@@ -1,23 +1,6 @@
-import {
-  FileDown,
-  FileText,
-  Home,
-  List,
-  LogOut,
-  Puzzle,
-  Save,
-  SwatchBook,
-} from "lucide-react";
+import { FileDown, Home, LogOut, Save } from "lucide-react";
 import { useResumeStore } from "../store/resumeStore";
 import { exportResumePdf } from "../features/preview/exportPdf";
-
-const menuItems = [
-  { label: "文件", icon: FileText },
-  { label: "编辑模式", icon: List },
-  { label: "选择主题", icon: SwatchBook },
-  { label: "插件列表", icon: Puzzle },
-  { label: "图标列表", icon: List },
-];
 
 export function Header() {
   const title = useResumeStore((state) => state.title);
@@ -31,45 +14,41 @@ export function Header() {
   const logout = useResumeStore((state) => state.logout);
 
   return (
-    <header className="top-header">
-      <div className="header-left">
-        <button className="icon-button ghost" aria-label="回主页" onClick={goHome}>
+    <header className="top-nav">
+      <div className="nav-left">
+        <button className="icon-button circular" aria-label="回主页" onClick={goHome}>
           <Home size={16} />
         </button>
-        <input
-          className="document-title"
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-          aria-label="简历标题"
-        />
-        <nav className="header-menu" aria-label="全局菜单">
-          {menuItems.map((item) => (
-            <button className="menu-button" key={item.label}>
-              <item.icon size={14} />
-              {item.label}
-            </button>
-          ))}
-        </nav>
+        <div className="nav-title-group">
+          <input
+            className="document-title-input"
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            aria-label="简历标题"
+            placeholder="未命名简历"
+          />
+          <span className="save-status">
+            {saveStatus === "saving"
+              ? "保存中..."
+              : saveStatus === "saved" && !dirty
+                ? "已保存"
+                : dirty
+                  ? "未保存"
+                  : user?.email}
+          </span>
+        </div>
       </div>
-      <div className="header-actions">
-        <span className="save-status">
-          {saveStatus === "saving"
-            ? "保存中"
-            : saveStatus === "saved" && !dirty
-              ? "已保存"
-              : dirty
-                ? "未保存"
-                : user?.email}
-        </span>
-        <button className="secondary-action" onClick={() => void exportResumePdf(smartOnePage, title)}>
+      <div className="nav-actions">
+        <button className="button-secondary" onClick={() => void exportResumePdf(smartOnePage, title)}>
           <FileDown size={14} />
           导出 PDF
         </button>
-        <button className="primary-action" onClick={() => void saveCurrentResume()}>
+        <button className="button-primary" onClick={() => void saveCurrentResume()}>
           <Save size={14} />
           保存
         </button>
-        <button className="icon-button ghost" title="退出登录" onClick={() => void logout()}>
+        <div className="nav-divider" />
+        <button className="button-text-link danger" title="退出登录" onClick={() => void logout()}>
           <LogOut size={15} />
         </button>
       </div>

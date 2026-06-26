@@ -1,4 +1,4 @@
-import { FileText, LogOut, Plus, Trash2 } from "lucide-react";
+import { FileText, LogOut, Plus, Trash2, PenLine } from "lucide-react";
 import { useResumeStore } from "../../store/resumeStore";
 
 export function HomePage() {
@@ -11,43 +11,46 @@ export function HomePage() {
 
   return (
     <main className="home-shell">
-      <header className="home-header">
-        <div>
-          <h1>简历主页</h1>
+      <header className="home-hero-band">
+        <div className="hero-content">
+          <h1>简历工作台</h1>
           <p>{user?.email}</p>
         </div>
-        <div className="home-actions">
-          <button className="secondary-action" onClick={() => void logout()}>
-            <LogOut size={14} />
-            退出
-          </button>
-          <button className="primary-action" onClick={() => void createResume("未命名简历")}>
-            <Plus size={14} />
+        <div className="hero-actions">
+          <button className="button-primary" onClick={() => void createResume("未命名简历")}>
+            <Plus size={16} />
             新建简历
+          </button>
+          <button className="button-secondary" onClick={() => void logout()}>
+            <LogOut size={16} />
+            退出
           </button>
         </div>
       </header>
+
       {resumes.length === 0 ? (
-        <section className="empty-state">
-          <FileText size={36} />
-          <h2>还没有简历</h2>
-          <p>创建第一份简历后，内容会保存到本地 SQLite 数据库。</p>
-          <button className="primary-action" onClick={() => void createResume("我的第一份简历")}>
-            <Plus size={14} />
-            创建简历
-          </button>
+        <section className="home-empty-state">
+          <div className="empty-content">
+            <PenLine size={48} strokeWidth={1} />
+            <h2>您还没有简历</h2>
+            <p>创建一个新的文档，开始您的创作之旅。</p>
+            <button className="button-primary" onClick={() => void createResume("我的第一份简历")}>
+              <Plus size={16} />
+              创建第一份简历
+            </button>
+          </div>
         </section>
       ) : (
         <section className="resume-grid">
           {resumes.map((resume) => (
-            <article className="resume-card" key={resume.id}>
-              <button className="resume-card-main" onClick={() => void loadResume(resume.id)}>
-                <FileText size={22} />
-                <span>{resume.title}</span>
-                <small>更新于 {formatTime(resume.updatedAt)}</small>
-              </button>
+            <article className="feature-card" key={resume.id}>
+              <div className="feature-card-main" onClick={() => void loadResume(resume.id)}>
+                <FileText size={24} className="feature-icon" />
+                <h3 className="feature-title">{resume.title}</h3>
+                <span className="feature-caption">更新于 {formatTime(resume.updatedAt)}</span>
+              </div>
               <button
-                className="icon-button danger"
+                className="icon-button danger feature-action"
                 title="删除简历"
                 onClick={() => {
                   if (window.confirm(`确定删除「${resume.title}」吗？`)) {
@@ -55,7 +58,7 @@ export function HomePage() {
                   }
                 }}
               >
-                <Trash2 size={15} />
+                <Trash2 size={16} />
               </button>
             </article>
           ))}
