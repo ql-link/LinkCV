@@ -7,7 +7,13 @@ import { useResumeStore } from "../../store/resumeStore";
 
 const fonts = [
   { label: "思源宋体", value: "Noto Serif SC, Source Han Serif SC, SimSun, serif" },
+  { label: "Noto Serif SC", value: "Noto Serif SC, Source Han Serif SC, SimSun, serif" },
   { label: "系统黑体", value: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" },
+  {
+    label: "JetBrains Mono",
+    value:
+      "JetBrains Mono, SFMono-Regular, Cascadia Code, Fira Code, Menlo, Consolas, ui-monospace, monospace",
+  },
   { label: "宋体", value: "SimSun, Songti SC, serif" },
   { label: "楷体", value: "KaiTi, STKaiti, serif" },
 ];
@@ -65,7 +71,7 @@ export function PreviewToolbar() {
       <NumberStepper
         label="左右"
         value={settings.pageMargin}
-        step={2}
+        step={0.5}
         min={8}
         max={28}
         onChange={(pageMargin) => updateSettings({ pageMargin })}
@@ -73,7 +79,7 @@ export function PreviewToolbar() {
       <NumberStepper
         label="上下"
         value={settings.verticalPageMargin}
-        step={2}
+        step={0.5}
         min={6}
         max={36}
         onChange={(verticalPageMargin) => updateSettings({ verticalPageMargin })}

@@ -78,7 +78,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   user: null,
   resumes: [],
   activeResumeId: null,
-  title: "许乐乐-后端开发实习生",
+  title: "张三-后端开发实习生",
   markdown: defaultResumeMarkdown,
   splitRatio: 0.4,
   previewScale: 1,

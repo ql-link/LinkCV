@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { api } from "../../api/client";
 import { useResumeStore } from "../../store/resumeStore";
 import { EditorCommand, EditorToolbar } from "./EditorToolbar";
-import { insertEditorText, runEditorCommand } from "./editorCommands";
+import { EditorInsertRange, insertEditorText, runEditorCommand } from "./editorCommands";
 
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -27,11 +27,14 @@ export function EditorPanel() {
   const setMarkdown = useResumeStore((state) => state.setMarkdown);
   const editorRef = useRef<EditorView | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingImageInsertRangeRef = useRef<EditorInsertRange | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   const handleCommand = (command: EditorCommand) => {
     if (!editorRef.current) return;
     if (command === "image") {
+      const selection = editorRef.current.state.selection.main;
+      pendingImageInsertRangeRef.current = { from: selection.from, to: selection.to };
       fileInputRef.current?.click();
       return;
     }
@@ -47,10 +50,16 @@ export function EditorPanel() {
       const dataUrl = await readFileAsDataUrl(file);
       const { asset } = await api.uploadAsset({ fileName: file.name, dataUrl });
       const alt = file.name.replace(/"/g, "&quot;");
-      insertEditorText(view, `<img src="${asset.url}" alt="${alt}" width="20" height="20">`);
+      const insertRange = pendingImageInsertRangeRef.current ?? undefined;
+      insertEditorText(
+        view,
+        `<img src="${asset.url}" alt="${alt}" width="20" height="20">`,
+        insertRange,
+      );
     } catch (error) {
       window.alert(`图片上传失败：${(error as Error).message}`);
     } finally {
+      pendingImageInsertRangeRef.current = null;
       setIsUploadingImage(false);
     }
   };

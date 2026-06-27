@@ -24,6 +24,21 @@ function normalizeLinkHref(href: string) {
   const trimmed = href.trim();
   if (!trimmed) return href;
 
+  try {
+    const parsedUrl = new URL(
+      /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`,
+    );
+    const csdnSubdomainMatch = parsedUrl.hostname.match(/^([a-z0-9-]+)\.blog\.csdn\.net$/i);
+
+    if (csdnSubdomainMatch) {
+      const userName = csdnSubdomainMatch[1];
+      const path = parsedUrl.pathname === "/" ? "" : parsedUrl.pathname;
+      return `https://blog.csdn.net/${userName}${path}${parsedUrl.search}${parsedUrl.hash}`;
+    }
+  } catch {
+    // Fall through to the generic normalization rules below.
+  }
+
   if (
     /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ||
     trimmed.startsWith("#") ||

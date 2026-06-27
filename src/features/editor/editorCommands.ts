@@ -30,8 +30,13 @@ const snippets: Record<EditorCommand, { prefix: string; suffix: string; fallback
   },
 };
 
-export function insertEditorText(view: EditorView, text: string) {
-  const selection = view.state.selection.main;
+export type EditorInsertRange = {
+  from: number;
+  to: number;
+};
+
+export function insertEditorText(view: EditorView, text: string, range?: EditorInsertRange) {
+  const selection = range ?? view.state.selection.main;
   view.dispatch({
     changes: { from: selection.from, to: selection.to, insert: text },
     selection: { anchor: selection.from + text.length },

@@ -1,6 +1,12 @@
-import { FileDown, Home, LogOut, Save } from "lucide-react";
+import { CircleAlert, CircleCheck, FileDown, Home, LogOut, Save } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useResumeStore } from "../store/resumeStore";
 import { exportResumePdf } from "../features/preview/exportPdf";
+
+type SaveToast = {
+  kind: "success" | "error";
+  message: string;
+};
 
 export function Header() {
   const title = useResumeStore((state) => state.title);
@@ -12,6 +18,27 @@ export function Header() {
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
   const goHome = useResumeStore((state) => state.goHome);
   const logout = useResumeStore((state) => state.logout);
+  const [saveToast, setSaveToast] = useState<SaveToast | null>(null);
+  const [isManualSaving, setIsManualSaving] = useState(false);
+
+  useEffect(() => {
+    if (!saveToast) return;
+
+    const timer = window.setTimeout(() => setSaveToast(null), 1800);
+    return () => window.clearTimeout(timer);
+  }, [saveToast]);
+
+  const handleManualSave = async () => {
+    setIsManualSaving(true);
+    await saveCurrentResume();
+    const latestError = useResumeStore.getState().error;
+    setSaveToast(
+      latestError
+        ? { kind: "error", message: "保存失败" }
+        : { kind: "success", message: "保存成功" },
+    );
+    setIsManualSaving(false);
+  };
 
   return (
     <header className="top-nav">
@@ -43,7 +70,7 @@ export function Header() {
           <FileDown size={14} />
           导出 PDF
         </button>
-        <button className="button-primary" onClick={() => void saveCurrentResume()}>
+        <button className="button-primary" disabled={isManualSaving} onClick={() => void handleManualSave()}>
           <Save size={14} />
           保存
         </button>
@@ -52,6 +79,12 @@ export function Header() {
           <LogOut size={15} />
         </button>
       </div>
+      {saveToast && (
+        <div className={`save-toast ${saveToast.kind}`} role="status" aria-live="polite">
+          {saveToast.kind === "success" ? <CircleCheck size={18} /> : <CircleAlert size={18} />}
+          {saveToast.message}
+        </div>
+      )}
     </header>
   );
 }

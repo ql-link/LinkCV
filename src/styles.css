@@ -100,6 +100,7 @@ select:focus-visible {
 }
 
 .top-nav {
+  position: relative;
   display: flex;
   height: 64px;
   flex: 0 0 64px;
@@ -213,7 +214,52 @@ select:focus-visible {
 }
 
 .button-primary:hover {
-  background: var(--cohere-black);
+  background: #b86750;
+}
+
+.button-primary:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.save-toast {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  z-index: 60;
+  display: inline-flex;
+  height: 48px;
+  min-width: 156px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transform: translateX(-50%);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0 18px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  box-shadow: 0 14px 34px rgba(20, 20, 19, 0.16);
+}
+
+.save-toast svg {
+  flex: 0 0 auto;
+}
+
+.save-toast.success {
+  border-color: rgba(23, 114, 69, 0.28);
+}
+
+.save-toast.success svg {
+  color: #20b56b;
+}
+
+.save-toast.error {
+  border-color: rgba(198, 69, 69, 0.32);
+  color: var(--error);
 }
 
 .button-secondary {
@@ -710,7 +756,7 @@ select:focus-visible {
   height: 100%;
   min-height: 0;
   flex-direction: column;
-  background: var(--canvas);
+  background: #ffffff;
 }
 
 .preview-toolbar {
@@ -829,9 +875,10 @@ select:focus-visible {
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 18px;
   overflow: auto;
+  background: #ffffff;
   padding: 36px 40px 64px;
 }
 
@@ -857,6 +904,7 @@ select:focus-visible {
   flex: 0 0 auto;
   flex-direction: column;
   gap: calc(20px * var(--preview-scale));
+  margin: 0 auto;
 }
 
 .resume-page-frame {
@@ -880,7 +928,7 @@ select:focus-visible {
   height: 297mm;
   flex: 0 0 auto;
   overflow: hidden;
-  background: var(--canvas);
+  background: #ffffff;
   box-shadow: 0 20px 48px rgba(0, 0, 0, 0.26);
   color: #111827;
   font-family: var(--resume-font-family);
@@ -1080,6 +1128,7 @@ select:focus-visible {
 }
 
 .page-break-hint {
+  align-self: center;
   width: 210mm;
   border-top: 1px dashed rgba(255, 255, 255, 0.42);
   padding-top: 10px;
