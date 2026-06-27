@@ -40,6 +40,7 @@ export type EditorCommand =
 
 type EditorToolbarProps = {
   onCommand: (command: EditorCommand) => void;
+  disabledCommands?: EditorCommand[];
 };
 
 const controls = [
@@ -62,14 +63,15 @@ const controls = [
   { command: "image", label: "图片", icon: Image },
 ] as const;
 
-export function EditorToolbar({ onCommand }: EditorToolbarProps) {
+export function EditorToolbar({ onCommand, disabledCommands = [] }: EditorToolbarProps) {
   return (
     <div className="editor-toolbar" aria-label="Markdown 工具栏">
       {controls.map((control) => (
         <button
           key={control.command}
           className="tool-button"
-          title={control.label}
+          title={disabledCommands.includes(control.command) ? "图片上传中" : control.label}
+          disabled={disabledCommands.includes(control.command)}
           onClick={() => onCommand(control.command)}
         >
           <control.icon size={14} />

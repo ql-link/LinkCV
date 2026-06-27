@@ -637,6 +637,12 @@ select:focus-visible {
   background: #fff1ed;
 }
 
+.tool-button:disabled {
+  cursor: wait;
+  color: #b8b3ac;
+  background: transparent;
+}
+
 .tool-button span {
   display: none;
 }
@@ -677,6 +683,19 @@ select:focus-visible {
   background: #fff1ed;
 }
 
+.editor-codemirror .cm-selectionBackground,
+.editor-codemirror .cm-content ::selection {
+  background: rgba(74, 85, 104, 0.24) !important;
+  background-color: rgba(74, 85, 104, 0.24) !important;
+  color: var(--ink);
+}
+
+.editor-codemirror .cm-focused .cm-selectionBackground {
+  background: rgba(74, 85, 104, 0.34) !important;
+  background-color: rgba(74, 85, 104, 0.34) !important;
+  box-shadow: inset 0 0 0 1px rgba(20, 20, 19, 0.22);
+}
+
 .editor-codemirror .cm-scroller {
   overflow: auto;
 }
@@ -701,10 +720,13 @@ select:focus-visible {
   transform: translateX(-50%);
   z-index: 10;
   display: flex;
+  max-width: calc(100% - 32px);
   height: 48px;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
   border-radius: var(--radius-full);
   border: 1px solid rgba(0, 0, 0, 0.05);
   background: rgba(255, 255, 255, 0.85);
@@ -712,6 +734,12 @@ select:focus-visible {
   padding: 0 16px;
   color: var(--ink);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  scrollbar-width: none;
+  white-space: nowrap;
+}
+
+.preview-toolbar::-webkit-scrollbar {
+  display: none;
 }
 
 .preview-toolbar .icon-button,
@@ -729,9 +757,14 @@ select:focus-visible {
 }
 
 .pill {
+  display: inline-flex;
+  flex: 0 0 auto;
   height: 32px;
+  align-items: center;
+  gap: 6px;
   padding: 0 13px;
   font-size: 13px;
+  white-space: nowrap;
 }
 
 .pill.active {
@@ -741,6 +774,7 @@ select:focus-visible {
 }
 
 .toolbar-select {
+  flex: 0 0 auto;
   height: 32px;
   min-width: 156px;
   border: 1px solid rgba(255, 255, 255, 0.22);
@@ -753,30 +787,40 @@ select:focus-visible {
 
 .stepper {
   display: inline-flex;
+  flex: 0 0 auto;
   height: 32px;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   border-radius: 8px;
-  padding: 0 7px 0 10px;
+  padding: 0 4px;
   font-size: 12px;
+  white-space: nowrap;
+}
+
+.stepper span {
+  width: 24px;
+  flex: 0 0 24px;
+  text-align: center;
 }
 
 .stepper button {
   display: inline-flex;
-  width: 20px;
+  width: 22px;
   height: 20px;
   align-items: center;
   justify-content: center;
-  border-radius: 9999px;
+  border-radius: 6px;
   background: transparent;
   color: inherit;
   cursor: pointer;
 }
 
 .stepper strong {
-  width: 30px;
+  width: 38px;
+  flex: 0 0 38px;
   text-align: center;
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 .paper-stage {
@@ -944,6 +988,22 @@ select:focus-visible {
 
 .resume-content strong {
   font-weight: 700;
+}
+
+.resume-content a {
+  border-radius: 2px;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.resume-content a:hover {
+  background: rgba(20, 20, 19, 0.08);
+}
+
+.resume-content a:focus-visible {
+  outline: 1px solid rgba(20, 20, 19, 0.38);
+  outline-offset: 1px;
 }
 
 .resume-content blockquote {

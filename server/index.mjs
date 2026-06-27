@@ -1,6 +1,7 @@
 import express from "express";
 import cookieParser from "cookie-parser";
 import { dirname, resolve } from "node:path";
+import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { db, databaseInfo } from "./db.mjs";
 import {
@@ -16,13 +17,22 @@ import {
   SESSION_COOKIE,
 } from "./auth.mjs";
 import { defaultResumeMarkdown, defaultResumeSettings } from "./defaultResume.mjs";
+import {
+  buildAssetObjectName,
+  dataUrlToImage,
+  ensureAssetBucket,
+  getAssetObject,
+  inferImageContentType,
+  minioConfig,
+  uploadAssetObject,
+} from "./minio.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(__dirname, "..");
 const port = Number(process.env.API_PORT ?? 4174);
 const app = express();
 
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "25mb" }));
 app.use(cookieParser());
 
 function publicUser(user) {
@@ -52,6 +62,69 @@ function validatePassword(password) {
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, database: databaseInfo.path });
+});
+
+app.post("/api/assets", requireAuth, async (req, res) => {
+  try {
+    const image = dataUrlToImage(req.body?.dataUrl);
+    if (!image) {
+      res.status(400).json({ error: "INVALID_IMAGE" });
+      return;
+    }
+
+    if (image.buffer.length > 10 * 1024 * 1024) {
+      res.status(413).json({ error: "IMAGE_TOO_LARGE" });
+      return;
+    }
+
+    const objectName = buildAssetObjectName({
+      userId: req.user.id,
+      fileName: req.body?.fileName,
+      contentType: image.contentType,
+    });
+
+    await uploadAssetObject({
+      objectName,
+      buffer: image.buffer,
+      contentType: image.contentType,
+    });
+
+    res.status(201).json({
+      asset: {
+        objectName,
+        url: `/api/assets/${encodeURIComponent(objectName)}`,
+      },
+    });
+  } catch (error) {
+    console.error("Unable to upload asset to MinIO", error);
+    res.status(502).json({ error: "ASSET_UPLOAD_FAILED" });
+  }
+});
+
+app.get("/api/assets/:objectName", requireAuth, async (req, res) => {
+  const objectName = decodeURIComponent(req.params.objectName);
+
+  if (!objectName.startsWith(`users/${req.user.id}/assets/`)) {
+    res.status(403).end("Forbidden");
+    return;
+  }
+
+  try {
+    const object = await getAssetObject(objectName);
+    object.on("error", (error) => {
+      if (!res.headersSent) {
+        res.status(error?.code === "NoSuchKey" ? 404 : 502).end("Unable to read asset");
+        return;
+      }
+      res.destroy(error);
+    });
+    res.setHeader("Content-Type", inferImageContentType(objectName));
+    res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
+    await pipeline(object, res);
+  } catch (error) {
+    console.error("Unable to read asset from MinIO", error);
+    res.status(error?.code === "NoSuchKey" ? 404 : 502).end("Unable to read asset");
+  }
 });
 
 app.get("/api/auth/me", (req, res) => {
@@ -222,6 +295,14 @@ app.delete("/api/resumes/:id", requireAuth, (req, res) => {
 
   res.json({ deleted: result.changes > 0 });
 });
+
+ensureAssetBucket()
+  .then(() => {
+    console.log(`MinIO bucket ready: ${minioConfig.bucket}`);
+  })
+  .catch((error) => {
+    console.error("Unable to initialize MinIO bucket", error);
+  });
 
 if (process.env.NODE_ENV === "production") {
   app.use(express.static(resolve(projectRoot, "dist")));

@@ -1,5 +1,4 @@
 import {
-  CodeXml,
   Minus,
   Plus,
   Sparkles,
@@ -79,9 +78,6 @@ export function PreviewToolbar() {
         max={36}
         onChange={(verticalPageMargin) => updateSettings({ verticalPageMargin })}
       />
-      <button className="icon-button" title="查看源码" onClick={() => updateSettings({ showSource: true })}>
-        <CodeXml size={15} />
-      </button>
     </div>
   );
 }

@@ -19,6 +19,11 @@ export type ResumeRecord = ResumeSummary & {
   previewScale: number;
 };
 
+export type UploadedAsset = {
+  objectName: string;
+  url: string;
+};
+
 type ApiOptions = {
   method?: string;
   body?: unknown;
@@ -68,4 +73,9 @@ export const api = {
     }),
   deleteResume: (id: string) =>
     request<{ deleted: boolean }>(`/api/resumes/${id}`, { method: "DELETE" }),
+  uploadAsset: (payload: { fileName: string; dataUrl: string }) =>
+    request<{ asset: UploadedAsset }>("/api/assets", {
+      method: "POST",
+      body: payload,
+    }),
 };

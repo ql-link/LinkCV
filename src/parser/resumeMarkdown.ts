@@ -12,6 +12,47 @@ const md = new MarkdownIt({
 });
 
 const defaultImageRenderer = md.renderer.rules.image;
+const defaultLinkOpenRenderer = md.renderer.rules.link_open;
+
+function isDomainLikeHref(href: string) {
+  return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:[/:?#].*)?$/i.test(
+    href,
+  );
+}
+
+function normalizeLinkHref(href: string) {
+  const trimmed = href.trim();
+  if (!trimmed) return href;
+
+  if (
+    /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ||
+    trimmed.startsWith("#") ||
+    trimmed.startsWith("/") ||
+    trimmed.startsWith("./") ||
+    trimmed.startsWith("../")
+  ) {
+    return href;
+  }
+
+  return isDomainLikeHref(trimmed) ? `https://${trimmed}` : href;
+}
+
+md.renderer.rules.link_open = (tokens, index, options, env, self) => {
+  const token = tokens[index];
+  const hrefIndex = token.attrIndex("href");
+
+  if (hrefIndex >= 0) {
+    const href = token.attrs?.[hrefIndex]?.[1];
+    if (href) token.attrs![hrefIndex][1] = normalizeLinkHref(href);
+  }
+
+  token.attrSet("target", "_blank");
+  token.attrSet("rel", "noopener noreferrer");
+
+  return defaultLinkOpenRenderer
+    ? defaultLinkOpenRenderer(tokens, index, options, env, self)
+    : self.renderToken(tokens, index, options);
+};
 
 md.renderer.rules.image = (tokens, index, options, env, self) => {
   const token = tokens[index];
