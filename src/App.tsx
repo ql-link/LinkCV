@@ -12,6 +12,7 @@ export function App() {
   const activeResumeId = useResumeStore((state) => state.activeResumeId);
   const hydrate = useResumeStore((state) => state.hydrate);
   const dirty = useResumeStore((state) => state.dirty);
+  const editVersion = useResumeStore((state) => state.editVersion);
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
 
   useEffect(() => {
@@ -26,7 +27,7 @@ export function App() {
     }, 900);
 
     return () => window.clearTimeout(timer);
-  }, [activeResumeId, dirty, saveCurrentResume]);
+  }, [activeResumeId, dirty, editVersion, saveCurrentResume]);
 
   if (authStatus === "checking") {
     return <div className="app-loading">正在加载简历工作台...</div>;

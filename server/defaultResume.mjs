@@ -73,7 +73,7 @@ TaskFlow Lite
 5. 工程能力：重视可维护性、可测试性与清晰的模块边界。`;
 
 export const defaultResumeSettings = {
-  fontFamily: "Noto Serif SC, Source Han Serif SC, SimSun, serif",
+  fontFamily: '"Source Han Serif SC", "Songti SC", STSong, SimSun, serif',
   fontSize: 10.5,
   lineHeight: 1.32,
   pageMargin: 16,

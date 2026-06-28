@@ -15,6 +15,8 @@ export type ResumeSettings = {
   showSource: boolean;
 };
 
+export const resumeSerifFontStack = '"Source Han Serif SC", "Songti SC", STSong, SimSun, serif';
+
 type AuthStatus = "checking" | "guest" | "authenticated";
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -29,6 +31,7 @@ type ResumeState = {
   previewScale: number;
   settings: ResumeSettings;
   dirty: boolean;
+  editVersion: number;
   saveStatus: SaveStatus;
   error: string | null;
   hydrate: () => Promise<void>;
@@ -48,8 +51,17 @@ type ResumeState = {
   updateSettings: (settings: Partial<ResumeSettings>) => void;
 };
 
+type SaveSnapshot = {
+  activeResumeId: string;
+  title: string;
+  markdown: string;
+  settings: ResumeSettings;
+  splitRatio: number;
+  previewScale: number;
+};
+
 export const defaultSettings: ResumeSettings = {
-  fontFamily: "Noto Serif SC, Source Han Serif SC, SimSun, serif",
+  fontFamily: resumeSerifFontStack,
   fontSize: 10.5,
   lineHeight: 1.32,
   pageMargin: 16,
@@ -59,18 +71,52 @@ export const defaultSettings: ResumeSettings = {
   showSource: false,
 };
 
+function normalizeSettings(settings: Partial<ResumeSettings> = {}) {
+  const normalized = { ...defaultSettings, ...settings, showSource: false };
+
+  if (normalized.fontFamily.includes("Source Han Serif SC") && normalized.fontFamily.includes("SimSun")) {
+    normalized.fontFamily = resumeSerifFontStack;
+  }
+
+  return normalized;
+}
+
 function applyResume(resume: ResumeRecord) {
   return {
     activeResumeId: resume.id,
     title: resume.title,
     markdown: resume.markdown,
-    settings: { ...defaultSettings, ...resume.settings, showSource: false },
+    settings: normalizeSettings(resume.settings),
     splitRatio: resume.splitRatio,
     previewScale: resume.previewScale,
     dirty: false,
     saveStatus: "saved" as SaveStatus,
     error: null,
   };
+}
+
+function settingsEqual(left: ResumeSettings, right: ResumeSettings) {
+  return (
+    left.fontFamily === right.fontFamily &&
+    left.fontSize === right.fontSize &&
+    left.lineHeight === right.lineHeight &&
+    left.pageMargin === right.pageMargin &&
+    left.verticalPageMargin === right.verticalPageMargin &&
+    left.theme === right.theme &&
+    left.smartOnePage === right.smartOnePage &&
+    left.showSource === right.showSource
+  );
+}
+
+function matchesSaveSnapshot(state: ResumeState, snapshot: SaveSnapshot) {
+  return (
+    state.activeResumeId === snapshot.activeResumeId &&
+    state.title === snapshot.title &&
+    state.markdown === snapshot.markdown &&
+    state.splitRatio === snapshot.splitRatio &&
+    state.previewScale === snapshot.previewScale &&
+    settingsEqual({ ...state.settings, showSource: false }, snapshot.settings)
+  );
 }
 
 export const useResumeStore = create<ResumeState>((set, get) => ({
@@ -84,6 +130,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   previewScale: 1,
   settings: defaultSettings,
   dirty: false,
+  editVersion: 0,
   saveStatus: "idle",
   error: null,
 
@@ -161,19 +208,33 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   saveCurrentResume: async () => {
     const state = get();
     if (!state.activeResumeId) return;
+    const snapshot: SaveSnapshot = {
+      activeResumeId: state.activeResumeId,
+      title: state.title,
+      markdown: state.markdown,
+      settings: { ...state.settings, showSource: false },
+      splitRatio: state.splitRatio,
+      previewScale: state.previewScale,
+    };
 
     set({ saveStatus: "saving", error: null });
 
     try {
-      const { resume } = await api.updateResume(state.activeResumeId, {
-        title: state.title,
-        markdown: state.markdown,
-        settings: { ...state.settings, showSource: false },
-        splitRatio: state.splitRatio,
-        previewScale: state.previewScale,
+      const { resume } = await api.updateResume(snapshot.activeResumeId, {
+        title: snapshot.title,
+        markdown: snapshot.markdown,
+        settings: snapshot.settings,
+        splitRatio: snapshot.splitRatio,
+        previewScale: snapshot.previewScale,
       });
       const { resumes } = await api.listResumes();
-      set({ resumes, ...applyResume(resume) });
+      set((current) => {
+        if (!matchesSaveSnapshot(current, snapshot)) {
+          return { resumes };
+        }
+
+        return { resumes, ...applyResume(resume) };
+      });
     } catch (error) {
       set({ saveStatus: "error", error: (error as Error).message });
     }
@@ -181,14 +242,35 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
 
   goHome: () => set({ activeResumeId: null }),
 
-  setTitle: (title) => set({ title, dirty: true, saveStatus: "idle" }),
-  setMarkdown: (markdown) => set({ markdown, dirty: true, saveStatus: "idle" }),
-  setSplitRatio: (splitRatio) => set({ splitRatio, dirty: true, saveStatus: "idle" }),
-  setPreviewScale: (previewScale) => set({ previewScale, dirty: true, saveStatus: "idle" }),
+  setTitle: (title) =>
+    set((state) =>
+      title === state.title
+        ? {}
+        : { title, dirty: true, editVersion: state.editVersion + 1, saveStatus: "idle" },
+    ),
+  setMarkdown: (markdown) =>
+    set((state) =>
+      markdown === state.markdown
+        ? {}
+        : { markdown, dirty: true, editVersion: state.editVersion + 1, saveStatus: "idle" },
+    ),
+  setSplitRatio: (splitRatio) =>
+    set((state) =>
+      splitRatio === state.splitRatio
+        ? {}
+        : { splitRatio, dirty: true, editVersion: state.editVersion + 1, saveStatus: "idle" },
+    ),
+  setPreviewScale: (previewScale) =>
+    set((state) =>
+      previewScale === state.previewScale
+        ? {}
+        : { previewScale, dirty: true, editVersion: state.editVersion + 1, saveStatus: "idle" },
+    ),
   updateSettings: (settings) =>
     set((state) => ({
       settings: { ...state.settings, ...settings },
       dirty: true,
+      editVersion: state.editVersion + 1,
       saveStatus: "idle",
     })),
 }));

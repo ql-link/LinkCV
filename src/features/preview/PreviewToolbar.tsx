@@ -3,12 +3,11 @@ import {
   Plus,
   Sparkles,
 } from "lucide-react";
-import { useResumeStore } from "../../store/resumeStore";
+import { resumeSerifFontStack, useResumeStore } from "../../store/resumeStore";
 
 const fonts = [
-  { label: "思源宋体", value: "Noto Serif SC, Source Han Serif SC, SimSun, serif" },
-  { label: "Noto Serif SC", value: "Noto Serif SC, Source Han Serif SC, SimSun, serif" },
-  { label: "系统黑体", value: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" },
+  { label: "简历宋体", value: resumeSerifFontStack },
+  { label: "系统黑体", value: '"PingFang SC", "Microsoft YaHei", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
   {
     label: "JetBrains Mono",
     value:
@@ -27,14 +26,7 @@ export function PreviewToolbar() {
       <button
         className={settings.smartOnePage ? "pill active" : "pill"}
         onClick={() => {
-          const enabled = !settings.smartOnePage;
-          updateSettings({
-            smartOnePage: enabled,
-            fontSize: enabled ? 9.8 : 10.5,
-            lineHeight: enabled ? 1.22 : 1.32,
-            pageMargin: enabled ? 12 : 16,
-            verticalPageMargin: enabled ? 12 : 16,
-          });
+          updateSettings({ smartOnePage: !settings.smartOnePage });
         }}
       >
         <Sparkles size={14} />
