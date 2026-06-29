@@ -7,6 +7,7 @@ import { resumeSerifFontStack, useResumeStore } from "../../store/resumeStore";
 
 const fonts = [
   { label: "简历宋体", value: resumeSerifFontStack },
+  { label: "霞鹜文楷", value: '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif' },
   { label: "系统黑体", value: '"PingFang SC", "Microsoft YaHei", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
   {
     label: "JetBrains Mono",
