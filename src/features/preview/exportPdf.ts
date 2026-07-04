@@ -3,10 +3,43 @@ import { jsPDF } from "jspdf";
 
 const A4_WIDTH_MM = 210;
 const A4_HEIGHT_MM = 297;
+const MIN_EXPORT_CANVAS_SCALE = 3;
+const MAX_EXPORT_CANVAS_SCALE = 4;
+
+type PdfLinkRegion = {
+  href: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 
 function sanitizeFilename(name: string) {
   const clean = name.trim().replace(/[\\/:*?"<>|]+/g, "-");
   return clean || "resume";
+}
+
+function isDomainLikeHref(href: string) {
+  return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:[/:?#].*)?$/i.test(
+    href,
+  );
+}
+
+function normalizePdfLinkHref(href: string) {
+  const trimmed = href.trim();
+  if (!trimmed) return "";
+
+  if (
+    /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ||
+    trimmed.startsWith("#") ||
+    trimmed.startsWith("/") ||
+    trimmed.startsWith("./") ||
+    trimmed.startsWith("../")
+  ) {
+    return trimmed;
+  }
+
+  return isDomainLikeHref(trimmed) ? `https://${trimmed}` : trimmed;
 }
 
 function waitForImages(root: HTMLElement) {
@@ -68,12 +101,42 @@ async function renderPaperToCanvas(paper: HTMLElement) {
 
   return html2canvas(paper, {
     backgroundColor: "#ffffff",
-    scale: 2,
+    scale: Math.min(
+      MAX_EXPORT_CANVAS_SCALE,
+      Math.max(MIN_EXPORT_CANVAS_SCALE, window.devicePixelRatio || 1),
+    ),
     useCORS: true,
     allowTaint: false,
     logging: false,
     windowWidth: paper.scrollWidth,
     windowHeight: paper.scrollHeight,
+  });
+}
+
+function collectPdfLinks(paper: HTMLElement, pageHeightMm: number): PdfLinkRegion[] {
+  const paperRect = paper.getBoundingClientRect();
+  const scaleX = A4_WIDTH_MM / paperRect.width;
+  const scaleY = pageHeightMm / paperRect.height;
+
+  return Array.from(paper.querySelectorAll<HTMLAnchorElement>("a[href]")).flatMap((anchor) => {
+    const href = normalizePdfLinkHref(anchor.getAttribute("href") ?? "");
+    if (!href) return [];
+
+    return Array.from(anchor.getClientRects())
+      .filter((rect) => rect.width > 0 && rect.height > 0)
+      .map((rect) => ({
+        href,
+        x: (rect.left - paperRect.left) * scaleX,
+        y: (rect.top - paperRect.top) * scaleY,
+        width: rect.width * scaleX,
+        height: rect.height * scaleY,
+      }));
+  });
+}
+
+function addPdfLinks(pdf: jsPDF, links: PdfLinkRegion[]) {
+  links.forEach((link) => {
+    pdf.link(link.x, link.y, link.width, link.height, { url: link.href });
   });
 }
 
@@ -118,11 +181,13 @@ export async function exportResumePdf(smartOnePage: boolean, title: string) {
     };
 
     addCanvasPage(firstCanvas, 0);
+    addPdfLinks(pdf, collectPdfLinks(clonedPapers[0], firstHeightMm));
 
     if (!smartOnePage) {
       for (let index = 1; index < clonedPapers.length; index += 1) {
         const canvas = await renderPaperToCanvas(clonedPapers[index]);
         addCanvasPage(canvas, index);
+        addPdfLinks(pdf, collectPdfLinks(clonedPapers[index], A4_HEIGHT_MM));
       }
     }
 
