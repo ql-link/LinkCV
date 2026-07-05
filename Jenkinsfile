@@ -19,20 +19,10 @@ pipeline {
       steps { checkout scm }
     }
 
-    stage('Install & Verify & Build') {
-      agent {
-        docker { image 'node:22-bookworm'; args '-v $HOME/.npm:/root/.npm'; reuseNode true }
-      }
-      steps {
-        sh 'npm ci --prefer-offline --no-audit --registry=https://registry.npmmirror.com'
-        sh 'npm run build'
-      }
-    }
-
     stage('Build Image') {
       steps {
         sh '''
-          docker build \
+          DOCKER_BUILDKIT=1 docker build \
             -t ${IMAGE}:${TAG} -t ${IMAGE}:latest \
             .
         '''

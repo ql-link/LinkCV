@@ -1,9 +1,6 @@
-FROM node:22-bookworm-slim AS runtime
+# syntax=docker/dockerfile:1
 
-ENV NODE_ENV=production \
-    API_PORT=4174 \
-    DATA_DIR=/app/data \
-    TZ=Asia/Shanghai
+FROM node:22-bookworm AS build
 
 WORKDIR /app
 
@@ -15,10 +12,28 @@ RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.li
     ca-certificates \
     python3 \
   && rm -rf /var/lib/apt/lists/*
-RUN npm ci --omit=dev --prefer-offline --no-audit --registry=https://registry.npmmirror.com
+RUN --mount=type=cache,target=/root/.npm \
+  npm ci --prefer-offline --no-audit --registry=https://registry.npmmirror.com
 
+COPY index.html tsconfig.json vite.config.mjs ./
+COPY src ./src
 COPY server ./server
-COPY dist ./dist
+RUN npm run build
+RUN npm prune --omit=dev
+
+FROM node:22-bookworm-slim AS runtime
+
+ENV NODE_ENV=production \
+    API_PORT=4174 \
+    DATA_DIR=/app/data \
+    TZ=Asia/Shanghai
+
+WORKDIR /app
+
+COPY --from=build /app/package.json /app/package-lock.json ./
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/server ./server
+COPY --from=build /app/dist ./dist
 
 EXPOSE 4174
 
