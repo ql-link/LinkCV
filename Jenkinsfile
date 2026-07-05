@@ -21,7 +21,7 @@ pipeline {
 
     stage('Install & Verify & Build') {
       agent {
-        docker { image 'node:22-bookworm-slim'; args '-v $HOME/.npm:/root/.npm'; reuseNode true }
+        docker { image 'node:22-bookworm'; args '-v $HOME/.npm:/root/.npm'; reuseNode true }
       }
       steps {
         sh 'npm ci --prefer-offline --no-audit --registry=https://registry.npmmirror.com'

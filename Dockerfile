@@ -8,6 +8,11 @@ ENV NODE_ENV=production \
 WORKDIR /app
 
 COPY package.json package-lock.json ./
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    python3 \
+  && rm -rf /var/lib/apt/lists/*
 RUN npm ci --omit=dev --prefer-offline --no-audit --registry=https://registry.npmmirror.com
 
 COPY server ./server
