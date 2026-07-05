@@ -932,6 +932,7 @@ select:focus-visible {
   box-shadow: 0 20px 48px rgba(0, 0, 0, 0.26);
   color: #111827;
   font-family: var(--resume-font-family);
+  font-synthesis: weight;
   transform: scale(var(--preview-scale));
   transform-origin: top left;
 }
@@ -991,7 +992,7 @@ select:focus-visible {
   margin: 0 0 7px;
   text-align: center;
   font-size: 20pt;
-  font-weight: 700;
+  font-weight: 400;
   letter-spacing: 0;
 }
 
@@ -1006,12 +1007,13 @@ select:focus-visible {
   border-bottom: 1px solid #1f2937;
   padding-bottom: 1px;
   font-size: 12.5pt;
-  font-weight: 700;
+  font-weight: 400;
 }
 
 .resume-content h3 {
   margin: 6px 0 3px;
   font-size: 10.5pt;
+  font-weight: 400;
 }
 
 .resume-content p {
@@ -1035,7 +1037,8 @@ select:focus-visible {
 }
 
 .resume-content strong {
-  font-weight: 700;
+  color: #4b5563;
+  font-weight: 600;
 }
 
 .resume-content a {
@@ -1107,7 +1110,6 @@ select:focus-visible {
 .resume-row-left {
   min-width: 0;
   flex: 1;
-  font-weight: 700;
 }
 
 .resume-row-right {
@@ -1118,7 +1120,6 @@ select:focus-visible {
 
 .resume-row.single {
   display: block;
-  font-weight: 700;
 }
 
 .resume-row.single.right {

@@ -9,3 +9,11 @@ When implementing from a selected generated mock, treat that image as the source
 Prototype content preference: default resume templates must use fictional sample content, currently "张三", and must not include the user's personal resume details or contact information.
 
 Resume font preference: default resume templates should use a polished Chinese serif stack and avoid the previously removed Google CJK serif family.
+
+Resume emphasis preference: left/right resume rows must not auto-bold left-side content; only explicit Markdown emphasis such as `**text**` should render as bold.
+
+Resume heading preference: resume Markdown headings should not auto-bold; use size, spacing, and rules for hierarchy unless the source explicitly uses bold emphasis.
+
+Explicit Markdown bold in resume content must render visibly bold in the web preview and PDF, including with Chinese serif fonts that need synthesized bold weight.
+
+Explicit Markdown bold should use medium weight and a slightly lighter ink than body text so the emphasis is visible without feeling overly heavy.
