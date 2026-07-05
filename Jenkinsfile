@@ -2,98 +2,61 @@ pipeline {
   agent any
 
   options {
-    buildDiscarder(logRotator(numToKeepStr: '20'))
-    disableConcurrentBuilds()
     timestamps()
-  }
-
-  parameters {
-    string(name: 'DEPLOY_HOST', defaultValue: '', description: 'Target server host or IP')
-    string(name: 'DEPLOY_USER', defaultValue: 'deploy', description: 'SSH user on the target server')
-    string(name: 'DEPLOY_DIR', defaultValue: '/opt/linkcv', description: 'Application directory on the target server')
-    string(name: 'SERVICE_NAME', defaultValue: 'linkcv', description: 'systemd service name')
-    string(name: 'APP_PORT', defaultValue: '4174', description: 'Port exposed by the Node service')
-    string(name: 'SSH_CREDENTIALS_ID', defaultValue: 'linkcv-deploy-ssh', description: 'Jenkins SSH private key credentials ID')
-    booleanParam(name: 'SKIP_DEPLOY', defaultValue: false, description: 'Only build and archive the deployment artifact')
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
   }
 
   environment {
-    CI = 'true'
+    IMAGE = 'linkcv'
+    TAG = "${env.GIT_COMMIT?.take(8) ?: env.BUILD_NUMBER}"
+    DEPLOY_DIR = '/opt/tolink/LinkCV'
+    LINKCV_ENV_FILE = '/opt/tolink/LinkCV/.env'
   }
 
   stages {
-    stage('Install') {
-      steps {
-        sh 'node --version && npm --version'
-        sh 'npm ci'
-      }
+    stage('Checkout') {
+      steps { checkout scm }
     }
 
-    stage('Build') {
+    stage('Install & Verify & Build') {
+      agent {
+        docker { image 'node:22-bookworm-slim'; args '-v $HOME/.npm:/root/.npm'; reuseNode true }
+      }
       steps {
+        sh 'npm ci --prefer-offline --no-audit --registry=https://registry.npmmirror.com'
         sh 'npm run build'
       }
     }
 
-    stage('Package') {
+    stage('Build Image') {
       steps {
         sh '''
-          set -euo pipefail
-          rm -rf .jenkins-package
-          mkdir -p .jenkins-package
-          tar \
-            --exclude=.git \
-            --exclude=.idea \
-            --exclude=.jenkins-package \
-            --exclude=node_modules \
-            --exclude=data \
-            -czf .jenkins-package/linkcv-${BUILD_NUMBER}.tar.gz .
+          docker build \
+            -t ${IMAGE}:${TAG} -t ${IMAGE}:latest \
+            .
         '''
-        archiveArtifacts artifacts: '.jenkins-package/*.tar.gz', fingerprint: true
       }
     }
 
     stage('Deploy') {
-      when {
-        expression { return !params.SKIP_DEPLOY }
-      }
       steps {
-        script {
-          if (!params.DEPLOY_HOST?.trim()) {
-            error('DEPLOY_HOST is required when SKIP_DEPLOY is false')
-          }
-        }
-        sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
-          sh '''
-            set -euo pipefail
-            artifact=".jenkins-package/linkcv-${BUILD_NUMBER}.tar.gz"
-            runtime_env=".jenkins-package/runtime-${BUILD_NUMBER}.env"
-            remote="${DEPLOY_USER}@${DEPLOY_HOST}"
-            remote_tarball="/tmp/linkcv-${BUILD_NUMBER}.tar.gz"
-            remote_runtime_env="/tmp/linkcv-runtime-${BUILD_NUMBER}.env"
-
-            : > "${runtime_env}"
-            for name in MINIO_ENDPOINT MINIO_ACCESS_KEY MINIO_SECRET_KEY MINIO_BUCKET; do
-              value="$(printenv "${name}" || true)"
-              if [ -n "${value}" ]; then
-                printf '%s=%s\\n' "${name}" "${value}" >> "${runtime_env}"
-              fi
-            done
-
-            scp -o StrictHostKeyChecking=accept-new "${artifact}" "${remote}:${remote_tarball}"
-            scp -o StrictHostKeyChecking=accept-new "${runtime_env}" "${remote}:${remote_runtime_env}"
-            scp -o StrictHostKeyChecking=accept-new deploy/remote-deploy.sh "${remote}:/tmp/linkcv-remote-deploy.sh"
-            ssh -o StrictHostKeyChecking=accept-new "${remote}" \
-              "APP_TARBALL='${remote_tarball}' RUNTIME_ENV_FILE='${remote_runtime_env}' DEPLOY_DIR='${DEPLOY_DIR}' RELEASE_ID='${BUILD_NUMBER}' SERVICE_NAME='${SERVICE_NAME}' APP_PORT='${APP_PORT}' bash /tmp/linkcv-remote-deploy.sh"
-          '''
-        }
+        sh '''
+          mkdir -p "${DEPLOY_DIR}/deploy" "${DEPLOY_DIR}/data"
+          cp deploy/docker-compose.yml "${DEPLOY_DIR}/deploy/docker-compose.yml"
+          cd "${DEPLOY_DIR}"
+          export TAG="${TAG}"
+          export LINKCV_ENV_FILE="${LINKCV_ENV_FILE}"
+          test -f "${LINKCV_ENV_FILE}" || { echo "Missing LinkCV env file: ${LINKCV_ENV_FILE}"; exit 14; }
+          docker compose -f deploy/docker-compose.yml up -d
+        '''
       }
     }
   }
 
   post {
-    always {
-      cleanWs(deleteDirs: true, disableDeferredWipeout: true)
-    }
+    always { sh 'docker image prune -f || true' }
+    success { echo "Deployed ${IMAGE}:${TAG}" }
+    failure { echo 'Build failed.' }
   }
 }

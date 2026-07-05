@@ -1,0 +1,12 @@
+node_modules
+data
+.git
+.github
+.idea
+.vscode
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
+deploy/*.md
