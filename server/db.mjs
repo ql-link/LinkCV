@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(__dirname, "..");
-const dataDir = resolve(projectRoot, "data");
+const dataDir = process.env.DATA_DIR ? resolve(process.env.DATA_DIR) : resolve(projectRoot, "data");
 const dbPath = resolve(dataDir, "resume_app.sqlite");
 
 mkdirSync(dataDir, { recursive: true });
