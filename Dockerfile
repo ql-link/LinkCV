@@ -30,6 +30,14 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 
+RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true; \
+  sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true; \
+  apt-get update && apt-get install -y --no-install-recommends \
+    fontconfig \
+    fonts-noto-cjk \
+  && rm -rf /var/lib/apt/lists/* \
+  && fc-cache -f
+
 COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/server ./server

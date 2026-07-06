@@ -15,7 +15,8 @@ export type ResumeSettings = {
   showSource: boolean;
 };
 
-export const resumeSerifFontStack = '"Source Han Serif SC", "Songti SC", STSong, SimSun, serif';
+export const resumeSerifFontStack =
+  '"Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", STSong, SimSun, serif';
 
 type AuthStatus = "checking" | "guest" | "authenticated";
 type SaveStatus = "idle" | "saving" | "saved" | "error";
