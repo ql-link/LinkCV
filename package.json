@@ -13,6 +13,7 @@
     "start": "NODE_ENV=production node server/index.mjs"
   },
   "dependencies": {
+    "@callmebill/lxgw-wenkai-web": "^1.522.0",
     "@codemirror/lang-markdown": "^6.5.0",
     "@uiw/react-codemirror": "^4.25.10",
     "@vitejs/plugin-react": "5.0.4",
