@@ -19,3 +19,10 @@ Resume heading preference: resume Markdown headings should not auto-bold; use si
 Explicit Markdown bold in resume content must render visibly bold in the web preview and PDF, including with Chinese serif fonts that need synthesized bold weight.
 
 Explicit Markdown bold should use medium weight and a slightly lighter ink than body text so the emphasis is visible without feeling overly heavy.
+
+## 协作语言
+
+- Multica Issue 和 GitHub Issue 的标题、正文、验收标准及面向协作者的说明必须使用中文。
+- GitHub PR 的标题、正文、审核意见和审核结论必须使用中文。
+- 代码标识符、文件路径、命令、API、库名和必要的技术术语可以保留英文；出现歧义时补充中文解释。
+- 提交 Issue 或 PR 前必须检查语言规范；不符合时先改为中文，再进入分工、开发或审核流程。
