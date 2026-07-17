@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "start": "NODE_ENV=production node server/index.mjs"
+    "start": "NODE_ENV=production node server/index.mjs",
+    "sync:multica-github": "node tools/multica-github-sync/sync.mjs",
+    "test:multica-github-sync": "node --test tools/multica-github-sync/*.test.mjs"
   },
   "dependencies": {
     "@callmebill/lxgw-wenkai-web": "^1.522.0",
