@@ -1,10 +1,15 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { accessSync, constants, createReadStream, statSync } from "node:fs";
-import { extname, resolve, sep } from "node:path";
+import { dirname, extname, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const workspaceRoot = resolve(process.cwd());
+const webRoot = dirname(fileURLToPath(import.meta.url));
+const workspaceRoot = resolve(webRoot, "../..");
 const documentsRoot = resolve(process.env.HOME ?? "", "Documents");
+const backendPort = process.env.BACKEND_PORT ?? "8000";
+const backendTarget = process.env.BACKEND_PROXY_TARGET ?? `http://127.0.0.1:${backendPort}`;
+const legacyApiTarget = process.env.LEGACY_API_PROXY_TARGET ?? "http://127.0.0.1:4174";
 
 const mimeTypes = {
   ".apng": "image/apng",
@@ -44,27 +49,27 @@ function localAssetPlugin() {
       }
 
       const stat = statSync(localPath);
-          if (!stat.isFile()) {
-            res.statusCode = 404;
-            res.end("Local asset is not a file");
-            return;
-          }
+      if (!stat.isFile()) {
+        res.statusCode = 404;
+        res.end("Local asset is not a file");
+        return;
+      }
 
-          accessSync(localPath, constants.R_OK);
+      accessSync(localPath, constants.R_OK);
 
-          const contentType = mimeTypes[extname(localPath).toLowerCase()] ?? "application/octet-stream";
-          res.setHeader("Content-Type", contentType);
-          res.setHeader("Cache-Control", "no-cache");
-          const stream = createReadStream(localPath);
-          stream.on("error", (error) => {
-            if (!res.headersSent) {
-              res.statusCode = error?.code === "ENOENT" ? 404 : 403;
-              res.end(error?.message ?? "Unable to read local asset");
-              return;
-            }
-            res.destroy(error);
-          });
-          stream.pipe(res);
+      const contentType = mimeTypes[extname(localPath).toLowerCase()] ?? "application/octet-stream";
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "no-cache");
+      const stream = createReadStream(localPath);
+      stream.on("error", (error) => {
+        if (!res.headersSent) {
+          res.statusCode = error?.code === "ENOENT" ? 404 : 403;
+          res.end(error?.message ?? "Unable to read local asset");
+          return;
+        }
+        res.destroy(error);
+      });
+      stream.pipe(res);
     } catch (error) {
       res.statusCode = error?.code === "ENOENT" ? 404 : 403;
       res.end(error?.message ?? "Unable to read local asset");
@@ -88,7 +93,14 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/api": "http://127.0.0.1:4174",
+      "/api/health": {
+        target: backendTarget,
+        changeOrigin: true,
+      },
+      "/api": {
+        target: legacyApiTarget,
+        changeOrigin: true,
+      },
     },
     warmup: {
       clientFiles: ["./src/main.tsx"],

@@ -1,14 +1,23 @@
 import { Client } from "minio";
 import { extname } from "node:path";
 
-const endpointUrl = new URL(process.env.MINIO_ENDPOINT ?? "http://103.205.254.30:39000");
+function requiredEnvironmentVariable(name) {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+
+  return value;
+}
+
+const endpointUrl = new URL(process.env.MINIO_ENDPOINT ?? "http://127.0.0.1:9000");
 
 export const minioConfig = {
   endPoint: endpointUrl.hostname,
   port: Number(endpointUrl.port || (endpointUrl.protocol === "https:" ? 443 : 80)),
   useSSL: endpointUrl.protocol === "https:",
-  accessKey: process.env.MINIO_ACCESS_KEY ?? "root",
-  secretKey: process.env.MINIO_SECRET_KEY ?? "ql354210",
+  accessKey: requiredEnvironmentVariable("MINIO_ACCESS_KEY"),
+  secretKey: requiredEnvironmentVariable("MINIO_SECRET_KEY"),
   bucket: process.env.MINIO_BUCKET ?? "linkcv",
 };
 
