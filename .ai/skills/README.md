@@ -25,14 +25,18 @@
 | `config-contract-sync` | 核对跨代码、配置和部署位置的具体契约值 | 诊断结束或转实现修复 |
 | `doc-maintenance-sync` | 维护 `docs/` 长期项目知识 | 文档与契约门禁 |
 | `implementation-execution` | 按冻结规格编码 | 测试 |
-| `run-all-tests` | 按改动范围验证 | 质量审查 |
+| `test-authoring` | 编写前端组件/单元测试和后端单元/集成测试 | 运行验证 |
+| `run-all-tests` | 按改动范围执行自动化验证 | 人工验收（适用时）或质量审查 |
+| `manual-acceptance` | 生成并记录任务级人工端到端验收 | 质量审查 |
 | `code-review-and-quality` | 审查正确性、契约与风险 | PR 收口 |
 | `branch-pr-workflow` | 安全准备分支、提交和 PR | 用户审核 |
 
 运行 `npm run check:ai` 校验技能的头部元数据、占位内容、链接和过期技术栈引用。长期模块知识从 [docs/README.md](../../docs/README.md) 按需读取；三个契约治理技能共享 [契约面与事实源映射](../../docs/internals/contract-governance.md)，不各自复制模块映射。
 
-固定结构的产物模板跟随所属技能保存：需求简报、验收契约、技术设计和按需生成的实施报告分别由对应技能维护。`agents/openai.yaml` 仅在需要 Codex 界面展示元数据时按需添加，不是项目技能的必需文件。
+固定结构的产物模板跟随所属技能保存：需求简报、验收契约、技术设计、按需生成的实施报告和人工验收记录分别由对应技能维护。`agents/openai.yaml` 仅在需要 Codex 界面展示元数据时按需添加，不是项目技能的必需文件。
 
 需求简报和技术设计初稿都是一致性探针：发现新分歧时转 `decision-grilling`，事实由 Agent 自行核实，真实决策按依赖顺序每轮只询问一个；结论回写原章节并重新扫描，阻塞项清空且用户确认后才允许冻结。
 
 契约治理技能不要求固定串行：结构或语义影响用 `contract-guard`，同一具体值的多处一致性用 `config-contract-sync`，更新长期 `docs/` 用 `doc-maintenance-sync`。已有上游结论时直接消费，不重复扫描同一问题。
+
+测试职责保持单向：`acceptance-generator` 定义可观察规则，`test-authoring` 编写自动化测试，`run-all-tests` 执行并报告自动化结果，`manual-acceptance` 记录必要的人工端到端结果，`code-review-and-quality` 审查证据是否足以支撑交付。

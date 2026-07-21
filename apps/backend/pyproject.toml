@@ -24,5 +24,5 @@ build-backend = "hatchling.build"
 packages = ["src/linkcv"]
 
 [tool.pytest.ini_options]
-addopts = "-q"
+addopts = "-q --import-mode=importlib"
 testpaths = ["tests"]

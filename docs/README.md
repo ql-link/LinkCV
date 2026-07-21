@@ -2,7 +2,7 @@
 
 `docs/` 保存 LinkCV 当前已经实现的长期项目知识，供开发者、运维人员和 AI 按需调阅。代码与运行配置是事实源；文档负责解释模块职责、调用关系和稳定契约。
 
-临时需求与交付产物不放在这里：Brief、Acceptance、Technical Design 和实施报告属于 [`.specs/`](../.specs/README.md)。尚未实现的计划不得写成当前项目事实。
+临时需求与交付产物不放在这里：Brief、Acceptance、Technical Design、实施报告和人工验收记录属于 [`.specs/`](../.specs/README.md)。尚未实现的计划不得写成当前项目事实。
 
 ## 按任务阅读
 
@@ -15,6 +15,7 @@
 | 维护迁移期 Express 能力 | [internals/legacy-express.md](internals/legacy-express.md) |
 | 对接或修改 HTTP API | [api/http-contracts.md](api/http-contracts.md) |
 | 配置本地开发环境 | [ops/development.md](ops/development.md) |
+| 编写或运行前后端测试 | [ops/development.md#测试分层](ops/development.md#测试分层) |
 | 理解当前构建与部署拓扑 | [ops/deployment.md](ops/deployment.md) |
 
 ## 目录职责

@@ -26,7 +26,21 @@
 | 命令 | 作用 |
 | --- | --- |
 | `npm run check:ai` | AI 链接、Skill、长期文档和契约规则 |
-| `npm run check:app` | 前端类型/构建和后端测试/构建 |
+| `npm run test:web` | 前端 Vitest 单元和组件测试 |
+| `npm run test:backend:unit` | 后端快速单元测试 |
+| `npm run test:backend:integration` | 后端模块和 FastAPI HTTP 集成测试 |
+| `npm run test:backend` | 全部后端测试，包括工作流工具测试 |
+| `npm test` | 依次运行前端和后端自动化测试 |
+| `npm run check:app` | 前后端测试、前端类型检查和前后端构建 |
 | `npm run check` | 完整本地质量入口 |
 
-前端尚无单元测试和 E2E。浏览器行为需要按改动范围人工验证，不能由构建结果代替。
+`npm run check` 是 CI 的统一入口，因此新增的前后端自动化测试会随 PR 和共享分支检查执行。
+
+## 测试分层
+
+- 前端测试使用 Vitest、React Testing Library 和 jsdom，测试文件与源码相邻，命名为 `*.test.ts` 或 `*.test.tsx`。组件测试通过 Mock 隔离 API 和外部服务。
+- 后端单元测试放在 `apps/backend/tests/unit/`，不访问网络、数据库或外部服务；集成测试放在 `apps/backend/tests/integration/`，FastAPI 路由使用进程内 ASGI Transport 验证。
+- `apps/backend/tests/tooling/` 只验证仓库脚本和 AI 工作流工具，不归入业务单元或集成测试。
+- 跨 Web、FastAPI、临时 Express 和基础设施的端到端流程当前由人工验证，不提供 `test:e2e` 命令。适用的 L2/L3 任务由 `manual-acceptance` 在 `.specs/<KEY>/manual_acceptance.md` 记录环境、步骤、预期、实际结果、状态和证据；该目录默认不提交，PR 只摘要结论。
+
+前端组件测试、后端接口测试、类型检查和构建均不能替代人工端到端结果。

@@ -37,14 +37,15 @@ npm run dev         # 启动 Web、FastAPI 和临时 Express
 npm run check:ai    # 校验 AI 链接和项目 Skill
 npm run check:docs  # 校验长期文档及代码到文档同步关系
 npm run check:contracts # 校验确定性的运行时契约值
-npm run check:app   # 类型检查、构建和后端测试
+npm test            # 运行前端和后端自动化测试
+npm run check:app   # 前后端测试、类型检查和构建
 npm run check       # 完整本地质量入口
 npm run spec -- ... # 管理 L2/L3 本地阶段状态
 ```
 
 - Python 命令统一通过 `uv run --directory apps/backend` 执行，不依赖系统 `python`。
 - 不得宣称测试通过，除非实际运行了与改动范围匹配的命令并看到了成功结果。
-- 前端尚无单元测试和 E2E 框架；相关验证未落地前，不得把 Gherkin 场景描述成已自动执行。
+- 前端使用 Vitest + React Testing Library，后端使用 pytest；跨端 E2E 当前采用人工验证。不得把 Gherkin 场景、组件测试或后端接口测试描述成已完成自动化端到端验收。
 
 ## 4. 交付流程入口
 
@@ -52,7 +53,7 @@ npm run spec -- ... # 管理 L2/L3 本地阶段状态
 - 需求或技术设计存在真实决策分支时使用 `decision-grilling`：能从仓库核实的事实由 Agent 自行调查；需要用户取舍的决策按依赖顺序每轮只询问一个，并提供推荐答案和影响分析。
 - L1 直接实现和验证；L2 需要冻结 Brief 与 Acceptance；L3 还需要冻结 Technical Design。
 - Multica Issue 是长期需求、范围和验收标准的主记录。不要自动创建、修改、评论或关闭 Multica/GitHub 对象。
-- `.specs/<LCV-key>/` 是本地执行快照，不是第二份长期需求库。冻结产物后由 `state.yaml` 记录哈希；内容变化必须重新冻结。
+- `.specs/<LCV-key>/` 是本地执行快照，不是第二份长期需求库。冻结产物后由 `state.yaml` 记录哈希；内容变化必须重新冻结。适用的人工端到端结果记录在同目录 `manual_acceptance.md`，PR 只摘要结论。
 - L2/L3 开始实现前运行阶段检查；L1 不强制创建 `.specs`。只在任务触发时读取对应 Skill。
 - 搭建或修订这套 AI 工作流框架本身时允许采用自举例外，不要求先用尚未稳定的流程生成 Spec；框架用于正式业务开发后，再按上述车道强制执行。自举例外不免除真实代码核实、测试和审查。
 
@@ -61,7 +62,7 @@ npm run spec -- ... # 管理 L2/L3 本地阶段状态
 - 改动前先读取最接近目标文件的现有实现、测试和文档，不凭框架惯例猜测项目结构。
 - 保持改动聚焦；不顺带重构无关模块，不覆盖用户已有修改。
 - API、持久化模型、迁移、权限和失败路径必须同步设计与验证。
-- `docs/` 只描述当前已实现的长期项目事实；Brief、Acceptance、Technical Design 和实施报告继续放在 `.specs/<KEY>/`。
+- `docs/` 只描述当前已实现的长期项目事实；Brief、Acceptance、Technical Design、实施报告和人工验收记录继续放在 `.specs/<KEY>/`。
 - Express 迁移到 FastAPI 时，明确旧路由、兼容窗口、Vite Proxy、回滚方式和数据处理策略。
 - 新依赖必须说明必要性，并更新对应 lockfile。
 - 默认示例和测试数据使用虚构信息，不得写入用户真实简历、联系方式或密钥。

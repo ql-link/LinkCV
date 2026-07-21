@@ -21,7 +21,6 @@ STALE_REFERENCES = (
     ".agent/skills",
     "docs/api/schemas/elasticsearch.md",
     "scripts/acceptance/",
-    "tests/unit/",
     "src/core/",
 )
 ALLOWED_AI_ENTRIES = {"prompts", "skills"}

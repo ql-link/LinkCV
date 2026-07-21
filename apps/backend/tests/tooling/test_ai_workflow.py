@@ -149,6 +149,9 @@ def test_l2_flow_skips_technical_design_and_records_evidence(tmp_path: Path) -> 
     assert run_script(FLOW_GUARD, "freeze", "LCV-100", "brief", env=env).returncode == 0
     (feature / "acceptance.feature").write_text("Feature: saved", encoding="utf-8")
     assert run_script(FLOW_GUARD, "freeze", "LCV-100", "acceptance", env=env).returncode == 0
+    (feature / "manual_acceptance.md").write_text(
+        "# 人工验收\n\n结论：通过\n", encoding="utf-8"
+    )
 
     implementation = run_script(FLOW_GUARD, "check", "LCV-100", "implementation", env=env)
     verified = run_script(
@@ -157,13 +160,20 @@ def test_l2_flow_skips_technical_design_and_records_evidence(tmp_path: Path) -> 
         "LCV-100",
         "--evidence",
         "npm run check",
+        "--evidence",
+        "人工验收：.specs/LCV-100/manual_acceptance.md（通过）",
         env=env,
     )
     done = run_script(FLOW_GUARD, "check", "LCV-100", "done", env=env)
+    state = yaml.safe_load((feature / "state.yaml").read_text(encoding="utf-8"))
 
     assert implementation.returncode == 0, implementation.stderr
     assert verified.returncode == 0, verified.stderr
     assert done.returncode == 0, done.stderr
+    assert state["verification"]["evidence"] == [
+        "npm run check",
+        "人工验收：.specs/LCV-100/manual_acceptance.md（通过）",
+    ]
 
 
 def test_docs_sync_reports_missing_required_documents() -> None:
@@ -249,3 +259,32 @@ def test_skill_check_rejects_unowned_ai_top_level_entry(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert ".ai 顶层含未归属目录或文件" in result.stderr
     assert "长期知识应放 docs" in result.stderr
+
+
+def test_skill_check_accepts_linkcv_backend_test_paths(tmp_path: Path) -> None:
+    skill_root = tmp_path / ".ai" / "skills" / "test-authoring"
+    skill_root.mkdir(parents=True)
+    (tmp_path / ".ai" / "prompts").mkdir(parents=True)
+    (tmp_path / ".ai" / "prompts" / "project.md").write_text(
+        "rules", encoding="utf-8"
+    )
+    (tmp_path / ".ai" / "skills" / "README.md").write_text(
+        "skills", encoding="utf-8"
+    )
+    (skill_root / "SKILL.md").write_text(
+        """---
+name: test-authoring
+description: 为 LinkCV 后端单元和集成测试提供真实路径及清晰的触发条件说明，适用于需要补充测试覆盖或调整测试分层的请求。
+---
+
+测试放在 `apps/backend/tests/unit/` 和 `apps/backend/tests/integration/`。
+""",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        SKILL_CHECK,
+        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result.returncode == 0, result.stderr

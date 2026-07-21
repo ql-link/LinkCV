@@ -26,4 +26,7 @@ Vite 插件在 `/__local_asset__` 提供开发期本地图片读取，只允许�
 
 ## 当前测试边界
 
-前端当前只有 TypeScript 检查和生产构建，没有单元测试或 E2E 框架。类型检查与构建通过不能替代浏览器交互验证。
+- 单元和组件测试使用 Vitest、React Testing Library 与 jsdom；配置入口为 `apps/web/vitest.config.ts`，公共初始化在 `src/test/setup.ts`。
+- 测试文件与被测源码相邻，命名为 `*.test.ts` 或 `*.test.tsx`，优先验证可见行为和公开接口。
+- 前端测试不得访问真实后端、数据库或对象存储，跨模块依赖在 API Client 边界使用受控 Mock。
+- 当前没有自动化 E2E；涉及 Web、FastAPI 或临时 Express 协作的完整浏览器流程仍需人工验证。

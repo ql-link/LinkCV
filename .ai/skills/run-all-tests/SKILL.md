@@ -20,10 +20,14 @@ description: 根据 LinkCV 的实际改动范围选择并运行验证命令，�
 | 仅 AI 规则、项目技能、链接或门禁脚本 | `npm run check:ai` |
 | 仅长期项目文档或文档同步规则 | `npm run check:docs` |
 | 路由、端口、环境变量、代理或部署契约 | `npm run check:contracts` |
+| 前端自动化测试 | `npm run test:web` |
 | 前端类型 | `npm run typecheck` |
 | 前端生产构建 | `npm run build:web` |
+| 后端单元测试 | `npm run test:backend:unit` |
+| 后端集成测试 | `npm run test:backend:integration` |
 | 后端测试 | `npm run test:backend` |
 | 后端构建 | `npm run build:backend` |
+| 前后端自动化测试 | `npm test` |
 | 完整仓库 | `npm run check` |
 
 Python 命令统一通过项目脚本或 `uv run --directory apps/backend` 执行，不依赖系统 Python。
@@ -34,12 +38,13 @@ Python 命令统一通过项目脚本或 `uv run --directory apps/backend` 执�
 2. 修改项目技能或 AI 链接时至少运行 `npm run check:ai`。
 3. 修改 `docs/` 或代码到文档映射时至少运行 `npm run check:docs`。
 4. 修改路由、端口、环境变量、代理或部署契约时运行 `npm run check:contracts`。
-5. 修改前端 TypeScript、组件、样式构建链或 API 客户端时运行前端类型检查和构建。
-6. 修改 FastAPI、Python 依赖、后端配置或门禁脚本时运行相关后端测试和构建。
-7. 修改共享契约、跨前后端行为、依赖、部署或准备创建 PR 时运行 `npm run check`。
-8. 只运行局部检查时，明确说明完整检查尚未执行，不得据此宣称仓库全部通过。
+5. 修改前端 TypeScript、组件、Hook、状态或 API 客户端时运行 `npm run test:web`、前端类型检查和构建。
+6. 修改 FastAPI、Python 依赖、后端配置或门禁脚本时运行对应后端测试和构建。
+7. 同时涉及前后端，或只需要统一执行已有自动化测试时运行 `npm test`。
+8. 修改共享契约、跨前后端行为、依赖、部署或准备创建 PR 时运行 `npm run check`。
+9. 只运行局部检查时，明确说明完整检查尚未执行，不得据此宣称仓库全部通过。
 
-当前前端没有单元测试和端到端测试框架。类型检查和生产构建通过不等于交互行为已被自动验证，应把未覆盖的浏览器行为单独说明。
+前端已有 Vitest + React Testing Library 单元和组件测试基础，但没有自动化端到端测试。跨 Web、FastAPI 和临时 Express 的完整浏览器流程仍需人工验证；组件测试、类型检查和生产构建不能替代该结果。
 
 ## 4. 执行与诊断
 
@@ -54,13 +59,15 @@ Python 命令统一通过项目脚本或 `uv run --directory apps/backend` 执�
 
 ## 5. L2/L3 验证证据
 
-全部要求的验证成功后，记录实际证据：
+全部要求的自动化验证成功，且任务不需要人工端到端验收时，记录实际证据：
 
 ```bash
 npm run spec -- verify <KEY> --evidence "npm run check"
 ```
 
 如果执行了多个必要命令，可以重复提供 `--evidence`。只有命令真实成功后才能写入；部分通过、环境阻塞或仍有未解决失败时不得标记已验证。
+
+如果存在跨端、浏览器、上传下载、PDF 或视觉行为需要人工验收，本技能只报告自动化结果和未覆盖区域，不运行 `spec verify`，转 `manual-acceptance`。人工验收全部通过后，由该技能把自动化命令和 `.specs/<KEY>/manual_acceptance.md` 一并写入验证证据。
 
 ## 6. 结果报告
 
@@ -83,5 +90,5 @@ npm run spec -- verify <KEY> --evidence "npm run check"
 - 所有报告结果都有实际命令和退出状态支撑；
 - 验证范围与改动风险匹配；
 - 失败与环境阻塞分类准确；
-- 没有把 Gherkin 场景、类型检查或构建结果夸大为未执行的自动化测试；
+- 没有把 Gherkin 场景、组件测试、类型检查或构建结果夸大为自动化端到端测试；
 - PR 前完整 `npm run check` 已通过，或明确记录无法执行的原因和风险。

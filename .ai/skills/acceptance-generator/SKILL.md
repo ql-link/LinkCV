@@ -47,7 +47,7 @@ npm run spec -- check <KEY> acceptance
 
 使用标准 Gherkin 关键字 `Feature`、`Background`、`Scenario`、`Scenario Outline`、`Given`、`When`、`Then`、`And`。这些关键字属于机器语法，场景名称、步骤和注释统一使用中文。
 
-当前 LinkCV 尚未建立前端单元测试和端到端测试框架，因此本文件首先是可执行化的验收契约，不得宣称它已经被自动化测试执行。
+当前 LinkCV 已建立前端单元和组件测试基础，但尚无自动化端到端测试框架。本文件首先是可执行化的验收契约；只有存在真实映射且已经运行的自动化测试时，才能声称对应场景被自动验证。跨端流程仍需人工验收。
 
 ## 5. 场景写作规则
 
@@ -121,4 +121,4 @@ npm run spec -- freeze <KEY> acceptance
 - 场景之间没有相互冲突；
 - 没有把尚未自动化的场景描述成已通过测试。
 
-L2 冻结后转 `implementation-execution`；L3 冻结后转 `technical-design`。
+L2 冻结后转 `implementation-execution`；L3 冻结后转 `technical-design`。实现完成后，无法由自动化测试覆盖的跨端或视觉场景由 `manual-acceptance` 转换为人工执行清单；本技能不提前复制第二份清单。

@@ -26,7 +26,7 @@ FastAPI 在 `apps/backend/src/linkcv/main.py` 以 `/api` 前缀挂载路由。Ex
 - 未完成对应实现和回归验证前，不改变现有路由归属。
 - 鉴权与简历 CRUD 需要协调迁移，因为旧实现使用 SQLite session cookie，目标后端尚未建立对应持久化和认证基础。
 - 图片资源接口依赖 MinIO 和用户资源路径校验，迁移时必须保留资源归属语义。
-- 全部 `/api` 切到 FastAPI 并完成端到端验证后，才能删除 `server`、SQLite 依赖和旧部署拓扑。
+- 全部 `/api` 切到 FastAPI 并完成人工端到端验证后，才能删除 `server`、SQLite 依赖和旧部署拓扑。
 - 原型 SQLite 数据不迁移到 MySQL。
 
 ## 配置真值

@@ -9,7 +9,7 @@ description: 根据 LinkCV 当前真实代码和配置创建或更新 docs 长�
 
 维护 `docs/` 中可供开发者和 AI 长期调阅的当前项目知识。文档解释系统现在是什么、模块如何协作以及稳定契约如何使用。
 
-`.specs/<KEY>/` 保存某次需求的 Brief、Acceptance、Technical Design 和实施报告，不属于本技能。尚未实现的计划、备选方案和一次性排障过程不得写成 `docs/` 当前事实。
+`.specs/<KEY>/` 保存某次需求的 Brief、Acceptance、Technical Design、实施报告和人工验收记录，不属于本技能。尚未实现的计划、备选方案和一次性排障过程不得写成 `docs/` 当前事实。
 
 ## 2. 触发与免触发
 
