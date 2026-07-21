@@ -9,9 +9,12 @@ apps/web       React, TypeScript, and Vite
 apps/backend   Python 3.13 and FastAPI
 server         Temporary legacy Express API
 deploy         Local dependencies and transitional deployment files
+docs           Long-lived architecture, API, module, and operations knowledge
 ```
 
 The Web and FastAPI projects install and run independently. The root package only coordinates development commands and retains the temporary Express dependencies until all existing APIs have moved.
+
+Current architecture and module contracts are indexed in [`docs/README.md`](docs/README.md). Temporary feature briefs and technical designs remain under `.specs/` and are not part of the long-lived project documentation.
 
 ## Local setup
 

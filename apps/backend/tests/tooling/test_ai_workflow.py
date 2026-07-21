@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -10,6 +11,10 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[4]
 FLOW_GUARD = REPO_ROOT / "scripts" / "spec" / "flow_guard.py"
 LINK_SETUP = REPO_ROOT / "scripts" / "setup" / "setup_ai_links.py"
+SKILL_CHECK = REPO_ROOT / "scripts" / "quality" / "check_skills.py"
+DOCS_SYNC = REPO_ROOT / "scripts" / "quality" / "check_docs_sync.py"
+RUNTIME_CONTRACTS = REPO_ROOT / "scripts" / "quality" / "check_runtime_contracts.py"
+RUNTIME_CONTRACT_RULES = REPO_ROOT / "scripts" / "quality" / "runtime-contract-rules.yaml"
 
 
 def run_script(script: Path, *args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -159,3 +164,88 @@ def test_l2_flow_skips_technical_design_and_records_evidence(tmp_path: Path) -> 
     assert implementation.returncode == 0, implementation.stderr
     assert verified.returncode == 0, verified.stderr
     assert done.returncode == 0, done.stderr
+
+
+def test_docs_sync_reports_missing_required_documents() -> None:
+    result = run_script(
+        DOCS_SYNC,
+        "--files",
+        "apps/backend/src/linkcv/api/routes/health.py",
+    )
+
+    assert result.returncode == 1
+    assert "fastapi-http-contract" in result.stderr
+    assert "docs/api/http-contracts.md" in result.stderr
+    assert "docs/internals/backend.md" in result.stderr
+
+
+def test_docs_sync_accepts_complete_companion_updates() -> None:
+    result = run_script(
+        DOCS_SYNC,
+        "--files",
+        "apps/backend/src/linkcv/api/routes/health.py",
+        "docs/api/http-contracts.md",
+        "docs/internals/backend.md",
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_runtime_contracts_match_current_repository() -> None:
+    result = run_script(RUNTIME_CONTRACTS)
+
+    assert result.returncode == 0, result.stderr
+    assert "4 组运行时契约" in result.stdout
+
+
+def test_runtime_contracts_report_drift(tmp_path: Path) -> None:
+    rules = yaml.safe_load(RUNTIME_CONTRACT_RULES.read_text(encoding="utf-8"))
+    target_rules = tmp_path / "scripts" / "quality" / "runtime-contract-rules.yaml"
+    target_rules.parent.mkdir(parents=True)
+    shutil.copy2(RUNTIME_CONTRACT_RULES, target_rules)
+
+    for contract in rules["contracts"]:
+        for assertion in contract["assertions"]:
+            relative = Path(assertion["path"])
+            target = tmp_path / relative
+            if not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(REPO_ROOT / relative, target)
+
+    package_file = tmp_path / "package.json"
+    package_file.write_text(
+        package_file.read_text(encoding="utf-8").replace(
+            "BACKEND_PORT:-8000", "BACKEND_PORT:-8010"
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        RUNTIME_CONTRACTS,
+        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result.returncode == 1
+    assert "fastapi-default-port" in result.stderr
+    assert "package.json" in result.stderr
+
+
+def test_skill_check_rejects_unowned_ai_top_level_entry(tmp_path: Path) -> None:
+    (tmp_path / ".ai" / "prompts").mkdir(parents=True)
+    (tmp_path / ".ai" / "skills").mkdir(parents=True)
+    (tmp_path / ".ai" / "references").mkdir(parents=True)
+    (tmp_path / ".ai" / "prompts" / "project.md").write_text(
+        "rules", encoding="utf-8"
+    )
+    (tmp_path / ".ai" / "skills" / "README.md").write_text(
+        "skills", encoding="utf-8"
+    )
+
+    result = run_script(
+        SKILL_CHECK,
+        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result.returncode == 1
+    assert ".ai 顶层含未归属目录或文件" in result.stderr
+    assert "长期知识应放 docs" in result.stderr

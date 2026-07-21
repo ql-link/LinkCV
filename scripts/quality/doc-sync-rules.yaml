@@ -1,0 +1,68 @@
+version: 1
+
+rules:
+  - id: fastapi-http-contract
+    description: FastAPI 路由变化必须同步 HTTP 契约和后端模块文档
+    when_changed:
+      - apps/backend/src/linkcv/api/router.py
+      - apps/backend/src/linkcv/api/routes/**/*.py
+    must_update:
+      - docs/api/http-contracts.md
+      - docs/internals/backend.md
+
+  - id: legacy-http-contract
+    description: 临时 Express 路由变化必须同步 HTTP 契约和旧模块文档
+    when_changed:
+      - server/index.mjs
+    must_update:
+      - docs/api/http-contracts.md
+      - docs/internals/legacy-express.md
+
+  - id: web-api-client-contract
+    description: 前端 API 客户端变化必须同步 HTTP 契约
+    when_changed:
+      - apps/web/src/api/client.ts
+    must_update:
+      - docs/api/http-contracts.md
+
+  - id: vite-routing-contract
+    description: Vite 代理或本地服务归属变化必须同步架构、Web 和开发文档
+    when_changed:
+      - apps/web/vite.config.mjs
+    must_update:
+      - docs/internals/architecture.md
+      - docs/internals/web.md
+      - docs/ops/development.md
+
+  - id: legacy-auth-storage
+    description: 临时鉴权或 SQLite 行为变化必须同步旧模块说明
+    when_changed:
+      - server/auth.mjs
+      - server/db.mjs
+    must_update:
+      - docs/internals/legacy-express.md
+
+  - id: legacy-object-storage
+    description: 临时 MinIO 行为变化必须同步旧模块和 HTTP 契约
+    when_changed:
+      - server/minio.mjs
+    must_update:
+      - docs/internals/legacy-express.md
+      - docs/api/http-contracts.md
+
+  - id: local-environment
+    description: 环境模板或本地依赖编排变化必须同步开发文档
+    when_changed:
+      - .env.example
+      - deploy/docker-compose.yml
+    must_update:
+      - docs/ops/development.md
+
+  - id: deployment-topology
+    description: 构建或旧部署拓扑变化必须同步部署文档
+    when_changed:
+      - Dockerfile
+      - Jenkinsfile
+      - deploy/docker-compose.legacy.yml
+    must_update:
+      - docs/ops/deployment.md

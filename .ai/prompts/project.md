@@ -2,7 +2,7 @@
 
 LinkCV 正在从 React + Express 原型迁移为 React/TypeScript + FastAPI 前后端分离 Monorepo。
 
-本文是项目使用与开发入口，只保留所有任务都需要知道的仓库事实、真实命令和长期约束。详细交付流程见 [.ai/skills/README.md](.ai/skills/README.md)，Spec 状态规则见 [.specs/README.md](.specs/README.md)。`AGENTS.md` 与 `CLAUDE.md` 统一链接到本文件。
+本文是项目使用与开发入口，只保留所有任务都需要知道的仓库事实、真实命令和长期约束。当前模块知识见 [docs/README.md](docs/README.md)，详细交付流程见 [.ai/skills/README.md](.ai/skills/README.md)，Spec 状态规则见 [.specs/README.md](.specs/README.md)。`AGENTS.md` 与 `CLAUDE.md` 统一链接到本文件。
 
 ## 1. 沟通与决策
 
@@ -18,6 +18,7 @@ apps/web       React 19、TypeScript、Vite 前端
 apps/backend   Python 3.13、FastAPI 后端
 server         临时 Express API
 deploy         Compose 与部署资料
+docs           供开发者和 AI 按需调阅的长期项目知识
 .ai            项目规则与交付 Skill 的唯一来源
 .specs         L2/L3 任务的本地阶段快照；产物模板跟随对应项目技能保存
 scripts        初始化、质量与阶段门禁脚本
@@ -34,6 +35,8 @@ scripts        初始化、质量与阶段门禁脚本
 npm run setup       # 新环境安装依赖并修复缺失的安全链接
 npm run dev         # 启动 Web、FastAPI 和临时 Express
 npm run check:ai    # 校验 AI 链接和项目 Skill
+npm run check:docs  # 校验长期文档及代码到文档同步关系
+npm run check:contracts # 校验确定性的运行时契约值
 npm run check:app   # 类型检查、构建和后端测试
 npm run check       # 完整本地质量入口
 npm run spec -- ... # 管理 L2/L3 本地阶段状态
@@ -51,12 +54,14 @@ npm run spec -- ... # 管理 L2/L3 本地阶段状态
 - Multica Issue 是长期需求、范围和验收标准的主记录。不要自动创建、修改、评论或关闭 Multica/GitHub 对象。
 - `.specs/<LCV-key>/` 是本地执行快照，不是第二份长期需求库。冻结产物后由 `state.yaml` 记录哈希；内容变化必须重新冻结。
 - L2/L3 开始实现前运行阶段检查；L1 不强制创建 `.specs`。只在任务触发时读取对应 Skill。
+- 搭建或修订这套 AI 工作流框架本身时允许采用自举例外，不要求先用尚未稳定的流程生成 Spec；框架用于正式业务开发后，再按上述车道强制执行。自举例外不免除真实代码核实、测试和审查。
 
 ## 5. 实现约束
 
 - 改动前先读取最接近目标文件的现有实现、测试和文档，不凭框架惯例猜测项目结构。
 - 保持改动聚焦；不顺带重构无关模块，不覆盖用户已有修改。
 - API、持久化模型、迁移、权限和失败路径必须同步设计与验证。
+- `docs/` 只描述当前已实现的长期项目事实；Brief、Acceptance、Technical Design 和实施报告继续放在 `.specs/<KEY>/`。
 - Express 迁移到 FastAPI 时，明确旧路由、兼容窗口、Vite Proxy、回滚方式和数据处理策略。
 - 新依赖必须说明必要性，并更新对应 lockfile。
 - 默认示例和测试数据使用虚构信息，不得写入用户真实简历、联系方式或密钥。

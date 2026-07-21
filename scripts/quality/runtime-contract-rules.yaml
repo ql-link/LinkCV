@@ -1,0 +1,48 @@
+version: 1
+
+contracts:
+  - id: fastapi-default-port
+    description: 根级启动命令和 Vite 使用同一个 BACKEND_PORT 默认值
+    assertions:
+      - path: package.json
+        pattern: 'BACKEND_PORT:-8000'
+        message: 根级 dev:backend 必须默认监听 8000
+      - path: apps/web/vite.config.mjs
+        pattern: 'process\.env\.BACKEND_PORT \?\? "8000"'
+        message: Vite 必须用 BACKEND_PORT=8000 构造默认后端目标
+
+  - id: legacy-api-default-port
+    description: Express、环境模板、Vite 和旧部署保持 4174 默认端口
+    assertions:
+      - path: server/index.mjs
+        pattern: 'process\.env\.API_PORT \?\? 4174'
+        message: Express 必须读取 API_PORT 并默认使用 4174
+      - path: .env.example
+        pattern: '(?m)^API_PORT=4174$'
+        message: 环境模板必须声明 API_PORT=4174
+      - path: apps/web/vite.config.mjs
+        pattern: 'LEGACY_API_PROXY_TARGET \?\? "http://127\.0\.0\.1:4174"'
+        message: Vite 必须把旧 API 默认代理到 4174
+      - path: deploy/docker-compose.legacy.yml
+        pattern: '(?m)^\s+API_PORT: 4174$'
+        message: 旧部署必须显式使用 4174
+
+  - id: health-route-ownership
+    description: 开发期 /api/health 由 Vite 精确转给 FastAPI
+    assertions:
+      - path: apps/web/vite.config.mjs
+        pattern: '"/api/health"\s*:\s*\{\s*target:\s*backendTarget'
+        message: Vite 必须先把 /api/health 转给 backendTarget
+      - path: apps/backend/src/linkcv/main.py
+        pattern: 'include_router\(api_router, prefix="/api"\)'
+        message: FastAPI 聚合路由必须使用 /api 前缀
+      - path: apps/backend/src/linkcv/api/routes/health.py
+        pattern: '@router\.get\("/health"'
+        message: FastAPI 必须注册 /health 子路由
+
+  - id: legacy-api-fallback
+    description: 未迁移的 /api 请求继续由 Vite 转给临时 Express
+    assertions:
+      - path: apps/web/vite.config.mjs
+        pattern: '"/api"\s*:\s*\{\s*target:\s*legacyApiTarget'
+        message: Vite 必须保留 /api 到 legacyApiTarget 的兜底代理

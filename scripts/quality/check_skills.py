@@ -3,13 +3,17 @@
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
 
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(
+    os.environ.get("LINKCV_REPO_ROOT", Path(__file__).resolve().parents[2])
+).resolve()
+AI_ROOT = REPO_ROOT / ".ai"
 SKILLS_ROOT = REPO_ROOT / ".ai" / "skills"
 NAME_RE = re.compile(r"^[a-z0-9-]+$")
 MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
@@ -20,6 +24,27 @@ STALE_REFERENCES = (
     "tests/unit/",
     "src/core/",
 )
+ALLOWED_AI_ENTRIES = {"prompts", "skills"}
+
+
+def validate_ai_layout() -> list[str]:
+    if not AI_ROOT.is_dir():
+        return ["缺少 .ai 目录"]
+
+    errors: list[str] = []
+    unexpected = sorted(
+        path.name for path in AI_ROOT.iterdir() if path.name not in ALLOWED_AI_ENTRIES
+    )
+    if unexpected:
+        errors.append(
+            ".ai 顶层含未归属目录或文件 "
+            f"{unexpected}；长期知识应放 docs，机器规则应放 scripts/quality"
+        )
+    if not (AI_ROOT / "prompts" / "project.md").is_file():
+        errors.append("缺少 .ai/prompts/project.md 项目规则源")
+    if not (SKILLS_ROOT / "README.md").is_file():
+        errors.append("缺少 .ai/skills/README.md Skill 注册表")
+    return errors
 
 
 def parse_frontmatter(text: str) -> tuple[dict[str, object] | None, str]:
@@ -93,7 +118,10 @@ def main() -> int:
         print("ERROR 缺少 .ai/skills", file=sys.stderr)
         return 2
     skill_dirs = sorted(path for path in SKILLS_ROOT.iterdir() if path.is_dir())
-    errors = [error for skill_dir in skill_dirs for error in validate_skill(skill_dir)]
+    errors = validate_ai_layout()
+    errors.extend(
+        error for skill_dir in skill_dirs for error in validate_skill(skill_dir)
+    )
     if errors:
         for error in errors:
             print(f"ERROR {error}", file=sys.stderr)

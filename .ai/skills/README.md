@@ -2,6 +2,18 @@
 
 `.ai/skills/` 是项目技能的唯一来源。Codex 从 `.agents/skills` 发现这些技能，Claude 从 `.claude/skills` 发现同一份内容。
 
+## 文件归属
+
+| 内容 | 唯一位置 | 不应放置的位置 |
+| --- | --- | --- |
+| 所有任务都要读取的项目规则 | `.ai/prompts/project.md` | 各 Skill 重复副本 |
+| Skill 流程和所属模板 | `.ai/skills/<skill>/` | `docs/`、`.specs/` |
+| 当前模块、架构、契约和运维知识 | `docs/` | `.ai/references/`、Skill 正文副本 |
+| 可执行检查和机器规则 | `scripts/quality/` | `docs/`、Skill 内手写副本 |
+| 某次 L2/L3 需求与设计快照 | `.specs/<KEY>/` | `docs/`、`.ai/skills/` |
+
+`.ai` 顶层只保留 `prompts/` 和 `skills/`。Skill 专属且只被该 Skill 使用的大型参考资料可以放在对应 Skill 的 `references/` 内；跨 Skill 的项目事实必须进入 `docs/`。
+
 | 技能 | 职责 | 下一站 |
 | --- | --- | --- |
 | `flow-router` | 判断 L1/L2/L3 并识别阻塞性决策 | 盘问、需求简报或实现 |
@@ -9,13 +21,18 @@
 | `brief-generator` | 收敛范围、边界与风险 | 验收契约 |
 | `acceptance-generator` | 生成可验证行为场景 | L2 实现；L3 技术设计 |
 | `technical-design` | 生成跨模块技术方案 | 实现 |
+| `contract-guard` | 分析契约结构、语义、兼容影响和同步范围 | 按需转配置核对、实现或文档同步 |
+| `config-contract-sync` | 核对跨代码、配置和部署位置的具体契约值 | 诊断结束或转实现修复 |
+| `doc-maintenance-sync` | 维护 `docs/` 长期项目知识 | 文档与契约门禁 |
 | `implementation-execution` | 按冻结规格编码 | 测试 |
 | `run-all-tests` | 按改动范围验证 | 质量审查 |
 | `code-review-and-quality` | 审查正确性、契约与风险 | PR 收口 |
 | `branch-pr-workflow` | 安全准备分支、提交和 PR | 用户审核 |
 
-运行 `npm run check:ai` 校验技能的头部元数据、占位内容、链接和过期技术栈引用。
+运行 `npm run check:ai` 校验技能的头部元数据、占位内容、链接和过期技术栈引用。长期模块知识从 [docs/README.md](../../docs/README.md) 按需读取；三个契约治理技能共享 [契约面与事实源映射](../../docs/internals/contract-governance.md)，不各自复制模块映射。
 
 固定结构的产物模板跟随所属技能保存：需求简报、验收契约、技术设计和按需生成的实施报告分别由对应技能维护。`agents/openai.yaml` 仅在需要 Codex 界面展示元数据时按需添加，不是项目技能的必需文件。
 
 需求简报和技术设计初稿都是一致性探针：发现新分歧时转 `decision-grilling`，事实由 Agent 自行核实，真实决策按依赖顺序每轮只询问一个；结论回写原章节并重新扫描，阻塞项清空且用户确认后才允许冻结。
+
+契约治理技能不要求固定串行：结构或语义影响用 `contract-guard`，同一具体值的多处一致性用 `config-contract-sync`，更新长期 `docs/` 用 `doc-maintenance-sync`。已有上游结论时直接消费，不重复扫描同一问题。

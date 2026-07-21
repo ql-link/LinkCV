@@ -18,6 +18,8 @@ description: 根据 LinkCV 的实际改动范围选择并运行验证命令，�
 | 改动范围 | 命令 |
 | --- | --- |
 | 仅 AI 规则、项目技能、链接或门禁脚本 | `npm run check:ai` |
+| 仅长期项目文档或文档同步规则 | `npm run check:docs` |
+| 路由、端口、环境变量、代理或部署契约 | `npm run check:contracts` |
 | 前端类型 | `npm run typecheck` |
 | 前端生产构建 | `npm run build:web` |
 | 后端测试 | `npm run test:backend` |
@@ -30,10 +32,12 @@ Python 命令统一通过项目脚本或 `uv run --directory apps/backend` 执�
 
 1. 先读取 `git diff --stat`、改动文件和相关测试，确定验证范围。
 2. 修改项目技能或 AI 链接时至少运行 `npm run check:ai`。
-3. 修改前端 TypeScript、组件、样式构建链或 API 客户端时运行前端类型检查和构建。
-4. 修改 FastAPI、Python 依赖、后端配置或门禁脚本时运行相关后端测试和构建。
-5. 修改共享契约、跨前后端行为、依赖、部署或准备创建 PR 时运行 `npm run check`。
-6. 只运行局部检查时，明确说明完整检查尚未执行，不得据此宣称仓库全部通过。
+3. 修改 `docs/` 或代码到文档映射时至少运行 `npm run check:docs`。
+4. 修改路由、端口、环境变量、代理或部署契约时运行 `npm run check:contracts`。
+5. 修改前端 TypeScript、组件、样式构建链或 API 客户端时运行前端类型检查和构建。
+6. 修改 FastAPI、Python 依赖、后端配置或门禁脚本时运行相关后端测试和构建。
+7. 修改共享契约、跨前后端行为、依赖、部署或准备创建 PR 时运行 `npm run check`。
+8. 只运行局部检查时，明确说明完整检查尚未执行，不得据此宣称仓库全部通过。
 
 当前前端没有单元测试和端到端测试框架。类型检查和生产构建通过不等于交互行为已被自动验证，应把未覆盖的浏览器行为单独说明。
 
