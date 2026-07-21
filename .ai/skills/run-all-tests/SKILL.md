@@ -27,6 +27,7 @@ description: 根据 LinkCV 的实际改动范围选择并运行验证命令，�
 | 后端集成测试 | `npm run test:backend:integration` |
 | 后端测试 | `npm run test:backend` |
 | 后端构建 | `npm run build:backend` |
+| SQLAlchemy/Alembic 迁移 | 按 `alembic-migration` 核实的真实入口执行 heads、空库升级、旧版升级和可逆往返，再运行后端集成测试 |
 | 前后端自动化测试 | `npm test` |
 | 完整仓库 | `npm run check` |
 
@@ -43,6 +44,7 @@ Python 命令统一通过项目脚本或 `uv run --directory apps/backend` 执�
 7. 同时涉及前后端，或只需要统一执行已有自动化测试时运行 `npm test`。
 8. 修改共享契约、跨前后端行为、依赖、部署或准备创建 PR 时运行 `npm run check`。
 9. 只运行局部检查时，明确说明完整检查尚未执行，不得据此宣称仓库全部通过。
+10. 数据库变更不能只跑 pytest；必须包含与目标 MySQL 版本一致的 migration 链验证。仓库尚未建立 Alembic 入口时，准确报告基础缺失，不编造命令。
 
 前端已有 Vitest + React Testing Library 单元和组件测试基础，但没有自动化端到端测试。跨 Web、FastAPI 和临时 Express 的完整浏览器流程仍需人工验证；组件测试、类型检查和生产构建不能替代该结果。
 
@@ -56,6 +58,7 @@ Python 命令统一通过项目脚本或 `uv run --directory apps/backend` 执�
    - 命令或测试基础设施本身错误。
 4. 如果当前任务包含“实现并完成”，可以修复本任务引入的失败并重新运行；不要借机修改无关失败。
 5. 如果用户只要求检查或报告，保持只读，给出证据和建议，不自动修复。
+6. 失败超出测试命令本身、需要沿网络、代理、服务、数据库或外部依赖定位时，转 `incident-triage`。
 
 ## 5. L2/L3 验证证据
 

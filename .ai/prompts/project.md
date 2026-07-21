@@ -52,6 +52,9 @@ npm run spec -- ... # 管理 L2/L3 本地阶段状态
 - 任何改代码请求先由 `flow-router` 按真实影响面判定 L1/L2/L3，详细判据和阶段转交以对应 Skill 为准。
 - 需求或技术设计存在真实决策分支时使用 `decision-grilling`：能从仓库核实的事实由 Agent 自行调查；需要用户取舍的决策按依赖顺序每轮只询问一个，并提供推荐答案和影响分析。
 - L1 直接实现和验证；L2 需要冻结 Brief 与 Acceptance；L3 还需要冻结 Technical Design。
+- 设计 MySQL 表结构时使用 `mysql-ddl-conventions`；编写、校验或排查 SQLAlchemy/Alembic 迁移时使用 `alembic-migration`。数据库改动始终属于 L3，但两个数据库技能只在命中时按需调用，不固定串入无关任务。
+- 用户要求判断“功能是否真正做完、还缺什么”时使用 `feature-completion-audit`；当前会话刚完成的实现必须由独立子 Agent 取证，避免实现者自评。
+- 用户要求根据报错、日志或异常现象查原因时使用 `incident-triage`，默认只诊断；没有修复授权时不修改代码、配置、外部系统或数据。
 - Multica Issue 是长期需求、范围和验收标准的主记录。不要自动创建、修改、评论或关闭 Multica/GitHub 对象。
 - `.specs/<LCV-key>/` 是本地执行快照，不是第二份长期需求库。冻结产物后由 `state.yaml` 记录哈希；内容变化必须重新冻结。适用的人工端到端结果记录在同目录 `manual_acceptance.md`，PR 只摘要结论。
 - L2/L3 开始实现前运行阶段检查；L1 不强制创建 `.specs`。只在任务触发时读取对应 Skill。
@@ -62,6 +65,7 @@ npm run spec -- ... # 管理 L2/L3 本地阶段状态
 - 改动前先读取最接近目标文件的现有实现、测试和文档，不凭框架惯例猜测项目结构。
 - 保持改动聚焦；不顺带重构无关模块，不覆盖用户已有修改。
 - API、持久化模型、迁移、权限和失败路径必须同步设计与验证。
+- 当前 FastAPI 尚未建立 SQLAlchemy/Alembic 基线。首次引入持久化时必须同时建立模型真值源、迁移链、测试入口、文档同步和部署回滚；原型 SQLite 数据默认不迁移到 MySQL。
 - `docs/` 只描述当前已实现的长期项目事实；Brief、Acceptance、Technical Design、实施报告和人工验收记录继续放在 `.specs/<KEY>/`。
 - Express 迁移到 FastAPI 时，明确旧路由、兼容窗口、Vite Proxy、回滚方式和数据处理策略。
 - 新依赖必须说明必要性，并更新对应 lockfile。

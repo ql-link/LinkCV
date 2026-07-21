@@ -14,6 +14,8 @@
 
 `.ai` 顶层只保留 `prompts/` 和 `skills/`。Skill 专属且只被该 Skill 使用的大型参考资料可以放在对应 Skill 的 `references/` 内；跨 Skill 的项目事实必须进入 `docs/`。
 
+## 需求到交付主链
+
 | 技能 | 职责 | 下一站 |
 | --- | --- | --- |
 | `flow-router` | 判断 L1/L2/L3 并识别阻塞性决策 | 盘问、需求简报或实现 |
@@ -25,11 +27,30 @@
 | `config-contract-sync` | 核对跨代码、配置和部署位置的具体契约值 | 诊断结束或转实现修复 |
 | `doc-maintenance-sync` | 维护 `docs/` 长期项目知识 | 文档与契约门禁 |
 | `implementation-execution` | 按冻结规格编码 | 测试 |
+| `branch-pr-workflow` | 安全准备分支、提交和 PR | 用户审核 |
+
+## 测试与质量
+
+| 技能 | 职责 | 边界或下一站 |
+| --- | --- | --- |
 | `test-authoring` | 编写前端组件/单元测试和后端单元/集成测试 | 运行验证 |
 | `run-all-tests` | 按改动范围执行自动化验证 | 人工验收（适用时）或质量审查 |
 | `manual-acceptance` | 生成并记录任务级人工端到端验收 | 质量审查 |
 | `code-review-and-quality` | 审查正确性、契约与风险 | PR 收口 |
-| `branch-pr-workflow` | 安全准备分支、提交和 PR | 用户审核 |
+| `feature-completion-audit` | 对照原始需求独立核验完成度、遗漏和偏离 | 按缺口返回规格、实现、测试或审查 |
+
+## 数据库与迁移
+
+| 技能 | 职责 | 边界或下一站 |
+| --- | --- | --- |
+| `mysql-ddl-conventions` | 设计和审查 MySQL 物理表结构、约束与索引 | 落地迁移转 `alembic-migration` |
+| `alembic-migration` | 编写、校验和排查 SQLAlchemy/Alembic 迁移链 | 业务实现转实施，文档转同步 |
+
+## 运维与故障
+
+| 技能 | 职责 | 边界或下一站 |
+| --- | --- | --- |
+| `incident-triage` | 沿 Web、代理、后端、数据和基础设施链路定位故障 | 修复代码先重新分级；迁移转 `alembic-migration` |
 
 运行 `npm run check:ai` 校验技能的头部元数据、占位内容、链接和过期技术栈引用。长期模块知识从 [docs/README.md](../../docs/README.md) 按需读取；三个契约治理技能共享 [契约面与事实源映射](../../docs/internals/contract-governance.md)，不各自复制模块映射。
 
@@ -40,3 +61,5 @@
 契约治理技能不要求固定串行：结构或语义影响用 `contract-guard`，同一具体值的多处一致性用 `config-contract-sync`，更新长期 `docs/` 用 `doc-maintenance-sync`。已有上游结论时直接消费，不重复扫描同一问题。
 
 测试职责保持单向：`acceptance-generator` 定义可观察规则，`test-authoring` 编写自动化测试，`run-all-tests` 执行并报告自动化结果，`manual-acceptance` 记录必要的人工端到端结果，`code-review-and-quality` 审查证据是否足以支撑交付。
+
+专项能力按需叠加，不延长所有任务的固定主链：表结构设计与迁移执行分别由 `mysql-ddl-conventions`、`alembic-migration` 承接；完成度问题由 `feature-completion-audit` 做需求到证据的独立对账；运行故障由 `incident-triage` 先定位，获得修复授权后再回主链。当前会话实现的完成度审计必须使用独立子 Agent，外部 PR 或历史分支可由当前 Agent 直接核验。

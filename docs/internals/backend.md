@@ -26,6 +26,9 @@
 - 新路由放入 `src/linkcv/api/routes/`，由 `api/router.py` 聚合。
 - API schema、错误语义和前端消费类型必须同步设计。
 - 引入 SQLAlchemy 模型后，结构变化必须通过 Alembic 迁移链落地；当前仓库尚未建立该基础。
+- 首次建立持久化时必须同时确定 SQLAlchemy metadata、Alembic 初始 revision、命令入口、隔离测试数据库、文档同步和部署执行者。只有本地 MySQL Compose 不代表迁移基础已经可用。
+- Schema 演进建立后以 ORM 模型和 Alembic 迁移链为权威源，不允许用手工 `ALTER TABLE` 绕过版本链，也不原地改写已经进入共享环境的 revision。
+- 原型 Express SQLite 数据当前不迁移到 MySQL；改变这一结论需要新的 L3 需求、数据策略和回滚设计。
 - 路由从 Express 切换前，需要同时处理 Vite 代理、认证/持久化兼容、回滚和回归验证。
 
 ## 测试约定

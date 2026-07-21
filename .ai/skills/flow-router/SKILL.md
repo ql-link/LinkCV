@@ -86,6 +86,8 @@ description: 在 LinkCV 的功能、修复、重构、迁移或配置改动进�
 5. 区分事实缺口和决策分歧：事实通过仓库探索解决；会改变范围、行为、契约、数据或兼容策略的选择转 `decision-grilling`。
 6. 实现过程中发现新的高风险影响时，立即升级车道并回到相应上游阶段，不得以“已经开始编码”为理由维持低车道。
 
+数据库任务判为 L3 后仍先走完整规格链。在技术设计中使用 `mysql-ddl-conventions` 确认物理 schema，在实施时使用 `alembic-migration` 落地和验证；这两个专项技能不替代 Brief、Acceptance 或 Technical Design。纯故障排查不进入车道分级，先转 `incident-triage`；确认需要修改代码或配置后再回本站分级。
+
 ## 6. 输出格式
 
 每次分级至少给出：
