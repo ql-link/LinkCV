@@ -587,11 +587,27 @@ def build_change_comment(
         "confirmed_at": confirmed_at,
     }
     return (
-        f"{COMMENT_HEADING}\n\n{business_content.strip()}\n\n"
+        f"{render_comment_body(business_content)}\n\n"
         f"```{COMMENT_FENCE}\n"
         f"{json.dumps(metadata, ensure_ascii=False, sort_keys=True, separators=(',', ':'))}\n"
         "```"
     )
+
+
+def render_comment_body(business_content: str) -> str:
+    blocks = re.split(r"\n\s*\n", business_content.strip(), maxsplit=1)
+    summary = blocks[0].strip()
+    details = blocks[1].strip() if len(blocks) == 2 else ""
+    sections = [COMMENT_HEADING, "### 概述", summary]
+    if details:
+        sections.extend(("### 具体变化", details))
+    sections.extend(
+        (
+            "### 工具记录",
+            "以下信息仅用于需求追踪，开发者和审核员无需填写或维护。",
+        )
+    )
+    return "\n\n".join(sections)
 
 
 def load_change_content(key: str, raw_path: str) -> str:
@@ -625,7 +641,18 @@ def added_comment_id(payload: object) -> str:
 
 
 def business_comment_hash(business_content: str) -> str:
-    return sha256_text(f"{COMMENT_HEADING}\n\n{business_content.strip()}")
+    return sha256_text(render_comment_body(business_content))
+
+
+def resolve_supersedes(
+    snapshot: dict[str, object], *, correct_latest: bool
+) -> list[str]:
+    if not correct_latest:
+        return []
+    active_ids = [str(value) for value in snapshot["active_change_comment_ids"]]
+    if not active_ids:
+        raise ValueError("--correct-latest 需要至少一条当前有效的结构化需求变更评论")
+    return [active_ids[-1]]
 
 
 def write_intent_state(source: dict[str, object]) -> dict[str, object]:
@@ -736,13 +763,10 @@ def cmd_sync_comment(args: argparse.Namespace) -> int:
     brief_path = require_brief(args.key)
     business_content = load_change_content(args.key, args.change_file)
     snapshot = require_matching_snapshot(args.key, state, source)
-    active_ids = [str(value) for value in snapshot["active_change_comment_ids"]]
-    supersedes = args.supersedes or []
-    if len(supersedes) != len(set(supersedes)):
-        return fail("--supersedes 不能包含重复评论 ID", 2)
-    unknown = [value for value in supersedes if value not in active_ids]
-    if unknown:
-        return fail("不能替代未知或已失效的结构化评论：" + ", ".join(unknown), 2)
+    supersedes = resolve_supersedes(
+        snapshot,
+        correct_latest=args.correct_latest,
+    )
     change_id = str(uuid.uuid4())
     confirmed_at = now()
     intent: dict[str, object] = {
@@ -892,9 +916,9 @@ def build_parser() -> argparse.ArgumentParser:
     sync.add_argument("--change-file", required=True)
     sync.add_argument("--confirmed-by-user", action="store_true")
     sync.add_argument(
-        "--supersedes",
-        action="append",
-        help="由 Agent 维护的被替代结构化评论 ID；开发者不手工填写",
+        "--correct-latest",
+        action="store_true",
+        help="当前评论纠正最近一条有效变更；工具自动解析并记录替代关系",
     )
     sync.set_defaults(handler=cmd_sync_comment)
 

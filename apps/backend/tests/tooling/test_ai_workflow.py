@@ -19,6 +19,9 @@ SKILL_CHECK = REPO_ROOT / "scripts" / "quality" / "check_skills.py"
 DOCS_SYNC = REPO_ROOT / "scripts" / "quality" / "check_docs_sync.py"
 RUNTIME_CONTRACTS = REPO_ROOT / "scripts" / "quality" / "check_runtime_contracts.py"
 RUNTIME_CONTRACT_RULES = REPO_ROOT / "scripts" / "quality" / "runtime-contract-rules.yaml"
+PR_TEMPLATE = (
+    REPO_ROOT / ".ai" / "skills" / "branch-pr-workflow" / "pull_request.template.md"
+)
 
 
 def run_script(script: Path, *args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -803,7 +806,12 @@ def test_multica_sync_comment_requires_confirmation_and_maintains_metadata(
     ).returncode == 0
     (feature / "brief.md").write_text("Brief 增加导出确认页", encoding="utf-8")
     change_file = feature / "requirement_change.md"
-    change_file.write_text("新增：导出前必须展示确认页。", encoding="utf-8")
+    change_file.write_text(
+        "本次确认新增导出确认页，避免用户直接导出错误内容。\n\n"
+        "- 新增：导出前必须展示确认页。\n"
+        "- 验收：用户确认后才开始导出。",
+        encoding="utf-8",
+    )
 
     blocked = run_script(
         SOURCE_GUARD,
@@ -834,6 +842,13 @@ def test_multica_sync_comment_requires_confirmation_and_maintains_metadata(
 
     assert synced.returncode == 0, synced.stderr
     assert len(comments) == 1
+    assert comments[0]["content"].startswith(
+        "## LinkCV 已确认需求变更\n\n"
+        "### 概述\n\n"
+        "本次确认新增导出确认页，避免用户直接导出错误内容。"
+    )
+    assert "### 具体变化" in comments[0]["content"]
+    assert "### 工具记录" in comments[0]["content"]
     assert metadata_match is not None
     metadata = json.loads(metadata_match.group(1))
     assert metadata["schema_version"] == 1
@@ -882,7 +897,11 @@ def test_multica_sync_comment_appends_correction_and_tracks_superseded_comment(
     ).returncode == 0
 
     brief.write_text("Brief 纠正版", encoding="utf-8")
-    change_file.write_text("修正：仅首次导出前展示确认页。", encoding="utf-8")
+    change_file.write_text(
+        "本次修正确认页的出现条件，避免重复打断用户。\n\n"
+        "- 修正：仅首次导出前展示确认页。",
+        encoding="utf-8",
+    )
     corrected = run_script(
         SOURCE_GUARD,
         "sync-comment",
@@ -890,8 +909,7 @@ def test_multica_sync_comment_appends_correction_and_tracks_superseded_comment(
         "--change-file",
         str(change_file),
         "--confirmed-by-user",
-        "--supersedes",
-        "comment-1",
+        "--correct-latest",
         env=env,
     )
     comments = json.loads(multica_comments_path(tmp_path).read_text(encoding="utf-8"))
@@ -910,6 +928,11 @@ def test_multica_sync_comment_appends_correction_and_tracks_superseded_comment(
     assert state["source"]["active_change_comment_ids"] == ["comment-2"]
     assert state["source"]["reconciliation"]["comment_ids"] == ["comment-2"]
 
+    help_result = run_script(SOURCE_GUARD, "sync-comment", "--help", env=env)
+    assert help_result.returncode == 0
+    assert "--correct-latest" in help_result.stdout
+    assert "--supersedes" not in help_result.stdout
+
     multica_comments_path(tmp_path).write_text(
         json.dumps(list(reversed(comments)), ensure_ascii=False), encoding="utf-8"
     )
@@ -917,6 +940,116 @@ def test_multica_sync_comment_appends_correction_and_tracks_superseded_comment(
         SOURCE_GUARD, "check", "LCV-102", "--gate", "brief", env=env
     )
     assert reordered.returncode == 0, reordered.stderr
+
+
+def test_multica_correction_requires_an_active_comment(tmp_path: Path) -> None:
+    specs_root = tmp_path / ".specs"
+    feature = specs_root / "LCV-102"
+    executable, response = write_fake_multica(
+        tmp_path, multica_issue("初始范围", "2026-07-21T01:00:00Z")
+    )
+    env = {
+        "LINKCV_SPECS_ROOT": str(specs_root),
+        "LINKCV_MULTICA_CLI": str(executable),
+        "LINKCV_MULTICA_RESPONSE": str(response),
+    }
+    assert init_multica_spec(specs_root, env).returncode == 0
+    assert run_script(
+        SOURCE_GUARD, "capture", "LCV-102", "--gate", "brief", env=env
+    ).returncode == 0
+    (feature / "brief.md").write_text("Brief 纠正版", encoding="utf-8")
+    change_file = feature / "requirement-change.tmp.md"
+    change_file.write_text("修正导出确认条件。", encoding="utf-8")
+
+    corrected = run_script(
+        SOURCE_GUARD,
+        "sync-comment",
+        "LCV-102",
+        "--change-file",
+        str(change_file),
+        "--confirmed-by-user",
+        "--correct-latest",
+        env=env,
+    )
+
+    assert corrected.returncode == 2
+    assert "至少一条当前有效" in corrected.stderr
+    assert json.loads(multica_comments_path(tmp_path).read_text(encoding="utf-8")) == []
+
+
+def test_multica_correction_automatically_selects_latest_active_comment(
+    tmp_path: Path,
+) -> None:
+    specs_root = tmp_path / ".specs"
+    feature = specs_root / "LCV-102"
+    executable, response = write_fake_multica(
+        tmp_path, multica_issue("初始范围", "2026-07-21T01:00:00Z")
+    )
+    env = {
+        "LINKCV_SPECS_ROOT": str(specs_root),
+        "LINKCV_MULTICA_CLI": str(executable),
+        "LINKCV_MULTICA_RESPONSE": str(response),
+    }
+    assert init_multica_spec(specs_root, env).returncode == 0
+    assert run_script(
+        SOURCE_GUARD, "capture", "LCV-102", "--gate", "brief", env=env
+    ).returncode == 0
+    brief = feature / "brief.md"
+    change_file = feature / "requirement-change.tmp.md"
+
+    for index in (1, 2):
+        brief.write_text(f"Brief 第 {index} 版", encoding="utf-8")
+        change_file.write_text(f"新增第 {index} 项独立要求。", encoding="utf-8")
+        assert run_script(
+            SOURCE_GUARD,
+            "sync-comment",
+            "LCV-102",
+            "--change-file",
+            str(change_file),
+            "--confirmed-by-user",
+            env=env,
+        ).returncode == 0
+
+    brief.write_text("Brief 纠正版", encoding="utf-8")
+    change_file.write_text("纠正最近确认的第 2 项要求。", encoding="utf-8")
+    corrected = run_script(
+        SOURCE_GUARD,
+        "sync-comment",
+        "LCV-102",
+        "--change-file",
+        str(change_file),
+        "--confirmed-by-user",
+        "--correct-latest",
+        env=env,
+    )
+    comments = json.loads(multica_comments_path(tmp_path).read_text(encoding="utf-8"))
+    state = yaml.safe_load((feature / "state.yaml").read_text(encoding="utf-8"))
+    metadata = json.loads(
+        re.search(
+            r"```linkcv-requirement-change\n(\{.*\})\n```$",
+            comments[2]["content"],
+        ).group(1)
+    )
+
+    assert corrected.returncode == 0, corrected.stderr
+    assert metadata["supersedes"] == ["comment-2"]
+    assert state["source"]["active_change_comment_ids"] == [
+        "comment-1",
+        "comment-3",
+    ]
+
+
+def test_pr_template_starts_with_summary_and_keeps_issue_links_last() -> None:
+    content = PR_TEMPLATE.read_text(encoding="utf-8")
+
+    assert content.startswith("## 概述\n")
+    assert content.index("## 概述") < content.index("## 背景与目标")
+    assert "## 合并信息" not in content
+    assert "目标分支" not in content
+    assert "来源分支" not in content
+    assert content.rstrip().endswith(
+        '- GitHub Issue：<Issue 编号与链接；不适用时写“无”>'
+    )
 
 
 def test_multica_issue_body_can_change_after_structured_comments_and_be_accepted(
