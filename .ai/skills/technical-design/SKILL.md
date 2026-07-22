@@ -23,12 +23,14 @@ description: 基于已冻结的 LinkCV L3 需求简报、验收契约和真实�
 本技能只用于 L3。进入前运行：
 
 ```bash
+npm run spec:source -- check <KEY> --gate technical_design # 仅 Multica 来源
 npm run spec -- check <KEY> technical_design
 ```
 
 以下情况停止并返回上游：
 
 - 需求简报或验收契约缺失、未冻结或哈希漂移；
+- Multica 需求正文漂移或需求源当前无法核验；
 - 设计过程中发现业务范围、权限规则或验收结果仍未确定；
 - 任务实际只需要 L2，且不存在跨模块或高风险设计内容。
 

@@ -69,6 +69,7 @@ description: 为 LinkCV 的 L2/L3 任务生成、修订和记录人工端到端�
 自动化验证已通过且所有必要人工项均通过后，才记录完成证据：
 
 ```bash
+npm run spec:source -- check <KEY> --gate verification # 仅 Multica 来源
 npm run spec -- verify <KEY> \
   --evidence "npm run check" \
   --evidence "人工验收：.specs/<KEY>/manual_acceptance.md（通过）"

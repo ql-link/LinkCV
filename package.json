@@ -11,6 +11,7 @@
     "check:docs": "uv run --directory apps/backend python ../../scripts/quality/check_docs_sync.py",
     "check:contracts": "uv run --directory apps/backend python ../../scripts/quality/check_runtime_contracts.py",
     "spec": "uv run --directory apps/backend python ../../scripts/spec/flow_guard.py",
+    "spec:source": "uv run --directory apps/backend python ../../scripts/spec/source_guard.py",
     "dev": "concurrently -n web,backend,legacy -c cyan,green,yellow \"npm:dev:web\" \"npm:dev:backend\" \"npm:dev:legacy\"",
     "dev:web": "npm --prefix apps/web run dev",
     "dev:backend": "uv run --directory apps/backend uvicorn linkcv.main:app --reload --host 127.0.0.1 --port ${BACKEND_PORT:-8000}",

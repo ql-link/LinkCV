@@ -41,6 +41,7 @@ npm test            # 运行前端和后端自动化测试
 npm run check:app   # 前后端测试、类型检查和构建
 npm run check       # 完整本地质量入口
 npm run spec -- ... # 管理 L2/L3 本地阶段状态
+npm run spec:source -- ... # 只读核验 Multica 需求指纹
 ```
 
 - Python 命令统一通过 `uv run --directory apps/backend` 执行，不依赖系统 `python`。
@@ -55,8 +56,8 @@ npm run spec -- ... # 管理 L2/L3 本地阶段状态
 - 设计 MySQL 表结构时使用 `mysql-ddl-conventions`；编写、校验或排查 SQLAlchemy/Alembic 迁移时使用 `alembic-migration`。数据库改动始终属于 L3，但两个数据库技能只在命中时按需调用，不固定串入无关任务。
 - 用户要求判断“功能是否真正做完、还缺什么”时使用 `feature-completion-audit`；当前会话刚完成的实现必须由独立子 Agent 取证，避免实现者自评。
 - 用户要求根据报错、日志或异常现象查原因时使用 `incident-triage`，默认只诊断；没有修复授权时不修改代码、配置、外部系统或数据。
-- Multica Issue 是长期需求、范围和验收标准的主记录。不要自动创建、修改、评论或关闭 Multica/GitHub 对象。
-- `.specs/<LCV-key>/` 是本地执行快照，不是第二份长期需求库。冻结产物后由 `state.yaml` 记录哈希；内容变化必须重新冻结。适用的人工端到端结果记录在同目录 `manual_acceptance.md`，PR 只摘要结论。
+- Multica Issue 是长期需求、范围和验收标准的主记录。Multica 来源在 Brief、Acceptance、Technical Design、实现、验证和 PR 前通过只读需求指纹门禁核验；查询失败或标题/描述漂移时停止推进。不要自动创建、修改、评论或关闭 Multica/GitHub 对象。
+- `.specs/<LCV-key>/` 是当前工作区的本地执行快照，不是第二份长期需求库，也不承诺跨设备或跨 worktree 自动同步。冻结产物后由 `state.yaml` 记录哈希；内容变化必须重新冻结。适用的人工端到端结果记录在同目录 `manual_acceptance.md`，PR 只摘要结论。
 - L2/L3 开始实现前运行阶段检查；L1 不强制创建 `.specs`。只在任务触发时读取对应 Skill。
 - 搭建或修订这套 AI 工作流框架本身时允许采用自举例外，不要求先用尚未稳定的流程生成 Spec；框架用于正式业务开发后，再按上述车道强制执行。自举例外不免除真实代码核实、测试和审查。
 

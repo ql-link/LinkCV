@@ -16,6 +16,7 @@ description: 把已冻结的 LinkCV L2 或 L3 需求简报转换为可观察、�
 进入前运行：
 
 ```bash
+npm run spec:source -- check <KEY> --gate acceptance # 仅 Multica 来源
 npm run spec -- check <KEY> acceptance
 ```
 
@@ -23,6 +24,7 @@ npm run spec -- check <KEY> acceptance
 
 - `brief.md` 缺失、未冻结或冻结后内容发生变化；
 - 需求简报仍有会改变业务规则的阻塞问题；
+- Multica 标题或描述自 Brief 冻结后发生变化，或者需求源当前无法核验；
 - 用户尚未确认需求范围；
 - 只能写出“正确处理”“适当提示”一类不可断言结果。
 

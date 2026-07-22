@@ -5,6 +5,7 @@
 - Node.js 22 LTS 和 npm 10+
 - Python 3.13 与 uv
 - Docker 和 Docker Compose
+- 处理 Multica 来源的 L2/L3 任务时，需要已安装并认证的 `multica` CLI；普通本地开发不依赖它
 
 新环境执行 `npm run setup` 安装前后端依赖并建立 AI 入口链接。复制 `.env.example` 为本地 `.env` 后，可用 `npm run infra:up` 启动 MySQL 与 MinIO，用 `npm run dev` 同时启动 Web、FastAPI 和临时 Express。
 
@@ -33,8 +34,12 @@
 | `npm test` | 依次运行前端和后端自动化测试 |
 | `npm run check:app` | 前后端测试、前端类型检查和前后端构建 |
 | `npm run check` | 完整本地质量入口 |
+| `npm run spec -- status` | 校验并恢复当前工作区的 L2/L3 在途任务 |
+| `npm run spec:source -- ...` | 只读核验 Multica 标题和描述是否发生需求漂移 |
 
 `npm run check` 是 CI 的统一入口，因此新增的前后端自动化测试会随 PR 和共享分支检查执行。
+
+Multica 来源的 Spec 在各阶段推进前通过需求指纹门禁读取 Issue。CLI、认证、权限或网络失败时保持未核验并停止推进，不回退到浏览器、Linear 或旧缓存。该门禁不会修改外部 Issue；详细状态与恢复命令见 [.specs/README.md](../../.specs/README.md)。
 
 ## 测试分层
 

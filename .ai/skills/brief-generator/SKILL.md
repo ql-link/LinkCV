@@ -46,7 +46,9 @@ Multica 是长期需求主记录。可以读取和引用，但没有用户明确
 
 ```bash
 # 来自 Multica Issue
-npm run spec -- init <KEY> --lane L2|L3 --source-system multica --issue-id <ISSUE_ID>
+npm run spec -- init <KEY> --lane L2|L3 --source-system multica \
+  --issue-id <ISSUE_UUID> --workspace-id <WORKSPACE_UUID>
+npm run spec:source -- capture <KEY> --gate brief
 
 # 来自 GitHub Issue
 npm run spec -- init <KEY> --lane L2|L3 --source-system github --issue-id <ISSUE_ID>
@@ -61,8 +63,17 @@ npm run spec -- init <KEY> --lane L2|L3 --source-system manual
 
 ```bash
 npm run spec -- status <KEY>
+npm run spec:source -- check <KEY> --gate brief # 仅 Multica 来源
 npm run spec -- check <KEY> brief
 ```
+
+Multica 查询只读，不修改 Issue。首次 `capture` 保存标题与描述的需求指纹；状态、负责人、标签等元数据变化不会让 Brief 失效。评论线程属于待判读上下文，不进入机器指纹；评论中的正式范围变化必须先整理到 Issue 描述。`check` 发现标题或描述变化时会把 Brief、Acceptance、Technical Design 和验证状态退回未冻结，并返回非零退出码。此时必须重新读取 Issue、在原文件修订 Brief，再运行：
+
+```bash
+npm run spec:source -- accept <KEY> --gate brief
+```
+
+`accept` 只表示本地开始以当前 Issue 正文作为新基线，不代表范围已经获得用户确认；仍须完成本技能的分歧扫描和用户确认后才能冻结。Multica CLI 不可用、认证失效、无权访问或网络失败时，准确报告“需求未核验”并停止，不得把缓存状态当成最新需求继续推进。
 
 需求简报固定输出到：
 
@@ -157,7 +168,7 @@ L3 只在需求简报中确定范围、概念契约和关键约束，具体文�
 ## 8. 工作步骤
 
 1. 从请求和 Issue 中提取目标、范围、非目标和显式验收要求。
-2. 检查本地状态；缺失时按真实来源自动初始化，存在时核对车道和来源。
+2. 检查本地状态；缺失时按真实来源自动初始化并捕获 Multica 需求基线，存在时核对车道、来源和需求指纹。
 3. 读取真实代码，核对当前行为、影响模块和可复用能力。
 4. 读取模板并生成或修订 `.specs/<KEY>/brief.md`，替换所有占位内容。
 5. 把初稿作为一致性探针，扫描事实缺口、正文冲突和真实决策分支。

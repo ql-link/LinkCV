@@ -52,7 +52,7 @@
 | --- | --- | --- |
 | `incident-triage` | 沿 Web、代理、后端、数据和基础设施链路定位故障 | 修复代码先重新分级；迁移转 `alembic-migration` |
 
-运行 `npm run check:ai` 校验技能的头部元数据、占位内容、链接和过期技术栈引用。长期模块知识从 [docs/README.md](../../docs/README.md) 按需读取；三个契约治理技能共享 [契约面与事实源映射](../../docs/internals/contract-governance.md)，不各自复制模块映射。
+运行 `npm run check:ai` 校验技能的头部元数据、占位内容、链接和过期技术栈引用。长期模块知识从 [docs/README.md](../../docs/README.md) 按需读取；三个契约治理技能共享 [契约面与事实源映射](../../docs/internals/contract-governance.md)，不各自复制模块映射。Multica 来源的阶段 Skill 通过 `npm run spec:source -- ...` 复用同一只读需求指纹门禁，不各自实现外部同步逻辑。
 
 固定结构的产物模板跟随所属技能保存：需求简报、验收契约、技术设计、按需生成的实施报告和人工验收记录分别由对应技能维护。`agents/openai.yaml` 仅在需要 Codex 界面展示元数据时按需添加，不是项目技能的必需文件。
 
@@ -63,3 +63,5 @@
 测试职责保持单向：`acceptance-generator` 定义可观察规则，`test-authoring` 编写自动化测试，`run-all-tests` 执行并报告自动化结果，`manual-acceptance` 记录必要的人工端到端结果，`code-review-and-quality` 审查证据是否足以支撑交付。
 
 专项能力按需叠加，不延长所有任务的固定主链：表结构设计与迁移执行分别由 `mysql-ddl-conventions`、`alembic-migration` 承接；完成度问题由 `feature-completion-audit` 做需求到证据的独立对账；运行故障由 `incident-triage` 先定位，获得修复授权后再回主链。当前会话实现的完成度审计必须使用独立子 Agent，外部 PR 或历史分支可由当前 Agent 直接核验。
+
+跨会话续做先运行 `npm run spec -- status`：脚本验证本地状态与冻结哈希并给出唯一下一站、待读文件和门禁命令。它只恢复当前工作区的 `.specs`；跨 worktree 或设备时从 Multica 长期主记录重新建立本地快照，不把 Git 忽略目录当作共享状态。

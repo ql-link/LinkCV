@@ -30,10 +30,11 @@ description: 在 LinkCV 中按已确认范围执行代码实现。适用于 L1 �
 实现前运行：
 
 ```bash
+npm run spec:source -- check <KEY> --gate implementation # 仅 Multica 来源
 npm run spec -- check <KEY> implementation
 ```
 
-L2 必须已有冻结的 `brief.md` 和 `acceptance.feature`；L3 还必须已有冻结的 `technical_design.md`。门禁失败时停止，按提示返回上游，不得绕过。
+L2 必须已有冻结的 `brief.md` 和 `acceptance.feature`；L3 还必须已有冻结的 `technical_design.md`。Multica 来源必须先完成当前阶段的只读需求核验。门禁失败时停止，按提示返回上游，不得绕过。
 
 ## 3. 必读材料
 

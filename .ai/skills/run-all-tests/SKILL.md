@@ -65,10 +65,11 @@ Python 命令统一通过项目脚本或 `uv run --directory apps/backend` 执�
 全部要求的自动化验证成功，且任务不需要人工端到端验收时，记录实际证据：
 
 ```bash
+npm run spec:source -- check <KEY> --gate verification # 仅 Multica 来源
 npm run spec -- verify <KEY> --evidence "npm run check"
 ```
 
-如果执行了多个必要命令，可以重复提供 `--evidence`。只有命令真实成功后才能写入；部分通过、环境阻塞或仍有未解决失败时不得标记已验证。
+如果执行了多个必要命令，可以重复提供 `--evidence`。只有命令真实成功且 Multica 需求没有漂移后才能写入；部分通过、需求源无法核验、环境阻塞或仍有未解决失败时不得标记已验证。
 
 如果存在跨端、浏览器、上传下载、PDF 或视觉行为需要人工验收，本技能只报告自动化结果和未覆盖区域，不运行 `spec verify`，转 `manual-acceptance`。人工验收全部通过后，由该技能把自动化命令和 `.specs/<KEY>/manual_acceptance.md` 一并写入验证证据。
 

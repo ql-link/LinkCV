@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -10,6 +11,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 FLOW_GUARD = REPO_ROOT / "scripts" / "spec" / "flow_guard.py"
+SOURCE_GUARD = REPO_ROOT / "scripts" / "spec" / "source_guard.py"
 LINK_SETUP = REPO_ROOT / "scripts" / "setup" / "setup_ai_links.py"
 SKILL_CHECK = REPO_ROOT / "scripts" / "quality" / "check_skills.py"
 DOCS_SYNC = REPO_ROOT / "scripts" / "quality" / "check_docs_sync.py"
@@ -28,6 +30,31 @@ def run_script(script: Path, *args: str, env: dict[str, str] | None = None) -> s
         capture_output=True,
         check=False,
     )
+
+
+def write_fake_multica(tmp_path: Path, payload: dict[str, object]) -> tuple[Path, Path]:
+    response = tmp_path / "multica-response.json"
+    response.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    executable = tmp_path / "multica"
+    executable.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os\n"
+        "from pathlib import Path\n"
+        "print(Path(os.environ['LINKCV_MULTICA_RESPONSE']).read_text(encoding='utf-8'))\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    return executable, response
+
+
+def multica_issue(description: str, updated_at: str) -> dict[str, object]:
+    return {
+        "id": "00000000-0000-0000-0000-000000000102",
+        "identifier": "LCV-102",
+        "title": "虚构工作流需求",
+        "description": description,
+        "updated_at": updated_at,
+    }
 
 
 def test_link_setup_creates_missing_links_and_is_idempotent(tmp_path: Path) -> None:
@@ -107,7 +134,9 @@ def test_flow_init_records_explicit_external_source(tmp_path: Path) -> None:
         "--source-system",
         "multica",
         "--issue-id",
-        "issue-102",
+        "00000000-0000-0000-0000-000000000102",
+        "--workspace-id",
+        "00000000-0000-0000-0000-000000000001",
         env=env,
     )
     state = yaml.safe_load((specs_root / "LCV-102" / "state.yaml").read_text(encoding="utf-8"))
@@ -115,8 +144,9 @@ def test_flow_init_records_explicit_external_source(tmp_path: Path) -> None:
 
     assert initialized.returncode == 0, initialized.stderr
     assert state["source"]["system"] == "multica"
-    assert state["source"]["issue_id"] == "issue-102"
-    assert "source=multica" in status.stdout
+    assert state["source"]["issue_id"] == "00000000-0000-0000-0000-000000000102"
+    assert state["source"]["workspace_id"] == "00000000-0000-0000-0000-000000000001"
+    assert "需求源：尚未捕获基线" in status.stdout
 
 
 def test_flow_init_rejects_external_source_without_issue_id(tmp_path: Path) -> None:
@@ -137,6 +167,301 @@ def test_flow_init_rejects_external_source_without_issue_id(tmp_path: Path) -> N
     assert initialized.returncode == 2
     assert "必须提供 --issue-id" in initialized.stderr
     assert not (specs_root / "LCV-103" / "state.yaml").exists()
+
+
+def test_flow_init_rejects_multica_without_workspace_id(tmp_path: Path) -> None:
+    specs_root = tmp_path / ".specs"
+    env = {"LINKCV_SPECS_ROOT": str(specs_root)}
+
+    initialized = run_script(
+        FLOW_GUARD,
+        "init",
+        "LCV-104",
+        "--lane",
+        "L2",
+        "--source-system",
+        "multica",
+        "--issue-id",
+        "issue-104",
+        env=env,
+    )
+
+    assert initialized.returncode == 2
+    assert "--workspace-id" in initialized.stderr
+
+
+def test_multica_source_drift_invalidates_frozen_artifacts(tmp_path: Path) -> None:
+    specs_root = tmp_path / ".specs"
+    feature = specs_root / "LCV-102"
+    executable, response = write_fake_multica(
+        tmp_path, multica_issue("初始范围", "2026-07-21T01:00:00Z")
+    )
+    env = {
+        "LINKCV_SPECS_ROOT": str(specs_root),
+        "LINKCV_MULTICA_CLI": str(executable),
+        "LINKCV_MULTICA_RESPONSE": str(response),
+    }
+    assert run_script(
+        FLOW_GUARD,
+        "init",
+        "LCV-102",
+        "--lane",
+        "L2",
+        "--source-system",
+        "multica",
+        "--issue-id",
+        "00000000-0000-0000-0000-000000000102",
+        "--workspace-id",
+        "00000000-0000-0000-0000-000000000001",
+        env=env,
+    ).returncode == 0
+
+    capture = run_script(SOURCE_GUARD, "capture", "LCV-102", "--gate", "brief", env=env)
+    assert capture.returncode == 0, capture.stderr
+    (feature / "brief.md").write_text("brief", encoding="utf-8")
+    assert run_script(FLOW_GUARD, "freeze", "LCV-102", "brief", env=env).returncode == 0
+    assert run_script(
+        SOURCE_GUARD, "check", "LCV-102", "--gate", "acceptance", env=env
+    ).returncode == 0
+    (feature / "acceptance.feature").write_text("Feature: saved", encoding="utf-8")
+    assert run_script(
+        FLOW_GUARD, "freeze", "LCV-102", "acceptance", env=env
+    ).returncode == 0
+
+    response.write_text(
+        json.dumps(
+            multica_issue("已经改变的范围", "2026-07-22T01:00:00Z"),
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    drifted = run_script(
+        SOURCE_GUARD, "check", "LCV-102", "--gate", "implementation", env=env
+    )
+    state = yaml.safe_load((feature / "state.yaml").read_text(encoding="utf-8"))
+
+    assert drifted.returncode == 1
+    assert "需求" in drifted.stderr and "漂移" in drifted.stderr
+    assert state["phase"] == "brief"
+    assert state["source"]["drift"]["detected"] is True
+    assert state["artifacts"]["brief"]["frozen"] is False
+    assert state["artifacts"]["acceptance"]["frozen"] is False
+
+    accepted = run_script(
+        SOURCE_GUARD, "accept", "LCV-102", "--gate", "brief", env=env
+    )
+    state = yaml.safe_load((feature / "state.yaml").read_text(encoding="utf-8"))
+    assert accepted.returncode == 0, accepted.stderr
+    assert state["source"]["drift"]["detected"] is False
+    assert state["source"]["checked_for"] == "brief"
+
+
+def test_multica_source_query_failure_does_not_mark_gate(tmp_path: Path) -> None:
+    specs_root = tmp_path / ".specs"
+    executable, response = write_fake_multica(
+        tmp_path, multica_issue("稳定范围", "2026-07-21T01:00:00Z")
+    )
+    env = {
+        "LINKCV_SPECS_ROOT": str(specs_root),
+        "LINKCV_MULTICA_CLI": str(executable),
+        "LINKCV_MULTICA_RESPONSE": str(response),
+    }
+    assert run_script(
+        FLOW_GUARD,
+        "init",
+        "LCV-102",
+        "--lane",
+        "L2",
+        "--source-system",
+        "multica",
+        "--issue-id",
+        "00000000-0000-0000-0000-000000000102",
+        "--workspace-id",
+        "workspace-105",
+        env=env,
+    ).returncode == 0
+
+    assert run_script(
+        SOURCE_GUARD, "capture", "LCV-102", "--gate", "brief", env=env
+    ).returncode == 0
+    env["LINKCV_MULTICA_CLI"] = str(tmp_path / "missing-multica")
+    checked = run_script(
+        SOURCE_GUARD, "check", "LCV-102", "--gate", "brief", env=env
+    )
+    state = yaml.safe_load(
+        (specs_root / "LCV-102" / "state.yaml").read_text(encoding="utf-8")
+    )
+
+    assert checked.returncode == 2
+    assert "状态未核验" in checked.stderr
+    assert state["source"]["checked_for"] is None
+
+
+def test_multica_metadata_change_does_not_invalidate_requirements(tmp_path: Path) -> None:
+    specs_root = tmp_path / ".specs"
+    executable, response = write_fake_multica(
+        tmp_path, multica_issue("范围不变", "2026-07-21T01:00:00Z")
+    )
+    env = {
+        "LINKCV_SPECS_ROOT": str(specs_root),
+        "LINKCV_MULTICA_CLI": str(executable),
+        "LINKCV_MULTICA_RESPONSE": str(response),
+    }
+    assert run_script(
+        FLOW_GUARD,
+        "init",
+        "LCV-102",
+        "--lane",
+        "L2",
+        "--source-system",
+        "multica",
+        "--issue-id",
+        "00000000-0000-0000-0000-000000000102",
+        "--workspace-id",
+        "00000000-0000-0000-0000-000000000001",
+        env=env,
+    ).returncode == 0
+    assert run_script(
+        SOURCE_GUARD, "capture", "LCV-102", "--gate", "brief", env=env
+    ).returncode == 0
+
+    response.write_text(
+        json.dumps(
+            multica_issue("范围不变", "2026-07-22T01:00:00Z"), ensure_ascii=False
+        ),
+        encoding="utf-8",
+    )
+    checked = run_script(
+        SOURCE_GUARD, "check", "LCV-102", "--gate", "brief", env=env
+    )
+
+    assert checked.returncode == 0, checked.stderr
+    assert "元数据变化但需求正文未漂移" in checked.stdout
+
+
+def test_multica_requires_a_fresh_checkpoint_at_each_delivery_gate(tmp_path: Path) -> None:
+    specs_root = tmp_path / ".specs"
+    feature = specs_root / "LCV-102"
+    executable, response = write_fake_multica(
+        tmp_path, multica_issue("稳定范围", "2026-07-21T01:00:00Z")
+    )
+    env = {
+        "LINKCV_SPECS_ROOT": str(specs_root),
+        "LINKCV_MULTICA_CLI": str(executable),
+        "LINKCV_MULTICA_RESPONSE": str(response),
+    }
+    assert run_script(
+        FLOW_GUARD,
+        "init",
+        "LCV-102",
+        "--lane",
+        "L2",
+        "--source-system",
+        "multica",
+        "--issue-id",
+        "00000000-0000-0000-0000-000000000102",
+        "--workspace-id",
+        "00000000-0000-0000-0000-000000000001",
+        env=env,
+    ).returncode == 0
+    assert run_script(
+        SOURCE_GUARD, "capture", "LCV-102", "--gate", "brief", env=env
+    ).returncode == 0
+    (feature / "brief.md").write_text("brief", encoding="utf-8")
+    assert run_script(FLOW_GUARD, "freeze", "LCV-102", "brief", env=env).returncode == 0
+
+    acceptance_blocked = run_script(
+        FLOW_GUARD, "check", "LCV-102", "acceptance", env=env
+    )
+    assert acceptance_blocked.returncode == 1
+    assert "--gate acceptance" in acceptance_blocked.stderr
+    assert run_script(
+        SOURCE_GUARD, "check", "LCV-102", "--gate", "acceptance", env=env
+    ).returncode == 0
+    assert run_script(
+        FLOW_GUARD, "check", "LCV-102", "acceptance", env=env
+    ).returncode == 0
+
+    (feature / "acceptance.feature").write_text("Feature: stable", encoding="utf-8")
+    assert run_script(
+        FLOW_GUARD, "freeze", "LCV-102", "acceptance", env=env
+    ).returncode == 0
+    implementation_blocked = run_script(
+        FLOW_GUARD, "check", "LCV-102", "implementation", env=env
+    )
+    assert implementation_blocked.returncode == 1
+    assert "--gate implementation" in implementation_blocked.stderr
+    assert run_script(
+        SOURCE_GUARD, "check", "LCV-102", "--gate", "implementation", env=env
+    ).returncode == 0
+    assert run_script(
+        FLOW_GUARD, "check", "LCV-102", "implementation", env=env
+    ).returncode == 0
+
+    verification_blocked = run_script(
+        FLOW_GUARD,
+        "verify",
+        "LCV-102",
+        "--evidence",
+        "npm run check",
+        env=env,
+    )
+    assert verification_blocked.returncode == 1
+    assert "--gate verification" in verification_blocked.stderr
+    assert run_script(
+        SOURCE_GUARD, "check", "LCV-102", "--gate", "verification", env=env
+    ).returncode == 0
+    assert run_script(
+        FLOW_GUARD,
+        "verify",
+        "LCV-102",
+        "--evidence",
+        "npm run check",
+        env=env,
+    ).returncode == 0
+
+    release_blocked = run_script(FLOW_GUARD, "check", "LCV-102", "done", env=env)
+    assert release_blocked.returncode == 1
+    assert "--gate release" in release_blocked.stderr
+    assert run_script(
+        SOURCE_GUARD, "check", "LCV-102", "--gate", "release", env=env
+    ).returncode == 0
+    assert run_script(FLOW_GUARD, "check", "LCV-102", "done", env=env).returncode == 0
+
+
+def test_status_reports_next_action_and_rejects_local_artifact_drift(tmp_path: Path) -> None:
+    specs_root = tmp_path / ".specs"
+    feature = specs_root / "LCV-106"
+    env = {"LINKCV_SPECS_ROOT": str(specs_root)}
+    assert run_script(FLOW_GUARD, "init", "LCV-106", "--lane", "L3", env=env).returncode == 0
+    (feature / "brief.md").write_text("brief", encoding="utf-8")
+    assert run_script(FLOW_GUARD, "freeze", "LCV-106", "brief", env=env).returncode == 0
+
+    status = run_script(FLOW_GUARD, "status", "LCV-106", env=env)
+    assert status.returncode == 0, status.stderr
+    assert "下一站：acceptance-generator" in status.stdout
+    assert ".specs/LCV-106/brief.md" in status.stdout
+    assert "npm run spec -- check LCV-106 acceptance" in status.stdout
+
+    (feature / "brief.md").write_text("changed", encoding="utf-8")
+    drifted = run_script(FLOW_GUARD, "status", "LCV-106", env=env)
+    assert drifted.returncode == 1
+    assert "本地状态不可信" in drifted.stderr
+    assert "冻结后已变化" in drifted.stderr
+
+
+def test_status_requires_selection_when_multiple_specs_are_active(tmp_path: Path) -> None:
+    specs_root = tmp_path / ".specs"
+    env = {"LINKCV_SPECS_ROOT": str(specs_root)}
+    assert run_script(FLOW_GUARD, "init", "LCV-107", "--lane", "L2", env=env).returncode == 0
+    assert run_script(FLOW_GUARD, "init", "LCV-108", "--lane", "L3", env=env).returncode == 0
+
+    status = run_script(FLOW_GUARD, "status", env=env)
+
+    assert status.returncode == 0, status.stderr
+    assert "有 2 个在途 Spec；请选择 KEY" in status.stdout
+    assert "LCV-107" in status.stdout
+    assert "LCV-108" in status.stdout
 
 
 def test_l2_flow_skips_technical_design_and_records_evidence(tmp_path: Path) -> None:
