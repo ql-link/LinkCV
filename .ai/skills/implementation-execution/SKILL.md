@@ -34,7 +34,7 @@ npm run spec:source -- check <KEY> --gate implementation # 仅 Multica 来源
 npm run spec -- check <KEY> implementation
 ```
 
-L2 必须已有冻结的 `brief.md` 和 `acceptance.feature`；L3 还必须已有冻结的 `technical_design.md`。Multica 来源必须先完成当前阶段的只读需求核验。门禁失败时停止，按提示返回上游，不得绕过。
+L2 必须已有冻结的 `brief.md` 和 `acceptance.feature`；L3 还必须已有冻结的 `technical_design.md`。Multica 来源必须先完成当前阶段的权威需求核验。门禁失败时停止，按提示返回上游，不得绕过。实现期间若发现会改变范围或验收的规格缺口，返回 `brief-generator`；用户确认差异后先由其完成结构化评论回写或无差异对账，再重新冻结下游产物，不能只改本地 Spec。
 
 ## 3. 必读材料
 
@@ -82,9 +82,9 @@ L2 必须已有冻结的 `brief.md` 和 `acceptance.feature`；L3 还必须已�
 5. 补充或修改距离行为最近的有效测试；简单邻近测试可直接编写，需要独立测试设计、复杂 Mock 或分层调整时使用 `test-authoring`。测试必须能在实现错误时失败。
 6. 检查 API、类型、权限、数据、配置、部署和长期文档是否需要同步，按契约影响选择对应专项技能。
 7. 实现稳定后更新必要 `docs/`，不要把临时 Spec 内容复制成项目现状。
-8. 完成后交给 `run-all-tests` 执行范围匹配的自动化验证。
+8. 完成后交给 `run-all-tests` 执行范围匹配的自动化验证；L2/L3 的最终命令由 `spec verify --run` 亲自执行并自动绑定当前代码快照。
 9. 存在跨端、浏览器、上传下载、PDF 或视觉行为且自动化测试未覆盖时，转 `manual-acceptance` 生成并记录人工验收；不适用时直接跳过。
-10. 全部必要验证通过后交给 `code-review-and-quality` 做最终质量审查。
+10. 全部必要验证通过后，状态进入 `quality_review`，交给 `code-review-and-quality` 做最终质量审查；无阻断问题时由 Agent 自动记录审查结论并进入 `release_ready`。
 
 ## 6. 规格缺口与回流
 

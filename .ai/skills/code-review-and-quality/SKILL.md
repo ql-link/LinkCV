@@ -26,7 +26,7 @@ description: 审查 LinkCV 代码差异的正确性、范围、契约、安全�
 3. 新增或修改的测试；
 4. L2/L3 的 `.specs/<KEY>/state.yaml`、冻结产物和实施报告（如果存在）；
 5. 适用的 `.specs/<KEY>/manual_acceptance.md`；
-6. 实际运行的验证命令及结果；
+6. `state.yaml` 中由 `spec verify --run` 自动记录的命令、退出码和代码快照；
 7. 与变更相关但未修改的调用方、公共类型和配置。
 
 审查 PR 或分支时，先确认正确的目标分支和来源分支。不要只看工作区差异而遗漏已提交改动，也不要把无关历史差异归到当前任务。
@@ -130,6 +130,13 @@ description: 审查 LinkCV 代码差异的正确性、范围、契约、安全�
 
 - 存在严重、必须修复或影响当前交付的一般问题：返回 `implementation-execution`；
 - 发现规格与实现冲突：返回对应的需求、验收或技术设计技能；
-- 没有阻断问题且用户要求发布：转 `branch-pr-workflow`；
+- 活跃 L2/L3 任务处于 `quality_review`，且没有阻断问题时，记录与当前验证快照绑定的审查结论：
+
+  ```bash
+  npm run spec -- review <KEY> --pass --evidence "<简洁审查结论>"
+  ```
+
+  命令由 Agent 执行，不要求开发者维护状态字段；代码在验证后变化时会被门禁拒绝，修复并重新验证后再复审。
+- 审查记录成功且用户要求发布：转 `branch-pr-workflow`；
 - 用户没有要求提交或 PR：审查结束后停止，不推断发布授权。
 - 用户要求判断功能完成度：转 `feature-completion-audit`，以原始需求重新取证。

@@ -66,16 +66,16 @@ description: 为 LinkCV 的 L2/L3 任务生成、修订和记录人工端到端�
 
 ## 6. 与验证状态衔接
 
-自动化验证已通过且所有必要人工项均通过后，才记录完成证据：
+所有必要人工项均通过后，由统一命令执行最终自动化验证并记录完整证据：
 
 ```bash
 npm run spec:source -- check <KEY> --gate verification # 仅 Multica 来源
 npm run spec -- verify <KEY> \
-  --evidence "npm run check" \
-  --evidence "人工验收：.specs/<KEY>/manual_acceptance.md（通过）"
+  --run "npm run check" \
+  --manual-acceptance
 ```
 
-如果任务不需要人工验收，由 `run-all-tests` 直接记录自动化证据。如果需要但尚未完成，`run-all-tests` 只能报告自动化结果，不能提前把 Spec 标记为 `done`。
+`spec verify` 会亲自执行最终自动化命令，并自动校验本文件的总体结论、统计、残留占位内容和 SHA-256；不要求开发者手填证明字段。成功后进入 `quality_review`。如果任务不需要人工验收，由 `run-all-tests` 直接执行自动验证；如果需要但尚未完成，则不能提前进入质量审查。
 
 ## 7. 完成输出
 

@@ -156,8 +156,8 @@ BREAKING CHANGE: <中文说明、受影响方和迁移方式>
 
 1. `code-review-and-quality` 没有未解决的阻断问题；
 2. 与改动范围匹配的验证已通过，默认包含 `npm run check`；
-3. L2/L3 的 `state.yaml` 前置产物有效，验证证据真实；
-4. Multica 来源已在发布前运行 `npm run spec:source -- check <KEY> --gate release`，随后 `npm run spec -- check <KEY> done` 通过；需求源无法访问或正文发生漂移时停止收口；
+3. L2/L3 的 `state.yaml` 已进入 `release_ready`，自动验证快照和质量审查快照都与当前可提交内容一致；
+4. Multica 来源已在发布前运行 `npm run spec:source -- check <KEY> --gate release`，随后 `npm run spec -- check <KEY> release_ready` 通过；需求源无法访问、权威需求正文或结构化评论链发生漂移、Brief 未完成对账，或验证后代码又变化时停止收口；
 5. 适用的人工端到端验收已完成，PR 验证结果摘要了通过、失败、阻塞和未覆盖项；
 6. API、类型、配置、迁移、部署和文档已经同步；
 7. 目标分支、来源分支、提交列表和 `origin/dev...HEAD` 完整差异已检查；
