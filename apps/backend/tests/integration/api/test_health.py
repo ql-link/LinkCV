@@ -5,7 +5,7 @@ import httpx
 from linkcv.main import app
 
 
-def test_health() -> None:
+def test_health_endpoint() -> None:
     async def request_health() -> httpx.Response:
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(

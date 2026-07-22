@@ -9,9 +9,12 @@ apps/web       React, TypeScript, and Vite
 apps/backend   Python 3.13 and FastAPI
 server         Temporary legacy Express API
 deploy         Local dependencies and transitional deployment files
+docs           Long-lived architecture, API, module, and operations knowledge
 ```
 
 The Web and FastAPI projects install and run independently. The root package only coordinates development commands and retains the temporary Express dependencies until all existing APIs have moved.
+
+Current architecture and module contracts are indexed in [`docs/README.md`](docs/README.md). Temporary feature briefs and technical designs remain under `.specs/` and are not part of the long-lived project documentation.
 
 ## Local setup
 
@@ -62,6 +65,8 @@ Run all current checks:
 npm run check
 ```
 
+Run frontend and backend automated tests together with `npm test`. Frontend component tests and backend pytest suites remain independently runnable; cross-application browser flows are verified manually rather than through an automated E2E command.
+
 `npm run build` builds both the Vite frontend and the installable Python backend package.
 
 ## Transitional API routing
@@ -75,7 +80,7 @@ The removal order is:
 1. Add the SQLAlchemy, MySQL, and Alembic foundation.
 2. Migrate authentication and resume CRUD as a coordinated slice.
 3. Migrate MinIO asset APIs and permission checks.
-4. Route all `/api` traffic to FastAPI and run end-to-end verification.
+4. Route all `/api` traffic to FastAPI and complete manual end-to-end verification.
 5. Remove `server`, SQLite dependencies, and the legacy deployment topology.
 
 Prototype SQLite data is not migrated to MySQL.

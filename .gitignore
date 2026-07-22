@@ -12,3 +12,6 @@ __pycache__/
 .ruff_cache/
 *.py[cod]
 .DS_Store
+
+# Local L2/L3 execution snapshots; reusable templates live with their owning Skills.
+.specs/*/
