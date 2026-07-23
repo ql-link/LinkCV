@@ -7,7 +7,7 @@ LinkCV is a frontend/backend separated Monorepo for editing and exporting resume
 ```text
 apps/web       React, TypeScript, and Vite
 apps/backend   Python 3.11+, FastAPI, SQLAlchemy, and Alembic
-deploy         Local infrastructure and production Compose configuration
+deploy         Local infrastructure plus Dev/Production Jenkins and Compose deployment
 docs           Long-lived architecture, API, module, and operations knowledge
 ```
 

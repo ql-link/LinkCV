@@ -28,9 +28,10 @@ RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-ins
 COPY apps/backend/alembic.ini ./
 COPY apps/backend/migrations ./migrations
 COPY apps/backend/src ./src
+COPY scripts/release/run_alembic.py /app/scripts/release/run_alembic.py
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev
 COPY --from=web-build /app/apps/web/dist /app/web
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn linkcv.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "python /app/scripts/release/run_alembic.py --expected-app-env \"$APP_ENV\" --expected-host \"$MYSQL_HOST\" --expected-port \"$MYSQL_PORT\" --expected-database \"$MYSQL_DATABASE\" && exec uvicorn linkcv.main:app --host 0.0.0.0 --port 8000"]

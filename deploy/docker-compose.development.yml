@@ -1,23 +1,23 @@
 services:
   linkcv:
-    image: linkcv:${TAG:-latest}
-    container_name: linkcv
+    image: linkcv:${TAG:?TAG is required}
+    container_name: linkcv-dev
     restart: always
     env_file:
-      - ${LINKCV_ENV_FILE:-../.env.production}
-      - ${LINKCV_SECRET_ENV_FILE:-../.env.production.local}
+      - ${LINKCV_ENV_FILE:-../.env.development}
+      - ${LINKCV_SECRET_ENV_FILE:-../.env.development.local}
     environment:
-      APP_ENV: production
+      APP_ENV: development
       BACKEND_HOST: 0.0.0.0
       BACKEND_PORT: 8000
       WEB_DIST_DIR: /app/web
       TZ: Asia/Shanghai
     ports:
-      - "${LINKCV_HTTP_PORT:-8000}:8000"
+      - "${LINKCV_DEV_HTTP_PORT:-18002}:8000"
     networks:
       - linkcv-runtime
     labels:
-      com.linkcv.environment: production
+      com.linkcv.environment: development
     healthcheck:
       test:
         [
@@ -26,12 +26,12 @@ services:
           "-c",
           "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')",
         ]
-      interval: 30s
+      interval: 15s
       timeout: 5s
-      retries: 3
+      retries: 5
       start_period: 20s
 
 networks:
   linkcv-runtime:
     external: true
-    name: ${LINKCV_DOCKER_NETWORK:-tolink-app-net}
+    name: ${LINKCV_DOCKER_NETWORK:-tolink-test-net}

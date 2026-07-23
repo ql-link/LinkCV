@@ -1,3 +1,5 @@
+"""Command-line entrypoint for local LinkCV development."""
+
 import uvicorn
 
 from linkcv.core.config import load_settings
