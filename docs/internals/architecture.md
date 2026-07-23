@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | Web | `apps/web` | React 19、TypeScript、Vite 前端和相对路径 API 客户端 |
 | Backend | `apps/backend` | FastAPI、JWT 鉴权、简历 CRUD、MinIO 图片接口、SQLAlchemy 模型和 Alembic 迁移 |
-| Infrastructure | `deploy` | MySQL、MinIO 本地依赖和生产 Compose 拓扑 |
+| Infrastructure | `deploy` | MySQL、Redis、MinIO 本地依赖和 Dev/Production Jenkins、Compose 拓扑 |
 | AI workflow | `.ai`、`.specs`、`scripts` | 项目规则、阶段状态和质量门禁 |
 
 ## 本地请求路径

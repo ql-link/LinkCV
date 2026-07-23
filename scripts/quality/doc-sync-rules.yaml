@@ -39,6 +39,9 @@ rules:
     description: 环境模板或本地依赖编排变化必须同步开发文档
     when_changed:
       - .env.example
+      - .env.development
+      - .env.production
+      - apps/backend/src/linkcv/core/config.py
       - deploy/docker-compose.yml
     must_update:
       - docs/ops/development.md
@@ -48,6 +51,9 @@ rules:
     when_changed:
       - Dockerfile
       - Jenkinsfile
+      - deploy/jenkins/**/*
+      - deploy/scripts/**/*
+      - deploy/docker-compose.development.yml
       - deploy/docker-compose.production.yml
     must_update:
       - docs/ops/deployment.md
