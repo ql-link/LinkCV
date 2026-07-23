@@ -1,51 +1,60 @@
 # LinkCV
 
-LinkCV is a frontend/backend separated Monorepo for editing and exporting resumes.
+LinkCV 是用于编辑和导出简历的前后端分离 Monorepo。
 
-## Repository layout
+## 仓库结构
 
 ```text
-apps/web       React, TypeScript, and Vite
-apps/backend   Python 3.11+, FastAPI, SQLAlchemy, and Alembic
-deploy         Local infrastructure plus Dev/Production Jenkins and Compose deployment
-docs           Long-lived architecture, API, module, and operations knowledge
+apps/web       React、TypeScript 与 Vite 前端
+apps/backend   Python 3.11+、FastAPI、SQLAlchemy 与 Alembic 后端
+deploy         本地基础设施、Dev/Production Jenkins 与 Compose 部署配置
+docs           长期维护的架构、API、模块与运维知识
 ```
 
-The Web and backend projects install and build independently. Root commands coordinate the two applications and local infrastructure.
+Web 与后端项目可独立安装和构建；根目录命令用于协调两个应用及本地基础设施。
 
-## Local setup
+## 首次初始化
 
-Requirements:
+环境要求：
 
-- Node.js 22 LTS and npm 10+
+- Node.js 22 LTS 与 npm 10+
 - uv
-- Docker with Docker Compose
+- Docker 与 Docker Compose（仅本地环境需要）
 
-Create local configuration and install dependencies:
-
-```bash
-cp .env.example .env
-npm ci
-npm run sync
-```
-
-Start MySQL 8.4 and MinIO, then use one command to start both Web and FastAPI locally:
+首次执行以下命令，安装根目录、Web 与 Python 的全部依赖：
 
 ```bash
-npm run infra:up
-npm run dev:local
+npm run setup
 ```
 
-To start the same Web and FastAPI processes against the shared development configuration, create `.env.development.local` with the required private values, then run:
+### 共享开发环境
+
+从已提交的开发环境模板创建本机私密覆盖文件：
+
+```bash
+cp .env.development .env.development.local
+```
+
+在 `.env.development.local` 填写必要的私密值，例如 `MYSQL_USER`、`MYSQL_PASSWORD`、`MINIO_ACCESS_KEY`、`MINIO_SECRET_KEY` 与 `JWT_SECRET`。然后通过一条命令同时启动 Web 和 FastAPI：
 
 ```bash
 npm run dev:development
 ```
 
-Both commands start the Web application at `http://127.0.0.1:5173` and FastAPI at `http://127.0.0.1:8000`. API documentation is available at `http://127.0.0.1:8000/api/docs` and the MinIO console at `http://127.0.0.1:9001` when local infrastructure is running.
+### 本地环境
 
-The Vite server proxies every relative `/api` request to FastAPI. Authentication uses a seven-day JWT in an HttpOnly cookie; resumes are stored in MySQL and private images in MinIO. Prototype SQLite data is intentionally not imported.
+创建本地配置、启动 MySQL 与 MinIO 后，再同时启动 Web 和 FastAPI：
 
-Run all checks with `npm run check`. `npm run build` builds both the Vite frontend and the installable Python backend package.
+```bash
+cp .env.example .env
+npm run infra:up
+npm run dev:local
+```
 
-Current architecture and module contracts are indexed in [`docs/README.md`](docs/README.md).
+两个命令都会启动 Web（`http://127.0.0.1:5173`）与 FastAPI（`http://127.0.0.1:8000`）。API 文档位于 `http://127.0.0.1:8000/api/docs`；本地基础设施运行时，MinIO 控制台位于 `http://127.0.0.1:9001`。
+
+Vite 会将所有相对 `/api` 请求代理到 FastAPI。鉴权使用有效期七天的 HttpOnly Cookie JWT；简历存储在 MySQL，私有图片存储在 MinIO。原型阶段的 SQLite 数据不会导入。
+
+执行 `npm run check` 可运行全部检查；执行 `npm run build` 可构建 Vite 前端和可安装的 Python 后端包。
+
+当前架构与模块契约索引见 [`docs/README.md`](docs/README.md)。
