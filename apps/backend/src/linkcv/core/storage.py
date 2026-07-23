@@ -1,0 +1,115 @@
+import base64
+import binascii
+import re
+import time
+import unicodedata
+from io import BytesIO
+from pathlib import PurePath
+from urllib.parse import quote, urlsplit
+
+from fastapi import Request
+from minio import Minio
+
+from linkcv.core.config import Settings
+
+SUPPORTED_IMAGE_TYPES = {
+    "image/apng": ".apng",
+    "image/avif": ".avif",
+    "image/gif": ".gif",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/svg+xml": ".svg",
+    "image/webp": ".webp",
+}
+IMAGE_CONTENT_TYPES = {
+    extension: content_type for content_type, extension in SUPPORTED_IMAGE_TYPES.items()
+}
+DATA_URL_PATTERN = re.compile(r"^data:([^;,]+);base64,(.+)$", re.DOTALL)
+
+
+class AssetStorage:
+    def __init__(self, settings: Settings) -> None:
+        endpoint = urlsplit(settings.minio_endpoint)
+        if not endpoint.hostname:
+            raise ValueError("MINIO_ENDPOINT must include a hostname")
+        host = endpoint.hostname
+        if endpoint.port:
+            host = f"{host}:{endpoint.port}"
+        self.bucket = settings.minio_bucket
+        self.client = Minio(
+            host,
+            access_key=settings.minio_access_key,
+            secret_key=settings.minio_secret_key,
+            secure=endpoint.scheme == "https",
+        )
+
+    def ensure_bucket(self) -> None:
+        if not self.client.bucket_exists(self.bucket):
+            self.client.make_bucket(self.bucket)
+
+    def upload(self, object_name: str, data: bytes, content_type: str) -> None:
+        self.ensure_bucket()
+        self.client.put_object(
+            self.bucket,
+            object_name,
+            BytesIO(data),
+            len(data),
+            content_type=content_type,
+            metadata={"Cache-Control": "private, max-age=31536000, immutable"},
+        )
+
+    def get(self, object_name: str):
+        self.ensure_bucket()
+        return self.client.get_object(self.bucket, object_name)
+
+
+def get_storage(request: Request) -> AssetStorage:
+    return request.app.state.storage
+
+
+def decode_image_data_url(data_url: object) -> tuple[bytes, str] | None:
+    if not isinstance(data_url, str):
+        return None
+    match = DATA_URL_PATTERN.fullmatch(data_url)
+    if not match:
+        return None
+    content_type = match.group(1).lower()
+    if content_type not in SUPPORTED_IMAGE_TYPES:
+        return None
+    try:
+        data = base64.b64decode(match.group(2), validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    return data, content_type
+
+
+def build_asset_object_name(user_id: str, file_name: object, content_type: str) -> str:
+    normalized = unicodedata.normalize("NFKD", str(file_name or "image"))
+    safe_name = re.sub(r"[^\w.-]+", "-", normalized).strip("-")[:80]
+    candidate_extension = PurePath(safe_name).suffix.lower()
+    extension = (
+        candidate_extension
+        if candidate_extension in IMAGE_CONTENT_TYPES
+        else SUPPORTED_IMAGE_TYPES[content_type]
+    )
+    base_name = PurePath(safe_name).stem if safe_name else "image"
+    base_name = base_name or "image"
+    unique = f"{int(time.time() * 1000)}-{secrets_token(8)}"
+    return f"users/{user_id}/assets/{unique}-{base_name}{extension}"
+
+
+def secrets_token(length: int) -> str:
+    import secrets
+
+    alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+def infer_image_content_type(object_name: str) -> str:
+    return IMAGE_CONTENT_TYPES.get(
+        PurePath(object_name).suffix.lower(), "application/octet-stream"
+    )
+
+
+def asset_url(object_name: str) -> str:
+    return f"/api/assets/{quote(object_name, safe='')}"

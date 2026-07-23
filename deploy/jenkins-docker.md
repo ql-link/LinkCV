@@ -1,58 +1,26 @@
 # Jenkins Docker deployment
 
-This project follows the same deployment shape as `LinkRag-Web`: Jenkins builds the app, builds a local Docker image, then restarts the app from a fixed deployment directory with Docker Compose.
+Jenkins builds the root Dockerfile and deploys FastAPI plus the bundled Web application through `deploy/docker-compose.production.yml`.
 
-## Server layout
-
-Prepare these directories on the Jenkins/deploy server:
-
-```bash
-sudo mkdir -p /opt/tolink/LinkCV/deploy /opt/tolink/LinkCV/data
-sudo chown -R jenkins:jenkins /opt/tolink/LinkCV
-```
-
-Jenkins copies `deploy/docker-compose.yml` into `/opt/tolink/LinkCV/deploy/docker-compose.yml` on each deployment.
-
-Create one runtime env file:
-
-```text
-/opt/tolink/LinkCV/.env
-```
-
-Example:
+Create `/opt/tolink/LinkCV/.env` outside the repository using values from the deployment secret store. It must define a MySQL connection, MinIO credentials, and a random JWT secret.
 
 ```dotenv
-MINIO_ENDPOINT=http://103.205.254.30:39000
-MINIO_ACCESS_KEY=root
-MINIO_SECRET_KEY=ql354210
+DATABASE_URL=mysql+pymysql://<user>:<password>@<mysql-host>:3306/linkcv?charset=utf8mb4
+JWT_SECRET=<at-least-32-random-characters>
+COOKIE_SECURE=true
+MINIO_ENDPOINT=https://minio.example.com
+MINIO_ACCESS_KEY=<deployment-access-key>
+MINIO_SECRET_KEY=<deployment-secret-key>
 MINIO_BUCKET=linkcv
 ```
 
-`/opt/tolink/LinkCV/data` is mounted into the container as `/app/data`, where SQLite stores `resume_app.sqlite`.
-
-## Jenkins job
-
-Use `Pipeline script from SCM`:
-
-- Repository: `https://github.com/ql-link/LinkCV.git`
-- Branch: `*/master`
-- Script Path: `Jenkinsfile`
-
-The Jenkins agent must have Docker and Docker Compose available, and the Jenkins user must be allowed to run Docker.
-
-## Deploy command used by Jenkins
+The Jenkins agent needs Docker and Docker Compose access. The pipeline deploys with:
 
 ```bash
 cd /opt/tolink/LinkCV
 export TAG=<git-sha>
 export LINKCV_ENV_FILE=/opt/tolink/LinkCV/.env
-docker compose -f deploy/docker-compose.yml up -d
+docker compose -f deploy/docker-compose.production.yml up -d
 ```
 
-## Useful checks
-
-```bash
-docker ps | grep linkcv
-docker logs -f linkcv
-curl -fsS http://127.0.0.1:4174/api/health
-```
+The container applies Alembic migrations before starting Uvicorn and exposes its health check at `/api/health` on port `8000`.

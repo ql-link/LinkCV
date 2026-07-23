@@ -1,48 +1,36 @@
 # syntax=docker/dockerfile:1
 
-FROM node:22-bookworm AS build
+FROM node:22-bookworm-slim AS web-build
 
-WORKDIR /app
-
-COPY package.json package-lock.json ./
-RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true; \
-  sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true; \
-  apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    ca-certificates \
-    python3 \
-  && rm -rf /var/lib/apt/lists/*
-RUN --mount=type=cache,target=/root/.npm \
-  npm ci --prefer-offline --no-audit --registry=https://registry.npmmirror.com
-
-COPY index.html tsconfig.json vite.config.mjs ./
-COPY src ./src
-COPY server ./server
+WORKDIR /app/apps/web
+COPY apps/web/package.json apps/web/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit
+COPY apps/web/index.html apps/web/tsconfig.json apps/web/vite.config.mjs ./
+COPY apps/web/src ./src
 RUN npm run build
-RUN npm prune --omit=dev
 
-FROM node:22-bookworm-slim AS runtime
+FROM ghcr.io/astral-sh/uv:0.11.30 AS uv
 
-ENV NODE_ENV=production \
-    API_PORT=4174 \
-    DATA_DIR=/app/data \
+FROM python:3.13-slim AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PATH="/app/apps/backend/.venv/bin:$PATH" \
+    APP_ENV=production \
+    BACKEND_HOST=0.0.0.0 \
+    BACKEND_PORT=8000 \
+    WEB_DIST_DIR=/app/web \
     TZ=Asia/Shanghai
 
-WORKDIR /app
+WORKDIR /app/apps/backend
+COPY --from=uv /uv /uvx /usr/local/bin/
+COPY apps/backend/pyproject.toml apps/backend/uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-install-project
+COPY apps/backend/alembic.ini ./
+COPY apps/backend/migrations ./migrations
+COPY apps/backend/src ./src
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev
+COPY --from=web-build /app/apps/web/dist /app/web
 
-RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true; \
-  sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true; \
-  apt-get update && apt-get install -y --no-install-recommends \
-    fontconfig \
-    fonts-noto-cjk \
-  && rm -rf /var/lib/apt/lists/* \
-  && fc-cache -f
+EXPOSE 8000
 
-COPY --from=build /app/package.json /app/package-lock.json ./
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/server ./server
-COPY --from=build /app/dist ./dist
-
-EXPOSE 4174
-
-CMD ["npm", "start"]
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn linkcv.main:app --host 0.0.0.0 --port 8000"]

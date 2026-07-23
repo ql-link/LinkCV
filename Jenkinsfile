@@ -32,13 +32,13 @@ pipeline {
     stage('Deploy') {
       steps {
         sh '''
-          mkdir -p "${DEPLOY_DIR}/deploy" "${DEPLOY_DIR}/data"
-          cp deploy/docker-compose.yml "${DEPLOY_DIR}/deploy/docker-compose.yml"
+          mkdir -p "${DEPLOY_DIR}/deploy"
+          cp deploy/docker-compose.production.yml "${DEPLOY_DIR}/deploy/docker-compose.production.yml"
           cd "${DEPLOY_DIR}"
           export TAG="${TAG}"
           export LINKCV_ENV_FILE="${LINKCV_ENV_FILE}"
           test -f "${LINKCV_ENV_FILE}" || { echo "Missing LinkCV env file: ${LINKCV_ENV_FILE}"; exit 14; }
-          docker compose -f deploy/docker-compose.yml up -d
+          docker compose -f deploy/docker-compose.production.yml up -d
         '''
       }
     }
