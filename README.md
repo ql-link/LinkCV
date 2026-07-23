@@ -13,33 +13,42 @@ docs           Long-lived architecture, API, module, and operations knowledge
 
 The Web and backend projects install and build independently. Root commands coordinate the two applications and local infrastructure.
 
-## Local setup
+## First-time setup
 
 Requirements:
 
 - Node.js 22 LTS and npm 10+
 - uv
-- Docker with Docker Compose
+- Docker with Docker Compose (only required for the local environment)
 
-Create local configuration and install dependencies:
-
-```bash
-cp .env.example .env
-npm ci
-npm run sync
-```
-
-Start MySQL 8.4 and MinIO, then use one command to start both Web and FastAPI locally:
+Install all root, Web, and Python dependencies once:
 
 ```bash
-npm run infra:up
-npm run dev:local
+npm run setup
 ```
 
-To start the same Web and FastAPI processes against the shared development configuration, create `.env.development.local` with the required private values, then run:
+### Shared development environment
+
+Create a local private override from the tracked development template:
+
+```bash
+cp .env.development .env.development.local
+```
+
+Fill the required private values in `.env.development.local`, such as `MYSQL_USER`, `MYSQL_PASSWORD`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, and `JWT_SECRET`. Then start both Web and FastAPI with one command:
 
 ```bash
 npm run dev:development
+```
+
+### Local environment
+
+Create the local configuration, start MySQL and MinIO, then start both Web and FastAPI:
+
+```bash
+cp .env.example .env
+npm run infra:up
+npm run dev:local
 ```
 
 Both commands start the Web application at `http://127.0.0.1:5173` and FastAPI at `http://127.0.0.1:8000`. API documentation is available at `http://127.0.0.1:8000/api/docs` and the MinIO console at `http://127.0.0.1:9001` when local infrastructure is running.
