@@ -1561,7 +1561,7 @@ def test_runtime_contracts_match_current_repository() -> None:
     result = run_script(RUNTIME_CONTRACTS)
 
     assert result.returncode == 0, result.stderr
-    assert "4 组运行时契约" in result.stdout
+    assert "3 组运行时契约" in result.stdout
 
 
 def test_runtime_contracts_report_drift(tmp_path: Path) -> None:
@@ -1578,10 +1578,13 @@ def test_runtime_contracts_report_drift(tmp_path: Path) -> None:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(REPO_ROOT / relative, target)
 
-    package_file = tmp_path / "package.json"
-    package_file.write_text(
-        package_file.read_text(encoding="utf-8").replace(
-            "BACKEND_PORT:-8000", "BACKEND_PORT:-8010"
+    backend_config = (
+        tmp_path / "apps" / "backend" / "src" / "linkcv" / "core" / "config.py"
+    )
+    backend_config.write_text(
+        backend_config.read_text(encoding="utf-8").replace(
+            'default=8000, alias="BACKEND_PORT"',
+            'default=8010, alias="BACKEND_PORT"',
         ),
         encoding="utf-8",
     )
@@ -1593,7 +1596,7 @@ def test_runtime_contracts_report_drift(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "fastapi-default-port" in result.stderr
-    assert "package.json" in result.stderr
+    assert "apps/backend/src/linkcv/core/config.py" in result.stderr
 
 
 def test_skill_check_rejects_unowned_ai_top_level_entry(tmp_path: Path) -> None:
