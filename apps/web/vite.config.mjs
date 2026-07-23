@@ -9,7 +9,6 @@ const workspaceRoot = resolve(webRoot, "../..");
 const documentsRoot = resolve(process.env.HOME ?? "", "Documents");
 const backendPort = process.env.BACKEND_PORT ?? "8000";
 const backendTarget = process.env.BACKEND_PROXY_TARGET ?? `http://127.0.0.1:${backendPort}`;
-const legacyApiTarget = process.env.LEGACY_API_PROXY_TARGET ?? "http://127.0.0.1:4174";
 
 const mimeTypes = {
   ".apng": "image/apng",
@@ -93,12 +92,8 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/api/health": {
-        target: backendTarget,
-        changeOrigin: true,
-      },
       "/api": {
-        target: legacyApiTarget,
+        target: backendTarget,
         changeOrigin: true,
       },
     },

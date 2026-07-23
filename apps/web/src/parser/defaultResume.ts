@@ -56,12 +56,12 @@ TaskFlow Lite
 全栈开发者
 :::
 
-**技术架构：** React、TypeScript、Node.js、SQLite、Express
+**技术架构：** React、TypeScript、Python、MySQL、FastAPI
 
 **项目描述：** 一个用于个人任务整理和周报生成的轻量级 Web 工具，支持任务分组、状态追踪和 Markdown 导出。
 
 1. 使用 Zustand 管理任务、筛选条件和编辑状态，保持页面交互简洁。
-2. 设计本地 SQLite 数据结构，支持任务归档和按周统计。
+2. 设计 MySQL 数据结构，支持任务归档和按周统计。
 3. 增加 Markdown 导出能力，便于复盘和同步到团队文档。
 
 ## 专业技能

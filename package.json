@@ -12,10 +12,11 @@
     "check:contracts": "uv run --directory apps/backend python ../../scripts/quality/check_runtime_contracts.py",
     "spec": "uv run --directory apps/backend python ../../scripts/spec/flow_guard.py",
     "spec:source": "uv run --directory apps/backend python ../../scripts/spec/source_guard.py",
-    "dev": "concurrently -n web,backend,legacy -c cyan,green,yellow \"npm:dev:web\" \"npm:dev:backend\" \"npm:dev:legacy\"",
+    "dev": "concurrently -n web,backend -c cyan,green \"npm:dev:web\" \"npm:dev:backend\"",
     "dev:web": "npm --prefix apps/web run dev",
-    "dev:backend": "uv run --directory apps/backend uvicorn linkcv.main:app --reload --host 127.0.0.1 --port ${BACKEND_PORT:-8000}",
-    "dev:legacy": "node --env-file-if-exists=.env server/index.mjs",
+    "dev:backend": "uv run --directory apps/backend python -m linkcv",
+    "db:migrate": "uv run --directory apps/backend alembic upgrade head",
+    "db:revision": "uv run --directory apps/backend alembic revision --autogenerate",
     "build": "npm run build:web && npm run build:backend",
     "build:web": "npm --prefix apps/web run build",
     "build:backend": "uv build --directory apps/backend",
@@ -28,15 +29,7 @@
     "check:app": "npm run typecheck && npm run build && npm test",
     "check": "npm run check:ai && npm run check:app",
     "infra:up": "docker compose -f deploy/docker-compose.yml up -d",
-    "infra:down": "docker compose -f deploy/docker-compose.yml down",
-    "start:legacy": "NODE_ENV=production node --env-file-if-exists=.env server/index.mjs"
-  },
-  "dependencies": {
-    "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^12.11.1",
-    "cookie-parser": "^1.4.7",
-    "express": "^5.2.1",
-    "minio": "^8.0.7"
+    "infra:down": "docker compose -f deploy/docker-compose.yml down"
   },
   "devDependencies": {
     "concurrently": "^10.0.3"

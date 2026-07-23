@@ -1,27 +1,23 @@
 # LinkCV
 
-LinkCV is being migrated from a React + Express prototype to a frontend/backend separated Monorepo.
+LinkCV is a frontend/backend separated Monorepo for editing and exporting resumes.
 
 ## Repository layout
 
 ```text
 apps/web       React, TypeScript, and Vite
-apps/backend   Python 3.13 and FastAPI
-server         Temporary legacy Express API
-deploy         Local dependencies and transitional deployment files
+apps/backend   Python 3.11+, FastAPI, SQLAlchemy, and Alembic
+deploy         Local infrastructure and production Compose configuration
 docs           Long-lived architecture, API, module, and operations knowledge
 ```
 
-The Web and FastAPI projects install and run independently. The root package only coordinates development commands and retains the temporary Express dependencies until all existing APIs have moved.
-
-Current architecture and module contracts are indexed in [`docs/README.md`](docs/README.md). Temporary feature briefs and technical designs remain under `.specs/` and are not part of the long-lived project documentation.
+The Web and backend projects install and build independently. Root commands coordinate the two applications and local infrastructure.
 
 ## Local setup
 
 Requirements:
 
-- Node.js 22 LTS
-- npm 10 or newer
+- Node.js 22 LTS and npm 10+
 - uv
 - Docker with Docker Compose
 
@@ -33,54 +29,18 @@ npm ci
 npm run sync
 ```
 
-Start MySQL 8.4 and MinIO:
+Start MySQL 8.4 and MinIO, apply the database migrations, then start Web and FastAPI:
 
 ```bash
 npm run infra:up
-```
-
-Start Web, FastAPI, and the temporary Express API together:
-
-```bash
+npm run db:migrate
 npm run dev
 ```
 
-If port 8000 is already in use, select another backend port for both FastAPI and the Vite proxy:
+`npm run dev` starts the Web application at `http://127.0.0.1:5173` and FastAPI at `http://127.0.0.1:8000`. API documentation is available at `http://127.0.0.1:8000/api/docs` and the MinIO console at `http://127.0.0.1:9001`.
 
-```bash
-BACKEND_PORT=8010 npm run dev
-```
+The Vite server proxies every relative `/api` request to FastAPI. Authentication uses a seven-day JWT in an HttpOnly cookie; resumes are stored in MySQL and private images in MinIO. Prototype SQLite data is intentionally not imported.
 
-Default addresses:
+Run all checks with `npm run check`. `npm run build` builds both the Vite frontend and the installable Python backend package.
 
-- Web: `http://127.0.0.1:5173`
-- FastAPI: `http://127.0.0.1:8000`
-- FastAPI docs: `http://127.0.0.1:8000/api/docs`
-- Legacy Express API: `http://127.0.0.1:4174`
-- MinIO console: `http://127.0.0.1:9001`
-
-Run all current checks:
-
-```bash
-npm run check
-```
-
-Run frontend and backend automated tests together with `npm test`. Frontend component tests and backend pytest suites remain independently runnable; cross-application browser flows are verified manually rather than through an automated E2E command.
-
-`npm run build` builds both the Vite frontend and the installable Python backend package.
-
-## Transitional API routing
-
-During the migration, Vite routes `/api/health` to FastAPI. Existing `/api/auth`, `/api/resumes`, and `/api/assets` requests continue to use Express. This preserves the current prototype while providing a real Web-to-FastAPI integration path.
-
-Move a route prefix to FastAPI only after its implementation and regression tests are complete. Authentication and resume CRUD need a coordinated cutover because the legacy implementation uses SQLite sessions while the target uses a JWT cookie.
-
-The removal order is:
-
-1. Add the SQLAlchemy, MySQL, and Alembic foundation.
-2. Migrate authentication and resume CRUD as a coordinated slice.
-3. Migrate MinIO asset APIs and permission checks.
-4. Route all `/api` traffic to FastAPI and complete manual end-to-end verification.
-5. Remove `server`, SQLite dependencies, and the legacy deployment topology.
-
-Prototype SQLite data is not migrated to MySQL.
+Current architecture and module contracts are indexed in [`docs/README.md`](docs/README.md).

@@ -1,0 +1,27 @@
+services:
+  linkcv:
+    image: linkcv:${TAG:-latest}
+    container_name: linkcv
+    restart: always
+    env_file:
+      - ${LINKCV_ENV_FILE:-../.env}
+    environment:
+      APP_ENV: production
+      BACKEND_HOST: 0.0.0.0
+      BACKEND_PORT: 8000
+      WEB_DIST_DIR: /app/web
+      TZ: Asia/Shanghai
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

@@ -8,11 +8,10 @@
 
 | 任务 | 入口 |
 | --- | --- |
-| 理解整体架构和迁移边界 | [internals/architecture.md](internals/architecture.md) |
+| 理解整体架构 | [internals/architecture.md](internals/architecture.md) |
 | 查找契约事实源和消费方 | [internals/contract-governance.md](internals/contract-governance.md) |
 | 修改 React/Vite 前端 | [internals/web.md](internals/web.md) |
 | 修改 FastAPI 后端 | [internals/backend.md](internals/backend.md) |
-| 维护迁移期 Express 能力 | [internals/legacy-express.md](internals/legacy-express.md) |
 | 对接或修改 HTTP API | [api/http-contracts.md](api/http-contracts.md) |
 | 配置本地开发环境 | [ops/development.md](ops/development.md) |
 | 编写或运行前后端测试 | [ops/development.md#测试分层](ops/development.md#测试分层) |

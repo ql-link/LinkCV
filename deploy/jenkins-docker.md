@@ -1,38 +1,26 @@
-# Jenkins legacy Docker deployment
+# Jenkins Docker deployment
 
-The Jenkins pipeline temporarily keeps the existing Express application deployable while API capabilities move to FastAPI. Local development uses `deploy/docker-compose.yml`; Jenkins uses `deploy/docker-compose.legacy.yml`.
+Jenkins builds the root Dockerfile and deploys FastAPI plus the bundled Web application through `deploy/docker-compose.production.yml`.
 
-## Server layout
-
-```bash
-sudo mkdir -p /opt/tolink/LinkCV/deploy /opt/tolink/LinkCV/data
-sudo chown -R jenkins:jenkins /opt/tolink/LinkCV
-```
-
-Create `/opt/tolink/LinkCV/.env` outside the repository. Use real values from the deployment secret store; do not commit them.
+Create `/opt/tolink/LinkCV/.env` outside the repository using values from the deployment secret store. It must define a MySQL connection, MinIO credentials, and a random JWT secret.
 
 ```dotenv
+DATABASE_URL=mysql+pymysql://<user>:<password>@<mysql-host>:3306/linkcv?charset=utf8mb4
+JWT_SECRET=<at-least-32-random-characters>
+COOKIE_SECURE=true
 MINIO_ENDPOINT=https://minio.example.com
 MINIO_ACCESS_KEY=<deployment-access-key>
 MINIO_SECRET_KEY=<deployment-secret-key>
 MINIO_BUCKET=linkcv
 ```
 
-SQLite remains mounted at `/opt/tolink/LinkCV/data` only for the legacy service. Its prototype data is not migrated to MySQL.
-
-## Jenkins job
-
-- Repository: `https://github.com/ql-link/LinkCV.git`
-- Script Path: `Jenkinsfile`
-- The Jenkins agent needs Docker and Docker Compose access.
-
-The pipeline builds the transitional root `Dockerfile` and runs:
+The Jenkins agent needs Docker and Docker Compose access. The pipeline deploys with:
 
 ```bash
 cd /opt/tolink/LinkCV
 export TAG=<git-sha>
 export LINKCV_ENV_FILE=/opt/tolink/LinkCV/.env
-docker compose -f deploy/docker-compose.legacy.yml up -d
+docker compose -f deploy/docker-compose.production.yml up -d
 ```
 
-This topology should be removed only after authentication, resumes, and asset APIs have moved to FastAPI and the production cutover has been verified.
+The container applies Alembic migrations before starting Uvicorn and exposes its health check at `/api/health` on port `8000`.

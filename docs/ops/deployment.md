@@ -2,16 +2,18 @@
 
 ## 当前状态
 
-仓库仍保留旧 Express 应用的 Jenkins 部署拓扑。`Jenkinsfile` 构建根级 Docker 镜像，并用 `deploy/docker-compose.legacy.yml` 在服务器运行 `4174` 端口服务，数据目录挂载到 `/opt/tolink/LinkCV/data`。
+根级 `Dockerfile` 构建 Vite 静态产物和 FastAPI Python 环境。容器启动时先运行 `alembic upgrade head`，再由 Uvicorn 在 `8000` 端口提供 `/api` 与 Web 静态文件。
 
-`deploy/docker-compose.yml` 只用于本地启动 MySQL 8.4 和 MinIO，不代表 FastAPI 已经进入生产部署。
+Jenkins 构建 `linkcv:<git-sha>` 镜像，并使用 `deploy/docker-compose.production.yml` 部署。生产 `.env` 必须提供 MySQL、MinIO 和 JWT 密钥；MySQL 与 MinIO 的生产实例不由该 Compose 文件创建。
+
+`deploy/docker-compose.yml` 只用于本地启动 MySQL 8.4 和 MinIO。
 
 ## CI
 
-`.github/workflows/quality.yml` 在面向 `dev`、`master` 的 PR 和对应分支 push 上执行根级 `npm run check`。本地和 CI 应复用同一质量入口；差异化的 Git 变更范围由文档同步检查自动识别。
+`.github/workflows/quality.yml` 在面向 `dev`、`master` 的 PR 和对应分支 push 上执行根级 `npm run check`。本地和 CI 复用同一质量入口。
 
-## 过渡约束
+## 回滚
 
-- 在 FastAPI 生产镜像、数据库迁移、健康检查和回滚方案落地前，不把本地 Compose 描述成生产拓扑。
-- 不在业务迁移完成前删除 `deploy/docker-compose.legacy.yml` 或旧镜像入口。
-- 部署变量、端口、健康检查路径或服务归属变化时，同步本文档与相关运行时契约。
+- 应用回滚通过把 `TAG` 切回上一镜像并重新执行 production Compose 完成。
+- Alembic revision 必须保持向前兼容上一个应用版本；需要破坏性 Schema 变更时使用“扩展—迁移—收缩”步骤，不能依赖自动 downgrade。
+- 原型 Express/SQLite 数据不进入新 MySQL 数据库，也不作为生产回滚路径。
