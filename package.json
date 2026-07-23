@@ -13,6 +13,8 @@
     "spec": "uv run --directory apps/backend python ../../scripts/spec/flow_guard.py",
     "spec:source": "uv run --directory apps/backend python ../../scripts/spec/source_guard.py",
     "dev": "concurrently -n web,backend -c cyan,green \"npm:dev:web\" \"npm:dev:backend\"",
+    "dev:local": "LINKCV_ENV_FILE=.env npm run dev",
+    "dev:development": "LINKCV_ENV_FILE=.env.development npm run dev",
     "dev:web": "npm --prefix apps/web run dev",
     "dev:backend": "uv run --directory apps/backend python -m linkcv",
     "db:migrate": "uv run --directory apps/backend alembic upgrade head",
