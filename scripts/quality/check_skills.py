@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate LinkCV project skills for discovery and stale references."""
+"""Validate LinkCV project skills and their stable artifact contracts."""
 
 from __future__ import annotations
 
@@ -24,6 +24,33 @@ STALE_REFERENCES = (
     "src/core/",
 )
 ALLOWED_AI_ENTRIES = {"prompts", "skills"}
+BRIEF_TEMPLATE_REQUIRED_MARKERS = (
+    "# <KEY> · <标题> Brief",
+    "## 1. 需求摘要",
+    "**做什么**",
+    "**为什么做**",
+    "**用户价值**",
+    "**交付结果**",
+    "**本次不做**",
+    "## 2. 当前行为与问题",
+    "## 3. 业务流程",
+    "### 3.1 主流程图",
+    "### 3.2 流程详解",
+    "### 3.3 异常分支",
+    "| 异常分支 | 触发条件 | 系统行为 | 用户或下游感知 | 状态或数据结果 |",
+    "## 4. 涉及模块与影响面",
+    "**位置**",
+    "**职责**",
+    "**复用 / 新增**",
+    "**触碰的公共契约**",
+    "**关键数据结构**",
+    "**可行性与不确定性**",
+    "### 4.2 L2 最小实现思路（仅 L2）",
+    "## 5. 风险与依赖",
+    "| 风险或依赖 | 触发条件 | 影响 | 当前判断或应对方向 |",
+    "## 6. 阻塞性决策（仅草稿阶段）",
+    "| 编号 | 分歧点 | 建议答案 | 为什么影响判断 | 影响范围 | 状态 |",
+)
 
 
 def validate_ai_layout() -> list[str]:
@@ -112,6 +139,27 @@ def validate_skill(skill_dir: Path) -> list[str]:
     return errors
 
 
+def validate_brief_template() -> list[str]:
+    skill_dir = SKILLS_ROOT / "brief-generator"
+    if not skill_dir.is_dir():
+        return []
+
+    template_file = skill_dir / "brief.template.md"
+    if not template_file.is_file():
+        return ["brief-generator: 缺少 brief.template.md"]
+
+    text = template_file.read_text(encoding="utf-8")
+    missing = [
+        marker for marker in BRIEF_TEMPLATE_REQUIRED_MARKERS if marker not in text
+    ]
+    if not missing:
+        return []
+    return [
+        "brief-generator: Brief 模板缺少固定结构 "
+        + ", ".join(repr(marker) for marker in missing)
+    ]
+
+
 def main() -> int:
     if not SKILLS_ROOT.is_dir():
         print("ERROR 缺少 .ai/skills", file=sys.stderr)
@@ -121,6 +169,7 @@ def main() -> int:
     errors.extend(
         error for skill_dir in skill_dirs for error in validate_skill(skill_dir)
     )
+    errors.extend(validate_brief_template())
     if errors:
         for error in errors:
             print(f"ERROR {error}", file=sys.stderr)
