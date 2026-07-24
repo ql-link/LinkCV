@@ -1,8 +1,5 @@
-import {
-  Minus,
-  Plus,
-  Sparkles,
-} from "lucide-react";
+import { Sparkles } from "lucide-react";
+import { Pill, Select, Stepper } from "../../components/ds";
 import { resumeSerifFontStack, useResumeStore } from "../../store/resumeStore";
 
 const fonts = [
@@ -24,28 +21,22 @@ export function PreviewToolbar() {
 
   return (
     <div className="preview-toolbar" aria-label="预览控制栏">
-      <button
-        className={settings.smartOnePage ? "pill active" : "pill"}
+      <Pill
+        active={settings.smartOnePage}
+        icon={<Sparkles size={14} />}
         onClick={() => {
           updateSettings({ smartOnePage: !settings.smartOnePage });
         }}
       >
-        <Sparkles size={14} />
         智能一页
-      </button>
-      <select
-        className="toolbar-select"
+      </Pill>
+      <Select
+        label="字体"
         value={settings.fontFamily}
         onChange={(event) => updateSettings({ fontFamily: event.target.value })}
-        aria-label="字体"
-      >
-        {fonts.map((font) => (
-          <option key={font.label} value={font.value}>
-            {font.label}
-          </option>
-        ))}
-      </select>
-      <NumberStepper
+        options={fonts}
+      />
+      <Stepper
         label="字号"
         value={settings.fontSize}
         step={0.5}
@@ -53,7 +44,7 @@ export function PreviewToolbar() {
         max={14}
         onChange={(fontSize) => updateSettings({ fontSize })}
       />
-      <NumberStepper
+      <Stepper
         label="行距"
         value={settings.lineHeight}
         step={0.05}
@@ -61,7 +52,7 @@ export function PreviewToolbar() {
         max={1.8}
         onChange={(lineHeight) => updateSettings({ lineHeight })}
       />
-      <NumberStepper
+      <Stepper
         label="左右"
         value={settings.pageMargin}
         step={0.5}
@@ -69,7 +60,7 @@ export function PreviewToolbar() {
         max={28}
         onChange={(pageMargin) => updateSettings({ pageMargin })}
       />
-      <NumberStepper
+      <Stepper
         label="上下"
         value={settings.verticalPageMargin}
         step={0.5}
@@ -77,36 +68,6 @@ export function PreviewToolbar() {
         max={36}
         onChange={(verticalPageMargin) => updateSettings({ verticalPageMargin })}
       />
-    </div>
-  );
-}
-
-type NumberStepperProps = {
-  label: string;
-  value: number;
-  step: number;
-  min: number;
-  max: number;
-  onChange: (value: number) => void;
-};
-
-function NumberStepper({ label, value, step, min, max, onChange }: NumberStepperProps) {
-  const next = (direction: -1 | 1) => {
-    const precision = step < 1 ? 2 : 0;
-    const updated = Math.min(max, Math.max(min, Number((value + step * direction).toFixed(precision))));
-    onChange(updated);
-  };
-
-  return (
-    <div className="stepper" aria-label={label}>
-      <span>{label}</span>
-      <button onClick={() => next(-1)} aria-label={`${label}减小`}>
-        <Minus size={12} />
-      </button>
-      <strong>{value}</strong>
-      <button onClick={() => next(1)} aria-label={`${label}增大`}>
-        <Plus size={12} />
-      </button>
     </div>
   );
 }

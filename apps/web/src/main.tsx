@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import "@callmebill/lxgw-wenkai-web/lxgwwenkai-regular/result.css";
 import "./styles.css";
+import "./design-system/tokens.css";
+import "./app.css";
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

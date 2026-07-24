@@ -1,13 +1,16 @@
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { Header } from "./components/Header";
 import { SplitPane } from "./components/SplitPane";
 import { AuthPage } from "./features/auth/AuthPage";
 import { EditorPanel } from "./features/editor/EditorPanel";
 import { HomePage } from "./features/home/HomePage";
+import { LandingPage } from "./features/landing/LandingPage";
 import { PreviewPanel } from "./features/preview/PreviewPanel";
 import { useResumeStore } from "./store/resumeStore";
 
 export function App() {
+  const [guestView, setGuestView] = useState<"landing" | "auth">("landing");
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const authStatus = useResumeStore((state) => state.authStatus);
   const activeResumeId = useResumeStore((state) => state.activeResumeId);
   const hydrate = useResumeStore((state) => state.hydrate);
@@ -18,6 +21,12 @@ export function App() {
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
+
+  useLayoutEffect(() => {
+    if (authStatus === "guest") {
+      setGuestView("landing");
+    }
+  }, [authStatus]);
 
   useEffect(() => {
     if (!dirty || !activeResumeId) return;
@@ -34,7 +43,22 @@ export function App() {
   }
 
   if (authStatus === "guest") {
-    return <AuthPage />;
+    if (guestView === "auth") {
+      return <AuthPage initialMode={authMode} />;
+    }
+
+    return (
+      <LandingPage
+        onLogin={() => {
+          setAuthMode("login");
+          setGuestView("auth");
+        }}
+        onStart={() => {
+          setAuthMode("register");
+          setGuestView("auth");
+        }}
+      />
+    );
   }
 
   if (!activeResumeId) {
