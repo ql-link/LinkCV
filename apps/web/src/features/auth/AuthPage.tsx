@@ -1,11 +1,12 @@
 import { FormEvent, useState } from "react";
-import { FileText, LogIn, UserPlus } from "lucide-react";
+import { ArrowRight, LogIn, UserPlus } from "lucide-react";
 import { useResumeStore } from "../../store/resumeStore";
+import { Brand, Button, TextInput } from "../../components/ds";
 
-export function AuthPage() {
+export function AuthPage({ initialMode = "login" }: { initialMode?: "login" | "register" }) {
   const login = useResumeStore((state) => state.login);
   const register = useResumeStore((state) => state.register);
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register">(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -33,50 +34,47 @@ export function AuthPage() {
     <main className="auth-shell">
       <section className="auth-panel">
         <div className="auth-brand">
-          <FileText size={28} />
+          <Brand />
           <div>
-            <h1>简历工作台</h1>
-            <p>登录后创建和管理多份 Markdown 简历。</p>
+            <span className="eyebrow">WRITE WITH CLARITY</span>
+            <h1>{mode === "login" ? "欢迎回来。" : "开始你的 LinkCV。"}</h1>
+            <p>专注内容，实时预览，生成一份真正属于你的简历。</p>
           </div>
         </div>
         <form className="auth-form" onSubmit={submit}>
-          <label>
-            邮箱
-            <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@example.com"
-              required
-            />
-          </label>
-          <label>
-            密码
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="至少 8 位"
-              minLength={8}
-              required
-            />
-          </label>
+          <TextInput label="邮箱" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" required />
+          <TextInput label="密码" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="至少 8 位" autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={8} required />
           {error && <div className="form-error">{error}</div>}
-          <button className="auth-submit" type="submit" disabled={submitting}>
-            {mode === "login" ? <LogIn size={16} /> : <UserPlus size={16} />}
+          <Button className="auth-submit" type="submit" disabled={submitting} icon={mode === "login" ? <LogIn size={16} /> : <UserPlus size={16} />}>
             {submitting ? "处理中..." : mode === "login" ? "登录" : "注册并创建简历"}
-          </button>
+          </Button>
         </form>
-        <button
+        <Button
           className="auth-switch"
+          variant="text"
+          icon={<ArrowRight size={15} />}
           onClick={() => {
             setMode(mode === "login" ? "register" : "login");
             setError(null);
           }}
         >
           {mode === "login" ? "没有账号？创建一个" : "已有账号？返回登录"}
-        </button>
+        </Button>
       </section>
+      <aside className="auth-story" aria-label="LinkCV 产品介绍">
+        <div className="auth-story-copy">
+          <span className="story-index">01 / FOCUS</span>
+          <blockquote>“好的简历，不是堆砌经历，<br />而是让重要的事被看见。”</blockquote>
+          <p>Markdown 写作、实时排版、A4 与智能一页导出，保持每一次修改都清晰可控。</p>
+        </div>
+        <div className="auth-paper-preview" aria-hidden="true">
+          <span />
+          <strong>张三</strong>
+          <i />
+          <i />
+          <i />
+        </div>
+      </aside>
     </main>
   );
 }

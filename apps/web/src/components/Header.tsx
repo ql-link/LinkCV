@@ -2,6 +2,7 @@ import { CircleAlert, CircleCheck, FileDown, Home, LogOut, Save } from "lucide-r
 import { useEffect, useState } from "react";
 import { useResumeStore } from "../store/resumeStore";
 import { exportResumePdf } from "../features/preview/exportPdf";
+import { Brand, Button, IconButton, Toast } from "./ds";
 
 type SaveToast = {
   kind: "success" | "error";
@@ -43,9 +44,11 @@ export function Header() {
   return (
     <header className="top-nav">
       <div className="nav-left">
-        <button className="icon-button circular" aria-label="回主页" onClick={goHome}>
+        <IconButton label="回主页" variant="circular" onClick={goHome}>
           <Home size={16} />
-        </button>
+        </IconButton>
+        <Brand />
+        <div className="nav-divider" />
         <div className="nav-title-group">
           <input
             className="document-title-input"
@@ -66,24 +69,22 @@ export function Header() {
         </div>
       </div>
       <div className="nav-actions">
-        <button className="button-secondary" onClick={() => void exportResumePdf(smartOnePage, title)}>
-          <FileDown size={14} />
+        <Button variant="secondary" icon={<FileDown size={14} />} onClick={() => void exportResumePdf(smartOnePage, title)}>
           导出 PDF
-        </button>
-        <button className="button-primary" disabled={isManualSaving} onClick={() => void handleManualSave()}>
-          <Save size={14} />
+        </Button>
+        <Button icon={<Save size={14} />} disabled={isManualSaving} onClick={() => void handleManualSave()}>
           保存
-        </button>
+        </Button>
         <div className="nav-divider" />
-        <button className="button-text-link danger" title="退出登录" onClick={() => void logout()}>
+        <IconButton label="退出登录" danger onClick={() => void logout()}>
           <LogOut size={15} />
-        </button>
+        </IconButton>
       </div>
       {saveToast && (
-        <div className={`save-toast ${saveToast.kind}`} role="status" aria-live="polite">
+        <Toast kind={saveToast.kind}>
           {saveToast.kind === "success" ? <CircleCheck size={18} /> : <CircleAlert size={18} />}
           {saveToast.message}
-        </div>
+        </Toast>
       )}
     </header>
   );
