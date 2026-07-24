@@ -1647,3 +1647,32 @@ description: 为 LinkCV 后端单元和集成测试提供真实路径及清晰�
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_skill_check_rejects_incomplete_brief_template(tmp_path: Path) -> None:
+    (tmp_path / ".ai" / "prompts").mkdir(parents=True)
+    (tmp_path / ".ai" / "prompts" / "project.md").write_text(
+        "rules", encoding="utf-8"
+    )
+    skills_root = tmp_path / ".ai" / "skills"
+    skills_root.mkdir(parents=True)
+    (skills_root / "README.md").write_text("skills", encoding="utf-8")
+    source_skill = REPO_ROOT / ".ai" / "skills" / "brief-generator"
+    target_skill = skills_root / "brief-generator"
+    shutil.copytree(source_skill, target_skill)
+    template_file = target_skill / "brief.template.md"
+    template_file.write_text(
+        template_file.read_text(encoding="utf-8").replace(
+            "## 3. 业务流程", "## 3. 实现说明"
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        SKILL_CHECK,
+        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result.returncode == 1
+    assert "Brief 模板缺少固定结构" in result.stderr
+    assert "## 3. 业务流程" in result.stderr

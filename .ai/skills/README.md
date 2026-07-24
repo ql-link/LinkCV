@@ -52,7 +52,7 @@
 | --- | --- | --- |
 | `incident-triage` | 沿 Web、代理、后端、数据和基础设施链路定位故障 | 修复代码先重新分级；迁移转 `alembic-migration` |
 
-运行 `npm run check:ai` 校验技能的头部元数据、占位内容、链接和过期技术栈引用。长期模块知识从 [docs/README.md](../../docs/README.md) 按需读取；三个契约治理技能共享 [契约面与事实源映射](../../docs/internals/contract-governance.md)，不各自复制模块映射。Multica 来源的阶段 Skill 通过 `npm run spec:source -- ...` 复用同一权威需求指纹门禁，不各自实现外部同步逻辑。除 `brief-generator` 在用户确认具体业务差异后调用 `sync-comment` 追加结构化需求变更评论外，其余阶段只读核验。
+运行 `npm run check:ai` 校验技能的头部元数据、占位内容、链接、过期技术栈引用，以及 Brief 模板的固定结构。长期模块知识从 [docs/README.md](../../docs/README.md) 按需读取；三个契约治理技能共享 [契约面与事实源映射](../../docs/internals/contract-governance.md)，不各自复制模块映射。Multica 来源的阶段 Skill 通过 `npm run spec:source -- ...` 复用同一权威需求指纹门禁，不各自实现外部同步逻辑。除 `brief-generator` 在用户确认具体业务差异后调用 `sync-comment` 追加结构化需求变更评论外，其余阶段只读核验。
 
 固定结构的产物模板跟随所属技能保存：需求简报、验收契约、技术设计、按需生成的实施报告和人工验收记录分别由对应技能维护。`agents/openai.yaml` 仅在需要 Codex 界面展示元数据时按需添加，不是项目技能的必需文件。
 
