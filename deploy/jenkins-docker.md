@@ -19,11 +19,13 @@ MYSQL_USER=<deployment-user>
 MYSQL_PASSWORD=<deployment-password>
 JWT_SECRET=<at-least-32-random-characters>
 COOKIE_SECURE=true
-MINIO_ENDPOINT=https://minio.example.com
 MINIO_ACCESS_KEY=<deployment-access-key>
 MINIO_SECRET_KEY=<deployment-secret-key>
-MINIO_BUCKET=linkcv
 ```
+
+连接地址和 Bucket 由仓库中的 `.env.production` 管理。私密文件不要设置
+`DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`，否则会覆盖通过
+`tolink-app-net` 使用的生产 Docker DNS 地址。
 
 The Production Jenkins agent needs Docker and Docker Compose access plus the external network `tolink-app-net`. The root `Jenkinsfile` deploys with:
 
@@ -36,4 +38,4 @@ export LINKCV_DOCKER_NETWORK=tolink-app-net
 docker compose -f deploy/docker-compose.production.yml up -d
 ```
 
-The guarded Production migration target is `production / 100.86.10.52:3306 / linkcv`. The image build does not connect to MySQL. Container startup keeps the same guard as a final protection for manual or concurrent starts.
+The guarded Production migration target is `production / tolink-mysql:3306 / linkcv`. The image build does not connect to MySQL. Container startup keeps the same guard as a final protection for manual or concurrent starts. Redis and MinIO use `tolink-redis:6379` and `http://tolink-minio:9000` on the same external Docker network.
