@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-根级 `Dockerfile` 构建 Vite 静态产物和 FastAPI Python 环境。镜像构建只打包 `migrations/sql/`、Alembic revision 和迁移 runner，不连接数据库。容器启动时 runner 先核对 `APP_ENV`、MySQL host、port 和 database，再升级到 Alembic head；目标不一致时拒绝启动，校验成功后才由 Uvicorn 在 `8000` 端口提供 `/api` 与 Web 静态文件。
+根级 `Dockerfile` 构建 Vite 静态产物和 FastAPI Python 环境。Web 构建阶段会复制 `apps/web/public/`，确保 favicon 等公共静态资源进入 `dist/`。镜像构建只打包 `migrations/sql/`、Alembic revision 和迁移 runner，不连接数据库。容器启动时 runner 先核对 `APP_ENV`、MySQL host、port 和 database，再升级到 Alembic head；目标不一致时拒绝启动，校验成功后才由 Uvicorn 在 `8000` 端口提供 `/api` 与 Web 静态文件。
 
 仓库提供相互独立的 Dev 与 Production Jenkins Pipeline。两者都使用不可变镜像标签，先以显式目标参数运行迁移 runner，再更新 Compose，最后等待 `/api/health`；构建镜像阶段不连接数据库。
 
