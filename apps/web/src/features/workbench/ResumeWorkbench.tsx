@@ -18,6 +18,7 @@ import { resumeSerifFontStack, useResumeStore } from "../../store/resumeStore";
 import { resumeEditorExtensions } from "./editorExtensions";
 import { WorkbenchToolbar } from "./WorkbenchToolbar";
 import { loadVersionHistory, saveVersionHistory, type VersionSnapshot } from "./versionHistory";
+import { handleWheelZoom } from "./workbenchZoom";
 import { navigateTo } from "../../routing";
 
 type DrawerMode = "settings" | "history" | null;
@@ -105,6 +106,8 @@ export function ResumeWorkbench() {
   const setEditorContent = useResumeStore((state) => state.setEditorContent);
   const settings = useResumeStore((state) => state.settings);
   const updateSettings = useResumeStore((state) => state.updateSettings);
+  const previewScale = useResumeStore((state) => state.previewScale);
+  const setPreviewScale = useResumeStore((state) => state.setPreviewScale);
   const saveStatus = useResumeStore((state) => state.saveStatus);
   const dirty = useResumeStore((state) => state.dirty);
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
@@ -115,6 +118,7 @@ export function ResumeWorkbench() {
   const [versions, setVersions] = useState<VersionSnapshot[]>([]);
   const lastSaveStatus = useRef(saveStatus);
   const latestAutoSnapshot = useRef("");
+  const paperScrollRef = useRef<HTMLDivElement>(null);
 
   const editor = useEditor({
     extensions: resumeEditorExtensions,
@@ -168,6 +172,18 @@ export function ResumeWorkbench() {
     const timer = window.setTimeout(() => setToast(null), 5000);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    const scrollArea = paperScrollRef.current;
+    if (!scrollArea) return;
+
+    const handleWheel = (event: WheelEvent) => {
+      handleWheelZoom(previewScale, event, setPreviewScale);
+    };
+
+    scrollArea.addEventListener("wheel", handleWheel, { passive: false });
+    return () => scrollArea.removeEventListener("wheel", handleWheel);
+  }, [previewScale, setPreviewScale]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -250,6 +266,7 @@ export function ResumeWorkbench() {
   };
 
   const statusText = saveStatus === "saving" ? "保存中..." : saveStatus === "error" ? "保存失败 · 请重试" : dirty ? "编辑中" : "已保存";
+  const zoomPercent = Math.round(previewScale * 100);
 
   return (
     <MotionConfig reducedMotion="user" transition={{ type: "spring", bounce: 0, duration: 0.34 }}>
@@ -277,7 +294,11 @@ export function ResumeWorkbench() {
         <WorkbenchToolbar editor={editor} onNotice={(label) => setToast({ label })} />
 
         <main className="workbench-canvas">
-          <div className="workbench-paper-scroll">
+          <div
+            ref={paperScrollRef}
+            className="workbench-paper-scroll"
+            style={{ "--workbench-preview-scale": previewScale } as React.CSSProperties}
+          >
             <article className={`resume-paper${settings.smartOnePage ? " smart-one-page" : ""}`} style={resumeStyle} aria-label="可编辑简历页面">
               <EditorContent editor={editor} />
             </article>
@@ -285,6 +306,7 @@ export function ResumeWorkbench() {
               {settings.smartOnePage ? "智能一页 · 导出为连续单页" : "标准 A4 · 超出内容自动分页导出"}
             </p>
           </div>
+          <output className="workbench-zoom-indicator" aria-label="简历缩放比例">{zoomPercent}%</output>
 
           <AnimatePresence initial={false}>
             {drawerMode && (
