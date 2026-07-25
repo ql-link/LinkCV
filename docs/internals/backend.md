@@ -22,7 +22,7 @@
 - 健康检查：`GET /api/health`
 - 业务接口：`/api/auth/**`、`/api/resumes/**`、`/api/assets/**`
 
-Alembic 根 revision `0001` 在空 MySQL `linkcv` 数据库建立 `users`、`resumes`，包含邮箱唯一约束、用户级联外键和按用户更新时间查询的联合索引。revision 固定使用四位递增编号 `0001`、`0002`；后续 schema 变化通过 `npm run db:revision -- -m "<message>"` 创建 Python revision 与同 ID 的 `.up.sql`、`.down.sql` 文件对，DDL、索引、外键和数据变更优先写入 SQL 文件。Python revision 只负责执行文件；仅当 SQL 无法表达受控数据迁移时才允许少量 Python，并必须在 revision 注释中说明原因。禁止手工 `ALTER TABLE` 或原地改写已进入共享环境的 revision。原型 SQLite 数据默认不迁移到 MySQL。
+Alembic 根 revision `0001` 在空 MySQL `linkcv` 数据库建立 `users`、`resumes`，包含邮箱唯一约束、用户级联外键、按用户更新时间查询的联合索引，以及认证版本和布局比例的正值检查。Markdown 使用 `LONGTEXT` 保留原型中的长文本语义，布局比例使用 `DOUBLE`，时间列使用 `DATETIME(6)`。revision 固定使用四位递增编号 `0001`、`0002`；后续 schema 变化通过 `npm run db:revision -- -m "<message>"` 创建 Python revision 与同 ID 的 `.up.sql`、`.down.sql` 文件对，DDL、索引、外键和数据变更优先写入 SQL 文件。Python revision 只负责执行文件；仅当 SQL 无法表达受控数据迁移时才允许少量 Python，并必须在 revision 注释中说明原因。禁止手工 `ALTER TABLE` 或原地改写已进入共享环境的 revision。原型 SQLite 数据默认不迁移到 MySQL。
 
 `scripts/db/init_mysql.py` 只允许创建名为 `linkcv` 的 MySQL 数据库；`scripts/release/run_alembic.py` 在迁移前校验环境、host、port 和数据库并输出不含密码的摘要。FastAPI 配置支持根 `.env`、显式 `LINKCV_ENV_FILE`、同名 `.local` 和进程环境覆盖。Redis 与阿里云 OSS 当前仅建立配置契约，业务缓存和 OSS 存储尚未启用。
 

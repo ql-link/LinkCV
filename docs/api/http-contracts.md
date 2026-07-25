@@ -41,7 +41,7 @@ Cookie 默认名为 `resume_session`，使用 `SameSite=Lax`。注册错误码�
 
 对外字段继续使用前端兼容的 `createdAt`、`updatedAt`、`splitRatio`、`previewScale`。所有查询和修改都按当前用户过滤；不存在或不属于当前用户的简历返回 `404 RESUME_NOT_FOUND`。未登录请求返回 `401 UNAUTHORIZED`。
 
-简历持久化在 MySQL `resumes` 表，并由外键归属当前用户；删除用户会级联删除其简历。数据库完整性约束不替代 API 的当前用户过滤。
+简历持久化在 MySQL `resumes` 表，Markdown 使用 `LONGTEXT`，布局比例由正值检查约束保护，并由外键归属当前用户；删除用户会级联删除其简历。数据库完整性约束不替代 API 的当前用户过滤。
 
 ## 图片接口
 

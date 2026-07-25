@@ -80,6 +80,25 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     assert {constraint["name"] for constraint in inspector.get_unique_constraints("users")} == {
         "uk_users_email"
     }
+    user_columns = {column["name"]: column for column in inspector.get_columns("users")}
+    resume_columns = {
+        column["name"]: column for column in inspector.get_columns("resumes")
+    }
+    assert user_columns["auth_version"]["type"].unsigned is True
+    assert user_columns["created_at"]["type"].fsp == 6
+    assert resume_columns["markdown"]["type"].__class__.__name__ == "LONGTEXT"
+    assert resume_columns["split_ratio"]["type"].__class__.__name__ == "DOUBLE"
+    assert resume_columns["preview_scale"]["type"].__class__.__name__ == "DOUBLE"
+    assert resume_columns["created_at"]["type"].fsp == 6
+    assert {constraint["name"] for constraint in inspector.get_check_constraints("users")} == {
+        "ck_users_auth_version_positive"
+    }
+    assert {
+        constraint["name"] for constraint in inspector.get_check_constraints("resumes")
+    } == {
+        "ck_resumes_preview_scale_positive",
+        "ck_resumes_split_ratio_positive",
+    }
     assert any(
         index["name"] == "idx_resumes_user_updated"
         and index["column_names"] == ["user_id", "updated_at"]

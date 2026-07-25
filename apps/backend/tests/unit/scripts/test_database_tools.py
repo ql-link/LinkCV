@@ -89,6 +89,12 @@ def test_initial_business_revision_is_sql_first_and_complete() -> None:
     assert f'"{INITIAL_REVISION}.down.sql"' in revision_text
     assert "CREATE TABLE users" in up_sql
     assert "CREATE TABLE resumes" in up_sql
+    assert "markdown LONGTEXT NOT NULL" in up_sql
+    assert "split_ratio DOUBLE NOT NULL" in up_sql
+    assert "created_at DATETIME(6)" in up_sql
+    assert "ck_users_auth_version_positive" in up_sql
+    assert "ck_resumes_split_ratio_positive" in up_sql
+    assert "ck_resumes_preview_scale_positive" in up_sql
     assert "CONSTRAINT uk_users_email UNIQUE (email)" in up_sql
     assert "CONSTRAINT fk_resumes_user_id_users" in up_sql
     assert "KEY idx_resumes_user_updated (user_id, updated_at)" in up_sql
