@@ -14,6 +14,11 @@ DB 2, the MinIO endpoint, and bucket `linkcv`.
 
 The guarded migration target is `development / 100.86.10.52:13306 / linkcv`; a mismatch fails before Alembic runs.
 
+Create a Jenkins Secret Text credential named `linkcv-dev-webhook-token`. The
+pipeline declares a Generic Webhook Trigger that accepts only
+`refs/heads/dev`; configure GitHub with the same token and only the push event.
+Do not place the token in this repository or the Primary env file.
+
 ## Production
 
 Jenkins copies the repository's non-secret `.env.production` to `/opt/tolink/LinkCV/.env.production`. Place a private `/opt/tolink/LinkCV/.env.production.local` beside it from the deployment secret store. The private file must define the MySQL and MinIO credentials plus a random JWT secret.

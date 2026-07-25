@@ -126,6 +126,12 @@ contracts:
       - path: deploy/jenkins/Jenkinsfile.development
         pattern: 'PRIMARY_SSH_KEY = ''/var/jenkins_home/\.ssh/primary_dev'''
         message: Dev Jenkins 必须使用 primary_dev 密钥
+      - path: deploy/jenkins/Jenkinsfile.development
+        pattern: 'tokenCredentialId: ''linkcv-dev-webhook-token'''
+        message: Dev webhook token 必须来自 Jenkins Secret Text 凭据
+      - path: deploy/jenkins/Jenkinsfile.development
+        pattern: 'regexpFilterExpression: ''\^refs/heads/dev\$'''
+        message: Dev webhook 必须只接受 refs/heads/dev push
       - path: deploy/docker-compose.production.yml
         pattern: '(?m)^    container_name: linkcv$'
         message: Production 必须使用生产容器名

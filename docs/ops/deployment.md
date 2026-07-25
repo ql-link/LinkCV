@@ -23,6 +23,8 @@ Dev Jenkins Job 使用 `deploy/jenkins/Jenkinsfile.development`。Jenkins 将当
 
 Dev Jenkins 节点需预置 `/var/jenkins_home/.ssh/primary_dev`，并能以 `root` 连接 Primary。Primary 需已有 Docker、Docker Compose、`tolink-dev-net` 和私密 env 文件。LinkCV Dev 使用独立 `linkcv` MySQL 数据库、MinIO bucket 和 Redis DB 2；本地密钥文件只保存凭据，不覆盖仓库中的地址与资源名。任一前置条件、迁移或健康检查失败都会让 Job 失败。
 
+`linkcv-dev` 的 Generic Webhook Trigger 只接受 `refs/heads/dev`。token 通过 Jenkins Secret Text 凭据 `linkcv-dev-webhook-token` 注入，仓库不保存 token；GitHub 仓库 webhook 只订阅 push 事件。
+
 ## Production Pipeline
 
 Production Jenkins Job 使用根目录 `Jenkinsfile`，在生产 Jenkins 节点本地构建并部署：
