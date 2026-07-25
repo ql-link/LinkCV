@@ -9,15 +9,15 @@ description: 为 LinkCV 设计和审查 MySQL 8.4 表、字段、主键、外键
 
 把已确认的业务实体和访问模式转换为物理 schema 设计，输出设计依据与评审清单。本技能不直接连接数据库、不执行 DDL，也不把示例 SQL 当成已经落库的事实。
 
-LinkCV 当前只有本地 MySQL 8.4 基础设施，FastAPI 尚无业务模型。首次设计时必须结合具体需求确定规范基线；不得因为 LinkRag 使用某种主键、状态或时间策略，就在 LinkCV 无业务依据时直接照搬。
+LinkCV 已有 FastAPI 业务模型、MySQL 8.4 配置和 Alembic/SQL-first 基础，但当前尚无业务 revision。现有 ORM 只能作为待核对的模型真值候选，不能证明 MySQL 物理 schema 已经建立。首次业务 revision 必须结合冻结需求、真实访问模式和当前模型统一规范；不得因为其他项目使用某种主键、状态或时间策略就直接照搬。
 
 ## 2. 必读输入
 
 1. 冻结 Brief 中的实体、字段和关系；
 2. Acceptance 中的查询、写入、唯一性、权限、并发和失败场景；
-3. Technical Design 的持久化边界与旧数据决策；
+3. 当前 Technical Design 草稿中已经确认的持久化边界与旧数据决策；本技能可由 `technical-design` 在起草过程中调用，不要求技术设计先冻结；
 4. 真实调用方的读写模式、排序、分页、过滤和生命周期；
-5. 已存在的模型、migration 和数据库文档；首次建立时明确这些尚不存在。
+5. 已存在的模型、Alembic 基础、revision、SQL 文件和数据库文档；分别说明“模型已存在”“业务 revision 尚不存在”和“目标环境是否已迁移”，不得合并成一个状态。
 
 ## 3. 命名与所有权
 
@@ -82,4 +82,4 @@ LinkCV 当前只有本地 MySQL 8.4 基础设施，FastAPI 尚无业务模型。
 待验证：<EXPLAIN、数据量、锁或边界假设>
 ```
 
-设计确认后转 `alembic-migration` 落地 ORM 与 migration。若字段语义、所有权、旧数据或删除行为仍有分歧，返回 `module-planning` 更新飞书并重新收敛受影响规格，不要在 DDL 中替用户决定。
+若由 `technical-design` 调用，把物理 schema 结论返回其数据章节，不能另建第二份方案或直接落地代码；技术设计冻结并进入实施后，才转 `alembic-migration` 同步 ORM 与 SQL-first revision。若字段语义、所有权、旧数据或删除行为仍有分歧，返回 `module-planning` 更新飞书并重新收敛受影响规格，不要在 DDL 中替用户决定。

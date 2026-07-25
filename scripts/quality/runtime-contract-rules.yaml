@@ -23,6 +23,12 @@ contracts:
       - path: apps/backend/src/linkcv/api/routes/health.py
         pattern: '@router\.get\("/health"'
         message: FastAPI 必须注册 /health 子路由
+      - path: .ai/prompts/project.md
+        pattern: '开发期全部 `/api` 请求由 Vite 代理到 FastAPI'
+        message: 项目入口不得继续声明只有 health 归 FastAPI
+      - path: .ai/skills/incident-triage/SKILL.md
+        pattern: '当前全部 `/api` 由 FastAPI 承接'
+        message: 故障分诊必须使用当前 FastAPI 路由归属
 
   - id: jwt-cookie-ttl
     description: 登录 Cookie 默认有效期为七天
@@ -91,6 +97,12 @@ contracts:
       - path: Dockerfile
         pattern: 'run_alembic\.py.*&& exec uvicorn'
         message: 容器必须先通过迁移 runner 再启动 FastAPI
+      - path: .ai/skills/alembic-migration/SKILL.md
+        pattern: '同 ID 的 `\.up\.sql`、`\.down\.sql` 文件对'
+        message: 迁移 Skill 必须要求配对 up/down SQL
+      - path: .ai/skills/alembic-migration/SKILL.md
+        pattern: '禁止使用 `alembic revision --autogenerate`'
+        message: 迁移 Skill 不得把 autogenerate 作为 SQL-first 入口
 
   - id: deployment-environment-isolation
     description: Dev 与 Production 使用独立的发布目标和运行资源

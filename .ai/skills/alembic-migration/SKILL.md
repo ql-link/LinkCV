@@ -1,6 +1,6 @@
 ---
 name: alembic-migration
-description: 为 LinkCV 编写、校验和排查 SQLAlchemy 与 Alembic schema 迁移，覆盖 revision 链、自动生成审查、数据回填、升级降级、兼容发布和文档同步。适用于首次建立 FastAPI 持久化基础，新增或修改表、字段、关系、约束、索引，处理多 head、模型与数据库漂移或迁移失败；单纯设计字段与索引先使用 mysql-ddl-conventions，数据库改动一律按 L3 处理。
+description: 为 LinkCV 编写、校验和排查 SQLAlchemy 与 SQL-first Alembic schema 迁移，覆盖 revision 链、配对 up/down SQL、数据回填、升级降级、兼容发布和文档同步。适用于首次加入业务 revision，新增或修改表、字段、关系、约束、索引，处理多 head、模型与数据库漂移或迁移失败；单纯设计字段与索引先使用 mysql-ddl-conventions，数据库改动一律按 L3 处理。
 ---
 
 # Alembic 迁移
@@ -18,11 +18,12 @@ description: 为 LinkCV 编写、校验和排查 SQLAlchemy 与 Alembic schema �
 
 ## 2. LinkCV 当前基线
 
-- FastAPI 当前只有健康检查，尚未引入 SQLAlchemy、Alembic、业务模型或迁移目录。
-- `deploy/docker-compose.yml` 提供本地 MySQL 8.4，不代表数据库已经进入 FastAPI 运行链或生产部署。
-- 临时 Express 继续使用 SQLite；当前约束是原型 SQLite 数据不迁移到 MySQL，除非新的冻结需求明确改变这一点。
+- FastAPI 已有鉴权、简历和图片路由，`core/database.py`、业务模型、Alembic 环境、SQL-first revision 模板与 `db:revision`、`db:migrate`、`db:init` 入口已经存在。
+- 当前尚无业务 revision。模型类存在不等于 MySQL 已有 `users`、`resumes` 等业务表；首次业务 schema 仍需建立明确的初始 revision。
+- 后端集成测试使用隔离 SQLite，只能证明应用层组合行为；迁移链必须在 MySQL 8.4 上单独验证。
+- 原型 SQLite 数据默认不迁移到 MySQL，除非新的冻结需求明确改变这一点。
 
-因此首次持久化任务必须先在技术设计中明确依赖、连接配置、模型目录、Alembic 目录、命令入口、初始 revision、测试数据库、部署顺序和回滚。仓库没有这些文件时，明确写“尚未建立”，不得照搬 LinkRag 路径或编造已可运行的命令。
+因此首次业务 revision 必须先在技术设计中核对现有模型、Alembic 入口和部署 runner，再明确初始物理 schema、测试数据库、执行者、部署顺序和回滚。不存在的 revision、表或验证结果必须明确写“尚未建立”，不得把基础框架存在描述成业务 schema 已经可用。
 
 ## 3. 必读材料
 
@@ -36,9 +37,9 @@ description: 为 LinkCV 编写、校验和排查 SQLAlchemy 与 Alembic schema �
 6. Compose、环境变量模板、部署入口与数据库长期文档；
 7. 正确基线到当前分支的完整模型与 migration 差异。
 
-## 4. 首次建立迁移基础
+## 4. 首次业务 revision 与基础变更
 
-首次引入时至少确认：
+建立首条业务 revision，或确需修改现有迁移基础时，至少确认：
 
 1. SQLAlchemy metadata 的唯一入口和命名约定；
 2. Alembic 如何读取与应用相同的非敏感数据库配置，同时避免在日志中输出凭据；
@@ -51,12 +52,13 @@ description: 为 LinkCV 编写、校验和排查 SQLAlchemy 与 Alembic schema �
 ## 5. 编写迁移
 
 1. **确认版本链**：读取 heads 与 history。新 revision 的 `down_revision` 必须接到预期 head；出现多个 head 时先判断是合法分支还是遗漏，不盲目生成 merge。
-2. **先定 ORM**：模型字段、外键、关系、约束和索引与已确认物理 schema 一致。
-3. **生成或手写 revision**：自动生成只能作为草稿，逐项核对列名、类型、长度、默认值、可空性、外键、约束、索引、表注释以及意外删除。
-4. **处理兼容**：破坏性变化优先采用“扩展 → 回填或双写 → 切换 → 收缩”。新增非空字段通常先允许空值或提供安全默认值，回填完成后再加约束。
-5. **处理数据**：回填必须限定范围、分批、幂等、可重试并能校验结果；不要把演示数据或真实用户数据写进 migration。
-6. **实现回滚**：`downgrade()` 与 `upgrade()` 对称。无法无损回退时明确标记不可逆，并给出应用回滚、备份恢复或补偿方案，不能用空实现伪装可回滚。
-7. **保护历史**：已经进入共享环境的 revision 不得原地改写；修正通过新的 revision 完成。
+2. **先核对 ORM**：模型字段、外键、关系、约束和索引必须与已确认物理 schema 一致；已有模型不正确时先同步修订，不能让 migration 迁就错误模型。
+3. **创建 SQL-first revision**：统一运行 `npm run db:revision -- -m "<message>"`，生成 Python revision 与同 ID 的 `.up.sql`、`.down.sql` 文件对。禁止使用 `alembic revision --autogenerate` 作为最终或草稿入口，也禁止把 `op.create_table`、`op.add_column`、`op.create_index` 等 Python DDL 留在最终 revision。
+4. **编写并审查 SQL**：DDL、索引、约束和 SQL 可表达的数据变更写入配对 SQL 文件；Python revision 只调用对应文件。逐项核对列名、类型、长度、默认值、可空性、外键、约束、索引、注释和意外删除。只有 SQL 无法安全表达的受控迁移才允许少量 Python，并在 revision 文件头说明原因、幂等性和回滚方式。
+5. **处理兼容**：破坏性变化优先采用“扩展 → 回填或双写 → 切换 → 收缩”。新增非空字段通常先允许空值或提供安全默认值，回填完成后再加约束。
+6. **处理数据**：回填必须限定范围、分批、幂等、可重试并能校验结果；不要把演示数据或真实用户数据写进 migration。
+7. **实现回滚**：`.down.sql` 与 `.up.sql` 表达相反变更。无法无损回退时在 SQL、revision 和发布方案中明确标记不可逆，并给出应用回滚、备份恢复或补偿方案；不能用空文件或空 `downgrade()` 伪装成功。
+8. **保护历史**：已经进入共享环境的 revision 及其 SQL 文件不得原地改写；修正通过新的 revision 完成。
 
 ## 6. MySQL 风险核实
 
@@ -71,12 +73,13 @@ description: 为 LinkCV 编写、校验和排查 SQLAlchemy 与 Alembic schema �
 根据仓库当时真实入口执行并记录：
 
 1. heads 只有预期结果，history 连续且 revision 唯一；
-2. 空数据库从零升级到 head；
-3. 具有上一版本 schema 和代表性虚构数据的数据库升级到 head；
-4. 可逆 migration 执行“升级 → 降级 → 再升级”；
-5. 模型 metadata 与 head schema 没有未解释差异；
-6. 约束、索引、外键、默认值、时区、回填幂等与失败恢复测试通过；
-7. 文档同步和完整 `npm run check` 通过。
+2. 每个 revision 都有同 ID 的 `.up.sql`、`.down.sql`，Python 文件只调用配对 SQL；
+3. 空 MySQL 8.4 数据库从零升级到 head；
+4. 具有上一版本 schema 和代表性虚构数据的 MySQL 数据库升级到 head；
+5. 可逆 migration 执行“升级 → 降级 → 再升级”；
+6. 模型 metadata 与 head schema 没有未解释差异；
+7. 约束、索引、外键、默认值、时区、回填幂等与失败恢复测试通过；
+8. 文档同步和完整 `npm run check` 通过。
 
 未实际运行的命令必须写成“未验证”。生产规模、锁时间和备份恢复无法在本地证明时，列为发布前门槛。
 

@@ -1,6 +1,6 @@
 ---
 name: config-contract-sync
-description: 核对 LinkCV 中同一个具体契约值在代码、环境变量、Vite、FastAPI、临时 Express、Compose 和部署入口是否一致，定位未读取配置、死值、覆盖优先级和路由漂移。适用于端口、API 路径、代理目标、环境变量、服务地址或对象存储标识在多处出现，机器契约门禁失败，或者用户排查某处配置修改后未生效时；不判断结构兼容，也不负责维护 docs。
+description: 核对 LinkCV 中同一个具体契约值在代码、环境变量、Vite、FastAPI、Compose 和部署入口是否一致，定位未读取配置、死值、覆盖优先级和路由漂移。适用于端口、API 路径、代理目标、环境变量、服务地址或对象存储标识在多处出现，机器契约门禁失败，或者用户排查某处配置修改后未生效时；不判断结构兼容，也不负责维护 docs。
 ---
 
 # 配置契约一致性
@@ -10,7 +10,7 @@ description: 核对 LinkCV 中同一个具体契约值在代码、环境变量�
 回答“同一个物理值在各处是否一致，运行时到底使用哪个”。典型值包括：
 
 - API 路径和当前服务归属；
-- FastAPI、Express、MySQL、MinIO 的端口或地址；
+- FastAPI、MySQL、MinIO 的端口或地址；
 - 环境变量名称、默认值和覆盖优先级；
 - Vite Proxy、根级启动命令和 Compose 中的目标；
 - bucket、对象路径前缀或其他跨模块标识。

@@ -52,6 +52,6 @@ npm run spec -- check LCV-42 release_ready
 
 有多个在途任务时必须由用户指定继续哪一个。`.specs/<KEY>/` 默认被 Git 忽略，因此该恢复能力覆盖同一工作区中的跨会话续做，不承诺跨设备或跨 worktree 自动复制本地产物；跨环境恢复时重新读取来源 Issue 和对应详情文档，并重新建立本地快照。
 
-当任务包含跨浏览器、跨服务、上传下载、PDF 或视觉行为，且现有自动化测试无法完整覆盖时，由 `manual-acceptance` 在 `.specs/<KEY>/manual_acceptance.md` 生成和记录人工端到端验收。最终运行 `spec verify --manual-acceptance` 时，脚本自动校验总体结论、统计、占位内容和文件哈希；仍有必要项未执行、失败或阻塞时不会进入质量审查。
+当 L2/L3 任务包含跨浏览器、跨服务、上传下载、PDF 或视觉行为，且现有自动化测试无法完整覆盖时，由 `manual-acceptance` 在 `.specs/<KEY>/manual_acceptance.md` 生成和记录人工端到端验收。最终运行 `spec verify --manual-acceptance` 时，脚本自动校验总体结论、统计、占位内容和文件哈希；仍有必要项未执行、失败或阻塞时不会进入质量审查。人工步骤执行后若相关代码或配置变化，受影响项必须恢复为未执行并重新验收；最终自动化快照不能代替较早的人工证据。L1 的同类检查只保留会话级记录，不创建 Spec。
 
 具体 Issue 目录默认被 Git 忽略。仓库只长期保留本文；PR 中摘要人工验收结论，但不复制整份本地清单。产物模板由对应的 `.ai/skills/<skill>/` 管理，避免全局模板与 Skill 规则漂移。

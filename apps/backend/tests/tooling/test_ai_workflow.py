@@ -140,6 +140,49 @@ def test_l3_flow_requires_frozen_artifacts_and_detects_drift(tmp_path: Path) -> 
     assert "冻结后已变化" in drifted.stderr
 
 
+def test_l3_flow_requires_technical_design_and_refreeze_invalidates_downstream(
+    tmp_path: Path,
+) -> None:
+    specs_root = tmp_path / ".specs"
+    feature = specs_root / "LCV-109"
+    env = {"LINKCV_SPECS_ROOT": str(specs_root)}
+
+    assert run_script(FLOW_GUARD, "init", "LCV-109", "--lane", "L3", env=env).returncode == 0
+    (feature / "brief.md").write_text("brief v1", encoding="utf-8")
+    assert run_script(FLOW_GUARD, "freeze", "LCV-109", "brief", env=env).returncode == 0
+    (feature / "acceptance.feature").write_text("Feature: v1", encoding="utf-8")
+    assert run_script(FLOW_GUARD, "freeze", "LCV-109", "acceptance", env=env).returncode == 0
+
+    blocked = run_script(FLOW_GUARD, "check", "LCV-109", "implementation", env=env)
+    status = run_script(FLOW_GUARD, "status", "LCV-109", env=env)
+
+    assert blocked.returncode == 1
+    assert "当前 phase=technical_design" in blocked.stderr
+    assert status.returncode == 0, status.stderr
+    assert "下一站：technical-design" in status.stdout
+
+    (feature / "technical_design.md").write_text("technical v1", encoding="utf-8")
+    assert run_script(
+        FLOW_GUARD, "freeze", "LCV-109", "technical_design", env=env
+    ).returncode == 0
+    allowed = run_script(FLOW_GUARD, "check", "LCV-109", "implementation", env=env)
+    assert allowed.returncode == 0, allowed.stderr
+
+    (feature / "brief.md").write_text("brief v2", encoding="utf-8")
+    refrozen = run_script(
+        FLOW_GUARD, "freeze", "LCV-109", "brief", "--refreeze", env=env
+    )
+    state = yaml.safe_load((feature / "state.yaml").read_text(encoding="utf-8"))
+
+    assert refrozen.returncode == 0, refrozen.stderr
+    assert state["phase"] == "acceptance"
+    assert state["artifacts"]["brief"]["frozen"] is True
+    assert state["artifacts"]["acceptance"]["frozen"] is False
+    assert state["artifacts"]["technical_design"]["frozen"] is False
+    assert state["verification"]["verified"] is False
+    assert state["quality_review"]["passed"] is False
+
+
 def test_flow_init_allows_missing_source_issue_for_explicit_exceptions(tmp_path: Path) -> None:
     specs_root = tmp_path / ".specs"
     env = {"LINKCV_SPECS_ROOT": str(specs_root)}

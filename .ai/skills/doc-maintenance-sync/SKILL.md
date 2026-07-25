@@ -17,7 +17,7 @@ description: 根据 LinkCV 当前真实代码和配置创建或更新 docs 长�
 
 - 新增、删除、重命名或移动重要模块和入口；
 - API、错误、权限、数据模型、配置或部署行为变化；
-- Express/FastAPI 路由归属和迁移边界变化；
+- FastAPI 路由、Vite Proxy、客户端或部署入口的归属和兼容边界变化；
 - `contract-guard` 给出文档同步清单；
 - `check_docs_sync.py` 报告缺失；
 - 用户单独要求补充或修正文档。

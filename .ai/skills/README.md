@@ -20,7 +20,7 @@
 | --- | --- | --- |
 | `flow-router` | 判断 L1/L2/L3，并检查是否具备已确认模块详情文档 | 模块规划、需求简报或实现 |
 | `module-planning` | 调查模块、主持决策、展示草稿并在确认后写入和读回飞书 | 停止，等待用户启动分级或需求简报 |
-| `decision-grilling` | 只沿决策树一次收敛一个真实选择 | 把确认结论返回 `module-planning` |
+| `decision-grilling` | 只沿决策树一次处理一个真实选择 | 把 `confirmed`、`blocked` 或 `replan` 结果返回上层规划技能 |
 | `brief-generator` | 把已确认 Issue、飞书详情与代码综合成本地需求简报 | 验收契约 |
 | `acceptance-generator` | 生成可验证行为场景 | L2 实现；L3 技术设计 |
 | `technical-design` | 生成跨模块技术方案 | 实现 |
@@ -36,7 +36,7 @@
 | --- | --- | --- |
 | `test-authoring` | 编写前端组件/单元测试和后端单元/集成测试 | 运行验证 |
 | `run-all-tests` | 按改动范围执行自动化验证 | 人工验收（适用时）或质量审查 |
-| `manual-acceptance` | 生成并记录任务级人工端到端验收 | 质量审查 |
+| `manual-acceptance` | 生成并记录人工端到端验收；L2/L3 写 Spec，L1 使用会话级记录 | 自动化汇总和质量审查 |
 | `code-review-and-quality` | 审查正确性、契约与风险 | PR 收口 |
 | `feature-completion-audit` | 对照原始需求独立核验完成度、遗漏和偏离 | 按缺口返回规格、实现、测试或审查 |
 
@@ -45,7 +45,7 @@
 | 技能 | 职责 | 边界或下一站 |
 | --- | --- | --- |
 | `mysql-ddl-conventions` | 设计和审查 MySQL 物理表结构、约束与索引 | 落地迁移转 `alembic-migration` |
-| `alembic-migration` | 编写、校验和排查 SQLAlchemy/Alembic 迁移链 | 业务实现转实施，文档转同步 |
+| `alembic-migration` | 编写、校验和排查 SQL-first Alembic 迁移链与配对 up/down SQL | 业务实现转实施，文档转同步 |
 
 ## 运维与故障
 
@@ -59,7 +59,7 @@
 
 固定结构的产物模板跟随所属技能保存：需求简报、验收契约、技术设计、按需生成的实施报告和人工验收记录分别由对应技能维护。`agents/openai.yaml` 仅在需要 Codex 界面展示元数据时按需添加，不是项目技能的必需文件。
 
-技能调用保持单向且由上层拥有产物：`module-planning` 调用 `decision-grilling` 收敛单个选择，调用 `lark-doc` 执行已经确认的文档写入；两个被调用技能都不接管模块规划。`brief-generator`、`acceptance-generator`、`technical-design` 和实施阶段只消费已确认输入；如果一致性检查暴露新的高影响决策，返回 `module-planning` 更新并读回飞书，再按顺序修订受影响产物，不在下游阶段直接盘问。
+技能调用保持单向且由上层拥有产物：`module-planning` 调用 `decision-grilling` 处理单个选择，只有 `confirmed` 才更新结论，`blocked` 暂停，`replan` 重建决策树；调用 `lark-doc` 执行已经确认的文档写入，两个被调用技能都不接管模块规划。`brief-generator`、`acceptance-generator`、`technical-design` 和实施阶段只消费已确认输入；如果一致性检查暴露新的高影响决策，返回 `module-planning` 更新并读回飞书，再按顺序修订受影响产物，不在下游阶段直接盘问。
 
 契约治理技能不要求固定串行：结构或语义影响用 `contract-guard`，同一具体值的多处一致性用 `config-contract-sync`，更新长期 `docs/` 用 `doc-maintenance-sync`。已有上游结论时直接消费，不重复扫描同一问题。
 

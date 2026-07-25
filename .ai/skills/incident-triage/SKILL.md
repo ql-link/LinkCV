@@ -1,6 +1,6 @@
 ---
 name: incident-triage
-description: 沿 LinkCV 的浏览器、Vite 代理、FastAPI、临时 Express、SQLite、MySQL、MinIO、构建和部署链路分诊故障，从日志与现象区分网络或 Tailscale、配置漂移、服务归属、登录态、数据不一致、代码缺陷和外部依赖。适用于用户贴报错、服务启动失败、接口不可达、登录或保存异常、上传失败、测试或 CI 故障并要求查原因；默认只读诊断，修复需另行授权。
+description: 沿 LinkCV 的浏览器、Vite 代理、FastAPI、SQLAlchemy、MySQL、MinIO、构建和部署链路分诊故障，从日志与现象区分网络或 Tailscale、配置漂移、缺失迁移、登录态、数据不一致、代码缺陷和外部依赖。适用于用户贴报错、服务启动失败、接口不可达、登录或保存异常、上传失败、测试或 CI 故障并要求查原因；默认只读诊断，修复需另行授权。
 ---
 
 # 故障分诊
@@ -14,15 +14,15 @@ description: 沿 LinkCV 的浏览器、Vite 代理、FastAPI、临时 Express、
 ```text
 浏览器
   → Vite 5173
-    → /api/health → FastAPI 8000
-    → 其他 /api → 临时 Express 4174
-      → 鉴权、简历 → SQLite
+    → /api → FastAPI 8000
+      → 健康检查
+      → 鉴权、简历 → SQLAlchemy → MySQL
       → 图片资源 → MinIO 9000
 
-本地 MySQL 3306 当前只由 Compose 提供，尚未进入 FastAPI 业务链。
+后端集成测试使用隔离 SQLite 和假 MinIO。它们是测试替身，不能用来推断本地、Dev 或 Production 的真实依赖状态。Redis 已有配置契约，但当前没有业务调用链。
 ```
 
-先核对请求真实走到哪里。当前只有 `/api/health` 属于 FastAPI，不能因为 URL 以 `/api` 开头就假设由 FastAPI 处理。
+先核对请求是否经过 Vite、实际 FastAPI 路由是否注册，以及目标环境是否已经应用对应 MySQL revision。当前全部 `/api` 由 FastAPI 承接；不得继续寻找已移除的 Express 进程或 `server/` 文件。
 
 ## 3. 固定故障事实
 
@@ -40,37 +40,37 @@ description: 沿 LinkCV 的浏览器、Vite 代理、FastAPI、临时 Express、
 
 ### A. 服务无法启动或页面打不开
 
-- 分别运行或读取 `npm run dev:web`、`npm run dev:backend`、`npm run dev:legacy` 的真实错误；
+- 分别运行或读取 `npm run dev:web`、`npm run dev:backend` 的真实错误；
 - 核对 Node、Python、uv、依赖锁、工作目录和端口占用；
 - 区分进程未启动、监听地址不对、端口冲突、依赖缺失和浏览器访问目标错误；
-- 不用一个子进程启动成功推断三个服务都正常。
+- 不用一个子进程启动成功推断 Web、FastAPI 和必要基础设施都正常。
 
 ### B. API 不可达、404、502 或请求进错服务
 
 - 从 `apps/web/src/api/client.ts` 的相对路径追到 `apps/web/vite.config.mjs`；
-- 核对 `BACKEND_PORT`、`BACKEND_PROXY_TARGET`、`API_PORT` 和 `LEGACY_API_PROXY_TARGET` 的实际覆盖关系；
+- 核对 `BACKEND_PORT` 和 `BACKEND_PROXY_TARGET` 的实际覆盖关系；
 - 分别直接探测目标服务和经过 Vite 的路径，区分代理错误与应用错误；
 - 同一个值多处不一致时转 `config-contract-sync`。
 
 ### C. 登录、Cookie、简历保存或权限异常
 
-- 当前事实源是 `server/auth.mjs`、`server/index.mjs` 和 `server/db.mjs`；
-- 核对 `resume_session` 是否由正确来源设置、浏览器是否携带、服务端 session 是否存在；
+- 当前事实源是 `apps/backend/src/linkcv/modules/identity/`、`modules/resumes/`、`core/security.py` 和 `core/database.py`；
+- 核对 `resume_session` JWT Cookie 是否由正确路由设置、浏览器是否携带、签名和有效期是否符合当前环境；
 - 区分浏览器登录、CLI 登录和其他 Agent 的凭据，它们不是同一身份；
 - 核对查询是否按 `user_id` 限制，以及 401、403、404 的契约语义。
 
 ### D. 图片上传、读取或 MinIO 故障
 
-- 从 Express 路由追到 `server/minio.mjs`，核对 endpoint、端口、bucket、凭据来源和对象名前缀；
+- 从 `modules/resumes/asset_routes.py` 追到 `core/storage.py`，核对 endpoint、端口、bucket、凭据来源和对象名前缀；
 - 区分上传数据校验失败、MinIO 不可达、bucket 不存在、对象不存在和跨用户路径被拒绝；
 - 不输出真实图片、密钥或用户对象名，证据中先脱敏。
 
 ### E. MySQL、SQLAlchemy 或 Alembic 故障
 
-- 当前 MySQL 未进入业务链，先证明报错确实来自新 FastAPI 持久化实现；
+- FastAPI 业务路由已经依赖 SQLAlchemy 模型和 MySQL 配置，但当前仓库尚无业务 revision；先区分模型代码存在、数据库已迁移和目标环境实际 current revision；
 - 只读核对连接目标、数据库版本、current revision、heads、history、锁和应用期望 schema；
 - 区分连接配置、未迁移、多 head、部分迁移、模型漂移、约束冲突和数据回填失败；
-- 迁移设计或数据修复转 `alembic-migration`，未经授权不执行升级、降级、UPDATE 或清库。
+- 迁移设计或数据修复转 `alembic-migration`，未经授权不执行升级、降级、UPDATE、DELETE 或清库；SQLite 集成测试成功不能证明 MySQL schema 已就绪。
 
 ### F. 测试、构建或 CI 故障
 
