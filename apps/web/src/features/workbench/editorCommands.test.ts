@@ -24,7 +24,7 @@ describe("convertCurrentLineToResumeRow", () => {
       type: "doc",
       content: [{
         type: "resumeRow",
-        attrs: { leftWidth: 65 },
+        attrs: { leftWidth: 70 },
         content: [
           { type: "paragraph", content: [{ type: "text", text: "星河云科技" }] },
           { type: "paragraph" },
@@ -32,6 +32,8 @@ describe("convertCurrentLineToResumeRow", () => {
       }],
     });
     expect(editor.isActive("resumeRow")).toBe(true);
+    expect(editor.state.selection.$from.parent).toEqual(editor.state.doc.firstChild?.child(1));
+    expect(editor.state.selection.$from.parentOffset).toBe(0);
   });
 
   it("光标已经在左右行内时不会再次嵌套", () => {
@@ -50,6 +52,26 @@ describe("convertCurrentLineToResumeRow", () => {
 
     expect(convertCurrentLineToResumeRow(editor)).toBe(false);
     expect(editor.getJSON().content?.[0].attrs?.leftWidth).toBe(60);
+  });
+
+  it("不会把列表项转换成破坏列表结构的左右行", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [{
+          type: "bulletList",
+          content: [{
+            type: "listItem",
+            content: [{ type: "paragraph", content: [{ type: "text", text: "列表项" }] }],
+          }],
+        }],
+      },
+    });
+    editor.commands.setTextSelection(3);
+
+    expect(convertCurrentLineToResumeRow(editor)).toBe(false);
+    expect(editor.getJSON().content?.[0].type).toBe("bulletList");
   });
 
   it("可以恢复普通行且不丢失左右文字", () => {

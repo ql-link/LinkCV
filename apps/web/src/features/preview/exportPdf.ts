@@ -94,6 +94,7 @@ function clonePaperForExport(paper: HTMLElement) {
   clone.querySelectorAll(".page-number").forEach((element) => element.remove());
   clone.querySelectorAll(".media-context-toolbar, .media-resize-handle").forEach((element) => element.remove());
   clone.querySelectorAll(".is-selected").forEach((element) => element.classList.remove("is-selected"));
+  clone.querySelectorAll(".resume-layout-row.is-active").forEach((element) => element.classList.remove("is-active"));
   return clone;
 }
 

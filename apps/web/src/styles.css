@@ -64,6 +64,22 @@ body {
   font-size: 14px;
 }
 
+.route-error-page {
+  display: grid;
+  min-height: 100vh;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  background: var(--wb-canvas, #f5f5f7);
+  padding: 32px;
+  color: var(--wb-ink, #1d1d1f);
+  text-align: center;
+}
+
+.route-error-page h1,
+.route-error-page p { margin: 0; }
+.route-error-page p { color: var(--wb-muted, #6e6e73); }
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -1508,6 +1524,7 @@ select:focus-visible {
 }
 
 .workbench-action.primary { border-color: var(--wb-accent); background: var(--wb-accent); color: #fff; }
+.workbench-action.active:not(.primary) { border-color: rgba(52, 120, 246, 0.28); background: var(--wb-accent-soft); color: var(--wb-accent); }
 .workbench-action:disabled { cursor: wait; opacity: 0.58; }
 .workbench-header-divider { width: 1px; height: 24px; background: var(--wb-hairline); }
 
@@ -1530,7 +1547,6 @@ select:focus-visible {
 .workbench-tool-button { width: 32px; height: 32px; flex: 0 0 32px; border-radius: 8px; background: transparent; font-size: 0.75rem; }
 .workbench-tool-button:disabled { cursor: default; opacity: 0.28; }
 .workbench-toolbar-divider { width: 1px; height: 20px; flex: 0 0 1px; margin: 0 6px; background: var(--wb-hairline); }
-.font-size-label { margin-left: 3px; color: var(--wb-muted); font-size: 0.75rem; }
 
 .workbench-block-select {
   height: 30px;
@@ -1589,16 +1605,18 @@ select:focus-visible {
   transform: none;
 }
 
-.resume-workbench .resume-content,
-.resume-workbench .resume-content .ProseMirror {
+.resume-workbench .resume-content {
   min-height: calc(297mm - (2 * var(--resume-page-margin-y)));
   height: auto;
   overflow: visible;
+  padding: 0;
 }
 
-.resume-workbench .resume-content { padding: 0; }
+.resume-workbench .resume-paper.smart-one-page .resume-content {
+  min-height: calc(297mm - (2 * var(--resume-page-margin-y)));
+}
 
-.resume-workbench .resume-content .ProseMirror {
+.resume-workbench .resume-content.ProseMirror {
   outline: 0;
   font-family: var(--resume-font-family);
   font-size: var(--resume-font-size);
@@ -1606,8 +1624,8 @@ select:focus-visible {
   caret-color: var(--wb-accent);
 }
 
-.resume-workbench .resume-content .ProseMirror > * { position: relative; }
-.resume-workbench .resume-content .ProseMirror p.is-editor-empty:first-child::before { float: left; height: 0; color: #a1a1a6; content: attr(data-placeholder); pointer-events: none; }
+.resume-workbench .resume-content.ProseMirror > * { position: relative; }
+.resume-workbench .resume-content.ProseMirror p.is-editor-empty:first-child::before { float: left; height: 0; color: #a1a1a6; content: attr(data-placeholder); pointer-events: none; }
 .resume-workbench .resume-content h1 { margin: 0 0 7px; font-size: 20pt; font-weight: 400; line-height: 1.12; letter-spacing: -0.02em; }
 .resume-workbench .resume-content h2 { margin: 8px 0 4px; border-bottom: 1px solid #1f2937; padding-bottom: 1px; font-size: 12.5pt; font-weight: 400; line-height: 1.2; letter-spacing: -0.015em; }
 .resume-workbench .resume-content h3 { margin: 7px 0 3px; font-size: 11pt; line-height: 1.25; }
@@ -1619,16 +1637,44 @@ select:focus-visible {
 .resume-workbench .resume-content a { color: #3478f6; text-decoration-thickness: 1px; text-underline-offset: 2px; }
 .resume-workbench .resume-content ::selection { background: rgba(52, 120, 246, 0.2); }
 
-.resume-layout-row { margin: 2px 0; border-radius: 4px; }
-.resume-layout-row [data-node-view-content] {
+.resume-layout-row {
+  position: relative;
+  margin: 2px 0;
+  border-radius: 5px;
+  transition: background 150ms ease, box-shadow 150ms ease;
+}
+.resume-layout-row [data-node-view-content-react] {
   display: grid;
   grid-template-columns: minmax(0, var(--resume-row-left)) minmax(0, 1fr);
   align-items: baseline;
   gap: 12px;
 }
-.resume-layout-row [data-node-view-content] > p { min-width: 0; margin: 0; }
-.resume-layout-row [data-node-view-content] > p:last-child { text-align: right; }
-.resume-layout-row:focus-within { background: rgba(52, 120, 246, 0.045); outline: 1px solid rgba(52, 120, 246, 0.14); outline-offset: 2px; }
+.resume-layout-row [data-node-view-content-react] > p {
+  min-width: 0;
+  min-height: 1.45em;
+  margin: 0;
+}
+.resume-layout-row [data-node-view-content-react] > p:last-child {
+  border-left: 1px solid transparent;
+  padding-left: 10px;
+  text-align: right;
+}
+.resume-layout-row.is-active {
+  background: rgba(52, 120, 246, 0.055);
+  box-shadow: 0 0 0 1px rgba(52, 120, 246, 0.2);
+}
+.resume-layout-row.is-active [data-node-view-content-react] > p:last-child {
+  border-left-color: rgba(52, 120, 246, 0.24);
+}
+.resume-layout-row.is-active [data-node-view-content-react] > p:last-child:has(> br.ProseMirror-trailingBreak)::before {
+  float: right;
+  height: 0;
+  color: #8a8a8e;
+  content: "在右侧输入…";
+  font-family: var(--ui-font);
+  font-size: 0.85em;
+  pointer-events: none;
+}
 
 .resume-media-node { position: relative; z-index: 2; }
 .resume-media-node img { display: block; width: 100%; height: auto; }

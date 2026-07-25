@@ -271,11 +271,34 @@ export const ResumeImage = Node.create({
   addNodeView: () => ReactNodeViewRenderer(MediaNodeView),
 });
 
-function ResumeRowView({ node }: NodeViewProps) {
+function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
+  const [active, setActive] = useState(false);
+
+  useEffect(() => {
+    const updateActiveState = () => {
+      const position = getPos();
+      if (typeof position !== "number") {
+        setActive(false);
+        return;
+      }
+
+      const { from, to } = editor.state.selection;
+      setActive(from > position && to < position + node.nodeSize);
+    };
+
+    updateActiveState();
+    editor.on("selectionUpdate", updateActiveState);
+    editor.on("transaction", updateActiveState);
+    return () => {
+      editor.off("selectionUpdate", updateActiveState);
+      editor.off("transaction", updateActiveState);
+    };
+  }, [editor, getPos, node.nodeSize]);
+
   return (
     <NodeViewWrapper
-      className="resume-layout-row"
-      style={{ "--resume-row-left": `${Number(node.attrs.leftWidth) || 65}%` } as React.CSSProperties}
+      className={`resume-layout-row${active ? " is-active" : ""}`}
+      style={{ "--resume-row-left": `${Number(node.attrs.leftWidth) || 70}%` } as React.CSSProperties}
     >
       <NodeViewContent />
     </NodeViewWrapper>
@@ -288,7 +311,7 @@ export const ResumeRow = Node.create({
   content: "paragraph paragraph",
   defining: true,
   isolating: true,
-  addAttributes: () => ({ leftWidth: { default: 65 } }),
+  addAttributes: () => ({ leftWidth: { default: 70 } }),
   parseHTML: () => [{ tag: "div[data-type='resume-row']" }, { tag: "div.resume-row[data-block='pair']" }],
   renderHTML: ({ HTMLAttributes }) => ["div", mergeAttributes(HTMLAttributes, { "data-type": "resume-row" }), 0],
   addNodeView: () => ReactNodeViewRenderer(ResumeRowView),

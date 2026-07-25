@@ -15,7 +15,7 @@ export function convertCurrentLineToResumeRow(editor: Editor) {
       paragraphDepth -= 1;
     }
 
-    if (paragraphDepth === 0 || $from.node(paragraphDepth - 1).type.name === "resumeRow") return false;
+    if (paragraphDepth === 0 || $from.node(paragraphDepth - 1).type.name !== "doc") return false;
 
     const paragraph = $from.node(paragraphDepth);
     const rowType = state.schema.nodes.resumeRow;
@@ -25,10 +25,10 @@ export function convertCurrentLineToResumeRow(editor: Editor) {
     const from = $from.before(paragraphDepth);
     const left = paragraphType.create(paragraph.attrs, paragraph.content, paragraph.marks);
     const right = paragraphType.create();
-    const row = rowType.create({ leftWidth: 65 }, [left, right]);
+    const row = rowType.create({ leftWidth: 70 }, [left, right]);
     const transaction = state.tr.replaceWith(from, from + paragraph.nodeSize, row);
     const rightTextPosition = from + 2 + left.nodeSize;
-    transaction.setSelection(TextSelection.near(transaction.doc.resolve(rightTextPosition)));
+    transaction.setSelection(TextSelection.create(transaction.doc, rightTextPosition));
     dispatch?.(transaction.scrollIntoView());
     return true;
   });
