@@ -1,6 +1,9 @@
 import { create } from "zustand";
+import type { JSONContent } from "@tiptap/core";
 import { api, ResumeRecord, ResumeSummary, User } from "../api/client";
+import { defaultResumeDocument, parseStoredDocument } from "../features/workbench/defaultDocument";
 import { defaultResumeMarkdown } from "../parser/defaultResume";
+import { renderResumeMarkdown } from "../parser/resumeMarkdown";
 
 export type ResumeTheme = "classic" | "modern" | "compact";
 
@@ -28,6 +31,7 @@ type ResumeState = {
   activeResumeId: string | null;
   title: string;
   markdown: string;
+  editorContent: JSONContent | string;
   splitRatio: number;
   previewScale: number;
   settings: ResumeSettings;
@@ -47,6 +51,7 @@ type ResumeState = {
   goHome: () => void;
   setTitle: (title: string) => void;
   setMarkdown: (markdown: string) => void;
+  setEditorContent: (content: JSONContent) => void;
   setSplitRatio: (ratio: number) => void;
   setPreviewScale: (scale: number) => void;
   updateSettings: (settings: Partial<ResumeSettings>) => void;
@@ -56,6 +61,7 @@ type SaveSnapshot = {
   activeResumeId: string;
   title: string;
   markdown: string;
+  editorContent: JSONContent | string;
   settings: ResumeSettings;
   splitRatio: number;
   previewScale: number;
@@ -83,10 +89,12 @@ function normalizeSettings(settings: Partial<ResumeSettings> = {}) {
 }
 
 function applyResume(resume: ResumeRecord) {
+  const stored = parseStoredDocument(resume.markdown);
   return {
     activeResumeId: resume.id,
     title: resume.title,
     markdown: resume.markdown,
+    editorContent: typeof stored === "string" ? renderResumeMarkdown(stored) : stored,
     settings: normalizeSettings(resume.settings),
     splitRatio: resume.splitRatio,
     previewScale: resume.previewScale,
@@ -114,6 +122,7 @@ function matchesSaveSnapshot(state: ResumeState, snapshot: SaveSnapshot) {
     state.activeResumeId === snapshot.activeResumeId &&
     state.title === snapshot.title &&
     state.markdown === snapshot.markdown &&
+    JSON.stringify(state.editorContent) === JSON.stringify(snapshot.editorContent) &&
     state.splitRatio === snapshot.splitRatio &&
     state.previewScale === snapshot.previewScale &&
     settingsEqual({ ...state.settings, showSource: false }, snapshot.settings)
@@ -127,6 +136,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   activeResumeId: null,
   title: "张三-后端开发实习生",
   markdown: defaultResumeMarkdown,
+  editorContent: defaultResumeDocument,
   splitRatio: 0.4,
   previewScale: 1,
   settings: defaultSettings,
@@ -182,7 +192,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   createResume: async (title = "未命名简历") => {
     const { resume } = await api.createResume({
       title,
-      markdown: defaultResumeMarkdown,
+      markdown: JSON.stringify(defaultResumeDocument),
       settings: defaultSettings,
       splitRatio: 0.4,
       previewScale: 1,
@@ -213,6 +223,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       activeResumeId: state.activeResumeId,
       title: state.title,
       markdown: state.markdown,
+      editorContent: state.editorContent,
       settings: { ...state.settings, showSource: false },
       splitRatio: state.splitRatio,
       previewScale: state.previewScale,
@@ -223,7 +234,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     try {
       const { resume } = await api.updateResume(snapshot.activeResumeId, {
         title: snapshot.title,
-        markdown: snapshot.markdown,
+        markdown: JSON.stringify(snapshot.editorContent),
         settings: snapshot.settings,
         splitRatio: snapshot.splitRatio,
         previewScale: snapshot.previewScale,
@@ -255,6 +266,17 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
         ? {}
         : { markdown, dirty: true, editVersion: state.editVersion + 1, saveStatus: "idle" },
     ),
+  setEditorContent: (editorContent) =>
+    set((state) => {
+      if (JSON.stringify(editorContent) === JSON.stringify(state.editorContent)) return {};
+      return {
+        editorContent,
+        markdown: JSON.stringify(editorContent),
+        dirty: true,
+        editVersion: state.editVersion + 1,
+        saveStatus: "idle",
+      };
+    }),
   setSplitRatio: (splitRatio) =>
     set((state) =>
       splitRatio === state.splitRatio

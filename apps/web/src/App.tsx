@@ -1,11 +1,8 @@
 import { useEffect, useLayoutEffect, useState } from "react";
-import { Header } from "./components/Header";
-import { SplitPane } from "./components/SplitPane";
 import { AuthPage } from "./features/auth/AuthPage";
-import { EditorPanel } from "./features/editor/EditorPanel";
 import { HomePage } from "./features/home/HomePage";
 import { LandingPage } from "./features/landing/LandingPage";
-import { PreviewPanel } from "./features/preview/PreviewPanel";
+import { ResumeWorkbench } from "./features/workbench/ResumeWorkbench";
 import { useResumeStore } from "./store/resumeStore";
 
 export function App() {
@@ -33,7 +30,7 @@ export function App() {
 
     const timer = window.setTimeout(() => {
       void saveCurrentResume();
-    }, 900);
+    }, 1200);
 
     return () => window.clearTimeout(timer);
   }, [activeResumeId, dirty, editVersion, saveCurrentResume]);
@@ -65,10 +62,5 @@ export function App() {
     return <HomePage />;
   }
 
-  return (
-    <div className="app-shell">
-      <Header />
-      <SplitPane left={<EditorPanel />} right={<PreviewPanel />} />
-    </div>
-  );
+  return <ResumeWorkbench />;
 }

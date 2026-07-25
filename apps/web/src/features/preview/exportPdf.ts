@@ -74,7 +74,7 @@ function createExportRoot() {
   return root;
 }
 
-function clonePaperForExport(paper: HTMLElement, smartOnePage: boolean) {
+function clonePaperForExport(paper: HTMLElement) {
   const clone = paper.cloneNode(true) as HTMLElement;
   const content = clone.querySelector<HTMLElement>(".resume-content");
 
@@ -82,16 +82,18 @@ function clonePaperForExport(paper: HTMLElement, smartOnePage: boolean) {
   clone.style.boxShadow = "none";
   clone.style.width = `${A4_WIDTH_MM}mm`;
   clone.style.minHeight = `${A4_HEIGHT_MM}mm`;
-  clone.style.height = smartOnePage ? "auto" : `${A4_HEIGHT_MM}mm`;
-  clone.style.overflow = smartOnePage ? "visible" : "hidden";
+  clone.style.height = "auto";
+  clone.style.overflow = "visible";
 
   if (content) {
     content.style.minHeight = `${A4_HEIGHT_MM}mm`;
-    content.style.height = smartOnePage ? "auto" : `${A4_HEIGHT_MM}mm`;
-    content.style.overflow = smartOnePage ? "visible" : "hidden";
+    content.style.height = "auto";
+    content.style.overflow = "visible";
   }
 
   clone.querySelectorAll(".page-number").forEach((element) => element.remove());
+  clone.querySelectorAll(".media-context-toolbar, .media-resize-handle").forEach((element) => element.remove());
+  clone.querySelectorAll(".is-selected").forEach((element) => element.classList.remove("is-selected"));
   return clone;
 }
 
@@ -140,9 +142,39 @@ function addPdfLinks(pdf: jsPDF, links: PdfLinkRegion[]) {
   });
 }
 
+function createPageSlice(source: HTMLCanvasElement, startY: number, pageHeight: number) {
+  const slice = document.createElement("canvas");
+  slice.width = source.width;
+  slice.height = pageHeight;
+  const context = slice.getContext("2d");
+  if (!context) return slice;
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, slice.width, slice.height);
+  const remainingHeight = Math.min(pageHeight, source.height - startY);
+  context.drawImage(source, 0, startY, source.width, remainingHeight, 0, 0, source.width, remainingHeight);
+  return slice;
+}
+
+function addLinksForStandardPage(pdf: jsPDF, links: PdfLinkRegion[], pageIndex: number) {
+  const pageTop = pageIndex * A4_HEIGHT_MM;
+  const pageBottom = pageTop + A4_HEIGHT_MM;
+  addPdfLinks(pdf, links.flatMap((link) => {
+    const linkBottom = link.y + link.height;
+    if (linkBottom <= pageTop || link.y >= pageBottom) return [];
+    const clippedTop = Math.max(link.y, pageTop);
+    const clippedBottom = Math.min(linkBottom, pageBottom);
+    return [{ ...link, y: clippedTop - pageTop, height: clippedBottom - clippedTop }];
+  }));
+}
+
+export function getStandardPdfPageCount(canvasWidth: number, canvasHeight: number) {
+  const pageHeightPx = Math.max(1, Math.round((canvasWidth * A4_HEIGHT_MM) / A4_WIDTH_MM));
+  return Math.max(1, Math.ceil(canvasHeight / pageHeightPx));
+}
+
 export async function exportResumePdf(smartOnePage: boolean, title: string) {
   const papers = Array.from(
-    document.querySelectorAll<HTMLElement>(".paper-zoom-frame .resume-paper"),
+    document.querySelectorAll<HTMLElement>(".resume-workbench .resume-paper, .paper-zoom-frame .resume-paper"),
   );
 
   if (papers.length === 0) return;
@@ -150,8 +182,8 @@ export async function exportResumePdf(smartOnePage: boolean, title: string) {
   const exportRoot = createExportRoot();
 
   try {
-    const clonedPapers = papers.map((paper, index) => {
-      const clone = clonePaperForExport(paper, smartOnePage && index === 0);
+    const clonedPapers = papers.map((paper) => {
+      const clone = clonePaperForExport(paper);
       exportRoot.appendChild(clone);
       return clone;
     });
@@ -167,27 +199,25 @@ export async function exportResumePdf(smartOnePage: boolean, title: string) {
       compress: true,
     });
 
-    const addCanvasPage = (canvas: HTMLCanvasElement, pageIndex: number) => {
-      const imageData = canvas.toDataURL("image/png");
-      const pageHeightMm = smartOnePage
-        ? Math.max(A4_HEIGHT_MM, (A4_WIDTH_MM * canvas.height) / canvas.width)
-        : A4_HEIGHT_MM;
+    if (smartOnePage) {
+      pdf.addImage(firstCanvas.toDataURL("image/png"), "PNG", 0, 0, A4_WIDTH_MM, firstHeightMm);
+      addPdfLinks(pdf, collectPdfLinks(clonedPapers[0], firstHeightMm));
+    } else {
+      let outputPageIndex = 0;
+      for (let paperIndex = 0; paperIndex < clonedPapers.length; paperIndex += 1) {
+        const canvas = paperIndex === 0 ? firstCanvas : await renderPaperToCanvas(clonedPapers[paperIndex]);
+        const pageHeightPx = Math.max(1, Math.round((canvas.width * A4_HEIGHT_MM) / A4_WIDTH_MM));
+        const fullHeightMm = (A4_WIDTH_MM * canvas.height) / canvas.width;
+        const links = collectPdfLinks(clonedPapers[paperIndex], fullHeightMm);
+        const pageCount = getStandardPdfPageCount(canvas.width, canvas.height);
 
-      if (pageIndex > 0) {
-        pdf.addPage([A4_WIDTH_MM, pageHeightMm], "portrait");
-      }
-
-      pdf.addImage(imageData, "PNG", 0, 0, A4_WIDTH_MM, pageHeightMm);
-    };
-
-    addCanvasPage(firstCanvas, 0);
-    addPdfLinks(pdf, collectPdfLinks(clonedPapers[0], firstHeightMm));
-
-    if (!smartOnePage) {
-      for (let index = 1; index < clonedPapers.length; index += 1) {
-        const canvas = await renderPaperToCanvas(clonedPapers[index]);
-        addCanvasPage(canvas, index);
-        addPdfLinks(pdf, collectPdfLinks(clonedPapers[index], A4_HEIGHT_MM));
+        for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+          if (outputPageIndex > 0) pdf.addPage([A4_WIDTH_MM, A4_HEIGHT_MM], "portrait");
+          const slice = createPageSlice(canvas, pageIndex * pageHeightPx, pageHeightPx);
+          pdf.addImage(slice.toDataURL("image/png"), "PNG", 0, 0, A4_WIDTH_MM, A4_HEIGHT_MM);
+          addLinksForStandardPage(pdf, links, pageIndex);
+          outputPageIndex += 1;
+        }
       }
     }
 
