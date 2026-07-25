@@ -104,6 +104,9 @@ contracts:
       - path: Dockerfile
         pattern: 'run_alembic\.py.*&& exec uvicorn'
         message: 容器必须先通过迁移 runner 再启动 FastAPI
+      - path: Dockerfile
+        pattern: 'python -m pip install --index-url "\$\{UV_INDEX_URL\}" "uv==\$\{UV_VERSION\}"'
+        message: uv 必须通过可配置的 PyPI 镜像安装，不能依赖 GHCR 镜像
 
   - id: deployment-environment-isolation
     description: Dev 与 Production 使用独立的发布目标和运行资源

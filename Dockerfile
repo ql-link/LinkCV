@@ -11,11 +11,10 @@ COPY apps/web/index.html apps/web/tsconfig.json apps/web/vite.config.mjs ./
 COPY apps/web/src ./src
 RUN npm run build
 
-FROM ghcr.io/astral-sh/uv:0.11.30 AS uv
-
 FROM python:3.13-slim AS runtime
 
 ARG UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+ARG UV_VERSION=0.11.30
 ENV PYTHONUNBUFFERED=1 \
     PATH="/app/apps/backend/.venv/bin:$PATH" \
     APP_ENV=production \
@@ -25,7 +24,8 @@ ENV PYTHONUNBUFFERED=1 \
     TZ=Asia/Shanghai
 
 WORKDIR /app/apps/backend
-COPY --from=uv /uv /uvx /usr/local/bin/
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip install --index-url "${UV_INDEX_URL}" "uv==${UV_VERSION}"
 COPY apps/backend/pyproject.toml apps/backend/uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     UV_DEFAULT_INDEX="${UV_INDEX_URL}" uv sync --frozen --no-dev --no-install-project
