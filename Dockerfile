@@ -6,6 +6,7 @@ WORKDIR /app/apps/web
 COPY apps/web/package.json apps/web/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit
 COPY apps/web/index.html apps/web/tsconfig.json apps/web/vite.config.mjs ./
+COPY apps/web/public ./public
 COPY apps/web/src ./src
 RUN npm run build
 
