@@ -212,9 +212,9 @@ function renderSideContent(content: string) {
 }
 
 function renderPair(left: string, right: string) {
-  return `<div class="resume-row" data-block="pair"><div class="resume-row-left">${renderSideContent(
+  return `<div class="resume-row" data-type="resume-row" data-block="pair"><p class="resume-row-left">${renderSideContent(
     left,
-  )}</div><div class="resume-row-right">${renderSideContent(right)}</div></div>`;
+  )}</p><p class="resume-row-right">${renderSideContent(right)}</p></div>`;
 }
 
 export function renderResumeMarkdown(source: string) {
