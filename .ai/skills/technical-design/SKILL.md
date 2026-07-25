@@ -16,21 +16,20 @@ description: 基于已冻结的 LinkCV L3 需求简报、验收契约和真实�
 - Express 与 FastAPI 的兼容和切换边界是什么；
 - 每个验收场景由哪里实现、由什么自动化测试或人工验收验证。
 
-本阶段不编写业务代码，也不修改 Issue、提交或 PR。
+本阶段不编写业务代码，也不修改任何平台的 Issue、提交或 PR。
 
 ## 2. 使用前提与机器门禁
 
 本技能只用于 L3。进入前运行：
 
 ```bash
-npm run spec:source -- check <KEY> --gate technical_design # 仅 Multica 来源
 npm run spec -- check <KEY> technical_design
 ```
 
 以下情况停止并返回上游：
 
 - 需求简报或验收契约缺失、未冻结或哈希漂移；
-- Multica 权威需求正文或结构化需求变更评论链漂移，或需求源当前无法核验；
+- 来源 Issue 或相关飞书详情材料中仍有会改变范围、权限、数据或验收的事项尚未确认，或者冻结产物与当前有效结论不一致；
 - 设计过程中发现业务范围、权限规则或验收结果仍未确定；
 - 任务实际只需要 L2，且不存在跨模块或高风险设计内容。
 
@@ -39,14 +38,15 @@ npm run spec -- check <KEY> technical_design
 ## 3. 必读材料
 
 1. `AGENTS.md`；
-2. `.specs/<KEY>/state.yaml`；
-3. `.specs/<KEY>/brief.md`；
-4. `.specs/<KEY>/acceptance.feature`；
-5. [technical_design.template.md](technical_design.template.md)；
-6. 所有预计修改文件及其最近的调用方和测试；
-7. 涉及时读取前端 API 客户端、共享类型、Vite 代理、环境变量和部署配置；
-8. 涉及时读取 FastAPI 路由、临时 Express 路由、数据库模型、迁移和对象存储实现；涉及 MySQL 物理 schema 时读取 `mysql-ddl-conventions`，涉及迁移链时读取 `alembic-migration`。
-9. 涉及公共契约结构、语义或兼容变化时，读取 `contract-guard` 和共享契约治理映射；没有契约变化时不要为了流程完整额外调用。
+2. 来源 Issue 正文及适用的飞书详情文档；
+3. `.specs/<KEY>/state.yaml`；
+4. `.specs/<KEY>/brief.md`；
+5. `.specs/<KEY>/acceptance.feature`；
+6. [technical_design.template.md](technical_design.template.md)；
+7. 所有预计修改文件及其最近的调用方和测试；
+8. 涉及时读取前端 API 客户端、共享类型、Vite 代理、环境变量和部署配置；
+9. 涉及时读取 FastAPI 路由、临时 Express 路由、数据库模型、迁移和对象存储实现；涉及 MySQL 物理 schema 时读取 `mysql-ddl-conventions`，涉及迁移链时读取 `alembic-migration`。
+10. 涉及公共契约结构、语义或兼容变化时，读取 `contract-guard` 和共享契约治理映射；没有契约变化时不要为了流程完整额外调用。
 
 只要方案声称“复用、修改或替换”某个能力，就必须先读取对应真实代码或文档。
 

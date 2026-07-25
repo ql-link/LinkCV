@@ -32,7 +32,7 @@ description: 为 LinkCV 的 L2/L3 任务生成、修订和记录人工端到端�
 .specs/<KEY>/manual_acceptance.md
 ```
 
-生成时读取 [manual_acceptance.template.md](manual_acceptance.template.md)，替换全部占位内容。该文件是任务级执行记录，不放入 `docs/`；`.specs/<KEY>/` 默认不提交，因此 PR 中只摘要结论和失败项。只有用户明确授权时，才能把结论写回 Multica 或其他外部 Issue。
+生成时读取 [manual_acceptance.template.md](manual_acceptance.template.md)，替换全部占位内容。该文件是任务级执行记录，不放入 `docs/`；`.specs/<KEY>/` 默认不提交，因此 PR 中只摘要结论和失败项。来源 Issue 是初始产品输入，不是验收结果存储位置；不要向任何 Issue 系统自动写回验收结果。
 
 清单可以在实现前预先生成，但只有在目标实现和自动化验证稳定后才执行。结果变化时直接更新原文件，不另建多份“最终版”。
 
@@ -69,7 +69,6 @@ description: 为 LinkCV 的 L2/L3 任务生成、修订和记录人工端到端�
 所有必要人工项均通过后，由统一命令执行最终自动化验证并记录完整证据：
 
 ```bash
-npm run spec:source -- check <KEY> --gate verification # 仅 Multica 来源
 npm run spec -- verify <KEY> \
   --run "npm run check" \
   --manual-acceptance

@@ -1,6 +1,6 @@
 ---
 name: brief-generator
-description: 为 LinkCV 的 L2 或 L3 任务创建和修订需求简报，从已确认的请求、Multica Issue 与真实仓库上下文中收敛目标、范围、非目标、业务流程、影响模块、概念契约、风险和阻塞决策。适用于分级完成后编写或迭代 brief.md，直到用户确认冻结。
+description: 为 LinkCV 的 L2 或 L3 任务创建和修订需求简报，从任意平台的来源 Issue、相关飞书详情文档、用户补充与真实仓库上下文中收敛目标、范围、非目标、业务流程、影响模块、概念契约、风险和阻塞决策。适用于分级完成后编写或迭代 brief.md，直到用户确认冻结。
 ---
 
 # 需求简报生成与收敛
@@ -24,7 +24,8 @@ description: 为 LinkCV 的 L2 或 L3 任务创建和修订需求简报，从已
 
 - `flow-router` 已判定为 L2 或 L3；
 - 有稳定的 Issue key，例如 `LCV-21`；
-- 用户请求或 Issue 内容足以识别核心目标。
+- 已能读取来源 Issue 正文，且其中至少可以识别核心目标；
+- 已有相关飞书详情文档时能够一并读取。
 
 以下情况停止或转交：
 
@@ -33,7 +34,9 @@ description: 为 LinkCV 的 L2 或 L3 任务创建和修订需求简报，从已
 - 用户要求直接写代码，但 L2/L3 前置产物未冻结：说明缺失阶段，不跳过；
 - 用户只要求改项目技能或模板：直接维护技能，不创建业务规格。
 
-Multica 是长期需求主记录。可以读取和引用，但没有用户对本次业务差异的明确确认时，不修改 Issue、评论、自定义属性或状态。确认后的需求增量只能由本技能通过 `source_guard` 追加固定格式的结构化评论；不得改写 Issue 正文、编辑旧评论或把普通讨论评论当成正式需求。
+来源 Issue 是需求简报的初始产品输入，必须读取完整正文，而不是只读取标识、摘要或链接。Issue 可以来自 Multica、Linear、GitHub 或其他系统，平台不改变输入权重或后续流程。关联的飞书周开发文档、详情文档和用户明确确认的补充内容负责展开或修正范围、验收和实现前决策；已有详情文档时必须和 Issue 一起读取。
+
+Issue 正文与详情文档不一致时，先根据明确的替代说明和时间顺序核实哪份是当前有效结论；无法确认时使用 `decision-grilling`，不得静默选择。普通评论不自动进入需求输入，除非用户明确指定某条评论为有效补充。本技能不创建、修改或评论任何外部 Issue。
 
 ## 3. 自动初始化与机器门禁
 
@@ -43,19 +46,13 @@ Multica 是长期需求主记录。可以读取和引用，但没有用户对本
 - 已存在时，不得覆盖，先读取状态并核对车道和来源；
 - 现有车道与 `flow-router` 结论冲突时停止，说明冲突和影响，不擅自改写状态。
 
-根据真实来源选择命令：
+初始化时只记录来源 Issue 的完整链接或稳定引用，不声明平台：
 
 ```bash
-# 来自 Multica Issue
-npm run spec -- init <KEY> --lane L2|L3 --source-system multica \
-  --issue-id <ISSUE_UUID> --workspace-id <WORKSPACE_UUID>
-npm run spec:source -- capture <KEY> --gate brief
+npm run spec -- init <KEY> --lane L2|L3 --source-issue <ISSUE_URL_OR_REF>
 
-# 来自 GitHub Issue
-npm run spec -- init <KEY> --lane L2|L3 --source-system github --issue-id <ISSUE_ID>
-
-# 来自用户对话或其他没有外部 Issue 的请求
-npm run spec -- init <KEY> --lane L2|L3 --source-system manual
+# 明确关闭常规认领流程、自举或本地维护等没有外部 Issue 的例外
+npm run spec -- init <KEY> --lane L2|L3
 ```
 
 命令中的 `L2|L3` 表示根据分级结果选择一个值，不能原样传入。初始化只创建目录和 `state.yaml`，不会生成需求简报、修改外部 Issue 或执行 Git 操作。
@@ -64,39 +61,12 @@ npm run spec -- init <KEY> --lane L2|L3 --source-system manual
 
 ```bash
 npm run spec -- status <KEY>
-npm run spec:source -- check <KEY> --gate brief # 仅 Multica 来源
 npm run spec -- check <KEY> brief
 ```
 
-首次 `capture` 保存 Multica 权威需求指纹。权威需求由 Issue 标识、标题、描述和有效的 LinkCV 结构化需求变更评论链共同组成；普通讨论、机器人消息和回复线程不进入指纹。没有结构化评论的旧任务继续使用原来的正文指纹，不产生无意义迁移。
+`source_issue` 原样保存 Issue 的完整链接或稳定引用，便于状态恢复和 PR 关联。它不拆分平台、workspace 或内部 ID，也不参与冻结门禁；需要读取时根据引用本身选择可用工具。Issue 正文仍是人工或 Agent 必须读取的业务输入；本地状态工具不访问外部 Issue，不捕获需求指纹，不比较评论链，也不向任何 Issue 系统回写需求变化。
 
-`check` 本身只读。状态、负责人、标签等元数据变化不会让 Brief 失效；标题、描述或结构化评论链变化会把 Brief、Acceptance、Technical Design 和验证状态退回未冻结，并返回非零退出码。此时必须重新读取完整权威需求、在原文件修订 Brief，再运行：
-
-```bash
-npm run spec:source -- accept <KEY> --gate brief
-```
-
-`accept` 只表示本地开始以当前 Multica 权威需求作为新基线，不代表范围已经获得用户确认；仍须完成本技能的分歧扫描、对账和用户确认后才能冻结。Multica CLI 不可用、认证失效、无权访问或网络失败时，准确报告“需求未核验”并停止，不得把缓存状态当成最新需求继续推进。
-
-### Brief 与 Multica 对账
-
-Brief 收敛后，本技能必须比较“已确认 Brief”与当前 Multica 权威需求：
-
-- 没有新增、修改或删除的业务范围/验收要求时，由 Agent 自动运行 `npm run spec:source -- reconcile <KEY> --no-change`；
-- 存在实质差异时，先向用户展示纯业务差异。只有用户明确确认这次差异后，Agent 才把差异写入 `.specs/<KEY>/` 内的临时输入文件，并运行：
-
-```bash
-npm run spec:source -- sync-comment <KEY> \
-  --change-file .specs/<KEY>/requirement-change.tmp.md --confirmed-by-user
-```
-
-临时输入文件的第一段必须用 1–3 句非技术语言概括“确认了什么、对谁有什么影响”，空一行后再用列表展示新增、修改、删除和验收变化。工具据此把 Multica 评论固定生成为“概述 → 具体变化 → 工具记录”，让开发者和审核员先读概述；固定标题、原需求指纹、变更 ID、时间、评论 ID、内容哈希和替代关系全部由工具生成或记录，开发者不填写 `state.yaml`，也不维护任何标识。命令成功并复核评论进入权威需求链后，Agent 删除临时输入文件。
-
-写入超时、响应损坏或写后复核失败时，工具保留 `syncing` 写入意图并禁止再次追加。Agent 自动运行 `recover-comment <KEY>` 只读查找同一变更 ID；找到后完成本地对账，不会重复评论。若反复核验且人工确认评论确实不存在，才运行 `abandon-sync <KEY> --confirmed-comment-absent` 清除意图，再按同一已确认业务差异重试。开发者不处理变更 ID 或评论 ID。
-
-结构化评论采用追加式审计：旧评论不编辑。若当前差异是在纠正最近一条有效的已确认评论，Agent 只追加 `--correct-latest`；工具从当前有效链自动解析实际评论 ID 并生成 `supersedes`，不得向开发者展示或要求输入评论 ID。没有有效评论时命令失败，不会误写成普通新增。任何普通评论，即使讨论了范围，也仍不自动成为权威需求；需要进入权威需求时必须重新形成业务差异、获得确认并追加结构化评论。
-
-`sync-comment` 是本流程唯一允许的 Multica 写操作，而且只追加需求变更评论。框架搭建时对这种机制的一次性同意，不等于授权未来任务自动回写；每次仍以用户对该次业务差异的明确确认作为写入前提。GitHub Issue 不承担需求回写。
+开始编写 Brief 前，先读取来源 Issue，再读取用户指定、Issue 关联或当前周对应的飞书材料。若 Issue、飞书材料与用户本轮补充冲突，使用 `decision-grilling` 收敛结论；没有明确写入授权时，把高影响结论交给用户更新飞书。进入编码前必须解决并记录会改变范围、验收、权限、数据或兼容策略的问题。Issue 本身已经足够明确且不存在这类决策时，不强制为了形式另写一份飞书详情文档。
 
 需求简报固定输出到：
 
@@ -110,10 +80,11 @@ npm run spec:source -- sync-comment <KEY> \
 
 1. `AGENTS.md`；
 2. 用户原始请求和已确认的补充信息；
-3. Multica Issue 内容（如果任务来自 Multica）；
-4. `.specs/<KEY>/state.yaml`；
-5. 与需求直接相关的入口文件、相邻模块、类型和测试；
-6. [brief.template.md](brief.template.md)。
+3. 来源 Issue 的标题、完整正文、附件或关联文档链接；
+4. 用户指定或 Issue 关联的飞书周开发文档、模块说明和已经确认的补充材料；
+5. `.specs/<KEY>/state.yaml`；
+6. 与需求直接相关的入口文件、相邻模块、类型和测试；
+7. [brief.template.md](brief.template.md)。
 
 代码探索以支撑范围判断为限，但必须基于真实文件。不要凭技术栈常识编造现有模块、接口或能力。
 
@@ -188,16 +159,15 @@ L3 删除模板中的“L2 最小实现思路”，只在需求简报中确定�
 
 ## 8. 工作步骤
 
-1. 从请求和 Issue 中提取目标、范围、非目标和显式验收要求。
-2. 检查本地状态；缺失时按真实来源自动初始化并捕获 Multica 需求基线，存在时核对车道、来源和需求指纹。
+1. 从来源 Issue 提取初始目标、范围、现状和显式验收要求，再用关联飞书详情文档和用户已确认补充展开或修正。
+2. 检查本地状态；缺失时按真实来源自动初始化，存在时核对车道和记录来源。
 3. 读取真实代码，核对当前行为、影响模块和可复用能力。
 4. 读取模板并生成或修订 `.specs/<KEY>/brief.md`，替换所有占位内容；主流程、异常分支和模块影响不能省略为一张概括表。
 5. 把初稿作为一致性探针，扫描事实缺口、正文冲突和真实决策分支。
 6. 事实缺口继续探索；真实决策进入 `decision-grilling`，每轮只处理一个最上游问题。
 7. 用户确认后重新读取当前文件，把结论写回对应章节，删除已解决阻塞项并重新扫描全文。
 8. 持续迭代，直到阻塞性决策区为空且正文没有依赖冲突。
-9. 向用户展示最终范围以及相对 Multica 权威需求的业务差异；用户明确确认后，无差异运行 `reconcile --no-change`，有差异运行 `sync-comment --confirmed-by-user` 并核验成功。
-10. 删除阻塞性决策整节并冻结：
+9. 向用户展示最终范围和仍需确认的差异；用户确认后删除阻塞性决策整节并冻结：
 
 ```bash
 npm run spec -- freeze <KEY> brief
@@ -217,7 +187,7 @@ npm run spec -- freeze <KEY> brief
 - API、权限、数据、迁移、部署等高风险影响没有被隐藏；
 - 风险是具体场景，不是泛泛提醒；
 - 没有仍会改变范围或行为的阻塞问题，草稿期“阻塞性决策”整节已经删除；
-- 当前 Brief 已与 Multica 权威需求对账，且对账记录绑定当前文件哈希；
+- Brief 与当前有效的来源 Issue、飞书详情材料及用户补充一致；
 - 文件中不包含占位符、过程记录或未经确认的实现承诺。
 
 冻结后转 `acceptance-generator`，不要直接进入实现。

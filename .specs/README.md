@@ -1,6 +1,6 @@
 # LinkCV 本地 Spec 工作区
 
-`.specs/<LCV-key>/` 用于 L2/L3 任务执行期间的阶段快照。Multica Issue 仍是长期需求、范围和验收标准的主记录；本目录不是第二套需求系统。
+`.specs/<LCV-key>/` 用于 L2/L3 任务执行期间的阶段快照。普通团队任务从来源 Issue 正文开始；已有飞书详情文档时一起读取，需要补充实现决策时先在飞书中解决，再把 Issue 与详情材料收敛到本地冻结产物。Issue 可以来自任意平台，来源系统不改变阶段判断。
 
 ## 车道
 
@@ -13,18 +13,11 @@
 通常由 `brief-generator` 在首次处理 L2/L3 任务时自动初始化，用户不需要手动运行。调试或人工恢复流程时可以使用：
 
 ```bash
-npm run spec -- init LCV-42 --lane L3 --source-system multica \
-  --issue-id <ISSUE_UUID> --workspace-id <WORKSPACE_UUID>
-npm run spec:source -- capture LCV-42 --gate brief
-npm run spec -- init LCV-43 --lane L2 --source-system github --issue-id <ISSUE_ID>
-npm run spec -- init LCV-44 --lane L2 --source-system manual
+npm run spec -- init LCV-42 --lane L3 --source-issue <ISSUE_URL_OR_REF>
+npm run spec -- init LCV-43 --lane L2 --source-issue <ISSUE_URL_OR_REF>
+npm run spec -- init LCV-44 --lane L2
 npm run spec -- status
 npm run spec -- status LCV-42
-npm run spec:source -- check LCV-42 --gate acceptance
-npm run spec:source -- reconcile LCV-42 --no-change
-# 仅在用户确认具体业务差异后，由 Agent 使用临时文件执行：
-npm run spec:source -- sync-comment LCV-42 \
-  --change-file .specs/LCV-42/requirement-change.tmp.md --confirmed-by-user
 npm run spec -- check LCV-42 acceptance
 npm run spec -- freeze LCV-42 brief
 npm run spec -- verify LCV-42 --run "npm run check"
@@ -43,27 +36,21 @@ npm run spec -- check LCV-42 release_ready
 
 旧版 `state.yaml` 会在读取时自动升级。旧的字符串验证证据会保留在 `legacy_evidence` 供追溯，但不会继续作为可信证明；任务会退回 `implementation`，由 Agent 自动重跑最终验证。
 
-## Multica 权威需求与漂移门禁
+## 需求来源与实施偏差
 
-Multica 来源在每个关键阶段先运行 `npm run spec:source -- check <KEY> --gate <GATE>`。可用 gate 为 `brief`、`acceptance`、`technical_design`、`implementation`、`verification` 和 `release`。除下面的显式 `sync-comment` 外，脚本只读取 Issue，不改字段、不切换状态。
+来源 Issue 正文是初始需求输入，关联的飞书周开发文档、详情文档和用户明确确认的补充内容用于展开和确认实现前决策。Brief、Acceptance 和 Technical Design 是当前工作区的执行快照；冻结后仍由本地哈希门禁保证这些本地产物没有被静默修改。
 
-首次 `capture` 保存权威需求指纹：Issue 标识、标题、描述，以及所有有效的 `LinkCV 已确认需求变更` 顶层结构化评论。普通评论、回复线程和机器人讨论被忽略；没有结构化评论的旧任务仍得到原正文指纹。负责人、状态、标签等元数据变化只刷新检查时间，不会误判为需求变化；正文或结构化评论链变化会使 Brief 及全部下游冻结状态失效并退回 `brief`。重新读取需求、修订 Brief 后，使用 `accept <KEY> --gate brief` 明确采用当前权威需求作为新基线。
+`source_issue` 只原样保存一个完整链接或稳定引用，方便恢复上下文、PR 关联和人工追踪。状态中不拆分 `source.system`、`issue_id` 或 `workspace_id`，也不给 Multica、Linear、GitHub 或其他平台附加不同流程语义。工具不会访问外部 Issue 校验正文，不维护需求指纹、评论链、漂移状态或对账状态，也不会向任何 Issue 系统写回评论。
 
-Brief 冻结前必须完成对账。没有实质差异时，Agent 运行 `reconcile <KEY> --no-change`；存在新增、修改、删除的范围或验收要求时，Agent 先让用户只审业务差异，确认后再运行 `sync-comment --confirmed-by-user`。临时输入的第一段是给开发者和审核员快速阅读的概述，后续才列具体业务变化；工具将评论固定排成“概述 → 具体变化 → 工具记录”，并在写后重新读取 Multica 验证其已进入需求指纹。原需求指纹、变更 ID、评论 ID、内容哈希、时间和 `supersedes` 替代关系均由工具维护，开发者无需填写或理解 `state.yaml` 字段。
-
-结构化评论不可编辑。纠错时使用 `--correct-latest` 追加一条新评论；工具自动选择最近一条当前有效评论并生成替代关系，不接收原始评论 ID。历史仍可审计；没有有效评论、格式损坏、标识重复、替代未知或已失效评论、写后无法核验都会失败关闭门禁。每条评论中的原需求指纹记录“确认这次差异时所依据的权威需求版本”；整体指纹则由当前 Issue 正文和归一化的结构化评论记录共同生成，因此后续正文变化仍会触发漂移，但不会让旧评论变成无法恢复的死链。
-
-写评论前，工具先保存带变更 ID 的 `syncing` 意图。写入可能成功但复核失败时，后续 `sync-comment` 会被拒绝，Agent 使用 `recover-comment <KEY>` 只读恢复，不会重复追加；只有反复核验并确认评论确实不存在后，才可用 `abandon-sync <KEY> --confirmed-comment-absent` 清除意图。异常恢复所需标识仍由工具维护。GitHub Issue 不参与这套需求回写。
-
-Multica CLI 不可用、认证失效、对象无权访问或网络失败时，命令返回非零且不更新核验 gate。恢复连接后重试原命令；不要用旧缓存声称需求未变化。
+实施中出现不改变核心产品目标的必要偏差时，在 `implementation_report.md` 和 PR 中说明原方案、实际实现、原因、影响、验证和遗留风险。若偏差会改变范围、验收、权限、数据安全或兼容承诺，先回到飞书确认，再修订和重新冻结受影响的本地产物。
 
 ## 跨会话恢复
 
-新会话先运行 `npm run spec -- status`。不带 KEY 时扫描当前工作区全部 Spec；每个可信的在途任务会显示车道、阶段、下一站 Skill、最小待读文件、阶段门禁和 Multica 核验命令。发现 `state.yaml` 结构错误、冻结文件缺失、规格或代码 SHA-256 漂移、人工验收变化，或阶段与产物不一致时返回非零，修复前不得继续。
+新会话先运行 `npm run spec -- status`。不带 KEY 时扫描当前工作区全部 Spec；每个可信的在途任务会显示车道、阶段、下一站 Skill、最小待读文件和本地阶段门禁。发现 `state.yaml` 结构错误、冻结文件缺失、规格或代码 SHA-256 漂移、人工验收变化，或阶段与产物不一致时返回非零，修复前不得继续。
 
 已经进入 `release_ready` 的任务不再计入无参数查询的“在途”列表，避免历史任务持续制造选择负担；需要复查或发布时仍可用 `npm run spec -- status <KEY>` 精确查询。
 
-有多个在途任务时必须由用户指定继续哪一个。`.specs/<KEY>/` 默认被 Git 忽略，因此该恢复能力覆盖同一工作区中的跨会话续做，不承诺跨设备或跨 worktree 自动复制本地产物；长期需求仍从 Multica 恢复。
+有多个在途任务时必须由用户指定继续哪一个。`.specs/<KEY>/` 默认被 Git 忽略，因此该恢复能力覆盖同一工作区中的跨会话续做，不承诺跨设备或跨 worktree 自动复制本地产物；跨环境恢复时重新读取来源 Issue 和对应详情文档，并重新建立本地快照。
 
 当任务包含跨浏览器、跨服务、上传下载、PDF 或视觉行为，且现有自动化测试无法完整覆盖时，由 `manual-acceptance` 在 `.specs/<KEY>/manual_acceptance.md` 生成和记录人工端到端验收。最终运行 `spec verify --manual-acceptance` 时，脚本自动校验总体结论、统计、占位内容和文件哈希；仍有必要项未执行、失败或阻塞时不会进入质量审查。
 

@@ -16,7 +16,6 @@ description: 把已冻结的 LinkCV L2 或 L3 需求简报转换为可观察、�
 进入前运行：
 
 ```bash
-npm run spec:source -- check <KEY> --gate acceptance # 仅 Multica 来源
 npm run spec -- check <KEY> acceptance
 ```
 
@@ -24,7 +23,7 @@ npm run spec -- check <KEY> acceptance
 
 - `brief.md` 缺失、未冻结或冻结后内容发生变化；
 - 需求简报仍有会改变业务规则的阻塞问题；
-- Multica 权威需求（正文或结构化需求变更评论链）自 Brief 冻结后发生变化，或者需求源当前无法核验；
+- 来源 Issue 或相关飞书详情材料中仍有会改变范围或验收的事项尚未确认，或者冻结 Brief 与当前有效结论不一致；
 - 用户尚未确认需求范围；
 - 只能写出“正确处理”“适当提示”一类不可断言结果。
 
@@ -34,8 +33,9 @@ npm run spec -- check <KEY> acceptance
 
 1. `.specs/<KEY>/state.yaml`；
 2. `.specs/<KEY>/brief.md`；
-3. 与用户可观察行为直接相关的当前实现、接口和测试；
-4. [acceptance.template.feature](acceptance.template.feature)。
+3. 来源 Issue 正文及适用的飞书详情文档，用于核对 Brief 没有遗漏或误解；
+4. 与用户可观察行为直接相关的当前实现、接口和测试；
+5. [acceptance.template.feature](acceptance.template.feature)。
 
 模板是 Gherkin 写法参考，不是业务内容。不得复制模板中的虚构事实代替真实需求。
 

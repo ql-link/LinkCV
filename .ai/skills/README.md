@@ -52,7 +52,9 @@
 | --- | --- | --- |
 | `incident-triage` | 沿 Web、代理、后端、数据和基础设施链路定位故障 | 修复代码先重新分级；迁移转 `alembic-migration` |
 
-运行 `npm run check:ai` 校验技能的头部元数据、占位内容、链接、过期技术栈引用，以及 Brief 模板的固定结构。长期模块知识从 [docs/README.md](../../docs/README.md) 按需读取；三个契约治理技能共享 [契约面与事实源映射](../../docs/internals/contract-governance.md)，不各自复制模块映射。Multica 来源的阶段 Skill 通过 `npm run spec:source -- ...` 复用同一权威需求指纹门禁，不各自实现外部同步逻辑。除 `brief-generator` 在用户确认具体业务差异后调用 `sync-comment` 追加结构化需求变更评论外，其余阶段只读核验。
+运行 `npm run check:ai` 校验技能的头部元数据、占位内容、链接、过期技术栈引用，以及 Brief 模板的固定结构。长期模块知识从 [docs/README.md](../../docs/README.md) 按需读取；三个契约治理技能共享 [契约面与事实源映射](../../docs/internals/contract-governance.md)，不各自复制模块映射。
+
+普通团队任务先从来源 Issue 认领并完整读取正文。Multica、Linear、GitHub 或其他 Issue 系统都可以作为来源；`state.yaml` 只原样保存一个 `source_issue` 链接或稳定引用，不单独记录平台，也不根据平台改变交付车道。Issue 是初始产品输入；已有飞书详情文档时必须一起读取，Issue 不足以支撑实现或存在高影响决策时先补齐详情文档。L1 可以在 Issue 足够明确时直接实现，L2/L3 再把 Issue 与详情文档收敛成本地冻结产物。项目阶段 Skill 不维护外部需求指纹、不核验评论链，也不向任何 Issue 系统写回评论。
 
 固定结构的产物模板跟随所属技能保存：需求简报、验收契约、技术设计、按需生成的实施报告和人工验收记录分别由对应技能维护。`agents/openai.yaml` 仅在需要 Codex 界面展示元数据时按需添加，不是项目技能的必需文件。
 
@@ -64,4 +66,4 @@
 
 专项能力按需叠加，不延长所有任务的固定主链：表结构设计与迁移执行分别由 `mysql-ddl-conventions`、`alembic-migration` 承接；完成度问题由 `feature-completion-audit` 做需求到证据的独立对账；运行故障由 `incident-triage` 先定位，获得修复授权后再回主链。当前会话实现的完成度审计必须使用独立子 Agent，外部 PR 或历史分支可由当前 Agent 直接核验。
 
-跨会话续做先运行 `npm run spec -- status`：脚本验证本地状态、规格冻结哈希、自动验证代码快照和质量审查快照，并给出唯一下一站、待读文件和门禁命令。验证成功后下一站固定为 `code-review-and-quality`，不会直接跳到 PR。它只恢复当前工作区的 `.specs`；跨 worktree 或设备时从 Multica 长期主记录重新建立本地快照，不把 Git 忽略目录当作共享状态。
+跨会话续做先运行 `npm run spec -- status`：脚本验证本地状态、规格冻结哈希、自动验证代码快照和质量审查快照，并给出唯一下一站、待读文件和门禁命令。验证成功后下一站固定为 `code-review-and-quality`，不会直接跳到 PR。它只恢复当前工作区的 `.specs`；跨 worktree 或设备时重新读取来源 Issue 和对应详情文档并建立本地快照，不把 Git 忽略目录当作共享状态。
