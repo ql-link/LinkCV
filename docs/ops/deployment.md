@@ -10,18 +10,18 @@
 
 ## Dev Pipeline
 
-Dev Jenkins Job 使用 `deploy/jenkins/Jenkinsfile.development`。Jenkins 将当前 checkout 通过 `git archive` 打包并上传 Primary `100.86.10.52`，由 `deploy/scripts/build-development-on-primary.sh` 在 `/opt/tolink/test` 内完成构建和部署，因此远端构建内容与 Jenkins 当前 commit 一致。
+Dev Jenkins Job 使用 `deploy/jenkins/Jenkinsfile.development`。Jenkins 将当前 checkout 通过 `git archive` 打包并上传 Primary `100.86.10.52`，由 `deploy/scripts/build-development-on-primary.sh` 在 `/opt/tolink/dev` 内完成构建和部署，因此远端构建内容与 Jenkins 当前 commit 一致。
 
-- 镜像：`linkcv:test-dev-<commit>-b<build-number>`
-- 部署目录：`/opt/tolink/test/linkcv`
+- 镜像：`linkcv:dev-<commit>-b<build-number>`
+- 部署目录：`/opt/tolink/dev/linkcv`
 - Compose：`deploy/docker-compose.development.yml`
 - 容器：`linkcv-dev`
-- 网络：外部网络 `tolink-test-net`
+- 网络：外部网络 `tolink-dev-net`
 - 宿主机端口：`18002`
-- 配置：`.env.development` + 权限为 `400` 或 `600` 的 `.env.development.local`
+- 配置：`.env.development` + 权限为 `600` 的 `.env.development.local`
 - 迁移门禁：`APP_ENV=development`、MySQL `100.86.10.52:13306/linkcv`
 
-Dev Jenkins 节点需预置 `/var/jenkins_home/.ssh/primary_test`，并能以 `root` 连接 Primary。Primary 需已有 Docker、Docker Compose、`tolink-test-net` 和私密 env 文件。任一前置条件、迁移或健康检查失败都会让 Job 失败。
+Dev Jenkins 节点需预置 `/var/jenkins_home/.ssh/primary_dev`，并能以 `root` 连接 Primary。Primary 需已有 Docker、Docker Compose、`tolink-dev-net` 和私密 env 文件。LinkCV Dev 使用独立 `linkcv` MySQL 数据库、MinIO bucket 和 Redis DB 2；本地密钥文件只保存凭据，不覆盖仓库中的地址与资源名。任一前置条件、迁移或健康检查失败都会让 Job 失败。
 
 ## Production Pipeline
 

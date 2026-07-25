@@ -18,7 +18,7 @@ pipeline {
   environment {
     PRIMARY_HOST = '100.86.10.52'
     PRIMARY_USER = 'root'
-    PRIMARY_SSH_KEY = '/var/jenkins_home/.ssh/primary_test'
+    PRIMARY_SSH_KEY = '/var/jenkins_home/.ssh/primary_dev'
   }
 
   stages {

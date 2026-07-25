@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, func
+from sqlalchemy import DateTime, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from linkcv.core.database import Base
@@ -8,11 +8,10 @@ from linkcv.core.database import Base
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("email", name="uk_users_email"),)
 
     id: Mapped[str] = mapped_column(String(37), primary_key=True)
-    email: Mapped[str] = mapped_column(
-        String(320), unique=True, nullable=False, index=True
-    )
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
     auth_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

@@ -4,7 +4,8 @@
 
 ## 当前基线
 
-当前没有业务表或 revision。`linkcv` 数据库不应存在 `users`、`resumes` 等业务表；表结构冻结后，再通过新的 SQL revision 加入。
+当前根 revision 为 `0001`，用于在空的 `linkcv` 数据库建立
+`users` 与 `resumes`。它同时提供可逆的 SQL 文件，不迁移原型 SQLite 数据。
 
 ```text
 migrations/
@@ -37,7 +38,8 @@ apps/backend/migrations/sql/<revision>.down.sql
 
 必须在提交前完成两个 SQL 文件：
 
-- `up.sql`：从上一版本升级到当前版本的 MySQL 8.4 SQL。
+- `up.sql`：从上一版本升级到当前版本的 MySQL SQL。当前基线使用已部署
+  MySQL 8.0 与目标 MySQL 8.4 都支持的语法。
 - `down.sql`：可安全回退时的反向 SQL；确实不可逆时写明原因，并在 Python revision 中显式失败，不得伪装成成功回滚。
 
 新 revision 的 Python 文件不应手写 `op.create_table`、`op.add_column`、`op.create_index` 等 DDL。
@@ -54,7 +56,7 @@ apps/backend/migrations/sql/<revision>.down.sql
 ## 执行与核验
 
 ```bash
-# 查看迁移链和当前数据库版本
+# 查看迁移链和当前数据库版本；heads 应只有 0001
 uv run --directory apps/backend alembic heads
 uv run --directory apps/backend alembic current
 
@@ -72,6 +74,14 @@ LINKCV_ENV_FILE=.env.development npm run db:migrate
 ```
 
 部署时不直接运行 Alembic CLI；Jenkins 和容器通过 `scripts/release/run_alembic.py` 先核对 `APP_ENV`、MySQL host、port 与 database，再升级到 head。
+
+真实 MySQL 往返测试需要显式提供专用、可清理的 `linkcv` 测试库，测试会执行
+`upgrade → downgrade → upgrade`，不得指向共享 Dev 或 Production：
+
+```bash
+LINKCV_TEST_MYSQL_URL='mysql+pymysql://<user>:<password>@127.0.0.1:<port>/linkcv' \
+  uv run --directory apps/backend pytest tests/integration/migrations
+```
 
 ## 禁止项
 

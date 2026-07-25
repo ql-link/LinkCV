@@ -9,12 +9,16 @@ from linkcv.core.database import Base
 
 class Resume(Base):
     __tablename__ = "resumes"
-    __table_args__ = (Index("ix_resumes_user_updated", "user_id", "updated_at"),)
+    __table_args__ = (Index("idx_resumes_user_updated", "user_id", "updated_at"),)
 
     id: Mapped[str] = mapped_column(String(39), primary_key=True)
     user_id: Mapped[str] = mapped_column(
         String(37),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey(
+            "users.id",
+            name="fk_resumes_user_id_users",
+            ondelete="CASCADE",
+        ),
         nullable=False,
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
