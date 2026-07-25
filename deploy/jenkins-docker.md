@@ -6,9 +6,18 @@ LinkCV uses separate Jenkins jobs for Development and Production. Both jobs buil
 
 Configure the Dev job with the script path `deploy/jenkins/Jenkinsfile.development`. The job archives its checked-out commit and sends it to Primary, where `deploy/scripts/build-development-on-primary.sh` builds and deploys it.
 
-Primary must provide `/opt/tolink/test/linkcv/.env.development.local` with mode `400` or `600`, the external Docker network `tolink-test-net`, and free host port `18002`. The Jenkins agent must provide `/var/jenkins_home/.ssh/primary_test`.
+Primary must provide `/opt/tolink/dev/linkcv/.env.development.local` with mode `600`, the external Docker network `tolink-dev-net`, and free host port `18002`. The Jenkins agent must provide `/var/jenkins_home/.ssh/primary_dev`.
+
+The private file contains only credentials and the JWT secret. The committed
+`.env.development` remains authoritative for `100.86.10.52:13306/linkcv`, Redis
+DB 2, the MinIO endpoint, and bucket `linkcv`.
 
 The guarded migration target is `development / 100.86.10.52:13306 / linkcv`; a mismatch fails before Alembic runs.
+
+Create a Jenkins Secret Text credential named `linkcv-dev-webhook-token`. The
+pipeline declares a Generic Webhook Trigger that accepts only
+`refs/heads/dev`; configure GitHub with the same token and only the push event.
+Do not place the token in this repository or the Primary env file.
 
 ## Production
 

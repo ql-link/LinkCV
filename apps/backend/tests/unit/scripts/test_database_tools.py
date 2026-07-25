@@ -6,6 +6,7 @@ from types import ModuleType
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
+INITIAL_REVISION = "0001"
 
 
 def load_module(name: str, path: Path) -> ModuleType:
@@ -41,10 +42,63 @@ def test_sql_revision_files_are_created_as_a_pair(tmp_path: Path) -> None:
         "linkcv_create_sql_revision_test",
         REPO_ROOT / "scripts/db/create_sql_revision.py",
     )
-    module.create_sql_files("20260723_0002", "add example", tmp_path)
+    module.create_sql_files("0002", "add example", tmp_path)
 
-    assert (tmp_path / "20260723_0002.up.sql").is_file()
-    assert (tmp_path / "20260723_0002.down.sql").is_file()
+    assert (tmp_path / "0002.up.sql").is_file()
+    assert (tmp_path / "0002.down.sql").is_file()
+
+
+def test_next_sql_revision_uses_zero_padded_sequence(tmp_path: Path) -> None:
+    module = load_module(
+        "linkcv_create_sql_revision_sequence_test",
+        REPO_ROOT / "scripts/db/create_sql_revision.py",
+    )
+
+    assert module.next_revision_id(tmp_path) == "0001"
+    (tmp_path / "0001_create_users.py").write_text("revision", encoding="utf-8")
+    assert module.next_revision_id(tmp_path) == "0002"
+
+
+def test_next_sql_revision_rejects_mixed_random_ids(tmp_path: Path) -> None:
+    module = load_module(
+        "linkcv_create_sql_revision_invalid_sequence_test",
+        REPO_ROOT / "scripts/db/create_sql_revision.py",
+    )
+    (tmp_path / "2b158fb5d8b6_random.py").write_text("revision", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must use 000x naming"):
+        module.next_revision_id(tmp_path)
+
+
+def test_initial_business_revision_is_sql_first_and_complete() -> None:
+    revision = next(
+        (REPO_ROOT / "apps/backend/migrations/versions").glob(
+            f"{INITIAL_REVISION}_*.py"
+        )
+    )
+    revision_text = revision.read_text(encoding="utf-8")
+    up_sql = (
+        REPO_ROOT / f"apps/backend/migrations/sql/{INITIAL_REVISION}.up.sql"
+    ).read_text(encoding="utf-8")
+    down_sql = (
+        REPO_ROOT / f"apps/backend/migrations/sql/{INITIAL_REVISION}.down.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "op.create_table" not in revision_text
+    assert f'"{INITIAL_REVISION}.up.sql"' in revision_text
+    assert f'"{INITIAL_REVISION}.down.sql"' in revision_text
+    assert "CREATE TABLE users" in up_sql
+    assert "CREATE TABLE resumes" in up_sql
+    assert "markdown LONGTEXT NOT NULL" in up_sql
+    assert "split_ratio DOUBLE NOT NULL" in up_sql
+    assert "created_at DATETIME(6)" in up_sql
+    assert "ck_users_auth_version_positive" in up_sql
+    assert "ck_resumes_split_ratio_positive" in up_sql
+    assert "ck_resumes_preview_scale_positive" in up_sql
+    assert "CONSTRAINT uk_users_email UNIQUE (email)" in up_sql
+    assert "CONSTRAINT fk_resumes_user_id_users" in up_sql
+    assert "KEY idx_resumes_user_updated (user_id, updated_at)" in up_sql
+    assert down_sql.index("DROP TABLE resumes") < down_sql.index("DROP TABLE users")
 
 
 def test_database_initializer_rejects_any_schema_except_linkcv() -> None:

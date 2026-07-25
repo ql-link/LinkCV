@@ -104,6 +104,12 @@ contracts:
       - path: Dockerfile
         pattern: 'run_alembic\.py.*&& exec uvicorn'
         message: 容器必须先通过迁移 runner 再启动 FastAPI
+      - path: Dockerfile
+        pattern: 'python -m pip install --index-url "\$\{UV_INDEX_URL\}" "uv==\$\{UV_VERSION\}"'
+        message: uv 必须通过可配置的 PyPI 镜像安装，不能依赖 GHCR 镜像
+      - path: Dockerfile
+        pattern: 'uv pip install .*--index-url "\$\{UV_INDEX_URL\}" --requirements /tmp/requirements\.txt'
+        message: 锁定的 Python 依赖必须从可配置镜像下载，不能复用 uv.lock 中的外部制品 URL
 
   - id: deployment-environment-isolation
     description: Dev 与 Production 使用独立的发布目标和运行资源
@@ -115,8 +121,23 @@ contracts:
         pattern: 'LINKCV_DEV_HTTP_PORT:-18002'
         message: Dev 必须使用独立宿主机端口 18002
       - path: deploy/docker-compose.development.yml
-        pattern: 'LINKCV_DOCKER_NETWORK:-tolink-test-net'
-        message: Dev 必须加入隔离测试网络
+        pattern: 'LINKCV_DOCKER_NETWORK:-tolink-dev-net'
+        message: Dev 必须加入隔离开发网络
+      - path: deploy/scripts/build-development-on-primary.sh
+        pattern: 'dev_root="/opt/tolink/dev"'
+        message: Dev 必须部署到 /opt/tolink/dev
+      - path: deploy/scripts/build-development-on-primary.sh
+        pattern: 'tag="dev-\$\{commit_short\}-b\$\{build_number\}"'
+        message: Dev 镜像必须使用 dev-<commit>-b<build> 标签
+      - path: deploy/jenkins/Jenkinsfile.development
+        pattern: 'PRIMARY_SSH_KEY = ''/var/jenkins_home/\.ssh/primary_dev'''
+        message: Dev Jenkins 必须使用 primary_dev 密钥
+      - path: deploy/jenkins/Jenkinsfile.development
+        pattern: 'tokenCredentialId: ''linkcv-dev-webhook-token'''
+        message: Dev webhook token 必须来自 Jenkins Secret Text 凭据
+      - path: deploy/jenkins/Jenkinsfile.development
+        pattern: 'regexpFilterExpression: ''\^refs/heads/dev\$'''
+        message: Dev webhook 必须只接受 refs/heads/dev push
       - path: deploy/docker-compose.production.yml
         pattern: '(?m)^    container_name: linkcv$'
         message: Production 必须使用生产容器名
@@ -145,3 +166,13 @@ contracts:
       - path: Jenkinsfile
         pattern: 'EXPECTED_MYSQL_DATABASE = ''linkcv'''
         message: Production Jenkins 必须锁定独立 linkcv 数据库
+
+  - id: development-resource-isolation
+    description: Dev 使用专属 Redis DB 和对象存储 Bucket
+    assertions:
+      - path: .env.development
+        pattern: '(?m)^REDIS_DB=2$'
+        message: LinkCV Dev 必须使用独立 Redis DB 2
+      - path: .env.development
+        pattern: '(?m)^MINIO_BUCKET=linkcv$'
+        message: LinkCV Dev 必须使用独立 linkcv Bucket
