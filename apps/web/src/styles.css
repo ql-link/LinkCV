@@ -1591,6 +1591,23 @@ select:focus-visible {
 .workbench-canvas { position: relative; display: flex; min-height: 0; flex: 1; overflow: hidden; }
 .workbench-paper-scroll { display: flex; min-width: 0; flex: 1; flex-direction: column; align-items: center; overflow: auto; padding: 36px 40px 96px; overscroll-behavior: contain; }
 
+.workbench-zoom-indicator {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  z-index: 12;
+  border: 1px solid var(--wb-hairline);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  padding: 6px 9px;
+  color: var(--wb-muted);
+  font: 600 0.7rem/1 var(--mono-font);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+}
+
 .resume-workbench .resume-paper {
   position: relative;
   width: 210mm;
@@ -1603,6 +1620,7 @@ select:focus-visible {
   color: #111827;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 18px 52px rgba(0, 0, 0, 0.13);
   transform: none;
+  zoom: var(--workbench-preview-scale, 1);
 }
 
 .resume-workbench .resume-content {
@@ -1835,11 +1853,12 @@ select:focus-visible {
   .workbench-toolbar,
   .workbench-drawer,
   .workbench-page-hint,
+  .workbench-zoom-indicator,
   .workbench-toast,
   .media-context-toolbar,
   .media-resize-handle { display: none !important; }
   .resume-workbench,
   .workbench-canvas,
   .workbench-paper-scroll { display: block; width: 210mm; height: auto; min-height: 297mm; overflow: visible; padding: 0; background: #fff; }
-  .resume-workbench .resume-paper { width: 210mm; min-height: 297mm; box-shadow: none; }
+  .resume-workbench .resume-paper { width: 210mm; min-height: 297mm; box-shadow: none; zoom: 1; }
 }
