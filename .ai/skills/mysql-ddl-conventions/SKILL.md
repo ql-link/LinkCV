@@ -82,4 +82,4 @@ LinkCV 当前只有本地 MySQL 8.4 基础设施，FastAPI 尚无业务模型。
 待验证：<EXPLAIN、数据量、锁或边界假设>
 ```
 
-设计确认后转 `alembic-migration` 落地 ORM 与 migration。若字段语义、所有权、旧数据或删除行为仍有分歧，先回到需求或 `decision-grilling`，不要在 DDL 中替用户决定。
+设计确认后转 `alembic-migration` 落地 ORM 与 migration。若字段语义、所有权、旧数据或删除行为仍有分歧，返回 `module-planning` 更新飞书并重新收敛受影响规格，不要在 DDL 中替用户决定。

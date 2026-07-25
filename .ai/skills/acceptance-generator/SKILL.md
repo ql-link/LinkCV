@@ -1,6 +1,6 @@
 ---
 name: acceptance-generator
-description: 把已冻结的 LinkCV L2 或 L3 需求简报转换为可观察、可断言的 Gherkin 验收契约。适用于 brief.md 已确认冻结后创建或修订 acceptance.feature，覆盖主流程、权限、校验、异常、边界、持久化、重试和回归行为，直到用户确认冻结。
+description: 把已冻结的 LinkCV L2 或 L3 需求简报转换为可观察、可断言的 Gherkin 验收契约。适用于 brief.md 已确认冻结后创建或修订 acceptance.feature，覆盖主流程、权限、校验、异常、边界、持久化、重试和回归行为；只展开已确认规则，不重新讨论需求，发现新业务选择时返回 module-planning。
 ---
 
 # 验收契约生成与收敛
@@ -27,7 +27,7 @@ npm run spec -- check <KEY> acceptance
 - 用户尚未确认需求范围；
 - 只能写出“正确处理”“适当提示”一类不可断言结果。
 
-停止后返回 `brief-generator` 修订并重新冻结。若存在两个以上会改变用户行为的合理答案，先使用 `decision-grilling` 逐项确认；不得根据聊天记忆补齐规则后继续。
+如果只是 Brief 漏写已确认内容，返回 `brief-generator` 修订并重新冻结。若存在两个以上会改变用户行为的合理答案，返回 `module-planning` 完成讨论、飞书更新和读回，再按顺序修订并重新冻结 Brief；本技能不直接调用 `decision-grilling`，也不得根据聊天记忆补齐规则后继续。
 
 ## 3. 必读材料
 
@@ -102,7 +102,7 @@ npm run spec -- check <KEY> acceptance
 4. 先写主流程，再补权限、异常、边界、幂等和回归场景。
 5. 逐条检查每个 `Then` 是否能由界面、接口、状态或数据断言。
 6. 检查场景之间是否重复、矛盾或引入需求简报之外的新范围。
-7. 发现事实缺口时探索代码；发现真实业务分歧时返回 `brief-generator` 并使用 `decision-grilling`，确认后重新冻结需求简报。
+7. 发现事实缺口时探索代码；发现真实业务分歧时返回 `module-planning`，待飞书确认后再返回 `brief-generator` 修订并重新冻结需求简报。
 8. 向用户展示场景覆盖和仍待确认的业务规则。
 9. 用户反馈后重新读取当前文件，在原场景中修订，不保留问答记录。
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "LinkCV 模块规划"
+  short_description: "讨论并确认模块方案，写入并校验飞书后再交给 Brief"
+  default_prompt: "使用 $module-planning 充分讨论这个模块，确认后写入飞书，并在生成 Brief 前停止。"

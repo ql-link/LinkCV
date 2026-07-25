@@ -18,9 +18,10 @@
 
 | 技能 | 职责 | 下一站 |
 | --- | --- | --- |
-| `flow-router` | 判断 L1/L2/L3 并识别阻塞性决策 | 盘问、需求简报或实现 |
-| `decision-grilling` | 沿决策树一次收敛一个真实选择 | 返回调用它的需求或设计技能 |
-| `brief-generator` | 收敛范围、边界与风险 | 验收契约 |
+| `flow-router` | 判断 L1/L2/L3，并检查是否具备已确认模块详情文档 | 模块规划、需求简报或实现 |
+| `module-planning` | 调查模块、主持决策、展示草稿并在确认后写入和读回飞书 | 停止，等待用户启动分级或需求简报 |
+| `decision-grilling` | 只沿决策树一次收敛一个真实选择 | 把确认结论返回 `module-planning` |
+| `brief-generator` | 把已确认 Issue、飞书详情与代码综合成本地需求简报 | 验收契约 |
 | `acceptance-generator` | 生成可验证行为场景 | L2 实现；L3 技术设计 |
 | `technical-design` | 生成跨模块技术方案 | 实现 |
 | `contract-guard` | 分析契约结构、语义、兼容影响和同步范围 | 按需转配置核对、实现或文档同步 |
@@ -54,11 +55,11 @@
 
 运行 `npm run check:ai` 校验技能的头部元数据、占位内容、链接、过期技术栈引用，以及 Brief 模板的固定结构。长期模块知识从 [docs/README.md](../../docs/README.md) 按需读取；三个契约治理技能共享 [契约面与事实源映射](../../docs/internals/contract-governance.md)，不各自复制模块映射。
 
-普通团队任务先从来源 Issue 认领并完整读取正文。Multica、Linear、GitHub 或其他 Issue 系统都可以作为来源；`state.yaml` 只原样保存一个 `source_issue` 链接或稳定引用，不单独记录平台，也不根据平台改变交付车道。Issue 是初始产品输入；已有飞书详情文档时必须一起读取，Issue 不足以支撑实现或存在高影响决策时先补齐详情文档。L1 可以在 Issue 足够明确时直接实现，L2/L3 再把 Issue 与详情文档收敛成本地冻结产物。项目阶段 Skill 不维护外部需求指纹、不核验评论链，也不向任何 Issue 系统写回评论。
+普通团队任务先从来源 Issue 认领并完整读取正文。Multica、Linear、GitHub 或其他 Issue 系统都可以作为来源；`state.yaml` 只原样保存一个 `source_issue` 链接或稳定引用，不单独记录平台，也不根据平台改变交付车道。Issue 是初始产品输入；L1 可以在 Issue 足够明确时直接实现，L2/L3 必须先由 `module-planning` 形成可读取、经用户确认并完成读回的飞书模块详情文档，再由 `brief-generator` 把两者综合成本地冻结产物。项目阶段 Skill 不维护外部需求指纹、不核验评论链，也不向任何 Issue 系统写回评论。
 
 固定结构的产物模板跟随所属技能保存：需求简报、验收契约、技术设计、按需生成的实施报告和人工验收记录分别由对应技能维护。`agents/openai.yaml` 仅在需要 Codex 界面展示元数据时按需添加，不是项目技能的必需文件。
 
-需求简报和技术设计初稿都是一致性探针：发现新分歧时转 `decision-grilling`，事实由 Agent 自行核实，真实决策按依赖顺序每轮只询问一个；结论回写原章节并重新扫描，阻塞项清空且用户确认后才允许冻结。
+技能调用保持单向且由上层拥有产物：`module-planning` 调用 `decision-grilling` 收敛单个选择，调用 `lark-doc` 执行已经确认的文档写入；两个被调用技能都不接管模块规划。`brief-generator`、`acceptance-generator`、`technical-design` 和实施阶段只消费已确认输入；如果一致性检查暴露新的高影响决策，返回 `module-planning` 更新并读回飞书，再按顺序修订受影响产物，不在下游阶段直接盘问。
 
 契约治理技能不要求固定串行：结构或语义影响用 `contract-guard`，同一具体值的多处一致性用 `config-contract-sync`，更新长期 `docs/` 用 `doc-maintenance-sync`。已有上游结论时直接消费，不重复扫描同一问题。
 

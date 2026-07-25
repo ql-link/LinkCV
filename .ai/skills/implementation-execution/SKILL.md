@@ -1,6 +1,6 @@
 ---
 name: implementation-execution
-description: 在 LinkCV 中从来源 Issue 和适用的详情文档出发，按已确认范围执行代码实现。适用于 Issue 已足够明确的 L1 任务直接编码，或 L2/L3 的需求简报、验收契约及必要技术设计已冻结后落地实现；要求保护用户现有修改、补充有效测试，把非核心实施偏差写入 PR，核心范围或风险边界变化先回飞书确认。
+description: 在 LinkCV 中按已确认范围执行代码实现。适用于 Issue 已足够明确的 L1 任务直接编码，或 L2/L3 的飞书模块详情、需求简报、验收契约及必要技术设计已确认冻结后落地实现；负责代码、测试和非核心偏差记录，不重新讨论需求，核心范围或风险边界变化返回 module-planning。
 ---
 
 # 实施执行
@@ -34,14 +34,14 @@ description: 在 LinkCV 中从来源 Issue 和适用的详情文档出发，按�
 npm run spec -- check <KEY> implementation
 ```
 
-L2 必须已有冻结的 `brief.md` 和 `acceptance.feature`；L3 还必须已有冻结的 `technical_design.md`。这些产物应从来源 Issue、适用的飞书详情文档和真实代码中收敛。门禁失败时停止，按提示返回上游，不得绕过。Issue 来源平台不参与实现门禁，项目也不接收或生成规格评论回写。
+L2 必须已有经 `module-planning` 确认并读回的飞书模块详情文档，以及冻结的 `brief.md` 和 `acceptance.feature`；L3 还必须已有冻结的 `technical_design.md`。这些产物应从来源 Issue、飞书详情文档和真实代码中单向收敛。门禁失败时停止，按提示返回上游，不得绕过。Issue 来源平台不参与实现门禁，项目也不接收或生成规格评论回写。
 
 ## 3. 必读材料
 
 1. `AGENTS.md`；
 2. 来源 Issue 的完整正文和关联材料，不限制来源平台；
 3. 用户当前请求和已经确认的范围；
-4. 已有飞书详情文档时完整读取；
+4. L2/L3 完整读取已确认的飞书模块详情文档；L1 存在详情文档时也必须读取；
 5. L2/L3 的 `.specs/<KEY>/state.yaml` 和全部冻结产物；
 6. 目标文件、直接调用方、共享类型和最近测试；
 7. `git status --short`、当前任务相关差异和用户已有未提交修改；
@@ -99,9 +99,9 @@ L2 必须已有冻结的 `brief.md` 和 `acceptance.feature`；L3 还必须已�
 
 按归属回流：
 
-- 范围和用户结果变化：`brief-generator`；
-- 可观察规则变化：`acceptance-generator`；
-- 文件、接口、数据、迁移或发布方案变化：`technical-design`；
+- 需要用户确认的新范围、用户结果、权限、数据语义、兼容或发布决策：`module-planning`，先更新并读回飞书；
+- 上游决定未变化、只是本地规格遗漏：按影响返回 `brief-generator`、`acceptance-generator` 或 `technical-design`；
+- 文件、接口、数据、迁移或发布方案与冻结设计不一致但不需要新决策：`technical-design`；
 - 车道错误：`flow-router`。
 
 不改变核心产品目标、验收、权限、数据安全或兼容承诺的实现偏差，可以继续推进，但必须记录原方案、实际实现、原因、影响和验证，并在 PR 中明确提出。会改变上述产品或风险边界的事项必须先回到飞书确认，修订并重新冻结受影响产物后再继续。任何情况都不要向来源 Issue 回写规格评论。

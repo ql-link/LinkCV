@@ -11,7 +11,7 @@ description: 为 LinkCV 编写、校验和排查 SQLAlchemy 与 Alembic schema �
 
 本技能负责迁移本身，不负责：
 
-- 决定业务字段语义、旧数据是否迁移或兼容窗口，返回 Brief、Acceptance 或 `decision-grilling`；
+- 决定业务字段语义、旧数据是否迁移或兼容窗口，返回 `module-planning`，再按影响修订 Brief、Acceptance 或 Technical Design；
 - 从零设计字段、类型、约束和索引，转 `mysql-ddl-conventions`；
 - 编写完整业务实现，转 `implementation-execution`；
 - 泛化维护长期文档，转 `doc-maintenance-sync`。
