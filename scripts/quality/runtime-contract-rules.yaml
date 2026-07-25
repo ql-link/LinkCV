@@ -57,6 +57,19 @@ contracts:
         pattern: '\$\{REDIS_PORT:-6379\}:6379'
         message: Compose 必须使用 REDIS_PORT=6379 作为默认映射
 
+  - id: production-middleware-docker-dns
+    description: Production 通过 tolink-app-net 的 Docker DNS 连接已迁移中间件
+    assertions:
+      - path: .env.production
+        pattern: '(?m)^MYSQL_HOST=tolink-mysql$'
+        message: Production MySQL 必须使用 Cloud 容器 DNS
+      - path: .env.production
+        pattern: '(?m)^REDIS_HOST=tolink-redis$'
+        message: Production Redis 必须使用 Cloud 容器 DNS
+      - path: .env.production
+        pattern: '(?m)^MINIO_ENDPOINT=http://tolink-minio:9000$'
+        message: Production MinIO 必须使用 Cloud 容器 DNS
+
   - id: environment-layering
     description: FastAPI、Dev Compose 与 Production Compose 都支持基础配置加私密覆盖
     assertions:
@@ -124,7 +137,7 @@ contracts:
         pattern: 'EXPECTED_APP_ENV = ''production'''
         message: Production Jenkins 必须锁定 production 环境
       - path: Jenkinsfile
-        pattern: 'EXPECTED_MYSQL_HOST = ''100\.86\.10\.52'''
+        pattern: 'EXPECTED_MYSQL_HOST = ''tolink-mysql'''
         message: Production Jenkins 必须锁定生产 MySQL 主机
       - path: Jenkinsfile
         pattern: 'EXPECTED_MYSQL_PORT = ''3306'''

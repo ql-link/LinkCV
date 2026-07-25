@@ -34,9 +34,9 @@ Production Jenkins Job 使用根目录 `Jenkinsfile`，在生产 Jenkins 节点�
 - 网络：外部网络 `tolink-app-net`
 - 宿主机端口：`8000`
 - 配置：`.env.production` + 权限为 `400` 或 `600` 的 `.env.production.local`
-- 迁移门禁：`APP_ENV=production`、MySQL `100.86.10.52:3306/linkcv`
+- 迁移门禁：`APP_ENV=production`、MySQL `tolink-mysql:3306/linkcv`
 
-Production Pipeline 会把仓库中的非敏感 `.env.production` 和 Compose 复制到部署目录；私密覆盖必须由部署密钥存储预先提供。MySQL、Redis 与 MinIO 的生产实例不由该 Compose 创建。
+Production Pipeline 会把仓库中的非敏感 `.env.production` 和 Compose 复制到部署目录；私密覆盖必须由部署密钥存储预先提供。生产容器通过 `tolink-app-net` 使用 Docker DNS 连接 `tolink-mysql:3306`、`tolink-redis:6379` 和 `tolink-minio:9000`，不依赖尚未发布的 Cloud 宿主机端口。私密覆盖只保存凭据，不应设置 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT` 覆盖仓库中的生产地址。MySQL、Redis 与 MinIO 的生产实例不由该 Compose 创建。
 
 两条 Pipeline 都提供 `RUN_TESTS` 参数；开启后会在镜像构建前运行 `npm run setup && npm run check`。常规 PR/push 质量检查仍由 GitHub Actions 执行。
 
