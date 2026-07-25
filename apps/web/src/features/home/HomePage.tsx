@@ -3,6 +3,7 @@ import { FileText, LayoutTemplate, LogOut, PenLine, Plus, Search, X } from "luci
 import type { ResumeSummary } from "../../api/client";
 import { Brand, Button, Toast } from "../../components/ds";
 import { useResumeStore } from "../../store/resumeStore";
+import { editorPath, navigateTo } from "../../routing";
 
 type HomeScreenProps = {
   email: string;
@@ -195,18 +196,28 @@ export function HomePage() {
   const user = useResumeStore((state) => state.user);
   const resumes = useResumeStore((state) => state.resumes);
   const createResume = useResumeStore((state) => state.createResume);
-  const loadResume = useResumeStore((state) => state.loadResume);
   const deleteResume = useResumeStore((state) => state.deleteResume);
   const logout = useResumeStore((state) => state.logout);
+
+  const createAndOpenResume = async () => {
+    await createResume("未命名简历");
+    const resumeId = useResumeStore.getState().activeResumeId;
+    if (resumeId) navigateTo(editorPath(resumeId));
+  };
+
+  const logoutAndReturn = async () => {
+    await logout();
+    navigateTo("/", { replace: true });
+  };
 
   return (
     <HomeScreen
       email={user?.email ?? ""}
       resumes={resumes}
-      onCreate={() => createResume("未命名简历")}
-      onOpen={loadResume}
+      onCreate={createAndOpenResume}
+      onOpen={(id) => navigateTo(editorPath(id))}
       onDelete={deleteResume}
-      onLogout={logout}
+      onLogout={logoutAndReturn}
     />
   );
 }

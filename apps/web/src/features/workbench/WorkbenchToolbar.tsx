@@ -256,16 +256,29 @@ function ImageControl({ editor, avatar = false, onNotice }: { editor: Editor; av
   );
 }
 
-function RowLayoutControl({ editor }: { editor: Editor }) {
+function RowLayoutControl({ editor, onNotice }: { editor: Editor; onNotice: (message: string) => void }) {
   const active = editor.isActive("resumeRow");
-  const leftWidth = Number(editor.getAttributes("resumeRow").leftWidth) || 65;
+  const leftWidth = Number(editor.getAttributes("resumeRow").leftWidth) || 70;
+
+  const toggleLayout = () => {
+    const changed = active
+      ? convertResumeRowToParagraph(editor)
+      : convertCurrentLineToResumeRow(editor);
+
+    if (!changed) {
+      onNotice(active ? "当前左右栏无法还原" : "请先把光标放在要分栏的正文行中");
+      return;
+    }
+
+    editor.view.focus();
+  };
 
   return (
     <div className={`row-layout-control${active ? " active" : ""}`}>
       <ToolButton
-        label={active ? "恢复为普通行" : "当前行转为左右布局"}
+        label={active ? "取消左右分栏" : "为当前行添加右侧内容"}
         active={active}
-        onClick={() => active ? convertResumeRowToParagraph(editor) : convertCurrentLineToResumeRow(editor)}
+        onClick={toggleLayout}
       >
         <Columns2 size={15} />
       </ToolButton>
@@ -342,12 +355,7 @@ export function WorkbenchToolbar({ editor, onNotice }: { editor: Editor | null; 
       <ImageControl editor={editor} onNotice={onNotice} />
       <ImageControl editor={editor} avatar onNotice={onNotice} />
       <IconControl editor={editor} />
-      <RowLayoutControl editor={editor} />
-      <Divider />
-      <span className="font-size-label">字号</span>
-      {[10, 12, 14, 18, 24].map((size) => (
-        <ToolButton key={size} label={`${size}px`} onClick={() => editor.chain().focus().setMark("textStyle", { fontSize: `${size}px` }).run()}><span>{size}</span></ToolButton>
-      ))}
+      <RowLayoutControl editor={editor} onNotice={onNotice} />
     </div>
   );
 }

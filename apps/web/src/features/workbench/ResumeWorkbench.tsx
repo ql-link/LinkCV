@@ -10,6 +10,7 @@ import {
   Plus,
   Save,
   SlidersHorizontal,
+  Sparkles,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { exportResumePdf } from "../preview/exportPdf";
@@ -17,6 +18,7 @@ import { resumeSerifFontStack, useResumeStore } from "../../store/resumeStore";
 import { resumeEditorExtensions } from "./editorExtensions";
 import { WorkbenchToolbar } from "./WorkbenchToolbar";
 import { loadVersionHistory, saveVersionHistory, type VersionSnapshot } from "./versionHistory";
+import { navigateTo } from "../../routing";
 
 type DrawerMode = "settings" | "history" | null;
 type ToastState = { label: string; undo?: () => void } | null;
@@ -48,16 +50,25 @@ function plainParagraphsFromHtml(html: string) {
   return plain.split(/\n+/).map((line) => `<p>${escape(line) || "<br>"}</p>`).join("");
 }
 
-function ActionButton({ primary, children, onClick, disabled }: { primary?: boolean; children: React.ReactNode; onClick: () => void; disabled?: boolean }) {
+function ActionButton({ primary, active, children, onClick, disabled }: { primary?: boolean; active?: boolean; children: React.ReactNode; onClick: () => void; disabled?: boolean }) {
   return (
     <motion.button
       type="button"
-      className={primary ? "workbench-action primary" : "workbench-action"}
+      className={`workbench-action${primary ? " primary" : ""}${active ? " active" : ""}`}
+      aria-pressed={active === undefined ? undefined : active}
       whileTap={disabled ? undefined : { scale: 0.97 }}
       transition={{ type: "spring", bounce: 0, duration: 0.32 }}
       onClick={onClick}
       disabled={disabled}
     >{children}</motion.button>
+  );
+}
+
+export function SmartOnePageAction({ active, onToggle }: { active: boolean; onToggle: () => void }) {
+  return (
+    <ActionButton active={active} onClick={onToggle}>
+      <Sparkles size={14} />智能一页
+    </ActionButton>
   );
 }
 
@@ -229,8 +240,13 @@ export function ResumeWorkbench() {
         return;
       }
     }
-    if (destination === "home") goHome();
-    else await logout();
+    if (destination === "home") {
+      goHome();
+      navigateTo("/resumes");
+    } else {
+      await logout();
+      navigateTo("/", { replace: true });
+    }
   };
 
   const statusText = saveStatus === "saving" ? "保存中..." : saveStatus === "error" ? "保存失败 · 请重试" : dirty ? "编辑中" : "已保存";
@@ -245,6 +261,10 @@ export function ResumeWorkbench() {
             <span className={`workbench-save-status ${!dirty && saveStatus === "saved" ? "saved" : ""}${saveStatus === "error" ? " error" : ""}`}><i />{statusText}</span>
           </div>
           <div className="workbench-header-actions">
+            <SmartOnePageAction
+              active={settings.smartOnePage}
+              onToggle={() => updateSettings({ smartOnePage: !settings.smartOnePage })}
+            />
             <IconAction label="页面设置" active={drawerMode === "settings"} onClick={() => setDrawerMode((mode) => mode === "settings" ? null : "settings")}><SlidersHorizontal size={16} /></IconAction>
             <IconAction label="版本记录" active={drawerMode === "history"} onClick={() => setDrawerMode((mode) => mode === "history" ? null : "history")}><History size={16} /></IconAction>
             <ActionButton onClick={() => void exportResumePdf(settings.smartOnePage, title)}><FileDown size={14} />导出 PDF</ActionButton>
@@ -258,10 +278,12 @@ export function ResumeWorkbench() {
 
         <main className="workbench-canvas">
           <div className="workbench-paper-scroll">
-            <article className="resume-paper" style={resumeStyle} aria-label="可编辑简历页面">
+            <article className={`resume-paper${settings.smartOnePage ? " smart-one-page" : ""}`} style={resumeStyle} aria-label="可编辑简历页面">
               <EditorContent editor={editor} />
             </article>
-            <p className="workbench-page-hint">A4 · 页面即最终导出效果</p>
+            <p className="workbench-page-hint">
+              {settings.smartOnePage ? "智能一页 · 导出为连续单页" : "标准 A4 · 超出内容自动分页导出"}
+            </p>
           </div>
 
           <AnimatePresence initial={false}>
