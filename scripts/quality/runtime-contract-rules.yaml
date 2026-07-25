@@ -107,6 +107,9 @@ contracts:
       - path: Dockerfile
         pattern: 'python -m pip install --index-url "\$\{UV_INDEX_URL\}" "uv==\$\{UV_VERSION\}"'
         message: uv 必须通过可配置的 PyPI 镜像安装，不能依赖 GHCR 镜像
+      - path: Dockerfile
+        pattern: 'uv pip install .*--index-url "\$\{UV_INDEX_URL\}" --requirements /tmp/requirements\.txt'
+        message: 锁定的 Python 依赖必须从可配置镜像下载，不能复用 uv.lock 中的外部制品 URL
 
   - id: deployment-environment-isolation
     description: Dev 与 Production 使用独立的发布目标和运行资源

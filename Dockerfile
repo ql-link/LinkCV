@@ -28,13 +28,15 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     python -m pip install --index-url "${UV_INDEX_URL}" "uv==${UV_VERSION}"
 COPY apps/backend/pyproject.toml apps/backend/uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    UV_DEFAULT_INDEX="${UV_INDEX_URL}" uv sync --frozen --no-dev --no-install-project
+    uv export --frozen --no-dev --no-emit-project --format requirements-txt --output-file /tmp/requirements.txt && \
+    uv venv .venv && \
+    uv pip install --python .venv/bin/python --require-hashes --index-url "${UV_INDEX_URL}" --requirements /tmp/requirements.txt
 COPY apps/backend/alembic.ini ./
 COPY apps/backend/migrations ./migrations
 COPY apps/backend/src ./src
 COPY scripts/release/run_alembic.py /app/scripts/release/run_alembic.py
 RUN --mount=type=cache,target=/root/.cache/uv \
-    UV_DEFAULT_INDEX="${UV_INDEX_URL}" uv sync --frozen --no-dev
+    uv pip install --python .venv/bin/python --no-deps --index-url "${UV_INDEX_URL}" .
 COPY --from=web-build /app/apps/web/dist /app/web
 
 EXPOSE 8000
