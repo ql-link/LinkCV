@@ -72,7 +72,7 @@ npm run spec -- check <KEY> technical_design
 
 - 指出真实入口、调用链、状态和数据流；
 - 说明可复用能力、现有限制和过渡实现；
-- 区分 FastAPI 已实现能力、已有模型和尚未建立的业务 revision，不把规划或模型存在当成数据库已经迁移。
+- 区分 FastAPI 已实现能力、已有模型、仓库迁移 head 和目标环境 current revision，不把规划、模型或仓库 revision 存在当成目标数据库已经迁移。
 
 ### 文件与模块职责
 
@@ -89,7 +89,7 @@ npm run spec -- check <KEY> technical_design
 - 明确物理字段、类型、约束、索引和关联关系；
 - 说明迁移顺序、旧数据处理、事务边界和回滚；
 - 说明重复请求、并发写入、部分失败和数据修复策略。
-- 首次加入业务 revision 时，明确模型 metadata、当前 head、配对 `.up.sql`/`.down.sql`、测试数据库、执行者和部署顺序；不得把模型或本地 MySQL Compose 存在写成业务 schema 已经迁移。
+- 新增或修改业务 revision 时，明确模型 metadata、当前 head、配对 `.up.sql`/`.down.sql`、测试数据库、执行者和部署顺序；不得把模型、仓库 revision 或本地 MySQL Compose 存在写成目标环境已经迁移。
 - 使用 `mysql-ddl-conventions` 核实表结构，使用 `alembic-migration` 核实版本链、扩展/回填/切换/收缩和升级降级验证，并把结论写回本节，不复制第二份方案。
 
 ### 鉴权、归属与安全

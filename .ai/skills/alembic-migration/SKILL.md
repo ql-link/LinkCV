@@ -1,6 +1,6 @@
 ---
 name: alembic-migration
-description: 为 LinkCV 编写、校验和排查 SQLAlchemy 与 SQL-first Alembic schema 迁移，覆盖 revision 链、配对 up/down SQL、数据回填、升级降级、兼容发布和文档同步。适用于首次加入业务 revision，新增或修改表、字段、关系、约束、索引，处理多 head、模型与数据库漂移或迁移失败；单纯设计字段与索引先使用 mysql-ddl-conventions，数据库改动一律按 L3 处理。
+description: 为 LinkCV 编写、校验和排查 SQLAlchemy 与 SQL-first Alembic schema 迁移，覆盖 revision 链、配对 up/down SQL、数据回填、升级降级、兼容发布和文档同步。适用于新增业务 revision，新增或修改表、字段、关系、约束、索引，处理多 head、模型与数据库漂移或迁移失败；单纯设计字段与索引先使用 mysql-ddl-conventions，数据库改动一律按 L3 处理。
 ---
 
 # Alembic 迁移
@@ -19,11 +19,11 @@ description: 为 LinkCV 编写、校验和排查 SQLAlchemy 与 SQL-first Alembi
 ## 2. LinkCV 当前基线
 
 - FastAPI 已有鉴权、简历和图片路由，`core/database.py`、业务模型、Alembic 环境、SQL-first revision 模板与 `db:revision`、`db:migrate`、`db:init` 入口已经存在。
-- 当前尚无业务 revision。模型类存在不等于 MySQL 已有 `users`、`resumes` 等业务表；首次业务 schema 仍需建立明确的初始 revision。
+- 根 revision `0001` 已通过配对 SQL 创建 `users`、`resumes`，并与当前 SQLAlchemy 模型保持一致；仓库存在 revision 不等于每个目标环境都已经迁移到 head。
 - 后端集成测试使用隔离 SQLite，只能证明应用层组合行为；迁移链必须在 MySQL 8.4 上单独验证。
 - 原型 SQLite 数据默认不迁移到 MySQL，除非新的冻结需求明确改变这一点。
 
-因此首次业务 revision 必须先在技术设计中核对现有模型、Alembic 入口和部署 runner，再明确初始物理 schema、测试数据库、执行者、部署顺序和回滚。不存在的 revision、表或验证结果必须明确写“尚未建立”，不得把基础框架存在描述成业务 schema 已经可用。
+因此每次 schema 变化都必须先在技术设计中核对现有模型、当前 head、目标环境 current revision 和部署 runner，再明确物理 schema、测试数据库、执行者、部署顺序和回滚。不存在的 revision、表或验证结果必须明确写“尚未建立”，不得把仓库 head 存在描述成目标环境已经迁移。
 
 ## 3. 必读材料
 
@@ -37,9 +37,9 @@ description: 为 LinkCV 编写、校验和排查 SQLAlchemy 与 SQL-first Alembi
 6. Compose、环境变量模板、部署入口与数据库长期文档；
 7. 正确基线到当前分支的完整模型与 migration 差异。
 
-## 4. 首次业务 revision 与基础变更
+## 4. 迁移基础与 schema 变更
 
-建立首条业务 revision，或确需修改现有迁移基础时，至少确认：
+新增业务 revision，或确需修改迁移基础时，至少确认：
 
 1. SQLAlchemy metadata 的唯一入口和命名约定；
 2. Alembic 如何读取与应用相同的非敏感数据库配置，同时避免在日志中输出凭据；

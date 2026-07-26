@@ -67,7 +67,7 @@ L2 必须已有经 `module-planning` 确认并读回的飞书模块详情文档�
 
 - 当前全部 `/api` 由 FastAPI 处理，仓库不再存在 Express 运行入口；不得寻找或恢复 `server/` 作为兼容方案；
 - 修改路由、前端 API client、Vite Proxy、环境变量或部署入口时，必须按冻结技术设计同步处理消费方、兼容、验证和回滚；
-- SQLAlchemy 模型和 Alembic 基础已经存在，但当前没有业务 revision；数据库任务必须同时落地 SQL-first migration，不能把 SQLite 集成测试当作 MySQL 就绪证据。
+- SQLAlchemy 模型和 Alembic 基础已经存在，根 revision `0001` 创建 `users`、`resumes`；后续数据库任务必须落地顺序编号的 SQL-first migration，并核对目标环境 current revision，不能把 SQLite 集成测试当作 MySQL 就绪证据。
 
 ### 安全与数据
 

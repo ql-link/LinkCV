@@ -63,6 +63,19 @@ contracts:
         pattern: '\$\{REDIS_PORT:-6379\}:6379'
         message: Compose 必须使用 REDIS_PORT=6379 作为默认映射
 
+  - id: production-middleware-docker-dns
+    description: Production 通过 tolink-app-net 的 Docker DNS 连接已迁移中间件
+    assertions:
+      - path: .env.production
+        pattern: '(?m)^MYSQL_HOST=tolink-mysql$'
+        message: Production MySQL 必须使用 Cloud 容器 DNS
+      - path: .env.production
+        pattern: '(?m)^REDIS_HOST=tolink-redis$'
+        message: Production Redis 必须使用 Cloud 容器 DNS
+      - path: .env.production
+        pattern: '(?m)^MINIO_ENDPOINT=http://tolink-minio:9000$'
+        message: Production MinIO 必须使用 Cloud 容器 DNS
+
   - id: environment-layering
     description: FastAPI、Dev Compose 与 Production Compose 都支持基础配置加私密覆盖
     assertions:
@@ -103,6 +116,15 @@ contracts:
       - path: .ai/skills/alembic-migration/SKILL.md
         pattern: '禁止使用 `alembic revision --autogenerate`'
         message: 迁移 Skill 不得把 autogenerate 作为 SQL-first 入口
+      - path: .ai/prompts/project.md
+        pattern: '根 revision `0001`'
+        message: 项目入口必须反映已经建立的 MySQL 根 revision
+      - path: Dockerfile
+        pattern: 'python -m pip install --index-url "\$\{UV_INDEX_URL\}" "uv==\$\{UV_VERSION\}"'
+        message: uv 必须通过可配置的 PyPI 镜像安装，不能依赖 GHCR 镜像
+      - path: Dockerfile
+        pattern: 'uv pip install .*--index-url "\$\{UV_INDEX_URL\}" --requirements /tmp/requirements\.txt'
+        message: 锁定的 Python 依赖必须从可配置镜像下载，不能复用 uv.lock 中的外部制品 URL
 
   - id: deployment-environment-isolation
     description: Dev 与 Production 使用独立的发布目标和运行资源
@@ -114,8 +136,23 @@ contracts:
         pattern: 'LINKCV_DEV_HTTP_PORT:-18002'
         message: Dev 必须使用独立宿主机端口 18002
       - path: deploy/docker-compose.development.yml
-        pattern: 'LINKCV_DOCKER_NETWORK:-tolink-test-net'
-        message: Dev 必须加入隔离测试网络
+        pattern: 'LINKCV_DOCKER_NETWORK:-tolink-dev-net'
+        message: Dev 必须加入隔离开发网络
+      - path: deploy/scripts/build-development-on-primary.sh
+        pattern: 'dev_root="/opt/tolink/dev"'
+        message: Dev 必须部署到 /opt/tolink/dev
+      - path: deploy/scripts/build-development-on-primary.sh
+        pattern: 'tag="dev-\$\{commit_short\}-b\$\{build_number\}"'
+        message: Dev 镜像必须使用 dev-<commit>-b<build> 标签
+      - path: deploy/jenkins/Jenkinsfile.development
+        pattern: 'PRIMARY_SSH_KEY = ''/var/jenkins_home/\.ssh/primary_dev'''
+        message: Dev Jenkins 必须使用 primary_dev 密钥
+      - path: deploy/jenkins/Jenkinsfile.development
+        pattern: 'tokenCredentialId: ''linkcv-dev-webhook-token'''
+        message: Dev webhook token 必须来自 Jenkins Secret Text 凭据
+      - path: deploy/jenkins/Jenkinsfile.development
+        pattern: 'regexpFilterExpression: ''\^refs/heads/dev\$'''
+        message: Dev webhook 必须只接受 refs/heads/dev push
       - path: deploy/docker-compose.production.yml
         pattern: '(?m)^    container_name: linkcv$'
         message: Production 必须使用生产容器名
@@ -136,7 +173,7 @@ contracts:
         pattern: 'EXPECTED_APP_ENV = ''production'''
         message: Production Jenkins 必须锁定 production 环境
       - path: Jenkinsfile
-        pattern: 'EXPECTED_MYSQL_HOST = ''100\.86\.10\.52'''
+        pattern: 'EXPECTED_MYSQL_HOST = ''tolink-mysql'''
         message: Production Jenkins 必须锁定生产 MySQL 主机
       - path: Jenkinsfile
         pattern: 'EXPECTED_MYSQL_PORT = ''3306'''
@@ -144,3 +181,13 @@ contracts:
       - path: Jenkinsfile
         pattern: 'EXPECTED_MYSQL_DATABASE = ''linkcv'''
         message: Production Jenkins 必须锁定独立 linkcv 数据库
+
+  - id: development-resource-isolation
+    description: Dev 使用专属 Redis DB 和对象存储 Bucket
+    assertions:
+      - path: .env.development
+        pattern: '(?m)^REDIS_DB=2$'
+        message: LinkCV Dev 必须使用独立 Redis DB 2
+      - path: .env.development
+        pattern: '(?m)^MINIO_BUCKET=linkcv$'
+        message: LinkCV Dev 必须使用独立 linkcv Bucket

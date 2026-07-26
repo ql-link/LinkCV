@@ -44,7 +44,7 @@ Python 命令统一通过项目脚本或 `uv run --directory apps/backend` 执�
 7. 同时涉及前后端，或只需要统一执行已有自动化测试时运行 `npm test`。
 8. 修改共享契约、跨前后端行为、依赖、部署或准备创建 PR 时运行 `npm run check`。
 9. 只运行局部检查时，明确说明完整检查尚未执行，不得据此宣称仓库全部通过。
-10. 数据库变更不能只跑 pytest；必须包含与目标 MySQL 8.4 一致的 SQL-first migration 链验证。仓库已有 Alembic 入口但尚无业务 revision，不能把入口存在或 SQLite 测试通过当作 schema 验证。
+10. 数据库变更不能只跑 pytest；必须包含与目标 MySQL 8.4 一致的 SQL-first migration 链验证。仓库根 revision `0001` 已存在，但不能把仓库 head、入口存在或 SQLite 测试通过当作目标环境 schema 验证。
 
 前端已有 Vitest + React Testing Library 单元和组件测试基础，但没有自动化端到端测试。跨 Web 与 FastAPI 的完整浏览器流程仍需人工验证；组件测试、类型检查和生产构建不能替代该结果。
 

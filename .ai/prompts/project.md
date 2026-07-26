@@ -1,6 +1,6 @@
 # LinkCV
 
-LinkCV 是 React/TypeScript + FastAPI 前后端分离 Monorepo。原型 Express 运行链已经移除；当前正在为现有 FastAPI 鉴权、简历和图片模块补齐正式 MySQL schema revision。
+LinkCV 是 React/TypeScript + FastAPI 前后端分离 Monorepo。原型 Express 运行链已经移除；SQL-first Alembic 根 revision `0001` 已为 FastAPI 鉴权和简历模块建立正式 MySQL schema。
 
 本文是项目使用与开发入口，只保留所有任务都需要知道的仓库事实、真实命令和长期约束。当前模块知识见 [docs/README.md](docs/README.md)，详细交付流程见 [.ai/skills/README.md](.ai/skills/README.md)，Spec 状态规则见 [.specs/README.md](.specs/README.md)。`AGENTS.md` 与 `CLAUDE.md` 统一链接到本文件。
 
@@ -24,7 +24,7 @@ scripts        初始化、质量与阶段门禁脚本
 ```
 
 - 开发期全部 `/api` 请求由 Vite 代理到 FastAPI；FastAPI 已提供健康检查、鉴权、简历和图片路由。仓库中不再存在 `server/` 或 Express 启动入口。
-- SQLAlchemy 模型、Alembic 环境和 SQL-first revision 生成入口已经建立，但当前尚无业务 revision；不能把模型存在误写成 MySQL 业务表已经建立。
+- SQLAlchemy 模型、Alembic 环境和 SQL-first revision 生成入口已经建立；根 revision `0001` 创建 `users`、`resumes`，但仍须区分仓库 head 与目标环境实际 current revision。
 - 后端集成测试使用隔离 SQLite 和假 MinIO，这只是测试替身，不是运行时持久化或回滚拓扑。
 - FastAPI、前端 API client、Vite Proxy、环境变量和部署配置属于同一跨端契约；修改其中一处时检查其他位置。
 - 鉴权、数据库、对象存储、资源归属和数据完整性改动一律按高风险跨模块改动处理。
@@ -99,7 +99,7 @@ npm run spec -- ... # 管理 L2/L3 本地阶段状态
 - 保持改动聚焦；不顺带重构无关模块，不覆盖用户已有修改。
 - API、持久化模型、迁移、权限和失败路径必须同步设计与验证。
 - Alembic 版本默认采用 SQL-first：每个 revision 必须配对同 ID 的 `.up.sql`、`.down.sql`，DDL、索引、约束和可表达的数据变更优先写入 SQL；Python revision 只执行 SQL 文件。仅当 SQL 无法安全表达受控迁移时才允许 Python 逻辑，并在 revision 注释中说明原因；禁止使用自动生成的 `op.create_table`、`op.add_column` 等作为最终版本内容。
-- FastAPI 已建立 SQLAlchemy 模型、Alembic 环境、SQL-first revision 模板和迁移执行入口，但尚无业务 revision。首次加入业务 schema 时必须核对模型真值源，创建配对 SQL 文件，完成空库与往返迁移验证、文档同步和部署回滚；原型 SQLite 数据默认不迁移到 MySQL。
+- FastAPI 已建立 SQLAlchemy 模型、Alembic 环境、SQL-first revision 模板和迁移执行入口，根 revision `0001` 创建 `users`、`resumes`。后续 schema 变化必须核对模型真值源，创建顺序编号及配对 SQL 文件，完成空库与往返迁移验证、文档同步和部署回滚；原型 SQLite 数据默认不迁移到 MySQL。
 - `docs/` 只描述当前已实现的长期项目事实；Brief、Acceptance、Technical Design、实施报告和人工验收记录继续放在 `.specs/<KEY>/`。
 - 修改 FastAPI 路由归属、Vite Proxy、HTTP 契约或部署入口时，明确兼容窗口、回滚方式和数据处理策略。
 - 新依赖必须说明必要性，并更新对应 lockfile。
@@ -133,3 +133,9 @@ npm run spec -- ... # 管理 L2/L3 本地阶段状态
 - Markdown 标题不自动加粗；默认通过字号、间距和分隔线建立层级。
 - 显式 Markdown 粗体必须在网页预览和 PDF 中清晰可见；中文衬线字体需要时允许合成粗体。
 - 显式粗体使用中等字重和略浅于正文的墨色，保持清晰但不过重。
+- 所见即所得编辑器工具栏不展示固定字号快捷项；全局字号统一通过页面设置调整，避免重复入口。
+- 左右布局以旧版 `::: left` / `::: right` 的渲染语义为准：转换当前正文行时保留原内容到左栏，右栏立即显示可输入状态并获得光标；聚焦时必须有清晰但不进入导出效果的分栏提示。
+- 登录、简历主页和简历编辑器使用可恢复的独立 URL：`/login`、`/resumes`、`/resumes/:resumeId/edit`；编辑页刷新、收藏及浏览器前进后退必须保持当前简历定位。
+- 所见即所得编辑器聚焦时不显示包围整张 A4 内容区的浏览器默认外框；保留光标、文本选区和左右分栏等局部编辑提示。
+- “智能一页”必须在简历编辑器中保留清晰、可直接操作的入口和选中状态，并继续控制连续单页与标准 A4 分页两种 PDF 导出模式。
+- 简历编辑工作台必须支持 `Command/Ctrl + 滚轮` 缩放纸张预览；普通滚轮仍只负责滚动，缩放比例不得影响 PDF 的实际页面尺寸。

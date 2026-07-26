@@ -24,15 +24,15 @@ if [[ ! -f "${source_archive}" ]]; then
 fi
 
 image="linkcv"
-tag="test-dev-${commit_short}-b${build_number}"
-test_root="/opt/tolink/test"
-deploy_dir="${test_root}/linkcv"
-work_root="${test_root}/jenkins/workspaces"
+tag="dev-${commit_short}-b${build_number}"
+dev_root="/opt/tolink/dev"
+deploy_dir="${dev_root}/linkcv"
+work_root="${dev_root}/jenkins/workspaces"
 build_dir="${work_root}/linkcv-${build_number}"
 base_env="${deploy_dir}/.env.development"
 secret_env="${deploy_dir}/.env.development.local"
 compose_file="${deploy_dir}/deploy/docker-compose.development.yml"
-docker_network="tolink-test-net"
+docker_network="tolink-dev-net"
 http_port="18002"
 
 cleanup() {
@@ -61,8 +61,8 @@ if [[ ! -f "${secret_env}" ]]; then
   exit 10
 fi
 secret_mode="$(stat -c '%a' "${secret_env}")"
-if [[ "${secret_mode}" != "400" && "${secret_mode}" != "600" ]]; then
-  echo "Development secret env file must use mode 400 or 600, got ${secret_mode}" >&2
+if [[ "${secret_mode}" != "600" ]]; then
+  echo "Development secret env file must use mode 600, got ${secret_mode}" >&2
   exit 11
 fi
 docker network inspect "${docker_network}" >/dev/null

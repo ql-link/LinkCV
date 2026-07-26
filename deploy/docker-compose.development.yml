@@ -34,4 +34,4 @@ services:
 networks:
   linkcv-runtime:
     external: true
-    name: ${LINKCV_DOCKER_NETWORK:-tolink-test-net}
+    name: ${LINKCV_DOCKER_NETWORK:-tolink-dev-net}

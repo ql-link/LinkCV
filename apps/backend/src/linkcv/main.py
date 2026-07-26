@@ -6,6 +6,9 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException
+from starlette.responses import Response
+from starlette.types import Scope
 from sqlalchemy.orm import Session, sessionmaker
 
 from linkcv.api.router import api_router
@@ -15,6 +18,19 @@ from linkcv.core.errors import install_error_handlers
 from linkcv.core.storage import AssetStorage
 
 logger = logging.getLogger(__name__)
+
+
+class SpaStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        try:
+            response = await super().get_response(path, scope)
+        except HTTPException as error:
+            if error.status_code != 404 or path.startswith("api/"):
+                raise
+            return await super().get_response("index.html", scope)
+        if response.status_code != 404 or path.startswith("api/"):
+            return response
+        return await super().get_response("index.html", scope)
 
 
 def create_app(
@@ -68,7 +84,7 @@ def create_app(
     if web_dist_dir:
         path = Path(web_dist_dir)
         if path.is_dir():
-            app.mount("/", StaticFiles(directory=path, html=True), name="web")
+            app.mount("/", SpaStaticFiles(directory=path, html=True), name="web")
     return app
 
 

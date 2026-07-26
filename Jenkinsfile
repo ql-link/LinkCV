@@ -23,7 +23,7 @@ pipeline {
     LINKCV_DOCKER_NETWORK = 'tolink-app-net'
     LINKCV_HTTP_PORT = '8000'
     EXPECTED_APP_ENV = 'production'
-    EXPECTED_MYSQL_HOST = '100.86.10.52'
+    EXPECTED_MYSQL_HOST = 'tolink-mysql'
     EXPECTED_MYSQL_PORT = '3306'
     EXPECTED_MYSQL_DATABASE = 'linkcv'
   }

@@ -2,8 +2,9 @@ import { FormEvent, useState } from "react";
 import { ArrowRight, LogIn, UserPlus } from "lucide-react";
 import { useResumeStore } from "../../store/resumeStore";
 import { Brand, Button, TextInput } from "../../components/ds";
+import { authPath, editorPath, navigateTo } from "../../routing";
 
-export function AuthPage({ initialMode = "login" }: { initialMode?: "login" | "register" }) {
+export function AuthPage({ initialMode = "login", next = null }: { initialMode?: "login" | "register"; next?: string | null }) {
   const login = useResumeStore((state) => state.login);
   const register = useResumeStore((state) => state.register);
   const [mode, setMode] = useState<"login" | "register">(initialMode);
@@ -20,8 +21,11 @@ export function AuthPage({ initialMode = "login" }: { initialMode?: "login" | "r
     try {
       if (mode === "login") {
         await login(email, password);
+        navigateTo(next ?? "/resumes", { replace: true });
       } else {
         await register(email, password);
+        const resumeId = useResumeStore.getState().activeResumeId;
+        navigateTo(resumeId ? editorPath(resumeId) : "/resumes", { replace: true });
       }
     } catch (submitError) {
       setError(normalizeAuthError((submitError as Error).message));
@@ -54,8 +58,10 @@ export function AuthPage({ initialMode = "login" }: { initialMode?: "login" | "r
           variant="text"
           icon={<ArrowRight size={15} />}
           onClick={() => {
-            setMode(mode === "login" ? "register" : "login");
+            const nextMode = mode === "login" ? "register" : "login";
+            setMode(nextMode);
             setError(null);
+            navigateTo(authPath(nextMode, next), { replace: true });
           }}
         >
           {mode === "login" ? "没有账号？创建一个" : "已有账号？返回登录"}

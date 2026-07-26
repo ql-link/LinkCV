@@ -67,7 +67,7 @@ description: 沿 LinkCV 的浏览器、Vite 代理、FastAPI、SQLAlchemy、MySQ
 
 ### E. MySQL、SQLAlchemy 或 Alembic 故障
 
-- FastAPI 业务路由已经依赖 SQLAlchemy 模型和 MySQL 配置，但当前仓库尚无业务 revision；先区分模型代码存在、数据库已迁移和目标环境实际 current revision；
+- FastAPI 业务路由已经依赖 SQLAlchemy 模型和 MySQL 配置，仓库根 revision `0001` 创建 `users`、`resumes`；先区分仓库 head、目标环境实际 current revision 和应用期望 schema；
 - 只读核对连接目标、数据库版本、current revision、heads、history、锁和应用期望 schema；
 - 区分连接配置、未迁移、多 head、部分迁移、模型漂移、约束冲突和数据回填失败；
 - 迁移设计或数据修复转 `alembic-migration`，未经授权不执行升级、降级、UPDATE、DELETE 或清库；SQLite 集成测试成功不能证明 MySQL schema 已就绪。

@@ -9,7 +9,7 @@ description: 为 LinkCV 设计和审查 MySQL 8.4 表、字段、主键、外键
 
 把已确认的业务实体和访问模式转换为物理 schema 设计，输出设计依据与评审清单。本技能不直接连接数据库、不执行 DDL，也不把示例 SQL 当成已经落库的事实。
 
-LinkCV 已有 FastAPI 业务模型、MySQL 8.4 配置和 Alembic/SQL-first 基础，但当前尚无业务 revision。现有 ORM 只能作为待核对的模型真值候选，不能证明 MySQL 物理 schema 已经建立。首次业务 revision 必须结合冻结需求、真实访问模式和当前模型统一规范；不得因为其他项目使用某种主键、状态或时间策略就直接照搬。
+LinkCV 已有 FastAPI 业务模型、MySQL 8.4 配置和 Alembic/SQL-first 基础；根 revision `0001` 已创建 `users`、`resumes`。现有 ORM 与迁移链共同约束当前 schema，但不能证明每个目标环境都已经迁移到 head。后续 schema 设计必须结合冻结需求、真实访问模式、当前模型和已有物理约束；不得因为其他项目使用某种主键、状态或时间策略就直接照搬。
 
 ## 2. 必读输入
 
@@ -17,7 +17,7 @@ LinkCV 已有 FastAPI 业务模型、MySQL 8.4 配置和 Alembic/SQL-first 基�
 2. Acceptance 中的查询、写入、唯一性、权限、并发和失败场景；
 3. 当前 Technical Design 草稿中已经确认的持久化边界与旧数据决策；本技能可由 `technical-design` 在起草过程中调用，不要求技术设计先冻结；
 4. 真实调用方的读写模式、排序、分页、过滤和生命周期；
-5. 已存在的模型、Alembic 基础、revision、SQL 文件和数据库文档；分别说明“模型已存在”“业务 revision 尚不存在”和“目标环境是否已迁移”，不得合并成一个状态。
+5. 已存在的模型、Alembic 基础、revision、SQL 文件和数据库文档；分别说明“模型与仓库 head 的状态”和“目标环境是否已迁移”，不得合并成一个状态。
 
 ## 3. 命名与所有权
 
