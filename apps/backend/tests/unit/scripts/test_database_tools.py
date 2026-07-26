@@ -7,6 +7,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 INITIAL_REVISION = "0001"
+FOUR_TABLE_REVISION = "0002"
 
 
 def load_module(name: str, path: Path) -> ModuleType:
@@ -99,6 +100,42 @@ def test_initial_business_revision_is_sql_first_and_complete() -> None:
     assert "CONSTRAINT fk_resumes_user_id_users" in up_sql
     assert "KEY idx_resumes_user_updated (user_id, updated_at)" in up_sql
     assert down_sql.index("DROP TABLE resumes") < down_sql.index("DROP TABLE users")
+
+
+def test_four_core_table_revision_is_sql_first_and_guarded() -> None:
+    revision = next(
+        (REPO_ROOT / "apps/backend/migrations/versions").glob(
+            f"{FOUR_TABLE_REVISION}_*.py"
+        )
+    )
+    revision_text = revision.read_text(encoding="utf-8")
+    up_sql = (
+        REPO_ROOT / f"apps/backend/migrations/sql/{FOUR_TABLE_REVISION}.up.sql"
+    ).read_text(encoding="utf-8")
+    down_sql = (
+        REPO_ROOT / f"apps/backend/migrations/sql/{FOUR_TABLE_REVISION}.down.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "op.create_table" not in revision_text
+    assert 'revision: str = \'0002\'' in revision_text
+    assert 'down_revision: str | None = \'0001\'' in revision_text
+    assert '"0002.up.sql"' in revision_text
+    assert '"0002.down.sql"' in revision_text
+    assert "require_empty_business_tables(connection)" in revision_text
+    assert "only supports empty business tables" in revision_text
+    assert "DROP TABLE IF EXISTS resumes" in up_sql
+    assert "CREATE TABLE users" in up_sql
+    assert "CREATE TABLE resume_templates" in up_sql
+    assert "CREATE TABLE resumes" in up_sql
+    assert "CREATE TABLE resume_versions" in up_sql
+    assert "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT" in up_sql
+    assert "auth_version" not in up_sql
+    assert "idx_resumes_user_updated_id" in up_sql
+    assert "uk_resume_versions_no" in up_sql
+    assert "DROP TABLE IF EXISTS resume_versions" in down_sql
+    assert down_sql.index("DROP TABLE IF EXISTS resume_versions") < down_sql.index(
+        "DROP TABLE IF EXISTS resumes"
+    )
 
 
 def test_database_initializer_rejects_any_schema_except_linkcv() -> None:

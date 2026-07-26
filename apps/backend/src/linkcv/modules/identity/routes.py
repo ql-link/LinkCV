@@ -1,4 +1,5 @@
 import re
+import secrets
 
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy import select
@@ -6,11 +7,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from linkcv.core.config import Settings
-from linkcv.core.database import get_db
+from linkcv.core.database import get_db, utc_now
 from linkcv.core.errors import ApiError
 from linkcv.core.security import (
     clear_session_cookie,
-    create_id,
     create_session_token,
     hash_password,
     set_session_cookie,
@@ -55,9 +55,9 @@ def register(
         raise ApiError(409, "EMAIL_EXISTS")
 
     user = User(
-        id=create_id("user"),
         email=email,
         password_hash=hash_password(payload.password),
+        nickname=f"用户{secrets.token_hex(3)}",
     )
     db.add(user)
     try:
@@ -66,7 +66,7 @@ def register(
         db.rollback()
         raise ApiError(409, "EMAIL_EXISTS") from error
 
-    token = create_session_token(user.id, user.auth_version, settings)
+    token = create_session_token(user.id, settings)
     set_session_cookie(response, token, settings)
     return AuthResponse(user=UserResponse.model_validate(user))
 
@@ -82,7 +82,7 @@ def login(
     user = db.scalar(select(User).where(User.email == email))
     if (
         user is None
-        or user.status != "active"
+        or user.status != 1
         or not verify_password(
             payload.password,
             user.password_hash,
@@ -90,7 +90,11 @@ def login(
     ):
         raise ApiError(401, "INVALID_CREDENTIALS")
 
-    token = create_session_token(user.id, user.auth_version, settings)
+    user.last_login_at = utc_now()
+    db.commit()
+    db.refresh(user)
+
+    token = create_session_token(user.id, settings)
     set_session_cookie(response, token, settings)
     return AuthResponse(user=UserResponse.model_validate(user))
 

@@ -4,8 +4,8 @@ import type { ResumeSummary } from "../../api/client";
 import { HomeScreen } from "./HomePage";
 
 const resumes: ResumeSummary[] = [
-  { id: "resume-1", title: "Frontend Resume", createdAt: "2026-07-20T08:00:00Z", updatedAt: "2026-07-24T08:00:00Z" },
-  { id: "resume-2", title: "产品经理", createdAt: "2026-07-20T08:00:00Z", updatedAt: "2026-07-23T08:00:00Z" },
+  { id: "1", title: "Frontend Resume", sourceType: "blank", lockVersion: 1, createdAt: "2026-07-20T08:00:00Z", updatedAt: "2026-07-24T08:00:00Z" },
+  { id: "2", title: "产品经理", sourceType: "blank", lockVersion: 1, createdAt: "2026-07-20T08:00:00Z", updatedAt: "2026-07-23T08:00:00Z" },
 ];
 
 function renderHome(overrides: Partial<React.ComponentProps<typeof HomeScreen>> = {}) {
@@ -60,7 +60,7 @@ describe("HomeScreen", () => {
 
     act(() => vi.advanceTimersByTime(1));
     expect(onDelete).toHaveBeenCalledTimes(1);
-    expect(onDelete).toHaveBeenCalledWith("resume-1");
+    expect(onDelete).toHaveBeenCalledWith("1");
   });
 
   it("五秒内撤销会恢复卡片且不调用删除", () => {

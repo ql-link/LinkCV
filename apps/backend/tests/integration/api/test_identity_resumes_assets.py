@@ -2,9 +2,11 @@ import base64
 from collections.abc import Iterator
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from linkcv.core.config import Settings
 from linkcv.main import create_app
+from linkcv.modules.resumes.models import ResumeVersion
 
 
 class FakeObjectResponse:
@@ -52,6 +54,7 @@ def test_authentication_and_resume_crud() -> None:
         )
         assert response.status_code == 201
         assert response.json()["user"]["email"] == "user@example.com"
+        assert response.json()["user"]["id"].isdecimal()
         assert "Max-Age=604800" in response.headers["set-cookie"]
 
         assert client.get("/api/auth/me").json()["user"]["email"] == "user@example.com"
@@ -72,19 +75,43 @@ def test_authentication_and_resume_crud() -> None:
         assert resume["settings"]["theme"] == "modern"
         assert resume["settings"]["showSource"] is False
         assert resume["splitRatio"] == 0.45
+        assert resume["sourceType"] == "blank"
+        assert resume["lockVersion"] == 1
         assert "createdAt" in resume
 
         resume_id = resume["id"]
+        with app.state.session_factory() as session:
+            initial_version = session.scalar(
+                select(ResumeVersion).where(ResumeVersion.resume_id == int(resume_id))
+            )
+            assert initial_version is not None
+            assert initial_version.version_no == 1
+            assert initial_version.reason == "initial"
         listed = client.get("/api/resumes").json()["resumes"]
         assert [item["id"] for item in listed] == [resume_id]
 
         updated = client.put(
             f"/api/resumes/{resume_id}",
-            json={"title": "更新后的简历", "markdown": "# 张三\n\n新内容"},
+            json={
+                "title": "更新后的简历",
+                "markdown": "# 张三\n\n新内容",
+                "lockVersion": resume["lockVersion"],
+            },
         )
         assert updated.status_code == 200
         assert updated.json()["resume"]["title"] == "更新后的简历"
         assert updated.json()["resume"]["splitRatio"] == 0.45
+        assert updated.json()["resume"]["lockVersion"] == 2
+
+        conflict = client.put(
+            f"/api/resumes/{resume_id}",
+            json={"title": "过期写入", "lockVersion": 1},
+        )
+        assert conflict.status_code == 409
+        assert conflict.json() == {"error": "RESUME_EDIT_CONFLICT"}
+        assert client.get(f"/api/resumes/{resume_id}").json()["resume"][
+            "title"
+        ] == "更新后的简历"
 
         assert client.delete(f"/api/resumes/{resume_id}").json() == {"deleted": True}
         assert client.get(f"/api/resumes/{resume_id}").status_code == 404
