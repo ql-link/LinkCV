@@ -96,7 +96,7 @@ async def _build_session(
 # -- 注册 --------------------------------------------------------------------
 
 
-@router.post("/auth/register", response_model=AuthResponse)
+@router.post("/auth/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     credentials: Credentials,
     request: Request,

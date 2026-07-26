@@ -63,18 +63,13 @@ async def get_optional_user(
     session_store: SessionStore = request.app.state.session_store
     access_token = request.cookies.get(settings.session_cookie_name)
     refresh_token_value = request.cookies.get(settings.refresh_cookie_name)
-    print("=== DEBUG get_optional_user ===", flush=True)
-    print("access_token:", access_token[:50] if access_token else None, flush=True)
-    print("refresh:", refresh_token_value[:50] if refresh_token_value else None, flush=True)
 
     # -- 第①层：Access 自洽 --
     claims: AccessClaims | None = decode_access_token(access_token, settings)
-    print("claims:", claims, flush=True)
 
     if claims is not None:
         # -- 第②层：Session 存活 --
         session = await session_store.get(claims.sid)
-        print("session in redis:", session is not None, flush=True)
         if session:
             # 校验绝对过期
             abs_raw = session.get("absolute_expires_at")

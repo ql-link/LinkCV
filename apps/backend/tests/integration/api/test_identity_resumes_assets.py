@@ -54,10 +54,10 @@ def test_authentication_and_resume_crud() -> None:
         )
         assert response.status_code == 201
         assert response.json()["user"]["email"] == "user@example.com"
-        assert response.json()["user"]["id"].isdecimal()
+        assert isinstance(response.json()["user"]["id"], int)
         assert "Max-Age=604800" in response.headers["set-cookie"]
 
-        assert client.get("/api/auth/me").json()["user"]["email"] == "user@example.com"
+        assert client.get("/api/auth/me").json()["email"] == "user@example.com"
 
         created = client.post(
             "/api/resumes",
@@ -116,8 +116,8 @@ def test_authentication_and_resume_crud() -> None:
         assert client.delete(f"/api/resumes/{resume_id}").json() == {"deleted": True}
         assert client.get(f"/api/resumes/{resume_id}").status_code == 404
 
-        assert client.post("/api/auth/logout").json() == {"ok": True}
-        assert client.get("/api/resumes").json() == {"error": "UNAUTHORIZED"}
+        assert client.post("/api/auth/logout").json() == {"detail": "Logged out"}
+        assert client.get("/api/resumes").json() == {"detail": "Not authenticated"}
 
 
 def test_assets_are_private_to_the_current_user() -> None:
