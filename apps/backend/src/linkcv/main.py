@@ -15,6 +15,7 @@ from linkcv.api.router import api_router
 from linkcv.core.config import Settings, load_settings
 from linkcv.core.database import Base, build_engine, build_session_factory
 from linkcv.core.errors import install_error_handlers
+from linkcv.core.sessions import build_session_store
 from linkcv.core.storage import AssetStorage
 
 logger = logging.getLogger(__name__)
@@ -65,7 +66,10 @@ def create_app(
             logger.warning(
                 "MinIO is unavailable; asset routes will retry on demand", exc_info=True
             )
+        session_store = await build_session_store(runtime_settings)
+        _app.state.session_store = session_store
         yield
+        await session_store._client.aclose()  # noqa: SLF001
 
     app = FastAPI(
         title="LinkCV API",
@@ -81,8 +85,10 @@ def create_app(
     app.include_router(api_router, prefix="/api")
 
     web_dist_dir = runtime_settings.web_dist_dir
+    print(f"DEBUG web_dist_dir: {web_dist_dir!r}", flush=True)
     if web_dist_dir:
         path = Path(web_dist_dir)
+        print(f"DEBUG static path: {path!r} is_dir={path.is_dir()}", flush=True)
         if path.is_dir():
             app.mount("/", SpaStaticFiles(directory=path, html=True), name="web")
     return app

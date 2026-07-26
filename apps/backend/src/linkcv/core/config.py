@@ -54,6 +54,15 @@ class Settings(BaseSettings):
     session_cookie_name: str = Field(
         default="resume_session", alias="SESSION_COOKIE_NAME"
     )
+    access_token_ttl_minutes: int = Field(
+        default=30, alias="ACCESS_TOKEN_TTL_MINUTES"
+    )
+    refresh_cookie_name: str = Field(
+        default="resume_refresh", alias="REFRESH_COOKIE_NAME"
+    )
+    refresh_token_absolute_days: int = Field(
+        default=30, alias="REFRESH_TOKEN_ABSOLUTE_DAYS"
+    )
     session_ttl_days: int = Field(default=7, alias="SESSION_TTL_DAYS")
     cookie_secure: bool = Field(default=False, alias="COOKIE_SECURE")
 
