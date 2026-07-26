@@ -21,13 +21,14 @@
 | Method | Path | 鉴权 | 成功结果 |
 | --- | --- | --- | --- |
 | `GET` | `/api/auth/me` | 否 | `{user}`；未登录或 Cookie 无效时为 `null` |
-| `POST` | `/api/auth/register` | 否 | `201 {user}`，设置七天 JWT HttpOnly Cookie |
-| `POST` | `/api/auth/login` | 否 | `{user}`，设置七天 JWT HttpOnly Cookie |
-| `POST` | `/api/auth/logout` | 否 | `{ok: true}`，清除 Cookie |
+| `POST` | `/api/auth/register` | 否 | `201 {user}`，签发短 access 与 7 天 refresh 双 Cookie |
+| `POST` | `/api/auth/login` | 否 | `{user}`，签发短 access 与 7 天 refresh 双 Cookie |
+| `POST` | `/api/auth/refresh` | 否 | `{user}`，轮换 refresh 密钥并下发新双 Cookie |
+| `POST` | `/api/auth/logout` | 否 | `{ok: true}`，删除 Redis 会话并清除双 Cookie |
 
-Cookie 默认名为 `resume_session`，使用 `SameSite=Lax`。注册错误码为 `INVALID_EMAIL`、`WEAK_PASSWORD`、`EMAIL_EXISTS`；登录失败返回 `401 INVALID_CREDENTIALS`。
+鉴权使用“短 JWT access + 不透明 refresh + Redis 会话”的双 Token 方案。Access Cookie 名为 `resume_access`，有效期 `ACCESS_TTL_MINUTES`（默认 15 分钟），`SameSite=Lax`、`Path=/`。Refresh Cookie 名为 `resume_refresh`，有效期 `SESSION_TTL_DAYS`（默认 7 天），`HttpOnly`、`SameSite=Lax`、`Path=/api/auth`。注册错误码同上；登录或刷新失败返回 `401 INVALID_CREDENTIALS`。
 
-用户身份持久化在 MySQL `users` 表，邮箱保持唯一；`status` 默认为 `1`（启用），`is_admin` 默认为 `0`（普通用户），注册时由服务端生成昵称。`auth_version` 已从 MySQL 模型移除；当前 Cookie JWT 解析后仍会从 MySQL 读取用户并检查账号启用状态。Redis Auth Session 与双 Token 刷新接口尚未启用。
+每次受保护请求按“Access 自洽 → Session 存活 → 用户启用”三步校验：先校验 access JWT 签名与过期，再用 `EXISTS auth:session:{sid}` 确认 Redis 会话仍在，最后从 MySQL 读取用户并要求 `status=1`。会话只存 Redis（`auth:session:{sid}` 哈希与 `auth:user_sessions:{uid}` 集合），不写 MySQL；撤销即删除 key，不再依赖 `auth_version`。账号被禁用或改密时，遍历该用户的 `auth:user_sessions:{uid}` 删除其全部会话，达到旧 `auth_version` 全局失效的同等效果。`POST /api/auth/refresh` 读取 refresh Cookie，拆出 `sid.secret`，校验 `sha256(secret)` 与 Redis 中存储的 `rhash` 一致后轮换密钥：重写 `rhash`、续期会话并下发新的双 Cookie。哈希不匹配即判定 refresh 窃用并立即删除该会话。密码经 Argon2id 哈希后存入 `password_hash`，不保存明文。
 
 ## 简历接口
 

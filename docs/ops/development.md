@@ -29,7 +29,7 @@ LINKCV_ENV_FILE=.env.development npm run db:init
 | MinIO API | 9000 | `MINIO_API_PORT`、`MINIO_ENDPOINT` |
 | MinIO Console | 9001 | `MINIO_CONSOLE_PORT` |
 
-`BACKEND_PROXY_TARGET` 可以覆盖 Vite 使用的完整 FastAPI 地址。数据库可以用完整 `DATABASE_URL` 覆盖分项 MySQL 配置，Redis 可以用 `REDIS_URL` 覆盖分项配置。Production 必须通过私密覆盖提供足够随机的 `JWT_SECRET`、MySQL 和 MinIO 凭据，否则后端拒绝启动。
+`BACKEND_PROXY_TARGET` 可以覆盖 Vite 使用的完整 FastAPI 地址。数据库可以用完整 `DATABASE_URL` 覆盖分项 MySQL 配置，Redis 可以用 `REDIS_URL` 覆盖分项配置。Production 必须通过私密覆盖提供足够随机的 `JWT_SECRET`、MySQL 和 MinIO 凭据，否则后端拒绝启动。鉴权会话使用 `REDIS_*` 配置的 Redis 作为唯一会话存储；`ACCESS_TTL_MINUTES`、`ACCESS_COOKIE_NAME` 和 `REFRESH_COOKIE_NAME` 控制双 Token 的有效期与 Cookie 名称。
 
 ## 常用命令
 

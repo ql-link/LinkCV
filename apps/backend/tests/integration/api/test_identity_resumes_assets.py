@@ -37,12 +37,99 @@ class FakeStorage:
         return FakeObjectResponse(self.objects[object_name])
 
 
+class FakeRedis:
+    """In-memory Redis stand-in mirroring the subset used by sessions."""
+
+    def __init__(self) -> None:
+        self.strings: dict[str, str] = {}
+        self.hashes: dict[str, dict[str, str]] = {}
+        self.sets: dict[str, set[str]] = {}
+        self.ttls: dict[str, float | None] = {}
+
+    def hset(
+        self,
+        name: str,
+        key: str | None = None,
+        value: str | None = None,
+        mapping: dict[str, str] | None = None,
+    ) -> int:
+        data = self.hashes.setdefault(name, {})
+        merged: dict[str, str] = dict(mapping or {})
+        if key is not None:
+            merged[key] = "" if value is None else str(value)
+        count = 0
+        for field, val in merged.items():
+            if field not in data:
+                count += 1
+            data[field] = str(val)
+        return count
+
+    def hget(self, name: str, key: str) -> str | None:
+        return self.hashes.get(name, {}).get(key)
+
+    def hgetall(self, name: str) -> dict[str, str]:
+        return dict(self.hashes.get(name, {}))
+
+    def exists(self, name: str) -> int:
+        return int(
+            name in self.strings or name in self.hashes or name in self.sets
+        )
+
+    def delete(self, *names: str) -> int:
+        removed = 0
+        for name in names:
+            removed += int(
+                self.strings.pop(name, None) is not None
+                or self.hashes.pop(name, None) is not None
+                or self.sets.pop(name, None) is not None
+            )
+            self.ttls.pop(name, None)
+        return removed
+
+    def expire(self, name: str, ttl: float) -> int:
+        if name in self.strings or name in self.hashes or name in self.sets:
+            self.ttls[name] = ttl
+            return 1
+        return 0
+
+    def sadd(self, name: str, *values: str) -> int:
+        target = self.sets.setdefault(name, set())
+        before = len(target)
+        target.update(values)
+        return len(target) - before
+
+    def srem(self, name: str, *values: str) -> int:
+        target = self.sets.get(name, set())
+        removed = 0
+        for value in values:
+            if value in target:
+                target.remove(value)
+                removed += 1
+        if not target:
+            self.sets.pop(name, None)
+        return removed
+
+    def smembers(self, name: str) -> set[str]:
+        return set(self.sets.get(name, set()))
+
+    def ping(self, **_kwargs) -> bool:
+        return True
+
+    def close(self, **_kwargs) -> None:
+        pass
+
+
 def build_test_app():
     settings = Settings(
         database_url="sqlite+pysqlite:///:memory:",
         jwt_secret="integration-test-secret-with-32-bytes",
     )
-    return create_app(settings, storage=FakeStorage(), create_schema=True)
+    return create_app(
+        settings,
+        storage=FakeStorage(),
+        redis=FakeRedis(),
+        create_schema=True,
+    )
 
 
 def test_authentication_and_resume_crud() -> None:
@@ -55,7 +142,10 @@ def test_authentication_and_resume_crud() -> None:
         assert response.status_code == 201
         assert response.json()["user"]["email"] == "user@example.com"
         assert response.json()["user"]["id"].isdecimal()
-        assert "Max-Age=604800" in response.headers["set-cookie"]
+        set_cookie = response.headers["set-cookie"]
+        # Short access cookie plus a 7-day refresh cookie.
+        assert "resume_access=" in set_cookie and "Max-Age=900" in set_cookie
+        assert "resume_refresh=" in set_cookie and "Max-Age=604800" in set_cookie
 
         assert client.get("/api/auth/me").json()["user"]["email"] == "user@example.com"
 
@@ -146,3 +236,53 @@ def test_assets_are_private_to_the_current_user() -> None:
                 json={"email": "stranger@example.com", "password": "password-123"},
             )
             assert stranger.get(asset["url"]).status_code == 403
+
+
+def test_refresh_rotates_secret_and_reuse_revokes_session() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        register = client.post(
+            "/api/auth/register",
+            json={"email": "rotator@example.com", "password": "password-123"},
+        )
+        assert register.status_code == 201
+        first_refresh = client.cookies.get("resume_refresh")
+        assert first_refresh
+
+        # Refresh issues a new access token and rotates the refresh secret.
+        refreshed = client.post("/api/auth/refresh")
+        assert refreshed.status_code == 200
+        assert refreshed.json()["user"]["email"] == "rotator@example.com"
+        second_refresh = client.cookies.get("resume_refresh")
+        assert second_refresh and second_refresh != first_refresh
+
+    # Reusing the rotated-out refresh token must fail and revoke the session.
+    with TestClient(app) as attacker:
+        attacker.cookies.set(
+            "resume_refresh", first_refresh, domain="localhost", path="/api/auth"
+        )
+        assert attacker.post("/api/auth/refresh").status_code == 401
+
+    # The whole session is now revoked, so the live token is also invalid.
+    with TestClient(app) as client2:
+        client2.cookies.set(
+            "resume_refresh", second_refresh, domain="localhost", path="/api/auth"
+        )
+        assert client2.post("/api/auth/refresh").status_code == 401
+
+
+def test_disabled_account_blocks_access() -> None:
+    from linkcv.modules.identity.models import User
+
+    app = build_test_app()
+    with TestClient(app) as client:
+        client.post(
+            "/api/auth/register",
+            json={"email": "disabled@example.com", "password": "password-123"},
+        )
+        with app.state.session_factory() as session:
+            row = session.query(User).filter_by(email="disabled@example.com").one()
+            row.status = 0
+            session.commit()
+        # Disabling the user (without deleting the Redis key) still rejects access.
+        assert client.get("/api/resumes").json() == {"error": "UNAUTHORIZED"}

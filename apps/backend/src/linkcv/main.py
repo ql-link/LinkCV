@@ -15,20 +15,26 @@ from linkcv.api.router import api_router
 from linkcv.core.config import Settings, load_settings
 from linkcv.core.database import Base, build_engine, build_session_factory
 from linkcv.core.errors import install_error_handlers
+from linkcv.core.redis import build_redis_client
 from linkcv.core.storage import AssetStorage
 
 logger = logging.getLogger(__name__)
 
 
 class SpaStaticFiles(StaticFiles):
+    @staticmethod
+    def _path_is_api(path: str) -> bool:
+        # Normalise OS path separators so the check works on Windows too.
+        return path.replace("\\", "/").lstrip("/").startswith("api/")
+
     async def get_response(self, path: str, scope: Scope) -> Response:
         try:
             response = await super().get_response(path, scope)
         except HTTPException as error:
-            if error.status_code != 404 or path.startswith("api/"):
+            if error.status_code != 404 or self._path_is_api(path):
                 raise
             return await super().get_response("index.html", scope)
-        if response.status_code != 404 or path.startswith("api/"):
+        if response.status_code != 404 or self._path_is_api(path):
             return response
         return await super().get_response("index.html", scope)
 
@@ -38,6 +44,7 @@ def create_app(
     *,
     session_factory: sessionmaker[Session] | None = None,
     storage: Any | None = None,
+    redis: Any | None = None,
     create_schema: bool = False,
 ) -> FastAPI:
     runtime_settings = settings or load_settings()
@@ -56,6 +63,8 @@ def create_app(
         Base.metadata.create_all(engine)
 
     runtime_storage = storage or AssetStorage(runtime_settings)
+    if redis is None:
+        redis = build_redis_client(runtime_settings)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -65,7 +74,15 @@ def create_app(
             logger.warning(
                 "MinIO is unavailable; asset routes will retry on demand", exc_info=True
             )
+        try:
+            await asyncio.to_thread(redis.ping)
+        except Exception:
+            logger.warning("Redis is unavailable; auth sessions will fail", exc_info=True)
         yield
+        try:
+            await asyncio.to_thread(redis.close)
+        except Exception:
+            logger.warning("Redis close failed", exc_info=True)
 
     app = FastAPI(
         title="LinkCV API",
@@ -77,6 +94,7 @@ def create_app(
     app.state.settings = runtime_settings
     app.state.session_factory = session_factory
     app.state.storage = runtime_storage
+    app.state.redis = redis
     install_error_handlers(app)
     app.include_router(api_router, prefix="/api")
 
