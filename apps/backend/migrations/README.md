@@ -2,10 +2,14 @@
 
 本目录管理 LinkCV MySQL schema 版本。迁移采用 **SQL-first**：表、字段、索引、外键和可表达的数据变更写在 SQL 文件中，Python revision 只负责按版本顺序调用 SQL 文件。
 
-## 当前基线
+## 当前迁移链
 
-当前根 revision 为 `0001`，用于在空的 `linkcv` 数据库建立
-`users` 与 `resumes`。它同时提供可逆的 SQL 文件，不迁移原型 SQLite 数据。
+根 revision `0001` 用于建立旧版 `users` 与 `resumes`。当前 head 为 `0002`，
+在确认 `0001` 两张业务表均为空后，将结构替换为 `users`、
+`resume_templates`、`resumes` 与 `resume_versions` 四张核心表。`0002` 使用
+`BIGINT UNSIGNED AUTO_INCREMENT` 主键，并通过 revision 的只读预检阻止对非空
+业务表执行破坏性替换；预检也允许空库在 MySQL DDL 部分失败后安全重试。升级和降级均提供配对 SQL；原型 SQLite 数据
+仍不迁移到 MySQL。
 
 ```text
 migrations/
@@ -56,7 +60,7 @@ apps/backend/migrations/sql/<revision>.down.sql
 ## 执行与核验
 
 ```bash
-# 查看迁移链和当前数据库版本；heads 应只有 0001
+# 查看迁移链和当前数据库版本；heads 应只有 0002
 uv run --directory apps/backend alembic heads
 uv run --directory apps/backend alembic current
 

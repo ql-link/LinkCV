@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ResumeWrite(BaseModel):
@@ -12,6 +12,7 @@ class ResumeWrite(BaseModel):
     settings: dict[str, Any] | None = None
     split_ratio: float | None = Field(default=None, alias="splitRatio")
     preview_scale: float | None = Field(default=None, alias="previewScale")
+    lock_version: int | None = Field(default=None, alias="lockVersion", ge=1)
 
 
 class ResumeSummary(BaseModel):
@@ -19,8 +20,15 @@ class ResumeSummary(BaseModel):
 
     id: str
     title: str
+    source_type: str = Field(alias="sourceType")
+    lock_version: int = Field(alias="lockVersion")
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def stringify_id(cls, value: object) -> str:
+        return str(value)
 
 
 class ResumeRecord(ResumeSummary):

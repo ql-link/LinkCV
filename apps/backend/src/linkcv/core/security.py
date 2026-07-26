@@ -1,4 +1,3 @@
-import secrets
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -6,10 +5,6 @@ import jwt
 from fastapi import Response
 
 from linkcv.core.config import Settings
-
-
-def create_id(prefix: str) -> str:
-    return f"{prefix}_{secrets.token_hex(16)}"
 
 
 def hash_password(password: str) -> str:
@@ -25,13 +20,12 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def create_session_token(user_id: str, auth_version: int, settings: Settings) -> str:
+def create_session_token(user_id: int, settings: Settings) -> str:
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(days=settings.session_ttl_days)
     return jwt.encode(
         {
-            "sub": user_id,
-            "ver": auth_version,
+            "sub": str(user_id),
             "iat": now,
             "exp": expires_at,
         },
@@ -40,9 +34,7 @@ def create_session_token(user_id: str, auth_version: int, settings: Settings) ->
     )
 
 
-def decode_session_token(
-    token: str | None, settings: Settings
-) -> tuple[str, int] | None:
+def decode_session_token(token: str | None, settings: Settings) -> int | None:
     if not token:
         return None
     try:
@@ -52,11 +44,11 @@ def decode_session_token(
             algorithms=[settings.jwt_algorithm],
         )
         subject = payload.get("sub")
-        version = payload.get("ver")
-        if not isinstance(subject, str) or not isinstance(version, int):
+        if not isinstance(subject, str) or not subject.isdecimal():
             return None
-        return subject, version
-    except jwt.PyJWTError:
+        user_id = int(subject)
+        return user_id if user_id > 0 and str(user_id) == subject else None
+    except (ValueError, jwt.PyJWTError):
         return None
 
 

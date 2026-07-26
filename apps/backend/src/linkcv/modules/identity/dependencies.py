@@ -18,16 +18,15 @@ def get_optional_user(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> User | None:
-    session = decode_session_token(
+    user_id = decode_session_token(
         request.cookies.get(settings.session_cookie_name),
         settings,
     )
-    if session is None:
+    if user_id is None:
         return None
 
-    user_id, auth_version = session
     user = db.scalar(select(User).where(User.id == user_id))
-    if user is None or user.status != "active" or user.auth_version != auth_version:
+    if user is None or user.status != 1:
         return None
     return user
 

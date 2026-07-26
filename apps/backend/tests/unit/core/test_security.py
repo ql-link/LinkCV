@@ -17,5 +17,5 @@ def test_password_hash_and_jwt_round_trip() -> None:
     assert verify_password("correct-horse", password_hash)
     assert not verify_password("wrong-password", password_hash)
 
-    token = create_session_token("user_123", 3, settings)
-    assert decode_session_token(token, settings) == ("user_123", 3)
+    token = create_session_token(123, settings)
+    assert decode_session_token(token, settings) == 123

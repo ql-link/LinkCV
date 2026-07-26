@@ -29,6 +29,7 @@ type ResumeState = {
   user: User | null;
   resumes: ResumeSummary[];
   activeResumeId: string | null;
+  lockVersion: number;
   title: string;
   markdown: string;
   editorContent: JSONContent | string;
@@ -59,6 +60,7 @@ type ResumeState = {
 
 type SaveSnapshot = {
   activeResumeId: string;
+  lockVersion: number;
   title: string;
   markdown: string;
   editorContent: JSONContent | string;
@@ -92,6 +94,7 @@ function applyResume(resume: ResumeRecord) {
   const stored = parseStoredDocument(resume.markdown);
   return {
     activeResumeId: resume.id,
+    lockVersion: resume.lockVersion,
     title: resume.title,
     markdown: resume.markdown,
     editorContent: typeof stored === "string" ? renderResumeMarkdown(stored) : stored,
@@ -120,6 +123,7 @@ function settingsEqual(left: ResumeSettings, right: ResumeSettings) {
 function matchesSaveSnapshot(state: ResumeState, snapshot: SaveSnapshot) {
   return (
     state.activeResumeId === snapshot.activeResumeId &&
+    state.lockVersion === snapshot.lockVersion &&
     state.title === snapshot.title &&
     state.markdown === snapshot.markdown &&
     JSON.stringify(state.editorContent) === JSON.stringify(snapshot.editorContent) &&
@@ -134,6 +138,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   user: null,
   resumes: [],
   activeResumeId: null,
+  lockVersion: 0,
   title: "张三-后端开发实习生",
   markdown: defaultResumeMarkdown,
   editorContent: defaultResumeDocument,
@@ -149,7 +154,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     try {
       const { user } = await api.me();
       if (!user) {
-        set({ authStatus: "guest", user: null, resumes: [], activeResumeId: null });
+        set({ authStatus: "guest", user: null, resumes: [], activeResumeId: null, lockVersion: 0 });
         return;
       }
 
@@ -179,6 +184,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       user: null,
       resumes: [],
       activeResumeId: null,
+      lockVersion: 0,
       dirty: false,
       saveStatus: "idle",
     });
@@ -212,7 +218,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     set({ resumes });
 
     if (get().activeResumeId === id) {
-      set({ activeResumeId: null, dirty: false, saveStatus: "idle" });
+      set({ activeResumeId: null, lockVersion: 0, dirty: false, saveStatus: "idle" });
     }
   },
 
@@ -221,6 +227,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     if (!state.activeResumeId) return;
     const snapshot: SaveSnapshot = {
       activeResumeId: state.activeResumeId,
+      lockVersion: state.lockVersion,
       title: state.title,
       markdown: state.markdown,
       editorContent: state.editorContent,
@@ -234,6 +241,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     try {
       const { resume } = await api.updateResume(snapshot.activeResumeId, {
         title: snapshot.title,
+        lockVersion: snapshot.lockVersion,
         markdown: JSON.stringify(snapshot.editorContent),
         settings: snapshot.settings,
         splitRatio: snapshot.splitRatio,
@@ -252,7 +260,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     }
   },
 
-  goHome: () => set({ activeResumeId: null }),
+  goHome: () => set({ activeResumeId: null, lockVersion: 0 }),
 
   setTitle: (title) =>
     set((state) =>

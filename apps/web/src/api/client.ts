@@ -8,6 +8,8 @@ export type User = {
 export type ResumeSummary = {
   id: string;
   title: string;
+  sourceType: "blank" | "template" | "import";
+  lockVersion: number;
   createdAt: string;
   updatedAt: string;
 };
