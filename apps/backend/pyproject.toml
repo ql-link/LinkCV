@@ -6,7 +6,9 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
   "alembic>=1.15,<2.0",
   "bcrypt>=4.2,<6.0",
+  "cryptography>=45,<47",
   "fastapi>=0.115,<1.0",
+  "litellm>=1.77,<2.0",
   "minio>=7.2,<8.0",
   "pydantic>=2.10,<3.0",
   "pydantic-settings>=2.7,<3.0",

@@ -1,6 +1,19 @@
 version: 1
 
 contracts:
+  - id: llm-credential-encryption-key-ring
+    description: 三套环境都声明后端模型凭据密钥环且不把真实密钥提交到仓库
+    assertions:
+      - path: .env.example
+        pattern: '(?m)^LLM_CREDENTIAL_ENCRYPTION_KEYS=$'
+        message: 本地模板必须声明空的 LLM 凭据密钥环
+      - path: .env.development
+        pattern: '(?m)^LLM_CREDENTIAL_ENCRYPTION_KEYS=$'
+        message: Dev 基础配置必须由私密覆盖提供 LLM 凭据密钥环
+      - path: .env.production
+        pattern: '(?m)^LLM_CREDENTIAL_ENCRYPTION_KEYS=$'
+        message: Production 基础配置必须由私密覆盖提供 LLM 凭据密钥环
+
   - id: fastapi-default-port
     description: FastAPI 和 Vite 使用同一个 BACKEND_PORT 默认值
     assertions:

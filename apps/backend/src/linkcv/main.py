@@ -16,6 +16,9 @@ from linkcv.core.config import Settings, load_settings
 from linkcv.core.database import Base, build_engine, build_session_factory
 from linkcv.core.errors import install_error_handlers
 from linkcv.core.storage import AssetStorage
+from linkcv.modules.llm.crypto import CredentialCipher
+from linkcv.modules.llm.gateway import LLMGateway, LiteLLMGateway
+from linkcv.modules.llm.service import LLMService
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +41,7 @@ def create_app(
     *,
     session_factory: sessionmaker[Session] | None = None,
     storage: Any | None = None,
+    llm_gateway: LLMGateway | None = None,
     create_schema: bool = False,
 ) -> FastAPI:
     runtime_settings = settings or load_settings()
@@ -56,6 +60,12 @@ def create_app(
         Base.metadata.create_all(engine)
 
     runtime_storage = storage or AssetStorage(runtime_settings)
+    runtime_llm_gateway = llm_gateway or LiteLLMGateway()
+    llm_service = LLMService(
+        session_factory,
+        runtime_llm_gateway,
+        CredentialCipher(runtime_settings.llm_credential_encryption_keys),
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -77,6 +87,7 @@ def create_app(
     app.state.settings = runtime_settings
     app.state.session_factory = session_factory
     app.state.storage = runtime_storage
+    app.state.llm_service = llm_service
     install_error_handlers(app)
     app.include_router(api_router, prefix="/api")
 

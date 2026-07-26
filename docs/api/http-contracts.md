@@ -29,6 +29,8 @@ Cookie 默认名为 `resume_session`，使用 `SameSite=Lax`。注册错误码�
 
 用户身份持久化在 MySQL `users` 表，邮箱保持唯一；`status` 默认为 `1`（启用），`is_admin` 默认为 `0`（普通用户），注册时由服务端生成昵称。`auth_version` 已从 MySQL 模型移除；当前 Cookie JWT 解析后仍会从 MySQL 读取用户并检查账号启用状态。Redis Auth Session 与双 Token 刷新接口尚未启用。
 
+JWT 只保存用户 ID、签发时间和有效期。`users.is_admin` 不进入 JWT；管理员接口每次请求都从数据库读取该 `0/1` 标记，因此提权或降权对现有 Cookie 的下一次请求即时生效。公开注册始终创建普通用户。
+
 ## 简历接口
 
 | Method | Path | 鉴权 | 成功结果 |
@@ -51,3 +53,23 @@ Cookie 默认名为 `resume_session`，使用 `SameSite=Lax`。注册错误码�
 | `GET` | `/api/assets/:objectName` | 是 | 读取当前用户前缀下的私有 MinIO 对象 |
 
 上传只接受 APNG、AVIF、GIF、JPEG、PNG、SVG 和 WebP data URL，单个解码后文件不超过 10 MiB。错误包括 `INVALID_IMAGE`、`IMAGE_TOO_LARGE`、`ASSET_UPLOAD_FAILED`、`ASSET_NOT_FOUND` 和 `ASSET_READ_FAILED`；跨用户对象路径返回 `403 FORBIDDEN`。
+
+## 大模型管理接口
+
+以下接口只允许当前数据库用户的 `is_admin=true` 时访问。未登录返回 `401 UNAUTHORIZED`，普通用户返回 `403 FORBIDDEN`。本期不公开普通用户或第三方可调用的通用 chat、stream HTTP API；模型调用只作为 FastAPI 后端内部 Python 服务提供。
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `GET` | `/api/admin/llm/models` | `{models}`，包含启用与停用配置 |
+| `POST` | `/api/admin/llm/models` | `201 {model}` |
+| `PATCH` | `/api/admin/llm/models/:modelConfigId` | `{model}`，字段可部分更新 |
+| `POST` | `/api/admin/llm/models/:modelConfigId/test` | `{ok: true, callId}`，测试指定配置 |
+| `GET` | `/api/admin/llm/calls` | `{calls, summary, nextCursor}` |
+
+模型配置接受 `model`、`apiBase`、只写的 `apiKey`、`enabled`、`priority`、`inputPricePerMillion` 和 `outputPricePerMillion`。响应只用 `keyConfigured` 表示是否已有凭据，绝不返回明文或数据库密文。PATCH 省略 `apiKey` 时保留原凭据，传 `null` 时清除，传非空字符串时替换；模型配置不提供硬删除接口。
+
+模型配置 `id`、调用记录 `userId` 和 `modelConfigId` 与其他 MySQL 业务 ID 一致，对外使用十进制字符串，内部数据库列仍为 `BIGINT UNSIGNED`。
+
+调用记录可用 `userId`、`modelConfigId`、`from`、`to`、`cursor` 和 `limit` 查询，默认每页 50、最大 200，按创建时间和内部 ID 倒序稳定分页。每条记录只包含调用标识、用户、实际模型快照、状态、耗时、Token、价格快照、估算成本和非敏感错误分类，不保存或返回消息、模型完整响应和凭据。汇总只聚合已知值，并用 `incompleteMeteringCount` 表明不完整计量。
+
+管理错误包括 `INVALID_LLM_MODEL_CONFIG`、`INVALID_LLM_CALL_QUERY`、`LLM_MODEL_NOT_FOUND`、`LLM_CREDENTIALS_UNAVAILABLE` 和 `LLM_CONNECTION_FAILED`。供应商原始错误不会透传。

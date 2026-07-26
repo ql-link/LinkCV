@@ -1,12 +1,15 @@
 import os
+import re
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote
 
-from pydantic import Field, model_validator
+from cryptography.fernet import Fernet
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
+LLM_KEY_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 
 
 def settings_env_files() -> tuple[Path, ...]:
@@ -22,6 +25,36 @@ def _is_placeholder(value: str | None) -> bool:
     return not normalized or any(
         marker in normalized for marker in ("replace-with", "change-me", "example")
     )
+
+
+def parse_llm_credential_encryption_keys(
+    value: SecretStr | str | None,
+) -> tuple[tuple[str, bytes], ...]:
+    if isinstance(value, SecretStr):
+        raw = value.get_secret_value()
+    else:
+        raw = value or ""
+    if not raw.strip():
+        return ()
+
+    keys: list[tuple[str, bytes]] = []
+    seen_ids: set[str] = set()
+    for entry in raw.split(","):
+        key_id, separator, encoded_key = entry.strip().partition(":")
+        if (
+            not separator
+            or not LLM_KEY_ID_PATTERN.fullmatch(key_id)
+            or key_id in seen_ids
+        ):
+            raise ValueError("LLM_CREDENTIAL_ENCRYPTION_KEYS is invalid")
+        try:
+            encoded = encoded_key.strip().encode("ascii")
+            Fernet(encoded)
+        except (UnicodeEncodeError, ValueError) as error:
+            raise ValueError("LLM_CREDENTIAL_ENCRYPTION_KEYS is invalid") from error
+        keys.append((key_id, encoded))
+        seen_ids.add(key_id)
+    return tuple(keys)
 
 
 class Settings(BaseSettings):
@@ -56,6 +89,11 @@ class Settings(BaseSettings):
     )
     session_ttl_days: int = Field(default=7, alias="SESSION_TTL_DAYS")
     cookie_secure: bool = Field(default=False, alias="COOKIE_SECURE")
+
+    llm_credential_encryption_keys: SecretStr | None = Field(
+        default=None,
+        alias="LLM_CREDENTIAL_ENCRYPTION_KEYS",
+    )
 
     minio_endpoint: str = Field(default="http://127.0.0.1:9000", alias="MINIO_ENDPOINT")
     minio_access_key: str = Field(default="linkcv", alias="MINIO_ACCESS_KEY")
@@ -122,6 +160,14 @@ class Settings(BaseSettings):
             invalid.append("MINIO_ACCESS_KEY")
         if _is_placeholder(self.minio_secret_key):
             invalid.append("MINIO_SECRET_KEY")
+        try:
+            llm_keys = parse_llm_credential_encryption_keys(
+                self.llm_credential_encryption_keys
+            )
+        except ValueError:
+            llm_keys = ()
+        if not llm_keys:
+            invalid.append("LLM_CREDENTIAL_ENCRYPTION_KEYS")
         if invalid:
             names = ", ".join(sorted(set(invalid)))
             raise ValueError(f"production secrets are missing or unsafe: {names}")
