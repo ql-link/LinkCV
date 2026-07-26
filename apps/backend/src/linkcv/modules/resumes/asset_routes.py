@@ -75,7 +75,7 @@ def read_asset(
     user: User = Depends(get_current_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> StreamingResponse:
-    if not object_name.startswith(f"users/{user.id}/assets/"):
+    if not object_name.startswith(f"users/{user.id}/"):
         raise ApiError(403, "FORBIDDEN")
     try:
         response = storage.get(object_name)

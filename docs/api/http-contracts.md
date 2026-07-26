@@ -21,13 +21,17 @@
 | Method | Path | 鉴权 | 成功结果 |
 | --- | --- | --- | --- |
 | `GET` | `/api/auth/me` | 否 | `{user}`；未登录或 Cookie 无效时为 `null` |
-| `POST` | `/api/auth/register` | 否 | `201 {user}`，设置七天 JWT HttpOnly Cookie |
-| `POST` | `/api/auth/login` | 否 | `{user}`，设置七天 JWT HttpOnly Cookie |
-| `POST` | `/api/auth/logout` | 否 | `{ok: true}`，清除 Cookie |
+| `POST` | `/api/auth/register` | 否 | `201 {user}`，写入双鉴权 Cookie 并创建 Redis 会话 |
+| `POST` | `/api/auth/login` | 否 | `{user}`，写入双鉴权 Cookie 并创建 Redis 会话 |
+| `POST` | `/api/auth/logout` | 否 | `{ok: true}`，撤销会话并清除两个 Cookie |
+| `PATCH` | `/api/users/me` | 是 | `{user}`，修改昵称 |
+| `PUT` | `/api/users/me/avatar` | 是 | `{avatarUrl}`，上传或更换头像并清理旧对象 |
 
-Cookie 默认名为 `resume_session`，使用 `SameSite=Lax`。注册错误码为 `INVALID_EMAIL`、`WEAK_PASSWORD`、`EMAIL_EXISTS`；登录失败返回 `401 INVALID_CREDENTIALS`。
+鉴权使用双 Token + Redis 会话三校验：Access Token 为 HttpOnly Cookie（默认名 `resume_session`，有效期 `ACCESS_TOKEN_TTL_MINUTES`，默认 30 分钟），Refresh Token 为不透明随机串的 HttpOnly Cookie（默认名 `resume_refresh`，滑动有效期 `SESSION_TTL_DAYS` 默认 7 天，绝对上限 `REFRESH_TOKEN_ABSOLUTE_DAYS` 默认 30 天）。统一鉴权依赖依次校验 Access JWT 自洽、Redis 会话存活与 Refresh 通行串一致；Access 不可用时用 Refresh 续期并轮换通行串。两个 Cookie 均为 `SameSite=Lax`、`Path=/`，生产环境启用 `Secure`。
 
-用户身份持久化在 MySQL `users` 表，邮箱保持唯一；默认状态为 `active`、认证版本为 `1`。这些持久化默认值不改变上述 HTTP 字段和错误语义。
+注册错误码为 `INVALID_EMAIL`、`WEAK_PASSWORD`、`EMAIL_EXISTS`；登录失败统一返回 `401 INVALID_CREDENTIALS`；昵称校验返回 `NICKNAME_REQUIRED`、`NICKNAME_TOO_LONG`；头像沿用图片接口错误码。
+
+用户身份持久化在 MySQL `users` 表，邮箱保持唯一，默认 `status=1`、`is_admin=0`。会话只存活于 Redis，不建立 Session、Refresh Token 或黑名单表。`user.id` 在 HTTP、JSON、JWT `sub` 与 Redis 中统一为十进制字符串。`{user}` 字段为 `id`（字符串）、`email`、`nickname`、`avatarUrl`（可空，指向 `/api/assets/{object_key}`）、`isAdmin`。注册时随机生成昵称，登录后可修改昵称和更换头像。
 
 ## 简历接口
 

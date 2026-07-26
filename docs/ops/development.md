@@ -1,4 +1,4 @@
-# 本地开发与配置
+﻿# 本地开发与配置
 
 ## 环境要求
 
@@ -29,7 +29,7 @@ LINKCV_ENV_FILE=.env.development npm run db:init
 | MinIO API | 9000 | `MINIO_API_PORT`、`MINIO_ENDPOINT` |
 | MinIO Console | 9001 | `MINIO_CONSOLE_PORT` |
 
-`BACKEND_PROXY_TARGET` 可以覆盖 Vite 使用的完整 FastAPI 地址。数据库可以用完整 `DATABASE_URL` 覆盖分项 MySQL 配置，Redis 可以用 `REDIS_URL` 覆盖分项配置。Production 必须通过私密覆盖提供足够随机的 `JWT_SECRET`、MySQL 和 MinIO 凭据，否则后端拒绝启动。
+`BACKEND_PROXY_TARGET` 可以覆盖 Vite 使用的完整 FastAPI 地址。数据库可以用完整 `DATABASE_URL` 覆盖分项 MySQL 配置，Redis 可以用 `REDIS_URL` 覆盖分项配置。Production 必须通过私密覆盖提供足够随机的 `JWT_SECRET`、MySQL 和 MinIO 凭据，否则后端拒绝启动。鉴权使用双 Token + Redis 会话：`ACCESS_TOKEN_TTL_MINUTES`（默认 30 分钟）控制 Access JWT 有效期，`SESSION_TTL_DAYS`（默认 7 天）为 Refresh 滑动有效期，`REFRESH_TOKEN_ABSOLUTE_DAYS`（默认 30 天）为单会话绝对上限，`REFRESH_COOKIE_NAME` 默认 `resume_refresh`；会话只存 Redis，启动前需确保 Redis 可达（`npm run infra:up`）。
 
 ## 常用命令
 

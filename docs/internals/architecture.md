@@ -18,7 +18,7 @@ FastAPI 在 `apps/backend/src/linkcv/main.py` 以 `/api` 前缀挂载路由。�
 ## 数据与鉴权
 
 - MySQL 是用户和简历数据的权威存储，表结构只通过 Alembic 迁移演进。
-- 登录态是有效期七天的 JWT HttpOnly Cookie，Cookie 名保持为 `resume_session`。
+- 鉴权采用双 Token + Redis 会话三校验：Access Token 为短期 JWT HttpOnly Cookie（`resume_session`），Refresh Token 为不透明随机串 HttpOnly Cookie（`resume_refresh`），会话只存 Redis、不落 MySQL；撤销会话即删 Redis 中的 `auth:session:{sid}`。
 - 图片存储在私有 MinIO bucket 中，对象键必须位于当前用户的 `users/<user-id>/assets/` 前缀下。
 - 原型 Express/SQLite 数据不迁移到 MySQL。
 

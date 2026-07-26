@@ -61,6 +61,9 @@ class AssetStorage:
     def get(self, object_name: str):
         self.ensure_bucket()
         return self.client.get_object(self.bucket, object_name)
+    def delete(self, object_name: str) -> None:
+        self.ensure_bucket()
+        self.client.remove_object(self.bucket, object_name)
 
 
 def get_storage(request: Request) -> AssetStorage:
