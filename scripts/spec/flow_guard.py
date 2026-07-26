@@ -22,7 +22,7 @@ VERIFICATION_ROOT = Path(
     os.environ.get("LINKCV_VERIFICATION_ROOT", REPO_ROOT)
 ).resolve()
 KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
-STATE_SCHEMA_VERSION = 2
+STATE_SCHEMA_VERSION = 4
 ARTIFACT_FILES = {
     "brief": "brief.md",
     "acceptance": "acceptance.feature",
@@ -36,25 +36,11 @@ PHASES = (
     "quality_review",
     "release_ready",
 )
-SOURCE_SYSTEMS = ("manual", "multica", "github")
-SOURCE_GATES = (
-    "brief",
-    "acceptance",
-    "technical_design",
-    "implementation",
-    "verification",
-    "release",
-)
-SOURCE_GATE_BY_PHASE = {
-    "brief": "brief",
-    "acceptance": "acceptance",
-    "technical_design": "technical_design",
-    "implementation": "implementation",
-    "quality_review": "verification",
-    "release_ready": "release",
-}
 STATIONS = {
-    "brief": ("brief-generator", ("Multica Issue 或用户请求",)),
+    "brief": (
+        "brief-generator",
+        ("来源 Issue 正文、相关飞书详情文档与用户确认补充",),
+    ),
     "acceptance": ("acceptance-generator", ("brief.md",)),
     "technical_design": (
         "technical-design",
@@ -93,6 +79,24 @@ def validate_key(key: str) -> str:
     return key.upper()
 
 
+def legacy_source_issue(source: object) -> str | None:
+    """把旧版平台字段压缩为一个不参与流程判断的稳定引用。"""
+    if not isinstance(source, dict):
+        return None
+    issue_id = source.get("issue_id")
+    if not isinstance(issue_id, str) or not issue_id.strip():
+        return None
+    issue_id = issue_id.strip()
+    system = source.get("system")
+    if not isinstance(system, str) or not system.strip() or system == "manual":
+        return issue_id
+    system = system.strip().lower()
+    workspace_id = source.get("workspace_id")
+    if isinstance(workspace_id, str) and workspace_id.strip():
+        return f"{system}://{workspace_id.strip()}/{issue_id}"
+    return f"{system}:{issue_id}"
+
+
 def feature_dir(key: str) -> Path:
     return SPECS_ROOT / validate_key(key)
 
@@ -128,53 +132,38 @@ def empty_quality_review_state() -> dict[str, object]:
     }
 
 
-def empty_source_reconciliation_state() -> dict[str, object]:
-    """Brief 与 Multica 权威需求之间由工具维护的对账状态。"""
-    return {
-        "status": "pending",
-        "brief_sha256": None,
-        "requirements_hash": None,
-        "comment_ids": [],
-        "reconciled_at": None,
-        "write_intent": None,
-    }
-
-
-def ensure_source_reconciliation(state: dict[str, object]) -> bool:
-    """为已有 v2 Spec 补齐可选来源状态，不强迫无关项目迁移 schema。"""
-    source = state.get("source")
-    if not isinstance(source, dict) or source.get("system") != "multica":
-        return False
-    if isinstance(source.get("reconciliation"), dict):
-        return False
-    source["reconciliation"] = empty_source_reconciliation_state()
-    return True
-
-
 def migrate_state(state: dict[str, object]) -> bool:
-    """把旧版状态安全升级到当前 schema；旧字符串证据不继续充当验证证明。"""
+    """升级旧状态，并把平台字段压缩为单一来源 Issue 引用。"""
     version = state.get("schema_version")
     if version == STATE_SCHEMA_VERSION:
         return False
-    if version not in {None, 1}:
+    if version not in {None, 1, 2, 3}:
         return False
 
-    legacy_verification = state.get("verification")
-    legacy_evidence: list[object] = []
-    legacy_verified = False
-    if isinstance(legacy_verification, dict):
-        legacy_verified = legacy_verification.get("verified") is True
-        raw_evidence = legacy_verification.get("evidence")
-        if isinstance(raw_evidence, list):
-            legacy_evidence = raw_evidence
+    if version in {None, 1}:
+        legacy_verification = state.get("verification")
+        legacy_evidence: list[object] = []
+        legacy_verified = False
+        if isinstance(legacy_verification, dict):
+            legacy_verified = legacy_verification.get("verified") is True
+            raw_evidence = legacy_verification.get("evidence")
+            if isinstance(raw_evidence, list):
+                legacy_evidence = raw_evidence
+        state["verification"] = empty_verification_state()
+        if legacy_evidence:
+            state["verification"]["legacy_evidence"] = legacy_evidence
+        state["quality_review"] = empty_quality_review_state()
+        if legacy_verified or state.get("phase") == "done":
+            state["phase"] = "implementation"
 
+    source_issue = state.get("source_issue")
+    if not isinstance(source_issue, str) or not source_issue.strip():
+        source_issue = legacy_source_issue(state.get("source"))
+    else:
+        source_issue = source_issue.strip()
+    state.pop("source", None)
+    state["source_issue"] = source_issue
     state["schema_version"] = STATE_SCHEMA_VERSION
-    state["verification"] = empty_verification_state()
-    if legacy_evidence:
-        state["verification"]["legacy_evidence"] = legacy_evidence
-    state["quality_review"] = empty_quality_review_state()
-    if legacy_verified or state.get("phase") == "done":
-        state["phase"] = "implementation"
     return True
 
 
@@ -186,13 +175,12 @@ def load_state(key: str) -> dict[str, object]:
     if not isinstance(value, dict):
         raise ValueError("state.yaml 顶层必须是映射")
     migrated = migrate_state(value)
-    supplemented = ensure_source_reconciliation(value)
-    if migrated or supplemented:
+    if migrated:
         save_state(key, value)
     if migrated:
         print(
             f"INFO 已自动升级 {display_path(path)} 到 schema v{STATE_SCHEMA_VERSION}；"
-            "旧验证证据需重新自动执行",
+            "已把旧版平台字段合并为 source_issue 引用",
             file=sys.stderr,
         )
     return value
@@ -273,85 +261,11 @@ def validate_schema(key: str, state: dict[str, object]) -> list[str]:
         errors.append("lane 必须是 L2 或 L3")
     if state.get("phase") not in PHASES:
         errors.append("phase 非法")
-    source = state.get("source")
-    if not isinstance(source, dict):
-        errors.append("source 必须是映射")
-    elif source.get("system") not in SOURCE_SYSTEMS:
-        errors.append(f"source.system 必须是 {', '.join(SOURCE_SYSTEMS)} 之一")
-    else:
-        system = source.get("system")
-        if system != "manual" and not (
-            isinstance(source.get("issue_id"), str) and source.get("issue_id")
-        ):
-            errors.append(f"source.system={system} 时 source.issue_id 必须是字符串")
-        if system == "multica":
-            if not (
-                isinstance(source.get("workspace_id"), str)
-                and source.get("workspace_id")
-            ):
-                errors.append("Multica 来源缺少 source.workspace_id")
-            for field in (
-                "updated_at",
-                "description_hash",
-                "base_requirements_hash",
-                "requirements_hash",
-                "checked_at",
-                "checked_for",
-            ):
-                if source.get(field) is not None and not isinstance(source.get(field), str):
-                    errors.append(f"source.{field} 必须是字符串或 null")
-            for field in ("change_comment_ids", "active_change_comment_ids"):
-                value = source.get(field)
-                if value is not None and (
-                    not isinstance(value, list)
-                    or not all(isinstance(item, str) and item for item in value)
-                ):
-                    errors.append(f"source.{field} 必须是非空字符串列表或 null")
-            if source.get("checked_for") not in {None, *SOURCE_GATES}:
-                errors.append(f"source.checked_for 必须是 {', '.join(SOURCE_GATES)} 或 null")
-            if source.get("fingerprint_version") not in {1, 2}:
-                errors.append("source.fingerprint_version 必须为 1 或 2")
-            drift = source.get("drift")
-            if not isinstance(drift, dict):
-                errors.append("Multica 来源缺少 source.drift")
-            elif not isinstance(drift.get("detected"), bool):
-                errors.append("source.drift.detected 必须是布尔值")
-            reconciliation = source.get("reconciliation")
-            if not isinstance(reconciliation, dict):
-                errors.append("Multica 来源缺少 source.reconciliation")
-            else:
-                if reconciliation.get("status") not in {
-                    "pending",
-                    "clean",
-                    "syncing",
-                    "synced",
-                }:
-                    errors.append(
-                        "source.reconciliation.status 必须是 pending、clean、syncing 或 synced"
-                    )
-                for field in ("brief_sha256", "requirements_hash", "reconciled_at"):
-                    if reconciliation.get(field) is not None and not isinstance(
-                        reconciliation.get(field), str
-                    ):
-                        errors.append(
-                            f"source.reconciliation.{field} 必须是字符串或 null"
-                        )
-                comment_ids = reconciliation.get("comment_ids")
-                if not isinstance(comment_ids, list) or not all(
-                    isinstance(value, str) and value for value in comment_ids
-                ):
-                    errors.append(
-                        "source.reconciliation.comment_ids 必须是非空字符串列表"
-                    )
-                write_intent = reconciliation.get("write_intent")
-                if write_intent is not None and not isinstance(write_intent, dict):
-                    errors.append(
-                        "source.reconciliation.write_intent 必须是映射或 null"
-                    )
-                if reconciliation.get("status") == "syncing" and not isinstance(
-                    write_intent, dict
-                ):
-                    errors.append("syncing 对账状态必须包含 write_intent")
+    source_issue = state.get("source_issue")
+    if source_issue is not None and not (
+        isinstance(source_issue, str) and source_issue.strip()
+    ):
+        errors.append("source_issue 必须是非空字符串或 null")
     for name in ARTIFACT_FILES:
         try:
             item = artifact_state(state, name)
@@ -505,59 +419,11 @@ def check_phase(key: str, state: dict[str, object], phase: str) -> list[str]:
         )
     for name in required_artifacts(state, phase):
         errors.extend(validate_frozen_artifact(key, state, name))
-    errors.extend(validate_source_checkpoint(key, state, SOURCE_GATE_BY_PHASE[phase]))
     if phase == "quality_review":
         errors.extend(validate_verification_snapshot(key, state))
     if phase == "release_ready":
         errors.extend(validate_quality_review(key, state))
     return errors
-
-
-def validate_source_checkpoint(
-    key: str, state: dict[str, object], required_gate: str
-) -> list[str]:
-    source = state.get("source")
-    if not isinstance(source, dict) or source.get("system") != "multica":
-        return []
-    drift = source.get("drift")
-    if isinstance(drift, dict) and drift.get("detected"):
-        return [
-            "Multica 需求已发生漂移；先重新读取 Issue、修订 Brief，并运行 "
-            f"`npm run spec:source -- accept {key} --gate brief`"
-        ]
-    if not source.get("requirements_hash"):
-        return [
-            "尚未捕获 Multica 需求基线；运行 "
-            f"`npm run spec:source -- capture {key} --gate {required_gate}`"
-        ]
-    if source.get("checked_for") != required_gate:
-        return [
-            f"进入当前阶段前必须重新核验 Multica 需求；运行 "
-            f"`npm run spec:source -- check {key} --gate {required_gate}`"
-        ]
-    return []
-
-
-def validate_brief_reconciliation(
-    key: str, state: dict[str, object], brief_sha256: str
-) -> list[str]:
-    source = state.get("source")
-    if not isinstance(source, dict) or source.get("system") != "multica":
-        return []
-    reconciliation = source.get("reconciliation")
-    if not isinstance(reconciliation, dict):
-        return ["Multica Brief 尚未完成权威需求对账"]
-    if reconciliation.get("status") not in {"clean", "synced"}:
-        return [
-            "冻结 Brief 前必须完成 Multica 需求对账；无变更运行 "
-            f"`npm run spec:source -- reconcile {key} --no-change`，"
-            "有变更须先获得用户确认再运行 sync-comment"
-        ]
-    if reconciliation.get("brief_sha256") != brief_sha256:
-        return ["Brief 在需求对账后发生变化；重新执行 reconcile 或 sync-comment"]
-    if reconciliation.get("requirements_hash") != source.get("requirements_hash"):
-        return ["Multica 权威需求在 Brief 对账后发生变化；重新核验并对账"]
-    return []
 
 
 def expected_phase(state: dict[str, object]) -> str:
@@ -600,10 +466,9 @@ def validate_current_state(key: str, state: dict[str, object]) -> list[str]:
 
 def cmd_init(args: argparse.Namespace) -> int:
     key = validate_key(args.key)
-    if args.source_system != "manual" and not args.issue_id:
-        return fail(f"来源为 {args.source_system} 时必须提供 --issue-id", 2)
-    if args.source_system == "multica" and not args.workspace_id:
-        return fail("来源为 multica 时必须提供 --workspace-id", 2)
+    source_issue = args.source_issue.strip() if args.source_issue is not None else None
+    if args.source_issue is not None and not source_issue:
+        return fail("--source-issue 不能是空字符串", 2)
     directory = feature_dir(key)
     path = state_path(key)
     if path.exists():
@@ -613,29 +478,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         "schema_version": STATE_SCHEMA_VERSION,
         "key": key,
         "title": args.title or "",
-        "source": {
-            "system": args.source_system,
-            "issue_id": args.issue_id,
-            "workspace_id": args.workspace_id,
-            "issue_key": key if args.source_system == "multica" else None,
-            "updated_at": args.issue_updated_at,
-            "description_hash": args.description_hash,
-            "base_requirements_hash": None,
-            "requirements_hash": None,
-            "change_comment_ids": [],
-            "active_change_comment_ids": [],
-            "fingerprint_version": 1,
-            "checked_at": None,
-            "checked_for": None,
-            "drift": {
-                "detected": False,
-                "detected_at": None,
-                "previous_requirements_hash": None,
-                "observed_requirements_hash": None,
-                "observed_updated_at": None,
-            },
-            "reconciliation": empty_source_reconciliation_state(),
-        },
+        "source_issue": source_issue,
         "lane": args.lane,
         "phase": "brief",
         "artifacts": {
@@ -696,48 +539,18 @@ def cmd_status(args: argparse.Namespace) -> int:
             "  待读："
             + ", ".join(
                 item
-                if item.startswith("Multica") or "证据" in item
+                if item.startswith(("来源 Issue", "飞书")) or "证据" in item
                 else f".specs/{key}/{item}"
                 for item in reads
             )
         )
         print(f"  门禁：npm run spec -- check {key} {phase}")
-        source = state.get("source", {})
-        if isinstance(source, dict) and source.get("system") == "multica":
-            gate = SOURCE_GATE_BY_PHASE[phase]
-            drift = source.get("drift")
-            reconciliation = source.get("reconciliation")
-            if isinstance(drift, dict) and drift.get("detected"):
-                print(
-                    "  需求源：已检测漂移；重新读取 Issue、修订 Brief 后执行 "
-                    f"npm run spec:source -- accept {key} --gate brief"
-                )
-            elif source.get("checked_for") == gate:
-                print(
-                    f"  需求源：已核验 gate={gate} at={source.get('checked_at') or '未知'}"
-                )
-            elif source.get("requirements_hash"):
-                print(
-                    "  需求源：待核验；执行 "
-                    f"npm run spec:source -- check {key} --gate {gate}"
-                )
-            else:
-                print(
-                    "  需求源：尚未捕获基线；执行 "
-                    f"npm run spec:source -- capture {key} --gate {gate}"
-                )
-            if phase == "brief" and isinstance(reconciliation, dict):
-                if reconciliation.get("status") in {"clean", "synced"}:
-                    print(
-                        "  需求对账："
-                        f"{reconciliation.get('status')} at="
-                        f"{reconciliation.get('reconciled_at') or '未知'}"
-                    )
-                elif source.get("requirements_hash"):
-                    print(
-                        "  需求对账：待 brief-generator 比较当前 Brief；"
-                        "开发者无需维护指纹或评论 ID"
-                    )
+        source_issue = state.get("source_issue")
+        if isinstance(source_issue, str):
+            print(
+                f"  来源 Issue：{source_issue}；"
+                "正文是开发起点，详情文档按需补充；不执行外部漂移门禁"
+            )
     return result
 
 
@@ -763,12 +576,6 @@ def invalidate_after(state: dict[str, object], name: str) -> None:
     state["quality_review"] = empty_quality_review_state()
 
 
-def clear_source_checkpoint(state: dict[str, object]) -> None:
-    source = state.get("source")
-    if isinstance(source, dict) and source.get("system") == "multica":
-        source["checked_for"] = None
-
-
 def cmd_freeze(args: argparse.Namespace) -> int:
     key = validate_key(args.key)
     state = load_state(key)
@@ -784,9 +591,6 @@ def cmd_freeze(args: argparse.Namespace) -> int:
             for prerequisite in required_artifacts(state, name)
             for error in validate_frozen_artifact(key, state, prerequisite)
         )
-        errors.extend(validate_source_checkpoint(key, state, name))
-        if name == "brief":
-            errors.extend(validate_brief_reconciliation(key, state, digest(path)))
     if errors:
         for error in errors:
             print(f"ERROR {error}", file=sys.stderr)
@@ -810,7 +614,6 @@ def cmd_freeze(args: argparse.Namespace) -> int:
         state["phase"] = "technical_design" if state.get("lane") == "L3" else "implementation"
     else:
         state["phase"] = "implementation"
-    clear_source_checkpoint(state)
     save_state(key, state)
     print(f"OK  已冻结 {name}，下一阶段 {state['phase']}")
     return 0
@@ -860,7 +663,6 @@ def cmd_verify(args: argparse.Namespace) -> int:
             )
         for name in required_artifacts(state, "implementation"):
             errors.extend(validate_frozen_artifact(key, state, name))
-        errors.extend(validate_source_checkpoint(key, state, "verification"))
     if errors:
         for error in errors:
             print(f"ERROR {error}", file=sys.stderr)
@@ -928,17 +730,11 @@ def build_parser() -> argparse.ArgumentParser:
     init = subparsers.add_parser("init", help="初始化本地规格状态")
     init.add_argument("key", help="Issue 标识，例如 LCV-21")
     init.add_argument("--lane", choices=("L2", "L3"), required=True, help="交付车道")
-    init.add_argument(
-        "--source-system",
-        choices=SOURCE_SYSTEMS,
-        default="manual",
-        help="需求来源；默认 manual",
-    )
     init.add_argument("--title", help="需求标题")
-    init.add_argument("--issue-id", help="外部系统中的 Issue ID")
-    init.add_argument("--workspace-id", help="Multica workspace UUID")
-    init.add_argument("--issue-updated-at", help="外部 Issue 最后更新时间")
-    init.add_argument("--description-hash", help="外部 Issue 描述哈希")
+    init.add_argument(
+        "--source-issue",
+        help="来源 Issue 的完整链接或稳定引用；无外部 Issue 的例外任务可省略",
+    )
     init.set_defaults(handler=cmd_init)
 
     status = subparsers.add_parser("status")

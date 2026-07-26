@@ -33,5 +33,5 @@
 
 ## 关联事项
 
-- Multica Issue：<Issue key 与链接；不适用时写“无”>
-- GitHub Issue：<Issue 编号与链接；不适用时写“无”>
+- 来源 Issue：<平台、Issue key 与链接；不适用时写“无”>
+- 其他关联：<其他 Issue、文档或 PR；不适用时写“无”>

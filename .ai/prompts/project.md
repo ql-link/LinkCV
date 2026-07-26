@@ -1,6 +1,6 @@
 # LinkCV
 
-LinkCV 正在从 React + Express 原型迁移为 React/TypeScript + FastAPI 前后端分离 Monorepo。
+LinkCV 是 React/TypeScript + FastAPI 前后端分离 Monorepo。原型 Express 运行链已经移除；SQL-first Alembic 根 revision `0001` 已为 FastAPI 鉴权和简历模块建立正式 MySQL schema。
 
 本文是项目使用与开发入口，只保留所有任务都需要知道的仓库事实、真实命令和长期约束。当前模块知识见 [docs/README.md](docs/README.md)，详细交付流程见 [.ai/skills/README.md](.ai/skills/README.md)，Spec 状态规则见 [.specs/README.md](.specs/README.md)。`AGENTS.md` 与 `CLAUDE.md` 统一链接到本文件。
 
@@ -16,7 +16,6 @@ LinkCV 正在从 React + Express 原型迁移为 React/TypeScript + FastAPI 前�
 ```text
 apps/web       React 19、TypeScript、Vite 前端
 apps/backend   Python 3.13、FastAPI 后端
-server         临时 Express API
 deploy         Compose 与部署资料
 docs           供开发者和 AI 按需调阅的长期项目知识
 .ai            项目规则与交付 Skill 的唯一来源
@@ -24,8 +23,9 @@ docs           供开发者和 AI 按需调阅的长期项目知识
 scripts        初始化、质量与阶段门禁脚本
 ```
 
-- 当前处于 Express 向 FastAPI 迁移期。`/api/health` 走 FastAPI，其他 `/api` 请求暂时走 Express。
-- 未完成实现和回归验证前，不得切换现有路由，也不得删除 `server`、SQLite 或旧部署拓扑。
+- 开发期全部 `/api` 请求由 Vite 代理到 FastAPI；FastAPI 已提供健康检查、鉴权、简历和图片路由。仓库中不再存在 `server/` 或 Express 启动入口。
+- SQLAlchemy 模型、Alembic 环境和 SQL-first revision 生成入口已经建立；根 revision `0001` 创建 `users`、`resumes`，但仍须区分仓库 head 与目标环境实际 current revision。
+- 后端集成测试使用隔离 SQLite 和假 MinIO，这只是测试替身，不是运行时持久化或回滚拓扑。
 - FastAPI、前端 API client、Vite Proxy、环境变量和部署配置属于同一跨端契约；修改其中一处时检查其他位置。
 - 鉴权、数据库、对象存储、资源归属和数据完整性改动一律按高风险跨模块改动处理。
 
@@ -33,7 +33,7 @@ scripts        初始化、质量与阶段门禁脚本
 
 ```bash
 npm run setup       # 新环境安装依赖并修复缺失的安全链接
-npm run dev         # 启动 Web、FastAPI 和临时 Express
+npm run dev         # 启动 Web 和 FastAPI
 npm run check:ai    # 校验 AI 链接和项目 Skill
 npm run check:docs  # 校验长期文档及代码到文档同步关系
 npm run check:contracts # 校验确定性的运行时契约值
@@ -41,7 +41,6 @@ npm test            # 运行前端和后端自动化测试
 npm run check:app   # 前后端测试、类型检查和构建
 npm run check       # 完整本地质量入口
 npm run spec -- ... # 管理 L2/L3 本地阶段状态
-npm run spec:source -- ... # 只读核验 Multica 需求指纹
 ```
 
 - Python 命令统一通过 `uv run --directory apps/backend` 执行，不依赖系统 `python`。
@@ -82,13 +81,15 @@ npm run spec:source -- ... # 只读核验 Multica 需求指纹
 
 ### 4.2 默认分级流程
 
-- 需求或技术设计存在真实决策分支时使用 `decision-grilling`：能从仓库核实的事实由 Agent 自行调查；需要用户取舍的决策按依赖顺序每轮只询问一个，并提供推荐答案和影响分析。
+- L2/L3 模块在生成 Brief 前使用 `module-planning` 完成事实调查、决策收敛、飞书草稿确认、写入和读回；它按需调用 `decision-grilling`，每轮只处理一个需要用户取舍的决策。下游规格和实施 Skill 发现新的高影响决策时返回 `module-planning`，不直接盘问或只凭聊天修改产物。
 - L1 直接实现和验证；L2 需要冻结 Brief 与 Acceptance；L3 还需要冻结 Technical Design。
 - 自动分级时，设计 MySQL 表结构使用 `mysql-ddl-conventions`，编写、校验或排查 SQLAlchemy/Alembic 迁移使用 `alembic-migration`；数据库改动默认判为 L3。用户显式关闭工作流或指定其他等级时采用用户选择，但仍需执行与数据库风险相匹配的目标校验、迁移验证和回滚检查。
 - 用户要求判断“功能是否真正做完、还缺什么”时使用 `feature-completion-audit`；当前会话刚完成的实现必须由独立子 Agent 取证，避免实现者自评。
 - 用户要求根据报错、日志或异常现象查原因时使用 `incident-triage`，默认只诊断；没有修复授权时不修改代码、配置、外部系统或数据。
-- Multica Issue 是长期需求、范围和验收标准的主记录。权威需求由 Issue 正文与工具格式的已确认需求变更评论链组成，普通评论不进入需求指纹。Multica 来源在 Brief、Acceptance、Technical Design、实现、验证和 PR 前核验权威需求；查询失败或正文/结构化评论漂移时停止推进。不要自动创建、修改、评论或关闭 Multica/GitHub 对象；唯一例外是 `brief-generator` 向用户展示本次纯业务差异并获得明确确认后，可调用 `spec:source sync-comment` 追加结构化 Multica 评论。指纹、变更 ID、评论 ID、时间和替代关系由工具维护，开发者不手填；不得编辑旧评论或向 GitHub 回写需求。
-- `.specs/<LCV-key>/` 是当前工作区的本地执行快照，不是第二份长期需求库，也不承诺跨设备或跨 worktree 自动同步。冻结产物后由 `state.yaml` 记录哈希；最终验证由工具亲自执行命令并自动绑定代码内容快照，验证后必须经过同一快照上的质量审查才能进入 `release_ready`。开发者不手填哈希、退出码或阶段字段。适用的人工端到端结果记录在同目录 `manual_acceptance.md`，PR 只摘要结论。
+- 普通团队开发从一条来源 Issue 开始，必须完整读取其正文和关联材料。Issue 可以来自 Multica、Linear、GitHub 或其他系统；来源平台只作为关联元数据，不改变分级、规格或实现规则，也不得把项目流程绑定到某个平台。Issue 正文承担初始产品目标、现状和验收输入；内容已经足够明确的 L1 任务可以直接据此实现，L2/L3 必须先由 `module-planning` 形成已确认并读回的飞书模块详情文档，再把两者收敛到本地 Brief、Acceptance 和必要的 Technical Design。没有外部 Issue 的用户直达请求只作为明确关闭工作流、自举或本地维护等例外处理。
+- 飞书周开发文档及其中引用的详情材料负责补充和确认会改变范围、验收、权限、数据或兼容策略的决定。来源 Issue 与详情文档冲突时转 `module-planning` 确认当前结论，不静默选择；它只在完整草稿获得用户确认后调用 `lark-doc` 写入，并通过读回完成交接。项目流程不捕获外部 Issue 需求指纹，不核验评论链，不自动写评论，也不把实施差异回写任何 Issue 系统。
+- `.specs/<LCV-key>/` 是当前工作区的本地执行快照，不承诺跨设备或跨 worktree 自动同步。冻结产物后由 `state.yaml` 记录哈希；最终验证由工具亲自执行命令并自动绑定代码内容快照，验证后必须经过同一快照上的质量审查才能进入 `release_ready`。开发者不手填哈希、退出码或阶段字段。适用的人工端到端结果记录在同目录 `manual_acceptance.md`。
+- 实现阶段出现无法预见但不改变核心产品目标的偏差时，记录原因、影响、验证和遗留风险，并在 PR 中明确提出；不得为此自动修改来源 Issue。会改变核心范围、验收、权限、数据安全或兼容承诺的事项返回 `module-planning`，先更新并读回飞书，再按顺序更新本地冻结产物。
 - L2/L3 开始实现前运行阶段检查；L1 不强制创建 `.specs`。只在任务触发时读取对应 Skill。
 - 搭建或修订这套 AI 工作流框架本身时允许采用自举例外，不要求先用尚未稳定的流程生成 Spec；框架用于正式业务开发后，再按上述车道强制执行。自举例外不免除真实代码核实、测试和审查。
 
@@ -98,9 +99,9 @@ npm run spec:source -- ... # 只读核验 Multica 需求指纹
 - 保持改动聚焦；不顺带重构无关模块，不覆盖用户已有修改。
 - API、持久化模型、迁移、权限和失败路径必须同步设计与验证。
 - Alembic 版本默认采用 SQL-first：每个 revision 必须配对同 ID 的 `.up.sql`、`.down.sql`，DDL、索引、约束和可表达的数据变更优先写入 SQL；Python revision 只执行 SQL 文件。仅当 SQL 无法安全表达受控迁移时才允许 Python 逻辑，并在 revision 注释中说明原因；禁止使用自动生成的 `op.create_table`、`op.add_column` 等作为最终版本内容。
-- 当前 FastAPI 尚未建立 SQLAlchemy/Alembic 基线。首次引入持久化时必须同时建立模型真值源、迁移链、测试入口、文档同步和部署回滚；原型 SQLite 数据默认不迁移到 MySQL。
+- FastAPI 已建立 SQLAlchemy 模型、Alembic 环境、SQL-first revision 模板和迁移执行入口，根 revision `0001` 创建 `users`、`resumes`。后续 schema 变化必须核对模型真值源，创建顺序编号及配对 SQL 文件，完成空库与往返迁移验证、文档同步和部署回滚；原型 SQLite 数据默认不迁移到 MySQL。
 - `docs/` 只描述当前已实现的长期项目事实；Brief、Acceptance、Technical Design、实施报告和人工验收记录继续放在 `.specs/<KEY>/`。
-- Express 迁移到 FastAPI 时，明确旧路由、兼容窗口、Vite Proxy、回滚方式和数据处理策略。
+- 修改 FastAPI 路由归属、Vite Proxy、HTTP 契约或部署入口时，明确兼容窗口、回滚方式和数据处理策略。
 - 新依赖必须说明必要性，并更新对应 lockfile。
 - 默认示例和测试数据使用虚构信息，不得写入用户真实简历、联系方式或密钥。
 

@@ -34,7 +34,7 @@ description: 为 LinkCV 的 React/TypeScript 前端和 FastAPI/Python 后端设�
 - 使用 Vitest、React Testing Library、`@testing-library/user-event` 和 jsdom；
 - 测试文件放在被测源码附近，命名为 `*.test.ts` 或 `*.test.tsx`；
 - 优先按角色、标签和可见文本查询，断言用户可观察结果；
-- 组件和 Hook 测试不请求真实 FastAPI、Express、数据库或对象存储，在 API Client 边界使用受控 Mock；
+- 组件和 Hook 测试不请求真实 FastAPI、数据库或对象存储，在 API Client 边界使用受控 Mock；
 - 不断言组件内部 state、私有函数、CSS 实现细节或大段脆弱快照。
 
 ### 后端
@@ -42,7 +42,9 @@ description: 为 LinkCV 的 React/TypeScript 前端和 FastAPI/Python 后端设�
 - `apps/backend/tests/unit/` 放不访问网络、数据库或外部服务的快速单元测试，目录尽量镜像 `src/linkcv/`；
 - `apps/backend/tests/integration/` 放模块组合和 FastAPI HTTP 边界测试；当前路由测试使用 `httpx.ASGITransport`，不启动真实端口；
 - `apps/backend/tests/tooling/` 只验证仓库脚本和 AI 工作流工具，不混入业务单元测试；
-- 对数据库、对象存储、第三方 API 和临时 Express 依赖使用明确夹具或替身，不读取真实密钥和用户数据。
+- 对数据库、对象存储和第三方 API 使用明确夹具或替身，不读取真实密钥和用户数据。SQLite 和假 MinIO 是测试替身，不能用来证明 MySQL 或真实 MinIO 已就绪。
+
+测试 LLM 或计费型外部服务时默认使用确定性 fake，不发出真实请求；至少按适用范围覆盖成功、超时、限流、拒绝、异常结构、重试上限、幂等、取消、部分结果和降级，并断言不会泄露输入正文或密钥。真实供应商 smoke test 必须单独授权、隔离标记并报告费用和数据边界，不能混入默认 `npm test`。
 
 ## 4. 编写步骤
 
