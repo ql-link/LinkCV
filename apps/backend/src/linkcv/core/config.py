@@ -54,7 +54,20 @@ class Settings(BaseSettings):
     session_cookie_name: str = Field(
         default="resume_session", alias="SESSION_COOKIE_NAME"
     )
+    # SESSION_TTL_DAYS 保留为七天的语义契约,Redis 会话滑动有效期沿用该值。
     session_ttl_days: int = Field(default=7, alias="SESSION_TTL_DAYS")
+    # Access Token 为短期 JWT,默认 30 分钟失效,需要 Refresh Token 续期。
+    access_token_ttl_minutes: int = Field(
+        default=30, alias="ACCESS_TOKEN_TTL_MINUTES"
+    )
+    # 单个会话绝对上限 30 天,滑动续期不可越过该时间窗。
+    refresh_token_absolute_days: int = Field(
+        default=30, alias="REFRESH_TOKEN_ABSOLUTE_DAYS"
+    )
+    # Refresh 不透明通行串对应的 HttpOnly Cookie 名,与 access Cookie 分离。
+    refresh_cookie_name: str = Field(
+        default="resume_refresh", alias="REFRESH_COOKIE_NAME"
+    )
     cookie_secure: bool = Field(default=False, alias="COOKIE_SECURE")
 
     minio_endpoint: str = Field(default="http://127.0.0.1:9000", alias="MINIO_ENDPOINT")

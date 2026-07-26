@@ -15,6 +15,7 @@ from linkcv.api.router import api_router
 from linkcv.core.config import Settings, load_settings
 from linkcv.core.database import Base, build_engine, build_session_factory
 from linkcv.core.errors import install_error_handlers
+from linkcv.core.sessions import SessionStore, build_session_store
 from linkcv.core.storage import AssetStorage
 
 logger = logging.getLogger(__name__)
@@ -22,13 +23,17 @@ logger = logging.getLogger(__name__)
 
 class SpaStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope: Scope) -> Response:
+        # 部分 Starlette 版本会以带前导斜杠的形式传入 path,统一归一后再判断是否属于 /api。
+        # Windows 下 StaticFiles 可能以反斜杠传入 path(如 api\not-found),
+        # 统一归一为正斜杠并去掉前导斜杠后,再判断是否属于 /api 命名空间。
+        normalized = path.replace("\\", "/").lstrip("/")
         try:
             response = await super().get_response(path, scope)
         except HTTPException as error:
-            if error.status_code != 404 or path.startswith("api/"):
+            if error.status_code != 404 or normalized.startswith("api/") or normalized == "api":
                 raise
             return await super().get_response("index.html", scope)
-        if response.status_code != 404 or path.startswith("api/"):
+        if response.status_code != 404 or normalized.startswith("api/") or normalized == "api":
             return response
         return await super().get_response("index.html", scope)
 
@@ -37,6 +42,7 @@ def create_app(
     settings: Settings | None = None,
     *,
     session_factory: sessionmaker[Session] | None = None,
+    session_store: SessionStore | None = None,
     storage: Any | None = None,
     create_schema: bool = False,
 ) -> FastAPI:
@@ -56,6 +62,7 @@ def create_app(
         Base.metadata.create_all(engine)
 
     runtime_storage = storage or AssetStorage(runtime_settings)
+    runtime_session_store = session_store or build_session_store(runtime_settings)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -65,7 +72,12 @@ def create_app(
             logger.warning(
                 "MinIO is unavailable; asset routes will retry on demand", exc_info=True
             )
+        _app.state.session_store = runtime_session_store
         yield
+        try:
+            await asyncio.to_thread(runtime_session_store.close)
+        except Exception:
+            logger.warning("Session store close failed", exc_info=True)
 
     app = FastAPI(
         title="LinkCV API",
@@ -77,6 +89,7 @@ def create_app(
     app.state.settings = runtime_settings
     app.state.session_factory = session_factory
     app.state.storage = runtime_storage
+    app.state.session_store = runtime_session_store
     install_error_handlers(app)
     app.include_router(api_router, prefix="/api")
 

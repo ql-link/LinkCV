@@ -5,13 +5,14 @@ description = "LinkCV FastAPI backend"
 requires-python = ">=3.11,<3.14"
 dependencies = [
   "alembic>=1.15,<2.0",
-  "bcrypt>=4.2,<6.0",
   "fastapi>=0.115,<1.0",
   "minio>=7.2,<8.0",
   "pydantic>=2.10,<3.0",
   "pydantic-settings>=2.7,<3.0",
   "pyjwt>=2.10,<3.0",
   "pymysql>=1.1,<2.0",
+  "pwdlib[argon2]>=0.2,<1.0",
+  "redis>=5.2,<7.0",
   "sqlalchemy>=2.0,<3.0",
   "uvicorn[standard]>=0.34,<1.0",
 ]
