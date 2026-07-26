@@ -107,7 +107,7 @@ class Resume(Base):
             "(source_type = 'blank' AND template_id IS NULL "
             "AND source_filename IS NULL AND source_object_key IS NULL "
             "AND extracted_markdown IS NULL) OR "
-            "(source_type = 'template' AND template_id IS NOT NULL "
+            "(source_type = 'template' "
             "AND source_filename IS NULL AND source_object_key IS NULL "
             "AND extracted_markdown IS NULL) OR "
             "(source_type = 'import' AND template_id IS NULL "
@@ -132,7 +132,7 @@ class Resume(Base):
         ForeignKey(
             "resume_templates.id",
             name="fk_resumes_template",
-            ondelete="RESTRICT",
+            ondelete="SET NULL",
         ),
         nullable=True,
         comment="创建来源模板",

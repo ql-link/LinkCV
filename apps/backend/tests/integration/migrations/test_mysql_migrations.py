@@ -10,7 +10,7 @@ from sqlalchemy.engine import make_url
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0002"
+EXPECTED_HEAD = "0003"
 
 
 def migration_test_url() -> str:
@@ -159,6 +159,10 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         resume_foreign_keys["fk_resumes_template"]["referred_table"]
         == "resume_templates"
     )
+    assert (
+        resume_foreign_keys["fk_resumes_template"]["options"]["ondelete"]
+        == "SET NULL"
+    )
 
     with engine.begin() as connection:
         user = connection.execute(
@@ -174,8 +178,8 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
                 "INSERT INTO resume_templates "
                 "(`key`, name, data_json, style_json) "
                 "VALUES ('standard', '标准模板', "
-                "JSON_OBJECT('schema_version', 1), "
-                "JSON_OBJECT('schema_version', 1))"
+                "JSON_OBJECT('schema_version', '1.0'), "
+                "JSON_OBJECT('schema_version', '1.0'))"
             )
         )
         template_id = template.lastrowid
@@ -184,8 +188,8 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
                 "INSERT INTO resumes "
                 "(user_id, template_id, title, data_json, style_json, source_type) "
                 "VALUES (:user_id, :template_id, '张三', "
-                "JSON_OBJECT('schema_version', 1), "
-                "JSON_OBJECT('schema_version', 1), 'template')"
+                "JSON_OBJECT('schema_version', '1.0'), "
+                "JSON_OBJECT('schema_version', '1.0'), 'template')"
             ),
             {"user_id": user_id, "template_id": template_id},
         )
@@ -194,17 +198,25 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
             text(
                 "INSERT INTO resume_versions "
                 "(resume_id, version_no, data_json, style_json, reason) "
-                "VALUES (:resume_id, 1, JSON_OBJECT('schema_version', 1), "
-                "JSON_OBJECT('schema_version', 1), 'initial')"
+                "VALUES (:resume_id, 1, JSON_OBJECT('schema_version', '1.0'), "
+                "JSON_OBJECT('schema_version', '1.0'), 'initial')"
             ),
             {"resume_id": resume_id},
         )
+        connection.execute(
+            text("DELETE FROM resume_templates WHERE id = :template_id"),
+            {"template_id": template_id},
+        )
+        assert connection.scalar(
+            text("SELECT template_id FROM resumes WHERE id = :resume_id"),
+            {"resume_id": resume_id},
+        ) is None
 
     run_alembic(database_url, "upgrade", "head")
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == EXPECTED_HEAD
         assert connection.scalar(text("SELECT COUNT(*) FROM users")) == 1
-        assert connection.scalar(text("SELECT COUNT(*) FROM resume_templates")) == 1
+        assert connection.scalar(text("SELECT COUNT(*) FROM resume_templates")) == 0
         assert connection.scalar(text("SELECT COUNT(*) FROM resumes")) == 1
         assert connection.scalar(text("SELECT COUNT(*) FROM resume_versions")) == 1
 
@@ -213,6 +225,19 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         connection.execute(text("DELETE FROM resumes"))
         connection.execute(text("DELETE FROM resume_templates"))
         connection.execute(text("DELETE FROM users"))
+
+    run_alembic(database_url, "downgrade", "0002")
+    downgraded_fk = {
+        foreign_key["name"]: foreign_key
+        for foreign_key in inspect(engine).get_foreign_keys("resumes")
+    }["fk_resumes_template"]
+    assert downgraded_fk["options"]["ondelete"] == "RESTRICT"
+    run_alembic(database_url, "upgrade", "head")
+    upgraded_fk = {
+        foreign_key["name"]: foreign_key
+        for foreign_key in inspect(engine).get_foreign_keys("resumes")
+    }["fk_resumes_template"]
+    assert upgraded_fk["options"]["ondelete"] == "SET NULL"
 
     run_alembic(database_url, "downgrade", "base")
     assert "users" not in inspect(engine).get_table_names()

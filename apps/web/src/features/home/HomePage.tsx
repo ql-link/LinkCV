@@ -22,7 +22,7 @@ function ResumeThumbnailCard({
   onDelete,
   deleteDisabled = false,
 }: {
-  resume: Pick<ResumeSummary, "id" | "title" | "updatedAt">;
+  resume: Pick<ResumeSummary, "id" | "title" | "updated_at">;
   onOpen: () => void;
   onDelete?: () => void;
   deleteDisabled?: boolean;
@@ -41,7 +41,7 @@ function ResumeThumbnailCard({
         </span>
         <span className="home-card-meta">
           <strong>{resume.title}</strong>
-          <small>更新于 {resume.updatedAt === "内置" ? "内置" : formatTime(resume.updatedAt)}</small>
+          <small>更新于 {resume.updated_at === "内置" ? "内置" : formatTime(resume.updated_at)}</small>
         </span>
       </button>
       {onDelete && (
@@ -149,7 +149,7 @@ export function HomeScreen({ email, resumes, onOpen, onDelete, onCreate, onLogou
           {tab === "templates" ? (
             <section className="home-card-grid" aria-label="简历模板">
               <ResumeThumbnailCard
-                resume={{ id: "standard-template", title: "标准简历模板", updatedAt: "内置" }}
+                resume={{ id: "standard-template", title: "标准简历模板", updated_at: "内置" }}
                 onOpen={() => void onCreate()}
               />
             </section>

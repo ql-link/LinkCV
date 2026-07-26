@@ -5,7 +5,7 @@ type Block =
   | { type: "side"; align: "left" | "right"; content: string };
 
 const md = new MarkdownIt({
-  html: true,
+  html: false,
   linkify: true,
   breaks: false,
   typographer: false,
@@ -85,6 +85,24 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
         token.content = "";
       }
     }
+  }
+
+  const src = srcIndex >= 0 ? token.attrs?.[srcIndex]?.[1] ?? "" : "";
+  const title = token.attrGet("title") ?? "";
+  const alt = escapeAttribute(token.content || "简历图片");
+  const escapedSrc = escapeAttribute(src);
+  const avatar = title.match(/^linkcv-avatar:(\d+)$/);
+  if (avatar) {
+    const size = Math.min(220, Math.max(56, Number(avatar[1]) || 96));
+    return `<figure data-type="avatar-image" data-src="${escapedSrc}" data-size="${size}" data-alt="${alt}" class="resume-media-node resume-avatar" style="width:${size}px;height:${size}px"><img src="${escapedSrc}" alt="${alt}"></figure>`;
+  }
+  const bodyImage = title.match(/^linkcv-image:(\d+(?:\.\d+)?):(%|px):(left|center|right|full)$/);
+  if (bodyImage) {
+    const widthUnit = bodyImage[2];
+    const maximum = widthUnit === "%" ? 100 : 794;
+    const width = Math.min(maximum, Math.max(0.1, Number(bodyImage[1]) || 55));
+    const align = bodyImage[3];
+    return `<div data-type="resume-image" data-src="${escapedSrc}" data-width="${width}" data-width-unit="${widthUnit}" data-align="${align}" data-alt="${alt}" class="resume-media-node resume-image align-${align}" style="width:${width}${widthUnit}"><img src="${escapedSrc}" alt="${alt}"></div>`;
   }
 
   return defaultImageRenderer

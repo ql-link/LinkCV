@@ -1,7 +1,24 @@
 import { create } from "zustand";
 import type { JSONContent } from "@tiptap/core";
-import { api, ResumeRecord, ResumeSummary, User } from "../api/client";
-import { defaultResumeDocument, parseStoredDocument } from "../features/workbench/defaultDocument";
+import {
+  api,
+  ResumeDocumentV1,
+  ResumeRecord,
+  ResumeStyleV1,
+  ResumeSummary,
+  ResumeVersion,
+  User,
+} from "../api/client";
+import {
+  defaultSemanticDocument,
+  defaultSemanticStyle,
+  editorDocumentToMarkdown,
+  editorSettingsToStyle,
+  resumeDocumentFromMarkdown,
+  resumeDocumentToMarkdown,
+  styleToEditorSettings,
+} from "../api/resumeContract";
+import { defaultResumeDocument } from "../features/workbench/defaultDocument";
 import { defaultResumeMarkdown } from "../parser/defaultResume";
 import { renderResumeMarkdown } from "../parser/resumeMarkdown";
 
@@ -28,8 +45,12 @@ type ResumeState = {
   authStatus: AuthStatus;
   user: User | null;
   resumes: ResumeSummary[];
+  versions: ResumeVersion[];
+  versionsLoading: boolean;
   activeResumeId: string | null;
   lockVersion: number;
+  data: ResumeDocumentV1;
+  style: ResumeStyleV1;
   title: string;
   markdown: string;
   editorContent: JSONContent | string;
@@ -49,6 +70,9 @@ type ResumeState = {
   loadResume: (id: string) => Promise<void>;
   deleteResume: (id: string) => Promise<void>;
   saveCurrentResume: () => Promise<void>;
+  loadVersions: () => Promise<void>;
+  createVersion: () => Promise<void>;
+  restoreVersion: (versionNo: number) => Promise<void>;
   goHome: () => void;
   setTitle: (title: string) => void;
   setMarkdown: (markdown: string) => void;
@@ -61,6 +85,8 @@ type ResumeState = {
 type SaveSnapshot = {
   activeResumeId: string;
   lockVersion: number;
+  data: ResumeDocumentV1;
+  style: ResumeStyleV1;
   title: string;
   markdown: string;
   editorContent: JSONContent | string;
@@ -90,17 +116,22 @@ function normalizeSettings(settings: Partial<ResumeSettings> = {}) {
   return normalized;
 }
 
-function applyResume(resume: ResumeRecord) {
-  const stored = parseStoredDocument(resume.markdown);
+function applyResume(resume: ResumeRecord, localState?: ResumeState) {
+  const markdown = resumeDocumentToMarkdown(resume.data);
+  const semanticSettings = normalizeSettings(styleToEditorSettings(resume.style));
   return {
     activeResumeId: resume.id,
-    lockVersion: resume.lockVersion,
+    lockVersion: resume.lock_version,
+    data: resume.data,
+    style: resume.style,
     title: resume.title,
-    markdown: resume.markdown,
-    editorContent: typeof stored === "string" ? renderResumeMarkdown(stored) : stored,
-    settings: normalizeSettings(resume.settings),
-    splitRatio: resume.splitRatio,
-    previewScale: resume.previewScale,
+    markdown,
+    editorContent: renderResumeMarkdown(markdown),
+    settings: localState
+      ? { ...semanticSettings, smartOnePage: localState.settings.smartOnePage }
+      : semanticSettings,
+    splitRatio: localState?.splitRatio ?? 0.4,
+    previewScale: localState?.previewScale ?? 1,
     dirty: false,
     saveStatus: "saved" as SaveStatus,
     error: null,
@@ -124,6 +155,8 @@ function matchesSaveSnapshot(state: ResumeState, snapshot: SaveSnapshot) {
   return (
     state.activeResumeId === snapshot.activeResumeId &&
     state.lockVersion === snapshot.lockVersion &&
+    JSON.stringify(state.data) === JSON.stringify(snapshot.data) &&
+    JSON.stringify(state.style) === JSON.stringify(snapshot.style) &&
     state.title === snapshot.title &&
     state.markdown === snapshot.markdown &&
     JSON.stringify(state.editorContent) === JSON.stringify(snapshot.editorContent) &&
@@ -137,8 +170,12 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   authStatus: "checking",
   user: null,
   resumes: [],
+  versions: [],
+  versionsLoading: false,
   activeResumeId: null,
   lockVersion: 0,
+  data: defaultSemanticDocument,
+  style: defaultSemanticStyle,
   title: "张三-后端开发实习生",
   markdown: defaultResumeMarkdown,
   editorContent: defaultResumeDocument,
@@ -154,7 +191,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     try {
       const { user } = await api.me();
       if (!user) {
-        set({ authStatus: "guest", user: null, resumes: [], activeResumeId: null, lockVersion: 0 });
+        set({ authStatus: "guest", user: null, resumes: [], versions: [], activeResumeId: null, lockVersion: 0 });
         return;
       }
 
@@ -183,6 +220,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       authStatus: "guest",
       user: null,
       resumes: [],
+      versions: [],
       activeResumeId: null,
       lockVersion: 0,
       dirty: false,
@@ -198,18 +236,14 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   createResume: async (title = "未命名简历") => {
     const { resume } = await api.createResume({
       title,
-      markdown: JSON.stringify(defaultResumeDocument),
-      settings: defaultSettings,
-      splitRatio: 0.4,
-      previewScale: 1,
     });
     const { resumes } = await api.listResumes();
-    set({ resumes, ...applyResume(resume) });
+    set({ resumes, versions: [], ...applyResume(resume) });
   },
 
   loadResume: async (id) => {
     const { resume } = await api.getResume(id);
-    set(applyResume(resume));
+    set({ versions: [], ...applyResume(resume) });
   },
 
   deleteResume: async (id) => {
@@ -218,7 +252,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     set({ resumes });
 
     if (get().activeResumeId === id) {
-      set({ activeResumeId: null, lockVersion: 0, dirty: false, saveStatus: "idle" });
+      set({ activeResumeId: null, versions: [], lockVersion: 0, dirty: false, saveStatus: "idle" });
     }
   },
 
@@ -228,6 +262,8 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     const snapshot: SaveSnapshot = {
       activeResumeId: state.activeResumeId,
       lockVersion: state.lockVersion,
+      data: state.data,
+      style: state.style,
       title: state.title,
       markdown: state.markdown,
       editorContent: state.editorContent,
@@ -241,11 +277,9 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     try {
       const { resume } = await api.updateResume(snapshot.activeResumeId, {
         title: snapshot.title,
-        lockVersion: snapshot.lockVersion,
-        markdown: JSON.stringify(snapshot.editorContent),
-        settings: snapshot.settings,
-        splitRatio: snapshot.splitRatio,
-        previewScale: snapshot.previewScale,
+        base_lock_version: snapshot.lockVersion,
+        data: resumeDocumentFromMarkdown(snapshot.markdown, snapshot.data),
+        style: editorSettingsToStyle(snapshot.settings, snapshot.style),
       });
       const { resumes } = await api.listResumes();
       set((current) => {
@@ -253,14 +287,78 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
           return { resumes };
         }
 
-        return { resumes, ...applyResume(resume) };
+        return { resumes, ...applyResume(resume, current) };
       });
     } catch (error) {
       set({ saveStatus: "error", error: (error as Error).message });
     }
   },
 
-  goHome: () => set({ activeResumeId: null, lockVersion: 0 }),
+  loadVersions: async () => {
+    const resumeId = get().activeResumeId;
+    if (!resumeId) {
+      set({ versions: [], versionsLoading: false });
+      return;
+    }
+    set({ versionsLoading: true });
+    try {
+      const { versions } = await api.listVersions(resumeId);
+      if (get().activeResumeId === resumeId) {
+        set({ versions, versionsLoading: false, error: null });
+      }
+    } catch (error) {
+      if (get().activeResumeId === resumeId) {
+        set({ versionsLoading: false, error: (error as Error).message });
+      }
+      throw error;
+    }
+  },
+
+  createVersion: async () => {
+    const resumeId = get().activeResumeId;
+    if (!resumeId) return;
+    try {
+      const { version } = await api.createVersion(resumeId);
+      if (get().activeResumeId === resumeId) {
+        set((state) => ({
+          versions: [version, ...state.versions.filter((item) => item.id !== version.id)],
+          error: null,
+        }));
+      }
+      try {
+        const { versions } = await api.listVersions(resumeId);
+        if (get().activeResumeId === resumeId) set({ versions });
+      } catch {
+        // The version already exists; a failed refresh must not invite a duplicate retry.
+      }
+    } catch (error) {
+      set({ error: (error as Error).message });
+      throw error;
+    }
+  },
+
+  restoreVersion: async (versionNo) => {
+    const localState = get();
+    const resumeId = localState.activeResumeId;
+    if (!resumeId) return;
+    try {
+      const { resume } = await api.restoreVersion(resumeId, versionNo);
+      if (get().activeResumeId === resumeId) {
+        set(applyResume(resume, localState));
+      }
+      try {
+        const { versions } = await api.listVersions(resumeId);
+        if (get().activeResumeId === resumeId) set({ versions });
+      } catch {
+        // Restore succeeded; retain the prior list until the next explicit refresh.
+      }
+    } catch (error) {
+      set({ error: (error as Error).message });
+      throw error;
+    }
+  },
+
+  goHome: () => set({ activeResumeId: null, versions: [], lockVersion: 0 }),
 
   setTitle: (title) =>
     set((state) =>
@@ -279,7 +377,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       if (JSON.stringify(editorContent) === JSON.stringify(state.editorContent)) return {};
       return {
         editorContent,
-        markdown: JSON.stringify(editorContent),
+        markdown: editorDocumentToMarkdown(editorContent),
         dirty: true,
         editVersion: state.editVersion + 1,
         saveStatus: "idle",

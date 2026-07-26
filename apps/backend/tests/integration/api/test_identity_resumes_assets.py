@@ -36,6 +36,14 @@ class FakeStorage:
     def get(self, object_name: str) -> FakeObjectResponse:
         return FakeObjectResponse(self.objects[object_name])
 
+    def delete(self, object_name: str) -> None:
+        self.objects.pop(object_name, None)
+
+    def delete_prefix(self, prefix: str) -> None:
+        for object_name in list(self.objects):
+            if object_name.startswith(prefix):
+                self.objects.pop(object_name)
+
 
 def build_test_app():
     settings = Settings(
@@ -61,23 +69,16 @@ def test_authentication_and_resume_crud() -> None:
 
         created = client.post(
             "/api/resumes",
-            json={
-                "title": "测试简历",
-                "markdown": "# 张三",
-                "settings": {"theme": "modern"},
-                "splitRatio": 0.45,
-                "previewScale": 0.9,
-            },
+            json={"title": "测试简历"},
         )
         assert created.status_code == 201
         resume = created.json()["resume"]
         assert resume["title"] == "测试简历"
-        assert resume["settings"]["theme"] == "modern"
-        assert resume["settings"]["showSource"] is False
-        assert resume["splitRatio"] == 0.45
-        assert resume["sourceType"] == "blank"
-        assert resume["lockVersion"] == 1
-        assert "createdAt" in resume
+        assert resume["data"]["schema_version"] == "1.0"
+        assert resume["style"]["template_key"] == "classic-cn"
+        assert resume["source_type"] == "blank"
+        assert resume["lock_version"] == 1
+        assert "created_at" in resume
 
         resume_id = resume["id"]
         with app.state.session_factory() as session:
@@ -94,18 +95,16 @@ def test_authentication_and_resume_crud() -> None:
             f"/api/resumes/{resume_id}",
             json={
                 "title": "更新后的简历",
-                "markdown": "# 张三\n\n新内容",
-                "lockVersion": resume["lockVersion"],
+                "base_lock_version": resume["lock_version"],
             },
         )
         assert updated.status_code == 200
         assert updated.json()["resume"]["title"] == "更新后的简历"
-        assert updated.json()["resume"]["splitRatio"] == 0.45
-        assert updated.json()["resume"]["lockVersion"] == 2
+        assert updated.json()["resume"]["lock_version"] == 2
 
         conflict = client.put(
             f"/api/resumes/{resume_id}",
-            json={"title": "过期写入", "lockVersion": 1},
+            json={"title": "过期写入", "base_lock_version": 1},
         )
         assert conflict.status_code == 409
         assert conflict.json() == {"error": "RESUME_EDIT_CONFLICT"}
@@ -146,3 +145,56 @@ def test_assets_are_private_to_the_current_user() -> None:
                 json={"email": "stranger@example.com", "password": "password-123"},
             )
             assert stranger.get(asset["url"]).status_code == 403
+
+
+def test_resume_assets_are_owned_and_preserved_while_history_references_them() -> None:
+    app = build_test_app()
+    payload = base64.b64encode(b"png-bytes").decode("ascii")
+
+    with TestClient(app) as owner:
+        owner.post(
+            "/api/auth/register",
+            json={"email": "resume-owner@example.com", "password": "password-123"},
+        )
+        resume = owner.post("/api/resumes", json={}).json()["resume"]
+        resume_id = resume["id"]
+        uploaded = owner.post(
+            f"/api/resumes/{resume_id}/assets",
+            json={
+                "file_name": "avatar.png",
+                "data_url": f"data:image/png;base64,{payload}",
+            },
+        )
+        assert uploaded.status_code == 201
+        asset = uploaded.json()["asset"]
+        assert owner.get(asset["url"]).content == b"png-bytes"
+
+        data = resume["data"]
+        data["basics"]["photo"] = asset["url"]
+        saved = owner.put(
+            f"/api/resumes/{resume_id}",
+            json={"data": data, "base_lock_version": 1},
+        )
+        assert saved.status_code == 200
+        assert owner.post(f"/api/resumes/{resume_id}/versions").status_code == 201
+
+        data["basics"]["photo"] = None
+        saved_without_photo = owner.put(
+            f"/api/resumes/{resume_id}",
+            json={"data": data, "base_lock_version": 2},
+        )
+        assert saved_without_photo.status_code == 200
+        assert owner.delete(asset["url"]).status_code == 409
+
+        with TestClient(app) as stranger:
+            stranger.post(
+                "/api/auth/register",
+                json={
+                    "email": "resume-stranger@example.com",
+                    "password": "password-123",
+                },
+            )
+            assert stranger.get(asset["url"]).status_code == 404
+
+        assert owner.delete(f"/api/resumes/{resume_id}").json() == {"deleted": True}
+        assert app.state.storage.objects == {}

@@ -1,37 +1,45 @@
 # FastAPI 后端
 
-## 当前职责
+## 当前职责与结构
 
-`apps/backend` 承接全部服务端能力：健康检查、用户注册登录、JWT Cookie 鉴权、简历 CRUD 和私有图片读写。
+`apps/backend` 承接健康检查、Cookie 鉴权、语义简历生命周期、历史版本、文件导入和私有对象资源。
 
 | 位置 | 职责 |
 | --- | --- |
-| `src/linkcv/main.py` | 创建应用、装配数据库与存储、配置 OpenAPI 和静态 Web 产物 |
-| `src/linkcv/core/` | 配置、数据库、错误、安全和 MinIO 基础设施 |
-| `src/linkcv/modules/identity/` | 用户模型、注册、登录和鉴权依赖 |
-| `src/linkcv/modules/resumes/` | 简历模型、CRUD、默认内容和图片接口 |
-| `migrations/sql/` | 每个 revision 对应的 `.up.sql`、`.down.sql` MySQL DDL；当前 head 为 `0002` |
-| `migrations/versions/` | 只调用同 ID 的 SQL 文件，不在 Python 中声明表、字段或索引 |
-| `tests/unit/` | 不访问外部资源的快速单元测试 |
-| `tests/integration/` | 使用隔离 SQLite 和假对象存储的 HTTP 组合测试 |
+| `src/linkcv/main.py` | 装配数据库、MinIO、tolink-rag 和结构化模型 Adapter；测试可注入 Fake |
+| `src/linkcv/domain/` | `ResumeDocumentV1`、`ResumeStyleV1`、联合快照、SectionIR、Draft 和确定性标准化 |
+| `src/linkcv/application/resumes/` | 统一创建、乐观锁保存、版本创建/恢复与事务规则 |
+| `src/linkcv/integrations/` | tolink-rag HTTP Adapter 和 OpenAI-compatible JSON Schema 模型 Adapter |
+| `src/linkcv/services/resume_import_service.py` | 文件校验、对象上传、Markdown 提取、结构化、统一创建和失败补偿 |
+| `src/linkcv/modules/identity/` | 用户模型、注册、登录和当前用户依赖 |
+| `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板/简历/版本/导入/资源路由 |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0003` |
 
-## 接口与持久化
+## 数据与事务
 
-- OpenAPI：`/api/openapi.json`
-- Swagger UI：`/api/docs`
-- 健康检查：`GET /api/health`
-- 业务接口：`/api/auth/**`、`/api/resumes/**`、`/api/assets/**`
+MySQL 包含 `users`、`resume_templates`、`resumes` 和 `resume_versions`。当前可编辑状态只保存在 `resumes.data_json/style_json`，历史版本同时快照两份 JSON。HTTP 中的 ID 是十进制字符串，ORM 和数据库使用整数。
 
-Alembic 当前 head `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versions` 四张核心表。业务主键和外键统一使用 `BIGINT UNSIGNED`；数据库中的整数 ID 在 HTTP、JWT、TypeScript 和对象键中表示为十进制字符串。`users` 保存账号、昵称、头像对象键、`0/1` 状态和管理员标记，不再保存 `auth_version`。`resumes` 保存当前 JSON 内容和样式、来源证据及乐观锁版本；创建简历时会在同一事务写入版本号为 `1` 的 `resume_versions` 初始快照。
+所有创建来源都调用统一服务，在单事务中创建当前简历和 initial 版本。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。手动版本与恢复先锁定所属简历；恢复按需生成 `before_restore` 并总是生成 `restore`，版本上限淘汰处于同一事务。
 
-核心查询索引包括邮箱唯一索引、模板 Key 唯一索引、`(user_id, updated_at DESC, id DESC)` 简历列表索引、模板外键索引，以及 `(resume_id, version_no)` 版本唯一索引。`0002` 只允许从空的 `0001` 业务表升级；revision 在 DDL 前只读检查现存业务表的记录数，发现任何数据就拒绝破坏性替换，并允许空库在 MySQL DDL 部分失败后重试。revision 固定使用四位递增编号；后续 schema 变化通过 `npm run db:revision -- -m "<message>"` 创建 Python revision 与配对 SQL。禁止手工 `ALTER TABLE` 或原地改写已进入共享环境的 revision。
+`0003` 将模板外键改为 `ON DELETE SET NULL`，同时允许历史模板来源在模板删除后保留 `source_type=template/template_id=NULL`。如果已经出现这种记录，0003 downgrade 会拒绝恢复不成立的 RESTRICT/非空来源约束。已进入共享环境的 revision 不原地修改。
 
-`scripts/db/init_mysql.py` 只允许创建名为 `linkcv` 的 MySQL 数据库；`scripts/release/run_alembic.py` 在迁移前校验环境、host、port 和数据库并输出不含密码的摘要。FastAPI 配置支持根 `.env`、显式 `LINKCV_ENV_FILE`、同名 `.local` 和进程环境覆盖。Redis 与阿里云 OSS 当前仅建立配置契约；Redis Auth Session 与双 Token 鉴权尚未在运行时代码中启用。
+## 导入与外部边界
+
+Markdown 文件直接读取；DOCX/PDF 通过 `RagConverter` 发往 tolink-rag 文件转 Markdown 接口。Markdown 只保存为 `extracted_markdown` 来源证据；AST 被压缩为 `SectionIR` 后才发送给结构化模型，模型只能返回 `ResumeExtractionDraft`，最终稳定 ID、日期和来源行号由程序生成。
+
+外部服务未配置时应用仍可启动，但对应导入返回明确错误，不使用 Fake 冒充生产结果。默认测试全部使用确定性 Fake 和 `httpx.MockTransport`，不访问真实网络或读取密钥。日志只记录 operation/resume/user 标识、大小、耗时和错误类型，不记录正文、Prompt、Cookie、密钥或完整供应商响应。
+
+## 对象存储
+
+- 用户级兼容图片：`users/{user_id}/assets/...`。
+- 导入原文件：`users/{user_id}/resume-imports/{operation_id}/...`。
+- 简历资源：`users/{user_id}/resumes/{resume_id}/assets/...`。
+
+简历级读取先校验所属简历。资源删除会递归检查当前和历史 `data_json` 引用；仍在使用时拒绝删除。数据库与 MinIO 不伪装成分布式事务，导入失败执行对象补偿，删除简历在数据库提交后执行幂等前缀清理。
 
 ## 测试约定
 
-- 全量入口为根目录 `npm run test:backend`；业务测试可分别运行 `test:backend:unit` 和 `test:backend:integration`。
-- 单元测试不连接真实网络、数据库或对象存储。
-- 路由集成测试使用内存 SQLite 与依赖注入的假 MinIO，不占用真实端口。
-- `LINKCV_TEST_MYSQL_URL` 可显式启用专用 MySQL 库的 migration 往返测试；该地址不得指向共享 Dev 或 Production。
-- 真实 MinIO 和浏览器流程仍需人工端到端验收。
+- `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
+- `npm run test:backend:integration`：SQLite、Fake MinIO、Fake RAG/LLM 的 HTTP 组合测试。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于 `0002/0003` 往返和物理约束验证。
+- 真实 tolink-rag、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。

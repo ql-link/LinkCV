@@ -17,7 +17,6 @@ import { exportResumePdf } from "../preview/exportPdf";
 import { resumeSerifFontStack, useResumeStore } from "../../store/resumeStore";
 import { resumeEditorExtensions } from "./editorExtensions";
 import { WorkbenchToolbar } from "./WorkbenchToolbar";
-import { loadVersionHistory, saveVersionHistory, type VersionSnapshot } from "./versionHistory";
 import { handleWheelZoom } from "./workbenchZoom";
 import { navigateTo } from "../../routing";
 
@@ -30,9 +29,20 @@ const fontOptions = [
   { label: "系统黑体", value: '"PingFang SC", "Microsoft YaHei", Inter, system-ui, sans-serif' },
 ];
 
-function nowText() {
-  const date = new Date();
-  return date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+const versionReasonLabels = {
+  initial: "初始版本",
+  manual: "手动保存",
+  before_restore: "恢复前备份",
+  restore: "恢复结果",
+} as const;
+
+function versionTime(value: string) {
+  return new Date(value).toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function plainParagraphsFromHtml(html: string) {
@@ -111,13 +121,15 @@ export function ResumeWorkbench() {
   const saveStatus = useResumeStore((state) => state.saveStatus);
   const dirty = useResumeStore((state) => state.dirty);
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
+  const versions = useResumeStore((state) => state.versions);
+  const versionsLoading = useResumeStore((state) => state.versionsLoading);
+  const loadVersions = useResumeStore((state) => state.loadVersions);
+  const createVersion = useResumeStore((state) => state.createVersion);
+  const restoreStoredVersion = useResumeStore((state) => state.restoreVersion);
   const goHome = useResumeStore((state) => state.goHome);
   const logout = useResumeStore((state) => state.logout);
   const [drawerMode, setDrawerMode] = useState<DrawerMode>(null);
   const [toast, setToast] = useState<ToastState>(null);
-  const [versions, setVersions] = useState<VersionSnapshot[]>([]);
-  const lastSaveStatus = useRef(saveStatus);
-  const latestAutoSnapshot = useRef("");
   const paperScrollRef = useRef<HTMLDivElement>(null);
 
   const editor = useEditor({
@@ -136,18 +148,9 @@ export function ResumeWorkbench() {
 
   useEffect(() => {
     let cancelled = false;
-    setVersions([]);
-    latestAutoSnapshot.current = "";
-    lastSaveStatus.current = saveStatus;
     if (!activeResumeId) return;
 
-    void loadVersionHistory(activeResumeId)
-      .then((stored) => {
-        if (!cancelled) {
-          setVersions(stored);
-          latestAutoSnapshot.current = stored[0] ? JSON.stringify(stored[0].json) : "";
-        }
-      })
+    void loadVersions()
       .catch(() => {
         if (!cancelled) setToast({ label: "版本记录暂时无法读取" });
       });
@@ -155,17 +158,7 @@ export function ResumeWorkbench() {
     return () => {
       cancelled = true;
     };
-  }, [activeResumeId]);
-
-  const appendVersion = (snapshot: VersionSnapshot) => {
-    setVersions((current) => {
-      const next = [snapshot, ...current].slice(0, 20);
-      if (activeResumeId) {
-        void saveVersionHistory(activeResumeId, next).catch(() => setToast({ label: "版本已保存，但本地记录写入失败" }));
-      }
-      return next;
-    });
-  };
+  }, [activeResumeId, loadVersions]);
 
   useEffect(() => {
     if (!toast) return;
@@ -202,19 +195,6 @@ export function ResumeWorkbench() {
     };
   }, [dirty]);
 
-  useEffect(() => {
-    if (lastSaveStatus.current === "saving" && saveStatus === "saved" && editor) {
-      const json = editor.getJSON();
-      const key = JSON.stringify(json);
-      if (key !== latestAutoSnapshot.current) {
-        latestAutoSnapshot.current = key;
-        const snapshot: VersionSnapshot = { id: crypto.randomUUID(), label: "自动保存", time: nowText(), json };
-        appendVersion(snapshot);
-      }
-    }
-    lastSaveStatus.current = saveStatus;
-  }, [editor, saveStatus]);
-
   const resumeStyle = useMemo(() => ({
     "--resume-font-family": settings.fontFamily,
     "--resume-font-size": `${settings.fontSize}pt`,
@@ -230,22 +210,28 @@ export function ResumeWorkbench() {
       setToast({ label: "保存失败，请稍后重试" });
       return;
     }
-    const json = editor.getJSON();
-    latestAutoSnapshot.current = JSON.stringify(json);
-    const snapshot: VersionSnapshot = { id: crypto.randomUUID(), label: "手动保存", time: nowText(), json };
-    appendVersion(snapshot);
-    setToast({ label: "已保存新版本" });
+    try {
+      await createVersion();
+      setToast({ label: "已保存新版本" });
+    } catch {
+      setToast({ label: "当前内容已保存，但版本创建失败" });
+    }
   };
 
-  const restoreVersion = (version: VersionSnapshot) => {
+  const restoreVersion = async (versionNo: number, createdAt: string) => {
     if (!editor) return;
     const previous = editor.getJSON();
-    editor.commands.setContent(version.json);
-    setEditorContent(version.json);
-    setToast({ label: `已恢复 ${version.time} 的版本`, undo: () => {
-      editor.commands.setContent(previous);
-      setEditorContent(previous);
-    } });
+    try {
+      await restoreStoredVersion(versionNo);
+      const restored = useResumeStore.getState().editorContent;
+      editor.commands.setContent(restored);
+      setToast({ label: `已恢复 ${versionTime(createdAt)} 的版本`, undo: () => {
+        editor.commands.setContent(previous);
+        setEditorContent(previous);
+      } });
+    } catch {
+      setToast({ label: "版本恢复失败，请稍后重试" });
+    }
   };
 
   const leaveSafely = async (destination: "home" | "logout") => {
@@ -291,7 +277,7 @@ export function ResumeWorkbench() {
           </div>
         </header>
 
-        <WorkbenchToolbar editor={editor} onNotice={(label) => setToast({ label })} />
+        {activeResumeId && <WorkbenchToolbar editor={editor} resumeId={activeResumeId} onNotice={(label) => setToast({ label })} />}
 
         <main className="workbench-canvas">
           <div
@@ -333,11 +319,12 @@ export function ResumeWorkbench() {
                   </div>
                 ) : (
                   <div className="workbench-versions">
-                    {versions.length === 0 && <p className="workbench-empty">修改内容后会自动生成版本，也可以点击“保存版本”。</p>}
-                    {versions.map((version, index) => (
-                      <div className={index === 0 ? "version-row current" : "version-row"} key={version.id}>
-                        <div><strong>{version.time}</strong><span>{version.label}{index === 0 ? " · 当前" : ""}</span></div>
-                        {index !== 0 && <button type="button" onClick={() => restoreVersion(version)}>恢复</button>}
+                    {versionsLoading && <p className="workbench-empty">正在读取版本记录…</p>}
+                    {!versionsLoading && versions.length === 0 && <p className="workbench-empty">暂无可用版本。</p>}
+                    {versions.map((version) => (
+                      <div className="version-row" key={version.id}>
+                        <div><strong>{versionTime(version.created_at)}</strong><span>v{version.version_no} · {versionReasonLabels[version.reason]}</span></div>
+                        <button type="button" onClick={() => void restoreVersion(version.version_no, version.created_at)}>恢复</button>
                       </div>
                     ))}
                   </div>

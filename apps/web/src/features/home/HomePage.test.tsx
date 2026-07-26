@@ -4,8 +4,8 @@ import type { ResumeSummary } from "../../api/client";
 import { HomeScreen } from "./HomePage";
 
 const resumes: ResumeSummary[] = [
-  { id: "1", title: "Frontend Resume", sourceType: "blank", lockVersion: 1, createdAt: "2026-07-20T08:00:00Z", updatedAt: "2026-07-24T08:00:00Z" },
-  { id: "2", title: "产品经理", sourceType: "blank", lockVersion: 1, createdAt: "2026-07-20T08:00:00Z", updatedAt: "2026-07-23T08:00:00Z" },
+  { id: "1", title: "Frontend Resume", source_type: "blank", lock_version: 1, created_at: "2026-07-20T08:00:00Z", updated_at: "2026-07-24T08:00:00Z" },
+  { id: "2", title: "产品经理", source_type: "blank", lock_version: 1, created_at: "2026-07-20T08:00:00Z", updated_at: "2026-07-23T08:00:00Z" },
 ];
 
 function renderHome(overrides: Partial<React.ComponentProps<typeof HomeScreen>> = {}) {

@@ -1,29 +1,37 @@
 from datetime import datetime
-from typing import Any
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from linkcv.domain.resume_document import ResumeDocumentV1
+from linkcv.domain.resume_style import ResumeStyleV1
 
-class ResumeWrite(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
 
-    title: str | None = None
-    markdown: str | None = None
-    settings: dict[str, Any] | None = None
-    split_ratio: float | None = Field(default=None, alias="splitRatio")
-    preview_scale: float | None = Field(default=None, alias="previewScale")
-    lock_version: int | None = Field(default=None, alias="lockVersion", ge=1)
+class ResumeCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, max_length=255)
+    template_id: str | None = None
+
+
+class ResumeUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, max_length=255)
+    data: ResumeDocumentV1 | None = None
+    style: ResumeStyleV1 | None = None
+    base_lock_version: int = Field(ge=1)
 
 
 class ResumeSummary(BaseModel):
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
 
     id: str
     title: str
-    source_type: str = Field(alias="sourceType")
-    lock_version: int = Field(alias="lockVersion")
-    created_at: datetime = Field(alias="createdAt")
-    updated_at: datetime = Field(alias="updatedAt")
+    source_type: Literal["blank", "template", "import"]
+    lock_version: int
+    created_at: datetime
+    updated_at: datetime
 
     @field_validator("id", mode="before")
     @classmethod
@@ -32,10 +40,10 @@ class ResumeSummary(BaseModel):
 
 
 class ResumeRecord(ResumeSummary):
-    markdown: str
-    settings: dict[str, Any]
-    split_ratio: float = Field(alias="splitRatio")
-    preview_scale: float = Field(alias="previewScale")
+    template_id: str | None
+    data: ResumeDocumentV1
+    style: ResumeStyleV1
+    source_filename: str | None = None
 
 
 class ResumeResponse(BaseModel):
@@ -48,3 +56,51 @@ class ResumeListResponse(BaseModel):
 
 class DeleteResumeResponse(BaseModel):
     deleted: bool
+
+
+class ResumeTemplateRecord(BaseModel):
+    id: str
+    key: str
+    name: str
+    description: str | None
+    data: ResumeDocumentV1
+    style: ResumeStyleV1
+
+
+class ResumeTemplateListResponse(BaseModel):
+    templates: list[ResumeTemplateRecord]
+
+
+class ResumeTemplateResponse(BaseModel):
+    template: ResumeTemplateRecord
+
+
+class ResumeVersionSummary(BaseModel):
+    id: str
+    version_no: int
+    reason: Literal["initial", "manual", "before_restore", "restore"]
+    created_at: datetime
+
+
+class ResumeVersionRecord(ResumeVersionSummary):
+    data: ResumeDocumentV1
+    style: ResumeStyleV1
+
+
+class ResumeVersionListResponse(BaseModel):
+    versions: list[ResumeVersionSummary]
+
+
+class ResumeVersionResponse(BaseModel):
+    version: ResumeVersionRecord
+
+
+class ResumeImportMetadata(BaseModel):
+    source_file_name: str
+    source_file_format: Literal["md", "docx", "pdf"]
+    warnings: list[str]
+
+
+class ResumeImportResponse(BaseModel):
+    resume: ResumeRecord
+    import_result: ResumeImportMetadata = Field(alias="import")

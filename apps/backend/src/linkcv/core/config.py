@@ -65,6 +65,43 @@ class Settings(BaseSettings):
     )
     minio_bucket: str = Field(default="linkcv", alias="MINIO_BUCKET")
 
+    resume_version_limit: int = Field(default=20, alias="RESUME_VERSION_LIMIT", ge=2)
+    resume_import_max_bytes: int = Field(
+        default=10 * 1024 * 1024,
+        alias="RESUME_IMPORT_MAX_BYTES",
+        ge=1,
+    )
+    resume_markdown_max_bytes: int = Field(
+        default=2 * 1024 * 1024,
+        alias="RESUME_MARKDOWN_MAX_BYTES",
+        ge=1,
+    )
+
+    rag_base_url: str | None = Field(default=None, alias="RAG_BASE_URL")
+    rag_api_key: str | None = Field(default=None, alias="RAG_API_KEY")
+    rag_convert_path: str = Field(
+        default="/documents/to-markdown",
+        alias="RAG_CONVERT_PATH",
+    )
+    rag_timeout_seconds: float = Field(
+        default=60,
+        alias="RAG_TIMEOUT_SECONDS",
+        gt=0,
+    )
+    llm_base_url: str | None = Field(default=None, alias="LLM_BASE_URL")
+    llm_api_key: str | None = Field(default=None, alias="LLM_API_KEY")
+    llm_model: str | None = Field(default=None, alias="LLM_MODEL")
+    llm_structured_path: str = Field(
+        default="/chat/completions",
+        alias="LLM_STRUCTURED_PATH",
+    )
+    llm_timeout_seconds: float = Field(
+        default=60,
+        alias="LLM_TIMEOUT_SECONDS",
+        gt=0,
+    )
+    llm_max_retries: int = Field(default=1, alias="LLM_MAX_RETRIES", ge=0, le=2)
+
     redis_url_override: str | None = Field(default=None, alias="REDIS_URL")
     redis_host: str = Field(default="127.0.0.1", alias="REDIS_HOST")
     redis_port: int = Field(default=6379, alias="REDIS_PORT")

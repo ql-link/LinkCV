@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
+import { useResumeStore } from "../../store/resumeStore";
 
 export const inlineIconComponents = {
   Mail,
@@ -67,7 +68,12 @@ function uploadImage(file: File) {
       }
       const preview = new Image();
       preview.addEventListener("load", () => {
-        void api.uploadAsset({ fileName: file.name, dataUrl: reader.result as string })
+        const resumeId = useResumeStore.getState().activeResumeId;
+        if (!resumeId) {
+          reject(new Error("请先选择简历"));
+          return;
+        }
+        void api.uploadResumeAsset(resumeId, { file_name: file.name, data_url: reader.result as string })
           .then(({ asset }) => resolve(asset.url))
           .catch(reject);
       }, { once: true });
@@ -249,7 +255,14 @@ export const AvatarImage = Node.create({
   atom: true,
   selectable: true,
   addAttributes: () => ({ src: { default: "" }, size: { default: 96 }, alt: { default: "简历头像" } }),
-  parseHTML: () => [{ tag: "figure[data-type='avatar-image']" }],
+  parseHTML: () => [{
+    tag: "figure[data-type='avatar-image']",
+    getAttrs: (element) => element instanceof HTMLElement ? {
+      src: element.dataset.src ?? "",
+      size: Number(element.dataset.size) || 96,
+      alt: element.dataset.alt ?? "简历头像",
+    } : false,
+  }],
   renderHTML: ({ HTMLAttributes }) => ["figure", mergeAttributes(HTMLAttributes, { "data-type": "avatar-image" })],
   addNodeView: () => ReactNodeViewRenderer(MediaNodeView),
 });
@@ -266,7 +279,25 @@ export const ResumeImage = Node.create({
     align: { default: "center" },
     alt: { default: "简历图片" },
   }),
-  parseHTML: () => [{ tag: "figure[data-type='resume-image']" }],
+  parseHTML: () => [
+    {
+      tag: "div[data-type='resume-image']",
+      getAttrs: (element) => element instanceof HTMLElement ? {
+        src: element.dataset.src ?? "",
+        width: Number(element.dataset.width) || 55,
+        widthUnit: element.dataset.widthUnit === "px" ? "px" : "%",
+        align: element.dataset.align ?? "center",
+        alt: element.dataset.alt ?? "简历图片",
+      } : false,
+    },
+    {
+      tag: "img",
+      getAttrs: (element) => element instanceof HTMLImageElement ? {
+        src: element.getAttribute("src") || "",
+        alt: element.alt || "简历图片",
+      } : false,
+    },
+  ],
   renderHTML: ({ HTMLAttributes }) => ["figure", mergeAttributes(HTMLAttributes, { "data-type": "resume-image" })],
   addNodeView: () => ReactNodeViewRenderer(MediaNodeView),
 });

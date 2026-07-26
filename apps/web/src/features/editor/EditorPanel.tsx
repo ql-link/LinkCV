@@ -24,6 +24,7 @@ function readFileAsDataUrl(file: File) {
 
 export function EditorPanel() {
   const markdownValue = useResumeStore((state) => state.markdown);
+  const activeResumeId = useResumeStore((state) => state.activeResumeId);
   const setMarkdown = useResumeStore((state) => state.setMarkdown);
   const editorRef = useRef<EditorView | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -48,12 +49,16 @@ export function EditorPanel() {
     setIsUploadingImage(true);
     try {
       const dataUrl = await readFileAsDataUrl(file);
-      const { asset } = await api.uploadAsset({ fileName: file.name, dataUrl });
+      if (!activeResumeId) throw new Error("RESUME_NOT_SELECTED");
+      const { asset } = await api.uploadResumeAsset(activeResumeId, {
+        file_name: file.name,
+        data_url: dataUrl,
+      });
       const alt = file.name.replace(/"/g, "&quot;");
       const insertRange = pendingImageInsertRangeRef.current ?? undefined;
       insertEditorText(
         view,
-        `<img src="${asset.url}" alt="${alt}" width="20" height="20">`,
+        `![${alt}](${asset.url})`,
         insertRange,
       );
     } catch (error) {
