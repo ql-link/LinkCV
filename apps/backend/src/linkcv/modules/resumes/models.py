@@ -1,7 +1,18 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, Float, ForeignKey, Index, JSON, String, Text, func
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    JSON,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,12 +31,12 @@ class Resume(Base):
     )
 
     id: Mapped[str] = mapped_column(String(39), primary_key=True)
-    user_id: Mapped[str] = mapped_column(
-        String(37),
+    user_id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"),
         ForeignKey(
             "users.id",
             name="fk_resumes_user_id_users",
-            ondelete="CASCADE",
+            ondelete="RESTRICT",
         ),
         nullable=False,
     )
