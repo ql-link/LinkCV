@@ -95,7 +95,7 @@ def register(
     user = User(
         email=email,
         password_hash=hash_password(payload.password),
-        nickname=f"鐢ㄦ埛{secrets.token_hex(3)}",
+        nickname=f"用户{secrets.token_hex(3)}",
     )
     db.add(user)
     try:
@@ -126,7 +126,7 @@ def login(
     ):
         raise ApiError(401, "INVALID_CREDENTIALS")
 
-    # Lazy upgrade: rehash legacy bcrypt / outdated Argon2 hashes in place.
+    # Keep current Argon2 hashes aligned with the configured parameters.
     if password_needs_rehash(user.password_hash):
         user.password_hash = hash_password(payload.password)
 

@@ -22,7 +22,7 @@
 - 健康检查：`GET /api/health`
 - 业务接口：`/api/auth/**`、`/api/resumes/**`、`/api/assets/**`
 
-Alembic 当前 head `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versions` 四张核心表。业务主键和外键统一使用 `BIGINT UNSIGNED`；数据库中的整数 ID 在 HTTP、JWT、TypeScript 和对象键中表示为十进制字符串。`users` 保存账号、昵称、头像对象键、`0/1` 状态和管理员标记，不再保存 `auth_version`。`resumes` 保存当前 JSON 内容和样式、来源证据及乐观锁版本；创建简历时会在同一事务写入版本号为 `1` 的 `resume_versions` 初始快照。
+Alembic 当前 head `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versions` 四张核心表。业务主键和外键统一使用 `BIGINT UNSIGNED`；数据库中的整数 ID 在 HTTP、JWT、TypeScript 和对象键中表示为十进制字符串。`users` 保存账号、昵称、头像对象键、`0/1` 状态和管理员标记，不再保存 `auth_version`；注册时生成以“用户”为前缀的默认昵称。`resumes` 保存当前 JSON 内容和样式、来源证据及乐观锁版本；创建简历时会在同一事务写入版本号为 `1` 的 `resume_versions` 初始快照。
 
 核心查询索引包括邮箱唯一索引、模板 Key 唯一索引、`(user_id, updated_at DESC, id DESC)` 简历列表索引、模板外键索引，以及 `(resume_id, version_no)` 版本唯一索引。`0002` 只允许从空的 `0001` 业务表升级；revision 在 DDL 前只读检查现存业务表的记录数，发现任何数据就拒绝破坏性替换，并允许空库在 MySQL DDL 部分失败后重试。revision 固定使用四位递增编号；后续 schema 变化通过 `npm run db:revision -- -m "<message>"` 创建 Python revision 与配对 SQL。禁止手工 `ALTER TABLE` 或原地改写已进入共享环境的 revision。
 

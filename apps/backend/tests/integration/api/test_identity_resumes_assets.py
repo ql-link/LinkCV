@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from linkcv.core.config import Settings
 from linkcv.main import create_app
+from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import ResumeVersion
 
 
@@ -142,6 +143,12 @@ def test_authentication_and_resume_crud() -> None:
         assert response.status_code == 201
         assert response.json()["user"]["email"] == "user@example.com"
         assert response.json()["user"]["id"].isdecimal()
+        with app.state.session_factory() as session:
+            registered_user = session.scalar(
+                select(User).where(User.email == "user@example.com")
+            )
+            assert registered_user is not None
+            assert registered_user.nickname.startswith("用户")
         set_cookie = response.headers["set-cookie"]
         # Short access cookie plus a 7-day refresh cookie.
         assert "resume_access=" in set_cookie and "Max-Age=900" in set_cookie
@@ -272,8 +279,6 @@ def test_refresh_rotates_secret_and_reuse_revokes_session() -> None:
 
 
 def test_disabled_account_blocks_access() -> None:
-    from linkcv.modules.identity.models import User
-
     app = build_test_app()
     with TestClient(app) as client:
         client.post(

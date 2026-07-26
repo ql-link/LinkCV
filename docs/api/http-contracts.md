@@ -26,7 +26,7 @@
 | `POST` | `/api/auth/refresh` | 否 | `{user}`，轮换 refresh 密钥并下发新双 Cookie |
 | `POST` | `/api/auth/logout` | 否 | `{ok: true}`，删除 Redis 会话并清除双 Cookie |
 
-鉴权使用“短 JWT access + 不透明 refresh + Redis 会话”的双 Token 方案。Access Cookie 名为 `resume_access`，有效期 `ACCESS_TTL_MINUTES`（默认 15 分钟），`SameSite=Lax`、`Path=/`。Refresh Cookie 名为 `resume_refresh`，有效期 `SESSION_TTL_DAYS`（默认 7 天），`HttpOnly`、`SameSite=Lax`、`Path=/api/auth`。注册错误码同上；登录或刷新失败返回 `401 INVALID_CREDENTIALS`。
+鉴权使用“短 JWT access + 不透明 refresh + Redis 会话”的双 Token 方案。Access Cookie 名为 `resume_access`，有效期 `ACCESS_TTL_MINUTES`（默认 15 分钟），`SameSite=Lax`、`Path=/`。Refresh Cookie 名为 `resume_refresh`，有效期 `SESSION_TTL_DAYS`（默认 7 天），`HttpOnly`、`SameSite=Lax`、`Path=/api/auth`。Web 调用受保护接口收到 `401` 时，会把并发请求合并到同一次 refresh，刷新成功后各自重试一次；启动检查 `/api/auth/me` 返回空用户时也会先尝试 refresh，再进入访客态。注册错误码同上；登录或刷新失败返回 `401 INVALID_CREDENTIALS`。
 
 每次受保护请求按“Access 自洽 → Session 存活 → 用户启用”三步校验：先校验 access JWT 签名与过期，再用 `EXISTS auth:session:{sid}` 确认 Redis 会话仍在，最后从 MySQL 读取用户并要求 `status=1`。会话只存 Redis（`auth:session:{sid}` 哈希与 `auth:user_sessions:{uid}` 集合），不写 MySQL；撤销即删除 key，不再依赖 `auth_version`。账号被禁用或改密时，遍历该用户的 `auth:user_sessions:{uid}` 删除其全部会话，达到旧 `auth_version` 全局失效的同等效果。`POST /api/auth/refresh` 读取 refresh Cookie，拆出 `sid.secret`，校验 `sha256(secret)` 与 Redis 中存储的 `rhash` 一致后轮换密钥：重写 `rhash`、续期会话并下发新的双 Cookie。哈希不匹配即判定 refresh 窃用并立即删除该会话。密码经 Argon2id 哈希后存入 `password_hash`，不保存明文。
 
