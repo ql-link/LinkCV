@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { authPath, editorPath, isSafeAppPath, navigateTo, parseAppRoute } from "./routing";
 
 describe("LinkCV routes", () => {
-  it("parses landing, auth, resume list, and editor routes", () => {
+  it("parses landing, auth, admin, resume list, and editor routes", () => {
     expect(parseAppRoute("/")).toEqual({ kind: "landing" });
     expect(parseAppRoute("/login", "?mode=register")).toEqual({ kind: "auth", mode: "register", next: null });
+    expect(parseAppRoute("/admin/llm/models")).toEqual({ kind: "admin" });
     expect(parseAppRoute("/resumes/")).toEqual({ kind: "resumes" });
     expect(parseAppRoute("/resumes/resume_123/edit")).toEqual({ kind: "editor", resumeId: "resume_123" });
     expect(parseAppRoute("/missing")).toEqual({ kind: "notFound" });

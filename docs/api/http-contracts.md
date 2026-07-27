@@ -8,12 +8,15 @@
 
 | Method | Path | 成功结果 |
 | --- | --- | --- |
-| `GET` | `/api/auth/me` | `{user}`；未登录时为 `null` |
-| `POST` | `/api/auth/register` | `201 {user}` 并设置 HttpOnly Cookie |
-| `POST` | `/api/auth/login` | `{user}` 并设置 Cookie |
-| `POST` | `/api/auth/logout` | `{ok: true}` 并清除 Cookie |
+| `GET` | `/api/auth/me` | `{user}`；未登录或 Cookie 无效时为 `null` |
+| `POST` | `/api/auth/register` | `201 {user}`，签发短 access 与 7 天 refresh 双 Cookie |
+| `POST` | `/api/auth/login` | `{user}`，签发短 access 与 7 天 refresh 双 Cookie |
+| `POST` | `/api/auth/refresh` | `{user}`，轮换 refresh 密钥并下发新双 Cookie |
+| `POST` | `/api/auth/logout` | `{ok: true}`，删除 Redis 会话并清除双 Cookie |
 
-私有接口从 Cookie 会话解析当前用户，不接受客户端 `user_id`。未登录返回 `401 UNAUTHORIZED`。
+鉴权使用“短 JWT access + 不透明 refresh + Redis 会话”的双 Token 方案。Access Cookie 名为 `resume_access`，有效期 `ACCESS_TTL_MINUTES`（默认 15 分钟），`SameSite=Lax`、`Path=/`。Refresh Cookie 名为 `resume_refresh`，有效期 `SESSION_TTL_DAYS`（默认 7 天），`HttpOnly`、`SameSite=Lax`、`Path=/api/auth`。Web 调用受保护接口收到 `401` 时，会把并发请求合并到同一次 refresh，刷新成功后各自重试一次；启动检查 `/api/auth/me` 返回空用户时也会先尝试 refresh，再进入访客态。登录或刷新失败返回 `401 INVALID_CREDENTIALS`。
+
+每次受保护请求按“Access 自洽 → Session 存活 → 用户启用”三步校验：先校验 access JWT 签名与过期，再用 `EXISTS auth:session:{sid}` 确认 Redis 会话仍在，最后从 MySQL 读取用户并要求 `status=1`。私有接口不接受客户端 `user_id`；未登录返回 `401 UNAUTHORIZED`。会话只存 Redis（`auth:session:{sid}` 哈希与 `auth:user_sessions:{uid}` 集合），不写 MySQL；撤销即删除 key。`POST /api/auth/refresh` 校验 refresh Cookie 中的 `sid.secret`，匹配 Redis 中保存的 secret 哈希后轮换密钥、续期会话并下发新 Cookie；哈希不匹配会立即撤销该会话。密码经 Argon2id 哈希后存入 `password_hash`，不保存明文。
 
 ## 语义简历契约
 

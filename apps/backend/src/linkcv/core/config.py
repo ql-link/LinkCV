@@ -51,8 +51,15 @@ class Settings(BaseSettings):
         default="linkcv-development-secret-change-me", alias="JWT_SECRET"
     )
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
+    access_ttl_minutes: int = Field(default=15, alias="ACCESS_TTL_MINUTES")
     session_cookie_name: str = Field(
         default="resume_session", alias="SESSION_COOKIE_NAME"
+    )
+    access_cookie_name: str = Field(
+        default="resume_access", alias="ACCESS_COOKIE_NAME"
+    )
+    refresh_cookie_name: str = Field(
+        default="resume_refresh", alias="REFRESH_COOKIE_NAME"
     )
     session_ttl_days: int = Field(default=7, alias="SESSION_TTL_DAYS")
     cookie_secure: bool = Field(default=False, alias="COOKIE_SECURE")

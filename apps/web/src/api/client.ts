@@ -51,7 +51,35 @@ export class ApiRequestError extends Error {
   }
 }
 
-async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function refreshSession(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = request<{ user: User }>(
+      "/api/auth/refresh",
+      { method: "POST" },
+      false,
+    )
+      .then(() => true)
+      .catch((error: unknown) => {
+        if (error instanceof ApiRequestError && error.status === 401) {
+          return false;
+        }
+        throw error;
+      })
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+
+  return refreshInFlight;
+}
+
+async function request<T>(
+  path: string,
+  options: ApiOptions = {},
+  retryAuth = true,
+): Promise<T> {
   const response = await fetch(path, {
     method: options.method ?? "GET",
     headers: options.body ? { "Content-Type": "application/json" } : undefined,
@@ -61,13 +89,33 @@ async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new ApiRequestError(response.status, data.error ?? `HTTP_${response.status}`);
+    const error = new ApiRequestError(
+      response.status,
+      typeof data.error === "string" ? data.error : `HTTP_${response.status}`,
+    );
+
+    if (response.status === 401 && retryAuth && !path.startsWith("/api/auth/")) {
+      const refreshed = await refreshSession();
+      if (refreshed) {
+        return request<T>(path, options, false);
+      }
+    }
+
+    throw error;
   }
   return data as T;
 }
 
+async function getCurrentUser(): Promise<{ user: User | null }> {
+  const current = await request<{ user: User | null }>("/api/auth/me");
+  if (current.user || !(await refreshSession())) {
+    return current;
+  }
+  return request<{ user: User | null }>("/api/auth/me", {}, false);
+}
+
 export const api = {
-  me: () => request<{ user: User | null }>("/api/auth/me"),
+  me: getCurrentUser,
   register: (email: string, password: string) =>
     request<{ user: User }>("/api/auth/register", { method: "POST", body: { email, password } }),
   login: (email: string, password: string) =>

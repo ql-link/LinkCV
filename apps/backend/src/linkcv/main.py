@@ -15,6 +15,7 @@ from linkcv.api.router import api_router
 from linkcv.core.config import Settings, load_settings
 from linkcv.core.database import Base, build_engine, build_session_factory
 from linkcv.core.errors import ApiError, install_error_handlers
+from linkcv.core.redis import build_redis_client
 from linkcv.core.storage import AssetStorage
 from linkcv.integrations.llm_client import (
     HttpStructuredLlmClient,
@@ -28,14 +29,19 @@ logger = logging.getLogger(__name__)
 
 
 class SpaStaticFiles(StaticFiles):
+    @staticmethod
+    def _path_is_api(path: str) -> bool:
+        # Normalise OS path separators so the check works on Windows too.
+        return path.replace("\\", "/").lstrip("/").startswith("api/")
+
     async def get_response(self, path: str, scope: Scope) -> Response:
         try:
             response = await super().get_response(path, scope)
         except HTTPException as error:
-            if error.status_code != 404 or path.startswith("api/"):
+            if error.status_code != 404 or self._path_is_api(path):
                 raise
             return await super().get_response("index.html", scope)
-        if response.status_code != 404 or path.startswith("api/"):
+        if response.status_code != 404 or self._path_is_api(path):
             return response
         return await super().get_response("index.html", scope)
 
@@ -45,6 +51,7 @@ def create_app(
     *,
     session_factory: sessionmaker[Session] | None = None,
     storage: Any | None = None,
+    redis: Any | None = None,
     rag_converter: Any | None = None,
     structuring_client: Any | None = None,
     create_schema: bool = False,
@@ -65,6 +72,8 @@ def create_app(
         Base.metadata.create_all(engine)
 
     runtime_storage = storage or AssetStorage(runtime_settings)
+    if redis is None:
+        redis = build_redis_client(runtime_settings)
     runtime_rag_converter = rag_converter
     if runtime_rag_converter is None:
         runtime_rag_converter = (
@@ -100,6 +109,10 @@ def create_app(
             logger.warning(
                 "MinIO is unavailable; asset routes will retry on demand", exc_info=True
             )
+        try:
+            await asyncio.to_thread(redis.ping)
+        except Exception:
+            logger.warning("Redis is unavailable; auth sessions will fail", exc_info=True)
         cleanup_task = asyncio.create_task(
             run_storage_cleanup_worker(session_factory, runtime_storage)
         )
@@ -111,6 +124,10 @@ def create_app(
                 await cleanup_task
             except asyncio.CancelledError:
                 pass
+            try:
+                await asyncio.to_thread(redis.close)
+            except Exception:
+                logger.warning("Redis close failed", exc_info=True)
 
     app = FastAPI(
         title="LinkCV API",
@@ -122,6 +139,7 @@ def create_app(
     app.state.settings = runtime_settings
     app.state.session_factory = session_factory
     app.state.storage = runtime_storage
+    app.state.redis = redis
     app.state.rag_converter = runtime_rag_converter
     app.state.structuring_client = runtime_structuring_client
     app.state.import_admission = ImportAdmissionController(
