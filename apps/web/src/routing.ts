@@ -3,6 +3,7 @@ import { useSyncExternalStore } from "react";
 export type AppRoute =
   | { kind: "landing" }
   | { kind: "auth"; mode: "login" | "register"; next: string | null }
+  | { kind: "admin" }
   | { kind: "resumes" }
   | { kind: "editor"; resumeId: string }
   | { kind: "notFound" };
@@ -25,6 +26,7 @@ export function isSafeAppPath(value: string | null) {
 export function parseAppRoute(pathname: string, search = ""): AppRoute {
   const normalizedPath = normalizePathname(pathname);
   if (normalizedPath === "/") return { kind: "landing" };
+  if (/^\/admin(?:\/|$)/.test(normalizedPath)) return { kind: "admin" };
   if (normalizedPath === "/login") {
     const params = new URLSearchParams(search);
     const next = params.get("next");
