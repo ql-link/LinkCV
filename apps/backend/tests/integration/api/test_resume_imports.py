@@ -15,6 +15,7 @@ from linkcv.integrations.rag_client import RagServiceError
 from linkcv.main import create_app
 from linkcv.modules.resumes.models import Resume, ResumeVersion, StorageCleanupJob
 from linkcv.services.storage_cleanup_service import process_storage_cleanup_jobs
+from tests.fakes import FakeRedis
 
 
 class FakeStorage:
@@ -118,6 +119,7 @@ def build_app(
             resume_import_requests_per_minute=requests_per_minute,
         ),
         storage=storage,
+        redis=FakeRedis(),
         rag_converter=rag_converter,
         structuring_client=structuring_client,
         create_schema=True,

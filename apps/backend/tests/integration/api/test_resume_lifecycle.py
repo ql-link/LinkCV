@@ -6,6 +6,7 @@ from linkcv.domain.resume_document import default_resume_document
 from linkcv.domain.resume_style import default_resume_style
 from linkcv.main import create_app
 from linkcv.modules.resumes.models import ResumeTemplate, ResumeVersion
+from tests.fakes import FakeRedis
 
 
 class FakeStorage:
@@ -27,6 +28,7 @@ def build_app(version_limit: int = 10):
             resume_version_limit=version_limit,
         ),
         storage=FakeStorage(),
+        redis=FakeRedis(),
         create_schema=True,
     )
 

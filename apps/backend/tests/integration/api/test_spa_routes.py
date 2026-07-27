@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from linkcv.core.config import Settings
 from linkcv.main import create_app
+from tests.fakes import FakeRedis
 
 
 class FakeStorage:
@@ -19,7 +20,7 @@ def test_spa_deep_links_fall_back_to_index_without_masking_api_404(tmp_path) -> 
         jwt_secret="integration-test-secret-with-32-bytes",
         web_dist_dir=tmp_path,
     )
-    app = create_app(settings, storage=FakeStorage())
+    app = create_app(settings, storage=FakeStorage(), redis=FakeRedis())
 
     with TestClient(app) as client:
         assert client.get("/resumes/resume_123/edit").text == "<main>LinkCV</main>"
