@@ -185,7 +185,7 @@ function IconControl({ editor }: { editor: Editor }) {
   );
 }
 
-function readImage(file: File, onLoad: (src: string) => void, onError: (message: string) => void) {
+function readImage(file: File, resumeId: string, onLoad: (src: string) => void, onError: (message: string) => void) {
   if (!file.type.startsWith("image/")) {
     onError("请选择图片文件");
     return;
@@ -203,7 +203,7 @@ function readImage(file: File, onLoad: (src: string) => void, onError: (message:
     }
     const preview = new window.Image();
     preview.onload = () => {
-      void api.uploadAsset({ fileName: file.name, dataUrl: reader.result as string })
+      void api.uploadResumeAsset(resumeId, { file_name: file.name, data_url: reader.result as string })
         .then(({ asset }) => onLoad(asset.url))
         .catch((error) => onError(`图片上传失败：${(error as Error).message}`));
     };
@@ -213,10 +213,10 @@ function readImage(file: File, onLoad: (src: string) => void, onError: (message:
   reader.readAsDataURL(file);
 }
 
-function ImageControl({ editor, avatar = false, onNotice }: { editor: Editor; avatar?: boolean; onNotice: (message: string) => void }) {
+function ImageControl({ editor, resumeId, avatar = false, onNotice }: { editor: Editor; resumeId: string; avatar?: boolean; onNotice: (message: string) => void }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const insert = (file: File) => {
-    readImage(file, (src) => {
+    readImage(file, resumeId, (src) => {
       if (!avatar) {
         editor.chain().focus().insertContent({ type: "resumeImage", attrs: { src, width: 55, widthUnit: "%", align: "center", alt: file.name } }).run();
         return;
@@ -304,7 +304,7 @@ function RowLayoutControl({ editor, onNotice }: { editor: Editor; onNotice: (mes
   );
 }
 
-export function WorkbenchToolbar({ editor, onNotice }: { editor: Editor | null; onNotice: (message: string) => void }) {
+export function WorkbenchToolbar({ editor, resumeId, onNotice }: { editor: Editor | null; resumeId: string; onNotice: (message: string) => void }) {
   const [, refresh] = useState(0);
 
   useEffect(() => {
@@ -352,8 +352,8 @@ export function WorkbenchToolbar({ editor, onNotice }: { editor: Editor | null; 
       <ToolButton label="有序列表" active={editor.isActive("orderedList")} onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={15} /></ToolButton>
       <Divider />
       <LinkControl editor={editor} />
-      <ImageControl editor={editor} onNotice={onNotice} />
-      <ImageControl editor={editor} avatar onNotice={onNotice} />
+      <ImageControl editor={editor} resumeId={resumeId} onNotice={onNotice} />
+      <ImageControl editor={editor} resumeId={resumeId} avatar onNotice={onNotice} />
       <IconControl editor={editor} />
       <RowLayoutControl editor={editor} onNotice={onNotice} />
     </div>

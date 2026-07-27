@@ -7,7 +7,9 @@ from sqlalchemy import select
 from linkcv.core.config import Settings
 from linkcv.main import create_app
 from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.models import ResumeVersion
+from linkcv.modules.resumes.models import Resume, ResumeVersion, StorageCleanupJob
+from linkcv.services.storage_cleanup_service import process_storage_cleanup_jobs
+from tests.fakes import FakeRedis
 
 
 class FakeObjectResponse:
@@ -27,6 +29,7 @@ class FakeObjectResponse:
 class FakeStorage:
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
+        self.fail_cleanup = False
 
     def ensure_bucket(self) -> None:
         pass
@@ -37,87 +40,17 @@ class FakeStorage:
     def get(self, object_name: str) -> FakeObjectResponse:
         return FakeObjectResponse(self.objects[object_name])
 
+    def delete(self, object_name: str) -> None:
+        if self.fail_cleanup:
+            raise RuntimeError("storage unavailable")
+        self.objects.pop(object_name, None)
 
-class FakeRedis:
-    """In-memory Redis stand-in mirroring the subset used by sessions."""
-
-    def __init__(self) -> None:
-        self.strings: dict[str, str] = {}
-        self.hashes: dict[str, dict[str, str]] = {}
-        self.sets: dict[str, set[str]] = {}
-        self.ttls: dict[str, float | None] = {}
-
-    def hset(
-        self,
-        name: str,
-        key: str | None = None,
-        value: str | None = None,
-        mapping: dict[str, str] | None = None,
-    ) -> int:
-        data = self.hashes.setdefault(name, {})
-        merged: dict[str, str] = dict(mapping or {})
-        if key is not None:
-            merged[key] = "" if value is None else str(value)
-        count = 0
-        for field, val in merged.items():
-            if field not in data:
-                count += 1
-            data[field] = str(val)
-        return count
-
-    def hget(self, name: str, key: str) -> str | None:
-        return self.hashes.get(name, {}).get(key)
-
-    def hgetall(self, name: str) -> dict[str, str]:
-        return dict(self.hashes.get(name, {}))
-
-    def exists(self, name: str) -> int:
-        return int(
-            name in self.strings or name in self.hashes or name in self.sets
-        )
-
-    def delete(self, *names: str) -> int:
-        removed = 0
-        for name in names:
-            removed += int(
-                self.strings.pop(name, None) is not None
-                or self.hashes.pop(name, None) is not None
-                or self.sets.pop(name, None) is not None
-            )
-            self.ttls.pop(name, None)
-        return removed
-
-    def expire(self, name: str, ttl: float) -> int:
-        if name in self.strings or name in self.hashes or name in self.sets:
-            self.ttls[name] = ttl
-            return 1
-        return 0
-
-    def sadd(self, name: str, *values: str) -> int:
-        target = self.sets.setdefault(name, set())
-        before = len(target)
-        target.update(values)
-        return len(target) - before
-
-    def srem(self, name: str, *values: str) -> int:
-        target = self.sets.get(name, set())
-        removed = 0
-        for value in values:
-            if value in target:
-                target.remove(value)
-                removed += 1
-        if not target:
-            self.sets.pop(name, None)
-        return removed
-
-    def smembers(self, name: str) -> set[str]:
-        return set(self.sets.get(name, set()))
-
-    def ping(self, **_kwargs) -> bool:
-        return True
-
-    def close(self, **_kwargs) -> None:
-        pass
+    def delete_prefix(self, prefix: str) -> None:
+        if self.fail_cleanup:
+            raise RuntimeError("storage unavailable")
+        for object_name in list(self.objects):
+            if object_name.startswith(prefix):
+                self.objects.pop(object_name)
 
 
 def build_test_app():
@@ -158,23 +91,16 @@ def test_authentication_and_resume_crud() -> None:
 
         created = client.post(
             "/api/resumes",
-            json={
-                "title": "测试简历",
-                "markdown": "# 张三",
-                "settings": {"theme": "modern"},
-                "splitRatio": 0.45,
-                "previewScale": 0.9,
-            },
+            json={"title": "测试简历"},
         )
         assert created.status_code == 201
         resume = created.json()["resume"]
         assert resume["title"] == "测试简历"
-        assert resume["settings"]["theme"] == "modern"
-        assert resume["settings"]["showSource"] is False
-        assert resume["splitRatio"] == 0.45
-        assert resume["sourceType"] == "blank"
-        assert resume["lockVersion"] == 1
-        assert "createdAt" in resume
+        assert resume["data"]["schema_version"] == "1.0"
+        assert resume["style"]["template_key"] == "classic-cn"
+        assert resume["source_type"] == "blank"
+        assert resume["lock_version"] == 1
+        assert "created_at" in resume
 
         resume_id = resume["id"]
         with app.state.session_factory() as session:
@@ -191,18 +117,16 @@ def test_authentication_and_resume_crud() -> None:
             f"/api/resumes/{resume_id}",
             json={
                 "title": "更新后的简历",
-                "markdown": "# 张三\n\n新内容",
-                "lockVersion": resume["lockVersion"],
+                "base_lock_version": resume["lock_version"],
             },
         )
         assert updated.status_code == 200
         assert updated.json()["resume"]["title"] == "更新后的简历"
-        assert updated.json()["resume"]["splitRatio"] == 0.45
-        assert updated.json()["resume"]["lockVersion"] == 2
+        assert updated.json()["resume"]["lock_version"] == 2
 
         conflict = client.put(
             f"/api/resumes/{resume_id}",
-            json={"title": "过期写入", "lockVersion": 1},
+            json={"title": "过期写入", "base_lock_version": 1},
         )
         assert conflict.status_code == 409
         assert conflict.json() == {"error": "RESUME_EDIT_CONFLICT"}
@@ -243,6 +167,91 @@ def test_assets_are_private_to_the_current_user() -> None:
                 json={"email": "stranger@example.com", "password": "password-123"},
             )
             assert stranger.get(asset["url"]).status_code == 403
+
+
+def test_resume_assets_are_owned_and_preserved_while_history_references_them() -> None:
+    app = build_test_app()
+    payload = base64.b64encode(b"png-bytes").decode("ascii")
+
+    with TestClient(app) as owner:
+        owner.post(
+            "/api/auth/register",
+            json={"email": "resume-owner@example.com", "password": "password-123"},
+        )
+        resume = owner.post("/api/resumes", json={}).json()["resume"]
+        resume_id = resume["id"]
+        uploaded = owner.post(
+            f"/api/resumes/{resume_id}/assets",
+            json={
+                "file_name": "avatar.png",
+                "data_url": f"data:image/png;base64,{payload}",
+            },
+        )
+        assert uploaded.status_code == 201
+        asset = uploaded.json()["asset"]
+        assert owner.get(asset["url"]).content == b"png-bytes"
+
+        data = resume["data"]
+        data["basics"]["photo"] = asset["url"]
+        saved = owner.put(
+            f"/api/resumes/{resume_id}",
+            json={"data": data, "base_lock_version": 1},
+        )
+        assert saved.status_code == 200
+        assert owner.post(f"/api/resumes/{resume_id}/versions").status_code == 201
+
+        data["basics"]["photo"] = None
+        saved_without_photo = owner.put(
+            f"/api/resumes/{resume_id}",
+            json={"data": data, "base_lock_version": 2},
+        )
+        assert saved_without_photo.status_code == 200
+        assert owner.delete(asset["url"]).status_code == 409
+
+        with TestClient(app) as stranger:
+            stranger.post(
+                "/api/auth/register",
+                json={
+                    "email": "resume-stranger@example.com",
+                    "password": "password-123",
+                },
+            )
+            assert stranger.get(asset["url"]).status_code == 404
+
+        assert owner.delete(f"/api/resumes/{resume_id}").json() == {"deleted": True}
+        assert app.state.storage.objects == {}
+
+
+def test_resume_delete_persists_failed_storage_cleanup_for_retry() -> None:
+    app = build_test_app()
+    storage = app.state.storage
+
+    with TestClient(app) as client:
+        register = client.post(
+            "/api/auth/register",
+            json={"email": "cleanup@example.com", "password": "password-123"},
+        )
+        assert register.status_code == 201
+        resume_id = client.post("/api/resumes", json={}).json()["resume"]["id"]
+        object_key = f"users/1/resumes/{resume_id}/image.png"
+        storage.objects[object_key] = b"private-resume-image"
+        storage.fail_cleanup = True
+
+        deleted = client.delete(f"/api/resumes/{resume_id}")
+
+        assert deleted.status_code == 200
+        with app.state.session_factory() as session:
+            assert session.scalar(select(Resume).where(Resume.id == int(resume_id))) is None
+            job = session.scalar(select(StorageCleanupJob))
+            assert job is not None
+            assert job.operation == "prefix"
+            assert job.attempts == 1
+
+        storage.fail_cleanup = False
+        with app.state.session_factory() as session:
+            assert process_storage_cleanup_jobs(session, storage) == 1
+            assert session.scalar(select(StorageCleanupJob)) is None
+        assert storage.objects == {}
 
 
 def test_refresh_rotates_secret_and_reuse_revokes_session() -> None:

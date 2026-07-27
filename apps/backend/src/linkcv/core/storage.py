@@ -62,6 +62,15 @@ class AssetStorage:
         self.ensure_bucket()
         return self.client.get_object(self.bucket, object_name)
 
+    def delete(self, object_name: str) -> None:
+        self.ensure_bucket()
+        self.client.remove_object(self.bucket, object_name)
+
+    def delete_prefix(self, prefix: str) -> None:
+        self.ensure_bucket()
+        for item in self.client.list_objects(self.bucket, prefix=prefix, recursive=True):
+            self.client.remove_object(self.bucket, item.object_name)
+
 
 def get_storage(request: Request) -> AssetStorage:
     return request.app.state.storage
@@ -96,6 +105,37 @@ def build_asset_object_name(user_id: str, file_name: object, content_type: str) 
     base_name = base_name or "image"
     unique = f"{int(time.time() * 1000)}-{secrets_token(8)}"
     return f"users/{user_id}/assets/{unique}-{base_name}{extension}"
+
+
+def build_import_object_name(
+    user_id: int,
+    operation_id: str,
+    file_name: str,
+) -> str:
+    normalized = unicodedata.normalize("NFKD", file_name)
+    safe_name = re.sub(r"[^\w.-]+", "-", normalized).strip("-.")[:120]
+    if not safe_name:
+        safe_name = "resume.bin"
+    return f"users/{user_id}/resume-imports/{operation_id}/{safe_name}"
+
+
+def build_resume_asset_object_name(
+    user_id: int,
+    resume_id: int,
+    file_name: object,
+    content_type: str,
+) -> str:
+    normalized = unicodedata.normalize("NFKD", str(file_name or "image"))
+    safe_name = re.sub(r"[^\w.-]+", "-", normalized).strip("-.")[:80]
+    candidate_extension = PurePath(safe_name).suffix.lower()
+    extension = (
+        candidate_extension
+        if candidate_extension in IMAGE_CONTENT_TYPES
+        else SUPPORTED_IMAGE_TYPES[content_type]
+    )
+    base_name = PurePath(safe_name).stem if safe_name else "image"
+    unique = f"{int(time.time() * 1000)}-{secrets_token(8)}"
+    return f"users/{user_id}/resumes/{resume_id}/assets/{unique}-{base_name}{extension}"
 
 
 def secrets_token(length: int) -> str:

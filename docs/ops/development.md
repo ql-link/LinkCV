@@ -6,7 +6,7 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装前后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis 与 MinIO，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web 和 FastAPI。当前 Alembic head `0002` 会建立 `users`、`resume_templates`、`resumes` 和 `resume_versions` 四张核心业务表。
+新环境执行 `npm run setup` 安装前后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis 与 MinIO，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web 和 FastAPI。当前 Alembic head `0005`；`0002` 建立四张核心业务表，`0003` 把模板删除规则调整为保留既有简历并将 `template_id` 置空（MySQL 限制使 template/source 组合改由应用服务保证），`0004` 新增对象存储清理补偿队列，`0005` 将旧 Tiptap 简历及历史版本转换为当前语义快照并保留可回滚的原始 JSON 备份。
 
 后端默认读取仓库根目录 `.env`。设置 `LINKCV_ENV_FILE=.env.development` 可选择共享 Dev 基础配置；如果同目录存在 `.env.development.local`，其密码和密钥会覆盖基础文件。Production 同理使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，配置路径不受当前工作目录影响。
 
@@ -30,6 +30,30 @@ LINKCV_ENV_FILE=.env.development npm run db:init
 | MinIO Console | 9001 | `MINIO_CONSOLE_PORT` |
 
 `BACKEND_PROXY_TARGET` 可以覆盖 Vite 使用的完整 FastAPI 地址。数据库可以用完整 `DATABASE_URL` 覆盖分项 MySQL 配置，Redis 可以用 `REDIS_URL` 覆盖分项配置。Production 必须通过私密覆盖提供足够随机的 `JWT_SECRET`、MySQL 和 MinIO 凭据，否则后端拒绝启动。鉴权会话使用 `REDIS_*` 配置的 Redis 作为唯一会话存储；`ACCESS_TTL_MINUTES`、`ACCESS_COOKIE_NAME` 和 `REFRESH_COOKIE_NAME` 控制双 Token 的有效期与 Cookie 名称。
+
+## 简历导入与版本配置
+
+| 环境变量 | 默认值 | 作用 |
+| --- | --- | --- |
+| `RESUME_VERSION_LIMIT` | `10` | 单份简历可保存的版本上限，达到后拒绝新增并由用户手动删除旧版本；最小为 2 |
+| `RESUME_IMPORT_MAX_BYTES` | `10485760` | 上传原文件大小上限 |
+| `RESUME_MARKDOWN_MAX_BYTES` | `2097152` | RAG Markdown 大小上限 |
+| `RESUME_STRUCTURING_MAX_BYTES` | `131072` | 允许发送到结构化模型的 Markdown 大小上限 |
+| `RESUME_IMPORT_REQUESTS_PER_MINUTE` | `3` | 单用户每分钟最多进入的导入请求数 |
+| `RESUME_IMPORT_GLOBAL_CONCURRENCY` | `4` | 单个 FastAPI 进程的导入全局并发上限 |
+| `RESUME_IMPORT_USER_CONCURRENCY` | `1` | 单个 FastAPI 进程内单用户导入并发上限 |
+| `RAG_BASE_URL` | 空 | tolink-rag 服务地址；为空时 DOCX/PDF 导入明确不可用 |
+| `RAG_API_KEY` | 空 | 可选 Bearer 凭据，只放 `.local` 或进程环境 |
+| `RAG_CONVERT_PATH` | `/documents/to-markdown` | 文件转 Markdown 接口路径；取得真实契约后覆盖 |
+| `RAG_TIMEOUT_SECONDS` | `60` | 单次转换超时 |
+| `LLM_BASE_URL` | 空 | OpenAI-compatible 结构化输出服务地址 |
+| `LLM_API_KEY` | 空 | 模型凭据，只放私密覆盖 |
+| `LLM_MODEL` | 空 | 模型名；与地址任一为空时结构化导入明确不可用 |
+| `LLM_STRUCTURED_PATH` | `/chat/completions` | JSON Schema 请求路径 |
+| `LLM_TIMEOUT_SECONDS` | `60` | 单次模型请求超时 |
+| `LLM_MAX_RETRIES` | `1` | Schema/网络失败后的最大额外重试次数，范围 0–2 |
+
+Markdown 导入不调用 tolink-rag，但仍需要结构化模型。频率和并发限制保存在 FastAPI 进程内，当前单实例部署可直接使用；多进程或多副本部署必须在 Redis 或 API 网关实施共享额度。默认自动化测试注入 Fake，不读取上述真实地址或密钥。真实简历属于敏感数据，联调前必须确认 tolink-rag 和模型环境的数据处理边界。
 
 ## 常用命令
 
