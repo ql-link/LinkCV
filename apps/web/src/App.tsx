@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "./components/ds";
+import { AdminApp } from "./features/admin/AdminApp";
 import { AuthPage } from "./features/auth/AuthPage";
 import { HomePage } from "./features/home/HomePage";
 import { LandingPage } from "./features/landing/LandingPage";
@@ -21,10 +22,12 @@ export function App() {
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
 
   useEffect(() => {
+    if (route.kind === "admin") return;
     void hydrate();
-  }, [hydrate]);
+  }, [hydrate, route.kind]);
 
   useEffect(() => {
+    if (route.kind === "admin") return;
     if (!dirty || !activeResumeId) return;
 
     const timer = window.setTimeout(() => {
@@ -32,9 +35,10 @@ export function App() {
     }, 1200);
 
     return () => window.clearTimeout(timer);
-  }, [activeResumeId, dirty, editVersion, saveCurrentResume]);
+  }, [activeResumeId, dirty, editVersion, route.kind, saveCurrentResume]);
 
   useEffect(() => {
+    if (route.kind === "admin") return;
     if (authStatus === "checking") return;
 
     if (authStatus === "guest") {
@@ -101,6 +105,10 @@ export function App() {
       cancelled = true;
     };
   }, [activeResumeId, authStatus, dirty, goHome, route.kind, saveCurrentResume]);
+
+  if (route.kind === "admin") {
+    return <AdminApp />;
+  }
 
   if (authStatus === "checking") {
     return <div className="app-loading">正在加载简历工作台...</div>;
