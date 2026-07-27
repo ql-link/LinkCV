@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "./components/ds";
+import { ApiRequestError } from "./api/client";
 import { AuthPage } from "./features/auth/AuthPage";
 import { HomePage } from "./features/home/HomePage";
 import { LandingPage } from "./features/landing/LandingPage";
@@ -70,9 +71,9 @@ export function App() {
       }
       try {
         await loadResume(routeResumeId);
-      } catch {
+      } catch (error) {
         if (!cancelled) {
-          setRouteError({ resumeId: routeResumeId, message: "简历不存在，或当前账号没有访问权限。" });
+          setRouteError({ resumeId: routeResumeId, message: resumeLoadErrorMessage(error) });
         }
       }
     })().catch((error) => {
@@ -149,4 +150,16 @@ export function App() {
   }
 
   return <div className="app-loading">正在进入简历主页...</div>;
+}
+
+export function resumeLoadErrorMessage(error: unknown) {
+  if (error instanceof ApiRequestError) {
+    if (error.status === 404) return "简历不存在，或当前账号没有访问权限。";
+    if (error.status === 401) return "登录状态已失效，请重新登录后再试。";
+    if (error.message === "RESUME_SCHEMA_INVALID") {
+      return "这份简历的数据格式暂时无法读取，请先完成数据迁移。";
+    }
+    if (error.status >= 500) return "服务暂时无法读取这份简历，请稍后重试。";
+  }
+  return "无法连接到服务，请检查本地服务后重试。";
 }

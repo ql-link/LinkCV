@@ -105,3 +105,44 @@ describe("resume save serialization", () => {
     });
   });
 });
+
+describe("resume deletion", () => {
+  beforeEach(() => {
+    useResumeStore.setState({
+      resumes: [
+        {
+          id: "1",
+          title: "待删除简历",
+          source_type: "blank",
+          lock_version: 1,
+          created_at: "2026-07-27T00:00:00Z",
+          updated_at: "2026-07-27T00:00:00Z",
+        },
+        {
+          id: "2",
+          title: "保留简历",
+          source_type: "blank",
+          lock_version: 1,
+          created_at: "2026-07-27T00:00:00Z",
+          updated_at: "2026-07-27T00:00:00Z",
+        },
+      ],
+    });
+  });
+
+  it("只在后端确认删除后移除本地卡片", async () => {
+    vi.spyOn(api, "deleteResume").mockResolvedValue({ deleted: true });
+
+    await useResumeStore.getState().deleteResume("1");
+
+    expect(useResumeStore.getState().resumes.map((resume) => resume.id)).toEqual(["2"]);
+  });
+
+  it("删除失败时保留本地卡片", async () => {
+    vi.spyOn(api, "deleteResume").mockRejectedValue(new Error("HTTP_500"));
+
+    await expect(useResumeStore.getState().deleteResume("1")).rejects.toThrow("HTTP_500");
+
+    expect(useResumeStore.getState().resumes.map((resume) => resume.id)).toEqual(["1", "2"]);
+  });
+});

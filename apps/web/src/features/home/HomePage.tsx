@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { FileText, LayoutTemplate, LogOut, PenLine, Plus, Search, X } from "lucide-react";
 import type { ResumeSummary } from "../../api/client";
 import { Brand, Button, Toast } from "../../components/ds";
@@ -13,8 +13,6 @@ type HomeScreenProps = {
   onCreate: () => void | Promise<void>;
   onLogout: () => void | Promise<void>;
 };
-
-type PendingDelete = Pick<ResumeSummary, "id" | "title">;
 
 function ResumeThumbnailCard({
   resume,
@@ -62,40 +60,29 @@ function ResumeThumbnailCard({
 
 export function HomeScreen({ email, resumes, onOpen, onDelete, onCreate, onLogout }: HomeScreenProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const deleteTimerRef = useRef<number | null>(null);
   const [tab, setTab] = useState<"all" | "templates">("all");
   const [query, setQuery] = useState("");
   const [scrollAmount, setScrollAmount] = useState(0);
-  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
-
-  useEffect(() => () => {
-    if (deleteTimerRef.current !== null) {
-      window.clearTimeout(deleteTimerRef.current);
-    }
-  }, []);
+  const [deletingResumeId, setDeletingResumeId] = useState<string | null>(null);
+  const [deleteNotice, setDeleteNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
 
   const visibleResumes = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
-    return resumes
-      .filter((resume) => resume.id !== pendingDelete?.id)
-      .filter((resume) => resume.title.toLocaleLowerCase().includes(normalizedQuery));
-  }, [pendingDelete?.id, query, resumes]);
+    return resumes.filter((resume) => resume.title.toLocaleLowerCase().includes(normalizedQuery));
+  }, [query, resumes]);
 
-  const requestDelete = (resume: ResumeSummary) => {
-    if (pendingDelete) return;
-    setPendingDelete({ id: resume.id, title: resume.title });
-    deleteTimerRef.current = window.setTimeout(() => {
-      deleteTimerRef.current = null;
-      void Promise.resolve(onDelete(resume.id)).finally(() => setPendingDelete(null));
-    }, 5000);
-  };
-
-  const undoDelete = () => {
-    if (deleteTimerRef.current !== null) {
-      window.clearTimeout(deleteTimerRef.current);
-      deleteTimerRef.current = null;
+  const requestDelete = async (resume: ResumeSummary) => {
+    if (deletingResumeId || !window.confirm(`确认永久删除「${resume.title}」吗？`)) return;
+    setDeletingResumeId(resume.id);
+    setDeleteNotice(null);
+    try {
+      await onDelete(resume.id);
+      setDeleteNotice({ kind: "success", message: `已删除「${resume.title}」` });
+    } catch {
+      setDeleteNotice({ kind: "error", message: `删除「${resume.title}」失败，请稍后重试。` });
+    } finally {
+      setDeletingResumeId(null);
     }
-    setPendingDelete(null);
   };
 
   const handleScroll = () => {
@@ -160,8 +147,8 @@ export function HomeScreen({ email, resumes, onOpen, onDelete, onCreate, onLogou
                   key={resume.id}
                   resume={resume}
                   onOpen={() => void onOpen(resume.id)}
-                  onDelete={() => requestDelete(resume)}
-                  deleteDisabled={pendingDelete !== null}
+                  onDelete={() => void requestDelete(resume)}
+                  deleteDisabled={deletingResumeId !== null}
                 />
               ))}
             </section>
@@ -179,12 +166,9 @@ export function HomeScreen({ email, resumes, onOpen, onDelete, onCreate, onLogou
           )}
         </div>
 
-        {pendingDelete && (
+        {deleteNotice && (
           <div className="home-delete-toast">
-            <Toast>
-              <span>已删除「{pendingDelete.title}」</span>
-              <Button variant="text" onClick={undoDelete}>撤销</Button>
-            </Toast>
+            <Toast kind={deleteNotice.kind}>{deleteNotice.message}</Toast>
           </div>
         )}
       </div>

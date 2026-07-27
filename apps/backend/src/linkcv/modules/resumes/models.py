@@ -146,6 +146,12 @@ class Resume(Base):
     style_json: Mapped[dict[str, Any]] = mapped_column(
         JSON(), nullable=False, comment="当前 ResumeStyleV1 样式"
     )
+    legacy_data_json_backup: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON(), nullable=True, comment="0005 迁移前的旧版内容 JSON；仅旧记录有值"
+    )
+    legacy_style_json_backup: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON(), nullable=True, comment="0005 迁移前的旧版样式 JSON；仅旧记录有值"
+    )
     lock_version: Mapped[int] = mapped_column(
         unsigned_int_type(), nullable=False, default=1, comment="乐观锁版本"
     )
@@ -226,6 +232,12 @@ class ResumeVersion(Base):
     )
     style_json: Mapped[dict[str, Any]] = mapped_column(
         JSON(), nullable=False, comment="ResumeStyleV1 样式快照"
+    )
+    legacy_data_json_backup: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON(), nullable=True, comment="0005 迁移前的旧版内容 JSON；仅旧记录有值"
+    )
+    legacy_style_json_backup: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON(), nullable=True, comment="0005 迁移前的旧版样式 JSON；仅旧记录有值"
     )
     reason: Mapped[str] = mapped_column(
         String(32),

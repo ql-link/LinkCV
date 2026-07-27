@@ -6,7 +6,7 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装前后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis 与 MinIO，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web 和 FastAPI。当前 Alembic head `0004`；`0002` 建立四张核心业务表，`0003` 把模板删除规则调整为保留既有简历并将 `template_id` 置空（MySQL 限制使 template/source 组合改由应用服务保证），`0004` 新增对象存储清理补偿队列。
+新环境执行 `npm run setup` 安装前后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis 与 MinIO，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web 和 FastAPI。当前 Alembic head `0005`；`0002` 建立四张核心业务表，`0003` 把模板删除规则调整为保留既有简历并将 `template_id` 置空（MySQL 限制使 template/source 组合改由应用服务保证），`0004` 新增对象存储清理补偿队列，`0005` 将旧 Tiptap 简历及历史版本转换为当前语义快照并保留可回滚的原始 JSON 备份。
 
 后端默认读取仓库根目录 `.env`。设置 `LINKCV_ENV_FILE=.env.development` 可选择共享 Dev 基础配置；如果同目录存在 `.env.development.local`，其密码和密钥会覆盖基础文件。Production 同理使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，配置路径不受当前工作目录影响。
 

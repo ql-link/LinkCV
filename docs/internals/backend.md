@@ -14,15 +14,17 @@
 | `src/linkcv/services/storage_cleanup_service.py` | 持久化对象删除任务、即时尝试与后台重试 |
 | `src/linkcv/modules/identity/` | 用户模型、注册、登录和当前用户依赖 |
 | `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板/简历/版本/导入/资源路由 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0004` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0005` |
+| `tests/unit/` | 不访问外部资源的快速单元测试 |
+| `tests/integration/` | 使用隔离 SQLite、Fake MinIO 和外部服务替身的组合测试 |
 
 ## 数据与事务
 
-MySQL 包含 `users`、`resume_templates`、`resumes`、`resume_versions` 和 `storage_cleanup_jobs`。当前可编辑状态只保存在 `resumes.data_json/style_json`，历史版本同时快照两份 JSON。HTTP 中的 ID 是十进制字符串，ORM 和数据库使用整数。
+MySQL 包含 `users`、`resume_templates`、`resumes`、`resume_versions` 和 `storage_cleanup_jobs`。当前可编辑状态保存在 `resumes.data_json/style_json`，历史版本同时快照两份 JSON。由 `0005` 转换过的旧记录还在同一行的 `legacy_data_json_backup/legacy_style_json_backup` 保存迁移前原值，普通新记录保持为 `NULL`，这些备份不通过 HTTP 暴露。HTTP 中的 ID 是十进制字符串，ORM 和数据库使用整数。
 
 所有创建来源都调用统一服务，在单事务中创建当前简历和 initial 版本。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。手动版本与恢复先锁定所属简历；恢复按需生成 `before_restore` 并总是生成 `restore`，版本上限淘汰处于同一事务。
 
-`0003` 将模板外键改为 `ON DELETE SET NULL`，同时允许历史模板来源在模板删除后保留 `source_type=template/template_id=NULL`。MySQL 8.4 禁止 `SET NULL` 外键列参与 CHECK，因此 `ck_resumes_source_fields` 只约束来源证据字段，`template_id/source_type` 组合由统一创建服务保证，外键继续保证非空引用有效。如果已经出现模板来源但 `template_id=NULL` 的记录，0003 downgrade 会拒绝恢复不成立的 RESTRICT/非空来源约束。`0004` 新增不绑定已删除业务记录的 `storage_cleanup_jobs`，以对象键或前缀保存幂等删除任务。已进入共享环境的 revision 不原地修改。
+`0003` 将模板外键改为 `ON DELETE SET NULL`，同时允许历史模板来源在模板删除后保留 `source_type=template/template_id=NULL`。MySQL 8.4 禁止 `SET NULL` 外键列参与 CHECK，因此 `ck_resumes_source_fields` 只约束来源证据字段，`template_id/source_type` 组合由统一创建服务保证，外键继续保证非空引用有效。如果已经出现模板来源但 `template_id=NULL` 的记录，0003 downgrade 会拒绝恢复不成立的 RESTRICT/非空来源约束。`0004` 新增不绑定已删除业务记录的 `storage_cleanup_jobs`，以对象键或前缀保存幂等删除任务。`0005` 在批量转换前核对旧节点和样式字段，只接受可完整表达的上一版结构；遇到未知字段、危险 Markdown 或无法保留的内嵌图片会中止。降级先从同行备份恢复 `resumes` 和 `resume_versions`，再删除备份列。已进入共享环境的 revision 不原地修改。
 
 ## 导入与外部边界
 
@@ -42,5 +44,5 @@ Markdown 文件直接读取；DOCX/PDF 通过 `RagConverter` 发往 tolink-rag �
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake MinIO、Fake RAG/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于 `0002`–`0004` 往返和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于 `0002`–`0005` 往返、旧快照转换和物理约束验证。
 - 真实 tolink-rag、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。

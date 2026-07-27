@@ -270,9 +270,9 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   },
 
   deleteResume: async (id) => {
-    await api.deleteResume(id);
-    const { resumes } = await api.listResumes();
-    set({ resumes });
+    const { deleted } = await api.deleteResume(id);
+    if (!deleted) throw new Error("RESUME_DELETE_FAILED");
+    set({ resumes: get().resumes.filter((resume) => resume.id !== id) });
 
     if (get().activeResumeId === id) {
       set({ activeResumeId: null, versions: [], lockVersion: 0, dirty: false, saveStatus: "idle" });

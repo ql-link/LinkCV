@@ -19,6 +19,8 @@
 
 简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`。数据库 ID 在 HTTP 中使用十进制字符串。`data` 是 `ResumeDocumentV1`，`style` 是 `ResumeStyleV1`，两者的 `schema_version` 当前均为字符串 `"1.0"`。`style.smart_one_page` 控制连续单页或标准 A4 导出模式，并随版本快照保存。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不再是简历写契约。
 
+Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照转换为上述 `"1.0"` 契约；原始 JSON 保存在只供迁移回滚使用的同行备份列中，不进入 API 响应。发布顺序仍为先迁移数据库、再启动新应用。
+
 | Method | Path | 鉴权 | 成功结果 |
 | --- | --- | --- | --- |
 | `GET` | `/api/resume-templates` | 否 | `{templates}` 启用模板列表 |

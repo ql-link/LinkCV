@@ -41,6 +41,16 @@ type ApiOptions = {
   formData?: FormData;
 };
 
+export class ApiRequestError extends Error {
+  constructor(
+    readonly status: number,
+    code: string,
+  ) {
+    super(code);
+    this.name = "ApiRequestError";
+  }
+}
+
 async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
   const response = await fetch(path, {
     method: options.method ?? "GET",
@@ -50,7 +60,9 @@ async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
   });
 
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error ?? `HTTP_${response.status}`);
+  if (!response.ok) {
+    throw new ApiRequestError(response.status, data.error ?? `HTTP_${response.status}`);
+  }
   return data as T;
 }
 

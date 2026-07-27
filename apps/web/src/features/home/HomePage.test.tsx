@@ -1,5 +1,5 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ResumeSummary } from "../../api/client";
 import { HomeScreen } from "./HomePage";
 
@@ -22,8 +22,7 @@ function renderHome(overrides: Partial<React.ComponentProps<typeof HomeScreen>> 
 }
 
 describe("HomeScreen", () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => vi.restoreAllMocks());
 
   it("按标题即时过滤且忽略大小写", () => {
     renderHome();
@@ -45,44 +44,39 @@ describe("HomeScreen", () => {
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("删除后先隐藏卡片并在五秒后调用一次删除", () => {
-    const onDelete = vi.fn();
+  it("确认后立即调用删除，成功后显示结果", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const onDelete = vi.fn().mockResolvedValue(undefined);
     renderHome({ onDelete });
 
     fireEvent.click(screen.getByRole("button", { name: "删除简历 Frontend Resume" }));
 
-    expect(screen.queryByText("Frontend Resume")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "撤销" })).toBeInTheDocument();
-    expect(onDelete).not.toHaveBeenCalled();
-
-    act(() => vi.advanceTimersByTime(4999));
-    expect(onDelete).not.toHaveBeenCalled();
-
-    act(() => vi.advanceTimersByTime(1));
     expect(onDelete).toHaveBeenCalledTimes(1);
     expect(onDelete).toHaveBeenCalledWith("1");
+    await waitFor(() => expect(screen.getByText("已删除「Frontend Resume」")).toBeInTheDocument());
   });
 
-  it("五秒内撤销会恢复卡片且不调用删除", () => {
+  it("取消确认时保留卡片且不调用删除", () => {
+    vi.spyOn(window, "confirm").mockReturnValue(false);
     const onDelete = vi.fn();
     renderHome({ onDelete });
 
     fireEvent.click(screen.getByRole("button", { name: "删除简历 Frontend Resume" }));
-    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
-    act(() => vi.advanceTimersByTime(5000));
 
     expect(screen.getByText("Frontend Resume")).toBeInTheDocument();
     expect(onDelete).not.toHaveBeenCalled();
   });
 
-  it("卸载主页会清理等待中的删除计时器", () => {
-    const onDelete = vi.fn();
-    const { unmount } = renderHome({ onDelete });
+  it("删除失败时保留卡片并显示明确错误", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const onDelete = vi.fn().mockRejectedValue(new Error("HTTP_500"));
+    renderHome({ onDelete });
 
     fireEvent.click(screen.getByRole("button", { name: "删除简历 Frontend Resume" }));
-    unmount();
-    act(() => vi.advanceTimersByTime(5000));
 
-    expect(onDelete).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.getByText("删除「Frontend Resume」失败，请稍后重试。")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Frontend Resume")).toBeInTheDocument();
   });
 });

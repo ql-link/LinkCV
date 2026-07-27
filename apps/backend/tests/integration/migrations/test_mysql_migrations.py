@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -10,7 +11,7 @@ from sqlalchemy.engine import make_url
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0004"
+EXPECTED_HEAD = "0005"
 
 
 def migration_test_url() -> str:
@@ -94,6 +95,8 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "title",
         "data_json",
         "style_json",
+        "legacy_data_json_backup",
+        "legacy_style_json_backup",
         "lock_version",
         "source_type",
         "source_filename",
@@ -108,6 +111,8 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "version_no",
         "data_json",
         "style_json",
+        "legacy_data_json_backup",
+        "legacy_style_json_backup",
         "reason",
         "created_at",
     }
@@ -282,4 +287,141 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "resume_versions",
         "storage_cleanup_jobs",
     } <= set(inspect(engine).get_table_names())
+    engine.dispose()
+
+
+def test_mysql_migrates_and_restores_legacy_resume_snapshots() -> None:
+    database_url = migration_test_url()
+    engine = create_engine(database_url)
+    legacy_data = {
+        "schema_version": 1,
+        "document": {
+            "type": "doc",
+            "content": [
+                {
+                    "type": "heading",
+                    "attrs": {"level": 1, "textAlign": "center"},
+                    "content": [{"type": "text", "text": "张三"}],
+                },
+                {
+                    "type": "paragraph",
+                    "content": [{"type": "text", "text": "虚构项目经历"}],
+                },
+            ],
+        },
+    }
+    legacy_style = {
+        "schema_version": 1,
+        "settings": {
+            "fontFamily": '"Source Han Serif SC", SimSun, serif',
+            "fontSize": 10.5,
+            "lineHeight": 1.32,
+            "pageMargin": 16,
+            "verticalPageMargin": 14,
+            "theme": "classic",
+            "smartOnePage": True,
+            "showSource": False,
+        },
+        "split_ratio": 0.4,
+        "preview_scale": 1.0,
+    }
+
+    run_alembic(database_url, "downgrade", "base")
+    run_alembic(database_url, "upgrade", "0004")
+    with engine.begin() as connection:
+        user_id = connection.execute(
+            text(
+                "INSERT INTO users (email, password_hash, nickname) "
+                "VALUES ('legacy@example.invalid', '$2b$12$fictional', '张三')"
+            )
+        ).lastrowid
+        resume_id = connection.execute(
+            text(
+                "INSERT INTO resumes "
+                "(user_id, title, data_json, style_json, source_type, updated_at) "
+                "VALUES (:user_id, '旧版虚构简历', :data, :style, 'blank', "
+                "'2026-07-01 00:00:00.000000')"
+            ),
+            {
+                "user_id": user_id,
+                "data": json.dumps(legacy_data, ensure_ascii=False),
+                "style": json.dumps(legacy_style, ensure_ascii=False),
+            },
+        ).lastrowid
+        connection.execute(
+            text(
+                "INSERT INTO resume_versions "
+                "(resume_id, version_no, data_json, style_json, reason) "
+                "VALUES (:resume_id, 1, :data, :style, 'initial')"
+            ),
+            {
+                "resume_id": resume_id,
+                "data": json.dumps(legacy_data, ensure_ascii=False),
+                "style": json.dumps(legacy_style, ensure_ascii=False),
+            },
+        )
+
+    run_alembic(database_url, "upgrade", "head")
+    with engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT "
+                "JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.schema_version')) AS current_version, "
+                "JSON_UNQUOTE(JSON_EXTRACT(legacy_data_json_backup, '$.schema_version')) AS backup_version, "
+                "JSON_UNQUOTE(JSON_EXTRACT(data_json, "
+                "'$.sections.custom_sections[0].items[0].content.content')) AS markdown, "
+                "updated_at "
+                "FROM resumes WHERE id = :resume_id"
+            ),
+            {"resume_id": resume_id},
+        ).mappings().one()
+        assert row["current_version"] == "1.0"
+        assert row["backup_version"] == "1"
+        assert "# 张三" in row["markdown"]
+        assert str(row["updated_at"]) == "2026-07-01 00:00:00"
+        assert connection.scalar(
+            text(
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.schema_version')) "
+                "FROM resume_versions WHERE resume_id = :resume_id"
+            ),
+            {"resume_id": resume_id},
+        ) == "1.0"
+
+    run_alembic(database_url, "downgrade", "0004")
+    assert "legacy_data_json_backup" not in {
+        column["name"] for column in inspect(engine).get_columns("resumes")
+    }
+    with engine.connect() as connection:
+        assert connection.scalar(
+            text(
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.schema_version')) "
+                "FROM resumes WHERE id = :resume_id"
+            ),
+            {"resume_id": resume_id},
+        ) == "1"
+        assert connection.scalar(
+            text(
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.schema_version')) "
+                "FROM resume_versions WHERE resume_id = :resume_id"
+            ),
+            {"resume_id": resume_id},
+        ) == "1"
+
+    run_alembic(database_url, "upgrade", "head")
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == EXPECTED_HEAD
+        assert connection.scalar(
+            text(
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.schema_version')) "
+                "FROM resumes WHERE id = :resume_id"
+            ),
+            {"resume_id": resume_id},
+        ) == "1.0"
+
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM resume_versions"))
+        connection.execute(text("DELETE FROM resumes"))
+        connection.execute(text("DELETE FROM users"))
+    run_alembic(database_url, "downgrade", "base")
+    run_alembic(database_url, "upgrade", "head")
     engine.dispose()
