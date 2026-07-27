@@ -10,13 +10,15 @@ from linkcv.domain.rag import RagMarkdownResult, RagMetadata
 from linkcv.domain.resume_extraction import DraftBasics, ResumeExtractionDraft
 from linkcv.integrations.rag_client import RagServiceError
 from linkcv.main import create_app
-from linkcv.modules.resumes.models import Resume, ResumeVersion
+from linkcv.modules.resumes.models import Resume, ResumeVersion, StorageCleanupJob
+from linkcv.services.storage_cleanup_service import process_storage_cleanup_jobs
 
 
 class FakeStorage:
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
         self.deleted: list[str] = []
+        self.fail_delete = False
 
     def ensure_bucket(self) -> None:
         pass
@@ -25,8 +27,17 @@ class FakeStorage:
         self.objects[object_name] = data
 
     def delete(self, object_name: str) -> None:
+        if self.fail_delete:
+            raise RuntimeError("storage unavailable")
         self.deleted.append(object_name)
         self.objects.pop(object_name, None)
+
+    def delete_prefix(self, prefix: str) -> None:
+        if self.fail_delete:
+            raise RuntimeError("storage unavailable")
+        for object_name in list(self.objects):
+            if object_name.startswith(prefix):
+                self.objects.pop(object_name)
 
 
 class FakeRag:
@@ -54,20 +65,33 @@ class FailingRag:
 
 
 class FakeStructuringClient:
+    def __init__(self) -> None:
+        self.calls = 0
+
     async def extract(self, section_ir):
+        self.calls += 1
         assert section_ir.sections
         return ResumeExtractionDraft(
             basics=DraftBasics(name="张三", headline="后端工程师")
         )
 
 
-def build_app(*, rag_converter, structuring_client=None, max_file_bytes=10 * 1024 * 1024):
+def build_app(
+    *,
+    rag_converter,
+    structuring_client=None,
+    max_file_bytes=10 * 1024 * 1024,
+    max_structuring_bytes=128 * 1024,
+    requests_per_minute=3,
+):
     storage = FakeStorage()
     app = create_app(
         Settings(
             database_url="sqlite+pysqlite:///:memory:",
             jwt_secret="resume-import-test-secret-with-32-bytes",
             resume_import_max_bytes=max_file_bytes,
+            resume_structuring_max_bytes=max_structuring_bytes,
+            resume_import_requests_per_minute=requests_per_minute,
         ),
         storage=storage,
         rag_converter=rag_converter,
@@ -213,6 +237,40 @@ def test_missing_structuring_model_is_explicit_and_compensated() -> None:
         assert storage.objects == {}
 
 
+def test_failed_import_cleanup_is_persisted_and_retried() -> None:
+    app, storage = build_app(
+        rag_converter=FailingRag(),
+        structuring_client=FakeStructuringClient(),
+    )
+    storage.fail_delete = True
+
+    with TestClient(app) as client:
+        register(client)
+        response = client.post(
+            "/api/resumes/import",
+            files={
+                "file": (
+                    "resume.docx",
+                    docx_bytes(),
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )
+            },
+        )
+
+        assert response.status_code == 502
+        with app.state.session_factory() as session:
+            job = session.scalar(select(StorageCleanupJob))
+            assert job is not None
+            assert job.operation == "object"
+            assert job.attempts == 0
+
+        storage.fail_delete = False
+        with app.state.session_factory() as session:
+            assert process_storage_cleanup_jobs(session, storage) == 1
+            assert session.scalar(select(StorageCleanupJob)) is None
+        assert storage.objects == {}
+
+
 def test_invalid_file_is_rejected_before_storage() -> None:
     app, storage = build_app(
         rag_converter=FakeRag(),
@@ -278,6 +336,51 @@ def test_oversized_import_is_rejected_before_storage() -> None:
         assert response.status_code == 413
         assert response.json() == {"error": "IMPORT_FILE_TOO_LARGE"}
         assert storage.objects == {}
+
+
+def test_oversized_structuring_input_is_rejected_before_model_call() -> None:
+    structuring_client = FakeStructuringClient()
+    app, storage = build_app(
+        rag_converter=FakeRag(),
+        structuring_client=structuring_client,
+        max_structuring_bytes=16,
+    )
+    with TestClient(app) as client:
+        register(client)
+        response = client.post(
+            "/api/resumes/import",
+            files={"file": ("resume.md", b"# Zhang San\n\nPython", "text/markdown")},
+        )
+
+        assert response.status_code == 413
+        assert response.json() == {"error": "STRUCTURING_INPUT_TOO_LARGE"}
+        assert structuring_client.calls == 0
+        assert storage.objects == {}
+
+
+def test_import_frequency_limit_rejects_before_storage_and_model() -> None:
+    structuring_client = FakeStructuringClient()
+    app, storage = build_app(
+        rag_converter=FakeRag(),
+        structuring_client=structuring_client,
+        requests_per_minute=1,
+    )
+    with TestClient(app) as client:
+        register(client)
+        first = client.post(
+            "/api/resumes/import",
+            files={"file": ("resume.md", b"# Zhang San", "text/markdown")},
+        )
+        second = client.post(
+            "/api/resumes/import",
+            files={"file": ("resume.md", b"# Zhang San", "text/markdown")},
+        )
+
+        assert first.status_code == 201
+        assert second.status_code == 429
+        assert second.json() == {"error": "IMPORT_RATE_LIMITED"}
+        assert structuring_client.calls == 1
+        assert len(storage.objects) == 1
 
 
 def test_import_requires_authentication() -> None:

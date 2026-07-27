@@ -47,6 +47,7 @@ type ResumeState = {
   resumes: ResumeSummary[];
   versions: ResumeVersion[];
   versionsLoading: boolean;
+  versionOperationPending: boolean;
   activeResumeId: string | null;
   lockVersion: number;
   data: ResumeDocumentV1;
@@ -95,6 +96,8 @@ type SaveSnapshot = {
   previewScale: number;
 };
 
+let saveQueue: Promise<void> = Promise.resolve();
+
 export const defaultSettings: ResumeSettings = {
   fontFamily: resumeSerifFontStack,
   fontSize: 10.5,
@@ -127,9 +130,7 @@ function applyResume(resume: ResumeRecord, localState?: ResumeState) {
     title: resume.title,
     markdown,
     editorContent: renderResumeMarkdown(markdown),
-    settings: localState
-      ? { ...semanticSettings, smartOnePage: localState.settings.smartOnePage }
-      : semanticSettings,
+    settings: semanticSettings,
     splitRatio: localState?.splitRatio ?? 0.4,
     previewScale: localState?.previewScale ?? 1,
     dirty: false,
@@ -166,12 +167,33 @@ function matchesSaveSnapshot(state: ResumeState, snapshot: SaveSnapshot) {
   );
 }
 
+function summaryFromRecord(resume: ResumeRecord): ResumeSummary {
+  return {
+    id: resume.id,
+    title: resume.title,
+    source_type: resume.source_type,
+    lock_version: resume.lock_version,
+    created_at: resume.created_at,
+    updated_at: resume.updated_at,
+  };
+}
+
+function mergeResumeSummary(resumes: ResumeSummary[], resume: ResumeRecord) {
+  const summary = summaryFromRecord(resume);
+  const next = [summary, ...resumes.filter((item) => item.id !== resume.id)];
+  return next.sort((left, right) => {
+    const timeDifference = Date.parse(right.updated_at) - Date.parse(left.updated_at);
+    return timeDifference || Number(right.id) - Number(left.id);
+  });
+}
+
 export const useResumeStore = create<ResumeState>((set, get) => ({
   authStatus: "checking",
   user: null,
   resumes: [],
   versions: [],
   versionsLoading: false,
+  versionOperationPending: false,
   activeResumeId: null,
   lockVersion: 0,
   data: defaultSemanticDocument,
@@ -221,6 +243,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       user: null,
       resumes: [],
       versions: [],
+      versionOperationPending: false,
       activeResumeId: null,
       lockVersion: 0,
       dirty: false,
@@ -257,41 +280,58 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   },
 
   saveCurrentResume: async () => {
-    const state = get();
-    if (!state.activeResumeId) return;
-    const snapshot: SaveSnapshot = {
-      activeResumeId: state.activeResumeId,
-      lockVersion: state.lockVersion,
-      data: state.data,
-      style: state.style,
-      title: state.title,
-      markdown: state.markdown,
-      editorContent: state.editorContent,
-      settings: { ...state.settings, showSource: false },
-      splitRatio: state.splitRatio,
-      previewScale: state.previewScale,
-    };
+    const requestedResumeId = get().activeResumeId;
+    const queuedSave = saveQueue.then(async () => {
+      const state = get();
+      if (!state.activeResumeId || state.activeResumeId !== requestedResumeId || !state.dirty) return;
+      const snapshot: SaveSnapshot = {
+        activeResumeId: state.activeResumeId,
+        lockVersion: state.lockVersion,
+        data: state.data,
+        style: state.style,
+        title: state.title,
+        markdown: state.markdown,
+        editorContent: state.editorContent,
+        settings: { ...state.settings, showSource: false },
+        splitRatio: state.splitRatio,
+        previewScale: state.previewScale,
+      };
 
-    set({ saveStatus: "saving", error: null });
+      set({ saveStatus: "saving", error: null });
 
-    try {
-      const { resume } = await api.updateResume(snapshot.activeResumeId, {
-        title: snapshot.title,
-        base_lock_version: snapshot.lockVersion,
-        data: resumeDocumentFromMarkdown(snapshot.markdown, snapshot.data),
-        style: editorSettingsToStyle(snapshot.settings, snapshot.style),
-      });
-      const { resumes } = await api.listResumes();
-      set((current) => {
-        if (!matchesSaveSnapshot(current, snapshot)) {
-          return { resumes };
-        }
+      try {
+        const dataChanged = snapshot.markdown !== resumeDocumentToMarkdown(snapshot.data);
+        const { resume } = await api.updateResume(snapshot.activeResumeId, {
+          title: snapshot.title,
+          base_lock_version: snapshot.lockVersion,
+          ...(dataChanged
+            ? { data: resumeDocumentFromMarkdown(snapshot.markdown, snapshot.data) }
+            : {}),
+          style: editorSettingsToStyle(snapshot.settings, snapshot.style),
+        });
+        set((current) => {
+          const resumes = mergeResumeSummary(current.resumes, resume);
+          if (current.activeResumeId !== snapshot.activeResumeId) return { resumes };
+          if (matchesSaveSnapshot(current, snapshot)) {
+            return { resumes, ...applyResume(resume, current) };
+          }
 
-        return { resumes, ...applyResume(resume, current) };
-      });
-    } catch (error) {
-      set({ saveStatus: "error", error: (error as Error).message });
-    }
+          return {
+            resumes,
+            lockVersion: resume.lock_version,
+            data: resume.data,
+            style: resume.style,
+            dirty: true,
+            saveStatus: "idle" as SaveStatus,
+            error: null,
+          };
+        });
+      } catch (error) {
+        set({ saveStatus: "error", error: (error as Error).message });
+      }
+    });
+    saveQueue = queuedSave.catch(() => undefined);
+    await queuedSave;
   },
 
   loadVersions: async () => {
@@ -338,10 +378,14 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   },
 
   restoreVersion: async (versionNo) => {
-    const localState = get();
-    const resumeId = localState.activeResumeId;
+    const initialState = get();
+    const resumeId = initialState.activeResumeId;
     if (!resumeId) return;
+    set({ versionOperationPending: true, error: null });
     try {
+      if (get().dirty) await get().saveCurrentResume();
+      if (get().error) throw new Error(get().error ?? "RESUME_SAVE_FAILED");
+      const localState = get();
       const { resume } = await api.restoreVersion(resumeId, versionNo);
       if (get().activeResumeId === resumeId) {
         set(applyResume(resume, localState));
@@ -355,6 +399,8 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     } catch (error) {
       set({ error: (error as Error).message });
       throw error;
+    } finally {
+      set({ versionOperationPending: false });
     }
   },
 

@@ -198,3 +198,44 @@ def test_version_limit_removes_only_the_oldest_snapshot() -> None:
             (3, "manual"),
             (2, "manual"),
         ]
+
+
+def test_overlong_resume_id_is_rejected_without_integer_conversion() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        response = client.get(f"/api/resumes/{'9' * 5000}")
+
+        assert response.status_code == 404
+        assert response.json() == {"error": "RESUME_NOT_FOUND"}
+
+
+def test_smart_one_page_is_persisted_and_restored_with_versions() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        resume = client.post("/api/resumes", json={}).json()["resume"]
+        resume_id = resume["id"]
+        style = resume["style"]
+        assert style["smart_one_page"] is False
+
+        style["smart_one_page"] = True
+        updated = client.put(
+            f"/api/resumes/{resume_id}",
+            json={"style": style, "base_lock_version": 1},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["resume"]["style"]["smart_one_page"] is True
+        version = client.post(f"/api/resumes/{resume_id}/versions")
+        assert version.status_code == 201
+        assert version.json()["version"]["version_no"] == 2
+
+        style["smart_one_page"] = False
+        assert client.put(
+            f"/api/resumes/{resume_id}",
+            json={"style": style, "base_lock_version": 2},
+        ).status_code == 200
+        restored = client.post(f"/api/resumes/{resume_id}/versions/2/restore")
+
+        assert restored.status_code == 200
+        assert restored.json()["resume"]["style"]["smart_one_page"] is True

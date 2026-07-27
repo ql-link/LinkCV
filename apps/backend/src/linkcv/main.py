@@ -21,6 +21,8 @@ from linkcv.integrations.llm_client import (
     UnconfiguredStructuringClient,
 )
 from linkcv.integrations.rag_client import HttpRagClient, UnconfiguredRagClient
+from linkcv.services.import_admission import ImportAdmissionController
+from linkcv.services.storage_cleanup_service import run_storage_cleanup_worker
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +100,17 @@ def create_app(
             logger.warning(
                 "MinIO is unavailable; asset routes will retry on demand", exc_info=True
             )
-        yield
+        cleanup_task = asyncio.create_task(
+            run_storage_cleanup_worker(session_factory, runtime_storage)
+        )
+        try:
+            yield
+        finally:
+            cleanup_task.cancel()
+            try:
+                await cleanup_task
+            except asyncio.CancelledError:
+                pass
 
     app = FastAPI(
         title="LinkCV API",
@@ -112,6 +124,11 @@ def create_app(
     app.state.storage = runtime_storage
     app.state.rag_converter = runtime_rag_converter
     app.state.structuring_client = runtime_structuring_client
+    app.state.import_admission = ImportAdmissionController(
+        requests_per_minute=runtime_settings.resume_import_requests_per_minute,
+        global_concurrency=runtime_settings.resume_import_global_concurrency,
+        user_concurrency=runtime_settings.resume_import_user_concurrency,
+    )
     install_error_handlers(app)
     app.include_router(api_router, prefix="/api")
 

@@ -21,9 +21,9 @@ API 客户端只发送相对 `/api/...` 请求并携带 cookie，不在业务组
 3. FastAPI 的真实路由；
 4. [HTTP 契约](../api/http-contracts.md)。
 
-简历 API 已统一使用 `snake_case`、`ResumeDocumentV1 data` 和 `ResumeStyleV1 style`。当前编辑器仍以 Markdown/Tiptap 提供整页编辑体验：读取时把语义字段渲染为 Markdown，写回时把编辑内容序列化为受限 Markdown 并放入领域 `custom_sections`，不会把整份 Tiptap JSON 写入后端。完整字段级编辑器属于后续产品改造；这个过渡适配优先保证单一事实源和内容不以编辑器 JSON 形式持久化。
+简历 API 已统一使用 `snake_case`、`ResumeDocumentV1 data` 和 `ResumeStyleV1 style`。当前编辑器仍以 Markdown/Tiptap 提供整页编辑体验：读取时把完整语义字段渲染为 Markdown；用户修改正文后，把受限 Markdown 写入 `custom_section_editor`，同时保留导入生成的结构化字段作为来源基线，后续读取以该自定义正文为准，不把整份 Tiptap JSON 写入后端。完整字段级双向编辑器属于后续产品改造。
 
-版本抽屉直接读取后端不可变版本列表。自动保存只更新当前草稿；用户点击“保存版本”时先保存草稿，再调用版本创建接口；恢复历史版本后，编辑器使用后端返回的当前快照刷新，不再维护 IndexedDB 本地版本副本。编辑器图片上传使用当前简历的私有资源接口。
+版本抽屉直接读取后端不可变版本列表。自动保存请求串行执行，并在每次成功后接续服务端返回的 `lock_version`；用户点击“保存版本”时先保存草稿，再调用版本创建接口。恢复历史版本前会先保存未提交草稿，恢复期间临时禁止编辑，成功后使用后端快照刷新。`smartOnePage` 作为 `ResumeStyleV1.smart_one_page` 随当前快照和历史版本持久化。编辑器图片上传使用当前简历的私有资源接口。
 
 ## 本地资源预览
 

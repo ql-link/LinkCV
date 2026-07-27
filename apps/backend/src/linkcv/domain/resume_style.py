@@ -23,6 +23,7 @@ class ResumeStyleV1(BaseModel):
     font_size: float = Field(default=14, ge=6, le=32)
     line_height: float = Field(default=1.55, ge=1, le=3)
     accent_color: str = "#2F4858"
+    smart_one_page: bool = False
     page: PageStyleV1 = Field(default_factory=PageStyleV1)
     section_order: list[str] = Field(
         default_factory=lambda: [

@@ -24,6 +24,7 @@ from linkcv.integrations.rag_client import (
     RagServiceError,
 )
 from linkcv.modules.resumes.models import Resume
+from linkcv.services.storage_cleanup_service import enqueue_storage_cleanup
 
 logger = logging.getLogger(__name__)
 
@@ -147,12 +148,14 @@ class ResumeImportService:
         storage: AssetStorage,
         max_file_bytes: int,
         max_markdown_bytes: int,
+        max_structuring_bytes: int,
     ) -> None:
         self._rag_converter = rag_converter
         self._structuring_client = structuring_client
         self._storage = storage
         self._max_file_bytes = max_file_bytes
         self._max_markdown_bytes = max_markdown_bytes
+        self._max_structuring_bytes = max_structuring_bytes
 
     async def import_resume(
         self,
@@ -199,6 +202,8 @@ class ResumeImportService:
                 rag_converter=self._rag_converter,
                 max_markdown_bytes=self._max_markdown_bytes,
             )
+            if len(rag_result.markdown.encode("utf-8")) > self._max_structuring_bytes:
+                raise ResumeImportFailure(413, "STRUCTURING_INPUT_TOO_LARGE")
             section_ir = build_section_ir(rag_result.markdown)
             try:
                 draft = await self._structuring_client.extract(section_ir)
@@ -249,10 +254,29 @@ class ResumeImportService:
                 try:
                     await asyncio.to_thread(self._storage.delete, object_key)
                 except Exception:
-                    logger.error(
-                        "resume import compensation failed",
-                        extra={
-                            "operation_id": operation_id,
-                            "user_id": user_id,
-                        },
-                    )
+                    try:
+                        cleanup_job = enqueue_storage_cleanup(
+                            db,
+                            operation="object",
+                            object_key=object_key,
+                        )
+                        db.commit()
+                    except Exception as persistence_error:
+                        db.rollback()
+                        logger.warning(
+                            "resume import cleanup job could not be persisted",
+                            extra={
+                                "operation_id": operation_id,
+                                "user_id": user_id,
+                                "error_type": type(persistence_error).__name__,
+                            },
+                        )
+                    else:
+                        logger.warning(
+                            "resume import cleanup deferred",
+                            extra={
+                                "cleanup_job_id": cleanup_job.id,
+                                "operation_id": operation_id,
+                                "user_id": user_id,
+                            },
+                        )

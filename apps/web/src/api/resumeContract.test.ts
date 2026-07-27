@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   defaultSemanticDocument,
+  defaultSemanticStyle,
+  editorSettingsToStyle,
   editorDocumentToMarkdown,
   resumeDocumentFromMarkdown,
   resumeDocumentToMarkdown,
+  styleToEditorSettings,
 } from "./resumeContract";
 import { renderResumeMarkdown } from "../parser/resumeMarkdown";
 
@@ -32,6 +35,32 @@ describe("resume semantic contract adapter", () => {
     });
     expect(JSON.stringify(document)).not.toContain('"type":"doc"');
     expect(resumeDocumentToMarkdown(document)).toBe(markdown);
+  });
+
+  it("preserves imported structured sections when the editor markdown changes", () => {
+    const previous = {
+      ...defaultSemanticDocument,
+      sections: {
+        ...defaultSemanticDocument.sections,
+        skills: [{ id: "skill_001", name: "Python", level: "熟练", keywords: ["FastAPI"] }],
+        certificates: [{ id: "certificate_001", name: "示例证书", issuer: "示例机构" }],
+      },
+    };
+
+    const document = resumeDocumentFromMarkdown("# 张三\n\n正文已修改", previous);
+
+    expect(document.sections.skills).toEqual(previous.sections.skills);
+    expect(document.sections.certificates).toEqual(previous.sections.certificates);
+    expect(resumeDocumentToMarkdown(previous)).toContain("## 证书");
+    expect(resumeDocumentToMarkdown(previous)).toContain("示例证书");
+  });
+
+  it("round-trips the smart one page setting through the persisted style", () => {
+    const settings = styleToEditorSettings({ ...defaultSemanticStyle, smart_one_page: true });
+    const style = editorSettingsToStyle(settings, defaultSemanticStyle);
+
+    expect(settings.smartOnePage).toBe(true);
+    expect(style.smart_one_page).toBe(true);
   });
 
   it("serializes Tiptap nodes instead of persisting the editor document JSON", () => {

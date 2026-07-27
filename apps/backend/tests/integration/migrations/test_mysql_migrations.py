@@ -10,7 +10,7 @@ from sqlalchemy.engine import make_url
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0003"
+EXPECTED_HEAD = "0004"
 
 
 def migration_test_url() -> str:
@@ -60,6 +60,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "resume_templates",
         "resumes",
         "resume_versions",
+        "storage_cleanup_jobs",
     } <= set(
         inspector.get_table_names()
     )
@@ -110,6 +111,19 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "reason",
         "created_at",
     }
+    assert {
+        column["name"]
+        for column in inspector.get_columns("storage_cleanup_jobs")
+    } == {
+        "id",
+        "operation",
+        "object_key",
+        "attempts",
+        "last_error_type",
+        "last_attempt_at",
+        "created_at",
+        "updated_at",
+    }
     assert {constraint["name"] for constraint in inspector.get_unique_constraints("users")} == {
         "uk_users_email"
     }
@@ -139,6 +153,22 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "ck_resumes_source_type",
         "ck_resumes_title_not_blank",
     }
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("storage_cleanup_jobs")
+    } == {
+        "ck_storage_cleanup_jobs_attempts",
+        "ck_storage_cleanup_jobs_operation",
+    }
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("storage_cleanup_jobs")
+    } == {"uk_storage_cleanup_jobs_target"}
+    assert any(
+        index["name"] == "idx_storage_cleanup_jobs_created_id"
+        and index["column_names"] == ["created_at", "id"]
+        for index in inspector.get_indexes("storage_cleanup_jobs")
+    )
     assert any(
         index["name"] == "idx_resumes_user_updated_id"
         and index["column_names"] == ["user_id", "updated_at", "id"]
@@ -219,6 +249,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         assert connection.scalar(text("SELECT COUNT(*) FROM resume_templates")) == 0
         assert connection.scalar(text("SELECT COUNT(*) FROM resumes")) == 1
         assert connection.scalar(text("SELECT COUNT(*) FROM resume_versions")) == 1
+        assert connection.scalar(text("SELECT COUNT(*) FROM storage_cleanup_jobs")) == 0
 
     with engine.begin() as connection:
         connection.execute(text("DELETE FROM resume_versions"))
@@ -249,5 +280,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "resume_templates",
         "resumes",
         "resume_versions",
+        "storage_cleanup_jobs",
     } <= set(inspect(engine).get_table_names())
     engine.dispose()

@@ -17,7 +17,7 @@
 
 ## 语义简历契约
 
-简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`。数据库 ID 在 HTTP 中使用十进制字符串。`data` 是 `ResumeDocumentV1`，`style` 是 `ResumeStyleV1`，两者的 `schema_version` 当前均为字符串 `"1.0"`。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不再是简历写契约。
+简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`。数据库 ID 在 HTTP 中使用十进制字符串。`data` 是 `ResumeDocumentV1`，`style` 是 `ResumeStyleV1`，两者的 `schema_version` 当前均为字符串 `"1.0"`。`style.smart_one_page` 控制连续单页或标准 A4 导出模式，并随版本快照保存。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不再是简历写契约。
 
 | Method | Path | 鉴权 | 成功结果 |
 | --- | --- | --- | --- |
@@ -57,7 +57,7 @@
 }
 ```
 
-原文件对象键不在响应中。文件为空、超限、不支持或内容非法分别返回 `EMPTY_IMPORT_FILE`、`IMPORT_FILE_TOO_LARGE`、`UNSUPPORTED_IMPORT_FORMAT`、`IMPORT_CONTENT_INVALID`。RAG 或结构化模型未配置、调用失败、响应非法时返回稳定的 503/502/422 错误且不创建半成品；已上传对象执行幂等补偿。
+原文件对象键不在响应中。文件为空、超限、不支持或内容非法分别返回 `EMPTY_IMPORT_FILE`、`IMPORT_FILE_TOO_LARGE`、`UNSUPPORTED_IMPORT_FORMAT`、`IMPORT_CONTENT_INVALID`；超过结构化模型输入上限返回 `413 STRUCTURING_INPUT_TOO_LARGE`，触发频率或并发保护返回 `429 IMPORT_RATE_LIMITED`。RAG 或结构化模型未配置、调用失败、响应非法时返回稳定的 503/502/422 错误且不创建半成品；已上传对象执行幂等补偿。
 
 ## 对象资源
 
@@ -69,4 +69,4 @@
 | `GET` | `/api/resumes/:id/assets/:asset_name` | 校验简历所有权后读取 |
 | `DELETE` | `/api/resumes/:id/assets/:asset_name` | 当前或历史快照仍引用时返回 `409 ASSET_IN_USE` |
 
-删除简历会删除数据库版本，并在提交后幂等清理导入原文件与简历资源前缀；清理失败写入脱敏错误日志，不恢复已经提交的数据库记录。
+删除简历会删除数据库版本，并在同一事务登记导入原文件与简历资源前缀的幂等清理任务；提交后立即尝试，失败任务由后台 worker 重试，不恢复已经提交的数据库记录。

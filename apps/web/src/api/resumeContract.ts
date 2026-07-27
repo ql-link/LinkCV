@@ -56,6 +56,7 @@ export type ResumeStyleV1 = {
   font_size: number;
   line_height: number;
   accent_color: string;
+  smart_one_page: boolean;
   page: {
     size: "A4";
     margin_top_mm: number;
@@ -97,6 +98,7 @@ export const defaultSemanticStyle: ResumeStyleV1 = {
   font_size: 14,
   line_height: 1.55,
   accent_color: "#2F4858",
+  smart_one_page: false,
   page: {
     size: "A4",
     margin_top_mm: 14,
@@ -130,6 +132,19 @@ function datedRange(value: Record<string, unknown>) {
   return [start, end].filter(Boolean).join(" - ");
 }
 
+function optionalText(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function appendHighlights(lines: string[], value: unknown) {
+  if (!Array.isArray(value)) return;
+  for (const highlight of value) {
+    if (!highlight || typeof highlight !== "object") continue;
+    const content = richText((highlight as Record<string, unknown>).content);
+    if (content) lines.push(`- ${content}`);
+  }
+}
+
 export function resumeDocumentToMarkdown(document: ResumeDocumentV1) {
   const editorSection = document.sections.custom_sections.find(
     (section) => section.id === "custom_section_editor",
@@ -144,20 +159,25 @@ export function resumeDocumentToMarkdown(document: ResumeDocumentV1) {
   const contacts = [basics.phone, basics.email, basics.location].filter(Boolean);
   if (contacts.length) lines.push("", contacts.join(" ｜ "));
   if (basics.summary) lines.push("", richText(basics.summary));
+  if (basics.links.length) {
+    for (const link of basics.links) lines.push(`- [${link.label}](${link.url})`);
+  }
+  if (basics.photo) {
+    lines.push("", `![简历头像](${basics.photo} \"linkcv-avatar:96\")`);
+  }
 
   if (sections.work_experiences.length) {
     lines.push("", "## 工作经历");
     for (const raw of sections.work_experiences) {
       const item = raw as Record<string, unknown>;
       lines.push("", `### ${String(item.organization ?? "")} - ${String(item.position ?? "")}`);
+      const location = optionalText(item.location);
+      if (location) lines.push(location);
       const range = datedRange(item);
       if (range) lines.push(range);
       const summary = richText(item.summary);
       if (summary) lines.push("", summary);
-      const highlights = Array.isArray(item.highlights) ? item.highlights : [];
-      for (const highlight of highlights) {
-        lines.push(`- ${richText((highlight as Record<string, unknown>).content)}`);
-      }
+      appendHighlights(lines, item.highlights);
     }
   }
 
@@ -166,8 +186,13 @@ export function resumeDocumentToMarkdown(document: ResumeDocumentV1) {
     for (const raw of sections.projects) {
       const item = raw as Record<string, unknown>;
       lines.push("", `### ${String(item.name ?? "")}`);
+      const details = [optionalText(item.role), datedRange(item)].filter(Boolean);
+      if (details.length) lines.push(details.join(" ｜ "));
+      const url = optionalText(item.url);
+      if (url) lines.push(`[项目链接](${url})`);
       const summary = richText(item.summary);
       if (summary) lines.push("", summary);
+      appendHighlights(lines, item.highlights);
     }
   }
 
@@ -180,6 +205,11 @@ export function resumeDocumentToMarkdown(document: ResumeDocumentV1) {
       if (detail) lines.push(String(detail));
       const range = datedRange(item);
       if (range) lines.push(range);
+      const score = optionalText(item.score);
+      if (score) lines.push(`成绩：${score}`);
+      const summary = richText(item.summary);
+      if (summary) lines.push("", summary);
+      appendHighlights(lines, item.highlights);
     }
   }
 
@@ -187,13 +217,51 @@ export function resumeDocumentToMarkdown(document: ResumeDocumentV1) {
     lines.push("", "## 专业技能");
     for (const skill of sections.skills) {
       const keywords = skill.keywords.length ? `：${skill.keywords.join("、")}` : "";
-      lines.push(`- ${skill.name}${keywords}`);
+      const level = skill.level ? `（${skill.level}）` : "";
+      lines.push(`- ${skill.name}${level}${keywords}`);
+    }
+  }
+
+  if (sections.certificates.length) {
+    lines.push("", "## 证书");
+    for (const raw of sections.certificates) {
+      const item = raw as Record<string, unknown>;
+      const details = [optionalText(item.issuer), datedRange(item)].filter(Boolean);
+      lines.push("", `### ${String(item.name ?? "")}`);
+      if (details.length) lines.push(details.join(" ｜ "));
+      const url = optionalText(item.url);
+      if (url) lines.push(`[证书链接](${url})`);
+    }
+  }
+
+  if (sections.awards.length) {
+    lines.push("", "## 荣誉奖项");
+    for (const raw of sections.awards) {
+      const item = raw as Record<string, unknown>;
+      const details = [optionalText(item.awarder), datedRange(item)].filter(Boolean);
+      lines.push("", `### ${String(item.title ?? "")}`);
+      if (details.length) lines.push(details.join(" ｜ "));
+      const summary = richText(item.summary);
+      if (summary) lines.push("", summary);
+    }
+  }
+
+  if (sections.languages.length) {
+    lines.push("", "## 语言能力");
+    for (const raw of sections.languages) {
+      const item = raw as Record<string, unknown>;
+      const fluency = optionalText(item.fluency);
+      lines.push(`- ${String(item.name ?? "")}${fluency ? `：${fluency}` : ""}`);
     }
   }
 
   for (const section of sections.custom_sections) {
     lines.push("", `## ${section.title}`);
-    for (const item of section.items) lines.push("", item.content.content);
+    for (const item of section.items) {
+      if (item.title) lines.push("", `### ${item.title}`);
+      if (item.subtitle) lines.push(item.subtitle);
+      if (item.content.content) lines.push("", item.content.content);
+    }
   }
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
@@ -203,18 +271,16 @@ export function resumeDocumentFromMarkdown(
   previous: ResumeDocumentV1,
 ): ResumeDocumentV1 {
   const heading = markdown.match(/^#\s+(.+)$/m)?.[1]?.trim();
+  const preservedCustomSections = previous.sections.custom_sections.filter(
+    (section) => section.id !== "custom_section_editor",
+  );
   return {
-    schema_version: "1.0",
+    ...previous,
     basics: { ...previous.basics, name: heading || previous.basics.name },
     sections: {
-      work_experiences: [],
-      educations: [],
-      projects: [],
-      skills: [],
-      certificates: [],
-      awards: [],
-      languages: [],
+      ...previous.sections,
       custom_sections: [
+        ...preservedCustomSections,
         {
           id: "custom_section_editor",
           title: "简历正文",
@@ -246,7 +312,7 @@ export function styleToEditorSettings(style: ResumeStyleV1): EditorSettings {
     pageMargin: style.page.margin_left_mm,
     verticalPageMargin: style.page.margin_top_mm,
     theme,
-    smartOnePage: false,
+    smartOnePage: style.smart_one_page,
     showSource: false,
   };
 }
@@ -261,6 +327,7 @@ export function editorSettingsToStyle(
     font_family: settings.fontFamily.includes("Source Han Serif") ? "source-han-serif" : settings.fontFamily,
     font_size: settings.fontSize,
     line_height: settings.lineHeight,
+    smart_one_page: settings.smartOnePage,
     page: {
       ...previous.page,
       margin_top_mm: settings.verticalPageMargin,

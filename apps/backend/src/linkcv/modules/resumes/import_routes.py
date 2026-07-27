@@ -14,6 +14,10 @@ from linkcv.modules.resumes.schemas import (
     ResumeImportMetadata,
     ResumeImportResponse,
 )
+from linkcv.services.import_admission import (
+    ImportAdmissionController,
+    ImportAdmissionRejected,
+)
 from linkcv.services.resume_import_service import (
     ResumeImportFailure,
     ResumeImportService,
@@ -30,6 +34,10 @@ def get_structuring_client(request: Request) -> ResumeStructuringClient:
     return request.app.state.structuring_client
 
 
+def get_import_admission(request: Request) -> ImportAdmissionController:
+    return request.app.state.import_admission
+
+
 @router.post("/import", response_model=ResumeImportResponse, status_code=201)
 async def import_resume(
     file: UploadFile = File(...),
@@ -40,26 +48,31 @@ async def import_resume(
     storage: AssetStorage = Depends(get_storage),
     rag_converter: RagConverter = Depends(get_rag_converter),
     structuring_client: ResumeStructuringClient = Depends(get_structuring_client),
+    import_admission: ImportAdmissionController = Depends(get_import_admission),
 ) -> ResumeImportResponse:
     filename = file.filename or "resume.bin"
     content_type = (file.content_type or "application/octet-stream").lower()
-    content = await file.read(settings.resume_import_max_bytes + 1)
-    service = ResumeImportService(
-        rag_converter=rag_converter,
-        structuring_client=structuring_client,
-        storage=storage,
-        max_file_bytes=settings.resume_import_max_bytes,
-        max_markdown_bytes=settings.resume_markdown_max_bytes,
-    )
     try:
-        result = await service.import_resume(
-            db=db,
-            user_id=user.id,
-            filename=filename,
-            content_type=content_type,
-            content=content,
-            title=title,
-        )
+        async with import_admission.acquire(user.id):
+            content = await file.read(settings.resume_import_max_bytes + 1)
+            service = ResumeImportService(
+                rag_converter=rag_converter,
+                structuring_client=structuring_client,
+                storage=storage,
+                max_file_bytes=settings.resume_import_max_bytes,
+                max_markdown_bytes=settings.resume_markdown_max_bytes,
+                max_structuring_bytes=settings.resume_structuring_max_bytes,
+            )
+            result = await service.import_resume(
+                db=db,
+                user_id=user.id,
+                filename=filename,
+                content_type=content_type,
+                content=content,
+                title=title,
+            )
+    except ImportAdmissionRejected as error:
+        raise ApiError(429, "IMPORT_RATE_LIMITED") from error
     except ResumeImportFailure as error:
         raise ApiError(error.status_code, error.code) from error
     finally:

@@ -8,7 +8,6 @@ ALTER TABLE resumes
 ALTER TABLE resumes
   ADD CONSTRAINT ck_resumes_source_fields CHECK (
     (source_type = 'blank'
-      AND template_id IS NULL
       AND source_filename IS NULL
       AND source_object_key IS NULL
       AND extracted_markdown IS NULL)
@@ -19,7 +18,6 @@ ALTER TABLE resumes
       AND extracted_markdown IS NULL)
     OR
     (source_type = 'import'
-      AND template_id IS NULL
       AND source_filename IS NOT NULL
       AND source_object_key IS NOT NULL
       AND extracted_markdown IS NOT NULL)

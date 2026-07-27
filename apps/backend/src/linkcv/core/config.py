@@ -76,6 +76,29 @@ class Settings(BaseSettings):
         alias="RESUME_MARKDOWN_MAX_BYTES",
         ge=1,
     )
+    resume_structuring_max_bytes: int = Field(
+        default=128 * 1024,
+        alias="RESUME_STRUCTURING_MAX_BYTES",
+        ge=1,
+    )
+    resume_import_requests_per_minute: int = Field(
+        default=3,
+        alias="RESUME_IMPORT_REQUESTS_PER_MINUTE",
+        ge=1,
+        le=60,
+    )
+    resume_import_global_concurrency: int = Field(
+        default=4,
+        alias="RESUME_IMPORT_GLOBAL_CONCURRENCY",
+        ge=1,
+        le=100,
+    )
+    resume_import_user_concurrency: int = Field(
+        default=1,
+        alias="RESUME_IMPORT_USER_CONCURRENCY",
+        ge=1,
+        le=10,
+    )
 
     rag_base_url: str | None = Field(default=None, alias="RAG_BASE_URL")
     rag_api_key: str | None = Field(default=None, alias="RAG_API_KEY")
@@ -144,6 +167,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
+        if self.resume_structuring_max_bytes > self.resume_markdown_max_bytes:
+            raise ValueError(
+                "RESUME_STRUCTURING_MAX_BYTES cannot exceed RESUME_MARKDOWN_MAX_BYTES"
+            )
         if self.app_environment.lower() != "production":
             return self
 

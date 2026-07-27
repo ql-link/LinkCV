@@ -104,13 +104,13 @@ class Resume(Base):
         ),
         CheckConstraint("lock_version >= 1", name="ck_resumes_lock_version"),
         CheckConstraint(
-            "(source_type = 'blank' AND template_id IS NULL "
+            "(source_type = 'blank' "
             "AND source_filename IS NULL AND source_object_key IS NULL "
             "AND extracted_markdown IS NULL) OR "
             "(source_type = 'template' "
             "AND source_filename IS NULL AND source_object_key IS NULL "
             "AND extracted_markdown IS NULL) OR "
-            "(source_type = 'import' AND template_id IS NULL "
+            "(source_type = 'import' "
             "AND source_filename IS NOT NULL AND source_object_key IS NOT NULL "
             "AND extracted_markdown IS NOT NULL)",
             name="ck_resumes_source_fields",
@@ -238,3 +238,58 @@ class ResumeVersion(Base):
         server_default=func.now(),
         comment="快照创建时间（UTC）",
     )
+
+
+class StorageCleanupJob(Base):
+    __tablename__ = "storage_cleanup_jobs"
+    __table_args__ = (
+        PrimaryKeyConstraint("id", name="pk_storage_cleanup_jobs"),
+        UniqueConstraint(
+            "operation", "object_key", name="uk_storage_cleanup_jobs_target"
+        ),
+        CheckConstraint(
+            "operation IN ('object', 'prefix')",
+            name="ck_storage_cleanup_jobs_operation",
+        ),
+        CheckConstraint("attempts >= 0", name="ck_storage_cleanup_jobs_attempts"),
+        {"comment": "对象存储删除补偿任务"},
+    )
+
+    id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(), autoincrement=True, comment="清理任务自增主键"
+    )
+    operation: Mapped[str] = mapped_column(
+        String(16), nullable=False, comment="删除类型：object 或 prefix"
+    )
+    object_key: Mapped[str] = mapped_column(
+        String(512), nullable=False, comment="待删除对象键或对象键前缀"
+    )
+    attempts: Mapped[int] = mapped_column(
+        unsigned_int_type(), nullable=False, default=0, comment="已失败尝试次数"
+    )
+    last_error_type: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, comment="最近失败异常类型"
+    )
+    last_attempt_at: Mapped[datetime | None] = mapped_column(
+        timestamp_type(), nullable=True, comment="最近尝试时间（UTC）"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        timestamp_type(),
+        nullable=False,
+        server_default=func.now(),
+        comment="创建时间（UTC）",
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        timestamp_type(),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+        comment="最后更新时间（UTC）",
+    )
+
+
+Index(
+    "idx_storage_cleanup_jobs_created_id",
+    StorageCleanupJob.created_at,
+    StorageCleanupJob.id,
+)

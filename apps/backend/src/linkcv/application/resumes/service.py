@@ -12,10 +12,10 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 
 def parse_decimal_id(value: str) -> int | None:
-    if not value.isdecimal():
+    if not value or len(value) > 20 or not value.isascii() or not value.isdecimal():
         return None
     parsed = int(value)
-    return parsed if parsed > 0 and str(parsed) == value else None
+    return parsed if 0 < parsed <= 2**64 - 1 and str(parsed) == value else None
 
 
 def find_owned_resume(db: Session, resume_id: str, user_id: int) -> Resume | None:

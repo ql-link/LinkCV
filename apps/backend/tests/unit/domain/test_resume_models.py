@@ -26,6 +26,13 @@ def test_default_snapshot_uses_the_v1_contract() -> None:
     assert snapshot.data.basics.name == "张三"
     assert snapshot.style.schema_version == "1.0"
     assert snapshot.style.section_order[0] == "basics"
+    assert snapshot.style.smart_one_page is False
+
+
+def test_legacy_style_without_smart_one_page_uses_the_compatible_default() -> None:
+    style = ResumeStyleV1.model_validate({"schema_version": "1.0"})
+
+    assert style.smart_one_page is False
 
 
 def test_document_rejects_duplicate_nested_ids() -> None:

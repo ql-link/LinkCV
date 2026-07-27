@@ -6,7 +6,8 @@ from sqlalchemy import select
 
 from linkcv.core.config import Settings
 from linkcv.main import create_app
-from linkcv.modules.resumes.models import ResumeVersion
+from linkcv.modules.resumes.models import Resume, ResumeVersion, StorageCleanupJob
+from linkcv.services.storage_cleanup_service import process_storage_cleanup_jobs
 
 
 class FakeObjectResponse:
@@ -26,6 +27,7 @@ class FakeObjectResponse:
 class FakeStorage:
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
+        self.fail_cleanup = False
 
     def ensure_bucket(self) -> None:
         pass
@@ -37,9 +39,13 @@ class FakeStorage:
         return FakeObjectResponse(self.objects[object_name])
 
     def delete(self, object_name: str) -> None:
+        if self.fail_cleanup:
+            raise RuntimeError("storage unavailable")
         self.objects.pop(object_name, None)
 
     def delete_prefix(self, prefix: str) -> None:
+        if self.fail_cleanup:
+            raise RuntimeError("storage unavailable")
         for object_name in list(self.objects):
             if object_name.startswith(prefix):
                 self.objects.pop(object_name)
@@ -198,3 +204,35 @@ def test_resume_assets_are_owned_and_preserved_while_history_references_them() -
 
         assert owner.delete(f"/api/resumes/{resume_id}").json() == {"deleted": True}
         assert app.state.storage.objects == {}
+
+
+def test_resume_delete_persists_failed_storage_cleanup_for_retry() -> None:
+    app = build_test_app()
+    storage = app.state.storage
+
+    with TestClient(app) as client:
+        register = client.post(
+            "/api/auth/register",
+            json={"email": "cleanup@example.com", "password": "password-123"},
+        )
+        assert register.status_code == 201
+        resume_id = client.post("/api/resumes", json={}).json()["resume"]["id"]
+        object_key = f"users/1/resumes/{resume_id}/image.png"
+        storage.objects[object_key] = b"private-resume-image"
+        storage.fail_cleanup = True
+
+        deleted = client.delete(f"/api/resumes/{resume_id}")
+
+        assert deleted.status_code == 200
+        with app.state.session_factory() as session:
+            assert session.scalar(select(Resume).where(Resume.id == int(resume_id))) is None
+            job = session.scalar(select(StorageCleanupJob))
+            assert job is not None
+            assert job.operation == "prefix"
+            assert job.attempts == 1
+
+        storage.fail_cleanup = False
+        with app.state.session_factory() as session:
+            assert process_storage_cleanup_jobs(session, storage) == 1
+            assert session.scalar(select(StorageCleanupJob)) is None
+        assert storage.objects == {}

@@ -9,6 +9,7 @@ from linkcv.application.resumes.commands import CreateResumeCommand
 from linkcv.application.resumes.service import (
     create_resume_with_initial_version,
     find_owned_resume,
+    lock_owned_resume,
     parse_decimal_id,
     update_resume_snapshot,
 )
@@ -29,6 +30,10 @@ from linkcv.modules.resumes.schemas import (
     ResumeResponse,
     ResumeSummary,
     ResumeUpdateRequest,
+)
+from linkcv.services.storage_cleanup_service import (
+    enqueue_storage_cleanup,
+    process_storage_cleanup_jobs,
 )
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
@@ -182,20 +187,43 @@ def delete_resume(
     parsed_id = parse_decimal_id(resume_id)
     if parsed_id is None:
         raise ApiError(404, "RESUME_NOT_FOUND")
-    resume = find_owned_resume(db, resume_id, user.id)
+    resume = lock_owned_resume(db, resume_id, user.id)
     if resume is None:
         raise ApiError(404, "RESUME_NOT_FOUND")
-    source_object_key = resume.source_object_key
-    db.execute(delete(ResumeVersion).where(ResumeVersion.resume_id == resume.id))
-    result = db.execute(delete(Resume).where(Resume.id == resume.id))
-    db.commit()
     try:
-        if source_object_key:
-            storage.delete(source_object_key)
-        storage.delete_prefix(f"users/{user.id}/resumes/{resume.id}/")
+        cleanup_jobs = []
+        if resume.source_object_key:
+            cleanup_jobs.append(
+                enqueue_storage_cleanup(
+                    db,
+                    operation="object",
+                    object_key=resume.source_object_key,
+                )
+            )
+        cleanup_jobs.append(
+            enqueue_storage_cleanup(
+                db,
+                operation="prefix",
+                object_key=f"users/{user.id}/resumes/{resume.id}/",
+            )
+        )
+        db.execute(delete(ResumeVersion).where(ResumeVersion.resume_id == resume.id))
+        result = db.execute(delete(Resume).where(Resume.id == resume.id))
+        db.commit()
     except Exception:
-        logger.error(
-            "resume resource cleanup failed",
-            extra={"resume_id": resume.id, "user_id": user.id},
+        db.rollback()
+        raise
+
+    try:
+        process_storage_cleanup_jobs(
+            db,
+            storage,
+            job_ids=[job.id for job in cleanup_jobs],
+        )
+    except Exception as error:
+        db.rollback()
+        logger.warning(
+            "immediate resume storage cleanup could not run",
+            extra={"resume_id": resume.id, "error_type": type(error).__name__},
         )
     return DeleteResumeResponse(deleted=bool(result.rowcount))
