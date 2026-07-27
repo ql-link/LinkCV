@@ -19,7 +19,7 @@ class FakeStorage:
         pass
 
 
-def build_app(version_limit: int = 20):
+def build_app(version_limit: int = 10):
     return create_app(
         Settings(
             database_url="sqlite+pysqlite:///:memory:",
@@ -161,6 +161,27 @@ def test_template_creation_copies_snapshot_and_filters_inactive_templates() -> N
         assert rejected.json() == {"error": "TEMPLATE_INACTIVE"}
 
 
+def test_resume_limit_rejects_eleventh_and_delete_releases_slot() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        resume_ids = []
+        for index in range(10):
+            created = client.post("/api/resumes", json={"title": f"简历 {index + 1}"})
+            assert created.status_code == 201
+            resume_ids.append(created.json()["resume"]["id"])
+
+        rejected = client.post("/api/resumes", json={"title": "第十一份"})
+        assert rejected.status_code == 409
+        assert rejected.json() == {"error": "RESUME_LIMIT_REACHED"}
+        assert len(client.get("/api/resumes").json()["resumes"]) == 10
+
+        assert client.delete(f"/api/resumes/{resume_ids[0]}").status_code == 200
+        replacement = client.post("/api/resumes", json={"title": "替补简历"})
+        assert replacement.status_code == 201
+        assert len(client.get("/api/resumes").json()["resumes"]) == 10
+
+
 def test_other_user_cannot_access_resume_versions() -> None:
     app = build_app()
     with TestClient(app) as owner:
@@ -177,27 +198,95 @@ def test_other_user_cannot_access_resume_versions() -> None:
         assert stranger.delete(f"/api/resumes/{resume_id}").status_code == 404
         assert stranger.get(f"/api/resumes/{resume_id}/versions").status_code == 404
         assert stranger.post(f"/api/resumes/{resume_id}/versions").status_code == 404
+        assert stranger.delete(f"/api/resumes/{resume_id}/versions/1").status_code == 404
         assert (
             stranger.post(f"/api/resumes/{resume_id}/versions/1/restore").status_code
             == 404
         )
 
 
-def test_version_limit_removes_only_the_oldest_snapshot() -> None:
+def test_version_limit_requires_user_to_delete_an_old_snapshot() -> None:
     app = build_app(version_limit=3)
     with TestClient(app) as client:
         register(client)
         resume_id = client.post("/api/resumes", json={}).json()["resume"]["id"]
 
-        for _ in range(3):
+        for _ in range(2):
             assert client.post(f"/api/resumes/{resume_id}/versions").status_code == 201
 
+        rejected = client.post(f"/api/resumes/{resume_id}/versions")
+        assert rejected.status_code == 409
+        assert rejected.json() == {"error": "RESUME_VERSION_LIMIT_REACHED"}
         versions = client.get(f"/api/resumes/{resume_id}/versions").json()["versions"]
         assert [(item["version_no"], item["reason"]) for item in versions] == [
-            (4, "manual"),
             (3, "manual"),
             (2, "manual"),
+            (1, "initial"),
         ]
+
+        deleted = client.delete(f"/api/resumes/{resume_id}/versions/1")
+        assert deleted.status_code == 200
+        assert deleted.json() == {"deleted": True}
+
+        replacement = client.post(f"/api/resumes/{resume_id}/versions")
+        assert replacement.status_code == 201
+        assert replacement.json()["version"]["version_no"] == 4
+        assert [
+            item["version_no"]
+            for item in client.get(f"/api/resumes/{resume_id}/versions").json()[
+                "versions"
+            ]
+        ] == [4, 3, 2]
+
+
+def test_latest_version_cannot_be_deleted() -> None:
+    app = build_app(version_limit=3)
+    with TestClient(app) as client:
+        register(client)
+        resume_id = client.post("/api/resumes", json={}).json()["resume"]["id"]
+        assert client.post(f"/api/resumes/{resume_id}/versions").status_code == 201
+
+        rejected = client.delete(f"/api/resumes/{resume_id}/versions/2")
+
+        assert rejected.status_code == 409
+        assert rejected.json() == {"error": "LATEST_RESUME_VERSION_REQUIRED"}
+        assert [
+            item["version_no"]
+            for item in client.get(f"/api/resumes/{resume_id}/versions").json()[
+                "versions"
+            ]
+        ] == [2, 1]
+
+
+def test_restore_rejects_without_mutation_when_it_needs_too_many_version_slots() -> None:
+    app = build_app(version_limit=3)
+    with TestClient(app) as client:
+        register(client)
+        created = client.post("/api/resumes", json={}).json()["resume"]
+        resume_id = created["id"]
+        assert client.post(f"/api/resumes/{resume_id}/versions").status_code == 201
+
+        draft = created["data"]
+        draft["basics"]["headline"] = "尚未建立版本的草稿"
+        updated = client.put(
+            f"/api/resumes/{resume_id}",
+            json={"data": draft, "base_lock_version": 1},
+        )
+        assert updated.status_code == 200
+
+        rejected = client.post(f"/api/resumes/{resume_id}/versions/1/restore")
+
+        assert rejected.status_code == 409
+        assert rejected.json() == {"error": "RESUME_VERSION_LIMIT_REACHED"}
+        current = client.get(f"/api/resumes/{resume_id}").json()["resume"]
+        assert current["data"]["basics"]["headline"] == "尚未建立版本的草稿"
+        assert current["lock_version"] == 2
+        assert [
+            item["version_no"]
+            for item in client.get(f"/api/resumes/{resume_id}/versions").json()[
+                "versions"
+            ]
+        ] == [2, 1]
 
 
 def test_overlong_resume_id_is_rejected_without_integer_conversion() -> None:

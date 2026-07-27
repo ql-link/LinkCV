@@ -31,7 +31,7 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 | `PUT` | `/api/resumes/:id` | 是 | `{resume}`；请求含 `base_lock_version` 及可选 `title/data/style` |
 | `DELETE` | `/api/resumes/:id` | 是 | `{deleted}` |
 
-空白和模板创建都在同一事务写入当前简历及 `version_no=1/reason=initial` 快照。更新同时保存完整 data/style 并递增 `lock_version`，不创建历史版本；过期基准返回 `409 RESUME_EDIT_CONFLICT`。非法内容和样式分别返回 `400 INVALID_RESUME_DOCUMENT`、`400 INVALID_RESUME_STYLE`。不存在或不属于当前用户的简历统一返回 `404 RESUME_NOT_FOUND`。
+空白、模板和导入创建统一受每用户最多 10 份简历的限制；创建事务先锁定用户行再检查数量，并发请求不会突破上限。达到上限返回 `409 RESUME_LIMIT_REACHED`，删除任意一份后释放名额。空白和模板创建都在同一事务写入当前简历及 `version_no=1/reason=initial` 快照。更新同时保存完整 data/style 并递增 `lock_version`，不创建历史版本；过期基准返回 `409 RESUME_EDIT_CONFLICT`。非法内容和样式分别返回 `400 INVALID_RESUME_DOCUMENT`、`400 INVALID_RESUME_STYLE`。不存在或不属于当前用户的简历统一返回 `404 RESUME_NOT_FOUND`。
 
 ## 历史版本
 
@@ -40,9 +40,10 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 | `GET` | `/api/resumes/:id/versions` | 是 | `{versions}`，版本号倒序 |
 | `POST` | `/api/resumes/:id/versions` | 是 | `201 {version}`，创建 `manual` 快照 |
 | `GET` | `/api/resumes/:id/versions/:version_no` | 是 | `{version}` 完整快照 |
+| `DELETE` | `/api/resumes/:id/versions/:version_no` | 是 | `{deleted}`；删除指定旧版本 |
 | `POST` | `/api/resumes/:id/versions/:version_no/restore` | 是 | `{resume}`；按需追加 `before_restore` 后追加 `restore` |
 
-版本号单调递增且不复用；每份简历默认最多保留 20 个版本，超限淘汰与新版本写入在同一事务中。版本不存在返回 `404 RESUME_VERSION_NOT_FOUND`，并发兜底失败返回 `409 VERSION_CONFLICT`。
+版本号单调递增且不复用；每份简历默认最多保存 10 个版本。创建或恢复所需的版本空间不足时返回 `409 RESUME_VERSION_LIMIT_REACHED`，不会自动删除任何历史版本；用户删除旧版本后才能继续。最新版本作为当前恢复基准不可删除，尝试删除返回 `409 LATEST_RESUME_VERSION_REQUIRED`。版本不存在返回 `404 RESUME_VERSION_NOT_FOUND`，并发兜底失败返回 `409 VERSION_CONFLICT`。
 
 ## 文件导入
 
@@ -59,7 +60,7 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 }
 ```
 
-原文件对象键不在响应中。文件为空、超限、不支持或内容非法分别返回 `EMPTY_IMPORT_FILE`、`IMPORT_FILE_TOO_LARGE`、`UNSUPPORTED_IMPORT_FORMAT`、`IMPORT_CONTENT_INVALID`；超过结构化模型输入上限返回 `413 STRUCTURING_INPUT_TOO_LARGE`，触发频率或并发保护返回 `429 IMPORT_RATE_LIMITED`。RAG 或结构化模型未配置、调用失败、响应非法时返回稳定的 503/502/422 错误且不创建半成品；已上传对象执行幂等补偿。
+原文件对象键不在响应中。文件为空、超限、不支持或内容非法分别返回 `EMPTY_IMPORT_FILE`、`IMPORT_FILE_TOO_LARGE`、`UNSUPPORTED_IMPORT_FORMAT`、`IMPORT_CONTENT_INVALID`；超过结构化模型输入上限返回 `413 STRUCTURING_INPUT_TOO_LARGE`，触发频率或并发保护返回 `429 IMPORT_RATE_LIMITED`。账号已有 10 份简历时会在上传和模型处理前返回 `409 RESUME_LIMIT_REACHED`；快速检查后的并发创建仍由最终事务检查兜底。RAG 或结构化模型未配置、调用失败、响应非法时返回稳定的 503/502/422 错误且不创建半成品；已上传对象执行幂等补偿。
 
 ## 对象资源
 

@@ -22,7 +22,7 @@
 
 MySQL 包含 `users`、`resume_templates`、`resumes`、`resume_versions` 和 `storage_cleanup_jobs`。当前可编辑状态保存在 `resumes.data_json/style_json`，历史版本同时快照两份 JSON。由 `0005` 转换过的旧记录还在同一行的 `legacy_data_json_backup/legacy_style_json_backup` 保存迁移前原值，普通新记录保持为 `NULL`，这些备份不通过 HTTP 暴露。HTTP 中的 ID 是十进制字符串，ORM 和数据库使用整数。
 
-所有创建来源都调用统一服务，在单事务中创建当前简历和 initial 版本。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。手动版本与恢复先锁定所属简历；恢复按需生成 `before_restore` 并总是生成 `restore`，版本上限淘汰处于同一事务。
+所有创建来源都调用统一服务，在单事务中创建当前简历和 initial 版本。每个用户最多保留 10 份简历；创建前锁定对应 `users` 行并读取已有记录，使普通、模板和导入创建在 MySQL 并发请求下共享同一上限，删除后立即释放名额。导入还会在上传和模型调用前快速拒绝已经达到上限的请求，最终事务检查继续处理快速检查后的竞态。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。手动版本、删除版本与恢复都先锁定所属简历；每份简历最多保存 10 个版本，空间不足时事务直接拒绝且不修改当前简历或历史快照。用户可以删除非最新的旧版本释放名额；恢复按当前内容是否已形成快照，原子地预留一个 `restore` 或两个 `before_restore + restore` 名额。
 
 `0003` 将模板外键改为 `ON DELETE SET NULL`，同时允许历史模板来源在模板删除后保留 `source_type=template/template_id=NULL`。MySQL 8.4 禁止 `SET NULL` 外键列参与 CHECK，因此 `ck_resumes_source_fields` 只约束来源证据字段，`template_id/source_type` 组合由统一创建服务保证，外键继续保证非空引用有效。如果已经出现模板来源但 `template_id=NULL` 的记录，0003 downgrade 会拒绝恢复不成立的 RESTRICT/非空来源约束。`0004` 新增不绑定已删除业务记录的 `storage_cleanup_jobs`，以对象键或前缀保存幂等删除任务。`0005` 在批量转换前核对旧节点和样式字段，只接受可完整表达的上一版结构；遇到未知字段、危险 Markdown 或无法保留的内嵌图片会中止。降级先从同行备份恢复 `resumes` 和 `resume_versions`，再删除备份列。已进入共享环境的 revision 不原地修改。
 

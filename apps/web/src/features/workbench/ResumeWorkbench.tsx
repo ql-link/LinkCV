@@ -11,8 +11,11 @@ import {
   Save,
   SlidersHorizontal,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ApiRequestError } from "../../api/client";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { exportResumePdf } from "../preview/exportPdf";
 import { resumeSerifFontStack, useResumeStore } from "../../store/resumeStore";
 import { resumeEditorExtensions } from "./editorExtensions";
@@ -43,6 +46,15 @@ function versionTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+export function versionOperationErrorMessage(error: unknown, operation: "create" | "restore") {
+  if (!(error instanceof ApiRequestError) || error.message !== "RESUME_VERSION_LIMIT_REACHED") {
+    return null;
+  }
+  return operation === "create"
+    ? "当前内容已保存，但版本数量已达上限。请删除一个旧版本后再保存新版本。"
+    : "版本空间不足，恢复操作没有执行。请删除一个旧版本后再重试。";
 }
 
 function plainParagraphsFromHtml(html: string) {
@@ -126,11 +138,16 @@ export function ResumeWorkbench() {
   const versionOperationPending = useResumeStore((state) => state.versionOperationPending);
   const loadVersions = useResumeStore((state) => state.loadVersions);
   const createVersion = useResumeStore((state) => state.createVersion);
+  const deleteStoredVersion = useResumeStore((state) => state.deleteVersion);
   const restoreStoredVersion = useResumeStore((state) => state.restoreVersion);
   const goHome = useResumeStore((state) => state.goHome);
   const logout = useResumeStore((state) => state.logout);
   const [drawerMode, setDrawerMode] = useState<DrawerMode>(null);
   const [toast, setToast] = useState<ToastState>(null);
+  const [pendingVersionDelete, setPendingVersionDelete] = useState<{
+    versionNo: number;
+    createdAt: string;
+  } | null>(null);
   const paperScrollRef = useRef<HTMLDivElement>(null);
 
   const editor = useEditor({
@@ -218,8 +235,10 @@ export function ResumeWorkbench() {
     try {
       await createVersion();
       setToast({ label: "已保存新版本" });
-    } catch {
-      setToast({ label: "当前内容已保存，但版本创建失败" });
+    } catch (error) {
+      const limitMessage = versionOperationErrorMessage(error, "create");
+      if (limitMessage) setDrawerMode("history");
+      setToast({ label: limitMessage ?? "当前内容已保存，但版本创建失败" });
     }
   };
 
@@ -231,10 +250,23 @@ export function ResumeWorkbench() {
       const restored = useResumeStore.getState().editorContent;
       editor.commands.setContent(restored);
       setToast({ label: `已恢复 ${versionTime(createdAt)} 的版本` });
-    } catch {
-      setToast({ label: "版本恢复失败，请稍后重试" });
+    } catch (error) {
+      const limitMessage = versionOperationErrorMessage(error, "restore");
+      if (limitMessage) setDrawerMode("history");
+      setToast({ label: limitMessage ?? "版本恢复失败，请稍后重试" });
     } finally {
       editor.setEditable(true);
+    }
+  };
+
+  const confirmDeleteVersion = async () => {
+    if (!pendingVersionDelete) return;
+    try {
+      await deleteStoredVersion(pendingVersionDelete.versionNo);
+      setPendingVersionDelete(null);
+      setToast({ label: "旧版本已删除，现在可以保存新版本" });
+    } catch {
+      setToast({ label: "版本删除失败，请稍后重试" });
     }
   };
 
@@ -324,12 +356,28 @@ export function ResumeWorkbench() {
                   </div>
                 ) : (
                   <div className="workbench-versions">
+                    <p className="workbench-version-guidance">
+                      每份简历最多保存 10 个版本。达到上限时不会自动删除；请手动清理旧版本，最新版本需保留。
+                    </p>
                     {versionsLoading && <p className="workbench-empty">正在读取版本记录…</p>}
                     {!versionsLoading && versions.length === 0 && <p className="workbench-empty">暂无可用版本。</p>}
                     {versions.map((version) => (
                       <div className="version-row" key={version.id}>
-                        <div><strong>{versionTime(version.created_at)}</strong><span>v{version.version_no} · {versionReasonLabels[version.reason]}</span></div>
-                        <button type="button" disabled={versionOperationPending} onClick={() => void restoreVersion(version.version_no, version.created_at)}>恢复</button>
+                        <div className="version-row-copy"><strong>{versionTime(version.created_at)}</strong><span>v{version.version_no} · {versionReasonLabels[version.reason]}</span></div>
+                        <span className="version-row-actions">
+                          <button type="button" disabled={versionOperationPending} onClick={() => void restoreVersion(version.version_no, version.created_at)}>恢复</button>
+                          {version.version_no !== versions[0]?.version_no && (
+                            <button
+                              type="button"
+                              className="version-delete-action"
+                              aria-label={`删除版本 v${version.version_no}`}
+                              disabled={versionOperationPending}
+                              onClick={() => setPendingVersionDelete({ versionNo: version.version_no, createdAt: version.created_at })}
+                            >
+                              <Trash2 size={13} />删除
+                            </button>
+                          )}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -346,6 +394,19 @@ export function ResumeWorkbench() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {pendingVersionDelete && (
+          <ConfirmDialog
+            kind="delete"
+            title={`删除版本 v${pendingVersionDelete.versionNo}？`}
+            description={`将永久删除 ${versionTime(pendingVersionDelete.createdAt)} 保存的历史版本，不会影响当前简历内容。`}
+            confirmLabel="永久删除"
+            busyLabel="正在删除…"
+            busy={versionOperationPending}
+            onCancel={() => setPendingVersionDelete(null)}
+            onConfirm={confirmDeleteVersion}
+          />
+        )}
       </div>
     </MotionConfig>
   );

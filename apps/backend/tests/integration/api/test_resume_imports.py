@@ -5,7 +5,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from linkcv.application.resumes.commands import CreateResumeCommand
+from linkcv.application.resumes.service import create_resume_with_initial_version
 from linkcv.core.config import Settings
+from linkcv.domain.resume_document import default_resume_document
 from linkcv.domain.rag import RagMarkdownResult, RagMetadata
 from linkcv.domain.resume_extraction import DraftBasics, ResumeExtractionDraft
 from linkcv.integrations.rag_client import RagServiceError
@@ -74,6 +77,27 @@ class FakeStructuringClient:
         return ResumeExtractionDraft(
             basics=DraftBasics(name="张三", headline="后端工程师")
         )
+
+
+class CapacityFillingStructuringClient(FakeStructuringClient):
+    def __init__(self, session_factory, user_id: int) -> None:
+        super().__init__()
+        self._session_factory = session_factory
+        self._user_id = user_id
+
+    async def extract(self, section_ir):
+        result = await super().extract(section_ir)
+        with self._session_factory() as db:
+            create_resume_with_initial_version(
+                CreateResumeCommand(
+                    user_id=self._user_id,
+                    title="并发创建的第十份",
+                    data=default_resume_document(),
+                    source_type="blank",
+                ),
+                db,
+            )
+        return result
 
 
 def build_app(
@@ -381,6 +405,66 @@ def test_import_frequency_limit_rejects_before_storage_and_model() -> None:
         assert second.json() == {"error": "IMPORT_RATE_LIMITED"}
         assert structuring_client.calls == 1
         assert len(storage.objects) == 1
+
+
+def test_import_at_resume_limit_is_rejected_and_uploaded_object_is_deleted() -> None:
+    structuring_client = FakeStructuringClient()
+    app, storage = build_app(
+        rag_converter=FakeRag(),
+        structuring_client=structuring_client,
+    )
+    with TestClient(app) as client:
+        register(client)
+        for index in range(10):
+            response = client.post("/api/resumes", json={"title": f"简历 {index + 1}"})
+            assert response.status_code == 201
+
+        rejected = client.post(
+            "/api/resumes/import",
+            files={"file": ("resume.md", b"# Zhang San", "text/markdown")},
+        )
+
+        assert rejected.status_code == 409
+        assert rejected.json() == {"error": "RESUME_LIMIT_REACHED"}
+        assert structuring_client.calls == 0
+        assert storage.objects == {}
+        assert storage.deleted == []
+        with app.state.session_factory() as session:
+            assert len(session.scalars(select(Resume)).all()) == 10
+
+
+def test_import_race_at_resume_limit_is_rejected_and_uploaded_object_is_deleted() -> None:
+    app, storage = build_app(
+        rag_converter=FakeRag(),
+        structuring_client=FakeStructuringClient(),
+    )
+    with TestClient(app) as client:
+        register(client)
+        for index in range(9):
+            response = client.post("/api/resumes", json={"title": f"简历 {index + 1}"})
+            assert response.status_code == 201
+
+        with app.state.session_factory() as session:
+            user_id = session.scalar(select(Resume.user_id).limit(1))
+        assert user_id is not None
+        structuring_client = CapacityFillingStructuringClient(
+            app.state.session_factory,
+            user_id,
+        )
+        app.state.structuring_client = structuring_client
+
+        rejected = client.post(
+            "/api/resumes/import",
+            files={"file": ("resume.md", b"# Zhang San", "text/markdown")},
+        )
+
+        assert rejected.status_code == 409
+        assert rejected.json() == {"error": "RESUME_LIMIT_REACHED"}
+        assert structuring_client.calls == 1
+        assert storage.objects == {}
+        assert len(storage.deleted) == 1
+        with app.state.session_factory() as session:
+            assert len(session.scalars(select(Resume)).all()) == 10
 
 
 def test_import_requires_authentication() -> None:

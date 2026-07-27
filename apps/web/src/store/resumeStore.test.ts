@@ -146,3 +146,34 @@ describe("resume deletion", () => {
     expect(useResumeStore.getState().resumes.map((resume) => resume.id)).toEqual(["1", "2"]);
   });
 });
+
+describe("resume version deletion", () => {
+  beforeEach(() => {
+    useResumeStore.setState({
+      versions: [
+        { id: "3", version_no: 3, reason: "manual", created_at: "2026-07-27T00:03:00Z" },
+        { id: "2", version_no: 2, reason: "manual", created_at: "2026-07-27T00:02:00Z" },
+        { id: "1", version_no: 1, reason: "initial", created_at: "2026-07-27T00:01:00Z" },
+      ],
+    });
+  });
+
+  it("只在后端确认后移除指定历史版本", async () => {
+    vi.spyOn(api, "deleteVersion").mockResolvedValue({ deleted: true });
+
+    await useResumeStore.getState().deleteVersion(1);
+
+    expect(api.deleteVersion).toHaveBeenCalledWith("1", 1);
+    expect(useResumeStore.getState().versions.map((version) => version.version_no)).toEqual([3, 2]);
+    expect(useResumeStore.getState().versionOperationPending).toBe(false);
+  });
+
+  it("删除失败时保留版本列表", async () => {
+    vi.spyOn(api, "deleteVersion").mockRejectedValue(new Error("HTTP_500"));
+
+    await expect(useResumeStore.getState().deleteVersion(1)).rejects.toThrow("HTTP_500");
+
+    expect(useResumeStore.getState().versions.map((version) => version.version_no)).toEqual([3, 2, 1]);
+    expect(useResumeStore.getState().versionOperationPending).toBe(false);
+  });
+});

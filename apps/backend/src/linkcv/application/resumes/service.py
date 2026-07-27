@@ -8,7 +8,22 @@ from linkcv.core.database import utc_now
 from linkcv.domain.resume_document import ResumeDocumentV1
 from linkcv.domain.resume_snapshot import ResumeSnapshot, parse_resume_snapshot
 from linkcv.domain.resume_style import ResumeStyleV1, default_resume_style
+from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import Resume, ResumeVersion
+
+MAX_RESUMES_PER_USER = 10
+
+
+class ResumeLimitExceeded(RuntimeError):
+    pass
+
+
+class ResumeVersionLimitExceeded(RuntimeError):
+    pass
+
+
+class LatestResumeVersionRequired(RuntimeError):
+    pass
 
 
 def parse_decimal_id(value: str) -> int | None:
@@ -38,6 +53,15 @@ def lock_owned_resume(db: Session, resume_id: str, user_id: int) -> Resume | Non
     )
 
 
+def has_resume_capacity(db: Session, user_id: int) -> bool:
+    existing_ids = db.scalars(
+        select(Resume.id)
+        .where(Resume.user_id == user_id)
+        .limit(MAX_RESUMES_PER_USER)
+    ).all()
+    return len(existing_ids) < MAX_RESUMES_PER_USER
+
+
 def create_resume_with_initial_version(
     command: CreateResumeCommand,
     db: Session,
@@ -47,18 +71,31 @@ def create_resume_with_initial_version(
         data=command.data,
         style=command.style or default_resume_style(),
     )
-    resume = Resume(
-        user_id=command.user_id,
-        template_id=command.template_id,
-        title=title,
-        data_json=snapshot.data.model_dump(mode="json"),
-        style_json=snapshot.style.model_dump(mode="json"),
-        source_type=command.source_type,
-        source_filename=command.source_filename,
-        source_object_key=command.source_object_key,
-        extracted_markdown=command.extracted_markdown,
-    )
     try:
+        locked_user_id = db.scalar(
+            select(User.id).where(User.id == command.user_id).with_for_update()
+        )
+        if locked_user_id is None:
+            raise RuntimeError("resume owner no longer exists")
+        resume_ids = db.scalars(
+            select(Resume.id)
+            .where(Resume.user_id == command.user_id)
+            .with_for_update()
+        ).all()
+        if len(resume_ids) >= MAX_RESUMES_PER_USER:
+            raise ResumeLimitExceeded
+
+        resume = Resume(
+            user_id=command.user_id,
+            template_id=command.template_id,
+            title=title,
+            data_json=snapshot.data.model_dump(mode="json"),
+            style_json=snapshot.style.model_dump(mode="json"),
+            source_type=command.source_type,
+            source_filename=command.source_filename,
+            source_object_key=command.source_object_key,
+            extracted_markdown=command.extracted_markdown,
+        )
         db.add(resume)
         db.flush()
         db.add(
@@ -141,15 +178,13 @@ def _append_version(db: Session, resume: Resume, reason: str) -> ResumeVersion:
     return version
 
 
-def _enforce_version_limit(db: Session, resume_id: int, limit: int) -> None:
-    ids = db.scalars(
-        select(ResumeVersion.id)
-        .where(ResumeVersion.resume_id == resume_id)
-        .order_by(ResumeVersion.version_no.desc())
-    ).all()
-    expired = ids[limit:]
-    if expired:
-        db.execute(delete(ResumeVersion).where(ResumeVersion.id.in_(expired)))
+def _version_count(db: Session, resume_id: int) -> int:
+    count = db.scalar(
+        select(func.count(ResumeVersion.id)).where(
+            ResumeVersion.resume_id == resume_id
+        )
+    )
+    return int(count or 0)
 
 
 def create_manual_version(
@@ -162,8 +197,9 @@ def create_manual_version(
     if resume is None:
         return None
     try:
+        if _version_count(db, resume.id) >= version_limit:
+            raise ResumeVersionLimitExceeded
         version = _append_version(db, resume, "manual")
-        _enforce_version_limit(db, resume.id, version_limit)
         db.refresh(version)
         db.commit()
     except Exception:
@@ -198,10 +234,14 @@ def restore_resume_version(
         .order_by(ResumeVersion.version_no.desc())
         .limit(1)
     )
+    needs_backup = latest is None or (
+        latest.data_json != resume.data_json or latest.style_json != resume.style_json
+    )
     try:
-        if latest is None or (
-            latest.data_json != resume.data_json or latest.style_json != resume.style_json
-        ):
+        required_slots = 2 if needs_backup else 1
+        if _version_count(db, resume.id) + required_slots > version_limit:
+            raise ResumeVersionLimitExceeded
+        if needs_backup:
             _append_version(db, resume, "before_restore")
 
         resume.data_json = target_snapshot.data.model_dump(mode="json")
@@ -210,10 +250,42 @@ def restore_resume_version(
         resume.updated_at = utc_now()
         db.flush()
         _append_version(db, resume, "restore")
-        _enforce_version_limit(db, resume.id, version_limit)
         db.refresh(resume)
         db.commit()
     except Exception:
         db.rollback()
         raise
     return resume
+
+
+def delete_resume_version(
+    db: Session,
+    resume_id: str,
+    version_no: int,
+    user_id: int,
+) -> bool | None:
+    resume = lock_owned_resume(db, resume_id, user_id)
+    if resume is None:
+        return None
+    try:
+        version = db.scalar(
+            select(ResumeVersion).where(
+                ResumeVersion.resume_id == resume.id,
+                ResumeVersion.version_no == version_no,
+            )
+        )
+        if version is None:
+            return None
+        latest_version_no = db.scalar(
+            select(func.max(ResumeVersion.version_no)).where(
+                ResumeVersion.resume_id == resume.id
+            )
+        )
+        if version.version_no == latest_version_no:
+            raise LatestResumeVersionRequired
+        db.execute(delete(ResumeVersion).where(ResumeVersion.id == version.id))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return True

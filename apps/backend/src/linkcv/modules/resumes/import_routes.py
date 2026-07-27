@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from sqlalchemy.orm import Session
 
+from linkcv.application.resumes.service import has_resume_capacity
 from linkcv.core.config import Settings
 from linkcv.core.database import get_db
 from linkcv.core.errors import ApiError
@@ -53,6 +54,8 @@ async def import_resume(
     filename = file.filename or "resume.bin"
     content_type = (file.content_type or "application/octet-stream").lower()
     try:
+        if not has_resume_capacity(db, user.id):
+            raise ApiError(409, "RESUME_LIMIT_REACHED")
         async with import_admission.acquire(user.id):
             content = await file.read(settings.resume_import_max_bytes + 1)
             service = ResumeImportService(

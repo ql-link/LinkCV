@@ -1766,12 +1766,16 @@ select:focus-visible {
 .workbench-stepper strong { min-width: 36px; color: var(--wb-ink); text-align: center; font-size: 0.75rem; font-weight: 600; }
 
 .workbench-versions { display: flex; flex-direction: column; gap: 8px; }
+.workbench-version-guidance { margin: 0 0 6px; border-radius: 9px; background: var(--wb-accent-soft); padding: 9px 10px; color: var(--wb-muted); font-size: 0.75rem; line-height: 1.55; }
 .version-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--wb-hairline); border-radius: 10px; padding: 10px 12px; }
 .version-row.current { background: var(--wb-canvas); }
-.version-row div { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.version-row-copy { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
 .version-row strong { font-size: 0.8125rem; font-weight: 550; }
 .version-row span { color: var(--wb-muted); font-size: 0.75rem; }
 .version-row button { border: 0; background: transparent; color: var(--wb-accent); cursor: pointer; font-size: 0.8125rem; font-weight: 600; }
+.version-row-actions { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 7px; }
+.version-row-actions .version-delete-action { display: inline-flex; align-items: center; gap: 3px; color: #c9342f; }
+.version-row button:disabled { cursor: default; opacity: 0.5; }
 .workbench-empty { margin: 28px 10px; color: var(--wb-muted); font-size: 0.8125rem; line-height: 1.6; text-align: center; }
 
 .workbench-toast {

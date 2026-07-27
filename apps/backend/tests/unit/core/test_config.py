@@ -70,6 +70,12 @@ def test_redis_url_without_password_has_no_authentication_fragment() -> None:
     assert settings.redis_url == "redis://cache:6380/0"
 
 
+def test_resume_version_limit_defaults_to_ten() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.resume_version_limit == 10
+
+
 def test_structuring_input_limit_cannot_exceed_markdown_limit() -> None:
     with pytest.raises(ValidationError, match="RESUME_STRUCTURING_MAX_BYTES"):
         Settings(

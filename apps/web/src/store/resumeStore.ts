@@ -73,6 +73,7 @@ type ResumeState = {
   saveCurrentResume: () => Promise<void>;
   loadVersions: () => Promise<void>;
   createVersion: () => Promise<void>;
+  deleteVersion: (versionNo: number) => Promise<void>;
   restoreVersion: (versionNo: number) => Promise<void>;
   goHome: () => void;
   setTitle: (title: string) => void;
@@ -374,6 +375,27 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     } catch (error) {
       set({ error: (error as Error).message });
       throw error;
+    }
+  },
+
+  deleteVersion: async (versionNo) => {
+    const resumeId = get().activeResumeId;
+    if (!resumeId) return;
+    set({ versionOperationPending: true, error: null });
+    try {
+      const { deleted } = await api.deleteVersion(resumeId, versionNo);
+      if (!deleted) throw new Error("RESUME_VERSION_DELETE_FAILED");
+      if (get().activeResumeId === resumeId) {
+        set((state) => ({
+          versions: state.versions.filter((version) => version.version_no !== versionNo),
+          error: null,
+        }));
+      }
+    } catch (error) {
+      set({ error: (error as Error).message });
+      throw error;
+    } finally {
+      set({ versionOperationPending: false });
     }
   },
 

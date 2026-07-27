@@ -35,7 +35,7 @@ LINKCV_ENV_FILE=.env.development npm run db:init
 
 | 环境变量 | 默认值 | 作用 |
 | --- | --- | --- |
-| `RESUME_VERSION_LIMIT` | `20` | 单份简历保留的历史版本数，最小为 2 |
+| `RESUME_VERSION_LIMIT` | `10` | 单份简历可保存的版本上限，达到后拒绝新增并由用户手动删除旧版本；最小为 2 |
 | `RESUME_IMPORT_MAX_BYTES` | `10485760` | 上传原文件大小上限 |
 | `RESUME_MARKDOWN_MAX_BYTES` | `2097152` | RAG Markdown 大小上限 |
 | `RESUME_STRUCTURING_MAX_BYTES` | `131072` | 允许发送到结构化模型的 Markdown 大小上限 |

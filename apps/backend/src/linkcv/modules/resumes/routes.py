@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 
 from linkcv.application.resumes.commands import CreateResumeCommand
 from linkcv.application.resumes.service import (
+    ResumeLimitExceeded,
     create_resume_with_initial_version,
     find_owned_resume,
     lock_owned_resume,
@@ -129,17 +130,20 @@ def create_resume(
         style = snapshot.style
         source_type = "template"
 
-    resume = create_resume_with_initial_version(
-        CreateResumeCommand(
-            user_id=user.id,
-            title=title,
-            data=data,
-            style=style,
-            source_type=source_type,
-            template_id=template_id,
-        ),
-        db,
-    )
+    try:
+        resume = create_resume_with_initial_version(
+            CreateResumeCommand(
+                user_id=user.id,
+                title=title,
+                data=data,
+                style=style,
+                source_type=source_type,
+                template_id=template_id,
+            ),
+            db,
+        )
+    except ResumeLimitExceeded as error:
+        raise ApiError(409, "RESUME_LIMIT_REACHED") from error
     return ResumeResponse(resume=resume_record(resume))
 
 

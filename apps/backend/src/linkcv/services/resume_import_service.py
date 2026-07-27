@@ -9,7 +9,10 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from linkcv.application.resumes.commands import CreateResumeCommand
-from linkcv.application.resumes.service import create_resume_with_initial_version
+from linkcv.application.resumes.service import (
+    ResumeLimitExceeded,
+    create_resume_with_initial_version,
+)
 from linkcv.core.storage import AssetStorage, build_import_object_name
 from linkcv.domain.rag import RagConverter, RagMarkdownResult, RagMetadata
 from linkcv.domain.resume_normalization import finalize_resume_document
@@ -240,6 +243,8 @@ class ResumeImportService:
                     ),
                     db,
                 )
+            except ResumeLimitExceeded as error:
+                raise ResumeImportFailure(409, "RESUME_LIMIT_REACHED") from error
             except Exception as error:
                 raise ResumeImportFailure(500, "IMPORT_CREATE_FAILED") from error
             created = True

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ResumeSummary } from "../../api/client";
+import { ApiRequestError, type ResumeSummary } from "../../api/client";
 import { HomeScreen } from "./HomePage";
 
 const resumes: ResumeSummary[] = [
@@ -63,6 +63,32 @@ describe("HomeScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: /标准简历模板/ }));
     expect(screen.getByRole("dialog", { name: "使用「标准简历模板」创建简历？" })).toBeInTheDocument();
     expect(onCreate).not.toHaveBeenCalled();
+  });
+
+  it("普通创建达到数量上限时显示明确提示", async () => {
+    const onCreate = vi.fn().mockRejectedValue(new ApiRequestError(409, "RESUME_LIMIT_REACHED"));
+    renderHome({ onCreate });
+
+    fireEvent.click(screen.getByRole("button", { name: "新建简历" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("每个账号最多保存 10 份简历，请先删除一份后再创建。")).toBeInTheDocument();
+    });
+    expect(onCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("模板创建达到数量上限时关闭确认并显示明确提示", async () => {
+    const onCreate = vi.fn().mockRejectedValue(new ApiRequestError(409, "RESUME_LIMIT_REACHED"));
+    renderHome({ onCreate });
+
+    fireEvent.click(screen.getByRole("button", { name: "模板" }));
+    fireEvent.click(screen.getByRole("button", { name: /标准简历模板/ }));
+    fireEvent.click(screen.getByRole("button", { name: "使用模板创建" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("每个账号最多保存 10 份简历，请先删除一份后再创建。")).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("通过站内弹窗确认后调用删除，成功后显示结果", async () => {

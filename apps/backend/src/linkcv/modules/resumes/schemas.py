@@ -95,6 +95,10 @@ class ResumeVersionResponse(BaseModel):
     version: ResumeVersionRecord
 
 
+class DeleteResumeVersionResponse(BaseModel):
+    deleted: bool
+
+
 class ResumeImportMetadata(BaseModel):
     source_file_name: str
     source_file_format: Literal["md", "docx", "pdf"]

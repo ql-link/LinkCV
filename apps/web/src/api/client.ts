@@ -89,6 +89,8 @@ export const api = {
   deleteResume: (id: string) => request<{ deleted: boolean }>(`/api/resumes/${id}`, { method: "DELETE" }),
   listVersions: (id: string) => request<{ versions: ResumeVersion[] }>(`/api/resumes/${id}/versions`),
   createVersion: (id: string) => request<{ version: ResumeVersion }>(`/api/resumes/${id}/versions`, { method: "POST" }),
+  deleteVersion: (id: string, versionNo: number) =>
+    request<{ deleted: boolean }>(`/api/resumes/${id}/versions/${versionNo}`, { method: "DELETE" }),
   restoreVersion: (id: string, versionNo: number) =>
     request<{ resume: ResumeRecord }>(`/api/resumes/${id}/versions/${versionNo}/restore`, { method: "POST" }),
   importResume: (file: File, title?: string) => {

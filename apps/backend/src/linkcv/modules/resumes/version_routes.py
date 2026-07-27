@@ -4,7 +4,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from linkcv.application.resumes.service import (
+    LatestResumeVersionRequired,
+    ResumeVersionLimitExceeded,
     create_manual_version,
+    delete_resume_version,
     find_owned_resume,
     restore_resume_version,
 )
@@ -17,6 +20,7 @@ from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import ResumeVersion
 from linkcv.modules.resumes.routes import resume_record
 from linkcv.modules.resumes.schemas import (
+    DeleteResumeVersionResponse,
     ResumeResponse,
     ResumeVersionListResponse,
     ResumeVersionRecord,
@@ -86,6 +90,8 @@ def create_version(
             user.id,
             settings.resume_version_limit,
         )
+    except ResumeVersionLimitExceeded as error:
+        raise ApiError(409, "RESUME_VERSION_LIMIT_REACHED") from error
     except IntegrityError as error:
         raise ApiError(409, "VERSION_CONFLICT") from error
     except ValueError as error:
@@ -93,6 +99,24 @@ def create_version(
     if version is None:
         raise ApiError(404, "RESUME_NOT_FOUND")
     return ResumeVersionResponse(version=version_record(version))
+
+
+@router.delete("/{version_no}", response_model=DeleteResumeVersionResponse)
+def delete_version(
+    resume_id: str,
+    version_no: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DeleteResumeVersionResponse:
+    try:
+        deleted = delete_resume_version(db, resume_id, version_no, user.id)
+    except LatestResumeVersionRequired as error:
+        raise ApiError(409, "LATEST_RESUME_VERSION_REQUIRED") from error
+    if deleted is None:
+        if find_owned_resume(db, resume_id, user.id) is None:
+            raise ApiError(404, "RESUME_NOT_FOUND")
+        raise ApiError(404, "RESUME_VERSION_NOT_FOUND")
+    return DeleteResumeVersionResponse(deleted=deleted)
 
 
 @router.get("/{version_no}", response_model=ResumeVersionResponse)
@@ -130,6 +154,8 @@ def restore_version(
             user.id,
             settings.resume_version_limit,
         )
+    except ResumeVersionLimitExceeded as error:
+        raise ApiError(409, "RESUME_VERSION_LIMIT_REACHED") from error
     except IntegrityError as error:
         raise ApiError(409, "VERSION_CONFLICT") from error
     except ValueError as error:
