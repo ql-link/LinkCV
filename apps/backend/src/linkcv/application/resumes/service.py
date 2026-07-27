@@ -1,0 +1,291 @@
+from copy import deepcopy
+
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.orm import Session
+
+from linkcv.application.resumes.commands import CreateResumeCommand
+from linkcv.core.database import utc_now
+from linkcv.domain.resume_document import ResumeDocumentV1
+from linkcv.domain.resume_snapshot import ResumeSnapshot, parse_resume_snapshot
+from linkcv.domain.resume_style import ResumeStyleV1, default_resume_style
+from linkcv.modules.identity.models import User
+from linkcv.modules.resumes.models import Resume, ResumeVersion
+
+MAX_RESUMES_PER_USER = 10
+
+
+class ResumeLimitExceeded(RuntimeError):
+    pass
+
+
+class ResumeVersionLimitExceeded(RuntimeError):
+    pass
+
+
+class LatestResumeVersionRequired(RuntimeError):
+    pass
+
+
+def parse_decimal_id(value: str) -> int | None:
+    if not value or len(value) > 20 or not value.isascii() or not value.isdecimal():
+        return None
+    parsed = int(value)
+    return parsed if 0 < parsed <= 2**64 - 1 and str(parsed) == value else None
+
+
+def find_owned_resume(db: Session, resume_id: str, user_id: int) -> Resume | None:
+    parsed_id = parse_decimal_id(resume_id)
+    if parsed_id is None:
+        return None
+    return db.scalar(
+        select(Resume).where(Resume.id == parsed_id, Resume.user_id == user_id)
+    )
+
+
+def lock_owned_resume(db: Session, resume_id: str, user_id: int) -> Resume | None:
+    parsed_id = parse_decimal_id(resume_id)
+    if parsed_id is None:
+        return None
+    return db.scalar(
+        select(Resume)
+        .where(Resume.id == parsed_id, Resume.user_id == user_id)
+        .with_for_update()
+    )
+
+
+def has_resume_capacity(db: Session, user_id: int) -> bool:
+    existing_ids = db.scalars(
+        select(Resume.id)
+        .where(Resume.user_id == user_id)
+        .limit(MAX_RESUMES_PER_USER)
+    ).all()
+    return len(existing_ids) < MAX_RESUMES_PER_USER
+
+
+def create_resume_with_initial_version(
+    command: CreateResumeCommand,
+    db: Session,
+) -> Resume:
+    title = command.title.strip() or "未命名简历"
+    snapshot = ResumeSnapshot(
+        data=command.data,
+        style=command.style or default_resume_style(),
+    )
+    try:
+        locked_user_id = db.scalar(
+            select(User.id).where(User.id == command.user_id).with_for_update()
+        )
+        if locked_user_id is None:
+            raise RuntimeError("resume owner no longer exists")
+        resume_ids = db.scalars(
+            select(Resume.id)
+            .where(Resume.user_id == command.user_id)
+            .with_for_update()
+        ).all()
+        if len(resume_ids) >= MAX_RESUMES_PER_USER:
+            raise ResumeLimitExceeded
+
+        resume = Resume(
+            user_id=command.user_id,
+            template_id=command.template_id,
+            title=title,
+            data_json=snapshot.data.model_dump(mode="json"),
+            style_json=snapshot.style.model_dump(mode="json"),
+            source_type=command.source_type,
+            source_filename=command.source_filename,
+            source_object_key=command.source_object_key,
+            extracted_markdown=command.extracted_markdown,
+        )
+        db.add(resume)
+        db.flush()
+        db.add(
+            ResumeVersion(
+                resume_id=resume.id,
+                version_no=1,
+                data_json=deepcopy(resume.data_json),
+                style_json=deepcopy(resume.style_json),
+                reason="initial",
+            )
+        )
+        db.flush()
+        db.refresh(resume)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return resume
+
+
+def update_resume_snapshot(
+    *,
+    db: Session,
+    resume: Resume,
+    user_id: int,
+    base_lock_version: int,
+    title: str | None,
+    data: ResumeDocumentV1 | None,
+    style: ResumeStyleV1 | None,
+) -> Resume | None:
+    current = parse_resume_snapshot(resume.data_json, resume.style_json)
+    snapshot = ResumeSnapshot(
+        data=data or current.data,
+        style=style or current.style,
+    )
+    values = {
+        "title": (title.strip() or "未命名简历") if title is not None else resume.title,
+        "data_json": snapshot.data.model_dump(mode="json"),
+        "style_json": snapshot.style.model_dump(mode="json"),
+        "lock_version": Resume.lock_version + 1,
+        "updated_at": utc_now(),
+    }
+    result = db.execute(
+        update(Resume)
+        .where(
+            Resume.id == resume.id,
+            Resume.user_id == user_id,
+            Resume.lock_version == base_lock_version,
+        )
+        .values(**values)
+    )
+    if result.rowcount != 1:
+        db.rollback()
+        return None
+    updated = db.scalar(select(Resume).where(Resume.id == resume.id))
+    db.commit()
+    return updated
+
+
+def _next_version_number(db: Session, resume_id: int) -> int:
+    current = db.scalar(
+        select(func.max(ResumeVersion.version_no)).where(
+            ResumeVersion.resume_id == resume_id
+        )
+    )
+    return int(current or 0) + 1
+
+
+def _append_version(db: Session, resume: Resume, reason: str) -> ResumeVersion:
+    snapshot = parse_resume_snapshot(resume.data_json, resume.style_json)
+    version = ResumeVersion(
+        resume_id=resume.id,
+        version_no=_next_version_number(db, resume.id),
+        data_json=deepcopy(snapshot.data.model_dump(mode="json")),
+        style_json=deepcopy(snapshot.style.model_dump(mode="json")),
+        reason=reason,
+    )
+    db.add(version)
+    db.flush()
+    return version
+
+
+def _version_count(db: Session, resume_id: int) -> int:
+    count = db.scalar(
+        select(func.count(ResumeVersion.id)).where(
+            ResumeVersion.resume_id == resume_id
+        )
+    )
+    return int(count or 0)
+
+
+def create_manual_version(
+    db: Session,
+    resume_id: str,
+    user_id: int,
+    version_limit: int,
+) -> ResumeVersion | None:
+    resume = lock_owned_resume(db, resume_id, user_id)
+    if resume is None:
+        return None
+    try:
+        if _version_count(db, resume.id) >= version_limit:
+            raise ResumeVersionLimitExceeded
+        version = _append_version(db, resume, "manual")
+        db.refresh(version)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return version
+
+
+def restore_resume_version(
+    db: Session,
+    resume_id: str,
+    version_no: int,
+    user_id: int,
+    version_limit: int,
+) -> Resume | None:
+    resume = lock_owned_resume(db, resume_id, user_id)
+    if resume is None:
+        return None
+    target = db.scalar(
+        select(ResumeVersion).where(
+            ResumeVersion.resume_id == resume.id,
+            ResumeVersion.version_no == version_no,
+        )
+    )
+    if target is None:
+        return None
+
+    target_snapshot = parse_resume_snapshot(target.data_json, target.style_json)
+    latest = db.scalar(
+        select(ResumeVersion)
+        .where(ResumeVersion.resume_id == resume.id)
+        .order_by(ResumeVersion.version_no.desc())
+        .limit(1)
+    )
+    needs_backup = latest is None or (
+        latest.data_json != resume.data_json or latest.style_json != resume.style_json
+    )
+    try:
+        required_slots = 2 if needs_backup else 1
+        if _version_count(db, resume.id) + required_slots > version_limit:
+            raise ResumeVersionLimitExceeded
+        if needs_backup:
+            _append_version(db, resume, "before_restore")
+
+        resume.data_json = target_snapshot.data.model_dump(mode="json")
+        resume.style_json = target_snapshot.style.model_dump(mode="json")
+        resume.lock_version += 1
+        resume.updated_at = utc_now()
+        db.flush()
+        _append_version(db, resume, "restore")
+        db.refresh(resume)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return resume
+
+
+def delete_resume_version(
+    db: Session,
+    resume_id: str,
+    version_no: int,
+    user_id: int,
+) -> bool | None:
+    resume = lock_owned_resume(db, resume_id, user_id)
+    if resume is None:
+        return None
+    try:
+        version = db.scalar(
+            select(ResumeVersion).where(
+                ResumeVersion.resume_id == resume.id,
+                ResumeVersion.version_no == version_no,
+            )
+        )
+        if version is None:
+            return None
+        latest_version_no = db.scalar(
+            select(func.max(ResumeVersion.version_no)).where(
+                ResumeVersion.resume_id == resume.id
+            )
+        )
+        if version.version_no == latest_version_no:
+            raise LatestResumeVersionRequired
+        db.execute(delete(ResumeVersion).where(ResumeVersion.id == version.id))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return True

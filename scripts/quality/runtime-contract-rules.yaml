@@ -76,6 +76,22 @@ contracts:
         pattern: '\$\{REDIS_PORT:-6379\}:6379'
         message: Compose 必须使用 REDIS_PORT=6379 作为默认映射
 
+  - id: resume-import-admission-defaults
+    description: FastAPI 与三套环境使用一致的简历导入成本保护默认值
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default=128 \* 1024,[\s\S]*alias="RESUME_STRUCTURING_MAX_BYTES"[\s\S]*default=3,[\s\S]*alias="RESUME_IMPORT_REQUESTS_PER_MINUTE"[\s\S]*default=4,[\s\S]*alias="RESUME_IMPORT_GLOBAL_CONCURRENCY"[\s\S]*default=1,[\s\S]*alias="RESUME_IMPORT_USER_CONCURRENCY"'
+        message: FastAPI 必须保留经过审查的导入限制默认值
+      - path: .env.example
+        pattern: '(?m)^RESUME_STRUCTURING_MAX_BYTES=131072$[\s\S]*^RESUME_IMPORT_REQUESTS_PER_MINUTE=3$[\s\S]*^RESUME_IMPORT_GLOBAL_CONCURRENCY=4$[\s\S]*^RESUME_IMPORT_USER_CONCURRENCY=1$'
+        message: 本地环境模板必须声明完整导入限制
+      - path: .env.development
+        pattern: '(?m)^RESUME_STRUCTURING_MAX_BYTES=131072$[\s\S]*^RESUME_IMPORT_REQUESTS_PER_MINUTE=3$[\s\S]*^RESUME_IMPORT_GLOBAL_CONCURRENCY=4$[\s\S]*^RESUME_IMPORT_USER_CONCURRENCY=1$'
+        message: Dev 环境必须声明完整导入限制
+      - path: .env.production
+        pattern: '(?m)^RESUME_STRUCTURING_MAX_BYTES=131072$[\s\S]*^RESUME_IMPORT_REQUESTS_PER_MINUTE=3$[\s\S]*^RESUME_IMPORT_GLOBAL_CONCURRENCY=4$[\s\S]*^RESUME_IMPORT_USER_CONCURRENCY=1$'
+        message: Production 环境必须声明完整导入限制
+
   - id: production-middleware-docker-dns
     description: Production 通过 tolink-app-net 的 Docker DNS 连接已迁移中间件
     assertions:

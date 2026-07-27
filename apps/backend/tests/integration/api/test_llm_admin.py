@@ -19,6 +19,7 @@ from linkcv.modules.llm.gateway import (
 from linkcv.modules.llm.models import LLMCallLog, LLMModelConfig
 from linkcv.modules.llm.schemas import ChatMessage
 from linkcv.modules.llm.service import LLMError
+from tests.fakes import FakeRedis
 
 
 class FakeStorage:
@@ -74,6 +75,7 @@ def build_app(*, with_key: bool = True):
     app = create_app(
         settings,
         storage=FakeStorage(),
+        redis=FakeRedis(),
         llm_gateway=gateway,
         create_schema=True,
     )
@@ -148,7 +150,7 @@ def test_disabling_model_preserves_history_and_removes_it_from_candidates() -> N
         )
         assert disabled.status_code == 200
         assert disabled.json()["model"]["enabled"] is False
-        assert client.delete(f"/api/admin/llm/models/{config_id}").status_code == 405
+        assert client.delete(f"/api/admin/llm/models/{config_id}").status_code == 404
 
         with app.state.session_factory() as db:
             user = db.scalar(

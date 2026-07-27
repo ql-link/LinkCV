@@ -65,3 +65,17 @@ final result: passed
 
 - 未发现内容裁切、错误间距、错误边框、不可达主要操作或品牌资产不一致。
 - 浏览器控制台无错误；自动化测试、类型检查和生产构建结果由规格状态与 PR 验证摘要记录。
+
+## Admin module on dev — 2026-07-27
+
+final result: passed
+
+- Reference: current `dev` design tokens and shared `Brand` component, plus the supplied Apple Fluid Interface brief.
+- The admin module now lives under `apps/web` and routes through the current dev router.
+- Visual tokens use dev's grayscale surfaces, system font stack, radii, shadows, dark-mode variables, and LinkCV brand mark.
+- Admin-owned motion uses Motion springs and only animates transform or opacity; its CSS contains no transitions or keyframes.
+- Reduced motion, reduced transparency, and increased contrast have explicit fallbacks.
+- Mock login, direct admin routes, section navigation, and model drawer pass component tests.
+- Production build and direct HTTP checks for `/admin` and `/admin/users` pass.
+- The admin login was visually rechecked after replacing the promotional full-screen split with a focused, glass-backed access workspace. Desktop and 390 × 844 mobile views have no clipping or horizontal overflow.
+- The mock credential fill and direct sign-in flow were exercised in the browser; `/admin/llm/models` retained its addressed destination after login and the browser console reported no warnings or errors.

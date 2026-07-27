@@ -8,6 +8,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[5]
 INITIAL_REVISION = "0001"
 FOUR_TABLE_REVISION = "0002"
+TEMPLATE_DELETE_REVISION = "0003"
 
 
 def load_module(name: str, path: Path) -> ModuleType:
@@ -136,6 +137,31 @@ def test_four_core_table_revision_is_sql_first_and_guarded() -> None:
     assert down_sql.index("DROP TABLE IF EXISTS resume_versions") < down_sql.index(
         "DROP TABLE IF EXISTS resumes"
     )
+
+
+def test_template_delete_revision_is_sql_first_and_reversible_when_safe() -> None:
+    revision = next(
+        (REPO_ROOT / "apps/backend/migrations/versions").glob(
+            f"{TEMPLATE_DELETE_REVISION}_*.py"
+        )
+    )
+    revision_text = revision.read_text(encoding="utf-8")
+    up_sql = (
+        REPO_ROOT
+        / f"apps/backend/migrations/sql/{TEMPLATE_DELETE_REVISION}.up.sql"
+    ).read_text(encoding="utf-8")
+    down_sql = (
+        REPO_ROOT
+        / f"apps/backend/migrations/sql/{TEMPLATE_DELETE_REVISION}.down.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "op.create_foreign_key" not in revision_text
+    assert "0003.up.sql" in revision_text
+    assert "0003.down.sql" in revision_text
+    assert "ON DELETE SET NULL" in up_sql
+    assert "ON DELETE RESTRICT" in down_sql
+    assert "DROP CHECK ck_resumes_source_fields" in up_sql
+    assert "source_type = 'template' AND template_id IS NULL" in revision_text
 
 
 def test_database_initializer_rejects_any_schema_except_linkcv() -> None:

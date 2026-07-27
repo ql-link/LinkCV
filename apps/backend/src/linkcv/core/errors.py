@@ -20,7 +20,8 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def handle_request_validation(
-        request: Request, error: RequestValidationError
+        request: Request,
+        error: RequestValidationError,
     ) -> JSONResponse:
         if request.url.path.startswith("/api/admin/llm"):
             code = (
@@ -29,4 +30,20 @@ def install_error_handlers(app: FastAPI) -> None:
                 else "INVALID_LLM_MODEL_CONFIG"
             )
             return JSONResponse(status_code=400, content={"error": code})
+        if request.method == "PUT" and request.url.path.startswith("/api/resumes/"):
+            fields = {
+                item["loc"][1]
+                for item in error.errors()
+                if len(item.get("loc", ())) > 1 and item["loc"][0] == "body"
+            }
+            if "style" in fields:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "INVALID_RESUME_STYLE"},
+                )
+            if "data" in fields:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "INVALID_RESUME_DOCUMENT"},
+                )
         return await request_validation_exception_handler(request, error)

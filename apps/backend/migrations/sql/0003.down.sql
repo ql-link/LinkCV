@@ -1,4 +1,31 @@
--- Down migration for 0003: remove LLM infrastructure.
--- This deletes LLM configuration and audit data; use only in controlled environments.
-DROP TABLE llm_call_logs;
-DROP TABLE llm_model_configs;
+-- Down migration for 0003: set resume template delete null
+ALTER TABLE resumes
+  DROP FOREIGN KEY fk_resumes_template;
+
+ALTER TABLE resumes
+  DROP CHECK ck_resumes_source_fields;
+
+ALTER TABLE resumes
+  ADD CONSTRAINT ck_resumes_source_fields CHECK (
+    (source_type = 'blank'
+      AND template_id IS NULL
+      AND source_filename IS NULL
+      AND source_object_key IS NULL
+      AND extracted_markdown IS NULL)
+    OR
+    (source_type = 'template'
+      AND template_id IS NOT NULL
+      AND source_filename IS NULL
+      AND source_object_key IS NULL
+      AND extracted_markdown IS NULL)
+    OR
+    (source_type = 'import'
+      AND template_id IS NULL
+      AND source_filename IS NOT NULL
+      AND source_object_key IS NOT NULL
+      AND extracted_markdown IS NOT NULL)
+  );
+
+ALTER TABLE resumes
+  ADD CONSTRAINT fk_resumes_template FOREIGN KEY (template_id)
+    REFERENCES resume_templates (id) ON DELETE RESTRICT;
