@@ -1451,6 +1451,7 @@ select:focus-visible,
   font-size: 13px;
 }
 
+.dashboard-import.ds-button,
 .dashboard-create.ds-button { border-radius: 980px; }
 
 .dashboard-main { padding: 32px; }
@@ -1740,6 +1741,7 @@ select:focus-visible,
   .dashboard-header h1 { font-size: 19px; }
   .dashboard-header-actions { min-width: 0; flex: 1; justify-content: flex-end; }
   .dashboard-search { width: min(190px, 48vw); }
+  .dashboard-import.ds-button,
   .dashboard-create.ds-button { padding-inline: 12px; }
   .dashboard-main { padding: 20px 16px 32px; }
   .home-card-grid { grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: 16px; }
@@ -1749,7 +1751,9 @@ select:focus-visible,
 }
 
 @media (max-width: 420px) {
+  .dashboard-import.ds-button svg,
   .dashboard-create.ds-button svg { display: none; }
+  .dashboard-import.ds-button,
   .dashboard-create.ds-button { padding-inline: 10px; }
   .dashboard-search { width: min(150px, 43vw); }
   .home-card-grid { grid-template-columns: 1fr 1fr; }

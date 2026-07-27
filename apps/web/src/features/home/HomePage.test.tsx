@@ -15,6 +15,7 @@ function renderHome(overrides: Partial<React.ComponentProps<typeof HomeScreen>> 
     onOpen: vi.fn(),
     onDelete: vi.fn(),
     onCreate: vi.fn(),
+    onImport: vi.fn(),
     onLogout: vi.fn(),
     ...overrides,
   };
@@ -89,6 +90,29 @@ describe("HomeScreen", () => {
       expect(screen.getByText("每个账号最多保存 10 份简历，请先删除一份后再创建。")).toBeInTheDocument();
     });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("从主页选择支持的文件并调用简历导入", async () => {
+    const onImport = vi.fn().mockResolvedValue(undefined);
+    const file = new File(["# 张三"], "resume.md", { type: "text/markdown" });
+    renderHome({ onImport });
+
+    fireEvent.click(screen.getByRole("button", { name: "导入简历" }));
+    fireEvent.change(screen.getByLabelText("选择简历文件"), { target: { files: [file] } });
+
+    await waitFor(() => expect(onImport).toHaveBeenCalledWith(file));
+  });
+
+  it("导入服务未配置时显示明确的站内提示", async () => {
+    const onImport = vi.fn().mockRejectedValue(new ApiRequestError(503, "STRUCTURING_MODEL_UNAVAILABLE"));
+    const file = new File(["# 张三"], "resume.md", { type: "text/markdown" });
+    renderHome({ onImport });
+
+    fireEvent.change(screen.getByLabelText("选择简历文件"), { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText("简历结构化服务尚未配置，暂时无法导入。")).toBeInTheDocument();
+    });
   });
 
   it("通过站内弹窗确认后调用删除，成功后显示结果", async () => {

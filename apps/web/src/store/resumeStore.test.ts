@@ -147,6 +147,53 @@ describe("resume deletion", () => {
   });
 });
 
+describe("resume import", () => {
+  it("导入成功后把简历加入列表并设为当前简历", async () => {
+    const importedResume: ResumeRecord = {
+      ...record(1, "# 导入的简历"),
+      id: "3",
+      title: "导入的简历",
+      source_type: "import",
+      source_filename: "resume.md",
+    };
+    const file = new File(["# 导入的简历"], "resume.md", { type: "text/markdown" });
+    vi.spyOn(api, "importResume").mockResolvedValue({ resume: importedResume, import: { warnings: [] } });
+
+    await useResumeStore.getState().importResume(file);
+
+    expect(api.importResume).toHaveBeenCalledWith(file, undefined);
+    expect(useResumeStore.getState()).toMatchObject({
+      activeResumeId: "3",
+      title: "导入的简历",
+      markdown: "# 导入的简历",
+      versions: [],
+      dirty: false,
+    });
+    expect(useResumeStore.getState().resumes).toEqual([
+      expect.objectContaining({ id: "3", source_type: "import" }),
+    ]);
+  });
+
+  it("导入失败时保留原有列表和当前简历", async () => {
+    const existing = {
+      id: "1",
+      title: "测试简历",
+      source_type: "blank" as const,
+      lock_version: 1,
+      created_at: "2026-07-27T00:00:00Z",
+      updated_at: "2026-07-27T00:00:01Z",
+    };
+    useResumeStore.setState({ resumes: [existing] });
+    const file = new File(["# 新简历"], "resume.md", { type: "text/markdown" });
+    vi.spyOn(api, "importResume").mockRejectedValue(new Error("HTTP_500"));
+
+    await expect(useResumeStore.getState().importResume(file)).rejects.toThrow("HTTP_500");
+
+    expect(useResumeStore.getState().activeResumeId).toBe("1");
+    expect(useResumeStore.getState().resumes).toEqual([existing]);
+  });
+});
+
 describe("resume version deletion", () => {
   beforeEach(() => {
     useResumeStore.setState({

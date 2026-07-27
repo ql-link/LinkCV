@@ -68,6 +68,7 @@ type ResumeState = {
   logout: () => Promise<void>;
   listResumes: () => Promise<void>;
   createResume: (title?: string) => Promise<void>;
+  importResume: (file: File, title?: string) => Promise<void>;
   loadResume: (id: string) => Promise<void>;
   deleteResume: (id: string) => Promise<void>;
   saveCurrentResume: () => Promise<void>;
@@ -263,6 +264,15 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     });
     const { resumes } = await api.listResumes();
     set({ resumes, versions: [], ...applyResume(resume) });
+  },
+
+  importResume: async (file, title) => {
+    const { resume } = await api.importResume(file, title);
+    set((state) => ({
+      resumes: mergeResumeSummary(state.resumes, resume),
+      versions: [],
+      ...applyResume(resume),
+    }));
   },
 
   loadResume: async (id) => {
