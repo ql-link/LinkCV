@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from "react";
-import { FileText, LayoutTemplate, LogOut, PenLine, Plus, Search, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { FileText, LayoutTemplate, LogOut, PenLine, Plus, Search, Trash2, X } from "lucide-react";
 import type { ResumeSummary } from "../../api/client";
 import { Brand, Button, Toast } from "../../components/ds";
 import { useResumeStore } from "../../store/resumeStore";
@@ -13,6 +13,113 @@ type HomeScreenProps = {
   onCreate: () => void | Promise<void>;
   onLogout: () => void | Promise<void>;
 };
+
+type HomeConfirmDialogProps = {
+  kind: "delete" | "template";
+  title: string;
+  description: string;
+  confirmLabel: string;
+  busyLabel: string;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void | Promise<void>;
+};
+
+function HomeConfirmDialog({
+  kind,
+  title,
+  description,
+  confirmLabel,
+  busyLabel,
+  busy,
+  onCancel,
+  onConfirm,
+}: HomeConfirmDialogProps) {
+  const titleId = `home-confirm-${kind}-title`;
+  const descriptionId = `home-confirm-${kind}-description`;
+  const dialogRef = useRef<HTMLElement>(null);
+  const cancelActionRef = useRef(onCancel);
+  const busyStateRef = useRef(busy);
+
+  useEffect(() => {
+    cancelActionRef.current = onCancel;
+    busyStateRef.current = busy;
+  }, [busy, onCancel]);
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !busyStateRef.current) {
+        cancelActionRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>("button:not(:disabled)"));
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
+    };
+  }, []);
+
+  return (
+    <div
+      className="home-confirm-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) onCancel();
+      }}
+    >
+      <section
+        ref={dialogRef}
+        className="home-confirm-dialog"
+        role={kind === "delete" ? "alertdialog" : "dialog"}
+        tabIndex={-1}
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+      >
+        <span className={`home-confirm-icon is-${kind}`} aria-hidden="true">
+          {kind === "delete" ? <Trash2 size={21} /> : <LayoutTemplate size={21} />}
+        </span>
+        <div className="home-confirm-copy">
+          <h2 id={titleId}>{title}</h2>
+          <p id={descriptionId}>{description}</p>
+        </div>
+        <div className="home-confirm-actions">
+          <Button variant="secondary" disabled={busy} autoFocus onClick={onCancel}>
+            取消
+          </Button>
+          <Button
+            className={kind === "delete" ? "home-confirm-danger" : ""}
+            disabled={busy}
+            onClick={() => void onConfirm()}
+          >
+            {busy ? busyLabel : confirmLabel}
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
+}
 
 function ResumeThumbnailCard({
   resume,
@@ -63,25 +170,50 @@ export function HomeScreen({ email, resumes, onOpen, onDelete, onCreate, onLogou
   const [tab, setTab] = useState<"all" | "templates">("all");
   const [query, setQuery] = useState("");
   const [scrollAmount, setScrollAmount] = useState(0);
+  const [pendingDelete, setPendingDelete] = useState<ResumeSummary | null>(null);
   const [deletingResumeId, setDeletingResumeId] = useState<string | null>(null);
-  const [deleteNotice, setDeleteNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+  const [templateConfirmOpen, setTemplateConfirmOpen] = useState(false);
+  const [creatingFromTemplate, setCreatingFromTemplate] = useState(false);
+  const [notice, setNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
 
   const visibleResumes = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     return resumes.filter((resume) => resume.title.toLocaleLowerCase().includes(normalizedQuery));
   }, [query, resumes]);
 
-  const requestDelete = async (resume: ResumeSummary) => {
-    if (deletingResumeId || !window.confirm(`确认永久删除「${resume.title}」吗？`)) return;
+  const requestDelete = (resume: ResumeSummary) => {
+    if (deletingResumeId) return;
+    setNotice(null);
+    setPendingDelete(resume);
+  };
+
+  const confirmDelete = async () => {
+    const resume = pendingDelete;
+    if (!resume || deletingResumeId) return;
     setDeletingResumeId(resume.id);
-    setDeleteNotice(null);
     try {
       await onDelete(resume.id);
-      setDeleteNotice({ kind: "success", message: `已删除「${resume.title}」` });
+      setNotice({ kind: "success", message: `已删除「${resume.title}」` });
     } catch {
-      setDeleteNotice({ kind: "error", message: `删除「${resume.title}」失败，请稍后重试。` });
+      setNotice({ kind: "error", message: `删除「${resume.title}」失败，请稍后重试。` });
     } finally {
       setDeletingResumeId(null);
+      setPendingDelete(null);
+    }
+  };
+
+  const confirmTemplateCreate = async () => {
+    if (creatingFromTemplate) return;
+    setCreatingFromTemplate(true);
+    setNotice(null);
+    try {
+      await onCreate();
+      setTemplateConfirmOpen(false);
+    } catch {
+      setNotice({ kind: "error", message: "从模板创建简历失败，请稍后重试。" });
+      setTemplateConfirmOpen(false);
+    } finally {
+      setCreatingFromTemplate(false);
     }
   };
 
@@ -137,7 +269,7 @@ export function HomeScreen({ email, resumes, onOpen, onDelete, onCreate, onLogou
             <section className="home-card-grid" aria-label="简历模板">
               <ResumeThumbnailCard
                 resume={{ id: "standard-template", title: "标准简历模板", updated_at: "内置" }}
-                onOpen={() => void onCreate()}
+                onOpen={() => setTemplateConfirmOpen(true)}
               />
             </section>
           ) : visibleResumes.length > 0 ? (
@@ -147,7 +279,7 @@ export function HomeScreen({ email, resumes, onOpen, onDelete, onCreate, onLogou
                   key={resume.id}
                   resume={resume}
                   onOpen={() => void onOpen(resume.id)}
-                  onDelete={() => void requestDelete(resume)}
+                  onDelete={() => requestDelete(resume)}
                   deleteDisabled={deletingResumeId !== null}
                 />
               ))}
@@ -166,12 +298,38 @@ export function HomeScreen({ email, resumes, onOpen, onDelete, onCreate, onLogou
           )}
         </div>
 
-        {deleteNotice && (
-          <div className="home-delete-toast">
-            <Toast kind={deleteNotice.kind}>{deleteNotice.message}</Toast>
+        {notice && (
+          <div className="home-action-toast">
+            <Toast kind={notice.kind}>{notice.message}</Toast>
           </div>
         )}
       </div>
+
+      {pendingDelete && (
+        <HomeConfirmDialog
+          kind="delete"
+          title={`删除「${pendingDelete.title}」？`}
+          description="删除后无法恢复，相关历史版本也会一并移除。"
+          confirmLabel="永久删除"
+          busyLabel="正在删除…"
+          busy={deletingResumeId === pendingDelete.id}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={confirmDelete}
+        />
+      )}
+
+      {templateConfirmOpen && (
+        <HomeConfirmDialog
+          kind="template"
+          title="使用「标准简历模板」创建简历？"
+          description="将以该模板新建一份简历，不会覆盖或修改已有简历。"
+          confirmLabel="使用模板创建"
+          busyLabel="正在创建…"
+          busy={creatingFromTemplate}
+          onCancel={() => setTemplateConfirmOpen(false)}
+          onConfirm={confirmTemplateCreate}
+        />
+      )}
     </main>
   );
 }

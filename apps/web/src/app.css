@@ -1582,7 +1582,7 @@ select:focus-visible,
 .dashboard-empty-state p { margin: 0; color: var(--muted); font-size: 17px; }
 .dashboard-empty-state .ds-button { margin-top: 8px; border-radius: 980px; }
 
-.home-delete-toast {
+.home-action-toast {
   position: fixed;
   bottom: 28px;
   left: calc(50% + 110px);
@@ -1591,7 +1591,7 @@ select:focus-visible,
   animation: home-toast-in 260ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
 }
 
-.home-delete-toast .ds-toast {
+.home-action-toast .ds-toast {
   position: static;
   height: 48px;
   min-width: 0;
@@ -1601,11 +1601,92 @@ select:focus-visible,
   box-shadow: var(--shadow-toast);
 }
 
-.home-delete-toast .ds-button { color: var(--ink); font-weight: 600; }
+.home-action-toast .ds-button { color: var(--ink); font-weight: 600; }
+
+.home-confirm-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--scrim);
+  padding: 24px;
+  backdrop-filter: blur(10px) saturate(140%);
+  animation: home-confirm-backdrop-in 180ms ease-out;
+}
+
+.home-confirm-dialog {
+  display: grid;
+  width: min(420px, 100%);
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-xl);
+  background: var(--surface-raised);
+  padding: 24px;
+  box-shadow: var(--shadow-lg);
+  animation: home-confirm-dialog-in 220ms var(--ease-standard);
+}
+
+.home-confirm-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 13px;
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.home-confirm-icon.is-delete {
+  background: var(--error-bg);
+  color: var(--error);
+}
+
+.home-confirm-copy h2 {
+  margin: 1px 0 7px;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.home-confirm-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.home-confirm-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.home-confirm-danger.ds-button-primary {
+  background: var(--error);
+  color: #fff;
+}
+
+.home-confirm-danger.ds-button-primary:hover:not(:disabled) {
+  background: #d92d20;
+}
 
 @keyframes home-toast-in {
   from { opacity: 0; transform: translateX(-50%) scale(0.9); }
   to { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+
+@keyframes home-confirm-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes home-confirm-dialog-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @media (max-width: 760px) {
@@ -1641,7 +1722,7 @@ select:focus-visible,
   .dashboard-account { width: 36px; height: 36px; justify-content: center; margin: 0; border: 0; border-radius: 8px; padding: 0; }
   .dashboard-account span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .dashboard-content { min-height: 0; }
-  .home-delete-toast { left: 50%; }
+  .home-action-toast { left: 50%; }
 }
 
 @media (max-width: 640px) {
@@ -1672,6 +1753,7 @@ select:focus-visible,
   .dashboard-create.ds-button { padding-inline: 10px; }
   .dashboard-search { width: min(150px, 43vw); }
   .home-card-grid { grid-template-columns: 1fr 1fr; }
+  .home-confirm-actions .ds-button { flex: 1; padding-inline: 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1680,7 +1762,9 @@ select:focus-visible,
   .landing-paper-card,
   .landing-reveal,
   .home-resume-card,
-  .home-delete-toast {
+  .home-action-toast,
+  .home-confirm-backdrop,
+  .home-confirm-dialog {
     transition: none;
     animation: none;
   }
