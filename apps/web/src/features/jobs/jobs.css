@@ -287,6 +287,20 @@
   font-size: 13px;
 }
 
+.job-field-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.job-field-label em {
+  color: var(--error);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+}
+
 .job-field-wide { grid-column: 1 / -1; }
 .job-field input,
 .job-field select,

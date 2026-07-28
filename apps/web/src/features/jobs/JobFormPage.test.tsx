@@ -57,6 +57,20 @@ afterEach(() => {
 });
 
 describe("JobFormPage", () => {
+  it("明确标记创建表单中的必填字段", () => {
+    render(<JobFormPage mode="create" />);
+
+    for (const label of ["岗位名称", "公司名称", "JD 正文（Markdown）"]) {
+      const field = screen.getByLabelText(label);
+      expect(field).toBeRequired();
+      expect(field.closest("label")).toHaveTextContent("必填");
+    }
+
+    const skills = screen.getByLabelText("技能");
+    expect(skills).not.toBeRequired();
+    expect(skills.closest("label")).not.toHaveTextContent("必填");
+  });
+
   it("发现重复来源后要求用户选择，并把更新动作与版本一起提交", async () => {
     const duplicate = {
       existing: summary,

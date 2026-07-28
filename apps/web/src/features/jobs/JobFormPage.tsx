@@ -275,11 +275,15 @@ function FormSection({ title, children }: { title: string; children: React.React
 }
 
 function JobInput({ label, hint, className = "", onChange, ...props }: Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange"> & { label: string; hint?: string; onChange: (value: string) => void }) {
-  return <label className={`job-field ${className}`.trim()}><span>{label}</span><input {...props} onChange={(event) => onChange(event.target.value)} />{hint && <small>{hint}</small>}</label>;
+  return <label className={`job-field ${className}`.trim()}><JobFieldLabel label={label} required={props.required} /><input {...props} aria-label={props["aria-label"] ?? label} onChange={(event) => onChange(event.target.value)} />{hint && <small>{hint}</small>}</label>;
 }
 
 function JobTextarea({ label, className = "", value, required, onChange }: { label: string; className?: string; value: string; required?: boolean; onChange: (value: string) => void }) {
-  return <label className={`job-field ${className}`.trim()}><span>{label}</span><textarea value={value} required={required} onChange={(event) => onChange(event.target.value)} /></label>;
+  return <label className={`job-field ${className}`.trim()}><JobFieldLabel label={label} required={required} /><textarea aria-label={label} value={value} required={required} onChange={(event) => onChange(event.target.value)} /></label>;
+}
+
+function JobFieldLabel({ label, required }: { label: string; required?: boolean }) {
+  return <span className="job-field-label">{label}{required && <em aria-hidden="true">必填</em>}</span>;
 }
 
 function JobSelect({ label, value, options, onChange }: { label: string; value: string; options: Array<[string, string]>; onChange: (value: string) => void }) {
