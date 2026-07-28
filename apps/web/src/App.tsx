@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "./components/ds";
+import { WorkspaceLayout, type WorkspaceSection } from "./components/WorkspaceLayout";
 import { ApiRequestError } from "./api/client";
 import { AdminApp } from "./features/admin/AdminApp";
 import { AuthPage } from "./features/auth/AuthPage";
@@ -138,24 +139,29 @@ export function App() {
     );
   }
 
-  if (route.kind === "resumes") {
-    return <HomePage />;
-  }
+  if (
+    route.kind === "resumes"
+    || route.kind === "jobs"
+    || route.kind === "jobCreate"
+    || route.kind === "jobDetail"
+    || route.kind === "jobEdit"
+  ) {
+    const resumeView = route.kind === "resumes" && new URLSearchParams(window.location.search).get("view") === "templates"
+      ? "templates"
+      : "all";
+    const activeSection: WorkspaceSection = route.kind === "resumes"
+      ? resumeView === "templates" ? "templates" : "resumes"
+      : "jobs";
 
-  if (route.kind === "jobs") {
-    return <JobCenterPage />;
-  }
-
-  if (route.kind === "jobCreate") {
-    return <JobFormPage mode="create" />;
-  }
-
-  if (route.kind === "jobDetail") {
-    return <JobDetailPage jobId={route.jobId} />;
-  }
-
-  if (route.kind === "jobEdit") {
-    return <JobFormPage mode="edit" jobId={route.jobId} />;
+    return (
+      <WorkspaceLayout active={activeSection}>
+        {route.kind === "resumes" && <HomePage view={resumeView} />}
+        {route.kind === "jobs" && <JobCenterPage />}
+        {route.kind === "jobCreate" && <JobFormPage mode="create" />}
+        {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}
+        {route.kind === "jobEdit" && <JobFormPage mode="edit" jobId={route.jobId} />}
+      </WorkspaceLayout>
+    );
   }
 
   if (route.kind === "editor") {

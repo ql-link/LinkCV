@@ -1,17 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { Archive, BriefcaseBusiness, FileText, LogOut, MapPin, Plus, RotateCcw, Search, Trash2 } from "lucide-react";
+import { Archive, BriefcaseBusiness, MapPin, Plus, RotateCcw, Search, Trash2 } from "lucide-react";
 import { api, type JobDescriptionSummary } from "../../api/client";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { Brand, Button } from "../../components/ds";
+import { Button } from "../../components/ds";
 import { jobDetailPath, navigateTo } from "../../routing";
-import { useResumeStore } from "../../store/resumeStore";
 import "./jobs.css";
 
 type JobScope = "active" | "archived" | "all";
 
 export function JobCenterPage() {
-  const user = useResumeStore((state) => state.user);
-  const logout = useResumeStore((state) => state.logout);
   const [scope, setScope] = useState<JobScope>("active");
   const [keyword, setKeyword] = useState("");
   const [items, setItems] = useState<JobDescriptionSummary[]>([]);
@@ -112,23 +109,8 @@ export function JobCenterPage() {
     }
   };
 
-  const logoutAndReturn = async () => {
-    await logout();
-    navigateTo("/", { replace: true });
-  };
-
   return (
-    <main className="job-center-shell">
-      <nav className="job-sidebar" aria-label="JD 中心导航">
-        <Brand />
-        <div className="job-sidebar-links">
-          <button type="button" onClick={() => navigateTo("/resumes")}><FileText size={16} />简历</button>
-          <button type="button" className="is-active"><BriefcaseBusiness size={16} />JD 中心</button>
-        </div>
-        <button className="job-account" type="button" onClick={() => void logoutAndReturn()}><LogOut size={14} /><span>{user?.email}</span></button>
-      </nav>
-
-      <section className="job-center-content">
+    <main className="dashboard-content job-center-content">
         <header className="job-center-header">
           <div><p className="job-eyebrow">岗位资料库</p><h1>JD 中心</h1><p>管理手工填写和外部结构化写入的最终岗位信息。</p></div>
           <Button icon={<Plus size={15} />} onClick={() => navigateTo("/jobs/new")}>新建 JD</Button>
@@ -170,8 +152,6 @@ export function JobCenterPage() {
             {nextCursor && <Button className="job-load-more" variant="secondary" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "正在加载…" : "加载更多"}</Button>}
           </div>
         )}
-      </section>
-
       {pendingDelete && <ConfirmDialog kind="delete" title={`永久删除「${pendingDelete.job_title}」？`} description="删除后无法恢复，并会释放该岗位的来源标识。" confirmLabel="永久删除" busyLabel="正在删除…" busy={busyId === pendingDelete.id} onCancel={() => setPendingDelete(null)} onConfirm={deleteJob} />}
     </main>
   );

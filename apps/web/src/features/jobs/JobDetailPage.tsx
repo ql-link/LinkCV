@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Archive, ArrowLeft, ExternalLink, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { api, ApiRequestError, type JobDescriptionRecord } from "../../api/client";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { Brand, Button } from "../../components/ds";
+import { Button } from "../../components/ds";
 import { jobEditPath, navigateTo } from "../../routing";
 import "./jobs.css";
 
@@ -60,9 +60,19 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
     }
   };
 
-  if (loading) return <div className="app-loading">正在加载岗位…</div>;
+  if (loading) {
+    return <main className="dashboard-content job-page-shell"><div className="job-workspace-state">正在加载岗位…</div></main>;
+  }
   if (!job) {
-    return <main className="route-error-page"><h1>无法打开这条 JD</h1><p>{error}</p><Button onClick={() => navigateTo("/jobs", { replace: true })}>返回 JD 中心</Button></main>;
+    return (
+      <main className="dashboard-content job-page-shell">
+        <section className="job-workspace-state">
+          <h1>无法打开这条 JD</h1>
+          <p>{error}</p>
+          <Button onClick={() => navigateTo("/jobs", { replace: true })}>返回 JD 中心</Button>
+        </section>
+      </main>
+    );
   }
 
   const companyFacts = compact([
@@ -79,9 +89,9 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
   ]);
 
   return (
-    <main className="job-page-shell">
+    <main className="dashboard-content job-page-shell">
       <header className="job-page-header">
-        <Brand />
+        <span className="job-page-context">JD 详情</span>
         <Button variant="secondary" size="sm" icon={<ArrowLeft size={15} />} onClick={() => navigateTo("/jobs")}>返回列表</Button>
       </header>
 

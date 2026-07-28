@@ -10,7 +10,7 @@ import {
   type JobSalaryPeriod,
   type JobWorkMode,
 } from "../../api/client";
-import { Brand, Button } from "../../components/ds";
+import { Button } from "../../components/ds";
 import { jobDetailPath, navigateTo } from "../../routing";
 import { JobDuplicateDialog } from "./JobDuplicateDialog";
 import "./jobs.css";
@@ -171,21 +171,25 @@ export function JobFormPage({ mode, jobId }: { mode: "create" | "edit"; jobId?: 
     }
   };
 
-  if (loading) return <div className="app-loading">正在加载岗位…</div>;
+  if (loading) {
+    return <main className="dashboard-content job-page-shell"><div className="job-workspace-state">正在加载岗位…</div></main>;
+  }
   if (mode === "edit" && !record) {
     return (
-      <main className="route-error-page">
-        <h1>无法打开这条 JD</h1>
-        <p>{error ?? "岗位不存在，或当前账号没有访问权限。"}</p>
-        <Button onClick={() => navigateTo("/jobs", { replace: true })}>返回 JD 中心</Button>
+      <main className="dashboard-content job-page-shell">
+        <section className="job-workspace-state">
+          <h1>无法打开这条 JD</h1>
+          <p>{error ?? "岗位不存在，或当前账号没有访问权限。"}</p>
+          <Button onClick={() => navigateTo("/jobs", { replace: true })}>返回 JD 中心</Button>
+        </section>
       </main>
     );
   }
 
   return (
-    <main className="job-page-shell">
+    <main className="dashboard-content job-page-shell">
       <header className="job-page-header">
-        <Brand />
+        <span className="job-page-context">{mode === "create" ? "新建 JD" : "编辑 JD"}</span>
         <Button variant="secondary" size="sm" icon={<ArrowLeft size={15} />} onClick={() => navigateTo(jobId ? jobDetailPath(jobId) : "/jobs")}>
           返回
         </Button>

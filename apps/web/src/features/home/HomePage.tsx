@@ -1,19 +1,18 @@
 import { useMemo, useRef, useState } from "react";
-import { BriefcaseBusiness, FileText, FileUp, LayoutTemplate, LogOut, PenLine, Plus, Search, X } from "lucide-react";
+import { FileUp, PenLine, Plus, Search, X } from "lucide-react";
 import { ApiRequestError, type ResumeSummary } from "../../api/client";
-import { Brand, Button, Toast } from "../../components/ds";
+import { Button, Toast } from "../../components/ds";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useResumeStore } from "../../store/resumeStore";
 import { editorPath, navigateTo } from "../../routing";
 
 type HomeScreenProps = {
-  email: string;
+  view?: "all" | "templates";
   resumes: ResumeSummary[];
   onOpen: (id: string) => void | Promise<void>;
   onDelete: (id: string) => void | Promise<void>;
   onCreate: () => void | Promise<void>;
   onImport: (file: File) => void | Promise<void>;
-  onLogout: () => void | Promise<void>;
 };
 
 function resumeCreationErrorMessage(error: unknown, fallback: string) {
@@ -100,10 +99,9 @@ function ResumeThumbnailCard({
   );
 }
 
-export function HomeScreen({ email, resumes, onOpen, onDelete, onCreate, onImport, onLogout }: HomeScreenProps) {
-  const scrollRef = useRef<HTMLDivElement>(null);
+export function HomeScreen({ view = "all", resumes, onOpen, onDelete, onCreate, onImport }: HomeScreenProps) {
+  const scrollRef = useRef<HTMLElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
-  const [tab, setTab] = useState<"all" | "templates">("all");
   const [query, setQuery] = useState("");
   const [scrollAmount, setScrollAmount] = useState(0);
   const [pendingDelete, setPendingDelete] = useState<ResumeSummary | null>(null);
@@ -193,27 +191,7 @@ export function HomeScreen({ email, resumes, onOpen, onDelete, onCreate, onImpor
   };
 
   return (
-    <main className="dashboard-shell">
-      <nav className="dashboard-sidebar" aria-label="简历主页导航">
-        <Brand className="dashboard-brand" />
-        <div className="dashboard-tabs">
-          <button className={tab === "all" ? "is-active" : ""} type="button" onClick={() => setTab("all")}>
-            <FileText size={16} />全部简历
-          </button>
-          <button className={tab === "templates" ? "is-active" : ""} type="button" onClick={() => setTab("templates")}>
-            <LayoutTemplate size={16} />模板
-          </button>
-          <button type="button" onClick={() => navigateTo("/jobs")}>
-            <BriefcaseBusiness size={16} />JD 中心
-          </button>
-        </div>
-        <button className="dashboard-account" type="button" onClick={() => void onLogout()}>
-          <LogOut size={14} />
-          <span>{email}</span>
-        </button>
-      </nav>
-
-      <div ref={scrollRef} className="dashboard-content" onScroll={handleScroll}>
+    <main ref={scrollRef} className="dashboard-content" onScroll={handleScroll}>
         <header
           className="dashboard-header"
           style={{
@@ -222,16 +200,16 @@ export function HomeScreen({ email, resumes, onOpen, onDelete, onCreate, onImpor
             "--header-border-alpha": scrollAmount,
           } as React.CSSProperties}
         >
-          <h1>{tab === "all" ? "全部简历" : "模板"}</h1>
+          <h1>{view === "all" ? "全部简历" : "模板"}</h1>
           <div className="dashboard-header-actions">
-            {tab === "all" && (
+            {view === "all" && (
               <label className="dashboard-search">
                 <span className="visually-hidden">搜索简历</span>
                 <Search size={14} aria-hidden="true" />
                 <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索简历" />
               </label>
             )}
-            {tab === "all" && (
+            {view === "all" && (
               <>
                 <input
                   ref={importInputRef}
@@ -270,7 +248,7 @@ export function HomeScreen({ email, resumes, onOpen, onDelete, onCreate, onImpor
         </header>
 
         <div className="dashboard-main">
-          {tab === "templates" ? (
+          {view === "templates" ? (
             <section className="home-card-grid" aria-label="简历模板">
               <ResumeThumbnailCard
                 resume={{ id: "standard-template", title: "标准简历模板", updated_at: "内置" }}
@@ -312,8 +290,6 @@ export function HomeScreen({ email, resumes, onOpen, onDelete, onCreate, onImpor
             <Toast kind={notice.kind}>{notice.message}</Toast>
           </div>
         )}
-      </div>
-
       {pendingDelete && (
         <ConfirmDialog
           kind="delete"
@@ -343,13 +319,11 @@ export function HomeScreen({ email, resumes, onOpen, onDelete, onCreate, onImpor
   );
 }
 
-export function HomePage() {
-  const user = useResumeStore((state) => state.user);
+export function HomePage({ view = "all" }: { view?: "all" | "templates" }) {
   const resumes = useResumeStore((state) => state.resumes);
   const createResume = useResumeStore((state) => state.createResume);
   const importResume = useResumeStore((state) => state.importResume);
   const deleteResume = useResumeStore((state) => state.deleteResume);
-  const logout = useResumeStore((state) => state.logout);
 
   const createAndOpenResume = async () => {
     await createResume("未命名简历");
@@ -363,20 +337,14 @@ export function HomePage() {
     if (resumeId) navigateTo(editorPath(resumeId));
   };
 
-  const logoutAndReturn = async () => {
-    await logout();
-    navigateTo("/", { replace: true });
-  };
-
   return (
     <HomeScreen
-      email={user?.email ?? ""}
+      view={view}
       resumes={resumes}
       onCreate={createAndOpenResume}
       onImport={importAndOpenResume}
       onOpen={(id) => navigateTo(editorPath(id))}
       onDelete={deleteResume}
-      onLogout={logoutAndReturn}
     />
   );
 }
