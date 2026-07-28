@@ -1,15 +1,20 @@
--- Up migration for 0006: add LLM infrastructure.
+-- 0006 升级迁移：新增统一大模型基础设施。
 CREATE TABLE llm_model_configs (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '模型配置主键',
   model_name VARCHAR(128) NOT NULL COMMENT 'LiteLLM 模型标识',
-  api_base VARCHAR(512) NULL COMMENT '自定义模型服务地址',
-  encrypted_api_key TEXT NULL COMMENT '版本化加密凭据，不保存明文',
-  enabled BOOLEAN NOT NULL DEFAULT FALSE,
-  priority SMALLINT UNSIGNED NOT NULL DEFAULT 100,
-  input_price_per_million DECIMAL(18, 8) NULL COMMENT 'USD/百万输入 Token',
-  output_price_per_million DECIMAL(18, 8) NULL COMMENT 'USD/百万输出 Token',
-  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  api_base VARCHAR(512) NULL COMMENT '模型服务基础地址',
+  encrypted_api_key TEXT NULL COMMENT '版本化加密凭据，禁止保存明文',
+  enabled BOOLEAN NOT NULL DEFAULT FALSE COMMENT '是否启用模型配置',
+  priority SMALLINT UNSIGNED NOT NULL DEFAULT 100
+    COMMENT '调用优先级，数值越小越优先',
+  input_price_per_million DECIMAL(18, 8) NULL
+    COMMENT '每百万输入令牌的美元价格',
+  output_price_per_million DECIMAL(18, 8) NULL
+    COMMENT '每百万输出令牌的美元价格',
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+    COMMENT '创建时间（UTC）',
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+    COMMENT '最后更新时间（UTC）',
   PRIMARY KEY (id),
   KEY idx_llm_model_configs_enabled_priority (enabled, priority, id),
   CONSTRAINT ck_llm_model_configs_input_price_nonnegative
@@ -20,23 +25,27 @@ CREATE TABLE llm_model_configs (
   COMMENT='大模型连接、优先级与可选价格配置';
 
 CREATE TABLE llm_call_logs (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  call_id VARCHAR(40) NOT NULL,
-  user_id BIGINT UNSIGNED NOT NULL,
-  model_config_id BIGINT UNSIGNED NULL,
-  model_name VARCHAR(128) NULL COMMENT '调用时实际模型快照',
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '调用日志主键',
+  call_id VARCHAR(40) NOT NULL COMMENT '逻辑调用唯一标识',
+  user_id BIGINT UNSIGNED NOT NULL COMMENT '发起调用的用户主键',
+  model_config_id BIGINT UNSIGNED NULL
+    COMMENT '实际使用的模型配置主键，未选中模型时为空',
+  model_name VARCHAR(128) NULL COMMENT '实际模型标识快照',
   status VARCHAR(16) NOT NULL DEFAULT 'pending'
-    COMMENT 'pending/succeeded/failed/cancelled',
+    COMMENT '调用状态：pending（待处理）、succeeded（成功）、failed（失败）、cancelled（已取消）',
   metering_status VARCHAR(16) NOT NULL DEFAULT 'unknown'
-    COMMENT 'complete/partial/unknown',
-  input_tokens BIGINT UNSIGNED NULL,
-  output_tokens BIGINT UNSIGNED NULL,
-  input_price_per_million DECIMAL(18, 8) NULL,
-  output_price_per_million DECIMAL(18, 8) NULL,
-  estimated_cost DECIMAL(20, 10) NULL COMMENT 'USD 估算成本',
-  latency_ms BIGINT UNSIGNED NULL,
-  error_code VARCHAR(64) NULL COMMENT '非敏感稳定错误分类',
-  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    COMMENT '计量状态：complete（完整）、partial（部分）、unknown（未知）',
+  input_tokens BIGINT UNSIGNED NULL COMMENT '输入令牌数量',
+  output_tokens BIGINT UNSIGNED NULL COMMENT '输出令牌数量',
+  input_price_per_million DECIMAL(18, 8) NULL
+    COMMENT '每百万输入令牌的美元价格快照',
+  output_price_per_million DECIMAL(18, 8) NULL
+    COMMENT '每百万输出令牌的美元价格快照',
+  estimated_cost DECIMAL(20, 10) NULL COMMENT '预估调用成本（美元）',
+  latency_ms BIGINT UNSIGNED NULL COMMENT '调用耗时（毫秒）',
+  error_code VARCHAR(64) NULL COMMENT '非敏感稳定错误码',
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+    COMMENT '调用创建时间（UTC）',
   PRIMARY KEY (id),
   CONSTRAINT uk_llm_call_logs_call_id UNIQUE (call_id),
   KEY idx_llm_call_logs_created (created_at, id),

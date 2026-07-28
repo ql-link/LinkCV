@@ -349,6 +349,46 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "error_code",
         "created_at",
     }
+    assert {
+        column["name"]: column["comment"]
+        for column in inspector.get_columns("llm_model_configs")
+    } == {
+        "id": "模型配置主键",
+        "model_name": "LiteLLM 模型标识",
+        "api_base": "模型服务基础地址",
+        "encrypted_api_key": "版本化加密凭据，禁止保存明文",
+        "enabled": "是否启用模型配置",
+        "priority": "调用优先级，数值越小越优先",
+        "input_price_per_million": "每百万输入令牌的美元价格",
+        "output_price_per_million": "每百万输出令牌的美元价格",
+        "created_at": "创建时间（UTC）",
+        "updated_at": "最后更新时间（UTC）",
+    }
+    assert {
+        column["name"]: column["comment"]
+        for column in inspector.get_columns("llm_call_logs")
+    } == {
+        "id": "调用日志主键",
+        "call_id": "逻辑调用唯一标识",
+        "user_id": "发起调用的用户主键",
+        "model_config_id": "实际使用的模型配置主键，未选中模型时为空",
+        "model_name": "实际模型标识快照",
+        "status": (
+            "调用状态：pending（待处理）、succeeded（成功）、"
+            "failed（失败）、cancelled（已取消）"
+        ),
+        "metering_status": (
+            "计量状态：complete（完整）、partial（部分）、unknown（未知）"
+        ),
+        "input_tokens": "输入令牌数量",
+        "output_tokens": "输出令牌数量",
+        "input_price_per_million": "每百万输入令牌的美元价格快照",
+        "output_price_per_million": "每百万输出令牌的美元价格快照",
+        "estimated_cost": "预估调用成本（美元）",
+        "latency_ms": "调用耗时（毫秒）",
+        "error_code": "非敏感稳定错误码",
+        "created_at": "调用创建时间（UTC）",
+    }
 
     user_columns = {
         column["name"]: column for column in inspector.get_columns("users")

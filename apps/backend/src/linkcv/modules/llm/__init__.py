@@ -1,1 +1,1 @@
-"""Unified LLM infrastructure for backend business modules."""
+"""供后端业务模块使用的统一大模型基础设施。"""

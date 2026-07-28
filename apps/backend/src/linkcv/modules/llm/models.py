@@ -51,6 +51,7 @@ class LLMModelConfig(Base):
         UNSIGNED_BIGINT,
         primary_key=True,
         autoincrement=True,
+        comment="模型配置主键",
     )
     model_name: Mapped[str] = mapped_column(
         String(128),
@@ -60,45 +61,49 @@ class LLMModelConfig(Base):
     api_base: Mapped[str | None] = mapped_column(
         String(512),
         nullable=True,
-        comment="自定义模型服务地址",
+        comment="模型服务基础地址",
     )
     encrypted_api_key: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
-        comment="版本化加密凭据，不保存明文",
+        comment="版本化加密凭据，禁止保存明文",
     )
     enabled: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=False,
         server_default=false(),
+        comment="是否启用模型配置",
     )
     priority: Mapped[int] = mapped_column(
         UNSIGNED_SMALLINT,
         nullable=False,
         default=100,
         server_default="100",
+        comment="调用优先级，数值越小越优先",
     )
     input_price_per_million: Mapped[Decimal | None] = mapped_column(
         Numeric(18, 8),
         nullable=True,
-        comment="USD/百万输入 Token",
+        comment="每百万输入令牌的美元价格",
     )
     output_price_per_million: Mapped[Decimal | None] = mapped_column(
         Numeric(18, 8),
         nullable=True,
-        comment="USD/百万输出 Token",
+        comment="每百万输出令牌的美元价格",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),
         nullable=False,
         server_default=func.now(),
+        comment="创建时间（UTC）",
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),
         nullable=False,
         server_default=func.now(),
         onupdate=func.now(),
+        comment="最后更新时间（UTC）",
     )
 
 
@@ -154,8 +159,11 @@ class LLMCallLog(Base):
         UNSIGNED_BIGINT,
         primary_key=True,
         autoincrement=True,
+        comment="调用日志主键",
     )
-    call_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    call_id: Mapped[str] = mapped_column(
+        String(40), nullable=False, comment="逻辑调用唯一标识"
+    )
     user_id: Mapped[int] = mapped_column(
         UNSIGNED_BIGINT,
         ForeignKey(
@@ -164,6 +172,7 @@ class LLMCallLog(Base):
             ondelete="RESTRICT",
         ),
         nullable=False,
+        comment="发起调用的用户主键",
     )
     model_config_id: Mapped[int | None] = mapped_column(
         UNSIGNED_BIGINT,
@@ -173,47 +182,58 @@ class LLMCallLog(Base):
             ondelete="RESTRICT",
         ),
         nullable=True,
+        comment="实际使用的模型配置主键，未选中模型时为空",
     )
     model_name: Mapped[str | None] = mapped_column(
         String(128),
         nullable=True,
-        comment="调用时实际模型快照",
+        comment="实际模型标识快照",
     )
     status: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
         default="pending",
         server_default="pending",
-        comment="pending/succeeded/failed/cancelled",
+        comment=(
+            "调用状态：pending（待处理）、succeeded（成功）、"
+            "failed（失败）、cancelled（已取消）"
+        ),
     )
     metering_status: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
         default="unknown",
         server_default="unknown",
-        comment="complete/partial/unknown",
+        comment="计量状态：complete（完整）、partial（部分）、unknown（未知）",
     )
-    input_tokens: Mapped[int | None] = mapped_column(UNSIGNED_BIGINT, nullable=True)
-    output_tokens: Mapped[int | None] = mapped_column(UNSIGNED_BIGINT, nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(
+        UNSIGNED_BIGINT, nullable=True, comment="输入令牌数量"
+    )
+    output_tokens: Mapped[int | None] = mapped_column(
+        UNSIGNED_BIGINT, nullable=True, comment="输出令牌数量"
+    )
     input_price_per_million: Mapped[Decimal | None] = mapped_column(
-        Numeric(18, 8), nullable=True
+        Numeric(18, 8), nullable=True, comment="每百万输入令牌的美元价格快照"
     )
     output_price_per_million: Mapped[Decimal | None] = mapped_column(
-        Numeric(18, 8), nullable=True
+        Numeric(18, 8), nullable=True, comment="每百万输出令牌的美元价格快照"
     )
     estimated_cost: Mapped[Decimal | None] = mapped_column(
         Numeric(20, 10),
         nullable=True,
-        comment="USD 估算成本",
+        comment="预估调用成本（美元）",
     )
-    latency_ms: Mapped[int | None] = mapped_column(UNSIGNED_BIGINT, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(
+        UNSIGNED_BIGINT, nullable=True, comment="调用耗时（毫秒）"
+    )
     error_code: Mapped[str | None] = mapped_column(
         String(64),
         nullable=True,
-        comment="非敏感稳定错误分类",
+        comment="非敏感稳定错误码",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),
         nullable=False,
         server_default=func.now(),
+        comment="调用创建时间（UTC）",
     )
