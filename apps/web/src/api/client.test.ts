@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api } from "./client";
+import { api, ApiRequestError } from "./client";
 
 function jsonResponse(status: number, body: unknown): Response {
   return {
@@ -110,5 +110,56 @@ describe("API session refresh", () => {
       ([path]) => path === "/api/auth/refresh",
     );
     expect(refreshCalls).toHaveLength(1);
+  });
+});
+
+describe("JD API client", () => {
+  it("编码列表筛选和游标，并保持相对 API 路径", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, { items: [], next_cursor: null }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.listJobDescriptions({
+      scope: "archived",
+      keyword: "Java 后端",
+      cursor: "cursor/value",
+      limit: 30,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/job-descriptions?scope=archived&keyword=Java+%E5%90%8E%E7%AB%AF&cursor=cursor%2Fvalue&limit=30",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
+
+  it("保留重复冲突的受控详情供页面选择后续动作", async () => {
+    const duplicate = {
+      existing: { id: "42", job_title: "Java 开发", lock_version: 3 },
+      allowed_actions: ["update", "cancel"],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(409, { error: "JD_SOURCE_DUPLICATE", duplicate }),
+      ),
+    );
+
+    try {
+      await api.createJobDescription({
+        job_title: "Java 开发",
+        company_name: "示例科技",
+        description: "虚构岗位",
+        source_type: "manual",
+        source_url: "https://example.test/jobs/42",
+      });
+      throw new Error("expected request to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiRequestError);
+      expect((error as ApiRequestError).payload).toEqual({
+        error: "JD_SOURCE_DUPLICATE",
+        duplicate,
+      });
+    }
   });
 });

@@ -4,12 +4,11 @@
 
 ## 当前迁移链
 
-根 revision `0001` 用于建立旧版 `users` 与 `resumes`。当前 head 为 `0002`，
-在确认 `0001` 两张业务表均为空后，将结构替换为 `users`、
-`resume_templates`、`resumes` 与 `resume_versions` 四张核心表。`0002` 使用
-`BIGINT UNSIGNED AUTO_INCREMENT` 主键，并通过 revision 的只读预检阻止对非空
-业务表执行破坏性替换；预检也允许空库在 MySQL DDL 部分失败后安全重试。升级和降级均提供配对 SQL；原型 SQLite 数据
-仍不迁移到 MySQL。
+根 revision `0001` 用于建立旧版 `users` 与 `resumes`；`0002` 在确认旧业务表为空后
+建立正式鉴权、模板、简历和历史版本结构。后续 revision 依次补充模板删除兼容、
+对象清理任务、语义简历迁移、LLM 治理，以及用户私有 JD。当前唯一 head 为 `0007`，
+它新增单表 `job_descriptions`，并以用户与规范化来源标识的唯一约束防止重复导入。
+每个版本都提供配对升级和降级 SQL；原型 SQLite 数据仍不迁移到 MySQL。
 
 ```text
 migrations/
@@ -60,7 +59,7 @@ apps/backend/migrations/sql/<revision>.down.sql
 ## 执行与核验
 
 ```bash
-# 查看迁移链和当前数据库版本；heads 应只有 0002
+# 查看迁移链和当前数据库版本；heads 应只有 0007
 uv run --directory apps/backend alembic heads
 uv run --directory apps/backend alembic current
 

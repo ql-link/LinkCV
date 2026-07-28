@@ -4,9 +4,9 @@
 
 - `apps/web/src/main.tsx`：React 启动入口。
 - `apps/web/src/App.tsx`：页面状态与主要功能组合。
-- `apps/web/src/features/`：鉴权、首页、编辑器和预览功能。
+- `apps/web/src/features/`：鉴权、首页、编辑器、预览和临时 JD 管理功能。
 - `apps/web/src/store/resumeStore.ts`：简历编辑状态。
-- `apps/web/src/api/client.ts`：鉴权、简历和资源 API 客户端。
+- `apps/web/src/api/client.ts`：鉴权、简历、JD 和资源 API 客户端。
 - `apps/web/src/api/resumeContract.ts`：语义简历 TypeScript 契约，以及领域 JSON、Markdown 和现有 Tiptap 编辑器之间的过渡适配。
 - `apps/web/vite.config.mjs`：开发服务器、FastAPI 代理和本地图片预览插件。
 
@@ -27,6 +27,8 @@ API 客户端只发送相对 `/api/...` 请求并携带 cookie，不在业务组
 
 版本抽屉直接读取后端不可变版本列表。自动保存请求串行执行，并在每次成功后接续服务端返回的 `lock_version`；用户点击“保存版本”时先保存草稿，再调用版本创建接口。恢复历史版本前会先保存未提交草稿，恢复期间临时禁止编辑，成功后使用后端快照刷新。`smartOnePage` 作为 `ResumeStyleV1.smart_one_page` 随当前快照和历史版本持久化。编辑器图片上传使用当前简历的私有资源接口。
 
+JD 临时管理界面使用可恢复路由 `/jobs`、`/jobs/new`、`/jobs/:jobId` 和 `/jobs/:jobId/edit`，与简历页面共享现有 Cookie 会话。列表支持活动、已归档、全部范围，关键词搜索和游标加载更多；详情页提供编辑、归档、恢复和站内确认后的永久删除。新建页允许手工填写最终结构化字段和可选来源链接。编辑页把来源身份完整显示为只读，不向更新接口发送来源字段。创建遇到来源重复时，页面根据服务端 `allowed_actions` 显示取消、恢复原内容或更新原记录；动作回传记录 ID 和 `lock_version`。该界面是当前数据模型和管理 API 的暂时实现，不包含浏览器插件、自动抓取或前端 API Key 管理。
+
 ## 本地资源预览
 
 Vite 插件在 `/__local_asset__` 提供开发期本地图片读取，只允许工作区和用户 `Documents` 目录内的文件。它不是生产 API，不应扩大允许目录或用于暴露任意本地路径。
@@ -36,4 +38,5 @@ Vite 插件在 `/__local_asset__` 提供开发期本地图片读取，只允许�
 - 单元和组件测试使用 Vitest、React Testing Library 与 jsdom；配置入口为 `apps/web/vitest.config.ts`，公共初始化在 `src/test/setup.ts`。
 - 测试文件与被测源码相邻，命名为 `*.test.ts` 或 `*.test.tsx`，优先验证可见行为和公开接口。
 - 前端测试不得访问真实后端、数据库或对象存储，跨模块依赖在 API Client 边界使用受控 Mock。
+- JD 页面测试覆盖列表筛选、归档版本、永久删除确认、重复来源动作和编辑来源只读契约。
 - 当前没有自动化 E2E；涉及 Web、FastAPI、MySQL 和 MinIO 的完整浏览器流程仍需人工验证。

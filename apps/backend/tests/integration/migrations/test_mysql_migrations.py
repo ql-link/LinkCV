@@ -3,15 +3,18 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import make_url
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0006"
+EXPECTED_HEAD = "0007"
 
 
 def migration_test_url() -> str:
@@ -62,6 +65,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "resumes",
         "resume_versions",
         "storage_cleanup_jobs",
+        "job_descriptions",
     } <= set(
         inspector.get_table_names()
     )
@@ -260,6 +264,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "storage_cleanup_jobs",
         "llm_model_configs",
         "llm_call_logs",
+        "job_descriptions",
     } <= set(inspector.get_table_names())
     assert {column["name"] for column in inspector.get_columns("users")} == {
         "id",
@@ -540,6 +545,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     assert "resumes" not in inspect(engine).get_table_names()
     assert "llm_model_configs" not in inspect(engine).get_table_names()
     assert "llm_call_logs" not in inspect(engine).get_table_names()
+    assert "job_descriptions" not in inspect(engine).get_table_names()
 
     run_alembic(database_url, "upgrade", "head")
     assert {
@@ -550,7 +556,217 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "storage_cleanup_jobs",
         "llm_model_configs",
         "llm_call_logs",
+        "job_descriptions",
     } <= set(inspect(engine).get_table_names())
+    engine.dispose()
+
+
+def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
+    database_url = migration_test_url()
+    engine = create_engine(database_url)
+    run_alembic(database_url, "downgrade", "base")
+    run_alembic(database_url, "upgrade", "head")
+
+    inspector = inspect(engine)
+    columns = {
+        column["name"]: column
+        for column in inspector.get_columns("job_descriptions")
+    }
+    assert set(columns) == {
+        "id",
+        "user_id",
+        "job_title",
+        "company_name",
+        "employment_type",
+        "description",
+        "skills",
+        "education_requirement",
+        "experience_requirement",
+        "work_schedule",
+        "work_city",
+        "work_address",
+        "work_mode",
+        "salary_text",
+        "salary_min",
+        "salary_max",
+        "salary_currency",
+        "salary_period",
+        "salary_months_per_year",
+        "company_legal_name",
+        "company_industry",
+        "company_size",
+        "company_financing_stage",
+        "company_description",
+        "recruiter_name",
+        "recruiter_title",
+        "source_type",
+        "source_site",
+        "source_job_id",
+        "source_url",
+        "source_url_hash",
+        "imported_at",
+        "notes",
+        "archived_at",
+        "lock_version",
+        "created_at",
+        "updated_at",
+    }
+    assert columns["id"]["type"].unsigned is True
+    assert columns["user_id"]["type"].unsigned is True
+    assert columns["employment_type"]["type"].length == 24
+    assert columns["education_requirement"]["type"].length == 100
+    assert columns["experience_requirement"]["type"].length == 100
+    assert columns["work_schedule"]["type"].length == 100
+    assert columns["salary_months_per_year"]["type"].unsigned is True
+    assert columns["salary_currency"]["type"].__class__.__name__ == "CHAR"
+    assert columns["salary_currency"]["type"].length == 3
+    assert columns["salary_currency"]["type"].collation == "ascii_bin"
+    assert columns["company_size"]["type"].length == 50
+    assert columns["company_financing_stage"]["type"].length == 50
+    assert columns["description"]["type"].__class__.__name__ == "LONGTEXT"
+    assert columns["company_description"]["type"].__class__.__name__ == "LONGTEXT"
+    assert columns["source_site"]["type"].length == 32
+    assert columns["source_site"]["type"].collation == "ascii_bin"
+    assert columns["source_job_id"]["type"].length == 128
+    assert columns["source_job_id"]["type"].collation == "ascii_bin"
+    assert columns["source_url_hash"]["type"].length == 32
+    assert columns["created_at"]["type"].fsp == 6
+
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("job_descriptions")
+    } == {
+        "uk_job_descriptions_user_source_job",
+        "uk_job_descriptions_user_source_url",
+    }
+    check_names = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("job_descriptions")
+    }
+    assert {
+        "ck_job_descriptions_job_title_not_blank",
+        "ck_job_descriptions_company_name_not_blank",
+        "ck_job_descriptions_description_not_blank",
+        "ck_job_descriptions_skills_array",
+        "ck_job_descriptions_source_type",
+        "ck_job_descriptions_source_fields",
+        "ck_job_descriptions_lock_version",
+    } <= check_names
+    indexes = {
+        index["name"]: index["column_names"]
+        for index in inspector.get_indexes("job_descriptions")
+    }
+    assert indexes["idx_job_descriptions_user_archive_updated_id"] == [
+        "user_id",
+        "archived_at",
+        "updated_at",
+        "id",
+    ]
+    assert indexes["idx_job_descriptions_user_updated_id"] == [
+        "user_id",
+        "updated_at",
+        "id",
+    ]
+    foreign_key = {
+        item["name"]: item
+        for item in inspector.get_foreign_keys("job_descriptions")
+    }["fk_job_descriptions_user"]
+    assert foreign_key["constrained_columns"] == ["user_id"]
+    assert foreign_key["referred_table"] == "users"
+    assert foreign_key["options"]["ondelete"] == "RESTRICT"
+
+    with engine.begin() as connection:
+        first_user = connection.execute(
+            text(
+                "INSERT INTO users (email, password_hash, nickname) "
+                "VALUES ('jd-one@example.invalid', '$2b$12$fictional', '张三')"
+            )
+        ).lastrowid
+        second_user = connection.execute(
+            text(
+                "INSERT INTO users (email, password_hash, nickname) "
+                "VALUES ('jd-two@example.invalid', '$2b$12$fictional', '李四')"
+            )
+        ).lastrowid
+        source_hash = bytes.fromhex("11" * 32)
+        values = {
+            "user_id": first_user,
+            "source_hash": source_hash,
+        }
+        connection.execute(
+            text(
+                "INSERT INTO job_descriptions "
+                "(user_id, job_title, company_name, description, skills, source_type, "
+                "source_site, source_job_id, source_url, source_url_hash, imported_at) "
+                "VALUES (:user_id, 'Java 开发', '示例科技', '虚构岗位', JSON_ARRAY('Java'), "
+                "'external_import', 'boss', 'abc123', "
+                "'https://www.zhipin.com/job_detail/abc123.html', :source_hash, UTC_TIMESTAMP(6))"
+            ),
+            values,
+        )
+        connection.execute(
+            text(
+                "INSERT INTO job_descriptions "
+                "(user_id, job_title, company_name, description, skills, source_type, "
+                "source_site, source_job_id, source_url, source_url_hash, imported_at) "
+                "VALUES (:user_id, 'Java 开发', '示例科技', '虚构岗位', JSON_ARRAY('Java'), "
+                "'external_import', 'boss', 'abc123', "
+                "'https://www.zhipin.com/job_detail/abc123.html', :source_hash, UTC_TIMESTAMP(6))"
+            ),
+            {"user_id": second_user, "source_hash": source_hash},
+        )
+
+    with pytest.raises(IntegrityError):
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO job_descriptions "
+                    "(user_id, job_title, company_name, description, skills, source_type, "
+                    "source_site, source_job_id, source_url, source_url_hash, imported_at) "
+                    "VALUES (:user_id, '重复岗位', '示例科技', '虚构岗位', JSON_ARRAY(), "
+                    "'external_import', 'boss', 'abc123', "
+                    "'https://www.zhipin.com/job_detail/abc123.html', :source_hash, UTC_TIMESTAMP(6))"
+                ),
+                {"user_id": first_user, "source_hash": bytes.fromhex("11" * 32)},
+            )
+
+    barrier = Barrier(2)
+
+    def insert_concurrent_source() -> str:
+        try:
+            with engine.begin() as connection:
+                barrier.wait(timeout=5)
+                connection.execute(
+                    text(
+                        "INSERT INTO job_descriptions "
+                        "(user_id, job_title, company_name, description, skills, source_type, "
+                        "source_site, source_job_id, source_url, source_url_hash, imported_at) "
+                        "VALUES (:user_id, '并发岗位', '示例科技', '虚构岗位', JSON_ARRAY(), "
+                        "'external_import', 'boss', 'concurrent42', "
+                        "'https://www.zhipin.com/job_detail/concurrent42.html', "
+                        ":source_hash, UTC_TIMESTAMP(6))"
+                    ),
+                    {
+                        "user_id": first_user,
+                        "source_hash": bytes.fromhex("22" * 32),
+                    },
+                )
+        except IntegrityError:
+            return "duplicate"
+        return "created"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _index: insert_concurrent_source(), range(2)))
+
+    assert sorted(results) == ["created", "duplicate"]
+
+    run_alembic(database_url, "downgrade", "0006")
+    assert "job_descriptions" not in inspect(engine).get_table_names()
+    run_alembic(database_url, "upgrade", "head")
+    assert "job_descriptions" in inspect(engine).get_table_names()
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM users"))
+    run_alembic(database_url, "downgrade", "base")
     engine.dispose()
 
 

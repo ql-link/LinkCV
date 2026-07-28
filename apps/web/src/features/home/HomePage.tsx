@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { FileText, FileUp, LayoutTemplate, LogOut, PenLine, Plus, Search, X } from "lucide-react";
+import { BriefcaseBusiness, FileText, FileUp, LayoutTemplate, LogOut, PenLine, Plus, Search, X } from "lucide-react";
 import { ApiRequestError, type ResumeSummary } from "../../api/client";
 import { Brand, Button, Toast } from "../../components/ds";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
@@ -202,6 +202,9 @@ export function HomeScreen({ email, resumes, onOpen, onDelete, onCreate, onImpor
           </button>
           <button className={tab === "templates" ? "is-active" : ""} type="button" onClick={() => setTab("templates")}>
             <LayoutTemplate size={16} />模板
+          </button>
+          <button type="button" onClick={() => navigateTo("/jobs")}>
+            <BriefcaseBusiness size={16} />JD 中心
           </button>
         </div>
         <button className="dashboard-account" type="button" onClick={() => void onLogout()}>

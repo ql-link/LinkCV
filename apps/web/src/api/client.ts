@@ -35,6 +35,100 @@ export type UploadedAsset = {
   url: string;
 };
 
+export type JobSourceType = "manual" | "external_import";
+export type JobEmploymentType = "full_time" | "part_time" | "internship" | "contract" | "temporary";
+export type JobWorkMode = "onsite" | "hybrid" | "remote";
+export type JobSalaryPeriod = "hour" | "day" | "month" | "year";
+
+export type JobDescriptionSummary = {
+  id: string;
+  job_title: string;
+  company_name: string;
+  work_city: string | null;
+  salary_text: string | null;
+  skills: string[];
+  source_type: JobSourceType;
+  source_site: string | null;
+  source_url: string | null;
+  archived_at: string | null;
+  lock_version: number;
+  updated_at: string;
+};
+
+export type JobDescriptionRecord = JobDescriptionSummary & {
+  employment_type: JobEmploymentType | null;
+  description: string;
+  education_requirement: string | null;
+  experience_requirement: string | null;
+  work_schedule: string | null;
+  work_address: string | null;
+  work_mode: JobWorkMode | null;
+  salary_min: string | null;
+  salary_max: string | null;
+  salary_currency: string | null;
+  salary_period: JobSalaryPeriod | null;
+  salary_months_per_year: number | null;
+  company_legal_name: string | null;
+  company_industry: string | null;
+  company_size: string | null;
+  company_financing_stage: string | null;
+  company_description: string | null;
+  recruiter_name: string | null;
+  recruiter_title: string | null;
+  source_job_id: string | null;
+  source_url_hash: string | null;
+  imported_at: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
+export type JobDescriptionFields = {
+  job_title: string;
+  company_name: string;
+  employment_type?: JobEmploymentType | null;
+  description: string;
+  skills?: string[];
+  education_requirement?: string | null;
+  experience_requirement?: string | null;
+  work_schedule?: string | null;
+  work_city?: string | null;
+  work_address?: string | null;
+  work_mode?: JobWorkMode | null;
+  salary_text?: string | null;
+  salary_min?: string | null;
+  salary_max?: string | null;
+  salary_currency?: string | null;
+  salary_period?: JobSalaryPeriod | null;
+  salary_months_per_year?: number | null;
+  company_legal_name?: string | null;
+  company_industry?: string | null;
+  company_size?: string | null;
+  company_financing_stage?: string | null;
+  company_description?: string | null;
+  recruiter_name?: string | null;
+  recruiter_title?: string | null;
+  notes?: string | null;
+};
+
+export type DuplicateResolution = {
+  action: "update" | "restore";
+  job_description_id: string;
+  base_lock_version: number;
+};
+
+export type JobDescriptionCreatePayload = JobDescriptionFields & {
+  source_type: JobSourceType;
+  source_url?: string | null;
+  duplicate_resolution?: DuplicateResolution;
+};
+
+export type JobDuplicateDetails = {
+  duplicate: {
+    existing: JobDescriptionSummary;
+    allowed_actions: Array<"restore" | "update" | "cancel">;
+  };
+};
+
 type ApiOptions = {
   method?: string;
   body?: unknown;
@@ -45,6 +139,7 @@ export class ApiRequestError extends Error {
   constructor(
     readonly status: number,
     code: string,
+    readonly payload: Record<string, unknown> | null = null,
   ) {
     super(code);
     this.name = "ApiRequestError";
@@ -92,6 +187,7 @@ async function request<T>(
     const error = new ApiRequestError(
       response.status,
       typeof data.error === "string" ? data.error : `HTTP_${response.status}`,
+      data && typeof data === "object" ? data as Record<string, unknown> : null,
     );
 
     if (response.status === 401 && retryAuth && !path.startsWith("/api/auth/")) {
@@ -149,6 +245,40 @@ export const api = {
   },
   uploadResumeAsset: (resumeId: string, payload: { file_name: string; data_url: string }) =>
     request<{ asset: UploadedAsset }>(`/api/resumes/${resumeId}/assets`, { method: "POST", body: payload }),
+  listJobDescriptions: (params: {
+    scope?: "active" | "archived" | "all";
+    keyword?: string;
+    cursor?: string;
+    limit?: number;
+  } = {}) => {
+    const search = new URLSearchParams();
+    if (params.scope) search.set("scope", params.scope);
+    if (params.keyword) search.set("keyword", params.keyword);
+    if (params.cursor) search.set("cursor", params.cursor);
+    if (params.limit) search.set("limit", String(params.limit));
+    const suffix = search.toString();
+    return request<{ items: JobDescriptionSummary[]; next_cursor: string | null }>(
+      `/api/job-descriptions${suffix ? `?${suffix}` : ""}`,
+    );
+  },
+  createJobDescription: (payload: JobDescriptionCreatePayload) =>
+    request<{ job_description: JobDescriptionRecord }>("/api/job-descriptions", { method: "POST", body: payload }),
+  getJobDescription: (id: string) =>
+    request<{ job_description: JobDescriptionRecord }>(`/api/job-descriptions/${id}`),
+  updateJobDescription: (id: string, payload: JobDescriptionFields & { base_lock_version: number }) =>
+    request<{ job_description: JobDescriptionRecord }>(`/api/job-descriptions/${id}`, { method: "PUT", body: payload }),
+  archiveJobDescription: (id: string, baseLockVersion: number) =>
+    request<{ job_description: JobDescriptionRecord }>(`/api/job-descriptions/${id}/archive`, {
+      method: "POST",
+      body: { base_lock_version: baseLockVersion },
+    }),
+  restoreJobDescription: (id: string, baseLockVersion: number) =>
+    request<{ job_description: JobDescriptionRecord }>(`/api/job-descriptions/${id}/restore`, {
+      method: "POST",
+      body: { base_lock_version: baseLockVersion },
+    }),
+  deleteJobDescription: (id: string) =>
+    request<{ deleted: boolean }>(`/api/job-descriptions/${id}`, { method: "DELETE" }),
 };
 
 export type { ResumeDocumentV1, ResumeStyleV1 } from "./resumeContract";

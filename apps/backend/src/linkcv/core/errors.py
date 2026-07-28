@@ -5,17 +5,26 @@ from fastapi.responses import JSONResponse
 
 
 class ApiError(Exception):
-    def __init__(self, status_code: int, code: str) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        code: str,
+        details: dict[str, object] | None = None,
+    ) -> None:
         super().__init__(code)
         self.status_code = status_code
         self.code = code
+        self.details = details
 
 
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def handle_api_error(_request: Request, error: ApiError) -> JSONResponse:
+        content: dict[str, object] = {"error": error.code}
+        if error.details:
+            content.update(error.details)
         return JSONResponse(
-            status_code=error.status_code, content={"error": error.code}
+            status_code=error.status_code, content=content
         )
 
     @app.exception_handler(RequestValidationError)
@@ -23,6 +32,14 @@ def install_error_handlers(app: FastAPI) -> None:
         request: Request,
         error: RequestValidationError,
     ) -> JSONResponse:
+        if request.url.path.startswith("/api/job-descriptions"):
+            code = (
+                "INVALID_JOB_QUERY"
+                if request.method == "GET"
+                and request.url.path.rstrip("/") == "/api/job-descriptions"
+                else "INVALID_JOB_DESCRIPTION"
+            )
+            return JSONResponse(status_code=400, content={"error": code})
         if request.url.path.startswith("/api/admin/llm"):
             code = (
                 "INVALID_LLM_CALL_QUERY"

@@ -6,6 +6,10 @@ export type AppRoute =
   | { kind: "admin" }
   | { kind: "resumes" }
   | { kind: "editor"; resumeId: string }
+  | { kind: "jobs" }
+  | { kind: "jobCreate" }
+  | { kind: "jobDetail"; jobId: string }
+  | { kind: "jobEdit"; jobId: string }
   | { kind: "notFound" };
 
 type NavigateOptions = {
@@ -13,6 +17,8 @@ type NavigateOptions = {
 };
 
 const editorPathPattern = /^\/resumes\/([^/]+)\/edit$/;
+const jobDetailPathPattern = /^\/jobs\/([^/]+)$/;
+const jobEditPathPattern = /^\/jobs\/([^/]+)\/edit$/;
 
 function normalizePathname(pathname: string) {
   if (pathname === "/") return pathname;
@@ -20,7 +26,7 @@ function normalizePathname(pathname: string) {
 }
 
 export function isSafeAppPath(value: string | null) {
-  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && /^\/resumes(?:\/|$)/.test(value));
+  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && /^\/(?:resumes|jobs)(?:\/|$)/.test(value));
 }
 
 export function parseAppRoute(pathname: string, search = ""): AppRoute {
@@ -37,6 +43,8 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
     };
   }
   if (normalizedPath === "/resumes") return { kind: "resumes" };
+  if (normalizedPath === "/jobs") return { kind: "jobs" };
+  if (normalizedPath === "/jobs/new") return { kind: "jobCreate" };
 
   const editorMatch = normalizedPath.match(editorPathPattern);
   if (editorMatch) {
@@ -47,11 +55,37 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
     }
   }
 
+  const jobEditMatch = normalizedPath.match(jobEditPathPattern);
+  if (jobEditMatch) {
+    try {
+      return { kind: "jobEdit", jobId: decodeURIComponent(jobEditMatch[1]) };
+    } catch {
+      return { kind: "notFound" };
+    }
+  }
+
+  const jobDetailMatch = normalizedPath.match(jobDetailPathPattern);
+  if (jobDetailMatch) {
+    try {
+      return { kind: "jobDetail", jobId: decodeURIComponent(jobDetailMatch[1]) };
+    } catch {
+      return { kind: "notFound" };
+    }
+  }
+
   return { kind: "notFound" };
 }
 
 export function editorPath(resumeId: string) {
   return `/resumes/${encodeURIComponent(resumeId)}/edit`;
+}
+
+export function jobDetailPath(jobId: string) {
+  return `/jobs/${encodeURIComponent(jobId)}`;
+}
+
+export function jobEditPath(jobId: string) {
+  return `/jobs/${encodeURIComponent(jobId)}/edit`;
 }
 
 export function authPath(mode: "login" | "register", next?: string | null) {

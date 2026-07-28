@@ -4,6 +4,9 @@ import { ApiRequestError } from "./api/client";
 import { AdminApp } from "./features/admin/AdminApp";
 import { AuthPage } from "./features/auth/AuthPage";
 import { HomePage } from "./features/home/HomePage";
+import { JobCenterPage } from "./features/jobs/JobCenterPage";
+import { JobDetailPage } from "./features/jobs/JobDetailPage";
+import { JobFormPage } from "./features/jobs/JobFormPage";
 import { LandingPage } from "./features/landing/LandingPage";
 import { ResumeWorkbench } from "./features/workbench/ResumeWorkbench";
 import { authPath, editorPath, navigateTo, useAppRoute } from "./routing";
@@ -43,7 +46,14 @@ export function App() {
     if (authStatus === "checking") return;
 
     if (authStatus === "guest") {
-      if (route.kind === "resumes" || route.kind === "editor") {
+      if (
+        route.kind === "resumes"
+        || route.kind === "editor"
+        || route.kind === "jobs"
+        || route.kind === "jobCreate"
+        || route.kind === "jobDetail"
+        || route.kind === "jobEdit"
+      ) {
         const next = `${window.location.pathname}${window.location.search}`;
         navigateTo(authPath("login", next), { replace: true });
       } else if (route.kind === "notFound") {
@@ -130,6 +140,22 @@ export function App() {
 
   if (route.kind === "resumes") {
     return <HomePage />;
+  }
+
+  if (route.kind === "jobs") {
+    return <JobCenterPage />;
+  }
+
+  if (route.kind === "jobCreate") {
+    return <JobFormPage mode="create" />;
+  }
+
+  if (route.kind === "jobDetail") {
+    return <JobDetailPage jobId={route.jobId} />;
+  }
+
+  if (route.kind === "jobEdit") {
+    return <JobFormPage mode="edit" jobId={route.jobId} />;
   }
 
   if (route.kind === "editor") {
