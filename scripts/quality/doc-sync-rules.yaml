@@ -32,6 +32,7 @@ rules:
       - apps/backend/src/linkcv/core/database.py
       - apps/backend/src/linkcv/modules/**/models.py
       - apps/backend/migrations/**/*.py
+      - apps/backend/migrations/**/*.sql
     must_update:
       - docs/internals/backend.md
 

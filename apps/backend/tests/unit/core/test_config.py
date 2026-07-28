@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from cryptography.fernet import Fernet
 import pytest
 from pydantic import ValidationError
 
@@ -99,6 +100,7 @@ def test_production_rejects_missing_secrets_without_exposing_values() -> None:
     assert "JWT_SECRET" in message
     assert "MINIO_ACCESS_KEY" in message
     assert "MINIO_SECRET_KEY" in message
+    assert "LLM_CREDENTIAL_ENCRYPTION_KEYS" in message
     assert exposed not in message
     assert "replace-with-secret" not in message
 
@@ -110,6 +112,9 @@ def test_production_accepts_injected_secrets_and_oss_stays_reserved() -> None:
         mysql_password="production-db-secret",
         minio_access_key="production-minio-access",
         minio_secret_key="production-minio-secret",
+        llm_credential_encryption_keys=(
+            f"production:{Fernet.generate_key().decode('ascii')}"
+        ),
         aliyun_oss_endpoint="https://oss-cn-hangzhou.aliyuncs.com",
         aliyun_oss_region="cn-hangzhou",
         aliyun_oss_access_key_id="reserved-access",

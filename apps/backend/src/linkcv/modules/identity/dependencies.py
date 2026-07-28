@@ -42,3 +42,9 @@ def get_current_user(user: User | None = Depends(get_optional_user)) -> User:
     if user is None:
         raise ApiError(401, "UNAUTHORIZED")
     return user
+
+
+def get_current_admin(user: User = Depends(get_current_user)) -> User:
+    if not user.is_admin:
+        raise ApiError(403, "FORBIDDEN")
+    return user

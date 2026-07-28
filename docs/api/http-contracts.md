@@ -76,3 +76,27 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 | `DELETE` | `/api/resumes/:id/assets/:asset_name` | 当前或历史快照仍引用时返回 `409 ASSET_IN_USE` |
 
 删除简历会删除数据库版本，并在同一事务登记导入原文件与简历资源前缀的幂等清理任务；提交后立即尝试，失败任务由后台 worker 重试，不恢复已经提交的数据库记录。
+
+## 大模型管理接口
+
+以下接口只允许当前数据库用户的 `is_admin=true` 时访问。未登录返回 `401 UNAUTHORIZED`，普通用户返回 `403 FORBIDDEN`。本期不公开普通用户或第三方可调用的通用 chat、stream HTTP API；模型调用只作为 FastAPI 后端内部 Python 服务提供。
+
+`users.is_admin` 不进入 access JWT 或 Redis 会话；管理员接口每次请求都从数据库读取该 `0/1` 标记，因此提权或降权对现有 Cookie 的下一次请求即时生效。公开注册始终创建普通用户。
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `GET` | `/api/admin/llm/models` | `{models}`，包含启用与停用配置 |
+| `POST` | `/api/admin/llm/models` | `201 {model}` |
+| `PATCH` | `/api/admin/llm/models/:modelConfigId` | `{model}`，字段可部分更新 |
+| `POST` | `/api/admin/llm/models/:modelConfigId/test` | `{ok: true, callId}`，测试指定配置 |
+| `GET` | `/api/admin/llm/calls` | `{calls, summary, nextCursor}` |
+
+模型配置接受 `model`、`apiBase`、只写的 `apiKey`、`enabled`、`priority`、`inputPricePerMillion` 和 `outputPricePerMillion`。响应只用 `keyConfigured` 表示是否已有凭据，绝不返回明文或数据库密文。PATCH 省略 `apiKey` 时保留原凭据，传 `null` 时清除，传非空字符串时替换；模型配置不提供硬删除接口。
+
+模型配置 `id`、调用记录 `userId` 和 `modelConfigId` 与其他 MySQL 业务 ID 一致，对外使用十进制字符串，内部数据库列仍为 `BIGINT UNSIGNED`。
+
+`0006` 在数据库中使用中文表注释和字段注释，这些注释只用于说明持久化语义，不改变本节约定的 JSON 字段名、错误码或状态字面值。
+
+调用记录可用 `userId`、`modelConfigId`、`from`、`to`、`cursor` 和 `limit` 查询，默认每页 50、最大 200，按创建时间和内部 ID 倒序稳定分页。每条记录只包含调用标识、用户、实际模型快照、状态、耗时、Token、价格快照、估算成本和非敏感错误分类，不保存或返回消息、模型完整响应和凭据。汇总只聚合已知值，并用 `incompleteMeteringCount` 表明不完整计量。
+
+管理错误包括 `INVALID_LLM_MODEL_CONFIG`、`INVALID_LLM_CALL_QUERY`、`LLM_MODEL_NOT_FOUND`、`LLM_CREDENTIALS_UNAVAILABLE` 和 `LLM_CONNECTION_FAILED`。供应商原始错误不会透传。

@@ -22,6 +22,9 @@ from linkcv.integrations.llm_client import (
     UnconfiguredStructuringClient,
 )
 from linkcv.integrations.rag_client import HttpRagClient, UnconfiguredRagClient
+from linkcv.modules.llm.crypto import CredentialCipher
+from linkcv.modules.llm.gateway import LLMGateway, LiteLLMGateway
+from linkcv.modules.llm.service import LLMService
 from linkcv.services.import_admission import ImportAdmissionController
 from linkcv.services.storage_cleanup_service import run_storage_cleanup_worker
 
@@ -51,6 +54,7 @@ def create_app(
     *,
     session_factory: sessionmaker[Session] | None = None,
     storage: Any | None = None,
+    llm_gateway: LLMGateway | None = None,
     redis: Any | None = None,
     rag_converter: Any | None = None,
     structuring_client: Any | None = None,
@@ -72,6 +76,12 @@ def create_app(
         Base.metadata.create_all(engine)
 
     runtime_storage = storage or AssetStorage(runtime_settings)
+    runtime_llm_gateway = llm_gateway or LiteLLMGateway()
+    llm_service = LLMService(
+        session_factory,
+        runtime_llm_gateway,
+        CredentialCipher(runtime_settings.llm_credential_encryption_keys),
+    )
     if redis is None:
         redis = build_redis_client(runtime_settings)
     runtime_rag_converter = rag_converter
@@ -139,6 +149,7 @@ def create_app(
     app.state.settings = runtime_settings
     app.state.session_factory = session_factory
     app.state.storage = runtime_storage
+    app.state.llm_service = llm_service
     app.state.redis = redis
     app.state.rag_converter = runtime_rag_converter
     app.state.structuring_client = runtime_structuring_client

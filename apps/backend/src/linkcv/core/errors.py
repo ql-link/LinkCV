@@ -22,7 +22,14 @@ def install_error_handlers(app: FastAPI) -> None:
     async def handle_request_validation(
         request: Request,
         error: RequestValidationError,
-    ):
+    ) -> JSONResponse:
+        if request.url.path.startswith("/api/admin/llm"):
+            code = (
+                "INVALID_LLM_CALL_QUERY"
+                if request.method == "GET" and request.url.path.endswith("/calls")
+                else "INVALID_LLM_MODEL_CONFIG"
+            )
+            return JSONResponse(status_code=400, content={"error": code})
         if request.method == "PUT" and request.url.path.startswith("/api/resumes/"):
             fields = {
                 item["loc"][1]

@@ -38,7 +38,11 @@ Production Jenkins Job 使用根目录 `Jenkinsfile`，在生产 Jenkins 节点�
 - 配置：`.env.production` + 权限为 `400` 或 `600` 的 `.env.production.local`
 - 迁移门禁：`APP_ENV=production`、MySQL `tolink-mysql:3306/linkcv`
 
-Production Pipeline 会把仓库中的非敏感 `.env.production` 和 Compose 复制到部署目录；私密覆盖必须由部署密钥存储预先提供。生产容器通过 `tolink-app-net` 使用 Docker DNS 连接 `tolink-mysql:3306`、`tolink-redis:6379` 和 `tolink-minio:9000`，不依赖尚未发布的 Cloud 宿主机端口。私密覆盖只保存凭据，不应设置 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT` 覆盖仓库中的生产地址。MySQL、Redis 与 MinIO 的生产实例不由该 Compose 创建。
+Production Pipeline 会把仓库中的非敏感 `.env.production` 和 Compose 复制到部署目录；私密覆盖必须由部署密钥存储预先提供。除 JWT、MySQL 和 MinIO 凭据外，新版本还要求私密覆盖提供有效的 `LLM_CREDENTIAL_ENCRYPTION_KEYS`，否则 Settings 会在启动前安全失败。该密钥环用于解密 MySQL 中的模型凭据，不是供应商 API key；轮换时先发布“新 key 在首项、旧 key 仍保留”的配置，确认旧密文已经重包后才能移除旧 key。
+
+本期没有管理员开通接口。发布方还需在受控流程中确保至少一个既有用户被标记为 `users.is_admin=true`；公开注册始终是普通用户。没有管理员只会使 `/api/admin/llm/**` 无法使用，不会放宽权限。
+
+生产容器通过 `tolink-app-net` 使用 Docker DNS 连接 `tolink-mysql:3306`、`tolink-redis:6379` 和 `tolink-minio:9000`，不依赖尚未发布的 Cloud 宿主机端口。私密覆盖只保存凭据，不应设置 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT` 覆盖仓库中的生产地址。MySQL、Redis 与 MinIO 的生产实例不由该 Compose 创建。
 
 两条 Pipeline 都提供 `RUN_TESTS` 参数；开启后会在镜像构建前运行 `npm run setup && npm run check`。常规 PR/push 质量检查仍由 GitHub Actions 执行。
 
@@ -49,6 +53,7 @@ Production Pipeline 会把仓库中的非敏感 `.env.production` 和 Compose �
 ## 回滚
 
 - 应用回滚通过把 `TAG` 切回上一环境的不可变镜像标签并重新执行对应 Compose 完成；不得把 Dev 标签部署到 Production。
-- Alembic revision 必须保持向前兼容上一个应用版本；需要破坏性 Schema 变更时使用“扩展—迁移—收缩”步骤，不能依赖自动 downgrade。
+- Alembic revision 必须保持向前兼容上一个应用版本；`0006` 只新增 LLM 表，上一应用版本会忽略它们。应用回滚保留 `0006` schema 和 LLM 数据，不在 Production 自动 downgrade；隔离环境的 `0006.down.sql` 会删除模型配置和调用日志。
+- 回滚到旧镜像时仍要保留新旧完整 LLM 密钥环，直到确认没有运行实例或密文依赖待移除的 key。
 - 原型 Express/SQLite 数据不进入新 MySQL 数据库，也不作为生产回滚路径。
 - 新增环境配置的回滚只恢复应用与 Compose；不得自动删除已有 `linkcv` 数据库或 Redis volume。

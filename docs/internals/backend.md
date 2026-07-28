@@ -2,11 +2,11 @@
 
 ## 当前职责与结构
 
-`apps/backend` 承接健康检查、短 JWT access + 不透明 refresh + Redis 会话鉴权、语义简历生命周期、历史版本、文件导入和私有对象资源。
+`apps/backend` 承接健康检查、短 JWT access + 不透明 refresh + Redis 会话鉴权、语义简历生命周期、历史版本、文件导入、私有对象资源，以及统一 LLM 调用和管理员模型治理 API。
 
 | 位置 | 职责 |
 | --- | --- |
-| `src/linkcv/main.py` | 装配数据库、Redis、MinIO、tolink-rag 和结构化模型 Adapter；测试可注入 Fake |
+| `src/linkcv/main.py` | 装配数据库、Redis、MinIO、tolink-rag、结构化模型 Adapter 和统一 LLM 服务；测试可注入 Fake |
 | `src/linkcv/core/` | 配置、数据库、错误、安全、Redis 和 MinIO 基础设施 |
 | `src/linkcv/domain/` | `ResumeDocumentV1`、`ResumeStyleV1`、联合快照、SectionIR、Draft 和确定性标准化 |
 | `src/linkcv/application/resumes/` | 统一创建、乐观锁保存、版本创建/恢复与事务规则 |
@@ -15,7 +15,8 @@
 | `src/linkcv/services/storage_cleanup_service.py` | 持久化对象删除任务、即时尝试与后台重试 |
 | `src/linkcv/modules/identity/` | 用户模型、注册、登录、刷新与双 Token 鉴权依赖 |
 | `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板/简历/版本/导入/资源路由 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0005` |
+| `src/linkcv/modules/llm/` | 模型凭据加密、LiteLLM 适配、普通/流式调用、故障切换、计量与管理员 API |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0006` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -26,6 +27,18 @@ MySQL 包含 `users`、`resume_templates`、`resumes`、`resume_versions` 和 `s
 Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versions` 四张核心表。业务主键和外键统一使用 `BIGINT UNSIGNED`；数据库中的整数 ID 在 HTTP、JWT、TypeScript 和对象键中表示为十进制字符串。`users` 保存账号、昵称、头像对象键、`0/1` 状态和管理员标记，不保存会话；注册时生成以“用户”为前缀的默认昵称。所有创建来源都调用统一服务，在单事务中创建当前简历和 initial 版本。每个用户最多保留 10 份简历；创建前锁定对应 `users` 行并读取已有记录，使普通、模板和导入创建在 MySQL 并发请求下共享同一上限，删除后立即释放名额。导入还会在上传和模型调用前快速拒绝已经达到上限的请求，最终事务检查继续处理快速检查后的竞态。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。手动版本、删除版本与恢复都先锁定所属简历；每份简历最多保存 10 个版本，空间不足时事务直接拒绝且不修改当前简历或历史快照。用户可以删除非最新的旧版本释放名额；恢复按当前内容是否已形成快照，原子地预留一个 `restore` 或两个 `before_restore + restore` 名额。
 
 `0003` 将模板外键改为 `ON DELETE SET NULL`，同时允许历史模板来源在模板删除后保留 `source_type=template/template_id=NULL`。MySQL 8.4 禁止 `SET NULL` 外键列参与 CHECK，因此 `ck_resumes_source_fields` 只约束来源证据字段，`template_id/source_type` 组合由统一创建服务保证，外键继续保证非空引用有效。如果已经出现模板来源但 `template_id=NULL` 的记录，0003 downgrade 会拒绝恢复不成立的 RESTRICT/非空来源约束。`0004` 新增不绑定已删除业务记录的 `storage_cleanup_jobs`，以对象键或前缀保存幂等删除任务。`0005` 在批量转换前核对旧节点和样式字段，只接受可完整表达的上一版结构；遇到未知字段、危险 Markdown 或无法保留的内嵌图片会中止。降级先从同行备份恢复 `resumes` 和 `resume_versions`，再删除备份列。已进入共享环境的 revision 不原地修改。
+
+`0006` 新增 `llm_model_configs` 和 `llm_call_logs`。模型配置保留启停、优先级、可选价格和版本化凭据密文；调用日志按唯一 `call_id` 保存用户、实际模型快照、最终状态、计量完整性、Token、价格快照和估算成本，不保存消息或模型正文。配置和调用日志不提供级联删除，历史关联使用 `RESTRICT`。两张表及其全部字段都在 SQL-first DDL 和 SQLAlchemy 模型中维护一致的中文注释；状态字段的英文值是持久化契约，不因注释语言改变。
+
+## 统一 LLM 调用
+
+`LLMService.chat()` 和 `LLMService.stream_chat()` 是后端业务模块使用的内部异步接口，不注册 HTTP route。调用方提供可信 `user_id` 和按顺序排列的 `system`、`user`、`assistant` messages；模型标识、地址、密钥和主备顺序由数据库配置决定。候选按 `priority ASC, id ASC` 固定为一次调用快照；连接、超时、限流、认证和服务类失败可在尚未产生流式内容时切换，消息无效、上下文超限、内容策略拒绝和已经输出后的流式失败不切换。
+
+LiteLLM 只位于 `modules/llm/gateway.py` 适配边界，供应商异常会转换成稳定分类。同步 SQLAlchemy 操作使用独立短 Session 在线程池执行，外部调用和流式迭代期间不持有数据库事务。成功、失败和取消都会收口同一条逻辑调用记录；进程被强制终止造成的 `pending` 记录保留为崩溃排查信号。
+
+模型凭据使用 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 提供的 Fernet 密钥环加密，数据库只保存 `v1:<keyId>:<token>`。列表首项负责新写入，旧 key 用于兼容解密；读取旧密文时会惰性重包到首项。普通日志、HTTP 响应和调用记录均不包含明文凭据、messages、模型完整响应或供应商原始错误。
+
+简历导入当前仍通过 `integrations/llm_client.py` 的 OpenAI-compatible JSON Schema Adapter 执行结构化提取，并使用独立的 `LLM_BASE_URL`、`LLM_API_KEY` 和 `LLM_MODEL` 配置。这条过渡链路不参与数据库模型选择、主备切换和统一调用日志，后续业务接管时再迁移到 `LLMService`，本次合并不改变既有导入行为。
 
 `scripts/db/init_mysql.py` 只允许创建名为 `linkcv` 的 MySQL 数据库；`scripts/release/run_alembic.py` 在迁移前校验环境、host、port 和数据库并输出不含密码的摘要。FastAPI 配置支持根 `.env`、显式 `LINKCV_ENV_FILE`、同名 `.local` 和进程环境覆盖。Redis 在鉴权链路中作为唯一会话存储：`auth:session:{sid}` 保存会话哈希，`auth:user_sessions:{uid}` 索引该用户全部会话；会话不写 MySQL，撤销即删除 key。阿里云 OSS 当前仅建立配置契约。
 
@@ -47,5 +60,5 @@ Markdown 文件直接读取；DOCX/PDF 通过 `RagConverter` 发往 tolink-rag �
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake RAG/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于 `0002`–`0005` 往返、旧快照转换和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于 `0002`–`0006` 往返、旧快照转换和物理约束验证。
 - 真实 tolink-rag、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
