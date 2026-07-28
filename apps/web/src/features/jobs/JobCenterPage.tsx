@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Archive, BriefcaseBusiness, MapPin, Plus, RotateCcw, Search, Trash2 } from "lucide-react";
-import { api, type JobDescriptionSummary } from "../../api/client";
+import { api, ApiRequestError, type JobDescriptionSummary } from "../../api/client";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Button } from "../../components/ds";
 import { jobDetailPath, navigateTo } from "../../routing";
@@ -101,8 +101,8 @@ export function JobCenterPage() {
       await api.deleteJobDescription(pendingDelete.id);
       setItems((current) => current.filter((item) => item.id !== pendingDelete.id));
       setPendingDelete(null);
-    } catch {
-      setError("删除失败，请稍后重试。");
+    } catch (deleteError) {
+      setError(deleteErrorMessage(deleteError));
       setPendingDelete(null);
     } finally {
       setBusyId(null);
@@ -145,7 +145,7 @@ export function JobCenterPage() {
                 </button>
                 <div className="job-card-actions">
                   <button type="button" disabled={busyId !== null} aria-label={`${job.archived_at ? "恢复" : "归档"} ${job.job_title}`} onClick={() => void changeArchived(job)}>{job.archived_at ? <RotateCcw size={16} /> : <Archive size={16} />}</button>
-                  <button type="button" disabled={busyId !== null} aria-label={`删除 ${job.job_title}`} onClick={() => setPendingDelete(job)}><Trash2 size={16} /></button>
+                  {job.archived_at && <button type="button" disabled={busyId !== null} aria-label={`删除 ${job.job_title}`} onClick={() => setPendingDelete(job)}><Trash2 size={16} /></button>}
                 </div>
               </article>
             ))}
@@ -159,4 +159,11 @@ export function JobCenterPage() {
 
 function formatTime(value: string): string {
   return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
+
+function deleteErrorMessage(error: unknown): string {
+  if (error instanceof ApiRequestError && error.message === "JD_DELETE_REQUIRES_ARCHIVE") {
+    return "岗位已经恢复为活动状态，请刷新列表后重试。";
+  }
+  return "删除失败，请稍后重试。";
 }

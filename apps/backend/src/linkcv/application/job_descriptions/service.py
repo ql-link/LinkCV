@@ -214,16 +214,40 @@ def set_job_archived(
         raise
 
 
-def hard_delete_owned_job(db: Session, job: JobDescription, user_id: int) -> bool:
+HardDeleteJobResult = Literal["deleted", "not_found", "requires_archive"]
+
+
+def hard_delete_owned_job(
+    db: Session, job_id: str, user_id: int
+) -> HardDeleteJobResult:
+    parsed = parse_decimal_id(job_id)
+    if parsed is None:
+        return "not_found"
     try:
         result = db.execute(
             delete(JobDescription).where(
-                JobDescription.id == job.id,
+                JobDescription.id == parsed,
                 JobDescription.user_id == user_id,
+                JobDescription.archived_at.is_not(None),
             )
         )
-        db.commit()
-        return result.rowcount == 1
+        if result.rowcount == 1:
+            db.commit()
+            return "deleted"
+
+        # Locking read observes the current row state after a concurrent restore.
+        # This distinguishes an active owned row from a missing or foreign row
+        # without weakening the archived predicate on the DELETE itself.
+        owned_job_id = db.scalar(
+            select(JobDescription.id)
+            .where(
+                JobDescription.id == parsed,
+                JobDescription.user_id == user_id,
+            )
+            .with_for_update()
+        )
+        db.rollback()
+        return "requires_archive" if owned_job_id is not None else "not_found"
     except Exception:
         db.rollback()
         raise

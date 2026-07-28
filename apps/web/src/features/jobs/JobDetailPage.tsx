@@ -112,7 +112,7 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
               {job.archived_at ? "恢复" : "归档"}
             </Button>
             <Button variant="secondary" icon={<Pencil size={15} />} disabled={busy} onClick={() => navigateTo(jobEditPath(job.id))}>编辑</Button>
-            <Button variant="danger" icon={<Trash2 size={15} />} disabled={busy} onClick={() => setDeleteOpen(true)}>删除</Button>
+            {job.archived_at && <Button variant="danger" icon={<Trash2 size={15} />} disabled={busy} onClick={() => setDeleteOpen(true)}>删除</Button>}
           </div>
         </header>
 
@@ -200,6 +200,7 @@ function detailErrorMessage(error: unknown): string {
   if (error instanceof ApiRequestError) {
     if (error.message === "JD_NOT_FOUND") return "岗位不存在，或当前账号没有访问权限。";
     if (error.message === "JD_EDIT_CONFLICT") return "岗位状态已经变化，请重新打开后再操作。";
+    if (error.message === "JD_DELETE_REQUIRES_ARCHIVE") return "岗位已经恢复为活动状态，请重新打开后再操作。";
     if (error.status === 401) return "登录状态已失效，请重新登录。";
   }
   return "岗位服务暂时不可用，请稍后重试。";

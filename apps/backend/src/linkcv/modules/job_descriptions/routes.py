@@ -192,7 +192,9 @@ def delete_job_description(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DeleteJobDescriptionResponse:
-    job = require_owned_job(db, job_id, user.id)
-    if not hard_delete_owned_job(db, job, user.id):
+    result = hard_delete_owned_job(db, job_id, user.id)
+    if result == "not_found":
         raise ApiError(404, "JD_NOT_FOUND")
+    if result == "requires_archive":
+        raise ApiError(409, "JD_DELETE_REQUIRES_ARCHIVE")
     return DeleteJobDescriptionResponse(deleted=True)

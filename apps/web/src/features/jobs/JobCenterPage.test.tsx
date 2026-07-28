@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, type JobDescriptionRecord, type JobDescriptionSummary } from "../../api/client";
+import { api, ApiRequestError, type JobDescriptionRecord, type JobDescriptionSummary } from "../../api/client";
 import { useResumeStore } from "../../store/resumeStore";
 import { JobCenterPage } from "./JobCenterPage";
 
@@ -35,6 +35,7 @@ describe("JobCenterPage", () => {
 
     expect(await screen.findByText("Java 开发实习生")).toBeInTheDocument();
     expect(list).toHaveBeenCalledWith({ scope: "active", keyword: undefined });
+    expect(screen.queryByRole("button", { name: "删除 Java 开发实习生" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "归档 Java 开发实习生" }));
 
     await waitFor(() => expect(archive).toHaveBeenCalledWith("job-1", 2));
@@ -46,7 +47,8 @@ describe("JobCenterPage", () => {
   });
 
   it("永久删除前显示站内确认，取消时不调用接口", async () => {
-    vi.spyOn(api, "listJobDescriptions").mockResolvedValue({ items: [job], next_cursor: null });
+    const archived = { ...job, archived_at: "2026-07-29T09:00:00Z", lock_version: 3 };
+    vi.spyOn(api, "listJobDescriptions").mockResolvedValue({ items: [archived], next_cursor: null });
     const remove = vi.spyOn(api, "deleteJobDescription");
 
     render(<JobCenterPage />);
@@ -57,5 +59,22 @@ describe("JobCenterPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(remove).not.toHaveBeenCalled();
+  });
+
+  it("归档岗位在删除前被恢复时保留记录并提示刷新", async () => {
+    const archived = { ...job, archived_at: "2026-07-29T09:00:00Z", lock_version: 3 };
+    vi.spyOn(api, "listJobDescriptions").mockResolvedValue({ items: [archived], next_cursor: null });
+    const remove = vi.spyOn(api, "deleteJobDescription").mockRejectedValue(
+      new ApiRequestError(409, "JD_DELETE_REQUIRES_ARCHIVE"),
+    );
+
+    render(<JobCenterPage />);
+    expect(await screen.findByText("Java 开发实习生")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "删除 Java 开发实习生" }));
+    fireEvent.click(screen.getByRole("button", { name: "永久删除" }));
+
+    await waitFor(() => expect(remove).toHaveBeenCalledWith(archived.id));
+    expect(screen.getByRole("alert")).toHaveTextContent("岗位已经恢复为活动状态");
+    expect(screen.getByText("Java 开发实习生")).toBeInTheDocument();
   });
 });

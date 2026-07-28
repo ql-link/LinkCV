@@ -135,6 +135,18 @@ def test_manual_crud_search_lifecycle_and_hard_delete_release_source() -> None:
         assert restored.status_code == 200
         assert restored.json()["job_description"]["lock_version"] == 4
 
+        active_delete = client.delete(f"/api/job-descriptions/{job['id']}")
+        assert active_delete.status_code == 409
+        assert active_delete.json() == {"error": "JD_DELETE_REQUIRES_ARCHIVE"}
+        assert client.get(f"/api/job-descriptions/{job['id']}").status_code == 200
+
+        rearchived = client.post(
+            f"/api/job-descriptions/{job['id']}/archive",
+            json={"base_lock_version": 4},
+        )
+        assert rearchived.status_code == 200
+        assert rearchived.json()["job_description"]["lock_version"] == 5
+
         deleted = client.delete(f"/api/job-descriptions/{job['id']}")
         assert deleted.status_code == 200
         assert deleted.json() == {"deleted": True}
@@ -408,7 +420,7 @@ def test_source_less_manual_jobs_are_not_content_deduplicated_and_pagination_is_
         assert invalid_timezone.json() == {"error": "INVALID_JOB_QUERY"}
 
 
-def test_delete_reports_not_found_if_target_disappears_after_ownership_check(
+def test_delete_reports_not_found_if_target_disappears_during_atomic_delete(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     app = build_app()
@@ -417,7 +429,7 @@ def test_delete_reports_not_found_if_target_disappears_after_ownership_check(
         job = create_job(client)
         monkeypatch.setattr(
             "linkcv.modules.job_descriptions.routes.hard_delete_owned_job",
-            lambda _db, _job, _user_id: False,
+            lambda _db, _job_id, _user_id: "not_found",
         )
 
         response = client.delete(f"/api/job-descriptions/{job['id']}")
