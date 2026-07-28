@@ -1,0 +1,7 @@
+# Local runtime configuration copied into new Codex-managed worktrees.
+.env.local
+.env.development.local
+
+# Personal PyCharm run configurations for the two development profiles.
+.idea/runConfigurations/LinkCV_Local_Dev.xml
+.idea/runConfigurations/LinkCV_Shared_Dev.xml
