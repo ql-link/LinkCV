@@ -10,20 +10,22 @@ const resumes: ResumeSummary[] = [
 
 function renderHome(overrides: Partial<React.ComponentProps<typeof HomeScreen>> = {}) {
   const props: React.ComponentProps<typeof HomeScreen> = {
-    email: "zhangsan@example.com",
+    view: "all",
     resumes,
     onOpen: vi.fn(),
     onDelete: vi.fn(),
     onCreate: vi.fn(),
     onImport: vi.fn(),
-    onLogout: vi.fn(),
     ...overrides,
   };
   return { ...render(<HomeScreen {...props} />), props };
 }
 
 describe("HomeScreen", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    window.history.replaceState(null, "", "/");
+  });
 
   it("按标题即时过滤且忽略大小写", () => {
     renderHome();
@@ -36,9 +38,7 @@ describe("HomeScreen", () => {
 
   it("切换模板后隐藏搜索并在确认后通过标准模板创建简历", async () => {
     const onCreate = vi.fn();
-    renderHome({ onCreate });
-
-    fireEvent.click(screen.getByRole("button", { name: "模板" }));
+    renderHome({ view: "templates", onCreate });
 
     expect(screen.queryByRole("textbox", { name: "搜索简历" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /标准简历模板/ }));
@@ -52,9 +52,7 @@ describe("HomeScreen", () => {
 
   it("每次从模板创建都显示确认，也可以取消", () => {
     const onCreate = vi.fn();
-    renderHome({ onCreate });
-
-    fireEvent.click(screen.getByRole("button", { name: "模板" }));
+    renderHome({ view: "templates", onCreate });
     fireEvent.click(screen.getByRole("button", { name: /标准简历模板/ }));
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
 
@@ -80,9 +78,7 @@ describe("HomeScreen", () => {
 
   it("模板创建达到数量上限时关闭确认并显示明确提示", async () => {
     const onCreate = vi.fn().mockRejectedValue(new ApiRequestError(409, "RESUME_LIMIT_REACHED"));
-    renderHome({ onCreate });
-
-    fireEvent.click(screen.getByRole("button", { name: "模板" }));
+    renderHome({ view: "templates", onCreate });
     fireEvent.click(screen.getByRole("button", { name: /标准简历模板/ }));
     fireEvent.click(screen.getByRole("button", { name: "使用模板创建" }));
 

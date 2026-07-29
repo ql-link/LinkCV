@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { authPath, editorPath, isSafeAppPath, navigateTo, parseAppRoute } from "./routing";
+import { authPath, editorPath, isSafeAppPath, jobDetailPath, jobEditPath, navigateTo, parseAppRoute } from "./routing";
 
 describe("LinkCV routes", () => {
   it("parses landing, auth, admin, resume list, and editor routes", () => {
@@ -8,12 +8,19 @@ describe("LinkCV routes", () => {
     expect(parseAppRoute("/admin/llm/models")).toEqual({ kind: "admin" });
     expect(parseAppRoute("/resumes/")).toEqual({ kind: "resumes" });
     expect(parseAppRoute("/resumes/resume_123/edit")).toEqual({ kind: "editor", resumeId: "resume_123" });
+    expect(parseAppRoute("/jobs")).toEqual({ kind: "jobs" });
+    expect(parseAppRoute("/jobs/new")).toEqual({ kind: "jobCreate" });
+    expect(parseAppRoute("/jobs/job_123")).toEqual({ kind: "jobDetail", jobId: "job_123" });
+    expect(parseAppRoute("/jobs/job_123/edit")).toEqual({ kind: "jobEdit", jobId: "job_123" });
     expect(parseAppRoute("/missing")).toEqual({ kind: "notFound" });
   });
 
   it("encodes resume identifiers and only accepts internal resume return paths", () => {
     expect(editorPath("resume/a b")).toBe("/resumes/resume%2Fa%20b/edit");
+    expect(jobDetailPath("job/a b")).toBe("/jobs/job%2Fa%20b");
+    expect(jobEditPath("job/a b")).toBe("/jobs/job%2Fa%20b/edit");
     expect(isSafeAppPath("/resumes/resume_123/edit")).toBe(true);
+    expect(isSafeAppPath("/jobs/job_123/edit")).toBe(true);
     expect(isSafeAppPath("//example.com/resumes")).toBe(false);
     expect(isSafeAppPath("https://example.com/resumes")).toBe(false);
     expect(authPath("login", "/resumes/resume_123/edit")).toBe("/login?next=%2Fresumes%2Fresume_123%2Fedit");

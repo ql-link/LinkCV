@@ -65,6 +65,30 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 
 原文件对象键不在响应中。文件为空、超限、不支持或内容非法分别返回 `EMPTY_IMPORT_FILE`、`IMPORT_FILE_TOO_LARGE`、`UNSUPPORTED_IMPORT_FORMAT`、`IMPORT_CONTENT_INVALID`；超过结构化模型输入上限返回 `413 STRUCTURING_INPUT_TOO_LARGE`，触发频率或并发保护返回 `429 IMPORT_RATE_LIMITED`。账号已有 10 份简历时会在上传和模型处理前返回 `409 RESUME_LIMIT_REACHED`；快速检查后的并发创建仍由最终事务检查兜底。RAG 或结构化模型未配置、调用失败、响应非法时返回稳定的 503/502/422 错误且不创建半成品；已上传对象执行幂等补偿。
 
+## JD 数据模型与管理
+
+JD 接口只接受和返回最终结构化数据，不保存插件原始页面、抓取中间结果或模型过程数据。所有接口都要求当前登录用户，服务端从会话取得 `user_id`；不存在和不属于当前用户的记录统一返回 `404 JD_NOT_FOUND`。
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `GET` | `/api/job-descriptions` | `{items, next_cursor}`，默认只列活动记录 |
+| `POST` | `/api/job-descriptions` | 新建时 `201 {job_description}`；解决重复时 `200` |
+| `GET` | `/api/job-descriptions/:id` | `{job_description}` |
+| `PUT` | `/api/job-descriptions/:id` | `{job_description}`；请求含 `base_lock_version` 和至少一个可编辑字段 |
+| `POST` | `/api/job-descriptions/:id/archive` | `{job_description}`；请求含 `base_lock_version` |
+| `POST` | `/api/job-descriptions/:id/restore` | `{job_description}`；请求含 `base_lock_version` |
+| `DELETE` | `/api/job-descriptions/:id` | 仅归档记录返回 `{deleted: true}`，永久删除并释放来源唯一标识 |
+
+列表查询支持 `scope=active|archived|all`、最长 200 字符的 `keyword`、不透明 `cursor` 和 `limit=1..100`。关键词忽略大小写，覆盖岗位名、公司名、城市、地址、正文和技能；分页按 `updated_at DESC, id DESC` 稳定排序。非法筛选或游标返回 `400 INVALID_JOB_QUERY`。
+
+创建必填 `job_title`、`company_name`、`description` 和 `source_type=manual|external_import`。`external_import` 必须带 `http/https source_url`；服务端负责规范化 URL 并计算来源身份。当前 BOSS 直聘岗位链接提取 `/job_detail/{source_job_id}.html`，保存 `source_site=boss`、原生 `source_job_id`、规范化 `source_url` 及其 SHA-256；其他链接保存 `source_site=web` 和 URL 哈希。`source_type`、`source_site`、`source_job_id`、`source_url`、`source_url_hash`、`imported_at` 创建后均不可通过更新接口修改。
+
+同一用户的 `(source_site, source_job_id)` 或 `source_url_hash` 重复时返回 `409 JD_SOURCE_DUPLICATE`，响应 `duplicate` 包含现有摘要和可选动作。活动记录允许 `update|cancel`；归档记录允许 `restore|update|cancel`。`duplicate_resolution` 必须回传现有 `job_description_id` 和 `base_lock_version`：`restore` 只恢复原内容，`update` 用本次结构化内容更新原记录并在必要时恢复；两者都不创建第二条记录。普通更新、归档、恢复及重复解决使用 `lock_version`，并发过期返回 `409 JD_EDIT_CONFLICT`。
+
+硬删除只允许 `archived_at` 非空的归档记录；活动记录（包括已恢复记录）返回 `409 JD_DELETE_REQUIRES_ARCHIVE` 且不产生删除副作用。删除语句同时约束记录 ID、当前用户和归档状态，因此记录在并发删除前恢复后不会被误删。不存在和不属于当前用户的记录仍返回 `404 JD_NOT_FOUND`。
+
+技能以最多 100 个字符串的 JSON 数组保存，写入时去空和去重。数值薪资非空时必须同时给出三字母币种与计薪周期，最高值不得低于最低值。请求字段、长度或组合非法返回 `400 INVALID_JOB_DESCRIPTION`，来源非法返回 `400 INVALID_JOB_SOURCE`。福利、原始抓取数据和插件 API Key 不属于当前契约。
+
 ## 对象资源
 
 原用户级 `/api/assets` 图片接口继续保留。新增简历级资源接口：

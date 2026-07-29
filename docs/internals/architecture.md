@@ -4,8 +4,8 @@
 
 | 模块 | 位置 | 当前职责 |
 | --- | --- | --- |
-| Web | `apps/web` | React 19、TypeScript、Vite 前端和相对路径 API 客户端 |
-| Backend | `apps/backend` | FastAPI、JWT 鉴权、简历 CRUD、MinIO 图片接口、SQLAlchemy 模型和 Alembic 迁移 |
+| Web | `apps/web` | React 19、TypeScript、Vite 前端，以及简历和临时 JD 管理页面 |
+| Backend | `apps/backend` | FastAPI、JWT/Redis 鉴权、简历与 JD API、MinIO 图片接口、SQLAlchemy 模型和 Alembic 迁移 |
 | Infrastructure | `deploy` | MySQL、Redis、MinIO 本地依赖和 Dev/Production Jenkins、Compose 拓扑 |
 | AI workflow | `.ai`、`.specs`、`scripts` | 项目规则、阶段状态和质量门禁 |
 
@@ -17,8 +17,8 @@ FastAPI 在 `apps/backend/src/linkcv/main.py` 以 `/api` 前缀挂载路由。�
 
 ## 数据与鉴权
 
-- MySQL 是用户和简历数据的权威存储，表结构只通过 Alembic 迁移演进。
-- 登录态是有效期七天的 JWT HttpOnly Cookie，Cookie 名保持为 `resume_session`。
+- MySQL 是用户、简历、结构化 JD 和治理数据的权威存储，表结构只通过 Alembic 迁移演进。
+- 登录态使用短 JWT access Cookie `resume_access` 与七天不透明 refresh Cookie `resume_refresh`，Redis 保存可撤销会话。
 - 图片存储在私有 MinIO bucket 中；现有兼容资源位于 `users/<user-id>/assets/`，简历编辑器新增资源位于 `users/<user-id>/resumes/<resume-id>/assets/`，两者都由服务端生成对象键并在读取时校验所有权。
 - 原型 Express/SQLite 数据不迁移到 MySQL。
 

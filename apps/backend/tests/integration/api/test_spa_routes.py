@@ -24,6 +24,7 @@ def test_spa_deep_links_fall_back_to_index_without_masking_api_404(tmp_path) -> 
 
     with TestClient(app) as client:
         assert client.get("/resumes/resume_123/edit").text == "<main>LinkCV</main>"
+        assert client.get("/jobs/job_123/edit").text == "<main>LinkCV</main>"
         assert client.get("/assets/app.js").text == "console.log('LinkCV')"
         api_response = client.get("/api/not-found")
         assert api_response.status_code == 404

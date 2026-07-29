@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
 import { Button } from "./components/ds";
+import { WorkspaceLayout, type WorkspaceSection } from "./components/WorkspaceLayout";
 import { ApiRequestError } from "./api/client";
 import { AdminApp } from "./features/admin/AdminApp";
 import { AuthPage } from "./features/auth/AuthPage";
 import { HomePage } from "./features/home/HomePage";
+import { JobCenterPage } from "./features/jobs/JobCenterPage";
+import { JobDetailPage } from "./features/jobs/JobDetailPage";
+import { JobFormPage } from "./features/jobs/JobFormPage";
 import { LandingPage } from "./features/landing/LandingPage";
 import { ResumeWorkbench } from "./features/workbench/ResumeWorkbench";
 import { authPath, editorPath, navigateTo, useAppRoute } from "./routing";
@@ -43,7 +47,14 @@ export function App() {
     if (authStatus === "checking") return;
 
     if (authStatus === "guest") {
-      if (route.kind === "resumes" || route.kind === "editor") {
+      if (
+        route.kind === "resumes"
+        || route.kind === "editor"
+        || route.kind === "jobs"
+        || route.kind === "jobCreate"
+        || route.kind === "jobDetail"
+        || route.kind === "jobEdit"
+      ) {
         const next = `${window.location.pathname}${window.location.search}`;
         navigateTo(authPath("login", next), { replace: true });
       } else if (route.kind === "notFound") {
@@ -128,8 +139,29 @@ export function App() {
     );
   }
 
-  if (route.kind === "resumes") {
-    return <HomePage />;
+  if (
+    route.kind === "resumes"
+    || route.kind === "jobs"
+    || route.kind === "jobCreate"
+    || route.kind === "jobDetail"
+    || route.kind === "jobEdit"
+  ) {
+    const resumeView = route.kind === "resumes" && new URLSearchParams(window.location.search).get("view") === "templates"
+      ? "templates"
+      : "all";
+    const activeSection: WorkspaceSection = route.kind === "resumes"
+      ? resumeView === "templates" ? "templates" : "resumes"
+      : "jobs";
+
+    return (
+      <WorkspaceLayout active={activeSection}>
+        {route.kind === "resumes" && <HomePage view={resumeView} />}
+        {route.kind === "jobs" && <JobCenterPage />}
+        {route.kind === "jobCreate" && <JobFormPage mode="create" />}
+        {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}
+        {route.kind === "jobEdit" && <JobFormPage mode="edit" jobId={route.jobId} />}
+      </WorkspaceLayout>
+    );
   }
 
   if (route.kind === "editor") {
