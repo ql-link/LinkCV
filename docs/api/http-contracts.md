@@ -1,4 +1,4 @@
-# HTTP 接口契约
+﻿# HTTP 接口契约
 
 本文记录当前调用方可观察的 HTTP 行为。全部 `/api` 路径由 FastAPI 提供，Swagger UI 位于 `/api/docs`，OpenAPI JSON 位于 `/api/openapi.json`。未匹配的 `/api` 路径返回 JSON 404，不会被 SPA fallback 转成 HTML。
 
@@ -106,6 +106,8 @@ JD 接口只接受和返回最终结构化数据，不保存插件原始页面�
 以下接口只允许当前数据库用户的 `is_admin=true` 时访问。未登录返回 `401 UNAUTHORIZED`，普通用户返回 `403 FORBIDDEN`。本期不公开普通用户或第三方可调用的通用 chat、stream HTTP API；模型调用只作为 FastAPI 后端内部 Python 服务提供。
 
 `users.is_admin` 不进入 access JWT 或 Redis 会话；管理员接口每次请求都从数据库读取该 `0/1` 标记，因此提权或降权对现有 Cookie 的下一次请求即时生效。公开注册始终创建普通用户。
+
+管理员通过 \POST /api/auth/admin-login\ 登录，后端额外校验 \is_admin=true\ 后签发会话；普通用户调用返回 \403 FORBIDDEN\。管理端前端在 \/admin\ 入口通过 \pi.me()\ 恢复登录态后检查 \is_admin\，非管理员无法加载管理端子页面或发起管理 API 调用。
 
 | Method | Path | 成功结果 |
 | --- | --- | --- |
