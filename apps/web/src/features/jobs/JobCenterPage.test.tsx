@@ -26,7 +26,7 @@ afterEach(() => {
 
 describe("JobCenterPage", () => {
   it("按范围和关键词读取列表，并使用当前版本归档", async () => {
-    useResumeStore.setState({ user: { id: "user-1", email: "user@example.test" } });
+    useResumeStore.setState({ user: { id: "user-1", email: "user@example.test", nickname: "测试用户", is_admin: false } });
     const list = vi.spyOn(api, "listJobDescriptions").mockResolvedValue({ items: [job], next_cursor: null });
     const archived = { ...job, archived_at: "2026-07-29T09:00:00Z", lock_version: 3 } as JobDescriptionRecord;
     const archive = vi.spyOn(api, "archiveJobDescription").mockResolvedValue({ job_description: archived });

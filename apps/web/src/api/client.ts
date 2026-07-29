@@ -3,6 +3,8 @@ import type { ResumeDocumentV1, ResumeStyleV1 } from "./resumeContract";
 export type User = {
   id: string;
   email: string;
+  nickname: string;
+  is_admin: boolean;
 };
 
 export type ResumeSummary = {
@@ -214,8 +216,10 @@ export const api = {
   me: getCurrentUser,
   register: (email: string, password: string) =>
     request<{ user: User }>("/api/auth/register", { method: "POST", body: { email, password } }),
-  login: (email: string, password: string) =>
+ login: (email: string, password: string) =>
     request<{ user: User }>("/api/auth/login", { method: "POST", body: { email, password } }),
+  adminLogin: (email: string, password: string) =>
+    request<{ user: User }>("/api/auth/admin-login", { method: "POST", body: { email, password } }),
   logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
   listResumes: () => request<{ resumes: ResumeSummary[] }>("/api/resumes"),
   createResume: (payload: { title?: string; template_id?: string }) =>

@@ -1,8 +1,21 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminApp } from "./AdminApp";
+import { api } from "../../api/client";
+
+const mockAdminUser = {
+  id: "admin-1",
+  email: "admin@linkcv.cn",
+  nickname: "陈听澜",
+  is_admin: true,
+};
 
 describe("AdminApp mock flow", () => {
+  beforeEach(() => {
+    vi.spyOn(api, "me").mockRejectedValue(new Error("UNAUTHORIZED"));
+    vi.spyOn(api, "adminLogin").mockResolvedValue({ user: mockAdminUser });
+  });
+
   afterEach(() => {
     window.history.replaceState(null, "", "/");
   });
@@ -11,7 +24,8 @@ describe("AdminApp mock flow", () => {
     window.history.replaceState(null, "", "/admin");
     render(<AdminApp />);
 
-    fireEvent.click(screen.getByRole("button", { name: "填入演示账号" }));
+    const demoButton = await screen.findByRole("button", { name: "填入演示账号" }, { timeout: 4_000 });
+    fireEvent.click(demoButton);
     fireEvent.click(screen.getByRole("button", { name: "进入管理台" }));
     expect(await screen.findByRole("heading", { name: "早上好，陈听澜" }, { timeout: 4_000 })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "模型配置" }));
@@ -26,7 +40,8 @@ describe("AdminApp mock flow", () => {
     window.history.replaceState(null, "", "/admin/users");
     render(<AdminApp />);
 
-    fireEvent.click(screen.getByRole("button", { name: "填入演示账号" }));
+    const demoButton = await screen.findByRole("button", { name: "填入演示账号" }, { timeout: 4_000 });
+    fireEvent.click(demoButton);
     fireEvent.click(screen.getByRole("button", { name: "进入管理台" }));
     expect(await screen.findByRole("heading", { name: "用户管理" }, { timeout: 4_000 })).toBeInTheDocument();
   });

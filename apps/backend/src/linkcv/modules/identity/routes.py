@@ -138,6 +138,36 @@ def login(
     return AuthResponse(user=UserResponse.model_validate(user))
 
 
+@router.post("/admin-login", response_model=AuthResponse)
+def admin_login(
+    payload: Credentials,
+    response: Response,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    redis_client: "redis.Redis" = Depends(get_redis),
+) -> AuthResponse:
+    email = normalize_email(payload.email)
+    user = db.scalar(select(User).where(User.email == email))
+    if (
+        user is None
+        or user.status != 1
+        or not verify_password(payload.password, user.password_hash)
+    ):
+        raise ApiError(401, "INVALID_CREDENTIALS")
+    if not user.is_admin:
+        raise ApiError(403, "FORBIDDEN")
+
+    if password_needs_rehash(user.password_hash):
+        user.password_hash = hash_password(payload.password)
+
+    user.last_login_at = utc_now()
+    db.commit()
+    db.refresh(user)
+
+    issue_session(response, user, settings, redis_client)
+    return AuthResponse(user=UserResponse.model_validate(user))
+
+
 @router.post("/refresh", response_model=AuthResponse)
 def refresh(
     request: Request,
