@@ -5,6 +5,7 @@
 | 契约面 | 代码或配置事实源 | 主要消费方 | 长期文档 |
 | --- | --- | --- | --- |
 | HTTP 路由与 schema | `apps/backend/src/linkcv/api/`、`apps/backend/src/linkcv/modules/` | Web API client、Vite 代理 | `docs/api/http-contracts.md` |
+| 浏览器导入请求 | `apps/backend/src/linkcv/modules/job_descriptions/schemas.py`、`apps/extension/src/contracts.ts` | 插件 API client、后端导入清洗 | `docs/api/http-contracts.md`、`docs/internals/extension.md` |
 | 开发期路由归属 | `apps/web/vite.config.mjs` | FastAPI、根级启动命令 | `docs/internals/architecture.md`、`docs/ops/development.md` |
 | 鉴权与资源归属 | `modules/identity/`、`core/security.py` | Web API client、MySQL | `docs/api/http-contracts.md`、`docs/internals/backend.md` |
 | 简历持久化 | `modules/resumes/models.py`、`migrations/` | Web store 与 API client | `docs/internals/backend.md`、`docs/api/http-contracts.md` |

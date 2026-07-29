@@ -6,12 +6,13 @@ LinkCV 是用于编辑和导出简历的前后端分离 Monorepo。
 
 ```text
 apps/web       React、TypeScript 与 Vite 前端
+apps/extension WXT、React 与 TypeScript 浏览器岗位采集插件
 apps/backend   Python 3.11+、FastAPI、SQLAlchemy 与 Alembic 后端
 deploy         本地基础设施、Dev/Production Jenkins 与 Compose 部署配置
 docs           长期维护的架构、API、模块与运维知识
 ```
 
-Web 与后端项目可独立安装和构建；根目录命令用于协调两个应用及本地基础设施。
+Web、浏览器插件与后端项目可独立安装和构建；根目录命令用于协调三个应用及本地基础设施。
 
 ## 首次初始化
 
@@ -55,6 +56,6 @@ npm run dev:local
 
 Vite 会将所有相对 `/api` 请求代理到 FastAPI。鉴权使用有效期七天的 HttpOnly Cookie JWT；简历存储在 MySQL，私有图片存储在 MinIO。原型阶段的 SQLite 数据不会导入。
 
-执行 `npm run check` 可运行全部检查；执行 `npm run build` 可构建 Vite 前端和可安装的 Python 后端包。
+执行 `npm run check` 可运行全部检查；执行 `npm run build` 可构建 Vite 前端、Chrome MV3 插件和可安装的 Python 后端包。插件侧载步骤见 [`apps/extension/README.md`](apps/extension/README.md)。
 
 当前架构与模块契约索引见 [`docs/README.md`](docs/README.md)。

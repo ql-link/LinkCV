@@ -15,6 +15,7 @@ LinkCV 是 React/TypeScript + FastAPI 前后端分离 Monorepo。原型 Express 
 
 ```text
 apps/web       React 19、TypeScript、Vite 前端
+apps/extension WXT、React、TypeScript 浏览器岗位采集插件
 apps/backend   Python 3.13、FastAPI 后端
 deploy         Compose 与部署资料
 docs           供开发者和 AI 按需调阅的长期项目知识
@@ -37,8 +38,8 @@ npm run dev         # 启动 Web 和 FastAPI
 npm run check:ai    # 校验 AI 链接和项目 Skill
 npm run check:docs  # 校验长期文档及代码到文档同步关系
 npm run check:contracts # 校验确定性的运行时契约值
-npm test            # 运行前端和后端自动化测试
-npm run check:app   # 前后端测试、类型检查和构建
+npm test            # 运行 Web、浏览器插件和后端自动化测试
+npm run check:app   # 三个应用的测试、类型检查和构建
 npm run check       # 完整本地质量入口
 npm run spec -- ... # 管理 L2/L3 本地阶段状态
 ```

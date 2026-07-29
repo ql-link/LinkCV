@@ -17,6 +17,18 @@ rules:
     must_update:
       - docs/api/http-contracts.md
 
+  - id: browser-extension-import-contract
+    description: 浏览器岗位采集、权限或导入客户端变化必须同步插件与 HTTP 契约文档
+    when_changed:
+      - apps/extension/wxt.config.ts
+      - apps/extension/src/contracts.ts
+      - apps/extension/src/api/**/*.ts
+      - apps/extension/entrypoints/**/*.ts
+      - apps/extension/entrypoints/**/*.tsx
+    must_update:
+      - docs/internals/extension.md
+      - docs/api/http-contracts.md
+
   - id: vite-routing-contract
     description: Vite 代理变化必须同步架构、Web 和开发文档
     when_changed:

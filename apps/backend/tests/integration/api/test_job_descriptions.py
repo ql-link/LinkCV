@@ -57,6 +57,27 @@ def create_job(client: TestClient, **overrides: object) -> dict[str, object]:
     return response.json()["job_description"]
 
 
+def import_payload(**overrides: object) -> dict[str, object]:
+    capture: dict[str, object] = {
+        "job_title": "  Python  后端工程师 ",
+        "company_name": "示例 科技",
+        "description_text": "职位描述\n\n负责 API 开发。\n\n举报\n无关页尾",
+        "skills": ["生日福利", "高温补贴", "Python", " FastAPI ", "Python", "全勤奖"],
+        "salary_text": "15-25K·13薪",
+        "experience_text": "5天/周 6个月",
+        "education_text": "本科",
+        "work_city": "上海",
+        "company_tags": ["企业服务", "100-499人", "B轮"],
+    }
+    capture.update(overrides.pop("capture", {}))
+    result: dict[str, object] = {
+        "source_url": "https://www.zhipin.com/job_detail/import42.html?ka=detail",
+        "capture": capture,
+    }
+    result.update(overrides)
+    return result
+
+
 def test_manual_crud_search_lifecycle_and_hard_delete_release_source() -> None:
     app = build_app()
     with TestClient(app) as client:
@@ -206,6 +227,75 @@ def test_external_boss_duplicate_update_preserves_source_identity_and_notes() ->
         assert len(client.get("/api/job-descriptions?scope=all").json()["items"]) == 1
 
 
+def test_browser_capture_import_is_cleaned_stored_and_uses_existing_duplicate_flow() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+
+        response = client.post("/api/job-descriptions/import", json=import_payload())
+
+        assert response.status_code == 201, response.text
+        created = response.json()["job_description"]
+        assert created["job_title"] == "Python 后端工程师"
+        assert created["description"] == "负责 API 开发。"
+        assert created["skills"] == ["Python", "FastAPI"]
+        assert created["experience_requirement"] is None
+        assert created["work_schedule"] == "5天/周 6个月"
+        assert created["salary_min"] == "15000.00"
+        assert created["salary_max"] == "25000.00"
+        assert created["salary_period"] == "month"
+        assert created["salary_months_per_year"] == 13
+        assert created["company_industry"] == "企业服务"
+        assert created["company_size"] == "100-499人"
+        assert created["company_financing_stage"] == "B轮"
+        assert created["source_site"] == "boss"
+        assert created["source_job_id"] == "import42"
+        assert created["source_url"] == (
+            "https://www.zhipin.com/job_detail/import42.html"
+        )
+
+        conflict = client.post(
+            "/api/job-descriptions/import",
+            json=import_payload(capture={"job_title": "更新后的岗位"}),
+        )
+        assert conflict.status_code == 409
+        duplicate = conflict.json()["duplicate"]
+        assert duplicate["existing"]["id"] == created["id"]
+        assert duplicate["allowed_actions"] == ["update", "cancel"]
+
+        resolved_payload = import_payload(capture={"job_title": "更新后的岗位"})
+        resolved_payload["duplicate_resolution"] = {
+            "action": "update",
+            "job_description_id": created["id"],
+            "base_lock_version": created["lock_version"],
+        }
+        resolved = client.post(
+            "/api/job-descriptions/import", json=resolved_payload
+        )
+        assert resolved.status_code == 200
+        assert resolved.json()["job_description"]["job_title"] == "更新后的岗位"
+
+
+def test_browser_capture_import_rejects_invalid_contract_without_writing() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        invalid_payloads = [
+            import_payload(source_url="https://example.test/jobs/42"),
+            import_payload(capture={"description_text": "  "}),
+            import_payload(capture={"job_title": "x" * 201}),
+            {"source_url": "https://www.zhipin.com/job_detail/abc.html", "capture": {}, "unexpected": True},
+        ]
+
+        for invalid in invalid_payloads:
+            response = client.post("/api/job-descriptions/import", json=invalid)
+            assert response.status_code == 400
+            assert response.json() == {"error": "INVALID_JOB_IMPORT"}
+
+        with app.state.session_factory() as session:
+            assert session.scalar(select(func.count(JobDescription.id))) == 0
+
+
 def test_archived_duplicate_can_restore_old_content_or_update_and_restore() -> None:
     app = build_app()
     with TestClient(app) as client:
@@ -311,6 +401,9 @@ def test_authentication_ownership_and_user_scoped_uniqueness() -> None:
     with TestClient(app) as anonymous:
         assert anonymous.get("/api/job-descriptions").status_code == 401
         assert anonymous.post("/api/job-descriptions", json=payload()).status_code == 401
+        assert anonymous.post(
+            "/api/job-descriptions/import", json=import_payload()
+        ).status_code == 401
         assert anonymous.get("/api/job-descriptions/1").status_code == 401
         assert anonymous.put(
             "/api/job-descriptions/1",
