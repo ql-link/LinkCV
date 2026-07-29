@@ -32,7 +32,9 @@ def ensure_link(link_rel: str, target_rel: str, check_only: bool) -> str | None:
     # Symlink check (preferred on Linux/macOS)
     if link.is_symlink():
         actual = os.readlink(link)
-        if actual != expected:
+        expected = expected.rstrip('\n')
+        actual = actual.rstrip('\n')
+        if actual.rstrip('\n') != expected.rstrip('\n'):
             return f"{link_rel} \u6307\u5411 {actual}\uff0c\u9884\u671f{expected}"
         if not link.resolve().exists():
             return f"{link_rel} \u662f\u6b7b\u94fe\u63a5"
