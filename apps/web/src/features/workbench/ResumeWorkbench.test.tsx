@@ -2,7 +2,11 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "../../api/client";
-import { SmartOnePageAction, versionOperationErrorMessage } from "./ResumeWorkbench";
+import {
+  ImportWarningBanner,
+  SmartOnePageAction,
+  versionOperationErrorMessage,
+} from "./ResumeWorkbench";
 
 describe("ResumeWorkbench 智能一页入口", () => {
   it("显示当前状态并允许切换", async () => {
@@ -16,6 +20,27 @@ describe("ResumeWorkbench 智能一页入口", () => {
 
     await user.click(action);
     expect(onToggle).toHaveBeenCalledOnce();
+  });
+});
+
+describe("ResumeWorkbench 导入质量提示", () => {
+  it("展示 OCR 等质量提示并允许关闭", async () => {
+    const user = userEvent.setup();
+    const onDismiss = vi.fn();
+
+    render(
+      <ImportWarningBanner
+        warnings={["pdf_ocr_applied", "source_quote_not_found"]}
+        onDismiss={onDismiss}
+      />,
+    );
+
+    expect(screen.getByText("请检查导入结果")).toBeInTheDocument();
+    expect(screen.getByText(/PDF 已使用 OCR/)).toBeInTheDocument();
+    expect(screen.getByText(/部分结构化内容无法定位到原文短句/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "关闭导入质量提示" }));
+    expect(onDismiss).toHaveBeenCalledOnce();
   });
 });
 

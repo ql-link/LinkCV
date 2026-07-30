@@ -101,6 +101,11 @@ class Settings(BaseSettings):
         default=None,
         alias="LLM_CREDENTIAL_ENCRYPTION_KEYS",
     )
+    llm_timeout_seconds: float = Field(
+        default=60,
+        alias="LLM_TIMEOUT_SECONDS",
+        gt=0,
+    )
 
     minio_endpoint: str = Field(default="http://127.0.0.1:9000", alias="MINIO_ENDPOINT")
     minio_access_key: str = Field(default="linkcv", alias="MINIO_ACCESS_KEY")
@@ -144,37 +149,75 @@ class Settings(BaseSettings):
         ge=1,
         le=10,
     )
+    resume_import_deadline_seconds: float = Field(
+        default=120,
+        alias="RESUME_IMPORT_DEADLINE_SECONDS",
+        gt=0,
+    )
+    resume_structuring_timeout_seconds: float = Field(
+        default=45,
+        alias="RESUME_STRUCTURING_TIMEOUT_SECONDS",
+        gt=0,
+    )
+    resume_import_idempotency_processing_ttl_seconds: int = Field(
+        default=180,
+        alias="RESUME_IMPORT_IDEMPOTENCY_PROCESSING_TTL_SECONDS",
+        ge=1,
+    )
+    resume_import_idempotency_success_ttl_seconds: int = Field(
+        default=3600,
+        alias="RESUME_IMPORT_IDEMPOTENCY_SUCCESS_TTL_SECONDS",
+        ge=1,
+    )
+    resume_import_idempotency_failure_ttl_seconds: int = Field(
+        default=60,
+        alias="RESUME_IMPORT_IDEMPOTENCY_FAILURE_TTL_SECONDS",
+        ge=1,
+    )
 
-    rag_base_url: str | None = Field(default=None, alias="RAG_BASE_URL")
-    rag_api_key: str | None = Field(default=None, alias="RAG_API_KEY")
-    rag_convert_path: str = Field(
-        default="/documents/to-markdown",
-        alias="RAG_CONVERT_PATH",
+    linkparse_base_url: str = Field(
+        default="http://100.86.10.52:18743",
+        alias="LINKPARSE_BASE_URL",
     )
-    rag_timeout_seconds: float = Field(
+    linkparse_api_key: SecretStr | None = Field(
+        default=None,
+        alias="LINKPARSE_API_KEY",
+    )
+    linkparse_parse_path: str = Field(
+        default="/v1/parse",
+        alias="LINKPARSE_PARSE_PATH",
+    )
+    linkparse_timeout_seconds: float = Field(
         default=60,
-        alias="RAG_TIMEOUT_SECONDS",
+        alias="LINKPARSE_TIMEOUT_SECONDS",
         gt=0,
     )
-    llm_base_url: str | None = Field(default=None, alias="LLM_BASE_URL")
-    llm_api_key: str | None = Field(default=None, alias="LLM_API_KEY")
-    llm_model: str | None = Field(default=None, alias="LLM_MODEL")
-    llm_structured_path: str = Field(
-        default="/chat/completions",
-        alias="LLM_STRUCTURED_PATH",
+    linkparse_response_max_bytes: int = Field(
+        default=3 * 1024 * 1024,
+        alias="LINKPARSE_RESPONSE_MAX_BYTES",
+        ge=1,
     )
-    llm_timeout_seconds: float = Field(
-        default=60,
-        alias="LLM_TIMEOUT_SECONDS",
+    docx_conversion_timeout_seconds: float = Field(
+        default=30,
+        alias="DOCX_CONVERSION_TIMEOUT_SECONDS",
         gt=0,
     )
-    llm_max_retries: int = Field(default=1, alias="LLM_MAX_RETRIES", ge=0, le=2)
 
     redis_url_override: str | None = Field(default=None, alias="REDIS_URL")
     redis_host: str = Field(default="127.0.0.1", alias="REDIS_HOST")
     redis_port: int = Field(default=6379, alias="REDIS_PORT")
     redis_db: int = Field(default=0, alias="REDIS_DB")
     redis_password: str | None = Field(default=None, alias="REDIS_PASSWORD")
+    redis_connect_timeout_seconds: float = Field(
+        default=2,
+        alias="REDIS_CONNECT_TIMEOUT_SECONDS",
+        gt=0,
+    )
+    redis_socket_timeout_seconds: float = Field(
+        default=2,
+        alias="REDIS_SOCKET_TIMEOUT_SECONDS",
+        gt=0,
+    )
 
     aliyun_oss_endpoint: str | None = Field(default=None, alias="ALIYUN_OSS_ENDPOINT")
     aliyun_oss_region: str | None = Field(default=None, alias="ALIYUN_OSS_REGION")
@@ -216,6 +259,14 @@ class Settings(BaseSettings):
             raise ValueError(
                 "RESUME_STRUCTURING_MAX_BYTES cannot exceed RESUME_MARKDOWN_MAX_BYTES"
             )
+        if (
+            self.resume_import_idempotency_processing_ttl_seconds
+            < self.resume_import_deadline_seconds + 30
+        ):
+            raise ValueError(
+                "RESUME_IMPORT_IDEMPOTENCY_PROCESSING_TTL_SECONDS must be at least "
+                "RESUME_IMPORT_DEADLINE_SECONDS + 30"
+            )
         if self.app_environment.lower() != "production":
             return self
 
@@ -231,6 +282,15 @@ class Settings(BaseSettings):
             invalid.append("MINIO_ACCESS_KEY")
         if _is_placeholder(self.minio_secret_key):
             invalid.append("MINIO_SECRET_KEY")
+        if _is_placeholder(self.linkparse_base_url):
+            invalid.append("LINKPARSE_BASE_URL")
+        linkparse_key = (
+            self.linkparse_api_key.get_secret_value()
+            if self.linkparse_api_key is not None
+            else None
+        )
+        if _is_placeholder(linkparse_key):
+            invalid.append("LINKPARSE_API_KEY")
         try:
             llm_keys = parse_llm_credential_encryption_keys(
                 self.llm_credential_encryption_keys

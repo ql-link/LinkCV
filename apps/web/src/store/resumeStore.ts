@@ -3,6 +3,7 @@ import type { JSONContent } from "@tiptap/core";
 import {
   api,
   ChangePasswordPayload,
+  ImportWarning,
   ResumeDocumentV1,
   ResumeRecord,
   ResumeStyleV1,
@@ -50,6 +51,7 @@ type ResumeState = {
   versions: ResumeVersion[];
   versionsLoading: boolean;
   versionOperationPending: boolean;
+  importWarningsByResumeId: Record<string, ImportWarning[]>;
   activeResumeId: string | null;
   lockVersion: number;
   data: ResumeDocumentV1;
@@ -72,7 +74,7 @@ type ResumeState = {
   changePassword: (payload: ChangePasswordPayload) => Promise<void>;
   listResumes: () => Promise<void>;
   createResume: (title?: string) => Promise<void>;
-  importResume: (file: File, title?: string) => Promise<void>;
+  importResume: (file: File, title?: string) => Promise<string>;
   loadResume: (id: string) => Promise<void>;
   deleteResume: (id: string) => Promise<void>;
   saveCurrentResume: () => Promise<void>;
@@ -81,6 +83,7 @@ type ResumeState = {
   deleteVersion: (versionNo: number) => Promise<void>;
   restoreVersion: (versionNo: number) => Promise<void>;
   goHome: () => void;
+  dismissImportWarnings: (resumeId: string) => void;
   setTitle: (title: string) => void;
   setMarkdown: (markdown: string) => void;
   setEditorContent: (content: JSONContent) => void;
@@ -200,6 +203,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   versions: [],
   versionsLoading: false,
   versionOperationPending: false,
+  importWarningsByResumeId: {},
   activeResumeId: null,
   lockVersion: 0,
   data: defaultSemanticDocument,
@@ -219,7 +223,15 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     try {
       const { user } = await api.me();
       if (!user) {
-        set({ authStatus: "guest", user: null, resumes: [], versions: [], activeResumeId: null, lockVersion: 0 });
+        set({
+          authStatus: "guest",
+          user: null,
+          resumes: [],
+          versions: [],
+          importWarningsByResumeId: {},
+          activeResumeId: null,
+          lockVersion: 0,
+        });
         return;
       }
 
@@ -250,6 +262,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       resumes: [],
       versions: [],
       versionOperationPending: false,
+      importWarningsByResumeId: {},
       activeResumeId: null,
       lockVersion: 0,
       dirty: false,
@@ -294,12 +307,22 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   },
 
   importResume: async (file, title) => {
-    const { resume } = await api.importResume(file, title);
+    const idempotencyKey = crypto.randomUUID();
+    const { resume, import: importResult } = await api.importResume(
+      file,
+      title,
+      idempotencyKey,
+    );
     set((state) => ({
       resumes: mergeResumeSummary(state.resumes, resume),
       versions: [],
+      importWarningsByResumeId: {
+        ...state.importWarningsByResumeId,
+        [resume.id]: importResult.warnings,
+      },
       ...applyResume(resume),
     }));
+    return resume.id;
   },
 
   loadResume: async (id) => {
@@ -310,7 +333,14 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   deleteResume: async (id) => {
     const { deleted } = await api.deleteResume(id);
     if (!deleted) throw new Error("RESUME_DELETE_FAILED");
-    set({ resumes: get().resumes.filter((resume) => resume.id !== id) });
+    set((state) => {
+      const importWarningsByResumeId = { ...state.importWarningsByResumeId };
+      delete importWarningsByResumeId[id];
+      return {
+        resumes: state.resumes.filter((resume) => resume.id !== id),
+        importWarningsByResumeId,
+      };
+    });
 
     if (get().activeResumeId === id) {
       set({ activeResumeId: null, versions: [], lockVersion: 0, dirty: false, saveStatus: "idle" });
@@ -464,6 +494,13 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   },
 
   goHome: () => set({ activeResumeId: null, versions: [], lockVersion: 0 }),
+
+  dismissImportWarnings: (resumeId) =>
+    set((state) => {
+      const importWarningsByResumeId = { ...state.importWarningsByResumeId };
+      delete importWarningsByResumeId[resumeId];
+      return { importWarningsByResumeId };
+    }),
 
   setTitle: (title) =>
     set((state) =>

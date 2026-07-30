@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from linkcv.domain.resume_document import ResumeDocumentV1
+from linkcv.domain.import_warnings import ImportWarning
 from linkcv.domain.resume_style import ResumeStyleV1
 
 
@@ -102,7 +103,7 @@ class DeleteResumeVersionResponse(BaseModel):
 class ResumeImportMetadata(BaseModel):
     source_file_name: str
     source_file_format: Literal["md", "docx", "pdf"]
-    warnings: list[str]
+    warnings: list[ImportWarning]
 
 
 class ResumeImportResponse(BaseModel):

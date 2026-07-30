@@ -108,6 +108,41 @@ contracts:
         pattern: '(?m)^RESUME_STRUCTURING_MAX_BYTES=131072$[\s\S]*^RESUME_IMPORT_REQUESTS_PER_MINUTE=3$[\s\S]*^RESUME_IMPORT_GLOBAL_CONCURRENCY=4$[\s\S]*^RESUME_IMPORT_USER_CONCURRENCY=1$'
         message: Production 环境必须声明完整导入限制
 
+  - id: resume-import-linkparse-contract
+    description: FastAPI、环境模板和 Vite 使用冻结的 LinkParse 与同步导入预算
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default="http://100\.86\.10\.52:18743",[\s\S]*alias="LINKPARSE_BASE_URL"[\s\S]*default="/v1/parse",[\s\S]*alias="LINKPARSE_PARSE_PATH"[\s\S]*default=60,[\s\S]*alias="LINKPARSE_TIMEOUT_SECONDS"[\s\S]*default=3 \* 1024 \* 1024,[\s\S]*alias="LINKPARSE_RESPONSE_MAX_BYTES"'
+        message: FastAPI 必须保留冻结的 LinkParse 地址、路径、超时和响应上限
+      - path: .env.example
+        pattern: '(?m)^LINKPARSE_BASE_URL=http://100\.86\.10\.52:18743$[\s\S]*^LINKPARSE_API_KEY=$[\s\S]*^LINKPARSE_PARSE_PATH=/v1/parse$[\s\S]*^LINKPARSE_TIMEOUT_SECONDS=60$[\s\S]*^LINKPARSE_RESPONSE_MAX_BYTES=3145728$'
+        message: 本地模板必须声明 LinkParse 契约且保持 API Key 为空
+      - path: .env.development
+        pattern: '(?m)^LINKPARSE_BASE_URL=http://100\.86\.10\.52:18743$[\s\S]*^LINKPARSE_API_KEY=$'
+        message: Dev 基础配置必须使用冻结地址并由私密覆盖提供 Key
+      - path: .env.production
+        pattern: '(?m)^LINKPARSE_BASE_URL=http://100\.86\.10\.52:18743$[\s\S]*^LINKPARSE_API_KEY=$'
+        message: Production 基础配置必须使用冻结地址并由私密覆盖提供 Key
+      - path: apps/web/vite.config.mjs
+        pattern: 'timeout: 130000,[\s\S]*proxyTimeout: 130000'
+        message: Vite 必须给同步导入保留 130 秒代理预算
+
+  - id: resume-import-idempotency-contract
+    description: FastAPI 和三套环境使用一致的 Redis 幂等与业务 deadline 默认值
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default=120,[\s\S]*alias="RESUME_IMPORT_DEADLINE_SECONDS"[\s\S]*default=180,[\s\S]*alias="RESUME_IMPORT_IDEMPOTENCY_PROCESSING_TTL_SECONDS"[\s\S]*default=3600,[\s\S]*alias="RESUME_IMPORT_IDEMPOTENCY_SUCCESS_TTL_SECONDS"[\s\S]*default=60,[\s\S]*alias="RESUME_IMPORT_IDEMPOTENCY_FAILURE_TTL_SECONDS"'
+        message: FastAPI 必须保留冻结的导入 deadline 与幂等 TTL
+      - path: .env.example
+        pattern: '(?m)^RESUME_IMPORT_DEADLINE_SECONDS=120$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_PROCESSING_TTL_SECONDS=180$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_SUCCESS_TTL_SECONDS=3600$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_FAILURE_TTL_SECONDS=60$'
+        message: 本地模板必须声明完整幂等默认值
+      - path: .env.development
+        pattern: '(?m)^RESUME_IMPORT_DEADLINE_SECONDS=120$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_PROCESSING_TTL_SECONDS=180$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_SUCCESS_TTL_SECONDS=3600$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_FAILURE_TTL_SECONDS=60$'
+        message: Dev 环境必须声明完整幂等默认值
+      - path: .env.production
+        pattern: '(?m)^RESUME_IMPORT_DEADLINE_SECONDS=120$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_PROCESSING_TTL_SECONDS=180$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_SUCCESS_TTL_SECONDS=3600$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_FAILURE_TTL_SECONDS=60$'
+        message: Production 环境必须声明完整幂等默认值
+
   - id: production-middleware-docker-dns
     description: Production 通过 tolink-app-net 的 Docker DNS 连接已迁移中间件
     assertions:

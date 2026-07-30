@@ -1,12 +1,14 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiRequestError, type ResumeSummary } from "../../api/client";
-import { HomeScreen } from "./HomePage";
+import { useResumeStore } from "../../store/resumeStore";
+import { HomePage, HomeScreen } from "./HomePage";
 
 const resumes: ResumeSummary[] = [
   { id: "1", title: "Frontend Resume", source_type: "blank", lock_version: 1, created_at: "2026-07-20T08:00:00Z", updated_at: "2026-07-24T08:00:00Z" },
   { id: "2", title: "产品经理", source_type: "blank", lock_version: 1, created_at: "2026-07-20T08:00:00Z", updated_at: "2026-07-23T08:00:00Z" },
 ];
+const originalImportResume = useResumeStore.getState().importResume;
 
 function renderHome(overrides: Partial<React.ComponentProps<typeof HomeScreen>> = {}) {
   const props: React.ComponentProps<typeof HomeScreen> = {
@@ -24,6 +26,11 @@ function renderHome(overrides: Partial<React.ComponentProps<typeof HomeScreen>> 
 describe("HomeScreen", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    useResumeStore.setState({
+      resumes: [],
+      activeResumeId: null,
+      importResume: originalImportResume,
+    });
     window.history.replaceState(null, "", "/");
   });
 
@@ -97,6 +104,20 @@ describe("HomeScreen", () => {
     fireEvent.change(screen.getByLabelText("选择简历文件"), { target: { files: [file] } });
 
     await waitFor(() => expect(onImport).toHaveBeenCalledWith(file));
+  });
+
+  it("导入完成后使用本次返回的简历 ID 打开编辑器", async () => {
+    const importResume = vi.fn().mockResolvedValue("3");
+    useResumeStore.setState({ resumes, activeResumeId: null, importResume });
+    const file = new File(["# 张三"], "resume.md", { type: "text/markdown" });
+    render(<HomePage />);
+
+    fireEvent.change(screen.getByLabelText("选择简历文件"), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => expect(window.location.pathname).toBe("/resumes/3/edit"));
+    expect(importResume).toHaveBeenCalledWith(file);
   });
 
   it("导入服务未配置时显示明确的站内提示", async () => {

@@ -101,6 +101,7 @@ def test_production_rejects_missing_secrets_without_exposing_values() -> None:
     assert "MINIO_ACCESS_KEY" in message
     assert "MINIO_SECRET_KEY" in message
     assert "LLM_CREDENTIAL_ENCRYPTION_KEYS" in message
+    assert "LINKPARSE_API_KEY" in message
     assert exposed not in message
     assert "replace-with-secret" not in message
 
@@ -115,6 +116,7 @@ def test_production_accepts_injected_secrets_and_oss_stays_reserved() -> None:
         llm_credential_encryption_keys=(
             f"production:{Fernet.generate_key().decode('ascii')}"
         ),
+        linkparse_api_key="fictional-linkparse-key",
         aliyun_oss_endpoint="https://oss-cn-hangzhou.aliyuncs.com",
         aliyun_oss_region="cn-hangzhou",
         aliyun_oss_access_key_id="reserved-access",
