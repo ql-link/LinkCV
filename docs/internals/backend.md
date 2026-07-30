@@ -1,4 +1,4 @@
-# FastAPI 后端
+﻿# FastAPI 后端
 
 ## 当前职责与结构
 
@@ -15,7 +15,7 @@
 | `src/linkcv/integrations/` | tolink-rag HTTP Adapter 和 OpenAI-compatible JSON Schema 模型 Adapter |
 | `src/linkcv/services/resume_import_service.py` | 文件校验、对象上传、Markdown 提取、结构化、统一创建和失败补偿 |
 | `src/linkcv/services/storage_cleanup_service.py` | 持久化对象删除任务、即时尝试与后台重试 |
-| `src/linkcv/modules/identity/` | 用户模型、注册、登录、刷新与双 Token 鉴权依赖 |
+| `src/linkcv/modules/identity/` | 用户模型、注册、登录、admin-login 鉴权、get_current_admin 权限依赖与双 Token 会话管理 |
 | `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板/简历/版本/导入/资源路由 |
 | `src/linkcv/modules/job_descriptions/` | JD 单表 ORM、HTTP DTO 和受保护路由 |
 | `src/linkcv/modules/llm/` | 模型凭据加密、LiteLLM 适配、普通/流式调用、故障切换、计量与管理员 API |

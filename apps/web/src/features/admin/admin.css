@@ -317,3 +317,54 @@
   .admin-login-frame, .admin-topbar, .admin-drawer, .admin-sidebar { border-color: var(--admin-ink); background: var(--surface-raised); backdrop-filter: none; -webkit-backdrop-filter: none; }
   .admin-nav button.active { outline: 1px solid var(--admin-ink); }
 }
+
+.admin-page-loading {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  gap: 1rem;
+}
+.admin-page-loading .loading-spinner {
+  width: 1.8rem;
+  height: 1.8rem;
+  border: 2px solid var(--admin-line);
+  border-top-color: var(--admin-accent);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.admin-page-loading span {
+  font-size: .82rem;
+  color: var(--admin-muted);
+}
+.admin-forbidden-card {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  gap: .6rem;
+  padding: 3rem;
+}
+.admin-forbidden-card svg {
+  color: var(--admin-ink);
+  opacity: .55;
+}
+.admin-forbidden-card h1 {
+  font-family: var(--display-font);
+  font-size: clamp(2rem, 5vw, 2.75rem);
+  font-weight: 520;
+  letter-spacing: -.03em;
+}
+.admin-forbidden-card p {
+  color: var(--admin-muted);
+  font-size: .88rem;
+}
+.admin-forbidden-card .admin-primary-button {
+  margin-top: 1rem;
+  text-decoration: none;
+}
+.admin-login-submit:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}

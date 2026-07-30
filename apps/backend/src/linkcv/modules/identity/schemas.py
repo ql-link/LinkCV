@@ -16,6 +16,8 @@ class UserResponse(BaseModel):
 
     id: str
     email: str
+    nickname: str
+    is_admin: bool
 
     @field_validator("id", mode="before")
     @classmethod
