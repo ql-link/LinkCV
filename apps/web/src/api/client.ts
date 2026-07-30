@@ -7,6 +7,39 @@ export type User = {
   is_admin: boolean;
 };
 
+export type AdminUserSummary = User & {
+  status: number;
+  resume_count: number;
+  last_login_at: string | null;
+  created_at: string;
+};
+
+export type AdminUserDetail = AdminUserSummary & {
+  llm_call_count: number;
+  updated_at: string;
+};
+
+export type AdminUserListResponse = {
+  items: AdminUserSummary[];
+  total: number;
+  page: number;
+  size: number;
+};
+
+export type AdminStatsResponse = {
+  total_users: number;
+  active_users_7d: number;
+  total_resumes: number;
+  llm_calls_today: number;
+  estimated_cost_month: string;
+};
+
+export type AdminStatusUpdateResponse = {
+  ok: boolean;
+  user: AdminUserSummary;
+  revoked_sessions: number;
+};
+
 export type ResumeSummary = {
   id: string;
   title: string;
@@ -38,7 +71,12 @@ export type UploadedAsset = {
 };
 
 export type JobSourceType = "manual" | "external_import";
-export type JobEmploymentType = "full_time" | "part_time" | "internship" | "contract" | "temporary";
+export type JobEmploymentType =
+  | "full_time"
+  | "part_time"
+  | "internship"
+  | "contract"
+  | "temporary";
 export type JobWorkMode = "onsite" | "hybrid" | "remote";
 export type JobSalaryPeriod = "hour" | "day" | "month" | "year";
 
@@ -180,7 +218,9 @@ async function request<T>(
   const response = await fetch(path, {
     method: options.method ?? "GET",
     headers: options.body ? { "Content-Type": "application/json" } : undefined,
-    body: options.formData ?? (options.body ? JSON.stringify(options.body) : undefined),
+    body:
+      options.formData ??
+      (options.body ? JSON.stringify(options.body) : undefined),
     credentials: "include",
   });
 
@@ -189,10 +229,16 @@ async function request<T>(
     const error = new ApiRequestError(
       response.status,
       typeof data.error === "string" ? data.error : `HTTP_${response.status}`,
-      data && typeof data === "object" ? data as Record<string, unknown> : null,
+      data && typeof data === "object"
+        ? (data as Record<string, unknown>)
+        : null,
     );
 
-    if (response.status === 401 && retryAuth && !path.startsWith("/api/auth/")) {
+    if (
+      response.status === 401 &&
+      retryAuth &&
+      !path.startsWith("/api/auth/")
+    ) {
       const refreshed = await refreshSession();
       if (refreshed) {
         return request<T>(path, options, false);
@@ -215,16 +261,30 @@ async function getCurrentUser(): Promise<{ user: User | null }> {
 export const api = {
   me: getCurrentUser,
   register: (email: string, password: string) =>
-    request<{ user: User }>("/api/auth/register", { method: "POST", body: { email, password } }),
- login: (email: string, password: string) =>
-    request<{ user: User }>("/api/auth/login", { method: "POST", body: { email, password } }),
+    request<{ user: User }>("/api/auth/register", {
+      method: "POST",
+      body: { email, password },
+    }),
+  login: (email: string, password: string) =>
+    request<{ user: User }>("/api/auth/login", {
+      method: "POST",
+      body: { email, password },
+    }),
   adminLogin: (email: string, password: string) =>
-    request<{ user: User }>("/api/auth/admin-login", { method: "POST", body: { email, password } }),
-  logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
+    request<{ user: User }>("/api/auth/admin-login", {
+      method: "POST",
+      body: { email, password },
+    }),
+  logout: () =>
+    request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
   listResumes: () => request<{ resumes: ResumeSummary[] }>("/api/resumes"),
   createResume: (payload: { title?: string; template_id?: string }) =>
-    request<{ resume: ResumeRecord }>("/api/resumes", { method: "POST", body: payload }),
-  getResume: (id: string) => request<{ resume: ResumeRecord }>(`/api/resumes/${id}`),
+    request<{ resume: ResumeRecord }>("/api/resumes", {
+      method: "POST",
+      body: payload,
+    }),
+  getResume: (id: string) =>
+    request<{ resume: ResumeRecord }>(`/api/resumes/${id}`),
   updateResume: (
     id: string,
     payload: {
@@ -233,56 +293,129 @@ export const api = {
       style?: ResumeStyleV1;
       base_lock_version: number;
     },
-  ) => request<{ resume: ResumeRecord }>(`/api/resumes/${id}`, { method: "PUT", body: payload }),
-  deleteResume: (id: string) => request<{ deleted: boolean }>(`/api/resumes/${id}`, { method: "DELETE" }),
-  listVersions: (id: string) => request<{ versions: ResumeVersion[] }>(`/api/resumes/${id}/versions`),
-  createVersion: (id: string) => request<{ version: ResumeVersion }>(`/api/resumes/${id}/versions`, { method: "POST" }),
+  ) =>
+    request<{ resume: ResumeRecord }>(`/api/resumes/${id}`, {
+      method: "PUT",
+      body: payload,
+    }),
+  deleteResume: (id: string) =>
+    request<{ deleted: boolean }>(`/api/resumes/${id}`, { method: "DELETE" }),
+  listVersions: (id: string) =>
+    request<{ versions: ResumeVersion[] }>(`/api/resumes/${id}/versions`),
+  createVersion: (id: string) =>
+    request<{ version: ResumeVersion }>(`/api/resumes/${id}/versions`, {
+      method: "POST",
+    }),
   deleteVersion: (id: string, versionNo: number) =>
-    request<{ deleted: boolean }>(`/api/resumes/${id}/versions/${versionNo}`, { method: "DELETE" }),
+    request<{ deleted: boolean }>(`/api/resumes/${id}/versions/${versionNo}`, {
+      method: "DELETE",
+    }),
   restoreVersion: (id: string, versionNo: number) =>
-    request<{ resume: ResumeRecord }>(`/api/resumes/${id}/versions/${versionNo}/restore`, { method: "POST" }),
+    request<{ resume: ResumeRecord }>(
+      `/api/resumes/${id}/versions/${versionNo}/restore`,
+      { method: "POST" },
+    ),
   importResume: (file: File, title?: string) => {
     const formData = new FormData();
     formData.append("file", file);
     if (title) formData.append("title", title);
-    return request<{ resume: ResumeRecord; import: { warnings: string[] } }>("/api/resumes/import", { method: "POST", formData });
+    return request<{ resume: ResumeRecord; import: { warnings: string[] } }>(
+      "/api/resumes/import",
+      { method: "POST", formData },
+    );
   },
-  uploadResumeAsset: (resumeId: string, payload: { file_name: string; data_url: string }) =>
-    request<{ asset: UploadedAsset }>(`/api/resumes/${resumeId}/assets`, { method: "POST", body: payload }),
-  listJobDescriptions: (params: {
-    scope?: "active" | "archived" | "all";
-    keyword?: string;
-    cursor?: string;
-    limit?: number;
-  } = {}) => {
+  uploadResumeAsset: (
+    resumeId: string,
+    payload: { file_name: string; data_url: string },
+  ) =>
+    request<{ asset: UploadedAsset }>(`/api/resumes/${resumeId}/assets`, {
+      method: "POST",
+      body: payload,
+    }),
+  listJobDescriptions: (
+    params: {
+      scope?: "active" | "archived" | "all";
+      keyword?: string;
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ) => {
     const search = new URLSearchParams();
     if (params.scope) search.set("scope", params.scope);
     if (params.keyword) search.set("keyword", params.keyword);
     if (params.cursor) search.set("cursor", params.cursor);
     if (params.limit) search.set("limit", String(params.limit));
     const suffix = search.toString();
-    return request<{ items: JobDescriptionSummary[]; next_cursor: string | null }>(
-      `/api/job-descriptions${suffix ? `?${suffix}` : ""}`,
-    );
+    return request<{
+      items: JobDescriptionSummary[];
+      next_cursor: string | null;
+    }>(`/api/job-descriptions${suffix ? `?${suffix}` : ""}`);
   },
   createJobDescription: (payload: JobDescriptionCreatePayload) =>
-    request<{ job_description: JobDescriptionRecord }>("/api/job-descriptions", { method: "POST", body: payload }),
+    request<{ job_description: JobDescriptionRecord }>(
+      "/api/job-descriptions",
+      { method: "POST", body: payload },
+    ),
   getJobDescription: (id: string) =>
-    request<{ job_description: JobDescriptionRecord }>(`/api/job-descriptions/${id}`),
-  updateJobDescription: (id: string, payload: JobDescriptionFields & { base_lock_version: number }) =>
-    request<{ job_description: JobDescriptionRecord }>(`/api/job-descriptions/${id}`, { method: "PUT", body: payload }),
+    request<{ job_description: JobDescriptionRecord }>(
+      `/api/job-descriptions/${id}`,
+    ),
+  updateJobDescription: (
+    id: string,
+    payload: JobDescriptionFields & { base_lock_version: number },
+  ) =>
+    request<{ job_description: JobDescriptionRecord }>(
+      `/api/job-descriptions/${id}`,
+      { method: "PUT", body: payload },
+    ),
   archiveJobDescription: (id: string, baseLockVersion: number) =>
-    request<{ job_description: JobDescriptionRecord }>(`/api/job-descriptions/${id}/archive`, {
-      method: "POST",
-      body: { base_lock_version: baseLockVersion },
-    }),
+    request<{ job_description: JobDescriptionRecord }>(
+      `/api/job-descriptions/${id}/archive`,
+      {
+        method: "POST",
+        body: { base_lock_version: baseLockVersion },
+      },
+    ),
   restoreJobDescription: (id: string, baseLockVersion: number) =>
-    request<{ job_description: JobDescriptionRecord }>(`/api/job-descriptions/${id}/restore`, {
-      method: "POST",
-      body: { base_lock_version: baseLockVersion },
-    }),
+    request<{ job_description: JobDescriptionRecord }>(
+      `/api/job-descriptions/${id}/restore`,
+      {
+        method: "POST",
+        body: { base_lock_version: baseLockVersion },
+      },
+    ),
   deleteJobDescription: (id: string) =>
-    request<{ deleted: boolean }>(`/api/job-descriptions/${id}`, { method: "DELETE" }),
+    request<{ deleted: boolean }>(`/api/job-descriptions/${id}`, {
+      method: "DELETE",
+    }),
+  adminListUsers: (
+    params: {
+      page?: number;
+      size?: number;
+      q?: string;
+      status?: string;
+      role?: string;
+    } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.page) search.set("page", String(params.page));
+    if (params.size) search.set("size", String(params.size));
+    if (params.q) search.set("q", params.q);
+    if (params.status) search.set("status", params.status);
+    if (params.role) search.set("role", params.role);
+    const suffix = search.toString();
+    return request<AdminUserListResponse>(
+      `/api/auth/admin/users${suffix ? `?${suffix}` : ""}`,
+    );
+  },
+  adminGetUser: (userId: string) =>
+    request<AdminUserDetail>(`/api/auth/admin/users/${userId}`),
+  adminUpdateUserStatus: (userId: string, action: "disable" | "enable") =>
+    request<AdminStatusUpdateResponse>(
+      `/api/auth/admin/users/${userId}/status`,
+      { method: "PATCH", body: { action } },
+    ),
+  adminStats: () => request<AdminStatsResponse>("/api/auth/admin/stats"),
 };
 
 export type { ResumeDocumentV1, ResumeStyleV1 } from "./resumeContract";

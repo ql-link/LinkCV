@@ -1,4 +1,4 @@
-﻿import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
   Activity,
@@ -30,7 +30,14 @@ import {
 import { Brand } from "../../components/ds";
 import "./admin.css";
 
-import { api, User, ApiRequestError } from "../../api/client";
+import {
+  api,
+  User,
+  ApiRequestError,
+  type AdminStatsResponse,
+  type AdminUserListResponse,
+  type AdminUserDetail as AdminUserDetailType,
+} from "../../api/client";
 type AdminSection = "overview" | "users" | "models" | "logs";
 
 function initialAdminSection(): AdminSection {
@@ -463,6 +470,7 @@ function AdminWorkspace({
   const [drawer, setDrawer] = useState<null | "user" | "model" | "alerts">(
     null,
   );
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [toast, setToast] = useState("");
 
   const navigate = (next: AdminSection) => {
@@ -474,6 +482,11 @@ function AdminWorkspace({
   const notify = (message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(""), 2400);
+  };
+
+  const openUserDetail = (userId: string) => {
+    setSelectedUserId(userId);
+    setDrawer("user");
   };
 
   return (
@@ -574,10 +587,7 @@ function AdminWorkspace({
                 />
               )}
               {section === "users" && (
-                <UsersPanel
-                  openDrawer={() => setDrawer("user")}
-                  notify={notify}
-                />
+                <UsersPanel onSelectUser={openUserDetail} notify={notify} />
               )}
               {section === "models" && (
                 <ModelsPanel
@@ -595,8 +605,12 @@ function AdminWorkspace({
         {drawer && (
           <AdminDrawer
             kind={drawer}
-            user={user}
-            close={() => setDrawer(null)}
+            currentUser={user}
+            selectedUserId={selectedUserId}
+            close={() => {
+              setDrawer(null);
+              setSelectedUserId(null);
+            }}
             notify={notify}
           />
         )}
@@ -721,42 +735,65 @@ function Overview({
   navigate: (section: AdminSection) => void;
   openDrawer: (drawer: "model") => void;
 }) {
-  const metrics = [
-    {
-      label: "用户总数",
-      value: "1,284",
-      delta: "+12.4%",
-      note: "较上月",
-      icon: Users,
-    },
-    {
-      label: "近 7 日登录用户",
-      value: "468",
-      delta: "+8.2%",
-      note: "成功登录口径",
-      icon: Activity,
-    },
-    {
-      label: "今日 LLM 调用",
-      value: "3,204",
-      delta: "+18.6%",
-      note: "成功率 98.7%",
-      icon: Bot,
-    },
-    {
-      label: "本月估算费用",
-      value: "$184.32",
-      delta: "62%",
-      note: "预算使用",
-      icon: FileText,
-    },
-  ];
+  const [stats, setStats] = useState<AdminStatsResponse | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  useEffect(() => {
+    setStatsLoading(true);
+    api
+      .adminStats()
+      .then(setStats)
+      .catch(() => setStats(null))
+      .finally(() => setStatsLoading(false));
+  }, []);
+
+  const displayValue = (
+    val: string | number | undefined | null,
+    fallback = "—",
+  ): string => {
+    if (val === undefined || val === null) return fallback;
+    if (typeof val === "number") return val.toLocaleString();
+    return val;
+  };
+
+  const metrics = statsLoading
+    ? null
+    : [
+        {
+          label: "用户总数",
+          value: displayValue(stats?.total_users),
+          delta: null,
+          note: "注册用户",
+          icon: Users,
+        },
+        {
+          label: "近 7 日登录用户",
+          value: displayValue(stats?.active_users_7d),
+          delta: null,
+          note: "成功登录口径",
+          icon: Activity,
+        },
+        {
+          label: "今日 LLM 调用",
+          value: displayValue(stats?.llm_calls_today),
+          delta: null,
+          note: "统计接入后可用",
+          icon: Bot,
+        },
+        {
+          label: "简历总数",
+          value: displayValue(stats?.total_resumes),
+          delta: null,
+          note: "全部用户",
+          icon: FileText,
+        },
+      ];
   return (
     <>
       <PageHeading
-        eyebrow="2026 年 7 月 27 日 · 星期一"
+        eyebrow="管理控制台"
         title={`早上好，${user.nickname}`}
-        description="这是 LinkCV 今天的运行状态与需要关注的事项。"
+        description="这是 LinkCV 当前的运行状态与用户情况。"
         action={
           <motion.button
             className="admin-primary-button"
@@ -768,27 +805,28 @@ function Overview({
           </motion.button>
         }
       />
-      <section className="metrics-grid" aria-label="核心指标">
-        {metrics.map((metric, index) => (
-          <motion.article
-            key={metric.label}
-            className="metric-card"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ ...gentleSpring, delay: index * 0.035 }}
-          >
-            <div className="metric-card-top">
-              <span>
-                <metric.icon size={17} />
-              </span>
-              <small>{metric.delta}</small>
-            </div>
-            <p>{metric.label}</p>
-            <strong>{metric.value}</strong>
-            <footer>{metric.note}</footer>
-          </motion.article>
-        ))}
-      </section>
+      {metrics && (
+        <section className="metrics-grid" aria-label="核心指标">
+          {metrics.map((metric, index) => (
+            <motion.article
+              key={metric.label}
+              className="metric-card"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ ...gentleSpring, delay: index * 0.035 }}
+            >
+              <div className="metric-card-top">
+                <span>
+                  <metric.icon size={17} />
+                </span>
+              </div>
+              <p>{metric.label}</p>
+              <strong>{metric.value}</strong>
+              <footer>{metric.note}</footer>
+            </motion.article>
+          ))}
+        </section>
+      )}
       <div className="overview-grid">
         <section className="admin-surface activity-surface">
           <div className="surface-heading">
@@ -820,7 +858,7 @@ function Overview({
             <div className="surface-heading">
               <div>
                 <h2>需要关注</h2>
-                <p>2 项待处理</p>
+                <p>待处理事项</p>
               </div>
             </div>
             <button
@@ -844,8 +882,8 @@ function Overview({
                 <Clock3 size={17} />
               </span>
               <div>
-                <strong>18 位用户从未登录</strong>
-                <p>占全部用户的 1.4%</p>
+                <strong>前往用户管理</strong>
+                <p>查看和管理所有用户账号</p>
               </div>
               <ChevronRight size={16} />
             </button>
@@ -862,16 +900,16 @@ function Overview({
             </div>
             <dl>
               <div>
-                <dt>成功率</dt>
-                <dd>98.7%</dd>
+                <dt>用户总数</dt>
+                <dd>{displayValue(stats?.total_users)}</dd>
               </div>
               <div>
-                <dt>P95 延迟</dt>
-                <dd>2.4 s</dd>
+                <dt>简历总数</dt>
+                <dd>{displayValue(stats?.total_resumes)}</dd>
               </div>
               <div>
-                <dt>可用模型</dt>
-                <dd>2 / 3</dd>
+                <dt>活跃用户 7d</dt>
+                <dd>{displayValue(stats?.active_users_7d)}</dd>
               </div>
             </dl>
           </section>
@@ -882,22 +920,57 @@ function Overview({
 }
 
 function UsersPanel({
-  openDrawer,
+  onSelectUser,
   notify,
 }: {
-  openDrawer: () => void;
+  onSelectUser: (userId: string) => void;
   notify: (message: string) => void;
 }) {
+  const [page, setPage] = useState(1);
+  const [size] = useState(20);
   const [query, setQuery] = useState("");
-  const visibleUsers = useMemo(
-    () =>
-      usersData.filter((user) =>
-        `${user.name}${user.email}${user.id}`
-          .toLowerCase()
-          .includes(query.toLowerCase()),
-      ),
-    [query],
-  );
+  const [statusFilter, setStatusFilter] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const [data, setData] = useState<AdminUserListResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  const totalPages = data ? Math.max(1, Math.ceil(data.total / data.size)) : 1;
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(false);
+    api
+      .adminListUsers({
+        page,
+        size,
+        q: query || undefined,
+        status: statusFilter || undefined,
+        role: roleFilter || undefined,
+      })
+      .then(setData)
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  }, [page, size, query, statusFilter, roleFilter]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const resetFilters = () => {
+    setQuery("");
+    setStatusFilter("");
+    setRoleFilter("");
+    setPage(1);
+  };
+
+  const copyId = (id: string) => {
+    navigator.clipboard.writeText(id).then(
+      () => notify(`已复制用户 ID ${id}`),
+      () => notify("复制失败"),
+    );
+  };
+
   return (
     <>
       <PageHeading
@@ -907,127 +980,165 @@ function UsersPanel({
         action={
           <button
             className="admin-secondary-button"
-            onClick={() => notify("用户数据已导出（演示）")}
+            onClick={() => notify("导出功能待接入")}
           >
             导出数据
           </button>
         }
       />
-      <section className="mini-metrics">
-        <div>
-          <span>用户总数</span>
-          <strong>1,284</strong>
-        </div>
-        <div>
-          <span>启用用户</span>
-          <strong>1,248</strong>
-        </div>
-        <div>
-          <span>今日新增</span>
-          <strong>18</strong>
-        </div>
-        <div>
-          <span>从未登录</span>
-          <strong>18</strong>
-        </div>
-      </section>
       <section className="admin-surface table-surface">
         <div className="table-tools">
           <label className="table-search">
             <Search size={16} />
             <input
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setPage(1);
+              }}
               placeholder="搜索用户 ID、邮箱或昵称"
             />
           </label>
           <div>
-            <select aria-label="账号状态">
-              <option>全部状态</option>
-              <option>启用</option>
-              <option>禁用</option>
+            <select
+              aria-label="账号状态"
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">全部状态</option>
+              <option value="enabled">启用</option>
+              <option value="disabled">禁用</option>
             </select>
-            <select aria-label="用户角色">
-              <option>全部角色</option>
-              <option>管理员</option>
-              <option>普通用户</option>
+            <select
+              aria-label="用户角色"
+              value={roleFilter}
+              onChange={(e) => {
+                setRoleFilter(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">全部角色</option>
+              <option value="admin">管理员</option>
+              <option value="user">普通用户</option>
             </select>
-            <button>
-              <Settings2 size={16} />
-              筛选
-            </button>
+            {(query || statusFilter || roleFilter) && (
+              <button onClick={resetFilters}>
+                <X size={16} />
+                清除筛选
+              </button>
+            )}
           </div>
         </div>
         <div className="admin-table-wrap">
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>用户</th>
-                <th>用户 ID</th>
-                <th>角色 / 状态</th>
-                <th>简历</th>
-                <th>LLM 调用 / 费用</th>
-                <th>最近登录</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {visibleUsers.map((user) => (
-                <tr key={user.id}>
-                  <td>
-                    <button className="user-cell" onClick={openDrawer}>
-                      <span>{user.name.slice(0, 1)}</span>
-                      <div>
-                        <strong>{user.name}</strong>
-                        <small>{user.email}</small>
-                      </div>
-                    </button>
-                  </td>
-                  <td>
-                    <button
-                      className="copy-id"
-                      onClick={() => notify(`已复制用户 ID ${user.id}`)}
-                    >
-                      {user.id}
-                      <Copy size={13} />
-                    </button>
-                  </td>
-                  <td>
-                    <div className="status-stack">
-                      <span>{user.role}</span>
-                      <small
-                        className={
-                          user.status === "启用" ? "enabled" : "disabled"
-                        }
-                      >
-                        {user.status}
-                      </small>
-                    </div>
-                  </td>
-                  <td>{user.resumes}</td>
-                  <td>
-                    <strong className="table-strong">{user.calls}</strong>
-                    <small className="table-sub">{user.cost}</small>
-                  </td>
-                  <td>{user.login}</td>
-                  <td>
-                    <button
-                      className="row-action"
-                      aria-label={`更多操作 ${user.name}`}
-                    >
-                      <MoreHorizontal size={18} />
-                    </button>
-                  </td>
+          {loading && <div className="table-status-row">加载中...</div>}
+          {!loading && error && (
+            <div className="table-status-row">
+              加载失败
+              <button onClick={load} style={{ marginLeft: 8 }}>
+                重试
+              </button>
+            </div>
+          )}
+          {!loading && !error && data && data.items.length === 0 && (
+            <div className="table-status-row">
+              {query || statusFilter || roleFilter
+                ? "没有匹配的用户"
+                : "暂无用户数据"}
+            </div>
+          )}
+          {data && data.items.length > 0 && (
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>用户</th>
+                  <th>用户 ID</th>
+                  <th>角色 / 状态</th>
+                  <th>简历</th>
+                  <th>注册时间</th>
+                  <th>最近登录</th>
+                  <th />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.items.map((u) => (
+                  <tr key={u.id}>
+                    <td>
+                      <button
+                        className="user-cell"
+                        onClick={() => onSelectUser(u.id)}
+                      >
+                        <span>{u.nickname.slice(0, 1)}</span>
+                        <div>
+                          <strong>{u.nickname}</strong>
+                          <small>{u.email}</small>
+                        </div>
+                      </button>
+                    </td>
+                    <td>
+                      <button className="copy-id" onClick={() => copyId(u.id)}>
+                        {u.id}
+                        <Copy size={13} />
+                      </button>
+                    </td>
+                    <td>
+                      <div className="status-stack">
+                        <span>{u.is_admin ? "管理员" : "普通用户"}</span>
+                        <small
+                          className={u.status === 1 ? "enabled" : "disabled"}
+                        >
+                          {u.status === 1 ? "启用" : "禁用"}
+                        </small>
+                      </div>
+                    </td>
+                    <td>{u.resume_count}</td>
+                    <td>
+                      {u.created_at
+                        ? new Date(u.created_at).toLocaleDateString("zh-CN")
+                        : "—"}
+                    </td>
+                    <td>
+                      {u.last_login_at
+                        ? new Date(u.last_login_at).toLocaleString("zh-CN")
+                        : "从未登录"}
+                    </td>
+                    <td>
+                      <button
+                        className="row-action"
+                        aria-label={`更多操作 ${u.nickname}`}
+                        onClick={() => onSelectUser(u.id)}
+                      >
+                        <MoreHorizontal size={18} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
         <footer className="table-footer">
-          <span>共 1,284 位用户 · 当前显示 {visibleUsers.length} 条</span>
+          {data && (
+            <span>
+              共 {data.total.toLocaleString()} 位用户 · 第 {data.page}/
+              {totalPages} 页
+            </span>
+          )}
           <div>
-            <button disabled>上一页</button>
-            <button>下一页</button>
+            <button
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              上一页
+            </button>
+            <button
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              下一页
+            </button>
           </div>
         </footer>
       </section>
@@ -1184,12 +1295,14 @@ function LogsPanel() {
 
 function AdminDrawer({
   kind,
-  user,
+  currentUser,
+  selectedUserId,
   close,
   notify,
 }: {
   kind: "user" | "model" | "alerts";
-  user: User;
+  currentUser: User;
+  selectedUserId: string | null;
   close: () => void;
   notify: (message: string) => void;
 }) {
@@ -1217,7 +1330,7 @@ function AdminDrawer({
                 ? "新增模型"
                 : kind === "alerts"
                   ? "待处理通知"
-                  : user.nickname}
+                  : "用户详情"}
             </h2>
           </div>
           <motion.button
@@ -1233,7 +1346,11 @@ function AdminDrawer({
         ) : kind === "alerts" ? (
           <Alerts />
         ) : (
-          <UserDetail user={user} notify={notify} />
+          <UserDetail
+            userId={selectedUserId}
+            currentUser={currentUser}
+            notify={notify}
+          />
         )}
       </motion.aside>
     </div>
@@ -1309,77 +1426,238 @@ function ModelForm({
   );
 }
 
+function ConfirmDialog({
+  title,
+  message,
+  confirmLabel,
+  onConfirm,
+  onCancel,
+  loading,
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading?: boolean;
+}) {
+  return (
+    <div className="drawer-layer" onClick={onCancel} style={{ zIndex: 110 }}>
+      <motion.div
+        className="confirm-dialog"
+        initial={{ opacity: 0, scale: 0.96 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.96 }}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "var(--neutral-1)",
+          borderRadius: 12,
+          padding: 24,
+          maxWidth: 400,
+          width: "90%",
+          margin: "auto",
+          boxShadow: "0 16px 48px rgba(0,0,0,0.25)",
+        }}
+      >
+        <h3 style={{ margin: "0 0 8px" }}>{title}</h3>
+        <p style={{ margin: "0 0 20px", color: "var(--neutral-11)" }}>
+          {message}
+        </p>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button
+            className="admin-secondary-button"
+            onClick={onCancel}
+            disabled={loading}
+          >
+            取消
+          </button>
+          <motion.button
+            className="admin-danger-button"
+            whileTap={{ scale: 0.97 }}
+            onClick={onConfirm}
+            disabled={loading}
+          >
+            {loading ? "处理中..." : confirmLabel}
+          </motion.button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 function UserDetail({
-  user,
+  userId,
+  currentUser,
   notify,
 }: {
-  user: User;
+  userId: string | null;
+  currentUser: User;
   notify: (message: string) => void;
 }) {
+  const [detail, setDetail] = useState<AdminUserDetailType | null | "loading">(
+    "loading",
+  );
+  const [confirmAction, setConfirmAction] = useState<
+    "disable" | "enable" | null
+  >(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  useEffect(() => {
+    if (!userId) {
+      setDetail(null);
+      return;
+    }
+    setDetail("loading");
+    api
+      .adminGetUser(userId)
+      .then(setDetail)
+      .catch(() => setDetail(null));
+  }, [userId]);
+
+  const handleStatusAction = async () => {
+    if (!userId || !confirmAction) return;
+    setActionLoading(true);
+    try {
+      const res = await api.adminUpdateUserStatus(userId, confirmAction);
+      notify(confirmAction === "disable" ? "账号已禁用" : "账号已启用");
+      setConfirmAction(null);
+      // Reload detail
+      const updated = await api.adminGetUser(userId);
+      setDetail(updated);
+    } catch (err) {
+      if (err instanceof ApiRequestError) {
+        if (err.message === "CANNOT_SELF_DISABLE")
+          notify("不能禁用你自己的账号");
+        else if (err.message === "CANNOT_DISABLE_LAST_ADMIN")
+          notify("不能禁用最后一个管理员");
+        else notify("操作失败，请重试");
+      } else {
+        notify("网络异常");
+      }
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  if (detail === "loading") {
+    return (
+      <div className="user-detail" style={{ padding: 24, textAlign: "center" }}>
+        加载中...
+      </div>
+    );
+  }
+  if (!detail) {
+    return (
+      <div className="user-detail" style={{ padding: 24, textAlign: "center" }}>
+        无法加载用户信息
+      </div>
+    );
+  }
+
+  const isSelf = currentUser.id === detail.id;
+  const isLastAdmin = detail.is_admin && detail.status === 1;
+
   return (
     <div className="user-detail">
       <div className="user-detail-hero">
-        <span>{user.nickname[0]}</span>
+        <span>{detail.nickname[0]}</span>
         <div>
-          <strong>{user.nickname}</strong>
-          <p>{user.email}</p>
-          <small>管理员 · 启用</small>
+          <strong>{detail.nickname}</strong>
+          <p>{detail.email}</p>
+          <small>
+            {detail.is_admin ? "管理员" : "普通用户"} ·{" "}
+            {detail.status === 1 ? "启用" : "禁用"}
+          </small>
         </div>
       </div>
       <dl>
         <div>
           <dt>用户 ID</dt>
-          <dd>{user.id}</dd>
+          <dd>{detail.id}</dd>
         </div>
         <div>
           <dt>注册时间</dt>
-          <dd>2026-06-12</dd>
+          <dd>
+            {detail.created_at
+              ? new Date(detail.created_at).toLocaleDateString("zh-CN")
+              : "—"}
+          </dd>
         </div>
         <div>
           <dt>最近登录</dt>
-          <dd>今天 09:42</dd>
+          <dd>
+            {detail.last_login_at
+              ? new Date(detail.last_login_at).toLocaleString("zh-CN")
+              : "从未登录"}
+          </dd>
         </div>
       </dl>
       <section>
         <h3>使用概况</h3>
         <div className="detail-stats">
           <div>
-            <strong>8</strong>
+            <strong>{detail.resume_count}</strong>
             <span>简历</span>
           </div>
           <div>
-            <strong>341</strong>
+            <strong>{detail.llm_call_count}</strong>
             <span>LLM 调用</span>
           </div>
           <div>
-            <strong>$1.62</strong>
-            <span>估算费用</span>
+            <strong>{detail.llm_call_count > 0 ? "—" : "0"}</strong>
+            <span>
+              估算费用 <small title="数据待接入">ⓘ</small>
+            </span>
           </div>
         </div>
       </section>
-      <section>
-        <h3>最近简历</h3>
-        <div className="recent-item">
-          <FileText size={17} />
-          <div>
-            <strong>高级产品经理 · 中文</strong>
-            <span>今天 09:18 更新</span>
-          </div>
-        </div>
-        <div className="recent-item">
-          <FileText size={17} />
-          <div>
-            <strong>Product Lead · English</strong>
-            <span>7 月 25 日更新</span>
-          </div>
-        </div>
-      </section>
-      <button
-        className="danger-zone-button"
-        onClick={() => notify("演示环境未执行账号禁用")}
-      >
-        禁用此账号
-      </button>
+      {detail.status === 1 ? (
+        <button
+          className="danger-zone-button"
+          onClick={() => setConfirmAction("disable")}
+          disabled={isSelf || isLastAdmin}
+          title={
+            isSelf
+              ? "不能禁用你自己的账号"
+              : isLastAdmin
+                ? "不能禁用最后一个管理员"
+                : undefined
+          }
+        >
+          {isSelf
+            ? "不能禁用自己"
+            : isLastAdmin
+              ? "最后一个管理员"
+              : "禁用此账号"}
+        </button>
+      ) : (
+        <button
+          className="admin-primary-button"
+          style={{ width: "100%", marginTop: 16 }}
+          onClick={() => setConfirmAction("enable")}
+        >
+          启用此账号
+        </button>
+      )}
+
+      <AnimatePresence>
+        {confirmAction && (
+          <ConfirmDialog
+            title={
+              confirmAction === "disable" ? "确认禁用账号" : "确认启用账号"
+            }
+            message={
+              confirmAction === "disable"
+                ? `确定要禁用 ${detail.nickname}（${detail.email}）吗？该用户的所有活跃会话将被立即撤销。`
+                : `确定要启用 ${detail.nickname}（${detail.email}）吗？该用户将可以重新登录。`
+            }
+            confirmLabel={confirmAction === "disable" ? "禁用" : "启用"}
+            onConfirm={handleStatusAction}
+            onCancel={() => setConfirmAction(null)}
+            loading={actionLoading}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -14,7 +14,7 @@ from sqlalchemy.engine import make_url
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0007"
+EXPECTED_HEAD = "0008"
 
 
 def migration_test_url() -> str:

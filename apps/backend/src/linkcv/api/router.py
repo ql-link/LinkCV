@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from linkcv.api.routes.health import router as health_router
+from linkcv.modules.identity.admin_routes import router as admin_identity_router
 from linkcv.modules.identity.routes import router as identity_router
 from linkcv.modules.job_descriptions.routes import router as job_description_router
 from linkcv.modules.llm.admin_routes import router as llm_admin_router
@@ -13,6 +14,7 @@ from linkcv.modules.resumes.version_routes import router as version_router
 
 api_router = APIRouter()
 api_router.include_router(health_router)
+api_router.include_router(admin_identity_router)
 api_router.include_router(identity_router)
 api_router.include_router(job_description_router)
 api_router.include_router(llm_admin_router)
