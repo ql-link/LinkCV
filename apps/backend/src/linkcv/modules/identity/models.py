@@ -15,6 +15,7 @@ from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Mapped, mapped_column
 
 from linkcv.core.database import Base
+from linkcv.core.storage import asset_url
 
 
 class User(Base):
@@ -76,3 +77,9 @@ class User(Base):
         onupdate=func.now(),
         comment="最后更新时间（UTC）",
     )
+
+    @property
+    def avatar_url(self) -> str | None:
+        if not self.avatar_object_key:
+            return None
+        return asset_url(self.avatar_object_key)

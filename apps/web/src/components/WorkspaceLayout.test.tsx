@@ -20,8 +20,27 @@ describe("WorkspaceSidebar", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "全部简历" }));
     expect(`${window.location.pathname}${window.location.search}`).toBe("/resumes");
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "user@example.test" }));
+  it("账号按钮进入个人资料，退出登录按钮触发登出", () => {
+    const onLogout = vi.fn();
+    render(
+      <WorkspaceSidebar
+        active="account"
+        email="user@example.test"
+        nickname="测试用户"
+        isAdmin={false}
+        onLogout={onLogout}
+      />,
+    );
+
+    const accountButton = screen.getByRole("button", { name: /测试用户/ });
+    expect(accountButton).toHaveAttribute("aria-current", "page");
+
+    fireEvent.click(accountButton);
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/account");
+
+    fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
     expect(onLogout).toHaveBeenCalledOnce();
   });
 });

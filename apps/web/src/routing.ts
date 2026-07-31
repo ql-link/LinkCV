@@ -10,6 +10,8 @@ export type AppRoute =
   | { kind: "jobCreate" }
   | { kind: "jobDetail"; jobId: string }
   | { kind: "jobEdit"; jobId: string }
+  | { kind: "account" }
+  | { kind: "accountPassword" }
   | { kind: "notFound" };
 
 type NavigateOptions = {
@@ -26,7 +28,7 @@ function normalizePathname(pathname: string) {
 }
 
 export function isSafeAppPath(value: string | null) {
-  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && /^\/(?:resumes|jobs)(?:\/|$)/.test(value));
+  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && /^\/(?:resumes|jobs|account)(?:\/|$)/.test(value));
 }
 
 export function parseAppRoute(pathname: string, search = ""): AppRoute {
@@ -45,6 +47,8 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
   if (normalizedPath === "/resumes") return { kind: "resumes" };
   if (normalizedPath === "/jobs") return { kind: "jobs" };
   if (normalizedPath === "/jobs/new") return { kind: "jobCreate" };
+  if (normalizedPath === "/account") return { kind: "account" };
+  if (normalizedPath === "/account/password") return { kind: "accountPassword" };
 
   const editorMatch = normalizedPath.match(editorPathPattern);
   if (editorMatch) {

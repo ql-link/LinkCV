@@ -2,7 +2,7 @@
 
 ## 当前职责与结构
 
-`apps/backend` 承接健康检查、短 JWT access + 不透明 refresh + Redis 会话鉴权、语义简历生命周期、历史版本、文件导入、私有对象资源、结构化 JD 生命周期、统一 LLM 调用和管理员模型治理 API，以及管理台用户管理（列表/搜索/详情/状态变更/概览统计）与操作审计日志。
+`apps/backend` 承接健康检查、短 JWT access + 不透明 refresh + Redis 会话鉴权、语义简历生命周期、历史版本、文件导入、私有对象资源、结构化 JD 生命周期、用户中心与账号安全、统一 LLM 调用和管理员模型治理 API，以及管理台用户管理（列表/搜索/详情/状态变更/概览统计）与操作审计日志。
 
 | 位置                                             | 职责                                                                                                                |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
@@ -15,7 +15,7 @@
 | `src/linkcv/integrations/`                       | tolink-rag HTTP Adapter 和简历导入独立使用的 OpenAI-compatible JSON Schema 模型 Adapter                             |
 | `src/linkcv/services/resume_import_service.py`   | 文件校验、对象上传、Markdown 提取、结构化、统一创建和失败补偿                                                       |
 | `src/linkcv/services/storage_cleanup_service.py` | 持久化对象删除任务、即时尝试与后台重试                                                                              |
-| `src/linkcv/modules/identity/`                   | 用户模型、注册、登录、admin-login 鉴权、get_current_admin 权限依赖、双 Token 会话管理、管理端用户管理与操作审计日志 |
+| `src/linkcv/modules/identity/`                   | 用户模型、注册、登录、admin-login 鉴权、get_current_admin 权限依赖、双 Token 会话管理、`/api/account` 用户中心（资料、头像、改密）、管理端用户管理与操作审计日志 |
 | `src/linkcv/modules/resumes/`                    | ORM、HTTP DTO、模板/简历/版本/导入/资源路由                                                                         |
 | `src/linkcv/modules/job_descriptions/`           | JD 单表 ORM、HTTP DTO 和受保护路由                                                                                  |
 | `src/linkcv/modules/llm/`                        | Chat 候选与当前绑定、模型凭据加密、LiteLLM 适配、普通/流式/结构化单模型调用、计量与管理员 API                       |
@@ -61,11 +61,15 @@ Markdown 文件直接读取；DOCX/PDF 通过 `RagConverter` 发往 tolink-rag �
 
 ## 对象存储
 
-- 用户级兼容图片：`users/{user_id}/assets/...`。
+- 用户级兼容图片与头像：`users/{user_id}/assets/...`，头像对象键记录在 `users.avatar_object_key`。
 - 导入原文件：`users/{user_id}/resume-imports/{operation_id}/...`。
 - 简历资源：`users/{user_id}/resumes/{resume_id}/assets/...`。
 
 简历级读取先校验所属简历。资源删除会递归检查当前和历史 `data_json` 引用；仍在使用时拒绝删除。数据库与 MinIO 不伪装成分布式事务：导入失败先尝试补偿删除；删除简历则在数据库事务中登记清理任务并于提交后立即尝试。失败任务保存在 `storage_cleanup_jobs`，由应用生命周期内的后台任务持续重试，成功后删除任务记录。
+
+## 用户中心
+
+`/api/account/*` 的五个端点都通过 `get_current_user` 获取当前用户，不接受客户端 `user_id`。`GET /api/account/profile` 返回资料并附带简历数量与最近 5 份简历；`PATCH /api/account/profile` 只允许修改昵称（去空白后 1–50 字符）。头像上传复用 `decode_image_data_url`、`build_asset_object_name` 和 `asset_url`：先写新对象再更新 `users.avatar_object_key`，提交失败补偿删除新对象，成功后才清理旧对象；响应只含相对 URL。`POST /api/account/change-password` 校验当前密码（新密码不得与当前密码相同，否则 `400 PASSWORD_UNCHANGED`）并更新 Argon2id 哈希后，调用 `revoke_user_sessions` 撤销该用户全部 Redis 会话，再通过 `clear_auth_cookies` 清除双 Cookie，强制所有设备用新密码重新登录。登录与 `/api/auth/me` 等鉴权响应的 `user` 对象同样包含 `avatar_url`（经 `/api/assets` 转发，无头像时为 `null`）。
 
 ## 测试约定
 

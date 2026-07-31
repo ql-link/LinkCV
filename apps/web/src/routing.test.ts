@@ -12,6 +12,8 @@ describe("LinkCV routes", () => {
     expect(parseAppRoute("/jobs/new")).toEqual({ kind: "jobCreate" });
     expect(parseAppRoute("/jobs/job_123")).toEqual({ kind: "jobDetail", jobId: "job_123" });
     expect(parseAppRoute("/jobs/job_123/edit")).toEqual({ kind: "jobEdit", jobId: "job_123" });
+    expect(parseAppRoute("/account")).toEqual({ kind: "account" });
+    expect(parseAppRoute("/account/password")).toEqual({ kind: "accountPassword" });
     expect(parseAppRoute("/missing")).toEqual({ kind: "notFound" });
   });
 
@@ -21,6 +23,8 @@ describe("LinkCV routes", () => {
     expect(jobEditPath("job/a b")).toBe("/jobs/job%2Fa%20b/edit");
     expect(isSafeAppPath("/resumes/resume_123/edit")).toBe(true);
     expect(isSafeAppPath("/jobs/job_123/edit")).toBe(true);
+    expect(isSafeAppPath("/account")).toBe(true);
+    expect(isSafeAppPath("/account/password")).toBe(true);
     expect(isSafeAppPath("//example.com/resumes")).toBe(false);
     expect(isSafeAppPath("https://example.com/resumes")).toBe(false);
     expect(authPath("login", "/resumes/resume_123/edit")).toBe("/login?next=%2Fresumes%2Fresume_123%2Fedit");

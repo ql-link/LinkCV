@@ -14,9 +14,27 @@
 | `POST` | `/api/auth/refresh`  | `{user}`，轮换 refresh 密钥并下发新双 Cookie          |
 | `POST` | `/api/auth/logout`   | `{ok: true}`，删除 Redis 会话并清除双 Cookie          |
 
-鉴权使用“短 JWT access + 不透明 refresh + Redis 会话”的双 Token 方案。Access Cookie 名为 `resume_access`，有效期 `ACCESS_TTL_MINUTES`（默认 15 分钟），`SameSite=Lax`、`Path=/`。Refresh Cookie 名为 `resume_refresh`，有效期 `SESSION_TTL_DAYS`（默认 7 天），`HttpOnly`、`SameSite=Lax`、`Path=/api/auth`。Web 调用受保护接口收到 `401` 时，会把并发请求合并到同一次 refresh，刷新成功后各自重试一次；启动检查 `/api/auth/me` 返回空用户时也会先尝试 refresh，再进入访客态。登录或刷新失败返回 `401 INVALID_CREDENTIALS`。
+鉴权使用“短 JWT access + 不透明 refresh + Redis 会话”的双 Token 方案。Access Cookie 名为 `resume_access`，有效期 `ACCESS_TTL_MINUTES`（默认 15 分钟），`SameSite=Lax`、`Path=/`。Refresh Cookie 名为 `resume_refresh`，有效期 `SESSION_TTL_DAYS`（默认 7 天），`HttpOnly`、`SameSite=Lax`、`Path=/api/auth`。Web 调用受保护接口收到 `401` 时，会把并发请求合并到同一次 refresh，刷新成功后各自重试一次；启动检查 `/api/auth/me` 返回空用户时也会先尝试 refresh，再进入访客态。登录或刷新失败返回 `401 INVALID_CREDENTIALS`。`/api/auth/me`、登录、注册与 refresh 返回的 `user` 对象与用户中心一致，包含 `avatar_url`（无头像时为 `null`）。
 
 每次受保护请求按“Access 自洽 → Session 存活 → 用户启用”三步校验：先校验 access JWT 签名与过期，再用 `EXISTS auth:session:{sid}` 确认 Redis 会话仍在，最后从 MySQL 读取用户并要求 `status=1`。私有接口不接受客户端 `user_id`；未登录返回 `401 UNAUTHORIZED`。会话只存 Redis（`auth:session:{sid}` 哈希与 `auth:user_sessions:{uid}` 集合），不写 MySQL；撤销即删除 key。`POST /api/auth/refresh` 校验 refresh Cookie 中的 `sid.secret`，匹配 Redis 中保存的 secret 哈希后轮换密钥、续期会话并下发新 Cookie；哈希不匹配会立即撤销该会话。密码经 Argon2id 哈希后存入 `password_hash`，不保存明文。
+
+## 用户中心
+
+`/api/account/*` 全部通过 `get_current_user` 取当前登录用户，不接受客户端传入 `user_id`。头像只暴露相对 URL（经 `/api/assets` 转发），不返回对象存储键。未登录返回 `401 UNAUTHORIZED`。
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `GET` | `/api/account/profile` | `{user, resume_count, recent_resumes}` |
+| `PATCH` | `/api/account/profile` | `{user}`；请求为 `{nickname}` |
+| `PUT` | `/api/account/avatar` | `{url}`；请求为 `{fileName?, dataUrl}` |
+| `DELETE` | `/api/account/avatar` | `{ok: true}` |
+| `POST` | `/api/account/change-password` | `{ok, message}`；请求为 `{current_password, new_password, confirm_password}` |
+
+`user` 为 `{id, email, nickname, is_admin, avatar_url}`，无头像时 `avatar_url` 为 `null`。`recent_resumes` 是最近编辑的 5 份简历，每项 `{id, title, updated_at}`，按 `updated_at DESC, id DESC` 排序。
+
+昵称去空白后为空或超过 50 字符返回 `400 INVALID_NICKNAME`。头像通过 data URL 上传（≤10MB）：非法图片返回 `400 INVALID_IMAGE`，超限返回 `413 IMAGE_TOO_LARGE`，对象写入失败返回 `502 ASSET_UPLOAD_FAILED`；先写新对象再更新数据库，提交失败补偿删除新对象，成功后清理旧头像对象。
+
+修改密码先校验当前密码（错误返回 `400 INVALID_CURRENT_PASSWORD`），再要求新密码至少 8 位（否则 `400 WEAK_PASSWORD`）、两次输入一致（否则 `400 PASSWORD_MISMATCH`）且不能与当前密码相同（否则 `400 PASSWORD_UNCHANGED`）。成功后更新 Argon2id 哈希，立即撤销该用户全部 Redis 会话，并在同一响应中清除双 Cookie，所有设备都必须用新密码重新登录。
 
 ## 语义简历契约
 

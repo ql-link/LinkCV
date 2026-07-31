@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Button } from "./components/ds";
 import { WorkspaceLayout, type WorkspaceSection } from "./components/WorkspaceLayout";
 import { ApiRequestError } from "./api/client";
+import { AccountPage } from "./features/account/AccountPage";
+import { ChangePasswordPage } from "./features/account/ChangePasswordPage";
 import { AdminApp } from "./features/admin/AdminApp";
 import { AuthPage } from "./features/auth/AuthPage";
 import { HomePage } from "./features/home/HomePage";
@@ -54,6 +56,7 @@ export function App() {
         || route.kind === "jobCreate"
         || route.kind === "jobDetail"
         || route.kind === "jobEdit"
+        || route.kind === "account"
       ) {
         const next = `${window.location.pathname}${window.location.search}`;
         navigateTo(authPath("login", next), { replace: true });
@@ -130,6 +133,9 @@ export function App() {
     if (route.kind === "auth") {
       return <AuthPage key={`${route.mode}:${route.next ?? ""}`} initialMode={route.mode} next={route.next} />;
     }
+    if (route.kind === "accountPassword") {
+      return <ChangePasswordPage />;
+    }
 
     return (
       <LandingPage
@@ -145,13 +151,17 @@ export function App() {
     || route.kind === "jobCreate"
     || route.kind === "jobDetail"
     || route.kind === "jobEdit"
+    || route.kind === "account"
+    || route.kind === "accountPassword"
   ) {
     const resumeView = route.kind === "resumes" && new URLSearchParams(window.location.search).get("view") === "templates"
       ? "templates"
       : "all";
     const activeSection: WorkspaceSection = route.kind === "resumes"
       ? resumeView === "templates" ? "templates" : "resumes"
-      : "jobs";
+      : route.kind === "account" || route.kind === "accountPassword"
+        ? "account"
+        : "jobs";
 
     return (
       <WorkspaceLayout active={activeSection}>
@@ -160,6 +170,8 @@ export function App() {
         {route.kind === "jobCreate" && <JobFormPage mode="create" />}
         {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}
         {route.kind === "jobEdit" && <JobFormPage mode="edit" jobId={route.jobId} />}
+        {route.kind === "account" && <AccountPage />}
+        {route.kind === "accountPassword" && <ChangePasswordPage />}
       </WorkspaceLayout>
     );
   }

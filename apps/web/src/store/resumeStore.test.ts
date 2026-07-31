@@ -194,6 +194,96 @@ describe("resume import", () => {
   });
 });
 
+describe("account profile sync and password change", () => {
+  it("syncProfile 合并资料到当前用户", () => {
+    useResumeStore.setState({
+      user: { id: "1", email: "user@example.test", nickname: "旧昵称", is_admin: false },
+    });
+    useResumeStore.getState().syncProfile({
+      id: "1",
+      email: "user@example.test",
+      nickname: "新昵称",
+      is_admin: false,
+      avatar_url: "/api/assets/users/1/assets/avatar",
+    });
+    expect(useResumeStore.getState().user).toMatchObject({
+      nickname: "新昵称",
+      avatar_url: "/api/assets/users/1/assets/avatar",
+    });
+  });
+
+  it("syncProfile 在无用户时不修改状态", () => {
+    useResumeStore.setState({ user: null });
+    useResumeStore.getState().syncProfile({
+      id: "1",
+      email: "user@example.test",
+      nickname: "新昵称",
+      is_admin: false,
+      avatar_url: null,
+    });
+    expect(useResumeStore.getState().user).toBeNull();
+  });
+
+  it("changePassword 成功后调用接口并清空登录态", async () => {
+    useResumeStore.setState({
+      authStatus: "authenticated",
+      user: { id: "1", email: "user@example.test", nickname: "昵称", is_admin: false },
+      resumes: [
+        {
+          id: "1",
+          title: "测试简历",
+          source_type: "blank",
+          lock_version: 1,
+          created_at: "2026-07-27T00:00:00Z",
+          updated_at: "2026-07-27T00:00:00Z",
+        },
+      ],
+      dirty: true,
+      saveStatus: "saving",
+    });
+    const change = vi
+      .spyOn(api, "changePassword")
+      .mockResolvedValue({ ok: true, message: "密码已修改，请重新登录" });
+    const payload = {
+      currentPassword: "password-123",
+      newPassword: "new-password-456",
+      confirmPassword: "new-password-456",
+    };
+    await useResumeStore.getState().changePassword(payload);
+    expect(change).toHaveBeenCalledWith(payload);
+    expect(useResumeStore.getState()).toMatchObject({
+      authStatus: "guest",
+      user: null,
+      resumes: [],
+      versions: [],
+      activeResumeId: null,
+      lockVersion: 0,
+      dirty: false,
+      saveStatus: "idle",
+    });
+  });
+
+  it("changePassword 失败时保留登录态", async () => {
+    useResumeStore.setState({
+      authStatus: "authenticated",
+      user: { id: "1", email: "user@example.test", nickname: "昵称", is_admin: false },
+    });
+    vi.spyOn(api, "changePassword").mockRejectedValue(
+      new Error("INVALID_CURRENT_PASSWORD"),
+    );
+    await expect(
+      useResumeStore.getState().changePassword({
+        currentPassword: "wrong",
+        newPassword: "new-password-456",
+        confirmPassword: "new-password-456",
+      }),
+    ).rejects.toThrow();
+    expect(useResumeStore.getState()).toMatchObject({
+      authStatus: "authenticated",
+    });
+  });
+});
+
 describe("resume version deletion", () => {
   beforeEach(() => {
     useResumeStore.setState({
