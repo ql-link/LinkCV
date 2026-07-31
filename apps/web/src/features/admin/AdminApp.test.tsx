@@ -53,8 +53,8 @@ describe("AdminApp flow", () => {
     expect(window.location.pathname).toBe("/admin/llm/models");
     expect(await screen.findByRole("heading", { name: "模型配置" }, { timeout: 4_000 })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "新增候选" }));
-    expect(screen.getByRole("heading", { name: "新增候选" })).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "新增模型" })[0]);
+    expect(screen.getByRole("heading", { name: "新增模型" })).toBeInTheDocument();
   });
 
   it("preserves a directly addressed admin section after mock login", async () => {

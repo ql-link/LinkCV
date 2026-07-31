@@ -140,6 +140,11 @@
 .model-health dt { color: var(--admin-muted); font-size: .6rem; }
 .model-health dd { margin: 0; font-family: var(--display-font); font-size: 1.2rem; font-weight: 600; }
 
+.llm-config-section { margin-bottom: 1.6rem; }
+.llm-section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: .75rem; }
+.llm-section-heading h2 { margin: .32rem 0 0; font-size: .92rem; font-weight: 720; letter-spacing: -.01em; }
+.llm-section-heading p { margin: .3rem 0 0; color: var(--admin-muted); font-size: .65rem; line-height: 1.5; }
+
 .mini-metrics { display: grid; grid-template-columns: repeat(4, 1fr); border-radius: .9rem; margin-bottom: .85rem; }
 .mini-metrics > div { display: grid; gap: .45rem; border-right: 1px solid var(--admin-line); padding: 1rem 1.2rem; }
 .mini-metrics > div:last-child { border: 0; }
@@ -230,6 +235,12 @@
 .admin-drawer > header { display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 1px solid var(--admin-line); padding-bottom: 1.1rem; }
 .admin-drawer h2 { margin: .38rem 0 0; font-family: var(--display-font); font-size: 2rem; font-weight: 500; letter-spacing: -.02em; }
 .admin-drawer > header button { display: grid; width: 2.2rem; height: 2.2rem; place-items: center; border: 1px solid var(--admin-line); border-radius: .6rem; background: var(--surface-card); cursor: pointer; }
+.llm-modal-layer { position: fixed; inset: 0; z-index: 90; display: grid; overflow-y: auto; place-items: center; background: var(--scrim); padding: clamp(.75rem, 3vw, 2rem); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.llm-modal { width: min(100%, 36rem); max-height: calc(100dvh - clamp(1.5rem, 6vw, 4rem)); overflow-y: auto; border: 1px solid var(--admin-line); border-radius: 1.05rem; background: color-mix(in srgb, var(--surface-raised) 96%, transparent); padding: 1.5rem; color: var(--admin-ink); box-shadow: 0 1.5rem 4.5rem rgba(17, 18, 16, .24); animation: llm-modal-enter 180ms cubic-bezier(.2, .8, .2, 1); }
+.llm-modal > header { display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 1px solid var(--admin-line); padding-bottom: 1.1rem; }
+.llm-modal h2 { margin: .38rem 0 0; font-family: var(--display-font); font-size: 1.85rem; font-weight: 500; letter-spacing: -.02em; }
+.llm-modal > header button { display: grid; width: 2.2rem; height: 2.2rem; flex: 0 0 auto; place-items: center; border: 1px solid var(--admin-line); border-radius: .6rem; background: var(--surface-card); color: var(--admin-ink); cursor: pointer; }
+@keyframes llm-modal-enter { from { transform: translateY(.6rem) scale(.98); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
 .drawer-form { display: grid; gap: 1rem; padding-top: 1.35rem; }
 .drawer-form input, .drawer-form select { width: 100%; height: 2.75rem; border: 1px solid var(--admin-line); border-radius: .65rem; background: var(--surface-card); padding: 0 .75rem; color: var(--admin-ink); outline: 0; font-size: .76rem; }
 .drawer-form input:focus, .drawer-form select:focus { border-color: var(--form-focus); box-shadow: 0 0 0 3px var(--accent-soft); }
@@ -243,9 +254,27 @@
 .drawer-callout { display: flex; gap: .65rem; border-radius: .7rem; background: var(--gray-100); padding: .8rem; color: var(--admin-ink); }
 .drawer-callout svg { flex: 0 0 auto; }
 .drawer-callout p { margin: 0; font-size: .66rem; line-height: 1.55; }
+.llm-current-binding { display: grid; gap: .35rem; border-radius: .72rem; background: var(--gray-100); padding: .9rem; }
+.llm-current-binding small { color: var(--admin-muted); font-size: .6rem; }
+.llm-current-binding strong { font-size: .75rem; }
+.llm-binding-list { display: grid; gap: .55rem; border: 0; margin: 0; padding: 0; }
+.llm-binding-list legend { margin-bottom: .25rem; color: var(--admin-ink); font-size: .72rem; font-weight: 680; }
+.llm-binding-option { display: grid !important; grid-template-columns: 1rem minmax(0, 1fr) auto; align-items: center; gap: .7rem; border: 1px solid var(--admin-line); border-radius: .72rem; background: var(--surface-card); padding: .8rem; cursor: pointer; }
+.llm-binding-option:hover { border-color: var(--gray-400); }
+.llm-binding-option.selected { border-color: var(--admin-accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.drawer-form .llm-binding-option input { width: 1rem; height: 1rem; margin: 0; padding: 0; accent-color: var(--admin-accent); }
+.llm-binding-option > span { display: grid; gap: .25rem; min-width: 0; }
+.llm-binding-option strong { overflow: hidden; font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
+.llm-binding-option small { color: var(--admin-muted); font-size: .59rem; font-weight: 500; }
+.llm-binding-option em { border-radius: 1rem; background: #e7f3eb; padding: .2rem .42rem; color: var(--admin-green); font-size: .55rem; font-style: normal; font-weight: 700; }
+.llm-binding-empty { display: grid; min-height: 11rem; place-items: center; align-content: center; gap: .5rem; border: 1px dashed var(--admin-line); border-radius: .72rem; text-align: center; }
+.llm-binding-empty strong { font-size: .75rem; }
+.llm-binding-empty p { margin: 0; color: var(--admin-muted); font-size: .64rem; }
+.llm-binding-empty button { border: 1px solid var(--admin-line); border-radius: .55rem; background: var(--surface-card); padding: .5rem .72rem; color: var(--admin-ink); cursor: pointer; font-size: .65rem; }
 .drawer-form footer { display: flex; justify-content: flex-end; gap: .55rem; border-top: 1px solid var(--admin-line); margin-top: .5rem; padding-top: 1rem; }
 .drawer-form footer button { height: 2.45rem; border: 1px solid var(--admin-line); border-radius: .62rem; background: var(--surface-card); padding: 0 .9rem; cursor: pointer; font-size: .7rem; font-weight: 600; }
 .drawer-form footer button:last-child { border-color: var(--admin-accent); background: var(--admin-accent); color: var(--admin-canvas); }
+.drawer-form footer button:disabled { cursor: not-allowed; opacity: .5; }
 .user-detail { padding-top: 1.3rem; }
 .user-detail-hero { display: flex; align-items: center; gap: .9rem; border-bottom: 1px solid var(--admin-line); padding-bottom: 1.2rem; }
 .user-detail-hero > span { display: grid; width: 3.6rem; height: 3.6rem; place-items: center; border-radius: 50%; background: var(--gray-200); color: var(--admin-ink); font-family: var(--display-font); font-size: 1.4rem; }
@@ -357,19 +386,23 @@
   .model-priority { display: flex; justify-content: flex-start; border-right: 0; border-bottom: 1px solid var(--admin-line); padding-bottom: .6rem; }
   .model-actions { grid-column: 1; }
   .llm-summary-grid, .llm-log-filters { grid-template-columns: 1fr; }
+  .llm-modal-layer { align-items: end; padding: .6rem; }
+  .llm-modal { max-height: calc(100dvh - 1.2rem); border-radius: .9rem; padding: 1.1rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; }
+  .llm-modal { animation: none; }
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .admin-login-frame, .admin-topbar, .metric-card, .admin-surface, .mini-metrics, .model-summary, .model-card, .admin-drawer { background: var(--admin-solid); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .admin-login-frame, .admin-topbar, .metric-card, .admin-surface, .mini-metrics, .model-summary, .model-card, .admin-drawer, .llm-modal { background: var(--admin-solid); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .llm-modal-layer { backdrop-filter: none; -webkit-backdrop-filter: none; }
 }
 
 @media (prefers-contrast: more) {
   .admin-login-shell, .admin-shell { --admin-line: var(--gray-600); --admin-panel: var(--surface-raised); }
-  .admin-login-frame, .admin-topbar, .admin-drawer, .admin-sidebar { border-color: var(--admin-ink); background: var(--surface-raised); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .admin-login-frame, .admin-topbar, .admin-drawer, .llm-modal, .admin-sidebar { border-color: var(--admin-ink); background: var(--surface-raised); backdrop-filter: none; -webkit-backdrop-filter: none; }
   .admin-nav button.active { outline: 1px solid var(--admin-ink); }
 }
 

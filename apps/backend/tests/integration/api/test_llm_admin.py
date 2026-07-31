@@ -178,6 +178,16 @@ def test_catalog_and_candidate_contract_separate_adapter_from_model() -> None:
         adapters = {item["code"]: item for item in catalog.json()["adapters"]}
         assert adapters["deepseek"]["requiresApiKey"] is True
         assert all(isinstance(model, str) for model in adapters["deepseek"]["models"])
+        assert adapters["dashscope"]["label"] == "阿里云百炼（千问）"
+        assert adapters["dashscope"]["requiresApiKey"] is True
+
+        qwen = create_candidate(
+            client,
+            adapter="dashscope",
+            model="qwen-plus",
+        )
+        assert qwen["adapter"] == "dashscope"
+        assert qwen["model"] == "qwen-plus"
 
         model = create_candidate(client)
         assert model["adapter"] == "deepseek"
@@ -193,6 +203,9 @@ def test_catalog_and_candidate_contract_separate_adapter_from_model() -> None:
             assert stored.model_name == "deepseek/deepseek-v4-flash"
             assert stored.adapter == "deepseek"
             assert stored.model_call_name == "deepseek-v4-flash"
+            stored_qwen = db.get(LLMModelConfig, int(qwen["id"]))
+            assert stored_qwen is not None
+            assert stored_qwen.model_name == "dashscope/qwen-plus"
 
 
 @pytest.mark.parametrize(

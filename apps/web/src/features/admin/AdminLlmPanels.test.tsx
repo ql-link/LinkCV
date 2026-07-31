@@ -42,6 +42,12 @@ const catalog: ChatCatalog = {
       requiresApiKey: true,
       models: ["gpt-4.1-mini"],
     },
+    {
+      code: "dashscope",
+      label: "阿里云百炼（千问）",
+      requiresApiKey: true,
+      models: ["qwen-plus"],
+    },
   ],
 };
 
@@ -103,20 +109,21 @@ afterEach(() => {
 });
 
 describe("ModelsPanel", () => {
-  it("highlights Chat and opens the current model editor from the capability card", async () => {
+  it("opens Chat binding settings from the capability card instead of editing the model", async () => {
     mockModels();
 
     renderModels();
 
-    const chatCard = await screen.findByRole("button", { name: /Chat 模型/ });
-    expect(chatCard).toHaveTextContent("当前使用 deepseek / deepseek-v4-flash");
-    expect(screen.getByText("当前使用", { selector: ".enabled-pill" })).toBeInTheDocument();
+    const chatCard = await screen.findByRole("button", { name: /Chat/ });
+    expect(chatCard).toHaveTextContent("已绑定 DeepSeek / deepseek-v4-flash");
+    expect(screen.getByText("已绑定", { selector: ".enabled-pill" })).toBeInTheDocument();
     expect(screen.queryByText(/优先级|输入价格|输出价格/)).not.toBeInTheDocument();
 
     fireEvent.click(chatCard);
-    expect(screen.getByRole("heading", { name: "编辑候选" })).toBeInTheDocument();
-    expect(screen.getByLabelText("接入方式")).toHaveValue("deepseek");
-    expect(screen.getByLabelText(/^模型调用名/)).toHaveValue("deepseek-v4-flash");
+    expect(screen.getByRole("heading", { name: "设置 Chat" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "设置 Chat" })).toHaveClass("llm-modal");
+    expect(screen.getByRole("radio", { name: /DeepSeek \/ deepseek-v4-flash/ })).toBeChecked();
+    expect(screen.queryByLabelText("模型供应商")).not.toBeInTheDocument();
   });
 
   it("shows a retryable load error and then the true empty state", async () => {
@@ -129,25 +136,26 @@ describe("ModelsPanel", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Chat 模型配置加载失败");
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
-    expect(await screen.findByText("Chat 还没有候选模型")).toBeInTheDocument();
+    expect(await screen.findByText("还没有可用于 Chat 的模型")).toBeInTheDocument();
   });
 
-  it("creates a DeepSeek candidate without asking for capability, priority or price", async () => {
+  it("creates a DeepSeek model without asking for capability, priority or price", async () => {
     mockModels(capability([]));
     const create = vi.spyOn(api, "createLlmModel").mockResolvedValue({
       model: { ...model, active: false },
     });
 
     renderModels();
-    await screen.findByText("Chat 还没有候选模型");
-    fireEvent.click(screen.getAllByRole("button", { name: /新增候选/ })[0]);
-    fireEvent.change(screen.getByLabelText(/^模型调用名/), {
+    await screen.findByText("还没有可用于 Chat 的模型");
+    fireEvent.click(screen.getAllByRole("button", { name: "新增模型" })[0]);
+    expect(screen.getByRole("dialog", { name: "新增模型" })).toHaveClass("llm-modal");
+    fireEvent.change(screen.getByLabelText(/^模型名称/), {
       target: { value: "deepseek-v4-flash" },
     });
     fireEvent.change(screen.getByLabelText(/API Key/), {
       target: { value: "fictional-secret" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "保存候选" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存模型" }));
 
     await waitFor(() =>
       expect(create).toHaveBeenCalledWith({
@@ -159,7 +167,47 @@ describe("ModelsPanel", () => {
     );
   });
 
-  it("prevents duplicate candidate creation while the first save is pending", async () => {
+  it("shows supplier names without adapter codes and creates a Qwen model", async () => {
+    mockModels(capability([]));
+    const create = vi.spyOn(api, "createLlmModel").mockResolvedValue({
+      model: {
+        ...model,
+        adapter: "dashscope",
+        model: "qwen-plus",
+        active: false,
+      },
+    });
+
+    renderModels();
+    await screen.findByText("还没有可用于 Chat 的模型");
+    fireEvent.click(screen.getAllByRole("button", { name: "新增模型" })[0]);
+
+    expect(screen.getByRole("option", { name: "DeepSeek" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "阿里云百炼（千问）" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /dashscope|deepseek ·/ })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("模型供应商"), {
+      target: { value: "dashscope" },
+    });
+    fireEvent.change(screen.getByLabelText(/^模型名称/), {
+      target: { value: "qwen-plus" },
+    });
+    fireEvent.change(screen.getByLabelText(/API Key/), {
+      target: { value: "fictional-qwen-secret" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存模型" }));
+
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith({
+        adapter: "dashscope",
+        model: "qwen-plus",
+        apiBase: null,
+        apiKey: "fictional-qwen-secret",
+      }),
+    );
+  });
+
+  it("prevents duplicate model creation while the first save is pending", async () => {
     mockModels(capability([]));
     let resolveCreate!: (value: { model: LlmModelConfig }) => void;
     const pending = new Promise<{ model: LlmModelConfig }>((resolve) => {
@@ -168,12 +216,12 @@ describe("ModelsPanel", () => {
     const create = vi.spyOn(api, "createLlmModel").mockReturnValue(pending);
 
     renderModels();
-    await screen.findByText("Chat 还没有候选模型");
-    fireEvent.click(screen.getByRole("button", { name: "新增候选" }));
-    fireEvent.change(screen.getByLabelText(/^模型调用名/), {
+    await screen.findByText("还没有可用于 Chat 的模型");
+    fireEvent.click(screen.getAllByRole("button", { name: "新增模型" })[0]);
+    fireEvent.change(screen.getByLabelText(/^模型名称/), {
       target: { value: "deepseek-chat" },
     });
-    const save = screen.getByRole("button", { name: "保存候选" });
+    const save = screen.getByRole("button", { name: "保存模型" });
     const form = save.closest("form");
     expect(form).not.toBeNull();
     fireEvent.submit(form!);
@@ -205,14 +253,14 @@ describe("ModelsPanel", () => {
     expect(update.mock.calls[1][1]).toMatchObject({ apiKey: null });
   });
 
-  it("tests and activates a candidate explicitly, preserving the returned callId", async () => {
+  it("tests a model from the model list and binds it from Chat settings", async () => {
     const candidate = { ...model, id: "8", active: false, lastTest: null };
     mockModels(capability([candidate]));
     vi.spyOn(api, "testLlmModel").mockResolvedValue({
       ok: true,
       callId: "llmcall_test_1",
     });
-    const activate = vi.spyOn(api, "activateLlmModel").mockResolvedValue({
+    const bind = vi.spyOn(api, "bindChatModel").mockResolvedValue({
       activeModel: { ...candidate, active: true },
       callId: "llmcall_activate_1",
     });
@@ -221,8 +269,30 @@ describe("ModelsPanel", () => {
     await screen.findByText("deepseek-v4-flash", { selector: "h3" });
     fireEvent.click(screen.getByRole("button", { name: "测试连接" }));
     expect(await screen.findByText(/llmcall_test_1/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "设为当前" }));
-    await waitFor(() => expect(activate).toHaveBeenCalledWith("8"));
+    expect(screen.queryByRole("button", { name: "设为当前" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Chat/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /DeepSeek \/ deepseek-v4-flash/ }));
+    fireEvent.click(screen.getByRole("button", { name: "测试并绑定" }));
+    await waitFor(() => expect(bind).toHaveBeenCalledWith("8"));
+  });
+
+  it("keeps Chat settings open and shows the backend callId when binding fails", async () => {
+    const candidate = { ...model, id: "8", active: false, lastTest: null };
+    mockModels(capability([candidate]));
+    vi.spyOn(api, "bindChatModel").mockRejectedValue(
+      new ApiRequestError(502, "LLM_CONNECTION_FAILED", {
+        callId: "llmcall_bind_failed",
+      }),
+    );
+
+    renderModels();
+    fireEvent.click(await screen.findByRole("button", { name: /Chat/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /DeepSeek \/ deepseek-v4-flash/ }));
+    fireEvent.click(screen.getByRole("button", { name: "测试并绑定" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("llmcall_bind_failed");
+    expect(screen.getByRole("heading", { name: "设置 Chat" })).toBeInTheDocument();
   });
 
   it("shows the backend callId when a connection test fails", async () => {

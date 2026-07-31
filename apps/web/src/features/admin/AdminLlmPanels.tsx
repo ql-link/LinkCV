@@ -52,11 +52,11 @@ function errorMessage(
   }
   const messages: Record<string, string> = {
     FORBIDDEN: "当前账号没有管理权限。",
-    INVALID_LLM_MODEL_CONFIG: "Chat 模型配置不合法，请检查接入方式、模型调用名和地址。",
-    LLM_MODEL_NOT_FOUND: "候选模型已不存在，请刷新后重试。",
+    INVALID_LLM_MODEL_CONFIG: "Chat 模型配置不合法，请检查模型供应商、模型名称和地址。",
+    LLM_MODEL_NOT_FOUND: "模型配置已不存在，请刷新后重试。",
     LLM_MODEL_CONFIG_CHANGED: "测试期间配置已被其他操作修改，请刷新后重试。",
     LLM_CREDENTIALS_UNAVAILABLE: "API Key 缺失或服务端暂时无法安全读取凭据。",
-    LLM_CONNECTION_FAILED: "连接测试失败，请检查接入方式、模型调用名、地址或 API Key。",
+    LLM_CONNECTION_FAILED: "连接测试失败，请检查模型供应商、模型名称、地址或 API Key。",
     LLM_CHAT_NOT_CONFIGURED: "Chat 当前尚未选择模型。",
     INVALID_LLM_CALL_QUERY: "调用日志筛选条件不合法，请检查后重试。",
   };
@@ -96,8 +96,8 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
   const [query, setQuery] = useState("");
   const [keyFilter, setKeyFilter] = useState("all");
   const [editor, setEditor] = useState<LlmModelConfig | "new" | null>(null);
+  const [bindingEditorOpen, setBindingEditorOpen] = useState(false);
   const [testingIds, setTestingIds] = useState<Set<string>>(new Set());
-  const [activatingIds, setActivatingIds] = useState<Set<string>>(new Set());
   const [testResults, setTestResults] = useState<
     Record<string, { ok: boolean; message: string }>
   >({});
@@ -128,20 +128,26 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
     void load();
   }, [load]);
 
+  const adapterLabels = useMemo(
+    () => new Map((catalog?.adapters ?? []).map((adapter) => [adapter.code, adapter.label])),
+    [catalog?.adapters],
+  );
+
   const visibleModels = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return (capability?.models ?? []).filter((model) => {
       const matchesQuery =
         !normalized ||
         model.model.toLowerCase().includes(normalized) ||
-        model.adapter.toLowerCase().includes(normalized);
+        model.adapter.toLowerCase().includes(normalized) ||
+        adapterLabels.get(model.adapter)?.toLowerCase().includes(normalized);
       const matchesKey =
         keyFilter === "all" ||
         (keyFilter === "configured" && model.keyConfigured) ||
         (keyFilter === "missing" && !model.keyConfigured);
       return matchesQuery && matchesKey;
     });
-  }, [capability?.models, keyFilter, query]);
+  }, [adapterLabels, capability?.models, keyFilter, query]);
 
   const testModel = async (model: LlmModelConfig) => {
     if (testingIds.has(model.id)) return;
@@ -182,36 +188,16 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
     }
   };
 
-  const activateModel = async (model: LlmModelConfig) => {
-    if (activatingIds.has(model.id) || model.active) return;
-    setActivatingIds((current) => new Set(current).add(model.id));
-    try {
-      const response = await api.activateLlmModel(model.id);
-      await load(false);
-      notify(`Chat 当前模型已切换 · ${response.callId}`);
-    } catch (error) {
-      notify(
-        errorMessage(error, "测试并启用失败，原当前模型保持不变。", onSessionExpired),
-      );
-    } finally {
-      setActivatingIds((current) => {
-        const next = new Set(current);
-        next.delete(model.id);
-        return next;
-      });
-    }
-  };
-
   return (
     <>
       <PanelHeading
         eyebrow="AI 基础设施"
         title="模型配置"
-        description="为系统 Chat 能力保存候选模型，并明确选择唯一的当前模型。"
+        description="先接入并验证模型，再为每项系统能力选择唯一绑定。"
         action={
           <button className="admin-primary-button" type="button" onClick={() => setEditor("new")}>
             <Plus size={16} />
-            新增候选
+            新增模型
           </button>
         }
       />
@@ -232,116 +218,149 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
       )}
       {loadState === "ready" && capability && (
         <>
-          <button
-            className="model-summary chat-capability-card"
-            type="button"
-            onClick={() => setEditor(capability.activeModel ?? "new")}
-          >
-            <div>
-              <span className="model-summary-icon"><Bot size={20} /></span>
+          <section className="llm-config-section" aria-labelledby="llm-capabilities-heading">
+            <div className="llm-section-heading">
               <div>
-                <small>系统能力</small>
-                <strong>Chat 模型</strong>
-                <p>
-                  {capability.activeModel
-                    ? `当前使用 ${capability.activeModel.adapter} / ${capability.activeModel.model}`
-                    : "尚未选择当前模型，点击这里新增候选。"}
-                </p>
+                <span className="page-eyebrow">能力配置</span>
+                <h2 id="llm-capabilities-heading">系统能力</h2>
+                <p>点击能力，选择它在运行时实际使用的模型。</p>
               </div>
             </div>
-            <span className={capability.activeModel ? "enabled-pill" : "disabled-pill"}>
-              {capability.activeModel ? "已配置" : "未配置"}
-            </span>
-          </button>
-
-          <section className="admin-surface llm-filter-bar" aria-label="候选模型筛选">
-            <label className="table-search">
-              <Search size={16} />
-              <input
-                aria-label="按接入方式或模型调用名筛选"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索接入方式或模型调用名"
-              />
-            </label>
-            <select aria-label="按密钥状态筛选" value={keyFilter} onChange={(event) => setKeyFilter(event.target.value)}>
-              <option value="all">全部密钥状态</option>
-              <option value="configured">密钥已配置</option>
-              <option value="missing">密钥未配置</option>
-            </select>
-            <button type="button" onClick={() => { setQuery(""); setKeyFilter("all"); }}>清除筛选</button>
+            <button
+              className="model-summary chat-capability-card"
+              type="button"
+              onClick={() => setBindingEditorOpen(true)}
+            >
+              <div>
+                <span className="model-summary-icon"><Bot size={20} /></span>
+                <div>
+                  <small>对话能力</small>
+                  <strong>Chat</strong>
+                  <p>
+                    {capability.activeModel
+                      ? `已绑定 ${adapterLabels.get(capability.activeModel.adapter) ?? capability.activeModel.adapter} / ${capability.activeModel.model}`
+                      : "尚未绑定模型，点击这里选择。"}
+                  </p>
+                </div>
+              </div>
+              <span className={capability.activeModel ? "enabled-pill" : "disabled-pill"}>
+                {capability.activeModel ? "已绑定" : "未绑定"}
+              </span>
+            </button>
           </section>
 
-          {capability.models.length === 0 ? (
-            <section className="admin-surface llm-state">
-              <Bot size={24} />
-              <strong>Chat 还没有候选模型</strong>
-              <p>先保存一个候选，再通过真实连接测试将它设为当前模型。</p>
-              <button type="button" onClick={() => setEditor("new")}>新增候选模型</button>
+          <section className="llm-config-section" aria-labelledby="llm-models-heading">
+            <div className="llm-section-heading">
+              <div>
+                <span className="page-eyebrow">模型接入</span>
+                <h2 id="llm-models-heading">已接入模型</h2>
+                <p>模型配置只负责连接和凭据；能力绑定在上方单独设置。</p>
+              </div>
+            </div>
+
+            <section className="admin-surface llm-filter-bar" aria-label="模型筛选">
+              <label className="table-search">
+                <Search size={16} />
+                <input
+                  aria-label="按模型供应商或模型名称筛选"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="搜索模型供应商或模型名称"
+                />
+              </label>
+              <select aria-label="按密钥状态筛选" value={keyFilter} onChange={(event) => setKeyFilter(event.target.value)}>
+                <option value="all">全部密钥状态</option>
+                <option value="configured">密钥已配置</option>
+                <option value="missing">密钥未配置</option>
+              </select>
+              <button type="button" onClick={() => { setQuery(""); setKeyFilter("all"); }}>清除筛选</button>
             </section>
-          ) : visibleModels.length === 0 ? (
-            <section className="admin-surface llm-state">
-              <Search size={24} />
-              <strong>没有符合筛选条件的候选</strong>
-              <p>清除筛选可恢复全部候选模型。</p>
-            </section>
-          ) : (
-            <section className="models-list" aria-label="Chat 候选模型">
-              {visibleModels.map((model) => {
-                const testing = testingIds.has(model.id);
-                const activating = activatingIds.has(model.id);
-                const transientResult = testResults[model.id];
-                return (
-                  <article className={`model-card ${model.active ? "current-model-card" : ""}`} key={model.id}>
-                    <div className="model-priority model-adapter-badge">
-                      <Bot size={19} />
-                      <small>{model.adapter}</small>
-                    </div>
-                    <div className="model-main">
-                      <div className="model-title-row">
-                        <h3>{model.model}</h3>
-                        <span className={model.active ? "enabled-pill" : "disabled-pill"}>
-                          {model.active ? "当前使用" : "候选"}
-                        </span>
+
+            {capability.models.length === 0 ? (
+              <section className="admin-surface llm-state">
+                <Bot size={24} />
+                <strong>还没有可用于 Chat 的模型</strong>
+                <p>先接入模型并配置凭据，再从上方 Chat 能力中选择绑定。</p>
+                <button type="button" onClick={() => setEditor("new")}>新增模型</button>
+              </section>
+            ) : visibleModels.length === 0 ? (
+              <section className="admin-surface llm-state">
+                <Search size={24} />
+                <strong>没有符合筛选条件的模型</strong>
+                <p>清除筛选可恢复全部已接入模型。</p>
+              </section>
+            ) : (
+              <section className="models-list" aria-label="已接入模型">
+                {visibleModels.map((model) => {
+                  const testing = testingIds.has(model.id);
+                  const transientResult = testResults[model.id];
+                  return (
+                    <article className={`model-card ${model.active ? "current-model-card" : ""}`} key={model.id}>
+                      <div className="model-priority model-adapter-badge">
+                        <Bot size={19} />
+                        <small>{adapterLabels.get(model.adapter) ?? model.adapter}</small>
                       </div>
-                      <p>{model.apiBase || "使用接入方式默认地址"}</p>
-                      <div className="model-meta">
-                        <span className={model.keyConfigured ? "" : "missing-key"}>
-                          <KeyRound size={14} />
-                          {model.keyConfigured ? "API Key 已配置" : "API Key 未配置"}
-                        </span>
-                        <span>
-                          <TestTube2 size={14} />
-                          {model.lastTest
-                            ? `最近测试：${model.lastTest.status === "succeeded" ? "成功" : "失败"} · ${model.lastTest.callId}`
-                            : "尚未测试"}
-                        </span>
+                      <div className="model-main">
+                        <div className="model-title-row">
+                          <h3>{model.model}</h3>
+                          <span className={model.active ? "enabled-pill" : "disabled-pill"}>
+                            {model.active ? "已绑定 Chat" : "未绑定"}
+                          </span>
+                        </div>
+                        <p>{model.apiBase || "使用供应商默认地址"}</p>
+                        <div className="model-meta">
+                          <span className={model.keyConfigured ? "" : "missing-key"}>
+                            <KeyRound size={14} />
+                            {model.keyConfigured ? "API Key 已配置" : "API Key 未配置"}
+                          </span>
+                          <span>
+                            <TestTube2 size={14} />
+                            {model.lastTest
+                              ? `最近测试：${model.lastTest.status === "succeeded" ? "成功" : "失败"} · ${model.lastTest.callId}`
+                              : "尚未测试"}
+                          </span>
+                        </div>
+                        {transientResult && (
+                          <p
+                            className={transientResult.ok ? "model-test-ok" : "model-test-error"}
+                            role={transientResult.ok ? "status" : "alert"}
+                          >
+                            {transientResult.ok ? <CheckCircle2 size={14} /> : <CircleAlert size={14} />}
+                            {transientResult.message}
+                          </p>
+                        )}
                       </div>
-                      {transientResult && (
-                        <p
-                          className={transientResult.ok ? "model-test-ok" : "model-test-error"}
-                          role={transientResult.ok ? "status" : "alert"}
-                        >
-                          {transientResult.ok ? <CheckCircle2 size={14} /> : <CircleAlert size={14} />}
-                          {transientResult.message}
-                        </p>
-                      )}
-                    </div>
-                    <div className="model-actions">
-                      <button type="button" onClick={() => void testModel(model)} disabled={testing || activating}>
-                        <TestTube2 size={14} />{testing ? "测试中…" : "测试连接"}
-                      </button>
-                      <button type="button" onClick={() => setEditor(model)} disabled={testing || activating}>编辑</button>
-                      <button type="button" onClick={() => void activateModel(model)} disabled={model.active || testing || activating}>
-                        {model.active ? "当前模型" : activating ? "测试并启用中…" : "设为当前"}
-                      </button>
-                    </div>
-                  </article>
-                );
-              })}
-            </section>
-          )}
+                      <div className="model-actions">
+                        <button type="button" onClick={() => void testModel(model)} disabled={testing}>
+                          <TestTube2 size={14} />{testing ? "测试中…" : "测试连接"}
+                        </button>
+                        <button type="button" onClick={() => setEditor(model)} disabled={testing}>编辑</button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </section>
+            )}
+          </section>
         </>
+      )}
+
+      {bindingEditorOpen && capability && (
+        <ChatBindingEditor
+          capability={capability}
+          adapterLabels={adapterLabels}
+          onClose={() => setBindingEditorOpen(false)}
+          onAddModel={() => {
+            setBindingEditorOpen(false);
+            setEditor("new");
+          }}
+          onBound={async (message) => {
+            setBindingEditorOpen(false);
+            await load(false);
+            notify(message);
+          }}
+          onSessionExpired={onSessionExpired}
+        />
       )}
 
       {editor && catalog && (
@@ -358,6 +377,135 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
         />
       )}
     </>
+  );
+}
+
+function ChatBindingEditor({
+  capability,
+  adapterLabels,
+  onClose,
+  onAddModel,
+  onBound,
+  onSessionExpired,
+}: {
+  capability: ChatCapability;
+  adapterLabels: Map<string, string>;
+  onClose: () => void;
+  onAddModel: () => void;
+  onBound: (message: string) => Promise<void>;
+  onSessionExpired: () => void;
+}) {
+  const [selectedId, setSelectedId] = useState(capability.activeModelId ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const savingRef = useRef(false);
+  const selectedModel = capability.models.find((model) => model.id === selectedId);
+  const bindingUnchanged = selectedId === capability.activeModelId;
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!selectedModel || bindingUnchanged || savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setError("");
+    try {
+      const response = await api.bindChatModel(selectedModel.id);
+      await onBound(`Chat 已绑定 ${adapterLabels.get(selectedModel.adapter) ?? selectedModel.adapter} / ${selectedModel.model} · ${response.callId}`);
+    } catch (caught) {
+      setError(
+        errorMessage(
+          caught,
+          "测试并绑定失败，Chat 原绑定保持不变。",
+          onSessionExpired,
+        ),
+      );
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="llm-modal-layer"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section className="llm-modal" role="dialog" aria-modal="true" aria-labelledby="chat-binding-title">
+        <header>
+          <div>
+            <span className="page-eyebrow">能力配置</span>
+            <h2 id="chat-binding-title">设置 Chat</h2>
+          </div>
+          <button type="button" onClick={onClose} aria-label="关闭 Chat 设置"><X size={18} /></button>
+        </header>
+        <form className="drawer-form" onSubmit={submit}>
+          <div className="llm-current-binding">
+            <small>当前绑定</small>
+            <strong>
+              {capability.activeModel
+                ? `${adapterLabels.get(capability.activeModel.adapter) ?? capability.activeModel.adapter} / ${capability.activeModel.model}`
+                : "尚未绑定模型"}
+            </strong>
+          </div>
+
+          {capability.models.length === 0 ? (
+            <div className="llm-binding-empty">
+              <Bot size={22} />
+              <strong>没有可绑定的模型</strong>
+              <p>先接入一个 Chat 模型，再回到这里完成绑定。</p>
+              <button type="button" onClick={onAddModel}>新增模型</button>
+            </div>
+          ) : (
+            <fieldset className="llm-binding-list">
+              <legend>选择 Chat 使用的模型</legend>
+              {capability.models.map((model) => (
+                <label
+                  className={`llm-binding-option ${selectedId === model.id ? "selected" : ""}`}
+                  key={model.id}
+                >
+                  <input
+                    type="radio"
+                    name="chat-model-binding"
+                    value={model.id}
+                    checked={selectedId === model.id}
+                    onChange={() => setSelectedId(model.id)}
+                  />
+                  <span>
+                    <strong>{adapterLabels.get(model.adapter) ?? model.adapter} / {model.model}</strong>
+                    <small>
+                      {model.keyConfigured ? "API Key 已配置" : "API Key 未配置"}
+                      {model.lastTest
+                        ? ` · 最近测试${model.lastTest.status === "succeeded" ? "成功" : "失败"}`
+                        : " · 尚未测试"}
+                    </small>
+                  </span>
+                  {model.active && <em>当前绑定</em>}
+                </label>
+              ))}
+            </fieldset>
+          )}
+
+          {capability.models.length > 0 && (
+            <div className="drawer-callout">
+              <ShieldCheck size={18} />
+              <p>绑定前会使用所选模型执行一次真实连接测试。只有测试成功才会更新 Chat；失败时原绑定保持不变。</p>
+            </div>
+          )}
+          {error && <p className="llm-inline-error" role="alert"><CircleAlert size={15} />{error}</p>}
+          {capability.models.length > 0 && (
+            <footer>
+              <button type="button" onClick={onClose}>取消</button>
+              <button type="submit" disabled={!selectedModel || bindingUnchanged || saving}>
+                {saving ? "测试并绑定中…" : bindingUnchanged ? "当前已绑定" : "测试并绑定"}
+              </button>
+            </footer>
+          )}
+        </form>
+      </section>
+    </div>
   );
 }
 
@@ -402,8 +550,8 @@ function ModelEditor({
         const response = await api.updateLlmModel(model.id, payload);
         await onSaved(
           response.validationCallId
-            ? `当前模型已验证并保存 · ${response.validationCallId}`
-            : "候选模型已保存",
+            ? `已绑定模型完成验证并保存 · ${response.validationCallId}`
+            : "模型配置已保存",
         );
       } else {
         const payload: LlmModelCreatePayload = {
@@ -413,7 +561,7 @@ function ModelEditor({
         };
         if (apiKey.trim()) payload.apiKey = apiKey;
         await api.createLlmModel(payload);
-        await onSaved("候选模型已保存；当前模型没有改变");
+        await onSaved("模型已接入；能力绑定没有改变");
       }
     } catch (caught) {
       setError(errorMessage(caught, "保存失败，请稍后重试。", onSessionExpired));
@@ -424,28 +572,34 @@ function ModelEditor({
   };
 
   return (
-    <div className="drawer-layer" role="presentation">
-      <aside className="admin-drawer" role="dialog" aria-modal="true" aria-labelledby="model-editor-title">
+    <div
+      className="llm-modal-layer"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section className="llm-modal" role="dialog" aria-modal="true" aria-labelledby="model-editor-title">
         <header>
-          <div><span className="page-eyebrow">Chat 模型</span><h2 id="model-editor-title">{model ? "编辑候选" : "新增候选"}</h2></div>
+          <div><span className="page-eyebrow">模型接入</span><h2 id="model-editor-title">{model ? "编辑模型" : "新增模型"}</h2></div>
           <button type="button" onClick={onClose} aria-label="关闭模型编辑"><X size={18} /></button>
         </header>
         <form className="drawer-form" onSubmit={submit}>
           <label>
-            <span>接入方式</span>
+            <span>模型供应商</span>
             <select value={adapter} onChange={(event) => { setAdapter(event.target.value as ChatAdapter); setModelName(""); }} required>
-              {catalog.adapters.map((item) => <option key={item.code} value={item.code}>{item.label} · {item.code}</option>)}
+              {catalog.adapters.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
             </select>
           </label>
           <label>
-            <span>模型调用名</span>
-            <input value={modelName} onChange={(event) => setModelName(event.target.value)} list={`models-${adapter}`} placeholder={adapter === "deepseek" ? "deepseek-v4-flash" : "输入供应商模型调用名"} required />
+            <span>模型名称</span>
+            <input value={modelName} onChange={(event) => setModelName(event.target.value)} list={`models-${adapter}`} placeholder={adapter === "deepseek" ? "例如 deepseek-chat" : adapter === "dashscope" ? "例如 qwen-plus" : "输入供应商模型名称"} required />
             <datalist id={`models-${adapter}`}>{selectedAdapter?.models.map((name) => <option key={name} value={name} />)}</datalist>
-            <small>保存时内部组装为 {adapter}/{modelName.trim() || "模型调用名"}；目录外模型也可直接输入。</small>
+            <small>可从建议中选择，也可填写供应商支持的其他模型名称。</small>
           </label>
           <label>
             <span>API Base <small>可选</small></span>
-            <input type="url" value={apiBase} onChange={(event) => setApiBase(event.target.value)} placeholder="使用接入方式默认地址" />
+            <input type="url" value={apiBase} onChange={(event) => setApiBase(event.target.value)} placeholder="使用供应商默认地址" />
           </label>
           <label>
             <span>API Key <small>{model?.keyConfigured ? "留空表示保留" : "启用前必须配置"}</small></span>
@@ -457,11 +611,11 @@ function ModelEditor({
               <span>明确清除已保存的 API Key</span>
             </label>
           )}
-          <div className="drawer-callout"><ShieldCheck size={18} /><p>API Key 只会加密写入。{model?.active ? "这是当前模型，保存前会先使用拟议配置执行真实连接测试；失败不会覆盖当前版本。" : "保存候选不会自动设为当前模型。"}</p></div>
+          <div className="drawer-callout"><ShieldCheck size={18} /><p>API Key 只会加密写入。{model?.active ? "该模型已绑定到 Chat，保存前会先验证拟议配置；失败不会覆盖当前版本。" : "保存模型不会改变任何能力绑定。"}</p></div>
           {error && <p className="llm-inline-error" role="alert"><CircleAlert size={15} />{error}</p>}
-          <footer><button type="button" onClick={onClose}>取消</button><button type="submit" disabled={saving}>{saving ? (model?.active ? "验证并保存中…" : "保存中…") : model?.active ? "验证并保存" : "保存候选"}</button></footer>
+          <footer><button type="button" onClick={onClose}>取消</button><button type="submit" disabled={saving}>{saving ? (model?.active ? "验证并保存中…" : "保存中…") : model?.active ? "验证并保存" : "保存模型"}</button></footer>
         </form>
-      </aside>
+      </section>
     </div>
   );
 }

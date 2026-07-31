@@ -16,8 +16,9 @@ class ChatAdapterDefinition:
 
 CHAT_ADAPTERS: tuple[ChatAdapterDefinition, ...] = (
     ChatAdapterDefinition("openai", "OpenAI"),
-    ChatAdapterDefinition("anthropic", "Anthropic"),
+    ChatAdapterDefinition("anthropic", "Anthropic（Claude）"),
     ChatAdapterDefinition("deepseek", "DeepSeek"),
+    ChatAdapterDefinition("dashscope", "阿里云百炼（千问）"),
     ChatAdapterDefinition("openrouter", "OpenRouter"),
     ChatAdapterDefinition("gemini", "Google Gemini"),
     ChatAdapterDefinition("xai", "xAI"),

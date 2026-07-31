@@ -128,6 +128,7 @@ export type ChatAdapter =
   | "openai"
   | "anthropic"
   | "deepseek"
+  | "dashscope"
   | "openrouter"
   | "gemini"
   | "xai"
@@ -407,7 +408,7 @@ export const api = {
     request<{ ok: true; callId: string }>(`/api/admin/llm/models/${id}/test`, {
       method: "POST",
     }),
-  activateLlmModel: (id: string) =>
+  bindChatModel: (id: string) =>
     request<{ activeModel: LlmModelConfig; callId: string }>(`/api/admin/llm/models/${id}/activate`, {
       method: "POST",
     }),

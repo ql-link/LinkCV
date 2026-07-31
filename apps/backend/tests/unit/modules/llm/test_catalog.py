@@ -15,6 +15,13 @@ def test_deepseek_identifier_keeps_adapter_and_call_name_separate() -> None:
     )
 
 
+def test_qwen_identifier_uses_dashscope_provider_route() -> None:
+    assert (
+        assemble_model_identifier("dashscope", "qwen-plus")
+        == "dashscope/qwen-plus"
+    )
+
+
 @pytest.mark.parametrize(
     "adapter,model",
     [
@@ -48,8 +55,14 @@ def test_catalog_only_returns_chat_models_for_supported_adapter(monkeypatch) -> 
                 "litellm_provider": "openai",
                 "mode": "chat",
             },
+            "dashscope/qwen-plus": {
+                "litellm_provider": "dashscope",
+                "mode": "chat",
+            },
         },
     )
 
     assert chat_model_suggestions("deepseek") == ["deepseek-chat"]
+    assert chat_model_suggestions("dashscope") == ["qwen-plus"]
     assert "deepseek" in {adapter.code for adapter in CHAT_ADAPTERS}
+    assert "dashscope" in {adapter.code for adapter in CHAT_ADAPTERS}
