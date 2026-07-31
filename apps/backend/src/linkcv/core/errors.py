@@ -33,12 +33,15 @@ def install_error_handlers(app: FastAPI) -> None:
         error: RequestValidationError,
     ) -> JSONResponse:
         if request.url.path.startswith("/api/job-descriptions"):
-            code = (
-                "INVALID_JOB_QUERY"
-                if request.method == "GET"
+            if request.url.path.rstrip("/") == "/api/job-descriptions/import":
+                code = "INVALID_JOB_IMPORT"
+            elif (
+                request.method == "GET"
                 and request.url.path.rstrip("/") == "/api/job-descriptions"
-                else "INVALID_JOB_DESCRIPTION"
-            )
+            ):
+                code = "INVALID_JOB_QUERY"
+            else:
+                code = "INVALID_JOB_DESCRIPTION"
             return JSONResponse(status_code=400, content={"error": code})
         if request.url.path.startswith("/api/admin/llm"):
             code = (

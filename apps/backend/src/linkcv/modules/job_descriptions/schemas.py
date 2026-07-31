@@ -25,6 +25,48 @@ class DuplicateResolution(BaseModel):
     base_lock_version: int = Field(ge=1)
 
 
+class BrowserJobCapture(BaseModel):
+    """Fields observed on a job detail page before server-side normalization."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    job_title: str | None = Field(default=None, max_length=1_000)
+    company_name: str | None = Field(default=None, max_length=1_000)
+    description_text: str | None = Field(default=None, max_length=200_000)
+    skills: list[Skill] = Field(default_factory=list, max_length=100)
+    employment_type_text: str | None = Field(default=None, max_length=100)
+    education_text: str | None = Field(default=None, max_length=100)
+    experience_text: str | None = Field(default=None, max_length=100)
+    work_schedule_text: str | None = Field(default=None, max_length=100)
+    work_city: str | None = Field(default=None, max_length=100)
+    work_address: str | None = Field(default=None, max_length=500)
+    salary_text: str | None = Field(default=None, max_length=128)
+    company_legal_name: str | None = Field(default=None, max_length=255)
+    company_industry: str | None = Field(default=None, max_length=100)
+    company_size: str | None = Field(default=None, max_length=50)
+    company_financing_stage: str | None = Field(default=None, max_length=50)
+    company_description: str | None = Field(default=None, max_length=200_000)
+    company_tags: list[Skill] = Field(default_factory=list, max_length=30)
+    recruiter_name: str | None = Field(default=None, max_length=100)
+    recruiter_title: str | None = Field(default=None, max_length=100)
+
+
+class JobDescriptionImportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_url: str = Field(max_length=2048)
+    capture: BrowserJobCapture
+    duplicate_resolution: DuplicateResolution | None = None
+
+    @field_validator("source_url")
+    @classmethod
+    def trim_source_url(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("source_url cannot be blank")
+        return normalized
+
+
 class JobDescriptionCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

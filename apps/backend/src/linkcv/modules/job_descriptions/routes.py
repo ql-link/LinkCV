@@ -16,6 +16,10 @@ from linkcv.application.job_descriptions.service import (
     set_job_archived,
     update_owned_job,
 )
+from linkcv.application.job_descriptions.import_service import (
+    InvalidJobImport,
+    build_job_description_from_capture,
+)
 from linkcv.core.database import get_db
 from linkcv.core.errors import ApiError
 from linkcv.domain.job_source import InvalidJobSource
@@ -25,6 +29,7 @@ from linkcv.modules.job_descriptions.models import JobDescription
 from linkcv.modules.job_descriptions.schemas import (
     DeleteJobDescriptionResponse,
     JobDescriptionCreateRequest,
+    JobDescriptionImportRequest,
     JobDescriptionListResponse,
     JobDescriptionRecord,
     JobDescriptionResponse,
@@ -100,6 +105,30 @@ def create_job_description(
 ) -> JobDescriptionResponse:
     try:
         result = create_or_resolve_job(db=db, user_id=user.id, payload=payload)
+    except InvalidJobSource as error:
+        raise ApiError(400, "INVALID_JOB_SOURCE") from error
+    except DuplicateJobDescription as error:
+        raise ApiError(409, "JD_SOURCE_DUPLICATE", duplicate_details(error)) from error
+    except JobEditConflict as error:
+        raise ApiError(409, "JD_EDIT_CONFLICT") from error
+    except JobWriteFailed as error:
+        raise ApiError(500, "JD_WRITE_FAILED") from error
+    response.status_code = 201 if result.created else 200
+    return JobDescriptionResponse(job_description=job_record(result.job))
+
+
+@router.post("/import", response_model=JobDescriptionResponse, status_code=201)
+def import_job_description(
+    payload: JobDescriptionImportRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> JobDescriptionResponse:
+    try:
+        structured = build_job_description_from_capture(payload)
+        result = create_or_resolve_job(db=db, user_id=user.id, payload=structured)
+    except InvalidJobImport as error:
+        raise ApiError(400, "INVALID_JOB_IMPORT") from error
     except InvalidJobSource as error:
         raise ApiError(400, "INVALID_JOB_SOURCE") from error
     except DuplicateJobDescription as error:

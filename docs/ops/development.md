@@ -6,7 +6,7 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装前后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis 与 MinIO，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web 和 FastAPI。当前 Alembic head `0006`；`0002` 建立四张核心业务表，`0003` 把模板删除规则调整为保留既有简历并将 `template_id` 置空，`0004` 新增对象存储清理补偿队列，`0005` 转换旧 Tiptap 简历及历史版本并保留可回滚备份，`0006` 新增 LLM 模型配置和调用日志表。
+新环境执行 `npm run setup` 安装 Web、浏览器插件和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis 与 MinIO，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web 和 FastAPI。当前 Alembic head `0007`；`0002` 建立四张核心业务表，`0003` 把模板删除规则调整为保留既有简历并将 `template_id` 置空，`0004` 新增对象存储清理补偿队列，`0005` 转换旧 Tiptap 简历及历史版本并保留可回滚备份，`0006` 新增 LLM 模型配置和调用日志表，`0007` 新增用户私有 JD 单表。
 
 后端默认读取仓库根目录 `.env`。设置 `LINKCV_ENV_FILE=.env.development` 可选择共享 Dev 基础配置；如果同目录存在 `.env.development.local`，其密码和密钥会覆盖基础文件。Production 同理使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，配置路径不受当前工作目录影响。
 
@@ -26,7 +26,7 @@ local/test 未配置密钥环时，原有非 LLM 接口仍可启动，但保存�
 LINKCV_ENV_FILE=.env.development npm run db:init
 ```
 
-命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0006`。阿里云 OSS 字段目前仅为预留配置，图片读写仍只使用 `MINIO_*`。
+命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0007`。阿里云 OSS 字段目前仅为预留配置，图片读写仍只使用 `MINIO_*`。
 
 ## 默认端口与覆盖
 
@@ -75,6 +75,9 @@ Markdown 导入不调用 tolink-rag，但仍需要结构化模型。频率和并
 | `npm run db:init` | 仅允许创建 `linkcv` 数据库并升级到 Alembic head |
 | `npm run db:revision -- -m <message>` | 创建只调用 SQL 的 revision，以及同 ID 的 `.up.sql`、`.down.sql` 文件 |
 | `npm run test:web` | 前端 Vitest 单元和组件测试 |
+| `npm run dev:extension` | 启动 WXT 插件开发模式 |
+| `npm run test:extension` | 插件 DOM 提取与 API 客户端测试 |
+| `npm run build:extension` | 构建可侧载的 Chrome MV3 目录 |
 | `npm run test:backend:unit` | 后端快速单元测试 |
 | `npm run test:backend:integration` | 后端隔离 HTTP 集成测试 |
 | `npm run test:backend` | 全部后端和仓库工具测试 |
@@ -84,4 +87,4 @@ Markdown 导入不调用 tolink-rag，但仍需要结构化模型。频率和并
 
 - 前端测试使用 Vitest、React Testing Library 和 jsdom，通过 Mock 隔离 API。
 - 后端单元测试不访问外部服务；集成测试使用内存 SQLite 和假 MinIO。
-- 跨 Web、FastAPI、真实 MySQL、Redis 和 MinIO 的完整流程由浏览器人工验证。
+- 跨浏览器插件、BOSS 页面、Web、FastAPI、真实 MySQL 和 Redis 的完整导入流程由浏览器人工验证。侧载目录和步骤见 [`apps/extension/README.md`](../../apps/extension/README.md)。
