@@ -1,4 +1,4 @@
-﻿import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+﻿import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
   Activity,
@@ -22,12 +22,12 @@ import {
   Search,
   Settings2,
   ShieldCheck,
-  TestTube2,
   UserRound,
   Users,
   X,
 } from "lucide-react";
 import { Brand } from "../../components/ds";
+import { LogsPanel, ModelsPanel } from "./AdminLlmPanels";
 import "./admin.css";
 
 import { api, User, ApiRequestError } from "../../api/client";
@@ -108,40 +108,7 @@ const usersData = [
   },
 ];
 
-const modelData = [
-  {
-    name: "openai/gpt-4.1-mini",
-    base: "供应商默认",
-    priority: 10,
-    input: "$0.40",
-    output: "$1.60",
-    enabled: true,
-    keyConfigured: true,
-    tested: "3 分钟前",
-  },
-  {
-    name: "anthropic/claude-sonnet-4",
-    base: "https://api.anthropic.com",
-    priority: 20,
-    input: "$3.00",
-    output: "$15.00",
-    enabled: true,
-    keyConfigured: true,
-    tested: "昨天 18:24",
-  },
-  {
-    name: "deepseek/deepseek-chat",
-    base: "https://api.deepseek.com",
-    priority: 30,
-    input: "$0.27",
-    output: "$1.10",
-    enabled: false,
-    keyConfigured: false,
-    tested: "尚未测试",
-  },
-];
-
-const logsData = [
+const overviewActivityData = [
   {
     time: "10:42:18",
     level: "INFO",
@@ -159,8 +126,8 @@ const logsData = [
   {
     time: "10:36:42",
     level: "WARN",
-    event: "模型连接重试",
-    detail: "claude-sonnet-4 · 第 2 次",
+    event: "模型连接测试失败",
+    detail: "claude-sonnet-4 · 凭据不可用",
     tone: "warn",
   },
   {
@@ -223,7 +190,11 @@ export function AdminApp() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
             >
-              <AdminWorkspace user={user} onLogout={handleLogout} />
+              <AdminWorkspace
+                user={user}
+                onLogout={handleLogout}
+                onSessionExpired={() => setUser(null)}
+              />
             </motion.div>
           )
         ) : (
@@ -454,15 +425,15 @@ function AdminLogin({ onLogin }: { onLogin: (user: User) => void }) {
 function AdminWorkspace({
   user,
   onLogout,
+  onSessionExpired,
 }: {
   user: User;
   onLogout: () => void;
+  onSessionExpired: () => void;
 }) {
   const [section, setSection] = useState<AdminSection>(initialAdminSection);
   const [mobileNav, setMobileNav] = useState(false);
-  const [drawer, setDrawer] = useState<null | "user" | "model" | "alerts">(
-    null,
-  );
+  const [drawer, setDrawer] = useState<null | "user" | "alerts">(null);
   const [toast, setToast] = useState("");
 
   const navigate = (next: AdminSection) => {
@@ -567,11 +538,7 @@ function AdminWorkspace({
               transition={gentleSpring}
             >
               {section === "overview" && (
-                <Overview
-                  user={user}
-                  navigate={navigate}
-                  openDrawer={setDrawer}
-                />
+                <Overview user={user} navigate={navigate} />
               )}
               {section === "users" && (
                 <UsersPanel
@@ -581,11 +548,16 @@ function AdminWorkspace({
               )}
               {section === "models" && (
                 <ModelsPanel
-                  openDrawer={() => setDrawer("model")}
                   notify={notify}
+                  onSessionExpired={onSessionExpired}
                 />
               )}
-              {section === "logs" && <LogsPanel />}
+              {section === "logs" && (
+                <LogsPanel
+                  notify={notify}
+                  onSessionExpired={onSessionExpired}
+                />
+              )}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -623,7 +595,7 @@ const sectionLabels: Record<AdminSection, string> = {
   overview: "概览",
   users: "用户管理",
   models: "模型配置",
-  logs: "系统日志",
+  logs: "LLM 调用日志",
 };
 
 function SidebarContent({
@@ -643,7 +615,7 @@ function SidebarContent({
     { id: "overview", label: "概览", icon: LayoutDashboard },
     { id: "users", label: "用户管理", icon: Users },
     { id: "models", label: "模型配置", icon: Bot },
-    { id: "logs", label: "系统日志", icon: Activity },
+    { id: "logs", label: "LLM 调用日志", icon: Activity },
   ];
   return (
     <>
@@ -698,7 +670,7 @@ function PageHeading({
   eyebrow: string;
   title: string;
   description: string;
-  action?: React.ReactNode;
+  action?: ReactNode;
 }) {
   return (
     <header className="admin-page-heading">
@@ -715,11 +687,9 @@ function PageHeading({
 function Overview({
   user,
   navigate,
-  openDrawer,
 }: {
   user: User;
   navigate: (section: AdminSection) => void;
-  openDrawer: (drawer: "model") => void;
 }) {
   const metrics = [
     {
@@ -761,7 +731,7 @@ function Overview({
           <motion.button
             className="admin-primary-button"
             whileTap={{ scale: 0.97 }}
-            onClick={() => openDrawer("model")}
+            onClick={() => navigate("models")}
           >
             <Plus size={16} />
             新增模型
@@ -801,7 +771,7 @@ function Overview({
             </button>
           </div>
           <div className="activity-list">
-            {logsData.map((log) => (
+            {overviewActivityData.map((log) => (
               <div className="activity-row" key={log.time + log.event}>
                 <span className={`event-icon ${log.tone}`}>
                   <Activity size={15} />
@@ -1035,160 +1005,13 @@ function UsersPanel({
   );
 }
 
-function ModelsPanel({
-  openDrawer,
-  notify,
-}: {
-  openDrawer: () => void;
-  notify: (message: string) => void;
-}) {
-  const [testing, setTesting] = useState("");
-  const test = (name: string) => {
-    setTesting(name);
-    window.setTimeout(() => {
-      setTesting("");
-      notify(`连接成功 · call_${Math.random().toString(16).slice(2, 8)}`);
-    }, 800);
-  };
-  return (
-    <>
-      <PageHeading
-        eyebrow="AI 基础设施"
-        title="模型配置"
-        description="配置业务调用模型、主备顺序与成本，无需修改环境变量。"
-        action={
-          <motion.button
-            className="admin-primary-button"
-            whileTap={{ scale: 0.97 }}
-            onClick={openDrawer}
-          >
-            <Plus size={16} />
-            新增模型
-          </motion.button>
-        }
-      />
-      <section className="model-summary">
-        <div>
-          <span className="model-summary-icon">
-            <Bot size={20} />
-          </span>
-          <div>
-            <strong>2 个模型正在参与业务调用</strong>
-            <p>按优先级自动切换，上次故障转移发生在 6 天前。</p>
-          </div>
-        </div>
-        <button onClick={() => notify("所有启用模型连接正常")}>
-          测试全部连接 <TestTube2 size={15} />
-        </button>
-      </section>
-      <section className="models-list">
-        {modelData.map((model, index) => (
-          <motion.article className="model-card" key={model.name} layout>
-            <div className="model-priority">
-              <span>{index + 1}</span>
-              <small>
-                {index === 0 ? "主模型" : index === 1 ? "备用" : "候选"}
-              </small>
-            </div>
-            <div className="model-main">
-              <div className="model-title-row">
-                <h3>{model.name}</h3>
-                <span
-                  className={model.enabled ? "enabled-pill" : "disabled-pill"}
-                >
-                  {model.enabled ? "启用" : "停用"}
-                </span>
-              </div>
-              <p>{model.base}</p>
-              <div className="model-meta">
-                <span className={model.keyConfigured ? "" : "missing-key"}>
-                  <KeyRound size={14} />
-                  {model.keyConfigured ? "密钥已配置" : "密钥未配置"}
-                </span>
-                <span>优先级 {model.priority}</span>
-                <span>
-                  输入 {model.input} / 输出 {model.output}
-                </span>
-                <span>测试：{model.tested}</span>
-              </div>
-            </div>
-            <div className="model-actions">
-              <button
-                onClick={() => test(model.name)}
-                disabled={testing === model.name}
-              >
-                {testing === model.name ? "测试中…" : "测试连接"}
-              </button>
-              <button onClick={openDrawer}>编辑</button>
-              <button aria-label={`更多 ${model.name}`}>
-                <MoreHorizontal size={18} />
-              </button>
-            </div>
-          </motion.article>
-        ))}
-      </section>
-    </>
-  );
-}
-
-function LogsPanel() {
-  return (
-    <>
-      <PageHeading
-        eyebrow="可观测性"
-        title="系统日志"
-        description="追踪关键业务事件与异常，只展示安全的结构化上下文。"
-        action={
-          <span className="live-status">
-            <span /> 实时更新
-          </span>
-        }
-      />
-      <section className="admin-surface logs-surface">
-        <div className="table-tools">
-          <label className="table-search">
-            <Search size={16} />
-            <input placeholder="搜索事件、callId 或用户 ID" />
-          </label>
-          <div>
-            <select aria-label="日志等级">
-              <option>全部等级</option>
-              <option>INFO</option>
-              <option>WARN</option>
-              <option>ERROR</option>
-            </select>
-            <select aria-label="时间范围">
-              <option>最近 1 小时</option>
-              <option>最近 24 小时</option>
-              <option>最近 7 天</option>
-            </select>
-          </div>
-        </div>
-        <div className="log-stream">
-          {[...logsData, ...logsData].map((log, index) => (
-            <div className="log-row" key={`${log.time}-${index}`}>
-              <time>{log.time}</time>
-              <span className={`log-level ${log.tone}`}>{log.level}</span>
-              <strong>{log.event}</strong>
-              <p>{log.detail}</p>
-              <button aria-label="查看日志详情">
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          ))}
-        </div>
-      </section>
-    </>
-  );
-}
-
 function AdminDrawer({
   kind,
   user,
   close,
   notify,
 }: {
-  kind: "user" | "model" | "alerts";
+  kind: "user" | "alerts";
   user: User;
   close: () => void;
   notify: (message: string) => void;
@@ -1206,19 +1029,9 @@ function AdminDrawer({
         <header>
           <div>
             <span className="page-eyebrow">
-              {kind === "model"
-                ? "模型配置"
-                : kind === "alerts"
-                  ? "通知中心"
-                  : "用户详情"}
+              {kind === "alerts" ? "通知中心" : "用户详情"}
             </span>
-            <h2>
-              {kind === "model"
-                ? "新增模型"
-                : kind === "alerts"
-                  ? "待处理通知"
-                  : user.nickname}
-            </h2>
+            <h2>{kind === "alerts" ? "待处理通知" : user.nickname}</h2>
           </div>
           <motion.button
             whileTap={{ scale: 0.9 }}
@@ -1228,84 +1041,13 @@ function AdminDrawer({
             <X size={19} />
           </motion.button>
         </header>
-        {kind === "model" ? (
-          <ModelForm close={close} notify={notify} />
-        ) : kind === "alerts" ? (
+        {kind === "alerts" ? (
           <Alerts />
         ) : (
           <UserDetail user={user} notify={notify} />
         )}
       </motion.aside>
     </div>
-  );
-}
-
-function ModelForm({
-  close,
-  notify,
-}: {
-  close: () => void;
-  notify: (message: string) => void;
-}) {
-  return (
-    <form
-      className="drawer-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        close();
-        notify("模型配置已保存为停用状态");
-      }}
-    >
-      <label>
-        <span>模型标识</span>
-        <input placeholder="openai/gpt-4.1-mini" required />
-      </label>
-      <label>
-        <span>
-          API Base <small>可选</small>
-        </span>
-        <input placeholder="使用供应商默认地址" />
-      </label>
-      <label>
-        <span>API Key</span>
-        <input type="password" placeholder="仅写入，不会再次显示" required />
-      </label>
-      <div className="drawer-form-row">
-        <label>
-          <span>优先级</span>
-          <input type="number" defaultValue="40" min="0" />
-        </label>
-        <label>
-          <span>初始状态</span>
-          <select defaultValue="disabled">
-            <option value="disabled">停用</option>
-            <option value="enabled">启用</option>
-          </select>
-        </label>
-      </div>
-      <div className="drawer-form-row">
-        <label>
-          <span>输入价格</span>
-          <input type="number" placeholder="USD / 百万 Token" />
-        </label>
-        <label>
-          <span>输出价格</span>
-          <input type="number" placeholder="USD / 百万 Token" />
-        </label>
-      </div>
-      <div className="drawer-callout">
-        <ShieldCheck size={17} />
-        <p>凭据只会加密写入。响应、日志与异常中均不会出现密钥原文。</p>
-      </div>
-      <footer>
-        <button type="button" onClick={close}>
-          取消
-        </button>
-        <motion.button whileTap={{ scale: 0.97 }} type="submit">
-          保存配置
-        </motion.button>
-      </footer>
-    </form>
   );
 }
 

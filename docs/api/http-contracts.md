@@ -63,7 +63,7 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 }
 ```
 
-原文件对象键不在响应中。文件为空、超限、不支持或内容非法分别返回 `EMPTY_IMPORT_FILE`、`IMPORT_FILE_TOO_LARGE`、`UNSUPPORTED_IMPORT_FORMAT`、`IMPORT_CONTENT_INVALID`；超过结构化模型输入上限返回 `413 STRUCTURING_INPUT_TOO_LARGE`，触发频率或并发保护返回 `429 IMPORT_RATE_LIMITED`。账号已有 10 份简历时会在上传和模型处理前返回 `409 RESUME_LIMIT_REACHED`；快速检查后的并发创建仍由最终事务检查兜底。RAG 或结构化模型未配置、调用失败、响应非法时返回稳定的 503/502/422 错误且不创建半成品；已上传对象执行幂等补偿。
+原文件对象键不在响应中。文件为空、超限、不支持或内容非法分别返回 `EMPTY_IMPORT_FILE`、`IMPORT_FILE_TOO_LARGE`、`UNSUPPORTED_IMPORT_FORMAT`、`IMPORT_CONTENT_INVALID`；超过结构化模型输入上限返回 `413 STRUCTURING_INPUT_TOO_LARGE`，触发频率或并发保护返回 `429 IMPORT_RATE_LIMITED`。账号已有 10 份简历时会在上传和模型处理前返回 `409 RESUME_LIMIT_REACHED`；快速检查后的并发创建仍由最终事务检查兜底。RAG 或结构化模型未配置、调用失败、响应非法时返回稳定的 503/502/422 错误且不创建半成品；已上传对象执行幂等补偿。简历结构化继续使用独立环境变量和客户端，不读取管理端 Chat 当前模型，也不写入管理端 LLM 调用日志。
 
 ## JD 数据模型与管理
 
@@ -107,22 +107,26 @@ JD 接口只接受和返回最终结构化数据，不保存插件原始页面�
 
 `users.is_admin` 不进入 access JWT 或 Redis 会话；管理员接口每次请求都从数据库读取该 `0/1` 标记，因此提权或降权对现有 Cookie 的下一次请求即时生效。公开注册始终创建普通用户。
 
-管理员通过 \POST /api/auth/admin-login\ 登录，后端额外校验 \is_admin=true\ 后签发会话；普通用户调用返回 \403 FORBIDDEN\。管理端前端在 \/admin\ 入口通过 \pi.me()\ 恢复登录态后检查 \is_admin\，非管理员无法加载管理端子页面或发起管理 API 调用。
+管理员通过 `POST /api/auth/admin-login` 登录，后端额外校验 `is_admin=true` 后签发会话；普通用户调用返回 `403 FORBIDDEN`。管理端前端在 `/admin` 入口通过 `api.me()` 恢复登录态后检查 `is_admin`，非管理员无法加载管理端子页面或发起管理 API 调用。
 
 | Method | Path | 成功结果 |
 | --- | --- | --- |
-| `GET` | `/api/admin/llm/models` | `{models}`，包含启用与停用配置 |
+| `GET` | `/api/admin/llm/capabilities/chat` | `{capability, activeModelId, activeModel, models}`，返回 Chat 当前项与候选列表 |
+| `GET` | `/api/admin/llm/catalog/chat` | `{capability, adapters}`，返回受支持 adapter 和 LiteLLM Chat 模型建议 |
 | `POST` | `/api/admin/llm/models` | `201 {model}` |
-| `PATCH` | `/api/admin/llm/models/:modelConfigId` | `{model}`，字段可部分更新 |
+| `PATCH` | `/api/admin/llm/models/:modelConfigId` | `{model, validationCallId}`；编辑当前项时先测试拟议配置 |
 | `POST` | `/api/admin/llm/models/:modelConfigId/test` | `{ok: true, callId}`，测试指定配置 |
+| `POST` | `/api/admin/llm/models/:modelConfigId/activate` | `{activeModel, callId}`，测试成功后设为 Chat 当前模型 |
 | `GET` | `/api/admin/llm/calls` | `{calls, summary, nextCursor}` |
 
-模型配置接受 `model`、`apiBase`、只写的 `apiKey`、`enabled`、`priority`、`inputPricePerMillion` 和 `outputPricePerMillion`。响应只用 `keyConfigured` 表示是否已有凭据，绝不返回明文或数据库密文。PATCH 省略 `apiKey` 时保留原凭据，传 `null` 时清除，传非空字符串时替换；模型配置不提供硬删除接口。
+Chat 是服务端预定义能力，管理员不填写能力标识。候选写入只接受 `adapter`、不含 adapter 前缀的 `model`、可选 `apiBase` 和只写 `apiKey`；服务端将 DeepSeek 示例组装成 `deepseek/deepseek-v4-flash` 传给 LiteLLM。目录建议来自锁定版本 LiteLLM 的 Chat 元数据，目录外调用名仍可提交并由真实连接测试兜底。旧 `enabled`、`priority` 和手工价格字段不再接受或返回。
+
+候选读取只用 `keyConfigured` 表示是否已有凭据，绝不返回明文或数据库密文。PATCH 省略 `apiKey` 时保留原凭据，传 `null` 时清除，传非空字符串时替换。新增和编辑普通候选不会改变 Chat 当前项；启用操作先测试目标快照，成功后才切换，失败时原当前项不变。编辑当前候选也先测试拟议配置，测试或版本核对失败时不覆盖正在使用的版本。候选不提供硬删除或独立启停接口。
 
 模型配置 `id`、调用记录 `userId` 和 `modelConfigId` 与其他 MySQL 业务 ID 一致，对外使用十进制字符串，内部数据库列仍为 `BIGINT UNSIGNED`。
 
-`0006` 在数据库中使用中文表注释和字段注释，这些注释只用于说明持久化语义，不改变本节约定的 JSON 字段名、错误码或状态字面值。
+`0006` 在数据库中使用中文表注释和字段注释，这些注释只用于说明持久化语义，不改变本节约定的 JSON 字段名、错误码或状态字面值。`0008` 增加候选的 `capability/adapter/model_call_name/config_version`、Chat 唯一当前绑定，以及调用日志的能力、来源和模型快照。迁移前置检查要求旧模型配置和日志表为空；当前不转换旧优先级或价格数据。
 
-调用记录可用 `userId`、`modelConfigId`、`from`、`to`、`cursor` 和 `limit` 查询，默认每页 50、最大 200，按创建时间和内部 ID 倒序稳定分页。每条记录只包含调用标识、用户、实际模型快照、状态、耗时、Token、价格快照、估算成本和非敏感错误分类，不保存或返回消息、模型完整响应和凭据。汇总只聚合已知值，并用 `incompleteMeteringCount` 表明不完整计量。
+调用记录可用 `source`、`status`、精确 `callId`、`userId`、`modelConfigId`、`from`、`to`、`cursor` 和 `limit` 查询，默认每页 50、最大 200，按创建时间和内部 ID 倒序稳定分页。`source` 是由内部调用方提供的稳定小写代码，格式为 `^[a-z][a-z0-9_]{0,31}$`；本期实际接入并保证产生的来源只有管理动作使用的 `connection_test`。时间范围使用带时区的 ISO 8601，区间为左闭右开；非法值、反向区间或无效游标返回 `400 INVALID_LLM_CALL_QUERY`。每条记录只包含调用标识、能力、来源、用户、实际 adapter/模型快照、状态、耗时、Token、LiteLLM 价格快照、估算成本和非敏感错误分类，不保存或返回消息、模型完整响应和凭据。汇总针对当前筛选条件聚合全部命中记录，只累加已知值，并用 `incompleteMeteringCount` 表明不完整计量。
 
-管理错误包括 `INVALID_LLM_MODEL_CONFIG`、`INVALID_LLM_CALL_QUERY`、`LLM_MODEL_NOT_FOUND`、`LLM_CREDENTIALS_UNAVAILABLE` 和 `LLM_CONNECTION_FAILED`。供应商原始错误不会透传。
+管理错误包括 `INVALID_LLM_MODEL_CONFIG`、`INVALID_LLM_CALL_QUERY`、`LLM_MODEL_NOT_FOUND`、`LLM_MODEL_CONFIG_CHANGED`、`LLM_CHAT_NOT_CONFIGURED`、`LLM_CREDENTIALS_UNAVAILABLE`、`LLM_UNAVAILABLE` 和 `LLM_REQUEST_REJECTED`。连接测试、启用和当前项验证失败响应带可查询的 `callId`；供应商原始错误不会透传。

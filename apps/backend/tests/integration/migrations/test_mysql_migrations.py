@@ -9,12 +9,12 @@ from threading import Barrier
 
 import pytest
 from sqlalchemy import create_engine, inspect, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.engine import make_url
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0007"
+EXPECTED_HEAD = "0008"
 
 
 def migration_test_url() -> str:
@@ -47,6 +47,27 @@ def run_alembic(database_url: str, *arguments: str) -> None:
         check=False,
     )
     assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
+
+
+def run_alembic_expect_failure(database_url: str, *arguments: str) -> str:
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "APP_ENV": "development",
+            "DATABASE_URL": database_url,
+            "LINKCV_ENV_FILE": str(REPO_ROOT / ".env.nonexistent-migration-test"),
+        }
+    )
+    result = subprocess.run(
+        ["uv", "run", "alembic", *arguments],
+        cwd=BACKEND_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    return f"{result.stdout}\n{result.stderr}"
 
 
 def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
@@ -263,6 +284,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "resume_versions",
         "storage_cleanup_jobs",
         "llm_model_configs",
+        "llm_capability_bindings",
         "llm_call_logs",
         "job_descriptions",
     } <= set(inspector.get_table_names())
@@ -325,24 +347,36 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         column["name"] for column in inspector.get_columns("llm_model_configs")
     } == {
         "id",
+        "capability",
         "model_name",
+        "adapter",
+        "model_call_name",
         "api_base",
         "encrypted_api_key",
         "enabled",
         "priority",
         "input_price_per_million",
         "output_price_per_million",
+        "config_version",
         "created_at",
         "updated_at",
     }
+    assert {
+        column["name"]
+        for column in inspector.get_columns("llm_capability_bindings")
+    } == {"capability", "model_config_id", "created_at", "updated_at"}
     assert {
         column["name"] for column in inspector.get_columns("llm_call_logs")
     } == {
         "id",
         "call_id",
+        "capability",
+        "source",
         "user_id",
         "model_config_id",
         "model_name",
+        "adapter",
+        "model_call_name",
         "status",
         "metering_status",
         "input_tokens",
@@ -359,25 +393,36 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         for column in inspector.get_columns("llm_model_configs")
     } == {
         "id": "模型配置主键",
+        "capability": "系统模型能力标识，当前仅 chat",
         "model_name": "LiteLLM 模型标识",
+        "adapter": "LiteLLM adapter 标识",
+        "model_call_name": "不含 adapter 前缀的模型调用名",
         "api_base": "模型服务基础地址",
         "encrypted_api_key": "版本化加密凭据，禁止保存明文",
         "enabled": "是否启用模型配置",
         "priority": "调用优先级，数值越小越优先",
         "input_price_per_million": "每百万输入令牌的美元价格",
         "output_price_per_million": "每百万输出令牌的美元价格",
+        "config_version": "模型候选乐观锁版本",
         "created_at": "创建时间（UTC）",
         "updated_at": "最后更新时间（UTC）",
     }
+    assert inspector.get_table_comment("llm_model_configs")["text"] == (
+        "系统模型能力的候选连接配置（含发布兼容列）"
+    )
     assert {
         column["name"]: column["comment"]
         for column in inspector.get_columns("llm_call_logs")
     } == {
         "id": "调用日志主键",
         "call_id": "逻辑调用唯一标识",
+        "capability": "实际模型能力快照",
+        "source": "稳定调用来源代码",
         "user_id": "发起调用的用户主键",
         "model_config_id": "实际使用的模型配置主键，未选中模型时为空",
         "model_name": "实际模型标识快照",
+        "adapter": "实际 LiteLLM adapter 快照",
+        "model_call_name": "实际模型调用名快照",
         "status": (
             "调用状态：pending（待处理）、succeeded（成功）、"
             "failed（失败）、cancelled（已取消）"
@@ -415,6 +460,10 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     assert resume_columns["extracted_markdown"]["type"].__class__.__name__ == "LONGTEXT"
     assert resume_columns["created_at"]["type"].fsp == 6
     assert call_columns["user_id"]["type"].unsigned is True
+    assert call_columns["source"]["type"].length == 32
+    assert call_columns["source"]["type"].collation == "ascii_bin"
+    assert call_columns["source"]["nullable"] is False
+    assert str(call_columns["source"]["default"]).strip("'") == "connection_test"
     assert call_columns["created_at"]["type"].fsp == 6
     assert {
         constraint["name"]
@@ -437,12 +486,14 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         for constraint in inspector.get_check_constraints("llm_call_logs")
     } == {
         "ck_llm_call_logs_estimated_cost_nonnegative",
+        "ck_llm_call_logs_adapter_pair",
         "ck_llm_call_logs_input_price_nonnegative",
         "ck_llm_call_logs_input_tokens_nonnegative",
         "ck_llm_call_logs_latency_nonnegative",
         "ck_llm_call_logs_metering_status",
         "ck_llm_call_logs_output_price_nonnegative",
         "ck_llm_call_logs_output_tokens_nonnegative",
+        "ck_llm_call_logs_source_not_blank",
         "ck_llm_call_logs_status",
     }
     assert any(
@@ -450,6 +501,19 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         and index["column_names"] == ["user_id", "updated_at", "id"]
         for index in inspector.get_indexes("resumes")
     )
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("llm_model_configs")
+    } == {
+        "ck_llm_model_configs_adapter_pair",
+        "ck_llm_model_configs_config_version",
+        "ck_llm_model_configs_input_price_nonnegative",
+        "ck_llm_model_configs_output_price_nonnegative",
+    }
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("llm_model_configs")
+    } == {"uk_llm_model_configs_capability_id"}
     assert any(
         index["name"] == "idx_llm_model_configs_enabled_priority"
         and index["column_names"] == ["enabled", "priority", "id"]
@@ -475,6 +539,22 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "created_at",
         "id",
     ]
+    assert call_indexes["idx_llm_call_logs_model_source_created"] == [
+        "model_config_id",
+        "source",
+        "created_at",
+        "id",
+    ]
+    binding_foreign_keys = {
+        foreign_key["name"]: foreign_key
+        for foreign_key in inspector.get_foreign_keys("llm_capability_bindings")
+    }
+    assert binding_foreign_keys["fk_llm_capability_bindings_model"][
+        "constrained_columns"
+    ] == ["capability", "model_config_id"]
+    assert binding_foreign_keys["fk_llm_capability_bindings_model"][
+        "referred_columns"
+    ] == ["capability", "id"]
 
     resume_foreign_keys = {
         foreign_key["name"]: foreign_key
@@ -519,6 +599,12 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         assert connection.scalar(text("SELECT COUNT(*) FROM resumes")) == 1
         assert connection.scalar(text("SELECT COUNT(*) FROM resume_versions")) == 1
         assert connection.scalar(text("SELECT COUNT(*) FROM storage_cleanup_jobs")) == 0
+        assert connection.execute(
+            text(
+                "SELECT capability, model_config_id "
+                "FROM llm_capability_bindings"
+            )
+        ).one() == ("chat", None)
 
     run_alembic(database_url, "upgrade", "head")
     with engine.begin() as connection:
@@ -544,6 +630,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     assert "users" not in inspect(engine).get_table_names()
     assert "resumes" not in inspect(engine).get_table_names()
     assert "llm_model_configs" not in inspect(engine).get_table_names()
+    assert "llm_capability_bindings" not in inspect(engine).get_table_names()
     assert "llm_call_logs" not in inspect(engine).get_table_names()
     assert "job_descriptions" not in inspect(engine).get_table_names()
 
@@ -555,6 +642,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "resume_versions",
         "storage_cleanup_jobs",
         "llm_model_configs",
+        "llm_capability_bindings",
         "llm_call_logs",
         "job_descriptions",
     } <= set(inspect(engine).get_table_names())
@@ -767,6 +855,179 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
     with engine.begin() as connection:
         connection.execute(text("DELETE FROM users"))
     run_alembic(database_url, "downgrade", "base")
+    engine.dispose()
+
+
+def test_mysql_chat_capability_migration_guards_data_and_supports_rollback() -> None:
+    database_url = migration_test_url()
+    engine = create_engine(database_url)
+
+    run_alembic(database_url, "downgrade", "base")
+    run_alembic(database_url, "upgrade", "0007")
+    with engine.begin() as connection:
+        user_id = connection.execute(
+            text(
+                "INSERT INTO users (email, password_hash, nickname) "
+                "VALUES ('llm-migration@example.invalid', '$2b$12$fictional', '张三')"
+            )
+        ).lastrowid
+        model_id = connection.execute(
+            text(
+                "INSERT INTO llm_model_configs (model_name, enabled, priority) "
+                "VALUES ('legacy-provider/fictional-primary', TRUE, 10)"
+            )
+        ).lastrowid
+    failure = run_alembic_expect_failure(database_url, "upgrade", "head")
+    assert "0008 requires empty LLM tables" in failure
+    with engine.begin() as connection:
+        connection.execute(
+            text("DELETE FROM llm_model_configs WHERE id = :model_id"),
+            {"model_id": model_id},
+        )
+
+    run_alembic(database_url, "upgrade", "head")
+    with engine.begin() as connection:
+        assert connection.execute(
+            text(
+                "SELECT capability, model_config_id "
+                "FROM llm_capability_bindings"
+            )
+        ).one() == ("chat", None)
+        legacy_model_id = connection.execute(
+            text(
+                "INSERT INTO llm_model_configs (model_name, enabled, priority) "
+                "VALUES ('legacy-provider/legacy-model', FALSE, 100)"
+            )
+        ).lastrowid
+        connection.execute(
+            text(
+                "INSERT INTO llm_call_logs "
+                "(call_id, user_id, model_config_id, model_name, status, created_at) "
+                "VALUES ('llmcall_old_app_write', :user_id, :model_id, "
+                "'legacy-provider/legacy-model', 'failed', "
+                "'2026-07-31 12:01:00.000000')"
+            ),
+            {"user_id": user_id, "model_id": legacy_model_id},
+        )
+        assert connection.execute(
+            text(
+                "SELECT capability, source, adapter, model_call_name "
+                "FROM llm_call_logs "
+                "WHERE call_id = 'llmcall_old_app_write'"
+            )
+        ).one() == ("chat", "connection_test", None, None)
+        new_model_id = connection.execute(
+            text(
+                "INSERT INTO llm_model_configs "
+                "(capability, model_name, adapter, model_call_name, enabled, priority) "
+                "VALUES ('chat', 'deepseek/deepseek-v4-flash', 'deepseek', "
+                "'deepseek-v4-flash', TRUE, 100)"
+            )
+        ).lastrowid
+        connection.execute(
+            text(
+                "UPDATE llm_capability_bindings SET model_config_id = :model_id "
+                "WHERE capability = 'chat'"
+            ),
+            {"model_id": new_model_id},
+        )
+        assert connection.scalar(
+            text(
+                "SELECT model_config_id FROM llm_capability_bindings "
+                "WHERE capability = 'chat'"
+            )
+        ) == new_model_id
+        alternate_model_id = connection.execute(
+            text(
+                "INSERT INTO llm_model_configs "
+                "(capability, model_name, adapter, model_call_name, enabled, priority) "
+                "VALUES ('chat', 'openai/fictional-chat', 'openai', "
+                "'fictional-chat', FALSE, 100)"
+            )
+        ).lastrowid
+
+    activation_barrier = Barrier(2)
+
+    def activate_candidate(model_id: int) -> int:
+        activation_barrier.wait(timeout=5)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "SELECT model_config_id FROM llm_capability_bindings "
+                    "WHERE capability = 'chat' FOR UPDATE"
+                )
+            ).one()
+            connection.execute(
+                text(
+                    "UPDATE llm_capability_bindings SET model_config_id = :model_id "
+                    "WHERE capability = 'chat'"
+                ),
+                {"model_id": model_id},
+            )
+        return model_id
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        activated = list(
+            executor.map(
+                activate_candidate,
+                [new_model_id, alternate_model_id],
+            )
+        )
+    assert set(activated) == {new_model_id, alternate_model_id}
+    with engine.connect() as connection:
+        assert connection.scalar(
+            text("SELECT COUNT(*) FROM llm_capability_bindings WHERE capability = 'chat'")
+        ) == 1
+        assert connection.scalar(
+            text(
+                "SELECT model_config_id FROM llm_capability_bindings "
+                "WHERE capability = 'chat'"
+            )
+        ) in {new_model_id, alternate_model_id}
+
+    with pytest.raises(DBAPIError) as error:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO llm_call_logs "
+                    "(call_id, source, user_id, status) "
+                    "VALUES ('llmcall_invalid_source', '', :user_id, 'failed')"
+                ),
+                {"user_id": user_id},
+            )
+    assert error.value.orig.args[0] == 3819
+
+    run_alembic(database_url, "downgrade", "0007")
+    assert "llm_capability_bindings" not in inspect(engine).get_table_names()
+    assert {"capability", "adapter", "model_call_name", "config_version"}.isdisjoint(
+        column["name"]
+        for column in inspect(engine).get_columns("llm_model_configs")
+    )
+    assert {"capability", "source", "adapter", "model_call_name"}.isdisjoint(
+        column["name"] for column in inspect(engine).get_columns("llm_call_logs")
+    )
+    assert inspect(engine).get_table_comment("llm_model_configs")["text"] == (
+        "大模型连接、优先级与可选价格配置"
+    )
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT COUNT(*) FROM llm_model_configs")) == 3
+        assert connection.scalar(text("SELECT COUNT(*) FROM llm_call_logs")) == 1
+
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM llm_call_logs"))
+        connection.execute(text("DELETE FROM llm_model_configs"))
+        connection.execute(text("DELETE FROM users"))
+
+    run_alembic(database_url, "upgrade", "head")
+    with engine.connect() as connection:
+        assert connection.execute(
+            text(
+                "SELECT capability, model_config_id "
+                "FROM llm_capability_bindings"
+            )
+        ).one() == ("chat", None)
+    run_alembic(database_url, "downgrade", "base")
+    run_alembic(database_url, "upgrade", "head")
     engine.dispose()
 
 

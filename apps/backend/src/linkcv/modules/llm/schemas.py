@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Generic, Literal, TypeVar
 
 from pydantic import (
     BaseModel,
@@ -14,9 +16,19 @@ from pydantic import (
     model_validator,
 )
 
+from linkcv.modules.llm.catalog import (
+    CHAT_CAPABILITY,
+    normalize_adapter,
+    normalize_model_call_name,
+)
+
 
 class CamelModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
+
+
+class AdminWriteModel(CamelModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
 class ChatMessage(BaseModel):
@@ -42,6 +54,18 @@ class ChatResult(CamelModel):
     usage: ChatUsage | None = None
 
 
+LLMCallStatus = Literal["pending", "succeeded", "failed", "cancelled"]
+LLMMeteringStatus = Literal["complete", "partial", "unknown"]
+StructuredValue = TypeVar("StructuredValue", bound=BaseModel)
+
+
+@dataclass(frozen=True)
+class StructuredChatResult(Generic[StructuredValue]):
+    value: StructuredValue
+    call_id: str
+    usage: ChatUsage | None = None
+
+
 class ChatStreamEvent(CamelModel):
     type: Literal["delta", "done", "error"]
     call_id: str = Field(alias="callId")
@@ -56,74 +80,51 @@ class ChatStream:
     events: AsyncIterator[ChatStreamEvent]
 
 
-Price = Decimal | None
-
-
-class ModelConfigCreate(CamelModel):
+class ModelConfigCreate(AdminWriteModel):
+    adapter: str = Field(min_length=1, max_length=64)
     model: str = Field(min_length=1, max_length=128)
-    api_base: HttpUrl | None = Field(
-        default=None,
-        alias="apiBase",
-        max_length=512,
-    )
+    api_base: HttpUrl | None = Field(default=None, alias="apiBase", max_length=512)
     api_key: SecretStr | None = Field(default=None, alias="apiKey")
-    enabled: bool = False
-    priority: int = Field(default=100, ge=0, le=65535)
-    input_price_per_million: Price = Field(
-        default=None,
-        alias="inputPricePerMillion",
-        ge=0,
-        max_digits=18,
-        decimal_places=8,
-    )
-    output_price_per_million: Price = Field(
-        default=None,
-        alias="outputPricePerMillion",
-        ge=0,
-        max_digits=18,
-        decimal_places=8,
-    )
+
+    @field_validator("adapter")
+    @classmethod
+    def validate_adapter(cls, value: str) -> str:
+        return normalize_adapter(value)
 
     @field_validator("model")
     @classmethod
-    def normalize_model(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("model must not be empty")
-        return normalized
+    def normalize_model(cls, value: str, info) -> str:
+        adapter = info.data.get("adapter")
+        if not isinstance(adapter, str):
+            normalized = value.strip()
+            if not normalized:
+                raise ValueError("model must not be empty")
+            return normalized
+        return normalize_model_call_name(adapter, value)
 
     @field_validator("api_key")
     @classmethod
     def validate_api_key(cls, value: SecretStr | None) -> SecretStr | None:
-        if value is not None and not value.get_secret_value():
+        if value is not None and not value.get_secret_value().strip():
             raise ValueError("apiKey must not be empty")
         return value
 
+    @model_validator(mode="after")
+    def validate_identifier(self) -> "ModelConfigCreate":
+        self.model = normalize_model_call_name(self.adapter, self.model)
+        return self
 
-class ModelConfigPatch(CamelModel):
+
+class ModelConfigPatch(AdminWriteModel):
+    adapter: str | None = Field(default=None, min_length=1, max_length=64)
     model: str | None = Field(default=None, min_length=1, max_length=128)
-    api_base: HttpUrl | None = Field(
-        default=None,
-        alias="apiBase",
-        max_length=512,
-    )
+    api_base: HttpUrl | None = Field(default=None, alias="apiBase", max_length=512)
     api_key: SecretStr | None = Field(default=None, alias="apiKey")
-    enabled: bool | None = None
-    priority: int | None = Field(default=None, ge=0, le=65535)
-    input_price_per_million: Price = Field(
-        default=None,
-        alias="inputPricePerMillion",
-        ge=0,
-        max_digits=18,
-        decimal_places=8,
-    )
-    output_price_per_million: Price = Field(
-        default=None,
-        alias="outputPricePerMillion",
-        ge=0,
-        max_digits=18,
-        decimal_places=8,
-    )
+
+    @field_validator("adapter")
+    @classmethod
+    def validate_adapter(cls, value: str | None) -> str | None:
+        return None if value is None else normalize_adapter(value)
 
     @field_validator("model")
     @classmethod
@@ -138,27 +139,33 @@ class ModelConfigPatch(CamelModel):
     @field_validator("api_key")
     @classmethod
     def validate_api_key(cls, value: SecretStr | None) -> SecretStr | None:
-        if value is not None and not value.get_secret_value():
+        if value is not None and not value.get_secret_value().strip():
             raise ValueError("apiKey must not be empty")
         return value
 
     @model_validator(mode="after")
-    def reject_null_for_required_values(self) -> "ModelConfigPatch":
-        for field in ("model", "enabled", "priority"):
+    def reject_explicit_nulls(self) -> "ModelConfigPatch":
+        for field in ("adapter", "model"):
             if field in self.model_fields_set and getattr(self, field) is None:
                 raise ValueError(f"{field} must not be null")
         return self
 
 
+class ModelLastTest(CamelModel):
+    status: Literal["succeeded", "failed", "cancelled"]
+    call_id: str = Field(alias="callId")
+    tested_at: datetime = Field(alias="testedAt")
+
+
 class ModelConfigRecord(CamelModel):
     id: str
+    capability: Literal["chat"] = CHAT_CAPABILITY
+    adapter: str
     model: str
     api_base: str | None = Field(alias="apiBase")
-    enabled: bool
-    priority: int
-    input_price_per_million: Price = Field(alias="inputPricePerMillion")
-    output_price_per_million: Price = Field(alias="outputPricePerMillion")
     key_configured: bool = Field(alias="keyConfigured")
+    active: bool
+    last_test: ModelLastTest | None = Field(alias="lastTest")
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
 
@@ -172,22 +179,57 @@ class ModelConfigResponse(CamelModel):
     model: ModelConfigRecord
 
 
-class ModelConfigListResponse(CamelModel):
+class ModelConfigPatchResponse(ModelConfigResponse):
+    validation_call_id: str | None = Field(default=None, alias="validationCallId")
+
+
+class ChatCapabilityResponse(CamelModel):
+    capability: Literal["chat"] = CHAT_CAPABILITY
+    active_model_id: str | None = Field(alias="activeModelId")
+    active_model: ModelConfigRecord | None = Field(alias="activeModel")
     models: list[ModelConfigRecord]
+
+    @field_validator("active_model_id", mode="before")
+    @classmethod
+    def stringify_active_id(cls, value: object) -> str | None:
+        return None if value is None else str(value)
 
 
 class ModelConnectionTestResponse(CamelModel):
-    ok: bool
+    ok: Literal[True] = True
     call_id: str = Field(alias="callId")
+
+
+class ModelActivationResponse(CamelModel):
+    active_model: ModelConfigRecord = Field(alias="activeModel")
+    call_id: str = Field(alias="callId")
+
+
+class ChatCatalogAdapter(CamelModel):
+    code: str
+    label: str
+    requires_api_key: bool = Field(alias="requiresApiKey")
+    models: list[str]
+
+
+class ChatCatalogResponse(CamelModel):
+    capability: Literal["chat"] = CHAT_CAPABILITY
+    adapters: list[ChatCatalogAdapter]
+
+
+Price = Decimal | None
 
 
 class CallLogRecord(CamelModel):
     call_id: str = Field(alias="callId")
+    capability: Literal["chat"]
+    source: str
     user_id: str = Field(alias="userId")
     model_config_id: str | None = Field(alias="modelConfigId")
+    adapter: str | None
     model: str | None
-    status: str
-    metering_status: str = Field(alias="meteringStatus")
+    status: LLMCallStatus
+    metering_status: LLMMeteringStatus = Field(alias="meteringStatus")
     input_tokens: int | None = Field(alias="inputTokens")
     output_tokens: int | None = Field(alias="outputTokens")
     input_price_per_million: Price = Field(alias="inputPricePerMillion")

@@ -53,7 +53,8 @@ Production Pipeline 会把仓库中的非敏感 `.env.production` 和 Compose �
 ## 回滚
 
 - 应用回滚通过把 `TAG` 切回上一环境的不可变镜像标签并重新执行对应 Compose 完成；不得把 Dev 标签部署到 Production。
-- Alembic revision 必须保持向前兼容上一个应用版本；`0006` 只新增 LLM 表，上一应用版本会忽略它们。应用回滚保留 `0006` schema 和 LLM 数据，不在 Production 自动 downgrade；隔离环境的 `0006.down.sql` 会删除模型配置和调用日志。
+- Alembic revision 必须保持向前兼容上一个应用版本。`0008` 在保留旧模型完整名、启用镜像、优先级和价格列的同时，增加 Chat 候选字段、唯一当前 binding 和日志快照。新应用会双写旧 `model_name/enabled`，因此优先只回滚应用并保留 `0008` schema；回滚前核对最后当前候选的旧启用镜像。Production 不自动 downgrade。
+- 如必须在隔离环境执行 `0008 → 0007`，先回滚应用并备份数据库。down 会保留旧模型和日志主体，但删除 binding 及能力、adapter、调用名、来源等附加快照；不要在新应用运行时执行。MySQL DDL 非事务，失败后停止自动重试并按实际 schema 或备份处理。
 - 回滚到旧镜像时仍要保留新旧完整 LLM 密钥环，直到确认没有运行实例或密文依赖待移除的 key。
 - 原型 Express/SQLite 数据不进入新 MySQL 数据库，也不作为生产回滚路径。
 - 新增环境配置的回滚只恢复应用与 Compose；不得自动删除已有 `linkcv` 数据库或 Redis volume。

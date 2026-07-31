@@ -6,7 +6,7 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装前后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis 与 MinIO，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web 和 FastAPI。当前 Alembic head `0006`；`0002` 建立四张核心业务表，`0003` 把模板删除规则调整为保留既有简历并将 `template_id` 置空，`0004` 新增对象存储清理补偿队列，`0005` 转换旧 Tiptap 简历及历史版本并保留可回滚备份，`0006` 新增 LLM 模型配置和调用日志表。
+新环境执行 `npm run setup` 安装前后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis 与 MinIO，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web 和 FastAPI。当前 Alembic head `0008`；`0002`–`0005` 建立并演进简历、版本和对象清理，`0006` 新增 LLM 模型配置和调用日志表，`0007` 新增 JD 表，`0008` 为 LLM 调用日志增加业务来源、约束和查询索引。
 
 后端默认读取仓库根目录 `.env`。设置 `LINKCV_ENV_FILE=.env.development` 可选择共享 Dev 基础配置；如果同目录存在 `.env.development.local`，其密码和密钥会覆盖基础文件。Production 同理使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，配置路径不受当前工作目录影响。
 
@@ -26,7 +26,7 @@ local/test 未配置密钥环时，原有非 LLM 接口仍可启动，但保存�
 LINKCV_ENV_FILE=.env.development npm run db:init
 ```
 
-命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0006`。阿里云 OSS 字段目前仅为预留配置，图片读写仍只使用 `MINIO_*`。
+命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0008`。阿里云 OSS 字段目前仅为预留配置，图片读写仍只使用 `MINIO_*`。
 
 ## 默认端口与覆盖
 
@@ -56,16 +56,16 @@ LINKCV_ENV_FILE=.env.development npm run db:init
 | `RAG_API_KEY` | 空 | 可选 Bearer 凭据，只放 `.local` 或进程环境 |
 | `RAG_CONVERT_PATH` | `/documents/to-markdown` | 文件转 Markdown 接口路径；取得真实契约后覆盖 |
 | `RAG_TIMEOUT_SECONDS` | `60` | 单次转换超时 |
-| `LLM_BASE_URL` | 空 | OpenAI-compatible 结构化输出服务地址 |
-| `LLM_API_KEY` | 空 | 模型凭据，只放私密覆盖 |
-| `LLM_MODEL` | 空 | 模型名；与地址任一为空时结构化导入明确不可用 |
-| `LLM_STRUCTURED_PATH` | `/chat/completions` | JSON Schema 请求路径 |
-| `LLM_TIMEOUT_SECONDS` | `60` | 单次模型请求超时 |
-| `LLM_MAX_RETRIES` | `1` | Schema/网络失败后的最大额外重试次数，范围 0–2 |
+| `LLM_BASE_URL` | 空 | 简历导入使用的 OpenAI-compatible 结构化输出服务地址 |
+| `LLM_API_KEY` | 空 | 简历导入模型凭据，只放私密覆盖 |
+| `LLM_MODEL` | 空 | 简历导入模型名；与地址任一为空时结构化导入明确不可用 |
+| `LLM_STRUCTURED_PATH` | `/chat/completions` | 简历导入 JSON Schema 请求路径 |
+| `LLM_TIMEOUT_SECONDS` | `60` | 两条 LLM 链路共享的单次请求超时 |
+| `LLM_MAX_RETRIES` | `1` | 仅简历导入结构化客户端使用的最大额外重试次数，范围 0–2 |
 
-Markdown 导入不调用 tolink-rag，但仍需要结构化模型。频率和并发限制保存在 FastAPI 进程内，当前单实例部署可直接使用；多进程或多副本部署必须在 Redis 或 API 网关实施共享额度。默认自动化测试注入 Fake，不读取上述真实地址或密钥。真实简历属于敏感数据，联调前必须确认 tolink-rag 和模型环境的数据处理边界。
+Markdown 导入不调用 tolink-rag，但仍需要独立配置的结构化模型。频率和并发限制保存在 FastAPI 进程内，当前单实例部署可直接使用；多进程或多副本部署必须在 Redis 或 API 网关实施共享额度。默认自动化测试注入 Fake，不读取真实地址或密钥。真实简历属于敏感数据，联调前必须确认 tolink-rag 和模型环境的数据处理边界。
 
-数据库驱动的统一 LLM 服务与简历导入的结构化 Adapter 暂时使用两组配置：前者只从管理员 API 和 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 取得模型连接信息，后者继续读取 `LLM_BASE_URL`、`LLM_API_KEY` 和 `LLM_MODEL`。本次合并保持既有导入行为，不能把其中一组配置删除或互相替代。
+数据库驱动的 Chat 服务与简历导入结构化 Adapter 暂时使用两组连接配置。Chat 的 adapter、模型调用名、API Base 和供应商 API Key 只从管理员 API 与 MySQL 候选取得，`LLM_CREDENTIAL_ENCRYPTION_KEYS` 用于加解密候选凭据；不存在当前 Chat 模型时明确失败，不回退 LiteLLM provider 环境变量。简历导入继续读取 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`、`LLM_STRUCTURED_PATH` 和 `LLM_MAX_RETRIES`。两条链路共享 `LLM_TIMEOUT_SECONDS`，但模型选择、凭据、重试和日志彼此独立；管理端 Chat 调用始终设置零重试。
 
 ## 常用命令
 
