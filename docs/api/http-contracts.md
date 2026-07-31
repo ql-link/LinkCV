@@ -32,7 +32,7 @@
 
 `user` 为 `{id, email, nickname, is_admin, avatar_url}`，无头像时 `avatar_url` 为 `null`。`recent_resumes` 是最近编辑的 5 份简历，每项 `{id, title, updated_at}`，按 `updated_at DESC, id DESC` 排序。
 
-昵称去空白后为空或超过 50 字符返回 `400 INVALID_NICKNAME`。头像通过 data URL 上传（≤10MB）：非法图片返回 `400 INVALID_IMAGE`，超限返回 `413 IMAGE_TOO_LARGE`，对象写入失败返回 `502 ASSET_UPLOAD_FAILED`；先写新对象再更新数据库，提交失败补偿删除新对象，成功后清理旧头像对象。
+昵称去空白后为空或超过 50 字符返回 `400 INVALID_NICKNAME`。头像通过 data URL 上传（≤10MB），新对象键使用 `users/{user_id}/assets/avatar/{毫秒时间戳}-{8位随机串}-{文件名}.{扩展名}`。非法图片返回 `400 INVALID_IMAGE`，超限返回 `413 IMAGE_TOO_LARGE`，对象写入失败返回 `502 ASSET_UPLOAD_FAILED`；先写新对象再更新数据库，提交失败补偿删除新对象，成功后清理旧头像对象。旧路径中的已有头像继续可读、可替换和删除，不做批量迁移。
 
 修改密码先校验当前密码（错误返回 `400 INVALID_CURRENT_PASSWORD`），再要求新密码至少 8 位（否则 `400 WEAK_PASSWORD`）、两次输入一致（否则 `400 PASSWORD_MISMATCH`）且不能与当前密码相同（否则 `400 PASSWORD_UNCHANGED`）。成功后更新 Argon2id 哈希，立即撤销该用户全部 Redis 会话，并在同一响应中清除双 Cookie，所有设备都必须用新密码重新登录。
 

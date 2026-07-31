@@ -105,7 +105,9 @@ def test_avatar_upload_replace_and_delete() -> None:
             row = session.scalar(select(User).where(User.email == "avatar@example.com"))
             assert row is not None
             assert row.avatar_object_key is not None
-        first_object_key = row.avatar_object_key
+            user_id = str(row.id)
+            first_object_key = row.avatar_object_key
+        assert first_object_key.startswith(f"users/{user_id}/assets/avatar/")
         assert first_object_key in storage.objects
 
         # Replacing the avatar removes the previous object and stores the new one.

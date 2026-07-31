@@ -61,7 +61,8 @@ Markdown 文件直接读取；DOCX/PDF 通过 `RagConverter` 发往 tolink-rag �
 
 ## 对象存储
 
-- 用户级兼容图片与头像：`users/{user_id}/assets/...`，头像对象键记录在 `users.avatar_object_key`。
+- 用户级兼容图片：`users/{user_id}/assets/...`。
+- 账号头像：`users/{user_id}/assets/avatar/...`，对象键记录在 `users.avatar_object_key`；旧路径中的已有头像保持兼容。
 - 导入原文件：`users/{user_id}/resume-imports/{operation_id}/...`。
 - 简历资源：`users/{user_id}/resumes/{resume_id}/assets/...`。
 
@@ -69,7 +70,7 @@ Markdown 文件直接读取；DOCX/PDF 通过 `RagConverter` 发往 tolink-rag �
 
 ## 用户中心
 
-`/api/account/*` 的五个端点都通过 `get_current_user` 获取当前用户，不接受客户端 `user_id`。`GET /api/account/profile` 返回资料并附带简历数量与最近 5 份简历；`PATCH /api/account/profile` 只允许修改昵称（去空白后 1–50 字符）。头像上传复用 `decode_image_data_url`、`build_asset_object_name` 和 `asset_url`：先写新对象再更新 `users.avatar_object_key`，提交失败补偿删除新对象，成功后才清理旧对象；响应只含相对 URL。`POST /api/account/change-password` 校验当前密码（新密码不得与当前密码相同，否则 `400 PASSWORD_UNCHANGED`）并更新 Argon2id 哈希后，调用 `revoke_user_sessions` 撤销该用户全部 Redis 会话，再通过 `clear_auth_cookies` 清除双 Cookie，强制所有设备用新密码重新登录。登录与 `/api/auth/me` 等鉴权响应的 `user` 对象同样包含 `avatar_url`（经 `/api/assets` 转发，无头像时为 `null`）。
+`/api/account/*` 的五个端点都通过 `get_current_user` 获取当前用户，不接受客户端 `user_id`。`GET /api/account/profile` 返回资料并附带简历数量与最近 5 份简历；`PATCH /api/account/profile` 只允许修改昵称（去空白后 1–50 字符）。头像上传复用 `decode_image_data_url`、`build_avatar_object_name` 和 `asset_url`：新对象写入 `users/{user_id}/assets/avatar/...`，再更新 `users.avatar_object_key`，提交失败补偿删除新对象，成功后才清理旧对象；响应只含相对 URL，旧路径中的已有头像不迁移。`POST /api/account/change-password` 校验当前密码（新密码不得与当前密码相同，否则 `400 PASSWORD_UNCHANGED`）并更新 Argon2id 哈希后，调用 `revoke_user_sessions` 撤销该用户全部 Redis 会话，再通过 `clear_auth_cookies` 清除双 Cookie，强制所有设备用新密码重新登录。登录与 `/api/auth/me` 等鉴权响应的 `user` 对象同样包含 `avatar_url`（经 `/api/assets` 转发，无头像时为 `null`）。
 
 ## 测试约定
 

@@ -18,7 +18,7 @@ from linkcv.core.security import (
 from linkcv.core.storage import (
     AssetStorage,
     asset_url,
-    build_asset_object_name,
+    build_avatar_object_name,
     decode_image_data_url,
     get_storage,
 )
@@ -120,7 +120,7 @@ def upload_avatar(
     if len(data) > MAX_AVATAR_BYTES:
         raise ApiError(413, "IMAGE_TOO_LARGE")
 
-    object_name = build_asset_object_name(user.id, payload.fileName, content_type)
+    object_name = build_avatar_object_name(user.id, payload.fileName, content_type)
     try:
         storage.upload(object_name, data, content_type)
     except Exception as error:

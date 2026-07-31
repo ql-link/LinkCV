@@ -92,7 +92,13 @@ def decode_image_data_url(data_url: object) -> tuple[bytes, str] | None:
     return data, content_type
 
 
-def build_asset_object_name(user_id: str, file_name: object, content_type: str) -> str:
+def _build_user_asset_object_name(
+    user_id: str,
+    file_name: object,
+    content_type: str,
+    *,
+    directory: str | None = None,
+) -> str:
     normalized = unicodedata.normalize("NFKD", str(file_name or "image"))
     safe_name = re.sub(r"[^\w.-]+", "-", normalized).strip("-")[:80]
     candidate_extension = PurePath(safe_name).suffix.lower()
@@ -104,7 +110,23 @@ def build_asset_object_name(user_id: str, file_name: object, content_type: str) 
     base_name = PurePath(safe_name).stem if safe_name else "image"
     base_name = base_name or "image"
     unique = f"{int(time.time() * 1000)}-{secrets_token(8)}"
-    return f"users/{user_id}/assets/{unique}-{base_name}{extension}"
+    prefix = f"users/{user_id}/assets"
+    if directory:
+        prefix = f"{prefix}/{directory}"
+    return f"{prefix}/{unique}-{base_name}{extension}"
+
+
+def build_asset_object_name(user_id: str, file_name: object, content_type: str) -> str:
+    return _build_user_asset_object_name(user_id, file_name, content_type)
+
+
+def build_avatar_object_name(user_id: str, file_name: object, content_type: str) -> str:
+    return _build_user_asset_object_name(
+        user_id,
+        file_name,
+        content_type,
+        directory="avatar",
+    )
 
 
 def build_import_object_name(
