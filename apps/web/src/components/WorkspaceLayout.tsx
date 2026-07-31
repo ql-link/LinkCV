@@ -1,19 +1,22 @@
 import type { ReactNode } from "react";
-import { BriefcaseBusiness, FileText, LayoutTemplate, LogOut, Shield } from "lucide-react";
+import { BriefcaseBusiness, FileText, LayoutTemplate, LogOut, Shield, UserRound } from "lucide-react";
 import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
 import { Brand } from "./ds";
 
-export type WorkspaceSection = "resumes" | "templates" | "jobs";
+export type WorkspaceSection = "resumes" | "templates" | "jobs" | "account";
 
 type WorkspaceSidebarProps = {
   active: WorkspaceSection;
   email: string;
+  nickname?: string;
+  avatarUrl?: string | null;
   isAdmin: boolean;
   onLogout: () => void | Promise<void>;
 };
 
-export function WorkspaceSidebar({ active, email, isAdmin, onLogout }: WorkspaceSidebarProps) {
+export function WorkspaceSidebar({ active, email, nickname, avatarUrl, isAdmin, onLogout }: WorkspaceSidebarProps) {
+  const displayName = nickname || email;
   return (
     <nav className="dashboard-sidebar" aria-label="工作区导航">
       <Brand className="dashboard-brand" />
@@ -57,10 +60,33 @@ export function WorkspaceSidebar({ active, email, isAdmin, onLogout }: Workspace
           </button>
         </>
       )}
-      <button className="dashboard-account" type="button" onClick={() => void onLogout()}>
-        <LogOut size={14} />
-        <span>{email}</span>
-      </button>
+      <div className="dashboard-account-area">
+        <button
+          className={`dashboard-account${active === "account" ? " is-active" : ""}`}
+          type="button"
+          aria-current={active === "account" ? "page" : undefined}
+          onClick={() => navigateTo("/account")}
+          title="个人资料"
+        >
+          {avatarUrl ? (
+            <img className="account-avatar" src={avatarUrl} alt="" />
+          ) : (
+            <span className="account-avatar-fallback" aria-hidden="true">
+              {[...displayName][0] ?? <UserRound size={14} />}
+            </span>
+          )}
+          <span className="account-name">{displayName}</span>
+        </button>
+        <button
+          className="dashboard-logout"
+          type="button"
+          aria-label="退出登录"
+          title="退出登录"
+          onClick={() => void onLogout()}
+        >
+          <LogOut size={14} />
+        </button>
+      </div>
     </nav>
   );
 }
@@ -76,7 +102,14 @@ export function WorkspaceLayout({ active, children }: { active: WorkspaceSection
 
   return (
     <div className="dashboard-shell">
-      <WorkspaceSidebar active={active} email={user?.email ?? ""} isAdmin={user?.is_admin ?? false} onLogout={logoutAndReturn} />
+      <WorkspaceSidebar
+        active={active}
+        email={user?.email ?? ""}
+        nickname={user?.nickname}
+        avatarUrl={user?.avatar_url}
+        isAdmin={user?.is_admin ?? false}
+        onLogout={logoutAndReturn}
+      />
       {children}
     </div>
   );

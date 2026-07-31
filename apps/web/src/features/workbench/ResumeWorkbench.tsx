@@ -12,6 +12,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Trash2,
+  UserRound,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiRequestError } from "../../api/client";
@@ -310,6 +311,7 @@ export function ResumeWorkbench() {
             <ActionButton onClick={() => void exportResumePdf(settings.smartOnePage, title)}><FileDown size={14} />导出 PDF</ActionButton>
             <ActionButton primary disabled={saveStatus === "saving" || versionOperationPending} onClick={() => void manualSave()}><Save size={14} />保存版本</ActionButton>
             <span className="workbench-header-divider" />
+            <IconAction label="个人资料" onClick={() => navigateTo("/account")}><UserRound size={15} /></IconAction>
             <IconAction label="退出登录" danger onClick={() => void leaveSafely("logout")}><LogOut size={15} /></IconAction>
           </div>
         </header>

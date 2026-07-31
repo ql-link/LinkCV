@@ -5,6 +5,29 @@ export type User = {
   email: string;
   nickname: string;
   is_admin: boolean;
+  avatar_url?: string | null;
+};
+
+export type UserProfile = User & {
+  avatar_url: string | null;
+};
+
+export type RecentResumeSummary = {
+  id: string;
+  title: string;
+  updated_at: string;
+};
+
+export type AccountProfile = {
+  user: UserProfile;
+  resume_count: number;
+  recent_resumes: RecentResumeSummary[];
+};
+
+export type ChangePasswordPayload = {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
 };
 
 export type AdminUserSummary = User & {
@@ -380,6 +403,28 @@ export const api = {
     }),
   logout: () =>
     request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
+  getAccountProfile: () => request<AccountProfile>("/api/account/profile"),
+  updateAccountProfile: (nickname: string) =>
+    request<UserProfile>("/api/account/profile", {
+      method: "PATCH",
+      body: { nickname },
+    }),
+  uploadAccountAvatar: (payload: { fileName: string; dataUrl: string }) =>
+    request<{ url: string }>("/api/account/avatar", {
+      method: "PUT",
+      body: payload,
+    }),
+  deleteAccountAvatar: () =>
+    request<{ ok: boolean }>("/api/account/avatar", { method: "DELETE" }),
+  changePassword: (payload: ChangePasswordPayload) =>
+    request<{ ok: boolean; message: string }>("/api/account/change-password", {
+      method: "POST",
+      body: {
+        current_password: payload.currentPassword,
+        new_password: payload.newPassword,
+        confirm_password: payload.confirmPassword,
+      },
+    }),
   listResumes: () => request<{ resumes: ResumeSummary[] }>("/api/resumes"),
   createResume: (payload: { title?: string; template_id?: string }) =>
     request<{ resume: ResumeRecord }>("/api/resumes", {

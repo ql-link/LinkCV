@@ -2,12 +2,14 @@ import { create } from "zustand";
 import type { JSONContent } from "@tiptap/core";
 import {
   api,
+  ChangePasswordPayload,
   ResumeDocumentV1,
   ResumeRecord,
   ResumeStyleV1,
   ResumeSummary,
   ResumeVersion,
   User,
+  UserProfile,
 } from "../api/client";
 import {
   defaultSemanticDocument,
@@ -66,6 +68,8 @@ type ResumeState = {
   register: (email: string, password: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  syncProfile: (user: UserProfile) => void;
+  changePassword: (payload: ChangePasswordPayload) => Promise<void>;
   listResumes: () => Promise<void>;
   createResume: (title?: string) => Promise<void>;
   importResume: (file: File, title?: string) => Promise<void>;
@@ -240,6 +244,29 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
 
   logout: async () => {
     await api.logout();
+    set({
+      authStatus: "guest",
+      user: null,
+      resumes: [],
+      versions: [],
+      versionOperationPending: false,
+      activeResumeId: null,
+      lockVersion: 0,
+      dirty: false,
+      saveStatus: "idle",
+    });
+  },
+
+  syncProfile: (profile) => {
+    const current = get().user;
+    if (!current) return;
+    set({ user: { ...current, ...profile } });
+  },
+
+  changePassword: async (payload) => {
+    await api.changePassword(payload);
+    // The backend revoked every session and cleared the cookies; clear the
+    // local state so the UI redirects to the login page.
     set({
       authStatus: "guest",
       user: null,

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
@@ -18,6 +20,7 @@ class UserResponse(BaseModel):
     email: str
     nickname: str
     is_admin: bool
+    avatar_url: str | None = None
 
     @field_validator("id", mode="before")
     @classmethod
@@ -35,3 +38,49 @@ class MeResponse(BaseModel):
 
 class OkResponse(BaseModel):
     ok: bool
+
+
+class UserProfileResponse(BaseModel):
+    """当前用户资料，头像只暴露经 /api/assets 转发的相对 URL。"""
+
+    id: str
+    email: str
+    nickname: str
+    is_admin: bool
+    avatar_url: str | None = None
+
+
+class ProfileUpdateRequest(BaseModel):
+    nickname: str
+
+
+class RecentResumeSummary(BaseModel):
+    id: str
+    title: str
+    updated_at: datetime
+
+
+class AccountProfileResponse(BaseModel):
+    user: UserProfileResponse
+    resume_count: int
+    recent_resumes: list[RecentResumeSummary]
+
+
+class AvatarUploadRequest(BaseModel):
+    fileName: str = "avatar"
+    dataUrl: str
+
+
+class AvatarResponse(BaseModel):
+    url: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+    confirm_password: str
+
+
+class PasswordChangedResponse(BaseModel):
+    ok: bool
+    message: str
