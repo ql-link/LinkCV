@@ -20,7 +20,7 @@ description: 为 LinkCV 的 React/TypeScript 前端和 FastAPI/Python 后端设�
 
 ## 2. 必读材料
 
-1. 用户请求、适用的冻结 Acceptance 和 Technical Design；
+1. 用户请求、适用的冻结 Acceptance 和方案文档中的数据模型与状态机；
 2. 被测实现、直接调用方及现有测试；
 3. [Web 模块](../../../docs/internals/web.md)、[FastAPI 后端](../../../docs/internals/backend.md)和[开发验证命令](../../../docs/ops/development.md)中命中的部分；
 4. 与行为相关的接口、错误、权限和持久化契约。

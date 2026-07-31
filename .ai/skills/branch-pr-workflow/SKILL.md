@@ -158,8 +158,8 @@ BREAKING CHANGE: <中文说明、受影响方和迁移方式>
 
 1. `code-review-and-quality` 没有未解决的阻断问题；
 2. 与改动范围匹配的验证已通过，默认包含 `npm run check`；
-3. L2/L3 的 `state.yaml` 已进入 `release_ready`，自动验证快照和质量审查快照都与当前可提交内容一致；
-4. L2/L3 已运行 `npm run spec -- check <KEY> release_ready`；验证后代码又变化时停止收口，实施阶段的必要偏差已经在 PR 中说明；
+3. 方案先行任务的 `state.yaml` 已进入 `release_ready`，自动验证快照和质量审查快照都与当前可提交内容一致；
+4. 方案先行任务已运行 `npm run spec -- check <KEY> release_ready`；验证后代码又变化时停止收口，实施阶段的必要偏差已经在 PR 中说明；
 5. 适用的人工端到端验收已完成，PR 验证结果摘要了通过、失败、阻塞和未覆盖项；
 6. API、类型、配置、迁移、部署和文档已经同步；
 7. 目标分支、来源分支、提交列表和 `origin/dev...HEAD` 完整差异已检查；

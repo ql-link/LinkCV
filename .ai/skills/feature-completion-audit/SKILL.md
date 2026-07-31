@@ -37,7 +37,7 @@ description: 对照 LinkCV 的原始需求与冻结规格，独立核验功能�
 1. 用户当前明确确认的需求与后续修订；
 2. 来源 Issue 的完整正文及明确指定为有效输入的附件或补充，不限制 Multica、Linear、GitHub 或其他平台；
 3. 飞书中已确认的周开发文档、详情文档、模块说明和后续补充；
-4. `.specs/<KEY>/brief.md`、`acceptance.feature`、`technical_design.md`、`implementation_report.md`；
+4. `.specs/<KEY>/solution.md`、`acceptance.feature`、`implementation_report.md`；
 5. 实际提交、完整 diff、关键调用方和保留的旧链路；
 6. 自动化测试结果、人工验收记录和未覆盖区域；
 7. 受影响的 HTTP、配置、数据库、Alembic、对象存储、部署和长期文档。
