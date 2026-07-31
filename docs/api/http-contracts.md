@@ -131,3 +131,16 @@ JD 管理接口接受和返回最终结构化数据；单独的浏览器导入�
 调用记录可用 `userId`、`modelConfigId`、`from`、`to`、`cursor` 和 `limit` 查询，默认每页 50、最大 200，按创建时间和内部 ID 倒序稳定分页。每条记录只包含调用标识、用户、实际模型快照、状态、耗时、Token、价格快照、估算成本和非敏感错误分类，不保存或返回消息、模型完整响应和凭据。汇总只聚合已知值，并用 `incompleteMeteringCount` 表明不完整计量。
 
 管理错误包括 `INVALID_LLM_MODEL_CONFIG`、`INVALID_LLM_CALL_QUERY`、`LLM_MODEL_NOT_FOUND`、`LLM_CREDENTIALS_UNAVAILABLE` 和 `LLM_CONNECTION_FAILED`。供应商原始错误不会透传。
+
+## 管理台用户管理
+
+以下接口同样只允许 `is_admin=true` 访问。当前异步使用 `POST /api/auth/admin-login` 登录判定管理身份，管理台前端在 `/admin` 入口通过 `POST /api/auth/admin-login` 获得管理会话后调用管理端 API。
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `GET` | `/api/auth/admin/users` | `{items, total, page, size}`，支持 `q`（ID/邮箱/昵称模糊）、`status`（启用/禁用）、`role`（admin/user）筛选和 `page/size` 分页 |
+| `GET` | `/api/auth/admin/users/{userId}` | 用户详情对象，含 `resume_count`（简历数）和 `llm_call_count`（LLM 调用量，当前为占位值 0） |
+| `PATCH` | `/api/auth/admin/users/{userId}/status` | `{ok: true, user, revoked_sessions}`；body 为 `{action: "disable"|"enable"}` |
+| `GET` | `/api/auth/admin/stats` | `{total_users, active_users_7d, total_resumes, llm_calls_today, estimated_cost_month}` 全系统概览统计；后两项当前为占位值 |
+
+管理员禁用自己的账号返回 `422 CANNOT_SELF_DISABLE`；尝试禁用系统中最后一个管理员返回 `422 CANNOT_DISABLE_LAST_ADMIN`。禁用成功后服务端立即调用 `revoke_user_sessions` 删除该用户全部 Redis 会话，该用户的所有现有 Cookie 立即失效，重新登录时因用户 `status=0` 被拒绝。每次 enable/disable 操作写入 `admin_operation_logs` 表，包含操作人、目标用户、操作类型和时间戳。

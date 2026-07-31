@@ -368,3 +368,41 @@
   opacity: .6;
   cursor: not-allowed;
 }
+
+/* ── Table status row (loading/error/empty) ── */
+.table-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 16px;
+  color: var(--admin-muted, #888);
+  font-size: .875rem;
+  gap: 8px;
+}
+
+/* ── Danger button ── */
+.admin-danger-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  background: #e53e3e;
+  color: #fff;
+  font-size: .875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s;
+}
+.admin-danger-button:hover { background: #c53030; }
+.admin-danger-button:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+/* ── Confirm dialog ── */
+.confirm-dialog h3 {
+  font-size: 1rem;
+  font-weight: 600;
+}

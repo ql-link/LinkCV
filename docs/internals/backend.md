@@ -2,7 +2,7 @@
 
 ## 当前职责与结构
 
-`apps/backend` 承接健康检查、短 JWT access + 不透明 refresh + Redis 会话鉴权、语义简历生命周期、历史版本、文件导入、私有对象资源、结构化 JD 生命周期，以及统一 LLM 调用和管理员模型治理 API。
+`apps/backend` 承接健康检查、短 JWT access + 不透明 refresh + Redis 会话鉴权、语义简历生命周期、历史版本、文件导入、私有对象资源、结构化 JD 生命周期、统一 LLM 调用和管理员模型治理 API，以及管理台用户管理（列表/搜索/详情/状态变更/概览统计）与操作审计日志。
 
 | 位置 | 职责 |
 | --- | --- |
@@ -15,11 +15,11 @@
 | `src/linkcv/integrations/` | tolink-rag HTTP Adapter 和 OpenAI-compatible JSON Schema 模型 Adapter |
 | `src/linkcv/services/resume_import_service.py` | 文件校验、对象上传、Markdown 提取、结构化、统一创建和失败补偿 |
 | `src/linkcv/services/storage_cleanup_service.py` | 持久化对象删除任务、即时尝试与后台重试 |
-| `src/linkcv/modules/identity/` | 用户模型、注册、登录、admin-login 鉴权、get_current_admin 权限依赖与双 Token 会话管理 |
+| `src/linkcv/modules/identity/` | 用户模型、注册、登录、admin-login 鉴权、get_current_admin 权限依赖、双 Token 会话管理、管理端用户管理与操作审计日志 |
 | `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板/简历/版本/导入/资源路由 |
 | `src/linkcv/modules/job_descriptions/` | JD 单表 ORM、HTTP DTO 和受保护路由 |
 | `src/linkcv/modules/llm/` | 模型凭据加密、LiteLLM 适配、普通/流式调用、故障切换、计量与管理员 API |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0007` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0008` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -36,6 +36,8 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 `0007` 新增用户私有 `job_descriptions` 单表。岗位、要求、工作地点、薪资、公司与招聘者快照、来源身份、备注、归档和乐观锁均保存在同行；福利和原始抓取内容不落库。`skills` 是字符串 JSON 数组。来源 URL 只在后端规范化，随后同时保存规范化值和二进制 SHA-256；BOSS 岗位链接还保存站点原生 ID。`(user_id, source_site, source_job_id)` 与 `(user_id, source_url_hash)` 两组唯一约束处理同用户重复。硬删除只接受归档记录，删除语句原子约束用户、记录 ID 和非空 `archived_at`，成功后真实释放来源唯一键；活动、已恢复或并发恢复的记录不会被删除。JD 搜索、归档和所有写操作始终带用户条件；外键使用 `ON DELETE RESTRICT`，不把删除用户隐式扩成级联删除岗位。
 
 `POST /api/job-descriptions/import` 是浏览器插件的受保护入口，只接受 BOSS 岗位详情 URL 和有限的页面采集字段。`application/job_descriptions/import_service.py` 先清理不可见字符、空白和明确页尾噪声，再映射就业类型、工作形态、月薪/日薪/时薪及公司标签；它还会把 `5天/周`、`6个月` 等实习安排从误传的经验字段移入 `work_schedule`，并在入库前剔除福利标签。最后构造已有 `JobDescriptionCreateRequest` 并复用统一创建与重复解决事务。该过程不调用 LLM，不保存输入 DTO，也不绕过既有用户条件、来源唯一键或乐观锁。
+
+`0008` 新增 `admin_operation_logs` 管理操作审计表，记录管理员对用户的 enable/disable 操作。字段包括 `id`（BIGINT UNSIGNED PK）、`actor_user_id`（操作人，FK → users.id）、`target_user_id`（目标用户，FK → users.id）、`action`（受 CHECK 约束的 VARCHAR，只允许 "disable"/"enable"）和 `created_at`。每次启用或禁用账号时通过 SQLAlchemy INSERT 写入一条记录，用于后续管理操作追溯。
 
 ## 统一 LLM 调用
 
@@ -67,5 +69,5 @@ Markdown 文件直接读取；DOCX/PDF 通过 `RagConverter` 发往 tolink-rag �
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake RAG/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于 `0002`–`0007` 往返、旧快照转换和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于 `0002`–`0008` 往返、旧快照转换和物理约束验证。
 - 真实 tolink-rag、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
