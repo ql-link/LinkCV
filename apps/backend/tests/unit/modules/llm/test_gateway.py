@@ -3,44 +3,70 @@ import traceback
 from types import SimpleNamespace
 
 import litellm
+from pydantic import BaseModel
 
-from linkcv.modules.llm.gateway import (
-    GatewayError,
-    LiteLLMGateway,
-    _gateway_error,
-)
+from linkcv.modules.llm.gateway import GatewayError, LiteLLMGateway, _gateway_error
 from linkcv.modules.llm.schemas import ChatMessage
 
 
-def test_rate_limit_is_switchable_without_ambiguous_usage() -> None:
-    mapped = _gateway_error(
+class StructuredPayload(BaseModel):
+    answer: str
+
+
+def test_provider_errors_map_without_retry_or_switch_semantics() -> None:
+    rate_limit = _gateway_error(
         litellm.RateLimitError("limited", "openai", "fictional-model")
     )
-
-    assert mapped.switchable is True
-    assert mapped.may_have_reached_provider is False
-
-
-def test_bad_request_is_not_switchable() -> None:
-    mapped = _gateway_error(
+    bad_request = _gateway_error(
         litellm.BadRequestError("invalid", "fictional-model", "openai")
     )
-
-    assert mapped.switchable is False
-    assert mapped.may_have_reached_provider is False
-
-
-def test_internal_server_error_is_switchable_with_ambiguous_usage() -> None:
-    mapped = _gateway_error(
+    internal = _gateway_error(
         litellm.InternalServerError("failed", "openai", "fictional-model")
     )
 
-    assert mapped.switchable is True
-    assert mapped.may_have_reached_provider is True
+    assert rate_limit.code == "LLM_UNAVAILABLE"
+    assert rate_limit.may_have_reached_provider is False
+    assert bad_request.code == "LLM_REQUEST_REJECTED"
+    assert bad_request.may_have_reached_provider is False
+    assert internal.code == "LLM_UNAVAILABLE"
+    assert internal.may_have_reached_provider is True
 
 
-def test_stream_failure_preserves_received_usage_and_prices(monkeypatch) -> None:
-    model = "fictional-provider/stream-model"
+def test_complete_forwards_zero_retries_structured_format_and_timeout(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_completion(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"answer":"ok"}'))],
+            usage=SimpleNamespace(prompt_tokens=3, completion_tokens=2),
+        )
+
+    monkeypatch.setattr(litellm, "acompletion", fake_completion)
+
+    result = asyncio.run(
+        LiteLLMGateway(timeout_seconds=12.5).complete(
+            model="deepseek/fictional-model",
+            messages=[ChatMessage(role="user", content="结构化请求")],
+            api_base="https://models.example.invalid",
+            api_key="fictional-key",
+            response_format=StructuredPayload,
+        )
+    )
+
+    assert result.content == '{"answer":"ok"}'
+    assert captured["response_format"] is StructuredPayload
+    assert captured["timeout"] == 12.5
+    assert captured["num_retries"] == 0
+
+
+def test_stream_forwards_zero_retries_and_preserves_partial_metering(
+    monkeypatch,
+) -> None:
+    model = "deepseek/stream-model"
+    captured: dict[str, object] = {}
     monkeypatch.setitem(
         litellm.model_cost,
         model,
@@ -55,9 +81,10 @@ def test_stream_failure_preserves_received_usage_and_prices(monkeypatch) -> None
             usage=SimpleNamespace(prompt_tokens=7, completion_tokens=3),
             choices=[],
         )
-        raise litellm.InternalServerError("failed", "openai", model)
+        raise litellm.InternalServerError("failed", "deepseek", model)
 
-    async def fake_completion(**_kwargs):
+    async def fake_completion(**kwargs):
+        captured.update(kwargs)
         return response()
 
     monkeypatch.setattr(litellm, "acompletion", fake_completion)
@@ -67,7 +94,7 @@ def test_stream_failure_preserves_received_usage_and_prices(monkeypatch) -> None
             model=model,
             messages=[ChatMessage(role="user", content="虚构请求")],
             api_base=None,
-            api_key=None,
+            api_key="fictional-key",
         )
         try:
             async for _event in events:
@@ -78,8 +105,8 @@ def test_stream_failure_preserves_received_usage_and_prices(monkeypatch) -> None
 
     error = asyncio.run(consume())
 
-    assert error.switchable is True
-    assert error.may_have_reached_provider is True
+    assert captured["num_retries"] == 0
+    assert error.code == "LLM_UNAVAILABLE"
     assert error.usage is not None
     assert error.usage.input_tokens == 7
     assert error.usage.output_tokens == 3
@@ -98,7 +125,7 @@ def test_provider_exception_details_are_removed_from_traceback(monkeypatch) -> N
     async def call() -> str:
         try:
             await LiteLLMGateway().complete(
-                model="fictional-provider/model",
+                model="deepseek/fictional-model",
                 messages=[ChatMessage(role="user", content="虚构请求")],
                 api_base="https://models.example.invalid",
                 api_key="fictional-key",

@@ -10,10 +10,31 @@ const mockAdminUser = {
   is_admin: true,
 };
 
-describe("AdminApp mock flow", () => {
+const emptyChatCapability = {
+  capability: "chat" as const,
+  activeModelId: null,
+  activeModel: null,
+  models: [],
+};
+
+const chatCatalog = {
+  capability: "chat" as const,
+  adapters: [
+    {
+      code: "deepseek" as const,
+      label: "DeepSeek",
+      requiresApiKey: true,
+      models: ["deepseek-chat"],
+    },
+  ],
+};
+
+describe("AdminApp flow", () => {
   beforeEach(() => {
     vi.spyOn(api, "me").mockRejectedValue(new Error("UNAUTHORIZED"));
     vi.spyOn(api, "adminLogin").mockResolvedValue({ user: mockAdminUser });
+    vi.spyOn(api, "getChatCapability").mockResolvedValue(emptyChatCapability);
+    vi.spyOn(api, "getChatCatalog").mockResolvedValue(chatCatalog);
   });
 
   afterEach(() => {
@@ -32,7 +53,7 @@ describe("AdminApp mock flow", () => {
     expect(window.location.pathname).toBe("/admin/llm/models");
     expect(await screen.findByRole("heading", { name: "模型配置" }, { timeout: 4_000 })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "新增模型" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "新增模型" })[0]);
     expect(screen.getByRole("heading", { name: "新增模型" })).toBeInTheDocument();
   });
 

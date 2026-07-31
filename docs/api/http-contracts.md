@@ -6,13 +6,13 @@
 
 `GET /api/health` 返回 `{status, service, version}`。鉴权接口包括：
 
-| Method | Path | 成功结果 |
-| --- | --- | --- |
-| `GET` | `/api/auth/me` | `{user}`；未登录或 Cookie 无效时为 `null` |
+| Method | Path                 | 成功结果                                              |
+| ------ | -------------------- | ----------------------------------------------------- |
+| `GET`  | `/api/auth/me`       | `{user}`；未登录或 Cookie 无效时为 `null`             |
 | `POST` | `/api/auth/register` | `201 {user}`，签发短 access 与 7 天 refresh 双 Cookie |
-| `POST` | `/api/auth/login` | `{user}`，签发短 access 与 7 天 refresh 双 Cookie |
-| `POST` | `/api/auth/refresh` | `{user}`，轮换 refresh 密钥并下发新双 Cookie |
-| `POST` | `/api/auth/logout` | `{ok: true}`，删除 Redis 会话并清除双 Cookie |
+| `POST` | `/api/auth/login`    | `{user}`，签发短 access 与 7 天 refresh 双 Cookie     |
+| `POST` | `/api/auth/refresh`  | `{user}`，轮换 refresh 密钥并下发新双 Cookie          |
+| `POST` | `/api/auth/logout`   | `{ok: true}`，删除 Redis 会话并清除双 Cookie          |
 
 鉴权使用“短 JWT access + 不透明 refresh + Redis 会话”的双 Token 方案。Access Cookie 名为 `resume_access`，有效期 `ACCESS_TTL_MINUTES`（默认 15 分钟），`SameSite=Lax`、`Path=/`。Refresh Cookie 名为 `resume_refresh`，有效期 `SESSION_TTL_DAYS`（默认 7 天），`HttpOnly`、`SameSite=Lax`、`Path=/api/auth`。Web 调用受保护接口收到 `401` 时，会把并发请求合并到同一次 refresh，刷新成功后各自重试一次；启动检查 `/api/auth/me` 返回空用户时也会先尝试 refresh，再进入访客态。登录或刷新失败返回 `401 INVALID_CREDENTIALS`。
 
@@ -24,27 +24,27 @@
 
 Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照转换为上述 `"1.0"` 契约；原始 JSON 保存在只供迁移回滚使用的同行备份列中，不进入 API 响应。发布顺序仍为先迁移数据库、再启动新应用。
 
-| Method | Path | 鉴权 | 成功结果 |
-| --- | --- | --- | --- |
-| `GET` | `/api/resume-templates` | 否 | `{templates}` 启用模板列表 |
-| `GET` | `/api/resume-templates/:id` | 否 | `{template}` |
-| `GET` | `/api/resumes` | 是 | `{resumes}`，按更新时间倒序 |
-| `POST` | `/api/resumes` | 是 | `201 {resume}`；请求为 `{title?, template_id?}` |
-| `GET` | `/api/resumes/:id` | 是 | `{resume}` |
-| `PUT` | `/api/resumes/:id` | 是 | `{resume}`；请求含 `base_lock_version` 及可选 `title/data/style` |
-| `DELETE` | `/api/resumes/:id` | 是 | `{deleted}` |
+| Method   | Path                        | 鉴权 | 成功结果                                                         |
+| -------- | --------------------------- | ---- | ---------------------------------------------------------------- |
+| `GET`    | `/api/resume-templates`     | 否   | `{templates}` 启用模板列表                                       |
+| `GET`    | `/api/resume-templates/:id` | 否   | `{template}`                                                     |
+| `GET`    | `/api/resumes`              | 是   | `{resumes}`，按更新时间倒序                                      |
+| `POST`   | `/api/resumes`              | 是   | `201 {resume}`；请求为 `{title?, template_id?}`                  |
+| `GET`    | `/api/resumes/:id`          | 是   | `{resume}`                                                       |
+| `PUT`    | `/api/resumes/:id`          | 是   | `{resume}`；请求含 `base_lock_version` 及可选 `title/data/style` |
+| `DELETE` | `/api/resumes/:id`          | 是   | `{deleted}`                                                      |
 
 空白、模板和导入创建统一受每用户最多 10 份简历的限制；创建事务先锁定用户行再检查数量，并发请求不会突破上限。达到上限返回 `409 RESUME_LIMIT_REACHED`，删除任意一份后释放名额。空白和模板创建都在同一事务写入当前简历及 `version_no=1/reason=initial` 快照。更新同时保存完整 data/style 并递增 `lock_version`，不创建历史版本；过期基准返回 `409 RESUME_EDIT_CONFLICT`。非法内容和样式分别返回 `400 INVALID_RESUME_DOCUMENT`、`400 INVALID_RESUME_STYLE`。不存在或不属于当前用户的简历统一返回 `404 RESUME_NOT_FOUND`。
 
 ## 历史版本
 
-| Method | Path | 鉴权 | 成功结果 |
-| --- | --- | --- | --- |
-| `GET` | `/api/resumes/:id/versions` | 是 | `{versions}`，版本号倒序 |
-| `POST` | `/api/resumes/:id/versions` | 是 | `201 {version}`，创建 `manual` 快照 |
-| `GET` | `/api/resumes/:id/versions/:version_no` | 是 | `{version}` 完整快照 |
-| `DELETE` | `/api/resumes/:id/versions/:version_no` | 是 | `{deleted}`；删除指定旧版本 |
-| `POST` | `/api/resumes/:id/versions/:version_no/restore` | 是 | `{resume}`；按需追加 `before_restore` 后追加 `restore` |
+| Method   | Path                                            | 鉴权 | 成功结果                                               |
+| -------- | ----------------------------------------------- | ---- | ------------------------------------------------------ |
+| `GET`    | `/api/resumes/:id/versions`                     | 是   | `{versions}`，版本号倒序                               |
+| `POST`   | `/api/resumes/:id/versions`                     | 是   | `201 {version}`，创建 `manual` 快照                    |
+| `GET`    | `/api/resumes/:id/versions/:version_no`         | 是   | `{version}` 完整快照                                   |
+| `DELETE` | `/api/resumes/:id/versions/:version_no`         | 是   | `{deleted}`；删除指定旧版本                            |
+| `POST`   | `/api/resumes/:id/versions/:version_no/restore` | 是   | `{resume}`；按需追加 `before_restore` 后追加 `restore` |
 
 版本号单调递增且不复用；每份简历默认最多保存 10 个版本。创建或恢复所需的版本空间不足时返回 `409 RESUME_VERSION_LIMIT_REACHED`，不会自动删除任何历史版本；用户删除旧版本后才能继续。最新版本作为当前恢复基准不可删除，尝试删除返回 `409 LATEST_RESUME_VERSION_REQUIRED`。版本不存在返回 `404 RESUME_VERSION_NOT_FOUND`，并发兜底失败返回 `409 VERSION_CONFLICT`。
 
@@ -63,22 +63,22 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 }
 ```
 
-原文件对象键不在响应中。文件为空、超限、不支持或内容非法分别返回 `EMPTY_IMPORT_FILE`、`IMPORT_FILE_TOO_LARGE`、`UNSUPPORTED_IMPORT_FORMAT`、`IMPORT_CONTENT_INVALID`；超过结构化模型输入上限返回 `413 STRUCTURING_INPUT_TOO_LARGE`，触发频率或并发保护返回 `429 IMPORT_RATE_LIMITED`。账号已有 10 份简历时会在上传和模型处理前返回 `409 RESUME_LIMIT_REACHED`；快速检查后的并发创建仍由最终事务检查兜底。RAG 或结构化模型未配置、调用失败、响应非法时返回稳定的 503/502/422 错误且不创建半成品；已上传对象执行幂等补偿。
+原文件对象键不在响应中。文件为空、超限、不支持或内容非法分别返回 `EMPTY_IMPORT_FILE`、`IMPORT_FILE_TOO_LARGE`、`UNSUPPORTED_IMPORT_FORMAT`、`IMPORT_CONTENT_INVALID`；超过结构化模型输入上限返回 `413 STRUCTURING_INPUT_TOO_LARGE`，触发频率或并发保护返回 `429 IMPORT_RATE_LIMITED`。账号已有 10 份简历时会在上传和模型处理前返回 `409 RESUME_LIMIT_REACHED`；快速检查后的并发创建仍由最终事务检查兜底。RAG 或结构化模型未配置、调用失败、响应非法时返回稳定的 503/502/422 错误且不创建半成品；已上传对象执行幂等补偿。简历结构化继续使用独立环境变量和客户端，不读取管理端 Chat 当前模型，也不写入管理端 LLM 调用日志。
 
 ## JD 数据模型与管理
 
 JD 管理接口接受和返回最终结构化数据；单独的浏览器导入接口接受有限页面采集 DTO，并在同一请求中清洗为最终结构化数据。服务端不保存插件原始页面、抓取中间结果或模型过程数据。所有接口都要求当前登录用户，服务端从会话取得 `user_id`；不存在和不属于当前用户的记录统一返回 `404 JD_NOT_FOUND`。
 
-| Method | Path | 成功结果 |
-| --- | --- | --- |
-| `GET` | `/api/job-descriptions` | `{items, next_cursor}`，默认只列活动记录 |
-| `POST` | `/api/job-descriptions` | 新建时 `201 {job_description}`；解决重复时 `200` |
-| `POST` | `/api/job-descriptions/import` | 清洗 BOSS 页面采集字段；新建时 `201 {job_description}`，解决重复时 `200` |
-| `GET` | `/api/job-descriptions/:id` | `{job_description}` |
-| `PUT` | `/api/job-descriptions/:id` | `{job_description}`；请求含 `base_lock_version` 和至少一个可编辑字段 |
-| `POST` | `/api/job-descriptions/:id/archive` | `{job_description}`；请求含 `base_lock_version` |
-| `POST` | `/api/job-descriptions/:id/restore` | `{job_description}`；请求含 `base_lock_version` |
-| `DELETE` | `/api/job-descriptions/:id` | 仅归档记录返回 `{deleted: true}`，永久删除并释放来源唯一标识 |
+| Method   | Path                                | 成功结果                                                                 |
+| -------- | ----------------------------------- | ------------------------------------------------------------------------ |
+| `GET`    | `/api/job-descriptions`             | `{items, next_cursor}`，默认只列活动记录                                 |
+| `POST`   | `/api/job-descriptions`             | 新建时 `201 {job_description}`；解决重复时 `200`                         |
+| `POST`   | `/api/job-descriptions/import`      | 清洗 BOSS 页面采集字段；新建时 `201 {job_description}`，解决重复时 `200` |
+| `GET`    | `/api/job-descriptions/:id`         | `{job_description}`                                                      |
+| `PUT`    | `/api/job-descriptions/:id`         | `{job_description}`；请求含 `base_lock_version` 和至少一个可编辑字段     |
+| `POST`   | `/api/job-descriptions/:id/archive` | `{job_description}`；请求含 `base_lock_version`                          |
+| `POST`   | `/api/job-descriptions/:id/restore` | `{job_description}`；请求含 `base_lock_version`                          |
+| `DELETE` | `/api/job-descriptions/:id`         | 仅归档记录返回 `{deleted: true}`，永久删除并释放来源唯一标识             |
 
 列表查询支持 `scope=active|archived|all`、最长 200 字符的 `keyword`、不透明 `cursor` 和 `limit=1..100`。关键词忽略大小写，覆盖岗位名、公司名、城市、地址、正文和技能；分页按 `updated_at DESC, id DESC` 稳定排序。非法筛选或游标返回 `400 INVALID_JOB_QUERY`。
 
@@ -98,10 +98,10 @@ JD 管理接口接受和返回最终结构化数据；单独的浏览器导入�
 
 原用户级 `/api/assets` 图片接口继续保留。新增简历级资源接口：
 
-| Method | Path | 行为 |
-| --- | --- | --- |
-| `POST` | `/api/resumes/:id/assets` | 接收 `file_name/data_url`，写入简历私有前缀 |
-| `GET` | `/api/resumes/:id/assets/:asset_name` | 校验简历所有权后读取 |
+| Method   | Path                                  | 行为                                          |
+| -------- | ------------------------------------- | --------------------------------------------- |
+| `POST`   | `/api/resumes/:id/assets`             | 接收 `file_name/data_url`，写入简历私有前缀   |
+| `GET`    | `/api/resumes/:id/assets/:asset_name` | 校验简历所有权后读取                          |
 | `DELETE` | `/api/resumes/:id/assets/:asset_name` | 当前或历史快照仍引用时返回 `409 ASSET_IN_USE` |
 
 删除简历会删除数据库版本，并在同一事务登记导入原文件与简历资源前缀的幂等清理任务；提交后立即尝试，失败任务由后台 worker 重试，不恢复已经提交的数据库记录。
@@ -112,22 +112,39 @@ JD 管理接口接受和返回最终结构化数据；单独的浏览器导入�
 
 `users.is_admin` 不进入 access JWT 或 Redis 会话；管理员接口每次请求都从数据库读取该 `0/1` 标记，因此提权或降权对现有 Cookie 的下一次请求即时生效。公开注册始终创建普通用户。
 
-管理员通过 \POST /api/auth/admin-login\ 登录，后端额外校验 \is_admin=true\ 后签发会话；普通用户调用返回 \403 FORBIDDEN\。管理端前端在 \/admin\ 入口通过 \pi.me()\ 恢复登录态后检查 \is_admin\，非管理员无法加载管理端子页面或发起管理 API 调用。
+管理员通过 `POST /api/auth/admin-login` 登录，后端额外校验 `is_admin=true` 后签发会话；普通用户调用返回 `403 FORBIDDEN`。管理端前端在 `/admin` 入口通过 `api.me()` 恢复登录态后检查 `is_admin`，非管理员无法加载管理端子页面或发起管理 API 调用。
 
-| Method | Path | 成功结果 |
-| --- | --- | --- |
-| `GET` | `/api/admin/llm/models` | `{models}`，包含启用与停用配置 |
-| `POST` | `/api/admin/llm/models` | `201 {model}` |
-| `PATCH` | `/api/admin/llm/models/:modelConfigId` | `{model}`，字段可部分更新 |
-| `POST` | `/api/admin/llm/models/:modelConfigId/test` | `{ok: true, callId}`，测试指定配置 |
-| `GET` | `/api/admin/llm/calls` | `{calls, summary, nextCursor}` |
+| Method  | Path                                            | 成功结果                                                                       |
+| ------- | ----------------------------------------------- | ------------------------------------------------------------------------------ |
+| `GET`   | `/api/admin/llm/capabilities/chat`              | `{capability, activeModelId, activeModel, models}`，返回 Chat 当前项与候选列表 |
+| `GET`   | `/api/admin/llm/catalog/chat`                   | `{capability, adapters}`，返回受支持 adapter 和 LiteLLM Chat 模型建议          |
+| `POST`  | `/api/admin/llm/models`                         | `201 {model}`                                                                  |
+| `PATCH` | `/api/admin/llm/models/:modelConfigId`          | `{model, validationCallId}`；编辑当前项时先测试拟议配置                        |
+| `POST`  | `/api/admin/llm/models/:modelConfigId/test`     | `{ok: true, callId}`，测试指定配置                                             |
+| `POST`  | `/api/admin/llm/models/:modelConfigId/activate` | `{activeModel, callId}`，测试成功后设为 Chat 当前模型                          |
+| `GET`   | `/api/admin/llm/calls`                          | `{calls, summary, nextCursor}`                                                 |
 
-模型配置接受 `model`、`apiBase`、只写的 `apiKey`、`enabled`、`priority`、`inputPricePerMillion` 和 `outputPricePerMillion`。响应只用 `keyConfigured` 表示是否已有凭据，绝不返回明文或数据库密文。PATCH 省略 `apiKey` 时保留原凭据，传 `null` 时清除，传非空字符串时替换；模型配置不提供硬删除接口。
+Chat 是服务端预定义能力，管理员不填写能力标识。候选写入只接受 `adapter`、不含 adapter 前缀的 `model`、可选 `apiBase` 和只写 `apiKey`；服务端将 DeepSeek 示例组装成 `deepseek/deepseek-v4-flash`，将千问示例组装成 `dashscope/qwen-plus` 后传给 LiteLLM。目录响应使用稳定 adapter 代码，管理页面只展示供应商名称；目录建议来自锁定版本 LiteLLM 的 Chat 元数据，目录外调用名仍可提交并由真实连接测试兜底。旧 `enabled`、`priority` 和手工价格字段不再接受或返回。
+
+候选读取只用 `keyConfigured` 表示是否已有凭据，绝不返回明文或数据库密文。PATCH 省略 `apiKey` 时保留原凭据，传 `null` 时清除，传非空字符串时替换。新增和编辑普通候选不会改变 Chat 当前项；启用操作先测试目标快照，成功后才切换，失败时原当前项不变。编辑当前候选也先测试拟议配置，测试或版本核对失败时不覆盖正在使用的版本。候选不提供硬删除或独立启停接口。
 
 模型配置 `id`、调用记录 `userId` 和 `modelConfigId` 与其他 MySQL 业务 ID 一致，对外使用十进制字符串，内部数据库列仍为 `BIGINT UNSIGNED`。
 
-`0006` 在数据库中使用中文表注释和字段注释，这些注释只用于说明持久化语义，不改变本节约定的 JSON 字段名、错误码或状态字面值。
+`0006` 在数据库中使用中文表注释和字段注释，这些注释只用于说明持久化语义，不改变本节约定的 JSON 字段名、错误码或状态字面值。`0008` 增加候选的 `capability/adapter/model_call_name/config_version`、Chat 唯一当前绑定，以及调用日志的能力、来源和模型快照。迁移前置检查要求旧模型配置和日志表为空；当前不转换旧优先级或价格数据。
 
-调用记录可用 `userId`、`modelConfigId`、`from`、`to`、`cursor` 和 `limit` 查询，默认每页 50、最大 200，按创建时间和内部 ID 倒序稳定分页。每条记录只包含调用标识、用户、实际模型快照、状态、耗时、Token、价格快照、估算成本和非敏感错误分类，不保存或返回消息、模型完整响应和凭据。汇总只聚合已知值，并用 `incompleteMeteringCount` 表明不完整计量。
+调用记录可用 `source`、`status`、精确 `callId`、`userId`、`modelConfigId`、`from`、`to`、`cursor` 和 `limit` 查询，默认每页 50、最大 200，按创建时间和内部 ID 倒序稳定分页。`source` 是由内部调用方提供的稳定小写代码，格式为 `^[a-z][a-z0-9_]{0,31}$`；本期实际接入并保证产生的来源只有管理动作使用的 `connection_test`。时间范围使用带时区的 ISO 8601，区间为左闭右开；非法值、反向区间或无效游标返回 `400 INVALID_LLM_CALL_QUERY`。每条记录只包含调用标识、能力、来源、用户、实际 adapter/模型快照、状态、耗时、Token、LiteLLM 价格快照、估算成本和非敏感错误分类，不保存或返回消息、模型完整响应和凭据。汇总针对当前筛选条件聚合全部命中记录，只累加已知值，并用 `incompleteMeteringCount` 表明不完整计量。
 
-管理错误包括 `INVALID_LLM_MODEL_CONFIG`、`INVALID_LLM_CALL_QUERY`、`LLM_MODEL_NOT_FOUND`、`LLM_CREDENTIALS_UNAVAILABLE` 和 `LLM_CONNECTION_FAILED`。供应商原始错误不会透传。
+管理错误包括 `INVALID_LLM_MODEL_CONFIG`、`INVALID_LLM_CALL_QUERY`、`LLM_MODEL_NOT_FOUND`、`LLM_MODEL_CONFIG_CHANGED`、`LLM_CHAT_NOT_CONFIGURED`、`LLM_CREDENTIALS_UNAVAILABLE`、`LLM_UNAVAILABLE` 和 `LLM_REQUEST_REJECTED`。连接测试、启用和当前项验证失败响应带可查询的 `callId`；供应商原始错误不会透传。
+
+## 管理台用户管理
+
+以下接口同样只允许 `is_admin=true` 访问。当前使用 `POST /api/auth/admin-login` 登录判定管理身份，管理台前端在 `/admin` 入口获得管理会话后调用管理端 API。
+
+| Method  | Path                                    | 成功结果                                                                                                                       |
+| ------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `GET`   | `/api/auth/admin/users`                 | `{items, total, page, size}`，支持 `q`（ID/邮箱/昵称模糊）、`status`（启用/禁用）、`role`（admin/user）筛选和 `page/size` 分页 |
+| `GET`   | `/api/auth/admin/users/{userId}`        | 用户详情对象，含 `resume_count`（简历数）和 `llm_call_count`（LLM 调用量，当前为占位值 0）                                     |
+| `PATCH` | `/api/auth/admin/users/{userId}/status` | `{ok: true, user, revoked_sessions}`；body 为 `{action: "disable" 或 "enable"}`                                                       |
+| `GET`   | `/api/auth/admin/stats`                 | `{total_users, active_users_7d, total_resumes, llm_calls_today, estimated_cost_month}` 全系统概览统计；后两项当前为占位值      |
+
+管理员禁用自己的账号返回 `422 CANNOT_SELF_DISABLE`；尝试禁用系统中最后一个管理员返回 `422 CANNOT_DISABLE_LAST_ADMIN`。禁用成功后服务端立即调用 `revoke_user_sessions` 删除该用户全部 Redis 会话，该用户的所有现有 Cookie 立即失效，重新登录时因用户 `status=0` 被拒绝。每次 enable/disable 操作写入 `admin_operation_logs` 表，包含操作人、目标用户、操作类型和时间戳。

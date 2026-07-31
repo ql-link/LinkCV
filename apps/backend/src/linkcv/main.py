@@ -24,6 +24,8 @@ from linkcv.integrations.llm_client import (
 from linkcv.integrations.rag_client import HttpRagClient, UnconfiguredRagClient
 from linkcv.modules.llm.crypto import CredentialCipher
 from linkcv.modules.llm.gateway import LLMGateway, LiteLLMGateway
+from linkcv.modules.llm.catalog import CHAT_CAPABILITY
+from linkcv.modules.llm.models import LLMCapabilityBinding
 from linkcv.modules.llm.service import LLMService
 from linkcv.services.import_admission import ImportAdmissionController
 from linkcv.services.storage_cleanup_service import run_storage_cleanup_worker
@@ -74,9 +76,15 @@ def create_app(
         import linkcv.models  # noqa: F401
 
         Base.metadata.create_all(engine)
+        with session_factory() as schema_db:
+            if schema_db.get(LLMCapabilityBinding, CHAT_CAPABILITY) is None:
+                schema_db.add(LLMCapabilityBinding(capability=CHAT_CAPABILITY))
+                schema_db.commit()
 
     runtime_storage = storage or AssetStorage(runtime_settings)
-    runtime_llm_gateway = llm_gateway or LiteLLMGateway()
+    runtime_llm_gateway = llm_gateway or LiteLLMGateway(
+        runtime_settings.llm_timeout_seconds
+    )
     llm_service = LLMService(
         session_factory,
         runtime_llm_gateway,

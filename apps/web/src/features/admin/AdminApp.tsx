@@ -1,4 +1,11 @@
-﻿import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
   Activity,
@@ -22,15 +29,22 @@ import {
   Search,
   Settings2,
   ShieldCheck,
-  TestTube2,
   UserRound,
   Users,
   X,
 } from "lucide-react";
 import { Brand } from "../../components/ds";
+import { LogsPanel, ModelsPanel } from "./AdminLlmPanels";
 import "./admin.css";
 
-import { api, User, ApiRequestError } from "../../api/client";
+import {
+  api,
+  User,
+  ApiRequestError,
+  type AdminStatsResponse,
+  type AdminUserListResponse,
+  type AdminUserDetail as AdminUserDetailType,
+} from "../../api/client";
 type AdminSection = "overview" | "users" | "models" | "logs";
 
 function initialAdminSection(): AdminSection {
@@ -108,40 +122,7 @@ const usersData = [
   },
 ];
 
-const modelData = [
-  {
-    name: "openai/gpt-4.1-mini",
-    base: "供应商默认",
-    priority: 10,
-    input: "$0.40",
-    output: "$1.60",
-    enabled: true,
-    keyConfigured: true,
-    tested: "3 分钟前",
-  },
-  {
-    name: "anthropic/claude-sonnet-4",
-    base: "https://api.anthropic.com",
-    priority: 20,
-    input: "$3.00",
-    output: "$15.00",
-    enabled: true,
-    keyConfigured: true,
-    tested: "昨天 18:24",
-  },
-  {
-    name: "deepseek/deepseek-chat",
-    base: "https://api.deepseek.com",
-    priority: 30,
-    input: "$0.27",
-    output: "$1.10",
-    enabled: false,
-    keyConfigured: false,
-    tested: "尚未测试",
-  },
-];
-
-const logsData = [
+const overviewActivityData = [
   {
     time: "10:42:18",
     level: "INFO",
@@ -159,8 +140,8 @@ const logsData = [
   {
     time: "10:36:42",
     level: "WARN",
-    event: "模型连接重试",
-    detail: "claude-sonnet-4 · 第 2 次",
+    event: "模型连接测试失败",
+    detail: "claude-sonnet-4 · 凭据不可用",
     tone: "warn",
   },
   {
@@ -223,7 +204,11 @@ export function AdminApp() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
             >
-              <AdminWorkspace user={user} onLogout={handleLogout} />
+              <AdminWorkspace
+                user={user}
+                onLogout={handleLogout}
+                onSessionExpired={() => setUser(null)}
+              />
             </motion.div>
           )
         ) : (
@@ -454,15 +439,16 @@ function AdminLogin({ onLogin }: { onLogin: (user: User) => void }) {
 function AdminWorkspace({
   user,
   onLogout,
+  onSessionExpired,
 }: {
   user: User;
   onLogout: () => void;
+  onSessionExpired: () => void;
 }) {
   const [section, setSection] = useState<AdminSection>(initialAdminSection);
   const [mobileNav, setMobileNav] = useState(false);
-  const [drawer, setDrawer] = useState<null | "user" | "model" | "alerts">(
-    null,
-  );
+  const [drawer, setDrawer] = useState<null | "user" | "alerts">(null);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [toast, setToast] = useState("");
 
   const navigate = (next: AdminSection) => {
@@ -474,6 +460,11 @@ function AdminWorkspace({
   const notify = (message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(""), 2400);
+  };
+
+  const openUserDetail = (userId: string) => {
+    setSelectedUserId(userId);
+    setDrawer("user");
   };
 
   return (
@@ -546,7 +537,7 @@ function AdminWorkspace({
             </motion.button>
             <button
               className="admin-account-button"
-              onClick={() => setDrawer("user")}
+              onClick={() => openUserDetail(user.id)}
             >
               <span>{user.nickname[0]}</span>
               <div>
@@ -567,25 +558,23 @@ function AdminWorkspace({
               transition={gentleSpring}
             >
               {section === "overview" && (
-                <Overview
-                  user={user}
-                  navigate={navigate}
-                  openDrawer={setDrawer}
-                />
+                <Overview user={user} navigate={navigate} />
               )}
               {section === "users" && (
-                <UsersPanel
-                  openDrawer={() => setDrawer("user")}
-                  notify={notify}
-                />
+                <UsersPanel onSelectUser={openUserDetail} notify={notify} />
               )}
               {section === "models" && (
                 <ModelsPanel
-                  openDrawer={() => setDrawer("model")}
                   notify={notify}
+                  onSessionExpired={onSessionExpired}
                 />
               )}
-              {section === "logs" && <LogsPanel />}
+              {section === "logs" && (
+                <LogsPanel
+                  notify={notify}
+                  onSessionExpired={onSessionExpired}
+                />
+              )}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -595,8 +584,12 @@ function AdminWorkspace({
         {drawer && (
           <AdminDrawer
             kind={drawer}
-            user={user}
-            close={() => setDrawer(null)}
+            currentUser={user}
+            selectedUserId={selectedUserId}
+            close={() => {
+              setDrawer(null);
+              setSelectedUserId(null);
+            }}
             notify={notify}
           />
         )}
@@ -623,7 +616,7 @@ const sectionLabels: Record<AdminSection, string> = {
   overview: "概览",
   users: "用户管理",
   models: "模型配置",
-  logs: "系统日志",
+  logs: "LLM 调用日志",
 };
 
 function SidebarContent({
@@ -643,7 +636,7 @@ function SidebarContent({
     { id: "overview", label: "概览", icon: LayoutDashboard },
     { id: "users", label: "用户管理", icon: Users },
     { id: "models", label: "模型配置", icon: Bot },
-    { id: "logs", label: "系统日志", icon: Activity },
+    { id: "logs", label: "LLM 调用日志", icon: Activity },
   ];
   return (
     <>
@@ -698,7 +691,7 @@ function PageHeading({
   eyebrow: string;
   title: string;
   description: string;
-  action?: React.ReactNode;
+  action?: ReactNode;
 }) {
   return (
     <header className="admin-page-heading">
@@ -715,80 +708,102 @@ function PageHeading({
 function Overview({
   user,
   navigate,
-  openDrawer,
 }: {
   user: User;
   navigate: (section: AdminSection) => void;
-  openDrawer: (drawer: "model") => void;
 }) {
-  const metrics = [
-    {
-      label: "用户总数",
-      value: "1,284",
-      delta: "+12.4%",
-      note: "较上月",
-      icon: Users,
-    },
-    {
-      label: "近 7 日登录用户",
-      value: "468",
-      delta: "+8.2%",
-      note: "成功登录口径",
-      icon: Activity,
-    },
-    {
-      label: "今日 LLM 调用",
-      value: "3,204",
-      delta: "+18.6%",
-      note: "成功率 98.7%",
-      icon: Bot,
-    },
-    {
-      label: "本月估算费用",
-      value: "$184.32",
-      delta: "62%",
-      note: "预算使用",
-      icon: FileText,
-    },
-  ];
+  const [stats, setStats] = useState<AdminStatsResponse | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  useEffect(() => {
+    setStatsLoading(true);
+    api
+      .adminStats()
+      .then(setStats)
+      .catch(() => setStats(null))
+      .finally(() => setStatsLoading(false));
+  }, []);
+
+  const displayValue = (
+    val: string | number | undefined | null,
+    fallback = "—",
+  ): string => {
+    if (val === undefined || val === null) return fallback;
+    if (typeof val === "number") return val.toLocaleString();
+    return val;
+  };
+
+  const metrics = statsLoading
+    ? null
+    : [
+        {
+          label: "用户总数",
+          value: displayValue(stats?.total_users),
+          delta: null,
+          note: "注册用户",
+          icon: Users,
+        },
+        {
+          label: "近 7 日登录用户",
+          value: displayValue(stats?.active_users_7d),
+          delta: null,
+          note: "成功登录口径",
+          icon: Activity,
+        },
+        {
+          label: "今日 LLM 调用",
+          value: displayValue(stats?.llm_calls_today),
+          delta: null,
+          note: "统计接入后可用",
+          icon: Bot,
+        },
+        {
+          label: "简历总数",
+          value: displayValue(stats?.total_resumes),
+          delta: null,
+          note: "全部用户",
+          icon: FileText,
+        },
+      ];
   return (
     <>
       <PageHeading
-        eyebrow="2026 年 7 月 27 日 · 星期一"
+        eyebrow="管理控制台"
         title={`早上好，${user.nickname}`}
-        description="这是 LinkCV 今天的运行状态与需要关注的事项。"
+        description="这是 LinkCV 当前的运行状态与用户情况。"
         action={
           <motion.button
             className="admin-primary-button"
             whileTap={{ scale: 0.97 }}
-            onClick={() => openDrawer("model")}
+            onClick={() => navigate("models")}
           >
             <Plus size={16} />
             新增模型
           </motion.button>
         }
       />
-      <section className="metrics-grid" aria-label="核心指标">
-        {metrics.map((metric, index) => (
-          <motion.article
-            key={metric.label}
-            className="metric-card"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ ...gentleSpring, delay: index * 0.035 }}
-          >
-            <div className="metric-card-top">
-              <span>
-                <metric.icon size={17} />
-              </span>
-              <small>{metric.delta}</small>
-            </div>
-            <p>{metric.label}</p>
-            <strong>{metric.value}</strong>
-            <footer>{metric.note}</footer>
-          </motion.article>
-        ))}
-      </section>
+      {metrics && (
+        <section className="metrics-grid" aria-label="核心指标">
+          {metrics.map((metric, index) => (
+            <motion.article
+              key={metric.label}
+              className="metric-card"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ ...gentleSpring, delay: index * 0.035 }}
+            >
+              <div className="metric-card-top">
+                <span>
+                  <metric.icon size={17} />
+                </span>
+              </div>
+              <p>{metric.label}</p>
+              <strong>{metric.value}</strong>
+              <footer>{metric.note}</footer>
+            </motion.article>
+          ))}
+        </section>
+      )}
       <div className="overview-grid">
         <section className="admin-surface activity-surface">
           <div className="surface-heading">
@@ -801,7 +816,7 @@ function Overview({
             </button>
           </div>
           <div className="activity-list">
-            {logsData.map((log) => (
+            {overviewActivityData.map((log) => (
               <div className="activity-row" key={log.time + log.event}>
                 <span className={`event-icon ${log.tone}`}>
                   <Activity size={15} />
@@ -820,7 +835,7 @@ function Overview({
             <div className="surface-heading">
               <div>
                 <h2>需要关注</h2>
-                <p>2 项待处理</p>
+                <p>待处理事项</p>
               </div>
             </div>
             <button
@@ -844,8 +859,8 @@ function Overview({
                 <Clock3 size={17} />
               </span>
               <div>
-                <strong>18 位用户从未登录</strong>
-                <p>占全部用户的 1.4%</p>
+                <strong>前往用户管理</strong>
+                <p>查看和管理所有用户账号</p>
               </div>
               <ChevronRight size={16} />
             </button>
@@ -862,16 +877,16 @@ function Overview({
             </div>
             <dl>
               <div>
-                <dt>成功率</dt>
-                <dd>98.7%</dd>
+                <dt>用户总数</dt>
+                <dd>{displayValue(stats?.total_users)}</dd>
               </div>
               <div>
-                <dt>P95 延迟</dt>
-                <dd>2.4 s</dd>
+                <dt>简历总数</dt>
+                <dd>{displayValue(stats?.total_resumes)}</dd>
               </div>
               <div>
-                <dt>可用模型</dt>
-                <dd>2 / 3</dd>
+                <dt>活跃用户 7d</dt>
+                <dd>{displayValue(stats?.active_users_7d)}</dd>
               </div>
             </dl>
           </section>
@@ -882,22 +897,57 @@ function Overview({
 }
 
 function UsersPanel({
-  openDrawer,
+  onSelectUser,
   notify,
 }: {
-  openDrawer: () => void;
+  onSelectUser: (userId: string) => void;
   notify: (message: string) => void;
 }) {
+  const [page, setPage] = useState(1);
+  const [size] = useState(20);
   const [query, setQuery] = useState("");
-  const visibleUsers = useMemo(
-    () =>
-      usersData.filter((user) =>
-        `${user.name}${user.email}${user.id}`
-          .toLowerCase()
-          .includes(query.toLowerCase()),
-      ),
-    [query],
-  );
+  const [statusFilter, setStatusFilter] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const [data, setData] = useState<AdminUserListResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  const totalPages = data ? Math.max(1, Math.ceil(data.total / data.size)) : 1;
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(false);
+    api
+      .adminListUsers({
+        page,
+        size,
+        q: query || undefined,
+        status: statusFilter || undefined,
+        role: roleFilter || undefined,
+      })
+      .then(setData)
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  }, [page, size, query, statusFilter, roleFilter]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const resetFilters = () => {
+    setQuery("");
+    setStatusFilter("");
+    setRoleFilter("");
+    setPage(1);
+  };
+
+  const copyId = (id: string) => {
+    navigator.clipboard.writeText(id).then(
+      () => notify(`已复制用户 ID ${id}`),
+      () => notify("复制失败"),
+    );
+  };
+
   return (
     <>
       <PageHeading
@@ -907,127 +957,165 @@ function UsersPanel({
         action={
           <button
             className="admin-secondary-button"
-            onClick={() => notify("用户数据已导出（演示）")}
+            onClick={() => notify("导出功能待接入")}
           >
             导出数据
           </button>
         }
       />
-      <section className="mini-metrics">
-        <div>
-          <span>用户总数</span>
-          <strong>1,284</strong>
-        </div>
-        <div>
-          <span>启用用户</span>
-          <strong>1,248</strong>
-        </div>
-        <div>
-          <span>今日新增</span>
-          <strong>18</strong>
-        </div>
-        <div>
-          <span>从未登录</span>
-          <strong>18</strong>
-        </div>
-      </section>
       <section className="admin-surface table-surface">
         <div className="table-tools">
           <label className="table-search">
             <Search size={16} />
             <input
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setPage(1);
+              }}
               placeholder="搜索用户 ID、邮箱或昵称"
             />
           </label>
           <div>
-            <select aria-label="账号状态">
-              <option>全部状态</option>
-              <option>启用</option>
-              <option>禁用</option>
+            <select
+              aria-label="账号状态"
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">全部状态</option>
+              <option value="enabled">启用</option>
+              <option value="disabled">禁用</option>
             </select>
-            <select aria-label="用户角色">
-              <option>全部角色</option>
-              <option>管理员</option>
-              <option>普通用户</option>
+            <select
+              aria-label="用户角色"
+              value={roleFilter}
+              onChange={(e) => {
+                setRoleFilter(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">全部角色</option>
+              <option value="admin">管理员</option>
+              <option value="user">普通用户</option>
             </select>
-            <button>
-              <Settings2 size={16} />
-              筛选
-            </button>
+            {(query || statusFilter || roleFilter) && (
+              <button onClick={resetFilters}>
+                <X size={16} />
+                清除筛选
+              </button>
+            )}
           </div>
         </div>
         <div className="admin-table-wrap">
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>用户</th>
-                <th>用户 ID</th>
-                <th>角色 / 状态</th>
-                <th>简历</th>
-                <th>LLM 调用 / 费用</th>
-                <th>最近登录</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {visibleUsers.map((user) => (
-                <tr key={user.id}>
-                  <td>
-                    <button className="user-cell" onClick={openDrawer}>
-                      <span>{user.name.slice(0, 1)}</span>
-                      <div>
-                        <strong>{user.name}</strong>
-                        <small>{user.email}</small>
-                      </div>
-                    </button>
-                  </td>
-                  <td>
-                    <button
-                      className="copy-id"
-                      onClick={() => notify(`已复制用户 ID ${user.id}`)}
-                    >
-                      {user.id}
-                      <Copy size={13} />
-                    </button>
-                  </td>
-                  <td>
-                    <div className="status-stack">
-                      <span>{user.role}</span>
-                      <small
-                        className={
-                          user.status === "启用" ? "enabled" : "disabled"
-                        }
-                      >
-                        {user.status}
-                      </small>
-                    </div>
-                  </td>
-                  <td>{user.resumes}</td>
-                  <td>
-                    <strong className="table-strong">{user.calls}</strong>
-                    <small className="table-sub">{user.cost}</small>
-                  </td>
-                  <td>{user.login}</td>
-                  <td>
-                    <button
-                      className="row-action"
-                      aria-label={`更多操作 ${user.name}`}
-                    >
-                      <MoreHorizontal size={18} />
-                    </button>
-                  </td>
+          {loading && <div className="table-status-row">加载中...</div>}
+          {!loading && error && (
+            <div className="table-status-row">
+              加载失败
+              <button onClick={load} style={{ marginLeft: 8 }}>
+                重试
+              </button>
+            </div>
+          )}
+          {!loading && !error && data && data.items.length === 0 && (
+            <div className="table-status-row">
+              {query || statusFilter || roleFilter
+                ? "没有匹配的用户"
+                : "暂无用户数据"}
+            </div>
+          )}
+          {data && data.items.length > 0 && (
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>用户</th>
+                  <th>用户 ID</th>
+                  <th>角色 / 状态</th>
+                  <th>简历</th>
+                  <th>注册时间</th>
+                  <th>最近登录</th>
+                  <th />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.items.map((u) => (
+                  <tr key={u.id}>
+                    <td>
+                      <button
+                        className="user-cell"
+                        onClick={() => onSelectUser(u.id)}
+                      >
+                        <span>{u.nickname.slice(0, 1)}</span>
+                        <div>
+                          <strong>{u.nickname}</strong>
+                          <small>{u.email}</small>
+                        </div>
+                      </button>
+                    </td>
+                    <td>
+                      <button className="copy-id" onClick={() => copyId(u.id)}>
+                        {u.id}
+                        <Copy size={13} />
+                      </button>
+                    </td>
+                    <td>
+                      <div className="status-stack">
+                        <span>{u.is_admin ? "管理员" : "普通用户"}</span>
+                        <small
+                          className={u.status === 1 ? "enabled" : "disabled"}
+                        >
+                          {u.status === 1 ? "启用" : "禁用"}
+                        </small>
+                      </div>
+                    </td>
+                    <td>{u.resume_count}</td>
+                    <td>
+                      {u.created_at
+                        ? new Date(u.created_at).toLocaleDateString("zh-CN")
+                        : "—"}
+                    </td>
+                    <td>
+                      {u.last_login_at
+                        ? new Date(u.last_login_at).toLocaleString("zh-CN")
+                        : "从未登录"}
+                    </td>
+                    <td>
+                      <button
+                        className="row-action"
+                        aria-label={`更多操作 ${u.nickname}`}
+                        onClick={() => onSelectUser(u.id)}
+                      >
+                        <MoreHorizontal size={18} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
         <footer className="table-footer">
-          <span>共 1,284 位用户 · 当前显示 {visibleUsers.length} 条</span>
+          {data && (
+            <span>
+              共 {data.total.toLocaleString()} 位用户 · 第 {data.page}/
+              {totalPages} 页
+            </span>
+          )}
           <div>
-            <button disabled>上一页</button>
-            <button>下一页</button>
+            <button
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              上一页
+            </button>
+            <button
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              下一页
+            </button>
           </div>
         </footer>
       </section>
@@ -1035,161 +1123,16 @@ function UsersPanel({
   );
 }
 
-function ModelsPanel({
-  openDrawer,
-  notify,
-}: {
-  openDrawer: () => void;
-  notify: (message: string) => void;
-}) {
-  const [testing, setTesting] = useState("");
-  const test = (name: string) => {
-    setTesting(name);
-    window.setTimeout(() => {
-      setTesting("");
-      notify(`连接成功 · call_${Math.random().toString(16).slice(2, 8)}`);
-    }, 800);
-  };
-  return (
-    <>
-      <PageHeading
-        eyebrow="AI 基础设施"
-        title="模型配置"
-        description="配置业务调用模型、主备顺序与成本，无需修改环境变量。"
-        action={
-          <motion.button
-            className="admin-primary-button"
-            whileTap={{ scale: 0.97 }}
-            onClick={openDrawer}
-          >
-            <Plus size={16} />
-            新增模型
-          </motion.button>
-        }
-      />
-      <section className="model-summary">
-        <div>
-          <span className="model-summary-icon">
-            <Bot size={20} />
-          </span>
-          <div>
-            <strong>2 个模型正在参与业务调用</strong>
-            <p>按优先级自动切换，上次故障转移发生在 6 天前。</p>
-          </div>
-        </div>
-        <button onClick={() => notify("所有启用模型连接正常")}>
-          测试全部连接 <TestTube2 size={15} />
-        </button>
-      </section>
-      <section className="models-list">
-        {modelData.map((model, index) => (
-          <motion.article className="model-card" key={model.name} layout>
-            <div className="model-priority">
-              <span>{index + 1}</span>
-              <small>
-                {index === 0 ? "主模型" : index === 1 ? "备用" : "候选"}
-              </small>
-            </div>
-            <div className="model-main">
-              <div className="model-title-row">
-                <h3>{model.name}</h3>
-                <span
-                  className={model.enabled ? "enabled-pill" : "disabled-pill"}
-                >
-                  {model.enabled ? "启用" : "停用"}
-                </span>
-              </div>
-              <p>{model.base}</p>
-              <div className="model-meta">
-                <span className={model.keyConfigured ? "" : "missing-key"}>
-                  <KeyRound size={14} />
-                  {model.keyConfigured ? "密钥已配置" : "密钥未配置"}
-                </span>
-                <span>优先级 {model.priority}</span>
-                <span>
-                  输入 {model.input} / 输出 {model.output}
-                </span>
-                <span>测试：{model.tested}</span>
-              </div>
-            </div>
-            <div className="model-actions">
-              <button
-                onClick={() => test(model.name)}
-                disabled={testing === model.name}
-              >
-                {testing === model.name ? "测试中…" : "测试连接"}
-              </button>
-              <button onClick={openDrawer}>编辑</button>
-              <button aria-label={`更多 ${model.name}`}>
-                <MoreHorizontal size={18} />
-              </button>
-            </div>
-          </motion.article>
-        ))}
-      </section>
-    </>
-  );
-}
-
-function LogsPanel() {
-  return (
-    <>
-      <PageHeading
-        eyebrow="可观测性"
-        title="系统日志"
-        description="追踪关键业务事件与异常，只展示安全的结构化上下文。"
-        action={
-          <span className="live-status">
-            <span /> 实时更新
-          </span>
-        }
-      />
-      <section className="admin-surface logs-surface">
-        <div className="table-tools">
-          <label className="table-search">
-            <Search size={16} />
-            <input placeholder="搜索事件、callId 或用户 ID" />
-          </label>
-          <div>
-            <select aria-label="日志等级">
-              <option>全部等级</option>
-              <option>INFO</option>
-              <option>WARN</option>
-              <option>ERROR</option>
-            </select>
-            <select aria-label="时间范围">
-              <option>最近 1 小时</option>
-              <option>最近 24 小时</option>
-              <option>最近 7 天</option>
-            </select>
-          </div>
-        </div>
-        <div className="log-stream">
-          {[...logsData, ...logsData].map((log, index) => (
-            <div className="log-row" key={`${log.time}-${index}`}>
-              <time>{log.time}</time>
-              <span className={`log-level ${log.tone}`}>{log.level}</span>
-              <strong>{log.event}</strong>
-              <p>{log.detail}</p>
-              <button aria-label="查看日志详情">
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          ))}
-        </div>
-      </section>
-    </>
-  );
-}
-
 function AdminDrawer({
   kind,
-  user,
+  currentUser,
+  selectedUserId,
   close,
   notify,
 }: {
-  kind: "user" | "model" | "alerts";
-  user: User;
+  kind: "user" | "alerts";
+  currentUser: User;
+  selectedUserId: string | null;
   close: () => void;
   notify: (message: string) => void;
 }) {
@@ -1206,19 +1149,9 @@ function AdminDrawer({
         <header>
           <div>
             <span className="page-eyebrow">
-              {kind === "model"
-                ? "模型配置"
-                : kind === "alerts"
-                  ? "通知中心"
-                  : "用户详情"}
+              {kind === "alerts" ? "通知中心" : "用户详情"}
             </span>
-            <h2>
-              {kind === "model"
-                ? "新增模型"
-                : kind === "alerts"
-                  ? "待处理通知"
-                  : user.nickname}
-            </h2>
+            <h2>{kind === "alerts" ? "待处理通知" : "用户详情"}</h2>
           </div>
           <motion.button
             whileTap={{ scale: 0.9 }}
@@ -1228,158 +1161,251 @@ function AdminDrawer({
             <X size={19} />
           </motion.button>
         </header>
-        {kind === "model" ? (
-          <ModelForm close={close} notify={notify} />
-        ) : kind === "alerts" ? (
+        {kind === "alerts" ? (
           <Alerts />
         ) : (
-          <UserDetail user={user} notify={notify} />
+          <UserDetail
+            userId={selectedUserId}
+            currentUser={currentUser}
+            notify={notify}
+          />
         )}
       </motion.aside>
     </div>
   );
 }
 
-function ModelForm({
-  close,
-  notify,
+function ConfirmDialog({
+  title,
+  message,
+  confirmLabel,
+  onConfirm,
+  onCancel,
+  loading,
 }: {
-  close: () => void;
-  notify: (message: string) => void;
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading?: boolean;
 }) {
   return (
-    <form
-      className="drawer-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        close();
-        notify("模型配置已保存为停用状态");
-      }}
-    >
-      <label>
-        <span>模型标识</span>
-        <input placeholder="openai/gpt-4.1-mini" required />
-      </label>
-      <label>
-        <span>
-          API Base <small>可选</small>
-        </span>
-        <input placeholder="使用供应商默认地址" />
-      </label>
-      <label>
-        <span>API Key</span>
-        <input type="password" placeholder="仅写入，不会再次显示" required />
-      </label>
-      <div className="drawer-form-row">
-        <label>
-          <span>优先级</span>
-          <input type="number" defaultValue="40" min="0" />
-        </label>
-        <label>
-          <span>初始状态</span>
-          <select defaultValue="disabled">
-            <option value="disabled">停用</option>
-            <option value="enabled">启用</option>
-          </select>
-        </label>
-      </div>
-      <div className="drawer-form-row">
-        <label>
-          <span>输入价格</span>
-          <input type="number" placeholder="USD / 百万 Token" />
-        </label>
-        <label>
-          <span>输出价格</span>
-          <input type="number" placeholder="USD / 百万 Token" />
-        </label>
-      </div>
-      <div className="drawer-callout">
-        <ShieldCheck size={17} />
-        <p>凭据只会加密写入。响应、日志与异常中均不会出现密钥原文。</p>
-      </div>
-      <footer>
-        <button type="button" onClick={close}>
-          取消
-        </button>
-        <motion.button whileTap={{ scale: 0.97 }} type="submit">
-          保存配置
-        </motion.button>
-      </footer>
-    </form>
+    <div className="drawer-layer" onClick={onCancel} style={{ zIndex: 110 }}>
+      <motion.div
+        className="confirm-dialog"
+        initial={{ opacity: 0, scale: 0.96 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.96 }}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "var(--neutral-1)",
+          borderRadius: 12,
+          padding: 24,
+          maxWidth: 400,
+          width: "90%",
+          margin: "auto",
+          boxShadow: "0 16px 48px rgba(0,0,0,0.25)",
+        }}
+      >
+        <h3 style={{ margin: "0 0 8px" }}>{title}</h3>
+        <p style={{ margin: "0 0 20px", color: "var(--neutral-11)" }}>
+          {message}
+        </p>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button
+            className="admin-secondary-button"
+            onClick={onCancel}
+            disabled={loading}
+          >
+            取消
+          </button>
+          <motion.button
+            className="admin-danger-button"
+            whileTap={{ scale: 0.97 }}
+            onClick={onConfirm}
+            disabled={loading}
+          >
+            {loading ? "处理中..." : confirmLabel}
+          </motion.button>
+        </div>
+      </motion.div>
+    </div>
   );
 }
-
 function UserDetail({
-  user,
+  userId,
+  currentUser,
   notify,
 }: {
-  user: User;
+  userId: string | null;
+  currentUser: User;
   notify: (message: string) => void;
 }) {
+  const [detail, setDetail] = useState<AdminUserDetailType | null | "loading">(
+    "loading",
+  );
+  const [confirmAction, setConfirmAction] = useState<
+    "disable" | "enable" | null
+  >(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  useEffect(() => {
+    if (!userId) {
+      setDetail(null);
+      return;
+    }
+    setDetail("loading");
+    api
+      .adminGetUser(userId)
+      .then(setDetail)
+      .catch(() => setDetail(null));
+  }, [userId]);
+
+  const handleStatusAction = async () => {
+    if (!userId || !confirmAction) return;
+    setActionLoading(true);
+    try {
+      const res = await api.adminUpdateUserStatus(userId, confirmAction);
+      notify(confirmAction === "disable" ? "账号已禁用" : "账号已启用");
+      setConfirmAction(null);
+      // Reload detail
+      const updated = await api.adminGetUser(userId);
+      setDetail(updated);
+    } catch (err) {
+      if (err instanceof ApiRequestError) {
+        if (err.message === "CANNOT_SELF_DISABLE")
+          notify("不能禁用你自己的账号");
+        else if (err.message === "CANNOT_DISABLE_LAST_ADMIN")
+          notify("不能禁用最后一个管理员");
+        else notify("操作失败，请重试");
+      } else {
+        notify("网络异常");
+      }
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  if (detail === "loading") {
+    return (
+      <div className="user-detail" style={{ padding: 24, textAlign: "center" }}>
+        加载中...
+      </div>
+    );
+  }
+  if (!detail) {
+    return (
+      <div className="user-detail" style={{ padding: 24, textAlign: "center" }}>
+        无法加载用户信息
+      </div>
+    );
+  }
+
+  const isSelf = currentUser.id === detail.id;
+  const isLastAdmin = detail.is_admin && detail.status === 1;
+
   return (
     <div className="user-detail">
       <div className="user-detail-hero">
-        <span>{user.nickname[0]}</span>
+        <span>{detail.nickname[0]}</span>
         <div>
-          <strong>{user.nickname}</strong>
-          <p>{user.email}</p>
-          <small>管理员 · 启用</small>
+          <strong>{detail.nickname}</strong>
+          <p>{detail.email}</p>
+          <small>
+            {detail.is_admin ? "管理员" : "普通用户"} ·{" "}
+            {detail.status === 1 ? "启用" : "禁用"}
+          </small>
         </div>
       </div>
       <dl>
         <div>
           <dt>用户 ID</dt>
-          <dd>{user.id}</dd>
+          <dd>{detail.id}</dd>
         </div>
         <div>
           <dt>注册时间</dt>
-          <dd>2026-06-12</dd>
+          <dd>
+            {detail.created_at
+              ? new Date(detail.created_at).toLocaleDateString("zh-CN")
+              : "—"}
+          </dd>
         </div>
         <div>
           <dt>最近登录</dt>
-          <dd>今天 09:42</dd>
+          <dd>
+            {detail.last_login_at
+              ? new Date(detail.last_login_at).toLocaleString("zh-CN")
+              : "从未登录"}
+          </dd>
         </div>
       </dl>
       <section>
         <h3>使用概况</h3>
         <div className="detail-stats">
           <div>
-            <strong>8</strong>
+            <strong>{detail.resume_count}</strong>
             <span>简历</span>
           </div>
           <div>
-            <strong>341</strong>
+            <strong>{detail.llm_call_count}</strong>
             <span>LLM 调用</span>
           </div>
           <div>
-            <strong>$1.62</strong>
-            <span>估算费用</span>
+            <strong>{detail.llm_call_count > 0 ? "—" : "0"}</strong>
+            <span>
+              估算费用 <small title="数据待接入">ⓘ</small>
+            </span>
           </div>
         </div>
       </section>
-      <section>
-        <h3>最近简历</h3>
-        <div className="recent-item">
-          <FileText size={17} />
-          <div>
-            <strong>高级产品经理 · 中文</strong>
-            <span>今天 09:18 更新</span>
-          </div>
-        </div>
-        <div className="recent-item">
-          <FileText size={17} />
-          <div>
-            <strong>Product Lead · English</strong>
-            <span>7 月 25 日更新</span>
-          </div>
-        </div>
-      </section>
-      <button
-        className="danger-zone-button"
-        onClick={() => notify("演示环境未执行账号禁用")}
-      >
-        禁用此账号
-      </button>
+      {detail.status === 1 ? (
+        <button
+          className="danger-zone-button"
+          onClick={() => setConfirmAction("disable")}
+          disabled={isSelf || isLastAdmin}
+          title={
+            isSelf
+              ? "不能禁用你自己的账号"
+              : isLastAdmin
+                ? "不能禁用最后一个管理员"
+                : undefined
+          }
+        >
+          {isSelf
+            ? "不能禁用自己"
+            : isLastAdmin
+              ? "最后一个管理员"
+              : "禁用此账号"}
+        </button>
+      ) : (
+        <button
+          className="admin-primary-button"
+          style={{ width: "100%", marginTop: 16 }}
+          onClick={() => setConfirmAction("enable")}
+        >
+          启用此账号
+        </button>
+      )}
+
+      <AnimatePresence>
+        {confirmAction && (
+          <ConfirmDialog
+            title={
+              confirmAction === "disable" ? "确认禁用账号" : "确认启用账号"
+            }
+            message={
+              confirmAction === "disable"
+                ? `确定要禁用 ${detail.nickname}（${detail.email}）吗？该用户的所有活跃会话将被立即撤销。`
+                : `确定要启用 ${detail.nickname}（${detail.email}）吗？该用户将可以重新登录。`
+            }
+            confirmLabel={confirmAction === "disable" ? "禁用" : "启用"}
+            onConfirm={handleStatusAction}
+            onCancel={() => setConfirmAction(null)}
+            loading={actionLoading}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

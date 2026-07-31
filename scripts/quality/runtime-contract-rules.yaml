@@ -14,6 +14,22 @@ contracts:
         pattern: '(?m)^LLM_CREDENTIAL_ENCRYPTION_KEYS=$'
         message: Production 基础配置必须由私密覆盖提供 LLM 凭据密钥环
 
+  - id: unified-llm-timeout
+    description: 统一 LLM Gateway 与三套环境使用同一个请求超时默认值
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default=60,[\s\S]*alias="LLM_TIMEOUT_SECONDS"'
+        message: FastAPI 必须保留统一 LLM 超时默认值 60 秒
+      - path: .env.example
+        pattern: '(?m)^LLM_TIMEOUT_SECONDS=60$'
+        message: 本地模板必须声明统一 LLM 超时
+      - path: .env.development
+        pattern: '(?m)^LLM_TIMEOUT_SECONDS=60$'
+        message: Dev 配置必须声明统一 LLM 超时
+      - path: .env.production
+        pattern: '(?m)^LLM_TIMEOUT_SECONDS=60$'
+        message: Production 配置必须声明统一 LLM 超时
+
   - id: fastapi-default-port
     description: FastAPI 和 Vite 使用同一个 BACKEND_PORT 默认值
     assertions:
