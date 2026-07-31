@@ -72,11 +72,7 @@ export type UploadedAsset = {
 
 export type JobSourceType = "manual" | "external_import";
 export type JobEmploymentType =
-  | "full_time"
-  | "part_time"
-  | "internship"
-  | "contract"
-  | "temporary";
+  "full_time" | "part_time" | "internship" | "contract" | "temporary";
 export type JobWorkMode = "onsite" | "hybrid" | "remote";
 export type JobSalaryPeriod = "hour" | "day" | "month" | "year";
 
@@ -160,6 +156,113 @@ export type JobDescriptionCreatePayload = JobDescriptionFields & {
   source_type: JobSourceType;
   source_url?: string | null;
   duplicate_resolution?: DuplicateResolution;
+};
+
+export type ChatAdapter =
+  | "openai"
+  | "anthropic"
+  | "deepseek"
+  | "dashscope"
+  | "openrouter"
+  | "gemini"
+  | "xai"
+  | "groq"
+  | "mistral"
+  | "cohere_chat"
+  | "perplexity";
+
+export type LlmModelLastTest = {
+  status: "succeeded" | "failed" | "cancelled";
+  callId: string;
+  testedAt: string;
+};
+
+export type LlmModelConfig = {
+  id: string;
+  capability: "chat";
+  adapter: ChatAdapter;
+  model: string;
+  apiBase: string | null;
+  keyConfigured: boolean;
+  active: boolean;
+  lastTest: LlmModelLastTest | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ChatCapability = {
+  capability: "chat";
+  activeModelId: string | null;
+  activeModel: LlmModelConfig | null;
+  models: LlmModelConfig[];
+};
+
+export type ChatCatalogAdapter = {
+  code: ChatAdapter;
+  label: string;
+  requiresApiKey: boolean;
+  models: string[];
+};
+
+export type ChatCatalog = {
+  capability: "chat";
+  adapters: ChatCatalogAdapter[];
+};
+
+export type LlmModelCreatePayload = {
+  adapter: ChatAdapter;
+  model: string;
+  apiBase?: string | null;
+  apiKey?: string | null;
+};
+
+export type LlmModelPatchPayload = Partial<
+  Omit<LlmModelCreatePayload, "apiKey">
+> & {
+  apiKey?: string | null;
+};
+
+export type LlmCallStatus = "pending" | "succeeded" | "failed" | "cancelled";
+export type LlmMeteringStatus = "complete" | "partial" | "unknown";
+
+export type LlmCallRecord = {
+  callId: string;
+  capability: "chat";
+  source: string;
+  userId: string;
+  modelConfigId: string | null;
+  adapter: ChatAdapter | null;
+  model: string | null;
+  status: LlmCallStatus;
+  meteringStatus: LlmMeteringStatus;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  inputPricePerMillion: string | null;
+  outputPricePerMillion: string | null;
+  estimatedCostUsd: string | null;
+  latencyMs: number | null;
+  errorCode: string | null;
+  createdAt: string;
+};
+
+export type LlmCallSummary = {
+  callCount: number;
+  incompleteMeteringCount: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  estimatedCostUsd: string | null;
+};
+
+export type LlmCallQuery = {
+  source?: string;
+  status?: LlmCallStatus;
+  modelConfigId?: string;
+  userId?: string;
+  callId?: string;
+  from?: string;
+  to?: string;
+  cursor?: string;
+  limit?: number;
 };
 
 export type JobDuplicateDetails = {
@@ -416,6 +519,51 @@ export const api = {
       { method: "PATCH", body: { action } },
     ),
   adminStats: () => request<AdminStatsResponse>("/api/auth/admin/stats"),
+  getChatCapability: () =>
+    request<ChatCapability>("/api/admin/llm/capabilities/chat"),
+  getChatCatalog: () => request<ChatCatalog>("/api/admin/llm/catalog/chat"),
+  createLlmModel: (payload: LlmModelCreatePayload) =>
+    request<{ model: LlmModelConfig }>("/api/admin/llm/models", {
+      method: "POST",
+      body: payload,
+    }),
+  updateLlmModel: (id: string, payload: LlmModelPatchPayload) =>
+    request<{ model: LlmModelConfig; validationCallId: string | null }>(
+      `/api/admin/llm/models/${id}`,
+      {
+        method: "PATCH",
+        body: payload,
+      },
+    ),
+  testLlmModel: (id: string) =>
+    request<{ ok: true; callId: string }>(`/api/admin/llm/models/${id}/test`, {
+      method: "POST",
+    }),
+  bindChatModel: (id: string) =>
+    request<{ activeModel: LlmModelConfig; callId: string }>(
+      `/api/admin/llm/models/${id}/activate`,
+      {
+        method: "POST",
+      },
+    ),
+  listLlmCalls: (params: LlmCallQuery = {}) => {
+    const search = new URLSearchParams();
+    if (params.source) search.set("source", params.source);
+    if (params.status) search.set("status", params.status);
+    if (params.modelConfigId) search.set("modelConfigId", params.modelConfigId);
+    if (params.userId) search.set("userId", params.userId);
+    if (params.callId) search.set("callId", params.callId);
+    if (params.from) search.set("from", params.from);
+    if (params.to) search.set("to", params.to);
+    if (params.cursor) search.set("cursor", params.cursor);
+    if (params.limit) search.set("limit", String(params.limit));
+    const suffix = search.toString();
+    return request<{
+      calls: LlmCallRecord[];
+      summary: LlmCallSummary;
+      nextCursor: string | null;
+    }>(`/api/admin/llm/calls${suffix ? `?${suffix}` : ""}`);
+  },
 };
 
 export type { ResumeDocumentV1, ResumeStyleV1 } from "./resumeContract";

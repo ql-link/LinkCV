@@ -4,9 +4,9 @@
 
 - `apps/web/src/main.tsx`：React 启动入口。
 - `apps/web/src/App.tsx`：页面状态与主要功能组合。
-- `apps/web/src/features/`：鉴权、首页、编辑器、预览和临时 JD 管理功能。
+- `apps/web/src/features/`：鉴权、首页、编辑器、预览、临时 JD 管理和管理端功能。
 - `apps/web/src/store/resumeStore.ts`：简历编辑状态。
-- `apps/web/src/api/client.ts`：鉴权、简历、JD 和资源 API 客户端。
+- `apps/web/src/api/client.ts`：鉴权、简历、JD、资源和管理员 LLM API 客户端。
 - `apps/web/src/api/resumeContract.ts`：语义简历 TypeScript 契约，以及领域 JSON、Markdown 和现有 Tiptap 编辑器之间的过渡适配。
 - `apps/web/vite.config.mjs`：开发服务器、FastAPI 代理和本地图片预览插件。
 
@@ -29,6 +29,10 @@ API 客户端只发送相对 `/api/...` 请求并携带 cookie，不在业务组
 
 JD 临时管理界面使用可恢复路由 `/jobs`、`/jobs/new`、`/jobs/:jobId` 和 `/jobs/:jobId/edit`，与简历页面共享现有 Cookie 会话和工作区侧边栏；在简历、模板、JD 列表、JD 详情及编辑页之间切换时只替换右侧内容区。列表支持活动、已归档、全部范围，关键词搜索和游标加载更多；详情页提供编辑、归档和恢复，只有归档记录在列表及详情页展示站内确认后的永久删除入口。新建页允许手工填写最终结构化字段和可选来源链接。编辑页把来源身份完整显示为只读，不向更新接口发送来源字段。创建遇到来源重复时，页面根据服务端 `allowed_actions` 显示取消、恢复原内容或更新原记录；动作回传记录 ID 和 `lock_version`。浏览器采集插件是独立的 `apps/extension` 应用，通过相同 Cookie 会话调用后端导入接口；Web 不承载页面抓取或插件 API Key 管理。
 
+管理端入口为 `/admin`，模型配置页使用 `/admin/llm/models`，LLM 调用日志页使用 `/admin/logs`。模型页突出可点击的系统 `Chat 模型` 能力区，展示唯一当前模型和多个候选；管理员只填写模型供应商、模型名称、可选 API Base 与 API Key，不填写能力、优先级或价格。供应商选项展示用户可识别的名称，不暴露 LiteLLM adapter 代码；当前支持列表包含以 `dashscope` 路由调用的阿里云百炼（千问）。保存普通候选不改变当前项，“设为当前”会先执行真实测试再切换；编辑当前项也必须先验证拟议配置。密钥字段只写，编辑留空时不进入 PATCH，显式清除才发送 `null`。
+
+日志页只展示管理端和未来内部 Chat 调用产生的真实记录，当前已接入来源为 `connection_test`。页面支持自由输入来源，以及按状态、模型、用户、精确 `callId` 和时间范围筛选、手动刷新与游标翻页；不轮询、不展示普通系统事件或简历导入记录。概览和用户页现有演示数据不属于 LLM 日志数据源。
+
 ## 本地资源预览
 
 Vite 插件在 `/__local_asset__` 提供开发期本地图片读取，只允许工作区和用户 `Documents` 目录内的文件。它不是生产 API，不应扩大允许目录或用于暴露任意本地路径。
@@ -39,4 +43,5 @@ Vite 插件在 `/__local_asset__` 提供开发期本地图片读取，只允许�
 - 测试文件与被测源码相邻，命名为 `*.test.ts` 或 `*.test.tsx`，优先验证可见行为和公开接口。
 - 前端测试不得访问真实后端、数据库或对象存储，跨模块依赖在 API Client 边界使用受控 Mock。
 - JD 页面测试覆盖列表筛选、归档版本、永久删除确认、重复来源动作和编辑来源只读契约。
+- 管理端组件测试在 API Client 边界使用 Mock，覆盖 Chat 当前项/候选与真实日志渲染、错误与空状态、密钥更新语义、测试后启用、筛选和游标交互。
 - 当前没有自动化 E2E；涉及 Web、FastAPI、MySQL 和 MinIO 的完整浏览器流程仍需人工验证。

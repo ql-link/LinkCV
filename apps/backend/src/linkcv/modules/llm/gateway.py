@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Literal, Protocol
 
 import litellm
+from pydantic import BaseModel
 
 from linkcv.modules.llm.schemas import ChatMessage
 
@@ -37,14 +38,14 @@ class GatewayError(Exception):
     def __init__(
         self,
         *,
-        switchable: bool,
+        code: Literal["LLM_UNAVAILABLE", "LLM_REQUEST_REJECTED"],
         may_have_reached_provider: bool,
         usage: GatewayUsage | None = None,
         input_price_per_million: Decimal | None = None,
         output_price_per_million: Decimal | None = None,
     ) -> None:
         super().__init__("LLM provider request failed")
-        self.switchable = switchable
+        self.code = code
         self.may_have_reached_provider = may_have_reached_provider
         self.usage = usage
         self.input_price_per_million = input_price_per_million
@@ -59,6 +60,7 @@ class LLMGateway(Protocol):
         messages: Sequence[ChatMessage],
         api_base: str | None,
         api_key: str | None,
+        response_format: dict[str, object] | type[BaseModel] | None = None,
     ) -> GatewayResult: ...
 
     async def start_stream(
@@ -111,13 +113,17 @@ def _gateway_error(
     }
     if isinstance(error, (litellm.APIConnectionError, litellm.AuthenticationError)):
         return GatewayError(
-            switchable=True,
+            code=(
+                "LLM_REQUEST_REJECTED"
+                if isinstance(error, litellm.AuthenticationError)
+                else "LLM_UNAVAILABLE"
+            ),
             may_have_reached_provider=False,
             **details,
         )
     if isinstance(error, litellm.RateLimitError):
         return GatewayError(
-            switchable=True,
+            code="LLM_UNAVAILABLE",
             may_have_reached_provider=False,
             **details,
         )
@@ -130,7 +136,7 @@ def _gateway_error(
         ),
     ):
         return GatewayError(
-            switchable=True,
+            code="LLM_UNAVAILABLE",
             may_have_reached_provider=True,
             **details,
         )
@@ -143,12 +149,12 @@ def _gateway_error(
         ),
     ):
         return GatewayError(
-            switchable=False,
+            code="LLM_REQUEST_REJECTED",
             may_have_reached_provider=False,
             **details,
         )
     return GatewayError(
-        switchable=False,
+        code="LLM_UNAVAILABLE",
         may_have_reached_provider=True,
         **details,
     )
@@ -165,14 +171,19 @@ class LiteLLMGateway:
         messages: Sequence[ChatMessage],
         api_base: str | None,
         api_key: str | None,
+        response_format: dict[str, object] | type[BaseModel] | None = None,
     ) -> dict[str, object]:
-        return {
+        arguments: dict[str, object] = {
             "model": model,
             "messages": [message.model_dump() for message in messages],
             "base_url": api_base,
             "api_key": api_key,
             "timeout": self.timeout_seconds,
+            "num_retries": 0,
         }
+        if response_format is not None:
+            arguments["response_format"] = response_format
+        return arguments
 
     async def complete(
         self,
@@ -181,6 +192,7 @@ class LiteLLMGateway:
         messages: Sequence[ChatMessage],
         api_base: str | None,
         api_key: str | None,
+        response_format: dict[str, object] | type[BaseModel] | None = None,
     ) -> GatewayResult:
         try:
             response = await litellm.acompletion(
@@ -189,6 +201,7 @@ class LiteLLMGateway:
                     messages=messages,
                     api_base=api_base,
                     api_key=api_key,
+                    response_format=response_format,
                 )
             )
             content = response.choices[0].message.content or ""
