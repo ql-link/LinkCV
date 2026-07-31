@@ -24,7 +24,7 @@ description: 审查 LinkCV 代码差异的正确性、范围、契约、安全�
 1. `AGENTS.md`；
 2. 当前分支、`git status`、提交范围和完整差异；
 3. 新增或修改的测试；
-4. L2/L3 的 `.specs/<KEY>/state.yaml`、冻结产物和实施报告（如果存在）；
+4. 方案先行任务的 `.specs/<KEY>/state.yaml`、冻结产物和实施报告（如果存在）；
 5. 适用的 `.specs/<KEY>/manual_acceptance.md`；
 6. `state.yaml` 中由 `spec verify --run` 自动记录的命令、退出码和代码快照；
 7. 与变更相关但未修改的调用方、公共类型和配置。
@@ -38,7 +38,7 @@ description: 审查 LinkCV 代码差异的正确性、范围、契约、安全�
 - 实现是否覆盖全部确认范围；
 - 是否出现未确认的功能扩张或顺手重构；
 - 每个验收场景是否有实现和验证承接；
-- 技术设计或实施报告中的偏差是否已经解释并重新确认。
+- 实施报告中的偏差是否已经解释并重新确认，实际数据结构与状态流转是否与冻结方案文档一致。
 
 ### 正确性与失败路径
 
@@ -138,8 +138,8 @@ description: 审查 LinkCV 代码差异的正确性、范围、契约、安全�
 ## 6. 阶段转交
 
 - 存在严重、必须修复或影响当前交付的一般问题：返回 `implementation-execution`；
-- 发现规格与实现冲突：返回对应的需求、验收或技术设计技能；
-- 活跃 L2/L3 任务处于 `quality_review`，且没有阻断问题时，记录与当前验证快照绑定的审查结论：
+- 发现规格与实现冲突：返回 `solution-generator` 或 `acceptance-generator`；
+- 活跃的方案先行任务处于 `quality_review`，且没有阻断问题时，记录与当前验证快照绑定的审查结论：
 
   ```bash
   npm run spec -- review <KEY> --pass --evidence "<简洁审查结论>"

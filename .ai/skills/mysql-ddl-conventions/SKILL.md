@@ -1,6 +1,6 @@
 ---
 name: mysql-ddl-conventions
-description: 为 LinkCV 设计和审查 MySQL 8.4 表、字段、主键、外键、唯一约束、索引、时间、状态与字符集规范，并把概念数据模型落成可评审的物理 schema。适用于新建业务表、调整字段类型与约束、设计查询索引或评审 DDL；真正写入 SQLAlchemy 模型和 Alembic revision 时转 alembic-migration。
+description: 为 LinkCV 设计和审查 MySQL 8.4 表、字段、主键、外键、唯一约束、索引、时间、状态与字符集规范，并把概念数据模型落成可评审的物理 schema。适用于新建业务表、调整字段类型与约束、设计查询索引或评审 DDL，通常由 solution-generator 在方案文档的数据模型章节调用以定稿；真正写入 SQLAlchemy 模型和 Alembic revision 时转 alembic-migration。
 ---
 
 # MySQL 表结构规范
@@ -13,9 +13,9 @@ LinkCV 已有 FastAPI 业务模型、MySQL 8.4 配置和 Alembic/SQL-first 基�
 
 ## 2. 必读输入
 
-1. 冻结 Brief 中的实体、字段和关系；
-2. Acceptance 中的查询、写入、唯一性、权限、并发和失败场景；
-3. 当前 Technical Design 草稿中已经确认的持久化边界与旧数据决策；本技能可由 `technical-design` 在起草过程中调用，不要求技术设计先冻结；
+1. 方案文档中的实体、字段和关系；本技能通常由 `solution-generator` 在起草数据模型章节时调用，不要求方案文档先冻结；
+2. 已有 Acceptance 或方案文档中的查询、写入、唯一性、权限、并发和失败场景；
+3. 方案文档中已经确认的持久化边界、数据归属与旧数据决策；
 4. 真实调用方的读写模式、排序、分页、过滤和生命周期；
 5. 已存在的模型、Alembic 基础、revision、SQL 文件和数据库文档；分别说明“模型与仓库 head 的状态”和“目标环境是否已迁移”，不得合并成一个状态。
 
@@ -30,7 +30,7 @@ LinkCV 已有 FastAPI 业务模型、MySQL 8.4 配置和 Alembic/SQL-first 基�
 
 ### 主键
 
-- 根据跨系统生成、写入局部性、暴露风险和关联成本选择 `BIGINT`、UUID 或其他方案，并在技术设计中说明；
+- 根据跨系统生成、写入局部性、暴露风险和关联成本选择 `BIGINT`、UUID 或其他方案，并在方案文档的数据模型章节说明；
 - 不同时保留两个含义不清的“主键”；业务唯一标识使用显式唯一约束；
 - 外键类型、长度和有符号性必须与被引用主键完全一致。
 
@@ -82,4 +82,4 @@ LinkCV 已有 FastAPI 业务模型、MySQL 8.4 配置和 Alembic/SQL-first 基�
 待验证：<EXPLAIN、数据量、锁或边界假设>
 ```
 
-若由 `technical-design` 调用，把物理 schema 结论返回其数据章节，不能另建第二份方案或直接落地代码；技术设计冻结并进入实施后，才转 `alembic-migration` 同步 ORM 与 SQL-first revision。若字段语义、所有权、旧数据或删除行为仍有分歧，返回 `module-planning` 更新飞书并重新收敛受影响规格，不要在 DDL 中替用户决定。
+若由 `solution-generator` 调用，把物理 schema 结论返回方案文档的数据模型章节和定稿 DDL，不能另建第二份方案或直接落地代码；方案文档冻结并进入实施后，才转 `alembic-migration` 同步 ORM 与 SQL-first revision。若字段语义、所有权、旧数据或删除行为仍有分歧，交回 `solution-generator` 向用户确认，不要在 DDL 中替用户决定。

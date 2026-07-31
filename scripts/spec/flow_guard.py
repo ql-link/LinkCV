@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""管理 L2/L3 本地规格状态和冻结产物哈希。"""
+"""管理方案先行任务的本地规格状态和冻结产物哈希。"""
 
 from __future__ import annotations
 
@@ -22,33 +22,32 @@ VERIFICATION_ROOT = Path(
     os.environ.get("LINKCV_VERIFICATION_ROOT", REPO_ROOT)
 ).resolve()
 KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
-STATE_SCHEMA_VERSION = 4
+STATE_SCHEMA_VERSION = 7
 ARTIFACT_FILES = {
-    "brief": "brief.md",
+    "solution": "solution.md",
     "acceptance": "acceptance.feature",
-    "technical_design": "technical_design.md",
+}
+# 方案文档冻结时选定的后续路径。进不进 .specs 由 flow-router 决定，这里只决定方案之后怎么走。
+ROUTES = {
+    "acceptance_first": "契约验收（方案 → 验收契约 → 实现）",
+    "direct_build": "直接施工（方案 → 实现，不产出验收契约）",
 }
 PHASES = (
-    "brief",
+    "solution",
     "acceptance",
-    "technical_design",
     "implementation",
     "quality_review",
     "release_ready",
 )
 STATIONS = {
-    "brief": (
-        "brief-generator",
+    "solution": (
+        "solution-generator",
         ("来源 Issue 正文、相关飞书详情文档与用户确认补充",),
     ),
-    "acceptance": ("acceptance-generator", ("brief.md",)),
-    "technical_design": (
-        "technical-design",
-        ("brief.md", "acceptance.feature"),
-    ),
+    "acceptance": ("acceptance-generator", ("solution.md",)),
     "implementation": (
         "implementation-execution（代码完成后转 run-all-tests）",
-        ("brief.md", "acceptance.feature", "technical_design.md（仅 L3）"),
+        ("solution.md",),
     ),
     "quality_review": (
         "code-review-and-quality",
@@ -132,12 +131,22 @@ def empty_quality_review_state() -> dict[str, object]:
     }
 
 
+def route_of(state: dict[str, object]) -> str | None:
+    route = state.get("route")
+    return route if isinstance(route, str) and route in ROUTES else None
+
+
+def acceptance_required(state: dict[str, object]) -> bool:
+    """只有契约验收路径才把 acceptance.feature 作为下游门禁的前置。"""
+    return route_of(state) == "acceptance_first"
+
+
 def migrate_state(state: dict[str, object]) -> bool:
     """升级旧状态，并把平台字段压缩为单一来源 Issue 引用。"""
     version = state.get("schema_version")
     if version == STATE_SCHEMA_VERSION:
         return False
-    if version not in {None, 1, 2, 3}:
+    if version not in {None, 1, 2, 3, 4, 5, 6}:
         return False
 
     if version in {None, 1}:
@@ -155,6 +164,28 @@ def migrate_state(state: dict[str, object]) -> bool:
         state["quality_review"] = empty_quality_review_state()
         if legacy_verified or state.get("phase") == "done":
             state["phase"] = "implementation"
+
+    artifacts = state.get("artifacts")
+    if isinstance(artifacts, dict):
+        artifacts.pop("technical_design", None)
+        legacy_brief = artifacts.pop("brief", None)
+        if isinstance(legacy_brief, dict) and "solution" not in artifacts:
+            legacy_brief["file"] = ARTIFACT_FILES["solution"]
+            artifacts["solution"] = legacy_brief
+    if state.get("phase") == "technical_design":
+        state["phase"] = "implementation"
+    if state.get("phase") == "brief":
+        state["phase"] = "solution"
+
+    # 旧版只有 L2/L3 一条链路，等价于新的契约验收路径；方案文档未冻结时路径尚未选定。
+    state.pop("lane", None)
+    if route_of(state) is None:
+        solution_frozen = (
+            isinstance(artifacts, dict)
+            and isinstance(artifacts.get("solution"), dict)
+            and artifacts["solution"].get("frozen") is True
+        )
+        state["route"] = "acceptance_first" if solution_frozen else None
 
     source_issue = state.get("source_issue")
     if not isinstance(source_issue, str) or not source_issue.strip():
@@ -180,7 +211,9 @@ def load_state(key: str) -> dict[str, object]:
     if migrated:
         print(
             f"INFO 已自动升级 {display_path(path)} 到 schema v{STATE_SCHEMA_VERSION}；"
-            "已把旧版平台字段合并为 source_issue 引用",
+            "已把旧版平台字段合并为 source_issue 引用，移除已下线的 "
+            "technical_design 阶段与 lane 字段，把 brief 阶段改名为 solution，"
+            "并把原 L2/L3 链路记为 route=acceptance_first",
             file=sys.stderr,
         )
     return value
@@ -257,10 +290,27 @@ def validate_schema(key: str, state: dict[str, object]) -> list[str]:
         errors.append(f"schema_version 必须为 {STATE_SCHEMA_VERSION}")
     if state.get("key") != validate_key(key):
         errors.append("state.key 与目录名不一致")
-    if state.get("lane") not in {"L2", "L3"}:
-        errors.append("lane 必须是 L2 或 L3")
+    if "lane" in state:
+        errors.append("lane 字段已下线；改用 route 记录方案文档之后的路径")
+    route = state.get("route")
+    if route is not None and route not in ROUTES:
+        errors.append("route 必须是 " + "、".join(ROUTES) + " 或 null")
     if state.get("phase") not in PHASES:
         errors.append("phase 非法")
+    solution_frozen = False
+    try:
+        solution_frozen = artifact_state(state, "solution").get("frozen") is True
+    except ValueError:
+        pass
+    if solution_frozen and route is None:
+        errors.append("方案文档已冻结但未记录 route；运行 spec route 选定后续路径")
+    if not solution_frozen and route is not None:
+        errors.append("方案文档尚未冻结，不应记录 route")
+    try:
+        if artifact_state(state, "acceptance").get("frozen") and route != "acceptance_first":
+            errors.append("只有 route=acceptance_first 才允许冻结 acceptance.feature")
+    except ValueError:
+        pass
     source_issue = state.get("source_issue")
     if source_issue is not None and not (
         isinstance(source_issue, str) and source_issue.strip()
@@ -394,18 +444,22 @@ def validate_frozen_artifact(key: str, state: dict[str, object], name: str) -> l
 
 
 def required_artifacts(state: dict[str, object], phase: str) -> list[str]:
-    if phase == "brief":
+    if phase == "solution":
         return []
     if phase == "acceptance":
-        return ["brief"]
-    if phase == "technical_design":
-        return ["brief", "acceptance"]
+        return ["solution"]
     if phase in {"implementation", "quality_review", "release_ready"}:
-        names = ["brief", "acceptance"]
-        if state.get("lane") == "L3":
-            names.append("technical_design")
-        return names
+        if acceptance_required(state):
+            return ["solution", "acceptance"]
+        return ["solution"]
     raise ValueError(f"未知阶段: {phase}")
+
+
+def station_reads(state: dict[str, object], phase: str) -> tuple[str, ...]:
+    reads = STATIONS[phase][1]
+    if phase == "implementation" and acceptance_required(state):
+        return (*reads, ARTIFACT_FILES["acceptance"])
+    return reads
 
 
 def check_phase(key: str, state: dict[str, object], phase: str) -> list[str]:
@@ -433,15 +487,13 @@ def expected_phase(state: dict[str, object]) -> str:
         if isinstance(review, dict) and review.get("passed"):
             return "release_ready"
         return "quality_review"
-    if artifact_state(state, "acceptance").get("frozen"):
-        if state.get("lane") == "L3" and not artifact_state(
-            state, "technical_design"
-        ).get("frozen"):
-            return "technical_design"
+    if not artifact_state(state, "solution").get("frozen"):
+        return "solution"
+    if route_of(state) == "direct_build":
         return "implementation"
-    if artifact_state(state, "brief").get("frozen"):
-        return "acceptance"
-    return "brief"
+    if artifact_state(state, "acceptance").get("frozen"):
+        return "implementation"
+    return "acceptance"
 
 
 def validate_current_state(key: str, state: dict[str, object]) -> list[str]:
@@ -479,8 +531,8 @@ def cmd_init(args: argparse.Namespace) -> int:
         "key": key,
         "title": args.title or "",
         "source_issue": source_issue,
-        "lane": args.lane,
-        "phase": "brief",
+        "route": None,
+        "phase": "solution",
         "artifacts": {
             name: {"file": filename, "frozen": False, "sha256": None}
             for name, filename in ARTIFACT_FILES.items()
@@ -491,7 +543,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         "updated_at": now(),
     }
     save_state(key, state)
-    print(f"OK  已初始化 .specs/{key} ({args.lane})")
+    print(f"OK  已初始化 .specs/{key}；方案文档冻结时选定后续路径")
     return 0
 
 
@@ -532,8 +584,10 @@ def cmd_status(args: argparse.Namespace) -> int:
             continue
 
         phase = str(state.get("phase"))
-        skill, reads = STATIONS[phase]
-        print(f"{key}: lane={state.get('lane')} phase={phase}")
+        skill = STATIONS[phase][0]
+        reads = station_reads(state, phase)
+        route = route_of(state)
+        print(f"{key}: route={ROUTES[route] if route else '未选定'} phase={phase}")
         print(f"  下一站：{skill}")
         print(
             "  待读："
@@ -567,7 +621,7 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 
 def invalidate_after(state: dict[str, object], name: str) -> None:
-    order = ["brief", "acceptance", "technical_design"]
+    order = ["solution", "acceptance"]
     for downstream in order[order.index(name) + 1 :]:
         item = artifact_state(state, downstream)
         item["frozen"] = False
@@ -591,6 +645,17 @@ def cmd_freeze(args: argparse.Namespace) -> int:
             for prerequisite in required_artifacts(state, name)
             for error in validate_frozen_artifact(key, state, prerequisite)
         )
+    if name == "solution" and args.next is None and route_of(state) is None:
+        errors.append(
+            "冻结方案文档时必须用 --next 选定后续路径：" + "、".join(ROUTES)
+        )
+    if name == "acceptance":
+        chosen = args.next or route_of(state)
+        if chosen != "acceptance_first":
+            errors.append(
+                "当前路径不产出验收契约；需要时先运行 "
+                f"`npm run spec -- route {key} acceptance_first`"
+            )
     if errors:
         for error in errors:
             print(f"ERROR {error}", file=sys.stderr)
@@ -598,24 +663,61 @@ def cmd_freeze(args: argparse.Namespace) -> int:
 
     item = artifact_state(state, name)
     new_hash = digest(path)
-    if item.get("frozen") and item.get("sha256") == new_hash:
+    unchanged = item.get("frozen") and item.get("sha256") == new_hash
+    route_change = name == "solution" and args.next is not None and args.next != route_of(state)
+    if unchanged and not route_change:
         print(f"OK  {name} 已冻结且内容未变化")
         return 0
-    if item.get("frozen") and not args.refreeze:
+    if item.get("frozen") and not unchanged and not args.refreeze:
         return fail(f"{name} 已冻结且内容变化；确认后追加 --refreeze")
-    if item.get("frozen"):
+    if item.get("frozen") and not unchanged:
         invalidate_after(state, name)
 
     item["frozen"] = True
     item["sha256"] = new_hash
-    if name == "brief":
-        state["phase"] = "acceptance"
-    elif name == "acceptance":
-        state["phase"] = "technical_design" if state.get("lane") == "L3" else "implementation"
-    else:
-        state["phase"] = "implementation"
+    if name == "solution" and args.next is not None:
+        apply_route(state, args.next)
+    state["phase"] = expected_phase(state)
     save_state(key, state)
-    print(f"OK  已冻结 {name}，下一阶段 {state['phase']}")
+    print(
+        f"OK  已冻结 {name}；路径 {ROUTES[route_of(state)]}，下一阶段 {state['phase']}"
+    )
+    return 0
+
+
+def apply_route(state: dict[str, object], route: str) -> None:
+    """切换方案文档之后的路径；离开契约验收时作废已冻结的验收契约和下游证据。"""
+    if route_of(state) == route:
+        return
+    if route != "acceptance_first":
+        acceptance = artifact_state(state, "acceptance")
+        acceptance["frozen"] = False
+        acceptance["sha256"] = None
+    state["verification"] = empty_verification_state()
+    state["quality_review"] = empty_quality_review_state()
+    state["route"] = route
+
+
+def cmd_route(args: argparse.Namespace) -> int:
+    key = validate_key(args.key)
+    state = load_state(key)
+    errors = validate_schema(key, state)
+    if not errors and not artifact_state(state, "solution").get("frozen"):
+        errors.append("方案文档尚未冻结；路径在冻结方案文档时选定")
+    if errors:
+        for error in errors:
+            print(f"ERROR {error}", file=sys.stderr)
+        return 1
+    if route_of(state) == args.route:
+        print(f"OK  路径已经是 {ROUTES[args.route]}")
+        return 0
+    apply_route(state, args.route)
+    state["phase"] = expected_phase(state)
+    save_state(key, state)
+    print(
+        f"OK  已切换为 {ROUTES[args.route]}；已重置验证与质量审查记录，"
+        f"下一阶段 {state['phase']}"
+    )
     return 0
 
 
@@ -729,7 +831,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     init = subparsers.add_parser("init", help="初始化本地规格状态")
     init.add_argument("key", help="Issue 标识，例如 LCV-21")
-    init.add_argument("--lane", choices=("L2", "L3"), required=True, help="交付车道")
     init.add_argument("--title", help="需求标题")
     init.add_argument(
         "--source-issue",
@@ -750,7 +851,17 @@ def build_parser() -> argparse.ArgumentParser:
     freeze.add_argument("key")
     freeze.add_argument("artifact", choices=tuple(ARTIFACT_FILES))
     freeze.add_argument("--refreeze", action="store_true")
+    freeze.add_argument(
+        "--next",
+        choices=tuple(ROUTES),
+        help="冻结方案文档时选定后续路径；首次冻结必填",
+    )
     freeze.set_defaults(handler=cmd_freeze)
+
+    route = subparsers.add_parser("route", help="切换方案文档之后的路径")
+    route.add_argument("key")
+    route.add_argument("route", choices=tuple(ROUTES))
+    route.set_defaults(handler=cmd_route)
 
     verify = subparsers.add_parser("verify")
     verify.add_argument("key")

@@ -117,81 +117,189 @@ def test_link_setup_refuses_to_overwrite_existing_file(tmp_path: Path) -> None:
     assert agents.read_text(encoding="utf-8") == "keep"
 
 
-def test_l3_flow_requires_frozen_artifacts_and_detects_drift(tmp_path: Path) -> None:
+def test_solution_freeze_requires_artifact_and_detects_drift(tmp_path: Path) -> None:
     specs_root = tmp_path / ".specs"
     env = {"LINKCV_SPECS_ROOT": str(specs_root)}
 
-    initialized = run_script(FLOW_GUARD, "init", "LCV-99", "--lane", "L3", env=env)
+    initialized = run_script(FLOW_GUARD, "init", "LCV-99", env=env)
     blocked = run_script(FLOW_GUARD, "check", "LCV-99", "acceptance", env=env)
     assert initialized.returncode == 0, initialized.stderr
     assert blocked.returncode == 1
-    assert "brief 尚未冻结" in blocked.stderr
+    assert "solution 尚未冻结" in blocked.stderr
 
-    brief = specs_root / "LCV-99" / "brief.md"
-    brief.write_text("# Brief\n", encoding="utf-8")
-    frozen = run_script(FLOW_GUARD, "freeze", "LCV-99", "brief", env=env)
+    solution = specs_root / "LCV-99" / "solution.md"
+    solution.write_text("# 方案\n", encoding="utf-8")
+    frozen = run_script(FLOW_GUARD, "freeze", "LCV-99", "solution", "--next", "acceptance_first", env=env)
     allowed = run_script(FLOW_GUARD, "check", "LCV-99", "acceptance", env=env)
     assert frozen.returncode == 0, frozen.stderr
     assert allowed.returncode == 0, allowed.stderr
 
-    brief.write_text("# Changed Brief\n", encoding="utf-8")
+    solution.write_text("# 方案 v2\n", encoding="utf-8")
     drifted = run_script(FLOW_GUARD, "check", "LCV-99", "acceptance", env=env)
     assert drifted.returncode == 1
     assert "冻结后已变化" in drifted.stderr
 
 
-def test_l3_flow_requires_technical_design_and_refreeze_invalidates_downstream(
+def test_acceptance_first_route_reaches_implementation_and_refreeze_invalidates_downstream(
     tmp_path: Path,
 ) -> None:
     specs_root = tmp_path / ".specs"
     feature = specs_root / "LCV-109"
     env = {"LINKCV_SPECS_ROOT": str(specs_root)}
 
-    assert run_script(FLOW_GUARD, "init", "LCV-109", "--lane", "L3", env=env).returncode == 0
-    (feature / "brief.md").write_text("brief v1", encoding="utf-8")
-    assert run_script(FLOW_GUARD, "freeze", "LCV-109", "brief", env=env).returncode == 0
+    assert run_script(FLOW_GUARD, "init", "LCV-109", env=env).returncode == 0
+    (feature / "solution.md").write_text("solution v1", encoding="utf-8")
+    assert run_script(FLOW_GUARD, "freeze", "LCV-109", "solution", "--next", "acceptance_first", env=env).returncode == 0
+
+    blocked = run_script(FLOW_GUARD, "check", "LCV-109", "implementation", env=env)
+    assert blocked.returncode == 1
+    assert "当前 phase=acceptance" in blocked.stderr
+
     (feature / "acceptance.feature").write_text("Feature: v1", encoding="utf-8")
     assert run_script(FLOW_GUARD, "freeze", "LCV-109", "acceptance", env=env).returncode == 0
 
-    blocked = run_script(FLOW_GUARD, "check", "LCV-109", "implementation", env=env)
+    allowed = run_script(FLOW_GUARD, "check", "LCV-109", "implementation", env=env)
     status = run_script(FLOW_GUARD, "status", "LCV-109", env=env)
 
-    assert blocked.returncode == 1
-    assert "当前 phase=technical_design" in blocked.stderr
-    assert status.returncode == 0, status.stderr
-    assert "下一站：technical-design" in status.stdout
-
-    (feature / "technical_design.md").write_text("technical v1", encoding="utf-8")
-    assert run_script(
-        FLOW_GUARD, "freeze", "LCV-109", "technical_design", env=env
-    ).returncode == 0
-    allowed = run_script(FLOW_GUARD, "check", "LCV-109", "implementation", env=env)
     assert allowed.returncode == 0, allowed.stderr
+    assert status.returncode == 0, status.stderr
+    assert "下一站：implementation-execution" in status.stdout
+    assert "technical" not in status.stdout
 
-    (feature / "brief.md").write_text("brief v2", encoding="utf-8")
+    (feature / "solution.md").write_text("solution v2", encoding="utf-8")
     refrozen = run_script(
-        FLOW_GUARD, "freeze", "LCV-109", "brief", "--refreeze", env=env
+        FLOW_GUARD, "freeze", "LCV-109", "solution", "--refreeze", env=env
     )
     state = yaml.safe_load((feature / "state.yaml").read_text(encoding="utf-8"))
 
     assert refrozen.returncode == 0, refrozen.stderr
     assert state["phase"] == "acceptance"
-    assert state["artifacts"]["brief"]["frozen"] is True
+    assert state["artifacts"]["solution"]["frozen"] is True
     assert state["artifacts"]["acceptance"]["frozen"] is False
-    assert state["artifacts"]["technical_design"]["frozen"] is False
+    assert "technical_design" not in state["artifacts"]
     assert state["verification"]["verified"] is False
     assert state["quality_review"]["passed"] is False
+
+
+def test_direct_build_route_reaches_implementation_without_acceptance(tmp_path: Path) -> None:
+    specs_root = tmp_path / ".specs"
+    feature = specs_root / "LCV-116"
+    env = {"LINKCV_SPECS_ROOT": str(specs_root)}
+
+    assert run_script(FLOW_GUARD, "init", "LCV-116", env=env).returncode == 0
+    (feature / "solution.md").write_text("solution v1", encoding="utf-8")
+
+    missing_route = run_script(FLOW_GUARD, "freeze", "LCV-116", "solution", env=env)
+    assert missing_route.returncode == 1
+    assert "必须用 --next 选定后续路径" in missing_route.stderr
+
+    frozen = run_script(
+        FLOW_GUARD, "freeze", "LCV-116", "solution", "--next", "direct_build", env=env
+    )
+    state = yaml.safe_load((feature / "state.yaml").read_text(encoding="utf-8"))
+    allowed = run_script(FLOW_GUARD, "check", "LCV-116", "implementation", env=env)
+    status = run_script(FLOW_GUARD, "status", "LCV-116", env=env)
+
+    assert frozen.returncode == 0, frozen.stderr
+    assert state["route"] == "direct_build"
+    assert state["phase"] == "implementation"
+    assert allowed.returncode == 0, allowed.stderr
+    assert "acceptance.feature" not in status.stdout
+
+    (feature / "acceptance.feature").write_text("Feature: v1", encoding="utf-8")
+    rejected = run_script(FLOW_GUARD, "freeze", "LCV-116", "acceptance", env=env)
+    assert rejected.returncode == 1
+    assert "当前路径不产出验收契约" in rejected.stderr
+
+
+def test_route_switch_to_acceptance_first_requires_acceptance_before_implementation(
+    tmp_path: Path,
+) -> None:
+    specs_root = tmp_path / ".specs"
+    feature = specs_root / "LCV-117"
+    env = {"LINKCV_SPECS_ROOT": str(specs_root)}
+
+    assert run_script(FLOW_GUARD, "init", "LCV-117", env=env).returncode == 0
+    (feature / "solution.md").write_text("solution v1", encoding="utf-8")
+    assert (
+        run_script(
+            FLOW_GUARD, "freeze", "LCV-117", "solution", "--next", "direct_build", env=env
+        ).returncode
+        == 0
+    )
+
+    switched = run_script(FLOW_GUARD, "route", "LCV-117", "acceptance_first", env=env)
+    state = yaml.safe_load((feature / "state.yaml").read_text(encoding="utf-8"))
+    blocked = run_script(FLOW_GUARD, "check", "LCV-117", "implementation", env=env)
+
+    assert switched.returncode == 0, switched.stderr
+    assert state["route"] == "acceptance_first"
+    assert state["phase"] == "acceptance"
+    assert blocked.returncode == 1
+    assert "acceptance 尚未冻结" in blocked.stderr
+
+    (feature / "acceptance.feature").write_text("Feature: v1", encoding="utf-8")
+    assert run_script(FLOW_GUARD, "freeze", "LCV-117", "acceptance", env=env).returncode == 0
+
+    back = run_script(FLOW_GUARD, "route", "LCV-117", "direct_build", env=env)
+    state = yaml.safe_load((feature / "state.yaml").read_text(encoding="utf-8"))
+
+    assert back.returncode == 0, back.stderr
+    assert state["artifacts"]["acceptance"]["frozen"] is False
+    assert state["phase"] == "implementation"
+
+
+def test_route_cannot_be_selected_before_solution_is_frozen(tmp_path: Path) -> None:
+    specs_root = tmp_path / ".specs"
+    env = {"LINKCV_SPECS_ROOT": str(specs_root)}
+
+    assert run_script(FLOW_GUARD, "init", "LCV-118", env=env).returncode == 0
+    rejected = run_script(FLOW_GUARD, "route", "LCV-118", "direct_build", env=env)
+
+    assert rejected.returncode == 1
+    assert "方案文档尚未冻结" in rejected.stderr
+
+
+def test_flow_migration_maps_legacy_lane_to_acceptance_first_route(tmp_path: Path) -> None:
+    specs_root = tmp_path / ".specs"
+    feature = specs_root / "LCV-119"
+    env = {"LINKCV_SPECS_ROOT": str(specs_root)}
+
+    assert run_script(FLOW_GUARD, "init", "LCV-119", env=env).returncode == 0
+    (feature / "solution.md").write_text("solution v1", encoding="utf-8")
+    assert (
+        run_script(
+            FLOW_GUARD, "freeze", "LCV-119", "solution", "--next", "acceptance_first", env=env
+        ).returncode
+        == 0
+    )
+
+    state_file = feature / "state.yaml"
+    state = yaml.safe_load(state_file.read_text(encoding="utf-8"))
+    state["schema_version"] = 6
+    state["lane"] = "L3"
+    state.pop("route")
+    state_file.write_text(yaml.safe_dump(state, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+    status = run_script(FLOW_GUARD, "status", "LCV-119", env=env)
+    migrated = yaml.safe_load(state_file.read_text(encoding="utf-8"))
+
+    assert status.returncode == 0, status.stderr
+    assert migrated["schema_version"] == 7
+    assert "lane" not in migrated
+    assert migrated["route"] == "acceptance_first"
+    assert migrated["phase"] == "acceptance"
 
 
 def test_flow_init_allows_missing_source_issue_for_explicit_exceptions(tmp_path: Path) -> None:
     specs_root = tmp_path / ".specs"
     env = {"LINKCV_SPECS_ROOT": str(specs_root)}
 
-    initialized = run_script(FLOW_GUARD, "init", "LCV-101", "--lane", "L2", env=env)
+    initialized = run_script(FLOW_GUARD, "init", "LCV-101", env=env)
     state = yaml.safe_load((specs_root / "LCV-101" / "state.yaml").read_text(encoding="utf-8"))
 
     assert initialized.returncode == 0, initialized.stderr
-    assert state["schema_version"] == 4
+    assert state["schema_version"] == 7
     assert state["source_issue"] is None
     assert state["verification"]["verified"] is False
     assert state["quality_review"]["passed"] is False
@@ -205,8 +313,6 @@ def test_flow_init_records_source_issue_without_platform_fields(tmp_path: Path) 
         FLOW_GUARD,
         "init",
         "LCV-102",
-        "--lane",
-        "L3",
         "--source-issue",
         "https://example.invalid/issues/LCV-102",
         env=env,
@@ -232,8 +338,6 @@ def test_v3_state_migration_collapses_platform_fields_into_source_issue(
         FLOW_GUARD,
         "init",
         "LCV-102",
-        "--lane",
-        "L2",
         env=env,
     )
     assert initialized.returncode == 0, initialized.stderr
@@ -252,9 +356,71 @@ def test_v3_state_migration_collapses_platform_fields_into_source_issue(
     migrated = yaml.safe_load(state_path.read_text(encoding="utf-8"))
 
     assert status.returncode == 0, status.stderr
-    assert migrated["schema_version"] == 4
+    assert migrated["schema_version"] == 7
     assert migrated["source_issue"] == "multica://workspace-102/issue-102"
     assert "source" not in migrated
+
+
+def test_flow_migration_drops_retired_technical_design_phase(tmp_path: Path) -> None:
+    specs_root = tmp_path / ".specs"
+    feature = specs_root / "LCV-103"
+    env = {"LINKCV_SPECS_ROOT": str(specs_root)}
+
+    assert run_script(FLOW_GUARD, "init", "LCV-103", env=env).returncode == 0
+    (feature / "solution.md").write_text("solution", encoding="utf-8")
+    assert run_script(FLOW_GUARD, "freeze", "LCV-103", "solution", "--next", "acceptance_first", env=env).returncode == 0
+    (feature / "acceptance.feature").write_text("Feature: v1", encoding="utf-8")
+    assert run_script(FLOW_GUARD, "freeze", "LCV-103", "acceptance", env=env).returncode == 0
+
+    state_path = feature / "state.yaml"
+    state = yaml.safe_load(state_path.read_text(encoding="utf-8"))
+    state["schema_version"] = 5
+    state["phase"] = "technical_design"
+    state["artifacts"]["technical_design"] = {
+        "file": "technical_design.md",
+        "frozen": False,
+        "sha256": None,
+    }
+    state_path.write_text(yaml.safe_dump(state, allow_unicode=True), encoding="utf-8")
+
+    status = run_script(FLOW_GUARD, "status", "LCV-103", env=env)
+    migrated = yaml.safe_load(state_path.read_text(encoding="utf-8"))
+
+    assert status.returncode == 0, status.stderr
+    assert migrated["schema_version"] == 7
+    assert migrated["phase"] == "implementation"
+    assert "technical_design" not in migrated["artifacts"]
+    assert "下一站：implementation-execution" in status.stdout
+
+
+def test_flow_migration_renames_brief_artifact_to_solution(tmp_path: Path) -> None:
+    specs_root = tmp_path / ".specs"
+    feature = specs_root / "LCV-104"
+    env = {"LINKCV_SPECS_ROOT": str(specs_root)}
+
+    assert run_script(FLOW_GUARD, "init", "LCV-104", env=env).returncode == 0
+    (feature / "solution.md").write_text("solution", encoding="utf-8")
+    assert run_script(FLOW_GUARD, "freeze", "LCV-104", "solution", "--next", "acceptance_first", env=env).returncode == 0
+
+    state_path = feature / "state.yaml"
+    state = yaml.safe_load(state_path.read_text(encoding="utf-8"))
+    state["schema_version"] = 5
+    state["artifacts"] = {
+        "brief": {**state["artifacts"]["solution"], "file": "brief.md"},
+        "acceptance": state["artifacts"]["acceptance"],
+    }
+    state_path.write_text(yaml.safe_dump(state, allow_unicode=True), encoding="utf-8")
+
+    status = run_script(FLOW_GUARD, "status", "LCV-104", env=env)
+    migrated = yaml.safe_load(state_path.read_text(encoding="utf-8"))
+
+    assert status.returncode == 0, status.stderr
+    assert migrated["schema_version"] == 7
+    assert "brief" not in migrated["artifacts"]
+    assert migrated["artifacts"]["solution"]["file"] == "solution.md"
+    assert migrated["artifacts"]["solution"]["frozen"] is True
+    assert migrated["phase"] == "acceptance"
+    assert "下一站：acceptance-generator" in status.stdout
 
 
 def test_flow_init_rejects_empty_source_issue(tmp_path: Path) -> None:
@@ -265,8 +431,6 @@ def test_flow_init_rejects_empty_source_issue(tmp_path: Path) -> None:
         FLOW_GUARD,
         "init",
         "LCV-103",
-        "--lane",
-        "L2",
         "--source-issue",
         "",
         env=env,
@@ -285,8 +449,6 @@ def test_flow_init_preserves_opaque_issue_reference(tmp_path: Path) -> None:
         FLOW_GUARD,
         "init",
         "LCV-104",
-        "--lane",
-        "L2",
         "--source-issue",
         "LCV-104",
         env=env,
@@ -306,8 +468,6 @@ def test_flow_init_treats_issue_urls_as_opaque_references(tmp_path: Path) -> Non
         FLOW_GUARD,
         "init",
         "LCV-105",
-        "--lane",
-        "L2",
         "--source-issue",
         "https://linear.app/example/issue/LIN-105/example",
         env=env,
@@ -316,8 +476,6 @@ def test_flow_init_treats_issue_urls_as_opaque_references(tmp_path: Path) -> Non
         FLOW_GUARD,
         "init",
         "LCV-105B",
-        "--lane",
-        "L2",
         "--source-issue",
         "https://example.atlassian.net/browse/JIRA-105",
         env=env,
@@ -345,17 +503,17 @@ def test_status_reports_next_action_and_rejects_local_artifact_drift(tmp_path: P
     specs_root = tmp_path / ".specs"
     feature = specs_root / "LCV-106"
     env = {"LINKCV_SPECS_ROOT": str(specs_root)}
-    assert run_script(FLOW_GUARD, "init", "LCV-106", "--lane", "L3", env=env).returncode == 0
-    (feature / "brief.md").write_text("brief", encoding="utf-8")
-    assert run_script(FLOW_GUARD, "freeze", "LCV-106", "brief", env=env).returncode == 0
+    assert run_script(FLOW_GUARD, "init", "LCV-106", env=env).returncode == 0
+    (feature / "solution.md").write_text("solution", encoding="utf-8")
+    assert run_script(FLOW_GUARD, "freeze", "LCV-106", "solution", "--next", "acceptance_first", env=env).returncode == 0
 
     status = run_script(FLOW_GUARD, "status", "LCV-106", env=env)
     assert status.returncode == 0, status.stderr
     assert "下一站：acceptance-generator" in status.stdout
-    assert ".specs/LCV-106/brief.md" in status.stdout
+    assert ".specs/LCV-106/solution.md" in status.stdout
     assert "npm run spec -- check LCV-106 acceptance" in status.stdout
 
-    (feature / "brief.md").write_text("changed", encoding="utf-8")
+    (feature / "solution.md").write_text("changed", encoding="utf-8")
     drifted = run_script(FLOW_GUARD, "status", "LCV-106", env=env)
     assert drifted.returncode == 1
     assert "本地状态不可信" in drifted.stderr
@@ -365,8 +523,8 @@ def test_status_reports_next_action_and_rejects_local_artifact_drift(tmp_path: P
 def test_status_requires_selection_when_multiple_specs_are_active(tmp_path: Path) -> None:
     specs_root = tmp_path / ".specs"
     env = {"LINKCV_SPECS_ROOT": str(specs_root)}
-    assert run_script(FLOW_GUARD, "init", "LCV-107", "--lane", "L2", env=env).returncode == 0
-    assert run_script(FLOW_GUARD, "init", "LCV-108", "--lane", "L3", env=env).returncode == 0
+    assert run_script(FLOW_GUARD, "init", "LCV-107", env=env).returncode == 0
+    assert run_script(FLOW_GUARD, "init", "LCV-108", env=env).returncode == 0
 
     status = run_script(FLOW_GUARD, "status", env=env)
 
@@ -376,7 +534,7 @@ def test_status_requires_selection_when_multiple_specs_are_active(tmp_path: Path
     assert "LCV-108" in status.stdout
 
 
-def test_l2_flow_records_automatic_verification_and_quality_review(tmp_path: Path) -> None:
+def test_flow_records_automatic_verification_and_quality_review(tmp_path: Path) -> None:
     specs_root = tmp_path / ".specs"
     feature = specs_root / "LCV-100"
     verification_root = create_verification_repo(tmp_path)
@@ -385,9 +543,9 @@ def test_l2_flow_records_automatic_verification_and_quality_review(tmp_path: Pat
         "LINKCV_VERIFICATION_ROOT": str(verification_root),
     }
 
-    assert run_script(FLOW_GUARD, "init", "LCV-100", "--lane", "L2", env=env).returncode == 0
-    (feature / "brief.md").write_text("brief", encoding="utf-8")
-    assert run_script(FLOW_GUARD, "freeze", "LCV-100", "brief", env=env).returncode == 0
+    assert run_script(FLOW_GUARD, "init", "LCV-100", env=env).returncode == 0
+    (feature / "solution.md").write_text("solution", encoding="utf-8")
+    assert run_script(FLOW_GUARD, "freeze", "LCV-100", "solution", "--next", "acceptance_first", env=env).returncode == 0
     (feature / "acceptance.feature").write_text("Feature: saved", encoding="utf-8")
     assert run_script(FLOW_GUARD, "freeze", "LCV-100", "acceptance", env=env).returncode == 0
     write_passing_manual_acceptance(feature / "manual_acceptance.md")
@@ -449,9 +607,9 @@ def test_status_omits_release_ready_specs_unless_key_is_explicit(tmp_path: Path)
         "LINKCV_SPECS_ROOT": str(specs_root),
         "LINKCV_VERIFICATION_ROOT": str(verification_root),
     }
-    assert run_script(FLOW_GUARD, "init", "LCV-114", "--lane", "L2", env=env).returncode == 0
-    (feature / "brief.md").write_text("brief", encoding="utf-8")
-    assert run_script(FLOW_GUARD, "freeze", "LCV-114", "brief", env=env).returncode == 0
+    assert run_script(FLOW_GUARD, "init", "LCV-114", env=env).returncode == 0
+    (feature / "solution.md").write_text("solution", encoding="utf-8")
+    assert run_script(FLOW_GUARD, "freeze", "LCV-114", "solution", "--next", "acceptance_first", env=env).returncode == 0
     (feature / "acceptance.feature").write_text("Feature: saved", encoding="utf-8")
     assert run_script(FLOW_GUARD, "freeze", "LCV-114", "acceptance", env=env).returncode == 0
     assert run_script(
@@ -482,9 +640,9 @@ def test_failed_verification_command_does_not_advance_state(tmp_path: Path) -> N
         "LINKCV_SPECS_ROOT": str(specs_root),
         "LINKCV_VERIFICATION_ROOT": str(verification_root),
     }
-    assert run_script(FLOW_GUARD, "init", "LCV-110", "--lane", "L2", env=env).returncode == 0
-    (feature / "brief.md").write_text("brief", encoding="utf-8")
-    assert run_script(FLOW_GUARD, "freeze", "LCV-110", "brief", env=env).returncode == 0
+    assert run_script(FLOW_GUARD, "init", "LCV-110", env=env).returncode == 0
+    (feature / "solution.md").write_text("solution", encoding="utf-8")
+    assert run_script(FLOW_GUARD, "freeze", "LCV-110", "solution", "--next", "acceptance_first", env=env).returncode == 0
     (feature / "acceptance.feature").write_text("Feature: saved", encoding="utf-8")
     assert run_script(FLOW_GUARD, "freeze", "LCV-110", "acceptance", env=env).returncode == 0
 
@@ -514,9 +672,9 @@ def test_verification_command_that_changes_code_does_not_advance_state(
         "LINKCV_SPECS_ROOT": str(specs_root),
         "LINKCV_VERIFICATION_ROOT": str(verification_root),
     }
-    assert run_script(FLOW_GUARD, "init", "LCV-115", "--lane", "L2", env=env).returncode == 0
-    (feature / "brief.md").write_text("brief", encoding="utf-8")
-    assert run_script(FLOW_GUARD, "freeze", "LCV-115", "brief", env=env).returncode == 0
+    assert run_script(FLOW_GUARD, "init", "LCV-115", env=env).returncode == 0
+    (feature / "solution.md").write_text("solution", encoding="utf-8")
+    assert run_script(FLOW_GUARD, "freeze", "LCV-115", "solution", "--next", "acceptance_first", env=env).returncode == 0
     (feature / "acceptance.feature").write_text("Feature: saved", encoding="utf-8")
     assert run_script(FLOW_GUARD, "freeze", "LCV-115", "acceptance", env=env).returncode == 0
 
@@ -544,9 +702,9 @@ def test_code_change_invalidates_review_and_reverify_resets_it(tmp_path: Path) -
         "LINKCV_SPECS_ROOT": str(specs_root),
         "LINKCV_VERIFICATION_ROOT": str(verification_root),
     }
-    assert run_script(FLOW_GUARD, "init", "LCV-111", "--lane", "L2", env=env).returncode == 0
-    (feature / "brief.md").write_text("brief", encoding="utf-8")
-    assert run_script(FLOW_GUARD, "freeze", "LCV-111", "brief", env=env).returncode == 0
+    assert run_script(FLOW_GUARD, "init", "LCV-111", env=env).returncode == 0
+    (feature / "solution.md").write_text("solution", encoding="utf-8")
+    assert run_script(FLOW_GUARD, "freeze", "LCV-111", "solution", "--next", "acceptance_first", env=env).returncode == 0
     (feature / "acceptance.feature").write_text("Feature: saved", encoding="utf-8")
     assert run_script(FLOW_GUARD, "freeze", "LCV-111", "acceptance", env=env).returncode == 0
     assert run_script(
@@ -603,9 +761,9 @@ def test_manual_acceptance_must_have_no_failed_or_pending_items(tmp_path: Path) 
         "LINKCV_SPECS_ROOT": str(specs_root),
         "LINKCV_VERIFICATION_ROOT": str(verification_root),
     }
-    assert run_script(FLOW_GUARD, "init", "LCV-112", "--lane", "L2", env=env).returncode == 0
-    (feature / "brief.md").write_text("brief", encoding="utf-8")
-    assert run_script(FLOW_GUARD, "freeze", "LCV-112", "brief", env=env).returncode == 0
+    assert run_script(FLOW_GUARD, "init", "LCV-112", env=env).returncode == 0
+    (feature / "solution.md").write_text("solution", encoding="utf-8")
+    assert run_script(FLOW_GUARD, "freeze", "LCV-112", "solution", "--next", "acceptance_first", env=env).returncode == 0
     (feature / "acceptance.feature").write_text("Feature: saved", encoding="utf-8")
     assert run_script(FLOW_GUARD, "freeze", "LCV-112", "acceptance", env=env).returncode == 0
     write_passing_manual_acceptance(feature / "manual_acceptance.md")
@@ -632,9 +790,9 @@ def test_legacy_verified_state_is_migrated_and_requires_reverification(tmp_path:
     specs_root = tmp_path / ".specs"
     feature = specs_root / "LCV-113"
     env = {"LINKCV_SPECS_ROOT": str(specs_root)}
-    assert run_script(FLOW_GUARD, "init", "LCV-113", "--lane", "L2", env=env).returncode == 0
-    (feature / "brief.md").write_text("brief", encoding="utf-8")
-    assert run_script(FLOW_GUARD, "freeze", "LCV-113", "brief", env=env).returncode == 0
+    assert run_script(FLOW_GUARD, "init", "LCV-113", env=env).returncode == 0
+    (feature / "solution.md").write_text("solution", encoding="utf-8")
+    assert run_script(FLOW_GUARD, "freeze", "LCV-113", "solution", "--next", "acceptance_first", env=env).returncode == 0
     (feature / "acceptance.feature").write_text("Feature: saved", encoding="utf-8")
     assert run_script(FLOW_GUARD, "freeze", "LCV-113", "acceptance", env=env).returncode == 0
     state_path = feature / "state.yaml"
@@ -655,7 +813,7 @@ def test_legacy_verified_state_is_migrated_and_requires_reverification(tmp_path:
     assert status.returncode == 0, status.stderr
     assert "已自动升级" in status.stderr
     assert "下一站：implementation-execution" in status.stdout
-    assert migrated["schema_version"] == 4
+    assert migrated["schema_version"] == 7
     assert migrated["phase"] == "implementation"
     assert migrated["verification"]["verified"] is False
     assert migrated["verification"]["legacy_evidence"] == ["npm run check"]
@@ -778,7 +936,7 @@ description: 为 LinkCV 后端单元和集成测试提供真实路径及清晰�
     assert result.returncode == 0, result.stderr
 
 
-def test_skill_check_rejects_incomplete_brief_template(tmp_path: Path) -> None:
+def test_skill_check_rejects_incomplete_solution_template(tmp_path: Path) -> None:
     (tmp_path / ".ai" / "prompts").mkdir(parents=True)
     (tmp_path / ".ai" / "prompts" / "project.md").write_text(
         "rules", encoding="utf-8"
@@ -786,13 +944,13 @@ def test_skill_check_rejects_incomplete_brief_template(tmp_path: Path) -> None:
     skills_root = tmp_path / ".ai" / "skills"
     skills_root.mkdir(parents=True)
     (skills_root / "README.md").write_text("skills", encoding="utf-8")
-    source_skill = REPO_ROOT / ".ai" / "skills" / "brief-generator"
-    target_skill = skills_root / "brief-generator"
+    source_skill = REPO_ROOT / ".ai" / "skills" / "solution-generator"
+    target_skill = skills_root / "solution-generator"
     shutil.copytree(source_skill, target_skill)
-    template_file = target_skill / "brief.template.md"
+    template_file = target_skill / "solution.template.md"
     template_file.write_text(
         template_file.read_text(encoding="utf-8").replace(
-            "## 3. 业务流程", "## 3. 实现说明"
+            "### 7. 数据模型", "### 7. 实现说明"
         ),
         encoding="utf-8",
     )
@@ -803,5 +961,5 @@ def test_skill_check_rejects_incomplete_brief_template(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 1
-    assert "Brief 模板缺少固定结构" in result.stderr
-    assert "## 3. 业务流程" in result.stderr
+    assert "方案文档模板缺少固定结构" in result.stderr
+    assert "### 7. 数据模型" in result.stderr

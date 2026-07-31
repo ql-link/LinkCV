@@ -24,29 +24,80 @@ STALE_REFERENCES = (
     "src/core/",
 )
 ALLOWED_AI_ENTRIES = {"prompts", "skills"}
-BRIEF_TEMPLATE_REQUIRED_MARKERS = (
-    "# <KEY> · <标题> Brief",
-    "## 1. 需求摘要",
-    "**做什么**",
-    "**为什么做**",
-    "**用户价值**",
-    "**交付结果**",
-    "**本次不做**",
-    "## 2. 当前行为与问题",
-    "## 3. 业务流程",
-    "### 3.1 主流程图",
-    "### 3.2 流程详解",
-    "### 3.3 异常分支",
+SOLUTION_TEMPLATE_REQUIRED_MARKERS = (
+    "# <KEY> · <标题> 方案文档",
+    "| 需求编号 | <KEY> |",
+    "| 一句话需求 |",
+    "| 来源 Issue |",
+    "| 后续路径 |",
+    "| 创建时间 |",
+    "| 最后更新 |",
+    "| 当前状态 |",
+    "## 第一部分 · 需求",
+    "### 1. 需求描述",
+    "#### 1.1 需求正文",
+    "#### 1.2 背景与动机",
+    "**问题来源**",
+    "**为什么现在做**",
+    "**不做会怎样**",
+    "#### 1.3 使用场景",
+    "| 场景 | 使用者 | 什么时候用 | 期望结果 |",
+    "#### 1.4 交付结果",
+    "#### 1.5 本次不做",
+    "### 2. 现状与问题",
+    "### 3. 模块分解",
+    "| 编号 | 模块 | 业务职责 | 依赖模块 | 交付顺序 | 可否独立验收 |",
+    "**边界**",
+    "**完成信号**",
+    "**依赖前提**",
+    "### 4. 业务流程",
+    "#### 4.1 主流程图",
+    "#### 4.2 流程详解",
+    "#### 4.3 异常分支",
     "| 异常分支 | 触发条件 | 系统行为 | 用户或下游感知 | 状态或数据结果 |",
-    "## 4. 涉及模块与影响面",
-    "**位置**",
-    "**职责**",
-    "**复用 / 新增**",
-    "**触碰的公共契约**",
-    "**关键数据结构**",
-    "**可行性与不确定性**",
-    "### 4.2 L2 最小实现思路（仅 L2）",
-    "## 5. 风险与依赖",
+    "### 5. 状态机",
+    "**初始状态**",
+    "**终态**",
+    "| 起始状态 | 事件或条件 | 目标状态 | 触发者 | 并发或重复触发处理 | 副作用 |",
+    "**不允许的流转**",
+    "## 第二部分 · 方案",
+    "### 6. 整体架构",
+    "#### 6.1 架构图",
+    "#### 6.2 分层与职责",
+    "| 层次 | 承担什么 | 不承担什么 | 涉及模块 |",
+    "#### 6.3 关键数据流",
+    "#### 6.4 技术选型与取舍",
+    "| 决策点 | 选定方案 | 放弃的方案 | 代价与理由 |",
+    "### 7. 数据模型",
+    "#### 7.1 实体关系",
+    "| 字段 | 类型 | 可空 | 默认值 | 业务含义 | 变更 |",
+    "**主键**",
+    "**唯一约束**",
+    "**索引**",
+    "**外键与关联策略**",
+    "**枚举取值**",
+    "#### 7.3 定稿 DDL",
+    "#### 7.4 旧数据与兼容",
+    "**真值源核对**",
+    "**回滚与不可逆点**",
+    "### 8. 接口契约",
+    "**共享类型影响**",
+    "**消费方**",
+    "### 9. 文件结构与实现方案",
+    "#### 9.1 目录树",
+    "#### 9.2 文件职责",
+    "| 文件或模块 | 动作 | 修改后职责 | 所属模块 | 影响方 |",
+    "**实现步骤**",
+    "**验证方式**",
+    "**实现要点**",
+    "**复用能力**",
+    "### 10. 外部服务与安全边界",
+    "## 第三部分 · 收口",
+    "### 11. 实施顺序",
+    "| 步骤 | 内容 | 模块 | 涉及文件 | 完成判据 |",
+    "### 12. 已确认决策",
+    "| 编号 | 决策事项 | 结论 | 影响章节 | 确认来源 |",
+    "### 13. 风险与依赖",
     "| 风险或依赖 | 触发条件 | 影响 | 当前判断或应对方向 |",
 )
 
@@ -137,23 +188,23 @@ def validate_skill(skill_dir: Path) -> list[str]:
     return errors
 
 
-def validate_brief_template() -> list[str]:
-    skill_dir = SKILLS_ROOT / "brief-generator"
+def validate_solution_template() -> list[str]:
+    skill_dir = SKILLS_ROOT / "solution-generator"
     if not skill_dir.is_dir():
         return []
 
-    template_file = skill_dir / "brief.template.md"
+    template_file = skill_dir / "solution.template.md"
     if not template_file.is_file():
-        return ["brief-generator: 缺少 brief.template.md"]
+        return ["solution-generator: 缺少 solution.template.md"]
 
     text = template_file.read_text(encoding="utf-8")
     missing = [
-        marker for marker in BRIEF_TEMPLATE_REQUIRED_MARKERS if marker not in text
+        marker for marker in SOLUTION_TEMPLATE_REQUIRED_MARKERS if marker not in text
     ]
     if not missing:
         return []
     return [
-        "brief-generator: Brief 模板缺少固定结构 "
+        "solution-generator: 方案文档模板缺少固定结构 "
         + ", ".join(repr(marker) for marker in missing)
     ]
 
@@ -167,7 +218,7 @@ def main() -> int:
     errors.extend(
         error for skill_dir in skill_dirs for error in validate_skill(skill_dir)
     )
-    errors.extend(validate_brief_template())
+    errors.extend(validate_solution_template())
     if errors:
         for error in errors:
             print(f"ERROR {error}", file=sys.stderr)
