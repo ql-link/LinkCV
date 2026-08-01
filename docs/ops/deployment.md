@@ -55,8 +55,8 @@ Production Pipeline 会把仓库中的非敏感 `.env.production` 和 Compose �
 ## 回滚
 
 - 应用回滚通过把 `TAG` 切回上一环境的不可变镜像标签并重新执行对应 Compose 完成；不得把 Dev 标签部署到 Production。
-- Alembic revision 必须保持向前兼容上一个应用版本。当前 `0009` 新增管理员操作审计日志；`0008` 在保留旧模型完整名、启用镜像、优先级和价格列的同时，增加 Chat 候选字段、唯一当前 binding 和日志快照。应用回滚优先保留 `0008`、`0009` schema，Production 不自动 downgrade。
-- 如必须在隔离环境执行 `0009 → 0008`，先回滚应用并备份审计日志，down 会删除 `admin_operation_logs`。继续执行 `0008 → 0007` 会保留旧模型和日志主体，但删除 binding 及能力、adapter、调用名、来源等附加快照；不要在新应用运行时执行。MySQL DDL 非事务，失败后停止自动重试并按实际 schema 或备份处理。
+- Alembic revision 必须保持向前兼容上一个应用版本。当前 `0009` 新增管理员操作审计日志；`0008` 执行 DDL 前会按外键依赖顺序永久清空旧调用日志和模型配置，再增加 Chat 候选字段、唯一当前 binding 和日志快照，升级完成后需要管理员重新配置并设置当前 Chat 模型。新应用会双写旧 `model_name/enabled`，因此应用回滚优先保留 `0008`、`0009` schema；回滚前核对最后当前候选的旧启用镜像。Production 不自动 downgrade。
+- 如必须在隔离环境执行 `0009 → 0008`，先回滚应用并备份审计日志，down 会删除 `admin_operation_logs`。继续执行 `0008 → 0007` 前还须备份数据库；down 会保留升级后新写入的模型和日志主体，但不会恢复 `0008` 升级前清理的数据，同时会删除 binding 及能力、adapter、调用名、来源等附加快照。不要在新应用运行时执行。MySQL DDL 非事务，失败后停止自动重试并按实际 schema 或备份处理。
 - 回滚到旧镜像时仍要保留新旧完整 LLM 密钥环，直到确认没有运行实例或密文依赖待移除的 key。
 - 原型 Express/SQLite 数据不进入新 MySQL 数据库，也不作为生产回滚路径。
 - 新增环境配置的回滚只恢复应用与 Compose；不得自动删除已有 `linkcv` 数据库或 Redis volume。

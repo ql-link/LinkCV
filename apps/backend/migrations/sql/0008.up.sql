@@ -1,5 +1,9 @@
 -- 0008 升级迁移：为系统 Chat 能力增加候选模型、唯一当前绑定与调用快照。
+-- 旧模型配置和调用日志不迁移；先按外键依赖顺序永久清空，再执行 DDL。
 -- 旧候选池列暂时保留，供滚动发布和应用回滚兼容；新运行时不读取这些列。
+DELETE FROM llm_call_logs;
+DELETE FROM llm_model_configs;
+
 ALTER TABLE llm_model_configs
   ADD COLUMN capability VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin
     NOT NULL DEFAULT 'chat' COMMENT '系统模型能力标识，当前仅 chat' AFTER id,

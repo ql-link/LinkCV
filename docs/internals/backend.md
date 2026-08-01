@@ -38,7 +38,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `POST /api/job-descriptions/import` 是浏览器插件的受保护入口，只接受 BOSS 岗位详情 URL 和有限的页面采集字段。`application/job_descriptions/import_service.py` 先清理不可见字符、空白和明确页尾噪声，再映射就业类型、工作形态、月薪/日薪/时薪及公司标签；它还会把 `5天/周`、`6个月` 等实习安排从误传的经验字段移入 `work_schedule`，并在入库前剔除福利标签。最后构造已有 `JobDescriptionCreateRequest` 并复用统一创建与重复解决事务。该过程不调用 LLM，不保存输入 DTO，也不绕过既有用户条件、来源唯一键或乐观锁。
 
-`0008` 在模型配置上增加 `capability`、LiteLLM `adapter`、不含前缀的模型调用名和配置版本；新增按能力保存唯一当前候选的 `llm_capability_bindings`，并预置一行可为空的 `chat` 绑定。调用日志增加能力、来源、adapter 和调用名快照。旧的完整 `model_name`、`enabled`、`priority` 和手工价格列暂时保留用于应用回滚兼容，新 HTTP 契约和运行时不读取其旧产品语义。由于目标环境已确认没有历史配置或日志，revision 在 DDL 前强制检查两表为空，发现数据就停止迁移而不是静默转换。
+`0008` 在模型配置上增加 `capability`、LiteLLM `adapter`、不含前缀的模型调用名和配置版本；新增按能力保存唯一当前候选的 `llm_capability_bindings`，并预置一行可为空的 `chat` 绑定。调用日志增加能力、来源、adapter 和调用名快照。旧的完整 `model_name`、`enabled`、`priority` 和手工价格列暂时保留用于应用回滚兼容，新 HTTP 契约和运行时不读取其旧产品语义。revision 在 DDL 前先删除 `llm_call_logs`，再删除 `llm_model_configs`；旧数据不迁移且 downgrade 不恢复，升级完成后的 `chat` 绑定为空。
 
 `0009` 新增 `admin_operation_logs` 管理操作审计表，记录管理员对用户的 enable/disable 操作。字段包括 `id`（BIGINT UNSIGNED PK）、`actor_user_id`（操作人，FK → users.id）、`target_user_id`（目标用户，FK → users.id）、`action`（受 CHECK 约束的 VARCHAR，只允许 "disable"/"enable"）和 `created_at`。每次启用或禁用账号时通过 SQLAlchemy INSERT 写入一条记录，用于后续管理操作追溯。
 
