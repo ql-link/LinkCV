@@ -6,9 +6,10 @@
 
 根 revision `0001` 用于建立旧版 `users` 与 `resumes`；`0002` 在确认旧业务表为空后
 建立正式鉴权、模板、简历和历史版本结构。后续 revision 依次补充模板删除兼容、
-对象清理任务、语义简历迁移、LLM 治理，以及用户私有 JD。当前唯一 head 为 `0007`，
-它新增单表 `job_descriptions`，并以用户与规范化来源标识的唯一约束防止重复导入。
-每个版本都提供配对升级和降级 SQL；原型 SQLite 数据仍不迁移到 MySQL。
+对象清理任务、语义简历迁移、LLM 治理、用户私有 JD 和管理员操作审计。`0008`
+在建立 Chat 候选和当前绑定前，按外键依赖顺序永久清空旧模型配置及调用日志；
+`0009` 新增 `admin_operation_logs`。当前唯一 head 为 `0009`。每个版本都提供配对
+升级和降级 SQL；原型 SQLite 数据仍不迁移到 MySQL。
 
 ```text
 migrations/
@@ -59,7 +60,7 @@ apps/backend/migrations/sql/<revision>.down.sql
 ## 执行与核验
 
 ```bash
-# 查看迁移链和当前数据库版本；heads 应只有 0007
+# 查看迁移链和当前数据库版本；heads 应只有 0009
 uv run --directory apps/backend alembic heads
 uv run --directory apps/backend alembic current
 
