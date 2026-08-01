@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiRequestError, type ResumeSummary } from "../../api/client";
 import { HomeScreen } from "./HomePage";
@@ -23,6 +23,7 @@ function renderHome(overrides: Partial<React.ComponentProps<typeof HomeScreen>> 
 
 describe("HomeScreen", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     window.history.replaceState(null, "", "/");
   });
@@ -74,6 +75,23 @@ describe("HomeScreen", () => {
       expect(screen.getByText("每个账号最多保存 10 份简历，请先删除一份后再创建。")).toBeInTheDocument();
     });
     expect(onCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("提示信息在触发数秒后自动消失", async () => {
+    vi.useFakeTimers();
+    const onCreate = vi.fn().mockRejectedValue(new ApiRequestError(409, "RESUME_LIMIT_REACHED"));
+    renderHome({ onCreate });
+
+    fireEvent.click(screen.getByRole("button", { name: "新建简历" }));
+    await act(async () => {});
+
+    expect(screen.getByText("每个账号最多保存 10 份简历，请先删除一份后再创建。")).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+
+    expect(screen.queryByText("每个账号最多保存 10 份简历，请先删除一份后再创建。")).not.toBeInTheDocument();
   });
 
   it("模板创建达到数量上限时关闭确认并显示明确提示", async () => {

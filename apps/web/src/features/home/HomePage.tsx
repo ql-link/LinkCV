@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FileUp, PenLine, Plus, Search, X } from "lucide-react";
 import { ApiRequestError, type ResumeSummary } from "../../api/client";
 import { Button, Toast } from "../../components/ds";
@@ -116,6 +116,12 @@ export function HomeScreen({ view = "all", resumes, onOpen, onDelete, onCreate, 
     const normalizedQuery = query.trim().toLocaleLowerCase();
     return resumes.filter((resume) => resume.title.toLocaleLowerCase().includes(normalizedQuery));
   }, [query, resumes]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   const requestDelete = (resume: ResumeSummary) => {
     if (deletingResumeId) return;
