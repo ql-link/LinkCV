@@ -49,27 +49,6 @@ def run_alembic(database_url: str, *arguments: str) -> None:
     assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
 
 
-def run_alembic_expect_failure(database_url: str, *arguments: str) -> str:
-    environment = os.environ.copy()
-    environment.update(
-        {
-            "APP_ENV": "development",
-            "DATABASE_URL": database_url,
-            "LINKCV_ENV_FILE": str(REPO_ROOT / ".env.nonexistent-migration-test"),
-        }
-    )
-    result = subprocess.run(
-        ["uv", "run", "alembic", *arguments],
-        cwd=BACKEND_ROOT,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode != 0
-    return f"{result.stdout}\n{result.stderr}"
-
-
 def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     database_url = migration_test_url()
     engine = create_engine(database_url)
@@ -905,7 +884,7 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
     engine.dispose()
 
 
-def test_mysql_chat_capability_migration_guards_data_and_supports_rollback() -> None:
+def test_mysql_0008_clears_legacy_llm_data_and_supports_rollback() -> None:
     database_url = migration_test_url()
     engine = create_engine(database_url)
 
@@ -924,16 +903,21 @@ def test_mysql_chat_capability_migration_guards_data_and_supports_rollback() -> 
                 "VALUES ('legacy-provider/fictional-primary', TRUE, 10)"
             )
         ).lastrowid
-    failure = run_alembic_expect_failure(database_url, "upgrade", "head")
-    assert "0008 requires empty LLM tables" in failure
-    with engine.begin() as connection:
         connection.execute(
-            text("DELETE FROM llm_model_configs WHERE id = :model_id"),
-            {"model_id": model_id},
+            text(
+                "INSERT INTO llm_call_logs "
+                "(call_id, user_id, model_config_id, model_name, status, created_at) "
+                "VALUES ('llmcall_legacy_before_0008', :user_id, :model_id, "
+                "'legacy-provider/fictional-primary', 'succeeded', "
+                "'2026-07-31 12:00:00.000000')"
+            ),
+            {"user_id": user_id, "model_id": model_id},
         )
 
     run_alembic(database_url, "upgrade", "0008")
     with engine.begin() as connection:
+        assert connection.scalar(text("SELECT COUNT(*) FROM llm_model_configs")) == 0
+        assert connection.scalar(text("SELECT COUNT(*) FROM llm_call_logs")) == 0
         connection.execute(
             text(
                 "ALTER TABLE llm_model_configs "
