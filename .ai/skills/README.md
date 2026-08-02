@@ -10,7 +10,7 @@
 | Skill 流程和所属模板 | `.ai/skills/<skill>/` | `docs/`、`.specs/` |
 | 当前模块、架构、契约和运维知识 | `docs/` | `.ai/references/`、Skill 正文副本 |
 | 可执行检查和机器规则 | `scripts/quality/` | `docs/`、Skill 内手写副本 |
-| 某次方案先行任务的需求与设计快照 | `.specs/<KEY>/` | `docs/`、`.ai/skills/` |
+| 某次方案先行任务的需求与设计文档 | `.specs/<KEY>/` | `docs/`、`.ai/skills/` |
 
 `.ai` 顶层只保留 `prompts/` 和 `skills/`。Skill 专属且只被该 Skill 使用的大型参考资料可以放在对应 Skill 的 `references/` 内；跨 Skill 的项目事实必须进入 `docs/`。
 
@@ -26,7 +26,7 @@
 | `contract-guard` | 分析契约结构、语义、兼容影响和同步范围 | 按需转配置核对、实现或文档同步 |
 | `config-contract-sync` | 核对跨代码、配置和部署位置的具体契约值 | 诊断结束或转实现修复 |
 | `doc-maintenance-sync` | 维护 `docs/` 长期项目知识 | 文档与契约门禁 |
-| `implementation-execution` | 按当前确认来源或冻结规格编码，只在已允许的实际方案偏差、已接受限制或必须跨会话交接的遗留风险或下一步存在时补实施报告 | 测试 |
+| `implementation-execution` | 直接任务按确认来源、方案任务以 `solution.md` 为中心编码；只在已允许偏差、已接受限制或必须交接的遗留事项存在时补实施报告 | 测试 |
 | `branch-pr-workflow` | 安全准备分支、提交和 PR，创建 PR 前执行完整本地检查 | 用户审核 |
 
 ## 测试与质量
@@ -43,7 +43,7 @@
 
 | 技能 | 职责 | 边界或下一站 |
 | --- | --- | --- |
-| `mysql-ddl-conventions` | 设计和审查 MySQL 物理表结构、约束与索引 | 由方案文档阶段调用定稿；落地迁移转 `alembic-migration` |
+| `mysql-ddl-conventions` | 设计和审查 MySQL 物理表结构、约束与索引 | 由方案编写过程调用定稿；落地迁移转 `alembic-migration` |
 | `alembic-migration` | 编写、校验和排查 SQL-first Alembic 迁移链与配对 up/down SQL | 业务实现转实施，文档转同步 |
 
 ## 运维与故障
@@ -54,18 +54,18 @@
 
 运行 `npm run check:ai` 校验技能的头部元数据、占位内容、链接、过期技术栈引用，以及方案模板的完整章节库、重点条件章节、施工契约和按需选择能力。长期模块知识从 [docs/README.md](../../docs/README.md) 按需读取；三个契约治理技能共享 [契约面与事实源映射](../../docs/internals/contract-governance.md)，不各自复制模块映射。
 
-用户当前请求、Issue、飞书文档及用户明确指定的其他材料都可以作为来源。Issue 存在时必须完整读取，但没有 Issue 不阻止开发，也不算例外；`state.yaml` 的 `source_issue` 只保存可选链接或稳定引用，不单独记录平台，也不参与交付路径判断。`flow-router` 内部完成全部七维判断，默认只展示路径、主导原因和额外检查；准备不足、风险严格、需要持久记录或用户主动询问时才展开完整依据。准备可实施、复杂度简单或中等且只需会话记录时可以直接开工；复杂任务或当前确需持久记录时进入方案先行。已有经 `module-planning` 确认并读回的飞书详情文档时，其结论优先于本地推断。项目阶段 Skill 不维护外部需求指纹、不核验评论链，也不向任何 Issue 系统写回评论。
+用户当前请求、Issue、飞书文档及用户明确指定的其他材料都可以作为来源。Issue 存在时必须完整读取，但没有 Issue 不阻止开发，也不算例外。`flow-router` 内部完成全部七维判断，默认只展示路径、主导原因和额外检查；准备不足、风险严格、需要持久记录或用户主动询问时才展开完整依据。准备可实施且复杂度简单或中等时可以直接开工，复杂任务进入方案先行；持久记录本身不升级路径。已有经 `module-planning` 确认并读回的飞书详情文档时，其结论优先于本地推断。项目 Skill 不维护外部需求指纹、不核验评论链，也不向任何 Issue 系统写回评论。
 
 产物模板跟随所属技能保存：方案模板保留完整章节库，由生成规则按任务选择实际章节；验收契约和人工验收记录按需创建。`implementation_report.md` 只补充已允许的实际方案偏差、已接受限制和必须跨会话交接的遗留风险或下一步事项，不复述正常实现、验证命令或 PR 内容。`agents/openai.yaml` 仅在需要 Codex 界面展示元数据时按需添加，不是项目技能的必需文件。
 
 技能调用保持单向且由上层拥有产物：`module-planning` 和 `solution-generator` 都可以调用 `decision-grilling` 处理单个选择，只有 `confirmed` 才写入结论，`blocked` 暂停，`replan` 交回上层重建决策树；`lark-doc` 只由 `module-planning` 调用执行已确认的文档写入，两个被调用技能都不接管规划。
 
-方案先行任务的需求确认权归 `solution-generator`：会改变范围、业务规则、数据归属、权限、状态流转或兼容策略的不确定点由它直接向用户提问，一次一个问题并给出推荐答案，结论写入方案文档的"已确认决策"。只有整个模块的目标或商业前提尚未成形，或结论需要沉淀到飞书供他人协作时才转 `module-planning`。`acceptance-generator` 和方案先行的实施阶段只消费已冻结的方案文档；直接实现消费来源材料、当前确认结论和分流给出的严格检查项。发现新的高影响决策时先重新分流，方案先行后返回 `solution-generator` 修订并重新冻结，不在下游自行改变结论。
+方案先行任务的需求确认权归 `solution-generator`：会改变范围、业务规则、数据归属、权限、状态流转或兼容策略的不确定点由它直接向用户提问，一次一个问题并给出推荐答案，结论写入方案文档的“已确认决策”。只有整个模块的目标或商业前提尚未成形，或结论需要沉淀到飞书供他人协作时才转 `module-planning`。`acceptance-generator` 和方案先行的实现都以当前 `solution.md` 为中心；直接实现消费来源材料、当前确认结论和分流给出的严格检查项。发现新的高影响决策时先重新分流，方案先行后返回 `solution-generator` 更新方案并确认受影响决定，不在下游自行改变结论。
 
 契约治理技能不要求固定串行：结构或语义影响用 `contract-guard`，同一具体值的多处一致性用 `config-contract-sync`，更新长期 `docs/` 用 `doc-maintenance-sync`。已有上游结论时直接消费，不重复扫描同一问题。
 
-测试职责保持单向：`acceptance-generator` 定义可观察规则，`test-authoring` 编写自动化测试，`run-all-tests` 在任务阶段执行范围与风险匹配的命令并自动记录验证结果与代码快照，`manual-acceptance` 记录必要的人工端到端结果，`code-review-and-quality` 审查同一代码快照并把无阻断结论推进到 `release_ready`。准备创建 PR 时再由 `branch-pr-workflow` 要求完整 `npm run check`；共享 CI 继续运行完整检查。开发者不手填哈希、退出码或阶段字段。
+测试职责保持单向：`acceptance-generator` 定义可观察规则，`test-authoring` 编写自动化测试，`run-all-tests` 直接执行范围与风险匹配的命令并报告当前结果，`manual-acceptance` 记录必要的人工端到端结果，`code-review-and-quality` 审查实际差异和证据。代码变化后由 AI 判断受影响的验证与审查；跨会话不继承旧测试结论。准备创建 PR 时再由 `branch-pr-workflow` 要求完整 `npm run check`，共享 CI 继续运行完整检查。
 
 专项能力按需叠加，不延长所有任务的固定主链：表结构设计与迁移执行分别由 `mysql-ddl-conventions`、`alembic-migration` 承接；完成度问题由 `feature-completion-audit` 做需求到证据的独立对账；运行故障由 `incident-triage` 先定位，获得修复授权后再回主链。当前会话实现的完成度审计必须使用独立子 Agent，外部 PR 或历史分支可由当前 Agent 直接核验。
 
-跨会话续做先运行 `npm run spec -- status`：脚本验证本地状态、规格冻结哈希、自动验证代码快照和质量审查快照，并给出唯一下一站、待读文件和门禁命令。验证成功后下一站固定为 `code-review-and-quality`，不会直接跳到 PR。它只恢复当前工作区的 `.specs`；跨 worktree 或设备时重新读取当前请求、可用 Issue 和对应详情文档等有效来源并建立本地快照，不把 Git 忽略目录当作共享状态。
+跨会话续做时，方案先行任务重新读取当前请求、匹配的 `solution.md` 和实际存在的附件，直接实现任务重新读取当前请求和来源材料；两条路径都要核对 Git 提交、工作区差异和真实代码，再由 AI 判断下一步。多个 Spec 都可能匹配时让用户选择。`.worktreeinclude` 只在 Codex 新建本地托管 worktree 时复制一次被忽略的 `.specs/*/`，不是实时同步，也不覆盖跨设备或多个已有 worktree。恢复后重新运行当前交付需要的验证，不继承较早会话的“已通过”结论。

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
@@ -35,7 +36,6 @@ SOLUTION_TEMPLATE_REQUIRED_MARKERS = (
     "| 后续路径 |",
     "| 创建时间 |",
     "| 最后更新 |",
-    "| 当前状态 |",
     "本模板保留完整章节库，不是逐章填写的表单",
     "未命中的章节整章删除",
     "可观察结果 → 业务规则 → 真实文件与编号步骤 → 验证证据",
@@ -86,7 +86,7 @@ SOLUTION_SKILL_REQUIRED_MARKERS = (
     "不依赖固定章节编号",
     "没有 Issue 不阻止创建方案，也不算例外",
     "没有真实待决选择的短方案，整份展示一次并确认一次",
-    "冻结阶段直接复用该选择",
+    "确认方案时直接复用该选择",
 )
 SOLUTION_FIXED_SECTION_RE = re.compile(
     r"(?:方案文档|`?solution\.md`?)(?:的)?(?:第 ?\d+ ?节| ?\d+\.\d+)"
@@ -97,7 +97,8 @@ FLOW_ROUTER_REQUIRED_MARKERS = (
     "没有 Issue 不阻止分流",
     "只使用 4.2 至 4.5 四个维度",
     "严格风险本身不自动升级为方案先行",
-    "这是当前存储能力限制，不代表任务本身复杂",
+    "记录需要不改变交付路径",
+    "记录为持久记录也不自动升级方案",
     "不要由分流阶段提前主持方案讨论",
     "其他准备为 `需澄清` 或 `需调查` 的情况",
     "准备：可实施 | 需澄清 | 需调查",
@@ -115,7 +116,7 @@ FLOW_ROUTER_FORBIDDEN_MARKERS = (
     "只有五条全部满足才判直接实现",
 )
 IMPLEMENTATION_EXECUTION_REQUIRED_MARKERS = (
-    "方案先行任务以冻结方案文档为准；"
+    "方案先行任务以当前 `solution.md` 为准；"
     "直接实现以来源材料、当前确认结论和 `flow-router` 列出的严格检查项为准",
     "不因选择影响大就自动升级为模块规划",
     "没有 Issue 不阻止直接实现",
@@ -158,9 +159,102 @@ REDUCTION_CONTRACTS = {
     ),
     Path("code-review-and-quality/SKILL.md"): (
         "不把任务范围验证冒充 PR 全量检查",
-        "`release_ready` 只代表同一代码快照完成了任务范围验证和质量审查",
+        "不写入工作流状态",
     ),
 }
+STATELESS_SPEC_REQUIRED_MARKERS = {
+    Path(".ai/prompts/project.md"): (
+        "以 `solution.md` 为中心",
+        "跨会话不继承旧测试结论",
+    ),
+    Path(".ai/skills/solution-generator/SKILL.md"): (
+        "`solution.md` 是方案任务的唯一中心文档",
+        "AI 根据当前请求、Spec 文档、Git 差异、真实代码和实际测试判断下一步",
+        "不创建额外机器状态文件",
+    ),
+    Path(".specs/README.md"): (
+        "顺序是内容关系，不是机器状态机",
+        "AI 根据最新用户指令、Spec 文档、Git 差异、真实代码和本次实际验证自行判断下一步",
+        "跨会话恢复后不继承以前会话的测试结论",
+    ),
+    Path(".ai/skills/run-all-tests/SKILL.md"): (
+        "不创建验证状态文件",
+        "不把较早会话中的“已通过”当作当前代码证据",
+    ),
+    Path(".ai/skills/code-review-and-quality/SKILL.md"): (
+        "不写入工作流状态",
+    ),
+}
+STATEFUL_SPEC_GLOBAL_FORBIDDEN_MARKERS = (
+    "state.yaml",
+    "state.yml",
+    "flow_guard.py",
+    "scripts/spec/",
+    "npm run spec --",
+    "spec init",
+    "spec status",
+    "spec route",
+    "--refreeze",
+    "spec freeze",
+    "spec check",
+    "spec verify",
+    "spec review",
+    "spec amend",
+)
+STATEFUL_SPEC_CORE_FORBIDDEN_MARKERS = (
+    "status.md",
+    "release_ready",
+    "quality_review",
+)
+STATELESS_SPEC_FORMAL_ROOTS = (
+    Path(".ai/prompts/project.md"),
+    Path(".ai/skills"),
+    Path(".specs/README.md"),
+)
+STATELESS_SPEC_CORE_ROOTS = (
+    Path(".ai/prompts/project.md"),
+    Path(".ai/skills/README.md"),
+    Path(".ai/skills/flow-router"),
+    Path(".ai/skills/solution-generator"),
+    Path(".ai/skills/acceptance-generator"),
+    Path(".ai/skills/implementation-execution"),
+    Path(".ai/skills/manual-acceptance"),
+    Path(".ai/skills/run-all-tests"),
+    Path(".ai/skills/code-review-and-quality"),
+    Path(".ai/skills/branch-pr-workflow"),
+    Path(".specs/README.md"),
+)
+STATELESS_SPEC_TEXT_SUFFIXES = {".feature", ".json", ".md", ".txt", ".yaml", ".yml"}
+SOLUTION_TEMPLATE_STATE_FIELD_RE = re.compile(
+    r"^\|\s*(?:\*\*\s*)?(当前状态|确认记录|当前阶段|工作流状态|整体确认)"
+    r"(?:\s*\*\*)?\s*\|",
+    re.MULTILINE,
+)
+
+
+def active_rule_lines(path: Path) -> set[str]:
+    if not path.is_file():
+        return set()
+    return {
+        stripped
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if (stripped := line.strip()) and not stripped.startswith("#")
+    }
+
+
+def collect_formal_text_files(relative_roots: tuple[Path, ...]) -> list[Path]:
+    files: list[Path] = []
+    for relative_root in relative_roots:
+        root = REPO_ROOT / relative_root
+        if root.is_file():
+            files.append(root)
+        elif root.is_dir():
+            files.extend(
+                path
+                for path in root.rglob("*")
+                if path.is_file() and path.suffix.lower() in STATELESS_SPEC_TEXT_SUFFIXES
+            )
+    return files
 
 
 def validate_ai_layout() -> list[str]:
@@ -368,6 +462,105 @@ def validate_reduction_contracts() -> list[str]:
     return errors
 
 
+def validate_stateless_spec_contract() -> list[str]:
+    errors: list[str] = []
+    spec_script_root = REPO_ROOT / "scripts" / "spec"
+    if spec_script_root.is_dir():
+        for path in sorted(item for item in spec_script_root.rglob("*") if item.is_file()):
+            errors.append(
+                "无状态 Spec: 不应在 scripts/spec 下重建状态管理脚本 "
+                f"{path.relative_to(REPO_ROOT)}"
+            )
+
+    package_file = REPO_ROOT / "package.json"
+    if package_file.is_file():
+        try:
+            package = json.loads(package_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            package = None
+        scripts = package.get("scripts") if isinstance(package, dict) else None
+        if isinstance(scripts, dict):
+            if "spec" in scripts:
+                errors.append(
+                    "无状态 Spec: package.json 不应重建 npm run spec 状态入口"
+                )
+            for script_name, command in scripts.items():
+                if isinstance(command, str) and (
+                    "scripts/spec/" in command or "flow_guard.py" in command
+                ):
+                    errors.append(
+                        "无状态 Spec: package.json 脚本 "
+                        f"{script_name!r} 不应引用已删除的 Spec 状态工具"
+                    )
+
+    full_repository = all(
+        (REPO_ROOT / relative_path).is_file()
+        for relative_path in (
+            Path("package.json"),
+            Path(".ai/prompts/project.md"),
+            Path(".specs/README.md"),
+        )
+    )
+    if full_repository:
+        if ".specs/*/" not in active_rule_lines(REPO_ROOT / ".worktreeinclude"):
+            errors.append(
+                "无状态 Spec: .worktreeinclude 必须包含有效的 .specs/*/ 复制规则"
+            )
+        if ".specs/*/" not in active_rule_lines(REPO_ROOT / ".gitignore"):
+            errors.append(
+                "无状态 Spec: .gitignore 必须包含有效的 .specs/*/ 忽略规则"
+            )
+
+    for relative_path, markers in STATELESS_SPEC_REQUIRED_MARKERS.items():
+        path = REPO_ROOT / relative_path
+        if not path.is_file():
+            if full_repository:
+                errors.append(f"无状态 Spec: 缺少正式文件 {relative_path}")
+            continue
+        if not full_repository and not str(relative_path).startswith(".ai/skills/"):
+            continue
+        text = path.read_text(encoding="utf-8")
+        missing = [marker for marker in markers if marker not in text]
+        if missing:
+            errors.append(
+                f"{relative_path}: 无状态 Spec 契约缺少必要内容 "
+                + ", ".join(repr(marker) for marker in missing)
+            )
+
+    for path in collect_formal_text_files(STATELESS_SPEC_FORMAL_ROOTS):
+        text = path.read_text(encoding="utf-8")
+        stale = [
+            marker for marker in STATEFUL_SPEC_GLOBAL_FORBIDDEN_MARKERS if marker in text
+        ]
+        if stale:
+            errors.append(
+                f"{path.relative_to(REPO_ROOT)}: 仍含已删除的状态工作流 "
+                + ", ".join(repr(marker) for marker in stale)
+            )
+
+    for path in collect_formal_text_files(STATELESS_SPEC_CORE_ROOTS):
+        text = path.read_text(encoding="utf-8")
+        stale = [
+            marker for marker in STATEFUL_SPEC_CORE_FORBIDDEN_MARKERS if marker in text
+        ]
+        if stale:
+            errors.append(
+                f"{path.relative_to(REPO_ROOT)}: 核心工作流仍含换皮状态字段 "
+                + ", ".join(repr(marker) for marker in stale)
+            )
+
+    template = SKILLS_ROOT / "solution-generator" / "solution.template.md"
+    if template.is_file():
+        text = template.read_text(encoding="utf-8")
+        rebuilt_state = sorted(set(SOLUTION_TEMPLATE_STATE_FIELD_RE.findall(text)))
+        if rebuilt_state:
+            errors.append(
+                "solution-generator/solution.template.md: 不应重建文档级状态字段 "
+                + ", ".join(repr(marker) for marker in rebuilt_state)
+            )
+    return errors
+
+
 def main() -> int:
     if not SKILLS_ROOT.is_dir():
         print("ERROR 缺少 .ai/skills", file=sys.stderr)
@@ -382,6 +575,7 @@ def main() -> int:
     errors.extend(validate_implementation_execution_contract())
     errors.extend(validate_contract_guard_routing())
     errors.extend(validate_reduction_contracts())
+    errors.extend(validate_stateless_spec_contract())
     if errors:
         for error in errors:
             print(f"ERROR {error}", file=sys.stderr)

@@ -17,5 +17,5 @@ __pycache__/
 *.py[cod]
 .DS_Store
 
-# Local L2/L3 execution snapshots; reusable templates live with their owning Skills.
+# Local Spec documents; reusable templates live with their owning Skills.
 .specs/*/

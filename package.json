@@ -10,7 +10,6 @@
     "check:ai": "uv run --directory apps/backend python ../../scripts/quality/check_ai_links.py && uv run --directory apps/backend python ../../scripts/quality/check_skills.py && npm run check:docs && npm run check:contracts",
     "check:docs": "uv run --directory apps/backend python ../../scripts/quality/check_docs_sync.py",
     "check:contracts": "uv run --directory apps/backend python ../../scripts/quality/check_runtime_contracts.py",
-    "spec": "uv run --directory apps/backend python ../../scripts/spec/flow_guard.py",
     "dev": "concurrently -n web,backend -c cyan,green \"npm:dev:web\" \"npm:dev:backend\"",
     "dev:local": "LINKCV_ENV_FILE=.env npm run dev",
     "dev:development": "LINKCV_ENV_FILE=.env.development npm run dev",

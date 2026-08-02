@@ -9,11 +9,11 @@ description: 为 LinkCV 设计和审查 MySQL 8.4 表、字段、主键、外键
 
 把已确认的业务实体和访问模式转换为物理 schema 设计，输出设计依据与评审清单。本技能不直接连接数据库、不执行 DDL，也不把示例 SQL 当成已经落库的事实。
 
-LinkCV 已有 FastAPI 业务模型、MySQL 8.4 配置和 Alembic/SQL-first 基础；根 revision `0001` 已创建 `users`、`resumes`。现有 ORM 与迁移链共同约束当前 schema，但不能证明每个目标环境都已经迁移到 head。后续 schema 设计必须结合冻结需求、真实访问模式、当前模型和已有物理约束；不得因为其他项目使用某种主键、状态或时间策略就直接照搬。
+LinkCV 已有 FastAPI 业务模型、MySQL 8.4 配置和 Alembic/SQL-first 基础；根 revision `0001` 已创建 `users`、`resumes`。现有 ORM 与迁移链共同约束当前 schema，但不能证明每个目标环境都已经迁移到 head。后续 schema 设计必须结合当前确认需求、真实访问模式、当前模型和已有物理约束；不得因为其他项目使用某种主键、状态或时间策略就直接照搬。
 
 ## 2. 必读输入
 
-1. 方案文档中的实体、字段和关系；本技能通常由 `solution-generator` 在起草数据模型章节时调用，不要求方案文档先冻结；
+1. 方案文档中的实体、字段和关系；本技能通常由 `solution-generator` 在起草数据模型章节时调用，不要求先完成整份方案确认；
 2. 已有 Acceptance 或方案文档中的查询、写入、唯一性、权限、并发和失败场景；
 3. 方案文档中已经确认的持久化边界、数据归属与旧数据决策；
 4. 真实调用方的读写模式、排序、分页、过滤和生命周期；
@@ -82,4 +82,4 @@ LinkCV 已有 FastAPI 业务模型、MySQL 8.4 配置和 Alembic/SQL-first 基�
 待验证：<EXPLAIN、数据量、锁或边界假设>
 ```
 
-若由 `solution-generator` 调用，把物理 schema 结论返回方案文档的数据模型章节和定稿 DDL，不能另建第二份方案或直接落地代码；方案文档冻结并进入实施后，才转 `alembic-migration` 同步 ORM 与 SQL-first revision。若字段语义、所有权、旧数据或删除行为仍有分歧，交回 `solution-generator` 向用户确认，不要在 DDL 中替用户决定。
+若由 `solution-generator` 调用，把物理 schema 结论返回方案文档的数据模型章节和定稿 DDL，不能另建第二份方案或直接落地代码；方案得到确认并开始实施后，才转 `alembic-migration` 同步 ORM 与 SQL-first revision。若字段语义、所有权、旧数据或删除行为仍有分歧，交回 `solution-generator` 向用户确认，不要在 DDL 中替用户决定。
