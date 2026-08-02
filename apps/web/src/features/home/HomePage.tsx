@@ -241,15 +241,17 @@ export function HomeScreen({ view = "all", resumes, onOpen, onDelete, onCreate, 
                 </Button>
               </>
             )}
-            <Button
-              className="dashboard-create"
-              size="sm"
-              icon={<Plus size={14} />}
-              disabled={creatingBlank || importing || creatingFromTemplate}
-              onClick={() => void createBlankResume()}
-            >
-              {creatingBlank ? "正在创建…" : "新建简历"}
-            </Button>
+            {view === "all" && (
+              <Button
+                className="dashboard-create"
+                size="sm"
+                icon={<Plus size={14} />}
+                disabled={creatingBlank || importing || creatingFromTemplate}
+                onClick={() => void createBlankResume()}
+              >
+                {creatingBlank ? "正在创建…" : "新建简历"}
+              </Button>
+            )}
           </div>
         </header>
 
