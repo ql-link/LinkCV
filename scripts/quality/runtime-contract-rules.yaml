@@ -59,15 +59,21 @@ contracts:
         pattern: '当前全部 `/api` 由 FastAPI 承接'
         message: 故障分诊必须使用当前 FastAPI 路由归属
 
-  - id: jwt-cookie-ttl
-    description: 登录 Cookie 默认有效期为七天
+  - id: jwt-cookie-contract
+    description: 三套环境显式声明一致的双 Token Cookie 名称和默认有效期
     assertions:
       - path: apps/backend/src/linkcv/core/config.py
-        pattern: 'default=7, alias="SESSION_TTL_DAYS"'
-        message: SESSION_TTL_DAYS 必须默认等于 7
+        pattern: 'default=15, alias="ACCESS_TTL_MINUTES"[\s\S]*default="resume_access", alias="ACCESS_COOKIE_NAME"[\s\S]*default="resume_refresh", alias="REFRESH_COOKIE_NAME"[\s\S]*default=7, alias="SESSION_TTL_DAYS"'
+        message: FastAPI 必须保留双 Token Cookie 名称和有效期默认值
       - path: .env.example
-        pattern: '(?m)^SESSION_TTL_DAYS=7$'
-        message: 环境模板必须声明七天登录有效期
+        pattern: '(?m)^SESSION_TTL_DAYS=7$[\s\S]*^ACCESS_TTL_MINUTES=15$[\s\S]*^ACCESS_COOKIE_NAME=resume_access$[\s\S]*^REFRESH_COOKIE_NAME=resume_refresh$'
+        message: 本地模板必须声明双 Token Cookie 契约
+      - path: .env.development
+        pattern: '(?m)^SESSION_TTL_DAYS=7$[\s\S]*^ACCESS_TTL_MINUTES=15$[\s\S]*^ACCESS_COOKIE_NAME=resume_access$[\s\S]*^REFRESH_COOKIE_NAME=resume_refresh$'
+        message: Dev 配置必须声明双 Token Cookie 契约
+      - path: .env.production
+        pattern: '(?m)^SESSION_TTL_DAYS=7$[\s\S]*^ACCESS_TTL_MINUTES=15$[\s\S]*^ACCESS_COOKIE_NAME=resume_access$[\s\S]*^REFRESH_COOKIE_NAME=resume_refresh$'
+        message: Production 配置必须声明双 Token Cookie 契约
 
   - id: environment-profile-database-isolation
     description: 三套环境都使用独立 linkcv 数据库

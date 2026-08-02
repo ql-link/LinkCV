@@ -26,7 +26,7 @@ local/test 未配置密钥环时，原有非 LLM 接口仍可启动，但保存�
 LINKCV_ENV_FILE=.env.development npm run db:init
 ```
 
-命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0009`。阿里云 OSS 字段目前仅为预留配置，图片读写仍只使用 `MINIO_*`。
+命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0009`。图片读写使用 `MINIO_*` 配置。
 
 ## 默认端口与覆盖
 
