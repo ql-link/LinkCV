@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { BriefcaseBusiness, FileText, LayoutTemplate, LogOut, Shield, UserRound } from "lucide-react";
+import { BriefcaseBusiness, FileText, LayoutTemplate, LogOut, UserRound } from "lucide-react";
 import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
 import { Brand } from "./ds";
@@ -11,11 +11,10 @@ type WorkspaceSidebarProps = {
   email: string;
   nickname?: string;
   avatarUrl?: string | null;
-  isAdmin: boolean;
   onLogout: () => void | Promise<void>;
 };
 
-export function WorkspaceSidebar({ active, email, nickname, avatarUrl, isAdmin, onLogout }: WorkspaceSidebarProps) {
+export function WorkspaceSidebar({ active, email, nickname, avatarUrl, onLogout }: WorkspaceSidebarProps) {
   const displayName = nickname || email;
   return (
     <nav className="dashboard-sidebar" aria-label="工作区导航">
@@ -46,20 +45,6 @@ export function WorkspaceSidebar({ active, email, nickname, avatarUrl, isAdmin, 
         <BriefcaseBusiness size={16} />JD 中心
         </button>
       </div>
-      {isAdmin && (
-        <>
-          <hr className="sidebar-divider" />
-          <button
-            className="sidebar-admin-button"
-            type="button"
-            onClick={() => navigateTo("/admin")}
-            title="管理台"
-          >
-            <Shield size={16} />
-            管理台
-          </button>
-        </>
-      )}
       <div className="dashboard-account-area">
         <button
           className={`dashboard-account${active === "account" ? " is-active" : ""}`}
@@ -107,7 +92,6 @@ export function WorkspaceLayout({ active, children }: { active: WorkspaceSection
         email={user?.email ?? ""}
         nickname={user?.nickname}
         avatarUrl={user?.avatar_url}
-        isAdmin={user?.is_admin ?? false}
         onLogout={logoutAndReturn}
       />
       {children}

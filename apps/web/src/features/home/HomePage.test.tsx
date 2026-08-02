@@ -49,6 +49,7 @@ describe("HomeScreen", () => {
     renderHome({ view: "templates", onCreate });
 
     expect(screen.queryByRole("textbox", { name: "搜索简历" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "新建简历" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /标准简历模板/ }));
 
     expect(screen.getByRole("dialog", { name: "使用「标准简历模板」创建简历？" })).toBeInTheDocument();

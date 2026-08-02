@@ -15,6 +15,7 @@ def test_settings_env_files_are_stable_and_include_local_override(
     base.write_text("APP_ENV=development\nMYSQL_USER=shared\n", encoding="utf-8")
     local.write_text("MYSQL_USER=local-secret-user\n", encoding="utf-8")
     monkeypatch.setenv("LINKCV_ENV_FILE", str(base))
+    monkeypatch.delenv("APP_ENV", raising=False)
     monkeypatch.delenv("MYSQL_USER", raising=False)
 
     files = settings_env_files()
@@ -40,9 +41,14 @@ def test_process_environment_has_highest_priority(
 
 def test_mysql_and_redis_urls_encode_credentials() -> None:
     settings = Settings(
+        mysql_host="127.0.0.1",
+        mysql_port=3306,
         mysql_user="user name",
         mysql_password="p@ss/word",
         mysql_database="link cv",
+        redis_host="127.0.0.1",
+        redis_port=6379,
+        redis_db=0,
         redis_password="redis/@ password",
     )
 
@@ -106,7 +112,7 @@ def test_production_rejects_missing_secrets_without_exposing_values() -> None:
     assert "replace-with-secret" not in message
 
 
-def test_production_accepts_injected_secrets_and_oss_stays_reserved() -> None:
+def test_production_accepts_injected_secrets() -> None:
     settings = Settings(
         app_environment="production",
         jwt_secret="a-production-jwt-secret-with-more-than-32-characters",
@@ -117,12 +123,5 @@ def test_production_accepts_injected_secrets_and_oss_stays_reserved() -> None:
             f"production:{Fernet.generate_key().decode('ascii')}"
         ),
         linkparse_api_key="fictional-linkparse-key",
-        aliyun_oss_endpoint="https://oss-cn-hangzhou.aliyuncs.com",
-        aliyun_oss_region="cn-hangzhou",
-        aliyun_oss_access_key_id="reserved-access",
-        aliyun_oss_access_key_secret="reserved-secret",
-        aliyun_oss_bucket="reserved-bucket",
     )
-
-    assert settings.aliyun_oss_bucket == "reserved-bucket"
     assert settings.minio_bucket == "linkcv"
