@@ -211,6 +211,26 @@ def test_direct_build_route_reaches_implementation_without_acceptance(tmp_path: 
     assert rejected.returncode == 1
     assert "当前路径不产出验收契约" in rejected.stderr
 
+    state_before_rejected_next = (feature / "state.yaml").read_bytes()
+    rejected_with_next = run_script(
+        FLOW_GUARD,
+        "freeze",
+        "LCV-116",
+        "acceptance",
+        "--next",
+        "acceptance_first",
+        env=env,
+    )
+    unchanged_state = yaml.safe_load(
+        (feature / "state.yaml").read_text(encoding="utf-8")
+    )
+    assert rejected_with_next.returncode == 1
+    assert "--next 只允许在冻结 solution 时使用" in rejected_with_next.stderr
+    assert unchanged_state["route"] == "direct_build"
+    assert unchanged_state["phase"] == "implementation"
+    assert unchanged_state["artifacts"]["acceptance"]["frozen"] is False
+    assert (feature / "state.yaml").read_bytes() == state_before_rejected_next
+
 
 def test_route_switch_to_acceptance_first_requires_acceptance_before_implementation(
     tmp_path: Path,
@@ -291,18 +311,32 @@ def test_flow_migration_maps_legacy_lane_to_acceptance_first_route(tmp_path: Pat
     assert migrated["phase"] == "acceptance"
 
 
-def test_flow_init_allows_missing_source_issue_for_explicit_exceptions(tmp_path: Path) -> None:
+def test_flow_init_allows_missing_source_issue_as_normal_input(tmp_path: Path) -> None:
     specs_root = tmp_path / ".specs"
     env = {"LINKCV_SPECS_ROOT": str(specs_root)}
 
-    initialized = run_script(FLOW_GUARD, "init", "LCV-101", env=env)
-    state = yaml.safe_load((specs_root / "LCV-101" / "state.yaml").read_text(encoding="utf-8"))
+    initialized = run_script(
+        FLOW_GUARD, "init", "LOCAL-20260802-WORKFLOW", env=env
+    )
+    state = yaml.safe_load(
+        (specs_root / "LOCAL-20260802-WORKFLOW" / "state.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    status = run_script(
+        FLOW_GUARD, "status", "LOCAL-20260802-WORKFLOW", env=env
+    )
 
     assert initialized.returncode == 0, initialized.stderr
     assert state["schema_version"] == 7
     assert state["source_issue"] is None
     assert state["verification"]["verified"] is False
     assert state["quality_review"]["passed"] is False
+    assert status.returncode == 0, status.stderr
+    assert "待读：有效来源材料与用户确认补充" in status.stdout
+    assert "关联 Issue：无" in status.stdout
+    assert "当前请求或其他已确认材料可作为需求来源" in status.stdout
+    assert "不阻止后续阶段" in status.stdout
 
 
 def test_flow_init_records_source_issue_without_platform_fields(tmp_path: Path) -> None:
@@ -323,8 +357,8 @@ def test_flow_init_records_source_issue_without_platform_fields(tmp_path: Path) 
     assert initialized.returncode == 0, initialized.stderr
     assert state["source_issue"] == "https://example.invalid/issues/LCV-102"
     assert "source" not in state
-    assert "来源 Issue：https://example.invalid/issues/LCV-102" in status.stdout
-    assert "正文是开发起点，详情文档按需补充" in status.stdout
+    assert "关联 Issue：https://example.invalid/issues/LCV-102" in status.stdout
+    assert "存在时完整读取，作为可选追踪信息" in status.stdout
     assert "不执行外部漂移门禁" in status.stdout
 
 
@@ -399,8 +433,10 @@ def test_flow_migration_renames_brief_artifact_to_solution(tmp_path: Path) -> No
     env = {"LINKCV_SPECS_ROOT": str(specs_root)}
 
     assert run_script(FLOW_GUARD, "init", "LCV-104", env=env).returncode == 0
-    (feature / "solution.md").write_text("solution", encoding="utf-8")
+    solution = feature / "solution.md"
+    solution.write_text("solution", encoding="utf-8")
     assert run_script(FLOW_GUARD, "freeze", "LCV-104", "solution", "--next", "acceptance_first", env=env).returncode == 0
+    solution.rename(feature / "brief.md")
 
     state_path = feature / "state.yaml"
     state = yaml.safe_load(state_path.read_text(encoding="utf-8"))
@@ -420,7 +456,155 @@ def test_flow_migration_renames_brief_artifact_to_solution(tmp_path: Path) -> No
     assert migrated["artifacts"]["solution"]["file"] == "solution.md"
     assert migrated["artifacts"]["solution"]["frozen"] is True
     assert migrated["phase"] == "acceptance"
+    assert solution.read_text(encoding="utf-8") == "solution"
+    assert not (feature / "brief.md").exists()
     assert "下一站：acceptance-generator" in status.stdout
+
+
+def test_flow_repairs_brief_file_left_by_earlier_v7_migration(tmp_path: Path) -> None:
+    specs_root = tmp_path / ".specs"
+    feature = specs_root / "LCV-120"
+    env = {"LINKCV_SPECS_ROOT": str(specs_root)}
+
+    assert run_script(FLOW_GUARD, "init", "LCV-120", env=env).returncode == 0
+    solution = feature / "solution.md"
+    solution.write_text("solution", encoding="utf-8")
+    assert (
+        run_script(
+            FLOW_GUARD,
+            "freeze",
+            "LCV-120",
+            "solution",
+            "--next",
+            "acceptance_first",
+            env=env,
+        ).returncode
+        == 0
+    )
+    solution.rename(feature / "brief.md")
+
+    status = run_script(FLOW_GUARD, "status", "LCV-120", env=env)
+    repaired = yaml.safe_load((feature / "state.yaml").read_text(encoding="utf-8"))
+
+    assert status.returncode == 0, status.stderr
+    assert "已迁移旧版 brief.md 为 solution.md" in status.stderr
+    assert repaired["schema_version"] == 7
+    assert repaired["artifacts"]["solution"]["frozen"] is True
+    assert solution.read_text(encoding="utf-8") == "solution"
+    assert not (feature / "brief.md").exists()
+
+
+def test_flow_v7_migration_removes_identical_brief_duplicate(tmp_path: Path) -> None:
+    specs_root = tmp_path / ".specs"
+    feature = specs_root / "LCV-125"
+    env = {"LINKCV_SPECS_ROOT": str(specs_root)}
+
+    assert run_script(FLOW_GUARD, "init", "LCV-125", env=env).returncode == 0
+    solution = feature / "solution.md"
+    solution.write_text("current solution", encoding="utf-8")
+    assert (
+        run_script(
+            FLOW_GUARD,
+            "freeze",
+            "LCV-125",
+            "solution",
+            "--next",
+            "direct_build",
+            env=env,
+        ).returncode
+        == 0
+    )
+    brief = feature / "brief.md"
+    shutil.copyfile(solution, brief)
+
+    status = run_script(FLOW_GUARD, "status", "LCV-125", env=env)
+
+    assert status.returncode == 0, status.stderr
+    assert "清理同内容冗余副本" in status.stderr
+    assert solution.read_text(encoding="utf-8") == "current solution"
+    assert not brief.exists()
+    assert "下一站：implementation-execution" in status.stdout
+
+
+def test_flow_v7_migration_refuses_conflicting_brief_and_solution_files(
+    tmp_path: Path,
+) -> None:
+    specs_root = tmp_path / ".specs"
+    feature = specs_root / "LCV-123"
+    env = {"LINKCV_SPECS_ROOT": str(specs_root)}
+
+    assert run_script(FLOW_GUARD, "init", "LCV-123", env=env).returncode == 0
+    solution = feature / "solution.md"
+    solution.write_text("current solution", encoding="utf-8")
+    assert (
+        run_script(
+            FLOW_GUARD,
+            "freeze",
+            "LCV-123",
+            "solution",
+            "--next",
+            "acceptance_first",
+            env=env,
+        ).returncode
+        == 0
+    )
+    brief = feature / "brief.md"
+    brief.write_text("different legacy brief", encoding="utf-8")
+    state_path = feature / "state.yaml"
+    state_before = state_path.read_bytes()
+
+    status = run_script(FLOW_GUARD, "status", "LCV-123", env=env)
+
+    assert status.returncode == 2
+    assert "brief.md 与 solution.md 同时存在且内容不同" in status.stderr
+    assert brief.read_text(encoding="utf-8") == "different legacy brief"
+    assert solution.read_text(encoding="utf-8") == "current solution"
+    assert state_path.read_bytes() == state_before
+
+
+def test_flow_migration_refuses_conflicting_brief_and_solution_files(
+    tmp_path: Path,
+) -> None:
+    specs_root = tmp_path / ".specs"
+    feature = specs_root / "LCV-122"
+    env = {"LINKCV_SPECS_ROOT": str(specs_root)}
+
+    assert run_script(FLOW_GUARD, "init", "LCV-122", env=env).returncode == 0
+    solution = feature / "solution.md"
+    solution.write_text("legacy solution", encoding="utf-8")
+    assert (
+        run_script(
+            FLOW_GUARD,
+            "freeze",
+            "LCV-122",
+            "solution",
+            "--next",
+            "acceptance_first",
+            env=env,
+        ).returncode
+        == 0
+    )
+    solution.rename(feature / "brief.md")
+    solution.write_text("different solution", encoding="utf-8")
+    state_path = feature / "state.yaml"
+    state = yaml.safe_load(state_path.read_text(encoding="utf-8"))
+    state["schema_version"] = 5
+    state["artifacts"] = {
+        "brief": {**state["artifacts"]["solution"], "file": "brief.md"},
+        "acceptance": state["artifacts"]["acceptance"],
+    }
+    state_path.write_text(
+        yaml.safe_dump(state, allow_unicode=True, sort_keys=False), encoding="utf-8"
+    )
+    state_before = state_path.read_bytes()
+
+    status = run_script(FLOW_GUARD, "status", "LCV-122", env=env)
+
+    assert status.returncode == 2
+    assert "brief.md 与 solution.md 同时存在且内容不同" in status.stderr
+    assert (feature / "brief.md").read_text(encoding="utf-8") == "legacy solution"
+    assert solution.read_text(encoding="utf-8") == "different solution"
+    assert state_path.read_bytes() == state_before
 
 
 def test_flow_init_rejects_empty_source_issue(tmp_path: Path) -> None:
@@ -657,9 +841,134 @@ def test_failed_verification_command_does_not_advance_state(tmp_path: Path) -> N
     state = yaml.safe_load((feature / "state.yaml").read_text(encoding="utf-8"))
 
     assert failed.returncode == 1
-    assert "未更新验证状态" in failed.stderr
+    assert "已撤销旧验证与质量审查状态" in failed.stderr
     assert state["phase"] == "implementation"
     assert state["verification"]["verified"] is False
+    assert state["verification"]["commands"][0]["exit_code"] == 7
+
+
+def test_failed_reverification_revokes_previous_verification_and_review(
+    tmp_path: Path,
+) -> None:
+    specs_root = tmp_path / ".specs"
+    feature = specs_root / "LCV-121"
+    verification_root = create_verification_repo(tmp_path)
+    env = {
+        "LINKCV_SPECS_ROOT": str(specs_root),
+        "LINKCV_VERIFICATION_ROOT": str(verification_root),
+    }
+    assert run_script(FLOW_GUARD, "init", "LCV-121", env=env).returncode == 0
+    (feature / "solution.md").write_text("solution", encoding="utf-8")
+    assert (
+        run_script(
+            FLOW_GUARD,
+            "freeze",
+            "LCV-121",
+            "solution",
+            "--next",
+            "direct_build",
+            env=env,
+        ).returncode
+        == 0
+    )
+    assert (
+        run_script(
+            FLOW_GUARD,
+            "verify",
+            "LCV-121",
+            "--run",
+            successful_verification_command(),
+            env=env,
+        ).returncode
+        == 0
+    )
+    assert (
+        run_script(FLOW_GUARD, "review", "LCV-121", "--pass", env=env).returncode
+        == 0
+    )
+
+    failed = run_script(
+        FLOW_GUARD,
+        "verify",
+        "LCV-121",
+        "--run",
+        failed_verification_command(),
+        env=env,
+    )
+    state = yaml.safe_load((feature / "state.yaml").read_text(encoding="utf-8"))
+    status = run_script(FLOW_GUARD, "status", "LCV-121", env=env)
+
+    assert failed.returncode == 1
+    assert "已撤销旧验证与质量审查状态" in failed.stderr
+    assert state["phase"] == "implementation"
+    assert state["verification"]["verified"] is False
+    assert state["verification"]["commands"][0]["exit_code"] == 7
+    assert state["quality_review"]["passed"] is False
+    assert status.returncode == 0, status.stderr
+    assert "下一站：implementation-execution" in status.stdout
+
+
+def test_reverification_with_drifted_solution_revokes_previous_trusted_state(
+    tmp_path: Path,
+) -> None:
+    specs_root = tmp_path / ".specs"
+    feature = specs_root / "LCV-124"
+    verification_root = create_verification_repo(tmp_path)
+    env = {
+        "LINKCV_SPECS_ROOT": str(specs_root),
+        "LINKCV_VERIFICATION_ROOT": str(verification_root),
+    }
+    assert run_script(FLOW_GUARD, "init", "LCV-124", env=env).returncode == 0
+    solution = feature / "solution.md"
+    solution.write_text("solution v1", encoding="utf-8")
+    assert (
+        run_script(
+            FLOW_GUARD,
+            "freeze",
+            "LCV-124",
+            "solution",
+            "--next",
+            "direct_build",
+            env=env,
+        ).returncode
+        == 0
+    )
+    assert (
+        run_script(
+            FLOW_GUARD,
+            "verify",
+            "LCV-124",
+            "--run",
+            successful_verification_command(),
+            env=env,
+        ).returncode
+        == 0
+    )
+    assert (
+        run_script(FLOW_GUARD, "review", "LCV-124", "--pass", env=env).returncode
+        == 0
+    )
+    solution.write_text("solution v2", encoding="utf-8")
+
+    failed = run_script(
+        FLOW_GUARD,
+        "verify",
+        "LCV-124",
+        "--run",
+        successful_verification_command(),
+        env=env,
+    )
+    state = yaml.safe_load((feature / "state.yaml").read_text(encoding="utf-8"))
+    default_status = run_script(FLOW_GUARD, "status", env=env)
+
+    assert failed.returncode == 1
+    assert "solution 冻结后已变化" in failed.stderr
+    assert "已撤销旧验证与质量审查状态" in failed.stderr
+    assert state["phase"] == "implementation"
+    assert state["verification"]["verified"] is False
+    assert state["quality_review"]["passed"] is False
+    assert default_status.returncode == 1
+    assert "LCV-124: 本地状态不可信" in default_status.stderr
 
 
 def test_verification_command_that_changes_code_does_not_advance_state(
@@ -980,6 +1289,9 @@ def test_skill_check_rejects_solution_skill_without_on_demand_contract(tmp_path:
         "未命中的章节整章删除",
         "必须保留状态机",
         "必须保留数据模型",
+        "没有 Issue 不阻止创建方案，也不算例外",
+        "没有真实待决选择的短方案，整份展示一次并确认一次",
+        "冻结阶段直接复用该选择",
     )
 
     for index, marker in enumerate(protected_markers):
@@ -1059,7 +1371,7 @@ def test_skill_check_rejects_incomplete_flow_router_contract(tmp_path: Path) -> 
     skill_file = target_skill / "SKILL.md"
     skill_file.write_text(
         skill_file.read_text(encoding="utf-8").replace(
-            "记录：会话内 | 持久记录", "记录：自动"
+            "默认只向用户展示三行", "默认展示完整七维表"
         ),
         encoding="utf-8",
     )
@@ -1071,15 +1383,18 @@ def test_skill_check_rejects_incomplete_flow_router_contract(tmp_path: Path) -> 
 
     assert result.returncode == 1
     assert "七维分流契约缺少必要内容" in result.stderr
-    assert "记录：会话内 | 持久记录" in result.stderr
+    assert "默认只向用户展示三行" in result.stderr
 
 
 def test_skill_check_protects_flow_router_core_semantics(tmp_path: Path) -> None:
     protected_markers = (
+        "七个维度仍必须在内部完整判断",
+        "没有 Issue 不阻止分流",
         "严格风险本身不自动升级为方案先行",
         "这是当前存储能力限制，不代表任务本身复杂",
         "不要由分流阶段提前主持方案讨论",
         "其他准备为 `需澄清` 或 `需调查` 的情况",
+        "只有准备不足、风险严格、需要持久记录或用户主动要求查看判断依据时",
     )
 
     for index, marker in enumerate(protected_markers):
@@ -1110,22 +1425,103 @@ def test_skill_check_protects_flow_router_core_semantics(tmp_path: Path) -> None
         assert marker in result.stderr
 
 
+def test_skill_check_protects_five_reduction_contracts(tmp_path: Path) -> None:
+    protected_cases = (
+        (
+            "module-planning",
+            "SKILL.md",
+            "没有 Issue 不阻塞模块规划",
+        ),
+        (
+            "module-planning",
+            "SKILL.md",
+            "复用该授权，不再索要一遍相同指令",
+        ),
+        (
+            "implementation-execution",
+            "implementation_report.template.md",
+            "## 2. 已接受限制",
+        ),
+        (
+            "implementation-execution",
+            "SKILL.md",
+            "严格风险本身都不触发报告",
+        ),
+        (
+            "run-all-tests",
+            "SKILL.md",
+            "**任务范围验证**",
+        ),
+        (
+            "run-all-tests",
+            "SKILL.md",
+            "准备创建 PR 时始终运行完整 `npm run check`",
+        ),
+        (
+            "branch-pr-workflow",
+            "SKILL.md",
+            "来源 Issue 是可选的追踪信息",
+        ),
+        (
+            "code-review-and-quality",
+            "SKILL.md",
+            "`release_ready` 只代表同一代码快照完成了任务范围验证和质量审查",
+        ),
+    )
+
+    for index, (skill_name, relative_file, marker) in enumerate(protected_cases):
+        case_root = tmp_path / f"case-{index}"
+        (case_root / ".ai" / "prompts").mkdir(parents=True)
+        (case_root / ".ai" / "prompts" / "project.md").write_text(
+            "rules", encoding="utf-8"
+        )
+        skills_root = case_root / ".ai" / "skills"
+        skills_root.mkdir(parents=True)
+        (skills_root / "README.md").write_text("skills", encoding="utf-8")
+        shutil.copytree(
+            REPO_ROOT / ".ai" / "skills" / skill_name,
+            skills_root / skill_name,
+        )
+        protected_file = skills_root / skill_name / relative_file
+        protected_file.write_text(
+            protected_file.read_text(encoding="utf-8").replace(
+                marker, f"减法契约已删除 {index}"
+            ),
+            encoding="utf-8",
+        )
+
+        result = run_script(
+            SKILL_CHECK,
+            env={"LINKCV_REPO_ROOT": str(case_root)},
+        )
+
+        assert result.returncode == 1
+        assert "五项减法契约缺少必要内容" in result.stderr
+        assert marker in result.stderr
+
+
 def test_skill_check_protects_flow_router_downstream_contract(tmp_path: Path) -> None:
     protected_markers = (
         (
             "implementation-execution",
             "方案先行任务以冻结方案文档为准；"
             "直接实现以来源材料、当前确认结论和 `flow-router` 列出的严格检查项为准",
+            "实现入口或实施报告契约缺少必要内容",
         ),
-        ("implementation-execution", "不因选择影响大就自动升级为模块规划"),
+        (
+            "implementation-execution",
+            "不因选择影响大就自动升级为模块规划",
+            "实现入口或实施报告契约缺少必要内容",
+        ),
         (
             "contract-guard",
             "其他单需求分歧返回 `flow-router` 重新判断，"
             "已经明确属于方案先行时直接交 `solution-generator` 定稿",
+            "七维分流下游契约缺少必要内容",
         ),
     )
 
-    for index, (skill_name, marker) in enumerate(protected_markers):
+    for index, (skill_name, marker, expected_error) in enumerate(protected_markers):
         case_root = tmp_path / f"case-{index}"
         (case_root / ".ai" / "prompts").mkdir(parents=True)
         (case_root / ".ai" / "prompts" / "project.md").write_text(
@@ -1149,7 +1545,7 @@ def test_skill_check_protects_flow_router_downstream_contract(tmp_path: Path) ->
         )
 
         assert result.returncode == 1
-        assert "七维分流下游契约缺少必要内容" in result.stderr
+        assert expected_error in result.stderr
         assert marker in result.stderr
 
 

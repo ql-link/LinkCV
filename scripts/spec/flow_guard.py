@@ -42,7 +42,7 @@ PHASES = (
 STATIONS = {
     "solution": (
         "solution-generator",
-        ("来源 Issue 正文、相关飞书详情文档与用户确认补充",),
+        ("有效来源材料与用户确认补充",),
     ),
     "acceptance": ("acceptance-generator", ("solution.md",)),
     "implementation": (
@@ -74,7 +74,7 @@ def display_path(path: Path) -> str:
 
 def validate_key(key: str) -> str:
     if not KEY_RE.fullmatch(key) or ".." in key:
-        raise ValueError("Issue key 只能包含字母、数字、下划线和连字符")
+        raise ValueError("任务标识只能包含字母、数字、下划线和连字符")
     return key.upper()
 
 
@@ -141,8 +141,85 @@ def acceptance_required(state: dict[str, object]) -> bool:
     return route_of(state) == "acceptance_first"
 
 
+def migrate_legacy_brief_file(key: str, state: dict[str, object]) -> bool:
+    """安全迁移旧 brief.md，并修复已升级状态遗留的旧文件名。"""
+    artifacts = state.get("artifacts")
+    if not isinstance(artifacts, dict):
+        return False
+
+    directory = feature_dir(key)
+    brief_path = directory / "brief.md"
+    solution_path = directory / ARTIFACT_FILES["solution"]
+    version = state.get("schema_version")
+    legacy_brief = artifacts.get("brief")
+    solution = artifacts.get("solution")
+    artifact: dict[str, object] | None = None
+    if (
+        version in {None, 1, 2, 3, 4, 5, 6}
+        and isinstance(legacy_brief, dict)
+        and "solution" not in artifacts
+    ):
+        artifact = legacy_brief
+    elif (
+        version == STATE_SCHEMA_VERSION
+        and isinstance(solution, dict)
+        and brief_path.is_file()
+    ):
+        artifact = solution
+    if artifact is None:
+        return False
+
+    if solution_path.is_file():
+        if brief_path.is_file() and brief_path.read_bytes() != solution_path.read_bytes():
+            raise RuntimeError(
+                "旧版 brief.md 与 solution.md 同时存在且内容不同；"
+                "请人工确认保留哪一份，工具不会自动覆盖"
+            )
+        expected_hash = artifact.get("sha256")
+        if (
+            artifact.get("frozen") is True
+            and isinstance(expected_hash, str)
+            and digest(solution_path) != expected_hash
+        ):
+            raise RuntimeError(
+                "现有 solution.md 与旧版冻结哈希不一致；请人工确认内容后再恢复"
+            )
+        if brief_path.is_file():
+            try:
+                brief_path.unlink()
+            except OSError as exc:
+                raise RuntimeError(
+                    f"清理与 solution.md 内容相同的旧版 brief.md 失败: {exc}"
+                ) from exc
+            return True
+        return False
+
+    if not brief_path.is_file():
+        if artifact.get("frozen") is True:
+            raise FileNotFoundError(
+                "旧版冻结产物 brief.md 和目标 solution.md 均不存在；"
+                "请先恢复原文件"
+            )
+        return False
+
+    expected_hash = artifact.get("sha256")
+    if (
+        artifact.get("frozen") is True
+        and isinstance(expected_hash, str)
+        and digest(brief_path) != expected_hash
+    ):
+        raise RuntimeError(
+            "旧版 brief.md 与冻结哈希不一致；请人工确认内容后再恢复"
+        )
+    try:
+        brief_path.replace(solution_path)
+    except OSError as exc:
+        raise RuntimeError(f"迁移 brief.md 到 solution.md 失败: {exc}") from exc
+    return True
+
+
 def migrate_state(state: dict[str, object]) -> bool:
-    """升级旧状态，并把平台字段压缩为单一来源 Issue 引用。"""
+    """升级旧状态，并把旧平台字段压缩为可选 Issue 追踪引用。"""
     version = state.get("schema_version")
     if version == STATE_SCHEMA_VERSION:
         return False
@@ -205,9 +282,15 @@ def load_state(key: str) -> dict[str, object]:
     value = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise ValueError("state.yaml 顶层必须是映射")
+    migrated_brief = migrate_legacy_brief_file(key, value)
     migrated = migrate_state(value)
-    if migrated:
+    if migrated or migrated_brief:
         save_state(key, value)
+    if migrated_brief:
+        print(
+            "INFO 已迁移旧版 brief.md 为 solution.md 或清理同内容冗余副本",
+            file=sys.stderr,
+        )
     if migrated:
         print(
             f"INFO 已自动升级 {display_path(path)} 到 schema v{STATE_SCHEMA_VERSION}；"
@@ -593,7 +676,7 @@ def cmd_status(args: argparse.Namespace) -> int:
             "  待读："
             + ", ".join(
                 item
-                if item.startswith(("来源 Issue", "飞书")) or "证据" in item
+                if item.startswith(("有效来源材料", "飞书")) or "证据" in item
                 else f".specs/{key}/{item}"
                 for item in reads
             )
@@ -602,8 +685,13 @@ def cmd_status(args: argparse.Namespace) -> int:
         source_issue = state.get("source_issue")
         if isinstance(source_issue, str):
             print(
-                f"  来源 Issue：{source_issue}；"
-                "正文是开发起点，详情文档按需补充；不执行外部漂移门禁"
+                f"  关联 Issue：{source_issue}；"
+                "存在时完整读取，作为可选追踪信息；不执行外部漂移门禁"
+            )
+        else:
+            print(
+                "  关联 Issue：无；当前请求或其他已确认材料可作为需求来源，"
+                "不阻止后续阶段"
             )
     return result
 
@@ -649,9 +737,10 @@ def cmd_freeze(args: argparse.Namespace) -> int:
         errors.append(
             "冻结方案文档时必须用 --next 选定后续路径：" + "、".join(ROUTES)
         )
+    if name != "solution" and args.next is not None:
+        errors.append("--next 只允许在冻结 solution 时使用")
     if name == "acceptance":
-        chosen = args.next or route_of(state)
-        if chosen != "acceptance_first":
+        if route_of(state) != "acceptance_first":
             errors.append(
                 "当前路径不产出验收契约；需要时先运行 "
                 f"`npm run spec -- route {key} acceptance_first`"
@@ -763,11 +852,28 @@ def cmd_verify(args: argparse.Namespace) -> int:
                 f"当前 phase={state.get('phase')}，不能记录实现验证；先运行 "
                 f"`npm run spec -- status {key}`"
             )
-        for name in required_artifacts(state, "implementation"):
-            errors.extend(validate_frozen_artifact(key, state, name))
     if errors:
         for error in errors:
             print(f"ERROR {error}", file=sys.stderr)
+        return 1
+
+    state["verification"] = empty_verification_state()
+    state["quality_review"] = empty_quality_review_state()
+    state["phase"] = "implementation"
+    save_state(key, state)
+
+    artifact_errors = [
+        error
+        for name in required_artifacts(state, "implementation")
+        for error in validate_frozen_artifact(key, state, name)
+    ]
+    if artifact_errors:
+        for error in artifact_errors:
+            print(f"ERROR {error}", file=sys.stderr)
+        print(
+            "ERROR 已撤销旧验证与质量审查状态；修复冻结产物后重新验证",
+            file=sys.stderr,
+        )
         return 1
 
     manual_acceptance: dict[str, object] | None = None
@@ -776,22 +882,31 @@ def cmd_verify(args: argparse.Namespace) -> int:
         if manual_errors:
             for error in manual_errors:
                 print(f"ERROR {error}", file=sys.stderr)
+            print(
+                "ERROR 已撤销旧验证与质量审查状态；人工验收通过后重新验证",
+                file=sys.stderr,
+            )
             return 1
 
     before = repository_snapshot()
     command_results, returncode = run_verification_commands(args.run)
+    verification = verification_state(state)
+    verification["commands"] = command_results
     if returncode != 0:
+        save_state(key, state)
         return fail(
-            f"验证命令失败（exit={returncode}）；未更新验证状态",
+            f"验证命令失败（exit={returncode}）；已撤销旧验证与质量审查状态",
             1,
         )
     after = repository_snapshot()
     if before["sha256"] != after["sha256"]:
-        return fail("验证命令改变了可提交内容；检查变更后重新运行 spec verify")
+        save_state(key, state)
+        return fail(
+            "验证命令改变了可提交内容；已撤销旧验证与质量审查状态，"
+            "检查变更后重新运行 spec verify"
+        )
 
-    verification = verification_state(state)
     verification["verified"] = True
-    verification["commands"] = command_results
     verification["code_snapshot"] = after
     verification["manual_acceptance"] = manual_acceptance
     verification["verified_at"] = now()
@@ -830,11 +945,11 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     init = subparsers.add_parser("init", help="初始化本地规格状态")
-    init.add_argument("key", help="Issue 标识，例如 LCV-21")
+    init.add_argument("key", help="任务标识，例如 LCV-21 或 LOCAL-20260802-AI-WORKFLOW")
     init.add_argument("--title", help="需求标题")
     init.add_argument(
         "--source-issue",
-        help="来源 Issue 的完整链接或稳定引用；无外部 Issue 的例外任务可省略",
+        help="可选的来源 Issue 完整链接或稳定引用；没有 Issue 时正常省略",
     )
     init.set_defaults(handler=cmd_init)
 
@@ -854,7 +969,7 @@ def build_parser() -> argparse.ArgumentParser:
     freeze.add_argument(
         "--next",
         choices=tuple(ROUTES),
-        help="冻结方案文档时选定后续路径；首次冻结必填",
+        help="仅冻结 solution 时选定后续路径；首次冻结必填",
     )
     freeze.set_defaults(handler=cmd_freeze)
 

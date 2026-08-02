@@ -79,7 +79,7 @@ description: 为 LinkCV 编写、校验和排查 SQLAlchemy 与 SQL-first Alembi
 5. 可逆 migration 执行“升级 → 降级 → 再升级”；
 6. 模型 metadata 与 head schema 没有未解释差异；
 7. 约束、索引、外键、默认值、时区、回填幂等与失败恢复测试通过；
-8. 文档同步和完整 `npm run check` 通过。
+8. 与迁移范围匹配的模型、SQL-first 链、空库与往返迁移、后端集成、契约和文档检查通过；准备创建 PR 时再运行完整 `npm run check`。
 
 未实际运行的命令必须写成“未验证”。生产规模、锁时间和备份恢复无法在本地证明时，列为发布前门槛。
 

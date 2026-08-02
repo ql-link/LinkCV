@@ -26,9 +26,9 @@ STALE_REFERENCES = (
 ALLOWED_AI_ENTRIES = {"prompts", "skills"}
 SOLUTION_TEMPLATE_REQUIRED_MARKERS = (
     "# <KEY> · <标题> 方案文档",
-    "| 需求编号 | <KEY> |",
+    "| 任务标识 |",
     "| 一句话需求 |",
-    "| 来源 Issue |",
+    "| 来源材料 |",
     "| 复杂度 |",
     "| 风险 |",
     "| 记录 |",
@@ -84,12 +84,17 @@ SOLUTION_SKILL_REQUIRED_MARKERS = (
     "HTTP 契约必须同时写方法和路径",
     "直接施工路径把本节作为唯一验证契约",
     "不依赖固定章节编号",
+    "没有 Issue 不阻止创建方案，也不算例外",
+    "没有真实待决选择的短方案，整份展示一次并确认一次",
+    "冻结阶段直接复用该选择",
 )
 SOLUTION_FIXED_SECTION_RE = re.compile(
     r"(?:方案文档|`?solution\.md`?)(?:的)?(?:第 ?\d+ ?节| ?\d+\.\d+)"
 )
 FLOW_ROUTER_REQUIRED_MARKERS = (
     "准备程度、复杂度、风险和记录需要必须分开表达",
+    "七个维度仍必须在内部完整判断",
+    "没有 Issue 不阻止分流",
     "只使用 4.2 至 4.5 四个维度",
     "严格风险本身不自动升级为方案先行",
     "这是当前存储能力限制，不代表任务本身复杂",
@@ -100,6 +105,10 @@ FLOW_ROUTER_REQUIRED_MARKERS = (
     "风险：常规 | 严格",
     "记录：会话内 | 持久记录",
     "路径：直接实现 | 方案先行 | 模块规划 | 暂不进入开发路径",
+    "默认只向用户展示三行",
+    "原因：<只写一个决定当前路径的主导事实>",
+    "额外检查：无 |",
+    "只有准备不足、风险严格、需要持久记录或用户主动要求查看判断依据时",
 )
 FLOW_ROUTER_FORBIDDEN_MARKERS = (
     "任意一条不满足即判方案先行",
@@ -109,11 +118,49 @@ IMPLEMENTATION_EXECUTION_REQUIRED_MARKERS = (
     "方案先行任务以冻结方案文档为准；"
     "直接实现以来源材料、当前确认结论和 `flow-router` 列出的严格检查项为准",
     "不因选择影响大就自动升级为模块规划",
+    "没有 Issue 不阻止直接实现",
+    "数据库迁移、跨端契约",
+    "严格风险本身都不触发报告",
+    "与方案的实际偏差",
+    "已接受限制",
+    "跨会话遗留风险与接手点",
 )
 CONTRACT_GUARD_REQUIRED_MARKERS = (
     "其他单需求分歧返回 `flow-router` 重新判断，"
     "已经明确属于方案先行时直接交 `solution-generator` 定稿",
 )
+REDUCTION_CONTRACTS = {
+    Path("module-planning/SKILL.md"): (
+        "没有 Issue 不阻塞模块规划",
+        "复用该授权，不再索要一遍相同指令",
+    ),
+    Path("implementation-execution/implementation_report.template.md"): (
+        "## 1. 与方案的实际偏差",
+        "## 2. 已接受限制",
+        "## 3. 跨会话遗留风险与接手点",
+        "不复述正常实现、运行链路、文件清单、验证命令、人工验收或 PR 内容",
+    ),
+    Path("implementation-execution/SKILL.md"): (
+        "没有 Issue 不阻止直接实现",
+        "数据库迁移、跨端契约",
+        "严格风险本身都不触发报告",
+    ),
+    Path("run-all-tests/SKILL.md"): (
+        "**任务范围验证**",
+        "**PR 全量验证**",
+        "准备创建 PR 时始终运行完整 `npm run check`",
+        "任务范围验证不因为“最终验证”自动变成全仓检查",
+    ),
+    Path("branch-pr-workflow/SKILL.md"): (
+        "来源 Issue 是可选的追踪信息",
+        "当前可提交内容实际运行完整 `npm run check`",
+        "共享 CI 仍对对应提交运行完整质量检查",
+    ),
+    Path("code-review-and-quality/SKILL.md"): (
+        "不把任务范围验证冒充 PR 全量检查",
+        "`release_ready` 只代表同一代码快照完成了任务范围验证和质量审查",
+    ),
+}
 
 
 def validate_ai_layout() -> list[str]:
@@ -283,7 +330,7 @@ def validate_implementation_execution_contract() -> list[str]:
     if not missing:
         return []
     return [
-        "implementation-execution: 七维分流下游契约缺少必要内容 "
+        "implementation-execution: 实现入口或实施报告契约缺少必要内容 "
         + ", ".join(repr(marker) for marker in missing)
     ]
 
@@ -305,6 +352,22 @@ def validate_contract_guard_routing() -> list[str]:
     ]
 
 
+def validate_reduction_contracts() -> list[str]:
+    errors: list[str] = []
+    for relative_path, markers in REDUCTION_CONTRACTS.items():
+        path = SKILLS_ROOT / relative_path
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        missing = [marker for marker in markers if marker not in text]
+        if missing:
+            errors.append(
+                f"{relative_path}: 五项减法契约缺少必要内容 "
+                + ", ".join(repr(marker) for marker in missing)
+            )
+    return errors
+
+
 def main() -> int:
     if not SKILLS_ROOT.is_dir():
         print("ERROR 缺少 .ai/skills", file=sys.stderr)
@@ -318,6 +381,7 @@ def main() -> int:
     errors.extend(validate_flow_router_contract())
     errors.extend(validate_implementation_execution_contract())
     errors.extend(validate_contract_guard_routing())
+    errors.extend(validate_reduction_contracts())
     if errors:
         for error in errors:
             print(f"ERROR {error}", file=sys.stderr)
