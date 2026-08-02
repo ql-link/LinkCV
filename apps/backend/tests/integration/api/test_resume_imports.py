@@ -13,8 +13,7 @@ from linkcv.domain.rag import RagMarkdownResult, RagMetadata
 from linkcv.domain.resume_extraction import DraftBasics, ResumeExtractionDraft
 from linkcv.integrations.rag_client import RagServiceError
 from linkcv.main import create_app
-from linkcv.modules.resumes.models import Resume, ResumeVersion, StorageCleanupJob
-from linkcv.services.storage_cleanup_service import process_storage_cleanup_jobs
+from linkcv.modules.resumes.models import Resume, ResumeVersion
 from tests.fakes import FakeRedis
 
 
@@ -263,7 +262,7 @@ def test_missing_structuring_model_is_explicit_and_compensated() -> None:
         assert storage.objects == {}
 
 
-def test_failed_import_cleanup_is_persisted_and_retried() -> None:
+def test_failed_import_cleanup_failure_leaves_object_for_external_cleanup() -> None:
     app, storage = build_app(
         rag_converter=FailingRag(),
         structuring_client=FakeStructuringClient(),
@@ -284,17 +283,9 @@ def test_failed_import_cleanup_is_persisted_and_retried() -> None:
         )
 
         assert response.status_code == 502
-        with app.state.session_factory() as session:
-            job = session.scalar(select(StorageCleanupJob))
-            assert job is not None
-            assert job.operation == "object"
-            assert job.attempts == 0
-
-        storage.fail_delete = False
-        with app.state.session_factory() as session:
-            assert process_storage_cleanup_jobs(session, storage) == 1
-            assert session.scalar(select(StorageCleanupJob)) is None
-        assert storage.objects == {}
+        assert response.json() == {"error": "RAG_SERVICE_FAILED"}
+        assert len(storage.objects) == 1
+        assert storage.deleted == []
 
 
 def test_invalid_file_is_rejected_before_storage() -> None:

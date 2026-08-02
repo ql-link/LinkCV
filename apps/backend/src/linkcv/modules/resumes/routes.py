@@ -32,11 +32,6 @@ from linkcv.modules.resumes.schemas import (
     ResumeSummary,
     ResumeUpdateRequest,
 )
-from linkcv.services.storage_cleanup_service import (
-    enqueue_storage_cleanup,
-    process_storage_cleanup_jobs,
-)
-
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 logger = logging.getLogger(__name__)
 
@@ -194,23 +189,20 @@ def delete_resume(
     resume = lock_owned_resume(db, resume_id, user.id)
     if resume is None:
         raise ApiError(404, "RESUME_NOT_FOUND")
+
     try:
-        cleanup_jobs = []
         if resume.source_object_key:
-            cleanup_jobs.append(
-                enqueue_storage_cleanup(
-                    db,
-                    operation="object",
-                    object_key=resume.source_object_key,
-                )
-            )
-        cleanup_jobs.append(
-            enqueue_storage_cleanup(
-                db,
-                operation="prefix",
-                object_key=f"users/{user.id}/resumes/{resume.id}/",
-            )
+            storage.delete(resume.source_object_key)
+        storage.delete_prefix(f"users/{user.id}/resumes/{resume.id}/")
+    except Exception as error:
+        db.rollback()
+        logger.warning(
+            "resume storage cleanup failed",
+            extra={"resume_id": resume.id, "error_type": type(error).__name__},
         )
+        raise ApiError(502, "ASSET_DELETE_FAILED") from error
+
+    try:
         db.execute(delete(ResumeVersion).where(ResumeVersion.resume_id == resume.id))
         result = db.execute(delete(Resume).where(Resume.id == resume.id))
         db.commit()
@@ -218,16 +210,4 @@ def delete_resume(
         db.rollback()
         raise
 
-    try:
-        process_storage_cleanup_jobs(
-            db,
-            storage,
-            job_ids=[job.id for job in cleanup_jobs],
-        )
-    except Exception as error:
-        db.rollback()
-        logger.warning(
-            "immediate resume storage cleanup could not run",
-            extra={"resume_id": resume.id, "error_type": type(error).__name__},
-        )
     return DeleteResumeResponse(deleted=bool(result.rowcount))

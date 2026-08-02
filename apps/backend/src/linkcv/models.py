@@ -6,7 +6,6 @@ from linkcv.modules.resumes.models import (
     Resume,
     ResumeTemplate,
     ResumeVersion,
-    StorageCleanupJob,
 )
 
 __all__ = [
@@ -18,6 +17,5 @@ __all__ = [
     "Resume",
     "ResumeTemplate",
     "ResumeVersion",
-    "StorageCleanupJob",
     "User",
 ]

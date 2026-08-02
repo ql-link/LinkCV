@@ -14,7 +14,7 @@ from sqlalchemy.engine import make_url
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0009"
+EXPECTED_HEAD = "0010"
 
 
 def migration_test_url() -> str:
@@ -29,7 +29,9 @@ def migration_test_url() -> str:
     return raw
 
 
-def run_alembic(database_url: str, *arguments: str) -> None:
+def invoke_alembic(
+    database_url: str, *arguments: str
+) -> subprocess.CompletedProcess[str]:
     environment = os.environ.copy()
     environment.update(
         {
@@ -38,7 +40,7 @@ def run_alembic(database_url: str, *arguments: str) -> None:
             "LINKCV_ENV_FILE": str(REPO_ROOT / ".env.nonexistent-migration-test"),
         }
     )
-    result = subprocess.run(
+    return subprocess.run(
         ["uv", "run", "alembic", *arguments],
         cwd=BACKEND_ROOT,
         env=environment,
@@ -46,6 +48,10 @@ def run_alembic(database_url: str, *arguments: str) -> None:
         text=True,
         check=False,
     )
+
+
+def run_alembic(database_url: str, *arguments: str) -> None:
+    result = invoke_alembic(database_url, *arguments)
     assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
 
 
@@ -64,7 +70,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "resume_templates",
         "resumes",
         "resume_versions",
-        "storage_cleanup_jobs",
         "job_descriptions",
         "admin_operation_logs",
     } <= set(
@@ -121,9 +126,13 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "reason",
         "created_at",
     }
+    assert "storage_cleanup_jobs" not in inspector.get_table_names()
+
+    run_alembic(database_url, "downgrade", "0009")
+    downgraded_inspector = inspect(engine)
     assert {
         column["name"]
-        for column in inspector.get_columns("storage_cleanup_jobs")
+        for column in downgraded_inspector.get_columns("storage_cleanup_jobs")
     } == {
         "id",
         "operation",
@@ -134,6 +143,24 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "created_at",
         "updated_at",
     }
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO storage_cleanup_jobs (operation, object_key) "
+                "VALUES ('object', 'users/1/resume-imports/pending/file.pdf')"
+            )
+        )
+    refused_upgrade = invoke_alembic(database_url, "upgrade", "head")
+    assert refused_upgrade.returncode != 0
+    assert "refuses to drop storage_cleanup_jobs" in refused_upgrade.stderr
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM storage_cleanup_jobs"))
+
+    run_alembic(database_url, "upgrade", "head")
+    inspector = inspect(engine)
+    assert "storage_cleanup_jobs" not in inspector.get_table_names()
+
     assert {constraint["name"] for constraint in inspector.get_unique_constraints("users")} == {
         "uk_users_email"
     }
@@ -163,22 +190,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "ck_resumes_source_type",
         "ck_resumes_title_not_blank",
     }
-    assert {
-        constraint["name"]
-        for constraint in inspector.get_check_constraints("storage_cleanup_jobs")
-    } == {
-        "ck_storage_cleanup_jobs_attempts",
-        "ck_storage_cleanup_jobs_operation",
-    }
-    assert {
-        constraint["name"]
-        for constraint in inspector.get_unique_constraints("storage_cleanup_jobs")
-    } == {"uk_storage_cleanup_jobs_target"}
-    assert any(
-        index["name"] == "idx_storage_cleanup_jobs_created_id"
-        and index["column_names"] == ["created_at", "id"]
-        for index in inspector.get_indexes("storage_cleanup_jobs")
-    )
     assert any(
         index["name"] == "idx_resumes_user_updated_id"
         and index["column_names"] == ["user_id", "updated_at", "id"]
@@ -262,7 +273,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "resume_templates",
         "resumes",
         "resume_versions",
-        "storage_cleanup_jobs",
         "llm_model_configs",
         "llm_capability_bindings",
         "llm_call_logs",
@@ -621,7 +631,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         assert connection.scalar(text("SELECT COUNT(*) FROM resume_templates")) == 0
         assert connection.scalar(text("SELECT COUNT(*) FROM resumes")) == 1
         assert connection.scalar(text("SELECT COUNT(*) FROM resume_versions")) == 1
-        assert connection.scalar(text("SELECT COUNT(*) FROM storage_cleanup_jobs")) == 0
         assert connection.scalar(text("SELECT COUNT(*) FROM admin_operation_logs")) == 0
         assert connection.execute(
             text(
@@ -665,13 +674,13 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "resume_templates",
         "resumes",
         "resume_versions",
-        "storage_cleanup_jobs",
         "llm_model_configs",
         "llm_capability_bindings",
         "llm_call_logs",
         "job_descriptions",
         "admin_operation_logs",
     } <= set(inspect(engine).get_table_names())
+    assert "storage_cleanup_jobs" not in inspect(engine).get_table_names()
     engine.dispose()
 
 
@@ -991,7 +1000,10 @@ def test_mysql_0008_clears_legacy_llm_data_and_supports_rollback() -> None:
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT COUNT(*) FROM llm_model_configs")) == 3
         assert connection.scalar(text("SELECT COUNT(*) FROM llm_call_logs")) == 1
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0009"
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version"))
+            == EXPECTED_HEAD
+        )
 
     activation_barrier = Barrier(2)
 

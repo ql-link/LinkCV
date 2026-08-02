@@ -27,7 +27,6 @@ from linkcv.integrations.rag_client import (
     RagServiceError,
 )
 from linkcv.modules.resumes.models import Resume
-from linkcv.services.storage_cleanup_service import enqueue_storage_cleanup
 
 logger = logging.getLogger(__name__)
 
@@ -258,30 +257,12 @@ class ResumeImportService:
             if not created:
                 try:
                     await asyncio.to_thread(self._storage.delete, object_key)
-                except Exception:
-                    try:
-                        cleanup_job = enqueue_storage_cleanup(
-                            db,
-                            operation="object",
-                            object_key=object_key,
-                        )
-                        db.commit()
-                    except Exception as persistence_error:
-                        db.rollback()
-                        logger.warning(
-                            "resume import cleanup job could not be persisted",
-                            extra={
-                                "operation_id": operation_id,
-                                "user_id": user_id,
-                                "error_type": type(persistence_error).__name__,
-                            },
-                        )
-                    else:
-                        logger.warning(
-                            "resume import cleanup deferred",
-                            extra={
-                                "cleanup_job_id": cleanup_job.id,
-                                "operation_id": operation_id,
-                                "user_id": user_id,
-                            },
-                        )
+                except Exception as cleanup_error:
+                    logger.warning(
+                        "resume import cleanup failed",
+                        extra={
+                            "operation_id": operation_id,
+                            "user_id": user_id,
+                            "error_type": type(cleanup_error).__name__,
+                        },
+                    )
