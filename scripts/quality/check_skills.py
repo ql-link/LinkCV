@@ -29,76 +29,90 @@ SOLUTION_TEMPLATE_REQUIRED_MARKERS = (
     "| 需求编号 | <KEY> |",
     "| 一句话需求 |",
     "| 来源 Issue |",
+    "| 复杂度 |",
+    "| 风险 |",
+    "| 记录 |",
     "| 后续路径 |",
     "| 创建时间 |",
     "| 最后更新 |",
     "| 当前状态 |",
+    "本模板保留完整章节库，不是逐章填写的表单",
+    "未命中的章节整章删除",
+    "可观察结果 → 业务规则 → 真实文件与编号步骤 → 验证证据",
     "## 第一部分 · 需求",
     "### 1. 需求描述",
     "#### 1.1 需求正文",
-    "#### 1.2 背景与动机",
-    "**问题来源**",
-    "**为什么现在做**",
-    "**不做会怎样**",
-    "#### 1.3 使用场景",
-    "| 场景 | 使用者 | 什么时候用 | 期望结果 |",
-    "#### 1.4 交付结果",
-    "#### 1.5 本次不做",
+    "#### 1.4 可观察结果",
+    "| 编号 | 完成后可以观察或断言的结果 |",
     "### 2. 现状与问题",
     "### 3. 模块分解",
-    "| 编号 | 模块 | 业务职责 | 依赖模块 | 交付顺序 | 可否独立验收 |",
-    "**边界**",
-    "**完成信号**",
-    "**依赖前提**",
     "### 4. 业务流程",
-    "#### 4.1 主流程图",
-    "#### 4.2 流程详解",
-    "#### 4.3 异常分支",
-    "| 异常分支 | 触发条件 | 系统行为 | 用户或下游感知 | 状态或数据结果 |",
+    "#### 4.1 主要流程图",
+    "#### 4.3 关键规则与异常分支",
+    "| 编号 | 条件或动作 | 系统行为 | 用户或下游可见结果 | 失败后的状态或数据结果 |",
     "### 5. 状态机",
     "**初始状态**",
     "**终态**",
-    "| 起始状态 | 事件或条件 | 目标状态 | 触发者 | 并发或重复触发处理 | 副作用 |",
-    "**不允许的流转**",
     "## 第二部分 · 方案",
     "### 6. 整体架构",
-    "#### 6.1 架构图",
-    "#### 6.2 分层与职责",
-    "| 层次 | 承担什么 | 不承担什么 | 涉及模块 |",
-    "#### 6.3 关键数据流",
-    "#### 6.4 技术选型与取舍",
-    "| 决策点 | 选定方案 | 放弃的方案 | 代价与理由 |",
     "### 7. 数据模型",
-    "#### 7.1 实体关系",
-    "| 字段 | 类型 | 可空 | 默认值 | 业务含义 | 变更 |",
-    "**主键**",
-    "**唯一约束**",
-    "**索引**",
-    "**外键与关联策略**",
-    "**枚举取值**",
-    "#### 7.3 定稿 DDL",
-    "#### 7.4 旧数据与兼容",
-    "**真值源核对**",
-    "**回滚与不可逆点**",
+    "| 字段 | 类型 | 可空 | 默认值 | 业务含义 | 变更 | 约束、索引或枚举 |",
+    "#### 7.4 定稿 DDL",
     "### 8. 接口契约",
-    "**共享类型影响**",
-    "**消费方**",
+    "**HTTP 方法与路径**",
     "### 9. 文件结构与实现方案",
-    "#### 9.1 目录树",
-    "#### 9.2 文件职责",
-    "| 文件或模块 | 动作 | 修改后职责 | 所属模块 | 影响方 |",
-    "**实现步骤**",
-    "**验证方式**",
-    "**实现要点**",
-    "**复用能力**",
+    "#### 9.3 代码实施计划",
+    "| 步骤 | 对应结果或规则 | 真实路径 | 动作 | 修改后职责或具体行为 | 依赖或消费方 | 完成判据 |",
     "### 10. 外部服务与安全边界",
     "## 第三部分 · 收口",
     "### 11. 实施顺序",
-    "| 步骤 | 内容 | 模块 | 涉及文件 | 完成判据 |",
     "### 12. 已确认决策",
-    "| 编号 | 决策事项 | 结论 | 影响章节 | 确认来源 |",
     "### 13. 风险与依赖",
-    "| 风险或依赖 | 触发条件 | 影响 | 当前判断或应对方向 |",
+    "### 14. 验证与验收",
+    "| 编号 | 可观察结果或规则 | 验证层级 | 测试文件或命令 | 关键断言或人工步骤 | 预期证据 |",
+)
+SOLUTION_SKILL_REQUIRED_MARKERS = (
+    "`solution.template.md` 保留原有完整章节库",
+    "未命中的章节整章删除",
+    "复杂任务也不要求机械填写完整章节库",
+    "必须保留状态机",
+    "必须保留数据模型",
+    "主要流程图",
+    "可观察结果 → 业务规则 → 真实文件与编号步骤 → 验证证据",
+    "每行给出一个真实文件路径",
+    "完整写实体关系、字段级变更、主键、唯一约束、索引、外键、枚举、定稿 DDL",
+    "HTTP 契约必须同时写方法和路径",
+    "直接施工路径把本节作为唯一验证契约",
+    "不依赖固定章节编号",
+)
+SOLUTION_FIXED_SECTION_RE = re.compile(
+    r"(?:方案文档|`?solution\.md`?)(?:的)?(?:第 ?\d+ ?节| ?\d+\.\d+)"
+)
+FLOW_ROUTER_REQUIRED_MARKERS = (
+    "准备程度、复杂度、风险和记录需要必须分开表达",
+    "只使用 4.2 至 4.5 四个维度",
+    "严格风险本身不自动升级为方案先行",
+    "这是当前存储能力限制，不代表任务本身复杂",
+    "不要由分流阶段提前主持方案讨论",
+    "其他准备为 `需澄清` 或 `需调查` 的情况",
+    "准备：可实施 | 需澄清 | 需调查",
+    "复杂度：简单 | 中等 | 复杂 | 暂不判定",
+    "风险：常规 | 严格",
+    "记录：会话内 | 持久记录",
+    "路径：直接实现 | 方案先行 | 模块规划 | 暂不进入开发路径",
+)
+FLOW_ROUTER_FORBIDDEN_MARKERS = (
+    "任意一条不满足即判方案先行",
+    "只有五条全部满足才判直接实现",
+)
+IMPLEMENTATION_EXECUTION_REQUIRED_MARKERS = (
+    "方案先行任务以冻结方案文档为准；"
+    "直接实现以来源材料、当前确认结论和 `flow-router` 列出的严格检查项为准",
+    "不因选择影响大就自动升级为模块规划",
+)
+CONTRACT_GUARD_REQUIRED_MARKERS = (
+    "其他单需求分歧返回 `flow-router` 重新判断，"
+    "已经明确属于方案先行时直接交 `solution-generator` 定稿",
 )
 
 
@@ -162,6 +176,15 @@ def validate_skill(skill_dir: Path) -> list[str]:
         if stale in body:
             errors.append(f"{skill_dir.name}: 含过期源项目引用 {stale}")
 
+    fixed_solution_references = sorted(
+        set(SOLUTION_FIXED_SECTION_RE.findall(body))
+    )
+    if fixed_solution_references:
+        errors.append(
+            f"{skill_dir.name}: 方案流程规则仍依赖 solution.md 固定章节号 "
+            + ", ".join(repr(reference) for reference in fixed_solution_references)
+        )
+
     for target in MARKDOWN_LINK_RE.findall(body):
         if target.startswith(("http://", "https://", "#")):
             continue
@@ -197,14 +220,87 @@ def validate_solution_template() -> list[str]:
     if not template_file.is_file():
         return ["solution-generator: 缺少 solution.template.md"]
 
-    text = template_file.read_text(encoding="utf-8")
+    template_text = template_file.read_text(encoding="utf-8")
+    missing_template = [
+        marker
+        for marker in SOLUTION_TEMPLATE_REQUIRED_MARKERS
+        if marker not in template_text
+    ]
+    skill_file = skill_dir / "SKILL.md"
+    if not skill_file.is_file():
+        return ["solution-generator: 缺少 SKILL.md"]
+    skill_text = skill_file.read_text(encoding="utf-8")
+    missing_skill = [
+        marker for marker in SOLUTION_SKILL_REQUIRED_MARKERS if marker not in skill_text
+    ]
+    errors: list[str] = []
+    if missing_template:
+        errors.append(
+            "solution-generator: 方案模板缺少完整章节库或施工能力 "
+            + ", ".join(repr(marker) for marker in missing_template)
+        )
+    if missing_skill:
+        errors.append(
+            "solution-generator: 方案生成规则缺少按需施工契约 "
+            + ", ".join(repr(marker) for marker in missing_skill)
+        )
+    return errors
+
+
+def validate_flow_router_contract() -> list[str]:
+    skill_file = SKILLS_ROOT / "flow-router" / "SKILL.md"
+    if not skill_file.is_file():
+        return []
+
+    text = skill_file.read_text(encoding="utf-8")
+    missing = [marker for marker in FLOW_ROUTER_REQUIRED_MARKERS if marker not in text]
+    stale = [marker for marker in FLOW_ROUTER_FORBIDDEN_MARKERS if marker in text]
+    errors: list[str] = []
+    if missing:
+        errors.append(
+            "flow-router: 七维分流契约缺少必要内容 "
+            + ", ".join(repr(marker) for marker in missing)
+        )
+    if stale:
+        errors.append(
+            "flow-router: 仍含旧的一票升级判据 "
+            + ", ".join(repr(marker) for marker in stale)
+        )
+    return errors
+
+
+def validate_implementation_execution_contract() -> list[str]:
+    skill_file = SKILLS_ROOT / "implementation-execution" / "SKILL.md"
+    if not skill_file.is_file():
+        return []
+
+    text = skill_file.read_text(encoding="utf-8")
     missing = [
-        marker for marker in SOLUTION_TEMPLATE_REQUIRED_MARKERS if marker not in text
+        marker
+        for marker in IMPLEMENTATION_EXECUTION_REQUIRED_MARKERS
+        if marker not in text
     ]
     if not missing:
         return []
     return [
-        "solution-generator: 方案文档模板缺少固定结构 "
+        "implementation-execution: 七维分流下游契约缺少必要内容 "
+        + ", ".join(repr(marker) for marker in missing)
+    ]
+
+
+def validate_contract_guard_routing() -> list[str]:
+    skill_file = SKILLS_ROOT / "contract-guard" / "SKILL.md"
+    if not skill_file.is_file():
+        return []
+
+    text = skill_file.read_text(encoding="utf-8")
+    missing = [
+        marker for marker in CONTRACT_GUARD_REQUIRED_MARKERS if marker not in text
+    ]
+    if not missing:
+        return []
+    return [
+        "contract-guard: 七维分流下游契约缺少必要内容 "
         + ", ".join(repr(marker) for marker in missing)
     ]
 
@@ -219,6 +315,9 @@ def main() -> int:
         error for skill_dir in skill_dirs for error in validate_skill(skill_dir)
     )
     errors.extend(validate_solution_template())
+    errors.extend(validate_flow_router_contract())
+    errors.extend(validate_implementation_execution_contract())
+    errors.extend(validate_contract_guard_routing())
     if errors:
         for error in errors:
             print(f"ERROR {error}", file=sys.stderr)

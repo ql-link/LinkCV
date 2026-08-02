@@ -4,15 +4,15 @@
 
 ## 三条交付路径
 
-`flow-router` 先决定进实现前要不要方案文档，`solution-generator` 在方案文档冻结时和用户一起决定之后怎么走，组合出三条路径：
+`flow-router` 先分开判断准备程度、任务复杂度、风险和记录需要，再决定进实现前要不要方案文档；`solution-generator` 在方案文档冻结时和用户一起决定之后怎么走，组合出三条路径：
 
 - **直接实现**：不创建 Spec，直接改代码并按改动范围验证。
-- **方案 → 实现**（`route=direct_build`）：`solution.md → implementation → 自动验证快照 → 按需人工验收 → 质量审查 → release_ready`。不产出 `acceptance.feature`，方案文档 9.3 的验证方式就是验证契约。
+- **方案 → 实现**（`route=direct_build`）：`solution.md → implementation → 自动验证快照 → 按需人工验收 → 质量审查 → release_ready`。不产出 `acceptance.feature`，方案文档“验证与验收”中的结果和验证映射就是验证契约。
 - **方案 → 验收契约 → 实现**（`route=acceptance_first`）：在上一条中间插入 `acceptance.feature`。
 
 `acceptance.feature` 永远依赖 `solution.md`：方案文档未冻结时无法冻结验收契约，方案文档重新冻结会作废验收契约和全部下游证据。这条顺序由脚本强制，不靠自觉。
 
-方案文档各章节写多细不由外部等级决定，而由文档实际涉及的内容触发；详见 `solution-generator`。不再存在独立的 `technical_design.md` 阶段，也不再有 `lane` 字段；旧状态在读取时自动升级，原 L2/L3 链路记为 `route=acceptance_first`。
+方案模板保留原有完整章节库和独立的“验证与验收”，不要求每份文档逐章填写。需求描述、现状问题、主要流程图、真实文件与代码实施计划、验证映射始终保留；状态机和数据模型是高优先条件章节，命中生命周期、状态关系或持久数据读写时不得省略；其他章节由任务复杂度及实际涉及面触发，未命中时整章删除。详见 `solution-generator`。不再存在独立的 `technical_design.md` 阶段，也不再有 `lane` 字段；旧状态在读取时自动升级，原 L2/L3 链路记为 `route=acceptance_first`。
 
 ## 使用
 
@@ -49,7 +49,7 @@ npm run spec -- check LCV-42 release_ready
 
 `source_issue` 只原样保存一个完整链接或稳定引用，方便恢复上下文、PR 关联和人工追踪。状态中不拆分 `source.system`、`issue_id` 或 `workspace_id`，也不给 Multica、Linear、GitHub 或其他平台附加不同流程语义。工具不会访问外部 Issue 校验正文，不维护需求指纹、评论链、漂移状态或对账状态，也不会向任何 Issue 系统写回评论。
 
-实施中出现不改变核心产品目标的必要偏差时，在 `implementation_report.md` 和 PR 中说明原方案、实际实现、原因、影响、验证和遗留风险。若偏差会改变范围、验收、权限、数据安全或兼容承诺，先回到飞书确认，再修订和重新冻结受影响的本地产物。
+实施中出现不改变核心产品目标的必要偏差时，在 `implementation_report.md` 和 PR 中说明原方案、实际实现、原因、影响、验证和遗留风险。若偏差会改变范围、验收、权限、数据安全或兼容承诺，返回 `solution-generator` 重新确认并修订冻结产物；只有相关结论已经写入并读回飞书详情文档时，才先经 `module-planning` 更新该文档。
 
 ## 跨会话恢复
 

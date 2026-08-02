@@ -936,7 +936,86 @@ description: 为 LinkCV 后端单元和集成测试提供真实路径及清晰�
     assert result.returncode == 0, result.stderr
 
 
-def test_skill_check_rejects_incomplete_solution_template(tmp_path: Path) -> None:
+def test_skill_check_rejects_solution_template_without_required_capability(tmp_path: Path) -> None:
+    protected_markers = (
+        "### 1. 需求描述",
+        "### 5. 状态机",
+        "### 7. 数据模型",
+        "#### 9.3 代码实施计划",
+        "### 14. 验证与验收",
+    )
+
+    for index, marker in enumerate(protected_markers):
+        case_root = tmp_path / f"case-{index}"
+        (case_root / ".ai" / "prompts").mkdir(parents=True)
+        (case_root / ".ai" / "prompts" / "project.md").write_text(
+            "rules", encoding="utf-8"
+        )
+        skills_root = case_root / ".ai" / "skills"
+        skills_root.mkdir(parents=True)
+        (skills_root / "README.md").write_text("skills", encoding="utf-8")
+        source_skill = REPO_ROOT / ".ai" / "skills" / "solution-generator"
+        target_skill = skills_root / "solution-generator"
+        shutil.copytree(source_skill, target_skill)
+        template_file = target_skill / "solution.template.md"
+        template_file.write_text(
+            template_file.read_text(encoding="utf-8").replace(
+                marker, f"### 已删除能力 {index}"
+            ),
+            encoding="utf-8",
+        )
+
+        result = run_script(
+            SKILL_CHECK,
+            env={"LINKCV_REPO_ROOT": str(case_root)},
+        )
+
+        assert result.returncode == 1
+        assert "方案模板缺少完整章节库或施工能力" in result.stderr
+        assert marker in result.stderr
+
+
+def test_skill_check_rejects_solution_skill_without_on_demand_contract(tmp_path: Path) -> None:
+    protected_markers = (
+        "未命中的章节整章删除",
+        "必须保留状态机",
+        "必须保留数据模型",
+    )
+
+    for index, marker in enumerate(protected_markers):
+        case_root = tmp_path / f"case-{index}"
+        (case_root / ".ai" / "prompts").mkdir(parents=True)
+        (case_root / ".ai" / "prompts" / "project.md").write_text(
+            "rules", encoding="utf-8"
+        )
+        skills_root = case_root / ".ai" / "skills"
+        skills_root.mkdir(parents=True)
+        (skills_root / "README.md").write_text("skills", encoding="utf-8")
+        source_skill = REPO_ROOT / ".ai" / "skills" / "solution-generator"
+        target_skill = skills_root / "solution-generator"
+        shutil.copytree(source_skill, target_skill)
+        skill_file = target_skill / "SKILL.md"
+        skill_file.write_text(
+            skill_file.read_text(encoding="utf-8").replace(
+                marker,
+                f"核心规则已删除 {index}",
+            ),
+            encoding="utf-8",
+        )
+
+        result = run_script(
+            SKILL_CHECK,
+            env={"LINKCV_REPO_ROOT": str(case_root)},
+        )
+
+        assert result.returncode == 1
+        assert "方案生成规则缺少按需施工契约" in result.stderr
+        assert marker in result.stderr
+
+
+def test_skill_check_rejects_fixed_solution_section_in_downstream_skill(
+    tmp_path: Path,
+) -> None:
     (tmp_path / ".ai" / "prompts").mkdir(parents=True)
     (tmp_path / ".ai" / "prompts" / "project.md").write_text(
         "rules", encoding="utf-8"
@@ -944,13 +1023,43 @@ def test_skill_check_rejects_incomplete_solution_template(tmp_path: Path) -> Non
     skills_root = tmp_path / ".ai" / "skills"
     skills_root.mkdir(parents=True)
     (skills_root / "README.md").write_text("skills", encoding="utf-8")
-    source_skill = REPO_ROOT / ".ai" / "skills" / "solution-generator"
-    target_skill = skills_root / "solution-generator"
+    for skill_name in ("solution-generator", "acceptance-generator"):
+        shutil.copytree(
+            REPO_ROOT / ".ai" / "skills" / skill_name,
+            skills_root / skill_name,
+        )
+    skill_file = skills_root / "acceptance-generator" / "SKILL.md"
+    skill_file.write_text(
+        skill_file.read_text(encoding="utf-8")
+        + "\n验证方式读取方案文档 9.3。\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        SKILL_CHECK,
+        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result.returncode == 1
+    assert "acceptance-generator: 方案流程规则仍依赖 solution.md 固定章节号" in result.stderr
+    assert "方案文档 9.3" in result.stderr
+
+
+def test_skill_check_rejects_incomplete_flow_router_contract(tmp_path: Path) -> None:
+    (tmp_path / ".ai" / "prompts").mkdir(parents=True)
+    (tmp_path / ".ai" / "prompts" / "project.md").write_text(
+        "rules", encoding="utf-8"
+    )
+    skills_root = tmp_path / ".ai" / "skills"
+    skills_root.mkdir(parents=True)
+    (skills_root / "README.md").write_text("skills", encoding="utf-8")
+    source_skill = REPO_ROOT / ".ai" / "skills" / "flow-router"
+    target_skill = skills_root / "flow-router"
     shutil.copytree(source_skill, target_skill)
-    template_file = target_skill / "solution.template.md"
-    template_file.write_text(
-        template_file.read_text(encoding="utf-8").replace(
-            "### 7. 数据模型", "### 7. 实现说明"
+    skill_file = target_skill / "SKILL.md"
+    skill_file.write_text(
+        skill_file.read_text(encoding="utf-8").replace(
+            "记录：会话内 | 持久记录", "记录：自动"
         ),
         encoding="utf-8",
     )
@@ -961,5 +1070,111 @@ def test_skill_check_rejects_incomplete_solution_template(tmp_path: Path) -> Non
     )
 
     assert result.returncode == 1
-    assert "方案文档模板缺少固定结构" in result.stderr
-    assert "### 7. 数据模型" in result.stderr
+    assert "七维分流契约缺少必要内容" in result.stderr
+    assert "记录：会话内 | 持久记录" in result.stderr
+
+
+def test_skill_check_protects_flow_router_core_semantics(tmp_path: Path) -> None:
+    protected_markers = (
+        "严格风险本身不自动升级为方案先行",
+        "这是当前存储能力限制，不代表任务本身复杂",
+        "不要由分流阶段提前主持方案讨论",
+        "其他准备为 `需澄清` 或 `需调查` 的情况",
+    )
+
+    for index, marker in enumerate(protected_markers):
+        case_root = tmp_path / f"case-{index}"
+        (case_root / ".ai" / "prompts").mkdir(parents=True)
+        (case_root / ".ai" / "prompts" / "project.md").write_text(
+            "rules", encoding="utf-8"
+        )
+        skills_root = case_root / ".ai" / "skills"
+        skills_root.mkdir(parents=True)
+        (skills_root / "README.md").write_text("skills", encoding="utf-8")
+        source_skill = REPO_ROOT / ".ai" / "skills" / "flow-router"
+        target_skill = skills_root / "flow-router"
+        shutil.copytree(source_skill, target_skill)
+        skill_file = target_skill / "SKILL.md"
+        skill_file.write_text(
+            skill_file.read_text(encoding="utf-8").replace(marker, "核心语义已删除"),
+            encoding="utf-8",
+        )
+
+        result = run_script(
+            SKILL_CHECK,
+            env={"LINKCV_REPO_ROOT": str(case_root)},
+        )
+
+        assert result.returncode == 1
+        assert "七维分流契约缺少必要内容" in result.stderr
+        assert marker in result.stderr
+
+
+def test_skill_check_protects_flow_router_downstream_contract(tmp_path: Path) -> None:
+    protected_markers = (
+        (
+            "implementation-execution",
+            "方案先行任务以冻结方案文档为准；"
+            "直接实现以来源材料、当前确认结论和 `flow-router` 列出的严格检查项为准",
+        ),
+        ("implementation-execution", "不因选择影响大就自动升级为模块规划"),
+        (
+            "contract-guard",
+            "其他单需求分歧返回 `flow-router` 重新判断，"
+            "已经明确属于方案先行时直接交 `solution-generator` 定稿",
+        ),
+    )
+
+    for index, (skill_name, marker) in enumerate(protected_markers):
+        case_root = tmp_path / f"case-{index}"
+        (case_root / ".ai" / "prompts").mkdir(parents=True)
+        (case_root / ".ai" / "prompts" / "project.md").write_text(
+            "rules", encoding="utf-8"
+        )
+        skills_root = case_root / ".ai" / "skills"
+        skills_root.mkdir(parents=True)
+        (skills_root / "README.md").write_text("skills", encoding="utf-8")
+        source_skill = REPO_ROOT / ".ai" / "skills" / skill_name
+        target_skill = skills_root / skill_name
+        shutil.copytree(source_skill, target_skill)
+        skill_file = target_skill / "SKILL.md"
+        skill_file.write_text(
+            skill_file.read_text(encoding="utf-8").replace(marker, "核心语义已删除"),
+            encoding="utf-8",
+        )
+
+        result = run_script(
+            SKILL_CHECK,
+            env={"LINKCV_REPO_ROOT": str(case_root)},
+        )
+
+        assert result.returncode == 1
+        assert "七维分流下游契约缺少必要内容" in result.stderr
+        assert marker in result.stderr
+
+
+def test_skill_check_rejects_legacy_flow_router_rule(tmp_path: Path) -> None:
+    (tmp_path / ".ai" / "prompts").mkdir(parents=True)
+    (tmp_path / ".ai" / "prompts" / "project.md").write_text(
+        "rules", encoding="utf-8"
+    )
+    skills_root = tmp_path / ".ai" / "skills"
+    skills_root.mkdir(parents=True)
+    (skills_root / "README.md").write_text("skills", encoding="utf-8")
+    source_skill = REPO_ROOT / ".ai" / "skills" / "flow-router"
+    target_skill = skills_root / "flow-router"
+    shutil.copytree(source_skill, target_skill)
+    skill_file = target_skill / "SKILL.md"
+    skill_file.write_text(
+        skill_file.read_text(encoding="utf-8")
+        + "\n任意一条不满足即判方案先行。\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        SKILL_CHECK,
+        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result.returncode == 1
+    assert "仍含旧的一票升级判据" in result.stderr
