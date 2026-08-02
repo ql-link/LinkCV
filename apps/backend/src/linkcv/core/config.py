@@ -176,16 +176,6 @@ class Settings(BaseSettings):
     redis_db: int = Field(default=0, alias="REDIS_DB")
     redis_password: str | None = Field(default=None, alias="REDIS_PASSWORD")
 
-    aliyun_oss_endpoint: str | None = Field(default=None, alias="ALIYUN_OSS_ENDPOINT")
-    aliyun_oss_region: str | None = Field(default=None, alias="ALIYUN_OSS_REGION")
-    aliyun_oss_access_key_id: str | None = Field(
-        default=None, alias="ALIYUN_OSS_ACCESS_KEY_ID"
-    )
-    aliyun_oss_access_key_secret: str | None = Field(
-        default=None, alias="ALIYUN_OSS_ACCESS_KEY_SECRET"
-    )
-    aliyun_oss_bucket: str | None = Field(default=None, alias="ALIYUN_OSS_BUCKET")
-
     web_dist_dir: Path | None = Field(default=None, alias="WEB_DIST_DIR")
 
     @property
