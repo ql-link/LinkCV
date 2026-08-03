@@ -93,6 +93,23 @@ export type UploadedAsset = {
   url: string;
 };
 
+export type ImportWarning =
+  | "pdf_ocr_applied"
+  | "pdf_low_text_quality"
+  | "docx_embedded_images_omitted"
+  | "docx_textbox_order_may_change"
+  | "document_heading_structure_missing"
+  | "source_quote_not_found"
+  | "unparsed_work_start_date"
+  | "unparsed_work_end_date"
+  | "unmapped_fragments_preserved";
+
+export type ResumeImportResult = {
+  source_file_name: string;
+  source_file_format: "md" | "docx" | "pdf";
+  warnings: ImportWarning[];
+};
+
 export type JobSourceType = "manual" | "external_import";
 export type JobEmploymentType =
   "full_time" | "part_time" | "internship" | "contract" | "temporary";
@@ -299,6 +316,7 @@ type ApiOptions = {
   method?: string;
   body?: unknown;
   formData?: FormData;
+  headers?: Record<string, string>;
 };
 
 export class ApiRequestError extends Error {
@@ -343,7 +361,10 @@ async function request<T>(
 ): Promise<T> {
   const response = await fetch(path, {
     method: options.method ?? "GET",
-    headers: options.body ? { "Content-Type": "application/json" } : undefined,
+    headers: {
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...options.headers,
+    },
     body:
       options.formData ??
       (options.body ? JSON.stringify(options.body) : undefined),
@@ -463,13 +484,17 @@ export const api = {
       `/api/resumes/${id}/versions/${versionNo}/restore`,
       { method: "POST" },
     ),
-  importResume: (file: File, title?: string) => {
+  importResume: (file: File, title: string | undefined, idempotencyKey: string) => {
     const formData = new FormData();
     formData.append("file", file);
     if (title) formData.append("title", title);
-    return request<{ resume: ResumeRecord; import: { warnings: string[] } }>(
+    return request<{ resume: ResumeRecord; import: ResumeImportResult }>(
       "/api/resumes/import",
-      { method: "POST", formData },
+      {
+        method: "POST",
+        formData,
+        headers: { "Idempotency-Key": idempotencyKey },
+      },
     );
   },
   uploadResumeAsset: (

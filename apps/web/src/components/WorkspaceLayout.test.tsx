@@ -10,7 +10,7 @@ afterEach(() => {
 describe("WorkspaceSidebar", () => {
   it("使用统一导航切换简历、模板和 JD，并标记当前模块", () => {
     const onLogout = vi.fn();
-    render(<WorkspaceSidebar active="jobs" email="user@example.test" isAdmin={false} onLogout={onLogout} />);
+    render(<WorkspaceSidebar active="jobs" email="user@example.test" onLogout={onLogout} />);
 
     expect(screen.getByRole("navigation", { name: "工作区导航" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "JD 中心" })).toHaveAttribute("aria-current", "page");
@@ -29,7 +29,6 @@ describe("WorkspaceSidebar", () => {
         active="account"
         email="user@example.test"
         nickname="测试用户"
-        isAdmin={false}
         onLogout={onLogout}
       />,
     );

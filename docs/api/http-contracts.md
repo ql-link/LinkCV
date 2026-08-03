@@ -68,7 +68,7 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 
 ## 文件导入
 
-`POST /api/resumes/import` 使用 `multipart/form-data`，字段为 `file` 和可选 `title`。支持 UTF-8 Markdown、DOCX 和带文字层 PDF；Markdown 直接读取，DOCX/PDF 通过配置的 tolink-rag Adapter 转为 Markdown，再经过 `SectionIR → ResumeExtractionDraft → ResumeDocumentV1`。成功返回：
+`POST /api/resumes/import` 使用 `multipart/form-data`，字段为 `file` 和可选 `title`，并要求 `Idempotency-Key` Header 为小写、带连字符的 canonical UUID。支持 UTF-8 Markdown、DOCX 和文字/扫描/混合 PDF：Markdown 本地直接读取，DOCX 本地通过 Mammoth 和安全 HTML 转 Markdown，只有 PDF 会调用 LinkParse `POST /v1/parse` 并由远端自动选择文字提取或 OCR；随后统一经过 `SectionIR → ResumeExtractionDraft → ResumeDocumentV1`。成功返回：
 
 ```json
 {
@@ -81,7 +81,11 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 }
 ```
 
-原文件对象键不在响应中。文件为空、超限、不支持或内容非法分别返回 `EMPTY_IMPORT_FILE`、`IMPORT_FILE_TOO_LARGE`、`UNSUPPORTED_IMPORT_FORMAT`、`IMPORT_CONTENT_INVALID`；超过结构化模型输入上限返回 `413 STRUCTURING_INPUT_TOO_LARGE`，触发频率或并发保护返回 `429 IMPORT_RATE_LIMITED`。账号已有 10 份简历时会在上传和模型处理前返回 `409 RESUME_LIMIT_REACHED`；快速检查后的并发创建仍由最终事务检查兜底。RAG 或结构化模型未配置、调用失败、响应非法时返回稳定的 503/502/422 错误且不创建半成品；已上传对象执行幂等补偿。简历结构化继续使用独立环境变量和客户端，不读取管理端 Chat 当前模型，也不写入管理端 LLM 调用日志。
+原文件对象键、LinkParse request ID、外部 URL 和模型调用信息不在响应中。`warnings` 只允许 `pdf_ocr_applied`、`pdf_low_text_quality`、`docx_embedded_images_omitted`、`docx_textbox_order_may_change`、`document_heading_structure_missing`、`source_quote_not_found`、`unparsed_work_start_date`、`unparsed_work_end_date` 和 `unmapped_fragments_preserved`，按转换、章节、标准化顺序首次去重。
+
+缺少或使用非 canonical Header 返回 `400 INVALID_IDEMPOTENCY_KEY`；同一用户、Key 与指纹仍在处理返回 `409 IMPORT_ALREADY_PROCESSING`，成功状态返回原 resume ID 和原导入元数据，不重复副作用；Key 用于不同文件或标题返回 `409 IDEMPOTENCY_KEY_REUSED`。Redis 不可用返回 `503 IMPORT_IDEMPOTENCY_UNAVAILABLE`。Header 按用户隔离，成功重放仍重新校验 MySQL 归属。
+
+文件为空、超限、不支持或内容非法分别返回 `EMPTY_IMPORT_FILE`、`IMPORT_FILE_TOO_LARGE`、`UNSUPPORTED_IMPORT_FORMAT`、`IMPORT_CONTENT_INVALID`；超过结构化模型输入上限返回 `413 STRUCTURING_INPUT_TOO_LARGE`，触发频率或并发保护返回 `429 IMPORT_RATE_LIMITED`。账号已有 10 份简历时会在上传和模型处理前返回 `409 RESUME_LIMIT_REACHED`；快速检查后的并发创建仍由最终事务检查兜底。LinkParse 未配置/未授权、网络或引擎不可用返回 `503 DOCUMENT_CONVERSION_UNAVAILABLE`，转换失败返回 `502 DOCUMENT_CONVERSION_FAILED`，阶段或总时限耗尽返回 `504 DOCUMENT_CONVERSION_TIMEOUT` 或 `504 IMPORT_DEADLINE_EXCEEDED`。结构化模型不可用、调用失败或输出非法分别返回 `503 STRUCTURING_MODEL_UNAVAILABLE`、`502 STRUCTURING_MODEL_FAILED`、`422 RESUME_STRUCTURE_INVALID`。失败不创建半成品；已上传对象即时补偿，删除失败进入持久化清理队列。
 
 ## JD 数据模型与管理
 

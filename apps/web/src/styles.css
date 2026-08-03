@@ -1476,6 +1476,35 @@ select:focus-visible {
 .workbench-save-status.error { color: #b42318; }
 .workbench-save-status.error i { background: #d92d20; }
 
+.workbench-import-warning {
+  position: relative;
+  z-index: 38;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  flex: 0 0 auto;
+  align-items: start;
+  gap: 10px;
+  border-bottom: 1px solid rgba(166, 115, 22, 0.24);
+  background: #fff9e8;
+  padding: 10px 16px;
+  color: #624a16;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.workbench-import-warning strong,
+.workbench-import-warning p { margin: 0; }
+
+.workbench-import-warning button {
+  display: grid;
+  place-items: center;
+  border: 0;
+  padding: 2px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
 .workbench-icon-action,
 .workbench-action,
 .workbench-tool-button {

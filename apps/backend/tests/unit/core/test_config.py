@@ -41,9 +41,14 @@ def test_process_environment_has_highest_priority(
 
 def test_mysql_and_redis_urls_encode_credentials() -> None:
     settings = Settings(
+        mysql_host="127.0.0.1",
+        mysql_port=3306,
         mysql_user="user name",
         mysql_password="p@ss/word",
         mysql_database="link cv",
+        redis_host="127.0.0.1",
+        redis_port=6379,
+        redis_db=0,
         redis_password="redis/@ password",
     )
 
@@ -78,6 +83,20 @@ def test_resume_version_limit_defaults_to_ten() -> None:
     assert settings.resume_version_limit == 10
 
 
+def test_resume_import_timeout_defaults_leave_cleanup_budget() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.resume_import_deadline_seconds == 180
+    assert settings.linkparse_timeout_seconds == 90
+    assert settings.resume_structuring_timeout_seconds == 60
+    assert settings.llm_timeout_seconds == 75
+    assert settings.resume_import_idempotency_processing_ttl_seconds == 240
+    assert (
+        settings.resume_import_idempotency_processing_ttl_seconds
+        >= settings.resume_import_deadline_seconds + 30
+    )
+
+
 def test_structuring_input_limit_cannot_exceed_markdown_limit() -> None:
     with pytest.raises(ValidationError, match="RESUME_STRUCTURING_MAX_BYTES"):
         Settings(
@@ -102,6 +121,7 @@ def test_production_rejects_missing_secrets_without_exposing_values() -> None:
     assert "MINIO_ACCESS_KEY" in message
     assert "MINIO_SECRET_KEY" in message
     assert "LLM_CREDENTIAL_ENCRYPTION_KEYS" in message
+    assert "LINKPARSE_API_KEY" in message
     assert exposed not in message
     assert "replace-with-secret" not in message
 
@@ -116,5 +136,6 @@ def test_production_accepts_injected_secrets() -> None:
         llm_credential_encryption_keys=(
             f"production:{Fernet.generate_key().decode('ascii')}"
         ),
+        linkparse_api_key="fictional-linkparse-key",
     )
     assert settings.minio_bucket == "linkcv"

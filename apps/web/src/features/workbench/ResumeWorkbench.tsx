@@ -1,6 +1,7 @@
 import { EditorContent, useEditor } from "@tiptap/react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
+  AlertTriangle,
   CircleCheck,
   FileDown,
   History,
@@ -13,6 +14,7 @@ import {
   Sparkles,
   Trash2,
   UserRound,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiRequestError } from "../../api/client";
@@ -26,6 +28,8 @@ import { navigateTo } from "../../routing";
 
 type DrawerMode = "settings" | "history" | null;
 type ToastState = { label: string } | null;
+
+const EMPTY_IMPORT_WARNINGS: string[] = [];
 
 const fontOptions = [
   { label: "简历宋体", value: resumeSerifFontStack },
@@ -96,6 +100,21 @@ export function SmartOnePageAction({ active, onToggle, disabled }: { active: boo
   );
 }
 
+export function ImportWarningBanner({ warnings, onDismiss }: { warnings: string[]; onDismiss: () => void }) {
+  return (
+    <div className="workbench-import-warning" role="status">
+      <AlertTriangle size={16} aria-hidden="true" />
+      <div>
+        <strong>请检查导入结果</strong>
+        <p>{warnings.map(importWarningMessage).join("；")}</p>
+      </div>
+      <button type="button" aria-label="关闭导入质量提示" onClick={onDismiss}>
+        <X size={15} aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
 function IconAction({ label, active, danger, children, onClick }: { label: string; active?: boolean; danger?: boolean; children: React.ReactNode; onClick: () => void }) {
   return (
     <motion.button
@@ -123,6 +142,8 @@ function Stepper({ label, value, min, max, step, onChange, disabled }: { label: 
 
 export function ResumeWorkbench() {
   const activeResumeId = useResumeStore((state) => state.activeResumeId);
+  const importWarningsByResumeId = useResumeStore((state) => state.importWarningsByResumeId);
+  const dismissImportWarnings = useResumeStore((state) => state.dismissImportWarnings);
   const title = useResumeStore((state) => state.title);
   const setTitle = useResumeStore((state) => state.setTitle);
   const editorContent = useResumeStore((state) => state.editorContent);
@@ -290,6 +311,9 @@ export function ResumeWorkbench() {
 
   const statusText = saveStatus === "saving" ? "保存中..." : saveStatus === "error" ? "保存失败 · 请重试" : dirty ? "编辑中" : "已保存";
   const zoomPercent = Math.round(previewScale * 100);
+  const importWarnings = activeResumeId
+    ? importWarningsByResumeId[activeResumeId] ?? EMPTY_IMPORT_WARNINGS
+    : EMPTY_IMPORT_WARNINGS;
 
   return (
     <MotionConfig reducedMotion="user" transition={{ type: "spring", bounce: 0, duration: 0.34 }}>
@@ -315,6 +339,13 @@ export function ResumeWorkbench() {
             <IconAction label="退出登录" danger onClick={() => void leaveSafely("logout")}><LogOut size={15} /></IconAction>
           </div>
         </header>
+
+        {activeResumeId && importWarnings.length > 0 && (
+          <ImportWarningBanner
+            warnings={importWarnings}
+            onDismiss={() => dismissImportWarnings(activeResumeId)}
+          />
+        )}
 
         {activeResumeId && <WorkbenchToolbar editor={editor} resumeId={activeResumeId} onNotice={(label) => setToast({ label })} />}
 
@@ -412,4 +443,19 @@ export function ResumeWorkbench() {
       </div>
     </MotionConfig>
   );
+}
+
+function importWarningMessage(warning: string) {
+  const messages: Record<string, string> = {
+    pdf_ocr_applied: "PDF 已使用 OCR，请核对姓名、日期和数字",
+    pdf_low_text_quality: "PDF 文本质量偏低，请重点核对遗漏和错字",
+    docx_embedded_images_omitted: "DOCX 中的图片未导入",
+    docx_textbox_order_may_change: "DOCX 文本框的阅读顺序可能发生变化",
+    document_heading_structure_missing: "原文缺少明确章节标题，已按全文识别",
+    source_quote_not_found: "部分结构化内容无法定位到原文短句",
+    unparsed_work_start_date: "部分工作开始日期未能识别",
+    unparsed_work_end_date: "部分工作结束日期未能识别",
+    unmapped_fragments_preserved: "部分未分类内容已保留，请人工整理",
+  };
+  return messages[warning] ?? "部分内容需要人工核对";
 }

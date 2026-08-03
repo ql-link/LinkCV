@@ -1,8 +1,10 @@
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass
-from pathlib import PurePath
-from uuid import uuid4
+from pathlib import PurePath, PurePosixPath
+from time import monotonic
 from zipfile import BadZipFile, ZipFile
 
 from pydantic import ValidationError
@@ -14,19 +16,24 @@ from linkcv.application.resumes.service import (
     create_resume_with_initial_version,
 )
 from linkcv.core.storage import AssetStorage, build_import_object_name
-from linkcv.domain.rag import RagConverter, RagMarkdownResult, RagMetadata
+from linkcv.domain.document_conversion import (
+    DocumentConversionFailure,
+    DocumentMarkdownConverter,
+)
+from linkcv.domain.import_warnings import merge_import_warnings
 from linkcv.domain.resume_normalization import finalize_resume_document
 from linkcv.domain.section_ir import build_section_ir
-from linkcv.integrations.llm_client import (
+from linkcv.integrations.resume_structuring import (
+    ResumeStructureInvalidError,
     ResumeStructuringClient,
     StructuringModelError,
     StructuringModelNotConfiguredError,
 )
-from linkcv.integrations.rag_client import (
-    RagNotConfiguredError,
-    RagServiceError,
-)
 from linkcv.modules.resumes.models import Resume
+from linkcv.services.resume_import_idempotency import (
+    IdempotencyLeaseLostError,
+    IdempotencyUnavailableError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +44,13 @@ SUPPORTED_IMPORT_MIME = {
     },
     "pdf": {"application/pdf"},
 }
+DOCX_MAX_ENTRIES = 5000
+DOCX_MAX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
+DOCX_MAX_COMPRESSION_RATIO = 100
+OLE_COMPOUND_SIGNATURE = bytes.fromhex("D0CF11E0A1B11AE1")
+ENCRYPTED_DOCX_MARKERS = tuple(
+    value.encode("utf-16le") for value in ("EncryptedPackage", "EncryptionInfo")
+)
 
 
 class ResumeImportFailure(Exception):
@@ -52,6 +66,54 @@ class ImportResult:
     source_file_name: str
     source_file_format: str
     warnings: list[str]
+
+
+def safe_import_filename(filename: str) -> str:
+    safe_filename = filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].strip()
+    if (
+        not safe_filename
+        or len(safe_filename) > 255
+        or any(ord(character) < 32 for character in safe_filename)
+    ):
+        raise ResumeImportFailure(400, "INVALID_IMPORT_FILENAME")
+    return safe_filename
+
+
+def _validate_docx(content: bytes) -> None:
+    if not content.startswith(b"PK\x03\x04"):
+        if content.startswith(OLE_COMPOUND_SIGNATURE) and all(
+            marker in content for marker in ENCRYPTED_DOCX_MARKERS
+        ):
+            raise ResumeImportFailure(422, "IMPORT_CONTENT_INVALID")
+        raise ResumeImportFailure(415, "UNSUPPORTED_IMPORT_FORMAT")
+    try:
+        from io import BytesIO
+
+        with ZipFile(BytesIO(content)) as archive:
+            entries = archive.infolist()
+            names = {item.filename for item in entries}
+            if not {"[Content_Types].xml", "word/document.xml"}.issubset(names):
+                raise ResumeImportFailure(415, "UNSUPPORTED_IMPORT_FORMAT")
+            if len(entries) > DOCX_MAX_ENTRIES:
+                raise ResumeImportFailure(413, "IMPORT_FILE_TOO_LARGE")
+            total_size = 0
+            for item in entries:
+                path = PurePosixPath(item.filename.replace("\\", "/"))
+                if path.is_absolute() or ".." in path.parts or item.flag_bits & 0x1:
+                    raise ResumeImportFailure(422, "IMPORT_CONTENT_INVALID")
+                total_size += item.file_size
+                if (
+                    item.file_size > 1024 * 1024
+                    and item.file_size / max(1, item.compress_size)
+                    > DOCX_MAX_COMPRESSION_RATIO
+                ):
+                    raise ResumeImportFailure(413, "IMPORT_FILE_TOO_LARGE")
+            if total_size > DOCX_MAX_UNCOMPRESSED_BYTES:
+                raise ResumeImportFailure(413, "IMPORT_FILE_TOO_LARGE")
+    except ResumeImportFailure:
+        raise
+    except (BadZipFile, OSError) as error:
+        raise ResumeImportFailure(422, "IMPORT_CONTENT_INVALID") from error
 
 
 def validate_import_file(
@@ -82,82 +144,26 @@ def validate_import_file(
     elif extension == "pdf":
         if not content.startswith(b"%PDF-"):
             raise ResumeImportFailure(415, "UNSUPPORTED_IMPORT_FORMAT")
-        if b"/Encrypt" in content:
-            raise ResumeImportFailure(422, "IMPORT_CONTENT_INVALID")
-    elif extension == "docx":
-        if not content.startswith(b"PK\x03\x04"):
-            raise ResumeImportFailure(415, "UNSUPPORTED_IMPORT_FORMAT")
-        try:
-            from io import BytesIO
-
-            with ZipFile(BytesIO(content)) as archive:
-                names = set(archive.namelist())
-                if not {"[Content_Types].xml", "word/document.xml"}.issubset(names):
-                    raise ResumeImportFailure(415, "UNSUPPORTED_IMPORT_FORMAT")
-                if any(item.flag_bits & 0x1 for item in archive.infolist()):
-                    raise ResumeImportFailure(422, "IMPORT_CONTENT_INVALID")
-                if sum(item.file_size for item in archive.infolist()) > 50 * 1024 * 1024:
-                    raise ResumeImportFailure(413, "IMPORT_FILE_TOO_LARGE")
-        except (BadZipFile, OSError) as error:
-            raise ResumeImportFailure(422, "IMPORT_CONTENT_INVALID") from error
-    return extension
-
-
-async def extract_markdown(
-    *,
-    extension: str,
-    filename: str,
-    content_type: str,
-    content: bytes,
-    rag_converter: RagConverter,
-    max_markdown_bytes: int,
-) -> RagMarkdownResult:
-    if extension == "md":
-        result = RagMarkdownResult(
-            markdown=content.decode("utf-8"),
-            metadata=RagMetadata(
-                source_file_name=filename,
-                source_format="md",
-                converter_version="linkcv/direct-markdown-v1",
-            ),
-        )
     else:
-        try:
-            result = await rag_converter.convert(
-                filename=filename,
-                content_type=content_type,
-                content=content,
-            )
-        except RagNotConfiguredError as error:
-            raise ResumeImportFailure(503, "RAG_SERVICE_UNAVAILABLE") from error
-        except RagServiceError as error:
-            raise ResumeImportFailure(502, "RAG_SERVICE_FAILED") from error
-
-    markdown = result.markdown.strip()
-    if not markdown:
-        raise ResumeImportFailure(422, "IMPORT_CONTENT_INVALID")
-    if len(markdown.encode("utf-8")) > max_markdown_bytes:
-        raise ResumeImportFailure(413, "IMPORT_FILE_TOO_LARGE")
-    return result.model_copy(update={"markdown": markdown})
+        _validate_docx(content)
+    return extension
 
 
 class ResumeImportService:
     def __init__(
         self,
         *,
-        rag_converter: RagConverter,
+        document_converter: DocumentMarkdownConverter,
         structuring_client: ResumeStructuringClient,
         storage: AssetStorage,
-        max_file_bytes: int,
-        max_markdown_bytes: int,
         max_structuring_bytes: int,
+        structuring_timeout_seconds: float,
     ) -> None:
-        self._rag_converter = rag_converter
+        self._document_converter = document_converter
         self._structuring_client = structuring_client
         self._storage = storage
-        self._max_file_bytes = max_file_bytes
-        self._max_markdown_bytes = max_markdown_bytes
         self._max_structuring_bytes = max_structuring_bytes
+        self._structuring_timeout_seconds = structuring_timeout_seconds
 
     async def import_resume(
         self,
@@ -168,58 +174,84 @@ class ResumeImportService:
         content_type: str,
         content: bytes,
         title: str | None,
+        operation_id: str,
+        deadline_monotonic: float,
+        assert_lease: Callable[[], Awaitable[None]],
     ) -> ImportResult:
-        safe_filename = filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].strip()
-        if (
-            not safe_filename
-            or len(safe_filename) > 255
-            or any(ord(character) < 32 for character in safe_filename)
-        ):
-            raise ResumeImportFailure(400, "INVALID_IMPORT_FILENAME")
-        extension = validate_import_file(
-            filename=safe_filename,
-            content_type=content_type,
-            content=content,
-            max_bytes=self._max_file_bytes,
-        )
-        operation_id = uuid4().hex
-        object_key = build_import_object_name(user_id, operation_id, safe_filename)
-        try:
-            await asyncio.to_thread(
-                self._storage.upload,
-                object_key,
-                content,
-                content_type,
-            )
-        except Exception as error:
-            raise ResumeImportFailure(502, "IMPORT_STORAGE_FAILED") from error
-
+        object_key = build_import_object_name(user_id, operation_id, filename)
         created = False
         try:
-            rag_result = await extract_markdown(
-                extension=extension,
-                filename=safe_filename,
-                content_type=content_type,
-                content=content,
-                rag_converter=self._rag_converter,
-                max_markdown_bytes=self._max_markdown_bytes,
+            upload_task = asyncio.create_task(
+                asyncio.to_thread(
+                    self._storage.upload,
+                    object_key,
+                    content,
+                    content_type,
+                )
             )
-            if len(rag_result.markdown.encode("utf-8")) > self._max_structuring_bytes:
-                raise ResumeImportFailure(413, "STRUCTURING_INPUT_TOO_LARGE")
-            section_ir = build_section_ir(rag_result.markdown)
             try:
-                draft = await self._structuring_client.extract(section_ir)
+                await asyncio.shield(upload_task)
+            except asyncio.CancelledError:
+                # A cancelled ``to_thread`` await does not stop the upload. Wait for
+                # the bounded storage call so compensation cannot race a late write.
+                with suppress(Exception):
+                    await upload_task
+                raise
+            except Exception as error:
+                raise ResumeImportFailure(502, "IMPORT_STORAGE_FAILED") from error
+
+            try:
+                conversion = await self._document_converter.convert(
+                    filename=filename,
+                    content_type=content_type,
+                    content=content,
+                    operation_id=operation_id,
+                    deadline_monotonic=deadline_monotonic,
+                )
+            except DocumentConversionFailure as error:
+                raise ResumeImportFailure(error.status_code, error.code) from error
+            if len(conversion.markdown.encode("utf-8")) > self._max_structuring_bytes:
+                raise ResumeImportFailure(413, "STRUCTURING_INPUT_TOO_LARGE")
+
+            section_ir = build_section_ir(conversion.markdown)
+            remaining = deadline_monotonic - monotonic()
+            if remaining <= 15:
+                raise ResumeImportFailure(504, "IMPORT_DEADLINE_EXCEEDED")
+            try:
+                draft = await self._structuring_client.extract(
+                    user_id=user_id,
+                    section_ir=section_ir,
+                    timeout_seconds=min(
+                        self._structuring_timeout_seconds,
+                        remaining - 15,
+                    ),
+                )
             except StructuringModelNotConfiguredError as error:
                 raise ResumeImportFailure(
                     503, "STRUCTURING_MODEL_UNAVAILABLE"
                 ) from error
+            except ResumeStructureInvalidError as error:
+                raise ResumeImportFailure(422, "RESUME_STRUCTURE_INVALID") from error
             except StructuringModelError as error:
                 raise ResumeImportFailure(502, "STRUCTURING_MODEL_FAILED") from error
 
             try:
-                normalized = finalize_resume_document(draft, rag_result.markdown)
+                normalized = finalize_resume_document(draft, conversion.markdown)
             except (ValidationError, ValueError) as error:
                 raise ResumeImportFailure(422, "RESUME_STRUCTURE_INVALID") from error
+
+            if deadline_monotonic - monotonic() <= 0:
+                raise ResumeImportFailure(504, "IMPORT_DEADLINE_EXCEEDED")
+            try:
+                await assert_lease()
+            except IdempotencyUnavailableError as error:
+                raise ResumeImportFailure(
+                    503, "IMPORT_IDEMPOTENCY_UNAVAILABLE"
+                ) from error
+            except IdempotencyLeaseLostError as error:
+                raise ResumeImportFailure(
+                    503, "IMPORT_IDEMPOTENCY_UNAVAILABLE"
+                ) from error
 
             inferred_title = " ".join(
                 value
@@ -233,12 +265,12 @@ class ResumeImportService:
                 resume = create_resume_with_initial_version(
                     CreateResumeCommand(
                         user_id=user_id,
-                        title=title or inferred_title or PurePath(safe_filename).stem,
+                        title=title or inferred_title or PurePath(filename).stem,
                         data=normalized.document,
                         source_type="import",
-                        source_filename=safe_filename,
+                        source_filename=filename,
                         source_object_key=object_key,
-                        extracted_markdown=rag_result.markdown,
+                        extracted_markdown=conversion.markdown,
                     ),
                     db,
                 )
@@ -249,14 +281,20 @@ class ResumeImportService:
             created = True
             return ImportResult(
                 resume=resume,
-                source_file_name=safe_filename,
-                source_file_format=extension,
-                warnings=sorted(set(rag_result.warnings + normalized.warnings)),
+                source_file_name=filename,
+                source_file_format=conversion.source_format,
+                warnings=merge_import_warnings(
+                    conversion.warnings,
+                    section_ir.warnings,
+                    normalized.warnings,
+                ),
             )
         finally:
             if not created:
                 try:
-                    await asyncio.to_thread(self._storage.delete, object_key)
+                    await asyncio.shield(
+                        asyncio.to_thread(self._storage.delete, object_key)
+                    )
                 except Exception as cleanup_error:
                     logger.warning(
                         "resume import cleanup failed",

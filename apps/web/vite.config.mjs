@@ -95,6 +95,8 @@ export default defineConfig({
       "/api": {
         target: backendTarget,
         changeOrigin: true,
+        timeout: 190000,
+        proxyTimeout: 190000,
       },
     },
     warmup: {
