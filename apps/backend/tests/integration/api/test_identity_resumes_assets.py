@@ -7,8 +7,7 @@ from sqlalchemy import select
 from linkcv.core.config import Settings
 from linkcv.main import create_app
 from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.models import Resume, ResumeVersion, StorageCleanupJob
-from linkcv.services.storage_cleanup_service import process_storage_cleanup_jobs
+from linkcv.modules.resumes.models import Resume, ResumeVersion
 from tests.fakes import FakeRedis
 
 
@@ -222,7 +221,7 @@ def test_resume_assets_are_owned_and_preserved_while_history_references_them() -
         assert app.state.storage.objects == {}
 
 
-def test_resume_delete_persists_failed_storage_cleanup_for_retry() -> None:
+def test_resume_delete_keeps_database_record_when_storage_cleanup_fails() -> None:
     app = build_test_app()
     storage = app.state.storage
 
@@ -239,18 +238,23 @@ def test_resume_delete_persists_failed_storage_cleanup_for_retry() -> None:
 
         deleted = client.delete(f"/api/resumes/{resume_id}")
 
-        assert deleted.status_code == 200
+        assert deleted.status_code == 502
+        assert deleted.json() == {"error": "ASSET_DELETE_FAILED"}
         with app.state.session_factory() as session:
-            assert session.scalar(select(Resume).where(Resume.id == int(resume_id))) is None
-            job = session.scalar(select(StorageCleanupJob))
-            assert job is not None
-            assert job.operation == "prefix"
-            assert job.attempts == 1
+            assert session.scalar(
+                select(Resume).where(Resume.id == int(resume_id))
+            ) is not None
+            assert session.scalar(
+                select(ResumeVersion).where(ResumeVersion.resume_id == int(resume_id))
+            ) is not None
+        assert storage.objects == {object_key: b"private-resume-image"}
 
         storage.fail_cleanup = False
+        assert client.delete(f"/api/resumes/{resume_id}").json() == {"deleted": True}
         with app.state.session_factory() as session:
-            assert process_storage_cleanup_jobs(session, storage) == 1
-            assert session.scalar(select(StorageCleanupJob)) is None
+            assert session.scalar(
+                select(Resume).where(Resume.id == int(resume_id))
+            ) is None
         assert storage.objects == {}
 
 

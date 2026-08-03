@@ -28,7 +28,6 @@ from linkcv.modules.llm.models import LLMCapabilityBinding
 from linkcv.modules.llm.service import LLMService
 from linkcv.services.import_admission import ImportAdmissionController
 from linkcv.services.resume_import_idempotency import ResumeImportIdempotency
-from linkcv.services.storage_cleanup_service import run_storage_cleanup_worker
 
 logger = logging.getLogger(__name__)
 
@@ -141,17 +140,9 @@ def create_app(
             await asyncio.to_thread(redis.ping)
         except Exception:
             logger.warning("Redis is unavailable; auth sessions will fail", exc_info=True)
-        cleanup_task = asyncio.create_task(
-            run_storage_cleanup_worker(session_factory, runtime_storage)
-        )
         try:
             yield
         finally:
-            cleanup_task.cancel()
-            try:
-                await cleanup_task
-            except asyncio.CancelledError:
-                pass
             try:
                 await asyncio.to_thread(redis.close)
             except Exception:

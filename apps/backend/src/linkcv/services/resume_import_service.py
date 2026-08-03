@@ -34,7 +34,6 @@ from linkcv.services.resume_import_idempotency import (
     IdempotencyLeaseLostError,
     IdempotencyUnavailableError,
 )
-from linkcv.services.storage_cleanup_service import enqueue_storage_cleanup
 
 logger = logging.getLogger(__name__)
 
@@ -292,41 +291,16 @@ class ResumeImportService:
             )
         finally:
             if not created:
-                await self._compensate_storage(db, object_key, operation_id, user_id)
-
-    async def _compensate_storage(
-        self,
-        db: Session,
-        object_key: str,
-        operation_id: str,
-        user_id: int,
-    ) -> None:
-        try:
-            await asyncio.shield(asyncio.to_thread(self._storage.delete, object_key))
-        except Exception:
-            try:
-                cleanup_job = enqueue_storage_cleanup(
-                    db,
-                    operation="object",
-                    object_key=object_key,
-                )
-                db.commit()
-            except Exception as persistence_error:
-                db.rollback()
-                logger.warning(
-                    "resume import cleanup job could not be persisted",
-                    extra={
-                        "operation_id": operation_id,
-                        "user_id": user_id,
-                        "error_type": type(persistence_error).__name__,
-                    },
-                )
-            else:
-                logger.warning(
-                    "resume import cleanup deferred",
-                    extra={
-                        "cleanup_job_id": cleanup_job.id,
-                        "operation_id": operation_id,
-                        "user_id": user_id,
-                    },
-                )
+                try:
+                    await asyncio.shield(
+                        asyncio.to_thread(self._storage.delete, object_key)
+                    )
+                except Exception as cleanup_error:
+                    logger.warning(
+                        "resume import cleanup failed",
+                        extra={
+                            "operation_id": operation_id,
+                            "user_id": user_id,
+                            "error_type": type(cleanup_error).__name__,
+                        },
+                    )

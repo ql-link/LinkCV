@@ -17,9 +17,8 @@ from linkcv.domain.document_conversion import (
 from linkcv.domain.resume_document import default_resume_document
 from linkcv.domain.resume_extraction import DraftBasics, ResumeExtractionDraft
 from linkcv.main import create_app
-from linkcv.modules.resumes.models import Resume, ResumeVersion, StorageCleanupJob
+from linkcv.modules.resumes.models import Resume, ResumeVersion
 from linkcv.services.resume_import_idempotency import import_fingerprint
-from linkcv.services.storage_cleanup_service import process_storage_cleanup_jobs
 from tests.fakes import FakeRedis
 
 
@@ -319,7 +318,7 @@ def test_missing_structuring_model_is_explicit_and_compensated() -> None:
     assert storage.objects == {}
 
 
-def test_failed_cleanup_is_persisted_and_retried() -> None:
+def test_failed_import_cleanup_failure_leaves_orphaned_object() -> None:
     app, storage, _redis, _ = build_app(
         document_converter=FailingDocumentConverter(),
         structuring_client=FakeStructuringClient(),
@@ -334,12 +333,9 @@ def test_failed_cleanup_is_persisted_and_retried() -> None:
             content_type="application/pdf",
         )
         assert response.status_code == 502
-        with app.state.session_factory() as session:
-            assert session.scalar(select(StorageCleanupJob)) is not None
-        storage.fail_delete = False
-        with app.state.session_factory() as session:
-            assert process_storage_cleanup_jobs(session, storage) == 1
-    assert storage.objects == {}
+        assert response.json() == {"error": "DOCUMENT_CONVERSION_FAILED"}
+        assert len(storage.objects) == 1
+        assert storage.deleted == []
 
 
 @pytest.mark.parametrize(
