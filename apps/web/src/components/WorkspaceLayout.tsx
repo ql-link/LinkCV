@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { BriefcaseBusiness, FileText, LayoutTemplate, LogOut, UserRound } from "lucide-react";
+import { BriefcaseBusiness, FileText, LayoutTemplate, UserRound } from "lucide-react";
 import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
 import { Brand } from "./ds";
@@ -11,10 +11,9 @@ type WorkspaceSidebarProps = {
   email: string;
   nickname?: string;
   avatarUrl?: string | null;
-  onLogout: () => void | Promise<void>;
 };
 
-export function WorkspaceSidebar({ active, email, nickname, avatarUrl, onLogout }: WorkspaceSidebarProps) {
+export function WorkspaceSidebar({ active, email, nickname, avatarUrl }: WorkspaceSidebarProps) {
   const displayName = nickname || email;
   return (
     <nav className="dashboard-sidebar" aria-label="工作区导航">
@@ -60,16 +59,10 @@ export function WorkspaceSidebar({ active, email, nickname, avatarUrl, onLogout 
               {[...displayName][0] ?? <UserRound size={14} />}
             </span>
           )}
-          <span className="account-name">{displayName}</span>
-        </button>
-        <button
-          className="dashboard-logout"
-          type="button"
-          aria-label="退出登录"
-          title="退出登录"
-          onClick={() => void onLogout()}
-        >
-          <LogOut size={14} />
+          <span className="account-text">
+            <strong className="account-name">{displayName}</strong>
+            <small className="account-email">{email}</small>
+          </span>
         </button>
       </div>
     </nav>
@@ -78,12 +71,6 @@ export function WorkspaceSidebar({ active, email, nickname, avatarUrl, onLogout 
 
 export function WorkspaceLayout({ active, children }: { active: WorkspaceSection; children: ReactNode }) {
   const user = useResumeStore((state) => state.user);
-  const logout = useResumeStore((state) => state.logout);
-
-  const logoutAndReturn = async () => {
-    await logout();
-    navigateTo("/", { replace: true });
-  };
 
   return (
     <div className="dashboard-shell">
@@ -92,7 +79,6 @@ export function WorkspaceLayout({ active, children }: { active: WorkspaceSection
         email={user?.email ?? ""}
         nickname={user?.nickname}
         avatarUrl={user?.avatar_url}
-        onLogout={logoutAndReturn}
       />
       {children}
     </div>

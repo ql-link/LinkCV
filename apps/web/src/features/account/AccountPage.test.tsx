@@ -96,4 +96,15 @@ describe("AccountPage", () => {
     expect(await screen.findByText("头像已删除。")).toBeInTheDocument();
     expect(useResumeStore.getState().user?.avatar_url).toBeNull();
   });
+
+  it("退出登录后回到首页并清空登录态", async () => {
+    const logout = vi.spyOn(useResumeStore.getState(), "logout").mockResolvedValue();
+    render(<AccountPage />);
+    await screen.findByDisplayValue("user@example.test");
+
+    fireEvent.click(screen.getByRole("button", { name: /退出登录/ }));
+
+    await waitFor(() => expect(logout).toHaveBeenCalledOnce());
+    expect(window.location.pathname).toBe("/");
+  });
 });
