@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal, Protocol
+from urllib.parse import urlsplit
 
 import litellm
 from pydantic import BaseModel
@@ -160,6 +161,27 @@ def _gateway_error(
     )
 
 
+_VERIFIED_QWEN_SCHEMA_MODEL = "openai/qwen3.7-plus"
+_VERIFIED_QWEN_SCHEMA_HOST = "dashscope-intl.aliyuncs.com"
+_VERIFIED_QWEN_SCHEMA_PATH = "/compatible-mode/v1"
+
+
+def _supports_verified_qwen_schema(*, model: str, api_base: str | None) -> bool:
+    if model.lower() != _VERIFIED_QWEN_SCHEMA_MODEL or api_base is None:
+        return False
+    try:
+        parsed = urlsplit(api_base)
+    except ValueError:
+        return False
+    return (
+        parsed.scheme.lower() == "https"
+        and parsed.hostname == _VERIFIED_QWEN_SCHEMA_HOST
+        and parsed.path.rstrip("/") == _VERIFIED_QWEN_SCHEMA_PATH
+        and parsed.query == ""
+        and parsed.fragment == ""
+    )
+
+
 class LiteLLMGateway:
     def __init__(self, timeout_seconds: float = 60.0) -> None:
         self.timeout_seconds = timeout_seconds
@@ -183,6 +205,8 @@ class LiteLLMGateway:
         }
         if response_format is not None:
             arguments["response_format"] = response_format
+            if _supports_verified_qwen_schema(model=model, api_base=api_base):
+                arguments["extra_body"] = {"enable_thinking": False}
         return arguments
 
     async def complete(

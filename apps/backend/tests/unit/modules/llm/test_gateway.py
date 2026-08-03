@@ -138,3 +138,29 @@ def test_provider_exception_details_are_removed_from_traceback(monkeypatch) -> N
 
     assert "LLM provider request failed" in rendered
     assert sensitive_detail not in rendered
+
+
+def test_verified_qwen_schema_request_disables_thinking(monkeypatch) -> None:
+    captured = {}
+
+    async def fake_completion(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"ok":true}'))],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+        )
+
+    monkeypatch.setattr(litellm, "acompletion", fake_completion)
+    asyncio.run(
+        LiteLLMGateway().complete(
+            model="openai/qwen3.7-plus",
+            messages=[ChatMessage(role="user", content="fixture")],
+            api_base=(
+                "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+            ),
+            api_key="fictional-key",
+            response_format=StructuredPayload,
+        )
+    )
+
+    assert captured["extra_body"] == {"enable_thinking": False}

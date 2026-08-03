@@ -1,3 +1,7 @@
+import json
+from threading import RLock
+
+
 class FakeRedis:
     """In-memory Redis stand-in mirroring the subset used by auth sessions."""
 
@@ -6,6 +10,75 @@ class FakeRedis:
         self.hashes: dict[str, dict[str, str]] = {}
         self.sets: dict[str, set[str]] = {}
         self.ttls: dict[str, float | None] = {}
+        self._lock = RLock()
+
+    def resume_import_acquire(
+        self,
+        key: str,
+        fingerprint: str,
+        owner: str,
+        ttl_ms: int,
+    ) -> tuple[str, str]:
+        with self._lock:
+            raw = self.strings.get(key)
+            if raw is None:
+                state = {
+                    "status": "processing",
+                    "fingerprint": fingerprint,
+                    "owner": owner,
+                }
+                raw = json.dumps(state)
+                self.strings[key] = raw
+                self.ttls[key] = ttl_ms / 1000
+                return "new", raw
+            state = json.loads(raw)
+            if state["fingerprint"] != fingerprint:
+                return "conflict", raw
+            return state["status"], raw
+
+    def resume_import_renew(
+        self,
+        key: str,
+        fingerprint: str,
+        owner: str,
+        ttl_ms: int,
+    ) -> int:
+        with self._lock:
+            raw = self.strings.get(key)
+            if raw is None:
+                return 0
+            state = json.loads(raw)
+            if (
+                state["status"] != "processing"
+                or state["fingerprint"] != fingerprint
+                or state["owner"] != owner
+            ):
+                return 0
+            self.ttls[key] = ttl_ms / 1000
+            return 1
+
+    def resume_import_finish(
+        self,
+        key: str,
+        fingerprint: str,
+        owner: str,
+        payload: str,
+        ttl_ms: int,
+    ) -> int:
+        with self._lock:
+            raw = self.strings.get(key)
+            if raw is None:
+                return 0
+            state = json.loads(raw)
+            if (
+                state["status"] != "processing"
+                or state["fingerprint"] != fingerprint
+                or state["owner"] != owner
+            ):
+                return 0
+            self.strings[key] = payload
+            self.ttls[key] = ttl_ms / 1000
+            return 1
 
     def hset(
         self,

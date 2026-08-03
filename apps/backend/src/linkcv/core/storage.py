@@ -9,6 +9,7 @@ from urllib.parse import quote, urlsplit
 
 from fastapi import Request
 from minio import Minio
+from urllib3 import PoolManager, Retry, Timeout
 
 from linkcv.core.config import Settings
 
@@ -41,6 +42,10 @@ class AssetStorage:
             access_key=settings.minio_access_key,
             secret_key=settings.minio_secret_key,
             secure=endpoint.scheme == "https",
+            http_client=PoolManager(
+                timeout=Timeout(connect=5, read=60),
+                retries=Retry(total=False),
+            ),
         )
 
     def ensure_bucket(self) -> None:

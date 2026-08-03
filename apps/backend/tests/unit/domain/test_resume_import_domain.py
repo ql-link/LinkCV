@@ -22,13 +22,13 @@ Python
 
     result = build_section_ir(markdown)
 
-    assert result.preamble is not None
-    assert result.preamble.start_line == 1
+    assert result.preamble is None
     assert [(item.heading, item.normalized_kind) for item in result.sections] == [
+        ("张三", None),
         ("工作经历", "work"),
         ("专业技能", "skills"),
     ]
-    assert result.sections[0].start_line == 4
+    assert result.sections[1].start_line == 4
 
 
 def test_markdown_without_level_two_heading_remains_available() -> None:
@@ -36,7 +36,7 @@ def test_markdown_without_level_two_heading_remains_available() -> None:
 
     assert result.preamble is None
     assert result.sections[0].markdown == "张三\n后端工程师"
-    assert result.warnings == ["no_level_two_headings"]
+    assert result.warnings == ["document_heading_structure_missing"]
 
 
 def test_draft_normalization_preserves_source_refs_and_unmapped_content() -> None:

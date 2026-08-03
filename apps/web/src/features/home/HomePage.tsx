@@ -30,8 +30,8 @@ function resumeImportErrorMessage(error: unknown) {
       return "每个账号最多保存 10 份简历，请先删除一份后再导入。";
     case "STRUCTURING_MODEL_UNAVAILABLE":
       return "简历结构化服务尚未配置，暂时无法导入。";
-    case "RAG_SERVICE_UNAVAILABLE":
-      return "文档转换服务尚未配置，DOCX 和 PDF 暂时无法导入；可以改用 Markdown。";
+    case "DOCUMENT_CONVERSION_UNAVAILABLE":
+      return "PDF 解析服务暂时不可用；Markdown 和 DOCX 仍可导入。";
     case "UNSUPPORTED_IMPORT_FORMAT":
     case "INVALID_IMPORT_FILENAME":
       return "仅支持 Markdown、DOCX 和 PDF 文件。";
@@ -44,7 +44,16 @@ function resumeImportErrorMessage(error: unknown) {
       return "转换后的简历内容过长，暂时无法结构化。";
     case "IMPORT_RATE_LIMITED":
       return "导入请求过于频繁，请稍后重试。";
-    case "RAG_SERVICE_FAILED":
+    case "IMPORT_ALREADY_PROCESSING":
+      return "这份简历正在导入，请等待当前处理完成。";
+    case "IDEMPOTENCY_KEY_REUSED":
+      return "本次导入标识已被使用，请重新选择文件后再试。";
+    case "IMPORT_IDEMPOTENCY_UNAVAILABLE":
+      return "导入保护服务暂时不可用，请稍后重试。";
+    case "DOCUMENT_CONVERSION_TIMEOUT":
+    case "IMPORT_DEADLINE_EXCEEDED":
+      return "文件解析超时，请稍后重新导入。";
+    case "DOCUMENT_CONVERSION_FAILED":
     case "STRUCTURING_MODEL_FAILED":
     case "RESUME_STRUCTURE_INVALID":
     case "IMPORT_STORAGE_FAILED":
@@ -340,9 +349,8 @@ export function HomePage({ view = "all" }: { view?: "all" | "templates" }) {
   };
 
   const importAndOpenResume = async (file: File) => {
-    await importResume(file);
-    const resumeId = useResumeStore.getState().activeResumeId;
-    if (resumeId) navigateTo(editorPath(resumeId));
+    const resumeId = await importResume(file);
+    navigateTo(editorPath(resumeId));
   };
 
   return (

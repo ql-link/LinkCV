@@ -8,7 +8,12 @@ from linkcv.core.config import Settings
 
 def build_redis_client(settings: Settings) -> redis.Redis:
     # decode_responses=True lets hash/string values come back as plain text.
-    return redis.Redis.from_url(settings.redis_url, decode_responses=True)
+    return redis.Redis.from_url(
+        settings.redis_url,
+        decode_responses=True,
+        socket_connect_timeout=settings.redis_connect_timeout_seconds,
+        socket_timeout=settings.redis_socket_timeout_seconds,
+    )
 
 
 def get_redis(request: Request) -> Generator[redis.Redis, None, None]:
