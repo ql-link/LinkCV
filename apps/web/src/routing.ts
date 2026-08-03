@@ -4,6 +4,7 @@ export type AppRoute =
   | { kind: "landing" }
   | { kind: "auth"; mode: "login" | "register"; next: string | null }
   | { kind: "admin" }
+  | { kind: "adminLogin"; next: string | null }
   | { kind: "resumes" }
   | { kind: "editor"; resumeId: string }
   | { kind: "jobs" }
@@ -31,9 +32,24 @@ export function isSafeAppPath(value: string | null) {
   return Boolean(value && value.startsWith("/") && !value.startsWith("//") && /^\/(?:resumes|jobs|account)(?:\/|$)/.test(value));
 }
 
+export function isSafeAdminPath(value: string | null) {
+  return Boolean(
+    value &&
+      value.startsWith("/") &&
+      !value.startsWith("//") &&
+      /^\/admin(?:\/|$)/.test(value) &&
+      !/^\/admin\/login(?:\/|$)/.test(value),
+  );
+}
+
 export function parseAppRoute(pathname: string, search = ""): AppRoute {
   const normalizedPath = normalizePathname(pathname);
   if (normalizedPath === "/") return { kind: "landing" };
+  if (/^\/admin\/login(?:\/|$)/.test(normalizedPath)) {
+    const params = new URLSearchParams(search);
+    const next = params.get("next");
+    return { kind: "adminLogin", next: isSafeAdminPath(next) ? next : null };
+  }
   if (/^\/admin(?:\/|$)/.test(normalizedPath)) return { kind: "admin" };
   if (normalizedPath === "/login") {
     const params = new URLSearchParams(search);
@@ -98,6 +114,13 @@ export function authPath(mode: "login" | "register", next?: string | null) {
   if (isSafeAppPath(next ?? null)) params.set("next", next as string);
   const search = params.toString();
   return search ? `/login?${search}` : "/login";
+}
+
+export function adminLoginPath(next?: string | null) {
+  const params = new URLSearchParams();
+  if (isSafeAdminPath(next ?? null)) params.set("next", next as string);
+  const search = params.toString();
+  return search ? `/admin/login?${search}` : "/admin/login";
 }
 
 export function navigateTo(path: string, options: NavigateOptions = {}) {
