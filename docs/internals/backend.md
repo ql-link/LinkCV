@@ -58,7 +58,7 @@ LiteLLM 只位于 `modules/llm/gateway.py` 和只读目录边界。白名单 ada
 
 Markdown 文件在进程内做 UTF-8 与确定性换行清理；DOCX 在可取消子进程中使用 Mammoth 转安全 HTML，经 nh3 allowlist 清洗后转 Markdown；只有 PDF 会以固定的 `engine=auto/output_formats=markdown/ocr=auto/dpi=200/include_bbox=false/include_images=false` 调用 LinkParse `POST /v1/parse`。LinkParse 响应在 JSON decode 前限制为 3 MiB，随后校验 request ID、schema、页数、Markdown 质量和空 assets；客户端不下载或保存外部 assets，也不自动重试同步解析请求。
 
-Markdown 只保存为 `extracted_markdown` 来源证据；超过结构化输入上限的内容不会发送给模型，合规输入的 AST 被压缩为 H1–H3 `SectionIR` 后才发送给结构化模型，模型只能返回 `ResumeExtractionDraft`，最终稳定 ID、日期和来源行号由程序生成。导入入口继续实施进程内频率与并发限制，并额外要求 canonical UUID `Idempotency-Key`。Redis key 按用户和 Header 哈希隔离，原子保存请求指纹、processing 租约、成功结果或短期失败；相同成功请求从 MySQL 按归属重放，不重复上传、转换或调用模型。Redis 不可用时 fail-closed。总业务 deadline 为 120 秒，PDF 阶段最多 60 秒、结构化阶段最多 45 秒。
+Markdown 只保存为 `extracted_markdown` 来源证据；超过结构化输入上限的内容不会发送给模型，合规输入的 AST 被压缩为 H1–H3 `SectionIR` 后才发送给结构化模型，模型只能返回 `ResumeExtractionDraft`，最终稳定 ID、日期和来源行号由程序生成。导入入口继续实施进程内频率与并发限制，并额外要求 canonical UUID `Idempotency-Key`。Redis key 按用户和 Header 哈希隔离，原子保存请求指纹、processing 租约、成功结果或短期失败；相同成功请求从 MySQL 按归属重放，不重复上传、转换或调用模型。Redis 不可用时 fail-closed。总业务 deadline 为 180 秒，PDF 阶段最多 90 秒、结构化阶段最多 60 秒。
 
 Development 未配置 LinkParse Key 时应用仍可启动，Markdown/DOCX 保持可用，PDF 返回 `DOCUMENT_CONVERSION_UNAVAILABLE`；Production 缺 Key 会安全拒绝启动。默认测试全部使用确定性 Fake 和 `httpx.MockTransport`，不访问真实网络或读取密钥。日志只记录 operation/resume/user 标识、大小、耗时、解析分类和错误类型，不记录正文、Prompt、Cookie、密钥或完整供应商响应。
 

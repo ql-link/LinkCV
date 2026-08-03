@@ -16,7 +16,7 @@ Web 页面统一请求相对 `/api` 路径。`apps/web/vite.config.mjs` 将全�
 
 浏览器插件从独立的 `chrome-extension://` 源运行，默认通过 `http://127.0.0.1:5173` 或 `http://localhost:5173` 调用同一 Vite `/api` 代理，并携带用户已经在对应 Web 源站建立的 HttpOnly Cookie 会话。插件 Manifest 只声明 BOSS 站点、本地 LinkCV 源站和构建时显式配置的 LinkCV 源站权限；内容脚本不直接访问 LinkCV API。
 
-FastAPI 在 `apps/backend/src/linkcv/main.py` 以 `/api` 前缀挂载路由。Vite 为同步导入设置 130 秒代理预算。PDF 导入由 FastAPI 使用后端 Secret 直接访问 `http://100.86.10.52:18743/v1/parse`；浏览器不连接 LinkParse，DOCX 和 Markdown 也不经过该服务。详细接口见 [HTTP 契约](../api/http-contracts.md)。
+FastAPI 在 `apps/backend/src/linkcv/main.py` 以 `/api` 前缀挂载路由。Vite 为最长 180 秒的同步导入设置 190 秒代理预算，避免代理先于后端业务 deadline 关闭连接。PDF 导入由 FastAPI 使用后端 Secret 直接访问 `http://100.86.10.52:18743/v1/parse`；浏览器不连接 LinkParse，DOCX 和 Markdown 也不经过该服务。详细接口见 [HTTP 契约](../api/http-contracts.md)。
 
 ## 数据与鉴权
 

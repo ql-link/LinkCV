@@ -102,7 +102,7 @@ class Settings(BaseSettings):
         alias="LLM_CREDENTIAL_ENCRYPTION_KEYS",
     )
     llm_timeout_seconds: float = Field(
-        default=60,
+        default=75,
         alias="LLM_TIMEOUT_SECONDS",
         gt=0,
     )
@@ -150,17 +150,17 @@ class Settings(BaseSettings):
         le=10,
     )
     resume_import_deadline_seconds: float = Field(
-        default=120,
+        default=180,
         alias="RESUME_IMPORT_DEADLINE_SECONDS",
         gt=0,
     )
     resume_structuring_timeout_seconds: float = Field(
-        default=45,
+        default=60,
         alias="RESUME_STRUCTURING_TIMEOUT_SECONDS",
         gt=0,
     )
     resume_import_idempotency_processing_ttl_seconds: int = Field(
-        default=180,
+        default=240,
         alias="RESUME_IMPORT_IDEMPOTENCY_PROCESSING_TTL_SECONDS",
         ge=1,
     )
@@ -188,7 +188,7 @@ class Settings(BaseSettings):
         alias="LINKPARSE_PARSE_PATH",
     )
     linkparse_timeout_seconds: float = Field(
-        default=60,
+        default=90,
         alias="LINKPARSE_TIMEOUT_SECONDS",
         gt=0,
     )

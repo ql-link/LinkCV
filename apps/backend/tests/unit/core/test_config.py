@@ -83,6 +83,20 @@ def test_resume_version_limit_defaults_to_ten() -> None:
     assert settings.resume_version_limit == 10
 
 
+def test_resume_import_timeout_defaults_leave_cleanup_budget() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.resume_import_deadline_seconds == 180
+    assert settings.linkparse_timeout_seconds == 90
+    assert settings.resume_structuring_timeout_seconds == 60
+    assert settings.llm_timeout_seconds == 75
+    assert settings.resume_import_idempotency_processing_ttl_seconds == 240
+    assert (
+        settings.resume_import_idempotency_processing_ttl_seconds
+        >= settings.resume_import_deadline_seconds + 30
+    )
+
+
 def test_structuring_input_limit_cannot_exceed_markdown_limit() -> None:
     with pytest.raises(ValidationError, match="RESUME_STRUCTURING_MAX_BYTES"):
         Settings(

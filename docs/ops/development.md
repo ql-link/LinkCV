@@ -52,20 +52,20 @@ LINKCV_ENV_FILE=.env.development npm run db:init
 | `RESUME_IMPORT_REQUESTS_PER_MINUTE` | `3` | 单用户每分钟最多进入的导入请求数 |
 | `RESUME_IMPORT_GLOBAL_CONCURRENCY` | `4` | 单个 FastAPI 进程的导入全局并发上限 |
 | `RESUME_IMPORT_USER_CONCURRENCY` | `1` | 单个 FastAPI 进程内单用户导入并发上限 |
-| `RESUME_IMPORT_DEADLINE_SECONDS` | `120` | 一次同步导入的总业务时限 |
-| `RESUME_STRUCTURING_TIMEOUT_SECONDS` | `45` | 统一模型结构化阶段的最大时限 |
-| `RESUME_IMPORT_IDEMPOTENCY_PROCESSING_TTL_SECONDS` | `180` | Redis processing 租约；必须至少比总 deadline 多 30 秒 |
+| `RESUME_IMPORT_DEADLINE_SECONDS` | `180` | 一次同步导入的总业务时限 |
+| `RESUME_STRUCTURING_TIMEOUT_SECONDS` | `60` | 统一模型结构化阶段的最大时限 |
+| `RESUME_IMPORT_IDEMPOTENCY_PROCESSING_TTL_SECONDS` | `240` | Redis processing 租约；必须至少比总 deadline 多 30 秒 |
 | `RESUME_IMPORT_IDEMPOTENCY_SUCCESS_TTL_SECONDS` | `3600` | 成功结果重放窗口 |
 | `RESUME_IMPORT_IDEMPOTENCY_FAILURE_TTL_SECONDS` | `60` | 失败结果短期重放窗口 |
 | `LINKPARSE_BASE_URL` | `http://100.86.10.52:18743` | PDF 解析服务地址 |
 | `LINKPARSE_API_KEY` | 空 | LinkParse Bearer 凭据，只放 `.local` 或进程环境 |
 | `LINKPARSE_PARSE_PATH` | `/v1/parse` | 同步 PDF 解析路径 |
-| `LINKPARSE_TIMEOUT_SECONDS` | `60` | 单次 LinkParse 阶段时限，不自动重试 |
+| `LINKPARSE_TIMEOUT_SECONDS` | `90` | 单次 LinkParse 阶段时限，不自动重试 |
 | `LINKPARSE_RESPONSE_MAX_BYTES` | `3145728` | LinkParse 响应读取上限 |
 | `DOCX_CONVERSION_TIMEOUT_SECONDS` | `30` | Mammoth 子进程转换时限 |
 | `REDIS_CONNECT_TIMEOUT_SECONDS` | `2` | Redis 连接超时 |
 | `REDIS_SOCKET_TIMEOUT_SECONDS` | `2` | Redis 操作超时 |
-| `LLM_TIMEOUT_SECONDS` | `60` | 统一托管 LLM Gateway 的单次请求超时 |
+| `LLM_TIMEOUT_SECONDS` | `75` | 统一托管 LLM Gateway 的单次请求超时 |
 
 Markdown 和 DOCX 导入不调用 LinkParse，但仍需要数据库中已经配置当前 Chat binding，且其供应商与模型支持结构化输出。PDF 会把原始二进制和安全文件名发送到 LinkParse；浏览器不读取地址或 Key。频率和并发限制仍保存在 FastAPI 进程内，幂等状态保存在 Redis。默认自动化测试注入 Fake，不访问真实地址或读取 Key。真实简历属于敏感数据，联调前必须确认 LinkParse 的源文件、结果、临时文件和日志保留边界，以及目标环境到当前 HTTP 地址的传输保护。
 
