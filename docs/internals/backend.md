@@ -51,7 +51,7 @@ LiteLLM 只位于 `modules/llm/gateway.py` 和只读目录边界。白名单 ada
 
 简历导入继续通过 `integrations/llm_client.py` 的 `HttpStructuredLlmClient` 执行结构化提取，使用独立的 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`、结构化路径和重试配置。这条链路不读取 Chat binding，不使用管理端候选凭据，也不产生 `resume_import` 管理日志；本期只建设可被后续业务模块调用的统一 Chat 能力。
 
-`scripts/db/init_mysql.py` 只允许创建名为 `linkcv` 的 MySQL 数据库；`scripts/release/run_alembic.py` 在迁移前校验环境、host、port 和数据库并输出不含密码的摘要。FastAPI 配置支持根 `.env`、显式 `LINKCV_ENV_FILE`、同名 `.local` 和进程环境覆盖。Redis 在鉴权链路中作为唯一会话存储：`auth:session:{sid}` 保存会话哈希，`auth:user_sessions:{uid}` 索引该用户全部会话；会话不写 MySQL，撤销即删除 key。阿里云 OSS 当前仅建立配置契约。
+`scripts/db/init_mysql.py` 只允许创建名为 `linkcv` 的 MySQL 数据库；`scripts/release/run_alembic.py` 在迁移前校验环境、host、port 和数据库并输出不含密码的摘要。FastAPI 配置支持根 `.env`、显式 `LINKCV_ENV_FILE`、同名 `.local` 和进程环境覆盖。Redis 在鉴权链路中作为唯一会话存储：`auth:session:{sid}` 保存会话哈希，`auth:user_sessions:{uid}` 索引该用户全部会话；会话不写 MySQL，撤销即删除 key。对象存储配置仅使用 `MINIO_*`。
 
 ## 导入与外部边界
 
