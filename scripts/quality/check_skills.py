@@ -127,9 +127,74 @@ IMPLEMENTATION_EXECUTION_REQUIRED_MARKERS = (
     "跨会话遗留风险与接手点",
 )
 CONTRACT_GUARD_REQUIRED_MARKERS = (
-    "其他单需求分歧返回 `flow-router` 重新判断，"
-    "已经明确属于方案先行时直接交 `solution-generator` 定稿",
+    "已经明确属于方案先行的单需求分歧直接交 `solution-generator` 修订当前方案",
+    "只有分流维度或交付路径也可能变化时才返回 `flow-router`",
 )
+DELIVERY_FLOW_REQUIRED_MARKERS = {
+    Path(".ai/prompts/project.md"): (
+        "需求和交付信息按单向链路流转",
+        "在 PR 创建后只补一条交付评论",
+    ),
+    Path(".ai/skills/README.md"): (
+        "飞书文档只作为方案形成前的初步设计输入",
+        "确认后的 `solution.md` 是方案任务的当前实施依据",
+        "## 单向交付层次",
+        "| 初始设计层 | 飞书文档 |",
+        "| 任务入口与跟踪层 | Issue 正文 |",
+        "| 实施真相层 | 代码、配置、迁移和测试 |",
+        "| 交付审阅层 | PR |",
+        "| 跟踪收尾层 | 来源 Issue 的交付评论 |",
+        "主链只向右推进",
+    ),
+    Path(".ai/skills/solution-generator/SKILL.md"): (
+        "飞书文档只作为初步设计输入",
+        "把已确认的取舍和被替代的来源结论写入当前 `solution.md`",
+        "不更新飞书",
+    ),
+    Path(".ai/skills/implementation-execution/SKILL.md"): (
+        "飞书冲突本身不触发 `module-planning`",
+        "交付说明统一留到 PR 收口",
+        "本阶段不回写飞书或 Issue",
+    ),
+    Path(".ai/skills/branch-pr-workflow/SKILL.md"): (
+        "默认同时授权发布上述一条交付评论",
+        "该授权不包含修改 Issue 正文、状态、负责人、标签或其他字段",
+        "同一 PR 默认只发布一条交付评论",
+        "后续代码变化优先更新 PR 正文",
+        "issue_delivery_comment.template.md",
+    ),
+    Path(".ai/skills/branch-pr-workflow/pull_request.template.md"): (
+        "## 来源差异与取舍",
+        "无须强一致",
+    ),
+    Path(".ai/skills/branch-pr-workflow/issue_delivery_comment.template.md"): (
+        "交付 PR：<PR 链接>",
+        "实际交付：",
+        "重要差异：",
+        "验证摘要：",
+        "未完成与后续：",
+    ),
+    Path(".specs/README.md"): (
+        "飞书只提供方案形成前的初步设计",
+        "不反向同步飞书或 Issue 正文",
+        "普通文件组织、命名、测试落点",
+        "PR 创建后只追加一条交付评论",
+    ),
+}
+DELIVERY_FLOW_FORBIDDEN_MARKERS = {
+    Path(".ai/skills/README.md"): (
+        "其结论优先于本地推断",
+        "也不向任何 Issue 系统写回评论",
+    ),
+    Path(".ai/skills/solution-generator/SKILL.md"): (
+        "其已确认结论优先于本地推断",
+        "停止并交 `module-planning` 更新上游",
+    ),
+    Path(".ai/skills/implementation-execution/SKILL.md"): (
+        "先更新并读回飞书",
+        "已有飞书结论需要更新时才进入",
+    ),
+}
 REDUCTION_CONTRACTS = {
     Path("module-planning/SKILL.md"): (
         "没有 Issue 不阻塞模块规划",
@@ -446,6 +511,46 @@ def validate_contract_guard_routing() -> list[str]:
     ]
 
 
+def validate_delivery_flow_contract() -> list[str]:
+    full_repository = all(
+        (REPO_ROOT / relative_path).is_file()
+        for relative_path in (
+            Path("package.json"),
+            Path(".ai/prompts/project.md"),
+            Path(".specs/README.md"),
+        )
+    )
+    if not full_repository:
+        return []
+
+    errors: list[str] = []
+    for relative_path, markers in DELIVERY_FLOW_REQUIRED_MARKERS.items():
+        path = REPO_ROOT / relative_path
+        if not path.is_file():
+            errors.append(f"单向交付: 缺少正式文件 {relative_path}")
+            continue
+        text = path.read_text(encoding="utf-8")
+        missing = [marker for marker in markers if marker not in text]
+        if missing:
+            errors.append(
+                f"{relative_path}: 单向交付契约缺少必要内容 "
+                + ", ".join(repr(marker) for marker in missing)
+            )
+
+    for relative_path, markers in DELIVERY_FLOW_FORBIDDEN_MARKERS.items():
+        path = REPO_ROOT / relative_path
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        stale = [marker for marker in markers if marker in text]
+        if stale:
+            errors.append(
+                f"{relative_path}: 仍含旧的并行来源或禁止收尾规则 "
+                + ", ".join(repr(marker) for marker in stale)
+            )
+    return errors
+
+
 def validate_reduction_contracts() -> list[str]:
     errors: list[str] = []
     for relative_path, markers in REDUCTION_CONTRACTS.items():
@@ -574,6 +679,7 @@ def main() -> int:
     errors.extend(validate_flow_router_contract())
     errors.extend(validate_implementation_execution_contract())
     errors.extend(validate_contract_guard_routing())
+    errors.extend(validate_delivery_flow_contract())
     errors.extend(validate_reduction_contracts())
     errors.extend(validate_stateless_spec_contract())
     if errors:

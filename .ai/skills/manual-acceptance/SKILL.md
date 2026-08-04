@@ -32,7 +32,7 @@ description: 为 LinkCV 任务生成、修订和记录人工端到端验收清�
 .specs/<KEY>/manual_acceptance.md
 ```
 
-生成时读取 [manual_acceptance.template.md](manual_acceptance.template.md)，替换全部占位内容。该文件是任务级执行记录，不放入 `docs/`；`.specs/<KEY>/` 默认不提交，因此 PR 中只摘要结论和失败项。来源 Issue 存在时是有效输入，但不是开工门槛或验收结果存储位置；不要向任何 Issue 系统自动写回验收结果。
+生成时读取 [manual_acceptance.template.md](manual_acceptance.template.md)，替换全部占位内容。该文件是任务级执行记录，不放入 `docs/`；`.specs/<KEY>/` 默认不提交，因此 PR 中只摘要结论和失败项。来源 Issue 存在时是有效输入，但不是开工门槛或验收结果存储位置；本技能不直接写回逐项验收结果，最终只由 `branch-pr-workflow` 在 PR 和一条 Issue 交付评论中摘要。
 
 直接实现不创建 `.specs` 或 `manual_acceptance.md`。若局部 UI、浏览器行为或视觉结果确实需要人工确认，在对话中生成最小清单，记录实际环境、步骤、结果和证据，并把摘要交给实施交接和后续 PR，不为此单独创建 Spec 或实施报告。只有方案先行任务命中已允许的实际方案偏差、已接受限制或必须交接的遗留风险或下一步事项时，`implementation_report.md` 才可作为增量补充，也不复制整份人工验收记录。未执行时只能写“未执行”，不能因为直接实现没有阶段命令而省略风险。
 

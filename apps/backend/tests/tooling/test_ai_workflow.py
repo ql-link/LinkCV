@@ -164,6 +164,8 @@ def test_skill_check_protects_stateless_spec_contract(tmp_path: Path) -> None:
     )
     for skill_name in (
         "solution-generator",
+        "implementation-execution",
+        "branch-pr-workflow",
         "run-all-tests",
         "code-review-and-quality",
     ):
@@ -171,7 +173,10 @@ def test_skill_check_protects_stateless_spec_contract(tmp_path: Path) -> None:
             REPO_ROOT / ".ai" / "skills" / skill_name,
             base_root / ".ai" / "skills" / skill_name,
         )
-    shutil.copy2(REPO_ROOT / ".specs" / "README.md", base_root / ".specs" / "README.md")
+    shutil.copy2(
+        REPO_ROOT / ".specs" / "README.md",
+        base_root / ".specs" / "README.md",
+    )
     shutil.copy2(REPO_ROOT / "package.json", base_root / "package.json")
     shutil.copy2(REPO_ROOT / ".worktreeinclude", base_root / ".worktreeinclude")
     shutil.copy2(REPO_ROOT / ".gitignore", base_root / ".gitignore")
@@ -650,8 +655,7 @@ def test_skill_check_protects_flow_router_downstream_contract(tmp_path: Path) ->
         ),
         (
             "contract-guard",
-            "其他单需求分歧返回 `flow-router` 重新判断，"
-            "已经明确属于方案先行时直接交 `solution-generator` 定稿",
+            "已经明确属于方案先行的单需求分歧直接交 `solution-generator` 修订当前方案",
             "七维分流下游契约缺少必要内容",
         ),
     )
@@ -682,6 +686,138 @@ def test_skill_check_protects_flow_router_downstream_contract(tmp_path: Path) ->
         assert result.returncode == 1
         assert expected_error in result.stderr
         assert marker in result.stderr
+
+
+def test_skill_check_protects_source_authority_and_one_way_delivery(
+    tmp_path: Path,
+) -> None:
+    cases = (
+        (
+            Path(".ai/skills/README.md"),
+            "飞书文档只作为方案形成前的初步设计输入",
+        ),
+        (
+            Path(".ai/skills/solution-generator/SKILL.md"),
+            "把已确认的取舍和被替代的来源结论写入当前 `solution.md`",
+        ),
+        (
+            Path(".ai/skills/implementation-execution/SKILL.md"),
+            "飞书冲突本身不触发 `module-planning`",
+        ),
+        (
+            Path(".specs/README.md"),
+            "飞书只提供方案形成前的初步设计",
+        ),
+        (
+            Path(".ai/prompts/project.md"),
+            "需求和交付信息按单向链路流转",
+        ),
+        (
+            Path(".ai/skills/README.md"),
+            "| 跟踪收尾层 | 来源 Issue 的交付评论 |",
+        ),
+        (
+            Path(".ai/skills/branch-pr-workflow/SKILL.md"),
+            "同一 PR 默认只发布一条交付评论",
+        ),
+        (
+            Path(".ai/skills/branch-pr-workflow/pull_request.template.md"),
+            "## 来源差异与取舍",
+        ),
+        (
+            Path(".ai/skills/branch-pr-workflow/issue_delivery_comment.template.md"),
+            "重要差异：",
+        ),
+        (
+            Path(".specs/README.md"),
+            "PR 创建后只追加一条交付评论",
+        ),
+    )
+    base_root = tmp_path / "base"
+    (base_root / ".ai" / "prompts").mkdir(parents=True)
+    (base_root / ".ai" / "skills").mkdir(parents=True)
+    (base_root / ".specs").mkdir(parents=True)
+    shutil.copy2(
+        REPO_ROOT / ".ai" / "prompts" / "project.md",
+        base_root / ".ai" / "prompts" / "project.md",
+    )
+    shutil.copy2(
+        REPO_ROOT / ".ai" / "skills" / "README.md",
+        base_root / ".ai" / "skills" / "README.md",
+    )
+    for skill_name in (
+        "solution-generator",
+        "implementation-execution",
+        "branch-pr-workflow",
+        "run-all-tests",
+        "code-review-and-quality",
+    ):
+        shutil.copytree(
+            REPO_ROOT / ".ai" / "skills" / skill_name,
+            base_root / ".ai" / "skills" / skill_name,
+        )
+    shutil.copy2(
+        REPO_ROOT / ".specs" / "README.md",
+        base_root / ".specs" / "README.md",
+    )
+    shutil.copy2(REPO_ROOT / "package.json", base_root / "package.json")
+    shutil.copy2(REPO_ROOT / ".worktreeinclude", base_root / ".worktreeinclude")
+    shutil.copy2(REPO_ROOT / ".gitignore", base_root / ".gitignore")
+
+    baseline = run_script(SKILL_CHECK, env={"LINKCV_REPO_ROOT": str(base_root)})
+    assert baseline.returncode == 0, baseline.stderr
+
+    for index, (relative_path, marker) in enumerate(cases):
+        case_root = tmp_path / f"required-{index}"
+        shutil.copytree(base_root, case_root)
+        target = case_root / relative_path
+        target.write_text(
+            target.read_text(encoding="utf-8").replace(marker, "来源优先级规则已删除"),
+            encoding="utf-8",
+        )
+
+        result = run_script(SKILL_CHECK, env={"LINKCV_REPO_ROOT": str(case_root)})
+
+        assert result.returncode == 1
+        assert "单向交付契约缺少必要内容" in result.stderr
+        assert marker in result.stderr
+
+    legacy_root = tmp_path / "legacy-feishu-priority"
+    shutil.copytree(base_root, legacy_root)
+    legacy_solution = (
+        legacy_root / ".ai" / "skills" / "solution-generator" / "SKILL.md"
+    )
+    legacy_solution.write_text(
+        legacy_solution.read_text(encoding="utf-8")
+        + "\n其已确认结论优先于本地推断。\n",
+        encoding="utf-8",
+    )
+
+    legacy_result = run_script(
+        SKILL_CHECK,
+        env={"LINKCV_REPO_ROOT": str(legacy_root)},
+    )
+
+    assert legacy_result.returncode == 1
+    assert "仍含旧的并行来源或禁止收尾规则" in legacy_result.stderr
+    assert "其已确认结论优先于本地推断" in legacy_result.stderr
+
+    old_rule_root = tmp_path / "legacy-no-issue-closeout"
+    shutil.copytree(base_root, old_rule_root)
+    old_readme = old_rule_root / ".ai" / "skills" / "README.md"
+    old_readme.write_text(
+        old_readme.read_text(encoding="utf-8")
+        + "\n也不向任何 Issue 系统写回评论。\n",
+        encoding="utf-8",
+    )
+
+    old_rule_result = run_script(
+        SKILL_CHECK,
+        env={"LINKCV_REPO_ROOT": str(old_rule_root)},
+    )
+
+    assert old_rule_result.returncode == 1
+    assert "仍含旧的并行来源或禁止收尾规则" in old_rule_result.stderr
 
 
 def test_skill_check_rejects_legacy_flow_router_rule(tmp_path: Path) -> None:
