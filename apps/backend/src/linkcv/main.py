@@ -17,18 +17,17 @@ from linkcv.core.database import Base, build_engine, build_session_factory
 from linkcv.core.errors import ApiError, install_error_handlers
 from linkcv.core.redis import build_redis_client
 from linkcv.core.storage import AssetStorage
-from linkcv.integrations.llm_client import (
-    HttpStructuredLlmClient,
-    UnconfiguredStructuringClient,
-)
-from linkcv.integrations.rag_client import HttpRagClient, UnconfiguredRagClient
+from linkcv.integrations.document_converter import DocumentConverter
+from linkcv.integrations.docx_parse_runner import DocxParseRunner
+from linkcv.integrations.linkparse_client import LinkParseClient
+from linkcv.integrations.resume_structuring import LLMResumeStructuringClient
 from linkcv.modules.llm.crypto import CredentialCipher
 from linkcv.modules.llm.gateway import LLMGateway, LiteLLMGateway
 from linkcv.modules.llm.catalog import CHAT_CAPABILITY
 from linkcv.modules.llm.models import LLMCapabilityBinding
 from linkcv.modules.llm.service import LLMService
 from linkcv.services.import_admission import ImportAdmissionController
-from linkcv.services.storage_cleanup_service import run_storage_cleanup_worker
+from linkcv.services.resume_import_idempotency import ResumeImportIdempotency
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +57,7 @@ def create_app(
     storage: Any | None = None,
     llm_gateway: LLMGateway | None = None,
     redis: Any | None = None,
-    rag_converter: Any | None = None,
+    document_converter: Any | None = None,
     structuring_client: Any | None = None,
     create_schema: bool = False,
 ) -> FastAPI:
@@ -92,32 +91,42 @@ def create_app(
     )
     if redis is None:
         redis = build_redis_client(runtime_settings)
-    runtime_rag_converter = rag_converter
-    if runtime_rag_converter is None:
-        runtime_rag_converter = (
-            HttpRagClient(
-                base_url=runtime_settings.rag_base_url,
-                api_key=runtime_settings.rag_api_key,
-                convert_path=runtime_settings.rag_convert_path,
-                timeout_seconds=runtime_settings.rag_timeout_seconds,
-            )
-            if runtime_settings.rag_base_url
-            else UnconfiguredRagClient()
+    runtime_document_converter = document_converter
+    if runtime_document_converter is None:
+        linkparse_key = (
+            runtime_settings.linkparse_api_key.get_secret_value()
+            if runtime_settings.linkparse_api_key is not None
+            else None
+        )
+        runtime_document_converter = DocumentConverter(
+            linkparse=LinkParseClient(
+                base_url=runtime_settings.linkparse_base_url,
+                api_key=linkparse_key,
+                parse_path=runtime_settings.linkparse_parse_path,
+                timeout_seconds=runtime_settings.linkparse_timeout_seconds,
+                response_max_bytes=runtime_settings.linkparse_response_max_bytes,
+                markdown_max_bytes=runtime_settings.resume_markdown_max_bytes,
+            ),
+            docx_runner=DocxParseRunner(
+                timeout_seconds=runtime_settings.docx_conversion_timeout_seconds
+            ),
+            markdown_max_bytes=runtime_settings.resume_markdown_max_bytes,
         )
     runtime_structuring_client = structuring_client
     if runtime_structuring_client is None:
-        runtime_structuring_client = (
-            HttpStructuredLlmClient(
-                base_url=runtime_settings.llm_base_url,
-                api_key=runtime_settings.llm_api_key,
-                model=runtime_settings.llm_model,
-                structured_path=runtime_settings.llm_structured_path,
-                timeout_seconds=runtime_settings.llm_timeout_seconds,
-                max_retries=runtime_settings.llm_max_retries,
-            )
-            if runtime_settings.llm_base_url and runtime_settings.llm_model
-            else UnconfiguredStructuringClient()
-        )
+        runtime_structuring_client = LLMResumeStructuringClient(llm_service)
+    import_idempotency = ResumeImportIdempotency(
+        redis,
+        processing_ttl_seconds=(
+            runtime_settings.resume_import_idempotency_processing_ttl_seconds
+        ),
+        success_ttl_seconds=(
+            runtime_settings.resume_import_idempotency_success_ttl_seconds
+        ),
+        failure_ttl_seconds=(
+            runtime_settings.resume_import_idempotency_failure_ttl_seconds
+        ),
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -131,17 +140,9 @@ def create_app(
             await asyncio.to_thread(redis.ping)
         except Exception:
             logger.warning("Redis is unavailable; auth sessions will fail", exc_info=True)
-        cleanup_task = asyncio.create_task(
-            run_storage_cleanup_worker(session_factory, runtime_storage)
-        )
         try:
             yield
         finally:
-            cleanup_task.cancel()
-            try:
-                await cleanup_task
-            except asyncio.CancelledError:
-                pass
             try:
                 await asyncio.to_thread(redis.close)
             except Exception:
@@ -159,8 +160,9 @@ def create_app(
     app.state.storage = runtime_storage
     app.state.llm_service = llm_service
     app.state.redis = redis
-    app.state.rag_converter = runtime_rag_converter
+    app.state.document_converter = runtime_document_converter
     app.state.structuring_client = runtime_structuring_client
+    app.state.import_idempotency = import_idempotency
     app.state.import_admission = ImportAdmissionController(
         requests_per_minute=runtime_settings.resume_import_requests_per_minute,
         global_concurrency=runtime_settings.resume_import_global_concurrency,

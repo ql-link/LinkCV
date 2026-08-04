@@ -3,6 +3,8 @@ from typing import Literal
 from markdown_it import MarkdownIt
 from pydantic import BaseModel, ConfigDict, Field
 
+from linkcv.domain.import_warnings import ImportWarning
+
 SECTION_ALIASES = {
     "work": {"工作经历", "工作经验", "职业经历", "任职经历", "实习经历", "experience"},
     "education": {"教育经历", "教育背景", "学历", "education"},
@@ -61,7 +63,11 @@ def build_section_ir(markdown: str) -> SectionIR:
     tokens = MarkdownIt("commonmark", {"html": False}).parse(markdown)
     headings: list[tuple[int, str]] = []
     for index, token in enumerate(tokens):
-        if token.type != "heading_open" or token.tag != "h2" or token.map is None:
+        if (
+            token.type != "heading_open"
+            or token.tag not in {"h1", "h2", "h3"}
+            or token.map is None
+        ):
             continue
         inline = tokens[index + 1] if index + 1 < len(tokens) else None
         heading = inline.content.strip() if inline and inline.type == "inline" else ""
@@ -69,7 +75,9 @@ def build_section_ir(markdown: str) -> SectionIR:
 
     if not headings:
         if not markdown.strip():
-            return SectionIR(warnings=["empty_markdown"])
+            return SectionIR(
+                warnings=[ImportWarning.DOCUMENT_HEADING_STRUCTURE_MISSING.value]
+            )
         return SectionIR(
             sections=[
                 _fragment(
@@ -80,7 +88,7 @@ def build_section_ir(markdown: str) -> SectionIR:
                     heading=None,
                 )
             ],
-            warnings=["no_level_two_headings"],
+            warnings=[ImportWarning.DOCUMENT_HEADING_STRUCTURE_MISSING.value],
         )
 
     preamble = None

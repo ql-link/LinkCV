@@ -37,6 +37,7 @@ beforeEach(() => {
     versions: [],
     versionsLoading: false,
     versionOperationPending: false,
+    importWarningsByResumeId: {},
     activeResumeId: "1",
     lockVersion: 1,
     data: defaultSemanticDocument,
@@ -157,21 +158,51 @@ describe("resume import", () => {
       source_filename: "resume.md",
     };
     const file = new File(["# 导入的简历"], "resume.md", { type: "text/markdown" });
-    vi.spyOn(api, "importResume").mockResolvedValue({ resume: importedResume, import: { warnings: [] } });
+    vi.spyOn(api, "importResume").mockResolvedValue({
+      resume: importedResume,
+      import: {
+        source_file_name: "resume.md",
+        source_file_format: "md",
+        warnings: ["document_heading_structure_missing"],
+      },
+    });
 
-    await useResumeStore.getState().importResume(file);
+    const importedResumeId = await useResumeStore.getState().importResume(file);
 
-    expect(api.importResume).toHaveBeenCalledWith(file, undefined);
+    expect(api.importResume).toHaveBeenCalledWith(
+      file,
+      undefined,
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
+    );
+    expect(importedResumeId).toBe("3");
     expect(useResumeStore.getState()).toMatchObject({
       activeResumeId: "3",
       title: "导入的简历",
       markdown: "# 导入的简历",
       versions: [],
       dirty: false,
+      importWarningsByResumeId: {
+        "3": ["document_heading_structure_missing"],
+      },
     });
     expect(useResumeStore.getState().resumes).toEqual([
       expect.objectContaining({ id: "3", source_type: "import" }),
     ]);
+  });
+
+  it("导入提示按简历隔离并可关闭", () => {
+    useResumeStore.setState({
+      importWarningsByResumeId: {
+        "1": ["pdf_low_text_quality"],
+        "2": ["pdf_ocr_applied"],
+      },
+    });
+
+    useResumeStore.getState().dismissImportWarnings("1");
+
+    expect(useResumeStore.getState().importWarningsByResumeId).toEqual({
+      "2": ["pdf_ocr_applied"],
+    });
   });
 
   it("导入失败时保留原有列表和当前简历", async () => {

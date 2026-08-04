@@ -111,6 +111,33 @@ describe("API session refresh", () => {
     );
     expect(refreshCalls).toHaveLength(1);
   });
+
+  it("导入请求刷新会话后保留同一个幂等键", async () => {
+    const imported = { resume: { id: "8" }, import: { warnings: [] } };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(401, { error: "UNAUTHORIZED" }))
+      .mockResolvedValueOnce(
+        jsonResponse(200, { user: { id: "1", email: "zhangsan@example.test" } }),
+      )
+      .mockResolvedValueOnce(jsonResponse(201, imported));
+    vi.stubGlobal("fetch", fetchMock);
+    const file = new File(["# 张三"], "resume.md", { type: "text/markdown" });
+    const key = "8d42a61f-2396-4dbc-a63d-a1770e398f61";
+
+    await api.importResume(file, undefined, key);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/resumes/import",
+      expect.objectContaining({ headers: { "Idempotency-Key": key } }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/resumes/import",
+      expect.objectContaining({ headers: { "Idempotency-Key": key } }),
+    );
+  });
 });
 
 describe("JD API client", () => {
