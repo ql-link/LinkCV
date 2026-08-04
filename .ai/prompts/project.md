@@ -2,8 +2,6 @@
 
 LinkCV 是 React/TypeScript + FastAPI 前后端分离 Monorepo。本文只保存所有任务都需要的入口、命令和底线；具体模块事实从 `docs/README.md` 查找，交付流程见 `.ai/skills/README.md`，本地 Spec 规则见 `.specs/README.md`。`AGENTS.md` 与 `CLAUDE.md` 都链接到本文件，只修改这一份源文件。
 
-> 临时改造分支提示：`refactor/local-ai-workflow-redesign` 的施工记录在 `plans/ai-workflow-redesign/README.md`；改造收尾时删除该目录和本提示。
-
 ## 1. 通用原则
 
 - 默认使用中文沟通、总结和撰写 PR 说明；代码、命令和技术标识保留原文。
