@@ -9,8 +9,7 @@ afterEach(() => {
 
 describe("WorkspaceSidebar", () => {
   it("使用统一导航切换简历、模板和 JD，并标记当前模块", () => {
-    const onLogout = vi.fn();
-    render(<WorkspaceSidebar active="jobs" email="user@example.test" onLogout={onLogout} />);
+    render(<WorkspaceSidebar active="jobs" email="user@example.test" />);
 
     expect(screen.getByRole("navigation", { name: "工作区导航" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "JD 中心" })).toHaveAttribute("aria-current", "page");
@@ -22,14 +21,12 @@ describe("WorkspaceSidebar", () => {
     expect(`${window.location.pathname}${window.location.search}`).toBe("/resumes");
   });
 
-  it("账号按钮进入个人资料，退出登录按钮触发登出", () => {
-    const onLogout = vi.fn();
+  it("账号按钮直接进入个人资料", () => {
     render(
       <WorkspaceSidebar
         active="account"
         email="user@example.test"
         nickname="测试用户"
-        onLogout={onLogout}
       />,
     );
 
@@ -38,8 +35,5 @@ describe("WorkspaceSidebar", () => {
 
     fireEvent.click(accountButton);
     expect(`${window.location.pathname}${window.location.search}`).toBe("/account");
-
-    fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
-    expect(onLogout).toHaveBeenCalledOnce();
   });
 });

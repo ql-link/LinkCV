@@ -5,7 +5,6 @@ from linkcv.core.config import Settings
 from linkcv.core.security import hash_password
 from linkcv.main import create_app
 from linkcv.modules.identity.models import User
-from linkcv.modules.identity.operation_log import AdminOperationLog
 from tests.fakes import FakeRedis
 
 
@@ -121,8 +120,3 @@ def test_admin_can_disable_user_revoke_sessions_and_write_audit_log() -> None:
             target_user = db.get(User, int(target["id"]))
             assert target_user is not None
             assert target_user.status == 0
-            audit_log = db.scalar(select(AdminOperationLog))
-            assert audit_log is not None
-            assert audit_log.actor_user_id == int(admin["id"])
-            assert audit_log.target_user_id == int(target["id"])
-            assert audit_log.action == "disable"

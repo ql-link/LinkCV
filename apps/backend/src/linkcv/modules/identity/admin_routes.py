@@ -21,7 +21,6 @@ from linkcv.modules.identity.admin_schemas import (
 )
 from linkcv.modules.identity.dependencies import get_current_admin
 from linkcv.modules.identity.models import User
-from linkcv.modules.identity.operation_log import AdminOperationLog
 from linkcv.modules.resumes.models import Resume
 
 router = APIRouter(prefix="/auth/admin", tags=["admin"])
@@ -182,13 +181,6 @@ def update_user_status(
     if new_status == 0:
         revoked = revoke_user_sessions(redis_client, target.id)
 
-    # Write operation log
-    log = AdminOperationLog(
-        actor_user_id=admin.id,
-        target_user_id=target.id,
-        action=body.action,
-    )
-    db.add(log)
     db.commit()
 
     return AdminStatusUpdateResponse(

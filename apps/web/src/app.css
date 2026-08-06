@@ -1753,36 +1753,32 @@ select:focus-visible,
   font-weight: 600;
 }
 
+.dashboard-account .account-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .dashboard-account .account-name {
   overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.dashboard-logout {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
-  place-items: center;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
+.dashboard-account .account-email {
+  overflow: hidden;
   color: var(--muted);
-  cursor: pointer;
-  transition:
-    transform 100ms var(--ease-press),
-    color var(--duration-fast) ease,
-    background var(--duration-fast) ease;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.dashboard-logout:hover {
-  background: var(--error-bg);
-  color: var(--error);
-}
-
-.dashboard-logout:active {
-  transform: scale(0.94);
+.dashboard-account-area .dashboard-account.is-active .account-email {
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .account-page {
@@ -1995,6 +1991,23 @@ select:focus-visible,
 .account-security-link small {
   color: var(--muted);
   font-size: 12px;
+}
+
+.account-logout-link {
+  color: var(--error);
+}
+
+.account-logout-link > svg {
+  color: var(--error);
+}
+
+.account-logout-link:hover {
+  background: var(--error-bg);
+}
+
+.account-logout-link[disabled] {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .account-state {

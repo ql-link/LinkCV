@@ -1,9 +1,4 @@
--- Up migration for 0011: drop legacy resume backups
--- The legacy JSON values are intentionally discarded and cannot be reconstructed.
-ALTER TABLE resume_versions
-  DROP COLUMN legacy_style_json_backup,
-  DROP COLUMN legacy_data_json_backup;
+-- 0011 升级迁移：删除管理员操作审计日志表。
+-- 该表仅写入不读取，管理端无查询入口，移除后可简化 schema 并避免禁用/启用用户提交时的无谓写路径。
 
-ALTER TABLE resumes
-  DROP COLUMN legacy_style_json_backup,
-  DROP COLUMN legacy_data_json_backup;
+DROP TABLE IF EXISTS admin_operation_logs;
