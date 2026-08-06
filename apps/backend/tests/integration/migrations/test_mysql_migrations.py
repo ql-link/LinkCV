@@ -14,7 +14,7 @@ from sqlalchemy.engine import make_url
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0011"
+EXPECTED_HEAD = "0012"
 
 
 def migration_test_url() -> str:
@@ -103,8 +103,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "title",
         "data_json",
         "style_json",
-        "legacy_data_json_backup",
-        "legacy_style_json_backup",
         "lock_version",
         "source_type",
         "source_filename",
@@ -119,8 +117,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "version_no",
         "data_json",
         "style_json",
-        "legacy_data_json_backup",
-        "legacy_style_json_backup",
         "reason",
         "created_at",
     }
@@ -140,6 +136,20 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "last_attempt_at",
         "created_at",
         "updated_at",
+    }
+    assert {
+        "legacy_data_json_backup",
+        "legacy_style_json_backup",
+    } <= {
+        column["name"]
+        for column in downgraded_inspector.get_columns("resumes")
+    }
+    assert {
+        "legacy_data_json_backup",
+        "legacy_style_json_backup",
+    } <= {
+        column["name"]
+        for column in downgraded_inspector.get_columns("resume_versions")
     }
     assert "admin_operation_logs" in downgraded_inspector.get_table_names()
 
@@ -310,8 +320,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "title",
         "data_json",
         "style_json",
-        "legacy_data_json_backup",
-        "legacy_style_json_backup",
         "lock_version",
         "source_type",
         "source_filename",
@@ -328,8 +336,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "version_no",
         "data_json",
         "style_json",
-        "legacy_data_json_backup",
-        "legacy_style_json_backup",
         "reason",
         "created_at",
     }
@@ -1116,7 +1122,17 @@ def test_mysql_migrates_and_restores_legacy_resume_snapshots() -> None:
             },
         )
 
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", "0010")
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0010"
+        assert connection.scalar(
+            text(
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(legacy_data_json_backup, "
+                "'$.schema_version')) FROM resumes WHERE id = :resume_id"
+            ),
+            {"resume_id": resume_id},
+        ) == "1"
+
     with engine.connect() as connection:
         row = connection.execute(
             text(
@@ -1162,7 +1178,31 @@ def test_mysql_migrates_and_restores_legacy_resume_snapshots() -> None:
             {"resume_id": resume_id},
         ) == "1"
 
+    run_alembic(database_url, "upgrade", "0010")
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0010"
+        assert connection.scalar(
+            text(
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(legacy_data_json_backup, "
+                "'$.schema_version')) FROM resumes WHERE id = :resume_id"
+            ),
+            {"resume_id": resume_id},
+        ) == "1"
+
     run_alembic(database_url, "upgrade", "head")
+    head_inspector = inspect(engine)
+    assert "legacy_data_json_backup" not in {
+        column["name"] for column in head_inspector.get_columns("resumes")
+    }
+    assert "legacy_style_json_backup" not in {
+        column["name"] for column in head_inspector.get_columns("resumes")
+    }
+    assert "legacy_data_json_backup" not in {
+        column["name"] for column in head_inspector.get_columns("resume_versions")
+    }
+    assert "legacy_style_json_backup" not in {
+        column["name"] for column in head_inspector.get_columns("resume_versions")
+    }
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == EXPECTED_HEAD
         assert connection.scalar(
