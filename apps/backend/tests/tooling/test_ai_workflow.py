@@ -389,6 +389,15 @@ def test_skill_check_rejects_solution_template_without_required_capability(tmp_p
         "### 1. 需求描述",
         "### 5. 状态机",
         "### 7. 数据模型",
+        "使用正常文本按数据对象说明变更层级",
+        "#### 7.2 数据结构变更",
+        "结构定义片段只供开发评审，不是可直接执行的 DDL",
+        "字段代码块只写字段",
+        "约束变更：",
+        "索引变更：",
+        "#### 7.3 存量数据、兼容与迁移",
+        "全部未命中时删除整节",
+        "使用正常文本描述存量数据的处理范围",
         "#### 9.3 代码实施计划",
         "### 14. 验证与验收",
     )
@@ -428,6 +437,11 @@ def test_skill_check_rejects_solution_skill_without_on_demand_contract(tmp_path:
         "未命中的章节整章删除",
         "必须保留状态机",
         "必须保留数据模型",
+        "第 7 章固定按实际内容连续编号",
+        "新增表和已有表的字段变化都使用 SQL 风格的结构定义片段",
+        "不得混入“字段定义”或“新增字段”",
+        "才保留“存量数据、兼容与迁移”",
+        "存量数据处理使用正常文本描述",
         "没有 Issue 不阻止创建方案，也不算例外",
         "没有真实待决选择的短方案，整份展示一次并确认一次",
         "确认方案时直接复用该选择",
@@ -462,6 +476,34 @@ def test_skill_check_rejects_solution_skill_without_on_demand_contract(tmp_path:
         assert result.returncode == 1
         assert "方案生成规则缺少按需施工契约" in result.stderr
         assert marker in result.stderr
+
+
+def test_skill_check_rejects_deprecated_solution_ddl_contract(tmp_path: Path) -> None:
+    (tmp_path / ".ai" / "prompts").mkdir(parents=True)
+    (tmp_path / ".ai" / "prompts" / "project.md").write_text(
+        "rules", encoding="utf-8"
+    )
+    skills_root = tmp_path / ".ai" / "skills"
+    skills_root.mkdir(parents=True)
+    (skills_root / "README.md").write_text("skills", encoding="utf-8")
+    source_skill = REPO_ROOT / ".ai" / "skills" / "solution-generator"
+    target_skill = skills_root / "solution-generator"
+    shutil.copytree(source_skill, target_skill)
+    template_file = target_skill / "solution.template.md"
+    template_file.write_text(
+        template_file.read_text(encoding="utf-8")
+        + "\n#### 7.4 定稿 DDL\n\n```sql\nALTER TABLE example;\n```\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        SKILL_CHECK,
+        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result.returncode == 1
+    assert "方案模板仍包含旧的可执行 DDL 展示契约" in result.stderr
+    assert "#### 7.4 定稿 DDL" in result.stderr
 
 
 def test_skill_check_rejects_fixed_solution_section_in_downstream_skill(

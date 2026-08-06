@@ -56,8 +56,15 @@ SOLUTION_TEMPLATE_REQUIRED_MARKERS = (
     "## 第二部分 · 方案",
     "### 6. 整体架构",
     "### 7. 数据模型",
-    "| 字段 | 类型 | 可空 | 默认值 | 业务含义 | 变更 | 约束、索引或枚举 |",
-    "#### 7.4 定稿 DDL",
+    "使用正常文本按数据对象说明变更层级",
+    "#### 7.2 数据结构变更",
+    "结构定义片段只供开发评审，不是可直接执行的 DDL",
+    "字段代码块只写字段",
+    "约束变更：",
+    "索引变更：",
+    "#### 7.3 存量数据、兼容与迁移",
+    "全部未命中时删除整节",
+    "使用正常文本描述存量数据的处理范围",
     "### 8. 接口契约",
     "**HTTP 方法与路径**",
     "### 9. 文件结构与实现方案",
@@ -80,13 +87,23 @@ SOLUTION_SKILL_REQUIRED_MARKERS = (
     "主要流程图",
     "可观察结果 → 业务规则 → 真实文件与编号步骤 → 验证证据",
     "每行给出一个真实文件路径",
-    "完整写实体关系、字段级变更、主键、唯一约束、索引、外键、枚举、定稿 DDL",
+    "第 7 章固定按实际内容连续编号",
+    "新增表和已有表的字段变化都使用 SQL 风格的结构定义片段",
+    "不得混入“字段定义”或“新增字段”",
+    "才保留“存量数据、兼容与迁移”",
+    "存量数据处理使用正常文本描述",
     "HTTP 契约必须同时写方法和路径",
     "直接施工路径把本节作为唯一验证契约",
     "不依赖固定章节编号",
     "没有 Issue 不阻止创建方案，也不算例外",
     "没有真实待决选择的短方案，整份展示一次并确认一次",
     "确认方案时直接复用该选择",
+)
+SOLUTION_TEMPLATE_FORBIDDEN_MARKERS = (
+    "#### 7.4 定稿 DDL",
+    "#### 7.3 数据结构变更",
+    "| 字段 | 类型 | 可空 | 默认值 | 业务含义 | 变更 | 约束、索引或枚举 |",
+    "| 数据对象 | 变更层级 | 读取方 | 写入方 | 归属与权限 | 必须保持的不变量 |",
 )
 SOLUTION_FIXED_SECTION_RE = re.compile(
     r"(?:方案文档|`?solution\.md`?)(?:的)?(?:第 ?\d+ ?节| ?\d+\.\d+)"
@@ -449,6 +466,16 @@ def validate_solution_template() -> list[str]:
         errors.append(
             "solution-generator: 方案生成规则缺少按需施工契约 "
             + ", ".join(repr(marker) for marker in missing_skill)
+        )
+    stale_template = [
+        marker
+        for marker in SOLUTION_TEMPLATE_FORBIDDEN_MARKERS
+        if marker in template_text
+    ]
+    if stale_template:
+        errors.append(
+            "solution-generator: 方案模板仍包含旧的可执行 DDL 展示契约 "
+            + ", ".join(repr(marker) for marker in stale_template)
         )
     return errors
 
