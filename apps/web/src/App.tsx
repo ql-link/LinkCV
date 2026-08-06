@@ -5,6 +5,7 @@ import { ApiRequestError } from "./api/client";
 import { AccountPage } from "./features/account/AccountPage";
 import { ChangePasswordPage } from "./features/account/ChangePasswordPage";
 import { AdminApp } from "./features/admin/AdminApp";
+import { AdminLoginPage } from "./features/admin/AdminLoginPage";
 import { AuthPage } from "./features/auth/AuthPage";
 import { HomePage } from "./features/home/HomePage";
 import { JobCenterPage } from "./features/jobs/JobCenterPage";
@@ -18,6 +19,7 @@ import { useResumeStore } from "./store/resumeStore";
 export function App() {
   const route = useAppRoute();
   const routeResumeId = route.kind === "editor" ? route.resumeId : null;
+  const isAdminArea = route.kind === "admin" || route.kind === "adminLogin";
   const [routeError, setRouteError] = useState<{ resumeId: string; message: string } | null>(null);
   const authStatus = useResumeStore((state) => state.authStatus);
   const activeResumeId = useResumeStore((state) => state.activeResumeId);
@@ -29,12 +31,12 @@ export function App() {
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
 
   useEffect(() => {
-    if (route.kind === "admin") return;
+    if (isAdminArea) return;
     void hydrate();
-  }, [hydrate, route.kind]);
+  }, [hydrate, isAdminArea]);
 
   useEffect(() => {
-    if (route.kind === "admin") return;
+    if (isAdminArea) return;
     if (!dirty || !activeResumeId) return;
 
     const timer = window.setTimeout(() => {
@@ -42,10 +44,10 @@ export function App() {
     }, 1200);
 
     return () => window.clearTimeout(timer);
-  }, [activeResumeId, dirty, editVersion, route.kind, saveCurrentResume]);
+  }, [activeResumeId, dirty, editVersion, isAdminArea, saveCurrentResume]);
 
   useEffect(() => {
-    if (route.kind === "admin") return;
+    if (isAdminArea) return;
     if (authStatus === "checking") return;
 
     if (authStatus === "guest") {
@@ -123,6 +125,10 @@ export function App() {
 
   if (route.kind === "admin") {
     return <AdminApp />;
+  }
+
+  if (route.kind === "adminLogin") {
+    return <AdminLoginPage key={route.next ?? ""} next={route.next} />;
   }
 
   if (authStatus === "checking") {

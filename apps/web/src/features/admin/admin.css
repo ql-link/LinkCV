@@ -427,31 +427,6 @@
   font-size: .82rem;
   color: var(--admin-muted);
 }
-.admin-forbidden-card {
-  display: grid;
-  place-items: center;
-  text-align: center;
-  gap: .6rem;
-  padding: 3rem;
-}
-.admin-forbidden-card svg {
-  color: var(--admin-ink);
-  opacity: .55;
-}
-.admin-forbidden-card h1 {
-  font-family: var(--display-font);
-  font-size: clamp(2rem, 5vw, 2.75rem);
-  font-weight: 520;
-  letter-spacing: -.03em;
-}
-.admin-forbidden-card p {
-  color: var(--admin-muted);
-  font-size: .88rem;
-}
-.admin-forbidden-card .admin-primary-button {
-  margin-top: 1rem;
-  text-decoration: none;
-}
 .admin-login-submit:disabled {
   opacity: .6;
   cursor: not-allowed;
