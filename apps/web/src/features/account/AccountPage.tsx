@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, ChevronRight, FileText, KeyRound, Trash2 } from "lucide-react";
+import { Camera, ChevronRight, FileText, KeyRound, LogOut, Trash2 } from "lucide-react";
 import { api, AccountProfile, ApiRequestError } from "../../api/client";
 import { Button, TextInput, Toast } from "../../components/ds";
 import { editorPath, navigateTo } from "../../routing";
@@ -23,12 +23,14 @@ export function accountErrorMessage(error: unknown, fallback: string) {
 
 export function AccountPage() {
   const syncProfile = useResumeStore((state) => state.syncProfile);
+  const logout = useResumeStore((state) => state.logout);
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [nickname, setNickname] = useState("");
   const [savingName, setSavingName] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -115,6 +117,19 @@ export function AccountPage() {
       setNotice({ kind: "success", message: "头像已删除。" });
     } catch (error) {
       setNotice({ kind: "error", message: accountErrorMessage(error, "头像删除失败，请稍后重试。") });
+    }
+  };
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    setNotice(null);
+    try {
+      await logout();
+      navigateTo("/", { replace: true });
+    } catch {
+      setNotice({ kind: "error", message: "退出登录失败，请稍后重试。" });
+      setLoggingOut(false);
     }
   };
 
@@ -228,6 +243,19 @@ export function AccountPage() {
               <span>
                 <strong>修改密码</strong>
                 <small>修改后所有设备需要重新登录</small>
+              </span>
+              <ChevronRight size={16} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="account-security-link account-logout-link"
+              disabled={loggingOut}
+              onClick={() => void handleLogout()}
+            >
+              <LogOut size={16} aria-hidden="true" />
+              <span>
+                <strong>{loggingOut ? "正在退出…" : "退出登录"}</strong>
+                <small>退出当前账号</small>
               </span>
               <ChevronRight size={16} aria-hidden="true" />
             </button>

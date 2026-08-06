@@ -14,7 +14,7 @@ from sqlalchemy.engine import make_url
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0010"
+EXPECTED_HEAD = "0011"
 
 
 def migration_test_url() -> str:
@@ -71,10 +71,8 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "resumes",
         "resume_versions",
         "job_descriptions",
-        "admin_operation_logs",
-    } <= set(
-        inspector.get_table_names()
-    )
+    } <= set(inspector.get_table_names())
+    assert "admin_operation_logs" not in inspector.get_table_names()
     assert {column["name"] for column in inspector.get_columns("users")} == {
         "id",
         "email",
@@ -143,6 +141,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "created_at",
         "updated_at",
     }
+    assert "admin_operation_logs" in downgraded_inspector.get_table_names()
 
     with engine.begin() as connection:
         connection.execute(
@@ -277,8 +276,8 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "llm_capability_bindings",
         "llm_call_logs",
         "job_descriptions",
-        "admin_operation_logs",
     } <= set(inspector.get_table_names())
+    assert "admin_operation_logs" not in inspector.get_table_names()
     assert {column["name"] for column in inspector.get_columns("users")} == {
         "id",
         "email",
@@ -430,23 +429,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "error_code": "非敏感稳定错误码",
         "created_at": "调用创建时间（UTC）",
     }
-    admin_log_columns = {
-        column["name"]: column
-        for column in inspector.get_columns("admin_operation_logs")
-    }
-    assert set(admin_log_columns) == {
-        "id",
-        "actor_user_id",
-        "target_user_id",
-        "action",
-        "created_at",
-    }
-    assert admin_log_columns["id"]["type"].unsigned is True
-    assert admin_log_columns["actor_user_id"]["type"].unsigned is True
-    assert admin_log_columns["target_user_id"]["type"].unsigned is True
-    assert admin_log_columns["action"]["type"].length == 32
-    assert admin_log_columns["created_at"]["type"].fsp == 6
-
     user_columns = {
         column["name"]: column for column in inspector.get_columns("users")
     }
@@ -503,10 +485,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "ck_llm_call_logs_source_not_blank",
         "ck_llm_call_logs_status",
     }
-    assert {
-        constraint["name"]
-        for constraint in inspector.get_check_constraints("admin_operation_logs")
-    } == {"ck_admin_op_logs_action"}
     assert any(
         index["name"] == "idx_resumes_user_updated_id"
         and index["column_names"] == ["user_id", "updated_at", "id"]
@@ -598,28 +576,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     assert call_foreign_keys[
         "fk_llm_call_logs_model_config_id_llm_model_configs"
     ]["referred_table"] == "llm_model_configs"
-    admin_log_foreign_keys = {
-        foreign_key["name"]: foreign_key
-        for foreign_key in inspector.get_foreign_keys("admin_operation_logs")
-    }
-    assert admin_log_foreign_keys["fk_admin_op_logs_actor"][
-        "constrained_columns"
-    ] == ["actor_user_id"]
-    assert admin_log_foreign_keys["fk_admin_op_logs_actor"][
-        "referred_table"
-    ] == "users"
-    assert admin_log_foreign_keys["fk_admin_op_logs_actor"]["options"][
-        "ondelete"
-    ] == "RESTRICT"
-    assert admin_log_foreign_keys["fk_admin_op_logs_target"][
-        "constrained_columns"
-    ] == ["target_user_id"]
-    assert admin_log_foreign_keys["fk_admin_op_logs_target"][
-        "referred_table"
-    ] == "users"
-    assert admin_log_foreign_keys["fk_admin_op_logs_target"]["options"][
-        "ondelete"
-    ] == "RESTRICT"
 
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == EXPECTED_HEAD
@@ -631,7 +587,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         assert connection.scalar(text("SELECT COUNT(*) FROM resume_templates")) == 0
         assert connection.scalar(text("SELECT COUNT(*) FROM resumes")) == 1
         assert connection.scalar(text("SELECT COUNT(*) FROM resume_versions")) == 1
-        assert connection.scalar(text("SELECT COUNT(*) FROM admin_operation_logs")) == 0
         assert connection.execute(
             text(
                 "SELECT capability, model_config_id "
@@ -678,8 +633,8 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "llm_capability_bindings",
         "llm_call_logs",
         "job_descriptions",
-        "admin_operation_logs",
     } <= set(inspect(engine).get_table_names())
+    assert "admin_operation_logs" not in inspect(engine).get_table_names()
     assert "storage_cleanup_jobs" not in inspect(engine).get_table_names()
     engine.dispose()
 
@@ -993,7 +948,7 @@ def test_mysql_0008_clears_legacy_llm_data_and_supports_rollback() -> None:
         ).lastrowid
 
     run_alembic(database_url, "upgrade", "head")
-    assert "admin_operation_logs" in inspect(engine).get_table_names()
+    assert "admin_operation_logs" not in inspect(engine).get_table_names()
     assert inspect(engine).get_table_comment("llm_model_configs")["text"] == (
         "系统模型能力的候选连接配置（含发布兼容列）"
     )
