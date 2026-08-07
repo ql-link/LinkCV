@@ -9,7 +9,7 @@
 | WeChat miniprogram | `apps/miniprogram` | 原生小程序（免构建，开发者工具直接导入）；扫码进入登录确认页，把 wx.login code 与 scene/mode/昵称/头像提交到后端 |
 | Backend | `apps/backend` | FastAPI、JWT/Redis 鉴权、简历与 JD API、MinIO 图片接口、SQLAlchemy 模型和 Alembic 迁移 |
 | Infrastructure | `deploy` | MySQL、Redis、MinIO 本地依赖和 Dev/Production Jenkins、Compose 拓扑 |
-| AI workflow | `.ai`、`.specs`、`scripts` | 项目规则、阶段状态和质量门禁 |
+| AI workflow | `.ai`、`.specs`、`scripts/quality` | 项目规则、以方案为中心的本地 Spec 和质量检查 |
 
 ## 本地请求路径
 
