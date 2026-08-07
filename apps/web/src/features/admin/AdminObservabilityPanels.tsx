@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
-import { Activity, ClipboardList, RefreshCw, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import {
+  Activity,
+  ChevronRight,
+  CircleAlert,
+  CircleCheck,
+  CircleX,
+  ClipboardList,
+  Info,
+  RefreshCw,
+  X,
+} from "lucide-react";
 import {
   api,
   ApiRequestError,
@@ -22,6 +33,17 @@ function initialKind(): LogKind {
 function displayTime(value: string): string {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("zh-CN");
+}
+
+function LogStatusIcon({ item, kind }: { item: LogItem; kind: "system" | "audit" }) {
+  if (kind === "audit") {
+    return item.result === "failed"
+      ? <CircleX aria-hidden="true" />
+      : <CircleCheck aria-hidden="true" />;
+  }
+  if (item.level === "ERROR") return <CircleX aria-hidden="true" />;
+  if (item.level === "WARNING") return <CircleAlert aria-hidden="true" />;
+  return <Info aria-hidden="true" />;
 }
 
 function LogDetailDialog({
@@ -69,9 +91,9 @@ function LogDetailDialog({
         ["错误码", item.errorCode],
       ];
 
-  return (
+  return createPortal(
     <div
-      className="llm-modal-layer"
+      className="admin-shell llm-modal-layer"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
@@ -112,7 +134,8 @@ function LogDetailDialog({
           )}
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -143,18 +166,23 @@ function LogTable({ items, kind }: { items: LogItem[]; kind: "system" | "audit" 
         <tbody>
           {items.map((item) => (
             <tr
-              className="observability-log-row"
+              className={`observability-log-row is-${kind === "audit" ? item.result ?? "unknown" : item.level.toLowerCase()}`}
               key={item.eventId}
               onClick={() => setSelected(item)}
             >
               <td>{displayTime(item.timestamp)}</td>
               <td>
-                <strong className="table-strong">
-                  {kind === "system" ? item.level : item.action ?? "—"}
-                </strong>
-                <small className="table-sub">
-                  {kind === "system" ? item.source : item.result ?? "—"}
-                </small>
+                <div className="observability-log-status">
+                  <span className="observability-log-status-icon"><LogStatusIcon item={item} kind={kind} /></span>
+                  <span>
+                    <strong className="table-strong">
+                      {kind === "system" ? item.level : item.action ?? "—"}
+                    </strong>
+                    <small className="table-sub">
+                      {kind === "system" ? item.source : item.result ?? "—"}
+                    </small>
+                  </span>
+                </div>
               </td>
               <td>
                 <strong className="table-strong">
@@ -168,15 +196,18 @@ function LogTable({ items, kind }: { items: LogItem[]; kind: "system" | "audit" 
                     : `${item.targetType ?? "—"}:${item.targetId ?? "—"}`}
                 </small>
               </td>
-              <td>{item.errorCode ?? "—"}</td>
+              <td>{item.errorCode ? <span className="observability-error-code">{item.errorCode}</span> : "—"}</td>
               <td>
                 <button
                   className="observability-log-detail-button"
                   type="button"
-                  onClick={() => setSelected(item)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setSelected(item);
+                  }}
                   aria-label={`查看日志 ${item.eventId}`}
                 >
-                  查看
+                  <ChevronRight size={17} aria-hidden="true" />
                 </button>
               </td>
             </tr>
@@ -309,44 +340,49 @@ function QueryState({
           void query();
         }}
       >
-        {kind === "system" ? (
-          <>
-            <select aria-label="日志级别" value={level} onChange={(event) => setLevel(event.target.value)}>
-              <option value="">全部级别</option>
-              <option value="INFO">INFO</option>
-              <option value="WARNING">WARNING</option>
-              <option value="ERROR">ERROR</option>
-            </select>
-            <select aria-label="日志来源" value={source} onChange={(event) => setSource(event.target.value)}>
-              <option value="">全部来源</option><option value="backend">Backend</option><option value="web">Web</option>
-            </select>
-            <select aria-label="依赖服务" value={dependency} onChange={(event) => setDependency(event.target.value)}>
-              <option value="">全部依赖</option>
-              <option value="mysql">MySQL</option><option value="redis">Redis</option>
-              <option value="minio">MinIO</option><option value="linkparse">LinkParse</option>
-              <option value="llm">LLM</option>
-            </select>
-            <input aria-label="请求 ID" placeholder="requestId" value={requestId} onChange={(event) => setRequestId(event.target.value)} />
-            <input aria-label="任务 ID" placeholder="taskId" value={taskId} onChange={(event) => setTaskId(event.target.value)} />
-            <input aria-label="操作 ID" placeholder="operationId" value={operationId} onChange={(event) => setOperationId(event.target.value)} />
-            <input aria-label="错误码" placeholder="errorCode" value={errorCode} onChange={(event) => setErrorCode(event.target.value)} />
-            <input aria-label="日志关键词" placeholder="关键词" value={keyword} onChange={(event) => setKeyword(event.target.value)} />
-          </>
-        ) : (
-          <>
-            <input aria-label="审计动作" placeholder="如 resume.update" value={action} onChange={(event) => setAction(event.target.value)} />
-            <input aria-label="操作者 ID" placeholder="actorUserId" value={actorUserId} onChange={(event) => setActorUserId(event.target.value)} />
-            <input aria-label="目标类型" placeholder="targetType" value={targetType} onChange={(event) => setTargetType(event.target.value)} />
-            <input aria-label="目标 ID" placeholder="targetId" value={targetId} onChange={(event) => setTargetId(event.target.value)} />
-            <input aria-label="审计请求 ID" placeholder="requestId" value={requestId} onChange={(event) => setRequestId(event.target.value)} />
-            <select aria-label="审计结果" value={result} onChange={(event) => setResult(event.target.value as "" | "succeeded" | "failed")}>
-              <option value="">全部结果</option><option value="succeeded">成功</option><option value="failed">失败</option>
-            </select>
-          </>
-        )}
-        <label><span>开始时间</span><input type="datetime-local" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
-        <label><span>结束时间</span><input type="datetime-local" value={to} onChange={(event) => setTo(event.target.value)} /></label>
-        <button type="submit" disabled={loading}>查询</button>
+        <div className="observability-filter-fields">
+          {kind === "system" ? (
+            <>
+              <select aria-label="日志级别" value={level} onChange={(event) => setLevel(event.target.value)}>
+                <option value="">全部级别</option>
+                <option value="INFO">INFO</option>
+                <option value="WARNING">WARNING</option>
+                <option value="ERROR">ERROR</option>
+              </select>
+              <select aria-label="日志来源" value={source} onChange={(event) => setSource(event.target.value)}>
+                <option value="">全部来源</option><option value="backend">Backend</option><option value="web">Web</option>
+              </select>
+              <select aria-label="依赖服务" value={dependency} onChange={(event) => setDependency(event.target.value)}>
+                <option value="">全部依赖</option>
+                <option value="mysql">MySQL</option><option value="redis">Redis</option>
+                <option value="minio">MinIO</option><option value="linkparse">LinkParse</option>
+                <option value="llm">LLM</option>
+              </select>
+              <input aria-label="请求 ID" placeholder="requestId" value={requestId} onChange={(event) => setRequestId(event.target.value)} />
+              <input aria-label="任务 ID" placeholder="taskId" value={taskId} onChange={(event) => setTaskId(event.target.value)} />
+              <input aria-label="操作 ID" placeholder="operationId" value={operationId} onChange={(event) => setOperationId(event.target.value)} />
+              <input aria-label="错误码" placeholder="errorCode" value={errorCode} onChange={(event) => setErrorCode(event.target.value)} />
+              <input aria-label="日志关键词" placeholder="关键词" value={keyword} onChange={(event) => setKeyword(event.target.value)} />
+            </>
+          ) : (
+            <>
+              <input aria-label="审计动作" placeholder="如 resume.update" value={action} onChange={(event) => setAction(event.target.value)} />
+              <select aria-label="审计结果" value={result} onChange={(event) => setResult(event.target.value as "" | "succeeded" | "failed")}>
+                <option value="">全部结果</option><option value="succeeded">成功</option><option value="failed">失败</option>
+              </select>
+              <input aria-label="操作者 ID" placeholder="actorUserId" value={actorUserId} onChange={(event) => setActorUserId(event.target.value)} />
+              <input aria-label="目标类型" placeholder="targetType" value={targetType} onChange={(event) => setTargetType(event.target.value)} />
+              <input aria-label="目标 ID" placeholder="targetId" value={targetId} onChange={(event) => setTargetId(event.target.value)} />
+              <input aria-label="审计请求 ID" placeholder="requestId" value={requestId} onChange={(event) => setRequestId(event.target.value)} />
+            </>
+          )}
+          <label><span>开始时间</span><input type="datetime-local" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
+          <label><span>结束时间</span><input type="datetime-local" value={to} onChange={(event) => setTo(event.target.value)} /></label>
+        </div>
+        <div className="observability-filter-actions">
+          <span>默认查询最近 24 小时，最长支持 7 天</span>
+          <button type="submit" disabled={loading}>{loading ? "查询中…" : "查询"}</button>
+        </div>
       </form>
       {response?.partial && <div className="llm-inline-error" role="status">部分异常日志行已忽略（{response.droppedMalformed} 条）。</div>}
       <section className="admin-surface logs-surface">
@@ -411,8 +447,8 @@ export function AdminLogsCenter({
 
   return (
     <>
-      <header className="admin-page-heading">
-        <div><span className="page-eyebrow">可观测性</span><h1>日志中心</h1><p>统一查询 LinkCV 系统日志、业务审计和既有 LLM 调用记录。</p></div>
+      <header className="admin-page-heading observability-heading">
+        <div className="observability-heading-copy"><Activity aria-hidden="true" /><div><span className="page-eyebrow">可观测性</span><h1>日志中心</h1><p>统一查询 LinkCV 系统日志、业务审计和既有 LLM 调用记录。</p></div></div>
         <button className="admin-secondary-button" type="button" onClick={() => window.location.reload()}><RefreshCw size={15} />刷新</button>
       </header>
       <nav className="observability-tabs" aria-label="日志类型">
@@ -421,7 +457,7 @@ export function AdminLogsCenter({
         <button className={kind === "llm" ? "active" : ""} onClick={() => selectKind("llm")}>LLM 调用</button>
       </nav>
       {kind !== "llm" && summaryError && <div className="llm-inline-error" role="alert">日志汇总暂不可用：{summaryError}<button type="button" onClick={() => void loadSummary()}>重试</button></div>}
-      {kind !== "llm" && summary && <section className="mini-metrics observability-summary" aria-label="日志汇总"><div><span>系统日志</span><strong>{summary.system.total}</strong></div><div><span>告警 / 错误</span><strong>{summary.system.warnings} / {summary.system.errors}</strong></div><div><span>审计成功</span><strong>{summary.audit.succeeded}</strong></div><button type="button" onClick={showAuditFailures}><span>审计失败</span><strong>{summary.audit.failed}</strong></button></section>}
+      {kind !== "llm" && summary && <section className="mini-metrics observability-summary" aria-label="日志汇总"><div><span>系统日志</span><strong>{summary.system.total}</strong></div><div className="observability-summary-alert"><span>告警 / 错误</span><strong><em>{summary.system.warnings}</em><i>/</i><b>{summary.system.errors}</b></strong></div><div className="observability-summary-success"><span>审计成功</span><strong>{summary.audit.succeeded}</strong></div><button className="observability-summary-failed" type="button" onClick={showAuditFailures}><span>审计失败</span><strong>{summary.audit.failed}</strong></button></section>}
       {kind === "llm" ? <LogsPanel embedded notify={notify} onSessionExpired={onSessionExpired} /> : <QueryState key={`${kind}-${auditFailedOnly}`} kind={kind} initialAuditResult={auditFailedOnly ? "failed" : ""} onSessionExpired={onSessionExpired} />}
     </>
   );
