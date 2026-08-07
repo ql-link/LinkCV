@@ -1,4 +1,4 @@
 interface:
   display_name: "LinkCV 模块规划"
-  short_description: "讨论并确认模块方案，写入并校验飞书后再交给 Brief"
-  default_prompt: "使用 $module-planning 充分讨论这个模块，确认后写入飞书，并在生成 Brief 前停止。"
+  short_description: "收敛模块初步设计，按用户要求写入飞书并完成后续交接"
+  default_prompt: "使用 $module-planning 从当前请求、可用 Issue 和飞书材料讨论模块初步设计，确认完整草稿后按用户要求写入并读回飞书；若原请求已授权后续开发，读回一致后继续到相应路径。进入 solution-generator 后以 solution.md 为准，后续变化不回写飞书。"

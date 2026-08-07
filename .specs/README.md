@@ -1,64 +1,56 @@
-# LinkCV 本地 Spec 工作区
+# LinkCV 本地 Spec 文档
 
-`.specs/<LCV-key>/` 用于方案先行任务执行期间的阶段快照。普通团队任务从来源 Issue 正文开始；已有飞书详情文档时一起读取，需要补充实现决策时先在飞书中解决，再把 Issue 与详情材料收敛到本地冻结产物。Issue 可以来自任意平台，来源系统不改变阶段判断。
+`.specs/<KEY>/` 保存方案先行任务的本地开发文档。它以 `solution.md` 为中心，不保存机器阶段、文档哈希、验证快照或任务状态。
+
+用户当前请求、可读取的 Issue、飞书文档及用户明确指定的其他材料都可以作为初始需求来源。Issue 存在时完整读取并关联；没有 Issue 不阻止方案、实现或 PR，本地任务可以使用 `LOCAL-YYYYMMDD-SHORT-SLUG` 作为目录名。飞书只提供方案形成前的初步设计；`solution.md` 确认后成为方案任务的当前实施和验收依据。
+
+## 文件组成
+
+| 文件 | 什么时候存在 | 职责 |
+| --- | --- | --- |
+| `solution.md` | 方案先行任务始终存在 | 唯一中心文档，保存需求、流程、规则、数据与状态设计、真实文件、实施步骤和验证映射 |
+| `acceptance.feature` | 方案选择契约验收时 | 展开需要独立确认的可观察业务规则 |
+| `manual_acceptance.md` | 自动化无法覆盖必要的跨端、浏览器、PDF 或视觉结果时 | 保存人工执行步骤和真实结果 |
+| `implementation_report.md` | 存在已允许偏差、已接受限制或必须交接的遗留事项时 | 只补充方案之外的新事实 |
+
+不得创建平级的 Change、第二份方案、任务状态文件或验证报告。未命中的附件不创建。
 
 ## 三条交付路径
 
-`flow-router` 先决定进实现前要不要方案文档，`solution-generator` 在方案文档冻结时和用户一起决定之后怎么走，组合出三条路径：
+- **直接实现**：不创建 Spec，根据当前请求和真实代码直接实现、验证和审查。
+- **方案 → 实现**：确认 `solution.md` 后直接施工，方案中的“验证与验收”就是验证依据。
+- **方案 → 验收契约 → 实现**：确认 `solution.md` 后生成并确认 `acceptance.feature`，再施工。
 
-- **直接实现**：不创建 Spec，直接改代码并按改动范围验证。
-- **方案 → 实现**（`route=direct_build`）：`solution.md → implementation → 自动验证快照 → 按需人工验收 → 质量审查 → release_ready`。不产出 `acceptance.feature`，方案文档 9.3 的验证方式就是验证契约。
-- **方案 → 验收契约 → 实现**（`route=acceptance_first`）：在上一条中间插入 `acceptance.feature`。
+顺序是内容关系，不是机器状态机。AI 根据最新用户指令、Spec 文档、Git 差异、真实代码和本次实际验证自行判断下一步。缺少阶段字段、哈希或门禁命令本身不得构成阻塞。
 
-`acceptance.feature` 永远依赖 `solution.md`：方案文档未冻结时无法冻结验收契约，方案文档重新冻结会作废验收契约和全部下游证据。这条顺序由脚本强制，不靠自觉。
+## 创建和修订
 
-方案文档各章节写多细不由外部等级决定，而由文档实际涉及的内容触发；详见 `solution-generator`。不再存在独立的 `technical_design.md` 阶段，也不再有 `lane` 字段；旧状态在读取时自动升级，原 L2/L3 链路记为 `route=acceptance_first`。
+方案先行时由 `solution-generator` 直接创建 `.specs/<KEY>/solution.md`。已有文件就在原文档中修订，不生成“最终版”“第二版”或对话流水账。
 
-## 使用
+`solution.md` 不保存全局的“当前阶段”或整份文档确认标记。具体业务决定和重要技术取舍写在“已确认决策”中并注明来源。仍有会改变范围、用户行为、权限、数据、安全、兼容或不可逆结果的未决项时必须确认；普通实现细节由 AI 按仓库事实自行决定。
 
-通常由 `solution-generator` 在首次处理方案先行任务时自动初始化，用户不需要手动运行。调试或人工恢复流程时可以使用：
+方案发生实质变化时更新原文档，只重新确认受影响的决定。若最新用户决定与飞书或 Issue 等初始来源不同，在“已确认决策”中写清被替代结论、当前结论和确认来源；不反向同步飞书或 Issue 正文，也不另建平级变更文档。普通文件组织、命名、测试落点和其他不改变外部结果的实现调整不修改方案，按需在 PR 中解释。随后由 AI 判断 Acceptance、实现、自动化测试、人工验收和审查中哪些需要同步或重做；无法可靠缩小影响时扩大检查。
 
-```bash
-npm run spec -- init LCV-42 --source-issue <ISSUE_URL_OR_REF>
-npm run spec -- init LCV-44
-npm run spec -- status
-npm run spec -- status LCV-42
-npm run spec -- check LCV-42 acceptance
-npm run spec -- freeze LCV-42 solution --next acceptance_first
-npm run spec -- freeze LCV-43 solution --next direct_build
-npm run spec -- route LCV-43 acceptance_first
-npm run spec -- verify LCV-42 --run "npm run check"
-npm run spec -- verify LCV-42 --run "npm run check" --manual-acceptance
-npm run spec -- review LCV-42 --pass --evidence "未发现阻断问题"
-npm run spec -- check LCV-42 release_ready
-```
+只有原目标或核心验收已经失效、变化形成独立交付边界，或整个模块商业前提需要重建时，才停止沿用当前 Spec 并开启新一轮任务；同一目标内的重要决定变化继续修订原 `solution.md`，不从飞书或 Issue 重新走一遍。
 
-`init` 只创建 `.specs/<KEY>/state.yaml`，不生成业务产物、不修改外部 Issue，也不执行 Git 操作。已有状态不会被覆盖。
+## 验证与收尾
 
-冻结会把产物 SHA-256 写入 `state.yaml`。冻结后修改文件会使下游检查失败；确认新版本后使用 `freeze --refreeze`，脚本会使受影响的下游状态失效。
+任务完成时直接运行与改动范围和风险匹配的真实命令，不保存本地“已通过”状态。跨会话恢复后不继承以前会话的测试结论；准备创建 PR 时必须在当前可提交内容上重新运行完整 `npm run check`，共享 CI 继续运行完整入口。PR 负责说明实际交付及相对当前方案和初始来源的重要差异；存在来源 Issue 时，PR 创建后只追加一条交付评论，不把 Spec 正文复制回外部系统。
 
-最终验证由 `spec verify --run` 自己执行命令，不接受手填的“已通过”字符串。脚本自动记录命令、退出码、耗时、时间和当前可提交内容的 SHA-256；验证命令失败、改变了可提交内容，或之后代码再次变化时都不会保留可信验证状态。代码指纹按内容计算，因此仅创建内容相同的 Git commit 不会触发无意义的重跑。
+人工验收文件中的单项结果是实际证据，可以保留。相关代码、配置或环境发生变化时，由 AI 根据影响把对应项目恢复为未执行并重新验收。
 
-验证成功后固定进入 `quality_review`，跨会话恢复会指向 `code-review-and-quality`，不会直接跳到 PR。只有审查没有阻断问题时，Agent 才自动运行 `spec review <KEY> --pass` 进入 `release_ready`。这些元数据都由工具维护，开发者不需要填写哈希、退出码、时间或状态字段。
+## 跨会话与 worktree
 
-旧版 `state.yaml` 会在读取时自动升级。旧的字符串验证证据会保留在 `legacy_evidence` 供追溯，但不会继续作为可信证明；任务会退回 `implementation`，由 Agent 自动重跑最终验证。
+新会话恢复任务时：
 
-## 需求来源与实施偏差
+1. 读取当前请求和匹配的 `solution.md`；
+2. 读取实际存在的 Acceptance、人工验收和实施报告；
+3. 检查当前分支、Git 提交、工作区差异和真实代码；
+4. 对照实施步骤与验证映射判断下一步；
+5. 重新运行完成当前交付所需的检查。
 
-来源 Issue 正文是初始需求输入，关联的飞书周开发文档、详情文档和用户在方案文档阶段确认的结论用于展开实现前决策。方案文档和 Acceptance 是当前工作区的执行快照；冻结后仍由本地哈希门禁保证这些本地产物没有被静默修改。
+多个 Spec 都可能匹配时由用户指定继续哪一个，不自动猜测。
 
-`source_issue` 只原样保存一个完整链接或稳定引用，方便恢复上下文、PR 关联和人工追踪。状态中不拆分 `source.system`、`issue_id` 或 `workspace_id`，也不给 Multica、Linear、GitHub 或其他平台附加不同流程语义。工具不会访问外部 Issue 校验正文，不维护需求指纹、评论链、漂移状态或对账状态，也不会向任何 Issue 系统写回评论。
+`.specs/*/` 被 Git 忽略，不进入提交或远端；仓库中的 `.worktreeinclude` 只在 Codex 新建本地托管 worktree 时复制一次这些文档。它不是实时同步：两个已有 worktree、命令行 worktree、远程环境和不同设备不会自动保持一致，同一个 Spec 不应在多个 worktree 中并行编辑。
 
-实施中出现不改变核心产品目标的必要偏差时，在 `implementation_report.md` 和 PR 中说明原方案、实际实现、原因、影响、验证和遗留风险。若偏差会改变范围、验收、权限、数据安全或兼容承诺，先回到飞书确认，再修订和重新冻结受影响的本地产物。
-
-## 跨会话恢复
-
-新会话先运行 `npm run spec -- status`。不带 KEY 时扫描当前工作区全部 Spec；每个可信的在途任务会显示后续路径、阶段、下一站 Skill、最小待读文件和本地阶段门禁。发现 `state.yaml` 结构错误、冻结文件缺失、规格或代码 SHA-256 漂移、人工验收变化，或阶段与产物不一致时返回非零，修复前不得继续。
-
-已经进入 `release_ready` 的任务不再计入无参数查询的“在途”列表，避免历史任务持续制造选择负担；需要复查或发布时仍可用 `npm run spec -- status <KEY>` 精确查询。
-
-有多个在途任务时必须由用户指定继续哪一个。`.specs/<KEY>/` 默认被 Git 忽略，因此该恢复能力覆盖同一工作区中的跨会话续做，不承诺跨设备或跨 worktree 自动复制本地产物；跨环境恢复时重新读取来源 Issue 和对应详情文档，并重新建立本地快照。
-
-当方案先行任务包含跨浏览器、跨服务、上传下载、PDF 或视觉行为，且现有自动化测试无法完整覆盖时，由 `manual-acceptance` 在 `.specs/<KEY>/manual_acceptance.md` 生成和记录人工端到端验收。最终运行 `spec verify --manual-acceptance` 时，脚本自动校验总体结论、统计、占位内容和文件哈希；仍有必要项未执行、失败或阻塞时不会进入质量审查。人工步骤执行后若相关代码或配置变化，受影响项必须恢复为未执行并重新验收；最终自动化快照不能代替较早的人工证据。直接实现的同类检查只保留会话级记录，不创建 Spec。
-
-具体 Issue 目录默认被 Git 忽略。仓库只长期保留本文；PR 中摘要人工验收结论，但不复制整份本地清单。产物模板由对应的 `.ai/skills/<skill>/` 管理，避免全局模板与 Skill 规则漂移。
+产物模板由对应的 `.ai/skills/<skill>/` 管理。仓库长期只跟踪本说明，不把本地任务内容复制进 `docs/`。

@@ -1,6 +1,6 @@
 ---
 name: alembic-migration
-description: 为 LinkCV 编写、校验和排查 SQLAlchemy 与 SQL-first Alembic schema 迁移，覆盖 revision 链、配对 up/down SQL、数据回填、升级降级、兼容发布和文档同步。适用于新增业务 revision，新增或修改表、字段、关系、约束、索引，处理多 head、模型与数据库漂移或迁移失败；单纯设计字段与索引先使用 mysql-ddl-conventions，数据库改动一律走方案先行。
+description: 为 LinkCV 编写、校验和排查 SQLAlchemy 与 SQL-first Alembic schema 迁移，覆盖 revision 链、配对 up/down SQL、数据回填、升级降级、兼容发布和文档同步。适用于新增业务 revision，新增或修改表、字段、关系、约束、索引，处理多 head、模型与数据库漂移或迁移失败；单纯设计字段与索引先使用 mysql-ddl-conventions，自动分流时数据库 schema 或数据迁移默认走方案先行。
 ---
 
 # Alembic 迁移
@@ -11,7 +11,7 @@ description: 为 LinkCV 编写、校验和排查 SQLAlchemy 与 SQL-first Alembi
 
 本技能负责迁移本身，不负责：
 
-- 决定业务字段语义、旧数据是否迁移或兼容窗口，返回 `solution-generator` 确认，再按影响修订并重新冻结方案文档或 Acceptance；
+- 决定业务字段语义、旧数据是否迁移或兼容窗口，返回 `solution-generator` 确认，再按影响修订方案文档或 Acceptance；
 - 从零设计字段、类型、约束和索引，转 `mysql-ddl-conventions`；
 - 编写完整业务实现，转 `implementation-execution`；
 - 泛化维护长期文档，转 `doc-maintenance-sync`。
@@ -21,15 +21,15 @@ description: 为 LinkCV 编写、校验和排查 SQLAlchemy 与 SQL-first Alembi
 - FastAPI 已有鉴权、简历和图片路由，`core/database.py`、业务模型、Alembic 环境、SQL-first revision 模板与 `db:revision`、`db:migrate`、`db:init` 入口已经存在。
 - 根 revision `0001` 已通过配对 SQL 创建 `users`、`resumes`，并与当前 SQLAlchemy 模型保持一致；仓库存在 revision 不等于每个目标环境都已经迁移到 head。
 - 后端集成测试使用隔离 SQLite，只能证明应用层组合行为；迁移链必须在 MySQL 8.4 上单独验证。
-- 原型 SQLite 数据默认不迁移到 MySQL，除非新的冻结需求明确改变这一点。
+- 原型 SQLite 数据默认不迁移到 MySQL，除非用户确认的新需求明确改变这一点。
 
-因此每次 schema 变化都必须先核对方案文档中的定稿 DDL、现有模型、当前 head、目标环境 current revision 和部署 runner，再明确测试数据库、执行者、部署顺序和回滚。不存在的 revision、表或验证结果必须明确写“尚未建立”，不得把仓库 head 存在描述成目标环境已经迁移。
+因此每次 schema 变化都必须先核对方案文档中的数据结构变更、现有模型、当前 head、目标环境 current revision 和部署 runner，再明确测试数据库、执行者、部署顺序和回滚。不存在的 revision、表或验证结果必须明确写“尚未建立”，不得把仓库 head 存在描述成目标环境已经迁移。
 
 ## 3. 必读材料
 
 存在时读取：
 
-1. 冻结的方案文档及其数据模型章节与定稿 DDL，以及 Acceptance；
+1. 当前方案文档及其数据模型、数据结构变更和存量数据处理规则，以及实际存在的 Acceptance；
 2. `apps/backend` 中相关 SQLAlchemy 模型、配置、仓储和测试；
 3. Alembic 配置、`env.py`、版本目录及全部相关 revision；
 4. 当前迁移 heads、history、目标数据库 current revision；
@@ -79,7 +79,7 @@ description: 为 LinkCV 编写、校验和排查 SQLAlchemy 与 SQL-first Alembi
 5. 可逆 migration 执行“升级 → 降级 → 再升级”；
 6. 模型 metadata 与 head schema 没有未解释差异；
 7. 约束、索引、外键、默认值、时区、回填幂等与失败恢复测试通过；
-8. 文档同步和完整 `npm run check` 通过。
+8. 与迁移范围匹配的模型、SQL-first 链、空库与往返迁移、后端集成、契约和文档检查通过；准备创建 PR 时再运行完整 `npm run check`。
 
 未实际运行的命令必须写成“未验证”。生产规模、锁时间和备份恢复无法在本地证明时，列为发布前门槛。
 
@@ -94,4 +94,4 @@ description: 为 LinkCV 编写、校验和排查 SQLAlchemy 与 SQL-first Alembi
 - 实际验证命令、结果和未覆盖项；
 - 需要同步的数据库文档与机器规则。
 
-定稿 DDL 无法落地时返回 `solution-generator` 修订并重新冻结；需要真正改代码时转 `implementation-execution`；迁移链或运行故障的只读定位可与 `incident-triage` 协作。
+方案中的数据结构变更无法落地时返回 `solution-generator` 修订并确认受影响决定；需要真正改代码时转 `implementation-execution`；迁移链或运行故障的只读定位可与 `incident-triage` 协作。
