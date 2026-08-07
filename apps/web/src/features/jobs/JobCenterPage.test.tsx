@@ -86,6 +86,6 @@ describe("JobCenterPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "安装岗位采集插件" }));
 
     expect(await screen.findByRole("dialog", { name: "安装岗位采集插件" })).toBeInTheDocument();
-    expect(screen.getByText("当前环境尚未发布插件安装包。")).toBeInTheDocument();
+    expect(screen.getByText("暂未提供插件安装包。")).toBeInTheDocument();
   });
 });

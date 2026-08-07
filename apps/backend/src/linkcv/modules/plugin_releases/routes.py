@@ -46,7 +46,7 @@ def download_plugin_release(
     service: PluginReleaseService = Depends(get_plugin_release_service),
 ) -> StreamingResponse:
     pointer, response = service.open_download(version)
-    file_name = f"linkcv-job-capture-{pointer.environment}-v{pointer.version}.zip"
+    file_name = f"linkcv-job-capture-v{pointer.version}.zip"
     return StreamingResponse(
         stream_object(response),
         media_type="application/zip",

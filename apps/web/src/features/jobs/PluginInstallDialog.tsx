@@ -1,4 +1,4 @@
-import { Download, PackageCheck, X } from "lucide-react";
+import { Download, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, ApiRequestError, type PluginReleaseCurrentResponse } from "../../api/client";
 import { Button } from "../../components/ds";
@@ -51,27 +51,20 @@ export function PluginInstallDialog({ onClose }: { onClose: () => void }) {
         <h2 id="plugin-install-title">安装岗位采集插件</h2>
         <p>在 BOSS 岗位详情页预览并导入 JD。插件采用 Chrome 开发者模式侧载，需要手工更新。</p>
 
-        {!result && !failed && <div className="plugin-release-state">正在读取当前版本…</div>}
-        {failed && <div className="plugin-release-state is-error" role="alert">暂时无法读取插件版本，请稍后重试。</div>}
-        {result?.status === "unpublished" && <div className="plugin-release-state">当前环境尚未发布插件安装包。</div>}
+        {!result && !failed && <div className="plugin-release-state">正在检查安装包…</div>}
+        {failed && <div className="plugin-release-state is-error" role="alert">暂时无法获取插件安装包，请稍后重试。</div>}
+        {result?.status === "unpublished" && <div className="plugin-release-state">暂未提供插件安装包。</div>}
         {release && (
           <>
-            <dl className="plugin-release-facts">
-              <div><dt>版本</dt><dd>v{release.version}</dd></div>
-              <div><dt>环境</dt><dd>{release.browser} · Manifest V{release.manifest_version}</dd></div>
-              <div><dt>发布时间</dt><dd>{formatDate(release.released_at)}</dd></div>
-              <div><dt>大小</dt><dd>{formatSize(release.size)}</dd></div>
-            </dl>
             <ol className="plugin-install-steps">
               <li>下载 ZIP 并解压到固定目录。</li>
               <li>打开 <code>chrome://extensions</code>，启用“开发者模式”。</li>
               <li>点击“加载已解压的扩展程序”，选择包含 manifest.json 的目录。</li>
               <li>更新时下载新包，并在扩展管理页重新加载。</li>
             </ol>
-            <p className="plugin-release-digest"><PackageCheck size={15} />SHA-256 {release.sha256}</p>
             {downloadError && <p className="plugin-release-state is-error" role="alert">{downloadError}</p>}
             <Button className="plugin-download-link" icon={<Download size={16} />} disabled={downloading} onClick={() => void download()}>
-              {downloading ? "正在下载…" : `下载 v${release.version}`}
+              {downloading ? "正在下载…" : "下载插件"}
             </Button>
           </>
         )}
@@ -79,12 +72,4 @@ export function PluginInstallDialog({ onClose }: { onClose: () => void }) {
       </section>
     </div>
   );
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
-}
-
-function formatSize(bytes: number): string {
-  return `${(bytes / 1024).toFixed(1)} KB`;
 }

@@ -7,8 +7,8 @@ from pydantic import BaseModel, ConfigDict
 class PluginReleasePointer(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[1] = 1
-    environment: str
+    schema_version: Literal[2, 3] = 3
+    status: Literal["published", "unpublished"] = "published"
     version: str
     released_at: datetime
     object_key: str
@@ -33,3 +33,22 @@ class PluginReleaseCurrentResponse(BaseModel):
 
 class PluginReleasePublishResponse(BaseModel):
     release: PluginRelease
+    cleanup_pending: bool = False
+
+
+class AdminPluginReleaseCurrentResponse(BaseModel):
+    status: Literal["absent", "published", "unpublished"]
+    release: PluginRelease | None
+
+
+class PluginReleaseUnpublishResponse(BaseModel):
+    unpublished: Literal[True] = True
+    release: PluginRelease
+
+
+class PluginReleaseReactivateResponse(BaseModel):
+    release: PluginRelease
+
+
+class PluginReleaseDeleteResponse(BaseModel):
+    deleted: Literal[True] = True

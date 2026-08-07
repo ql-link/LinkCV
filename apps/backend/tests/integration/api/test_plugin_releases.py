@@ -68,6 +68,7 @@ def test_auth_permissions_publish_current_and_download() -> None:
             files={"file": ("plugin.zip", package, "application/zip")},
         )
         assert published.status_code == 201, published.text
+        assert published.json()["cleanup_pending"] is False
         release = published.json()["release"]
         assert release["version"] == "0.1.0"
         assert release["download_url"] == "/api/plugin-releases/0.1.0/download"
@@ -82,7 +83,9 @@ def test_auth_permissions_publish_current_and_download() -> None:
         assert download.content == package
         assert download.headers["content-type"] == "application/zip"
         assert download.headers["x-content-type-options"] == "nosniff"
-        assert "attachment" in download.headers["content-disposition"]
+        assert download.headers["content-disposition"] == (
+            'attachment; filename="linkcv-job-capture-v0.1.0.zip"'
+        )
         assert "minio" not in download.text.lower()
 
 
@@ -151,7 +154,7 @@ def test_current_reports_storage_unavailable_for_missing_release_object() -> Non
         ).status_code == 201
 
         current_pointer = storage.objects[
-            "system/plugin-releases/development/current.json"
+            "system/plugin-releases/current.json"
         ]
         release_key = json.loads(current_pointer)["object_key"]
         del storage.objects[release_key]
@@ -159,3 +162,115 @@ def test_current_reports_storage_unavailable_for_missing_release_object() -> Non
         current = client.get("/api/plugin-releases/current")
         assert current.status_code == 503
         assert current.json() == {"error": "PLUGIN_RELEASE_OBJECT_UNAVAILABLE"}
+
+
+def test_admin_can_unpublish_without_deleting_current_package() -> None:
+    app, storage = build_app()
+    package = build_plugin_zip()
+    with TestClient(app) as client:
+        register(client, "admin@example.invalid")
+        assert client.delete("/api/admin/plugin-releases/current").status_code == 403
+        assert client.get("/api/admin/plugin-releases/current").status_code == 403
+        promote_admin(app, "admin@example.invalid")
+
+        assert client.get("/api/admin/plugin-releases/current").json() == {
+            "status": "absent",
+            "release": None,
+        }
+
+        published = client.post(
+            "/api/admin/plugin-releases",
+            files={"file": ("plugin.zip", package, "application/zip")},
+        )
+        assert published.status_code == 201
+        release = published.json()["release"]
+        pointer = json.loads(storage.objects["system/plugin-releases/current.json"])
+
+        unpublished = client.delete("/api/admin/plugin-releases/current")
+        assert unpublished.status_code == 200
+        assert unpublished.json() == {"unpublished": True, "release": release}
+        stored_pointer = json.loads(
+            storage.objects["system/plugin-releases/current.json"]
+        )
+        assert stored_pointer["schema_version"] == 3
+        assert stored_pointer["status"] == "unpublished"
+        assert pointer["object_key"] in storage.objects
+        assert client.get("/api/admin/plugin-releases/current").json() == {
+            "status": "unpublished",
+            "release": release,
+        }
+        assert client.get("/api/plugin-releases/current").json() == {
+            "status": "unpublished",
+            "release": None,
+        }
+        assert client.get(release["download_url"]).status_code == 404
+
+        missing = client.delete("/api/admin/plugin-releases/current")
+        assert missing.status_code == 404
+        assert missing.json() == {"error": "PLUGIN_RELEASE_NOT_FOUND"}
+
+        reactivated = client.post("/api/admin/plugin-releases/current/publish")
+        assert reactivated.status_code == 200
+        reactivated_release = reactivated.json()["release"]
+        assert reactivated_release["version"] == release["version"]
+        assert client.get("/api/admin/plugin-releases/current").json() == {
+            "status": "published",
+            "release": reactivated_release,
+        }
+        assert client.get(release["download_url"]).status_code == 200
+
+        deleted = client.delete("/api/admin/plugin-releases/current/package")
+        assert deleted.status_code == 200
+        assert deleted.json() == {"deleted": True}
+        assert client.get("/api/admin/plugin-releases/current").json() == {
+            "status": "absent",
+            "release": None,
+        }
+        assert pointer["object_key"] not in storage.objects
+        assert "system/plugin-releases/current.json" not in storage.objects
+        assert client.get(release["download_url"]).status_code == 404
+
+
+def test_publish_new_version_deletes_previous_package() -> None:
+    app, storage = build_app()
+    with TestClient(app) as client:
+        register(client, "admin@example.invalid")
+        promote_admin(app, "admin@example.invalid")
+
+        first = client.post(
+            "/api/admin/plugin-releases",
+            files={
+                "file": (
+                    "plugin.zip",
+                    build_plugin_zip(version="0.1.0"),
+                    "application/zip",
+                )
+            },
+        )
+        first_pointer = json.loads(
+            storage.objects["system/plugin-releases/current.json"]
+        )
+        assert first.status_code == 201
+
+        second = client.post(
+            "/api/admin/plugin-releases",
+            files={
+                "file": (
+                    "plugin.zip",
+                    build_plugin_zip(version="0.2.0"),
+                    "application/zip",
+                )
+            },
+        )
+
+        assert second.status_code == 201
+        assert second.json()["cleanup_pending"] is False
+        second_pointer = json.loads(
+            storage.objects["system/plugin-releases/current.json"]
+        )
+        assert first_pointer["object_key"] not in storage.objects
+        assert second_pointer["object_key"] in storage.objects
+        assert sorted(storage.objects) == [
+            "system/plugin-releases/current.json",
+            second_pointer["object_key"],
+        ]

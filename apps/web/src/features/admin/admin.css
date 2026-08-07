@@ -469,26 +469,47 @@
   font-size: 1rem;
   font-weight: 600;
 }
-.plugin-release-panel { padding: 24px; }
-.plugin-admin-state { margin: 18px 0; padding: 16px; border-radius: 12px; background: var(--surface-subtle); color: var(--body-muted); }
+.plugin-page-heading > button { display: inline-flex; align-items: center; gap: 7px; }
+.plugin-release-panel { padding: 26px; }
+.plugin-admin-state { margin: 0; padding: 28px; border-radius: 16px; background: var(--surface-subtle); color: var(--body-muted); text-align: center; }
 .plugin-admin-state.is-error { color: var(--danger); }
-.plugin-current-card { display: flex; gap: 14px; align-items: flex-start; margin: 18px 0 24px; padding: 18px; border: 1px solid var(--card-border); border-radius: 14px; }
-.plugin-current-card > svg { color: #2f8a62; }
-.plugin-current-card p { margin: 4px 0; color: var(--body-muted); }
-.plugin-current-card small { overflow-wrap: anywhere; color: var(--muted); }
-.plugin-upload-zone { display: grid; grid-template-columns: auto 1fr minmax(200px, auto); gap: 16px; align-items: center; padding: 22px; border: 1px dashed var(--card-border); border-radius: 14px; background: var(--surface-subtle); }
-.plugin-upload-zone p { margin: 4px 0 0; color: var(--body-muted); }
-.plugin-selected-file { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 12px 14px; border: 1px solid var(--card-border); border-radius: 12px; }
+.plugin-status-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 18px; align-items: center; min-height: 150px; padding: 24px; border: 1px solid var(--card-border); border-radius: 18px; background: linear-gradient(135deg, color-mix(in srgb, var(--surface-raised) 94%, transparent), var(--surface-subtle)); }
+.plugin-status-card.is-published { border-color: color-mix(in srgb, #2f8a62 28%, var(--card-border)); }
+.plugin-status-card.is-unpublished { border-color: color-mix(in srgb, #d28a22 30%, var(--card-border)); }
+.plugin-status-icon { display: grid; width: 48px; height: 48px; place-items: center; border-radius: 14px; background: var(--surface-raised); color: var(--body-muted); box-shadow: var(--shadow-sm); }
+.plugin-status-card.is-published .plugin-status-icon { color: #2f8a62; }
+.plugin-status-card.is-unpublished .plugin-status-icon { color: #c37a17; }
+.plugin-status-copy { min-width: 0; }
+.plugin-status-copy h2 { margin: 8px 0 5px; font-size: 1.1rem; }
+.plugin-status-copy p { margin: 0; color: var(--body-muted); }
+.plugin-status-copy small { display: block; margin-top: 8px; overflow-wrap: anywhere; color: var(--muted); }
+.plugin-status-badge { display: inline-flex; border-radius: 999px; background: var(--surface-raised); padding: 4px 9px; color: var(--body-muted); font-size: .68rem; font-weight: 700; }
+.plugin-status-card.is-published .plugin-status-badge { background: color-mix(in srgb, #2f8a62 12%, var(--surface-raised)); color: #287653; }
+.plugin-status-card.is-unpublished .plugin-status-badge { background: color-mix(in srgb, #d28a22 13%, var(--surface-raised)); color: #a96510; }
+.plugin-status-actions { display: flex; max-width: 24rem; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.plugin-status-actions button { min-height: 2.6rem; }
+.admin-danger-button.is-quiet { border: 1px solid color-mix(in srgb, #e53e3e 30%, var(--card-border)); background: transparent; color: #c53030; }
+.admin-danger-button.is-quiet:hover { background: color-mix(in srgb, #e53e3e 9%, transparent); }
+.plugin-file-input { display: none; }
+.plugin-selected-file { display: flex; align-items: center; gap: 16px; margin-top: 16px; padding: 15px 16px; border: 1px solid var(--card-border); border-radius: 14px; background: var(--surface-subtle); }
+.plugin-selected-file > div:first-child { display: grid; min-width: 0; gap: 4px; margin-right: auto; }
 .plugin-selected-file span { overflow-wrap: anywhere; font-weight: 600; }
-.plugin-selected-file small { margin-right: auto; color: var(--muted); }
-.plugin-admin-message { margin: 14px 0 0; color: var(--body-muted); }
+.plugin-selected-file small { color: var(--muted); }
+.plugin-selected-file-actions { display: flex; gap: 8px; }
+.plugin-admin-message { margin: 16px 0 0; border-radius: 12px; background: var(--surface-subtle); padding: 12px 14px; color: var(--body-muted); }
 .plugin-admin-dialog-backdrop { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; padding: 20px; background: var(--scrim); }
 .plugin-admin-dialog { width: min(500px, 100%); padding: 26px; border: 1px solid var(--card-border); border-radius: 16px; background: var(--surface-raised); box-shadow: var(--shadow-lg); }
 .plugin-admin-dialog h2 { margin-top: 0; }
 .plugin-admin-dialog > div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+.plugin-admin-dialog .admin-danger-button { min-height: 2.6rem; padding: 0 1rem; }
 
 @media (max-width: 760px) {
-  .plugin-upload-zone { grid-template-columns: 1fr; }
+  .plugin-page-heading { align-items: flex-start; flex-direction: column; }
+  .plugin-status-card { grid-template-columns: 1fr; }
+  .plugin-status-actions { max-width: none; justify-content: stretch; }
+  .plugin-status-actions button { flex: 1 1 9rem; justify-content: center; }
   .plugin-selected-file { align-items: flex-start; flex-direction: column; }
-  .plugin-selected-file small { margin-right: 0; }
+  .plugin-selected-file > div:first-child { margin-right: 0; }
+  .plugin-selected-file-actions { width: 100%; }
+  .plugin-selected-file-actions button { flex: 1; }
 }

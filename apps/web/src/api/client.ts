@@ -201,6 +201,11 @@ export type PluginReleaseCurrentResponse = {
   release: PluginRelease | null;
 };
 
+export type AdminPluginReleaseCurrentResponse = {
+  status: "absent" | "published" | "unpublished";
+  release: PluginRelease | null;
+};
+
 export type DuplicateResolution = {
   action: "update" | "restore";
   job_description_id: string;
@@ -600,11 +605,30 @@ export const api = {
   adminPublishPluginRelease: (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
-    return request<{ release: PluginRelease }>("/api/admin/plugin-releases", {
+    return request<{ release: PluginRelease; cleanup_pending: boolean }>("/api/admin/plugin-releases", {
       method: "POST",
       formData,
     });
   },
+  getAdminPluginRelease: () =>
+    request<AdminPluginReleaseCurrentResponse>(
+      "/api/admin/plugin-releases/current",
+    ),
+  adminUnpublishPluginRelease: () =>
+    request<{ unpublished: true; release: PluginRelease }>(
+      "/api/admin/plugin-releases/current",
+      { method: "DELETE" },
+    ),
+  adminReactivatePluginRelease: () =>
+    request<{ release: PluginRelease }>(
+      "/api/admin/plugin-releases/current/publish",
+      { method: "POST" },
+    ),
+  adminDeletePluginRelease: () =>
+    request<{ deleted: true }>(
+      "/api/admin/plugin-releases/current/package",
+      { method: "DELETE" },
+    ),
   adminListUsers: (
     params: {
       page?: number;

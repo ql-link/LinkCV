@@ -49,7 +49,10 @@ class FakePluginStorage:
         self.objects: dict[str, bytes] = {}
         self.metadata: dict[str, dict[str, str]] = {}
         self.put_order: list[str] = []
+        self.delete_order: list[str] = []
         self.fail_put_key: str | None = None
+        self.fail_delete_key: str | None = None
+        self.fail_list = False
 
     def ensure_bucket(self) -> None:
         pass
@@ -84,6 +87,18 @@ class FakePluginStorage:
         except KeyError as error:
             raise FakeStorageError("NoSuchKey") from error
         return FakeStat(size=len(data), metadata=self.metadata.get(object_name, {}))
+
+    def list_names(self, prefix: str) -> list[str]:
+        if self.fail_list:
+            raise RuntimeError("storage list failed")
+        return [name for name in self.objects if name.startswith(prefix)]
+
+    def delete(self, object_name: str) -> None:
+        if object_name == self.fail_delete_key:
+            raise RuntimeError("storage delete failed")
+        self.objects.pop(object_name, None)
+        self.metadata.pop(object_name, None)
+        self.delete_order.append(object_name)
 
 
 def build_plugin_zip(

@@ -89,6 +89,17 @@ class AssetStorage:
         self.ensure_bucket()
         return self.client.stat_object(self.bucket, object_name)
 
+    def list_names(self, prefix: str) -> list[str]:
+        self.ensure_bucket()
+        return [
+            item.object_name
+            for item in self.client.list_objects(
+                self.bucket,
+                prefix=prefix,
+                recursive=True,
+            )
+        ]
+
     def delete(self, object_name: str) -> None:
         self.ensure_bucket()
         self.client.remove_object(self.bucket, object_name)

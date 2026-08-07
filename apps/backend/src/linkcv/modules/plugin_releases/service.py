@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -19,6 +21,14 @@ from linkcv.modules.plugin_releases.validator import (
 POINTER_MAX_BYTES = 16 * 1024
 ZIP_CONTENT_TYPE = "application/zip"
 JSON_CONTENT_TYPE = "application/json"
+RELEASE_PREFIX = "system/plugin-releases/"
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class PluginReleasePublishResult:
+    pointer: PluginReleasePointer
+    cleanup_pending: bool
 
 
 def _not_found(error: Exception) -> bool:
@@ -35,20 +45,19 @@ def _close_response(response: Any) -> None:
 
 
 class PluginReleaseService:
-    def __init__(self, storage: Any, *, environment: str, expected_origin: str) -> None:
+    def __init__(self, storage: Any, *, expected_origin: str) -> None:
         self.storage = storage
-        self.environment = environment.lower()
         self.expected_origin = expected_origin
         self._publish_lock = threading.Lock()
 
     @property
     def pointer_key(self) -> str:
-        return f"system/plugin-releases/{self.environment}/current.json"
+        return "system/plugin-releases/current.json"
 
     def object_key(self, version: str) -> str:
         return (
-            f"system/plugin-releases/{self.environment}/v{version}/"
-            f"linkcv-job-capture-{self.environment}-v{version}.zip"
+            f"system/plugin-releases/v{version}/"
+            f"linkcv-job-capture-v{version}.zip"
         )
 
     def release_from_pointer(self, pointer: PluginReleasePointer) -> PluginRelease:
@@ -81,7 +90,14 @@ class PluginReleaseService:
         except (ValidationError, ValueError) as error:
             raise ApiError(503, "PLUGIN_RELEASE_INVALID_POINTER") from error
         if (
-            pointer.environment != self.environment
+            (
+                pointer.schema_version == 2
+                and "status" in pointer.model_fields_set
+            )
+            or (
+                pointer.schema_version == 3
+                and "status" not in pointer.model_fields_set
+            )
             or pointer.object_key != self.object_key(pointer.version)
             or pointer.size <= 0
             or len(pointer.sha256) != 64
@@ -111,11 +127,64 @@ class PluginReleaseService:
 
     def current(self) -> PluginReleasePointer | None:
         pointer = self._read_pointer()
-        if pointer is not None:
+        if pointer is None or pointer.status == "unpublished":
+            return None
+        self._validate_stored_object(pointer)
+        return pointer
+
+    def admin_current(self) -> PluginReleasePointer | None:
+        pointer = self._read_pointer()
+        if pointer is not None and pointer.status == "published":
             self._validate_stored_object(pointer)
         return pointer
 
-    def publish(self, data: bytes) -> PluginReleasePointer:
+    def _write_pointer(self, pointer: PluginReleasePointer, error_code: str) -> None:
+        pointer_data = json.dumps(
+            pointer.model_dump(mode="json"),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        try:
+            self.storage.put(
+                self.pointer_key,
+                pointer_data,
+                JSON_CONTENT_TYPE,
+                cache_control="private, no-store",
+            )
+        except Exception as error:
+            raise ApiError(503, error_code) from error
+
+    def _finish_publish(
+        self,
+        pointer: PluginReleasePointer,
+    ) -> PluginReleasePublishResult:
+        return PluginReleasePublishResult(
+            pointer=pointer,
+            cleanup_pending=self._cleanup_old_packages(pointer.object_key),
+        )
+
+    def _cleanup_old_packages(self, current_object_key: str) -> bool:
+        try:
+            object_names = self.storage.list_names(RELEASE_PREFIX)
+        except Exception:
+            logger.warning("Failed to list old plugin release packages", exc_info=True)
+            return True
+        cleanup_pending = False
+        for object_name in object_names:
+            if object_name == current_object_key or not object_name.endswith(".zip"):
+                continue
+            try:
+                self.storage.delete(object_name)
+            except Exception:
+                logger.warning(
+                    "Failed to delete old plugin release package: %s",
+                    object_name,
+                    exc_info=True,
+                )
+                cleanup_pending = True
+        return cleanup_pending
+
+    def publish(self, data: bytes) -> PluginReleasePublishResult:
         package = validate_plugin_package(data, self.expected_origin)
         with self._publish_lock:
             current = self._read_pointer()
@@ -126,33 +195,32 @@ class PluginReleaseService:
                 if package.version_tuple == current_version:
                     if package.sha256 != current.sha256:
                         raise ApiError(409, "PLUGIN_RELEASE_VERSION_CONFLICT")
-                    self._validate_stored_object(current)
-                    return current
+                    self._store_package(current.object_key, package)
+                    if current.status == "published":
+                        return self._finish_publish(current)
+                    reactivated = current.model_copy(
+                        update={
+                            "schema_version": 3,
+                            "status": "published",
+                            "released_at": datetime.now(UTC),
+                        }
+                    )
+                    self._write_pointer(
+                        reactivated,
+                        "PLUGIN_RELEASE_PUBLISH_FAILED",
+                    )
+                    return self._finish_publish(reactivated)
             object_key = self.object_key(package.version)
             self._store_package(object_key, package)
             pointer = PluginReleasePointer(
-                environment=self.environment,
                 version=package.version,
                 released_at=datetime.now(UTC),
                 object_key=object_key,
                 size=package.size,
                 sha256=package.sha256,
             )
-            pointer_data = json.dumps(
-                pointer.model_dump(mode="json"),
-                ensure_ascii=False,
-                separators=(",", ":"),
-            ).encode("utf-8")
-            try:
-                self.storage.put(
-                    self.pointer_key,
-                    pointer_data,
-                    JSON_CONTENT_TYPE,
-                    cache_control="private, no-store",
-                )
-            except Exception as error:
-                raise ApiError(503, "PLUGIN_RELEASE_PUBLISH_FAILED") from error
-            return pointer
+            self._write_pointer(pointer, "PLUGIN_RELEASE_PUBLISH_FAILED")
+            return self._finish_publish(pointer)
 
     def _store_package(self, object_key: str, package: ValidatedPluginPackage) -> None:
         try:
@@ -183,6 +251,60 @@ class PluginReleaseService:
             or self._metadata_sha256(stored) != package.sha256
         ):
             raise ApiError(503, "PLUGIN_RELEASE_PUBLISH_FAILED")
+
+    def unpublish(self) -> PluginReleasePointer:
+        with self._publish_lock:
+            pointer = self._read_pointer()
+            if pointer is None or pointer.status == "unpublished":
+                raise ApiError(404, "PLUGIN_RELEASE_NOT_FOUND")
+            unpublished = pointer.model_copy(
+                update={"schema_version": 3, "status": "unpublished"}
+            )
+            self._write_pointer(
+                unpublished,
+                "PLUGIN_RELEASE_UNPUBLISH_FAILED",
+            )
+            return unpublished
+
+    def reactivate(self) -> PluginReleasePointer:
+        with self._publish_lock:
+            pointer = self._read_pointer()
+            if pointer is None:
+                raise ApiError(404, "PLUGIN_RELEASE_NOT_FOUND")
+            if pointer.status == "published":
+                raise ApiError(409, "PLUGIN_RELEASE_ALREADY_PUBLISHED")
+            self._validate_stored_object(pointer)
+            reactivated = pointer.model_copy(
+                update={
+                    "schema_version": 3,
+                    "status": "published",
+                    "released_at": datetime.now(UTC),
+                }
+            )
+            self._write_pointer(
+                reactivated,
+                "PLUGIN_RELEASE_REACTIVATE_FAILED",
+            )
+            return reactivated
+
+    def delete_current(self) -> None:
+        with self._publish_lock:
+            pointer = self._read_pointer()
+            if pointer is None:
+                raise ApiError(404, "PLUGIN_RELEASE_NOT_FOUND")
+            if pointer.status == "published":
+                pointer = pointer.model_copy(
+                    update={"schema_version": 3, "status": "unpublished"}
+                )
+                self._write_pointer(
+                    pointer,
+                    "PLUGIN_RELEASE_DELETE_FAILED",
+                )
+            try:
+                self.storage.delete(pointer.object_key)
+                self.storage.delete(self.pointer_key)
+            except Exception as error:
+                raise ApiError(503, "PLUGIN_RELEASE_DELETE_FAILED") from error
 
     def open_download(self, version: str) -> tuple[PluginReleasePointer, Any]:
         try:
