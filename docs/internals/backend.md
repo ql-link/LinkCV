@@ -80,3 +80,10 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown/DOCX 保持
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
 - `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于 `0002`–`0012` 往返、旧快照转换和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
+# 插件发布与私有下载
+
+`modules/plugin_releases/` 负责 Chrome 岗位采集插件的当前版本发布。管理员上传预构建 ZIP 后，后端限制上传与解压大小，拒绝路径穿越、重复项、加密项和符号链接，并校验根目录安装说明、Manifest V3、三段数字版本以及当前 `PLUGIN_RELEASE_ORIGIN` 对应的精确站点权限。
+
+插件不使用数据库表。每个环境在现有私有 MinIO Bucket 的 `system/plugin-releases/<APP_ENV>/` 前缀下保存不可变版本 ZIP 和 `current.json`。发布顺序固定为先写 ZIP 并核对 size/SHA-256 元数据，最后覆盖当前指针；指针失败时上一版本继续有效。同版本同摘要可以幂等重试，同版本不同内容或版本降级返回冲突。当前 Docker 入口是单 Uvicorn 进程，进程锁只保证当前部署内发布串行；扩为多副本前必须改成跨实例协调。
+
+普通登录用户通过 FastAPI 读取当前元数据和流式下载，MinIO Bucket policy、Endpoint 和对象键都不暴露给浏览器。下载前重新核对当前版本、对象大小和 SHA-256 元数据，页面停留期间版本已变化时要求刷新，不回退到历史对象。

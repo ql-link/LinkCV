@@ -469,3 +469,26 @@
   font-size: 1rem;
   font-weight: 600;
 }
+.plugin-release-panel { padding: 24px; }
+.plugin-admin-state { margin: 18px 0; padding: 16px; border-radius: 12px; background: var(--surface-subtle); color: var(--body-muted); }
+.plugin-admin-state.is-error { color: var(--danger); }
+.plugin-current-card { display: flex; gap: 14px; align-items: flex-start; margin: 18px 0 24px; padding: 18px; border: 1px solid var(--card-border); border-radius: 14px; }
+.plugin-current-card > svg { color: #2f8a62; }
+.plugin-current-card p { margin: 4px 0; color: var(--body-muted); }
+.plugin-current-card small { overflow-wrap: anywhere; color: var(--muted); }
+.plugin-upload-zone { display: grid; grid-template-columns: auto 1fr minmax(200px, auto); gap: 16px; align-items: center; padding: 22px; border: 1px dashed var(--card-border); border-radius: 14px; background: var(--surface-subtle); }
+.plugin-upload-zone p { margin: 4px 0 0; color: var(--body-muted); }
+.plugin-selected-file { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 12px 14px; border: 1px solid var(--card-border); border-radius: 12px; }
+.plugin-selected-file span { overflow-wrap: anywhere; font-weight: 600; }
+.plugin-selected-file small { margin-right: auto; color: var(--muted); }
+.plugin-admin-message { margin: 14px 0 0; color: var(--body-muted); }
+.plugin-admin-dialog-backdrop { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; padding: 20px; background: var(--scrim); }
+.plugin-admin-dialog { width: min(500px, 100%); padding: 26px; border: 1px solid var(--card-border); border-radius: 16px; background: var(--surface-raised); box-shadow: var(--shadow-lg); }
+.plugin-admin-dialog h2 { margin-top: 0; }
+.plugin-admin-dialog > div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+
+@media (max-width: 760px) {
+  .plugin-upload-zone { grid-template-columns: 1fr; }
+  .plugin-selected-file { align-items: flex-start; flex-direction: column; }
+  .plugin-selected-file small { margin-right: 0; }
+}

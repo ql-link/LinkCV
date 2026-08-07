@@ -186,6 +186,21 @@ export type JobDescriptionFields = {
   notes?: string | null;
 };
 
+export type PluginRelease = {
+  version: string;
+  released_at: string;
+  browser: "Chrome";
+  manifest_version: 3;
+  size: number;
+  sha256: string;
+  download_url: string;
+};
+
+export type PluginReleaseCurrentResponse = {
+  status: "available" | "unpublished";
+  release: PluginRelease | null;
+};
+
 export type DuplicateResolution = {
   action: "update" | "restore";
   job_description_id: string;
@@ -397,6 +412,23 @@ async function request<T>(
   return data as T;
 }
 
+async function requestBlob(path: string, retryAuth = true): Promise<Blob> {
+  const response = await fetch(path, { credentials: "include" });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401 && retryAuth) {
+      const refreshed = await refreshSession();
+      if (refreshed) return requestBlob(path, false);
+    }
+    throw new ApiRequestError(
+      response.status,
+      typeof data.error === "string" ? data.error : `HTTP_${response.status}`,
+      data && typeof data === "object" ? data as Record<string, unknown> : null,
+    );
+  }
+  return response.blob();
+}
+
 async function getCurrentUser(): Promise<{ user: User | null }> {
   const current = await request<{ user: User | null }>("/api/auth/me");
   if (current.user || !(await refreshSession())) {
@@ -561,6 +593,18 @@ export const api = {
     request<{ deleted: boolean }>(`/api/job-descriptions/${id}`, {
       method: "DELETE",
     }),
+  getPluginRelease: () =>
+    request<PluginReleaseCurrentResponse>("/api/plugin-releases/current"),
+  downloadPluginRelease: (version: string) =>
+    requestBlob(`/api/plugin-releases/${encodeURIComponent(version)}/download`),
+  adminPublishPluginRelease: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<{ release: PluginRelease }>("/api/admin/plugin-releases", {
+      method: "POST",
+      formData,
+    });
+  },
   adminListUsers: (
     params: {
       page?: number;

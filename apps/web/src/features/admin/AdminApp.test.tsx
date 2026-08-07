@@ -50,6 +50,7 @@ function mockCommonApis() {
   vi.spyOn(api, "getChatCapability").mockResolvedValue(emptyChatCapability);
   vi.spyOn(api, "getChatCatalog").mockResolvedValue(chatCatalog);
   vi.spyOn(api, "adminStats").mockResolvedValue(emptyStats);
+  vi.spyOn(api, "getPluginRelease").mockResolvedValue({ status: "unpublished", release: null });
 }
 
 describe("AdminApp access control", () => {
@@ -70,6 +71,15 @@ describe("AdminApp access control", () => {
     expect(
       await screen.findByRole("heading", { name: "早上好，陈听澜" }, { timeout: 4_000 }),
     ).toBeInTheDocument();
+  });
+
+  it("opens the plugin publishing section from its route", async () => {
+    vi.spyOn(api, "me").mockResolvedValue({ user: mockAdminUser });
+    window.history.replaceState(null, "", "/admin/plugins");
+    render(<AdminApp />);
+
+    expect(await screen.findByRole("heading", { name: "插件发布" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "管理端导航" })).toHaveTextContent("插件发布");
   });
 
   it("redirects a regular user to the admin login page", async () => {

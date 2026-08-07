@@ -77,4 +77,15 @@ describe("JobCenterPage", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("岗位已经恢复为活动状态");
     expect(screen.getByText("Java 开发实习生")).toBeInTheDocument();
   });
+
+  it("从 JD 页头打开插件安装入口", async () => {
+    vi.spyOn(api, "listJobDescriptions").mockResolvedValue({ items: [], next_cursor: null });
+    vi.spyOn(api, "getPluginRelease").mockResolvedValue({ status: "unpublished", release: null });
+
+    render(<JobCenterPage />);
+    fireEvent.click(screen.getByRole("button", { name: "安装岗位采集插件" }));
+
+    expect(await screen.findByRole("dialog", { name: "安装岗位采集插件" })).toBeInTheDocument();
+    expect(screen.getByText("当前环境尚未发布插件安装包。")).toBeInTheDocument();
+  });
 });

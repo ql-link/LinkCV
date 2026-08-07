@@ -170,3 +170,17 @@ Chat 是服务端预定义能力，管理员不填写能力标识。候选写入
 | `GET`   | `/api/auth/admin/stats`                 | `{total_users, active_users_7d, total_resumes, llm_calls_today, estimated_cost_month}` 全系统概览统计；后两项当前为占位值      |
 
 管理员禁用自己的账号返回 `422 CANNOT_SELF_DISABLE`；尝试禁用系统中最后一个管理员返回 `422 CANNOT_DISABLE_LAST_ADMIN`。禁用成功后服务端立即调用 `revoke_user_sessions` 删除该用户全部 Redis 会话，该用户的所有现有 Cookie 立即失效，重新登录时因用户 `status=0` 被拒绝。
+
+## 浏览器插件发布与下载
+
+插件发布复用现有私有 MinIO，不返回对象存储地址。以下读取和下载接口要求普通登录会话，发布接口要求 `is_admin=true`：
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `GET` | `/api/plugin-releases/current` | `200 {status, release}`；未发布为 `{status: "unpublished", release: null}`，可用 release 含 `version`、`released_at`、`browser`、`manifest_version`、`size`、`sha256`、`download_url` |
+| `GET` | `/api/plugin-releases/{version}/download` | 当前版本匹配时返回 `200 application/zip` 附件流，带 `Content-Length`、SHA-256 `ETag`、`private, no-store` 和 `nosniff` |
+| `POST` | `/api/admin/plugin-releases` | multipart 字段 `file` 接收一个 ZIP，校验并发布成功返回 `201 {release}` |
+
+current 或下载读取存储失败、指针/对象大小或摘要非法时返回 `503`，不会返回旧缓存或 MinIO URL。下载版本不是当前版本时返回 `409 PLUGIN_RELEASE_VERSION_CHANGED`，非法或未发布版本返回 `404 PLUGIN_RELEASE_NOT_FOUND`。
+
+上传只接受最大 20 MiB 的 ZIP。压缩包、Manifest、离线说明或环境权限不合法返回 `422 PLUGIN_RELEASE_*`；超过上限返回 `413 PLUGIN_RELEASE_TOO_LARGE`；版本降级、同版本不同内容或不可变对象冲突返回 `409`；对象或指针写入失败返回 `503`，当前指针保持原值。前端不得从文件名推断版本或环境，也不得自行拼接存储路径。

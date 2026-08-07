@@ -375,6 +375,20 @@
 
 .job-dialog h2 { margin: 7px 0 10px; }
 .job-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+.job-header-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.plugin-install-dialog { position: relative; width: min(620px, 100%); }
+.plugin-dialog-close { position: absolute; top: 18px; right: 18px; display: grid; place-items: center; width: 34px; height: 34px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); }
+.plugin-dialog-close:hover { background: var(--surface-subtle); color: var(--ink); }
+.plugin-release-state { margin: 20px 0; padding: 16px; border-radius: var(--radius-md); background: var(--surface-subtle); color: var(--body-muted); }
+.plugin-release-state.is-error { color: var(--danger); }
+.plugin-release-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 20px 0; }
+.plugin-release-facts div { padding: 12px 14px; border: 1px solid var(--card-border); border-radius: var(--radius-md); }
+.plugin-release-facts dt { color: var(--muted); font-size: 12px; }
+.plugin-release-facts dd { margin: 4px 0 0; font-weight: 600; }
+.plugin-install-steps { padding-left: 22px; color: var(--body-muted); line-height: 1.75; }
+.plugin-release-digest { display: flex; align-items: flex-start; gap: 7px; overflow-wrap: anywhere; color: var(--muted); font-size: 12px; }
+.plugin-release-digest svg { flex: 0 0 auto; margin-top: 2px; }
+.plugin-download-link { display: inline-flex; width: fit-content; margin-top: 8px; text-decoration: none; }
 
 @media (max-width: 760px) {
   .job-center-content { padding: 30px 18px 70px; }
@@ -388,6 +402,8 @@
   .job-field-wide { grid-column: auto; }
   .job-detail-hero { flex-direction: column; }
   .job-detail-actions { justify-content: flex-start; }
+  .job-header-actions { justify-content: flex-start; }
+  .plugin-release-facts { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {
