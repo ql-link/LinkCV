@@ -92,6 +92,60 @@ describe("AdminApp access control", () => {
     await waitFor(() => expect(api.adminListSystemLogs).toHaveBeenCalled());
   });
 
+  it("opens a log detail dialog instead of showing the summary in the table", async () => {
+    vi.spyOn(api, "me").mockResolvedValue({ user: mockAdminUser });
+    vi.mocked(api.adminListSystemLogs).mockResolvedValue({
+      items: [{
+        timestampNs: "1786092502557798000",
+        timestamp: "2026-08-07T08:48:22.557798Z",
+        eventId: "event-system-1",
+        eventVersion: 1,
+        logType: "system",
+        level: "INFO",
+        service: "linkcv",
+        environment: "development",
+        source: "backend",
+        logger: "linkcv.http",
+        message: "http request completed",
+        requestId: "request-system-1",
+        taskId: null,
+        operationId: null,
+        actorUserId: "1",
+        dependency: null,
+        durationMs: 12,
+        httpMethod: "GET",
+        httpRoute: "/api/health",
+        httpStatus: 200,
+        errorCode: null,
+        exceptionType: null,
+        exceptionStack: null,
+        action: null,
+        actorType: null,
+        targetType: null,
+        targetId: null,
+        result: null,
+        summary: "健康检查完成",
+      }],
+      nextCursor: null,
+      partial: false,
+      droppedMalformed: 0,
+    });
+    window.history.replaceState(null, "", "/admin/logs/system");
+    render(<AdminApp />);
+
+    expect(await screen.findByRole("button", { name: "查看日志 event-system-1" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "摘要" })).not.toBeInTheDocument();
+    expect(screen.queryByText("健康检查完成")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "查看日志 event-system-1" }));
+    expect(screen.getByRole("dialog", { name: "日志详情" })).toBeInTheDocument();
+    expect(screen.getByText("健康检查完成")).toBeInTheDocument();
+    expect(screen.getByText("GET /api/health")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭日志详情" }));
+    expect(screen.queryByRole("dialog", { name: "日志详情" })).not.toBeInTheDocument();
+  });
+
   it("keeps the legacy LLM log route independent from Loki summary", async () => {
     vi.spyOn(api, "me").mockResolvedValue({ user: mockAdminUser });
     vi.spyOn(api, "listLlmCalls").mockResolvedValue({

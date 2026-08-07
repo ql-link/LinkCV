@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Activity, ClipboardList, RefreshCw } from "lucide-react";
+import { Activity, ClipboardList, RefreshCw, X } from "lucide-react";
 import {
   api,
   ApiRequestError,
@@ -24,7 +24,101 @@ function displayTime(value: string): string {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("zh-CN");
 }
 
+function LogDetailDialog({
+  item,
+  kind,
+  onClose,
+}: {
+  item: LogItem;
+  kind: "system" | "audit";
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  const fields: Array<[string, string | number | null]> = kind === "system"
+    ? [
+        ["事件 ID", item.eventId],
+        ["请求 ID", item.requestId],
+        ["操作 ID", item.operationId],
+        ["任务 ID", item.taskId],
+        ["来源", item.source],
+        ["记录器", item.logger],
+        ["依赖", item.dependency],
+        ["HTTP", [item.httpMethod, item.httpRoute].filter(Boolean).join(" ") || null],
+        ["状态码", item.httpStatus],
+        ["耗时", item.durationMs === null ? null : `${item.durationMs} ms`],
+        ["错误码", item.errorCode],
+        ["异常类型", item.exceptionType],
+      ]
+    : [
+        ["事件 ID", item.eventId],
+        ["请求 ID", item.requestId],
+        ["操作 ID", item.operationId],
+        ["动作", item.action],
+        ["结果", item.result],
+        ["操作者", `${item.actorType ?? "—"}:${item.actorUserId ?? "—"}`],
+        ["目标", `${item.targetType ?? "—"}:${item.targetId ?? "—"}`],
+        ["HTTP", [item.httpMethod, item.httpRoute].filter(Boolean).join(" ") || null],
+        ["状态码", item.httpStatus],
+        ["错误码", item.errorCode],
+      ];
+
+  return (
+    <div
+      className="llm-modal-layer"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        className="llm-modal observability-log-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="observability-log-detail-title"
+      >
+        <header>
+          <div>
+            <span className="page-eyebrow">{kind === "system" ? "系统日志" : "业务审计"}</span>
+            <h2 id="observability-log-detail-title">日志详情</h2>
+          </div>
+          <button type="button" onClick={onClose} aria-label="关闭日志详情" autoFocus>
+            <X size={18} />
+          </button>
+        </header>
+        <div className="observability-log-detail">
+          <section className="observability-log-summary">
+            <span>摘要</span>
+            <p>{item.summary ?? item.message}</p>
+          </section>
+          <dl>
+            <div><dt>时间</dt><dd>{displayTime(item.timestamp)}</dd></div>
+            <div><dt>级别</dt><dd>{item.level}</dd></div>
+            {fields.map(([label, value]) => value === null || value === "" ? null : (
+              <div key={label}><dt>{label}</dt><dd>{value}</dd></div>
+            ))}
+          </dl>
+          {item.exceptionStack && (
+            <section className="observability-log-stack">
+              <span>异常堆栈</span>
+              <pre>{item.exceptionStack}</pre>
+            </section>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function LogTable({ items, kind }: { items: LogItem[]; kind: "system" | "audit" }) {
+  const [selected, setSelected] = useState<LogItem | null>(null);
+
   if (!items.length) {
     return (
       <div className="llm-state">
@@ -42,13 +136,17 @@ function LogTable({ items, kind }: { items: LogItem[]; kind: "system" | "audit" 
             <th>时间</th>
             <th>{kind === "system" ? "级别 / 来源" : "动作 / 结果"}</th>
             <th>{kind === "system" ? "请求 / 依赖" : "操作者 / 目标"}</th>
-            <th>摘要</th>
             <th>错误码</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody>
           {items.map((item) => (
-            <tr key={item.eventId}>
+            <tr
+              className="observability-log-row"
+              key={item.eventId}
+              onClick={() => setSelected(item)}
+            >
               <td>{displayTime(item.timestamp)}</td>
               <td>
                 <strong className="table-strong">
@@ -70,12 +168,22 @@ function LogTable({ items, kind }: { items: LogItem[]; kind: "system" | "audit" 
                     : `${item.targetType ?? "—"}:${item.targetId ?? "—"}`}
                 </small>
               </td>
-              <td>{item.summary ?? item.message}</td>
               <td>{item.errorCode ?? "—"}</td>
+              <td>
+                <button
+                  className="observability-log-detail-button"
+                  type="button"
+                  onClick={() => setSelected(item)}
+                  aria-label={`查看日志 ${item.eventId}`}
+                >
+                  查看
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
+      {selected && <LogDetailDialog item={selected} kind={kind} onClose={() => setSelected(null)} />}
     </div>
   );
 }

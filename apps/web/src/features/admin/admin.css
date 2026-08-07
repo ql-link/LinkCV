@@ -548,6 +548,97 @@
   overflow-wrap: anywhere;
 }
 
+.observability-log-row {
+  cursor: pointer;
+}
+
+.observability-log-row:hover {
+  background: color-mix(in srgb, var(--admin-accent) 4%, transparent);
+}
+
+.observability-log-detail-button {
+  border: 1px solid var(--admin-line);
+  border-radius: .45rem;
+  background: var(--surface-card);
+  padding: .35rem .6rem;
+  color: var(--admin-ink);
+  cursor: pointer;
+  font-size: .62rem;
+}
+
+.observability-log-detail-button:focus-visible {
+  outline: 3px solid var(--accent-soft);
+  outline-offset: 2px;
+}
+
+.observability-log-dialog {
+  width: min(100%, 46rem);
+}
+
+.observability-log-detail {
+  display: grid;
+  gap: 1rem;
+  padding-top: 1.2rem;
+}
+
+.observability-log-summary,
+.observability-log-stack {
+  border-radius: .72rem;
+  background: var(--gray-100);
+  padding: .9rem;
+}
+
+.observability-log-summary span,
+.observability-log-stack span {
+  color: var(--admin-muted);
+  font-size: .6rem;
+}
+
+.observability-log-summary p {
+  margin: .45rem 0 0;
+  overflow-wrap: anywhere;
+  font-size: .74rem;
+  line-height: 1.65;
+}
+
+.observability-log-detail dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .65rem;
+  margin: 0;
+}
+
+.observability-log-detail dl div {
+  display: grid;
+  gap: .3rem;
+  min-width: 0;
+  border-bottom: 1px solid var(--admin-line);
+  padding: .55rem 0;
+}
+
+.observability-log-detail dt {
+  color: var(--admin-muted);
+  font-size: .59rem;
+}
+
+.observability-log-detail dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--mono-font);
+  font-size: .65rem;
+}
+
+.observability-log-stack pre {
+  max-height: 18rem;
+  margin: .5rem 0 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--mono-font);
+  font-size: .62rem;
+  line-height: 1.55;
+}
+
 .fatal-error {
   max-width: 520px;
   margin: 15vh auto;
@@ -558,5 +649,9 @@
 @media (max-width: 900px) {
   .observability-filters {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .observability-log-detail dl {
+    grid-template-columns: 1fr;
   }
 }
