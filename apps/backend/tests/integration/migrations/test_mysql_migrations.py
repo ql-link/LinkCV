@@ -14,7 +14,7 @@ from sqlalchemy.engine import make_url
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0012"
+EXPECTED_HEAD = "0013"
 
 
 def migration_test_url() -> str:
@@ -81,6 +81,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "avatar_object_key",
         "status",
         "is_admin",
+        "wechat_openid",
         "last_login_at",
         "created_at",
         "updated_at",
@@ -171,7 +172,8 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     assert "storage_cleanup_jobs" not in inspector.get_table_names()
 
     assert {constraint["name"] for constraint in inspector.get_unique_constraints("users")} == {
-        "uk_users_email"
+        "uk_users_email",
+        "uk_users_wechat_openid",
     }
     user_columns = {column["name"]: column for column in inspector.get_columns("users")}
     resume_columns = {
@@ -296,6 +298,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "avatar_object_key",
         "status",
         "is_admin",
+        "wechat_openid",
         "last_login_at",
         "created_at",
         "updated_at",
@@ -463,7 +466,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     assert {
         constraint["name"]
         for constraint in inspector.get_unique_constraints("users")
-    } == {"uk_users_email"}
+    } == {"uk_users_email", "uk_users_wechat_openid"}
     assert {
         constraint["name"] for constraint in inspector.get_check_constraints("users")
     } == {"ck_users_is_admin", "ck_users_status"}

@@ -13,6 +13,9 @@
 | `POST` | `/api/auth/login`    | `{user}`，签发短 access 与 7 天 refresh 双 Cookie     |
 | `POST` | `/api/auth/refresh`  | `{user}`，轮换 refresh 密钥并下发新双 Cookie          |
 | `POST` | `/api/auth/logout`   | `{ok: true}`，删除 Redis 会话并清除双 Cookie          |
+| `POST` | `/api/auth/wechat/qrcode`  | `{scene, qr_base64}`；请求为 `{mode: "login" 或 "bind"}`，bind 模式要求已登录，按 IP 限流（默认 10 次/分钟） |
+| `GET`  | `/api/auth/wechat/status`  | `{status: "pending" 或 "success" 或 "expired", user?}`；`scene` 为 query 参数，命中 success 后 login 模式签发双 Cookie、bind 模式不签发，并删除 scene |
+| `POST` | `/api/auth/wechat/confirm` | `{ok: true}`；multipart 提交 `scene`、`code`、`mode`、`nickname?` 与可选 `avatar` 文件；scene 只能确认一次（重复提交 `409 SCENE_REUSED`） |
 
 鉴权使用“短 JWT access + 不透明 refresh + Redis 会话”的双 Token 方案。Access Cookie 名为 `resume_access`，有效期 `ACCESS_TTL_MINUTES`（默认 15 分钟），`SameSite=Lax`、`Path=/`。Refresh Cookie 名为 `resume_refresh`，有效期 `SESSION_TTL_DAYS`（默认 7 天），`HttpOnly`、`SameSite=Lax`、`Path=/api/auth`。Web 调用受保护接口收到 `401` 时，会把并发请求合并到同一次 refresh，刷新成功后各自重试一次；启动检查 `/api/auth/me` 返回空用户时也会先尝试 refresh，再进入访客态。登录或刷新失败返回 `401 INVALID_CREDENTIALS`。`/api/auth/me`、登录、注册与 refresh 返回的 `user` 对象与用户中心一致，包含 `avatar_url`（无头像时为 `null`）。
 
@@ -30,7 +33,7 @@
 | `DELETE` | `/api/account/avatar` | `{ok: true}` |
 | `POST` | `/api/account/change-password` | `{ok, message}`；请求为 `{current_password, new_password, confirm_password}` |
 
-`user` 为 `{id, email, nickname, is_admin, avatar_url}`，无头像时 `avatar_url` 为 `null`。`recent_resumes` 是最近编辑的 5 份简历，每项 `{id, title, updated_at}`，按 `updated_at DESC, id DESC` 排序。
+`user` 为 `{id, email, nickname, is_admin, avatar_url}`，`email` 可为 `null`（微信扫码创建的账号无邮箱密码），无头像时 `avatar_url` 为 `null`。`recent_resumes` 是最近编辑的 5 份简历，每项 `{id, title, updated_at}`，按 `updated_at DESC, id DESC` 排序。
 
 昵称去空白后为空或超过 50 字符返回 `400 INVALID_NICKNAME`。头像通过 data URL 上传（≤10MB），新对象键使用 `users/{user_id}/assets/avatar/{毫秒时间戳}-{8位随机串}-{文件名}.{扩展名}`。非法图片返回 `400 INVALID_IMAGE`，超限返回 `413 IMAGE_TOO_LARGE`，对象写入失败返回 `502 ASSET_UPLOAD_FAILED`；先写新对象再更新数据库，提交失败补偿删除新对象，成功后清理旧头像对象。旧路径中的已有头像继续可读、可替换和删除，不做批量迁移。
 

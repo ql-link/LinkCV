@@ -1,13 +1,17 @@
 import { FormEvent, useState } from "react";
 import { ArrowRight, LogIn, UserPlus } from "lucide-react";
+import { User } from "../../api/client";
 import { useResumeStore } from "../../store/resumeStore";
 import { Brand, Button, TextInput } from "../../components/ds";
 import { authPath, editorPath, navigateTo } from "../../routing";
+import { WechatQrLogin } from "./WechatQrLogin";
 
 export function AuthPage({ initialMode = "login", next = null }: { initialMode?: "login" | "register"; next?: string | null }) {
   const login = useResumeStore((state) => state.login);
   const register = useResumeStore((state) => state.register);
+  const loginWithWechat = useResumeStore((state) => state.loginWithWechat);
   const [mode, setMode] = useState<"login" | "register">(initialMode);
+  const [loginMethod, setLoginMethod] = useState<"password" | "wechat">("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +38,11 @@ export function AuthPage({ initialMode = "login", next = null }: { initialMode?:
     }
   };
 
+  const handleWechatSuccess = async (user: User) => {
+    await loginWithWechat(user);
+    navigateTo(next ?? "/resumes", { replace: true });
+  };
+
   return (
     <main className="auth-shell">
       <section className="auth-panel">
@@ -45,14 +54,51 @@ export function AuthPage({ initialMode = "login", next = null }: { initialMode?:
             <p>专注内容，实时预览，生成一份真正属于你的简历。</p>
           </div>
         </div>
-        <form className="auth-form" onSubmit={submit}>
-          <TextInput label="邮箱" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" required />
-          <TextInput label="密码" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="至少 8 位" autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={8} required />
-          {error && <div className="form-error">{error}</div>}
-          <Button className="auth-submit" type="submit" disabled={submitting} icon={mode === "login" ? <LogIn size={16} /> : <UserPlus size={16} />}>
-            {submitting ? "处理中..." : mode === "login" ? "登录" : "注册并创建简历"}
-          </Button>
-        </form>
+
+        {mode === "login" && (
+          <div className="auth-methods" role="tablist" aria-label="登录方式">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={loginMethod === "password"}
+              className={loginMethod === "password" ? "is-active" : ""}
+              onClick={() => {
+                setLoginMethod("password");
+                setError(null);
+              }}
+            >
+              密码登录
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={loginMethod === "wechat"}
+              className={loginMethod === "wechat" ? "is-active" : ""}
+              onClick={() => {
+                setLoginMethod("wechat");
+                setError(null);
+              }}
+            >
+              微信扫码
+            </button>
+          </div>
+        )}
+
+        {mode === "login" && loginMethod === "wechat" ? (
+          <div className="auth-form">
+            <WechatQrLogin mode="login" onSuccess={handleWechatSuccess} />
+          </div>
+        ) : (
+          <form className="auth-form" onSubmit={submit}>
+            <TextInput label="邮箱" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" required />
+            <TextInput label="密码" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="至少 8 位" autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={8} required />
+            {error && <div className="form-error">{error}</div>}
+            <Button className="auth-submit" type="submit" disabled={submitting} icon={mode === "login" ? <LogIn size={16} /> : <UserPlus size={16} />}>
+              {submitting ? "处理中..." : mode === "login" ? "登录" : "注册并创建简历"}
+            </Button>
+          </form>
+        )}
+
         <Button
           className="auth-switch"
           variant="text"
@@ -60,6 +106,7 @@ export function AuthPage({ initialMode = "login", next = null }: { initialMode?:
           onClick={() => {
             const nextMode = mode === "login" ? "register" : "login";
             setMode(nextMode);
+            setLoginMethod("password");
             setError(null);
             navigateTo(authPath(nextMode, next), { replace: true });
           }}

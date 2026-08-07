@@ -21,6 +21,7 @@ from linkcv.integrations.document_converter import DocumentConverter
 from linkcv.integrations.docx_parse_runner import DocxParseRunner
 from linkcv.integrations.linkparse_client import LinkParseClient
 from linkcv.integrations.resume_structuring import LLMResumeStructuringClient
+from linkcv.integrations.wechat_client import WeChatClient
 from linkcv.modules.llm.crypto import CredentialCipher
 from linkcv.modules.llm.gateway import LLMGateway, LiteLLMGateway
 from linkcv.modules.llm.catalog import CHAT_CAPABILITY
@@ -115,6 +116,18 @@ def create_app(
     runtime_structuring_client = structuring_client
     if runtime_structuring_client is None:
         runtime_structuring_client = LLMResumeStructuringClient(llm_service)
+    wechat_appsecret = (
+        runtime_settings.wechat_appsecret.get_secret_value()
+        if runtime_settings.wechat_appsecret is not None
+        else None
+    )
+    runtime_wechat_client = WeChatClient(
+        appid=runtime_settings.wechat_appid,
+        appsecret=wechat_appsecret or "",
+        login_page=runtime_settings.wechat_login_page,
+        redis_client=redis,
+        timeout_seconds=runtime_settings.wechat_timeout_seconds,
+    )
     import_idempotency = ResumeImportIdempotency(
         redis,
         processing_ttl_seconds=(
@@ -162,6 +175,7 @@ def create_app(
     app.state.redis = redis
     app.state.document_converter = runtime_document_converter
     app.state.structuring_client = runtime_structuring_client
+    app.state.wechat_client = runtime_wechat_client
     app.state.import_idempotency = import_idempotency
     app.state.import_admission = ImportAdmissionController(
         requests_per_minute=runtime_settings.resume_import_requests_per_minute,

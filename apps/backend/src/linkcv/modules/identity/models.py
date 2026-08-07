@@ -23,6 +23,7 @@ class User(Base):
     __table_args__ = (
         PrimaryKeyConstraint("id", name="pk_users"),
         UniqueConstraint("email", name="uk_users_email"),
+        UniqueConstraint("wechat_openid", name="uk_users_wechat_openid"),
         CheckConstraint("status IN (0, 1)", name="ck_users_status"),
         CheckConstraint("is_admin IN (0, 1)", name="ck_users_is_admin"),
         {"comment": "用户账号"},
@@ -35,11 +36,16 @@ class User(Base):
         autoincrement=True,
         comment="用户自增主键",
     )
-    email: Mapped[str] = mapped_column(
-        String(254), nullable=False, comment="规范化后的登录邮箱"
+    email: Mapped[str | None] = mapped_column(
+        String(254), nullable=True, comment="规范化后的登录邮箱（微信登录用户可为空）"
     )
-    password_hash: Mapped[str] = mapped_column(
-        String(255), nullable=False, comment="密码摘要，不保存明文"
+    password_hash: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="密码摘要，不保存明文（微信登录用户可为空）"
+    )
+    wechat_openid: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="微信 openid，登录绑定标识；一微信一账号",
     )
     nickname: Mapped[str] = mapped_column(
         String(50), nullable=False, comment="用户展示昵称"

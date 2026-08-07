@@ -2,10 +2,20 @@ import type { ResumeDocumentV1, ResumeStyleV1 } from "./resumeContract";
 
 export type User = {
   id: string;
-  email: string;
+  email: string | null;
   nickname: string;
   is_admin: boolean;
   avatar_url?: string | null;
+};
+
+export type WeChatQrcodeResponse = {
+  scene: string;
+  qr_base64: string;
+};
+
+export type WeChatStatusResponse = {
+  status: "pending" | "success" | "expired";
+  user: User | null;
 };
 
 export type UserProfile = User & {
@@ -422,6 +432,15 @@ export const api = {
       method: "POST",
       body: { email, password },
     }),
+  wechatQrcode: (mode: "login" | "bind") =>
+    request<WeChatQrcodeResponse>("/api/auth/wechat/qrcode", {
+      method: "POST",
+      body: { mode },
+    }),
+  wechatStatus: (scene: string) =>
+    request<WeChatStatusResponse>(
+      `/api/auth/wechat/status?scene=${encodeURIComponent(scene)}`,
+    ),
   logout: () =>
     request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
   getAccountProfile: () => request<AccountProfile>("/api/account/profile"),

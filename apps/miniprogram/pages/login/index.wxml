@@ -1,0 +1,42 @@
+<view class="page">
+  <view class="card">
+    <view class="logo">LinkCV</view>
+    <view class="title" wx:if="{{!done}}">确认登录 LinkCV</view>
+    <view class="subtitle" wx:if="{{!done}}">
+      {{mode === 'bind' ? '绑定微信到你的账号' : '扫码授权后将自动登录'}}
+    </view>
+
+    <view class="form" wx:if="{{!done}}">
+      <button class="avatar-button" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar">
+        <image wx:if="{{avatarUrl}}" class="avatar-image" src="{{avatarUrl}}" mode="aspectFill" />
+        <view wx:else class="avatar-placeholder">选择头像</view>
+      </button>
+
+      <input
+        class="nickname-input"
+        type="nickname"
+        placeholder="请输入昵称"
+        value="{{nickname}}"
+        bindinput="onNicknameInput"
+      />
+
+      <button
+        class="confirm-button"
+        type="primary"
+        loading="{{confirming}}"
+        disabled="{{confirming}}"
+        bindtap="onConfirm"
+      >
+        确认
+      </button>
+
+      <view class="error" wx:if="{{error}}">{{error}}</view>
+    </view>
+
+    <view class="done" wx:if="{{done}}">
+      <view class="done-icon">✓</view>
+      <view class="done-title">已确认，可关闭本页</view>
+      <view class="done-subtitle">请在电脑上继续操作</view>
+    </view>
+  </view>
+</view>

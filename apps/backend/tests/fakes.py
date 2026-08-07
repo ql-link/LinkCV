@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 from threading import RLock
 
@@ -103,6 +105,26 @@ class FakeRedis:
 
     def hgetall(self, name: str) -> dict[str, str]:
         return dict(self.hashes.get(name, {}))
+
+    def get(self, name: str) -> str | None:
+        return self.strings.get(name)
+
+    def getset(self, name: str, value: str) -> str | None:
+        previous = self.strings.get(name)
+        self.strings[name] = str(value)
+        return previous
+
+    def incr(self, name: str, amount: int = 1) -> int:
+        current = int(self.strings.get(name) or 0)
+        self.strings[name] = str(current + amount)
+        return current + amount
+
+    def set(self, name: str, value: str, **kwargs: object) -> int:
+        self.strings[name] = str(value)
+        ttl = kwargs.get("ex")
+        if isinstance(ttl, (int, float)):
+            self.ttls[name] = float(ttl)
+        return 1
 
     def exists(self, name: str) -> int:
         return int(

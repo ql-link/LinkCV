@@ -6,7 +6,7 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装 Web、浏览器插件和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis 与 MinIO，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web 和 FastAPI。当前 Alembic head `0012`；`0002`–`0005` 建立并演进简历、版本和对象清理，`0006` 新增 LLM 模型配置和调用日志表，`0007` 新增用户私有 JD 单表，`0008` 增加 Chat 候选模型、唯一当前绑定与调用快照，`0009` 曾新增管理员操作审计日志表，`0010` 在对象删除改为同步后移除清理任务表，`0011` 移除仅写不读的管理员操作审计日志表，`0012` 删除已停用的旧版简历内容与样式备份列。
+新环境执行 `npm run setup` 安装 Web、浏览器插件和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis 与 MinIO，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web 和 FastAPI。当前 Alembic head `0013`；`0002`–`0005` 建立并演进简历、版本和对象清理，`0006` 新增 LLM 模型配置和调用日志表，`0007` 新增用户私有 JD 单表，`0008` 增加 Chat 候选模型、唯一当前绑定与调用快照，`0009` 曾新增管理员操作审计日志表，`0010` 在对象删除改为同步后移除清理任务表，`0011` 移除仅写不读的管理员操作审计日志表，`0012` 删除已停用的旧版简历内容与样式备份列，`0013` 为微信扫码登录新增 `users.wechat_openid` 唯一绑定并放宽邮箱可空。
 
 后端默认读取仓库根目录 `.env`。设置 `LINKCV_ENV_FILE=.env.development` 可选择共享 Dev 基础配置；如果同目录存在 `.env.development.local`，其密码和密钥会覆盖基础文件。Production 同理使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，配置路径不受当前工作目录影响。
 
@@ -26,7 +26,7 @@ local/test 未配置密钥环时，原有非 LLM 接口仍可启动，但保存�
 LINKCV_ENV_FILE=.env.development npm run db:init
 ```
 
-命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0012`。图片读写使用 `MINIO_*` 配置。
+命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0013`。图片读写使用 `MINIO_*` 配置。
 
 ## 默认端口与覆盖
 
@@ -40,6 +40,8 @@ LINKCV_ENV_FILE=.env.development npm run db:init
 | MinIO Console |     9001 | `MINIO_CONSOLE_PORT`                                |
 
 `BACKEND_PROXY_TARGET` 可以覆盖 Vite 使用的完整 FastAPI 地址。数据库可以用完整 `DATABASE_URL` 覆盖分项 MySQL 配置，Redis 可以用 `REDIS_URL` 覆盖分项配置。Production 必须通过私密覆盖提供足够随机的 `JWT_SECRET`、`LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY`、MySQL 和 MinIO 凭据，否则后端拒绝启动。鉴权会话与简历导入幂等状态共用 `REDIS_*` 指向的隔离数据库；`ACCESS_TTL_MINUTES`、`ACCESS_COOKIE_NAME` 和 `REFRESH_COOKIE_NAME` 控制双 Token 的有效期与 Cookie 名称。
+
+微信扫码登录需要 `WECHAT_APPID` 与 `WECHAT_APPSECRET`（个人主体小程序，体验版/正式版均可）；`WECHAT_LOGIN_PAGE` 指定小程序登录确认页（默认 `pages/login/index`）。`WECHAT_QRCODE_REQUESTS_PER_MINUTE`（默认 10）控制二维码请求的按 IP 限流，`WECHAT_SCENE_TTL_SECONDS`（默认 300）控制 scene 有效期，`WECHAT_TIMEOUT_SECONDS`（默认 5）控制微信上游调用超时。Development 未配置微信凭据时仍可启动应用，但二维码接口会返回 `WECHAT_UNAVAILABLE`；Production 缺 `WECHAT_APPID`/`WECHAT_APPSECRET` 会拒绝启动。
 
 ## 简历导入与版本配置
 

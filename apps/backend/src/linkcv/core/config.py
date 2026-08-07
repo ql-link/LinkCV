@@ -175,6 +175,30 @@ class Settings(BaseSettings):
         ge=1,
     )
 
+    wechat_appid: str = Field(default="", alias="WECHAT_APPID")
+    wechat_appsecret: SecretStr | None = Field(default=None, alias="WECHAT_APPSECRET")
+    wechat_login_page: str = Field(
+        default="pages/login/index",
+        alias="WECHAT_LOGIN_PAGE",
+    )
+    wechat_qrcode_requests_per_minute: int = Field(
+        default=10,
+        alias="WECHAT_QRCODE_REQUESTS_PER_MINUTE",
+        ge=1,
+        le=60,
+    )
+    wechat_scene_ttl_seconds: int = Field(
+        default=300,
+        alias="WECHAT_SCENE_TTL_SECONDS",
+        ge=30,
+        le=600,
+    )
+    wechat_timeout_seconds: float = Field(
+        default=5,
+        alias="WECHAT_TIMEOUT_SECONDS",
+        gt=0,
+    )
+
     linkparse_base_url: str = Field(
         default="http://100.86.10.52:18743",
         alias="LINKPARSE_BASE_URL",
@@ -281,6 +305,15 @@ class Settings(BaseSettings):
         )
         if _is_placeholder(linkparse_key):
             invalid.append("LINKPARSE_API_KEY")
+        if _is_placeholder(self.wechat_appid) or _is_placeholder(self.wechat_login_page):
+            invalid.append("WECHAT_APPID")
+        wechat_secret = (
+            self.wechat_appsecret.get_secret_value()
+            if self.wechat_appsecret is not None
+            else None
+        )
+        if _is_placeholder(wechat_secret):
+            invalid.append("WECHAT_APPSECRET")
         try:
             llm_keys = parse_llm_credential_encryption_keys(
                 self.llm_credential_encryption_keys

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   api,
@@ -106,5 +106,59 @@ describe("AccountPage", () => {
 
     await waitFor(() => expect(logout).toHaveBeenCalledOnce());
     expect(window.location.pathname).toBe("/");
+  });
+});
+
+describe("AccountPage WeChat binding", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("打开绑定弹窗后展示二维码", async () => {
+    const qrcode = vi
+      .spyOn(api, "wechatQrcode")
+      .mockResolvedValue({ scene: "bind:abc123", qr_base64: "base64-qr" });
+    vi.spyOn(api, "wechatStatus").mockResolvedValue({ status: "pending", user: null });
+
+    render(<AccountPage />);
+    await act(async () => {});
+
+    fireEvent.click(screen.getByRole("button", { name: /微信绑定/ }));
+    await act(async () => {});
+
+    expect(qrcode).toHaveBeenCalledWith("bind");
+    expect(screen.getByAltText("微信扫码登录二维码")).toBeInTheDocument();
+  });
+
+  it("绑定成功后显示已绑定状态与成功提示", async () => {
+    const boundUser: UserProfile = {
+      ...user,
+      email: "user@example.test",
+    };
+    vi.spyOn(api, "wechatQrcode").mockResolvedValue({
+      scene: "bind:abc123",
+      qr_base64: "base64-qr",
+    });
+    vi.spyOn(api, "wechatStatus").mockResolvedValue({
+      status: "success",
+      user: boundUser,
+    });
+
+    render(<AccountPage />);
+    await act(async () => {});
+
+    fireEvent.click(screen.getByRole("button", { name: /微信绑定/ }));
+    await act(async () => {});
+    await act(async () => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(screen.getByText("微信绑定成功。")).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /已绑定微信，可用微信扫码登录/ })).toBeInTheDocument();
   });
 });

@@ -114,6 +114,8 @@ def test_production_rejects_missing_secrets_without_exposing_values() -> None:
             mysql_password=exposed,
             minio_access_key="",
             minio_secret_key="replace-with-secret",
+            wechat_appid="",
+            wechat_appsecret="replace-with-appsecret",
         )
 
     message = str(error.value)
@@ -122,6 +124,8 @@ def test_production_rejects_missing_secrets_without_exposing_values() -> None:
     assert "MINIO_SECRET_KEY" in message
     assert "LLM_CREDENTIAL_ENCRYPTION_KEYS" in message
     assert "LINKPARSE_API_KEY" in message
+    assert "WECHAT_APPID" in message
+    assert "WECHAT_APPSECRET" in message
     assert exposed not in message
     assert "replace-with-secret" not in message
 
@@ -137,5 +141,7 @@ def test_production_accepts_injected_secrets() -> None:
             f"production:{Fernet.generate_key().decode('ascii')}"
         ),
         linkparse_api_key="fictional-linkparse-key",
+        wechat_appid="wx-production-appid",
+        wechat_appsecret="production-wechat-appsecret",
     )
     assert settings.minio_bucket == "linkcv"

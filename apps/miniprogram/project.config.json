@@ -1,0 +1,27 @@
+{
+  "description": "LinkCV 微信扫码登录确认小程序",
+  "projectname": "linkcv-miniprogram",
+  "appid": "touristappid",
+  "compileType": "miniprogram",
+  "miniprogramRoot": "",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "ignoreUploadUnusedFiles": true
+  },
+  "condition": {
+    "miniprogram": {
+      "list": [
+        {
+          "name": "登录确认（注入 scene）",
+          "pathName": "pages/login/index",
+          "query": "scene=login%3Afe1c9a2b3c4d5e6f",
+          "scene": "login%3Afe1c9a2b3c4d5e6f"
+        }
+      ]
+    }
+  }
+}

@@ -830,7 +830,7 @@ function UsersPanel({
                         <span>{u.nickname.slice(0, 1)}</span>
                         <div>
                           <strong>{u.nickname}</strong>
-                          <small>{u.email}</small>
+                          <small>{u.email ?? "（未绑定邮箱）"}</small>
                         </div>
                       </button>
                     </td>
@@ -1091,7 +1091,7 @@ function UserDetail({
         <span>{detail.nickname[0]}</span>
         <div>
           <strong>{detail.nickname}</strong>
-          <p>{detail.email}</p>
+          <p>{detail.email ?? "（未绑定邮箱）"}</p>
           <small>
             {detail.is_admin ? "管理员" : "普通用户"} ·{" "}
             {detail.status === 1 ? "启用" : "禁用"}
@@ -1176,8 +1176,8 @@ function UserDetail({
             }
             message={
               confirmAction === "disable"
-                ? `确定要禁用 ${detail.nickname}（${detail.email}）吗？该用户的所有活跃会话将被立即撤销。`
-                : `确定要启用 ${detail.nickname}（${detail.email}）吗？该用户将可以重新登录。`
+                ? `确定要禁用 ${detail.nickname}（${detail.email ?? "未绑定邮箱"}）吗？该用户的所有活跃会话将被立即撤销。`
+                : `确定要启用 ${detail.nickname}（${detail.email ?? "未绑定邮箱"}）吗？该用户将可以重新登录。`
             }
             confirmLabel={confirmAction === "disable" ? "禁用" : "启用"}
             onConfirm={handleStatusAction}

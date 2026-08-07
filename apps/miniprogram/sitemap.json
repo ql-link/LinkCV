@@ -1,0 +1,9 @@
+{
+  "desc": "LinkCV 小程序站点地图；登录确认页无需被搜索收录",
+  "rules": [
+    {
+      "action": "disallow",
+      "page": "*"
+    }
+  ]
+}

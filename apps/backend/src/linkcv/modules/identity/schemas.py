@@ -17,7 +17,7 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    email: str
+    email: str | None
     nickname: str
     is_admin: bool
     avatar_url: str | None = None
@@ -44,7 +44,7 @@ class UserProfileResponse(BaseModel):
     """当前用户资料，头像只暴露经 /api/assets 转发的相对 URL。"""
 
     id: str
-    email: str
+    email: str | None
     nickname: str
     is_admin: bool
     avatar_url: str | None = None

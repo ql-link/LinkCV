@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, ChevronRight, FileText, KeyRound, LogOut, Trash2 } from "lucide-react";
+import { Camera, ChevronRight, FileText, KeyRound, LogOut, MessageCircle, Trash2 } from "lucide-react";
 import { api, AccountProfile, ApiRequestError } from "../../api/client";
 import { Button, TextInput, Toast } from "../../components/ds";
 import { editorPath, navigateTo } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
+import { WechatQrLogin } from "../auth/WechatQrLogin";
 
 const MAX_AVATAR_BYTES = 10 * 1024 * 1024;
 const MAX_NICKNAME_LENGTH = 50;
@@ -31,6 +32,8 @@ export function AccountPage() {
   const [savingName, setSavingName] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [wechatDialogOpen, setWechatDialogOpen] = useState(false);
+  const [wechatBound, setWechatBound] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -206,7 +209,7 @@ export function AccountPage() {
                   {savingName ? "保存中..." : "保存昵称"}
                 </Button>
               </div>
-              <TextInput label="登录邮箱" value={profile.user.email} readOnly disabled hint="邮箱是登录账号，暂不支持修改" />
+              <TextInput label="登录邮箱" value={profile.user.email ?? ""} readOnly disabled hint={profile.user.email ? "邮箱是登录账号，暂不支持修改" : "微信登录账号暂无邮箱"} />
             </div>
           </section>
 
@@ -238,6 +241,18 @@ export function AccountPage() {
 
           <section className="account-card account-security-card">
             <h2>账号安全</h2>
+            <button
+              type="button"
+              className="account-security-link"
+              onClick={() => setWechatDialogOpen(true)}
+            >
+              <MessageCircle size={16} aria-hidden="true" />
+              <span>
+                <strong>微信绑定</strong>
+                <small>{wechatBound ? "已绑定微信，可用微信扫码登录" : "绑定后可用微信扫码登录当前账号"}</small>
+              </span>
+              <ChevronRight size={16} aria-hidden="true" />
+            </button>
             <button type="button" className="account-security-link" onClick={() => navigateTo("/account/password")}>
               <KeyRound size={16} aria-hidden="true" />
               <span>
@@ -259,6 +274,41 @@ export function AccountPage() {
               </span>
               <ChevronRight size={16} aria-hidden="true" />
             </button>
+          </section>
+        </div>
+      )}
+
+      {wechatDialogOpen && (
+        <div
+          className="home-confirm-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setWechatDialogOpen(false);
+          }}
+        >
+          <section
+            className="home-confirm-dialog wechat-bind-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="绑定微信"
+          >
+            <div className="home-confirm-copy">
+              <h2>{wechatBound ? "已绑定微信" : "绑定微信"}</h2>
+              <p>{wechatBound ? "当前账号已绑定微信，可以使用微信扫码登录。" : "使用微信扫一扫，在手机上确认后即可完成绑定。"}</p>
+            </div>
+            {!wechatBound && (
+              <WechatQrLogin
+                mode="bind"
+                onSuccess={() => {
+                  setWechatBound(true);
+                  setNotice({ kind: "success", message: "微信绑定成功。" });
+                }}
+              />
+            )}
+            <div className="home-confirm-actions">
+              <Button variant="secondary" onClick={() => setWechatDialogOpen(false)}>
+                {wechatBound ? "完成" : "取消"}
+              </Button>
+            </div>
           </section>
         </div>
       )}

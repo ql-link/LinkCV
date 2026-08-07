@@ -69,6 +69,7 @@ type ResumeState = {
   hydrate: () => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
+  loginWithWechat: (user: User) => Promise<void>;
   logout: () => Promise<void>;
   syncProfile: (user: UserProfile) => void;
   changePassword: (payload: ChangePasswordPayload) => Promise<void>;
@@ -250,6 +251,11 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
 
   login: async (email, password) => {
     const { user } = await api.login(email, password);
+    set({ authStatus: "authenticated", user, error: null });
+    await get().listResumes();
+  },
+
+  loginWithWechat: async (user) => {
     set({ authStatus: "authenticated", user, error: null });
     await get().listResumes();
   },
