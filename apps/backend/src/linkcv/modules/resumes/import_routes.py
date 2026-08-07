@@ -21,6 +21,7 @@ from linkcv.modules.resumes.schemas import (
     ResumeImportMetadata,
     ResumeImportResponse,
 )
+from linkcv.modules.observability.audit import bind_audit_target
 from linkcv.services.import_admission import (
     ImportAdmissionController,
     ImportAdmissionRejected,
@@ -141,6 +142,7 @@ async def import_resume(
             content=content,
         )
         operation_id = uuid4().hex
+        request.state.operation_id = operation_id
         try:
             acquired = await idempotency.acquire_or_replay(
                 user_id=user.id,
@@ -171,6 +173,7 @@ async def import_resume(
             resume = find_owned_resume(db, state.resume_id, user.id)
             if resume is None:
                 raise ApiError(503, "IMPORT_REPLAY_UNAVAILABLE")
+            bind_audit_target(request, resume.id)
             return import_response(
                 ImportResult(
                     resume=resume,
@@ -237,6 +240,7 @@ async def import_resume(
                 extra={"operation_id": operation_id, "user_id": user.id},
             )
             raise ApiError(503, "IMPORT_IDEMPOTENCY_UNAVAILABLE") from error
+        bind_audit_target(request, result.resume.id)
         return import_response(result)
     except ResumeImportFailure as error:
         if lease is not None:

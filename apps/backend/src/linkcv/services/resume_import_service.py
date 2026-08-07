@@ -181,6 +181,11 @@ class ResumeImportService:
         object_key = build_import_object_name(user_id, operation_id, filename)
         created = False
         try:
+            upload_started = monotonic()
+            logger.info(
+                "resume import source upload started",
+                extra={"dependency": "minio", "operation_id": operation_id},
+            )
             upload_task = asyncio.create_task(
                 asyncio.to_thread(
                     self._storage.upload,
@@ -198,7 +203,25 @@ class ResumeImportService:
                     await upload_task
                 raise
             except Exception as error:
+                logger.warning(
+                    "resume import source upload failed",
+                    extra={
+                        "dependency": "minio",
+                        "operation_id": operation_id,
+                        "duration_ms": round((monotonic() - upload_started) * 1000),
+                        "error_code": "IMPORT_STORAGE_FAILED",
+                        "exception_type": type(error).__name__,
+                    },
+                )
                 raise ResumeImportFailure(502, "IMPORT_STORAGE_FAILED") from error
+            logger.info(
+                "resume import source upload completed",
+                extra={
+                    "dependency": "minio",
+                    "operation_id": operation_id,
+                    "duration_ms": round((monotonic() - upload_started) * 1000),
+                },
+            )
 
             try:
                 conversion = await self._document_converter.convert(
@@ -299,8 +322,10 @@ class ResumeImportService:
                     logger.warning(
                         "resume import cleanup failed",
                         extra={
+                            "dependency": "minio",
                             "operation_id": operation_id,
-                            "user_id": user_id,
-                            "error_type": type(cleanup_error).__name__,
+                            "actor_user_id": user_id,
+                            "error_code": "IMPORT_STORAGE_CLEANUP_FAILED",
+                            "exception_type": type(cleanup_error).__name__,
                         },
                     )

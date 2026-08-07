@@ -28,7 +28,8 @@ import {
   X,
 } from "lucide-react";
 import { Brand } from "../../components/ds";
-import { LogsPanel, ModelsPanel } from "./AdminLlmPanels";
+import { ModelsPanel } from "./AdminLlmPanels";
+import { AdminLogsCenter } from "./AdminObservabilityPanels";
 import "./admin.css";
 
 import {
@@ -54,7 +55,7 @@ const adminSectionPaths: Record<AdminSection, string> = {
   overview: "/admin",
   users: "/admin/users",
   models: "/admin/llm/models",
-  logs: "/admin/logs",
+  logs: "/admin/logs/system",
 };
 
 const spring = {
@@ -350,7 +351,7 @@ function AdminWorkspace({
                 />
               )}
               {section === "logs" && (
-                <LogsPanel
+                <AdminLogsCenter
                   notify={notify}
                   onSessionExpired={onSessionExpired}
                 />
@@ -396,7 +397,7 @@ const sectionLabels: Record<AdminSection, string> = {
   overview: "概览",
   users: "用户管理",
   models: "模型配置",
-  logs: "LLM 调用日志",
+  logs: "日志中心",
 };
 
 function SidebarContent({
@@ -416,7 +417,7 @@ function SidebarContent({
     { id: "overview", label: "概览", icon: LayoutDashboard },
     { id: "users", label: "用户管理", icon: Users },
     { id: "models", label: "模型配置", icon: Bot },
-    { id: "logs", label: "LLM 调用日志", icon: Activity },
+    { id: "logs", label: "日志中心", icon: Activity },
   ];
   return (
     <>

@@ -37,6 +37,7 @@ from linkcv.modules.identity.schemas import (
     OkResponse,
     UserResponse,
 )
+from linkcv.modules.observability.audit import bind_audit_actor, bind_audit_target
 
 router = APIRouter(prefix="/auth", tags=["identity"])
 EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -79,6 +80,7 @@ def me(user: User | None = Depends(get_optional_user)) -> MeResponse:
 @router.post("/register", response_model=AuthResponse, status_code=201)
 def register(
     payload: Credentials,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
@@ -106,12 +108,15 @@ def register(
     db.refresh(user)
 
     issue_session(response, user, settings, redis_client)
+    bind_audit_actor(request, user.id)
+    bind_audit_target(request, user.id)
     return AuthResponse(user=UserResponse.model_validate(user))
 
 
 @router.post("/login", response_model=AuthResponse)
 def login(
     payload: Credentials,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
@@ -135,12 +140,15 @@ def login(
     db.refresh(user)
 
     issue_session(response, user, settings, redis_client)
+    bind_audit_actor(request, user.id)
+    bind_audit_target(request, user.id)
     return AuthResponse(user=UserResponse.model_validate(user))
 
 
 @router.post("/admin-login", response_model=AuthResponse)
 def admin_login(
     payload: Credentials,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
@@ -154,6 +162,8 @@ def admin_login(
         or not verify_password(payload.password, user.password_hash)
     ):
         raise ApiError(401, "INVALID_CREDENTIALS")
+    bind_audit_actor(request, user.id, is_admin=bool(user.is_admin))
+    bind_audit_target(request, user.id)
     if not user.is_admin:
         raise ApiError(403, "FORBIDDEN")
 
@@ -194,6 +204,8 @@ def refresh(
     if user is None or user.status != 1:
         redis_client.delete(key)
         raise ApiError(401, "INVALID_CREDENTIALS")
+    bind_audit_actor(request, user.id, is_admin=bool(user.is_admin))
+    bind_audit_target(request, sid)
 
     # Rotate the refresh secret; sid is stable so the session keeps its identity.
     new_secret = new_refresh_secret()
@@ -216,8 +228,10 @@ def logout(
         sid, _ = parsed
         key = session_key(sid)
         uid = redis_client.hget(key, "uid")
+        bind_audit_target(request, sid)
         redis_client.delete(key)
         if uid and uid.isdecimal():
+            bind_audit_actor(request, int(uid))
             redis_client.srem(user_sessions_key(int(uid)), sid)
     clear_auth_cookies(response, settings)
     return OkResponse(ok=True)

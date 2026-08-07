@@ -2,6 +2,8 @@
 
 本文记录当前调用方可观察的 HTTP 行为。全部 `/api` 路径由 FastAPI 提供，Swagger UI 位于 `/api/docs`，OpenAPI JSON 位于 `/api/openapi.json`。未匹配的 `/api` 路径返回 JSON 404，不会被 SPA fallback 转成 HTML。
 
+客户端可以发送最长 64 字符、仅包含字母数字、下划线和连字符的 `X-Request-ID`；不合法或缺失时服务端生成新值。所有正常及受控错误响应回传最终 `X-Request-ID`。命中状态变更审计映射的响应还带 `X-Audit-Recorded: true|false`，表示本地日志 sink 是否接受该次审计；它不表示事件已经同步到 Loki。
+
 ## 健康检查与鉴权
 
 `GET /api/health` 返回 `{status, service, version}`。鉴权接口包括：
@@ -127,6 +129,29 @@ JD 管理接口接受和返回最终结构化数据；单独的浏览器导入�
 | `DELETE` | `/api/resumes/:id/assets/:asset_name` | 当前或历史快照仍引用时返回 `409 ASSET_IN_USE` |
 
 删除简历会先同步删除导入原文件和简历资源前缀，全部成功后再删除数据库版本和简历；对象存储删除失败返回 `502 ASSET_DELETE_FAILED`，数据库记录保持不变。MinIO 与 MySQL 不构成原子事务，多个对象可能只删除一部分，对象已删除后的数据库提交失败也无法回滚对象。
+
+## 系统日志与业务审计
+
+以下上报接口只允许已登录用户访问。浏览器不直接连接 Loki，不提交 label 或 LogQL：
+
+| Method | Path | 请求 | 成功结果 |
+| --- | --- | --- | --- |
+| `POST` | `/api/observability/client-events` | `{event_type, error_name, message, stack?, request_id?}` | `202 {accepted: true, eventId}` |
+| `POST` | `/api/audit/events` | `{action: "resume.pdf_export", target_type: "resume", target_id, result, error_code?}` | `202 {accepted: true, eventId}` |
+
+`event_type` 只允许 `unhandled_error`、`unhandled_rejection`、`render_error` 和 `api_5xx`。服务端从当前会话绑定 actor，忽略客户端提供身份；消息和栈经统一长度限制与脱敏后写入系统日志。请求非法返回 `400 INVALID_CLIENT_LOG_EVENT`，本地 sink 拒绝写入返回 `503 LOG_EVENT_UNAVAILABLE`。
+
+PDF 导出审计只接受当前用户拥有的简历 ID；不存在或不属于当前用户都返回 `404 RESUME_NOT_FOUND`，非法动作或字段返回 `400 INVALID_AUDIT_EVENT`，sink 拒绝写入返回 `503 AUDIT_EVENT_UNAVAILABLE`。其他审计动作不能通过该接口伪造，而是由服务端路由映射自动生成。自动审计覆盖鉴权/会话、账号资料和密码、简历/版本/资源、JD、管理员用户状态和模型配置等状态变更；普通 GET 不写审计。成功和受控失败都记录 action、可信 actor、target、result、错误码和 request ID，不记录请求 body。审计进入共享 Loki，不新增 MySQL 审计表；现有 `/api/admin/llm/calls` 继续是 LLM 计量和调用状态的事实源。
+
+管理员日志查询接口复用 `is_admin=true` 权限；未登录返回 `401 UNAUTHORIZED`，普通用户返回 `403 FORBIDDEN`：
+
+| Method | Path | 查询参数 | 成功结果 |
+| --- | --- | --- | --- |
+| `GET` | `/api/admin/logs/system` | `from`、`to`、`level`、`source`、`dependency`、`requestId`、`taskId`、`operationId`、`errorCode`、`keyword`、`cursor`、`limit` | `{items, nextCursor, partial, droppedMalformed}` |
+| `GET` | `/api/admin/logs/audit` | `from`、`to`、`action`、`actorUserId`、`targetType`、`targetId`、`result`、`requestId`、`cursor`、`limit` | 同上 |
+| `GET` | `/api/admin/logs/summary` | `from`、`to` | `{system: {total, warnings, errors}, audit: {total, succeeded, failed}}` |
+
+时间使用带时区 ISO 8601，默认最近 24 小时，最大跨度七天；`limit` 默认 50、最大 200。系统依赖筛选只允许 `mysql|redis|minio|linkparse|llm`，审计 action 只允许服务端已注册动作。游标不透明；非法筛选分别返回 `400 INVALID_SYSTEM_LOG_QUERY`、`INVALID_AUDIT_LOG_QUERY` 或 `INVALID_LOG_SUMMARY_QUERY`。查询固定使用 `service=linkcv`、当前环境和日志类型，不接受任意 selector。历史脏行会被丢弃并通过 `partial/droppedMalformed` 告知调用方；重复 `event_id` 在返回前去重。Loki 未配置、超时、网络或响应异常统一返回 `503 LOG_QUERY_UNAVAILABLE`，不能伪装为空结果。
 
 ## 大模型管理接口
 

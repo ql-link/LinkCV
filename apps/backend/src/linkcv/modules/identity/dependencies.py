@@ -10,6 +10,7 @@ from linkcv.core.errors import ApiError
 from linkcv.core.redis import get_redis
 from linkcv.core.security import decode_access_token, session_key
 from linkcv.modules.identity.models import User
+from linkcv.modules.observability.audit import bind_audit_actor
 
 
 def get_settings(request: Request) -> Settings:
@@ -35,6 +36,7 @@ def get_optional_user(
     user = db.scalar(select(User).where(User.id == user_id))
     if user is None or user.status != 1:
         return None
+    bind_audit_actor(request, user.id, is_admin=bool(user.is_admin))
     return user
 
 

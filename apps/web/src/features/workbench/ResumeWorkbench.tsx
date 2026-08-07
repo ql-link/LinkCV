@@ -332,7 +332,7 @@ export function ResumeWorkbench() {
             />
             <IconAction label="页面设置" active={drawerMode === "settings"} onClick={() => setDrawerMode((mode) => mode === "settings" ? null : "settings")}><SlidersHorizontal size={16} /></IconAction>
             <IconAction label="版本记录" active={drawerMode === "history"} onClick={() => setDrawerMode((mode) => mode === "history" ? null : "history")}><History size={16} /></IconAction>
-            <ActionButton onClick={() => void exportResumePdf(settings.smartOnePage, title)}><FileDown size={14} />导出 PDF</ActionButton>
+            <ActionButton onClick={() => activeResumeId && void exportResumePdf(settings.smartOnePage, title, activeResumeId)}><FileDown size={14} />导出 PDF</ActionButton>
             <ActionButton primary disabled={saveStatus === "saving" || versionOperationPending} onClick={() => void manualSave()}><Save size={14} />保存版本</ActionButton>
             <span className="workbench-header-divider" />
             <IconAction label="个人资料" onClick={() => navigateTo("/account")}><UserRound size={15} /></IconAction>

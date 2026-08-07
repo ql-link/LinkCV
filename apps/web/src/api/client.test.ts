@@ -130,13 +130,44 @@ describe("API session refresh", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       "/api/resumes/import",
-      expect.objectContaining({ headers: { "Idempotency-Key": key } }),
+      expect.objectContaining({
+        headers: expect.objectContaining({ "Idempotency-Key": key }),
+      }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
       "/api/resumes/import",
-      expect.objectContaining({ headers: { "Idempotency-Key": key } }),
+      expect.objectContaining({
+        headers: expect.objectContaining({ "Idempotency-Key": key }),
+      }),
     );
+  });
+});
+
+describe("API observability", () => {
+  it("adds a request id and reports API 5xx without exposing the response body", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(503, { error: "SERVICE_UNAVAILABLE", secret: "hidden" }))
+      .mockResolvedValueOnce(jsonResponse(202, { accepted: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.listResumes()).rejects.toMatchObject({
+      status: 503,
+      message: "SERVICE_UNAVAILABLE",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstOptions = fetchMock.mock.calls[0][1] as RequestInit;
+    expect((firstOptions.headers as Record<string, string>)["X-Request-ID"]).toBeTruthy();
+    const reportBody = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/observability/client-events");
+    expect(reportBody).toMatchObject({
+      event_type: "api_5xx",
+      error_name: "ApiRequestError",
+      message: "SERVICE_UNAVAILABLE",
+    });
+    expect(JSON.stringify(reportBody)).not.toContain("hidden");
   });
 });
 

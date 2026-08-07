@@ -1,6 +1,34 @@
 version: 1
 
 contracts:
+  - id: observability-loki-promtail-contract
+    description: LinkCV 三套环境固定七天 JSONL 契约，Dev/Production 使用独立 Promtail 和共享 Loki
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default="linkcv", alias="LOG_SERVICE_NAME"[\s\S]*default=7, alias="LOG_RETENTION_DAYS"[\s\S]*default=5,[\s\S]*alias="LOKI_QUERY_TIMEOUT_SECONDS"'
+        message: 后端必须固定 LinkCV service、七天本地保留和五秒 Loki 查询预算
+      - path: .env.example
+        pattern: '(?m)^LOG_SERVICE_NAME=linkcv$[\s\S]*^LOG_RETENTION_DAYS=7$[\s\S]*^LOKI_QUERY_TIMEOUT_SECONDS=5$'
+        message: 本地模板必须声明统一日志契约
+      - path: .env.development
+        pattern: '(?m)^LOG_DIRECTORY=/app/logs$[\s\S]*^LOG_RETENTION_DAYS=7$[\s\S]*^LOKI_QUERY_URL=http://tolink-dev-loki:3100$[\s\S]*^LOKI_PUSH_URL=http://tolink-dev-loki:3100/loki/api/v1/push$'
+        message: Dev 必须使用独立日志目录和共享 Dev Loki 内网地址
+      - path: .env.production
+        pattern: '(?m)^LOG_DIRECTORY=/app/logs$[\s\S]*^LOG_RETENTION_DAYS=7$[\s\S]*^LOKI_QUERY_URL=http://tolink-loki:3100$[\s\S]*^LOKI_PUSH_URL=http://tolink-loki:3100/loki/api/v1/push$'
+        message: Production 必须使用独立日志目录和共享 Production Loki 内网地址
+      - path: deploy/docker-compose.development.yml
+        pattern: 'grafana/promtail:2\.9\.8[\s\S]*container_name: linkcv-dev-promtail[\s\S]*linkcv-dev-logs:/var/log/linkcv:ro[\s\S]*linkcv-dev-promtail-positions:/tmp'
+        message: Dev 必须部署固定版本的独立 Promtail、日志卷和 positions 卷
+      - path: deploy/docker-compose.production.yml
+        pattern: 'grafana/promtail:2\.9\.8[\s\S]*container_name: linkcv-promtail[\s\S]*linkcv-production-logs:/var/log/linkcv:ro[\s\S]*linkcv-production-promtail-positions:/tmp'
+        message: Production 必须部署固定版本的独立 Promtail、日志卷和 positions 卷
+      - path: deploy/docker-compose.observability.local.yml
+        pattern: 'grafana/promtail:2\.9\.8[\s\S]*container_name: linkcv-local-promtail[\s\S]*LOKI_PUSH_URL:-http://loki:3100/loki/api/v1/push[\s\S]*LINKCV_LOG_PATH:-\.\./\.runtime/logs[\s\S]*LOKI_DOCKER_NETWORK:-tolink-rag-local_tolink-net'
+        message: 本地联调必须使用独立 Promtail、LinkCV 日志目录和 LinkRag 共享 Loki 网络
+      - path: deploy/observability/promtail-config.yml
+        pattern: 'service: service[\s\S]*environment: environment[\s\S]*log_type: log_type[\s\S]*level: level[\s\S]*labels:[\s\S]*service:[\s\S]*environment:[\s\S]*log_type:[\s\S]*level:'
+        message: Promtail 只能提升约定的低基数 JSON 字段为 Loki labels
+
   - id: llm-credential-encryption-key-ring
     description: 三套环境都声明后端模型凭据密钥环且不把真实密钥提交到仓库
     assertions:

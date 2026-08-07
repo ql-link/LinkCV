@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminApp } from "./AdminApp";
 import { AdminLoginPage } from "./AdminLoginPage";
-import { api, type AdminStatsResponse } from "../../api/client";
+import { api, ApiRequestError, type AdminStatsResponse } from "../../api/client";
 
 const mockAdminUser = {
   id: "admin-1",
@@ -50,6 +50,16 @@ function mockCommonApis() {
   vi.spyOn(api, "getChatCapability").mockResolvedValue(emptyChatCapability);
   vi.spyOn(api, "getChatCatalog").mockResolvedValue(chatCatalog);
   vi.spyOn(api, "adminStats").mockResolvedValue(emptyStats);
+  vi.spyOn(api, "adminLogSummary").mockResolvedValue({
+    system: { total: 2, warnings: 1, errors: 0 },
+    audit: { total: 1, succeeded: 1, failed: 0 },
+  });
+  vi.spyOn(api, "adminListSystemLogs").mockResolvedValue({
+    items: [], nextCursor: null, partial: false, droppedMalformed: 0,
+  });
+  vi.spyOn(api, "adminListAuditLogs").mockResolvedValue({
+    items: [], nextCursor: null, partial: false, droppedMalformed: 0,
+  });
 }
 
 describe("AdminApp access control", () => {
@@ -70,6 +80,68 @@ describe("AdminApp access control", () => {
     expect(
       await screen.findByRole("heading", { name: "早上好，陈听澜" }, { timeout: 4_000 }),
     ).toBeInTheDocument();
+  });
+
+  it("opens the system log center from its direct route", async () => {
+    vi.spyOn(api, "me").mockResolvedValue({ user: mockAdminUser });
+    window.history.replaceState(null, "", "/admin/logs/system");
+    render(<AdminApp />);
+
+    expect(await screen.findByRole("heading", { name: "日志中心" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "系统日志" })).toHaveClass("active");
+    await waitFor(() => expect(api.adminListSystemLogs).toHaveBeenCalled());
+  });
+
+  it("keeps the legacy LLM log route independent from Loki summary", async () => {
+    vi.spyOn(api, "me").mockResolvedValue({ user: mockAdminUser });
+    vi.spyOn(api, "listLlmCalls").mockResolvedValue({
+      calls: [],
+      summary: {
+        callCount: 0,
+        incompleteMeteringCount: 0,
+        inputTokens: null,
+        outputTokens: null,
+        estimatedCostUsd: null,
+      },
+      nextCursor: null,
+    });
+    window.history.replaceState(null, "", "/admin/logs");
+    render(<AdminApp />);
+
+    expect(await screen.findByRole("heading", { name: "日志中心" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "LLM 调用" })).toHaveClass("active");
+    expect(api.adminLogSummary).not.toHaveBeenCalled();
+    await waitFor(() => expect(api.listLlmCalls).toHaveBeenCalled());
+  });
+
+  it("shows an explicit retry state instead of an empty list when Loki fails", async () => {
+    vi.spyOn(api, "me").mockResolvedValue({ user: mockAdminUser });
+    vi.mocked(api.adminLogSummary).mockRejectedValue(
+      new ApiRequestError(503, "LOG_QUERY_UNAVAILABLE"),
+    );
+    vi.mocked(api.adminListSystemLogs).mockRejectedValue(
+      new ApiRequestError(503, "LOG_QUERY_UNAVAILABLE"),
+    );
+    window.history.replaceState(null, "", "/admin/logs/system");
+    render(<AdminApp />);
+
+    expect(await screen.findByText("日志查询暂不可用")).toBeInTheDocument();
+    expect(screen.queryByText("当前筛选下没有日志")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "重试" }).length).toBeGreaterThan(0);
+  });
+
+  it("opens the failed audit list from the summary card", async () => {
+    vi.spyOn(api, "me").mockResolvedValue({ user: mockAdminUser });
+    window.history.replaceState(null, "", "/admin/logs/system");
+    render(<AdminApp />);
+
+    const failed = await screen.findByRole("button", { name: /审计失败/ });
+    fireEvent.click(failed);
+    await waitFor(() => {
+      expect(api.adminListAuditLogs).toHaveBeenCalledWith(
+        expect.objectContaining({ result: "failed" }),
+      );
+    });
   });
 
   it("redirects a regular user to the admin login page", async () => {

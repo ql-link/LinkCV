@@ -11,6 +11,7 @@ type SaveToast = {
 
 export function Header() {
   const title = useResumeStore((state) => state.title);
+  const activeResumeId = useResumeStore((state) => state.activeResumeId);
   const setTitle = useResumeStore((state) => state.setTitle);
   const smartOnePage = useResumeStore((state) => state.settings.smartOnePage);
   const user = useResumeStore((state) => state.user);
@@ -69,7 +70,7 @@ export function Header() {
         </div>
       </div>
       <div className="nav-actions">
-        <Button variant="secondary" icon={<FileDown size={14} />} onClick={() => void exportResumePdf(smartOnePage, title)}>
+        <Button variant="secondary" icon={<FileDown size={14} />} disabled={!activeResumeId} onClick={() => activeResumeId && void exportResumePdf(smartOnePage, title, activeResumeId)}>
           导出 PDF
         </Button>
         <Button icon={<Save size={14} />} disabled={isManualSaving} onClick={() => void handleManualSave()}>

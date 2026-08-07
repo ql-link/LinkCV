@@ -26,6 +26,9 @@ from linkcv.modules.llm.gateway import LLMGateway, LiteLLMGateway
 from linkcv.modules.llm.catalog import CHAT_CAPABILITY
 from linkcv.modules.llm.models import LLMCapabilityBinding
 from linkcv.modules.llm.service import LLMService
+from linkcv.modules.observability.logging import StructuredLogEmitter, configure_logging
+from linkcv.modules.observability.middleware import ObservabilityMiddleware
+from linkcv.modules.observability.loki import LokiClient
 from linkcv.services.import_admission import ImportAdmissionController
 from linkcv.services.resume_import_idempotency import ResumeImportIdempotency
 
@@ -59,9 +62,18 @@ def create_app(
     redis: Any | None = None,
     document_converter: Any | None = None,
     structuring_client: Any | None = None,
+    event_emitter: StructuredLogEmitter | None = None,
+    loki_client: Any | None = None,
     create_schema: bool = False,
 ) -> FastAPI:
     runtime_settings = settings or load_settings()
+    runtime_emitter = event_emitter or configure_logging(runtime_settings)
+    runtime_loki_client = loki_client
+    if runtime_loki_client is None and runtime_settings.loki_query_url:
+        runtime_loki_client = LokiClient(
+            runtime_settings.loki_query_url,
+            runtime_settings.loki_query_timeout_seconds,
+        )
     engine = None
     if session_factory is None:
         engine = build_engine(runtime_settings.sqlalchemy_url)
@@ -134,19 +146,38 @@ def create_app(
             await asyncio.to_thread(runtime_storage.ensure_bucket)
         except Exception:
             logger.warning(
-                "MinIO is unavailable; asset routes will retry on demand", exc_info=True
+                "MinIO is unavailable; asset routes will retry on demand",
+                exc_info=True,
+                extra={"dependency": "minio", "error_code": "MINIO_UNAVAILABLE"},
             )
         try:
             await asyncio.to_thread(redis.ping)
         except Exception:
-            logger.warning("Redis is unavailable; auth sessions will fail", exc_info=True)
+            logger.warning(
+                "Redis is unavailable; auth sessions will fail",
+                exc_info=True,
+                extra={"dependency": "redis", "error_code": "REDIS_UNAVAILABLE"},
+            )
         try:
             yield
         finally:
             try:
                 await asyncio.to_thread(redis.close)
             except Exception:
-                logger.warning("Redis close failed", exc_info=True)
+                logger.warning(
+                    "Redis close failed",
+                    exc_info=True,
+                    extra={"dependency": "redis", "error_code": "REDIS_CLOSE_FAILED"},
+                )
+            if runtime_loki_client is not None:
+                try:
+                    await asyncio.to_thread(runtime_loki_client.close)
+                except Exception:
+                    logger.warning(
+                        "Loki client close failed",
+                        exc_info=True,
+                        extra={"error_code": "LOKI_CLOSE_FAILED"},
+                    )
 
     app = FastAPI(
         title="LinkCV API",
@@ -168,7 +199,10 @@ def create_app(
         global_concurrency=runtime_settings.resume_import_global_concurrency,
         user_concurrency=runtime_settings.resume_import_user_concurrency,
     )
+    app.state.event_emitter = runtime_emitter
+    app.state.loki_client = runtime_loki_client
     install_error_handlers(app)
+    app.add_middleware(ObservabilityMiddleware, emitter=runtime_emitter)
     app.include_router(api_router, prefix="/api")
 
     @app.api_route(

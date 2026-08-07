@@ -12,6 +12,7 @@ def main() -> None:
         host=settings.backend_host,
         port=settings.backend_port,
         reload=settings.app_environment == "development",
+        access_log=False,
     )
 
 

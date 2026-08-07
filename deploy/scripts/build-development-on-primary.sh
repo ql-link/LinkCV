@@ -43,7 +43,7 @@ cleanup() {
 trap cleanup EXIT
 
 rm -rf -- "${build_dir}"
-mkdir -p "${build_dir}" "${deploy_dir}/deploy"
+mkdir -p "${build_dir}" "${deploy_dir}/deploy/observability"
 tar -xzf "${source_archive}" -C "${build_dir}"
 
 DOCKER_BUILDKIT=1 docker build \
@@ -55,6 +55,9 @@ install -m 0644 "${build_dir}/.env.development" "${base_env}"
 install -m 0644 \
   "${build_dir}/deploy/docker-compose.development.yml" \
   "${compose_file}"
+install -m 0644 \
+  "${build_dir}/deploy/observability/promtail-config.yml" \
+  "${deploy_dir}/deploy/observability/promtail-config.yml"
 
 if [[ ! -f "${secret_env}" ]]; then
   echo "Missing Development secret env file: ${secret_env}" >&2
@@ -88,9 +91,11 @@ LINKCV_DEV_HTTP_PORT="${http_port}" \
 
 for _ in $(seq 1 30); do
   health_status="$(docker inspect --format='{{.State.Health.Status}}' linkcv-dev 2>/dev/null || true)"
-  if [[ "${health_status}" == "healthy" ]] && \
+  promtail_status="$(docker inspect --format='{{.State.Status}}' linkcv-dev-promtail 2>/dev/null || true)"
+  if [[ "${health_status}" == "healthy" ]] && [[ "${promtail_status}" == "running" ]] && \
     curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null; then
     echo "Container health: ${health_status}"
+    echo "Promtail status: ${promtail_status}"
     docker image prune -f >/dev/null
     echo "Development deployed: ${image}:${tag}"
     exit 0
@@ -98,6 +103,6 @@ for _ in $(seq 1 30); do
   sleep 2
 done
 
-docker compose -f "${compose_file}" logs --tail=100 linkcv
+docker compose -f "${compose_file}" logs --tail=100 linkcv promtail
 echo "Development health check timed out." >&2
 exit 12

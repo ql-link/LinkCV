@@ -469,3 +469,94 @@
   font-size: 1rem;
   font-weight: 600;
 }
+.observability-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+
+.observability-tabs button {
+  border: 1px solid var(--admin-border, #d9ddd8);
+  border-radius: 999px;
+  background: #fff;
+  color: #59635b;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+.observability-tabs button.active {
+  border-color: #294f3b;
+  background: #294f3b;
+  color: #fff;
+}
+
+.observability-summary {
+  margin-bottom: 18px;
+}
+
+.observability-summary > button {
+  display: grid;
+  gap: .45rem;
+  border: 0;
+  border-left: 1px solid var(--admin-line);
+  background: transparent;
+  padding: 1rem 1.2rem;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.observability-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr)) auto;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 14px;
+}
+
+.observability-filters input,
+.observability-filters select {
+  min-width: 0;
+  border: 1px solid #d9ddd8;
+  border-radius: 8px;
+  background: #fff;
+  padding: 9px 10px;
+}
+
+.observability-filters label {
+  display: grid;
+  gap: 4px;
+  color: var(--admin-muted);
+  font-size: .66rem;
+}
+
+.observability-filters label input {
+  width: 100%;
+}
+
+.observability-filters button {
+  border: 0;
+  border-radius: 8px;
+  background: #294f3b;
+  color: #fff;
+  padding: 9px 18px;
+  cursor: pointer;
+}
+
+.observability-table td:nth-child(3) {
+  max-width: 260px;
+  overflow-wrap: anywhere;
+}
+
+.fatal-error {
+  max-width: 520px;
+  margin: 15vh auto;
+  padding: 32px;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .observability-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+}

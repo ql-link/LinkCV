@@ -69,6 +69,16 @@ class Settings(BaseSettings):
     app_environment: str = Field(default="development", alias="APP_ENV")
     backend_host: str = Field(default="127.0.0.1", alias="BACKEND_HOST")
     backend_port: int = Field(default=8000, alias="BACKEND_PORT")
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    log_service_name: str = Field(default="linkcv", alias="LOG_SERVICE_NAME")
+    log_directory: Path | None = Field(default=None, alias="LOG_DIRECTORY")
+    log_retention_days: int = Field(default=7, alias="LOG_RETENTION_DAYS", ge=1)
+    loki_query_url: str | None = Field(default=None, alias="LOKI_QUERY_URL")
+    loki_query_timeout_seconds: float = Field(
+        default=5,
+        alias="LOKI_QUERY_TIMEOUT_SECONDS",
+        gt=0,
+    )
 
     database_url: str | None = Field(default=None, alias="DATABASE_URL")
     mysql_host: str = Field(default="127.0.0.1", alias="MYSQL_HOST")
@@ -245,6 +255,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
+        self.log_level = self.log_level.strip().upper()
+        if self.log_level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+            raise ValueError("LOG_LEVEL is invalid")
+        self.log_service_name = self.log_service_name.strip()
+        if self.log_service_name != "linkcv":
+            raise ValueError("LOG_SERVICE_NAME must be linkcv")
+        if self.log_retention_days != 7:
+            raise ValueError("LOG_RETENTION_DAYS must be 7")
         if self.resume_structuring_max_bytes > self.resume_markdown_max_bytes:
             raise ValueError(
                 "RESUME_STRUCTURING_MAX_BYTES cannot exceed RESUME_MARKDOWN_MAX_BYTES"
