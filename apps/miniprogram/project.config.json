@@ -1,16 +1,34 @@
 {
   "description": "LinkCV 微信扫码登录确认小程序",
   "projectname": "linkcv-miniprogram",
-  "appid": "touristappid",
+  "appid": "wxa56f4b15231066eb",
   "compileType": "miniprogram",
-  "miniprogramRoot": "",
+  "miniprogramRoot": "./",
   "setting": {
     "urlCheck": false,
     "es6": true,
     "enhance": true,
     "postcss": true,
     "minified": true,
-    "ignoreUploadUnusedFiles": true
+    "ignoreUploadUnusedFiles": true,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "uploadWithSourceMap": true,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
   },
   "condition": {
     "miniprogram": {
@@ -23,5 +41,12 @@
         }
       ]
     }
-  }
+  },
+  "simulatorPluginLibVersion": {},
+  "packOptions": {
+    "ignore": [],
+    "include": []
+  },
+  "editorSetting": {},
+  "libVersion": "3.17.1"
 }

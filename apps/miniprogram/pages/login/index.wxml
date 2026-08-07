@@ -7,10 +7,11 @@
     </view>
 
     <view class="form" wx:if="{{!done}}">
-      <button class="avatar-button" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar">
+      <view class="avatar-wrap">
         <image wx:if="{{avatarUrl}}" class="avatar-image" src="{{avatarUrl}}" mode="aspectFill" />
         <view wx:else class="avatar-placeholder">选择头像</view>
-      </button>
+        <button class="avatar-button" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar"></button>
+      </view>
 
       <input
         class="nickname-input"
