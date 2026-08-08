@@ -7,6 +7,7 @@ import { ChangePasswordPage } from "./features/account/ChangePasswordPage";
 import { AdminApp } from "./features/admin/AdminApp";
 import { AdminLoginPage } from "./features/admin/AdminLoginPage";
 import { AuthPage } from "./features/auth/AuthPage";
+import { DatasetsPage } from "./features/datasets/DatasetsPage";
 import { HomePage } from "./features/home/HomePage";
 import { ResumeCreatePage } from "./features/home/ResumeCreatePage";
 import { JobCenterPage } from "./features/jobs/JobCenterPage";
@@ -61,6 +62,7 @@ export function App() {
         || route.kind === "jobCreate"
         || route.kind === "jobDetail"
         || route.kind === "jobEdit"
+        || route.kind === "datasets"
         || route.kind === "account"
       ) {
         const next = `${window.location.pathname}${window.location.search}`;
@@ -165,6 +167,7 @@ export function App() {
     || route.kind === "jobCreate"
     || route.kind === "jobDetail"
     || route.kind === "jobEdit"
+    || route.kind === "datasets"
     || route.kind === "account"
     || route.kind === "accountPassword"
   ) {
@@ -177,7 +180,9 @@ export function App() {
         ? "resumes"
       : route.kind === "account" || route.kind === "accountPassword"
         ? "account"
-        : "jobs";
+        : route.kind === "datasets"
+          ? "datasets"
+          : "jobs";
 
     return (
       <WorkspaceLayout active={activeSection}>
@@ -187,6 +192,7 @@ export function App() {
         {route.kind === "jobCreate" && <JobFormPage mode="create" />}
         {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}
         {route.kind === "jobEdit" && <JobFormPage mode="edit" jobId={route.jobId} />}
+        {route.kind === "datasets" && <DatasetsPage />}
         {route.kind === "account" && <AccountPage />}
         {route.kind === "accountPassword" && <ChangePasswordPage />}
       </WorkspaceLayout>

@@ -12,6 +12,7 @@ export type AppRoute =
   | { kind: "jobCreate" }
   | { kind: "jobDetail"; jobId: string }
   | { kind: "jobEdit"; jobId: string }
+  | { kind: "datasets" }
   | { kind: "account" }
   | { kind: "accountPassword" }
   | { kind: "share"; token: string }
@@ -32,7 +33,7 @@ function normalizePathname(pathname: string) {
 }
 
 export function isSafeAppPath(value: string | null) {
-  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && /^\/(?:resumes|jobs|account)(?:\/|$)/.test(value));
+  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && /^\/(?:resumes|jobs|account|datasets)(?:\/|$)/.test(value));
 }
 
 export function isSafeAdminPath(value: string | null) {
@@ -67,6 +68,7 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
   if (normalizedPath === "/resumes/new") return { kind: "resumeCreate" };
   if (normalizedPath === "/jobs") return { kind: "jobs" };
   if (normalizedPath === "/jobs/new") return { kind: "jobCreate" };
+  if (normalizedPath === "/datasets") return { kind: "datasets" };
   if (normalizedPath === "/account") return { kind: "account" };
   if (normalizedPath === "/account/password") return { kind: "accountPassword" };
 

@@ -117,6 +117,25 @@ RabbitMQ 是默认 Broker，使用固定 `resume.import` routing key；Kafka 兼
 
 `/api/admin/resume-templates` 只允许管理员访问。`GET` 返回启用、停用和结构无效的全部模板；`POST /import` 接受最大 512 KiB 的严格 UTF-8 JSON 模板包，新模板默认停用且相同 `key` 返回 `409 TEMPLATE_KEY_CONFLICT`，不覆盖已有模板；`PUT /:id/status` 幂等启停，结构无效模板不能启用。模板包拒绝未知字段、脚本、外链、文件 URL、本地路径和媒体引用。当前不提供模板覆盖或硬删除。
 
+## 知识库资料
+
+`POST /api/datasets` 使用 `multipart/form-data`，字段为 `file`，支持 docx/pdf/md/txt 四种格式（按扩展名判定、大小写不敏感），单文件上限 `DATASET_UPLOAD_MAX_BYTES`（默认 10MB）。上传成功后文件保存到对象存储（对象键由服务端生成并强制以 `users/{当前用户id}/datasets/` 为前缀，客户端不可指定），元信息写入 `user_dataset` 表并返回：
+
+```json
+{
+  "id": "1",
+  "file_name": "notes.md",
+  "file_format": "md",
+  "file_size": 12,
+  "sha256": "…",
+  "created_at": "…"
+}
+```
+
+`GET /api/datasets` 返回当前登录用户自己的资料记录，按上传时间倒序（`{datasets: [...]}`）。两个接口都要求登录（未登录返回 `401 UNAUTHORIZED`），用户只能看到自己的记录。
+
+文件名非法返回 `400 INVALID_DATASET_FILENAME`，空文件返回 `400 EMPTY_DATASET_FILE`，不支持格式返回 `400 UNSUPPORTED_DATASET_FORMAT`，超过大小上限返回 `413 DATASET_TOO_LARGE`。对象存储上传失败返回 `502 DATASET_UPLOAD_FAILED` 且不落库；对象已上传但元信息写入失败返回 `500 DATASET_RECORD_FAILED`，已上传对象会被尽力清理。同一文件允许重复上传并生成新记录（不做去重或幂等）。
+
 ## JD 数据模型与管理
 
 JD 管理接口接受和返回最终结构化数据；单独的浏览器导入接口接受有限页面采集 DTO，并在同一请求中清洗为最终结构化数据。服务端不保存插件原始页面、抓取中间结果或模型过程数据。所有接口都要求当前登录用户，服务端从会话取得 `user_id`；不存在和不属于当前用户的记录统一返回 `404 JD_NOT_FOUND`。

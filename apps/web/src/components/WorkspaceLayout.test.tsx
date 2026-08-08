@@ -23,6 +23,9 @@ describe("WorkspaceSidebar", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "全部简历" }));
     expect(`${window.location.pathname}${window.location.search}`).toBe("/resumes");
+
+    fireEvent.click(screen.getByRole("button", { name: "资料库" }));
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/datasets");
   });
 
   it("账号按钮直接进入个人资料", () => {

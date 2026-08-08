@@ -1,10 +1,10 @@
 import { useState, type ReactNode } from "react";
-import { BriefcaseBusiness, FileText, LayoutTemplate, LogOut, UserRound } from "lucide-react";
+import { BriefcaseBusiness, Database, FileText, LayoutTemplate, LogOut, UserRound } from "lucide-react";
 import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
 import { Brand } from "./ds";
 
-export type WorkspaceSection = "resumes" | "templates" | "jobs" | "account";
+export type WorkspaceSection = "resumes" | "templates" | "jobs" | "datasets" | "account";
 
 type WorkspaceSidebarProps = {
   active: WorkspaceSection;
@@ -53,6 +53,14 @@ export function WorkspaceSidebar({
           onClick={() => navigateTo("/jobs")}
         >
         <BriefcaseBusiness size={16} />JD 中心
+        </button>
+        <button
+          className={active === "datasets" ? "is-active" : ""}
+          type="button"
+          aria-current={active === "datasets" ? "page" : undefined}
+          onClick={() => navigateTo("/datasets")}
+        >
+        <Database size={16} />资料库
         </button>
       </div>
       <div className="dashboard-account-area">
