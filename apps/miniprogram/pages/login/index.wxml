@@ -1,43 +1,46 @@
+<!-- pages/login/index.wxml -->
+<!-- LinkResume 授权确认页（强设计感版）：背景叠加多组极浅几何装饰，
+     右上角带服务来源声明，聚焦"确认登录"单一动作。 -->
 <view class="page">
-  <view class="card">
-    <view class="logo">LinkCV</view>
-    <view class="title" wx:if="{{!done}}">确认登录 LinkCV</view>
-    <view class="subtitle" wx:if="{{!done}}">
-      {{mode === 'bind' ? '绑定微信到你的账号' : '扫码授权后将自动登录'}}
-    </view>
+  <!-- 背景装饰层（不可点击，z-index 0，置于所有内容之下） -->
+  <view class="bg-deco">
+    <!-- 巨型品牌水印：几乎不可见的 "L" 纹理 -->
+    <view class="deco-watermark">L</view>
+    <!-- 中心聚焦光晕：径向渐变聚光灯效果 -->
+    <view class="deco-glow"></view>
+    <!-- 底部点阵网格纹理 -->
+    <view class="deco-grid"></view>
+  </view>
 
-    <view class="form" wx:if="{{!done}}">
-      <view class="avatar-wrap">
-        <image wx:if="{{avatarUrl}}" class="avatar-image" src="{{avatarUrl}}" mode="aspectFill" />
-        <view wx:else class="avatar-placeholder">选择头像</view>
-        <button class="avatar-button" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar"></button>
-      </view>
+  <!-- 自定义导航栏：右上角服务来源声明，无返回/退出入口 -->
+  <view class="nav">
+    <view class="nav-center"></view>
+    <text class="service-provider">相关服务由 LinkResume 小程序提供</text>
+  </view>
 
-      <input
-        class="nickname-input"
-        type="nickname"
-        placeholder="请输入昵称"
-        value="{{nickname}}"
-        bindinput="onNicknameInput"
-      />
+  <!-- 核心内容区：垂直居中，置于装饰之上 -->
+  <view class="content">
+    <!-- 品牌徽章：深色圆底 + 外围极淡描边 + 白色大写字母 L -->
+    <view class="brand-icon">L</view>
+    <!-- 品牌名称：衬线字体，宽字距 -->
+    <view class="brand-name">LinkResume</view>
+    <!-- 陶土红装饰线：两端略微变细，加载时从左向右展开 -->
+    <view class="decor-line"></view>
+    <!-- Slogan -->
+    <view class="brand-tagline">安全连接你的职业档案</view>
+    <!-- 模式说明：浏览模式（无会话）展示流程说明，不请求任何授权；
+         授权模式（有会话）展示授权范围 -->
+    <view class="mode-note" wx:if="{{!hasSession}}">本小程序用于 LinkResume 网页版扫码登录确认。可先自由浏览本页内容；如需登录，请前往 LinkResume 网页端扫码，将自动进入授权确认。</view>
+    <view class="mode-note" wx:if="{{hasSession}}">· 本次登录将获取您的公开信息（头像、昵称） ·</view>
+  </view>
 
-      <button
-        class="confirm-button"
-        type="primary"
-        loading="{{confirming}}"
-        disabled="{{confirming}}"
-        bindtap="onConfirm"
-      >
-        确认
-      </button>
-
-      <view class="error" wx:if="{{error}}">{{error}}</view>
-    </view>
-
-    <view class="done" wx:if="{{done}}">
-      <view class="done-icon">✓</view>
-      <view class="done-title">已确认，可关闭本页</view>
-      <view class="done-subtitle">请在电脑上继续操作</view>
-    </view>
+  <!-- 底部操作区：仅授权确认模式显示，含确认按钮 + 取消入口（审核规范要求） -->
+  <view class="footer" wx:if="{{hasSession}}">
+    <button class="btn-main" hover-class="btn-pressed" bindtap="handleConfirm" disabled="{{loading}}">
+      <view class="btn-text">{{loading ? '正在授权…' : '确认登录'}}</view>
+      <view class="btn-arrow">→</view>
+    </button>
+    <!-- 取消入口：提供取消/拒绝返回选项，避免强制授权 -->
+    <view class="btn-cancel" hover-class="btn-cancel-hover" bindtap="handleCancel">取消</view>
   </view>
 </view>

@@ -1,7 +1,7 @@
 {
   "pages": ["pages/login/index"],
   "window": {
-    "navigationBarTitleText": "LinkCV 登录确认",
+    "navigationBarTitleText": "LinkResume 登录确认",
     "navigationBarBackgroundColor": "#ffffff",
     "navigationBarTextStyle": "black",
     "backgroundColor": "#f7f7f7"

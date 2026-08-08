@@ -1,5 +1,5 @@
 {
-  "description": "LinkCV 微信扫码登录确认小程序",
+  "description": "LinkResume 微信扫码登录确认小程序",
   "projectname": "linkcv-miniprogram",
   "appid": "wxa56f4b15231066eb",
   "compileType": "miniprogram",
@@ -34,7 +34,7 @@
     "miniprogram": {
       "list": [
         {
-          "name": "登录确认（注入 scene）",
+          "name": "登录确认(注入 scene)",
           "pathName": "pages/login/index",
           "query": "scene=login%3Afe1c9a2b3c4d5e6f",
           "scene": "login%3Afe1c9a2b3c4d5e6f"
