@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileUp, PenLine, Plus, Search, X } from "lucide-react";
+import { FileUp, PenLine, Plus, Search, Share2, X } from "lucide-react";
 import {
   ApiRequestError,
   type ResumeImportSummary,
@@ -11,6 +11,7 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useResumeStore } from "../../store/resumeStore";
 import { editorPath, navigateTo } from "../../routing";
 import { ResumePreview } from "../preview/ResumePreview";
+import { SharePanel } from "./SharePanel";
 import { TemplatePicker } from "./TemplatePicker";
 
 type HomeScreenProps = {
@@ -69,11 +70,13 @@ function ResumeThumbnailCard({
   resume,
   onOpen,
   onDelete,
+  onShare,
   deleteDisabled = false,
 }: {
   resume: Pick<ResumeSummary, "id" | "title" | "updated_at" | "preview">;
   onOpen: () => void;
   onDelete?: () => void;
+  onShare?: () => void;
   deleteDisabled?: boolean;
 }) {
   return (
@@ -91,6 +94,17 @@ function ResumeThumbnailCard({
           <small>更新于 {formatTime(resume.updated_at)}</small>
         </span>
       </button>
+      {onShare && (
+        <button
+          className="home-card-share"
+          type="button"
+          aria-label={`分享简历 ${resume.title}`}
+          title="分享简历"
+          onClick={onShare}
+        >
+          <Share2 size={14} />
+        </button>
+      )}
       {onDelete && (
         <button
           className="home-card-delete"
@@ -120,6 +134,7 @@ export function HomeScreen({
 }: HomeScreenProps) {
   const [query, setQuery] = useState("");
   const [pendingDelete, setPendingDelete] = useState<ResumeSummary | null>(null);
+  const [sharingResume, setSharingResume] = useState<ResumeSummary | null>(null);
   const [deletingResumeId, setDeletingResumeId] = useState<string | null>(null);
   const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
@@ -253,6 +268,7 @@ export function HomeScreen({
                 key={resume.id}
                 resume={resume}
                 onOpen={() => void onOpen(resume.id)}
+                onShare={() => setSharingResume(resume)}
                 onDelete={() => setPendingDelete(resume)}
                 deleteDisabled={deletingResumeId !== null}
               />
@@ -336,6 +352,14 @@ export function HomeScreen({
             </footer>
           </div>
         </div>
+      )}
+
+      {sharingResume && (
+        <SharePanel
+          resumeId={sharingResume.id}
+          resumeTitle={sharingResume.title}
+          onClose={() => setSharingResume(null)}
+        />
       )}
     </main>
   );

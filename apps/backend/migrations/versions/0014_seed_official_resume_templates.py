@@ -1,8 +1,8 @@
-"""differentiate official resume templates.
+"""seed official resume templates.
 
 Revision ID: 0014
 Revises: 0013
-Create Date: 2026-08-08 00:38:34.211062
+Create Date: 2026-08-07 22:19:20.343924
 """
 from collections.abc import Sequence
 from pathlib import Path
@@ -10,8 +10,8 @@ from pathlib import Path
 from alembic import op
 from linkcv.core.migration_sql import execute_sql_file
 
-revision: str = "0014"
-down_revision: str | None = "0013"
+revision: str = '0014'
+down_revision: str | None = '0013'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

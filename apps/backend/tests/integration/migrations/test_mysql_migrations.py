@@ -21,7 +21,7 @@ from linkcv.domain.resume_snapshot import parse_resume_snapshot
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0016"
+EXPECTED_HEAD = "0017"
 
 
 def migration_test_url() -> str:
@@ -141,6 +141,10 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "style_json",
         "lock_version",
         "source_type",
+        "share_token",
+        "share_visibility",
+        "share_expires_at",
+        "share_created_at",
         "created_at",
         "updated_at",
     }
@@ -227,6 +231,8 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         constraint["name"] for constraint in inspector.get_check_constraints("resumes")
     } == {
         "ck_resumes_lock_version",
+        "ck_resumes_share_fields",
+        "ck_resumes_share_visibility",
         "ck_resumes_source_type",
         "ck_resumes_title_not_blank",
     }
@@ -392,6 +398,10 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "style_json",
         "lock_version",
         "source_type",
+        "share_token",
+        "share_visibility",
+        "share_expires_at",
+        "share_created_at",
         "created_at",
         "updated_at",
     }
@@ -538,6 +548,8 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         for constraint in inspector.get_check_constraints("resumes")
         } == {
             "ck_resumes_lock_version",
+            "ck_resumes_share_fields",
+            "ck_resumes_share_visibility",
             "ck_resumes_source_type",
             "ck_resumes_title_not_blank",
         }
@@ -728,10 +740,10 @@ def test_resume_template_seed_conflict_does_not_overwrite_existing_data() -> Non
                 "JSON_OBJECT('schema_version', '1.0'), 1)"
             )
         )
-    refused_seed = invoke_alembic(database_url, "upgrade", "0013")
+    refused_seed = invoke_alembic(database_url, "upgrade", "0014")
     assert refused_seed.returncode != 0
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0012"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0013"
         assert connection.scalar(
             text("SELECT name FROM resume_templates WHERE `key` = 'blank-cn'")
         ) == "现场同名模板"

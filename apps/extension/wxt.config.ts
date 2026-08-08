@@ -5,6 +5,12 @@ const localLinkCVPermissions = [
   "http://localhost:5173/*",
 ];
 
+const bossPermissions = [
+  "https://zhipin.com/*",
+  "https://www.zhipin.com/*",
+  "https://m.zhipin.com/*",
+];
+
 function configuredLinkCVPermission(): string[] {
   const configured = process.env.WXT_PUBLIC_LINKCV_ORIGIN?.trim();
   if (!configured) return [];
@@ -24,10 +30,8 @@ export default defineConfig({
     description: "从当前 BOSS 直聘岗位详情页提取信息，经确认后导入 LinkCV。",
     permissions: ["activeTab"],
     host_permissions: [
-      "https://zhipin.com/*",
-      "https://www.zhipin.com/*",
-      "https://m.zhipin.com/*",
-      ...localLinkCVPermissions,
+      ...bossPermissions,
+      ...(process.env.WXT_RELEASE_BUILD === "1" ? [] : localLinkCVPermissions),
       ...configuredLinkCVPermission(),
     ],
     action: {

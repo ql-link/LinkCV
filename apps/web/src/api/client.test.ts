@@ -190,3 +190,60 @@ describe("JD API client", () => {
     }
   });
 });
+
+describe("API resume share", () => {
+  it("按管理与公开接口的路径和方法发起分享请求", async () => {
+    const share = {
+      share_token: "token_abc",
+      share_visibility: "public",
+      share_expires_at: null,
+      share_created_at: "2026-08-05T00:00:00Z",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(200, { share }))
+      .mockResolvedValueOnce(jsonResponse(200, { share: null }))
+      .mockResolvedValueOnce(jsonResponse(200, { share: { ...share, share_visibility: "private" } }))
+      .mockResolvedValueOnce(jsonResponse(200, { deleted: true }))
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          data: { schema_version: "1.0" },
+          style: { schema_version: "1.0" },
+          sharer: { nickname: "于晏", avatar_url: null },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.createShare("1");
+    await api.getShareState("1");
+    await api.updateShare("1", { visibility: "private" });
+    await api.deleteShare("1");
+    await api.fetchPublicShare("token_abc");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/resumes/1/share",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/resumes/1/share",
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/resumes/1/share",
+      expect.objectContaining({ method: "PATCH", body: JSON.stringify({ visibility: "private" }) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/resumes/1/share",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/share/token_abc",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+});

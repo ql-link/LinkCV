@@ -1,4 +1,10 @@
--- Down migration for 0014: remove editor-only differentiated previews.
+-- Down migration for 0014: keep source records and existing resumes intact.
 UPDATE resume_templates
-SET data_json = JSON_REMOVE(data_json, '$.sections.custom_sections')
-WHERE `key` IN ('modern-two-column-cn', 'compact-tech-cn');
+SET is_active = 0
+WHERE `key` IN (
+  'blank-cn',
+  'classic-cn',
+  'modern-two-column-cn',
+  'compact-tech-cn'
+);
+-- Add reviewed MySQL 8.4 statements below.

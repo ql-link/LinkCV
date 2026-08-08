@@ -103,6 +103,17 @@ class Resume(Base):
             name="ck_resumes_title_not_blank",
         ),
         CheckConstraint("lock_version >= 1", name="ck_resumes_lock_version"),
+        UniqueConstraint("share_token", name="uk_resumes_share_token"),
+        CheckConstraint(
+            "(share_token IS NULL AND share_visibility IS NULL AND share_created_at IS NULL) "
+            "OR (share_token IS NOT NULL AND share_visibility IS NOT NULL "
+            "AND share_created_at IS NOT NULL)",
+            name="ck_resumes_share_fields",
+        ),
+        CheckConstraint(
+            "share_visibility IS NULL OR share_visibility IN ('private', 'public')",
+            name="ck_resumes_share_visibility",
+        ),
         {"comment": "用户简历当前版本"},
     )
 
@@ -142,6 +153,22 @@ class Resume(Base):
         nullable=False,
         default="blank",
         comment="来源类型：blank、template 或 import",
+    )
+    share_token: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="分享链接 token，全局唯一，NULL 表示未分享"
+    )
+    share_visibility: Mapped[str | None] = mapped_column(
+        String(16),
+        nullable=True,
+        comment="分享可见性：private 仅自己可见 / public 所有人可见",
+    )
+    share_expires_at: Mapped[datetime | None] = mapped_column(
+        timestamp_type(),
+        nullable=True,
+        comment="分享过期时间（UTC），NULL 表示长期有效",
+    )
+    share_created_at: Mapped[datetime | None] = mapped_column(
+        timestamp_type(), nullable=True, comment="分享创建时间（UTC）"
     )
     created_at: Mapped[datetime] = mapped_column(
         timestamp_type(),

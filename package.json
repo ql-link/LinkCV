@@ -23,6 +23,7 @@
     "build": "npm run build:web && npm run build:extension && npm run build:backend",
     "build:web": "npm --prefix apps/web run build",
     "build:extension": "npm --prefix apps/extension run build",
+    "release:extension": "uv run --directory apps/backend python ../../scripts/release/build_extension_release.py",
     "build:backend": "uv build --directory apps/backend",
     "typecheck": "npm run typecheck:web && npm run typecheck:extension",
     "typecheck:web": "npm --prefix apps/web run typecheck",

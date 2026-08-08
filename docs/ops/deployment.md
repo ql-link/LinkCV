@@ -18,7 +18,7 @@ Dev Jenkins Job 使用 `deploy/jenkins/Jenkinsfile.development`。Jenkins 将当
 - 容器：`linkcv-dev`、`linkcv-worker-dev`
 - 网络：外部网络 `tolink-dev-net`
 - 宿主机端口：`18002`
-- 配置：`.env.development` + 权限为 `600` 的 `.env.development.local`
+- 配置：`.env.development` + 权限为 `600` 的 `.env.development.local`；后者提供部署实际 `PLUGIN_RELEASE_ORIGIN`
 - 迁移门禁：`APP_ENV=development`、MySQL `100.86.10.52:13306/linkcv`
 
 Dev Jenkins 节点需预置 `/var/jenkins_home/.ssh/primary_dev`，并能以 `root` 连接 Primary。Primary 需已有 Docker、Docker Compose、`tolink-dev-net` 和私密 env 文件。LinkCV Dev 使用独立 `linkcv` MySQL 数据库、MinIO bucket 和 Redis DB 2；本地密钥文件只保存凭据，不覆盖仓库中的地址与资源名。任一前置条件、迁移或健康检查失败都会让 Job 失败。
@@ -35,16 +35,16 @@ Production Jenkins Job 使用根目录 `Jenkinsfile`，在生产 Jenkins 节点�
 - 容器：`linkcv`、`linkcv-worker`
 - 网络：外部网络 `tolink-app-net`
 - 宿主机端口：`8000`
-- 配置：`.env.production` + 权限为 `400` 或 `600` 的 `.env.production.local`
+- 配置：`.env.production` + 权限为 `400` 或 `600` 的 `.env.production.local`；后者必须提供 HTTPS `PLUGIN_RELEASE_ORIGIN`
 - 迁移门禁：`APP_ENV=production`、MySQL `tolink-mysql:3306/linkcv`
 
-Production Pipeline 会把仓库中的非敏感 `.env.production` 和 Compose 复制到部署目录；私密覆盖必须由部署密钥存储预先提供。除 JWT、MySQL 和 MinIO 凭据外，新版本还要求私密覆盖提供有效的 `LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY` 与 `RABBITMQ_URL`，否则 Settings 会在启动前安全失败。LLM 密钥环用于解密 MySQL 中的模型凭据，不是供应商 API key。
+Production Pipeline 会把仓库中的非敏感 `.env.production` 和 Compose 复制到部署目录；私密覆盖必须由部署密钥存储预先提供。除 JWT、MySQL 和 MinIO 凭据外，新版本还要求覆盖提供有效的 `LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY`、`RABBITMQ_URL` 与实际 HTTPS `PLUGIN_RELEASE_ORIGIN`，否则 Settings 会在启动前安全失败。Origin 不是密钥，但因为部署域名不提交到仓库而通过同一覆盖文件提供。LLM 密钥环用于解密 MySQL 中的模型凭据，不是供应商 API key；轮换时先发布“新 key 在首项、旧 key 仍保留”的配置，确认旧密文已经重包后才能移除旧 key。LinkParse Key 只供后端 Bearer 请求使用，不进入 Web 制品。
 
 本期没有管理员开通接口。发布方还需在受控流程中确保至少一个既有用户被标记为 `users.is_admin=true`；公开注册始终是普通用户。没有管理员只会使 `/api/admin/llm/**` 无法使用，不会放宽权限。
 
 生产容器通过 `tolink-app-net` 使用 Docker DNS 连接 MySQL、Redis、MinIO 和平台 RabbitMQ，并须能访问仓库配置的 LinkParse。MySQL、Redis、MinIO、RabbitMQ 与 LinkParse 都不由 Production Compose 创建。Worker 使用 RabbitMQ durable queue、固定 `resume.import` 路由和 DLX/DLT；业务解析失败落 MySQL 终态且不自动重试，Redis、数据库或对象存储等公共依赖不可用时保留消息等待恢复。
 
-模板创建与异步导入是同一版本的跨端契约，Web、FastAPI、Worker 和迁移必须一起发布。执行 `0016` 前先运行 `uv run --directory apps/backend python scripts/release/cleanup_legacy_resume_imports.py` 获取 dry-run 清单，人工确认后再加 `--execute`；旧导入未归零时迁移会拒绝继续。
+模板创建与异步导入是同一版本的跨端契约，Web、FastAPI、Worker 和迁移必须一起发布。执行 `0017` 前先运行 `uv run --directory apps/backend python scripts/release/cleanup_legacy_resume_imports.py` 获取 dry-run 清单，人工确认后再加 `--execute`；旧导入未归零时迁移会拒绝继续。
 
 两条 Pipeline 都提供 `RUN_TESTS` 参数；开启后会在镜像构建前运行 `npm run setup && npm run check`。常规 PR/push 质量检查仍由 GitHub Actions 执行。
 
@@ -55,12 +55,13 @@ Production Pipeline 会把仓库中的非敏感 `.env.production` 和 Compose �
 ## 回滚
 
 - 应用回滚通过把 `TAG` 切回上一环境的不可变镜像标签并重新执行对应 Compose 完成；不得把 Dev 标签部署到 Production。
-- 当前 head `0016`。`0015` 新增 `resume_imports` 且非空时拒绝 downgrade；`0016` 删除旧同步导入证据列，执行前必须完成不可逆的旧对象、版本和简历清理。
-- `0016` 后旧镜像依赖已删除字段，禁止直接回切；只能向前修复。尚未产生新导入简历且确认可恢复空列结构时才允许 downgrade 到 `0015`，存在 `source_type=import` 行时 downgrade 会拒绝执行。
+- 当前 head `0017`。`0016` 新增 `resume_imports` 且非空时拒绝 downgrade；`0017` 删除旧同步导入证据列，执行前必须完成不可逆的旧对象、版本和简历清理。
+- `0017` 后旧镜像依赖已删除字段，禁止直接回切；只能向前修复。尚未产生新导入简历且确认可恢复空列结构时才允许 downgrade 到 `0016`，存在 `source_type=import` 行时 downgrade 会拒绝执行。
 - `0012 → 0011` 只重新增加空的旧版备份列，不恢复已经删除的 JSON；如需恢复旧值或继续回滚到依赖旧格式的应用，必须使用执行 `0012` 前的外部数据库备份。不要把 schema 降级成功描述为数据已恢复。
 - 如必须在隔离环境继续执行 `0011 → 0010`，先回滚应用，down 会重建空的 `admin_operation_logs`；`0010 → 0009` 还会重建空的对象存储清理任务表。继续执行 `0009 → 0008` 前须备份数据库，down 会删除 `admin_operation_logs`；继续执行 `0008 → 0007` 会保留升级后新写入的模型和日志主体，但不会恢复 `0008` 升级前清理的数据，同时会删除 binding 及能力、adapter、调用名、来源等附加快照。不要在新应用运行时执行。MySQL DDL 非事务，失败后停止自动重试并按实际 schema 或备份处理。
 - 回滚到旧镜像时仍要保留新旧完整 LLM 密钥环，直到确认没有运行实例或密文依赖待移除的 key。
 - 原型 Express/SQLite 数据不进入新 MySQL 数据库，也不作为生产回滚路径。
 - 新增环境配置的回滚只恢复应用与 Compose；不得自动删除已有 `linkcv` 数据库或 Redis volume。
-- `0014 → 0013` 只移除官方现代双栏和紧凑技术型模板新增的受控 Markdown，已经从模板创建的用户简历仍保留自己的快照。MySQL DDL 非事务，Production 不自动 downgrade。
+- `0015 → 0014` 只移除官方现代双栏和紧凑技术型模板新增的受控 Markdown，已经从模板创建的用户简历仍保留自己的快照。MySQL DDL 非事务，Production 不自动 downgrade。
 - 进入新契约后应用替换必须同时覆盖 Web、FastAPI 与 Worker，避免页面、任务状态和消费者契约错配。
+- 插件发布失败不覆盖 `current.json` 时继续使用上一版本；应用镜像回滚不删除 `system/plugin-releases/` 对象。当前版本内容有误时发布更高补丁版本，不覆盖同版本 ZIP。

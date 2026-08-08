@@ -109,6 +109,29 @@ export type ResumeVersion = {
   style?: ResumeStyleV1;
 };
 
+export type ResumeShareState = {
+  share_token: string;
+  share_visibility: "private" | "public";
+  share_expires_at: string | null;
+  share_created_at: string;
+};
+
+export type ResumeShareUpdatePayload = {
+  visibility?: "private" | "public";
+  expires_at?: string | null;
+};
+
+export type PublicShareSharer = {
+  nickname: string;
+  avatar_url: string | null;
+};
+
+export type PublicSharePayload = {
+  data: ResumeDocumentV1;
+  style: ResumeStyleV1;
+  sharer: PublicShareSharer;
+};
+
 export type UploadedAsset = {
   object_key: string;
   url: string;
@@ -225,6 +248,26 @@ export type JobDescriptionFields = {
   recruiter_name?: string | null;
   recruiter_title?: string | null;
   notes?: string | null;
+};
+
+export type PluginRelease = {
+  version: string;
+  released_at: string;
+  browser: "Chrome";
+  manifest_version: 3;
+  size: number;
+  sha256: string;
+  download_url: string;
+};
+
+export type PluginReleaseCurrentResponse = {
+  status: "available" | "unpublished";
+  release: PluginRelease | null;
+};
+
+export type AdminPluginReleaseCurrentResponse = {
+  status: "absent" | "published" | "unpublished";
+  release: PluginRelease | null;
 };
 
 export type DuplicateResolution = {
@@ -438,6 +481,23 @@ async function request<T>(
   return data as T;
 }
 
+async function requestBlob(path: string, retryAuth = true): Promise<Blob> {
+  const response = await fetch(path, { credentials: "include" });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401 && retryAuth) {
+      const refreshed = await refreshSession();
+      if (refreshed) return requestBlob(path, false);
+    }
+    throw new ApiRequestError(
+      response.status,
+      typeof data.error === "string" ? data.error : `HTTP_${response.status}`,
+      data && typeof data === "object" ? data as Record<string, unknown> : null,
+    );
+  }
+  return response.blob();
+}
+
 async function getCurrentUser(): Promise<{ user: User | null }> {
   const current = await request<{ user: User | null }>("/api/auth/me");
   if (current.user || !(await refreshSession())) {
@@ -530,6 +590,23 @@ export const api = {
       `/api/resumes/${id}/versions/${versionNo}/restore`,
       { method: "POST" },
     ),
+  getShareState: (id: string) =>
+    request<{ share: ResumeShareState | null }>(`/api/resumes/${id}/share`),
+  createShare: (id: string) =>
+    request<{ share: ResumeShareState }>(`/api/resumes/${id}/share`, {
+      method: "POST",
+    }),
+  updateShare: (id: string, payload: ResumeShareUpdatePayload) =>
+    request<{ share: ResumeShareState }>(`/api/resumes/${id}/share`, {
+      method: "PATCH",
+      body: payload,
+    }),
+  deleteShare: (id: string) =>
+    request<{ deleted: boolean }>(`/api/resumes/${id}/share`, {
+      method: "DELETE",
+    }),
+  fetchPublicShare: (token: string) =>
+    request<PublicSharePayload>(`/api/share/${encodeURIComponent(token)}`),
   importResume: (file: File, templateId: string, idempotencyKey: string) => {
     const formData = new FormData();
     formData.append("file", file);
@@ -626,6 +703,37 @@ export const api = {
     request<{ deleted: boolean }>(`/api/job-descriptions/${id}`, {
       method: "DELETE",
     }),
+  getPluginRelease: () =>
+    request<PluginReleaseCurrentResponse>("/api/plugin-releases/current"),
+  downloadPluginRelease: (version: string) =>
+    requestBlob(`/api/plugin-releases/${encodeURIComponent(version)}/download`),
+  adminPublishPluginRelease: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<{ release: PluginRelease; cleanup_pending: boolean }>("/api/admin/plugin-releases", {
+      method: "POST",
+      formData,
+    });
+  },
+  getAdminPluginRelease: () =>
+    request<AdminPluginReleaseCurrentResponse>(
+      "/api/admin/plugin-releases/current",
+    ),
+  adminUnpublishPluginRelease: () =>
+    request<{ unpublished: true; release: PluginRelease }>(
+      "/api/admin/plugin-releases/current",
+      { method: "DELETE" },
+    ),
+  adminReactivatePluginRelease: () =>
+    request<{ release: PluginRelease }>(
+      "/api/admin/plugin-releases/current/publish",
+      { method: "POST" },
+    ),
+  adminDeletePluginRelease: () =>
+    request<{ deleted: true }>(
+      "/api/admin/plugin-releases/current/package",
+      { method: "DELETE" },
+    ),
   adminListUsers: (
     params: {
       page?: number;

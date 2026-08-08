@@ -1,8 +1,8 @@
-"""drop resume import columns.
+"""create resume imports.
 
 Revision ID: 0016
 Revises: 0015
-Create Date: 2026-08-08 16:24:42.590571
+Create Date: 2026-08-08 15:57:29.873363
 """
 from collections.abc import Sequence
 from pathlib import Path
@@ -21,26 +21,15 @@ SQL_DIR = Path(__file__).parent.parent / "sql"
 
 
 def upgrade() -> None:
-    connection = op.get_bind()
-    row_count = connection.scalar(
-        text("SELECT COUNT(*) FROM resumes WHERE source_type = 'import'")
-    )
-    if row_count:
-        raise RuntimeError(
-            "0016 requires legacy imported resumes to be removed first: "
-            f"count={row_count}"
-        )
-    execute_sql_file(connection, SQL_DIR / "0016.up.sql")
+    execute_sql_file(op.get_bind(), SQL_DIR / "0016.up.sql")
 
 
 def downgrade() -> None:
     connection = op.get_bind()
-    row_count = connection.scalar(
-        text("SELECT COUNT(*) FROM resumes WHERE source_type = 'import'")
-    )
+    row_count = connection.scalar(text("SELECT COUNT(*) FROM resume_imports"))
     if row_count:
         raise RuntimeError(
-            "0016 cannot restore removed import evidence for existing resumes: "
+            "0016 refuses to drop resume_imports while import records exist: "
             f"count={row_count}"
         )
     execute_sql_file(connection, SQL_DIR / "0016.down.sql")
