@@ -109,3 +109,46 @@ class ResumeImportMetadata(BaseModel):
 class ResumeImportResponse(BaseModel):
     resume: ResumeRecord
     import_result: ResumeImportMetadata = Field(alias="import")
+
+
+class ResumeShareState(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    share_token: str
+    share_visibility: Literal["private", "public"]
+    share_expires_at: datetime | None = None
+    share_created_at: datetime
+
+
+class ResumeShareResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    share: ResumeShareState | None
+
+
+class ResumeShareUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    visibility: Literal["private", "public"] | None = None
+    expires_at: datetime | None = None
+
+
+class DeleteResumeShareResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    deleted: bool
+
+
+class PublicShareSharer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    nickname: str
+    avatar_url: str | None = None
+
+
+class PublicSharePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ResumeDocumentV1
+    style: ResumeStyleV1
+    sharer: PublicShareSharer
