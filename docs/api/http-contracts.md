@@ -66,6 +66,22 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 
 版本号单调递增且不复用；每份简历默认最多保存 10 个版本。创建或恢复所需的版本空间不足时返回 `409 RESUME_VERSION_LIMIT_REACHED`，不会自动删除任何历史版本；用户删除旧版本后才能继续。最新版本作为当前恢复基准不可删除，尝试删除返回 `409 LATEST_RESUME_VERSION_REQUIRED`。版本不存在返回 `404 RESUME_VERSION_NOT_FOUND`，并发兜底失败返回 `409 VERSION_CONFLICT`。
 
+## 简历分享链接
+
+每份简历一个分享链接，分享状态直接落在 `resumes` 表的 `share_*` 字段，不单独建表。分享内容不落快照：公开读取时实时取 `resume_versions` 中 `version_no` 最大的正式版本，所有者继续编辑的是快照草稿，不会影响已分享内容之外的版本语义。管理接口全部要求登录且只能操作本人简历（`404 RESUME_NOT_FOUND`）；公开接口 `/api/share/{token}` 允许未登录访问。
+
+| Method   | Path                  | 鉴权 | 成功结果                                                                 |
+| -------- | --------------------- | ---- | ------------------------------------------------------------------------ |
+| `GET`    | `/api/resumes/:id/share`    | 是   | `{share}`；未开启分享时 `share` 为 `null`                        |
+| `POST`   | `/api/resumes/:id/share`    | 是   | `{share}`；无链接时创建，已有链接时作废旧 token 并生成新 token（一键覆盖） |
+| `PATCH`  | `/api/resumes/:id/share`    | 是   | `{share}`；请求可选 `{visibility, expires_at}`，可续期或改为仅自己可见     |
+| `DELETE` | `/api/resumes/:id/share`    | 是   | `{deleted: true}`；清空分享字段，旧地址访问统一失效，重复删除幂等          |
+| `GET`    | `/api/share/{token}`        | 否   | `{data, style, sharer}`；`sharer` 为 `{nickname, avatar_url}`             |
+
+`share` 为 `{share_token, share_visibility, share_expires_at, share_created_at}`。`share_visibility` 只允许 `public|private`，`share_expires_at` 为带时区的 ISO 8601，`null` 表示长期有效；`private` 时只有分享者本人登录可见，未登录或其他用户访问一律按失效处理。
+
+`POST` 创建或覆盖会重置可见性为 `public` 并清除过期时间。`PATCH` 用 `model_fields_set` 区分传入字段，可单独续期（延长或清除 `expires_at`）或切换可见性；未开启分享时返回 `404 SHARE_LINK_UNAVAILABLE`。token 使用 `secrets.token_urlsafe(16)`（约 160 bit 熵）且全局唯一，冲突重试 3 次。为避免枚举探测，以下场景在管理侧与公开侧统一返回 `404 SHARE_LINK_UNAVAILABLE`：token 不存在、已删除、已过期、`private` 无权查看、简历或最新版本不存在。过期后可再次 `PATCH expires_at` 恢复访问，不需重建链接。
+
 ## 文件导入
 
 `POST /api/resumes/import` 使用 `multipart/form-data`，字段为 `file` 和可选 `title`，并要求 `Idempotency-Key` Header 为小写、带连字符的 canonical UUID。支持 UTF-8 Markdown、DOCX 和文字/扫描/混合 PDF：Markdown 本地直接读取，DOCX 本地通过 Mammoth 和安全 HTML 转 Markdown，只有 PDF 会调用 LinkParse `POST /v1/parse` 并由远端自动选择文字提取或 OCR；随后统一经过 `SectionIR → ResumeExtractionDraft → ResumeDocumentV1`。成功返回：

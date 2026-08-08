@@ -9,6 +9,7 @@ import {
   jobEditPath,
   navigateTo,
   parseAppRoute,
+  sharePath,
 } from "./routing";
 
 describe("LinkCV routes", () => {
@@ -24,7 +25,14 @@ describe("LinkCV routes", () => {
     expect(parseAppRoute("/jobs/job_123/edit")).toEqual({ kind: "jobEdit", jobId: "job_123" });
     expect(parseAppRoute("/account")).toEqual({ kind: "account" });
     expect(parseAppRoute("/account/password")).toEqual({ kind: "accountPassword" });
+    expect(parseAppRoute("/share/abc123")).toEqual({ kind: "share", token: "abc123" });
+    expect(parseAppRoute("/share/a%20b")).toEqual({ kind: "share", token: "a b" });
     expect(parseAppRoute("/missing")).toEqual({ kind: "notFound" });
+  });
+
+  it("encodes share tokens when building share paths", () => {
+    expect(sharePath("abc123")).toBe("/share/abc123");
+    expect(sharePath("a/b c")).toBe("/share/a%2Fb%20c");
   });
 
   it("parses the admin login route and its safe next target", () => {

@@ -12,6 +12,7 @@ import { JobCenterPage } from "./features/jobs/JobCenterPage";
 import { JobDetailPage } from "./features/jobs/JobDetailPage";
 import { JobFormPage } from "./features/jobs/JobFormPage";
 import { LandingPage } from "./features/landing/LandingPage";
+import { SharePage } from "./features/share/SharePage";
 import { ResumeWorkbench } from "./features/workbench/ResumeWorkbench";
 import { authPath, editorPath, navigateTo, useAppRoute } from "./routing";
 import { useResumeStore } from "./store/resumeStore";
@@ -129,6 +130,10 @@ export function App() {
 
   if (route.kind === "adminLogin") {
     return <AdminLoginPage key={route.next ?? ""} next={route.next} />;
+  }
+
+  if (route.kind === "share") {
+    return <SharePage token={route.token} />;
   }
 
   if (authStatus === "checking") {

@@ -2,7 +2,7 @@
 
 ## 当前职责与结构
 
-`apps/backend` 承接健康检查、短 JWT access + 不透明 refresh + Redis 会话鉴权、语义简历生命周期、历史版本、文件导入、私有对象资源、结构化 JD 生命周期、用户中心与账号安全、统一 LLM 调用和管理员模型治理 API，以及管理台用户管理（列表/搜索/详情/状态变更/概览统计）。
+`apps/backend` 承接健康检查、短 JWT access + 不透明 refresh + Redis 会话鉴权、语义简历生命周期、历史版本、简历分享链接、文件导入、私有对象资源、结构化 JD 生命周期、用户中心与账号安全、统一 LLM 调用和管理员模型治理 API，以及管理台用户管理（列表/搜索/详情/状态变更/概览统计）。
 
 | 位置 | 职责 |
 | --- | --- |
@@ -10,16 +10,16 @@
 | `src/linkcv/core/` | 配置、数据库、错误、安全、Redis 和 MinIO 基础设施 |
 | `src/linkcv/domain/` | `ResumeDocumentV1`、`ResumeStyleV1`、联合快照、SectionIR、Draft 和确定性标准化 |
 | `src/linkcv/domain/job_source.py` | JD 来源 URL 校验、规范化、站点识别和 SHA-256 身份计算 |
-| `src/linkcv/application/resumes/` | 统一创建、乐观锁保存、版本创建/恢复与事务规则 |
+| `src/linkcv/application/resumes/` | 统一创建、乐观锁保存、版本创建/恢复、分享链接创建/覆盖/更新与事务规则 |
 | `src/linkcv/application/job_descriptions/` | JD 创建、重复解决、搜索分页、乐观锁更新、归档和永久删除 |
 | `src/linkcv/integrations/` | LinkParse PDF Adapter、Mammoth DOCX worker、转换分发和统一 LLM 简历结构化 Adapter |
 | `src/linkcv/services/resume_import_service.py` | 文件校验、对象上传、Markdown 转换、结构化、统一创建、deadline 和失败补偿 |
 | `src/linkcv/services/resume_import_idempotency.py` | Redis Lua 短窗口幂等租约、成功重放和冲突保护 |
 | `src/linkcv/modules/identity/` | 用户模型、注册、登录、admin-login 鉴权、双 Token 会话、`/api/account` 用户中心、管理端用户管理 |
-| `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板/简历/版本/导入/资源路由 |
+| `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板/简历/版本/导入/分享/资源路由 |
 | `src/linkcv/modules/job_descriptions/` | JD 单表 ORM、HTTP DTO 和受保护路由 |
 | `src/linkcv/modules/llm/` | Chat 当前绑定、模型凭据加密、LiteLLM 适配、普通/流式/结构化单模型调用、计量与管理员 API |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0012` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0013` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -40,6 +40,8 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 `0008` 在模型配置上增加 `capability`、LiteLLM `adapter`、不含前缀的模型调用名和配置版本；新增按能力保存唯一当前候选的 `llm_capability_bindings`，并预置一行可为空的 `chat` 绑定。调用日志增加能力、来源、adapter 和调用名快照。旧的完整 `model_name`、`enabled`、`priority` 和手工价格列暂时保留用于应用回滚兼容，新 HTTP 契约和运行时不读取其旧产品语义。revision 在 DDL 前先删除 `llm_call_logs`，再删除 `llm_model_configs`；旧数据不迁移且 downgrade 不恢复，升级完成后的 `chat` 绑定为空。
 
 `0009` 曾新增 `admin_operation_logs` 管理操作审计表，记录管理员对用户的 enable/disable 操作。字段包括 `id`（BIGINT UNSIGNED PK）、`actor_user_id`（操作人，FK → users.id）、`target_user_id`（目标用户，FK → users.id）、`action`（受 CHECK 约束的 VARCHAR，只允许 "disable"/"enable"）和 `created_at`。该表仅写入不读取，管理端无查询入口，`0011` 将其删除（down 只重建空表结构）；enable/disable 操作不再持久化审计记录。
+
+`0013` 为 `resumes` 增加分享字段：`share_token`（VARCHAR(64)，全局唯一索引）、`share_visibility`（VARCHAR(16)，`private|public`）、`share_expires_at`（可空，UTC 过期时间）和 `share_created_at`。两个 CHECK 约束保证分享字段要么全部为空（未分享）、要么全部非空（已分享），且可见性只允许 `private/public`。分享不单独建表、不落内容快照，公开读取时实时取 `resume_versions` 中 `version_no` 最大的正式版本；down 迁移只删除新增列与约束，不触碰分享期间创建的版本数据。
 
 ## 统一 LLM 调用
 
@@ -73,6 +75,10 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown/DOCX 保持
 ## 用户中心
 
 `/api/account/*` 的五个端点都通过 `get_current_user` 获取当前用户，不接受客户端 `user_id`。`GET /api/account/profile` 返回资料并附带简历数量与最近 5 份简历；`PATCH /api/account/profile` 只允许修改昵称（去空白后 1–50 字符）。头像上传复用 `decode_image_data_url`、`build_avatar_object_name` 和 `asset_url`：新对象写入 `users/{user_id}/assets/avatar/...`，再更新 `users.avatar_object_key`，提交失败补偿删除新对象，成功后才清理旧对象；响应只含相对 URL，旧路径中的已有头像不迁移。`POST /api/account/change-password` 校验当前密码（新密码不得与当前密码相同，否则 `400 PASSWORD_UNCHANGED`）并更新 Argon2id 哈希后，调用 `revoke_user_sessions` 撤销该用户全部 Redis 会话，再通过 `clear_auth_cookies` 清除双 Cookie，强制所有设备用新密码重新登录。登录与 `/api/auth/me` 等鉴权响应的 `user` 对象同样包含 `avatar_url`（经 `/api/assets` 转发，无头像时为 `null`）。
+
+## 简历分享
+
+`application/resumes/share_service.py` 承担分享业务，`modules/resumes/share_routes.py` 暴露管理端 4 个端点（`/api/resumes/{resume_id}/share` 的 GET/POST/PATCH/DELETE）和公开只读端点（`/api/share/{token}`，依赖 `get_optional_user` 以支持 `private` 可见性判断）。token 使用 `secrets.token_urlsafe(16)`，全局唯一且冲突重试 3 次；`POST` 覆盖会作废旧 token 生成新 token，`DELETE` 清空分享字段，重复删除幂等。公开解析按「token 存在 → 未过期（SQLite naive datetime 按 UTC 解释后比较）→ 非 `private` 或访问者是分享者本人 → 简历与最新版本存在」的顺序校验，任一不满足统一抛 `SHARE_LINK_UNAVAILABLE`，路由转成 `404`，防止枚举探测。分享内容实时读取 `resume_versions` 最新正式版本并脱敏返回 `data/style/sharer`，不保存快照，因此所有者后续保存新版本会立即反映到分享页。
 
 ## 测试约定
 

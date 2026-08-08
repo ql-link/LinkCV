@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FileUp, PenLine, Plus, Search, X } from "lucide-react";
+import { FileUp, PenLine, Plus, Search, Share2, X } from "lucide-react";
 import { ApiRequestError, type ResumeSummary } from "../../api/client";
 import { Button, Toast } from "../../components/ds";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useResumeStore } from "../../store/resumeStore";
 import { editorPath, navigateTo } from "../../routing";
+import { SharePanel } from "./SharePanel";
 
 type HomeScreenProps = {
   view?: "all" | "templates";
@@ -68,11 +69,13 @@ function ResumeThumbnailCard({
   resume,
   onOpen,
   onDelete,
+  onShare,
   deleteDisabled = false,
 }: {
   resume: Pick<ResumeSummary, "id" | "title" | "updated_at">;
   onOpen: () => void;
   onDelete?: () => void;
+  onShare?: () => void;
   deleteDisabled?: boolean;
 }) {
   return (
@@ -92,6 +95,17 @@ function ResumeThumbnailCard({
           <small>更新于 {resume.updated_at === "内置" ? "内置" : formatTime(resume.updated_at)}</small>
         </span>
       </button>
+      {onShare && (
+        <button
+          className="home-card-share"
+          type="button"
+          aria-label={`分享简历 ${resume.title}`}
+          title="分享简历"
+          onClick={onShare}
+        >
+          <Share2 size={14} />
+        </button>
+      )}
       {onDelete && (
         <button
           className="home-card-delete"
@@ -114,6 +128,7 @@ export function HomeScreen({ view = "all", resumes, onOpen, onDelete, onCreate, 
   const [query, setQuery] = useState("");
   const [scrollAmount, setScrollAmount] = useState(0);
   const [pendingDelete, setPendingDelete] = useState<ResumeSummary | null>(null);
+  const [sharingResume, setSharingResume] = useState<ResumeSummary | null>(null);
   const [deletingResumeId, setDeletingResumeId] = useState<string | null>(null);
   const [creatingBlank, setCreatingBlank] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -279,6 +294,7 @@ export function HomeScreen({ view = "all", resumes, onOpen, onDelete, onCreate, 
                   key={resume.id}
                   resume={resume}
                   onOpen={() => void onOpen(resume.id)}
+                  onShare={() => setSharingResume(resume)}
                   onDelete={() => requestDelete(resume)}
                   deleteDisabled={deletingResumeId !== null}
                 />
@@ -330,6 +346,14 @@ export function HomeScreen({ view = "all", resumes, onOpen, onDelete, onCreate, 
           busy={creatingFromTemplate}
           onCancel={() => setTemplateConfirmOpen(false)}
           onConfirm={confirmTemplateCreate}
+        />
+      )}
+
+      {sharingResume && (
+        <SharePanel
+          resumeId={sharingResume.id}
+          resumeTitle={sharingResume.title}
+          onClose={() => setSharingResume(null)}
         />
       )}
     </main>

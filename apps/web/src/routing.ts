@@ -13,6 +13,7 @@ export type AppRoute =
   | { kind: "jobEdit"; jobId: string }
   | { kind: "account" }
   | { kind: "accountPassword" }
+  | { kind: "share"; token: string }
   | { kind: "notFound" };
 
 type NavigateOptions = {
@@ -22,6 +23,7 @@ type NavigateOptions = {
 const editorPathPattern = /^\/resumes\/([^/]+)\/edit$/;
 const jobDetailPathPattern = /^\/jobs\/([^/]+)$/;
 const jobEditPathPattern = /^\/jobs\/([^/]+)\/edit$/;
+const sharePathPattern = /^\/share\/([^/]+)$/;
 
 function normalizePathname(pathname: string) {
   if (pathname === "/") return pathname;
@@ -93,7 +95,20 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
     }
   }
 
+  const shareMatch = normalizedPath.match(sharePathPattern);
+  if (shareMatch) {
+    try {
+      return { kind: "share", token: decodeURIComponent(shareMatch[1]) };
+    } catch {
+      return { kind: "notFound" };
+    }
+  }
+
   return { kind: "notFound" };
+}
+
+export function sharePath(token: string) {
+  return `/share/${encodeURIComponent(token)}`;
 }
 
 export function editorPath(resumeId: string) {

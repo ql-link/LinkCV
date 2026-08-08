@@ -88,6 +88,29 @@ export type ResumeVersion = {
   style?: ResumeStyleV1;
 };
 
+export type ResumeShareState = {
+  share_token: string;
+  share_visibility: "private" | "public";
+  share_expires_at: string | null;
+  share_created_at: string;
+};
+
+export type ResumeShareUpdatePayload = {
+  visibility?: "private" | "public";
+  expires_at?: string | null;
+};
+
+export type PublicShareSharer = {
+  nickname: string;
+  avatar_url: string | null;
+};
+
+export type PublicSharePayload = {
+  data: ResumeDocumentV1;
+  style: ResumeStyleV1;
+  sharer: PublicShareSharer;
+};
+
 export type UploadedAsset = {
   object_key: string;
   url: string;
@@ -484,6 +507,23 @@ export const api = {
       `/api/resumes/${id}/versions/${versionNo}/restore`,
       { method: "POST" },
     ),
+  getShareState: (id: string) =>
+    request<{ share: ResumeShareState | null }>(`/api/resumes/${id}/share`),
+  createShare: (id: string) =>
+    request<{ share: ResumeShareState }>(`/api/resumes/${id}/share`, {
+      method: "POST",
+    }),
+  updateShare: (id: string, payload: ResumeShareUpdatePayload) =>
+    request<{ share: ResumeShareState }>(`/api/resumes/${id}/share`, {
+      method: "PATCH",
+      body: payload,
+    }),
+  deleteShare: (id: string) =>
+    request<{ deleted: boolean }>(`/api/resumes/${id}/share`, {
+      method: "DELETE",
+    }),
+  fetchPublicShare: (token: string) =>
+    request<PublicSharePayload>(`/api/share/${encodeURIComponent(token)}`),
   importResume: (file: File, title: string | undefined, idempotencyKey: string) => {
     const formData = new FormData();
     formData.append("file", file);
