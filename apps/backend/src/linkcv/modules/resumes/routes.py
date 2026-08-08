@@ -5,10 +5,12 @@ from sqlalchemy.orm import Session, load_only
 
 from fastapi import APIRouter, Depends
 
-from linkcv.application.resumes.commands import CreateResumeCommand
 from linkcv.application.resumes.service import (
+    InvalidResumeTitle,
     ResumeLimitExceeded,
-    create_resume_with_initial_version,
+    ResumeTemplateUnavailable,
+    ResumeTitleConflict,
+    create_resume_from_template,
     find_owned_resume,
     lock_owned_resume,
     parse_decimal_id,
@@ -17,16 +19,15 @@ from linkcv.application.resumes.service import (
 from linkcv.core.database import get_db
 from linkcv.core.errors import ApiError
 from linkcv.core.storage import AssetStorage, get_storage
-from linkcv.domain.resume_document import default_resume_document
 from linkcv.domain.resume_snapshot import parse_resume_snapshot
-from linkcv.domain.resume_style import default_resume_style
 from linkcv.modules.identity.dependencies import get_current_user
 from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
+from linkcv.modules.resumes.models import Resume, ResumeVersion
 from linkcv.modules.resumes.schemas import (
     DeleteResumeResponse,
     ResumeCreateRequest,
     ResumeListResponse,
+    ResumePreview,
     ResumeRecord,
     ResumeResponse,
     ResumeSummary,
@@ -44,6 +45,12 @@ def require_owned_resume(db: Session, resume_id: str, user_id: int) -> Resume:
 
 
 def resume_summary(resume: Resume) -> ResumeSummary:
+    preview: ResumePreview | None = None
+    try:
+        snapshot = parse_resume_snapshot(resume.data_json, resume.style_json)
+        preview = ResumePreview(data=snapshot.data, style=snapshot.style)
+    except (TypeError, ValueError):
+        pass
     return ResumeSummary(
         id=str(resume.id),
         title=resume.title,
@@ -51,6 +58,7 @@ def resume_summary(resume: Resume) -> ResumeSummary:
         lock_version=resume.lock_version,
         created_at=resume.created_at,
         updated_at=resume.updated_at,
+        preview=preview,
     )
 
 
@@ -64,7 +72,6 @@ def resume_record(resume: Resume) -> ResumeRecord:
         template_id=str(resume.template_id) if resume.template_id is not None else None,
         data=snapshot.data,
         style=snapshot.style,
-        source_filename=resume.source_filename,
     )
 
 
@@ -83,6 +90,8 @@ def list_resumes(
                 Resume.lock_version,
                 Resume.created_at,
                 Resume.updated_at,
+                Resume.data_json,
+                Resume.style_json,
             )
         )
         .where(Resume.user_id == user.id)
@@ -97,46 +106,25 @@ def create_resume(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ResumeResponse:
-    title = payload.title or "未命名简历"
-    data = default_resume_document()
-    style = default_resume_style()
-    source_type = "blank"
-    template_id: int | None = None
-
-    if payload.template_id is not None:
-        template_id = parse_decimal_id(payload.template_id)
-        template = (
-            db.scalar(
-                select(ResumeTemplate).where(
-                    ResumeTemplate.id == template_id,
-                    ResumeTemplate.is_active == 1,
-                )
-            )
-            if template_id is not None
-            else None
-        )
-        if template is None:
-            raise ApiError(422, "TEMPLATE_INACTIVE")
-        try:
-            snapshot = parse_resume_snapshot(template.data_json, template.style_json)
-        except ValueError as error:
-            raise ApiError(422, "TEMPLATE_INACTIVE") from error
-        data = snapshot.data
-        style = snapshot.style
-        source_type = "template"
+    if payload.template_id is None:
+        raise ApiError(400, "TEMPLATE_REQUIRED")
+    template_id = parse_decimal_id(payload.template_id)
+    if template_id is None:
+        raise ApiError(422, "TEMPLATE_INACTIVE")
 
     try:
-        resume = create_resume_with_initial_version(
-            CreateResumeCommand(
-                user_id=user.id,
-                title=title,
-                data=data,
-                style=style,
-                source_type=source_type,
-                template_id=template_id,
-            ),
-            db,
+        resume = create_resume_from_template(
+            db=db,
+            user_id=user.id,
+            title=payload.title,
+            template_id=template_id,
         )
+    except InvalidResumeTitle as error:
+        raise ApiError(400, "INVALID_RESUME_TITLE") from error
+    except ResumeTitleConflict as error:
+        raise ApiError(409, "RESUME_TITLE_CONFLICT") from error
+    except ResumeTemplateUnavailable as error:
+        raise ApiError(422, "TEMPLATE_INACTIVE") from error
     except ResumeLimitExceeded as error:
         raise ApiError(409, "RESUME_LIMIT_REACHED") from error
     return ResumeResponse(resume=resume_record(resume))
@@ -169,6 +157,10 @@ def update_resume(
             data=payload.data,
             style=payload.style,
         )
+    except InvalidResumeTitle as error:
+        raise ApiError(400, "INVALID_RESUME_TITLE") from error
+    except ResumeTitleConflict as error:
+        raise ApiError(409, "RESUME_TITLE_CONFLICT") from error
     except ValueError as error:
         raise ApiError(500, "RESUME_SCHEMA_INVALID") from error
     if updated is None:

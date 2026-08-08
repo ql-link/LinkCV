@@ -115,7 +115,7 @@ contracts:
         message: Production 环境必须声明完整导入限制
 
   - id: resume-import-linkparse-contract
-    description: FastAPI、环境模板和 Vite 使用冻结的 LinkParse 与同步导入预算
+    description: FastAPI 与环境模板使用冻结的 LinkParse 转换契约
     assertions:
       - path: apps/backend/src/linkcv/core/config.py
         pattern: 'default="http://100\.86\.10\.52:18743",[\s\S]*alias="LINKPARSE_BASE_URL"[\s\S]*default="/v1/parse",[\s\S]*alias="LINKPARSE_PARSE_PATH"[\s\S]*default=90,[\s\S]*alias="LINKPARSE_TIMEOUT_SECONDS"[\s\S]*default=3 \* 1024 \* 1024,[\s\S]*alias="LINKPARSE_RESPONSE_MAX_BYTES"'
@@ -132,7 +132,6 @@ contracts:
       - path: apps/web/vite.config.mjs
         pattern: 'timeout: 190000,[\s\S]*proxyTimeout: 190000'
         message: Vite 必须给同步导入保留 190 秒代理预算
-
   - id: resume-import-idempotency-contract
     description: FastAPI 和三套环境使用一致的导入 deadline、结构化超时与 Redis 幂等默认值
     assertions:

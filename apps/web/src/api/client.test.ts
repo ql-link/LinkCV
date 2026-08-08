@@ -125,7 +125,7 @@ describe("API session refresh", () => {
     const file = new File(["# 张三"], "resume.md", { type: "text/markdown" });
     const key = "8d42a61f-2396-4dbc-a63d-a1770e398f61";
 
-    await api.importResume(file, undefined, key);
+    await api.importResume(file, "8", key);
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,

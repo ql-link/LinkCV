@@ -4,24 +4,28 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from linkcv.domain.resume_document import ResumeDocumentV1
-from linkcv.domain.import_warnings import ImportWarning
 from linkcv.domain.resume_style import ResumeStyleV1
 
 
 class ResumeCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    title: str | None = Field(default=None, max_length=255)
-    template_id: str | None = None
+    title: str | None = Field(default=None, strict=True, max_length=20_000)
+    template_id: str | None = Field(default=None, strict=True)
 
 
 class ResumeUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    title: str | None = Field(default=None, max_length=255)
+    title: str | None = Field(default=None, strict=True, max_length=20_000)
     data: ResumeDocumentV1 | None = None
     style: ResumeStyleV1 | None = None
     base_lock_version: int = Field(ge=1)
+
+
+class ResumePreview(BaseModel):
+    data: ResumeDocumentV1
+    style: ResumeStyleV1
 
 
 class ResumeSummary(BaseModel):
@@ -33,6 +37,7 @@ class ResumeSummary(BaseModel):
     lock_version: int
     created_at: datetime
     updated_at: datetime
+    preview: ResumePreview | None = None
 
     @field_validator("id", mode="before")
     @classmethod
@@ -44,7 +49,6 @@ class ResumeRecord(ResumeSummary):
     template_id: str | None
     data: ResumeDocumentV1
     style: ResumeStyleV1
-    source_filename: str | None = None
 
 
 class ResumeResponse(BaseModel):
@@ -57,6 +61,17 @@ class ResumeListResponse(BaseModel):
 
 class DeleteResumeResponse(BaseModel):
     deleted: bool
+
+
+class ResumeImportMetadata(BaseModel):
+    source_file_name: str
+    source_file_format: Literal["md", "docx", "pdf"]
+    warnings: list[str]
+
+
+class ResumeImportResponse(BaseModel):
+    resume: ResumeRecord
+    import_result: ResumeImportMetadata = Field(alias="import")
 
 
 class ResumeTemplateRecord(BaseModel):
@@ -98,14 +113,3 @@ class ResumeVersionResponse(BaseModel):
 
 class DeleteResumeVersionResponse(BaseModel):
     deleted: bool
-
-
-class ResumeImportMetadata(BaseModel):
-    source_file_name: str
-    source_file_format: Literal["md", "docx", "pdf"]
-    warnings: list[ImportWarning]
-
-
-class ResumeImportResponse(BaseModel):
-    resume: ResumeRecord
-    import_result: ResumeImportMetadata = Field(alias="import")

@@ -6,6 +6,7 @@ export type AppRoute =
   | { kind: "admin" }
   | { kind: "adminLogin"; next: string | null }
   | { kind: "resumes" }
+  | { kind: "resumeCreate" }
   | { kind: "editor"; resumeId: string }
   | { kind: "jobs" }
   | { kind: "jobCreate" }
@@ -61,6 +62,7 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
     };
   }
   if (normalizedPath === "/resumes") return { kind: "resumes" };
+  if (normalizedPath === "/resumes/new") return { kind: "resumeCreate" };
   if (normalizedPath === "/jobs") return { kind: "jobs" };
   if (normalizedPath === "/jobs/new") return { kind: "jobCreate" };
   if (normalizedPath === "/account") return { kind: "account" };

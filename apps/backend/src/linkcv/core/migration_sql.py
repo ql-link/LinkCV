@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 _COMMENT = re.compile(r"(?m)^\s*--.*$")
@@ -37,4 +36,7 @@ def execute_sql_file(
     for statement in statements:
         if _DATABASE_SCOPE.match(statement):
             raise ValueError(f"migration SQL cannot change database scope: {path}")
-        connection.execute(text(statement))
+        # Migration files are reviewed, statement-only MySQL SQL. Executing the
+        # driver SQL directly keeps JSON object colons literal instead of having
+        # SQLAlchemy interpret values such as `"font_size":14` as bind params.
+        connection.exec_driver_sql(statement)

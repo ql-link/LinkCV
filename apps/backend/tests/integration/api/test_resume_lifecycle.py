@@ -21,7 +21,7 @@ class FakeStorage:
 
 
 def build_app(version_limit: int = 10):
-    return create_app(
+    app = create_app(
         Settings(
             database_url="sqlite+pysqlite:///:memory:",
             jwt_secret="resume-lifecycle-test-secret-32-bytes",
@@ -31,6 +31,19 @@ def build_app(version_limit: int = 10):
         redis=FakeRedis(),
         create_schema=True,
     )
+    with app.state.session_factory() as session:
+        template = ResumeTemplate(
+            key="blank-cn",
+            name="空白简历",
+            description="测试默认模板",
+            data_json=default_resume_document().model_dump(mode="json"),
+            style_json=default_resume_style().model_dump(mode="json"),
+            is_active=1,
+        )
+        session.add(template)
+        session.commit()
+        app.state.test_template_id = str(template.id)
+    return app
 
 
 def register(client: TestClient, email: str = "owner@example.com") -> None:
@@ -41,11 +54,18 @@ def register(client: TestClient, email: str = "owner@example.com") -> None:
     assert response.status_code == 201
 
 
+def create_resume(client: TestClient, app, title: str = "测试简历"):
+    return client.post(
+        "/api/resumes",
+        json={"title": title, "template_id": app.state.test_template_id},
+    )
+
+
 def test_blank_create_update_versions_and_restore() -> None:
     app = build_app()
     with TestClient(app) as client:
         register(client)
-        created = client.post("/api/resumes", json={})
+        created = create_resume(client, app)
         assert created.status_code == 201
         resume = created.json()["resume"]
         assert resume["data"]["schema_version"] == "1.0"
@@ -145,11 +165,13 @@ def test_template_creation_copies_snapshot_and_filters_inactive_templates() -> N
         inactive_id = str(inactive.id)
 
     with TestClient(app) as client:
+        register(client)
         listed = client.get("/api/resume-templates")
         assert listed.status_code == 200
-        assert [item["id"] for item in listed.json()["templates"]] == [active_id]
+        listed_ids = [item["id"] for item in listed.json()["templates"]]
+        assert active_id in listed_ids
+        assert inactive_id not in listed_ids
 
-        register(client)
         created = client.post(
             "/api/resumes",
             json={"title": "模板简历", "template_id": active_id},
@@ -158,7 +180,9 @@ def test_template_creation_copies_snapshot_and_filters_inactive_templates() -> N
         assert created.json()["resume"]["source_type"] == "template"
         assert created.json()["resume"]["template_id"] == active_id
 
-        rejected = client.post("/api/resumes", json={"template_id": inactive_id})
+        rejected = client.post(
+            "/api/resumes", json={"title": "停用模板", "template_id": inactive_id}
+        )
         assert rejected.status_code == 422
         assert rejected.json() == {"error": "TEMPLATE_INACTIVE"}
 
@@ -169,26 +193,68 @@ def test_resume_limit_rejects_eleventh_and_delete_releases_slot() -> None:
         register(client)
         resume_ids = []
         for index in range(10):
-            created = client.post("/api/resumes", json={"title": f"简历 {index + 1}"})
+            created = create_resume(client, app, f"简历 {index + 1}")
             assert created.status_code == 201
             resume_ids.append(created.json()["resume"]["id"])
 
-        rejected = client.post("/api/resumes", json={"title": "第十一份"})
+        rejected = create_resume(client, app, "第十一份")
         assert rejected.status_code == 409
         assert rejected.json() == {"error": "RESUME_LIMIT_REACHED"}
         assert len(client.get("/api/resumes").json()["resumes"]) == 10
 
         assert client.delete(f"/api/resumes/{resume_ids[0]}").status_code == 200
-        replacement = client.post("/api/resumes", json={"title": "替补简历"})
+        replacement = create_resume(client, app, "替补简历")
         assert replacement.status_code == 201
         assert len(client.get("/api/resumes").json()["resumes"]) == 10
 
+
+def test_create_requires_name_and_template_and_rejects_normalized_duplicates() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        missing_name = client.post(
+            "/api/resumes", json={"template_id": app.state.test_template_id}
+        )
+        missing_template = client.post("/api/resumes", json={"title": "测试"})
+        created = create_resume(client, app, "  Project   Alpha  ")
+        duplicate = create_resume(client, app, "project alpha")
+
+        assert missing_name.status_code == 400
+        assert missing_name.json() == {"error": "INVALID_RESUME_TITLE"}
+        assert missing_template.status_code == 400
+        assert missing_template.json() == {"error": "TEMPLATE_REQUIRED"}
+        assert created.status_code == 201
+        assert created.json()["resume"]["title"] == "Project Alpha"
+        assert duplicate.status_code == 409
+        assert duplicate.json() == {"error": "RESUME_TITLE_CONFLICT"}
+
+
+def test_rename_allows_unchanged_historical_name_but_rejects_another_resume_name() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        first = create_resume(client, app, "第一份").json()["resume"]
+        second = create_resume(client, app, "第二份").json()["resume"]
+
+        unchanged = client.put(
+            f"/api/resumes/{first['id']}",
+            json={"title": "  第一份  ", "base_lock_version": first["lock_version"]},
+        )
+        conflict = client.put(
+            f"/api/resumes/{second['id']}",
+            json={"title": "第一份", "base_lock_version": second["lock_version"]},
+        )
+
+        assert unchanged.status_code == 200
+        assert unchanged.json()["resume"]["title"] == "第一份"
+        assert conflict.status_code == 409
+        assert conflict.json() == {"error": "RESUME_TITLE_CONFLICT"}
 
 def test_other_user_cannot_access_resume_versions() -> None:
     app = build_app()
     with TestClient(app) as owner:
         register(owner, "owner@example.com")
-        resume_id = owner.post("/api/resumes", json={}).json()["resume"]["id"]
+        resume_id = create_resume(owner, app).json()["resume"]["id"]
 
     with TestClient(app) as stranger:
         register(stranger, "stranger@example.com")
@@ -211,7 +277,7 @@ def test_version_limit_requires_user_to_delete_an_old_snapshot() -> None:
     app = build_app(version_limit=3)
     with TestClient(app) as client:
         register(client)
-        resume_id = client.post("/api/resumes", json={}).json()["resume"]["id"]
+        resume_id = create_resume(client, app).json()["resume"]["id"]
 
         for _ in range(2):
             assert client.post(f"/api/resumes/{resume_id}/versions").status_code == 201
@@ -245,7 +311,7 @@ def test_latest_version_cannot_be_deleted() -> None:
     app = build_app(version_limit=3)
     with TestClient(app) as client:
         register(client)
-        resume_id = client.post("/api/resumes", json={}).json()["resume"]["id"]
+        resume_id = create_resume(client, app).json()["resume"]["id"]
         assert client.post(f"/api/resumes/{resume_id}/versions").status_code == 201
 
         rejected = client.delete(f"/api/resumes/{resume_id}/versions/2")
@@ -264,7 +330,7 @@ def test_restore_rejects_without_mutation_when_it_needs_too_many_version_slots()
     app = build_app(version_limit=3)
     with TestClient(app) as client:
         register(client)
-        created = client.post("/api/resumes", json={}).json()["resume"]
+        created = create_resume(client, app).json()["resume"]
         resume_id = created["id"]
         assert client.post(f"/api/resumes/{resume_id}/versions").status_code == 201
 
@@ -305,7 +371,7 @@ def test_smart_one_page_is_persisted_and_restored_with_versions() -> None:
     app = build_app()
     with TestClient(app) as client:
         register(client)
-        resume = client.post("/api/resumes", json={}).json()["resume"]
+        resume = create_resume(client, app).json()["resume"]
         resume_id = resume["id"]
         style = resume["style"]
         assert style["smart_one_page"] is False

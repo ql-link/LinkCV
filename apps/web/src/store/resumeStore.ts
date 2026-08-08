@@ -73,8 +73,8 @@ type ResumeState = {
   syncProfile: (user: UserProfile) => void;
   changePassword: (payload: ChangePasswordPayload) => Promise<void>;
   listResumes: () => Promise<void>;
-  createResume: (title?: string) => Promise<void>;
-  importResume: (file: File, title?: string) => Promise<string>;
+  createResume: (title: string, templateId: string) => Promise<string>;
+  importResume: (file: File, templateId: string) => Promise<string>;
   loadResume: (id: string) => Promise<void>;
   deleteResume: (id: string) => Promise<void>;
   saveCurrentResume: () => Promise<void>;
@@ -184,6 +184,7 @@ function summaryFromRecord(resume: ResumeRecord): ResumeSummary {
     lock_version: resume.lock_version,
     created_at: resume.created_at,
     updated_at: resume.updated_at,
+    preview: { data: resume.data, style: resume.style },
   };
 }
 
@@ -245,7 +246,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   register: async (email, password) => {
     const { user } = await api.register(email, password);
     set({ authStatus: "authenticated", user, error: null });
-    await get().createResume("我的第一份简历");
+    await get().listResumes();
   },
 
   login: async (email, password) => {
@@ -298,19 +299,21 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     set({ resumes });
   },
 
-  createResume: async (title = "未命名简历") => {
+  createResume: async (title, templateId) => {
     const { resume } = await api.createResume({
       title,
+      template_id: templateId,
     });
     const { resumes } = await api.listResumes();
     set({ resumes, versions: [], ...applyResume(resume) });
+    return resume.id;
   },
 
-  importResume: async (file, title) => {
+  importResume: async (file, templateId) => {
     const idempotencyKey = crypto.randomUUID();
     const { resume, import: importResult } = await api.importResume(
       file,
-      title,
+      templateId,
       idempotencyKey,
     );
     set((state) => ({

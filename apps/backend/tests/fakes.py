@@ -149,5 +149,28 @@ class FakeRedis:
     def ping(self, **_kwargs) -> bool:
         return True
 
+    def set(
+        self,
+        name: str,
+        value: str,
+        *,
+        nx: bool = False,
+        ex: int | None = None,
+    ) -> bool:
+        with self._lock:
+            if nx and name in self.strings:
+                return False
+            self.strings[name] = value
+            self.ttls[name] = ex
+            return True
+
+    def eval(self, _script: str, _numkeys: int, name: str, token: str) -> int:
+        with self._lock:
+            if self.strings.get(name) != token:
+                return 0
+            self.strings.pop(name, None)
+            self.ttls.pop(name, None)
+            return 1
+
     def close(self, **_kwargs) -> None:
         pass

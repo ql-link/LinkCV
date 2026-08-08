@@ -84,15 +84,15 @@ def import_fingerprint(
     filename: str,
     source_format: str,
     content_type: str,
-    title: str | None,
+    template_id: str,
     content: bytes,
 ) -> str:
     payload = {
-        "version": 1,
+        "version": 2,
         "filename": filename,
         "source_format": source_format,
         "content_type": content_type.partition(";")[0].strip().lower(),
-        "title": (title or "").strip(),
+        "template_id": template_id,
         "content_sha256": hashlib.sha256(content).hexdigest(),
     }
     encoded = json.dumps(

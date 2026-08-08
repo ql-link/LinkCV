@@ -4,7 +4,13 @@ from time import monotonic
 
 import pytest
 
-from linkcv.services.resume_import_service import ResumeImportService
+from linkcv.domain.resume_style import default_resume_style
+from linkcv.services.resume_import_service import (
+    ResumeImportFailure,
+    ResumeImportService,
+    safe_import_filename,
+    validate_import_file,
+)
 
 
 class BlockingStorage:
@@ -55,7 +61,8 @@ def test_cancellation_waits_for_upload_before_compensating() -> None:
                 filename="resume.md",
                 content_type="text/markdown",
                 content=b"# Zhang San",
-                title=None,
+                template_id=3,
+                template_style=default_resume_style(),
                 operation_id="00000000-0000-4000-8000-000000000001",
                 deadline_monotonic=monotonic() + 60,
                 assert_lease=assert_lease,
@@ -75,3 +82,21 @@ def test_cancellation_waits_for_upload_before_compensating() -> None:
 
     assert storage.objects == {}
     assert len(storage.deleted) == 1
+
+
+def test_file_validation_and_safe_filename_are_side_effect_free() -> None:
+    assert safe_import_filename(" C:/fakepath/resume.md ") == "resume.md"
+    assert validate_import_file(
+        filename="resume.md",
+        content_type="text/markdown",
+        content=b"# Resume",
+        max_bytes=1024,
+    ) == "md"
+    with pytest.raises(ResumeImportFailure) as error:
+        validate_import_file(
+            filename="resume.md",
+            content_type="text/markdown",
+            content=b"",
+            max_bytes=1024,
+        )
+    assert error.value.code == "EMPTY_IMPORT_FILE"

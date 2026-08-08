@@ -84,7 +84,14 @@ def test_resume_version_limit_defaults_to_ten() -> None:
 
 
 def test_resume_import_timeout_defaults_leave_cleanup_budget() -> None:
-    settings = Settings(_env_file=None)
+    settings = Settings(
+        _env_file=None,
+        resume_import_deadline_seconds=180,
+        linkparse_timeout_seconds=90,
+        resume_structuring_timeout_seconds=60,
+        llm_timeout_seconds=75,
+        resume_import_idempotency_processing_ttl_seconds=240,
+    )
 
     assert settings.resume_import_deadline_seconds == 180
     assert settings.linkparse_timeout_seconds == 90
@@ -137,5 +144,6 @@ def test_production_accepts_injected_secrets() -> None:
             f"production:{Fernet.generate_key().decode('ascii')}"
         ),
         linkparse_api_key="fictional-linkparse-key",
+        rabbitmq_url="amqp://linkcv:fictional-secret@rabbitmq:5672/",
     )
     assert settings.minio_bucket == "linkcv"

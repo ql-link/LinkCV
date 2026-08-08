@@ -5,22 +5,26 @@ from time import monotonic
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, Header, Request, UploadFile
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from linkcv.application.resumes.service import find_owned_resume, has_resume_capacity
+from linkcv.application.resumes.service import (
+    find_owned_resume,
+    has_resume_capacity,
+    parse_decimal_id,
+)
 from linkcv.core.config import Settings
 from linkcv.core.database import get_db
 from linkcv.core.errors import ApiError
 from linkcv.core.storage import AssetStorage, get_storage
 from linkcv.domain.document_conversion import DocumentMarkdownConverter
+from linkcv.domain.resume_snapshot import parse_resume_snapshot
 from linkcv.integrations.resume_structuring import ResumeStructuringClient
 from linkcv.modules.identity.dependencies import get_current_user, get_settings
 from linkcv.modules.identity.models import User
+from linkcv.modules.resumes.models import ResumeTemplate
 from linkcv.modules.resumes.routes import resume_record
-from linkcv.modules.resumes.schemas import (
-    ResumeImportMetadata,
-    ResumeImportResponse,
-)
+from linkcv.modules.resumes.schemas import ResumeImportMetadata, ResumeImportResponse
 from linkcv.services.import_admission import (
     ImportAdmissionController,
     ImportAdmissionRejected,
@@ -106,7 +110,7 @@ async def run_until_disconnect(request: Request, coroutine) -> ImportResult:
 async def import_resume(
     request: Request,
     file: UploadFile = File(...),
-    title: str | None = Form(default=None, max_length=255),
+    template_id: str = Form(...),
     idempotency_key_header: str | None = Header(
         default=None,
         alias="Idempotency-Key",
@@ -122,6 +126,27 @@ async def import_resume(
 ) -> ResumeImportResponse:
     lease: tuple[str, str, str] | None = None
     try:
+        parsed_template_id = parse_decimal_id(template_id)
+        template = (
+            db.scalar(
+                select(ResumeTemplate).where(
+                    ResumeTemplate.id == parsed_template_id,
+                    ResumeTemplate.is_active == 1,
+                )
+            )
+            if parsed_template_id is not None
+            else None
+        )
+        if template is None:
+            raise ResumeImportFailure(422, "TEMPLATE_INACTIVE")
+        try:
+            template_snapshot = parse_resume_snapshot(
+                template.data_json,
+                template.style_json,
+            )
+        except ValueError as error:
+            raise ResumeImportFailure(422, "TEMPLATE_INACTIVE") from error
+
         idempotency_key = canonical_idempotency_key(idempotency_key_header)
         deadline_monotonic = monotonic() + settings.resume_import_deadline_seconds
         filename = safe_import_filename(file.filename or "resume.bin")
@@ -137,7 +162,7 @@ async def import_resume(
             filename=filename,
             source_format=extension,
             content_type=content_type,
-            title=title,
+            template_id=template_id,
             content=content,
         )
         operation_id = uuid4().hex
@@ -211,7 +236,8 @@ async def import_resume(
                         filename=filename,
                         content_type=content_type,
                         content=content,
-                        title=title,
+                        template_id=template.id,
+                        template_style=template_snapshot.style,
                         operation_id=operation_id,
                         deadline_monotonic=deadline_monotonic,
                         assert_lease=assert_lease,

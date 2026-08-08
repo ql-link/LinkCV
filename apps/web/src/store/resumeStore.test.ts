@@ -16,7 +16,6 @@ function record(lockVersion: number, markdown: string, smartOnePage = false): Re
     lock_version: lockVersion,
     data: resumeDocumentFromMarkdown(markdown, defaultSemanticDocument),
     style: { ...defaultSemanticStyle, smart_one_page: smartOnePage },
-    source_filename: null,
     created_at: "2026-07-27T00:00:00Z",
     updated_at: `2026-07-27T00:00:0${lockVersion}Z`,
   };
@@ -149,15 +148,15 @@ describe("resume deletion", () => {
 });
 
 describe("resume import", () => {
-  it("导入成功后把简历加入列表并设为当前简历", async () => {
+  it("同步导入成功后加入列表并打开正式简历", async () => {
+    const file = new File(["# 导入的简历"], "resume.md", { type: "text/markdown" });
     const importedResume: ResumeRecord = {
       ...record(1, "# 导入的简历"),
       id: "3",
       title: "导入的简历",
       source_type: "import",
-      source_filename: "resume.md",
+      template_id: "8",
     };
-    const file = new File(["# 导入的简历"], "resume.md", { type: "text/markdown" });
     vi.spyOn(api, "importResume").mockResolvedValue({
       resume: importedResume,
       import: {
@@ -167,26 +166,20 @@ describe("resume import", () => {
       },
     });
 
-    const importedResumeId = await useResumeStore.getState().importResume(file);
+    const result = await useResumeStore.getState().importResume(file, "8");
 
     expect(api.importResume).toHaveBeenCalledWith(
       file,
-      undefined,
+      "8",
       expect.stringMatching(/^[0-9a-f-]{36}$/),
     );
-    expect(importedResumeId).toBe("3");
-    expect(useResumeStore.getState()).toMatchObject({
-      activeResumeId: "3",
-      title: "导入的简历",
-      markdown: "# 导入的简历",
-      versions: [],
-      dirty: false,
-      importWarningsByResumeId: {
-        "3": ["document_heading_structure_missing"],
-      },
-    });
-    expect(useResumeStore.getState().resumes).toEqual([
-      expect.objectContaining({ id: "3", source_type: "import" }),
+    expect(result).toBe("3");
+    expect(useResumeStore.getState().resumes).toContainEqual(
+      expect.objectContaining({ id: "3", title: "导入的简历" }),
+    );
+    expect(useResumeStore.getState().activeResumeId).toBe("3");
+    expect(useResumeStore.getState().importWarningsByResumeId["3"]).toEqual([
+      "document_heading_structure_missing",
     ]);
   });
 
@@ -218,7 +211,7 @@ describe("resume import", () => {
     const file = new File(["# 新简历"], "resume.md", { type: "text/markdown" });
     vi.spyOn(api, "importResume").mockRejectedValue(new Error("HTTP_500"));
 
-    await expect(useResumeStore.getState().importResume(file)).rejects.toThrow("HTTP_500");
+    await expect(useResumeStore.getState().importResume(file, "8")).rejects.toThrow("HTTP_500");
 
     expect(useResumeStore.getState().activeResumeId).toBe("1");
     expect(useResumeStore.getState().resumes).toEqual([existing]);

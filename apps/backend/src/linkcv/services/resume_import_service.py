@@ -30,6 +30,7 @@ from linkcv.integrations.resume_structuring import (
     StructuringModelNotConfiguredError,
 )
 from linkcv.modules.resumes.models import Resume
+from linkcv.domain.resume_style import ResumeStyleV1
 from linkcv.services.resume_import_idempotency import (
     IdempotencyLeaseLostError,
     IdempotencyUnavailableError,
@@ -173,7 +174,8 @@ class ResumeImportService:
         filename: str,
         content_type: str,
         content: bytes,
-        title: str | None,
+        template_id: int,
+        template_style: ResumeStyleV1,
         operation_id: str,
         deadline_monotonic: float,
         assert_lease: Callable[[], Awaitable[None]],
@@ -192,8 +194,6 @@ class ResumeImportService:
             try:
                 await asyncio.shield(upload_task)
             except asyncio.CancelledError:
-                # A cancelled ``to_thread`` await does not stop the upload. Wait for
-                # the bounded storage call so compensation cannot race a late write.
                 with suppress(Exception):
                     await upload_task
                 raise
@@ -244,11 +244,7 @@ class ResumeImportService:
                 raise ResumeImportFailure(504, "IMPORT_DEADLINE_EXCEEDED")
             try:
                 await assert_lease()
-            except IdempotencyUnavailableError as error:
-                raise ResumeImportFailure(
-                    503, "IMPORT_IDEMPOTENCY_UNAVAILABLE"
-                ) from error
-            except IdempotencyLeaseLostError as error:
+            except (IdempotencyUnavailableError, IdempotencyLeaseLostError) as error:
                 raise ResumeImportFailure(
                     503, "IMPORT_IDEMPOTENCY_UNAVAILABLE"
                 ) from error
@@ -265,9 +261,11 @@ class ResumeImportService:
                 resume = create_resume_with_initial_version(
                     CreateResumeCommand(
                         user_id=user_id,
-                        title=title or inferred_title or PurePath(filename).stem,
+                        title=inferred_title or PurePath(filename).stem,
                         data=normalized.document,
+                        style=template_style,
                         source_type="import",
+                        template_id=template_id,
                         source_filename=filename,
                         source_object_key=object_key,
                         extracted_markdown=conversion.markdown,

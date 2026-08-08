@@ -1,194 +1,158 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiRequestError, type ResumeSummary } from "../../api/client";
-import { useResumeStore } from "../../store/resumeStore";
-import { HomePage, HomeScreen } from "./HomePage";
+import { HomeScreen } from "./HomePage";
+
+vi.mock("./TemplatePicker", () => ({
+  TemplatePicker: ({ onSelect }: { onSelect: (template: object) => void }) => (
+    <button
+      type="button"
+      onClick={() =>
+        onSelect({
+          id: "8",
+          key: "blank-cn",
+          name: "空白简历",
+          description: null,
+          data: {},
+          style: {},
+        })
+      }
+    >
+      选择空白模板
+    </button>
+  ),
+}));
 
 const resumes: ResumeSummary[] = [
-  { id: "1", title: "Frontend Resume", source_type: "blank", lock_version: 1, created_at: "2026-07-20T08:00:00Z", updated_at: "2026-07-24T08:00:00Z" },
-  { id: "2", title: "产品经理", source_type: "blank", lock_version: 1, created_at: "2026-07-20T08:00:00Z", updated_at: "2026-07-23T08:00:00Z" },
+  {
+    id: "1",
+    title: "Frontend Resume",
+    source_type: "template",
+    lock_version: 1,
+    created_at: "2026-07-20T08:00:00Z",
+    updated_at: "2026-07-24T08:00:00Z",
+  },
+  {
+    id: "2",
+    title: "产品经理",
+    source_type: "template",
+    lock_version: 1,
+    created_at: "2026-07-20T08:00:00Z",
+    updated_at: "2026-07-23T08:00:00Z",
+  },
 ];
-const originalImportResume = useResumeStore.getState().importResume;
 
 function renderHome(overrides: Partial<React.ComponentProps<typeof HomeScreen>> = {}) {
   const props: React.ComponentProps<typeof HomeScreen> = {
-    view: "all",
     resumes,
     onOpen: vi.fn(),
     onDelete: vi.fn(),
     onCreate: vi.fn(),
-    onImport: vi.fn(),
+    onImport: vi.fn().mockResolvedValue("1"),
     ...overrides,
   };
   return { ...render(<HomeScreen {...props} />), props };
 }
 
 describe("HomeScreen", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.restoreAllMocks();
-    useResumeStore.setState({
-      resumes: [],
-      activeResumeId: null,
-      importResume: originalImportResume,
-    });
-    window.history.replaceState(null, "", "/");
-  });
+  afterEach(() => vi.restoreAllMocks());
 
-  it("按标题即时过滤且忽略大小写", () => {
-    renderHome();
-
-    fireEvent.change(screen.getByRole("textbox", { name: "搜索简历" }), { target: { value: "frontend" } });
-
-    expect(screen.getByText("Frontend Resume")).toBeInTheDocument();
-    expect(screen.queryByText("产品经理")).not.toBeInTheDocument();
-  });
-
-  it("切换模板后隐藏搜索并在确认后通过标准模板创建简历", async () => {
+  it("按名称筛选简历并从新建按钮进入创建流程", () => {
     const onCreate = vi.fn();
-    renderHome({ view: "templates", onCreate });
-
-    expect(screen.queryByRole("textbox", { name: "搜索简历" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "新建简历" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /标准简历模板/ }));
-
-    expect(screen.getByRole("dialog", { name: "使用「标准简历模板」创建简历？" })).toBeInTheDocument();
-    expect(onCreate).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: "使用模板创建" }));
-    await waitFor(() => expect(onCreate).toHaveBeenCalledTimes(1));
-  });
-
-  it("每次从模板创建都显示确认，也可以取消", () => {
-    const onCreate = vi.fn();
-    renderHome({ view: "templates", onCreate });
-    fireEvent.click(screen.getByRole("button", { name: /标准简历模板/ }));
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
-
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(onCreate).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: /标准简历模板/ }));
-    expect(screen.getByRole("dialog", { name: "使用「标准简历模板」创建简历？" })).toBeInTheDocument();
-    expect(onCreate).not.toHaveBeenCalled();
-  });
-
-  it("普通创建达到数量上限时显示明确提示", async () => {
-    const onCreate = vi.fn().mockRejectedValue(new ApiRequestError(409, "RESUME_LIMIT_REACHED"));
     renderHome({ onCreate });
 
-    fireEvent.click(screen.getByRole("button", { name: "新建简历" }));
-
-    await waitFor(() => {
-      expect(screen.getByText("每个账号最多保存 10 份简历，请先删除一份后再创建。")).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("搜索简历"), {
+      target: { value: "frontend" },
     });
+    expect(screen.getByText("Frontend Resume")).toBeInTheDocument();
+    expect(screen.queryByText("产品经理")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "新建简历" }));
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("提示信息在触发数秒后自动消失", async () => {
-    vi.useFakeTimers();
-    const onCreate = vi.fn().mockRejectedValue(new ApiRequestError(409, "RESUME_LIMIT_REACHED"));
-    renderHome({ onCreate });
+  it("导入必须同时选择模板和文件，成功后打开正式简历", async () => {
+    const onImport = vi.fn().mockResolvedValue("3");
+    const onOpen = vi.fn();
+    const file = new File(["# Zhang San"], "resume.md", { type: "text/markdown" });
+    renderHome({ onImport, onOpen });
 
-    fireEvent.click(screen.getByRole("button", { name: "新建简历" }));
-    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: "导入简历" }));
+    const submit = screen.getByRole("button", { name: "开始导入" });
+    expect(submit).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "选择空白模板" }));
+    fireEvent.change(screen.getByLabelText(/选择 Markdown/), { target: { files: [file] } });
+    expect(submit).toBeEnabled();
+    fireEvent.click(submit);
 
-    expect(screen.getByText("每个账号最多保存 10 份简历，请先删除一份后再创建。")).toBeInTheDocument();
-
-    act(() => {
-      vi.advanceTimersByTime(5000);
-    });
-
-    expect(screen.queryByText("每个账号最多保存 10 份简历，请先删除一份后再创建。")).not.toBeInTheDocument();
+    await waitFor(() => expect(onImport).toHaveBeenCalledWith(file, "8"));
+    await waitFor(() => expect(onOpen).toHaveBeenCalledWith("3"));
+    expect(screen.getByText("简历导入成功。")).toBeInTheDocument();
   });
 
-  it("模板创建达到数量上限时关闭确认并显示明确提示", async () => {
-    const onCreate = vi.fn().mockRejectedValue(new ApiRequestError(409, "RESUME_LIMIT_REACHED"));
-    renderHome({ view: "templates", onCreate });
-    fireEvent.click(screen.getByRole("button", { name: /标准简历模板/ }));
-    fireEvent.click(screen.getByRole("button", { name: "使用模板创建" }));
-
-    await waitFor(() => {
-      expect(screen.getByText("每个账号最多保存 10 份简历，请先删除一份后再创建。")).toBeInTheDocument();
-    });
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-
-  it("从主页选择支持的文件并调用简历导入", async () => {
-    const onImport = vi.fn().mockResolvedValue(undefined);
-    const file = new File(["# 张三"], "resume.md", { type: "text/markdown" });
+  it("结构化模型未配置时在导入弹窗内显示具体错误", async () => {
+    const onImport = vi.fn().mockRejectedValue(
+      new ApiRequestError(503, "STRUCTURING_MODEL_UNAVAILABLE"),
+    );
+    const file = new File(["# 张三"], "张三简历.md", { type: "text/markdown" });
     renderHome({ onImport });
 
     fireEvent.click(screen.getByRole("button", { name: "导入简历" }));
-    fireEvent.change(screen.getByLabelText("选择简历文件"), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: "选择空白模板" }));
+    fireEvent.change(screen.getByLabelText(/选择 Markdown/), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: "开始导入" }));
 
-    await waitFor(() => expect(onImport).toHaveBeenCalledWith(file));
+    const error = await screen.findByRole("alert");
+    expect(error).toHaveTextContent("内容结构化模型未配置或凭据不可用，请联系管理员配置后重试。");
+    expect(screen.getByRole("dialog", { name: "导入简历" })).toContainElement(error);
+    expect(screen.getByText("张三简历.md")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始导入" })).toBeEnabled();
   });
 
-  it("导入完成后使用本次返回的简历 ID 打开编辑器", async () => {
-    const importResume = vi.fn().mockResolvedValue("3");
-    useResumeStore.setState({ resumes, activeResumeId: null, importResume });
-    const file = new File(["# 张三"], "resume.md", { type: "text/markdown" });
-    render(<HomePage />);
+  it("同步导入等待响应时显示处理中状态并防止关闭弹窗", async () => {
+    let resolveImport: ((resumeId: string) => void) | undefined;
+    const onImport = vi.fn().mockReturnValue(
+      new Promise<string>((resolve) => {
+        resolveImport = resolve;
+      }),
+    );
+    const file = new File(["# 张三"], "张三简历.md", { type: "text/markdown" });
+    const onOpen = vi.fn();
+    renderHome({ onImport, onOpen });
 
-    fireEvent.change(screen.getByLabelText("选择简历文件"), {
-      target: { files: [file] },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "导入简历" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择空白模板" }));
+    fireEvent.change(screen.getByLabelText(/选择 Markdown/), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: "开始导入" }));
 
-    await waitFor(() => expect(window.location.pathname).toBe("/resumes/3/edit"));
-    expect(importResume).toHaveBeenCalledWith(file);
+    expect(screen.getByRole("button", { name: "正在导入…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "取消" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "关闭" })).toBeDisabled();
+
+    resolveImport?.("3");
+    await waitFor(() => expect(onOpen).toHaveBeenCalledWith("3"));
   });
 
-  it("导入服务未配置时显示明确的站内提示", async () => {
-    const onImport = vi.fn().mockRejectedValue(new ApiRequestError(503, "STRUCTURING_MODEL_UNAVAILABLE"));
-    const file = new File(["# 张三"], "resume.md", { type: "text/markdown" });
+  it("未知导入错误会显示服务端错误码而不是无响应", async () => {
+    const onImport = vi.fn().mockRejectedValue(new ApiRequestError(502, "IMPORT_PROVIDER_FAILED"));
+    const file = new File(["# 张三"], "张三简历.md", { type: "text/markdown" });
     renderHome({ onImport });
 
-    fireEvent.change(screen.getByLabelText("选择简历文件"), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: "导入简历" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择空白模板" }));
+    fireEvent.change(screen.getByLabelText(/选择 Markdown/), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: "开始导入" }));
 
-    await waitFor(() => {
-      expect(screen.getByText("简历结构化服务尚未配置，暂时无法导入。")).toBeInTheDocument();
-    });
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "导入失败（IMPORT_PROVIDER_FAILED），请稍后重试。",
+    );
   });
 
-  it("通过站内弹窗确认后调用删除，成功后显示结果", async () => {
-    const nativeConfirm = vi.spyOn(window, "confirm");
+  it("通过站内确认弹窗删除正式简历", async () => {
     const onDelete = vi.fn().mockResolvedValue(undefined);
     renderHome({ onDelete });
-
     fireEvent.click(screen.getByRole("button", { name: "删除简历 Frontend Resume" }));
-
-    expect(nativeConfirm).not.toHaveBeenCalled();
-    expect(screen.getByRole("alertdialog", { name: "删除「Frontend Resume」？" })).toBeInTheDocument();
-    expect(onDelete).not.toHaveBeenCalled();
-
+    expect(screen.getByRole("alertdialog", { name: "删除“Frontend Resume”？" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "永久删除" }));
     await waitFor(() => expect(onDelete).toHaveBeenCalledWith("1"));
-    await waitFor(() => expect(screen.getByText("已删除「Frontend Resume」")).toBeInTheDocument());
-  });
-
-  it("取消确认时保留卡片且不调用删除", () => {
-    const onDelete = vi.fn();
-    renderHome({ onDelete });
-
-    fireEvent.click(screen.getByRole("button", { name: "删除简历 Frontend Resume" }));
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
-
-    expect(screen.getByText("Frontend Resume")).toBeInTheDocument();
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(onDelete).not.toHaveBeenCalled();
-  });
-
-  it("删除失败时保留卡片并显示明确错误", async () => {
-    const onDelete = vi.fn().mockRejectedValue(new Error("HTTP_500"));
-    renderHome({ onDelete });
-
-    fireEvent.click(screen.getByRole("button", { name: "删除简历 Frontend Resume" }));
-    fireEvent.click(screen.getByRole("button", { name: "永久删除" }));
-
-    await waitFor(() => {
-      expect(screen.getByText("删除「Frontend Resume」失败，请稍后重试。")).toBeInTheDocument();
-    });
-    expect(screen.getByText("Frontend Resume")).toBeInTheDocument();
   });
 });

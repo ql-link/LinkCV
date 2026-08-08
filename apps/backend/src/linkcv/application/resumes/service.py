@@ -18,6 +18,18 @@ class ResumeLimitExceeded(RuntimeError):
     pass
 
 
+class InvalidResumeTitle(ValueError):
+    pass
+
+
+class ResumeTitleConflict(RuntimeError):
+    pass
+
+
+class ResumeTemplateUnavailable(RuntimeError):
+    pass
+
+
 class ResumeVersionLimitExceeded(RuntimeError):
     pass
 
@@ -62,15 +74,76 @@ def has_resume_capacity(db: Session, user_id: int) -> bool:
     return len(existing_ids) < MAX_RESUMES_PER_USER
 
 
-def create_resume_with_initial_version(
+def normalize_resume_title(value: str | None) -> str:
+    if value is None:
+        raise InvalidResumeTitle
+    normalized = " ".join(value.split())
+    if not normalized or len(normalized) > 255:
+        raise InvalidResumeTitle
+    return normalized
+
+
+def resume_title_key(value: str) -> str:
+    return normalize_resume_title(value).casefold()
+
+
+def _assert_unique_resume_title(
+    db: Session,
+    *,
+    user_id: int,
+    title: str,
+    exclude_resume_id: int | None = None,
+) -> None:
+    expected_key = resume_title_key(title)
+    rows = db.execute(
+        select(Resume.id, Resume.title).where(Resume.user_id == user_id)
+    ).all()
+    if any(
+        resume_id != exclude_resume_id and resume_title_key(existing_title) == expected_key
+        for resume_id, existing_title in rows
+    ):
+        raise ResumeTitleConflict
+
+
+def persist_resume_with_initial_version(
     command: CreateResumeCommand,
     db: Session,
 ) -> Resume:
-    title = command.title.strip() or "未命名简历"
     snapshot = ResumeSnapshot(
         data=command.data,
         style=command.style or default_resume_style(),
     )
+    resume = Resume(
+        user_id=command.user_id,
+        template_id=command.template_id,
+        title=command.title,
+        data_json=snapshot.data.model_dump(mode="json"),
+        style_json=snapshot.style.model_dump(mode="json"),
+        source_type=command.source_type,
+        source_filename=command.source_filename,
+        source_object_key=command.source_object_key,
+        extracted_markdown=command.extracted_markdown,
+    )
+    db.add(resume)
+    db.flush()
+    db.add(
+        ResumeVersion(
+            resume_id=resume.id,
+            version_no=1,
+            data_json=deepcopy(resume.data_json),
+            style_json=deepcopy(resume.style_json),
+            reason="initial",
+        )
+    )
+    db.flush()
+    db.refresh(resume)
+    return resume
+
+
+def create_resume_with_initial_version(
+    command: CreateResumeCommand,
+    db: Session,
+) -> Resume:
     try:
         locked_user_id = db.scalar(
             select(User.id).where(User.id == command.user_id).with_for_update()
@@ -85,35 +158,69 @@ def create_resume_with_initial_version(
         if len(resume_ids) >= MAX_RESUMES_PER_USER:
             raise ResumeLimitExceeded
 
-        resume = Resume(
-            user_id=command.user_id,
-            template_id=command.template_id,
-            title=title,
-            data_json=snapshot.data.model_dump(mode="json"),
-            style_json=snapshot.style.model_dump(mode="json"),
-            source_type=command.source_type,
-            source_filename=command.source_filename,
-            source_object_key=command.source_object_key,
-            extracted_markdown=command.extracted_markdown,
+        normalized_command = CreateResumeCommand(
+            **{**command.__dict__, "title": normalize_resume_title(command.title)}
         )
-        db.add(resume)
-        db.flush()
-        db.add(
-            ResumeVersion(
-                resume_id=resume.id,
-                version_no=1,
-                data_json=deepcopy(resume.data_json),
-                style_json=deepcopy(resume.style_json),
-                reason="initial",
-            )
-        )
-        db.flush()
-        db.refresh(resume)
+        resume = persist_resume_with_initial_version(normalized_command, db)
         db.commit()
     except Exception:
         db.rollback()
         raise
     return resume
+
+
+def create_resume_from_template(
+    *,
+    db: Session,
+    user_id: int,
+    title: str | None,
+    template_id: int,
+) -> Resume:
+    from linkcv.modules.resumes.models import ResumeTemplate
+
+    normalized_title = normalize_resume_title(title)
+    try:
+        locked_user_id = db.scalar(
+            select(User.id).where(User.id == user_id).with_for_update()
+        )
+        if locked_user_id is None:
+            raise RuntimeError("resume owner no longer exists")
+        resume_ids = db.scalars(
+            select(Resume.id).where(Resume.user_id == user_id).with_for_update()
+        ).all()
+        if len(resume_ids) >= MAX_RESUMES_PER_USER:
+            raise ResumeLimitExceeded
+        _assert_unique_resume_title(db, user_id=user_id, title=normalized_title)
+        template = db.scalar(
+            select(ResumeTemplate)
+            .where(
+                ResumeTemplate.id == template_id,
+                ResumeTemplate.is_active == 1,
+            )
+            .with_for_update()
+        )
+        if template is None:
+            raise ResumeTemplateUnavailable
+        try:
+            snapshot = parse_resume_snapshot(template.data_json, template.style_json)
+        except ValueError as error:
+            raise ResumeTemplateUnavailable from error
+        resume = persist_resume_with_initial_version(
+            CreateResumeCommand(
+                user_id=user_id,
+                title=normalized_title,
+                data=snapshot.data,
+                style=snapshot.style,
+                source_type="template",
+                template_id=template.id,
+            ),
+            db,
+        )
+        db.commit()
+        return resume
+    except Exception:
+        db.rollback()
+        raise
 
 
 def update_resume_snapshot(
@@ -131,8 +238,19 @@ def update_resume_snapshot(
         data=data or current.data,
         style=style or current.style,
     )
+    next_title = resume.title
+    if title is not None:
+        next_title = normalize_resume_title(title)
+        db.scalar(select(User.id).where(User.id == user_id).with_for_update())
+        if resume_title_key(next_title) != resume_title_key(resume.title):
+            _assert_unique_resume_title(
+                db,
+                user_id=user_id,
+                title=next_title,
+                exclude_resume_id=resume.id,
+            )
     values = {
-        "title": (title.strip() or "未命名简历") if title is not None else resume.title,
+        "title": next_title,
         "data_json": snapshot.data.model_dump(mode="json"),
         "style_json": snapshot.style.model_dump(mode="json"),
         "lock_version": Resume.lock_version + 1,
