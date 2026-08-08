@@ -190,3 +190,52 @@ describe("JD API client", () => {
     }
   });
 });
+
+describe("知识库资料 API", () => {
+  it("以 FormData 上传资料并保持相对路径", async () => {
+    const record = {
+      id: "42",
+      file_name: "岗位要求.md",
+      file_format: "md",
+      file_size: 1024,
+      sha256: "abc123",
+      created_at: "2026-08-08T08:00:00Z",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(201, record));
+    vi.stubGlobal("fetch", fetchMock);
+    const file = new File(["# 岗位要求"], "岗位要求.md", { type: "text/markdown" });
+
+    await expect(api.uploadDataset(file)).resolves.toEqual(record);
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.method).toBe("POST");
+    expect(init.headers).not.toHaveProperty("Content-Type");
+    expect(init.body).toBeInstanceOf(FormData);
+    expect((init.body as FormData).get("file")).toBe(file);
+  });
+
+  it("列出当前用户的资料清单", async () => {
+    const datasets = [
+      {
+        id: "1",
+        file_name: "行业报告.pdf",
+        file_format: "pdf",
+        file_size: 2048,
+        sha256: "def456",
+        created_at: "2026-08-07T08:00:00Z",
+      },
+    ];
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(200, { datasets }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.listDatasets()).resolves.toEqual({ datasets });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/datasets",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
+});

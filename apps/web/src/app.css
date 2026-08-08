@@ -2153,3 +2153,82 @@ select:focus-visible,
   .landing-markdown-card { transform: rotate(-5deg); }
   .landing-paper-card { transform: rotate(3deg); }
 }
+
+/* 资料库页面 */
+.datasets-body {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 28px 32px 40px;
+}
+
+.datasets-list {
+  display: grid;
+  gap: 10px;
+}
+
+.dataset-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  padding: 14px 18px;
+  box-shadow: var(--shadow-sm);
+}
+
+.dataset-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--gray-100);
+  color: var(--muted);
+}
+
+.dataset-meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dataset-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.dataset-sub {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.dataset-format {
+  border-radius: 6px;
+  background: var(--gray-100);
+  padding: 2px 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.datasets-toast {
+  transition: opacity 200ms ease;
+}
+
+.datasets-toast.is-fading {
+  opacity: 0;
+}
+
+@media (max-width: 640px) {
+  .datasets-body { padding: 20px 16px 32px; }
+  .dataset-sub { flex-wrap: wrap; gap: 8px; }
+}

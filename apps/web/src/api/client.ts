@@ -110,6 +110,15 @@ export type ResumeImportResult = {
   warnings: ImportWarning[];
 };
 
+export type DatasetRecord = {
+  id: string;
+  file_name: string;
+  file_format: string;
+  file_size: number;
+  sha256: string;
+  created_at: string;
+};
+
 export type JobSourceType = "manual" | "external_import";
 export type JobEmploymentType =
   "full_time" | "part_time" | "internship" | "contract" | "temporary";
@@ -505,6 +514,15 @@ export const api = {
       method: "POST",
       body: payload,
     }),
+  uploadDataset: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<DatasetRecord>("/api/datasets", {
+      method: "POST",
+      formData,
+    });
+  },
+  listDatasets: () => request<{ datasets: DatasetRecord[] }>("/api/datasets"),
   listJobDescriptions: (
     params: {
       scope?: "active" | "archived" | "all";

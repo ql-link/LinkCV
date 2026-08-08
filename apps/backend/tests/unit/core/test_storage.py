@@ -3,6 +3,7 @@ import base64
 from linkcv.core.storage import (
     build_asset_object_name,
     build_avatar_object_name,
+    build_dataset_object_name,
     decode_image_data_url,
 )
 
@@ -25,6 +26,12 @@ def test_image_data_url_and_object_name() -> None:
     )
     assert avatar_object_name.startswith("users/user_123/assets/avatar/")
     assert avatar_object_name.endswith("-头像.png")
+
+
+def test_dataset_object_name_is_user_scoped() -> None:
+    object_name = build_dataset_object_name(42, "notes.md")
+    assert object_name.startswith("users/42/datasets/")
+    assert object_name.endswith("-notes.md")
 
 
 def test_rejects_non_image_data_url() -> None:

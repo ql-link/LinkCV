@@ -2,7 +2,7 @@
 
 ## 当前职责与结构
 
-`apps/backend` 承接健康检查、短 JWT access + 不透明 refresh + Redis 会话鉴权、语义简历生命周期、历史版本、文件导入、私有对象资源、结构化 JD 生命周期、用户中心与账号安全、统一 LLM 调用和管理员模型治理 API，以及管理台用户管理（列表/搜索/详情/状态变更/概览统计）。
+`apps/backend` 承接健康检查、短 JWT access + 不透明 refresh + Redis 会话鉴权、语义简历生命周期、历史版本、文件导入、私有对象资源、结构化 JD 生命周期、用户中心与账号安全、统一 LLM 调用和管理员模型治理 API，以及管理台用户管理（列表/搜索/详情/状态变更/概览统计）和知识库资料上传。
 
 | 位置 | 职责 |
 | --- | --- |
@@ -17,9 +17,10 @@
 | `src/linkcv/services/resume_import_idempotency.py` | Redis Lua 短窗口幂等租约、成功重放和冲突保护 |
 | `src/linkcv/modules/identity/` | 用户模型、注册、登录、admin-login 鉴权、双 Token 会话、`/api/account` 用户中心、管理端用户管理 |
 | `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板/简历/版本/导入/资源路由 |
+| `src/linkcv/modules/datasets/` | `user_dataset` 用户知识库数据集表与上传/列表路由 |
 | `src/linkcv/modules/job_descriptions/` | JD 单表 ORM、HTTP DTO 和受保护路由 |
 | `src/linkcv/modules/llm/` | Chat 当前绑定、模型凭据加密、LiteLLM 适配、普通/流式/结构化单模型调用、计量与管理员 API |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0012` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0013` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -40,6 +41,8 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 `0008` 在模型配置上增加 `capability`、LiteLLM `adapter`、不含前缀的模型调用名和配置版本；新增按能力保存唯一当前候选的 `llm_capability_bindings`，并预置一行可为空的 `chat` 绑定。调用日志增加能力、来源、adapter 和调用名快照。旧的完整 `model_name`、`enabled`、`priority` 和手工价格列暂时保留用于应用回滚兼容，新 HTTP 契约和运行时不读取其旧产品语义。revision 在 DDL 前先删除 `llm_call_logs`，再删除 `llm_model_configs`；旧数据不迁移且 downgrade 不恢复，升级完成后的 `chat` 绑定为空。
 
 `0009` 曾新增 `admin_operation_logs` 管理操作审计表，记录管理员对用户的 enable/disable 操作。字段包括 `id`（BIGINT UNSIGNED PK）、`actor_user_id`（操作人，FK → users.id）、`target_user_id`（目标用户，FK → users.id）、`action`（受 CHECK 约束的 VARCHAR，只允许 "disable"/"enable"）和 `created_at`。该表仅写入不读取，管理端无查询入口，`0011` 将其删除（down 只重建空表结构）；enable/disable 操作不再持久化审计记录。
+
+`0013` 新增 `user_dataset` 用户知识库数据集表，与简历文件导入链路分开。每行记录一个用户上传的单个资料文件元信息：所属用户外键、安全化后的文件名、四类格式（docx/pdf/md/txt，受 CHECK 约束）、MIME、字节大小、对象存储对象键（唯一）和内容 SHA-256；外键 `ON DELETE RESTRICT`，删除用户不隐式级联删除资料记录。`POST /api/datasets` 先校验格式与大小（上限 `DATASET_UPLOAD_MAX_BYTES`，默认 10MB）并把文件上传到对象存储（对象键由服务端生成，强制以 `users/{uid}/datasets/` 为前缀），上传成功后才写库，写库失败会尽力删除已上传对象；`GET /api/datasets` 按用户过滤、按上传时间倒序。本期不做分片、RAG、删除、下载、预览和去重，同一文件重复上传生成新记录。
 
 ## 统一 LLM 调用
 

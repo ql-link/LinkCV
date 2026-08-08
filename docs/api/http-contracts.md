@@ -87,6 +87,25 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 
 文件为空、超限、不支持或内容非法分别返回 `EMPTY_IMPORT_FILE`、`IMPORT_FILE_TOO_LARGE`、`UNSUPPORTED_IMPORT_FORMAT`、`IMPORT_CONTENT_INVALID`；超过结构化模型输入上限返回 `413 STRUCTURING_INPUT_TOO_LARGE`，触发频率或并发保护返回 `429 IMPORT_RATE_LIMITED`。账号已有 10 份简历时会在上传和模型处理前返回 `409 RESUME_LIMIT_REACHED`；快速检查后的并发创建仍由最终事务检查兜底。LinkParse 未配置/未授权、网络或引擎不可用返回 `503 DOCUMENT_CONVERSION_UNAVAILABLE`，转换失败返回 `502 DOCUMENT_CONVERSION_FAILED`，阶段或总时限耗尽返回 `504 DOCUMENT_CONVERSION_TIMEOUT` 或 `504 IMPORT_DEADLINE_EXCEEDED`。结构化模型不可用、调用失败或输出非法分别返回 `503 STRUCTURING_MODEL_UNAVAILABLE`、`502 STRUCTURING_MODEL_FAILED`、`422 RESUME_STRUCTURE_INVALID`。失败不创建半成品；已上传对象即时补偿，删除失败进入持久化清理队列。
 
+## 知识库资料
+
+`POST /api/datasets` 使用 `multipart/form-data`，字段为 `file`，支持 docx/pdf/md/txt 四种格式（按扩展名判定、大小写不敏感），单文件上限 `DATASET_UPLOAD_MAX_BYTES`（默认 10MB）。上传成功后文件保存到对象存储（对象键由服务端生成并强制以 `users/{当前用户id}/datasets/` 为前缀，客户端不可指定），元信息写入 `user_dataset` 表并返回：
+
+```json
+{
+  "id": "1",
+  "file_name": "notes.md",
+  "file_format": "md",
+  "file_size": 12,
+  "sha256": "…",
+  "created_at": "…"
+}
+```
+
+`GET /api/datasets` 返回当前登录用户自己的资料记录，按上传时间倒序（`{datasets: [...]}`）。两个接口都要求登录（未登录返回 `401 UNAUTHORIZED`），用户只能看到自己的记录。
+
+文件名非法返回 `400 INVALID_DATASET_FILENAME`，空文件返回 `400 EMPTY_DATASET_FILE`，不支持格式返回 `400 UNSUPPORTED_DATASET_FORMAT`，超过大小上限返回 `413 DATASET_TOO_LARGE`。对象存储上传失败返回 `502 DATASET_UPLOAD_FAILED` 且不落库；对象已上传但元信息写入失败返回 `500 DATASET_RECORD_FAILED`，已上传对象会被尽力清理。同一文件允许重复上传并生成新记录（不做去重或幂等）。
+
 ## JD 数据模型与管理
 
 JD 管理接口接受和返回最终结构化数据；单独的浏览器导入接口接受有限页面采集 DTO，并在同一请求中清洗为最终结构化数据。服务端不保存插件原始页面、抓取中间结果或模型过程数据。所有接口都要求当前登录用户，服务端从会话取得 `user_id`；不存在和不属于当前用户的记录统一返回 `404 JD_NOT_FOUND`。

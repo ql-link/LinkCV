@@ -116,6 +116,11 @@ class Settings(BaseSettings):
     minio_bucket: str = Field(default="linkcv", alias="MINIO_BUCKET")
 
     resume_version_limit: int = Field(default=10, alias="RESUME_VERSION_LIMIT", ge=2)
+    dataset_upload_max_bytes: int = Field(
+        default=10 * 1024 * 1024,
+        alias="DATASET_UPLOAD_MAX_BYTES",
+        ge=1,
+    )
     resume_import_max_bytes: int = Field(
         default=10 * 1024 * 1024,
         alias="RESUME_IMPORT_MAX_BYTES",
