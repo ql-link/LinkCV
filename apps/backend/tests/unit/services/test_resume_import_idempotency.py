@@ -4,6 +4,7 @@ from uuid import uuid4
 import pytest
 
 from linkcv.services.resume_import_idempotency import (
+    IdempotencyBindingLostError,
     IdempotencyUnavailableError,
     ResumeImportIdempotency,
 )
@@ -13,9 +14,8 @@ from tests.fakes import FakeRedis
 def service(redis=None) -> ResumeImportIdempotency:
     return ResumeImportIdempotency(
         redis or FakeRedis(),
-        processing_ttl_seconds=180,
-        success_ttl_seconds=3600,
-        failure_ttl_seconds=60,
+        bind_ttl_seconds=30,
+        ttl_seconds=900,
     )
 
 
@@ -30,56 +30,58 @@ def acquire(instance, *, user_id=1, key=None, fingerprint="fingerprint", owner="
     )
 
 
-def test_new_processing_success_replay_and_conflict() -> None:
+def test_new_request_binds_import_and_replays_mapping() -> None:
     redis = FakeRedis()
     instance = service(redis)
     key = str(uuid4())
+
     first = acquire(instance, key=key)
-    processing = acquire(instance, key=key, owner="second")
     assert first.status == "new"
-    assert processing.status == "processing"
+    assert first.state.import_id is None
+    assert redis.ttls[instance.redis_key(1, key)] == 30
 
     asyncio.run(
-        instance.mark_succeeded(
+        instance.bind_import_id(
             user_id=1,
             idempotency_key=key,
             fingerprint="fingerprint",
             owner="owner",
-            resume_id="42",
-            source_file_name="resume.pdf",
-            source_file_format="pdf",
-            warnings=["pdf_ocr_applied"],
+            import_id="42",
         )
     )
-    replay = acquire(instance, key=key, owner="third")
-    conflict = acquire(instance, key=key, fingerprint="different", owner="third")
-    assert replay.status == "succeeded"
-    assert replay.state.resume_id == "42"
-    assert replay.state.warnings == ["pdf_ocr_applied"]
-    assert conflict.status == "conflict"
-    redis_key = instance.redis_key(1, key)
-    assert redis.ttls[redis_key] == 3600
+    replay = acquire(instance, key=key, owner="second")
+    assert replay.status == "processing"
+    assert replay.state.import_id == "42"
+    assert redis.ttls[instance.redis_key(1, key)] == 900
 
 
-def test_failed_state_and_user_namespace_are_isolated() -> None:
+def test_conflict_and_user_namespace_are_isolated() -> None:
     instance = service()
     key = str(uuid4())
     acquire(instance, key=key)
-    asyncio.run(
-        instance.mark_failed(
-            user_id=1,
-            idempotency_key=key,
-            fingerprint="fingerprint",
-            owner="owner",
-            error_status=502,
-            error_code="DOCUMENT_CONVERSION_FAILED",
-        )
-    )
-    failed = acquire(instance, key=key, owner="new-owner")
+
+    conflict = acquire(instance, key=key, fingerprint="different")
     other_user = acquire(instance, user_id=2, key=key, owner="other-owner")
-    assert failed.status == "failed"
-    assert failed.state.error_code == "DOCUMENT_CONVERSION_FAILED"
+
+    assert conflict.status == "conflict"
     assert other_user.status == "new"
+
+
+def test_binding_requires_original_owner() -> None:
+    instance = service()
+    key = str(uuid4())
+    acquire(instance, key=key)
+
+    with pytest.raises(IdempotencyBindingLostError):
+        asyncio.run(
+            instance.bind_import_id(
+                user_id=1,
+                idempotency_key=key,
+                fingerprint="fingerprint",
+                owner="other-owner",
+                import_id="42",
+            )
+        )
 
 
 def test_redis_failure_is_wrapped() -> None:

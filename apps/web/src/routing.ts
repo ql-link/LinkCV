@@ -6,6 +6,7 @@ export type AppRoute =
   | { kind: "admin" }
   | { kind: "adminLogin"; next: string | null }
   | { kind: "resumes" }
+  | { kind: "resumeCreate" }
   | { kind: "editor"; resumeId: string }
   | { kind: "jobs" }
   | { kind: "jobCreate" }
@@ -14,6 +15,7 @@ export type AppRoute =
   | { kind: "datasets" }
   | { kind: "account" }
   | { kind: "accountPassword" }
+  | { kind: "share"; token: string }
   | { kind: "notFound" };
 
 type NavigateOptions = {
@@ -23,6 +25,7 @@ type NavigateOptions = {
 const editorPathPattern = /^\/resumes\/([^/]+)\/edit$/;
 const jobDetailPathPattern = /^\/jobs\/([^/]+)$/;
 const jobEditPathPattern = /^\/jobs\/([^/]+)\/edit$/;
+const sharePathPattern = /^\/share\/([^/]+)$/;
 
 function normalizePathname(pathname: string) {
   if (pathname === "/") return pathname;
@@ -62,6 +65,7 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
     };
   }
   if (normalizedPath === "/resumes") return { kind: "resumes" };
+  if (normalizedPath === "/resumes/new") return { kind: "resumeCreate" };
   if (normalizedPath === "/jobs") return { kind: "jobs" };
   if (normalizedPath === "/jobs/new") return { kind: "jobCreate" };
   if (normalizedPath === "/datasets") return { kind: "datasets" };
@@ -95,7 +99,20 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
     }
   }
 
+  const shareMatch = normalizedPath.match(sharePathPattern);
+  if (shareMatch) {
+    try {
+      return { kind: "share", token: decodeURIComponent(shareMatch[1]) };
+    } catch {
+      return { kind: "notFound" };
+    }
+  }
+
   return { kind: "notFound" };
+}
+
+export function sharePath(token: string) {
+  return `/share/${encodeURIComponent(token)}`;
 }
 
 export function editorPath(resumeId: string) {

@@ -113,19 +113,19 @@ describe("API session refresh", () => {
   });
 
   it("导入请求刷新会话后保留同一个幂等键", async () => {
-    const imported = { resume: { id: "8" }, import: { warnings: [] } };
+    const imported = { import: { id: "8", parse_status: "processing" } };
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(401, { error: "UNAUTHORIZED" }))
       .mockResolvedValueOnce(
         jsonResponse(200, { user: { id: "1", email: "zhangsan@example.test" } }),
       )
-      .mockResolvedValueOnce(jsonResponse(201, imported));
+      .mockResolvedValueOnce(jsonResponse(202, imported));
     vi.stubGlobal("fetch", fetchMock);
     const file = new File(["# 张三"], "resume.md", { type: "text/markdown" });
     const key = "8d42a61f-2396-4dbc-a63d-a1770e398f61";
 
-    await api.importResume(file, undefined, key);
+    await api.importResume(file, "8", key);
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -236,6 +236,63 @@ describe("知识库资料 API", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/datasets",
       expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
+});
+
+describe("API resume share", () => {
+  it("按管理与公开接口的路径和方法发起分享请求", async () => {
+    const share = {
+      share_token: "token_abc",
+      share_visibility: "public",
+      share_expires_at: null,
+      share_created_at: "2026-08-05T00:00:00Z",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(200, { share }))
+      .mockResolvedValueOnce(jsonResponse(200, { share: null }))
+      .mockResolvedValueOnce(jsonResponse(200, { share: { ...share, share_visibility: "private" } }))
+      .mockResolvedValueOnce(jsonResponse(200, { deleted: true }))
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          data: { schema_version: "1.0" },
+          style: { schema_version: "1.0" },
+          sharer: { nickname: "于晏", avatar_url: null },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.createShare("1");
+    await api.getShareState("1");
+    await api.updateShare("1", { visibility: "private" });
+    await api.deleteShare("1");
+    await api.fetchPublicShare("token_abc");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/resumes/1/share",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/resumes/1/share",
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/resumes/1/share",
+      expect.objectContaining({ method: "PATCH", body: JSON.stringify({ visibility: "private" }) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/resumes/1/share",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/share/token_abc",
+      expect.objectContaining({ method: "GET" }),
     );
   });
 });

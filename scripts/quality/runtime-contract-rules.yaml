@@ -1,6 +1,22 @@
 version: 1
 
 contracts:
+  - id: plugin-release-origin-contract
+    description: FastAPI 和三套环境声明当前环境允许插件访问的精确 LinkCV Origin
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default="http://127\.0\.0\.1:5173",[\s\S]*alias="PLUGIN_RELEASE_ORIGIN"'
+        message: FastAPI 必须保留本地插件发布 Origin 默认值
+      - path: .env.example
+        pattern: '(?m)^PLUGIN_RELEASE_ORIGIN=http://127\.0\.0\.1:5173$'
+        message: 本地模板必须声明插件发布 Origin
+      - path: .env.development
+        pattern: '(?m)^PLUGIN_RELEASE_ORIGIN=http://127\.0\.0\.1:5173$'
+        message: Dev 基础配置必须声明可由私密环境文件覆盖的插件发布 Origin
+      - path: .env.production
+        pattern: '(?m)^PLUGIN_RELEASE_ORIGIN=$'
+        message: Production 基础配置不得提交实际公开 Origin，必须由环境覆盖提供
+
   - id: llm-credential-encryption-key-ring
     description: 三套环境都声明后端模型凭据密钥环且不把真实密钥提交到仓库
     assertions:
@@ -115,7 +131,7 @@ contracts:
         message: Production 环境必须声明完整导入限制
 
   - id: resume-import-linkparse-contract
-    description: FastAPI、环境模板和 Vite 使用冻结的 LinkParse 与同步导入预算
+    description: FastAPI 与环境模板使用冻结的 LinkParse 转换契约
     assertions:
       - path: apps/backend/src/linkcv/core/config.py
         pattern: 'default="http://100\.86\.10\.52:18743",[\s\S]*alias="LINKPARSE_BASE_URL"[\s\S]*default="/v1/parse",[\s\S]*alias="LINKPARSE_PARSE_PATH"[\s\S]*default=90,[\s\S]*alias="LINKPARSE_TIMEOUT_SECONDS"[\s\S]*default=3 \* 1024 \* 1024,[\s\S]*alias="LINKPARSE_RESPONSE_MAX_BYTES"'
@@ -132,22 +148,46 @@ contracts:
       - path: apps/web/vite.config.mjs
         pattern: 'timeout: 190000,[\s\S]*proxyTimeout: 190000'
         message: Vite 必须给同步导入保留 190 秒代理预算
-
   - id: resume-import-idempotency-contract
-    description: FastAPI 和三套环境使用一致的导入 deadline、结构化超时与 Redis 幂等默认值
+    description: FastAPI 和三套环境使用一致的 Worker deadline、陈旧收口与 Redis 幂等默认值
     assertions:
       - path: apps/backend/src/linkcv/core/config.py
-        pattern: 'default=180,[\s\S]*alias="RESUME_IMPORT_DEADLINE_SECONDS"[\s\S]*default=60,[\s\S]*alias="RESUME_STRUCTURING_TIMEOUT_SECONDS"[\s\S]*default=240,[\s\S]*alias="RESUME_IMPORT_IDEMPOTENCY_PROCESSING_TTL_SECONDS"[\s\S]*default=3600,[\s\S]*alias="RESUME_IMPORT_IDEMPOTENCY_SUCCESS_TTL_SECONDS"[\s\S]*default=60,[\s\S]*alias="RESUME_IMPORT_IDEMPOTENCY_FAILURE_TTL_SECONDS"'
-        message: FastAPI 必须保留冻结的导入 deadline、结构化超时与幂等 TTL
+        pattern: 'default=60,[\s\S]*alias="RESUME_STRUCTURING_TIMEOUT_SECONDS"[\s\S]*default=180, alias="RESUME_IMPORT_PARSE_DEADLINE_SECONDS"[\s\S]*default=240, alias="RESUME_IMPORT_PARSE_STALE_SECONDS"[\s\S]*default=30, alias="RESUME_IMPORT_IDEMPOTENCY_BIND_TTL_SECONDS"[\s\S]*default=900, alias="RESUME_IMPORT_IDEMPOTENCY_TTL_SECONDS"'
+        message: FastAPI 必须保留 Worker deadline、陈旧收口与两阶段幂等 TTL
       - path: .env.example
-        pattern: '(?m)^RESUME_IMPORT_DEADLINE_SECONDS=180$[\s\S]*^RESUME_STRUCTURING_TIMEOUT_SECONDS=60$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_PROCESSING_TTL_SECONDS=240$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_SUCCESS_TTL_SECONDS=3600$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_FAILURE_TTL_SECONDS=60$'
-        message: 本地模板必须声明完整导入超时与幂等默认值
+        pattern: '(?m)^RESUME_STRUCTURING_TIMEOUT_SECONDS=60$[\s\S]*^RESUME_IMPORT_PARSE_DEADLINE_SECONDS=180$[\s\S]*^RESUME_IMPORT_PARSE_STALE_SECONDS=240$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_BIND_TTL_SECONDS=30$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_TTL_SECONDS=900$'
+        message: 本地模板必须声明完整异步导入超时与幂等默认值
       - path: .env.development
-        pattern: '(?m)^RESUME_IMPORT_DEADLINE_SECONDS=180$[\s\S]*^RESUME_STRUCTURING_TIMEOUT_SECONDS=60$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_PROCESSING_TTL_SECONDS=240$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_SUCCESS_TTL_SECONDS=3600$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_FAILURE_TTL_SECONDS=60$'
-        message: Dev 环境必须声明完整导入超时与幂等默认值
+        pattern: '(?m)^RESUME_STRUCTURING_TIMEOUT_SECONDS=60$[\s\S]*^RESUME_IMPORT_PARSE_DEADLINE_SECONDS=180$[\s\S]*^RESUME_IMPORT_PARSE_STALE_SECONDS=240$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_BIND_TTL_SECONDS=30$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_TTL_SECONDS=900$'
+        message: Dev 环境必须声明完整异步导入超时与幂等默认值
       - path: .env.production
-        pattern: '(?m)^RESUME_IMPORT_DEADLINE_SECONDS=180$[\s\S]*^RESUME_STRUCTURING_TIMEOUT_SECONDS=60$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_PROCESSING_TTL_SECONDS=240$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_SUCCESS_TTL_SECONDS=3600$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_FAILURE_TTL_SECONDS=60$'
-        message: Production 环境必须声明完整导入超时与幂等默认值
+        pattern: '(?m)^RESUME_STRUCTURING_TIMEOUT_SECONDS=60$[\s\S]*^RESUME_IMPORT_PARSE_DEADLINE_SECONDS=180$[\s\S]*^RESUME_IMPORT_PARSE_STALE_SECONDS=240$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_BIND_TTL_SECONDS=30$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_TTL_SECONDS=900$'
+        message: Production 环境必须声明完整异步导入超时与幂等默认值
+
+  - id: async-resume-import-broker-contract
+    description: FastAPI、Worker、环境模板与 Compose 使用同一套异步导入 Broker 契约
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default="rabbitmq", alias="MQ_VENDOR"[\s\S]*default="tolink\.cv\.resume_import"[\s\S]*alias="RABBITMQ_EXCHANGE_NAME"[\s\S]*default="resume\.import"[\s\S]*alias="RABBITMQ_ROUTING_KEY"'
+        message: 后端必须默认使用 RabbitMQ 固定 exchange 和 routing key
+      - path: .env.example
+        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=amqp://linkcv:linkcv-rabbit-local-change-me@127\.0\.0\.1:5672/$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import$'
+        message: 本地模板必须连接本地 RabbitMQ 并声明固定路由
+      - path: .env.development
+        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import$'
+        message: Dev 必须由私密覆盖提供平台 RabbitMQ 地址
+      - path: .env.production
+        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import$'
+        message: Production 必须由私密覆盖提供平台 RabbitMQ 地址
+      - path: deploy/docker-compose.yml
+        pattern: '(?m)^  rabbitmq:$[\s\S]*rabbitmq:4-management-alpine'
+        message: 本地 Compose 必须提供 RabbitMQ
+      - path: deploy/docker-compose.development.yml
+        pattern: '(?m)^  linkcv-worker:$[\s\S]*command: \["python", "-m", "linkcv\.workers"\]'
+        message: Dev Compose 必须启动独立导入 Worker
+      - path: deploy/docker-compose.production.yml
+        pattern: '(?m)^  linkcv-worker:$[\s\S]*command: \["python", "-m", "linkcv\.workers"\]'
+        message: Production Compose 必须启动独立导入 Worker
 
   - id: production-middleware-docker-dns
     description: Production 通过 tolink-app-net 的 Docker DNS 连接已迁移中间件

@@ -1,9 +1,9 @@
-import { LayoutTemplate, Trash2 } from "lucide-react";
+import { LayoutTemplate, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { Button } from "./ds";
 
 type ConfirmDialogProps = {
-  kind: "delete" | "template";
+  kind: "delete" | "template" | "warning";
   title: string;
   description: string;
   confirmLabel: string;
@@ -86,7 +86,7 @@ export function ConfirmDialog({
         aria-describedby={descriptionId}
       >
         <span className={`home-confirm-icon is-${kind}`} aria-hidden="true">
-          {kind === "delete" ? <Trash2 size={21} /> : <LayoutTemplate size={21} />}
+          {kind === "delete" ? <Trash2 size={21} /> : kind === "warning" ? <RefreshCw size={21} /> : <LayoutTemplate size={21} />}
         </span>
         <div className="home-confirm-copy">
           <h2 id={titleId}>{title}</h2>

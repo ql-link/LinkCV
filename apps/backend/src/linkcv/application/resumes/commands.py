@@ -13,6 +13,3 @@ class CreateResumeCommand:
     source_type: Literal["blank", "template", "import"]
     style: ResumeStyleV1 | None = None
     template_id: int | None = None
-    source_filename: str | None = None
-    source_object_key: str | None = None
-    extracted_markdown: str | None = None

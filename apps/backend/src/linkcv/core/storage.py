@@ -52,20 +52,53 @@ class AssetStorage:
         if not self.client.bucket_exists(self.bucket):
             self.client.make_bucket(self.bucket)
 
-    def upload(self, object_name: str, data: bytes, content_type: str) -> None:
+    def put(
+        self,
+        object_name: str,
+        data: bytes,
+        content_type: str,
+        *,
+        cache_control: str,
+        metadata: dict[str, str] | None = None,
+    ) -> None:
         self.ensure_bucket()
+        object_metadata = dict(metadata or {})
+        object_metadata["Cache-Control"] = cache_control
         self.client.put_object(
             self.bucket,
             object_name,
             BytesIO(data),
             len(data),
             content_type=content_type,
-            metadata={"Cache-Control": "private, max-age=31536000, immutable"},
+            metadata=object_metadata,
+        )
+
+    def upload(self, object_name: str, data: bytes, content_type: str) -> None:
+        self.put(
+            object_name,
+            data,
+            content_type,
+            cache_control="private, max-age=31536000, immutable",
         )
 
     def get(self, object_name: str):
         self.ensure_bucket()
         return self.client.get_object(self.bucket, object_name)
+
+    def stat(self, object_name: str):
+        self.ensure_bucket()
+        return self.client.stat_object(self.bucket, object_name)
+
+    def list_names(self, prefix: str) -> list[str]:
+        self.ensure_bucket()
+        return [
+            item.object_name
+            for item in self.client.list_objects(
+                self.bucket,
+                prefix=prefix,
+                recursive=True,
+            )
+        ]
 
     def delete(self, object_name: str) -> None:
         self.ensure_bucket()

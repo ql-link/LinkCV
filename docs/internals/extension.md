@@ -16,7 +16,7 @@
 | `entrypoints/popup/` | 登录状态、可编辑预览、提交、重复来源和结果反馈 |
 | `src/api/linkcv.ts` | 本地 LinkCV 源站探测、Cookie 会话刷新和导入客户端 |
 
-内容脚本和 API 客户端分开：BOSS 页面上下文只返回采集字段，带 LinkCV `host_permissions` 的扩展弹窗才发送受保护 API 请求。默认候选源站是 `127.0.0.1:5173` 和 `localhost:5173`，并优先选择已有登录态的源站。生产或其他环境通过构建变量 `WXT_PUBLIC_LINKCV_ORIGIN` 加入一个精确源站权限。
+内容脚本和 API 客户端分开：BOSS 页面上下文只返回采集字段，带 LinkCV `host_permissions` 的扩展弹窗才发送受保护 API 请求。普通开发构建保留 `127.0.0.1:5173` 和 `localhost:5173` 候选，并优先选择已有登录态的源站。正式发布构建设置 `WXT_RELEASE_BUILD=1`，此时移除本地默认权限，只保留 `WXT_PUBLIC_LINKCV_ORIGIN` 指定的一个精确 LinkCV Origin 与受控 BOSS Origin。
 
 ## 提取与失败策略
 
@@ -27,3 +27,14 @@ BOSS DOM 不是稳定公共契约。站点结构变化时优先新增最窄的�
 ## 构建和人工验证
 
 安装、侧载和环境构建命令见 [`apps/extension/README.md`](../../apps/extension/README.md)。自动化测试覆盖 DOM 详情选择、必填失败、登录源站选择和 access 过期刷新；真实 BOSS 页面、真实 Chrome Cookie 与 FastAPI/MySQL 的完整链路仍需人工验收。
+
+面向管理员发布的安装包通过根目录脚本一次生成 Development 与 Production 两个 ZIP：
+
+```bash
+uv run --directory apps/backend python ../../scripts/release/build_extension_release.py \
+  --development-origin http://127.0.0.1:5173 \
+  --production-origin https://linkcv.example.test \
+  --output-dir ../../.tmp/plugin-release
+```
+
+脚本以 `apps/extension/package.json.version` 为版本真值，分别注入精确 Origin，运行 WXT ZIP 构建，并检查 Manifest V3、三段数字版本、精确 `host_permissions`、压缩包路径与大小，以及根目录的 `安装与使用说明.html`。输出包含两个确定命名的 ZIP 和 `SHA256SUMS`；管理员只把与当前环境匹配的 ZIP 上传到管理台。
