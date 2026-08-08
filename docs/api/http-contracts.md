@@ -44,15 +44,17 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 
 | Method   | Path                        | 鉴权 | 成功结果                                                         |
 | -------- | --------------------------- | ---- | ---------------------------------------------------------------- |
-| `GET`    | `/api/resume-templates`     | 否   | `{templates}` 启用模板列表                                       |
-| `GET`    | `/api/resume-templates/:id` | 否   | `{template}`                                                     |
-| `GET`    | `/api/resumes`              | 是   | `{resumes}`，按更新时间倒序                                      |
-| `POST`   | `/api/resumes`              | 是   | `201 {resume}`；请求为 `{title?, template_id?}`                  |
+| `GET`    | `/api/resume-templates`     | 是   | `{templates}` 启用且结构有效的模板列表                           |
+| `GET`    | `/api/resume-templates/:id` | 是   | `{template}`                                                     |
+| `GET`    | `/api/resumes`              | 是   | `{resumes}`，摘要含可选 `preview`，按更新时间倒序                |
+| `POST`   | `/api/resumes`              | 是   | `201 {resume}`；请求必填 `{title, template_id}`                  |
 | `GET`    | `/api/resumes/:id`          | 是   | `{resume}`                                                       |
 | `PUT`    | `/api/resumes/:id`          | 是   | `{resume}`；请求含 `base_lock_version` 及可选 `title/data/style` |
 | `DELETE` | `/api/resumes/:id`          | 是   | `{deleted}`                                                      |
 
-空白、模板和导入创建统一受每用户最多 10 份简历的限制；创建事务先锁定用户行再检查数量，并发请求不会突破上限。达到上限返回 `409 RESUME_LIMIT_REACHED`，删除任意一份后释放名额。空白和模板创建都在同一事务写入当前简历及 `version_no=1/reason=initial` 快照。更新同时保存完整 data/style 并递增 `lock_version`，不创建历史版本；过期基准返回 `409 RESUME_EDIT_CONFLICT`。非法内容和样式分别返回 `400 INVALID_RESUME_DOCUMENT`、`400 INVALID_RESUME_STYLE`。不存在或不属于当前用户的简历统一返回 `404 RESUME_NOT_FOUND`。
+所有新简历都从模板创建，官方模板中包含空白简历模板。普通创建先把名称去首尾空白、折叠连续空白，再按 Unicode `casefold` 比较同一用户已有名称；重复返回 `409 RESUME_TITLE_CONFLICT`，名称为空或超过 255 字符返回 `400 INVALID_RESUME_TITLE`，缺模板返回 `400 TEMPLATE_REQUIRED`，模板不存在、停用或结构无效返回 `422 TEMPLATE_INACTIVE`。历史无模板简历继续可读写，历史重名不回填也不阻止保持原名。
+
+每个用户最多保存 10 份正式简历；创建事务锁定用户行后检查，达到上限返回 `409 RESUME_LIMIT_REACHED`。创建在同一事务写入当前简历及 `version_no=1/reason=initial` 快照。更新同时保存完整 data/style 并递增 `lock_version`，不创建历史版本；过期基准返回 `409 RESUME_EDIT_CONFLICT`。非法内容和样式分别返回 `400 INVALID_RESUME_DOCUMENT`、`400 INVALID_RESUME_STYLE`。不存在或不属于当前用户的简历统一返回 `404 RESUME_NOT_FOUND`。
 
 ## 历史版本
 
@@ -84,24 +86,36 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 
 ## 文件导入
 
-`POST /api/resumes/import` 使用 `multipart/form-data`，字段为 `file` 和可选 `title`，并要求 `Idempotency-Key` Header 为小写、带连字符的 canonical UUID。支持 UTF-8 Markdown、DOCX 和文字/扫描/混合 PDF：Markdown 本地直接读取，DOCX 本地通过 Mammoth 和安全 HTML 转 Markdown，只有 PDF 会调用 LinkParse `POST /v1/parse` 并由远端自动选择文字提取或 OCR；随后统一经过 `SectionIR → ResumeExtractionDraft → ResumeDocumentV1`。成功返回：
+`POST /api/resumes/import` 使用 `multipart/form-data`，必填规范十进制字符串 `template_id` 与 `file`，不接收目标名称，并要求 `Idempotency-Key` Header 为小写、带连字符的 canonical UUID。接口只完成校验、源文件上传、任务持久化和消息确认；首次受理成功返回 `202`，不等待转换或结构化：
 
 ```json
 {
-  "resume": { "id": "1", "source_type": "import", "data": {}, "style": {} },
   "import": {
-    "source_file_name": "resume.pdf",
+    "id": "42",
+    "source_filename": "resume.pdf",
     "source_file_format": "pdf",
-    "warnings": []
+    "upload_status": "succeeded",
+    "upload_duration_ms": 83,
+    "parse_status": "processing",
+    "parse_duration_ms": null,
+    "result_resume_id": null,
+    "created_at": "2026-08-08T12:00:00Z",
+    "updated_at": "2026-08-08T12:00:00Z"
   }
 }
 ```
 
-原文件对象键、LinkParse request ID、外部 URL 和模型调用信息不在响应中。`warnings` 只允许 `pdf_ocr_applied`、`pdf_low_text_quality`、`docx_embedded_images_omitted`、`docx_textbox_order_may_change`、`document_heading_structure_missing`、`source_quote_not_found`、`unparsed_work_start_date`、`unparsed_work_end_date` 和 `unmapped_fragments_preserved`，按转换、章节、标准化顺序首次去重。
+RabbitMQ 是默认 Broker，使用固定 `resume.import` routing key；Kafka 兼容实现使用规范 `import_id` 作为消息 key。独立 Worker 从私有对象存储读取文件，Markdown 本地转换、DOCX 经 Mammoth、PDF 经 LinkParse，再走 `SectionIR → ResumeExtractionDraft → ResumeDocumentV1`。解析成功时以安全化文件名的 stem 作为标题，允许与已有简历同名；解析内容作为 data，所选模板只提供 style。正式简历、initial 版本、结果关联和任务成功状态在一个数据库事务内提交。
 
-缺少或使用非 canonical Header 返回 `400 INVALID_IDEMPOTENCY_KEY`；同一用户、Key 与指纹仍在处理返回 `409 IMPORT_ALREADY_PROCESSING`，成功状态返回原 resume ID 和原导入元数据，不重复副作用；Key 用于不同文件或标题返回 `409 IDEMPOTENCY_KEY_REUSED`。Redis 不可用返回 `503 IMPORT_IDEMPOTENCY_UNAVAILABLE`。Header 按用户隔离，成功重放仍重新校验 MySQL 归属。
+缺少或使用非 canonical Header 返回 `400 INVALID_IDEMPOTENCY_KEY`。同一用户、Key 和请求指纹在 15 分钟映射窗口内重放同一导入记录：活动状态返回 `202`，成功终态返回 `200`，失败终态返回 `409 IMPORT_PREVIOUSLY_FAILED`；同 Key 异指纹返回 `409 IDEMPOTENCY_KEY_REUSED`。记录绑定前的短窗口返回 `409 IMPORT_ACCEPTANCE_IN_PROGRESS`，Redis 不可用返回 `503 IMPORT_IDEMPOTENCY_UNAVAILABLE`。记录创建后的错误响应在顶层 `import` 字段附带同一任务摘要。
 
-文件为空、超限、不支持或内容非法分别返回 `EMPTY_IMPORT_FILE`、`IMPORT_FILE_TOO_LARGE`、`UNSUPPORTED_IMPORT_FORMAT`、`IMPORT_CONTENT_INVALID`；超过结构化模型输入上限返回 `413 STRUCTURING_INPUT_TOO_LARGE`，触发频率或并发保护返回 `429 IMPORT_RATE_LIMITED`。账号已有 10 份简历时会在上传和模型处理前返回 `409 RESUME_LIMIT_REACHED`；快速检查后的并发创建仍由最终事务检查兜底。LinkParse 未配置/未授权、网络或引擎不可用返回 `503 DOCUMENT_CONVERSION_UNAVAILABLE`，转换失败返回 `502 DOCUMENT_CONVERSION_FAILED`，阶段或总时限耗尽返回 `504 DOCUMENT_CONVERSION_TIMEOUT` 或 `504 IMPORT_DEADLINE_EXCEEDED`。结构化模型不可用、调用失败或输出非法分别返回 `503 STRUCTURING_MODEL_UNAVAILABLE`、`502 STRUCTURING_MODEL_FAILED`、`422 RESUME_STRUCTURE_INVALID`。失败不创建半成品；已上传对象即时补偿，删除失败进入持久化清理队列。
+`GET /api/resume-overview` 返回 `{resumes, active_imports, failed_imports, next_failed_cursor}`；失败列表支持 `failed_limit=1..50` 和服务端生成的 `failed_cursor`。Web 仅在存在活动任务时每 2 秒刷新，成功任务在同一 overview 快照中由正式简历替换。`DELETE /api/resume-imports/:id` 只允许本人删除上传或解析失败记录；活动任务返回 `409 RESUME_IMPORT_IN_PROGRESS`，不存在、非法 ID 或越权统一返回 `404 RESUME_IMPORT_NOT_FOUND`，对象删除失败返回 `502 ASSET_DELETE_FAILED`。
+
+文件或模板无效时返回对应 `4xx` 且不创建正式简历。MinIO 上传失败会补偿删除可能写入的对象，再返回 `502 RESUME_SOURCE_UPLOAD_FAILED` 并保留上传失败记录；MQ confirm 失败返回 `503 RESUME_IMPORT_QUEUE_UNAVAILABLE`，记录保存为“上传成功、解析失败”。转换、结构化或模板复核失败由 Worker 保存解析失败终态，不创建半成品，也不自动重试业务失败。正式简历与活动导入共享每用户 10 个名额；成功导入只是把活动占位转换为正式简历。
+
+## 简历模板管理
+
+`/api/admin/resume-templates` 只允许管理员访问。`GET` 返回启用、停用和结构无效的全部模板；`POST /import` 接受最大 512 KiB 的严格 UTF-8 JSON 模板包，新模板默认停用且相同 `key` 返回 `409 TEMPLATE_KEY_CONFLICT`，不覆盖已有模板；`PUT /:id/status` 幂等启停，结构无效模板不能启用。模板包拒绝未知字段、脚本、外链、文件 URL、本地路径和媒体引用。当前不提供模板覆盖或硬删除。
 
 ## JD 数据模型与管理
 
@@ -142,7 +156,7 @@ JD 管理接口接受和返回最终结构化数据；单独的浏览器导入�
 | `GET`    | `/api/resumes/:id/assets/:asset_name` | 校验简历所有权后读取                          |
 | `DELETE` | `/api/resumes/:id/assets/:asset_name` | 当前或历史快照仍引用时返回 `409 ASSET_IN_USE` |
 
-删除简历会先同步删除导入原文件和简历资源前缀，全部成功后再删除数据库版本和简历；对象存储删除失败返回 `502 ASSET_DELETE_FAILED`，数据库记录保持不变。MinIO 与 MySQL 不构成原子事务，多个对象可能只删除一部分，对象已删除后的数据库提交失败也无法回滚对象。
+删除简历会先同步删除该简历保存的导入源文件和简历资源前缀，全部成功后再删除数据库版本和简历；对象存储删除失败返回 `502 ASSET_DELETE_FAILED`，数据库记录保持不变。MinIO 与 MySQL 不构成原子事务，多个对象可能只删除一部分，对象已删除后的数据库提交失败也无法回滚对象。
 
 ## 大模型管理接口
 

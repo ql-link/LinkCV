@@ -1,27 +1,16 @@
-import asyncio
-import logging
-from collections.abc import Awaitable, Callable
-from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import PurePath, PurePosixPath
 from time import monotonic
 from zipfile import BadZipFile, ZipFile
 
 from pydantic import ValidationError
-from sqlalchemy.orm import Session
-
-from linkcv.application.resumes.commands import CreateResumeCommand
-from linkcv.application.resumes.service import (
-    ResumeLimitExceeded,
-    create_resume_with_initial_version,
-)
-from linkcv.core.storage import AssetStorage, build_import_object_name
 from linkcv.domain.document_conversion import (
     DocumentConversionFailure,
     DocumentMarkdownConverter,
 )
 from linkcv.domain.import_warnings import merge_import_warnings
 from linkcv.domain.resume_normalization import finalize_resume_document
+from linkcv.domain.resume_document import ResumeDocumentV1
 from linkcv.domain.section_ir import build_section_ir
 from linkcv.integrations.resume_structuring import (
     ResumeStructureInvalidError,
@@ -29,13 +18,6 @@ from linkcv.integrations.resume_structuring import (
     StructuringModelError,
     StructuringModelNotConfiguredError,
 )
-from linkcv.modules.resumes.models import Resume
-from linkcv.services.resume_import_idempotency import (
-    IdempotencyLeaseLostError,
-    IdempotencyUnavailableError,
-)
-
-logger = logging.getLogger(__name__)
 
 SUPPORTED_IMPORT_MIME = {
     "md": {"text/markdown", "text/plain", "text/x-markdown"},
@@ -61,9 +43,9 @@ class ResumeImportFailure(Exception):
 
 
 @dataclass(frozen=True)
-class ImportResult:
-    resume: Resume
-    source_file_name: str
+class ParsedImportResult:
+    document: ResumeDocumentV1
+    extracted_markdown: str
     source_file_format: str
     warnings: list[str]
 
@@ -155,152 +137,72 @@ class ResumeImportService:
         *,
         document_converter: DocumentMarkdownConverter,
         structuring_client: ResumeStructuringClient,
-        storage: AssetStorage,
         max_structuring_bytes: int,
         structuring_timeout_seconds: float,
     ) -> None:
         self._document_converter = document_converter
         self._structuring_client = structuring_client
-        self._storage = storage
         self._max_structuring_bytes = max_structuring_bytes
         self._structuring_timeout_seconds = structuring_timeout_seconds
 
-    async def import_resume(
+    async def parse_resume(
         self,
         *,
-        db: Session,
         user_id: int,
         filename: str,
         content_type: str,
         content: bytes,
-        title: str | None,
         operation_id: str,
         deadline_monotonic: float,
-        assert_lease: Callable[[], Awaitable[None]],
-    ) -> ImportResult:
-        object_key = build_import_object_name(user_id, operation_id, filename)
-        created = False
+    ) -> ParsedImportResult:
         try:
-            upload_task = asyncio.create_task(
-                asyncio.to_thread(
-                    self._storage.upload,
-                    object_key,
-                    content,
-                    content_type,
-                )
+            conversion = await self._document_converter.convert(
+                filename=filename,
+                content_type=content_type,
+                content=content,
+                operation_id=operation_id,
+                deadline_monotonic=deadline_monotonic,
             )
-            try:
-                await asyncio.shield(upload_task)
-            except asyncio.CancelledError:
-                # A cancelled ``to_thread`` await does not stop the upload. Wait for
-                # the bounded storage call so compensation cannot race a late write.
-                with suppress(Exception):
-                    await upload_task
-                raise
-            except Exception as error:
-                raise ResumeImportFailure(502, "IMPORT_STORAGE_FAILED") from error
+        except DocumentConversionFailure as error:
+            raise ResumeImportFailure(error.status_code, error.code) from error
+        if len(conversion.markdown.encode("utf-8")) > self._max_structuring_bytes:
+            raise ResumeImportFailure(413, "STRUCTURING_INPUT_TOO_LARGE")
 
-            try:
-                conversion = await self._document_converter.convert(
-                    filename=filename,
-                    content_type=content_type,
-                    content=content,
-                    operation_id=operation_id,
-                    deadline_monotonic=deadline_monotonic,
-                )
-            except DocumentConversionFailure as error:
-                raise ResumeImportFailure(error.status_code, error.code) from error
-            if len(conversion.markdown.encode("utf-8")) > self._max_structuring_bytes:
-                raise ResumeImportFailure(413, "STRUCTURING_INPUT_TOO_LARGE")
-
-            section_ir = build_section_ir(conversion.markdown)
-            remaining = deadline_monotonic - monotonic()
-            if remaining <= 15:
-                raise ResumeImportFailure(504, "IMPORT_DEADLINE_EXCEEDED")
-            try:
-                draft = await self._structuring_client.extract(
-                    user_id=user_id,
-                    section_ir=section_ir,
-                    timeout_seconds=min(
-                        self._structuring_timeout_seconds,
-                        remaining - 15,
-                    ),
-                )
-            except StructuringModelNotConfiguredError as error:
-                raise ResumeImportFailure(
-                    503, "STRUCTURING_MODEL_UNAVAILABLE"
-                ) from error
-            except ResumeStructureInvalidError as error:
-                raise ResumeImportFailure(422, "RESUME_STRUCTURE_INVALID") from error
-            except StructuringModelError as error:
-                raise ResumeImportFailure(502, "STRUCTURING_MODEL_FAILED") from error
-
-            try:
-                normalized = finalize_resume_document(draft, conversion.markdown)
-            except (ValidationError, ValueError) as error:
-                raise ResumeImportFailure(422, "RESUME_STRUCTURE_INVALID") from error
-
-            if deadline_monotonic - monotonic() <= 0:
-                raise ResumeImportFailure(504, "IMPORT_DEADLINE_EXCEEDED")
-            try:
-                await assert_lease()
-            except IdempotencyUnavailableError as error:
-                raise ResumeImportFailure(
-                    503, "IMPORT_IDEMPOTENCY_UNAVAILABLE"
-                ) from error
-            except IdempotencyLeaseLostError as error:
-                raise ResumeImportFailure(
-                    503, "IMPORT_IDEMPOTENCY_UNAVAILABLE"
-                ) from error
-
-            inferred_title = " ".join(
-                value
-                for value in (
-                    normalized.document.basics.name,
-                    normalized.document.basics.headline or "",
-                )
-                if value
-            )
-            try:
-                resume = create_resume_with_initial_version(
-                    CreateResumeCommand(
-                        user_id=user_id,
-                        title=title or inferred_title or PurePath(filename).stem,
-                        data=normalized.document,
-                        source_type="import",
-                        source_filename=filename,
-                        source_object_key=object_key,
-                        extracted_markdown=conversion.markdown,
-                    ),
-                    db,
-                )
-            except ResumeLimitExceeded as error:
-                raise ResumeImportFailure(409, "RESUME_LIMIT_REACHED") from error
-            except Exception as error:
-                raise ResumeImportFailure(500, "IMPORT_CREATE_FAILED") from error
-            created = True
-            return ImportResult(
-                resume=resume,
-                source_file_name=filename,
-                source_file_format=conversion.source_format,
-                warnings=merge_import_warnings(
-                    conversion.warnings,
-                    section_ir.warnings,
-                    normalized.warnings,
+        section_ir = build_section_ir(conversion.markdown)
+        remaining = deadline_monotonic - monotonic()
+        if remaining <= 15:
+            raise ResumeImportFailure(504, "IMPORT_DEADLINE_EXCEEDED")
+        try:
+            draft = await self._structuring_client.extract(
+                user_id=user_id,
+                section_ir=section_ir,
+                timeout_seconds=min(
+                    self._structuring_timeout_seconds,
+                    remaining - 15,
                 ),
             )
-        finally:
-            if not created:
-                try:
-                    await asyncio.shield(
-                        asyncio.to_thread(self._storage.delete, object_key)
-                    )
-                except Exception as cleanup_error:
-                    logger.warning(
-                        "resume import cleanup failed",
-                        extra={
-                            "operation_id": operation_id,
-                            "user_id": user_id,
-                            "error_type": type(cleanup_error).__name__,
-                        },
-                    )
+        except StructuringModelNotConfiguredError as error:
+            raise ResumeImportFailure(
+                503, "STRUCTURING_MODEL_UNAVAILABLE"
+            ) from error
+        except ResumeStructureInvalidError as error:
+            raise ResumeImportFailure(422, "RESUME_STRUCTURE_INVALID") from error
+        except StructuringModelError as error:
+            raise ResumeImportFailure(502, "STRUCTURING_MODEL_FAILED") from error
+
+        try:
+            normalized = finalize_resume_document(draft, conversion.markdown)
+        except (ValidationError, ValueError) as error:
+            raise ResumeImportFailure(422, "RESUME_STRUCTURE_INVALID") from error
+        if deadline_monotonic - monotonic() <= 0:
+            raise ResumeImportFailure(504, "IMPORT_DEADLINE_EXCEEDED")
+        return ParsedImportResult(
+            document=normalized.document,
+            extracted_markdown=conversion.markdown,
+            source_file_format=conversion.source_format,
+            warnings=merge_import_warnings(
+                conversion.warnings,
+                section_ir.warnings,
+                normalized.warnings,
+            ),
+        )

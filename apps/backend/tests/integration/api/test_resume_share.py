@@ -4,8 +4,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from linkcv.core.config import Settings
+from linkcv.domain.resume_document import default_resume_document
+from linkcv.domain.resume_style import default_resume_style
 from linkcv.main import create_app
-from linkcv.modules.resumes.models import Resume
+from linkcv.modules.resumes.models import Resume, ResumeTemplate
 from tests.fakes import FakeRedis
 
 
@@ -21,7 +23,7 @@ class FakeStorage:
 
 
 def build_app():
-    return create_app(
+    app = create_app(
         Settings(
             database_url="sqlite+pysqlite:///:memory:",
             jwt_secret="resume-share-test-secret-32-bytes",
@@ -31,6 +33,19 @@ def build_app():
         redis=FakeRedis(),
         create_schema=True,
     )
+    with app.state.session_factory() as session:
+        template = ResumeTemplate(
+            key="share-test",
+            name="分享测试模板",
+            description="分享接口集成测试使用的模板",
+            data_json=default_resume_document().model_dump(mode="json"),
+            style_json=default_resume_style().model_dump(mode="json"),
+            is_active=1,
+        )
+        session.add(template)
+        session.commit()
+        app.state.test_template_id = str(template.id)
+    return app
 
 
 def register(client: TestClient, email: str) -> None:
@@ -39,6 +54,15 @@ def register(client: TestClient, email: str) -> None:
         json={"email": email, "password": "password-123"},
     )
     assert response.status_code == 201
+
+
+def create_resume(client: TestClient, app):
+    response = client.post(
+        "/api/resumes",
+        json={"title": "分享测试简历", "template_id": app.state.test_template_id},
+    )
+    assert response.status_code == 201
+    return response
 
 
 def open_clients(app, *emails: str) -> tuple[TestClient, ...]:
@@ -56,7 +80,7 @@ def test_create_share_public_read_and_overwrite() -> None:
         guest = stack.enter_context(TestClient(app))
         register(owner, "owner@example.com")
 
-        resume_id = owner.post("/api/resumes", json={}).json()["resume"]["id"]
+        resume_id = create_resume(owner, app).json()["resume"]["id"]
 
         # 未分享时查询为空
         assert owner.get(f"/api/resumes/{resume_id}/share").json()["share"] is None
@@ -101,7 +125,7 @@ def test_private_visibility_access_matrix() -> None:
         register(owner, "owner@example.com")
         register(other, "other@example.com")
 
-        resume_id = owner.post("/api/resumes", json={}).json()["resume"]["id"]
+        resume_id = create_resume(owner, app).json()["resume"]["id"]
         token = owner.post(f"/api/resumes/{resume_id}/share").json()["share"][
             "share_token"
         ]
@@ -130,7 +154,7 @@ def test_expiry_renew_and_delete() -> None:
         guest = stack.enter_context(TestClient(app))
         register(owner, "owner@example.com")
 
-        resume_id = owner.post("/api/resumes", json={}).json()["resume"]["id"]
+        resume_id = create_resume(owner, app).json()["resume"]["id"]
         token = owner.post(f"/api/resumes/{resume_id}/share").json()["share"][
             "share_token"
         ]
@@ -177,7 +201,7 @@ def test_share_content_tracks_latest_formal_version() -> None:
         guest = stack.enter_context(TestClient(app))
         register(owner, "owner@example.com")
 
-        created = owner.post("/api/resumes", json={})
+        created = create_resume(owner, app)
         resume = created.json()["resume"]
         resume_id = resume["id"]
         token = owner.post(f"/api/resumes/{resume_id}/share").json()["share"][
@@ -213,7 +237,7 @@ def test_delete_resume_invalidates_share_and_ownership_is_enforced() -> None:
         register(owner, "owner@example.com")
         register(other, "other@example.com")
 
-        resume_id = owner.post("/api/resumes", json={}).json()["resume"]["id"]
+        resume_id = create_resume(owner, app).json()["resume"]["id"]
         token = owner.post(f"/api/resumes/{resume_id}/share").json()["share"][
             "share_token"
         ]

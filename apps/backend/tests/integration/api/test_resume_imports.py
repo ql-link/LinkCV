@@ -1,24 +1,21 @@
-import json
-from io import BytesIO
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
-from zipfile import ZipFile
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from linkcv.application.resumes.commands import CreateResumeCommand
-from linkcv.application.resumes.service import create_resume_with_initial_version
+from linkcv.application.resumes.service import persist_resume_with_initial_version
 from linkcv.core.config import Settings
-from linkcv.domain.document_conversion import (
-    DocumentConversionFailure,
-    DocumentMarkdownResult,
-)
+from linkcv.core.mq import MQPublishError
+from linkcv.domain.document_conversion import DocumentMarkdownResult
 from linkcv.domain.resume_document import default_resume_document
 from linkcv.domain.resume_extraction import DraftBasics, ResumeExtractionDraft
+from linkcv.domain.resume_style import default_resume_style
 from linkcv.main import create_app
-from linkcv.modules.resumes.models import Resume, ResumeVersion
-from linkcv.services.resume_import_idempotency import import_fingerprint
+from linkcv.modules.identity.models import User
+from linkcv.modules.resumes.models import Resume, ResumeImport, ResumeTemplate
 from tests.fakes import FakeRedis
 
 
@@ -27,7 +24,6 @@ class FakeStorage:
         self.objects: dict[str, bytes] = {}
         self.deleted: list[str] = []
         self.fail_upload = False
-        self.fail_delete = False
 
     def ensure_bucket(self) -> None:
         pass
@@ -38,706 +34,404 @@ class FakeStorage:
             raise RuntimeError("storage unavailable")
 
     def delete(self, object_name: str) -> None:
-        if self.fail_delete:
-            raise RuntimeError("storage unavailable")
         self.deleted.append(object_name)
         self.objects.pop(object_name, None)
 
     def delete_prefix(self, prefix: str) -> None:
-        if self.fail_delete:
-            raise RuntimeError("storage unavailable")
         for object_name in list(self.objects):
             if object_name.startswith(prefix):
                 self.objects.pop(object_name)
 
 
-class FakeDocumentConverter:
+class FakePublisher:
     def __init__(self) -> None:
-        self.calls: list[str] = []
+        self.messages = []
+        self.fail = False
 
-    async def convert(
-        self,
-        *,
-        filename: str,
-        content_type: str,
-        content: bytes,
-        operation_id: str,
-        deadline_monotonic: float,
-    ) -> DocumentMarkdownResult:
-        del content_type, content, operation_id, deadline_monotonic
-        extension = filename.rsplit(".", 1)[-1]
-        self.calls.append(extension)
-        return DocumentMarkdownResult(
-            markdown="# 张三\n\n## 专业技能\nPython",
-            source_file_name=filename,
-            source_format=extension,
-            parser="fake",
-            parser_version="1",
-            warnings=(
-                ["docx_embedded_images_omitted"] if extension == "docx" else []
-            ),
-        )
+    async def publish_resume_import(self, message) -> None:
+        if self.fail:
+            raise MQPublishError("broker unavailable")
+        self.messages.append(message)
+
+    async def close(self) -> None:
+        pass
 
 
-class FailingDocumentConverter:
-    async def convert(self, **_kwargs):
-        raise DocumentConversionFailure(502, "DOCUMENT_CONVERSION_FAILED")
-
-
-class FakeStructuringClient:
+class FakeDocumentConverter:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def extract(self, *, user_id, section_ir, timeout_seconds):
-        del user_id, timeout_seconds
+    async def convert(self, *, filename: str, **_kwargs) -> DocumentMarkdownResult:
         self.calls += 1
-        assert section_ir.sections
-        return ResumeExtractionDraft(
-            basics=DraftBasics(name="张三", headline="后端工程师")
+        return DocumentMarkdownResult(
+            markdown="# 张三",
+            source_file_name=filename,
+            source_format=filename.rsplit(".", 1)[-1],
+            parser="fake",
+            parser_version="1",
+            warnings=[],
         )
 
 
-class CapacityFillingStructuringClient(FakeStructuringClient):
-    def __init__(self, session_factory, user_id: int) -> None:
-        super().__init__()
-        self._session_factory = session_factory
-        self._user_id = user_id
-
-    async def extract(self, *, user_id, section_ir, timeout_seconds):
-        result = await super().extract(
-            user_id=user_id,
-            section_ir=section_ir,
-            timeout_seconds=timeout_seconds,
-        )
-        with self._session_factory() as db:
-            create_resume_with_initial_version(
-                CreateResumeCommand(
-                    user_id=self._user_id,
-                    title="并发创建的第十份",
-                    data=default_resume_document(),
-                    source_type="blank",
-                ),
-                db,
-            )
-        return result
+class FakeStructuringClient:
+    async def extract(self, **_kwargs):
+        return ResumeExtractionDraft(basics=DraftBasics(name="张三"))
 
 
-class ImportFailingRedis(FakeRedis):
-    def resume_import_acquire(self, *_args):
-        raise OSError("redis unavailable")
-
-
-class LeaseLosingRedis(FakeRedis):
-    def resume_import_renew(self, *_args):
-        return 0
-
-
-def build_app(
-    *,
-    document_converter=None,
-    structuring_client=None,
-    redis=None,
-    max_file_bytes=10 * 1024 * 1024,
-    max_structuring_bytes=128 * 1024,
-    requests_per_minute=3,
-):
+def build_app():
     storage = FakeStorage()
-    runtime_redis = redis or FakeRedis()
-    converter = document_converter or FakeDocumentConverter()
+    converter = FakeDocumentConverter()
+    publisher = FakePublisher()
     app = create_app(
         Settings(
             database_url="sqlite+pysqlite:///:memory:",
             jwt_secret="resume-import-test-secret-with-32-bytes",
-            resume_import_max_bytes=max_file_bytes,
-            resume_structuring_max_bytes=max_structuring_bytes,
-            resume_import_requests_per_minute=requests_per_minute,
+            resume_import_requests_per_minute=60,
         ),
         storage=storage,
-        redis=runtime_redis,
+        redis=FakeRedis(),
         document_converter=converter,
-        structuring_client=structuring_client,
+        structuring_client=FakeStructuringClient(),
+        mq_publisher=publisher,
         create_schema=True,
     )
-    return app, storage, runtime_redis, converter
+    with app.state.session_factory() as db:
+        template = ResumeTemplate(
+            key="modern-two-column-cn",
+            name="现代双栏",
+            data_json=default_resume_document().model_dump(mode="json"),
+            style_json=default_resume_style().model_dump(mode="json"),
+            is_active=1,
+        )
+        db.add(template)
+        db.commit()
+        app.state.test_template_id = str(template.id)
+    return app, storage, converter, publisher
 
 
-def register(client: TestClient, email: str = "importer@example.com") -> None:
+def register(client: TestClient) -> None:
     response = client.post(
         "/api/auth/register",
-        json={"email": email, "password": "password-123"},
+        json={"email": "importer@example.invalid", "password": "password-123"},
     )
     assert response.status_code == 201
 
 
 def import_file(
     client: TestClient,
+    app,
     *,
-    filename: str,
-    content: bytes,
-    content_type: str,
     key: str | None = None,
-    title: str | None = None,
+    template_id: str | None = None,
+    filename: str = "resume.md",
+    content: bytes = b"# Zhang San",
+    content_type: str = "text/markdown",
 ):
-    data = {"title": title} if title is not None else None
     return client.post(
         "/api/resumes/import",
         files={"file": (filename, content, content_type)},
-        data=data,
+        data={
+            "template_id": (
+                app.state.test_template_id if template_id is None else template_id
+            )
+        },
         headers={"Idempotency-Key": key or str(uuid4())},
     )
 
 
-def docx_bytes() -> bytes:
-    output = BytesIO()
-    with ZipFile(output, "w") as archive:
-        archive.writestr("[Content_Types].xml", "<Types />")
-        archive.writestr("word/document.xml", "<document />")
-    return output.getvalue()
-
-
-def test_markdown_import_creates_resume_and_initial_version() -> None:
-    converter = FakeDocumentConverter()
-    app, storage, _redis, _ = build_app(
-        document_converter=converter,
-        structuring_client=FakeStructuringClient(),
-    )
-    markdown = "# 张三\n\n## 专业技能\nPython"
-
+def test_import_accepts_upload_without_running_parser_or_creating_resume() -> None:
+    app, storage, converter, publisher = build_app()
     with TestClient(app) as client:
         register(client)
-        response = import_file(
-            client,
-            filename="resume.md",
-            content=markdown.encode(),
-            content_type="text/markdown",
-            title="导入简历",
+        response = import_file(client, app)
+
+    assert response.status_code == 202
+    summary = response.json()["import"]
+    assert summary["source_filename"] == "resume.md"
+    assert summary["upload_status"] == "succeeded"
+    assert summary["parse_status"] == "processing"
+    assert summary["result_resume_id"] is None
+    assert converter.calls == 0
+    assert len(storage.objects) == 1
+    assert len(publisher.messages) == 1
+    assert publisher.messages[0].payload.import_id == summary["id"]
+    with app.state.session_factory() as db:
+        assert db.scalar(select(Resume.id)) is None
+
+
+def test_active_import_shares_the_ten_slot_limit_with_normal_creation() -> None:
+    app, _storage, _converter, _publisher = build_app()
+    with TestClient(app) as client:
+        register(client)
+        for number in range(9):
+            created = client.post(
+                "/api/resumes",
+                json={
+                    "title": f"resume-{number}",
+                    "template_id": app.state.test_template_id,
+                },
+            )
+            assert created.status_code == 201
+
+        accepted = import_file(client, app)
+        rejected = client.post(
+            "/api/resumes",
+            json={
+                "title": "resume-10",
+                "template_id": app.state.test_template_id,
+            },
         )
 
-        assert response.status_code == 201
-        body = response.json()
-        assert body["resume"]["source_type"] == "import"
-        assert body["resume"]["data"]["basics"]["name"] == "张三"
-        assert body["import"]["source_file_format"] == "md"
-        assert converter.calls == ["md"]
-        assert len(storage.objects) == 1
-        with app.state.session_factory() as session:
-            resume = session.scalar(select(Resume))
-            versions = session.scalars(select(ResumeVersion)).all()
-            assert resume is not None
-            assert resume.extracted_markdown == markdown
-            assert len(versions) == 1
+    assert accepted.status_code == 202
+    assert rejected.status_code == 409
+    assert rejected.json() == {"error": "RESUME_LIMIT_REACHED"}
 
 
 @pytest.mark.parametrize(
-    ("filename", "content", "content_type", "warning"),
-    [
-        (
-            "resume.docx",
-            docx_bytes(),
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "docx_embedded_images_omitted",
-        ),
-        ("resume.pdf", b"%PDF-1.7 fixture", "application/pdf", None),
-    ],
+    "template_id",
+    ["0", "+1", "01", " 1", "1 ", "1.0", "18446744073709551616"],
 )
-def test_docx_and_pdf_use_document_converter(
-    filename: str,
-    content: bytes,
-    content_type: str,
-    warning: str | None,
+def test_import_rejects_noncanonical_template_ids_without_side_effects(
+    template_id: str,
 ) -> None:
-    converter = FakeDocumentConverter()
-    app, _storage, _redis, _ = build_app(
-        document_converter=converter,
-        structuring_client=FakeStructuringClient(),
-    )
+    app, storage, converter, publisher = build_app()
     with TestClient(app) as client:
         register(client)
-        response = import_file(
-            client,
-            filename=filename,
-            content=content,
-            content_type=content_type,
-        )
-    assert response.status_code == 201
-    assert converter.calls == [filename.rsplit(".", 1)[-1]]
-    if warning:
-        assert warning in response.json()["import"]["warnings"]
+        response = import_file(client, app, template_id=template_id)
 
-
-def test_conversion_failure_compensates_storage() -> None:
-    app, storage, _redis, _ = build_app(
-        document_converter=FailingDocumentConverter(),
-        structuring_client=FakeStructuringClient(),
-    )
-    with TestClient(app) as client:
-        register(client)
-        response = import_file(
-            client,
-            filename="resume.pdf",
-            content=b"%PDF-1.7 fixture",
-            content_type="application/pdf",
-        )
-    assert response.status_code == 502
-    assert response.json() == {"error": "DOCUMENT_CONVERSION_FAILED"}
+    assert response.status_code == 422
+    assert response.json() == {"error": "TEMPLATE_INACTIVE"}
     assert storage.objects == {}
-    assert len(storage.deleted) == 1
+    assert converter.calls == 0
+    assert publisher.messages == []
 
 
-def test_storage_failure_stops_downstream_and_compensates_partial_write() -> None:
-    structuring = FakeStructuringClient()
-    app, storage, _redis, converter = build_app(structuring_client=structuring)
+def test_same_key_replays_same_active_import_and_changed_input_conflicts() -> None:
+    app, storage, _converter, publisher = build_app()
+    key = str(uuid4())
+    with TestClient(app) as client:
+        register(client)
+        first = import_file(client, app, key=key)
+        replay = import_file(client, app, key=key)
+        conflict = import_file(client, app, key=key, content=b"# changed")
+
+    assert first.status_code == replay.status_code == 202
+    assert first.json()["import"]["id"] == replay.json()["import"]["id"]
+    assert conflict.status_code == 409
+    assert conflict.json() == {"error": "IDEMPOTENCY_KEY_REUSED"}
+    assert len(storage.objects) == 1
+    assert len(publisher.messages) == 1
+
+
+def test_same_key_replays_original_import_after_template_is_disabled() -> None:
+    app, storage, _converter, publisher = build_app()
+    key = str(uuid4())
+    with TestClient(app) as client:
+        register(client)
+        first = import_file(client, app, key=key)
+        with app.state.session_factory() as db:
+            template = db.get(ResumeTemplate, int(app.state.test_template_id))
+            assert template is not None
+            template.is_active = 0
+            db.commit()
+
+        replay = import_file(client, app, key=key)
+
+    assert first.status_code == replay.status_code == 202
+    assert replay.json()["import"]["id"] == first.json()["import"]["id"]
+    assert len(storage.objects) == 1
+    assert len(publisher.messages) == 1
+
+
+def test_upload_failure_is_compensated_and_persisted_for_user_cleanup() -> None:
+    app, storage, _converter, publisher = build_app()
     storage.fail_upload = True
     with TestClient(app) as client:
         register(client)
-        response = import_file(
-            client,
-            filename="resume.md",
-            content=b"# Zhang San",
-            content_type="text/markdown",
-        )
+        response = import_file(client, app)
+
     assert response.status_code == 502
-    assert response.json() == {"error": "IMPORT_STORAGE_FAILED"}
-    assert storage.objects == {}
-    assert converter.calls == []
-    assert structuring.calls == 0
-
-
-def test_missing_structuring_model_is_explicit_and_compensated() -> None:
-    app, storage, _redis, _ = build_app(structuring_client=None)
-    with TestClient(app) as client:
-        register(client)
-        response = import_file(
-            client,
-            filename="resume.md",
-            content=b"# Zhang San",
-            content_type="text/markdown",
-        )
-    assert response.status_code == 503
-    assert response.json() == {"error": "STRUCTURING_MODEL_UNAVAILABLE"}
-    assert storage.objects == {}
-
-
-def test_failed_import_cleanup_failure_leaves_orphaned_object() -> None:
-    app, storage, _redis, _ = build_app(
-        document_converter=FailingDocumentConverter(),
-        structuring_client=FakeStructuringClient(),
-    )
-    storage.fail_delete = True
-    with TestClient(app) as client:
-        register(client)
-        response = import_file(
-            client,
-            filename="resume.pdf",
-            content=b"%PDF-1.7 fixture",
-            content_type="application/pdf",
-        )
-        assert response.status_code == 502
-        assert response.json() == {"error": "DOCUMENT_CONVERSION_FAILED"}
-        assert len(storage.objects) == 1
-        assert storage.deleted == []
-
-
-@pytest.mark.parametrize(
-    ("filename", "content", "content_type", "status", "code"),
-    [
-        ("resume.md", b"", "text/markdown", 400, "EMPTY_IMPORT_FILE"),
-        ("resume.txt", b"plain", "text/plain", 415, "UNSUPPORTED_IMPORT_FORMAT"),
-        ("resume.pdf", b"not-a-pdf", "application/pdf", 415, "UNSUPPORTED_IMPORT_FORMAT"),
-        ("resume.pdf", b"%PDF-1.7", "text/plain", 415, "UNSUPPORTED_IMPORT_FORMAT"),
-        (
-            "resume.docx",
-            bytes.fromhex("D0CF11E0A1B11AE1")
-            + "EncryptedPackage".encode("utf-16le")
-            + "EncryptionInfo".encode("utf-16le"),
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            422,
-            "IMPORT_CONTENT_INVALID",
-        ),
-    ],
-)
-def test_invalid_files_have_no_side_effects(
-    filename: str,
-    content: bytes,
-    content_type: str,
-    status: int,
-    code: str,
-) -> None:
-    structuring = FakeStructuringClient()
-    app, storage, redis, converter = build_app(structuring_client=structuring)
-    with TestClient(app) as client:
-        register(client)
-        response = import_file(
-            client,
-            filename=filename,
-            content=content,
-            content_type=content_type,
-        )
-    assert response.status_code == status
-    assert response.json() == {"error": code}
-    assert storage.objects == {}
-    assert converter.calls == []
-    assert structuring.calls == 0
-    assert not any(key.startswith("resume-import:") for key in redis.strings)
-
-
-def test_missing_or_noncanonical_idempotency_key_is_rejected() -> None:
-    app, storage, _redis, converter = build_app(
-        structuring_client=FakeStructuringClient()
-    )
-    with TestClient(app) as client:
-        register(client)
-        missing = client.post(
-            "/api/resumes/import",
-            files={"file": ("resume.md", b"# Zhang San", "text/markdown")},
-        )
-        uppercase = import_file(
-            client,
-            filename="resume.md",
-            content=b"# Zhang San",
-            content_type="text/markdown",
-            key=str(uuid4()).upper(),
-        )
-    assert missing.status_code == 400
-    assert uppercase.status_code == 400
-    assert missing.json() == {"error": "INVALID_IDEMPOTENCY_KEY"}
-    assert storage.objects == {}
-    assert converter.calls == []
-
-
-def test_oversized_inputs_stop_before_downstream_calls() -> None:
-    structuring = FakeStructuringClient()
-    app, storage, _redis, converter = build_app(
-        structuring_client=structuring,
-        max_file_bytes=8,
-    )
-    with TestClient(app) as client:
-        register(client)
-        response = import_file(
-            client,
-            filename="resume.md",
-            content=b"# too large",
-            content_type="text/markdown",
-        )
-    assert response.status_code == 413
-    assert storage.objects == {}
-    assert converter.calls == []
-    assert structuring.calls == 0
-
-
-def test_structuring_input_limit_compensates_before_model() -> None:
-    structuring = FakeStructuringClient()
-    app, storage, _redis, _ = build_app(
-        structuring_client=structuring,
-        max_structuring_bytes=16,
-    )
-    with TestClient(app) as client:
-        register(client)
-        response = import_file(
-            client,
-            filename="resume.md",
-            content=b"# Zhang San",
-            content_type="text/markdown",
-        )
-    assert response.status_code == 413
-    assert response.json() == {"error": "STRUCTURING_INPUT_TOO_LARGE"}
-    assert structuring.calls == 0
-    assert storage.objects == {}
-
-
-def test_frequency_limit_uses_distinct_idempotency_keys() -> None:
-    structuring = FakeStructuringClient()
-    app, storage, _redis, _ = build_app(
-        structuring_client=structuring,
-        requests_per_minute=1,
-    )
-    with TestClient(app) as client:
-        register(client)
-        first = import_file(
-            client,
-            filename="resume.md",
-            content=b"# Zhang San",
-            content_type="text/markdown",
-        )
-        second = import_file(
-            client,
-            filename="resume.md",
-            content=b"# Zhang San",
-            content_type="text/markdown",
-        )
-    assert first.status_code == 201
-    assert second.status_code == 429
-    assert structuring.calls == 1
-    assert len(storage.objects) == 1
-
-
-def test_resume_limit_rejects_before_storage_and_model() -> None:
-    structuring = FakeStructuringClient()
-    app, storage, _redis, _ = build_app(structuring_client=structuring)
-    with TestClient(app) as client:
-        register(client)
-        for index in range(10):
-            assert client.post(
-                "/api/resumes", json={"title": f"简历 {index + 1}"}
-            ).status_code == 201
-        rejected = import_file(
-            client,
-            filename="resume.md",
-            content=b"# Zhang San",
-            content_type="text/markdown",
-        )
-    assert rejected.status_code == 409
-    assert rejected.json() == {"error": "RESUME_LIMIT_REACHED"}
-    assert structuring.calls == 0
-    assert storage.objects == {}
-
-
-def test_resume_limit_race_compensates_uploaded_object() -> None:
-    app, storage, _redis, _ = build_app(structuring_client=FakeStructuringClient())
-    with TestClient(app) as client:
-        register(client)
-        for index in range(9):
-            assert client.post(
-                "/api/resumes", json={"title": f"简历 {index + 1}"}
-            ).status_code == 201
-        with app.state.session_factory() as session:
-            user_id = session.scalar(select(Resume.user_id).limit(1))
-        structuring = CapacityFillingStructuringClient(
-            app.state.session_factory,
-            user_id,
-        )
-        app.state.structuring_client = structuring
-        rejected = import_file(
-            client,
-            filename="resume.md",
-            content=b"# Zhang San",
-            content_type="text/markdown",
-        )
-    assert rejected.status_code == 409
+    assert response.json()["error"] == "RESUME_SOURCE_UPLOAD_FAILED"
+    assert response.json()["import"]["upload_status"] == "failed"
     assert storage.objects == {}
     assert len(storage.deleted) == 1
+    assert publisher.messages == []
+    with app.state.session_factory() as db:
+        record = db.scalar(select(ResumeImport))
+        assert record is not None
+        assert record.upload_status == "failed"
 
 
-def test_database_create_failure_rolls_back_and_compensates(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def fail_create(*_args, **_kwargs):
-        raise RuntimeError("database unavailable")
-
-    monkeypatch.setattr(
-        "linkcv.services.resume_import_service.create_resume_with_initial_version",
-        fail_create,
-    )
-    app, storage, _redis, _ = build_app(
-        structuring_client=FakeStructuringClient()
-    )
+def test_broker_failure_marks_parse_failed_and_exposes_task_summary() -> None:
+    app, storage, _converter, publisher = build_app()
+    publisher.fail = True
     with TestClient(app) as client:
         register(client)
-        response = import_file(
-            client,
-            filename="resume.md",
-            content=b"# Zhang San",
-            content_type="text/markdown",
-        )
-    assert response.status_code == 500
-    assert response.json() == {"error": "IMPORT_CREATE_FAILED"}
-    assert storage.objects == {}
-    with app.state.session_factory() as session:
-        assert session.scalar(select(Resume)) is None
-        assert session.scalar(select(ResumeVersion)) is None
+        response = import_file(client, app)
 
-
-def test_successful_replay_returns_same_resume_without_downstream_calls() -> None:
-    structuring = FakeStructuringClient()
-    converter = FakeDocumentConverter()
-    app, storage, _redis, _ = build_app(
-        document_converter=converter,
-        structuring_client=structuring,
-    )
-    key = str(uuid4())
-    with TestClient(app) as client:
-        register(client)
-        first = import_file(
-            client,
-            filename="resume.md",
-            content=b"# Zhang San",
-            content_type="text/markdown",
-            key=key,
-        )
-        replay = import_file(
-            client,
-            filename="resume.md",
-            content=b"# Zhang San",
-            content_type="text/markdown",
-            key=key,
-        )
-    assert first.status_code == replay.status_code == 201
-    assert first.json()["resume"]["id"] == replay.json()["resume"]["id"]
-    assert converter.calls == ["md"]
-    assert structuring.calls == 1
-    assert len(storage.objects) == 1
-
-
-def test_idempotency_key_reuse_with_different_content_is_rejected() -> None:
-    structuring = FakeStructuringClient()
-    app, storage, _redis, converter = build_app(structuring_client=structuring)
-    key = str(uuid4())
-    with TestClient(app) as client:
-        register(client)
-        assert import_file(
-            client,
-            filename="resume.md",
-            content=b"# Zhang San",
-            content_type="text/markdown",
-            key=key,
-        ).status_code == 201
-        conflict = import_file(
-            client,
-            filename="resume.md",
-            content=b"# Li Si",
-            content_type="text/markdown",
-            key=key,
-        )
-    assert conflict.status_code == 409
-    assert conflict.json() == {"error": "IDEMPOTENCY_KEY_REUSED"}
-    assert converter.calls == ["md"]
-    assert structuring.calls == 1
-    assert len(storage.objects) == 1
-
-
-def test_new_key_creates_a_new_resume_and_same_key_isolated_between_users() -> None:
-    structuring = FakeStructuringClient()
-    app, storage, _redis, converter = build_app(structuring_client=structuring)
-    shared_key = str(uuid4())
-    content = b"# Zhang San"
-    with TestClient(app) as client:
-        register(client)
-        first = import_file(
-            client,
-            filename="resume.md",
-            content=content,
-            content_type="text/markdown",
-            key=shared_key,
-        )
-        repeated_intent = import_file(
-            client,
-            filename="resume.md",
-            content=content,
-            content_type="text/markdown",
-            key=str(uuid4()),
-        )
-        assert client.post("/api/auth/logout").status_code == 200
-        register(client, "second-importer@example.com")
-        second_user = import_file(
-            client,
-            filename="resume.md",
-            content=content,
-            content_type="text/markdown",
-            key=shared_key,
-        )
-
-    resume_ids = {
-        first.json()["resume"]["id"],
-        repeated_intent.json()["resume"]["id"],
-        second_user.json()["resume"]["id"],
-    }
-    assert (
-        first.status_code
-        == repeated_intent.status_code
-        == second_user.status_code
-        == 201
-    )
-    assert len(resume_ids) == 3
-    assert converter.calls == ["md", "md", "md"]
-    assert structuring.calls == 3
-    assert len(storage.objects) == 3
-
-
-def test_processing_replay_and_redis_failure_are_fail_closed() -> None:
-    redis = FakeRedis()
-    app, storage, _runtime_redis, converter = build_app(
-        redis=redis,
-        structuring_client=FakeStructuringClient(),
-    )
-    key = str(uuid4())
-    content = b"# Zhang San"
-    fingerprint = import_fingerprint(
-        filename="resume.md",
-        source_format="md",
-        content_type="text/markdown",
-        title=None,
-        content=content,
-    )
-    redis.resume_import_acquire(
-        app.state.import_idempotency.redis_key(1, key),
-        fingerprint,
-        "original-owner",
-        180_000,
-    )
-    with TestClient(app) as client:
-        register(client)
-        processing = import_file(
-            client,
-            filename="resume.md",
-            content=content,
-            content_type="text/markdown",
-            key=key,
-        )
-    assert processing.status_code == 409
-    assert processing.json() == {"error": "IMPORT_ALREADY_PROCESSING"}
-    assert storage.objects == {}
-    assert converter.calls == []
-
-    failing_app, failing_storage, _redis, failing_converter = build_app(
-        redis=ImportFailingRedis(),
-        structuring_client=FakeStructuringClient(),
-    )
-    with TestClient(failing_app) as client:
-        register(client, "redis-failure@example.com")
-        unavailable = import_file(
-            client,
-            filename="resume.md",
-            content=content,
-            content_type="text/markdown",
-        )
-    assert unavailable.status_code == 503
-    assert unavailable.json() == {"error": "IMPORT_IDEMPOTENCY_UNAVAILABLE"}
-    assert failing_storage.objects == {}
-    assert failing_converter.calls == []
-
-
-def test_lost_lease_before_create_is_fail_closed_and_compensated() -> None:
-    app, storage, _redis, _ = build_app(
-        redis=LeaseLosingRedis(),
-        structuring_client=FakeStructuringClient(),
-    )
-    with TestClient(app) as client:
-        register(client)
-        response = import_file(
-            client,
-            filename="resume.md",
-            content=b"# Zhang San",
-            content_type="text/markdown",
-        )
     assert response.status_code == 503
-    assert response.json() == {"error": "IMPORT_IDEMPOTENCY_UNAVAILABLE"}
-    assert storage.objects == {}
-    with app.state.session_factory() as session:
-        assert session.scalar(select(Resume)) is None
+    assert response.json()["error"] == "RESUME_IMPORT_QUEUE_UNAVAILABLE"
+    assert response.json()["import"]["upload_status"] == "succeeded"
+    assert response.json()["import"]["parse_status"] == "failed"
+    assert len(storage.objects) == 1
 
 
-def test_import_requires_authentication() -> None:
-    app, storage, _redis, converter = build_app(
-        structuring_client=FakeStructuringClient()
-    )
+def test_publish_confirm_failure_does_not_overwrite_worker_success() -> None:
+    app, _storage, _converter, _publisher = build_app()
+
+    class DeliveredBeforeTimeoutPublisher:
+        async def publish_resume_import(self, message) -> None:
+            with app.state.session_factory() as db:
+                record = db.get(ResumeImport, int(message.payload.import_id))
+                template = db.get(ResumeTemplate, int(message.payload.template_id))
+                assert record is not None
+                assert template is not None
+                resume = persist_resume_with_initial_version(
+                    CreateResumeCommand(
+                        user_id=record.user_id,
+                        title="delivered-resume",
+                        data=default_resume_document(),
+                        style=default_resume_style(),
+                        source_type="import",
+                        template_id=template.id,
+                    ),
+                    db,
+                )
+                record.result_resume_id = resume.id
+                record.parse_status = "succeeded"
+                record.parse_duration_ms = 1
+                db.commit()
+            raise MQPublishError("confirm timed out after delivery")
+
+        async def close(self) -> None:
+            pass
+
+    app.state.mq_publisher = DeliveredBeforeTimeoutPublisher()
     with TestClient(app) as client:
-        response = import_file(
-            client,
-            filename="resume.md",
-            content=b"# Zhang San",
-            content_type="text/markdown",
+        register(client)
+        response = import_file(client, app)
+
+    assert response.status_code == 200
+    assert response.json()["import"]["parse_status"] == "succeeded"
+    assert response.json()["import"]["result_resume_id"] is not None
+    with app.state.session_factory() as db:
+        record = db.scalar(select(ResumeImport))
+        assert record is not None
+        assert record.parse_status == "succeeded"
+
+
+def test_overview_lists_active_import_and_failed_import_can_be_deleted() -> None:
+    app, storage, _converter, publisher = build_app()
+    with TestClient(app) as client:
+        register(client)
+        active = import_file(client, app)
+        publisher.fail = True
+        failed = import_file(client, app)
+        overview = client.get("/api/resume-overview")
+        deleted = client.delete(
+            f"/api/resume-imports/{failed.json()['import']['id']}"
         )
+
+    assert active.status_code == 202
+    assert failed.status_code == 503
+    assert overview.status_code == 200
+    assert [item["id"] for item in overview.json()["active_imports"]] == [
+        active.json()["import"]["id"]
+    ]
+    assert [item["id"] for item in overview.json()["failed_imports"]] == [
+        failed.json()["import"]["id"]
+    ]
+    assert deleted.status_code == 200
+    assert deleted.json() == {"deleted": True}
+    assert len(storage.objects) == 1
+
+
+def test_overview_closes_stale_processing_import_with_sqlite_datetime() -> None:
+    app, _storage, _converter, _publisher = build_app()
+    with TestClient(app) as client:
+        register(client)
+        accepted = import_file(client, app)
+        import_id = int(accepted.json()["import"]["id"])
+        with app.state.session_factory() as db:
+            record = db.get(ResumeImport, import_id)
+            assert record is not None
+            record.updated_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+            db.commit()
+
+        overview = client.get("/api/resume-overview")
+
+    assert overview.status_code == 200
+    assert overview.json()["active_imports"] == []
+    failed = overview.json()["failed_imports"]
+    assert [item["id"] for item in failed] == [str(import_id)]
+    assert failed[0]["parse_status"] == "failed"
+    assert failed[0]["parse_duration_ms"] is not None
+
+
+def test_import_replay_closes_stale_task_before_idempotency_response() -> None:
+    app, _storage, _converter, _publisher = build_app()
+    key = str(uuid4())
+    with TestClient(app) as client:
+        register(client)
+        accepted = import_file(client, app, key=key)
+        import_id = int(accepted.json()["import"]["id"])
+        with app.state.session_factory() as db:
+            record = db.get(ResumeImport, import_id)
+            assert record is not None
+            record.updated_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+            db.commit()
+
+        replay = import_file(client, app, key=key)
+
+    assert replay.status_code == 409
+    assert replay.json()["error"] == "IMPORT_PREVIOUSLY_FAILED"
+    assert replay.json()["import"]["id"] == str(import_id)
+    assert replay.json()["import"]["parse_status"] == "failed"
+
+
+def test_failed_import_cursor_can_load_the_next_page() -> None:
+    app, _storage, _converter, _publisher = build_app()
+    with TestClient(app) as client:
+        register(client)
+        with app.state.session_factory() as db:
+            user_id = db.scalar(select(User.id))
+            assert user_id is not None
+            for number in range(3):
+                db.add(
+                    ResumeImport(
+                        user_id=user_id,
+                        source_filename=f"failed-{number}.md",
+                        source_file_format="md",
+                        source_object_key=f"users/{user_id}/imports/{number}.md",
+                        upload_status="failed",
+                        upload_duration_ms=number,
+                    )
+                )
+            db.commit()
+
+        first = client.get("/api/resume-overview?failed_limit=2")
+        cursor = first.json()["next_failed_cursor"]
+        second = client.get(
+            "/api/resume-overview",
+            params={"failed_limit": 2, "failed_cursor": cursor},
+        )
+
+    assert first.status_code == 200
+    assert cursor is not None
+    assert len(first.json()["failed_imports"]) == 2
+    assert second.status_code == 200
+    assert len(second.json()["failed_imports"]) == 1
+    first_ids = {item["id"] for item in first.json()["failed_imports"]}
+    second_ids = {item["id"] for item in second.json()["failed_imports"]}
+    assert first_ids.isdisjoint(second_ids)
+
+
+def test_unauthenticated_import_is_rejected() -> None:
+    app, storage, converter, publisher = build_app()
+    with TestClient(app) as client:
+        response = import_file(client, app)
+
     assert response.status_code == 401
-    assert response.json() == {"error": "UNAUTHORIZED"}
     assert storage.objects == {}
-    assert converter.calls == []
+    assert converter.calls == 0
+    assert publisher.messages == []

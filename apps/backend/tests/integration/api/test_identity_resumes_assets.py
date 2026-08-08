@@ -6,8 +6,10 @@ from sqlalchemy import select
 
 from linkcv.core.config import Settings
 from linkcv.main import create_app
+from linkcv.domain.resume_document import default_resume_document
+from linkcv.domain.resume_style import default_resume_style
 from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.models import Resume, ResumeVersion
+from linkcv.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
 from tests.fakes import FakeRedis
 
 
@@ -57,12 +59,28 @@ def build_test_app():
         database_url="sqlite+pysqlite:///:memory:",
         jwt_secret="integration-test-secret-with-32-bytes",
     )
-    return create_app(
+    app = create_app(
         settings,
         storage=FakeStorage(),
         redis=FakeRedis(),
         create_schema=True,
     )
+    with app.state.session_factory() as session:
+        template = ResumeTemplate(
+            key="blank-cn",
+            name="空白简历",
+            data_json=default_resume_document().model_dump(mode="json"),
+            style_json=default_resume_style().model_dump(mode="json"),
+            is_active=1,
+        )
+        session.add(template)
+        session.commit()
+        app.state.test_template_id = str(template.id)
+    return app
+
+
+def resume_payload(app, title: str = "测试简历") -> dict[str, str]:
+    return {"title": title, "template_id": app.state.test_template_id}
 
 
 def test_authentication_and_resume_crud() -> None:
@@ -90,14 +108,14 @@ def test_authentication_and_resume_crud() -> None:
 
         created = client.post(
             "/api/resumes",
-            json={"title": "测试简历"},
+            json=resume_payload(app),
         )
         assert created.status_code == 201
         resume = created.json()["resume"]
         assert resume["title"] == "测试简历"
         assert resume["data"]["schema_version"] == "1.0"
         assert resume["style"]["template_key"] == "classic-cn"
-        assert resume["source_type"] == "blank"
+        assert resume["source_type"] == "template"
         assert resume["lock_version"] == 1
         assert "created_at" in resume
 
@@ -177,7 +195,7 @@ def test_resume_assets_are_owned_and_preserved_while_history_references_them() -
             "/api/auth/register",
             json={"email": "resume-owner@example.com", "password": "password-123"},
         )
-        resume = owner.post("/api/resumes", json={}).json()["resume"]
+        resume = owner.post("/api/resumes", json=resume_payload(app)).json()["resume"]
         resume_id = resume["id"]
         uploaded = owner.post(
             f"/api/resumes/{resume_id}/assets",
@@ -231,7 +249,7 @@ def test_resume_delete_keeps_database_record_when_storage_cleanup_fails() -> Non
             json={"email": "cleanup@example.com", "password": "password-123"},
         )
         assert register.status_code == 201
-        resume_id = client.post("/api/resumes", json={}).json()["resume"]["id"]
+        resume_id = client.post("/api/resumes", json=resume_payload(app)).json()["resume"]["id"]
         object_key = f"users/1/resumes/{resume_id}/image.png"
         storage.objects[object_key] = b"private-resume-image"
         storage.fail_cleanup = True

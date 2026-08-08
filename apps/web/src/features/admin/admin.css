@@ -469,6 +469,28 @@
   font-size: 1rem;
   font-weight: 600;
 }
+.admin-template-upload { cursor: pointer; }
+.admin-template-upload input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+.admin-template-list { display: grid; overflow: hidden; padding: 0; }
+.admin-template-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(170px, auto) auto;
+  align-items: center;
+  gap: 24px;
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--admin-border, rgba(15, 23, 42, .08));
+}
+.admin-template-row:last-child { border-bottom: 0; }
+.admin-template-row small, .admin-template-row p { display: block; margin: 4px 0 0; color: #64748b; }
+.admin-template-status { display: grid; gap: 5px; font-size: .82rem; }
+.admin-template-status .is-valid { color: #166534; }
+.admin-template-status .is-invalid { color: #991b1b; }
+.admin-template-actions { display: flex; gap: 8px; }
+@media (max-width: 860px) {
+  .admin-template-row { grid-template-columns: 1fr; gap: 12px; }
+  .admin-template-actions { justify-content: flex-end; }
+}
+
 .plugin-page-heading > button { display: inline-flex; align-items: center; gap: 7px; }
 .plugin-release-panel { padding: 26px; }
 .plugin-admin-state { margin: 0; padding: 28px; border-radius: 16px; background: var(--surface-subtle); color: var(--body-muted); text-align: center; }

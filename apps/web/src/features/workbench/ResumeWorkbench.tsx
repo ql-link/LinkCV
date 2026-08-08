@@ -355,7 +355,7 @@ export function ResumeWorkbench() {
             className="workbench-paper-scroll"
             style={{ "--workbench-preview-scale": previewScale } as React.CSSProperties}
           >
-            <article className={`resume-paper${settings.smartOnePage ? " smart-one-page" : ""}`} style={resumeStyle} aria-label="可编辑简历页面">
+            <article className={`resume-paper theme-${settings.theme}${settings.smartOnePage ? " smart-one-page" : ""}`} style={resumeStyle} aria-label="可编辑简历页面">
               <EditorContent editor={editor} />
             </article>
             <p className="workbench-page-hint">

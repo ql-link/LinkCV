@@ -70,13 +70,34 @@ export type ResumeSummary = {
   lock_version: number;
   created_at: string;
   updated_at: string;
+  preview?: { data: ResumeDocumentV1; style: ResumeStyleV1 } | null;
+};
+
+export type ResumeTemplate = {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  data: ResumeDocumentV1;
+  style: ResumeStyleV1;
+};
+
+export type AdminResumeTemplate = {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  data: ResumeDocumentV1 | null;
+  style: ResumeStyleV1 | null;
+  active: boolean;
+  valid: boolean;
+  validation_error: string | null;
 };
 
 export type ResumeRecord = ResumeSummary & {
   template_id: string | null;
   data: ResumeDocumentV1;
   style: ResumeStyleV1;
-  source_filename: string | null;
 };
 
 export type ResumeVersion = {
@@ -131,6 +152,26 @@ export type ResumeImportResult = {
   source_file_name: string;
   source_file_format: "md" | "docx" | "pdf";
   warnings: ImportWarning[];
+};
+
+export type ResumeImportSummary = {
+  id: string;
+  source_filename: string;
+  source_file_format: "md" | "docx" | "pdf";
+  upload_status: "uploading" | "succeeded" | "failed";
+  upload_duration_ms: number | null;
+  parse_status: "processing" | "succeeded" | "failed" | null;
+  parse_duration_ms: number | null;
+  result_resume_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ResumeOverview = {
+  resumes: ResumeSummary[];
+  active_imports: ResumeImportSummary[];
+  failed_imports: ResumeImportSummary[];
+  next_failed_cursor: string | null;
 };
 
 export type JobSourceType = "manual" | "external_import";
@@ -507,7 +548,12 @@ export const api = {
       },
     }),
   listResumes: () => request<{ resumes: ResumeSummary[] }>("/api/resumes"),
-  createResume: (payload: { title?: string; template_id?: string }) =>
+  getResumeOverview: () => request<ResumeOverview>("/api/resume-overview"),
+  listResumeTemplates: () =>
+    request<{ templates: ResumeTemplate[] }>("/api/resume-templates"),
+  getResumeTemplate: (id: string) =>
+    request<{ template: ResumeTemplate }>(`/api/resume-templates/${id}`),
+  createResume: (payload: { title: string; template_id: string }) =>
     request<{ resume: ResumeRecord }>("/api/resumes", {
       method: "POST",
       body: payload,
@@ -561,11 +607,11 @@ export const api = {
     }),
   fetchPublicShare: (token: string) =>
     request<PublicSharePayload>(`/api/share/${encodeURIComponent(token)}`),
-  importResume: (file: File, title: string | undefined, idempotencyKey: string) => {
+  importResume: (file: File, templateId: string, idempotencyKey: string) => {
     const formData = new FormData();
     formData.append("file", file);
-    if (title) formData.append("title", title);
-    return request<{ resume: ResumeRecord; import: ResumeImportResult }>(
+    formData.append("template_id", templateId);
+    return request<{ import: ResumeImportSummary }>(
       "/api/resumes/import",
       {
         method: "POST",
@@ -574,6 +620,25 @@ export const api = {
       },
     );
   },
+  deleteResumeImport: (id: string) =>
+    request<{ deleted: boolean }>(`/api/resume-imports/${id}`, {
+      method: "DELETE",
+    }),
+  listAdminResumeTemplates: () =>
+    request<{ templates: AdminResumeTemplate[] }>("/api/admin/resume-templates"),
+  importAdminResumeTemplate: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<{ template: AdminResumeTemplate }>(
+      "/api/admin/resume-templates/import",
+      { method: "POST", formData },
+    );
+  },
+  updateAdminResumeTemplateStatus: (id: string, active: boolean) =>
+    request<{ template: AdminResumeTemplate }>(
+      `/api/admin/resume-templates/${id}/status`,
+      { method: "PUT", body: { active } },
+    ),
   uploadResumeAsset: (
     resumeId: string,
     payload: { file_name: string; data_url: string },

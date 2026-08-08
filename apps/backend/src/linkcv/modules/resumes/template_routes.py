@@ -6,6 +6,8 @@ from linkcv.application.resumes.service import parse_decimal_id
 from linkcv.core.database import get_db
 from linkcv.core.errors import ApiError
 from linkcv.domain.resume_snapshot import parse_resume_snapshot
+from linkcv.modules.identity.dependencies import get_current_user
+from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import ResumeTemplate
 from linkcv.modules.resumes.schemas import (
     ResumeTemplateListResponse,
@@ -32,21 +34,29 @@ def template_record(template: ResumeTemplate) -> ResumeTemplateRecord:
 
 
 @router.get("", response_model=ResumeTemplateListResponse)
-def list_templates(db: Session = Depends(get_db)) -> ResumeTemplateListResponse:
+def list_templates(
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> ResumeTemplateListResponse:
     templates = db.scalars(
         select(ResumeTemplate)
         .where(ResumeTemplate.is_active == 1)
         .order_by(ResumeTemplate.id)
     ).all()
-    return ResumeTemplateListResponse(
-        templates=[template_record(template) for template in templates]
-    )
+    records: list[ResumeTemplateRecord] = []
+    for template in templates:
+        try:
+            records.append(template_record(template))
+        except ApiError:
+            continue
+    return ResumeTemplateListResponse(templates=records)
 
 
 @router.get("/{template_id}", response_model=ResumeTemplateResponse)
 def get_template(
     template_id: str,
     db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
 ) -> ResumeTemplateResponse:
     parsed_id = parse_decimal_id(template_id)
     template = (

@@ -2,6 +2,7 @@ import os
 import re
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 from urllib.parse import quote, urlsplit
 
 from cryptography.fernet import Fernet
@@ -153,30 +154,88 @@ class Settings(BaseSettings):
         ge=1,
         le=10,
     )
-    resume_import_deadline_seconds: float = Field(
-        default=180,
-        alias="RESUME_IMPORT_DEADLINE_SECONDS",
-        gt=0,
-    )
     resume_structuring_timeout_seconds: float = Field(
         default=60,
         alias="RESUME_STRUCTURING_TIMEOUT_SECONDS",
         gt=0,
     )
-    resume_import_idempotency_processing_ttl_seconds: int = Field(
-        default=240,
-        alias="RESUME_IMPORT_IDEMPOTENCY_PROCESSING_TTL_SECONDS",
-        ge=1,
+    resume_import_upload_stale_seconds: int = Field(
+        default=120, alias="RESUME_IMPORT_UPLOAD_STALE_SECONDS", ge=1
     )
-    resume_import_idempotency_success_ttl_seconds: int = Field(
-        default=3600,
-        alias="RESUME_IMPORT_IDEMPOTENCY_SUCCESS_TTL_SECONDS",
-        ge=1,
+    resume_import_parse_deadline_seconds: int = Field(
+        default=180, alias="RESUME_IMPORT_PARSE_DEADLINE_SECONDS", ge=1
     )
-    resume_import_idempotency_failure_ttl_seconds: int = Field(
-        default=60,
-        alias="RESUME_IMPORT_IDEMPOTENCY_FAILURE_TTL_SECONDS",
+    resume_import_parse_stale_seconds: int = Field(
+        default=240, alias="RESUME_IMPORT_PARSE_STALE_SECONDS", ge=1
+    )
+    resume_import_worker_lock_seconds: int = Field(
+        default=240, alias="RESUME_IMPORT_WORKER_LOCK_SECONDS", ge=1
+    )
+    resume_import_idempotency_bind_ttl_seconds: int = Field(
+        default=30, alias="RESUME_IMPORT_IDEMPOTENCY_BIND_TTL_SECONDS", ge=1
+    )
+    resume_import_idempotency_ttl_seconds: int = Field(
+        default=900, alias="RESUME_IMPORT_IDEMPOTENCY_TTL_SECONDS", ge=1
+    )
+    resume_import_worker_concurrency: int = Field(
+        default=4,
+        alias="RESUME_IMPORT_WORKER_CONCURRENCY",
         ge=1,
+        le=100,
+    )
+
+    mq_vendor: Literal["rabbitmq", "kafka"] = Field(
+        default="rabbitmq", alias="MQ_VENDOR"
+    )
+    rabbitmq_url: SecretStr | None = Field(default=None, alias="RABBITMQ_URL")
+    rabbitmq_exchange_name: str = Field(
+        default="tolink.cv.resume_import",
+        alias="RABBITMQ_EXCHANGE_NAME",
+        min_length=1,
+        max_length=255,
+    )
+    rabbitmq_queue: str = Field(
+        default="linkcv.resume_import.worker",
+        alias="RABBITMQ_QUEUE",
+        min_length=1,
+        max_length=255,
+    )
+    rabbitmq_routing_key: str = Field(
+        default="resume.import",
+        alias="RABBITMQ_ROUTING_KEY",
+        min_length=1,
+        max_length=255,
+    )
+    kafka_bootstrap_servers: str | None = Field(
+        default=None, alias="KAFKA_BOOTSTRAP_SERVERS"
+    )
+    kafka_topic: str = Field(
+        default="tolink.cv.resume_import",
+        alias="KAFKA_TOPIC",
+        min_length=1,
+        max_length=249,
+    )
+    kafka_consumer_group: str = Field(
+        default="linkcv.resume_import.worker",
+        alias="KAFKA_CONSUMER_GROUP",
+        min_length=1,
+        max_length=255,
+    )
+    mq_publish_confirm_timeout_seconds: float = Field(
+        default=5,
+        alias="MQ_PUBLISH_CONFIRM_TIMEOUT_SECONDS",
+        gt=0,
+    )
+    mq_consume_max_retries: int = Field(
+        default=2,
+        alias="MQ_CONSUME_MAX_RETRIES",
+        ge=0,
+        le=10,
+    )
+    mq_consume_retry_backoff_seconds: float = Field(
+        default=1,
+        alias="MQ_CONSUME_RETRY_BACKOFF_SECONDS",
+        gt=0,
     )
 
     linkparse_base_url: str = Field(
@@ -254,12 +313,31 @@ class Settings(BaseSettings):
                 "RESUME_STRUCTURING_MAX_BYTES cannot exceed RESUME_MARKDOWN_MAX_BYTES"
             )
         if (
-            self.resume_import_idempotency_processing_ttl_seconds
-            < self.resume_import_deadline_seconds + 30
+            self.resume_import_parse_stale_seconds
+            <= self.resume_import_parse_deadline_seconds
         ):
             raise ValueError(
-                "RESUME_IMPORT_IDEMPOTENCY_PROCESSING_TTL_SECONDS must be at least "
-                "RESUME_IMPORT_DEADLINE_SECONDS + 30"
+                "RESUME_IMPORT_PARSE_STALE_SECONDS must exceed "
+                "RESUME_IMPORT_PARSE_DEADLINE_SECONDS"
+            )
+        if (
+            self.resume_import_worker_lock_seconds
+            < self.resume_import_parse_stale_seconds
+        ):
+            raise ValueError(
+                "RESUME_IMPORT_WORKER_LOCK_SECONDS must be at least "
+                "RESUME_IMPORT_PARSE_STALE_SECONDS"
+            )
+        rabbitmq_url = (
+            self.rabbitmq_url.get_secret_value()
+            if self.rabbitmq_url is not None
+            else None
+        )
+        if self.mq_vendor == "kafka" and _is_placeholder(
+            self.kafka_bootstrap_servers
+        ):
+            raise ValueError(
+                "KAFKA_BOOTSTRAP_SERVERS is required when MQ_VENDOR=kafka"
             )
         origin = urlsplit(self.plugin_release_origin.strip())
         try:
@@ -311,6 +389,8 @@ class Settings(BaseSettings):
         )
         if _is_placeholder(linkparse_key):
             invalid.append("LINKPARSE_API_KEY")
+        if self.mq_vendor == "rabbitmq" and _is_placeholder(rabbitmq_url):
+            invalid.append("RABBITMQ_URL")
         try:
             llm_keys = parse_llm_credential_encryption_keys(
                 self.llm_credential_encryption_keys
