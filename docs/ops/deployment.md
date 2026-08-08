@@ -18,7 +18,7 @@ Dev Jenkins Job 使用 `deploy/jenkins/Jenkinsfile.development`。Jenkins 将当
 - 容器：`linkcv-dev`
 - 网络：外部网络 `tolink-dev-net`
 - 宿主机端口：`18002`
-- 配置：`.env.development` + 权限为 `600` 的 `.env.development.local`
+- 配置：`.env.development` + 权限为 `600` 的 `.env.development.local`；后者提供部署实际 `PLUGIN_RELEASE_ORIGIN`
 - 迁移门禁：`APP_ENV=development`、MySQL `100.86.10.52:13306/linkcv`
 
 Dev Jenkins 节点需预置 `/var/jenkins_home/.ssh/primary_dev`，并能以 `root` 连接 Primary。Primary 需已有 Docker、Docker Compose、`tolink-dev-net` 和私密 env 文件。LinkCV Dev 使用独立 `linkcv` MySQL 数据库、MinIO bucket 和 Redis DB 2；本地密钥文件只保存凭据，不覆盖仓库中的地址与资源名。任一前置条件、迁移或健康检查失败都会让 Job 失败。
@@ -35,10 +35,10 @@ Production Jenkins Job 使用根目录 `Jenkinsfile`，在生产 Jenkins 节点�
 - 容器：`linkcv`
 - 网络：外部网络 `tolink-app-net`
 - 宿主机端口：`8000`
-- 配置：`.env.production` + 权限为 `400` 或 `600` 的 `.env.production.local`
+- 配置：`.env.production` + 权限为 `400` 或 `600` 的 `.env.production.local`；后者必须提供 HTTPS `PLUGIN_RELEASE_ORIGIN`
 - 迁移门禁：`APP_ENV=production`、MySQL `tolink-mysql:3306/linkcv`
 
-Production Pipeline 会把仓库中的非敏感 `.env.production` 和 Compose 复制到部署目录；私密覆盖必须由部署密钥存储预先提供。除 JWT、MySQL 和 MinIO 凭据外，新版本还要求私密覆盖提供有效的 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 与 `LINKPARSE_API_KEY`，否则 Settings 会在启动前安全失败。LLM 密钥环用于解密 MySQL 中的模型凭据，不是供应商 API key；轮换时先发布“新 key 在首项、旧 key 仍保留”的配置，确认旧密文已经重包后才能移除旧 key。LinkParse Key 只供后端 Bearer 请求使用，不进入 Web 制品。
+Production Pipeline 会把仓库中的非敏感 `.env.production` 和 Compose 复制到部署目录；私密覆盖必须由部署密钥存储预先提供。除 JWT、MySQL 和 MinIO 凭据外，新版本还要求覆盖提供有效的 `LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY` 与实际 HTTPS `PLUGIN_RELEASE_ORIGIN`，否则 Settings 会在启动前安全失败。Origin 不是密钥，但因为部署域名不提交到仓库而通过同一覆盖文件提供。LLM 密钥环用于解密 MySQL 中的模型凭据，不是供应商 API key；轮换时先发布“新 key 在首项、旧 key 仍保留”的配置，确认旧密文已经重包后才能移除旧 key。LinkParse Key 只供后端 Bearer 请求使用，不进入 Web 制品。
 
 本期没有管理员开通接口。发布方还需在受控流程中确保至少一个既有用户被标记为 `users.is_admin=true`；公开注册始终是普通用户。没有管理员只会使 `/api/admin/llm/**` 无法使用，不会放宽权限。
 
@@ -61,4 +61,5 @@ Production Pipeline 会把仓库中的非敏感 `.env.production` 和 Compose �
 - 回滚到旧镜像时仍要保留新旧完整 LLM 密钥环，直到确认没有运行实例或密文依赖待移除的 key。
 - 原型 Express/SQLite 数据不进入新 MySQL 数据库，也不作为生产回滚路径。
 - 新增环境配置的回滚只恢复应用与 Compose；不得自动删除已有 `linkcv` 数据库或 Redis volume。
+- 插件发布失败不覆盖 `current.json` 时继续使用上一版本；应用镜像回滚不删除 `system/plugin-releases/` 对象。当前版本内容有误时发布更高补丁版本，不覆盖同版本 ZIP。
 - 简历导入回滚采用上一版 Web 与 FastAPI 整体镜像；不删除新简历、MinIO 原件或 Redis 幂等 key，也不静默切回未验收的旧转换服务。

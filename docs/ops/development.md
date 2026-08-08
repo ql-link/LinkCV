@@ -26,7 +26,9 @@ local/test 未配置密钥环时，原有非 LLM 接口仍可启动，但保存�
 LINKCV_ENV_FILE=.env.development npm run db:init
 ```
 
-命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0012`。图片读写使用 `MINIO_*` 配置。
+命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0012`。图片和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。
+
+`PLUGIN_RELEASE_ORIGIN` 是当前环境允许正式插件访问的 LinkCV 根 Origin。默认本地值为 `http://127.0.0.1:5173`；共享 Development 和 Production 必须在各自 `.local` 覆盖中写入用户实际访问的 Origin，Production 只接受 HTTPS。该值必须与构建安装包时传给 `build_extension_release.py` 的对应 Origin 一致，否则管理员上传会被拒绝。
 
 ## 默认端口与覆盖
 
@@ -84,6 +86,7 @@ Markdown 和 DOCX 导入不调用 LinkParse，但仍需要数据库中已经配�
 | `npm run dev:extension`               | 启动 WXT 插件开发模式                                                |
 | `npm run test:extension`              | 插件 DOM 提取与 API 客户端测试                                       |
 | `npm run build:extension`             | 构建可侧载的 Chrome MV3 目录                                         |
+| `uv run --directory apps/backend python ../../scripts/release/build_extension_release.py ...` | 生成并校验 Development/Production 插件发布 ZIP 与 SHA256SUMS |
 | `npm run test:backend:unit`           | 后端快速单元测试                                                     |
 | `npm run test:backend:integration`    | 后端隔离 HTTP 集成测试                                               |
 | `npm run test:backend`                | 全部后端和仓库工具测试                                               |

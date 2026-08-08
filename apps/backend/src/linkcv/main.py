@@ -26,6 +26,7 @@ from linkcv.modules.llm.gateway import LLMGateway, LiteLLMGateway
 from linkcv.modules.llm.catalog import CHAT_CAPABILITY
 from linkcv.modules.llm.models import LLMCapabilityBinding
 from linkcv.modules.llm.service import LLMService
+from linkcv.modules.plugin_releases.service import PluginReleaseService
 from linkcv.services.import_admission import ImportAdmissionController
 from linkcv.services.resume_import_idempotency import ResumeImportIdempotency
 
@@ -59,6 +60,7 @@ def create_app(
     redis: Any | None = None,
     document_converter: Any | None = None,
     structuring_client: Any | None = None,
+    plugin_release_service: Any | None = None,
     create_schema: bool = False,
 ) -> FastAPI:
     runtime_settings = settings or load_settings()
@@ -81,6 +83,10 @@ def create_app(
                 schema_db.commit()
 
     runtime_storage = storage or AssetStorage(runtime_settings)
+    runtime_plugin_release_service = plugin_release_service or PluginReleaseService(
+        runtime_storage,
+        expected_origin=runtime_settings.plugin_release_origin,
+    )
     runtime_llm_gateway = llm_gateway or LiteLLMGateway(
         runtime_settings.llm_timeout_seconds
     )
@@ -158,6 +164,7 @@ def create_app(
     app.state.settings = runtime_settings
     app.state.session_factory = session_factory
     app.state.storage = runtime_storage
+    app.state.plugin_release_service = runtime_plugin_release_service
     app.state.llm_service = llm_service
     app.state.redis = redis
     app.state.document_converter = runtime_document_converter

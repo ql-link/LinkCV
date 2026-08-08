@@ -10,6 +10,7 @@
 | 鉴权与资源归属 | `modules/identity/`、`core/security.py` | Web API client、MySQL | `docs/api/http-contracts.md`、`docs/internals/backend.md` |
 | 简历持久化 | `modules/resumes/models.py`、`migrations/` | Web store 与 API client | `docs/internals/backend.md`、`docs/api/http-contracts.md` |
 | 图片对象存储 | `core/storage.py`、`modules/resumes/asset_routes.py` | Web 上传与预览、MinIO | `docs/internals/backend.md`、`docs/api/http-contracts.md` |
+| 插件发布与下载 | `modules/plugin_releases/`、`core/storage.py`、`PLUGIN_RELEASE_ORIGIN` | JD 安装入口、管理台、MinIO、浏览器插件构建 | `docs/api/http-contracts.md`、`docs/internals/backend.md`、`docs/internals/extension.md` |
 | 简历文件导入 | `integrations/document_converter.py`、`linkparse_client.py`、`resume_import_idempotency.py` | Web API client、Redis、统一 LLM、MinIO | `docs/api/http-contracts.md`、`docs/internals/backend.md`、`docs/ops/development.md` |
 | 本地环境变量 | `.env.example`、根级 `package.json`、Vite、Compose | 开发者与本地进程 | `docs/ops/development.md` |
 | 构建与部署 | `Jenkinsfile`、`Dockerfile`、`deploy/`、GitHub Actions | CI、部署主机 | `docs/ops/deployment.md` |

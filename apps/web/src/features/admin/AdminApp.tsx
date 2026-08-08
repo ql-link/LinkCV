@@ -21,6 +21,7 @@ import {
   LogOut,
   Menu,
   MoreHorizontal,
+  PackageOpen,
   Plus,
   Search,
   Settings2,
@@ -29,6 +30,7 @@ import {
 } from "lucide-react";
 import { Brand } from "../../components/ds";
 import { LogsPanel, ModelsPanel } from "./AdminLlmPanels";
+import { PluginReleasePanel } from "./PluginReleasePanel";
 import "./admin.css";
 
 import {
@@ -40,12 +42,13 @@ import {
   type AdminUserDetail as AdminUserDetailType,
 } from "../../api/client";
 import { adminLoginPath, navigateTo } from "../../routing";
-type AdminSection = "overview" | "users" | "models" | "logs";
+type AdminSection = "overview" | "users" | "models" | "plugins" | "logs";
 
 function initialAdminSection(): AdminSection {
   const path = window.location.pathname;
   if (path.startsWith("/admin/users")) return "users";
   if (path.startsWith("/admin/llm")) return "models";
+  if (path.startsWith("/admin/plugins")) return "plugins";
   if (path.startsWith("/admin/logs")) return "logs";
   return "overview";
 }
@@ -54,6 +57,7 @@ const adminSectionPaths: Record<AdminSection, string> = {
   overview: "/admin",
   users: "/admin/users",
   models: "/admin/llm/models",
+  plugins: "/admin/plugins",
   logs: "/admin/logs",
 };
 
@@ -349,6 +353,7 @@ function AdminWorkspace({
                   onSessionExpired={onSessionExpired}
                 />
               )}
+              {section === "plugins" && <PluginReleasePanel />}
               {section === "logs" && (
                 <LogsPanel
                   notify={notify}
@@ -396,6 +401,7 @@ const sectionLabels: Record<AdminSection, string> = {
   overview: "概览",
   users: "用户管理",
   models: "模型配置",
+  plugins: "插件发布",
   logs: "LLM 调用日志",
 };
 
@@ -416,6 +422,7 @@ function SidebarContent({
     { id: "overview", label: "概览", icon: LayoutDashboard },
     { id: "users", label: "用户管理", icon: Users },
     { id: "models", label: "模型配置", icon: Bot },
+    { id: "plugins", label: "插件发布", icon: PackageOpen },
     { id: "logs", label: "LLM 调用日志", icon: Activity },
   ];
   return (

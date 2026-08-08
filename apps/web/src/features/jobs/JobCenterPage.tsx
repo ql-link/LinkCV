@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Archive, BriefcaseBusiness, MapPin, Plus, RotateCcw, Search, Trash2 } from "lucide-react";
+import { Archive, BriefcaseBusiness, Download, MapPin, Plus, RotateCcw, Search, Trash2 } from "lucide-react";
 import { api, ApiRequestError, type JobDescriptionSummary } from "../../api/client";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Button } from "../../components/ds";
 import { jobDetailPath, navigateTo } from "../../routing";
+import { PluginInstallDialog } from "./PluginInstallDialog";
 import "./jobs.css";
 
 type JobScope = "active" | "archived" | "all";
@@ -18,6 +19,7 @@ export function JobCenterPage() {
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<JobDescriptionSummary | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [showPluginInstall, setShowPluginInstall] = useState(false);
   const activeQueryRef = useRef({ scope, keyword: keyword.trim() });
   activeQueryRef.current = { scope, keyword: keyword.trim() };
 
@@ -113,7 +115,10 @@ export function JobCenterPage() {
     <main className="dashboard-content job-center-content">
         <header className="job-center-header">
           <div><p className="job-eyebrow">岗位资料库</p><h1>JD 中心</h1><p>管理手工填写和外部结构化写入的最终岗位信息。</p></div>
-          <Button icon={<Plus size={15} />} onClick={() => navigateTo("/jobs/new")}>新建 JD</Button>
+          <div className="job-header-actions">
+            <Button variant="secondary" icon={<Download size={15} />} onClick={() => setShowPluginInstall(true)}>安装岗位采集插件</Button>
+            <Button icon={<Plus size={15} />} onClick={() => navigateTo("/jobs/new")}>新建 JD</Button>
+          </div>
         </header>
 
         <div className="job-toolbar">
@@ -153,6 +158,7 @@ export function JobCenterPage() {
           </div>
         )}
       {pendingDelete && <ConfirmDialog kind="delete" title={`永久删除「${pendingDelete.job_title}」？`} description="删除后无法恢复，并会释放该岗位的来源标识。" confirmLabel="永久删除" busyLabel="正在删除…" busy={busyId === pendingDelete.id} onCancel={() => setPendingDelete(null)} onConfirm={deleteJob} />}
+      {showPluginInstall && <PluginInstallDialog onClose={() => setShowPluginInstall(false)} />}
     </main>
   );
 }
