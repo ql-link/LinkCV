@@ -62,7 +62,7 @@ apps/backend/migrations/sql/<revision>.down.sql
 ## 执行与核验
 
 ```bash
-# 查看迁移链和当前数据库版本；heads 应只有 0012
+# 查看迁移链和当前数据库版本；heads 应只有 0017
 uv run --directory apps/backend alembic heads
 uv run --directory apps/backend alembic current
 
