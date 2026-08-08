@@ -57,6 +57,32 @@ class FakeRedis:
             self.ttls[key] = ttl_ms / 1000
             return 1
 
+    def resume_import_bind(
+        self,
+        key: str,
+        fingerprint: str,
+        owner: str,
+        import_id: str,
+        ttl_ms: int,
+    ) -> int:
+        with self._lock:
+            raw = self.strings.get(key)
+            if raw is None:
+                return 0
+            state = json.loads(raw)
+            if (
+                state["status"] != "processing"
+                or state["fingerprint"] != fingerprint
+                or state.get("owner") != owner
+                or state.get("import_id") is not None
+            ):
+                return 0
+            state.pop("owner", None)
+            state["import_id"] = import_id
+            self.strings[key] = json.dumps(state)
+            self.ttls[key] = ttl_ms / 1000
+            return 1
+
     def resume_import_finish(
         self,
         key: str,
@@ -108,6 +134,9 @@ class FakeRedis:
         return int(
             name in self.strings or name in self.hashes or name in self.sets
         )
+
+    def get(self, name: str) -> str | None:
+        return self.strings.get(name)
 
     def delete(self, *names: str) -> int:
         removed = 0

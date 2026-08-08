@@ -31,6 +31,23 @@ services:
       retries: 3
       start_period: 20s
 
+  linkcv-worker:
+    image: linkcv:${TAG:-latest}
+    container_name: linkcv-worker
+    command: ["python", "-m", "linkcv.workers"]
+    restart: always
+    env_file:
+      - ${LINKCV_ENV_FILE:-../.env.production}
+      - ${LINKCV_SECRET_ENV_FILE:-../.env.production.local}
+    environment:
+      APP_ENV: production
+      TZ: Asia/Shanghai
+    networks:
+      - linkcv-runtime
+    labels:
+      com.linkcv.environment: production
+      com.linkcv.role: resume-import-worker
+
 networks:
   linkcv-runtime:
     external: true

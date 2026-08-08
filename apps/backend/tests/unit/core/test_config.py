@@ -86,22 +86,35 @@ def test_resume_version_limit_defaults_to_ten() -> None:
 def test_resume_import_timeout_defaults_leave_cleanup_budget() -> None:
     settings = Settings(
         _env_file=None,
-        resume_import_deadline_seconds=180,
         linkparse_timeout_seconds=90,
         resume_structuring_timeout_seconds=60,
         llm_timeout_seconds=75,
-        resume_import_idempotency_processing_ttl_seconds=240,
     )
 
-    assert settings.resume_import_deadline_seconds == 180
     assert settings.linkparse_timeout_seconds == 90
     assert settings.resume_structuring_timeout_seconds == 60
     assert settings.llm_timeout_seconds == 75
-    assert settings.resume_import_idempotency_processing_ttl_seconds == 240
     assert (
-        settings.resume_import_idempotency_processing_ttl_seconds
-        >= settings.resume_import_deadline_seconds + 30
+        settings.resume_import_parse_stale_seconds
+        > settings.resume_import_parse_deadline_seconds
     )
+    assert (
+        settings.resume_import_worker_lock_seconds
+        >= settings.resume_import_parse_stale_seconds
+    )
+
+
+def test_resume_import_parse_stale_window_must_exceed_deadline() -> None:
+    with pytest.raises(ValidationError, match="RESUME_IMPORT_PARSE_STALE_SECONDS"):
+        Settings(
+            resume_import_parse_deadline_seconds=180,
+            resume_import_parse_stale_seconds=180,
+        )
+
+
+def test_kafka_vendor_requires_bootstrap_servers() -> None:
+    with pytest.raises(ValidationError, match="KAFKA_BOOTSTRAP_SERVERS"):
+        Settings(mq_vendor="kafka", kafka_bootstrap_servers="")
 
 
 def test_structuring_input_limit_cannot_exceed_markdown_limit() -> None:
@@ -129,6 +142,7 @@ def test_production_rejects_missing_secrets_without_exposing_values() -> None:
     assert "MINIO_SECRET_KEY" in message
     assert "LLM_CREDENTIAL_ENCRYPTION_KEYS" in message
     assert "LINKPARSE_API_KEY" in message
+    assert "RABBITMQ_URL" in message
     assert exposed not in message
     assert "replace-with-secret" not in message
 

@@ -70,34 +70,32 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 
 ## 文件导入
 
-`POST /api/resumes/import` 使用 `multipart/form-data`，必填规范十进制字符串 `template_id` 与 `file`，不接收目标名称，并要求 `Idempotency-Key` Header 为小写、带连字符的 canonical UUID。接口在同一个 HTTP 请求内完成文件保存、Markdown/DOCX/PDF 转换、结构化和正式简历创建，成功返回 `201`：
+`POST /api/resumes/import` 使用 `multipart/form-data`，必填规范十进制字符串 `template_id` 与 `file`，不接收目标名称，并要求 `Idempotency-Key` Header 为小写、带连字符的 canonical UUID。接口只完成校验、源文件上传、任务持久化和消息确认；首次受理成功返回 `202`，不等待转换或结构化：
 
 ```json
 {
-  "resume": {
-    "id": "9",
-    "title": "resume",
-    "source_type": "import",
-    "template_id": "8",
-    "lock_version": 1,
-    "data": {},
-    "style": {},
-    "created_at": "2026-08-07T12:00:00Z",
-    "updated_at": "2026-08-07T12:00:00Z"
-  },
   "import": {
-    "source_file_name": "resume.pdf",
+    "id": "42",
+    "source_filename": "resume.pdf",
     "source_file_format": "pdf",
-    "warnings": []
+    "upload_status": "succeeded",
+    "upload_duration_ms": 83,
+    "parse_status": "processing",
+    "parse_duration_ms": null,
+    "result_resume_id": null,
+    "created_at": "2026-08-08T12:00:00Z",
+    "updated_at": "2026-08-08T12:00:00Z"
   }
 }
 ```
 
-Markdown 本地读取、DOCX 经 Mammoth、PDF 经 LinkParse，再走 `SectionIR → ResumeExtractionDraft → ResumeDocumentV1`。成功时以安全化文件名作为标题，允许与已有简历同名；解析内容作为简历内容，所选模板只提供样式。正式简历和 initial 版本在一个数据库事务内提交；源文件名、MinIO 对象键和转换后的 Markdown 作为简历导入证据保存，响应只公开文件名、格式与 warnings。
+RabbitMQ 是默认 Broker，使用固定 `resume.import` routing key；Kafka 兼容实现使用规范 `import_id` 作为消息 key。独立 Worker 从私有对象存储读取文件，Markdown 本地转换、DOCX 经 Mammoth、PDF 经 LinkParse，再走 `SectionIR → ResumeExtractionDraft → ResumeDocumentV1`。解析成功时以安全化文件名的 stem 作为标题，允许与已有简历同名；解析内容作为 data，所选模板只提供 style。正式简历、initial 版本、结果关联和任务成功状态在一个数据库事务内提交。
 
-缺少或使用非 canonical Header 返回 `400 INVALID_IDEMPOTENCY_KEY`。同一用户、Key 和包含模板选择的请求指纹在幂等窗口内重放原成功响应；同 Key 异指纹返回 `409 IDEMPOTENCY_KEY_REUSED`。Redis 不可用返回 `503 IMPORT_IDEMPOTENCY_UNAVAILABLE`。
+缺少或使用非 canonical Header 返回 `400 INVALID_IDEMPOTENCY_KEY`。同一用户、Key 和请求指纹在 15 分钟映射窗口内重放同一导入记录：活动状态返回 `202`，成功终态返回 `200`，失败终态返回 `409 IMPORT_PREVIOUSLY_FAILED`；同 Key 异指纹返回 `409 IDEMPOTENCY_KEY_REUSED`。记录绑定前的短窗口返回 `409 IMPORT_ACCEPTANCE_IN_PROGRESS`，Redis 不可用返回 `503 IMPORT_IDEMPOTENCY_UNAVAILABLE`。记录创建后的错误响应在顶层 `import` 字段附带同一任务摘要。
 
-文件或模板无效时返回对应 `4xx` 且不创建正式简历。MinIO 上传失败返回 `502 RESUME_SOURCE_UPLOAD_FAILED`；转换或结构化失败会补偿删除已上传的源文件，不创建半成品。LCV-25 不提供导入任务、状态查询、失败任务删除、消息队列或 Worker 契约。
+`GET /api/resume-overview` 返回 `{resumes, active_imports, failed_imports, next_failed_cursor}`；失败列表支持 `failed_limit=1..50` 和服务端生成的 `failed_cursor`。Web 仅在存在活动任务时每 2 秒刷新，成功任务在同一 overview 快照中由正式简历替换。`DELETE /api/resume-imports/:id` 只允许本人删除上传或解析失败记录；活动任务返回 `409 RESUME_IMPORT_IN_PROGRESS`，不存在、非法 ID 或越权统一返回 `404 RESUME_IMPORT_NOT_FOUND`，对象删除失败返回 `502 ASSET_DELETE_FAILED`。
+
+文件或模板无效时返回对应 `4xx` 且不创建正式简历。MinIO 上传失败会补偿删除可能写入的对象，再返回 `502 RESUME_SOURCE_UPLOAD_FAILED` 并保留上传失败记录；MQ confirm 失败返回 `503 RESUME_IMPORT_QUEUE_UNAVAILABLE`，记录保存为“上传成功、解析失败”。转换、结构化或模板复核失败由 Worker 保存解析失败终态，不创建半成品，也不自动重试业务失败。正式简历与活动导入共享每用户 10 个名额；成功导入只是把活动占位转换为正式简历。
 
 ## 简历模板管理
 

@@ -1,6 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiRequestError, type ResumeSummary } from "../../api/client";
+import {
+  ApiRequestError,
+  type ResumeImportSummary,
+  type ResumeSummary,
+} from "../../api/client";
 import { HomeScreen } from "./HomePage";
 
 vi.mock("./TemplatePicker", () => ({
@@ -45,10 +49,13 @@ const resumes: ResumeSummary[] = [
 function renderHome(overrides: Partial<React.ComponentProps<typeof HomeScreen>> = {}) {
   const props: React.ComponentProps<typeof HomeScreen> = {
     resumes,
+    activeImports: [],
+    failedImports: [],
     onOpen: vi.fn(),
     onDelete: vi.fn(),
     onCreate: vi.fn(),
     onImport: vi.fn().mockResolvedValue("1"),
+    onDeleteImport: vi.fn(),
     ...overrides,
   };
   return { ...render(<HomeScreen {...props} />), props };
@@ -70,7 +77,7 @@ describe("HomeScreen", () => {
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("导入必须同时选择模板和文件，成功后打开正式简历", async () => {
+  it("导入必须同时选择模板和文件，受理后显示后台解析提示", async () => {
     const onImport = vi.fn().mockResolvedValue("3");
     const onOpen = vi.fn();
     const file = new File(["# Zhang San"], "resume.md", { type: "text/markdown" });
@@ -85,8 +92,8 @@ describe("HomeScreen", () => {
     fireEvent.click(submit);
 
     await waitFor(() => expect(onImport).toHaveBeenCalledWith(file, "8"));
-    await waitFor(() => expect(onOpen).toHaveBeenCalledWith("3"));
-    expect(screen.getByText("简历导入成功。")).toBeInTheDocument();
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(screen.getByText("文件已上传，正在后台解析。")).toBeInTheDocument();
   });
 
   it("结构化模型未配置时在导入弹窗内显示具体错误", async () => {
@@ -129,7 +136,8 @@ describe("HomeScreen", () => {
     expect(screen.getByRole("button", { name: "关闭" })).toBeDisabled();
 
     resolveImport?.("3");
-    await waitFor(() => expect(onOpen).toHaveBeenCalledWith("3"));
+    await waitFor(() => expect(onImport).toHaveBeenCalledTimes(1));
+    expect(onOpen).not.toHaveBeenCalled();
   });
 
   it("未知导入错误会显示服务端错误码而不是无响应", async () => {
@@ -154,5 +162,62 @@ describe("HomeScreen", () => {
     expect(screen.getByRole("alertdialog", { name: "删除“Frontend Resume”？" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "永久删除" }));
     await waitFor(() => expect(onDelete).toHaveBeenCalledWith("1"));
+  });
+
+  it("失败导入卡显示失败阶段和耗时", () => {
+    const failedImports: ResumeImportSummary[] = [
+      {
+        id: "31",
+        source_filename: "upload.md",
+        source_file_format: "md",
+        upload_status: "failed",
+        upload_duration_ms: 420,
+        parse_status: null,
+        parse_duration_ms: null,
+        result_resume_id: null,
+        created_at: "2026-08-08T08:00:00Z",
+        updated_at: "2026-08-08T08:00:01Z",
+      },
+      {
+        id: "32",
+        source_filename: "parse.pdf",
+        source_file_format: "pdf",
+        upload_status: "succeeded",
+        upload_duration_ms: 120,
+        parse_status: "failed",
+        parse_duration_ms: 1250,
+        result_resume_id: null,
+        created_at: "2026-08-08T08:00:00Z",
+        updated_at: "2026-08-08T08:00:02Z",
+      },
+    ];
+
+    renderHome({ failedImports });
+
+    expect(screen.getByText("上传失败 · 420 毫秒")).toBeInTheDocument();
+    expect(screen.getByText("解析失败 · 1.3 秒")).toBeInTheDocument();
+  });
+
+  it("失败记录删除失败时保留卡片并显示错误", async () => {
+    const failedImport: ResumeImportSummary = {
+      id: "31",
+      source_filename: "resume.md",
+      source_file_format: "md",
+      upload_status: "failed",
+      upload_duration_ms: null,
+      parse_status: null,
+      parse_duration_ms: null,
+      result_resume_id: null,
+      created_at: "2026-08-08T08:00:00Z",
+      updated_at: "2026-08-08T08:00:01Z",
+    };
+    const onDeleteImport = vi.fn().mockRejectedValue(new Error("storage unavailable"));
+    renderHome({ failedImports: [failedImport], onDeleteImport });
+
+    fireEvent.click(screen.getByRole("button", { name: "删除记录" }));
+
+    await waitFor(() => expect(onDeleteImport).toHaveBeenCalledWith("31"));
+    expect(screen.getByText("resume.md")).toBeInTheDocument();
+    expect(screen.getByText(/删除“resume.md”的失败记录失败/)).toBeInTheDocument();
   });
 });

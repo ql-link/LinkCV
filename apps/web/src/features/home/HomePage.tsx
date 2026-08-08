@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FileUp, PenLine, Plus, Search, X } from "lucide-react";
 import {
   ApiRequestError,
+  type ResumeImportSummary,
   type ResumeSummary,
   type ResumeTemplate,
 } from "../../api/client";
@@ -15,10 +16,13 @@ import { TemplatePicker } from "./TemplatePicker";
 type HomeScreenProps = {
   view?: "all" | "templates";
   resumes: ResumeSummary[];
+  activeImports: ResumeImportSummary[];
+  failedImports: ResumeImportSummary[];
   onOpen: (id: string) => void | Promise<void>;
   onDelete: (id: string) => void | Promise<void>;
   onCreate: () => void | Promise<void>;
   onImport: (file: File, templateId: string) => Promise<string>;
+  onDeleteImport: (id: string) => void | Promise<void>;
 };
 
 function importErrorMessage(error: unknown) {
@@ -36,8 +40,10 @@ function importErrorMessage(error: unknown) {
     IMPORT_ALREADY_PROCESSING: "这份简历正在导入，请等待当前请求完成。",
     IDEMPOTENCY_KEY_REUSED: "本次导入标识已被使用，请重新选择文件后再试。",
     IMPORT_IDEMPOTENCY_UNAVAILABLE: "导入保护服务暂时不可用，请稍后重试。",
-    IMPORT_REPLAY_UNAVAILABLE: "无法恢复本次导入结果，请重新选择文件后再试。",
-    IMPORT_STORAGE_FAILED: "源文件上传失败，请稍后重试。",
+    IMPORT_ACCEPTANCE_IN_PROGRESS: "导入正在受理，请稍后刷新查看。",
+    IMPORT_PREVIOUSLY_FAILED: "这次导入已经失败，请删除失败记录后重新上传。",
+    RESUME_SOURCE_UPLOAD_FAILED: "源文件上传失败，请稍后重试。",
+    RESUME_IMPORT_QUEUE_UNAVAILABLE: "解析队列暂时不可用，失败记录已保留。",
     DOCUMENT_CONVERSION_UNAVAILABLE: "文档解析服务暂时不可用，请稍后重试。",
     DOCUMENT_CONVERSION_TIMEOUT: "文档解析超时，请稍后重新导入。",
     DOCUMENT_CONVERSION_FAILED: "文档解析失败，请检查文件内容后重试。",
@@ -48,6 +54,15 @@ function importErrorMessage(error: unknown) {
     IMPORT_DEADLINE_EXCEEDED: "导入处理超时，请稍后重新导入。",
   };
   return messages[error.message] ?? `导入失败（${error.message}），请稍后重试。`;
+}
+
+function importFailureStatus(task: ResumeImportSummary) {
+  const uploadFailed = task.upload_status === "failed";
+  const stage = uploadFailed ? "上传失败" : "解析失败";
+  const durationMs = uploadFailed ? task.upload_duration_ms : task.parse_duration_ms;
+  if (durationMs === null) return `${stage} · —`;
+  if (durationMs < 1000) return `${stage} · ${durationMs} 毫秒`;
+  return `${stage} · ${(durationMs / 1000).toFixed(1)} 秒`;
 }
 
 function ResumeThumbnailCard({
@@ -95,14 +110,18 @@ function ResumeThumbnailCard({
 export function HomeScreen({
   view = "all",
   resumes,
+  activeImports,
+  failedImports,
   onOpen,
   onDelete,
   onCreate,
   onImport,
+  onDeleteImport,
 }: HomeScreenProps) {
   const [query, setQuery] = useState("");
   const [pendingDelete, setPendingDelete] = useState<ResumeSummary | null>(null);
   const [deletingResumeId, setDeletingResumeId] = useState<string | null>(null);
+  const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<ResumeTemplate | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -127,12 +146,11 @@ export function HomeScreen({
     setImportError(null);
     setNotice(null);
     try {
-      const resumeId = await onImport(selectedFile, selectedTemplate.id);
+      await onImport(selectedFile, selectedTemplate.id);
       setImportOpen(false);
       setSelectedFile(null);
       setSelectedTemplate(null);
-      setNotice({ kind: "success", message: "简历导入成功。" });
-      await onOpen(resumeId);
+      setNotice({ kind: "success", message: "文件已上传，正在后台解析。" });
     } catch (error) {
       setImportError(importErrorMessage(error));
     } finally {
@@ -152,6 +170,19 @@ export function HomeScreen({
     } finally {
       setDeletingResumeId(null);
       setPendingDelete(null);
+    }
+  };
+
+  const deleteFailedImport = async (task: ResumeImportSummary) => {
+    if (deletingImportId) return;
+    setDeletingImportId(task.id);
+    try {
+      await onDeleteImport(task.id);
+      setNotice({ kind: "success", message: `已删除“${task.source_filename}”的失败记录。` });
+    } catch {
+      setNotice({ kind: "error", message: `删除“${task.source_filename}”的失败记录失败，请稍后重试。` });
+    } finally {
+      setDeletingImportId(null);
     }
   };
 
@@ -184,6 +215,37 @@ export function HomeScreen({
       </header>
 
       <div className="dashboard-main">
+        {(activeImports.length > 0 || failedImports.length > 0) && (
+          <section className="home-import-task-list" aria-label="导入任务">
+            {activeImports.map((task) => (
+              <article className="home-import-task" key={task.id}>
+                <div>
+                  <strong>{task.source_filename}</strong>
+                  <small>
+                    {task.upload_status === "uploading" ? "正在上传" : "正在解析"}
+                  </small>
+                </div>
+                <span aria-label="导入处理中">处理中</span>
+              </article>
+            ))}
+            {failedImports.map((task) => (
+              <article className="home-import-task home-import-task-failed" key={task.id}>
+                <div>
+                  <strong>{task.source_filename}</strong>
+                  <small>{importFailureStatus(task)}</small>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={deletingImportId !== null}
+                  onClick={() => void deleteFailedImport(task)}
+                >
+                  {deletingImportId === task.id ? "正在删除…" : "删除记录"}
+                </Button>
+              </article>
+            ))}
+          </section>
+        )}
         {visibleResumes.length > 0 ? (
           <section className="home-card-grid" aria-label="全部简历">
             {visibleResumes.map((resume) => (
@@ -281,17 +343,32 @@ export function HomeScreen({
 
 export function HomePage({ view = "all" }: { view?: "all" | "templates" }) {
   const resumes = useResumeStore((state) => state.resumes);
+  const activeImports = useResumeStore((state) => state.activeImports);
+  const failedImports = useResumeStore((state) => state.failedImports);
+  const listResumes = useResumeStore((state) => state.listResumes);
   const importResume = useResumeStore((state) => state.importResume);
   const deleteResume = useResumeStore((state) => state.deleteResume);
+  const deleteResumeImport = useResumeStore((state) => state.deleteResumeImport);
+
+  useEffect(() => {
+    if (view !== "all") return;
+    void listResumes();
+    if (activeImports.length === 0) return;
+    const timer = window.setInterval(() => void listResumes(), 2000);
+    return () => window.clearInterval(timer);
+  }, [activeImports.length, listResumes, view]);
 
   if (view === "templates") return <TemplateLibrary />;
   return (
     <HomeScreen
       resumes={resumes}
+      activeImports={activeImports}
+      failedImports={failedImports}
       onCreate={() => navigateTo("/resumes/new")}
       onImport={importResume}
       onOpen={(id) => navigateTo(editorPath(id))}
       onDelete={deleteResume}
+      onDeleteImport={deleteResumeImport}
     />
   );
 }

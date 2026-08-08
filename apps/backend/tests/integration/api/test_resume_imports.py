@@ -1,19 +1,21 @@
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from linkcv.application.resumes.commands import CreateResumeCommand
+from linkcv.application.resumes.service import persist_resume_with_initial_version
 from linkcv.core.config import Settings
-from linkcv.domain.document_conversion import (
-    DocumentConversionFailure,
-    DocumentMarkdownResult,
-)
+from linkcv.core.mq import MQPublishError
+from linkcv.domain.document_conversion import DocumentMarkdownResult
 from linkcv.domain.resume_document import default_resume_document
 from linkcv.domain.resume_extraction import DraftBasics, ResumeExtractionDraft
 from linkcv.domain.resume_style import default_resume_style
 from linkcv.main import create_app
-from linkcv.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
+from linkcv.modules.identity.models import User
+from linkcv.modules.resumes.models import Resume, ResumeImport, ResumeTemplate
 from tests.fakes import FakeRedis
 
 
@@ -41,6 +43,20 @@ class FakeStorage:
                 self.objects.pop(object_name)
 
 
+class FakePublisher:
+    def __init__(self) -> None:
+        self.messages = []
+        self.fail = False
+
+    async def publish_resume_import(self, message) -> None:
+        if self.fail:
+            raise MQPublishError("broker unavailable")
+        self.messages.append(message)
+
+    async def close(self) -> None:
+        pass
+
+
 class FakeDocumentConverter:
     def __init__(self) -> None:
         self.calls = 0
@@ -48,7 +64,7 @@ class FakeDocumentConverter:
     async def convert(self, *, filename: str, **_kwargs) -> DocumentMarkdownResult:
         self.calls += 1
         return DocumentMarkdownResult(
-            markdown="# 张三\n\n## 专业技能\nPython",
+            markdown="# 张三",
             source_file_name=filename,
             source_format=filename.rsplit(".", 1)[-1],
             parser="fake",
@@ -57,21 +73,15 @@ class FakeDocumentConverter:
         )
 
 
-class FailingDocumentConverter:
-    async def convert(self, **_kwargs):
-        raise DocumentConversionFailure(502, "DOCUMENT_CONVERSION_FAILED")
-
-
 class FakeStructuringClient:
     async def extract(self, **_kwargs):
-        return ResumeExtractionDraft(
-            basics=DraftBasics(name="张三", headline="后端工程师")
-        )
+        return ResumeExtractionDraft(basics=DraftBasics(name="张三"))
 
 
-def build_app(*, document_converter=None):
+def build_app():
     storage = FakeStorage()
-    converter = document_converter or FakeDocumentConverter()
+    converter = FakeDocumentConverter()
+    publisher = FakePublisher()
     app = create_app(
         Settings(
             database_url="sqlite+pysqlite:///:memory:",
@@ -82,23 +92,21 @@ def build_app(*, document_converter=None):
         redis=FakeRedis(),
         document_converter=converter,
         structuring_client=FakeStructuringClient(),
+        mq_publisher=publisher,
         create_schema=True,
     )
     with app.state.session_factory() as db:
-        style = default_resume_style().model_copy(
-            update={"template_key": "modern-two-column-cn", "accent_color": "#315C6B"}
-        )
         template = ResumeTemplate(
             key="modern-two-column-cn",
             name="现代双栏",
             data_json=default_resume_document().model_dump(mode="json"),
-            style_json=style.model_dump(mode="json"),
+            style_json=default_resume_style().model_dump(mode="json"),
             is_active=1,
         )
         db.add(template)
         db.commit()
         app.state.test_template_id = str(template.id)
-    return app, storage, converter
+    return app, storage, converter, publisher
 
 
 def register(client: TestClient) -> None:
@@ -131,34 +139,52 @@ def import_file(
     )
 
 
-def test_sync_import_immediately_creates_resume_with_selected_template_style() -> None:
-    app, storage, converter = build_app()
+def test_import_accepts_upload_without_running_parser_or_creating_resume() -> None:
+    app, storage, converter, publisher = build_app()
     with TestClient(app) as client:
         register(client)
         response = import_file(client, app)
 
-    assert response.status_code == 201
-    body = response.json()
-    assert body["resume"]["source_type"] == "import"
-    assert body["resume"]["template_id"] == app.state.test_template_id
-    assert body["resume"]["data"]["basics"]["name"] == "张三"
-    assert body["resume"]["style"]["template_key"] == "modern-two-column-cn"
-    assert body["resume"]["style"]["accent_color"] == "#315C6B"
-    assert body["import"]["source_file_name"] == "resume.md"
-    assert body["import"]["source_file_format"] == "md"
-    assert converter.calls == 1
+    assert response.status_code == 202
+    summary = response.json()["import"]
+    assert summary["source_filename"] == "resume.md"
+    assert summary["upload_status"] == "succeeded"
+    assert summary["parse_status"] == "processing"
+    assert summary["result_resume_id"] is None
+    assert converter.calls == 0
     assert len(storage.objects) == 1
-
+    assert len(publisher.messages) == 1
+    assert publisher.messages[0].payload.import_id == summary["id"]
     with app.state.session_factory() as db:
-        resume = db.get(Resume, int(body["resume"]["id"]))
-        assert resume is not None
-        assert resume.source_filename == "resume.md"
-        assert resume.source_object_key in storage.objects
-        assert resume.extracted_markdown.startswith("# 张三")
-        versions = db.scalars(
-            select(ResumeVersion).where(ResumeVersion.resume_id == resume.id)
-        ).all()
-        assert len(versions) == 1
+        assert db.scalar(select(Resume.id)) is None
+
+
+def test_active_import_shares_the_ten_slot_limit_with_normal_creation() -> None:
+    app, _storage, _converter, _publisher = build_app()
+    with TestClient(app) as client:
+        register(client)
+        for number in range(9):
+            created = client.post(
+                "/api/resumes",
+                json={
+                    "title": f"resume-{number}",
+                    "template_id": app.state.test_template_id,
+                },
+            )
+            assert created.status_code == 201
+
+        accepted = import_file(client, app)
+        rejected = client.post(
+            "/api/resumes",
+            json={
+                "title": "resume-10",
+                "template_id": app.state.test_template_id,
+            },
+        )
+
+    assert accepted.status_code == 202
+    assert rejected.status_code == 409
+    assert rejected.json() == {"error": "RESUME_LIMIT_REACHED"}
 
 
 @pytest.mark.parametrize(
@@ -168,7 +194,7 @@ def test_sync_import_immediately_creates_resume_with_selected_template_style() -
 def test_import_rejects_noncanonical_template_ids_without_side_effects(
     template_id: str,
 ) -> None:
-    app, storage, converter = build_app()
+    app, storage, converter, publisher = build_app()
     with TestClient(app) as client:
         register(client)
         response = import_file(client, app, template_id=template_id)
@@ -177,94 +203,235 @@ def test_import_rejects_noncanonical_template_ids_without_side_effects(
     assert response.json() == {"error": "TEMPLATE_INACTIVE"}
     assert storage.objects == {}
     assert converter.calls == 0
+    assert publisher.messages == []
 
 
-def test_import_rejects_template_disabled_before_submission() -> None:
-    app, storage, converter = build_app()
-    with TestClient(app) as client:
-        register(client)
-        with app.state.session_factory() as db:
-            template = db.get(ResumeTemplate, int(app.state.test_template_id))
-            assert template is not None
-            template.is_active = 0
-            db.commit()
-        response = import_file(client, app)
-
-    assert response.status_code == 422
-    assert response.json() == {"error": "TEMPLATE_INACTIVE"}
-    assert storage.objects == {}
-    assert converter.calls == 0
-
-
-def test_import_requires_canonical_idempotency_key_without_side_effects() -> None:
-    app, storage, converter = build_app()
-    with TestClient(app) as client:
-        register(client)
-        missing = client.post(
-            "/api/resumes/import",
-            files={"file": ("resume.md", b"# Zhang San", "text/markdown")},
-            data={"template_id": app.state.test_template_id},
-        )
-        uppercase = import_file(client, app, key=str(uuid4()).upper())
-
-    assert missing.status_code == uppercase.status_code == 400
-    assert missing.json() == uppercase.json() == {"error": "INVALID_IDEMPOTENCY_KEY"}
-    assert storage.objects == {}
-    assert converter.calls == 0
-
-
-def test_same_key_replays_formal_resume_and_changed_template_conflicts() -> None:
-    app, storage, converter = build_app()
+def test_same_key_replays_same_active_import_and_changed_input_conflicts() -> None:
+    app, storage, _converter, publisher = build_app()
     key = str(uuid4())
     with TestClient(app) as client:
         register(client)
         first = import_file(client, app, key=key)
         replay = import_file(client, app, key=key)
+        conflict = import_file(client, app, key=key, content=b"# changed")
 
-        with app.state.session_factory() as db:
-            second = ResumeTemplate(
-                key="classic-cn",
-                name="经典单栏",
-                data_json=default_resume_document().model_dump(mode="json"),
-                style_json=default_resume_style().model_dump(mode="json"),
-                is_active=1,
-            )
-            db.add(second)
-            db.commit()
-            second_id = str(second.id)
-        conflict = import_file(client, app, key=key, template_id=second_id)
-
-    assert first.status_code == replay.status_code == 201
-    assert first.json()["resume"]["id"] == replay.json()["resume"]["id"]
+    assert first.status_code == replay.status_code == 202
+    assert first.json()["import"]["id"] == replay.json()["import"]["id"]
     assert conflict.status_code == 409
     assert conflict.json() == {"error": "IDEMPOTENCY_KEY_REUSED"}
-    assert converter.calls == 1
     assert len(storage.objects) == 1
-    with app.state.session_factory() as db:
-        assert len(db.scalars(select(Resume)).all()) == 1
+    assert len(publisher.messages) == 1
 
 
-def test_sync_import_failure_cleans_source_and_creates_no_resume() -> None:
-    app, storage, _converter = build_app(
-        document_converter=FailingDocumentConverter()
-    )
+def test_same_key_replays_original_import_after_template_is_disabled() -> None:
+    app, storage, _converter, publisher = build_app()
+    key = str(uuid4())
+    with TestClient(app) as client:
+        register(client)
+        first = import_file(client, app, key=key)
+        with app.state.session_factory() as db:
+            template = db.get(ResumeTemplate, int(app.state.test_template_id))
+            assert template is not None
+            template.is_active = 0
+            db.commit()
+
+        replay = import_file(client, app, key=key)
+
+    assert first.status_code == replay.status_code == 202
+    assert replay.json()["import"]["id"] == first.json()["import"]["id"]
+    assert len(storage.objects) == 1
+    assert len(publisher.messages) == 1
+
+
+def test_upload_failure_is_compensated_and_persisted_for_user_cleanup() -> None:
+    app, storage, _converter, publisher = build_app()
+    storage.fail_upload = True
     with TestClient(app) as client:
         register(client)
         response = import_file(client, app)
 
     assert response.status_code == 502
-    assert response.json() == {"error": "DOCUMENT_CONVERSION_FAILED"}
+    assert response.json()["error"] == "RESUME_SOURCE_UPLOAD_FAILED"
+    assert response.json()["import"]["upload_status"] == "failed"
     assert storage.objects == {}
     assert len(storage.deleted) == 1
+    assert publisher.messages == []
     with app.state.session_factory() as db:
-        assert db.scalar(select(Resume.id)) is None
+        record = db.scalar(select(ResumeImport))
+        assert record is not None
+        assert record.upload_status == "failed"
+
+
+def test_broker_failure_marks_parse_failed_and_exposes_task_summary() -> None:
+    app, storage, _converter, publisher = build_app()
+    publisher.fail = True
+    with TestClient(app) as client:
+        register(client)
+        response = import_file(client, app)
+
+    assert response.status_code == 503
+    assert response.json()["error"] == "RESUME_IMPORT_QUEUE_UNAVAILABLE"
+    assert response.json()["import"]["upload_status"] == "succeeded"
+    assert response.json()["import"]["parse_status"] == "failed"
+    assert len(storage.objects) == 1
+
+
+def test_publish_confirm_failure_does_not_overwrite_worker_success() -> None:
+    app, _storage, _converter, _publisher = build_app()
+
+    class DeliveredBeforeTimeoutPublisher:
+        async def publish_resume_import(self, message) -> None:
+            with app.state.session_factory() as db:
+                record = db.get(ResumeImport, int(message.payload.import_id))
+                template = db.get(ResumeTemplate, int(message.payload.template_id))
+                assert record is not None
+                assert template is not None
+                resume = persist_resume_with_initial_version(
+                    CreateResumeCommand(
+                        user_id=record.user_id,
+                        title="delivered-resume",
+                        data=default_resume_document(),
+                        style=default_resume_style(),
+                        source_type="import",
+                        template_id=template.id,
+                    ),
+                    db,
+                )
+                record.result_resume_id = resume.id
+                record.parse_status = "succeeded"
+                record.parse_duration_ms = 1
+                db.commit()
+            raise MQPublishError("confirm timed out after delivery")
+
+        async def close(self) -> None:
+            pass
+
+    app.state.mq_publisher = DeliveredBeforeTimeoutPublisher()
+    with TestClient(app) as client:
+        register(client)
+        response = import_file(client, app)
+
+    assert response.status_code == 200
+    assert response.json()["import"]["parse_status"] == "succeeded"
+    assert response.json()["import"]["result_resume_id"] is not None
+    with app.state.session_factory() as db:
+        record = db.scalar(select(ResumeImport))
+        assert record is not None
+        assert record.parse_status == "succeeded"
+
+
+def test_overview_lists_active_import_and_failed_import_can_be_deleted() -> None:
+    app, storage, _converter, publisher = build_app()
+    with TestClient(app) as client:
+        register(client)
+        active = import_file(client, app)
+        publisher.fail = True
+        failed = import_file(client, app)
+        overview = client.get("/api/resume-overview")
+        deleted = client.delete(
+            f"/api/resume-imports/{failed.json()['import']['id']}"
+        )
+
+    assert active.status_code == 202
+    assert failed.status_code == 503
+    assert overview.status_code == 200
+    assert [item["id"] for item in overview.json()["active_imports"]] == [
+        active.json()["import"]["id"]
+    ]
+    assert [item["id"] for item in overview.json()["failed_imports"]] == [
+        failed.json()["import"]["id"]
+    ]
+    assert deleted.status_code == 200
+    assert deleted.json() == {"deleted": True}
+    assert len(storage.objects) == 1
+
+
+def test_overview_closes_stale_processing_import_with_sqlite_datetime() -> None:
+    app, _storage, _converter, _publisher = build_app()
+    with TestClient(app) as client:
+        register(client)
+        accepted = import_file(client, app)
+        import_id = int(accepted.json()["import"]["id"])
+        with app.state.session_factory() as db:
+            record = db.get(ResumeImport, import_id)
+            assert record is not None
+            record.updated_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+            db.commit()
+
+        overview = client.get("/api/resume-overview")
+
+    assert overview.status_code == 200
+    assert overview.json()["active_imports"] == []
+    failed = overview.json()["failed_imports"]
+    assert [item["id"] for item in failed] == [str(import_id)]
+    assert failed[0]["parse_status"] == "failed"
+    assert failed[0]["parse_duration_ms"] is not None
+
+
+def test_import_replay_closes_stale_task_before_idempotency_response() -> None:
+    app, _storage, _converter, _publisher = build_app()
+    key = str(uuid4())
+    with TestClient(app) as client:
+        register(client)
+        accepted = import_file(client, app, key=key)
+        import_id = int(accepted.json()["import"]["id"])
+        with app.state.session_factory() as db:
+            record = db.get(ResumeImport, import_id)
+            assert record is not None
+            record.updated_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+            db.commit()
+
+        replay = import_file(client, app, key=key)
+
+    assert replay.status_code == 409
+    assert replay.json()["error"] == "IMPORT_PREVIOUSLY_FAILED"
+    assert replay.json()["import"]["id"] == str(import_id)
+    assert replay.json()["import"]["parse_status"] == "failed"
+
+
+def test_failed_import_cursor_can_load_the_next_page() -> None:
+    app, _storage, _converter, _publisher = build_app()
+    with TestClient(app) as client:
+        register(client)
+        with app.state.session_factory() as db:
+            user_id = db.scalar(select(User.id))
+            assert user_id is not None
+            for number in range(3):
+                db.add(
+                    ResumeImport(
+                        user_id=user_id,
+                        source_filename=f"failed-{number}.md",
+                        source_file_format="md",
+                        source_object_key=f"users/{user_id}/imports/{number}.md",
+                        upload_status="failed",
+                        upload_duration_ms=number,
+                    )
+                )
+            db.commit()
+
+        first = client.get("/api/resume-overview?failed_limit=2")
+        cursor = first.json()["next_failed_cursor"]
+        second = client.get(
+            "/api/resume-overview",
+            params={"failed_limit": 2, "failed_cursor": cursor},
+        )
+
+    assert first.status_code == 200
+    assert cursor is not None
+    assert len(first.json()["failed_imports"]) == 2
+    assert second.status_code == 200
+    assert len(second.json()["failed_imports"]) == 1
+    first_ids = {item["id"] for item in first.json()["failed_imports"]}
+    second_ids = {item["id"] for item in second.json()["failed_imports"]}
+    assert first_ids.isdisjoint(second_ids)
 
 
 def test_unauthenticated_import_is_rejected() -> None:
-    app, storage, converter = build_app()
+    app, storage, converter, publisher = build_app()
     with TestClient(app) as client:
         response = import_file(client, app)
 
     assert response.status_code == 401
     assert storage.objects == {}
     assert converter.calls == 0
+    assert publisher.messages == []

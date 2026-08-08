@@ -6,7 +6,7 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装 Web、浏览器插件和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis 与 MinIO，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web 和 FastAPI。当前 Alembic head `0014`；`0013` 初始化四个官方模板，`0014` 为现代双栏和紧凑技术型模板补充差异化受控内容。
+新环境执行 `npm run setup` 安装 Web、浏览器插件和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI 和简历导入 Worker。当前 Alembic head `0016`；`0015` 新增导入任务表，`0016` 在旧同步导入数据清理后移除正式简历上的旧导入证据列。
 
 后端默认读取仓库根目录 `.env`。设置 `LINKCV_ENV_FILE=.env.development` 可选择共享 Dev 基础配置；如果同目录存在 `.env.development.local`，其密码和密钥会覆盖基础文件。Production 同理使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，配置路径不受当前工作目录影响。
 
@@ -26,7 +26,7 @@ local/test 未配置密钥环时，原有非 LLM 接口仍可启动，但保存�
 LINKCV_ENV_FILE=.env.development npm run db:init
 ```
 
-命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0014`。图片和导入源文件使用 `MINIO_*` 配置。
+命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0016`。图片和导入源文件使用 `MINIO_*` 配置。
 
 ## 默认端口与覆盖
 
@@ -38,6 +38,8 @@ LINKCV_ENV_FILE=.env.development npm run db:init
 | Redis         |     6379 | `REDIS_HOST`、`REDIS_PORT`、`REDIS_DB`、`REDIS_URL` |
 | MinIO API     |     9000 | `MINIO_API_PORT`、`MINIO_ENDPOINT`                  |
 | MinIO Console |     9001 | `MINIO_CONSOLE_PORT`                                |
+| RabbitMQ AMQP |     5672 | `RABBITMQ_PORT`、`RABBITMQ_URL`                     |
+| RabbitMQ UI   |    15672 | `RABBITMQ_MANAGEMENT_PORT`                          |
 
 `BACKEND_PROXY_TARGET` 可以覆盖 Vite 使用的完整 FastAPI 地址。数据库可以用完整 `DATABASE_URL` 覆盖分项 MySQL 配置，Redis 可以用 `REDIS_URL` 覆盖分项配置。Production 必须通过私密覆盖提供足够随机的 `JWT_SECRET`、`LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY`、MySQL 和 MinIO 凭据，否则后端拒绝启动。鉴权会话和简历导入幂等共用 `REDIS_*` 指向的隔离数据库。
 
@@ -52,11 +54,19 @@ LINKCV_ENV_FILE=.env.development npm run db:init
 | `RESUME_IMPORT_REQUESTS_PER_MINUTE` | `3` | 单用户每分钟最多进入的导入请求数 |
 | `RESUME_IMPORT_GLOBAL_CONCURRENCY` | `4` | 单个 FastAPI 进程的导入全局并发上限 |
 | `RESUME_IMPORT_USER_CONCURRENCY` | `1` | 单个 FastAPI 进程内单用户导入并发上限 |
-| `RESUME_IMPORT_DEADLINE_SECONDS` | `180` | 同步导入请求的总业务时限 |
 | `RESUME_STRUCTURING_TIMEOUT_SECONDS` | `60` | 统一模型结构化阶段的最大时限 |
-| `RESUME_IMPORT_IDEMPOTENCY_PROCESSING_TTL_SECONDS` | `240` | Redis 中导入处理中租约时长，必须覆盖总业务时限 |
-| `RESUME_IMPORT_IDEMPOTENCY_SUCCESS_TTL_SECONDS` | `3600` | 成功响应可重放时长 |
-| `RESUME_IMPORT_IDEMPOTENCY_FAILURE_TTL_SECONDS` | `60` | 失败后短期保护时长 |
+| `RESUME_IMPORT_UPLOAD_STALE_SECONDS` | `120` | 上传中记录的陈旧收口时限 |
+| `RESUME_IMPORT_PARSE_DEADLINE_SECONDS` | `180` | Worker 单个任务解析业务时限 |
+| `RESUME_IMPORT_PARSE_STALE_SECONDS` | `240` | 解析中记录的陈旧收口时限，必须大于解析时限 |
+| `RESUME_IMPORT_WORKER_LOCK_SECONDS` | `240` | Redis Worker 防重锁时长 |
+| `RESUME_IMPORT_IDEMPOTENCY_BIND_TTL_SECONDS` | `30` | 请求占有但尚未绑定导入 ID 的短 TTL |
+| `RESUME_IMPORT_IDEMPOTENCY_TTL_SECONDS` | `900` | 请求指纹到导入 ID 映射的重放窗口 |
+| `RESUME_IMPORT_WORKER_CONCURRENCY` | `4` | Worker 消费预取并发 |
+| `MQ_VENDOR` | `rabbitmq` | Broker 实现，可显式切换为 `kafka` |
+| `RABBITMQ_URL` | 本地 RabbitMQ | AMQP 地址；Dev/Production 由私密覆盖提供 |
+| `RABBITMQ_EXCHANGE_NAME` | `tolink.cv.resume_import` | durable direct exchange |
+| `RABBITMQ_QUEUE` | `linkcv.resume_import.worker` | durable Worker queue |
+| `RABBITMQ_ROUTING_KEY` | `resume.import` | RabbitMQ 固定业务路由 |
 | `LINKPARSE_BASE_URL` | `http://100.86.10.52:18743` | PDF 解析服务地址 |
 | `LINKPARSE_API_KEY` | 空 | LinkParse Bearer 凭据，只放 `.local` 或进程环境 |
 | `LINKPARSE_PARSE_PATH` | `/v1/parse` | 同步 PDF 解析路径 |
@@ -67,7 +77,7 @@ LINKCV_ENV_FILE=.env.development npm run db:init
 | `REDIS_SOCKET_TIMEOUT_SECONDS` | `2` | Redis 操作超时 |
 | `LLM_TIMEOUT_SECONDS` | `75` | 统一托管 LLM Gateway 的单次请求超时 |
 
-Markdown 和 DOCX 导入不调用 LinkParse，但同步导入仍需要数据库中已配置当前 Chat binding。PDF 会把原始二进制和安全文件名发送到 LinkParse；浏览器不读取地址或 Key。API 的频率与并发限制保存在 FastAPI 进程内，请求幂等保存在 Redis。默认自动化测试注入 Fake，不访问真实地址或读取 Key。
+Markdown 和 DOCX 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置当前 Chat binding。PDF 会把原始二进制和安全文件名发送到 LinkParse；浏览器不读取地址或 Key。API 的频率与受理并发限制保存在 FastAPI 进程内，请求幂等和 Worker 防重保存在 Redis，任务终态保存在 MySQL。默认自动化测试注入 Fake，不访问真实地址或读取 Key。
 
 简历导入使用数据库驱动的统一 LLM 服务和当前 Chat binding。模型地址、模型调用名与 API Key 通过管理员 API 管理，凭据由 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 加解密；调用不自动重试，也不回退其他候选。环境只保留密钥环与统一的 `LLM_TIMEOUT_SECONDS`，不再配置导入专用 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL` 或重试参数。
 

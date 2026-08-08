@@ -6,17 +6,19 @@
 
 | 位置 | 职责 |
 | --- | --- |
-| `src/linkcv/main.py` | 装配数据库、Redis、MinIO、文档转换、统一 LLM 和导入幂等服务；测试可注入 Fake |
+| `src/linkcv/main.py` | 装配数据库、Redis、MinIO、统一 LLM、导入幂等和 MQ publisher；测试可注入 Fake |
 | `src/linkcv/core/` | 配置、数据库、错误、安全、Redis 和 MinIO 基础设施 |
 | `src/linkcv/domain/` | `ResumeDocumentV1`、`ResumeStyleV1`、联合快照、SectionIR、Draft 和确定性标准化 |
 | `src/linkcv/domain/job_source.py` | JD 来源 URL 校验、规范化、站点识别和 SHA-256 身份计算 |
 | `src/linkcv/application/resumes/` | 统一创建、乐观锁保存、版本创建/恢复与事务规则 |
 | `src/linkcv/application/job_descriptions/` | JD 创建、重复解决、搜索分页、乐观锁更新、归档和永久删除 |
 | `src/linkcv/integrations/` | LinkParse PDF Adapter、Mammoth DOCX worker、转换分发和统一 LLM 简历结构化 Adapter |
-| `src/linkcv/services/resume_import_service.py` | 同步文件保存、Markdown 转换、结构化、正式简历创建和失败补偿 |
-| `src/linkcv/services/resume_import_idempotency.py` | Redis Lua 请求幂等、成功响应重放和冲突保护 |
+| `src/linkcv/services/resume_import_service.py` | Worker 使用的 Markdown 转换、结构化与规范化原语，不提交业务事务 |
+| `src/linkcv/services/resume_import_idempotency.py` | Redis Lua 请求指纹到导入 ID 的短期绑定与冲突保护 |
+| `src/linkcv/core/mq/` | RabbitMQ/Kafka publisher、统一导入消息和 confirm 异常边界 |
+| `src/linkcv/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
 | `src/linkcv/modules/identity/` | 用户模型、注册、登录、admin-login 鉴权、双 Token 会话、`/api/account` 用户中心、管理端用户管理 |
-| `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板及管理、简历、版本、同步导入和资源路由 |
+| `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板及管理、简历、版本、异步导入任务和资源路由 |
 | `src/linkcv/modules/job_descriptions/` | JD 单表 ORM、HTTP DTO 和受保护路由 |
 | `src/linkcv/modules/llm/` | Chat 当前绑定、模型凭据加密、LiteLLM 适配、普通/流式/结构化单模型调用、计量与管理员 API |
 | `migrations/` | SQL-first Alembic revision；当前 head 为 `0016` |
@@ -29,7 +31,9 @@ MySQL 包含用户、简历、LLM 治理和 `job_descriptions` 等业务表。�
 
 Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versions` 四张核心表。业务主键和外键统一使用 `BIGINT UNSIGNED`；数据库中的整数 ID 在 HTTP、TypeScript 和对象键中表示为规范十进制字符串。`0013` 幂等写入四个官方模板，包含空白简历模板；标识冲突且内容不一致时迁移中止，不覆盖现场数据。`0014` 在不改变 schema 的前提下补充现代双栏和紧凑技术型官方模板的受控编辑 Markdown：现代模板使用 `::: left/right` 左右结构，紧凑模板使用高密度技术条目。模板卡片、完整预览和普通创建后的编辑器读取同一份模板快照；downgrade 只移除官方模板新增的编辑 Markdown，已经创建的用户简历继续保留其快照。
 
-普通创建必须提供名称和启用模板，在用户行锁内完成容量、名称规范键和模板快照校验，再以 `source_type=template` 原子创建当前简历和 initial 版本。每个用户最多保存 10 份正式简历。同步导入同样必须提供启用模板，其标题来自安全化源文件名并允许与已有简历同名；解析内容作为 data，所选模板提供 style。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。手动版本、删除版本与恢复都先锁定所属简历；每份简历最多保存 10 个版本。
+`0015` 新增 12 字段 `resume_imports` 过程表，保存用户、源文件对象、上传/解析状态和唯一结果简历关联；非空表拒绝 downgrade。`0016` 要求旧 `source_type=import` 简历已通过发布清理命令归零，再删除 `resumes` 中旧同步导入使用的 `source_filename/source_object_key/extracted_markdown`。存在无法恢复这些证据的新导入简历时，`0016` downgrade 同样拒绝执行。
+
+普通创建必须提供名称和启用模板，在用户行锁内完成容量、名称规范键和模板快照校验，再以 `source_type=template` 原子创建当前简历和 initial 版本。正式简历与活动导入任务共享每用户 10 个名额。异步导入同样必须提供启用模板，其标题来自安全化源文件名并允许与已有简历同名；解析内容作为 data，所选模板提供 style。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。手动版本、删除版本与恢复都先锁定所属简历；每份简历最多保存 10 个版本。
 
 `0003` 将模板外键改为 `ON DELETE SET NULL`，同时允许历史模板来源在模板删除后保留 `source_type=template/template_id=NULL`。MySQL 8.4 禁止 `SET NULL` 外键列参与 CHECK，因此 `ck_resumes_source_fields` 只约束来源证据字段，`template_id/source_type` 组合由统一创建服务保证，外键继续保证非空引用有效。如果已经出现模板来源但 `template_id=NULL` 的记录，0003 downgrade 会拒绝恢复不成立的 RESTRICT/非空来源约束。`0004` 曾新增对象存储清理任务表；`0010` 在删除链路改为同步后移除该表，upgrade 会先锁表并在存在待处理任务时拒绝删表，downgrade 只恢复空表结构。部署流水线先迁移再替换应用，因此迁移到 `0010` 前须确认任务表为空；迁移和容器替换之间的旧应用删除请求可能短暂失败，回滚旧应用前须先 downgrade 到 `0009`。`0005` 在批量转换前核对旧节点和样式字段，只接受可完整表达的上一版结构；遇到未知字段、危险 Markdown 或无法保留的内嵌图片会中止。`0012` 删除 `resumes` 和 `resume_versions` 的旧版内容与样式备份列；降级只恢复空列结构，无法重建已删除的旧 JSON，恢复旧值必须使用迁移前的外部数据库备份。已进入共享环境的 revision 不原地修改。
 
@@ -51,7 +55,7 @@ LiteLLM 只位于 `modules/llm/gateway.py` 和只读目录边界。白名单 ada
 
 模型凭据使用 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 提供的 Fernet 密钥环加密，数据库只保存 `v1:<keyId>:<token>`。列表首项负责新写入，旧 key 用于兼容解密；读取旧密文时会惰性重包到首项。普通日志、HTTP 响应和调用记录均不包含明文凭据、messages、模型完整响应或供应商原始错误。
 
-简历同步导入通过 `integrations/resume_structuring.py` 以 `source=resume_import` 调用 `LLMService.structured_chat()`，复用数据库中的 Chat 当前绑定、加密凭据、调用日志和计量。模型输入只包含 SectionIR 的标题、类别和 Markdown，不包含原文件、对象键、LinkParse 元数据、warnings 或用户 ID；模型返回内容仍须通过 `ResumeExtractionDraft` 严格校验。
+简历导入 Worker 通过 `integrations/resume_structuring.py` 以 `source=resume_import` 调用 `LLMService.structured_chat()`，复用数据库中的 Chat 当前绑定、加密凭据、调用日志和计量。模型输入只包含 SectionIR 的标题、类别和 Markdown，不包含原文件、对象键、LinkParse 元数据、warnings 或用户 ID；模型返回内容仍须通过 `ResumeExtractionDraft` 严格校验。
 
 `scripts/db/init_mysql.py` 只允许创建名为 `linkcv` 的 MySQL 数据库；`scripts/release/run_alembic.py` 在迁移前校验环境、host、port 和数据库并输出不含密码的摘要。FastAPI 配置支持根 `.env`、显式 `LINKCV_ENV_FILE`、同名 `.local` 和进程环境覆盖。Redis 在鉴权链路中作为唯一会话存储：`auth:session:{sid}` 保存会话哈希，`auth:user_sessions:{uid}` 索引该用户全部会话；会话不写 MySQL，撤销即删除 key。对象存储配置仅使用 `MINIO_*`。
 
@@ -59,7 +63,7 @@ LiteLLM 只位于 `modules/llm/gateway.py` 和只读目录边界。白名单 ada
 
 Markdown 文件在进程内做 UTF-8 与确定性换行清理；DOCX 在可取消子进程中使用 Mammoth 转安全 HTML，经 nh3 allowlist 清洗后转 Markdown；只有 PDF 会以固定的 `engine=auto/output_formats=markdown/ocr=auto/dpi=200/include_bbox=false/include_images=false` 调用 LinkParse `POST /v1/parse`。LinkParse 响应在 JSON decode 前限制为 3 MiB，随后校验 request ID、schema、页数、Markdown 质量和空 assets；客户端不下载或保存外部 assets，也不自动重试同步解析请求。
 
-超过结构化输入上限的内容不会发送给模型，合规输入的 AST 被压缩为 H1–H3 `SectionIR` 后才发送给结构化模型，最终稳定 ID、日期和来源行号由程序生成。HTTP 导入入口先校验所选模板与文件，再使用 canonical UUID `Idempotency-Key`；Redis key 按用户和 Header 哈希隔离，按处理、成功和失败分别设置 TTL。请求同步完成源文件上传、转换、结构化和正式简历事务；失败时补偿删除源文件，不保存导入任务状态。
+超过结构化输入上限的内容不会发送给模型，合规输入的 AST 被压缩为 H1–H3 `SectionIR` 后才发送给结构化模型，最终稳定 ID、日期和来源行号由程序生成。HTTP 导入入口先校验所选模板与文件，再使用 canonical UUID `Idempotency-Key`；Redis key 按用户和 Header 哈希隔离，先以 30 秒租约占有请求，再绑定持久化导入 ID 并保留 15 分钟。`resume_imports` 是上传和解析状态的唯一真值；API 只上传、更新为解析中并等待 MQ confirm，Worker 才执行转换和结果事务。上传失败补偿对象；业务解析失败保留源文件与失败记录供用户删除，不自动重试。
 
 Development 未配置 LinkParse Key 时应用仍可启动，Markdown/DOCX 保持可用，PDF 返回 `DOCUMENT_CONVERSION_UNAVAILABLE`；Production 缺 Key 会安全拒绝启动。默认测试全部使用确定性 Fake 和 `httpx.MockTransport`，不访问真实网络或读取密钥。日志只记录 operation/resume/user 标识、大小、耗时、解析分类和错误类型，不记录正文、Prompt、Cookie、密钥或完整供应商响应。
 
@@ -70,7 +74,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown/DOCX 保持
 - 导入原文件：`users/{user_id}/resume-imports/{operation_id}/...`。
 - 简历资源：`users/{user_id}/resumes/{resume_id}/assets/...`。
 
-简历级读取先校验所属简历。资源删除会递归检查当前和历史 `data_json` 引用；仍在使用时拒绝删除。删除导入生成的正式简历时先按 `resumes.source_object_key` 删除源文件，再删除简历资源、版本和简历。MinIO 删除失败返回 `502 ASSET_DELETE_FAILED` 并保留数据库记录。数据库与 MinIO 仍不是同一事务：多个对象可能只删除一部分，且对象删除成功后的数据库提交失败无法恢复对象。
+简历级读取先校验所属简历。资源删除会递归检查当前和历史 `data_json` 引用；仍在使用时拒绝删除。删除导入生成的正式简历时通过 `resume_imports.result_resume_id` 找到并删除源文件，再删除导入记录、简历资源、版本和简历。MinIO 删除失败返回 `502 ASSET_DELETE_FAILED` 并保留数据库记录。数据库与 MinIO 仍不是同一事务：多个对象可能只删除一部分，且对象删除成功后的数据库提交失败无法恢复对象。
 
 ## 用户中心
 

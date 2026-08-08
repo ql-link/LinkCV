@@ -70,8 +70,38 @@ class ResumeImportMetadata(BaseModel):
 
 
 class ResumeImportResponse(BaseModel):
-    resume: ResumeRecord
-    import_result: ResumeImportMetadata = Field(alias="import")
+    import_result: "ResumeImportSummary" = Field(alias="import")
+
+
+class ResumeImportSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    id: str
+    source_filename: str
+    source_file_format: Literal["md", "docx", "pdf"]
+    upload_status: Literal["uploading", "succeeded", "failed"]
+    upload_duration_ms: int | None
+    parse_status: Literal["processing", "succeeded", "failed"] | None
+    parse_duration_ms: int | None
+    result_resume_id: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    @field_validator("id", "result_resume_id", mode="before")
+    @classmethod
+    def stringify_optional_id(cls, value: object) -> str | None:
+        return None if value is None else str(value)
+
+
+class ResumeOverviewResponse(BaseModel):
+    resumes: list[ResumeSummary]
+    active_imports: list[ResumeImportSummary]
+    failed_imports: list[ResumeImportSummary]
+    next_failed_cursor: str | None
+
+
+class DeleteResumeImportResponse(BaseModel):
+    deleted: bool
 
 
 class ResumeTemplateRecord(BaseModel):

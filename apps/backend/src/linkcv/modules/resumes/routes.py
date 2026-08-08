@@ -22,7 +22,7 @@ from linkcv.core.storage import AssetStorage, get_storage
 from linkcv.domain.resume_snapshot import parse_resume_snapshot
 from linkcv.modules.identity.dependencies import get_current_user
 from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.models import Resume, ResumeVersion
+from linkcv.modules.resumes.models import Resume, ResumeImport, ResumeVersion
 from linkcv.modules.resumes.schemas import (
     DeleteResumeResponse,
     ResumeCreateRequest,
@@ -183,8 +183,12 @@ def delete_resume(
         raise ApiError(404, "RESUME_NOT_FOUND")
 
     try:
-        if resume.source_object_key:
-            storage.delete(resume.source_object_key)
+        imported = db.scalar(
+            select(ResumeImport).where(ResumeImport.result_resume_id == resume.id)
+        )
+        source_object_key = imported.source_object_key if imported is not None else None
+        if source_object_key:
+            storage.delete(source_object_key)
         storage.delete_prefix(f"users/{user.id}/resumes/{resume.id}/")
     except Exception as error:
         db.rollback()
@@ -195,6 +199,8 @@ def delete_resume(
         raise ApiError(502, "ASSET_DELETE_FAILED") from error
 
     try:
+        if imported is not None:
+            db.execute(delete(ResumeImport).where(ResumeImport.id == imported.id))
         db.execute(delete(ResumeVersion).where(ResumeVersion.resume_id == resume.id))
         result = db.execute(delete(Resume).where(Resume.id == resume.id))
         db.commit()

@@ -21,7 +21,7 @@ from linkcv.domain.resume_snapshot import parse_resume_snapshot
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0014"
+EXPECTED_HEAD = "0016"
 
 
 def migration_test_url() -> str:
@@ -105,6 +105,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "resume_templates",
         "resumes",
         "resume_versions",
+        "resume_imports",
         "job_descriptions",
     } <= set(inspector.get_table_names())
     assert "admin_operation_logs" not in inspector.get_table_names()
@@ -140,9 +141,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "style_json",
         "lock_version",
         "source_type",
-        "source_filename",
-        "source_object_key",
-        "extracted_markdown",
         "created_at",
         "updated_at",
     }
@@ -220,7 +218,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     assert resume_columns["user_id"]["type"].unsigned is True
     assert resume_columns["data_json"]["type"].__class__.__name__ == "JSON"
     assert resume_columns["style_json"]["type"].__class__.__name__ == "JSON"
-    assert resume_columns["extracted_markdown"]["type"].__class__.__name__ == "LONGTEXT"
     assert resume_columns["created_at"]["type"].fsp == 6
     assert {constraint["name"] for constraint in inspector.get_check_constraints("users")} == {
         "ck_users_is_admin",
@@ -230,7 +227,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         constraint["name"] for constraint in inspector.get_check_constraints("resumes")
     } == {
         "ck_resumes_lock_version",
-        "ck_resumes_source_fields",
         "ck_resumes_source_type",
         "ck_resumes_title_not_blank",
     }
@@ -355,6 +351,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "resume_templates",
         "resumes",
         "resume_versions",
+        "resume_imports",
         "llm_model_configs",
         "llm_capability_bindings",
         "llm_call_logs",
@@ -395,9 +392,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "style_json",
         "lock_version",
         "source_type",
-        "source_filename",
-        "source_object_key",
-        "extracted_markdown",
         "created_at",
         "updated_at",
     }
@@ -544,7 +538,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         for constraint in inspector.get_check_constraints("resumes")
         } == {
             "ck_resumes_lock_version",
-            "ck_resumes_source_fields",
             "ck_resumes_source_type",
             "ck_resumes_title_not_blank",
         }

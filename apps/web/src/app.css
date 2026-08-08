@@ -1703,6 +1703,41 @@ select:focus-visible,
   gap: 24px;
 }
 
+.home-import-task-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.home-import-task {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--surface-raised);
+}
+
+.home-import-task > div {
+  display: grid;
+  gap: 4px;
+}
+
+.home-import-task small {
+  color: var(--muted);
+}
+
+.home-import-task > span {
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.home-import-task-failed {
+  border-color: var(--error-border);
+}
+
 .home-resume-card {
   position: relative;
   overflow: hidden;

@@ -6,6 +6,7 @@ import {
   ImportWarning,
   ResumeDocumentV1,
   ResumeRecord,
+  ResumeImportSummary,
   ResumeStyleV1,
   ResumeSummary,
   ResumeVersion,
@@ -48,6 +49,8 @@ type ResumeState = {
   authStatus: AuthStatus;
   user: User | null;
   resumes: ResumeSummary[];
+  activeImports: ResumeImportSummary[];
+  failedImports: ResumeImportSummary[];
   versions: ResumeVersion[];
   versionsLoading: boolean;
   versionOperationPending: boolean;
@@ -77,6 +80,7 @@ type ResumeState = {
   importResume: (file: File, templateId: string) => Promise<string>;
   loadResume: (id: string) => Promise<void>;
   deleteResume: (id: string) => Promise<void>;
+  deleteResumeImport: (id: string) => Promise<void>;
   saveCurrentResume: () => Promise<void>;
   loadVersions: () => Promise<void>;
   createVersion: () => Promise<void>;
@@ -201,6 +205,8 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   authStatus: "checking",
   user: null,
   resumes: [],
+  activeImports: [],
+  failedImports: [],
   versions: [],
   versionsLoading: false,
   versionOperationPending: false,
@@ -228,6 +234,8 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
           authStatus: "guest",
           user: null,
           resumes: [],
+          activeImports: [],
+          failedImports: [],
           versions: [],
           importWarningsByResumeId: {},
           activeResumeId: null,
@@ -261,6 +269,8 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       authStatus: "guest",
       user: null,
       resumes: [],
+      activeImports: [],
+      failedImports: [],
       versions: [],
       versionOperationPending: false,
       importWarningsByResumeId: {},
@@ -285,6 +295,8 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       authStatus: "guest",
       user: null,
       resumes: [],
+      activeImports: [],
+      failedImports: [],
       versions: [],
       versionOperationPending: false,
       activeResumeId: null,
@@ -295,8 +307,12 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   },
 
   listResumes: async () => {
-    const { resumes } = await api.listResumes();
-    set({ resumes });
+    const overview = await api.getResumeOverview();
+    set({
+      resumes: overview.resumes,
+      activeImports: overview.active_imports,
+      failedImports: overview.failed_imports,
+    });
   },
 
   createResume: async (title, templateId) => {
@@ -311,21 +327,36 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
 
   importResume: async (file, templateId) => {
     const idempotencyKey = crypto.randomUUID();
-    const { resume, import: importResult } = await api.importResume(
-      file,
-      templateId,
-      idempotencyKey,
-    );
-    set((state) => ({
-      resumes: mergeResumeSummary(state.resumes, resume),
-      versions: [],
-      importWarningsByResumeId: {
-        ...state.importWarningsByResumeId,
-        [resume.id]: importResult.warnings,
-      },
-      ...applyResume(resume),
-    }));
-    return resume.id;
+    try {
+      const { import: importTask } = await api.importResume(
+        file,
+        templateId,
+        idempotencyKey,
+      );
+      set((state) => ({
+        activeImports: [
+          importTask,
+          ...state.activeImports.filter((item) => item.id !== importTask.id),
+        ],
+        failedImports: state.failedImports.filter((item) => item.id !== importTask.id),
+      }));
+      return importTask.id;
+    } catch (error) {
+      if (error instanceof Error && "payload" in error) {
+        const payload = (error as { payload?: Record<string, unknown> | null }).payload;
+        const importTask = payload?.import as ResumeImportSummary | undefined;
+        if (importTask?.id) {
+          set((state) => ({
+            activeImports: state.activeImports.filter((item) => item.id !== importTask.id),
+            failedImports: [
+              importTask,
+              ...state.failedImports.filter((item) => item.id !== importTask.id),
+            ],
+          }));
+        }
+      }
+      throw error;
+    }
   },
 
   loadResume: async (id) => {
@@ -348,6 +379,14 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     if (get().activeResumeId === id) {
       set({ activeResumeId: null, versions: [], lockVersion: 0, dirty: false, saveStatus: "idle" });
     }
+  },
+
+  deleteResumeImport: async (id) => {
+    const { deleted } = await api.deleteResumeImport(id);
+    if (!deleted) throw new Error("RESUME_IMPORT_DELETE_FAILED");
+    set((state) => ({
+      failedImports: state.failedImports.filter((item) => item.id !== id),
+    }));
   },
 
   saveCurrentResume: async () => {

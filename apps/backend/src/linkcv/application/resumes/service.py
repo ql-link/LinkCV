@@ -1,6 +1,7 @@
 from copy import deepcopy
+from datetime import timedelta, timezone
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from linkcv.application.resumes.commands import CreateResumeCommand
@@ -9,7 +10,7 @@ from linkcv.domain.resume_document import ResumeDocumentV1
 from linkcv.domain.resume_snapshot import ResumeSnapshot, parse_resume_snapshot
 from linkcv.domain.resume_style import ResumeStyleV1, default_resume_style
 from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.models import Resume, ResumeVersion
+from linkcv.modules.resumes.models import Resume, ResumeImport, ResumeVersion
 
 MAX_RESUMES_PER_USER = 10
 
@@ -66,12 +67,66 @@ def lock_owned_resume(db: Session, resume_id: str, user_id: int) -> Resume | Non
 
 
 def has_resume_capacity(db: Session, user_id: int) -> bool:
-    existing_ids = db.scalars(
-        select(Resume.id)
-        .where(Resume.user_id == user_id)
-        .limit(MAX_RESUMES_PER_USER)
+    return resume_slot_count(db, user_id) < MAX_RESUMES_PER_USER
+
+
+def resume_slot_count(db: Session, user_id: int) -> int:
+    resume_count = db.scalar(
+        select(func.count(Resume.id)).where(Resume.user_id == user_id)
+    )
+    active_import_count = db.scalar(
+        select(func.count(ResumeImport.id)).where(
+            ResumeImport.user_id == user_id,
+            or_(
+                ResumeImport.upload_status == "uploading",
+                ResumeImport.parse_status == "processing",
+            ),
+        )
+    )
+    return int(resume_count or 0) + int(active_import_count or 0)
+
+
+def close_stale_resume_imports(
+    db: Session,
+    *,
+    user_id: int,
+    upload_stale_seconds: int,
+    parse_stale_seconds: int,
+) -> None:
+    now = utc_now()
+    upload_cutoff = now - timedelta(seconds=upload_stale_seconds)
+    parse_cutoff = now - timedelta(seconds=parse_stale_seconds)
+    records = db.scalars(
+        select(ResumeImport)
+        .where(
+            ResumeImport.user_id == user_id,
+            or_(
+                and_(
+                    ResumeImport.upload_status == "uploading",
+                    ResumeImport.updated_at < upload_cutoff,
+                ),
+                and_(
+                    ResumeImport.parse_status == "processing",
+                    ResumeImport.updated_at < parse_cutoff,
+                ),
+            ),
+        )
+        .with_for_update()
     ).all()
-    return len(existing_ids) < MAX_RESUMES_PER_USER
+    for record in records:
+        created_at = record.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        elapsed_ms = round((now - created_at).total_seconds() * 1000)
+        elapsed_ms = min(max(0, elapsed_ms), 2**32 - 1)
+        if record.upload_status == "uploading":
+            record.upload_status = "failed"
+            record.upload_duration_ms = elapsed_ms
+        else:
+            record.parse_status = "failed"
+            record.parse_duration_ms = elapsed_ms
+    if records:
+        db.commit()
 
 
 def normalize_resume_title(value: str | None) -> str:
@@ -120,9 +175,6 @@ def persist_resume_with_initial_version(
         data_json=snapshot.data.model_dump(mode="json"),
         style_json=snapshot.style.model_dump(mode="json"),
         source_type=command.source_type,
-        source_filename=command.source_filename,
-        source_object_key=command.source_object_key,
-        extracted_markdown=command.extracted_markdown,
     )
     db.add(resume)
     db.flush()
@@ -150,12 +202,7 @@ def create_resume_with_initial_version(
         )
         if locked_user_id is None:
             raise RuntimeError("resume owner no longer exists")
-        resume_ids = db.scalars(
-            select(Resume.id)
-            .where(Resume.user_id == command.user_id)
-            .with_for_update()
-        ).all()
-        if len(resume_ids) >= MAX_RESUMES_PER_USER:
+        if not has_resume_capacity(db, command.user_id):
             raise ResumeLimitExceeded
 
         normalized_command = CreateResumeCommand(
@@ -185,10 +232,7 @@ def create_resume_from_template(
         )
         if locked_user_id is None:
             raise RuntimeError("resume owner no longer exists")
-        resume_ids = db.scalars(
-            select(Resume.id).where(Resume.user_id == user_id).with_for_update()
-        ).all()
-        if len(resume_ids) >= MAX_RESUMES_PER_USER:
+        if not has_resume_capacity(db, user_id):
             raise ResumeLimitExceeded
         _assert_unique_resume_title(db, user_id=user_id, title=normalized_title)
         template = db.scalar(
