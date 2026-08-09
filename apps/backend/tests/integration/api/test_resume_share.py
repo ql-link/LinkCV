@@ -116,6 +116,70 @@ def test_create_share_public_read_and_overwrite() -> None:
         assert guest.get("/api/share/not-a-real-token").status_code == 404
 
 
+def test_create_share_with_requested_visibility() -> None:
+    app = build_app()
+    with ExitStack() as stack:
+        owner = stack.enter_context(TestClient(app))
+        guest = stack.enter_context(TestClient(app))
+        register(owner, "owner@example.com")
+
+        resume_id = create_resume(owner, app).json()["resume"]["id"]
+
+        # 创建时指定仅自己可见，公开访问立即失效
+        created = owner.post(
+            f"/api/resumes/{resume_id}/share",
+            json={"visibility": "private"},
+        )
+        assert created.status_code == 200
+        share = created.json()["share"]
+        assert share["share_visibility"] == "private"
+        token = share["share_token"]
+        assert guest.get(f"/api/share/{token}").status_code == 404
+
+        # 覆盖时同样可指定可见性：改为所有人可见后公开可读
+        overwritten = owner.post(
+            f"/api/resumes/{resume_id}/share",
+            json={"visibility": "public"},
+        )
+        assert overwritten.status_code == 200
+        new_token = overwritten.json()["share"]["share_token"]
+        assert overwritten.json()["share"]["share_visibility"] == "public"
+        assert guest.get(f"/api/share/{new_token}").status_code == 200
+
+
+def test_create_share_with_requested_expiry() -> None:
+    app = build_app()
+    with ExitStack() as stack:
+        owner = stack.enter_context(TestClient(app))
+        guest = stack.enter_context(TestClient(app))
+        register(owner, "owner@example.com")
+
+        resume_id = create_resume(owner, app).json()["resume"]["id"]
+
+        # 创建时指定有效期（7 天后过期）
+        expires_at = "2099-01-01T00:00:00+00:00"
+        created = owner.post(
+            f"/api/resumes/{resume_id}/share",
+            json={"expires_at": expires_at},
+        )
+        assert created.status_code == 200
+        share = created.json()["share"]
+        assert share["share_expires_at"].startswith("2099-01-01T00:00:00")
+
+        # 未过期时公开可读
+        token = share["share_token"]
+        assert guest.get(f"/api/share/{token}").status_code == 200
+
+        # 已过期的时间创建后立即失效
+        expired = owner.post(
+            f"/api/resumes/{resume_id}/share",
+            json={"expires_at": "2000-01-01T00:00:00+00:00"},
+        )
+        assert expired.status_code == 200
+        expired_token = expired.json()["share"]["share_token"]
+        assert guest.get(f"/api/share/{expired_token}").status_code == 404
+
+
 def test_private_visibility_access_matrix() -> None:
     app = build_app()
     with ExitStack() as stack:

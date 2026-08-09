@@ -17,6 +17,7 @@ from linkcv.modules.resumes.models import Resume
 from linkcv.modules.resumes.schemas import (
     DeleteResumeShareResponse,
     PublicSharePayload,
+    ResumeShareCreateRequest,
     ResumeShareResponse,
     ResumeShareUpdateRequest,
 )
@@ -46,11 +47,18 @@ def get_share_state(
 @router.post("", response_model=ResumeShareResponse)
 def create_share(
     resume_id: str,
+    request: ResumeShareCreateRequest | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ResumeShareResponse:
-    resume = _require_owned_resume(db, resume_id, user.id)
-    updated = create_or_overwrite_share(db, resume_id, user.id)
+    _require_owned_resume(db, resume_id, user.id)
+    updated = create_or_overwrite_share(
+        db,
+        resume_id,
+        user.id,
+        visibility=request.visibility if request else None,
+        expires_at=request.expires_at if request else None,
+    )
     if updated is None:
         raise ApiError(404, "RESUME_NOT_FOUND")
     return ResumeShareResponse(share=share_state_of(updated))

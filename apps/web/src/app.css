@@ -2812,6 +2812,10 @@ select:focus-visible,
 
 .share-panel-actions .share-panel-danger { border-color: #f0c8c3; color: #c0392b; }
 
+.share-panel-actions .share-panel-save { border-color: #1d1d1f; background: #1d1d1f; color: #ffffff; }
+
+.share-panel-dirty { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
 /* ---- 公开分享页 ---- */
 
 .share-page {

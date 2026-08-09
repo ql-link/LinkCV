@@ -75,14 +75,14 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 | Method   | Path                  | 鉴权 | 成功结果                                                                 |
 | -------- | --------------------- | ---- | ------------------------------------------------------------------------ |
 | `GET`    | `/api/resumes/:id/share`    | 是   | `{share}`；未开启分享时 `share` 为 `null`                        |
-| `POST`   | `/api/resumes/:id/share`    | 是   | `{share}`；无链接时创建，已有链接时作废旧 token 并生成新 token（一键覆盖） |
+| `POST`   | `/api/resumes/:id/share`    | 是   | `{share}`；请求可选 `{visibility, expires_at}`，无链接时创建，已有链接时作废旧 token 并生成新 token（一键覆盖） |
 | `PATCH`  | `/api/resumes/:id/share`    | 是   | `{share}`；请求可选 `{visibility, expires_at}`，可续期或改为仅自己可见     |
 | `DELETE` | `/api/resumes/:id/share`    | 是   | `{deleted: true}`；清空分享字段，旧地址访问统一失效，重复删除幂等          |
 | `GET`    | `/api/share/{token}`        | 否   | `{data, style, sharer}`；`sharer` 为 `{nickname, avatar_url}`             |
 
 `share` 为 `{share_token, share_visibility, share_expires_at, share_created_at}`。`share_visibility` 只允许 `public|private`，`share_expires_at` 为带时区的 ISO 8601，`null` 表示长期有效；`private` 时只有分享者本人登录可见，未登录或其他用户访问一律按失效处理。
 
-`POST` 创建或覆盖会重置可见性为 `public` 并清除过期时间。`PATCH` 用 `model_fields_set` 区分传入字段，可单独续期（延长或清除 `expires_at`）或切换可见性；未开启分享时返回 `404 SHARE_LINK_UNAVAILABLE`。token 使用 `secrets.token_urlsafe(16)`（约 160 bit 熵）且全局唯一，冲突重试 3 次。为避免枚举探测，以下场景在管理侧与公开侧统一返回 `404 SHARE_LINK_UNAVAILABLE`：token 不存在、已删除、已过期、`private` 无权查看、简历或最新版本不存在。过期后可再次 `PATCH expires_at` 恢复访问，不需重建链接。
+`POST` 创建或覆盖请求可选 `{visibility, expires_at}` 分别指定可见性（缺省 `public`）与有效期（缺省永久，即 `expires_at` 为 `null`）。`PATCH` 用 `model_fields_set` 区分传入字段，可单独续期（延长或清除 `expires_at`）或切换可见性；未开启分享时返回 `404 SHARE_LINK_UNAVAILABLE`。token 使用 `secrets.token_urlsafe(16)`（约 160 bit 熵）且全局唯一，冲突重试 3 次。为避免枚举探测，以下场景在管理侧与公开侧统一返回 `404 SHARE_LINK_UNAVAILABLE`：token 不存在、已删除、已过期、`private` 无权查看、简历或最新版本不存在。过期后可再次 `PATCH expires_at` 恢复访问，不需重建链接。
 
 ## 文件导入
 

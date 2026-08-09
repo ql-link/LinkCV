@@ -601,9 +601,13 @@ export const api = {
     ),
   getShareState: (id: string) =>
     request<{ share: ResumeShareState | null }>(`/api/resumes/${id}/share`),
-  createShare: (id: string) =>
+  createShare: (
+    id: string,
+    payload?: { visibility?: "private" | "public"; expires_at?: string | null },
+  ) =>
     request<{ share: ResumeShareState }>(`/api/resumes/${id}/share`, {
       method: "POST",
+      body: payload,
     }),
   updateShare: (id: string, payload: ResumeShareUpdatePayload) =>
     request<{ share: ResumeShareState }>(`/api/resumes/${id}/share`, {
