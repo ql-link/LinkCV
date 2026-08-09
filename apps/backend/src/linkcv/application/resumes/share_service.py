@@ -49,6 +49,9 @@ def create_or_overwrite_share(
     db: Session,
     resume_id: str,
     user_id: int,
+    *,
+    visibility: str | None = None,
+    expires_at=None,
 ) -> Resume | None:
     """无链接时生成新链接；已有链接时作废旧 token 并生成新 token。"""
     resume = find_owned_resume(db, resume_id, user_id)
@@ -57,8 +60,8 @@ def create_or_overwrite_share(
     try:
         for _ in range(_TOKEN_GENERATION_TRIES):
             resume.share_token = _generate_share_token()
-            resume.share_visibility = DEFAULT_SHARE_VISIBILITY
-            resume.share_expires_at = None
+            resume.share_visibility = visibility or DEFAULT_SHARE_VISIBILITY
+            resume.share_expires_at = expires_at
             resume.share_created_at = utc_now()
             try:
                 db.commit()

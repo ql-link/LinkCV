@@ -160,6 +160,13 @@ class ResumeShareResponse(BaseModel):
     share: ResumeShareState | None
 
 
+class ResumeShareCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    visibility: Literal["private", "public"] | None = None
+    expires_at: datetime | None = None
+
+
 class ResumeShareUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
