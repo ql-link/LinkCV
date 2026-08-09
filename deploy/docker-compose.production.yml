@@ -14,6 +14,8 @@ services:
       TZ: Asia/Shanghai
     ports:
       - "${LINKCV_HTTP_PORT:-8000}:8000"
+    volumes:
+      - linkcv-production-logs:/app/logs
     networks:
       - linkcv-runtime
     labels:
@@ -31,6 +33,27 @@ services:
       retries: 3
       start_period: 20s
 
+  promtail:
+    image: grafana/promtail:2.9.8
+    container_name: linkcv-promtail
+    restart: always
+    command:
+      - -config.file=/etc/promtail/promtail-config.yml
+      - -config.expand-env=true
+    env_file:
+      - ${LINKCV_ENV_FILE:-../.env.production}
+    volumes:
+      - ./observability/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - linkcv-production-logs:/var/log/linkcv:ro
+      - linkcv-production-promtail-positions:/tmp
+    networks:
+      - linkcv-runtime
+    depends_on:
+      linkcv:
+        condition: service_started
+      linkcv-worker:
+        condition: service_started
+
   linkcv-worker:
     image: linkcv:${TAG:-latest}
     container_name: linkcv-worker
@@ -41,7 +64,10 @@ services:
       - ${LINKCV_SECRET_ENV_FILE:-../.env.production.local}
     environment:
       APP_ENV: production
+      LOG_DIRECTORY: /app/logs/worker
       TZ: Asia/Shanghai
+    volumes:
+      - linkcv-production-logs:/app/logs
     networks:
       - linkcv-runtime
     labels:
@@ -52,3 +78,9 @@ networks:
   linkcv-runtime:
     external: true
     name: ${LINKCV_DOCKER_NETWORK:-tolink-app-net}
+
+volumes:
+  linkcv-production-logs:
+    name: linkcv-production-logs
+  linkcv-production-promtail-positions:
+    name: linkcv-production-promtail-positions

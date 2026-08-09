@@ -29,7 +29,8 @@ import {
   X,
 } from "lucide-react";
 import { Brand } from "../../components/ds";
-import { LogsPanel, ModelsPanel } from "./AdminLlmPanels";
+import { ModelsPanel } from "./AdminLlmPanels";
+import { AdminLogsCenter } from "./AdminObservabilityPanels";
 import { AdminTemplatePanel } from "./AdminTemplatePanel";
 import { PluginReleasePanel } from "./PluginReleasePanel";
 import "./admin.css";
@@ -61,7 +62,7 @@ const adminSectionPaths: Record<AdminSection, string> = {
   templates: "/admin/templates",
   models: "/admin/llm/models",
   plugins: "/admin/plugins",
-  logs: "/admin/logs",
+  logs: "/admin/logs/system",
 };
 
 const spring = {
@@ -359,7 +360,7 @@ function AdminWorkspace({
               )}
               {section === "plugins" && <PluginReleasePanel />}
               {section === "logs" && (
-                <LogsPanel
+                <AdminLogsCenter
                   notify={notify}
                   onSessionExpired={onSessionExpired}
                 />
@@ -407,7 +408,7 @@ const sectionLabels: Record<AdminSection, string> = {
   templates: "简历模板",
   models: "模型配置",
   plugins: "插件发布",
-  logs: "LLM 调用日志",
+  logs: "日志中心",
 };
 
 function SidebarContent({
@@ -429,7 +430,7 @@ function SidebarContent({
     { id: "templates", label: "简历模板", icon: FileText },
     { id: "models", label: "模型配置", icon: Bot },
     { id: "plugins", label: "插件发布", icon: PackageOpen },
-    { id: "logs", label: "LLM 调用日志", icon: Activity },
+    { id: "logs", label: "日志中心", icon: Activity },
   ];
   return (
     <>

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import unicodedata
+from time import monotonic
 
 from linkcv.domain.document_conversion import (
     DocumentConversionFailure,
@@ -8,6 +10,8 @@ from linkcv.domain.document_conversion import (
 )
 from linkcv.integrations.docx_parse_runner import DocxParseRunner
 from linkcv.integrations.linkparse_client import LinkParseClient
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_markdown(markdown: str) -> str:
@@ -59,23 +63,49 @@ class DocumentConverter:
                 operation_id=operation_id,
                 deadline_monotonic=deadline_monotonic,
             )
-        if extension == "md":
-            markdown = normalize_markdown(content.decode("utf-8"))
-            warnings: list[str] = []
-            parser = "linkcv-direct-markdown"
-        elif extension == "docx":
-            markdown, warnings = await self._docx_runner.convert(
-                content,
-                deadline_monotonic=deadline_monotonic,
+        started = monotonic()
+        logger.info(
+            "document conversion started",
+            extra={"operation_id": operation_id, "summary": f"format={extension}"},
+        )
+        try:
+            if extension == "md":
+                markdown = normalize_markdown(content.decode("utf-8"))
+                warnings: list[str] = []
+                parser = "linkcv-direct-markdown"
+            elif extension == "docx":
+                markdown, warnings = await self._docx_runner.convert(
+                    content,
+                    deadline_monotonic=deadline_monotonic,
+                )
+                markdown = normalize_markdown(markdown)
+                parser = "mammoth"
+            else:
+                raise DocumentConversionFailure(415, "UNSUPPORTED_IMPORT_FORMAT")
+            if not markdown:
+                raise DocumentConversionFailure(422, "IMPORT_CONTENT_INVALID")
+            if len(markdown.encode("utf-8")) > self._markdown_max_bytes:
+                raise DocumentConversionFailure(413, "IMPORT_FILE_TOO_LARGE")
+        except (DocumentConversionFailure, UnicodeDecodeError) as error:
+            logger.warning(
+                "document conversion failed",
+                extra={
+                    "operation_id": operation_id,
+                    "duration_ms": round((monotonic() - started) * 1000),
+                    "error_code": getattr(error, "code", "IMPORT_CONTENT_INVALID"),
+                    "exception_type": type(error).__name__,
+                    "summary": f"format={extension}",
+                },
             )
-            markdown = normalize_markdown(markdown)
-            parser = "mammoth"
-        else:
-            raise DocumentConversionFailure(415, "UNSUPPORTED_IMPORT_FORMAT")
-        if not markdown:
-            raise DocumentConversionFailure(422, "IMPORT_CONTENT_INVALID")
-        if len(markdown.encode("utf-8")) > self._markdown_max_bytes:
-            raise DocumentConversionFailure(413, "IMPORT_FILE_TOO_LARGE")
+            raise
+        logger.info(
+            "document conversion completed",
+            extra={
+                "operation_id": operation_id,
+                "duration_ms": round((monotonic() - started) * 1000),
+                "summary": f"format={extension};parser={parser}",
+            },
+        )
         return DocumentMarkdownResult(
             markdown=markdown,
             source_file_name=filename,

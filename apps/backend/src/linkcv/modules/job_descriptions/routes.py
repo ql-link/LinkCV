@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from linkcv.application.job_descriptions.service import (
@@ -37,6 +37,7 @@ from linkcv.modules.job_descriptions.schemas import (
     JobDescriptionUpdateRequest,
     JobLifecycleRequest,
 )
+from linkcv.modules.observability.audit import bind_audit_target
 
 router = APIRouter(prefix="/job-descriptions", tags=["job-descriptions"])
 
@@ -99,6 +100,7 @@ def list_job_descriptions(
 @router.post("", response_model=JobDescriptionResponse, status_code=201)
 def create_job_description(
     payload: JobDescriptionCreateRequest,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -114,12 +116,14 @@ def create_job_description(
     except JobWriteFailed as error:
         raise ApiError(500, "JD_WRITE_FAILED") from error
     response.status_code = 201 if result.created else 200
+    bind_audit_target(request, result.job.id)
     return JobDescriptionResponse(job_description=job_record(result.job))
 
 
 @router.post("/import", response_model=JobDescriptionResponse, status_code=201)
 def import_job_description(
     payload: JobDescriptionImportRequest,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -138,6 +142,7 @@ def import_job_description(
     except JobWriteFailed as error:
         raise ApiError(500, "JD_WRITE_FAILED") from error
     response.status_code = 201 if result.created else 200
+    bind_audit_target(request, result.job.id)
     return JobDescriptionResponse(job_description=job_record(result.job))
 
 

@@ -21,6 +21,7 @@ from linkcv.core.storage import AssetStorage, build_import_object_name, get_stor
 from linkcv.domain.resume_snapshot import parse_resume_snapshot
 from linkcv.modules.identity.dependencies import get_current_user, get_settings
 from linkcv.modules.identity.models import User
+from linkcv.modules.observability.audit import bind_audit_target
 from linkcv.modules.resumes.models import ResumeImport, ResumeTemplate
 from linkcv.modules.resumes.schemas import ResumeImportResponse, ResumeImportSummary
 from linkcv.services.resume_import_idempotency import (
@@ -196,9 +197,9 @@ async def import_resume(
                     ) from error
             if existing is None or existing.import_id is None:
                 raise ApiError(409, "IMPORT_ACCEPTANCE_IN_PROGRESS")
-            return _replay_response(
-                _load_owned_import(db, existing.import_id, user.id), response
-            )
+            record = _load_owned_import(db, existing.import_id, user.id)
+            bind_audit_target(request, record.id)
+            return _replay_response(record, response)
 
         assert template is not None
         admission_context = import_admission.acquire(user.id)
@@ -235,11 +236,12 @@ async def import_resume(
                     ) from error
             if state is None or state.import_id is None:
                 raise ApiError(409, "IMPORT_ACCEPTANCE_IN_PROGRESS")
-            return _replay_response(
-                _load_owned_import(db, state.import_id, user.id), response
-            )
+            record = _load_owned_import(db, state.import_id, user.id)
+            bind_audit_target(request, record.id)
+            return _replay_response(record, response)
 
         operation_id = uuid4().hex
+        request.state.operation_id = operation_id
         object_key = build_import_object_name(user.id, operation_id, filename)
         try:
             locked_user_id = db.scalar(
@@ -259,6 +261,7 @@ async def import_resume(
             db.add(record)
             db.commit()
             db.refresh(record)
+            bind_audit_target(request, record.id)
         except Exception:
             db.rollback()
             raise

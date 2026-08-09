@@ -3,7 +3,7 @@ import logging
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, load_only
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from linkcv.application.resumes.service import (
     InvalidResumeTitle,
@@ -33,6 +33,7 @@ from linkcv.modules.resumes.schemas import (
     ResumeSummary,
     ResumeUpdateRequest,
 )
+from linkcv.modules.observability.audit import bind_audit_target
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,7 @@ def list_resumes(
 @router.post("", response_model=ResumeResponse, status_code=201)
 def create_resume(
     payload: ResumeCreateRequest,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ResumeResponse:
@@ -127,6 +129,7 @@ def create_resume(
         raise ApiError(422, "TEMPLATE_INACTIVE") from error
     except ResumeLimitExceeded as error:
         raise ApiError(409, "RESUME_LIMIT_REACHED") from error
+    bind_audit_target(request, resume.id)
     return ResumeResponse(resume=resume_record(resume))
 
 

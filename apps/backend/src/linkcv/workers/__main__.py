@@ -11,6 +11,7 @@ from linkcv.integrations.resume_structuring import LLMResumeStructuringClient
 from linkcv.modules.llm.crypto import CredentialCipher
 from linkcv.modules.llm.gateway import LiteLLMGateway
 from linkcv.modules.llm.service import LLMService
+from linkcv.modules.observability.logging import configure_logging
 from linkcv.services.resume_import_service import ResumeImportService
 from linkcv.workers.resume_import_consumer import run_consumer
 from linkcv.workers.resume_import_worker import ResumeImportProcessor
@@ -18,6 +19,7 @@ from linkcv.workers.resume_import_worker import ResumeImportProcessor
 
 async def main() -> None:
     settings = load_settings()
+    configure_logging(settings)
     session_factory = build_session_factory(build_engine(settings.sqlalchemy_url))
     storage = AssetStorage(settings)
     redis = build_redis_client(settings)

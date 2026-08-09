@@ -405,6 +405,78 @@ export type JobDuplicateDetails = {
   };
 };
 
+export type LogItem = {
+  timestampNs: string;
+  timestamp: string;
+  eventId: string;
+  eventVersion: number;
+  logType: "system" | "audit";
+  level: string;
+  service: string;
+  environment: string;
+  source: string;
+  logger: string;
+  message: string;
+  requestId: string | null;
+  taskId: string | null;
+  operationId: string | null;
+  actorUserId: string | null;
+  dependency: string | null;
+  durationMs: number | null;
+  httpMethod: string | null;
+  httpRoute: string | null;
+  httpStatus: number | null;
+  errorCode: string | null;
+  exceptionType: string | null;
+  exceptionStack: string | null;
+  action: string | null;
+  actorType: string | null;
+  targetType: string | null;
+  targetId: string | null;
+  result: string | null;
+  summary: string | null;
+};
+
+export type LogListResponse = {
+  items: LogItem[];
+  nextCursor: string | null;
+  partial: boolean;
+  droppedMalformed: number;
+};
+
+export type SystemLogQuery = {
+  from?: string;
+  to?: string;
+  level?: "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
+  source?: "backend" | "web";
+  dependency?: "mysql" | "redis" | "minio" | "linkparse" | "llm";
+  requestId?: string;
+  taskId?: string;
+  operationId?: string;
+  errorCode?: string;
+  keyword?: string;
+  cursor?: string;
+  limit?: number;
+};
+
+export type AuditLogQuery = {
+  from?: string;
+  to?: string;
+  action?: string;
+  actorUserId?: string;
+  targetType?: string;
+  targetId?: string;
+  result?: "succeeded" | "failed";
+  requestId?: string;
+  cursor?: string;
+  limit?: number;
+};
+
+export type LogSummary = {
+  system: { total: number; warnings: number; errors: number };
+  audit: { total: number; succeeded: number; failed: number };
+};
+
 type ApiOptions = {
   method?: string;
   body?: unknown;
@@ -417,6 +489,7 @@ export class ApiRequestError extends Error {
     readonly status: number,
     code: string,
     readonly payload: Record<string, unknown> | null = null,
+    readonly requestId: string | null = null,
   ) {
     super(code);
     this.name = "ApiRequestError";
@@ -424,6 +497,30 @@ export class ApiRequestError extends Error {
 }
 
 let refreshInFlight: Promise<boolean> | null = null;
+
+function createRequestId(): string {
+  return globalThis.crypto?.randomUUID?.().replace(/-/g, "") ??
+    `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+}
+
+function reportApi5xx(error: ApiRequestError): void {
+  if (typeof fetch !== "function") return;
+  const reportRequestId = createRequestId();
+  void fetch("/api/observability/client-events", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Request-ID": reportRequestId,
+    },
+    body: JSON.stringify({
+      event_type: "api_5xx",
+      error_name: error.name,
+      message: error.message,
+      request_id: error.requestId,
+    }),
+    credentials: "include",
+  }).catch(() => undefined);
+}
 
 async function refreshSession(): Promise<boolean> {
   if (!refreshInFlight) {
@@ -452,10 +549,12 @@ async function request<T>(
   options: ApiOptions = {},
   retryAuth = true,
 ): Promise<T> {
+  const requestId = options.headers?.["X-Request-ID"] ?? createRequestId();
   const response = await fetch(path, {
     method: options.method ?? "GET",
     headers: {
       ...(options.body ? { "Content-Type": "application/json" } : {}),
+      "X-Request-ID": requestId,
       ...options.headers,
     },
     body:
@@ -466,12 +565,14 @@ async function request<T>(
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
+    const responseRequestId = response.headers?.get?.("X-Request-ID") ?? requestId;
     const error = new ApiRequestError(
       response.status,
       typeof data.error === "string" ? data.error : `HTTP_${response.status}`,
       data && typeof data === "object"
         ? (data as Record<string, unknown>)
         : null,
+      responseRequestId,
     );
 
     if (
@@ -485,6 +586,9 @@ async function request<T>(
       }
     }
 
+    if (response.status >= 500 && path !== "/api/observability/client-events") {
+      reportApi5xx(error);
+    }
     throw error;
   }
   return data as T;
@@ -829,6 +933,58 @@ export const api = {
       nextCursor: string | null;
     }>(`/api/admin/llm/calls${suffix ? `?${suffix}` : ""}`);
   },
+  reportClientEvent: (payload: {
+    eventType: "unhandled_error" | "unhandled_rejection" | "render_error" | "api_5xx";
+    errorName: string;
+    message: string;
+    stack?: string | null;
+    requestId?: string | null;
+  }) =>
+    request<{ accepted: true; eventId: string | null }>(
+      "/api/observability/client-events",
+      {
+        method: "POST",
+        body: {
+          event_type: payload.eventType,
+          error_name: payload.errorName,
+          message: payload.message,
+          stack: payload.stack,
+          request_id: payload.requestId,
+        },
+      },
+    ),
+  reportAuditEvent: (payload: {
+    action: "resume.pdf_export";
+    targetId: string;
+    result: "succeeded" | "failed";
+    errorCode?: string | null;
+  }) =>
+    request<{ accepted: true; eventId: string | null }>("/api/audit/events", {
+      method: "POST",
+      body: {
+        action: payload.action,
+        target_type: "resume",
+        target_id: payload.targetId,
+        result: payload.result,
+        error_code: payload.errorCode,
+      },
+    }),
+  adminListSystemLogs: (params: SystemLogQuery = {}) =>
+    request<LogListResponse>(withLogQuery("/api/admin/logs/system", params)),
+  adminListAuditLogs: (params: AuditLogQuery = {}) =>
+    request<LogListResponse>(withLogQuery("/api/admin/logs/audit", params)),
+  adminLogSummary: (params: { from?: string; to?: string } = {}) =>
+    request<LogSummary>(withLogQuery("/api/admin/logs/summary", params)),
 };
+
+function withLogQuery(path: string, params: Record<string, unknown>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value == null || value === "") continue;
+    search.set(key, String(value));
+  }
+  const suffix = search.toString();
+  return `${path}${suffix ? `?${suffix}` : ""}`;
+}
 
 export type { ResumeDocumentV1, ResumeStyleV1 } from "./resumeContract";

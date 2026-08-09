@@ -315,10 +315,14 @@ class LLMService:
             error_code or "-",
             metering.status if metering else "unknown",
             extra={
-                "call_id": call_id,
-                "status": status,
+                "dependency": "llm",
+                "duration_ms": latency_ms,
+                "operation_id": call_id,
                 "error_code": error_code,
-                "metering_status": metering.status if metering else "unknown",
+                "summary": (
+                    f"status={status};metering="
+                    f"{metering.status if metering else 'unknown'}"
+                ),
             },
         )
 

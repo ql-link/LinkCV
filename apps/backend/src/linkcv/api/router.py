@@ -7,6 +7,7 @@ from linkcv.modules.identity.account_routes import router as account_router
 from linkcv.modules.identity.routes import router as identity_router
 from linkcv.modules.job_descriptions.routes import router as job_description_router
 from linkcv.modules.llm.admin_routes import router as llm_admin_router
+from linkcv.modules.observability.routes import router as observability_router
 from linkcv.modules.plugin_releases.admin_routes import router as plugin_release_admin_router
 from linkcv.modules.plugin_releases.routes import router as plugin_release_router
 from linkcv.modules.resumes.asset_routes import router as asset_router
@@ -33,6 +34,7 @@ api_router.include_router(identity_router)
 api_router.include_router(account_router)
 api_router.include_router(job_description_router)
 api_router.include_router(llm_admin_router)
+api_router.include_router(observability_router)
 api_router.include_router(plugin_release_admin_router)
 api_router.include_router(plugin_release_router)
 api_router.include_router(template_router)

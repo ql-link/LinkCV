@@ -646,7 +646,10 @@ function buildLogQuery(filters: LogFilters): LlmCallQuery {
   };
 }
 
-export function LogsPanel({ onSessionExpired }: PanelProps) {
+export function LogsPanel({
+  onSessionExpired,
+  embedded = false,
+}: PanelProps & { embedded?: boolean }) {
   const [calls, setCalls] = useState<LlmCallRecord[]>([]);
   const [models, setModels] = useState<LlmModelConfig[]>([]);
   const [summary, setSummary] = useState<LlmCallSummary>(emptySummary);
@@ -696,7 +699,7 @@ export function LogsPanel({ onSessionExpired }: PanelProps) {
 
   return (
     <>
-      <PanelHeading eyebrow="可观测性" title="LLM 调用日志" description="查询真实 Chat 调用的安全元数据；数据仅在手动刷新后更新。" action={<button className="admin-secondary-button" type="button" onClick={refresh} disabled={pagePending}><RefreshCw size={15} />{pagePending ? "刷新中…" : "刷新"}</button>} />
+      {!embedded && <PanelHeading eyebrow="可观测性" title="LLM 调用日志" description="查询真实 Chat 调用的安全元数据；数据仅在手动刷新后更新。" action={<button className="admin-secondary-button" type="button" onClick={refresh} disabled={pagePending}><RefreshCw size={15} />{pagePending ? "刷新中…" : "刷新"}</button>} />}
       {loadState === "loading" && <section className="admin-surface llm-state" aria-live="polite"><span className="loading-spinner" /><p>正在加载 LLM 调用日志…</p></section>}
       {loadState === "error" && <section className="admin-surface llm-state llm-error" role="alert"><CircleAlert size={22} /><strong>无法加载 LLM 调用日志</strong><p>{loadError}</p><button type="button" onClick={() => void loadPage(appliedQuery, currentCursor, true)}>重试</button></section>}
       {loadState === "ready" && (

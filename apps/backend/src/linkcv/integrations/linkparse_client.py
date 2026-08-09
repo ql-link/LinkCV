@@ -121,6 +121,52 @@ class LinkParseClient:
         operation_id: str,
         deadline_monotonic: float,
     ) -> DocumentMarkdownResult:
+        started = monotonic()
+        logger.info(
+            "LinkParse request started",
+            extra={"dependency": "linkparse", "operation_id": operation_id},
+        )
+        try:
+            result = await self._parse_pdf(
+                filename=filename,
+                content=content,
+                operation_id=operation_id,
+                deadline_monotonic=deadline_monotonic,
+            )
+        except DocumentConversionFailure as error:
+            logger.warning(
+                "LinkParse request failed",
+                extra={
+                    "dependency": "linkparse",
+                    "operation_id": operation_id,
+                    "duration_ms": round((monotonic() - started) * 1000),
+                    "error_code": error.code,
+                    "exception_type": type(error).__name__,
+                },
+            )
+            raise
+        logger.info(
+            "LinkParse request completed",
+            extra={
+                "dependency": "linkparse",
+                "operation_id": operation_id,
+                "duration_ms": round((monotonic() - started) * 1000),
+                "summary": (
+                    f"parser={result.parser};pages={result.page_count or 0};"
+                    f"ocr={str(result.ocr_applied).lower()}"
+                ),
+            },
+        )
+        return result
+
+    async def _parse_pdf(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        operation_id: str,
+        deadline_monotonic: float,
+    ) -> DocumentMarkdownResult:
         if not self._base_url or not self._api_key:
             raise DocumentConversionFailure(503, "DOCUMENT_CONVERSION_UNAVAILABLE")
         remaining = deadline_monotonic - monotonic()
@@ -212,16 +258,6 @@ class LinkParseClient:
             warnings.append(ImportWarning.PDF_OCR_APPLIED.value)
         if quality == "low":
             warnings.append(ImportWarning.PDF_LOW_TEXT_QUALITY.value)
-        logger.info(
-            "LinkParse completed operation_id=%s request_id=%s engine=%s "
-            "detected_type=%s pages=%s duration_ms=%s",
-            operation_id,
-            request_id,
-            parsed.engine,
-            parsed.detected_type,
-            parsed.meta.page_count,
-            parsed.meta.duration_ms,
-        )
         return DocumentMarkdownResult(
             markdown=markdown,
             source_file_name=filename,

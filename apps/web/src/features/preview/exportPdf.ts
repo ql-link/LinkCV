@@ -1,5 +1,6 @@
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
+import { api } from "../../api/client";
 
 const A4_WIDTH_MM = 210;
 const A4_HEIGHT_MM = 297;
@@ -173,12 +174,34 @@ export function getStandardPdfPageCount(canvasWidth: number, canvasHeight: numbe
   return Math.max(1, Math.ceil(canvasHeight / pageHeightPx));
 }
 
-export async function exportResumePdf(smartOnePage: boolean, title: string) {
+async function recordPdfExport(
+  resumeId: string,
+  result: "succeeded" | "failed",
+  errorCode?: string,
+) {
+  await api
+    .reportAuditEvent({
+      action: "resume.pdf_export",
+      targetId: resumeId,
+      result,
+      errorCode,
+    })
+    .catch(() => undefined);
+}
+
+export async function exportResumePdf(
+  smartOnePage: boolean,
+  title: string,
+  resumeId: string,
+) {
   const papers = Array.from(
     document.querySelectorAll<HTMLElement>(".resume-workbench .resume-paper, .paper-zoom-frame .resume-paper"),
   );
 
-  if (papers.length === 0) return;
+  if (papers.length === 0) {
+    await recordPdfExport(resumeId, "failed", "PDF_EXPORT_CONTENT_MISSING");
+    return;
+  }
 
   const exportRoot = createExportRoot();
 
@@ -223,6 +246,10 @@ export async function exportResumePdf(smartOnePage: boolean, title: string) {
     }
 
     pdf.save(`${sanitizeFilename(title)}.pdf`);
+    await recordPdfExport(resumeId, "succeeded");
+  } catch (error) {
+    await recordPdfExport(resumeId, "failed", "PDF_EXPORT_FAILED");
+    throw error;
   } finally {
     exportRoot.remove();
   }

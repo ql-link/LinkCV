@@ -66,10 +66,12 @@ pipeline {
         sh '''
           set -eu
           docker network inspect "${LINKCV_DOCKER_NETWORK}" >/dev/null
-          mkdir -p "${DEPLOY_DIR}/deploy"
+          mkdir -p "${DEPLOY_DIR}/deploy/observability"
           install -m 0644 .env.production "${LINKCV_ENV_FILE}"
           install -m 0644 deploy/docker-compose.production.yml \
             "${DEPLOY_DIR}/deploy/docker-compose.production.yml"
+          install -m 0644 deploy/observability/promtail-config.yml \
+            "${DEPLOY_DIR}/deploy/observability/promtail-config.yml"
           test -f "${LINKCV_SECRET_ENV_FILE}" || {
             echo "Missing Production secret env file: ${LINKCV_SECRET_ENV_FILE}"
             exit 15
@@ -121,9 +123,12 @@ pipeline {
           attempt=1
           while [ "${attempt}" -le 30 ]; do
             health_status="$(docker inspect --format='{{.State.Health.Status}}' linkcv 2>/dev/null || true)"
+            promtail_status="$(docker inspect --format='{{.State.Status}}' linkcv-promtail 2>/dev/null || true)"
             if [ "${health_status}" = 'healthy' ] && \
+              [ "${promtail_status}" = 'running' ] && \
               curl -fsS "http://127.0.0.1:${LINKCV_HTTP_PORT}/api/health" >/dev/null; then
               echo "Container health: ${health_status}"
+              echo "Promtail status: ${promtail_status}"
               exit 0
             fi
             sleep 2
@@ -132,7 +137,7 @@ pipeline {
 
           docker compose \
             -f "${DEPLOY_DIR}/deploy/docker-compose.production.yml" \
-            logs --tail=100 linkcv
+            logs --tail=100 linkcv promtail
           echo 'Production health check timed out.'
           exit 17
         '''

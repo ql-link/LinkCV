@@ -6,13 +6,15 @@
 - `apps/web/src/App.tsx`：页面状态与主要功能组合。
 - `apps/web/src/features/`：鉴权、首页、编辑器、预览、临时 JD 管理和管理端功能。
 - `apps/web/src/store/resumeStore.ts`：简历编辑状态。
-- `apps/web/src/api/client.ts`：鉴权、模板、简历与同步导入、JD、资源和管理员 API 客户端。
+- `apps/web/src/api/client.ts`：鉴权、模板、简历与异步导入、JD、资源、日志上报和管理员查询 API 客户端。
 - `apps/web/src/api/resumeContract.ts`：语义简历 TypeScript 契约，以及领域 JSON、Markdown 和现有 Tiptap 编辑器之间的过渡适配。
 - `apps/web/vite.config.mjs`：开发服务器、FastAPI 代理和本地图片预览插件。
 
 ## API 调用
 
-API 客户端只发送相对 `/api/...` 请求并携带 cookie，不在业务组件中写死后端主机。开发期全部 `/api` 请求由 Vite 代理到 FastAPI，见 [架构文档](architecture.md#本地请求路径)。短 access 过期后，受保护请求会复用单个 `/api/auth/refresh` 请求轮换双 Cookie，并重试一次原请求；应用启动时 `/api/auth/me` 返回空用户也会先尝试 refresh，再判定为访客。
+API 客户端只发送相对 `/api/...` 请求并携带 cookie，不在业务组件中写死后端主机。每次请求附加 `X-Request-ID`，错误对象保留服务端回传的追踪值；API 5xx 会异步上报稳定错误码和追踪值，不发送原响应 body。开发期全部 `/api` 请求由 Vite 代理到 FastAPI，见 [架构文档](architecture.md#本地请求路径)。短 access 过期后，受保护请求会复用单个 `/api/auth/refresh` 请求轮换双 Cookie，并重试一次原请求；应用启动时 `/api/auth/me` 返回空用户也会先尝试 refresh，再判定为访客。
+
+React 根入口用 Error Boundary 和 `error` / `unhandledrejection` 监听器捕获登录态页面的未处理异常，通过 FastAPI 受保护入口进入统一日志链路；上报失败被吞掉，不能形成递归上报或替代原始页面错误。上报内容限制为错误类型、消息、栈和可选 request ID，不发送 Store、表单、简历正文或浏览器 Cookie。
 
 新增或迁移接口时同时检查：
 
@@ -31,9 +33,11 @@ API 客户端只发送相对 `/api/...` 请求并携带 cookie，不在业务组
 
 JD 临时管理界面使用可恢复路由 `/jobs`、`/jobs/new`、`/jobs/:jobId` 和 `/jobs/:jobId/edit`，与简历页面共享现有 Cookie 会话和工作区侧边栏；在简历、模板、JD 列表、JD 详情及编辑页之间切换时只替换右侧内容区。列表支持活动、已归档、全部范围，关键词搜索和游标加载更多；详情页提供编辑、归档和恢复，只有归档记录在列表及详情页展示站内确认后的永久删除入口。新建页允许手工填写最终结构化字段和可选来源链接。编辑页把来源身份完整显示为只读，不向更新接口发送来源字段。创建遇到来源重复时，页面根据服务端 `allowed_actions` 显示取消、恢复原内容或更新原记录；动作回传记录 ID 和 `lock_version`。浏览器采集插件是独立的 `apps/extension` 应用，通过相同 Cookie 会话调用后端导入接口；Web 不承载页面抓取或插件 API Key 管理。
 
-管理端入口为 `/admin`，模型配置页使用 `/admin/llm/models`，LLM 调用日志页使用 `/admin/logs`。模型页突出可点击的系统 `Chat 模型` 能力区，展示唯一当前模型和多个候选；管理员只填写模型供应商、模型名称、可选 API Base 与 API Key，不填写能力、优先级或价格。供应商选项展示用户可识别的名称，不暴露 LiteLLM adapter 代码；当前支持列表包含以 `dashscope` 路由调用的阿里云百炼（千问）。保存普通候选不改变当前项，“设为当前”会先执行真实测试再切换；编辑当前项也必须先验证拟议配置。密钥字段只写，编辑留空时不进入 PATCH，显式清除才发送 `null`。
+管理端入口为 `/admin`，模型配置页使用 `/admin/llm/models`，日志中心使用 `/admin/logs/system`、`/admin/logs/audit` 和兼容原 LLM 页的 `/admin/logs`。模型页突出可点击的系统 `Chat 模型` 能力区，展示唯一当前模型和多个候选；管理员只填写模型供应商、模型名称、可选 API Base 与 API Key，不填写能力、优先级或价格。供应商选项展示用户可识别的名称，不暴露 LiteLLM adapter 代码；当前支持列表包含以 `dashscope` 路由调用的阿里云百炼（千问）。保存普通候选不改变当前项，“设为当前”会先执行真实测试再切换；编辑当前项也必须先验证拟议配置。密钥字段只写，编辑留空时不进入 PATCH，显式清除才发送 `null`。
 
-管理端新增 `/admin/templates` 模板工作区，可查看启用、停用和结构无效模板，上传严格 JSON 包、真实预览并幂等启停；不提供覆盖或删除。日志页只展示管理端和未来内部 Chat 调用产生的真实记录，当前已接入来源为 `connection_test`。页面支持自由输入来源，以及按状态、模型、用户、精确 `callId` 和时间范围筛选、手动刷新与游标翻页；不轮询、不展示普通系统事件或简历导入记录。
+日志中心的系统页支持按级别、依赖、request ID 和关键词筛选；审计页支持按固定动作、操作者、目标和结果筛选；两者展示最近 24 小时摘要、部分脏行提示和游标分页。LLM 页继续读取 MySQL 中的真实调用记录，支持来源、状态、模型、用户、精确 `callId` 和时间范围筛选。三个页面都只通过 FastAPI 查询，不直连 Loki，也不轮询。PDF 保存完成或失败后会按当前 `resumeId` 上报审计；审计上报失败不改变 PDF 的保存结果或原始导出异常。
+
+管理端新增 `/admin/templates` 模板工作区，可查看启用、停用和结构无效模板，上传严格 JSON 包、真实预览并幂等启停；不提供覆盖或删除。`/admin/plugins` 提供插件发布管理。
 
 ## 视觉与交互基线
 
