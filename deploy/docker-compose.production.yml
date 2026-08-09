@@ -51,6 +51,28 @@ services:
     depends_on:
       linkcv:
         condition: service_started
+      linkcv-worker:
+        condition: service_started
+
+  linkcv-worker:
+    image: linkcv:${TAG:-latest}
+    container_name: linkcv-worker
+    command: ["python", "-m", "linkcv.workers"]
+    restart: always
+    env_file:
+      - ${LINKCV_ENV_FILE:-../.env.production}
+      - ${LINKCV_SECRET_ENV_FILE:-../.env.production.local}
+    environment:
+      APP_ENV: production
+      LOG_DIRECTORY: /app/logs/worker
+      TZ: Asia/Shanghai
+    volumes:
+      - linkcv-production-logs:/app/logs
+    networks:
+      - linkcv-runtime
+    labels:
+      com.linkcv.environment: production
+      com.linkcv.role: resume-import-worker
 
 networks:
   linkcv-runtime:

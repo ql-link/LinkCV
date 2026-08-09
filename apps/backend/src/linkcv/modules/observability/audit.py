@@ -37,7 +37,9 @@ AUDIT_ACTIONS: dict[tuple[str, str], AuditAction] = {
         "account.asset_upload", "user", target_actor=True
     ),
     ("POST", "/api/resumes"): AuditAction("resume.create", "resume"),
-    ("POST", "/api/resumes/import"): AuditAction("resume.import", "resume"),
+    ("POST", "/api/resumes/import"): AuditAction(
+        "resume.import", "resume_import"
+    ),
     ("PUT", "/api/resumes/{resume_id}"): AuditAction(
         "resume.update", "resume", "resume_id"
     ),

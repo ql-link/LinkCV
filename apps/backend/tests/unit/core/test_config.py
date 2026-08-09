@@ -84,17 +84,37 @@ def test_resume_version_limit_defaults_to_ten() -> None:
 
 
 def test_resume_import_timeout_defaults_leave_cleanup_budget() -> None:
-    settings = Settings(_env_file=None)
+    settings = Settings(
+        _env_file=None,
+        linkparse_timeout_seconds=90,
+        resume_structuring_timeout_seconds=60,
+        llm_timeout_seconds=75,
+    )
 
-    assert settings.resume_import_deadline_seconds == 180
     assert settings.linkparse_timeout_seconds == 90
     assert settings.resume_structuring_timeout_seconds == 60
     assert settings.llm_timeout_seconds == 75
-    assert settings.resume_import_idempotency_processing_ttl_seconds == 240
     assert (
-        settings.resume_import_idempotency_processing_ttl_seconds
-        >= settings.resume_import_deadline_seconds + 30
+        settings.resume_import_parse_stale_seconds
+        > settings.resume_import_parse_deadline_seconds
     )
+    assert (
+        settings.resume_import_worker_lock_seconds
+        >= settings.resume_import_parse_stale_seconds
+    )
+
+
+def test_resume_import_parse_stale_window_must_exceed_deadline() -> None:
+    with pytest.raises(ValidationError, match="RESUME_IMPORT_PARSE_STALE_SECONDS"):
+        Settings(
+            resume_import_parse_deadline_seconds=180,
+            resume_import_parse_stale_seconds=180,
+        )
+
+
+def test_kafka_vendor_requires_bootstrap_servers() -> None:
+    with pytest.raises(ValidationError, match="KAFKA_BOOTSTRAP_SERVERS"):
+        Settings(mq_vendor="kafka", kafka_bootstrap_servers="")
 
 
 def test_structuring_input_limit_cannot_exceed_markdown_limit() -> None:
@@ -120,8 +140,10 @@ def test_production_rejects_missing_secrets_without_exposing_values() -> None:
     assert "JWT_SECRET" in message
     assert "MINIO_ACCESS_KEY" in message
     assert "MINIO_SECRET_KEY" in message
+    assert "PLUGIN_RELEASE_ORIGIN" in message
     assert "LLM_CREDENTIAL_ENCRYPTION_KEYS" in message
     assert "LINKPARSE_API_KEY" in message
+    assert "RABBITMQ_URL" in message
     assert exposed not in message
     assert "replace-with-secret" not in message
 
@@ -133,9 +155,20 @@ def test_production_accepts_injected_secrets() -> None:
         mysql_password="production-db-secret",
         minio_access_key="production-minio-access",
         minio_secret_key="production-minio-secret",
+        plugin_release_origin="https://linkcv.example.test",
         llm_credential_encryption_keys=(
             f"production:{Fernet.generate_key().decode('ascii')}"
         ),
         linkparse_api_key="fictional-linkparse-key",
+        rabbitmq_url="amqp://linkcv:fictional-secret@rabbitmq:5672/",
     )
     assert settings.minio_bucket == "linkcv"
+    assert settings.plugin_release_origin == "https://linkcv.example.test"
+
+
+def test_plugin_release_origin_must_be_a_root_origin() -> None:
+    with pytest.raises(ValidationError, match="PLUGIN_RELEASE_ORIGIN"):
+        Settings(plugin_release_origin="https://linkcv.example.test/path")
+
+    with pytest.raises(ValidationError, match="PLUGIN_RELEASE_ORIGIN"):
+        Settings(plugin_release_origin="https://linkcv.example.test:invalid")

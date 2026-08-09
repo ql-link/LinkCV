@@ -33,6 +33,11 @@ def install_error_handlers(app: FastAPI) -> None:
         request: Request,
         error: RequestValidationError,
     ) -> JSONResponse:
+        if request.url.path.rstrip("/") == "/api/admin/plugin-releases":
+            return JSONResponse(
+                status_code=422,
+                content={"error": "PLUGIN_RELEASE_INVALID_FILE"},
+            )
         if request.url.path.startswith("/api/job-descriptions"):
             if request.url.path.rstrip("/") == "/api/job-descriptions/import":
                 code = "INVALID_JOB_IMPORT"

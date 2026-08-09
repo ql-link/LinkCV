@@ -554,13 +554,13 @@ def validate_delivery_flow_contract() -> list[str]:
     for relative_path, markers in DELIVERY_FLOW_REQUIRED_MARKERS.items():
         path = REPO_ROOT / relative_path
         if not path.is_file():
-            errors.append(f"单向交付: 缺少正式文件 {relative_path}")
+            errors.append(f"单向交付: 缺少正式文件 {relative_path.as_posix()}")
             continue
         text = path.read_text(encoding="utf-8")
         missing = [marker for marker in markers if marker not in text]
         if missing:
             errors.append(
-                f"{relative_path}: 单向交付契约缺少必要内容 "
+                f"{relative_path.as_posix()}: 单向交付契约缺少必要内容 "
                 + ", ".join(repr(marker) for marker in missing)
             )
 
@@ -572,7 +572,7 @@ def validate_delivery_flow_contract() -> list[str]:
         stale = [marker for marker in markers if marker in text]
         if stale:
             errors.append(
-                f"{relative_path}: 仍含旧的并行来源或禁止收尾规则 "
+                f"{relative_path.as_posix()}: 仍含旧的并行来源或禁止收尾规则 "
                 + ", ".join(repr(marker) for marker in stale)
             )
     return errors
@@ -588,7 +588,7 @@ def validate_reduction_contracts() -> list[str]:
         missing = [marker for marker in markers if marker not in text]
         if missing:
             errors.append(
-                f"{relative_path}: 五项减法契约缺少必要内容 "
+                f"{relative_path.as_posix()}: 五项减法契约缺少必要内容 "
                 + ", ".join(repr(marker) for marker in missing)
             )
     return errors
@@ -601,7 +601,7 @@ def validate_stateless_spec_contract() -> list[str]:
         for path in sorted(item for item in spec_script_root.rglob("*") if item.is_file()):
             errors.append(
                 "无状态 Spec: 不应在 scripts/spec 下重建状态管理脚本 "
-                f"{path.relative_to(REPO_ROOT)}"
+                f"{path.relative_to(REPO_ROOT).as_posix()}"
             )
 
     package_file = REPO_ROOT / "package.json"
@@ -647,7 +647,9 @@ def validate_stateless_spec_contract() -> list[str]:
         path = REPO_ROOT / relative_path
         if not path.is_file():
             if full_repository:
-                errors.append(f"无状态 Spec: 缺少正式文件 {relative_path}")
+                errors.append(
+                    f"无状态 Spec: 缺少正式文件 {relative_path.as_posix()}"
+                )
             continue
         if not full_repository and not str(relative_path).startswith(".ai/skills/"):
             continue
@@ -655,7 +657,7 @@ def validate_stateless_spec_contract() -> list[str]:
         missing = [marker for marker in markers if marker not in text]
         if missing:
             errors.append(
-                f"{relative_path}: 无状态 Spec 契约缺少必要内容 "
+                f"{relative_path.as_posix()}: 无状态 Spec 契约缺少必要内容 "
                 + ", ".join(repr(marker) for marker in missing)
             )
 
@@ -666,7 +668,7 @@ def validate_stateless_spec_contract() -> list[str]:
         ]
         if stale:
             errors.append(
-                f"{path.relative_to(REPO_ROOT)}: 仍含已删除的状态工作流 "
+                f"{path.relative_to(REPO_ROOT).as_posix()}: 仍含已删除的状态工作流 "
                 + ", ".join(repr(marker) for marker in stale)
             )
 
@@ -677,7 +679,7 @@ def validate_stateless_spec_contract() -> list[str]:
         ]
         if stale:
             errors.append(
-                f"{path.relative_to(REPO_ROOT)}: 核心工作流仍含换皮状态字段 "
+                f"{path.relative_to(REPO_ROOT).as_posix()}: 核心工作流仍含换皮状态字段 "
                 + ", ".join(repr(marker) for marker in stale)
             )
 

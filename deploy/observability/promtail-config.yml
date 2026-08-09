@@ -15,7 +15,7 @@ scrape_configs:
           - localhost
         labels:
           job: linkcv-jsonl
-          __path__: /var/log/linkcv/linkcv*.jsonl
+          __path__: /var/log/linkcv/**/linkcv*.jsonl
     pipeline_stages:
       - json:
           expressions:

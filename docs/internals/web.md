@@ -6,7 +6,7 @@
 - `apps/web/src/App.tsx`：页面状态与主要功能组合。
 - `apps/web/src/features/`：鉴权、首页、编辑器、预览、临时 JD 管理和管理端功能。
 - `apps/web/src/store/resumeStore.ts`：简历编辑状态。
-- `apps/web/src/api/client.ts`：鉴权、简历、JD、资源、日志上报和管理员查询 API 客户端。
+- `apps/web/src/api/client.ts`：鉴权、模板、简历与异步导入、JD、资源、日志上报和管理员查询 API 客户端。
 - `apps/web/src/api/resumeContract.ts`：语义简历 TypeScript 契约，以及领域 JSON、Markdown 和现有 Tiptap 编辑器之间的过渡适配。
 - `apps/web/vite.config.mjs`：开发服务器、FastAPI 代理和本地图片预览插件。
 
@@ -25,7 +25,9 @@ React 根入口用 Error Boundary 和 `error` / `unhandledrejection` 监听器�
 
 简历 API 已统一使用 `snake_case`、`ResumeDocumentV1 data` 和 `ResumeStyleV1 style`。当前编辑器仍以 Markdown/Tiptap 提供整页编辑体验：读取时把完整语义字段渲染为 Markdown；用户修改正文后，把受限 Markdown 写入 `custom_section_editor`，同时保留导入生成的结构化字段作为来源基线，后续读取以该自定义正文为准，不把整份 Tiptap JSON 写入后端。完整字段级双向编辑器属于后续产品改造。
 
-简历主页删除使用站内确认弹窗并立即请求后端，只有接口成功才从本地列表移除；失败时保留卡片并显示错误，不再使用刷新会取消的前端延迟计时器。主页提供 Markdown、DOCX 和 PDF 导入入口，每次用户选择文件都会生成新的 UUID `Idempotency-Key` 并随 multipart 请求发送；access 过期后的自动刷新重放保持同一个 Key。同步导入的后端业务 deadline 为 180 秒，Vite 代理预算为 190 秒，前端不另设更短的请求超时。成功后立即进入新简历编辑页，Store 按 resume ID 保存本次 warnings，编辑器显示可关闭的中文质量提示；失败时按格式、大小、数量上限、幂等状态、超时和外部服务状态显示站内提示。前端不持有 LinkParse 或结构化模型密钥。编辑路由根据 API 状态区分不存在或无权访问、登录失效、数据格式不兼容、服务端故障和网络不可达。
+简历主页卡片使用后端摘要中的真实 `data/style` 只读预览；预览纸张和编辑工作台都使用 `ResumeStyleV1.template_key` 对应的主题类，模板内的 `::: left/right` 结构由同一 Markdown 渲染链处理。历史结构无效时显示“预览不可用”，不阻断列表。新建统一进入 `/resumes/new`，用户必须选择启用模板并输入名称；空白简历也是模板。注册成功后只进入空主页，不自动创建第一份简历。模板库和新建页复用同一真实模板预览链。
+
+主页导入弹窗必须同时选择模板和 Markdown、DOCX 或 PDF 文件，每次提交生成新的 UUID `Idempotency-Key`；access 刷新重放保持同一个 Key。API 在请求内同步返回正式简历后，Store 合并摘要、保存本次 warnings 并打开编辑器；失败则保留原列表和当前简历。页面不展示上传中、解析中或失败任务卡，也不轮询导入状态。前端不持有 MinIO、LinkParse 或结构化模型凭据。
 
 版本抽屉直接读取后端不可变版本列表。自动保存请求串行执行，并在每次成功后接续服务端返回的 `lock_version`；用户点击“保存版本”时先保存草稿，再调用版本创建接口。恢复历史版本前会先保存未提交草稿，恢复期间临时禁止编辑，成功后使用后端快照刷新。`smartOnePage` 作为 `ResumeStyleV1.smart_one_page` 随当前快照和历史版本持久化。编辑器图片上传使用当前简历的私有资源接口。
 
@@ -35,9 +37,12 @@ JD 临时管理界面使用可恢复路由 `/jobs`、`/jobs/new`、`/jobs/:jobId
 
 日志中心的系统页支持按级别、依赖、request ID 和关键词筛选；审计页支持按固定动作、操作者、目标和结果筛选；两者展示最近 24 小时摘要、部分脏行提示和游标分页。LLM 页继续读取 MySQL 中的真实调用记录，支持来源、状态、模型、用户、精确 `callId` 和时间范围筛选。三个页面都只通过 FastAPI 查询，不直连 Loki，也不轮询。PDF 保存完成或失败后会按当前 `resumeId` 上报审计；审计上报失败不改变 PDF 的保存结果或原始导出异常。
 
+管理端新增 `/admin/templates` 模板工作区，可查看启用、停用和结构无效模板，上传严格 JSON 包、真实预览并幂等启停；不提供覆盖或删除。`/admin/plugins` 提供插件发布管理。
+
 ## 视觉与交互基线
 
 - 可在本地运行的 Web 改动由 Agent 启动并查看实际页面；大幅视觉修改先确认设计来源，按选定效果的布局、密度、间距、色彩、字体、内容和层级实现。新反馈只有在实现完成后才更新本节；尚未实现的决定留在对应 Spec。
+- 公共 `/` 欢迎页位于 `src/features/landing/`，使用独立的 Tailwind 编译配置和 `.marketing-landing` 样式边界承载深浅主题、响应式营销区块与产品模拟图；登录、顶部和页尾 CTA 仍通过现有 `LandingPage` 回调进入 `/login`，不在营销组件内另建路由或鉴权状态。
 - 默认简历使用虚构示例，当前姓名为“张三”。产品约束是不使用已经移除的 Google CJK serif 字体族；当前 `resumeStore.ts` 和 `tokens.css` 仍保留 `Noto Serif CJK SC` 或 `Noto Serif SC` 作为本地 fallback，这是尚未消解的既有不一致，不能写成已经满足。UI 中的霞鹜文楷由 Web Font 依赖提供，不能依赖用户系统安装。
 - 简历标题用字号、间距和分隔线建立层级，不自动加粗；显式 Markdown 粗体使用中等字重和略浅于正文的墨色，并在网页预览和 PDF 中保持可见。
 - 左右结构不自动加粗左侧内容。编辑器继续兼容旧版 `::: left` / `::: right`：把当前正文行转换为左右行时保留原内容到左侧，右侧立即可输入；聚焦提示只用于编辑，不进入导出结果。
@@ -59,3 +64,8 @@ Vite 插件在 `/__local_asset__` 提供开发期本地图片读取，只允许�
 - JD 页面测试覆盖列表筛选、归档版本、永久删除确认、重复来源动作和编辑来源只读契约。
 - 管理端组件测试在 API Client 边界使用 Mock，覆盖 Chat 当前项/候选与真实日志渲染、错误与空状态、密钥更新语义、测试后启用、筛选和游标交互。
 - 当前没有自动化 E2E；涉及 Web、FastAPI、MySQL 和 MinIO 的完整浏览器流程仍需人工验证。
+# 插件安装与发布入口
+
+JD 中心页头提供“安装岗位采集插件”入口。`PluginInstallDialog.tsx` 只向普通用户展示开发者模式安装、使用、手工更新说明和统一下载按钮，不展示版本、Manifest、发布时间、大小或 SHA-256；只有后端返回可用版本时才渲染同源下载入口，未发布、下架或存储故障时不猜测地址。
+
+管理台 `/admin/plugins` 由 `PluginReleasePanel.tsx` 承担，并按无插件、已上架、已下架三态显示卡片。无插件时只显示“上传插件”；已上架时显示“更新插件 / 下架插件 / 删除插件”；已下架时显示“更新插件 / 重新上架 / 删除插件”。管理员选择单个 ZIP 后，客户端先检查扩展名与 20 MiB 上限，二次确认后以 multipart 上传；版本、环境和权限仍由后端作可信校验。校验失败的文件可显式清除并重选。更新成功后后端自动删除旧版本 ZIP；下架保留当前 ZIP，重新上架无需上传；永久删除经二次确认后物理删除 ZIP 和发布指针。面板不编译源码，也不提供历史版本或回滚。

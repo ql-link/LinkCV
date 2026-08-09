@@ -1,0 +1,178 @@
+@tailwind utilities;
+
+.marketing-landing {
+  --page-bg: #fafaf9;
+  --grid-line: rgb(0 0 0 / 0.032);
+  --glow: rgb(0 0 0 / 0.04);
+  --border: 240 5.9% 90%;
+  --ring: 240 5.9% 10%;
+  --muted-foreground: 240 3.8% 46.1%;
+  --radius: 0.625rem;
+  width: 100%;
+  height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--page-bg);
+  color: #18181b;
+  font-family: "Space Grotesk", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  line-height: 1.5;
+  font-feature-settings: "ss01" on;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+}
+
+.marketing-landing.dark {
+  --page-bg: #0e0e10;
+  --grid-line: rgb(255 255 255 / 0.028);
+  --glow: rgb(255 255 255 / 0.05);
+  --border: 240 3.7% 15.9%;
+  --ring: 240 4.9% 83.9%;
+  --muted-foreground: 240 5% 64.9%;
+  color: #f4f4f5;
+}
+
+.marketing-landing *,
+.marketing-landing *::before,
+.marketing-landing *::after {
+  box-sizing: border-box;
+}
+
+:where(.marketing-landing *, .marketing-landing *::before, .marketing-landing *::after) {
+  border-width: 0;
+  border-style: solid;
+  border-color: hsl(var(--border));
+}
+
+.marketing-landing :where(button.border) {
+  border-style: solid;
+}
+
+:where(.marketing-landing h1, .marketing-landing h2, .marketing-landing h3, .marketing-landing h4) {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+:where(
+  .marketing-landing h1,
+  .marketing-landing h2,
+  .marketing-landing h3,
+  .marketing-landing p,
+  .marketing-landing ul
+) {
+  margin: 0;
+}
+
+:where(.marketing-landing ul) {
+  padding: 0;
+  list-style: none;
+}
+
+:where(.marketing-landing a) {
+  color: inherit;
+  text-decoration: none;
+}
+
+:where(.marketing-landing button) {
+  cursor: pointer;
+}
+
+.marketing-landing button:not([data-slot="accordion-trigger"]):focus-visible {
+  outline: revert;
+  outline-offset: revert;
+}
+
+:where(.marketing-landing button),
+:where(.marketing-landing input),
+:where(.marketing-landing textarea),
+:where(.marketing-landing select) {
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+}
+
+:where(.marketing-landing button) {
+  background-color: transparent;
+  background-image: none;
+  text-transform: none;
+}
+
+:where(.marketing-landing img),
+:where(.marketing-landing svg) {
+  display: block;
+  vertical-align: middle;
+}
+
+.marketing-landing ::selection {
+  background: rgb(0 0 0 / 0.12);
+}
+
+.marketing-landing.dark ::selection {
+  background: rgb(255 255 255 / 0.2);
+}
+
+.marketing-landing .hairline {
+  border-color: rgb(0 0 0 / 0.06);
+}
+
+.marketing-landing.dark .hairline {
+  border-color: rgb(255 255 255 / 0.07);
+}
+
+.marketing-landing .text-balance {
+  text-wrap: balance;
+}
+
+.marketing-landing .bg-grid {
+  background-image:
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 72px 72px;
+}
+
+.marketing-landing .paper {
+  background: #fafaf7;
+  color: #18181b;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.07),
+    0 12px 40px -12px rgb(0 0 0 / 0.18),
+    0 2px 10px rgb(0 0 0 / 0.05);
+}
+
+.marketing-landing.dark .paper {
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.12),
+    0 24px 80px -16px rgb(0 0 0 / 0.85),
+    0 4px 24px rgb(0 0 0 / 0.5);
+}
+
+.marketing-landing .glass {
+  background: rgb(255 255 255 / 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.marketing-landing.dark .glass {
+  background: rgb(14 14 16 / 0.66);
+}
+
+@keyframes dash-flow {
+  from {
+    stroke-dashoffset: 0;
+  }
+
+  to {
+    stroke-dashoffset: -18;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketing-landing {
+    scroll-behavior: auto;
+  }
+
+  .marketing-landing .animate-marquee,
+  .marketing-landing .animate-float-slow {
+    animation: none;
+  }
+}

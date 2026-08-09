@@ -5,9 +5,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from linkcv.core.config import Settings
+from linkcv.domain.resume_document import default_resume_document
+from linkcv.domain.resume_style import default_resume_style
 from linkcv.main import create_app
 from linkcv.modules.identity.models import User
 from linkcv.modules.observability.loki import LokiUnavailableError
+from linkcv.modules.resumes.models import ResumeTemplate
 from tests.fakes import FakeRedis
 
 
@@ -104,6 +107,17 @@ def build_app():
         loki_client=loki,
         create_schema=True,
     )
+    with app.state.session_factory() as db:
+        template = ResumeTemplate(
+            key="observability-blank",
+            name="观测测试模板",
+            data_json=default_resume_document().model_dump(mode="json"),
+            style_json=default_resume_style().model_dump(mode="json"),
+            is_active=1,
+        )
+        db.add(template)
+        db.commit()
+        app.state.test_template_id = str(template.id)
     return app, emitter, loki
 
 
@@ -122,6 +136,13 @@ def set_admin(app, user_id: int) -> None:
         assert user is not None
         user.is_admin = True
         db.commit()
+
+
+def create_resume(client: TestClient, app, title: str = "观测测试简历"):
+    return client.post(
+        "/api/resumes",
+        json={"title": title, "template_id": app.state.test_template_id},
+    )
 
 
 def test_request_id_and_business_audit_are_recorded_once() -> None:
@@ -148,7 +169,7 @@ def test_request_id_and_business_audit_are_recorded_once() -> None:
         assert client.get("/api/resumes").status_code == 200
         assert len(emitter.audit_events) == before
 
-        created = client.post("/api/resumes", json={})
+        created = create_resume(client, app)
         resume_id = created.json()["resume"]["id"]
         failed = client.put(
             f"/api/resumes/{resume_id}",
@@ -177,7 +198,7 @@ def test_client_error_and_pdf_export_audit_require_auth_and_owned_resume() -> No
             == 401
         )
         user_id = register(client)
-        created = client.post("/api/resumes", json={})
+        created = create_resume(client, app)
         resume_id = created.json()["resume"]["id"]
 
         logged = client.post(

@@ -15,6 +15,8 @@ from linkcv.api.router import api_router
 from linkcv.core.config import Settings, load_settings
 from linkcv.core.database import Base, build_engine, build_session_factory
 from linkcv.core.errors import ApiError, install_error_handlers
+from linkcv.core.mq.publisher import MQPublisher
+from linkcv.core.mq.factory import build_mq_publisher
 from linkcv.core.redis import build_redis_client
 from linkcv.core.storage import AssetStorage
 from linkcv.integrations.document_converter import DocumentConverter
@@ -29,6 +31,7 @@ from linkcv.modules.llm.service import LLMService
 from linkcv.modules.observability.logging import StructuredLogEmitter, configure_logging
 from linkcv.modules.observability.middleware import ObservabilityMiddleware
 from linkcv.modules.observability.loki import LokiClient
+from linkcv.modules.plugin_releases.service import PluginReleaseService
 from linkcv.services.import_admission import ImportAdmissionController
 from linkcv.services.resume_import_idempotency import ResumeImportIdempotency
 
@@ -64,6 +67,8 @@ def create_app(
     structuring_client: Any | None = None,
     event_emitter: StructuredLogEmitter | None = None,
     loki_client: Any | None = None,
+    mq_publisher: MQPublisher | None = None,
+    plugin_release_service: Any | None = None,
     create_schema: bool = False,
 ) -> FastAPI:
     runtime_settings = settings or load_settings()
@@ -74,6 +79,12 @@ def create_app(
             runtime_settings.loki_query_url,
             runtime_settings.loki_query_timeout_seconds,
         )
+    runtime_mq_publisher = mq_publisher
+    if runtime_mq_publisher is None and (
+        runtime_settings.mq_vendor == "kafka"
+        or runtime_settings.rabbitmq_url is not None
+    ):
+        runtime_mq_publisher = build_mq_publisher(runtime_settings)
     engine = None
     if session_factory is None:
         engine = build_engine(runtime_settings.sqlalchemy_url)
@@ -93,6 +104,10 @@ def create_app(
                 schema_db.commit()
 
     runtime_storage = storage or AssetStorage(runtime_settings)
+    runtime_plugin_release_service = plugin_release_service or PluginReleaseService(
+        runtime_storage,
+        expected_origin=runtime_settings.plugin_release_origin,
+    )
     runtime_llm_gateway = llm_gateway or LiteLLMGateway(
         runtime_settings.llm_timeout_seconds
     )
@@ -129,15 +144,8 @@ def create_app(
         runtime_structuring_client = LLMResumeStructuringClient(llm_service)
     import_idempotency = ResumeImportIdempotency(
         redis,
-        processing_ttl_seconds=(
-            runtime_settings.resume_import_idempotency_processing_ttl_seconds
-        ),
-        success_ttl_seconds=(
-            runtime_settings.resume_import_idempotency_success_ttl_seconds
-        ),
-        failure_ttl_seconds=(
-            runtime_settings.resume_import_idempotency_failure_ttl_seconds
-        ),
+        bind_ttl_seconds=runtime_settings.resume_import_idempotency_bind_ttl_seconds,
+        ttl_seconds=runtime_settings.resume_import_idempotency_ttl_seconds,
     )
 
     @asynccontextmanager
@@ -161,6 +169,12 @@ def create_app(
         try:
             yield
         finally:
+            runtime_publisher = _app.state.mq_publisher
+            if runtime_publisher is not None:
+                try:
+                    await runtime_publisher.close()
+                except Exception:
+                    logger.warning("MQ publisher close failed", exc_info=True)
             try:
                 await asyncio.to_thread(redis.close)
             except Exception:
@@ -189,11 +203,13 @@ def create_app(
     app.state.settings = runtime_settings
     app.state.session_factory = session_factory
     app.state.storage = runtime_storage
+    app.state.plugin_release_service = runtime_plugin_release_service
     app.state.llm_service = llm_service
     app.state.redis = redis
     app.state.document_converter = runtime_document_converter
     app.state.structuring_client = runtime_structuring_client
     app.state.import_idempotency = import_idempotency
+    app.state.mq_publisher = runtime_mq_publisher
     app.state.import_admission = ImportAdmissionController(
         requests_per_minute=runtime_settings.resume_import_requests_per_minute,
         global_concurrency=runtime_settings.resume_import_global_concurrency,

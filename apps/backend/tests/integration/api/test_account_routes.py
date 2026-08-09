@@ -6,7 +6,10 @@ from sqlalchemy import select
 from linkcv.core.config import Settings
 from linkcv.core.security import verify_password
 from linkcv.main import create_app
+from linkcv.domain.resume_document import default_resume_document
+from linkcv.domain.resume_style import default_resume_style
 from linkcv.modules.identity.models import User
+from linkcv.modules.resumes.models import ResumeTemplate
 from tests.fakes import FakeRedis
 from tests.integration.api.test_identity_resumes_assets import FakeStorage
 
@@ -16,12 +19,24 @@ def build_test_app():
         database_url="sqlite+pysqlite:///:memory:",
         jwt_secret="account-test-secret-with-32-bytes",
     )
-    return create_app(
+    app = create_app(
         settings,
         storage=FakeStorage(),
         redis=FakeRedis(),
         create_schema=True,
     )
+    with app.state.session_factory() as session:
+        template = ResumeTemplate(
+            key="blank-cn",
+            name="空白简历",
+            data_json=default_resume_document().model_dump(mode="json"),
+            style_json=default_resume_style().model_dump(mode="json"),
+            is_active=1,
+        )
+        session.add(template)
+        session.commit()
+        app.state.test_template_id = str(template.id)
+    return app
 
 
 def _avatar_data_url(payload: bytes = b"avatar-bytes") -> str:
@@ -35,8 +50,14 @@ def test_profile_query_returns_stats_and_recent_resumes() -> None:
             "/api/auth/register",
             json={"email": "profile@example.com", "password": "password-123"},
         )
-        client.post("/api/resumes", json={"title": "简历一"})
-        client.post("/api/resumes", json={"title": "简历二"})
+        client.post(
+            "/api/resumes",
+            json={"title": "简历一", "template_id": app.state.test_template_id},
+        )
+        client.post(
+            "/api/resumes",
+            json={"title": "简历二", "template_id": app.state.test_template_id},
+        )
 
         response = client.get("/api/account/profile")
         assert response.status_code == 200

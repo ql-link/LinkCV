@@ -46,15 +46,17 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 
 | Method   | Path                        | 鉴权 | 成功结果                                                         |
 | -------- | --------------------------- | ---- | ---------------------------------------------------------------- |
-| `GET`    | `/api/resume-templates`     | 否   | `{templates}` 启用模板列表                                       |
-| `GET`    | `/api/resume-templates/:id` | 否   | `{template}`                                                     |
-| `GET`    | `/api/resumes`              | 是   | `{resumes}`，按更新时间倒序                                      |
-| `POST`   | `/api/resumes`              | 是   | `201 {resume}`；请求为 `{title?, template_id?}`                  |
+| `GET`    | `/api/resume-templates`     | 是   | `{templates}` 启用且结构有效的模板列表                           |
+| `GET`    | `/api/resume-templates/:id` | 是   | `{template}`                                                     |
+| `GET`    | `/api/resumes`              | 是   | `{resumes}`，摘要含可选 `preview`，按更新时间倒序                |
+| `POST`   | `/api/resumes`              | 是   | `201 {resume}`；请求必填 `{title, template_id}`                  |
 | `GET`    | `/api/resumes/:id`          | 是   | `{resume}`                                                       |
 | `PUT`    | `/api/resumes/:id`          | 是   | `{resume}`；请求含 `base_lock_version` 及可选 `title/data/style` |
 | `DELETE` | `/api/resumes/:id`          | 是   | `{deleted}`                                                      |
 
-空白、模板和导入创建统一受每用户最多 10 份简历的限制；创建事务先锁定用户行再检查数量，并发请求不会突破上限。达到上限返回 `409 RESUME_LIMIT_REACHED`，删除任意一份后释放名额。空白和模板创建都在同一事务写入当前简历及 `version_no=1/reason=initial` 快照。更新同时保存完整 data/style 并递增 `lock_version`，不创建历史版本；过期基准返回 `409 RESUME_EDIT_CONFLICT`。非法内容和样式分别返回 `400 INVALID_RESUME_DOCUMENT`、`400 INVALID_RESUME_STYLE`。不存在或不属于当前用户的简历统一返回 `404 RESUME_NOT_FOUND`。
+所有新简历都从模板创建，官方模板中包含空白简历模板。普通创建先把名称去首尾空白、折叠连续空白，再按 Unicode `casefold` 比较同一用户已有名称；重复返回 `409 RESUME_TITLE_CONFLICT`，名称为空或超过 255 字符返回 `400 INVALID_RESUME_TITLE`，缺模板返回 `400 TEMPLATE_REQUIRED`，模板不存在、停用或结构无效返回 `422 TEMPLATE_INACTIVE`。历史无模板简历继续可读写，历史重名不回填也不阻止保持原名。
+
+每个用户最多保存 10 份正式简历；创建事务锁定用户行后检查，达到上限返回 `409 RESUME_LIMIT_REACHED`。创建在同一事务写入当前简历及 `version_no=1/reason=initial` 快照。更新同时保存完整 data/style 并递增 `lock_version`，不创建历史版本；过期基准返回 `409 RESUME_EDIT_CONFLICT`。非法内容和样式分别返回 `400 INVALID_RESUME_DOCUMENT`、`400 INVALID_RESUME_STYLE`。不存在或不属于当前用户的简历统一返回 `404 RESUME_NOT_FOUND`。
 
 ## 历史版本
 
@@ -68,26 +70,73 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 
 版本号单调递增且不复用；每份简历默认最多保存 10 个版本。创建或恢复所需的版本空间不足时返回 `409 RESUME_VERSION_LIMIT_REACHED`，不会自动删除任何历史版本；用户删除旧版本后才能继续。最新版本作为当前恢复基准不可删除，尝试删除返回 `409 LATEST_RESUME_VERSION_REQUIRED`。版本不存在返回 `404 RESUME_VERSION_NOT_FOUND`，并发兜底失败返回 `409 VERSION_CONFLICT`。
 
+## 简历分享链接
+
+每份简历一个分享链接，分享状态直接落在 `resumes` 表的 `share_*` 字段，不单独建表。分享内容不落快照：公开读取时实时取 `resume_versions` 中 `version_no` 最大的正式版本，所有者继续编辑的是快照草稿，不会影响已分享内容之外的版本语义。管理接口全部要求登录且只能操作本人简历（`404 RESUME_NOT_FOUND`）；公开接口 `/api/share/{token}` 允许未登录访问。
+
+| Method   | Path                  | 鉴权 | 成功结果                                                                 |
+| -------- | --------------------- | ---- | ------------------------------------------------------------------------ |
+| `GET`    | `/api/resumes/:id/share`    | 是   | `{share}`；未开启分享时 `share` 为 `null`                        |
+| `POST`   | `/api/resumes/:id/share`    | 是   | `{share}`；请求可选 `{visibility, expires_at}`，无链接时创建，已有链接时作废旧 token 并生成新 token（一键覆盖） |
+| `PATCH`  | `/api/resumes/:id/share`    | 是   | `{share}`；请求可选 `{visibility, expires_at}`，可续期或改为仅自己可见     |
+| `DELETE` | `/api/resumes/:id/share`    | 是   | `{deleted: true}`；清空分享字段，旧地址访问统一失效，重复删除幂等          |
+| `GET`    | `/api/share/{token}`        | 否   | `{data, style, sharer}`；`sharer` 为 `{nickname, avatar_url}`             |
+
+`share` 为 `{share_token, share_visibility, share_expires_at, share_created_at}`。`share_visibility` 只允许 `public|private`，`share_expires_at` 为带时区的 ISO 8601，`null` 表示长期有效；`private` 时只有分享者本人登录可见，未登录或其他用户访问一律按失效处理。
+
+`POST` 创建或覆盖请求可选 `{visibility, expires_at}` 分别指定可见性（缺省 `public`）与有效期（缺省永久，即 `expires_at` 为 `null`）。`PATCH` 用 `model_fields_set` 区分传入字段，可单独续期（延长或清除 `expires_at`）或切换可见性；未开启分享时返回 `404 SHARE_LINK_UNAVAILABLE`。token 使用 `secrets.token_urlsafe(16)`（约 160 bit 熵）且全局唯一，冲突重试 3 次。为避免枚举探测，以下场景在管理侧与公开侧统一返回 `404 SHARE_LINK_UNAVAILABLE`：token 不存在、已删除、已过期、`private` 无权查看、简历或最新版本不存在。过期后可再次 `PATCH expires_at` 恢复访问，不需重建链接。
+
 ## 文件导入
 
-`POST /api/resumes/import` 使用 `multipart/form-data`，字段为 `file` 和可选 `title`，并要求 `Idempotency-Key` Header 为小写、带连字符的 canonical UUID。支持 UTF-8 Markdown、DOCX 和文字/扫描/混合 PDF：Markdown 本地直接读取，DOCX 本地通过 Mammoth 和安全 HTML 转 Markdown，只有 PDF 会调用 LinkParse `POST /v1/parse` 并由远端自动选择文字提取或 OCR；随后统一经过 `SectionIR → ResumeExtractionDraft → ResumeDocumentV1`。成功返回：
+`POST /api/resumes/import` 使用 `multipart/form-data`，必填规范十进制字符串 `template_id` 与 `file`，不接收目标名称，并要求 `Idempotency-Key` Header 为小写、带连字符的 canonical UUID。接口只完成校验、源文件上传、任务持久化和消息确认；首次受理成功返回 `202`，不等待转换或结构化：
 
 ```json
 {
-  "resume": { "id": "1", "source_type": "import", "data": {}, "style": {} },
   "import": {
-    "source_file_name": "resume.pdf",
+    "id": "42",
+    "source_filename": "resume.pdf",
     "source_file_format": "pdf",
-    "warnings": []
+    "upload_status": "succeeded",
+    "upload_duration_ms": 83,
+    "parse_status": "processing",
+    "parse_duration_ms": null,
+    "result_resume_id": null,
+    "created_at": "2026-08-08T12:00:00Z",
+    "updated_at": "2026-08-08T12:00:00Z"
   }
 }
 ```
 
-原文件对象键、LinkParse request ID、外部 URL 和模型调用信息不在响应中。`warnings` 只允许 `pdf_ocr_applied`、`pdf_low_text_quality`、`docx_embedded_images_omitted`、`docx_textbox_order_may_change`、`document_heading_structure_missing`、`source_quote_not_found`、`unparsed_work_start_date`、`unparsed_work_end_date` 和 `unmapped_fragments_preserved`，按转换、章节、标准化顺序首次去重。
+RabbitMQ 是默认 Broker，使用固定 `resume.import` routing key；Kafka 兼容实现使用规范 `import_id` 作为消息 key。独立 Worker 从私有对象存储读取文件，Markdown 本地转换、DOCX 经 Mammoth、PDF 经 LinkParse，再走 `SectionIR → ResumeExtractionDraft → ResumeDocumentV1`。解析成功时以安全化文件名的 stem 作为标题，允许与已有简历同名；解析内容作为 data，所选模板只提供 style。正式简历、initial 版本、结果关联和任务成功状态在一个数据库事务内提交。
 
-缺少或使用非 canonical Header 返回 `400 INVALID_IDEMPOTENCY_KEY`；同一用户、Key 与指纹仍在处理返回 `409 IMPORT_ALREADY_PROCESSING`，成功状态返回原 resume ID 和原导入元数据，不重复副作用；Key 用于不同文件或标题返回 `409 IDEMPOTENCY_KEY_REUSED`。Redis 不可用返回 `503 IMPORT_IDEMPOTENCY_UNAVAILABLE`。Header 按用户隔离，成功重放仍重新校验 MySQL 归属。
+缺少或使用非 canonical Header 返回 `400 INVALID_IDEMPOTENCY_KEY`。同一用户、Key 和请求指纹在 15 分钟映射窗口内重放同一导入记录：活动状态返回 `202`，成功终态返回 `200`，失败终态返回 `409 IMPORT_PREVIOUSLY_FAILED`；同 Key 异指纹返回 `409 IDEMPOTENCY_KEY_REUSED`。记录绑定前的短窗口返回 `409 IMPORT_ACCEPTANCE_IN_PROGRESS`，Redis 不可用返回 `503 IMPORT_IDEMPOTENCY_UNAVAILABLE`。记录创建后的错误响应在顶层 `import` 字段附带同一任务摘要。
 
-文件为空、超限、不支持或内容非法分别返回 `EMPTY_IMPORT_FILE`、`IMPORT_FILE_TOO_LARGE`、`UNSUPPORTED_IMPORT_FORMAT`、`IMPORT_CONTENT_INVALID`；超过结构化模型输入上限返回 `413 STRUCTURING_INPUT_TOO_LARGE`，触发频率或并发保护返回 `429 IMPORT_RATE_LIMITED`。账号已有 10 份简历时会在上传和模型处理前返回 `409 RESUME_LIMIT_REACHED`；快速检查后的并发创建仍由最终事务检查兜底。LinkParse 未配置/未授权、网络或引擎不可用返回 `503 DOCUMENT_CONVERSION_UNAVAILABLE`，转换失败返回 `502 DOCUMENT_CONVERSION_FAILED`，阶段或总时限耗尽返回 `504 DOCUMENT_CONVERSION_TIMEOUT` 或 `504 IMPORT_DEADLINE_EXCEEDED`。结构化模型不可用、调用失败或输出非法分别返回 `503 STRUCTURING_MODEL_UNAVAILABLE`、`502 STRUCTURING_MODEL_FAILED`、`422 RESUME_STRUCTURE_INVALID`。失败不创建半成品；已上传对象即时补偿，删除失败进入持久化清理队列。
+`GET /api/resume-overview` 返回 `{resumes, active_imports, failed_imports, next_failed_cursor}`；失败列表支持 `failed_limit=1..50` 和服务端生成的 `failed_cursor`。Web 仅在存在活动任务时每 2 秒刷新，成功任务在同一 overview 快照中由正式简历替换。`DELETE /api/resume-imports/:id` 只允许本人删除上传或解析失败记录；活动任务返回 `409 RESUME_IMPORT_IN_PROGRESS`，不存在、非法 ID 或越权统一返回 `404 RESUME_IMPORT_NOT_FOUND`，对象删除失败返回 `502 ASSET_DELETE_FAILED`。
+
+文件或模板无效时返回对应 `4xx` 且不创建正式简历。MinIO 上传失败会补偿删除可能写入的对象，再返回 `502 RESUME_SOURCE_UPLOAD_FAILED` 并保留上传失败记录；MQ confirm 失败返回 `503 RESUME_IMPORT_QUEUE_UNAVAILABLE`，记录保存为“上传成功、解析失败”。转换、结构化或模板复核失败由 Worker 保存解析失败终态，不创建半成品，也不自动重试业务失败。正式简历与活动导入共享每用户 10 个名额；成功导入只是把活动占位转换为正式简历。
+
+## 简历模板管理
+
+`/api/admin/resume-templates` 只允许管理员访问。`GET` 返回启用、停用和结构无效的全部模板；`POST /import` 接受最大 512 KiB 的严格 UTF-8 JSON 模板包，新模板默认停用且相同 `key` 返回 `409 TEMPLATE_KEY_CONFLICT`，不覆盖已有模板；`PUT /:id/status` 幂等启停，结构无效模板不能启用。模板包拒绝未知字段、脚本、外链、文件 URL、本地路径和媒体引用。当前不提供模板覆盖或硬删除。
+
+## 知识库资料
+
+`POST /api/datasets` 使用 `multipart/form-data`，字段为 `file`，支持 docx/pdf/md/txt 四种格式（按扩展名判定、大小写不敏感），单文件上限 `DATASET_UPLOAD_MAX_BYTES`（默认 10MB）。上传成功后文件保存到对象存储（对象键由服务端生成并强制以 `users/{当前用户id}/datasets/` 为前缀，客户端不可指定），元信息写入 `user_dataset` 表并返回：
+
+```json
+{
+  "id": "1",
+  "file_name": "notes.md",
+  "file_format": "md",
+  "file_size": 12,
+  "sha256": "…",
+  "created_at": "…"
+}
+```
+
+`GET /api/datasets` 返回当前登录用户自己的资料记录，按上传时间倒序（`{datasets: [...]}`）。两个接口都要求登录（未登录返回 `401 UNAUTHORIZED`），用户只能看到自己的记录。
+
+文件名非法返回 `400 INVALID_DATASET_FILENAME`，空文件返回 `400 EMPTY_DATASET_FILE`，不支持格式返回 `400 UNSUPPORTED_DATASET_FORMAT`，超过大小上限返回 `413 DATASET_TOO_LARGE`。对象存储上传失败返回 `502 DATASET_UPLOAD_FAILED` 且不落库；对象已上传但元信息写入失败返回 `500 DATASET_RECORD_FAILED`，已上传对象会被尽力清理。同一文件允许重复上传并生成新记录（不做去重或幂等）。
 
 ## JD 数据模型与管理
 
@@ -128,7 +177,7 @@ JD 管理接口接受和返回最终结构化数据；单独的浏览器导入�
 | `GET`    | `/api/resumes/:id/assets/:asset_name` | 校验简历所有权后读取                          |
 | `DELETE` | `/api/resumes/:id/assets/:asset_name` | 当前或历史快照仍引用时返回 `409 ASSET_IN_USE` |
 
-删除简历会先同步删除导入原文件和简历资源前缀，全部成功后再删除数据库版本和简历；对象存储删除失败返回 `502 ASSET_DELETE_FAILED`，数据库记录保持不变。MinIO 与 MySQL 不构成原子事务，多个对象可能只删除一部分，对象已删除后的数据库提交失败也无法回滚对象。
+删除简历会先同步删除该简历保存的导入源文件和简历资源前缀，全部成功后再删除数据库版本和简历；对象存储删除失败返回 `502 ASSET_DELETE_FAILED`，数据库记录保持不变。MinIO 与 MySQL 不构成原子事务，多个对象可能只删除一部分，对象已删除后的数据库提交失败也无法回滚对象。
 
 ## 系统日志与业务审计
 
@@ -195,3 +244,27 @@ Chat 是服务端预定义能力，管理员不填写能力标识。候选写入
 | `GET`   | `/api/auth/admin/stats`                 | `{total_users, active_users_7d, total_resumes, llm_calls_today, estimated_cost_month}` 全系统概览统计；后两项当前为占位值      |
 
 管理员禁用自己的账号返回 `422 CANNOT_SELF_DISABLE`；尝试禁用系统中最后一个管理员返回 `422 CANNOT_DISABLE_LAST_ADMIN`。禁用成功后服务端立即调用 `revoke_user_sessions` 删除该用户全部 Redis 会话，该用户的所有现有 Cookie 立即失效，重新登录时因用户 `status=0` 被拒绝。
+
+## 浏览器插件发布与下载
+
+插件发布复用现有私有 MinIO，不返回对象存储地址。以下读取和下载接口要求普通登录会话，所有 `/api/admin/plugin-releases` 接口要求 `is_admin=true`：
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `GET` | `/api/plugin-releases/current` | `200 {status, release}`；未发布为 `{status: "unpublished", release: null}`，可用 release 含 `version`、`released_at`、`browser`、`manifest_version`、`size`、`sha256`、`download_url` |
+| `GET` | `/api/plugin-releases/{version}/download` | 当前版本匹配时返回名为 `linkcv-job-capture-v<version>.zip` 的 `200 application/zip` 附件流，带 `Content-Length`、SHA-256 `ETag`、`private, no-store` 和 `nosniff` |
+| `GET` | `/api/admin/plugin-releases/current` | `200 {status, release}`；管理员状态为 `absent/published/unpublished`，已下架时仍返回保留版本信息 |
+| `POST` | `/api/admin/plugin-releases` | multipart 字段 `file` 接收一个 ZIP，校验并发布成功返回 `201 {release, cleanup_pending}`；新版生效后自动删除其他版本 ZIP |
+| `DELETE` | `/api/admin/plugin-releases/current` | 下架当前插件并返回 `200 {unpublished: true, release}`；把 current 指针状态改为 `unpublished`，保留当前唯一版本信息和 ZIP |
+| `POST` | `/api/admin/plugin-releases/current/publish` | 重新上架已下架插件并返回 `200 {release}`；复用保留的 ZIP，不需要重新上传 |
+| `DELETE` | `/api/admin/plugin-releases/current/package` | 永久删除当前 ZIP 和 current 指针并返回 `200 {deleted: true}`；操作不可恢复 |
+
+current 或下载读取存储失败、指针/对象大小或摘要非法时返回 `503`，不会返回旧缓存或 MinIO URL。下载版本不是当前版本时返回 `409 PLUGIN_RELEASE_VERSION_CHANGED`，非法或未发布版本返回 `404 PLUGIN_RELEASE_NOT_FOUND`。
+
+上传只接受最大 20 MiB 的 ZIP。压缩包、Manifest、离线说明或环境权限不合法返回 `422 PLUGIN_RELEASE_*`；超过上限返回 `413 PLUGIN_RELEASE_TOO_LARGE`；版本降级、同版本不同内容或当前对象冲突返回 `409`；新对象或指针写入失败返回 `503`，当前指针和旧版保持原值。指针成功切换后，服务端删除 `system/plugin-releases/` 下除 current 引用对象外的其他 ZIP；清理失败不回滚已经生效的新版本，响应为 `cleanup_pending=true`，管理端提示待重试，后续上传会重新清理。前端不得从文件名推断版本或环境，也不得自行拼接存储路径。
+
+下架必须二次确认。没有 current 指针或指针已经是 `unpublished` 时返回 `404 PLUGIN_RELEASE_NOT_FOUND`；状态指针写入失败返回 `503 PLUGIN_RELEASE_UNPUBLISH_FAILED`，当前发布状态保持不变。成功下架后 current 查询返回 unpublished，当前唯一版本下载关闭；`current.json` 和该版本 ZIP 继续保留。保留的版本仍作为后续发布下限，同版本同摘要安装包可以重新上架；上架和下架都不创建第二个版本。
+
+重新上架只接受 `unpublished` 指针：没有 current 指针返回 `404`，已经上架返回 `409 PLUGIN_RELEASE_ALREADY_PUBLISHED`，保留 ZIP 缺失或校验不一致返回 `503`。永久删除也必须二次确认；若插件仍已上架，服务端先把指针改为 `unpublished` 以关闭下载，再依次删除 ZIP 和 `current.json`。任一步骤失败返回 `503 PLUGIN_RELEASE_DELETE_FAILED`，保留 unpublished 状态供管理员安全重试；没有 current 指针返回 `404`。
+
+Development 与 Production 使用独立 MinIO。各自 Bucket 内的当前指针固定为 `system/plugin-releases/current.json`，版本对象固定为 `system/plugin-releases/v<version>/linkcv-job-capture-v<version>.zip`；对象键不重复携带环境名。服务端新写的指针使用 `schema_version=3` 并显式包含 `status=published|unpublished`；读取兼容既有不含 `status` 的 v2 指针，并按已发布处理。

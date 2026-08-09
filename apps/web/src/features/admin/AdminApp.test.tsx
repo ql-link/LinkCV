@@ -60,6 +60,7 @@ function mockCommonApis() {
   vi.spyOn(api, "adminListAuditLogs").mockResolvedValue({
     items: [], nextCursor: null, partial: false, droppedMalformed: 0,
   });
+  vi.spyOn(api, "getPluginRelease").mockResolvedValue({ status: "unpublished", release: null });
 }
 
 describe("AdminApp access control", () => {
@@ -196,6 +197,15 @@ describe("AdminApp access control", () => {
         expect.objectContaining({ result: "failed" }),
       );
     });
+  });
+
+  it("opens the plugin publishing section from its route", async () => {
+    vi.spyOn(api, "me").mockResolvedValue({ user: mockAdminUser });
+    window.history.replaceState(null, "", "/admin/plugins");
+    render(<AdminApp />);
+
+    expect(await screen.findByRole("heading", { name: "插件发布" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "管理端导航" })).toHaveTextContent("插件发布");
   });
 
   it("redirects a regular user to the admin login page", async () => {
