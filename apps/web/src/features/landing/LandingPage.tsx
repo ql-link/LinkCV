@@ -48,7 +48,7 @@ export function LandingPage({ onStart, onLogin }: LandingPageProps) {
         onLogin={onLogin}
       />
       <main>
-        <Hero onStart={onStart} />
+        <Hero onStart={onStart} scrollContainerRef={pageRef} />
         <Marquee />
         <Chaos />
         <Features />

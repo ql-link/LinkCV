@@ -18,25 +18,33 @@ const keywords = [
 export function Marquee() {
   const row = [...keywords, ...keywords]
   return (
-    <div className="relative overflow-hidden border-y hairline py-5">
-      <div className="animate-marquee flex w-max items-center">
-        {row.map((k, i) => (
-          <div key={i} className="flex items-center">
-            <span className="px-8 font-mono text-[11px] tracking-[0.16em] text-zinc-400 dark:text-zinc-500 uppercase">{k}</span>
-            <span className="h-1 w-1 rounded-full bg-zinc-400 dark:bg-zinc-700" aria-hidden />
-          </div>
-        ))}
+    <section id="workspace-intro" className="landing-section-bridge">
+      <div className="landing-section-bridge-copy">
+        <span>LINKCV / ONE WORKSPACE</span>
+        <h2>
+          一份简历，<br />
+          只是开始。
+        </h2>
+        <p>继续向下，进入完整的求职工作台。</p>
       </div>
-      <div className="pointer-events-none absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-[#fafaf9] to-transparent dark:from-[#0e0e10]" />
-      <div className="pointer-events-none absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-[#fafaf9] to-transparent dark:from-[#0e0e10]" />
-    </div>
+      <div className="landing-bridge-marquee">
+        <div className="animate-marquee flex w-max items-center">
+          {row.map((k, i) => (
+            <div key={i} className="flex items-center">
+              <span className="px-8 font-mono text-[11px] tracking-[0.16em] uppercase">{k}</span>
+              <span className="h-1 w-1 rounded-full" aria-hidden />
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   )
 }
 
 /** 痛点：散落的求职现场 → 一个工作台 */
 export function Chaos() {
   return (
-    <section className="relative border-b hairline">
+    <section id="chaos" className="relative border-b hairline">
       <div className="mx-auto max-w-6xl px-6 py-28 sm:py-36">
         <div className="grid gap-16 lg:grid-cols-2 lg:gap-12">
           <div>
