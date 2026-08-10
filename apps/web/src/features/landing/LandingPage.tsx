@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { LanguageProvider } from "./locales/LanguageContext";
 import { Chaos, Marquee } from "./sections/Chaos";
 import { EditorSection } from "./sections/EditorSection";
 import { FAQ } from "./sections/FAQ";
@@ -40,26 +41,28 @@ export function LandingPage({ onStart, onLogin }: LandingPageProps) {
   };
 
   return (
-    <div ref={pageRef} className={`marketing-landing ${theme === "dark" ? "dark" : ""}`}>
-      <Nav
-        scrollContainerRef={pageRef}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        onLogin={onLogin}
-      />
-      <main>
-        <Hero onStart={onStart} scrollContainerRef={pageRef} />
-        <Marquee />
-        <Chaos />
-        <Features />
-        <EditorSection />
-        <VersionExport />
-        <JDSection />
-        <Workflow />
-        <Philosophy />
-        <FAQ />
-      </main>
-      <Footer onStart={onStart} />
-    </div>
+    <LanguageProvider>
+      <div ref={pageRef} className={`marketing-landing ${theme === "dark" ? "dark" : ""}`}>
+        <Nav
+          scrollContainerRef={pageRef}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          onLogin={onLogin}
+        />
+        <main>
+          <Hero onStart={onStart} scrollContainerRef={pageRef} />
+          <Marquee />
+          <Chaos />
+          <Features />
+          <EditorSection />
+          <VersionExport />
+          <JDSection />
+          <Workflow />
+          <Philosophy />
+          <FAQ />
+        </main>
+        <Footer onStart={onStart} />
+      </div>
+    </LanguageProvider>
   );
 }

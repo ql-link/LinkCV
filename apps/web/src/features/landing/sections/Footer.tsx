@@ -2,39 +2,15 @@ import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { useInView } from "motion/react";
 import { lazy, Suspense, useRef } from "react";
 import { Reveal } from "../components/Reveal";
+import { useT } from "../locales/LanguageContext";
 
 const FlutedGlass = lazy(() =>
   import("@paper-design/shaders-react").then((module) => ({ default: module.FlutedGlass })),
 );
 
-const footerLinkGroups = [
-  {
-    title: "产品",
-    links: [
-      { label: "功能总览", href: "#features" },
-      { label: "A4 编辑器", href: "#editor" },
-      { label: "JD 中心", href: "#jd" },
-    ],
-  },
-  {
-    title: "了解",
-    links: [
-      { label: "工作区", href: "#chaos" },
-      { label: "产品理念", href: "#philosophy" },
-      { label: "常见问题", href: "#faq" },
-    ],
-  },
-  {
-    title: "导航",
-    links: [
-      { label: "首页导览", href: "#workspace-intro" },
-      { label: "返回顶部", href: "#top" },
-    ],
-  },
-];
-
 /** 结尾 CTA + 页脚 */
 export function Footer({ onStart }: { onStart: () => void }) {
+  const t = useT();
   const shaderRef = useRef<HTMLDivElement>(null);
   const showShader = useInView(shaderRef, { margin: "480px", once: true });
 
@@ -89,16 +65,16 @@ export function Footer({ onStart }: { onStart: () => void }) {
                   <span className="font-display text-base font-semibold tracking-tight">LinkCV</span>
                   <span className="hidden h-4 w-px bg-white/30 sm:block" aria-hidden />
                   <p className="font-mono text-[10px] tracking-[0.16em] text-white/85 uppercase">
-                    One workspace for every application
+                    {t.footer.tagline}
                   </p>
                 </div>
-                <h2 className="mt-5 max-w-xl text-balance font-display text-4xl leading-[1.02] font-medium tracking-[-0.045em] sm:text-[2.75rem] lg:text-[2.8rem]">
-                  下一份简历，
+                <h2 className="mt-5 max-w-xl text-balance font-display text-4xl !leading-[1.3] font-medium tracking-[-0.045em] sm:text-[2.75rem] lg:text-[2.8rem]">
+                  {t.footer.title1}
                   <br />
-                  从这里开始。
+                  {t.footer.title2}
                 </h2>
                 <p className="mt-3 max-w-xl text-sm leading-6 text-white/85">
-                  管理简历、版本与岗位，把每一次修改和投递都留在同一个工作区。
+                  {t.footer.description}
                 </p>
                 <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3">
                   <button
@@ -106,11 +82,11 @@ export function Footer({ onStart }: { onStart: () => void }) {
                     onClick={onStart}
                     className="group inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-[#1257bd] shadow-sm transition-[transform,background-color] hover:-translate-y-0.5 hover:bg-blue-50 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white active:translate-y-0"
                   >
-                    开始使用 LinkCV
+                    {t.footer.cta}
                     <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                   </button>
                   <p className="font-mono text-[10px] tracking-[0.04em] text-white/75">
-                    © 2026 LinkCV · RESUME · VERSION · PDF · JD
+                    {t.footer.copyright}
                   </p>
                 </div>
               </div>
@@ -118,10 +94,10 @@ export function Footer({ onStart }: { onStart: () => void }) {
           </div>
 
           <nav
-            aria-label="页脚导航"
+            aria-label={t.footer.navLabel}
             className="grid grid-cols-2 gap-x-10 gap-y-10 sm:grid-cols-3 lg:self-center"
           >
-            {footerLinkGroups.map((group) => (
+            {t.footer.linkGroups.map((group) => (
               <div key={group.title}>
                 <h3 className="font-display text-sm font-semibold tracking-wide text-white">
                   {group.title}

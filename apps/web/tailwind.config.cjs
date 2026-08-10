@@ -1,7 +1,10 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   darkMode: "class",
-  content: ["./src/features/landing/**/*.{ts,tsx}"],
+  content: [
+    "./src/features/landing/**/*.{ts,tsx}",
+    "./src/features/auth/**/*.{ts,tsx}",
+  ],
   corePlugins: {
     preflight: false,
   },

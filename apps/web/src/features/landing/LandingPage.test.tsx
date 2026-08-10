@@ -8,7 +8,7 @@ describe("LandingPage", () => {
     const onStart = vi.fn();
     render(<LandingPage onLogin={onLogin} onStart={onStart} />);
 
-    expect(screen.getByRole("heading", { name: /把经历，写成/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "把每一份经历，都写成下一份机会" })).toBeInTheDocument();
     const orbitResumes = screen.getAllByTestId("orbit-resume");
     expect(orbitResumes).toHaveLength(14);
     expect(new Set(orbitResumes.map((resume) => resume.dataset.resumeDesign)).size).toBe(14);

@@ -2,9 +2,11 @@ import { Reveal, SectionHeading } from '../components/Reveal'
 import { VersionTimeline } from '../components/mockups/VersionTimeline'
 import { ResumePaper } from '../components/mockups/ResumePaper'
 import { FileDown, Minimize2, Check } from 'lucide-react'
+import { useT } from '../locales/LanguageContext'
 
 /** 版本管理 + PDF 导出 两个深潜区块 */
 export function VersionExport() {
+  const t = useT()
   return (
     <>
       {/* 版本管理 */}
@@ -16,19 +18,19 @@ export function VersionExport() {
             </Reveal>
             <div className="order-1 lg:order-2">
               <SectionHeading
-                index="03"
-                eyebrow="版本管理"
-                title={<>每一次修改，<br />都可以回溯。</>}
-                description="系统自动保存当前修改；重要的节点，主动存成一个版本。投递不同公司前改了什么、为什么改，随时翻看，一键恢复旧内容。"
+                index={t.version.index}
+                eyebrow={t.version.eyebrow}
+                title={<>{t.version.title1}<br />{t.version.title2}</>}
+                description={t.version.description}
               />
               <Reveal delay={0.2}>
                 <ul className="mt-10 space-y-4">
-                  {['自动保存，离开页面也不丢内容', '命名版本，标记每个关键节点', '任意历史版本一键恢复'].map((t) => (
-                    <li key={t} className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-300">
+                  {t.version.bullets.map((text) => (
+                    <li key={text} className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-300">
                       <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-black/20 dark:border-white/20">
                         <Check className="h-3 w-3 text-zinc-600 dark:text-zinc-300" />
                       </span>
-                      {t}
+                      {text}
                     </li>
                   ))}
                 </ul>
@@ -47,9 +49,9 @@ export function VersionExport() {
         />
         <div className="relative mx-auto max-w-6xl px-6 py-28 sm:py-36">
           <SectionHeading
-            index="04"
-            eyebrow="导出"
-            title={<>两种导出方式，<br />都为投递而生。</>}
+            index={t.export.index}
+            eyebrow={t.export.eyebrow}
+            title={<>{t.export.title1}<br />{t.export.title2}</>}
             align="center"
           />
           <div className="mt-16 grid gap-6 md:grid-cols-2">
@@ -59,9 +61,9 @@ export function VersionExport() {
                 <FileDown className="h-5 w-5 text-zinc-400" strokeWidth={1.5} />
                 <span className="font-mono text-xs text-zinc-600">MODE A</span>
               </div>
-              <h3 className="mt-8 text-xl font-medium text-zinc-900 dark:text-white">标准 A4 分页</h3>
+              <h3 className="mt-8 text-xl font-medium text-zinc-900 dark:text-white">{t.export.modeA}</h3>
               <p className="mt-3 max-w-sm text-sm leading-relaxed text-zinc-500">
-                内容自然分页，每一页都严格遵循 A4 尺寸与页边距，打印、上传、转发都稳妥。
+                {t.export.modeADesc}
               </p>
               <div className="mt-auto pt-12">
                 <div className="flex items-end justify-center gap-4 rounded-md bg-black/[0.035] px-6 py-6 dark:bg-white/[0.04]">
@@ -80,9 +82,9 @@ export function VersionExport() {
                 <Minimize2 className="h-5 w-5 text-zinc-400" strokeWidth={1.5} />
                 <span className="font-mono text-xs text-zinc-600">MODE B</span>
               </div>
-              <h3 className="mt-8 text-xl font-medium text-zinc-900 dark:text-white">智能一页</h3>
+              <h3 className="mt-8 text-xl font-medium text-zinc-900 dark:text-white">{t.export.modeB}</h3>
               <p className="mt-3 max-w-sm text-sm leading-relaxed text-zinc-500">
-                自动调节排版密度，把内容压缩进一页纸。HR 筛选简历的黄金一页，不再靠手动删减硬凑。
+                {t.export.modeBDesc}
               </p>
               <div className="mt-auto pt-12">
                 <div className="flex items-end justify-center gap-5 rounded-md bg-black/[0.035] px-6 py-6 sm:gap-7 dark:bg-white/[0.04]">

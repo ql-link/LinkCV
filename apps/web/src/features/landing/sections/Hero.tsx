@@ -8,21 +8,17 @@ import {
   useTransform,
 } from "motion/react";
 import { ArrowDown, ArrowRight } from "lucide-react";
-import { useRef, type CSSProperties, type RefObject } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from "react";
+import { useT } from "../locales/LanguageContext";
 
 const ease = [0.21, 0.47, 0.32, 0.98] as const;
 const scrollOrbitBoostMs = 14000;
-
-type ResumeProfile = {
-  company: string;
-  education: string;
-  location: string;
-  name: string;
-  project: string;
-  role: string;
-  summary: string;
-  skills: string[];
-};
 
 type ResumeTemplate =
   | "classic"
@@ -40,80 +36,6 @@ type ResumeDesign = {
   template: ResumeTemplate;
 };
 
-const profiles: ResumeProfile[] = [
-  {
-    company: "远望科技 · 核心产品组",
-    education: "华东理工大学 · 信息管理",
-    location: "上海",
-    name: "张三",
-    project: "求职工作台重构",
-    role: "产品经理",
-    summary: "把复杂问题拆成清晰、可验证的产品体验。",
-    skills: ["产品策略", "用户研究", "数据分析"],
-  },
-  {
-    company: "微光网络 · Web 平台",
-    education: "浙江工业大学 · 软件工程",
-    location: "杭州",
-    name: "李华",
-    project: "企业级设计系统",
-    role: "前端工程师",
-    summary: "关注交互细节，也关注每一次真实交付。",
-    skills: ["React", "TypeScript", "设计系统"],
-  },
-  {
-    company: "折页工作室 · 品牌团队",
-    education: "中央美术学院 · 视觉传达",
-    location: "北京",
-    name: "王宁",
-    project: "消费品牌视觉升级",
-    role: "品牌设计师",
-    summary: "用统一的视觉语言，让品牌被准确记住。",
-    skills: ["品牌视觉", "动效设计", "创意策划"],
-  },
-  {
-    company: "数桥咨询 · 商业分析",
-    education: "中山大学 · 统计学",
-    location: "深圳",
-    name: "陈晨",
-    project: "经营指标分析平台",
-    role: "数据分析师",
-    summary: "从信息噪声里，找到真正值得行动的信号。",
-    skills: ["SQL", "可视化", "商业分析"],
-  },
-  {
-    company: "同行产品 · 用户体验部",
-    education: "四川大学 · 应用心理学",
-    location: "成都",
-    name: "赵清",
-    project: "新用户旅程研究",
-    role: "用户研究员",
-    summary: "把真实用户的声音，转化为可执行的产品判断。",
-    skills: ["深度访谈", "可用性测试", "洞察分析"],
-  },
-  {
-    company: "白昼创意 · 设计中心",
-    education: "广州美术学院 · 数字媒体",
-    location: "广州",
-    name: "林墨",
-    project: "内容创作工具改版",
-    role: "视觉设计师",
-    summary: "用清晰的层级和节奏，让复杂功能自然易懂。",
-    skills: ["视觉系统", "交互设计", "动态设计"],
-  },
-  {
-    company: "新岸商业 · 增长团队",
-    education: "南京大学 · 市场营销",
-    location: "南京",
-    name: "周冉",
-    project: "会员增长策略",
-    role: "运营策略",
-    summary: "从业务目标出发，建立持续、可衡量的增长机制。",
-    skills: ["增长策略", "内容运营", "项目管理"],
-  },
-];
-
-const orbitProfiles = Array.from({ length: 14 }, (_, index) => profiles[index % profiles.length]);
 const resumeDesigns: ResumeDesign[] = [
   { accent: "#355f85", id: 1, soft: "#edf4f8", template: "classic" },
   { accent: "#8a4f45", id: 2, soft: "#f8efed", template: "editorial" },
@@ -138,6 +60,11 @@ export function Hero({
   onStart: () => void;
   scrollContainerRef: RefObject<HTMLDivElement | null>;
 }) {
+  const t = useT();
+  const taglines = t.hero.taglines;
+  const profiles = t.hero.profiles;
+  const orbitProfiles = Array.from({ length: 14 }, (_, index) => profiles[index % profiles.length]);
+
   const sectionRef = useRef<HTMLElement>(null);
   const reduceMotion = useReducedMotion();
   const orbitTime = useTime();
@@ -152,10 +79,76 @@ export function Hero({
     mass: 0.35,
   });
 
-  const orbitOpacity = useTransform(progress, [0, 0.72, 0.96, 1], [1, 1, 0.26, 0.08]);
+  const orbitOpacity = useTransform(progress, [0, 0.72, 0.96, 1], [1, 1, 0.26, 0]);
   const copyY = useTransform(progress, [0, 0.7, 1], [0, -12, -72]);
   const copyOpacity = useTransform(progress, [0, 0.7, 0.96, 1], [1, 1, 0.34, 0.08]);
   const cueOpacity = useTransform(progress, [0, 0.18], [1, 0]);
+
+  const [taglineIndex, setTaglineIndex] = useState(0);
+  const [typedCount, setTypedCount] = useState(reduceMotion ? taglines[0].length : 0);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      setTypedCount(taglines[0].length);
+      return;
+    }
+
+    let currentTagline = 0;
+    let index = 0;
+    let phase: "typing" | "holding" | "erasing" = "typing";
+    let cancelled = false;
+    let timer: number | undefined;
+
+    setTaglineIndex(0);
+    setTypedCount(0);
+
+    const typeMs = 110;
+    const eraseMs = 38;
+    const holdMs = 2400;
+    const startDelay = 500;
+
+    const tick = () => {
+      if (cancelled) return;
+      const text = taglines[currentTagline];
+
+      if (phase === "typing") {
+        index += 1;
+        setTypedCount(index);
+        if (index >= text.length) {
+          phase = "holding";
+          timer = window.setTimeout(tick, holdMs);
+        } else {
+          timer = window.setTimeout(tick, typeMs);
+        }
+        return;
+      }
+
+      if (phase === "holding") {
+        phase = "erasing";
+        timer = window.setTimeout(tick, eraseMs);
+        return;
+      }
+
+      index -= 1;
+      setTypedCount(index);
+      if (index <= 0) {
+        currentTagline = (currentTagline + 1) % taglines.length;
+        setTaglineIndex(currentTagline);
+        phase = "typing";
+        timer = window.setTimeout(tick, typeMs);
+      } else {
+        timer = window.setTimeout(tick, eraseMs);
+      }
+    };
+
+    timer = window.setTimeout(tick, startDelay);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [reduceMotion, taglines]);
+
+  const activeTagline = taglines[taglineIndex];
 
   return (
     <section ref={sectionRef} id="top" className="landing-orbit-hero">
@@ -191,26 +184,31 @@ export function Hero({
             initial={reduceMotion ? false : { opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.65, ease }}
-            className="landing-orbit-kicker"
+            className="landing-orbit-brand"
           >
-            <span>LINKCV</span>
-            <i aria-hidden />
-            <span>求职工作台</span>
+            <span className="landing-orbit-brand-mark" aria-hidden>
+              L
+            </span>
+            <span className="landing-orbit-brand-name">{t.hero.brand}</span>
           </motion.div>
           <motion.h1
-            initial={reduceMotion ? false : { opacity: 0, y: 22 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.75, delay: 0.08, ease }}
+            initial={reduceMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3 }}
+            className="landing-orbit-tagline"
           >
-            把经历，写成
-            <span>下一份机会。</span>
+            <span className="sr-only">{activeTagline}</span>
+            <span aria-hidden className="landing-orbit-tagline-visible">
+              {activeTagline.slice(0, typedCount)}
+              <span className="landing-orbit-caret" />
+            </span>
           </motion.h1>
           <motion.p
             initial={reduceMotion ? false : { opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.72, delay: 0.16, ease }}
           >
-            从一份简历开始，管理版本、岗位与每一次成长。
+            {t.hero.subtitle}
           </motion.p>
           <motion.button
             type="button"
@@ -222,7 +220,7 @@ export function Hero({
             whileTap={reduceMotion ? undefined : { scale: 0.98 }}
             className="landing-orbit-cta"
           >
-            开始创建简历
+            {t.hero.cta}
             <ArrowRight aria-hidden />
           </motion.button>
         </motion.div>
@@ -232,13 +230,31 @@ export function Hero({
           className="landing-orbit-scroll-cue"
           style={reduceMotion ? undefined : { opacity: cueOpacity }}
         >
-          <span>向下探索</span>
+          <span>{t.hero.scrollCue}</span>
           <ArrowDown aria-hidden />
         </motion.a>
       </div>
     </section>
   );
 }
+
+type ProfileData = {
+  company: string;
+  company2: string;
+  education: string;
+  location: string;
+  name: string;
+  project: string;
+  projectDesc: string;
+  projectPeriod: string;
+  role: string;
+  summary: string;
+  skills: string[];
+  workDesc: string;
+  workDesc2: string;
+  workPeriod: string;
+  workPeriod2: string;
+};
 
 function OrbitResume({
   design,
@@ -251,7 +267,7 @@ function OrbitResume({
 }: {
   design: ResumeDesign;
   index: number;
-  profile: ResumeProfile;
+  profile: ProfileData;
   reduceMotion: boolean;
   scrollProgress: MotionValue<number>;
   time: MotionValue<number>;
@@ -284,7 +300,8 @@ function OrbitResume({
   );
 }
 
-function ResumeCard({ design, profile }: { design: ResumeDesign; profile: ResumeProfile }) {
+function ResumeCard({ design, profile }: { design: ResumeDesign; profile: ProfileData }) {
+  const t = useT();
   const style = {
     "--resume-accent": design.accent,
     "--resume-accent-soft": design.soft,
@@ -303,43 +320,48 @@ function ResumeCard({ design, profile }: { design: ResumeDesign; profile: Resume
           <strong>{profile.name}</strong>
           <small>{profile.role}</small>
         </div>
-        <address>{profile.location} · 求职中</address>
+        <address>{profile.location} · {t.hero.cardStatus}</address>
       </header>
       <div className="landing-resume-contact">
         <span>linkcv.example</span>
-        <span>作品集 / 项目经历</span>
+        <span>{t.hero.cardPortfolio}</span>
       </div>
       <p className="landing-resume-summary">{profile.summary}</p>
       <section>
         <div className="landing-resume-section-title">
-          <span>工作经历</span>
+          <span>{t.hero.cardWork}</span>
           <i />
         </div>
         <div className="landing-resume-row">
           <strong>{profile.company}</strong>
-          <time>2022.06 — 至今</time>
+          <time>{profile.workPeriod}</time>
         </div>
         <small>{profile.role}</small>
-        <p>负责核心项目规划与落地，持续推动关键体验与业务指标改进。</p>
+        <p>{profile.workDesc}</p>
+        <div className="landing-resume-row landing-resume-row--next">
+          <strong>{profile.company2}</strong>
+          <time>{profile.workPeriod2}</time>
+        </div>
+        <p>{profile.workDesc2}</p>
       </section>
       <section>
         <div className="landing-resume-section-title">
-          <span>项目经历</span>
+          <span>{t.hero.cardProject}</span>
           <i />
         </div>
         <div className="landing-resume-row">
           <strong>{profile.project}</strong>
-          <time>2024</time>
+          <time>{profile.projectPeriod}</time>
         </div>
-        <p>从需求梳理到最终交付，建立可复用的方法并沉淀完整成果。</p>
+        <p>{profile.projectDesc}</p>
       </section>
       <footer>
         <div>
-          <strong>教育经历</strong>
+          <strong>{t.hero.cardEducation}</strong>
           <span>{profile.education}</span>
         </div>
         <div>
-          <strong>专业能力</strong>
+          <strong>{t.hero.cardSkills}</strong>
           <span>{profile.skills.join(" · ")}</span>
         </div>
       </footer>
