@@ -10,6 +10,7 @@
   --radius: 0.625rem;
   width: 100%;
   height: 100vh;
+  position: relative;
   overflow-x: hidden;
   overflow-y: auto;
   background: var(--page-bg);
@@ -152,6 +153,682 @@
   -webkit-backdrop-filter: blur(14px);
 }
 
+.landing-orbit-hero {
+  position: relative;
+  height: 145vh;
+  min-height: 900px;
+  overflow: clip;
+  background: var(--page-bg);
+}
+
+.landing-orbit-stage {
+  position: sticky;
+  top: 0;
+  width: 100%;
+  height: 100vh;
+  min-height: 680px;
+  isolation: isolate;
+}
+
+.landing-orbit-halo {
+  position: absolute;
+  inset: 10% 18% 6%;
+  border: 1px solid rgb(24 24 27 / 0.06);
+  border-radius: 50%;
+  opacity: 0.7;
+}
+
+.dark .landing-orbit-halo {
+  border-color: rgb(255 255 255 / 0.08);
+}
+
+.landing-orbit-halo::before,
+.landing-orbit-halo::after {
+  position: absolute;
+  border: 1px solid rgb(24 24 27 / 0.04);
+  border-radius: inherit;
+  content: "";
+  inset: 8%;
+}
+
+.landing-orbit-halo::after {
+  inset: 18%;
+}
+
+.dark .landing-orbit-halo::before,
+.dark .landing-orbit-halo::after {
+  border-color: rgb(255 255 255 / 0.05);
+}
+
+.landing-orbit-scroll-layer,
+.landing-orbit-stream {
+  position: absolute;
+  inset: 0;
+}
+
+.landing-orbit-scroll-layer {
+  z-index: 0;
+  transform-origin: 50% 54%;
+}
+
+.landing-orbit-card {
+  position: absolute;
+  top: 56%;
+  left: 50%;
+  width: clamp(150px, 15vw, 230px);
+  transform-origin: center;
+  will-change: transform, filter, opacity;
+}
+
+.landing-orbit-copy {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  width: min(700px, calc(100% - 40px));
+  align-items: center;
+  flex-direction: column;
+  translate: -50% -52%;
+  text-align: center;
+}
+
+.landing-orbit-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.landing-orbit-brand-mark {
+  display: flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: #18181b;
+  color: #fafafa;
+  font-family: var(--display-font, serif);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.dark .landing-orbit-brand-mark {
+  background: #fafafa;
+  color: #18181b;
+}
+
+.landing-orbit-brand-name {
+  color: #18181b;
+  font-family: var(--display-font, serif);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.dark .landing-orbit-brand-name {
+  color: #fafafa;
+}
+
+.landing-orbit-copy h1 {
+  margin-top: 20px;
+  min-height: 1em;
+  color: #18181b;
+  font-family: var(--display-font, serif);
+  font-size: clamp(1.9rem, 3.6vw, 3.8rem);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+}
+
+.dark .landing-orbit-copy h1 {
+  color: #fafafa;
+}
+
+.landing-orbit-tagline-visible {
+  white-space: nowrap;
+}
+
+.landing-orbit-caret {
+  display: inline-block;
+  width: 3px;
+  height: 0.86em;
+  margin-left: 6px;
+  background: currentColor;
+  vertical-align: -0.08em;
+  animation: landing-orbit-caret-blink 0.9s steps(1) infinite;
+}
+
+@keyframes landing-orbit-caret-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-orbit-caret {
+    animation: none;
+  }
+}
+
+.landing-orbit-copy > p {
+  margin-top: 22px;
+  color: #71717a;
+  font-size: clamp(13px, 1.2vw, 16px);
+  letter-spacing: 0.01em;
+}
+
+.landing-orbit-cta {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 26px;
+  border-radius: 999px;
+  background: #18181b;
+  box-shadow: 0 12px 34px rgb(24 24 27 / 0.18);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0 24px;
+}
+
+.dark .landing-orbit-cta {
+  background: #fafafa;
+  color: #18181b;
+}
+
+.landing-orbit-cta svg {
+  width: 15px;
+  height: 15px;
+  transition: transform 180ms ease;
+}
+
+.landing-orbit-cta:hover svg {
+  transform: translateX(3px);
+}
+
+.landing-resume-card {
+  --resume-accent: #355f85;
+  --resume-accent-soft: #edf4f8;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 210 / 297;
+  overflow: hidden;
+  border: 1px solid rgb(24 24 27 / 0.1);
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 20px 54px rgb(24 24 27 / 0.13), 0 2px 9px rgb(24 24 27 / 0.05);
+  color: #27272a;
+  padding: 9% 9% 8%;
+  text-align: left;
+}
+
+.landing-resume-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-bottom: 9px;
+  border-bottom: 1px solid rgb(24 24 27 / 0.16);
+}
+
+.landing-resume-card header div {
+  display: grid;
+  gap: 4px;
+}
+
+.landing-resume-card header strong {
+  font-family: var(--display-font, serif);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+
+.landing-resume-card header small {
+  color: var(--resume-accent);
+  font-size: 6px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.landing-resume-card address {
+  color: #a1a1aa;
+  font-style: normal;
+  font-family: var(--mono-font, ui-monospace, monospace);
+  font-size: 5px;
+  letter-spacing: 0.04em;
+  padding-top: 2px;
+}
+
+.landing-resume-contact {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 7px;
+  color: #a1a1aa;
+  font-family: var(--mono-font, ui-monospace, monospace);
+  font-size: 4.5px;
+  letter-spacing: 0.03em;
+}
+
+.landing-resume-summary {
+  margin-top: 12px;
+  color: #52525b;
+  font-size: 6px;
+  line-height: 1.65;
+}
+
+.landing-resume-card section {
+  margin-top: 13px;
+}
+
+.landing-resume-section-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 8px;
+  color: var(--resume-accent);
+  font-size: 6px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.landing-resume-section-title i {
+  height: 1px;
+  flex: 1;
+  background: currentColor;
+  opacity: 0.16;
+}
+
+.landing-resume-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.landing-resume-row strong {
+  overflow: hidden;
+  font-size: 6px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.landing-resume-row time {
+  flex: 0 0 auto;
+  color: #a1a1aa;
+  font-family: var(--mono-font, ui-monospace, monospace);
+  font-size: 4.5px;
+}
+
+.landing-resume-card section > small {
+  display: block;
+  margin-top: 3px;
+  color: #71717a;
+  font-size: 5px;
+}
+
+.landing-resume-row--next {
+  margin-top: 9px;
+  padding-top: 7px;
+  border-top: 1px dashed rgb(24 24 27 / 0.12);
+}
+
+.landing-resume-card section > p {
+  margin-top: 5px;
+  color: #71717a;
+  font-size: 5px;
+  line-height: 1.55;
+}
+
+.landing-resume-card footer {
+  position: absolute;
+  right: 9%;
+  bottom: 8%;
+  left: 9%;
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgb(24 24 27 / 0.12);
+}
+
+.landing-resume-card footer div {
+  display: grid;
+  gap: 4px;
+}
+
+.landing-resume-card footer strong {
+  color: var(--resume-accent);
+  font-size: 5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.landing-resume-card footer span {
+  color: #a1a1aa;
+  font-size: 4.5px;
+  line-height: 1.4;
+}
+
+.landing-resume-card[data-resume-template="editorial"] {
+  padding-right: 11%;
+  padding-left: 11%;
+}
+
+.landing-resume-card[data-resume-template="editorial"] header {
+  display: block;
+  padding-bottom: 10px;
+  text-align: center;
+}
+
+.landing-resume-card[data-resume-template="editorial"] header strong {
+  color: var(--resume-accent);
+  font-size: 21px;
+}
+
+.landing-resume-card[data-resume-template="editorial"] address {
+  display: block;
+  margin-top: 5px;
+}
+
+.landing-resume-card[data-resume-template="editorial"] .landing-resume-contact {
+  justify-content: center;
+  gap: 12px;
+}
+
+.landing-resume-card[data-resume-template="editorial"] .landing-resume-section-title {
+  justify-content: center;
+}
+
+.landing-resume-card[data-resume-template="editorial"] .landing-resume-section-title i {
+  max-width: 24px;
+}
+
+.landing-resume-card[data-resume-template="sidebar"] {
+  border-left: 2px solid var(--resume-accent);
+  padding-left: 12%;
+}
+
+.landing-resume-card[data-resume-template="sidebar"] header {
+  border-bottom: 0;
+  padding-bottom: 5px;
+}
+
+.landing-resume-card[data-resume-template="sidebar"] header strong {
+  color: var(--resume-accent);
+  font-family: var(--body-font, sans-serif);
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+
+.landing-resume-card[data-resume-template="sidebar"] .landing-resume-contact {
+  padding-top: 6px;
+  border-top: 1px solid rgb(24 24 27 / 0.1);
+}
+
+.landing-resume-card[data-resume-template="sidebar"] .landing-resume-section-title i {
+  display: none;
+}
+
+.landing-resume-card[data-resume-template="ledger"] {
+  border-top-width: 5px;
+}
+
+.landing-resume-card[data-resume-template="ledger"] header {
+  border-bottom-color: var(--resume-accent);
+}
+
+.landing-resume-card[data-resume-template="ledger"] .landing-resume-section-title {
+  margin-right: -4px;
+  margin-left: -4px;
+  padding: 4px;
+  border-bottom: 1px solid var(--resume-accent);
+}
+
+.landing-resume-card[data-resume-template="ledger"] .landing-resume-section-title i {
+  display: none;
+}
+
+.landing-resume-card[data-resume-template="split"] header {
+  border-bottom: 2px solid var(--resume-accent);
+}
+
+.landing-resume-card[data-resume-template="split"] .landing-resume-summary {
+  border-left: 2px solid var(--resume-accent);
+  padding: 2px 0 2px 7px;
+}
+
+.landing-resume-card[data-resume-template="split"] footer {
+  grid-template-columns: 1fr 1fr;
+  border-top-color: var(--resume-accent);
+}
+
+.landing-resume-card[data-resume-template="compact"] {
+  padding: 8% 8% 7%;
+}
+
+.landing-resume-card[data-resume-template="compact"] header strong {
+  color: var(--resume-accent);
+  font-family: var(--body-font, sans-serif);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.landing-resume-card[data-resume-template="compact"] .landing-resume-summary {
+  margin-top: 9px;
+}
+
+.landing-resume-card[data-resume-template="compact"] section {
+  margin-top: 10px;
+}
+
+.landing-resume-card[data-resume-template="compact"] footer {
+  right: 8%;
+  bottom: 7%;
+  left: 8%;
+  grid-template-columns: 1fr;
+  gap: 5px;
+}
+
+.landing-resume-card[data-resume-template="compact"] footer div {
+  grid-template-columns: 0.72fr 1.28fr;
+  align-items: baseline;
+}
+
+.landing-resume-card[data-resume-template="minimal"] {
+  border-top-width: 1px;
+  padding-right: 10%;
+  padding-left: 10%;
+}
+
+.landing-resume-card[data-resume-template="minimal"] header {
+  border-bottom: 0;
+}
+
+.landing-resume-card[data-resume-template="minimal"] header strong {
+  color: var(--resume-accent);
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.landing-resume-card[data-resume-template="minimal"] .landing-resume-contact {
+  padding-bottom: 7px;
+  border-bottom: 1px solid rgb(24 24 27 / 0.1);
+}
+
+.landing-resume-card[data-resume-template="minimal"] .landing-resume-section-title {
+  letter-spacing: 0.18em;
+}
+
+.landing-orbit-scroll-cue {
+  position: absolute;
+  z-index: 4;
+  right: 34px;
+  bottom: 28px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #71717a;
+  font-family: var(--mono-font, ui-monospace, monospace);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+}
+
+.landing-orbit-scroll-cue svg {
+  width: 13px;
+  height: 13px;
+  animation: landing-cue 1.9s ease-in-out infinite;
+}
+
+.landing-section-bridge {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  min-height: 100svh;
+  grid-template-rows: 1fr auto;
+  margin-top: -10vh;
+  overflow: hidden;
+  border-top: 1px solid rgb(24 24 27 / 0.08);
+  background: var(--page-bg);
+  color: #18181b;
+  padding-top: 10vh;
+}
+
+.dark .landing-section-bridge {
+  border-top-color: rgb(255 255 255 / 0.08);
+  color: #fafafa;
+}
+
+.landing-section-bridge-copy {
+  display: flex;
+  min-height: 0;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(72px, 12vh, 132px) 24px clamp(56px, 9vh, 96px);
+  text-align: center;
+}
+
+.landing-section-bridge-copy > span {
+  color: #a1a1aa;
+  font-family: var(--mono-font, ui-monospace, monospace);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+}
+
+.landing-section-bridge-copy h2 {
+  margin-top: 20px;
+  color: #18181b;
+  font-family: var(--display-font, serif);
+  font-size: clamp(3rem, 6.4vw, 6.6rem);
+  font-weight: 500;
+  letter-spacing: -0.055em;
+  line-height: 1.32;
+}
+
+.dark .landing-section-bridge-copy h2 {
+  color: #fafafa;
+}
+
+.landing-section-bridge-copy p {
+  margin-top: 22px;
+  color: #a1a1aa;
+  font-size: 14px;
+}
+
+.landing-bridge-marquee {
+  overflow: hidden;
+  border-top: 1px solid rgb(24 24 27 / 0.1);
+  border-bottom: 1px solid rgb(24 24 27 / 0.1);
+  color: #71717a;
+  padding: 20px 0;
+}
+
+.dark .landing-bridge-marquee {
+  border-color: rgb(255 255 255 / 0.12);
+  color: #a1a1aa;
+}
+
+.landing-bridge-marquee .h-1 {
+  background: #a1a1aa;
+}
+
+@keyframes landing-cue {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(5px); }
+}
+
+@media (max-width: 900px) {
+  .landing-orbit-hero {
+    height: 142vh;
+  }
+
+  .landing-orbit-halo {
+    inset: 14% 5% 8%;
+  }
+
+  .landing-orbit-card {
+    width: clamp(145px, 20vw, 190px);
+  }
+}
+
+@media (max-width: 640px) {
+  .landing-orbit-stage {
+    min-height: 620px;
+  }
+
+  .landing-orbit-halo {
+    inset: 15% -24% 8%;
+  }
+
+  .landing-orbit-copy {
+    top: 48%;
+    width: calc(100% - 36px);
+    translate: -50% -50%;
+  }
+
+  .landing-orbit-copy h1 {
+    max-width: 430px;
+    font-size: clamp(2.8rem, 14vw, 4.3rem);
+  }
+
+  .landing-orbit-copy > p {
+    max-width: 300px;
+  }
+
+  .landing-orbit-card {
+    top: 55%;
+    width: 146px;
+  }
+
+  .landing-orbit-scroll-cue {
+    right: 18px;
+    bottom: 18px;
+  }
+
+  .landing-orbit-scroll-cue span {
+    display: none;
+  }
+
+  .landing-section-bridge {
+    min-height: 100svh;
+    margin-top: -8vh;
+    padding-top: 8vh;
+  }
+
+  .landing-section-bridge-copy {
+    min-height: 0;
+    padding: 72px 22px 56px;
+  }
+}
+
 .marketing-landing.dark .glass {
   background: rgb(14 14 16 / 0.66);
 }
@@ -172,7 +849,8 @@
   }
 
   .marketing-landing .animate-marquee,
-  .marketing-landing .animate-float-slow {
+  .marketing-landing .animate-float-slow,
+  .landing-orbit-scroll-cue svg {
     animation: none;
   }
 }

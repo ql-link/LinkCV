@@ -1,140 +1,370 @@
-import { motion } from 'motion/react'
-import { ArrowRight, FileDown, History } from 'lucide-react'
-import { ResumePaper } from '../components/mockups/ResumePaper'
+import {
+  motion,
+  type MotionValue,
+  useReducedMotion,
+  useScroll,
+  useSpring,
+  useTime,
+  useTransform,
+} from "motion/react";
+import { ArrowDown, ArrowRight } from "lucide-react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from "react";
+import { useT } from "../locales/LanguageContext";
 
-const ease = [0.21, 0.47, 0.32, 0.98] as const
+const ease = [0.21, 0.47, 0.32, 0.98] as const;
+const scrollOrbitBoostMs = 14000;
 
-export function Hero({ onStart }: { onStart: () => void }) {
+type ResumeTemplate =
+  | "classic"
+  | "compact"
+  | "editorial"
+  | "ledger"
+  | "minimal"
+  | "sidebar"
+  | "split";
+
+type ResumeDesign = {
+  accent: string;
+  id: number;
+  soft: string;
+  template: ResumeTemplate;
+};
+
+const resumeDesigns: ResumeDesign[] = [
+  { accent: "#355f85", id: 1, soft: "#edf4f8", template: "classic" },
+  { accent: "#8a4f45", id: 2, soft: "#f8efed", template: "editorial" },
+  { accent: "#496a58", id: 3, soft: "#edf4ef", template: "sidebar" },
+  { accent: "#876a35", id: 4, soft: "#f7f2e7", template: "ledger" },
+  { accent: "#66558a", id: 5, soft: "#f2eff8", template: "split" },
+  { accent: "#39757a", id: 6, soft: "#eaf5f5", template: "compact" },
+  { accent: "#5e6472", id: 7, soft: "#f0f1f3", template: "minimal" },
+  { accent: "#9a5b37", id: 8, soft: "#faefe8", template: "classic" },
+  { accent: "#376b63", id: 9, soft: "#eaf4f1", template: "editorial" },
+  { accent: "#596f9c", id: 10, soft: "#edf1f8", template: "sidebar" },
+  { accent: "#7e526f", id: 11, soft: "#f6edf3", template: "ledger" },
+  { accent: "#5c7444", id: 12, soft: "#eff4e9", template: "split" },
+  { accent: "#8a623d", id: 13, soft: "#f7f0e8", template: "compact" },
+  { accent: "#426b7c", id: 14, soft: "#ebf3f6", template: "minimal" },
+];
+
+export function Hero({
+  onStart,
+  scrollContainerRef,
+}: {
+  onStart: () => void;
+  scrollContainerRef: RefObject<HTMLDivElement | null>;
+}) {
+  const t = useT();
+  const taglines = t.hero.taglines;
+  const profiles = t.hero.profiles;
+  const orbitProfiles = Array.from({ length: 14 }, (_, index) => profiles[index % profiles.length]);
+
+  const sectionRef = useRef<HTMLElement>(null);
+  const reduceMotion = useReducedMotion();
+  const orbitTime = useTime();
+  const { scrollYProgress } = useScroll({
+    container: scrollContainerRef,
+    target: sectionRef,
+    offset: ["start start", "end end"],
+  });
+  const progress = useSpring(scrollYProgress, {
+    stiffness: 90,
+    damping: 24,
+    mass: 0.35,
+  });
+
+  const orbitOpacity = useTransform(progress, [0, 0.72, 0.96, 1], [1, 1, 0.26, 0]);
+  const copyY = useTransform(progress, [0, 0.7, 1], [0, -12, -72]);
+  const copyOpacity = useTransform(progress, [0, 0.7, 0.96, 1], [1, 1, 0.34, 0.08]);
+  const cueOpacity = useTransform(progress, [0, 0.18], [1, 0]);
+
+  const [taglineIndex, setTaglineIndex] = useState(0);
+  const [typedCount, setTypedCount] = useState(reduceMotion ? taglines[0].length : 0);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      setTypedCount(taglines[0].length);
+      return;
+    }
+
+    let currentTagline = 0;
+    let index = 0;
+    let phase: "typing" | "holding" | "erasing" = "typing";
+    let cancelled = false;
+    let timer: number | undefined;
+
+    setTaglineIndex(0);
+    setTypedCount(0);
+
+    const typeMs = 110;
+    const eraseMs = 38;
+    const holdMs = 2400;
+    const startDelay = 500;
+
+    const tick = () => {
+      if (cancelled) return;
+      const text = taglines[currentTagline];
+
+      if (phase === "typing") {
+        index += 1;
+        setTypedCount(index);
+        if (index >= text.length) {
+          phase = "holding";
+          timer = window.setTimeout(tick, holdMs);
+        } else {
+          timer = window.setTimeout(tick, typeMs);
+        }
+        return;
+      }
+
+      if (phase === "holding") {
+        phase = "erasing";
+        timer = window.setTimeout(tick, eraseMs);
+        return;
+      }
+
+      index -= 1;
+      setTypedCount(index);
+      if (index <= 0) {
+        currentTagline = (currentTagline + 1) % taglines.length;
+        setTaglineIndex(currentTagline);
+        phase = "typing";
+        timer = window.setTimeout(tick, typeMs);
+      } else {
+        timer = window.setTimeout(tick, eraseMs);
+      }
+    };
+
+    timer = window.setTimeout(tick, startDelay);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [reduceMotion, taglines]);
+
+  const activeTagline = taglines[taglineIndex];
+
   return (
-    <section id="top" className="relative overflow-hidden pt-16">
-      {/* 背景：细网格 + 顶部辉光 */}
-      <div className="bg-grid absolute inset-0" aria-hidden />
-      <div
-        className="absolute inset-0"
-        style={{ background: 'radial-gradient(ellipse 60% 45% at 50% 0%, var(--glow), transparent 70%)' }}
-        aria-hidden
-      />
-      <div
-        className="absolute inset-0"
-        style={{ background: 'linear-gradient(to bottom, transparent 55%, var(--page-bg) 96%)' }}
-        aria-hidden
-      />
+    <section ref={sectionRef} id="top" className="landing-orbit-hero">
+      <div className="landing-orbit-stage">
+        <div className="landing-orbit-halo" aria-hidden />
 
-      <div className="relative mx-auto max-w-6xl px-6">
-        <div className="grid items-center gap-16 py-24 sm:py-32 lg:grid-cols-[1.05fr_0.95fr] lg:gap-10">
-          {/* 左侧文案 */}
-          <div>
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7, ease }}
-              className="inline-flex items-center gap-2.5 rounded-full border border-black/[0.08] bg-black/[0.03] dark:border-white/10 dark:bg-white/[0.03] px-4 py-1.5"
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-zinc-900 dark:bg-white" />
-              <span className="font-mono text-[11px] tracking-[0.12em] text-zinc-500 dark:text-zinc-400">中文求职工作台</span>
-            </motion.div>
-
-            <motion.h1
-              initial={{ opacity: 0, y: 28 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.1, ease }}
-              className="text-balance mt-8 font-display text-[2.6rem] leading-[1.1] font-medium tracking-tight text-zinc-900 dark:text-white sm:text-6xl lg:text-[4.2rem]"
-            >
-              简历创作，
-              <br />
-              版本与岗位，
-              <br />
-              <span className="text-zinc-500">收进一个工作区。</span>
-            </motion.h1>
-
-            <motion.p
-              initial={{ opacity: 0, y: 28 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.2, ease }}
-              className="mt-7 max-w-md text-[15px] leading-relaxed text-zinc-500 dark:text-zinc-400"
-            >
-              LinkCV 把简历编辑、版本管理、PDF 导出与岗位资料收集整合在一起。
-              不再在 Word、模板网站、浏览器收藏和零散文档之间来回切换。
-            </motion.p>
-
-            <motion.div
-              initial={{ opacity: 0, y: 28 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.3, ease }}
-              className="mt-10 flex flex-wrap items-center gap-4"
-            >
-              <button
-                type="button"
-                onClick={onStart}
-                className="group flex items-center gap-2 rounded-full bg-zinc-900 px-7 py-3.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-              >
-                开始创建简历
-                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-              </button>
-              <a
-                href="#features"
-                className="rounded-full border border-black/15 px-7 py-3.5 text-sm text-zinc-700 transition-colors hover:border-black/40 hover:text-zinc-900 dark:border-white/15 dark:text-zinc-300 dark:hover:border-white/35 dark:hover:text-white"
-              >
-                了解功能
-              </a>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.8, delay: 0.45 }}
-              className="mt-14 flex flex-wrap gap-x-7 gap-y-3 font-mono text-[10px] tracking-[0.08em] text-zinc-400 dark:text-zinc-600"
-            >
-              <span>A4 PAPER EDITING</span>
-              <span>VERSION HISTORY</span>
-              <span>PDF EXPORT</span>
-              <span>JD CENTER</span>
-            </motion.div>
+        <motion.div
+          className="landing-orbit-scroll-layer"
+          style={reduceMotion ? undefined : { opacity: orbitOpacity }}
+          aria-hidden
+        >
+          <div className="landing-orbit-stream">
+            {orbitProfiles.map((profile, index) => (
+              <OrbitResume
+                design={resumeDesigns[index]}
+                index={index}
+                key={`${profile.name}-${index}`}
+                profile={profile}
+                reduceMotion={Boolean(reduceMotion)}
+                scrollProgress={progress}
+                time={orbitTime}
+                total={orbitProfiles.length}
+              />
+            ))}
           </div>
+        </motion.div>
 
-          {/* 右侧：白纸悬浮于黑场 */}
+        <motion.div
+          className="landing-orbit-copy"
+          style={reduceMotion ? undefined : { y: copyY, opacity: copyOpacity }}
+        >
           <motion.div
-            initial={{ opacity: 0, y: 40, rotate: 2 }}
-            animate={{ opacity: 1, y: 0, rotate: 0 }}
-            transition={{ duration: 1, delay: 0.25, ease }}
-            className="relative mx-auto w-full max-w-[420px]"
+            initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.65, ease }}
+            className="landing-orbit-brand"
           >
-            <div className="animate-float-slow">
-              <div className="text-[13px]">
-                <ResumePaper />
-              </div>
-            </div>
-
-            {/* 浮动标签：版本 */}
-            <motion.div
-              initial={{ opacity: 0, x: -16 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.7, delay: 0.7, ease }}
-              className="glass absolute -top-5 -left-4 flex items-center gap-2.5 rounded-md border border-black/10 px-3.5 py-2.5 sm:-left-16 dark:border-white/12"
-            >
-              <History className="h-3.5 w-3.5 text-zinc-400" />
-              <div>
-                <div className="font-mono text-[10px] text-zinc-500">version</div>
-                <div className="text-xs font-medium text-zinc-800 dark:text-zinc-100">v12 · 已保存</div>
-              </div>
-            </motion.div>
-
-            {/* 浮动标签：导出 */}
-            <motion.div
-              initial={{ opacity: 0, x: 16 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.7, delay: 0.85, ease }}
-              className="glass absolute -right-4 bottom-[5%] flex items-center gap-2.5 rounded-md border border-black/10 px-3.5 py-2.5 sm:-right-12 dark:border-white/12"
-            >
-              <FileDown className="h-3.5 w-3.5 text-zinc-400" />
-              <div>
-                <div className="font-mono text-[10px] text-zinc-500">export</div>
-                <div className="text-xs font-medium text-zinc-800 dark:text-zinc-100">简历_终稿.pdf</div>
-              </div>
-            </motion.div>
+            <span className="landing-orbit-brand-mark" aria-hidden>
+              L
+            </span>
+            <span className="landing-orbit-brand-name">{t.hero.brand}</span>
           </motion.div>
-        </div>
+          <motion.h1
+            initial={reduceMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3 }}
+            className="landing-orbit-tagline"
+          >
+            <span className="sr-only">{activeTagline}</span>
+            <span aria-hidden className="landing-orbit-tagline-visible">
+              {activeTagline.slice(0, typedCount)}
+              <span className="landing-orbit-caret" />
+            </span>
+          </motion.h1>
+          <motion.p
+            initial={reduceMotion ? false : { opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.72, delay: 0.16, ease }}
+          >
+            {t.hero.subtitle}
+          </motion.p>
+          <motion.button
+            type="button"
+            onClick={onStart}
+            initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.24, ease }}
+            whileHover={reduceMotion ? undefined : { y: -2 }}
+            whileTap={reduceMotion ? undefined : { scale: 0.98 }}
+            className="landing-orbit-cta"
+          >
+            {t.hero.cta}
+            <ArrowRight aria-hidden />
+          </motion.button>
+        </motion.div>
+
+        <motion.a
+          href="#workspace-intro"
+          className="landing-orbit-scroll-cue"
+          style={reduceMotion ? undefined : { opacity: cueOpacity }}
+        >
+          <span>{t.hero.scrollCue}</span>
+          <ArrowDown aria-hidden />
+        </motion.a>
       </div>
     </section>
-  )
+  );
+}
+
+type ProfileData = {
+  company: string;
+  company2: string;
+  education: string;
+  location: string;
+  name: string;
+  project: string;
+  projectDesc: string;
+  projectPeriod: string;
+  role: string;
+  summary: string;
+  skills: string[];
+  workDesc: string;
+  workDesc2: string;
+  workPeriod: string;
+  workPeriod2: string;
+};
+
+function OrbitResume({
+  design,
+  index,
+  profile,
+  reduceMotion,
+  scrollProgress,
+  time,
+  total,
+}: {
+  design: ResumeDesign;
+  index: number;
+  profile: ProfileData;
+  reduceMotion: boolean;
+  scrollProgress: MotionValue<number>;
+  time: MotionValue<number>;
+  total: number;
+}) {
+  const phase = (value: number) => {
+    const elapsed = reduceMotion ? 0 : value + scrollProgress.get() * scrollOrbitBoostMs;
+    return ((elapsed / 58000 + index / total) % 1) * Math.PI * 2;
+  };
+  const depth = (value: number) => (Math.sin(phase(value)) + 1) / 2;
+  const transform = useTransform(time, (value) => {
+    const angle = phase(value);
+    const foreground = depth(value);
+    const x = Math.cos(angle) * 58;
+    const y = Math.sin(angle) * 42;
+    const scale = 0.58 + foreground * 0.92;
+    return `translate3d(calc(-50% + ${x.toFixed(3)}vw), calc(-50% + ${y.toFixed(3)}vh), 0) scale(${scale.toFixed(4)})`;
+  });
+  const opacity = useTransform(time, (value) => 0.28 + depth(value) * 0.72);
+  const filter = useTransform(time, (value) => `blur(${((1 - depth(value)) * 2.1).toFixed(2)}px)`);
+  const zIndex = useTransform(time, (value) => Math.round(10 + depth(value) * 80));
+
+  return (
+    <motion.div
+      className="landing-orbit-card"
+      style={{ filter, opacity, transform, zIndex }}
+    >
+      <ResumeCard design={design} profile={profile} />
+    </motion.div>
+  );
+}
+
+function ResumeCard({ design, profile }: { design: ResumeDesign; profile: ProfileData }) {
+  const t = useT();
+  const style = {
+    "--resume-accent": design.accent,
+    "--resume-accent-soft": design.soft,
+  } as CSSProperties;
+
+  return (
+    <article
+      className="landing-resume-card"
+      data-resume-design={design.id}
+      data-resume-template={design.template}
+      data-testid="orbit-resume"
+      style={style}
+    >
+      <header>
+        <div>
+          <strong>{profile.name}</strong>
+          <small>{profile.role}</small>
+        </div>
+        <address>{profile.location} · {t.hero.cardStatus}</address>
+      </header>
+      <div className="landing-resume-contact">
+        <span>linkcv.example</span>
+        <span>{t.hero.cardPortfolio}</span>
+      </div>
+      <p className="landing-resume-summary">{profile.summary}</p>
+      <section>
+        <div className="landing-resume-section-title">
+          <span>{t.hero.cardWork}</span>
+          <i />
+        </div>
+        <div className="landing-resume-row">
+          <strong>{profile.company}</strong>
+          <time>{profile.workPeriod}</time>
+        </div>
+        <small>{profile.role}</small>
+        <p>{profile.workDesc}</p>
+        <div className="landing-resume-row landing-resume-row--next">
+          <strong>{profile.company2}</strong>
+          <time>{profile.workPeriod2}</time>
+        </div>
+        <p>{profile.workDesc2}</p>
+      </section>
+      <section>
+        <div className="landing-resume-section-title">
+          <span>{t.hero.cardProject}</span>
+          <i />
+        </div>
+        <div className="landing-resume-row">
+          <strong>{profile.project}</strong>
+          <time>{profile.projectPeriod}</time>
+        </div>
+        <p>{profile.projectDesc}</p>
+      </section>
+      <footer>
+        <div>
+          <strong>{t.hero.cardEducation}</strong>
+          <span>{profile.education}</span>
+        </div>
+        <div>
+          <strong>{t.hero.cardSkills}</strong>
+          <span>{profile.skills.join(" · ")}</span>
+        </div>
+      </footer>
+    </article>
+  );
 }

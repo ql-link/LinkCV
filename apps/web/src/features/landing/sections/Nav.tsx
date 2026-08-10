@@ -1,13 +1,7 @@
 import { useEffect, useState, type RefObject } from 'react'
 import { ArrowUpRight, Moon, Sun } from 'lucide-react'
-
-const links = [
-  { href: '#features', label: '功能' },
-  { href: '#editor', label: '编辑器' },
-  { href: '#jd', label: 'JD 中心' },
-  { href: '#philosophy', label: '理念' },
-  { href: '#faq', label: 'FAQ' },
-]
+import { useLanguage, useT } from '../locales/LanguageContext'
+import { motion, AnimatePresence } from 'motion/react'
 
 export function Nav({
   theme,
@@ -21,6 +15,8 @@ export function Nav({
   scrollContainerRef: RefObject<HTMLDivElement | null>
 }) {
   const [scrolled, setScrolled] = useState(false)
+  const { lang, toggle } = useLanguage()
+  const t = useT()
 
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current
@@ -46,13 +42,13 @@ export function Nav({
           <span className="font-display text-[15px] font-semibold tracking-tight text-zinc-900 dark:text-white">
             LinkCV
             <span className="ml-2 hidden font-mono text-[10px] font-normal tracking-[0.12em] text-zinc-400 dark:text-zinc-500 sm:inline">
-              求职工作台
+              {t.nav.brandSub}
             </span>
           </span>
         </a>
 
         <div className="hidden items-center gap-8 md:flex">
-          {links.map((l) => (
+          {t.nav.links.map((l) => (
             <a
               key={l.href}
               href={l.href}
@@ -64,23 +60,68 @@ export function Nav({
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={onToggleTheme}
-            aria-label={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-black/10 text-zinc-600 transition-colors hover:border-black/30 hover:text-zinc-900 dark:border-white/12 dark:text-zinc-400 dark:hover:border-white/35 dark:hover:text-white"
+          <PillButton
+            onClick={toggle}
+            aria-label={lang === 'zh' ? 'Switch to English' : '切换到中文'}
+            contentKey={lang}
           >
-            {theme === 'dark' ? <Sun className="h-4 w-4" strokeWidth={1.5} /> : <Moon className="h-4 w-4" strokeWidth={1.5} />}
-          </button>
+            <span className="font-mono text-[11px] font-medium tracking-wide">
+              {lang === 'zh' ? 'EN' : '中'}
+            </span>
+          </PillButton>
+          <PillButton
+            onClick={onToggleTheme}
+            aria-label={theme === 'dark' ? t.nav.themeToLight : t.nav.themeToDark}
+            contentKey={theme}
+          >
+            {theme === 'dark'
+              ? <Sun className="h-3.5 w-3.5" strokeWidth={1.5} />
+              : <Moon className="h-3.5 w-3.5" strokeWidth={1.5} />}
+          </PillButton>
           <button
             type="button"
             onClick={onLogin}
             className="group flex items-center gap-1.5 rounded-full bg-zinc-900 px-5 py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
           >
-            开始使用
+            {t.nav.login}
             <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
           </button>
         </div>
       </nav>
     </header>
+  )
+}
+
+function PillButton({
+  onClick,
+  'aria-label': ariaLabel,
+  contentKey,
+  children,
+}: {
+  onClick: () => void
+  'aria-label': string
+  contentKey: string
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-black/10 transition-colors hover:border-black/30 dark:border-white/12 dark:hover:border-white/35"
+    >
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.span
+          key={contentKey}
+          className="flex items-center justify-center text-zinc-600 dark:text-zinc-400"
+          initial={{ opacity: 0, y: 8, scale: 0.6 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -8, scale: 0.6 }}
+          transition={{ duration: 0.25, ease: [0.21, 0.47, 0.32, 0.98] }}
+        >
+          {children}
+        </motion.span>
+      </AnimatePresence>
+    </button>
   )
 }

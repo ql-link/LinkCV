@@ -8,14 +8,22 @@ describe("LandingPage", () => {
     const onStart = vi.fn();
     render(<LandingPage onLogin={onLogin} onStart={onStart} />);
 
-    expect(screen.getByRole("heading", { name: /简历创作/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "把每一份经历，都写成下一份机会" })).toBeInTheDocument();
+    const orbitResumes = screen.getAllByTestId("orbit-resume");
+    expect(orbitResumes).toHaveLength(14);
+    expect(new Set(orbitResumes.map((resume) => resume.dataset.resumeDesign)).size).toBe(14);
+    expect(new Set(orbitResumes.map((resume) => resume.dataset.resumeTemplate)).size).toBe(7);
+    expect(screen.getByRole("heading", { name: /一份简历，只是开始/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /每一步都在掌控之中/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /岗位信息/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /下一份简历，从这里开始/ })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "页脚导航" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "开始创建简历" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始使用 LinkCV" }));
     fireEvent.click(screen.getByRole("button", { name: "开始使用" }));
 
-    expect(onStart).toHaveBeenCalledTimes(1);
+    expect(onStart).toHaveBeenCalledTimes(2);
     expect(onLogin).toHaveBeenCalledTimes(1);
   });
 });
