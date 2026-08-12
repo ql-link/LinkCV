@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import { useResumeStore } from "../../store/resumeStore";
-import { IconButton } from "../../components/ds";
+import { IconButton } from "@/components/ui";
 
 type SourceModalProps = {
   html: string;

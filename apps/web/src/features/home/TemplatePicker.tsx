@@ -1,7 +1,7 @@
 import { Check, Eye, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, type ResumeTemplate } from "../../api/client";
-import { Button } from "../../components/ds";
+import { Button } from "@/components/ui";
 import { ResumePreview } from "../preview/ResumePreview";
 
 export function TemplatePicker({

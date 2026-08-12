@@ -5,6 +5,7 @@ import { ObservabilityBoundary } from "./features/observability/ObservabilityBou
 import "@callmebill/lxgw-wenkai-web/lxgwwenkai-regular/result.css";
 import "./styles.css";
 import "./design-system/tokens.css";
+import "./design-system/utilities.css";
 import "./app.css";
 
 createRoot(document.getElementById("root")!).render(

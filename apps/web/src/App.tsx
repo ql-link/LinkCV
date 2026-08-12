@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button } from "./components/ds";
+import { Button } from "@/components/ui";
 import { WorkspaceLayout, type WorkspaceSection } from "./components/WorkspaceLayout";
 import { ApiRequestError } from "./api/client";
 import { AccountPage } from "./features/account/AccountPage";

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ShieldCheck } from "lucide-react";
 import { ApiRequestError } from "../../api/client";
-import { Button, TextInput } from "../../components/ds";
+import { Button, TextField } from "@/components/ui";
 import { authPath, navigateTo } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
 
@@ -98,14 +98,14 @@ export function ChangePasswordPage() {
                 修改成功后，所有设备上的登录状态都会立即失效。
               </p>
               <div className="account-fields">
-                <TextInput
+                <TextField
                   label="当前密码"
                   type="password"
                   value={currentPassword}
                   autoComplete="current-password"
                   onChange={(event) => setCurrentPassword(event.target.value)}
                 />
-                <TextInput
+                <TextField
                   label="新密码"
                   type="password"
                   value={newPassword}
@@ -113,7 +113,7 @@ export function ChangePasswordPage() {
                   hint={`至少 ${MIN_PASSWORD_LENGTH} 位`}
                   onChange={(event) => setNewPassword(event.target.value)}
                 />
-                <TextInput
+                <TextField
                   label="确认新密码"
                   type="password"
                   value={confirmPassword}

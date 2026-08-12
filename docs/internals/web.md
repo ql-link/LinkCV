@@ -41,8 +41,12 @@ JD 临时管理界面使用可恢复路由 `/jobs`、`/jobs/new`、`/jobs/:jobId
 
 ## 视觉与交互基线
 
+- 登录后功能区的视觉语言与机器可读 Token 见根目录 [`DESIGN.md`](../../DESIGN.md)。`src/design-system/tokens.css` 是浏览器运行实现，`tailwind.config.cjs` 提供语义 utility 映射，`src/design-system/utilities.css` 是 Tailwind utilities 的全局入口；保持 `preflight: false`。
+- shadcn primitive 与 LinkCV 通用组合组件只放在 `src/components/ui/`，页面统一从 `@/components/ui` 导入；`components.json` 保存 shadcn CLI 与 Registry 配置，MCP 连接由 Codex 配置管理。UI 目录不保存 API、权限和页面状态，也不另建 `components/product`。
+- 普通工作区在 `WorkspaceLayout` 上显式使用 `data-ui-theme="light"`，保持既有浅色行为；入口层和管理端沿用各自主题。新增主题必须在 Token 层定义，不能在页面重复声明整套颜色。
+- 页面视觉方向、Design Brief、shadcn 选型、Vercel Web Interface Guidelines 审查和浏览器验收流程由 [frontend-design Skill](../../.ai/skills/frontend-design/SKILL.md) 维护。该 Skill 把 Anthropic 官方 frontend-design 方法适配到 LinkCV 的四类视觉边界；21st.dev 等外部参考只提供局部布局、材质和动效意图，最终使用 LinkCV Token 与组件重写。
 - 可在本地运行的 Web 改动由 Agent 启动并查看实际页面；大幅视觉修改先确认设计来源，按选定效果的布局、密度、间距、色彩、字体、内容和层级实现。新反馈只有在实现完成后才更新本节；尚未实现的决定留在对应 Spec。
-- 公共 `/` 欢迎页位于 `src/features/landing/`，使用独立的 Tailwind 编译配置和 `.marketing-landing` 样式边界承载深浅主题、响应式营销区块与产品模拟图；登录、顶部和页尾 CTA 仍通过现有 `LandingPage` 回调进入 `/login`，不在营销组件内另建路由或鉴权状态。
+- 公共 `/` 欢迎页位于 `src/features/landing/`，使用 `.marketing-landing` 样式边界承载深浅主题、响应式营销区块与产品模拟图；登录、顶部和页尾 CTA 仍通过现有 `LandingPage` 回调进入 `/login`，不在营销组件内另建路由或鉴权状态。登录/注册页使用独立 `features/auth/auth.css` 保留入口构图和 Shader，表单的 TextField 与 Button 来自集中 UI；入口不再导入 `landing.css`。
 - 默认简历使用虚构示例，当前姓名为“张三”。产品约束是不使用已经移除的 Google CJK serif 字体族；当前 `resumeStore.ts` 和 `tokens.css` 仍保留 `Noto Serif CJK SC` 或 `Noto Serif SC` 作为本地 fallback，这是尚未消解的既有不一致，不能写成已经满足。UI 中的霞鹜文楷由 Web Font 依赖提供，不能依赖用户系统安装。
 - 简历标题用字号、间距和分隔线建立层级，不自动加粗；显式 Markdown 粗体使用中等字重和略浅于正文的墨色，并在网页预览和 PDF 中保持可见。
 - 左右结构不自动加粗左侧内容。编辑器继续兼容旧版 `::: left` / `::: right`：把当前正文行转换为左右行时保留原内容到左侧，右侧立即可输入；聚焦提示只用于编辑，不进入导出结果。

@@ -10,7 +10,7 @@ import {
   type JobSalaryPeriod,
   type JobWorkMode,
 } from "../../api/client";
-import { Button } from "../../components/ds";
+import { Button } from "@/components/ui";
 import { jobDetailPath, navigateTo } from "../../routing";
 import { JobDuplicateDialog } from "./JobDuplicateDialog";
 import "./jobs.css";

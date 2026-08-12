@@ -28,7 +28,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { Brand } from "../../components/ds";
+import { Brand } from "@/components/ui";
 import { ModelsPanel } from "./AdminLlmPanels";
 import { AdminLogsCenter } from "./AdminObservabilityPanels";
 import { AdminTemplatePanel } from "./AdminTemplatePanel";

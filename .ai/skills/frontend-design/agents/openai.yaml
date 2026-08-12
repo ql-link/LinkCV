@@ -1,0 +1,5 @@
+interface:
+  display_name: "LinkCV 前端设计"
+  short_description: "用官方视觉方法、shadcn 和浏览器闭环设计 LinkCV 页面"
+  brand_color: "#17191C"
+  default_prompt: "Use $frontend-design to form an intentional visual direction, implement this LinkCV page with the project design system and shadcn components, and complete interface and browser checks."

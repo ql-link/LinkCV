@@ -1,13 +1,23 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, ChevronRight, FileText, KeyRound, LogOut, Trash2 } from "lucide-react";
+import { UserRound } from "lucide-react";
+
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+  Button,
+  FeedbackNotice,
+  Input,
+  Label,
+  Separator,
+  Skeleton,
+} from "@/components/ui";
 import { api, AccountProfile, ApiRequestError } from "../../api/client";
-import { Button, TextInput, Toast } from "../../components/ds";
-import { editorPath, navigateTo } from "../../routing";
+import { navigateTo } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
 
 const MAX_AVATAR_BYTES = 10 * 1024 * 1024;
 const MAX_NICKNAME_LENGTH = 50;
-
 type Notice = { kind: "success" | "error"; message: string } | null;
 
 export function accountErrorMessage(error: unknown, fallback: string) {
@@ -30,6 +40,7 @@ export function AccountPage() {
   const [nickname, setNickname] = useState("");
   const [savingName, setSavingName] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [removingAvatar, setRemovingAvatar] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -70,6 +81,7 @@ export function AccountPage() {
     try {
       const updated = await api.updateAccountProfile(trimmed);
       applyUserUpdate(updated);
+      setNickname(updated.nickname);
       setNotice({ kind: "success", message: "昵称已更新。" });
     } catch (error) {
       setNotice({ kind: "error", message: accountErrorMessage(error, "昵称保存失败，请稍后重试。") });
@@ -109,7 +121,8 @@ export function AccountPage() {
   };
 
   const removeAvatar = async () => {
-    if (!profile || uploadingAvatar) return;
+    if (!profile || uploadingAvatar || removingAvatar) return;
+    setRemovingAvatar(true);
     setNotice(null);
     try {
       await api.deleteAccountAvatar();
@@ -117,6 +130,8 @@ export function AccountPage() {
       setNotice({ kind: "success", message: "头像已删除。" });
     } catch (error) {
       setNotice({ kind: "error", message: accountErrorMessage(error, "头像删除失败，请稍后重试。") });
+    } finally {
+      setRemovingAvatar(false);
     }
   };
 
@@ -136,134 +151,173 @@ export function AccountPage() {
   return (
     <main className="dashboard-content account-page">
       <header className="dashboard-header account-header">
-        <h1>个人资料</h1>
+        <div className="mx-auto w-full max-w-[756px]">
+          <h1>个人资料</h1>
+        </div>
       </header>
 
-      {loading && <div className="app-loading">正在加载资料...</div>}
+      {loading && <AccountPageSkeleton />}
 
       {!loading && loadFailed && !profile && (
-        <div className="account-state">
-          <p>资料加载失败，请稍后重试。</p>
+        <section className="account-state" role="alert">
+          <UserRound aria-hidden size={28} />
+          <div>
+            <h2>暂时无法读取个人资料</h2>
+            <p>请检查网络连接后重新加载。</p>
+          </div>
           <Button variant="secondary" onClick={() => window.location.reload()}>重新加载</Button>
-        </div>
+        </section>
       )}
 
       {profile && (
-        <div className="account-body">
-          <section className="account-card">
-            <div className="account-avatar-row">
-              <span className="account-avatar">
-                {profile.user.avatar_url ? (
-                  <img src={profile.user.avatar_url} alt="当前头像" />
-                ) : (
-                  <span className="account-avatar-fallback">{[...profile.user.nickname][0] ?? "?"}</span>
-                )}
-              </span>
-              <div className="account-avatar-actions">
-                <input
-                  ref={fileInputRef}
-                  className="visually-hidden"
-                  type="file"
-                  accept="image/*"
-                  aria-label="选择头像图片"
-                  onChange={(event) => {
-                    const file = event.currentTarget.files?.[0];
-                    event.currentTarget.value = "";
-                    pickAvatarFile(file);
-                  }}
-                />
+        <div className="mx-auto w-full max-w-[820px] px-5 py-8 sm:px-8 sm:py-10">
+          <section className="overflow-hidden rounded-xl border border-border bg-surface" aria-label="账号设置">
+            <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:p-6">
+              <Avatar className="size-16 shrink-0 border border-border bg-muted">
+                <AvatarImage alt="当前头像" className="object-cover" src={profile.user.avatar_url ?? undefined} />
+                <AvatarFallback className="bg-primary text-xl font-semibold text-primary-foreground">
+                  {profileInitial(profile.user.nickname)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <h3 className="m-0 truncate text-base font-semibold">{profile.user.nickname}</h3>
+                <p className="mb-0 mt-1 truncate text-sm text-muted-foreground">{profile.user.email}</p>
+              </div>
+              <input
+                ref={fileInputRef}
+                className="visually-hidden"
+                type="file"
+                accept="image/*"
+                aria-label="选择头像图片"
+                tabIndex={-1}
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = "";
+                  pickAvatarFile(file);
+                }}
+              />
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                 <Button
-                  variant="secondary"
                   size="sm"
-                  icon={<Camera size={14} />}
-                  disabled={uploadingAvatar}
+                  variant="outline"
+                  disabled={uploadingAvatar || removingAvatar}
                   onClick={() => fileInputRef.current?.click()}
                 >
                   {uploadingAvatar ? "上传中..." : "更换头像"}
                 </Button>
                 {profile.user.avatar_url && (
-                  <Button variant="text" size="sm" icon={<Trash2 size={14} />} onClick={() => void removeAvatar()}>
-                    删除头像
+                  <Button
+                    className="text-muted-foreground hover:text-destructive"
+                    size="sm"
+                    variant="ghost"
+                    disabled={uploadingAvatar || removingAvatar}
+                    onClick={() => void removeAvatar()}
+                  >
+                    {removingAvatar ? "移除中..." : "移除"}
                   </Button>
                 )}
               </div>
             </div>
 
-            <div className="account-fields">
-              <TextInput
-                label="昵称"
-                value={nickname}
-                maxLength={MAX_NICKNAME_LENGTH}
-                hint={`最多 ${MAX_NICKNAME_LENGTH} 个字符`}
-                onChange={(event) => setNickname(event.target.value)}
-              />
-              <div className="account-field-save">
+            <Separator />
+
+            <div className="divide-y divide-border">
+              <div className="grid gap-4 p-5 sm:grid-cols-[160px_minmax(0,1fr)] sm:p-6">
+                <div>
+                  <Label htmlFor="account-nickname">昵称</Label>
+                  <p className="mb-0 mt-1 text-xs leading-relaxed text-muted-foreground">用于工作区中的身份展示。</p>
+                </div>
+                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
+                  <Input
+                    id="account-nickname"
+                    value={nickname}
+                    maxLength={MAX_NICKNAME_LENGTH}
+                    aria-describedby="account-nickname-hint"
+                    onChange={(event) => setNickname(event.target.value)}
+                  />
+                  <Button
+                    className="shrink-0 self-end sm:self-auto"
+                    size="sm"
+                    disabled={savingName || nickname.trim() === profile.user.nickname}
+                    onClick={() => void saveNickname()}
+                  >
+                    {savingName ? "保存中..." : "保存"}
+                  </Button>
+                  <span id="account-nickname-hint" className="sr-only">最多 {MAX_NICKNAME_LENGTH} 个字符</span>
+                </div>
+              </div>
+
+              <div className="grid gap-3 p-5 sm:grid-cols-[160px_minmax(0,1fr)] sm:p-6">
+                <div>
+                  <span className="text-sm font-medium">登录邮箱</span>
+                  <p className="mb-0 mt-1 text-xs leading-relaxed text-muted-foreground">当前暂不支持修改。</p>
+                </div>
+                <p className="m-0 self-center break-all text-sm text-foreground">{profile.user.email}</p>
+              </div>
+            </div>
+
+            <div className="border-t border-border bg-surface-subtle px-5 py-3 sm:px-6">
+              <h3 className="m-0 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">安全</h3>
+            </div>
+
+            <div className="divide-y divide-border">
+              <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:p-6">
+                <div className="min-w-0 flex-1">
+                  <h3 className="m-0 text-sm font-medium">登录密码</h3>
+                  <p className="mb-0 mt-1 text-xs leading-relaxed text-muted-foreground">修改密码后，其他设备需要重新登录。</p>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => navigateTo("/account/password")}>修改密码</Button>
+              </div>
+
+              <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:p-6">
+                <div className="min-w-0 flex-1">
+                  <h3 className="m-0 text-sm font-medium">退出当前账号</h3>
+                  <p className="mb-0 mt-1 text-xs leading-relaxed text-muted-foreground">结束此设备上的当前会话。</p>
+                </div>
                 <Button
+                  className="self-start text-destructive hover:bg-[var(--ui-destructive-subtle)] hover:text-destructive sm:self-auto"
                   size="sm"
-                  disabled={savingName || nickname.trim() === profile.user.nickname}
-                  onClick={() => void saveNickname()}
+                  variant="ghost"
+                  disabled={loggingOut}
+                  onClick={() => void handleLogout()}
                 >
-                  {savingName ? "保存中..." : "保存昵称"}
+                  {loggingOut ? "正在退出…" : "退出登录"}
                 </Button>
               </div>
-              <TextInput label="登录邮箱" value={profile.user.email} readOnly disabled hint="邮箱是登录账号，暂不支持修改" />
             </div>
-          </section>
-
-          <section className="account-card account-usage-card">
-            <h2>使用概况</h2>
-            <div className="account-stat-grid">
-              <div className="account-stat">
-                <FileText size={18} aria-hidden="true" />
-                <strong>{profile.resume_count}</strong>
-                <span>简历数量</span>
-              </div>
-            </div>
-            {profile.recent_resumes.length > 0 && (
-              <div className="account-recent">
-                <h3>最近编辑</h3>
-                <ul>
-                  {profile.recent_resumes.map((resume) => (
-                    <li key={resume.id}>
-                      <button type="button" onClick={() => navigateTo(editorPath(resume.id))}>
-                        <span>{resume.title}</span>
-                        <ChevronRight size={14} aria-hidden="true" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </section>
-
-          <section className="account-card account-security-card">
-            <h2>账号安全</h2>
-            <button type="button" className="account-security-link" onClick={() => navigateTo("/account/password")}>
-              <KeyRound size={16} aria-hidden="true" />
-              <span>
-                <strong>修改密码</strong>
-                <small>修改后所有设备需要重新登录</small>
-              </span>
-              <ChevronRight size={16} aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              className="account-security-link account-logout-link"
-              disabled={loggingOut}
-              onClick={() => void handleLogout()}
-            >
-              <LogOut size={16} aria-hidden="true" />
-              <span>
-                <strong>{loggingOut ? "正在退出…" : "退出登录"}</strong>
-                <small>退出当前账号</small>
-              </span>
-              <ChevronRight size={16} aria-hidden="true" />
-            </button>
           </section>
         </div>
       )}
 
-      {notice && <Toast kind={notice.kind}>{notice.message}</Toast>}
+      {notice && <FeedbackNotice kind={notice.kind}>{notice.message}</FeedbackNotice>}
     </main>
   );
+}
+
+function AccountPageSkeleton() {
+  return (
+    <div aria-label="正在加载个人资料" className="mx-auto w-full max-w-[820px] px-5 py-8 sm:px-8 sm:py-10" role="status">
+      <div className="overflow-hidden rounded-xl border border-border bg-surface">
+        <div className="flex items-center gap-4 p-6">
+          <Skeleton className="size-16 rounded-full" />
+          <div className="flex-1">
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="mt-2 h-4 w-48 max-w-full" />
+          </div>
+          <Skeleton className="h-8 w-20" />
+        </div>
+        <Separator />
+        <div className="grid gap-6 p-6">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function profileInitial(nickname: string) {
+  return Array.from(nickname.trim())[0] ?? "?";
 }
