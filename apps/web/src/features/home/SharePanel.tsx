@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Copy, Eye, EyeOff, Link2, Save, Share2, Trash2 } from "lucide-react";
 import { api, type ResumeShareState } from "../../api/client";
-import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { ConfirmDialog } from "@/components/ui";
 
 type SharePanelProps = {
   resumeId: string;

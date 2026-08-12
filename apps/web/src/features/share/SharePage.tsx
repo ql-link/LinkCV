@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link2Off } from "lucide-react";
-import brandMark from "../../assets/linkcv-mark.svg";
+import { Brand } from "@/components/ui";
 import { api, type PublicSharePayload } from "../../api/client";
 import {
   resumeDocumentToMarkdown,
@@ -9,14 +9,7 @@ import {
 import { renderResumeMarkdown } from "../../parser/resumeMarkdown";
 
 function ShareBrand() {
-  return (
-    <span className="ds-brand share-brand" aria-label="linkresume">
-      <span className="ds-brand-mark" aria-hidden="true">
-        <img src={brandMark} alt="" />
-      </span>
-      <span className="ds-brand-name">linkresume</span>
-    </span>
-  );
+  return <Brand className="share-brand" label="linkresume" name="linkresume" />;
 }
 
 type ShareStatus = "loading" | "ready" | "unavailable";

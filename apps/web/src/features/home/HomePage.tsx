@@ -6,8 +6,11 @@ import {
   type ResumeSummary,
   type ResumeTemplate,
 } from "../../api/client";
-import { Button, Toast } from "../../components/ds";
-import { ConfirmDialog } from "../../components/ConfirmDialog";
+import {
+  Button,
+  ConfirmDialog,
+  FeedbackNotice,
+} from "@/components/ui";
 import { useResumeStore } from "../../store/resumeStore";
 import { editorPath, navigateTo } from "../../routing";
 import { ResumePreview } from "../preview/ResumePreview";
@@ -284,7 +287,7 @@ export function HomeScreen({
         )}
       </div>
 
-      {notice && <div className="home-action-toast"><Toast kind={notice.kind}>{notice.message}</Toast></div>}
+      {notice && <div className="home-action-toast"><FeedbackNotice kind={notice.kind}>{notice.message}</FeedbackNotice></div>}
       {pendingDelete && (
         <ConfirmDialog
           kind="delete"

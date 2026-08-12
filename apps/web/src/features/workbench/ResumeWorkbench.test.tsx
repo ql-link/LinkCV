@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "../../api/client";
 import {
   ImportWarningBanner,
+  SaveVersionAction,
   SmartOnePageAction,
+  WorkbenchSaveStatus,
   versionOperationErrorMessage,
 } from "./ResumeWorkbench";
 
@@ -20,6 +22,32 @@ describe("ResumeWorkbench 智能一页入口", () => {
 
     await user.click(action);
     expect(onToggle).toHaveBeenCalledOnce();
+  });
+});
+
+describe("ResumeWorkbench 顶部保存反馈", () => {
+  it("区分编辑中、保存中和已保存状态", () => {
+    const { rerender } = render(<WorkbenchSaveStatus dirty saveStatus="idle" />);
+    expect(screen.getByRole("status")).toHaveTextContent("编辑中");
+
+    rerender(<WorkbenchSaveStatus dirty saveStatus="saving" />);
+    expect(screen.getByRole("status")).toHaveTextContent("保存中…");
+
+    rerender(<WorkbenchSaveStatus dirty={false} saveStatus="saved" />);
+    expect(screen.getByRole("status")).toHaveTextContent("已保存");
+  });
+
+  it("保存版本期间禁用重复操作并保留明确文案", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    const { rerender } = render(<SaveVersionAction pending={false} onSave={onSave} />);
+
+    await user.click(screen.getByRole("button", { name: "保存版本" }));
+    expect(onSave).toHaveBeenCalledOnce();
+
+    rerender(<SaveVersionAction pending onSave={onSave} />);
+    expect(screen.getByRole("button", { name: "正在保存版本" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "正在保存版本" })).toHaveTextContent("保存中…");
   });
 });
 

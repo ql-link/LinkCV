@@ -1,7 +1,7 @@
 import { Download, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, ApiRequestError, type PluginReleaseCurrentResponse } from "../../api/client";
-import { Button } from "../../components/ds";
+import { Button } from "@/components/ui";
 
 export function PluginInstallDialog({ onClose }: { onClose: () => void }) {
   const [result, setResult] = useState<PluginReleaseCurrentResponse | null>(null);

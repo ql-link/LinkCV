@@ -11,7 +11,7 @@ import {
   UserRound,
   Users,
 } from "lucide-react";
-import { Brand } from "../../components/ds";
+import { Brand } from "@/components/ui";
 import "./admin.css";
 
 import {

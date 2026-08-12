@@ -2,7 +2,7 @@ import { CircleAlert, CircleCheck, FileDown, Home, LogOut, Save } from "lucide-r
 import { useEffect, useState } from "react";
 import { useResumeStore } from "../store/resumeStore";
 import { exportResumePdf } from "../features/preview/exportPdf";
-import { Brand, Button, IconButton, Toast } from "./ds";
+import { Brand, Button, FeedbackNotice, IconButton } from "@/components/ui";
 
 type SaveToast = {
   kind: "success" | "error";
@@ -82,10 +82,10 @@ export function Header() {
         </IconButton>
       </div>
       {saveToast && (
-        <Toast kind={saveToast.kind}>
+        <FeedbackNotice kind={saveToast.kind}>
           {saveToast.kind === "success" ? <CircleCheck size={18} /> : <CircleAlert size={18} />}
           {saveToast.message}
-        </Toast>
+        </FeedbackNotice>
       )}
     </header>
   );

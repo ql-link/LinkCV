@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { BriefcaseBusiness, Database, FileText, LayoutTemplate, LogOut, UserRound } from "lucide-react";
 import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
-import { Brand } from "./ds";
+import { Brand } from "@/components/ui";
 
 export type WorkspaceSection = "resumes" | "templates" | "jobs" | "datasets" | "account";
 
@@ -122,7 +122,7 @@ export function WorkspaceLayout({ active, children }: { active: WorkspaceSection
   };
 
   return (
-    <div className="dashboard-shell">
+    <div className="dashboard-shell" data-ui-theme="light">
       <WorkspaceSidebar
         active={active}
         email={user?.email ?? ""}

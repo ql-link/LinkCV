@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { Archive, ArrowLeft, ExternalLink, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { api, ApiRequestError, type JobDescriptionRecord } from "../../api/client";
-import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { Button } from "../../components/ds";
+import { Button, ConfirmDialog } from "@/components/ui";
 import { jobEditPath, navigateTo } from "../../routing";
 import "./jobs.css";
 
@@ -112,7 +111,7 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
               {job.archived_at ? "恢复" : "归档"}
             </Button>
             <Button variant="secondary" icon={<Pencil size={15} />} disabled={busy} onClick={() => navigateTo(jobEditPath(job.id))}>编辑</Button>
-            {job.archived_at && <Button variant="danger" icon={<Trash2 size={15} />} disabled={busy} onClick={() => setDeleteOpen(true)}>删除</Button>}
+            {job.archived_at && <Button variant="destructive" icon={<Trash2 size={15} />} disabled={busy} onClick={() => setDeleteOpen(true)}>删除</Button>}
           </div>
         </header>
 

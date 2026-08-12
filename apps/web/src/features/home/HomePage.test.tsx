@@ -93,7 +93,7 @@ describe("HomeScreen", () => {
 
     await waitFor(() => expect(onImport).toHaveBeenCalledWith(file, "8"));
     expect(onOpen).not.toHaveBeenCalled();
-    expect(screen.getByText("文件已上传，正在后台解析。")).toBeInTheDocument();
+    expect(await screen.findByText("文件已上传，正在后台解析。")).toBeInTheDocument();
   });
 
   it("结构化模型未配置时在导入弹窗内显示具体错误", async () => {

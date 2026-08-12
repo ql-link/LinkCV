@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Database, FileText, FileUp } from "lucide-react";
 import { api, ApiRequestError, type DatasetRecord } from "../../api/client";
-import { Button, Toast } from "../../components/ds";
+import { Button, FeedbackNotice } from "@/components/ui";
 
 const MAX_DATASET_BYTES = 10 * 1024 * 1024;
 
@@ -186,7 +186,7 @@ export function DatasetsPage() {
 
       {notice && (
         <div className={`datasets-toast${fading ? " is-fading" : ""}`}>
-          <Toast kind={notice.kind}>{notice.message}</Toast>
+          <FeedbackNotice kind={notice.kind}>{notice.message}</FeedbackNotice>
         </div>
       )}
     </main>

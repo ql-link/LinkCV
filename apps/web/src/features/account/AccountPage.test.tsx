@@ -42,14 +42,12 @@ afterEach(() => {
 });
 
 describe("AccountPage", () => {
-  it("加载并展示资料、简历数量与最近编辑", async () => {
+  it("加载并展示精简后的账号资料与安全操作", async () => {
     render(<AccountPage />);
 
-    expect(
-      await screen.findByDisplayValue("user@example.test"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("3")).toBeInTheDocument();
-    expect(screen.getByText("产品经理简历")).toBeInTheDocument();
+    expect(await screen.findAllByText("user@example.test")).toHaveLength(2);
+    expect(screen.queryByText("产品经理简历")).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "账号设置" })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /修改密码/ }),
     ).toBeInTheDocument();
@@ -61,12 +59,12 @@ describe("AccountPage", () => {
       .spyOn(api, "updateAccountProfile")
       .mockResolvedValue(updated);
     render(<AccountPage />);
-    await screen.findByDisplayValue("user@example.test");
+    await screen.findAllByText("user@example.test");
 
     fireEvent.change(screen.getByLabelText("昵称", { exact: false }), {
       target: { value: "新昵称" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "保存昵称" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => expect(update).toHaveBeenCalledWith("新昵称"));
     expect(await screen.findByText("昵称已更新。")).toBeInTheDocument();
@@ -88,9 +86,9 @@ describe("AccountPage", () => {
       .spyOn(api, "deleteAccountAvatar")
       .mockResolvedValue({ ok: true });
     render(<AccountPage />);
-    await screen.findByDisplayValue("user@example.test");
+    await screen.findAllByText("user@example.test");
 
-    fireEvent.click(screen.getByRole("button", { name: "删除头像" }));
+    fireEvent.click(screen.getByRole("button", { name: "移除" }));
 
     await waitFor(() => expect(remove).toHaveBeenCalledOnce());
     expect(await screen.findByText("头像已删除。")).toBeInTheDocument();
@@ -100,7 +98,7 @@ describe("AccountPage", () => {
   it("退出登录后回到首页并清空登录态", async () => {
     const logout = vi.spyOn(useResumeStore.getState(), "logout").mockResolvedValue();
     render(<AccountPage />);
-    await screen.findByDisplayValue("user@example.test");
+    await screen.findAllByText("user@example.test");
 
     fireEvent.click(screen.getByRole("button", { name: /退出登录/ }));
 
