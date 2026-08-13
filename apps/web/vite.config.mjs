@@ -87,6 +87,11 @@ function localAssetPlugin() {
 }
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      "@": resolve(webRoot, "src"),
+    },
+  },
   optimizeDeps: {
     include: ["react", "react-dom/client"],
   },

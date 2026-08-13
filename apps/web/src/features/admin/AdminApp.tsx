@@ -21,14 +21,18 @@ import {
   LogOut,
   Menu,
   MoreHorizontal,
+  PackageOpen,
   Plus,
   Search,
   Settings2,
   Users,
   X,
 } from "lucide-react";
-import { Brand } from "../../components/ds";
-import { LogsPanel, ModelsPanel } from "./AdminLlmPanels";
+import { Brand } from "@/components/ui";
+import { ModelsPanel } from "./AdminLlmPanels";
+import { AdminLogsCenter } from "./AdminObservabilityPanels";
+import { AdminTemplatePanel } from "./AdminTemplatePanel";
+import { PluginReleasePanel } from "./PluginReleasePanel";
 import "./admin.css";
 
 import {
@@ -40,12 +44,14 @@ import {
   type AdminUserDetail as AdminUserDetailType,
 } from "../../api/client";
 import { adminLoginPath, navigateTo } from "../../routing";
-type AdminSection = "overview" | "users" | "models" | "logs";
+type AdminSection = "overview" | "users" | "templates" | "models" | "plugins" | "logs";
 
 function initialAdminSection(): AdminSection {
   const path = window.location.pathname;
   if (path.startsWith("/admin/users")) return "users";
+  if (path.startsWith("/admin/templates")) return "templates";
   if (path.startsWith("/admin/llm")) return "models";
+  if (path.startsWith("/admin/plugins")) return "plugins";
   if (path.startsWith("/admin/logs")) return "logs";
   return "overview";
 }
@@ -53,8 +59,10 @@ function initialAdminSection(): AdminSection {
 const adminSectionPaths: Record<AdminSection, string> = {
   overview: "/admin",
   users: "/admin/users",
+  templates: "/admin/templates",
   models: "/admin/llm/models",
-  logs: "/admin/logs",
+  plugins: "/admin/plugins",
+  logs: "/admin/logs/system",
 };
 
 const spring = {
@@ -343,14 +351,16 @@ function AdminWorkspace({
               {section === "users" && (
                 <UsersPanel onSelectUser={openUserDetail} notify={notify} />
               )}
+              {section === "templates" && <AdminTemplatePanel notify={notify} />}
               {section === "models" && (
                 <ModelsPanel
                   notify={notify}
                   onSessionExpired={onSessionExpired}
                 />
               )}
+              {section === "plugins" && <PluginReleasePanel />}
               {section === "logs" && (
-                <LogsPanel
+                <AdminLogsCenter
                   notify={notify}
                   onSessionExpired={onSessionExpired}
                 />
@@ -395,8 +405,10 @@ function AdminWorkspace({
 const sectionLabels: Record<AdminSection, string> = {
   overview: "概览",
   users: "用户管理",
+  templates: "简历模板",
   models: "模型配置",
-  logs: "LLM 调用日志",
+  plugins: "插件发布",
+  logs: "日志中心",
 };
 
 function SidebarContent({
@@ -415,8 +427,10 @@ function SidebarContent({
   }> = [
     { id: "overview", label: "概览", icon: LayoutDashboard },
     { id: "users", label: "用户管理", icon: Users },
+    { id: "templates", label: "简历模板", icon: FileText },
     { id: "models", label: "模型配置", icon: Bot },
-    { id: "logs", label: "LLM 调用日志", icon: Activity },
+    { id: "plugins", label: "插件发布", icon: PackageOpen },
+    { id: "logs", label: "日志中心", icon: Activity },
   ];
   return (
     <>

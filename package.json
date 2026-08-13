@@ -10,18 +10,20 @@
     "check:ai": "uv run --directory apps/backend python ../../scripts/quality/check_ai_links.py && uv run --directory apps/backend python ../../scripts/quality/check_skills.py && npm run check:docs && npm run check:contracts",
     "check:docs": "uv run --directory apps/backend python ../../scripts/quality/check_docs_sync.py",
     "check:contracts": "uv run --directory apps/backend python ../../scripts/quality/check_runtime_contracts.py",
-    "dev": "concurrently -n web,backend -c cyan,green \"npm:dev:web\" \"npm:dev:backend\"",
+    "dev": "concurrently -n web,backend,worker -c cyan,green,yellow \"npm:dev:web\" \"npm:dev:backend\" \"npm:dev:worker\"",
     "dev:local": "LINKCV_ENV_FILE=.env npm run dev",
     "dev:development": "LINKCV_ENV_FILE=.env.development npm run dev",
     "dev:web": "npm --prefix apps/web run dev",
     "dev:extension": "npm --prefix apps/extension run dev",
     "dev:backend": "uv run --directory apps/backend python -m linkcv",
+    "dev:worker": "uv run --directory apps/backend python -m linkcv.workers",
     "db:migrate": "uv run --directory apps/backend alembic upgrade head",
     "db:init": "uv run --directory apps/backend python ../../scripts/db/init_mysql.py && uv run --directory apps/backend alembic upgrade head",
     "db:revision": "uv run --directory apps/backend python ../../scripts/db/create_sql_revision.py",
     "build": "npm run build:web && npm run build:extension && npm run build:backend",
     "build:web": "npm --prefix apps/web run build",
     "build:extension": "npm --prefix apps/extension run build",
+    "release:extension": "uv run --directory apps/backend python ../../scripts/release/build_extension_release.py",
     "build:backend": "uv build --directory apps/backend",
     "typecheck": "npm run typecheck:web && npm run typecheck:extension",
     "typecheck:web": "npm --prefix apps/web run typecheck",
@@ -35,7 +37,9 @@
     "check:app": "npm run typecheck && npm run build && npm test",
     "check": "npm run check:ai && npm run check:app",
     "infra:up": "docker compose -f deploy/docker-compose.yml up -d",
-    "infra:down": "docker compose -f deploy/docker-compose.yml down"
+    "infra:down": "docker compose -f deploy/docker-compose.yml down",
+    "observability:up": "docker compose -f deploy/docker-compose.observability.local.yml up -d",
+    "observability:down": "docker compose -f deploy/docker-compose.observability.local.yml down"
   },
   "devDependencies": {
     "concurrently": "^10.0.3"

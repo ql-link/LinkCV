@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { ConfirmDialog } from "./ConfirmDialog";
+import { ConfirmDialog } from "@/components/ui";
 
 describe("ConfirmDialog", () => {
   it("使用站内弹窗确认删除，不调用浏览器原生确认", async () => {

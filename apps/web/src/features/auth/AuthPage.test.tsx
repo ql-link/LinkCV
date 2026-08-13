@@ -26,15 +26,21 @@ describe("AuthPage initial mode", () => {
   it("允许 Landing CTA 直接打开注册模式", () => {
     render(<AuthPage initialMode="register" />);
 
-    expect(screen.getByRole("heading", { name: "开始你的 LinkCV。" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /注册并创建简历/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "创建账号" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "注册并创建简历" }),
+    ).toBeInTheDocument();
   });
 
   it("登录模式继续保留原有登录表单", () => {
     render(<AuthPage initialMode="login" />);
 
-    expect(screen.getByRole("heading", { name: "欢迎回来。" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /登录/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "登录 LinkCV" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "登录" })).toBeInTheDocument();
   });
 });
 
@@ -46,7 +52,7 @@ describe("AuthPage WeChat scan login", () => {
     vi.spyOn(api, "wechatStatus").mockResolvedValue({ status: "pending", user: null });
 
     render(<AuthPage initialMode="login" />);
-    fireEvent.click(screen.getByRole("tab", { name: "微信扫码" }));
+    fireEvent.click(screen.getByRole("button", { name: "微信扫码登录" }));
 
     await act(async () => {
       // 冲刷二维码请求的微任务。
@@ -70,7 +76,7 @@ describe("AuthPage WeChat scan login", () => {
       .mockResolvedValue();
 
     render(<AuthPage initialMode="login" />);
-    fireEvent.click(screen.getByRole("tab", { name: "微信扫码" }));
+    fireEvent.click(screen.getByRole("button", { name: "微信扫码登录" }));
 
     await act(async () => {
       // 冲刷二维码请求的微任务。

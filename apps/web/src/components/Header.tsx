@@ -1,8 +1,8 @@
-import { CircleAlert, CircleCheck, FileDown, Home, LogOut, Save } from "lucide-react";
+import { CircleAlert, CircleCheck, FileDown, Home, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useResumeStore } from "../store/resumeStore";
 import { exportResumePdf } from "../features/preview/exportPdf";
-import { Brand, Button, IconButton, Toast } from "./ds";
+import { Brand, Button, FeedbackNotice, IconButton } from "@/components/ui";
 
 type SaveToast = {
   kind: "success" | "error";
@@ -11,6 +11,7 @@ type SaveToast = {
 
 export function Header() {
   const title = useResumeStore((state) => state.title);
+  const activeResumeId = useResumeStore((state) => state.activeResumeId);
   const setTitle = useResumeStore((state) => state.setTitle);
   const smartOnePage = useResumeStore((state) => state.settings.smartOnePage);
   const user = useResumeStore((state) => state.user);
@@ -18,7 +19,6 @@ export function Header() {
   const dirty = useResumeStore((state) => state.dirty);
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
   const goHome = useResumeStore((state) => state.goHome);
-  const logout = useResumeStore((state) => state.logout);
   const [saveToast, setSaveToast] = useState<SaveToast | null>(null);
   const [isManualSaving, setIsManualSaving] = useState(false);
 
@@ -69,22 +69,18 @@ export function Header() {
         </div>
       </div>
       <div className="nav-actions">
-        <Button variant="secondary" icon={<FileDown size={14} />} onClick={() => void exportResumePdf(smartOnePage, title)}>
+        <Button variant="secondary" icon={<FileDown size={14} />} disabled={!activeResumeId} onClick={() => activeResumeId && void exportResumePdf(smartOnePage, title, activeResumeId)}>
           导出 PDF
         </Button>
         <Button icon={<Save size={14} />} disabled={isManualSaving} onClick={() => void handleManualSave()}>
           保存
         </Button>
-        <div className="nav-divider" />
-        <IconButton label="退出登录" danger onClick={() => void logout()}>
-          <LogOut size={15} />
-        </IconButton>
       </div>
       {saveToast && (
-        <Toast kind={saveToast.kind}>
+        <FeedbackNotice kind={saveToast.kind}>
           {saveToast.kind === "success" ? <CircleCheck size={18} /> : <CircleAlert size={18} />}
           {saveToast.message}
-        </Toast>
+        </FeedbackNotice>
       )}
     </header>
   );

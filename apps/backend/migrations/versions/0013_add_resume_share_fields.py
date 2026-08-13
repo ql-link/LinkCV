@@ -1,12 +1,11 @@
-"""Add wechat login binding fields to users.
+"""Add resume share link fields.
 
-WeChat login users have no email or password, so both columns become
-nullable. The MySQL unique index allows multiple NULL rows, so the existing
-email uniqueness constraint remains valid.
+每份简历一个分享链接：token、可见性、有效期与创建时间均落在 resumes 表，
+分享内容不落库，读取时实时取最新正式版本。新字段全部可空，存量数据不受影响。
 
 Revision ID: 0013
 Revises: 0012
-Create Date: 2026-08-04 00:18:06.710797
+Create Date: 2026-08-05
 """
 from collections.abc import Sequence
 from pathlib import Path

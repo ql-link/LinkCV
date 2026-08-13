@@ -20,6 +20,8 @@ export type WeChatStatusResponse = {
 
 export type UserProfile = User & {
   avatar_url: string | null;
+  wechat_status: "unbound" | "bound" | "unavailable";
+  wechat_bound_at: string | null;
 };
 
 export type RecentResumeSummary = {
@@ -80,13 +82,34 @@ export type ResumeSummary = {
   lock_version: number;
   created_at: string;
   updated_at: string;
+  preview?: { data: ResumeDocumentV1; style: ResumeStyleV1 } | null;
+};
+
+export type ResumeTemplate = {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  data: ResumeDocumentV1;
+  style: ResumeStyleV1;
+};
+
+export type AdminResumeTemplate = {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  data: ResumeDocumentV1 | null;
+  style: ResumeStyleV1 | null;
+  active: boolean;
+  valid: boolean;
+  validation_error: string | null;
 };
 
 export type ResumeRecord = ResumeSummary & {
   template_id: string | null;
   data: ResumeDocumentV1;
   style: ResumeStyleV1;
-  source_filename: string | null;
 };
 
 export type ResumeVersion = {
@@ -96,6 +119,29 @@ export type ResumeVersion = {
   created_at: string;
   data?: ResumeDocumentV1;
   style?: ResumeStyleV1;
+};
+
+export type ResumeShareState = {
+  share_token: string;
+  share_visibility: "private" | "public";
+  share_expires_at: string | null;
+  share_created_at: string;
+};
+
+export type ResumeShareUpdatePayload = {
+  visibility?: "private" | "public";
+  expires_at?: string | null;
+};
+
+export type PublicShareSharer = {
+  nickname: string;
+  avatar_url: string | null;
+};
+
+export type PublicSharePayload = {
+  data: ResumeDocumentV1;
+  style: ResumeStyleV1;
+  sharer: PublicShareSharer;
 };
 
 export type UploadedAsset = {
@@ -118,6 +164,35 @@ export type ResumeImportResult = {
   source_file_name: string;
   source_file_format: "md" | "docx" | "pdf";
   warnings: ImportWarning[];
+};
+
+export type DatasetRecord = {
+  id: string;
+  file_name: string;
+  file_format: string;
+  file_size: number;
+  sha256: string;
+  created_at: string;
+};
+
+export type ResumeImportSummary = {
+  id: string;
+  source_filename: string;
+  source_file_format: "md" | "docx" | "pdf";
+  upload_status: "uploading" | "succeeded" | "failed";
+  upload_duration_ms: number | null;
+  parse_status: "processing" | "succeeded" | "failed" | null;
+  parse_duration_ms: number | null;
+  result_resume_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ResumeOverview = {
+  resumes: ResumeSummary[];
+  active_imports: ResumeImportSummary[];
+  failed_imports: ResumeImportSummary[];
+  next_failed_cursor: string | null;
 };
 
 export type JobSourceType = "manual" | "external_import";
@@ -194,6 +269,26 @@ export type JobDescriptionFields = {
   recruiter_name?: string | null;
   recruiter_title?: string | null;
   notes?: string | null;
+};
+
+export type PluginRelease = {
+  version: string;
+  released_at: string;
+  browser: "Chrome";
+  manifest_version: 3;
+  size: number;
+  sha256: string;
+  download_url: string;
+};
+
+export type PluginReleaseCurrentResponse = {
+  status: "available" | "unpublished";
+  release: PluginRelease | null;
+};
+
+export type AdminPluginReleaseCurrentResponse = {
+  status: "absent" | "published" | "unpublished";
+  release: PluginRelease | null;
 };
 
 export type DuplicateResolution = {
@@ -322,6 +417,78 @@ export type JobDuplicateDetails = {
   };
 };
 
+export type LogItem = {
+  timestampNs: string;
+  timestamp: string;
+  eventId: string;
+  eventVersion: number;
+  logType: "system" | "audit";
+  level: string;
+  service: string;
+  environment: string;
+  source: string;
+  logger: string;
+  message: string;
+  requestId: string | null;
+  taskId: string | null;
+  operationId: string | null;
+  actorUserId: string | null;
+  dependency: string | null;
+  durationMs: number | null;
+  httpMethod: string | null;
+  httpRoute: string | null;
+  httpStatus: number | null;
+  errorCode: string | null;
+  exceptionType: string | null;
+  exceptionStack: string | null;
+  action: string | null;
+  actorType: string | null;
+  targetType: string | null;
+  targetId: string | null;
+  result: string | null;
+  summary: string | null;
+};
+
+export type LogListResponse = {
+  items: LogItem[];
+  nextCursor: string | null;
+  partial: boolean;
+  droppedMalformed: number;
+};
+
+export type SystemLogQuery = {
+  from?: string;
+  to?: string;
+  level?: "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
+  source?: "backend" | "web";
+  dependency?: "mysql" | "redis" | "minio" | "linkparse" | "llm";
+  requestId?: string;
+  taskId?: string;
+  operationId?: string;
+  errorCode?: string;
+  keyword?: string;
+  cursor?: string;
+  limit?: number;
+};
+
+export type AuditLogQuery = {
+  from?: string;
+  to?: string;
+  action?: string;
+  actorUserId?: string;
+  targetType?: string;
+  targetId?: string;
+  result?: "succeeded" | "failed";
+  requestId?: string;
+  cursor?: string;
+  limit?: number;
+};
+
+export type LogSummary = {
+  system: { total: number; warnings: number; errors: number };
+  audit: { total: number; succeeded: number; failed: number };
+};
+
 type ApiOptions = {
   method?: string;
   body?: unknown;
@@ -334,6 +501,7 @@ export class ApiRequestError extends Error {
     readonly status: number,
     code: string,
     readonly payload: Record<string, unknown> | null = null,
+    readonly requestId: string | null = null,
   ) {
     super(code);
     this.name = "ApiRequestError";
@@ -341,6 +509,30 @@ export class ApiRequestError extends Error {
 }
 
 let refreshInFlight: Promise<boolean> | null = null;
+
+function createRequestId(): string {
+  return globalThis.crypto?.randomUUID?.().replace(/-/g, "") ??
+    `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+}
+
+function reportApi5xx(error: ApiRequestError): void {
+  if (typeof fetch !== "function") return;
+  const reportRequestId = createRequestId();
+  void fetch("/api/observability/client-events", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Request-ID": reportRequestId,
+    },
+    body: JSON.stringify({
+      event_type: "api_5xx",
+      error_name: error.name,
+      message: error.message,
+      request_id: error.requestId,
+    }),
+    credentials: "include",
+  }).catch(() => undefined);
+}
 
 async function refreshSession(): Promise<boolean> {
   if (!refreshInFlight) {
@@ -369,10 +561,12 @@ async function request<T>(
   options: ApiOptions = {},
   retryAuth = true,
 ): Promise<T> {
+  const requestId = options.headers?.["X-Request-ID"] ?? createRequestId();
   const response = await fetch(path, {
     method: options.method ?? "GET",
     headers: {
       ...(options.body ? { "Content-Type": "application/json" } : {}),
+      "X-Request-ID": requestId,
       ...options.headers,
     },
     body:
@@ -383,12 +577,14 @@ async function request<T>(
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
+    const responseRequestId = response.headers?.get?.("X-Request-ID") ?? requestId;
     const error = new ApiRequestError(
       response.status,
       typeof data.error === "string" ? data.error : `HTTP_${response.status}`,
       data && typeof data === "object"
         ? (data as Record<string, unknown>)
         : null,
+      responseRequestId,
     );
 
     if (
@@ -402,9 +598,29 @@ async function request<T>(
       }
     }
 
+    if (response.status >= 500 && path !== "/api/observability/client-events") {
+      reportApi5xx(error);
+    }
     throw error;
   }
   return data as T;
+}
+
+async function requestBlob(path: string, retryAuth = true): Promise<Blob> {
+  const response = await fetch(path, { credentials: "include" });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401 && retryAuth) {
+      const refreshed = await refreshSession();
+      if (refreshed) return requestBlob(path, false);
+    }
+    throw new ApiRequestError(
+      response.status,
+      typeof data.error === "string" ? data.error : `HTTP_${response.status}`,
+      data && typeof data === "object" ? data as Record<string, unknown> : null,
+    );
+  }
+  return response.blob();
 }
 
 async function getCurrentUser(): Promise<{ user: User | null }> {
@@ -465,8 +681,27 @@ export const api = {
         confirm_password: payload.confirmPassword,
       },
     }),
+  requestWechatBind: () =>
+    request<{ ticket: string; qrcode_data: string }>(
+      "/api/account/wechat/bind-request",
+      { method: "POST" },
+    ),
+  confirmWechatBind: (payload: { ticket: string; code: string }) =>
+    request<{ ok: boolean }>("/api/account/wechat/bind-confirm", {
+      method: "POST",
+      body: payload,
+    }),
+  getWechatBindStatus: (ticket: string) =>
+    request<{ status: "pending" | "bound" | "expired" }>(
+      `/api/account/wechat/bind-status?ticket=${encodeURIComponent(ticket)}`,
+    ),
   listResumes: () => request<{ resumes: ResumeSummary[] }>("/api/resumes"),
-  createResume: (payload: { title?: string; template_id?: string }) =>
+  getResumeOverview: () => request<ResumeOverview>("/api/resume-overview"),
+  listResumeTemplates: () =>
+    request<{ templates: ResumeTemplate[] }>("/api/resume-templates"),
+  getResumeTemplate: (id: string) =>
+    request<{ template: ResumeTemplate }>(`/api/resume-templates/${id}`),
+  createResume: (payload: { title: string; template_id: string }) =>
     request<{ resume: ResumeRecord }>("/api/resumes", {
       method: "POST",
       body: payload,
@@ -503,11 +738,32 @@ export const api = {
       `/api/resumes/${id}/versions/${versionNo}/restore`,
       { method: "POST" },
     ),
-  importResume: (file: File, title: string | undefined, idempotencyKey: string) => {
+  getShareState: (id: string) =>
+    request<{ share: ResumeShareState | null }>(`/api/resumes/${id}/share`),
+  createShare: (
+    id: string,
+    payload?: { visibility?: "private" | "public"; expires_at?: string | null },
+  ) =>
+    request<{ share: ResumeShareState }>(`/api/resumes/${id}/share`, {
+      method: "POST",
+      body: payload,
+    }),
+  updateShare: (id: string, payload: ResumeShareUpdatePayload) =>
+    request<{ share: ResumeShareState }>(`/api/resumes/${id}/share`, {
+      method: "PATCH",
+      body: payload,
+    }),
+  deleteShare: (id: string) =>
+    request<{ deleted: boolean }>(`/api/resumes/${id}/share`, {
+      method: "DELETE",
+    }),
+  fetchPublicShare: (token: string) =>
+    request<PublicSharePayload>(`/api/share/${encodeURIComponent(token)}`),
+  importResume: (file: File, templateId: string, idempotencyKey: string) => {
     const formData = new FormData();
     formData.append("file", file);
-    if (title) formData.append("title", title);
-    return request<{ resume: ResumeRecord; import: ResumeImportResult }>(
+    formData.append("template_id", templateId);
+    return request<{ import: ResumeImportSummary }>(
       "/api/resumes/import",
       {
         method: "POST",
@@ -516,6 +772,25 @@ export const api = {
       },
     );
   },
+  deleteResumeImport: (id: string) =>
+    request<{ deleted: boolean }>(`/api/resume-imports/${id}`, {
+      method: "DELETE",
+    }),
+  listAdminResumeTemplates: () =>
+    request<{ templates: AdminResumeTemplate[] }>("/api/admin/resume-templates"),
+  importAdminResumeTemplate: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<{ template: AdminResumeTemplate }>(
+      "/api/admin/resume-templates/import",
+      { method: "POST", formData },
+    );
+  },
+  updateAdminResumeTemplateStatus: (id: string, active: boolean) =>
+    request<{ template: AdminResumeTemplate }>(
+      `/api/admin/resume-templates/${id}/status`,
+      { method: "PUT", body: { active } },
+    ),
   uploadResumeAsset: (
     resumeId: string,
     payload: { file_name: string; data_url: string },
@@ -524,6 +799,15 @@ export const api = {
       method: "POST",
       body: payload,
     }),
+  uploadDataset: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<DatasetRecord>("/api/datasets", {
+      method: "POST",
+      formData,
+    });
+  },
+  listDatasets: () => request<{ datasets: DatasetRecord[] }>("/api/datasets"),
   listJobDescriptions: (
     params: {
       scope?: "active" | "archived" | "all";
@@ -580,6 +864,37 @@ export const api = {
     request<{ deleted: boolean }>(`/api/job-descriptions/${id}`, {
       method: "DELETE",
     }),
+  getPluginRelease: () =>
+    request<PluginReleaseCurrentResponse>("/api/plugin-releases/current"),
+  downloadPluginRelease: (version: string) =>
+    requestBlob(`/api/plugin-releases/${encodeURIComponent(version)}/download`),
+  adminPublishPluginRelease: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<{ release: PluginRelease; cleanup_pending: boolean }>("/api/admin/plugin-releases", {
+      method: "POST",
+      formData,
+    });
+  },
+  getAdminPluginRelease: () =>
+    request<AdminPluginReleaseCurrentResponse>(
+      "/api/admin/plugin-releases/current",
+    ),
+  adminUnpublishPluginRelease: () =>
+    request<{ unpublished: true; release: PluginRelease }>(
+      "/api/admin/plugin-releases/current",
+      { method: "DELETE" },
+    ),
+  adminReactivatePluginRelease: () =>
+    request<{ release: PluginRelease }>(
+      "/api/admin/plugin-releases/current/publish",
+      { method: "POST" },
+    ),
+  adminDeletePluginRelease: () =>
+    request<{ deleted: true }>(
+      "/api/admin/plugin-releases/current/package",
+      { method: "DELETE" },
+    ),
   adminListUsers: (
     params: {
       page?: number;
@@ -653,6 +968,58 @@ export const api = {
       nextCursor: string | null;
     }>(`/api/admin/llm/calls${suffix ? `?${suffix}` : ""}`);
   },
+  reportClientEvent: (payload: {
+    eventType: "unhandled_error" | "unhandled_rejection" | "render_error" | "api_5xx";
+    errorName: string;
+    message: string;
+    stack?: string | null;
+    requestId?: string | null;
+  }) =>
+    request<{ accepted: true; eventId: string | null }>(
+      "/api/observability/client-events",
+      {
+        method: "POST",
+        body: {
+          event_type: payload.eventType,
+          error_name: payload.errorName,
+          message: payload.message,
+          stack: payload.stack,
+          request_id: payload.requestId,
+        },
+      },
+    ),
+  reportAuditEvent: (payload: {
+    action: "resume.pdf_export";
+    targetId: string;
+    result: "succeeded" | "failed";
+    errorCode?: string | null;
+  }) =>
+    request<{ accepted: true; eventId: string | null }>("/api/audit/events", {
+      method: "POST",
+      body: {
+        action: payload.action,
+        target_type: "resume",
+        target_id: payload.targetId,
+        result: payload.result,
+        error_code: payload.errorCode,
+      },
+    }),
+  adminListSystemLogs: (params: SystemLogQuery = {}) =>
+    request<LogListResponse>(withLogQuery("/api/admin/logs/system", params)),
+  adminListAuditLogs: (params: AuditLogQuery = {}) =>
+    request<LogListResponse>(withLogQuery("/api/admin/logs/audit", params)),
+  adminLogSummary: (params: { from?: string; to?: string } = {}) =>
+    request<LogSummary>(withLogQuery("/api/admin/logs/summary", params)),
 };
+
+function withLogQuery(path: string, params: Record<string, unknown>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value == null || value === "") continue;
+    search.set(key, String(value));
+  }
+  const suffix = search.toString();
+  return `${path}${suffix ? `?${suffix}` : ""}`;
+}
 
 export type { ResumeDocumentV1, ResumeStyleV1 } from "./resumeContract";

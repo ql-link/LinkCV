@@ -11,10 +11,17 @@ import pytest
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.engine import make_url
+from sqlalchemy.orm import sessionmaker
+
+from linkcv.application.resumes.service import (
+    ResumeTitleConflict,
+    create_resume_from_template,
+)
+from linkcv.domain.resume_snapshot import parse_resume_snapshot
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0013"
+EXPECTED_HEAD = "0020"
 
 
 def migration_test_url() -> str:
@@ -55,11 +62,39 @@ def run_alembic(database_url: str, *arguments: str) -> None:
     assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
 
 
+def reset_test_database_to_base(database_url: str) -> None:
+    """Remove business rows before resetting the disposable database to base.
+
+    Several historical downgrades correctly refuse to discard non-empty tables
+    or restore template references that no longer exist. The suite only accepts
+    a local database named ``linkcv``, so clear every business table while
+    retaining Alembic's revision row, then exercise the real downgrade chain.
+    """
+    engine = create_engine(database_url)
+    try:
+        table_names = [
+            table_name
+            for table_name in inspect(engine).get_table_names()
+            if table_name != "alembic_version"
+        ]
+        with engine.begin() as connection:
+            connection.exec_driver_sql("SET FOREIGN_KEY_CHECKS = 0")
+            try:
+                for table_name in table_names:
+                    escaped_name = table_name.replace("`", "``")
+                    connection.exec_driver_sql(f"DELETE FROM `{escaped_name}`")
+            finally:
+                connection.exec_driver_sql("SET FOREIGN_KEY_CHECKS = 1")
+    finally:
+        engine.dispose()
+    run_alembic(database_url, "downgrade", "base")
+
+
 def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     database_url = migration_test_url()
     engine = create_engine(database_url)
 
-    run_alembic(database_url, "downgrade", "base")
+    reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
     run_alembic(database_url, "check")
 
@@ -70,6 +105,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "resume_templates",
         "resumes",
         "resume_versions",
+        "resume_imports",
         "job_descriptions",
     } <= set(inspector.get_table_names())
     assert "admin_operation_logs" not in inspector.get_table_names()
@@ -83,6 +119,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "is_admin",
         "wechat_openid",
         "last_login_at",
+        "wechat_bound_at",
         "created_at",
         "updated_at",
     }
@@ -106,9 +143,10 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "style_json",
         "lock_version",
         "source_type",
-        "source_filename",
-        "source_object_key",
-        "extracted_markdown",
+        "share_token",
+        "share_visibility",
+        "share_expires_at",
+        "share_created_at",
         "created_at",
         "updated_at",
     }
@@ -172,8 +210,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     assert "storage_cleanup_jobs" not in inspector.get_table_names()
 
     assert {constraint["name"] for constraint in inspector.get_unique_constraints("users")} == {
-        "uk_users_email",
-        "uk_users_wechat_openid",
+        "uk_users_email"
     }
     user_columns = {column["name"]: column for column in inspector.get_columns("users")}
     resume_columns = {
@@ -187,7 +224,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     assert resume_columns["user_id"]["type"].unsigned is True
     assert resume_columns["data_json"]["type"].__class__.__name__ == "JSON"
     assert resume_columns["style_json"]["type"].__class__.__name__ == "JSON"
-    assert resume_columns["extracted_markdown"]["type"].__class__.__name__ == "LONGTEXT"
     assert resume_columns["created_at"]["type"].fsp == 6
     assert {constraint["name"] for constraint in inspector.get_check_constraints("users")} == {
         "ck_users_is_admin",
@@ -197,7 +233,8 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         constraint["name"] for constraint in inspector.get_check_constraints("resumes")
     } == {
         "ck_resumes_lock_version",
-        "ck_resumes_source_fields",
+        "ck_resumes_share_fields",
+        "ck_resumes_share_visibility",
         "ck_resumes_source_type",
         "ck_resumes_title_not_blank",
     }
@@ -225,6 +262,44 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         resume_foreign_keys["fk_resumes_template"]["options"]["ondelete"]
         == "SET NULL"
     )
+    with engine.connect() as connection:
+        assert set(
+            connection.scalars(
+                text(
+                    "SELECT `key` FROM resume_templates "
+                    "WHERE is_active = 1 ORDER BY `key`"
+                )
+            )
+        ) == {
+            "blank-cn",
+            "classic-cn",
+            "modern-two-column-cn",
+            "compact-tech-cn",
+        }
+        for row in connection.execute(
+            text(
+                "SELECT `key`, data_json, style_json FROM resume_templates "
+                "WHERE `key` IN "
+                "('blank-cn', 'classic-cn', 'modern-two-column-cn', 'compact-tech-cn')"
+            )
+        ).mappings():
+            data_json = (
+                json.loads(row["data_json"])
+                if isinstance(row["data_json"], str)
+                else row["data_json"]
+            )
+            style_json = (
+                json.loads(row["style_json"])
+                if isinstance(row["style_json"], str)
+                else row["style_json"]
+            )
+            parse_resume_snapshot(data_json, style_json)
+            if row["key"] in {"modern-two-column-cn", "compact-tech-cn"}:
+                editor_markdown = data_json["sections"]["custom_sections"][0][
+                    "items"
+                ][0]["content"]["content"]
+                assert "::: left" in editor_markdown
+                assert "::: right" in editor_markdown
 
     with engine.begin() as connection:
         user = connection.execute(
@@ -284,6 +359,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "resume_templates",
         "resumes",
         "resume_versions",
+        "resume_imports",
         "llm_model_configs",
         "llm_capability_bindings",
         "llm_call_logs",
@@ -300,6 +376,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "is_admin",
         "wechat_openid",
         "last_login_at",
+        "wechat_bound_at",
         "created_at",
         "updated_at",
     }
@@ -325,9 +402,10 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "style_json",
         "lock_version",
         "source_type",
-        "source_filename",
-        "source_object_key",
-        "extracted_markdown",
+        "share_token",
+        "share_visibility",
+        "share_expires_at",
+        "share_created_at",
         "created_at",
         "updated_at",
     }
@@ -455,7 +533,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     assert resume_columns["user_id"]["type"].unsigned is True
     assert resume_columns["data_json"]["type"].__class__.__name__ == "JSON"
     assert resume_columns["style_json"]["type"].__class__.__name__ == "JSON"
-    assert resume_columns["extracted_markdown"]["type"].__class__.__name__ == "LONGTEXT"
     assert resume_columns["created_at"]["type"].fsp == 6
     assert call_columns["user_id"]["type"].unsigned is True
     assert call_columns["source"]["type"].length == 32
@@ -466,19 +543,20 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     assert {
         constraint["name"]
         for constraint in inspector.get_unique_constraints("users")
-    } == {"uk_users_email", "uk_users_wechat_openid"}
+    } == {"uk_users_email"}
     assert {
         constraint["name"] for constraint in inspector.get_check_constraints("users")
     } == {"ck_users_is_admin", "ck_users_status"}
     assert {
         constraint["name"]
         for constraint in inspector.get_check_constraints("resumes")
-    } == {
-        "ck_resumes_lock_version",
-        "ck_resumes_source_fields",
-        "ck_resumes_source_type",
-        "ck_resumes_title_not_blank",
-    }
+        } == {
+            "ck_resumes_lock_version",
+            "ck_resumes_share_fields",
+            "ck_resumes_share_visibility",
+            "ck_resumes_source_type",
+            "ck_resumes_title_not_blank",
+        }
     assert {
         constraint["name"]
         for constraint in inspector.get_check_constraints("llm_call_logs")
@@ -593,7 +671,10 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
             {"user_id": user_id},
         ) == 0
         assert connection.scalar(text("SELECT COUNT(*) FROM users")) == 1
-        assert connection.scalar(text("SELECT COUNT(*) FROM resume_templates")) == 0
+        assert connection.scalar(text("SELECT COUNT(*) FROM resume_templates")) == 4
+        assert connection.scalar(
+            text("SELECT COUNT(*) FROM resume_templates WHERE is_active = 1")
+        ) == 4
         assert connection.scalar(text("SELECT COUNT(*) FROM resumes")) == 1
         assert connection.scalar(text("SELECT COUNT(*) FROM resume_versions")) == 1
         assert connection.execute(
@@ -623,7 +704,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     }["fk_resumes_template"]
     assert upgraded_fk["options"]["ondelete"] == "SET NULL"
 
-    run_alembic(database_url, "downgrade", "base")
+    reset_test_database_to_base(database_url)
     assert "users" not in inspect(engine).get_table_names()
     assert "resumes" not in inspect(engine).get_table_names()
     assert "llm_model_configs" not in inspect(engine).get_table_names()
@@ -648,10 +729,101 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     engine.dispose()
 
 
+def test_resume_template_seed_conflict_does_not_overwrite_existing_data() -> None:
+    database_url = migration_test_url()
+    engine = create_engine(database_url)
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0012")
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO resume_templates "
+                "(`key`, name, data_json, style_json, is_active) VALUES "
+                "('blank-cn', '现场同名模板', JSON_OBJECT('schema_version', '1.0'), "
+                "JSON_OBJECT('schema_version', '1.0'), 1)"
+            )
+        )
+    refused_seed = invoke_alembic(database_url, "upgrade", "0014")
+    assert refused_seed.returncode != 0
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0013"
+        assert connection.scalar(
+            text("SELECT name FROM resume_templates WHERE `key` = 'blank-cn'")
+        ) == "现场同名模板"
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM resume_templates WHERE `key` = 'blank-cn'"))
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "head")
+    engine.dispose()
+
+
+def test_mysql_serializes_concurrent_normalized_resume_titles() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "head")
+    engine = create_engine(database_url)
+    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+
+    with engine.begin() as connection:
+        user_id = connection.execute(
+            text(
+                "INSERT INTO users (email, password_hash, nickname) "
+                "VALUES ('concurrent@example.invalid', '$2b$12$fictional', '张三')"
+            )
+        ).lastrowid
+        template_id = connection.scalar(
+            text("SELECT id FROM resume_templates WHERE `key` = 'blank-cn'")
+        )
+    assert template_id is not None
+
+    barrier = Barrier(2)
+
+    def create_with_title(title: str) -> tuple[str, str | None]:
+        with session_factory() as db:
+            barrier.wait()
+            try:
+                resume = create_resume_from_template(
+                    db=db,
+                    user_id=user_id,
+                    title=title,
+                    template_id=template_id,
+                )
+            except ResumeTitleConflict:
+                return "conflict", None
+            return "created", resume.title
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(
+            executor.map(
+                create_with_title,
+                ["  Senior   Product Manager  ", "senior product manager"],
+            )
+        )
+
+    assert sorted(status for status, _ in results) == ["conflict", "created"]
+    created_titles = [title for status, title in results if status == "created"]
+    assert len(created_titles) == 1
+    assert created_titles[0] is not None
+    assert created_titles[0].casefold() == "senior product manager"
+    with engine.connect() as connection:
+        assert connection.scalar(
+            text("SELECT COUNT(*) FROM resumes WHERE user_id = :user_id"),
+            {"user_id": user_id},
+        ) == 1
+        assert connection.scalar(
+            text("SELECT COUNT(*) FROM resume_versions WHERE version_no = 1")
+        ) == 1
+
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "head")
+    engine.dispose()
+
+
 def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
     database_url = migration_test_url()
     engine = create_engine(database_url)
-    run_alembic(database_url, "downgrade", "base")
+    reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
 
     inspector = inspect(engine)
@@ -853,7 +1025,7 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
     assert "job_descriptions" in inspect(engine).get_table_names()
     with engine.begin() as connection:
         connection.execute(text("DELETE FROM users"))
-    run_alembic(database_url, "downgrade", "base")
+    reset_test_database_to_base(database_url)
     engine.dispose()
 
 
@@ -861,7 +1033,7 @@ def test_mysql_0008_clears_legacy_llm_data_and_supports_rollback() -> None:
     database_url = migration_test_url()
     engine = create_engine(database_url)
 
-    run_alembic(database_url, "downgrade", "base")
+    reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "0007")
     with engine.begin() as connection:
         user_id = connection.execute(
@@ -1049,7 +1221,7 @@ def test_mysql_0008_clears_legacy_llm_data_and_supports_rollback() -> None:
                 "FROM llm_capability_bindings"
             )
         ).one() == ("chat", None)
-    run_alembic(database_url, "downgrade", "base")
+    reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
     engine.dispose()
 
@@ -1090,7 +1262,7 @@ def test_mysql_migrates_and_restores_legacy_resume_snapshots() -> None:
         "preview_scale": 1.0,
     }
 
-    run_alembic(database_url, "downgrade", "base")
+    reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "0004")
     with engine.begin() as connection:
         user_id = connection.execute(
@@ -1220,6 +1392,6 @@ def test_mysql_migrates_and_restores_legacy_resume_snapshots() -> None:
         connection.execute(text("DELETE FROM resume_versions"))
         connection.execute(text("DELETE FROM resumes"))
         connection.execute(text("DELETE FROM users"))
-    run_alembic(database_url, "downgrade", "base")
+    reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
     engine.dispose()

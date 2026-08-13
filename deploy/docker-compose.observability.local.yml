@@ -1,0 +1,27 @@
+name: linkcv-observability-local
+
+services:
+  promtail:
+    image: grafana/promtail:2.9.8
+    container_name: linkcv-local-promtail
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/promtail/promtail-config.yml
+      - -config.expand-env=true
+    environment:
+      LOKI_PUSH_URL: ${LOKI_PUSH_URL:-http://loki:3100/loki/api/v1/push}
+    volumes:
+      - ./observability/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - ${LINKCV_LOG_PATH:-../.runtime/logs}:/var/log/linkcv:ro
+      - promtail-positions:/tmp
+    networks:
+      - shared-loki
+
+networks:
+  shared-loki:
+    external: true
+    name: ${LOKI_DOCKER_NETWORK:-tolink-rag-local_tolink-net}
+
+volumes:
+  promtail-positions:
+    name: linkcv-local-promtail-positions

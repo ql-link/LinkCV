@@ -1,34 +1,24 @@
-"""微信小程序扫码登录与账号绑定三接口。
+"""微信小程序扫码登录接口（scene 状态机）。
 
-scene 状态机存 Redis，key 形如 ``wechat:login:<scene>``，值 ``pending:<mode>`` /
-``confirmed:<uid>:<mode>``，TTL 默认 5 分钟。confirm 用 GETSET 原子地把
-``pending:*`` 翻转为 ``confirmed:*``，只有原值仍是 pending 才算成功（防重放：
-一个 scene 只能确认一次，二次提交返回 409）。status 命中 confirmed 后发放
-会话（仅 login 模式）并删除 scene，防止轮询结束后残留；qrcode 按 IP 轻量限流
-（Redis INCR 计数，默认 10 次/分钟）。
+仅服务扫码登录（mode=login）：Web 端请求 /qrcode 生成小程序码，
+小程序端扫码确认后 POST /confirm 提交临时 code，Web 端轮询 /status
+感知成功并发放会话。绑定走 /api/account/wechat/bind-*（ticket 票据）。
 
-设计取舍：方案文档"confirm 成功即删 scene"落实为两段式——confirm 只负责原子
-确认（防重放），scene 记录在 status 消费后才删除，否则轮询无法读到确认结果。
+scene 状态机存 Redis，key 形如 ``wechat:login:<scene>``，值
+``pending:login`` / ``confirmed:<uid>:login``，TTL 默认 5 分钟。
+confirm 用 GETSET 原子地把 ``pending:*`` 翻转为 ``claimed``，只有原值
+仍是 pending 才算成功（防重放：一个 scene 只能确认一次，二次提交返回
+409）。status 命中 confirmed 后发放会话并删除 scene，防止轮询结束后
+残留；qrcode 按 IP 轻量限流（Redis INCR 计数，默认 10 次/分钟）。
 """
 from __future__ import annotations
 
 import base64
 import logging
 import secrets
-from typing import Literal
 
 import redis
-from fastapi import (
-    APIRouter,
-    Body,
-    Depends,
-    File,
-    Form,
-    Query,
-    Request,
-    Response,
-    UploadFile,
-)
+from fastapi import APIRouter, Depends, Form, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -38,30 +28,14 @@ from linkcv.core.config import Settings
 from linkcv.core.database import get_db, utc_now
 from linkcv.core.errors import ApiError
 from linkcv.core.redis import get_redis
-from linkcv.core.storage import (
-    AssetStorage,
-    build_avatar_object_name,
-    get_storage,
-)
-from linkcv.integrations.wechat_client import WeChatClient, WeChatUpstreamError
-from linkcv.modules.identity.dependencies import get_optional_user, get_settings
+from linkcv.integrations.wechat_client import WechatApiError, WechatClient
+from linkcv.modules.identity.dependencies import get_settings
 from linkcv.modules.identity.models import User
 from linkcv.modules.identity.routes import issue_session
 from linkcv.modules.identity.schemas import OkResponse, UserResponse
 
 router = APIRouter(prefix="/auth/wechat", tags=["identity"])
 logger = logging.getLogger(__name__)
-
-MAX_AVATAR_BYTES = 10 * 1024 * 1024
-SUPPORTED_IMAGE_CONTENT_TYPES = {
-    "image/apng",
-    "image/avif",
-    "image/gif",
-    "image/jpeg",
-    "image/png",
-    "image/webp",
-}
-WECHAT_MODE = Literal["login", "bind"]
 
 
 class WeChatQrcodeResponse(BaseModel):
@@ -70,11 +44,11 @@ class WeChatQrcodeResponse(BaseModel):
 
 
 class WeChatStatusResponse(BaseModel):
-    status: Literal["pending", "success", "expired"]
+    status: str
     user: UserResponse | None = None
 
 
-def get_wechat_client(request: Request) -> WeChatClient:
+def get_wechat_client(request: Request) -> WechatClient:
     return request.app.state.wechat_client
 
 
@@ -106,33 +80,8 @@ def check_qrcode_rate_limit(
         raise ApiError(429, "WECHAT_RATE_LIMITED")
 
 
-def bind_user_or_none(
-    mode: WECHAT_MODE = Form(...),
-    user: User | None = Depends(get_optional_user),
-) -> User | None:
-    if mode == "bind" and user is None:
-        raise ApiError(401, "UNAUTHORIZED")
-    return user
-
-
-def require_login_for_bind_mode(
-    mode: WECHAT_MODE = Body(embed=True),
-    user: User | None = Depends(get_optional_user),
-) -> str:
-    if mode == "bind" and user is None:
-        raise ApiError(401, "UNAUTHORIZED")
-    return mode
-
-
-def resolve_wechat_user(
-    db: Session,
-    wechat_openid: str,
-    *,
-    nickname: str | None,
-    avatar: tuple[bytes, str] | None,
-    storage: AssetStorage,
-) -> User:
-    """按 openid 查用户；不存在则创建微信账号，昵称头像仅建号时写入。"""
+def resolve_wechat_user(db: Session, wechat_openid: str) -> User:
+    """按 openid 查用户；不存在则创建微信账号（无邮箱密码）。"""
     user = db.scalar(select(User).where(User.wechat_openid == wechat_openid))
     if user is not None:
         return user
@@ -141,7 +90,7 @@ def resolve_wechat_user(
         wechat_openid=wechat_openid,
         email=None,
         password_hash=None,
-        nickname=nickname or f"微信用户{secrets.token_hex(3)}",
+        nickname=f"微信用户{secrets.token_hex(3)}",
     )
     db.add(user)
     try:
@@ -151,51 +100,38 @@ def resolve_wechat_user(
         db.rollback()
         user = db.scalar(select(User).where(User.wechat_openid == wechat_openid))
         if user is None:
-            raise ApiError(409, "WECHAT_BIND_CONFLICT")
+            raise ApiError(409, "WECHAT_BIND_CONFLICT") from None
         return user
     db.refresh(user)
-
-    if avatar is not None:
-        data, content_type = avatar
-        object_name = build_avatar_object_name(
-            str(user.id), "wechat-avatar", content_type
-        )
-        try:
-            storage.upload(object_name, data, content_type)
-        except Exception:
-            # 头像只是建号的可选项，上传失败不阻塞登录；后续可在设置页补。
-            logger.warning("failed to store wechat avatar for user %s", user.id)
-        else:
-            user.avatar_object_key = object_name
-            db.commit()
-            db.refresh(user)
     return user
 
 
 @router.post("/qrcode", response_model=WeChatQrcodeResponse)
-async def create_qrcode(
+def create_login_qrcode(
     request: Request,
-    mode: str = Depends(require_login_for_bind_mode),
     settings: Settings = Depends(get_settings),
     redis_client: "redis.Redis" = Depends(get_redis),
-    wechat: WeChatClient = Depends(get_wechat_client),
+    wechat: WechatClient = Depends(get_wechat_client),
 ) -> WeChatQrcodeResponse:
+    if not settings.wechat_enabled:
+        raise ApiError(503, "WECHAT_SERVICE_UNAVAILABLE")
     check_qrcode_rate_limit(client_ip(request), settings, redis_client)
 
-    # scene 编码 mode 前缀（login:/bind:），小程序扫码后可从 options.scene
-    # 解析出本次是登录还是绑定；整体长度受微信小程序码 32 字符上限约束。
-    scene = f"{mode}:{secrets.token_hex(8)}"
+    # scene 前缀 login: 供小程序解析确认页模式；整体长度受微信 32 字符上限约束。
+    scene = f"login:{secrets.token_hex(8)}"
     redis_client.set(
         scene_key(scene),
-        f"pending:{mode}",
+        "pending:login",
         ex=settings.wechat_scene_ttl_seconds,
     )
 
     try:
-        image = await wechat.create_wxacode(scene=scene)
-    except WeChatUpstreamError as error:
+        image = wechat.mini_program_qrcode(scene, for_login=True)
+    except WechatApiError as error:
         redis_client.delete(scene_key(scene))
-        raise ApiError(error.status_code, error.code) from error
+        if error.code == "WECHAT_RATE_LIMITED":
+            raise ApiError(429, "WECHAT_RATE_LIMITED") from error
+        raise ApiError(503, "WECHAT_SERVICE_UNAVAILABLE") from error
     return WeChatQrcodeResponse(
         scene=scene,
         qr_base64=base64.b64encode(image).decode("ascii"),
@@ -203,7 +139,7 @@ async def create_qrcode(
 
 
 @router.get("/status", response_model=WeChatStatusResponse)
-def status(
+def login_status(
     response: Response,
     scene: str = Query(min_length=8, max_length=128),
     settings: Settings = Depends(get_settings),
@@ -220,7 +156,7 @@ def status(
         return WeChatStatusResponse(status="expired")
 
     _, uid, mode = state.split(":", 2)
-    if not uid.isdecimal():
+    if mode != "login" or not uid.isdecimal():
         redis_client.delete(key)
         return WeChatStatusResponse(status="expired")
     user = db.scalar(select(User).where(User.id == int(uid)))
@@ -228,95 +164,49 @@ def status(
         redis_client.delete(key)
         return WeChatStatusResponse(status="expired")
 
-    # 消费结果后立即删除 scene；login 模式发放与邮箱一致的会话。
+    # 消费结果后立即删除 scene 并发放会话。
     redis_client.delete(key)
-    if mode == "login":
-        issue_session(response, user, settings, redis_client)
+    issue_session(response, user, settings, redis_client)
     return WeChatStatusResponse(status="success", user=UserResponse.model_validate(user))
 
 
 @router.post("/confirm", response_model=OkResponse)
-async def confirm(
+def confirm_login(
     scene: str = Form(min_length=8, max_length=128),
     code: str = Form(min_length=1, max_length=128),
-    mode: WECHAT_MODE = Form(...),
-    nickname: str | None = Form(default=None, max_length=50),
-    avatar: UploadFile | None = File(default=None),
-    bind_user: User | None = Depends(bind_user_or_none),
     settings: Settings = Depends(get_settings),
     redis_client: "redis.Redis" = Depends(get_redis),
     db: Session = Depends(get_db),
-    storage: AssetStorage = Depends(get_storage),
-    wechat: WeChatClient = Depends(get_wechat_client),
+    wechat: WechatClient = Depends(get_wechat_client),
 ) -> OkResponse:
+    if not settings.wechat_enabled:
+        raise ApiError(503, "WECHAT_SERVICE_UNAVAILABLE")
     key = scene_key(scene)
-    if mode == "bind" and bind_user is not None and bind_user.wechat_openid is not None:
-        raise ApiError(409, "WECHAT_ALREADY_BOUND")
-    # 防重放抢占：GETSET 原子地把 pending:<mode> 翻转为 claimed，原值必须是
+    # 防重放抢占：GETSET 原子地把 pending:login 翻转为 claimed，原值必须是
     # 匹配的 pending 才算抢占成功；一次抢占后重复提交返回 409。
     previous = redis_client.getset(key, "claimed")
     if previous is None:
         raise ApiError(410, "SCENE_EXPIRED")
-    if not previous.startswith("pending:") or previous.split(":", 1)[1] != mode:
+    if previous != "pending:login":
         redis_client.delete(key)
         raise ApiError(409, "SCENE_REUSED")
 
     try:
-        wechat_session = await wechat.code2_session(code=code)
-    except WeChatUpstreamError as error:
+        openid = wechat.code_to_openid(code)
+    except WechatApiError as error:
         redis_client.delete(key)
-        raise ApiError(error.status_code, error.code) from error
+        if error.code == "WECHAT_CODE_EXCHANGE_FAILED":
+            raise ApiError(400, "WECHAT_CODE_INVALID") from error
+        raise ApiError(503, "WECHAT_SERVICE_UNAVAILABLE") from error
 
-    avatar_payload = None
-    if avatar is not None:
-        data = avatar.file.read()
-        content_type = (avatar.content_type or "").lower()
-        if content_type not in SUPPORTED_IMAGE_CONTENT_TYPES:
-            redis_client.delete(key)
-            raise ApiError(400, "INVALID_AVATAR")
-        if len(data) > MAX_AVATAR_BYTES:
-            redis_client.delete(key)
-            raise ApiError(413, "IMAGE_TOO_LARGE")
-        avatar_payload = (data, content_type)
-
-    if mode == "login":
-        user = resolve_wechat_user(
-            db,
-            wechat_session.openid,
-            nickname=nickname,
-            avatar=avatar_payload,
-            storage=storage,
-        )
-        user.last_login_at = utc_now()
-        db.commit()
-        db.refresh(user)
-        # 结果写回 scene 供 status 轮询消费；会话由 status 按 login 模式发放。
-        redis_client.set(
-            key,
-            f"confirmed:{user.id}:{mode}",
-            ex=settings.wechat_scene_ttl_seconds,
-        )
-        return OkResponse(ok=True)
-
-    assert bind_user is not None
-    existing = db.scalar(
-        select(User.id).where(
-            User.wechat_openid == wechat_session.openid, User.id != bind_user.id
-        )
-    )
-    if existing is not None:
-        redis_client.delete(key)
-        raise ApiError(409, "WECHAT_BIND_CONFLICT")
-    bind_user.wechat_openid = wechat_session.openid
-    try:
-        db.commit()
-    except IntegrityError as error:
-        db.rollback()
-        redis_client.delete(key)
-        raise ApiError(409, "WECHAT_BIND_CONFLICT") from error
+    user = resolve_wechat_user(db, openid)
+    user.last_login_at = utc_now()
+    db.commit()
+    db.refresh(user)
+    # 结果写回 scene 供 status 轮询消费；会话由 status 按 login 模式发放。
     redis_client.set(
         key,
-        f"confirmed:{bind_user.id}:{mode}",
+        f"confirmed:{user.id}:login",
         ex=settings.wechat_scene_ttl_seconds,
     )
     return OkResponse(ok=True)

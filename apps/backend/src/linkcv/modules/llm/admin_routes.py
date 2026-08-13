@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import Select, case, func, or_, select, update
 from sqlalchemy.orm import Session
 
@@ -45,6 +45,7 @@ from linkcv.modules.llm.schemas import (
     ModelLastTest,
 )
 from linkcv.modules.llm.service import LLMError, LLMService, RuntimeModelConfig
+from linkcv.modules.observability.audit import bind_audit_target
 
 router = APIRouter(prefix="/admin/llm", tags=["llm-admin"])
 
@@ -288,6 +289,7 @@ def get_chat_catalog(
 @router.post("/models", response_model=ModelConfigResponse, status_code=201)
 def create_model(
     payload: ModelConfigCreate,
+    request: Request,
     db: Session = Depends(get_db),
     _admin: User = Depends(get_current_admin),
     service: LLMService = Depends(get_llm_service),
@@ -321,6 +323,7 @@ def create_model(
     db.add(config)
     db.commit()
     db.refresh(config)
+    bind_audit_target(request, config.id)
     return ModelConfigResponse(
         model=model_record(config, active_model_id=None, last_test=None)
     )

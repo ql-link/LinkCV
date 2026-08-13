@@ -21,31 +21,18 @@ afterEach(() => {
 });
 
 describe("WechatQrLogin", () => {
-  it("登录模式生成二维码并提示扫码后自动登录", async () => {
+  it("生成登录二维码并提示扫码后自动登录", async () => {
     const qrcode = vi
       .spyOn(api, "wechatQrcode")
       .mockResolvedValue({ scene: "login:abc123", qr_base64: "base64-qr" });
     vi.spyOn(api, "wechatStatus").mockResolvedValue({ status: "pending", user: null });
 
-    render(<WechatQrLogin mode="login" onSuccess={() => undefined} />);
+    render(<WechatQrLogin onSuccess={() => undefined} />);
     await act(async () => {});
 
     expect(qrcode).toHaveBeenCalledWith("login");
     expect(screen.getByAltText("微信扫码登录二维码")).toBeInTheDocument();
     expect(screen.getByText(/扫码确认后自动登录/)).toBeInTheDocument();
-  });
-
-  it("绑定模式生成二维码并提示完成绑定", async () => {
-    vi.spyOn(api, "wechatQrcode").mockResolvedValue({
-      scene: "bind:abc123",
-      qr_base64: "base64-qr",
-    });
-    vi.spyOn(api, "wechatStatus").mockResolvedValue({ status: "pending", user: null });
-
-    render(<WechatQrLogin mode="bind" onSuccess={() => undefined} />);
-    await act(async () => {});
-
-    expect(screen.getByText(/扫码确认后完成绑定/)).toBeInTheDocument();
   });
 
   it("轮询命中成功状态后回调用户", async () => {
@@ -59,7 +46,7 @@ describe("WechatQrLogin", () => {
     });
     const onSuccess = vi.fn();
 
-    render(<WechatQrLogin mode="login" onSuccess={onSuccess} />);
+    render(<WechatQrLogin onSuccess={onSuccess} />);
     await act(async () => {});
     await act(async () => {
       vi.advanceTimersByTime(2000);
@@ -74,7 +61,7 @@ describe("WechatQrLogin", () => {
       .mockResolvedValue({ scene: "login:abc123", qr_base64: "base64-qr" });
     vi.spyOn(api, "wechatStatus").mockResolvedValue({ status: "expired", user: null });
 
-    render(<WechatQrLogin mode="login" onSuccess={() => undefined} />);
+    render(<WechatQrLogin onSuccess={() => undefined} />);
     await act(async () => {});
     await act(async () => {
       vi.advanceTimersByTime(2000);
@@ -92,7 +79,7 @@ describe("WechatQrLogin", () => {
       new ApiRequestError(429, "WECHAT_RATE_LIMITED"),
     );
 
-    render(<WechatQrLogin mode="login" onSuccess={() => undefined} />);
+    render(<WechatQrLogin onSuccess={() => undefined} />);
     await act(async () => {});
 
     expect(screen.getByText("请求太频繁，请稍后再试。")).toBeInTheDocument();
@@ -104,6 +91,7 @@ describe("wechatErrorMessage", () => {
   it("将后端错误码映射为可读文案", () => {
     expect(wechatErrorMessage(new ApiRequestError(429, "WECHAT_RATE_LIMITED"), "默认")).toBe("请求太频繁，请稍后再试。");
     expect(wechatErrorMessage(new ApiRequestError(502, "WECHAT_QRCODE_FAILED"), "默认")).toBe("微信二维码生成失败，请稍后重试。");
+    expect(wechatErrorMessage(new ApiRequestError(503, "WECHAT_SERVICE_UNAVAILABLE"), "默认")).toBe("微信登录服务暂不可用，请稍后重试。");
     expect(wechatErrorMessage(new ApiRequestError(401, "UNAUTHORIZED"), "默认")).toBe("登录状态已失效，请刷新页面后重试。");
     expect(wechatErrorMessage(new Error("boom"), "默认")).toBe("默认");
   });

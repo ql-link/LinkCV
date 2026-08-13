@@ -6,6 +6,7 @@ import {
   FileDown,
   History,
   Home,
+  LoaderCircle,
   LogOut,
   Minus,
   Plus,
@@ -18,7 +19,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiRequestError } from "../../api/client";
-import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { Button, ConfirmDialog, IconButton, TogglePill } from "@/components/ui";
 import { exportResumePdf } from "../preview/exportPdf";
 import { resumeSerifFontStack, useResumeStore } from "../../store/resumeStore";
 import { resumeEditorExtensions } from "./editorExtensions";
@@ -30,6 +31,7 @@ type DrawerMode = "settings" | "history" | null;
 type ToastState = { label: string } | null;
 
 const EMPTY_IMPORT_WARNINGS: string[] = [];
+const A4_WIDTH_IN_CSS_PIXELS = (210 / 25.4) * 96;
 
 const fontOptions = [
   { label: "简历宋体", value: resumeSerifFontStack },
@@ -78,25 +80,67 @@ function plainParagraphsFromHtml(html: string) {
   return plain.split(/\n+/).map((line) => `<p>${escape(line) || "<br>"}</p>`).join("");
 }
 
-function ActionButton({ primary, active, children, onClick, disabled }: { primary?: boolean; active?: boolean; children: React.ReactNode; onClick: () => void; disabled?: boolean }) {
+export function SmartOnePageAction({ active, onToggle, disabled }: { active: boolean; onToggle: () => void; disabled?: boolean }) {
   return (
-    <motion.button
-      type="button"
-      className={`workbench-action${primary ? " primary" : ""}${active ? " active" : ""}`}
-      aria-pressed={active === undefined ? undefined : active}
-      whileTap={disabled ? undefined : { scale: 0.97 }}
-      transition={{ type: "spring", bounce: 0, duration: 0.32 }}
-      onClick={onClick}
+    <TogglePill
+      active={active}
+      className="workbench-smart-toggle"
       disabled={disabled}
-    >{children}</motion.button>
+      icon={<Sparkles size={14} />}
+      onClick={onToggle}
+      title="智能一页"
+    >
+      智能一页
+    </TogglePill>
   );
 }
 
-export function SmartOnePageAction({ active, onToggle, disabled }: { active: boolean; onToggle: () => void; disabled?: boolean }) {
+type WorkbenchSaveStatusProps = {
+  saveStatus: "idle" | "saving" | "saved" | "error";
+  dirty: boolean;
+};
+
+export function WorkbenchSaveStatus({ saveStatus, dirty }: WorkbenchSaveStatusProps) {
+  const kind = saveStatus === "saving"
+    ? "saving"
+    : saveStatus === "error"
+      ? "error"
+      : dirty
+        ? "editing"
+        : "saved";
+  const label = kind === "saving"
+    ? "保存中…"
+    : kind === "error"
+      ? "保存失败 · 请重试"
+      : kind === "editing"
+        ? "编辑中"
+        : "已保存";
+
   return (
-    <ActionButton active={active} onClick={onToggle} disabled={disabled}>
-      <Sparkles size={14} />智能一页
-    </ActionButton>
+    <span aria-live="polite" className={`workbench-save-status ${kind}`} role="status">
+      {kind === "saving"
+        ? <LoaderCircle aria-hidden="true" className="workbench-status-spinner" />
+        : kind === "saved"
+          ? <CircleCheck aria-hidden="true" />
+          : <i aria-hidden="true" />}
+      {label}
+    </span>
+  );
+}
+
+export function SaveVersionAction({ pending, onSave }: { pending: boolean; onSave: () => void }) {
+  return (
+    <Button
+      aria-label={pending ? "正在保存版本" : "保存版本"}
+      className="workbench-action workbench-save-action"
+      disabled={pending}
+      icon={pending ? <LoaderCircle aria-hidden="true" className="workbench-save-spinner" /> : <Save aria-hidden="true" />}
+      size="sm"
+      variant="accent"
+      onClick={onSave}
+    >
+      {pending ? "保存中…" : "保存版本"}
+    </Button>
   );
 }
 
@@ -112,20 +156,6 @@ export function ImportWarningBanner({ warnings, onDismiss }: { warnings: string[
         <X size={15} aria-hidden="true" />
       </button>
     </div>
-  );
-}
-
-function IconAction({ label, active, danger, children, onClick }: { label: string; active?: boolean; danger?: boolean; children: React.ReactNode; onClick: () => void }) {
-  return (
-    <motion.button
-      type="button"
-      className={`workbench-icon-action${active ? " active" : ""}${danger ? " danger" : ""}`}
-      aria-label={label}
-      title={label}
-      whileTap={{ scale: 0.97 }}
-      transition={{ type: "spring", bounce: 0, duration: 0.32 }}
-      onClick={onClick}
-    >{children}</motion.button>
   );
 }
 
@@ -166,6 +196,7 @@ export function ResumeWorkbench() {
   const logout = useResumeStore((state) => state.logout);
   const [drawerMode, setDrawerMode] = useState<DrawerMode>(null);
   const [toast, setToast] = useState<ToastState>(null);
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [pendingVersionDelete, setPendingVersionDelete] = useState<{
     versionNo: number;
     createdAt: string;
@@ -221,6 +252,12 @@ export function ResumeWorkbench() {
     scrollArea.addEventListener("wheel", handleWheel, { passive: false });
     return () => scrollArea.removeEventListener("wheel", handleWheel);
   }, [previewScale, setPreviewScale]);
+
+  useEffect(() => {
+    const updateViewportWidth = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", updateViewportWidth);
+    return () => window.removeEventListener("resize", updateViewportWidth);
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -309,34 +346,46 @@ export function ResumeWorkbench() {
     }
   };
 
-  const statusText = saveStatus === "saving" ? "保存中..." : saveStatus === "error" ? "保存失败 · 请重试" : dirty ? "编辑中" : "已保存";
-  const zoomPercent = Math.round(previewScale * 100);
+  const responsiveFitScale = viewportWidth <= 720
+    ? Math.min(1, Math.max(0.36, (viewportWidth - 32) / A4_WIDTH_IN_CSS_PIXELS))
+    : 1;
+  const renderedPreviewScale = previewScale * responsiveFitScale;
+  const zoomPercent = Math.round(renderedPreviewScale * 100);
   const importWarnings = activeResumeId
     ? importWarningsByResumeId[activeResumeId] ?? EMPTY_IMPORT_WARNINGS
     : EMPTY_IMPORT_WARNINGS;
 
   return (
     <MotionConfig reducedMotion="user" transition={{ type: "spring", bounce: 0, duration: 0.34 }}>
-      <div className="resume-workbench">
+      <div className="resume-workbench" data-ui-theme="light">
         <header className="workbench-header">
           <div className="workbench-header-left">
-            <IconAction label="回主页" onClick={() => void leaveSafely("home")}><Home size={16} /></IconAction>
-            <input className="workbench-title" value={title} onChange={(event) => setTitle(event.target.value)} aria-label="简历标题" disabled={versionOperationPending} />
-            <span className={`workbench-save-status ${!dirty && saveStatus === "saved" ? "saved" : ""}${saveStatus === "error" ? " error" : ""}`}><i />{statusText}</span>
+            <IconButton className="workbench-icon-action workbench-back-action" label="返回全部简历" onClick={() => void leaveSafely("home")}><Home size={16} /></IconButton>
+            <div className="workbench-document-identity">
+              <span>简历编辑</span>
+              <input autoComplete="off" className="workbench-title" name="resume-title" value={title} onChange={(event) => setTitle(event.target.value)} aria-label="简历标题" disabled={versionOperationPending} />
+            </div>
+            <WorkbenchSaveStatus dirty={dirty} saveStatus={saveStatus} />
           </div>
           <div className="workbench-header-actions">
-            <SmartOnePageAction
-              active={settings.smartOnePage}
-              onToggle={() => updateSettings({ smartOnePage: !settings.smartOnePage })}
-              disabled={versionOperationPending}
-            />
-            <IconAction label="页面设置" active={drawerMode === "settings"} onClick={() => setDrawerMode((mode) => mode === "settings" ? null : "settings")}><SlidersHorizontal size={16} /></IconAction>
-            <IconAction label="版本记录" active={drawerMode === "history"} onClick={() => setDrawerMode((mode) => mode === "history" ? null : "history")}><History size={16} /></IconAction>
-            <ActionButton onClick={() => void exportResumePdf(settings.smartOnePage, title)}><FileDown size={14} />导出 PDF</ActionButton>
-            <ActionButton primary disabled={saveStatus === "saving" || versionOperationPending} onClick={() => void manualSave()}><Save size={14} />保存版本</ActionButton>
+            <div className="workbench-header-tool-group" role="group" aria-label="编辑面板">
+              <IconButton aria-controls="workbench-side-panel" aria-expanded={drawerMode === "settings"} aria-pressed={drawerMode === "settings"} className={`workbench-icon-action${drawerMode === "settings" ? " is-active" : ""}`} label="页面设置" onClick={() => setDrawerMode((mode) => mode === "settings" ? null : "settings")}><SlidersHorizontal size={16} /></IconButton>
+              <IconButton aria-controls="workbench-side-panel" aria-expanded={drawerMode === "history"} aria-pressed={drawerMode === "history"} className={`workbench-icon-action${drawerMode === "history" ? " is-active" : ""}`} label="版本记录" onClick={() => setDrawerMode((mode) => mode === "history" ? null : "history")}><History size={16} /></IconButton>
+            </div>
+            <div className="workbench-output-actions" role="group" aria-label="保存与导出">
+              <SmartOnePageAction
+                active={settings.smartOnePage}
+                onToggle={() => updateSettings({ smartOnePage: !settings.smartOnePage })}
+                disabled={versionOperationPending}
+              />
+              <Button aria-label="导出 PDF" className="workbench-action workbench-export-action" icon={<FileDown aria-hidden="true" />} size="sm" title="导出 PDF" variant="secondary" onClick={() => activeResumeId && void exportResumePdf(settings.smartOnePage, title, activeResumeId)}>导出 PDF</Button>
+              <SaveVersionAction pending={saveStatus === "saving" || versionOperationPending} onSave={() => void manualSave()} />
+            </div>
             <span className="workbench-header-divider" />
-            <IconAction label="个人资料" onClick={() => navigateTo("/account")}><UserRound size={15} /></IconAction>
-            <IconAction label="退出登录" danger onClick={() => void leaveSafely("logout")}><LogOut size={15} /></IconAction>
+            <div className="workbench-account-actions" role="group" aria-label="账户操作">
+              <IconButton className="workbench-icon-action" label="个人资料" onClick={() => navigateTo("/account")}><UserRound size={15} /></IconButton>
+              <IconButton className="workbench-icon-action workbench-logout-action" label="退出登录" onClick={() => void leaveSafely("logout")}><LogOut size={15} /></IconButton>
+            </div>
           </div>
         </header>
 
@@ -350,23 +399,32 @@ export function ResumeWorkbench() {
         {activeResumeId && <WorkbenchToolbar editor={editor} resumeId={activeResumeId} onNotice={(label) => setToast({ label })} />}
 
         <main className="workbench-canvas">
+          <aside className="workbench-stage-rail" aria-label="当前纸张信息">
+            <span className="workbench-stage-kicker">编辑画布</span>
+            <dl>
+              <div><dt>纸张</dt><dd>A4</dd></div>
+              <div><dt>缩放</dt><dd><output aria-label="简历缩放比例">{zoomPercent}%</output></dd></div>
+              <div><dt>导出</dt><dd>{settings.smartOnePage ? "连续单页" : "自动分页"}</dd></div>
+            </dl>
+            <p>按住 Ctrl 或 ⌘ 滚动可调整缩放。</p>
+          </aside>
           <div
             ref={paperScrollRef}
             className="workbench-paper-scroll"
-            style={{ "--workbench-preview-scale": previewScale } as React.CSSProperties}
+            style={{ "--workbench-preview-scale": renderedPreviewScale } as React.CSSProperties}
           >
-            <article className={`resume-paper${settings.smartOnePage ? " smart-one-page" : ""}`} style={resumeStyle} aria-label="可编辑简历页面">
+            <article className={`resume-paper theme-${settings.theme}${settings.smartOnePage ? " smart-one-page" : ""}`} style={resumeStyle} aria-label="可编辑简历页面">
               <EditorContent editor={editor} />
             </article>
             <p className="workbench-page-hint">
               {settings.smartOnePage ? "智能一页 · 导出为连续单页" : "标准 A4 · 超出内容自动分页导出"}
             </p>
           </div>
-          <output className="workbench-zoom-indicator" aria-label="简历缩放比例">{zoomPercent}%</output>
 
           <AnimatePresence initial={false}>
             {drawerMode && (
               <motion.aside
+                id="workbench-side-panel"
                 className="workbench-drawer"
                 role="region"
                 aria-labelledby="workbench-drawer-title"
@@ -376,7 +434,10 @@ export function ResumeWorkbench() {
                 transition={{ type: "spring", bounce: 0, duration: 0.36 }}
               >
                 <div className="workbench-drawer-head">
-                  <h2 id="workbench-drawer-title">{drawerMode === "settings" ? "页面设置" : "版本记录"}</h2>
+                  <div>
+                    <span>{drawerMode === "settings" ? "排版" : "历史"}</span>
+                    <h2 id="workbench-drawer-title">{drawerMode === "settings" ? "页面设置" : "版本记录"}</h2>
+                  </div>
                   <button type="button" onClick={() => setDrawerMode(null)} aria-label="关闭面板">×</button>
                 </div>
                 {drawerMode === "settings" ? (

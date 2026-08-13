@@ -113,30 +113,61 @@ describe("API session refresh", () => {
   });
 
   it("导入请求刷新会话后保留同一个幂等键", async () => {
-    const imported = { resume: { id: "8" }, import: { warnings: [] } };
+    const imported = { import: { id: "8", parse_status: "processing" } };
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(401, { error: "UNAUTHORIZED" }))
       .mockResolvedValueOnce(
         jsonResponse(200, { user: { id: "1", email: "zhangsan@example.test" } }),
       )
-      .mockResolvedValueOnce(jsonResponse(201, imported));
+      .mockResolvedValueOnce(jsonResponse(202, imported));
     vi.stubGlobal("fetch", fetchMock);
     const file = new File(["# 张三"], "resume.md", { type: "text/markdown" });
     const key = "8d42a61f-2396-4dbc-a63d-a1770e398f61";
 
-    await api.importResume(file, undefined, key);
+    await api.importResume(file, "8", key);
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       "/api/resumes/import",
-      expect.objectContaining({ headers: { "Idempotency-Key": key } }),
+      expect.objectContaining({
+        headers: expect.objectContaining({ "Idempotency-Key": key }),
+      }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
       "/api/resumes/import",
-      expect.objectContaining({ headers: { "Idempotency-Key": key } }),
+      expect.objectContaining({
+        headers: expect.objectContaining({ "Idempotency-Key": key }),
+      }),
     );
+  });
+});
+
+describe("API observability", () => {
+  it("adds a request id and reports API 5xx without exposing the response body", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(503, { error: "SERVICE_UNAVAILABLE", secret: "hidden" }))
+      .mockResolvedValueOnce(jsonResponse(202, { accepted: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.listResumes()).rejects.toMatchObject({
+      status: 503,
+      message: "SERVICE_UNAVAILABLE",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstOptions = fetchMock.mock.calls[0][1] as RequestInit;
+    expect((firstOptions.headers as Record<string, string>)["X-Request-ID"]).toBeTruthy();
+    const reportBody = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/observability/client-events");
+    expect(reportBody).toMatchObject({
+      event_type: "api_5xx",
+      error_name: "ApiRequestError",
+      message: "SERVICE_UNAVAILABLE",
+    });
+    expect(JSON.stringify(reportBody)).not.toContain("hidden");
   });
 });
 
@@ -191,8 +222,114 @@ describe("JD API client", () => {
   });
 });
 
-describe("WeChat scan login API client", () => {
-  it("申请登录二维码时提交 mode 并读取 scene 与 base64 图片", async () => {
+describe("知识库资料 API", () => {
+  it("以 FormData 上传资料并保持相对路径", async () => {
+    const record = {
+      id: "42",
+      file_name: "岗位要求.md",
+      file_format: "md",
+      file_size: 1024,
+      sha256: "abc123",
+      created_at: "2026-08-08T08:00:00Z",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(201, record));
+    vi.stubGlobal("fetch", fetchMock);
+    const file = new File(["# 岗位要求"], "岗位要求.md", { type: "text/markdown" });
+
+    await expect(api.uploadDataset(file)).resolves.toEqual(record);
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.method).toBe("POST");
+    expect(init.headers).not.toHaveProperty("Content-Type");
+    expect(init.body).toBeInstanceOf(FormData);
+    expect((init.body as FormData).get("file")).toBe(file);
+  });
+
+  it("列出当前用户的资料清单", async () => {
+    const datasets = [
+      {
+        id: "1",
+        file_name: "行业报告.pdf",
+        file_format: "pdf",
+        file_size: 2048,
+        sha256: "def456",
+        created_at: "2026-08-07T08:00:00Z",
+      },
+    ];
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(200, { datasets }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.listDatasets()).resolves.toEqual({ datasets });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/datasets",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
+});
+
+describe("API resume share", () => {
+  it("按管理与公开接口的路径和方法发起分享请求", async () => {
+    const share = {
+      share_token: "token_abc",
+      share_visibility: "public",
+      share_expires_at: null,
+      share_created_at: "2026-08-05T00:00:00Z",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(200, { share }))
+      .mockResolvedValueOnce(jsonResponse(200, { share: null }))
+      .mockResolvedValueOnce(jsonResponse(200, { share: { ...share, share_visibility: "private" } }))
+      .mockResolvedValueOnce(jsonResponse(200, { deleted: true }))
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          data: { schema_version: "1.0" },
+          style: { schema_version: "1.0" },
+          sharer: { nickname: "于晏", avatar_url: null },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.createShare("1");
+    await api.getShareState("1");
+    await api.updateShare("1", { visibility: "private" });
+    await api.deleteShare("1");
+    await api.fetchPublicShare("token_abc");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/resumes/1/share",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/resumes/1/share",
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/resumes/1/share",
+      expect.objectContaining({ method: "PATCH", body: JSON.stringify({ visibility: "private" }) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/resumes/1/share",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/share/token_abc",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+});
+
+describe("微信扫码登录 API", () => {
+  it("申请登录二维码时读取 scene 与 base64 图片", async () => {
     const body = { scene: "login:abcd1234", qr_base64: "base64-qr" };
     vi.stubGlobal(
       "fetch",
@@ -204,25 +341,7 @@ describe("WeChat scan login API client", () => {
       "/api/auth/wechat/qrcode",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ mode: "login" }),
         credentials: "include",
-      }),
-    );
-  });
-
-  it("绑定模式同样通过同一接口提交 bind", async () => {
-    const body = { scene: "bind:abcd5678", qr_base64: "base64-qr" };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(jsonResponse(200, body)),
-    );
-
-    await expect(api.wechatQrcode("bind")).resolves.toEqual(body);
-    expect(fetch).toHaveBeenCalledWith(
-      "/api/auth/wechat/qrcode",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ mode: "bind" }),
       }),
     );
   });

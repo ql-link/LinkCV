@@ -31,7 +31,7 @@
     <!-- 模式说明：浏览模式（无会话）展示流程说明，不请求任何授权；
          授权模式（有会话）展示授权范围 -->
     <view class="mode-note" wx:if="{{!hasSession}}">本小程序用于 LinkResume 网页版扫码登录确认。可先自由浏览本页内容；如需登录，请前往 LinkResume 网页端扫码，将自动进入授权确认。</view>
-    <view class="mode-note" wx:if="{{hasSession}}">· 本次登录将获取您的公开信息（头像、昵称） ·</view>
+    <view class="mode-note" wx:if="{{hasSession}}">· 确认后，网页端将使用您的微信身份登录 LinkResume ·</view>
   </view>
 
   <!-- 底部操作区：仅授权确认模式显示，含确认按钮 + 取消入口（审核规范要求） -->

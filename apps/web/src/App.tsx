@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button } from "./components/ds";
+import { Button } from "@/components/ui";
 import { WorkspaceLayout, type WorkspaceSection } from "./components/WorkspaceLayout";
 import { ApiRequestError } from "./api/client";
 import { AccountPage } from "./features/account/AccountPage";
@@ -7,11 +7,14 @@ import { ChangePasswordPage } from "./features/account/ChangePasswordPage";
 import { AdminApp } from "./features/admin/AdminApp";
 import { AdminLoginPage } from "./features/admin/AdminLoginPage";
 import { AuthPage } from "./features/auth/AuthPage";
+import { DatasetsPage } from "./features/datasets/DatasetsPage";
 import { HomePage } from "./features/home/HomePage";
+import { ResumeCreatePage } from "./features/home/ResumeCreatePage";
 import { JobCenterPage } from "./features/jobs/JobCenterPage";
 import { JobDetailPage } from "./features/jobs/JobDetailPage";
 import { JobFormPage } from "./features/jobs/JobFormPage";
 import { LandingPage } from "./features/landing/LandingPage";
+import { SharePage } from "./features/share/SharePage";
 import { ResumeWorkbench } from "./features/workbench/ResumeWorkbench";
 import { authPath, editorPath, navigateTo, useAppRoute } from "./routing";
 import { useResumeStore } from "./store/resumeStore";
@@ -53,11 +56,13 @@ export function App() {
     if (authStatus === "guest") {
       if (
         route.kind === "resumes"
+        || route.kind === "resumeCreate"
         || route.kind === "editor"
         || route.kind === "jobs"
         || route.kind === "jobCreate"
         || route.kind === "jobDetail"
         || route.kind === "jobEdit"
+        || route.kind === "datasets"
         || route.kind === "account"
       ) {
         const next = `${window.location.pathname}${window.location.search}`;
@@ -131,6 +136,10 @@ export function App() {
     return <AdminLoginPage key={route.next ?? ""} next={route.next} />;
   }
 
+  if (route.kind === "share") {
+    return <SharePage token={route.token} />;
+  }
+
   if (authStatus === "checking") {
     return <div className="app-loading">正在加载简历工作台...</div>;
   }
@@ -153,10 +162,12 @@ export function App() {
 
   if (
     route.kind === "resumes"
+    || route.kind === "resumeCreate"
     || route.kind === "jobs"
     || route.kind === "jobCreate"
     || route.kind === "jobDetail"
     || route.kind === "jobEdit"
+    || route.kind === "datasets"
     || route.kind === "account"
     || route.kind === "accountPassword"
   ) {
@@ -165,17 +176,23 @@ export function App() {
       : "all";
     const activeSection: WorkspaceSection = route.kind === "resumes"
       ? resumeView === "templates" ? "templates" : "resumes"
+      : route.kind === "resumeCreate"
+        ? "resumes"
       : route.kind === "account" || route.kind === "accountPassword"
         ? "account"
-        : "jobs";
+        : route.kind === "datasets"
+          ? "datasets"
+          : "jobs";
 
     return (
       <WorkspaceLayout active={activeSection}>
         {route.kind === "resumes" && <HomePage view={resumeView} />}
+        {route.kind === "resumeCreate" && <ResumeCreatePage />}
         {route.kind === "jobs" && <JobCenterPage />}
         {route.kind === "jobCreate" && <JobFormPage mode="create" />}
         {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}
         {route.kind === "jobEdit" && <JobFormPage mode="edit" jobId={route.jobId} />}
+        {route.kind === "datasets" && <DatasetsPage />}
         {route.kind === "account" && <AccountPage />}
         {route.kind === "accountPassword" && <ChangePasswordPage />}
       </WorkspaceLayout>

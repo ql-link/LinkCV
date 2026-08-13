@@ -29,9 +29,9 @@
 .admin-login-frame { display: grid; width: min(100%, 68rem); min-height: min(43rem, calc(100vh - clamp(2rem, 8vw, 7rem))); grid-template-columns: minmax(21rem, .88fr) minmax(27rem, 1.12fr); overflow: hidden; border: 1px solid color-mix(in srgb, var(--admin-line) 76%, transparent); border-radius: clamp(1.25rem, 2vw, 1.75rem); background: color-mix(in srgb, var(--surface-raised) 80%, transparent); box-shadow: 0 2rem 5rem rgba(29, 29, 31, .12), inset 0 1px 0 color-mix(in srgb, white 76%, transparent); backdrop-filter: blur(32px) saturate(150%); -webkit-backdrop-filter: blur(32px) saturate(150%); will-change: transform, opacity; }
 .admin-login-context { position: relative; display: flex; min-height: 100%; flex-direction: column; overflow: hidden; background: #1d1d1f; padding: clamp(2rem, 3.4vw, 3.35rem); color: #f5f5f7; }
 .admin-wordmark, .sidebar-brand { display: inline-flex; align-items: center; gap: .7rem; color: inherit; font-size: 1.08rem; font-weight: 720; letter-spacing: -.02em; text-decoration: none; }
-.admin-login-context .ds-brand { color: #f5f5f7; }
-.admin-login-context .ds-brand-mark { background: #f5f5f7; }
-.admin-login-context .ds-brand-mark img { filter: invert(1); }
+.admin-login-context .ui-brand { color: #f5f5f7; }
+.admin-login-context .ui-brand-mark { background: #f5f5f7; }
+.admin-login-context .ui-brand-mark img { filter: brightness(0); }
 .login-context-copy { position: relative; z-index: 1; max-width: 25rem; margin: auto 0; padding: 3rem 0; will-change: transform, opacity; }
 .eyebrow, .page-eyebrow { display: inline-flex; align-items: center; gap: .45rem; color: var(--admin-muted); font-size: .72rem; font-weight: 680; letter-spacing: .08em; line-height: 1.2; text-transform: uppercase; }
 .login-access-label { display: inline-flex; align-items: center; gap: .5rem; color: rgba(245,245,247,.58); font-size: .66rem; font-weight: 700; letter-spacing: .11em; }
@@ -468,4 +468,504 @@
 .confirm-dialog h3 {
   font-size: 1rem;
   font-weight: 600;
+}
+.observability-heading {
+  align-items: center;
+  margin-top: -.8rem;
+  margin-bottom: 1.5rem;
+}
+
+.observability-heading-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.observability-heading-copy > svg {
+  width: 2rem;
+  height: 2rem;
+  margin-top: .6rem;
+  stroke-width: 1.6;
+}
+
+.observability-heading .page-eyebrow {
+  display: none;
+}
+
+.observability-heading h1 {
+  font-size: clamp(2.4rem, 3.6vw, 3.35rem);
+}
+
+.observability-tabs {
+  display: grid;
+  width: min(100%, 31rem);
+  grid-template-columns: repeat(3, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--admin-line);
+  border-radius: 999px;
+  margin: 0 0 1.3rem;
+  background: var(--surface-card);
+}
+
+.observability-tabs button {
+  min-height: 2.5rem;
+  border: 0;
+  border-right: 1px solid var(--admin-line);
+  background: transparent;
+  color: var(--admin-muted);
+  padding: .62rem 1rem;
+  cursor: pointer;
+  font-size: .75rem;
+  font-weight: 650;
+}
+
+.observability-tabs button:last-child {
+  border-right: 0;
+}
+
+.observability-tabs button.active {
+  background: #294f3b;
+  color: #fff;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
+}
+
+.observability-summary {
+  margin-bottom: 1.2rem;
+  box-shadow: none;
+}
+
+.observability-summary > div,
+.observability-summary > button {
+  min-height: 6.2rem;
+  align-content: center;
+  padding: 1rem 1.35rem;
+}
+
+.observability-summary strong {
+  font-size: 1.85rem;
+  font-weight: 600;
+}
+
+.observability-summary-alert strong {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+}
+
+.observability-summary-alert em,
+.observability-summary-alert i,
+.observability-summary-alert b {
+  font: inherit;
+  font-style: normal;
+}
+
+.observability-summary-alert em {
+  color: var(--admin-warn);
+}
+
+.observability-summary-alert i {
+  color: var(--admin-muted);
+}
+
+.observability-summary-alert b,
+.observability-summary-failed strong {
+  color: #c64545;
+}
+
+.observability-summary-success strong {
+  color: var(--admin-green);
+}
+
+.observability-summary > button {
+  display: grid;
+  gap: .45rem;
+  border: 0;
+  border-left: 1px solid var(--admin-line);
+  background: transparent;
+  padding: 1rem 1.2rem;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.observability-summary > button:hover {
+  background: color-mix(in srgb, #c64545 4%, transparent);
+}
+
+.observability-filters {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.1rem;
+  padding: 1rem;
+  background: color-mix(in srgb, var(--admin-panel) 58%, var(--gray-100));
+  box-shadow: none;
+}
+
+.observability-filter-fields {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: .72rem;
+}
+
+.observability-filters input,
+.observability-filters select {
+  width: 100%;
+  height: 2.65rem;
+  min-width: 0;
+  border: 1px solid var(--admin-line);
+  border-radius: .58rem;
+  outline: 0;
+  background: var(--surface-card);
+  padding: 0 .75rem;
+  color: var(--admin-ink);
+  font-size: .74rem;
+}
+
+.observability-filters input:focus,
+.observability-filters select:focus {
+  border-color: var(--form-focus);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.observability-filters label {
+  display: grid;
+  gap: .34rem;
+  color: var(--admin-muted);
+  font-size: .62rem;
+}
+
+.observability-filters label input {
+  width: 100%;
+}
+
+.observability-filter-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-top: 1px solid var(--admin-line);
+  padding-top: .9rem;
+}
+
+.observability-filter-actions > span {
+  color: var(--admin-muted);
+  font-size: .64rem;
+}
+
+.observability-filter-actions button {
+  min-width: 7.5rem;
+  height: 2.45rem;
+  border: 0;
+  border-radius: .58rem;
+  background: #294f3b;
+  color: #fff;
+  padding: 0 1.35rem;
+  cursor: pointer;
+  font-size: .72rem;
+  font-weight: 650;
+}
+
+.observability-filter-actions button:disabled {
+  cursor: wait;
+  opacity: .6;
+}
+
+.observability-table {
+  min-width: 52rem;
+}
+
+.observability-table th {
+  padding: .8rem 1.15rem;
+  font-size: .62rem;
+}
+
+.observability-table td {
+  height: 4rem;
+  padding: .72rem 1.15rem;
+  font-size: .75rem;
+}
+
+.observability-table td:nth-child(3) {
+  max-width: 24rem;
+  overflow-wrap: anywhere;
+}
+
+.observability-log-row {
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.observability-log-row:hover {
+  background: color-mix(in srgb, var(--admin-accent) 3.5%, transparent);
+}
+
+.observability-log-status {
+  display: flex;
+  align-items: center;
+  gap: .62rem;
+}
+
+.observability-log-status-icon {
+  display: grid;
+  width: 1.35rem;
+  height: 1.35rem;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #4388e6;
+}
+
+.observability-log-status-icon svg {
+  width: 100%;
+  height: 100%;
+  stroke-width: 1.7;
+}
+
+.observability-log-row.is-warning .observability-log-status-icon {
+  color: var(--admin-warn);
+}
+
+.observability-log-row.is-error .observability-log-status-icon,
+.observability-log-row.is-failed .observability-log-status-icon {
+  color: #d34b4b;
+}
+
+.observability-log-row.is-succeeded .observability-log-status-icon {
+  color: var(--admin-green);
+}
+
+.observability-table .table-strong {
+  font-size: .75rem;
+  letter-spacing: .015em;
+}
+
+.observability-table .table-sub {
+  margin-top: .16rem;
+  font-size: .64rem;
+}
+
+.observability-error-code {
+  color: #b13e3e;
+  font-family: var(--mono-font);
+  font-size: .68rem;
+  font-weight: 650;
+}
+
+.observability-log-detail-button {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 0;
+  border-radius: .5rem;
+  background: transparent;
+  padding: 0;
+  color: var(--admin-muted);
+  cursor: pointer;
+}
+
+.observability-log-row:hover .observability-log-detail-button {
+  color: var(--admin-ink);
+  background: var(--surface-card);
+}
+
+.observability-log-detail-button:focus-visible {
+  outline: 3px solid var(--accent-soft);
+  outline-offset: 2px;
+}
+
+.observability-log-dialog {
+  width: min(100%, 46rem);
+}
+
+.observability-log-detail {
+  display: grid;
+  gap: 1rem;
+  padding-top: 1.2rem;
+}
+
+.observability-log-summary,
+.observability-log-stack {
+  border-radius: .72rem;
+  background: var(--gray-100);
+  padding: .9rem;
+}
+
+.observability-log-summary span,
+.observability-log-stack span {
+  color: var(--admin-muted);
+  font-size: .6rem;
+}
+
+.observability-log-summary p {
+  margin: .45rem 0 0;
+  overflow-wrap: anywhere;
+  font-size: .74rem;
+  line-height: 1.65;
+}
+
+.observability-log-detail dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .65rem;
+  margin: 0;
+}
+
+.observability-log-detail dl div {
+  display: grid;
+  gap: .3rem;
+  min-width: 0;
+  border-bottom: 1px solid var(--admin-line);
+  padding: .55rem 0;
+}
+
+.observability-log-detail dt {
+  color: var(--admin-muted);
+  font-size: .59rem;
+}
+
+.observability-log-detail dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--mono-font);
+  font-size: .65rem;
+}
+
+.observability-log-stack pre {
+  max-height: 18rem;
+  margin: .5rem 0 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--mono-font);
+  font-size: .62rem;
+  line-height: 1.55;
+}
+
+.fatal-error {
+  max-width: 520px;
+  margin: 15vh auto;
+  padding: 32px;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .observability-heading-copy > svg {
+    display: none;
+  }
+
+  .observability-filter-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .observability-summary {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .observability-summary > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .observability-log-detail dl {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .observability-heading {
+    align-items: flex-start;
+  }
+
+  .observability-tabs,
+  .observability-filter-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .observability-tabs {
+    border-radius: .75rem;
+  }
+
+  .observability-tabs button {
+    border-right: 0;
+    border-bottom: 1px solid var(--admin-line);
+  }
+
+  .observability-tabs button:last-child {
+    border-bottom: 0;
+  }
+
+  .observability-filter-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .observability-filter-actions button {
+    width: 100%;
+  }
+}
+
+.admin-template-upload { cursor: pointer; }
+.admin-template-upload input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+.admin-template-list { display: grid; overflow: hidden; padding: 0; }
+.admin-template-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(170px, auto) auto;
+  align-items: center;
+  gap: 24px;
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--admin-border, rgba(15, 23, 42, .08));
+}
+.admin-template-row:last-child { border-bottom: 0; }
+.admin-template-row small, .admin-template-row p { display: block; margin: 4px 0 0; color: #64748b; }
+.admin-template-status { display: grid; gap: 5px; font-size: .82rem; }
+.admin-template-status .is-valid { color: #166534; }
+.admin-template-status .is-invalid { color: #991b1b; }
+.admin-template-actions { display: flex; gap: 8px; }
+@media (max-width: 860px) {
+  .admin-template-row { grid-template-columns: 1fr; gap: 12px; }
+  .admin-template-actions { justify-content: flex-end; }
+}
+
+.plugin-page-heading > button { display: inline-flex; align-items: center; gap: 7px; }
+.plugin-release-panel { padding: 26px; }
+.plugin-admin-state { margin: 0; padding: 28px; border-radius: 16px; background: var(--surface-subtle); color: var(--body-muted); text-align: center; }
+.plugin-admin-state.is-error { color: var(--danger); }
+.plugin-status-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 18px; align-items: center; min-height: 150px; padding: 24px; border: 1px solid var(--card-border); border-radius: 18px; background: linear-gradient(135deg, color-mix(in srgb, var(--surface-raised) 94%, transparent), var(--surface-subtle)); }
+.plugin-status-card.is-published { border-color: color-mix(in srgb, #2f8a62 28%, var(--card-border)); }
+.plugin-status-card.is-unpublished { border-color: color-mix(in srgb, #d28a22 30%, var(--card-border)); }
+.plugin-status-icon { display: grid; width: 48px; height: 48px; place-items: center; border-radius: 14px; background: var(--surface-raised); color: var(--body-muted); box-shadow: var(--shadow-sm); }
+.plugin-status-card.is-published .plugin-status-icon { color: #2f8a62; }
+.plugin-status-card.is-unpublished .plugin-status-icon { color: #c37a17; }
+.plugin-status-copy { min-width: 0; }
+.plugin-status-copy h2 { margin: 8px 0 5px; font-size: 1.1rem; }
+.plugin-status-copy p { margin: 0; color: var(--body-muted); }
+.plugin-status-copy small { display: block; margin-top: 8px; overflow-wrap: anywhere; color: var(--muted); }
+.plugin-status-badge { display: inline-flex; border-radius: 999px; background: var(--surface-raised); padding: 4px 9px; color: var(--body-muted); font-size: .68rem; font-weight: 700; }
+.plugin-status-card.is-published .plugin-status-badge { background: color-mix(in srgb, #2f8a62 12%, var(--surface-raised)); color: #287653; }
+.plugin-status-card.is-unpublished .plugin-status-badge { background: color-mix(in srgb, #d28a22 13%, var(--surface-raised)); color: #a96510; }
+.plugin-status-actions { display: flex; max-width: 24rem; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.plugin-status-actions button { min-height: 2.6rem; }
+.admin-danger-button.is-quiet { border: 1px solid color-mix(in srgb, #e53e3e 30%, var(--card-border)); background: transparent; color: #c53030; }
+.admin-danger-button.is-quiet:hover { background: color-mix(in srgb, #e53e3e 9%, transparent); }
+.plugin-file-input { display: none; }
+.plugin-selected-file { display: flex; align-items: center; gap: 16px; margin-top: 16px; padding: 15px 16px; border: 1px solid var(--card-border); border-radius: 14px; background: var(--surface-subtle); }
+.plugin-selected-file > div:first-child { display: grid; min-width: 0; gap: 4px; margin-right: auto; }
+.plugin-selected-file span { overflow-wrap: anywhere; font-weight: 600; }
+.plugin-selected-file small { color: var(--muted); }
+.plugin-selected-file-actions { display: flex; gap: 8px; }
+.plugin-admin-message { margin: 16px 0 0; border-radius: 12px; background: var(--surface-subtle); padding: 12px 14px; color: var(--body-muted); }
+.plugin-admin-dialog-backdrop { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; padding: 20px; background: var(--scrim); }
+.plugin-admin-dialog { width: min(500px, 100%); padding: 26px; border: 1px solid var(--card-border); border-radius: 16px; background: var(--surface-raised); box-shadow: var(--shadow-lg); }
+.plugin-admin-dialog h2 { margin-top: 0; }
+.plugin-admin-dialog > div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+.plugin-admin-dialog .admin-danger-button { min-height: 2.6rem; padding: 0 1rem; }
+
+@media (max-width: 760px) {
+  .plugin-page-heading { align-items: flex-start; flex-direction: column; }
+  .plugin-status-card { grid-template-columns: 1fr; }
+  .plugin-status-actions { max-width: none; justify-content: stretch; }
+  .plugin-status-actions button { flex: 1 1 9rem; justify-content: center; }
+  .plugin-selected-file { align-items: flex-start; flex-direction: column; }
+  .plugin-selected-file > div:first-child { margin-right: 0; }
+  .plugin-selected-file-actions { width: 100%; }
+  .plugin-selected-file-actions button { flex: 1; }
 }

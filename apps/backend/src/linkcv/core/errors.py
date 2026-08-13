@@ -19,7 +19,8 @@ class ApiError(Exception):
 
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
-    async def handle_api_error(_request: Request, error: ApiError) -> JSONResponse:
+    async def handle_api_error(request: Request, error: ApiError) -> JSONResponse:
+        request.state.error_code = error.code
         content: dict[str, object] = {"error": error.code}
         if error.details:
             content.update(error.details)
@@ -32,6 +33,11 @@ def install_error_handlers(app: FastAPI) -> None:
         request: Request,
         error: RequestValidationError,
     ) -> JSONResponse:
+        if request.url.path.rstrip("/") == "/api/admin/plugin-releases":
+            return JSONResponse(
+                status_code=422,
+                content={"error": "PLUGIN_RELEASE_INVALID_FILE"},
+            )
         if request.url.path.startswith("/api/job-descriptions"):
             if request.url.path.rstrip("/") == "/api/job-descriptions/import":
                 code = "INVALID_JOB_IMPORT"
@@ -42,6 +48,7 @@ def install_error_handlers(app: FastAPI) -> None:
                 code = "INVALID_JOB_QUERY"
             else:
                 code = "INVALID_JOB_DESCRIPTION"
+            request.state.error_code = code
             return JSONResponse(status_code=400, content={"error": code})
         if request.url.path.startswith("/api/admin/llm"):
             code = (
@@ -49,6 +56,7 @@ def install_error_handlers(app: FastAPI) -> None:
                 if request.method == "GET" and request.url.path.endswith("/calls")
                 else "INVALID_LLM_MODEL_CONFIG"
             )
+            request.state.error_code = code
             return JSONResponse(status_code=400, content={"error": code})
         if request.method == "PUT" and request.url.path.startswith("/api/resumes/"):
             fields = {
@@ -57,13 +65,46 @@ def install_error_handlers(app: FastAPI) -> None:
                 if len(item.get("loc", ())) > 1 and item["loc"][0] == "body"
             }
             if "style" in fields:
+                request.state.error_code = "INVALID_RESUME_STYLE"
                 return JSONResponse(
                     status_code=400,
                     content={"error": "INVALID_RESUME_STYLE"},
                 )
             if "data" in fields:
+                request.state.error_code = "INVALID_RESUME_DOCUMENT"
                 return JSONResponse(
                     status_code=400,
                     content={"error": "INVALID_RESUME_DOCUMENT"},
                 )
+        if request.url.path.startswith("/api/admin/logs/system"):
+            request.state.error_code = "INVALID_SYSTEM_LOG_QUERY"
+            return JSONResponse(
+                status_code=400,
+                content={"error": "INVALID_SYSTEM_LOG_QUERY"},
+            )
+        if request.url.path.startswith("/api/admin/logs/audit"):
+            request.state.error_code = "INVALID_AUDIT_LOG_QUERY"
+            return JSONResponse(
+                status_code=400,
+                content={"error": "INVALID_AUDIT_LOG_QUERY"},
+            )
+        if request.url.path.startswith("/api/admin/logs/summary"):
+            request.state.error_code = "INVALID_LOG_SUMMARY_QUERY"
+            return JSONResponse(
+                status_code=400,
+                content={"error": "INVALID_LOG_SUMMARY_QUERY"},
+            )
+        if request.url.path == "/api/observability/client-events":
+            request.state.error_code = "INVALID_CLIENT_LOG_EVENT"
+            return JSONResponse(
+                status_code=400,
+                content={"error": "INVALID_CLIENT_LOG_EVENT"},
+            )
+        if request.url.path == "/api/audit/events":
+            request.state.error_code = "INVALID_AUDIT_EVENT"
+            return JSONResponse(
+                status_code=400,
+                content={"error": "INVALID_AUDIT_EVENT"},
+            )
+        request.state.error_code = "REQUEST_VALIDATION_ERROR"
         return await request_validation_exception_handler(request, error)

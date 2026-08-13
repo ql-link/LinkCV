@@ -1,40 +1,41 @@
 import asyncio
 import logging
-from contextlib import suppress
 from time import monotonic
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, Form, Header, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, Request, Response, UploadFile
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from linkcv.application.resumes.service import find_owned_resume, has_resume_capacity
+from linkcv.application.resumes.service import (
+    close_stale_resume_imports,
+    has_resume_capacity,
+    parse_decimal_id,
+)
 from linkcv.core.config import Settings
 from linkcv.core.database import get_db
 from linkcv.core.errors import ApiError
-from linkcv.core.storage import AssetStorage, get_storage
-from linkcv.domain.document_conversion import DocumentMarkdownConverter
-from linkcv.integrations.resume_structuring import ResumeStructuringClient
+from linkcv.core.mq import MQPublishError, MQPublisher, ResumeImportMessage
+from linkcv.core.mq.factory import build_mq_publisher
+from linkcv.core.storage import AssetStorage, build_import_object_name, get_storage
+from linkcv.domain.resume_snapshot import parse_resume_snapshot
 from linkcv.modules.identity.dependencies import get_current_user, get_settings
 from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.routes import resume_record
-from linkcv.modules.resumes.schemas import (
-    ResumeImportMetadata,
-    ResumeImportResponse,
+from linkcv.modules.observability.audit import bind_audit_target
+from linkcv.modules.resumes.models import ResumeImport, ResumeTemplate
+from linkcv.modules.resumes.schemas import ResumeImportResponse, ResumeImportSummary
+from linkcv.services.resume_import_idempotency import (
+    IdempotencyBindingLostError,
+    IdempotencyUnavailableError,
+    ResumeImportIdempotency,
+    import_fingerprint,
 )
 from linkcv.services.import_admission import (
     ImportAdmissionController,
     ImportAdmissionRejected,
 )
-from linkcv.services.resume_import_idempotency import (
-    IdempotencyLeaseLostError,
-    IdempotencyUnavailableError,
-    ResumeImportIdempotency,
-    import_fingerprint,
-)
 from linkcv.services.resume_import_service import (
-    ImportResult,
     ResumeImportFailure,
-    ResumeImportService,
     safe_import_filename,
     validate_import_file,
 )
@@ -43,20 +44,23 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/resumes", tags=["resume-imports"])
 
 
-def get_document_converter(request: Request) -> DocumentMarkdownConverter:
-    return request.app.state.document_converter
-
-
-def get_structuring_client(request: Request) -> ResumeStructuringClient:
-    return request.app.state.structuring_client
+def get_import_idempotency(request: Request) -> ResumeImportIdempotency:
+    return request.app.state.import_idempotency
 
 
 def get_import_admission(request: Request) -> ImportAdmissionController:
     return request.app.state.import_admission
 
 
-def get_import_idempotency(request: Request) -> ResumeImportIdempotency:
-    return request.app.state.import_idempotency
+def get_mq_publisher(request: Request, settings: Settings) -> MQPublisher:
+    publisher = request.app.state.mq_publisher
+    if publisher is None:
+        try:
+            publisher = build_mq_publisher(settings)
+        except ValueError as error:
+            raise ApiError(503, "RESUME_IMPORT_QUEUE_UNAVAILABLE") from error
+        request.app.state.mq_publisher = publisher
+    return publisher
 
 
 def canonical_idempotency_key(value: str | None) -> str:
@@ -70,43 +74,51 @@ def canonical_idempotency_key(value: str | None) -> str:
     return canonical
 
 
-def import_response(result: ImportResult) -> ResumeImportResponse:
-    return ResumeImportResponse(
-        resume=resume_record(result.resume),
-        **{
-            "import": ResumeImportMetadata(
-                source_file_name=result.source_file_name,
-                source_file_format=result.source_file_format,
-                warnings=result.warnings,
+def import_summary(record: ResumeImport) -> ResumeImportSummary:
+    return ResumeImportSummary.model_validate(record)
+
+
+def import_details(record: ResumeImport) -> dict[str, object]:
+    return {"import": import_summary(record).model_dump(mode="json")}
+
+
+def _duration_ms(started: float) -> int:
+    return min(round((monotonic() - started) * 1000), 2**32 - 1)
+
+
+def _load_owned_import(db: Session, import_id: str, user_id: int) -> ResumeImport:
+    parsed_id = parse_decimal_id(import_id)
+    record = (
+        db.scalar(
+            select(ResumeImport).where(
+                ResumeImport.id == parsed_id,
+                ResumeImport.user_id == user_id,
             )
-        },
+        )
+        if parsed_id is not None
+        else None
     )
+    if record is None:
+        raise ApiError(503, "IMPORT_IDEMPOTENCY_UNAVAILABLE")
+    return record
 
 
-async def run_until_disconnect(request: Request, coroutine) -> ImportResult:
-    task = asyncio.create_task(coroutine)
-    try:
-        while True:
-            done, _ = await asyncio.wait({task}, timeout=0.25)
-            if task in done:
-                return task.result()
-            if await request.is_disconnected():
-                task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await task
-                raise asyncio.CancelledError
-    finally:
-        if not task.done():
-            task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
+def _replay_response(
+    record: ResumeImport,
+    response: Response,
+) -> ResumeImportResponse:
+    if record.parse_status == "failed" or record.upload_status == "failed":
+        raise ApiError(409, "IMPORT_PREVIOUSLY_FAILED", import_details(record))
+    response.status_code = 200 if record.parse_status == "succeeded" else 202
+    return ResumeImportResponse.model_validate({"import": import_summary(record)})
 
 
-@router.post("/import", response_model=ResumeImportResponse, status_code=201)
+@router.post("/import", response_model=ResumeImportResponse, status_code=202)
 async def import_resume(
     request: Request,
+    response: Response,
     file: UploadFile = File(...),
-    title: str | None = Form(default=None, max_length=255),
+    template_id: str = Form(...),
     idempotency_key_header: str | None = Header(
         default=None,
         alias="Idempotency-Key",
@@ -115,15 +127,17 @@ async def import_resume(
     user: User = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
     storage: AssetStorage = Depends(get_storage),
-    document_converter: DocumentMarkdownConverter = Depends(get_document_converter),
-    structuring_client: ResumeStructuringClient = Depends(get_structuring_client),
-    import_admission: ImportAdmissionController = Depends(get_import_admission),
     idempotency: ResumeImportIdempotency = Depends(get_import_idempotency),
+    import_admission: ImportAdmissionController = Depends(get_import_admission),
 ) -> ResumeImportResponse:
-    lease: tuple[str, str, str] | None = None
+    record: ResumeImport | None = None
+    admission_context = None
     try:
+        parsed_template_id = parse_decimal_id(template_id)
+        if parsed_template_id is None:
+            raise ResumeImportFailure(422, "TEMPLATE_INACTIVE")
+
         idempotency_key = canonical_idempotency_key(idempotency_key_header)
-        deadline_monotonic = monotonic() + settings.resume_import_deadline_seconds
         filename = safe_import_filename(file.filename or "resume.bin")
         content_type = (file.content_type or "application/octet-stream").lower()
         content = await file.read(settings.resume_import_max_bytes + 1)
@@ -137,16 +151,71 @@ async def import_resume(
             filename=filename,
             source_format=extension,
             content_type=content_type,
-            title=title,
+            template_id=template_id,
             content=content,
         )
-        operation_id = uuid4().hex
+        close_stale_resume_imports(
+            db,
+            user_id=user.id,
+            upload_stale_seconds=settings.resume_import_upload_stale_seconds,
+            parse_stale_seconds=settings.resume_import_parse_stale_seconds,
+        )
+
+        template = db.scalar(
+            select(ResumeTemplate).where(
+                ResumeTemplate.id == parsed_template_id,
+                ResumeTemplate.is_active == 1,
+            )
+        )
+        template_available = template is not None
+        if template is not None:
+            try:
+                parse_resume_snapshot(template.data_json, template.style_json)
+            except ValueError:
+                template_available = False
+        if not template_available:
+            try:
+                existing = await idempotency.read_state(
+                    user_id=user.id,
+                    idempotency_key=idempotency_key,
+                )
+            except IdempotencyUnavailableError as error:
+                raise ApiError(503, "IMPORT_IDEMPOTENCY_UNAVAILABLE") from error
+            if existing is None:
+                raise ResumeImportFailure(422, "TEMPLATE_INACTIVE")
+            if existing.fingerprint != fingerprint:
+                raise ApiError(409, "IDEMPOTENCY_KEY_REUSED")
+            if existing.import_id is None:
+                try:
+                    existing = await idempotency.wait_for_binding(
+                        user_id=user.id,
+                        idempotency_key=idempotency_key,
+                    )
+                except IdempotencyUnavailableError as error:
+                    raise ApiError(
+                        503, "IMPORT_IDEMPOTENCY_UNAVAILABLE"
+                    ) from error
+            if existing is None or existing.import_id is None:
+                raise ApiError(409, "IMPORT_ACCEPTANCE_IN_PROGRESS")
+            record = _load_owned_import(db, existing.import_id, user.id)
+            bind_audit_target(request, record.id)
+            return _replay_response(record, response)
+
+        assert template is not None
+        admission_context = import_admission.acquire(user.id)
+        try:
+            await admission_context.__aenter__()
+        except ImportAdmissionRejected as error:
+            admission_context = None
+            raise ApiError(429, "IMPORT_RATE_LIMITED") from error
+
+        owner = uuid4().hex
         try:
             acquired = await idempotency.acquire_or_replay(
                 user_id=user.id,
                 idempotency_key=idempotency_key,
                 fingerprint=fingerprint,
-                owner=operation_id,
+                owner=owner,
             )
         except IdempotencyUnavailableError as error:
             raise ApiError(503, "IMPORT_IDEMPOTENCY_UNAVAILABLE") from error
@@ -154,119 +223,126 @@ async def import_resume(
         if acquired.status == "conflict":
             raise ApiError(409, "IDEMPOTENCY_KEY_REUSED")
         if acquired.status == "processing":
-            raise ApiError(409, "IMPORT_ALREADY_PROCESSING")
-        if acquired.status == "failed":
-            raise ApiError(
-                acquired.state.error_status or 409,
-                acquired.state.error_code or "IMPORT_PREVIOUSLY_FAILED",
-            )
-        if acquired.status == "succeeded":
             state = acquired.state
-            if (
-                state.resume_id is None
-                or state.source_file_name is None
-                or state.source_file_format is None
-            ):
-                raise ApiError(503, "IMPORT_IDEMPOTENCY_UNAVAILABLE")
-            resume = find_owned_resume(db, state.resume_id, user.id)
-            if resume is None:
-                raise ApiError(503, "IMPORT_REPLAY_UNAVAILABLE")
-            return import_response(
-                ImportResult(
-                    resume=resume,
-                    source_file_name=state.source_file_name,
-                    source_file_format=state.source_file_format,
-                    warnings=state.warnings,
-                )
-            )
-
-        lease = (idempotency_key, fingerprint, operation_id)
-
-        async def assert_lease() -> None:
-            await idempotency.renew_and_assert_owner(
-                user_id=user.id,
-                idempotency_key=idempotency_key,
-                fingerprint=fingerprint,
-                owner=operation_id,
-            )
-
-        try:
-            if not has_resume_capacity(db, user.id):
-                raise ResumeImportFailure(409, "RESUME_LIMIT_REACHED")
-            async with import_admission.acquire(user.id):
-                service = ResumeImportService(
-                    document_converter=document_converter,
-                    structuring_client=structuring_client,
-                    storage=storage,
-                    max_structuring_bytes=settings.resume_structuring_max_bytes,
-                    structuring_timeout_seconds=(
-                        settings.resume_structuring_timeout_seconds
-                    ),
-                )
-                result = await run_until_disconnect(
-                    request,
-                    service.import_resume(
-                        db=db,
+            if state.import_id is None:
+                try:
+                    state = await idempotency.wait_for_binding(
                         user_id=user.id,
-                        filename=filename,
-                        content_type=content_type,
-                        content=content,
-                        title=title,
-                        operation_id=operation_id,
-                        deadline_monotonic=deadline_monotonic,
-                        assert_lease=assert_lease,
-                    ),
-                )
-        except ImportAdmissionRejected as error:
-            raise ResumeImportFailure(429, "IMPORT_RATE_LIMITED") from error
-
-        try:
-            await idempotency.mark_succeeded(
-                user_id=user.id,
-                idempotency_key=idempotency_key,
-                fingerprint=fingerprint,
-                owner=operation_id,
-                resume_id=str(result.resume.id),
-                source_file_name=result.source_file_name,
-                source_file_format=result.source_file_format,
-                warnings=result.warnings,
-            )
-        except (IdempotencyUnavailableError, IdempotencyLeaseLostError) as error:
-            logger.error(
-                "resume import committed but idempotency finalization failed",
-                extra={"operation_id": operation_id, "user_id": user.id},
-            )
-            raise ApiError(503, "IMPORT_IDEMPOTENCY_UNAVAILABLE") from error
-        return import_response(result)
-    except ResumeImportFailure as error:
-        if lease is not None:
-            key, fingerprint, owner = lease
-            try:
-                await idempotency.mark_failed(
-                    user_id=user.id,
-                    idempotency_key=key,
-                    fingerprint=fingerprint,
-                    owner=owner,
-                    error_status=error.status_code,
-                    error_code=error.code,
-                )
-            except (IdempotencyUnavailableError, IdempotencyLeaseLostError) as state_error:
-                raise ApiError(503, "IMPORT_IDEMPOTENCY_UNAVAILABLE") from state_error
-        raise ApiError(error.status_code, error.code) from error
-    except asyncio.CancelledError:
-        if lease is not None:
-            key, fingerprint, owner = lease
-            with suppress(IdempotencyUnavailableError, IdempotencyLeaseLostError):
-                await asyncio.shield(
-                    idempotency.mark_failed(
-                        user_id=user.id,
-                        idempotency_key=key,
-                        fingerprint=fingerprint,
-                        owner=owner,
-                        error_status=499,
-                        error_code="IMPORT_CANCELLED",
+                        idempotency_key=idempotency_key,
                     )
+                except IdempotencyUnavailableError as error:
+                    raise ApiError(
+                        503, "IMPORT_IDEMPOTENCY_UNAVAILABLE"
+                    ) from error
+            if state is None or state.import_id is None:
+                raise ApiError(409, "IMPORT_ACCEPTANCE_IN_PROGRESS")
+            record = _load_owned_import(db, state.import_id, user.id)
+            bind_audit_target(request, record.id)
+            return _replay_response(record, response)
+
+        operation_id = uuid4().hex
+        request.state.operation_id = operation_id
+        object_key = build_import_object_name(user.id, operation_id, filename)
+        try:
+            locked_user_id = db.scalar(
+                select(User.id).where(User.id == user.id).with_for_update()
+            )
+            if locked_user_id is None:
+                raise ApiError(401, "UNAUTHORIZED")
+            if not has_resume_capacity(db, user.id):
+                raise ApiError(409, "RESUME_LIMIT_REACHED")
+            record = ResumeImport(
+                user_id=user.id,
+                source_filename=filename,
+                source_file_format=extension,
+                source_object_key=object_key,
+                upload_status="uploading",
+            )
+            db.add(record)
+            db.commit()
+            db.refresh(record)
+            bind_audit_target(request, record.id)
+        except Exception:
+            db.rollback()
+            raise
+
+        try:
+            await idempotency.bind_import_id(
+                user_id=user.id,
+                idempotency_key=idempotency_key,
+                fingerprint=fingerprint,
+                owner=owner,
+                import_id=str(record.id),
+            )
+        except (IdempotencyUnavailableError, IdempotencyBindingLostError) as error:
+            record.upload_status = "failed"
+            record.upload_duration_ms = 0
+            db.commit()
+            raise ApiError(
+                503,
+                "IMPORT_IDEMPOTENCY_UNAVAILABLE",
+                import_details(record),
+            ) from error
+
+        upload_started = monotonic()
+        try:
+            await asyncio.to_thread(storage.upload, object_key, content, content_type)
+        except Exception as error:
+            try:
+                await asyncio.to_thread(storage.delete, object_key)
+            except Exception:
+                logger.warning(
+                    "resume source upload compensation failed",
+                    extra={"import_id": record.id},
+                    exc_info=True,
                 )
-        raise
+            record.upload_status = "failed"
+            record.upload_duration_ms = _duration_ms(upload_started)
+            db.commit()
+            raise ApiError(
+                502,
+                "RESUME_SOURCE_UPLOAD_FAILED",
+                import_details(record),
+            ) from error
+
+        record.upload_status = "succeeded"
+        record.upload_duration_ms = _duration_ms(upload_started)
+        record.parse_status = "processing"
+        db.commit()
+        db.refresh(record)
+
+        publisher = get_mq_publisher(request, settings)
+        try:
+            await publisher.publish_resume_import(
+                ResumeImportMessage.create(
+                    import_id=record.id,
+                    template_id=template.id,
+                )
+            )
+        except MQPublishError as error:
+            result = db.execute(
+                update(ResumeImport)
+                .where(
+                    ResumeImport.id == record.id,
+                    ResumeImport.parse_status == "processing",
+                    ResumeImport.result_resume_id.is_(None),
+                )
+                .values(parse_status="failed", parse_duration_ms=0)
+            )
+            db.commit()
+            db.expire_all()
+            record = _load_owned_import(db, str(record.id), user.id)
+            if result.rowcount != 1:
+                return _replay_response(record, response)
+            raise ApiError(
+                503,
+                "RESUME_IMPORT_QUEUE_UNAVAILABLE",
+                import_details(record),
+            ) from error
+        return ResumeImportResponse.model_validate({"import": import_summary(record)})
+    except ResumeImportFailure as error:
+        raise ApiError(error.status_code, error.code) from error
     finally:
+        if admission_context is not None:
+            await admission_context.__aexit__(None, None, None)
         await file.close()

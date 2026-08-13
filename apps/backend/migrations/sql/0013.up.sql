@@ -1,13 +1,19 @@
--- Up migration for 0013: add wechat login binding to users
--- WeChat login users have no email or password, so both columns become nullable.
--- uk_users_email remains valid: MySQL unique indexes allow multiple NULL rows.
-ALTER TABLE users
-  ADD COLUMN wechat_openid VARCHAR(64) NULL DEFAULT NULL
-    COMMENT '微信 openid，登录绑定标识；一微信一账号' AFTER is_admin,
-  ADD CONSTRAINT uk_users_wechat_openid UNIQUE (wechat_openid);
-
-ALTER TABLE users
-  MODIFY COLUMN email VARCHAR(254) NULL DEFAULT NULL
-    COMMENT '规范化后的登录邮箱（微信登录用户可为空）',
-  MODIFY COLUMN password_hash VARCHAR(255) NULL DEFAULT NULL
-    COMMENT '密码摘要，不保存明文（微信登录用户可为空）';
+﻿-- Up migration for 0013: add resume share link fields
+-- 每份简历一个分享链接；share_token 为空表示未开启分享。
+ALTER TABLE resumes
+  ADD COLUMN share_token VARCHAR(64) NULL
+    COMMENT '分享链接 token，全局唯一，NULL 表示未分享' AFTER updated_at,
+  ADD COLUMN share_visibility VARCHAR(16) NULL
+    COMMENT '分享可见性：private 仅自己可见 / public 所有人可见'
+    AFTER share_token,
+  ADD COLUMN share_expires_at DATETIME(6) NULL
+    COMMENT '分享过期时间（UTC），NULL 表示长期有效' AFTER share_visibility,
+  ADD COLUMN share_created_at DATETIME(6) NULL
+    COMMENT '分享创建时间（UTC）' AFTER share_expires_at,
+  ADD UNIQUE KEY uk_resumes_share_token (share_token),
+  ADD CONSTRAINT ck_resumes_share_visibility
+    CHECK (share_visibility IS NULL OR share_visibility IN ('private', 'public')),
+  ADD CONSTRAINT ck_resumes_share_fields CHECK (
+    (share_token IS NULL AND share_visibility IS NULL AND share_created_at IS NULL)
+    OR (share_token IS NOT NULL AND share_visibility IS NOT NULL AND share_created_at IS NOT NULL)
+  );

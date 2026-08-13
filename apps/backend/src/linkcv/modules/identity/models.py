@@ -42,11 +42,6 @@ class User(Base):
     password_hash: Mapped[str | None] = mapped_column(
         String(255), nullable=True, comment="密码摘要，不保存明文（微信登录用户可为空）"
     )
-    wechat_openid: Mapped[str | None] = mapped_column(
-        String(64),
-        nullable=True,
-        comment="微信 openid，登录绑定标识；一微信一账号",
-    )
     nickname: Mapped[str] = mapped_column(
         String(50), nullable=False, comment="用户展示昵称"
     )
@@ -69,6 +64,16 @@ class User(Base):
         DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),
         nullable=True,
         comment="最近一次成功登录时间（UTC）",
+    )
+    wechat_openid: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="微信小程序 openid，绑定后写入，全局唯一",
+    )
+    wechat_bound_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),
+        nullable=True,
+        comment="微信绑定时间（UTC）",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),

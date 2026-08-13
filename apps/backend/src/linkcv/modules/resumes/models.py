@@ -103,17 +103,16 @@ class Resume(Base):
             name="ck_resumes_title_not_blank",
         ),
         CheckConstraint("lock_version >= 1", name="ck_resumes_lock_version"),
+        UniqueConstraint("share_token", name="uk_resumes_share_token"),
         CheckConstraint(
-            "(source_type = 'blank' "
-            "AND source_filename IS NULL AND source_object_key IS NULL "
-            "AND extracted_markdown IS NULL) OR "
-            "(source_type = 'template' "
-            "AND source_filename IS NULL AND source_object_key IS NULL "
-            "AND extracted_markdown IS NULL) OR "
-            "(source_type = 'import' "
-            "AND source_filename IS NOT NULL AND source_object_key IS NOT NULL "
-            "AND extracted_markdown IS NOT NULL)",
-            name="ck_resumes_source_fields",
+            "(share_token IS NULL AND share_visibility IS NULL AND share_created_at IS NULL) "
+            "OR (share_token IS NOT NULL AND share_visibility IS NOT NULL "
+            "AND share_created_at IS NOT NULL)",
+            name="ck_resumes_share_fields",
+        ),
+        CheckConstraint(
+            "share_visibility IS NULL OR share_visibility IN ('private', 'public')",
+            name="ck_resumes_share_visibility",
         ),
         {"comment": "用户简历当前版本"},
     )
@@ -155,16 +154,21 @@ class Resume(Base):
         default="blank",
         comment="来源类型：blank、template 或 import",
     )
-    source_filename: Mapped[str | None] = mapped_column(
-        String(255), nullable=True, comment="导入文件原名"
+    share_token: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="分享链接 token，全局唯一，NULL 表示未分享"
     )
-    source_object_key: Mapped[str | None] = mapped_column(
-        String(512), nullable=True, comment="私有导入原文件对象键"
-    )
-    extracted_markdown: Mapped[str | None] = mapped_column(
-        Text().with_variant(mysql.LONGTEXT(), "mysql"),
+    share_visibility: Mapped[str | None] = mapped_column(
+        String(16),
         nullable=True,
-        comment="导入解析的中间文本证据",
+        comment="分享可见性：private 仅自己可见 / public 所有人可见",
+    )
+    share_expires_at: Mapped[datetime | None] = mapped_column(
+        timestamp_type(),
+        nullable=True,
+        comment="分享过期时间（UTC），NULL 表示长期有效",
+    )
+    share_created_at: Mapped[datetime | None] = mapped_column(
+        timestamp_type(), nullable=True, comment="分享创建时间（UTC）"
     )
     created_at: Mapped[datetime] = mapped_column(
         timestamp_type(),
@@ -188,6 +192,128 @@ Index(
     Resume.id.desc(),
 )
 Index("idx_resumes_template_id", Resume.template_id)
+
+
+class ResumeImport(Base):
+    __tablename__ = "resume_imports"
+    __table_args__ = (
+        PrimaryKeyConstraint("id", name="pk_resume_imports"),
+        UniqueConstraint(
+            "result_resume_id", name="uk_resume_imports_result_resume"
+        ),
+        CheckConstraint(
+            "source_file_format IN ('md', 'docx', 'pdf')",
+            name="ck_resume_imports_source_format",
+        ),
+        CheckConstraint(
+            "upload_status IN ('uploading', 'succeeded', 'failed')",
+            name="ck_resume_imports_upload_status",
+        ),
+        CheckConstraint(
+            "parse_status IS NULL OR "
+            "parse_status IN ('processing', 'succeeded', 'failed')",
+            name="ck_resume_imports_parse_status",
+        ),
+        CheckConstraint(
+            "(upload_status = 'uploading' "
+            "AND upload_duration_ms IS NULL "
+            "AND parse_status IS NULL "
+            "AND parse_duration_ms IS NULL "
+            "AND result_resume_id IS NULL) OR "
+            "(upload_status = 'failed' "
+            "AND upload_duration_ms IS NOT NULL "
+            "AND parse_status IS NULL "
+            "AND parse_duration_ms IS NULL "
+            "AND result_resume_id IS NULL) OR "
+            "(upload_status = 'succeeded' "
+            "AND upload_duration_ms IS NOT NULL "
+            "AND parse_status = 'processing' "
+            "AND parse_duration_ms IS NULL "
+            "AND result_resume_id IS NULL) OR "
+            "(upload_status = 'succeeded' "
+            "AND upload_duration_ms IS NOT NULL "
+            "AND parse_status = 'failed' "
+            "AND parse_duration_ms IS NOT NULL "
+            "AND result_resume_id IS NULL) OR "
+            "(upload_status = 'succeeded' "
+            "AND upload_duration_ms IS NOT NULL "
+            "AND parse_status = 'succeeded' "
+            "AND parse_duration_ms IS NOT NULL "
+            "AND result_resume_id IS NOT NULL)",
+            name="ck_resume_imports_lifecycle",
+        ),
+        {"comment": "简历源文件导入任务"},
+    )
+
+    id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(), autoincrement=True, comment="导入记录标识"
+    )
+    user_id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(),
+        ForeignKey("users.id", name="fk_resume_imports_user", ondelete="RESTRICT"),
+        nullable=False,
+        comment="所属用户标识",
+    )
+    result_resume_id: Mapped[int | None] = mapped_column(
+        unsigned_bigint_type(),
+        ForeignKey(
+            "resumes.id",
+            name="fk_resume_imports_result_resume",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+        comment="解析成功生成的正式简历标识",
+    )
+    source_filename: Mapped[str] = mapped_column(
+        String(255), nullable=False, comment="安全化后的用户源文件名"
+    )
+    source_file_format: Mapped[str] = mapped_column(
+        String(8), nullable=False, comment="源文件格式：md、docx、pdf"
+    )
+    source_object_key: Mapped[str] = mapped_column(
+        String(512), nullable=False, comment="私有 MinIO 对象键"
+    )
+    upload_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, comment="上传状态：uploading、succeeded、failed"
+    )
+    upload_duration_ms: Mapped[int | None] = mapped_column(
+        unsigned_int_type(), nullable=True, comment="上传进入终态时的实际耗时毫秒"
+    )
+    parse_status: Mapped[str | None] = mapped_column(
+        String(16),
+        nullable=True,
+        comment="解析状态：processing、succeeded、failed",
+    )
+    parse_duration_ms: Mapped[int | None] = mapped_column(
+        unsigned_int_type(), nullable=True, comment="解析进入终态时的实际耗时毫秒"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        timestamp_type(),
+        nullable=False,
+        server_default=func.now(),
+        comment="创建时间（UTC）",
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        timestamp_type(),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+        comment="最后更新时间（UTC）",
+    )
+
+
+Index(
+    "idx_resume_imports_user_created_id",
+    ResumeImport.user_id,
+    ResumeImport.created_at.desc(),
+    ResumeImport.id.desc(),
+)
+Index(
+    "idx_resume_imports_user_state",
+    ResumeImport.user_id,
+    ResumeImport.upload_status,
+    ResumeImport.parse_status,
+)
 
 
 class ResumeVersion(Base):

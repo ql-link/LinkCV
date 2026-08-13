@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { WorkspaceSidebar } from "./WorkspaceLayout";
+import { useResumeStore } from "../store/resumeStore";
+import { WorkspaceLayout, WorkspaceSidebar } from "./WorkspaceLayout";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -19,6 +20,9 @@ describe("WorkspaceSidebar", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "全部简历" }));
     expect(`${window.location.pathname}${window.location.search}`).toBe("/resumes");
+
+    fireEvent.click(screen.getByRole("button", { name: "资料库" }));
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/datasets");
   });
 
   it("账号按钮直接进入个人资料", () => {
@@ -35,5 +39,16 @@ describe("WorkspaceSidebar", () => {
 
     fireEvent.click(accountButton);
     expect(`${window.location.pathname}${window.location.search}`).toBe("/account");
+  });
+
+  it("侧边栏不再提供退出登录入口，退出统一收敛到用户中心", () => {
+    useResumeStore.setState({
+      user: { id: "1", email: "user@example.test", nickname: "测试用户", is_admin: false, avatar_url: null },
+    });
+
+    render(<WorkspaceLayout active="resumes"><div>简历列表</div></WorkspaceLayout>);
+    expect(screen.queryByRole("button", { name: "退出登录" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "退出" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /测试用户/ })).toBeInTheDocument();
   });
 });

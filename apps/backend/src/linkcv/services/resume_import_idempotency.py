@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 ACQUIRE_SCRIPT = r"""
 local raw = redis.call('GET', KEYS[1])
@@ -19,34 +19,20 @@ local state = cjson.decode(raw)
 if state.fingerprint ~= ARGV[1] then
   return {'conflict', raw}
 end
-if state.status == 'processing' then
-  return {'processing', raw}
-end
-if state.status == 'succeeded' then
-  return {'succeeded', raw}
-end
-return {'failed', raw}
+return {'processing', raw}
 """
 
-RENEW_SCRIPT = r"""
+BIND_SCRIPT = r"""
 local raw = redis.call('GET', KEYS[1])
 if not raw then return 0 end
 local state = cjson.decode(raw)
-if state.status ~= 'processing' or state.fingerprint ~= ARGV[1] or state.owner ~= ARGV[2] then
+if state.status ~= 'processing' or state.fingerprint ~= ARGV[1]
+  or state.owner ~= ARGV[2] or state.import_id then
   return 0
 end
-redis.call('PEXPIRE', KEYS[1], ARGV[3])
-return 1
-"""
-
-FINISH_SCRIPT = r"""
-local raw = redis.call('GET', KEYS[1])
-if not raw then return 0 end
-local state = cjson.decode(raw)
-if state.status ~= 'processing' or state.fingerprint ~= ARGV[1] or state.owner ~= ARGV[2] then
-  return 0
-end
-redis.call('SET', KEYS[1], ARGV[3], 'PX', ARGV[4])
+state.import_id = ARGV[3]
+state.owner = nil
+redis.call('SET', KEYS[1], cjson.encode(state), 'PX', ARGV[4])
 return 1
 """
 
@@ -55,27 +41,22 @@ class IdempotencyUnavailableError(Exception):
     pass
 
 
-class IdempotencyLeaseLostError(Exception):
+class IdempotencyBindingLostError(Exception):
     pass
 
 
 class StoredImportState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    status: Literal["processing", "succeeded", "failed"]
+    status: Literal["processing"]
     fingerprint: str
     owner: str | None = None
-    resume_id: str | None = None
-    source_file_name: str | None = None
-    source_file_format: Literal["md", "docx", "pdf"] | None = None
-    warnings: list[str] = Field(default_factory=list)
-    error_status: int | None = None
-    error_code: str | None = None
+    import_id: str | None = None
 
 
 @dataclass(frozen=True)
 class AcquireResult:
-    status: Literal["new", "processing", "succeeded", "failed", "conflict"]
+    status: Literal["new", "processing", "conflict"]
     state: StoredImportState
 
 
@@ -84,15 +65,15 @@ def import_fingerprint(
     filename: str,
     source_format: str,
     content_type: str,
-    title: str | None,
+    template_id: str,
     content: bytes,
 ) -> str:
     payload = {
-        "version": 1,
+        "version": 2,
         "filename": filename,
         "source_format": source_format,
         "content_type": content_type.partition(";")[0].strip().lower(),
-        "title": (title or "").strip(),
+        "template_id": template_id,
         "content_sha256": hashlib.sha256(content).hexdigest(),
     }
     encoded = json.dumps(
@@ -109,14 +90,12 @@ class ResumeImportIdempotency:
         self,
         redis,
         *,
-        processing_ttl_seconds: int,
-        success_ttl_seconds: int,
-        failure_ttl_seconds: int,
+        bind_ttl_seconds: int,
+        ttl_seconds: int,
     ) -> None:
         self._redis = redis
-        self._processing_ttl_ms = processing_ttl_seconds * 1000
-        self._success_ttl_ms = success_ttl_seconds * 1000
-        self._failure_ttl_ms = failure_ttl_seconds * 1000
+        self._bind_ttl_ms = bind_ttl_seconds * 1000
+        self._ttl_ms = ttl_seconds * 1000
 
     @staticmethod
     def redis_key(user_id: int, idempotency_key: str) -> str:
@@ -139,7 +118,7 @@ class ResumeImportIdempotency:
                     key,
                     fingerprint,
                     owner,
-                    self._processing_ttl_ms,
+                    self._bind_ttl_ms,
                 )
             else:
                 result = await asyncio.to_thread(
@@ -149,7 +128,7 @@ class ResumeImportIdempotency:
                     key,
                     fingerprint,
                     owner,
-                    self._processing_ttl_ms,
+                    self._bind_ttl_ms,
                 )
             status, raw = result
             state = StoredImportState.model_validate_json(raw)
@@ -159,127 +138,74 @@ class ResumeImportIdempotency:
         except Exception as error:
             raise IdempotencyUnavailableError from error
 
-    async def renew_and_assert_owner(
+    async def bind_import_id(
         self,
         *,
         user_id: int,
         idempotency_key: str,
         fingerprint: str,
         owner: str,
+        import_id: str,
     ) -> None:
         key = self.redis_key(user_id, idempotency_key)
         try:
-            if hasattr(self._redis, "resume_import_renew"):
-                renewed = await asyncio.to_thread(
-                    self._redis.resume_import_renew,
+            if hasattr(self._redis, "resume_import_bind"):
+                bound = await asyncio.to_thread(
+                    self._redis.resume_import_bind,
                     key,
                     fingerprint,
                     owner,
-                    self._processing_ttl_ms,
+                    import_id,
+                    self._ttl_ms,
                 )
             else:
-                renewed = await asyncio.to_thread(
+                bound = await asyncio.to_thread(
                     self._redis.eval,
-                    RENEW_SCRIPT,
+                    BIND_SCRIPT,
                     1,
                     key,
                     fingerprint,
                     owner,
-                    self._processing_ttl_ms,
+                    import_id,
+                    self._ttl_ms,
                 )
         except Exception as error:
             raise IdempotencyUnavailableError from error
-        if int(renewed) != 1:
-            raise IdempotencyLeaseLostError
+        if int(bound) != 1:
+            raise IdempotencyBindingLostError
 
-    async def mark_succeeded(
+    async def read_state(
         self,
         *,
         user_id: int,
         idempotency_key: str,
-        fingerprint: str,
-        owner: str,
-        resume_id: str,
-        source_file_name: str,
-        source_file_format: str,
-        warnings: list[str],
-    ) -> None:
-        state = StoredImportState(
-            status="succeeded",
-            fingerprint=fingerprint,
-            resume_id=resume_id,
-            source_file_name=source_file_name,
-            source_file_format=source_file_format,
-            warnings=warnings,
-        )
-        await self._finish(
-            user_id=user_id,
-            idempotency_key=idempotency_key,
-            fingerprint=fingerprint,
-            owner=owner,
-            state=state,
-            ttl_ms=self._success_ttl_ms,
-        )
-
-    async def mark_failed(
-        self,
-        *,
-        user_id: int,
-        idempotency_key: str,
-        fingerprint: str,
-        owner: str,
-        error_status: int,
-        error_code: str,
-    ) -> None:
-        state = StoredImportState(
-            status="failed",
-            fingerprint=fingerprint,
-            error_status=error_status,
-            error_code=error_code,
-        )
-        await self._finish(
-            user_id=user_id,
-            idempotency_key=idempotency_key,
-            fingerprint=fingerprint,
-            owner=owner,
-            state=state,
-            ttl_ms=self._failure_ttl_ms,
-        )
-
-    async def _finish(
-        self,
-        *,
-        user_id: int,
-        idempotency_key: str,
-        fingerprint: str,
-        owner: str,
-        state: StoredImportState,
-        ttl_ms: int,
-    ) -> None:
+    ) -> StoredImportState | None:
         key = self.redis_key(user_id, idempotency_key)
-        payload = state.model_dump_json()
         try:
-            if hasattr(self._redis, "resume_import_finish"):
-                finished = await asyncio.to_thread(
-                    self._redis.resume_import_finish,
-                    key,
-                    fingerprint,
-                    owner,
-                    payload,
-                    ttl_ms,
-                )
-            else:
-                finished = await asyncio.to_thread(
-                    self._redis.eval,
-                    FINISH_SCRIPT,
-                    1,
-                    key,
-                    fingerprint,
-                    owner,
-                    payload,
-                    ttl_ms,
-                )
+            raw = await asyncio.to_thread(self._redis.get, key)
+            if raw is None:
+                return None
+            return StoredImportState.model_validate_json(raw)
+        except (ValidationError, ValueError, TypeError, OSError) as error:
+            raise IdempotencyUnavailableError from error
         except Exception as error:
             raise IdempotencyUnavailableError from error
-        if int(finished) != 1:
-            raise IdempotencyLeaseLostError
+
+    async def wait_for_binding(
+        self,
+        *,
+        user_id: int,
+        idempotency_key: str,
+        timeout_seconds: float = 1,
+    ) -> StoredImportState | None:
+        deadline = asyncio.get_running_loop().time() + timeout_seconds
+        while True:
+            state = await self.read_state(
+                user_id=user_id,
+                idempotency_key=idempotency_key,
+            )
+            if state is None or state.import_id is not None:
+                return state
+            if asyncio.get_running_loop().time() >= deadline:
+                return state
+            await asyncio.sleep(0.05)

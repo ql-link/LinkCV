@@ -9,6 +9,7 @@ import {
   jobEditPath,
   navigateTo,
   parseAppRoute,
+  sharePath,
 } from "./routing";
 
 describe("LinkCV routes", () => {
@@ -22,9 +23,17 @@ describe("LinkCV routes", () => {
     expect(parseAppRoute("/jobs/new")).toEqual({ kind: "jobCreate" });
     expect(parseAppRoute("/jobs/job_123")).toEqual({ kind: "jobDetail", jobId: "job_123" });
     expect(parseAppRoute("/jobs/job_123/edit")).toEqual({ kind: "jobEdit", jobId: "job_123" });
+    expect(parseAppRoute("/datasets")).toEqual({ kind: "datasets" });
     expect(parseAppRoute("/account")).toEqual({ kind: "account" });
     expect(parseAppRoute("/account/password")).toEqual({ kind: "accountPassword" });
+    expect(parseAppRoute("/share/abc123")).toEqual({ kind: "share", token: "abc123" });
+    expect(parseAppRoute("/share/a%20b")).toEqual({ kind: "share", token: "a b" });
     expect(parseAppRoute("/missing")).toEqual({ kind: "notFound" });
+  });
+
+  it("encodes share tokens when building share paths", () => {
+    expect(sharePath("abc123")).toBe("/share/abc123");
+    expect(sharePath("a/b c")).toBe("/share/a%2Fb%20c");
   });
 
   it("parses the admin login route and its safe next target", () => {
@@ -40,6 +49,7 @@ describe("LinkCV routes", () => {
     expect(jobEditPath("job/a b")).toBe("/jobs/job%2Fa%20b/edit");
     expect(isSafeAppPath("/resumes/resume_123/edit")).toBe(true);
     expect(isSafeAppPath("/jobs/job_123/edit")).toBe(true);
+    expect(isSafeAppPath("/datasets")).toBe(true);
     expect(isSafeAppPath("/account")).toBe(true);
     expect(isSafeAppPath("/account/password")).toBe(true);
     expect(isSafeAppPath("//example.com/resumes")).toBe(false);

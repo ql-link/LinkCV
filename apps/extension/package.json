@@ -8,6 +8,7 @@
     "dev": "wxt",
     "build": "wxt build",
     "zip": "wxt zip",
+    "zip:release": "wxt zip",
     "typecheck": "wxt prepare && tsc --noEmit",
     "test": "vitest run"
   },

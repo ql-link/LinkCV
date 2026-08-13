@@ -59,6 +59,32 @@ class FakeRedis:
             self.ttls[key] = ttl_ms / 1000
             return 1
 
+    def resume_import_bind(
+        self,
+        key: str,
+        fingerprint: str,
+        owner: str,
+        import_id: str,
+        ttl_ms: int,
+    ) -> int:
+        with self._lock:
+            raw = self.strings.get(key)
+            if raw is None:
+                return 0
+            state = json.loads(raw)
+            if (
+                state["status"] != "processing"
+                or state["fingerprint"] != fingerprint
+                or state.get("owner") != owner
+                or state.get("import_id") is not None
+            ):
+                return 0
+            state.pop("owner", None)
+            state["import_id"] = import_id
+            self.strings[key] = json.dumps(state)
+            self.ttls[key] = ttl_ms / 1000
+            return 1
+
     def resume_import_finish(
         self,
         key: str,
@@ -131,6 +157,9 @@ class FakeRedis:
             name in self.strings or name in self.hashes or name in self.sets
         )
 
+    def get(self, name: str) -> str | None:
+        return self.strings.get(name)
+
     def delete(self, *names: str) -> int:
         removed = 0
         for name in names:
@@ -170,6 +199,29 @@ class FakeRedis:
 
     def ping(self, **_kwargs) -> bool:
         return True
+
+    def set(
+        self,
+        name: str,
+        value: str,
+        *,
+        nx: bool = False,
+        ex: int | None = None,
+    ) -> bool:
+        with self._lock:
+            if nx and name in self.strings:
+                return False
+            self.strings[name] = value
+            self.ttls[name] = ex
+            return True
+
+    def eval(self, _script: str, _numkeys: int, name: str, token: str) -> int:
+        with self._lock:
+            if self.strings.get(name) != token:
+                return 0
+            self.strings.pop(name, None)
+            self.ttls.pop(name, None)
+            return 1
 
     def close(self, **_kwargs) -> None:
         pass

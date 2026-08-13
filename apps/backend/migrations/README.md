@@ -10,9 +10,10 @@
 在建立 Chat 候选和当前绑定前，按外键依赖顺序永久清空旧模型配置及调用日志；
 `0009` 新增 `admin_operation_logs`；`0010` 移除对象存储清理任务表；`0011`
 删除仅写不读的管理员操作审计表；`0012` 删除已停用的旧版简历内容与样式备份列；
-`0013` 为微信扫码登录在 `users` 表新增 `wechat_openid` 唯一绑定字段，并将
-`email`、`password_hash` 放宽为可空（微信登录用户无邮箱密码）。
-当前唯一 head 为 `0013`。每个版本都提供配对升级和降级 SQL；原型 SQLite 数据
+`0013` 为简历分享新增字段；`0019` 为账号绑定新增 `wechat_openid` 唯一绑定与
+`wechat_bound_at`；后续 revision 将 `email`、`password_hash` 放宽为可空
+（微信扫码登录用户无邮箱密码）。
+当前唯一 head 见 `alembic heads`。每个版本都提供配对升级和降级 SQL；原型 SQLite 数据
 仍不迁移到 MySQL。
 
 ```text
@@ -64,7 +65,7 @@ apps/backend/migrations/sql/<revision>.down.sql
 ## 执行与核验
 
 ```bash
-# 查看迁移链和当前数据库版本；heads 应只有 0013
+# 查看迁移链和当前数据库版本；head 应唯一
 uv run --directory apps/backend alembic heads
 uv run --directory apps/backend alembic current
 

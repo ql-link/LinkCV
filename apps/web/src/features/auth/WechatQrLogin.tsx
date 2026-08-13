@@ -1,18 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw, ScanLine } from "lucide-react";
 import { api, ApiRequestError, User } from "../../api/client";
-import { Button } from "../../components/ds";
+import { Button } from "@/components/ui";
 
 const POLL_INTERVAL_MS = 2000;
 
 type QrPhase = "loading" | "waiting" | "expired" | "error";
 
 type WechatQrLoginProps = {
-  mode: "login" | "bind";
   onSuccess: (user: User) => void;
 };
 
-export function WechatQrLogin({ mode, onSuccess }: WechatQrLoginProps) {
+export function WechatQrLogin({ onSuccess }: WechatQrLoginProps) {
   const [phase, setPhase] = useState<QrPhase>("loading");
   const [qrBase64, setQrBase64] = useState("");
   const [message, setMessage] = useState("");
@@ -20,8 +19,6 @@ export function WechatQrLogin({ mode, onSuccess }: WechatQrLoginProps) {
   const timerRef = useRef<number | null>(null);
   const succeededRef = useRef(false);
   const onSuccessRef = useRef(onSuccess);
-  const modeRef = useRef(mode);
-  modeRef.current = mode;
 
   useEffect(() => {
     onSuccessRef.current = onSuccess;
@@ -40,7 +37,7 @@ export function WechatQrLogin({ mode, onSuccess }: WechatQrLoginProps) {
     setPhase("loading");
     setMessage("");
     try {
-      const { scene, qr_base64 } = await api.wechatQrcode(modeRef.current);
+      const { scene, qr_base64 } = await api.wechatQrcode("login");
       sceneRef.current = scene;
       setQrBase64(qr_base64);
       setPhase("waiting");
@@ -107,14 +104,12 @@ export function WechatQrLogin({ mode, onSuccess }: WechatQrLoginProps) {
       </div>
 
       <p className="wechat-qr-hint">
-        {phase === "waiting"
-          ? "使用微信扫一扫，扫码确认后" + (mode === "bind" ? "完成绑定。" : "自动登录。")
-          : message}
+        {phase === "waiting" ? "使用微信扫一扫，扫码确认后自动登录。" : message}
       </p>
 
       {(phase === "expired" || phase === "error") && (
-        <Button variant="secondary" size="sm" icon={<RefreshCw size={14} />} onClick={() => void loadQr()}>
-          刷新二维码
+        <Button variant="outline" size="sm" onClick={() => void loadQr()}>
+          <RefreshCw size={14} /> 刷新二维码
         </Button>
       )}
     </div>
@@ -125,6 +120,7 @@ export function wechatErrorMessage(error: unknown, fallback: string) {
   if (error instanceof ApiRequestError) {
     if (error.message === "WECHAT_RATE_LIMITED") return "请求太频繁，请稍后再试。";
     if (error.message === "WECHAT_QRCODE_FAILED") return "微信二维码生成失败，请稍后重试。";
+    if (error.message === "WECHAT_SERVICE_UNAVAILABLE") return "微信登录服务暂不可用，请稍后重试。";
     if (error.status === 401) return "登录状态已失效，请刷新页面后重试。";
     if (error.status >= 500) return "服务暂时不可用，请稍后重试。";
   }

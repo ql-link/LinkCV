@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
-import { BriefcaseBusiness, FileText, LayoutTemplate, UserRound } from "lucide-react";
+import { BriefcaseBusiness, Database, FileText, LayoutTemplate, UserRound } from "lucide-react";
 import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
-import { Brand } from "./ds";
+import { Brand } from "@/components/ui";
 
-export type WorkspaceSection = "resumes" | "templates" | "jobs" | "account";
+export type WorkspaceSection = "resumes" | "templates" | "jobs" | "datasets" | "account";
 
 type WorkspaceSidebarProps = {
   active: WorkspaceSection;
@@ -13,7 +13,12 @@ type WorkspaceSidebarProps = {
   avatarUrl?: string | null;
 };
 
-export function WorkspaceSidebar({ active, email, nickname, avatarUrl }: WorkspaceSidebarProps) {
+export function WorkspaceSidebar({
+  active,
+  email,
+  nickname,
+  avatarUrl,
+}: WorkspaceSidebarProps) {
   const displayName = nickname || email;
   return (
     <nav className="dashboard-sidebar" aria-label="工作区导航">
@@ -43,6 +48,14 @@ export function WorkspaceSidebar({ active, email, nickname, avatarUrl }: Workspa
         >
         <BriefcaseBusiness size={16} />JD 中心
         </button>
+        <button
+          className={active === "datasets" ? "is-active" : ""}
+          type="button"
+          aria-current={active === "datasets" ? "page" : undefined}
+          onClick={() => navigateTo("/datasets")}
+        >
+        <Database size={16} />资料库
+        </button>
       </div>
       <div className="dashboard-account-area">
         <button
@@ -71,9 +84,8 @@ export function WorkspaceSidebar({ active, email, nickname, avatarUrl }: Workspa
 
 export function WorkspaceLayout({ active, children }: { active: WorkspaceSection; children: ReactNode }) {
   const user = useResumeStore((state) => state.user);
-
   return (
-    <div className="dashboard-shell">
+    <div className="dashboard-shell" data-ui-theme="light">
       <WorkspaceSidebar
         active={active}
         email={user?.email ?? ""}

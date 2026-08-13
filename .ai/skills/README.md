@@ -27,6 +27,7 @@
 | `config-contract-sync` | 核对跨代码、配置和部署位置的具体契约值 | 诊断结束或转实现修复 |
 | `doc-maintenance-sync` | 维护 `docs/` 长期项目知识 | 文档与契约门禁 |
 | `implementation-execution` | 直接任务按确认来源、方案任务以 `solution.md` 为中心编码；只在已允许偏差、已接受限制或必须交接的遗留事项存在时补实施报告 | 测试 |
+| `frontend-design` | 用 Anthropic 视觉方法、LinkCV Token、shadcn 选型和 Vercel 界面审查完成页面与浏览器闭环 | 测试与人工验收 |
 | `branch-pr-workflow` | 安全准备分支、提交和 PR，创建 PR 前执行完整本地检查 | 用户审核 |
 
 ## 测试与质量

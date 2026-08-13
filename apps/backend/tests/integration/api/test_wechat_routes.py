@@ -5,45 +5,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from linkcv.core.config import Settings
+from linkcv.integrations.wechat_client import WechatClient
 from linkcv.main import create_app
 from linkcv.modules.identity.models import User
 from tests.fakes import FakeRedis
-
-
-class FakeObjectResponse:
-    def __init__(self, data: bytes) -> None:
-        self.data = data
-
-    def stream(self, _size: int) -> bytes:
-        return self.data
-
-    def close(self) -> None:
-        pass
-
-    def release_conn(self) -> None:
-        pass
-
-
-class FakeStorage:
-    def __init__(self) -> None:
-        self.objects: dict[str, bytes] = {}
-
-    def ensure_bucket(self) -> None:
-        pass
-
-    def upload(self, object_name: str, data: bytes, _content_type: str) -> None:
-        self.objects[object_name] = data
-
-    def get(self, object_name: str) -> FakeObjectResponse:
-        return FakeObjectResponse(self.objects[object_name])
-
-    def delete(self, object_name: str) -> None:
-        self.objects.pop(object_name, None)
-
-    def delete_prefix(self, prefix: str) -> None:
-        for object_name in list(self.objects):
-            if object_name.startswith(prefix):
-                self.objects.pop(object_name)
+from tests.integration.api.test_identity_resumes_assets import FakeStorage
 
 
 def wxacode_handler(openid: str = "openid-fixture"):
@@ -69,6 +35,8 @@ def build_test_app(openid: str = "openid-fixture"):
     settings = Settings(
         database_url="sqlite+pysqlite:///:memory:",
         jwt_secret="integration-test-secret-with-32-bytes",
+        wechat_appid="wx-fixture-appid",
+        wechat_secret="fixture-secret",
     )
     app = create_app(
         settings,
@@ -76,31 +44,29 @@ def build_test_app(openid: str = "openid-fixture"):
         redis=FakeRedis(),
         create_schema=True,
     )
-    from linkcv.integrations.wechat_client import WeChatClient
-
-    app.state.wechat_client = WeChatClient(
+    app.state.wechat_client = WechatClient(
         appid="wx-fixture-appid",
-        appsecret="fixture-secret",
+        secret="fixture-secret",
+        qr_page="pages/bind/bind",
         login_page="pages/login/index",
-        redis_client=app.state.redis,
         transport=httpx.MockTransport(wxacode_handler(openid)),
     )
     return app
 
 
-def create_qrcode(client: TestClient, mode: str = "login") -> tuple[str, str]:
-    response = client.post("/api/auth/wechat/qrcode", json={"mode": mode})
+def create_qrcode(client: TestClient) -> tuple[str, str]:
+    response = client.post("/api/auth/wechat/qrcode")
     assert response.status_code == 200, response.text
     payload = response.json()
     return payload["scene"], payload["qr_base64"]
 
 
-def confirm_and_poll(client: TestClient, scene: str, **kwargs) -> dict:
+def confirm_and_poll(client: TestClient, scene: str, code: str = "js-code-1") -> dict:
     """模拟小程序 confirm 后，Web 端轮询 status 命中 success（发放 Cookie）。"""
-    data = {"scene": scene, "code": kwargs.pop("code", "js-code-1"), "mode": "login"}
-    data.update({key: value for key, value in kwargs.items() if key != "files"})
-    files = kwargs.get("files")
-    response = client.post("/api/auth/wechat/confirm", data=data, files=files)
+    response = client.post(
+        "/api/auth/wechat/confirm",
+        data={"scene": scene, "code": code},
+    )
     assert response.status_code == 200, response.text
     status = client.get("/api/auth/wechat/status", params={"scene": scene}).json()
     assert status["status"] == "success", status
@@ -152,7 +118,7 @@ def test_wechat_confirm_is_replay_resistant() -> None:
     app = build_test_app()
     with TestClient(app) as client:
         scene, _ = create_qrcode(client)
-        data = {"scene": scene, "code": "js-code-1", "mode": "login"}
+        data = {"scene": scene, "code": "js-code-1"}
         assert client.post("/api/auth/wechat/confirm", data=data).status_code == 200
         second = client.post("/api/auth/wechat/confirm", data=data)
         assert second.status_code == 409
@@ -164,107 +130,30 @@ def test_wechat_confirm_unknown_scene_is_expired() -> None:
     with TestClient(app) as client:
         response = client.post(
             "/api/auth/wechat/confirm",
-            data={"scene": "sc-missing-scene-0000001", "code": "js-code-1", "mode": "login"},
+            data={"scene": "sc-missing-scene-0000001", "code": "js-code-1"},
         )
         assert response.status_code == 410
         assert response.json()["error"] == "SCENE_EXPIRED"
-
-
-def test_wechat_bind_requires_login() -> None:
-    app = build_test_app()
-    with TestClient(app) as client:
-        response = client.post("/api/auth/wechat/qrcode", json={"mode": "bind"})
-        assert response.status_code == 401
-        assert response.json()["error"] == "UNAUTHORIZED"
-
-
-def test_wechat_bind_conflict_rejects_existing_openid() -> None:
-    app = build_test_app()
-    with TestClient(app) as client:
-        # 第一个账号用 openid-fixture 登录。
-        scene, _ = create_qrcode(client, mode="login")
-        confirm_and_poll(client, scene)
-
-        # 第二个账号尝试绑定同一 openid。
-        register = client.post(
-            "/api/auth/register",
-            json={"email": "second@example.invalid", "password": "password-1234"},
-        )
-        assert register.status_code == 201
-        scene_bind, _ = create_qrcode(client, mode="bind")
-        conflict = client.post(
-            "/api/auth/wechat/confirm",
-            data={"scene": scene_bind, "code": "js-code-1", "mode": "bind"},
-        )
-        assert conflict.status_code == 409
-        assert conflict.json()["error"] == "WECHAT_BIND_CONFLICT"
-
-
-def test_wechat_bind_binds_openid_to_current_account() -> None:
-    app = build_test_app()
-    with TestClient(app) as client:
-        register = client.post(
-            "/api/auth/register",
-            json={"email": "owner@example.invalid", "password": "password-1234"},
-        )
-        assert register.status_code == 201
-        scene, _ = create_qrcode(client, mode="bind")
-        ok = client.post(
-            "/api/auth/wechat/confirm",
-            data={"scene": scene, "code": "js-code-1", "mode": "bind"},
-        )
-        assert ok.status_code == 200
-
-        # bind 模式 status 不发 Cookie（不发新会话），当前账号仍有效。
-        status = client.get("/api/auth/wechat/status", params={"scene": scene}).json()
-        assert status["status"] == "success"
-        me = client.get("/api/auth/me").json()["user"]
-        assert me["email"] == "owner@example.invalid"
-
-
-def test_wechat_confirm_stores_avatar_on_account_creation() -> None:
-    app = build_test_app()
-    storage = app.state.storage
-    with TestClient(app) as client:
-        scene, _ = create_qrcode(client)
-        files = {
-            "avatar": (
-                "wechat-avatar.png",
-                b"\x89PNG\r\n\x1a\nfixture-avatar",
-                "image/png",
-            )
-        }
-        status = confirm_and_poll(
-            client,
-            scene,
-            nickname="微信昵称",
-            files=files,
-        )
-        assert status["user"]["nickname"] == "微信昵称"
-        assert status["user"]["avatar_url"] is not None
-        assert any("avatar" in key for key in storage.objects)
 
 
 def test_wechat_qrcode_is_rate_limited_per_ip() -> None:
     app = build_test_app()
     with TestClient(app) as client:
         for _index in range(10):
-            response = client.post("/api/auth/wechat/qrcode", json={"mode": "login"})
+            response = client.post("/api/auth/wechat/qrcode")
             assert response.status_code == 200, response.text
-        limited = client.post("/api/auth/wechat/qrcode", json={"mode": "login"})
+        limited = client.post("/api/auth/wechat/qrcode")
         assert limited.status_code == 429
         assert limited.json()["error"] == "WECHAT_RATE_LIMITED"
 
 
-def test_wechat_confirm_rejects_avatar_wrong_type() -> None:
+def test_wechat_login_creates_user_without_email() -> None:
     app = build_test_app()
     with TestClient(app) as client:
         scene, _ = create_qrcode(client)
-        files = {"avatar": ("wechat-avatar.txt", b"not an image", "text/plain")}
-        response = client.post(
-            "/api/auth/wechat/confirm",
-            data={"scene": scene, "code": "js-code-1", "mode": "login"},
-            files=files,
-        )
-        assert response.status_code == 400
-        assert response.json()["error"] == "INVALID_AVATAR"
+        confirm_and_poll(client, scene)
+        with app.state.session_factory() as db:
+            user = db.scalars(select(User)).one()
+            assert user.email is None
+            assert user.password_hash is None
+            assert user.wechat_openid == "openid-fixture"

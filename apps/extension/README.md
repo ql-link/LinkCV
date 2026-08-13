@@ -35,6 +35,19 @@ WXT_PUBLIC_LINKCV_ORIGIN=https://linkcv.example.com npm run build:extension
 
 该值会同时进入运行时 API 候选地址和 Manifest 的精确 `host_permissions`。
 
+## 生成管理员发布包
+
+正式插件包不使用上述本地默认权限。在仓库根目录一次生成 Development 和 Production 两个环境包：
+
+```bash
+npm run release:extension -- \
+  --development-origin http://127.0.0.1:5173 \
+  --production-origin https://linkcv.example.test \
+  --output-dir .tmp/plugin-release
+```
+
+把示例 Origin 换成用户实际访问的两个 LinkCV 根 Origin。脚本会分别构建、检查 Manifest V3、版本、精确站点权限、ZIP 安全结构和离线说明，并输出两个带环境和版本的 ZIP 以及 `SHA256SUMS`。管理员只向当前环境的 `/admin/plugins` 上传对应 ZIP，不上传源码、校验文件或 `current.json`。
+
 ## 权限边界
 
 - `activeTab`：用户点击插件时确认当前活动页。

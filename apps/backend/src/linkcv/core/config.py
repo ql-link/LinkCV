@@ -2,7 +2,8 @@ import os
 import re
 from functools import lru_cache
 from pathlib import Path
-from urllib.parse import quote
+from typing import Literal
+from urllib.parse import quote, urlsplit
 
 from cryptography.fernet import Fernet
 from pydantic import Field, SecretStr, model_validator
@@ -69,6 +70,16 @@ class Settings(BaseSettings):
     app_environment: str = Field(default="development", alias="APP_ENV")
     backend_host: str = Field(default="127.0.0.1", alias="BACKEND_HOST")
     backend_port: int = Field(default=8000, alias="BACKEND_PORT")
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    log_service_name: str = Field(default="linkcv", alias="LOG_SERVICE_NAME")
+    log_directory: Path | None = Field(default=None, alias="LOG_DIRECTORY")
+    log_retention_days: int = Field(default=7, alias="LOG_RETENTION_DAYS", ge=1)
+    loki_query_url: str | None = Field(default=None, alias="LOKI_QUERY_URL")
+    loki_query_timeout_seconds: float = Field(
+        default=5,
+        alias="LOKI_QUERY_TIMEOUT_SECONDS",
+        gt=0,
+    )
 
     database_url: str | None = Field(default=None, alias="DATABASE_URL")
     mysql_host: str = Field(default="127.0.0.1", alias="MYSQL_HOST")
@@ -114,8 +125,17 @@ class Settings(BaseSettings):
         alias="MINIO_SECRET_KEY",
     )
     minio_bucket: str = Field(default="linkcv", alias="MINIO_BUCKET")
+    plugin_release_origin: str = Field(
+        default="http://127.0.0.1:5173",
+        alias="PLUGIN_RELEASE_ORIGIN",
+    )
 
     resume_version_limit: int = Field(default=10, alias="RESUME_VERSION_LIMIT", ge=2)
+    dataset_upload_max_bytes: int = Field(
+        default=10 * 1024 * 1024,
+        alias="DATASET_UPLOAD_MAX_BYTES",
+        ge=1,
+    )
     resume_import_max_bytes: int = Field(
         default=10 * 1024 * 1024,
         alias="RESUME_IMPORT_MAX_BYTES",
@@ -149,37 +169,112 @@ class Settings(BaseSettings):
         ge=1,
         le=10,
     )
-    resume_import_deadline_seconds: float = Field(
-        default=180,
-        alias="RESUME_IMPORT_DEADLINE_SECONDS",
-        gt=0,
-    )
     resume_structuring_timeout_seconds: float = Field(
         default=60,
         alias="RESUME_STRUCTURING_TIMEOUT_SECONDS",
         gt=0,
     )
-    resume_import_idempotency_processing_ttl_seconds: int = Field(
-        default=240,
-        alias="RESUME_IMPORT_IDEMPOTENCY_PROCESSING_TTL_SECONDS",
-        ge=1,
+    resume_import_upload_stale_seconds: int = Field(
+        default=120, alias="RESUME_IMPORT_UPLOAD_STALE_SECONDS", ge=1
     )
-    resume_import_idempotency_success_ttl_seconds: int = Field(
-        default=3600,
-        alias="RESUME_IMPORT_IDEMPOTENCY_SUCCESS_TTL_SECONDS",
-        ge=1,
+    resume_import_parse_deadline_seconds: int = Field(
+        default=180, alias="RESUME_IMPORT_PARSE_DEADLINE_SECONDS", ge=1
     )
-    resume_import_idempotency_failure_ttl_seconds: int = Field(
-        default=60,
-        alias="RESUME_IMPORT_IDEMPOTENCY_FAILURE_TTL_SECONDS",
+    resume_import_parse_stale_seconds: int = Field(
+        default=240, alias="RESUME_IMPORT_PARSE_STALE_SECONDS", ge=1
+    )
+    resume_import_worker_lock_seconds: int = Field(
+        default=240, alias="RESUME_IMPORT_WORKER_LOCK_SECONDS", ge=1
+    )
+    resume_import_idempotency_bind_ttl_seconds: int = Field(
+        default=30, alias="RESUME_IMPORT_IDEMPOTENCY_BIND_TTL_SECONDS", ge=1
+    )
+    resume_import_idempotency_ttl_seconds: int = Field(
+        default=900, alias="RESUME_IMPORT_IDEMPOTENCY_TTL_SECONDS", ge=1
+    )
+    resume_import_worker_concurrency: int = Field(
+        default=4,
+        alias="RESUME_IMPORT_WORKER_CONCURRENCY",
         ge=1,
+        le=100,
     )
 
-    wechat_appid: str = Field(default="", alias="WECHAT_APPID")
-    wechat_appsecret: SecretStr | None = Field(default=None, alias="WECHAT_APPSECRET")
+    mq_vendor: Literal["rabbitmq", "kafka"] = Field(
+        default="rabbitmq", alias="MQ_VENDOR"
+    )
+    rabbitmq_url: SecretStr | None = Field(default=None, alias="RABBITMQ_URL")
+    rabbitmq_exchange_name: str = Field(
+        default="tolink.cv.resume_import",
+        alias="RABBITMQ_EXCHANGE_NAME",
+        min_length=1,
+        max_length=255,
+    )
+    rabbitmq_queue: str = Field(
+        default="linkcv.resume_import.worker",
+        alias="RABBITMQ_QUEUE",
+        min_length=1,
+        max_length=255,
+    )
+    rabbitmq_routing_key: str = Field(
+        default="resume.import",
+        alias="RABBITMQ_ROUTING_KEY",
+        min_length=1,
+        max_length=255,
+    )
+    kafka_bootstrap_servers: str | None = Field(
+        default=None, alias="KAFKA_BOOTSTRAP_SERVERS"
+    )
+    kafka_topic: str = Field(
+        default="tolink.cv.resume_import",
+        alias="KAFKA_TOPIC",
+        min_length=1,
+        max_length=249,
+    )
+    kafka_consumer_group: str = Field(
+        default="linkcv.resume_import.worker",
+        alias="KAFKA_CONSUMER_GROUP",
+        min_length=1,
+        max_length=255,
+    )
+    mq_publish_confirm_timeout_seconds: float = Field(
+        default=5,
+        alias="MQ_PUBLISH_CONFIRM_TIMEOUT_SECONDS",
+        gt=0,
+    )
+    mq_consume_max_retries: int = Field(
+        default=2,
+        alias="MQ_CONSUME_MAX_RETRIES",
+        ge=0,
+        le=10,
+    )
+    mq_consume_retry_backoff_seconds: float = Field(
+        default=1,
+        alias="MQ_CONSUME_RETRY_BACKOFF_SECONDS",
+        gt=0,
+    )
+
+    wechat_appid: str | None = Field(default=None, alias="WECHAT_APPID")
+    wechat_secret: SecretStr | None = Field(default=None, alias="WECHAT_SECRET")
+    wechat_qr_page: str = Field(
+        default="pages/bind/bind",
+        alias="WECHAT_QR_PAGE",
+        min_length=1,
+    )
     wechat_login_page: str = Field(
         default="pages/login/index",
         alias="WECHAT_LOGIN_PAGE",
+        min_length=1,
+    )
+    wechat_bind_ticket_ttl_seconds: int = Field(
+        default=300,
+        alias="WECHAT_BIND_TICKET_TTL_SECONDS",
+        ge=60,
+        le=900,
+    )
+    wechat_api_timeout_seconds: float = Field(
+        default=5,
+        alias="WECHAT_API_TIMEOUT_SECONDS",
+        gt=0,
     )
     wechat_qrcode_requests_per_minute: int = Field(
         default=10,
@@ -192,11 +287,6 @@ class Settings(BaseSettings):
         alias="WECHAT_SCENE_TTL_SECONDS",
         ge=30,
         le=600,
-    )
-    wechat_timeout_seconds: float = Field(
-        default=5,
-        alias="WECHAT_TIMEOUT_SECONDS",
-        gt=0,
     )
 
     linkparse_base_url: str = Field(
@@ -246,6 +336,18 @@ class Settings(BaseSettings):
     web_dist_dir: Path | None = Field(default=None, alias="WEB_DIST_DIR")
 
     @property
+    def wechat_enabled(self) -> bool:
+        secret = (
+            self.wechat_secret.get_secret_value() if self.wechat_secret else None
+        )
+        return bool(
+            self.wechat_appid
+            and secret
+            and not _is_placeholder(self.wechat_appid)
+            and not _is_placeholder(secret)
+        )
+
+    @property
     def sqlalchemy_url(self) -> str:
         if self.database_url:
             return self.database_url
@@ -269,18 +371,69 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
+        self.log_level = self.log_level.strip().upper()
+        if self.log_level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+            raise ValueError("LOG_LEVEL is invalid")
+        self.log_service_name = self.log_service_name.strip()
+        if self.log_service_name != "linkcv":
+            raise ValueError("LOG_SERVICE_NAME must be linkcv")
+        if self.log_retention_days != 7:
+            raise ValueError("LOG_RETENTION_DAYS must be 7")
         if self.resume_structuring_max_bytes > self.resume_markdown_max_bytes:
             raise ValueError(
                 "RESUME_STRUCTURING_MAX_BYTES cannot exceed RESUME_MARKDOWN_MAX_BYTES"
             )
         if (
-            self.resume_import_idempotency_processing_ttl_seconds
-            < self.resume_import_deadline_seconds + 30
+            self.resume_import_parse_stale_seconds
+            <= self.resume_import_parse_deadline_seconds
         ):
             raise ValueError(
-                "RESUME_IMPORT_IDEMPOTENCY_PROCESSING_TTL_SECONDS must be at least "
-                "RESUME_IMPORT_DEADLINE_SECONDS + 30"
+                "RESUME_IMPORT_PARSE_STALE_SECONDS must exceed "
+                "RESUME_IMPORT_PARSE_DEADLINE_SECONDS"
             )
+        if (
+            self.resume_import_worker_lock_seconds
+            < self.resume_import_parse_stale_seconds
+        ):
+            raise ValueError(
+                "RESUME_IMPORT_WORKER_LOCK_SECONDS must be at least "
+                "RESUME_IMPORT_PARSE_STALE_SECONDS"
+            )
+        rabbitmq_url = (
+            self.rabbitmq_url.get_secret_value()
+            if self.rabbitmq_url is not None
+            else None
+        )
+        if self.mq_vendor == "kafka" and _is_placeholder(
+            self.kafka_bootstrap_servers
+        ):
+            raise ValueError(
+                "KAFKA_BOOTSTRAP_SERVERS is required when MQ_VENDOR=kafka"
+            )
+        origin = urlsplit(self.plugin_release_origin.strip())
+        try:
+            port = origin.port
+        except ValueError as error:
+            raise ValueError(
+                "PLUGIN_RELEASE_ORIGIN must be an HTTP(S) root origin"
+            ) from error
+        if (
+            origin.scheme not in {"http", "https"}
+            or not origin.hostname
+            or origin.path not in {"", "/"}
+            or origin.query
+            or origin.fragment
+            or origin.username
+            or origin.password
+        ):
+            raise ValueError("PLUGIN_RELEASE_ORIGIN must be an HTTP(S) root origin")
+        authority = origin.hostname
+        if ":" in authority:
+            authority = f"[{authority}]"
+        if port is not None:
+            authority = f"{authority}:{port}"
+        self.plugin_release_origin = f"{origin.scheme}://{authority}"
+
         if self.app_environment.lower() != "production":
             return self
 
@@ -296,6 +449,8 @@ class Settings(BaseSettings):
             invalid.append("MINIO_ACCESS_KEY")
         if _is_placeholder(self.minio_secret_key):
             invalid.append("MINIO_SECRET_KEY")
+        if origin.scheme != "https":
+            invalid.append("PLUGIN_RELEASE_ORIGIN")
         if _is_placeholder(self.linkparse_base_url):
             invalid.append("LINKPARSE_BASE_URL")
         linkparse_key = (
@@ -305,15 +460,8 @@ class Settings(BaseSettings):
         )
         if _is_placeholder(linkparse_key):
             invalid.append("LINKPARSE_API_KEY")
-        if _is_placeholder(self.wechat_appid) or _is_placeholder(self.wechat_login_page):
-            invalid.append("WECHAT_APPID")
-        wechat_secret = (
-            self.wechat_appsecret.get_secret_value()
-            if self.wechat_appsecret is not None
-            else None
-        )
-        if _is_placeholder(wechat_secret):
-            invalid.append("WECHAT_APPSECRET")
+        if self.mq_vendor == "rabbitmq" and _is_placeholder(rabbitmq_url):
+            invalid.append("RABBITMQ_URL")
         try:
             llm_keys = parse_llm_credential_encryption_keys(
                 self.llm_credential_encryption_keys

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -27,6 +27,7 @@ from linkcv.modules.resumes.schemas import (
     ResumeVersionResponse,
     ResumeVersionSummary,
 )
+from linkcv.modules.observability.audit import bind_audit_target
 
 router = APIRouter(prefix="/resumes/{resume_id}/versions", tags=["resume-versions"])
 
@@ -79,6 +80,7 @@ def list_versions(
 @router.post("", response_model=ResumeVersionResponse, status_code=201)
 def create_version(
     resume_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
@@ -98,6 +100,7 @@ def create_version(
         raise ApiError(500, "RESUME_SCHEMA_INVALID") from error
     if version is None:
         raise ApiError(404, "RESUME_NOT_FOUND")
+    bind_audit_target(request, version.id)
     return ResumeVersionResponse(version=version_record(version))
 
 
