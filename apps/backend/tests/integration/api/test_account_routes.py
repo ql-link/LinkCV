@@ -19,6 +19,8 @@ def build_test_app():
     settings = Settings(
         database_url="sqlite+pysqlite:///:memory:",
         jwt_secret="account-test-secret-with-32-bytes",
+        wechat_appid=None,
+        wechat_secret=None,
     )
     app = create_app(
         settings,
