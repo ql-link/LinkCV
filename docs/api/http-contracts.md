@@ -15,6 +15,9 @@
 | `POST` | `/api/auth/login`    | `{user}`，签发短 access 与 7 天 refresh 双 Cookie     |
 | `POST` | `/api/auth/refresh`  | `{user}`，轮换 refresh 密钥并下发新双 Cookie          |
 | `POST` | `/api/auth/logout`   | `{ok: true}`，删除 Redis 会话并清除双 Cookie          |
+| `POST` | `/api/auth/wechat/qrcode`  | `{scene, qr_base64}`；请求为 `{mode: "login" 或 "bind"}`，bind 模式要求已登录，按 IP 限流（默认 10 次/分钟） |
+| `GET`  | `/api/auth/wechat/status`  | `{status: "pending" 或 "success" 或 "expired", user?}`；`scene` 为 query 参数，命中 success 后 login 模式签发双 Cookie、bind 模式不签发，并删除 scene |
+| `POST` | `/api/auth/wechat/confirm` | `{ok: true}`；multipart 提交 `scene`、`code`、`mode`、`nickname?` 与可选 `avatar` 文件；scene 只能确认一次（重复提交 `409 SCENE_REUSED`） |
 
 鉴权使用“短 JWT access + 不透明 refresh + Redis 会话”的双 Token 方案。Access Cookie 名为 `resume_access`，有效期 `ACCESS_TTL_MINUTES`（默认 15 分钟），`SameSite=Lax`、`Path=/`。Refresh Cookie 名为 `resume_refresh`，有效期 `SESSION_TTL_DAYS`（默认 7 天），`HttpOnly`、`SameSite=Lax`、`Path=/api/auth`。Web 调用受保护接口收到 `401` 时，会把并发请求合并到同一次 refresh，刷新成功后各自重试一次；启动检查 `/api/auth/me` 返回空用户时也会先尝试 refresh，再进入访客态。登录或刷新失败返回 `401 INVALID_CREDENTIALS`。`/api/auth/me`、登录、注册与 refresh 返回的 `user` 对象与用户中心一致，包含 `avatar_url`（无头像时为 `null`）。
 
@@ -35,13 +38,23 @@
 | `POST` | `/api/account/wechat/bind-confirm` | `{ok: true}`；请求为 `{ticket, code}` |
 | `GET` | `/api/account/wechat/bind-status` | `{status}`；查询参数 `ticket`，状态为 `pending\|bound\|expired` |
 
-`user` 为 `{id, email, nickname, is_admin, avatar_url, wechat_status, wechat_bound_at}`，无头像时 `avatar_url` 为 `null`。`wechat_status` 为 `unbound\|bound\|unavailable`：已绑定微信为 `bound`，未绑定且微信能力可用为 `unbound`，未配置微信凭据时统一为 `unavailable`；`wechat_bound_at` 绑定后为带时区 ISO 8601，未绑定为 `null`。`recent_resumes` 是最近编辑的 5 份简历，每项 `{id, title, updated_at}`，按 `updated_at DESC, id DESC` 排序。
+`user` 为 `{id, email, nickname, is_admin, avatar_url, wechat_status, wechat_bound_at}`，`email` 可为 `null`（微信扫码创建的账号无邮箱密码），无头像时 `avatar_url` 为 `null`。`wechat_status` 为 `unbound\|bound\|unavailable`：已绑定微信为 `bound`，未绑定且微信能力可用为 `unbound`，未配置微信凭据时统一为 `unavailable`；`wechat_bound_at` 绑定后为带时区 ISO 8601，未绑定为 `null`。`recent_resumes` 是最近编辑的 5 份简历，每项 `{id, title, updated_at}`，按 `updated_at DESC, id DESC` 排序。
 
 昵称去空白后为空或超过 50 字符返回 `400 INVALID_NICKNAME`。头像通过 data URL 上传（≤10MB），新对象键使用 `users/{user_id}/assets/avatar/{毫秒时间戳}-{8位随机串}-{文件名}.{扩展名}`。非法图片返回 `400 INVALID_IMAGE`，超限返回 `413 IMAGE_TOO_LARGE`，对象写入失败返回 `502 ASSET_UPLOAD_FAILED`；先写新对象再更新数据库，提交失败补偿删除新对象，成功后清理旧头像对象。旧路径中的已有头像继续可读、可替换和删除，不做批量迁移。
 
 修改密码先校验当前密码（错误返回 `400 INVALID_CURRENT_PASSWORD`），再要求新密码至少 8 位且同时包含字母和数字（否则 `400 WEAK_PASSWORD`）、两次输入一致（否则 `400 PASSWORD_MISMATCH`）且不能与当前密码相同（否则 `400 PASSWORD_UNCHANGED`）。成功后更新 Argon2id 哈希，立即撤销该用户全部 Redis 会话，并在同一响应中清除双 Cookie，所有设备都必须用新密码重新登录。
 
 微信绑定由 Web 已登录用户发起：`bind-request` 生成绑定票据并返回小程序码，票据存 Redis（TTL 默认 300 秒，同用户重新发起时作废旧票据），`scene` 携带票据；用户用微信扫小程序码进入小程序确认页，小程序调 `wx.login()` 取得临时 code 后提交 `bind-confirm`，服务端用 code 换取 openid 并关联到发起用户。openid 只在服务端存储，任何接口不回传 openid 明文。openid 已被其他用户绑定时返回 `409 WECHAT_ALREADY_BOUND`，原绑定关系不被覆盖；票据不存在或已过期返回 `400 BIND_TICKET_INVALID`；已绑定用户再次发起返回 `400 WECHAT_ALREADY_BOUND`。微信凭据未配置或微信接口调用失败返回 `503 WECHAT_SERVICE_UNAVAILABLE`。Web 端通过 `bind-status` 每 3 秒轮询感知绑定成功（`bound` 后停止），票据过期返回 `expired` 提示重新发起。本周不提供解绑或更换微信身份，也不存在对应接口。
+
+### 微信扫码登录
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `POST` | `/api/auth/wechat/qrcode` | `{scene, qr_base64}`；无需登录 |
+| `GET` | `/api/auth/wechat/status` | `{status}`；查询参数 `scene`，状态为 `pending\|success\|expired`，`success` 时含 `user` 并发放会话 |
+| `POST` | `/api/auth/wechat/confirm` | `{ok: true}`；请求为表单 `{scene, code}`（由小程序端调用） |
+
+扫码登录采用 scene 状态机：Web 端请求 `qrcode` 生成携带 `scene` 的小程序码（scene 前缀 `login:`，TTL 默认 300 秒），用户用微信扫码进入小程序确认页，小程序调 `wx.login()` 取得临时 code 后提交 `confirm`，服务端用 code 换取 openid：已存在 openid 则复用该账号，否则创建无邮箱密码的微信账号（昵称为 `微信用户` 加随机后缀），并把结果写回 scene。Web 端每 2 秒轮询 `status`，命中 `success` 后发放会话并删除 scene，`expired` 提示刷新。`confirm` 用 GETSET 原子防重放：同一 scene 二次提交返回 `409 SCENE_REUSED`，scene 不存在或已过期返回 `410 SCENE_EXPIRED`，code 无效返回 `400 WECHAT_CODE_INVALID`。`qrcode` 按 IP 限流（默认 10 次/分钟），超限返回 `429 WECHAT_RATE_LIMITED`；微信凭据未配置返回 `503 WECHAT_SERVICE_UNAVAILABLE`。
 
 ## 语义简历契约
 

@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   color: var(--ui-foreground);
   background: var(--ui-background);
   font-family: var(--ui-font-sans);
@@ -2495,4 +2495,51 @@ select:not([data-slot]):focus-visible,
   .share-page-header { padding: 0 16px; }
   .share-page-header-note { display: none; }
   .share-owner { font-size: 12px; }
+}
+
+/* ---- 微信扫码登录（/api/auth/wechat/qrcode） ---- */
+
+.wechat-qr-panel {
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+  padding: 8px 0 4px;
+}
+
+.wechat-qr-box {
+  display: grid;
+  width: 200px;
+  height: 200px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+}
+
+.wechat-qr-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.wechat-qr-loading,
+.wechat-qr-fallback {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.wechat-qr-fallback svg {
+  color: var(--gray-400);
+}
+
+.wechat-qr-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
 }

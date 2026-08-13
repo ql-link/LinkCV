@@ -16,6 +16,8 @@ API 客户端只发送相对 `/api/...` 请求并携带 cookie，不在业务组
 
 React 根入口用 Error Boundary 和 `error` / `unhandledrejection` 监听器捕获登录态页面的未处理异常，通过 FastAPI 受保护入口进入统一日志链路；上报失败被吞掉，不能形成递归上报或替代原始页面错误。上报内容限制为错误类型、消息、栈和可选 request ID，不发送 Store、表单、简历正文或浏览器 Cookie。
 
+登录页 `/login` 在登录模式提供“密码登录”与“微信扫码”两个 Tab。微信扫码 Tab 使用 `WechatQrLogin` 组件：先调用 `POST /api/auth/wechat/qrcode`（mode=login）取得 `scene` 与 base64 二维码，展示图片后每 2 秒轮询 `GET /api/auth/wechat/status?scene=...`；命中 `success` 时后端已签发双 Cookie，组件回调用户并进入已登录态；二维码过期或生成失败时提供“刷新二维码”重试。个人资料页 `/account` 的账号安全区提供微信绑定入口，复用同一组件以 mode=bind 打开弹窗，绑定成功后展示“已绑定”状态与成功提示；绑定模式不签发新会话。
+
 新增或迁移接口时同时检查：
 
 1. `src/api/client.ts` 的路径和响应类型；

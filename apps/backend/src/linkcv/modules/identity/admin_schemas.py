@@ -14,7 +14,7 @@ class AdminUserSummary(_StringIdMixin):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    email: str
+    email: str | None
     nickname: str
     is_admin: bool
     status: int

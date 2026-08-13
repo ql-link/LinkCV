@@ -36,11 +36,11 @@ class User(Base):
         autoincrement=True,
         comment="用户自增主键",
     )
-    email: Mapped[str] = mapped_column(
-        String(254), nullable=False, comment="规范化后的登录邮箱"
+    email: Mapped[str | None] = mapped_column(
+        String(254), nullable=True, comment="规范化后的登录邮箱（微信登录用户可为空）"
     )
-    password_hash: Mapped[str] = mapped_column(
-        String(255), nullable=False, comment="密码摘要，不保存明文"
+    password_hash: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="密码摘要，不保存明文（微信登录用户可为空）"
     )
     nickname: Mapped[str] = mapped_column(
         String(50), nullable=False, comment="用户展示昵称"

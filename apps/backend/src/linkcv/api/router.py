@@ -5,6 +5,7 @@ from linkcv.modules.datasets.routes import router as dataset_router
 from linkcv.modules.identity.admin_routes import router as admin_identity_router
 from linkcv.modules.identity.account_routes import router as account_router
 from linkcv.modules.identity.routes import router as identity_router
+from linkcv.modules.identity.wechat_routes import router as wechat_router
 from linkcv.modules.job_descriptions.routes import router as job_description_router
 from linkcv.modules.llm.admin_routes import router as llm_admin_router
 from linkcv.modules.observability.routes import router as observability_router
@@ -31,6 +32,7 @@ api_router.include_router(health_router)
 api_router.include_router(admin_identity_router)
 api_router.include_router(dataset_router)
 api_router.include_router(identity_router)
+api_router.include_router(wechat_router)
 api_router.include_router(account_router)
 api_router.include_router(job_description_router)
 api_router.include_router(llm_admin_router)

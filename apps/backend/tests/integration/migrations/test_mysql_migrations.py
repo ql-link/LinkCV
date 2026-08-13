@@ -21,7 +21,7 @@ from linkcv.domain.resume_snapshot import parse_resume_snapshot
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0017"
+EXPECTED_HEAD = "0020"
 
 
 def migration_test_url() -> str:
@@ -117,7 +117,9 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "avatar_object_key",
         "status",
         "is_admin",
+        "wechat_openid",
         "last_login_at",
+        "wechat_bound_at",
         "created_at",
         "updated_at",
     }
@@ -372,7 +374,9 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "avatar_object_key",
         "status",
         "is_admin",
+        "wechat_openid",
         "last_login_at",
+        "wechat_bound_at",
         "created_at",
         "updated_at",
     }

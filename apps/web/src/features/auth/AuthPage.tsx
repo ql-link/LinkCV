@@ -3,6 +3,8 @@ import { ArrowRight } from "lucide-react";
 import { Button, TextField } from "@/components/ui";
 import { useResumeStore } from "../../store/resumeStore";
 import { authPath, editorPath, navigateTo } from "../../routing";
+import { User } from "../../api/client";
+import { WechatQrLogin } from "./WechatQrLogin";
 import "./auth.css";
 
 const GrainGradient = lazy(() =>
@@ -20,7 +22,9 @@ export function AuthPage({
 }) {
   const login = useResumeStore((state) => state.login);
   const register = useResumeStore((state) => state.register);
+  const loginWithWechat = useResumeStore((state) => state.loginWithWechat);
   const [mode, setMode] = useState<"login" | "register">(initialMode);
+  const [showWechat, setShowWechat] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -51,9 +55,15 @@ export function AuthPage({
     }
   };
 
+  const handleWechatSuccess = async (user: User) => {
+    await loginWithWechat(user);
+    navigateTo(next ?? "/resumes", { replace: true });
+  };
+
   const switchMode = () => {
     const nextMode = isLogin ? "register" : "login";
     setMode(nextMode);
+    setShowWechat(false);
     setError(null);
     navigateTo(authPath(nextMode, next), { replace: true });
   };
@@ -77,47 +87,73 @@ export function AuthPage({
               </p>
             </div>
 
-            <form className="mt-10 space-y-4" onSubmit={submit}>
-              <TextField
-                autoComplete="email"
-                inputClassName="h-12 text-base"
-                label="邮箱"
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@example.com"
-                required
-                type="email"
-                value={email}
-              />
-              <TextField
-                autoComplete={isLogin ? "current-password" : "new-password"}
-                inputClassName="h-12 text-base"
-                label="密码"
-                minLength={8}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="至少 8 位"
-                required
-                type="password"
-                value={password}
-              />
+            {isLogin && showWechat ? (
+              <div className="mt-10 rounded-xl border border-border bg-surface-subtle p-6">
+                <WechatQrLogin onSuccess={(user) => void handleWechatSuccess(user)} />
+                <button
+                  className="mx-auto mt-4 block bg-transparent p-0 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                  onClick={() => setShowWechat(false)}
+                  type="button"
+                >
+                  返回密码登录
+                </button>
+              </div>
+            ) : (
+              <>
+                <form className="mt-10 space-y-4" onSubmit={submit}>
+                  <TextField
+                    autoComplete="email"
+                    inputClassName="h-12 text-base"
+                    label="邮箱"
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="you@example.com"
+                    required
+                    type="email"
+                    value={email}
+                  />
+                  <TextField
+                    autoComplete={isLogin ? "current-password" : "new-password"}
+                    inputClassName="h-12 text-base"
+                    label="密码"
+                    minLength={8}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="至少 8 位"
+                    required
+                    type="password"
+                    value={password}
+                  />
 
-              {error && (
-                <p className="rounded-md border border-destructive bg-[var(--ui-destructive-subtle)] px-4 py-2.5 text-sm text-destructive" role="alert">
-                  {error}
-                </p>
-              )}
+                  {error && (
+                    <p className="rounded-md border border-destructive bg-[var(--ui-destructive-subtle)] px-4 py-2.5 text-sm text-destructive" role="alert">
+                      {error}
+                    </p>
+                  )}
 
-              <Button
-                className="mt-6 h-12 w-full text-base"
-                disabled={submitting}
-                type="submit"
-              >
-                {submitting
-                  ? "处理中..."
-                  : isLogin
-                    ? "登录"
-                    : "注册并创建简历"}
-              </Button>
-            </form>
+                  <Button
+                    className="mt-6 h-12 w-full text-base"
+                    disabled={submitting}
+                    type="submit"
+                  >
+                    {submitting
+                      ? "处理中..."
+                      : isLogin
+                        ? "登录"
+                        : "注册并创建简历"}
+                  </Button>
+                </form>
+
+                {isLogin && (
+                  <button
+                    className="mt-5 inline-flex items-center gap-1.5 bg-transparent p-0 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    onClick={() => setShowWechat(true)}
+                    type="button"
+                  >
+                    微信扫码登录
+                    <ArrowRight aria-hidden size={14} />
+                  </button>
+                )}
+              </>
+            )}
 
             <button
               className="mt-6 inline-flex items-center gap-1.5 bg-transparent p-0 text-sm text-muted-foreground transition-colors hover:text-foreground"

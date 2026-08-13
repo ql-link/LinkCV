@@ -155,6 +155,7 @@ def create_app(
             appid=runtime_settings.wechat_appid or "",
             secret=wechat_secret or "",
             qr_page=runtime_settings.wechat_qr_page,
+            login_page=runtime_settings.wechat_login_page,
             timeout_seconds=runtime_settings.wechat_api_timeout_seconds,
         )
     import_idempotency = ResumeImportIdempotency(

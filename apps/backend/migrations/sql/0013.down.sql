@@ -1,4 +1,4 @@
--- Down migration for 0013: drop resume share link fields
+﻿-- Down migration for 0013: drop resume share link fields
 -- 分享字段全部可空且无存量数据，删除即可安全回退。
 ALTER TABLE resumes
   DROP CHECK ck_resumes_share_fields,
