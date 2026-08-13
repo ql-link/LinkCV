@@ -226,6 +226,8 @@ describe("account profile sync and password change", () => {
       nickname: "新昵称",
       is_admin: false,
       avatar_url: "/api/assets/users/1/assets/avatar",
+      wechat_status: "unbound",
+      wechat_bound_at: null,
     });
     expect(useResumeStore.getState().user).toMatchObject({
       nickname: "新昵称",
@@ -241,6 +243,8 @@ describe("account profile sync and password change", () => {
       nickname: "新昵称",
       is_admin: false,
       avatar_url: null,
+      wechat_status: "unbound",
+      wechat_bound_at: null,
     });
     expect(useResumeStore.getState().user).toBeNull();
   });

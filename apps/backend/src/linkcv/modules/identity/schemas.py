@@ -48,10 +48,26 @@ class UserProfileResponse(BaseModel):
     nickname: str
     is_admin: bool
     avatar_url: str | None = None
+    wechat_status: str = "unbound"
+    wechat_bound_at: datetime | None = None
 
 
 class ProfileUpdateRequest(BaseModel):
     nickname: str
+
+
+class WechatBindRequestResponse(BaseModel):
+    ticket: str
+    qrcode_data: str
+
+
+class WechatBindConfirmRequest(BaseModel):
+    ticket: str
+    code: str
+
+
+class WechatBindStatusResponse(BaseModel):
+    status: str
 
 
 class RecentResumeSummary(BaseModel):
