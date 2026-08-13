@@ -13,7 +13,7 @@ import {
   Skeleton,
 } from "@/components/ui";
 import { api, AccountProfile, ApiRequestError, UserProfile } from "../../api/client";
-import { navigateTo } from "../../routing";
+import { editorPath, navigateTo } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
 
 const MAX_AVATAR_BYTES = 10 * 1024 * 1024;
@@ -358,7 +358,7 @@ export function AccountPage() {
                       <button
                         type="button"
                         className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-accent"
-                        onClick={() => navigateTo(`/resume/${resume.id}`)}
+                        onClick={() => navigateTo(editorPath(String(resume.id)))}
                       >
                         <FileText aria-hidden size={14} className="shrink-0 text-muted-foreground" />
                         <span className="min-w-0 flex-1 truncate">{resume.title}</span>
