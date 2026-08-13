@@ -23,6 +23,7 @@ class User(Base):
     __table_args__ = (
         PrimaryKeyConstraint("id", name="pk_users"),
         UniqueConstraint("email", name="uk_users_email"),
+        UniqueConstraint("wechat_openid", name="uk_users_wechat_openid"),
         CheckConstraint("status IN (0, 1)", name="ck_users_status"),
         CheckConstraint("is_admin IN (0, 1)", name="ck_users_is_admin"),
         {"comment": "用户账号"},
@@ -63,6 +64,16 @@ class User(Base):
         DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),
         nullable=True,
         comment="最近一次成功登录时间（UTC）",
+    )
+    wechat_openid: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="微信小程序 openid，绑定后写入，全局唯一",
+    )
+    wechat_bound_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),
+        nullable=True,
+        comment="微信绑定时间（UTC）",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),

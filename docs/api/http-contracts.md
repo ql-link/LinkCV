@@ -31,12 +31,17 @@
 | `PUT` | `/api/account/avatar` | `{url}`；请求为 `{fileName?, dataUrl}` |
 | `DELETE` | `/api/account/avatar` | `{ok: true}` |
 | `POST` | `/api/account/change-password` | `{ok, message}`；请求为 `{current_password, new_password, confirm_password}` |
+| `POST` | `/api/account/wechat/bind-request` | `{ticket, qrcode_data}`；小程序码图片为 base64 |
+| `POST` | `/api/account/wechat/bind-confirm` | `{ok: true}`；请求为 `{ticket, code}` |
+| `GET` | `/api/account/wechat/bind-status` | `{status}`；查询参数 `ticket`，状态为 `pending\|bound\|expired` |
 
-`user` 为 `{id, email, nickname, is_admin, avatar_url}`，无头像时 `avatar_url` 为 `null`。`recent_resumes` 是最近编辑的 5 份简历，每项 `{id, title, updated_at}`，按 `updated_at DESC, id DESC` 排序。
+`user` 为 `{id, email, nickname, is_admin, avatar_url, wechat_status, wechat_bound_at}`，无头像时 `avatar_url` 为 `null`。`wechat_status` 为 `unbound\|bound\|unavailable`：已绑定微信为 `bound`，未绑定且微信能力可用为 `unbound`，未配置微信凭据时统一为 `unavailable`；`wechat_bound_at` 绑定后为带时区 ISO 8601，未绑定为 `null`。`recent_resumes` 是最近编辑的 5 份简历，每项 `{id, title, updated_at}`，按 `updated_at DESC, id DESC` 排序。
 
 昵称去空白后为空或超过 50 字符返回 `400 INVALID_NICKNAME`。头像通过 data URL 上传（≤10MB），新对象键使用 `users/{user_id}/assets/avatar/{毫秒时间戳}-{8位随机串}-{文件名}.{扩展名}`。非法图片返回 `400 INVALID_IMAGE`，超限返回 `413 IMAGE_TOO_LARGE`，对象写入失败返回 `502 ASSET_UPLOAD_FAILED`；先写新对象再更新数据库，提交失败补偿删除新对象，成功后清理旧头像对象。旧路径中的已有头像继续可读、可替换和删除，不做批量迁移。
 
-修改密码先校验当前密码（错误返回 `400 INVALID_CURRENT_PASSWORD`），再要求新密码至少 8 位（否则 `400 WEAK_PASSWORD`）、两次输入一致（否则 `400 PASSWORD_MISMATCH`）且不能与当前密码相同（否则 `400 PASSWORD_UNCHANGED`）。成功后更新 Argon2id 哈希，立即撤销该用户全部 Redis 会话，并在同一响应中清除双 Cookie，所有设备都必须用新密码重新登录。
+修改密码先校验当前密码（错误返回 `400 INVALID_CURRENT_PASSWORD`），再要求新密码至少 8 位且同时包含字母和数字（否则 `400 WEAK_PASSWORD`）、两次输入一致（否则 `400 PASSWORD_MISMATCH`）且不能与当前密码相同（否则 `400 PASSWORD_UNCHANGED`）。成功后更新 Argon2id 哈希，立即撤销该用户全部 Redis 会话，并在同一响应中清除双 Cookie，所有设备都必须用新密码重新登录。
+
+微信绑定由 Web 已登录用户发起：`bind-request` 生成绑定票据并返回小程序码，票据存 Redis（TTL 默认 300 秒，同用户重新发起时作废旧票据），`scene` 携带票据；用户用微信扫小程序码进入小程序确认页，小程序调 `wx.login()` 取得临时 code 后提交 `bind-confirm`，服务端用 code 换取 openid 并关联到发起用户。openid 只在服务端存储，任何接口不回传 openid 明文。openid 已被其他用户绑定时返回 `409 WECHAT_ALREADY_BOUND`，原绑定关系不被覆盖；票据不存在或已过期返回 `400 BIND_TICKET_INVALID`；已绑定用户再次发起返回 `400 WECHAT_ALREADY_BOUND`。微信凭据未配置或微信接口调用失败返回 `503 WECHAT_SERVICE_UNAVAILABLE`。Web 端通过 `bind-status` 每 3 秒轮询感知绑定成功（`bound` 后停止），票据过期返回 `expired` 提示重新发起。本周不提供解绑或更换微信身份，也不存在对应接口。
 
 ## 语义简历契约
 

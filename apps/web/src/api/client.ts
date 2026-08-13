@@ -10,6 +10,8 @@ export type User = {
 
 export type UserProfile = User & {
   avatar_url: string | null;
+  wechat_status: "unbound" | "bound" | "unavailable";
+  wechat_bound_at: string | null;
 };
 
 export type RecentResumeSummary = {
@@ -660,6 +662,20 @@ export const api = {
         confirm_password: payload.confirmPassword,
       },
     }),
+  requestWechatBind: () =>
+    request<{ ticket: string; qrcode_data: string }>(
+      "/api/account/wechat/bind-request",
+      { method: "POST" },
+    ),
+  confirmWechatBind: (payload: { ticket: string; code: string }) =>
+    request<{ ok: boolean }>("/api/account/wechat/bind-confirm", {
+      method: "POST",
+      body: payload,
+    }),
+  getWechatBindStatus: (ticket: string) =>
+    request<{ status: "pending" | "bound" | "expired" }>(
+      `/api/account/wechat/bind-status?ticket=${encodeURIComponent(ticket)}`,
+    ),
   listResumes: () => request<{ resumes: ResumeSummary[] }>("/api/resumes"),
   getResumeOverview: () => request<ResumeOverview>("/api/resume-overview"),
   listResumeTemplates: () =>

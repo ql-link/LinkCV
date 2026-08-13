@@ -23,7 +23,7 @@
 | `src/linkcv/modules/job_descriptions/` | JD 单表 ORM、HTTP DTO 和受保护路由 |
 | `src/linkcv/modules/llm/` | Chat 当前绑定、模型凭据加密、LiteLLM 适配、普通/流式/结构化单模型调用、计量与管理员 API |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0018` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0019` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -52,6 +52,8 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 `0013` 为 `resumes` 增加分享字段：`share_token`（VARCHAR(64)，全局唯一索引）、`share_visibility`（VARCHAR(16)，`private|public`）、`share_expires_at`（可空，UTC 过期时间）和 `share_created_at`。两个 CHECK 约束保证分享字段要么全部为空（未分享）、要么全部非空（已分享），且可见性只允许 `private/public`。分享不单独建表、不落内容快照，公开读取时实时取 `resume_versions` 中 `version_no` 最大的正式版本；down 迁移只删除新增列与约束，不触碰分享期间创建的版本数据。
 
 `0018` 新增 `user_dataset` 用户知识库数据集表，与简历文件导入链路分开。每行记录一个用户上传的单个资料文件元信息：所属用户外键、安全化后的文件名、四类格式（docx/pdf/md/txt，受 CHECK 约束）、MIME、字节大小、对象存储对象键（唯一）和内容 SHA-256；外键 `ON DELETE RESTRICT`，删除用户不隐式级联删除资料记录。`POST /api/datasets` 先校验格式与大小（上限 `DATASET_UPLOAD_MAX_BYTES`，默认 10MB）并把文件上传到对象存储（对象键由服务端生成，强制以 `users/{uid}/datasets/` 为前缀），上传成功后才写库，写库失败会尽力删除已上传对象；`GET /api/datasets` 按用户过滤、按上传时间倒序。本期不做分片、RAG、删除、下载、预览和去重，同一文件重复上传生成新记录。
+
+`0019` 为 `users` 增加 `wechat_openid`（VARCHAR(64)，全局唯一索引 `uk_users_wechat_openid`）和 `wechat_bound_at`（可空，UTC 绑定时间）。`wechat_openid` 是微信小程序 openid，绑定后写入，全局唯一约束承担 openid 冲突检测的数据库兜底；本周不提供解绑接口，因此不存在清空路径。绑定票据是临时凭证，只存 Redis（`wechat:bind_ticket:<ticket>` 存用户、`wechat:bind_status:<ticket>` 存 `pending/bound`、`wechat:bind_user_ticket:<uid>` 指向当前票据），TTL 默认 300 秒，同用户重新发起时覆盖旧票据。微信开放平台客户端位于 `integrations/wechat_client.py`，只封装最小能力：`code2Session` 用小程序临时 code 换 openid、`wxa/getwxacodeunlimit` 生成小程序码（`scene` 携带票据）；access_token 在进程内缓存到过期。微信凭据未配置时 `settings.wechat_enabled` 为假，profile 返回 `wechat_status=unavailable`，绑定接口返回 `503 WECHAT_SERVICE_UNAVAILABLE`。openid 只在服务端存储与换取，任何接口不回传 openid 明文。
 
 ## 统一 LLM 调用
 

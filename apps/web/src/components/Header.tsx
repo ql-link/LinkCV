@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, FileDown, Home, LogOut, Save } from "lucide-react";
+import { CircleAlert, CircleCheck, FileDown, Home, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useResumeStore } from "../store/resumeStore";
 import { exportResumePdf } from "../features/preview/exportPdf";
@@ -19,7 +19,6 @@ export function Header() {
   const dirty = useResumeStore((state) => state.dirty);
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
   const goHome = useResumeStore((state) => state.goHome);
-  const logout = useResumeStore((state) => state.logout);
   const [saveToast, setSaveToast] = useState<SaveToast | null>(null);
   const [isManualSaving, setIsManualSaving] = useState(false);
 
@@ -76,10 +75,6 @@ export function Header() {
         <Button icon={<Save size={14} />} disabled={isManualSaving} onClick={() => void handleManualSave()}>
           保存
         </Button>
-        <div className="nav-divider" />
-        <IconButton label="退出登录" danger onClick={() => void logout()}>
-          <LogOut size={15} />
-        </IconButton>
       </div>
       {saveToast && (
         <FeedbackNotice kind={saveToast.kind}>
