@@ -2257,6 +2257,46 @@ select:not([data-slot]):focus-visible,
   font-size: 12px;
 }
 
+.share-panel-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  border-radius: 9px;
+  padding: 8px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.share-panel-status::before {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  content: "";
+}
+
+.share-panel-status.is-available {
+  background: #eaf6ee;
+  color: #1e7e34;
+}
+
+.share-panel-status.is-available::before { background: #2e9e4f; }
+
+.share-panel-status.is-expired {
+  background: #fdf3e3;
+  color: #9a6700;
+}
+
+.share-panel-status.is-expired::before { background: #d97706; }
+
+.share-panel-status.is-unavailable {
+  background: #fdeceb;
+  color: #c0392b;
+}
+
+.share-panel-status.is-unavailable::before { background: #c0392b; }
+
 .share-panel-actions { display: flex; gap: 8px; }
 
 .share-panel-actions button {
@@ -2277,6 +2317,12 @@ select:not([data-slot]):focus-visible,
 .share-panel-actions button:disabled { opacity: 0.55; cursor: default; }
 
 .share-panel-actions .share-panel-danger { border-color: #f0c8c3; color: #c0392b; }
+
+.share-panel-actions .share-panel-regenerate {
+  border-color: #c9b8e8;
+  background: #f7f3ff;
+  color: #5b3fb8;
+}
 
 .share-panel-actions .share-panel-save { border-color: #1d1d1f; background: #1d1d1f; color: #ffffff; }
 
