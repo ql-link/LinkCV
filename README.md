@@ -14,6 +14,12 @@ docs           长期维护的架构、API、模块与运维知识
 
 Web、浏览器插件与后端项目可独立安装和构建；根目录命令用于协调三个应用及本地基础设施。
 
+## 分支与交付
+
+新的业务需求分支统一从最新 `origin/master` 创建。实现和本地验证完成后，先由该业务分支向 `release` 提交 PR；PR 合并且 `release` 分支测试通过后，再由同一业务分支向 `master` 提交 PR。不得从 `dev` 创建新的业务需求分支，也不得用 `release -> master` PR 代替业务分支回合 `master`。
+
+完整的分支检查、提交、PR 和授权规则见 [`branch-pr-workflow`](.ai/skills/branch-pr-workflow/SKILL.md)，开发者流程见 [`docs/ops/development.md#分支与发布流程`](docs/ops/development.md#分支与发布流程)。
+
 ## 首次初始化
 
 环境要求：

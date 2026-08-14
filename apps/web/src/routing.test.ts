@@ -15,6 +15,8 @@ import {
 describe("LinkCV routes", () => {
   it("parses landing, auth, admin, resume list, and editor routes", () => {
     expect(parseAppRoute("/")).toEqual({ kind: "landing" });
+    expect(parseAppRoute("/home")).toEqual({ kind: "landing" });
+    expect(parseAppRoute("/home/")).toEqual({ kind: "landing" });
     expect(parseAppRoute("/login", "?mode=register")).toEqual({ kind: "auth", mode: "register", next: null });
     expect(parseAppRoute("/admin/llm/models")).toEqual({ kind: "admin" });
     expect(parseAppRoute("/resumes/")).toEqual({ kind: "resumes" });

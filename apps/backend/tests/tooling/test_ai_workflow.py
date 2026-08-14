@@ -760,7 +760,7 @@ def test_skill_check_protects_source_authority_and_one_way_delivery(
         ),
         (
             Path(".ai/skills/branch-pr-workflow/SKILL.md"),
-            "同一 PR 默认只发布一条交付评论",
+            "同一业务需求默认只在最终 `master` PR 创建后发布一条交付评论",
         ),
         (
             Path(".ai/skills/branch-pr-workflow/pull_request.template.md"),
