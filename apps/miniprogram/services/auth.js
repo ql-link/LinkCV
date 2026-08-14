@@ -18,7 +18,7 @@ function rawRequest(path, method, data, header) {
       data,
       header: header || { "content-type": "application/json" },
       success: resolve,
-      fail: reject,
+      fail: (result) => reject(new Error(result.errMsg || "网络请求失败")),
     });
   });
 }
@@ -27,7 +27,7 @@ function wxLoginCode() {
   return new Promise((resolve, reject) => {
     wx.login({
       success: (result) => result.code ? resolve(result.code) : reject(new Error("微信登录失败")),
-      fail: reject,
+      fail: (result) => reject(new Error(result.errMsg || "微信登录失败")),
     });
   });
 }
@@ -53,7 +53,10 @@ async function login() {
     { code },
   );
   if (response.statusCode !== 200) {
-    const error = new Error((response.data && response.data.error) || "登录失败");
+    const error = new Error(
+      (response.data && response.data.error)
+      || `登录失败（HTTP ${response.statusCode || "未知"}）`,
+    );
     error.statusCode = response.statusCode;
     throw error;
   }

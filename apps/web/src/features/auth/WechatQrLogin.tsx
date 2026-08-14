@@ -4,6 +4,16 @@ import { api, ApiRequestError, User } from "../../api/client";
 import { Button } from "@/components/ui";
 
 const POLL_INTERVAL_MS = 2000;
+let qrRequestInFlight: ReturnType<typeof api.wechatQrcode> | null = null;
+
+function requestLoginQr() {
+  if (!qrRequestInFlight) {
+    qrRequestInFlight = api.wechatQrcode().finally(() => {
+      qrRequestInFlight = null;
+    });
+  }
+  return qrRequestInFlight;
+}
 
 type QrPhase = "loading" | "waiting" | "cancelled" | "expired" | "error";
 
@@ -18,6 +28,7 @@ export function WechatQrLogin({ onSuccess }: WechatQrLoginProps) {
   const sceneRef = useRef<string | null>(null);
   const pollTokenRef = useRef<string | null>(null);
   const timerRef = useRef<number | null>(null);
+  const loadVersionRef = useRef(0);
   const succeededRef = useRef(false);
   const onSuccessRef = useRef(onSuccess);
 
@@ -33,12 +44,14 @@ export function WechatQrLogin({ onSuccess }: WechatQrLoginProps) {
   };
 
   const loadQr = async () => {
+    const loadVersion = ++loadVersionRef.current;
     stopPolling();
     succeededRef.current = false;
     setPhase("loading");
     setMessage("");
     try {
-      const { scene, poll_token, qr_base64 } = await api.wechatQrcode();
+      const { scene, poll_token, qr_base64 } = await requestLoginQr();
+      if (loadVersion !== loadVersionRef.current) return;
       sceneRef.current = scene;
       pollTokenRef.current = poll_token;
       setQrBase64(qr_base64);
@@ -47,6 +60,7 @@ export function WechatQrLogin({ onSuccess }: WechatQrLoginProps) {
         void pollStatus();
       }, POLL_INTERVAL_MS);
     } catch (error) {
+      if (loadVersion !== loadVersionRef.current) return;
       setPhase("error");
       setMessage(wechatErrorMessage(error, "二维码生成失败，请稍后重试。"));
     }
@@ -81,7 +95,10 @@ export function WechatQrLogin({ onSuccess }: WechatQrLoginProps) {
 
   useEffect(() => {
     void loadQr();
-    return () => stopPolling();
+    return () => {
+      loadVersionRef.current += 1;
+      stopPolling();
+    };
     // 挂载时加载一次；后续刷新由用户点击触发。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

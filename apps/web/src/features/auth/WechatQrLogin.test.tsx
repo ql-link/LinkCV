@@ -1,6 +1,7 @@
+import { StrictMode } from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api, ApiRequestError, User } from "../../api/client";
+import { api, ApiRequestError, User, WeChatQrcodeResponse } from "../../api/client";
 import { WechatQrLogin, wechatErrorMessage } from "./WechatQrLogin";
 
 const wechatUser: User = {
@@ -54,6 +55,31 @@ describe("WechatQrLogin", () => {
     });
 
     expect(onSuccess).toHaveBeenCalledWith(wechatUser);
+  });
+
+  it("Strict Mode 下忽略已卸载初始化产生的旧二维码", async () => {
+    let resolveQr!: (value: WeChatQrcodeResponse) => void;
+    const qrcode = vi.spyOn(api, "wechatQrcode")
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveQr = resolve; }));
+    const status = vi.spyOn(api, "wechatStatus").mockResolvedValue({
+      status: "pending",
+      user: null,
+    });
+
+    render(
+      <StrictMode>
+        <WechatQrLogin onSuccess={() => undefined} />
+      </StrictMode>,
+    );
+    await act(async () => {
+      resolveQr({ scene: "login:current", poll_token: "poll-current", qr_base64: "current" });
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(qrcode).toHaveBeenCalledTimes(1);
+    expect(status).toHaveBeenCalledWith("login:current", "poll-current");
   });
 
   it("二维码过期后展示刷新入口，点击后重新请求", async () => {
