@@ -69,6 +69,7 @@ type ResumeState = {
   saveStatus: SaveStatus;
   error: string | null;
   hydrate: () => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   loginWithWechat: (user: User) => Promise<void>;
   logout: () => Promise<void>;
   syncProfile: (user: UserProfile) => void;
@@ -246,6 +247,12 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     } catch (error) {
       set({ authStatus: "guest", user: null, error: (error as Error).message });
     }
+  },
+
+  login: async (email, password) => {
+    const { user } = await api.login(email, password);
+    set({ authStatus: "authenticated", user, error: null });
+    await get().listResumes();
   },
 
   loginWithWechat: async (user) => {

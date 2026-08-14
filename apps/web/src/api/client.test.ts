@@ -317,6 +317,37 @@ describe("API resume share", () => {
 });
 
 describe("微信扫码登录 API", () => {
+  it("读取当前环境开放的普通用户登录方式", async () => {
+    const body = { password_login_enabled: true };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, body)));
+
+    await expect(api.authCapabilities()).resolves.toEqual(body);
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/auth/capabilities",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
+
+  it("开发环境邮箱密码登录提交凭据", async () => {
+    const body = {
+      user: { id: "1", email: "developer@example.test", nickname: "开发用户" },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, body)));
+
+    await expect(api.login("developer@example.test", "password-123")).resolves.toEqual(body);
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/auth/login",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        body: JSON.stringify({
+          email: "developer@example.test",
+          password: "password-123",
+        }),
+      }),
+    );
+  });
+
   it("申请登录二维码时读取 scene 与 base64 图片", async () => {
     const body = { scene: "login:abcd1234", poll_token: "poll-token", qr_base64: "base64-qr" };
     vi.stubGlobal(

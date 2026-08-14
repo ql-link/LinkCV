@@ -30,6 +30,7 @@ from linkcv.modules.identity.session_service import (
     rotate_session,
 )
 from linkcv.modules.identity.schemas import (
+    AuthCapabilitiesResponse,
     AuthResponse,
     Credentials,
     MeResponse,
@@ -62,6 +63,16 @@ def issue_session(
 @router.get("/me", response_model=MeResponse)
 def me(user: User | None = Depends(get_optional_user)) -> MeResponse:
     return MeResponse(user=UserResponse.model_validate(user) if user else None)
+
+
+@router.get("/capabilities", response_model=AuthCapabilitiesResponse)
+def auth_capabilities(
+    settings: Settings = Depends(get_settings),
+) -> AuthCapabilitiesResponse:
+    return AuthCapabilitiesResponse(
+        password_login_enabled=settings.app_environment.strip().lower()
+        == "development"
+    )
 
 
 def require_legacy_test_route(request: Request) -> None:
@@ -120,12 +131,17 @@ def login(
     settings: Settings = Depends(get_settings),
     redis_client: "redis.Redis" = Depends(get_redis),
 ) -> AuthResponse:
-    require_legacy_test_route(request)
+    if (
+        settings.app_environment.strip().lower() != "development"
+        and not getattr(request.app.state, "legacy_identity_test_routes", False)
+    ):
+        raise ApiError(404, "NOT_FOUND")
     email = normalize_email(payload.email)
     user = db.scalar(select(User).where(User.email == email))
     if (
         user is None
         or user.status != 1
+        or not user.password_hash
         or not verify_password(payload.password, user.password_hash)
     ):
         raise ApiError(401, "INVALID_CREDENTIALS")

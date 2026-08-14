@@ -6,7 +6,7 @@
 
 ## 健康检查与鉴权
 
-`GET /api/health` 返回 `{status, service, version}`。普通用户不再提供公开邮箱注册、密码登录或微信绑定接口；`POST /api/auth/register`、`POST /api/auth/login`、`POST /api/account/change-password` 和 `/api/account/wechat/bind-*` 在正常运行环境返回 `404 NOT_FOUND`，且不进入 OpenAPI。`POST /api/auth/admin-login` 是密码登录的唯一例外，只允许管理员成功。
+`GET /api/health` 返回 `{status, service, version}`。`GET /api/auth/capabilities` 公开返回 `{password_login_enabled}`，Web 据此选择登录入口。普通用户邮箱密码登录仅在 `APP_ENV=development` 时开放；Production 的 `POST /api/auth/login` 返回 `404 NOT_FOUND`。普通邮箱注册、改密和微信绑定接口仍不公开；`POST /api/auth/register`、`POST /api/account/change-password` 和 `/api/account/wechat/bind-*` 在正常运行环境返回 `404 NOT_FOUND`，且不进入 OpenAPI。`POST /api/auth/admin-login` 保持独立，只允许管理员成功。
 
 | Method | Path | 成功结果 |
 | --- | --- | --- |

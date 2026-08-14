@@ -1,7 +1,9 @@
-import { lazy, Suspense } from "react";
+import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
+import { ArrowRight } from "lucide-react";
+import { Button, TextField } from "@/components/ui";
+import { api, User } from "../../api/client";
 import { useResumeStore } from "../../store/resumeStore";
 import { navigateTo } from "../../routing";
-import { User } from "../../api/client";
 import { WechatQrLogin } from "./WechatQrLogin";
 import "./auth.css";
 
@@ -11,18 +13,55 @@ const GrainGradient = lazy(() =>
   })),
 );
 
-export function AuthPage({
-  next = null,
-}: {
+export function AuthPage(props: {
   initialMode?: "login" | "register";
   next?: string | null;
 }) {
+  const next = props.next ?? null;
+  const login = useResumeStore((state) => state.login);
   const loginWithWechat = useResumeStore((state) => state.loginWithWechat);
+  const [passwordLoginEnabled, setPasswordLoginEnabled] = useState<boolean | null>(null);
+  const [showWechat, setShowWechat] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    api.authCapabilities()
+      .then(({ password_login_enabled }) => {
+        if (active) setPasswordLoginEnabled(password_login_enabled);
+      })
+      .catch(() => {
+        if (active) setPasswordLoginEnabled(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      await login(email, password);
+      navigateTo(next ?? "/resumes", { replace: true });
+    } catch (submitError) {
+      setError(normalizeAuthError((submitError as Error).message));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleWechatSuccess = async (user: User) => {
     await loginWithWechat(user);
     navigateTo(next ?? "/resumes", { replace: true });
   };
+
+  const showPasswordForm = passwordLoginEnabled === true && !showWechat;
+  const showWechatLogin = passwordLoginEnabled === false || showWechat;
 
   return (
     <main className="auth-entry min-h-screen bg-background p-3 text-foreground antialiased [font-synthesis:none]">
@@ -30,17 +69,85 @@ export function AuthPage({
         <section className="flex items-center rounded-md border border-border bg-surface px-6 py-12 sm:px-10 lg:px-14 lg:py-20 xl:px-20">
           <div className="mx-auto w-full max-w-[520px]">
             <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-              WeChat sign in
+              {showPasswordForm ? "Development sign in" : "WeChat sign in"}
             </span>
             <h1 className="mt-3 text-3xl font-medium tracking-[-0.04em] sm:text-4xl lg:text-[42px] lg:leading-[1.05] xl:text-[48px]">
-              微信扫码登录 LinkCV
+              {showPasswordForm ? "登录 LinkCV" : "微信扫码登录 LinkCV"}
             </h1>
             <p className="mt-3 text-base leading-snug text-text-secondary sm:text-lg">
-              使用微信扫描小程序码，并在小程序中确认本次登录。
+              {showPasswordForm
+                ? "开发环境支持使用邮箱和密码进入工作台。"
+                : "使用微信扫描小程序码，并在小程序中确认本次登录。"}
             </p>
-            <div className="mt-10 rounded-xl border border-border bg-surface-subtle p-6">
-              <WechatQrLogin onSuccess={(user) => void handleWechatSuccess(user)} />
-            </div>
+
+            {passwordLoginEnabled === null && (
+              <p className="mt-10 text-sm text-muted-foreground" role="status">
+                正在确认登录方式...
+              </p>
+            )}
+
+            {showPasswordForm && (
+              <>
+                <form className="mt-10 space-y-4" onSubmit={submit}>
+                  <TextField
+                    autoComplete="email"
+                    inputClassName="h-12 text-base"
+                    label="邮箱"
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="you@example.com"
+                    required
+                    type="email"
+                    value={email}
+                  />
+                  <TextField
+                    autoComplete="current-password"
+                    inputClassName="h-12 text-base"
+                    label="密码"
+                    minLength={8}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="至少 8 位"
+                    required
+                    type="password"
+                    value={password}
+                  />
+                  {error && (
+                    <p className="rounded-md border border-destructive bg-[var(--ui-destructive-subtle)] px-4 py-2.5 text-sm text-destructive" role="alert">
+                      {error}
+                    </p>
+                  )}
+                  <Button
+                    className="mt-6 h-12 w-full text-base"
+                    disabled={submitting}
+                    type="submit"
+                  >
+                    {submitting ? "登录中..." : "登录"}
+                  </Button>
+                </form>
+                <button
+                  className="mt-5 inline-flex items-center gap-1.5 bg-transparent p-0 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                  onClick={() => setShowWechat(true)}
+                  type="button"
+                >
+                  使用微信扫码登录
+                  <ArrowRight aria-hidden size={14} />
+                </button>
+              </>
+            )}
+
+            {showWechatLogin && (
+              <div className="mt-10 rounded-xl border border-border bg-surface-subtle p-6">
+                <WechatQrLogin onSuccess={(user) => void handleWechatSuccess(user)} />
+                {passwordLoginEnabled && (
+                  <button
+                    className="mx-auto mt-4 block bg-transparent p-0 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    onClick={() => setShowWechat(false)}
+                    type="button"
+                  >
+                    返回邮箱密码登录
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </section>
 
@@ -71,11 +178,19 @@ export function AuthPage({
               安全进入工作台。
             </h2>
             <p className="max-w-[420px] text-base leading-relaxed text-white/70 xl:text-lg">
-              普通账号由微信身份自动创建，无需填写注册或登录表单。
+              {showPasswordForm
+                ? "开发环境可使用已有账号调试；微信扫码登录仍可随时验证。"
+                : "普通账号由微信身份自动创建，无需填写注册或登录表单。"}
             </p>
           </div>
         </aside>
       </div>
     </main>
   );
+}
+
+function normalizeAuthError(error: string) {
+  if (error === "INVALID_CREDENTIALS") return "邮箱或密码不正确。";
+  if (error === "NOT_FOUND") return "当前环境未开放邮箱密码登录。";
+  return "登录失败，请稍后再试。";
 }

@@ -25,7 +25,7 @@ FastAPI 在 `apps/backend/src/linkcv/main.py` 以 `/api` 前缀挂载路由。Vi
 
 - MySQL 是用户、简历、结构化 JD 和治理数据的权威存储，表结构只通过 Alembic 迁移演进。
 - Web 登录态使用短 JWT access Cookie 与不透明 refresh Cookie；小程序使用 Bearer access 与 JSON refresh。Redis session 的 channel 阻止两端凭据混用并支持统一撤销。
-- 普通 Web 登录页只显示微信小程序码；管理员密码表单只存在于 `/admin/login`。小程序从公开的 runtime 配置读取 HTTPS API 根地址，第三方平台扩展配置可覆盖；开发版未配置时才回退本机 8000 端口。
+- 普通 Web 登录页由 `/api/auth/capabilities` 控制：Development 可使用邮箱密码或微信扫码，Production 只显示微信小程序码；管理员密码表单只存在于 `/admin/login`。小程序从公开的 runtime 配置读取 HTTPS API 根地址，第三方平台扩展配置可覆盖；开发版未配置时才回退本机 8000 端口。
 - 图片存储在私有 MinIO bucket 中；现有兼容资源位于 `users/<user-id>/assets/`，简历编辑器新增资源位于 `users/<user-id>/resumes/<resume-id>/assets/`，两者都由服务端生成对象键并在读取时校验所有权。
 - 原型 Express/SQLite 数据不迁移到 MySQL。
 

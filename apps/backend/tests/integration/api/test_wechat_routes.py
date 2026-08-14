@@ -61,6 +61,9 @@ def test_retired_public_identity_routes_are_absent_outside_test_scaffolding() ->
         database_url="sqlite+pysqlite:///:memory:",
         jwt_secret="integration-test-secret-with-32-bytes",
     )
+    # Exercise the production gate without weakening Settings' real-production
+    # secret validation for this isolated in-memory test.
+    settings.app_environment = "production"
     app = create_app(
         settings,
         storage=FakeStorage(),
@@ -68,6 +71,9 @@ def test_retired_public_identity_routes_are_absent_outside_test_scaffolding() ->
         create_schema=False,
     )
     with TestClient(app) as client:
+        assert client.get("/api/auth/capabilities").json() == {
+            "password_login_enabled": False
+        }
         assert client.post(
             "/api/auth/register",
             json={"email": "removed@example.test", "password": "password-123"},
@@ -81,6 +87,45 @@ def test_retired_public_identity_routes_are_absent_outside_test_scaffolding() ->
         assert "/api/auth/register" not in paths
         assert "/api/auth/login" not in paths
         assert "/api/account/wechat/bind-request" not in paths
+
+
+def test_development_environment_allows_password_login_but_not_registration() -> None:
+    settings = Settings(
+        app_environment="development",
+        database_url="sqlite+pysqlite:///:memory:",
+        jwt_secret="integration-test-secret-with-32-bytes",
+    )
+    app = create_app(
+        settings,
+        storage=FakeStorage(),
+        redis=FakeRedis(),
+        create_schema=True,
+    )
+    app.state.legacy_identity_test_routes = False
+    with app.state.session_factory() as session:
+        session.add(
+            User(
+                email="developer@example.test",
+                password_hash=hash_password("password-123"),
+                nickname="开发用户",
+            )
+        )
+        session.commit()
+
+    with TestClient(app) as client:
+        assert client.get("/api/auth/capabilities").json() == {
+            "password_login_enabled": True
+        }
+        login = client.post(
+            "/api/auth/login",
+            json={"email": "developer@example.test", "password": "password-123"},
+        )
+        assert login.status_code == 200
+        assert login.json()["user"]["email"] == "developer@example.test"
+        assert client.post(
+            "/api/auth/register",
+            json={"email": "new@example.test", "password": "password-123"},
+        ).status_code == 404
 
 
 def create_qrcode(client: TestClient) -> tuple[str, str, str]:

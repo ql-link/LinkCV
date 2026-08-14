@@ -32,6 +32,10 @@ class AuthResponse(BaseModel):
     user: UserResponse
 
 
+class AuthCapabilitiesResponse(BaseModel):
+    password_login_enabled: bool
+
+
 class MeResponse(BaseModel):
     user: UserResponse | None
 

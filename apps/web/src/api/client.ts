@@ -19,6 +19,10 @@ export type WeChatStatusResponse = {
   user: User | null;
 };
 
+export type AuthCapabilities = {
+  password_login_enabled: boolean;
+};
+
 export type UserProfile = User & {
   avatar_url: string | null;
   wechat_status: "unbound" | "bound" | "unavailable";
@@ -627,6 +631,13 @@ async function getCurrentUser(): Promise<{ user: User | null }> {
 
 export const api = {
   me: getCurrentUser,
+  authCapabilities: () =>
+    request<AuthCapabilities>("/api/auth/capabilities"),
+  login: (email: string, password: string) =>
+    request<{ user: User }>("/api/auth/login", {
+      method: "POST",
+      body: { email, password },
+    }),
   adminLogin: (email: string, password: string) =>
     request<{ user: User }>("/api/auth/admin-login", {
       method: "POST",
