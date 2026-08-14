@@ -73,7 +73,7 @@ export function App() {
       return;
     }
 
-    if (route.kind === "landing" || route.kind === "auth") {
+    if (route.kind === "auth") {
       navigateTo("/resumes", { replace: true });
     }
   }, [authStatus, route.kind]);
@@ -144,6 +144,19 @@ export function App() {
     return <div className="app-loading">正在加载简历工作台...</div>;
   }
 
+  if (route.kind === "landing") {
+    const landingDestination = authStatus === "authenticated"
+      ? "/resumes"
+      : null;
+
+    return (
+      <LandingPage
+        onLogin={() => navigateTo(landingDestination ?? authPath("login"))}
+        onStart={() => navigateTo(landingDestination ?? authPath("register"))}
+      />
+    );
+  }
+
   if (authStatus === "guest") {
     if (route.kind === "auth") {
       return <AuthPage key={`${route.mode}:${route.next ?? ""}`} initialMode={route.mode} next={route.next} />;
@@ -152,12 +165,7 @@ export function App() {
       return <ChangePasswordPage />;
     }
 
-    return (
-      <LandingPage
-        onLogin={() => navigateTo(authPath("login"))}
-        onStart={() => navigateTo(authPath("register"))}
-      />
-    );
+    return <div className="app-loading">正在进入首页...</div>;
   }
 
   if (
