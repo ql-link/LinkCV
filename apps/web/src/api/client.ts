@@ -171,7 +171,6 @@ export type DatasetRecord = {
   file_name: string;
   file_format: string;
   file_size: number;
-  sha256: string;
   created_at: string;
 };
 

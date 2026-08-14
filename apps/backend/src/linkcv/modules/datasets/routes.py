@@ -43,7 +43,6 @@ def dataset_record(dataset: UserDataset) -> UserDatasetRecord:
         file_name=dataset.file_name,
         file_format=dataset.file_format,
         file_size=dataset.file_size,
-        sha256=dataset.sha256,
         created_at=dataset.created_at,
     )
 

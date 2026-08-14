@@ -51,7 +51,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0013` 为 `resumes` 增加分享字段：`share_token`（VARCHAR(64)，全局唯一索引）、`share_visibility`（VARCHAR(16)，`private|public`）、`share_expires_at`（可空，UTC 过期时间）和 `share_created_at`。两个 CHECK 约束保证分享字段要么全部为空（未分享）、要么全部非空（已分享），且可见性只允许 `private/public`。分享不单独建表、不落内容快照，公开读取时实时取 `resume_versions` 中 `version_no` 最大的正式版本；down 迁移只删除新增列与约束，不触碰分享期间创建的版本数据。
 
-`0018` 新增 `user_dataset` 用户知识库数据集表，与简历文件导入链路分开。每行记录一个用户上传的单个资料文件元信息：所属用户外键、安全化后的文件名、四类格式（docx/pdf/md/txt，受 CHECK 约束）、MIME、字节大小、对象存储对象键（唯一）和内容 SHA-256；外键 `ON DELETE RESTRICT`，删除用户不隐式级联删除资料记录。`POST /api/datasets` 先校验格式与大小（上限 `DATASET_UPLOAD_MAX_BYTES`，默认 10MB）并把文件上传到对象存储（对象键由服务端生成，强制以 `users/{uid}/datasets/` 为前缀），上传成功后才写库，写库失败会尽力删除已上传对象；`GET /api/datasets` 按用户过滤、按上传时间倒序。本期不做分片、RAG、删除、下载、预览和去重，同一文件重复上传生成新记录。
+`0018` 新增 `user_dataset` 用户知识库数据集表，与简历文件导入链路分开。每行记录一个用户上传的单个资料文件元信息：所属用户外键、安全化后的文件名、四类格式（docx/pdf/md/txt，受 CHECK 约束）、MIME、字节大小、对象存储对象键（唯一）和内容 SHA-256；外键 `ON DELETE RESTRICT`，删除用户不隐式级联删除资料记录。`POST /api/datasets` 先校验格式与大小（上限 `DATASET_UPLOAD_MAX_BYTES`，默认 10MB）并把文件上传到对象存储（对象键由服务端生成，强制以 `users/{uid}/datasets/` 为前缀），上传成功后才写库，写库失败会尽力删除已上传对象；`GET /api/datasets` 按用户过滤、按上传时间倒序。`sha256` 与对象键保留在库内供内部追踪，但上传/列表接口的响应只返回 `id/file_name/file_format/file_size/created_at`，不暴露对象存储路径与内容摘要等内部字段。本期不做分片、RAG、删除、下载、预览和去重，同一文件重复上传生成新记录。
 
 ### 微信账号（绑定与扫码登录）
 

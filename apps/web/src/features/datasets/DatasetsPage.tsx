@@ -4,8 +4,21 @@ import { api, ApiRequestError, type DatasetRecord } from "../../api/client";
 import { Button, FeedbackNotice } from "@/components/ui";
 
 const MAX_DATASET_BYTES = 10 * 1024 * 1024;
+const SUPPORTED_DATASET_EXTENSIONS = ["docx", "pdf", "md", "txt"];
 
 type Notice = { kind: "success" | "error"; message: string } | null;
+
+function datasetFormatError(file: File): string | null {
+  if (file.size === 0) return "文件为空，请重新选择。";
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (!SUPPORTED_DATASET_EXTENSIONS.includes(extension)) {
+    return "仅支持 DOCX、PDF、Markdown 和 TXT 文件。";
+  }
+  if (file.size > MAX_DATASET_BYTES) {
+    return "文件过大，最大支持 10 MB。";
+  }
+  return null;
+}
 
 export function datasetUploadErrorMessage(error: unknown, fallback: string) {
   if (!(error instanceof ApiRequestError)) return fallback;
@@ -51,6 +64,7 @@ export function DatasetsPage() {
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
   const [fading, setFading] = useState(false);
 
@@ -89,21 +103,25 @@ export function DatasetsPage() {
 
   const pickFile = (file: File | undefined) => {
     if (!file) return;
-    if (file.size > MAX_DATASET_BYTES) {
-      setNotice({ kind: "error", message: "文件过大，最大支持 10 MB。" });
+    const error = datasetFormatError(file);
+    if (error) {
+      setNotice({ kind: "error", message: error });
       return;
     }
-    void uploadFile(file);
+    setPendingFile(file);
+    setNotice(null);
   };
 
-  const uploadFile = async (file: File) => {
-    if (uploading) return;
+  const confirmUpload = async () => {
+    if (!pendingFile || uploading) return;
+    const file = pendingFile;
     setUploading(true);
     setNotice(null);
     try {
       await api.uploadDataset(file);
       await refresh();
       setNotice({ kind: "success", message: `已上传「${file.name}」` });
+      setPendingFile(null);
     } catch (error) {
       setNotice({ kind: "error", message: datasetUploadErrorMessage(error, "上传失败，请稍后重试。") });
     } finally {
@@ -111,11 +129,17 @@ export function DatasetsPage() {
     }
   };
 
+  const cancelUpload = () => {
+    setPendingFile(null);
+    setNotice(null);
+  };
+
   return (
     <main className="dashboard-content datasets-page">
       <header className="dashboard-header">
         <h1>资料库</h1>
         <div className="dashboard-header-actions">
+          <span className="datasets-hint">支持 DOCX、PDF、Markdown 和 TXT，单个文件不超过 10 MB</span>
           <input
             ref={fileInputRef}
             className="visually-hidden"
@@ -141,6 +165,31 @@ export function DatasetsPage() {
       </header>
 
       <div className="datasets-body">
+        {pendingFile && !uploading && (
+          <section className="datasets-pending" aria-label="待上传的文件">
+            <span className="dataset-icon" aria-hidden="true">
+              <FileText size={18} />
+            </span>
+            <span className="dataset-meta">
+              <strong className="dataset-name">{pendingFile.name}</strong>
+              <small className="dataset-sub">
+                <span className="dataset-format">
+                  {(pendingFile.name.split(".").pop() ?? "").toUpperCase()}
+                </span>
+                <span>{formatFileSize(pendingFile.size)}</span>
+              </small>
+            </span>
+            <span className="datasets-pending-actions">
+              <Button variant="default" size="sm" onClick={() => void confirmUpload()}>
+                上传
+              </Button>
+              <Button variant="ghost" size="sm" onClick={cancelUpload}>
+                取消
+              </Button>
+            </span>
+          </section>
+        )}
+
         {loading && <div className="app-loading">正在加载资料...</div>}
 
         {!loading && loadFailed && (

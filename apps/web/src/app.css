@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   color: var(--ui-foreground);
   background: var(--ui-background);
   font-family: var(--ui-font-sans);
@@ -1975,6 +1975,34 @@ select:not([data-slot]):focus-visible,
 .datasets-list {
   display: grid;
   gap: 10px;
+}
+
+.datasets-hint {
+  color: var(--muted);
+  font-size: 13px;
+  margin-right: 4px;
+}
+
+.datasets-pending {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  padding: 14px 18px;
+  box-shadow: var(--shadow-sm);
+}
+
+.datasets-pending .dataset-meta {
+  flex: 1;
+}
+
+.datasets-pending-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 
 .dataset-row {

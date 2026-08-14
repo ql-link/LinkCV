@@ -147,12 +147,11 @@ RabbitMQ 是默认 Broker，使用固定 `resume.import` routing key；Kafka 兼
   "file_name": "notes.md",
   "file_format": "md",
   "file_size": 12,
-  "sha256": "…",
   "created_at": "…"
 }
 ```
 
-`GET /api/datasets` 返回当前登录用户自己的资料记录，按上传时间倒序（`{datasets: [...]}`）。两个接口都要求登录（未登录返回 `401 UNAUTHORIZED`），用户只能看到自己的记录。
+`GET /api/datasets` 返回当前登录用户自己的资料记录，按上传时间倒序（`{datasets: [...]}`）。两个接口都要求登录（未登录返回 `401 UNAUTHORIZED`），用户只能看到自己的记录。响应不包含对象存储路径、内容摘要（sha256）等内部字段。
 
 文件名非法返回 `400 INVALID_DATASET_FILENAME`，空文件返回 `400 EMPTY_DATASET_FILE`，不支持格式返回 `400 UNSUPPORTED_DATASET_FORMAT`，超过大小上限返回 `413 DATASET_TOO_LARGE`。对象存储上传失败返回 `502 DATASET_UPLOAD_FAILED` 且不落库；对象已上传但元信息写入失败返回 `500 DATASET_RECORD_FAILED`，已上传对象会被尽力清理。同一文件允许重复上传并生成新记录（不做去重或幂等）。
 
