@@ -1,17 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ShieldCheck } from "lucide-react";
 import { ApiRequestError } from "../../api/client";
-import { Button, TextInput } from "../../components/ds";
+import { Button, TextField } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { authPath, navigateTo } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
 
 const MIN_PASSWORD_LENGTH = 8;
 
+export function isStrongPassword(password: string) {
+  return (
+    password.length >= MIN_PASSWORD_LENGTH &&
+    /[A-Za-z]/.test(password) &&
+    /\d/.test(password)
+  );
+}
+
 export function passwordErrorMessage(error: unknown) {
   if (error instanceof ApiRequestError) {
     if (error.message === "INVALID_CURRENT_PASSWORD") return "当前密码不正确。";
     if (error.message === "WEAK_PASSWORD")
-      return `新密码至少需要 ${MIN_PASSWORD_LENGTH} 位。`;
+      return `新密码至少需要 ${MIN_PASSWORD_LENGTH} 位，且同时包含字母和数字。`;
     if (error.message === "PASSWORD_MISMATCH")
       return "两次输入的新密码不一致。";
     if (error.message === "PASSWORD_UNCHANGED")
@@ -32,6 +41,7 @@ export function ChangePasswordPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [changed, setChanged] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     if (authStatus === "guest" && !changedRef.current) {
@@ -39,24 +49,27 @@ export function ChangePasswordPage() {
     }
   }, [authStatus]);
 
-  const submit = async () => {
+  const validate = (): string | null => {
+    if (!currentPassword) return "请输入当前密码。";
+    if (!isStrongPassword(newPassword))
+      return `新密码至少需要 ${MIN_PASSWORD_LENGTH} 位，且同时包含字母和数字。`;
+    if (newPassword !== confirmPassword) return "两次输入的新密码不一致。";
+    if (newPassword === currentPassword) return "新密码不能与当前密码相同。";
+    return null;
+  };
+
+  const requestConfirm = () => {
     setError(null);
-    if (!currentPassword) {
-      setError("请输入当前密码。");
+    const problem = validate();
+    if (problem) {
+      setError(problem);
       return;
     }
-    if (newPassword.length < MIN_PASSWORD_LENGTH) {
-      setError(`新密码至少需要 ${MIN_PASSWORD_LENGTH} 位。`);
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError("两次输入的新密码不一致。");
-      return;
-    }
-    if (newPassword === currentPassword) {
-      setError("新密码不能与当前密码相同。");
-      return;
-    }
+    setShowConfirm(true);
+  };
+
+  const submit = async () => {
+    setShowConfirm(false);
     setSubmitting(true);
     try {
       await changePassword({ currentPassword, newPassword, confirmPassword });
@@ -98,22 +111,22 @@ export function ChangePasswordPage() {
                 修改成功后，所有设备上的登录状态都会立即失效。
               </p>
               <div className="account-fields">
-                <TextInput
+                <TextField
                   label="当前密码"
                   type="password"
                   value={currentPassword}
                   autoComplete="current-password"
                   onChange={(event) => setCurrentPassword(event.target.value)}
                 />
-                <TextInput
+                <TextField
                   label="新密码"
                   type="password"
                   value={newPassword}
                   autoComplete="new-password"
-                  hint={`至少 ${MIN_PASSWORD_LENGTH} 位`}
+                  hint={`至少 ${MIN_PASSWORD_LENGTH} 位，且同时包含字母和数字`}
                   onChange={(event) => setNewPassword(event.target.value)}
                 />
-                <TextInput
+                <TextField
                   label="确认新密码"
                   type="password"
                   value={confirmPassword}
@@ -129,7 +142,7 @@ export function ChangePasswordPage() {
                 >
                   取消
                 </Button>
-                <Button disabled={submitting} onClick={() => void submit()}>
+                <Button disabled={submitting} onClick={requestConfirm}>
                   {submitting ? "提交中..." : "确认修改"}
                 </Button>
               </div>
@@ -137,6 +150,19 @@ export function ChangePasswordPage() {
           )}
         </section>
       </div>
+
+      {showConfirm && (
+        <ConfirmDialog
+          kind="warning"
+          title="确认修改密码？"
+          description="修改成功后，所有设备上的登录状态都会立即失效，需要用新密码重新登录。"
+          confirmLabel="确认修改"
+          busyLabel="提交中..."
+          busy={submitting}
+          onCancel={() => setShowConfirm(false)}
+          onConfirm={() => void submit()}
+        />
+      )}
     </main>
   );
 }

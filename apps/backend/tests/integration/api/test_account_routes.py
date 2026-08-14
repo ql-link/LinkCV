@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from linkcv.core.config import Settings
 from linkcv.core.security import verify_password
+from linkcv.integrations.wechat_client import WechatApiError
 from linkcv.main import create_app
 from linkcv.domain.resume_document import default_resume_document
 from linkcv.domain.resume_style import default_resume_style
@@ -18,6 +19,8 @@ def build_test_app():
     settings = Settings(
         database_url="sqlite+pysqlite:///:memory:",
         jwt_secret="account-test-secret-with-32-bytes",
+        wechat_appid=None,
+        wechat_secret=None,
     )
     app = create_app(
         settings,
@@ -37,6 +40,41 @@ def build_test_app():
         session.commit()
         app.state.test_template_id = str(template.id)
     return app
+
+
+class FakeWechatClient:
+    def __init__(self, openids: dict[str, str] | None = None, fail: bool = False) -> None:
+        self.openids = openids or {}
+        self.fail = fail
+
+    def code_to_openid(self, code: str) -> str:
+        if self.fail:
+            raise WechatApiError("WECHAT_SERVICE_UNAVAILABLE")
+        return self.openids.get(code, f"openid-{code}")
+
+    def mini_program_qrcode(self, scene: str) -> bytes:
+        if self.fail:
+            raise WechatApiError("WECHAT_QRCODE_FAILED")
+        return b"\x89PNG-" + scene.encode("ascii")
+
+
+def build_wechat_test_app() -> tuple[object, FakeWechatClient]:
+    settings = Settings(
+        database_url="sqlite+pysqlite:///:memory:",
+        jwt_secret="account-test-secret-with-32-bytes",
+        wechat_appid="wx-test-appid",
+        wechat_secret="wechat-test-secret",
+        wechat_qr_page="pages/bind/bind",
+    )
+    wechat = FakeWechatClient()
+    app = create_app(
+        settings,
+        storage=FakeStorage(),
+        redis=FakeRedis(),
+        wechat_client=wechat,
+        create_schema=True,
+    )
+    return app, wechat
 
 
 def _avatar_data_url(payload: bytes = b"avatar-bytes") -> str:
@@ -283,3 +321,158 @@ def test_account_routes_reject_unauthenticated_users() -> None:
             ).status_code
             == 401
         )
+
+
+def test_change_password_rejects_letters_only_password() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        client.post(
+            "/api/auth/register",
+            json={"email": "strength@example.com", "password": "password-123"},
+        )
+        letters_only = client.post(
+            "/api/account/change-password",
+            json={
+                "current_password": "password-123",
+                "new_password": "onlyletters",
+                "confirm_password": "onlyletters",
+            },
+        )
+        assert letters_only.status_code == 400
+        assert letters_only.json() == {"error": "WEAK_PASSWORD"}
+
+
+def test_profile_reports_wechat_unavailable_without_config() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        client.post(
+            "/api/auth/register",
+            json={"email": "nowx@example.com", "password": "password-123"},
+        )
+        profile = client.get("/api/account/profile").json()["user"]
+        assert profile["wechat_status"] == "unavailable"
+        assert profile["wechat_bound_at"] is None
+
+
+def test_wechat_bind_full_flow() -> None:
+    app, _wechat = build_wechat_test_app()
+    with TestClient(app) as client:
+        client.post(
+            "/api/auth/register",
+            json={"email": "bind@example.com", "password": "password-123"},
+        )
+        assert (
+            client.get("/api/account/profile").json()["user"]["wechat_status"]
+            == "unbound"
+        )
+
+        requested = client.post("/api/account/wechat/bind-request")
+        assert requested.status_code == 200
+        body = requested.json()
+        ticket = body["ticket"]
+        assert base64.b64decode(body["qrcode_data"]).startswith(b"\x89PNG-")
+        assert client.get(f"/api/account/wechat/bind-status?ticket={ticket}").json() == {
+            "status": "pending"
+        }
+
+        confirmed = client.post(
+            "/api/account/wechat/bind-confirm",
+            json={"ticket": ticket, "code": "code-a"},
+        )
+        assert confirmed.status_code == 200
+        assert confirmed.json() == {"ok": True}
+        assert client.get(f"/api/account/wechat/bind-status?ticket={ticket}").json() == {
+            "status": "bound"
+        }
+        profile = client.get("/api/account/profile").json()["user"]
+        assert profile["wechat_status"] == "bound"
+        assert profile["wechat_bound_at"] is not None
+
+        with app.state.session_factory() as session:
+            row = session.scalar(select(User).where(User.email == "bind@example.com"))
+            assert row is not None
+            assert row.wechat_openid == "openid-code-a"
+
+        # Already-bound users cannot request another binding.
+        re_request = client.post("/api/account/wechat/bind-request")
+        assert re_request.status_code == 400
+        assert re_request.json() == {"error": "WECHAT_ALREADY_BOUND"}
+
+
+def test_wechat_bind_rejects_unknown_ticket() -> None:
+    app, _wechat = build_wechat_test_app()
+    with TestClient(app) as client:
+        client.post(
+            "/api/auth/register",
+            json={"email": "ticket@example.com", "password": "password-123"},
+        )
+        confirmed = client.post(
+            "/api/account/wechat/bind-confirm",
+            json={"ticket": "missing-ticket", "code": "code-a"},
+        )
+        assert confirmed.status_code == 400
+        assert confirmed.json() == {"error": "BIND_TICKET_INVALID"}
+
+
+def test_wechat_bind_conflicts_with_another_user() -> None:
+    app, wechat = build_wechat_test_app()
+    wechat.openids = {"code-shared": "openid-shared"}
+    with TestClient(app) as client:
+        client.post(
+            "/api/auth/register",
+            json={"email": "first@example.com", "password": "password-123"},
+        )
+        first_ticket = client.post("/api/account/wechat/bind-request").json()["ticket"]
+        assert (
+            client.post(
+                "/api/account/wechat/bind-confirm",
+                json={"ticket": first_ticket, "code": "code-shared"},
+            ).status_code
+            == 200
+        )
+
+        # A second account tries to bind the same openid; it must be rejected.
+        client.post(
+            "/api/auth/register",
+            json={"email": "second@example.com", "password": "password-123"},
+        )
+        second_ticket = client.post("/api/account/wechat/bind-request").json()["ticket"]
+        conflict = client.post(
+            "/api/account/wechat/bind-confirm",
+            json={"ticket": second_ticket, "code": "code-shared"},
+        )
+        assert conflict.status_code == 409
+        assert conflict.json() == {"error": "WECHAT_ALREADY_BOUND"}
+
+        with app.state.session_factory() as session:
+            second = session.scalar(select(User).where(User.email == "second@example.com"))
+            assert second is not None
+            assert second.wechat_openid is None
+            first = session.scalar(select(User).where(User.email == "first@example.com"))
+            assert first is not None
+            assert first.wechat_openid == "openid-shared"
+
+
+def test_wechat_bind_unavailable_without_config() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        client.post(
+            "/api/auth/register",
+            json={"email": "wxoff@example.com", "password": "password-123"},
+        )
+        requested = client.post("/api/account/wechat/bind-request")
+        assert requested.status_code == 503
+        assert requested.json() == {"error": "WECHAT_SERVICE_UNAVAILABLE"}
+
+
+def test_wechat_bind_surfaces_wechat_api_failure() -> None:
+    app, wechat = build_wechat_test_app()
+    wechat.fail = True
+    with TestClient(app) as client:
+        client.post(
+            "/api/auth/register",
+            json={"email": "wxdown@example.com", "password": "password-123"},
+        )
+        requested = client.post("/api/account/wechat/bind-request")
+        assert requested.status_code == 503
+        assert requested.json() == {"error": "WECHAT_SERVICE_UNAVAILABLE"}

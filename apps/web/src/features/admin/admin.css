@@ -29,9 +29,9 @@
 .admin-login-frame { display: grid; width: min(100%, 68rem); min-height: min(43rem, calc(100vh - clamp(2rem, 8vw, 7rem))); grid-template-columns: minmax(21rem, .88fr) minmax(27rem, 1.12fr); overflow: hidden; border: 1px solid color-mix(in srgb, var(--admin-line) 76%, transparent); border-radius: clamp(1.25rem, 2vw, 1.75rem); background: color-mix(in srgb, var(--surface-raised) 80%, transparent); box-shadow: 0 2rem 5rem rgba(29, 29, 31, .12), inset 0 1px 0 color-mix(in srgb, white 76%, transparent); backdrop-filter: blur(32px) saturate(150%); -webkit-backdrop-filter: blur(32px) saturate(150%); will-change: transform, opacity; }
 .admin-login-context { position: relative; display: flex; min-height: 100%; flex-direction: column; overflow: hidden; background: #1d1d1f; padding: clamp(2rem, 3.4vw, 3.35rem); color: #f5f5f7; }
 .admin-wordmark, .sidebar-brand { display: inline-flex; align-items: center; gap: .7rem; color: inherit; font-size: 1.08rem; font-weight: 720; letter-spacing: -.02em; text-decoration: none; }
-.admin-login-context .ds-brand { color: #f5f5f7; }
-.admin-login-context .ds-brand-mark { background: #f5f5f7; }
-.admin-login-context .ds-brand-mark img { filter: invert(1); }
+.admin-login-context .ui-brand { color: #f5f5f7; }
+.admin-login-context .ui-brand-mark { background: #f5f5f7; }
+.admin-login-context .ui-brand-mark img { filter: brightness(0); }
 .login-context-copy { position: relative; z-index: 1; max-width: 25rem; margin: auto 0; padding: 3rem 0; will-change: transform, opacity; }
 .eyebrow, .page-eyebrow { display: inline-flex; align-items: center; gap: .45rem; color: var(--admin-muted); font-size: .72rem; font-weight: 680; letter-spacing: .08em; line-height: 1.2; text-transform: uppercase; }
 .login-access-label { display: inline-flex; align-items: center; gap: .5rem; color: rgba(245,245,247,.58); font-size: .66rem; font-weight: 700; letter-spacing: .11em; }

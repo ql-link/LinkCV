@@ -17,7 +17,7 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    email: str
+    email: str | None
     nickname: str
     is_admin: bool
     avatar_url: str | None = None
@@ -44,14 +44,30 @@ class UserProfileResponse(BaseModel):
     """当前用户资料，头像只暴露经 /api/assets 转发的相对 URL。"""
 
     id: str
-    email: str
+    email: str | None
     nickname: str
     is_admin: bool
     avatar_url: str | None = None
+    wechat_status: str = "unbound"
+    wechat_bound_at: datetime | None = None
 
 
 class ProfileUpdateRequest(BaseModel):
     nickname: str
+
+
+class WechatBindRequestResponse(BaseModel):
+    ticket: str
+    qrcode_data: str
+
+
+class WechatBindConfirmRequest(BaseModel):
+    ticket: str
+    code: str
+
+
+class WechatBindStatusResponse(BaseModel):
+    status: str
 
 
 class RecentResumeSummary(BaseModel):

@@ -1,0 +1,13 @@
+.auth-entry {
+  isolation: isolate;
+}
+
+.auth-entry-visual {
+  contain: paint;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-entry-shader {
+    display: none;
+  }
+}

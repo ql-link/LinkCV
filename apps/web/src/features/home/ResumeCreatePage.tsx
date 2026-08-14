@@ -1,7 +1,7 @@
 import { ArrowLeft, FilePlus2 } from "lucide-react";
 import { useState } from "react";
 import { ApiRequestError, type ResumeTemplate } from "../../api/client";
-import { Button, Toast } from "../../components/ds";
+import { Button, FeedbackNotice } from "@/components/ui";
 import { editorPath, navigateTo } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
 import { TemplatePicker } from "./TemplatePicker";
@@ -63,7 +63,7 @@ export function ResumeCreatePage() {
         />
         <small>同一账号内名称不能重复；系统会清理首尾和连续空格。</small>
       </section>
-      {error && <Toast kind="error">{error}</Toast>}
+      {error && <FeedbackNotice kind="error">{error}</FeedbackNotice>}
       <footer className="resume-create-actions">
         <Button variant="secondary" onClick={() => navigateTo("/resumes")}>取消</Button>
         <Button icon={<FilePlus2 size={16} />} disabled={submitting} onClick={() => void submit()}>

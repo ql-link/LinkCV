@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Archive, BriefcaseBusiness, Download, MapPin, Plus, RotateCcw, Search, Trash2 } from "lucide-react";
 import { api, ApiRequestError, type JobDescriptionSummary } from "../../api/client";
-import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { Button } from "../../components/ds";
+import { Button, ConfirmDialog } from "@/components/ui";
 import { jobDetailPath, navigateTo } from "../../routing";
 import { PluginInstallDialog } from "./PluginInstallDialog";
 import "./jobs.css";

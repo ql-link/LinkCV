@@ -253,6 +253,42 @@ class Settings(BaseSettings):
         gt=0,
     )
 
+    wechat_appid: str | None = Field(default=None, alias="WECHAT_APPID")
+    wechat_secret: SecretStr | None = Field(default=None, alias="WECHAT_SECRET")
+    wechat_qr_page: str = Field(
+        default="pages/bind/bind",
+        alias="WECHAT_QR_PAGE",
+        min_length=1,
+    )
+    wechat_login_page: str = Field(
+        default="pages/login/index",
+        alias="WECHAT_LOGIN_PAGE",
+        min_length=1,
+    )
+    wechat_bind_ticket_ttl_seconds: int = Field(
+        default=300,
+        alias="WECHAT_BIND_TICKET_TTL_SECONDS",
+        ge=60,
+        le=900,
+    )
+    wechat_api_timeout_seconds: float = Field(
+        default=5,
+        alias="WECHAT_API_TIMEOUT_SECONDS",
+        gt=0,
+    )
+    wechat_qrcode_requests_per_minute: int = Field(
+        default=10,
+        alias="WECHAT_QRCODE_REQUESTS_PER_MINUTE",
+        ge=1,
+        le=60,
+    )
+    wechat_scene_ttl_seconds: int = Field(
+        default=300,
+        alias="WECHAT_SCENE_TTL_SECONDS",
+        ge=30,
+        le=600,
+    )
+
     linkparse_base_url: str = Field(
         default="http://100.86.10.52:18743",
         alias="LINKPARSE_BASE_URL",
@@ -298,6 +334,18 @@ class Settings(BaseSettings):
     )
 
     web_dist_dir: Path | None = Field(default=None, alias="WEB_DIST_DIR")
+
+    @property
+    def wechat_enabled(self) -> bool:
+        secret = (
+            self.wechat_secret.get_secret_value() if self.wechat_secret else None
+        )
+        return bool(
+            self.wechat_appid
+            and secret
+            and not _is_placeholder(self.wechat_appid)
+            and not _is_placeholder(secret)
+        )
 
     @property
     def sqlalchemy_url(self) -> str:

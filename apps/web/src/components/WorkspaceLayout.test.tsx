@@ -1,13 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useResumeStore } from "../store/resumeStore";
 import { WorkspaceLayout, WorkspaceSidebar } from "./WorkspaceLayout";
 
-const originalLogout = useResumeStore.getState().logout;
-
 afterEach(() => {
   vi.restoreAllMocks();
-  useResumeStore.setState({ logout: originalLogout });
   window.history.replaceState(null, "", "/");
 });
 
@@ -44,33 +41,14 @@ describe("WorkspaceSidebar", () => {
     expect(`${window.location.pathname}${window.location.search}`).toBe("/account");
   });
 
-  it("从工作区退出登录后返回欢迎页", async () => {
-    const logout = vi.fn().mockResolvedValue(undefined);
+  it("侧边栏不再提供退出登录入口，退出统一收敛到用户中心", () => {
     useResumeStore.setState({
       user: { id: "1", email: "user@example.test", nickname: "测试用户", is_admin: false, avatar_url: null },
-      logout,
     });
-    window.history.replaceState(null, "", "/resumes");
 
     render(<WorkspaceLayout active="resumes"><div>简历列表</div></WorkspaceLayout>);
-    fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
-
-    await waitFor(() => expect(logout).toHaveBeenCalledOnce());
-    expect(window.location.pathname).toBe("/");
-  });
-
-  it("退出接口失败时保留当前页面并显示错误", async () => {
-    const logout = vi.fn().mockRejectedValue(new Error("network error"));
-    useResumeStore.setState({
-      user: { id: "1", email: "user@example.test", nickname: "测试用户", is_admin: false, avatar_url: null },
-      logout,
-    });
-    window.history.replaceState(null, "", "/resumes");
-
-    render(<WorkspaceLayout active="resumes"><div>简历列表</div></WorkspaceLayout>);
-    fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("退出登录失败");
-    expect(window.location.pathname).toBe("/resumes");
+    expect(screen.queryByRole("button", { name: "退出登录" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "退出" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /测试用户/ })).toBeInTheDocument();
   });
 });

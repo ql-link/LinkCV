@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, type ResumeShareState } from "../../api/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { api, type PublicSharePayload, type ResumeShareState } from "../../api/client";
 import { SharePanel } from "./SharePanel";
 
 vi.mock("../../api/client", async (importOriginal) => {
@@ -13,6 +13,7 @@ vi.mock("../../api/client", async (importOriginal) => {
       createShare: vi.fn(),
       updateShare: vi.fn(),
       deleteShare: vi.fn(),
+      fetchPublicShare: vi.fn(),
     },
   };
 });
@@ -21,6 +22,7 @@ const mockedGetState = vi.mocked(api.getShareState);
 const mockedCreate = vi.mocked(api.createShare);
 const mockedUpdate = vi.mocked(api.updateShare);
 const mockedDelete = vi.mocked(api.deleteShare);
+const mockedFetchPublic = vi.mocked(api.fetchPublicShare);
 
 const shareState: ResumeShareState = {
   share_token: "token_abc",
@@ -28,6 +30,16 @@ const shareState: ResumeShareState = {
   share_expires_at: null,
   share_created_at: "2026-08-05T08:00:00Z",
 };
+
+const publicPayload = {
+  data: {} as PublicSharePayload["data"],
+  style: {} as PublicSharePayload["style"],
+  sharer: { nickname: "于晏", avatar_url: null },
+} satisfies PublicSharePayload;
+
+beforeEach(() => {
+  mockedFetchPublic.mockResolvedValue(publicPayload);
+});
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -202,6 +214,95 @@ describe("SharePanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "隐藏" }));
     expect(screen.getByDisplayValue(/\/share\/toke\*\*\*\*\*_abc$/)).toBeInTheDocument();
+  });
+
+  it("重新生成链接需二次确认，旧链接作废且保留配置", async () => {
+    mockedGetState.mockResolvedValue({ share: shareState });
+    mockedCreate.mockResolvedValue({ share: { ...shareState, share_token: "token_new" } });
+    render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "重新生成链接" })).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "重新生成链接" }));
+    const dialog = await screen.findByRole("dialog", { name: "重新生成分享链接？" });
+    expect(dialog).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "确认重新生成" }));
+
+    await waitFor(() =>
+      expect(mockedCreate).toHaveBeenCalledWith("1", {
+        visibility: "public",
+        expires_at: null,
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByDisplayValue(/\/share\/toke\*\*\*\*\*_new$/)).toBeInTheDocument(),
+    );
+  });
+
+  it("在重新生成确认弹窗取消则不生成", async () => {
+    mockedGetState.mockResolvedValue({ share: shareState });
+    render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "重新生成链接" })).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "重新生成链接" }));
+    const dialog = await screen.findByRole("dialog", { name: "重新生成分享链接？" });
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+
+    expect(dialog).not.toBeInTheDocument();
+    expect(mockedCreate).not.toHaveBeenCalled();
+  });
+
+  it("公共链接探测成功后显示链接可用", async () => {
+    mockedGetState.mockResolvedValue({ share: shareState });
+    render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("链接当前可用"),
+    );
+    expect(mockedFetchPublic).toHaveBeenCalledWith("token_abc");
+  });
+
+  it("链接过期时显示已过期，不发起探测", async () => {
+    mockedGetState.mockResolvedValue({
+      share: {
+        ...shareState,
+        share_expires_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      },
+    });
+    render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("链接已过期"),
+    );
+    expect(mockedFetchPublic).not.toHaveBeenCalled();
+  });
+
+  it("公共链接探测失败时显示链接已失效", async () => {
+    mockedGetState.mockResolvedValue({ share: shareState });
+    mockedFetchPublic.mockRejectedValue(new Error("unavailable"));
+    render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("链接已失效"),
+    );
+  });
+
+  it("仅自己可见链接不进行公开探测但视为可用", async () => {
+    mockedGetState.mockResolvedValue({
+      share: { ...shareState, share_visibility: "private" },
+    });
+    render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("链接当前可用"),
+    );
+    expect(mockedFetchPublic).not.toHaveBeenCalled();
   });
 
   it("删除链接需二次确认并清空分享状态", async () => {

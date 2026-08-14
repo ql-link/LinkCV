@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { JobDuplicateDetails } from "../../api/client";
-import { Button } from "../../components/ds";
+import { Button } from "@/components/ui";
 
 type DuplicateAction = "restore" | "update" | "cancel";
 

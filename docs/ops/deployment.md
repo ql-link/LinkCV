@@ -53,7 +53,7 @@ Production Pipeline 会把仓库中的非敏感 `.env.production`、Compose 和 
 
 ## CI
 
-`.github/workflows/quality.yml` 在面向 `dev`、`master` 的 PR 和对应分支 push 上执行根级 `npm run check`。本地和 CI 复用同一质量入口。
+`.github/workflows/quality.yml` 在面向 `dev`、`release`、`master` 的 PR 和对应分支 push 上执行根级 `npm run check`。业务需求先由独立业务分支合入 `release`，合并后的 `release` push 检查成功才算 Release 测试通过；随后仍由同一业务分支向 `master` 提 PR，不使用 `release -> master` PR。本地和 CI 复用同一质量入口，完整分支规则见 [本地开发与配置](development.md#分支与发布流程)。
 
 ## 回滚
 

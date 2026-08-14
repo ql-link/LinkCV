@@ -1,8 +1,8 @@
-import { useState, type ReactNode } from "react";
-import { BriefcaseBusiness, Database, FileText, LayoutTemplate, LogOut, UserRound } from "lucide-react";
+import type { ReactNode } from "react";
+import { BriefcaseBusiness, Database, FileText, LayoutTemplate, UserRound } from "lucide-react";
 import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
-import { Brand } from "./ds";
+import { Brand } from "@/components/ui";
 
 export type WorkspaceSection = "resumes" | "templates" | "jobs" | "datasets" | "account";
 
@@ -11,9 +11,6 @@ type WorkspaceSidebarProps = {
   email: string;
   nickname?: string;
   avatarUrl?: string | null;
-  loggingOut?: boolean;
-  logoutError?: string | null;
-  onLogout?: () => void;
 };
 
 export function WorkspaceSidebar({
@@ -21,9 +18,6 @@ export function WorkspaceSidebar({
   email,
   nickname,
   avatarUrl,
-  loggingOut = false,
-  logoutError = null,
-  onLogout,
 }: WorkspaceSidebarProps) {
   const displayName = nickname || email;
   return (
@@ -83,20 +77,6 @@ export function WorkspaceSidebar({
             <small className="account-email">{email}</small>
           </span>
         </button>
-        {onLogout && (
-          <button
-            className="dashboard-logout-button"
-            type="button"
-            disabled={loggingOut}
-            onClick={onLogout}
-            aria-label={loggingOut ? "正在退出登录" : "退出登录"}
-            title={loggingOut ? "正在退出登录" : "退出登录并返回欢迎页"}
-          >
-            <LogOut size={16} aria-hidden="true" />
-            <span>{loggingOut ? "退出中…" : "退出"}</span>
-          </button>
-        )}
-        {logoutError && <p className="dashboard-logout-error" role="alert">{logoutError}</p>}
       </div>
     </nav>
   );
@@ -104,33 +84,13 @@ export function WorkspaceSidebar({
 
 export function WorkspaceLayout({ active, children }: { active: WorkspaceSection; children: ReactNode }) {
   const user = useResumeStore((state) => state.user);
-  const logout = useResumeStore((state) => state.logout);
-  const [loggingOut, setLoggingOut] = useState(false);
-  const [logoutError, setLogoutError] = useState<string | null>(null);
-
-  const handleLogout = async () => {
-    if (loggingOut) return;
-    setLoggingOut(true);
-    setLogoutError(null);
-    try {
-      await logout();
-      navigateTo("/", { replace: true });
-    } catch {
-      setLogoutError("退出登录失败，请稍后重试。");
-      setLoggingOut(false);
-    }
-  };
-
   return (
-    <div className="dashboard-shell">
+    <div className="dashboard-shell" data-ui-theme="light">
       <WorkspaceSidebar
         active={active}
         email={user?.email ?? ""}
         nickname={user?.nickname}
         avatarUrl={user?.avatar_url}
-        loggingOut={loggingOut}
-        logoutError={logoutError}
-        onLogout={() => void handleLogout()}
       />
       {children}
     </div>

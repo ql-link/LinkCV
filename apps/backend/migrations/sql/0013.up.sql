@@ -1,4 +1,4 @@
--- Up migration for 0013: add resume share link fields
+﻿-- Up migration for 0013: add resume share link fields
 -- 每份简历一个分享链接；share_token 为空表示未开启分享。
 ALTER TABLE resumes
   ADD COLUMN share_token VARCHAR(64) NULL

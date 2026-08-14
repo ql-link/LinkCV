@@ -1,7 +1,29 @@
 import { useCallback, useEffect, useState } from "react";
-import { Copy, Eye, EyeOff, Link2, Save, Share2, Trash2 } from "lucide-react";
+import {
+  Copy,
+  Eye,
+  EyeOff,
+  Link2,
+  RefreshCw,
+  Save,
+  Share2,
+  Trash2,
+} from "lucide-react";
 import { api, type ResumeShareState } from "../../api/client";
-import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { ConfirmDialog } from "@/components/ui";
+
+type LinkStatus = "available" | "expired" | "unavailable" | null;
+
+function parseShareExpiry(expiresAt: string | null) {
+  if (!expiresAt) return null;
+  const time = Date.parse(expiresAt.endsWith("Z") ? expiresAt : `${expiresAt}Z`);
+  return Number.isFinite(time) ? time : null;
+}
+
+function isShareExpired(expiresAt: string | null) {
+  const time = parseShareExpiry(expiresAt);
+  return time !== null && time < Date.now();
+}
 
 type SharePanelProps = {
   resumeId: string;
@@ -61,9 +83,11 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [linkStatus, setLinkStatus] = useState<LinkStatus>(null);
   const [createVisibility, setCreateVisibility] = useState<"private" | "public">("public");
   const [createExpiry, setCreateExpiry] = useState<ExpiryKey>("forever");
   const [confirmCreate, setConfirmCreate] = useState(false);
+  const [confirmRegenerate, setConfirmRegenerate] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmSave, setConfirmSave] = useState(false);
   const [revealed, setRevealed] = useState(false);
@@ -99,6 +123,35 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
     setDraftExpiry(matchExpiry(share.share_expires_at));
   }, [share]);
 
+  // 链接可用性：本地按过期时间判断，公共链接加载时静默探测兜底
+  useEffect(() => {
+    if (!share) {
+      setLinkStatus(null);
+      return;
+    }
+    if (isShareExpired(share.share_expires_at)) {
+      setLinkStatus("expired");
+      return;
+    }
+    if (share.share_visibility !== "public") {
+      setLinkStatus("available");
+      return;
+    }
+    setLinkStatus(null);
+    let cancelled = false;
+    void api
+      .fetchPublicShare(share.share_token)
+      .then(() => {
+        if (!cancelled) setLinkStatus("available");
+      })
+      .catch(() => {
+        if (!cancelled) setLinkStatus("unavailable");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [share]);
+
   const runAction = async (action: () => Promise<void>, failureMessage: string) => {
     if (busy) return;
     setBusy(true);
@@ -122,6 +175,17 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
       setRevealed(false);
       setShare(result.share);
     }, "生成分享链接失败，请稍后重试。");
+
+  const regenerate = () =>
+    runAction(async () => {
+      if (!share) return;
+      const result = await api.createShare(resumeId, {
+        visibility: share.share_visibility,
+        expires_at: share.share_expires_at ?? null,
+      });
+      setRevealed(false);
+      setShare(result.share);
+    }, "重新生成分享链接失败，请稍后重试。");
 
   const saveConfig = () =>
     runAction(async () => {
@@ -191,7 +255,7 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
         ) : !share ? (
           <div className="share-panel-body">
             <p className="share-panel-hint">
-              生成链接后，招聘方可直接打开查看这份简历的最新正式版本。分享内容只读，编辑草稿不会影响已分享内容。
+              分享内容来自简历最近一次正式保存的版本，当前编辑中的草稿不会被公开。保存新版本后，分享链接会自动展示最新正式版本。
             </p>
             <div className="share-panel-field">
               <label>谁可以看</label>
@@ -243,6 +307,13 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
           </div>
         ) : (
           <div className="share-panel-body">
+            {linkStatus && (
+              <p className={`share-panel-status is-${linkStatus}`} role="status">
+                {linkStatus === "available" && "链接当前可用"}
+                {linkStatus === "expired" && "链接已过期，可延长有效期恢复"}
+                {linkStatus === "unavailable" && "链接已失效，请重新生成"}
+              </p>
+            )}
             <div className="share-panel-field">
               <label>分享链接</label>
               <div className="share-panel-link-row">
@@ -334,6 +405,15 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
               </button>
               <button
                 type="button"
+                className="share-panel-regenerate"
+                disabled={busy}
+                onClick={() => setConfirmRegenerate(true)}
+              >
+                <RefreshCw size={14} />
+                重新生成链接
+              </button>
+              <button
+                type="button"
                 className="share-panel-danger"
                 disabled={busy}
                 onClick={() => setConfirmDelete(true)}
@@ -384,6 +464,21 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
           onConfirm={() => {
             setConfirmSave(false);
             void saveConfig();
+          }}
+        />
+      )}
+      {confirmRegenerate && (
+        <ConfirmDialog
+          kind="warning"
+          title="重新生成分享链接？"
+          description={`重新生成后旧链接将立即失效，已转发的旧地址无法再访问。「${resumeTitle}」的分享配置（可见性与有效期）会保留。`}
+          confirmLabel="确认重新生成"
+          busyLabel="正在重新生成…"
+          busy={busy}
+          onCancel={() => setConfirmRegenerate(false)}
+          onConfirm={() => {
+            setConfirmRegenerate(false);
+            void regenerate();
           }}
         />
       )}

@@ -1,12 +1,14 @@
+import base64
 import logging
 
 import redis
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from linkcv.core.config import Settings
-from linkcv.core.database import get_db
+from linkcv.core.database import get_db, utc_now
 from linkcv.core.errors import ApiError
 from linkcv.core.redis import get_redis
 from linkcv.core.security import (
@@ -22,6 +24,7 @@ from linkcv.core.storage import (
     decode_image_data_url,
     get_storage,
 )
+from linkcv.integrations.wechat_client import WechatApiError, WechatClient
 from linkcv.modules.identity.dependencies import get_current_user, get_settings
 from linkcv.modules.identity.models import User
 from linkcv.modules.identity.schemas import (
@@ -34,6 +37,15 @@ from linkcv.modules.identity.schemas import (
     ProfileUpdateRequest,
     RecentResumeSummary,
     UserProfileResponse,
+    WechatBindConfirmRequest,
+    WechatBindRequestResponse,
+    WechatBindStatusResponse,
+)
+from linkcv.modules.identity.wechat_bind_service import (
+    bind_status,
+    bind_ticket_user,
+    mark_bind_success,
+    new_bind_ticket,
 )
 from linkcv.modules.resumes.models import Resume
 
@@ -45,7 +57,26 @@ RECENT_RESUMES_LIMIT = 5
 logger = logging.getLogger(__name__)
 
 
-def _profile(user: User) -> UserProfileResponse:
+def _password_strong(password: str) -> bool:
+    """至少 8 位且同时包含字母和数字。"""
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return False
+    return any(character.isalpha() for character in password) and any(
+        character.isdigit() for character in password
+    )
+
+
+def get_wechat_client(request: Request) -> WechatClient:
+    return request.app.state.wechat_client
+
+
+def _profile(user: User, settings: Settings) -> UserProfileResponse:
+    if user.wechat_openid:
+        wechat_status = "bound"
+    elif settings.wechat_enabled:
+        wechat_status = "unbound"
+    else:
+        wechat_status = "unavailable"
     return UserProfileResponse(
         id=str(user.id),
         email=user.email,
@@ -54,6 +85,8 @@ def _profile(user: User) -> UserProfileResponse:
         avatar_url=(
             asset_url(user.avatar_object_key) if user.avatar_object_key else None
         ),
+        wechat_status=wechat_status,
+        wechat_bound_at=user.wechat_bound_at,
     )
 
 
@@ -61,6 +94,7 @@ def _profile(user: User) -> UserProfileResponse:
 def get_profile(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> AccountProfileResponse:
     resume_count = (
         db.scalar(
@@ -75,7 +109,7 @@ def get_profile(
         .limit(RECENT_RESUMES_LIMIT)
     ).all()
     return AccountProfileResponse(
-        user=_profile(user),
+        user=_profile(user, settings),
         resume_count=resume_count,
         recent_resumes=[
             RecentResumeSummary(
@@ -91,6 +125,7 @@ def update_profile(
     payload: ProfileUpdateRequest,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> UserProfileResponse:
     nickname = payload.nickname.strip()
     if not nickname or len(nickname) > NICKNAME_MAX_LENGTH:
@@ -103,7 +138,7 @@ def update_profile(
         logger.exception("failed to update nickname for user %s", user.id)
         raise
     db.refresh(user)
-    return _profile(user)
+    return _profile(user, settings)
 
 
 @router.put("/avatar", response_model=AvatarResponse)
@@ -182,7 +217,7 @@ def change_password(
 ) -> PasswordChangedResponse:
     if not verify_password(payload.current_password, user.password_hash):
         raise ApiError(400, "INVALID_CURRENT_PASSWORD")
-    if len(payload.new_password) < MIN_PASSWORD_LENGTH:
+    if not _password_strong(payload.new_password):
         raise ApiError(400, "WEAK_PASSWORD")
     if payload.new_password != payload.confirm_password:
         raise ApiError(400, "PASSWORD_MISMATCH")
@@ -202,3 +237,93 @@ def change_password(
     revoke_user_sessions(redis_client, user.id)
     clear_auth_cookies(response, settings)
     return PasswordChangedResponse(ok=True, message="密码已修改，请重新登录")
+
+
+@router.post("/wechat/bind-request", response_model=WechatBindRequestResponse)
+def create_wechat_bind_request(
+    user: User = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+    redis_client: "redis.Redis" = Depends(get_redis),
+    wechat: WechatClient = Depends(get_wechat_client),
+) -> WechatBindRequestResponse:
+    if not settings.wechat_enabled:
+        raise ApiError(503, "WECHAT_SERVICE_UNAVAILABLE")
+    if user.wechat_openid:
+        raise ApiError(400, "WECHAT_ALREADY_BOUND")
+
+    ticket = new_bind_ticket(
+        redis_client, user.id, settings.wechat_bind_ticket_ttl_seconds
+    )
+    try:
+        qrcode = wechat.mini_program_qrcode(ticket)
+    except WechatApiError as error:
+        logger.warning(
+            "failed to generate wechat qrcode",
+            extra={"user_id": user.id, "error_code": error.code},
+        )
+        raise ApiError(503, "WECHAT_SERVICE_UNAVAILABLE") from error
+    return WechatBindRequestResponse(
+        ticket=ticket, qrcode_data=base64.b64encode(qrcode).decode("ascii")
+    )
+
+
+@router.post("/wechat/bind-confirm", response_model=OkResponse)
+def confirm_wechat_bind(
+    payload: WechatBindConfirmRequest,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    redis_client: "redis.Redis" = Depends(get_redis),
+    wechat: WechatClient = Depends(get_wechat_client),
+) -> OkResponse:
+    if not settings.wechat_enabled:
+        raise ApiError(503, "WECHAT_SERVICE_UNAVAILABLE")
+    try:
+        owner_id = bind_ticket_user(redis_client, payload.ticket)
+    except ValueError:
+        owner_id = None
+    if owner_id is None:
+        raise ApiError(400, "BIND_TICKET_INVALID")
+    if bind_status(redis_client, payload.ticket) == "bound":
+        return OkResponse(ok=True)
+
+    try:
+        openid = wechat.code_to_openid(payload.code)
+    except WechatApiError as error:
+        logger.warning(
+            "failed to exchange wechat code",
+            extra={"ticket": payload.ticket, "error_code": error.code},
+        )
+        raise ApiError(503, "WECHAT_SERVICE_UNAVAILABLE") from error
+
+    existing = db.scalar(select(User).where(User.wechat_openid == openid))
+    if existing is not None and existing.id != owner_id:
+        raise ApiError(409, "WECHAT_ALREADY_BOUND")
+    if existing is not None:
+        mark_bind_success(
+            redis_client, payload.ticket, settings.wechat_bind_ticket_ttl_seconds
+        )
+        return OkResponse(ok=True)
+
+    owner = db.get(User, owner_id)
+    if owner is None:
+        raise ApiError(400, "BIND_TICKET_INVALID")
+    owner.wechat_openid = openid
+    owner.wechat_bound_at = utc_now()
+    try:
+        db.commit()
+    except IntegrityError as error:
+        db.rollback()
+        raise ApiError(409, "WECHAT_ALREADY_BOUND") from error
+    mark_bind_success(
+        redis_client, payload.ticket, settings.wechat_bind_ticket_ttl_seconds
+    )
+    return OkResponse(ok=True)
+
+
+@router.get("/wechat/bind-status", response_model=WechatBindStatusResponse)
+def get_wechat_bind_status(
+    ticket: str,
+    user: User = Depends(get_current_user),
+    redis_client: "redis.Redis" = Depends(get_redis),
+) -> WechatBindStatusResponse:
+    return WechatBindStatusResponse(status=bind_status(redis_client, ticket))

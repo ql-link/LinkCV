@@ -23,6 +23,7 @@ from linkcv.integrations.document_converter import DocumentConverter
 from linkcv.integrations.docx_parse_runner import DocxParseRunner
 from linkcv.integrations.linkparse_client import LinkParseClient
 from linkcv.integrations.resume_structuring import LLMResumeStructuringClient
+from linkcv.integrations.wechat_client import WechatClient
 from linkcv.modules.llm.crypto import CredentialCipher
 from linkcv.modules.llm.gateway import LLMGateway, LiteLLMGateway
 from linkcv.modules.llm.catalog import CHAT_CAPABILITY
@@ -65,6 +66,7 @@ def create_app(
     redis: Any | None = None,
     document_converter: Any | None = None,
     structuring_client: Any | None = None,
+    wechat_client: Any | None = None,
     event_emitter: StructuredLogEmitter | None = None,
     loki_client: Any | None = None,
     mq_publisher: MQPublisher | None = None,
@@ -142,6 +144,20 @@ def create_app(
     runtime_structuring_client = structuring_client
     if runtime_structuring_client is None:
         runtime_structuring_client = LLMResumeStructuringClient(llm_service)
+    runtime_wechat_client = wechat_client
+    if runtime_wechat_client is None:
+        wechat_secret = (
+            runtime_settings.wechat_secret.get_secret_value()
+            if runtime_settings.wechat_secret is not None
+            else None
+        )
+        runtime_wechat_client = WechatClient(
+            appid=runtime_settings.wechat_appid or "",
+            secret=wechat_secret or "",
+            qr_page=runtime_settings.wechat_qr_page,
+            login_page=runtime_settings.wechat_login_page,
+            timeout_seconds=runtime_settings.wechat_api_timeout_seconds,
+        )
     import_idempotency = ResumeImportIdempotency(
         redis,
         bind_ttl_seconds=runtime_settings.resume_import_idempotency_bind_ttl_seconds,
@@ -208,6 +224,7 @@ def create_app(
     app.state.redis = redis
     app.state.document_converter = runtime_document_converter
     app.state.structuring_client = runtime_structuring_client
+    app.state.wechat_client = runtime_wechat_client
     app.state.import_idempotency = import_idempotency
     app.state.mq_publisher = runtime_mq_publisher
     app.state.import_admission = ImportAdmissionController(

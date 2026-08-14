@@ -2,7 +2,7 @@
 
 ## 当前职责与结构
 
-`apps/backend` 承接健康检查、短 JWT access + 不透明 refresh + Redis 会话鉴权、语义简历生命周期、历史版本、简历分享链接、异步文件导入、私有对象资源、结构化 JD 生命周期、用户中心与账号安全、统一 LLM 调用和管理员模型治理 API、管理台用户管理、知识库资料上传，以及统一系统日志、业务审计和管理员日志查询。
+`apps/backend` 承接健康检查、短 JWT access + 不透明 refresh + Redis 会话鉴权、微信小程序扫码登录与账号绑定、语义简历生命周期、历史版本、简历分享链接、异步文件导入、私有对象资源、结构化 JD 生命周期、用户中心与账号安全、统一 LLM 调用和管理员模型治理 API、管理台用户管理、知识库资料上传，以及统一系统日志、业务审计和管理员日志查询。
 
 | 位置 | 职责 |
 | --- | --- |
@@ -12,18 +12,18 @@
 | `src/linkcv/domain/job_source.py` | JD 来源 URL 校验、规范化、站点识别和 SHA-256 身份计算 |
 | `src/linkcv/application/resumes/` | 统一创建、乐观锁保存、版本创建/恢复、分享链接创建/覆盖/更新与事务规则 |
 | `src/linkcv/application/job_descriptions/` | JD 创建、重复解决、搜索分页、乐观锁更新、归档和永久删除 |
-| `src/linkcv/integrations/` | LinkParse PDF Adapter、Mammoth DOCX worker、转换分发和统一 LLM 简历结构化 Adapter |
+| `src/linkcv/integrations/` | LinkParse PDF Adapter、Mammoth DOCX worker、转换分发、微信小程序上游封装和统一 LLM 简历结构化 Adapter |
 | `src/linkcv/services/resume_import_service.py` | Worker 使用的 Markdown 转换、结构化与规范化原语，不提交业务事务 |
 | `src/linkcv/services/resume_import_idempotency.py` | Redis Lua 请求指纹到导入 ID 的短期绑定与冲突保护 |
 | `src/linkcv/core/mq/` | RabbitMQ/Kafka publisher、统一导入消息和 confirm 异常边界 |
 | `src/linkcv/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
-| `src/linkcv/modules/identity/` | 用户模型、注册、登录、admin-login 鉴权、双 Token 会话、`/api/account` 用户中心、管理端用户管理 |
+| `src/linkcv/modules/identity/` | 用户模型、注册、登录、admin-login 鉴权、双 Token 会话、微信扫码登录与绑定、`/api/account` 用户中心、管理端用户管理 |
 | `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板及管理、简历、版本、异步导入、分享和资源路由 |
 | `src/linkcv/modules/datasets/` | `user_dataset` 用户知识库数据集表与上传/列表路由 |
 | `src/linkcv/modules/job_descriptions/` | JD 单表 ORM、HTTP DTO 和受保护路由 |
 | `src/linkcv/modules/llm/` | Chat 当前绑定、模型凭据加密、LiteLLM 适配、普通/流式/结构化单模型调用、计量与管理员 API |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0018` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0020` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -51,7 +51,23 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0013` 为 `resumes` 增加分享字段：`share_token`（VARCHAR(64)，全局唯一索引）、`share_visibility`（VARCHAR(16)，`private|public`）、`share_expires_at`（可空，UTC 过期时间）和 `share_created_at`。两个 CHECK 约束保证分享字段要么全部为空（未分享）、要么全部非空（已分享），且可见性只允许 `private/public`。分享不单独建表、不落内容快照，公开读取时实时取 `resume_versions` 中 `version_no` 最大的正式版本；down 迁移只删除新增列与约束，不触碰分享期间创建的版本数据。
 
-`0018` 新增 `user_dataset` 用户知识库数据集表，与简历文件导入链路分开。每行记录一个用户上传的单个资料文件元信息：所属用户外键、安全化后的文件名、四类格式（docx/pdf/md/txt，受 CHECK 约束）、MIME、字节大小、对象存储对象键（唯一）和内容 SHA-256；外键 `ON DELETE RESTRICT`，删除用户不隐式级联删除资料记录。`POST /api/datasets` 先校验格式与大小（上限 `DATASET_UPLOAD_MAX_BYTES`，默认 10MB）并把文件上传到对象存储（对象键由服务端生成，强制以 `users/{uid}/datasets/` 为前缀），上传成功后才写库，写库失败会尽力删除已上传对象；`GET /api/datasets` 按用户过滤、按上传时间倒序。本期不做分片、RAG、删除、下载、预览和去重，同一文件重复上传生成新记录。
+`0018` 新增 `user_dataset` 用户知识库数据集表，与简历文件导入链路分开。每行记录一个用户上传的单个资料文件元信息：所属用户外键、安全化后的文件名、四类格式（docx/pdf/md/txt，受 CHECK 约束）、MIME、字节大小、对象存储对象键（唯一）和内容 SHA-256；外键 `ON DELETE RESTRICT`，删除用户不隐式级联删除资料记录。`POST /api/datasets` 先校验格式与大小（上限 `DATASET_UPLOAD_MAX_BYTES`，默认 10MB）并把文件上传到对象存储（对象键由服务端生成，强制以 `users/{uid}/datasets/` 为前缀），上传成功后才写库，写库失败会尽力删除已上传对象；`GET /api/datasets` 按用户过滤、按上传时间倒序。`sha256` 与对象键保留在库内供内部追踪，但上传/列表接口的响应只返回 `id/file_name/file_format/file_size/created_at`，不暴露对象存储路径与内容摘要等内部字段。本期不做分片、RAG、删除、下载、预览和去重，同一文件重复上传生成新记录。
+
+### 微信账号（绑定与扫码登录）
+
+`0019` 为 `users` 增加 `wechat_openid`（VARCHAR(64)，全局唯一索引 `uk_users_wechat_openid`）和 `wechat_bound_at`（可空，UTC 绑定时间）。`wechat_openid` 是微信小程序 openid，绑定后写入，全局唯一约束承担 openid 冲突检测的数据库兜底；本周不提供解绑接口，因此不存在清空路径。`0020` 将 `email`、`password_hash` 放宽为可空：微信扫码登录创建的账号没有邮箱密码，`email` 为 `null`，昵称默认生成“微信用户”前缀。绑定逻辑遵循“一微信一账号”：同一 `openid` 只能关联一个用户，登录复用已有账号不新建。
+
+绑定由 Web 已登录用户发起，走 `/api/account/wechat/bind-request|bind-confirm|bind-status`（ticket 票据）。绑定票据是临时凭证，只存 Redis（`wechat:bind_ticket:<ticket>` 存用户、`wechat:bind_status:<ticket>` 存 `pending/bound`、`wechat:bind_user_ticket:<uid>` 指向当前票据），TTL 默认 300 秒，同用户重新发起时覆盖旧票据。`bind-confirm` 提交小程序 `wx.login()` 的临时 code，服务端换 openid 后关联到发起用户；openid 已被其他用户绑定时返回 `409 WECHAT_ALREADY_BOUND`，原绑定关系不被覆盖。
+
+扫码登录挂在 `/api/auth/wechat` 下，scene 状态机存 Redis（key `wechat:login:<scene>`，TTL 默认 300 秒）：
+
+| Method | Path | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/auth/wechat/qrcode` | 无需登录。生成 `login:{随机}` scene 并调用微信小程序码上游，返回 `{scene, qr_base64}`；按 IP 限流（默认 10 次/分钟） |
+| `GET` | `/api/auth/wechat/status` | `{status: "pending" 或 "success" 或 "expired", user?}`；命中 `confirmed:*` 后签发双 Cookie，随后删除 scene 防残留 |
+| `POST` | `/api/auth/wechat/confirm` | 小程序端 multipart 提交 `scene/code`；用 GETSET 原子把 `pending:login` 翻转为 `claimed`，防重放（重复提交 `409 SCENE_REUSED`）。解析 openid 后按需建号（无邮箱密码），再把 `confirmed:<uid>:login` 写回 scene 供 status 轮询消费 |
+
+`integrations/wechat_client.py` 只封装 `cgi-bin/token`、`wxa/getwxacodeunlimit` 和 `sns/jscode2session` 三个上游调用；access_token 在进程内缓存到过期，凭据与完整上游响应不写日志，网络与上游失败统一转成 `WechatApiError` 供路由映射稳定错误码。同一客户端按 `qr_page`（绑定页）或 `login_page`（登录确认页）生成小程序码。登录模式的成功会话由 status 端点消费时签发，与邮箱登录共用同一套双 Token 会话。微信凭据未配置时 `settings.wechat_enabled` 为假，profile 返回 `wechat_status=unavailable`，绑定与扫码登录接口返回 `503 WECHAT_SERVICE_UNAVAILABLE`。openid 只在服务端存储与换取，任何接口不回传 openid 明文。
 
 ## 统一 LLM 调用
 
@@ -102,7 +118,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown/DOCX 保持
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于 `0002`–`0017` 往返、模板初始化和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于 `0002`–`0020` 往返、模板初始化和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 

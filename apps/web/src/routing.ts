@@ -48,7 +48,7 @@ export function isSafeAdminPath(value: string | null) {
 
 export function parseAppRoute(pathname: string, search = ""): AppRoute {
   const normalizedPath = normalizePathname(pathname);
-  if (normalizedPath === "/") return { kind: "landing" };
+  if (normalizedPath === "/" || normalizedPath === "/home") return { kind: "landing" };
   if (/^\/admin\/login(?:\/|$)/.test(normalizedPath)) {
     const params = new URLSearchParams(search);
     const next = params.get("next");

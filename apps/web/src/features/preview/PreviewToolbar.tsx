@@ -1,5 +1,5 @@
 import { Sparkles } from "lucide-react";
-import { Pill, Select, Stepper } from "../../components/ds";
+import { NumberStepper, SelectField, TogglePill } from "@/components/ui";
 import { resumeSerifFontStack, useResumeStore } from "../../store/resumeStore";
 
 const fonts = [
@@ -21,7 +21,7 @@ export function PreviewToolbar() {
 
   return (
     <div className="preview-toolbar" aria-label="预览控制栏">
-      <Pill
+      <TogglePill
         active={settings.smartOnePage}
         icon={<Sparkles size={14} />}
         onClick={() => {
@@ -29,14 +29,14 @@ export function PreviewToolbar() {
         }}
       >
         智能一页
-      </Pill>
-      <Select
+      </TogglePill>
+      <SelectField
         label="字体"
         value={settings.fontFamily}
         onChange={(event) => updateSettings({ fontFamily: event.target.value })}
         options={fonts}
       />
-      <Stepper
+      <NumberStepper
         label="字号"
         value={settings.fontSize}
         step={0.5}
@@ -44,7 +44,7 @@ export function PreviewToolbar() {
         max={14}
         onChange={(fontSize) => updateSettings({ fontSize })}
       />
-      <Stepper
+      <NumberStepper
         label="行距"
         value={settings.lineHeight}
         step={0.05}
@@ -52,7 +52,7 @@ export function PreviewToolbar() {
         max={1.8}
         onChange={(lineHeight) => updateSettings({ lineHeight })}
       />
-      <Stepper
+      <NumberStepper
         label="左右"
         value={settings.pageMargin}
         step={0.5}
@@ -60,7 +60,7 @@ export function PreviewToolbar() {
         max={28}
         onChange={(pageMargin) => updateSettings({ pageMargin })}
       />
-      <Stepper
+      <NumberStepper
         label="上下"
         value={settings.verticalPageMargin}
         step={0.5}

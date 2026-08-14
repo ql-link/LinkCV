@@ -327,3 +327,47 @@ describe("API resume share", () => {
     );
   });
 });
+
+describe("微信扫码登录 API", () => {
+  it("申请登录二维码时读取 scene 与 base64 图片", async () => {
+    const body = { scene: "login:abcd1234", qr_base64: "base64-qr" };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse(200, body)),
+    );
+
+    await expect(api.wechatQrcode("login")).resolves.toEqual(body);
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/auth/wechat/qrcode",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+      }),
+    );
+  });
+
+  it("轮询状态时编码 scene 查询参数并返回当前状态", async () => {
+    const status = { status: "success", user: { id: "9", email: null, nickname: "微信用户" } };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse(200, status)),
+    );
+
+    await expect(api.wechatStatus("login:a b")).resolves.toEqual(status);
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/auth/wechat/status?scene=login%3Aa%20b",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
+
+  it("二维码请求受限时抛出可读错误码", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse(429, { error: "WECHAT_RATE_LIMITED" })),
+    );
+
+    await expect(api.wechatQrcode("login")).rejects.toThrow(
+      "WECHAT_RATE_LIMITED",
+    );
+  });
+});

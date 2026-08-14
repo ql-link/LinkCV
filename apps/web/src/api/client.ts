@@ -2,14 +2,26 @@ import type { ResumeDocumentV1, ResumeStyleV1 } from "./resumeContract";
 
 export type User = {
   id: string;
-  email: string;
+  email: string | null;
   nickname: string;
   is_admin: boolean;
   avatar_url?: string | null;
 };
 
+export type WeChatQrcodeResponse = {
+  scene: string;
+  qr_base64: string;
+};
+
+export type WeChatStatusResponse = {
+  status: "pending" | "success" | "expired";
+  user: User | null;
+};
+
 export type UserProfile = User & {
   avatar_url: string | null;
+  wechat_status: "unbound" | "bound" | "unavailable";
+  wechat_bound_at: string | null;
 };
 
 export type RecentResumeSummary = {
@@ -159,7 +171,6 @@ export type DatasetRecord = {
   file_name: string;
   file_format: string;
   file_size: number;
-  sha256: string;
   created_at: string;
 };
 
@@ -636,6 +647,15 @@ export const api = {
       method: "POST",
       body: { email, password },
     }),
+  wechatQrcode: (mode: "login" | "bind") =>
+    request<WeChatQrcodeResponse>("/api/auth/wechat/qrcode", {
+      method: "POST",
+      body: { mode },
+    }),
+  wechatStatus: (scene: string) =>
+    request<WeChatStatusResponse>(
+      `/api/auth/wechat/status?scene=${encodeURIComponent(scene)}`,
+    ),
   logout: () =>
     request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
   getAccountProfile: () => request<AccountProfile>("/api/account/profile"),
@@ -660,6 +680,20 @@ export const api = {
         confirm_password: payload.confirmPassword,
       },
     }),
+  requestWechatBind: () =>
+    request<{ ticket: string; qrcode_data: string }>(
+      "/api/account/wechat/bind-request",
+      { method: "POST" },
+    ),
+  confirmWechatBind: (payload: { ticket: string; code: string }) =>
+    request<{ ok: boolean }>("/api/account/wechat/bind-confirm", {
+      method: "POST",
+      body: payload,
+    }),
+  getWechatBindStatus: (ticket: string) =>
+    request<{ status: "pending" | "bound" | "expired" }>(
+      `/api/account/wechat/bind-status?ticket=${encodeURIComponent(ticket)}`,
+    ),
   listResumes: () => request<{ resumes: ResumeSummary[] }>("/api/resumes"),
   getResumeOverview: () => request<ResumeOverview>("/api/resume-overview"),
   listResumeTemplates: () =>

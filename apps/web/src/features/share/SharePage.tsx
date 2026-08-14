@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link2Off } from "lucide-react";
-import brandMark from "../../assets/linkcv-mark.svg";
+import { Brand } from "@/components/ui";
 import { api, type PublicSharePayload } from "../../api/client";
 import {
   resumeDocumentToMarkdown,
@@ -9,17 +9,13 @@ import {
 import { renderResumeMarkdown } from "../../parser/resumeMarkdown";
 
 function ShareBrand() {
-  return (
-    <span className="ds-brand share-brand" aria-label="linkresume">
-      <span className="ds-brand-mark" aria-hidden="true">
-        <img src={brandMark} alt="" />
-      </span>
-      <span className="ds-brand-name">linkresume</span>
-    </span>
-  );
+  return <Brand className="share-brand" label="linkresume" name="linkresume" />;
 }
 
 type ShareStatus = "loading" | "ready" | "unavailable";
+
+// 210mm A4 纸宽约 794px；除以略大的基准让移动端留出边距
+const PAPER_WIDTH_PX = 820;
 
 function paperStyle(payload: PublicSharePayload) {
   const settings = styleToEditorSettings(payload.style);
@@ -32,9 +28,23 @@ function paperStyle(payload: PublicSharePayload) {
   } as React.CSSProperties;
 }
 
+function useMobilePaperZoom() {
+  const [zoom, setZoom] = useState(1);
+  useEffect(() => {
+    const update = () => {
+      setZoom(Math.min(1, window.innerWidth / PAPER_WIDTH_PX));
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+  return zoom;
+}
+
 export function SharePage({ token }: { token: string }) {
   const [payload, setPayload] = useState<PublicSharePayload | null>(null);
   const [status, setStatus] = useState<ShareStatus>("loading");
+  const paperZoom = useMobilePaperZoom();
 
   useEffect(() => {
     let cancelled = false;
@@ -100,7 +110,10 @@ export function SharePage({ token }: { token: string }) {
       <section className="share-page-paper-scroll">
         <article
           className="resume-paper smart-one-page share-page-paper"
-          style={paperStyle(payload)}
+          style={{
+            ...paperStyle(payload),
+            zoom: paperZoom,
+          }}
           aria-label="分享简历内容"
         >
           <div

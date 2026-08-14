@@ -10,7 +10,6 @@ class UserDatasetRecord(BaseModel):
     file_name: str
     file_format: str
     file_size: int
-    sha256: str
     created_at: datetime
 
     @field_validator("id", mode="before")

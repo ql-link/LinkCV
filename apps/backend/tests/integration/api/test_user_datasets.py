@@ -1,4 +1,3 @@
-import hashlib
 from collections.abc import Iterator
 
 from fastapi.testclient import TestClient
@@ -101,7 +100,8 @@ def test_upload_and_list_own_datasets() -> None:
         assert payload["file_name"] == "notes.md"
         assert payload["file_format"] == "md"
         assert payload["file_size"] == len(b"# Zhang San")
-        assert payload["sha256"] == hashlib.sha256(b"# Zhang San").hexdigest()
+        assert "sha256" not in payload
+        assert "object_name" not in payload
         assert "created_at" in payload
 
         second = upload_file(

@@ -17,7 +17,7 @@ import {
   Strikethrough,
   Underline,
 } from "lucide-react";
-import { IconButton } from "../../components/ds";
+import { IconButton } from "@/components/ui";
 
 export type EditorCommand =
   | "paragraph"

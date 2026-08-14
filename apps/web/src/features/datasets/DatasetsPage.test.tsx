@@ -9,7 +9,6 @@ const record: DatasetRecord = {
   file_name: "岗位要求.md",
   file_format: "md",
   file_size: 1024,
-  sha256: "abc123",
   created_at: "2026-08-08T08:00:00Z",
 };
 
@@ -42,6 +41,15 @@ describe("DatasetsPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("上传区说明支持的格式与大小上限", async () => {
+    render(<DatasetsPage />);
+
+    expect(
+      await screen.findByText(/支持 DOCX、PDF、Markdown 和 TXT/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/不超过 10 MB/)).toBeInTheDocument();
+  });
+
   it("展示已上传资料的清单", async () => {
     vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [record] });
     render(<DatasetsPage />);
@@ -51,7 +59,7 @@ describe("DatasetsPage", () => {
     expect(screen.getByText("1.0 KB")).toBeInTheDocument();
   });
 
-  it("上传成功后刷新列表并提示", async () => {
+  it("选择文件后展示预览，确认后才上传", async () => {
     const list = vi
       .spyOn(api, "listDatasets")
       .mockResolvedValue({ datasets: [] });
@@ -66,9 +74,67 @@ describe("DatasetsPage", () => {
       target: { files: [file] },
     });
 
+    expect(await screen.findByLabelText("待上传的文件")).toBeInTheDocument();
+    expect(screen.getByText("岗位要求.md")).toBeInTheDocument();
+    expect(upload).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "上传" }));
     await waitFor(() => expect(upload).toHaveBeenCalledWith(file));
     expect(await screen.findByText(/已上传「岗位要求\.md」/)).toBeInTheDocument();
     expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it("取消选择后不上传", async () => {
+    const upload = vi.spyOn(api, "uploadDataset");
+    render(<DatasetsPage />);
+    await screen.findByText("资料库还是空的");
+
+    const file = new File(["# 岗位要求"], "岗位要求.md", {
+      type: "text/markdown",
+    });
+    fireEvent.change(screen.getByLabelText("选择资料文件"), {
+      target: { files: [file] },
+    });
+
+    expect(await screen.findByLabelText("待上传的文件")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+
+    expect(screen.queryByLabelText("待上传的文件")).not.toBeInTheDocument();
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("空文件在上传前被拦截", async () => {
+    const upload = vi.spyOn(api, "uploadDataset");
+    render(<DatasetsPage />);
+    await screen.findByText("资料库还是空的");
+
+    const empty = new File([], "empty.md", { type: "text/markdown" });
+    fireEvent.change(screen.getByLabelText("选择资料文件"), {
+      target: { files: [empty] },
+    });
+
+    expect(await screen.findByText("文件为空，请重新选择。")).toBeInTheDocument();
+    expect(screen.queryByLabelText("待上传的文件")).not.toBeInTheDocument();
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("不支持的格式在上传前被拦截", async () => {
+    const upload = vi.spyOn(api, "uploadDataset");
+    render(<DatasetsPage />);
+    await screen.findByText("资料库还是空的");
+
+    const exe = new File(["MZ"], "malware.exe", {
+      type: "application/octet-stream",
+    });
+    fireEvent.change(screen.getByLabelText("选择资料文件"), {
+      target: { files: [exe] },
+    });
+
+    expect(
+      await screen.findByText("仅支持 DOCX、PDF、Markdown 和 TXT 文件。"),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("待上传的文件")).not.toBeInTheDocument();
+    expect(upload).not.toHaveBeenCalled();
   });
 
   it("超过 10MB 的文件在上传前被拦截", async () => {
@@ -82,6 +148,7 @@ describe("DatasetsPage", () => {
     });
 
     expect(await screen.findByText(/最大支持 10 MB/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("待上传的文件")).not.toBeInTheDocument();
     expect(upload).not.toHaveBeenCalled();
   });
 
@@ -108,6 +175,11 @@ describe("DatasetsPage", () => {
       fireEvent.change(screen.getByLabelText("选择资料文件"), {
         target: { files: [file] },
       });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByLabelText("待上传的文件")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "上传" }));
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
       });
