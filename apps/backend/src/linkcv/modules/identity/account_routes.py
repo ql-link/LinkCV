@@ -57,6 +57,11 @@ RECENT_RESUMES_LIMIT = 5
 logger = logging.getLogger(__name__)
 
 
+def require_legacy_test_route(request: Request) -> None:
+    if not getattr(request.app.state, "legacy_identity_test_routes", False):
+        raise ApiError(404, "NOT_FOUND")
+
+
 def _password_strong(password: str) -> bool:
     """至少 8 位且同时包含字母和数字。"""
     if len(password) < MIN_PASSWORD_LENGTH:
@@ -206,15 +211,22 @@ def delete_avatar(
     return OkResponse(ok=True)
 
 
-@router.post("/change-password", response_model=PasswordChangedResponse)
+@router.post(
+    "/change-password",
+    response_model=PasswordChangedResponse,
+    include_in_schema=False,
+)
 def change_password(
     payload: ChangePasswordRequest,
+    request: Request,
     response: Response,
+    _legacy_route: None = Depends(require_legacy_test_route),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
     redis_client: "redis.Redis" = Depends(get_redis),
 ) -> PasswordChangedResponse:
+    require_legacy_test_route(request)
     if not verify_password(payload.current_password, user.password_hash):
         raise ApiError(400, "INVALID_CURRENT_PASSWORD")
     if not _password_strong(payload.new_password):
@@ -239,13 +251,20 @@ def change_password(
     return PasswordChangedResponse(ok=True, message="密码已修改，请重新登录")
 
 
-@router.post("/wechat/bind-request", response_model=WechatBindRequestResponse)
+@router.post(
+    "/wechat/bind-request",
+    response_model=WechatBindRequestResponse,
+    include_in_schema=False,
+)
 def create_wechat_bind_request(
+    request: Request,
+    _legacy_route: None = Depends(require_legacy_test_route),
     user: User = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
     redis_client: "redis.Redis" = Depends(get_redis),
     wechat: WechatClient = Depends(get_wechat_client),
 ) -> WechatBindRequestResponse:
+    require_legacy_test_route(request)
     if not settings.wechat_enabled:
         raise ApiError(503, "WECHAT_SERVICE_UNAVAILABLE")
     if user.wechat_openid:
@@ -267,14 +286,20 @@ def create_wechat_bind_request(
     )
 
 
-@router.post("/wechat/bind-confirm", response_model=OkResponse)
+@router.post(
+    "/wechat/bind-confirm",
+    response_model=OkResponse,
+    include_in_schema=False,
+)
 def confirm_wechat_bind(
     payload: WechatBindConfirmRequest,
+    request: Request,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
     redis_client: "redis.Redis" = Depends(get_redis),
     wechat: WechatClient = Depends(get_wechat_client),
 ) -> OkResponse:
+    require_legacy_test_route(request)
     if not settings.wechat_enabled:
         raise ApiError(503, "WECHAT_SERVICE_UNAVAILABLE")
     try:
@@ -320,10 +345,17 @@ def confirm_wechat_bind(
     return OkResponse(ok=True)
 
 
-@router.get("/wechat/bind-status", response_model=WechatBindStatusResponse)
+@router.get(
+    "/wechat/bind-status",
+    response_model=WechatBindStatusResponse,
+    include_in_schema=False,
+)
 def get_wechat_bind_status(
     ticket: str,
+    request: Request,
+    _legacy_route: None = Depends(require_legacy_test_route),
     user: User = Depends(get_current_user),
     redis_client: "redis.Redis" = Depends(get_redis),
 ) -> WechatBindStatusResponse:
+    require_legacy_test_route(request)
     return WechatBindStatusResponse(status=bind_status(redis_client, ticket))

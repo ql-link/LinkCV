@@ -87,11 +87,22 @@ def revoke_user_sessions(redis_client, user_id: int, except_sid: str | None = No
     return removed
 
 
-def create_access_token(user_id: int, sid: str, settings: Settings) -> str:
+def create_access_token(
+    user_id: int,
+    sid: str,
+    settings: Settings,
+    channel: str = "web",
+) -> str:
     now = _now()
     expires_at = now + timedelta(minutes=settings.access_ttl_minutes)
     return jwt.encode(
-        {"sub": str(user_id), "sid": sid, "iat": now, "exp": expires_at},
+        {
+            "sub": str(user_id),
+            "sid": sid,
+            "channel": channel,
+            "iat": now,
+            "exp": expires_at,
+        },
         settings.jwt_secret,
         algorithm=settings.jwt_algorithm,
     )
@@ -99,7 +110,7 @@ def create_access_token(user_id: int, sid: str, settings: Settings) -> str:
 
 def decode_access_token(
     token: str | None, settings: Settings
-) -> tuple[int, str] | None:
+) -> tuple[int, str, str] | None:
     if not token:
         return None
     try:
@@ -112,14 +123,17 @@ def decode_access_token(
         return None
     subject = payload.get("sub")
     sid = payload.get("sid")
+    channel = payload.get("channel")
     if not isinstance(subject, str) or not subject.isdecimal():
         return None
     if not isinstance(sid, str) or not sid:
         return None
+    if channel not in {"web", "miniprogram"}:
+        return None
     user_id = int(subject)
     if user_id <= 0 or str(user_id) != subject:
         return None
-    return user_id, sid
+    return user_id, sid, channel
 
 
 def access_max_age_seconds(settings: Settings) -> int:

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   api,
@@ -70,9 +70,8 @@ describe("AccountPage", () => {
     expect(screen.getByText("3")).toBeInTheDocument();
     expect(screen.getByText("产品经理简历")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "账号设置" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /修改密码/ }),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /修改密码/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /绑定微信/ })).not.toBeInTheDocument();
   });
 
   it("修改昵称成功后同步本地资料与 store", async () => {
@@ -150,70 +149,6 @@ describe("AccountPage", () => {
     expect(await screen.findByText(/服务暂时不可用/)).toBeInTheDocument();
     expect(screen.queryByText("新头像已预览，尚未保存")).not.toBeInTheDocument();
     expect(useResumeStore.getState().user?.avatar_url).toBeNull();
-  });
-
-  it("未绑定微信时展示绑定入口，发起后显示小程序码并轮询感知成功", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      const request = vi
-        .spyOn(api, "requestWechatBind")
-        .mockResolvedValue({ ticket: "ticket-1", qrcode_data: "cXJjb2Rl" });
-      vi.spyOn(api, "getWechatBindStatus").mockResolvedValue({ status: "bound" });
-      const getProfile = vi
-        .spyOn(api, "getAccountProfile")
-        .mockResolvedValueOnce({ ...profile, user: { ...user } })
-        .mockResolvedValue({
-          ...profile,
-          user: {
-            ...user,
-            wechat_status: "bound",
-            wechat_bound_at: "2026-08-13T00:00:00Z",
-          },
-        });
-
-      render(<AccountPage />);
-      await screen.findAllByText("user@example.test");
-
-      fireEvent.click(screen.getByRole("button", { name: "绑定微信" }));
-      await waitFor(() => expect(request).toHaveBeenCalledOnce());
-      expect(screen.getByAltText("微信绑定二维码")).toBeInTheDocument();
-
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(3000);
-      });
-      expect(getProfile).toHaveBeenCalledTimes(2);
-      expect(await screen.findByText(/已绑定微信/)).toBeInTheDocument();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("已绑定微信时只展示状态，不提供解绑", async () => {
-    vi.spyOn(api, "getAccountProfile").mockResolvedValue({
-      ...profile,
-      user: {
-        ...user,
-        wechat_status: "bound",
-        wechat_bound_at: "2026-08-13T00:00:00Z",
-      },
-    });
-    render(<AccountPage />);
-    await screen.findAllByText("user@example.test");
-
-    expect(screen.getByText(/已绑定微信/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "绑定微信" })).not.toBeInTheDocument();
-  });
-
-  it("微信服务不可用时展示不可用提示且无绑定入口", async () => {
-    vi.spyOn(api, "getAccountProfile").mockResolvedValue({
-      ...profile,
-      user: { ...user, wechat_status: "unavailable" },
-    });
-    render(<AccountPage />);
-    await screen.findAllByText("user@example.test");
-
-    expect(screen.getByText(/微信绑定服务暂不可用/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "绑定微信" })).not.toBeInTheDocument();
   });
 
   it("退出登录后回到首页并清空登录态", async () => {

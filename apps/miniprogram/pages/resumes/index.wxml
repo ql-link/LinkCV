@@ -1,0 +1,24 @@
+<view class="page">
+  <view class="hero">
+    <text class="eyebrow">LINKCV</text>
+    <text class="title">我的简历</text>
+    <text class="subtitle" wx:if="{{user}}">{{user.nickname}}，这里仅提供简历查阅。</text>
+  </view>
+
+  <view class="state" wx:if="{{loading}}">正在安全登录并加载简历…</view>
+  <view class="state error" wx:elif="{{error}}">
+    <text>{{error}}</text>
+    <button class="secondary" bindtap="loadPage">重新加载</button>
+  </view>
+  <view class="state" wx:elif="{{items.length === 0}}">暂无简历，请先在 LinkCV 网页端创建。</view>
+
+  <view class="list" wx:else>
+    <view class="card" wx:for="{{items}}" wx:key="id" data-id="{{item.id}}" bindtap="openResume">
+      <view class="card-main">
+        <text class="card-title">{{item.title}}</text>
+        <text class="card-time">更新于 {{item.updated_at}}</text>
+      </view>
+      <text class="arrow">›</text>
+    </view>
+  </view>
+</view>

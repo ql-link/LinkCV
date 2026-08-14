@@ -30,7 +30,13 @@ LINKCV_ENV_FILE=.env.development npm run db:init
 
 `PLUGIN_RELEASE_ORIGIN` 是当前环境允许正式插件访问的 LinkCV 根 Origin。默认本地值为 `http://127.0.0.1:5173`；共享 Development 和 Production 必须在各自 `.local` 覆盖中写入用户实际访问的 Origin，Production 只接受 HTTPS。该值必须与构建安装包时传给 `build_extension_release.py` 的对应 Origin 一致，否则管理员上传会被拒绝。
 
-微信绑定与扫码登录要求同时配置 `WECHAT_APPID` 与 `WECHAT_SECRET`（两者均为非占位符才开启能力开关，否则 profile 返回 `unavailable`、相关接口返回 `503 WECHAT_SERVICE_UNAVAILABLE`）。`WECHAT_QR_PAGE` 是绑定用小程序码页（默认 `pages/bind/bind`），`WECHAT_LOGIN_PAGE` 是扫码登录确认页（默认 `pages/login/index`）；`WECHAT_BIND_TICKET_TTL_SECONDS`（默认 300）与 `WECHAT_SCENE_TTL_SECONDS`（默认 300）分别控制绑定票据与登录 scene 的 Redis 有效期，`WECHAT_QRCODE_REQUESTS_PER_MINUTE`（默认 10）限制登录二维码按 IP 的生成频率。
+微信自动建号、小程序登录和网页扫码确认要求同时配置 `WECHAT_APPID` 与 `WECHAT_SECRET`；密钥只放 `.env.local`、环境对应 `.local` 或进程环境。`WECHAT_LOGIN_PAGE` 默认 `pages/login/index`，`WECHAT_SCENE_TTL_SECONDS` 默认 300 秒，`WECHAT_QRCODE_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 10 次，`WECHAT_LOGIN_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 30 次，`WECHAT_API_TIMEOUT_SECONDS` 控制微信上游超时。未配置时应用仍可启动，但微信登录接口返回 `503 WECHAT_SERVICE_UNAVAILABLE`。
+
+## 微信小程序开发
+
+用微信开发者工具直接导入 `apps/miniprogram`。直接打开时首页会调用 `wx.login` 并进入本人简历列表；扫描 Web 生成的码会进入 `pages/login/index`，可确认或取消该次网页登录。开发版未配置时 API 地址回退到 `http://127.0.0.1:8000`，开发者工具需要关闭合法域名校验。体验版和正式版发布前在 `apps/miniprogram/config/runtime.js` 填写公开的 HTTPS `apiBaseUrl`；第三方平台代开发时也可用 `extConfig.apiBaseUrl` 覆盖。随后在微信公众平台把同一主机登记为 request 合法域名。API URL 会打入小程序包，本来就是公开信息；仓库和小程序包内不得放 AppSecret。
+
+小程序只渲染 `GET /api/resumes` 与 `GET /api/resumes/{id}` 的本人数据，不展示照片、附件或写操作。纯逻辑测试运行 `npm run test:miniprogram`；微信 API、页面跳转和合法域名仍需开发者工具与真机验收，不能描述为自动化 E2E。
 
 ## 默认端口与覆盖
 
@@ -67,8 +73,6 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 
 如 LinkRag 使用了其他 Compose project/network，可通过 `LOKI_DOCKER_NETWORK` 覆盖网络名；LinkCV 日志目录可通过 `LINKCV_LOG_PATH` 覆盖。需要让本地 FastAPI 管理端查询该 Loki 时，为进程设置 `LOKI_QUERY_URL=http://127.0.0.1:3100`，该地址不传给浏览器。
 
-微信扫码登录需要 `WECHAT_APPID` 与 `WECHAT_APPSECRET`（个人主体小程序，体验版/正式版均可）；`WECHAT_LOGIN_PAGE` 指定小程序登录确认页（默认 `pages/login/index`）。`WECHAT_QRCODE_REQUESTS_PER_MINUTE`（默认 10）控制二维码请求的按 IP 限流，`WECHAT_SCENE_TTL_SECONDS`（默认 300）控制 scene 有效期，`WECHAT_TIMEOUT_SECONDS`（默认 5）控制微信上游调用超时。Development 未配置微信凭据时仍可启动应用，但二维码接口会返回 `WECHAT_UNAVAILABLE`；Production 缺 `WECHAT_APPID`/`WECHAT_APPSECRET` 会拒绝启动。
-
 ## 简历导入与版本配置
 
 | 环境变量 | 默认值 | 作用 |
@@ -100,10 +104,12 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 | `LINKPARSE_TIMEOUT_SECONDS` | `90` | 单次 LinkParse 阶段时限，不自动重试 |
 | `LINKPARSE_RESPONSE_MAX_BYTES` | `3145728` | LinkParse 响应读取上限 |
 | `DOCX_CONVERSION_TIMEOUT_SECONDS` | `30` | Mammoth 子进程转换时限 |
-| `WECHAT_APPID` | 空 | 微信小程序 appid；与 `WECHAT_SECRET` 同时配置才启用微信绑定 |
+| `WECHAT_APPID` | 空 | 微信小程序 appid；与 `WECHAT_SECRET` 同时配置才启用微信登录 |
 | `WECHAT_SECRET` | 空 | 微信小程序密钥，只放 `.local` 或进程环境 |
-| `WECHAT_QR_PAGE` | `pages/bind/bind` | 小程序码跳转的绑定确认页路径 |
-| `WECHAT_BIND_TICKET_TTL_SECONDS` | `300` | 微信绑定票据有效期，60~900 秒 |
+| `WECHAT_LOGIN_PAGE` | `pages/login/index` | 网页扫码进入的小程序确认页 |
+| `WECHAT_SCENE_TTL_SECONDS` | `300` | 网页扫码场景有效期，30~600 秒 |
+| `WECHAT_QRCODE_REQUESTS_PER_MINUTE` | `10` | 每 IP 每分钟生成网页登录码上限 |
+| `WECHAT_LOGIN_REQUESTS_PER_MINUTE` | `30` | 每 IP 每分钟小程序自动登录上限 |
 | `WECHAT_API_TIMEOUT_SECONDS` | `5` | 单次微信开放平台调用超时 |
 | `REDIS_CONNECT_TIMEOUT_SECONDS` | `2` | Redis 连接超时 |
 | `REDIS_SOCKET_TIMEOUT_SECONDS` | `2` | Redis 操作超时 |
@@ -123,6 +129,7 @@ Markdown 和 DOCX 导入不调用 LinkParse，但 Worker 仍需要数据库中�
 | `npm run db:init`                     | 仅允许创建 `linkcv` 数据库并升级到 Alembic head                      |
 | `npm run db:revision -- -m <message>` | 创建只调用 SQL 的 revision，以及同 ID 的 `.up.sql`、`.down.sql` 文件 |
 | `npm run test:web`                    | 前端 Vitest 单元和组件测试                                           |
+| `npm run test:miniprogram`            | 小程序纯逻辑 Node 测试                                               |
 | `npm run dev:extension`               | 启动 WXT 插件开发模式                                                |
 | `npm run test:extension`              | 插件 DOM 提取与 API 客户端测试                                       |
 | `npm run build:extension`             | 构建可侧载的 Chrome MV3 目录                                         |

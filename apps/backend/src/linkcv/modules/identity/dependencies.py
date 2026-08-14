@@ -23,18 +23,38 @@ def get_optional_user(
     settings: Settings = Depends(get_settings),
     redis_client: "redis.Redis" = Depends(get_redis),
 ) -> User | None:
-    # 1. Access self-check: signature, expiry and sane sub/sid.
-    decoded = decode_access_token(
-        request.cookies.get(settings.access_cookie_name), settings
-    )
+    cookie_token = request.cookies.get(settings.access_cookie_name)
+    authorization = request.headers.get("authorization")
+    bearer_token = None
+    if authorization:
+        scheme, _, value = authorization.partition(" ")
+        if scheme.lower() != "bearer" or not value or " " in value:
+            return None
+        bearer_token = value
+
+    # A request must use exactly one credential carrier. This prevents a browser
+    # cookie and an injected Bearer token from silently selecting different users.
+    if cookie_token and bearer_token:
+        return None
+    token = bearer_token or cookie_token
+    expected_channel = "miniprogram" if bearer_token else "web"
+    decoded = decode_access_token(token, settings)
     if decoded is None:
         return None
-    user_id, sid = decoded
-    # 2. Session lives only in Redis; deleted key means revoked or expired.
-    if not redis_client.exists(session_key(sid)):
+    user_id, sid, channel = decoded
+    if channel != expected_channel:
+        return None
+    session = redis_client.hgetall(session_key(sid))
+    if (
+        not session
+        or session.get("uid") != str(user_id)
+        or session.get("channel") != channel
+    ):
         return None
     user = db.scalar(select(User).where(User.id == user_id))
     if user is None or user.status != 1:
+        return None
+    if bearer_token and user.is_admin:
         return None
     bind_audit_actor(request, user.id, is_admin=bool(user.is_admin))
     return user

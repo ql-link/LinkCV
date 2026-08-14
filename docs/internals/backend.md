@@ -2,7 +2,7 @@
 
 ## 当前职责与结构
 
-`apps/backend` 承接健康检查、短 JWT access + 不透明 refresh + Redis 会话鉴权、微信小程序扫码登录与账号绑定、语义简历生命周期、历史版本、简历分享链接、异步文件导入、私有对象资源、结构化 JD 生命周期、用户中心与账号安全、统一 LLM 调用和管理员模型治理 API、管理台用户管理、知识库资料上传，以及统一系统日志、业务审计和管理员日志查询。
+`apps/backend` 承接健康检查、Web/小程序双通道 Redis 会话鉴权、微信自动建号与网页扫码确认、语义简历生命周期、历史版本、简历分享链接、异步文件导入、私有对象资源、结构化 JD 生命周期、用户中心、统一 LLM 调用和管理员模型治理 API、管理台用户管理、知识库资料上传，以及统一系统日志、业务审计和管理员日志查询。
 
 | 位置 | 职责 |
 | --- | --- |
@@ -17,7 +17,7 @@
 | `src/linkcv/services/resume_import_idempotency.py` | Redis Lua 请求指纹到导入 ID 的短期绑定与冲突保护 |
 | `src/linkcv/core/mq/` | RabbitMQ/Kafka publisher、统一导入消息和 confirm 异常边界 |
 | `src/linkcv/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
-| `src/linkcv/modules/identity/` | 用户模型、注册、登录、admin-login 鉴权、双 Token 会话、微信扫码登录与绑定、`/api/account` 用户中心、管理端用户管理 |
+| `src/linkcv/modules/identity/` | 用户模型、管理员密码登录、双通道会话、微信自动建号、扫码状态机、`/api/account` 用户中心与管理端用户管理 |
 | `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板及管理、简历、版本、异步导入、分享和资源路由 |
 | `src/linkcv/modules/datasets/` | `user_dataset` 用户知识库数据集表与上传/列表路由 |
 | `src/linkcv/modules/job_descriptions/` | JD 单表 ORM、HTTP DTO 和受保护路由 |
@@ -53,21 +53,23 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0018` 新增 `user_dataset` 用户知识库数据集表，与简历文件导入链路分开。每行记录一个用户上传的单个资料文件元信息：所属用户外键、安全化后的文件名、四类格式（docx/pdf/md/txt，受 CHECK 约束）、MIME、字节大小、对象存储对象键（唯一）和内容 SHA-256；外键 `ON DELETE RESTRICT`，删除用户不隐式级联删除资料记录。`POST /api/datasets` 先校验格式与大小（上限 `DATASET_UPLOAD_MAX_BYTES`，默认 10MB）并把文件上传到对象存储（对象键由服务端生成，强制以 `users/{uid}/datasets/` 为前缀），上传成功后才写库，写库失败会尽力删除已上传对象；`GET /api/datasets` 按用户过滤、按上传时间倒序。`sha256` 与对象键保留在库内供内部追踪，但上传/列表接口的响应只返回 `id/file_name/file_format/file_size/created_at`，不暴露对象存储路径与内容摘要等内部字段。本期不做分片、RAG、删除、下载、预览和去重，同一文件重复上传生成新记录。
 
-### 微信账号（绑定与扫码登录）
+### 微信账号、双端会话与扫码登录
 
-`0019` 为 `users` 增加 `wechat_openid`（VARCHAR(64)，全局唯一索引 `uk_users_wechat_openid`）和 `wechat_bound_at`（可空，UTC 绑定时间）。`wechat_openid` 是微信小程序 openid，绑定后写入，全局唯一约束承担 openid 冲突检测的数据库兜底；本周不提供解绑接口，因此不存在清空路径。`0020` 将 `email`、`password_hash` 放宽为可空：微信扫码登录创建的账号没有邮箱密码，`email` 为 `null`，昵称默认生成“微信用户”前缀。绑定逻辑遵循“一微信一账号”：同一 `openid` 只能关联一个用户，登录复用已有账号不新建。
+`0019` 为 `users` 增加全局唯一的 `wechat_openid` 和可空 `wechat_bound_at`，`0020` 将 `email/password_hash` 放宽为可空。当前普通用户以 openid 为唯一登录身份：code2session 得到的 openid 不存在时创建无邮箱密码账号，存在时复用；数据库唯一约束收敛并发建号。旧 Web 账号绑定、普通注册、普通密码登录和改密路由在正常应用中返回 404 且不进入 OpenAPI；`create_schema=True` 的隔离集成测试暂时保留隐藏造数入口。管理员仍只通过 `/api/auth/admin-login` 使用密码登录；即使历史管理员记录已有 `wechat_openid`，扫码确认和小程序登录也会拒绝该账号。
 
-绑定由 Web 已登录用户发起，走 `/api/account/wechat/bind-request|bind-confirm|bind-status`（ticket 票据）。绑定票据是临时凭证，只存 Redis（`wechat:bind_ticket:<ticket>` 存用户、`wechat:bind_status:<ticket>` 存 `pending/bound`、`wechat:bind_user_ticket:<uid>` 指向当前票据），TTL 默认 300 秒，同用户重新发起时覆盖旧票据。`bind-confirm` 提交小程序 `wx.login()` 的临时 code，服务端换 openid 后关联到发起用户；openid 已被其他用户绑定时返回 `409 WECHAT_ALREADY_BOUND`，原绑定关系不被覆盖。
+`session_service.py` 统一发放、轮换和撤销 Redis session。`auth:session:{sid}` 保存 `uid/rhash/channel/created_at`，access JWT 也保存 `channel=web|miniprogram`。Web 只从 Cookie 接受 web channel，小程序只从 Bearer 接受 miniprogram channel；Redis uid/channel 必须与 JWT 完全一致。小程序的 login/refresh/logout 返回 JSON token，refresh 每次轮换，旧 secret 重放会删除 session；管理员停用用户时原有用户会话集合仍可撤销两个 channel。
 
 扫码登录挂在 `/api/auth/wechat` 下，scene 状态机存 Redis（key `wechat:login:<scene>`，TTL 默认 300 秒）：
 
 | Method | Path | 说明 |
 | --- | --- | --- |
-| `POST` | `/api/auth/wechat/qrcode` | 无需登录。生成 `login:{随机}` scene 并调用微信小程序码上游，返回 `{scene, qr_base64}`；按 IP 限流（默认 10 次/分钟） |
-| `GET` | `/api/auth/wechat/status` | `{status: "pending" 或 "success" 或 "expired", user?}`；命中 `confirmed:*` 后签发双 Cookie，随后删除 scene 防残留 |
-| `POST` | `/api/auth/wechat/confirm` | 小程序端 multipart 提交 `scene/code`；用 GETSET 原子把 `pending:login` 翻转为 `claimed`，防重放（重复提交 `409 SCENE_REUSED`）。解析 openid 后按需建号（无邮箱密码），再把 `confirmed:<uid>:login` 写回 scene 供 status 轮询消费 |
+| `POST` | `/api/auth/wechat/qrcode` | 无需登录。生成 `login:{随机}` scene 和独立 Web `poll_token`，调用微信小程序码上游，返回 `{scene, poll_token, qr_base64}`；按 IP 限流（默认 10 次/分钟） |
+| `GET` | `/api/auth/wechat/status` | 返回 `pending/success/cancelled/expired`；只有携带匹配 `poll_token` 的 success 查询才发放 Web Cookie，未携带时只读状态 |
+| `POST` | `/api/auth/wechat/confirm` | 表单 `scene/code`；Redis Lua 原子进入 processing，按需建号后进入 confirmed；重复 confirmed 幂等成功 |
+| `POST` | `/api/auth/wechat/cancel` | 表单 `scene`；仅 pending 可原子进入 cancelled，重复取消幂等 |
+| `POST` | `/api/auth/wechat/miniprogram/login\|refresh\|logout` | 小程序自动登录、轮换 JSON token 和幂等撤销 |
 
-`integrations/wechat_client.py` 只封装 `cgi-bin/token`、`wxa/getwxacodeunlimit` 和 `sns/jscode2session` 三个上游调用；access_token 在进程内缓存到过期，凭据与完整上游响应不写日志，网络与上游失败统一转成 `WechatApiError` 供路由映射稳定错误码。同一客户端按 `qr_page`（绑定页）或 `login_page`（登录确认页）生成小程序码。登录模式的成功会话由 status 端点消费时签发，与邮箱登录共用同一套双 Token 会话。微信凭据未配置时 `settings.wechat_enabled` 为假，profile 返回 `wechat_status=unavailable`，绑定与扫码登录接口返回 `503 WECHAT_SERVICE_UNAVAILABLE`。openid 只在服务端存储与换取，任何接口不回传 openid 明文。
+scene 使用结构化 hash 保存 state、Web poll token 哈希、claim 所有者、claim 时间、uid 和最近发放的 web sid。小程序只持有二维码中的 scene，可读取状态但不能领取或替换 Web session；poll token 只返回给创建二维码的网页。processing 的微信调用失败时，只有 claim 所有者能恢复 pending；进程中断遗留的 processing 超过 30 秒后可由新确认原子接管，未超时的并发确认返回 `SCENE_IN_PROGRESS`。confirmed/cancelled 不被重复请求删除。携带正确 poll token 的重复 success 轮询先生成新 Web session，再原子交换 `web_sid` 并撤销旧 sid，以支持响应丢失重试。`integrations/wechat_client.py` 只封装 token、小程序码和 code2session；凭据、code、openid 和完整上游响应不写日志。微信凭据未配置时相关登录接口返回 `503 WECHAT_SERVICE_UNAVAILABLE`。
 
 ## 统一 LLM 调用
 
@@ -108,7 +110,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown/DOCX 保持
 
 ## 用户中心
 
-`/api/account/*` 的五个端点都通过 `get_current_user` 获取当前用户，不接受客户端 `user_id`。`GET /api/account/profile` 返回资料并附带简历数量与最近 5 份简历；`PATCH /api/account/profile` 只允许修改昵称（去空白后 1–50 字符）。头像上传复用 `decode_image_data_url`、`build_avatar_object_name` 和 `asset_url`：新对象写入 `users/{user_id}/assets/avatar/...`，再更新 `users.avatar_object_key`，提交失败补偿删除新对象，成功后才清理旧对象；响应只含相对 URL，旧路径中的已有头像不迁移。`POST /api/account/change-password` 校验当前密码（新密码不得与当前密码相同，否则 `400 PASSWORD_UNCHANGED`）并更新 Argon2id 哈希后，调用 `revoke_user_sessions` 撤销该用户全部 Redis 会话，再通过 `clear_auth_cookies` 清除双 Cookie，强制所有设备用新密码重新登录。登录与 `/api/auth/me` 等鉴权响应的 `user` 对象同样包含 `avatar_url`（经 `/api/assets` 转发，无头像时为 `null`）。
+公开的 `/api/account/*` 通过 `get_current_user` 获取当前用户，不接受客户端 `user_id`。`GET /api/account/profile` 返回资料并附带简历数量与最近 5 份简历；`PATCH /api/account/profile` 只允许修改昵称（去空白后 1–50 字符）。头像上传复用 `decode_image_data_url`、`build_avatar_object_name` 和 `asset_url`：新对象写入 `users/{user_id}/assets/avatar/...`，再更新 `users.avatar_object_key`，提交失败补偿删除新对象，成功后才清理旧对象；响应只含相对 URL。普通改密和微信绑定不是运行时公开契约；用户停用或管理员操作仍通过 `revoke_user_sessions` 撤销该用户的 Web 与小程序 session。
 
 ## 简历分享
 

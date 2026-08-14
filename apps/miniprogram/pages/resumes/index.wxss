@@ -1,0 +1,15 @@
+page { background: #f5f6f8; color: #172033; }
+.page { min-height: 100vh; padding: 56rpx 32rpx 80rpx; box-sizing: border-box; }
+.hero { display: flex; flex-direction: column; margin-bottom: 42rpx; }
+.eyebrow { color: #2463eb; font-size: 20rpx; font-weight: 700; letter-spacing: 6rpx; }
+.title { margin-top: 14rpx; font-size: 56rpx; font-weight: 700; letter-spacing: -2rpx; }
+.subtitle { margin-top: 14rpx; color: #687386; font-size: 26rpx; }
+.list { display: flex; flex-direction: column; gap: 20rpx; }
+.card { display: flex; align-items: center; min-height: 132rpx; padding: 28rpx 30rpx; border: 1rpx solid #e4e7ec; border-radius: 24rpx; background: #fff; box-sizing: border-box; }
+.card-main { display: flex; flex: 1; min-width: 0; flex-direction: column; }
+.card-title { overflow: hidden; font-size: 32rpx; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.card-time { margin-top: 12rpx; color: #8a93a3; font-size: 22rpx; }
+.arrow { margin-left: 20rpx; color: #2463eb; font-size: 48rpx; }
+.state { display: flex; min-height: 260rpx; flex-direction: column; align-items: center; justify-content: center; color: #687386; font-size: 27rpx; text-align: center; }
+.error { color: #b42318; }
+.secondary { margin-top: 28rpx; border: 1rpx solid #d0d5dd; border-radius: 14rpx; background: #fff; color: #344054; font-size: 26rpx; }

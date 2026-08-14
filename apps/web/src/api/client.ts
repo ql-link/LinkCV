@@ -10,11 +10,12 @@ export type User = {
 
 export type WeChatQrcodeResponse = {
   scene: string;
+  poll_token: string;
   qr_base64: string;
 };
 
 export type WeChatStatusResponse = {
-  status: "pending" | "success" | "expired";
+  status: "pending" | "success" | "cancelled" | "expired";
   user: User | null;
 };
 
@@ -34,12 +35,6 @@ export type AccountProfile = {
   user: UserProfile;
   resume_count: number;
   recent_resumes: RecentResumeSummary[];
-};
-
-export type ChangePasswordPayload = {
-  currentPassword: string;
-  newPassword: string;
-  confirmPassword: string;
 };
 
 export type AdminUserSummary = User & {
@@ -632,29 +627,18 @@ async function getCurrentUser(): Promise<{ user: User | null }> {
 
 export const api = {
   me: getCurrentUser,
-  register: (email: string, password: string) =>
-    request<{ user: User }>("/api/auth/register", {
-      method: "POST",
-      body: { email, password },
-    }),
-  login: (email: string, password: string) =>
-    request<{ user: User }>("/api/auth/login", {
-      method: "POST",
-      body: { email, password },
-    }),
   adminLogin: (email: string, password: string) =>
     request<{ user: User }>("/api/auth/admin-login", {
       method: "POST",
       body: { email, password },
     }),
-  wechatQrcode: (mode: "login" | "bind") =>
+  wechatQrcode: () =>
     request<WeChatQrcodeResponse>("/api/auth/wechat/qrcode", {
       method: "POST",
-      body: { mode },
     }),
-  wechatStatus: (scene: string) =>
+  wechatStatus: (scene: string, pollToken: string) =>
     request<WeChatStatusResponse>(
-      `/api/auth/wechat/status?scene=${encodeURIComponent(scene)}`,
+      `/api/auth/wechat/status?scene=${encodeURIComponent(scene)}&poll_token=${encodeURIComponent(pollToken)}`,
     ),
   logout: () =>
     request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
@@ -671,29 +655,6 @@ export const api = {
     }),
   deleteAccountAvatar: () =>
     request<{ ok: boolean }>("/api/account/avatar", { method: "DELETE" }),
-  changePassword: (payload: ChangePasswordPayload) =>
-    request<{ ok: boolean; message: string }>("/api/account/change-password", {
-      method: "POST",
-      body: {
-        current_password: payload.currentPassword,
-        new_password: payload.newPassword,
-        confirm_password: payload.confirmPassword,
-      },
-    }),
-  requestWechatBind: () =>
-    request<{ ticket: string; qrcode_data: string }>(
-      "/api/account/wechat/bind-request",
-      { method: "POST" },
-    ),
-  confirmWechatBind: (payload: { ticket: string; code: string }) =>
-    request<{ ok: boolean }>("/api/account/wechat/bind-confirm", {
-      method: "POST",
-      body: payload,
-    }),
-  getWechatBindStatus: (ticket: string) =>
-    request<{ status: "pending" | "bound" | "expired" }>(
-      `/api/account/wechat/bind-status?ticket=${encodeURIComponent(ticket)}`,
-    ),
   listResumes: () => request<{ resumes: ResumeSummary[] }>("/api/resumes"),
   getResumeOverview: () => request<ResumeOverview>("/api/resume-overview"),
   listResumeTemplates: () =>

@@ -1,0 +1,19 @@
+page { background: #eef1f5; color: #172033; }
+.page { min-height: 100vh; padding: 28rpx; box-sizing: border-box; }
+.document { padding: 44rpx 38rpx 64rpx; border-radius: 20rpx; background: #fff; box-shadow: 0 10rpx 40rpx rgba(20, 32, 54, .07); }
+.header { display: flex; flex-direction: column; padding-bottom: 34rpx; border-bottom: 3rpx solid #2463eb; }
+.name { font-size: 52rpx; font-weight: 700; }
+.headline { margin-top: 8rpx; color: #475467; font-size: 28rpx; }
+.contacts { display: flex; margin-top: 18rpx; flex-wrap: wrap; gap: 12rpx 22rpx; color: #667085; font-size: 23rpx; }
+.summary { margin-top: 22rpx; color: #344054; font-size: 25rpx; line-height: 1.75; white-space: pre-wrap; }
+.section { margin-top: 38rpx; }
+.section-title { display: block; color: #2463eb; font-size: 28rpx; font-weight: 700; letter-spacing: 2rpx; }
+.entry { padding: 24rpx 0; border-bottom: 1rpx solid #eaecf0; }
+.entry-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 20rpx; }
+.entry-title { font-size: 28rpx; font-weight: 600; }
+.entry-meta { flex-shrink: 0; color: #98a2b3; font-size: 21rpx; }
+.entry-subtitle { display: block; margin-top: 7rpx; color: #475467; font-size: 24rpx; }
+.entry-content, .highlight { display: block; margin-top: 14rpx; color: #344054; font-size: 24rpx; line-height: 1.75; white-space: pre-wrap; }
+.highlight { margin-top: 8rpx; }
+.state { display: flex; min-height: 60vh; align-items: center; justify-content: center; color: #667085; font-size: 27rpx; text-align: center; }
+.error { color: #b42318; }

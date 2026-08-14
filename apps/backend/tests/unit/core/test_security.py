@@ -29,7 +29,7 @@ def test_access_token_round_trip() -> None:
     settings = _settings()
     token = create_access_token(123, "sid-abc", settings)
 
-    assert decode_access_token(token, settings) == (123, "sid-abc")
+    assert decode_access_token(token, settings) == (123, "sid-abc", "web")
     assert decode_access_token(None, settings) is None
     assert decode_access_token("not-a-jwt", settings) is None
 

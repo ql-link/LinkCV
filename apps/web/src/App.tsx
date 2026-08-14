@@ -3,7 +3,6 @@ import { Button } from "@/components/ui";
 import { WorkspaceLayout, type WorkspaceSection } from "./components/WorkspaceLayout";
 import { ApiRequestError } from "./api/client";
 import { AccountPage } from "./features/account/AccountPage";
-import { ChangePasswordPage } from "./features/account/ChangePasswordPage";
 import { AdminApp } from "./features/admin/AdminApp";
 import { AdminLoginPage } from "./features/admin/AdminLoginPage";
 import { AuthPage } from "./features/auth/AuthPage";
@@ -148,10 +147,6 @@ export function App() {
     if (route.kind === "auth") {
       return <AuthPage key={`${route.mode}:${route.next ?? ""}`} initialMode={route.mode} next={route.next} />;
     }
-    if (route.kind === "accountPassword") {
-      return <ChangePasswordPage />;
-    }
-
     return (
       <LandingPage
         onLogin={() => navigateTo(authPath("login"))}
@@ -169,7 +164,6 @@ export function App() {
     || route.kind === "jobEdit"
     || route.kind === "datasets"
     || route.kind === "account"
-    || route.kind === "accountPassword"
   ) {
     const resumeView = route.kind === "resumes" && new URLSearchParams(window.location.search).get("view") === "templates"
       ? "templates"
@@ -178,7 +172,7 @@ export function App() {
       ? resumeView === "templates" ? "templates" : "resumes"
       : route.kind === "resumeCreate"
         ? "resumes"
-      : route.kind === "account" || route.kind === "accountPassword"
+      : route.kind === "account"
         ? "account"
         : route.kind === "datasets"
           ? "datasets"
@@ -194,7 +188,6 @@ export function App() {
         {route.kind === "jobEdit" && <JobFormPage mode="edit" jobId={route.jobId} />}
         {route.kind === "datasets" && <DatasetsPage />}
         {route.kind === "account" && <AccountPage />}
-        {route.kind === "accountPassword" && <ChangePasswordPage />}
       </WorkspaceLayout>
     );
   }

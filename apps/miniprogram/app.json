@@ -1,7 +1,11 @@
 {
-  "pages": ["pages/login/index"],
+  "pages": [
+    "pages/resumes/index",
+    "pages/resumes/detail",
+    "pages/login/index"
+  ],
   "window": {
-    "navigationBarTitleText": "LinkResume 登录确认",
+    "navigationBarTitleText": "LinkCV",
     "navigationBarBackgroundColor": "#ffffff",
     "navigationBarTextStyle": "black",
     "backgroundColor": "#f7f7f7"

@@ -78,18 +78,6 @@ describe("API session refresh", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("登录失败不会触发 refresh", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(401, { error: "INVALID_CREDENTIALS" }));
-    vi.stubGlobal("fetch", fetchMock);
-
-    await expect(
-      api.login("zhangsan@example.test", "wrong-password"),
-    ).rejects.toThrow("INVALID_CREDENTIALS");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
   it("并发 401 共用一次 refresh，避免轮换令牌互相撤销", async () => {
     const fetchMock = vi
       .fn()
@@ -330,13 +318,13 @@ describe("API resume share", () => {
 
 describe("微信扫码登录 API", () => {
   it("申请登录二维码时读取 scene 与 base64 图片", async () => {
-    const body = { scene: "login:abcd1234", qr_base64: "base64-qr" };
+    const body = { scene: "login:abcd1234", poll_token: "poll-token", qr_base64: "base64-qr" };
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(jsonResponse(200, body)),
     );
 
-    await expect(api.wechatQrcode("login")).resolves.toEqual(body);
+    await expect(api.wechatQrcode()).resolves.toEqual(body);
     expect(fetch).toHaveBeenCalledWith(
       "/api/auth/wechat/qrcode",
       expect.objectContaining({
@@ -353,9 +341,9 @@ describe("微信扫码登录 API", () => {
       vi.fn().mockResolvedValue(jsonResponse(200, status)),
     );
 
-    await expect(api.wechatStatus("login:a b")).resolves.toEqual(status);
+    await expect(api.wechatStatus("login:a b", "poll/token")).resolves.toEqual(status);
     expect(fetch).toHaveBeenCalledWith(
-      "/api/auth/wechat/status?scene=login%3Aa%20b",
+      "/api/auth/wechat/status?scene=login%3Aa%20b&poll_token=poll%2Ftoken",
       expect.objectContaining({ method: "GET", credentials: "include" }),
     );
   });
@@ -366,7 +354,7 @@ describe("微信扫码登录 API", () => {
       vi.fn().mockResolvedValue(jsonResponse(429, { error: "WECHAT_RATE_LIMITED" })),
     );
 
-    await expect(api.wechatQrcode("login")).rejects.toThrow(
+    await expect(api.wechatQrcode()).rejects.toThrow(
       "WECHAT_RATE_LIMITED",
     );
   });

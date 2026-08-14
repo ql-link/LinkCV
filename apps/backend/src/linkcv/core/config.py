@@ -282,6 +282,12 @@ class Settings(BaseSettings):
         ge=1,
         le=60,
     )
+    wechat_login_requests_per_minute: int = Field(
+        default=30,
+        alias="WECHAT_LOGIN_REQUESTS_PER_MINUTE",
+        ge=1,
+        le=120,
+    )
     wechat_scene_ttl_seconds: int = Field(
         default=300,
         alias="WECHAT_SCENE_TTL_SECONDS",

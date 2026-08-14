@@ -5,7 +5,7 @@ import { Button } from "@/components/ui";
 
 const POLL_INTERVAL_MS = 2000;
 
-type QrPhase = "loading" | "waiting" | "expired" | "error";
+type QrPhase = "loading" | "waiting" | "cancelled" | "expired" | "error";
 
 type WechatQrLoginProps = {
   onSuccess: (user: User) => void;
@@ -16,6 +16,7 @@ export function WechatQrLogin({ onSuccess }: WechatQrLoginProps) {
   const [qrBase64, setQrBase64] = useState("");
   const [message, setMessage] = useState("");
   const sceneRef = useRef<string | null>(null);
+  const pollTokenRef = useRef<string | null>(null);
   const timerRef = useRef<number | null>(null);
   const succeededRef = useRef(false);
   const onSuccessRef = useRef(onSuccess);
@@ -37,8 +38,9 @@ export function WechatQrLogin({ onSuccess }: WechatQrLoginProps) {
     setPhase("loading");
     setMessage("");
     try {
-      const { scene, qr_base64 } = await api.wechatQrcode("login");
+      const { scene, poll_token, qr_base64 } = await api.wechatQrcode();
       sceneRef.current = scene;
+      pollTokenRef.current = poll_token;
       setQrBase64(qr_base64);
       setPhase("waiting");
       timerRef.current = window.setInterval(() => {
@@ -52,9 +54,10 @@ export function WechatQrLogin({ onSuccess }: WechatQrLoginProps) {
 
   const pollStatus = async () => {
     const scene = sceneRef.current;
-    if (!scene || succeededRef.current) return;
+    const pollToken = pollTokenRef.current;
+    if (!scene || !pollToken || succeededRef.current) return;
     try {
-      const result = await api.wechatStatus(scene);
+      const result = await api.wechatStatus(scene, pollToken);
       if (result.status === "success" && result.user) {
         stopPolling();
         succeededRef.current = true;
@@ -65,6 +68,11 @@ export function WechatQrLogin({ onSuccess }: WechatQrLoginProps) {
         stopPolling();
         setPhase("expired");
         setMessage("二维码已过期，请刷新后重新扫码。");
+      }
+      if (result.status === "cancelled") {
+        stopPolling();
+        setPhase("cancelled");
+        setMessage("已在小程序中取消本次登录，请刷新二维码后重试。");
       }
     } catch {
       // 轮询期间网络抖动不打断等待，只对确定过期/成功切换状态。
@@ -89,10 +97,10 @@ export function WechatQrLogin({ onSuccess }: WechatQrLoginProps) {
             alt="微信扫码登录二维码"
           />
         )}
-        {phase === "expired" && (
+        {(phase === "expired" || phase === "cancelled") && (
           <div className="wechat-qr-fallback">
             <ScanLine size={26} aria-hidden="true" />
-            <span>二维码已过期</span>
+            <span>{phase === "cancelled" ? "登录已取消" : "二维码已过期"}</span>
           </div>
         )}
         {phase === "error" && (
@@ -107,7 +115,7 @@ export function WechatQrLogin({ onSuccess }: WechatQrLoginProps) {
         {phase === "waiting" ? "使用微信扫一扫，扫码确认后自动登录。" : message}
       </p>
 
-      {(phase === "expired" || phase === "error") && (
+      {(phase === "expired" || phase === "cancelled" || phase === "error") && (
         <Button variant="outline" size="sm" onClick={() => void loadQr()}>
           <RefreshCw size={14} /> 刷新二维码
         </Button>
