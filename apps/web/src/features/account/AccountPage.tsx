@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState } from "react";
-import { ChevronRight, FileText, MessageCircle, UserRound } from "lucide-react";
+import { ChevronRight, UserRound } from "lucide-react";
 
 import {
   Avatar,
@@ -9,12 +9,13 @@ import {
   FeedbackNotice,
   Input,
   Label,
-  Separator,
   Skeleton,
 } from "@/components/ui";
 import { api, AccountProfile, ApiRequestError, UserProfile } from "../../api/client";
+import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { editorPath, navigateTo } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
+import { ChangePasswordDialog } from "./ChangePasswordDialog";
 
 const MAX_AVATAR_BYTES = 10 * 1024 * 1024;
 const MAX_NICKNAME_LENGTH = 50;
@@ -46,6 +47,7 @@ export function AccountPage() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [removingAvatar, setRemovingAvatar] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [bindTicket, setBindTicket] = useState<string | null>(null);
   const [bindQrcode, setBindQrcode] = useState<string | null>(null);
   const [requestingBind, setRequestingBind] = useState(false);
@@ -218,11 +220,11 @@ export function AccountPage() {
 
   return (
     <main className="dashboard-content account-page">
-      <header className="dashboard-header account-header">
-        <div className="mx-auto w-full max-w-[756px]">
-          <h1>个人资料</h1>
-        </div>
-      </header>
+      <WorkspacePageHero
+        eyebrow="账号设置"
+        title="个人资料"
+        description="管理你的身份信息、使用情况和登录安全。"
+      />
 
       {loading && <AccountPageSkeleton />}
 
@@ -238,151 +240,155 @@ export function AccountPage() {
       )}
 
       {profile && (
-        <div className="mx-auto w-full max-w-[820px] px-5 py-8 sm:px-8 sm:py-10">
-          <section className="overflow-hidden rounded-xl border border-border bg-surface" aria-label="账号设置">
-            <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:p-6">
-              <Avatar className="size-16 shrink-0 border border-border bg-muted">
-                <AvatarImage alt="当前头像" className="object-cover" src={displayAvatar ?? undefined} />
-                <AvatarFallback className="bg-primary text-xl font-semibold text-primary-foreground">
-                  {profileInitial(profile.user.nickname)}
-                </AvatarFallback>
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <h3 className="m-0 truncate text-base font-semibold">{profile.user.nickname}</h3>
-                <p className="mb-0 mt-1 truncate text-sm text-muted-foreground">{profile.user.email}</p>
-                {avatarPreview && (
-                  <p className="mb-0 mt-1 text-xs font-medium text-warning">新头像已预览，尚未保存</p>
-                )}
-              </div>
-              <input
-                ref={fileInputRef}
-                className="visually-hidden"
-                type="file"
-                accept="image/*"
-                aria-label="选择头像图片"
-                tabIndex={-1}
-                onChange={(event) => {
-                  const file = event.currentTarget.files?.[0];
-                  event.currentTarget.value = "";
-                  pickAvatarFile(file);
-                }}
-              />
-              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                {avatarPreview ? (
-                  <>
-                    <Button size="sm" disabled={uploadingAvatar} onClick={() => void saveAvatar()}>
-                      {uploadingAvatar ? "保存中..." : "保存新头像"}
-                    </Button>
-                    <Button size="sm" variant="ghost" disabled={uploadingAvatar} onClick={cancelAvatarPreview}>
-                      取消
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={uploadingAvatar || removingAvatar}
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      {uploadingAvatar ? "上传中..." : "更换头像"}
-                    </Button>
-                    {profile.user.avatar_url && (
+        <div className="account-layout">
+          <section className="account-top-card" aria-label="账号设置">
+            <div className="account-profile-col">
+              <div className="account-identity">
+                <Avatar className="account-avatar-lg">
+                  <AvatarImage alt="当前头像" className="object-cover" src={displayAvatar ?? undefined} />
+                  <AvatarFallback className="account-avatar-lg-fallback">
+                    {profileInitial(profile.user.nickname)}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="account-identity-text">
+                  <h3>{profile.user.nickname}</h3>
+                  <p>{profile.user.email}</p>
+                  {avatarPreview && (
+                    <p className="account-avatar-note">新头像已预览，尚未保存</p>
+                  )}
+                </div>
+                <input
+                  ref={fileInputRef}
+                  className="visually-hidden"
+                  type="file"
+                  accept="image/*"
+                  aria-label="选择头像图片"
+                  tabIndex={-1}
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = "";
+                    pickAvatarFile(file);
+                  }}
+                />
+                <div className="account-avatar-actions">
+                  {avatarPreview ? (
+                    <>
+                      <Button size="sm" disabled={uploadingAvatar} onClick={() => void saveAvatar()}>
+                        {uploadingAvatar ? "保存中..." : "保存新头像"}
+                      </Button>
+                      <Button size="sm" variant="ghost" disabled={uploadingAvatar} onClick={cancelAvatarPreview}>
+                        取消
+                      </Button>
+                    </>
+                  ) : (
+                    <>
                       <Button
-                        className="text-muted-foreground hover:text-destructive"
                         size="sm"
                         variant="ghost"
                         disabled={uploadingAvatar || removingAvatar}
-                        onClick={() => void removeAvatar()}
+                        onClick={() => fileInputRef.current?.click()}
                       >
-                        {removingAvatar ? "移除中..." : "移除"}
+                        {uploadingAvatar ? "上传中..." : "更换头像"}
                       </Button>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-
-            <Separator />
-
-            <div className="divide-y divide-border">
-              <div className="grid gap-4 p-5 sm:grid-cols-[160px_minmax(0,1fr)] sm:p-6">
-                <div>
-                  <Label htmlFor="account-nickname">昵称</Label>
-                  <p className="mb-0 mt-1 text-xs leading-relaxed text-muted-foreground">用于工作区中的身份展示。</p>
-                </div>
-                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
-                  <Input
-                    id="account-nickname"
-                    value={nickname}
-                    maxLength={MAX_NICKNAME_LENGTH}
-                    aria-describedby="account-nickname-hint"
-                    onChange={(event) => setNickname(event.target.value)}
-                  />
-                  <Button
-                    className="shrink-0 self-end sm:self-auto"
-                    size="sm"
-                    disabled={savingName || nickname.trim() === profile.user.nickname}
-                    onClick={() => void saveNickname()}
-                  >
-                    {savingName ? "保存中..." : "保存"}
-                  </Button>
-                  <span id="account-nickname-hint" className="sr-only">最多 {MAX_NICKNAME_LENGTH} 个字符</span>
-                </div>
-              </div>
-
-              <div className="grid gap-3 p-5 sm:grid-cols-[160px_minmax(0,1fr)] sm:p-6">
-                <div>
-                  <span className="text-sm font-medium">登录邮箱</span>
-                  <p className="mb-0 mt-1 text-xs leading-relaxed text-muted-foreground">当前暂不支持修改。</p>
-                </div>
-                <p className="m-0 self-center break-all text-sm text-foreground">{profile.user.email}</p>
-              </div>
-            </div>
-          </section>
-
-          <section className="mt-5 overflow-hidden rounded-xl border border-border bg-surface" aria-label="使用情况">
-            <div className="grid gap-3 p-5 sm:grid-cols-2 sm:p-6">
-              <div>
-                <h3 className="m-0 text-sm font-semibold">简历数量</h3>
-                <p className="mb-0 mt-1 text-3xl font-semibold tabular-nums">{profile.resume_count}</p>
-              </div>
-              <div className="min-w-0">
-                <h3 className="m-0 text-sm font-semibold">最近简历</h3>
-                <ul className="mb-0 mt-2 flex flex-col gap-1">
-                  {profile.recent_resumes.length === 0 && (
-                    <li className="text-sm text-muted-foreground">暂无简历</li>
+                      {profile.user.avatar_url && (
+                        <Button
+                          className="account-danger-text"
+                          size="sm"
+                          variant="ghost"
+                          disabled={uploadingAvatar || removingAvatar}
+                          onClick={() => void removeAvatar()}
+                        >
+                          {removingAvatar ? "移除中..." : "移除"}
+                        </Button>
+                      )}
+                    </>
                   )}
-                  {profile.recent_resumes.map((resume) => (
-                    <li key={resume.id}>
-                      <button
-                        type="button"
-                        className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-accent"
-                        onClick={() => navigateTo(editorPath(String(resume.id)))}
-                      >
-                        <FileText aria-hidden size={14} className="shrink-0 text-muted-foreground" />
-                        <span className="min-w-0 flex-1 truncate">{resume.title}</span>
-                        <ChevronRight aria-hidden size={14} className="shrink-0 text-muted-foreground" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                </div>
+              </div>
+
+              <div className="account-field-row">
+                <div className="account-field-label">
+                  <Label htmlFor="account-nickname">昵称</Label>
+                  <p>用于工作区中的身份展示</p>
+                </div>
+                <Input
+                  id="account-nickname"
+                  value={nickname}
+                  maxLength={MAX_NICKNAME_LENGTH}
+                  aria-describedby="account-nickname-hint"
+                  onChange={(event) => setNickname(event.target.value)}
+                />
+                <Button
+                  className="account-field-action"
+                  size="sm"
+                  variant="ghost"
+                  disabled={savingName || nickname.trim() === profile.user.nickname}
+                  onClick={() => void saveNickname()}
+                >
+                  {savingName ? "保存中..." : "保存昵称"}
+                </Button>
+                <span id="account-nickname-hint" className="sr-only">最多 {MAX_NICKNAME_LENGTH} 个字符</span>
+              </div>
+
+              <div className="account-field-row">
+                <div className="account-field-label">
+                  <span className="account-field-name">登录邮箱</span>
+                  <p>当前暂不支持修改</p>
+                </div>
+                <p className="account-email-value">{profile.user.email}</p>
               </div>
             </div>
+
+            <aside className="account-usage">
+              <h3>使用概况</h3>
+              <p className="account-usage-sub">当前账号的简历使用情况</p>
+              <div className="account-usage-count">
+                <span className="account-usage-number">
+                  <strong>{profile.resume_count}</strong>
+                  <span>份简历</span>
+                </span>
+                <button type="button" className="account-usage-link" onClick={() => navigateTo("/resumes")}>
+                  查看全部 →
+                </button>
+              </div>
+              <p className="account-usage-recent-label">最近简历</p>
+              <ul className="account-recent-list">
+                {profile.recent_resumes.length === 0 && (
+                  <li className="account-recent-empty">暂无简历</li>
+                )}
+                {profile.recent_resumes.map((resume) => (
+                  <li key={resume.id}>
+                    <button
+                      type="button"
+                      className="account-recent-row"
+                      onClick={() => navigateTo(editorPath(String(resume.id)))}
+                    >
+                      <span className="account-recent-badge" aria-hidden="true">cv</span>
+                      <span className="account-recent-text">
+                        <strong>{resume.title}</strong>
+                        <small>{recentTime(resume.updated_at)}</small>
+                      </span>
+                      <ChevronRight aria-hidden size={15} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </aside>
           </section>
 
-          <section className="mt-5 overflow-hidden rounded-xl border border-border bg-surface" aria-label="安全设置">
-            <div className="border-b border-border bg-surface-subtle px-5 py-3 sm:px-6">
-              <h3 className="m-0 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">安全</h3>
-            </div>
+          <section className="account-card-block" aria-label="安全设置">
+            <header className="account-block-head">
+              <h2>安全设置</h2>
+              <p>登录、绑定与会话管理</p>
+            </header>
 
-            <div className="divide-y divide-border">
-              <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:p-6">
-                <div className="min-w-0 flex-1">
-                  <h3 className="m-0 text-sm font-medium">登录密码</h3>
-                  <p className="mb-0 mt-1 text-xs leading-relaxed text-muted-foreground">修改密码后，其他设备需要重新登录。</p>
+            <div className="account-security-rows">
+              <div className="account-security-row">
+                <div>
+                  <h3>登录密码</h3>
+                  <p>修改后，其他设备需要重新登录</p>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => navigateTo("/account/password")}>修改密码</Button>
+                <Button size="sm" variant="outline" onClick={() => setPasswordDialogOpen(true)}>修改密码</Button>
               </div>
 
               <WechatSection
@@ -393,13 +399,13 @@ export function AccountPage() {
                 onStartBind={() => void handleStartBind()}
               />
 
-              <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:p-6">
-                <div className="min-w-0 flex-1">
-                  <h3 className="m-0 text-sm font-medium">退出当前账号</h3>
-                  <p className="mb-0 mt-1 text-xs leading-relaxed text-muted-foreground">结束此设备上的当前会话。</p>
+              <div className="account-security-row">
+                <div>
+                  <h3>退出当前账号</h3>
+                  <p>结束此设备上的当前会话</p>
                 </div>
                 <Button
-                  className="self-start text-destructive hover:bg-[var(--ui-destructive-subtle)] hover:text-destructive sm:self-auto"
+                  className="account-danger-text"
                   size="sm"
                   variant="ghost"
                   disabled={loggingOut}
@@ -414,6 +420,9 @@ export function AccountPage() {
       )}
 
       {notice && <FeedbackNotice kind={notice.kind}>{notice.message}</FeedbackNotice>}
+      {passwordDialogOpen && (
+        <ChangePasswordDialog onClose={() => setPasswordDialogOpen(false)} />
+      )}
     </main>
   );
 }
@@ -432,32 +441,23 @@ function WechatSection({
   onStartBind: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:p-6">
-      <div className="flex min-w-0 flex-1 items-start gap-3">
-        <MessageCircle aria-hidden size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
-        <div className="min-w-0">
-          <h3 className="m-0 text-sm font-medium">微信绑定</h3>
-          {status === "bound" && (
-            <p className="mb-0 mt-1 text-xs leading-relaxed text-muted-foreground">
-              已绑定微信{boundAt ? `（${formatBoundAt(boundAt)}）` : ""}。本周暂不支持解绑或更换。
-            </p>
-          )}
-          {status === "unavailable" && (
-            <p className="mb-0 mt-1 text-xs leading-relaxed text-muted-foreground">
-              微信绑定服务暂不可用。
-            </p>
-          )}
-          {status === "unbound" && !bindQrcode && (
-            <p className="mb-0 mt-1 text-xs leading-relaxed text-muted-foreground">
-              绑定微信后可通过小程序登录当前账号。
-            </p>
-          )}
-          {status === "unbound" && bindQrcode && (
-            <p className="mb-0 mt-1 text-xs leading-relaxed text-muted-foreground">
-              使用微信扫描下方小程序码，在小程序内确认绑定。
-            </p>
-          )}
-        </div>
+    <div className="account-security-row is-wechat">
+      <div>
+        <h3>微信绑定</h3>
+        {status === "bound" && (
+          <p>
+            已绑定微信{boundAt ? `（${formatBoundAt(boundAt)}）` : ""}。本周暂不支持解绑或更换。
+          </p>
+        )}
+        {status === "unavailable" && (
+          <p>微信绑定服务暂不可用。</p>
+        )}
+        {status === "unbound" && !bindQrcode && (
+          <p>未绑定 · 绑定后可通过小程序登录</p>
+        )}
+        {status === "unbound" && bindQrcode && (
+          <p>使用微信扫描下方小程序码，在小程序内确认绑定。</p>
+        )}
       </div>
       {status === "unbound" && !bindQrcode && (
         <Button size="sm" variant="outline" disabled={requesting} onClick={onStartBind}>
@@ -466,7 +466,7 @@ function WechatSection({
       )}
       {status === "unbound" && bindQrcode && (
         <img
-          className="size-32 shrink-0 rounded-lg border border-border object-contain"
+          className="account-wechat-qr"
           src={`data:image/png;base64,${bindQrcode}`}
           alt="微信绑定二维码"
         />
@@ -477,22 +477,16 @@ function WechatSection({
 
 function AccountPageSkeleton() {
   return (
-    <div aria-label="正在加载个人资料" className="mx-auto w-full max-w-[820px] px-5 py-8 sm:px-8 sm:py-10" role="status">
-      <div className="overflow-hidden rounded-xl border border-border bg-surface">
-        <div className="flex items-center gap-4 p-6">
-          <Skeleton className="size-16 rounded-full" />
-          <div className="flex-1">
-            <Skeleton className="h-5 w-32" />
-            <Skeleton className="mt-2 h-4 w-48 max-w-full" />
+    <div aria-label="正在加载个人资料" className="account-layout" role="status">
+      <div className="account-top-card">
+        <div className="account-profile-col">
+          <div className="account-identity">
+            <Skeleton className="account-avatar-lg" />
+            <div className="account-identity-text">
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="mt-2 h-4 w-48 max-w-full" />
+            </div>
           </div>
-          <Skeleton className="h-8 w-20" />
-        </div>
-        <Separator />
-        <div className="grid gap-6 p-6">
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
         </div>
       </div>
     </div>
@@ -501,6 +495,16 @@ function AccountPageSkeleton() {
 
 function profileInitial(nickname: string) {
   return Array.from(nickname.trim())[0] ?? "?";
+}
+
+function recentTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const startOfDay = (target: Date) => new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(new Date()) - startOfDay(date)) / 86400000);
+  if (diffDays === 0) return "今天更新";
+  if (diffDays === 1) return "昨天更新";
+  return `${date.getMonth() + 1}月${date.getDate()}日更新`;
 }
 
 function formatBoundAt(value: string) {

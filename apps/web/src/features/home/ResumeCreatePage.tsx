@@ -1,10 +1,10 @@
-import { ArrowLeft, FilePlus2 } from "lucide-react";
-import { useState } from "react";
-import { ApiRequestError, type ResumeTemplate } from "../../api/client";
-import { Button, FeedbackNotice } from "@/components/ui";
+import { ArrowLeft, ArrowRight, Check, FileUp, LayoutTemplate, Upload, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { api, ApiRequestError, type ResumeTemplate } from "../../api/client";
+import { Brand, Button, FeedbackNotice } from "@/components/ui";
 import { editorPath, navigateTo } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
-import { TemplatePicker } from "./TemplatePicker";
+import { ResumePreview } from "../preview/ResumePreview";
 
 function createErrorMessage(error: unknown) {
   if (!(error instanceof ApiRequestError)) return "创建简历失败，请稍后重试。";
@@ -15,15 +15,90 @@ function createErrorMessage(error: unknown) {
   return "创建简历失败，请稍后重试。";
 }
 
+function importErrorMessage(error: unknown) {
+  if (!(error instanceof ApiRequestError)) return "导入请求失败，请检查网络后重试。";
+  const messages: Record<string, string> = {
+    RESUME_LIMIT_REACHED: "每个账号最多保存 10 份简历，请先删除一份后再导入。",
+    TEMPLATE_INACTIVE: "所选模板已停用或不可用，请重新选择。",
+    EMPTY_IMPORT_FILE: "文件为空，请重新选择。",
+    IMPORT_FILE_TOO_LARGE: "文件过大，最大支持 10 MB。",
+    UNSUPPORTED_IMPORT_FORMAT: "仅支持 Markdown、DOCX 和 PDF 文件。",
+    INVALID_IMPORT_FILENAME: "文件名无效，请重新选择。",
+    IMPORT_CONTENT_INVALID: "文件内容无法读取，请重新选择。",
+    STRUCTURING_INPUT_TOO_LARGE: "转换后的简历内容过长，暂时无法结构化。",
+    IMPORT_RATE_LIMITED: "导入请求过于频繁，请稍后重试。",
+    IMPORT_ALREADY_PROCESSING: "这份简历正在导入，请等待当前请求完成。",
+    IDEMPOTENCY_KEY_REUSED: "本次导入标识已被使用，请重新选择文件后再试。",
+    IMPORT_IDEMPOTENCY_UNAVAILABLE: "导入保护服务暂时不可用，请稍后重试。",
+    IMPORT_ACCEPTANCE_IN_PROGRESS: "导入正在受理，请稍后刷新查看。",
+    IMPORT_PREVIOUSLY_FAILED: "这次导入已经失败，请删除失败记录后重新上传。",
+    RESUME_SOURCE_UPLOAD_FAILED: "源文件上传失败，请稍后重试。",
+    RESUME_IMPORT_QUEUE_UNAVAILABLE: "解析队列暂时不可用，失败记录已保留。",
+    DOCUMENT_CONVERSION_UNAVAILABLE: "文档解析服务暂时不可用，请稍后重试。",
+    DOCUMENT_CONVERSION_TIMEOUT: "文档解析超时，请稍后重新导入。",
+    DOCUMENT_CONVERSION_FAILED: "文档解析失败，请检查文件内容后重试。",
+    STRUCTURING_MODEL_UNAVAILABLE: "内容结构化模型未配置或凭据不可用，请联系管理员配置后重试。",
+    STRUCTURING_MODEL_FAILED: "内容结构化失败，请稍后重试。",
+    RESUME_STRUCTURE_INVALID: "文件已解析，但生成的简历结构无效，请检查内容后重试。",
+    IMPORT_CREATE_FAILED: "正式简历创建失败，请稍后重试。",
+    IMPORT_DEADLINE_EXCEEDED: "导入处理超时，请稍后重新导入。",
+  };
+  return messages[error.message] ?? `导入失败（${error.message}），请稍后重试。`;
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+}
+
 export function ResumeCreatePage() {
   const createResume = useResumeStore((state) => state.createResume);
+  const importResume = useResumeStore((state) => state.importResume);
+  const [mode, setMode] = useState<"template" | "import">(() =>
+    new URLSearchParams(window.location.search).get("mode") === "import" ? "import" : "template",
+  );
+  const [templates, setTemplates] = useState<ResumeTemplate[]>([]);
+  const [templatesError, setTemplatesError] = useState<string | null>(null);
   const [selected, setSelected] = useState<ResumeTemplate | null>(null);
   const [title, setTitle] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [titleTouched, setTitleTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const initialTemplateId = new URLSearchParams(window.location.search).get("template");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const submit = async () => {
+  useEffect(() => {
+    let cancelled = false;
+    void api.listResumeTemplates().then(
+      ({ templates: next }) => {
+        if (cancelled) return;
+        setTemplates(next);
+        const initialId = new URLSearchParams(window.location.search).get("template");
+        const initial = next.find((template) => template.id === initialId) ?? next[0] ?? null;
+        setSelected(initial);
+      },
+      () => {
+        if (cancelled) return;
+        setTemplatesError("模板暂时无法加载，请稍后重试。");
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const importTemplate = templates.find((template) => template.key === "blank-cn") ?? templates[0] ?? null;
+
+  const pickFile = (next: File | null) => {
+    setFile(next);
+    setError(null);
+    if (next && !titleTouched) {
+      setTitle(next.name.replace(/\.[^.]+$/, ""));
+    }
+  };
+
+  const submitCreate = async () => {
     if (submitting) return;
     if (!selected) {
       setError("请先选择一套简历模板。");
@@ -41,35 +116,207 @@ export function ResumeCreatePage() {
     }
   };
 
+  const submitImport = async () => {
+    if (submitting) return;
+    if (!file) {
+      setError("请先选择需要导入的文件。");
+      return;
+    }
+    if (!importTemplate) {
+      setError("模板暂时无法加载，请稍后重试。");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await importResume(file, importTemplate.id);
+      navigateTo("/resumes");
+    } catch (reason) {
+      setError(importErrorMessage(reason));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const previewTemplate = mode === "template" ? selected : importTemplate;
+
   return (
-    <main className="resume-create-page">
-      <header className="resume-create-header">
-        <button type="button" onClick={() => navigateTo("/resumes")}><ArrowLeft size={18} />返回</button>
-        <div><span>新建简历</span><h1>选择一个起点</h1><p>所有简历都从模板创建，空白简历也作为模板提供。</p></div>
+    <main className="create-page" data-ui-theme="light">
+      <header className="create-topbar">
+        <Brand />
+        <button type="button" className="create-back" onClick={() => navigateTo("/resumes")}>
+          <ArrowLeft size={15} />返回全部简历
+        </button>
       </header>
-      <TemplatePicker
-        selectedTemplateId={selected?.id ?? null}
-        initialTemplateId={initialTemplateId}
-        onSelect={setSelected}
-      />
-      <section className="resume-create-name">
-        <label htmlFor="resume-create-title">简历名称</label>
-        <input
-          id="resume-create-title"
-          value={title}
-          maxLength={255}
-          placeholder="例如：2026 产品经理简历"
-          onChange={(event) => setTitle(event.target.value)}
-        />
-        <small>同一账号内名称不能重复；系统会清理首尾和连续空格。</small>
-      </section>
-      {error && <FeedbackNotice kind="error">{error}</FeedbackNotice>}
-      <footer className="resume-create-actions">
-        <Button variant="secondary" onClick={() => navigateTo("/resumes")}>取消</Button>
-        <Button icon={<FilePlus2 size={16} />} disabled={submitting} onClick={() => void submit()}>
-          {submitting ? "正在创建…" : "创建并开始编辑"}
-        </Button>
-      </footer>
+      <div className="create-body">
+        <section className="create-panel">
+          <h1>{mode === "template" ? "创建简历" : "导入简历"}</h1>
+          <p className="create-subtitle">
+            {mode === "template" ? "选择模板并命名，下一步直接编辑内容。" : "上传文件并确认名称，内容将在下一步解析。"}
+          </p>
+          <div className="create-tabs" role="tablist" aria-label="创建方式">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === "template"}
+              className={mode === "template" ? "is-active" : ""}
+              onClick={() => {
+                setMode("template");
+                setError(null);
+              }}
+            >
+              <LayoutTemplate size={15} />使用模板
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === "import"}
+              className={mode === "import" ? "is-active" : ""}
+              onClick={() => {
+                setMode("import");
+                setError(null);
+              }}
+            >
+              <Upload size={15} />导入文件
+            </button>
+          </div>
+
+          {mode === "template" ? (
+            <>
+              <label className="create-field">
+                <span>简历名称</span>
+                <input
+                  value={title}
+                  maxLength={255}
+                  placeholder="例如：2026 产品经理简历"
+                  aria-label="简历名称"
+                  onChange={(event) => setTitle(event.target.value)}
+                />
+              </label>
+              <div className="create-field">
+                <span>选择模板</span>
+                {templatesError && <FeedbackNotice kind="error">{templatesError}</FeedbackNotice>}
+                <div className="create-template-grid" role="listbox" aria-label="选择模板">
+                  {templates.map((template) => {
+                    const active = selected?.id === template.id;
+                    return (
+                      <button
+                        key={template.id}
+                        type="button"
+                        role="option"
+                        aria-selected={active}
+                        className={`create-template-card${active ? " is-active" : ""}`}
+                        onClick={() => {
+                          setSelected(template);
+                          setError(null);
+                        }}
+                      >
+                        <span className="create-template-thumb" aria-hidden="true">
+                          <ResumePreview data={template.data} style={template.style} />
+                        </span>
+                        <span className="create-template-meta">
+                          <strong>{template.name}</strong>
+                          <small>{active ? "已选择" : "选择模板"}</small>
+                        </span>
+                        {active && (
+                          <span className="create-template-check" aria-hidden="true">
+                            <Check size={13} />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {error && <FeedbackNotice kind="error">{error}</FeedbackNotice>}
+              <Button
+                className="create-submit"
+                disabled={submitting}
+                onClick={() => void submitCreate()}
+              >
+                {submitting ? "正在创建…" : "创建并进入编辑器"}
+                <ArrowRight size={15} />
+              </Button>
+            </>
+          ) : (
+            <>
+              <div className="create-field">
+                <span>简历文件</span>
+                <button
+                  type="button"
+                  className="create-dropzone"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <span className="create-dropzone-icon" aria-hidden="true"><Upload size={18} /></span>
+                  <strong>拖拽文件，或点击选择</strong>
+                  <small>支持 Markdown、DOCX、PDF，最大 10 MB</small>
+                </button>
+                <input
+                  ref={fileInputRef}
+                  className="visually-hidden"
+                  type="file"
+                  aria-label="选择 Markdown、DOCX 或 PDF 文件"
+                  accept=".md,.docx,.pdf,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={(event) => pickFile(event.currentTarget.files?.[0] ?? null)}
+                />
+                {file && (
+                  <div className="create-file-chip">
+                    <span className="create-file-badge">{file.name.split(".").pop()?.toUpperCase()}</span>
+                    <span className="create-file-meta">
+                      <strong>{file.name}</strong>
+                      <small>{formatFileSize(file.size)} · 已准备</small>
+                    </span>
+                    <button type="button" aria-label="移除文件" onClick={() => pickFile(null)}>
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+              </div>
+              <label className="create-field">
+                <span>简历名称</span>
+                <input
+                  value={title}
+                  maxLength={255}
+                  placeholder="例如：张三｜产品经理"
+                  aria-label="简历名称"
+                  onChange={(event) => {
+                    setTitleTouched(true);
+                    setTitle(event.target.value);
+                  }}
+                />
+                <small>已根据文件名自动填写，可修改。</small>
+              </label>
+              {error && <FeedbackNotice kind="error">{error}</FeedbackNotice>}
+              <Button
+                className="create-submit"
+                icon={<FileUp size={15} />}
+                disabled={submitting}
+                onClick={() => void submitImport()}
+              >
+                {submitting ? "正在导入…" : "导入并开始解析"}
+              </Button>
+            </>
+          )}
+        </section>
+
+        <aside className="create-preview">
+          <div className="create-preview-head">
+            <span>预览</span>
+            {previewTemplate && (
+              <span className={`create-preview-chip${mode === "import" ? " is-outline" : ""}`}>
+                {mode === "template" ? previewTemplate.name : "内容可编辑"}
+              </span>
+            )}
+          </div>
+          <div className="create-preview-paper">
+            {previewTemplate ? (
+              <ResumePreview data={previewTemplate.data} style={previewTemplate.style} mode="full" />
+            ) : (
+              <div className="create-preview-empty">模板加载后可预览版式。</div>
+            )}
+          </div>
+        </aside>
+      </div>
     </main>
   );
 }

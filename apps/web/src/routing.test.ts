@@ -27,7 +27,7 @@ describe("LinkCV routes", () => {
     expect(parseAppRoute("/jobs/job_123/edit")).toEqual({ kind: "jobEdit", jobId: "job_123" });
     expect(parseAppRoute("/datasets")).toEqual({ kind: "datasets" });
     expect(parseAppRoute("/account")).toEqual({ kind: "account" });
-    expect(parseAppRoute("/account/password")).toEqual({ kind: "accountPassword" });
+    expect(parseAppRoute("/account/password")).toEqual({ kind: "notFound" });
     expect(parseAppRoute("/share/abc123")).toEqual({ kind: "share", token: "abc123" });
     expect(parseAppRoute("/share/a%20b")).toEqual({ kind: "share", token: "a b" });
     expect(parseAppRoute("/missing")).toEqual({ kind: "notFound" });

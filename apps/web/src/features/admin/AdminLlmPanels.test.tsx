@@ -330,9 +330,12 @@ describe("LogsPanel", () => {
 
     renderLogs();
 
-    expect(await screen.findByText("llmcall_fictional")).toBeInTheDocument();
     expect(
-      screen.getByText("deepseek/deepseek-v4-flash", { selector: "strong" }),
+      await screen.findByText("deepseek/deepseek-v4-flash", { selector: "strong" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "筛选" }));
+    expect(
+      screen.getByRole("dialog", { name: "筛选调用记录" }),
     ).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("调用来源"), {
       target: { value: "resume_editor" },
@@ -342,7 +345,7 @@ describe("LogsPanel", () => {
     fireEvent.change(screen.getByLabelText("callId"), {
       target: { value: "llmcall_fictional" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "查询" }));
+    fireEvent.click(screen.getByRole("button", { name: "应用" }));
 
     await waitFor(() => expect(listCalls).toHaveBeenCalledTimes(2));
     expect(listCalls.mock.calls[1][0]).toMatchObject({

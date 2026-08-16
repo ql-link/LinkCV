@@ -14,7 +14,6 @@ export type AppRoute =
   | { kind: "jobEdit"; jobId: string }
   | { kind: "datasets" }
   | { kind: "account" }
-  | { kind: "accountPassword" }
   | { kind: "share"; token: string }
   | { kind: "notFound" };
 
@@ -70,7 +69,6 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
   if (normalizedPath === "/jobs/new") return { kind: "jobCreate" };
   if (normalizedPath === "/datasets") return { kind: "datasets" };
   if (normalizedPath === "/account") return { kind: "account" };
-  if (normalizedPath === "/account/password") return { kind: "accountPassword" };
 
   const editorMatch = normalizedPath.match(editorPathPattern);
   if (editorMatch) {

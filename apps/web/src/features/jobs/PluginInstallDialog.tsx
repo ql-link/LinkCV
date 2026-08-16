@@ -46,29 +46,52 @@ export function PluginInstallDialog({ onClose }: { onClose: () => void }) {
       if (event.target === event.currentTarget) onClose();
     }}>
       <section className="job-dialog plugin-install-dialog" role="dialog" aria-modal="true" aria-labelledby="plugin-install-title">
+        <span className="plugin-dialog-chip">支持 Chrome / Edge</span>
         <button className="plugin-dialog-close" type="button" aria-label="关闭插件安装说明" onClick={onClose}><X size={18} /></button>
-        <p className="job-eyebrow">浏览器插件</p>
         <h2 id="plugin-install-title">安装岗位采集插件</h2>
-        <p>在 BOSS 岗位详情页预览并导入 JD。插件采用 Chrome 开发者模式侧载，需要手工更新。</p>
+        <p>用浏览器扩展一键保存招聘网站上的岗位信息。</p>
 
-        {!result && !failed && <div className="plugin-release-state">正在检查安装包…</div>}
-        {failed && <div className="plugin-release-state is-error" role="alert">暂时无法获取插件安装包，请稍后重试。</div>}
-        {result?.status === "unpublished" && <div className="plugin-release-state">暂未提供插件安装包。</div>}
-        {release && (
-          <>
-            <ol className="plugin-install-steps">
-              <li>下载 ZIP 并解压到固定目录。</li>
-              <li>打开 <code>chrome://extensions</code>，启用“开发者模式”。</li>
-              <li>点击“加载已解压的扩展程序”，选择包含 manifest.json 的目录。</li>
-              <li>更新时下载新包，并在扩展管理页重新加载。</li>
-            </ol>
-            {downloadError && <p className="plugin-release-state is-error" role="alert">{downloadError}</p>}
-            <Button className="plugin-download-link" icon={<Download size={16} />} disabled={downloading} onClick={() => void download()}>
-              {downloading ? "正在下载…" : "下载插件"}
-            </Button>
-          </>
-        )}
-        <div className="job-dialog-actions"><Button variant="secondary" onClick={onClose}>关闭</Button></div>
+        <ol className="plugin-steps">
+          <li className="plugin-step is-open">
+            <span className="plugin-step-index" aria-hidden="true">1</span>
+            <div className="plugin-step-body">
+              <strong>下载插件</strong>
+              <p>获取 LinkCV 岗位采集插件安装包</p>
+              {!result && !failed && <div className="plugin-release-state">正在检查安装包…</div>}
+              {failed && <div className="plugin-release-state is-error" role="alert">暂时无法获取插件安装包，请稍后重试。</div>}
+              {result?.status === "unpublished" && <div className="plugin-release-state">暂未提供插件安装包。</div>}
+              {release && (
+                <div className="plugin-step-panel">
+                  <p>下载 ZIP 并解压到固定目录，打开 <code>chrome://extensions</code> 启用“开发者模式”，选择“加载已解压的扩展程序”。</p>
+                  <p>更新时下载新包，并在扩展管理页重新加载。</p>
+                  {downloadError && <p className="plugin-release-state is-error" role="alert">{downloadError}</p>}
+                  <Button className="plugin-download-link" icon={<Download size={15} />} disabled={downloading} onClick={() => void download()}>
+                    {downloading ? "正在下载…" : "下载插件"}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </li>
+          <li className="plugin-step">
+            <span className="plugin-step-index" aria-hidden="true">2</span>
+            <div className="plugin-step-body">
+              <strong>安装并固定</strong>
+              <p>在工具栏固定 LinkCV，方便随时保存岗位</p>
+            </div>
+          </li>
+          <li className="plugin-step">
+            <span className="plugin-step-index" aria-hidden="true">3</span>
+            <div className="plugin-step-body">
+              <strong>开始采集</strong>
+              <p>打开招聘网站，点击 LinkCV 图标保存岗位</p>
+            </div>
+          </li>
+        </ol>
+
+        <div className="plugin-dialog-footer">
+          <p>完成安装后返回此页，刷新即可开始使用。</p>
+          <Button onClick={onClose}>我已安装，刷新状态</Button>
+        </div>
       </section>
     </div>
   );

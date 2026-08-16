@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, ApiRequestError, type DatasetRecord } from "../../api/client";
 import { useResumeStore } from "../../store/resumeStore";
@@ -35,9 +35,9 @@ describe("DatasetsPage", () => {
   it("资料为空时展示空状态", async () => {
     render(<DatasetsPage />);
 
-    expect(await screen.findByText("资料库还是空的")).toBeInTheDocument();
+    expect(await screen.findByText("先上传一份资料")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "上传第一份资料" }),
+      screen.getByRole("button", { name: /拖拽文件到这里/ }),
     ).toBeInTheDocument();
   });
 
@@ -65,7 +65,7 @@ describe("DatasetsPage", () => {
       .mockResolvedValue({ datasets: [] });
     const upload = vi.spyOn(api, "uploadDataset").mockResolvedValue(record);
     render(<DatasetsPage />);
-    await screen.findByText("资料库还是空的");
+    await screen.findByText("先上传一份资料");
 
     const file = new File(["# 岗位要求"], "岗位要求.md", {
       type: "text/markdown",
@@ -78,7 +78,7 @@ describe("DatasetsPage", () => {
     expect(screen.getByText("岗位要求.md")).toBeInTheDocument();
     expect(upload).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "上传" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "上传资料" }));
     await waitFor(() => expect(upload).toHaveBeenCalledWith(file));
     expect(await screen.findByText(/已上传「岗位要求\.md」/)).toBeInTheDocument();
     expect(list).toHaveBeenCalledTimes(2);
@@ -87,7 +87,7 @@ describe("DatasetsPage", () => {
   it("取消选择后不上传", async () => {
     const upload = vi.spyOn(api, "uploadDataset");
     render(<DatasetsPage />);
-    await screen.findByText("资料库还是空的");
+    await screen.findByText("先上传一份资料");
 
     const file = new File(["# 岗位要求"], "岗位要求.md", {
       type: "text/markdown",
@@ -97,7 +97,7 @@ describe("DatasetsPage", () => {
     });
 
     expect(await screen.findByLabelText("待上传的文件")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "取消" }));
 
     expect(screen.queryByLabelText("待上传的文件")).not.toBeInTheDocument();
     expect(upload).not.toHaveBeenCalled();
@@ -106,7 +106,7 @@ describe("DatasetsPage", () => {
   it("空文件在上传前被拦截", async () => {
     const upload = vi.spyOn(api, "uploadDataset");
     render(<DatasetsPage />);
-    await screen.findByText("资料库还是空的");
+    await screen.findByText("先上传一份资料");
 
     const empty = new File([], "empty.md", { type: "text/markdown" });
     fireEvent.change(screen.getByLabelText("选择资料文件"), {
@@ -121,7 +121,7 @@ describe("DatasetsPage", () => {
   it("不支持的格式在上传前被拦截", async () => {
     const upload = vi.spyOn(api, "uploadDataset");
     render(<DatasetsPage />);
-    await screen.findByText("资料库还是空的");
+    await screen.findByText("先上传一份资料");
 
     const exe = new File(["MZ"], "malware.exe", {
       type: "application/octet-stream",
@@ -140,7 +140,7 @@ describe("DatasetsPage", () => {
   it("超过 10MB 的文件在上传前被拦截", async () => {
     const upload = vi.spyOn(api, "uploadDataset");
     render(<DatasetsPage />);
-    await screen.findByText("资料库还是空的");
+    await screen.findByText("先上传一份资料");
 
     const big = new File([new Uint8Array(10 * 1024 * 1024 + 1)], "big.pdf");
     fireEvent.change(screen.getByLabelText("选择资料文件"), {
@@ -167,7 +167,7 @@ describe("DatasetsPage", () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
       });
-      expect(screen.getByText("资料库还是空的")).toBeInTheDocument();
+      expect(screen.getByText("先上传一份资料")).toBeInTheDocument();
 
       const file = new File(["# 岗位要求"], "岗位要求.md", {
         type: "text/markdown",
@@ -179,7 +179,7 @@ describe("DatasetsPage", () => {
         await vi.advanceTimersByTimeAsync(0);
       });
       expect(screen.getByLabelText("待上传的文件")).toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: "上传" }));
+      fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "上传资料" }));
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
       });

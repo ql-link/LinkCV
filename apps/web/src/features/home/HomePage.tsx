@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileUp, PenLine, Plus, Search, Share2, X } from "lucide-react";
+import { FileUp, Plus, Search, Share2, X } from "lucide-react";
 import {
-  ApiRequestError,
   type ResumeImportSummary,
   type ResumeSummary,
-  type ResumeTemplate,
 } from "../../api/client";
 import {
   Button,
@@ -14,51 +12,18 @@ import {
 import { useResumeStore } from "../../store/resumeStore";
 import { editorPath, navigateTo } from "../../routing";
 import { ResumePreview } from "../preview/ResumePreview";
+import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { SharePanel } from "./SharePanel";
-import { TemplatePicker } from "./TemplatePicker";
 
 type HomeScreenProps = {
-  view?: "all" | "templates";
   resumes: ResumeSummary[];
   activeImports: ResumeImportSummary[];
   failedImports: ResumeImportSummary[];
   onOpen: (id: string) => void | Promise<void>;
   onDelete: (id: string) => void | Promise<void>;
   onCreate: () => void | Promise<void>;
-  onImport: (file: File, templateId: string) => Promise<string>;
   onDeleteImport: (id: string) => void | Promise<void>;
 };
-
-function importErrorMessage(error: unknown) {
-  if (!(error instanceof ApiRequestError)) return "导入请求失败，请检查网络后重试。";
-  const messages: Record<string, string> = {
-    RESUME_LIMIT_REACHED: "每个账号最多保存 10 份简历，请先删除一份后再导入。",
-    TEMPLATE_INACTIVE: "所选模板已停用或不可用，请重新选择。",
-    EMPTY_IMPORT_FILE: "文件为空，请重新选择。",
-    IMPORT_FILE_TOO_LARGE: "文件过大，最大支持 10 MB。",
-    UNSUPPORTED_IMPORT_FORMAT: "仅支持 Markdown、DOCX 和 PDF 文件。",
-    INVALID_IMPORT_FILENAME: "文件名无效，请重新选择。",
-    IMPORT_CONTENT_INVALID: "文件内容无法读取，请重新选择。",
-    STRUCTURING_INPUT_TOO_LARGE: "转换后的简历内容过长，暂时无法结构化。",
-    IMPORT_RATE_LIMITED: "导入请求过于频繁，请稍后重试。",
-    IMPORT_ALREADY_PROCESSING: "这份简历正在导入，请等待当前请求完成。",
-    IDEMPOTENCY_KEY_REUSED: "本次导入标识已被使用，请重新选择文件后再试。",
-    IMPORT_IDEMPOTENCY_UNAVAILABLE: "导入保护服务暂时不可用，请稍后重试。",
-    IMPORT_ACCEPTANCE_IN_PROGRESS: "导入正在受理，请稍后刷新查看。",
-    IMPORT_PREVIOUSLY_FAILED: "这次导入已经失败，请删除失败记录后重新上传。",
-    RESUME_SOURCE_UPLOAD_FAILED: "源文件上传失败，请稍后重试。",
-    RESUME_IMPORT_QUEUE_UNAVAILABLE: "解析队列暂时不可用，失败记录已保留。",
-    DOCUMENT_CONVERSION_UNAVAILABLE: "文档解析服务暂时不可用，请稍后重试。",
-    DOCUMENT_CONVERSION_TIMEOUT: "文档解析超时，请稍后重新导入。",
-    DOCUMENT_CONVERSION_FAILED: "文档解析失败，请检查文件内容后重试。",
-    STRUCTURING_MODEL_UNAVAILABLE: "内容结构化模型未配置或凭据不可用，请联系管理员配置后重试。",
-    STRUCTURING_MODEL_FAILED: "内容结构化失败，请稍后重试。",
-    RESUME_STRUCTURE_INVALID: "文件已解析，但生成的简历结构无效，请检查内容后重试。",
-    IMPORT_CREATE_FAILED: "正式简历创建失败，请稍后重试。",
-    IMPORT_DEADLINE_EXCEEDED: "导入处理超时，请稍后重新导入。",
-  };
-  return messages[error.message] ?? `导入失败（${error.message}），请稍后重试。`;
-}
 
 function importFailureStatus(task: ResumeImportSummary) {
   const uploadFailed = task.upload_status === "failed";
@@ -92,22 +57,7 @@ function ResumeThumbnailCard({
             <span className="home-preview-unavailable">预览不可用</span>
           )}
         </span>
-        <span className="home-card-meta">
-          <strong>{resume.title}</strong>
-          <small>更新于 {formatTime(resume.updated_at)}</small>
-        </span>
       </button>
-      {onShare && (
-        <button
-          className="home-card-share"
-          type="button"
-          aria-label={`分享简历 ${resume.title}`}
-          title="分享简历"
-          onClick={onShare}
-        >
-          <Share2 size={14} />
-        </button>
-      )}
       {onDelete && (
         <button
           className="home-card-delete"
@@ -120,19 +70,36 @@ function ResumeThumbnailCard({
           <X size={14} />
         </button>
       )}
+      <div className="home-card-meta">
+        <strong>{resume.title}</strong>
+        <small>更新于 {formatTime(resume.updated_at)}</small>
+        <div className="home-card-actions">
+          {onShare && (
+            <button
+              className="home-card-action"
+              type="button"
+              aria-label={`分享简历 ${resume.title}`}
+              onClick={onShare}
+            >
+              <Share2 size={14} />分享
+            </button>
+          )}
+          <button className="home-card-action" type="button" onClick={onOpen}>
+            打开
+          </button>
+        </div>
+      </div>
     </article>
   );
 }
 
 export function HomeScreen({
-  view = "all",
   resumes,
   activeImports,
   failedImports,
   onOpen,
   onDelete,
   onCreate,
-  onImport,
   onDeleteImport,
 }: HomeScreenProps) {
   const [query, setQuery] = useState("");
@@ -140,11 +107,6 @@ export function HomeScreen({
   const [sharingResume, setSharingResume] = useState<ResumeSummary | null>(null);
   const [deletingResumeId, setDeletingResumeId] = useState<string | null>(null);
   const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState<ResumeTemplate | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [importError, setImportError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
 
   const visibleResumes = useMemo(() => {
@@ -157,24 +119,6 @@ export function HomeScreen({
     const timer = window.setTimeout(() => setNotice(null), 5000);
     return () => window.clearTimeout(timer);
   }, [notice]);
-
-  const submitImport = async () => {
-    if (!selectedFile || !selectedTemplate || importing) return;
-    setImporting(true);
-    setImportError(null);
-    setNotice(null);
-    try {
-      await onImport(selectedFile, selectedTemplate.id);
-      setImportOpen(false);
-      setSelectedFile(null);
-      setSelectedTemplate(null);
-      setNotice({ kind: "success", message: "文件已上传，正在后台解析。" });
-    } catch (error) {
-      setImportError(importErrorMessage(error));
-    } finally {
-      setImporting(false);
-    }
-  };
 
   const confirmDelete = async () => {
     if (!pendingDelete || deletingResumeId) return;
@@ -206,31 +150,41 @@ export function HomeScreen({
 
   return (
     <main className="dashboard-content">
-      <header className="dashboard-header">
-        <h1>{view === "all" ? "全部简历" : "模板"}</h1>
-        {view === "all" && (
-          <div className="dashboard-header-actions">
-            <label className="dashboard-search">
-              <Search size={14} aria-hidden="true" />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索简历" />
+      <WorkspacePageHero
+        eyebrow="求职工作台"
+        title="全部简历"
+        description={
+          resumes.length > 0
+            ? `${resumes.length} 份简历 · 按最近更新排列`
+            : "从一份有针对性的简历开始，逐步整理你的求职版本。"
+        }
+        actions={
+          <>
+            <label className="page-hero-field dashboard-search-field">
+              <span>搜索简历</span>
+              <span className="dashboard-search">
+                <Search size={14} aria-hidden="true" />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="请输入关键词"
+                  aria-label="搜索简历"
+                />
+              </span>
             </label>
             <Button
-              variant="secondary"
-              size="sm"
-              icon={<FileUp size={14} />}
-              onClick={() => {
-                setImportError(null);
-                setImportOpen(true);
-              }}
+              variant="ghost"
+              icon={<FileUp size={15} />}
+              onClick={() => navigateTo("/resumes/new?mode=import")}
             >
               导入简历
             </Button>
-            <Button size="sm" icon={<Plus size={14} />} onClick={() => void onCreate()}>
+            <Button icon={<Plus size={15} />} onClick={() => void onCreate()}>
               新建简历
             </Button>
-          </div>
-        )}
-      </header>
+          </>
+        }
+      />
 
       <div className="dashboard-main">
         {(activeImports.length > 0 || failedImports.length > 0) && (
@@ -265,24 +219,47 @@ export function HomeScreen({
           </section>
         )}
         {visibleResumes.length > 0 ? (
-          <section className="home-card-grid" aria-label="全部简历">
-            {visibleResumes.map((resume) => (
-              <ResumeThumbnailCard
-                key={resume.id}
-                resume={resume}
-                onOpen={() => void onOpen(resume.id)}
-                onShare={() => setSharingResume(resume)}
-                onDelete={() => setPendingDelete(resume)}
-                deleteDisabled={deletingResumeId !== null}
-              />
-            ))}
-          </section>
+          <>
+            <div className="home-filter-row">
+              <span className="filter-pill is-active">全部 {visibleResumes.length}</span>
+              <span className="home-filter-sort">最近更新</span>
+            </div>
+            <section className="home-card-grid" aria-label="全部简历">
+              {visibleResumes.map((resume) => (
+                <ResumeThumbnailCard
+                  key={resume.id}
+                  resume={resume}
+                  onOpen={() => void onOpen(resume.id)}
+                  onShare={() => setSharingResume(resume)}
+                  onDelete={() => setPendingDelete(resume)}
+                  deleteDisabled={deletingResumeId !== null}
+                />
+              ))}
+            </section>
+            <p className="home-page-tip">提示：点击简历卡片可继续编辑，分享按钮只管理当前简历的公开链接。</p>
+          </>
         ) : (
           <section className="dashboard-empty-state">
-            <PenLine size={48} strokeWidth={1.2} />
+            <span className="empty-state-icon" aria-hidden="true"><Plus size={28} strokeWidth={1.6} /></span>
             <h2>{query ? "没有匹配的简历" : "还没有正式简历"}</h2>
-            <p>{query ? "换个关键词试试。" : "从空白模板或其他模板创建第一份简历。"}</p>
-            {!query && <Button icon={<Plus size={16} />} onClick={() => void onCreate()}>创建第一份简历</Button>}
+            <p>
+              {query
+                ? "换个关键词试试。"
+                : "从空白模板创建，或导入一份已有文件作为起点。之后可以复制出不同岗位版本，分别维护和分享。"}
+            </p>
+            {!query && (
+              <div className="empty-state-actions">
+                <Button icon={<Plus size={15} />} onClick={() => void onCreate()}>创建第一份简历</Button>
+                <Button
+                  variant="outline"
+                  icon={<FileUp size={15} />}
+                  onClick={() => navigateTo("/resumes/new?mode=import")}
+                >
+                  导入简历
+                </Button>
+              </div>
+            )}
+            {!query && <small className="empty-state-hint">建议：先完成一份基础版，再为不同岗位复制出定向版本。</small>}
           </section>
         )}
       </div>
@@ -300,63 +277,6 @@ export function HomeScreen({
           onConfirm={confirmDelete}
         />
       )}
-      {importOpen && (
-        <div className="template-preview-backdrop" role="dialog" aria-modal="true" aria-label="导入简历">
-          <div className="home-import-dialog">
-            <header>
-              <div><h2>导入简历</h2><p>先选择模板，再上传需要解析的文件。</p></div>
-              <button
-                type="button"
-                aria-label="关闭"
-                disabled={importing}
-                onClick={() => {
-                  setImportError(null);
-                  setImportOpen(false);
-                }}
-              ><X size={18} /></button>
-            </header>
-            <TemplatePicker
-              selectedTemplateId={selectedTemplate?.id ?? null}
-              onSelect={(template) => {
-                setSelectedTemplate(template);
-                setImportError(null);
-              }}
-            />
-            <label className="home-import-file">
-              <span>{selectedFile ? selectedFile.name : "选择 Markdown、DOCX 或 PDF 文件"}</span>
-              <input
-                className="visually-hidden"
-                type="file"
-                accept=".md,.docx,.pdf,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                onChange={(event) => {
-                  setSelectedFile(event.currentTarget.files?.[0] ?? null);
-                  setImportError(null);
-                }}
-              />
-              <span className="home-import-file-action">{selectedFile ? "重新选择" : "选择文件"}</span>
-            </label>
-            {importError && <p className="home-import-error" role="alert">{importError}</p>}
-            <footer>
-              <Button
-                variant="secondary"
-                disabled={importing}
-                onClick={() => {
-                  setImportError(null);
-                  setImportOpen(false);
-                }}
-              >取消</Button>
-              <Button
-                aria-busy={importing}
-                disabled={!selectedTemplate || !selectedFile || importing}
-                onClick={() => void submitImport()}
-              >
-                {importing ? "正在导入…" : "开始导入"}
-              </Button>
-            </footer>
-          </div>
-        </div>
-      )}
-
       {sharingResume && (
         <SharePanel
           resumeId={sharingResume.id}
@@ -368,52 +288,31 @@ export function HomeScreen({
   );
 }
 
-export function HomePage({ view = "all" }: { view?: "all" | "templates" }) {
+export function HomePage() {
   const resumes = useResumeStore((state) => state.resumes);
   const activeImports = useResumeStore((state) => state.activeImports);
   const failedImports = useResumeStore((state) => state.failedImports);
   const listResumes = useResumeStore((state) => state.listResumes);
-  const importResume = useResumeStore((state) => state.importResume);
   const deleteResume = useResumeStore((state) => state.deleteResume);
   const deleteResumeImport = useResumeStore((state) => state.deleteResumeImport);
 
   useEffect(() => {
-    if (view !== "all") return;
     void listResumes();
     if (activeImports.length === 0) return;
     const timer = window.setInterval(() => void listResumes(), 2000);
     return () => window.clearInterval(timer);
-  }, [activeImports.length, listResumes, view]);
+  }, [activeImports.length, listResumes]);
 
-  if (view === "templates") return <TemplateLibrary />;
   return (
     <HomeScreen
       resumes={resumes}
       activeImports={activeImports}
       failedImports={failedImports}
       onCreate={() => navigateTo("/resumes/new")}
-      onImport={importResume}
       onOpen={(id) => navigateTo(editorPath(id))}
       onDelete={deleteResume}
       onDeleteImport={deleteResumeImport}
     />
-  );
-}
-
-function TemplateLibrary() {
-  const [selected, setSelected] = useState<ResumeTemplate | null>(null);
-  return (
-    <main className="dashboard-content template-library-page">
-      <header className="dashboard-header"><h1>模板</h1></header>
-      <div className="dashboard-main">
-        <TemplatePicker selectedTemplateId={selected?.id ?? null} onSelect={setSelected} />
-        <div className="template-library-actions">
-          <Button disabled={!selected} onClick={() => selected && navigateTo(`/resumes/new?template=${encodeURIComponent(selected.id)}`)}>
-            使用所选模板
-          </Button>
-        </div>
-      </div>
-    </main>
   );
 }
 

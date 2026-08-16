@@ -40,7 +40,7 @@ describe("SharePage", () => {
     render(<SharePage token="token_123" />);
 
     await waitFor(() => expect(screen.getByText("linkresume")).toBeInTheDocument());
-    expect(screen.getByText("于晏 分享的简历")).toBeInTheDocument();
+    expect(screen.getByText("由 于晏 分享")).toBeInTheDocument();
     // 默认简历内容含姓名「张三」；仅渲染正文，不包含私密字段入口
     expect(screen.getByText("张三")).toBeInTheDocument();
   });
@@ -49,7 +49,7 @@ describe("SharePage", () => {
     mockedFetch.mockRejectedValue(new Error("SHARE_LINK_UNAVAILABLE"));
     render(<SharePage token="token_123" />);
 
-    await waitFor(() => expect(screen.getByText("分享链接已失效")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("这条分享链接已失效")).toBeInTheDocument());
     expect(screen.queryByText("张三")).not.toBeInTheDocument();
   });
 });

@@ -1,4 +1,4 @@
-import { EditorContent, useEditor } from "@tiptap/react";
+import { BubbleMenu, EditorContent, useEditor } from "@tiptap/react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
   AlertTriangle,
@@ -7,21 +7,16 @@ import {
   History,
   Home,
   LoaderCircle,
-  LogOut,
-  Minus,
-  Plus,
   Save,
   SlidersHorizontal,
   Sparkles,
-  Trash2,
-  UserRound,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiRequestError } from "../../api/client";
 import { Button, ConfirmDialog, IconButton, TogglePill } from "@/components/ui";
 import { exportResumePdf } from "../preview/exportPdf";
-import { resumeSerifFontStack, useResumeStore } from "../../store/resumeStore";
+import { defaultSettings, resumeSerifFontStack, useResumeStore } from "../../store/resumeStore";
 import { resumeEditorExtensions } from "./editorExtensions";
 import { WorkbenchToolbar } from "./WorkbenchToolbar";
 import { handleWheelZoom } from "./workbenchZoom";
@@ -136,7 +131,6 @@ export function SaveVersionAction({ pending, onSave }: { pending: boolean; onSav
       disabled={pending}
       icon={pending ? <LoaderCircle aria-hidden="true" className="workbench-save-spinner" /> : <Save aria-hidden="true" />}
       size="sm"
-      variant="accent"
       onClick={onSave}
     >
       {pending ? "保存中…" : "保存版本"}
@@ -159,14 +153,24 @@ export function ImportWarningBanner({ warnings, onDismiss }: { warnings: string[
   );
 }
 
-function Stepper({ label, value, min, max, step, onChange, disabled }: { label: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void; disabled?: boolean }) {
-  const change = (direction: -1 | 1) => onChange(Number(Math.min(max, Math.max(min, value + direction * step)).toFixed(2)));
+function SettingsSlider({ label, unit, value, min, max, step, onChange, disabled }: { label: string; unit: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void; disabled?: boolean }) {
   return (
-    <div className="workbench-stepper" aria-label={label}>
-      <motion.button type="button" aria-label={`${label}减小`} whileTap={{ scale: 0.92 }} onClick={() => change(-1)} disabled={disabled}><Minus size={12} /></motion.button>
-      <strong>{value}</strong>
-      <motion.button type="button" aria-label={`${label}增大`} whileTap={{ scale: 0.92 }} onClick={() => change(1)} disabled={disabled}><Plus size={12} /></motion.button>
-    </div>
+    <label className="workbench-slider-row">
+      <span className="workbench-slider-head">
+        <span>{label}</span>
+        <output>{value} {unit}</output>
+      </span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        disabled={disabled}
+        aria-label={label}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
+    </label>
   );
 }
 
@@ -193,7 +197,6 @@ export function ResumeWorkbench() {
   const deleteStoredVersion = useResumeStore((state) => state.deleteVersion);
   const restoreStoredVersion = useResumeStore((state) => state.restoreVersion);
   const goHome = useResumeStore((state) => state.goHome);
-  const logout = useResumeStore((state) => state.logout);
   const [drawerMode, setDrawerMode] = useState<DrawerMode>(null);
   const [toast, setToast] = useState<ToastState>(null);
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
@@ -329,7 +332,7 @@ export function ResumeWorkbench() {
     }
   };
 
-  const leaveSafely = async (destination: "home" | "logout") => {
+  const leaveSafely = async () => {
     if (dirty) {
       await saveCurrentResume();
       if (useResumeStore.getState().error) {
@@ -337,13 +340,8 @@ export function ResumeWorkbench() {
         return;
       }
     }
-    if (destination === "home") {
-      goHome();
-      navigateTo("/resumes");
-    } else {
-      await logout();
-      navigateTo("/", { replace: true });
-    }
+    goHome();
+    navigateTo("/resumes");
   };
 
   const responsiveFitScale = viewportWidth <= 720
@@ -360,31 +358,22 @@ export function ResumeWorkbench() {
       <div className="resume-workbench" data-ui-theme="light">
         <header className="workbench-header">
           <div className="workbench-header-left">
-            <IconButton className="workbench-icon-action workbench-back-action" label="返回全部简历" onClick={() => void leaveSafely("home")}><Home size={16} /></IconButton>
+            <IconButton className="workbench-icon-action workbench-back-action" label="返回全部简历" onClick={() => void leaveSafely()}><Home size={16} /></IconButton>
             <div className="workbench-document-identity">
-              <span>简历编辑</span>
               <input autoComplete="off" className="workbench-title" name="resume-title" value={title} onChange={(event) => setTitle(event.target.value)} aria-label="简历标题" disabled={versionOperationPending} />
+              <span>简历编辑</span>
             </div>
-            <WorkbenchSaveStatus dirty={dirty} saveStatus={saveStatus} />
           </div>
+          <WorkbenchSaveStatus dirty={dirty} saveStatus={saveStatus} />
           <div className="workbench-header-actions">
+            <output className="workbench-zoom" aria-label="简历缩放比例">{zoomPercent}%</output>
             <div className="workbench-header-tool-group" role="group" aria-label="编辑面板">
               <IconButton aria-controls="workbench-side-panel" aria-expanded={drawerMode === "settings"} aria-pressed={drawerMode === "settings"} className={`workbench-icon-action${drawerMode === "settings" ? " is-active" : ""}`} label="页面设置" onClick={() => setDrawerMode((mode) => mode === "settings" ? null : "settings")}><SlidersHorizontal size={16} /></IconButton>
               <IconButton aria-controls="workbench-side-panel" aria-expanded={drawerMode === "history"} aria-pressed={drawerMode === "history"} className={`workbench-icon-action${drawerMode === "history" ? " is-active" : ""}`} label="版本记录" onClick={() => setDrawerMode((mode) => mode === "history" ? null : "history")}><History size={16} /></IconButton>
             </div>
             <div className="workbench-output-actions" role="group" aria-label="保存与导出">
-              <SmartOnePageAction
-                active={settings.smartOnePage}
-                onToggle={() => updateSettings({ smartOnePage: !settings.smartOnePage })}
-                disabled={versionOperationPending}
-              />
               <Button aria-label="导出 PDF" className="workbench-action workbench-export-action" icon={<FileDown aria-hidden="true" />} size="sm" title="导出 PDF" variant="secondary" onClick={() => activeResumeId && void exportResumePdf(settings.smartOnePage, title, activeResumeId)}>导出 PDF</Button>
               <SaveVersionAction pending={saveStatus === "saving" || versionOperationPending} onSave={() => void manualSave()} />
-            </div>
-            <span className="workbench-header-divider" />
-            <div className="workbench-account-actions" role="group" aria-label="账户操作">
-              <IconButton className="workbench-icon-action" label="个人资料" onClick={() => navigateTo("/account")}><UserRound size={15} /></IconButton>
-              <IconButton className="workbench-icon-action workbench-logout-action" label="退出登录" onClick={() => void leaveSafely("logout")}><LogOut size={15} /></IconButton>
             </div>
           </div>
         </header>
@@ -396,18 +385,20 @@ export function ResumeWorkbench() {
           />
         )}
 
-        {activeResumeId && <WorkbenchToolbar editor={editor} resumeId={activeResumeId} onNotice={(label) => setToast({ label })} />}
+        {activeResumeId && editor && (
+          <BubbleMenu
+            editor={editor}
+            tippyOptions={{ duration: 150, maxWidth: "none", placement: "top-start" }}
+            shouldShow={({ editor: current, state }) => {
+              const { selection } = state;
+              return current.isEditable && !selection.empty;
+            }}
+          >
+            <WorkbenchToolbar editor={editor} resumeId={activeResumeId} onNotice={(label) => setToast({ label })} />
+          </BubbleMenu>
+        )}
 
         <main className="workbench-canvas">
-          <aside className="workbench-stage-rail" aria-label="当前纸张信息">
-            <span className="workbench-stage-kicker">编辑画布</span>
-            <dl>
-              <div><dt>纸张</dt><dd>A4</dd></div>
-              <div><dt>缩放</dt><dd><output aria-label="简历缩放比例">{zoomPercent}%</output></dd></div>
-              <div><dt>导出</dt><dd>{settings.smartOnePage ? "连续单页" : "自动分页"}</dd></div>
-            </dl>
-            <p>按住 Ctrl 或 ⌘ 滚动可调整缩放。</p>
-          </aside>
           <div
             ref={paperScrollRef}
             className="workbench-paper-scroll"
@@ -416,9 +407,6 @@ export function ResumeWorkbench() {
             <article className={`resume-paper theme-${settings.theme}${settings.smartOnePage ? " smart-one-page" : ""}`} style={resumeStyle} aria-label="可编辑简历页面">
               <EditorContent editor={editor} />
             </article>
-            <p className="workbench-page-hint">
-              {settings.smartOnePage ? "智能一页 · 导出为连续单页" : "标准 A4 · 超出内容自动分页导出"}
-            </p>
           </div>
 
           <AnimatePresence initial={false}>
@@ -435,29 +423,66 @@ export function ResumeWorkbench() {
               >
                 <div className="workbench-drawer-head">
                   <div>
-                    <span>{drawerMode === "settings" ? "排版" : "历史"}</span>
                     <h2 id="workbench-drawer-title">{drawerMode === "settings" ? "页面设置" : "版本记录"}</h2>
+                    <p>{drawerMode === "settings" ? "只在需要时打开，关闭后不占用工作区。" : "每次手动保存都会留下一个可恢复版本。"}</p>
                   </div>
-                  <button type="button" onClick={() => setDrawerMode(null)} aria-label="关闭面板">×</button>
+                  <button type="button" className="workbench-drawer-done" onClick={() => setDrawerMode(null)} aria-label="关闭面板">完成</button>
                 </div>
                 {drawerMode === "settings" ? (
                   <div className="workbench-settings">
-                    <label><span>全局字体</span><select value={settings.fontFamily} onChange={(event) => updateSettings({ fontFamily: event.target.value })} disabled={versionOperationPending}>{fontOptions.map((font) => <option key={font.label} value={font.value}>{font.label}</option>)}</select></label>
-                    <label><span>全局字号</span><Stepper label="全局字号" value={settings.fontSize} min={8} max={16} step={0.5} onChange={(fontSize) => updateSettings({ fontSize })} disabled={versionOperationPending} /></label>
-                    <label><span>行距</span><Stepper label="行距" value={settings.lineHeight} min={1.1} max={1.8} step={0.05} onChange={(lineHeight) => updateSettings({ lineHeight })} disabled={versionOperationPending} /></label>
-                    <label><span>左右边距</span><Stepper label="左右边距" value={settings.pageMargin} min={10} max={30} step={2} onChange={(pageMargin) => updateSettings({ pageMargin })} disabled={versionOperationPending} /></label>
-                    <label><span>上下边距</span><Stepper label="上下边距" value={settings.verticalPageMargin} min={10} max={30} step={2} onChange={(verticalPageMargin) => updateSettings({ verticalPageMargin })} disabled={versionOperationPending} /></label>
+                    <label className="workbench-field"><span>字体</span><select value={settings.fontFamily} onChange={(event) => updateSettings({ fontFamily: event.target.value })} disabled={versionOperationPending}>{fontOptions.map((font) => <option key={font.label} value={font.value}>{font.label}</option>)}</select></label>
+                    <SettingsSlider label="正文字号" unit="pt" value={settings.fontSize} min={8} max={16} step={0.5} onChange={(fontSize) => updateSettings({ fontSize })} disabled={versionOperationPending} />
+                    <SettingsSlider label="行距" unit="" value={settings.lineHeight} min={1.1} max={1.8} step={0.05} onChange={(lineHeight) => updateSettings({ lineHeight })} disabled={versionOperationPending} />
+                    <SettingsSlider label="左右边距" unit="mm" value={settings.pageMargin} min={10} max={30} step={2} onChange={(pageMargin) => updateSettings({ pageMargin })} disabled={versionOperationPending} />
+                    <SettingsSlider label="上下边距" unit="mm" value={settings.verticalPageMargin} min={10} max={30} step={2} onChange={(verticalPageMargin) => updateSettings({ verticalPageMargin })} disabled={versionOperationPending} />
+                    <div className="workbench-settings-section">
+                      <span className="workbench-settings-kicker">导出模式</span>
+                      <div className="workbench-smart-row">
+                        <div>
+                          <strong>智能一页</strong>
+                          <small>尽量压缩为连续单页</small>
+                        </div>
+                        <SmartOnePageAction
+                          active={settings.smartOnePage}
+                          onToggle={() => updateSettings({ smartOnePage: !settings.smartOnePage })}
+                          disabled={versionOperationPending}
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="workbench-reset-settings"
+                      disabled={versionOperationPending}
+                      onClick={() => updateSettings({
+                        fontFamily: defaultSettings.fontFamily,
+                        fontSize: defaultSettings.fontSize,
+                        lineHeight: defaultSettings.lineHeight,
+                        pageMargin: defaultSettings.pageMargin,
+                        verticalPageMargin: defaultSettings.verticalPageMargin,
+                        smartOnePage: defaultSettings.smartOnePage,
+                      })}
+                    >
+                      恢复默认设置
+                    </button>
                   </div>
                 ) : (
                   <div className="workbench-versions">
-                    <p className="workbench-version-guidance">
-                      每份简历最多保存 10 个版本。达到上限时不会自动删除；请手动清理旧版本，最新版本需保留。
+                    <p className="workbench-version-summary">
+                      <strong>{versions.length} 个版本</strong>
+                      <span>自动保存不会创建版本</span>
                     </p>
+                    <div className="version-row is-current">
+                      <div className="version-row-copy">
+                        <strong>当前草稿</strong>
+                        <span>{dirty ? "编辑中 · 尚未手动保存" : "自动保存 · 正在编辑"}</span>
+                      </div>
+                      <span className="version-current-badge">当前</span>
+                    </div>
                     {versionsLoading && <p className="workbench-empty">正在读取版本记录…</p>}
                     {!versionsLoading && versions.length === 0 && <p className="workbench-empty">暂无可用版本。</p>}
                     {versions.map((version) => (
                       <div className="version-row" key={version.id}>
-                        <div className="version-row-copy"><strong>{versionTime(version.created_at)}</strong><span>v{version.version_no} · {versionReasonLabels[version.reason]}</span></div>
+                        <div className="version-row-copy"><strong>版本 {version.version_no}</strong><span>{versionTime(version.created_at)} · {versionReasonLabels[version.reason]}</span></div>
                         <span className="version-row-actions">
                           <button type="button" disabled={versionOperationPending} onClick={() => void restoreVersion(version.version_no, version.created_at)}>恢复</button>
                           {version.version_no !== versions[0]?.version_no && (
@@ -468,12 +493,13 @@ export function ResumeWorkbench() {
                               disabled={versionOperationPending}
                               onClick={() => setPendingVersionDelete({ versionNo: version.version_no, createdAt: version.created_at })}
                             >
-                              <Trash2 size={13} />删除
+                              删除
                             </button>
                           )}
                         </span>
                       </div>
                     ))}
+                    <p className="workbench-version-footnote">恢复版本前会先保存当前草稿。</p>
                   </div>
                 )}
               </motion.aside>

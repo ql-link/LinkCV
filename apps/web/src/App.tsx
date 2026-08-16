@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
-import { Button } from "@/components/ui";
+import { useEffect, useState, type ReactNode } from "react";
+import { CircleAlert } from "lucide-react";
+import { Brand, Button } from "@/components/ui";
 import { WorkspaceLayout, type WorkspaceSection } from "./components/WorkspaceLayout";
 import { ApiRequestError } from "./api/client";
 import { AccountPage } from "./features/account/AccountPage";
-import { ChangePasswordPage } from "./features/account/ChangePasswordPage";
 import { AdminApp } from "./features/admin/AdminApp";
 import { AdminLoginPage } from "./features/admin/AdminLoginPage";
 import { AuthPage } from "./features/auth/AuthPage";
@@ -161,32 +161,26 @@ export function App() {
     if (route.kind === "auth") {
       return <AuthPage key={`${route.mode}:${route.next ?? ""}`} initialMode={route.mode} next={route.next} />;
     }
-    if (route.kind === "accountPassword") {
-      return <ChangePasswordPage />;
-    }
 
     return <div className="app-loading">正在进入首页...</div>;
   }
 
+  if (route.kind === "resumeCreate") {
+    return <ResumeCreatePage />;
+  }
+
   if (
     route.kind === "resumes"
-    || route.kind === "resumeCreate"
     || route.kind === "jobs"
     || route.kind === "jobCreate"
     || route.kind === "jobDetail"
     || route.kind === "jobEdit"
     || route.kind === "datasets"
     || route.kind === "account"
-    || route.kind === "accountPassword"
   ) {
-    const resumeView = route.kind === "resumes" && new URLSearchParams(window.location.search).get("view") === "templates"
-      ? "templates"
-      : "all";
     const activeSection: WorkspaceSection = route.kind === "resumes"
-      ? resumeView === "templates" ? "templates" : "resumes"
-      : route.kind === "resumeCreate"
-        ? "resumes"
-      : route.kind === "account" || route.kind === "accountPassword"
+      ? "resumes"
+      : route.kind === "account"
         ? "account"
         : route.kind === "datasets"
           ? "datasets"
@@ -194,15 +188,13 @@ export function App() {
 
     return (
       <WorkspaceLayout active={activeSection}>
-        {route.kind === "resumes" && <HomePage view={resumeView} />}
-        {route.kind === "resumeCreate" && <ResumeCreatePage />}
+        {route.kind === "resumes" && <HomePage />}
         {route.kind === "jobs" && <JobCenterPage />}
         {route.kind === "jobCreate" && <JobFormPage mode="create" />}
         {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}
         {route.kind === "jobEdit" && <JobFormPage mode="edit" jobId={route.jobId} />}
         {route.kind === "datasets" && <DatasetsPage />}
         {route.kind === "account" && <AccountPage />}
-        {route.kind === "accountPassword" && <ChangePasswordPage />}
       </WorkspaceLayout>
     );
   }
@@ -210,29 +202,82 @@ export function App() {
   if (route.kind === "editor") {
     if (routeError?.resumeId === route.resumeId) {
       return (
-        <main className="route-error-page">
-          <h1>无法打开这份简历</h1>
-          <p>{routeError.message}</p>
-          <Button onClick={() => navigateTo("/resumes", { replace: true })}>返回简历主页</Button>
-        </main>
+        <StatusShell>
+          <div className="status-card">
+            <span className="status-icon" aria-hidden="true">
+              <CircleAlert size={26} />
+            </span>
+            <h1>无法打开这份简历</h1>
+            <p className="status-desc">{routeError.message}</p>
+            <p className="status-desc">你可以返回主页选择其他简历，或稍后重试。</p>
+            <div className="status-actions">
+              <Button variant="outline" onClick={() => navigateTo("/resumes", { replace: true })}>
+                返回主页
+              </Button>
+              <Button
+                onClick={() => {
+                  const resumeId = route.resumeId;
+                  setRouteError(null);
+                  void loadResume(resumeId).catch((error: unknown) => {
+                    setRouteError({ resumeId, message: resumeLoadErrorMessage(error) });
+                  });
+                }}
+              >
+                重新尝试
+              </Button>
+            </div>
+          </div>
+        </StatusShell>
       );
     }
     if (activeResumeId !== route.resumeId) {
-      return <div className="app-loading">正在打开简历...</div>;
+      return (
+        <StatusShell>
+          <div className="status-card">
+            <span className="status-spinner" aria-hidden="true" />
+            <h1>正在打开简历</h1>
+            <p className="status-desc">正在同步最新版本和编辑状态...</p>
+            <div className="status-skeleton" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </div>
+          </div>
+        </StatusShell>
+      );
     }
     return <ResumeWorkbench />;
   }
 
   if (route.kind === "notFound") {
     return (
-      <main className="route-error-page">
-        <h1>页面不存在</h1>
-        <Button onClick={() => navigateTo("/resumes", { replace: true })}>返回简历主页</Button>
-      </main>
+      <StatusShell>
+        <div className="status-card">
+          <p className="status-code">404</p>
+          <h1>页面不存在</h1>
+          <p className="status-desc">这个地址可能已被移动或删除。</p>
+          <div className="status-actions">
+            <Button onClick={() => navigateTo("/resumes", { replace: true })}>返回简历主页</Button>
+          </div>
+        </div>
+      </StatusShell>
     );
   }
 
   return <div className="app-loading">正在进入简历主页...</div>;
+}
+
+function StatusShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="status-shell">
+      <header className="status-topbar">
+        <a href="/" aria-label="返回 LinkCV 首页" className="status-brand">
+          <Brand />
+        </a>
+      </header>
+      <main className="status-body">{children}</main>
+    </div>
+  );
 }
 
 export function resumeLoadErrorMessage(error: unknown) {
