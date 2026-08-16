@@ -1505,20 +1505,6 @@ select:not([data-slot]):focus-visible,
   padding: 14px 16px 14px;
   background: rgb(255 255 255 / 0.72);
   backdrop-filter: blur(10px);
-  opacity: 0;
-  transition: opacity 180ms ease;
-}
-
-.home-resume-card:hover .home-card-meta,
-.home-resume-card:focus-within .home-card-meta {
-  opacity: 1;
-}
-
-@media (hover: none) {
-  .home-card-meta {
-    position: static;
-    opacity: 1;
-  }
 }
 
 .home-card-meta strong,
@@ -2196,7 +2182,6 @@ select:not([data-slot]):focus-visible,
   .landing-paper-card,
   .landing-reveal,
   .home-resume-card,
-  .home-card-meta,
   .home-action-toast,
   .home-confirm-dialog {
     transition: none;
