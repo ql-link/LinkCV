@@ -178,11 +178,8 @@ export function App() {
     || route.kind === "datasets"
     || route.kind === "account"
   ) {
-    const resumeView = route.kind === "resumes" && new URLSearchParams(window.location.search).get("view") === "templates"
-      ? "templates"
-      : "all";
     const activeSection: WorkspaceSection = route.kind === "resumes"
-      ? resumeView === "templates" ? "templates" : "resumes"
+      ? "resumes"
       : route.kind === "account"
         ? "account"
         : route.kind === "datasets"
@@ -191,7 +188,7 @@ export function App() {
 
     return (
       <WorkspaceLayout active={activeSection}>
-        {route.kind === "resumes" && <HomePage view={resumeView} />}
+        {route.kind === "resumes" && <HomePage />}
         {route.kind === "jobs" && <JobCenterPage />}
         {route.kind === "jobCreate" && <JobFormPage mode="create" />}
         {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}

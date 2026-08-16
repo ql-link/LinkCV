@@ -868,9 +868,6 @@ select:not([data-slot]):focus-visible,
   font-size: 13px;
 }
 
-.template-picker-state { max-width: 1280px; margin: 40px auto; color: var(--muted); }
-.template-picker-state.error { color: var(--error); }
-
 .template-preview-backdrop {
   position: fixed;
   z-index: 100;
@@ -1632,56 +1629,6 @@ select:not([data-slot]):focus-visible,
 }
 
 .empty-state-hint { margin-top: 4px; color: var(--slate); font-size: 12px; }
-
-.template-library-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 24px;
-}
-
-.template-library-card {
-  display: flex;
-  overflow: hidden;
-  flex-direction: column;
-  border: 1px solid var(--hairline);
-  border-radius: 14px;
-  background: var(--surface-card);
-  transition: border-color 160ms ease, box-shadow 160ms ease;
-}
-
-.template-library-card:hover {
-  border-color: var(--gray-300);
-  box-shadow: var(--shadow-md);
-}
-
-.template-library-preview {
-  display: block;
-  position: relative;
-  aspect-ratio: 1 / 1;
-  overflow: hidden;
-  container-type: inline-size;
-  background: var(--ui-surface);
-}
-
-.template-library-preview .resume-readonly-preview-card .resume-preview-paper {
-  top: 0;
-  translate: -50% 0;
-  transform-origin: top center;
-  scale: calc(100cqw / 210mm);
-}
-
-.template-library-meta {
-  display: grid;
-  gap: 4px;
-  padding: 14px 16px 4px;
-  border-top: 1px solid var(--hairline);
-}
-
-.template-library-meta strong { font-size: 14px; font-weight: 600; }
-.template-library-meta small { color: var(--muted); font-size: 12px; }
-.template-library-card > .ui-button { margin: 12px 16px 16px; }
-
-.template-library-search { width: min(280px, 40vw); }
 
 .home-action-toast {
   position: fixed;

@@ -3,14 +3,13 @@ import {
   BriefcaseBusiness,
   Database,
   FileText,
-  LayoutTemplate,
   UserRound,
 } from "lucide-react";
 import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
 import { Brand } from "@/components/ui";
 
-export type WorkspaceSection = "resumes" | "templates" | "jobs" | "datasets" | "account";
+export type WorkspaceSection = "resumes" | "jobs" | "datasets" | "account";
 
 type WorkspaceSidebarProps = {
   active: WorkspaceSection;
@@ -26,7 +25,6 @@ const NAV_ITEMS: Array<{
   icon: typeof FileText;
 }> = [
   { key: "resumes", label: "全部简历", href: "/resumes", icon: FileText },
-  { key: "templates", label: "模板", href: "/resumes?view=templates", icon: LayoutTemplate },
   { key: "jobs", label: "JD 中心", href: "/jobs", icon: BriefcaseBusiness },
   { key: "datasets", label: "资料库", href: "/datasets", icon: Database },
 ];

@@ -3,7 +3,6 @@ import { FileUp, Plus, Search, Share2, X } from "lucide-react";
 import {
   type ResumeImportSummary,
   type ResumeSummary,
-  type ResumeTemplate,
 } from "../../api/client";
 import {
   Button,
@@ -15,10 +14,8 @@ import { editorPath, navigateTo } from "../../routing";
 import { ResumePreview } from "../preview/ResumePreview";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { SharePanel } from "./SharePanel";
-import { api } from "../../api/client";
 
 type HomeScreenProps = {
-  view?: "all" | "templates";
   resumes: ResumeSummary[];
   activeImports: ResumeImportSummary[];
   failedImports: ResumeImportSummary[];
@@ -291,7 +288,7 @@ export function HomeScreen({
   );
 }
 
-export function HomePage({ view = "all" }: { view?: "all" | "templates" }) {
+export function HomePage() {
   const resumes = useResumeStore((state) => state.resumes);
   const activeImports = useResumeStore((state) => state.activeImports);
   const failedImports = useResumeStore((state) => state.failedImports);
@@ -300,14 +297,12 @@ export function HomePage({ view = "all" }: { view?: "all" | "templates" }) {
   const deleteResumeImport = useResumeStore((state) => state.deleteResumeImport);
 
   useEffect(() => {
-    if (view !== "all") return;
     void listResumes();
     if (activeImports.length === 0) return;
     const timer = window.setInterval(() => void listResumes(), 2000);
     return () => window.clearInterval(timer);
-  }, [activeImports.length, listResumes, view]);
+  }, [activeImports.length, listResumes]);
 
-  if (view === "templates") return <TemplateLibrary />;
   return (
     <HomeScreen
       resumes={resumes}
@@ -318,91 +313,6 @@ export function HomePage({ view = "all" }: { view?: "all" | "templates" }) {
       onDelete={deleteResume}
       onDeleteImport={deleteResumeImport}
     />
-  );
-}
-
-function TemplateLibrary() {
-  const [templates, setTemplates] = useState<ResumeTemplate[]>([]);
-  const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void api.listResumeTemplates().then(
-      ({ templates: next }) => {
-        if (cancelled) return;
-        setTemplates(next);
-        setLoading(false);
-      },
-      () => {
-        if (cancelled) return;
-        setError("模板暂时无法加载，请稍后重试。");
-        setLoading(false);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const visible = templates.filter((template) =>
-    template.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
-  );
-
-  return (
-    <main className="dashboard-content template-library-page">
-      <WorkspacePageHero
-        eyebrow="简历模板"
-        title="选择模板"
-        description="从结构开始，而不是从空白页开始。"
-        actions={
-          <span className="dashboard-search template-library-search">
-            <Search size={14} aria-hidden="true" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索模板"
-              aria-label="搜索模板"
-            />
-          </span>
-        }
-      />
-      <div className="dashboard-main">
-        {loading && <div className="template-picker-state">正在加载模板…</div>}
-        {error && <div className="template-picker-state error">{error}</div>}
-        {!loading && !error && visible.length === 0 && (
-          <div className="template-picker-state">{query ? "没有匹配的模板。" : "当前没有可用模板。"}</div>
-        )}
-        {!loading && !error && visible.length > 0 && (
-          <>
-            <div className="home-filter-row">
-              <span className="filter-pill is-active">全部 {visible.length}</span>
-            </div>
-            <section className="template-library-grid" aria-label="选择简历模板">
-              {visible.map((template) => (
-                <article key={template.id} className="template-library-card">
-                  <span className="template-library-preview" aria-hidden="true">
-                    <ResumePreview data={template.data} style={template.style} />
-                  </span>
-                  <div className="template-library-meta">
-                    <strong>{template.name}</strong>
-                    <small>{template.description ?? "适用于通用简历场景"}</small>
-                  </div>
-                  <Button
-                    onClick={() =>
-                      navigateTo(`/resumes/new?template=${encodeURIComponent(template.id)}`)
-                    }
-                  >
-                    使用模板
-                  </Button>
-                </article>
-              ))}
-            </section>
-          </>
-        )}
-      </div>
-    </main>
   );
 }
 

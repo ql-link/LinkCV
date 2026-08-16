@@ -9,14 +9,12 @@ afterEach(() => {
 });
 
 describe("WorkspaceSidebar", () => {
-  it("使用统一导航切换简历、模板和 JD，并标记当前模块", () => {
+  it("使用统一导航切换简历、JD 和资料库，并标记当前模块", () => {
     render(<WorkspaceSidebar active="jobs" email="user@example.test" />);
 
     expect(screen.getByRole("navigation", { name: "工作区导航" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "JD 中心" })).toHaveAttribute("aria-current", "page");
-
-    fireEvent.click(screen.getByRole("button", { name: "模板" }));
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/resumes?view=templates");
+    expect(screen.queryByRole("button", { name: "模板" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "全部简历" }));
     expect(`${window.location.pathname}${window.location.search}`).toBe("/resumes");
