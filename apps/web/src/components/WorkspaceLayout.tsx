@@ -1,5 +1,11 @@
 import type { ReactNode } from "react";
-import { BriefcaseBusiness, Database, FileText, LayoutTemplate, UserRound } from "lucide-react";
+import {
+  BriefcaseBusiness,
+  Database,
+  FileText,
+  LayoutTemplate,
+  UserRound,
+} from "lucide-react";
 import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
 import { Brand } from "@/components/ui";
@@ -13,72 +19,92 @@ type WorkspaceSidebarProps = {
   avatarUrl?: string | null;
 };
 
-export function WorkspaceSidebar({
-  active,
-  email,
-  nickname,
-  avatarUrl,
-}: WorkspaceSidebarProps) {
+const NAV_ITEMS: Array<{
+  key: WorkspaceSection;
+  label: string;
+  href: string;
+  icon: typeof FileText;
+}> = [
+  { key: "resumes", label: "全部简历", href: "/resumes", icon: FileText },
+  { key: "templates", label: "模板", href: "/resumes?view=templates", icon: LayoutTemplate },
+  { key: "jobs", label: "JD 中心", href: "/jobs", icon: BriefcaseBusiness },
+  { key: "datasets", label: "资料库", href: "/datasets", icon: Database },
+];
+
+function WorkspaceAccount({ active, email, nickname, avatarUrl }: WorkspaceSidebarProps) {
   const displayName = nickname || email;
+
+  return (
+    <div className="dashboard-account-area">
+      <button
+        className={`dashboard-account${active === "account" ? " is-active" : ""}`}
+        type="button"
+        aria-current={active === "account" ? "page" : undefined}
+        onClick={() => navigateTo("/account")}
+        title="个人资料"
+      >
+        {avatarUrl ? (
+          <img className="account-avatar" src={avatarUrl} alt="" />
+        ) : (
+          <span className="account-avatar-fallback" aria-hidden="true">
+            {[...displayName][0] ?? <UserRound size={14} />}
+          </span>
+        )}
+        <span className="account-text">
+          <strong className="account-name">{displayName}</strong>
+          <small className="account-email">个人资料</small>
+        </span>
+      </button>
+    </div>
+  );
+}
+
+export function WorkspaceSidebar(props: WorkspaceSidebarProps) {
   return (
     <nav className="dashboard-sidebar" aria-label="工作区导航">
       <Brand className="dashboard-brand" />
       <div className="dashboard-tabs">
-        <button
-          className={active === "resumes" ? "is-active" : ""}
-          type="button"
-          aria-current={active === "resumes" ? "page" : undefined}
-          onClick={() => navigateTo("/resumes")}
-        >
-          <FileText size={16} />全部简历
-        </button>
-        <button
-          className={active === "templates" ? "is-active" : ""}
-          type="button"
-          aria-current={active === "templates" ? "page" : undefined}
-          onClick={() => navigateTo("/resumes?view=templates")}
-        >
-          <LayoutTemplate size={16} />模板
-        </button>
-        <button
-          className={active === "jobs" ? "is-active" : ""}
-          type="button"
-          aria-current={active === "jobs" ? "page" : undefined}
-          onClick={() => navigateTo("/jobs")}
-        >
-        <BriefcaseBusiness size={16} />JD 中心
-        </button>
-        <button
-          className={active === "datasets" ? "is-active" : ""}
-          type="button"
-          aria-current={active === "datasets" ? "page" : undefined}
-          onClick={() => navigateTo("/datasets")}
-        >
-        <Database size={16} />资料库
-        </button>
+        {NAV_ITEMS.map((item) => {
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.key}
+              className={props.active === item.key ? "is-active" : ""}
+              type="button"
+              aria-current={props.active === item.key ? "page" : undefined}
+              onClick={() => navigateTo(item.href)}
+            >
+              <Icon size={16} />
+              {item.label}
+            </button>
+          );
+        })}
       </div>
-      <div className="dashboard-account-area">
-        <button
-          className={`dashboard-account${active === "account" ? " is-active" : ""}`}
-          type="button"
-          aria-current={active === "account" ? "page" : undefined}
-          onClick={() => navigateTo("/account")}
-          title="个人资料"
-        >
-          {avatarUrl ? (
-            <img className="account-avatar" src={avatarUrl} alt="" />
-          ) : (
-            <span className="account-avatar-fallback" aria-hidden="true">
-              {[...displayName][0] ?? <UserRound size={14} />}
-            </span>
-          )}
-          <span className="account-text">
-            <strong className="account-name">{displayName}</strong>
-            <small className="account-email">{email}</small>
-          </span>
-        </button>
-      </div>
+      <WorkspaceAccount {...props} />
     </nav>
+  );
+}
+
+export function WorkspacePageHero({
+  eyebrow,
+  title,
+  description,
+  actions,
+}: {
+  eyebrow: string;
+  title: string;
+  description?: string;
+  actions?: ReactNode;
+}) {
+  return (
+    <header className="page-hero">
+      <div className="page-hero-text">
+        <p className="page-hero-eyebrow">{eyebrow}</p>
+        <h1>{title}</h1>
+        {description && <p className="page-hero-description">{description}</p>}
+      </div>
+      {actions && <div className="page-hero-actions">{actions}</div>}
+    </header>
   );
 }
 

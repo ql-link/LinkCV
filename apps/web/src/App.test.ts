@@ -8,7 +8,7 @@ import { useResumeStore } from "./store/resumeStore";
 describe("App landing routes", () => {
   beforeEach(() => {
     window.history.replaceState(null, "", "/");
-    localStorage.clear();
+    window.localStorage?.clear();
     useResumeStore.setState({
       authStatus: "authenticated",
       user: {

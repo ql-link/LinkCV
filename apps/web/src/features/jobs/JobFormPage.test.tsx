@@ -60,15 +60,15 @@ describe("JobFormPage", () => {
   it("明确标记创建表单中的必填字段", () => {
     render(<JobFormPage mode="create" />);
 
-    for (const label of ["岗位名称", "公司名称", "JD 正文（Markdown）"]) {
+    for (const label of ["职位名称", "公司名称", "职位描述"]) {
       const field = screen.getByLabelText(label);
       expect(field).toBeRequired();
-      expect(field.closest("label")).toHaveTextContent("必填");
+      expect(field.closest("label")).toHaveTextContent("*");
     }
 
     const skills = screen.getByLabelText("技能");
     expect(skills).not.toBeRequired();
-    expect(skills.closest("label")).not.toHaveTextContent("必填");
+    expect(skills.closest("label")).not.toHaveTextContent("*");
   });
 
   it("发现重复来源后要求用户选择，并把更新动作与版本一起提交", async () => {
@@ -84,11 +84,11 @@ describe("JobFormPage", () => {
       .mockResolvedValueOnce({ job_description: record });
 
     render(<JobFormPage mode="create" />);
-    fireEvent.change(screen.getByLabelText("岗位名称"), { target: { value: "Java 开发实习生" } });
+    fireEvent.change(screen.getByLabelText("职位名称"), { target: { value: "Java 开发实习生" } });
     fireEvent.change(screen.getByLabelText("公司名称"), { target: { value: "示例科技" } });
-    fireEvent.change(screen.getByLabelText("JD 正文（Markdown）"), { target: { value: "参与业务系统后端开发" } });
+    fireEvent.change(screen.getByLabelText("职位描述"), { target: { value: "参与业务系统后端开发" } });
     fireEvent.change(screen.getByLabelText("来源链接（可选）"), { target: { value: summary.source_url } });
-    fireEvent.click(screen.getByRole("button", { name: "保存 JD" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建 JD" }));
 
     expect(await screen.findByRole("dialog", { name: "Java 开发实习生" })).toBeInTheDocument();
     expect(create).toHaveBeenCalledTimes(1);
@@ -114,7 +114,7 @@ describe("JobFormPage", () => {
     expect(await screen.findByText("来源信息（只读）")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: summary.source_url as string })).toHaveAttribute("href", summary.source_url);
     expect(screen.queryByLabelText("来源链接（可选）")).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("岗位名称"), { target: { value: "高级 Java 开发实习生" } });
+    fireEvent.change(screen.getByLabelText("职位名称"), { target: { value: "高级 Java 开发实习生" } });
     fireEvent.click(screen.getByRole("button", { name: "保存 JD" }));
 
     await waitFor(() => expect(update).toHaveBeenCalledOnce());

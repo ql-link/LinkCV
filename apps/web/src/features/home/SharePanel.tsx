@@ -1,14 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  Copy,
-  Eye,
-  EyeOff,
-  Link2,
-  RefreshCw,
-  Save,
-  Share2,
-  Trash2,
-} from "lucide-react";
 import { api, type ResumeShareState } from "../../api/client";
 import { ConfirmDialog } from "@/components/ui";
 
@@ -234,10 +224,13 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="share-panel-head">
-          <h2>
-            <Share2 size={16} />
-            分享简历
-          </h2>
+          <div className="share-panel-title">
+            <h2>分享简历</h2>
+            <p className="share-panel-doc">{resumeTitle}</p>
+            <p className="share-panel-sub">
+              {share ? "分享链接只展示最近一次正式保存的版本。" : "分享内容来自最近一次正式保存的版本，当前草稿不会公开。"}
+            </p>
+          </div>
           <button type="button" className="share-panel-close" aria-label="关闭" onClick={onClose}>
             ×
           </button>
@@ -254,8 +247,9 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
           </div>
         ) : !share ? (
           <div className="share-panel-body">
-            <p className="share-panel-hint">
-              分享内容来自简历最近一次正式保存的版本，当前编辑中的草稿不会被公开。保存新版本后，分享链接会自动展示最新正式版本。
+            <p className="share-panel-banner is-info">
+              <strong>尚未创建分享链接</strong>
+              <span>创建后可复制链接，并随时调整可见范围和有效期。</span>
             </p>
             <div className="share-panel-field">
               <label>谁可以看</label>
@@ -294,15 +288,20 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
                 ))}
               </div>
             </div>
-            <button
-              type="button"
-              className="share-panel-primary"
-              disabled={busy}
-              onClick={() => setConfirmCreate(true)}
-            >
-              <Link2 size={14} />
-              创建分享链接
-            </button>
+            <p className="share-panel-rules">
+              <strong>链接更新规则</strong>
+              <span>保存新的简历版本后，已创建的分享链接会自动展示最新正式版本。</span>
+            </p>
+            <div className="share-panel-footer">
+              <button
+                type="button"
+                className="share-panel-primary"
+                disabled={busy}
+                onClick={() => setConfirmCreate(true)}
+              >
+                创建分享链接
+              </button>
+            </div>
             {error && <p className="share-panel-error">{error}</p>}
           </div>
         ) : (
@@ -312,6 +311,9 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
                 {linkStatus === "available" && "链接当前可用"}
                 {linkStatus === "expired" && "链接已过期，可延长有效期恢复"}
                 {linkStatus === "unavailable" && "链接已失效，请重新生成"}
+                <span className="share-panel-status-summary">
+                  {visibilityLabel(share.share_visibility)} · {currentExpiryLabel}有效
+                </span>
               </p>
             )}
             <div className="share-panel-field">
@@ -328,12 +330,10 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
                   onClick={() => setRevealed((value) => !value)}
                   disabled={busy}
                 >
-                  {revealed ? <EyeOff size={14} /> : <Eye size={14} />}
                   {revealed ? "隐藏" : "查看"}
                 </button>
                 <button type="button" className="share-panel-copy" onClick={() => void copyLink()} disabled={busy}>
-                  <Copy size={14} />
-                  {copied ? "已复制" : "复制"}
+                  {copied ? "已复制" : "复制链接"}
                 </button>
               </div>
             </div>
@@ -393,6 +393,10 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
               </p>
             )}
 
+            <p className="share-panel-banner is-warning">
+              重新生成链接会立即使旧地址失效，已转发的旧链接将无法访问。
+            </p>
+
             <div className="share-panel-actions">
               <button
                 type="button"
@@ -400,7 +404,6 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
                 disabled={busy}
                 onClick={() => setConfirmSave(true)}
               >
-                <Save size={14} />
                 保存链接配置
               </button>
               <button
@@ -409,7 +412,6 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
                 disabled={busy}
                 onClick={() => setConfirmRegenerate(true)}
               >
-                <RefreshCw size={14} />
                 重新生成链接
               </button>
               <button
@@ -418,7 +420,6 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
                 disabled={busy}
                 onClick={() => setConfirmDelete(true)}
               >
-                <Trash2 size={14} />
                 删除链接
               </button>
             </div>

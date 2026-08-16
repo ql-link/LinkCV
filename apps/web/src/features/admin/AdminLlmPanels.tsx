@@ -661,6 +661,8 @@ export function LogsPanel({
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [currentCursor, setCurrentCursor] = useState<string | undefined>();
   const [cursorStack, setCursorStack] = useState<Array<string | undefined>>([]);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [appliedCount, setAppliedCount] = useState(0);
   const pendingRequest = useRef("");
 
   const loadPage = useCallback(async (query: LlmCallQuery, cursor?: string, initial = false) => {
@@ -687,11 +689,20 @@ export function LogsPanel({
     api.getChatCapability().then((response) => setModels(response.models)).catch(() => undefined);
   }, [loadPage]);
 
-  const applyFilters = async (event: FormEvent) => {
-    event.preventDefault();
+  const countActiveFilters = () =>
+    [filters.source, filters.status, filters.modelConfigId, filters.userId.trim(), filters.callId.trim(), filters.from, filters.to]
+      .filter(Boolean).length;
+
+  const applyFilters = async () => {
     let nextQuery: LlmCallQuery;
     try { nextQuery = buildLogQuery(filters); } catch { setLoadError("时间筛选格式不合法，请检查后重试。"); return; }
-    if (await loadPage(nextQuery)) { setAppliedQuery(nextQuery); setCurrentCursor(undefined); setCursorStack([]); }
+    if (await loadPage(nextQuery)) {
+      setAppliedQuery(nextQuery);
+      setCurrentCursor(undefined);
+      setCursorStack([]);
+      setAppliedCount(countActiveFilters());
+      setFilterOpen(false);
+    }
   };
   const refresh = () => void loadPage(appliedQuery, currentCursor);
   const next = async () => { if (!nextCursor || pagePending) return; if (await loadPage(appliedQuery, nextCursor)) { setCursorStack((current) => [...current, currentCursor]); setCurrentCursor(nextCursor); } };
@@ -707,19 +718,65 @@ export function LogsPanel({
           <section className="mini-metrics llm-summary-grid" aria-label="调用汇总">
             <div><span>调用次数</span><strong>{summary.callCount}</strong></div><div><span>不完整计量</span><strong>{summary.incompleteMeteringCount}</strong></div><div><span>输入 Token</span><strong>{summary.inputTokens ?? "—"}</strong></div><div><span>输出 Token</span><strong>{summary.outputTokens ?? "—"}</strong></div><div><span>预估费用 USD</span><strong>{summary.estimatedCostUsd ?? "—"}</strong></div>
           </section>
-          <form className="admin-surface llm-log-filters" onSubmit={applyFilters}>
-            <input aria-label="调用来源" placeholder="如 connection_test" value={filters.source} onChange={(event) => setFilters({ ...filters, source: event.target.value })} />
-            <select aria-label="调用状态" value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value as LogFilters["status"] })}><option value="">全部状态</option><option value="pending">处理中</option><option value="succeeded">成功</option><option value="failed">失败</option><option value="cancelled">已取消</option></select>
-            <select aria-label="实际模型" value={filters.modelConfigId} onChange={(event) => setFilters({ ...filters, modelConfigId: event.target.value })}><option value="">全部模型</option>{models.map((model) => <option key={model.id} value={model.id}>{model.adapter}/{model.model}</option>)}</select>
-            <input aria-label="用户 ID" placeholder="用户 ID" value={filters.userId} onChange={(event) => setFilters({ ...filters, userId: event.target.value })} />
-            <input aria-label="callId" placeholder="callId" value={filters.callId} onChange={(event) => setFilters({ ...filters, callId: event.target.value })} />
-            <label><span>开始时间</span><input type="datetime-local" value={filters.from} onChange={(event) => setFilters({ ...filters, from: event.target.value })} /></label><label><span>结束时间</span><input type="datetime-local" value={filters.to} onChange={(event) => setFilters({ ...filters, to: event.target.value })} /></label>
-            <div><button type="button" onClick={() => setFilters(initialLogFilters)}>清空</button><button type="submit" disabled={pagePending}>查询</button></div>
-          </form>
+          <div className="observability-filterbar">
+            <span>默认最近 24 小时 · {appliedCount} 个筛选条件</span>
+            <button
+              type="button"
+              className="observability-filter-open"
+              onClick={() => setFilterOpen(true)}
+            >
+              筛选
+            </button>
+          </div>
+          {filterOpen && (
+            <div className="drawer-layer" onClick={() => setFilterOpen(false)}>
+              <aside
+                className="admin-drawer log-filter-drawer"
+                role="dialog"
+                aria-modal="true"
+                aria-label="筛选调用记录"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <header>
+                  <div><h2>筛选调用记录</h2></div>
+                  <button type="button" aria-label="关闭筛选" onClick={() => setFilterOpen(false)}><X size={18} /></button>
+                </header>
+                <form
+                  className="log-filter-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void applyFilters();
+                  }}
+                >
+                  <div className="log-filter-group">
+                    <span>常用筛选</span>
+                    <div className="log-filter-grid">
+                      <input aria-label="调用来源" placeholder="调用来源" value={filters.source} onChange={(event) => setFilters({ ...filters, source: event.target.value })} />
+                      <select aria-label="调用状态" value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value as LogFilters["status"] })}><option value="">调用状态</option><option value="pending">处理中</option><option value="succeeded">成功</option><option value="failed">失败</option><option value="cancelled">已取消</option></select>
+                      <select aria-label="实际模型" value={filters.modelConfigId} onChange={(event) => setFilters({ ...filters, modelConfigId: event.target.value })}><option value="">实际模型</option>{models.map((model) => <option key={model.id} value={model.id}>{model.adapter}/{model.model}</option>)}</select>
+                      <input aria-label="用户 ID" placeholder="用户 ID" value={filters.userId} onChange={(event) => setFilters({ ...filters, userId: event.target.value })} />
+                      <input aria-label="callId" placeholder="callId" value={filters.callId} onChange={(event) => setFilters({ ...filters, callId: event.target.value })} />
+                    </div>
+                  </div>
+                  <div className="log-filter-group">
+                    <span>时间范围</span>
+                    <div className="log-filter-grid">
+                      <input aria-label="开始时间" type="datetime-local" value={filters.from} onChange={(event) => setFilters({ ...filters, from: event.target.value })} />
+                      <input aria-label="结束时间" type="datetime-local" value={filters.to} onChange={(event) => setFilters({ ...filters, to: event.target.value })} />
+                    </div>
+                  </div>
+                  <footer className="log-filter-footer">
+                    <button type="button" onClick={() => setFilters(initialLogFilters)}>重置</button>
+                    <button type="submit" disabled={pagePending}>应用</button>
+                  </footer>
+                </form>
+              </aside>
+            </div>
+          )}
           {loadError && <div className="llm-inline-error" role="alert"><CircleAlert size={15} />{loadError}</div>}
           <section className="admin-surface logs-surface">
             {calls.length === 0 ? <div className="llm-state"><Bot size={24} /><strong>当前筛选下没有 LLM 调用记录</strong><p>连接测试或内部 Chat 调用产生记录后，可通过刷新获取。</p></div> : (
-              <div className="admin-table-wrap"><table className="admin-table llm-calls-table"><thead><tr><th>时间</th><th>来源 / 状态</th><th>能力 / 模型</th><th>Token / 预估费用</th><th>耗时 / 计量</th><th>错误码</th><th>callId</th></tr></thead><tbody>{calls.map((call) => <tr key={call.callId}><td>{new Date(call.createdAt).toLocaleString("zh-CN")}</td><td><strong className="table-strong">{call.source === "connection_test" ? "连接测试" : call.source}</strong><small className={`table-sub call-status ${call.status}`}>{statusLabel(call.status)}</small></td><td><strong className="table-strong">{call.adapter && call.model ? `${call.adapter}/${call.model}` : "未选择模型"}</strong><small className="table-sub">Chat · 用户 {call.userId}</small></td><td><strong className="table-strong">{call.inputTokens ?? "—"} / {call.outputTokens ?? "—"}</strong><small className="table-sub">${call.estimatedCostUsd ?? "—"}</small></td><td><strong className="table-strong">{call.latencyMs == null ? "—" : `${call.latencyMs} ms`}</strong><small className="table-sub">{meteringLabel(call.meteringStatus)}</small></td><td>{call.errorCode ?? "—"}</td><td><code>{call.callId}</code></td></tr>)}</tbody></table></div>
+              <div className="admin-table-wrap"><table className="admin-table llm-calls-table"><thead><tr><th>时间</th><th>来源 / 状态</th><th>能力 / 模型</th><th>Token / 预估费用</th><th>耗时 / 计量</th><th>错误码</th></tr></thead><tbody>{calls.map((call) => <tr key={call.callId}><td>{new Date(call.createdAt).toLocaleString("zh-CN")}</td><td><strong className="table-strong">{call.source === "connection_test" ? "连接测试" : call.source}</strong><small className={`table-sub call-status ${call.status}`}>{statusLabel(call.status)}</small></td><td><strong className="table-strong">{call.adapter && call.model ? `${call.adapter}/${call.model}` : "未选择模型"}</strong><small className="table-sub">Chat · 用户 {call.userId}</small></td><td><strong className="table-strong">{call.inputTokens ?? "—"} / {call.outputTokens ?? "—"}</strong><small className="table-sub">${call.estimatedCostUsd ?? "—"}</small></td><td><strong className="table-strong">{call.latencyMs == null ? "—" : `${call.latencyMs} ms`}</strong><small className="table-sub">{meteringLabel(call.meteringStatus)}</small></td><td>{call.errorCode ?? "—"}</td></tr>)}</tbody></table></div>
             )}
             <footer className="table-footer"><span>当前页 {calls.length} 条 · 汇总 {summary.callCount} 条</span><div><button type="button" onClick={() => void previous()} disabled={!cursorStack.length || pagePending}>上一页</button><button type="button" onClick={() => void next()} disabled={!nextCursor || pagePending}>下一页</button></div></footer>
           </section>

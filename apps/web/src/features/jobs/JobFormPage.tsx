@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { ArrowLeft, Save } from "lucide-react";
+import { Check } from "lucide-react";
 import {
   api,
   ApiRequestError,
@@ -11,6 +11,7 @@ import {
   type JobWorkMode,
 } from "../../api/client";
 import { Button } from "@/components/ui";
+import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { jobDetailPath, navigateTo } from "../../routing";
 import { JobDuplicateDialog } from "./JobDuplicateDialog";
 import "./jobs.css";
@@ -186,82 +187,131 @@ export function JobFormPage({ mode, jobId }: { mode: "create" | "edit"; jobId?: 
     );
   }
 
+  const cancelTarget = jobId ? jobDetailPath(jobId) : "/jobs";
+  const requiredFilled = [form.job_title, form.company_name, form.description].filter((value) => value.trim()).length;
+
   return (
     <main className="dashboard-content job-page-shell">
-      <header className="job-page-header">
-        <span className="job-page-context">{mode === "create" ? "新建 JD" : "编辑 JD"}</span>
-        <Button variant="secondary" size="sm" icon={<ArrowLeft size={15} />} onClick={() => navigateTo(jobId ? jobDetailPath(jobId) : "/jobs")}>
-          返回
-        </Button>
-      </header>
-
       <form className="job-form" onSubmit={submit}>
-        <div className="job-form-title">
-          <p className="job-eyebrow">{mode === "create" ? "手工新建" : "编辑岗位"}</p>
-          <h1>{mode === "create" ? "保存一条 JD" : record?.job_title ?? "编辑 JD"}</h1>
-          <p>仅保存最终结构化信息。来源字段创建后不可修改。</p>
-        </div>
+        <WorkspacePageHero
+          eyebrow="JD 管理"
+          title={mode === "create" ? "新建 JD" : "编辑 JD"}
+          description="先录入岗位核心信息，保存后再补充公司与来源。"
+          actions={(
+            <>
+              <Button variant="ghost" onClick={() => navigateTo(cancelTarget)}>取消</Button>
+              <Button type="submit" disabled={saving}>{saving ? "正在保存…" : mode === "create" ? "创建 JD" : "保存 JD"}</Button>
+            </>
+          )}
+        />
 
         {error && <div className="job-error" role="alert">{error}</div>}
 
-        <FormSection title="基本信息">
-          <JobInput label="岗位名称" required value={form.job_title} maxLength={200} onChange={(value) => setField("job_title", value)} />
-          <JobInput label="公司名称" required value={form.company_name} maxLength={200} onChange={(value) => setField("company_name", value)} />
-          <JobSelect label="岗位类型" value={form.employment_type} onChange={(value) => setField("employment_type", value as JobFormState["employment_type"])} options={[
-            ["", "未填写"], ["full_time", "全职"], ["part_time", "兼职"], ["internship", "实习"], ["contract", "合同"], ["temporary", "临时"],
-          ]} />
-          <JobTextarea className="job-field-wide" label="JD 正文（Markdown）" required value={form.description} onChange={(value) => setField("description", value)} />
-          <JobInput className="job-field-wide" label="技能" hint="使用逗号或换行分隔，保存时自动去空去重。" value={form.skills} onChange={(value) => setField("skills", value)} />
-        </FormSection>
+        <div className="job-form-layout">
+          <div className="job-form-main">
+            <section className="job-form-card">
+              <header className="job-form-section-head">
+                <p className="job-form-kicker">第一层 · 必填</p>
+                <h2>核心信息</h2>
+              </header>
+              <div className="job-form-grid">
+                <JobInput label="职位名称" required value={form.job_title} maxLength={200} placeholder="例如：高级产品经理" onChange={(value) => setField("job_title", value)} />
+                <JobInput label="公司名称" required value={form.company_name} maxLength={200} placeholder="请输入公司名称" onChange={(value) => setField("company_name", value)} />
+                <JobTextarea className="job-field-wide" label="职位描述" required value={form.description} placeholder="简要说明岗位职责与工作内容" onChange={(value) => setField("description", value)} />
+                <JobInput className="job-field-wide" label="技能" hint="使用逗号或换行分隔，保存时自动去空去重。" value={form.skills} onChange={(value) => setField("skills", value)} />
+              </div>
 
-        <FormSection title="要求与工作地点">
-          <JobInput label="学历要求" value={form.education_requirement} onChange={(value) => setField("education_requirement", value)} />
-          <JobInput label="经验要求" value={form.experience_requirement} onChange={(value) => setField("experience_requirement", value)} />
-          <JobInput label="工作安排" value={form.work_schedule} onChange={(value) => setField("work_schedule", value)} />
-          <JobSelect label="工作方式" value={form.work_mode} onChange={(value) => setField("work_mode", value as JobFormState["work_mode"])} options={[
-            ["", "未填写"], ["onsite", "现场"], ["hybrid", "混合"], ["remote", "远程"],
-          ]} />
-          <JobInput label="城市/地区" value={form.work_city} onChange={(value) => setField("work_city", value)} />
-          <JobInput label="详细地址" value={form.work_address} onChange={(value) => setField("work_address", value)} />
-        </FormSection>
+              <header className="job-form-section-head">
+                <p className="job-form-kicker">第二层 · 用于匹配判断</p>
+                <h2>岗位判断</h2>
+              </header>
+              <div className="job-form-grid is-three">
+                <JobInput label="工作城市" value={form.work_city} placeholder="工作城市" onChange={(value) => setField("work_city", value)} />
+                <JobInput label="薪资范围" placeholder="例如：25-40K、面议" value={form.salary_text} onChange={(value) => setField("salary_text", value)} />
+                <JobSelect label="用工类型" value={form.employment_type} onChange={(value) => setField("employment_type", value as JobFormState["employment_type"])} options={[
+                  ["", "未填写"], ["full_time", "全职"], ["part_time", "兼职"], ["internship", "实习"], ["contract", "合同"], ["temporary", "临时"],
+                ]} />
+                <JobInput label="学历要求" value={form.education_requirement} placeholder="学历要求" onChange={(value) => setField("education_requirement", value)} />
+                <JobInput label="经验要求" value={form.experience_requirement} placeholder="经验要求" onChange={(value) => setField("experience_requirement", value)} />
+                <JobSelect label="工作方式" value={form.work_mode} onChange={(value) => setField("work_mode", value as JobFormState["work_mode"])} options={[
+                  ["", "未填写"], ["onsite", "现场"], ["hybrid", "混合"], ["remote", "远程"],
+                ]} />
+              </div>
+            </section>
+          </div>
 
-        <FormSection title="薪资">
-          <JobInput className="job-field-wide" label="薪资原文" placeholder="例如：150–170 元/天、面议" value={form.salary_text} onChange={(value) => setField("salary_text", value)} />
-          <JobInput label="最低薪资" inputMode="decimal" value={form.salary_min} onChange={(value) => setField("salary_min", value)} />
-          <JobInput label="最高薪资" inputMode="decimal" value={form.salary_max} onChange={(value) => setField("salary_max", value)} />
-          <JobInput label="币种" placeholder="CNY" maxLength={3} value={form.salary_currency} onChange={(value) => setField("salary_currency", value)} />
-          <JobSelect label="计薪周期" value={form.salary_period} onChange={(value) => setField("salary_period", value as JobFormState["salary_period"])} options={[
-            ["", "未填写"], ["hour", "小时"], ["day", "天"], ["month", "月"], ["year", "年"],
-          ]} />
-          <JobInput label="每年薪资月数" type="number" min={1} max={65535} value={form.salary_months_per_year} onChange={(value) => setField("salary_months_per_year", value)} />
-        </FormSection>
+          <aside className="job-form-rail">
+            <section className="job-form-card">
+              <h2 className="job-form-rail-title">补充信息</h2>
+              <p className="job-form-rail-note">低频字段默认收起，避免工作台被表单细节占满。</p>
 
-        <FormSection title="公司与招聘者快照">
-          <JobInput label="公司工商全称" value={form.company_legal_name} onChange={(value) => setField("company_legal_name", value)} />
-          <JobInput label="行业" value={form.company_industry} onChange={(value) => setField("company_industry", value)} />
-          <JobInput label="公司规模" value={form.company_size} onChange={(value) => setField("company_size", value)} />
-          <JobInput label="融资阶段" value={form.company_financing_stage} onChange={(value) => setField("company_financing_stage", value)} />
-          <JobTextarea className="job-field-wide" label="公司简介" value={form.company_description} onChange={(value) => setField("company_description", value)} />
-          <JobInput label="招聘者姓名" value={form.recruiter_name} onChange={(value) => setField("recruiter_name", value)} />
-          <JobInput label="招聘者职位" value={form.recruiter_title} onChange={(value) => setField("recruiter_title", value)} />
-        </FormSection>
+              <details className="job-rail-section">
+                <summary><span><strong>薪资明细</strong><small>结构化薪资，用于排序与筛选</small></span></summary>
+                <div className="job-rail-body">
+                  <JobInput label="最低薪资" inputMode="decimal" value={form.salary_min} onChange={(value) => setField("salary_min", value)} />
+                  <JobInput label="最高薪资" inputMode="decimal" value={form.salary_max} onChange={(value) => setField("salary_max", value)} />
+                  <JobInput label="币种" placeholder="CNY" maxLength={3} value={form.salary_currency} onChange={(value) => setField("salary_currency", value)} />
+                  <JobSelect label="计薪周期" value={form.salary_period} onChange={(value) => setField("salary_period", value as JobFormState["salary_period"])} options={[
+                    ["", "未填写"], ["hour", "小时"], ["day", "天"], ["month", "月"], ["year", "年"],
+                  ]} />
+                  <JobInput label="每年薪资月数" type="number" min={1} max={65535} value={form.salary_months_per_year} onChange={(value) => setField("salary_months_per_year", value)} />
+                </div>
+              </details>
 
-        <FormSection title="来源与备注">
-          {mode === "create" ? (
-            <JobInput className="job-field-wide" label="来源链接（可选）" type="url" value={form.source_url} onChange={(value) => setField("source_url", value)} />
-          ) : (
-            <div className="job-readonly-source job-field-wide">
-              <span>来源信息（只读）</span>
-              <strong>{record?.source_site ?? "手工创建，无来源"}</strong>
-              {record?.source_url && <a href={record.source_url} target="_blank" rel="noreferrer">{record.source_url}</a>}
-            </div>
-          )}
-          <JobTextarea className="job-field-wide" label="个人备注" value={form.notes} onChange={(value) => setField("notes", value)} />
-        </FormSection>
+              <details className="job-rail-section">
+                <summary><span><strong>公司快照</strong><small>行业、规模、招聘者</small></span></summary>
+                <div className="job-rail-body">
+                  <JobInput label="公司工商全称" value={form.company_legal_name} onChange={(value) => setField("company_legal_name", value)} />
+                  <JobInput label="行业" value={form.company_industry} onChange={(value) => setField("company_industry", value)} />
+                  <JobInput label="公司规模" value={form.company_size} onChange={(value) => setField("company_size", value)} />
+                  <JobInput label="融资阶段" value={form.company_financing_stage} onChange={(value) => setField("company_financing_stage", value)} />
+                  <JobTextarea label="公司简介" value={form.company_description} onChange={(value) => setField("company_description", value)} />
+                  <JobInput label="招聘者姓名" value={form.recruiter_name} onChange={(value) => setField("recruiter_name", value)} />
+                  <JobInput label="招聘者职位" value={form.recruiter_title} onChange={(value) => setField("recruiter_title", value)} />
+                </div>
+              </details>
 
-        <div className="job-form-actions">
-          <Button variant="secondary" onClick={() => navigateTo(jobId ? jobDetailPath(jobId) : "/jobs")}>取消</Button>
-          <Button type="submit" icon={<Save size={15} />} disabled={saving}>{saving ? "正在保存…" : "保存 JD"}</Button>
+              <details className="job-rail-section" open={mode === "edit"}>
+                <summary><span><strong>来源信息</strong><small>{mode === "create" ? "链接可选" : "创建后只读"}</small></span></summary>
+                <div className="job-rail-body">
+                  {mode === "create" ? (
+                    <JobInput label="来源链接（可选）" type="url" value={form.source_url} onChange={(value) => setField("source_url", value)} />
+                  ) : (
+                    <div className="job-readonly-source">
+                      <span>来源信息（只读）</span>
+                      <strong>{record?.source_site ?? "手工创建，无来源"}</strong>
+                      {record?.source_url && <a href={record.source_url} target="_blank" rel="noreferrer">{record.source_url}</a>}
+                    </div>
+                  )}
+                  <JobInput label="详细地址" value={form.work_address} onChange={(value) => setField("work_address", value)} />
+                  <JobInput label="工作安排" hint="例如：双休、弹性打卡" value={form.work_schedule} onChange={(value) => setField("work_schedule", value)} />
+                </div>
+              </details>
+
+              <details className="job-rail-section">
+                <summary><span><strong>个人备注</strong><small>{form.notes.trim() ? "已填写" : "暂未填写"}</small></span></summary>
+                <div className="job-rail-body">
+                  <JobTextarea label="个人备注" value={form.notes} onChange={(value) => setField("notes", value)} />
+                </div>
+              </details>
+            </section>
+
+            <section className="job-check-card">
+              <p className="job-form-kicker">保存前检查</p>
+              <div className="job-check-body">
+                <div>
+                  <strong>{requiredFilled === 3 ? "核心信息已完整" : "等待填写核心信息"}</strong>
+                  <span>必填字段 {requiredFilled}/3</span>
+                </div>
+                <Check size={18} aria-hidden="true" />
+              </div>
+            </section>
+
+            <section className="job-form-card job-layer-note">
+              <p className="job-form-kicker">字段层级说明</p>
+              <p>第一层：岗位身份与描述<br />第二层：匹配判断<br />第三层：来源、快照与备注</p>
+            </section>
+          </aside>
         </div>
       </form>
 
@@ -270,20 +320,16 @@ export function JobFormPage({ mode, jobId }: { mode: "create" | "edit"; jobId?: 
   );
 }
 
-function FormSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section className="job-form-section"><h2>{title}</h2><div className="job-form-grid">{children}</div></section>;
-}
-
 function JobInput({ label, hint, className = "", onChange, ...props }: Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange"> & { label: string; hint?: string; onChange: (value: string) => void }) {
   return <label className={`job-field ${className}`.trim()}><JobFieldLabel label={label} required={props.required} /><input {...props} aria-label={props["aria-label"] ?? label} onChange={(event) => onChange(event.target.value)} />{hint && <small>{hint}</small>}</label>;
 }
 
-function JobTextarea({ label, className = "", value, required, onChange }: { label: string; className?: string; value: string; required?: boolean; onChange: (value: string) => void }) {
-  return <label className={`job-field ${className}`.trim()}><JobFieldLabel label={label} required={required} /><textarea aria-label={label} value={value} required={required} onChange={(event) => onChange(event.target.value)} /></label>;
+function JobTextarea({ label, className = "", value, required, placeholder, onChange }: { label: string; className?: string; value: string; required?: boolean; placeholder?: string; onChange: (value: string) => void }) {
+  return <label className={`job-field ${className}`.trim()}><JobFieldLabel label={label} required={required} /><textarea aria-label={label} value={value} required={required} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
 function JobFieldLabel({ label, required }: { label: string; required?: boolean }) {
-  return <span className="job-field-label">{label}{required && <em aria-hidden="true">必填</em>}</span>;
+  return <span className="job-field-label">{label}{required && <em aria-hidden="true">*</em>}</span>;
 }
 
 function JobSelect({ label, value, options, onChange }: { label: string; value: string; options: Array<[string, string]>; onChange: (value: string) => void }) {

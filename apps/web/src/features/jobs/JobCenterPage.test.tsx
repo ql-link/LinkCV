@@ -83,7 +83,7 @@ describe("JobCenterPage", () => {
     vi.spyOn(api, "getPluginRelease").mockResolvedValue({ status: "unpublished", release: null });
 
     render(<JobCenterPage />);
-    fireEvent.click(screen.getByRole("button", { name: "安装岗位采集插件" }));
+    fireEvent.click(screen.getByRole("button", { name: "安装采集插件" }));
 
     expect(await screen.findByRole("dialog", { name: "安装岗位采集插件" })).toBeInTheDocument();
     expect(screen.getByText("暂未提供插件安装包。")).toBeInTheDocument();

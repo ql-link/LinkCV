@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Archive, BriefcaseBusiness, Download, MapPin, Plus, RotateCcw, Search, Trash2 } from "lucide-react";
 import { api, ApiRequestError, type JobDescriptionSummary } from "../../api/client";
 import { Button, ConfirmDialog } from "@/components/ui";
+import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { jobDetailPath, navigateTo } from "../../routing";
 import { PluginInstallDialog } from "./PluginInstallDialog";
 import "./jobs.css";
@@ -112,18 +113,31 @@ export function JobCenterPage() {
 
   return (
     <main className="dashboard-content job-center-content">
-        <header className="job-center-header">
-          <div><p className="job-eyebrow">岗位资料库</p><h1>JD 中心</h1><p>管理手工填写和外部结构化写入的最终岗位信息。</p></div>
-          <div className="job-header-actions">
-            <Button variant="secondary" icon={<Download size={15} />} onClick={() => setShowPluginInstall(true)}>安装岗位采集插件</Button>
-            <Button icon={<Plus size={15} />} onClick={() => navigateTo("/jobs/new")}>新建 JD</Button>
-          </div>
-        </header>
+        <WorkspacePageHero
+          eyebrow="岗位资料库"
+          title="JD 中心"
+          description="把岗位身份和下一步判断放在第一层，来源与更新时间退到辅助信息。"
+          actions={(
+            <>
+              <Button variant="ghost" icon={<Download size={15} />} onClick={() => setShowPluginInstall(true)}>安装采集插件</Button>
+              <Button icon={<Plus size={15} />} onClick={() => navigateTo("/jobs/new")}>新建 JD</Button>
+            </>
+          )}
+        />
 
         <div className="job-toolbar">
-          <label className="job-search"><Search size={15} /><span className="visually-hidden">搜索 JD</span><input aria-label="搜索 JD" value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索岗位、公司、城市、技能或正文" /></label>
-          <div className="job-scope-tabs" aria-label="归档范围">
-            {(["active", "archived", "all"] as const).map((value) => <button key={value} type="button" className={scope === value ? "is-active" : ""} onClick={() => setScope(value)}>{value === "active" ? "活动" : value === "archived" ? "已归档" : "全部"}</button>)}
+          <label className="job-search-field">
+            <span>搜索职位</span>
+            <span className="job-search">
+              <Search size={15} />
+              <input aria-label="搜索 JD" value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="职位、公司或技能" />
+            </span>
+          </label>
+          <div className="job-filter-row">
+            <div className="job-scope-tabs" aria-label="归档范围">
+              {(["all", "active", "archived"] as const).map((value) => <button key={value} type="button" className={scope === value ? "is-active" : ""} onClick={() => setScope(value)}>{value === "active" ? "活动" : value === "archived" ? "已归档" : "全部"}</button>)}
+            </div>
+            <span className="job-sort-note">按最近更新</span>
           </div>
         </div>
 
@@ -143,13 +157,20 @@ export function JobCenterPage() {
             {items.map((job) => (
               <article key={job.id} className="job-card">
                 <button className="job-card-main" type="button" onClick={() => navigateTo(jobDetailPath(job.id))}>
-                  <div className="job-card-heading"><div><h2>{job.job_title}</h2><p>{job.company_name}</p></div>{job.archived_at && <span className="job-archive-badge">已归档</span>}</div>
-                  <div className="job-card-facts">{job.work_city && <span><MapPin size={13} />{job.work_city}</span>}{job.salary_text && <span>{job.salary_text}</span>}{job.source_site && <span>来源 {job.source_site}</span>}<span>更新于 {formatTime(job.updated_at)}</span></div>
-                  {job.skills.length > 0 && <div className="job-skill-row">{job.skills.slice(0, 6).map((skill) => <span key={skill}>{skill}</span>)}</div>}
+                  <div className="job-card-heading"><h2>{job.job_title}</h2><p>{job.company_name}</p></div>
+                  <div className="job-card-facts">{job.work_city && <span><MapPin size={13} />{job.work_city}</span>}{job.salary_text && <span>{job.salary_text}</span>}</div>
+                  {job.skills.length > 0 && <div className="job-skill-row">{job.skills.slice(0, 6).map((skill, index) => <span key={skill} className={index === 0 ? "is-primary" : ""}>{skill}</span>)}</div>}
                 </button>
-                <div className="job-card-actions">
-                  <button type="button" disabled={busyId !== null} aria-label={`${job.archived_at ? "恢复" : "归档"} ${job.job_title}`} onClick={() => void changeArchived(job)}>{job.archived_at ? <RotateCcw size={16} /> : <Archive size={16} />}</button>
-                  {job.archived_at && <button type="button" disabled={busyId !== null} aria-label={`删除 ${job.job_title}`} onClick={() => setPendingDelete(job)}><Trash2 size={16} /></button>}
+                <div className="job-card-side">
+                  <span className={`job-status-badge${job.archived_at ? " is-archived" : ""}`}>{job.archived_at ? "已归档" : "活动"}</span>
+                  <div className="job-card-source">
+                    {job.source_site && <span>{job.source_site}</span>}
+                    <span>更新于 {formatTime(job.updated_at)}</span>
+                  </div>
+                  <div className="job-card-actions">
+                    <button type="button" disabled={busyId !== null} aria-label={`${job.archived_at ? "恢复" : "归档"} ${job.job_title}`} onClick={() => void changeArchived(job)}>{job.archived_at ? <RotateCcw size={15} /> : <Archive size={15} />}</button>
+                    {job.archived_at && <button type="button" disabled={busyId !== null} aria-label={`删除 ${job.job_title}`} onClick={() => setPendingDelete(job)}><Trash2 size={15} /></button>}
+                  </div>
                 </div>
               </article>
             ))}

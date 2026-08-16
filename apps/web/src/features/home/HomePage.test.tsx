@@ -1,31 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  ApiRequestError,
   type ResumeImportSummary,
   type ResumeSummary,
 } from "../../api/client";
 import { HomeScreen } from "./HomePage";
-
-vi.mock("./TemplatePicker", () => ({
-  TemplatePicker: ({ onSelect }: { onSelect: (template: object) => void }) => (
-    <button
-      type="button"
-      onClick={() =>
-        onSelect({
-          id: "8",
-          key: "blank-cn",
-          name: "空白简历",
-          description: null,
-          data: {},
-          style: {},
-        })
-      }
-    >
-      选择空白模板
-    </button>
-  ),
-}));
 
 const resumes: ResumeSummary[] = [
   {
@@ -54,7 +33,6 @@ function renderHome(overrides: Partial<React.ComponentProps<typeof HomeScreen>> 
     onOpen: vi.fn(),
     onDelete: vi.fn(),
     onCreate: vi.fn(),
-    onImport: vi.fn().mockResolvedValue("1"),
     onDeleteImport: vi.fn(),
     ...overrides,
   };
@@ -62,13 +40,16 @@ function renderHome(overrides: Partial<React.ComponentProps<typeof HomeScreen>> 
 }
 
 describe("HomeScreen", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    window.history.replaceState(null, "", "/resumes");
+  });
 
   it("按名称筛选简历并从新建按钮进入创建流程", () => {
     const onCreate = vi.fn();
     renderHome({ onCreate });
 
-    fireEvent.change(screen.getByPlaceholderText("搜索简历"), {
+    fireEvent.change(screen.getByLabelText("搜索简历"), {
       target: { value: "frontend" },
     });
     expect(screen.getByText("Frontend Resume")).toBeInTheDocument();
@@ -77,82 +58,11 @@ describe("HomeScreen", () => {
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("导入必须同时选择模板和文件，受理后显示后台解析提示", async () => {
-    const onImport = vi.fn().mockResolvedValue("3");
-    const onOpen = vi.fn();
-    const file = new File(["# Zhang San"], "resume.md", { type: "text/markdown" });
-    renderHome({ onImport, onOpen });
-
+  it("导入简历入口跳转到新建页的导入模式", () => {
+    renderHome();
     fireEvent.click(screen.getByRole("button", { name: "导入简历" }));
-    const submit = screen.getByRole("button", { name: "开始导入" });
-    expect(submit).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "选择空白模板" }));
-    fireEvent.change(screen.getByLabelText(/选择 Markdown/), { target: { files: [file] } });
-    expect(submit).toBeEnabled();
-    fireEvent.click(submit);
-
-    await waitFor(() => expect(onImport).toHaveBeenCalledWith(file, "8"));
-    expect(onOpen).not.toHaveBeenCalled();
-    expect(await screen.findByText("文件已上传，正在后台解析。")).toBeInTheDocument();
-  });
-
-  it("结构化模型未配置时在导入弹窗内显示具体错误", async () => {
-    const onImport = vi.fn().mockRejectedValue(
-      new ApiRequestError(503, "STRUCTURING_MODEL_UNAVAILABLE"),
-    );
-    const file = new File(["# 张三"], "张三简历.md", { type: "text/markdown" });
-    renderHome({ onImport });
-
-    fireEvent.click(screen.getByRole("button", { name: "导入简历" }));
-    fireEvent.click(screen.getByRole("button", { name: "选择空白模板" }));
-    fireEvent.change(screen.getByLabelText(/选择 Markdown/), { target: { files: [file] } });
-    fireEvent.click(screen.getByRole("button", { name: "开始导入" }));
-
-    const error = await screen.findByRole("alert");
-    expect(error).toHaveTextContent("内容结构化模型未配置或凭据不可用，请联系管理员配置后重试。");
-    expect(screen.getByRole("dialog", { name: "导入简历" })).toContainElement(error);
-    expect(screen.getByText("张三简历.md")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "开始导入" })).toBeEnabled();
-  });
-
-  it("同步导入等待响应时显示处理中状态并防止关闭弹窗", async () => {
-    let resolveImport: ((resumeId: string) => void) | undefined;
-    const onImport = vi.fn().mockReturnValue(
-      new Promise<string>((resolve) => {
-        resolveImport = resolve;
-      }),
-    );
-    const file = new File(["# 张三"], "张三简历.md", { type: "text/markdown" });
-    const onOpen = vi.fn();
-    renderHome({ onImport, onOpen });
-
-    fireEvent.click(screen.getByRole("button", { name: "导入简历" }));
-    fireEvent.click(screen.getByRole("button", { name: "选择空白模板" }));
-    fireEvent.change(screen.getByLabelText(/选择 Markdown/), { target: { files: [file] } });
-    fireEvent.click(screen.getByRole("button", { name: "开始导入" }));
-
-    expect(screen.getByRole("button", { name: "正在导入…" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "取消" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "关闭" })).toBeDisabled();
-
-    resolveImport?.("3");
-    await waitFor(() => expect(onImport).toHaveBeenCalledTimes(1));
-    expect(onOpen).not.toHaveBeenCalled();
-  });
-
-  it("未知导入错误会显示服务端错误码而不是无响应", async () => {
-    const onImport = vi.fn().mockRejectedValue(new ApiRequestError(502, "IMPORT_PROVIDER_FAILED"));
-    const file = new File(["# 张三"], "张三简历.md", { type: "text/markdown" });
-    renderHome({ onImport });
-
-    fireEvent.click(screen.getByRole("button", { name: "导入简历" }));
-    fireEvent.click(screen.getByRole("button", { name: "选择空白模板" }));
-    fireEvent.change(screen.getByLabelText(/选择 Markdown/), { target: { files: [file] } });
-    fireEvent.click(screen.getByRole("button", { name: "开始导入" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "导入失败（IMPORT_PROVIDER_FAILED），请稍后重试。",
-    );
+    expect(window.location.pathname).toBe("/resumes/new");
+    expect(window.location.search).toBe("?mode=import");
   });
 
   it("通过站内确认弹窗删除正式简历", async () => {
