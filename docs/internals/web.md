@@ -27,13 +27,13 @@ React 根入口用 Error Boundary 和 `error` / `unhandledrejection` 监听器�
 
 简历 API 已统一使用 `snake_case`、`ResumeDocumentV1 data` 和 `ResumeStyleV1 style`。当前编辑器仍以 Markdown/Tiptap 提供整页编辑体验：读取时把完整语义字段渲染为 Markdown；用户修改正文后，把受限 Markdown 写入 `custom_section_editor`，同时保留导入生成的结构化字段作为来源基线，后续读取以该自定义正文为准，不把整份 Tiptap JSON 写入后端。完整字段级双向编辑器属于后续产品改造。
 
-简历主页卡片使用后端摘要中的真实 `data/style` 只读预览；预览纸张和编辑工作台都使用 `ResumeStyleV1.template_key` 对应的主题类，模板内的 `::: left/right` 结构由同一 Markdown 渲染链处理。历史结构无效时显示“预览不可用”，不阻断列表。新建统一进入 `/resumes/new`，用户必须选择启用模板并输入名称；空白简历也是模板。注册成功后只进入空主页，不自动创建第一份简历。模板库和新建页复用同一真实模板预览链。
+简历主页卡片使用后端摘要中的真实 `data/style` 只读预览；预览纸张和编辑工作台都使用 `ResumeStyleV1.template_key` 对应的主题类，模板内的 `::: left/right` 结构由同一 Markdown 渲染链处理。历史结构无效时显示“预览不可用”，不阻断列表。主页只展示简历和导入任务，不再提供模板库或“模板”导航项；旧的 `/resumes?view=templates` 仍按普通简历列表处理。新建统一进入独立的 `/resumes/new`：创建模式要求选择启用模板并输入名称，导入模式要求选择 Markdown、DOCX 或 PDF 文件并使用空白模板；空白简历也是模板。注册成功后只进入空主页，不自动创建第一份简历。
 
-主页导入弹窗必须同时选择模板和 Markdown、DOCX 或 PDF 文件，每次提交生成新的 UUID `Idempotency-Key`；access 刷新重放保持同一个 Key。API 在请求内同步返回正式简历后，Store 合并摘要、保存本次 warnings 并打开编辑器；失败则保留原列表和当前简历。页面不展示上传中、解析中或失败任务卡，也不轮询导入状态。前端不持有 MinIO、LinkParse 或结构化模型凭据。
+导入从 `/resumes/new?mode=import` 发起，文件选择后以空白模板提交 Markdown、DOCX 或 PDF；每次提交生成新的 UUID `Idempotency-Key`，access 刷新重放保持同一个 Key。创建页在提交成功后回到主页；主页显示上传中、解析中和失败导入任务，并在存在活动任务时每 2 秒刷新列表，失败任务可删除。前端不持有 MinIO、LinkParse 或结构化模型凭据。
 
 版本抽屉直接读取后端不可变版本列表。自动保存请求串行执行，并在每次成功后接续服务端返回的 `lock_version`；用户点击“保存版本”时先保存草稿，再调用版本创建接口。恢复历史版本前会先保存未提交草稿，恢复期间临时禁止编辑，成功后使用后端快照刷新。`smartOnePage` 作为 `ResumeStyleV1.smart_one_page` 随当前快照和历史版本持久化。编辑器图片上传使用当前简历的私有资源接口。
 
-JD 临时管理界面使用可恢复路由 `/jobs`、`/jobs/new`、`/jobs/:jobId` 和 `/jobs/:jobId/edit`，与简历页面共享现有 Cookie 会话和工作区侧边栏；在简历、模板、JD 列表、JD 详情及编辑页之间切换时只替换右侧内容区。列表支持活动、已归档、全部范围，关键词搜索和游标加载更多；详情页提供编辑、归档和恢复，只有归档记录在列表及详情页展示站内确认后的永久删除入口。新建页允许手工填写最终结构化字段和可选来源链接。编辑页把来源身份完整显示为只读，不向更新接口发送来源字段。创建遇到来源重复时，页面根据服务端 `allowed_actions` 显示取消、恢复原内容或更新原记录；动作回传记录 ID 和 `lock_version`。浏览器采集插件是独立的 `apps/extension` 应用，通过相同 Cookie 会话调用后端导入接口；Web 不承载页面抓取或插件 API Key 管理。
+JD 临时管理界面使用可恢复路由 `/jobs`、`/jobs/new`、`/jobs/:jobId` 和 `/jobs/:jobId/edit`，与简历页面共享现有 Cookie 会话和工作区侧边栏；在简历、JD 列表、JD 详情及编辑页之间切换时只替换右侧内容区。列表支持活动、已归档、全部范围，关键词搜索和游标加载更多；详情页提供编辑、归档和恢复，只有归档记录在列表及详情页展示站内确认后的永久删除入口。新建页允许手工填写最终结构化字段和可选来源链接。编辑页把来源身份完整显示为只读，不向更新接口发送来源字段。创建遇到来源重复时，页面根据服务端 `allowed_actions` 显示取消、恢复原内容或更新原记录；动作回传记录 ID 和 `lock_version`。浏览器采集插件是独立的 `apps/extension` 应用，通过相同 Cookie 会话调用后端导入接口；Web 不承载页面抓取或插件 API Key 管理。
 
 管理端入口为 `/admin`，模型配置页使用 `/admin/llm/models`，日志中心使用 `/admin/logs/system`、`/admin/logs/audit` 和兼容原 LLM 页的 `/admin/logs`。模型页突出可点击的系统 `Chat 模型` 能力区，展示唯一当前模型和多个候选；管理员只填写模型供应商、模型名称、可选 API Base 与 API Key，不填写能力、优先级或价格。供应商选项展示用户可识别的名称，不暴露 LiteLLM adapter 代码；当前支持列表包含以 `dashscope` 路由调用的阿里云百炼（千问）。保存普通候选不改变当前项，“设为当前”会先执行真实测试再切换；编辑当前项也必须先验证拟议配置。密钥字段只写，编辑留空时不进入 PATCH，显式清除才发送 `null`。
 
