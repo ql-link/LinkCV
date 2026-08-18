@@ -1,5 +1,7 @@
 import asyncio
+from io import BytesIO
 from time import monotonic
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
 
@@ -11,6 +13,17 @@ from linkcv.services.resume_import_service import (
     safe_import_filename,
     validate_import_file,
 )
+
+
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def docx_fixture(*, document_content: bytes = b"<w:document />") -> bytes:
+    output = BytesIO()
+    with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", b"<Types />")
+        archive.writestr("word/document.xml", document_content)
+    return output.getvalue()
 
 
 class FakeConverter:
@@ -46,6 +59,50 @@ def test_file_validation_and_safe_filename_are_side_effect_free() -> None:
             max_bytes=1024,
         )
     assert error.value.code == "EMPTY_IMPORT_FILE"
+
+
+def test_docx_validation_accepts_required_zip_structure() -> None:
+    assert (
+        validate_import_file(
+            filename="resume.docx",
+            content_type=DOCX_MIME,
+            content=docx_fixture(),
+            max_bytes=2 * 1024 * 1024,
+        )
+        == "docx"
+    )
+
+
+def test_docx_validation_rejects_encrypted_compound_document() -> None:
+    encrypted = bytes.fromhex("D0CF11E0A1B11AE1") + b"".join(
+        value.encode("utf-16le") for value in ("EncryptedPackage", "EncryptionInfo")
+    )
+
+    with pytest.raises(ResumeImportFailure) as error:
+        validate_import_file(
+            filename="resume.docx",
+            content_type=DOCX_MIME,
+            content=encrypted,
+            max_bytes=1024,
+        )
+
+    assert error.value.status_code == 422
+    assert error.value.code == "IMPORT_CONTENT_INVALID"
+
+
+def test_docx_validation_rejects_compression_bomb() -> None:
+    compressed = docx_fixture(document_content=b"x" * (1024 * 1024 + 1))
+
+    with pytest.raises(ResumeImportFailure) as error:
+        validate_import_file(
+            filename="resume.docx",
+            content_type=DOCX_MIME,
+            content=compressed,
+            max_bytes=2 * 1024 * 1024,
+        )
+
+    assert error.value.status_code == 413
+    assert error.value.code == "IMPORT_FILE_TOO_LARGE"
 
 
 def test_parse_resume_calls_markdown_callback_without_changing_result() -> None:

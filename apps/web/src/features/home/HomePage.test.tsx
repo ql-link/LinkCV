@@ -1,10 +1,11 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type ResumeImportSummary,
   type ResumeSummary,
 } from "../../api/client";
-import { HomeScreen } from "./HomePage";
+import { defaultSettings, useResumeStore } from "../../store/resumeStore";
+import { HomePage, HomeScreen } from "./HomePage";
 
 const resumes: ResumeSummary[] = [
   {
@@ -241,5 +242,96 @@ describe("HomeScreen", () => {
     await waitFor(() => expect(onDeleteImport).toHaveBeenCalledWith("31"));
     expect(screen.getByText("resume.md")).toBeInTheDocument();
     expect(screen.getByText(/删除“resume.md”的失败记录失败/)).toBeInTheDocument();
+  });
+});
+
+describe("HomePage import polling", () => {
+  const processingTask = (id: string): ResumeImportSummary => ({
+    id,
+    source_filename: `张三-${id}.docx`,
+    source_file_format: "docx",
+    upload_status: "succeeded",
+    upload_duration_ms: 20,
+    parse_status: "processing",
+    parse_duration_ms: null,
+    result_resume_id: null,
+    created_at: "2026-08-19T00:00:00Z",
+    updated_at: "2026-08-19T00:00:00Z",
+  });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    useResumeStore.setState({
+      resumes: [],
+      activeImports: [],
+      failedImports: [],
+      settings: defaultSettings,
+      listResumes: vi.fn().mockResolvedValue(undefined),
+      pollResumeImport: vi.fn().mockResolvedValue(undefined),
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("每秒分别轮询所有正在解析的任务，并在任务移除后停止对应轮询", async () => {
+    const first = processingTask("41");
+    const second = processingTask("42");
+    const poll = vi.fn().mockResolvedValue(undefined);
+    useResumeStore.setState({
+      activeImports: [first, second],
+      pollResumeImport: poll,
+    });
+    render(<HomePage />);
+
+    expect(poll).not.toHaveBeenCalled();
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(poll.mock.calls).toEqual([["41"], ["42"]]);
+
+    act(() => useResumeStore.setState({ activeImports: [second] }));
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(poll.mock.calls).toEqual([["41"], ["42"], ["42"]]);
+  });
+
+  it("上传中或非 processing 状态不触发轮询", async () => {
+    const poll = vi.fn().mockResolvedValue(undefined);
+    useResumeStore.setState({
+      activeImports: [
+        processingTask("51"),
+        processingTask("52"),
+      ].map((task, index) => (
+        index === 0
+          ? { ...task, upload_status: "uploading" as const, parse_status: null }
+          : { ...task, parse_status: null }
+      )),
+      pollResumeImport: poll,
+    });
+    render(<HomePage />);
+
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+
+    expect(poll).not.toHaveBeenCalled();
+  });
+
+  it("上一次状态请求未完成时跳过同一任务的后续 tick", async () => {
+    let finishRequest!: () => void;
+    const pendingRequest = new Promise<void>((resolve) => {
+      finishRequest = resolve;
+    });
+    const poll = vi.fn().mockReturnValue(pendingRequest);
+    useResumeStore.setState({
+      activeImports: [processingTask("61")],
+      pollResumeImport: poll,
+    });
+    render(<HomePage />);
+
+    await act(() => vi.advanceTimersByTimeAsync(3000));
+    expect(poll).toHaveBeenCalledTimes(1);
+
+    await act(async () => finishRequest());
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(poll).toHaveBeenCalledTimes(2);
   });
 });

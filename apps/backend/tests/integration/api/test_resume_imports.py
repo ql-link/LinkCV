@@ -364,6 +364,54 @@ def test_overview_lists_active_import_and_failed_import_can_be_deleted() -> None
     assert len(storage.objects) == 1
 
 
+def test_get_resume_import_returns_only_the_owned_task_summary() -> None:
+    app, _storage, _converter, _publisher = build_app()
+    with TestClient(app) as client:
+        register(client)
+        accepted = import_file(client, app)
+        import_id = accepted.json()["import"]["id"]
+
+        status = client.get(f"/api/resume-imports/{import_id}")
+        invalid = client.get("/api/resume-imports/+1")
+
+        client.post("/api/auth/logout")
+        second_user = client.post(
+            "/api/auth/register",
+            json={
+                "email": "other-importer@example.invalid",
+                "password": "password-123",
+            },
+        )
+        hidden = client.get(f"/api/resume-imports/{import_id}")
+
+    assert status.status_code == 200
+    assert status.json() == accepted.json()
+    assert invalid.status_code == 404
+    assert invalid.json() == {"error": "RESUME_IMPORT_NOT_FOUND"}
+    assert second_user.status_code == 201
+    assert hidden.status_code == 404
+    assert hidden.json() == {"error": "RESUME_IMPORT_NOT_FOUND"}
+
+
+def test_get_resume_import_closes_a_stale_processing_task() -> None:
+    app, _storage, _converter, _publisher = build_app()
+    with TestClient(app) as client:
+        register(client)
+        accepted = import_file(client, app)
+        import_id = int(accepted.json()["import"]["id"])
+        with app.state.session_factory() as db:
+            record = db.get(DocumentParseTask, import_id)
+            assert record is not None
+            record.updated_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+            db.commit()
+
+        status = client.get(f"/api/resume-imports/{import_id}")
+
+    assert status.status_code == 200
+    assert status.json()["import"]["parse_status"] == "failed"
+    assert status.json()["import"]["parse_duration_ms"] is not None
+
+
 def test_overview_closes_stale_processing_import_with_sqlite_datetime() -> None:
     app, _storage, _converter, _publisher = build_app()
     with TestClient(app) as client:

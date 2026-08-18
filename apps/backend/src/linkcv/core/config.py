@@ -311,12 +311,6 @@ class Settings(BaseSettings):
         alias="LINKPARSE_RESPONSE_MAX_BYTES",
         ge=1,
     )
-    docx_conversion_timeout_seconds: float = Field(
-        default=30,
-        alias="DOCX_CONVERSION_TIMEOUT_SECONDS",
-        gt=0,
-    )
-
     redis_url_override: str | None = Field(default=None, alias="REDIS_URL")
     redis_host: str = Field(default="127.0.0.1", alias="REDIS_HOST")
     redis_port: int = Field(default=6379, alias="REDIS_PORT")

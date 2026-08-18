@@ -771,6 +771,10 @@ export const api = {
       },
     );
   },
+  getResumeImport: (id: string) =>
+    request<{ import: ResumeImportSummary }>(
+      `/api/resume-imports/${encodeURIComponent(id)}`,
+    ),
   deleteResumeImport: (id: string) =>
     request<{ deleted: boolean }>(`/api/resume-imports/${id}`, {
       method: "DELETE",

@@ -460,29 +460,68 @@ export function HomePage() {
   const activeImports = useResumeStore((state) => state.activeImports);
   const failedImports = useResumeStore((state) => state.failedImports);
   const listResumes = useResumeStore((state) => state.listResumes);
+  const pollResumeImport = useResumeStore((state) => state.pollResumeImport);
   const deleteResume = useResumeStore((state) => state.deleteResume);
   const renameResume = useResumeStore((state) => state.renameResume);
   const deleteResumeImport = useResumeStore((state) => state.deleteResumeImport);
 
   useEffect(() => {
     void listResumes();
-    if (activeImports.length === 0) return;
-    const timer = window.setInterval(() => void listResumes(), 2000);
-    return () => window.clearInterval(timer);
-  }, [activeImports.length, listResumes]);
+  }, [listResumes]);
 
   return (
-    <HomeScreen
-      resumes={resumes}
-      activeImports={activeImports}
-      failedImports={failedImports}
-      onCreate={() => navigateTo("/resumes/new")}
-      onOpen={(id) => navigateTo(editorPath(id))}
-      onRename={renameResume}
-      onDelete={deleteResume}
-      onDeleteImport={deleteResumeImport}
-    />
+    <>
+      {activeImports
+        .filter((task) => (
+          task.upload_status === "succeeded" && task.parse_status === "processing"
+        ))
+        .map((task) => (
+          <ResumeImportPoller
+            key={task.id}
+            importId={task.id}
+            pollResumeImport={pollResumeImport}
+          />
+        ))}
+      <HomeScreen
+        resumes={resumes}
+        activeImports={activeImports}
+        failedImports={failedImports}
+        onCreate={() => navigateTo("/resumes/new")}
+        onOpen={(id) => navigateTo(editorPath(id))}
+        onRename={renameResume}
+        onDelete={deleteResume}
+        onDeleteImport={deleteResumeImport}
+      />
+    </>
   );
+}
+
+const RESUME_IMPORT_POLL_INTERVAL_MS = 1000;
+
+function ResumeImportPoller({
+  importId,
+  pollResumeImport,
+}: {
+  importId: string;
+  pollResumeImport: (id: string) => Promise<void>;
+}) {
+  useEffect(() => {
+    let requestInFlight = false;
+    const timer = window.setInterval(() => {
+      if (requestInFlight) return;
+      requestInFlight = true;
+      void pollResumeImport(importId)
+        .catch(() => {
+          // Transient polling failures are retried on the next tick.
+        })
+        .finally(() => {
+          requestInFlight = false;
+        });
+    }, RESUME_IMPORT_POLL_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [importId, pollResumeImport]);
+
+  return null;
 }
 
 function formatTime(value: string) {
