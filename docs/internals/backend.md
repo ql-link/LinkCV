@@ -23,7 +23,7 @@
 | `src/linkcv/modules/job_descriptions/` | JD 单表 ORM、HTTP DTO 和受保护路由 |
 | `src/linkcv/modules/llm/` | Chat 当前绑定、模型凭据加密、LiteLLM 适配、普通/流式/结构化单模型调用、计量与管理员 API |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0020` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0021` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -57,6 +57,8 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0019` 为 `users` 增加 `wechat_openid`（VARCHAR(64)，全局唯一索引 `uk_users_wechat_openid`）和 `wechat_bound_at`（可空，UTC 绑定时间）。`wechat_openid` 是微信小程序 openid，绑定后写入，全局唯一约束承担 openid 冲突检测的数据库兜底；本周不提供解绑接口，因此不存在清空路径。`0020` 将 `email`、`password_hash` 放宽为可空：微信扫码登录创建的账号没有邮箱密码，`email` 为 `null`，昵称默认生成“微信用户”前缀。绑定逻辑遵循“一微信一账号”：同一 `openid` 只能关联一个用户，登录复用已有账号不新建。
 
+`0021` 将 `resume_imports` 一次性迁移为通用 `document_parse_tasks`：任务表保存 `source_type=resume_import`、源文件和上传/解析状态，不再持有最终简历指针；`resumes.parse_task_id` 以无外键的可空唯一列记录来源任务，由 Worker 在创建简历和完成任务的同一事务中维护。迁移沿用原任务主键并回填来源指针，随后删除旧表；降级会镜像重建 `resume_imports`，存在非简历类型任务时拒绝执行。转换后的 Markdown 尽力存入 `converted_object_name`，历史迁移记录保持为空，生命周期检查不依赖该字段。
+
 绑定由 Web 已登录用户发起，走 `/api/account/wechat/bind-request|bind-confirm|bind-status`（ticket 票据）。绑定票据是临时凭证，只存 Redis（`wechat:bind_ticket:<ticket>` 存用户、`wechat:bind_status:<ticket>` 存 `pending/bound`、`wechat:bind_user_ticket:<uid>` 指向当前票据），TTL 默认 300 秒，同用户重新发起时覆盖旧票据。`bind-confirm` 提交小程序 `wx.login()` 的临时 code，服务端换 openid 后关联到发起用户；openid 已被其他用户绑定时返回 `409 WECHAT_ALREADY_BOUND`，原绑定关系不被覆盖。
 
 扫码登录挂在 `/api/auth/wechat` 下，scene 状态机存 Redis（key `wechat:login:<scene>`，TTL 默认 300 秒）：
@@ -85,7 +87,7 @@ LiteLLM 只位于 `modules/llm/gateway.py` 和只读目录边界。白名单 ada
 
 Markdown 文件在进程内做 UTF-8 与确定性换行清理；DOCX 在可取消子进程中使用 Mammoth 转安全 HTML，经 nh3 allowlist 清洗后转 Markdown；只有 PDF 会以固定的 `engine=auto/output_formats=markdown/ocr=auto/dpi=200/include_bbox=false/include_images=false` 调用 LinkParse `POST /v1/parse`。LinkParse 响应在 JSON decode 前限制为 3 MiB，随后校验 request ID、schema、页数、Markdown 质量和空 assets；客户端不下载或保存外部 assets，也不自动重试同步解析请求。
 
-超过结构化输入上限的内容不会发送给模型，合规输入的 AST 被压缩为 H1–H3 `SectionIR` 后才发送给结构化模型，最终稳定 ID、日期和来源行号由程序生成。HTTP 导入入口先校验所选模板与文件，再使用 canonical UUID `Idempotency-Key`；Redis key 按用户和 Header 哈希隔离，先以 30 秒租约占有请求，再绑定持久化导入 ID 并保留 15 分钟。`resume_imports` 是上传和解析状态的唯一真值；API 只上传、更新为解析中并等待 MQ confirm，Worker 才执行转换和结果事务。上传失败补偿对象；业务解析失败保留源文件与失败记录供用户删除，不自动重试。
+超过结构化输入上限的内容不会发送给模型，合规输入的 AST 被压缩为 H1–H3 `SectionIR` 后才发送给结构化模型，最终稳定 ID、日期和来源行号由程序生成。HTTP 导入入口先校验所选模板与文件，再使用 canonical UUID `Idempotency-Key`；Redis key 按用户和 Header 哈希隔离，先以 30 秒租约占有请求，再绑定持久化导入 ID 并保留 15 分钟。`document_parse_tasks` 中 `source_type=resume_import` 的记录是上传和解析状态真值；API 只上传、更新为解析中并等待 MQ confirm，Worker 才执行转换和结果事务。转换成功后 Worker 尽力把 Markdown 存到源文件同目录的 `converted.md`，存档失败只记录告警，不改变解析结果。上传失败补偿对象；业务解析失败保留源文件、可能存在的转换存档与失败记录供用户删除，不自动重试。
 
 Development 未配置 LinkParse Key 时应用仍可启动，Markdown/DOCX 保持可用，PDF 返回 `DOCUMENT_CONVERSION_UNAVAILABLE`；Production 缺 Key 会安全拒绝启动。默认测试全部使用确定性 Fake 和 `httpx.MockTransport`，不访问真实网络或读取密钥。PDF 解析日志只记录 LinkCV 调用 LinkParse 的开始、结果、耗时、解析器/页数/OCR 摘要和稳定错误码；不读取 LinkParse 内部日志，也不记录正文、Prompt、Cookie、密钥或完整供应商响应。Markdown/DOCX 当前本地转换同样只记录格式、结果和耗时；未来迁移到外部转换服务时继续沿用该调用方边界。
 
@@ -102,9 +104,10 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown/DOCX 保持
 - 用户级兼容图片：`users/{user_id}/assets/...`。
 - 账号头像：`users/{user_id}/assets/avatar/...`，对象键记录在 `users.avatar_object_key`；旧路径中的已有头像保持兼容。
 - 导入原文件：`users/{user_id}/resume-imports/{operation_id}/...`。
+- 导入转换存档：`users/{user_id}/resume-imports/{operation_id}/converted.md`。
 - 简历资源：`users/{user_id}/resumes/{resume_id}/assets/...`。
 
-简历级读取先校验所属简历。资源删除会递归检查当前和历史 `data_json` 引用；仍在使用时拒绝删除。删除导入生成的正式简历时通过 `resume_imports.result_resume_id` 找到并删除源文件，再删除导入记录、简历资源、版本和简历。MinIO 删除失败返回 `502 ASSET_DELETE_FAILED` 并保留数据库记录。数据库与 MinIO 仍不是同一事务：多个对象可能只删除一部分，且对象删除成功后的数据库提交失败无法恢复对象。
+简历级读取先校验所属简历。资源删除会递归检查当前和历史 `data_json` 引用；仍在使用时拒绝删除。删除导入生成的正式简历时通过 `resumes.parse_task_id` 读取对应 `document_parse_tasks`，删除源文件、转换存档和任务记录，再删除简历资源、版本和简历；任务记录异常缺失时只记录告警，不阻断简历删除。MinIO 删除失败返回 `502 ASSET_DELETE_FAILED` 并保留数据库记录。数据库与 MinIO 仍不是同一事务：多个对象可能只删除一部分，且对象删除成功后的数据库提交失败无法恢复对象。
 
 ## 用户中心
 
@@ -118,7 +121,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown/DOCX 保持
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于 `0002`–`0020` 往返、模板初始化和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于 `0002`–`0021` 往返、模板初始化和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 

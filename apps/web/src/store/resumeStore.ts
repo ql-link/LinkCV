@@ -80,6 +80,7 @@ type ResumeState = {
   createResume: (title: string, templateId: string) => Promise<string>;
   importResume: (file: File, templateId: string) => Promise<string>;
   loadResume: (id: string) => Promise<void>;
+  renameResume: (id: string, title: string) => Promise<void>;
   deleteResume: (id: string) => Promise<void>;
   deleteResumeImport: (id: string) => Promise<void>;
   saveCurrentResume: () => Promise<void>;
@@ -368,6 +369,24 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   loadResume: async (id) => {
     const { resume } = await api.getResume(id);
     set({ versions: [], ...applyResume(resume) });
+  },
+
+  renameResume: async (id, title) => {
+    const current = get().resumes.find((resume) => resume.id === id);
+    if (!current) throw new Error("RESUME_NOT_FOUND");
+    const { resume } = await api.updateResume(id, {
+      title,
+      base_lock_version: current.lock_version,
+    });
+    set((state) => {
+      const resumes = mergeResumeSummary(state.resumes, resume);
+      if (state.activeResumeId !== id) return { resumes };
+      return {
+        resumes,
+        title: resume.title,
+        lockVersion: resume.lock_version,
+      };
+    });
   },
 
   deleteResume: async (id) => {

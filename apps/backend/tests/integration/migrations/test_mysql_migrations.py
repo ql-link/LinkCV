@@ -21,7 +21,7 @@ from linkcv.domain.resume_snapshot import parse_resume_snapshot
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0020"
+EXPECTED_HEAD = "0021"
 
 
 def migration_test_url() -> str:
@@ -105,7 +105,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "resume_templates",
         "resumes",
         "resume_versions",
-        "resume_imports",
+        "document_parse_tasks",
         "job_descriptions",
     } <= set(inspector.get_table_names())
     assert "admin_operation_logs" not in inspector.get_table_names()
@@ -138,6 +138,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "id",
         "user_id",
         "template_id",
+        "parse_task_id",
         "title",
         "data_json",
         "style_json",
@@ -159,7 +160,63 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "reason",
         "created_at",
     }
+    assert {
+        column["name"]
+        for column in inspector.get_columns("document_parse_tasks")
+    } == {
+        "id",
+        "source_type",
+        "user_id",
+        "file_name",
+        "file_format",
+        "object_name",
+        "converted_object_name",
+        "upload_status",
+        "upload_duration_ms",
+        "parse_status",
+        "parse_duration_ms",
+        "created_at",
+        "updated_at",
+    }
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("document_parse_tasks")
+    } == {
+        "ck_document_parse_tasks_file_format",
+        "ck_document_parse_tasks_lifecycle",
+        "ck_document_parse_tasks_parse_status",
+        "ck_document_parse_tasks_source_type",
+        "ck_document_parse_tasks_upload_status",
+    }
+    task_indexes = {
+        index["name"]: index["column_names"]
+        for index in inspector.get_indexes("document_parse_tasks")
+    }
+    assert task_indexes["idx_document_parse_tasks_user_created_id"] == [
+        "user_id",
+        "created_at",
+        "id",
+    ]
+    assert task_indexes["idx_document_parse_tasks_user_state"] == [
+        "user_id",
+        "upload_status",
+        "parse_status",
+    ]
+    task_foreign_keys = {
+        foreign_key["name"]: foreign_key
+        for foreign_key in inspector.get_foreign_keys("document_parse_tasks")
+    }
+    assert set(task_foreign_keys) == {"fk_document_parse_tasks_user"}
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("resumes")
+    } == {"uk_resumes_parse_task_id", "uk_resumes_share_token"}
+    assert all(
+        "parse_task_id" not in foreign_key["constrained_columns"]
+        for foreign_key in inspector.get_foreign_keys("resumes")
+    )
     assert "storage_cleanup_jobs" not in inspector.get_table_names()
+    assert "resume_imports" not in inspector.get_table_names()
 
     run_alembic(database_url, "downgrade", "0009")
     downgraded_inspector = inspect(engine)
@@ -359,7 +416,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "resume_templates",
         "resumes",
         "resume_versions",
-        "resume_imports",
+        "document_parse_tasks",
         "llm_model_configs",
         "llm_capability_bindings",
         "llm_call_logs",
@@ -397,6 +454,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "id",
         "user_id",
         "template_id",
+        "parse_task_id",
         "title",
         "data_json",
         "style_json",
@@ -726,6 +784,113 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     } <= set(inspect(engine).get_table_names())
     assert "admin_operation_logs" not in inspect(engine).get_table_names()
     assert "storage_cleanup_jobs" not in inspect(engine).get_table_names()
+    assert "resume_imports" not in inspect(engine).get_table_names()
+    assert "document_parse_tasks" in inspect(engine).get_table_names()
+    engine.dispose()
+
+
+def test_document_parse_task_migration_preserves_import_data_round_trip() -> None:
+    database_url = migration_test_url()
+    engine = create_engine(database_url)
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0020")
+
+    with engine.begin() as connection:
+        user_id = connection.execute(
+            text(
+                "INSERT INTO users (email, password_hash, nickname) "
+                "VALUES ('migration@example.invalid', '$2b$12$fictional', '张三')"
+            )
+        ).lastrowid
+        template_id = connection.scalar(
+            text("SELECT id FROM resume_templates WHERE `key` = 'blank-cn'")
+        )
+        resume_id = connection.execute(
+            text(
+                "INSERT INTO resumes "
+                "(user_id, template_id, title, data_json, style_json, source_type) "
+                "VALUES (:user_id, :template_id, '迁移简历', "
+                "JSON_OBJECT('schema_version', '1.0'), "
+                "JSON_OBJECT('schema_version', '1.0'), 'import')"
+            ),
+            {"user_id": user_id, "template_id": template_id},
+        ).lastrowid
+        import_id = connection.execute(
+            text(
+                "INSERT INTO resume_imports "
+                "(user_id, result_resume_id, source_filename, source_file_format, "
+                "source_object_key, upload_status, upload_duration_ms, "
+                "parse_status, parse_duration_ms) VALUES "
+                "(:user_id, :resume_id, 'resume.md', 'md', "
+                "'users/1/resume-imports/task/resume.md', "
+                "'succeeded', 12, 'succeeded', 34)"
+            ),
+            {"user_id": user_id, "resume_id": resume_id},
+        ).lastrowid
+
+    run_alembic(database_url, "upgrade", "0021")
+    upgraded = inspect(engine)
+    assert "resume_imports" not in upgraded.get_table_names()
+    assert "document_parse_tasks" in upgraded.get_table_names()
+    with engine.connect() as connection:
+        assert connection.execute(
+            text(
+                "SELECT id, source_type, user_id, file_name, file_format, "
+                "object_name, converted_object_name, upload_status, "
+                "upload_duration_ms, parse_status, parse_duration_ms "
+                "FROM document_parse_tasks WHERE id = :import_id"
+            ),
+            {"import_id": import_id},
+        ).one() == (
+            import_id,
+            "resume_import",
+            user_id,
+            "resume.md",
+            "md",
+            "users/1/resume-imports/task/resume.md",
+            None,
+            "succeeded",
+            12,
+            "succeeded",
+            34,
+        )
+        assert connection.scalar(
+            text("SELECT parse_task_id FROM resumes WHERE id = :resume_id"),
+            {"resume_id": resume_id},
+        ) == import_id
+
+    run_alembic(database_url, "downgrade", "0020")
+    downgraded = inspect(engine)
+    assert "document_parse_tasks" not in downgraded.get_table_names()
+    assert "resume_imports" in downgraded.get_table_names()
+    assert "parse_task_id" not in {
+        column["name"] for column in downgraded.get_columns("resumes")
+    }
+    with engine.connect() as connection:
+        assert connection.execute(
+            text(
+                "SELECT id, user_id, result_resume_id, source_filename, "
+                "source_file_format, source_object_key, upload_status, "
+                "upload_duration_ms, parse_status, parse_duration_ms "
+                "FROM resume_imports WHERE id = :import_id"
+            ),
+            {"import_id": import_id},
+        ).one() == (
+            import_id,
+            user_id,
+            resume_id,
+            "resume.md",
+            "md",
+            "users/1/resume-imports/task/resume.md",
+            "succeeded",
+            12,
+            "succeeded",
+            34,
+        )
+
+    run_alembic(database_url, "upgrade", "head")
+    assert "document_parse_tasks" in inspect(engine).get_table_names()
+    reset_test_database_to_base(database_url)
     engine.dispose()
 
 

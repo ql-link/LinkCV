@@ -179,6 +179,10 @@ def build_import_object_name(
     return f"users/{user_id}/resume-imports/{operation_id}/{safe_name}"
 
 
+def build_converted_markdown_object_name(user_id: int, operation_id: str) -> str:
+    return f"users/{user_id}/resume-imports/{operation_id}/converted.md"
+
+
 def build_dataset_object_name(user_id: int, file_name: str) -> str:
     """生成知识库资料对象键，强制以当前用户 id 为前缀，调用方不可覆盖。"""
     normalized = unicodedata.normalize("NFKD", file_name)

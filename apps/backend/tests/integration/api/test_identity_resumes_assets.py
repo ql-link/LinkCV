@@ -9,7 +9,13 @@ from linkcv.main import create_app
 from linkcv.domain.resume_document import default_resume_document
 from linkcv.domain.resume_style import default_resume_style
 from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
+from linkcv.modules.resumes.models import (
+    RESUME_IMPORT_SOURCE_TYPE,
+    DocumentParseTask,
+    Resume,
+    ResumeTemplate,
+    ResumeVersion,
+)
 from tests.fakes import FakeRedis
 
 
@@ -273,6 +279,54 @@ def test_resume_delete_keeps_database_record_when_storage_cleanup_fails() -> Non
             assert session.scalar(
                 select(Resume).where(Resume.id == int(resume_id))
             ) is None
+        assert storage.objects == {}
+
+
+def test_resume_delete_cleans_parse_task_source_and_converted_markdown() -> None:
+    app = build_test_app()
+    storage = app.state.storage
+
+    with TestClient(app) as client:
+        assert client.post(
+            "/api/auth/register",
+            json={"email": "import-cleanup@example.com", "password": "password-123"},
+        ).status_code == 201
+        resume_id = int(
+            client.post("/api/resumes", json=resume_payload(app)).json()["resume"]["id"]
+        )
+        with app.state.session_factory() as session:
+            user_id = session.scalar(select(User.id))
+            resume = session.get(Resume, resume_id)
+            assert user_id is not None
+            assert resume is not None
+            task = DocumentParseTask(
+                source_type=RESUME_IMPORT_SOURCE_TYPE,
+                user_id=user_id,
+                file_name="resume.md",
+                file_format="md",
+                object_name=f"users/{user_id}/resume-imports/task/source.md",
+                converted_object_name=(
+                    f"users/{user_id}/resume-imports/task/converted.md"
+                ),
+                upload_status="succeeded",
+                upload_duration_ms=1,
+                parse_status="succeeded",
+                parse_duration_ms=1,
+            )
+            session.add(task)
+            session.flush()
+            resume.parse_task_id = task.id
+            session.commit()
+            task_id = task.id
+            storage.objects[task.object_name] = b"# source"
+            storage.objects[task.converted_object_name] = b"# converted"
+
+        deleted = client.delete(f"/api/resumes/{resume_id}")
+
+        assert deleted.status_code == 200
+        with app.state.session_factory() as session:
+            assert session.get(DocumentParseTask, task_id) is None
+            assert session.get(Resume, resume_id) is None
         assert storage.objects == {}
 
 

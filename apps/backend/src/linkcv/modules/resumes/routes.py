@@ -22,7 +22,12 @@ from linkcv.core.storage import AssetStorage, get_storage
 from linkcv.domain.resume_snapshot import parse_resume_snapshot
 from linkcv.modules.identity.dependencies import get_current_user
 from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.models import Resume, ResumeImport, ResumeVersion
+from linkcv.modules.resumes.models import (
+    RESUME_IMPORT_SOURCE_TYPE,
+    DocumentParseTask,
+    Resume,
+    ResumeVersion,
+)
 from linkcv.modules.resumes.schemas import (
     DeleteResumeResponse,
     ResumeCreateRequest,
@@ -186,12 +191,27 @@ def delete_resume(
         raise ApiError(404, "RESUME_NOT_FOUND")
 
     try:
-        imported = db.scalar(
-            select(ResumeImport).where(ResumeImport.result_resume_id == resume.id)
-        )
-        source_object_key = imported.source_object_key if imported is not None else None
-        if source_object_key:
-            storage.delete(source_object_key)
+        parse_task = None
+        if resume.parse_task_id is not None:
+            parse_task = db.scalar(
+                select(DocumentParseTask).where(
+                    DocumentParseTask.id == resume.parse_task_id,
+                    DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+                    DocumentParseTask.user_id == user.id,
+                )
+            )
+            if parse_task is None:
+                logger.warning(
+                    "resume parse task missing during cleanup",
+                    extra={
+                        "resume_id": resume.id,
+                        "parse_task_id": resume.parse_task_id,
+                    },
+                )
+        if parse_task is not None:
+            storage.delete(parse_task.object_name)
+            if parse_task.converted_object_name:
+                storage.delete(parse_task.converted_object_name)
         storage.delete_prefix(f"users/{user.id}/resumes/{resume.id}/")
     except Exception as error:
         db.rollback()
@@ -202,8 +222,13 @@ def delete_resume(
         raise ApiError(502, "ASSET_DELETE_FAILED") from error
 
     try:
-        if imported is not None:
-            db.execute(delete(ResumeImport).where(ResumeImport.id == imported.id))
+        if parse_task is not None:
+            db.execute(
+                delete(DocumentParseTask).where(
+                    DocumentParseTask.id == parse_task.id,
+                    DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+                )
+            )
         db.execute(delete(ResumeVersion).where(ResumeVersion.resume_id == resume.id))
         result = db.execute(delete(Resume).where(Resume.id == resume.id))
         db.commit()
