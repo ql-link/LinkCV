@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { FileUp, Plus, Search, Share2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { ExternalLink, FileUp, MoreHorizontal, Pencil, Plus, Search, Share2, Trash2 } from "lucide-react";
 import {
   type ResumeImportSummary,
   type ResumeSummary,
@@ -13,6 +13,7 @@ import { useResumeStore } from "../../store/resumeStore";
 import { editorPath, navigateTo } from "../../routing";
 import { ResumePreview } from "../preview/ResumePreview";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
+import { RenameResumeDialog } from "./RenameResumeDialog";
 import { SharePanel } from "./SharePanel";
 
 type HomeScreenProps = {
@@ -20,6 +21,7 @@ type HomeScreenProps = {
   activeImports: ResumeImportSummary[];
   failedImports: ResumeImportSummary[];
   onOpen: (id: string) => void | Promise<void>;
+  onRename: (id: string, title: string) => void | Promise<void>;
   onDelete: (id: string) => void | Promise<void>;
   onCreate: () => void | Promise<void>;
   onDeleteImport: (id: string) => void | Promise<void>;
@@ -34,19 +36,136 @@ function importFailureStatus(task: ResumeImportSummary) {
   return `${stage} · ${(durationMs / 1000).toFixed(1)} 秒`;
 }
 
+function ImportTaskCard({
+  task,
+  failed = false,
+  deleting = false,
+  deleteDisabled = false,
+  onDelete,
+}: {
+  task: ResumeImportSummary;
+  failed?: boolean;
+  deleting?: boolean;
+  deleteDisabled?: boolean;
+  onDelete?: () => void;
+}) {
+  const stage = task.upload_status === "uploading" ? "正在上传" : "正在解析";
+
+  return (
+    <article
+      className={`home-import-card${failed ? " home-import-card-failed" : ""}`}
+      aria-label={`导入任务 ${task.source_filename}`}
+    >
+      <div className="home-import-preview">
+        <div className="home-import-document" aria-hidden="true">
+          <span className="home-import-document-title" />
+          <span />
+          <span />
+          <span className="is-short" />
+          <span className="home-import-document-heading" />
+          <span />
+          <span />
+          <span className="is-short" />
+          <span className="home-import-document-heading" />
+          <span />
+          <span className="is-short" />
+        </div>
+        <div className="home-import-state">
+          <span className="home-import-state-label">未完成</span>
+          {!failed && (
+            <div
+              className="home-import-progress"
+              role="progressbar"
+              aria-label={`${task.source_filename} ${stage}`}
+              aria-valuetext={`${stage}，暂时无法估算完成时间`}
+            >
+              <span />
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="home-import-meta">
+        <strong title={task.source_filename}>{task.source_filename}</strong>
+        <small>{failed ? importFailureStatus(task) : `${stage} · 请稍候`}</small>
+        {failed && onDelete && (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={deleteDisabled}
+            aria-label={`删除失败记录 ${task.source_filename}`}
+            onClick={onDelete}
+          >
+            {deleting ? "正在删除…" : "删除记录"}
+          </Button>
+        )}
+      </div>
+    </article>
+  );
+}
+
 function ResumeThumbnailCard({
   resume,
   onOpen,
   onDelete,
   onShare,
+  onRename,
   deleteDisabled = false,
 }: {
   resume: Pick<ResumeSummary, "id" | "title" | "updated_at" | "preview">;
   onOpen: () => void;
   onDelete?: () => void;
   onShare?: () => void;
+  onRename?: () => void;
   deleteDisabled?: boolean;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        menuTriggerRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePress);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePress);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    menuRef.current?.querySelector<HTMLButtonElement>("[role='menuitem']:not(:disabled)")?.focus();
+  }, [menuOpen]);
+
+  const handleMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not(:disabled)") ?? []);
+    if (!items.length) return;
+    if (event.key === "Home") return items[0].focus();
+    if (event.key === "End") return items[items.length - 1].focus();
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+    const direction = event.key === "ArrowDown" ? 1 : -1;
+    const nextIndex = currentIndex < 0
+      ? direction > 0 ? 0 : items.length - 1
+      : (currentIndex + direction + items.length) % items.length;
+    items[nextIndex].focus();
+  };
+
+  const runMenuAction = (action?: () => void) => {
+    setMenuOpen(false);
+    action?.();
+  };
+
   return (
     <article className="home-resume-card">
       <button className="home-card-open" type="button" onClick={onOpen}>
@@ -58,34 +177,55 @@ function ResumeThumbnailCard({
           )}
         </span>
       </button>
-      {onDelete && (
+      <div className="home-card-menu" ref={menuRef}>
         <button
-          className="home-card-delete"
+          ref={menuTriggerRef}
+          className="home-card-menu-trigger"
           type="button"
-          aria-label={`删除简历 ${resume.title}`}
-          title="删除简历"
-          disabled={deleteDisabled}
-          onClick={onDelete}
+          aria-label={`更多简历操作 ${resume.title}`}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((open) => !open)}
         >
-          <X size={14} />
+          <MoreHorizontal size={16} aria-hidden="true" />
         </button>
-      )}
+        {menuOpen && (
+          <div
+            className="home-card-menu-panel"
+            role="menu"
+            aria-label={`${resume.title} 操作菜单`}
+            onKeyDown={handleMenuKeyDown}
+          >
+            {onRename && (
+              <button type="button" role="menuitem" onClick={() => runMenuAction(onRename)}>
+                <Pencil size={15} aria-hidden="true" />重命名
+              </button>
+            )}
+            {onShare && (
+              <button type="button" role="menuitem" onClick={() => runMenuAction(onShare)}>
+                <Share2 size={15} aria-hidden="true" />分享链接
+              </button>
+            )}
+            {onDelete && (
+              <button
+                className="is-danger"
+                type="button"
+                role="menuitem"
+                disabled={deleteDisabled}
+                onClick={() => runMenuAction(onDelete)}
+              >
+                <Trash2 size={15} aria-hidden="true" />删除
+              </button>
+            )}
+          </div>
+        )}
+      </div>
       <div className="home-card-meta">
         <strong>{resume.title}</strong>
         <small>更新于 {formatTime(resume.updated_at)}</small>
         <div className="home-card-actions">
-          {onShare && (
-            <button
-              className="home-card-action"
-              type="button"
-              aria-label={`分享简历 ${resume.title}`}
-              onClick={onShare}
-            >
-              <Share2 size={14} />分享
-            </button>
-          )}
-          <button className="home-card-action" type="button" onClick={onOpen}>
-            打开
+          <button className="home-card-action is-primary" type="button" onClick={onOpen}>
+            <ExternalLink size={14} />打开
           </button>
         </div>
       </div>
@@ -98,14 +238,18 @@ export function HomeScreen({
   activeImports,
   failedImports,
   onOpen,
+  onRename,
   onDelete,
   onCreate,
   onDeleteImport,
 }: HomeScreenProps) {
   const [query, setQuery] = useState("");
   const [pendingDelete, setPendingDelete] = useState<ResumeSummary | null>(null);
+  const [pendingRename, setPendingRename] = useState<ResumeSummary | null>(null);
   const [sharingResume, setSharingResume] = useState<ResumeSummary | null>(null);
   const [deletingResumeId, setDeletingResumeId] = useState<string | null>(null);
+  const [renamingResumeId, setRenamingResumeId] = useState<string | null>(null);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
 
@@ -113,6 +257,14 @@ export function HomeScreen({
     const normalizedQuery = query.trim().toLocaleLowerCase();
     return resumes.filter((resume) => resume.title.toLocaleLowerCase().includes(normalizedQuery));
   }, [query, resumes]);
+  const visibleImports = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    return [
+      ...activeImports.map((task) => ({ task, failed: false })),
+      ...failedImports.map((task) => ({ task, failed: true })),
+    ].filter(({ task }) => task.source_filename.toLocaleLowerCase().includes(normalizedQuery));
+  }, [activeImports, failedImports, query]);
+  const visibleCardCount = visibleImports.length + visibleResumes.length;
 
   useEffect(() => {
     if (!notice) return;
@@ -132,6 +284,26 @@ export function HomeScreen({
     } finally {
       setDeletingResumeId(null);
       setPendingDelete(null);
+    }
+  };
+
+  const confirmRename = async (title: string) => {
+    if (!pendingRename || renamingResumeId) return;
+    const resume = pendingRename;
+    if (title === resume.title) {
+      setPendingRename(null);
+      return;
+    }
+    setRenamingResumeId(resume.id);
+    setRenameError(null);
+    try {
+      await onRename(resume.id, title);
+      setNotice({ kind: "success", message: `已将简历重命名为“${title}”。` });
+      setPendingRename(null);
+    } catch {
+      setRenameError("保存名称失败，请刷新列表后重试。");
+    } finally {
+      setRenamingResumeId(null);
     }
   };
 
@@ -187,50 +359,33 @@ export function HomeScreen({
       />
 
       <div className="dashboard-main">
-        {(activeImports.length > 0 || failedImports.length > 0) && (
-          <section className="home-import-task-list" aria-label="导入任务">
-            {activeImports.map((task) => (
-              <article className="home-import-task" key={task.id}>
-                <div>
-                  <strong>{task.source_filename}</strong>
-                  <small>
-                    {task.upload_status === "uploading" ? "正在上传" : "正在解析"}
-                  </small>
-                </div>
-                <span aria-label="导入处理中">处理中</span>
-              </article>
-            ))}
-            {failedImports.map((task) => (
-              <article className="home-import-task home-import-task-failed" key={task.id}>
-                <div>
-                  <strong>{task.source_filename}</strong>
-                  <small>{importFailureStatus(task)}</small>
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={deletingImportId !== null}
-                  onClick={() => void deleteFailedImport(task)}
-                >
-                  {deletingImportId === task.id ? "正在删除…" : "删除记录"}
-                </Button>
-              </article>
-            ))}
-          </section>
-        )}
-        {visibleResumes.length > 0 ? (
+        {visibleCardCount > 0 ? (
           <>
             <div className="home-filter-row">
-              <span className="filter-pill is-active">全部 {visibleResumes.length}</span>
+              <span className="filter-pill is-active">全部 {visibleCardCount}</span>
               <span className="home-filter-sort">最近更新</span>
             </div>
             <section className="home-card-grid" aria-label="全部简历">
+              {visibleImports.map(({ task, failed }) => (
+                <ImportTaskCard
+                  task={task}
+                  key={task.id}
+                  failed={failed}
+                  deleting={deletingImportId === task.id}
+                  deleteDisabled={deletingImportId !== null}
+                  onDelete={failed ? () => void deleteFailedImport(task) : undefined}
+                />
+              ))}
               {visibleResumes.map((resume) => (
                 <ResumeThumbnailCard
                   key={resume.id}
                   resume={resume}
                   onOpen={() => void onOpen(resume.id)}
                   onShare={() => setSharingResume(resume)}
+                  onRename={() => {
+                    setRenameError(null);
+                    setPendingRename(resume);
+                  }}
                   onDelete={() => setPendingDelete(resume)}
                   deleteDisabled={deletingResumeId !== null}
                 />
@@ -277,6 +432,18 @@ export function HomeScreen({
           onConfirm={confirmDelete}
         />
       )}
+      {pendingRename && (
+        <RenameResumeDialog
+          initialTitle={pendingRename.title}
+          busy={renamingResumeId === pendingRename.id}
+          error={renameError}
+          onCancel={() => {
+            setRenameError(null);
+            setPendingRename(null);
+          }}
+          onSubmit={confirmRename}
+        />
+      )}
       {sharingResume && (
         <SharePanel
           resumeId={sharingResume.id}
@@ -294,6 +461,7 @@ export function HomePage() {
   const failedImports = useResumeStore((state) => state.failedImports);
   const listResumes = useResumeStore((state) => state.listResumes);
   const deleteResume = useResumeStore((state) => state.deleteResume);
+  const renameResume = useResumeStore((state) => state.renameResume);
   const deleteResumeImport = useResumeStore((state) => state.deleteResumeImport);
 
   useEffect(() => {
@@ -310,6 +478,7 @@ export function HomePage() {
       failedImports={failedImports}
       onCreate={() => navigateTo("/resumes/new")}
       onOpen={(id) => navigateTo(editorPath(id))}
+      onRename={renameResume}
       onDelete={deleteResume}
       onDeleteImport={deleteResumeImport}
     />

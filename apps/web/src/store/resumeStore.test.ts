@@ -147,6 +147,37 @@ describe("resume deletion", () => {
   });
 });
 
+describe("resume rename", () => {
+  it("使用摘要中的锁版本更新名称并刷新本地摘要", async () => {
+    useResumeStore.setState({
+      resumes: [
+        {
+          id: "1",
+          title: "旧名称",
+          source_type: "blank",
+          lock_version: 3,
+          created_at: "2026-07-27T00:00:00Z",
+          updated_at: "2026-07-27T00:00:03Z",
+        },
+      ],
+    });
+    const renamed = { ...record(4, "# 第一次编辑"), title: "新名称" };
+    vi.spyOn(api, "updateResume").mockResolvedValue({ resume: renamed });
+
+    await useResumeStore.getState().renameResume("1", "新名称");
+
+    expect(api.updateResume).toHaveBeenCalledWith("1", {
+      title: "新名称",
+      base_lock_version: 3,
+    });
+    expect(useResumeStore.getState()).toMatchObject({
+      title: "新名称",
+      lockVersion: 4,
+      resumes: [expect.objectContaining({ id: "1", title: "新名称", lock_version: 4 })],
+    });
+  });
+});
+
 describe("resume import", () => {
   it("异步导入受理后加入活动任务但不创建本地正式简历", async () => {
     const file = new File(["# 导入的简历"], "resume.md", { type: "text/markdown" });
