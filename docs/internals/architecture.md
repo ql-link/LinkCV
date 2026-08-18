@@ -9,6 +9,7 @@
 | WeChat miniprogram | `apps/miniprogram` | 原生小程序（免构建，开发者工具直接导入）；扫码进入登录确认页，把 wx.login code 与 scene/mode/昵称/头像提交到后端 |
 | Backend | `apps/backend` | FastAPI、JWT/Redis 鉴权、简历与 JD API、MinIO 图片接口、SQLAlchemy 模型和 Alembic 迁移 |
 | Infrastructure | `deploy` | MySQL、Redis、MinIO 本地依赖和 Dev/Production Jenkins、Compose 拓扑 |
+| pi agent 工具包（第三方，一次性引入） | `third_party/pi` | Node/TypeScript AI agent 工具包，独立 npm workspace，不被根级脚本纳管；引入方式、验证状态与对接约束见 [internals/third-party-pi.md](third-party-pi.md) |
 | AI workflow | `.ai`、`.specs`、`scripts/quality` | 项目规则、以方案为中心的本地 Spec 和质量检查 |
 
 ## 本地请求路径
