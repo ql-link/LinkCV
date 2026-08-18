@@ -8,7 +8,6 @@ from linkcv.domain.document_conversion import (
     DocumentConversionFailure,
     DocumentMarkdownResult,
 )
-from linkcv.integrations.docx_parse_runner import DocxParseRunner
 from linkcv.integrations.linkparse_client import LinkParseClient
 
 logger = logging.getLogger(__name__)
@@ -38,11 +37,9 @@ class DocumentConverter:
         self,
         *,
         linkparse: LinkParseClient,
-        docx_runner: DocxParseRunner,
         markdown_max_bytes: int,
     ) -> None:
         self._linkparse = linkparse
-        self._docx_runner = docx_runner
         self._markdown_max_bytes = markdown_max_bytes
 
     async def convert(
@@ -63,6 +60,13 @@ class DocumentConverter:
                 operation_id=operation_id,
                 deadline_monotonic=deadline_monotonic,
             )
+        if extension == "docx":
+            return await self._linkparse.parse_docx(
+                filename=filename,
+                content=content,
+                operation_id=operation_id,
+                deadline_monotonic=deadline_monotonic,
+            )
         started = monotonic()
         logger.info(
             "document conversion started",
@@ -73,13 +77,6 @@ class DocumentConverter:
                 markdown = normalize_markdown(content.decode("utf-8"))
                 warnings: list[str] = []
                 parser = "linkcv-direct-markdown"
-            elif extension == "docx":
-                markdown, warnings = await self._docx_runner.convert(
-                    content,
-                    deadline_monotonic=deadline_monotonic,
-                )
-                markdown = normalize_markdown(markdown)
-                parser = "mammoth"
             else:
                 raise DocumentConversionFailure(415, "UNSUPPORTED_IMPORT_FORMAT")
             if not markdown:

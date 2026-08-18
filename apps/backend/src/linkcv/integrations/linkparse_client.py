@@ -17,11 +17,24 @@ from linkcv.domain.import_warnings import ImportWarning
 logger = logging.getLogger(__name__)
 
 
+class LinkParseWordMeta(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    omitted_image_count: int = Field(default=0, ge=0)
+    table_failure_count: int | None = Field(default=None, ge=0)
+    markdown_table_count: int | None = Field(default=None, ge=0)
+    rag_text_table_count: int | None = Field(default=None, ge=0)
+    formula_count: int | None = Field(default=None, ge=0)
+    comment_removed_count: int | None = Field(default=None, ge=0)
+    mammoth_warning_count: int | None = Field(default=None, ge=0)
+
+
 class LinkParseMeta(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     page_count: int = Field(ge=1, le=50)
     duration_ms: int = Field(ge=0)
+    word: LinkParseWordMeta | None = None
 
 
 class LinkParseOutputs(BaseModel):
@@ -40,7 +53,7 @@ class LinkParseResponse(BaseModel):
     request_id: str
     filename: str
     engine: str
-    detected_type: Literal["text_pdf", "scanned_pdf", "mixed_pdf"]
+    detected_type: Literal["text_pdf", "scanned_pdf", "mixed_pdf", "docx"]
     outputs: LinkParseOutputs
     assets: list[LinkParseAsset] = Field(default_factory=list)
     meta: LinkParseMeta
@@ -82,13 +95,21 @@ def markdown_quality(markdown: str) -> Literal["invalid", "low", "good"]:
 
 
 def mapped_failure(status_code: int, code: str | None) -> DocumentConversionFailure:
-    if status_code == 401 or (status_code == 503 and code == "ENGINE_UNAVAILABLE"):
+    if (
+        status_code == 401
+        or (status_code == 503 and code == "ENGINE_UNAVAILABLE")
+        or (status_code == 429 and code == "CONCURRENCY_LIMIT_REACHED")
+    ):
         return DocumentConversionFailure(503, "DOCUMENT_CONVERSION_UNAVAILABLE")
     if status_code == 413 and code in {"FILE_TOO_LARGE", "PDF_TOO_MANY_PAGES"}:
         return DocumentConversionFailure(413, "IMPORT_FILE_TOO_LARGE")
     if status_code == 415 and code == "UNSUPPORTED_FILE_TYPE":
         return DocumentConversionFailure(415, "UNSUPPORTED_IMPORT_FORMAT")
-    if status_code == 422 and code == "PDF_RENDER_FAILED":
+    if status_code == 422 and code in {
+        "PDF_RENDER_FAILED",
+        "WORD_PARSE_FAILED",
+        "INVALID_WORD_DOCUMENT",
+    }:
         return DocumentConversionFailure(422, "IMPORT_CONTENT_INVALID")
     return DocumentConversionFailure(502, "DOCUMENT_CONVERSION_FAILED")
 
@@ -121,17 +142,66 @@ class LinkParseClient:
         operation_id: str,
         deadline_monotonic: float,
     ) -> DocumentMarkdownResult:
+        return await self._parse_with_logging(
+            filename=filename,
+            content=content,
+            operation_id=operation_id,
+            deadline_monotonic=deadline_monotonic,
+            content_type="application/pdf",
+            source_format="pdf",
+            expected_detected_types={"text_pdf", "scanned_pdf", "mixed_pdf"},
+        )
+
+    async def parse_docx(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        operation_id: str,
+        deadline_monotonic: float,
+    ) -> DocumentMarkdownResult:
+        return await self._parse_with_logging(
+            filename=filename,
+            content=content,
+            operation_id=operation_id,
+            deadline_monotonic=deadline_monotonic,
+            content_type=(
+                "application/vnd.openxmlformats-officedocument."
+                "wordprocessingml.document"
+            ),
+            source_format="docx",
+            expected_detected_types={"docx"},
+        )
+
+    async def _parse_with_logging(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        operation_id: str,
+        deadline_monotonic: float,
+        content_type: str,
+        source_format: Literal["pdf", "docx"],
+        expected_detected_types: set[str],
+    ) -> DocumentMarkdownResult:
         started = monotonic()
         logger.info(
             "LinkParse request started",
-            extra={"dependency": "linkparse", "operation_id": operation_id},
+            extra={
+                "dependency": "linkparse",
+                "operation_id": operation_id,
+                "source_format": source_format,
+            },
         )
         try:
-            result = await self._parse_pdf(
+            result, word_meta = await self._parse_document(
                 filename=filename,
                 content=content,
                 operation_id=operation_id,
                 deadline_monotonic=deadline_monotonic,
+                content_type=content_type,
+                source_format=source_format,
+                expected_detected_types=expected_detected_types,
             )
         except DocumentConversionFailure as error:
             logger.warning(
@@ -139,6 +209,7 @@ class LinkParseClient:
                 extra={
                     "dependency": "linkparse",
                     "operation_id": operation_id,
+                    "source_format": source_format,
                     "duration_ms": round((monotonic() - started) * 1000),
                     "error_code": error.code,
                     "exception_type": type(error).__name__,
@@ -150,7 +221,9 @@ class LinkParseClient:
             extra={
                 "dependency": "linkparse",
                 "operation_id": operation_id,
+                "source_format": source_format,
                 "duration_ms": round((monotonic() - started) * 1000),
+                "word_meta": word_meta,
                 "summary": (
                     f"parser={result.parser};pages={result.page_count or 0};"
                     f"ocr={str(result.ocr_applied).lower()}"
@@ -159,14 +232,17 @@ class LinkParseClient:
         )
         return result
 
-    async def _parse_pdf(
+    async def _parse_document(
         self,
         *,
         filename: str,
         content: bytes,
         operation_id: str,
         deadline_monotonic: float,
-    ) -> DocumentMarkdownResult:
+        content_type: str,
+        source_format: Literal["pdf", "docx"],
+        expected_detected_types: set[str],
+    ) -> tuple[DocumentMarkdownResult, dict[str, int] | None]:
         if not self._base_url or not self._api_key:
             raise DocumentConversionFailure(503, "DOCUMENT_CONVERSION_UNAVAILABLE")
         remaining = deadline_monotonic - monotonic()
@@ -196,7 +272,7 @@ class LinkParseClient:
                     self._parse_path,
                     headers=headers,
                     data=form,
-                    files={"file": (filename, content, "application/pdf")},
+                    files={"file": (filename, content, content_type)},
                 ) as response:
                     body = bytearray()
                     async for chunk in response.aiter_bytes():
@@ -244,6 +320,7 @@ class LinkParseClient:
             parsed.request_id != request_id
             or response.headers.get("X-Request-ID") != request_id
             or parsed.assets
+            or parsed.detected_type not in expected_detected_types
         ):
             raise DocumentConversionFailure(502, "DOCUMENT_CONVERSION_FAILED")
 
@@ -254,17 +331,29 @@ class LinkParseClient:
         if quality == "invalid":
             raise DocumentConversionFailure(422, "IMPORT_CONTENT_INVALID")
         warnings: list[str] = []
-        if parsed.detected_type in {"scanned_pdf", "mixed_pdf"}:
-            warnings.append(ImportWarning.PDF_OCR_APPLIED.value)
-        if quality == "low":
-            warnings.append(ImportWarning.PDF_LOW_TEXT_QUALITY.value)
-        return DocumentMarkdownResult(
-            markdown=markdown,
-            source_file_name=filename,
-            source_format="pdf",
-            parser=parsed.engine,
-            parser_version="linkparse-v0.2.0",
-            page_count=parsed.meta.page_count,
-            ocr_applied=parsed.detected_type != "text_pdf",
-            warnings=warnings,
+        if source_format == "pdf":
+            if parsed.detected_type in {"scanned_pdf", "mixed_pdf"}:
+                warnings.append(ImportWarning.PDF_OCR_APPLIED.value)
+            if quality == "low":
+                warnings.append(ImportWarning.PDF_LOW_TEXT_QUALITY.value)
+        elif parsed.meta.word is not None and parsed.meta.word.omitted_image_count > 0:
+            warnings.append(ImportWarning.DOCX_EMBEDDED_IMAGES_OMITTED.value)
+        return (
+            DocumentMarkdownResult(
+                markdown=markdown,
+                source_file_name=filename,
+                source_format=source_format,
+                parser=parsed.engine,
+                parser_version="linkparse-v0.2.0",
+                page_count=parsed.meta.page_count,
+                ocr_applied=(
+                    parsed.detected_type != "text_pdf" if source_format == "pdf" else False
+                ),
+                warnings=warnings,
+            ),
+            (
+                parsed.meta.word.model_dump(exclude_none=True)
+                if parsed.meta.word is not None
+                else None
+            ),
         )

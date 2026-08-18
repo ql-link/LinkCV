@@ -5,7 +5,6 @@ from linkcv.core.database import build_engine, build_session_factory
 from linkcv.core.redis import build_redis_client
 from linkcv.core.storage import AssetStorage
 from linkcv.integrations.document_converter import DocumentConverter
-from linkcv.integrations.docx_parse_runner import DocxParseRunner
 from linkcv.integrations.linkparse_client import LinkParseClient
 from linkcv.integrations.resume_structuring import LLMResumeStructuringClient
 from linkcv.modules.llm.crypto import CredentialCipher
@@ -41,9 +40,6 @@ async def main() -> None:
             timeout_seconds=settings.linkparse_timeout_seconds,
             response_max_bytes=settings.linkparse_response_max_bytes,
             markdown_max_bytes=settings.resume_markdown_max_bytes,
-        ),
-        docx_runner=DocxParseRunner(
-            timeout_seconds=settings.docx_conversion_timeout_seconds
         ),
         markdown_max_bytes=settings.resume_markdown_max_bytes,
     )

@@ -21,6 +21,8 @@ def test_structured_emitter_redacts_secrets_and_preserves_query_fields(capsys) -
         request_id="request_123",
         dependency="linkparse",
         duration_ms=12,
+        source_format="docx",
+        word_meta={"omitted_image_count": 1, "table_failure_count": 2},
         unsupported_field="must-not-be-recorded",
     )
 
@@ -30,6 +32,9 @@ def test_structured_emitter_redacts_secrets_and_preserves_query_fields(capsys) -
     assert event["source"] == "web"
     assert event["request_id"] == "request_123"
     assert event["duration_ms"] == 12
+    assert event["source_format"] == "docx"
+    assert "omitted_image_count" in event["word_meta"]
+    assert "table_failure_count" in event["word_meta"]
     assert "unsupported_field" not in event
     serialized = json.dumps(event)
     assert "raw" not in serialized

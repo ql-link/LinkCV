@@ -79,6 +79,7 @@ type ResumeState = {
   listResumes: () => Promise<void>;
   createResume: (title: string, templateId: string) => Promise<string>;
   importResume: (file: File, templateId: string) => Promise<string>;
+  pollResumeImport: (id: string) => Promise<void>;
   loadResume: (id: string) => Promise<void>;
   renameResume: (id: string, title: string) => Promise<void>;
   deleteResume: (id: string) => Promise<void>;
@@ -363,6 +364,43 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
         }
       }
       throw error;
+    }
+  },
+
+  pollResumeImport: async (id) => {
+    const current = get().activeImports.find((item) => item.id === id);
+    if (
+      current?.upload_status !== "succeeded"
+      || current.parse_status !== "processing"
+    ) {
+      return;
+    }
+    const { import: importTask } = await api.getResumeImport(id);
+    if (importTask.parse_status === "processing") {
+      set((state) => ({
+        activeImports: state.activeImports.map((item) => (
+          item.id === importTask.id ? importTask : item
+        )),
+      }));
+      return;
+    }
+    if (importTask.parse_status === "failed" || importTask.upload_status === "failed") {
+      set((state) => ({
+        activeImports: state.activeImports.filter((item) => item.id !== importTask.id),
+        failedImports: [
+          importTask,
+          ...state.failedImports.filter((item) => item.id !== importTask.id),
+        ],
+      }));
+      return;
+    }
+    if (importTask.parse_status === "succeeded") {
+      const overview = await api.getResumeOverview();
+      set({
+        resumes: overview.resumes,
+        activeImports: overview.active_imports,
+        failedImports: overview.failed_imports,
+      });
     }
   },
 

@@ -46,6 +46,7 @@ ALLOWED_FIELDS = {
     "request_id",
     "result",
     "source",
+    "source_format",
     "summary",
     "target_id",
     "target_type",
@@ -53,6 +54,7 @@ ALLOWED_FIELDS = {
     "actor_type",
     "exception_type",
     "exception_stack",
+    "word_meta",
 }
 
 

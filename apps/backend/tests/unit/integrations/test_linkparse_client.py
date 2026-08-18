@@ -35,11 +35,12 @@ def response_payload(request_id: str, **overrides):
     return payload
 
 
-def run_parse(instance: LinkParseClient):
+def run_parse(instance: LinkParseClient, *, source_format="pdf"):
+    parse = instance.parse_docx if source_format == "docx" else instance.parse_pdf
     return asyncio.run(
-        instance.parse_pdf(
-            filename="resume.pdf",
-            content=b"%PDF-1.7 fixture",
+        parse(
+            filename=f"resume.{source_format}",
+            content=(b"PK fixture" if source_format == "docx" else b"%PDF-1.7 fixture"),
             operation_id="operation-1",
             deadline_monotonic=monotonic() + 120,
         )
@@ -76,14 +77,115 @@ def test_linkparse_sends_fixed_minimal_contract_and_maps_ocr_warning() -> None:
     assert result.warnings == ["pdf_ocr_applied"]
 
 
+def test_linkparse_parses_docx_with_shared_contract_and_image_warning() -> None:
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.read()
+        request_id = request.headers["X-Request-ID"]
+        return httpx.Response(
+            200,
+            headers={"X-Request-ID": request_id},
+            json=response_payload(
+                request_id,
+                filename="resume.docx",
+                engine="mammoth_word",
+                detected_type="docx",
+                meta={
+                    "page_count": 3,
+                    "duration_ms": 31,
+                    "word": {
+                        "omitted_image_count": 2,
+                        "table_failure_count": 1,
+                        "formula_count": 1,
+                    },
+                },
+            ),
+        )
+
+    result = run_parse(client(handler), source_format="docx")
+
+    assert (
+        b"application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        in captured["body"]
+    )
+    assert result.source_format == "docx"
+    assert result.parser == "mammoth_word"
+    assert result.parser_version == "linkparse-v0.2.0"
+    assert result.page_count == 3
+    assert result.ocr_applied is False
+    assert result.warnings == ["docx_embedded_images_omitted"]
+
+
+def test_linkparse_docx_does_not_expose_other_word_metadata_as_warnings() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        request_id = request.headers["X-Request-ID"]
+        return httpx.Response(
+            200,
+            headers={"X-Request-ID": request_id},
+            json=response_payload(
+                request_id,
+                detected_type="docx",
+                engine="mammoth_word",
+                meta={
+                    "page_count": 1,
+                    "duration_ms": 8,
+                    "word": {
+                        "omitted_image_count": 0,
+                        "table_failure_count": 3,
+                        "comment_removed_count": 4,
+                    },
+                },
+            ),
+        )
+
+    result = run_parse(client(handler), source_format="docx")
+
+    assert result.warnings == []
+
+
 @pytest.mark.parametrize(
     ("status", "code", "expected_status", "expected_code"),
     [
         (401, "UNAUTHORIZED", 503, "DOCUMENT_CONVERSION_UNAVAILABLE"),
         (503, "ENGINE_UNAVAILABLE", 503, "DOCUMENT_CONVERSION_UNAVAILABLE"),
+        (429, "CONCURRENCY_LIMIT_REACHED", 503, "DOCUMENT_CONVERSION_UNAVAILABLE"),
+        (422, "WORD_PARSE_FAILED", 422, "IMPORT_CONTENT_INVALID"),
+        (422, "INVALID_WORD_DOCUMENT", 422, "IMPORT_CONTENT_INVALID"),
+        (415, "UNSUPPORTED_FILE_TYPE", 415, "UNSUPPORTED_IMPORT_FORMAT"),
+    ],
+)
+def test_linkparse_docx_maps_known_error_envelopes(
+    status: int,
+    code: str,
+    expected_status: int,
+    expected_code: str,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status,
+            headers={"X-Request-ID": request.headers["X-Request-ID"]},
+            json={"error": {"code": code, "message": "sensitive detail"}},
+        )
+
+    with pytest.raises(DocumentConversionFailure) as raised:
+        run_parse(client(handler), source_format="docx")
+    assert raised.value.status_code == expected_status
+    assert raised.value.code == expected_code
+    assert "sensitive detail" not in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    ("status", "code", "expected_status", "expected_code"),
+    [
+        (401, "UNAUTHORIZED", 503, "DOCUMENT_CONVERSION_UNAVAILABLE"),
+        (503, "ENGINE_UNAVAILABLE", 503, "DOCUMENT_CONVERSION_UNAVAILABLE"),
+        (429, "CONCURRENCY_LIMIT_REACHED", 503, "DOCUMENT_CONVERSION_UNAVAILABLE"),
         (413, "PDF_TOO_MANY_PAGES", 413, "IMPORT_FILE_TOO_LARGE"),
         (415, "UNSUPPORTED_FILE_TYPE", 415, "UNSUPPORTED_IMPORT_FORMAT"),
         (422, "PDF_RENDER_FAILED", 422, "IMPORT_CONTENT_INVALID"),
+        (422, "WORD_PARSE_FAILED", 422, "IMPORT_CONTENT_INVALID"),
+        (422, "INVALID_WORD_DOCUMENT", 422, "IMPORT_CONTENT_INVALID"),
         (422, "OCR_FAILED", 502, "DOCUMENT_CONVERSION_FAILED"),
         (500, "INTERNAL_ERROR", 502, "DOCUMENT_CONVERSION_FAILED"),
     ],
@@ -186,6 +288,19 @@ def test_linkparse_rejects_unusable_markdown_and_missing_key() -> None:
         run_parse(client(handler, key=""))
     assert unavailable.value.status_code == 503
     assert unavailable.value.code == "DOCUMENT_CONVERSION_UNAVAILABLE"
+
+    network_calls = 0
+
+    def unexpected_handler(request: httpx.Request) -> httpx.Response:
+        nonlocal network_calls
+        network_calls += 1
+        return handler(request)
+
+    with pytest.raises(DocumentConversionFailure) as unavailable_docx:
+        run_parse(client(unexpected_handler, key=""), source_format="docx")
+    assert unavailable_docx.value.status_code == 503
+    assert unavailable_docx.value.code == "DOCUMENT_CONVERSION_UNAVAILABLE"
+    assert network_calls == 0
 
 
 def test_linkparse_marks_usable_short_text_as_low_quality() -> None:

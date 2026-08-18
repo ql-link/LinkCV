@@ -26,6 +26,7 @@ from linkcv.modules.resumes.models import (
 from linkcv.modules.resumes.routes import resume_summary
 from linkcv.modules.resumes.schemas import (
     DeleteResumeImportResponse,
+    ResumeImportResponse,
     ResumeOverviewResponse,
 )
 
@@ -153,6 +154,36 @@ def get_resume_overview(
         failed_imports=[import_summary(db, item) for item in failed],
         next_failed_cursor=next_cursor,
     )
+
+
+@import_router.get("/{import_id}", response_model=ResumeImportResponse)
+def get_resume_import(
+    import_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+) -> ResumeImportResponse:
+    close_stale_resume_imports(
+        db,
+        user_id=user.id,
+        upload_stale_seconds=settings.resume_import_upload_stale_seconds,
+        parse_stale_seconds=settings.resume_import_parse_stale_seconds,
+    )
+    parsed_id = parse_decimal_id(import_id)
+    record = (
+        db.scalar(
+            select(DocumentParseTask).where(
+                DocumentParseTask.id == parsed_id,
+                DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+                DocumentParseTask.user_id == user.id,
+            )
+        )
+        if parsed_id is not None
+        else None
+    )
+    if record is None:
+        raise ApiError(404, "RESUME_IMPORT_NOT_FOUND")
+    return ResumeImportResponse.model_validate({"import": import_summary(db, record)})
 
 
 @import_router.delete("/{import_id}", response_model=DeleteResumeImportResponse)

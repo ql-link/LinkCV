@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { api, type ResumeRecord } from "../api/client";
+import { api, type ResumeImportSummary, type ResumeRecord } from "../api/client";
 import {
   defaultSemanticDocument,
   defaultSemanticStyle,
@@ -29,10 +29,31 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function importTask(
+  id: string,
+  overrides: Partial<ResumeImportSummary> = {},
+): ResumeImportSummary {
+  return {
+    id,
+    source_filename: `张三-${id}.docx`,
+    source_file_format: "docx",
+    upload_status: "succeeded",
+    upload_duration_ms: 12,
+    parse_status: "processing",
+    parse_duration_ms: null,
+    result_resume_id: null,
+    created_at: "2026-08-19T00:00:00Z",
+    updated_at: "2026-08-19T00:00:00Z",
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   vi.restoreAllMocks();
   useResumeStore.setState({
     resumes: [],
+    activeImports: [],
+    failedImports: [],
     versions: [],
     versionsLoading: false,
     versionOperationPending: false,
@@ -243,6 +264,71 @@ describe("resume import", () => {
 
     expect(useResumeStore.getState().activeResumeId).toBe("1");
     expect(useResumeStore.getState().resumes).toEqual([existing]);
+  });
+
+  it("轮询处理中任务时只更新对应任务", async () => {
+    const first = importTask("3");
+    const second = importTask("4");
+    useResumeStore.setState({ activeImports: [first, second] });
+    vi.spyOn(api, "getResumeImport").mockResolvedValue({
+      import: { ...first, updated_at: "2026-08-19T00:00:01Z" },
+    });
+
+    await useResumeStore.getState().pollResumeImport("3");
+
+    expect(useResumeStore.getState().activeImports).toEqual([
+      expect.objectContaining({ id: "3", updated_at: "2026-08-19T00:00:01Z" }),
+      second,
+    ]);
+  });
+
+  it("轮询发现失败终态时停止活动展示并加入失败列表", async () => {
+    const processing = importTask("3");
+    const failed = importTask("3", {
+      parse_status: "failed",
+      parse_duration_ms: 820,
+    });
+    useResumeStore.setState({ activeImports: [processing] });
+    vi.spyOn(api, "getResumeImport").mockResolvedValue({ import: failed });
+
+    await useResumeStore.getState().pollResumeImport("3");
+
+    expect(useResumeStore.getState().activeImports).toEqual([]);
+    expect(useResumeStore.getState().failedImports).toEqual([failed]);
+  });
+
+  it("轮询发现成功终态时用一次 overview 刷新正式简历并移除任务", async () => {
+    const processing = importTask("3");
+    const succeeded = importTask("3", {
+      parse_status: "succeeded",
+      parse_duration_ms: 910,
+      result_resume_id: "9",
+    });
+    const resume = {
+      id: "9",
+      title: "张三",
+      source_type: "import" as const,
+      lock_version: 1,
+      created_at: "2026-08-19T00:00:01Z",
+      updated_at: "2026-08-19T00:00:01Z",
+    };
+    useResumeStore.setState({ activeImports: [processing] });
+    vi.spyOn(api, "getResumeImport").mockResolvedValue({ import: succeeded });
+    vi.spyOn(api, "getResumeOverview").mockResolvedValue({
+      resumes: [resume],
+      active_imports: [],
+      failed_imports: [],
+      next_failed_cursor: null,
+    });
+
+    await useResumeStore.getState().pollResumeImport("3");
+
+    expect(api.getResumeOverview).toHaveBeenCalledTimes(1);
+    expect(useResumeStore.getState()).toMatchObject({
+      resumes: [resume],
+      activeImports: [],
+      failedImports: [],
+    });
   });
 });
 
