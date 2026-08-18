@@ -27,7 +27,7 @@ React 根入口用 Error Boundary 和 `error` / `unhandledrejection` 监听器�
 
 简历 API 已统一使用 `snake_case`、`ResumeDocumentV1 data` 和 `ResumeStyleV1 style`。当前编辑器仍以 Markdown/Tiptap 提供整页编辑体验：读取时把完整语义字段渲染为 Markdown；用户修改正文后，把受限 Markdown 写入 `custom_section_editor`，同时保留导入生成的结构化字段作为来源基线，后续读取以该自定义正文为准，不把整份 Tiptap JSON 写入后端。完整字段级双向编辑器属于后续产品改造。
 
-简历主页卡片使用后端摘要中的真实 `data/style` 只读预览；预览纸张和编辑工作台都使用 `ResumeStyleV1.template_key` 对应的主题类，模板内的 `::: left/right` 结构由同一 Markdown 渲染链处理。历史结构无效时显示“预览不可用”，不阻断列表。主页只展示简历和导入任务，不再提供模板库或“模板”导航项；旧的 `/resumes?view=templates` 仍按普通简历列表处理。新建统一进入独立的 `/resumes/new`：创建模式要求选择启用模板并输入名称，导入模式要求选择 Markdown、DOCX 或 PDF 文件并使用空白模板；空白简历也是模板。注册成功后只进入空主页，不自动创建第一份简历。
+简历主页卡片使用后端摘要中的真实 `data/style` 只读预览；预览纸张和编辑工作台都使用 `ResumeStyleV1.template_key` 对应的主题类，模板内的 `::: left/right` 结构由同一 Markdown 渲染链处理。历史结构无效时显示“预览不可用”，不阻断列表。正式简历卡片可打开、重命名、分享或删除；重命名只更新列表识别用的标题，不会写入简历正文。主页只展示简历和导入任务，不再提供模板库或“模板”导航项；旧的 `/resumes?view=templates` 仍按普通简历列表处理。新建统一进入独立的 `/resumes/new`：创建模式要求选择启用模板并输入名称，导入模式要求选择 Markdown、DOCX 或 PDF 文件并使用空白模板；空白简历也是模板。注册成功后只进入空主页，不自动创建第一份简历。
 
 导入从 `/resumes/new?mode=import` 发起，文件选择后以空白模板提交 Markdown、DOCX 或 PDF；每次提交生成新的 UUID `Idempotency-Key`，access 刷新重放保持同一个 Key。创建页在提交成功后回到主页；主页显示上传中、解析中和失败导入任务。只有上传成功且仍在解析的任务会挂载独立轮询器，每个任务每秒调用一次单任务状态接口；慢请求不会重叠，多个文件分别轮询，任务进入成功或失败终态后对应轮询器卸载。成功终态会一次性刷新 overview 以展示正式简历，失败任务可删除。前端不持有 MinIO、LinkParse 或结构化模型凭据。
 
