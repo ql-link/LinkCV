@@ -10,7 +10,12 @@ from linkcv.domain.resume_document import ResumeDocumentV1
 from linkcv.domain.resume_snapshot import ResumeSnapshot, parse_resume_snapshot
 from linkcv.domain.resume_style import ResumeStyleV1, default_resume_style
 from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.models import Resume, ResumeImport, ResumeVersion
+from linkcv.modules.resumes.models import (
+    RESUME_IMPORT_SOURCE_TYPE,
+    DocumentParseTask,
+    Resume,
+    ResumeVersion,
+)
 
 MAX_RESUMES_PER_USER = 10
 
@@ -75,11 +80,12 @@ def resume_slot_count(db: Session, user_id: int) -> int:
         select(func.count(Resume.id)).where(Resume.user_id == user_id)
     )
     active_import_count = db.scalar(
-        select(func.count(ResumeImport.id)).where(
-            ResumeImport.user_id == user_id,
+        select(func.count(DocumentParseTask.id)).where(
+            DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+            DocumentParseTask.user_id == user_id,
             or_(
-                ResumeImport.upload_status == "uploading",
-                ResumeImport.parse_status == "processing",
+                DocumentParseTask.upload_status == "uploading",
+                DocumentParseTask.parse_status == "processing",
             ),
         )
     )
@@ -97,17 +103,18 @@ def close_stale_resume_imports(
     upload_cutoff = now - timedelta(seconds=upload_stale_seconds)
     parse_cutoff = now - timedelta(seconds=parse_stale_seconds)
     records = db.scalars(
-        select(ResumeImport)
+        select(DocumentParseTask)
         .where(
-            ResumeImport.user_id == user_id,
+            DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+            DocumentParseTask.user_id == user_id,
             or_(
                 and_(
-                    ResumeImport.upload_status == "uploading",
-                    ResumeImport.updated_at < upload_cutoff,
+                    DocumentParseTask.upload_status == "uploading",
+                    DocumentParseTask.updated_at < upload_cutoff,
                 ),
                 and_(
-                    ResumeImport.parse_status == "processing",
-                    ResumeImport.updated_at < parse_cutoff,
+                    DocumentParseTask.parse_status == "processing",
+                    DocumentParseTask.updated_at < parse_cutoff,
                 ),
             ),
         )

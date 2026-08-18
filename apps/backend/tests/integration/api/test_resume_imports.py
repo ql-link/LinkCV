@@ -3,10 +3,14 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from linkcv.application.resumes.commands import CreateResumeCommand
-from linkcv.application.resumes.service import persist_resume_with_initial_version
+from linkcv.application.resumes.service import (
+    close_stale_resume_imports,
+    persist_resume_with_initial_version,
+    resume_slot_count,
+)
 from linkcv.core.config import Settings
 from linkcv.core.mq import MQPublishError
 from linkcv.domain.document_conversion import DocumentMarkdownResult
@@ -15,7 +19,12 @@ from linkcv.domain.resume_extraction import DraftBasics, ResumeExtractionDraft
 from linkcv.domain.resume_style import default_resume_style
 from linkcv.main import create_app
 from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.models import Resume, ResumeImport, ResumeTemplate
+from linkcv.modules.resumes.models import (
+    RESUME_IMPORT_SOURCE_TYPE,
+    DocumentParseTask,
+    Resume,
+    ResumeTemplate,
+)
 from tests.fakes import FakeRedis
 
 
@@ -257,7 +266,7 @@ def test_upload_failure_is_compensated_and_persisted_for_user_cleanup() -> None:
     assert len(storage.deleted) == 1
     assert publisher.messages == []
     with app.state.session_factory() as db:
-        record = db.scalar(select(ResumeImport))
+        record = db.scalar(select(DocumentParseTask))
         assert record is not None
         assert record.upload_status == "failed"
 
@@ -282,7 +291,7 @@ def test_publish_confirm_failure_does_not_overwrite_worker_success() -> None:
     class DeliveredBeforeTimeoutPublisher:
         async def publish_resume_import(self, message) -> None:
             with app.state.session_factory() as db:
-                record = db.get(ResumeImport, int(message.payload.import_id))
+                record = db.get(DocumentParseTask, int(message.payload.import_id))
                 template = db.get(ResumeTemplate, int(message.payload.template_id))
                 assert record is not None
                 assert template is not None
@@ -297,7 +306,7 @@ def test_publish_confirm_failure_does_not_overwrite_worker_success() -> None:
                     ),
                     db,
                 )
-                record.result_resume_id = resume.id
+                resume.parse_task_id = record.id
                 record.parse_status = "succeeded"
                 record.parse_duration_ms = 1
                 db.commit()
@@ -315,7 +324,7 @@ def test_publish_confirm_failure_does_not_overwrite_worker_success() -> None:
     assert response.json()["import"]["parse_status"] == "succeeded"
     assert response.json()["import"]["result_resume_id"] is not None
     with app.state.session_factory() as db:
-        record = db.scalar(select(ResumeImport))
+        record = db.scalar(select(DocumentParseTask))
         assert record is not None
         assert record.parse_status == "succeeded"
 
@@ -327,10 +336,18 @@ def test_overview_lists_active_import_and_failed_import_can_be_deleted() -> None
         active = import_file(client, app)
         publisher.fail = True
         failed = import_file(client, app)
-        overview = client.get("/api/resume-overview")
-        deleted = client.delete(
-            f"/api/resume-imports/{failed.json()['import']['id']}"
+        failed_id = int(failed.json()["import"]["id"])
+        converted_object_name = (
+            f"users/1/resume-imports/{failed_id}/converted.md"
         )
+        with app.state.session_factory() as db:
+            record = db.get(DocumentParseTask, failed_id)
+            assert record is not None
+            record.converted_object_name = converted_object_name
+            db.commit()
+        storage.objects[converted_object_name] = b"# converted"
+        overview = client.get("/api/resume-overview")
+        deleted = client.delete(f"/api/resume-imports/{failed_id}")
 
     assert active.status_code == 202
     assert failed.status_code == 503
@@ -343,6 +360,7 @@ def test_overview_lists_active_import_and_failed_import_can_be_deleted() -> None
     ]
     assert deleted.status_code == 200
     assert deleted.json() == {"deleted": True}
+    assert converted_object_name in storage.deleted
     assert len(storage.objects) == 1
 
 
@@ -353,7 +371,7 @@ def test_overview_closes_stale_processing_import_with_sqlite_datetime() -> None:
         accepted = import_file(client, app)
         import_id = int(accepted.json()["import"]["id"])
         with app.state.session_factory() as db:
-            record = db.get(ResumeImport, import_id)
+            record = db.get(DocumentParseTask, import_id)
             assert record is not None
             record.updated_at = datetime.now(timezone.utc) - timedelta(minutes=5)
             db.commit()
@@ -376,7 +394,7 @@ def test_import_replay_closes_stale_task_before_idempotency_response() -> None:
         accepted = import_file(client, app, key=key)
         import_id = int(accepted.json()["import"]["id"])
         with app.state.session_factory() as db:
-            record = db.get(ResumeImport, import_id)
+            record = db.get(DocumentParseTask, import_id)
             assert record is not None
             record.updated_at = datetime.now(timezone.utc) - timedelta(minutes=5)
             db.commit()
@@ -398,11 +416,12 @@ def test_failed_import_cursor_can_load_the_next_page() -> None:
             assert user_id is not None
             for number in range(3):
                 db.add(
-                    ResumeImport(
+                    DocumentParseTask(
+                        source_type=RESUME_IMPORT_SOURCE_TYPE,
                         user_id=user_id,
-                        source_filename=f"failed-{number}.md",
-                        source_file_format="md",
-                        source_object_key=f"users/{user_id}/imports/{number}.md",
+                        file_name=f"failed-{number}.md",
+                        file_format="md",
+                        object_name=f"users/{user_id}/imports/{number}.md",
                         upload_status="failed",
                         upload_duration_ms=number,
                     )
@@ -424,6 +443,37 @@ def test_failed_import_cursor_can_load_the_next_page() -> None:
     first_ids = {item["id"] for item in first.json()["failed_imports"]}
     second_ids = {item["id"] for item in second.json()["failed_imports"]}
     assert first_ids.isdisjoint(second_ids)
+
+
+def test_resume_capacity_and_stale_cleanup_ignore_other_task_types() -> None:
+    app, _storage, _converter, _publisher = build_app()
+    with TestClient(app) as client:
+        register(client)
+        with app.state.session_factory() as db:
+            user_id = db.scalar(select(User.id))
+            assert user_id is not None
+            db.execute(text("PRAGMA ignore_check_constraints = ON"))
+            other_task = DocumentParseTask(
+                source_type="future_consumer",
+                user_id=user_id,
+                file_name="notes.md",
+                file_format="md",
+                object_name=f"users/{user_id}/future/notes.md",
+                upload_status="uploading",
+                updated_at=datetime.now(timezone.utc) - timedelta(minutes=5),
+            )
+            db.add(other_task)
+            db.commit()
+
+            assert resume_slot_count(db, user_id) == 0
+            close_stale_resume_imports(
+                db,
+                user_id=user_id,
+                upload_stale_seconds=60,
+                parse_stale_seconds=60,
+            )
+            db.refresh(other_task)
+            assert other_task.upload_status == "uploading"
 
 
 def test_unauthenticated_import_is_rejected() -> None:

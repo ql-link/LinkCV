@@ -49,6 +49,8 @@ Production Pipeline 会把仓库中的非敏感 `.env.production`、Compose 和 
 
 模板创建与异步导入是同一版本的跨端契约，Web、FastAPI、Worker 和迁移必须一起发布。执行 `0017` 前先运行 `uv run --directory apps/backend python scripts/release/cleanup_legacy_resume_imports.py` 获取 dry-run 清单，人工确认后再加 `--execute`；旧导入未归零时迁移会拒绝继续。
 
+执行 `0021` 前必须确认目标数据库已有可恢复备份。该 revision 先迁移全部 `resume_imports` 数据并回填 `resumes.parse_task_id`，随后删除旧表；旧应用不能在新 schema 上运行，新应用也不能在旧 schema 上运行，因此迁移成功后必须立即整体替换 FastAPI 与 Worker，不设灰度兼容窗口。降级会重建旧表；若已经存在非 `resume_import` 的通用解析任务则拒绝降级。
+
 两条 Pipeline 都提供 `RUN_TESTS` 参数；开启后会在镜像构建前运行 `npm run setup && npm run check`。常规 PR/push 质量检查仍由 GitHub Actions 执行。
 
 ## CI
@@ -58,7 +60,8 @@ Production Pipeline 会把仓库中的非敏感 `.env.production`、Compose 和 
 ## 回滚
 
 - 应用回滚通过把 `TAG` 切回上一环境的不可变镜像标签并重新执行对应 Compose 完成；不得把 Dev 标签部署到 Production。
-- 当前 head `0018`。`0016` 新增 `resume_imports` 且非空时拒绝 downgrade；`0017` 删除旧同步导入证据列，执行前必须完成不可逆的旧对象、版本和简历清理；`0018` 新增用户数据集表。
+- 当前 head `0021`。`0016` 新增旧版 `resume_imports` 且非空时拒绝 downgrade；`0017` 删除旧同步导入证据列，执行前必须完成不可逆的旧对象、版本和简历清理；`0018` 新增用户数据集表；`0019`–`0020` 增加微信绑定并支持无邮箱密码账号；`0021` 将旧导入表迁移为 `document_parse_tasks`。
+- `0021 → 0020` 会从 `document_parse_tasks` 和 `resumes.parse_task_id` 镜像重建 `resume_imports`，并拒绝丢弃非简历类型任务。由于升级已删除旧表，执行前仍需以部署前备份作为完整恢复保障；应用与 schema 必须配套回滚，不能单独回切镜像。
 - `0017` 后旧镜像依赖已删除字段，禁止直接回切；只能向前修复。尚未产生新导入简历且确认可恢复空列结构时才允许 downgrade 到 `0016`，存在 `source_type=import` 行时 downgrade 会拒绝执行。
 - `0012 → 0011` 只重新增加空的旧版备份列，不恢复已经删除的 JSON；如需恢复旧值或继续回滚到依赖旧格式的应用，必须使用执行 `0012` 前的外部数据库备份。不要把 schema 降级成功描述为数据已恢复。
 - 如必须在隔离环境继续执行 `0011 → 0010`，先回滚应用，down 会重建空的 `admin_operation_logs`；`0010 → 0009` 还会重建空的对象存储清理任务表。继续执行 `0009 → 0008` 前须备份数据库，down 会删除 `admin_operation_logs`；继续执行 `0008 → 0007` 会保留升级后新写入的模型和日志主体，但不会恢复 `0008` 升级前清理的数据，同时会删除 binding 及能力、adapter、调用名、来源等附加快照。不要在新应用运行时执行。MySQL DDL 非事务，失败后停止自动重试并按实际 schema 或备份处理。

@@ -3,6 +3,7 @@ import base64
 from linkcv.core.storage import (
     build_asset_object_name,
     build_avatar_object_name,
+    build_converted_markdown_object_name,
     build_dataset_object_name,
     decode_image_data_url,
 )
@@ -32,6 +33,12 @@ def test_dataset_object_name_is_user_scoped() -> None:
     object_name = build_dataset_object_name(42, "notes.md")
     assert object_name.startswith("users/42/datasets/")
     assert object_name.endswith("-notes.md")
+
+
+def test_converted_markdown_object_name_shares_import_directory() -> None:
+    assert build_converted_markdown_object_name(42, "task-123") == (
+        "users/42/resume-imports/task-123/converted.md"
+    )
 
 
 def test_rejects_non_image_data_url() -> None:

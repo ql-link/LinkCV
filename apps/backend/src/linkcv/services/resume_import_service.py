@@ -1,3 +1,4 @@
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import PurePath, PurePosixPath
 from time import monotonic
@@ -154,6 +155,7 @@ class ResumeImportService:
         content: bytes,
         operation_id: str,
         deadline_monotonic: float,
+        on_markdown_extracted: Callable[[str], Awaitable[None]] | None = None,
     ) -> ParsedImportResult:
         try:
             conversion = await self._document_converter.convert(
@@ -165,6 +167,8 @@ class ResumeImportService:
             )
         except DocumentConversionFailure as error:
             raise ResumeImportFailure(error.status_code, error.code) from error
+        if on_markdown_extracted is not None:
+            await on_markdown_extracted(conversion.markdown)
         if len(conversion.markdown.encode("utf-8")) > self._max_structuring_bytes:
             raise ResumeImportFailure(413, "STRUCTURING_INPUT_TOO_LARGE")
 

@@ -18,7 +18,11 @@ from linkcv.core.storage import AssetStorage, get_storage
 from linkcv.modules.identity.dependencies import get_current_user, get_settings
 from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.import_routes import import_summary
-from linkcv.modules.resumes.models import Resume, ResumeImport
+from linkcv.modules.resumes.models import (
+    RESUME_IMPORT_SOURCE_TYPE,
+    DocumentParseTask,
+    Resume,
+)
 from linkcv.modules.resumes.routes import resume_summary
 from linkcv.modules.resumes.schemas import (
     DeleteResumeImportResponse,
@@ -94,21 +98,26 @@ def get_resume_overview(
         .order_by(Resume.updated_at.desc(), Resume.id.desc())
     ).all()
     active = db.scalars(
-        select(ResumeImport)
+        select(DocumentParseTask)
         .where(
-            ResumeImport.user_id == user.id,
+            DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+            DocumentParseTask.user_id == user.id,
             or_(
-                ResumeImport.upload_status == "uploading",
-                ResumeImport.parse_status == "processing",
+                DocumentParseTask.upload_status == "uploading",
+                DocumentParseTask.parse_status == "processing",
             ),
         )
-        .order_by(ResumeImport.created_at.desc(), ResumeImport.id.desc())
+        .order_by(
+            DocumentParseTask.created_at.desc(),
+            DocumentParseTask.id.desc(),
+        )
     ).all()
-    failed_query = select(ResumeImport).where(
-        ResumeImport.user_id == user.id,
+    failed_query = select(DocumentParseTask).where(
+        DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+        DocumentParseTask.user_id == user.id,
         or_(
-            ResumeImport.upload_status == "failed",
-            ResumeImport.parse_status == "failed",
+            DocumentParseTask.upload_status == "failed",
+            DocumentParseTask.parse_status == "failed",
         ),
     )
     if failed_cursor:
@@ -120,16 +129,17 @@ def get_resume_overview(
         cursor_boundary = literal(cursor_timestamp)
         failed_query = failed_query.where(
             or_(
-                ResumeImport.created_at < cursor_boundary,
+                DocumentParseTask.created_at < cursor_boundary,
                 and_(
-                    ResumeImport.created_at == cursor_boundary,
-                    ResumeImport.id < import_id,
+                    DocumentParseTask.created_at == cursor_boundary,
+                    DocumentParseTask.id < import_id,
                 ),
             )
         )
     failed = db.scalars(
         failed_query.order_by(
-            ResumeImport.created_at.desc(), ResumeImport.id.desc()
+            DocumentParseTask.created_at.desc(),
+            DocumentParseTask.id.desc(),
         ).limit(failed_limit + 1)
     ).all()
     next_cursor = None
@@ -139,8 +149,8 @@ def get_resume_overview(
         next_cursor = _encode_cursor(last.created_at, last.id)
     return ResumeOverviewResponse(
         resumes=[resume_summary(item) for item in resumes],
-        active_imports=[import_summary(item) for item in active],
-        failed_imports=[import_summary(item) for item in failed],
+        active_imports=[import_summary(db, item) for item in active],
+        failed_imports=[import_summary(db, item) for item in failed],
         next_failed_cursor=next_cursor,
     )
 
@@ -155,10 +165,11 @@ def delete_resume_import(
     parsed_id = parse_decimal_id(import_id)
     record = (
         db.scalar(
-            select(ResumeImport)
+            select(DocumentParseTask)
             .where(
-                ResumeImport.id == parsed_id,
-                ResumeImport.user_id == user.id,
+                DocumentParseTask.id == parsed_id,
+                DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+                DocumentParseTask.user_id == user.id,
             )
             .with_for_update()
         )
@@ -172,7 +183,9 @@ def delete_resume_import(
     if record.parse_status == "succeeded":
         raise ApiError(409, "RESUME_IMPORT_HAS_RESULT")
     try:
-        storage.delete(record.source_object_key)
+        storage.delete(record.object_name)
+        if record.converted_object_name:
+            storage.delete(record.converted_object_name)
     except Exception as error:
         db.rollback()
         logger.warning(
@@ -183,6 +196,11 @@ def delete_resume_import(
             },
         )
         raise ApiError(502, "ASSET_DELETE_FAILED") from error
-    result = db.execute(delete(ResumeImport).where(ResumeImport.id == record.id))
+    result = db.execute(
+        delete(DocumentParseTask).where(
+            DocumentParseTask.id == record.id,
+            DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+        )
+    )
     db.commit()
     return DeleteResumeImportResponse(deleted=bool(result.rowcount))
