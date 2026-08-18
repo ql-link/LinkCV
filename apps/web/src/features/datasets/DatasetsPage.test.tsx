@@ -9,6 +9,9 @@ const record: DatasetRecord = {
   file_name: "岗位要求.md",
   file_format: "md",
   file_size: 1024,
+  upload_status: "succeeded",
+  parse_status: "succeeded",
+  failure_reason: null,
   created_at: "2026-08-08T08:00:00Z",
 };
 
@@ -57,6 +60,28 @@ describe("DatasetsPage", () => {
     expect(await screen.findByText("岗位要求.md")).toBeInTheDocument();
     expect(screen.getByText("MD")).toBeInTheDocument();
     expect(screen.getByText("1.0 KB")).toBeInTheDocument();
+    expect(screen.getByText("解析完成")).toBeInTheDocument();
+  });
+
+  it.each([
+    [{ ...record, upload_status: "uploading" as const, parse_status: null }, "排队中"],
+    [{ ...record, parse_status: "processing" as const }, "解析中"],
+    [{ ...record, parse_status: "succeeded" as const }, "解析完成"],
+  ])("展示资料处理状态", async (dataset, label) => {
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [dataset] });
+    render(<DatasetsPage />);
+
+    expect(await screen.findByText(label)).toBeInTheDocument();
+  });
+
+  it("展示具体解析失败原因", async () => {
+    vi.spyOn(api, "listDatasets").mockResolvedValue({
+      datasets: [{ ...record, parse_status: "failed", failure_reason: "service_unavailable" }],
+    });
+    render(<DatasetsPage />);
+
+    expect(await screen.findByText("解析失败")).toBeInTheDocument();
+    expect(screen.getByText("解析服务暂不可用，请稍后重新上传。")).toBeInTheDocument();
   });
 
   it("选择文件后展示预览，确认后才上传", async () => {

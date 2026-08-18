@@ -2466,7 +2466,7 @@ select:not([data-slot]):focus-visible,
 }
 
 .dataset-feature-tag {
-  margin-left: auto;
+  margin-left: 0;
   color: var(--action-blue);
   font-size: 12px;
 }
@@ -2531,6 +2531,41 @@ select:not([data-slot]):focus-visible,
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
+}
+
+.dataset-status-block {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--muted);
+  text-align: right;
+}
+
+.dataset-status-block small {
+  max-width: 280px;
+  line-height: 1.4;
+}
+
+.dataset-status {
+  flex: 0 0 auto;
+  margin-left: auto;
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: var(--ui-surface-muted);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dataset-status.is-processing { background: var(--accent-soft); color: var(--action-blue); }
+.dataset-status.is-succeeded { background: var(--ui-success-subtle); color: var(--success); }
+.dataset-status.is-failed { background: var(--error-bg); color: var(--error); }
+
+@media (max-width: 640px) {
+  .dataset-feature,
+  .dataset-row { align-items: flex-start; flex-wrap: wrap; }
+  .dataset-status-block { width: 100%; justify-items: start; margin-left: 60px; text-align: left; }
 }
 
 .home-import-dialog {

@@ -57,7 +57,7 @@ class FakePublisher:
         self.messages = []
         self.fail = False
 
-    async def publish_resume_import(self, message) -> None:
+    async def publish(self, message) -> None:
         if self.fail:
             raise MQPublishError("broker unavailable")
         self.messages.append(message)
@@ -289,7 +289,7 @@ def test_publish_confirm_failure_does_not_overwrite_worker_success() -> None:
     app, _storage, _converter, _publisher = build_app()
 
     class DeliveredBeforeTimeoutPublisher:
-        async def publish_resume_import(self, message) -> None:
+        async def publish(self, message) -> None:
             with app.state.session_factory() as db:
                 record = db.get(DocumentParseTask, int(message.payload.import_id))
                 template = db.get(ResumeTemplate, int(message.payload.template_id))
@@ -337,9 +337,7 @@ def test_overview_lists_active_import_and_failed_import_can_be_deleted() -> None
         publisher.fail = True
         failed = import_file(client, app)
         failed_id = int(failed.json()["import"]["id"])
-        converted_object_name = (
-            f"users/1/resume-imports/{failed_id}/converted.md"
-        )
+        converted_object_name = f"users/1/resume-imports/{failed_id}/converted.md"
         with app.state.session_factory() as db:
             record = db.get(DocumentParseTask, failed_id)
             assert record is not None

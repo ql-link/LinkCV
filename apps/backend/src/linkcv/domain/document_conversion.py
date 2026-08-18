@@ -17,7 +17,7 @@ class DocumentMarkdownResult(BaseModel):
 
     markdown: str
     source_file_name: str
-    source_format: Literal["md", "docx", "pdf"]
+    source_format: Literal["md", "docx", "pdf", "txt"]
     parser: str
     parser_version: str
     page_count: int | None = Field(default=None, ge=1, le=50)

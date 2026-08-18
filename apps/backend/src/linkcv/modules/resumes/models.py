@@ -22,6 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from linkcv.core.database import Base
 
 RESUME_IMPORT_SOURCE_TYPE = "resume_import"
+DATASET_SOURCE_TYPE = "dataset"
 
 
 def unsigned_bigint_type():
@@ -144,9 +145,7 @@ class Resume(Base):
         nullable=True,
         comment="来源解析任务标识，无数据库外键约束",
     )
-    title: Mapped[str] = mapped_column(
-        String(255), nullable=False, comment="简历标题"
-    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False, comment="简历标题")
     data_json: Mapped[dict[str, Any]] = mapped_column(
         JSON(), nullable=False, comment="当前 ResumeDocumentV1 内容"
     )
@@ -207,11 +206,11 @@ class DocumentParseTask(Base):
     __table_args__ = (
         PrimaryKeyConstraint("id", name="pk_document_parse_tasks"),
         CheckConstraint(
-            "source_type IN ('resume_import')",
+            "source_type IN ('resume_import', 'dataset')",
             name="ck_document_parse_tasks_source_type",
         ),
         CheckConstraint(
-            "file_format IN ('md', 'docx', 'pdf')",
+            "file_format IN ('md', 'docx', 'pdf', 'txt')",
             name="ck_document_parse_tasks_file_format",
         ),
         CheckConstraint(
@@ -255,7 +254,7 @@ class DocumentParseTask(Base):
     source_type: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
-        comment="任务来源：目前仅 resume_import，为未来消费方预留取值空间",
+        comment="任务来源：resume_import、dataset",
     )
     user_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
@@ -271,7 +270,7 @@ class DocumentParseTask(Base):
         String(255), nullable=False, comment="安全化后的用户源文件名"
     )
     file_format: Mapped[str] = mapped_column(
-        String(8), nullable=False, comment="源文件格式：md、docx、pdf"
+        String(8), nullable=False, comment="源文件格式：md、txt、docx、pdf"
     )
     object_name: Mapped[str] = mapped_column(
         String(512), nullable=False, comment="私有对象存储中的源文件对象键"
@@ -294,6 +293,9 @@ class DocumentParseTask(Base):
     )
     parse_duration_ms: Mapped[int | None] = mapped_column(
         unsigned_int_type(), nullable=True, comment="解析进入终态时的实际耗时毫秒"
+    )
+    failure_reason: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="解析失败分类原因"
     )
     created_at: Mapped[datetime] = mapped_column(
         timestamp_type(),
@@ -328,9 +330,7 @@ class ResumeVersion(Base):
     __tablename__ = "resume_versions"
     __table_args__ = (
         PrimaryKeyConstraint("id", name="pk_resume_versions"),
-        UniqueConstraint(
-            "resume_id", "version_no", name="uk_resume_versions_no"
-        ),
+        UniqueConstraint("resume_id", "version_no", name="uk_resume_versions_no"),
         CheckConstraint("version_no >= 1", name="ck_resume_versions_no"),
         CheckConstraint(
             "reason IN ('initial', 'manual', 'before_restore', 'restore')",

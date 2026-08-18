@@ -39,6 +39,17 @@ CONTENT_TYPES = {
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "pdf": "application/pdf",
 }
+FAILURE_REASON_BY_CODE = {
+    "UNSUPPORTED_IMPORT_FORMAT": "format_unsupported",
+    "IMPORT_CONTENT_INVALID": "content_invalid",
+    "IMPORT_FILE_TOO_LARGE": "size_exceeded",
+    "STRUCTURING_INPUT_TOO_LARGE": "size_exceeded",
+    "DOCUMENT_CONVERSION_UNAVAILABLE": "service_unavailable",
+    "STRUCTURING_MODEL_UNAVAILABLE": "service_unavailable",
+    "DOCUMENT_CONVERSION_TIMEOUT": "timeout",
+    "IMPORT_DEADLINE_EXCEEDED": "timeout",
+    "RESUME_LIMIT_REACHED": "quota_exceeded",
+}
 UNLOCK_SCRIPT = r"""
 if redis.call('GET', KEYS[1]) == ARGV[1] then
   return redis.call('DEL', KEYS[1])
@@ -137,7 +148,10 @@ class ResumeImportProcessor:
                 )
                 if record is None or record.parse_status in {"succeeded", "failed"}:
                     return None
-                if record.upload_status != "succeeded" or record.parse_status != "processing":
+                if (
+                    record.upload_status != "succeeded"
+                    or record.parse_status != "processing"
+                ):
                     return None
                 template = db.scalar(
                     select(ResumeTemplate).where(
@@ -159,7 +173,12 @@ class ResumeImportProcessor:
         except SQLAlchemyError as error:
             raise WorkerDependencyUnavailable("database unavailable") from error
 
-    def _mark_failed(self, import_id: int, started: float | None) -> None:
+    def _mark_failed(
+        self,
+        import_id: int,
+        started: float | None,
+        failure_reason: str = "internal_error",
+    ) -> None:
         try:
             with self._session_factory() as db:
                 record = db.scalar(
@@ -173,13 +192,12 @@ class ResumeImportProcessor:
                 if record is None or record.parse_status != "processing":
                     return
                 record.parse_status = "failed"
+                record.failure_reason = failure_reason
                 if started is None:
                     created_at = record.created_at
                     if created_at.tzinfo is None:
                         created_at = created_at.replace(tzinfo=timezone.utc)
-                    elapsed_ms = round(
-                        (utc_now() - created_at).total_seconds() * 1000
-                    )
+                    elapsed_ms = round((utc_now() - created_at).total_seconds() * 1000)
                 else:
                     elapsed_ms = round((monotonic() - started) * 1000)
                 record.parse_duration_ms = min(max(0, elapsed_ms), 2**32 - 1)
@@ -278,7 +296,9 @@ class ResumeImportProcessor:
                 )
                 if template is None:
                     raise ResumeImportFailure(422, "TEMPLATE_INACTIVE")
-                snapshot = parse_resume_snapshot(template.data_json, template.style_json)
+                snapshot = parse_resume_snapshot(
+                    template.data_json, template.style_json
+                )
                 resume = persist_resume_with_initial_version(
                     CreateResumeCommand(
                         user_id=record.user_id,
@@ -337,9 +357,7 @@ class ResumeImportProcessor:
                         self._persist_converted_markdown(
                             import_id=record.id,
                             user_id=record.user_id,
-                            operation_id=PurePosixPath(
-                                record.object_name
-                            ).parent.name,
+                            operation_id=PurePosixPath(record.object_name).parent.name,
                             markdown=markdown,
                         )
                     ),
@@ -355,6 +373,10 @@ class ResumeImportProcessor:
             except ResumeImportFailure as error:
                 if error.status_code >= 500:
                     raise WorkerTaskRetryable(error.code) from error
-                self._mark_failed(import_id, started)
+                self._mark_failed(
+                    import_id,
+                    started,
+                    FAILURE_REASON_BY_CODE.get(error.code, "internal_error"),
+                )
         finally:
             await self._release_lock(import_id, token)

@@ -171,6 +171,17 @@ export type DatasetRecord = {
   file_name: string;
   file_format: string;
   file_size: number;
+  upload_status: "uploading" | "succeeded" | "failed";
+  parse_status: "processing" | "succeeded" | "failed" | null;
+  failure_reason:
+    | "format_unsupported"
+    | "content_invalid"
+    | "size_exceeded"
+    | "service_unavailable"
+    | "timeout"
+    | "quota_exceeded"
+    | "internal_error"
+    | null;
   created_at: string;
 };
 

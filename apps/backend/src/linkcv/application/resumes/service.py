@@ -132,6 +132,7 @@ def close_stale_resume_imports(
         else:
             record.parse_status = "failed"
             record.parse_duration_ms = elapsed_ms
+            record.failure_reason = "timeout"
     if records:
         db.commit()
 
@@ -161,7 +162,8 @@ def _assert_unique_resume_title(
         select(Resume.id, Resume.title).where(Resume.user_id == user_id)
     ).all()
     if any(
-        resume_id != exclude_resume_id and resume_title_key(existing_title) == expected_key
+        resume_id != exclude_resume_id
+        and resume_title_key(existing_title) == expected_key
         for resume_id, existing_title in rows
     ):
         raise ResumeTitleConflict
@@ -349,9 +351,7 @@ def _append_version(db: Session, resume: Resume, reason: str) -> ResumeVersion:
 
 def _version_count(db: Session, resume_id: int) -> int:
     count = db.scalar(
-        select(func.count(ResumeVersion.id)).where(
-            ResumeVersion.resume_id == resume_id
-        )
+        select(func.count(ResumeVersion.id)).where(ResumeVersion.resume_id == resume_id)
     )
     return int(count or 0)
 

@@ -2,7 +2,7 @@ import asyncio
 
 from aiokafka import AIOKafkaProducer
 
-from linkcv.core.mq.message import ResumeImportMessage
+from linkcv.core.mq.message import DatasetParseMessage, DocumentParseTaskMessage
 from linkcv.core.mq.publisher import MQPublishError
 
 
@@ -44,14 +44,18 @@ class KafkaPublisher:
             self._started = True
             return producer
 
-    async def publish_resume_import(self, message: ResumeImportMessage) -> None:
+    async def publish(self, message: DocumentParseTaskMessage) -> None:
         try:
             producer = await self._ensure_started()
             await asyncio.wait_for(
                 producer.send_and_wait(
                     self._topic,
                     value=message.body(),
-                    key=message.payload.import_id.encode("ascii"),
+                    key=(
+                        message.payload.parse_task_id.encode("ascii")
+                        if isinstance(message, DatasetParseMessage)
+                        else message.payload.import_id.encode("ascii")
+                    ),
                 ),
                 timeout=self._confirm_timeout_seconds,
             )

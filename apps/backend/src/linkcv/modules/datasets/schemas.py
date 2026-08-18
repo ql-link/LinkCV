@@ -10,6 +10,9 @@ class UserDatasetRecord(BaseModel):
     file_name: str
     file_format: str
     file_size: int
+    upload_status: str
+    parse_status: str | None
+    failure_reason: str | None
     created_at: datetime
 
     @field_validator("id", mode="before")

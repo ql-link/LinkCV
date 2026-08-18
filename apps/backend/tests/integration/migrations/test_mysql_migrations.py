@@ -21,7 +21,7 @@ from linkcv.domain.resume_snapshot import parse_resume_snapshot
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0021"
+EXPECTED_HEAD = "0022"
 
 
 def migration_test_url() -> str:
@@ -175,6 +175,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "upload_duration_ms",
         "parse_status",
         "parse_duration_ms",
+        "failure_reason",
         "created_at",
         "updated_at",
     }
@@ -214,6 +215,17 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     assert all(
         "parse_task_id" not in foreign_key["constrained_columns"]
         for foreign_key in inspector.get_foreign_keys("resumes")
+    )
+    assert "parse_task_id" in {
+        column["name"] for column in inspector.get_columns("user_dataset")
+    }
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("user_dataset")
+    } == {"uk_user_dataset_object_name", "uk_user_dataset_parse_task_id"}
+    assert all(
+        "parse_task_id" not in foreign_key["constrained_columns"]
+        for foreign_key in inspector.get_foreign_keys("user_dataset")
     )
     assert "storage_cleanup_jobs" not in inspector.get_table_names()
     assert "resume_imports" not in inspector.get_table_names()

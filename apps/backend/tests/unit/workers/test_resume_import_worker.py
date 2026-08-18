@@ -108,9 +108,9 @@ def build_processor(*, converter=None):
             key="worker-template",
             name="Worker 模板",
             data_json=default_resume_document().model_dump(mode="json"),
-            style_json=default_resume_style().model_copy(
-                update={"accent_color": "#315C6B"}
-            ).model_dump(mode="json"),
+            style_json=default_resume_style()
+            .model_copy(update={"accent_color": "#315C6B"})
+            .model_dump(mode="json"),
             is_active=1,
         )
         db.add_all([user, template])
@@ -181,6 +181,7 @@ def test_business_parse_failure_creates_no_resume_and_marks_failed() -> None:
         record = db.get(DocumentParseTask, import_id)
         assert record is not None
         assert record.parse_status == "failed"
+        assert record.failure_reason == "content_invalid"
         assert record.converted_object_name is None
         assert db.scalar(select(Resume.id)) is None
 

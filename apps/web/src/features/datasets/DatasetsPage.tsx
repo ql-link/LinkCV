@@ -10,6 +10,16 @@ const SUPPORTED_DATASET_EXTENSIONS = ["docx", "pdf", "md", "txt"];
 type Notice = { kind: "success" | "error"; message: string } | null;
 type TypeFilter = "all" | "pdf" | "docx" | "text";
 
+const FAILURE_REASON_LABELS: Record<NonNullable<DatasetRecord["failure_reason"]>, string> = {
+  format_unsupported: "文件格式不受支持，请重新选择文件。",
+  content_invalid: "文件内容无效，请检查后重新上传。",
+  size_exceeded: "文件内容超出解析限制，请缩小文件后重试。",
+  service_unavailable: "解析服务暂不可用，请稍后重新上传。",
+  timeout: "解析超时，请稍后重新上传。",
+  quota_exceeded: "当前资料数量已达上限。",
+  internal_error: "解析失败，请重新上传。",
+};
+
 function datasetFormatError(file: File): string | null {
   if (file.size === 0) return "文件为空，请重新选择。";
   const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
@@ -38,6 +48,8 @@ export function datasetUploadErrorMessage(error: unknown, fallback: string) {
       return "上传失败，请稍后重试。";
     case "DATASET_RECORD_FAILED":
       return "资料保存失败，请稍后重试。";
+    case "DATASET_QUEUE_UNAVAILABLE":
+      return "资料已保存，但解析服务暂不可用，请重新上传。";
     default:
       if (error.status === 401) return "登录状态已失效，请重新登录。";
       return error.status >= 500 ? "服务暂时不可用，请稍后重试。" : fallback;
@@ -69,6 +81,30 @@ function matchesType(dataset: DatasetRecord, filter: TypeFilter) {
 
 function DatasetBadge({ format }: { format: string }) {
   return <span className={`dataset-badge is-${format}`}>{format.toUpperCase()}</span>;
+}
+
+function DatasetStatus({ dataset }: { dataset: DatasetRecord }) {
+  if (dataset.upload_status === "uploading") {
+    return <span className="dataset-status is-pending">排队中</span>;
+  }
+  if (dataset.upload_status === "failed") {
+    return <span className="dataset-status is-failed">上传失败</span>;
+  }
+  if (dataset.parse_status === "processing") {
+    return <span className="dataset-status is-processing">解析中</span>;
+  }
+  if (dataset.parse_status === "succeeded") {
+    return <span className="dataset-status is-succeeded">解析完成</span>;
+  }
+  const reason = dataset.failure_reason
+    ? FAILURE_REASON_LABELS[dataset.failure_reason]
+    : FAILURE_REASON_LABELS.internal_error;
+  return (
+    <span className="dataset-status-block">
+      <span className="dataset-status is-failed">解析失败</span>
+      <small>{reason}</small>
+    </span>
+  );
 }
 
 function DatasetDropzone({ onBrowse, onDropFile }: { onBrowse: () => void; onDropFile: (file: File | undefined) => void }) {
@@ -131,6 +167,24 @@ export function DatasetsPage() {
       cancelled = true;
     };
   }, []);
+
+  const hasActiveParsing = datasets.some(
+    (dataset) => dataset.upload_status === "uploading" || dataset.parse_status === "processing",
+  );
+
+  useEffect(() => {
+    if (!hasActiveParsing) return;
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      void api.listDatasets().then((data) => {
+        if (!cancelled) setDatasets(data.datasets);
+      }).catch(() => undefined);
+    }, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [hasActiveParsing]);
 
   const refresh = async () => {
     const data = await api.listDatasets();
@@ -278,6 +332,7 @@ export function DatasetsPage() {
                       <span>上传于 {relativeTime(latest.created_at)}</span>
                     </small>
                   </span>
+                  <DatasetStatus dataset={latest} />
                   <span className="dataset-feature-tag">最近上传</span>
                 </article>
               </section>
@@ -303,6 +358,7 @@ export function DatasetsPage() {
                           <span>上传于 {relativeTime(dataset.created_at)}</span>
                         </small>
                       </span>
+                      <DatasetStatus dataset={dataset} />
                     </article>
                   ))
                 )}

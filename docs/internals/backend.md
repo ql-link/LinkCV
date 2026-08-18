@@ -2,7 +2,7 @@
 
 ## 当前职责与结构
 
-`apps/backend` 承接健康检查、短 JWT access + 不透明 refresh + Redis 会话鉴权、微信小程序扫码登录与账号绑定、语义简历生命周期、历史版本、简历分享链接、异步文件导入、私有对象资源、结构化 JD 生命周期、用户中心与账号安全、统一 LLM 调用和管理员模型治理 API、管理台用户管理、知识库资料上传，以及统一系统日志、业务审计和管理员日志查询。
+`apps/backend` 承接健康检查、短 JWT access + 不透明 refresh + Redis 会话鉴权、微信小程序扫码登录与账号绑定、语义简历生命周期、历史版本、简历分享链接、异步文件导入、私有对象资源、结构化 JD 生命周期、用户中心与账号安全、统一 LLM 调用和管理员模型治理 API、管理台用户管理、知识库资料异步解析，以及统一系统日志、业务审计和管理员日志查询。
 
 | 位置 | 职责 |
 | --- | --- |
@@ -19,11 +19,11 @@
 | `src/linkcv/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
 | `src/linkcv/modules/identity/` | 用户模型、注册、登录、admin-login 鉴权、双 Token 会话、微信扫码登录与绑定、`/api/account` 用户中心、管理端用户管理 |
 | `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板及管理、简历、版本、异步导入、分享和资源路由 |
-| `src/linkcv/modules/datasets/` | `user_dataset` 用户知识库数据集表与上传/列表路由 |
+| `src/linkcv/modules/datasets/` | `user_dataset` 资料元数据、异步解析受理与状态列表路由 |
 | `src/linkcv/modules/job_descriptions/` | JD 单表 ORM、HTTP DTO 和受保护路由 |
 | `src/linkcv/modules/llm/` | Chat 当前绑定、模型凭据加密、LiteLLM 适配、普通/流式/结构化单模型调用、计量与管理员 API |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0021` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0022` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -51,13 +51,15 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0013` 为 `resumes` 增加分享字段：`share_token`（VARCHAR(64)，全局唯一索引）、`share_visibility`（VARCHAR(16)，`private|public`）、`share_expires_at`（可空，UTC 过期时间）和 `share_created_at`。两个 CHECK 约束保证分享字段要么全部为空（未分享）、要么全部非空（已分享），且可见性只允许 `private/public`。分享不单独建表、不落内容快照，公开读取时实时取 `resume_versions` 中 `version_no` 最大的正式版本；down 迁移只删除新增列与约束，不触碰分享期间创建的版本数据。
 
-`0018` 新增 `user_dataset` 用户知识库数据集表，与简历文件导入链路分开。每行记录一个用户上传的单个资料文件元信息：所属用户外键、安全化后的文件名、四类格式（docx/pdf/md/txt，受 CHECK 约束）、MIME、字节大小、对象存储对象键（唯一）和内容 SHA-256；外键 `ON DELETE RESTRICT`，删除用户不隐式级联删除资料记录。`POST /api/datasets` 先校验格式与大小（上限 `DATASET_UPLOAD_MAX_BYTES`，默认 10MB）并把文件上传到对象存储（对象键由服务端生成，强制以 `users/{uid}/datasets/` 为前缀），上传成功后才写库，写库失败会尽力删除已上传对象；`GET /api/datasets` 按用户过滤、按上传时间倒序。`sha256` 与对象键保留在库内供内部追踪，但上传/列表接口的响应只返回 `id/file_name/file_format/file_size/created_at`，不暴露对象存储路径与内容摘要等内部字段。本期不做分片、RAG、删除、下载、预览和去重，同一文件重复上传生成新记录。
+`0018` 新增 `user_dataset` 用户知识库数据集表。`0022` 为每行增加无数据库外键的唯一 `parse_task_id`，解析状态只以 `document_parse_tasks` 为真值源；同一事务创建资料和 `source_type=dataset` 的任务。`POST /api/datasets` 校验并上传源文件、提交两行记录后向既有文档解析队列发布 `DATASET_PARSE_TASK`；发布失败将任务收口为上传失败并返回 `502 DATASET_QUEUE_UNAVAILABLE`。Worker 对 DOCX/PDF 调用 LinkParse，对 Markdown/TXT 本地执行 UTF-8 与换行规范化，结果尽力存入 `users/{uid}/datasets/converted/{task_id}.md`。`GET /api/datasets` 联表按当前用户过滤并返回上传、解析状态和失败分类，不暴露对象键或 SHA-256。本期不做分片、RAG、常规删除、下载、预览和去重。
 
 ### 微信账号（绑定与扫码登录）
 
 `0019` 为 `users` 增加 `wechat_openid`（VARCHAR(64)，全局唯一索引 `uk_users_wechat_openid`）和 `wechat_bound_at`（可空，UTC 绑定时间）。`wechat_openid` 是微信小程序 openid，绑定后写入，全局唯一约束承担 openid 冲突检测的数据库兜底；本周不提供解绑接口，因此不存在清空路径。`0020` 将 `email`、`password_hash` 放宽为可空：微信扫码登录创建的账号没有邮箱密码，`email` 为 `null`，昵称默认生成“微信用户”前缀。绑定逻辑遵循“一微信一账号”：同一 `openid` 只能关联一个用户，登录复用已有账号不新建。
 
 `0021` 将 `resume_imports` 一次性迁移为通用 `document_parse_tasks`：任务表保存 `source_type=resume_import`、源文件和上传/解析状态，不再持有最终简历指针；`resumes.parse_task_id` 以无外键的可空唯一列记录来源任务，由 Worker 在创建简历和完成任务的同一事务中维护。迁移沿用原任务主键并回填来源指针，随后删除旧表；降级会镜像重建 `resume_imports`，存在非简历类型任务时拒绝执行。转换后的 Markdown 尽力存入 `converted_object_name`，历史迁移记录保持为空，生命周期检查不依赖该字段。
+
+`0022` 扩展 `document_parse_tasks.source_type` 与文件格式约束以支持资料解析，并新增两个消费方共用的可空 `failure_reason`。迁移会删除上线前的全部 `user_dataset` 行；对象存储源文件必须在迁移前、确认数据库与对象存储备份后，通过 `scripts/release/cleanup_legacy_user_datasets.py --execute` 清理。该数据删除不可由 downgrade 恢复。
 
 绑定由 Web 已登录用户发起，走 `/api/account/wechat/bind-request|bind-confirm|bind-status`（ticket 票据）。绑定票据是临时凭证，只存 Redis（`wechat:bind_ticket:<ticket>` 存用户、`wechat:bind_status:<ticket>` 存 `pending/bound`、`wechat:bind_user_ticket:<uid>` 指向当前票据），TTL 默认 300 秒，同用户重新发起时覆盖旧票据。`bind-confirm` 提交小程序 `wx.login()` 的临时 code，服务端换 openid 后关联到发起用户；openid 已被其他用户绑定时返回 `409 WECHAT_ALREADY_BOUND`，原绑定关系不被覆盖。
 
@@ -121,7 +123,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于 `0002`–`0021` 往返、模板初始化和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于 `0002`–`0022` 往返、模板初始化和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 

@@ -73,10 +73,14 @@ class DocumentConverter:
             extra={"operation_id": operation_id, "summary": f"format={extension}"},
         )
         try:
-            if extension == "md":
+            if extension in {"md", "txt"}:
                 markdown = normalize_markdown(content.decode("utf-8"))
                 warnings: list[str] = []
-                parser = "linkcv-direct-markdown"
+                parser = (
+                    "linkcv-direct-markdown"
+                    if extension == "md"
+                    else "linkcv-direct-txt"
+                )
             else:
                 raise DocumentConversionFailure(415, "UNSUPPORTED_IMPORT_FORMAT")
             if not markdown:
