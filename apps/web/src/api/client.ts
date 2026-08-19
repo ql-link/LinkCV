@@ -171,7 +171,25 @@ export type DatasetRecord = {
   file_name: string;
   file_format: string;
   file_size: number;
+  upload_status: "uploading" | "succeeded" | "failed";
+  parse_status: "processing" | "succeeded" | "failed" | null;
+  failure_reason:
+    | "format_unsupported"
+    | "content_invalid"
+    | "size_exceeded"
+    | "service_unavailable"
+    | "timeout"
+    | "quota_exceeded"
+    | "internal_error"
+    | null;
   created_at: string;
+};
+
+export type DatasetContent = {
+  id: string;
+  file_name: string;
+  file_format: string;
+  markdown: string;
 };
 
 export type ResumeImportSummary = {
@@ -811,6 +829,8 @@ export const api = {
     });
   },
   listDatasets: () => request<{ datasets: DatasetRecord[] }>("/api/datasets"),
+  getDatasetContent: (id: string) =>
+    request<DatasetContent>(`/api/datasets/${id}/content`),
   listJobDescriptions: (
     params: {
       scope?: "active" | "archived" | "all";

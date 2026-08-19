@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from linkcv.core.mq.kafka import KafkaPublisher
-from linkcv.core.mq.message import ResumeImportMessage
+from linkcv.core.mq.message import DatasetParseMessage, ResumeImportMessage
 from linkcv.core.mq.publisher import MQPublishError
 from linkcv.core.mq.rabbitmq import RabbitMQPublisher
 
@@ -22,12 +22,19 @@ def test_resume_import_message_uses_canonical_string_identifiers() -> None:
     assert body["payload"]["template_id"] == "7"
 
 
+def test_dataset_parse_message_uses_shared_envelope_and_canonical_id() -> None:
+    message = DatasetParseMessage.create(parse_task_id=42)
+
+    body = json.loads(message.body())
+    assert body["mq_type"] == "DATASET_PARSE_TASK"
+    assert body["mq_name"] == "tolink.cv.resume_import"
+    assert body["payload"]["parse_task_id"] == "42"
+
+
 @pytest.mark.parametrize("value", ["", "0", "01", "-1", " 1", "1.0"])
 def test_resume_import_message_rejects_noncanonical_identifiers(value: str) -> None:
     with pytest.raises(ValidationError):
-        ResumeImportMessage(
-            payload={"import_id": value, "template_id": "1"}
-        )
+        ResumeImportMessage(payload={"import_id": value, "template_id": "1"})
 
 
 @pytest.mark.parametrize(
@@ -70,7 +77,7 @@ def test_kafka_publish_uses_import_id_as_partition_key(
     message = ResumeImportMessage.create(import_id=42, template_id=7)
 
     async def exercise() -> None:
-        await publisher.publish_resume_import(message)
+        await publisher.publish(message)
         await publisher.close()
 
     asyncio.run(exercise())
@@ -100,9 +107,7 @@ def test_kafka_publish_wraps_broker_failure(monkeypatch: pytest.MonkeyPatch) -> 
 
     with pytest.raises(MQPublishError, match="Kafka did not confirm"):
         asyncio.run(
-            publisher.publish_resume_import(
-                ResumeImportMessage.create(import_id=42, template_id=7)
-            )
+            publisher.publish(ResumeImportMessage.create(import_id=42, template_id=7))
         )
 
     producer.stop.assert_awaited_once()
@@ -133,8 +138,8 @@ def test_kafka_concurrent_first_publish_starts_only_one_producer(
 
     async def exercise() -> None:
         await asyncio.gather(
-            publisher.publish_resume_import(first),
-            publisher.publish_resume_import(second),
+            publisher.publish(first),
+            publisher.publish(second),
         )
         await publisher.close()
 
@@ -149,16 +154,16 @@ def test_kafka_concurrent_first_publish_starts_only_one_producer(
 def test_rabbitmq_publish_uses_fixed_routing_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    exchange = SimpleNamespace(name="resume-import", publish=AsyncMock(return_value=True))
+    exchange = SimpleNamespace(
+        name="resume-import", publish=AsyncMock(return_value=True)
+    )
     dead_letter_exchange = SimpleNamespace(name="resume-import.DLX")
     queue = SimpleNamespace(bind=AsyncMock())
     dead_letter_queue = SimpleNamespace(bind=AsyncMock())
     channel = SimpleNamespace(
         is_closed=False,
         close=AsyncMock(),
-        declare_exchange=AsyncMock(
-            side_effect=[exchange, dead_letter_exchange]
-        ),
+        declare_exchange=AsyncMock(side_effect=[exchange, dead_letter_exchange]),
         declare_queue=AsyncMock(side_effect=[queue, dead_letter_queue]),
     )
     connection = SimpleNamespace(
@@ -179,9 +184,7 @@ def test_rabbitmq_publish_uses_fixed_routing_key(
     )
 
     asyncio.run(
-        publisher.publish_resume_import(
-            ResumeImportMessage.create(import_id=42, template_id=7)
-        )
+        publisher.publish(ResumeImportMessage.create(import_id=42, template_id=7))
     )
 
     exchange.publish.assert_awaited_once()

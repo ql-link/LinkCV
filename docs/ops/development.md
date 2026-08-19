@@ -16,7 +16,7 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装 Web、浏览器插件和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI 和简历导入 Worker。当前 Alembic head `0021`；`0002`–`0005` 建立并演进简历、版本和对象清理，`0006` 新增 LLM 模型配置和调用日志表，`0007` 新增用户私有 JD 单表，`0008` 增加 Chat 候选模型、唯一当前绑定与调用快照，`0009` 曾新增管理员操作审计日志表，`0010` 在对象删除改为同步后移除清理任务表，`0011` 移除仅写不读的管理员操作审计日志表，`0012` 删除已停用的旧版简历内容与样式备份列，`0013` 为简历分享新增字段，`0016` 新增导入任务表，`0017` 在旧同步导入数据清理后移除正式简历上的旧导入证据列，`0018` 新增用户知识库资料表，`0019` 新增 `users.wechat_openid` 唯一绑定与绑定时间，`0020` 将 `email`、`password_hash` 放宽为可空以支持微信扫码登录建号，`0021` 将简历导入状态迁移到通用 `document_parse_tasks` 并把来源指针改由 `resumes.parse_task_id` 持有。
+新环境执行 `npm run setup` 安装 Web、浏览器插件和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI 和文档解析 Worker。当前 Alembic head `0022`；`0002`–`0005` 建立并演进简历、版本和对象清理，`0006` 新增 LLM 模型配置和调用日志表，`0007` 新增用户私有 JD 单表，`0008` 增加 Chat 候选模型、唯一当前绑定与调用快照，`0009` 曾新增管理员操作审计日志表，`0010` 在对象删除改为同步后移除清理任务表，`0011` 移除仅写不读的管理员操作审计日志表，`0012` 删除已停用的旧版简历内容与样式备份列，`0013` 为简历分享新增字段，`0016` 新增导入任务表，`0017` 在旧同步导入数据清理后移除正式简历上的旧导入证据列，`0018` 新增用户知识库资料表，`0019` 新增 `users.wechat_openid` 唯一绑定与绑定时间，`0020` 将 `email`、`password_hash` 放宽为可空以支持微信扫码登录建号，`0021` 将简历导入状态迁移到通用 `document_parse_tasks` 并把来源指针改由 `resumes.parse_task_id` 持有，`0022` 增加资料解析任务、共享失败分类和资料反向指针，并清理旧资料行。
 
 后端默认读取仓库根目录 `.env`。设置 `LINKCV_ENV_FILE=.env.development` 可选择共享 Dev 基础配置；如果同目录存在 `.env.development.local`，其密码和密钥会覆盖基础文件。Production 同理使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，配置路径不受当前工作目录影响。
 
@@ -36,7 +36,7 @@ local/test 未配置密钥环时，原有非 LLM 接口仍可启动，但保存�
 LINKCV_ENV_FILE=.env.development npm run db:init
 ```
 
-命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0021`。图片、导入源文件和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。
+命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0022`。图片、导入源文件和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。
 
 `PLUGIN_RELEASE_ORIGIN` 是当前环境允许正式插件访问的 LinkCV 根 Origin。默认本地值为 `http://127.0.0.1:5173`；共享 Development 和 Production 必须在各自 `.local` 覆盖中写入用户实际访问的 Origin，Production 只接受 HTTPS。该值必须与构建安装包时传给 `build_extension_release.py` 的对应 Origin 一致，否则管理员上传会被拒绝。
 

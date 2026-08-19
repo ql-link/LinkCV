@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from linkcv.core.mq.message import ResumeImportMessage
+from linkcv.core.mq.message import DocumentParseTaskMessage
 
 
 class MQPublishError(RuntimeError):
@@ -8,6 +8,6 @@ class MQPublishError(RuntimeError):
 
 
 class MQPublisher(Protocol):
-    async def publish_resume_import(self, message: ResumeImportMessage) -> None: ...
+    async def publish(self, message: DocumentParseTaskMessage) -> None: ...
 
     async def close(self) -> None: ...

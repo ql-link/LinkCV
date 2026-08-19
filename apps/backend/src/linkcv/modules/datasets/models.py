@@ -35,6 +35,7 @@ class UserDataset(Base):
     __table_args__ = (
         PrimaryKeyConstraint("id", name="pk_user_dataset"),
         UniqueConstraint("object_name", name="uk_user_dataset_object_name"),
+        UniqueConstraint("parse_task_id", name="uk_user_dataset_parse_task_id"),
         CheckConstraint(
             "file_format IN ('docx', 'pdf', 'md', 'txt')",
             name="ck_user_dataset_file_format",
@@ -50,6 +51,11 @@ class UserDataset(Base):
         ForeignKey("users.id", name="fk_user_dataset_user", ondelete="RESTRICT"),
         nullable=False,
         comment="所属用户 ID",
+    )
+    parse_task_id: Mapped[int | None] = mapped_column(
+        unsigned_bigint_type(),
+        nullable=True,
+        comment="关联的解析任务标识，无数据库外键约束",
     )
     file_name: Mapped[str] = mapped_column(
         String(255), nullable=False, comment="原始上传文件名（已安全化）"

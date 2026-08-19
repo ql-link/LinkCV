@@ -13,7 +13,7 @@
 `0013` 为简历分享新增字段；`0019` 为账号绑定新增 `wechat_openid` 唯一绑定与
 `wechat_bound_at`；后续 revision 将 `email`、`password_hash` 放宽为可空
 （微信扫码登录用户无邮箱密码）。
-当前唯一 head 见 `alembic heads`。每个版本都提供配对升级和降级 SQL；原型 SQLite 数据
+`0022` 扩展通用文档解析任务以承载资料库，并在增加资料任务指针前删除旧资料行；对象存储源文件由发布前清理脚本处理，执行前必须确认备份。当前唯一 head 见 `alembic heads`。每个版本都提供配对升级和降级 SQL；原型 SQLite 数据
 仍不迁移到 MySQL。
 
 ```text

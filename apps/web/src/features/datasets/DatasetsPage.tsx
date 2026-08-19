@@ -1,14 +1,25 @@
 import { useEffect, useRef, useState } from "react";
-import { Database, FileText, Plus, Search, X } from "lucide-react";
+import { Database, FileSearch, FileText, Plus, Search, X } from "lucide-react";
 import { api, ApiRequestError, type DatasetRecord } from "../../api/client";
 import { Button, FeedbackNotice } from "@/components/ui";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
+import { DatasetPreviewDialog } from "./DatasetPreviewDialog";
 
 const MAX_DATASET_BYTES = 10 * 1024 * 1024;
 const SUPPORTED_DATASET_EXTENSIONS = ["docx", "pdf", "md", "txt"];
 
 type Notice = { kind: "success" | "error"; message: string } | null;
 type TypeFilter = "all" | "pdf" | "docx" | "text";
+
+const FAILURE_REASON_LABELS: Record<NonNullable<DatasetRecord["failure_reason"]>, string> = {
+  format_unsupported: "文件格式不受支持，请重新选择文件。",
+  content_invalid: "文件内容无效，请检查后重新上传。",
+  size_exceeded: "文件内容超出解析限制，请缩小文件后重试。",
+  service_unavailable: "解析服务暂不可用，请稍后重新上传。",
+  timeout: "解析超时，请稍后重新上传。",
+  quota_exceeded: "当前资料数量已达上限。",
+  internal_error: "解析失败，请重新上传。",
+};
 
 function datasetFormatError(file: File): string | null {
   if (file.size === 0) return "文件为空，请重新选择。";
@@ -38,6 +49,8 @@ export function datasetUploadErrorMessage(error: unknown, fallback: string) {
       return "上传失败，请稍后重试。";
     case "DATASET_RECORD_FAILED":
       return "资料保存失败，请稍后重试。";
+    case "DATASET_QUEUE_UNAVAILABLE":
+      return "资料已保存，但解析服务暂不可用，请重新上传。";
     default:
       if (error.status === 401) return "登录状态已失效，请重新登录。";
       return error.status >= 500 ? "服务暂时不可用，请稍后重试。" : fallback;
@@ -71,6 +84,53 @@ function DatasetBadge({ format }: { format: string }) {
   return <span className={`dataset-badge is-${format}`}>{format.toUpperCase()}</span>;
 }
 
+function DatasetName({
+  dataset,
+  onPreview,
+}: {
+  dataset: DatasetRecord;
+  onPreview: (dataset: DatasetRecord, trigger: HTMLButtonElement) => void;
+}) {
+  if (dataset.parse_status !== "succeeded") {
+    return <strong className="dataset-name">{dataset.file_name}</strong>;
+  }
+  return (
+    <button
+      type="button"
+      className="dataset-name dataset-name-button"
+      aria-label={`查看「${dataset.file_name}」的解析结果`}
+      onClick={(event) => onPreview(dataset, event.currentTarget)}
+    >
+      <span>{dataset.file_name}</span>
+      <span className="dataset-name-action"><FileSearch size={14} aria-hidden="true" />查看结果</span>
+    </button>
+  );
+}
+
+function DatasetStatus({ dataset }: { dataset: DatasetRecord }) {
+  if (dataset.upload_status === "uploading") {
+    return <span className="dataset-status is-pending">排队中</span>;
+  }
+  if (dataset.upload_status === "failed") {
+    return <span className="dataset-status is-failed">上传失败</span>;
+  }
+  if (dataset.parse_status === "processing") {
+    return <span className="dataset-status is-processing">解析中</span>;
+  }
+  if (dataset.parse_status === "succeeded") {
+    return <span className="dataset-status is-succeeded">解析完成</span>;
+  }
+  const reason = dataset.failure_reason
+    ? FAILURE_REASON_LABELS[dataset.failure_reason]
+    : FAILURE_REASON_LABELS.internal_error;
+  return (
+    <span className="dataset-status-block">
+      <span className="dataset-status is-failed">解析失败</span>
+      <small>{reason}</small>
+    </span>
+  );
+}
+
 function DatasetDropzone({ onBrowse, onDropFile }: { onBrowse: () => void; onDropFile: (file: File | undefined) => void }) {
   return (
     <button
@@ -93,6 +153,7 @@ function DatasetDropzone({ onBrowse, onDropFile }: { onBrowse: () => void; onDro
 
 export function DatasetsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const previewTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [datasets, setDatasets] = useState<DatasetRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -103,6 +164,16 @@ export function DatasetsPage() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [notice, setNotice] = useState<Notice>(null);
   const [fading, setFading] = useState(false);
+  const [previewDataset, setPreviewDataset] = useState<DatasetRecord | null>(null);
+
+  const openPreview = (dataset: DatasetRecord, trigger: HTMLButtonElement) => {
+    previewTriggerRef.current = trigger;
+    setPreviewDataset(dataset);
+  };
+
+  const closePreview = () => {
+    setPreviewDataset(null);
+  };
 
   useEffect(() => {
     if (!notice) return;
@@ -131,6 +202,24 @@ export function DatasetsPage() {
       cancelled = true;
     };
   }, []);
+
+  const hasActiveParsing = datasets.some(
+    (dataset) => dataset.upload_status === "uploading" || dataset.parse_status === "processing",
+  );
+
+  useEffect(() => {
+    if (!hasActiveParsing) return;
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      void api.listDatasets().then((data) => {
+        if (!cancelled) setDatasets(data.datasets);
+      }).catch(() => undefined);
+    }, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [hasActiveParsing]);
 
   const refresh = async () => {
     const data = await api.listDatasets();
@@ -272,12 +361,13 @@ export function DatasetsPage() {
                 <article className="dataset-feature">
                   <DatasetBadge format={latest.file_format} />
                   <span className="dataset-meta">
-                    <strong className="dataset-name">{latest.file_name}</strong>
+                    <DatasetName dataset={latest} onPreview={openPreview} />
                     <small className="dataset-sub">
                       <span>{formatFileSize(latest.file_size)}</span>
                       <span>上传于 {relativeTime(latest.created_at)}</span>
                     </small>
                   </span>
+                  <DatasetStatus dataset={latest} />
                   <span className="dataset-feature-tag">最近上传</span>
                 </article>
               </section>
@@ -296,13 +386,14 @@ export function DatasetsPage() {
                     <article key={dataset.id} className="dataset-row">
                       <DatasetBadge format={dataset.file_format} />
                       <span className="dataset-meta">
-                        <strong className="dataset-name">{dataset.file_name}</strong>
+                        <DatasetName dataset={dataset} onPreview={openPreview} />
                         <small className="dataset-sub">
                           <span>{dataset.file_format.toUpperCase()}</span>
                           <span>{formatFileSize(dataset.file_size)}</span>
                           <span>上传于 {relativeTime(dataset.created_at)}</span>
                         </small>
                       </span>
+                      <DatasetStatus dataset={dataset} />
                     </article>
                   ))
                 )}
@@ -356,6 +447,14 @@ export function DatasetsPage() {
         <div className={`datasets-toast${fading ? " is-fading" : ""}`}>
           <FeedbackNotice kind={notice.kind}>{notice.message}</FeedbackNotice>
         </div>
+      )}
+
+      {previewDataset && (
+        <DatasetPreviewDialog
+          dataset={previewDataset}
+          returnFocusTo={previewTriggerRef.current}
+          onClose={closePreview}
+        />
       )}
     </main>
   );

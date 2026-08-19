@@ -9,6 +9,9 @@ const record: DatasetRecord = {
   file_name: "岗位要求.md",
   file_format: "md",
   file_size: 1024,
+  upload_status: "succeeded",
+  parse_status: "succeeded",
+  failure_reason: null,
   created_at: "2026-08-08T08:00:00Z",
 };
 
@@ -57,6 +60,85 @@ describe("DatasetsPage", () => {
     expect(await screen.findByText("岗位要求.md")).toBeInTheDocument();
     expect(screen.getByText("MD")).toBeInTheDocument();
     expect(screen.getByText("1.0 KB")).toBeInTheDocument();
+    expect(screen.getByText("解析完成")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "查看「岗位要求.md」的解析结果" })).toBeInTheDocument();
+  });
+
+  it("点击解析完成的资料后展示安全渲染的 Markdown", async () => {
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [record] });
+    const getContent = vi.spyOn(api, "getDatasetContent").mockResolvedValue({
+      id: record.id,
+      file_name: record.file_name,
+      file_format: record.file_format,
+      markdown: "# 解析标题\n\n- 第一项\n\n<script>window.bad = true</script>\n\n![架构图](https://example.test/a.png)",
+    });
+    render(<DatasetsPage />);
+
+    const trigger = await screen.findByRole("button", { name: "查看「岗位要求.md」的解析结果" });
+    fireEvent.click(trigger);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(getContent).toHaveBeenCalledWith("1");
+    expect(within(dialog).getByRole("heading", { name: "解析标题" })).toBeInTheDocument();
+    expect(within(dialog).getByText("第一项")).toBeInTheDocument();
+    expect(within(dialog).getByText("[图片：架构图]")).toBeInTheDocument();
+    expect(dialog.querySelector("script")).toBeNull();
+    expect(dialog.querySelector("img")).toBeNull();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "关闭" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it("解析结果读取失败时允许重新加载", async () => {
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [record] });
+    const getContent = vi.spyOn(api, "getDatasetContent")
+      .mockRejectedValueOnce(new ApiRequestError(502, "DATASET_CONTENT_READ_FAILED"))
+      .mockResolvedValueOnce({
+        id: record.id,
+        file_name: record.file_name,
+        file_format: record.file_format,
+        markdown: "读取成功",
+      });
+    render(<DatasetsPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "查看「岗位要求.md」的解析结果" }));
+    expect(await screen.findByText("解析结果读取失败，请稍后重试。")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+
+    expect(await screen.findByText("读取成功")).toBeInTheDocument();
+    expect(getContent).toHaveBeenCalledTimes(2);
+  });
+
+  it("未解析完成的资料不提供查看入口", async () => {
+    vi.spyOn(api, "listDatasets").mockResolvedValue({
+      datasets: [{ ...record, parse_status: "processing" }],
+    });
+    render(<DatasetsPage />);
+
+    await screen.findByText("解析中");
+    expect(screen.queryByRole("button", { name: /查看.*解析结果/ })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [{ ...record, upload_status: "uploading" as const, parse_status: null }, "排队中"],
+    [{ ...record, parse_status: "processing" as const }, "解析中"],
+    [{ ...record, parse_status: "succeeded" as const }, "解析完成"],
+  ])("展示资料处理状态", async (dataset, label) => {
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [dataset] });
+    render(<DatasetsPage />);
+
+    expect(await screen.findByText(label)).toBeInTheDocument();
+  });
+
+  it("展示具体解析失败原因", async () => {
+    vi.spyOn(api, "listDatasets").mockResolvedValue({
+      datasets: [{ ...record, parse_status: "failed", failure_reason: "service_unavailable" }],
+    });
+    render(<DatasetsPage />);
+
+    expect(await screen.findByText("解析失败")).toBeInTheDocument();
+    expect(screen.getByText("解析服务暂不可用，请稍后重新上传。")).toBeInTheDocument();
   });
 
   it("选择文件后展示预览，确认后才上传", async () => {

@@ -7,7 +7,11 @@ from aiokafka.structs import OffsetAndMetadata, TopicPartition
 from pydantic import ValidationError
 
 from linkcv.core.config import Settings
-from linkcv.core.mq.message import ResumeImportMessage
+from linkcv.core.mq.message import (
+    ResumeImportMessage,
+    document_parse_task_message_adapter,
+)
+from linkcv.workers.dataset_parse_worker import DatasetParseProcessor
 from linkcv.workers.resume_import_worker import (
     ResumeImportProcessor,
     WorkerDependencyUnavailable,
@@ -17,37 +21,50 @@ logger = logging.getLogger(__name__)
 
 
 async def _process_message(
-    processor: ResumeImportProcessor,
+    resume_processor: ResumeImportProcessor,
+    dataset_processor: DatasetParseProcessor,
     body: bytes,
 ) -> None:
-    message = ResumeImportMessage.model_validate_json(body)
-    await processor.process(
-        import_id=int(message.payload.import_id),
-        template_id=int(message.payload.template_id),
-    )
+    message = document_parse_task_message_adapter.validate_json(body)
+    if isinstance(message, ResumeImportMessage):
+        await resume_processor.process(
+            import_id=int(message.payload.import_id),
+            template_id=int(message.payload.template_id),
+        )
+    else:
+        await dataset_processor.process(
+            parse_task_id=int(message.payload.parse_task_id)
+        )
 
 
-def _import_id_from_body(body: bytes) -> int | None:
+def _task_from_body(body: bytes) -> tuple[str, int] | None:
     try:
-        message = ResumeImportMessage.model_validate_json(body)
+        message = document_parse_task_message_adapter.validate_json(body)
     except ValidationError:
         return None
-    return int(message.payload.import_id)
+    if isinstance(message, ResumeImportMessage):
+        return "resume", int(message.payload.import_id)
+    return "dataset", int(message.payload.parse_task_id)
 
 
 def _mark_retry_exhausted(
-    processor: ResumeImportProcessor,
+    resume_processor: ResumeImportProcessor,
+    dataset_processor: DatasetParseProcessor,
     body: bytes,
 ) -> None:
-    import_id = _import_id_from_body(body)
-    if import_id is None:
+    task = _task_from_body(body)
+    if task is None:
         return
+    task_type, task_id = task
     try:
-        processor.mark_retry_exhausted(import_id)
+        if task_type == "resume":
+            resume_processor.mark_retry_exhausted(task_id)
+        else:
+            dataset_processor.mark_retry_exhausted(task_id)
     except WorkerDependencyUnavailable:
         logger.warning(
-            "resume import retry exhausted but failure state could not be saved",
-            extra={"import_id": import_id},
+            "document parse retry exhausted but failure state could not be saved",
+            extra={"parse_task_id": task_id, "source_type": task_type},
             exc_info=True,
         )
 
@@ -77,7 +94,8 @@ async def _publish_rabbit_dlt(
 
 async def _dead_letter_rabbit(
     *,
-    processor: ResumeImportProcessor,
+    resume_processor: ResumeImportProcessor,
+    dataset_processor: DatasetParseProcessor,
     dead_letter_exchange,
     incoming,
     settings: Settings,
@@ -90,32 +108,38 @@ async def _dead_letter_rabbit(
             settings=settings,
         )
     except Exception:
-        logger.exception("resume import DLT publish failed; original retained")
+        logger.exception("document parse DLT publish failed; original retained")
         await asyncio.sleep(settings.mq_consume_retry_backoff_seconds)
         await incoming.nack(requeue=True)
         return
     if mark_failed:
-        _mark_retry_exhausted(processor, incoming.body)
+        _mark_retry_exhausted(
+            resume_processor,
+            dataset_processor,
+            incoming.body,
+        )
     await incoming.ack()
 
 
 async def _handle_rabbit_message(
     *,
-    processor: ResumeImportProcessor,
+    resume_processor: ResumeImportProcessor,
+    dataset_processor: DatasetParseProcessor,
     exchange,
     dead_letter_exchange,
     incoming,
     settings: Settings,
 ) -> None:
     try:
-        await _process_message(processor, incoming.body)
+        await _process_message(resume_processor, dataset_processor, incoming.body)
     except WorkerDependencyUnavailable:
         await asyncio.sleep(settings.mq_consume_retry_backoff_seconds)
         await incoming.nack(requeue=True)
     except ValidationError:
-        logger.warning("invalid resume import message sent to DLT")
+        logger.warning("invalid document parse message sent to DLT")
         await _dead_letter_rabbit(
-            processor=processor,
+            resume_processor=resume_processor,
+            dataset_processor=dataset_processor,
             dead_letter_exchange=dead_letter_exchange,
             incoming=incoming,
             settings=settings,
@@ -124,9 +148,10 @@ async def _handle_rabbit_message(
     except Exception:
         retries = int(incoming.headers.get("x-linkcv-retry", 0))
         if retries >= settings.mq_consume_max_retries:
-            logger.exception("resume import message sent to DLT")
+            logger.exception("document parse message sent to DLT")
             await _dead_letter_rabbit(
-                processor=processor,
+                resume_processor=resume_processor,
+                dataset_processor=dataset_processor,
                 dead_letter_exchange=dead_letter_exchange,
                 incoming=incoming,
                 settings=settings,
@@ -164,22 +189,19 @@ async def _handle_rabbit_message(
 
 async def run_rabbitmq_consumer(
     *,
-    processor: ResumeImportProcessor,
+    resume_processor: ResumeImportProcessor,
+    dataset_processor: DatasetParseProcessor,
     settings: Settings,
 ) -> None:
     if settings.rabbitmq_url is None:
         raise ValueError("RABBITMQ_URL is required")
-    connection = await aio_pika.connect_robust(
-        settings.rabbitmq_url.get_secret_value()
-    )
+    connection = await aio_pika.connect_robust(settings.rabbitmq_url.get_secret_value())
     async with connection:
         channel = await connection.channel(
             publisher_confirms=True,
             on_return_raises=True,
         )
-        await channel.set_qos(
-            prefetch_count=settings.resume_import_worker_concurrency
-        )
+        await channel.set_qos(prefetch_count=settings.resume_import_worker_concurrency)
         exchange = await channel.declare_exchange(
             settings.rabbitmq_exchange_name,
             aio_pika.ExchangeType.DIRECT,
@@ -195,9 +217,7 @@ async def run_rabbitmq_consumer(
             durable=True,
             arguments={
                 "x-dead-letter-exchange": dead_letter_exchange.name,
-                "x-dead-letter-routing-key": (
-                    f"{settings.rabbitmq_routing_key}.DLT"
-                ),
+                "x-dead-letter-routing-key": (f"{settings.rabbitmq_routing_key}.DLT"),
             },
         )
         await queue.bind(exchange, routing_key=settings.rabbitmq_routing_key)
@@ -214,7 +234,8 @@ async def run_rabbitmq_consumer(
                 async for incoming in iterator:
                     task_group.create_task(
                         _handle_rabbit_message(
-                            processor=processor,
+                            resume_processor=resume_processor,
+                            dataset_processor=dataset_processor,
                             exchange=exchange,
                             dead_letter_exchange=dead_letter_exchange,
                             incoming=incoming,
@@ -225,7 +246,8 @@ async def run_rabbitmq_consumer(
 
 async def _handle_kafka_message(
     *,
-    processor: ResumeImportProcessor,
+    resume_processor: ResumeImportProcessor,
+    dataset_processor: DatasetParseProcessor,
     consumer,
     producer,
     incoming,
@@ -235,14 +257,18 @@ async def _handle_kafka_message(
     attempts = 0
     while True:
         try:
-            await _process_message(processor, incoming.value)
+            await _process_message(
+                resume_processor,
+                dataset_processor,
+                incoming.value,
+            )
         except WorkerDependencyUnavailable:
             consumer.pause(partition)
             await asyncio.sleep(settings.mq_consume_retry_backoff_seconds)
             consumer.resume(partition)
             continue
         except ValidationError:
-            logger.warning("invalid resume import Kafka message sent to DLT")
+            logger.warning("invalid document parse Kafka message sent to DLT")
             await producer.send_and_wait(
                 f"{settings.kafka_topic}.DLT",
                 value=incoming.value,
@@ -254,7 +280,7 @@ async def _handle_kafka_message(
                 await asyncio.sleep(settings.mq_consume_retry_backoff_seconds)
                 continue
             logger.error(
-                "resume import Kafka message sent to DLT",
+                "document parse Kafka message sent to DLT",
                 exc_info=error,
             )
             await producer.send_and_wait(
@@ -262,16 +288,19 @@ async def _handle_kafka_message(
                 value=incoming.value,
                 key=incoming.key,
             )
-            _mark_retry_exhausted(processor, incoming.value)
-        await consumer.commit(
-            {partition: OffsetAndMetadata(incoming.offset + 1, "")}
-        )
+            _mark_retry_exhausted(
+                resume_processor,
+                dataset_processor,
+                incoming.value,
+            )
+        await consumer.commit({partition: OffsetAndMetadata(incoming.offset + 1, "")})
         return
 
 
 async def run_kafka_consumer(
     *,
-    processor: ResumeImportProcessor,
+    resume_processor: ResumeImportProcessor,
+    dataset_processor: DatasetParseProcessor,
     settings: Settings,
 ) -> None:
     if not settings.kafka_bootstrap_servers:
@@ -294,7 +323,8 @@ async def run_kafka_consumer(
             while True:
                 incoming = await consumer.getone()
                 await _handle_kafka_message(
-                    processor=processor,
+                    resume_processor=resume_processor,
+                    dataset_processor=dataset_processor,
                     consumer=consumer,
                     producer=producer,
                     incoming=incoming,
@@ -308,10 +338,19 @@ async def run_kafka_consumer(
 
 async def run_consumer(
     *,
-    processor: ResumeImportProcessor,
+    resume_processor: ResumeImportProcessor,
+    dataset_processor: DatasetParseProcessor,
     settings: Settings,
 ) -> None:
     if settings.mq_vendor == "kafka":
-        await run_kafka_consumer(processor=processor, settings=settings)
+        await run_kafka_consumer(
+            resume_processor=resume_processor,
+            dataset_processor=dataset_processor,
+            settings=settings,
+        )
     else:
-        await run_rabbitmq_consumer(processor=processor, settings=settings)
+        await run_rabbitmq_consumer(
+            resume_processor=resume_processor,
+            dataset_processor=dataset_processor,
+            settings=settings,
+        )

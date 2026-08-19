@@ -3,7 +3,16 @@ import logging
 from time import monotonic
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, Form, Header, Request, Response, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    Header,
+    Request,
+    Response,
+    UploadFile,
+)
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
@@ -109,9 +118,7 @@ def _duration_ms(started: float) -> int:
     return min(round((monotonic() - started) * 1000), 2**32 - 1)
 
 
-def _load_owned_import(
-    db: Session, import_id: str, user_id: int
-) -> DocumentParseTask:
+def _load_owned_import(db: Session, import_id: str, user_id: int) -> DocumentParseTask:
     parsed_id = parse_decimal_id(import_id)
     record = (
         db.scalar(
@@ -219,9 +226,7 @@ async def import_resume(
                         idempotency_key=idempotency_key,
                     )
                 except IdempotencyUnavailableError as error:
-                    raise ApiError(
-                        503, "IMPORT_IDEMPOTENCY_UNAVAILABLE"
-                    ) from error
+                    raise ApiError(503, "IMPORT_IDEMPOTENCY_UNAVAILABLE") from error
             if existing is None or existing.import_id is None:
                 raise ApiError(409, "IMPORT_ACCEPTANCE_IN_PROGRESS")
             record = _load_owned_import(db, existing.import_id, user.id)
@@ -258,9 +263,7 @@ async def import_resume(
                         idempotency_key=idempotency_key,
                     )
                 except IdempotencyUnavailableError as error:
-                    raise ApiError(
-                        503, "IMPORT_IDEMPOTENCY_UNAVAILABLE"
-                    ) from error
+                    raise ApiError(503, "IMPORT_IDEMPOTENCY_UNAVAILABLE") from error
             if state is None or state.import_id is None:
                 raise ApiError(409, "IMPORT_ACCEPTANCE_IN_PROGRESS")
             record = _load_owned_import(db, state.import_id, user.id)
@@ -341,7 +344,7 @@ async def import_resume(
 
         publisher = get_mq_publisher(request, settings)
         try:
-            await publisher.publish_resume_import(
+            await publisher.publish(
                 ResumeImportMessage.create(
                     import_id=record.id,
                     template_id=template.id,
@@ -355,7 +358,11 @@ async def import_resume(
                     DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
                     DocumentParseTask.parse_status == "processing",
                 )
-                .values(parse_status="failed", parse_duration_ms=0)
+                .values(
+                    parse_status="failed",
+                    parse_duration_ms=0,
+                    failure_reason="service_unavailable",
+                )
             )
             db.commit()
             db.expire_all()
