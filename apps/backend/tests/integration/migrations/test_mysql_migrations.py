@@ -21,7 +21,7 @@ from linkcv.domain.resume_snapshot import parse_resume_snapshot
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0022"
+EXPECTED_HEAD = "0023"
 
 
 def migration_test_url() -> str:
@@ -158,6 +158,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "data_json",
         "style_json",
         "reason",
+        "name",
         "created_at",
     }
     assert {
@@ -403,9 +404,9 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         connection.execute(
             text(
                 "INSERT INTO resume_versions "
-                "(resume_id, version_no, data_json, style_json, reason) "
+                "(resume_id, version_no, data_json, style_json, reason, name) "
                 "VALUES (:resume_id, 1, JSON_OBJECT('schema_version', '1.0'), "
-                "JSON_OBJECT('schema_version', '1.0'), 'initial')"
+                "JSON_OBJECT('schema_version', '1.0'), 'initial', '初始版本')"
             ),
             {"resume_id": resume_id},
         )
@@ -488,6 +489,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "data_json",
         "style_json",
         "reason",
+        "name",
         "created_at",
     }
     assert {
