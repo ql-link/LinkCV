@@ -30,6 +30,7 @@ export function App() {
   const loadResume = useResumeStore((state) => state.loadResume);
   const goHome = useResumeStore((state) => state.goHome);
   const dirty = useResumeStore((state) => state.dirty);
+  const versionOperationPending = useResumeStore((state) => state.versionOperationPending);
   const editVersion = useResumeStore((state) => state.editVersion);
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
 
@@ -40,14 +41,14 @@ export function App() {
 
   useEffect(() => {
     if (isAdminArea) return;
-    if (!dirty || !activeResumeId) return;
+    if (!dirty || !activeResumeId || versionOperationPending) return;
 
     const timer = window.setTimeout(() => {
       void saveCurrentResume();
     }, 1200);
 
     return () => window.clearTimeout(timer);
-  }, [activeResumeId, dirty, editVersion, isAdminArea, saveCurrentResume]);
+  }, [activeResumeId, dirty, editVersion, isAdminArea, saveCurrentResume, versionOperationPending]);
 
   useEffect(() => {
     if (isAdminArea) return;

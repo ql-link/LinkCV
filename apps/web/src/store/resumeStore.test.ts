@@ -102,12 +102,10 @@ describe("resume save serialization", () => {
     });
   });
 
-  it("saves a dirty draft before restoring a historical version", async () => {
+  it("恢复历史版本时不创建或保存新的版本", async () => {
     const calls: string[] = [];
-    vi.spyOn(api, "updateResume").mockImplementation(async () => {
-      calls.push("save");
-      return { resume: record(2, "# 第一次编辑") };
-    });
+    const update = vi.spyOn(api, "updateResume");
+    const create = vi.spyOn(api, "createVersion");
     vi.spyOn(api, "restoreVersion").mockImplementation(async () => {
       calls.push("restore");
       return { resume: record(3, "# 历史版本", true) };
@@ -116,7 +114,9 @@ describe("resume save serialization", () => {
 
     await useResumeStore.getState().restoreVersion(1);
 
-    expect(calls).toEqual(["save", "restore"]);
+    expect(calls).toEqual(["restore"]);
+    expect(update).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
     expect(useResumeStore.getState()).toMatchObject({
       lockVersion: 3,
       markdown: "# 历史版本",
@@ -430,9 +430,9 @@ describe("resume version deletion", () => {
   beforeEach(() => {
     useResumeStore.setState({
       versions: [
-        { id: "3", version_no: 3, reason: "manual", created_at: "2026-07-27T00:03:00Z" },
-        { id: "2", version_no: 2, reason: "manual", created_at: "2026-07-27T00:02:00Z" },
-        { id: "1", version_no: 1, reason: "initial", created_at: "2026-07-27T00:01:00Z" },
+        { id: "3", version_no: 3, name: "第三版", reason: "manual", created_at: "2026-07-27T00:03:00Z" },
+        { id: "2", version_no: 2, name: "第二版", reason: "manual", created_at: "2026-07-27T00:02:00Z" },
+        { id: "1", version_no: 1, name: "初始版本", reason: "initial", created_at: "2026-07-27T00:01:00Z" },
       ],
     });
   });
@@ -454,5 +454,33 @@ describe("resume version deletion", () => {
 
     expect(useResumeStore.getState().versions.map((version) => version.version_no)).toEqual([3, 2, 1]);
     expect(useResumeStore.getState().versionOperationPending).toBe(false);
+  });
+});
+
+describe("resume version rename", () => {
+  it("更新指定版本名称并保留其他版本", async () => {
+    useResumeStore.setState({
+      activeResumeId: "1",
+      versions: [
+        { id: "2", version_no: 2, name: "旧名称", reason: "manual", created_at: "2026-07-27T00:02:00Z" },
+        { id: "1", version_no: 1, name: "初始版本", reason: "initial", created_at: "2026-07-27T00:01:00Z" },
+      ],
+    });
+    const renamed = {
+      id: "2",
+      version_no: 2,
+      name: "投递终版",
+      reason: "manual" as const,
+      created_at: "2026-07-27T00:02:00Z",
+    };
+    vi.spyOn(api, "renameVersion").mockResolvedValue({ version: renamed });
+
+    await useResumeStore.getState().renameVersion(2, "投递终版");
+
+    expect(api.renameVersion).toHaveBeenCalledWith("1", 2, "投递终版");
+    expect(useResumeStore.getState().versions).toEqual([
+      renamed,
+      { id: "1", version_no: 1, name: "初始版本", reason: "initial", created_at: "2026-07-27T00:01:00Z" },
+    ]);
   });
 });

@@ -115,6 +115,7 @@ export type ResumeRecord = ResumeSummary & {
 export type ResumeVersion = {
   id: string;
   version_no: number;
+  name: string;
   reason: "initial" | "manual" | "before_restore" | "restore";
   created_at: string;
   data?: ResumeDocumentV1;
@@ -742,9 +743,15 @@ export const api = {
     request<{ deleted: boolean }>(`/api/resumes/${id}`, { method: "DELETE" }),
   listVersions: (id: string) =>
     request<{ versions: ResumeVersion[] }>(`/api/resumes/${id}/versions`),
-  createVersion: (id: string) =>
+  createVersion: (id: string, name?: string) =>
     request<{ version: ResumeVersion }>(`/api/resumes/${id}/versions`, {
       method: "POST",
+      body: name === undefined ? undefined : { name },
+    }),
+  renameVersion: (id: string, versionNo: number, name: string) =>
+    request<{ version: ResumeVersion }>(`/api/resumes/${id}/versions/${versionNo}`, {
+      method: "PATCH",
+      body: { name },
     }),
   deleteVersion: (id: string, versionNo: number) =>
     request<{ deleted: boolean }>(`/api/resumes/${id}/versions/${versionNo}`, {

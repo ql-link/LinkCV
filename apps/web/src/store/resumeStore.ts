@@ -86,7 +86,8 @@ type ResumeState = {
   deleteResumeImport: (id: string) => Promise<void>;
   saveCurrentResume: () => Promise<void>;
   loadVersions: () => Promise<void>;
-  createVersion: () => Promise<void>;
+  createVersion: (name?: string) => Promise<void>;
+  renameVersion: (versionNo: number, name: string) => Promise<void>;
   deleteVersion: (versionNo: number) => Promise<void>;
   restoreVersion: (versionNo: number) => Promise<void>;
   goHome: () => void;
@@ -456,7 +457,12 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     const requestedResumeId = get().activeResumeId;
     const queuedSave = saveQueue.then(async () => {
       const state = get();
-      if (!state.activeResumeId || state.activeResumeId !== requestedResumeId || !state.dirty) return;
+      if (
+        !state.activeResumeId
+        || state.activeResumeId !== requestedResumeId
+        || !state.dirty
+        || state.versionOperationPending
+      ) return;
       const snapshot: SaveSnapshot = {
         activeResumeId: state.activeResumeId,
         lockVersion: state.lockVersion,
@@ -527,11 +533,11 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     }
   },
 
-  createVersion: async () => {
+  createVersion: async (name) => {
     const resumeId = get().activeResumeId;
     if (!resumeId) return;
     try {
-      const { version } = await api.createVersion(resumeId);
+      const { version } = await api.createVersion(resumeId, name);
       if (get().activeResumeId === resumeId) {
         set((state) => ({
           versions: [version, ...state.versions.filter((item) => item.id !== version.id)],
@@ -543,6 +549,25 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
         if (get().activeResumeId === resumeId) set({ versions });
       } catch {
         // The version already exists; a failed refresh must not invite a duplicate retry.
+      }
+    } catch (error) {
+      set({ error: (error as Error).message });
+      throw error;
+    }
+  },
+
+  renameVersion: async (versionNo, name) => {
+    const resumeId = get().activeResumeId;
+    if (!resumeId) return;
+    try {
+      const { version } = await api.renameVersion(resumeId, versionNo, name);
+      if (get().activeResumeId === resumeId) {
+        set((state) => ({
+          versions: state.versions.map((item) => (
+            item.version_no === version.version_no ? version : item
+          )),
+          error: null,
+        }));
       }
     } catch (error) {
       set({ error: (error as Error).message });
@@ -577,8 +602,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     if (!resumeId) return;
     set({ versionOperationPending: true, error: null });
     try {
-      if (get().dirty) await get().saveCurrentResume();
-      if (get().error) throw new Error(get().error ?? "RESUME_SAVE_FAILED");
+      await saveQueue;
       const localState = get();
       const { resume } = await api.restoreVersion(resumeId, versionNo);
       if (get().activeResumeId === resumeId) {
