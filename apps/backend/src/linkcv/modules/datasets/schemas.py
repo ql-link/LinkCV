@@ -23,3 +23,15 @@ class UserDatasetRecord(BaseModel):
 
 class UserDatasetListResponse(BaseModel):
     datasets: list[UserDatasetRecord]
+
+
+class UserDatasetContentResponse(BaseModel):
+    id: str
+    file_name: str
+    file_format: str
+    markdown: str
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def stringify_id(cls, value: object) -> str:
+        return str(value)

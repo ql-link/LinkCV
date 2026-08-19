@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Database, FileText, Plus, Search, X } from "lucide-react";
+import { Database, FileSearch, FileText, Plus, Search, X } from "lucide-react";
 import { api, ApiRequestError, type DatasetRecord } from "../../api/client";
 import { Button, FeedbackNotice } from "@/components/ui";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
+import { DatasetPreviewDialog } from "./DatasetPreviewDialog";
 
 const MAX_DATASET_BYTES = 10 * 1024 * 1024;
 const SUPPORTED_DATASET_EXTENSIONS = ["docx", "pdf", "md", "txt"];
@@ -83,6 +84,29 @@ function DatasetBadge({ format }: { format: string }) {
   return <span className={`dataset-badge is-${format}`}>{format.toUpperCase()}</span>;
 }
 
+function DatasetName({
+  dataset,
+  onPreview,
+}: {
+  dataset: DatasetRecord;
+  onPreview: (dataset: DatasetRecord, trigger: HTMLButtonElement) => void;
+}) {
+  if (dataset.parse_status !== "succeeded") {
+    return <strong className="dataset-name">{dataset.file_name}</strong>;
+  }
+  return (
+    <button
+      type="button"
+      className="dataset-name dataset-name-button"
+      aria-label={`查看「${dataset.file_name}」的解析结果`}
+      onClick={(event) => onPreview(dataset, event.currentTarget)}
+    >
+      <span>{dataset.file_name}</span>
+      <span className="dataset-name-action"><FileSearch size={14} aria-hidden="true" />查看结果</span>
+    </button>
+  );
+}
+
 function DatasetStatus({ dataset }: { dataset: DatasetRecord }) {
   if (dataset.upload_status === "uploading") {
     return <span className="dataset-status is-pending">排队中</span>;
@@ -129,6 +153,7 @@ function DatasetDropzone({ onBrowse, onDropFile }: { onBrowse: () => void; onDro
 
 export function DatasetsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const previewTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [datasets, setDatasets] = useState<DatasetRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -139,6 +164,16 @@ export function DatasetsPage() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [notice, setNotice] = useState<Notice>(null);
   const [fading, setFading] = useState(false);
+  const [previewDataset, setPreviewDataset] = useState<DatasetRecord | null>(null);
+
+  const openPreview = (dataset: DatasetRecord, trigger: HTMLButtonElement) => {
+    previewTriggerRef.current = trigger;
+    setPreviewDataset(dataset);
+  };
+
+  const closePreview = () => {
+    setPreviewDataset(null);
+  };
 
   useEffect(() => {
     if (!notice) return;
@@ -326,7 +361,7 @@ export function DatasetsPage() {
                 <article className="dataset-feature">
                   <DatasetBadge format={latest.file_format} />
                   <span className="dataset-meta">
-                    <strong className="dataset-name">{latest.file_name}</strong>
+                    <DatasetName dataset={latest} onPreview={openPreview} />
                     <small className="dataset-sub">
                       <span>{formatFileSize(latest.file_size)}</span>
                       <span>上传于 {relativeTime(latest.created_at)}</span>
@@ -351,7 +386,7 @@ export function DatasetsPage() {
                     <article key={dataset.id} className="dataset-row">
                       <DatasetBadge format={dataset.file_format} />
                       <span className="dataset-meta">
-                        <strong className="dataset-name">{dataset.file_name}</strong>
+                        <DatasetName dataset={dataset} onPreview={openPreview} />
                         <small className="dataset-sub">
                           <span>{dataset.file_format.toUpperCase()}</span>
                           <span>{formatFileSize(dataset.file_size)}</span>
@@ -412,6 +447,14 @@ export function DatasetsPage() {
         <div className={`datasets-toast${fading ? " is-fading" : ""}`}>
           <FeedbackNotice kind={notice.kind}>{notice.message}</FeedbackNotice>
         </div>
+      )}
+
+      {previewDataset && (
+        <DatasetPreviewDialog
+          dataset={previewDataset}
+          returnFocusTo={previewTriggerRef.current}
+          onClose={closePreview}
+        />
       )}
     </main>
   );

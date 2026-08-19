@@ -108,6 +108,22 @@ def upload_file(
     )
 
 
+def mark_dataset_succeeded(app, dataset_id: int, markdown: bytes = b"# Parsed") -> None:
+    converted_object_name = f"users/1/datasets/converted/{dataset_id}.md"
+    with app.state.session_factory() as session:
+        dataset = session.get(UserDataset, dataset_id)
+        assert dataset is not None
+        task = session.get(DocumentParseTask, dataset.parse_task_id)
+        assert task is not None
+        task.upload_status = "succeeded"
+        task.upload_duration_ms = 1
+        task.parse_status = "succeeded"
+        task.parse_duration_ms = 1
+        task.converted_object_name = converted_object_name
+        session.commit()
+    app.state.storage.objects[converted_object_name] = markdown
+
+
 def test_upload_and_list_own_datasets() -> None:
     app = build_test_app()
     storage = app.state.storage
@@ -215,6 +231,89 @@ def test_list_only_returns_own_datasets() -> None:
             rows = session.scalars(select(UserDataset)).all()
             by_name = {row.file_name: row.user_id for row in rows}
             assert by_name == {"alice.md": alice.id, "bob.md": bob.id}
+
+
+def test_read_parsed_dataset_content() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        register(client)
+        uploaded = upload_file(client, filename="notes.md")
+        dataset_id = int(uploaded.json()["id"])
+        mark_dataset_succeeded(app, dataset_id, "# 解析结果\n\n张三".encode())
+
+        response = client.get(f"/api/datasets/{dataset_id}/content")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": str(dataset_id),
+        "file_name": "notes.md",
+        "file_format": "md",
+        "markdown": "# 解析结果\n\n张三",
+    }
+
+
+def test_read_dataset_content_requires_successful_parse() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        register(client)
+        uploaded = upload_file(client)
+
+        response = client.get(f"/api/datasets/{uploaded.json()['id']}/content")
+
+    assert response.status_code == 409
+    assert response.json() == {"error": "DATASET_CONTENT_UNAVAILABLE"}
+
+
+def test_read_dataset_content_hides_other_users_records() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        register(client, email="alice@example.com")
+        uploaded = upload_file(client)
+        dataset_id = int(uploaded.json()["id"])
+        mark_dataset_succeeded(app, dataset_id)
+        register(client, email="bob@example.com")
+
+        response = client.get(f"/api/datasets/{dataset_id}/content")
+
+    assert response.status_code == 404
+    assert response.json() == {"error": "DATASET_NOT_FOUND"}
+
+
+def test_read_dataset_content_reports_storage_failure() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        register(client)
+        uploaded = upload_file(client)
+        dataset_id = int(uploaded.json()["id"])
+        mark_dataset_succeeded(app, dataset_id)
+        app.state.storage.objects.clear()
+
+        response = client.get(f"/api/datasets/{dataset_id}/content")
+
+    assert response.status_code == 502
+    assert response.json() == {"error": "DATASET_CONTENT_READ_FAILED"}
+
+
+def test_read_dataset_content_rejects_object_outside_user_prefix() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        register(client)
+        uploaded = upload_file(client)
+        dataset_id = int(uploaded.json()["id"])
+        mark_dataset_succeeded(app, dataset_id)
+        with app.state.session_factory() as session:
+            dataset = session.get(UserDataset, dataset_id)
+            assert dataset is not None
+            task = session.get(DocumentParseTask, dataset.parse_task_id)
+            assert task is not None
+            task.converted_object_name = "users/2/datasets/converted/private.md"
+            session.commit()
+        app.state.storage.objects["users/2/datasets/converted/private.md"] = b"private"
+
+        response = client.get(f"/api/datasets/{dataset_id}/content")
+
+    assert response.status_code == 502
+    assert response.json() == {"error": "DATASET_CONTENT_READ_FAILED"}
 
 
 def test_upload_storage_failure_does_not_write_record() -> None:

@@ -5,6 +5,7 @@ export { Brand } from "./brand";
 export { Button, buttonVariants, type ButtonProps } from "./button";
 export { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "./card";
 export { ConfirmDialog } from "./confirm-dialog";
+export { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "./dialog";
 export { FeedbackNotice } from "./feedback-notice";
 export { IconButton } from "./icon-button";
 export { Input } from "./input";

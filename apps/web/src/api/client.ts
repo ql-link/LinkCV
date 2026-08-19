@@ -185,6 +185,13 @@ export type DatasetRecord = {
   created_at: string;
 };
 
+export type DatasetContent = {
+  id: string;
+  file_name: string;
+  file_format: string;
+  markdown: string;
+};
+
 export type ResumeImportSummary = {
   id: string;
   source_filename: string;
@@ -822,6 +829,8 @@ export const api = {
     });
   },
   listDatasets: () => request<{ datasets: DatasetRecord[] }>("/api/datasets"),
+  getDatasetContent: (id: string) =>
+    request<DatasetContent>(`/api/datasets/${id}/content`),
   listJobDescriptions: (
     params: {
       scope?: "active" | "archived" | "all";

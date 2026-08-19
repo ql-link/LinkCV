@@ -18,6 +18,7 @@ from linkcv.core.storage import (
 )
 from linkcv.modules.datasets.models import UserDataset
 from linkcv.modules.datasets.schemas import (
+    UserDatasetContentResponse,
     UserDatasetListResponse,
     UserDatasetRecord,
 )
@@ -28,6 +29,34 @@ from linkcv.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
 SUPPORTED_DATASET_FORMATS = {"docx", "pdf", "md", "txt"}
+
+
+def read_dataset_markdown(
+    storage: AssetStorage,
+    object_name: str,
+    max_bytes: int,
+) -> str:
+    response = storage.get(object_name)
+    if isinstance(response, bytes):
+        content = response
+    else:
+        chunks: list[bytes] = []
+        size = 0
+        try:
+            for chunk in response.stream(64 * 1024):
+                if not isinstance(chunk, bytes):
+                    raise TypeError("storage response did not return bytes")
+                size += len(chunk)
+                if size > max_bytes:
+                    raise ValueError("dataset markdown exceeds configured limit")
+                chunks.append(chunk)
+            content = b"".join(chunks)
+        finally:
+            response.close()
+            response.release_conn()
+    if len(content) > max_bytes:
+        raise ValueError("dataset markdown exceeds configured limit")
+    return content.decode("utf-8")
 
 
 def safe_dataset_filename(filename: str) -> str:
@@ -181,4 +210,50 @@ def list_datasets(
     ).all()
     return UserDatasetListResponse(
         datasets=[dataset_record(dataset, task) for dataset, task in rows]
+    )
+
+
+@router.get("/{dataset_id}/content", response_model=UserDatasetContentResponse)
+def get_dataset_content(
+    dataset_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+    storage: AssetStorage = Depends(get_storage),
+) -> UserDatasetContentResponse:
+    row = db.execute(
+        select(UserDataset, DocumentParseTask)
+        .join(
+            DocumentParseTask,
+            DocumentParseTask.id == UserDataset.parse_task_id,
+        )
+        .where(
+            UserDataset.id == dataset_id,
+            UserDataset.user_id == user.id,
+            DocumentParseTask.user_id == user.id,
+            DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
+        )
+    ).one_or_none()
+    if row is None:
+        raise ApiError(404, "DATASET_NOT_FOUND")
+
+    dataset, task = row
+    if task.parse_status != "succeeded" or not task.converted_object_name:
+        raise ApiError(409, "DATASET_CONTENT_UNAVAILABLE")
+    expected_prefix = f"users/{user.id}/datasets/converted/"
+    if not task.converted_object_name.startswith(expected_prefix):
+        raise ApiError(502, "DATASET_CONTENT_READ_FAILED")
+    try:
+        markdown = read_dataset_markdown(
+            storage,
+            task.converted_object_name,
+            settings.resume_markdown_max_bytes,
+        )
+    except Exception as error:
+        raise ApiError(502, "DATASET_CONTENT_READ_FAILED") from error
+    return UserDatasetContentResponse(
+        id=dataset.id,
+        file_name=dataset.file_name,
+        file_format=dataset.file_format,
+        markdown=markdown,
     )

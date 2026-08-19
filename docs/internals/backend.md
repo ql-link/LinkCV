@@ -51,7 +51,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0013` 为 `resumes` 增加分享字段：`share_token`（VARCHAR(64)，全局唯一索引）、`share_visibility`（VARCHAR(16)，`private|public`）、`share_expires_at`（可空，UTC 过期时间）和 `share_created_at`。两个 CHECK 约束保证分享字段要么全部为空（未分享）、要么全部非空（已分享），且可见性只允许 `private/public`。分享不单独建表、不落内容快照，公开读取时实时取 `resume_versions` 中 `version_no` 最大的正式版本；down 迁移只删除新增列与约束，不触碰分享期间创建的版本数据。
 
-`0018` 新增 `user_dataset` 用户知识库数据集表。`0022` 为每行增加无数据库外键的唯一 `parse_task_id`，解析状态只以 `document_parse_tasks` 为真值源；同一事务创建资料和 `source_type=dataset` 的任务。`POST /api/datasets` 校验并上传源文件、提交两行记录后向既有文档解析队列发布 `DATASET_PARSE_TASK`；发布失败将任务收口为上传失败并返回 `502 DATASET_QUEUE_UNAVAILABLE`。Worker 对 DOCX/PDF 调用 LinkParse，对 Markdown/TXT 本地执行 UTF-8 与换行规范化，结果尽力存入 `users/{uid}/datasets/converted/{task_id}.md`。`GET /api/datasets` 联表按当前用户过滤并返回上传、解析状态和失败分类，不暴露对象键或 SHA-256。本期不做分片、RAG、常规删除、下载、预览和去重。
+`0018` 新增 `user_dataset` 用户知识库数据集表。`0022` 为每行增加无数据库外键的唯一 `parse_task_id`，解析状态只以 `document_parse_tasks` 为真值源；同一事务创建资料和 `source_type=dataset` 的任务。`POST /api/datasets` 校验并上传源文件、提交两行记录后向既有文档解析队列发布 `DATASET_PARSE_TASK`；发布失败将任务收口为上传失败并返回 `502 DATASET_QUEUE_UNAVAILABLE`。Worker 对 DOCX/PDF 调用 LinkParse，对 Markdown/TXT 本地执行 UTF-8 与换行规范化，结果尽力存入 `users/{uid}/datasets/converted/{task_id}.md`。`GET /api/datasets` 联表按当前用户过滤并返回上传、解析状态和失败分类，不暴露对象键或 SHA-256；`GET /api/datasets/:id/content` 在再次校验资料与任务归属、解析成功状态后读取转换存档并返回 Markdown。转换存档缺失或对象读取失败不会退回源文件。本期不做分片、RAG、常规删除、源文件下载和去重。
 
 ### 微信账号（绑定与扫码登录）
 
