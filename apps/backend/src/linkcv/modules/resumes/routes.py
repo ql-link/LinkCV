@@ -20,6 +20,7 @@ from linkcv.core.database import get_db
 from linkcv.core.errors import ApiError
 from linkcv.core.storage import AssetStorage, get_storage
 from linkcv.domain.resume_snapshot import parse_resume_snapshot
+from linkcv.modules.agent.service import delete_resume_agent_data
 from linkcv.modules.identity.dependencies import get_current_user
 from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import (
@@ -229,6 +230,7 @@ def delete_resume(
                     DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
                 )
             )
+        delete_resume_agent_data(db, resume_id=resume.id, user_id=user.id)
         db.execute(delete(ResumeVersion).where(ResumeVersion.resume_id == resume.id))
         result = db.execute(delete(Resume).where(Resume.id == resume.id))
         db.commit()

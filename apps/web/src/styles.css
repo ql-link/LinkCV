@@ -1900,6 +1900,54 @@ select:not([data-slot]):focus-visible {
 .workbench-drawer-done { border: 0; background: transparent; padding: 2px 0; color: var(--ui-accent); cursor: pointer; font-size: 0.8125rem; font-weight: 600; }
 .workbench-drawer-done:hover { text-decoration: underline; }
 
+.workbench-drawer.is-agent {
+  display: flex;
+  width: 390px;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.agent-panel { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 12px; }
+.agent-trust-note { display: flex; align-items: flex-start; gap: 8px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-md); background: var(--ui-surface-subtle); padding: 10px 12px; color: var(--ui-text-secondary); font-size: 0.75rem; line-height: 1.5; }
+.agent-trust-note svg { flex: 0 0 auto; margin-top: 1px; color: var(--ui-success); }
+.agent-message-list { display: flex; min-height: 120px; flex: 1; flex-direction: column; gap: 12px; overflow-y: auto; overscroll-behavior: contain; padding: 4px 2px 10px; scrollbar-width: thin; }
+.agent-empty { display: flex; align-items: center; justify-content: center; gap: 8px; margin: auto; color: var(--ui-text-muted); font-size: 0.8125rem; }
+.agent-empty-state { display: grid; max-width: 270px; gap: 8px; margin: auto; color: var(--ui-text-secondary); text-align: center; }
+.agent-empty-state svg { margin: 0 auto 2px; color: var(--ui-accent); }
+.agent-empty-state strong { color: var(--ui-foreground); font-size: 0.875rem; }
+.agent-empty-state p { margin: 0; color: var(--ui-text-muted); font-size: 0.8125rem; line-height: 1.6; }
+.agent-message { display: grid; max-width: 92%; gap: 5px; }
+.agent-message > span { color: var(--ui-text-subtle); font-size: 0.6875rem; font-weight: 600; }
+.agent-message > p { margin: 0; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-md); background: var(--ui-surface); padding: 10px 12px; color: var(--ui-text-secondary); font-size: 0.8125rem; line-height: 1.62; white-space: pre-wrap; }
+.agent-message.is-user { align-self: flex-end; }
+.agent-message.is-user > span { text-align: right; }
+.agent-message.is-user > p { border-color: color-mix(in srgb, var(--ui-accent) 30%, var(--ui-border)); background: var(--ui-accent-subtle); color: var(--ui-foreground); }
+.agent-tool-status { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--ui-text-muted); font-size: 0.75rem; }
+.agent-spinner { animation: workbench-spin 0.8s linear infinite; }
+.agent-proposal-list { display: grid; max-height: 260px; gap: 10px; overflow-y: auto; padding-right: 2px; }
+.agent-proposal { display: grid; gap: 10px; border: 1px solid color-mix(in srgb, var(--ui-accent) 38%, var(--ui-border)); border-radius: var(--ui-radius-lg); background: var(--ui-accent-subtle); padding: 13px; }
+.agent-proposal header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.agent-proposal header span { display: inline-flex; align-items: center; gap: 6px; color: var(--ui-accent); font-size: 0.75rem; font-weight: 700; }
+.agent-proposal header small { color: var(--ui-text-muted); font: 500 0.6875rem/1 var(--ui-font-mono); }
+.agent-proposal > p { margin: 0; color: var(--ui-text-secondary); font-size: 0.8125rem; line-height: 1.55; }
+.agent-proposal-diff { border-top: 1px solid color-mix(in srgb, var(--ui-accent) 22%, transparent); padding-top: 8px; }
+.agent-proposal-diff summary { cursor: pointer; color: var(--ui-text-secondary); font-size: 0.75rem; font-weight: 650; }
+.agent-proposal-diff dl { display: grid; gap: 6px; margin: 9px 0 0; }
+.agent-proposal-diff dl > div { display: grid; grid-template-columns: minmax(72px, auto) 1fr; align-items: center; gap: 8px; }
+.agent-proposal-diff dt { color: var(--ui-text-primary); font-size: 0.75rem; font-weight: 650; }
+.agent-proposal-diff dd { display: flex; justify-content: flex-end; gap: 6px; margin: 0; color: var(--ui-text-muted); font-size: 0.71875rem; }
+.agent-proposal-diff del { color: var(--ui-danger); }
+.agent-proposal-diff ins { color: var(--ui-success); text-decoration: none; }
+.agent-proposal-actions { display: flex; align-items: center; gap: 4px; }
+.agent-error { border: 1px solid color-mix(in srgb, var(--ui-destructive) 28%, var(--ui-border)); border-radius: var(--ui-radius-md); background: var(--ui-destructive-subtle); padding: 10px 12px; color: var(--ui-destructive); font-size: 0.75rem; line-height: 1.5; }
+.agent-composer { display: grid; gap: 8px; border-top: 1px solid var(--ui-border); padding-top: 12px; }
+.agent-composer > label { color: var(--ui-text-secondary); font-size: 0.75rem; font-weight: 600; }
+.agent-composer textarea { min-height: 84px; resize: vertical; border: 1px solid var(--ui-input); border-radius: var(--ui-radius-md); outline: 0; background: var(--ui-surface); padding: 10px 11px; color: var(--ui-foreground); font: 400 0.8125rem/1.55 var(--ui-font-sans); }
+.agent-composer textarea:focus { border-color: var(--ui-ring); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-ring) 18%, transparent); }
+.agent-composer textarea::placeholder { color: var(--ui-text-subtle); }
+.agent-composer > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.agent-composer small { color: var(--ui-text-subtle); font-size: 0.6875rem; }
+
 .workbench-settings { display: flex; flex-direction: column; gap: 18px; }
 .workbench-field { display: grid; gap: 8px; color: var(--ui-text-secondary); font-size: 0.8125rem; }
 .workbench-field > span { font-weight: 600; }
@@ -2035,7 +2083,8 @@ select:not([data-slot]):focus-visible {
   .media-size-field select,
   .media-alt-field { font-size: 1rem; }
   .workbench-paper-scroll { padding: 24px 16px 72px; }
-  .workbench-drawer { width: calc(100% - 16px); padding: 20px; }
+  .workbench-drawer,
+  .workbench-drawer.is-agent { width: calc(100% - 16px); padding: 20px; }
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -2058,7 +2107,8 @@ select:not([data-slot]):focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .workbench-status-spinner,
-  .workbench-save-spinner { animation: none; }
+  .workbench-save-spinner,
+  .agent-spinner { animation: none; }
   .workbench-icon-action,
   .workbench-action,
   .workbench-tool-button,

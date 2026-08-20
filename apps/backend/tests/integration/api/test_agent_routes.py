@@ -1,0 +1,497 @@
+import asyncio
+from datetime import timedelta
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+from uuid import uuid4
+
+import pytest
+from fastapi.testclient import TestClient
+from pydantic import SecretStr
+from sqlalchemy import select, update
+
+from linkcv.core.config import Settings
+from linkcv.core.database import utc_now
+from linkcv.core.errors import ApiError
+from linkcv.domain.resume_document import default_resume_document
+from linkcv.domain.resume_style import default_resume_style
+from linkcv.main import create_app
+from linkcv.modules.agent.models import (
+    AgentMessage,
+    AgentRun,
+    AgentSession,
+    AgentToolCall,
+    ResumeChangeProposal,
+)
+from linkcv.modules.agent.pi_client import stream_pi_run
+from linkcv.modules.agent.service import create_run
+from linkcv.modules.resumes.models import ResumeTemplate
+from tests.fakes import FakeRedis
+
+
+INTERNAL_TOKEN = "internal-agent-token-for-tests-000000000001"
+
+
+class FakeStorage:
+    def ensure_bucket(self) -> None:
+        pass
+
+    def delete(self, object_name: str) -> None:
+        pass
+
+    def delete_prefix(self, prefix: str) -> None:
+        pass
+
+
+def build_app():
+    app = create_app(
+        Settings(
+            database_url="sqlite+pysqlite:///:memory:",
+            jwt_secret="agent-routes-test-secret-at-least-32-bytes",
+            linkcv_internal_agent_token=INTERNAL_TOKEN,
+        ),
+        storage=FakeStorage(),
+        redis=FakeRedis(),
+        create_schema=True,
+    )
+    with app.state.session_factory() as db:
+        template = ResumeTemplate(
+            key="agent-test",
+            name="Agent 测试模板",
+            data_json=default_resume_document().model_dump(mode="json"),
+            style_json=default_resume_style().model_dump(mode="json"),
+            is_active=1,
+        )
+        db.add(template)
+        db.commit()
+        app.state.test_template_id = str(template.id)
+    return app
+
+
+def register(client: TestClient, email: str) -> None:
+    response = client.post(
+        "/api/auth/register",
+        json={"email": email, "password": "password-123"},
+    )
+    assert response.status_code == 201
+
+
+def create_resume(client: TestClient, app) -> dict:
+    response = client.post(
+        "/api/resumes",
+        json={"title": "张三的测试简历", "template_id": app.state.test_template_id},
+    )
+    assert response.status_code == 201
+    return response.json()["resume"]
+
+
+def create_active_run(app, session_public_id: str) -> str:
+    with app.state.session_factory() as db:
+        session = db.scalar(
+            select(AgentSession).where(AgentSession.public_id == session_public_id)
+        )
+        assert session is not None
+        run = AgentRun(
+            public_id=str(uuid4()),
+            session_id=session.id,
+            idempotency_key=uuid4().hex,
+            status="running",
+            started_at=utc_now(),
+        )
+        db.add(run)
+        db.commit()
+        return run.public_id
+
+
+def internal_headers(token: str = INTERNAL_TOKEN) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_session_is_owned_and_internal_context_requires_service_token() -> None:
+    app = build_app()
+    with TestClient(app) as owner, TestClient(app) as stranger:
+        register(owner, "agent-owner@example.test")
+        resume = create_resume(owner, app)
+        created = owner.post(
+            "/api/agent/sessions",
+            json={"resume_id": resume["id"], "title": "岗位定制"},
+        )
+        assert created.status_code == 201
+        session_id = created.json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+
+        register(stranger, "agent-stranger@example.test")
+        hidden = stranger.get(f"/api/agent/sessions/{session_id}")
+        assert hidden.status_code == 404
+        assert hidden.json() == {"error": "AGENT_SESSION_NOT_FOUND"}
+
+        denied = owner.get(f"/internal/agent/runs/{run_id}/context")
+        assert denied.status_code == 401
+        assert denied.json() == {"error": "AGENT_SERVICE_UNAUTHORIZED"}
+
+        context = owner.get(
+            f"/internal/agent/runs/{run_id}/context",
+            headers=internal_headers(),
+        )
+        assert context.status_code == 200
+        assert context.json()["resume_id"] == resume["id"]
+        assert context.json()["lock_version"] == 1
+
+
+def test_proposal_is_idempotent_and_confirmed_once() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-proposal@example.test")
+        resume = create_resume(client, app)
+        session_id = client.post(
+            "/api/agent/sessions", json={"resume_id": resume["id"]}
+        ).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        proposed_data = resume["data"]
+        proposed_data["basics"]["headline"] = "由智能助手生成的虚构标题"
+        payload = {
+            "call_key": "proposal-call-1",
+            "data": proposed_data,
+            "style": resume["style"],
+            "summary": "调整简历标题表达",
+        }
+
+        first = client.post(
+            f"/internal/agent/runs/{run_id}/proposals",
+            headers=internal_headers(),
+            json=payload,
+        )
+        repeated = client.post(
+            f"/internal/agent/runs/{run_id}/proposals",
+            headers=internal_headers(),
+            json=payload,
+        )
+        assert first.status_code == repeated.status_code == 201
+        proposal_id = first.json()["proposal"]["id"]
+        assert repeated.json()["proposal"]["id"] == proposal_id
+
+        confirmed = client.post(f"/api/agent/proposals/{proposal_id}/confirm")
+        confirmed_again = client.post(f"/api/agent/proposals/{proposal_id}/confirm")
+        assert confirmed.status_code == confirmed_again.status_code == 200
+        assert confirmed.json()["resume"]["lock_version"] == 2
+        assert confirmed_again.json()["resume"]["lock_version"] == 2
+        assert (
+            confirmed.json()["resume"]["data"]["basics"]["headline"]
+            == "由智能助手生成的虚构标题"
+        )
+
+
+def test_proposal_confirmation_never_overwrites_concurrent_resume_edit() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-conflict@example.test")
+        resume = create_resume(client, app)
+        session_id = client.post(
+            "/api/agent/sessions", json={"resume_id": resume["id"]}
+        ).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        proposal = client.post(
+            f"/internal/agent/runs/{run_id}/proposals",
+            headers=internal_headers(),
+            json={
+                "call_key": "proposal-conflict",
+                "data": resume["data"],
+                "style": resume["style"],
+                "summary": "不会覆盖并发编辑",
+            },
+        )
+        assert proposal.status_code == 201
+
+        edited_data = resume["data"]
+        edited_data["basics"]["headline"] = "用户刚刚手动修改"
+        edited = client.put(
+            f"/api/resumes/{resume['id']}",
+            json={"data": edited_data, "base_lock_version": 1},
+        )
+        assert edited.status_code == 200
+
+        conflict = client.post(
+            f"/api/agent/proposals/{proposal.json()['proposal']['id']}/confirm"
+        )
+        assert conflict.status_code == 409
+        assert conflict.json() == {"error": "RESUME_EDIT_CONFLICT"}
+        current = client.get(f"/api/resumes/{resume['id']}").json()["resume"]
+        assert current["lock_version"] == 2
+        assert current["data"]["basics"]["headline"] == "用户刚刚手动修改"
+
+
+def test_run_concurrency_is_limited_across_user_sessions() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-concurrency@example.test")
+        first_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        second_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+
+        with app.state.session_factory() as db:
+            first = db.scalar(
+                select(AgentSession).where(AgentSession.public_id == first_id)
+            )
+            second = db.scalar(
+                select(AgentSession).where(AgentSession.public_id == second_id)
+            )
+            assert first is not None and second is not None
+            idempotency_key = uuid4().hex
+            first_run, created = create_run(
+                db,
+                session=first,
+                content="第一条消息",
+                idempotency_key=idempotency_key,
+                timeout_seconds=300,
+            )
+            replayed, replay_created = create_run(
+                db,
+                session=first,
+                content="第一条消息",
+                idempotency_key=idempotency_key,
+                timeout_seconds=300,
+            )
+            assert created is True
+            assert replay_created is False
+            assert replayed.id == first_run.id
+            with pytest.raises(ApiError) as caught:
+                create_run(
+                    db,
+                    session=second,
+                    content="不应并行执行",
+                    idempotency_key=uuid4().hex,
+                    timeout_seconds=300,
+                )
+            assert caught.value.code == "AGENT_RUN_IN_PROGRESS"
+
+
+def test_stale_run_is_failed_before_starting_a_replacement() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-stale-run@example.test")
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+
+        with app.state.session_factory() as db:
+            session = db.scalar(
+                select(AgentSession).where(AgentSession.public_id == session_id)
+            )
+            assert session is not None
+            stale = AgentRun(
+                public_id=str(uuid4()),
+                session_id=session.id,
+                idempotency_key=uuid4().hex,
+                status="running",
+                started_at=utc_now() - timedelta(seconds=301),
+            )
+            db.add(stale)
+            db.commit()
+            replacement, created = create_run(
+                db,
+                session=session,
+                content="重新开始",
+                idempotency_key=uuid4().hex,
+                timeout_seconds=300,
+            )
+            db.refresh(stale)
+            assert created is True
+            assert replacement.status == "running"
+            assert stale.status == "failed"
+            assert stale.error_code == "AGENT_TIMEOUT"
+
+
+def test_deleting_resume_explicitly_cleans_agent_rows_without_foreign_keys() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-delete@example.test")
+        resume = create_resume(client, app)
+        session_id = client.post(
+            "/api/agent/sessions", json={"resume_id": resume["id"]}
+        ).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        proposal = client.post(
+            f"/internal/agent/runs/{run_id}/proposals",
+            headers=internal_headers(),
+            json={
+                "call_key": "delete-cleanup-proposal",
+                "data": resume["data"],
+                "style": resume["style"],
+                "summary": "删除简历时一并清理",
+            },
+        )
+        assert proposal.status_code == 201
+        with app.state.session_factory() as db:
+            run = db.scalar(select(AgentRun).where(AgentRun.public_id == run_id))
+            assert run is not None
+            db.add(
+                AgentToolCall(
+                    run_id=run.id,
+                    call_key="delete-cleanup-tool",
+                    tool_name="get_resume_context",
+                    status="succeeded",
+                )
+            )
+            db.add(
+                AgentMessage(
+                    session_id=run.session_id,
+                    run_id=run.id,
+                    sequence_no=1,
+                    role="user",
+                    content="删除清理测试消息",
+                )
+            )
+            db.commit()
+
+        assert client.delete(f"/api/resumes/{resume['id']}").json() == {
+            "deleted": True
+        }
+        with app.state.session_factory() as db:
+            assert db.scalar(select(AgentSession.id)) is None
+            assert db.scalar(select(AgentRun.id)) is None
+            assert db.scalar(select(AgentMessage.id)) is None
+            assert db.scalar(select(AgentToolCall.id)) is None
+            assert db.scalar(select(ResumeChangeProposal.id)) is None
+
+
+def test_cancel_does_not_overwrite_a_run_that_completed_while_waiting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-cancel-race@example.test")
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+
+        async def complete_during_cancel(_app, public_id: str) -> None:
+            with app.state.session_factory() as other_db:
+                other_db.execute(
+                    update(AgentRun)
+                    .where(AgentRun.public_id == public_id)
+                    .values(status="succeeded", completed_at=utc_now())
+                )
+                other_db.commit()
+
+        monkeypatch.setattr(
+            "linkcv.modules.agent.routes.cancel_pi_run", complete_during_cancel
+        )
+
+        response = client.post(f"/api/agent/runs/{run_id}/cancel")
+
+        assert response.status_code == 200
+        assert response.json() == {"run_id": run_id, "status": "succeeded"}
+        with app.state.session_factory() as db:
+            run = db.scalar(select(AgentRun).where(AgentRun.public_id == run_id))
+            assert run is not None
+            assert run.status == "succeeded"
+
+
+def test_pi_stream_emits_failure_when_upstream_ends_without_terminal_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = build_app()
+    app.state.settings.agent_enabled = True
+    app.state.settings.pi_service_token = SecretStr(
+        "pi-service-token-for-tests-00000000000001"
+    )
+    with TestClient(app) as client:
+        register(client, "agent-incomplete-stream@example.test")
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+
+        class FakeStreamResponse:
+            status_code = 200
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args):
+                return None
+
+            async def aiter_lines(self):
+                for line in (
+                    "event: assistant.delta",
+                    'data: {"delta": "半条回复"}',
+                    "",
+                ):
+                    yield line
+
+        class FakeHttpClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args):
+                return None
+
+            def stream(self, *_args, **_kwargs):
+                return FakeStreamResponse()
+
+        monkeypatch.setattr(
+            "linkcv.modules.agent.pi_client.httpx.AsyncClient",
+            lambda **_kwargs: FakeHttpClient(),
+        )
+
+        async def collect_events() -> list[bytes]:
+            return [item async for item in stream_pi_run(app, run_id, "请优化简历")]
+
+        events = b"".join(asyncio.run(collect_events())).decode()
+
+        assert "event: assistant.delta" in events
+        assert "event: run.failed" in events
+        assert "AGENT_UPSTREAM_FAILED" in events
+        with app.state.session_factory() as db:
+            run = db.scalar(select(AgentRun).where(AgentRun.public_id == run_id))
+            assert run is not None
+            assert run.status == "failed"
+            assert run.error_code == "AGENT_UPSTREAM_FAILED"
+
+
+def test_tool_event_terminal_state_is_idempotent_and_cannot_regress() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-tool-terminal@example.test")
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        path = f"/internal/agent/runs/{run_id}/tool-events"
+        running = {
+            "call_key": "context-call-1",
+            "tool_name": "get_resume_context",
+            "status": "running",
+        }
+        succeeded = {**running, "status": "succeeded", "duration_ms": 17}
+
+        assert client.post(path, headers=internal_headers(), json=running).status_code == 204
+        assert client.post(path, headers=internal_headers(), json=succeeded).status_code == 204
+        repeated = client.post(path, headers=internal_headers(), json=succeeded)
+        regressed = client.post(path, headers=internal_headers(), json=running)
+
+        assert repeated.status_code == 204
+        assert regressed.status_code == 409
+        assert regressed.json() == {"error": "AGENT_TOOL_CALL_TERMINAL"}
+        with app.state.session_factory() as db:
+            record = db.scalar(
+                select(AgentToolCall).where(AgentToolCall.call_key == "context-call-1")
+            )
+            assert record is not None
+            assert record.status == "succeeded"
+            assert record.duration_ms == 17
+
+
+def test_agent_readiness_checks_model_config_and_full_service_chain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = build_app()
+    app.state.llm_service.agent_runtime_model = AsyncMock(
+        return_value=SimpleNamespace(adapter="openai")
+    )
+    check_chain = AsyncMock()
+    monkeypatch.setattr(
+        "linkcv.modules.agent.routes.check_pi_readiness", check_chain
+    )
+    with TestClient(app) as client:
+        internal = client.get(
+            "/internal/agent/readiness", headers=internal_headers()
+        )
+        public = client.get("/api/agent/readiness")
+
+    assert internal.status_code == 200
+    assert internal.json() == {"ready": True}
+    assert public.status_code == 200
+    assert public.json() == {"ready": True}
+    check_chain.assert_awaited_once_with(app)

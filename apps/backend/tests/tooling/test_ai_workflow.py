@@ -296,7 +296,7 @@ def test_runtime_contracts_match_current_repository() -> None:
     result = run_script(RUNTIME_CONTRACTS)
 
     assert result.returncode == 0, result.stderr
-    assert "19 组运行时契约" in result.stdout
+    assert "21 组运行时契约" in result.stdout
 
 
 def test_runtime_contracts_report_drift(tmp_path: Path) -> None:

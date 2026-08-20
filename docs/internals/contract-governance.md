@@ -9,6 +9,7 @@
 | 开发期路由归属 | `apps/web/vite.config.mjs` | FastAPI、根级启动命令 | `docs/internals/architecture.md`、`docs/ops/development.md` |
 | 鉴权与资源归属 | `modules/identity/`、`core/security.py` | Web API client、MySQL | `docs/api/http-contracts.md`、`docs/internals/backend.md` |
 | 简历持久化 | `modules/resumes/models.py`、`migrations/` | Web store 与 API client | `docs/internals/backend.md`、`docs/api/http-contracts.md` |
+| 简历智能助手 | `modules/agent/`、`apps/pi-service/`、`third_party/pi/` | Web Agent 面板、管理员 Chat 模型、Compose/Jenkins | `docs/api/http-contracts.md`、`docs/internals/third-party-pi.md`、`docs/ops/deployment.md` |
 | 图片对象存储 | `core/storage.py`、`modules/resumes/asset_routes.py` | Web 上传与预览、MinIO | `docs/internals/backend.md`、`docs/api/http-contracts.md` |
 | 简历文件导入 | `modules/resumes/import_routes.py`、`overview_routes.py`、`core/mq/`、`workers/`、`resume_import_idempotency.py` | Web API client、MySQL、Redis、RabbitMQ/Kafka、统一 LLM、MinIO | `docs/api/http-contracts.md`、`docs/internals/backend.md`、`docs/ops/development.md` |
 | 系统日志与业务审计 | `modules/observability/`、Web API client、Promtail Compose | 管理端日志中心、共享 Loki | `docs/api/http-contracts.md`、`docs/internals/backend.md`、`docs/internals/web.md`、`docs/ops/deployment.md` |

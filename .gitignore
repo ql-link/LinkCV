@@ -3,6 +3,8 @@ dist/
 .output/
 .wxt/
 data/
+!third_party/pi/packages/ai/src/providers/data/
+!third_party/pi/packages/ai/src/providers/data/*.json
 .idea/
 .vscode/
 .env

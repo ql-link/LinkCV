@@ -1,0 +1,28 @@
+# syntax=docker/dockerfile:1
+
+FROM node:22-bookworm-slim AS build
+
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+WORKDIR /app/third_party/pi
+COPY third_party/pi/package.json third_party/pi/package-lock.json ./
+COPY third_party/pi/packages ./packages
+COPY third_party/pi/scripts ./scripts
+COPY third_party/pi/tsconfig.json third_party/pi/tsconfig.base.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --ignore-scripts --no-audit --registry="${NPM_REGISTRY}" && \
+    npm run build:offline
+
+FROM node:22-bookworm-slim AS runtime
+
+ENV NODE_ENV=production \
+    PI_SERVICE_HOST=0.0.0.0 \
+    PI_SERVICE_PORT=8010 \
+    PI_OFFLINE=1 \
+    TZ=Asia/Shanghai
+
+WORKDIR /app
+COPY --from=build /app/third_party/pi ./third_party/pi
+COPY apps/pi-service ./apps/pi-service
+USER node
+EXPOSE 8010
+CMD ["node", "apps/pi-service/src/server.js"]

@@ -88,6 +88,26 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 
 版本号单调递增且不复用；每份简历默认最多保存 10 个版本。创建或恢复所需的版本空间不足时返回 `409 RESUME_VERSION_LIMIT_REACHED`，不会自动删除任何历史版本；用户删除旧版本后才能继续。最新版本作为当前恢复基准不可删除，尝试删除返回 `409 LATEST_RESUME_VERSION_REQUIRED`。版本不存在返回 `404 RESUME_VERSION_NOT_FOUND`，并发兜底失败返回 `409 VERSION_CONFLICT`。
 
+## 简历智能助手
+
+除部署探针 `GET /api/agent/readiness` 外，智能助手接口全部要求登录，且会话、运行与提案都按当前用户重新校验归属；不存在或越权资源返回对应 `AGENT_*_NOT_FOUND`，不暴露其他用户数据。消息发送使用 POST SSE，不使用浏览器原生 `EventSource`。
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `GET` | `/api/agent/readiness` | `200 {ready: true}`；只读校验完整 Agent 服务链，不返回模型或凭据 |
+| `GET` | `/api/agent/sessions?resume_id=:id` | `{sessions}`，最近更新优先 |
+| `POST` | `/api/agent/sessions` | `201 {session}`；请求为 `{resume_id, title?}` |
+| `GET` | `/api/agent/sessions/:sessionId` | `{session}`，包含最近 100 条消息 |
+| `POST` | `/api/agent/sessions/:sessionId/messages` | SSE；请求为 `{content, idempotency_key}` |
+| `POST` | `/api/agent/runs/:runId/cancel` | `{run_id, status}`；重复取消幂等 |
+| `GET` | `/api/agent/proposals?resume_id=:id` | `{proposals}`，只返回当前待确认提案 |
+| `POST` | `/api/agent/proposals/:proposalId/confirm` | `{resume}`；确认后应用完整快照并创建 `agent` 版本 |
+| `POST` | `/api/agent/proposals/:proposalId/reject` | `{proposal}`；放弃待确认提案 |
+
+SSE 事件包括 `run.started`、`assistant.delta`、`tool.started`、`tool.completed`、`proposal.created`、`run.completed`、`run.cancelled` 和 `run.failed`。每个成功建立的 SSE 响应必须以后三种 `run.*` 终态之一结束；Pi 在 HTTP 200 后提前 EOF 时 FastAPI 补发 `run.failed/AGENT_UPSTREAM_FAILED`，浏览器也会把无终态 EOF 识别为 `AGENT_STREAM_INCOMPLETE`。同一用户只允许一个 running 运行；相同 `idempotency_key` 重放现有运行状态。取消与流式完成并发时采用第一个成功写入的终态，后到操作不得覆盖。Agent 只能读取当前会话绑定的简历，并且不能直接写简历：修改必须先生成完整 data/style 提案。确认时以 `base_lock_version` 执行乐观锁；简历已改变时返回 `409 RESUME_EDIT_CONFLICT` 并把提案标记为 conflicted，过期提案返回 `410 AGENT_PROPOSAL_EXPIRED`。服务或模型不可用返回安全化的 `AGENT_UNAVAILABLE`、`AGENT_MODEL_UNAVAILABLE` 或 `AGENT_MODEL_UNSUPPORTED`，供应商原始错误和 API Key 不进入浏览器响应。
+
+`/internal/agent/**` 仅供 Pi 服务使用，以独立 Bearer token 鉴权且不出现在 OpenAPI。`GET /internal/agent/readiness` 验证当前 Chat binding、凭据解密和 Pi provider 映射，不发起供应商模型调用；工具事件以 `(run_id, call_key)` 幂等，同一工具调用进入 succeeded、failed 或 cancelled 后不可回退或改写为另一终态。内部运行配置复用管理员设置的当前 Chat binding；模型配置页面仍是 `/admin/llm/models`，不新增 Pi 专用配置 UI。
+
 ## 简历分享链接
 
 每份简历一个分享链接，分享状态直接落在 `resumes` 表的 `share_*` 字段，不单独建表。分享内容不落快照：公开读取时实时取 `resume_versions` 中 `version_no` 最大的正式版本，所有者继续编辑的是快照草稿，不会影响已分享内容之外的版本语义。管理接口全部要求登录且只能操作本人简历（`404 RESUME_NOT_FOUND`）；公开接口 `/api/share/{token}` 允许未登录访问。

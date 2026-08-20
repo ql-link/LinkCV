@@ -1,6 +1,38 @@
 version: 1
 
 contracts:
+  - id: development-local-agent-startup
+    description: Development 本地脚本向四个进程加载同一配置并使用回环服务地址
+    assertions:
+      - path: package.json
+        pattern: '"dev:development": "bash scripts/dev/start-development\.sh"'
+        message: 根级 Development 启动入口必须使用统一脚本
+      - path: scripts/dev/start-development.sh
+        pattern: 'BACKEND_PORT="\$\{backend_port\}"[\s\S]*PI_SERVICE_BASE_URL="http://127\.0\.0\.1:\$\{pi_port\}"[\s\S]*LINKCV_BASE_URL="http://127\.0\.0\.1:\$\{backend_port\}"[\s\S]*--env-file=\$\{base_env\}'
+        message: 启动脚本必须加载 Development 配置并统一本地跨服务地址
+      - path: scripts/dev/run-development.mjs
+        pattern: 'RABBITMQ_URL[\s\S]*LINKCV_LOCAL_RABBITMQ_HOST[\s\S]*MYSQL_HOST[\s\S]*LINKCV_LOCAL_RABBITMQ_PORT'
+        message: 本机 Worker 必须把 Development 容器 DNS 转换为可达的 AMQP 地址
+      - path: scripts/dev/run-development.mjs
+        pattern: 'npm:dev:web[\s\S]*npm:dev:backend[\s\S]*npm:dev:worker[\s\S]*npm:dev:pi'
+        message: 启动器必须同时启动 Web、FastAPI、Worker 与 Pi
+
+  - id: agent-readiness-deployment-contract
+    description: Dev 与 Production 通过 FastAPI 检查完整 Agent 服务链后才完成部署
+    assertions:
+      - path: apps/backend/src/linkcv/modules/agent/routes.py
+        pattern: '@router\.get\("/readiness", response_model=AgentReadinessResponse\)'
+        message: FastAPI 必须暴露不泄露配置的 Agent readiness 入口
+      - path: apps/pi-service/src/server.js
+        pattern: 'GET" && url\.pathname === "/internal/agent/readiness"'
+        message: Pi 必须提供受服务令牌保护的内部 readiness
+      - path: Jenkinsfile
+        pattern: '/api/agent/readiness'
+        message: Production 发布必须检查完整 Agent 服务链
+      - path: deploy/scripts/build-development-on-primary.sh
+        pattern: '/api/agent/readiness'
+        message: Dev 发布必须检查完整 Agent 服务链
+
   - id: observability-loki-promtail-contract
     description: LinkCV 三套环境固定七天 JSONL 契约，Dev/Production 使用独立 Promtail 和共享 Loki
     assertions:

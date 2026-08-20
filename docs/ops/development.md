@@ -16,9 +16,11 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装 Web、浏览器插件和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI 和文档解析 Worker。当前 Alembic head `0022`；`0002`–`0005` 建立并演进简历、版本和对象清理，`0006` 新增 LLM 模型配置和调用日志表，`0007` 新增用户私有 JD 单表，`0008` 增加 Chat 候选模型、唯一当前绑定与调用快照，`0009` 曾新增管理员操作审计日志表，`0010` 在对象删除改为同步后移除清理任务表，`0011` 移除仅写不读的管理员操作审计日志表，`0012` 删除已停用的旧版简历内容与样式备份列，`0013` 为简历分享新增字段，`0016` 新增导入任务表，`0017` 在旧同步导入数据清理后移除正式简历上的旧导入证据列，`0018` 新增用户知识库资料表，`0019` 新增 `users.wechat_openid` 唯一绑定与绑定时间，`0020` 将 `email`、`password_hash` 放宽为可空以支持微信扫码登录建号，`0021` 将简历导入状态迁移到通用 `document_parse_tasks` 并把来源指针改由 `resumes.parse_task_id` 持有，`0022` 增加资料解析任务、共享失败分类和资料反向指针，并清理旧资料行。
+新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker 和独立 Pi 服务。当前 Alembic head `0023`；`0002`–`0022` 的既有演进保持不变，`0023` 新增 Agent 会话、运行、消息、工具审计与简历修改提案，并允许历史版本使用 `reason=agent`。
 
 后端默认读取仓库根目录 `.env`。设置 `LINKCV_ENV_FILE=.env.development` 可选择共享 Dev 基础配置；如果同目录存在 `.env.development.local`，其密码和密钥会覆盖基础文件。Production 同理使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，配置路径不受当前工作目录影响。
+
+`npm run dev:development` 通过 `scripts/dev/start-development.sh` 同时启动 Web、FastAPI、解析 Worker 与 Pi。脚本使用 Node `--env-file` 把 `.env.development` 和可选 `.env.development.local` 同步交给 Node 与 Python 进程，将 Web 到 FastAPI、FastAPI 到 Pi 及 Pi 回调 FastAPI 改为本机回环地址，并把仅在 Docker 网络内可解析的 RabbitMQ 主机名在进程内替换为 Development 主机地址；原始 URL 的账号、密码和 vhost 不会被输出或改写到文件。默认使用 FastAPI 18000、Pi 8010 和 AMQP 5672，可用 `LINKCV_LOCAL_BACKEND_PORT`、`LINKCV_LOCAL_PI_PORT`、`LINKCV_LOCAL_RABBITMQ_HOST`、`LINKCV_LOCAL_RABBITMQ_PORT` 覆盖。两枚仅用于本地进程间鉴权的 Agent token 首次启动时自动生成到被忽略且权限为 600 的 `.runtime/development-agent.env`；脚本不会生成 LLM 密钥环，共享 Development 的 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 仍必须从受控密钥来源写入 `.env.development.local`。
 
 LLM 模型 API key 通过管理员 API 加密进入 MySQL，Fernet 根密钥环必须留在私密 env。格式为 `LLM_CREDENTIAL_ENCRYPTION_KEYS=<keyId>:<fernetKey>`；轮换时把新 key 放在首项，旧 key 以逗号分隔继续保留。可用以下命令生成一个虚构开发 key，输出只应写入被 Git 忽略的 `.env.local` 或 `.env.development.local`：
 
@@ -36,7 +38,7 @@ local/test 未配置密钥环时，原有非 LLM 接口仍可启动，但保存�
 LINKCV_ENV_FILE=.env.development npm run db:init
 ```
 
-命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0022`。图片、导入源文件和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。
+命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0023`。图片、导入源文件和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。
 
 `PLUGIN_RELEASE_ORIGIN` 是当前环境允许正式插件访问的 LinkCV 根 Origin。默认本地值为 `http://127.0.0.1:5173`；共享 Development 和 Production 必须在各自 `.local` 覆盖中写入用户实际访问的 Origin，Production 只接受 HTTPS。该值必须与构建安装包时传给 `build_extension_release.py` 的对应 Origin 一致，否则管理员上传会被拒绝。
 
@@ -48,6 +50,8 @@ LINKCV_ENV_FILE=.env.development npm run db:init
 | ------------- | -------: | --------------------------------------------------- |
 | Vite Web      |     5173 | Vite 默认值                                         |
 | FastAPI       |     8000 | `BACKEND_HOST`、`BACKEND_PORT`                      |
+| FastAPI（`dev:development`） | 18000 | `LINKCV_LOCAL_BACKEND_PORT`             |
+| Pi Agent      |     8010 | `PI_SERVICE_HOST`、`PI_SERVICE_PORT`                 |
 | MySQL         |     3306 | `MYSQL_HOST`、`MYSQL_PORT`                          |
 | Redis         |     6379 | `REDIS_HOST`、`REDIS_PORT`、`REDIS_DB`、`REDIS_URL` |
 | MinIO API     |     9000 | `MINIO_API_PORT`、`MINIO_ENDPOINT`                  |
@@ -55,7 +59,7 @@ LINKCV_ENV_FILE=.env.development npm run db:init
 | RabbitMQ AMQP |     5672 | `RABBITMQ_PORT`、`RABBITMQ_URL`                     |
 | RabbitMQ UI   |    15672 | `RABBITMQ_MANAGEMENT_PORT`                          |
 
-`BACKEND_PROXY_TARGET` 可以覆盖 Vite 使用的完整 FastAPI 地址。数据库可以用完整 `DATABASE_URL` 覆盖分项 MySQL 配置，Redis 可以用 `REDIS_URL` 覆盖分项配置。Production 必须通过私密覆盖提供足够随机的 `JWT_SECRET`、`LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY`、MySQL 和 MinIO 凭据，否则后端拒绝启动。鉴权会话和简历导入幂等共用 `REDIS_*` 指向的隔离数据库。
+`BACKEND_PROXY_TARGET` 可以覆盖 Vite 使用的完整 FastAPI 地址。数据库可以用完整 `DATABASE_URL` 覆盖分项 MySQL 配置，Redis 可以用 `REDIS_URL` 覆盖分项配置。`AGENT_ENABLED` 控制用户 Agent 入口；`PI_SERVICE_BASE_URL` 是 FastAPI 调 Pi 的内网地址，`LINKCV_BASE_URL` 是 Pi 回调 FastAPI 的内网地址。`PI_SERVICE_TOKEN` 与 `LINKCV_INTERNAL_AGENT_TOKEN` 必须使用两枚不同的高熵值，只写入被忽略的本地或环境私密覆盖。`AGENT_RUN_TIMEOUT_SECONDS`、`AGENT_TOOL_TIMEOUT_SECONDS` 和 `AGENT_PROPOSAL_TTL_DAYS` 分别限制运行、工具调用和待确认提案寿命。Production 开启 Agent 时缺 token 会拒绝启动。鉴权会话和简历导入幂等共用 `REDIS_*` 指向的隔离数据库。
 
 Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都维护相同别名。新增 shadcn 组件时从 `apps/web` 运行 CLI，使 `components.json` 能把源码写入 `src/components/ui/`。
 
@@ -131,7 +135,11 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run db:migrate`                  | 将数据库升级到 Alembic 最新版本                                      |
 | `npm run db:init`                     | 仅允许创建 `linkcv` 数据库并升级到 Alembic head                      |
 | `npm run db:revision -- -m <message>` | 创建只调用 SQL 的 revision，以及同 ID 的 `.up.sql`、`.down.sql` 文件 |
+| `npm run dev:development`             | 使用共享 Development 中间件，一键启动 Web、FastAPI、Worker 与 Pi    |
 | `npm run test:web`                    | 前端 Vitest 单元和组件测试                                           |
+| `npm run dev:pi`                      | 单独启动无头 Pi Agent 服务                                           |
+| `npm run test:pi`                     | 运行 Pi 服务单元测试                                                  |
+| `npm run check:pi`                    | 校验静态模型目录、离线构建 Pi 并测试服务                              |
 | `npm run dev:extension`               | 启动 WXT 插件开发模式                                                |
 | `npm run test:extension`              | 插件 DOM 提取与 API 客户端测试                                       |
 | `npm run build:extension`             | 构建可侧载的 Chrome MV3 目录                                         |
@@ -145,4 +153,5 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 
 - 前端测试使用 Vitest、React Testing Library 和 jsdom，通过 Mock 隔离 API。
 - 后端单元测试不访问外部服务；集成测试使用内存 SQLite 和假 MinIO。
+- Pi 服务测试不访问真实模型或 FastAPI；真实 Agent 联调需要管理员配置当前 Chat 模型，并启动 FastAPI 与 Pi 两个进程。
 - 跨浏览器插件、BOSS 页面、Web、FastAPI、真实 MySQL 和 Redis 的完整导入流程由浏览器人工验证。侧载目录和步骤见 [`apps/extension/README.md`](../../apps/extension/README.md)。

@@ -115,11 +115,51 @@ export type ResumeRecord = ResumeSummary & {
 export type ResumeVersion = {
   id: string;
   version_no: number;
-  reason: "initial" | "manual" | "before_restore" | "restore";
+  reason: "initial" | "manual" | "before_restore" | "restore" | "agent";
   created_at: string;
   data?: ResumeDocumentV1;
   style?: ResumeStyleV1;
 };
+
+export type AgentMessage = {
+  sequence_no: number;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+};
+
+export type AgentSession = {
+  id: string;
+  resume_id: string | null;
+  title: string;
+  status: "active" | "archived";
+  last_message_at: string | null;
+  created_at: string;
+  updated_at: string;
+  messages: AgentMessage[];
+};
+
+export type AgentProposal = {
+  id: string;
+  run_id: string;
+  resume_id: string;
+  base_lock_version: number;
+  data: ResumeDocumentV1;
+  style: ResumeStyleV1;
+  summary: string;
+  status: "pending" | "applied" | "rejected" | "expired" | "conflicted";
+  applied_lock_version: number | null;
+  expires_at: string;
+  created_at: string;
+};
+
+export type AgentStreamEvent =
+  | { type: "run.started"; runId: string }
+  | { type: "assistant.delta"; runId: string; delta: string }
+  | { type: "tool.started" | "tool.completed"; runId: string; tool: string; callKey: string }
+  | { type: "proposal.created"; runId: string; proposal: AgentProposal }
+  | { type: "run.completed" | "run.cancelled"; runId: string }
+  | { type: "run.failed"; runId: string; error: string };
 
 export type ResumeShareState = {
   share_token: string;
@@ -640,6 +680,71 @@ async function requestBlob(path: string, retryAuth = true): Promise<Blob> {
   return response.blob();
 }
 
+async function streamAgentMessage(
+  sessionId: string,
+  payload: { content: string; idempotency_key: string },
+  signal: AbortSignal,
+  onEvent: (event: AgentStreamEvent) => void,
+  retryAuth = true,
+): Promise<void> {
+  const path = `/api/agent/sessions/${encodeURIComponent(sessionId)}/messages`;
+  const requestId = createRequestId();
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
+    body: JSON.stringify(payload),
+    credentials: "include",
+    signal,
+  });
+  if (response.status === 401 && retryAuth && await refreshSession()) {
+    return streamAgentMessage(sessionId, payload, signal, onEvent, false);
+  }
+  if (!response.ok || !response.body) {
+    const data = await response.json().catch(() => ({}));
+    const error = new ApiRequestError(
+      response.status,
+      typeof data.error === "string" ? data.error : `HTTP_${response.status}`,
+      data && typeof data === "object" ? data as Record<string, unknown> : null,
+      response.headers.get("X-Request-ID") ?? requestId,
+    );
+    if (response.status >= 500) reportApi5xx(error);
+    throw error;
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let terminalReceived = false;
+  const terminalEvents = new Set(["run.completed", "run.failed", "run.cancelled"]);
+  const allowedEvents = new Set([
+    "run.started", "assistant.delta", "tool.started", "tool.completed",
+    "proposal.created", ...terminalEvents,
+  ]);
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() ?? "";
+    for (const frame of frames) {
+      const eventName = frame.split("\n").find((line) => line.startsWith("event: "))?.slice(7);
+      const rawData = frame.split("\n").find((line) => line.startsWith("data: "))?.slice(6);
+      if (!eventName || !rawData) continue;
+      try {
+        const data = JSON.parse(rawData) as Record<string, unknown>;
+        if (allowedEvents.has(eventName)) {
+          if (terminalEvents.has(eventName)) terminalReceived = true;
+          onEvent({ type: eventName, ...data } as AgentStreamEvent);
+        }
+      } catch {
+        // Ignore an isolated malformed or future event without losing the stream.
+      }
+    }
+    if (done) break;
+  }
+  if (!terminalReceived) {
+    throw new ApiRequestError(502, "AGENT_STREAM_INCOMPLETE", null, requestId);
+  }
+}
+
 async function getCurrentUser(): Promise<{ user: User | null }> {
   const current = await request<{ user: User | null }>("/api/auth/me");
   if (current.user || !(await refreshSession())) {
@@ -725,6 +830,39 @@ export const api = {
     }),
   getResume: (id: string) =>
     request<{ resume: ResumeRecord }>(`/api/resumes/${id}`),
+  listAgentSessions: (resumeId: string) =>
+    request<{ sessions: AgentSession[] }>(
+      `/api/agent/sessions?resume_id=${encodeURIComponent(resumeId)}`,
+    ),
+  listAgentProposals: (resumeId: string) =>
+    request<{ proposals: AgentProposal[] }>(
+      `/api/agent/proposals?resume_id=${encodeURIComponent(resumeId)}`,
+    ),
+  getAgentSession: (sessionId: string) =>
+    request<{ session: AgentSession }>(
+      `/api/agent/sessions/${encodeURIComponent(sessionId)}`,
+    ),
+  createAgentSession: (resumeId: string) =>
+    request<{ session: AgentSession }>("/api/agent/sessions", {
+      method: "POST",
+      body: { resume_id: resumeId },
+    }),
+  streamAgentMessage,
+  cancelAgentRun: (runId: string) =>
+    request<{ run_id: string; status: string }>(
+      `/api/agent/runs/${encodeURIComponent(runId)}/cancel`,
+      { method: "POST" },
+    ),
+  confirmAgentProposal: (proposalId: string) =>
+    request<{ resume: ResumeRecord }>(
+      `/api/agent/proposals/${encodeURIComponent(proposalId)}/confirm`,
+      { method: "POST" },
+    ),
+  rejectAgentProposal: (proposalId: string) =>
+    request<{ proposal: AgentProposal }>(
+      `/api/agent/proposals/${encodeURIComponent(proposalId)}/reject`,
+      { method: "POST" },
+    ),
   updateResume: (
     id: string,
     payload: {

@@ -12,6 +12,7 @@ from starlette.types import Scope
 from sqlalchemy.orm import Session, sessionmaker
 
 from linkcv.api.router import api_router
+from linkcv.modules.agent.internal_routes import router as internal_agent_router
 from linkcv.core.config import Settings, load_settings
 from linkcv.core.database import Base, build_engine, build_session_factory
 from linkcv.core.errors import ApiError, install_error_handlers
@@ -233,6 +234,7 @@ def create_app(
     install_error_handlers(app)
     app.add_middleware(ObservabilityMiddleware, emitter=runtime_emitter)
     app.include_router(api_router, prefix="/api")
+    app.include_router(internal_agent_router)
 
     @app.api_route(
         "/api/{path:path}",

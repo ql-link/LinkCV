@@ -6,7 +6,7 @@
 - `apps/web/src/App.tsx`：页面状态与主要功能组合。
 - `apps/web/src/features/`：鉴权、首页、编辑器、预览、临时 JD 管理和管理端功能。
 - `apps/web/src/store/resumeStore.ts`：简历编辑状态。
-- `apps/web/src/api/client.ts`：鉴权、模板、简历与异步导入、JD、资源、日志上报和管理员查询 API 客户端。
+- `apps/web/src/api/client.ts`：鉴权、模板、简历与异步导入、智能助手 SSE、JD、资源、日志上报和管理员查询 API 客户端。
 - `apps/web/src/api/resumeContract.ts`：语义简历 TypeScript 契约，以及领域 JSON、Markdown 和现有 Tiptap 编辑器之间的过渡适配。
 - `apps/web/vite.config.mjs`：开发服务器、FastAPI 代理和本地图片预览插件。
 
@@ -34,6 +34,8 @@ React 根入口用 Error Boundary 和 `error` / `unhandledrejection` 监听器�
 资料库 `/datasets` 展示上传和解析状态，并在存在活动任务时轮询列表。解析成功的资料名称提供“查看结果”入口，按资料 ID 请求 `/api/datasets/:id/content` 后在带焦点约束的阅读弹窗中渲染 Markdown；原始 HTML 不执行，图片只显示文字占位，不由浏览器加载转换内容中的外部资源。未完成或失败资料不显示查看入口，读取失败在弹窗内保留重试操作。
 
 版本抽屉直接读取后端不可变版本列表。自动保存请求串行执行，并在每次成功后接续服务端返回的 `lock_version`；用户点击“保存版本”时先保存草稿，再调用版本创建接口。恢复历史版本前会先保存未提交草稿，恢复期间临时禁止编辑，成功后使用后端快照刷新。`smartOnePage` 作为 `ResumeStyleV1.smart_one_page` 随当前快照和历史版本持久化。编辑器图片上传使用当前简历的私有资源接口。
+
+工作台页头的“智能助手”打开独立右侧抽屉；移动端沿用工作台侧栏的覆盖布局。`AgentPanel` 通过 POST SSE 展示文本增量、工具状态和待确认提案，关闭或停止时取消当前请求；正常 EOF 前未收到完成、失败或取消终态会显示连接中断，而不把半条响应当作成功。提案卡显示摘要、基准版本和发生变化的简历区域，用户必须先保存当前草稿再确认应用；保存失败、提案冲突或 Agent 不可用都保留现有编辑内容。确认成功后重新读取简历和版本列表。浏览器只持有用户 Cookie，不读取 Pi 服务地址、服务 token 或模型 API Key。
 
 JD 临时管理界面使用可恢复路由 `/jobs`、`/jobs/new`、`/jobs/:jobId` 和 `/jobs/:jobId/edit`，与简历页面共享现有 Cookie 会话和工作区侧边栏；在简历、JD 列表、JD 详情及编辑页之间切换时只替换右侧内容区。列表支持活动、已归档、全部范围，关键词搜索和游标加载更多；详情页提供编辑、归档和恢复，只有归档记录在列表及详情页展示站内确认后的永久删除入口。新建页允许手工填写最终结构化字段和可选来源链接。编辑页把来源身份完整显示为只读，不向更新接口发送来源字段。创建遇到来源重复时，页面根据服务端 `allowed_actions` 显示取消、恢复原内容或更新原记录；动作回传记录 ID 和 `lock_version`。浏览器采集插件是独立的 `apps/extension` 应用，通过相同 Cookie 会话调用后端导入接口；Web 不承载页面抓取或插件 API Key 管理。
 

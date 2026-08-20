@@ -17,6 +17,7 @@ pipeline {
 
   environment {
     IMAGE = 'linkcv'
+    PI_IMAGE = 'linkcv-pi'
     DEPLOY_DIR = '/opt/tolink/LinkCV'
     LINKCV_ENV_FILE = '/opt/tolink/LinkCV/.env.production'
     LINKCV_SECRET_ENV_FILE = '/opt/tolink/LinkCV/.env.production.local'
@@ -56,6 +57,11 @@ pipeline {
           DOCKER_BUILDKIT=1 docker build \
             --label org.opencontainers.image.revision="$(git rev-parse HEAD)" \
             -t "${IMAGE}:${TAG}" \
+            .
+          DOCKER_BUILDKIT=1 docker build \
+            --label org.opencontainers.image.revision="$(git rev-parse HEAD)" \
+            -f deploy/Dockerfile.pi \
+            -t "${PI_IMAGE}:${TAG}" \
             .
         '''
       }
@@ -112,6 +118,7 @@ pipeline {
         sh '''
           set -eu
           TAG="${TAG}" \
+          PI_TAG="${TAG}" \
           LINKCV_ENV_FILE="${LINKCV_ENV_FILE}" \
           LINKCV_SECRET_ENV_FILE="${LINKCV_SECRET_ENV_FILE}" \
           LINKCV_DOCKER_NETWORK="${LINKCV_DOCKER_NETWORK}" \
@@ -123,11 +130,15 @@ pipeline {
           attempt=1
           while [ "${attempt}" -le 30 ]; do
             health_status="$(docker inspect --format='{{.State.Health.Status}}' linkcv 2>/dev/null || true)"
+            pi_health_status="$(docker inspect --format='{{.State.Health.Status}}' linkcv-pi 2>/dev/null || true)"
             promtail_status="$(docker inspect --format='{{.State.Status}}' linkcv-promtail 2>/dev/null || true)"
             if [ "${health_status}" = 'healthy' ] && \
+              [ "${pi_health_status}" = 'healthy' ] && \
               [ "${promtail_status}" = 'running' ] && \
-              curl -fsS "http://127.0.0.1:${LINKCV_HTTP_PORT}/api/health" >/dev/null; then
+              curl -fsS "http://127.0.0.1:${LINKCV_HTTP_PORT}/api/health" >/dev/null && \
+              curl -fsS "http://127.0.0.1:${LINKCV_HTTP_PORT}/api/agent/readiness" >/dev/null; then
               echo "Container health: ${health_status}"
+              echo "Pi container health: ${pi_health_status}"
               echo "Promtail status: ${promtail_status}"
               exit 0
             fi
@@ -137,7 +148,7 @@ pipeline {
 
           docker compose \
             -f "${DEPLOY_DIR}/deploy/docker-compose.production.yml" \
-            logs --tail=100 linkcv promtail
+            logs --tail=100 linkcv linkcv-pi promtail
           echo 'Production health check timed out.'
           exit 17
         '''
@@ -147,7 +158,7 @@ pipeline {
 
   post {
     always { sh 'docker image prune -f || true' }
-    success { echo "Production deployed: ${env.IMAGE}:${env.TAG}" }
+    success { echo "Production deployed: ${env.IMAGE}:${env.TAG} + ${env.PI_IMAGE}:${env.TAG}" }
     failure { echo 'Production build or deployment failed.' }
   }
 }

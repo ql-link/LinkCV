@@ -7,6 +7,7 @@ import {
   History,
   Home,
   LoaderCircle,
+  MessageSquareText,
   Save,
   SlidersHorizontal,
   Sparkles,
@@ -21,8 +22,9 @@ import { resumeEditorExtensions } from "./editorExtensions";
 import { WorkbenchToolbar } from "./WorkbenchToolbar";
 import { handleWheelZoom } from "./workbenchZoom";
 import { navigateTo } from "../../routing";
+import { AgentPanel } from "../agent/AgentPanel";
 
-type DrawerMode = "settings" | "history" | null;
+type DrawerMode = "settings" | "history" | "agent" | null;
 type ToastState = { label: string } | null;
 
 const EMPTY_IMPORT_WARNINGS: string[] = [];
@@ -39,6 +41,7 @@ const versionReasonLabels = {
   manual: "手动保存",
   before_restore: "恢复前备份",
   restore: "恢复结果",
+  agent: "智能助手修改",
 } as const;
 
 function versionTime(value: string) {
@@ -183,6 +186,8 @@ export function ResumeWorkbench() {
   const editorContent = useResumeStore((state) => state.editorContent);
   const setEditorContent = useResumeStore((state) => state.setEditorContent);
   const settings = useResumeStore((state) => state.settings);
+  const data = useResumeStore((state) => state.data);
+  const style = useResumeStore((state) => state.style);
   const updateSettings = useResumeStore((state) => state.updateSettings);
   const previewScale = useResumeStore((state) => state.previewScale);
   const setPreviewScale = useResumeStore((state) => state.setPreviewScale);
@@ -193,6 +198,7 @@ export function ResumeWorkbench() {
   const versionsLoading = useResumeStore((state) => state.versionsLoading);
   const versionOperationPending = useResumeStore((state) => state.versionOperationPending);
   const loadVersions = useResumeStore((state) => state.loadVersions);
+  const loadResume = useResumeStore((state) => state.loadResume);
   const createVersion = useResumeStore((state) => state.createVersion);
   const deleteStoredVersion = useResumeStore((state) => state.deleteVersion);
   const restoreStoredVersion = useResumeStore((state) => state.restoreVersion);
@@ -344,6 +350,22 @@ export function ResumeWorkbench() {
     navigateTo("/resumes");
   };
 
+  const prepareAgentProposalConfirmation = async () => {
+    await saveCurrentResume();
+    if (useResumeStore.getState().error) {
+      setToast({ label: "当前草稿保存失败，提案没有应用" });
+      return false;
+    }
+    return true;
+  };
+
+  const refreshAppliedAgentProposal = async () => {
+    if (!activeResumeId || !editor) return;
+    await loadResume(activeResumeId);
+    editor.commands.setContent(useResumeStore.getState().editorContent);
+    setToast({ label: "智能修改已应用，并保存为可恢复版本" });
+  };
+
   const responsiveFitScale = viewportWidth <= 720
     ? Math.min(1, Math.max(0.36, (viewportWidth - 32) / A4_WIDTH_IN_CSS_PIXELS))
     : 1;
@@ -370,6 +392,7 @@ export function ResumeWorkbench() {
             <div className="workbench-header-tool-group" role="group" aria-label="编辑面板">
               <IconButton aria-controls="workbench-side-panel" aria-expanded={drawerMode === "settings"} aria-pressed={drawerMode === "settings"} className={`workbench-icon-action${drawerMode === "settings" ? " is-active" : ""}`} label="页面设置" onClick={() => setDrawerMode((mode) => mode === "settings" ? null : "settings")}><SlidersHorizontal size={16} /></IconButton>
               <IconButton aria-controls="workbench-side-panel" aria-expanded={drawerMode === "history"} aria-pressed={drawerMode === "history"} className={`workbench-icon-action${drawerMode === "history" ? " is-active" : ""}`} label="版本记录" onClick={() => setDrawerMode((mode) => mode === "history" ? null : "history")}><History size={16} /></IconButton>
+              <IconButton aria-controls="workbench-side-panel" aria-expanded={drawerMode === "agent"} aria-pressed={drawerMode === "agent"} className={`workbench-icon-action${drawerMode === "agent" ? " is-active" : ""}`} label="智能助手" onClick={() => setDrawerMode((mode) => mode === "agent" ? null : "agent")}><MessageSquareText size={16} /></IconButton>
             </div>
             <div className="workbench-output-actions" role="group" aria-label="保存与导出">
               <Button aria-label="导出 PDF" className="workbench-action workbench-export-action" icon={<FileDown aria-hidden="true" />} size="sm" title="导出 PDF" variant="secondary" onClick={() => activeResumeId && void exportResumePdf(settings.smartOnePage, title, activeResumeId)}>导出 PDF</Button>
@@ -413,7 +436,7 @@ export function ResumeWorkbench() {
             {drawerMode && (
               <motion.aside
                 id="workbench-side-panel"
-                className="workbench-drawer"
+                className={`workbench-drawer${drawerMode === "agent" ? " is-agent" : ""}`}
                 role="region"
                 aria-labelledby="workbench-drawer-title"
                 initial={{ x: 360 }}
@@ -423,8 +446,8 @@ export function ResumeWorkbench() {
               >
                 <div className="workbench-drawer-head">
                   <div>
-                    <h2 id="workbench-drawer-title">{drawerMode === "settings" ? "页面设置" : "版本记录"}</h2>
-                    <p>{drawerMode === "settings" ? "只在需要时打开，关闭后不占用工作区。" : "每次手动保存都会留下一个可恢复版本。"}</p>
+                    <h2 id="workbench-drawer-title">{drawerMode === "settings" ? "页面设置" : drawerMode === "history" ? "版本记录" : "智能助手"}</h2>
+                    <p>{drawerMode === "settings" ? "只在需要时打开，关闭后不占用工作区。" : drawerMode === "history" ? "每次手动保存都会留下一个可恢复版本。" : "分析当前简历；任何修改都先生成提案。"}</p>
                   </div>
                   <button type="button" className="workbench-drawer-done" onClick={() => setDrawerMode(null)} aria-label="关闭面板">完成</button>
                 </div>
@@ -465,7 +488,7 @@ export function ResumeWorkbench() {
                       恢复默认设置
                     </button>
                   </div>
-                ) : (
+                ) : drawerMode === "history" ? (
                   <div className="workbench-versions">
                     <p className="workbench-version-summary">
                       <strong>{versions.length} 个版本</strong>
@@ -501,7 +524,16 @@ export function ResumeWorkbench() {
                     ))}
                     <p className="workbench-version-footnote">恢复版本前会先保存当前草稿。</p>
                   </div>
-                )}
+                ) : activeResumeId ? (
+                  <AgentPanel
+                    key={activeResumeId}
+                    resumeId={activeResumeId}
+                    currentData={data}
+                    currentStyle={style}
+                    onBeforeConfirm={prepareAgentProposalConfirmation}
+                    onApplied={refreshAppliedAgentProposal}
+                  />
+                ) : null}
               </motion.aside>
             )}
           </AnimatePresence>

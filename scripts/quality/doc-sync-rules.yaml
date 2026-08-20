@@ -55,6 +55,8 @@ rules:
       - .env.development
       - .env.production
       - apps/backend/src/linkcv/core/config.py
+      - package.json
+      - scripts/dev/**/*
       - deploy/docker-compose.yml
       - deploy/docker-compose.observability.local.yml
     must_update:

@@ -1,0 +1,14 @@
+{
+  "name": "@linkcv/pi-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "check": "node --check src/*.js && node --check src/runtime/*.js && node --check src/tools/*.js",
+    "test": "node --test test/*.test.js"
+  }
+}

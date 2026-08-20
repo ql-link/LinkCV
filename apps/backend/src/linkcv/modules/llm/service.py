@@ -104,6 +104,16 @@ class RuntimeModelConfig:
 
 
 @dataclass(frozen=True)
+class AgentRuntimeModel:
+    id: int
+    adapter: str
+    model_call_name: str
+    api_base: str | None
+    api_key: str | None
+    config_version: int
+
+
+@dataclass(frozen=True)
 class Metering:
     status: str
     input_tokens: int | None
@@ -217,6 +227,40 @@ class LLMService:
 
     def encrypt_credential(self, plaintext: str) -> str:
         return self._cipher.encrypt(plaintext)
+
+    async def agent_runtime_model(self) -> AgentRuntimeModel:
+        """Resolve the current Chat binding for the trusted Pi service.
+
+        The decrypted key is returned only to the internal authenticated route and
+        must never be logged or persisted by its caller.
+        """
+        config = await self._db(self._current_config_sync)
+        if config is None:
+            raise LLMError("LLM_CHAT_NOT_CONFIGURED", "agent-runtime-config")
+        if config.encrypted_api_key is None:
+            if adapter_requires_api_key(config.adapter):
+                raise LLMError(
+                    "LLM_CREDENTIALS_UNAVAILABLE", "agent-runtime-config"
+                )
+            api_key = None
+        else:
+            try:
+                credential = self._cipher.decrypt(config.encrypted_api_key)
+            except CredentialUnavailableError as error:
+                raise LLMError(
+                    "LLM_CREDENTIALS_UNAVAILABLE", "agent-runtime-config"
+                ) from error
+            api_key = credential.plaintext
+            if credential.needs_rewrap:
+                await self._db(self._rewrap_sync, config, credential.plaintext)
+        return AgentRuntimeModel(
+            id=config.id,
+            adapter=config.adapter,
+            model_call_name=config.model_call_name,
+            api_base=config.api_base,
+            api_key=api_key,
+            config_version=config.config_version,
+        )
 
     async def _db(self, function, *args, **kwargs):
         return await to_thread.run_sync(lambda: function(*args, **kwargs))

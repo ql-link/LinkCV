@@ -1,6 +1,6 @@
 # Jenkins Docker deployment
 
-LinkCV uses separate Jenkins jobs for Development and Production. Both jobs build the root Dockerfile, run the guarded Alembic runner before deployment, update the matching Compose service, and wait for `/api/health`.
+LinkCV uses separate Jenkins jobs for Development and Production. Both jobs build the application and Pi images, run the guarded Alembic runner before deployment, update the matching Compose services, and wait for `/api/health` plus `/api/agent/readiness`. The Agent readiness probe verifies the FastAPI-to-Pi-to-FastAPI authentication and current Chat model configuration without calling the model provider.
 
 ## Development
 
