@@ -110,7 +110,9 @@ export function SharePage({ token }: { token: string }) {
       </header>
       <section className="share-page-paper-scroll">
         <article
-          className="resume-paper smart-one-page share-page-paper"
+          className={`resume-paper theme-${
+            styleToEditorSettings(payload.style).theme
+          } smart-one-page share-page-paper`}
           style={{
             ...paperStyle(payload),
             zoom: paperZoom,

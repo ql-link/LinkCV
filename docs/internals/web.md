@@ -51,7 +51,7 @@ JD 临时管理界面使用可恢复路由 `/jobs`、`/jobs/new`、`/jobs/:jobId
 - 页面视觉方向、Design Brief、shadcn 选型、Vercel Web Interface Guidelines 审查和浏览器验收流程由 [frontend-design Skill](../../.ai/skills/frontend-design/SKILL.md) 维护。该 Skill 把 Anthropic 官方 frontend-design 方法适配到 LinkCV 的四类视觉边界；21st.dev 等外部参考只提供局部布局、材质和动效意图，最终使用 LinkCV Token 与组件重写。
 - 可在本地运行的 Web 改动由 Agent 启动并查看实际页面；大幅视觉修改先确认设计来源，按选定效果的布局、密度、间距、色彩、字体、内容和层级实现。新反馈只有在实现完成后才更新本节；尚未实现的决定留在对应 Spec。
 - 公共欢迎页位于 `src/features/landing/`，由 `/` 与 `/home` 共同访问，登录状态不会把这两个地址重定向到工作台；未登录时顶部和页尾 CTA 通过现有 `LandingPage` 回调进入 `/login`，已登录时 CTA 进入 `/resumes`，营销组件本身不持有鉴权状态。顶部可在中文和英文间切换，选择仅保存在浏览器本地并在下次访问时恢复。欢迎页使用 `.marketing-landing` 样式边界承载深浅主题、响应式营销区块与产品模拟图。登录/注册页使用独立 `features/auth/auth.css` 保留入口构图和 Shader，表单的 TextField 与 Button 来自集中 UI；入口不再导入 `landing.css`。
-- 默认简历使用虚构示例，当前姓名为“张三”。产品约束是不使用已经移除的 Google CJK serif 字体族；当前 `resumeStore.ts` 和 `tokens.css` 仍保留 `Noto Serif CJK SC` 或 `Noto Serif SC` 作为本地 fallback，这是尚未消解的既有不一致，不能写成已经满足。UI 中的霞鹜文楷由 Web Font 依赖提供，不能依赖用户系统安装。
+- 默认简历使用虚构示例，当前姓名为“张三”。默认中文衬线栈使用思源宋体与系统宋体回退，不包含已移除的 Google CJK serif 字体族；UI 中的霞鹜文楷由 Web Font 依赖提供，不能依赖用户系统安装。“经典单页技术简历”使用独立主题键，在创建页、列表预览、编辑器和 PDF 中保持居中身份信息、细分隔线、高密度编号条目与非斜体右侧职位日期行。
 - 简历标题用字号、间距和分隔线建立层级，不自动加粗；显式 Markdown 粗体使用中等字重和略浅于正文的墨色，并在网页预览和 PDF 中保持可见。
 - 左右结构不自动加粗左侧内容。编辑器继续兼容旧版 `::: left` / `::: right`：把当前正文行转换为左右行时保留原内容到左侧，右侧立即可输入；聚焦提示只用于编辑，不进入导出结果。
 - 编辑器工具栏不提供固定字号快捷项；全局字号只从页面设置调整。编辑器聚焦时不显示包围整张 A4 的浏览器默认外框，但保留光标、选区和左右分栏提示。

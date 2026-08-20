@@ -63,6 +63,20 @@ describe("resume semantic contract adapter", () => {
     expect(style.smart_one_page).toBe(true);
   });
 
+  it("preserves the classic technical theme when editor settings are saved", () => {
+    const original = {
+      ...defaultSemanticStyle,
+      template_key: "classic-technical-cn",
+      smart_one_page: true,
+    };
+    const settings = styleToEditorSettings(original);
+
+    expect(settings.theme).toBe("classic-technical");
+    expect(editorSettingsToStyle(settings, original).template_key).toBe(
+      "classic-technical-cn",
+    );
+  });
+
   it("serializes Tiptap nodes instead of persisting the editor document JSON", () => {
     const markdown = editorDocumentToMarkdown({
       type: "doc",

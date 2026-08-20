@@ -21,7 +21,7 @@ from linkcv.domain.resume_snapshot import parse_resume_snapshot
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0023"
+EXPECTED_HEAD = "0024"
 
 
 def migration_test_url() -> str:
@@ -343,6 +343,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         ) == {
             "blank-cn",
             "classic-cn",
+            "classic-technical-cn",
             "modern-two-column-cn",
             "compact-tech-cn",
         }
@@ -350,7 +351,8 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
             text(
                 "SELECT `key`, data_json, style_json FROM resume_templates "
                 "WHERE `key` IN "
-                "('blank-cn', 'classic-cn', 'modern-two-column-cn', 'compact-tech-cn')"
+                "('blank-cn', 'classic-cn', 'classic-technical-cn', "
+                "'modern-two-column-cn', 'compact-tech-cn')"
             )
         ).mappings():
             data_json = (
@@ -364,12 +366,21 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
                 else row["style_json"]
             )
             parse_resume_snapshot(data_json, style_json)
-            if row["key"] in {"modern-two-column-cn", "compact-tech-cn"}:
+            if row["key"] in {
+                "modern-two-column-cn",
+                "compact-tech-cn",
+                "classic-technical-cn",
+            }:
                 editor_markdown = data_json["sections"]["custom_sections"][0][
                     "items"
                 ][0]["content"]["content"]
                 assert "::: left" in editor_markdown
                 assert "::: right" in editor_markdown
+            if row["key"] == "classic-technical-cn":
+                assert style_json["smart_one_page"] is True
+                assert style_json["template_key"] == "classic-technical-cn"
+                assert "# 张三" in editor_markdown
+                assert "zhangsan@example.com" in editor_markdown
 
     with engine.begin() as connection:
         user = connection.execute(
@@ -743,10 +754,10 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
             {"user_id": user_id},
         ) == 0
         assert connection.scalar(text("SELECT COUNT(*) FROM users")) == 1
-        assert connection.scalar(text("SELECT COUNT(*) FROM resume_templates")) == 4
+        assert connection.scalar(text("SELECT COUNT(*) FROM resume_templates")) == 5
         assert connection.scalar(
             text("SELECT COUNT(*) FROM resume_templates WHERE is_active = 1")
-        ) == 4
+        ) == 5
         assert connection.scalar(text("SELECT COUNT(*) FROM resumes")) == 1
         assert connection.scalar(text("SELECT COUNT(*) FROM resume_versions")) == 1
         assert connection.execute(

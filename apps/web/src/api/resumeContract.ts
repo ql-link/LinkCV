@@ -115,7 +115,7 @@ type EditorSettings = {
   lineHeight: number;
   pageMargin: number;
   verticalPageMargin: number;
-  theme: "classic" | "modern" | "compact";
+  theme: "classic" | "modern" | "compact" | "classic-technical";
   smartOnePage: boolean;
   showSource: boolean;
 };
@@ -300,13 +300,17 @@ export function resumeDocumentFromMarkdown(
 }
 
 export function styleToEditorSettings(style: ResumeStyleV1): EditorSettings {
-  const theme = style.template_key.startsWith("modern")
-    ? "modern"
-    : style.template_key.startsWith("compact")
-      ? "compact"
-      : "classic";
+  const theme = style.template_key.startsWith("classic-technical")
+    ? "classic-technical"
+    : style.template_key.startsWith("modern")
+      ? "modern"
+      : style.template_key.startsWith("compact")
+        ? "compact"
+        : "classic";
   return {
-    fontFamily: style.font_family === "source-han-serif" ? "Source Han Serif SC, SimSun, serif" : style.font_family,
+    fontFamily: style.font_family === "source-han-serif"
+      ? '"Source Han Serif SC", "Songti SC", STSong, SimSun, serif'
+      : style.font_family,
     fontSize: style.font_size,
     lineHeight: style.line_height,
     pageMargin: style.page.margin_left_mm,

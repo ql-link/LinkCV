@@ -26,7 +26,7 @@ import { defaultResumeDocument } from "../features/workbench/defaultDocument";
 import { defaultResumeMarkdown } from "../parser/defaultResume";
 import { renderResumeMarkdown } from "../parser/resumeMarkdown";
 
-export type ResumeTheme = "classic" | "modern" | "compact";
+export type ResumeTheme = "classic" | "modern" | "compact" | "classic-technical";
 
 export type ResumeSettings = {
   fontFamily: string;
@@ -40,7 +40,7 @@ export type ResumeSettings = {
 };
 
 export const resumeSerifFontStack =
-  '"Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", STSong, SimSun, serif';
+  '"Source Han Serif SC", "Songti SC", STSong, SimSun, serif';
 
 type AuthStatus = "checking" | "guest" | "authenticated";
 type SaveStatus = "idle" | "saving" | "saved" | "error";
