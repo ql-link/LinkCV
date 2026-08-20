@@ -21,7 +21,7 @@ from linkcv.domain.resume_snapshot import parse_resume_snapshot
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0024"
+EXPECTED_HEAD = "0025"
 
 
 def migration_test_url() -> str:
@@ -381,6 +381,16 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
                 assert style_json["template_key"] == "classic-technical-cn"
                 assert "# 张三" in editor_markdown
                 assert "zhangsan@example.com" in editor_markdown
+                assert "极昼气象服务有限公司" in editor_markdown
+                assert "TraceHarbor" in editor_markdown
+                for rejected_sample in (
+                    "星河云科技有限公司",
+                    "KnowledgeFlow",
+                    "销售预测",
+                    "JMM",
+                    "Qdrant",
+                ):
+                    assert rejected_sample not in editor_markdown
 
     with engine.begin() as connection:
         user = connection.execute(
@@ -943,6 +953,69 @@ def test_resume_template_seed_conflict_does_not_overwrite_existing_data() -> Non
         ) == "现场同名模板"
     with engine.begin() as connection:
         connection.execute(text("DELETE FROM resume_templates WHERE `key` = 'blank-cn'"))
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "head")
+    engine.dispose()
+
+
+def test_classic_template_content_migration_refuses_customized_snapshots() -> None:
+    database_url = migration_test_url()
+    engine = create_engine(database_url)
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0024")
+
+    headline_path = "$.basics.headline"
+    location_path = "$.basics.location"
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE resume_templates "
+                "SET data_json = JSON_SET(data_json, :path, '现场自定义职位') "
+                "WHERE `key` = 'classic-technical-cn'"
+            ),
+            {"path": headline_path},
+        )
+    refused_upgrade = invoke_alembic(database_url, "upgrade", "0025")
+    assert refused_upgrade.returncode != 0
+    with engine.connect() as connection:
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version"))
+            == "0024"
+        )
+        assert connection.scalar(
+            text(
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, :path)) "
+                "FROM resume_templates WHERE `key` = 'classic-technical-cn'"
+            ),
+            {"path": headline_path},
+        ) == "现场自定义职位"
+
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "head")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE resume_templates "
+                "SET data_json = JSON_SET(data_json, :path, '现场自定义城市') "
+                "WHERE `key` = 'classic-technical-cn'"
+            ),
+            {"path": location_path},
+        )
+    refused_downgrade = invoke_alembic(database_url, "downgrade", "0024")
+    assert refused_downgrade.returncode != 0
+    with engine.connect() as connection:
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version"))
+            == "0025"
+        )
+        assert connection.scalar(
+            text(
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, :path)) "
+                "FROM resume_templates WHERE `key` = 'classic-technical-cn'"
+            ),
+            {"path": location_path},
+        ) == "现场自定义城市"
+
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
     engine.dispose()
