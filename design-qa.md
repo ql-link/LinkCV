@@ -42,6 +42,26 @@
 
 final result: passed
 
+## 经典单页技术简历示例内容重编 — 2026-08-21
+
+### Verification state
+
+- Environment: `fix/classic-technical-fictional-content`，本机隔离 SQLite 后端与 Vite 前端，应用内浏览器桌面视口。
+- Template picker: “经典单页技术简历”仍为独立选项，预览完整显示虚构的张三资料。
+- Content independence: 技能改为 Go、TypeScript、云原生、可观测性和工程质量；三段实习分别为气象观测、协作绘图和城市照明运维；个人项目改为可观测性实验台 TraceHarbor。预览中未出现旧示例的销售预测、知识检索、AI 编程工具、JMM、Qdrant、公司名或项目名。
+- Editor: 从模板创建“经典模板内容验收”后进入编辑器，页面节点包含 `theme-classic-technical smart-one-page`，保存状态为“已保存”。
+- Single page: 编辑纸张 `clientHeight=1123`、`scrollHeight=1123`，正文末尾完整显示，没有内部溢出或截断。
+- Console: 浏览器 console 中没有 warning 或 error。
+
+### Findings
+
+- P0: none.
+- P1: none.
+- P2: none.
+- P3: 这次只重编模板种子，已经从旧模板创建的简历仍保留各自快照，不会被迁移追溯覆盖。
+
+final result: passed
+
 ## 经典单页技术简历模板 — 2026-08-21
 
 ### Visual truth
