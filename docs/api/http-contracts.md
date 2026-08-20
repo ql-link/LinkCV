@@ -80,13 +80,14 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 
 | Method   | Path                                            | 鉴权 | 成功结果                                               |
 | -------- | ----------------------------------------------- | ---- | ------------------------------------------------------ |
-| `GET`    | `/api/resumes/:id/versions`                     | 是   | `{versions}`，版本号倒序                               |
-| `POST`   | `/api/resumes/:id/versions`                     | 是   | `201 {version}`，创建 `manual` 快照                    |
-| `GET`    | `/api/resumes/:id/versions/:version_no`         | 是   | `{version}` 完整快照                                   |
+| `GET`    | `/api/resumes/:id/versions`                     | 是   | `{versions}`，正式版本号倒序；每项含 `name`            |
+| `POST`   | `/api/resumes/:id/versions`                     | 是   | `201 {version}`，创建带名称的 `manual` 快照            |
+| `GET`    | `/api/resumes/:id/versions/:version_no`         | 是   | `{version}` 完整快照，含 `name`                        |
+| `PATCH`  | `/api/resumes/:id/versions/:version_no`         | 是   | `{version}`；只更新指定正式版本的 `name`               |
 | `DELETE` | `/api/resumes/:id/versions/:version_no`         | 是   | `{deleted}`；删除指定旧版本                            |
-| `POST`   | `/api/resumes/:id/versions/:version_no/restore` | 是   | `{resume}`；按需追加 `before_restore` 后追加 `restore` |
+| `POST`   | `/api/resumes/:id/versions/:version_no/restore` | 是   | `{resume}`；直接用目标正式版本替换当前简历，不创建新版本 |
 
-版本号单调递增且不复用；每份简历默认最多保存 10 个版本。创建或恢复所需的版本空间不足时返回 `409 RESUME_VERSION_LIMIT_REACHED`，不会自动删除任何历史版本；用户删除旧版本后才能继续。最新版本作为当前恢复基准不可删除，尝试删除返回 `409 LATEST_RESUME_VERSION_REQUIRED`。版本不存在返回 `404 RESUME_VERSION_NOT_FOUND`，并发兜底失败返回 `409 VERSION_CONFLICT`。
+版本号单调递增且不复用；每份简历默认最多保存 10 个正式版本。创建和重命名请求中的 `name` 会去除首尾空白并折叠连续空白，规范化后必须为 1–80 个字符；创建缺省名称兼容旧调用方并按版本号生成“版本 N”。非法名称返回 `400 INVALID_RESUME_VERSION_NAME`。`PATCH` 重命名只更新指定版本的名称，不改变 `data/style` 快照、不创建新版本，也不改变当前简历标题。恢复直接使用已存在的目标快照替换当前简历，不创建新的 `before_restore` 或 `restore` 版本，也不占用版本空间。创建版本空间不足时返回 `409 RESUME_VERSION_LIMIT_REACHED`，不会自动删除任何历史版本；用户删除旧版本后才能继续。最新版本作为当前恢复基准不可删除，尝试删除返回 `409 LATEST_RESUME_VERSION_REQUIRED`。版本不存在返回 `404 RESUME_VERSION_NOT_FOUND`，并发兜底失败返回 `409 VERSION_CONFLICT`。历史数据中的 `before_restore`、`restore` 原因仍可读取，但新恢复操作不会再生成这两类记录。旧版本名称由 `0023` 按原因回填，Web 版本抽屉只展示这些正式版本，不单独展示当前草稿。
 
 ## 简历分享链接
 

@@ -79,6 +79,7 @@ def test_blank_create_update_versions_and_restore() -> None:
             )
             assert initial is not None
             assert (initial.version_no, initial.reason) == (1, "initial")
+            assert initial.name == "初始版本"
 
         first_data = resume["data"]
         first_data["basics"]["headline"] = "第一次保存"
@@ -113,10 +114,14 @@ def test_blank_create_update_versions_and_restore() -> None:
         assert invalid.status_code == 400
         assert invalid.json() == {"error": "INVALID_RESUME_DOCUMENT"}
 
-        manual = client.post(f"/api/resumes/{resume_id}/versions")
+        manual = client.post(
+            f"/api/resumes/{resume_id}/versions",
+            json={"name": "  投递 版本  "},
+        )
         assert manual.status_code == 201
         assert manual.json()["version"]["reason"] == "manual"
         assert manual.json()["version"]["version_no"] == 2
+        assert manual.json()["version"]["name"] == "投递 版本"
 
         second_data = updated.json()["resume"]["data"]
         second_data["basics"]["headline"] = "尚未保存版本的草稿"
@@ -134,11 +139,67 @@ def test_blank_create_update_versions_and_restore() -> None:
 
         versions = client.get(f"/api/resumes/{resume_id}/versions").json()["versions"]
         assert [(item["version_no"], item["reason"]) for item in versions] == [
-            (4, "restore"),
-            (3, "before_restore"),
             (2, "manual"),
             (1, "initial"),
         ]
+
+
+def test_manual_version_name_rejects_blank_and_overlong_values() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        resume_id = create_resume(client, app).json()["resume"]["id"]
+
+        blank = client.post(
+            f"/api/resumes/{resume_id}/versions",
+            json={"name": " \t\n"},
+        )
+        assert blank.status_code == 400
+        assert blank.json() == {"error": "INVALID_RESUME_VERSION_NAME"}
+
+        overlong = client.post(
+            f"/api/resumes/{resume_id}/versions",
+            json={"name": "名" * 81},
+        )
+        assert overlong.status_code == 400
+        assert overlong.json() == {"error": "INVALID_RESUME_VERSION_NAME"}
+        assert [
+            item["version_no"]
+            for item in client.get(f"/api/resumes/{resume_id}/versions").json()[
+                "versions"
+            ]
+        ] == [1]
+
+
+def test_historical_version_can_be_renamed_without_changing_snapshot() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        resume_id = create_resume(client, app).json()["resume"]["id"]
+        created = client.post(
+            f"/api/resumes/{resume_id}/versions",
+            json={"name": "投递初版"},
+        )
+        assert created.status_code == 201
+        original_data = created.json()["version"]["data"]
+
+        renamed = client.patch(
+            f"/api/resumes/{resume_id}/versions/2",
+            json={"name": "  投递终版  "},
+        )
+        assert renamed.status_code == 200
+        assert renamed.json()["version"]["name"] == "投递终版"
+        assert renamed.json()["version"]["data"] == original_data
+
+        blank = client.patch(
+            f"/api/resumes/{resume_id}/versions/2",
+            json={"name": " \t\n"},
+        )
+        assert blank.status_code == 400
+        assert blank.json() == {"error": "INVALID_RESUME_VERSION_NAME"}
+
+        versions = client.get(f"/api/resumes/{resume_id}/versions").json()["versions"]
+        assert versions[0]["name"] == "投递终版"
 
 
 def test_template_creation_copies_snapshot_and_filters_inactive_templates() -> None:
@@ -291,6 +352,7 @@ def test_version_limit_requires_user_to_delete_an_old_snapshot() -> None:
             (2, "manual"),
             (1, "initial"),
         ]
+        assert [item["name"] for item in versions] == ["版本 3", "版本 2", "初始版本"]
 
         deleted = client.delete(f"/api/resumes/{resume_id}/versions/1")
         assert deleted.status_code == 200
@@ -326,8 +388,8 @@ def test_latest_version_cannot_be_deleted() -> None:
         ] == [2, 1]
 
 
-def test_restore_rejects_without_mutation_when_it_needs_too_many_version_slots() -> None:
-    app = build_app(version_limit=3)
+def test_restore_does_not_create_a_version_for_an_unversioned_draft() -> None:
+    app = build_app(version_limit=2)
     with TestClient(app) as client:
         register(client)
         created = create_resume(client, app).json()["resume"]
@@ -342,19 +404,68 @@ def test_restore_rejects_without_mutation_when_it_needs_too_many_version_slots()
         )
         assert updated.status_code == 200
 
-        rejected = client.post(f"/api/resumes/{resume_id}/versions/1/restore")
+        restored = client.post(f"/api/resumes/{resume_id}/versions/1/restore")
 
-        assert rejected.status_code == 409
-        assert rejected.json() == {"error": "RESUME_VERSION_LIMIT_REACHED"}
+        assert restored.status_code == 200
         current = client.get(f"/api/resumes/{resume_id}").json()["resume"]
-        assert current["data"]["basics"]["headline"] == "尚未建立版本的草稿"
-        assert current["lock_version"] == 2
+        assert current["data"]["basics"]["headline"] == "后端开发工程师"
+        assert current["lock_version"] == 3
+        assert [
+            (item["version_no"], item["reason"])
+            for item in client.get(f"/api/resumes/{resume_id}/versions").json()[
+                "versions"
+            ]
+        ] == [(2, "manual"), (1, "initial")]
+
+
+def test_restore_without_unversioned_draft_does_not_need_a_version_slot() -> None:
+    app = build_app(version_limit=2)
+    with TestClient(app) as client:
+        register(client)
+        resume_id = create_resume(client, app).json()["resume"]["id"]
+        assert client.post(f"/api/resumes/{resume_id}/versions").status_code == 201
+
+        restored = client.post(f"/api/resumes/{resume_id}/versions/1/restore")
+
+        assert restored.status_code == 200
+        assert restored.json()["resume"]["lock_version"] == 2
+        assert [
+            (item["version_no"], item["reason"])
+            for item in client.get(f"/api/resumes/{resume_id}/versions").json()[
+                "versions"
+            ]
+        ] == [(2, "manual"), (1, "initial")]
+
+
+def test_restore_at_version_limit_still_replaces_the_current_draft() -> None:
+    app = build_app(version_limit=3)
+    with TestClient(app) as client:
+        register(client)
+        created = create_resume(client, app).json()["resume"]
+        resume_id = created["id"]
+        for _ in range(2):
+            assert client.post(f"/api/resumes/{resume_id}/versions").status_code == 201
+
+        draft = created["data"]
+        draft["basics"]["headline"] = "尚未建立版本的草稿"
+        updated = client.put(
+            f"/api/resumes/{resume_id}",
+            json={"data": draft, "base_lock_version": 1},
+        )
+        assert updated.status_code == 200
+
+        restored = client.post(f"/api/resumes/{resume_id}/versions/1/restore")
+
+        assert restored.status_code == 200
+        current = client.get(f"/api/resumes/{resume_id}").json()["resume"]
+        assert current["data"]["basics"]["headline"] == "后端开发工程师"
+        assert current["lock_version"] == 3
         assert [
             item["version_no"]
             for item in client.get(f"/api/resumes/{resume_id}/versions").json()[
                 "versions"
             ]
-        ] == [2, 1]
+        ] == [3, 2, 1]
 
 
 def test_overlong_resume_id_is_rejected_without_integer_conversion() -> None:
