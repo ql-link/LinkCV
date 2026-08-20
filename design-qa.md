@@ -42,6 +42,39 @@
 
 final result: passed
 
+## 经典单页技术简历模板 — 2026-08-21
+
+### Visual truth
+
+- Source: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-c1ac7690-f3aa-4dc6-be6c-f8322563511d.png`。
+- Implementation: `/tmp/linkcv-classic-technical-viewport-v5.png`。
+- Side-by-side comparison: `/tmp/linkcv-classic-technical-comparison.svg.png`。
+- State: 使用虚构“张三”内容创建简历后进入真实编辑器，保存状态为“已保存”，主题为 `classic-technical`，智能一页开启。
+- Source capture: `1000 × 1414` px；implementation viewport: `1280 × 1400` CSS px / PNG px，DPR 1；A4 paper: `793.69 × 1122.52` CSS px。
+
+### Required fidelity surfaces
+
+- Typography: 中文衬线栈、居中姓名与联系方式、非粗体标题层级、紧凑正文和编号列表与参考图一致；显式 Markdown 粗体仍使用较轻的 600 权重。
+- Spacing and layout: 9mm 上下、11mm 左右页边距，细分隔线与密集段落节奏保持单页；教育、公司/岗位日期和项目链接使用结构化左右栏，不依赖空格对齐。
+- Content: 模板选择器新增独立“经典单页技术简历”选项，保留已有模板；默认内容全部为虚构样例，不包含用户姓名、电话、邮箱、学校、公司或项目数据。
+- Rendering parity: 模板选择页只读预览、编辑器和 PDF 共用同一主题键与 `pt` 字号语义；右侧岗位/日期为正常字形、右对齐且不换行。
+
+### Comparison history
+
+1. [P1] 首次真实页面截图中，左右行沿用通用 70% 左栏，岗位与日期发生换行。模板主题覆盖为 57% 左栏，并保持右栏单行；复核后右栏可用宽度 294px，最长内容 293px。
+2. [P2] 模板选择页只读预览把字号值解释为 `px`，与编辑器/PDF 的 `pt` 不一致。已统一为 `pt`。
+3. 最终 A4 高度 `1122.52px`、内容 `scrollHeight=1123px`，完整内容保持在单页；标题字重为 400，右栏字形为 normal、字重 400。
+4. 浏览器控制台 error/warning：0；模板选择、创建简历、进入编辑器和自动保存链路均完成。
+
+### Findings
+
+- P0: none.
+- P1: none.
+- P2: none.
+- P3: 参考图包含真实企业/学校图标；为避免把用户个人资产和经历固化进默认模板，本模板保留纯文字结构，用户仍可在编辑器内按需插入图片或行内图标。
+
+final result: passed
+
 ## LinkCV Design System
 
 - 登录、主页、编辑器与预览工作区统一使用 LinkCV 的黑白中性色、品牌标记、排版、间距、圆角、阴影与交互状态。

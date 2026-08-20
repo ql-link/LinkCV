@@ -516,6 +516,85 @@ select:not([data-slot]):focus-visible,
 .resume-preview-paper h2,
 .resume-preview-paper h3 { color: var(--preview-accent); }
 
+.theme-classic-technical .resume-content {
+  color: #171b24;
+}
+
+.theme-classic-technical .resume-content h1,
+.resume-preview-paper.theme-classic-technical h1 {
+  margin: 0 0 5px;
+  color: #171b24;
+  font-size: 21pt;
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: 0.08em;
+}
+
+.theme-classic-technical .resume-content h1 + p {
+  margin: 0 0 7px;
+  text-align: center;
+  font-size: 8.5pt;
+  letter-spacing: 0.01em;
+}
+
+.theme-classic-technical .resume-content h2,
+.resume-preview-paper.theme-classic-technical h2 {
+  margin: 6px 0 3px;
+  border-bottom: 1px solid #252d3a;
+  padding-bottom: 1px;
+  color: #171b24;
+  font-size: 12.25pt;
+  font-weight: 400;
+  line-height: 1.08;
+  letter-spacing: 0;
+}
+
+.theme-classic-technical .resume-content p {
+  margin: 1px 0;
+}
+
+.theme-classic-technical .resume-content ol,
+.theme-classic-technical .resume-content ul {
+  margin-top: 2px;
+  margin-bottom: 3px;
+}
+
+.theme-classic-technical .resume-content li {
+  margin: 0;
+}
+
+.theme-classic-technical .resume-content strong {
+  color: #48505c;
+  font-weight: 600;
+}
+
+.theme-classic-technical .resume-content em {
+  color: #28303d;
+  font-style: normal;
+}
+
+.theme-classic-technical .resume-content a {
+  color: #28303d;
+  text-decoration: none;
+}
+
+.theme-classic-technical .resume-row,
+.theme-classic-technical .resume-layout-row {
+  margin: 2px 0;
+}
+
+.theme-classic-technical .resume-layout-row {
+  --resume-row-left: 57% !important;
+}
+
+.theme-classic-technical .resume-row-right,
+.theme-classic-technical .resume-row.single.right,
+.theme-classic-technical .resume-layout-row [data-node-view-content-react] > p:last-child {
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .resume-readonly-preview-card {
   position: absolute;
   inset: 0;

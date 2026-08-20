@@ -141,7 +141,7 @@
   --display-font: var(--ui-font-display);
   --ui-font: var(--ui-font-sans);
   --mono-font: var(--ui-font-mono);
-  --resume-serif-font: "Source Han Serif SC", "Noto Serif SC", "Songti SC", STSong, SimSun, serif;
+  --resume-serif-font: "Source Han Serif SC", "Songti SC", STSong, SimSun, serif;
   --ease-standard: var(--ui-ease-standard);
   --ease-press: var(--ui-ease-press);
   --duration-fast: var(--ui-duration-fast);
