@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiRequestError, api } from "../../api/client";
@@ -17,7 +17,9 @@ vi.mock("../../api/client", async (importOriginal) => {
 });
 
 vi.mock("../preview/ResumePreview", () => ({
-  ResumePreview: () => <div data-testid="resume-preview" />,
+  ResumePreview: ({ mode = "card" }: { mode?: "card" | "full" }) => (
+    <div data-testid={`resume-preview-${mode}`} />
+  ),
 }));
 
 const templates = [
@@ -52,7 +54,7 @@ describe("ResumeTemplatesPage", () => {
     render(<ResumeTemplatesPage />);
 
     expect(await screen.findByRole("heading", { name: "现代双栏" })).toBeInTheDocument();
-    expect(screen.getAllByTestId("resume-preview")).toHaveLength(2);
+    expect(screen.getAllByTestId("resume-preview-card")).toHaveLength(2);
 
     fireEvent.click(screen.getAllByRole("button", { name: "创建简历" })[1]);
     expect(screen.getByRole("dialog")).toHaveTextContent("基于“现代双栏”创建简历");
@@ -67,6 +69,78 @@ describe("ResumeTemplatesPage", () => {
       expect(createResume).toHaveBeenCalledWith("2026 产品经理简历", "9");
       expect(window.location.pathname).toBe("/resumes/12/edit");
     });
+  });
+
+  it("点击模板卡片打开大尺寸预览，并可继续进入命名弹窗", async () => {
+    vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates } as never);
+    render(<ResumeTemplatesPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "查看模板：现代双栏" }));
+
+    const previewDialog = screen.getByRole("dialog", { name: "现代双栏" });
+    expect(previewDialog).toHaveClass("template-preview-dialog");
+    expect(within(previewDialog).getByTestId("resume-preview-full")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/templates");
+
+    fireEvent.click(within(previewDialog).getByRole("button", { name: "创建简历" }));
+
+    expect(screen.getByRole("dialog", { name: "创建简历" })).toHaveTextContent(
+      "基于“现代双栏”创建简历",
+    );
+    expect(screen.queryByRole("dialog", { name: "现代双栏" })).not.toBeInTheDocument();
+  });
+
+  it("仅在按住 Ctrl 或 Command 时缩放模板预览", async () => {
+    vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates } as never);
+    render(<ResumeTemplatesPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "查看模板：空白简历" }));
+
+    const previewDialog = screen.getByRole("dialog", { name: "空白简历" });
+    const stage = previewDialog.querySelector(".template-preview-dialog-stage");
+    expect(stage).not.toBeNull();
+    expect(within(previewDialog).getByLabelText("模板预览缩放比例")).toHaveTextContent("72%");
+
+    fireEvent.wheel(stage!, { deltaY: -100 });
+    expect(within(previewDialog).getByLabelText("模板预览缩放比例")).toHaveTextContent("72%");
+
+    fireEvent.wheel(stage!, { ctrlKey: true, deltaY: -100 });
+    await waitFor(() => {
+      expect(within(previewDialog).getByLabelText("模板预览缩放比例")).toHaveTextContent("80%");
+    });
+
+    fireEvent.wheel(stage!, { metaKey: true, deltaY: 100 });
+    await waitFor(() => {
+      expect(within(previewDialog).getByLabelText("模板预览缩放比例")).toHaveTextContent("72%");
+    });
+  });
+
+  it("可以通过预览工具栏放大和缩小模板", async () => {
+    vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates } as never);
+    render(<ResumeTemplatesPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "查看模板：空白简历" }));
+
+    const previewDialog = screen.getByRole("dialog", { name: "空白简历" });
+    const scale = within(previewDialog).getByLabelText("模板预览缩放比例");
+
+    fireEvent.click(within(previewDialog).getByRole("button", { name: "放大模板" }));
+    expect(scale).toHaveTextContent("80%");
+
+    fireEvent.click(within(previewDialog).getByRole("button", { name: "缩小模板" }));
+    expect(scale).toHaveTextContent("72%");
+  });
+
+  it("卡片内的创建按钮不会误触模板预览", async () => {
+    vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates } as never);
+    render(<ResumeTemplatesPage />);
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "创建简历" }))[0]);
+
+    expect(screen.getByRole("dialog", { name: "创建简历" })).toHaveTextContent(
+      "基于“空白简历”创建简历",
+    );
+    expect(screen.queryByTestId("resume-preview-full")).not.toBeInTheDocument();
   });
 
   it("名称为空时留在弹窗并阻止创建", async () => {
