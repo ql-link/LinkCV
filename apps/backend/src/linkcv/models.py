@@ -1,0 +1,23 @@
+from linkcv.modules.datasets.models import UserDataset
+from linkcv.modules.identity.models import User
+from linkcv.modules.job_descriptions.models import JobDescription
+from linkcv.modules.llm.models import LLMCallLog, LLMCapabilityBinding, LLMModelConfig
+from linkcv.modules.resumes.models import (
+    DocumentParseTask,
+    Resume,
+    ResumeTemplate,
+    ResumeVersion,
+)
+
+__all__ = [
+    "LLMCallLog",
+    "LLMCapabilityBinding",
+    "LLMModelConfig",
+    "JobDescription",
+    "DocumentParseTask",
+    "Resume",
+    "ResumeTemplate",
+    "ResumeVersion",
+    "User",
+    "UserDataset",
+]

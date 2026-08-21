@@ -1,0 +1,356 @@
+version: 1
+
+contracts:
+  - id: observability-loki-promtail-contract
+    description: LinkCV 三套环境固定七天 JSONL 契约，Dev/Production 使用独立 Promtail 和共享 Loki
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default="linkcv", alias="LOG_SERVICE_NAME"[\s\S]*default=7, alias="LOG_RETENTION_DAYS"[\s\S]*default=5,[\s\S]*alias="LOKI_QUERY_TIMEOUT_SECONDS"'
+        message: 后端必须固定 LinkCV service、七天本地保留和五秒 Loki 查询预算
+      - path: .env.example
+        pattern: '(?m)^LOG_SERVICE_NAME=linkcv$[\s\S]*^LOG_RETENTION_DAYS=7$[\s\S]*^LOKI_QUERY_TIMEOUT_SECONDS=5$'
+        message: 本地模板必须声明统一日志契约
+      - path: .env.development
+        pattern: '(?m)^LOG_DIRECTORY=/app/logs$[\s\S]*^LOG_RETENTION_DAYS=7$[\s\S]*^LOKI_QUERY_URL=http://tolink-dev-loki:3100$[\s\S]*^LOKI_PUSH_URL=http://tolink-dev-loki:3100/loki/api/v1/push$'
+        message: Dev 必须使用独立日志目录和共享 Dev Loki 内网地址
+      - path: .env.production
+        pattern: '(?m)^LOG_DIRECTORY=/app/logs$[\s\S]*^LOG_RETENTION_DAYS=7$[\s\S]*^LOKI_QUERY_URL=http://tolink-loki:3100$[\s\S]*^LOKI_PUSH_URL=http://tolink-loki:3100/loki/api/v1/push$'
+        message: Production 必须使用独立日志目录和共享 Production Loki 内网地址
+      - path: deploy/docker-compose.development.yml
+        pattern: 'grafana/promtail:2\.9\.8[\s\S]*container_name: linkcv-dev-promtail[\s\S]*linkcv-dev-logs:/var/log/linkcv:ro[\s\S]*linkcv-dev-promtail-positions:/tmp'
+        message: Dev 必须部署固定版本的独立 Promtail、日志卷和 positions 卷
+      - path: deploy/docker-compose.production.yml
+        pattern: 'grafana/promtail:2\.9\.8[\s\S]*container_name: linkcv-promtail[\s\S]*linkcv-production-logs:/var/log/linkcv:ro[\s\S]*linkcv-production-promtail-positions:/tmp'
+        message: Production 必须部署固定版本的独立 Promtail、日志卷和 positions 卷
+      - path: deploy/docker-compose.observability.local.yml
+        pattern: 'grafana/promtail:2\.9\.8[\s\S]*container_name: linkcv-local-promtail[\s\S]*LOKI_PUSH_URL:-http://loki:3100/loki/api/v1/push[\s\S]*LINKCV_LOG_PATH:-\.\./\.runtime/logs[\s\S]*LOKI_DOCKER_NETWORK:-tolink-rag-local_tolink-net'
+        message: 本地联调必须使用独立 Promtail、LinkCV 日志目录和 LinkRag 共享 Loki 网络
+      - path: deploy/observability/promtail-config.yml
+        pattern: '__path__: /var/log/linkcv/\*\*/linkcv\*\.jsonl[\s\S]*service: service[\s\S]*environment: environment[\s\S]*log_type: log_type[\s\S]*level: level[\s\S]*labels:[\s\S]*service:[\s\S]*environment:[\s\S]*log_type:[\s\S]*level:'
+        message: Promtail 只能提升约定的低基数 JSON 字段为 Loki labels
+      - path: apps/backend/src/linkcv/workers/__main__.py
+        pattern: 'configure_logging\(settings\)'
+        message: 异步导入 Worker 必须启用与 FastAPI 相同的结构化日志入口
+      - path: deploy/docker-compose.development.yml
+        pattern: 'linkcv-worker:[\s\S]*LOG_DIRECTORY: /app/logs/worker[\s\S]*linkcv-dev-logs:/app/logs'
+        message: Dev Worker 必须使用共享卷中的独立日志子目录
+      - path: deploy/docker-compose.production.yml
+        pattern: 'linkcv-worker:[\s\S]*LOG_DIRECTORY: /app/logs/worker[\s\S]*linkcv-production-logs:/app/logs'
+        message: Production Worker 必须使用共享卷中的独立日志子目录
+
+  - id: plugin-release-origin-contract
+    description: FastAPI 和三套环境声明当前环境允许插件访问的精确 LinkCV Origin
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default="http://127\.0\.0\.1:5173",[\s\S]*alias="PLUGIN_RELEASE_ORIGIN"'
+        message: FastAPI 必须保留本地插件发布 Origin 默认值
+      - path: .env.example
+        pattern: '(?m)^PLUGIN_RELEASE_ORIGIN=http://127\.0\.0\.1:5173$'
+        message: 本地模板必须声明插件发布 Origin
+      - path: .env.development
+        pattern: '(?m)^PLUGIN_RELEASE_ORIGIN=http://127\.0\.0\.1:5173$'
+        message: Dev 基础配置必须声明可由私密环境文件覆盖的插件发布 Origin
+      - path: .env.production
+        pattern: '(?m)^PLUGIN_RELEASE_ORIGIN=$'
+        message: Production 基础配置不得提交实际公开 Origin，必须由环境覆盖提供
+
+  - id: llm-credential-encryption-key-ring
+    description: 三套环境都声明后端模型凭据密钥环且不把真实密钥提交到仓库
+    assertions:
+      - path: .env.example
+        pattern: '(?m)^LLM_CREDENTIAL_ENCRYPTION_KEYS=$'
+        message: 本地模板必须声明空的 LLM 凭据密钥环
+      - path: .env.development
+        pattern: '(?m)^LLM_CREDENTIAL_ENCRYPTION_KEYS=$'
+        message: Dev 基础配置必须由私密覆盖提供 LLM 凭据密钥环
+      - path: .env.production
+        pattern: '(?m)^LLM_CREDENTIAL_ENCRYPTION_KEYS=$'
+        message: Production 基础配置必须由私密覆盖提供 LLM 凭据密钥环
+
+  - id: unified-llm-timeout
+    description: 统一 LLM Gateway 与三套环境使用同一个请求超时默认值
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default=75,[\s\S]*alias="LLM_TIMEOUT_SECONDS"'
+        message: FastAPI 必须保留统一 LLM 超时默认值 75 秒
+      - path: .env.example
+        pattern: '(?m)^LLM_TIMEOUT_SECONDS=75$'
+        message: 本地模板必须声明统一 LLM 超时
+      - path: .env.development
+        pattern: '(?m)^LLM_TIMEOUT_SECONDS=75$'
+        message: Dev 配置必须声明统一 LLM 超时
+      - path: .env.production
+        pattern: '(?m)^LLM_TIMEOUT_SECONDS=75$'
+        message: Production 配置必须声明统一 LLM 超时
+
+  - id: fastapi-default-port
+    description: FastAPI 和 Vite 使用同一个 BACKEND_PORT 默认值
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default=8000, alias="BACKEND_PORT"'
+        message: FastAPI 配置必须默认监听 8000
+      - path: apps/web/vite.config.mjs
+        pattern: 'process\.env\.BACKEND_PORT \?\? "8000"'
+        message: Vite 必须用 BACKEND_PORT=8000 构造默认后端目标
+
+  - id: fastapi-api-ownership
+    description: 所有 /api 请求由 FastAPI 承接
+    assertions:
+      - path: apps/web/vite.config.mjs
+        pattern: '"/api"\s*:\s*\{\s*target:\s*backendTarget'
+        message: Vite 必须把 /api 代理到 backendTarget
+      - path: apps/backend/src/linkcv/main.py
+        pattern: 'include_router\(api_router, prefix="/api"\)'
+        message: FastAPI 聚合路由必须使用 /api 前缀
+      - path: apps/backend/src/linkcv/api/routes/health.py
+        pattern: '@router\.get\("/health"'
+        message: FastAPI 必须注册 /health 子路由
+      - path: .ai/prompts/project.md
+        pattern: '开发期全部 `/api` 请求由 Vite 代理到 FastAPI'
+        message: 项目入口不得继续声明只有 health 归 FastAPI
+      - path: .ai/skills/incident-triage/SKILL.md
+        pattern: '当前全部 `/api` 由 FastAPI 承接'
+        message: 故障分诊必须使用当前 FastAPI 路由归属
+
+  - id: jwt-cookie-contract
+    description: 三套环境显式声明一致的双 Token Cookie 名称和默认有效期
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default=15, alias="ACCESS_TTL_MINUTES"[\s\S]*default="resume_access", alias="ACCESS_COOKIE_NAME"[\s\S]*default="resume_refresh", alias="REFRESH_COOKIE_NAME"[\s\S]*default=7, alias="SESSION_TTL_DAYS"'
+        message: FastAPI 必须保留双 Token Cookie 名称和有效期默认值
+      - path: .env.example
+        pattern: '(?m)^SESSION_TTL_DAYS=7$[\s\S]*^ACCESS_TTL_MINUTES=15$[\s\S]*^ACCESS_COOKIE_NAME=resume_access$[\s\S]*^REFRESH_COOKIE_NAME=resume_refresh$'
+        message: 本地模板必须声明双 Token Cookie 契约
+      - path: .env.development
+        pattern: '(?m)^SESSION_TTL_DAYS=7$[\s\S]*^ACCESS_TTL_MINUTES=15$[\s\S]*^ACCESS_COOKIE_NAME=resume_access$[\s\S]*^REFRESH_COOKIE_NAME=resume_refresh$'
+        message: Dev 配置必须声明双 Token Cookie 契约
+      - path: .env.production
+        pattern: '(?m)^SESSION_TTL_DAYS=7$[\s\S]*^ACCESS_TTL_MINUTES=15$[\s\S]*^ACCESS_COOKIE_NAME=resume_access$[\s\S]*^REFRESH_COOKIE_NAME=resume_refresh$'
+        message: Production 配置必须声明双 Token Cookie 契约
+
+  - id: environment-profile-database-isolation
+    description: 三套环境都使用独立 linkcv 数据库
+    assertions:
+      - path: .env.example
+        pattern: '(?m)^MYSQL_DATABASE=linkcv$'
+        message: 本地模板必须使用 linkcv 数据库
+      - path: .env.development
+        pattern: '(?m)^MYSQL_DATABASE=linkcv$'
+        message: Dev 配置不得写入 LinkRag 数据库
+      - path: .env.production
+        pattern: '(?m)^MYSQL_DATABASE=linkcv$'
+        message: Production 配置必须使用独立 linkcv 数据库
+
+  - id: redis-local-port
+    description: 本地配置与 Compose 使用同一个 Redis 默认端口
+    assertions:
+      - path: .env.example
+        pattern: '(?m)^REDIS_PORT=6379$'
+        message: 本地模板必须声明 Redis 6379
+      - path: deploy/docker-compose.yml
+        pattern: '\$\{REDIS_PORT:-6379\}:6379'
+        message: Compose 必须使用 REDIS_PORT=6379 作为默认映射
+
+  - id: resume-import-admission-defaults
+    description: FastAPI 与三套环境使用一致的简历导入成本保护默认值
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default=128 \* 1024,[\s\S]*alias="RESUME_STRUCTURING_MAX_BYTES"[\s\S]*default=3,[\s\S]*alias="RESUME_IMPORT_REQUESTS_PER_MINUTE"[\s\S]*default=4,[\s\S]*alias="RESUME_IMPORT_GLOBAL_CONCURRENCY"[\s\S]*default=1,[\s\S]*alias="RESUME_IMPORT_USER_CONCURRENCY"'
+        message: FastAPI 必须保留经过审查的导入限制默认值
+      - path: .env.example
+        pattern: '(?m)^RESUME_STRUCTURING_MAX_BYTES=131072$[\s\S]*^RESUME_IMPORT_REQUESTS_PER_MINUTE=3$[\s\S]*^RESUME_IMPORT_GLOBAL_CONCURRENCY=4$[\s\S]*^RESUME_IMPORT_USER_CONCURRENCY=1$'
+        message: 本地环境模板必须声明完整导入限制
+      - path: .env.development
+        pattern: '(?m)^RESUME_STRUCTURING_MAX_BYTES=131072$[\s\S]*^RESUME_IMPORT_REQUESTS_PER_MINUTE=3$[\s\S]*^RESUME_IMPORT_GLOBAL_CONCURRENCY=4$[\s\S]*^RESUME_IMPORT_USER_CONCURRENCY=1$'
+        message: Dev 环境必须声明完整导入限制
+      - path: .env.production
+        pattern: '(?m)^RESUME_STRUCTURING_MAX_BYTES=131072$[\s\S]*^RESUME_IMPORT_REQUESTS_PER_MINUTE=3$[\s\S]*^RESUME_IMPORT_GLOBAL_CONCURRENCY=4$[\s\S]*^RESUME_IMPORT_USER_CONCURRENCY=1$'
+        message: Production 环境必须声明完整导入限制
+
+  - id: resume-import-linkparse-contract
+    description: FastAPI 与环境模板使用冻结的 LinkParse 转换契约
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default="http://100\.86\.10\.52:18743",[\s\S]*alias="LINKPARSE_BASE_URL"[\s\S]*default="/v1/parse",[\s\S]*alias="LINKPARSE_PARSE_PATH"[\s\S]*default=90,[\s\S]*alias="LINKPARSE_TIMEOUT_SECONDS"[\s\S]*default=3 \* 1024 \* 1024,[\s\S]*alias="LINKPARSE_RESPONSE_MAX_BYTES"'
+        message: FastAPI 必须保留冻结的 LinkParse 地址、路径、超时和响应上限
+      - path: .env.example
+        pattern: '(?m)^LINKPARSE_BASE_URL=http://100\.86\.10\.52:18743$[\s\S]*^LINKPARSE_API_KEY=$[\s\S]*^LINKPARSE_PARSE_PATH=/v1/parse$[\s\S]*^LINKPARSE_TIMEOUT_SECONDS=90$[\s\S]*^LINKPARSE_RESPONSE_MAX_BYTES=3145728$'
+        message: 本地模板必须声明 LinkParse 契约且保持 API Key 为空
+      - path: .env.development
+        pattern: '(?m)^LINKPARSE_BASE_URL=http://100\.86\.10\.52:18743$[\s\S]*^LINKPARSE_API_KEY=$[\s\S]*^LINKPARSE_PARSE_PATH=/v1/parse$[\s\S]*^LINKPARSE_TIMEOUT_SECONDS=90$[\s\S]*^LINKPARSE_RESPONSE_MAX_BYTES=3145728$'
+        message: Dev 基础配置必须声明 LinkParse 契约并由私密覆盖提供 Key
+      - path: .env.production
+        pattern: '(?m)^LINKPARSE_BASE_URL=http://100\.86\.10\.52:18743$[\s\S]*^LINKPARSE_API_KEY=$[\s\S]*^LINKPARSE_PARSE_PATH=/v1/parse$[\s\S]*^LINKPARSE_TIMEOUT_SECONDS=90$[\s\S]*^LINKPARSE_RESPONSE_MAX_BYTES=3145728$'
+        message: Production 基础配置必须声明 LinkParse 契约并由私密覆盖提供 Key
+      - path: apps/web/vite.config.mjs
+        pattern: 'timeout: 190000,[\s\S]*proxyTimeout: 190000'
+        message: Vite 必须给同步导入保留 190 秒代理预算
+  - id: resume-import-idempotency-contract
+    description: FastAPI 和三套环境使用一致的 Worker deadline、陈旧收口与 Redis 幂等默认值
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default=60,[\s\S]*alias="RESUME_STRUCTURING_TIMEOUT_SECONDS"[\s\S]*default=180, alias="RESUME_IMPORT_PARSE_DEADLINE_SECONDS"[\s\S]*default=240, alias="RESUME_IMPORT_PARSE_STALE_SECONDS"[\s\S]*default=30, alias="RESUME_IMPORT_IDEMPOTENCY_BIND_TTL_SECONDS"[\s\S]*default=900, alias="RESUME_IMPORT_IDEMPOTENCY_TTL_SECONDS"'
+        message: FastAPI 必须保留 Worker deadline、陈旧收口与两阶段幂等 TTL
+      - path: .env.example
+        pattern: '(?m)^RESUME_STRUCTURING_TIMEOUT_SECONDS=60$[\s\S]*^RESUME_IMPORT_PARSE_DEADLINE_SECONDS=180$[\s\S]*^RESUME_IMPORT_PARSE_STALE_SECONDS=240$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_BIND_TTL_SECONDS=30$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_TTL_SECONDS=900$'
+        message: 本地模板必须声明完整异步导入超时与幂等默认值
+      - path: .env.development
+        pattern: '(?m)^RESUME_STRUCTURING_TIMEOUT_SECONDS=60$[\s\S]*^RESUME_IMPORT_PARSE_DEADLINE_SECONDS=180$[\s\S]*^RESUME_IMPORT_PARSE_STALE_SECONDS=240$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_BIND_TTL_SECONDS=30$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_TTL_SECONDS=900$'
+        message: Dev 环境必须声明完整异步导入超时与幂等默认值
+      - path: .env.production
+        pattern: '(?m)^RESUME_STRUCTURING_TIMEOUT_SECONDS=60$[\s\S]*^RESUME_IMPORT_PARSE_DEADLINE_SECONDS=180$[\s\S]*^RESUME_IMPORT_PARSE_STALE_SECONDS=240$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_BIND_TTL_SECONDS=30$[\s\S]*^RESUME_IMPORT_IDEMPOTENCY_TTL_SECONDS=900$'
+        message: Production 环境必须声明完整异步导入超时与幂等默认值
+
+  - id: async-resume-import-broker-contract
+    description: FastAPI、Worker、环境模板与 Compose 使用同一套异步导入 Broker 契约
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default="rabbitmq", alias="MQ_VENDOR"[\s\S]*default="tolink\.cv\.resume_import"[\s\S]*alias="RABBITMQ_EXCHANGE_NAME"[\s\S]*default="resume\.import"[\s\S]*alias="RABBITMQ_ROUTING_KEY"'
+        message: 后端必须默认使用 RabbitMQ 固定 exchange 和 routing key
+      - path: .env.example
+        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=amqp://linkcv:linkcv-rabbit-local-change-me@127\.0\.0\.1:5672/$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import$'
+        message: 本地模板必须连接本地 RabbitMQ 并声明固定路由
+      - path: .env.development
+        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import$'
+        message: Dev 必须由私密覆盖提供平台 RabbitMQ 地址
+      - path: .env.production
+        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import$'
+        message: Production 必须由私密覆盖提供平台 RabbitMQ 地址
+      - path: deploy/docker-compose.yml
+        pattern: '(?m)^  rabbitmq:$[\s\S]*rabbitmq:4-management-alpine'
+        message: 本地 Compose 必须提供 RabbitMQ
+      - path: deploy/docker-compose.development.yml
+        pattern: '(?m)^  linkcv-worker:$[\s\S]*command: \["python", "-m", "linkcv\.workers"\]'
+        message: Dev Compose 必须启动独立导入 Worker
+      - path: deploy/docker-compose.production.yml
+        pattern: '(?m)^  linkcv-worker:$[\s\S]*command: \["python", "-m", "linkcv\.workers"\]'
+        message: Production Compose 必须启动独立导入 Worker
+
+  - id: production-middleware-docker-dns
+    description: Production 通过 tolink-app-net 的 Docker DNS 连接已迁移中间件
+    assertions:
+      - path: .env.production
+        pattern: '(?m)^MYSQL_HOST=tolink-mysql$'
+        message: Production MySQL 必须使用 Cloud 容器 DNS
+      - path: .env.production
+        pattern: '(?m)^REDIS_HOST=tolink-redis$'
+        message: Production Redis 必须使用 Cloud 容器 DNS
+      - path: .env.production
+        pattern: '(?m)^MINIO_ENDPOINT=http://tolink-minio:9000$'
+        message: Production MinIO 必须使用 Cloud 容器 DNS
+
+  - id: environment-layering
+    description: FastAPI、Dev Compose 与 Production Compose 都支持基础配置加私密覆盖
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'local = Path\(f"\{base\}\.local"\)'
+        message: Settings 必须加载同名 local 覆盖文件
+      - path: deploy/docker-compose.production.yml
+        pattern: 'LINKCV_ENV_FILE:-\.\./\.env\.production'
+        message: Production Compose 必须默认加载基础配置
+      - path: deploy/docker-compose.production.yml
+        pattern: 'LINKCV_SECRET_ENV_FILE:-\.\./\.env\.production\.local'
+        message: Production Compose 必须后加载私密覆盖
+      - path: deploy/docker-compose.development.yml
+        pattern: 'LINKCV_ENV_FILE:-\.\./\.env\.development'
+        message: Dev Compose 必须默认加载基础配置
+      - path: deploy/docker-compose.development.yml
+        pattern: 'LINKCV_SECRET_ENV_FILE:-\.\./\.env\.development\.local'
+        message: Dev Compose 必须后加载私密覆盖
+
+  - id: sql-first-alembic-migrations
+    description: 后续迁移通过独立 SQL 文件执行，容器启动前校验并执行迁移
+    assertions:
+      - path: apps/backend/migrations/script.py.mako
+        pattern: 'execute_sql_file\(op\.get_bind\(\), SQL_DIR / "\$\{up_revision\}\.up\.sql"\)'
+        message: 新 revision 必须通过独立 up SQL 文件执行
+      - path: apps/backend/migrations/script.py.mako
+        pattern: 'execute_sql_file\(op\.get_bind\(\), SQL_DIR / "\$\{up_revision\}\.down\.sql"\)'
+        message: 新 revision 必须通过独立 down SQL 文件执行
+      - path: scripts/db/create_sql_revision.py
+        pattern: 'create_sql_files\(revision\.revision, args\.message\)'
+        message: 生成 revision 时必须同步创建 SQL 文件对
+      - path: Dockerfile
+        pattern: 'run_alembic\.py.*&& exec uvicorn'
+        message: 容器必须先通过迁移 runner 再启动 FastAPI
+      - path: .ai/skills/alembic-migration/SKILL.md
+        pattern: '同 ID 的 `\.up\.sql`、`\.down\.sql` 文件对'
+        message: 迁移 Skill 必须要求配对 up/down SQL
+      - path: .ai/skills/alembic-migration/SKILL.md
+        pattern: '禁止使用 `alembic revision --autogenerate`'
+        message: 迁移 Skill 不得把 autogenerate 作为 SQL-first 入口
+      - path: .ai/prompts/project.md
+        pattern: '根 revision `0001`'
+        message: 项目入口必须反映已经建立的 MySQL 根 revision
+      - path: Dockerfile
+        pattern: 'python -m pip install --index-url "\$\{UV_INDEX_URL\}" "uv==\$\{UV_VERSION\}"'
+        message: uv 必须通过可配置的 PyPI 镜像安装，不能依赖 GHCR 镜像
+      - path: Dockerfile
+        pattern: 'uv pip install .*--index-url "\$\{UV_INDEX_URL\}" --requirements /tmp/requirements\.txt'
+        message: 锁定的 Python 依赖必须从可配置镜像下载，不能复用 uv.lock 中的外部制品 URL
+
+  - id: deployment-environment-isolation
+    description: Dev 与 Production 使用独立的发布目标和运行资源
+    assertions:
+      - path: deploy/docker-compose.development.yml
+        pattern: '(?m)^    container_name: linkcv-dev$'
+        message: Dev 必须使用独立容器名
+      - path: deploy/docker-compose.development.yml
+        pattern: 'LINKCV_DEV_HTTP_PORT:-18002'
+        message: Dev 必须使用独立宿主机端口 18002
+      - path: deploy/docker-compose.development.yml
+        pattern: 'LINKCV_DOCKER_NETWORK:-tolink-dev-net'
+        message: Dev 必须加入隔离开发网络
+      - path: deploy/scripts/build-development-on-primary.sh
+        pattern: 'dev_root="/opt/tolink/dev"'
+        message: Dev 必须部署到 /opt/tolink/dev
+      - path: deploy/scripts/build-development-on-primary.sh
+        pattern: 'tag="dev-\$\{commit_short\}-b\$\{build_number\}"'
+        message: Dev 镜像必须使用 dev-<commit>-b<build> 标签
+      - path: deploy/jenkins/Jenkinsfile.development
+        pattern: 'PRIMARY_SSH_KEY = ''/var/jenkins_home/\.ssh/primary_dev'''
+        message: Dev Jenkins 必须使用 primary_dev 密钥
+      - path: deploy/jenkins/Jenkinsfile.development
+        pattern: 'tokenCredentialId: ''linkcv-dev-webhook-token'''
+        message: Dev webhook token 必须来自 Jenkins Secret Text 凭据
+      - path: deploy/jenkins/Jenkinsfile.development
+        pattern: 'regexpFilterExpression: ''\^refs/heads/dev\$'''
+        message: Dev webhook 必须只接受 refs/heads/dev push
+      - path: deploy/docker-compose.production.yml
+        pattern: '(?m)^    container_name: linkcv$'
+        message: Production 必须使用生产容器名
+      - path: deploy/docker-compose.production.yml
+        pattern: 'LINKCV_HTTP_PORT:-8000'
+        message: Production 必须使用生产宿主机端口 8000
+      - path: deploy/docker-compose.production.yml
+        pattern: 'LINKCV_DOCKER_NETWORK:-tolink-app-net'
+        message: Production 必须加入生产应用网络
+
+  - id: jenkins-migration-targets
+    description: 两条 Jenkins 发布链在部署前校验各自的环境与数据库目标
+    assertions:
+      - path: deploy/scripts/build-development-on-primary.sh
+        pattern: '--expected-app-env development[\s\S]*--expected-host 100\.86\.10\.52[\s\S]*--expected-port 13306[\s\S]*--expected-database linkcv'
+        message: Dev 迁移必须锁定共享 Dev 的独立 linkcv 数据库
+      - path: Jenkinsfile
+        pattern: 'EXPECTED_APP_ENV = ''production'''
+        message: Production Jenkins 必须锁定 production 环境
+      - path: Jenkinsfile
+        pattern: 'EXPECTED_MYSQL_HOST = ''tolink-mysql'''
+        message: Production Jenkins 必须锁定生产 MySQL 主机
+      - path: Jenkinsfile
+        pattern: 'EXPECTED_MYSQL_PORT = ''3306'''
+        message: Production Jenkins 必须锁定生产 MySQL 端口
+      - path: Jenkinsfile
+        pattern: 'EXPECTED_MYSQL_DATABASE = ''linkcv'''
+        message: Production Jenkins 必须锁定独立 linkcv 数据库
+
+  - id: development-resource-isolation
+    description: Dev 使用专属 Redis DB 和对象存储 Bucket
+    assertions:
+      - path: .env.development
+        pattern: '(?m)^REDIS_DB=2$'
+        message: LinkCV Dev 必须使用独立 Redis DB 2
+      - path: .env.development
+        pattern: '(?m)^MINIO_BUCKET=linkcv$'
+        message: LinkCV Dev 必须使用独立 linkcv Bucket

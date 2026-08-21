@@ -1,0 +1,6 @@
+{
+  "navigationStyle": "custom",
+  "backgroundColor": "#FFFFFF",
+  "enablePullDownRefresh": false,
+  "usingComponents": {}
+}

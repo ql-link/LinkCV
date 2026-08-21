@@ -1,0 +1,35 @@
+name: Quality
+
+on:
+  pull_request:
+    branches: [dev, release, master]
+  push:
+    branches: [dev, release, master]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/web/package-lock.json
+            apps/extension/package-lock.json
+      - uses: astral-sh/setup-uv@v8.3.2
+        with:
+          enable-cache: true
+      - run: npm ci --prefix apps/web
+      - run: npm ci --prefix apps/extension
+      - run: uv sync --directory apps/backend --dev
+      - run: npm run check
+        env:
+          DOCS_SYNC_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}

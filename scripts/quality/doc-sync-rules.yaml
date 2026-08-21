@@ -1,0 +1,75 @@
+version: 1
+
+rules:
+  - id: fastapi-http-contract
+    description: FastAPI 路由变化必须同步 HTTP 契约和后端模块文档
+    when_changed:
+      - apps/backend/src/linkcv/api/**/*.py
+      - apps/backend/src/linkcv/modules/**/*.py
+    must_update:
+      - docs/api/http-contracts.md
+      - docs/internals/backend.md
+
+  - id: web-api-client-contract
+    description: 前端 API 客户端变化必须同步 HTTP 契约
+    when_changed:
+      - apps/web/src/api/client.ts
+    must_update:
+      - docs/api/http-contracts.md
+
+  - id: browser-extension-import-contract
+    description: 浏览器岗位采集、权限或导入客户端变化必须同步插件与 HTTP 契约文档
+    when_changed:
+      - apps/extension/wxt.config.ts
+      - apps/extension/src/contracts.ts
+      - apps/extension/src/api/**/*.ts
+      - apps/extension/entrypoints/**/*.ts
+      - apps/extension/entrypoints/**/*.tsx
+    must_update:
+      - docs/internals/extension.md
+      - docs/api/http-contracts.md
+
+  - id: vite-routing-contract
+    description: Vite 代理变化必须同步架构、Web 和开发文档
+    when_changed:
+      - apps/web/vite.config.mjs
+    must_update:
+      - docs/internals/architecture.md
+      - docs/internals/web.md
+      - docs/ops/development.md
+
+  - id: backend-persistence
+    description: 数据模型和迁移变化必须同步后端文档
+    when_changed:
+      - apps/backend/src/linkcv/core/database.py
+      - apps/backend/src/linkcv/modules/**/models.py
+      - apps/backend/migrations/**/*.py
+      - apps/backend/migrations/**/*.sql
+    must_update:
+      - docs/internals/backend.md
+
+  - id: local-environment
+    description: 环境模板或本地依赖编排变化必须同步开发文档
+    when_changed:
+      - .env.example
+      - .env.development
+      - .env.production
+      - apps/backend/src/linkcv/core/config.py
+      - deploy/docker-compose.yml
+      - deploy/docker-compose.observability.local.yml
+    must_update:
+      - docs/ops/development.md
+
+  - id: deployment-topology
+    description: 构建或生产部署拓扑变化必须同步部署文档
+    when_changed:
+      - .github/workflows/quality.yml
+      - Dockerfile
+      - Jenkinsfile
+      - deploy/jenkins/**/*
+      - deploy/scripts/**/*
+      - deploy/docker-compose.development.yml
+      - deploy/docker-compose.production.yml
+      - deploy/docker-compose.observability.local.yml
+    must_update:
+      - docs/ops/deployment.md

@@ -1,58 +1,50 @@
 # Jenkins Docker deployment
 
-This project follows the same deployment shape as `LinkRag-Web`: Jenkins builds the app, builds a local Docker image, then restarts the app from a fixed deployment directory with Docker Compose.
+LinkCV uses separate Jenkins jobs for Development and Production. Both jobs build the root Dockerfile, run the guarded Alembic runner before deployment, update the matching Compose service, and wait for `/api/health`.
 
-## Server layout
+## Development
 
-Prepare these directories on the Jenkins/deploy server:
+Configure the Dev job with the script path `deploy/jenkins/Jenkinsfile.development`. The job archives its checked-out commit and sends it to Primary, where `deploy/scripts/build-development-on-primary.sh` builds and deploys it.
 
-```bash
-sudo mkdir -p /opt/tolink/LinkCV/deploy /opt/tolink/LinkCV/data
-sudo chown -R jenkins:jenkins /opt/tolink/LinkCV
-```
+Primary must provide `/opt/tolink/dev/linkcv/.env.development.local` with mode `600`, the external Docker network `tolink-dev-net`, and free host port `18002`. The Jenkins agent must provide `/var/jenkins_home/.ssh/primary_dev`.
 
-Jenkins copies `deploy/docker-compose.yml` into `/opt/tolink/LinkCV/deploy/docker-compose.yml` on each deployment.
+The private file contains only credentials and the JWT secret. The committed
+`.env.development` remains authoritative for `100.86.10.52:13306/linkcv`, Redis
+DB 2, the MinIO endpoint, and bucket `linkcv`.
 
-Create one runtime env file:
+The guarded migration target is `development / 100.86.10.52:13306 / linkcv`; a mismatch fails before Alembic runs.
 
-```text
-/opt/tolink/LinkCV/.env
-```
+Create a Jenkins Secret Text credential named `linkcv-dev-webhook-token`. The
+pipeline declares a Generic Webhook Trigger that accepts only
+`refs/heads/dev`; configure GitHub with the same token and only the push event.
+Do not place the token in this repository or the Primary env file.
 
-Example:
+## Production
+
+Jenkins copies the repository's non-secret `.env.production` to `/opt/tolink/LinkCV/.env.production`. Place a private `/opt/tolink/LinkCV/.env.production.local` beside it from the deployment secret store. The private file must define the MySQL and MinIO credentials plus a random JWT secret.
 
 ```dotenv
-MINIO_ENDPOINT=http://103.205.254.30:39000
-MINIO_ACCESS_KEY=root
-MINIO_SECRET_KEY=ql354210
-MINIO_BUCKET=linkcv
+MYSQL_USER=<deployment-user>
+MYSQL_PASSWORD=<deployment-password>
+JWT_SECRET=<at-least-32-random-characters>
+COOKIE_SECURE=true
+MINIO_ACCESS_KEY=<deployment-access-key>
+MINIO_SECRET_KEY=<deployment-secret-key>
 ```
 
-`/opt/tolink/LinkCV/data` is mounted into the container as `/app/data`, where SQLite stores `resume_app.sqlite`.
+连接地址和 Bucket 由仓库中的 `.env.production` 管理。私密文件不要设置
+`DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`，否则会覆盖通过
+`tolink-app-net` 使用的生产 Docker DNS 地址。
 
-## Jenkins job
-
-Use `Pipeline script from SCM`:
-
-- Repository: `https://github.com/ql-link/LinkCV.git`
-- Branch: `*/master`
-- Script Path: `Jenkinsfile`
-
-The Jenkins agent must have Docker and Docker Compose available, and the Jenkins user must be allowed to run Docker.
-
-## Deploy command used by Jenkins
+The Production Jenkins agent needs Docker and Docker Compose access plus the external network `tolink-app-net`. The root `Jenkinsfile` deploys with:
 
 ```bash
 cd /opt/tolink/LinkCV
 export TAG=<git-sha>
-export LINKCV_ENV_FILE=/opt/tolink/LinkCV/.env
-docker compose -f deploy/docker-compose.yml up -d
+export LINKCV_ENV_FILE=/opt/tolink/LinkCV/.env.production
+export LINKCV_SECRET_ENV_FILE=/opt/tolink/LinkCV/.env.production.local
+export LINKCV_DOCKER_NETWORK=tolink-app-net
+docker compose -f deploy/docker-compose.production.yml up -d
 ```
 
-## Useful checks
-
-```bash
-docker ps | grep linkcv
-docker logs -f linkcv
-curl -fsS http://127.0.0.1:4174/api/health
-```
+The guarded Production migration target is `production / tolink-mysql:3306 / linkcv`. The image build does not connect to MySQL. Container startup keeps the same guard as a final protection for manual or concurrent starts. Redis and MinIO use `tolink-redis:6379` and `http://tolink-minio:9000` on the same external Docker network.

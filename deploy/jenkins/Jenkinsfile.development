@@ -1,0 +1,112 @@
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+  }
+
+  parameters {
+    booleanParam(
+      name: 'RUN_TESTS',
+      defaultValue: false,
+      description: '上传 Primary 前运行 npm run check'
+    )
+  }
+
+  triggers {
+    GenericTrigger(
+      genericVariables: [[key: 'ref', value: '$.ref']],
+      causeString: 'GitHub push to $ref',
+      token: '',
+      tokenCredentialId: 'linkcv-dev-webhook-token',
+      printContributedVariables: false,
+      printPostContent: false,
+      silentResponse: false,
+      shouldNotFlatten: false,
+      regexpFilterText: '$ref',
+      regexpFilterExpression: '^refs/heads/dev$'
+    )
+  }
+
+  environment {
+    PRIMARY_HOST = '100.86.10.52'
+    PRIMARY_USER = 'root'
+    PRIMARY_SSH_KEY = '/var/jenkins_home/.ssh/primary_dev'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+        script {
+          env.COMMIT_SHORT = sh(
+            script: 'git rev-parse --short=8 HEAD',
+            returnStdout: true
+          ).trim()
+        }
+      }
+    }
+
+    stage('Quality') {
+      when { expression { return params.RUN_TESTS } }
+      steps {
+        sh 'npm run setup && npm run check'
+      }
+    }
+
+    stage('Package Commit') {
+      steps {
+        sh '''
+          set -eu
+          git archive --format=tar.gz --output=linkcv-source.tar.gz HEAD
+        '''
+      }
+    }
+
+    stage('Deploy Development on Primary') {
+      steps {
+        sh '''
+          set -eu
+          case "${BUILD_NUMBER}" in
+            ''|*[!0-9]*) echo 'BUILD_NUMBER must be numeric'; exit 20 ;;
+          esac
+          test -f "${PRIMARY_SSH_KEY}" || {
+            echo "Missing Primary SSH key: ${PRIMARY_SSH_KEY}"
+            exit 21
+          }
+
+          remote_dir="/tmp/linkcv-jenkins-${BUILD_NUMBER}"
+          ssh_opts="-i ${PRIMARY_SSH_KEY} -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+          ssh ${ssh_opts} "${PRIMARY_USER}@${PRIMARY_HOST}" \
+            "mkdir -p '${remote_dir}'"
+          scp ${ssh_opts} \
+            linkcv-source.tar.gz \
+            deploy/scripts/build-development-on-primary.sh \
+            "${PRIMARY_USER}@${PRIMARY_HOST}:${remote_dir}/"
+          ssh ${ssh_opts} "${PRIMARY_USER}@${PRIMARY_HOST}" \
+            "bash '${remote_dir}/build-development-on-primary.sh' '${BUILD_NUMBER}' '${COMMIT_SHORT}' '${remote_dir}/linkcv-source.tar.gz'"
+        '''
+      }
+    }
+  }
+
+  post {
+    always {
+      sh '''
+        case "${BUILD_NUMBER}" in
+          ''|*[!0-9]*) exit 0 ;;
+        esac
+        ssh -i "${PRIMARY_SSH_KEY}" \
+          -o BatchMode=yes \
+          -o StrictHostKeyChecking=accept-new \
+          "${PRIMARY_USER}@${PRIMARY_HOST}" \
+          "rm -rf '/tmp/linkcv-jenkins-${BUILD_NUMBER}'" || true
+        rm -f linkcv-source.tar.gz
+      '''
+    }
+    success { echo "Development deployed from commit ${env.COMMIT_SHORT}" }
+    failure { echo 'Development build or deployment failed.' }
+  }
+}

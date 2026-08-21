@@ -1,6 +1,25 @@
 node_modules/
 dist/
-data/*.sqlite
-data/*.sqlite-shm
-data/*.sqlite-wal
+.output/
+.wxt/
+data/
+.idea/
+.vscode/
+.env
+.env.*
+!.env.example
+!.env.development
+!.env.production
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.runtime/
+*.py[cod]
 .DS_Store
+
+# WeChat DevTools local private config
+apps/miniprogram/project.private.config.json
+
+# Local Spec documents; reusable templates live with their owning Skills.
+.specs/*/

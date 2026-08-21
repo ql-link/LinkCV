@@ -1,48 +1,51 @@
 # syntax=docker/dockerfile:1
 
-FROM node:22-bookworm AS build
+FROM node:22-bookworm-slim AS web-build
 
-WORKDIR /app
-
-COPY package.json package-lock.json ./
-RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true; \
-  sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true; \
-  apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    ca-certificates \
-    python3 \
-  && rm -rf /var/lib/apt/lists/*
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+WORKDIR /app/apps/web
+COPY apps/web/package.json apps/web/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
-  npm ci --prefer-offline --no-audit --registry=https://registry.npmmirror.com
-
-COPY index.html tsconfig.json vite.config.mjs ./
-COPY src ./src
-COPY server ./server
+    npm ci --no-audit --registry="${NPM_REGISTRY}"
+COPY apps/web/index.html \
+    apps/web/tsconfig.json \
+    apps/web/vite.config.mjs \
+    apps/web/postcss.config.cjs \
+    apps/web/tailwind.config.cjs \
+    ./
+COPY apps/web/public ./public
+COPY apps/web/src ./src
 RUN npm run build
-RUN npm prune --omit=dev
 
-FROM node:22-bookworm-slim AS runtime
+FROM python:3.13-slim AS runtime
 
-ENV NODE_ENV=production \
-    API_PORT=4174 \
-    DATA_DIR=/app/data \
+ARG UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+ARG UV_VERSION=0.11.30
+ENV PYTHONUNBUFFERED=1 \
+    PATH="/app/apps/backend/.venv/bin:$PATH" \
+    APP_ENV=production \
+    BACKEND_HOST=0.0.0.0 \
+    BACKEND_PORT=8000 \
+    WEB_DIST_DIR=/app/web \
     TZ=Asia/Shanghai
 
-WORKDIR /app
+WORKDIR /app/apps/backend
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip install --index-url "${UV_INDEX_URL}" "uv==${UV_VERSION}"
+COPY apps/backend/pyproject.toml apps/backend/uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv export --quiet --frozen --no-dev --no-emit-project --format requirements-txt --output-file /tmp/requirements.txt && \
+    uv venv .venv && \
+    uv pip install --python .venv/bin/python --require-hashes --index-url "${UV_INDEX_URL}" --requirements /tmp/requirements.txt
+COPY apps/backend/alembic.ini ./
+COPY apps/backend/migrations ./migrations
+COPY apps/backend/src ./src
+COPY scripts/release/run_alembic.py /app/scripts/release/run_alembic.py
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --python .venv/bin/python --no-deps --index-url "${UV_INDEX_URL}" .
+COPY --from=web-build /app/apps/web/dist /app/web
+RUN mkdir -p /app/logs
 
-RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true; \
-  sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true; \
-  apt-get update && apt-get install -y --no-install-recommends \
-    fontconfig \
-    fonts-noto-cjk \
-  && rm -rf /var/lib/apt/lists/* \
-  && fc-cache -f
+EXPOSE 8000
 
-COPY --from=build /app/package.json /app/package-lock.json ./
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/server ./server
-COPY --from=build /app/dist ./dist
-
-EXPOSE 4174
-
-CMD ["npm", "start"]
+CMD ["sh", "-c", "python /app/scripts/release/run_alembic.py --expected-app-env \"$APP_ENV\" --expected-host \"$MYSQL_HOST\" --expected-port \"$MYSQL_PORT\" --expected-database \"$MYSQL_DATABASE\" && exec uvicorn linkcv.main:app --host 0.0.0.0 --port 8000 --no-access-log"]

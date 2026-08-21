@@ -1,32 +1,81 @@
-# 部署用 compose：引用本机 docker build 出来的镜像并启动。
-# 用法：
-#   TAG=xxx docker compose -f deploy/docker-compose.yml up -d
+name: linkcv-dev
 
 services:
-  linkcv:
-    image: linkcv:${TAG:-latest}
-    container_name: linkcv
-    restart: always
-    env_file:
-      - ${LINKCV_ENV_FILE:-../.env}
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
     environment:
-      TZ: Asia/Shanghai
-      NODE_ENV: production
-      API_PORT: 4174
-      DATA_DIR: /app/data
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-linkcv}
+      MYSQL_USER: ${MYSQL_USER:-linkcv}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-linkcv-local-change-me}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-linkcv-root-local-change-me}
     ports:
-      - "4174:4174"
+      - "${MYSQL_PORT:-3306}:3306"
     volumes:
-      - /opt/tolink/LinkCV/data:/app/data
+      - mysql-data:/var/lib/mysql
     healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://127.0.0.1:4174/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
-        ]
-      interval: 30s
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$${MYSQL_USER} -p$${MYSQL_PASSWORD} --silent"]
+      interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 10
+      start_period: 30s
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-linkcv}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-linkcv-minio-local-change-me}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
       start_period: 10s
+
+  redis:
+    image: redis:8.2-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-linkcv-redis-local-change-me}
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-linkcv}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-linkcv-rabbit-local-change-me}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  mysql-data:
+  minio-data:
+  redis-data:
+  rabbitmq-data:

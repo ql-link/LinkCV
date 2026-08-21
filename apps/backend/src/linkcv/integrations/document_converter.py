@@ -1,0 +1,117 @@
+from __future__ import annotations
+
+import logging
+import unicodedata
+from time import monotonic
+
+from linkcv.domain.document_conversion import (
+    DocumentConversionFailure,
+    DocumentMarkdownResult,
+)
+from linkcv.integrations.linkparse_client import LinkParseClient
+
+logger = logging.getLogger(__name__)
+
+
+def normalize_markdown(markdown: str) -> str:
+    value = unicodedata.normalize("NFC", markdown)
+    lines = [
+        line.rstrip()
+        for line in value.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    ]
+    normalized: list[str] = []
+    previous_blank = False
+    for line in lines:
+        if not line:
+            if previous_blank:
+                continue
+            previous_blank = True
+        else:
+            previous_blank = False
+        normalized.append(line)
+    return "\n".join(normalized).strip()
+
+
+class DocumentConverter:
+    def __init__(
+        self,
+        *,
+        linkparse: LinkParseClient,
+        markdown_max_bytes: int,
+    ) -> None:
+        self._linkparse = linkparse
+        self._markdown_max_bytes = markdown_max_bytes
+
+    async def convert(
+        self,
+        *,
+        filename: str,
+        content_type: str,
+        content: bytes,
+        operation_id: str,
+        deadline_monotonic: float,
+    ) -> DocumentMarkdownResult:
+        del content_type
+        extension = filename.rsplit(".", 1)[-1].lower()
+        if extension == "pdf":
+            return await self._linkparse.parse_pdf(
+                filename=filename,
+                content=content,
+                operation_id=operation_id,
+                deadline_monotonic=deadline_monotonic,
+            )
+        if extension == "docx":
+            return await self._linkparse.parse_docx(
+                filename=filename,
+                content=content,
+                operation_id=operation_id,
+                deadline_monotonic=deadline_monotonic,
+            )
+        started = monotonic()
+        logger.info(
+            "document conversion started",
+            extra={"operation_id": operation_id, "summary": f"format={extension}"},
+        )
+        try:
+            if extension in {"md", "txt"}:
+                markdown = normalize_markdown(content.decode("utf-8"))
+                warnings: list[str] = []
+                parser = (
+                    "linkcv-direct-markdown"
+                    if extension == "md"
+                    else "linkcv-direct-txt"
+                )
+            else:
+                raise DocumentConversionFailure(415, "UNSUPPORTED_IMPORT_FORMAT")
+            if not markdown:
+                raise DocumentConversionFailure(422, "IMPORT_CONTENT_INVALID")
+            if len(markdown.encode("utf-8")) > self._markdown_max_bytes:
+                raise DocumentConversionFailure(413, "IMPORT_FILE_TOO_LARGE")
+        except (DocumentConversionFailure, UnicodeDecodeError) as error:
+            logger.warning(
+                "document conversion failed",
+                extra={
+                    "operation_id": operation_id,
+                    "duration_ms": round((monotonic() - started) * 1000),
+                    "error_code": getattr(error, "code", "IMPORT_CONTENT_INVALID"),
+                    "exception_type": type(error).__name__,
+                    "summary": f"format={extension}",
+                },
+            )
+            raise
+        logger.info(
+            "document conversion completed",
+            extra={
+                "operation_id": operation_id,
+                "duration_ms": round((monotonic() - started) * 1000),
+                "summary": f"format={extension};parser={parser}",
+            },
+        )
+        return DocumentMarkdownResult(
+            markdown=markdown,
+            source_file_name=filename,
+            source_format=extension,
+            parser=parser,
+            parser_version="1",
+            warnings=warnings,
+        )

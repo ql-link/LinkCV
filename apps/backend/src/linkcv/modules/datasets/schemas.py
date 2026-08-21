@@ -1,0 +1,37 @@
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, field_validator
+
+
+class UserDatasetRecord(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    file_name: str
+    file_format: str
+    file_size: int
+    upload_status: str
+    parse_status: str | None
+    failure_reason: str | None
+    created_at: datetime
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def stringify_id(cls, value: object) -> str:
+        return str(value)
+
+
+class UserDatasetListResponse(BaseModel):
+    datasets: list[UserDatasetRecord]
+
+
+class UserDatasetContentResponse(BaseModel):
+    id: str
+    file_name: str
+    file_format: str
+    markdown: str
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def stringify_id(cls, value: object) -> str:
+        return str(value)

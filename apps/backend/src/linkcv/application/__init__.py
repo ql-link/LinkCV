@@ -1,0 +1,1 @@
+"""LinkCV application services."""
