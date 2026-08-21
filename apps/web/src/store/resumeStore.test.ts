@@ -232,6 +232,59 @@ describe("resume import", () => {
     expect(useResumeStore.getState().activeResumeId).toBe("1");
   });
 
+  it("浏览器不提供 crypto 时仍生成规范幂等键并发送导入请求", async () => {
+    const file = new File(["# 张三"], "resume.md", { type: "text/markdown" });
+    const importResume = vi.spyOn(api, "importResume").mockResolvedValue({
+      import: importTask("3", {
+        source_filename: "resume.md",
+        source_file_format: "md",
+      }),
+    });
+    vi.stubGlobal("crypto", undefined);
+
+    try {
+      await useResumeStore.getState().importResume(file, "8");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(importResume).toHaveBeenCalledWith(
+      file,
+      "8",
+      expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      ),
+    );
+  });
+
+  it("浏览器不提供 randomUUID 时使用随机字节生成 UUID v4", async () => {
+    const file = new File(["# 张三"], "resume.md", { type: "text/markdown" });
+    const importResume = vi.spyOn(api, "importResume").mockResolvedValue({
+      import: importTask("4", {
+        source_filename: "resume.md",
+        source_file_format: "md",
+      }),
+    });
+    vi.stubGlobal("crypto", {
+      getRandomValues: (bytes: Uint8Array) => {
+        bytes.fill(0);
+        return bytes;
+      },
+    });
+
+    try {
+      await useResumeStore.getState().importResume(file, "8");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(importResume).toHaveBeenCalledWith(
+      file,
+      "8",
+      "00000000-0000-4000-8000-000000000000",
+    );
+  });
+
   it("导入提示按简历隔离并可关闭", () => {
     useResumeStore.setState({
       importWarningsByResumeId: {
