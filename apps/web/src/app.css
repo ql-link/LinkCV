@@ -1472,6 +1472,126 @@ select:not([data-slot]):focus-visible,
 
 .dashboard-main { padding: 32px; }
 
+.template-library-body {
+  padding: 28px 32px 48px;
+}
+
+.template-library-grid {
+  display: grid;
+  max-width: 1180px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 24px;
+}
+
+.template-library-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-surface);
+  transition: border-color var(--ui-duration-fast) var(--ui-ease-press);
+}
+
+.template-library-card:not(.is-loading):hover {
+  border-color: var(--ui-border-strong);
+}
+
+.template-library-preview {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 210 / 220;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-surface-subtle);
+  container-type: inline-size;
+}
+
+.template-library-preview .resume-readonly-preview-card .resume-preview-paper {
+  top: 0;
+  translate: -50% 0;
+  transform-origin: top center;
+  scale: calc(100cqw / 210mm);
+}
+
+.template-library-card-copy {
+  display: flex;
+  min-height: 158px;
+  flex: 1;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px;
+}
+
+.template-library-card-copy h2 {
+  margin: 0;
+  color: var(--ui-foreground);
+  font-size: var(--ui-text-md);
+  font-weight: 600;
+  line-height: var(--ui-leading-tight);
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.template-library-card-copy p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 7px 0 0;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-text-sm);
+  line-height: var(--ui-leading-normal);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.template-library-action { width: 100%; }
+
+.template-library-card.is-loading { pointer-events: none; }
+
+.template-library-skeleton-preview {
+  aspect-ratio: 210 / 220;
+  border-radius: 0;
+}
+
+.template-library-state {
+  display: flex;
+  max-width: 680px;
+  min-height: 280px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  border: 1px dashed var(--ui-border-strong);
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-surface-subtle);
+  padding: 40px 24px;
+  text-align: center;
+}
+
+.template-library-state-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: var(--ui-radius-full);
+  background: var(--ui-accent-subtle);
+  color: var(--ui-accent);
+}
+
+.template-library-state h2 {
+  margin: 16px 0 0;
+  color: var(--ui-foreground);
+  font-size: var(--ui-text-lg);
+}
+
+.template-library-state p {
+  max-width: 420px;
+  margin: 8px 0 20px;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-text-sm);
+  line-height: var(--ui-leading-normal);
+}
+
 .home-card-grid {
   display: grid;
   max-width: 1180px;
@@ -2279,6 +2399,9 @@ select:not([data-slot]):focus-visible,
   .dashboard-import.ui-button,
   .dashboard-create.ui-button { padding-inline: 12px; }
   .dashboard-main { padding: 20px 16px 32px; }
+  .template-library-content .page-hero { padding: 22px 16px 0; }
+  .template-library-body { padding: 22px 16px 32px; }
+  .template-library-grid { grid-template-columns: 1fr; gap: 16px; }
   .home-card-grid { grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: 16px; }
   .home-card-preview { padding: 14px; }
   .home-card-meta { padding: 13px 14px 15px; }
@@ -3279,45 +3402,30 @@ select:not([data-slot]):focus-visible,
 /* 资料库空态（16A） */
 .datasets-empty {
   display: grid;
+  min-height: 360px;
+  place-content: center;
   justify-items: center;
-  gap: 14px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-xl);
-  background: var(--surface-card);
-  padding: clamp(40px, 7vw, 72px) clamp(24px, 6vw, 80px);
+  gap: 12px;
+  color: var(--ui-muted);
   text-align: center;
-  box-shadow: var(--shadow-sm);
 }
 
 .datasets-empty-icon {
   display: grid;
-  width: 72px;
-  height: 72px;
   place-items: center;
-  border-radius: 20px;
-  background: var(--gray-100);
-  color: var(--ink);
+  color: var(--ui-muted);
 }
 
 .datasets-empty h2 {
-  margin: 6px 0 0;
-  font-size: 22px;
+  margin: 0;
+  color: var(--ink);
+  font-size: 24px;
 }
 
 .datasets-empty p {
   margin: 0;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.8;
-}
-
-.datasets-empty .file-upload {
-  width: min(560px, 100%);
-  margin-top: 10px;
-}
-
-.datasets-empty-hint {
-  font-size: 12px !important;
+  color: var(--ui-muted);
+  line-height: 1.55;
 }
 
 /* 资料上传弹窗（16C） */

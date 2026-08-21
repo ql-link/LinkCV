@@ -332,6 +332,7 @@ export function HomeScreen({
           <>
             <ExpandableSearch
               label="搜索简历"
+              name="resume-search"
               value={query}
               onValueChange={setQuery}
               placeholder="搜索简历…"

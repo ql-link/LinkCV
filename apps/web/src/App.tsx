@@ -10,6 +10,7 @@ import { AuthPage } from "./features/auth/AuthPage";
 import { DatasetsPage } from "./features/datasets/DatasetsPage";
 import { HomePage } from "./features/home/HomePage";
 import { ResumeCreatePage } from "./features/home/ResumeCreatePage";
+import { ResumeTemplatesPage } from "./features/templates/ResumeTemplatesPage";
 import { JobCenterPage } from "./features/jobs/JobCenterPage";
 import { JobDetailPage } from "./features/jobs/JobDetailPage";
 import { JobFormPage } from "./features/jobs/JobFormPage";
@@ -57,6 +58,7 @@ export function App() {
     if (authStatus === "guest") {
       if (
         route.kind === "resumes"
+        || route.kind === "templates"
         || route.kind === "resumeCreate"
         || route.kind === "editor"
         || route.kind === "jobs"
@@ -172,6 +174,7 @@ export function App() {
 
   if (
     route.kind === "resumes"
+    || route.kind === "templates"
     || route.kind === "jobs"
     || route.kind === "jobCreate"
     || route.kind === "jobDetail"
@@ -181,6 +184,8 @@ export function App() {
   ) {
     const activeSection: WorkspaceSection = route.kind === "resumes"
       ? "resumes"
+      : route.kind === "templates"
+        ? "templates"
       : route.kind === "account"
         ? "account"
         : route.kind === "datasets"
@@ -190,6 +195,7 @@ export function App() {
     return (
       <WorkspaceLayout active={activeSection}>
         {route.kind === "resumes" && <HomePage />}
+        {route.kind === "templates" && <ResumeTemplatesPage />}
         {route.kind === "jobs" && <JobCenterPage />}
         {route.kind === "jobCreate" && <JobFormPage mode="create" />}
         {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}

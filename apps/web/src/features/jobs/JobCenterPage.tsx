@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { Archive, BriefcaseBusiness, Download, MapPin, Plus, RotateCcw, Search, Trash2 } from "lucide-react";
+import { Archive, BriefcaseBusiness, Download, MapPin, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { api, ApiRequestError, type JobDescriptionSummary } from "../../api/client";
-import { Button, ConfirmDialog } from "@/components/ui";
+import { Button, ConfirmDialog, ExpandableSearch } from "@/components/ui";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { jobDetailPath, navigateTo } from "../../routing";
 import { PluginInstallDialog } from "./PluginInstallDialog";
 import "./jobs.css";
 
-type JobScope = "active" | "archived" | "all";
+type JobScope = "archived" | "all";
 
 export function JobCenterPage() {
-  const [scope, setScope] = useState<JobScope>("active");
+  const [scope, setScope] = useState<JobScope>("all");
   const [keyword, setKeyword] = useState("");
   const [items, setItems] = useState<JobDescriptionSummary[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -113,29 +113,42 @@ export function JobCenterPage() {
 
   return (
     <main className="dashboard-content job-center-content">
-        <WorkspacePageHero
-          eyebrow="岗位资料库"
-          title="JD 中心"
-          description="把岗位身份和下一步判断放在第一层，来源与更新时间退到辅助信息。"
-          actions={(
-            <>
-              <Button variant="ghost" icon={<Download size={15} />} onClick={() => setShowPluginInstall(true)}>安装采集插件</Button>
-              <Button icon={<Plus size={15} />} onClick={() => navigateTo("/jobs/new")}>新建 JD</Button>
-            </>
-          )}
-        />
+      <WorkspacePageHero
+        eyebrow="岗位资料库"
+        title="JD 中心"
+        description="把岗位身份和下一步判断放在第一层，来源与更新时间退到辅助信息。"
+        actions={(
+          <>
+            <ExpandableSearch
+              label="搜索职位"
+              name="job-search"
+              value={keyword}
+              onValueChange={setKeyword}
+              placeholder="搜索职位、公司或技能…"
+            />
+            <Button variant="ghost" icon={<Download size={15} />} onClick={() => setShowPluginInstall(true)}>安装采集插件</Button>
+            <Button variant="outline" icon={<Plus size={15} />} onClick={() => navigateTo("/jobs/new")}>新建 JD</Button>
+          </>
+        )}
+      />
 
+      <div className="job-center-body">
         <div className="job-toolbar">
-          <label className="job-search-field">
-            <span>搜索职位</span>
-            <span className="job-search">
-              <Search size={15} />
-              <input aria-label="搜索 JD" value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="职位、公司或技能" />
-            </span>
-          </label>
           <div className="job-filter-row">
             <div className="job-scope-tabs" aria-label="归档范围">
-              {(["all", "active", "archived"] as const).map((value) => <button key={value} type="button" className={scope === value ? "is-active" : ""} onClick={() => setScope(value)}>{value === "active" ? "活动" : value === "archived" ? "已归档" : "全部"}</button>)}
+              {(["all", "archived"] as const).map((value) => (
+                <Button
+                  key={value}
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  aria-pressed={scope === value}
+                  className={scope === value ? "is-active" : ""}
+                  onClick={() => setScope(value)}
+                >
+                  {value === "archived" ? "已归档" : "全部"}
+                </Button>
+              ))}
             </div>
             <span className="job-sort-note">按最近更新</span>
           </div>
@@ -177,6 +190,7 @@ export function JobCenterPage() {
             {nextCursor && <Button className="job-load-more" variant="secondary" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "正在加载…" : "加载更多"}</Button>}
           </div>
         )}
+      </div>
       {pendingDelete && <ConfirmDialog kind="delete" title={`永久删除「${pendingDelete.job_title}」？`} description="删除后无法恢复，并会释放该岗位的来源标识。" confirmLabel="永久删除" busyLabel="正在删除…" busy={busyId === pendingDelete.id} onCancel={() => setPendingDelete(null)} onConfirm={deleteJob} />}
       {showPluginInstall && <PluginInstallDialog onClose={() => setShowPluginInstall(false)} />}
     </main>
