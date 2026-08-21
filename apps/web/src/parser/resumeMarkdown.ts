@@ -2,7 +2,43 @@ import MarkdownIt from "markdown-it";
 
 type Block =
   | { type: "markdown"; content: string }
-  | { type: "side"; align: "left" | "right"; content: string };
+  | { type: "side"; align: "left" | "right"; content: string }
+  | { type: "wide"; kind: "sidebar" | "main" | "meta" | "trio"; content: string };
+
+const inlineIconNames = new Set([
+  "Mail",
+  "Phone",
+  "MapPin",
+  "Globe",
+  "Github",
+  "Linkedin",
+  "GraduationCap",
+  "Briefcase",
+  "Award",
+  "Star",
+  "Calendar",
+  "Code2",
+]);
+
+const inlineIconShapes: Record<string, string> = {
+  Mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-10 6L2 7"/>',
+  Phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.69 2.8a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.33 1.85.56 2.81.69A2 2 0 0 1 22 16.92Z"/>',
+  MapPin: '<path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+  Globe: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10Z"/>',
+  Github: '<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3.3-.4 6.8-1.6 6.8-7A5.4 5.4 0 0 0 19.4 4 5 5 0 0 0 19.3.5S18.2.1 15 1.8a13.4 13.4 0 0 0-7 0C4.8.1 3.7.5 3.7.5A5 5 0 0 0 3.6 4a5.4 5.4 0 0 0-1.4 3.7c0 5.4 3.5 6.6 6.8 7A4.8 4.8 0 0 0 8 18v4"/>',
+  Linkedin: '<path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6ZM2 9h4v12H2z"/><circle cx="4" cy="4" r="2"/>',
+  GraduationCap: '<path d="m2 10 10-5 10 5-10 5Z"/><path d="M6 12v5c3 3 9 3 12 0v-5M22 10v6"/>',
+  Briefcase: '<rect width="20" height="14" x="2" y="7" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M2 12h20M12 12v3"/>',
+  Award: '<circle cx="12" cy="8" r="6"/><path d="M15.5 13.5 17 22l-5-3-5 3 1.5-8.5"/>',
+  Star: '<path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8-6.2-3.2L5.8 21 7 14.2l-5-4.9 6.9-1Z"/>',
+  Calendar: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  Code2: '<path d="m18 16 4-4-4-4M6 8l-4 4 4 4M14.5 4l-5 16"/>',
+};
+
+function renderInlineIcon(name: string) {
+  const shape = inlineIconShapes[name] ?? inlineIconShapes.Star;
+  return `<span data-inline-icon data-icon-name="${escapeAttribute(name)}" class="resume-inline-icon"><svg aria-hidden="true" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${shape}</svg></span>`;
+}
 
 const md = new MarkdownIt({
   html: false,
@@ -200,14 +236,31 @@ function tokenizeCustomBlocks(source: string): Block[] {
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
+    const wideStart = line.match(/^::::\s*(sidebar|main|meta|trio)\s*$/);
     const start = line.match(/^:::\s*(left|right)\s*$/);
 
-    if (!start) {
+    if (!wideStart && !start) {
       buffer.push(line);
       continue;
     }
 
     flushMarkdown();
+
+    if (wideStart) {
+      const kind = wideStart[1] as "sidebar" | "main" | "meta" | "trio";
+      const content: string[] = [];
+      index += 1;
+
+      while (index < lines.length && !/^::::\s*$/.test(lines[index])) {
+        content.push(lines[index]);
+        index += 1;
+      }
+
+      blocks.push({ type: "wide", kind, content: content.join("\n").trim() });
+      continue;
+    }
+
+    if (!start) continue;
 
     const align = start[1] as "left" | "right";
     const content: string[] = [];
@@ -225,8 +278,25 @@ function tokenizeCustomBlocks(source: string): Block[] {
   return blocks;
 }
 
+function renderMarkdownContent(content: string, inline = false) {
+  const icons: string[] = [];
+  const tokenized = content.replace(/:icon\[([A-Za-z0-9]+)\]:/g, (source, name: string) => {
+    if (!inlineIconNames.has(name)) return source;
+    const token = `LINKCVICONPLACEHOLDER${icons.length}Z`;
+    icons.push(name);
+    return token;
+  });
+  let html = inline ? md.renderInline(tokenized) : md.render(tokenized);
+  icons.forEach((name, index) => {
+    html = html.split(`LINKCVICONPLACEHOLDER${index}Z`).join(
+      renderInlineIcon(name),
+    );
+  });
+  return rewriteHtmlImageSources(html);
+}
+
 function renderSideContent(content: string) {
-  return rewriteHtmlImageSources(md.renderInline(content));
+  return renderMarkdownContent(content, true);
 }
 
 function renderPair(left: string, right: string) {
@@ -243,7 +313,43 @@ export function renderResumeMarkdown(source: string) {
     const block = blocks[index];
 
     if (block.type === "markdown") {
-      html.push(rewriteHtmlImageSources(md.render(block.content)));
+      html.push(renderMarkdownContent(block.content));
+      continue;
+    }
+
+    if (block.type === "wide") {
+      const next = blocks[index + 1];
+      if (
+        (block.kind === "sidebar" || block.kind === "main") &&
+        next?.type === "wide" &&
+        (next.kind === "sidebar" || next.kind === "main") &&
+        next.kind !== block.kind
+      ) {
+        const sidebar = block.kind === "sidebar" ? block : next;
+        const main = block.kind === "main" ? block : next;
+        html.push(
+          `<div class="resume-columns" data-type="resume-columns"><section class="resume-column resume-column-sidebar" data-type="resume-column" data-column="sidebar">${renderResumeMarkdown(sidebar.content)}</section><section class="resume-column resume-column-main" data-type="resume-column" data-column="main">${renderResumeMarkdown(main.content)}</section></div>`,
+        );
+        index += 1;
+        continue;
+      }
+
+      if (block.kind === "meta" || block.kind === "trio") {
+        const expected = block.kind === "meta" ? 4 : 3;
+        const lines = block.content.split("\n").map((line) => line.trim()).filter(Boolean);
+        if (lines.length === expected) {
+          const className = block.kind === "meta" ? "resume-meta-row" : "resume-trio-row";
+          const itemName = block.kind === "meta" ? "meta" : "trio";
+          html.push(
+            `<div class="${className}" data-type="${className}">${lines
+              .map((line) => `<p data-${itemName}-cell>${renderSideContent(line)}</p>`)
+              .join("")}</div>`,
+          );
+          continue;
+        }
+      }
+
+      html.push(renderMarkdownContent(`:::: ${block.kind}\n${block.content}\n::::`));
       continue;
     }
 

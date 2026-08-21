@@ -77,6 +77,64 @@ describe("resume semantic contract adapter", () => {
     );
   });
 
+  it.each([
+    "administrative-sidebar-cn",
+    "campus-professional-cn",
+    "civic-service-cn",
+    "creative-orange-cn",
+  ])("preserves the %s theme when editor settings are saved", (templateKey) => {
+    const original = { ...defaultSemanticStyle, template_key: templateKey };
+    const settings = styleToEditorSettings(original);
+
+    expect(editorSettingsToStyle(settings, original).template_key).toBe(templateKey);
+  });
+
+  it("serializes professional layout nodes and inline icons back to markdown", () => {
+    const markdown = editorDocumentToMarkdown({
+      type: "doc",
+      content: [
+        {
+          type: "resumeColumns",
+          content: [
+            {
+              type: "resumeColumn",
+              attrs: { variant: "sidebar" },
+              content: [{ type: "paragraph", content: [{ type: "text", text: "侧栏" }] }],
+            },
+            {
+              type: "resumeColumn",
+              attrs: { variant: "main" },
+              content: [{
+                type: "heading",
+                attrs: { level: 2 },
+                content: [{ type: "inlineIcon", attrs: { name: "Briefcase" } }, { type: "text", text: " 工作经历" }],
+              }],
+            },
+          ],
+        },
+        {
+          type: "resumeMetaRow",
+          content: ["日期", "组织", "方向", "角色"].map((text) => ({
+            type: "paragraph",
+            content: [{ type: "text", text }],
+          })),
+        },
+        {
+          type: "resumeTrioRow",
+          content: ["技能", "年限", "熟练"].map((text) => ({
+            type: "paragraph",
+            content: [{ type: "text", text }],
+          })),
+        },
+      ],
+    });
+
+    expect(markdown).toContain(":::: sidebar\n侧栏\n::::");
+    expect(markdown).toContain("## :icon[Briefcase]: 工作经历");
+    expect(markdown).toContain(":::: meta\n日期\n组织\n方向\n角色\n::::");
+    expect(markdown).toContain(":::: trio\n技能\n年限\n熟练\n::::");
+  });
+
   it("serializes Tiptap nodes instead of persisting the editor document JSON", () => {
     const markdown = editorDocumentToMarkdown({
       type: "doc",
@@ -125,5 +183,14 @@ describe("resume semantic contract adapter", () => {
 
     expect(html).toContain("&lt;img");
     expect(html).not.toContain("<img src=\"x\"");
+  });
+
+  it("renders allowlisted icons as static SVG and leaves unknown icons as text", () => {
+    const html = renderResumeMarkdown("## :icon[GraduationCap]: 教育\n\n:icon[NotAllowed]: 保持文本");
+
+    expect(html).toContain('data-icon-name="GraduationCap"');
+    expect(html).toContain("<svg");
+    expect(html).toContain(":icon[NotAllowed]:");
+    expect(html).not.toContain('data-icon-name="NotAllowed"');
   });
 });

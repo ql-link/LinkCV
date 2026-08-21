@@ -115,7 +115,15 @@ type EditorSettings = {
   lineHeight: number;
   pageMargin: number;
   verticalPageMargin: number;
-  theme: "classic" | "modern" | "compact" | "classic-technical";
+  theme:
+    | "classic"
+    | "modern"
+    | "compact"
+    | "classic-technical"
+    | "administrative-sidebar"
+    | "campus-professional"
+    | "civic-service"
+    | "creative-orange";
   smartOnePage: boolean;
   showSource: boolean;
 };
@@ -300,13 +308,16 @@ export function resumeDocumentFromMarkdown(
 }
 
 export function styleToEditorSettings(style: ResumeStyleV1): EditorSettings {
-  const theme = style.template_key.startsWith("classic-technical")
-    ? "classic-technical"
-    : style.template_key.startsWith("modern")
-      ? "modern"
-      : style.template_key.startsWith("compact")
-        ? "compact"
-        : "classic";
+  const supportedThemes = [
+    "classic-technical",
+    "administrative-sidebar",
+    "campus-professional",
+    "civic-service",
+    "creative-orange",
+    "modern",
+    "compact",
+  ] as const;
+  const theme = supportedThemes.find((candidate) => style.template_key.startsWith(candidate)) ?? "classic";
   return {
     fontFamily: style.font_family === "source-han-serif"
       ? '"Source Han Serif SC", "Songti SC", STSong, SimSun, serif'
@@ -355,7 +366,15 @@ function markedText(node: JSONContent) {
 function nodeText(node: JSONContent): string {
   if (node.type === "text") return markedText(node);
   if (node.type === "hardBreak") return "\n";
+  if (node.type === "inlineIcon") {
+    const name = typeof node.attrs?.name === "string" ? node.attrs.name : "Star";
+    return `:icon[${name}]:`;
+  }
   return (node.content ?? []).map(nodeText).join("");
+}
+
+function childBlocksMarkdown(node: JSONContent) {
+  return (node.content ?? []).map(nodeMarkdown).filter(Boolean).join("\n\n");
 }
 
 function markdownImage(node: JSONContent, title: string) {
@@ -377,6 +396,21 @@ function nodeMarkdown(node: JSONContent): string {
     const [left, right] = node.content ?? [];
     return `::: left\n${left ? nodeText(left) : ""}\n:::\n\n::: right\n${right ? nodeText(right) : ""}\n:::`;
   }
+  if (node.type === "resumeColumns") {
+    const columns = node.content ?? [];
+    return columns.map((column, index) => {
+      const variant = column.attrs?.variant === "sidebar" || column.attrs?.variant === "main"
+        ? column.attrs.variant
+        : index === 0 ? "sidebar" : "main";
+      return `:::: ${variant}\n${childBlocksMarkdown(column)}\n::::`;
+    }).join("\n\n");
+  }
+  if (node.type === "resumeColumn") return childBlocksMarkdown(node);
+  if (node.type === "resumeMetaRow" || node.type === "resumeTrioRow") {
+    const kind = node.type === "resumeMetaRow" ? "meta" : "trio";
+    return `:::: ${kind}\n${(node.content ?? []).map(nodeText).join("\n")}\n::::`;
+  }
+  if (node.type === "inlineIcon") return nodeText(node);
   if (node.type === "avatarImage") {
     const size = Math.min(220, Math.max(56, Number(node.attrs?.size) || 96));
     return markdownImage(node, `linkcv-avatar:${size}`);
