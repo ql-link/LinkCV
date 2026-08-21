@@ -15,6 +15,21 @@ pipeline {
     )
   }
 
+  triggers {
+    GenericTrigger(
+      genericVariables: [[key: 'ref', value: '$.ref']],
+      causeString: 'GitHub push to $ref',
+      token: '',
+      tokenCredentialId: 'linkcv-dev-webhook-token',
+      printContributedVariables: false,
+      printPostContent: false,
+      silentResponse: false,
+      shouldNotFlatten: false,
+      regexpFilterText: '$ref',
+      regexpFilterExpression: '^refs/heads/master$'
+    )
+  }
+
   environment {
     IMAGE = 'linkcv'
     DEPLOY_DIR = '/opt/tolink/LinkCV'

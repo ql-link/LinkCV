@@ -139,7 +139,7 @@ describe("SharePanel", () => {
     render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "一个月" })).toBeInTheDocument(),
+      expect(screen.getByDisplayValue(/\/share\/toke\*\*\*\*\*_abc/)).toBeInTheDocument(),
     );
 
     // 点击仅本地暂存，不立即提交

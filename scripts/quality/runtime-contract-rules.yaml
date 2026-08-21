@@ -325,6 +325,12 @@ contracts:
       - path: deploy/docker-compose.production.yml
         pattern: 'LINKCV_DOCKER_NETWORK:-tolink-app-net'
         message: Production 必须加入生产应用网络
+      - path: Jenkinsfile
+        pattern: 'tokenCredentialId: ''linkcv-dev-webhook-token'''
+        message: Production webhook token 必须来自现有 Jenkins Secret Text 凭据
+      - path: Jenkinsfile
+        pattern: 'regexpFilterExpression: ''\^refs/heads/master\$'''
+        message: Production webhook 必须只接受 refs/heads/master push
 
   - id: jenkins-migration-targets
     description: 两条 Jenkins 发布链在部署前校验各自的环境与数据库目标
