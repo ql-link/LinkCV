@@ -211,7 +211,7 @@ JD 管理接口接受和返回最终结构化数据；单独的浏览器导入�
 
 `event_type` 只允许 `unhandled_error`、`unhandled_rejection`、`render_error` 和 `api_5xx`。服务端从当前会话绑定 actor，忽略客户端提供身份；消息和栈经统一长度限制与脱敏后写入系统日志。请求非法返回 `400 INVALID_CLIENT_LOG_EVENT`，本地 sink 拒绝写入返回 `503 LOG_EVENT_UNAVAILABLE`。
 
-PDF 导出审计只接受当前用户拥有的简历 ID；不存在或不属于当前用户都返回 `404 RESUME_NOT_FOUND`，非法动作或字段返回 `400 INVALID_AUDIT_EVENT`，sink 拒绝写入返回 `503 AUDIT_EVENT_UNAVAILABLE`。其他审计动作不能通过该接口伪造，而是由服务端路由映射自动生成。自动审计覆盖鉴权/会话、账号资料和密码、简历/版本/资源、JD、管理员用户状态和模型配置等状态变更；普通 GET 不写审计。成功和受控失败都记录 action、可信 actor、target、result、错误码和 request ID，不记录请求 body。审计进入共享 Loki，不新增 MySQL 审计表；现有 `/api/admin/llm/calls` 继续是 LLM 计量和调用状态的事实源。
+PDF 导出审计只接受当前用户拥有的简历 ID；不存在或不属于当前用户都返回 `404 RESUME_NOT_FOUND`，非法动作或字段返回 `400 INVALID_AUDIT_EVENT`，sink 拒绝写入返回 `503 AUDIT_EVENT_UNAVAILABLE`。该契约为既有调用方保留；当前工作台的文字版 PDF 下载链不调用它。其他审计动作不能通过该接口伪造，而是由服务端路由映射自动生成。自动审计覆盖鉴权/会话、账号资料和密码、简历/版本/资源、JD、管理员用户状态和模型配置等状态变更；普通 GET 不写审计。成功和受控失败都记录 action、可信 actor、target、result、错误码和 request ID，不记录请求 body。审计进入共享 Loki，不新增 MySQL 审计表；现有 `/api/admin/llm/calls` 继续是 LLM 计量和调用状态的事实源。
 
 管理员日志查询接口复用 `is_admin=true` 权限；未登录返回 `401 UNAUTHORIZED`，普通用户返回 `403 FORBIDDEN`：
 

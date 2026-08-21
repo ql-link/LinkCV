@@ -4,7 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "../../api/client";
 import {
   ImportWarningBanner,
+  ExportPdfAction,
+  FontPreviewSelect,
   normalizeVersionName,
+  PageArrangementControl,
+  SettingsSlider,
   SaveVersionAction,
   VersionRenameAction,
   versionRenameErrorMessage,
@@ -15,6 +19,51 @@ import {
   WorkbenchSaveStatus,
   versionOperationErrorMessage,
 } from "./ResumeWorkbench";
+
+describe("ResumeWorkbench 字体选择", () => {
+  it("用每个候选字体展示统一样例并允许选择", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const serifFont = '"Source Han Serif SC", "Songti SC", STSong, SimSun, serif';
+
+    render(<FontPreviewSelect value={serifFont} onChange={onChange} />);
+
+    const trigger = screen.getByRole("combobox", { name: "字体" });
+    expect(trigger).toHaveTextContent("简历宋体");
+    expect(screen.getByText("张三的简历 Resume")).toHaveStyle({ fontFamily: serifFont });
+
+    await user.click(trigger);
+    expect(screen.getByRole("listbox")).toHaveAttribute("data-ui-theme", "light");
+    const wenkaiOption = screen.getByRole("option", { name: /霞鹜文楷/ });
+    expect(wenkaiOption).toHaveTextContent("张三的简历 Resume");
+    expect(wenkaiOption.querySelector(".workbench-font-option-copy > span")).toHaveStyle({
+      fontFamily: '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif',
+    });
+
+    await user.click(wenkaiOption);
+    expect(onChange).toHaveBeenCalledWith('"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif');
+  });
+
+  it("版本操作期间禁用字体选择", () => {
+    render(<FontPreviewSelect value="missing-font" onChange={vi.fn()} disabled />);
+    expect(screen.getByRole("combobox", { name: "字体" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "字体" })).toHaveTextContent("简历宋体");
+  });
+});
+
+describe("ResumeWorkbench 页面设置步进按钮", () => {
+  it("按滑杆步长增大或减小当前数值", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<SettingsSlider label="正文字号" unit="pt" value={10.5} min={8} max={16} step={0.5} onChange={onChange} />);
+
+    await user.click(screen.getByRole("button", { name: "正文字号减小" }));
+    await user.click(screen.getByRole("button", { name: "正文字号增大" }));
+
+    expect(onChange).toHaveBeenNthCalledWith(1, 10);
+    expect(onChange).toHaveBeenNthCalledWith(2, 11);
+  });
+});
 
 describe("ResumeWorkbench 智能一页入口", () => {
   it("显示当前状态并允许切换", async () => {
@@ -28,6 +77,29 @@ describe("ResumeWorkbench 智能一页入口", () => {
 
     await user.click(action);
     expect(onToggle).toHaveBeenCalledOnce();
+  });
+});
+
+describe("ResumeWorkbench 页面排列", () => {
+  it("使用一个按钮切换排列并随当前方向改变图标", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+
+    const { rerender } = render(<PageArrangementControl value="vertical" onChange={onChange} />);
+
+    const verticalButton = screen.getByRole("button", { name: "当前上下排列，切换为左右排列" });
+    expect(verticalButton.querySelector('[data-arrangement="vertical"]')).toBeInTheDocument();
+    await user.click(verticalButton);
+    expect(onChange).toHaveBeenCalledWith("horizontal");
+
+    rerender(<PageArrangementControl value="horizontal" onChange={onChange} />);
+    const horizontalButton = screen.getByRole("button", { name: "当前左右排列，切换为上下排列" });
+    expect(horizontalButton.querySelector('[data-arrangement="horizontal"]')).toBeInTheDocument();
+  });
+
+  it("智能一页开启时禁用排列选择", () => {
+    render(<PageArrangementControl value="horizontal" onChange={vi.fn()} disabled />);
+    expect(screen.getByRole("button", { name: "当前左右排列，切换为上下排列" })).toBeDisabled();
   });
 });
 
@@ -57,6 +129,29 @@ describe("ResumeWorkbench 顶部保存反馈", () => {
   });
 });
 
+describe("ResumeWorkbench PDF 导出按钮", () => {
+  it("点击按钮直接导出文字版 PDF", async () => {
+    const user = userEvent.setup();
+    const onExport = vi.fn();
+    render(<ExportPdfAction onExport={onExport} />);
+
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "导出 PDF" }));
+    expect(onExport).toHaveBeenCalledOnce();
+  });
+
+  it("PDF 生成期间禁用重复下载", async () => {
+    const user = userEvent.setup();
+    const onExport = vi.fn();
+    render(<ExportPdfAction onExport={onExport} pending />);
+
+    const pdfAction = screen.getByRole("button", { name: "正在导出 PDF" });
+    expect(pdfAction).toBeDisabled();
+    await user.click(pdfAction);
+    expect(onExport).not.toHaveBeenCalled();
+  });
+});
+
 describe("ResumeWorkbench 导入质量提示", () => {
   it("展示 OCR 等质量提示并允许关闭", async () => {
     const user = userEvent.setup();
@@ -83,7 +178,7 @@ describe("ResumeWorkbench 版本上限提示", () => {
     const error = new ApiRequestError(409, "RESUME_VERSION_LIMIT_REACHED");
 
     expect(versionOperationErrorMessage(error, "create")).toContain("请删除一个旧版本");
-    expect(versionOperationErrorMessage(error, "restore")).toContain("恢复操作没有执行");
+    expect(versionOperationErrorMessage(error, "restore")).toBeNull();
   });
 
   it("其他错误继续使用通用失败提示", () => {

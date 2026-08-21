@@ -1,9 +1,48 @@
 import type { Editor } from "@tiptap/react";
 import { Fragment } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
+import type { InlineIconName } from "../../lib/resumeInlineIcon";
+
+export type WorkbenchBlockCommandId =
+  | "paragraph"
+  | "heading-1"
+  | "heading-2"
+  | "heading-3"
+  | "bullet-list"
+  | "ordered-list"
+  | "resume-row"
+  | "image"
+  | "avatar"
+  | "inline-icon";
+
+export type WorkbenchBlockCommand = {
+  id: WorkbenchBlockCommandId;
+  label: string;
+  keywords: string[];
+};
+
+export const workbenchBlockCommands: WorkbenchBlockCommand[] = [
+  { id: "paragraph", label: "正文", keywords: ["文本", "paragraph"] },
+  { id: "resume-row", label: "左右分栏", keywords: ["同一行左 / 右独立输入", "当前行左右对齐", "双栏", "两栏", "分栏", "左右", "日期", "columns"] },
+  { id: "heading-1", label: "标题 1", keywords: ["一级标题", "h1"] },
+  { id: "heading-2", label: "标题 2", keywords: ["章节", "二级标题", "h2"] },
+  { id: "heading-3", label: "标题 3", keywords: ["小标题", "三级标题", "h3"] },
+  { id: "bullet-list", label: "无序列表", keywords: ["分点", "项目符号", "ul"] },
+  { id: "ordered-list", label: "有序列表", keywords: ["编号", "ol"] },
+  { id: "image", label: "插入图片", keywords: ["正文图片", "image"] },
+  { id: "avatar", label: "上传或更换头像", keywords: ["照片", "avatar"] },
+  { id: "inline-icon", label: "插入图标", keywords: ["图标", "学校", "教育", "电话", "邮箱", "icon"] },
+];
+
+export function insertInlineIcon(editor: Editor, name: InlineIconName) {
+  return editor.chain().focus().insertContent([
+    { type: "inlineIcon", attrs: { name } },
+    { type: "text", text: " " },
+  ]).run();
+}
 
 /**
- * 将光标所在的普通段落替换成结构化左右行，并把光标放到右栏。
+ * 将光标所在的普通段落替换成结构化左右行，并把非空行的光标放到右栏。
  * 两栏都是真实段落，因此改字体、页边距或导出 PDF 时不会像空格对齐那样漂移。
  */
 export function convertCurrentLineToResumeRow(editor: Editor) {
@@ -25,10 +64,13 @@ export function convertCurrentLineToResumeRow(editor: Editor) {
     const from = $from.before(paragraphDepth);
     const left = paragraphType.create(paragraph.attrs, paragraph.content, paragraph.marks);
     const right = paragraphType.create();
-    const row = rowType.create({ leftWidth: 70 }, [left, right]);
+    const row = rowType.create({ leftWidth: 50 }, [left, right]);
     const transaction = state.tr.replaceWith(from, from + paragraph.nodeSize, row);
     const rightTextPosition = from + 2 + left.nodeSize;
-    transaction.setSelection(TextSelection.create(transaction.doc, rightTextPosition));
+    const targetPosition = paragraph.content.size === 0
+      ? from + 2
+      : rightTextPosition;
+    transaction.setSelection(TextSelection.create(transaction.doc, targetPosition));
     dispatch?.(transaction.scrollIntoView());
     return true;
   });
