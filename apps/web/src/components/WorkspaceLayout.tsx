@@ -59,16 +59,16 @@ export function WorkspaceNavigation({ active, avatarUrl, email, nickname }: Work
   return (
     <header className="dashboard-topbar">
       <a
-        className="dashboard-brand-link"
+        className="dashboard-brand-link no-underline hover:no-underline"
         href="/resumes"
         onClick={(event) => {
           if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
           event.preventDefault();
           navigateTo("/resumes");
         }}
-        aria-label="LinkCV 首页"
+        aria-label="LinkResume 首页"
       >
-        <Brand className="dashboard-brand" />
+        <Brand className="dashboard-brand" label="LinkResume" name="LinkResume" />
       </a>
       <div className="dashboard-nav-scroll">
         <nav aria-label="工作区导航" title={`当前账号：${displayName}`}>

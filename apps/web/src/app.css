@@ -1280,10 +1280,11 @@ select:not([data-slot]):focus-visible,
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 20px;
-  border-bottom: 1px solid color-mix(in srgb, var(--ui-border) 72%, transparent);
-  background: color-mix(in srgb, var(--ui-background) 88%, transparent);
+  border-bottom: 0;
+  background: color-mix(in srgb, var(--ui-background) 76%, transparent);
   padding: 10px 24px;
   backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
 }
 
 .dashboard-brand {
@@ -1299,6 +1300,14 @@ select:not([data-slot]):focus-visible,
   padding: 4px;
   color: var(--ui-foreground);
   cursor: pointer;
+  text-decoration: none;
+}
+
+.dashboard-brand-link:hover,
+.dashboard-brand-link:active,
+.dashboard-brand-link:visited {
+  color: var(--ui-foreground);
+  text-decoration: none;
 }
 
 .dashboard-brand-link:focus-visible {
@@ -1321,7 +1330,7 @@ select:not([data-slot]):focus-visible,
 .dashboard-tabs {
   border-color: color-mix(in srgb, var(--ui-border) 70%, transparent);
   background: color-mix(in srgb, var(--ui-surface) 82%, transparent);
-  box-shadow: 0 10px 28px color-mix(in srgb, var(--ui-foreground) 9%, transparent);
+  box-shadow: none;
 }
 
 .dashboard-tabs > a {
