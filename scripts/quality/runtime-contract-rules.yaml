@@ -33,6 +33,19 @@ contracts:
         pattern: '/api/agent/readiness'
         message: Dev 发布必须检查完整 Agent 服务链
 
+  - id: pi-provider-network-contract
+    description: Pi SDK 服务继承部署环境代理并把供应商失败作为运行失败上报
+    assertions:
+      - path: third_party/pi/packages/coding-agent/src/index.ts
+        pattern: 'export \{ configureHttpDispatcher \} from "\./core/http-dispatcher\.ts"'
+        message: Pi SDK 公共入口必须暴露 HTTP 代理初始化能力
+      - path: apps/pi-service/src/server.js
+        pattern: 'configureHttpDispatcher\(\);[\s\S]*const config = loadConfig\(\);'
+        message: Pi 服务必须在处理模型请求前启用环境代理
+      - path: apps/pi-service/src/runtime/agent.js
+        pattern: 'message\.stopReason === "error"[\s\S]*AGENT_MODEL_REQUEST_FAILED[\s\S]*assertAgentCompleted\(finalAssistantMessage\)'
+        message: Pi 服务不得把模型供应商错误误报为运行成功
+
   - id: observability-loki-promtail-contract
     description: LinkCV 三套环境固定七天 JSONL 契约，Dev/Production 使用独立 Promtail 和共享 Loki
     assertions:

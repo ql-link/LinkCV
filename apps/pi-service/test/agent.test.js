@@ -1,7 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createSkillReadTool } from "../src/runtime/agent.js";
+import { assertAgentCompleted, createSkillReadTool } from "../src/runtime/agent.js";
+
+test("agent completion accepts a successful assistant message", () => {
+  assert.doesNotThrow(() => assertAgentCompleted({ role: "assistant", stopReason: "stop" }));
+});
+
+test("agent completion rejects provider failures hidden in assistant messages", () => {
+  assert.throws(
+    () => assertAgentCompleted({ role: "assistant", stopReason: "error", errorMessage: "Request timed out." }),
+    /AGENT_MODEL_REQUEST_FAILED/,
+  );
+});
+
+test("agent completion rejects missing and aborted assistant messages", () => {
+  assert.throws(() => assertAgentCompleted(undefined), /AGENT_EMPTY_RESPONSE/);
+  assert.throws(
+    () => assertAgentCompleted({ role: "assistant", stopReason: "aborted" }),
+    /AGENT_ABORTED/,
+  );
+});
 
 test("read tool can load a registered resume skill", async () => {
   const tool = createSkillReadTool();

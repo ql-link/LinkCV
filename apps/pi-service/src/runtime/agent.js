@@ -66,6 +66,18 @@ export function createSkillReadTool() {
   });
 }
 
+export function assertAgentCompleted(message) {
+  if (!message || message.role !== "assistant") {
+    throw new Error("AGENT_EMPTY_RESPONSE");
+  }
+  if (message.stopReason === "error") {
+    throw new Error("AGENT_MODEL_REQUEST_FAILED");
+  }
+  if (message.stopReason === "aborted") {
+    throw new Error("AGENT_ABORTED");
+  }
+}
+
 export async function executeAgentRun({ config, runId, content, history, emit, signal }) {
   const client = createLinkCVClient(config, runId, signal);
   const runtimeConfig = await client.runtimeConfig();
@@ -190,7 +202,11 @@ export async function executeAgentRun({ config, runId, content, history, emit, s
     sessionManager: SessionManager.inMemory(),
     settingsManager,
   });
+  let finalAssistantMessage;
   const unsubscribe = session.subscribe((event) => {
+    if (event.type === "message_end" && event.message.role === "assistant") {
+      finalAssistantMessage = event.message;
+    }
     if (
       event.type === "message_update" &&
       event.assistantMessageEvent.type === "text_delta"
@@ -205,6 +221,7 @@ export async function executeAgentRun({ config, runId, content, history, emit, s
       ? `以下是由 LinkCV 数据库恢复的同一会话最近记录，仅作为对话上下文：\n${JSON.stringify(history)}\n\n用户本轮请求：\n${content}`
       : content;
     await session.prompt(conversation);
+    assertAgentCompleted(finalAssistantMessage);
   } finally {
     signal.removeEventListener("abort", abort);
     unsubscribe();

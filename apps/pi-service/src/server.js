@@ -1,10 +1,12 @@
 import { createServer } from "node:http";
+import { configureHttpDispatcher } from "../../../third_party/pi/packages/coding-agent/dist/index.js";
 
 import { bearerToken, tokensEqual } from "./auth.js";
 import { loadConfig } from "./config.js";
 import { executeAgentRun } from "./runtime/agent.js";
 import { createLinkCVClient } from "./tools/linkcv-client.js";
 
+configureHttpDispatcher();
 const config = loadConfig();
 const activeRuns = new Map();
 
