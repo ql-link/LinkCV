@@ -1547,13 +1547,6 @@ select:not([data-slot]):focus-visible,
 
 .template-library-action { width: 100%; }
 
-.template-library-card.is-loading { pointer-events: none; }
-
-.template-library-skeleton-preview {
-  aspect-ratio: 210 / 220;
-  border-radius: 0;
-}
-
 .template-library-state {
   display: flex;
   max-width: 680px;
@@ -2726,14 +2719,6 @@ select:not([data-slot]):focus-visible,
   padding: 24px;
 }
 
-.dataset-preview-loading {
-  display: grid;
-  min-height: 240px;
-  place-items: center;
-  color: var(--muted);
-  font-size: 14px;
-}
-
 .dataset-preview-error {
   display: grid;
   justify-items: start;
@@ -3002,14 +2987,6 @@ select:not([data-slot]):focus-visible,
   flex-direction: column;
   gap: 16px;
   padding: 16px 18px 20px;
-}
-
-.share-panel-empty {
-  padding: 28px 18px;
-  margin: 0;
-  color: var(--muted);
-  font-size: 13px;
-  text-align: center;
 }
 
 .share-panel-hint { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }

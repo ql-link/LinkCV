@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Archive, ArrowLeft, ExternalLink, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { api, ApiRequestError, type JobDescriptionRecord } from "../../api/client";
-import { Button, ConfirmDialog } from "@/components/ui";
+import { Button, ConfirmDialog, PageLoading } from "@/components/ui";
 import { jobEditPath, navigateTo } from "../../routing";
 import "./jobs.css";
 
@@ -60,7 +60,7 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
   };
 
   if (loading) {
-    return <main className="dashboard-content job-page-shell"><div className="job-workspace-state">正在加载岗位…</div></main>;
+    return <main className="dashboard-content job-page-shell"><PageLoading label="正在加载岗位详情…" /></main>;
   }
   if (!job) {
     return (

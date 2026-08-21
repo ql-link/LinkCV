@@ -16,7 +16,7 @@ import {
   DialogTitle,
   Input,
   Label,
-  Skeleton,
+  PageLoading,
   buttonVariants,
 } from "@/components/ui";
 
@@ -100,34 +100,22 @@ export function ResumeTemplatesPage() {
         description="浏览当前可用版式，选择后填写简历名称并进入编辑器。"
       />
 
-      <section className="template-library-body" aria-label="可用简历模板">
-        {loading && (
-          <div className="template-library-grid" role="status" aria-label="正在加载简历模板">
-            {[0, 1, 2].map((item) => (
-              <div className="template-library-card is-loading" key={item}>
-                <Skeleton className="template-library-skeleton-preview" />
-                <div className="template-library-card-copy">
-                  <Skeleton className="h-5 w-28" />
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-9 w-full" />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+      {loading ? (
+        <PageLoading label="正在加载简历模板…" />
+      ) : (
+        <section className="template-library-body" aria-label="可用简历模板">
+          {failed && (
+            <div className="template-library-state" role="alert">
+              <span className="template-library-state-icon" aria-hidden="true"><RefreshCw size={20} /></span>
+              <h2>模板暂时无法加载</h2>
+              <p>请检查网络后重试，已有简历不会受到影响。</p>
+              <Button variant="outline" icon={<RefreshCw size={15} aria-hidden="true" />} onClick={() => void loadTemplates()}>
+                重新加载
+              </Button>
+            </div>
+          )}
 
-        {!loading && failed && (
-          <div className="template-library-state" role="alert">
-            <span className="template-library-state-icon" aria-hidden="true"><RefreshCw size={20} /></span>
-            <h2>模板暂时无法加载</h2>
-            <p>请检查网络后重试，已有简历不会受到影响。</p>
-            <Button variant="outline" icon={<RefreshCw size={15} aria-hidden="true" />} onClick={() => void loadTemplates()}>
-              重新加载
-            </Button>
-          </div>
-        )}
-
-        {!loading && !failed && templates.length === 0 && (
+        {!failed && templates.length === 0 && (
           <div className="template-library-state">
             <span className="template-library-state-icon" aria-hidden="true"><LayoutTemplate size={20} /></span>
             <h2>当前没有可用模板</h2>
@@ -142,7 +130,7 @@ export function ResumeTemplatesPage() {
           </div>
         )}
 
-        {!loading && !failed && templates.length > 0 && (
+        {!failed && templates.length > 0 && (
           <div className="template-library-grid">
             {templates.map((template) => (
               <article className="template-library-card" key={template.id}>
@@ -170,7 +158,8 @@ export function ResumeTemplatesPage() {
             ))}
           </div>
         )}
-      </section>
+        </section>
+      )}
 
       <Dialog open={selectedTemplate !== null} onOpenChange={(open) => !open && closeCreateDialog()}>
         <DialogContent>

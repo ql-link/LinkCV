@@ -35,6 +35,16 @@ afterEach(() => {
 });
 
 describe("DatasetsPage", () => {
+  it("首次读取时在页头下方展示统一加载状态", () => {
+    vi.spyOn(api, "listDatasets").mockReturnValue(new Promise(() => undefined));
+
+    const { container } = render(<DatasetsPage />);
+
+    expect(screen.getByRole("status", { name: "正在加载资料…" })).toBeInTheDocument();
+    expect(container.querySelector(".datasets-page > .page-loading")).toBeInTheDocument();
+    expect(container.querySelector(".datasets-body")).not.toBeInTheDocument();
+  });
+
   it("资料为空时展示引导，并在用户操作后打开上传窗口", async () => {
     render(<DatasetsPage />);
 

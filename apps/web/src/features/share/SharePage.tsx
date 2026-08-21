@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link2Off, Printer } from "lucide-react";
-import { Brand, Button } from "@/components/ui";
+import { Brand, Button, PageLoading } from "@/components/ui";
 import { api, type PublicSharePayload } from "../../api/client";
 import {
   resumeDocumentToMarkdown,
@@ -73,7 +73,7 @@ export function SharePage({ token }: { token: string }) {
   const html = useMemo(() => renderResumeMarkdown(markdown), [markdown]);
 
   if (status === "loading") {
-    return <div className="app-loading">正在加载分享内容...</div>;
+    return <PageLoading label="正在加载分享内容…" scope="page" />;
   }
 
   if (status === "unavailable" || !payload) {

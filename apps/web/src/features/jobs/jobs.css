@@ -158,7 +158,6 @@
 .job-card-actions button:last-child:hover { color: var(--error); }
 .job-load-more { justify-self: center; margin-top: 10px; }
 
-.job-list-state,
 .job-empty-state {
   display: grid;
   min-height: 360px;

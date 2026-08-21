@@ -53,6 +53,14 @@ describe("HomeScreen", () => {
     window.history.replaceState(null, "", "/resumes");
   });
 
+  it("首次读取时在页头下方展示统一加载状态", () => {
+    const { container } = renderHome({ loading: true });
+
+    expect(screen.getByRole("status", { name: "正在加载我的简历…" })).toBeInTheDocument();
+    expect(container.querySelector(".home-dashboard-content > .page-loading")).toBeInTheDocument();
+    expect(container.querySelector(".dashboard-main")).not.toBeInTheDocument();
+  });
+
   it("按名称筛选简历并从新建按钮进入创建流程", () => {
     const onCreate = vi.fn();
     renderHome({ onCreate });

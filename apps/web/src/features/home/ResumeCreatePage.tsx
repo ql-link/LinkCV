@@ -1,7 +1,7 @@
 import { ArrowLeft, ArrowRight, Check, FileUp, LayoutTemplate, Upload, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, ApiRequestError, type ResumeTemplate } from "../../api/client";
-import { Brand, Button, FeedbackNotice, FileUpload } from "@/components/ui";
+import { Brand, Button, FeedbackNotice, FileUpload, PageLoading } from "@/components/ui";
 import { editorPath, navigateTo } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
 import { ResumePreview } from "../preview/ResumePreview";
@@ -23,6 +23,7 @@ export function ResumeCreatePage() {
     new URLSearchParams(window.location.search).get("mode") === "import" ? "import" : "template",
   );
   const [templates, setTemplates] = useState<ResumeTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(true);
   const [templatesError, setTemplatesError] = useState<string | null>(null);
   const [selected, setSelected] = useState<ResumeTemplate | null>(null);
   const [title, setTitle] = useState("");
@@ -37,12 +38,14 @@ export function ResumeCreatePage() {
       ({ templates: next }) => {
         if (cancelled) return;
         setTemplates(next);
+        setTemplatesLoading(false);
         const initialId = new URLSearchParams(window.location.search).get("template");
         const initial = next.find((template) => template.id === initialId) ?? next[0] ?? null;
         setSelected(initial);
       },
       () => {
         if (cancelled) return;
+        setTemplatesLoading(false);
         setTemplatesError("模板暂时无法加载，请稍后重试。");
       },
     );
@@ -164,7 +167,9 @@ export function ResumeCreatePage() {
               <div className="create-field">
                 <span>选择模板</span>
                 {templatesError && <FeedbackNotice kind="error">{templatesError}</FeedbackNotice>}
-                <div className="create-template-grid" role="listbox" aria-label="选择模板">
+                {templatesLoading ? (
+                  <PageLoading label="正在加载简历模板…" scope="panel" />
+                ) : <div className="create-template-grid" role="listbox" aria-label="选择模板">
                   {templates.map((template) => {
                     const active = selected?.id === template.id;
                     return (
@@ -194,7 +199,7 @@ export function ResumeCreatePage() {
                       </button>
                     );
                   })}
-                </div>
+                </div>}
               </div>
               {error && <FeedbackNotice kind="error">{error}</FeedbackNotice>}
               <Button
