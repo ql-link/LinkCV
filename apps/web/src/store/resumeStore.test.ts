@@ -217,10 +217,10 @@ describe("resume import", () => {
       },
     });
 
-    const result = await useResumeStore.getState().importResume(file, "8");
+    const result = await useResumeStore.getState().importResume(file, "8", "产品经理简历");
 
     expect(api.importResume).toHaveBeenCalledWith(
-      file,
+      expect.objectContaining({ name: "产品经理简历.md" }),
       "8",
       expect.stringMatching(/^[0-9a-f-]{36}$/),
     );
