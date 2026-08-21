@@ -19,6 +19,13 @@ describe("LandingPage", () => {
     expect(screen.getByRole("heading", { name: /下一份简历，从这里开始/ })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "页脚导航" })).toBeInTheDocument();
 
+    const featuresLink = screen.getByLabelText("功能");
+    const editorLink = screen.getByLabelText("编辑器");
+    expect(featuresLink).toHaveAttribute("aria-current", "location");
+    fireEvent.click(editorLink);
+    expect(editorLink).toHaveAttribute("aria-current", "location");
+    expect(featuresLink).not.toHaveAttribute("aria-current");
+
     fireEvent.click(screen.getByRole("button", { name: "开始创建简历" }));
     fireEvent.click(screen.getByRole("button", { name: "开始使用 LinkCV" }));
     fireEvent.click(screen.getByRole("button", { name: "开始使用" }));

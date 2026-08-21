@@ -11,6 +11,7 @@ export { IconButton } from "./icon-button";
 export { Input } from "./input";
 export { Label } from "./label";
 export { NumberStepper } from "./number-stepper";
+export { RandomLetterSwap, type RandomLetterSwapProps } from "./random-letter-swap";
 export { SelectField } from "./select-field";
 export { Separator } from "./separator";
 export { Skeleton } from "./skeleton";
