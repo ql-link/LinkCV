@@ -8,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
   FeedbackNotice,
+  PageLoading,
 } from "@/components/ui";
 import { renderDatasetMarkdown } from "./datasetMarkdown";
 
@@ -80,7 +81,7 @@ export function DatasetPreviewDialog({
 
         <div className="dataset-preview-body" aria-live="polite">
           {state.status === "loading" && (
-            <div className="dataset-preview-loading">正在读取解析结果…</div>
+            <PageLoading label="正在读取解析结果…" scope="panel" />
           )}
           {state.status === "error" && (
             <div className="dataset-preview-error">

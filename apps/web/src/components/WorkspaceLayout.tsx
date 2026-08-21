@@ -3,13 +3,14 @@ import {
   BriefcaseBusiness,
   Database,
   FileText,
+  LayoutTemplate,
 } from "lucide-react";
 import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
 import { Brand } from "@/components/ui";
 import RandomLetterSwapNav from "@/components/ui/m-random-letter-swap-1";
 
-export type WorkspaceSection = "resumes" | "jobs" | "datasets" | "account";
+export type WorkspaceSection = "resumes" | "templates" | "jobs" | "datasets" | "account";
 
 type WorkspaceNavigationProps = {
   active: WorkspaceSection;
@@ -30,9 +31,17 @@ const NAV_ITEMS: Array<{
     activeColor: "var(--ui-accent)",
     gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-accent) 24%, transparent) 0%, color-mix(in srgb, var(--ui-accent) 10%, transparent) 48%, transparent 76%)",
     key: "resumes",
-    label: "全部简历",
+    label: "我的简历",
     href: "/resumes",
     icon: FileText,
+  },
+  {
+    activeColor: "var(--ui-template-accent)",
+    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-template-accent) 24%, transparent) 0%, color-mix(in srgb, var(--ui-template-accent) 10%, transparent) 48%, transparent 76%)",
+    key: "templates",
+    label: "简历模板",
+    href: "/templates",
+    icon: LayoutTemplate,
   },
   {
     activeColor: "var(--ui-warning)",

@@ -36,7 +36,7 @@ class FakeGateway:
             list[GatewayStreamEvent] | GatewayError | AsyncIterator[GatewayStreamEvent],
         ] = {}
         self.calls: list[tuple[str, str | None]] = []
-        self.response_formats: list[type[BaseModel] | None] = []
+        self.message_batches: list[tuple[ChatMessage, ...]] = []
 
     async def complete(
         self,
@@ -45,11 +45,10 @@ class FakeGateway:
         messages,
         api_base,
         api_key,
-        response_format=None,
     ):
-        del messages, api_base
+        del api_base
         self.calls.append((model, api_key))
-        self.response_formats.append(response_format)
+        self.message_batches.append(tuple(messages))
         result = self.complete_results[model]
         if isinstance(result, GatewayError):
             raise result
@@ -165,11 +164,22 @@ def test_chat_uses_only_bound_model_and_records_cost(service_context) -> None:
         assert log.estimated_cost == Decimal("2.5000000000")
 
 
-def test_structured_chat_uses_current_and_validates_response(service_context) -> None:
+@pytest.mark.parametrize(
+    "content",
+    [
+        '{"answer":"有效"}',
+        '```json\n{"answer":"有效"}\n```',
+        '结果如下：\n{"answer":"有效"}',
+    ],
+)
+def test_structured_chat_uses_current_and_validates_local_json(
+    service_context,
+    content: str,
+) -> None:
     service, gateway, sessions = service_context
     add_candidate(sessions, service, "current", current=True)
     add_candidate(sessions, service, "backup")
-    gateway.complete_results["deepseek/current"] = success('{"answer":"有效"}')
+    gateway.complete_results["deepseek/current"] = success(content)
 
     result = asyncio.run(
         service.structured_chat(
@@ -182,10 +192,23 @@ def test_structured_chat_uses_current_and_validates_response(service_context) ->
 
     assert result.value.answer == "有效"
     assert [model for model, _key in gateway.calls] == ["deepseek/current"]
-    assert gateway.response_formats == [StructuredPayload]
+    assert len(gateway.message_batches) == 1
+    instruction, original = gateway.message_batches[0]
+    assert instruction.role == "system"
+    assert "只返回一个" in instruction.content
+    assert '"answer"' in instruction.content
+    assert original == ChatMessage(role="user", content="结构化请求")
 
 
-@pytest.mark.parametrize("content", ["not-json", '{"wrong":"shape"}'])
+@pytest.mark.parametrize(
+    "content",
+    [
+        "not-json",
+        '{"wrong":"shape"}',
+        '{"answer":"第一个"}\n{"answer":"第二个"}',
+        '{"answer":"重复"}\n{"answer":"重复"}',
+    ],
+)
 def test_invalid_structured_response_fails_without_backup(
     service_context,
     content: str,

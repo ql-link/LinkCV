@@ -39,15 +39,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-.app-loading {
-  display: grid;
-  min-height: 100vh;
-  place-items: center;
-  background: var(--canvas);
-  color: var(--body-muted);
-  font-size: 14px;
-}
-
 .status-shell {
   display: flex;
   min-height: 100vh;
@@ -130,37 +121,6 @@ body {
   color: var(--ui-destructive);
   margin-bottom: 20px;
 }
-
-.status-spinner {
-  width: 42px;
-  height: 42px;
-  border: 3px solid var(--ui-surface-muted);
-  border-top-color: var(--ui-border-strong);
-  border-radius: 50%;
-  margin-bottom: 20px;
-  animation: status-spin 900ms linear infinite;
-}
-
-@keyframes status-spin {
-  to { transform: rotate(360deg); }
-}
-
-.status-skeleton {
-  display: grid;
-  width: 240px;
-  gap: 9px;
-  margin-top: 28px;
-}
-
-.status-skeleton i {
-  display: block;
-  height: 8px;
-  border-radius: var(--ui-radius-full);
-  background: var(--ui-surface-muted);
-}
-
-.status-skeleton i:nth-child(2) { width: 86%; }
-.status-skeleton i:nth-child(3) { width: 93%; }
 
 .visually-hidden {
   position: absolute;

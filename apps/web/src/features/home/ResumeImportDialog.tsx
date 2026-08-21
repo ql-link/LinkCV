@@ -100,7 +100,11 @@ export function ResumeImportDialog({ onClose, onAccepted }: ResumeImportDialogPr
         if (!open && !submitting) onClose();
       }}
     >
-      <AlertDialogContent className="home-import-dialog" aria-label="导入简历">
+      <AlertDialogContent
+        className="home-import-dialog"
+        overlayClassName="bg-[var(--scrim)]"
+        aria-label="导入简历"
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>导入简历</AlertDialogTitle>
           <AlertDialogDescription className="home-import-description">选择已有文件并确认名称，系统会在当前简历列表中开始解析。</AlertDialogDescription>
