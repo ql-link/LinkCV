@@ -23,7 +23,7 @@
 | `src/linkcv/modules/job_descriptions/` | JD 单表 ORM、HTTP DTO 和受保护路由 |
 | `src/linkcv/modules/llm/` | 能力中立模型候选、Chat/简历结构化/Pi Agent 绑定、版本化验证证据、模型凭据加密、LiteLLM 适配、普通/流式/结构化调用、计量与管理员 API |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0027` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0028` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -31,7 +31,7 @@
 
 MySQL 包含用户、简历、LLM 治理和 `job_descriptions` 等业务表。当前可编辑简历状态保存在 `resumes.data_json/style_json`，历史版本同时快照两份 JSON。HTTP 中的 ID 是十进制字符串，ORM 和数据库使用整数。
 
-Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versions` 四张核心表。业务主键和外键统一使用 `BIGINT UNSIGNED`；数据库中的整数 ID 在 HTTP、TypeScript 和对象键中表示为规范十进制字符串。`0014` 幂等写入四个官方模板，包含空白简历模板；标识冲突且内容不一致时迁移中止，不覆盖现场数据。`0015` 在不改变 schema 的前提下补充现代双栏和紧凑技术型官方模板的受控编辑 Markdown：现代模板使用 `::: left/right` 左右结构，紧凑模板使用高密度技术条目。`0024` 新增“经典单页技术简历”官方模板，使用虚构的张三示例、高密度单页参数与独立主题键；downgrade 只在没有简历引用时删除该模板，存在来源引用时拒绝降级。`0025` 将该模板的示例内容重编为虚构的平台工程方向经历，技能、公司、业务场景和个人项目均与来源材料解耦；迁移只接受 `0024` 的原始内容摘要，downgrade 也只接受未被后续定制的 `0025` 内容。模板卡片、完整预览和普通创建后的编辑器读取同一份模板快照。
+Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versions` 四张核心表。业务主键和外键统一使用 `BIGINT UNSIGNED`；数据库中的整数 ID 在 HTTP、TypeScript 和对象键中表示为规范十进制字符串。`0014` 幂等写入四个官方模板，包含空白简历模板；标识冲突且内容不一致时迁移中止，不覆盖现场数据。`0015` 在不改变 schema 的前提下补充现代双栏和紧凑技术型官方模板的受控编辑 Markdown：现代模板使用 `::: left/right` 左右结构，紧凑模板使用高密度技术条目。`0024` 新增“经典单页技术简历”官方模板，使用虚构的张三示例、高密度单页参数与独立主题键；`0025` 将该模板的示例内容重编为虚构的平台工程方向经历。`0026` 新增“深蓝行政双栏”“校招 / 社招通用”“蓝色政务行政”和“橙弧创意设计”四套官方模板，默认内容与头像均为项目内置虚构示例；稳定 key 冲突且内容不一致时升级中止，任一新增模板已被简历引用时 downgrade 拒绝删除。模板卡片、完整预览和普通创建后的编辑器读取同一份模板快照。
 
 `0016` 新增 12 字段 `resume_imports` 过程表，保存用户、源文件对象、上传/解析状态和唯一结果简历关联；非空表拒绝 downgrade。`0017` 要求旧 `source_type=import` 简历已通过发布清理命令归零，再删除 `resumes` 中旧同步导入使用的 `source_filename/source_object_key/extracted_markdown`。存在无法恢复这些证据的新导入简历时，`0017` downgrade 同样拒绝执行。
 
@@ -83,7 +83,7 @@ LiteLLM 只位于 `modules/llm/gateway.py` 和只读目录边界。白名单 ada
 
 简历导入 Worker 通过 `integrations/resume_structuring.py` 以 `source=resume_import` 调用 `LLMService.structured_chat()`，使用数据库中的 `resume_structuring` 当前绑定、加密凭据、调用日志和计量。模型输入只包含 SectionIR 的标题、类别和 Markdown，不包含原文件、对象键、LinkParse 元数据、warnings 或用户 ID；模型返回内容仍须通过 `ResumeExtractionDraft` 严格校验。`pi_agent` 一期绑定通过 `apps/pi-service` 的固定 probe Tool 验证：FastAPI 固定候选配置快照、创建调用记录并在请求期解密供应商凭据，通过服务令牌把模型、地址和 Key 交给 Pi Service；Pi 使用原生 provider 直连供应商，FastAPI 不重建 Pi messages、tools 或 `tool_choice`。明文凭据不进入响应、调用日志或持久化 Run。
 
-模型候选在 `0027` 后不再携带能力列；`llm_capability_bindings` 为 `chat`、`resume_structuring`、`pi_agent` 各保存一行当前候选、绑定版本和最近验证证据。`llm_model_validations` 按候选配置版本、能力、探针版本和调用 ID 保存验证结果；`llm_call_logs.model_config_version` 保存实际调用时的候选版本快照。管理员使用 `/api/admin/llm/capabilities` 查看能力矩阵，并通过 `/api/admin/llm/capabilities/{capability}/binding` 以真实探针成功后切换绑定。
+模型候选在 `0028` 后不再携带能力列；`llm_capability_bindings` 为 `chat`、`resume_structuring`、`pi_agent` 各保存一行当前候选、绑定版本和最近验证证据。`llm_model_validations` 按候选配置版本、能力、探针版本和调用 ID 保存验证结果；`llm_call_logs.model_config_version` 保存实际调用时的候选版本快照。管理员使用 `/api/admin/llm/capabilities` 查看能力矩阵，并通过 `/api/admin/llm/capabilities/{capability}/binding` 以真实探针成功后切换绑定。
 
 `scripts/db/init_mysql.py` 只允许创建名为 `linkcv` 的 MySQL 数据库；`scripts/release/run_alembic.py` 在迁移前校验环境、host、port 和数据库并输出不含密码的摘要。FastAPI 配置支持根 `.env`、显式 `LINKCV_ENV_FILE`、同名 `.local` 和进程环境覆盖。Redis 在鉴权链路中作为唯一会话存储：`auth:session:{sid}` 保存会话哈希，`auth:user_sessions:{uid}` 索引该用户全部会话；会话不写 MySQL，撤销即删除 key。对象存储配置仅使用 `MINIO_*`。
 
@@ -125,7 +125,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于 `0002`–`0027` 往返、模板初始化和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于 `0002`–`0028` 往返、模板初始化和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 

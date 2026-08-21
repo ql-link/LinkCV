@@ -104,4 +104,47 @@ describe("convertCurrentLineToResumeRow", () => {
       ],
     });
   });
+
+  it("专业模板 Markdown 会迁移为可编辑布局节点并保留图标名称", () => {
+    const html = renderResumeMarkdown(`:::: sidebar
+联系信息
+::::
+
+:::: main
+## :icon[Briefcase]: 工作经历
+::::
+
+:::: meta
+2024.01 - 至今
+示例组织
+运营
+负责人
+::::
+
+:::: trio
+Figma
+4 年
+熟练
+::::`);
+    editor = new Editor({ extensions: resumeEditorExtensions, content: html });
+
+    expect(editor.getJSON().content).toMatchObject([
+      {
+        type: "resumeColumns",
+        content: [
+          { type: "resumeColumn", attrs: { variant: "sidebar" } },
+          {
+            type: "resumeColumn",
+            attrs: { variant: "main" },
+            content: [{
+              type: "heading",
+              content: [{ type: "inlineIcon", attrs: { name: "Briefcase" } }, { type: "text", text: " 工作经历" }],
+            }],
+          },
+        ],
+      },
+      { type: "resumeMetaRow" },
+      { type: "resumeTrioRow" },
+    ]);
+  });
 });
