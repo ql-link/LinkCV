@@ -14,12 +14,12 @@ git subtree add --prefix=third_party/pi https://github.com/earendil-works/pi.git
 
 ## 构建与 LinkCV 适配层
 
-`third_party/pi` 仍是独立的 npm workspaces monorepo。LinkCV 一期适配层位于 `apps/pi-service`，不修改 Pi 核心源码，直接复用 vendored `Agent`、OpenAI-compatible provider、模型目录、事件流和参数校验源码，并只映射这些模块实际需要的 `pi-ai` 运行时。根级 `sync` 安装 Pi workspace 依赖，`dev`、`typecheck`、`build` 和 `test` 已纳管 Pi Service。
+`third_party/pi` 仍是独立的 npm workspaces monorepo。LinkCV 一期适配层位于 `apps/pi-service`，不修改 Pi 核心源码，直接复用 vendored `Agent`、OpenAI-compatible provider、模型目录、事件流和参数校验源码，并只映射这些模块实际需要的 `pi-ai` 运行时。Pi 上游不提交生成后的模型目录数据，因此根级 `sync` 在安装 workspace 依赖后执行 Pi 自带的 `hydrate:model-data`；CI 和 Docker 使用同一准备步骤，避免依赖开发机残留的忽略文件。`dev`、`typecheck`、`build` 和 `test` 已纳管 Pi Service。
 
 ## 验证状态
 
 - `npm ci --prefix third_party/pi` 已验证通过。
-- Pi 完整模型数据 hydrate、`packages/ai build:offline` 与 `packages/agent build` 已验证通过，但不是 LinkCV 日常启动前置。
+- Pi 完整模型数据 hydrate、`packages/ai build:offline` 与 `packages/agent build` 已验证通过；hydrate 是新环境 `npm run setup`、CI 和镜像构建的显式前置，不要求每次启动开发服务时重复执行。
 - `apps/pi-service` 的固定 probe Tool 测试、TypeScript 类型检查和 bundle 构建已验证；测试确认 DeepSeek 与 DashScope 解析到对应 Pi profile，请求级 API Key 只传给原生 provider，并由 `Agent` 执行 Tool。
 - pi 源码中未发现内置的 MCP client/server 支持（协议、client、server 三个包内搜索确认），与 LinkCV 后端对接不走 MCP 协议。
 

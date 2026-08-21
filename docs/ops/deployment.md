@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-根级 `Dockerfile` 构建 Vite 静态产物、FastAPI Python 环境和 Pi Service 单文件 bundle。Web 构建阶段会把 `postcss.config.cjs` 与 `tailwind.config.cjs` 和应用源码一起复制到 `/app/apps/web`，确保容器内的 Vite 生产构建生成 Tailwind 工具类，而不是只打包手写 CSS；Pi 构建阶段安装 vendored workspace 的锁定依赖，把 `apps/pi-service` 与所需 Pi provider/model profile 打成 `/app/pi/server.js`，运行镜像同时包含 Node 22。Node 依赖默认使用 npmmirror，固定版本的 `uv` 与 Python 依赖默认使用阿里云 PyPI，避免部署节点依赖 GHCR。构建过程静默地从 `uv.lock` 导出带哈希的 requirements 后再从指定镜像安装，既保留锁定版本与制品校验，也避免锁文件里的外部下载地址绕过镜像或把完整依赖清单写入 Jenkins 日志。镜像构建只打包 `migrations/sql/`、Alembic revision 和迁移 runner，不连接数据库。FastAPI 容器启动时 runner 先核对 `APP_ENV`、MySQL host、port 和 database，再升级到 Alembic head；目标不一致时拒绝启动，校验成功后才由 Uvicorn 在 `8000` 端口提供 `/api` 与 Web 静态文件。
+根级 `Dockerfile` 构建 Vite 静态产物、FastAPI Python 环境和 Pi Service 单文件 bundle。Web 构建阶段会把 `postcss.config.cjs` 与 `tailwind.config.cjs` 和应用源码一起复制到 `/app/apps/web`，确保容器内的 Vite 生产构建生成 Tailwind 工具类，而不是只打包手写 CSS；Pi 构建阶段安装 vendored workspace 的锁定依赖，执行 Pi 自带的模型目录 hydrate，再把 `apps/pi-service` 与所需 Pi provider/model profile 打成 `/app/pi/server.js`，运行镜像同时包含 Node 22。Node 依赖默认使用 npmmirror，固定版本的 `uv` 与 Python 依赖默认使用阿里云 PyPI，避免部署节点依赖 GHCR。构建过程静默地从 `uv.lock` 导出带哈希的 requirements 后再从指定镜像安装，既保留锁定版本与制品校验，也避免锁文件里的外部下载地址绕过镜像或把完整依赖清单写入 Jenkins 日志。镜像构建只打包 `migrations/sql/`、Alembic revision 和迁移 runner，不连接数据库。FastAPI 容器启动时 runner 先核对 `APP_ENV`、MySQL host、port 和 database，再升级到 Alembic head；目标不一致时拒绝启动，校验成功后才由 Uvicorn 在 `8000` 端口提供 `/api` 与 Web 静态文件。
 
 仓库提供相互独立的 Dev 与 Production Jenkins Pipeline。两者都使用不可变镜像标签，先以显式目标参数运行迁移 runner，再更新 Compose，最后等待 `/api/health` 和本环境 Promtail 进入 running；构建镜像阶段不连接数据库。
 

@@ -25,6 +25,7 @@ COPY third_party/pi ./third_party/pi
 COPY apps/pi-service ./apps/pi-service
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --prefix third_party/pi --no-audit --registry="${NPM_REGISTRY}" && \
+    npm --prefix third_party/pi run hydrate:model-data && \
     npm --prefix apps/pi-service run build
 
 FROM python:3.13-slim AS runtime

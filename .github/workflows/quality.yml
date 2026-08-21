@@ -31,6 +31,7 @@ jobs:
       - run: npm ci --prefix apps/web
       - run: npm ci --prefix apps/extension
       - run: npm ci --prefix third_party/pi
+      - run: npm run prepare:pi
       - run: uv sync --directory apps/backend --dev
       - run: npm run check
         env:
