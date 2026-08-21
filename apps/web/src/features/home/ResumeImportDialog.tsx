@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { FileText, FileUp, X } from "lucide-react";
 import { api, type ResumeTemplate } from "../../api/client";
 import {
@@ -11,6 +11,7 @@ import {
   AlertDialogTitle,
   Button,
   FeedbackNotice,
+  FileUpload,
   TextField,
 } from "@/components/ui";
 import {
@@ -34,9 +35,7 @@ export function ResumeImportDialog({ onClose, onAccepted }: ResumeImportDialogPr
   const [titleTouched, setTitleTouched] = useState(false);
   const [loadingTemplate, setLoadingTemplate] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,43 +109,14 @@ export function ResumeImportDialog({ onClose, onAccepted }: ResumeImportDialogPr
         <div className="home-import-fields">
           <div className="home-import-file-field">
             <span className="home-import-field-label">简历文件</span>
-            <div className="home-import-file-shell">
-              <button
-                type="button"
-                className={`home-import-file-picker${dragActive ? " is-dragging" : ""}`}
-                disabled={submitting}
-                onClick={() => fileInputRef.current?.click()}
-                onDragEnter={(event) => {
-                  event.preventDefault();
-                  if (!submitting) setDragActive(true);
-                }}
-                onDragOver={(event) => event.preventDefault()}
-                onDragLeave={(event) => {
-                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragActive(false);
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  setDragActive(false);
-                  if (!submitting) pickFile(event.dataTransfer.files?.[0] ?? null);
-                }}
-              >
-                <span className="home-import-file-icon" aria-hidden="true"><FileUp /></span>
-                <span className="home-import-file-copy">
-                  <strong>{file ? "点击重新选择或拖放文件替换" : "点击上传或拖放文件"}</strong>
-                  <small>支持 Markdown、DOCX、PDF，最大 10 MB</small>
-                  <span className="home-import-browse-action"><FileUp aria-hidden="true" />{file ? "重新选择" : "浏览文件"}</span>
-                </span>
-              </button>
-            </div>
-            <input
-              ref={fileInputRef}
-              className="visually-hidden"
-              type="file"
+            <FileUpload
               name="resume-file"
-              aria-label="选择 Markdown、DOCX 或 PDF 文件"
               accept=".md,.docx,.pdf,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              inputLabel="选择 Markdown、DOCX 或 PDF 文件"
+              supportingText="支持 Markdown、DOCX、PDF，最大 10 MB"
               disabled={submitting}
-              onChange={(event) => pickFile(event.currentTarget.files?.[0] ?? null)}
+              file={file}
+              onFileSelect={(selected) => pickFile(selected ?? null)}
             />
             {file && (
               <div className="home-import-file-summary">

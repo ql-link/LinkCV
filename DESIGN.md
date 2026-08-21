@@ -107,11 +107,15 @@ components:
     padding: 20px
     height: 44px
   button-secondary:
-    backgroundColor: "{colors.surface}"
+    backgroundColor: "transparent"
     textColor: "{colors.on-surface}"
     typography: "{typography.label-sm}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.full}"
+    borderColor: "{colors.border}"
     height: 40px
+  button-secondary-hover:
+    backgroundColor: "transparent"
+    borderColor: "{colors.ring}"
   link:
     textColor: "{colors.primary}"
     typography: "{typography.body-sm}"
@@ -238,11 +242,11 @@ LinkCV 的登录后功能区采用 Apple 式克制与 OpenAI 式任务效率：�
 
 ## Shapes
 
-形状语言偏紧凑和工程化：输入与常规按钮使用 8–10px 圆角，卡片与弹窗使用 12–16px。全圆角只用于页面级 CTA、筛选 Chip、切换项和头像，不能把表格、表单里的每个动作都做成药丸。同一页面不要混用大量无关联的圆角尺寸。
+形状语言偏紧凑和工程化：输入、主按钮与表单提交使用 8–10px 圆角，卡片与弹窗使用 12–16px。透明次要文字按钮、页面级 CTA、筛选 Chip、切换项和头像可以使用全圆角；纯图标按钮、导航标签、危险按钮和密集表格操作仍按各自语义控制形状，不能把所有动作无差别做成药丸。同一页面不要混用大量无关联的圆角尺寸。
 
 ## Components
 
-- **Buttons:** `primary` 使用 LinkCV 蓝且只用于区域内最重要的动作；页面级单一 CTA 可以使用 `button-primary-pill`，普通提交仍使用紧凑圆角。取消、返回和普通编辑使用 secondary 或 outline；局部轻操作使用 ghost；不可逆操作使用 destructive 并确认后果。
+- **Buttons:** `primary` 使用 LinkCV 蓝且只用于区域内最重要的动作；页面级单一 CTA 可以使用 `button-primary-pill`，普通提交仍使用紧凑圆角。带文字的 `secondary`、`outline` 和 `ghost` 统一为透明全圆角细边框，悬浮或键盘聚焦时由边框中部向左右两半扩展 LinkCV 蓝色描边，并显示克制柔光；减少动态效果时直接切换最终边框。纯图标按钮、导航标签与不可逆的 `destructive` 不继承该外观，不可逆操作仍需确认后果。
 - **Inputs:** 始终提供可访问标签；帮助文字和错误贴近字段；提交中禁止重复操作，不能只用 placeholder 代替标签。
 - **Lists:** 优先展示对象身份、状态和主要动作；次要元信息降级；必须设计加载、空、错误和继续加载状态。
 - **Dialogs:** 只用于需要打断当前任务的确认或短流程。移动端保留至少 16px 外边距，危险动作提供明确标题和后果。

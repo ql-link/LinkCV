@@ -1,7 +1,7 @@
 import { ArrowLeft, ArrowRight, Check, FileUp, LayoutTemplate, Upload, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiRequestError, type ResumeTemplate } from "../../api/client";
-import { Brand, Button, FeedbackNotice } from "@/components/ui";
+import { Brand, Button, FeedbackNotice, FileUpload } from "@/components/ui";
 import { editorPath, navigateTo } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
 import { ResumePreview } from "../preview/ResumePreview";
@@ -30,7 +30,6 @@ export function ResumeCreatePage() {
   const [titleTouched, setTitleTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -211,22 +210,13 @@ export function ResumeCreatePage() {
             <>
               <div className="create-field">
                 <span>简历文件</span>
-                <button
-                  type="button"
-                  className="create-dropzone"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <span className="create-dropzone-icon" aria-hidden="true"><Upload size={18} /></span>
-                  <strong>拖拽文件，或点击选择</strong>
-                  <small>支持 Markdown、DOCX、PDF，最大 10 MB</small>
-                </button>
-                <input
-                  ref={fileInputRef}
-                  className="visually-hidden"
-                  type="file"
-                  aria-label="选择 Markdown、DOCX 或 PDF 文件"
+                <FileUpload
                   accept=".md,.docx,.pdf,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  onChange={(event) => pickFile(event.currentTarget.files?.[0] ?? null)}
+                  inputLabel="选择 Markdown、DOCX 或 PDF 文件"
+                  supportingText="支持 Markdown、DOCX、PDF，最大 10 MB"
+                  disabled={submitting}
+                  file={file}
+                  onFileSelect={(selectedFile) => pickFile(selectedFile ?? null)}
                 />
                 {file && (
                   <div className="create-file-chip">

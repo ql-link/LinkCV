@@ -23,6 +23,23 @@ const inactiveTemplate: AdminResumeTemplate = {
 describe("AdminTemplatePanel", () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it("使用统一上传区导入 JSON 模板包", async () => {
+    vi.spyOn(api, "listAdminResumeTemplates").mockResolvedValue({ templates: [] });
+    const upload = vi.spyOn(api, "importAdminResumeTemplate").mockResolvedValue({
+      template: inactiveTemplate,
+    });
+    const notify = vi.fn();
+    render(<AdminTemplatePanel notify={notify} />);
+
+    await screen.findByText("简历模板");
+    expect(screen.getByRole("button", { name: /点击上传或拖放文件/ })).toBeInTheDocument();
+    const file = new File(["{}"], "template.json", { type: "application/json" });
+    fireEvent.change(screen.getByLabelText("选择 JSON 模板包"), { target: { files: [file] } });
+
+    await waitFor(() => expect(upload).toHaveBeenCalledWith(file));
+    expect(notify).toHaveBeenCalledWith("模板已导入，默认保持停用");
+  });
+
   it("展示全部模板、提供只读预览并允许管理员启用", async () => {
     vi.spyOn(api, "listAdminResumeTemplates").mockResolvedValue({
       templates: [inactiveTemplate],

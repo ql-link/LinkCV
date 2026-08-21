@@ -15,6 +15,7 @@ describe("WorkspaceNavigation", () => {
     expect(screen.getByRole("navigation", { name: "工作区导航" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "JD 中心" })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByRole("link", { name: "模板" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "个人资料" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("link", { name: "全部简历" }));
     expect(`${window.location.pathname}${window.location.search}`).toBe("/resumes");
@@ -31,7 +32,7 @@ describe("WorkspaceNavigation", () => {
     expect(`${window.location.pathname}${window.location.search}`).toBe("/jobs");
   });
 
-  it("个人资料入口保留当前账号提示并直接进入账号页", () => {
+  it("从导航移除个人资料按钮，并通过右上角头像进入账号页", () => {
     useResumeStore.setState({
       user: { id: "1", email: "user@example.test", nickname: "测试用户", is_admin: false, avatar_url: null },
     });
@@ -43,9 +44,13 @@ describe("WorkspaceNavigation", () => {
       />,
     );
 
-    const accountLink = screen.getByRole("link", { name: "个人资料" });
+    const navigation = screen.getByRole("navigation", { name: "工作区导航" });
+    expect(navigation).not.toHaveTextContent("个人资料");
+    expect(navigation.querySelector('[aria-current="page"]')).not.toBeInTheDocument();
+
+    const accountLink = screen.getByRole("link", { name: "打开个人资料，当前账号：测试用户" });
+    expect(accountLink).toHaveAttribute("href", "/account");
     expect(accountLink).toHaveAttribute("aria-current", "page");
-    expect(screen.getByLabelText("当前账号：测试用户")).toBeInTheDocument();
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
 
     fireEvent.click(accountLink);

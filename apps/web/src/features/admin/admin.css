@@ -859,8 +859,7 @@
   }
 }
 
-.admin-template-upload { cursor: pointer; }
-.admin-template-upload input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+.admin-template-import { width: min(42rem, 100%); margin-bottom: 1.2rem; }
 .admin-template-list { display: grid; overflow: hidden; padding: 0; }
 .admin-template-row {
   display: grid;
@@ -902,7 +901,7 @@
 .plugin-status-actions button { min-height: 2.6rem; }
 .admin-danger-button.is-quiet { border: 1px solid color-mix(in srgb, #e53e3e 30%, var(--card-border)); background: transparent; color: #c53030; }
 .admin-danger-button.is-quiet:hover { background: color-mix(in srgb, #e53e3e 9%, transparent); }
-.plugin-file-input { display: none; }
+.plugin-file-upload { margin-top: 16px; }
 .plugin-selected-file { display: flex; align-items: center; gap: 16px; margin-top: 16px; padding: 15px 16px; border: 1px solid var(--card-border); border-radius: 14px; background: var(--surface-subtle); }
 .plugin-selected-file > div:first-child { display: grid; min-width: 0; gap: 4px; margin-right: auto; }
 .plugin-selected-file span { overflow-wrap: anywhere; font-weight: 600; }
