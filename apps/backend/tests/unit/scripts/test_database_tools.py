@@ -67,6 +67,27 @@ def test_sql_migration_executor_keeps_json_colons_literal(tmp_path: Path) -> Non
     ]
 
 
+def test_sql_migration_executor_strips_utf8_bom(tmp_path: Path) -> None:
+    module = load_module(
+        "linkcv_migration_sql_bom_test",
+        REPO_ROOT / "apps/backend/src/linkcv/core/migration_sql.py",
+    )
+    sql_file = tmp_path / "bom.up.sql"
+    sql_file.write_text("\ufeff-- comment\nSELECT 1;", encoding="utf-8")
+
+    class Connection:
+        def __init__(self) -> None:
+            self.statements: list[str] = []
+
+        def exec_driver_sql(self, statement: str) -> None:
+            self.statements.append(statement)
+
+    connection = Connection()
+    module.execute_sql_file(connection, sql_file)
+
+    assert connection.statements == ["SELECT 1"]
+
+
 def test_sql_revision_files_are_created_as_a_pair(tmp_path: Path) -> None:
     module = load_module(
         "linkcv_create_sql_revision_test",

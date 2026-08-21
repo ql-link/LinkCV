@@ -353,6 +353,38 @@ export type LlmModelConfig = {
   updatedAt: string;
 };
 
+export type ModelCapability = "chat" | "resume_structuring" | "pi_agent";
+
+export type CapabilityModelConfig = {
+  id: string;
+  adapter: ChatAdapter;
+  model: string;
+  apiBase: string | null;
+  keyConfigured: boolean;
+  configVersion: number;
+  activeCapabilities: ModelCapability[];
+  lastTest: LlmModelLastTest | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ModelCapabilityRecord = {
+  capability: ModelCapability;
+  activeModelId: string | null;
+  bindingVersion: number;
+  activeModel: CapabilityModelConfig | null;
+  models: CapabilityModelConfig[];
+};
+
+export type ModelCapabilityList = {
+  capabilities: ModelCapabilityRecord[];
+};
+
+export type ModelCatalog = {
+  capabilities: ModelCapability[];
+  adapters: ChatCatalogAdapter[];
+};
+
 export type ChatCapability = {
   capability: "chat";
   activeModelId: string | null;
@@ -382,6 +414,7 @@ export type LlmModelCreatePayload = {
 export type LlmModelPatchPayload = Partial<
   Omit<LlmModelCreatePayload, "apiKey">
 > & {
+  baseConfigVersion?: number;
   apiKey?: string | null;
 };
 
@@ -390,7 +423,7 @@ export type LlmMeteringStatus = "complete" | "partial" | "unknown";
 
 export type LlmCallRecord = {
   callId: string;
-  capability: "chat";
+  capability: ModelCapability;
   source: string;
   userId: string;
   modelConfigId: string | null;
@@ -405,6 +438,7 @@ export type LlmCallRecord = {
   estimatedCostUsd: string | null;
   latencyMs: number | null;
   errorCode: string | null;
+  modelConfigVersion?: number | null;
   createdAt: string;
 };
 
@@ -955,6 +989,9 @@ export const api = {
   adminStats: () => request<AdminStatsResponse>("/api/auth/admin/stats"),
   getChatCapability: () =>
     request<ChatCapability>("/api/admin/llm/capabilities/chat"),
+  getModelCapabilities: () =>
+    request<ModelCapabilityList>("/api/admin/llm/capabilities"),
+  getModelCatalog: () => request<ModelCatalog>("/api/admin/llm/catalog"),
   getChatCatalog: () => request<ChatCatalog>("/api/admin/llm/catalog/chat"),
   createLlmModel: (payload: LlmModelCreatePayload) =>
     request<{ model: LlmModelConfig }>("/api/admin/llm/models", {
@@ -980,6 +1017,47 @@ export const api = {
         method: "POST",
       },
     ),
+  bindModelCapability: (
+    capability: Exclude<ModelCapability, "chat">,
+    id: string,
+    baseConfigVersion?: number,
+    baseBindingVersion?: number,
+  ) =>
+    request<{
+      capability: ModelCapability;
+      activeModelId: string;
+      bindingVersion: number;
+      validationId: string;
+      callId: string;
+      activeModel: CapabilityModelConfig;
+    }>(`/api/admin/llm/capabilities/${capability}/binding`, {
+      method: "PUT",
+      body: {
+        modelConfigId: id,
+        ...(baseConfigVersion ? { baseConfigVersion } : {}),
+        ...(baseBindingVersion ? { baseBindingVersion } : {}),
+      },
+    }),
+  testModelCapability: (
+    id: string,
+    capability: ModelCapability,
+    baseConfigVersion?: number,
+  ) =>
+    request<{
+      ok: true;
+      capability: ModelCapability;
+      validationId: string;
+      callId: string;
+      configVersion: number;
+    }>(`/api/admin/llm/models/${id}/tests`, {
+      method: "POST",
+      body: {
+        capability,
+        ...(baseConfigVersion ? { baseConfigVersion } : {}),
+      },
+    }),
+  deleteLlmModel: (id: string) =>
+    request<void>(`/api/admin/llm/models/${id}`, { method: "DELETE" }),
   listLlmCalls: (params: LlmCallQuery = {}) => {
     const search = new URLSearchParams();
     if (params.source) search.set("source", params.source);

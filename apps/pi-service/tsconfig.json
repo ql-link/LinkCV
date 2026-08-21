@@ -1,0 +1,14 @@
+{
+  "extends": "../../third_party/pi/tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": "../..",
+    "noEmit": true,
+    "paths": {
+      "@earendil-works/pi-ai": ["apps/pi-service/src/pi-ai-runtime.ts"],
+      "typebox": ["third_party/pi/node_modules/typebox/build/index.d.mts"],
+      "typebox/*": ["third_party/pi/node_modules/typebox/build/*/index.d.mts"]
+    },
+    "typeRoots": ["../../third_party/pi/node_modules/@types"]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

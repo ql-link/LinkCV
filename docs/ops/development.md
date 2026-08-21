@@ -16,7 +16,7 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装 Web、浏览器插件和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI 和文档解析 Worker。当前 Alembic head `0022`；`0002`–`0005` 建立并演进简历、版本和对象清理，`0006` 新增 LLM 模型配置和调用日志表，`0007` 新增用户私有 JD 单表，`0008` 增加 Chat 候选模型、唯一当前绑定与调用快照，`0009` 曾新增管理员操作审计日志表，`0010` 在对象删除改为同步后移除清理任务表，`0011` 移除仅写不读的管理员操作审计日志表，`0012` 删除已停用的旧版简历内容与样式备份列，`0013` 为简历分享新增字段，`0016` 新增导入任务表，`0017` 在旧同步导入数据清理后移除正式简历上的旧导入证据列，`0018` 新增用户知识库资料表，`0019` 新增 `users.wechat_openid` 唯一绑定与绑定时间，`0020` 将 `email`、`password_hash` 放宽为可空以支持微信扫码登录建号，`0021` 将简历导入状态迁移到通用 `document_parse_tasks` 并把来源指针改由 `resumes.parse_task_id` 持有，`0022` 增加资料解析任务、共享失败分类和资料反向指针，并清理旧资料行。
+新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace 和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker 和 Pi Service。当前 Alembic head `0027`；`0002`–`0025` 建立并演进既有业务表和官方模板，`0026` 增加统一模型能力绑定与验证证据，`0027` 把模型候选收敛为能力中立配置。
 
 后端默认读取仓库根目录 `.env`。设置 `LINKCV_ENV_FILE=.env.development` 可选择共享 Dev 基础配置；如果同目录存在 `.env.development.local`，其密码和密钥会覆盖基础文件。Production 同理使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，配置路径不受当前工作目录影响。
 
@@ -36,7 +36,7 @@ local/test 未配置密钥环时，原有非 LLM 接口仍可启动，但保存�
 LINKCV_ENV_FILE=.env.development npm run db:init
 ```
 
-命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0022`。图片、导入源文件和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。
+命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0027`。图片、导入源文件和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。
 
 `PLUGIN_RELEASE_ORIGIN` 是当前环境允许正式插件访问的 LinkCV 根 Origin。默认本地值为 `http://127.0.0.1:5173`；共享 Development 和 Production 必须在各自 `.local` 覆盖中写入用户实际访问的 Origin，Production 只接受 HTTPS。该值必须与构建安装包时传给 `build_extension_release.py` 的对应 Origin 一致，否则管理员上传会被拒绝。
 
@@ -48,6 +48,7 @@ LINKCV_ENV_FILE=.env.development npm run db:init
 | ------------- | -------: | --------------------------------------------------- |
 | Vite Web      |     5173 | Vite 默认值                                         |
 | FastAPI       |     8000 | `BACKEND_HOST`、`BACKEND_PORT`                      |
+| Pi Service    |     8010 | `PI_SERVICE_PORT`、`PI_SERVICE_URL`                  |
 | MySQL         |     3306 | `MYSQL_HOST`、`MYSQL_PORT`                          |
 | Redis         |     6379 | `REDIS_HOST`、`REDIS_PORT`、`REDIS_DB`、`REDIS_URL` |
 | MinIO API     |     9000 | `MINIO_API_PORT`、`MINIO_ENDPOINT`                  |
@@ -117,6 +118,10 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 | `REDIS_CONNECT_TIMEOUT_SECONDS` | `2` | Redis 连接超时 |
 | `REDIS_SOCKET_TIMEOUT_SECONDS` | `2` | Redis 操作超时 |
 | `LLM_TIMEOUT_SECONDS` | `75` | 统一托管 LLM Gateway 的单次请求超时 |
+| `PI_SERVICE_URL` | `http://127.0.0.1:8010` | FastAPI 调用无头 Pi Service 的地址 |
+| `PI_SERVICE_HOST` | `127.0.0.1` | Pi Service 本地监听地址；容器内由 Compose 覆盖为 `0.0.0.0` |
+| `PI_SERVICE_TOKEN` | 本地占位值 | FastAPI 到 Pi Service 的独立 Bearer 凭据；Production 必须覆盖 |
+| `PI_PROBE_TIMEOUT_SECONDS` | `45` | 管理端等待 Pi Tool 探针的上限 |
 
 Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置当前 Chat binding。PDF 和 DOCX 会把原始二进制和安全文件名发送到 LinkParse；浏览器不读取地址或 Key。API 的频率与受理并发限制保存在 FastAPI 进程内，请求幂等和 Worker 防重保存在 Redis，任务终态保存在 MySQL。默认自动化测试注入 Fake，不访问真实地址或读取 Key。
 
@@ -139,6 +144,7 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run test:backend:unit`           | 后端快速单元测试                                                     |
 | `npm run test:backend:integration`    | 后端隔离 HTTP 集成测试                                               |
 | `npm run test:backend`                | 全部后端和仓库工具测试                                               |
+| `npm run test:pi`                     | Pi 原生模型 profile、凭据边界与固定 Tool 技术闭环测试                  |
 | `npm run check`                       | 完整本地质量入口                                                     |
 
 ## 测试分层

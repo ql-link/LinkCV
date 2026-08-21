@@ -2,13 +2,13 @@
 
 ## 当前状态
 
-根级 `Dockerfile` 构建 Vite 静态产物和 FastAPI Python 环境。Web 构建阶段会把 `postcss.config.cjs` 与 `tailwind.config.cjs` 和应用源码一起复制到 `/app/apps/web`，确保容器内的 Vite 生产构建生成 Tailwind 工具类，而不是只打包手写 CSS。Node 依赖默认使用 npmmirror，固定版本的 `uv` 与 Python 依赖默认使用阿里云 PyPI，避免部署节点依赖 GHCR。构建过程静默地从 `uv.lock` 导出带哈希的 requirements 后再从指定镜像安装，既保留锁定版本与制品校验，也避免锁文件里的外部下载地址绕过镜像或把完整依赖清单写入 Jenkins 日志。镜像构建只打包 `migrations/sql/`、Alembic revision 和迁移 runner，不连接数据库。容器启动时 runner 先核对 `APP_ENV`、MySQL host、port 和 database，再升级到 Alembic head；目标不一致时拒绝启动，校验成功后才由 Uvicorn 在 `8000` 端口提供 `/api` 与 Web 静态文件。
+根级 `Dockerfile` 构建 Vite 静态产物、FastAPI Python 环境和 Pi Service 单文件 bundle。Web 构建阶段会把 `postcss.config.cjs` 与 `tailwind.config.cjs` 和应用源码一起复制到 `/app/apps/web`，确保容器内的 Vite 生产构建生成 Tailwind 工具类，而不是只打包手写 CSS；Pi 构建阶段安装 vendored workspace 的锁定依赖，把 `apps/pi-service` 与所需 Pi provider/model profile 打成 `/app/pi/server.js`，运行镜像同时包含 Node 22。Node 依赖默认使用 npmmirror，固定版本的 `uv` 与 Python 依赖默认使用阿里云 PyPI，避免部署节点依赖 GHCR。构建过程静默地从 `uv.lock` 导出带哈希的 requirements 后再从指定镜像安装，既保留锁定版本与制品校验，也避免锁文件里的外部下载地址绕过镜像或把完整依赖清单写入 Jenkins 日志。镜像构建只打包 `migrations/sql/`、Alembic revision 和迁移 runner，不连接数据库。FastAPI 容器启动时 runner 先核对 `APP_ENV`、MySQL host、port 和 database，再升级到 Alembic head；目标不一致时拒绝启动，校验成功后才由 Uvicorn 在 `8000` 端口提供 `/api` 与 Web 静态文件。
 
 仓库提供相互独立的 Dev 与 Production Jenkins Pipeline。两者都使用不可变镜像标签，先以显式目标参数运行迁移 runner，再更新 Compose，最后等待 `/api/health` 和本环境 Promtail 进入 running；构建镜像阶段不连接数据库。
 
 Dev 与 Production Compose 各自部署一个 `grafana/promtail:2.9.8`，读取 LinkCV 应用挂载的环境独立日志命名卷，并把 positions 保存到另一个独立命名卷。Promtail 只提升 `service`、`environment`、`log_type`、`level` 四个低基数字段为 Loki labels；request/user/target/operation 等高基数字段保留在 JSON body。Dev 推送并查询 `http://tolink-dev-loki:3100`，Production 使用 `http://tolink-loki:3100`；两者都是 LinkRag 已有、保留七天的共享实例，本仓库不创建或修改 Loki。应用写本地 JSONL，Promtail 异步采集，因此 Loki 暂时不可用不会阻断业务请求。
 
-`deploy/docker-compose.yml` 只用于本地启动 MySQL 8.4、Redis、MinIO 和 RabbitMQ。Dev 与 Production Compose 使用同一镜像分别启动包含静态 Web 与 FastAPI 的 `linkcv` 容器，以及执行 `python -m linkcv.workers` 的 `linkcv-worker` 容器；两套远端环境复用平台 RabbitMQ，不在应用 Compose 内创建 Broker。
+`deploy/docker-compose.yml` 只用于本地启动 MySQL 8.4、Redis、MinIO 和 RabbitMQ。Dev 与 Production Compose 使用同一镜像分别启动包含静态 Web 与 FastAPI 的 `linkcv`、执行 `python -m linkcv.workers` 的 `linkcv-worker`，以及执行 `node /app/pi/server.js` 的 `linkcv-pi`。Pi 容器不发布宿主机端口，只在现有 Docker 网络监听 `8010`；FastAPI 等待 Pi 健康后启动，并通过同一份私密 env 中的 `PI_SERVICE_TOKEN` 鉴权。两套远端环境复用平台 RabbitMQ，不在应用 Compose 内创建 Broker。
 Worker 将结构化日志写入共享日志卷的独立子目录，Promtail 同时采集 Web/FastAPI 与 Worker，避免多个进程并发轮转同一个文件。本机日志联调另使用 `deploy/docker-compose.observability.local.yml` 启动 LinkCV 自己的 Promtail，并复用 LinkRag 本地 Compose 已部署的 Loki；它不创建第二个 Loki，也不停止 LinkRag 的采集器。
 
 ## Dev Pipeline
@@ -18,7 +18,7 @@ Dev Jenkins Job 使用 `deploy/jenkins/Jenkinsfile.development`。Jenkins 将当
 - 镜像：`linkcv:dev-<commit>-b<build-number>`
 - 部署目录：`/opt/tolink/dev/linkcv`
 - Compose：`deploy/docker-compose.development.yml`
-- 容器：`linkcv-dev`、`linkcv-worker-dev`、`linkcv-dev-promtail`
+- 容器：`linkcv-dev`、`linkcv-worker-dev`、`linkcv-pi-dev`、`linkcv-dev-promtail`
 - 网络：外部网络 `tolink-dev-net`
 - 宿主机端口：`18002`
 - 配置：`.env.development` + 权限为 `600` 的 `.env.development.local`；后者提供部署实际 `PLUGIN_RELEASE_ORIGIN`
@@ -35,7 +35,7 @@ Production Jenkins Job 使用根目录 `Jenkinsfile`，在生产 Jenkins 节点�
 - 镜像：`linkcv:prod-<commit>-b<build-number>`
 - 部署目录：`/opt/tolink/LinkCV`
 - Compose：`deploy/docker-compose.production.yml`
-- 容器：`linkcv`、`linkcv-worker`、`linkcv-promtail`
+- 容器：`linkcv`、`linkcv-worker`、`linkcv-pi`、`linkcv-promtail`
 - 网络：外部网络 `tolink-app-net`
 - 宿主机端口：`8000`
 - 配置：`.env.production` + 权限为 `400` 或 `600` 的 `.env.production.local`；后者必须提供 HTTPS `PLUGIN_RELEASE_ORIGIN`
@@ -47,7 +47,7 @@ webhook 因此会分别把 `dev` 推送交给 Dev Job、把 PR 合并产生的 `
 Production Job。首次加入触发器后需手动运行一次 `linkcv-PROD`，让 Jenkins 从根
 `Jenkinsfile` 加载并注册触发器；后续 `master` push 自动构建。
 
-Production Pipeline 会把仓库中的非敏感 `.env.production`、Compose 和 Promtail 配置复制到部署目录；私密覆盖必须由部署密钥存储预先提供。除 JWT、MySQL 和 MinIO 凭据外，新版本还要求覆盖提供有效的 `LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY`、`RABBITMQ_URL` 与实际 HTTPS `PLUGIN_RELEASE_ORIGIN`，否则 Settings 会在启动前安全失败。Origin 不是密钥，但因为部署域名不提交到仓库而通过同一覆盖文件提供。LLM 密钥环用于解密 MySQL 中的模型凭据，不是供应商 API key；轮换时先发布“新 key 在首项、旧 key 仍保留”的配置，确认旧密文已经重包后才能移除旧 key。LinkParse Key 只供后端 Bearer 请求使用，不进入 Web 制品。
+Production Pipeline 会把仓库中的非敏感 `.env.production`、Compose 和 Promtail 配置复制到部署目录；私密覆盖必须由部署密钥存储预先提供。除 JWT、MySQL 和 MinIO 凭据外，新版本还要求覆盖提供有效的 `LLM_CREDENTIAL_ENCRYPTION_KEYS`、`PI_SERVICE_TOKEN`、`LINKPARSE_API_KEY`、`RABBITMQ_URL` 与实际 HTTPS `PLUGIN_RELEASE_ORIGIN`，否则 Settings 会在启动前安全失败。`PI_SERVICE_TOKEN` 同时注入 FastAPI 与 Pi 容器，只用于受控内部探针；Pi 容器没有宿主机端口。Origin 不是密钥，但因为部署域名不提交到仓库而通过同一覆盖文件提供。LLM 密钥环用于解密 MySQL 中的模型凭据，不是供应商 API key；轮换时先发布“新 key 在首项、旧 key 仍保留”的配置，确认旧密文已经重包后才能移除旧 key。LinkParse Key 只供后端 Bearer 请求使用，不进入 Web 制品。
 
 本期没有管理员开通接口。发布方还需在受控流程中确保至少一个既有用户被标记为 `users.is_admin=true`；公开注册始终是普通用户。没有管理员只会使 `/api/admin/llm/**` 无法使用，不会放宽权限。
 
@@ -70,10 +70,13 @@ Production Pipeline 会把仓库中的非敏感 `.env.production`、Compose 和 
 ## 回滚
 
 - 应用回滚通过把 `TAG` 切回上一环境的不可变镜像标签并重新执行对应 Compose 完成；不得把 Dev 标签部署到 Production。
-- 当前 head `0023`。`0016` 新增旧版 `resume_imports` 且非空时拒绝 downgrade；`0017` 删除旧同步导入证据列，执行前必须完成不可逆的旧对象、版本和简历清理；`0018` 新增用户数据集表；`0019`–`0020` 增加微信绑定并支持无邮箱密码账号；`0021` 将旧导入表迁移为 `document_parse_tasks`；`0022` 将资料解析接入该任务表，并在迁移前清理旧资料；`0023` 为历史简历版本新增名称。
+- Pi Service 与 FastAPI 使用同一镜像标签同步回滚；回滚期间 Compose 会停止不再存在的 `linkcv-pi` 服务，不能只回切其中一个容器。
+- 当前 head `0027`。`0016` 新增旧版 `resume_imports` 且非空时拒绝 downgrade；`0017` 删除旧同步导入证据列，执行前必须完成不可逆的旧对象、版本和简历清理；`0018` 新增用户数据集表；`0019`–`0020` 增加微信绑定并支持无邮箱密码账号；`0021` 将旧导入表迁移为 `document_parse_tasks`；`0022` 将资料解析接入该任务表；`0023` 为历史简历版本新增名称；`0024`–`0025` 新增并重编经典技术简历模板；`0026`–`0027` 建立能力中立模型配置、版本化验证证据与 Pi Agent 绑定。
 - `0021 → 0020` 会从 `document_parse_tasks` 和 `resumes.parse_task_id` 镜像重建 `resume_imports`，并拒绝丢弃非简历类型任务。由于升级已删除旧表，执行前仍需以部署前备份作为完整恢复保障；应用与 schema 必须配套回滚，不能单独回切镜像。
 - `0022 → 0021` 会删除全部资料及 `source_type=dataset` 的解析任务，再移除资料任务指针和失败分类；它不能恢复升级前删除的资料记录或对象。降级前必须确认不存在需要保留的资料任务，并与应用整体回滚。
 - `0023 → 0022` 会删除 `resume_versions.name`，不能恢复升级后创建或重命名的版本名称；降级前必须确认数据库备份可用，并与应用整体回滚。
+- `0024 → 0023` 只在没有简历引用时删除经典技术简历模板；`0025 → 0024` 只接受未被现场定制的模板内容，拒绝覆盖管理员修改。
+- `0027 → 0026` 会恢复模型配置的兼容能力列；继续执行 `0026 → 0025` 会删除简历结构化与 Pi Agent 绑定、验证证据及调用配置版本快照。降级前必须备份数据库并确认这些新证据可以丢弃。
 - `0017` 后旧镜像依赖已删除字段，禁止直接回切；只能向前修复。尚未产生新导入简历且确认可恢复空列结构时才允许 downgrade 到 `0016`，存在 `source_type=import` 行时 downgrade 会拒绝执行。
 - `0012 → 0011` 只重新增加空的旧版备份列，不恢复已经删除的 JSON；如需恢复旧值或继续回滚到依赖旧格式的应用，必须使用执行 `0012` 前的外部数据库备份。不要把 schema 降级成功描述为数据已恢复。
 - 如必须在隔离环境继续执行 `0011 → 0010`，先回滚应用，down 会重建空的 `admin_operation_logs`；`0010 → 0009` 还会重建空的对象存储清理任务表。继续执行 `0009 → 0008` 前须备份数据库，down 会删除 `admin_operation_logs`；继续执行 `0008 → 0007` 会保留升级后新写入的模型和日志主体，但不会恢复 `0008` 升级前清理的数据，同时会删除 binding 及能力、adapter、调用名、来源等附加快照。不要在新应用运行时执行。MySQL DDL 非事务，失败后停止自动重试并按实际 schema 或备份处理。

@@ -29,7 +29,10 @@ def execute_sql_file(
     require_statements: bool = True,
 ) -> None:
     """Execute one migration file without allowing it to change database scope."""
-    statements = sql_statements(path.read_text(encoding="utf-8"))
+    # utf-8-sig accepts regular UTF-8 and strips an optional BOM. Some already
+    # published SQL files contain a BOM, which MySQL otherwise sees as part of
+    # the first statement and rejects with a syntax error.
+    statements = sql_statements(path.read_text(encoding="utf-8-sig"))
     if require_statements and not statements:
         raise ValueError(f"migration SQL file has no executable statements: {path}")
 

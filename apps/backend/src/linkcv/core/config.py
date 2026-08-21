@@ -117,6 +117,20 @@ class Settings(BaseSettings):
         alias="LLM_TIMEOUT_SECONDS",
         gt=0,
     )
+    pi_service_url: str = Field(
+        default="http://127.0.0.1:8010",
+        alias="PI_SERVICE_URL",
+    )
+    pi_service_token: SecretStr = Field(
+        default=SecretStr("linkcv-pi-local-change-me"),
+        alias="PI_SERVICE_TOKEN",
+    )
+    pi_probe_timeout_seconds: float = Field(
+        default=45,
+        alias="PI_PROBE_TIMEOUT_SECONDS",
+        gt=0,
+        le=120,
+    )
 
     minio_endpoint: str = Field(default="http://127.0.0.1:9000", alias="MINIO_ENDPOINT")
     minio_access_key: str = Field(default="linkcv", alias="MINIO_ACCESS_KEY")
@@ -434,6 +448,8 @@ class Settings(BaseSettings):
         invalid: list[str] = []
         if _is_placeholder(self.jwt_secret) or len(self.jwt_secret) < 32:
             invalid.append("JWT_SECRET")
+        if _is_placeholder(self.pi_service_token.get_secret_value()):
+            invalid.append("PI_SERVICE_TOKEN")
         if self.database_url:
             if _is_placeholder(self.database_url):
                 invalid.append("DATABASE_URL")

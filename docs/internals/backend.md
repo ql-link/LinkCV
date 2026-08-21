@@ -21,9 +21,9 @@
 | `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板及管理、简历、版本、异步导入、分享和资源路由 |
 | `src/linkcv/modules/datasets/` | `user_dataset` 资料元数据、异步解析受理与状态列表路由 |
 | `src/linkcv/modules/job_descriptions/` | JD 单表 ORM、HTTP DTO 和受保护路由 |
-| `src/linkcv/modules/llm/` | Chat 当前绑定、模型凭据加密、LiteLLM 适配、普通/流式/结构化单模型调用、计量与管理员 API |
+| `src/linkcv/modules/llm/` | 能力中立模型候选、Chat/简历结构化/Pi Agent 绑定、版本化验证证据、模型凭据加密、LiteLLM 适配、普通/流式/结构化调用、计量与管理员 API |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0025` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0027` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -75,13 +75,15 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 ## 统一 LLM 调用
 
-`LLMService.chat()`、`LLMService.stream_chat()` 和 `LLMService.structured_chat()` 是后端业务模块使用的内部异步接口，不注册 HTTP route。调用方只提供可信 `user_id`、稳定 `source`、messages，以及结构化调用所需的响应模型；不传候选 ID、adapter、模型名、地址或密钥。服务从固定的 `chat` binding 解析唯一当前模型，并在单次逻辑调用内只调用该模型一次。没有当前项时返回 `LLM_CHAT_NOT_CONFIGURED`；供应商失败时直接收口，不重试、不遍历其他候选、不自动切换 binding。结构化调用把 Pydantic 响应模型交给 LiteLLM；对已实测的 `openai/qwen3.7-plus` 与国际兼容端点精确组合额外关闭 thinking mode。
+`LLMService.chat()`、`LLMService.stream_chat()` 和 `LLMService.structured_chat()` 是后端业务模块使用的内部异步接口，不注册 HTTP route。调用方只提供可信 `user_id`、稳定 `source`、messages，以及结构化调用所需的响应模型；不传候选 ID、adapter、模型名、地址或密钥。服务按调用方传入的能力解析唯一当前 binding；当前能力未绑定时，Chat 返回 `LLM_CHAT_NOT_CONFIGURED`，其他能力返回 `LLM_MODEL_NOT_CONFIGURED`。单次逻辑调用只调用当前模型一次，供应商失败直接收口，不重试、不遍历其他候选、不自动切换 binding。简历结构化通过 `resume_structuring` binding 调用结构化模型；对已实测的 `openai/qwen3.7-plus` 与国际兼容端点精确组合额外关闭 thinking mode。
 
 LiteLLM 只位于 `modules/llm/gateway.py` 和只读目录边界。白名单 adapter 与不含前缀的调用名组装成 LiteLLM 模型标识；阿里云百炼（千问）使用 `dashscope/<model>` 路由，和其他当前支持的简单 API Key 供应商共享模型名、可选 API Base 与加密 API Key 配置。所有 `acompletion` 显式传 `num_retries=0`，价格只读 `litellm.model_cost`，缺价格不阻断调用。供应商异常转换成稳定分类。同步 SQLAlchemy 操作使用独立短 Session 在线程池执行，外部调用和流式迭代期间不持有数据库事务。成功、失败和取消都会收口同一条逻辑调用记录；进程被强制终止造成的 `pending` 记录保留为崩溃排查信号。
 
 模型凭据使用 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 提供的 Fernet 密钥环加密，数据库只保存 `v1:<keyId>:<token>`。列表首项负责新写入，旧 key 用于兼容解密；读取旧密文时会惰性重包到首项。普通日志、HTTP 响应和调用记录均不包含明文凭据、messages、模型完整响应或供应商原始错误。
 
-简历导入 Worker 通过 `integrations/resume_structuring.py` 以 `source=resume_import` 调用 `LLMService.structured_chat()`，复用数据库中的 Chat 当前绑定、加密凭据、调用日志和计量。模型输入只包含 SectionIR 的标题、类别和 Markdown，不包含原文件、对象键、LinkParse 元数据、warnings 或用户 ID；模型返回内容仍须通过 `ResumeExtractionDraft` 严格校验。
+简历导入 Worker 通过 `integrations/resume_structuring.py` 以 `source=resume_import` 调用 `LLMService.structured_chat()`，使用数据库中的 `resume_structuring` 当前绑定、加密凭据、调用日志和计量。模型输入只包含 SectionIR 的标题、类别和 Markdown，不包含原文件、对象键、LinkParse 元数据、warnings 或用户 ID；模型返回内容仍须通过 `ResumeExtractionDraft` 严格校验。`pi_agent` 一期绑定通过 `apps/pi-service` 的固定 probe Tool 验证：FastAPI 固定候选配置快照、创建调用记录并在请求期解密供应商凭据，通过服务令牌把模型、地址和 Key 交给 Pi Service；Pi 使用原生 provider 直连供应商，FastAPI 不重建 Pi messages、tools 或 `tool_choice`。明文凭据不进入响应、调用日志或持久化 Run。
+
+模型候选在 `0027` 后不再携带能力列；`llm_capability_bindings` 为 `chat`、`resume_structuring`、`pi_agent` 各保存一行当前候选、绑定版本和最近验证证据。`llm_model_validations` 按候选配置版本、能力、探针版本和调用 ID 保存验证结果；`llm_call_logs.model_config_version` 保存实际调用时的候选版本快照。管理员使用 `/api/admin/llm/capabilities` 查看能力矩阵，并通过 `/api/admin/llm/capabilities/{capability}/binding` 以真实探针成功后切换绑定。
 
 `scripts/db/init_mysql.py` 只允许创建名为 `linkcv` 的 MySQL 数据库；`scripts/release/run_alembic.py` 在迁移前校验环境、host、port 和数据库并输出不含密码的摘要。FastAPI 配置支持根 `.env`、显式 `LINKCV_ENV_FILE`、同名 `.local` 和进程环境覆盖。Redis 在鉴权链路中作为唯一会话存储：`auth:session:{sid}` 保存会话哈希，`auth:user_sessions:{uid}` 索引该用户全部会话；会话不写 MySQL，撤销即删除 key。对象存储配置仅使用 `MINIO_*`。
 
@@ -123,7 +125,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于 `0002`–`0025` 往返、模板初始化和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于 `0002`–`0027` 往返、模板初始化和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 

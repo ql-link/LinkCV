@@ -1,0 +1,13 @@
+{
+  "name": "@linkcv/pi-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "../../third_party/pi/node_modules/.bin/tsx watch --tsconfig tsconfig.json src/main.ts",
+    "start": "node dist/server.js",
+    "build": "../../third_party/pi/node_modules/.bin/esbuild src/main.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/server.js --tsconfig=tsconfig.json",
+    "typecheck": "../../third_party/pi/node_modules/.bin/tsc --noEmit -p tsconfig.json",
+    "test": "../../third_party/pi/node_modules/.bin/esbuild test/probe.test.ts --bundle --platform=node --format=esm --target=node22 --outfile=.test-dist/probe.test.js --tsconfig=tsconfig.json && node --test .test-dist/probe.test.js"
+  }
+}

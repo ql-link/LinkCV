@@ -138,11 +138,14 @@ pipeline {
           attempt=1
           while [ "${attempt}" -le 30 ]; do
             health_status="$(docker inspect --format='{{.State.Health.Status}}' linkcv 2>/dev/null || true)"
+            pi_health_status="$(docker inspect --format='{{.State.Health.Status}}' linkcv-pi 2>/dev/null || true)"
             promtail_status="$(docker inspect --format='{{.State.Status}}' linkcv-promtail 2>/dev/null || true)"
             if [ "${health_status}" = 'healthy' ] && \
+              [ "${pi_health_status}" = 'healthy' ] && \
               [ "${promtail_status}" = 'running' ] && \
               curl -fsS "http://127.0.0.1:${LINKCV_HTTP_PORT}/api/health" >/dev/null; then
               echo "Container health: ${health_status}"
+              echo "Pi Service health: ${pi_health_status}"
               echo "Promtail status: ${promtail_status}"
               exit 0
             fi
@@ -152,7 +155,7 @@ pipeline {
 
           docker compose \
             -f "${DEPLOY_DIR}/deploy/docker-compose.production.yml" \
-            logs --tail=100 linkcv promtail
+            logs --tail=100 linkcv linkcv-pi promtail
           echo 'Production health check timed out.'
           exit 17
         '''

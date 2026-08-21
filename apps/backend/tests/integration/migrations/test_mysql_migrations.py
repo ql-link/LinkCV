@@ -21,7 +21,7 @@ from linkcv.domain.resume_snapshot import parse_resume_snapshot
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0025"
+EXPECTED_HEAD = "0027"
 
 
 def migration_test_url() -> str:
@@ -279,9 +279,10 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     inspector = inspect(engine)
     assert "storage_cleanup_jobs" not in inspector.get_table_names()
 
-    assert {constraint["name"] for constraint in inspector.get_unique_constraints("users")} == {
-        "uk_users_email"
-    }
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("users")
+    } == {"uk_users_email", "uk_users_wechat_openid"}
     user_columns = {column["name"]: column for column in inspector.get_columns("users")}
     resume_columns = {
         column["name"]: column for column in inspector.get_columns("resumes")
@@ -451,10 +452,11 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "resumes",
         "resume_versions",
         "document_parse_tasks",
-        "llm_model_configs",
-        "llm_capability_bindings",
-        "llm_call_logs",
-        "job_descriptions",
+            "llm_model_configs",
+            "llm_capability_bindings",
+            "llm_call_logs",
+            "llm_model_validations",
+            "job_descriptions",
     } <= set(inspector.get_table_names())
     assert "admin_operation_logs" not in inspector.get_table_names()
     assert {column["name"] for column in inspector.get_columns("users")} == {
@@ -517,7 +519,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         column["name"] for column in inspector.get_columns("llm_model_configs")
     } == {
         "id",
-        "capability",
         "model_name",
         "adapter",
         "model_call_name",
@@ -534,7 +535,14 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     assert {
         column["name"]
         for column in inspector.get_columns("llm_capability_bindings")
-    } == {"capability", "model_config_id", "created_at", "updated_at"}
+    } == {
+        "capability",
+        "model_config_id",
+        "binding_version",
+        "validation_id",
+        "created_at",
+        "updated_at",
+    }
     assert {
         column["name"] for column in inspector.get_columns("llm_call_logs")
     } == {
@@ -544,6 +552,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "source",
         "user_id",
         "model_config_id",
+        "model_config_version",
         "model_name",
         "adapter",
         "model_call_name",
@@ -563,7 +572,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         for column in inspector.get_columns("llm_model_configs")
     } == {
         "id": "模型配置主键",
-        "capability": "系统模型能力标识，当前仅 chat",
         "model_name": "LiteLLM 模型标识",
         "adapter": "LiteLLM adapter 标识",
         "model_call_name": "不含 adapter 前缀的模型调用名",
@@ -578,7 +586,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "updated_at": "最后更新时间（UTC）",
     }
     assert inspector.get_table_comment("llm_model_configs")["text"] == (
-        "系统模型能力的候选连接配置（含发布兼容列）"
+        "能力中立的模型连接配置"
     )
     assert {
         column["name"]: column["comment"]
@@ -590,6 +598,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "source": "稳定调用来源代码",
         "user_id": "发起调用的用户主键",
         "model_config_id": "实际使用的模型配置主键，未选中模型时为空",
+        "model_config_version": "实际模型配置版本快照，未选中模型时为空",
         "model_name": "实际模型标识快照",
         "adapter": "实际 LiteLLM adapter 快照",
         "model_call_name": "实际模型调用名快照",
@@ -636,7 +645,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     assert {
         constraint["name"]
         for constraint in inspector.get_unique_constraints("users")
-    } == {"uk_users_email"}
+    } == {"uk_users_email", "uk_users_wechat_openid"}
     assert {
         constraint["name"] for constraint in inspector.get_check_constraints("users")
     } == {"ck_users_is_admin", "ck_users_status"}
@@ -659,6 +668,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "ck_llm_call_logs_input_price_nonnegative",
         "ck_llm_call_logs_input_tokens_nonnegative",
         "ck_llm_call_logs_latency_nonnegative",
+        "ck_llm_call_logs_model_config_version",
         "ck_llm_call_logs_metering_status",
         "ck_llm_call_logs_output_price_nonnegative",
         "ck_llm_call_logs_output_tokens_nonnegative",
@@ -682,7 +692,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     assert {
         constraint["name"]
         for constraint in inspector.get_unique_constraints("llm_model_configs")
-    } == {"uk_llm_model_configs_capability_id"}
+    } == set()
     assert any(
         index["name"] == "idx_llm_model_configs_enabled_priority"
         and index["column_names"] == ["enabled", "priority", "id"]
@@ -720,10 +730,17 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     }
     assert binding_foreign_keys["fk_llm_capability_bindings_model"][
         "constrained_columns"
-    ] == ["capability", "model_config_id"]
+    ] == ["model_config_id"]
     assert binding_foreign_keys["fk_llm_capability_bindings_model"][
         "referred_columns"
-    ] == ["capability", "id"]
+    ] == ["id"]
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("llm_capability_bindings")
+    } == {
+        "ck_llm_capability_bindings_capability",
+        "ck_llm_capability_bindings_version",
+    }
 
     resume_foreign_keys = {
         foreign_key["name"]: foreign_key
@@ -773,9 +790,13 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         assert connection.execute(
             text(
                 "SELECT capability, model_config_id "
-                "FROM llm_capability_bindings"
+                "FROM llm_capability_bindings ORDER BY capability"
             )
-        ).one() == ("chat", None)
+        ).all() == [
+            ("chat", None),
+            ("pi_agent", None),
+            ("resume_structuring", None),
+        ]
 
     run_alembic(database_url, "upgrade", "head")
     with engine.begin() as connection:
@@ -1394,7 +1415,7 @@ def test_mysql_0008_clears_legacy_llm_data_and_supports_rollback() -> None:
     run_alembic(database_url, "upgrade", "head")
     assert "admin_operation_logs" not in inspect(engine).get_table_names()
     assert inspect(engine).get_table_comment("llm_model_configs")["text"] == (
-        "系统模型能力的候选连接配置（含发布兼容列）"
+        "能力中立的模型连接配置"
     )
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT COUNT(*) FROM llm_model_configs")) == 3
@@ -1481,9 +1502,13 @@ def test_mysql_0008_clears_legacy_llm_data_and_supports_rollback() -> None:
         assert connection.execute(
             text(
                 "SELECT capability, model_config_id "
-                "FROM llm_capability_bindings"
+                "FROM llm_capability_bindings ORDER BY capability"
             )
-        ).one() == ("chat", None)
+        ).all() == [
+            ("chat", None),
+            ("pi_agent", None),
+            ("resume_structuring", None),
+        ]
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
     engine.dispose()
