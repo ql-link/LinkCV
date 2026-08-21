@@ -1478,7 +1478,7 @@ select:not([data-slot]):focus-visible,
 
 .template-library-grid {
   display: grid;
-  max-width: 1180px;
+  width: 100%;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 24px;
 }
@@ -1587,7 +1587,7 @@ select:not([data-slot]):focus-visible,
 
 .home-card-grid {
   display: grid;
-  max-width: 1180px;
+  width: 100%;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 24px;
 }
