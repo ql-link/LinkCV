@@ -73,7 +73,10 @@ def test_sql_migration_executor_strips_utf8_bom(tmp_path: Path) -> None:
         REPO_ROOT / "apps/backend/src/linkcv/core/migration_sql.py",
     )
     sql_file = tmp_path / "bom.up.sql"
-    sql_file.write_text("\ufeff-- comment\nSELECT 1;", encoding="utf-8")
+    sql_file.write_text(
+        "-- migration comment\nALTER TABLE example ADD COLUMN enabled BOOLEAN;",
+        encoding="utf-8-sig",
+    )
 
     class Connection:
         def __init__(self) -> None:
@@ -85,7 +88,9 @@ def test_sql_migration_executor_strips_utf8_bom(tmp_path: Path) -> None:
     connection = Connection()
     module.execute_sql_file(connection, sql_file)
 
-    assert connection.statements == ["SELECT 1"]
+    assert connection.statements == [
+        "ALTER TABLE example ADD COLUMN enabled BOOLEAN"
+    ]
 
 
 def test_sql_revision_files_are_created_as_a_pair(tmp_path: Path) -> None:

@@ -5,11 +5,14 @@ from datetime import datetime, timedelta, timezone
 import jwt
 from fastapi import Response
 from pwdlib import PasswordHash
+from pwdlib.exceptions import PwdlibError
 from pwdlib.hashers.argon2 import Argon2Hasher
+from pwdlib.hashers.bcrypt import BcryptHasher
 
 from linkcv.core.config import Settings
 
-_password_hash = PasswordHash((Argon2Hasher(),))
+_argon2_hasher = Argon2Hasher()
+_password_hash = PasswordHash((_argon2_hasher, BcryptHasher()))
 
 SESSION_KEY_PREFIX = "auth:session:"
 USER_SESSIONS_KEY_PREFIX = "auth:user_sessions:"
@@ -22,14 +25,18 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, password_hash: str) -> bool:
     try:
         return _password_hash.verify(password, password_hash)
-    except (ValueError, TypeError):
+    except (PwdlibError, ValueError, TypeError):
         return False
 
 
 def password_needs_rehash(password_hash: str) -> bool:
-    # Rehash when Argon2 parameters drift from the recommended defaults.
+    # Upgrade legacy bcrypt hashes and Argon2 hashes with stale parameters.
     try:
-        return _password_hash.current_hasher.check_needs_rehash(password_hash)
+        if password_hash.startswith(("$2a$", "$2b$", "$2y$")):
+            return True
+        if password_hash.startswith("$argon2"):
+            return _argon2_hasher.check_needs_rehash(password_hash)
+        return False
     except (ValueError, TypeError):
         return False
 

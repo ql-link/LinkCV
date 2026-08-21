@@ -13,6 +13,11 @@ pipeline {
       defaultValue: false,
       description: '构建生产镜像前运行 npm run check'
     )
+    booleanParam(
+      name: 'IMPORT_LEGACY_SQLITE',
+      defaultValue: false,
+      description: '仅首次切换时导入旧 Production SQLite；自动构建必须保持关闭'
+    )
   }
 
   triggers {
@@ -31,16 +36,9 @@ pipeline {
   }
 
   environment {
-    IMAGE = 'linkcv'
-    DEPLOY_DIR = '/opt/tolink/LinkCV'
-    LINKCV_ENV_FILE = '/opt/tolink/LinkCV/.env.production'
-    LINKCV_SECRET_ENV_FILE = '/opt/tolink/LinkCV/.env.production.local'
-    LINKCV_DOCKER_NETWORK = 'tolink-app-net'
-    LINKCV_HTTP_PORT = '8000'
-    EXPECTED_APP_ENV = 'production'
-    EXPECTED_MYSQL_HOST = 'tolink-mysql'
-    EXPECTED_MYSQL_PORT = '3306'
-    EXPECTED_MYSQL_DATABASE = 'linkcv'
+    CLOUD_HOST = '100.77.31.79'
+    CLOUD_USER = 'root'
+    CLOUD_SSH_KEY = '/var/jenkins_home/.ssh/cloud_prod'
   }
 
   stages {
@@ -52,7 +50,6 @@ pipeline {
             script: 'git rev-parse --short=8 HEAD',
             returnStdout: true
           ).trim()
-          env.TAG = "prod-${env.COMMIT_SHORT}-b${env.BUILD_NUMBER}"
         }
       }
     }
@@ -64,108 +61,66 @@ pipeline {
       }
     }
 
-    stage('Build Image') {
+    stage('Package Commit') {
       steps {
         sh '''
           set -eu
-          DOCKER_BUILDKIT=1 docker build \
-            --label org.opencontainers.image.revision="$(git rev-parse HEAD)" \
-            -t "${IMAGE}:${TAG}" \
-            .
+          git archive --format=tar.gz --output=linkcv-source.tar.gz HEAD
         '''
       }
     }
 
-    stage('Prepare Production') {
+    stage('Deploy Production on Cloud') {
       steps {
         sh '''
           set -eu
-          docker network inspect "${LINKCV_DOCKER_NETWORK}" >/dev/null
-          mkdir -p "${DEPLOY_DIR}/deploy/observability"
-          install -m 0644 .env.production "${LINKCV_ENV_FILE}"
-          install -m 0644 deploy/docker-compose.production.yml \
-            "${DEPLOY_DIR}/deploy/docker-compose.production.yml"
-          install -m 0644 deploy/observability/promtail-config.yml \
-            "${DEPLOY_DIR}/deploy/observability/promtail-config.yml"
-          test -f "${LINKCV_SECRET_ENV_FILE}" || {
-            echo "Missing Production secret env file: ${LINKCV_SECRET_ENV_FILE}"
-            exit 15
-          }
-          secret_mode="$(stat -c '%a' "${LINKCV_SECRET_ENV_FILE}")"
-          case "${secret_mode}" in
-            400|600) ;;
-            *)
-              echo "Production secret env file must use mode 400 or 600, got ${secret_mode}"
-              exit 16
-              ;;
+          case "${BUILD_NUMBER}" in
+            ''|*[!0-9]*) echo 'BUILD_NUMBER must be numeric'; exit 20 ;;
           esac
-        '''
-      }
-    }
+          test -f "${CLOUD_SSH_KEY}" || {
+            echo "Missing Cloud SSH key: ${CLOUD_SSH_KEY}"
+            exit 21
+          }
 
-    stage('Migrate Production') {
-      steps {
-        sh '''
-          set -eu
-          docker run --rm \
-            --network "${LINKCV_DOCKER_NETWORK}" \
-            --env-file "${LINKCV_ENV_FILE}" \
-            --env-file "${LINKCV_SECRET_ENV_FILE}" \
-            -e APP_ENV="${EXPECTED_APP_ENV}" \
-            "${IMAGE}:${TAG}" \
-            python /app/scripts/release/run_alembic.py \
-              --expected-app-env "${EXPECTED_APP_ENV}" \
-              --expected-host "${EXPECTED_MYSQL_HOST}" \
-              --expected-port "${EXPECTED_MYSQL_PORT}" \
-              --expected-database "${EXPECTED_MYSQL_DATABASE}"
-        '''
-      }
-    }
+          remote_dir="/tmp/linkcv-prod-jenkins-${BUILD_NUMBER}"
+          ssh_opts="-i ${CLOUD_SSH_KEY} -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          effective_import="${IMPORT_LEGACY_SQLITE}"
+          if [ -n "${ref:-}" ] && [ "${effective_import}" = 'true' ]; then
+            echo 'Webhook-triggered builds cannot import legacy SQLite.'
+            exit 22
+          fi
 
-    stage('Deploy Production') {
-      steps {
-        sh '''
-          set -eu
-          TAG="${TAG}" \
-          LINKCV_ENV_FILE="${LINKCV_ENV_FILE}" \
-          LINKCV_SECRET_ENV_FILE="${LINKCV_SECRET_ENV_FILE}" \
-          LINKCV_DOCKER_NETWORK="${LINKCV_DOCKER_NETWORK}" \
-          LINKCV_HTTP_PORT="${LINKCV_HTTP_PORT}" \
-            docker compose \
-              -f "${DEPLOY_DIR}/deploy/docker-compose.production.yml" \
-              up -d --remove-orphans
-
-          attempt=1
-          while [ "${attempt}" -le 30 ]; do
-            health_status="$(docker inspect --format='{{.State.Health.Status}}' linkcv 2>/dev/null || true)"
-            pi_health_status="$(docker inspect --format='{{.State.Health.Status}}' linkcv-pi 2>/dev/null || true)"
-            promtail_status="$(docker inspect --format='{{.State.Status}}' linkcv-promtail 2>/dev/null || true)"
-            if [ "${health_status}" = 'healthy' ] && \
-              [ "${pi_health_status}" = 'healthy' ] && \
-              [ "${promtail_status}" = 'running' ] && \
-              curl -fsS "http://127.0.0.1:${LINKCV_HTTP_PORT}/api/health" >/dev/null; then
-              echo "Container health: ${health_status}"
-              echo "Pi Service health: ${pi_health_status}"
-              echo "Promtail status: ${promtail_status}"
-              exit 0
-            fi
-            sleep 2
-            attempt=$((attempt + 1))
-          done
-
-          docker compose \
-            -f "${DEPLOY_DIR}/deploy/docker-compose.production.yml" \
-            logs --tail=100 linkcv linkcv-pi promtail
-          echo 'Production health check timed out.'
-          exit 17
+          ssh ${ssh_opts} "${CLOUD_USER}@${CLOUD_HOST}" \
+            "mkdir -p '${remote_dir}'"
+          scp ${ssh_opts} \
+            linkcv-source.tar.gz \
+            deploy/scripts/build-production-on-cloud.sh \
+            "${CLOUD_USER}@${CLOUD_HOST}:${remote_dir}/"
+          ssh ${ssh_opts} "${CLOUD_USER}@${CLOUD_HOST}" \
+            "bash '${remote_dir}/build-production-on-cloud.sh' '${BUILD_NUMBER}' '${COMMIT_SHORT}' '${remote_dir}/linkcv-source.tar.gz' '${effective_import}'"
         '''
       }
     }
   }
 
   post {
-    always { sh 'docker image prune -f || true' }
-    success { echo "Production deployed: ${env.IMAGE}:${env.TAG}" }
+    always {
+      sh '''
+        case "${BUILD_NUMBER}" in
+          ''|*[!0-9]*) exit 0 ;;
+        esac
+        if [ -f "${CLOUD_SSH_KEY}" ]; then
+          ssh -i "${CLOUD_SSH_KEY}" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=accept-new \
+            "${CLOUD_USER}@${CLOUD_HOST}" \
+            "rm -rf '/tmp/linkcv-prod-jenkins-${BUILD_NUMBER}'" || true
+        fi
+        rm -f linkcv-source.tar.gz
+      '''
+    }
+    success { echo "Production deployed from commit ${env.COMMIT_SHORT}" }
     failure { echo 'Production build or deployment failed.' }
   }
 }
