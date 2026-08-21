@@ -18,6 +18,10 @@ describe("LandingPage", () => {
     expect(screen.getByRole("heading", { name: /岗位信息/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /下一份简历，从这里开始/ })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "页脚导航" })).toBeInTheDocument();
+    const filingLink = screen.getByRole("link", { name: "皖ICP备2026017322号" });
+    expect(filingLink).toHaveAttribute("href", "https://beian.miit.gov.cn/");
+    expect(filingLink).toHaveAttribute("target", "_blank");
+    expect(filingLink).toHaveAttribute("rel", "noreferrer");
 
     const featuresLink = screen.getByLabelText("功能");
     const editorLink = screen.getByLabelText("编辑器");

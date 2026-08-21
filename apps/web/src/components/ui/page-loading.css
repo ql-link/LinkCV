@@ -1,0 +1,44 @@
+.page-loading {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  place-content: center;
+  justify-items: center;
+  gap: var(--ui-space-3);
+  color: var(--ui-text-muted);
+  text-align: center;
+}
+
+.page-loading.is-page {
+  min-height: 100vh;
+  background: var(--ui-background);
+}
+
+.page-loading.is-workspace {
+  min-height: 360px;
+}
+
+.page-loading.is-panel {
+  min-height: 180px;
+}
+
+.page-loading-spinner {
+  width: 28px;
+  height: 28px;
+  color: var(--ui-accent);
+  animation: page-loading-spin 800ms linear infinite;
+}
+
+.page-loading p {
+  margin: 0;
+  font-size: var(--ui-text-sm);
+  line-height: var(--ui-leading-normal);
+}
+
+@keyframes page-loading-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-loading-spinner { animation: none; }
+}

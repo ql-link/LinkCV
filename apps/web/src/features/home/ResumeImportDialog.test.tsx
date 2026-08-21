@@ -33,6 +33,10 @@ describe("ResumeImportDialog", () => {
     const onAccepted = vi.fn();
     render(<ResumeImportDialog onClose={onClose} onAccepted={onAccepted} />);
 
+    const overlay = document.querySelector('[data-slot="alert-dialog-overlay"]');
+    expect(overlay).toHaveClass("bg-[var(--scrim)]");
+    expect(overlay).not.toHaveClass("bg-black/80");
+
     const file = new File(["# 张三"], "张三简历.md", { type: "text/markdown" });
     fireEvent.change(screen.getByLabelText("选择 Markdown、DOCX 或 PDF 文件"), {
       target: { files: [file] },

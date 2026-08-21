@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Database, FileSearch, FileText, Plus, Search, X } from "lucide-react";
 import { api, ApiRequestError, type DatasetRecord } from "../../api/client";
-import { Button, FeedbackNotice, FileUpload } from "@/components/ui";
+import { Button, FeedbackNotice, FileUpload, PageLoading } from "@/components/ui";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { DatasetPreviewDialog } from "./DatasetPreviewDialog";
 
@@ -294,29 +294,29 @@ export function DatasetsPage() {
         )}
       />
 
-      <div className="datasets-body">
-        {loading && <div className="app-loading">正在加载资料...</div>}
+      {loading ? (
+        <PageLoading label="正在加载资料…" />
+      ) : (
+        <div className="datasets-body">
+          {loadFailed && (
+            <section className="dashboard-empty-state">
+              <Database size={48} strokeWidth={1.2} />
+              <h2>资料加载失败</h2>
+              <p>请稍后重试。</p>
+              <Button variant="secondary" onClick={() => window.location.reload()}>重新加载</Button>
+            </section>
+          )}
 
-        {!loading && loadFailed && (
-          <section className="dashboard-empty-state">
-            <Database size={48} strokeWidth={1.2} />
-            <h2>资料加载失败</h2>
-            <p>请稍后重试。</p>
-            <Button variant="secondary" onClick={() => window.location.reload()}>重新加载</Button>
-          </section>
-        )}
-
-        {!loading && !loadFailed && datasets.length === 0 && (
+        {!loadFailed && datasets.length === 0 && (
           <section className="datasets-empty">
-            <span className="datasets-empty-icon" aria-hidden="true"><FileText size={40} strokeWidth={1.4} /></span>
-            <h2>先上传一份资料</h2>
-            <p>把简历、作品集、项目复盘或岗位参考资料放进来。<br />写简历时可以快速检索和引用，减少重复整理。</p>
-            <DatasetDropzone onDropFile={pickFile} />
-            <p className="datasets-empty-hint">建议先上传与你当前求职方向最相关的资料，资料越聚焦，后续引用越准确。</p>
+            <span className="datasets-empty-icon" aria-hidden="true"><FileText size={44} strokeWidth={1.2} /></span>
+            <h2>还没有资料</h2>
+            <p>建议先上传一份与你当前求职方向相关的资料，<br />后续写简历时可以快速检索和引用。</p>
+            <Button icon={<Plus size={15} />} onClick={() => setDialogOpen(true)}>上传第一份资料</Button>
           </section>
         )}
 
-        {!loading && !loadFailed && datasets.length > 0 && (
+        {!loadFailed && datasets.length > 0 && (
           <>
             <div className="datasets-toolbar">
               <label className="datasets-search-field">
@@ -386,7 +386,8 @@ export function DatasetsPage() {
             </section>
           </>
         )}
-      </div>
+        </div>
+      )}
 
       {dialogOpen && (
         <div className="dataset-dialog-backdrop" onMouseDown={(event) => {

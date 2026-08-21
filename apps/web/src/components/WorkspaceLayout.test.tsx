@@ -9,7 +9,7 @@ afterEach(() => {
 });
 
 describe("WorkspaceNavigation", () => {
-  it("使用顶部胶囊导航切换简历、JD 和资料库，并标记当前模块", () => {
+  it("使用顶部胶囊导航切换简历、模板、JD 和资料库，并标记当前模块", () => {
     render(<WorkspaceNavigation active="jobs" email="user@example.test" />);
 
     expect(screen.getByRole("navigation", { name: "工作区导航" })).toBeInTheDocument();
@@ -18,17 +18,23 @@ describe("WorkspaceNavigation", () => {
     expect(brandLink).toHaveClass("no-underline", "hover:no-underline");
     expect(screen.getByText("LinkResume")).toHaveAttribute("translate", "no");
     expect(screen.getByRole("link", { name: "JD 中心" })).toHaveAttribute("aria-current", "page");
-    expect(screen.queryByRole("link", { name: "模板" })).not.toBeInTheDocument();
+    const resumesLink = screen.getByRole("link", { name: "我的简历" });
+    const templatesLink = screen.getByRole("link", { name: "简历模板" });
+    expect(templatesLink).toHaveAttribute("href", "/templates");
+    expect(resumesLink.style.getPropertyValue("--nav-item-color")).toBe("var(--ui-accent)");
+    expect(templatesLink.style.getPropertyValue("--nav-item-color")).toBe("var(--ui-template-accent)");
     expect(screen.queryByRole("link", { name: "个人资料" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("link", { name: "全部简历" }));
+    fireEvent.click(screen.getByRole("link", { name: "我的简历" }));
     expect(`${window.location.pathname}${window.location.search}`).toBe("/resumes");
+
+    fireEvent.click(screen.getByRole("link", { name: "简历模板" }));
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/templates");
 
     fireEvent.click(screen.getByRole("link", { name: "资料库" }));
     expect(`${window.location.pathname}${window.location.search}`).toBe("/datasets");
 
     window.history.replaceState(null, "", "/jobs");
-    const resumesLink = screen.getByRole("link", { name: "全部简历" });
     const preventNativeNavigation = (event: MouseEvent) => event.preventDefault();
     resumesLink.addEventListener("click", preventNativeNavigation);
     fireEvent.click(resumesLink, { metaKey: true });

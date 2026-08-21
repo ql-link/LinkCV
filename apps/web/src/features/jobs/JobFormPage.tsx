@@ -10,7 +10,7 @@ import {
   type JobSalaryPeriod,
   type JobWorkMode,
 } from "../../api/client";
-import { Button } from "@/components/ui";
+import { Button, PageLoading } from "@/components/ui";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { jobDetailPath, navigateTo } from "../../routing";
 import { JobDuplicateDialog } from "./JobDuplicateDialog";
@@ -173,7 +173,7 @@ export function JobFormPage({ mode, jobId }: { mode: "create" | "edit"; jobId?: 
   };
 
   if (loading) {
-    return <main className="dashboard-content job-page-shell"><div className="job-workspace-state">正在加载岗位…</div></main>;
+    return <main className="dashboard-content job-page-shell"><PageLoading label="正在加载岗位信息…" /></main>;
   }
   if (mode === "edit" && !record) {
     return (
