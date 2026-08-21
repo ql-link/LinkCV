@@ -8,10 +8,11 @@ import {
 import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
 import { Brand } from "@/components/ui";
+import RandomLetterSwapNav from "@/components/ui/m-random-letter-swap-1";
 
 export type WorkspaceSection = "resumes" | "jobs" | "datasets" | "account";
 
-type WorkspaceSidebarProps = {
+type WorkspaceNavigationProps = {
   active: WorkspaceSection;
   email: string;
   nickname?: string;
@@ -19,67 +20,83 @@ type WorkspaceSidebarProps = {
 };
 
 const NAV_ITEMS: Array<{
+  activeColor: string;
+  gradient: string;
   key: WorkspaceSection;
   label: string;
   href: string;
   icon: typeof FileText;
 }> = [
-  { key: "resumes", label: "全部简历", href: "/resumes", icon: FileText },
-  { key: "jobs", label: "JD 中心", href: "/jobs", icon: BriefcaseBusiness },
-  { key: "datasets", label: "资料库", href: "/datasets", icon: Database },
+  {
+    activeColor: "var(--ui-accent)",
+    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-accent) 24%, transparent) 0%, color-mix(in srgb, var(--ui-accent) 10%, transparent) 48%, transparent 76%)",
+    key: "resumes",
+    label: "全部简历",
+    href: "/resumes",
+    icon: FileText,
+  },
+  {
+    activeColor: "var(--ui-warning)",
+    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-warning) 24%, transparent) 0%, color-mix(in srgb, var(--ui-warning) 10%, transparent) 48%, transparent 76%)",
+    key: "jobs",
+    label: "JD 中心",
+    href: "/jobs",
+    icon: BriefcaseBusiness,
+  },
+  {
+    activeColor: "var(--ui-success)",
+    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-success) 24%, transparent) 0%, color-mix(in srgb, var(--ui-success) 10%, transparent) 48%, transparent 76%)",
+    key: "datasets",
+    label: "资料库",
+    href: "/datasets",
+    icon: Database,
+  },
+  {
+    activeColor: "var(--ui-destructive)",
+    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-destructive) 24%, transparent) 0%, color-mix(in srgb, var(--ui-destructive) 10%, transparent) 48%, transparent 76%)",
+    key: "account",
+    label: "个人资料",
+    href: "/account",
+    icon: UserRound,
+  },
 ];
 
-function WorkspaceAccount({ active, email, nickname, avatarUrl }: WorkspaceSidebarProps) {
-  const displayName = nickname || email;
+export function WorkspaceNavigation({ active, avatarUrl, email, nickname }: WorkspaceNavigationProps) {
+  const displayName = nickname || email || "个人资料";
+  const activeHref = NAV_ITEMS.find((item) => item.key === active)?.href ?? "/resumes";
 
   return (
-    <div className="dashboard-account-area">
-      <button
-        className={`dashboard-account${active === "account" ? " is-active" : ""}`}
-        type="button"
-        aria-current={active === "account" ? "page" : undefined}
-        onClick={() => navigateTo("/account")}
-        title="个人资料"
+    <header className="dashboard-topbar">
+      <a
+        className="dashboard-brand-link"
+        href="/resumes"
+        onClick={(event) => {
+          if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+          event.preventDefault();
+          navigateTo("/resumes");
+        }}
+        aria-label="LinkCV 首页"
       >
-        {avatarUrl ? (
-          <img className="account-avatar" src={avatarUrl} alt="" />
-        ) : (
-          <span className="account-avatar-fallback" aria-hidden="true">
-            {[...displayName][0] ?? <UserRound size={14} />}
-          </span>
-        )}
-        <span className="account-text">
-          <strong className="account-name">{displayName}</strong>
-          <small className="account-email">个人资料</small>
-        </span>
-      </button>
-    </div>
-  );
-}
-
-export function WorkspaceSidebar(props: WorkspaceSidebarProps) {
-  return (
-    <nav className="dashboard-sidebar" aria-label="工作区导航">
-      <Brand className="dashboard-brand" />
-      <div className="dashboard-tabs">
-        {NAV_ITEMS.map((item) => {
-          const Icon = item.icon;
-          return (
-            <button
-              key={item.key}
-              className={props.active === item.key ? "is-active" : ""}
-              type="button"
-              aria-current={props.active === item.key ? "page" : undefined}
-              onClick={() => navigateTo(item.href)}
-            >
-              <Icon size={16} />
-              {item.label}
-            </button>
-          );
-        })}
+        <Brand className="dashboard-brand" />
+      </a>
+      <div className="dashboard-nav-scroll">
+        <nav aria-label="工作区导航" title={`当前账号：${displayName}`}>
+          <RandomLetterSwapNav
+            activeItem={activeHref}
+            className="dashboard-tabs"
+            currentType="page"
+            links={NAV_ITEMS}
+            navigationMode="client"
+            onItemClick={navigateTo}
+          />
+        </nav>
       </div>
-      <WorkspaceAccount {...props} />
-    </nav>
+      <span className="dashboard-account-badge" title={displayName} aria-label={`当前账号：${displayName}`}>
+        {avatarUrl
+          ? <img src={avatarUrl} alt="" width="34" height="34" />
+          : [...displayName][0]}
+      </span>
+    </header>
   );
 }
 
@@ -110,7 +127,7 @@ export function WorkspaceLayout({ active, children }: { active: WorkspaceSection
   const user = useResumeStore((state) => state.user);
   return (
     <div className="dashboard-shell" data-ui-theme="light">
-      <WorkspaceSidebar
+      <WorkspaceNavigation
         active={active}
         email={user?.email ?? ""}
         nickname={user?.nickname}
