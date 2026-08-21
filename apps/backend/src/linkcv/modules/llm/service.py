@@ -63,6 +63,81 @@ def normalize_call_source(source: str) -> str:
     return normalized
 
 
+def _structured_messages(
+    messages: Sequence[ChatMessage],
+    response_model: type[StructuredValue],
+) -> tuple[ChatMessage, ...]:
+    schema = json.dumps(
+        response_model.model_json_schema(),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    instruction = ChatMessage(
+        role="system",
+        content=(
+            "只返回一个符合下列 JSON Schema 的 JSON 对象。"
+            "不要输出 Markdown、代码围栏、解释或其他文字。"
+            "必须保留 Schema 要求的字段与类型；未知值按 Schema 使用 null、空数组或空字符串。"
+            f"\nJSON Schema:\n{schema}"
+        ),
+    )
+    return (instruction, *messages)
+
+
+def _json_object_candidates(content: str) -> tuple[str, ...]:
+    candidates: list[str] = []
+    start: int | None = None
+    depth = 0
+    in_string = False
+    escaped = False
+
+    for index, character in enumerate(content):
+        if start is None:
+            if character == "{":
+                start = index
+                depth = 1
+                in_string = False
+                escaped = False
+            continue
+
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+            continue
+
+        if character == '"':
+            in_string = True
+        elif character == "{":
+            depth += 1
+        elif character == "}":
+            depth -= 1
+            if depth == 0:
+                candidates.append(content[start : index + 1])
+                start = None
+
+    return tuple(candidates)
+
+
+def _validate_structured_content(
+    content: str,
+    response_model: type[StructuredValue],
+) -> StructuredValue:
+    validated: list[StructuredValue] = []
+    for candidate in _json_object_candidates(content):
+        try:
+            payload = json.loads(candidate)
+            validated.append(response_model.model_validate(payload))
+        except (TypeError, ValueError, ValidationError):
+            continue
+    if len(validated) == 1:
+        return validated[0]
+    raise ValueError("model output must contain exactly one valid structured object")
+
+
 class LLMError(Exception):
     def __init__(self, code: str, call_id: str) -> None:
         super().__init__(code)
@@ -515,10 +590,12 @@ class LLMService:
             try:
                 result = await self._gateway.complete(
                     model=config.model_name,
-                    messages=validated_messages,
+                    messages=_structured_messages(
+                        validated_messages,
+                        response_model,
+                    ),
                     api_base=config.api_base,
                     api_key=api_key,
-                    response_format=response_model,
                 )
             except GatewayError as error:
                 await self._db(
@@ -537,7 +614,10 @@ class LLMService:
                 output_price_per_million=result.output_price_per_million,
             )
             try:
-                value = response_model.model_validate(json.loads(result.content))
+                value = _validate_structured_content(
+                    result.content,
+                    response_model,
+                )
             except (TypeError, ValueError, ValidationError):
                 await self._db(
                     self._finalize_sync,
@@ -774,18 +854,13 @@ class LLMService:
             await self._db(self._select_model_sync, call_id, config)
             api_key = await self._credential(config, call_id, started_at)
             try:
-                probe_response_format = (
-                    {"type": "json_object"}
-                    if config.capability == RESUME_STRUCTURING_CAPABILITY
-                    else None
-                )
                 result: GatewayResult = await self._gateway.complete(
                     model=config.model_name,
                     messages=(
                         ChatMessage(
                             role="user",
                             content=(
-                                "Reply with a valid JSON object containing an ok field."
+                                "Reply only with this valid JSON object: {\"ok\": true}"
                                 if config.capability == RESUME_STRUCTURING_CAPABILITY
                                 else "Reply with OK."
                             ),
@@ -793,7 +868,6 @@ class LLMService:
                     ),
                     api_base=config.api_base,
                     api_key=api_key,
-                    response_format=probe_response_format,
                 )
             except GatewayError as error:
                 await self._db(
