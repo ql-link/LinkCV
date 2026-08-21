@@ -3,7 +3,6 @@ import {
   BriefcaseBusiness,
   Database,
   FileText,
-  UserRound,
 } from "lucide-react";
 import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
@@ -51,19 +50,11 @@ const NAV_ITEMS: Array<{
     href: "/datasets",
     icon: Database,
   },
-  {
-    activeColor: "var(--ui-destructive)",
-    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-destructive) 24%, transparent) 0%, color-mix(in srgb, var(--ui-destructive) 10%, transparent) 48%, transparent 76%)",
-    key: "account",
-    label: "个人资料",
-    href: "/account",
-    icon: UserRound,
-  },
 ];
 
 export function WorkspaceNavigation({ active, avatarUrl, email, nickname }: WorkspaceNavigationProps) {
   const displayName = nickname || email || "个人资料";
-  const activeHref = NAV_ITEMS.find((item) => item.key === active)?.href ?? "/resumes";
+  const activeHref = NAV_ITEMS.find((item) => item.key === active)?.href ?? "";
 
   return (
     <header className="dashboard-topbar">
@@ -91,11 +82,22 @@ export function WorkspaceNavigation({ active, avatarUrl, email, nickname }: Work
           />
         </nav>
       </div>
-      <span className="dashboard-account-badge" title={displayName} aria-label={`当前账号：${displayName}`}>
+      <a
+        aria-current={active === "account" ? "page" : undefined}
+        aria-label={`打开个人资料，当前账号：${displayName}`}
+        className="dashboard-account-badge"
+        href="/account"
+        title={`个人资料：${displayName}`}
+        onClick={(event) => {
+          if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+          event.preventDefault();
+          navigateTo("/account");
+        }}
+      >
         {avatarUrl
           ? <img src={avatarUrl} alt="" width="34" height="34" />
           : [...displayName][0]}
-      </span>
+      </a>
     </header>
   );
 }

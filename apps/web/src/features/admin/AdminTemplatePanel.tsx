@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { FileUp, X } from "lucide-react";
+import { X } from "lucide-react";
 import {
   api,
   ApiRequestError,
   type AdminResumeTemplate,
 } from "../../api/client";
+import { FileUpload } from "@/components/ui";
 import { ResumePreview } from "../preview/ResumePreview";
 
 export function AdminTemplatePanel({ notify }: { notify: (message: string) => void }) {
@@ -64,21 +65,20 @@ export function AdminTemplatePanel({ notify }: { notify: (message: string) => vo
           <h1>简历模板</h1>
           <p>上传严格 JSON 模板包，预览确认后再向用户启用。</p>
         </div>
-        <label className="admin-primary-button admin-template-upload">
-          <FileUp size={16} />
-          {busyId === "upload" ? "正在导入…" : "导入模板包"}
-          <input
-            type="file"
-            accept="application/json,.json"
-            disabled={busyId !== null}
-            onChange={(event) => {
-              const file = event.currentTarget.files?.[0];
-              event.currentTarget.value = "";
-              if (file) void upload(file);
-            }}
-          />
-        </label>
       </header>
+
+      <div className="admin-template-import">
+        <FileUpload
+          accept="application/json,.json"
+          inputLabel="选择 JSON 模板包"
+          supportingText="支持 JSON 模板包，选择后立即校验并导入"
+          disabled={busyId !== null}
+          browseLabel={busyId === "upload" ? "正在导入…" : "浏览文件"}
+          onFileSelect={(file) => {
+            if (file) void upload(file);
+          }}
+        />
+      </div>
 
       <div className="admin-surface admin-template-list">
         {loading ? <p>正在读取模板…</p> : templates.map((template) => (

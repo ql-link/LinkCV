@@ -2,12 +2,28 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { Brand, Button, NumberStepper, TextField, TogglePill } from ".";
+import { Brand, Button, IconButton, NumberStepper, TextField, TogglePill } from ".";
 
 describe("LinkCV UI components", () => {
   it("按钮默认不会提交所在表单", () => {
     render(<Button>保存</Button>);
     expect(screen.getByRole("button", { name: "保存" })).toHaveAttribute("type", "button");
+  });
+
+  it("次要文字按钮统一使用透明圆弧样式，纯图标按钮保持原样", () => {
+    render(
+      <>
+        <Button variant="outline">返回</Button>
+        <Button variant="secondary">取消</Button>
+        <Button variant="ghost">导入简历</Button>
+        <IconButton label="更多">+</IconButton>
+      </>,
+    );
+
+    expect(screen.getByRole("button", { name: "返回" })).toHaveClass("ui-button-transparent", "rounded-full");
+    expect(screen.getByRole("button", { name: "取消" })).toHaveClass("ui-button-transparent", "rounded-full");
+    expect(screen.getByRole("button", { name: "导入简历" })).toHaveClass("ui-button-transparent", "rounded-full");
+    expect(screen.getByRole("button", { name: "更多" })).not.toHaveClass("ui-button-transparent");
   });
 
   it("TogglePill 通过 aria-pressed 暴露选中状态", () => {

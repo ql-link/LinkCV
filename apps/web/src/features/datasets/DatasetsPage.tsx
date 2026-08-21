@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Database, FileSearch, FileText, Plus, Search, X } from "lucide-react";
 import { api, ApiRequestError, type DatasetRecord } from "../../api/client";
-import { Button, FeedbackNotice } from "@/components/ui";
+import { Button, FeedbackNotice, FileUpload } from "@/components/ui";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { DatasetPreviewDialog } from "./DatasetPreviewDialog";
 
@@ -131,28 +131,28 @@ function DatasetStatus({ dataset }: { dataset: DatasetRecord }) {
   );
 }
 
-function DatasetDropzone({ onBrowse, onDropFile }: { onBrowse: () => void; onDropFile: (file: File | undefined) => void }) {
+function DatasetDropzone({
+  disabled = false,
+  file = null,
+  onDropFile,
+}: {
+  disabled?: boolean;
+  file?: File | null;
+  onDropFile: (file: File | undefined) => void;
+}) {
   return (
-    <button
-      type="button"
-      className="dataset-dropzone"
-      onClick={onBrowse}
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={(event) => {
-        event.preventDefault();
-        onDropFile(event.dataTransfer.files?.[0]);
-      }}
-    >
-      <strong>拖拽文件到这里</strong>
-      <span className="dataset-dropzone-or">或</span>
-      <span className="dataset-dropzone-pick">选择文件</span>
-      <small>支持 DOCX、PDF、Markdown 和 TXT，单个文件不超过 10 MB</small>
-    </button>
+    <FileUpload
+      accept=".docx,.pdf,.md,.txt,application/pdf,text/markdown,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      inputLabel="选择资料文件"
+      supportingText="支持 DOCX、PDF、Markdown 和 TXT，单个文件不超过 10 MB"
+      disabled={disabled}
+      file={file}
+      onFileSelect={onDropFile}
+    />
   );
 }
 
 export function DatasetsPage() {
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const previewTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [datasets, setDatasets] = useState<DatasetRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -238,8 +238,6 @@ export function DatasetsPage() {
     setNotice(null);
   };
 
-  const browse = () => fileInputRef.current?.click();
-
   const closeDialog = () => {
     if (uploading) return;
     setDialogOpen(false);
@@ -296,19 +294,6 @@ export function DatasetsPage() {
         )}
       />
 
-      <input
-        ref={fileInputRef}
-        className="visually-hidden"
-        type="file"
-        aria-label="选择资料文件"
-        accept=".docx,.pdf,.md,.txt,application/pdf,text/markdown,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        onChange={(event) => {
-          const file = event.currentTarget.files?.[0];
-          event.currentTarget.value = "";
-          pickFile(file);
-        }}
-      />
-
       <div className="datasets-body">
         {loading && <div className="app-loading">正在加载资料...</div>}
 
@@ -326,7 +311,7 @@ export function DatasetsPage() {
             <span className="datasets-empty-icon" aria-hidden="true"><FileText size={40} strokeWidth={1.4} /></span>
             <h2>先上传一份资料</h2>
             <p>把简历、作品集、项目复盘或岗位参考资料放进来。<br />写简历时可以快速检索和引用，减少重复整理。</p>
-            <DatasetDropzone onBrowse={browse} onDropFile={pickFile} />
+            <DatasetDropzone onDropFile={pickFile} />
             <p className="datasets-empty-hint">建议先上传与你当前求职方向最相关的资料，资料越聚焦，后续引用越准确。</p>
           </section>
         )}
@@ -412,7 +397,7 @@ export function DatasetsPage() {
             <h2 id="dataset-upload-title">上传资料</h2>
             <p>把文件加入资料库，后续写简历时可以随时引用。</p>
 
-            <DatasetDropzone onBrowse={browse} onDropFile={pickFile} />
+            <DatasetDropzone disabled={uploading} file={pendingFile} onDropFile={pickFile} />
 
             {pendingFile && (
               <div className="dataset-pending-block" aria-label="待上传的文件">
@@ -426,7 +411,7 @@ export function DatasetsPage() {
                       <span>将保存到资料库</span>
                     </small>
                   </span>
-                  <button type="button" className="dataset-text-btn" onClick={browse}>更换文件</button>
+                  <button type="button" className="dataset-text-btn" disabled={uploading} onClick={() => setPendingFile(null)}>移除文件</button>
                 </div>
               </div>
             )}

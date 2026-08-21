@@ -57,12 +57,23 @@ describe("HomeScreen", () => {
     const onCreate = vi.fn();
     renderHome({ onCreate });
 
-    fireEvent.change(screen.getByLabelText("搜索简历"), {
+    expect(screen.queryByText(/按最近更新排列/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/点击简历卡片可继续编辑/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("searchbox", { name: "搜索简历" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "搜索简历" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索简历" }), {
       target: { value: "frontend" },
     });
     expect(screen.getByText("Frontend Resume")).toBeInTheDocument();
     expect(screen.queryByText("产品经理")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "新建简历" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "清除并收起搜索" }));
+    expect(screen.getByText("产品经理")).toBeInTheDocument();
+    expect(screen.queryByRole("searchbox", { name: "搜索简历" })).not.toBeInTheDocument();
+
+    const createButton = screen.getByRole("button", { name: "新建简历" });
+    expect(createButton).toHaveClass("ui-button-transparent");
+    fireEvent.click(createButton);
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
@@ -223,7 +234,8 @@ describe("HomeScreen", () => {
       name: "导入任务 后端工程师.pdf",
     })).toBeInTheDocument();
     expect(within(cardGrid).getByText("Frontend Resume")).toBeInTheDocument();
-    expect(screen.getByText("全部 3")).toBeInTheDocument();
+    expect(screen.queryByText("全部 3")).not.toBeInTheDocument();
+    expect(screen.queryByText("最近更新")).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "导入任务" })).not.toBeInTheDocument();
   });
 

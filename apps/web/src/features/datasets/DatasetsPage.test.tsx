@@ -40,7 +40,7 @@ describe("DatasetsPage", () => {
 
     expect(await screen.findByText("先上传一份资料")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /拖拽文件到这里/ }),
+      screen.getByRole("button", { name: /点击上传或拖放文件/ }),
     ).toBeInTheDocument();
   });
 

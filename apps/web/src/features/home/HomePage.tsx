@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { ExternalLink, FileUp, MoreHorizontal, Pencil, Plus, Search, Share2, Trash2 } from "lucide-react";
+import { ExternalLink, FileUp, MoreHorizontal, Pencil, Plus, Share2, Trash2 } from "lucide-react";
 import {
   type ResumeImportSummary,
   type ResumeSummary,
@@ -7,6 +7,7 @@ import {
 import {
   Button,
   ConfirmDialog,
+  ExpandableSearch,
   FeedbackNotice,
 } from "@/components/ui";
 import { useResumeStore } from "../../store/resumeStore";
@@ -323,29 +324,18 @@ export function HomeScreen({
   };
 
   return (
-    <main className="dashboard-content">
+    <main className="dashboard-content home-dashboard-content">
       <WorkspacePageHero
         eyebrow="求职工作台"
         title="全部简历"
-        description={
-          resumes.length > 0
-            ? `${resumes.length} 份简历 · 按最近更新排列`
-            : "从一份有针对性的简历开始，逐步整理你的求职版本。"
-        }
         actions={
           <>
-            <label className="page-hero-field dashboard-search-field">
-              <span>搜索简历</span>
-              <span className="dashboard-search">
-                <Search size={14} aria-hidden="true" />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="请输入关键词"
-                  aria-label="搜索简历"
-                />
-              </span>
-            </label>
+            <ExpandableSearch
+              label="搜索简历"
+              value={query}
+              onValueChange={setQuery}
+              placeholder="搜索简历…"
+            />
             <Button
               variant="ghost"
               icon={<FileUp size={15} />}
@@ -353,7 +343,12 @@ export function HomeScreen({
             >
               导入简历
             </Button>
-            <Button icon={<Plus size={15} />} onClick={() => void onCreate()}>
+            <Button
+              className="dashboard-create"
+              variant="outline"
+              icon={<Plus size={15} />}
+              onClick={() => void onCreate()}
+            >
               新建简历
             </Button>
           </>
@@ -363,10 +358,6 @@ export function HomeScreen({
       <div className="dashboard-main">
         {visibleCardCount > 0 ? (
           <>
-            <div className="home-filter-row">
-              <span className="filter-pill is-active">全部 {visibleCardCount}</span>
-              <span className="home-filter-sort">最近更新</span>
-            </div>
             <section className="home-card-grid" aria-label="全部简历">
               {visibleImports.map(({ task, failed }) => (
                 <ImportTaskCard
@@ -393,7 +384,6 @@ export function HomeScreen({
                 />
               ))}
             </section>
-            <p className="home-page-tip">提示：点击简历卡片可继续编辑，分享按钮只管理当前简历的公开链接。</p>
           </>
         ) : (
           <section className="dashboard-empty-state">

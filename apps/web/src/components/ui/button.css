@@ -1,0 +1,102 @@
+.ui-button-transparent {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--ui-border-strong);
+  background: transparent;
+  box-shadow: none;
+  isolation: isolate;
+}
+
+.ui-button-transparent::before,
+.ui-button-transparent::after {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  box-sizing: border-box;
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--ui-duration-base) var(--ui-ease-standard),
+    opacity var(--ui-duration-fast) var(--ui-ease-press);
+}
+
+.ui-button-transparent::before {
+  left: 50%;
+  border-top: 1px solid var(--ui-ring);
+  border-right: 1px solid var(--ui-ring);
+  border-bottom: 1px solid var(--ui-ring);
+  border-radius: 0 var(--ui-radius-full) var(--ui-radius-full) 0;
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+.ui-button-transparent::after {
+  right: 50%;
+  border-top: 1px solid var(--ui-ring);
+  border-bottom: 1px solid var(--ui-ring);
+  border-left: 1px solid var(--ui-ring);
+  border-radius: var(--ui-radius-full) 0 0 var(--ui-radius-full);
+  transform: scaleX(0);
+  transform-origin: right center;
+}
+
+.ui-button-transparent:focus-visible,
+.ui-button-transparent[data-state="open"] {
+  background: transparent;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-ring) 14%, transparent);
+}
+
+.ui-button-transparent:focus-visible::before,
+.ui-button-transparent[data-state="open"]::before {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.ui-button-transparent:focus-visible::after,
+.ui-button-transparent[data-state="open"]::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+@media (hover: hover) {
+  .ui-button-transparent:hover {
+    background: transparent;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-ring) 14%, transparent);
+  }
+
+  .ui-button-transparent:hover::before {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+
+  .ui-button-transparent:hover::after {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+.ui-button-transparent:disabled {
+  box-shadow: none;
+}
+
+.ui-button-transparent:disabled::before,
+.ui-button-transparent:disabled::after {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-button-transparent::before,
+  .ui-button-transparent::after {
+    transition-duration: 0.01ms;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .ui-button-transparent::before,
+  .ui-button-transparent::after {
+    border-color: currentColor;
+  }
+}
