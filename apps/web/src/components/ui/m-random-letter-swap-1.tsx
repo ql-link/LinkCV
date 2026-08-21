@@ -35,7 +35,7 @@ export default function RandomLetterSwapNav({
   return (
     <div
       className={cn(
-        "flex w-max items-center gap-0.5 rounded-full border border-black/[0.06] bg-white/70 p-1 shadow-[0_8px_24px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/65 dark:shadow-[0_8px_24px_rgba(0,0,0,0.22)]",
+        "flex w-max items-center gap-0.5 overflow-hidden rounded-full border border-black/[0.06] bg-white/70 p-1 shadow-[0_8px_24px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/65 dark:shadow-[0_8px_24px_rgba(0,0,0,0.22)]",
         className,
       )}
     >
@@ -46,7 +46,7 @@ export default function RandomLetterSwapNav({
         return (
           <RandomLetterSwap
             aria-current={isActive ? currentType : undefined}
-            className="relative isolate items-center gap-2 rounded-full px-3 py-2 text-[13px] text-zinc-500 transition-colors duration-fast ease-press before:absolute before:-inset-x-4 before:-inset-y-2 before:z-0 before:rounded-full before:opacity-0 before:transition-opacity before:duration-slow before:ease-standard before:[background:var(--nav-item-glow)] hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-ring)] focus-visible:ring-offset-2 data-[active=true]:font-medium data-[active=true]:text-[var(--nav-item-color)] data-[active=true]:before:opacity-100 motion-reduce:before:transition-none dark:text-zinc-400 dark:hover:text-white dark:data-[active=true]:text-[var(--nav-item-color)]"
+            className="relative isolate items-center gap-2 rounded-full px-3 py-2 text-[13px] text-zinc-500 no-underline transition-colors duration-fast ease-press before:absolute before:-inset-x-4 before:-inset-y-2 before:z-0 before:rounded-full before:opacity-0 before:content-[''] before:transition-opacity before:duration-slow before:ease-standard before:[background:var(--nav-item-glow)] hover:text-zinc-900 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ui-ring)] data-[active=true]:font-medium data-[active=true]:text-[var(--nav-item-color)] data-[active=true]:before:opacity-100 motion-reduce:before:transition-none dark:text-zinc-400 dark:hover:text-white dark:data-[active=true]:text-[var(--nav-item-color)]"
             data-active={isActive}
             href={link.href}
             key={link.href}
@@ -64,12 +64,10 @@ export default function RandomLetterSwapNav({
               }
               onItemClick?.(link.href);
             }}
-            staggerDuration={0.025}
             style={{
               "--nav-item-color": link.activeColor,
               "--nav-item-glow": link.gradient,
             } as NavigationTone}
-            transition={{ duration: 0.6, type: "spring" }}
           />
         );
       })}

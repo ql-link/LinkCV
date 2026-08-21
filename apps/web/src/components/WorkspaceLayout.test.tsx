@@ -13,6 +13,10 @@ describe("WorkspaceNavigation", () => {
     render(<WorkspaceNavigation active="jobs" email="user@example.test" />);
 
     expect(screen.getByRole("navigation", { name: "工作区导航" })).toBeInTheDocument();
+    const brandLink = screen.getByRole("link", { name: "LinkResume 首页" });
+    expect(brandLink).toHaveTextContent("LinkResume");
+    expect(brandLink).toHaveClass("no-underline", "hover:no-underline");
+    expect(screen.getByText("LinkResume")).toHaveAttribute("translate", "no");
     expect(screen.getByRole("link", { name: "JD 中心" })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByRole("link", { name: "模板" })).not.toBeInTheDocument();
 
