@@ -41,6 +41,12 @@ Production Jenkins Job 使用根目录 `Jenkinsfile`，在生产 Jenkins 节点�
 - 配置：`.env.production` + 权限为 `400` 或 `600` 的 `.env.production.local`；后者必须提供 HTTPS `PLUGIN_RELEASE_ORIGIN`
 - 迁移门禁：`APP_ENV=production`、MySQL `tolink-mysql:3306/linkcv`
 
+`linkcv-PROD` 的 Generic Webhook Trigger 复用 Jenkins Secret Text 凭据
+`linkcv-dev-webhook-token`，但只接受 `refs/heads/master`。同一个 GitHub push
+webhook 因此会分别把 `dev` 推送交给 Dev Job、把 PR 合并产生的 `master` 推送交给
+Production Job。首次加入触发器后需手动运行一次 `linkcv-PROD`，让 Jenkins 从根
+`Jenkinsfile` 加载并注册触发器；后续 `master` push 自动构建。
+
 Production Pipeline 会把仓库中的非敏感 `.env.production`、Compose 和 Promtail 配置复制到部署目录；私密覆盖必须由部署密钥存储预先提供。除 JWT、MySQL 和 MinIO 凭据外，新版本还要求覆盖提供有效的 `LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY`、`RABBITMQ_URL` 与实际 HTTPS `PLUGIN_RELEASE_ORIGIN`，否则 Settings 会在启动前安全失败。Origin 不是密钥，但因为部署域名不提交到仓库而通过同一覆盖文件提供。LLM 密钥环用于解密 MySQL 中的模型凭据，不是供应商 API key；轮换时先发布“新 key 在首项、旧 key 仍保留”的配置，确认旧密文已经重包后才能移除旧 key。LinkParse Key 只供后端 Bearer 请求使用，不进入 Web 制品。
 
 本期没有管理员开通接口。发布方还需在受控流程中确保至少一个既有用户被标记为 `users.is_admin=true`；公开注册始终是普通用户。没有管理员只会使 `/api/admin/llm/**` 无法使用，不会放宽权限。
