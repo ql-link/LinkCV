@@ -21,7 +21,7 @@ from linkcv.domain.resume_snapshot import parse_resume_snapshot
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0025"
+EXPECTED_HEAD = "0026"
 
 
 def migration_test_url() -> str:
@@ -341,9 +341,13 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
                 )
             )
         ) == {
+            "administrative-sidebar-cn",
             "blank-cn",
+            "campus-professional-cn",
             "classic-cn",
             "classic-technical-cn",
+            "civic-service-cn",
+            "creative-orange-cn",
             "modern-two-column-cn",
             "compact-tech-cn",
         }
@@ -351,8 +355,9 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
             text(
                 "SELECT `key`, data_json, style_json FROM resume_templates "
                 "WHERE `key` IN "
-                "('blank-cn', 'classic-cn', 'classic-technical-cn', "
-                "'modern-two-column-cn', 'compact-tech-cn')"
+                "('administrative-sidebar-cn', 'blank-cn', 'campus-professional-cn', "
+                "'classic-cn', 'classic-technical-cn', 'civic-service-cn', "
+                "'creative-orange-cn', 'modern-two-column-cn', 'compact-tech-cn')"
             )
         ).mappings():
             data_json = (
@@ -391,6 +396,14 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
                     "Qdrant",
                 ):
                     assert rejected_sample not in editor_markdown
+            if row["key"] == "administrative-sidebar-cn":
+                assert ":::: sidebar" in editor_markdown
+                assert ":::: main" in editor_markdown
+            if row["key"] == "campus-professional-cn":
+                assert ":::: meta" in editor_markdown
+            if row["key"] == "creative-orange-cn":
+                assert ":::: trio" in editor_markdown
+                assert ":icon[GraduationCap]:" in editor_markdown
 
     with engine.begin() as connection:
         user = connection.execute(
@@ -764,10 +777,10 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
             {"user_id": user_id},
         ) == 0
         assert connection.scalar(text("SELECT COUNT(*) FROM users")) == 1
-        assert connection.scalar(text("SELECT COUNT(*) FROM resume_templates")) == 5
+        assert connection.scalar(text("SELECT COUNT(*) FROM resume_templates")) == 9
         assert connection.scalar(
             text("SELECT COUNT(*) FROM resume_templates WHERE is_active = 1")
-        ) == 5
+        ) == 9
         assert connection.scalar(text("SELECT COUNT(*) FROM resumes")) == 1
         assert connection.scalar(text("SELECT COUNT(*) FROM resume_versions")) == 1
         assert connection.execute(
@@ -1015,6 +1028,92 @@ def test_classic_template_content_migration_refuses_customized_snapshots() -> No
             ),
             {"path": location_path},
         ) == "现场自定义城市"
+
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "head")
+    engine.dispose()
+
+
+def test_professional_template_seed_conflict_is_atomic() -> None:
+    database_url = migration_test_url()
+    engine = create_engine(database_url)
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0025")
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO resume_templates "
+                "(`key`, name, data_json, style_json, is_active) VALUES "
+                "('administrative-sidebar-cn', '现场行政模板', "
+                "JSON_OBJECT('schema_version', '1.0'), "
+                "JSON_OBJECT('schema_version', '1.0'), 1)"
+            )
+        )
+
+    refused_upgrade = invoke_alembic(database_url, "upgrade", "0026")
+    assert refused_upgrade.returncode != 0
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0025"
+        assert connection.scalar(
+            text(
+                "SELECT name FROM resume_templates "
+                "WHERE `key` = 'administrative-sidebar-cn'"
+            )
+        ) == "现场行政模板"
+        assert connection.scalar(
+            text(
+                "SELECT COUNT(*) FROM resume_templates WHERE `key` IN "
+                "('campus-professional-cn', 'civic-service-cn', 'creative-orange-cn')"
+            )
+        ) == 0
+
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "head")
+    engine.dispose()
+
+
+def test_professional_template_downgrade_refuses_referenced_seed() -> None:
+    database_url = migration_test_url()
+    engine = create_engine(database_url)
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "head")
+
+    with engine.begin() as connection:
+        user = connection.execute(
+            text(
+                "INSERT INTO users (email, password_hash, nickname) "
+                "VALUES ('template-guard@example.invalid', '$2b$12$fictional', '张三')"
+            )
+        )
+        template_id = connection.scalar(
+            text(
+                "SELECT id FROM resume_templates "
+                "WHERE `key` = 'creative-orange-cn'"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO resumes "
+                "(user_id, template_id, title, data_json, style_json, source_type) "
+                "VALUES (:user_id, :template_id, '张三设计简历', "
+                "JSON_OBJECT('schema_version', '1.0'), "
+                "JSON_OBJECT('schema_version', '1.0'), 'template')"
+            ),
+            {"user_id": user.lastrowid, "template_id": template_id},
+        )
+
+    refused_downgrade = invoke_alembic(database_url, "downgrade", "0025")
+    assert refused_downgrade.returncode != 0
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0026"
+        assert connection.scalar(
+            text(
+                "SELECT COUNT(*) FROM resume_templates WHERE `key` IN "
+                "('administrative-sidebar-cn', 'campus-professional-cn', "
+                "'civic-service-cn', 'creative-orange-cn')"
+            )
+        ) == 4
 
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")

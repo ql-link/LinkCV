@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title">
+  <title id="title">虚构校招岗位头像插画</title>
+  <rect width="160" height="160" rx="18" fill="#f7faff"/>
+  <circle cx="80" cy="62" r="30" fill="#f2c9a8"/>
+  <path d="M50 57c1-28 15-40 32-40 20 0 32 14 31 39-10-1-20-7-28-17-8 9-20 15-35 18Z" fill="#6e4a34"/>
+  <path d="M45 160c3-36 17-55 35-55 20 0 34 19 36 55Z" fill="#f0e2bd" stroke="#806c4b" stroke-width="3"/>
+  <path d="M62 111h36l-5 17H67Z" fill="#fff" stroke="#806c4b" stroke-width="2"/>
+  <path d="M68 80c7 5 16 5 24 0" fill="none" stroke="#b47c68" stroke-width="2" stroke-linecap="round"/>
+</svg>
