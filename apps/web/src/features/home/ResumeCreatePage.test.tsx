@@ -85,7 +85,7 @@ describe("ResumeCreatePage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /导入并开始解析/ }));
     await waitFor(() => {
-      expect(importResume).toHaveBeenCalledWith(file, "8");
+      expect(importResume).toHaveBeenCalledWith(file, "8", "resume");
       expect(window.location.pathname).toBe("/resumes");
     });
   });

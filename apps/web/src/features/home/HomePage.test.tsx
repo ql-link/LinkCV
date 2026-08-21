@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  api,
   type ResumeImportSummary,
   type ResumeSummary,
 } from "../../api/client";
@@ -65,11 +66,16 @@ describe("HomeScreen", () => {
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("导入简历入口跳转到新建页的导入模式", () => {
+  it("导入简历入口在当前列表打开弹窗而不改变地址", async () => {
+    vi.spyOn(api, "listResumeTemplates").mockResolvedValue({ templates: [] });
     renderHome();
     fireEvent.click(screen.getByRole("button", { name: "导入简历" }));
-    expect(window.location.pathname).toBe("/resumes/new");
-    expect(window.location.search).toBe("?mode=import");
+    expect(await screen.findByRole("alertdialog", { name: "导入简历" })).toBeInTheDocument();
+    expect(screen.queryByText("选择模板")).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe("/resumes");
+    expect(window.location.search).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(screen.queryByRole("alertdialog", { name: "导入简历" })).not.toBeInTheDocument();
   });
 
   it("通过站内确认弹窗删除正式简历", async () => {
