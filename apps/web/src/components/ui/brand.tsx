@@ -17,7 +17,7 @@ export function Brand({
       <span aria-hidden="true" className="ui-brand-mark grid size-8 place-items-center overflow-hidden rounded-md bg-foreground">
         <img alt="" className="size-full [filter:brightness(0)_invert(1)]" src={brandMark} />
       </span>
-      {!compact && <span className="ui-brand-name font-display text-base font-bold tracking-[-0.02em]">{name}</span>}
+      {!compact && <span className="ui-brand-name font-display text-base font-bold tracking-[-0.02em]" translate="no">{name}</span>}
     </span>
   );
 }
