@@ -124,6 +124,7 @@ class ResumeTemplateResponse(BaseModel):
 class ResumeVersionSummary(BaseModel):
     id: str
     version_no: int
+    name: str
     reason: Literal["initial", "manual", "before_restore", "restore"]
     created_at: datetime
 
@@ -139,6 +140,18 @@ class ResumeVersionListResponse(BaseModel):
 
 class ResumeVersionResponse(BaseModel):
     version: ResumeVersionRecord
+
+
+class ResumeVersionCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, strict=True)
+
+
+class ResumeVersionRenameRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(strict=True)
 
 
 class DeleteResumeVersionResponse(BaseModel):

@@ -4,8 +4,14 @@ import { describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "../../api/client";
 import {
   ImportWarningBanner,
+  normalizeVersionName,
   SaveVersionAction,
+  VersionRenameAction,
+  versionRenameErrorMessage,
+  setRestoredEditorContent,
+  setWorkbenchEditorEditable,
   SmartOnePageAction,
+  versionNameValidationMessage,
   WorkbenchSaveStatus,
   versionOperationErrorMessage,
 } from "./ResumeWorkbench";
@@ -82,5 +88,72 @@ describe("ResumeWorkbench 版本上限提示", () => {
 
   it("其他错误继续使用通用失败提示", () => {
     expect(versionOperationErrorMessage(new Error("HTTP_500"), "create")).toBeNull();
+  });
+});
+
+describe("ResumeWorkbench 版本侧边栏", () => {
+  it("在正式版本名称旁提供行内重命名入口", async () => {
+    const user = userEvent.setup();
+    const onRename = vi.fn();
+
+    render(<VersionRenameAction name="产品经理投递版" versionNo={2} onRename={onRename} />);
+
+    expect(screen.getByText("产品经理投递版")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "重命名版本 2" }));
+    const input = screen.getByRole("textbox", { name: "版本 2 名称" });
+    expect(screen.queryByText("按 Enter 保存，Esc 取消")).not.toBeInTheDocument();
+    await user.clear(input);
+    await user.type(input, "产品经理终版");
+    await user.keyboard("{Enter}");
+    expect(onRename).toHaveBeenCalledWith("产品经理终版");
+  });
+
+  it("把重命名冲突转换为可行动提示", () => {
+    expect(versionRenameErrorMessage(new ApiRequestError(400, "INVALID_RESUME_VERSION_NAME"))).toBe("版本名称不能为空且不能超过 80 个字符。");
+  });
+
+  it("空名称提交时保留输入并提示用户", async () => {
+    const user = userEvent.setup();
+    const onRename = vi.fn();
+
+    render(<VersionRenameAction name="产品经理投递版" versionNo={2} onRename={onRename} />);
+
+    await user.click(screen.getByRole("button", { name: "重命名版本 2" }));
+    const input = screen.getByRole("textbox", { name: "版本 2 名称" });
+    await user.clear(input);
+    await user.keyboard("{Enter}");
+
+    expect(screen.getByRole("alert")).toHaveTextContent("请填写版本名称");
+    expect(onRename).not.toHaveBeenCalled();
+  });
+});
+
+describe("ResumeWorkbench 恢复版本", () => {
+  it("刷新编辑器内容时不触发编辑更新", () => {
+    const setContent = vi.fn();
+    const restoredContent = "<h1>历史版本</h1>";
+
+    setRestoredEditorContent({ commands: { setContent } }, restoredContent);
+
+    expect(setContent).toHaveBeenCalledWith(restoredContent, false);
+  });
+
+  it("切换恢复期间的编辑状态时不触发编辑更新", () => {
+    const setEditable = vi.fn();
+
+    setWorkbenchEditorEditable({ commands: { setContent: vi.fn() }, setEditable }, false);
+
+    expect(setEditable).toHaveBeenCalledWith(false, false);
+  });
+});
+
+describe("ResumeWorkbench 正式版本命名", () => {
+  it("会整理首尾和连续空白", () => {
+    expect(normalizeVersionName("  投递\t产品 经理  ")).toBe("投递 产品 经理");
+    expect(versionNameValidationMessage(" \n\t ")).toBe("请填写版本名称");
+  });
+
+  it("拒绝超过 80 个字符的名称", () => {
+    expect(versionNameValidationMessage("版".repeat(81))).toBe("版本名称不能超过 80 个字符");
   });
 });

@@ -1,3 +1,6 @@
+import bcrypt
+import jwt
+
 from linkcv.core.config import Settings
 from linkcv.core.security import (
     create_access_token,
@@ -25,6 +28,23 @@ def test_password_hash_and_argon2_round_trip() -> None:
 
     # Fresh Argon2id hashes do not need a lazy rehash.
     assert not password_needs_rehash(password_hash)
+
+
+def test_legacy_bcrypt_hash_is_verified_and_marked_for_rehash() -> None:
+    password_hash = bcrypt.hashpw(
+        b"legacy-password", bcrypt.gensalt(rounds=4)
+    ).decode("ascii")
+
+    assert verify_password("legacy-password", password_hash)
+    assert not verify_password("wrong-password", password_hash)
+    assert password_needs_rehash(password_hash)
+
+
+def test_unknown_password_hash_fails_safely() -> None:
+    assert not verify_password("password", "not-a-password-hash")
+    assert not password_needs_rehash("not-a-password-hash")
+
+
 def test_access_token_round_trip() -> None:
     settings = _settings()
     token = create_access_token(123, "sid-abc", settings)
@@ -32,6 +52,17 @@ def test_access_token_round_trip() -> None:
     assert decode_access_token(token, settings) == (123, "sid-abc", "web")
     assert decode_access_token(None, settings) is None
     assert decode_access_token("not-a-jwt", settings) is None
+
+
+def test_legacy_access_token_without_channel_is_web_only() -> None:
+    settings = _settings()
+    token = jwt.encode(
+        {"sub": "123", "sid": "legacy-sid"},
+        settings.jwt_secret,
+        algorithm=settings.jwt_algorithm,
+    )
+
+    assert decode_access_token(token, settings) == (123, "legacy-sid", "web")
 
 
 def test_refresh_token_parse_and_hash() -> None:

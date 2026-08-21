@@ -85,7 +85,7 @@ describe("AccountPage", () => {
     fireEvent.change(screen.getByLabelText("昵称", { exact: false }), {
       target: { value: "新昵称" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存昵称" }));
 
     await waitFor(() => expect(update).toHaveBeenCalledWith("新昵称"));
     expect(await screen.findByText("昵称已更新。")).toBeInTheDocument();

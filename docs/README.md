@@ -14,8 +14,10 @@
 | 理解视觉语言或设计内部功能页面 | [`DESIGN.md`](../DESIGN.md) |
 | 修改或侧载岗位采集插件 | [internals/extension.md](internals/extension.md) |
 | 修改 FastAPI 后端 | [internals/backend.md](internals/backend.md) |
+| 了解 third_party/pi 引入方式与对接约束 | [internals/third-party-pi.md](internals/third-party-pi.md) |
 | 对接或修改 HTTP API | [api/http-contracts.md](api/http-contracts.md) |
 | 配置本地开发环境 | [ops/development.md](ops/development.md) |
+| 创建业务分支并完成 Release/Master 交付 | [ops/development.md#分支与发布流程](ops/development.md#分支与发布流程) |
 | 编写或运行应用测试 | [ops/development.md#测试分层](ops/development.md#测试分层) |
 | 理解当前构建与部署拓扑 | [ops/deployment.md](ops/deployment.md) |
 

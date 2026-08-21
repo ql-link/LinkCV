@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { Button } from "@/components/ui";
+import { useEffect, useState, type ReactNode } from "react";
+import { CircleAlert } from "lucide-react";
+import { Brand, Button, PageLoading } from "@/components/ui";
 import { WorkspaceLayout, type WorkspaceSection } from "./components/WorkspaceLayout";
 import { ApiRequestError } from "./api/client";
 import { AccountPage } from "./features/account/AccountPage";
@@ -9,6 +10,7 @@ import { AuthPage } from "./features/auth/AuthPage";
 import { DatasetsPage } from "./features/datasets/DatasetsPage";
 import { HomePage } from "./features/home/HomePage";
 import { ResumeCreatePage } from "./features/home/ResumeCreatePage";
+import { ResumeTemplatesPage } from "./features/templates/ResumeTemplatesPage";
 import { JobCenterPage } from "./features/jobs/JobCenterPage";
 import { JobDetailPage } from "./features/jobs/JobDetailPage";
 import { JobFormPage } from "./features/jobs/JobFormPage";
@@ -29,6 +31,7 @@ export function App() {
   const loadResume = useResumeStore((state) => state.loadResume);
   const goHome = useResumeStore((state) => state.goHome);
   const dirty = useResumeStore((state) => state.dirty);
+  const versionOperationPending = useResumeStore((state) => state.versionOperationPending);
   const editVersion = useResumeStore((state) => state.editVersion);
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
 
@@ -39,14 +42,14 @@ export function App() {
 
   useEffect(() => {
     if (isAdminArea) return;
-    if (!dirty || !activeResumeId) return;
+    if (!dirty || !activeResumeId || versionOperationPending) return;
 
     const timer = window.setTimeout(() => {
       void saveCurrentResume();
     }, 1200);
 
     return () => window.clearTimeout(timer);
-  }, [activeResumeId, dirty, editVersion, isAdminArea, saveCurrentResume]);
+  }, [activeResumeId, dirty, editVersion, isAdminArea, saveCurrentResume, versionOperationPending]);
 
   useEffect(() => {
     if (isAdminArea) return;
@@ -55,6 +58,7 @@ export function App() {
     if (authStatus === "guest") {
       if (
         route.kind === "resumes"
+        || route.kind === "templates"
         || route.kind === "resumeCreate"
         || route.kind === "editor"
         || route.kind === "jobs"
@@ -72,7 +76,7 @@ export function App() {
       return;
     }
 
-    if (route.kind === "landing" || route.kind === "auth") {
+    if (route.kind === "auth") {
       navigateTo("/resumes", { replace: true });
     }
   }, [authStatus, route.kind]);
@@ -140,24 +144,37 @@ export function App() {
   }
 
   if (authStatus === "checking") {
-    return <div className="app-loading">正在加载简历工作台...</div>;
+    return <PageLoading label="正在加载简历工作台…" scope="page" />;
+  }
+
+  if (route.kind === "landing") {
+    const landingDestination = authStatus === "authenticated"
+      ? "/resumes"
+      : null;
+
+    return (
+      <LandingPage
+        onLogin={() => navigateTo(landingDestination ?? authPath("login"))}
+        onStart={() => navigateTo(landingDestination ?? authPath("register"))}
+      />
+    );
   }
 
   if (authStatus === "guest") {
     if (route.kind === "auth") {
       return <AuthPage key={`${route.mode}:${route.next ?? ""}`} initialMode={route.mode} next={route.next} />;
     }
-    return (
-      <LandingPage
-        onLogin={() => navigateTo(authPath("login"))}
-        onStart={() => navigateTo(authPath("register"))}
-      />
-    );
+
+    return <PageLoading label="正在进入首页…" scope="page" />;
+  }
+
+  if (route.kind === "resumeCreate") {
+    return <ResumeCreatePage />;
   }
 
   if (
     route.kind === "resumes"
-    || route.kind === "resumeCreate"
+    || route.kind === "templates"
     || route.kind === "jobs"
     || route.kind === "jobCreate"
     || route.kind === "jobDetail"
@@ -165,13 +182,10 @@ export function App() {
     || route.kind === "datasets"
     || route.kind === "account"
   ) {
-    const resumeView = route.kind === "resumes" && new URLSearchParams(window.location.search).get("view") === "templates"
-      ? "templates"
-      : "all";
     const activeSection: WorkspaceSection = route.kind === "resumes"
-      ? resumeView === "templates" ? "templates" : "resumes"
-      : route.kind === "resumeCreate"
-        ? "resumes"
+      ? "resumes"
+      : route.kind === "templates"
+        ? "templates"
       : route.kind === "account"
         ? "account"
         : route.kind === "datasets"
@@ -180,8 +194,8 @@ export function App() {
 
     return (
       <WorkspaceLayout active={activeSection}>
-        {route.kind === "resumes" && <HomePage view={resumeView} />}
-        {route.kind === "resumeCreate" && <ResumeCreatePage />}
+        {route.kind === "resumes" && <HomePage />}
+        {route.kind === "templates" && <ResumeTemplatesPage />}
         {route.kind === "jobs" && <JobCenterPage />}
         {route.kind === "jobCreate" && <JobFormPage mode="create" />}
         {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}
@@ -195,29 +209,69 @@ export function App() {
   if (route.kind === "editor") {
     if (routeError?.resumeId === route.resumeId) {
       return (
-        <main className="route-error-page">
-          <h1>无法打开这份简历</h1>
-          <p>{routeError.message}</p>
-          <Button onClick={() => navigateTo("/resumes", { replace: true })}>返回简历主页</Button>
-        </main>
+        <StatusShell>
+          <div className="status-card">
+            <span className="status-icon" aria-hidden="true">
+              <CircleAlert size={26} />
+            </span>
+            <h1>无法打开这份简历</h1>
+            <p className="status-desc">{routeError.message}</p>
+            <p className="status-desc">你可以返回主页选择其他简历，或稍后重试。</p>
+            <div className="status-actions">
+              <Button variant="outline" onClick={() => navigateTo("/resumes", { replace: true })}>
+                返回主页
+              </Button>
+              <Button
+                onClick={() => {
+                  const resumeId = route.resumeId;
+                  setRouteError(null);
+                  void loadResume(resumeId).catch((error: unknown) => {
+                    setRouteError({ resumeId, message: resumeLoadErrorMessage(error) });
+                  });
+                }}
+              >
+                重新尝试
+              </Button>
+            </div>
+          </div>
+        </StatusShell>
       );
     }
     if (activeResumeId !== route.resumeId) {
-      return <div className="app-loading">正在打开简历...</div>;
+      return <StatusShell><PageLoading label="正在打开简历…" scope="panel" /></StatusShell>;
     }
     return <ResumeWorkbench />;
   }
 
   if (route.kind === "notFound") {
     return (
-      <main className="route-error-page">
-        <h1>页面不存在</h1>
-        <Button onClick={() => navigateTo("/resumes", { replace: true })}>返回简历主页</Button>
-      </main>
+      <StatusShell>
+        <div className="status-card">
+          <p className="status-code">404</p>
+          <h1>页面不存在</h1>
+          <p className="status-desc">这个地址可能已被移动或删除。</p>
+          <div className="status-actions">
+            <Button onClick={() => navigateTo("/resumes", { replace: true })}>返回简历主页</Button>
+          </div>
+        </div>
+      </StatusShell>
     );
   }
 
-  return <div className="app-loading">正在进入简历主页...</div>;
+  return <PageLoading label="正在进入简历主页…" scope="page" />;
+}
+
+function StatusShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="status-shell">
+      <header className="status-topbar">
+        <a href="/" aria-label="返回 LinkCV 首页" className="status-brand">
+          <Brand />
+        </a>
+      </header>
+      <main className="status-body">{children}</main>
+    </div>
+  );
 }
 
 export function resumeLoadErrorMessage(error: unknown) {

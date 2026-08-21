@@ -2,7 +2,7 @@ import asyncio
 import logging
 import secrets
 from datetime import timezone
-from pathlib import PurePath
+from pathlib import PurePath, PurePosixPath
 from time import monotonic
 
 from sqlalchemy import select
@@ -17,10 +17,17 @@ from linkcv.application.resumes.service import (
 )
 from linkcv.core.config import Settings
 from linkcv.core.database import utc_now
-from linkcv.core.storage import AssetStorage
+from linkcv.core.storage import (
+    AssetStorage,
+    build_converted_markdown_object_name,
+)
 from linkcv.domain.resume_snapshot import parse_resume_snapshot
 from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.models import ResumeImport, ResumeTemplate
+from linkcv.modules.resumes.models import (
+    RESUME_IMPORT_SOURCE_TYPE,
+    DocumentParseTask,
+    ResumeTemplate,
+)
 from linkcv.services.resume_import_service import (
     ResumeImportFailure,
     ResumeImportService,
@@ -31,6 +38,17 @@ CONTENT_TYPES = {
     "md": "text/markdown",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "pdf": "application/pdf",
+}
+FAILURE_REASON_BY_CODE = {
+    "UNSUPPORTED_IMPORT_FORMAT": "format_unsupported",
+    "IMPORT_CONTENT_INVALID": "content_invalid",
+    "IMPORT_FILE_TOO_LARGE": "size_exceeded",
+    "STRUCTURING_INPUT_TOO_LARGE": "size_exceeded",
+    "DOCUMENT_CONVERSION_UNAVAILABLE": "service_unavailable",
+    "STRUCTURING_MODEL_UNAVAILABLE": "service_unavailable",
+    "DOCUMENT_CONVERSION_TIMEOUT": "timeout",
+    "IMPORT_DEADLINE_EXCEEDED": "timeout",
+    "RESUME_LIMIT_REACHED": "quota_exceeded",
 }
 UNLOCK_SCRIPT = r"""
 if redis.call('GET', KEYS[1]) == ARGV[1] then
@@ -119,13 +137,21 @@ class ResumeImportProcessor:
         self,
         import_id: int,
         template_id: int,
-    ) -> tuple[ResumeImport, ResumeTemplate] | None:
+    ) -> tuple[DocumentParseTask, ResumeTemplate] | None:
         try:
             with self._session_factory() as db:
-                record = db.get(ResumeImport, import_id)
+                record = db.scalar(
+                    select(DocumentParseTask).where(
+                        DocumentParseTask.id == import_id,
+                        DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+                    )
+                )
                 if record is None or record.parse_status in {"succeeded", "failed"}:
                     return None
-                if record.upload_status != "succeeded" or record.parse_status != "processing":
+                if (
+                    record.upload_status != "succeeded"
+                    or record.parse_status != "processing"
+                ):
                     return None
                 template = db.scalar(
                     select(ResumeTemplate).where(
@@ -147,24 +173,31 @@ class ResumeImportProcessor:
         except SQLAlchemyError as error:
             raise WorkerDependencyUnavailable("database unavailable") from error
 
-    def _mark_failed(self, import_id: int, started: float | None) -> None:
+    def _mark_failed(
+        self,
+        import_id: int,
+        started: float | None,
+        failure_reason: str = "internal_error",
+    ) -> None:
         try:
             with self._session_factory() as db:
                 record = db.scalar(
-                    select(ResumeImport)
-                    .where(ResumeImport.id == import_id)
+                    select(DocumentParseTask)
+                    .where(
+                        DocumentParseTask.id == import_id,
+                        DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+                    )
                     .with_for_update()
                 )
                 if record is None or record.parse_status != "processing":
                     return
                 record.parse_status = "failed"
+                record.failure_reason = failure_reason
                 if started is None:
                     created_at = record.created_at
                     if created_at.tzinfo is None:
                         created_at = created_at.replace(tzinfo=timezone.utc)
-                    elapsed_ms = round(
-                        (utc_now() - created_at).total_seconds() * 1000
-                    )
+                    elapsed_ms = round((utc_now() - created_at).total_seconds() * 1000)
                 else:
                     elapsed_ms = round((monotonic() - started) * 1000)
                 record.parse_duration_ms = min(max(0, elapsed_ms), 2**32 - 1)
@@ -175,6 +208,46 @@ class ResumeImportProcessor:
     def mark_retry_exhausted(self, import_id: int) -> None:
         """Best-effort terminal update before the broker moves a task to DLT."""
         self._mark_failed(import_id, None)
+
+    async def _persist_converted_markdown(
+        self,
+        *,
+        import_id: int,
+        user_id: int,
+        operation_id: str,
+        markdown: str,
+    ) -> None:
+        object_name = build_converted_markdown_object_name(user_id, operation_id)
+        try:
+            await asyncio.to_thread(
+                self._storage.upload,
+                object_name,
+                markdown.encode("utf-8"),
+                "text/markdown",
+            )
+            with self._session_factory() as db:
+                record = db.scalar(
+                    select(DocumentParseTask)
+                    .where(
+                        DocumentParseTask.id == import_id,
+                        DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+                        DocumentParseTask.user_id == user_id,
+                    )
+                    .with_for_update()
+                )
+                if record is None:
+                    raise LookupError("document parse task is missing")
+                record.converted_object_name = object_name
+                db.commit()
+        except Exception as error:
+            logger.warning(
+                "resume import converted markdown persistence failed",
+                extra={
+                    "import_id": import_id,
+                    "error_type": type(error).__name__,
+                },
+                exc_info=True,
+            )
 
     def _persist_success(
         self,
@@ -188,7 +261,10 @@ class ResumeImportProcessor:
         try:
             with self._session_factory() as db:
                 user_id = db.scalar(
-                    select(ResumeImport.user_id).where(ResumeImport.id == import_id)
+                    select(DocumentParseTask.user_id).where(
+                        DocumentParseTask.id == import_id,
+                        DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+                    )
                 )
                 if user_id is None:
                     return
@@ -198,10 +274,11 @@ class ResumeImportProcessor:
                 if locked_user is None:
                     raise ResumeImportFailure(409, "RESUME_OWNER_MISSING")
                 record = db.scalar(
-                    select(ResumeImport)
+                    select(DocumentParseTask)
                     .where(
-                        ResumeImport.id == import_id,
-                        ResumeImport.user_id == user_id,
+                        DocumentParseTask.id == import_id,
+                        DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+                        DocumentParseTask.user_id == user_id,
                     )
                     .with_for_update()
                 )
@@ -219,7 +296,9 @@ class ResumeImportProcessor:
                 )
                 if template is None:
                     raise ResumeImportFailure(422, "TEMPLATE_INACTIVE")
-                snapshot = parse_resume_snapshot(template.data_json, template.style_json)
+                snapshot = parse_resume_snapshot(
+                    template.data_json, template.style_json
+                )
                 resume = persist_resume_with_initial_version(
                     CreateResumeCommand(
                         user_id=record.user_id,
@@ -231,7 +310,7 @@ class ResumeImportProcessor:
                     ),
                     db,
                 )
-                record.result_resume_id = resume.id
+                resume.parse_task_id = record.id
                 record.parse_status = "succeeded"
                 record.parse_duration_ms = min(
                     round((monotonic() - started) * 1000),
@@ -260,22 +339,30 @@ class ResumeImportProcessor:
                     content = await asyncio.to_thread(
                         _read_storage_object,
                         self._storage,
-                        record.source_object_key,
+                        record.object_name,
                     )
                 except Exception as error:
                     raise WorkerTaskRetryable("source object unavailable") from error
                 parsed = await self._import_service.parse_resume(
                     user_id=record.user_id,
-                    filename=record.source_filename,
-                    content_type=CONTENT_TYPES[record.source_file_format],
+                    filename=record.file_name,
+                    content_type=CONTENT_TYPES[record.file_format],
                     content=content,
                     operation_id=str(record.id),
                     deadline_monotonic=(
                         monotonic()
                         + self._settings.resume_import_parse_deadline_seconds
                     ),
+                    on_markdown_extracted=lambda markdown: (
+                        self._persist_converted_markdown(
+                            import_id=record.id,
+                            user_id=record.user_id,
+                            operation_id=PurePosixPath(record.object_name).parent.name,
+                            markdown=markdown,
+                        )
+                    ),
                 )
-                title = PurePath(record.source_filename).stem or "未命名简历"
+                title = PurePath(record.file_name).stem or "未命名简历"
                 self._persist_success(
                     import_id=record.id,
                     template_id=template_id,
@@ -286,6 +373,10 @@ class ResumeImportProcessor:
             except ResumeImportFailure as error:
                 if error.status_code >= 500:
                     raise WorkerTaskRetryable(error.code) from error
-                self._mark_failed(import_id, started)
+                self._mark_failed(
+                    import_id,
+                    started,
+                    FAILURE_REASON_BY_CODE.get(error.code, "internal_error"),
+                )
         finally:
             await self._release_lock(import_id, token)

@@ -42,6 +42,155 @@
 
 final result: passed
 
+## 全部简历折叠搜索框 — 2026-08-21
+
+### Visual truth and evidence
+
+- Source visual truth: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-daf6a511-bbdc-4902-abd4-6a9fe1656d23.png`（收起态，`235 × 136` px）与 `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-27d63f44-3a4c-4683-a67f-beba833de2f9.png`（展开态，`584 × 151` px）。
+- Implementation screenshots: `/private/tmp/linkcv-resumes-search-collapsed-desktop.png` 与 `/private/tmp/linkcv-resumes-search-expanded-desktop.png`（浏览器视口请求 `1440 × 900` CSS px，实际内容截图 `1309 × 818` px），以及 `/private/tmp/linkcv-resumes-search-expanded-mobile-fixed.png`（视口请求 `390 × 844` CSS px，实际内容截图 `354 × 767` px）。浏览器密度为 1；未把浏览器外框计入比较。
+- State: 已登录的 `/resumes`，浅色工作区；分别比较默认收起态、点击后聚焦的展开态，以及移动端展开态。
+- Full-view comparison: 桌面完整页面核对搜索框与“导入简历 / 新建简历”的相对位置、操作层级和展开后的工具栏密度；移动端完整页面核对展开时无水平溢出且两个操作按钮保持可见。
+- Focused-region comparison: 在同一次视觉比较中并列打开两张来源图与 `/private/tmp/linkcv-search-collapsed-crop.jpg`、`/private/tmp/linkcv-search-expanded-crop.jpg`，核对圆形轮廓、胶囊比例、左右图标、占位文案和边框。实现裁切保留了少量相邻按钮，用于确认真实工具栏间距。
+
+### Required fidelity surfaces
+
+- Fonts and typography: 输入与占位文字使用 LinkCV 的 `--ui-font-sans`、14px 控件字号；视觉权重和参考图一致，中文占位文案改为任务明确的“搜索简历…”。
+- Spacing and layout rhythm: 收起态为 `44 × 44` 圆形；桌面展开为 `280 × 44` 胶囊，左右各保留 42px 图标区。尺寸略小于独立参考画布，以对齐现有工作区 40–44px 工具栏密度。移动端展开后独占一行，关闭后恢复紧凑操作行。
+- Colors and tokens: 白色表面、细灰边框、近黑图标与弱化占位文字全部映射既有 `--ui-*` Token；展开态输入焦点只加深胶囊自身边框，不叠加全局蓝色外轮廓。收起按钮与关闭按钮继续保留键盘 `focus-visible` 提示。
+- Image and asset fidelity: 视觉只包含标准搜索与关闭图标，使用项目已配置的 Lucide 图标库；没有缺失的位图、品牌资产或用 CSS/字符伪造图标。
+- Copy and content: 收起按钮、输入框和搜索区域都以“搜索简历”命名；关闭按钮明确命名为“清除并收起搜索”，关闭后同时恢复全部简历。
+
+### Interaction evidence
+
+- 圆形按钮点击后展开并自动聚焦输入框；输入关键词继续复用原有前端筛选逻辑。
+- 右侧关闭按钮与 Escape 都会清空关键词、收起控件并把焦点还给圆形按钮。
+- 桌面、小桌面与移动端均检查；浏览器控制台没有 error 或 warning。
+
+### Comparison history
+
+1. 初次移动端比较发现 P2：展开搜索与两个页面操作争抢同一行，右侧操作可能被挤出视口。
+2. 修复：只在“全部简历”页面的移动端把标题与操作区改为上下布局；展开搜索独占一行，导入和新建按钮移到下一行，其他工作区页面不受影响。
+3. 修复后重新捕获 `/private/tmp/linkcv-resumes-search-expanded-mobile-fixed.png`；搜索框、导入和新建操作均完整可见，页面无水平溢出。没有剩余 P0/P1/P2 问题。
+4. 用户复查发现 P1：展开态同时命中组件 `:focus-within` 与项目全局 `input:focus-visible`，形成蓝色双层外框和输入区矩形边界。修复后输入框通过独立 `data-slot` 隔离全局轮廓，组件不再绘制外圈；实时浏览器计算样式确认输入与容器 `outline-style: none`，并把关闭按钮 hover 区域收敛为 `32 × 32` 圆形。
+
+### Follow-up polish
+
+- P3: none.
+
+final result: passed
+
+## 全部简历操作区精简 — 2026-08-21
+
+### Visual truth and evidence
+
+- Source visual truth: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-99d26f5f-0378-4d16-8de1-b69ac13353ec.png`，红框标出需要移除的“全部 1”筛选胶囊与需要改造的“新建简历”按钮；同一行右侧“最近更新”描述按用户文字要求一并移除。
+- Implementation screenshots: `/private/tmp/linkcv-resumes-action-cleanup-final.png`（桌面悬浮态）、`/private/tmp/linkcv-resumes-create-button-desktop.png`（桌面默认态）与 `/private/tmp/linkcv-resumes-create-button-mobile.png`（移动端）。
+- Full-view comparison: 在同一次视觉比较中并列打开来源截图与最终桌面实现，核对筛选行已完整移除、卡片网格自然上移，以及搜索、导入、新建三个操作保持对齐。
+
+### Required fidelity surfaces
+
+- Information hierarchy: 删除无实际筛选能力的“全部 N”胶囊、重复的“最近更新”行内说明、标题下方数量/排序摘要，以及卡片区底部的分享操作提示；页面只保留标题、操作区和简历内容。
+- Button treatment: “新建简历”从黑色实心主按钮改为共享 `outline` 透明圆弧按钮，复用从边框中部向两侧展开的蓝色悬浮描边；点击行为不变。
+- Responsive: 桌面操作区保持单行；移动端三项操作完整可见，页面内容宽度与视口一致，无水平溢出。
+- Accessibility: “新建简历”继续暴露原有按钮名称，透明样式不改变键盘焦点反馈与业务动作。
+
+### Findings
+
+- P0: none.
+- P1: none.
+- P2: none.
+- P3: none.
+
+### Follow-up
+
+- 用户进一步要求移除“1 份简历 · 按最近更新排列”和“提示：点击简历卡片可继续编辑，分享按钮只管理当前简历的公开链接。”，实现已同步删除对应 DOM 与不再使用的提示样式。
+- Follow-up screenshot: `/private/tmp/linkcv-resumes-copy-cleanup-final.png`；浏览器正文核对两段目标文字均不存在，标题与操作区之间未留下额外占位。
+
+final result: passed
+
+## 透明圆弧次要按钮 — 2026-08-21
+
+### Visual truth and evidence
+
+- Source visual truth: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-99fcb496-9803-4556-bf2c-af2a76264ee7.png`（透明默认态）与 `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-daacce61-8938-4e15-ad66-508cd4339108.png`（蓝色描边悬浮态）。
+- Implementation state: 已登录 `/resumes` 的“导入简历”次要按钮；在同一次视觉比较中分别并列打开默认态参考与默认态页面、悬浮态参考与悬浮态页面。
+- Responsive evidence: 浏览器请求 `1440`、`1024` 与 `390` 宽度；移动端搜索、导入与新建按钮均完整可见，没有横向溢出。
+
+### Required fidelity surfaces
+
+- Shape and material: `outline`、`secondary` 与带文字的 `ghost` 使用透明背景、完整圆弧和单层灰色细边框；主操作、危险操作、纯图标按钮与导航控件不套用。
+- Hover and focus: 两个半边框从按钮中部向右、向左分别以 `scaleX` 展开，最终形成完整 LinkCV 蓝色描边与低强度柔光；键盘 `focus-visible` 与打开态使用相同最终反馈。
+- Motion: 描边只动画 `transform` 与 `opacity`，时长使用现有 `--ui-duration-base`；`prefers-reduced-motion` 将时长降至 `0.01ms`，不依赖动画完成业务动作。
+- Content and icons: 保留各业务按钮原有文字和项目既有图标，不强制添加参考图中的 `>` 符号，也不改变点击行为。
+
+### Comparison history
+
+1. 第一轮实现后发现 P2：Tailwind `border` 被较晚加载的全局 `button { border: 0 }` 覆盖，默认态只剩透明背景而没有可辨识的圆弧边界。
+2. 修复：共享组件自身声明 `border: 1px solid var(--ui-border-strong)`；1024 与 390 浏览器复查均恢复默认灰色边框。
+3. 按最新版 Vercel Web Interface Guidelines 复查后，把初版 `clip-path` 描边改为两个半边框的 `transform: scaleX`，保留从中心向两侧扩展的视觉意图并降低动画成本。
+
+### Findings
+
+- P0: none.
+- P1: none.
+- P2: none.
+- P3: 工作台“导出 PDF”这类带文字的次要按钮同步使用圆弧样式；返回、设置、历史记录等纯图标工具仍保持紧凑形状，未发现工具栏溢出。
+
+final result: passed
+
+## 经典单页技术简历示例内容重编 — 2026-08-21
+
+### Verification state
+
+- Environment: `fix/classic-technical-fictional-content`，本机隔离 SQLite 后端与 Vite 前端，应用内浏览器桌面视口。
+- Template picker: “经典单页技术简历”仍为独立选项，预览完整显示虚构的张三资料。
+- Content independence: 技能改为 Go、TypeScript、云原生、可观测性和工程质量；三段实习分别为气象观测、协作绘图和城市照明运维；个人项目改为可观测性实验台 TraceHarbor。预览中未出现旧示例的销售预测、知识检索、AI 编程工具、JMM、Qdrant、公司名或项目名。
+- Editor: 从模板创建“经典模板内容验收”后进入编辑器，页面节点包含 `theme-classic-technical smart-one-page`，保存状态为“已保存”。
+- Single page: 编辑纸张 `clientHeight=1123`、`scrollHeight=1123`，正文末尾完整显示，没有内部溢出或截断。
+- Console: 浏览器 console 中没有 warning 或 error。
+
+### Findings
+
+- P0: none.
+- P1: none.
+- P2: none.
+- P3: 这次只重编模板种子，已经从旧模板创建的简历仍保留各自快照，不会被迁移追溯覆盖。
+
+final result: passed
+
+## 经典单页技术简历模板 — 2026-08-21
+
+### Visual truth
+
+- Source: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-c1ac7690-f3aa-4dc6-be6c-f8322563511d.png`。
+- Implementation: `/tmp/linkcv-classic-technical-viewport-v5.png`。
+- Side-by-side comparison: `/tmp/linkcv-classic-technical-comparison.svg.png`。
+- State: 使用虚构“张三”内容创建简历后进入真实编辑器，保存状态为“已保存”，主题为 `classic-technical`，智能一页开启。
+- Source capture: `1000 × 1414` px；implementation viewport: `1280 × 1400` CSS px / PNG px，DPR 1；A4 paper: `793.69 × 1122.52` CSS px。
+
+### Required fidelity surfaces
+
+- Typography: 中文衬线栈、居中姓名与联系方式、非粗体标题层级、紧凑正文和编号列表与参考图一致；显式 Markdown 粗体仍使用较轻的 600 权重。
+- Spacing and layout: 9mm 上下、11mm 左右页边距，细分隔线与密集段落节奏保持单页；教育、公司/岗位日期和项目链接使用结构化左右栏，不依赖空格对齐。
+- Content: 模板选择器新增独立“经典单页技术简历”选项，保留已有模板；默认内容全部为虚构样例，不包含用户姓名、电话、邮箱、学校、公司或项目数据。
+- Rendering parity: 模板选择页只读预览、编辑器和 PDF 共用同一主题键与 `pt` 字号语义；右侧岗位/日期为正常字形、右对齐且不换行。
+
+### Comparison history
+
+1. [P1] 首次真实页面截图中，左右行沿用通用 70% 左栏，岗位与日期发生换行。模板主题覆盖为 57% 左栏，并保持右栏单行；复核后右栏可用宽度 294px，最长内容 293px。
+2. [P2] 模板选择页只读预览把字号值解释为 `px`，与编辑器/PDF 的 `pt` 不一致。已统一为 `pt`。
+3. 最终 A4 高度 `1122.52px`、内容 `scrollHeight=1123px`，完整内容保持在单页；标题字重为 400，右栏字形为 normal、字重 400。
+4. 浏览器控制台 error/warning：0；模板选择、创建简历、进入编辑器和自动保存链路均完成。
+
+### Findings
+
+- P0: none.
+- P1: none.
+- P2: none.
+- P3: 参考图包含真实企业/学校图标；为避免把用户个人资产和经历固化进默认模板，本模板保留纯文字结构，用户仍可在编辑器内按需插入图片或行内图标。
+
+final result: passed
+
 ## LinkCV Design System
 
 - 登录、主页、编辑器与预览工作区统一使用 LinkCV 的黑白中性色、品牌标记、排版、间距、圆角、阴影与交互状态。

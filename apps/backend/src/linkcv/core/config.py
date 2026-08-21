@@ -317,12 +317,6 @@ class Settings(BaseSettings):
         alias="LINKPARSE_RESPONSE_MAX_BYTES",
         ge=1,
     )
-    docx_conversion_timeout_seconds: float = Field(
-        default=30,
-        alias="DOCX_CONVERSION_TIMEOUT_SECONDS",
-        gt=0,
-    )
-
     redis_url_override: str | None = Field(default=None, alias="REDIS_URL")
     redis_host: str = Field(default="127.0.0.1", alias="REDIS_HOST")
     redis_port: int = Field(default=6379, alias="REDIS_PORT")
@@ -468,6 +462,15 @@ class Settings(BaseSettings):
             invalid.append("LINKPARSE_API_KEY")
         if self.mq_vendor == "rabbitmq" and _is_placeholder(rabbitmq_url):
             invalid.append("RABBITMQ_URL")
+        wechat_secret = (
+            self.wechat_secret.get_secret_value()
+            if self.wechat_secret is not None
+            else None
+        )
+        if _is_placeholder(self.wechat_appid):
+            invalid.append("WECHAT_APPID")
+        if _is_placeholder(wechat_secret):
+            invalid.append("WECHAT_SECRET")
         try:
             llm_keys = parse_llm_credential_encryption_keys(
                 self.llm_credential_encryption_keys

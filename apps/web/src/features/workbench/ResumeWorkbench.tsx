@@ -1,4 +1,5 @@
-import { EditorContent, useEditor } from "@tiptap/react";
+import type { JSONContent } from "@tiptap/core";
+import { BubbleMenu, EditorContent, useEditor } from "@tiptap/react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
   AlertTriangle,
@@ -7,21 +8,31 @@ import {
   History,
   Home,
   LoaderCircle,
-  LogOut,
-  Minus,
-  Plus,
+  Pencil,
   Save,
   SlidersHorizontal,
   Sparkles,
-  Trash2,
-  UserRound,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiRequestError } from "../../api/client";
-import { Button, ConfirmDialog, IconButton, TogglePill } from "@/components/ui";
+import {
+  Button,
+  ConfirmDialog,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  IconButton,
+  Input,
+  Label,
+  PageLoading,
+  TogglePill,
+} from "@/components/ui";
 import { exportResumePdf } from "../preview/exportPdf";
-import { resumeSerifFontStack, useResumeStore } from "../../store/resumeStore";
+import { defaultSettings, resumeSerifFontStack, useResumeStore } from "../../store/resumeStore";
 import { resumeEditorExtensions } from "./editorExtensions";
 import { WorkbenchToolbar } from "./WorkbenchToolbar";
 import { handleWheelZoom } from "./workbenchZoom";
@@ -43,8 +54,21 @@ const versionReasonLabels = {
   initial: "初始版本",
   manual: "手动保存",
   before_restore: "恢复前备份",
-  restore: "恢复结果",
+  restore: "恢复结果（历史记录）",
 } as const;
+
+const MAX_VERSION_NAME_LENGTH = 80;
+
+export function normalizeVersionName(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+export function versionNameValidationMessage(value: string) {
+  const normalized = normalizeVersionName(value);
+  if (!normalized) return "请填写版本名称";
+  if (normalized.length > MAX_VERSION_NAME_LENGTH) return `版本名称不能超过 ${MAX_VERSION_NAME_LENGTH} 个字符`;
+  return null;
+}
 
 function versionTime(value: string) {
   return new Date(value).toLocaleString("zh-CN", {
@@ -62,6 +86,144 @@ export function versionOperationErrorMessage(error: unknown, operation: "create"
   return operation === "create"
     ? "当前内容已保存，但版本数量已达上限。请删除一个旧版本后再保存新版本。"
     : "版本空间不足，恢复操作没有执行。请删除一个旧版本后再重试。";
+}
+
+export function versionRenameErrorMessage(error: unknown) {
+  if (error instanceof ApiRequestError) {
+    if (error.message === "INVALID_RESUME_VERSION_NAME") return "版本名称不能为空且不能超过 80 个字符。";
+    if (error.message === "RESUME_VERSION_NOT_FOUND") return "该版本不存在，请刷新后重试。";
+  }
+  return "保存版本名称失败，请稍后重试。";
+}
+
+export function VersionRenameAction({
+  name,
+  versionNo,
+  disabled = false,
+  busy = false,
+  error = null,
+  onStartRename,
+  onRename,
+}: {
+  name: string;
+  versionNo: number;
+  disabled?: boolean;
+  busy?: boolean;
+  error?: string | null;
+  onStartRename?: () => void;
+  onRename: (name: string) => void | Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(name);
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!editing) setDraft(name);
+  }, [editing, name]);
+
+  const startEditing = () => {
+    if (disabled || busy) return;
+    setDraft(name);
+    setValidationError(null);
+    setEditing(true);
+    onStartRename?.();
+  };
+
+  const cancelEditing = () => {
+    if (busy) return;
+    setDraft(name);
+    setValidationError(null);
+    setEditing(false);
+  };
+
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const nextName = draft.trim();
+    if (busy) return;
+    if (!nextName) {
+      setValidationError("请填写版本名称");
+      return;
+    }
+    if (nextName.length > 80) {
+      setValidationError("版本名称不能超过 80 个字符");
+      return;
+    }
+    if (nextName === name.trim()) {
+      setEditing(false);
+      return;
+    }
+    try {
+      await onRename(nextName);
+      setEditing(false);
+    } catch {
+      // Keep the input open so the user can correct and retry after an error.
+    }
+  };
+  const visibleError = error ?? validationError;
+
+  return (
+    <div className="version-row-name">
+      {editing ? (
+        <form className="version-row-name-edit" onSubmit={(event) => void submit(event)}>
+          <input
+            id={`version-name-input-${versionNo}`}
+            className="version-row-name-input"
+            autoFocus
+            autoComplete="off"
+            maxLength={80}
+            value={draft}
+            disabled={busy}
+            aria-invalid={Boolean(visibleError)}
+            aria-label={`版本 ${versionNo} 名称`}
+            aria-describedby={visibleError ? `version-name-error-${versionNo}` : undefined}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setValidationError(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                cancelEditing();
+              }
+            }}
+          />
+          {visibleError ? (
+            <small className="version-row-name-error" id={`version-name-error-${versionNo}`} role="alert">{visibleError}</small>
+          ) : null}
+        </form>
+      ) : (
+        <div className="version-row-name-value">
+          <strong title={name}>{name}</strong>
+          <IconButton
+            className="version-rename-icon"
+            label={`重命名版本 ${versionNo}`}
+            disabled={disabled || busy}
+            onClick={startEditing}
+          >
+            <Pencil size={14} />
+          </IconButton>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type EditorContentCommands = {
+  commands: {
+    setContent: (content: string | JSONContent, emitUpdate?: boolean) => unknown;
+  };
+};
+
+type RestorableEditor = EditorContentCommands & {
+  setEditable: (editable: boolean, emitUpdate?: boolean) => unknown;
+};
+
+export function setRestoredEditorContent(editor: EditorContentCommands, content: string | JSONContent) {
+  editor.commands.setContent(content, false);
+}
+
+export function setWorkbenchEditorEditable(editor: RestorableEditor, editable: boolean) {
+  editor.setEditable(editable, false);
 }
 
 function plainParagraphsFromHtml(html: string) {
@@ -136,7 +298,6 @@ export function SaveVersionAction({ pending, onSave }: { pending: boolean; onSav
       disabled={pending}
       icon={pending ? <LoaderCircle aria-hidden="true" className="workbench-save-spinner" /> : <Save aria-hidden="true" />}
       size="sm"
-      variant="accent"
       onClick={onSave}
     >
       {pending ? "保存中…" : "保存版本"}
@@ -159,14 +320,24 @@ export function ImportWarningBanner({ warnings, onDismiss }: { warnings: string[
   );
 }
 
-function Stepper({ label, value, min, max, step, onChange, disabled }: { label: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void; disabled?: boolean }) {
-  const change = (direction: -1 | 1) => onChange(Number(Math.min(max, Math.max(min, value + direction * step)).toFixed(2)));
+function SettingsSlider({ label, unit, value, min, max, step, onChange, disabled }: { label: string; unit: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void; disabled?: boolean }) {
   return (
-    <div className="workbench-stepper" aria-label={label}>
-      <motion.button type="button" aria-label={`${label}减小`} whileTap={{ scale: 0.92 }} onClick={() => change(-1)} disabled={disabled}><Minus size={12} /></motion.button>
-      <strong>{value}</strong>
-      <motion.button type="button" aria-label={`${label}增大`} whileTap={{ scale: 0.92 }} onClick={() => change(1)} disabled={disabled}><Plus size={12} /></motion.button>
-    </div>
+    <label className="workbench-slider-row">
+      <span className="workbench-slider-head">
+        <span>{label}</span>
+        <output>{value} {unit}</output>
+      </span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        disabled={disabled}
+        aria-label={label}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
+    </label>
   );
 }
 
@@ -190,10 +361,10 @@ export function ResumeWorkbench() {
   const versionOperationPending = useResumeStore((state) => state.versionOperationPending);
   const loadVersions = useResumeStore((state) => state.loadVersions);
   const createVersion = useResumeStore((state) => state.createVersion);
+  const renameStoredVersion = useResumeStore((state) => state.renameVersion);
   const deleteStoredVersion = useResumeStore((state) => state.deleteVersion);
   const restoreStoredVersion = useResumeStore((state) => state.restoreVersion);
   const goHome = useResumeStore((state) => state.goHome);
-  const logout = useResumeStore((state) => state.logout);
   const [drawerMode, setDrawerMode] = useState<DrawerMode>(null);
   const [toast, setToast] = useState<ToastState>(null);
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
@@ -201,6 +372,12 @@ export function ResumeWorkbench() {
     versionNo: number;
     createdAt: string;
   } | null>(null);
+  const [versionNameDialogOpen, setVersionNameDialogOpen] = useState(false);
+  const [versionName, setVersionName] = useState("");
+  const [versionNameError, setVersionNameError] = useState<string | null>(null);
+  const [versionNameSubmitting, setVersionNameSubmitting] = useState(false);
+  const [versionRenameSubmitting, setVersionRenameSubmitting] = useState<number | null>(null);
+  const [versionRenameError, setVersionRenameError] = useState<{ versionNo: number; message: string } | null>(null);
   const paperScrollRef = useRef<HTMLDivElement>(null);
 
   const editor = useEditor({
@@ -218,7 +395,7 @@ export function ResumeWorkbench() {
   }, [activeResumeId]);
 
   useEffect(() => {
-    editor?.setEditable(!versionOperationPending);
+    if (editor) setWorkbenchEditorEditable(editor, !versionOperationPending);
   }, [editor, versionOperationPending]);
 
   useEffect(() => {
@@ -284,37 +461,80 @@ export function ResumeWorkbench() {
     "--resume-page-margin-y": `${settings.verticalPageMargin}mm`,
   }) as React.CSSProperties, [settings]);
 
+  const openVersionNameDialog = () => {
+    setVersionName("");
+    setVersionNameError(null);
+    setVersionNameDialogOpen(true);
+  };
+
+  const closeVersionNameDialog = () => {
+    if (versionNameSubmitting) return;
+    setVersionNameDialogOpen(false);
+    setVersionNameError(null);
+  };
+
+  const startVersionRename = () => {
+    setVersionRenameError(null);
+  };
+
+  const submitVersionRename = async (versionNo: number, nextName: string) => {
+    if (!activeResumeId || versionRenameSubmitting !== null) return;
+    setVersionRenameSubmitting(versionNo);
+    setVersionRenameError(null);
+    try {
+      await renameStoredVersion(versionNo, nextName);
+      setToast({ label: `已将版本 ${versionNo} 重命名为“${nextName}”` });
+    } catch (error) {
+      setVersionRenameError({ versionNo, message: versionRenameErrorMessage(error) });
+      throw error;
+    } finally {
+      setVersionRenameSubmitting(null);
+    }
+  };
+
   const manualSave = async () => {
-    if (!editor) return;
+    if (!editor || versionNameSubmitting) return;
+    const validationMessage = versionNameValidationMessage(versionName);
+    if (validationMessage) {
+      setVersionNameError(validationMessage);
+      return;
+    }
+    const normalizedName = normalizeVersionName(versionName);
+    setVersionNameError(null);
+    setVersionNameSubmitting(true);
     await saveCurrentResume();
     if (useResumeStore.getState().error) {
       setToast({ label: "保存失败，请稍后重试" });
+      setVersionNameSubmitting(false);
       return;
     }
     try {
-      await createVersion();
+      await createVersion(normalizedName);
+      setVersionNameDialogOpen(false);
       setToast({ label: "已保存新版本" });
     } catch (error) {
       const limitMessage = versionOperationErrorMessage(error, "create");
       if (limitMessage) setDrawerMode("history");
       setToast({ label: limitMessage ?? "当前内容已保存，但版本创建失败" });
+    } finally {
+      setVersionNameSubmitting(false);
     }
   };
 
   const restoreVersion = async (versionNo: number, createdAt: string) => {
     if (!editor) return;
-    editor.setEditable(false);
+    setWorkbenchEditorEditable(editor, false);
     try {
       await restoreStoredVersion(versionNo);
       const restored = useResumeStore.getState().editorContent;
-      editor.commands.setContent(restored);
+      setRestoredEditorContent(editor, restored);
       setToast({ label: `已恢复 ${versionTime(createdAt)} 的版本` });
     } catch (error) {
       const limitMessage = versionOperationErrorMessage(error, "restore");
       if (limitMessage) setDrawerMode("history");
       setToast({ label: limitMessage ?? "版本恢复失败，请稍后重试" });
     } finally {
-      editor.setEditable(true);
+      setWorkbenchEditorEditable(editor, true);
     }
   };
 
@@ -329,7 +549,7 @@ export function ResumeWorkbench() {
     }
   };
 
-  const leaveSafely = async (destination: "home" | "logout") => {
+  const leaveSafely = async () => {
     if (dirty) {
       await saveCurrentResume();
       if (useResumeStore.getState().error) {
@@ -337,13 +557,8 @@ export function ResumeWorkbench() {
         return;
       }
     }
-    if (destination === "home") {
-      goHome();
-      navigateTo("/resumes");
-    } else {
-      await logout();
-      navigateTo("/", { replace: true });
-    }
+    goHome();
+    navigateTo("/resumes");
   };
 
   const responsiveFitScale = viewportWidth <= 720
@@ -360,31 +575,22 @@ export function ResumeWorkbench() {
       <div className="resume-workbench" data-ui-theme="light">
         <header className="workbench-header">
           <div className="workbench-header-left">
-            <IconButton className="workbench-icon-action workbench-back-action" label="返回全部简历" onClick={() => void leaveSafely("home")}><Home size={16} /></IconButton>
+            <IconButton className="workbench-icon-action workbench-back-action" label="返回全部简历" onClick={() => void leaveSafely()}><Home size={16} /></IconButton>
             <div className="workbench-document-identity">
-              <span>简历编辑</span>
               <input autoComplete="off" className="workbench-title" name="resume-title" value={title} onChange={(event) => setTitle(event.target.value)} aria-label="简历标题" disabled={versionOperationPending} />
+              <span>简历编辑</span>
             </div>
-            <WorkbenchSaveStatus dirty={dirty} saveStatus={saveStatus} />
           </div>
+          <WorkbenchSaveStatus dirty={dirty} saveStatus={saveStatus} />
           <div className="workbench-header-actions">
+            <output className="workbench-zoom" aria-label="简历缩放比例">{zoomPercent}%</output>
             <div className="workbench-header-tool-group" role="group" aria-label="编辑面板">
               <IconButton aria-controls="workbench-side-panel" aria-expanded={drawerMode === "settings"} aria-pressed={drawerMode === "settings"} className={`workbench-icon-action${drawerMode === "settings" ? " is-active" : ""}`} label="页面设置" onClick={() => setDrawerMode((mode) => mode === "settings" ? null : "settings")}><SlidersHorizontal size={16} /></IconButton>
               <IconButton aria-controls="workbench-side-panel" aria-expanded={drawerMode === "history"} aria-pressed={drawerMode === "history"} className={`workbench-icon-action${drawerMode === "history" ? " is-active" : ""}`} label="版本记录" onClick={() => setDrawerMode((mode) => mode === "history" ? null : "history")}><History size={16} /></IconButton>
             </div>
             <div className="workbench-output-actions" role="group" aria-label="保存与导出">
-              <SmartOnePageAction
-                active={settings.smartOnePage}
-                onToggle={() => updateSettings({ smartOnePage: !settings.smartOnePage })}
-                disabled={versionOperationPending}
-              />
               <Button aria-label="导出 PDF" className="workbench-action workbench-export-action" icon={<FileDown aria-hidden="true" />} size="sm" title="导出 PDF" variant="secondary" onClick={() => activeResumeId && void exportResumePdf(settings.smartOnePage, title, activeResumeId)}>导出 PDF</Button>
-              <SaveVersionAction pending={saveStatus === "saving" || versionOperationPending} onSave={() => void manualSave()} />
-            </div>
-            <span className="workbench-header-divider" />
-            <div className="workbench-account-actions" role="group" aria-label="账户操作">
-              <IconButton className="workbench-icon-action" label="个人资料" onClick={() => navigateTo("/account")}><UserRound size={15} /></IconButton>
-              <IconButton className="workbench-icon-action workbench-logout-action" label="退出登录" onClick={() => void leaveSafely("logout")}><LogOut size={15} /></IconButton>
+              <SaveVersionAction pending={saveStatus === "saving" || versionOperationPending || versionNameSubmitting} onSave={openVersionNameDialog} />
             </div>
           </div>
         </header>
@@ -396,18 +602,20 @@ export function ResumeWorkbench() {
           />
         )}
 
-        {activeResumeId && <WorkbenchToolbar editor={editor} resumeId={activeResumeId} onNotice={(label) => setToast({ label })} />}
+        {activeResumeId && editor && (
+          <BubbleMenu
+            editor={editor}
+            tippyOptions={{ duration: 150, maxWidth: "none", placement: "top-start" }}
+            shouldShow={({ editor: current, state }) => {
+              const { selection } = state;
+              return current.isEditable && !selection.empty;
+            }}
+          >
+            <WorkbenchToolbar editor={editor} resumeId={activeResumeId} onNotice={(label) => setToast({ label })} />
+          </BubbleMenu>
+        )}
 
         <main className="workbench-canvas">
-          <aside className="workbench-stage-rail" aria-label="当前纸张信息">
-            <span className="workbench-stage-kicker">编辑画布</span>
-            <dl>
-              <div><dt>纸张</dt><dd>A4</dd></div>
-              <div><dt>缩放</dt><dd><output aria-label="简历缩放比例">{zoomPercent}%</output></dd></div>
-              <div><dt>导出</dt><dd>{settings.smartOnePage ? "连续单页" : "自动分页"}</dd></div>
-            </dl>
-            <p>按住 Ctrl 或 ⌘ 滚动可调整缩放。</p>
-          </aside>
           <div
             ref={paperScrollRef}
             className="workbench-paper-scroll"
@@ -416,9 +624,6 @@ export function ResumeWorkbench() {
             <article className={`resume-paper theme-${settings.theme}${settings.smartOnePage ? " smart-one-page" : ""}`} style={resumeStyle} aria-label="可编辑简历页面">
               <EditorContent editor={editor} />
             </article>
-            <p className="workbench-page-hint">
-              {settings.smartOnePage ? "智能一页 · 导出为连续单页" : "标准 A4 · 超出内容自动分页导出"}
-            </p>
           </div>
 
           <AnimatePresence initial={false}>
@@ -435,29 +640,70 @@ export function ResumeWorkbench() {
               >
                 <div className="workbench-drawer-head">
                   <div>
-                    <span>{drawerMode === "settings" ? "排版" : "历史"}</span>
                     <h2 id="workbench-drawer-title">{drawerMode === "settings" ? "页面设置" : "版本记录"}</h2>
+                    <p>{drawerMode === "settings" ? "只在需要时打开，关闭后不占用工作区。" : "每次手动保存都会留下一个可恢复版本。"}</p>
                   </div>
-                  <button type="button" onClick={() => setDrawerMode(null)} aria-label="关闭面板">×</button>
+                  <button type="button" className="workbench-drawer-done" onClick={() => setDrawerMode(null)} aria-label="关闭面板">完成</button>
                 </div>
                 {drawerMode === "settings" ? (
                   <div className="workbench-settings">
-                    <label><span>全局字体</span><select value={settings.fontFamily} onChange={(event) => updateSettings({ fontFamily: event.target.value })} disabled={versionOperationPending}>{fontOptions.map((font) => <option key={font.label} value={font.value}>{font.label}</option>)}</select></label>
-                    <label><span>全局字号</span><Stepper label="全局字号" value={settings.fontSize} min={8} max={16} step={0.5} onChange={(fontSize) => updateSettings({ fontSize })} disabled={versionOperationPending} /></label>
-                    <label><span>行距</span><Stepper label="行距" value={settings.lineHeight} min={1.1} max={1.8} step={0.05} onChange={(lineHeight) => updateSettings({ lineHeight })} disabled={versionOperationPending} /></label>
-                    <label><span>左右边距</span><Stepper label="左右边距" value={settings.pageMargin} min={10} max={30} step={2} onChange={(pageMargin) => updateSettings({ pageMargin })} disabled={versionOperationPending} /></label>
-                    <label><span>上下边距</span><Stepper label="上下边距" value={settings.verticalPageMargin} min={10} max={30} step={2} onChange={(verticalPageMargin) => updateSettings({ verticalPageMargin })} disabled={versionOperationPending} /></label>
+                    <label className="workbench-field"><span>字体</span><select value={settings.fontFamily} onChange={(event) => updateSettings({ fontFamily: event.target.value })} disabled={versionOperationPending}>{fontOptions.map((font) => <option key={font.label} value={font.value}>{font.label}</option>)}</select></label>
+                    <SettingsSlider label="正文字号" unit="pt" value={settings.fontSize} min={8} max={16} step={0.5} onChange={(fontSize) => updateSettings({ fontSize })} disabled={versionOperationPending} />
+                    <SettingsSlider label="行距" unit="" value={settings.lineHeight} min={1.1} max={1.8} step={0.05} onChange={(lineHeight) => updateSettings({ lineHeight })} disabled={versionOperationPending} />
+                    <SettingsSlider label="左右边距" unit="mm" value={settings.pageMargin} min={10} max={30} step={2} onChange={(pageMargin) => updateSettings({ pageMargin })} disabled={versionOperationPending} />
+                    <SettingsSlider label="上下边距" unit="mm" value={settings.verticalPageMargin} min={10} max={30} step={2} onChange={(verticalPageMargin) => updateSettings({ verticalPageMargin })} disabled={versionOperationPending} />
+                    <div className="workbench-settings-section">
+                      <span className="workbench-settings-kicker">导出模式</span>
+                      <div className="workbench-smart-row">
+                        <div>
+                          <strong>智能一页</strong>
+                          <small>尽量压缩为连续单页</small>
+                        </div>
+                        <SmartOnePageAction
+                          active={settings.smartOnePage}
+                          onToggle={() => updateSettings({ smartOnePage: !settings.smartOnePage })}
+                          disabled={versionOperationPending}
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="workbench-reset-settings"
+                      disabled={versionOperationPending}
+                      onClick={() => updateSettings({
+                        fontFamily: defaultSettings.fontFamily,
+                        fontSize: defaultSettings.fontSize,
+                        lineHeight: defaultSettings.lineHeight,
+                        pageMargin: defaultSettings.pageMargin,
+                        verticalPageMargin: defaultSettings.verticalPageMargin,
+                        smartOnePage: defaultSettings.smartOnePage,
+                      })}
+                    >
+                      恢复默认设置
+                    </button>
                   </div>
                 ) : (
                   <div className="workbench-versions">
-                    <p className="workbench-version-guidance">
-                      每份简历最多保存 10 个版本。达到上限时不会自动删除；请手动清理旧版本，最新版本需保留。
+                    <p className="workbench-version-summary">
+                      <strong>{versions.length} 个版本</strong>
+                      <span>正式保存 · 自动保存不计入</span>
                     </p>
-                    {versionsLoading && <p className="workbench-empty">正在读取版本记录…</p>}
+                    {versionsLoading && <PageLoading label="正在读取版本记录…" scope="panel" />}
                     {!versionsLoading && versions.length === 0 && <p className="workbench-empty">暂无可用版本。</p>}
                     {versions.map((version) => (
                       <div className="version-row" key={version.id}>
-                        <div className="version-row-copy"><strong>{versionTime(version.created_at)}</strong><span>v{version.version_no} · {versionReasonLabels[version.reason]}</span></div>
+                        <div className="version-row-copy">
+                          <VersionRenameAction
+                            name={version.name}
+                            versionNo={version.version_no}
+                            disabled={versionOperationPending || (versionRenameSubmitting !== null && versionRenameSubmitting !== version.version_no)}
+                            busy={versionRenameSubmitting === version.version_no}
+                            error={versionRenameError?.versionNo === version.version_no ? versionRenameError.message : null}
+                            onStartRename={startVersionRename}
+                            onRename={(nextName) => submitVersionRename(version.version_no, nextName)}
+                          />
+                          <span>版本 {version.version_no} · {versionTime(version.created_at)} · {versionReasonLabels[version.reason]}</span>
+                        </div>
                         <span className="version-row-actions">
                           <button type="button" disabled={versionOperationPending} onClick={() => void restoreVersion(version.version_no, version.created_at)}>恢复</button>
                           {version.version_no !== versions[0]?.version_no && (
@@ -468,12 +714,13 @@ export function ResumeWorkbench() {
                               disabled={versionOperationPending}
                               onClick={() => setPendingVersionDelete({ versionNo: version.version_no, createdAt: version.created_at })}
                             >
-                              <Trash2 size={13} />删除
+                              删除
                             </button>
                           )}
                         </span>
                       </div>
                     ))}
+                    <p className="workbench-version-footnote">自动保存不会创建正式版本；恢复会直接替换当前编辑内容。</p>
                   </div>
                 )}
               </motion.aside>
@@ -501,6 +748,46 @@ export function ResumeWorkbench() {
             onConfirm={confirmDeleteVersion}
           />
         )}
+
+        <Dialog
+          open={versionNameDialogOpen}
+          onOpenChange={(open) => (open ? setVersionNameDialogOpen(true) : closeVersionNameDialog())}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>保存正式版本</DialogTitle>
+              <DialogDescription>为这个重要节点命名，之后可以从版本记录中恢复。</DialogDescription>
+            </DialogHeader>
+            <form className="version-name-form" onSubmit={(event) => { event.preventDefault(); void manualSave(); }}>
+              <div className="version-name-field">
+                <Label htmlFor="resume-version-name">版本名称</Label>
+                <Input
+                  id="resume-version-name"
+                  autoFocus
+                  maxLength={MAX_VERSION_NAME_LENGTH}
+                  placeholder="例如：投递产品经理岗位"
+                  value={versionName}
+                  aria-invalid={versionNameError ? "true" : undefined}
+                  aria-describedby={versionNameError ? "resume-version-name-error" : "resume-version-name-help"}
+                  onChange={(event) => {
+                    setVersionName(event.target.value);
+                    if (versionNameError) setVersionNameError(null);
+                  }}
+                />
+                {versionNameError ? (
+                  <p className="version-name-error" id="resume-version-name-error" role="alert">{versionNameError}</p>
+                ) : (
+                  <p className="version-name-help" id="resume-version-name-help">名称只用于区分正式保存的简历节点。</p>
+                )}
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="secondary" onClick={closeVersionNameDialog} disabled={versionNameSubmitting}>取消</Button>
+                <Button type="submit" variant="accent" disabled={versionNameSubmitting}>{versionNameSubmitting ? "保存中…" : "保存版本"}</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
       </div>
     </MotionConfig>
   );

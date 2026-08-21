@@ -21,6 +21,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from linkcv.core.database import Base
 
+RESUME_IMPORT_SOURCE_TYPE = "resume_import"
+DATASET_SOURCE_TYPE = "dataset"
+
 
 def unsigned_bigint_type():
     return (
@@ -103,6 +106,7 @@ class Resume(Base):
             name="ck_resumes_title_not_blank",
         ),
         CheckConstraint("lock_version >= 1", name="ck_resumes_lock_version"),
+        UniqueConstraint("parse_task_id", name="uk_resumes_parse_task_id"),
         UniqueConstraint("share_token", name="uk_resumes_share_token"),
         CheckConstraint(
             "(share_token IS NULL AND share_visibility IS NULL AND share_created_at IS NULL) "
@@ -136,9 +140,12 @@ class Resume(Base):
         nullable=True,
         comment="创建来源模板",
     )
-    title: Mapped[str] = mapped_column(
-        String(255), nullable=False, comment="简历标题"
+    parse_task_id: Mapped[int | None] = mapped_column(
+        unsigned_bigint_type(),
+        nullable=True,
+        comment="来源解析任务标识，无数据库外键约束",
     )
+    title: Mapped[str] = mapped_column(String(255), nullable=False, comment="简历标题")
     data_json: Mapped[dict[str, Any]] = mapped_column(
         JSON(), nullable=False, comment="当前 ResumeDocumentV1 内容"
     )
@@ -194,84 +201,84 @@ Index(
 Index("idx_resumes_template_id", Resume.template_id)
 
 
-class ResumeImport(Base):
-    __tablename__ = "resume_imports"
+class DocumentParseTask(Base):
+    __tablename__ = "document_parse_tasks"
     __table_args__ = (
-        PrimaryKeyConstraint("id", name="pk_resume_imports"),
-        UniqueConstraint(
-            "result_resume_id", name="uk_resume_imports_result_resume"
+        PrimaryKeyConstraint("id", name="pk_document_parse_tasks"),
+        CheckConstraint(
+            "source_type IN ('resume_import', 'dataset')",
+            name="ck_document_parse_tasks_source_type",
         ),
         CheckConstraint(
-            "source_file_format IN ('md', 'docx', 'pdf')",
-            name="ck_resume_imports_source_format",
+            "file_format IN ('md', 'docx', 'pdf', 'txt')",
+            name="ck_document_parse_tasks_file_format",
         ),
         CheckConstraint(
             "upload_status IN ('uploading', 'succeeded', 'failed')",
-            name="ck_resume_imports_upload_status",
+            name="ck_document_parse_tasks_upload_status",
         ),
         CheckConstraint(
             "parse_status IS NULL OR "
             "parse_status IN ('processing', 'succeeded', 'failed')",
-            name="ck_resume_imports_parse_status",
+            name="ck_document_parse_tasks_parse_status",
         ),
         CheckConstraint(
             "(upload_status = 'uploading' "
             "AND upload_duration_ms IS NULL "
             "AND parse_status IS NULL "
-            "AND parse_duration_ms IS NULL "
-            "AND result_resume_id IS NULL) OR "
+            "AND parse_duration_ms IS NULL) OR "
             "(upload_status = 'failed' "
             "AND upload_duration_ms IS NOT NULL "
             "AND parse_status IS NULL "
-            "AND parse_duration_ms IS NULL "
-            "AND result_resume_id IS NULL) OR "
+            "AND parse_duration_ms IS NULL) OR "
             "(upload_status = 'succeeded' "
             "AND upload_duration_ms IS NOT NULL "
             "AND parse_status = 'processing' "
-            "AND parse_duration_ms IS NULL "
-            "AND result_resume_id IS NULL) OR "
+            "AND parse_duration_ms IS NULL) OR "
             "(upload_status = 'succeeded' "
             "AND upload_duration_ms IS NOT NULL "
             "AND parse_status = 'failed' "
-            "AND parse_duration_ms IS NOT NULL "
-            "AND result_resume_id IS NULL) OR "
+            "AND parse_duration_ms IS NOT NULL) OR "
             "(upload_status = 'succeeded' "
             "AND upload_duration_ms IS NOT NULL "
             "AND parse_status = 'succeeded' "
-            "AND parse_duration_ms IS NOT NULL "
-            "AND result_resume_id IS NOT NULL)",
-            name="ck_resume_imports_lifecycle",
+            "AND parse_duration_ms IS NOT NULL)",
+            name="ck_document_parse_tasks_lifecycle",
         ),
-        {"comment": "简历源文件导入任务"},
+        {"comment": "通用文档上传解析任务"},
     )
 
     id: Mapped[int] = mapped_column(
-        unsigned_bigint_type(), autoincrement=True, comment="导入记录标识"
+        unsigned_bigint_type(), autoincrement=True, comment="解析任务标识"
+    )
+    source_type: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        comment="任务来源：resume_import、dataset",
     )
     user_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey("users.id", name="fk_resume_imports_user", ondelete="RESTRICT"),
+        ForeignKey(
+            "users.id",
+            name="fk_document_parse_tasks_user",
+            ondelete="RESTRICT",
+        ),
         nullable=False,
         comment="所属用户标识",
     )
-    result_resume_id: Mapped[int | None] = mapped_column(
-        unsigned_bigint_type(),
-        ForeignKey(
-            "resumes.id",
-            name="fk_resume_imports_result_resume",
-            ondelete="RESTRICT",
-        ),
-        nullable=True,
-        comment="解析成功生成的正式简历标识",
-    )
-    source_filename: Mapped[str] = mapped_column(
+    file_name: Mapped[str] = mapped_column(
         String(255), nullable=False, comment="安全化后的用户源文件名"
     )
-    source_file_format: Mapped[str] = mapped_column(
-        String(8), nullable=False, comment="源文件格式：md、docx、pdf"
+    file_format: Mapped[str] = mapped_column(
+        String(8), nullable=False, comment="源文件格式：md、txt、docx、pdf"
     )
-    source_object_key: Mapped[str] = mapped_column(
-        String(512), nullable=False, comment="私有 MinIO 对象键"
+    object_name: Mapped[str] = mapped_column(
+        String(512), nullable=False, comment="私有对象存储中的源文件对象键"
+    )
+    converted_object_name: Mapped[str | None] = mapped_column(
+        String(512),
+        nullable=True,
+        comment="转换后 Markdown 在对象存储中的对象键",
     )
     upload_status: Mapped[str] = mapped_column(
         String(16), nullable=False, comment="上传状态：uploading、succeeded、failed"
@@ -286,6 +293,9 @@ class ResumeImport(Base):
     )
     parse_duration_ms: Mapped[int | None] = mapped_column(
         unsigned_int_type(), nullable=True, comment="解析进入终态时的实际耗时毫秒"
+    )
+    failure_reason: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="解析失败分类原因"
     )
     created_at: Mapped[datetime] = mapped_column(
         timestamp_type(),
@@ -303,16 +313,16 @@ class ResumeImport(Base):
 
 
 Index(
-    "idx_resume_imports_user_created_id",
-    ResumeImport.user_id,
-    ResumeImport.created_at.desc(),
-    ResumeImport.id.desc(),
+    "idx_document_parse_tasks_user_created_id",
+    DocumentParseTask.user_id,
+    DocumentParseTask.created_at.desc(),
+    DocumentParseTask.id.desc(),
 )
 Index(
-    "idx_resume_imports_user_state",
-    ResumeImport.user_id,
-    ResumeImport.upload_status,
-    ResumeImport.parse_status,
+    "idx_document_parse_tasks_user_state",
+    DocumentParseTask.user_id,
+    DocumentParseTask.upload_status,
+    DocumentParseTask.parse_status,
 )
 
 
@@ -320,9 +330,7 @@ class ResumeVersion(Base):
     __tablename__ = "resume_versions"
     __table_args__ = (
         PrimaryKeyConstraint("id", name="pk_resume_versions"),
-        UniqueConstraint(
-            "resume_id", "version_no", name="uk_resume_versions_no"
-        ),
+        UniqueConstraint("resume_id", "version_no", name="uk_resume_versions_no"),
         CheckConstraint("version_no >= 1", name="ck_resume_versions_no"),
         CheckConstraint(
             "reason IN ('initial', 'manual', 'before_restore', 'restore')",
@@ -357,6 +365,11 @@ class ResumeVersion(Base):
         String(32),
         nullable=False,
         comment="创建原因：initial、manual、before_restore 或 restore",
+    )
+    name: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        comment="正式版本名称",
     )
     created_at: Mapped[datetime] = mapped_column(
         timestamp_type(),

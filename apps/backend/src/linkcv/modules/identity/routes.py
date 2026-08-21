@@ -70,9 +70,12 @@ def auth_capabilities(
     settings: Settings = Depends(get_settings),
 ) -> AuthCapabilitiesResponse:
     return AuthCapabilitiesResponse(
-        password_login_enabled=settings.app_environment.strip().lower()
-        == "development"
+        password_login_enabled=password_login_enabled(settings)
     )
+
+
+def password_login_enabled(settings: Settings) -> bool:
+    return settings.app_environment.strip().lower() in {"local", "development"}
 
 
 def require_legacy_test_route(request: Request) -> None:
@@ -132,7 +135,7 @@ def login(
     redis_client: "redis.Redis" = Depends(get_redis),
 ) -> AuthResponse:
     if (
-        settings.app_environment.strip().lower() != "development"
+        not password_login_enabled(settings)
         and not getattr(request.app.state, "legacy_identity_test_routes", False)
     ):
         raise ApiError(404, "NOT_FOUND")

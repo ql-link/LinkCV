@@ -3,12 +3,12 @@ const assert = require("node:assert/strict");
 const runtimeConfig = require("../config/runtime");
 const { resolveApiBaseUrl } = require("../config/env");
 
-test("release build requires an explicit HTTPS API base URL", () => {
+test("release build defaults to the LinkResume production origin", () => {
   global.wx = {
     getExtConfigSync: () => ({}),
     getAccountInfoSync: () => ({ miniProgram: { envVersion: "release" } }),
   };
-  assert.throws(resolveApiBaseUrl, /未配置小程序 API 地址/);
+  assert.equal(resolveApiBaseUrl(), "https://linkresume.cn");
 });
 
 test("ext config API URL wins and removes a trailing slash", () => {
@@ -24,12 +24,41 @@ test("static runtime config supports a standalone release build", () => {
     getExtConfigSync: () => ({}),
     getAccountInfoSync: () => ({ miniProgram: { envVersion: "release" } }),
   };
-  runtimeConfig.apiBaseUrl = "https://linkcv.example.test/api/";
+  const previous = runtimeConfig.productionApiBaseUrl;
+  runtimeConfig.productionApiBaseUrl = "https://linkcv.example.test/api/";
   try {
     assert.equal(resolveApiBaseUrl(), "https://linkcv.example.test/api");
   } finally {
-    runtimeConfig.apiBaseUrl = "";
+    runtimeConfig.productionApiBaseUrl = previous;
   }
+});
+
+test("develop build defaults to the local FastAPI origin", () => {
+  global.wx = {
+    getExtConfigSync: () => ({}),
+    getAccountInfoSync: () => ({ miniProgram: { envVersion: "develop" } }),
+  };
+  assert.equal(resolveApiBaseUrl(), "http://127.0.0.1:8000");
+});
+
+test("develop build accepts a device-local internal API URL override", () => {
+  global.wx = {
+    getExtConfigSync: () => ({}),
+    getStorageSync: (key) => key === "linkcv_api_base_url"
+      ? "http://192.168.1.23:8000/"
+      : "",
+    getAccountInfoSync: () => ({ miniProgram: { envVersion: "develop" } }),
+  };
+  assert.equal(resolveApiBaseUrl(), "http://192.168.1.23:8000");
+});
+
+test("release build ignores a device-local development override", () => {
+  global.wx = {
+    getExtConfigSync: () => ({}),
+    getStorageSync: () => "http://192.168.1.23:8000",
+    getAccountInfoSync: () => ({ miniProgram: { envVersion: "release" } }),
+  };
+  assert.equal(resolveApiBaseUrl(), "https://linkresume.cn");
 });
 
 test("release build rejects an insecure configured API URL", () => {

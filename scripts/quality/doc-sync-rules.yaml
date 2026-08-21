@@ -75,6 +75,7 @@ rules:
   - id: deployment-topology
     description: 构建或生产部署拓扑变化必须同步部署文档
     when_changed:
+      - .github/workflows/quality.yml
       - Dockerfile
       - Jenkinsfile
       - deploy/jenkins/**/*

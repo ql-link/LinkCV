@@ -38,7 +38,7 @@ export function ResumePreview({
       className={`resume-readonly-preview resume-readonly-preview-${mode}`}
       style={{
         "--preview-font-family": settings.fontFamily,
-        "--preview-font-size": `${settings.fontSize}px`,
+        "--preview-font-size": `${settings.fontSize}pt`,
         "--preview-line-height": String(settings.lineHeight),
         "--preview-accent": style.accent_color,
         "--preview-margin-x": `${style.page.margin_left_mm}mm`,

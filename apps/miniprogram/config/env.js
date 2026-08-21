@@ -7,25 +7,35 @@ function resolveApiBaseUrl() {
   const extApiBaseUrl = extConfig && typeof extConfig.apiBaseUrl === "string"
     ? extConfig.apiBaseUrl
     : "";
-  const staticApiBaseUrl = typeof runtimeConfig.apiBaseUrl === "string"
-    ? runtimeConfig.apiBaseUrl
-    : "";
-  const configured = (extApiBaseUrl || staticApiBaseUrl).trim().replace(/\/+$/, "");
-
   const account = typeof wx !== "undefined" && wx.getAccountInfoSync
     ? wx.getAccountInfoSync()
     : null;
   const envVersion = account && account.miniProgram
     ? account.miniProgram.envVersion
     : "develop";
+  const developmentOverride = envVersion === "develop"
+    && typeof wx !== "undefined"
+    && wx.getStorageSync
+    ? wx.getStorageSync("linkcv_api_base_url")
+    : "";
+  const defaultApiBaseUrl = envVersion === "develop"
+    ? runtimeConfig.developmentApiBaseUrl
+    : runtimeConfig.productionApiBaseUrl;
+  const configured = (
+    (typeof developmentOverride === "string" ? developmentOverride : "")
+    || extApiBaseUrl
+    || defaultApiBaseUrl
+    || ""
+  )
+    .trim()
+    .replace(/\/+$/, "");
   if (configured) {
     if (envVersion !== "develop" && !configured.startsWith("https://")) {
       throw new Error("体验版和正式版的小程序 API 地址必须使用 HTTPS");
     }
     return configured;
   }
-  if (envVersion === "develop") return "http://127.0.0.1:8000";
-  throw new Error("未配置小程序 API 地址");
+  throw new Error("未配置当前环境的小程序 API 地址");
 }
 
 module.exports = { resolveApiBaseUrl };

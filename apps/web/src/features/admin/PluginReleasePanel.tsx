@@ -1,6 +1,7 @@
 import { CheckCircle2, PackageOpen, RefreshCw, RotateCcw, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { FileUpload, type FileUploadHandle } from "@/components/ui";
 import {
   api,
   ApiRequestError,
@@ -22,7 +23,7 @@ export function PluginReleasePanel() {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [busy, setBusy] = useState<"publish" | "unpublish" | "reactivate" | "delete" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const fileUploadRef = useRef<FileUploadHandle>(null);
 
   const release = current.release;
   const hasPlugin = current.status !== "absent" && release !== null;
@@ -43,7 +44,6 @@ export function PluginReleasePanel() {
     setFile(null);
     setConfirmingUpload(false);
     setMessage(null);
-    if (inputRef.current) inputRef.current.value = "";
   };
 
   const chooseFile = (selected: File | undefined) => {
@@ -69,7 +69,6 @@ export function PluginReleasePanel() {
       setCurrent({ status: "published", release: result.release });
       setFile(null);
       setConfirmingUpload(false);
-      if (inputRef.current) inputRef.current.value = "";
       setMessage(result.cleanup_pending
         ? `v${result.release.version} 已更新，但旧版本安装包清理未完成，将在下次更新时重试。`
         : `v${result.release.version} 已${isUpdating ? "更新" : "上传并上架"}。`);
@@ -138,7 +137,7 @@ export function PluginReleasePanel() {
 
   const openFilePicker = () => {
     setMessage(null);
-    inputRef.current?.click();
+    fileUploadRef.current?.open();
   };
 
   return (
@@ -166,7 +165,18 @@ export function PluginReleasePanel() {
           </div>
         )}
 
-        <input ref={inputRef} className="plugin-file-input" aria-label="选择插件 ZIP" type="file" accept=".zip,application/zip" onChange={(event) => chooseFile(event.target.files?.[0])} />
+        <FileUpload
+          ref={fileUploadRef}
+          className="plugin-file-upload"
+          accept=".zip,application/zip"
+          inputLabel="选择插件 ZIP"
+          supportingText="支持 ZIP 插件安装包，最大 20 MB"
+          disabled={busy !== null}
+          file={file}
+          browseLabel={hasPlugin ? "选择更新包" : "浏览文件"}
+          replaceLabel="重新选择"
+          onFileSelect={chooseFile}
+        />
         {file && <div className="plugin-selected-file"><div><span>{file.name}</span><small>{formatSize(file.size)}</small></div><div className="plugin-selected-file-actions"><button className="admin-secondary-button" disabled={busy !== null} onClick={clearFile}>清除</button><button className="admin-primary-button" disabled={busy !== null} onClick={() => setConfirmingUpload(true)}>{isUpdating ? "确认更新" : "确认上传"}</button></div></div>}
         {message && <p className="plugin-admin-message" role="status">{message}</p>}
       </section>

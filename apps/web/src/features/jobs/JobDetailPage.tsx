@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Archive, ArrowLeft, ExternalLink, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { api, ApiRequestError, type JobDescriptionRecord } from "../../api/client";
-import { Button, ConfirmDialog } from "@/components/ui";
+import { Button, ConfirmDialog, PageLoading } from "@/components/ui";
 import { jobEditPath, navigateTo } from "../../routing";
 import "./jobs.css";
 
@@ -60,7 +60,7 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
   };
 
   if (loading) {
-    return <main className="dashboard-content job-page-shell"><div className="job-workspace-state">正在加载岗位…</div></main>;
+    return <main className="dashboard-content job-page-shell"><PageLoading label="正在加载岗位详情…" /></main>;
   }
   if (!job) {
     return (
@@ -74,12 +74,6 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
     );
   }
 
-  const companyFacts = compact([
-    job.company_legal_name,
-    job.company_industry,
-    job.company_size,
-    job.company_financing_stage,
-  ]);
   const workFacts = compact([
     job.work_city,
     job.work_address,
@@ -89,66 +83,93 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
 
   return (
     <main className="dashboard-content job-page-shell">
-      <header className="job-page-header">
-        <span className="job-page-context">JD 详情</span>
-        <Button variant="secondary" size="sm" icon={<ArrowLeft size={15} />} onClick={() => navigateTo("/jobs")}>返回列表</Button>
-      </header>
-
       <article className="job-detail">
-        <header className="job-detail-hero">
+        <div className="job-detail-topbar">
           <div>
-            <p className="job-eyebrow">{job.archived_at ? "已归档" : "活动岗位"}</p>
-            <h1>{job.job_title}</h1>
-            <p>{job.company_name}</p>
-            <div className="job-tag-row">
-              {job.salary_text && <span>{job.salary_text}</span>}
-              {workFacts.map((fact) => <span key={fact}>{fact}</span>)}
-              {job.employment_type && <span>{employmentLabel(job.employment_type)}</span>}
-            </div>
+            <p className="job-eyebrow">JD 详情</p>
+            <button type="button" className="job-back-link" onClick={() => navigateTo("/jobs")}>
+              <ArrowLeft size={14} />返回 JD 中心
+            </button>
           </div>
           <div className="job-detail-actions">
-            <Button variant="secondary" icon={job.archived_at ? <RotateCcw size={15} /> : <Archive size={15} />} disabled={busy} onClick={() => void changeArchived()}>
-              {job.archived_at ? "恢复" : "归档"}
+            <Button icon={job.archived_at ? <RotateCcw size={15} /> : <Archive size={15} />} disabled={busy} onClick={() => void changeArchived()}>
+              {job.archived_at ? "恢复岗位" : "归档岗位"}
             </Button>
-            <Button variant="secondary" icon={<Pencil size={15} />} disabled={busy} onClick={() => navigateTo(jobEditPath(job.id))}>编辑</Button>
-            {job.archived_at && <Button variant="destructive" icon={<Trash2 size={15} />} disabled={busy} onClick={() => setDeleteOpen(true)}>删除</Button>}
+            <Button variant="ghost" icon={<Pencil size={15} />} disabled={busy} onClick={() => navigateTo(jobEditPath(job.id))}>编辑</Button>
+            {job.archived_at && <Button variant="ghost" icon={<Trash2 size={15} />} disabled={busy} onClick={() => setDeleteOpen(true)}>删除</Button>}
           </div>
-        </header>
+        </div>
 
         {error && <div className="job-error" role="alert">{error}</div>}
 
-        <section className="job-detail-section">
-          <h2>职位描述</h2>
-          <div className="job-markdown">{job.description}</div>
-          {job.skills.length > 0 && <div className="job-skill-row">{job.skills.map((skill) => <span key={skill}>{skill}</span>)}</div>}
-        </section>
+        <header className="job-detail-hero">
+          <div className="job-detail-identity">
+            <span className={`job-status-badge${job.archived_at ? " is-archived" : ""}`}>{job.archived_at ? "已归档" : "活动岗位"}</span>
+            <h1>{job.job_title}</h1>
+            <p>{job.company_name}</p>
+          </div>
+          <dl className="job-detail-stats">
+            <div><dt>薪资</dt><dd>{job.salary_text || structuredSalary(job) || "未填写"}</dd></div>
+            <div><dt>工作城市</dt><dd>{job.work_city || "未填写"}</dd></div>
+            <div><dt>用工类型</dt><dd>{job.employment_type ? employmentLabel(job.employment_type) : "未填写"}</dd></div>
+          </dl>
+        </header>
 
-        <div className="job-detail-columns">
-          <section className="job-detail-section">
-            <h2>岗位要求</h2>
-            <DetailRow label="学历" value={job.education_requirement} />
-            <DetailRow label="经验" value={job.experience_requirement} />
-            <DetailRow label="工作安排" value={job.work_schedule} />
-            <DetailRow label="工作地点" value={workFacts.join(" · ") || null} />
-            <DetailRow label="结构化薪资" value={structuredSalary(job)} />
-          </section>
-          <section className="job-detail-section">
-            <h2>公司与招聘者</h2>
-            <DetailRow label="公司" value={companyFacts.join(" · ") || job.company_name} />
-            <DetailRow label="招聘者" value={compact([job.recruiter_name, job.recruiter_title]).join(" · ") || null} />
-            {job.company_description && <p className="job-long-copy">{job.company_description}</p>}
-          </section>
+        <div className="job-detail-layout">
+          <div className="job-detail-main">
+            <section className="job-detail-section">
+              <h2>职位描述</h2>
+              <div className="job-markdown">{job.description}</div>
+              {job.skills.length > 0 && (
+                <>
+                  <h3 className="job-detail-subhead">核心技能</h3>
+                  <div className="job-skill-row">{job.skills.map((skill, index) => <span key={skill} className={index === 0 ? "is-primary" : ""}>{skill}</span>)}</div>
+                </>
+              )}
+              <p className="job-section-footnote">优先级最高的阅读区：先确认岗位做什么，再判断自己是否匹配。</p>
+            </section>
+
+            <section className="job-detail-section">
+              <h2>岗位要求</h2>
+              <div className="job-fact-grid">
+                <div><span>学历</span><strong>{job.education_requirement || "未填写"}</strong></div>
+                <div><span>经验</span><strong>{job.experience_requirement || "未填写"}</strong></div>
+                <div><span>工作方式</span><strong>{workModeLabel(job.work_mode) ?? "未填写"}</strong></div>
+              </div>
+              <p className="job-section-footnote">仅在需要判断匹配度时展开的次级字段</p>
+              <DetailRow label="工作安排" value={job.work_schedule} />
+              <DetailRow label="工作地点" value={workFacts.join(" · ") || null} />
+              <DetailRow label="结构化薪资" value={structuredSalary(job)} />
+            </section>
+          </div>
+
+          <aside className="job-detail-rail">
+            <section className="job-detail-section">
+              <h2>公司与招聘者</h2>
+              <div className="job-fact-grid is-compact">
+                <div><span>行业</span><strong>{job.company_industry || "未填写"}</strong></div>
+                <div><span>规模</span><strong>{job.company_size || "未填写"}</strong></div>
+              </div>
+              <DetailRow label="公司" value={job.company_legal_name || job.company_name} />
+              <DetailRow label="融资阶段" value={job.company_financing_stage} />
+              <DetailRow label="招聘者" value={compact([job.recruiter_name, job.recruiter_title]).join(" · ") || null} />
+              {job.company_description && <p className="job-long-copy">{job.company_description}</p>}
+              {job.source_url && <a className="job-source-link" href={job.source_url} target="_blank" rel="noreferrer">查看企业快照 <ExternalLink size={13} /></a>}
+            </section>
+
+            <section className="job-detail-section">
+              <h2>来源与备注</h2>
+              <p className="job-source-summary">
+                {job.source_site ?? "手工创建"} · 更新于 {formatTime(job.updated_at)}
+              </p>
+              <DetailRow label="来源类型" value={job.source_type} />
+              <DetailRow label="来源标识" value={compact([job.source_site, job.source_job_id]).join(":") || null} />
+              <DetailRow label="导入时间" value={job.imported_at ? formatTime(job.imported_at) : null} />
+              {job.source_url && <a className="job-source-link" href={job.source_url} target="_blank" rel="noreferrer">打开来源链接 <ExternalLink size={13} /></a>}
+              {job.notes && <p className="job-long-copy">{job.notes}</p>}
+            </section>
+          </aside>
         </div>
-
-        <section className="job-detail-section job-source-panel">
-          <h2>来源信息（只读）</h2>
-          <DetailRow label="来源类型" value={job.source_type} />
-          <DetailRow label="来源标识" value={compact([job.source_site, job.source_job_id]).join(":") || null} />
-          <DetailRow label="导入时间" value={job.imported_at ? formatTime(job.imported_at) : null} />
-          {job.source_url && <a href={job.source_url} target="_blank" rel="noreferrer">打开来源链接 <ExternalLink size={14} /></a>}
-        </section>
-
-        {job.notes && <section className="job-detail-section"><h2>个人备注</h2><p className="job-long-copy">{job.notes}</p></section>}
       </article>
 
       {deleteOpen && (

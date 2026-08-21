@@ -6,6 +6,7 @@ export type AppRoute =
   | { kind: "admin" }
   | { kind: "adminLogin"; next: string | null }
   | { kind: "resumes" }
+  | { kind: "templates" }
   | { kind: "resumeCreate" }
   | { kind: "editor"; resumeId: string }
   | { kind: "jobs" }
@@ -32,7 +33,7 @@ function normalizePathname(pathname: string) {
 }
 
 export function isSafeAppPath(value: string | null) {
-  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && /^\/(?:resumes|jobs|account|datasets)(?:\/|$)/.test(value));
+  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && /^\/(?:resumes|templates|jobs|account|datasets)(?:\/|$)/.test(value));
 }
 
 export function isSafeAdminPath(value: string | null) {
@@ -47,7 +48,7 @@ export function isSafeAdminPath(value: string | null) {
 
 export function parseAppRoute(pathname: string, search = ""): AppRoute {
   const normalizedPath = normalizePathname(pathname);
-  if (normalizedPath === "/") return { kind: "landing" };
+  if (normalizedPath === "/" || normalizedPath === "/home") return { kind: "landing" };
   if (/^\/admin\/login(?:\/|$)/.test(normalizedPath)) {
     const params = new URLSearchParams(search);
     const next = params.get("next");
@@ -64,6 +65,7 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
     };
   }
   if (normalizedPath === "/resumes") return { kind: "resumes" };
+  if (normalizedPath === "/templates") return { kind: "templates" };
   if (normalizedPath === "/resumes/new") return { kind: "resumeCreate" };
   if (normalizedPath === "/jobs") return { kind: "jobs" };
   if (normalizedPath === "/jobs/new") return { kind: "jobCreate" };

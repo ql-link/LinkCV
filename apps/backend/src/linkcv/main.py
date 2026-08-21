@@ -20,7 +20,6 @@ from linkcv.core.mq.factory import build_mq_publisher
 from linkcv.core.redis import build_redis_client
 from linkcv.core.storage import AssetStorage
 from linkcv.integrations.document_converter import DocumentConverter
-from linkcv.integrations.docx_parse_runner import DocxParseRunner
 from linkcv.integrations.linkparse_client import LinkParseClient
 from linkcv.integrations.resume_structuring import LLMResumeStructuringClient
 from linkcv.integrations.wechat_client import WechatClient
@@ -135,9 +134,6 @@ def create_app(
                 timeout_seconds=runtime_settings.linkparse_timeout_seconds,
                 response_max_bytes=runtime_settings.linkparse_response_max_bytes,
                 markdown_max_bytes=runtime_settings.resume_markdown_max_bytes,
-            ),
-            docx_runner=DocxParseRunner(
-                timeout_seconds=runtime_settings.docx_conversion_timeout_seconds
             ),
             markdown_max_bytes=runtime_settings.resume_markdown_max_bytes,
         )

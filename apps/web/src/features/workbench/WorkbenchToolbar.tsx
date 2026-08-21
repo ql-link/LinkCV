@@ -318,7 +318,7 @@ export function WorkbenchToolbar({ editor, resumeId, onNotice }: { editor: Edito
     };
   }, [editor]);
 
-  if (!editor) return <div className="workbench-toolbar" />;
+  if (!editor) return null;
   return (
     <div className="workbench-toolbar" role="toolbar" aria-label="简历格式工具栏">
       <ToolButton label="撤销" disabled={!editor.can().undo()} onClick={() => editor.chain().focus().undo().run()}><Undo2 size={15} /></ToolButton>

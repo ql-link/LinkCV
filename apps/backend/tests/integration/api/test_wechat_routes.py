@@ -89,43 +89,44 @@ def test_retired_public_identity_routes_are_absent_outside_test_scaffolding() ->
         assert "/api/account/wechat/bind-request" not in paths
 
 
-def test_development_environment_allows_password_login_but_not_registration() -> None:
-    settings = Settings(
-        app_environment="development",
-        database_url="sqlite+pysqlite:///:memory:",
-        jwt_secret="integration-test-secret-with-32-bytes",
-    )
-    app = create_app(
-        settings,
-        storage=FakeStorage(),
-        redis=FakeRedis(),
-        create_schema=True,
-    )
-    app.state.legacy_identity_test_routes = False
-    with app.state.session_factory() as session:
-        session.add(
-            User(
-                email="developer@example.test",
-                password_hash=hash_password("password-123"),
-                nickname="开发用户",
+def test_local_and_development_allow_password_login_but_not_registration() -> None:
+    for app_environment in ("local", "development"):
+        settings = Settings(
+            app_environment=app_environment,
+            database_url="sqlite+pysqlite:///:memory:",
+            jwt_secret="integration-test-secret-with-32-bytes",
+        )
+        app = create_app(
+            settings,
+            storage=FakeStorage(),
+            redis=FakeRedis(),
+            create_schema=True,
+        )
+        app.state.legacy_identity_test_routes = False
+        with app.state.session_factory() as session:
+            session.add(
+                User(
+                    email="developer@example.test",
+                    password_hash=hash_password("password-123"),
+                    nickname="开发用户",
+                )
             )
-        )
-        session.commit()
+            session.commit()
 
-    with TestClient(app) as client:
-        assert client.get("/api/auth/capabilities").json() == {
-            "password_login_enabled": True
-        }
-        login = client.post(
-            "/api/auth/login",
-            json={"email": "developer@example.test", "password": "password-123"},
-        )
-        assert login.status_code == 200
-        assert login.json()["user"]["email"] == "developer@example.test"
-        assert client.post(
-            "/api/auth/register",
-            json={"email": "new@example.test", "password": "password-123"},
-        ).status_code == 404
+        with TestClient(app) as client:
+            assert client.get("/api/auth/capabilities").json() == {
+                "password_login_enabled": True
+            }
+            login = client.post(
+                "/api/auth/login",
+                json={"email": "developer@example.test", "password": "password-123"},
+            )
+            assert login.status_code == 200
+            assert login.json()["user"]["email"] == "developer@example.test"
+            assert client.post(
+                "/api/auth/register",
+                json={"email": "new@example.test", "password": "password-123"},
+            ).status_code == 404
 
 
 def create_qrcode(client: TestClient) -> tuple[str, str, str]:
@@ -322,7 +323,11 @@ def test_miniprogram_session_rotates_and_rejects_web_carrier() -> None:
             "/api/auth/me",
             headers={"Authorization": f"Bearer {body['access_token']}"},
         )
-        assert me.json()["user"]["id"] == body["user"]["id"]
+        assert me.json() == {"user": None}
+        assert client.get(
+            "/api/miniprogram/resumes",
+            headers={"Authorization": f"Bearer {body['access_token']}"},
+        ).status_code == 200
 
         refreshed = client.post(
             "/api/auth/wechat/miniprogram/refresh",

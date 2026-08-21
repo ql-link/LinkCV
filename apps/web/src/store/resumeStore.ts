@@ -24,8 +24,9 @@ import {
 import { defaultResumeDocument } from "../features/workbench/defaultDocument";
 import { defaultResumeMarkdown } from "../parser/defaultResume";
 import { renderResumeMarkdown } from "../parser/resumeMarkdown";
+import { buildNamedImportFile } from "../lib/resumeImport";
 
-export type ResumeTheme = "classic" | "modern" | "compact";
+export type ResumeTheme = "classic" | "modern" | "compact" | "classic-technical";
 
 export type ResumeSettings = {
   fontFamily: string;
@@ -39,7 +40,7 @@ export type ResumeSettings = {
 };
 
 export const resumeSerifFontStack =
-  '"Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", STSong, SimSun, serif';
+  '"Source Han Serif SC", "Songti SC", STSong, SimSun, serif';
 
 type AuthStatus = "checking" | "guest" | "authenticated";
 type SaveStatus = "idle" | "saving" | "saved" | "error";
@@ -75,13 +76,16 @@ type ResumeState = {
   syncProfile: (user: UserProfile) => void;
   listResumes: () => Promise<void>;
   createResume: (title: string, templateId: string) => Promise<string>;
-  importResume: (file: File, templateId: string) => Promise<string>;
+  importResume: (file: File, templateId: string, title?: string) => Promise<string>;
+  pollResumeImport: (id: string) => Promise<void>;
   loadResume: (id: string) => Promise<void>;
+  renameResume: (id: string, title: string) => Promise<void>;
   deleteResume: (id: string) => Promise<void>;
   deleteResumeImport: (id: string) => Promise<void>;
   saveCurrentResume: () => Promise<void>;
   loadVersions: () => Promise<void>;
-  createVersion: () => Promise<void>;
+  createVersion: (name?: string) => Promise<void>;
+  renameVersion: (versionNo: number, name: string) => Promise<void>;
   deleteVersion: (versionNo: number) => Promise<void>;
   restoreVersion: (versionNo: number) => Promise<void>;
   goHome: () => void;
@@ -108,6 +112,31 @@ type SaveSnapshot = {
 };
 
 let saveQueue: Promise<void> = Promise.resolve();
+
+function createImportIdempotencyKey(): string {
+  const nativeUuid = globalThis.crypto?.randomUUID?.();
+  if (nativeUuid) return nativeUuid;
+
+  const bytes = new Uint8Array(16);
+  if (globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"));
+  return [
+    hex.slice(0, 4).join(""),
+    hex.slice(4, 6).join(""),
+    hex.slice(6, 8).join(""),
+    hex.slice(8, 10).join(""),
+    hex.slice(10).join(""),
+  ].join("-");
+}
 
 export const defaultSettings: ResumeSettings = {
   fontFamily: resumeSerifFontStack,
@@ -303,11 +332,12 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     return resume.id;
   },
 
-  importResume: async (file, templateId) => {
-    const idempotencyKey = crypto.randomUUID();
+  importResume: async (file, templateId, title) => {
+    const idempotencyKey = createImportIdempotencyKey();
+    const importFile = title === undefined ? file : buildNamedImportFile(file, title);
     try {
       const { import: importTask } = await api.importResume(
-        file,
+        importFile,
         templateId,
         idempotencyKey,
       );
@@ -337,9 +367,64 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     }
   },
 
+  pollResumeImport: async (id) => {
+    const current = get().activeImports.find((item) => item.id === id);
+    if (
+      current?.upload_status !== "succeeded"
+      || current.parse_status !== "processing"
+    ) {
+      return;
+    }
+    const { import: importTask } = await api.getResumeImport(id);
+    if (importTask.parse_status === "processing") {
+      set((state) => ({
+        activeImports: state.activeImports.map((item) => (
+          item.id === importTask.id ? importTask : item
+        )),
+      }));
+      return;
+    }
+    if (importTask.parse_status === "failed" || importTask.upload_status === "failed") {
+      set((state) => ({
+        activeImports: state.activeImports.filter((item) => item.id !== importTask.id),
+        failedImports: [
+          importTask,
+          ...state.failedImports.filter((item) => item.id !== importTask.id),
+        ],
+      }));
+      return;
+    }
+    if (importTask.parse_status === "succeeded") {
+      const overview = await api.getResumeOverview();
+      set({
+        resumes: overview.resumes,
+        activeImports: overview.active_imports,
+        failedImports: overview.failed_imports,
+      });
+    }
+  },
+
   loadResume: async (id) => {
     const { resume } = await api.getResume(id);
     set({ versions: [], ...applyResume(resume) });
+  },
+
+  renameResume: async (id, title) => {
+    const current = get().resumes.find((resume) => resume.id === id);
+    if (!current) throw new Error("RESUME_NOT_FOUND");
+    const { resume } = await api.updateResume(id, {
+      title,
+      base_lock_version: current.lock_version,
+    });
+    set((state) => {
+      const resumes = mergeResumeSummary(state.resumes, resume);
+      if (state.activeResumeId !== id) return { resumes };
+      return {
+        resumes,
+        title: resume.title,
+        lockVersion: resume.lock_version,
+      };
+    });
   },
 
   deleteResume: async (id) => {
@@ -371,7 +456,12 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     const requestedResumeId = get().activeResumeId;
     const queuedSave = saveQueue.then(async () => {
       const state = get();
-      if (!state.activeResumeId || state.activeResumeId !== requestedResumeId || !state.dirty) return;
+      if (
+        !state.activeResumeId
+        || state.activeResumeId !== requestedResumeId
+        || !state.dirty
+        || state.versionOperationPending
+      ) return;
       const snapshot: SaveSnapshot = {
         activeResumeId: state.activeResumeId,
         lockVersion: state.lockVersion,
@@ -442,11 +532,11 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     }
   },
 
-  createVersion: async () => {
+  createVersion: async (name) => {
     const resumeId = get().activeResumeId;
     if (!resumeId) return;
     try {
-      const { version } = await api.createVersion(resumeId);
+      const { version } = await api.createVersion(resumeId, name);
       if (get().activeResumeId === resumeId) {
         set((state) => ({
           versions: [version, ...state.versions.filter((item) => item.id !== version.id)],
@@ -458,6 +548,25 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
         if (get().activeResumeId === resumeId) set({ versions });
       } catch {
         // The version already exists; a failed refresh must not invite a duplicate retry.
+      }
+    } catch (error) {
+      set({ error: (error as Error).message });
+      throw error;
+    }
+  },
+
+  renameVersion: async (versionNo, name) => {
+    const resumeId = get().activeResumeId;
+    if (!resumeId) return;
+    try {
+      const { version } = await api.renameVersion(resumeId, versionNo, name);
+      if (get().activeResumeId === resumeId) {
+        set((state) => ({
+          versions: state.versions.map((item) => (
+            item.version_no === version.version_no ? version : item
+          )),
+          error: null,
+        }));
       }
     } catch (error) {
       set({ error: (error as Error).message });
@@ -492,8 +601,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     if (!resumeId) return;
     set({ versionOperationPending: true, error: null });
     try {
-      if (get().dirty) await get().saveCurrentResume();
-      if (get().error) throw new Error(get().error ?? "RESUME_SAVE_FAILED");
+      await saveQueue;
       const localState = get();
       const { resume } = await api.restoreVersion(resumeId, versionNo);
       if (get().activeResumeId === resumeId) {

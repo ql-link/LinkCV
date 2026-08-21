@@ -15,24 +15,25 @@
 1. 打开微信开发者工具，选择“导入项目”。
 2. 项目目录选择本目录 `apps/miniprogram`，不要选择仓库根目录。
 3. AppID 使用 `project.config.json` 中的项目 AppID；如果实际发布主体不同，先替换为该主体的小程序 AppID。
-4. 本地联调默认访问 `http://127.0.0.1:8000`。开发者工具中需要临时关闭“校验合法域名、web-view（业务域名）、TLS 版本以及 HTTPS 证书”。
+4. 开发版默认访问 `http://127.0.0.1:8000`。后端在其他内网地址时，在开发者工具控制台执行 `wx.setStorageSync("linkcv_api_base_url", "http://<内网地址>:8000")`，重新进入小程序即可；该覆盖只在 `develop` 生效，不需要修改受版本控制的文件。开发者工具中还需临时关闭“校验合法域名、web-view（业务域名）、TLS 版本以及 HTTPS 证书”。
 5. 启动后端并配置与小程序 AppID 配对的 `WECHAT_APPID` 和 `WECHAT_SECRET`，再测试自动登录、扫码确认和简历读取。
 
 ## 体验版与正式版
 
-发布前修改 `config/runtime.js`：
+`config/runtime.js` 已按运行环境拆分地址：
 
 ```js
 module.exports = {
-  apiBaseUrl: "https://你的-api-域名",
+  developmentApiBaseUrl: "http://127.0.0.1:8000",
+  productionApiBaseUrl: "https://linkresume.cn",
 };
 ```
 
-该地址是小程序包内公开的 API 根地址，不是密钥。体验版和正式版会拒绝 HTTP 地址。`WECHAT_SECRET` 只能保存在后端私密环境中，禁止写入本目录。
+该地址是小程序包内公开的 API 根地址，不是密钥。体验版和正式版忽略开发者工具中的本地存储覆盖，并拒绝 HTTP 地址。通过第三方平台代开发时也可以用 ext config 的 `apiBaseUrl` 覆盖默认地址；普通开发者工具联调优先使用上面的本地存储方式。`WECHAT_SECRET` 只能保存在后端私密环境中，禁止写入本目录。
 
 还必须在微信公众平台完成：
 
-1. 把 API 主机登记为 request 合法域名，并保证公网 HTTPS 证书有效。
+1. 把 `https://linkresume.cn` 登记为 request 合法域名，并保证公网 HTTPS 证书有效。
 2. 确认后端 `WECHAT_APPID/WECHAT_SECRET` 与待发布小程序完全匹配。
 3. 配置小程序名称、图标、服务类目、用户隐私保护指引和必要的用户协议。
 4. 上传体验版，使用真实微信完成直接打开、自动建号、扫码确认、扫码取消、会话续期、本人简历和越权详情测试。

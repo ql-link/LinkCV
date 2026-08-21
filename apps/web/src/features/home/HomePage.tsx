@@ -1,64 +1,35 @@
-import { useEffect, useMemo, useState } from "react";
-import { FileUp, PenLine, Plus, Search, Share2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { ExternalLink, FileUp, MoreHorizontal, Pencil, Plus, Share2, Trash2 } from "lucide-react";
 import {
-  ApiRequestError,
   type ResumeImportSummary,
   type ResumeSummary,
-  type ResumeTemplate,
 } from "../../api/client";
 import {
   Button,
   ConfirmDialog,
+  ExpandableSearch,
   FeedbackNotice,
+  PageLoading,
 } from "@/components/ui";
 import { useResumeStore } from "../../store/resumeStore";
 import { editorPath, navigateTo } from "../../routing";
 import { ResumePreview } from "../preview/ResumePreview";
+import { WorkspacePageHero } from "../../components/WorkspaceLayout";
+import { RenameResumeDialog } from "./RenameResumeDialog";
 import { SharePanel } from "./SharePanel";
-import { TemplatePicker } from "./TemplatePicker";
+import { ResumeImportDialog } from "./ResumeImportDialog";
 
 type HomeScreenProps = {
-  view?: "all" | "templates";
+  loading?: boolean;
   resumes: ResumeSummary[];
   activeImports: ResumeImportSummary[];
   failedImports: ResumeImportSummary[];
   onOpen: (id: string) => void | Promise<void>;
+  onRename: (id: string, title: string) => void | Promise<void>;
   onDelete: (id: string) => void | Promise<void>;
   onCreate: () => void | Promise<void>;
-  onImport: (file: File, templateId: string) => Promise<string>;
   onDeleteImport: (id: string) => void | Promise<void>;
 };
-
-function importErrorMessage(error: unknown) {
-  if (!(error instanceof ApiRequestError)) return "导入请求失败，请检查网络后重试。";
-  const messages: Record<string, string> = {
-    RESUME_LIMIT_REACHED: "每个账号最多保存 10 份简历，请先删除一份后再导入。",
-    TEMPLATE_INACTIVE: "所选模板已停用或不可用，请重新选择。",
-    EMPTY_IMPORT_FILE: "文件为空，请重新选择。",
-    IMPORT_FILE_TOO_LARGE: "文件过大，最大支持 10 MB。",
-    UNSUPPORTED_IMPORT_FORMAT: "仅支持 Markdown、DOCX 和 PDF 文件。",
-    INVALID_IMPORT_FILENAME: "文件名无效，请重新选择。",
-    IMPORT_CONTENT_INVALID: "文件内容无法读取，请重新选择。",
-    STRUCTURING_INPUT_TOO_LARGE: "转换后的简历内容过长，暂时无法结构化。",
-    IMPORT_RATE_LIMITED: "导入请求过于频繁，请稍后重试。",
-    IMPORT_ALREADY_PROCESSING: "这份简历正在导入，请等待当前请求完成。",
-    IDEMPOTENCY_KEY_REUSED: "本次导入标识已被使用，请重新选择文件后再试。",
-    IMPORT_IDEMPOTENCY_UNAVAILABLE: "导入保护服务暂时不可用，请稍后重试。",
-    IMPORT_ACCEPTANCE_IN_PROGRESS: "导入正在受理，请稍后刷新查看。",
-    IMPORT_PREVIOUSLY_FAILED: "这次导入已经失败，请删除失败记录后重新上传。",
-    RESUME_SOURCE_UPLOAD_FAILED: "源文件上传失败，请稍后重试。",
-    RESUME_IMPORT_QUEUE_UNAVAILABLE: "解析队列暂时不可用，失败记录已保留。",
-    DOCUMENT_CONVERSION_UNAVAILABLE: "文档解析服务暂时不可用，请稍后重试。",
-    DOCUMENT_CONVERSION_TIMEOUT: "文档解析超时，请稍后重新导入。",
-    DOCUMENT_CONVERSION_FAILED: "文档解析失败，请检查文件内容后重试。",
-    STRUCTURING_MODEL_UNAVAILABLE: "内容结构化模型未配置或凭据不可用，请联系管理员配置后重试。",
-    STRUCTURING_MODEL_FAILED: "内容结构化失败，请稍后重试。",
-    RESUME_STRUCTURE_INVALID: "文件已解析，但生成的简历结构无效，请检查内容后重试。",
-    IMPORT_CREATE_FAILED: "正式简历创建失败，请稍后重试。",
-    IMPORT_DEADLINE_EXCEEDED: "导入处理超时，请稍后重新导入。",
-  };
-  return messages[error.message] ?? `导入失败（${error.message}），请稍后重试。`;
-}
 
 function importFailureStatus(task: ResumeImportSummary) {
   const uploadFailed = task.upload_status === "failed";
@@ -69,19 +40,136 @@ function importFailureStatus(task: ResumeImportSummary) {
   return `${stage} · ${(durationMs / 1000).toFixed(1)} 秒`;
 }
 
+function ImportTaskCard({
+  task,
+  failed = false,
+  deleting = false,
+  deleteDisabled = false,
+  onDelete,
+}: {
+  task: ResumeImportSummary;
+  failed?: boolean;
+  deleting?: boolean;
+  deleteDisabled?: boolean;
+  onDelete?: () => void;
+}) {
+  const stage = task.upload_status === "uploading" ? "正在上传" : "正在解析";
+
+  return (
+    <article
+      className={`home-import-card${failed ? " home-import-card-failed" : ""}`}
+      aria-label={`导入任务 ${task.source_filename}`}
+    >
+      <div className="home-import-preview">
+        <div className="home-import-document" aria-hidden="true">
+          <span className="home-import-document-title" />
+          <span />
+          <span />
+          <span className="is-short" />
+          <span className="home-import-document-heading" />
+          <span />
+          <span />
+          <span className="is-short" />
+          <span className="home-import-document-heading" />
+          <span />
+          <span className="is-short" />
+        </div>
+        <div className="home-import-state">
+          <span className="home-import-state-label">未完成</span>
+          {!failed && (
+            <div
+              className="home-import-progress"
+              role="progressbar"
+              aria-label={`${task.source_filename} ${stage}`}
+              aria-valuetext={`${stage}，暂时无法估算完成时间`}
+            >
+              <span />
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="home-import-meta">
+        <strong title={task.source_filename}>{task.source_filename}</strong>
+        <small>{failed ? importFailureStatus(task) : `${stage} · 请稍候`}</small>
+        {failed && onDelete && (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={deleteDisabled}
+            aria-label={`删除失败记录 ${task.source_filename}`}
+            onClick={onDelete}
+          >
+            {deleting ? "正在删除…" : "删除记录"}
+          </Button>
+        )}
+      </div>
+    </article>
+  );
+}
+
 function ResumeThumbnailCard({
   resume,
   onOpen,
   onDelete,
   onShare,
+  onRename,
   deleteDisabled = false,
 }: {
   resume: Pick<ResumeSummary, "id" | "title" | "updated_at" | "preview">;
   onOpen: () => void;
   onDelete?: () => void;
   onShare?: () => void;
+  onRename?: () => void;
   deleteDisabled?: boolean;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        menuTriggerRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePress);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePress);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    menuRef.current?.querySelector<HTMLButtonElement>("[role='menuitem']:not(:disabled)")?.focus();
+  }, [menuOpen]);
+
+  const handleMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not(:disabled)") ?? []);
+    if (!items.length) return;
+    if (event.key === "Home") return items[0].focus();
+    if (event.key === "End") return items[items.length - 1].focus();
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+    const direction = event.key === "ArrowDown" ? 1 : -1;
+    const nextIndex = currentIndex < 0
+      ? direction > 0 ? 0 : items.length - 1
+      : (currentIndex + direction + items.length) % items.length;
+    items[nextIndex].focus();
+  };
+
+  const runMenuAction = (action?: () => void) => {
+    setMenuOpen(false);
+    action?.();
+  };
+
   return (
     <article className="home-resume-card">
       <button className="home-card-open" type="button" onClick={onOpen}>
@@ -92,89 +180,103 @@ function ResumeThumbnailCard({
             <span className="home-preview-unavailable">预览不可用</span>
           )}
         </span>
-        <span className="home-card-meta">
-          <strong>{resume.title}</strong>
-          <small>更新于 {formatTime(resume.updated_at)}</small>
-        </span>
       </button>
-      {onShare && (
+      <div className="home-card-menu" ref={menuRef}>
         <button
-          className="home-card-share"
+          ref={menuTriggerRef}
+          className="home-card-menu-trigger"
           type="button"
-          aria-label={`分享简历 ${resume.title}`}
-          title="分享简历"
-          onClick={onShare}
+          aria-label={`更多简历操作 ${resume.title}`}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((open) => !open)}
         >
-          <Share2 size={14} />
+          <MoreHorizontal size={16} aria-hidden="true" />
         </button>
-      )}
-      {onDelete && (
-        <button
-          className="home-card-delete"
-          type="button"
-          aria-label={`删除简历 ${resume.title}`}
-          title="删除简历"
-          disabled={deleteDisabled}
-          onClick={onDelete}
-        >
-          <X size={14} />
-        </button>
-      )}
+        {menuOpen && (
+          <div
+            className="home-card-menu-panel"
+            role="menu"
+            aria-label={`${resume.title} 操作菜单`}
+            onKeyDown={handleMenuKeyDown}
+          >
+            {onRename && (
+              <button type="button" role="menuitem" onClick={() => runMenuAction(onRename)}>
+                <Pencil size={15} aria-hidden="true" />重命名
+              </button>
+            )}
+            {onShare && (
+              <button type="button" role="menuitem" onClick={() => runMenuAction(onShare)}>
+                <Share2 size={15} aria-hidden="true" />分享链接
+              </button>
+            )}
+            {onDelete && (
+              <button
+                className="is-danger"
+                type="button"
+                role="menuitem"
+                disabled={deleteDisabled}
+                onClick={() => runMenuAction(onDelete)}
+              >
+                <Trash2 size={15} aria-hidden="true" />删除
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="home-card-meta">
+        <strong>{resume.title}</strong>
+        <small>更新于 {formatTime(resume.updated_at)}</small>
+        <div className="home-card-actions">
+          <button className="home-card-action is-primary" type="button" onClick={onOpen}>
+            <ExternalLink size={14} />打开
+          </button>
+        </div>
+      </div>
     </article>
   );
 }
 
 export function HomeScreen({
-  view = "all",
+  loading = false,
   resumes,
   activeImports,
   failedImports,
   onOpen,
+  onRename,
   onDelete,
   onCreate,
-  onImport,
   onDeleteImport,
 }: HomeScreenProps) {
   const [query, setQuery] = useState("");
   const [pendingDelete, setPendingDelete] = useState<ResumeSummary | null>(null);
+  const [pendingRename, setPendingRename] = useState<ResumeSummary | null>(null);
   const [sharingResume, setSharingResume] = useState<ResumeSummary | null>(null);
   const [deletingResumeId, setDeletingResumeId] = useState<string | null>(null);
+  const [renamingResumeId, setRenamingResumeId] = useState<string | null>(null);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState<ResumeTemplate | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [importError, setImportError] = useState<string | null>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [notice, setNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
 
   const visibleResumes = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     return resumes.filter((resume) => resume.title.toLocaleLowerCase().includes(normalizedQuery));
   }, [query, resumes]);
+  const visibleImports = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    return [
+      ...activeImports.map((task) => ({ task, failed: false })),
+      ...failedImports.map((task) => ({ task, failed: true })),
+    ].filter(({ task }) => task.source_filename.toLocaleLowerCase().includes(normalizedQuery));
+  }, [activeImports, failedImports, query]);
+  const visibleCardCount = visibleImports.length + visibleResumes.length;
 
   useEffect(() => {
     if (!notice) return;
     const timer = window.setTimeout(() => setNotice(null), 5000);
     return () => window.clearTimeout(timer);
   }, [notice]);
-
-  const submitImport = async () => {
-    if (!selectedFile || !selectedTemplate || importing) return;
-    setImporting(true);
-    setImportError(null);
-    setNotice(null);
-    try {
-      await onImport(selectedFile, selectedTemplate.id);
-      setImportOpen(false);
-      setSelectedFile(null);
-      setSelectedTemplate(null);
-      setNotice({ kind: "success", message: "文件已上传，正在后台解析。" });
-    } catch (error) {
-      setImportError(importErrorMessage(error));
-    } finally {
-      setImporting(false);
-    }
-  };
 
   const confirmDelete = async () => {
     if (!pendingDelete || deletingResumeId) return;
@@ -188,6 +290,26 @@ export function HomeScreen({
     } finally {
       setDeletingResumeId(null);
       setPendingDelete(null);
+    }
+  };
+
+  const confirmRename = async (title: string) => {
+    if (!pendingRename || renamingResumeId) return;
+    const resume = pendingRename;
+    if (title === resume.title) {
+      setPendingRename(null);
+      return;
+    }
+    setRenamingResumeId(resume.id);
+    setRenameError(null);
+    try {
+      await onRename(resume.id, title);
+      setNotice({ kind: "success", message: `已将简历重命名为“${title}”。` });
+      setPendingRename(null);
+    } catch {
+      setRenameError("保存名称失败，请刷新列表后重试。");
+    } finally {
+      setRenamingResumeId(null);
     }
   };
 
@@ -205,87 +327,97 @@ export function HomeScreen({
   };
 
   return (
-    <main className="dashboard-content">
-      <header className="dashboard-header">
-        <h1>{view === "all" ? "全部简历" : "模板"}</h1>
-        {view === "all" && (
-          <div className="dashboard-header-actions">
-            <label className="dashboard-search">
-              <Search size={14} aria-hidden="true" />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索简历" />
-            </label>
+    <main className="dashboard-content home-dashboard-content">
+      <WorkspacePageHero
+        eyebrow="求职工作台"
+        title="全部简历"
+        actions={
+          <>
+            <ExpandableSearch
+              label="搜索简历"
+              name="resume-search"
+              value={query}
+              onValueChange={setQuery}
+              placeholder="搜索简历…"
+            />
             <Button
-              variant="secondary"
-              size="sm"
-              icon={<FileUp size={14} />}
-              onClick={() => {
-                setImportError(null);
-                setImportOpen(true);
-              }}
+              variant="ghost"
+              icon={<FileUp size={15} />}
+              onClick={() => setImportDialogOpen(true)}
             >
               导入简历
             </Button>
-            <Button size="sm" icon={<Plus size={14} />} onClick={() => void onCreate()}>
+            <Button
+              className="dashboard-create"
+              variant="outline"
+              icon={<Plus size={15} />}
+              onClick={() => void onCreate()}
+            >
               新建简历
             </Button>
-          </div>
-        )}
-      </header>
+          </>
+        }
+      />
 
-      <div className="dashboard-main">
-        {(activeImports.length > 0 || failedImports.length > 0) && (
-          <section className="home-import-task-list" aria-label="导入任务">
-            {activeImports.map((task) => (
-              <article className="home-import-task" key={task.id}>
-                <div>
-                  <strong>{task.source_filename}</strong>
-                  <small>
-                    {task.upload_status === "uploading" ? "正在上传" : "正在解析"}
-                  </small>
-                </div>
-                <span aria-label="导入处理中">处理中</span>
-              </article>
-            ))}
-            {failedImports.map((task) => (
-              <article className="home-import-task home-import-task-failed" key={task.id}>
-                <div>
-                  <strong>{task.source_filename}</strong>
-                  <small>{importFailureStatus(task)}</small>
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={deletingImportId !== null}
-                  onClick={() => void deleteFailedImport(task)}
-                >
-                  {deletingImportId === task.id ? "正在删除…" : "删除记录"}
-                </Button>
-              </article>
-            ))}
-          </section>
-        )}
-        {visibleResumes.length > 0 ? (
-          <section className="home-card-grid" aria-label="全部简历">
-            {visibleResumes.map((resume) => (
-              <ResumeThumbnailCard
-                key={resume.id}
-                resume={resume}
-                onOpen={() => void onOpen(resume.id)}
-                onShare={() => setSharingResume(resume)}
-                onDelete={() => setPendingDelete(resume)}
-                deleteDisabled={deletingResumeId !== null}
-              />
-            ))}
-          </section>
-        ) : (
-          <section className="dashboard-empty-state">
-            <PenLine size={48} strokeWidth={1.2} />
+      {loading ? (
+        <PageLoading label="正在加载我的简历…" />
+      ) : (
+        <div className="dashboard-main">
+          {visibleCardCount > 0 ? (
+            <>
+              <section className="home-card-grid" aria-label="全部简历">
+              {visibleImports.map(({ task, failed }) => (
+                <ImportTaskCard
+                  task={task}
+                  key={task.id}
+                  failed={failed}
+                  deleting={deletingImportId === task.id}
+                  deleteDisabled={deletingImportId !== null}
+                  onDelete={failed ? () => void deleteFailedImport(task) : undefined}
+                />
+              ))}
+              {visibleResumes.map((resume) => (
+                <ResumeThumbnailCard
+                  key={resume.id}
+                  resume={resume}
+                  onOpen={() => void onOpen(resume.id)}
+                  onShare={() => setSharingResume(resume)}
+                  onRename={() => {
+                    setRenameError(null);
+                    setPendingRename(resume);
+                  }}
+                  onDelete={() => setPendingDelete(resume)}
+                  deleteDisabled={deletingResumeId !== null}
+                />
+              ))}
+              </section>
+            </>
+          ) : (
+            <section className="dashboard-empty-state">
+            <span className="empty-state-icon" aria-hidden="true"><Plus size={28} strokeWidth={1.6} /></span>
             <h2>{query ? "没有匹配的简历" : "还没有正式简历"}</h2>
-            <p>{query ? "换个关键词试试。" : "从空白模板或其他模板创建第一份简历。"}</p>
-            {!query && <Button icon={<Plus size={16} />} onClick={() => void onCreate()}>创建第一份简历</Button>}
-          </section>
-        )}
-      </div>
+            <p>
+              {query
+                ? "换个关键词试试。"
+                : "从空白模板创建，或导入一份已有文件作为起点。之后可以复制出不同岗位版本，分别维护和分享。"}
+            </p>
+            {!query && (
+              <div className="empty-state-actions">
+                <Button icon={<Plus size={15} />} onClick={() => void onCreate()}>创建第一份简历</Button>
+                <Button
+                  variant="outline"
+                  icon={<FileUp size={15} />}
+                  onClick={() => setImportDialogOpen(true)}
+                >
+                  导入简历
+                </Button>
+              </div>
+            )}
+            {!query && <small className="empty-state-hint">建议：先完成一份基础版，再为不同岗位复制出定向版本。</small>}
+            </section>
+          )}
+        </div>
+      )}
 
       {notice && <div className="home-action-toast"><FeedbackNotice kind={notice.kind}>{notice.message}</FeedbackNotice></div>}
       {pendingDelete && (
@@ -300,63 +432,18 @@ export function HomeScreen({
           onConfirm={confirmDelete}
         />
       )}
-      {importOpen && (
-        <div className="template-preview-backdrop" role="dialog" aria-modal="true" aria-label="导入简历">
-          <div className="home-import-dialog">
-            <header>
-              <div><h2>导入简历</h2><p>先选择模板，再上传需要解析的文件。</p></div>
-              <button
-                type="button"
-                aria-label="关闭"
-                disabled={importing}
-                onClick={() => {
-                  setImportError(null);
-                  setImportOpen(false);
-                }}
-              ><X size={18} /></button>
-            </header>
-            <TemplatePicker
-              selectedTemplateId={selectedTemplate?.id ?? null}
-              onSelect={(template) => {
-                setSelectedTemplate(template);
-                setImportError(null);
-              }}
-            />
-            <label className="home-import-file">
-              <span>{selectedFile ? selectedFile.name : "选择 Markdown、DOCX 或 PDF 文件"}</span>
-              <input
-                className="visually-hidden"
-                type="file"
-                accept=".md,.docx,.pdf,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                onChange={(event) => {
-                  setSelectedFile(event.currentTarget.files?.[0] ?? null);
-                  setImportError(null);
-                }}
-              />
-              <span className="home-import-file-action">{selectedFile ? "重新选择" : "选择文件"}</span>
-            </label>
-            {importError && <p className="home-import-error" role="alert">{importError}</p>}
-            <footer>
-              <Button
-                variant="secondary"
-                disabled={importing}
-                onClick={() => {
-                  setImportError(null);
-                  setImportOpen(false);
-                }}
-              >取消</Button>
-              <Button
-                aria-busy={importing}
-                disabled={!selectedTemplate || !selectedFile || importing}
-                onClick={() => void submitImport()}
-              >
-                {importing ? "正在导入…" : "开始导入"}
-              </Button>
-            </footer>
-          </div>
-        </div>
+      {pendingRename && (
+        <RenameResumeDialog
+          initialTitle={pendingRename.title}
+          busy={renamingResumeId === pendingRename.id}
+          error={renameError}
+          onCancel={() => {
+            setRenameError(null);
+            setPendingRename(null);
+          }}
+          onSubmit={confirmRename}
+        />
       )}
-
       {sharingResume && (
         <SharePanel
           resumeId={sharingResume.id}
@@ -364,57 +451,93 @@ export function HomeScreen({
           onClose={() => setSharingResume(null)}
         />
       )}
+      {importDialogOpen && (
+        <ResumeImportDialog
+          onClose={() => setImportDialogOpen(false)}
+          onAccepted={(title) => setNotice({ kind: "success", message: `已开始导入“${title}”。` })}
+        />
+      )}
     </main>
   );
 }
 
-export function HomePage({ view = "all" }: { view?: "all" | "templates" }) {
+export function HomePage() {
+  const [loading, setLoading] = useState(true);
   const resumes = useResumeStore((state) => state.resumes);
   const activeImports = useResumeStore((state) => state.activeImports);
   const failedImports = useResumeStore((state) => state.failedImports);
   const listResumes = useResumeStore((state) => state.listResumes);
-  const importResume = useResumeStore((state) => state.importResume);
+  const pollResumeImport = useResumeStore((state) => state.pollResumeImport);
   const deleteResume = useResumeStore((state) => state.deleteResume);
+  const renameResume = useResumeStore((state) => state.renameResume);
   const deleteResumeImport = useResumeStore((state) => state.deleteResumeImport);
 
   useEffect(() => {
-    if (view !== "all") return;
-    void listResumes();
-    if (activeImports.length === 0) return;
-    const timer = window.setInterval(() => void listResumes(), 2000);
-    return () => window.clearInterval(timer);
-  }, [activeImports.length, listResumes, view]);
+    let cancelled = false;
+    void listResumes()
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [listResumes]);
 
-  if (view === "templates") return <TemplateLibrary />;
   return (
-    <HomeScreen
-      resumes={resumes}
-      activeImports={activeImports}
-      failedImports={failedImports}
-      onCreate={() => navigateTo("/resumes/new")}
-      onImport={importResume}
-      onOpen={(id) => navigateTo(editorPath(id))}
-      onDelete={deleteResume}
-      onDeleteImport={deleteResumeImport}
-    />
+    <>
+      {activeImports
+        .filter((task) => (
+          task.upload_status === "succeeded" && task.parse_status === "processing"
+        ))
+        .map((task) => (
+          <ResumeImportPoller
+            key={task.id}
+            importId={task.id}
+            pollResumeImport={pollResumeImport}
+          />
+        ))}
+      <HomeScreen
+        loading={loading}
+        resumes={resumes}
+        activeImports={activeImports}
+        failedImports={failedImports}
+        onCreate={() => navigateTo("/resumes/new")}
+        onOpen={(id) => navigateTo(editorPath(id))}
+        onRename={renameResume}
+        onDelete={deleteResume}
+        onDeleteImport={deleteResumeImport}
+      />
+    </>
   );
 }
 
-function TemplateLibrary() {
-  const [selected, setSelected] = useState<ResumeTemplate | null>(null);
-  return (
-    <main className="dashboard-content template-library-page">
-      <header className="dashboard-header"><h1>模板</h1></header>
-      <div className="dashboard-main">
-        <TemplatePicker selectedTemplateId={selected?.id ?? null} onSelect={setSelected} />
-        <div className="template-library-actions">
-          <Button disabled={!selected} onClick={() => selected && navigateTo(`/resumes/new?template=${encodeURIComponent(selected.id)}`)}>
-            使用所选模板
-          </Button>
-        </div>
-      </div>
-    </main>
-  );
+const RESUME_IMPORT_POLL_INTERVAL_MS = 1000;
+
+function ResumeImportPoller({
+  importId,
+  pollResumeImport,
+}: {
+  importId: string;
+  pollResumeImport: (id: string) => Promise<void>;
+}) {
+  useEffect(() => {
+    let requestInFlight = false;
+    const timer = window.setInterval(() => {
+      if (requestInFlight) return;
+      requestInFlight = true;
+      void pollResumeImport(importId)
+        .catch(() => {
+          // Transient polling failures are retried on the next tick.
+        })
+        .finally(() => {
+          requestInFlight = false;
+        });
+    }, RESUME_IMPORT_POLL_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [importId, pollResumeImport]);
+
+  return null;
 }
 
 function formatTime(value: string) {

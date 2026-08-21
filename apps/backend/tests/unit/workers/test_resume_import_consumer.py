@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, Mock
 from aiokafka.structs import TopicPartition
 
 from linkcv.core.config import Settings
-from linkcv.core.mq.message import ResumeImportMessage
-from linkcv.workers.resume_import_consumer import (
+from linkcv.core.mq.message import DatasetParseMessage, ResumeImportMessage
+from linkcv.workers.document_parse_consumer import (
     _handle_kafka_message,
     _handle_rabbit_message,
 )
@@ -41,13 +41,18 @@ def rabbit_incoming(*, retries: int = 0):
     )
 
 
+def dataset_processor():
+    return SimpleNamespace(process=AsyncMock(), mark_retry_exhausted=Mock())
+
+
 def test_rabbit_success_acks_original_message() -> None:
     processor = SimpleNamespace(process=AsyncMock(), mark_retry_exhausted=Mock())
     incoming = rabbit_incoming()
 
     asyncio.run(
         _handle_rabbit_message(
-            processor=processor,
+            resume_processor=processor,
+            dataset_processor=dataset_processor(),
             exchange=SimpleNamespace(publish=AsyncMock()),
             dead_letter_exchange=SimpleNamespace(publish=AsyncMock()),
             incoming=incoming,
@@ -57,6 +62,29 @@ def test_rabbit_success_acks_original_message() -> None:
 
     incoming.ack.assert_awaited_once()
     incoming.nack.assert_not_awaited()
+
+
+def test_rabbit_dispatches_dataset_message_to_dataset_processor() -> None:
+    resume = SimpleNamespace(process=AsyncMock(), mark_retry_exhausted=Mock())
+    dataset = dataset_processor()
+    incoming = rabbit_incoming()
+    incoming.body = DatasetParseMessage.create(parse_task_id=84).body()
+    incoming.type = "DATASET_PARSE_TASK"
+
+    asyncio.run(
+        _handle_rabbit_message(
+            resume_processor=resume,
+            dataset_processor=dataset,
+            exchange=SimpleNamespace(publish=AsyncMock()),
+            dead_letter_exchange=SimpleNamespace(publish=AsyncMock()),
+            incoming=incoming,
+            settings=settings(),
+        )
+    )
+
+    resume.process.assert_not_awaited()
+    dataset.process.assert_awaited_once_with(parse_task_id=84)
+    incoming.ack.assert_awaited_once()
 
 
 def test_rabbit_retry_exhaustion_confirms_dlt_before_ack() -> None:
@@ -69,7 +97,8 @@ def test_rabbit_retry_exhaustion_confirms_dlt_before_ack() -> None:
 
     asyncio.run(
         _handle_rabbit_message(
-            processor=processor,
+            resume_processor=processor,
+            dataset_processor=dataset_processor(),
             exchange=SimpleNamespace(publish=AsyncMock()),
             dead_letter_exchange=dead_letter_exchange,
             incoming=incoming,
@@ -94,7 +123,8 @@ def test_rabbit_dlt_failure_retains_original_message() -> None:
 
     asyncio.run(
         _handle_rabbit_message(
-            processor=processor,
+            resume_processor=processor,
+            dataset_processor=dataset_processor(),
             exchange=SimpleNamespace(publish=AsyncMock()),
             dead_letter_exchange=SimpleNamespace(
                 publish=AsyncMock(side_effect=OSError("broker unavailable"))
@@ -120,7 +150,8 @@ def test_rabbit_shared_dependency_failure_does_not_consume_retry_budget() -> Non
 
     asyncio.run(
         _handle_rabbit_message(
-            processor=processor,
+            resume_processor=processor,
+            dataset_processor=dataset_processor(),
             exchange=exchange,
             dead_letter_exchange=dead_letter_exchange,
             incoming=incoming,
@@ -155,7 +186,8 @@ def test_kafka_retry_exhaustion_publishes_dlt_before_exact_commit() -> None:
 
     asyncio.run(
         _handle_kafka_message(
-            processor=processor,
+            resume_processor=processor,
+            dataset_processor=dataset_processor(),
             consumer=consumer,
             producer=producer,
             incoming=incoming,
@@ -199,7 +231,8 @@ def test_kafka_dlt_failure_does_not_commit_offset() -> None:
     try:
         asyncio.run(
             _handle_kafka_message(
-                processor=processor,
+                resume_processor=processor,
+                dataset_processor=dataset_processor(),
                 consumer=consumer,
                 producer=producer,
                 incoming=incoming,

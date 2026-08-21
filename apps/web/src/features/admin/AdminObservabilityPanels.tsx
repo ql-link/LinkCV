@@ -250,6 +250,8 @@ function QueryState({
   );
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [appliedCount, setAppliedCount] = useState(initialAuditResult ? 1 : 0);
 
   const load = useCallback(
     async (nextCursor?: string) => {
@@ -315,7 +317,9 @@ function QueryState({
     if (await load()) {
       setCursor(undefined);
       setCursorStack([]);
+      return true;
     }
+    return false;
   };
   const next = async () => {
     const nextCursor = response?.nextCursor ?? undefined;
@@ -331,59 +335,128 @@ function QueryState({
     setCursorStack((current) => current.slice(0, -1));
   };
 
+  const countActive = () =>
+    (kind === "system"
+      ? [level, source, dependency, requestId.trim(), taskId.trim(), operationId.trim(), errorCode.trim(), keyword.trim(), from, to]
+      : [action.trim(), result, actorUserId.trim(), targetType.trim(), targetId.trim(), requestId.trim(), from, to]
+    ).filter(Boolean).length;
+
+  const resetFilters = () => {
+    setLevel("");
+    setSource("");
+    setDependency("");
+    setRequestId("");
+    setTaskId("");
+    setOperationId("");
+    setErrorCode("");
+    setKeyword("");
+    setAction("");
+    setActorUserId("");
+    setTargetType("");
+    setTargetId("");
+    setResult("");
+    setFrom("");
+    setTo("");
+  };
+
+  const applyFilters = async () => {
+    if (await query()) {
+      setAppliedCount(countActive());
+      setFilterOpen(false);
+    }
+  };
+
   return (
     <>
-      <form
-        className="admin-surface observability-filters"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void query();
-        }}
-      >
-        <div className="observability-filter-fields">
-          {kind === "system" ? (
-            <>
-              <select aria-label="日志级别" value={level} onChange={(event) => setLevel(event.target.value)}>
-                <option value="">全部级别</option>
-                <option value="INFO">INFO</option>
-                <option value="WARNING">WARNING</option>
-                <option value="ERROR">ERROR</option>
-              </select>
-              <select aria-label="日志来源" value={source} onChange={(event) => setSource(event.target.value)}>
-                <option value="">全部来源</option><option value="backend">Backend</option><option value="web">Web</option>
-              </select>
-              <select aria-label="依赖服务" value={dependency} onChange={(event) => setDependency(event.target.value)}>
-                <option value="">全部依赖</option>
-                <option value="mysql">MySQL</option><option value="redis">Redis</option>
-                <option value="minio">MinIO</option><option value="linkparse">LinkParse</option>
-                <option value="llm">LLM</option>
-              </select>
-              <input aria-label="请求 ID" placeholder="requestId" value={requestId} onChange={(event) => setRequestId(event.target.value)} />
-              <input aria-label="任务 ID" placeholder="taskId" value={taskId} onChange={(event) => setTaskId(event.target.value)} />
-              <input aria-label="操作 ID" placeholder="operationId" value={operationId} onChange={(event) => setOperationId(event.target.value)} />
-              <input aria-label="错误码" placeholder="errorCode" value={errorCode} onChange={(event) => setErrorCode(event.target.value)} />
-              <input aria-label="日志关键词" placeholder="关键词" value={keyword} onChange={(event) => setKeyword(event.target.value)} />
-            </>
-          ) : (
-            <>
-              <input aria-label="审计动作" placeholder="如 resume.update" value={action} onChange={(event) => setAction(event.target.value)} />
-              <select aria-label="审计结果" value={result} onChange={(event) => setResult(event.target.value as "" | "succeeded" | "failed")}>
-                <option value="">全部结果</option><option value="succeeded">成功</option><option value="failed">失败</option>
-              </select>
-              <input aria-label="操作者 ID" placeholder="actorUserId" value={actorUserId} onChange={(event) => setActorUserId(event.target.value)} />
-              <input aria-label="目标类型" placeholder="targetType" value={targetType} onChange={(event) => setTargetType(event.target.value)} />
-              <input aria-label="目标 ID" placeholder="targetId" value={targetId} onChange={(event) => setTargetId(event.target.value)} />
-              <input aria-label="审计请求 ID" placeholder="requestId" value={requestId} onChange={(event) => setRequestId(event.target.value)} />
-            </>
-          )}
-          <label><span>开始时间</span><input type="datetime-local" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
-          <label><span>结束时间</span><input type="datetime-local" value={to} onChange={(event) => setTo(event.target.value)} /></label>
+      <div className="observability-filterbar">
+        <span>默认最近 24 小时 · {appliedCount} 个筛选条件</span>
+        <button
+          type="button"
+          className="observability-filter-open"
+          onClick={() => setFilterOpen(true)}
+        >
+          筛选
+        </button>
+      </div>
+      {filterOpen && (
+        <div className="drawer-layer" onClick={() => setFilterOpen(false)}>
+          <aside
+            className="admin-drawer log-filter-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label={kind === "system" ? "筛选日志" : "筛选审计记录"}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header>
+              <div>
+                <h2>{kind === "system" ? "筛选日志" : "筛选审计记录"}</h2>
+              </div>
+              <button type="button" aria-label="关闭筛选" onClick={() => setFilterOpen(false)}>
+                <X size={18} />
+              </button>
+            </header>
+            <form
+              className="log-filter-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void applyFilters();
+              }}
+            >
+              <div className="log-filter-group">
+                <span>常用筛选</span>
+                <div className="log-filter-grid">
+                  {kind === "system" ? (
+                    <>
+                      <select aria-label="日志级别" value={level} onChange={(event) => setLevel(event.target.value)}>
+                        <option value="">日志级别</option>
+                        <option value="INFO">INFO</option>
+                        <option value="WARNING">WARNING</option>
+                        <option value="ERROR">ERROR</option>
+                      </select>
+                      <select aria-label="日志来源" value={source} onChange={(event) => setSource(event.target.value)}>
+                        <option value="">日志来源</option><option value="backend">Backend</option><option value="web">Web</option>
+                      </select>
+                      <select aria-label="依赖服务" value={dependency} onChange={(event) => setDependency(event.target.value)}>
+                        <option value="">依赖服务</option>
+                        <option value="mysql">MySQL</option><option value="redis">Redis</option>
+                        <option value="minio">MinIO</option><option value="linkparse">LinkParse</option>
+                        <option value="llm">LLM</option>
+                      </select>
+                      <input aria-label="请求 ID" placeholder="请求 ID" value={requestId} onChange={(event) => setRequestId(event.target.value)} />
+                      <input aria-label="任务 ID" placeholder="任务 ID" value={taskId} onChange={(event) => setTaskId(event.target.value)} />
+                      <input aria-label="操作 ID" placeholder="操作 ID" value={operationId} onChange={(event) => setOperationId(event.target.value)} />
+                      <input aria-label="错误码" placeholder="错误码" value={errorCode} onChange={(event) => setErrorCode(event.target.value)} />
+                      <input aria-label="日志关键词" placeholder="日志关键词" value={keyword} onChange={(event) => setKeyword(event.target.value)} />
+                    </>
+                  ) : (
+                    <>
+                      <input aria-label="审计动作" placeholder="审计动作" value={action} onChange={(event) => setAction(event.target.value)} />
+                      <select aria-label="审计结果" value={result} onChange={(event) => setResult(event.target.value as "" | "succeeded" | "failed")}>
+                        <option value="">审计结果</option><option value="succeeded">成功</option><option value="failed">失败</option>
+                      </select>
+                      <input aria-label="操作者 ID" placeholder="操作者 ID" value={actorUserId} onChange={(event) => setActorUserId(event.target.value)} />
+                      <input aria-label="目标类型" placeholder="目标类型" value={targetType} onChange={(event) => setTargetType(event.target.value)} />
+                      <input aria-label="目标 ID" placeholder="目标 ID" value={targetId} onChange={(event) => setTargetId(event.target.value)} />
+                      <input aria-label="审计请求 ID" placeholder="审计请求 ID" value={requestId} onChange={(event) => setRequestId(event.target.value)} />
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="log-filter-group">
+                <span>时间范围</span>
+                <div className="log-filter-grid">
+                  <input aria-label="开始时间" type="datetime-local" value={from} onChange={(event) => setFrom(event.target.value)} />
+                  <input aria-label="结束时间" type="datetime-local" value={to} onChange={(event) => setTo(event.target.value)} />
+                </div>
+              </div>
+              <footer className="log-filter-footer">
+                <button type="button" onClick={resetFilters}>重置</button>
+                <button type="submit" disabled={loading}>{loading ? "查询中…" : "应用"}</button>
+              </footer>
+            </form>
+          </aside>
         </div>
-        <div className="observability-filter-actions">
-          <span>默认查询最近 24 小时，最长支持 7 天</span>
-          <button type="submit" disabled={loading}>{loading ? "查询中…" : "查询"}</button>
-        </div>
-      </form>
+      )}
       {response?.partial && <div className="llm-inline-error" role="status">部分异常日志行已忽略（{response.droppedMalformed} 条）。</div>}
       <section className="admin-surface logs-surface">
         {loading && !response ? (
@@ -447,8 +520,8 @@ export function AdminLogsCenter({
 
   return (
     <>
-      <header className="admin-page-heading observability-heading">
-        <div className="observability-heading-copy"><Activity aria-hidden="true" /><div><span className="page-eyebrow">可观测性</span><h1>日志中心</h1><p>统一查询 LinkCV 系统日志、业务审计和既有 LLM 调用记录。</p></div></div>
+      <header className="admin-page-heading">
+        <div><h1>日志中心</h1><p>统一查询 LinkCV 系统日志、业务审计和既有 LLM 调用记录。</p></div>
         <button className="admin-secondary-button" type="button" onClick={() => window.location.reload()}><RefreshCw size={15} />刷新</button>
       </header>
       <nav className="observability-tabs" aria-label="日志类型">

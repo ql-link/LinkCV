@@ -159,6 +159,20 @@ describe("API observability", () => {
   });
 });
 
+describe("resume import polling API", () => {
+  it("按任务 ID 查询单个导入状态并编码路径参数", async () => {
+    const body = { import: { id: "41", parse_status: "processing" } };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, body)));
+
+    await expect(api.getResumeImport("41/other")).resolves.toEqual(body);
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/resume-imports/41%2Fother",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
+});
+
 describe("JD API client", () => {
   it("编码列表筛选和游标，并保持相对 API 路径", async () => {
     const fetchMock = vi.fn().mockResolvedValue(

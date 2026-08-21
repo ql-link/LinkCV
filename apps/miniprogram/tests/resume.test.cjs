@@ -2,6 +2,28 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { toDisplayResume } = require("../utils/resume");
 
+test("resume service uses the dedicated mini-program read-only API", async () => {
+  const requests = [];
+  require.cache[require.resolve("../utils/request")] = {
+    exports: {
+      request: async (path) => {
+        requests.push(path);
+        return path.endsWith("/42") ? { resume: { id: "42" } } : { resumes: [] };
+      },
+    },
+  };
+  delete require.cache[require.resolve("../services/resumes")];
+  const resumes = require("../services/resumes");
+
+  await resumes.listResumes();
+  await resumes.getResume("42");
+
+  assert.deepEqual(requests, [
+    "/api/miniprogram/resumes",
+    "/api/miniprogram/resumes/42",
+  ]);
+});
+
 test("maps semantic resume to read-only display sections", () => {
   const result = toDisplayResume({
     title: "后端简历",

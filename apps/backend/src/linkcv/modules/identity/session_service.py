@@ -23,9 +23,10 @@ WEB_CHANNEL = "web"
 MINIPROGRAM_CHANNEL = "miniprogram"
 
 ROTATE_REFRESH_SCRIPT = """-- auth_rotate_refresh
-if redis.call('HGET', KEYS[1], 'channel') ~= ARGV[3] then return 'invalid' end
+local channel = redis.call('HGET', KEYS[1], 'channel')
+if channel ~= ARGV[3] and not (ARGV[3] == 'web' and not channel) then return 'invalid' end
 if redis.call('HGET', KEYS[1], 'rhash') ~= ARGV[1] then return 'mismatch' end
-redis.call('HSET', KEYS[1], 'rhash', ARGV[2])
+redis.call('HSET', KEYS[1], 'rhash', ARGV[2], 'channel', ARGV[3])
 redis.call('EXPIRE', KEYS[1], ARGV[4])
 return 'rotated'
 """
@@ -81,7 +82,8 @@ def rotate_session(
     sid, secret = parsed
     key = session_key(sid)
     session = redis_client.hgetall(key)
-    if not session or session.get("channel") != expected_channel:
+    session_channel = session.get("channel") or WEB_CHANNEL
+    if not session or session_channel != expected_channel:
         return None
     uid = session.get("uid", "")
     if not uid.isdecimal():

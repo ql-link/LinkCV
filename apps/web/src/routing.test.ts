@@ -13,11 +13,14 @@ import {
 } from "./routing";
 
 describe("LinkCV routes", () => {
-  it("parses landing, auth, admin, resume list, and editor routes", () => {
+  it("parses landing, auth, admin, resume, template, and editor routes", () => {
     expect(parseAppRoute("/")).toEqual({ kind: "landing" });
+    expect(parseAppRoute("/home")).toEqual({ kind: "landing" });
+    expect(parseAppRoute("/home/")).toEqual({ kind: "landing" });
     expect(parseAppRoute("/login", "?mode=register")).toEqual({ kind: "auth", mode: "register", next: null });
     expect(parseAppRoute("/admin/llm/models")).toEqual({ kind: "admin" });
     expect(parseAppRoute("/resumes/")).toEqual({ kind: "resumes" });
+    expect(parseAppRoute("/templates/")).toEqual({ kind: "templates" });
     expect(parseAppRoute("/resumes/resume_123/edit")).toEqual({ kind: "editor", resumeId: "resume_123" });
     expect(parseAppRoute("/jobs")).toEqual({ kind: "jobs" });
     expect(parseAppRoute("/jobs/new")).toEqual({ kind: "jobCreate" });
@@ -48,6 +51,7 @@ describe("LinkCV routes", () => {
     expect(jobDetailPath("job/a b")).toBe("/jobs/job%2Fa%20b");
     expect(jobEditPath("job/a b")).toBe("/jobs/job%2Fa%20b/edit");
     expect(isSafeAppPath("/resumes/resume_123/edit")).toBe(true);
+    expect(isSafeAppPath("/templates")).toBe(true);
     expect(isSafeAppPath("/jobs/job_123/edit")).toBe(true);
     expect(isSafeAppPath("/datasets")).toBe(true);
     expect(isSafeAppPath("/account")).toBe(true);

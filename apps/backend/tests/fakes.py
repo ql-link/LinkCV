@@ -228,11 +228,15 @@ class FakeRedis:
         with self._lock:
             if "auth_rotate_refresh" in script:
                 old_hash, new_hash, channel, ttl = args
-                if self.hget(name, "channel") != str(channel):
+                stored_channel = self.hget(name, "channel") or "web"
+                if stored_channel != str(channel):
                     return "invalid"
                 if self.hget(name, "rhash") != str(old_hash):
                     return "mismatch"
-                self.hset(name, "rhash", str(new_hash))
+                self.hset(
+                    name,
+                    mapping={"rhash": str(new_hash), "channel": str(channel)},
+                )
                 self.expire(name, float(ttl))
                 return "rotated"
             if "wechat_claim" in script:

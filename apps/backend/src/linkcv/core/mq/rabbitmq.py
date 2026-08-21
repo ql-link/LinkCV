@@ -3,7 +3,7 @@ import asyncio
 import aio_pika
 from aio_pika.abc import AbstractRobustConnection
 
-from linkcv.core.mq.message import ResumeImportMessage
+from linkcv.core.mq.message import DocumentParseTaskMessage
 from linkcv.core.mq.publisher import MQPublishError
 
 
@@ -80,7 +80,7 @@ class RabbitMQPublisher:
                 raise MQPublishError("RabbitMQ topology is unavailable") from error
         return self._exchange
 
-    async def publish_resume_import(self, message: ResumeImportMessage) -> None:
+    async def publish(self, message: DocumentParseTaskMessage) -> None:
         exchange = await self._ensure_ready()
         outbound = aio_pika.Message(
             body=message.body(),

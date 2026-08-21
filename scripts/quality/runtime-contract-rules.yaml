@@ -128,6 +128,37 @@ contracts:
         pattern: '(?m)^SESSION_TTL_DAYS=7$[\s\S]*^ACCESS_TTL_MINUTES=15$[\s\S]*^ACCESS_COOKIE_NAME=resume_access$[\s\S]*^REFRESH_COOKIE_NAME=resume_refresh$'
         message: Production 配置必须声明双 Token Cookie 契约
 
+  - id: wechat-miniprogram-environment-contract
+    description: Production 普通登录使用微信，且小程序开发与正式 API 地址按环境隔离
+    assertions:
+      - path: .env.development
+        pattern: '(?m)^APP_ENV=development$'
+        message: Development 必须允许后端能力接口开放普通账号密码登录
+      - path: .env.example
+        pattern: '(?m)^APP_ENV=local$'
+        message: 本地模板必须使用允许普通账号密码登录的 local 环境
+      - path: apps/backend/src/linkcv/modules/identity/routes.py
+        pattern: 'app_environment\.strip\(\)\.lower\(\) in \{"local", "development"\}'
+        message: 本地和 Development 必须共享密码登录能力，Production 必须排除在外
+      - path: .env.production
+        pattern: '(?m)^APP_ENV=production$'
+        message: Production 必须关闭普通账号密码登录
+      - path: .env.example
+        pattern: '(?m)^WECHAT_APPID=$[\s\S]*^WECHAT_SECRET=$[\s\S]*^WECHAT_API_TIMEOUT_SECONDS=5$'
+        message: 环境模板必须声明后端实际读取的微信凭据与超时键
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'invalid\.append\("WECHAT_APPID"\)[\s\S]*invalid\.append\("WECHAT_SECRET"\)'
+        message: Production 必须在启动时拒绝缺少微信凭据的配置
+      - path: apps/miniprogram/config/runtime.js
+        pattern: 'developmentApiBaseUrl: "http://127\.0\.0\.1:8000"[\s\S]*productionApiBaseUrl: "https://linkresume\.cn"'
+        message: 小程序必须把开发默认地址与 linkresume.cn 生产地址分开
+      - path: apps/miniprogram/config/env.js
+        pattern: 'envVersion === "develop"[\s\S]*wx\.getStorageSync\("linkcv_api_base_url"\)[\s\S]*envVersion !== "develop"[\s\S]*startsWith\("https://"\)'
+        message: 内网地址覆盖只能用于开发版，体验版和正式版必须强制 HTTPS
+      - path: apps/miniprogram/services/resumes.js
+        pattern: '/api/miniprogram/resumes'
+        message: 小程序必须只调用后端专用只读简历接口
+
   - id: environment-profile-database-isolation
     description: 三套环境都使用独立 linkcv 数据库
     assertions:
@@ -320,11 +351,32 @@ contracts:
         pattern: '(?m)^    container_name: linkcv$'
         message: Production 必须使用生产容器名
       - path: deploy/docker-compose.production.yml
-        pattern: 'LINKCV_HTTP_PORT:-8000'
-        message: Production 必须使用生产宿主机端口 8000
+        pattern: 'LINKCV_HTTP_PORT:-4174'
+        message: Production 必须保持反向代理使用的宿主机端口 4174
       - path: deploy/docker-compose.production.yml
         pattern: 'LINKCV_DOCKER_NETWORK:-tolink-app-net'
         message: Production 必须加入生产应用网络
+      - path: Jenkinsfile
+        pattern: 'CLOUD_HOST = ''100\.77\.31\.79'''
+        message: Production Jenkins 必须把发布交给 Cloud 生产主机
+      - path: Jenkinsfile
+        pattern: 'CLOUD_SSH_KEY = ''/var/jenkins_home/\.ssh/cloud_prod'''
+        message: Production Jenkins 必须使用独立 Cloud SSH 密钥
+      - path: deploy/scripts/build-production-on-cloud.sh
+        pattern: 'prod_root="/opt/tolink/LinkCV"'
+        message: Production 远端脚本必须使用 Cloud 生产部署目录
+      - path: deploy/scripts/build-production-on-cloud.sh
+        pattern: 'tag="prod-\$\{commit_short\}-b\$\{build_number\}"'
+        message: Production 镜像必须使用 prod-<commit>-b<build> 标签
+      - path: deploy/scripts/build-production-on-cloud.sh
+        pattern: 'http_port="4174"'
+        message: Production 远端健康检查必须使用宿主机端口 4174
+      - path: Jenkinsfile
+        pattern: 'tokenCredentialId: ''linkcv-dev-webhook-token'''
+        message: Production webhook token 必须来自现有 Jenkins Secret Text 凭据
+      - path: Jenkinsfile
+        pattern: 'regexpFilterExpression: ''\^refs/heads/master\$'''
+        message: Production webhook 必须只接受 refs/heads/master push
 
   - id: jenkins-migration-targets
     description: 两条 Jenkins 发布链在部署前校验各自的环境与数据库目标
@@ -332,18 +384,15 @@ contracts:
       - path: deploy/scripts/build-development-on-primary.sh
         pattern: '--expected-app-env development[\s\S]*--expected-host 100\.86\.10\.52[\s\S]*--expected-port 13306[\s\S]*--expected-database linkcv'
         message: Dev 迁移必须锁定共享 Dev 的独立 linkcv 数据库
+      - path: deploy/scripts/build-production-on-cloud.sh
+        pattern: '--expected-app-env production[\s\S]*--expected-host tolink-mysql[\s\S]*--expected-port 3306[\s\S]*--expected-database linkcv'
+        message: Production 远端迁移必须锁定 Cloud 的独立 linkcv 数据库
+      - path: deploy/scripts/build-production-on-cloud.sh
+        pattern: 'python /app/scripts/db/init_mysql\.py[\s\S]*python /app/scripts/release/run_alembic\.py'
+        message: Production 必须先初始化独立数据库再执行 Alembic
       - path: Jenkinsfile
-        pattern: 'EXPECTED_APP_ENV = ''production'''
-        message: Production Jenkins 必须锁定 production 环境
-      - path: Jenkinsfile
-        pattern: 'EXPECTED_MYSQL_HOST = ''tolink-mysql'''
-        message: Production Jenkins 必须锁定生产 MySQL 主机
-      - path: Jenkinsfile
-        pattern: 'EXPECTED_MYSQL_PORT = ''3306'''
-        message: Production Jenkins 必须锁定生产 MySQL 端口
-      - path: Jenkinsfile
-        pattern: 'EXPECTED_MYSQL_DATABASE = ''linkcv'''
-        message: Production Jenkins 必须锁定独立 linkcv 数据库
+        pattern: 'defaultValue: false,[\s\S]*description: ''仅首次切换时导入旧 Production SQLite'
+        message: 旧 SQLite 导入必须是默认关闭的一次性人工参数
 
   - id: development-resource-isolation
     description: Dev 使用专属 Redis DB 和对象存储 Bucket

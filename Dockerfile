@@ -7,7 +7,12 @@ WORKDIR /app/apps/web
 COPY apps/web/package.json apps/web/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --no-audit --registry="${NPM_REGISTRY}"
-COPY apps/web/index.html apps/web/tsconfig.json apps/web/vite.config.mjs ./
+COPY apps/web/index.html \
+    apps/web/tsconfig.json \
+    apps/web/vite.config.mjs \
+    apps/web/postcss.config.cjs \
+    apps/web/tailwind.config.cjs \
+    ./
 COPY apps/web/public ./public
 COPY apps/web/src ./src
 RUN npm run build
@@ -35,6 +40,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY apps/backend/alembic.ini ./
 COPY apps/backend/migrations ./migrations
 COPY apps/backend/src ./src
+COPY apps/backend/scripts/release/import_legacy_sqlite.py /app/scripts/release/import_legacy_sqlite.py
+COPY scripts/db/init_mysql.py /app/scripts/db/init_mysql.py
 COPY scripts/release/run_alembic.py /app/scripts/release/run_alembic.py
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --python .venv/bin/python --no-deps --index-url "${UV_INDEX_URL}" .

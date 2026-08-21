@@ -611,10 +611,15 @@ function Overview({
           </div>
           <div className="activity-list">
             {overviewActivityData.map((log) => (
-              <div className="activity-row" key={log.time + log.event}>
-                <span className={`event-icon ${log.tone}`}>
-                  <Activity size={15} />
-                </span>
+              <div
+                className={`activity-row${log.tone === "warn" ? "" : " no-icon"}`}
+                key={log.time + log.event}
+              >
+                {log.tone === "warn" && (
+                  <span className="event-icon warn">
+                    <Activity size={15} />
+                  </span>
+                )}
                 <div>
                   <strong>{log.event}</strong>
                   <p>{log.detail}</p>
@@ -643,7 +648,6 @@ function Overview({
                 <strong>备用模型尚未配置密钥</strong>
                 <p>deepseek-chat 无法参与调用</p>
               </div>
-              <ChevronRight size={16} />
             </button>
             <button
               className="attention-item"
@@ -656,7 +660,6 @@ function Overview({
                 <strong>前往用户管理</strong>
                 <p>查看和管理所有用户账号</p>
               </div>
-              <ChevronRight size={16} />
             </button>
           </section>
           <section className="admin-surface model-health">

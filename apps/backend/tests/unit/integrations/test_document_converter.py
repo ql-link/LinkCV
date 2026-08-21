@@ -1,23 +1,22 @@
 import asyncio
 from time import monotonic
 
-import pytest
-
 from linkcv.domain.document_conversion import (
     DocumentConversionFailure,
     DocumentMarkdownResult,
 )
+import pytest
 from linkcv.integrations.document_converter import DocumentConverter
-from linkcv.integrations.docx_parse_runner import DocxParseRunner
 
 
 class FakeLinkParse:
     def __init__(self) -> None:
-        self.calls = 0
+        self.pdf_calls = 0
+        self.docx_calls = 0
 
     async def parse_pdf(self, *, filename, content, operation_id, deadline_monotonic):
         del content, operation_id, deadline_monotonic
-        self.calls += 1
+        self.pdf_calls += 1
         return DocumentMarkdownResult(
             markdown="# PDF",
             source_file_name=filename,
@@ -26,20 +25,24 @@ class FakeLinkParse:
             parser_version="1",
         )
 
-
-class FakeDocxRunner:
-    def __init__(self) -> None:
-        self.calls = 0
-
-    async def convert(self, content, *, deadline_monotonic):
-        del content, deadline_monotonic
-        self.calls += 1
-        return "# DOCX", ["docx_embedded_images_omitted"]
+    async def parse_docx(self, *, filename, content, operation_id, deadline_monotonic):
+        del content, operation_id, deadline_monotonic
+        self.docx_calls += 1
+        return DocumentMarkdownResult(
+            markdown="# DOCX",
+            source_file_name=filename,
+            source_format="docx",
+            parser="mammoth_word",
+            parser_version="linkparse-v0.2.0",
+            page_count=2,
+            warnings=["docx_embedded_images_omitted"],
+        )
 
 
 def convert(instance: DocumentConverter, filename: str, content: bytes):
     content_types = {
         "md": "text/markdown",
+        "txt": "text/plain",
         "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "pdf": "application/pdf",
     }
@@ -55,12 +58,10 @@ def convert(instance: DocumentConverter, filename: str, content: bytes):
     )
 
 
-def test_dispatcher_keeps_markdown_local_and_routes_docx_and_pdf_separately() -> None:
+def test_dispatcher_keeps_markdown_local_and_routes_docx_and_pdf_to_linkparse() -> None:
     linkparse = FakeLinkParse()
-    docx = FakeDocxRunner()
     instance = DocumentConverter(
         linkparse=linkparse,
-        docx_runner=docx,
         markdown_max_bytes=1024,
     )
 
@@ -70,27 +71,31 @@ def test_dispatcher_keeps_markdown_local_and_routes_docx_and_pdf_separately() ->
 
     assert markdown.markdown == "# Markdown\n\nText"
     assert markdown.parser == "linkcv-direct-markdown"
-    assert docx_result.parser == "mammoth"
+    assert docx_result.parser == "mammoth_word"
+    assert docx_result.parser_version == "linkparse-v0.2.0"
+    assert docx_result.page_count == 2
     assert docx_result.warnings == ["docx_embedded_images_omitted"]
     assert pdf.parser == "fake-linkparse"
-    assert docx.calls == 1
-    assert linkparse.calls == 1
+    assert linkparse.docx_calls == 1
+    assert linkparse.pdf_calls == 1
 
 
-def test_docx_runner_maps_worker_spawn_failure_to_stable_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def fail_spawn(*_args, **_kwargs):
-        raise OSError("process creation failed")
+def test_txt_is_normalized_locally() -> None:
+    linkparse = FakeLinkParse()
+    instance = DocumentConverter(linkparse=linkparse, markdown_max_bytes=1024)
 
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", fail_spawn)
-    runner = DocxParseRunner(timeout_seconds=1)
-    with pytest.raises(DocumentConversionFailure) as raised:
-        asyncio.run(
-            runner.convert(
-                b"fixture",
-                deadline_monotonic=monotonic() + 5,
-            )
-        )
-    assert raised.value.status_code == 502
-    assert raised.value.code == "DOCUMENT_CONVERSION_FAILED"
+    result = convert(instance, "notes.txt", "标题\r\n\r\n\r\n正文  ".encode())
+
+    assert result.markdown == "标题\n\n正文"
+    assert result.source_format == "txt"
+    assert result.parser == "linkcv-direct-txt"
+    assert linkparse.docx_calls == 0
+    assert linkparse.pdf_calls == 0
+
+
+@pytest.mark.parametrize("content", [b"", b"\xff"])
+def test_txt_rejects_empty_or_non_utf8_content(content: bytes) -> None:
+    instance = DocumentConverter(linkparse=FakeLinkParse(), markdown_max_bytes=1024)
+
+    with pytest.raises((DocumentConversionFailure, UnicodeDecodeError)):
+        convert(instance, "notes.txt", content)

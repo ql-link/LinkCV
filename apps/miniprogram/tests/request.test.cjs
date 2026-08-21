@@ -41,8 +41,8 @@ test("concurrent 401 responses share one refresh and retry once", async () => {
 
   const { request } = require("../utils/request");
   const responses = await Promise.all([
-    request("/api/resumes"),
-    request("/api/resumes"),
+    request("/api/miniprogram/resumes"),
+    request("/api/miniprogram/resumes"),
   ]);
 
   assert.deepEqual(responses, [{ resumes: [] }, { resumes: [] }]);
@@ -83,7 +83,7 @@ test("transient refresh failure keeps the session and does not create a new logi
 
   const { request } = require("../utils/request");
   await assert.rejects(
-    request("/api/resumes"),
+    request("/api/miniprogram/resumes"),
     (error) => error.statusCode === 503 && error.message === "WECHAT_SERVICE_UNAVAILABLE",
   );
 

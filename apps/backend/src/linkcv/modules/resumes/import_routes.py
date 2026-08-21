@@ -3,7 +3,16 @@ import logging
 from time import monotonic
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, Form, Header, Request, Response, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    Header,
+    Request,
+    Response,
+    UploadFile,
+)
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
@@ -22,7 +31,12 @@ from linkcv.domain.resume_snapshot import parse_resume_snapshot
 from linkcv.modules.identity.dependencies import get_current_user, get_settings
 from linkcv.modules.identity.models import User
 from linkcv.modules.observability.audit import bind_audit_target
-from linkcv.modules.resumes.models import ResumeImport, ResumeTemplate
+from linkcv.modules.resumes.models import (
+    RESUME_IMPORT_SOURCE_TYPE,
+    DocumentParseTask,
+    Resume,
+    ResumeTemplate,
+)
 from linkcv.modules.resumes.schemas import ResumeImportResponse, ResumeImportSummary
 from linkcv.services.resume_import_idempotency import (
     IdempotencyBindingLostError,
@@ -74,25 +88,44 @@ def canonical_idempotency_key(value: str | None) -> str:
     return canonical
 
 
-def import_summary(record: ResumeImport) -> ResumeImportSummary:
-    return ResumeImportSummary.model_validate(record)
+def import_summary(db: Session, record: DocumentParseTask) -> ResumeImportSummary:
+    result_resume_id = None
+    if record.parse_status == "succeeded":
+        result_resume_id = db.scalar(
+            select(Resume.id).where(Resume.parse_task_id == record.id)
+        )
+    return ResumeImportSummary(
+        id=str(record.id),
+        source_filename=record.file_name,
+        source_file_format=record.file_format,
+        upload_status=record.upload_status,
+        upload_duration_ms=record.upload_duration_ms,
+        parse_status=record.parse_status,
+        parse_duration_ms=record.parse_duration_ms,
+        result_resume_id=(
+            str(result_resume_id) if result_resume_id is not None else None
+        ),
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
 
 
-def import_details(record: ResumeImport) -> dict[str, object]:
-    return {"import": import_summary(record).model_dump(mode="json")}
+def import_details(db: Session, record: DocumentParseTask) -> dict[str, object]:
+    return {"import": import_summary(db, record).model_dump(mode="json")}
 
 
 def _duration_ms(started: float) -> int:
     return min(round((monotonic() - started) * 1000), 2**32 - 1)
 
 
-def _load_owned_import(db: Session, import_id: str, user_id: int) -> ResumeImport:
+def _load_owned_import(db: Session, import_id: str, user_id: int) -> DocumentParseTask:
     parsed_id = parse_decimal_id(import_id)
     record = (
         db.scalar(
-            select(ResumeImport).where(
-                ResumeImport.id == parsed_id,
-                ResumeImport.user_id == user_id,
+            select(DocumentParseTask).where(
+                DocumentParseTask.id == parsed_id,
+                DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+                DocumentParseTask.user_id == user_id,
             )
         )
         if parsed_id is not None
@@ -104,13 +137,14 @@ def _load_owned_import(db: Session, import_id: str, user_id: int) -> ResumeImpor
 
 
 def _replay_response(
-    record: ResumeImport,
+    db: Session,
+    record: DocumentParseTask,
     response: Response,
 ) -> ResumeImportResponse:
     if record.parse_status == "failed" or record.upload_status == "failed":
-        raise ApiError(409, "IMPORT_PREVIOUSLY_FAILED", import_details(record))
+        raise ApiError(409, "IMPORT_PREVIOUSLY_FAILED", import_details(db, record))
     response.status_code = 200 if record.parse_status == "succeeded" else 202
-    return ResumeImportResponse.model_validate({"import": import_summary(record)})
+    return ResumeImportResponse.model_validate({"import": import_summary(db, record)})
 
 
 @router.post("/import", response_model=ResumeImportResponse, status_code=202)
@@ -130,7 +164,7 @@ async def import_resume(
     idempotency: ResumeImportIdempotency = Depends(get_import_idempotency),
     import_admission: ImportAdmissionController = Depends(get_import_admission),
 ) -> ResumeImportResponse:
-    record: ResumeImport | None = None
+    record: DocumentParseTask | None = None
     admission_context = None
     try:
         parsed_template_id = parse_decimal_id(template_id)
@@ -192,14 +226,12 @@ async def import_resume(
                         idempotency_key=idempotency_key,
                     )
                 except IdempotencyUnavailableError as error:
-                    raise ApiError(
-                        503, "IMPORT_IDEMPOTENCY_UNAVAILABLE"
-                    ) from error
+                    raise ApiError(503, "IMPORT_IDEMPOTENCY_UNAVAILABLE") from error
             if existing is None or existing.import_id is None:
                 raise ApiError(409, "IMPORT_ACCEPTANCE_IN_PROGRESS")
             record = _load_owned_import(db, existing.import_id, user.id)
             bind_audit_target(request, record.id)
-            return _replay_response(record, response)
+            return _replay_response(db, record, response)
 
         assert template is not None
         admission_context = import_admission.acquire(user.id)
@@ -231,14 +263,12 @@ async def import_resume(
                         idempotency_key=idempotency_key,
                     )
                 except IdempotencyUnavailableError as error:
-                    raise ApiError(
-                        503, "IMPORT_IDEMPOTENCY_UNAVAILABLE"
-                    ) from error
+                    raise ApiError(503, "IMPORT_IDEMPOTENCY_UNAVAILABLE") from error
             if state is None or state.import_id is None:
                 raise ApiError(409, "IMPORT_ACCEPTANCE_IN_PROGRESS")
             record = _load_owned_import(db, state.import_id, user.id)
             bind_audit_target(request, record.id)
-            return _replay_response(record, response)
+            return _replay_response(db, record, response)
 
         operation_id = uuid4().hex
         request.state.operation_id = operation_id
@@ -251,16 +281,17 @@ async def import_resume(
                 raise ApiError(401, "UNAUTHORIZED")
             if not has_resume_capacity(db, user.id):
                 raise ApiError(409, "RESUME_LIMIT_REACHED")
-            record = ResumeImport(
+            record = DocumentParseTask(
+                source_type=RESUME_IMPORT_SOURCE_TYPE,
                 user_id=user.id,
-                source_filename=filename,
-                source_file_format=extension,
-                source_object_key=object_key,
+                file_name=filename,
+                file_format=extension,
+                object_name=object_key,
                 upload_status="uploading",
             )
             db.add(record)
             db.commit()
-            db.refresh(record)
+            record = _load_owned_import(db, str(record.id), user.id)
             bind_audit_target(request, record.id)
         except Exception:
             db.rollback()
@@ -281,7 +312,7 @@ async def import_resume(
             raise ApiError(
                 503,
                 "IMPORT_IDEMPOTENCY_UNAVAILABLE",
-                import_details(record),
+                import_details(db, record),
             ) from error
 
         upload_started = monotonic()
@@ -302,18 +333,18 @@ async def import_resume(
             raise ApiError(
                 502,
                 "RESUME_SOURCE_UPLOAD_FAILED",
-                import_details(record),
+                import_details(db, record),
             ) from error
 
         record.upload_status = "succeeded"
         record.upload_duration_ms = _duration_ms(upload_started)
         record.parse_status = "processing"
         db.commit()
-        db.refresh(record)
+        record = _load_owned_import(db, str(record.id), user.id)
 
         publisher = get_mq_publisher(request, settings)
         try:
-            await publisher.publish_resume_import(
+            await publisher.publish(
                 ResumeImportMessage.create(
                     import_id=record.id,
                     template_id=template.id,
@@ -321,25 +352,31 @@ async def import_resume(
             )
         except MQPublishError as error:
             result = db.execute(
-                update(ResumeImport)
+                update(DocumentParseTask)
                 .where(
-                    ResumeImport.id == record.id,
-                    ResumeImport.parse_status == "processing",
-                    ResumeImport.result_resume_id.is_(None),
+                    DocumentParseTask.id == record.id,
+                    DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+                    DocumentParseTask.parse_status == "processing",
                 )
-                .values(parse_status="failed", parse_duration_ms=0)
+                .values(
+                    parse_status="failed",
+                    parse_duration_ms=0,
+                    failure_reason="service_unavailable",
+                )
             )
             db.commit()
             db.expire_all()
             record = _load_owned_import(db, str(record.id), user.id)
             if result.rowcount != 1:
-                return _replay_response(record, response)
+                return _replay_response(db, record, response)
             raise ApiError(
                 503,
                 "RESUME_IMPORT_QUEUE_UNAVAILABLE",
-                import_details(record),
+                import_details(db, record),
             ) from error
-        return ResumeImportResponse.model_validate({"import": import_summary(record)})
+        return ResumeImportResponse.model_validate(
+            {"import": import_summary(db, record)}
+        )
     except ResumeImportFailure as error:
         raise ApiError(error.status_code, error.code) from error
     finally:

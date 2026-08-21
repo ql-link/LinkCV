@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link2Off } from "lucide-react";
-import { Brand } from "@/components/ui";
+import { Link2Off, Printer } from "lucide-react";
+import { Brand, Button, PageLoading } from "@/components/ui";
 import { api, type PublicSharePayload } from "../../api/client";
 import {
   resumeDocumentToMarkdown,
@@ -73,7 +73,7 @@ export function SharePage({ token }: { token: string }) {
   const html = useMemo(() => renderResumeMarkdown(markdown), [markdown]);
 
   if (status === "loading") {
-    return <div className="app-loading">正在加载分享内容...</div>;
+    return <PageLoading label="正在加载分享内容…" scope="page" />;
   }
 
   if (status === "unavailable" || !payload) {
@@ -82,10 +82,11 @@ export function SharePage({ token }: { token: string }) {
         <ShareBrand />
         <section className="share-unavailable-card">
           <span className="share-unavailable-icon" aria-hidden="true">
-            <Link2Off size={24} strokeWidth={1.8} />
+            <Link2Off size={22} strokeWidth={1.8} />
           </span>
-          <h1>分享链接已失效</h1>
-          <p>链接不存在、已过期，或分享者已将其关闭。</p>
+          <h1>这条分享链接已失效</h1>
+          <p>链接可能已过期、被重新生成，或由分享者主动关闭。你可以联系分享者获取新的链接。</p>
+          <Button variant="outline" onClick={() => window.location.assign("/")}>返回 LinkCV 首页</Button>
         </section>
       </main>
     );
@@ -95,21 +96,23 @@ export function SharePage({ token }: { token: string }) {
     <main className="share-page">
       <header className="share-page-header">
         <ShareBrand />
-        <span className="share-page-header-note">简历分享</span>
-        <span className="share-owner">
-          {payload.sharer.avatar_url && (
-            <img
-              className="share-owner-avatar"
-              src={payload.sharer.avatar_url}
-              alt=""
-            />
-          )}
-          <span>{payload.sharer.nickname} 分享的简历</span>
+        <span className="share-page-header-note">
+          由 {payload.sharer.nickname} 分享
+        </span>
+        <span className="share-page-header-actions">
+          <Button variant="outline" size="sm" icon={<Printer size={14} />} onClick={() => window.print()}>
+            打印
+          </Button>
+          <Button size="sm" onClick={() => window.print()}>
+            下载 PDF
+          </Button>
         </span>
       </header>
       <section className="share-page-paper-scroll">
         <article
-          className="resume-paper smart-one-page share-page-paper"
+          className={`resume-paper theme-${
+            styleToEditorSettings(payload.style).theme
+          } smart-one-page share-page-paper`}
           style={{
             ...paperStyle(payload),
             zoom: paperZoom,

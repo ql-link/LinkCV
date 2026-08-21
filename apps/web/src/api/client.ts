@@ -114,6 +114,7 @@ export type ResumeRecord = ResumeSummary & {
 export type ResumeVersion = {
   id: string;
   version_no: number;
+  name: string;
   reason: "initial" | "manual" | "before_restore" | "restore";
   created_at: string;
   data?: ResumeDocumentV1;
@@ -170,7 +171,25 @@ export type DatasetRecord = {
   file_name: string;
   file_format: string;
   file_size: number;
+  upload_status: "uploading" | "succeeded" | "failed";
+  parse_status: "processing" | "succeeded" | "failed" | null;
+  failure_reason:
+    | "format_unsupported"
+    | "content_invalid"
+    | "size_exceeded"
+    | "service_unavailable"
+    | "timeout"
+    | "quota_exceeded"
+    | "internal_error"
+    | null;
   created_at: string;
+};
+
+export type DatasetContent = {
+  id: string;
+  file_name: string;
+  file_format: string;
+  markdown: string;
 };
 
 export type ResumeImportSummary = {
@@ -696,9 +715,15 @@ export const api = {
     request<{ deleted: boolean }>(`/api/resumes/${id}`, { method: "DELETE" }),
   listVersions: (id: string) =>
     request<{ versions: ResumeVersion[] }>(`/api/resumes/${id}/versions`),
-  createVersion: (id: string) =>
+  createVersion: (id: string, name?: string) =>
     request<{ version: ResumeVersion }>(`/api/resumes/${id}/versions`, {
       method: "POST",
+      body: name === undefined ? undefined : { name },
+    }),
+  renameVersion: (id: string, versionNo: number, name: string) =>
+    request<{ version: ResumeVersion }>(`/api/resumes/${id}/versions/${versionNo}`, {
+      method: "PATCH",
+      body: { name },
     }),
   deleteVersion: (id: string, versionNo: number) =>
     request<{ deleted: boolean }>(`/api/resumes/${id}/versions/${versionNo}`, {
@@ -743,6 +768,10 @@ export const api = {
       },
     );
   },
+  getResumeImport: (id: string) =>
+    request<{ import: ResumeImportSummary }>(
+      `/api/resume-imports/${encodeURIComponent(id)}`,
+    ),
   deleteResumeImport: (id: string) =>
     request<{ deleted: boolean }>(`/api/resume-imports/${id}`, {
       method: "DELETE",
@@ -779,6 +808,8 @@ export const api = {
     });
   },
   listDatasets: () => request<{ datasets: DatasetRecord[] }>("/api/datasets"),
+  getDatasetContent: (id: string) =>
+    request<DatasetContent>(`/api/datasets/${id}/content`),
   listJobDescriptions: (
     params: {
       scope?: "active" | "archived" | "all";
