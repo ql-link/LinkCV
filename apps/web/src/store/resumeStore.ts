@@ -25,6 +25,7 @@ import {
 import { defaultResumeDocument } from "../features/workbench/defaultDocument";
 import { defaultResumeMarkdown } from "../parser/defaultResume";
 import { renderResumeMarkdown } from "../parser/resumeMarkdown";
+import { buildNamedImportFile } from "../lib/resumeImport";
 
 export type ResumeTheme = "classic" | "modern" | "compact" | "classic-technical";
 
@@ -78,7 +79,7 @@ type ResumeState = {
   changePassword: (payload: ChangePasswordPayload) => Promise<void>;
   listResumes: () => Promise<void>;
   createResume: (title: string, templateId: string) => Promise<string>;
-  importResume: (file: File, templateId: string) => Promise<string>;
+  importResume: (file: File, templateId: string, title?: string) => Promise<string>;
   pollResumeImport: (id: string) => Promise<void>;
   loadResume: (id: string) => Promise<void>;
   renameResume: (id: string, title: string) => Promise<void>;
@@ -359,11 +360,12 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     return resume.id;
   },
 
-  importResume: async (file, templateId) => {
+  importResume: async (file, templateId, title) => {
     const idempotencyKey = createImportIdempotencyKey();
+    const importFile = title === undefined ? file : buildNamedImportFile(file, title);
     try {
       const { import: importTask } = await api.importResume(
-        file,
+        importFile,
         templateId,
         idempotencyKey,
       );

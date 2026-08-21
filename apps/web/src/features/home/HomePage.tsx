@@ -15,6 +15,7 @@ import { ResumePreview } from "../preview/ResumePreview";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { RenameResumeDialog } from "./RenameResumeDialog";
 import { SharePanel } from "./SharePanel";
+import { ResumeImportDialog } from "./ResumeImportDialog";
 
 type HomeScreenProps = {
   resumes: ResumeSummary[];
@@ -251,6 +252,7 @@ export function HomeScreen({
   const [renamingResumeId, setRenamingResumeId] = useState<string | null>(null);
   const [renameError, setRenameError] = useState<string | null>(null);
   const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [notice, setNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
 
   const visibleResumes = useMemo(() => {
@@ -347,7 +349,7 @@ export function HomeScreen({
             <Button
               variant="ghost"
               icon={<FileUp size={15} />}
-              onClick={() => navigateTo("/resumes/new?mode=import")}
+              onClick={() => setImportDialogOpen(true)}
             >
               导入简历
             </Button>
@@ -408,7 +410,7 @@ export function HomeScreen({
                 <Button
                   variant="outline"
                   icon={<FileUp size={15} />}
-                  onClick={() => navigateTo("/resumes/new?mode=import")}
+                  onClick={() => setImportDialogOpen(true)}
                 >
                   导入简历
                 </Button>
@@ -449,6 +451,12 @@ export function HomeScreen({
           resumeId={sharingResume.id}
           resumeTitle={sharingResume.title}
           onClose={() => setSharingResume(null)}
+        />
+      )}
+      {importDialogOpen && (
+        <ResumeImportDialog
+          onClose={() => setImportDialogOpen(false)}
+          onAccepted={(title) => setNotice({ kind: "success", message: `已开始导入“${title}”。` })}
         />
       )}
     </main>
