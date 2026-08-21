@@ -348,6 +348,62 @@ export const ResumeRow = Node.create({
   addNodeView: () => ReactNodeViewRenderer(ResumeRowView),
 });
 
+export const ResumeColumn = Node.create({
+  name: "resumeColumn",
+  content: "block+",
+  defining: true,
+  isolating: true,
+  addAttributes: () => ({ variant: { default: "main" } }),
+  parseHTML: () => [{
+    tag: "section[data-type='resume-column']",
+    getAttrs: (element) => element instanceof HTMLElement
+      ? { variant: element.dataset.column === "sidebar" ? "sidebar" : "main" }
+      : false,
+  }],
+  renderHTML: ({ node, HTMLAttributes }) => [
+    "section",
+    mergeAttributes(HTMLAttributes, {
+      "data-type": "resume-column",
+      "data-column": node.attrs.variant,
+      class: `resume-layout-column resume-layout-column-${node.attrs.variant}`,
+    }),
+    0,
+  ],
+});
+
+export const ResumeColumns = Node.create({
+  name: "resumeColumns",
+  group: "block",
+  content: "resumeColumn resumeColumn",
+  defining: true,
+  isolating: true,
+  parseHTML: () => [{ tag: "div[data-type='resume-columns']" }],
+  renderHTML: ({ HTMLAttributes }) => [
+    "div",
+    mergeAttributes(HTMLAttributes, { "data-type": "resume-columns", class: "resume-layout-columns" }),
+    0,
+  ],
+});
+
+function fixedRow(name: "resumeMetaRow" | "resumeTrioRow", count: 3 | 4, className: string) {
+  return Node.create({
+    name,
+    group: "block",
+    content: Array.from({ length: count }, () => "paragraph").join(" "),
+    defining: true,
+    isolating: true,
+    parseHTML: () => [{ tag: `div[data-type='${className}']` }],
+    renderHTML: ({ HTMLAttributes }) => [
+      "div",
+      mergeAttributes(HTMLAttributes, { "data-type": className, class: `resume-layout-${className.replace("resume-", "")}` }),
+      0,
+    ],
+  });
+}
+
+export const ResumeMetaRow = fixedRow("resumeMetaRow", 4, "resume-meta-row");
+export const ResumeTrioRow = fixedRow("resumeTrioRow", 3, "resume-trio-row");
+
 function InlineIconView({ node }: NodeViewProps) {
   const Icon = inlineIconComponents[node.attrs.name as InlineIconName] ?? Star;
   return <NodeViewWrapper as="span" className="resume-inline-icon"><Icon size="1em" /></NodeViewWrapper>;
@@ -360,8 +416,15 @@ export const InlineIcon = Node.create({
   atom: true,
   selectable: true,
   addAttributes: () => ({ name: { default: "Star" } }),
-  parseHTML: () => [{ tag: "span[data-inline-icon]" }],
-  renderHTML: ({ HTMLAttributes }) => ["span", mergeAttributes(HTMLAttributes, { "data-inline-icon": "" })],
+  parseHTML: () => [{
+    tag: "span[data-inline-icon]",
+    getAttrs: (element) => element instanceof HTMLElement ? { name: element.dataset.iconName ?? "Star" } : false,
+  }],
+  renderHTML: ({ node, HTMLAttributes }) => ["span", mergeAttributes(HTMLAttributes, {
+    "data-inline-icon": "",
+    "data-icon-name": node.attrs.name,
+    class: "resume-inline-icon",
+  })],
   addNodeView: () => ReactNodeViewRenderer(InlineIconView),
 });
 
@@ -390,5 +453,9 @@ export const resumeEditorExtensions: Extensions = [
   AvatarImage,
   ResumeImage,
   ResumeRow,
+  ResumeColumn,
+  ResumeColumns,
+  ResumeMetaRow,
+  ResumeTrioRow,
   InlineIcon,
 ];

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title">
+  <title id="title">虚构创意设计岗位头像插画</title>
+  <rect width="160" height="160" fill="#dce9df"/>
+  <circle cx="80" cy="64" r="31" fill="#efc4a5"/>
+  <path d="M47 66c0-32 16-49 36-49 22 0 35 17 32 51-8-4-17-12-24-25-9 13-23 21-44 23Z" fill="#59463c"/>
+  <path d="M36 160c8-38 23-57 44-57 22 0 38 19 45 57Z" fill="#4b5968"/>
+  <path d="m57 118 23 20 25-21 11 43H44Z" fill="#d77d45"/>
+  <circle cx="118" cy="43" r="13" fill="#344252"/>
+  <path d="M70 85c7 4 14 4 21 0" fill="none" stroke="#ae7462" stroke-width="2" stroke-linecap="round"/>
+</svg>
