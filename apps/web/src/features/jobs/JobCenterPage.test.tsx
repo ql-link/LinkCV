@@ -25,6 +25,16 @@ afterEach(() => {
 });
 
 describe("JobCenterPage", () => {
+  it("首次读取时在页头下方展示统一加载状态", () => {
+    vi.spyOn(api, "listJobDescriptions").mockReturnValue(new Promise(() => undefined));
+
+    const { container } = render(<JobCenterPage />);
+
+    expect(screen.getByRole("status", { name: "正在加载 JD…" })).toBeInTheDocument();
+    expect(container.querySelector(".job-center-content > .page-loading")).toBeInTheDocument();
+    expect(container.querySelector(".job-center-body")).not.toBeInTheDocument();
+  });
+
   it("默认读取全部范围，提供透明按钮筛选并使用当前版本归档", async () => {
     useResumeStore.setState({ user: { id: "user-1", email: "user@example.test", nickname: "测试用户", is_admin: false } });
     const list = vi.spyOn(api, "listJobDescriptions").mockResolvedValue({ items: [job], next_cursor: null });

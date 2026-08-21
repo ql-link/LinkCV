@@ -28,7 +28,7 @@ describe("SharePage", () => {
   it("加载中显示占位文案", () => {
     mockedFetch.mockReturnValue(new Promise(() => undefined));
     render(<SharePage token="token_123" />);
-    expect(screen.getByText("正在加载分享内容...")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "正在加载分享内容…" })).toBeInTheDocument();
   });
 
   it("成功时展示 linkresume 品牌、分享者与脱敏简历内容", async () => {

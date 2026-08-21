@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { CircleAlert } from "lucide-react";
-import { Brand, Button } from "@/components/ui";
+import { Brand, Button, PageLoading } from "@/components/ui";
 import { WorkspaceLayout, type WorkspaceSection } from "./components/WorkspaceLayout";
 import { ApiRequestError } from "./api/client";
 import { AccountPage } from "./features/account/AccountPage";
@@ -144,7 +144,7 @@ export function App() {
   }
 
   if (authStatus === "checking") {
-    return <div className="app-loading">正在加载简历工作台...</div>;
+    return <PageLoading label="正在加载简历工作台…" scope="page" />;
   }
 
   if (route.kind === "landing") {
@@ -165,7 +165,7 @@ export function App() {
       return <AuthPage key={`${route.mode}:${route.next ?? ""}`} initialMode={route.mode} next={route.next} />;
     }
 
-    return <div className="app-loading">正在进入首页...</div>;
+    return <PageLoading label="正在进入首页…" scope="page" />;
   }
 
   if (route.kind === "resumeCreate") {
@@ -238,20 +238,7 @@ export function App() {
       );
     }
     if (activeResumeId !== route.resumeId) {
-      return (
-        <StatusShell>
-          <div className="status-card">
-            <span className="status-spinner" aria-hidden="true" />
-            <h1>正在打开简历</h1>
-            <p className="status-desc">正在同步最新版本和编辑状态...</p>
-            <div className="status-skeleton" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-            </div>
-          </div>
-        </StatusShell>
-      );
+      return <StatusShell><PageLoading label="正在打开简历…" scope="panel" /></StatusShell>;
     }
     return <ResumeWorkbench />;
   }
@@ -271,7 +258,7 @@ export function App() {
     );
   }
 
-  return <div className="app-loading">正在进入简历主页...</div>;
+  return <PageLoading label="正在进入简历主页…" scope="page" />;
 }
 
 function StatusShell({ children }: { children: ReactNode }) {

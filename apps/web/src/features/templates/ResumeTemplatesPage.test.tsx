@@ -35,6 +35,16 @@ afterEach(() => {
 });
 
 describe("ResumeTemplatesPage", () => {
+  it("首次读取时在页头下方展示统一加载状态", () => {
+    vi.mocked(api.listResumeTemplates).mockReturnValue(new Promise(() => undefined));
+
+    const { container } = render(<ResumeTemplatesPage />);
+
+    expect(screen.getByRole("status", { name: "正在加载简历模板…" })).toBeInTheDocument();
+    expect(container.querySelector(".template-library-content > .page-loading")).toBeInTheDocument();
+    expect(container.querySelector(".template-library-body")).not.toBeInTheDocument();
+  });
+
   it("从模板卡片打开命名弹窗并直接创建简历", async () => {
     vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates } as never);
     const createResume = vi.fn().mockResolvedValue("12");

@@ -9,7 +9,7 @@ import {
   FeedbackNotice,
   Input,
   Label,
-  Skeleton,
+  PageLoading,
 } from "@/components/ui";
 import { api, AccountProfile, ApiRequestError, UserProfile } from "../../api/client";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
@@ -226,7 +226,7 @@ export function AccountPage() {
         description="管理你的身份信息、使用情况和登录安全。"
       />
 
-      {loading && <AccountPageSkeleton />}
+      {loading && <PageLoading label="正在加载个人资料…" />}
 
       {!loading && loadFailed && !profile && (
         <section className="account-state" role="alert">
@@ -471,24 +471,6 @@ function WechatSection({
           alt="微信绑定二维码"
         />
       )}
-    </div>
-  );
-}
-
-function AccountPageSkeleton() {
-  return (
-    <div aria-label="正在加载个人资料" className="account-layout" role="status">
-      <div className="account-top-card">
-        <div className="account-profile-col">
-          <div className="account-identity">
-            <Skeleton className="account-avatar-lg" />
-            <div className="account-identity-text">
-              <Skeleton className="h-5 w-32" />
-              <Skeleton className="mt-2 h-4 w-48 max-w-full" />
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

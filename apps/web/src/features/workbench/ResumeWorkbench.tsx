@@ -28,6 +28,7 @@ import {
   IconButton,
   Input,
   Label,
+  PageLoading,
   TogglePill,
 } from "@/components/ui";
 import { exportResumePdf } from "../preview/exportPdf";
@@ -687,7 +688,7 @@ export function ResumeWorkbench() {
                       <strong>{versions.length} 个版本</strong>
                       <span>正式保存 · 自动保存不计入</span>
                     </p>
-                    {versionsLoading && <p className="workbench-empty">正在读取版本记录…</p>}
+                    {versionsLoading && <PageLoading label="正在读取版本记录…" scope="panel" />}
                     {!versionsLoading && versions.length === 0 && <p className="workbench-empty">暂无可用版本。</p>}
                     {versions.map((version) => (
                       <div className="version-row" key={version.id}>

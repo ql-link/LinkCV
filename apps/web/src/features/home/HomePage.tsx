@@ -9,6 +9,7 @@ import {
   ConfirmDialog,
   ExpandableSearch,
   FeedbackNotice,
+  PageLoading,
 } from "@/components/ui";
 import { useResumeStore } from "../../store/resumeStore";
 import { editorPath, navigateTo } from "../../routing";
@@ -19,6 +20,7 @@ import { SharePanel } from "./SharePanel";
 import { ResumeImportDialog } from "./ResumeImportDialog";
 
 type HomeScreenProps = {
+  loading?: boolean;
   resumes: ResumeSummary[];
   activeImports: ResumeImportSummary[];
   failedImports: ResumeImportSummary[];
@@ -236,6 +238,7 @@ function ResumeThumbnailCard({
 }
 
 export function HomeScreen({
+  loading = false,
   resumes,
   activeImports,
   failedImports,
@@ -356,10 +359,13 @@ export function HomeScreen({
         }
       />
 
-      <div className="dashboard-main">
-        {visibleCardCount > 0 ? (
-          <>
-            <section className="home-card-grid" aria-label="全部简历">
+      {loading ? (
+        <PageLoading label="正在加载我的简历…" />
+      ) : (
+        <div className="dashboard-main">
+          {visibleCardCount > 0 ? (
+            <>
+              <section className="home-card-grid" aria-label="全部简历">
               {visibleImports.map(({ task, failed }) => (
                 <ImportTaskCard
                   task={task}
@@ -384,10 +390,10 @@ export function HomeScreen({
                   deleteDisabled={deletingResumeId !== null}
                 />
               ))}
-            </section>
-          </>
-        ) : (
-          <section className="dashboard-empty-state">
+              </section>
+            </>
+          ) : (
+            <section className="dashboard-empty-state">
             <span className="empty-state-icon" aria-hidden="true"><Plus size={28} strokeWidth={1.6} /></span>
             <h2>{query ? "没有匹配的简历" : "还没有正式简历"}</h2>
             <p>
@@ -408,9 +414,10 @@ export function HomeScreen({
               </div>
             )}
             {!query && <small className="empty-state-hint">建议：先完成一份基础版，再为不同岗位复制出定向版本。</small>}
-          </section>
-        )}
-      </div>
+            </section>
+          )}
+        </div>
+      )}
 
       {notice && <div className="home-action-toast"><FeedbackNotice kind={notice.kind}>{notice.message}</FeedbackNotice></div>}
       {pendingDelete && (
@@ -455,6 +462,7 @@ export function HomeScreen({
 }
 
 export function HomePage() {
+  const [loading, setLoading] = useState(true);
   const resumes = useResumeStore((state) => state.resumes);
   const activeImports = useResumeStore((state) => state.activeImports);
   const failedImports = useResumeStore((state) => state.failedImports);
@@ -465,7 +473,15 @@ export function HomePage() {
   const deleteResumeImport = useResumeStore((state) => state.deleteResumeImport);
 
   useEffect(() => {
-    void listResumes();
+    let cancelled = false;
+    void listResumes()
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [listResumes]);
 
   return (
@@ -482,6 +498,7 @@ export function HomePage() {
           />
         ))}
       <HomeScreen
+        loading={loading}
         resumes={resumes}
         activeImports={activeImports}
         failedImports={failedImports}
