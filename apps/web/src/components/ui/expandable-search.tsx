@@ -5,6 +5,7 @@ import "./expandable-search.css";
 
 type ExpandableSearchProps = {
   label: string;
+  name: string;
   value: string;
   onValueChange: (value: string) => void;
   className?: string;
@@ -13,6 +14,7 @@ type ExpandableSearchProps = {
 
 export function ExpandableSearch({
   label,
+  name,
   value,
   onValueChange,
   className,
@@ -62,7 +64,7 @@ export function ExpandableSearch({
         aria-label={label}
         autoComplete="off"
         data-slot="expandable-search-input"
-        name="resume-search"
+        name={name}
         placeholder={placeholder}
         spellCheck={false}
         type="search"

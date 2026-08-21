@@ -5,7 +5,7 @@ import { ExpandableSearch } from "./expandable-search";
 
 function SearchHarness() {
   const [value, setValue] = useState("");
-  return <ExpandableSearch label="搜索简历" value={value} onValueChange={setValue} placeholder="搜索简历…" />;
+  return <ExpandableSearch label="搜索简历" name="resume-search" value={value} onValueChange={setValue} placeholder="搜索简历…" />;
 }
 
 describe("ExpandableSearch", () => {

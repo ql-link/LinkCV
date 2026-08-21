@@ -308,11 +308,10 @@ export function DatasetsPage() {
 
         {!loading && !loadFailed && datasets.length === 0 && (
           <section className="datasets-empty">
-            <span className="datasets-empty-icon" aria-hidden="true"><FileText size={40} strokeWidth={1.4} /></span>
-            <h2>先上传一份资料</h2>
-            <p>把简历、作品集、项目复盘或岗位参考资料放进来。<br />写简历时可以快速检索和引用，减少重复整理。</p>
-            <DatasetDropzone onDropFile={pickFile} />
-            <p className="datasets-empty-hint">建议先上传与你当前求职方向最相关的资料，资料越聚焦，后续引用越准确。</p>
+            <span className="datasets-empty-icon" aria-hidden="true"><FileText size={44} strokeWidth={1.2} /></span>
+            <h2>还没有资料</h2>
+            <p>建议先上传一份与你当前求职方向相关的资料，<br />后续写简历时可以快速检索和引用。</p>
+            <Button icon={<Plus size={15} />} onClick={() => setDialogOpen(true)}>上传第一份资料</Button>
           </section>
         )}
 

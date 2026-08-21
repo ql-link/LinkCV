@@ -25,23 +25,37 @@ afterEach(() => {
 });
 
 describe("JobCenterPage", () => {
-  it("按范围和关键词读取列表，并使用当前版本归档", async () => {
+  it("默认读取全部范围，提供透明按钮筛选并使用当前版本归档", async () => {
     useResumeStore.setState({ user: { id: "user-1", email: "user@example.test", nickname: "测试用户", is_admin: false } });
     const list = vi.spyOn(api, "listJobDescriptions").mockResolvedValue({ items: [job], next_cursor: null });
     const archived = { ...job, archived_at: "2026-07-29T09:00:00Z", lock_version: 3 } as JobDescriptionRecord;
     const archive = vi.spyOn(api, "archiveJobDescription").mockResolvedValue({ job_description: archived });
 
-    render(<JobCenterPage />);
+    const { container } = render(<JobCenterPage />);
 
     expect(await screen.findByText("Java 开发实习生")).toBeInTheDocument();
-    expect(list).toHaveBeenCalledWith({ scope: "active", keyword: undefined });
+    expect(list).toHaveBeenCalledWith({ scope: "all", keyword: undefined });
+    expect(screen.queryByRole("button", { name: "活动" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "全部" })).toHaveClass("ui-button-transparent");
+    expect(screen.getByRole("button", { name: "全部" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "已归档" })).toHaveClass("ui-button-transparent");
+    expect(screen.getByRole("button", { name: "新建 JD" })).toHaveClass("ui-button-transparent");
+    expect(container.querySelector(".job-center-content > .page-hero")).toBeInTheDocument();
+    expect(container.querySelector(".job-center-content > .job-center-body")).toBeInTheDocument();
+    const heroActions = container.querySelector(".page-hero-actions");
+    expect(heroActions?.children[0]).toBe(screen.getByRole("button", { name: "搜索职位" }));
+    expect(heroActions?.children[1]).toBe(screen.getByRole("button", { name: "安装采集插件" }));
     expect(screen.queryByRole("button", { name: "删除 Java 开发实习生" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "归档 Java 开发实习生" }));
 
     await waitFor(() => expect(archive).toHaveBeenCalledWith("job-1", 2));
-    expect(screen.queryByText("Java 开发实习生")).not.toBeInTheDocument();
+    expect(screen.getByText("Java 开发实习生")).toBeInTheDocument();
+    expect(container.querySelector(".job-status-badge")).toHaveTextContent("已归档");
 
-    fireEvent.change(screen.getByRole("textbox", { name: "搜索 JD" }), { target: { value: "Java 后端" } });
+    fireEvent.click(screen.getByRole("button", { name: "搜索职位" }));
+    const searchInput = screen.getByRole("searchbox", { name: "搜索职位" });
+    expect(searchInput).toHaveAttribute("name", "job-search");
+    fireEvent.change(searchInput, { target: { value: "Java 后端" } });
     fireEvent.click(screen.getByRole("button", { name: "已归档" }));
     await waitFor(() => expect(list).toHaveBeenLastCalledWith({ scope: "archived", keyword: "Java 后端" }));
   });
