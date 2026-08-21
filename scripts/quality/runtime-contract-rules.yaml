@@ -320,11 +320,26 @@ contracts:
         pattern: '(?m)^    container_name: linkcv$'
         message: Production 必须使用生产容器名
       - path: deploy/docker-compose.production.yml
-        pattern: 'LINKCV_HTTP_PORT:-8000'
-        message: Production 必须使用生产宿主机端口 8000
+        pattern: 'LINKCV_HTTP_PORT:-4174'
+        message: Production 必须保持反向代理使用的宿主机端口 4174
       - path: deploy/docker-compose.production.yml
         pattern: 'LINKCV_DOCKER_NETWORK:-tolink-app-net'
         message: Production 必须加入生产应用网络
+      - path: Jenkinsfile
+        pattern: 'CLOUD_HOST = ''100\.77\.31\.79'''
+        message: Production Jenkins 必须把发布交给 Cloud 生产主机
+      - path: Jenkinsfile
+        pattern: 'CLOUD_SSH_KEY = ''/var/jenkins_home/\.ssh/cloud_prod'''
+        message: Production Jenkins 必须使用独立 Cloud SSH 密钥
+      - path: deploy/scripts/build-production-on-cloud.sh
+        pattern: 'prod_root="/opt/tolink/LinkCV"'
+        message: Production 远端脚本必须使用 Cloud 生产部署目录
+      - path: deploy/scripts/build-production-on-cloud.sh
+        pattern: 'tag="prod-\$\{commit_short\}-b\$\{build_number\}"'
+        message: Production 镜像必须使用 prod-<commit>-b<build> 标签
+      - path: deploy/scripts/build-production-on-cloud.sh
+        pattern: 'http_port="4174"'
+        message: Production 远端健康检查必须使用宿主机端口 4174
       - path: Jenkinsfile
         pattern: 'tokenCredentialId: ''linkcv-dev-webhook-token'''
         message: Production webhook token 必须来自现有 Jenkins Secret Text 凭据
@@ -338,18 +353,15 @@ contracts:
       - path: deploy/scripts/build-development-on-primary.sh
         pattern: '--expected-app-env development[\s\S]*--expected-host 100\.86\.10\.52[\s\S]*--expected-port 13306[\s\S]*--expected-database linkcv'
         message: Dev 迁移必须锁定共享 Dev 的独立 linkcv 数据库
+      - path: deploy/scripts/build-production-on-cloud.sh
+        pattern: '--expected-app-env production[\s\S]*--expected-host tolink-mysql[\s\S]*--expected-port 3306[\s\S]*--expected-database linkcv'
+        message: Production 远端迁移必须锁定 Cloud 的独立 linkcv 数据库
+      - path: deploy/scripts/build-production-on-cloud.sh
+        pattern: 'python /app/scripts/db/init_mysql\.py[\s\S]*python /app/scripts/release/run_alembic\.py'
+        message: Production 必须先初始化独立数据库再执行 Alembic
       - path: Jenkinsfile
-        pattern: 'EXPECTED_APP_ENV = ''production'''
-        message: Production Jenkins 必须锁定 production 环境
-      - path: Jenkinsfile
-        pattern: 'EXPECTED_MYSQL_HOST = ''tolink-mysql'''
-        message: Production Jenkins 必须锁定生产 MySQL 主机
-      - path: Jenkinsfile
-        pattern: 'EXPECTED_MYSQL_PORT = ''3306'''
-        message: Production Jenkins 必须锁定生产 MySQL 端口
-      - path: Jenkinsfile
-        pattern: 'EXPECTED_MYSQL_DATABASE = ''linkcv'''
-        message: Production Jenkins 必须锁定独立 linkcv 数据库
+        pattern: 'defaultValue: false,[\s\S]*description: ''仅首次切换时导入旧 Production SQLite'
+        message: 旧 SQLite 导入必须是默认关闭的一次性人工参数
 
   - id: development-resource-isolation
     description: Dev 使用专属 Redis DB 和对象存储 Bucket

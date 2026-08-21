@@ -40,6 +40,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY apps/backend/alembic.ini ./
 COPY apps/backend/migrations ./migrations
 COPY apps/backend/src ./src
+COPY apps/backend/scripts/release/import_legacy_sqlite.py /app/scripts/release/import_legacy_sqlite.py
+COPY scripts/db/init_mysql.py /app/scripts/db/init_mysql.py
 COPY scripts/release/run_alembic.py /app/scripts/release/run_alembic.py
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --python .venv/bin/python --no-deps --index-url "${UV_INDEX_URL}" .
