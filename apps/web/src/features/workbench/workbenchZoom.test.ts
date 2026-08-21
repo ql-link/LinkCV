@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { getWheelZoomScale, handleWheelZoom } from "./workbenchZoom";
+import { getTwoPageFitScale, getWheelZoomScale, handleWheelZoom } from "./workbenchZoom";
 
 describe("workbench wheel zoom", () => {
   it("只在按下 Command 或 Ctrl 时缩放", () => {
@@ -18,6 +18,16 @@ describe("workbench wheel zoom", () => {
 
     expect(getWheelZoomScale(1.2, { ctrlKey: true, metaKey: false, deltaY: -1 }, options)).toBe(1.2);
     expect(getWheelZoomScale(0.3, { ctrlKey: false, metaKey: true, deltaY: 1 }, options)).toBe(0.3);
+  });
+
+  it("按工作区宽度把两张 A4 和页间空隙完整放下", () => {
+    expect(getTwoPageFitScale(1470, 96)).toBe(0.8526);
+    expect(getTwoPageFitScale(2000, 96)).toBe(1);
+    expect(getTwoPageFitScale(390, 32)).toBe(0.2221);
+  });
+
+  it("双页适配后的临时缩放允许低于普通模式下限", () => {
+    expect(getWheelZoomScale(0.22, { ctrlKey: true, metaKey: false, deltaY: -1 }, { minScale: 0.1 })).toBe(0.3);
   });
 
   it("普通滚轮保持页面滚动，修饰键滚轮才阻止默认行为", () => {

@@ -1,4 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
+import { inlineIconMarkdown, isInlineIconName } from "../lib/resumeInlineIcon";
+import { inlineFontSizeOpenMarker, INLINE_FONT_SIZE_CLOSE_MARKER, normalizeInlineFontSize } from "../lib/resumeInlineStyle";
 
 export type RichTextV1 = {
   format: "markdown";
@@ -360,16 +362,19 @@ function markedText(node: JSONContent) {
     if (mark.type === "italic") value = `*${value}*`;
     if (mark.type === "link" && typeof mark.attrs?.href === "string") value = `[${value}](${mark.attrs.href})`;
   }
+  const fontSize = normalizeInlineFontSize(
+    node.marks?.find((mark) => mark.type === "textStyle")?.attrs?.fontSize,
+  );
+  if (fontSize != null) {
+    value = `${inlineFontSizeOpenMarker(fontSize)}${value}${INLINE_FONT_SIZE_CLOSE_MARKER}`;
+  }
   return value;
 }
 
 function nodeText(node: JSONContent): string {
   if (node.type === "text") return markedText(node);
   if (node.type === "hardBreak") return "\n";
-  if (node.type === "inlineIcon") {
-    const name = typeof node.attrs?.name === "string" ? node.attrs.name : "Star";
-    return `:icon[${name}]:`;
-  }
+  if (node.type === "inlineIcon" && isInlineIconName(node.attrs?.name)) return inlineIconMarkdown(node.attrs.name);
   return (node.content ?? []).map(nodeText).join("");
 }
 
@@ -394,7 +399,8 @@ function nodeMarkdown(node: JSONContent): string {
   if (node.type === "orderedList") return (node.content ?? []).map((item, index) => `${index + 1}. ${nodeMarkdown(item)}`).join("\n");
   if (node.type === "resumeRow") {
     const [left, right] = node.content ?? [];
-    return `::: left\n${left ? nodeText(left) : ""}\n:::\n\n::: right\n${right ? nodeText(right) : ""}\n:::`;
+    const leftWidth = Math.min(80, Math.max(30, Number(node.attrs?.leftWidth) || 50));
+    return `::: left ${leftWidth}\n${left ? nodeText(left) : ""}\n:::\n\n::: right\n${right ? nodeText(right) : ""}\n:::`;
   }
   if (node.type === "resumeColumns") {
     const columns = node.content ?? [];

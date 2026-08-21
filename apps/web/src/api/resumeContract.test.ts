@@ -150,6 +150,42 @@ describe("resume semantic contract adapter", () => {
     expect(markdown).toBe("# 张三\n\n**后端工程师**");
   });
 
+  it("round-trips an inline font size through the markdown extension", () => {
+    const markdown = editorDocumentToMarkdown({
+      type: "doc",
+      content: [{
+        type: "paragraph",
+        content: [{
+          type: "text",
+          text: "重点经历",
+          marks: [{ type: "bold" }, { type: "textStyle", attrs: { fontSize: "9.5pt" } }],
+        }],
+      }],
+    });
+    const html = renderResumeMarkdown(markdown);
+
+    expect(markdown).toBe("[[linkcv-size:9.5pt]]**重点经历**[[/linkcv-size]]");
+    expect(html).toContain('<span style="font-size:9.5pt"><strong>重点经历</strong></span>');
+  });
+
+  it("round-trips a line-leading inline icon through the markdown extension", () => {
+    const markdown = editorDocumentToMarkdown({
+      type: "doc",
+      content: [{
+        type: "paragraph",
+        content: [
+          { type: "inlineIcon", attrs: { name: "GraduationCap" } },
+          { type: "text", text: " 示例大学" },
+        ],
+      }],
+    });
+    const html = renderResumeMarkdown(markdown);
+
+    expect(markdown).toBe(":icon[GraduationCap]: 示例大学");
+    expect(html).toContain('<span data-inline-icon data-icon-name="GraduationCap" class="resume-inline-icon">');
+    expect(html).toContain("</span> 示例大学");
+  });
+
   it("preserves private images and their editor layout metadata", () => {
     const markdown = editorDocumentToMarkdown({
       type: "doc",
@@ -176,6 +212,23 @@ describe("resume semantic contract adapter", () => {
     expect(markdown).toContain('"linkcv-image:60:%:right"');
     expect(html).toContain('data-type="avatar-image"');
     expect(html).toContain('data-type="resume-image"');
+  });
+
+  it("preserves a left-right row and its left column width", () => {
+    const markdown = editorDocumentToMarkdown({
+      type: "doc",
+      content: [{
+        type: "resumeRow",
+        attrs: { leftWidth: 62 },
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "示例大学" }] },
+          { type: "paragraph", content: [{ type: "text", text: "2022 – 2026" }] },
+        ],
+      }],
+    });
+
+    expect(markdown).toContain("::: left 62\n示例大学");
+    expect(renderResumeMarkdown(markdown)).toContain('data-left-width="62"');
   });
 
   it("renders raw HTML as text instead of executable markup", () => {
