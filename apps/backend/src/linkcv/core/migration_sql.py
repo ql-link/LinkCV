@@ -42,4 +42,11 @@ def execute_sql_file(
         # Migration files are reviewed, statement-only MySQL SQL. Executing the
         # driver SQL directly keeps JSON object colons literal instead of having
         # SQLAlchemy interpret values such as `"font_size":14` as bind params.
-        connection.exec_driver_sql(statement)
+        # The migration format never supplies bind parameters.  Without
+        # ``no_parameters``, SQLAlchemy still passes an empty parameter
+        # collection to some DBAPIs.  PyMySQL then applies ``%`` formatting
+        # and rejects literal percentages in seeded Markdown/JSON content.
+        connection.exec_driver_sql(
+            statement,
+            execution_options={"no_parameters": True},
+        )
