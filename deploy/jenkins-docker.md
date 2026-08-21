@@ -21,6 +21,17 @@ Do not place the token in this repository or the Primary env file.
 
 ## Production
 
+The Production job uses the root `Jenkinsfile`. It reuses the existing
+`linkcv-dev-webhook-token` Secret Text credential and accepts only
+`refs/heads/master`. The shared GitHub push webhook therefore dispatches Dev
+pushes to the Development job and master pushes to the Production job without
+adding another webhook or exposing the token in the repository.
+
+After adding the trigger for the first time, run the Production job once so
+Jenkins loads and registers the trigger from the updated `Jenkinsfile`.
+Subsequent pull-request merges into `master` emit a push event and start the
+Production job automatically.
+
 Jenkins copies the repository's non-secret `.env.production` to `/opt/tolink/LinkCV/.env.production`. Place a private `/opt/tolink/LinkCV/.env.production.local` beside it from the deployment secret store. The private file must define the MySQL and MinIO credentials plus a random JWT secret.
 
 ```dotenv
