@@ -6,7 +6,8 @@
   "scripts": {
     "setup": "npm ci && npm run sync && npm run ai:setup",
     "sync": "npm ci --prefix apps/web && npm ci --prefix apps/extension && npm ci --prefix third_party/pi && npm run prepare:pi && uv sync --directory apps/backend --dev",
-    "prepare:pi": "npm --prefix third_party/pi run hydrate:model-data",
+    "prepare:pi": "npm --prefix third_party/pi run check:model-data",
+    "refresh:pi-model-data": "npm --prefix third_party/pi run hydrate:model-data",
     "ai:setup": "uv run --directory apps/backend python ../../scripts/setup/setup_ai_links.py",
     "check:ai": "uv run --directory apps/backend python ../../scripts/quality/check_ai_links.py && uv run --directory apps/backend python ../../scripts/quality/check_skills.py && npm run check:docs && npm run check:contracts",
     "check:docs": "uv run --directory apps/backend python ../../scripts/quality/check_docs_sync.py",
