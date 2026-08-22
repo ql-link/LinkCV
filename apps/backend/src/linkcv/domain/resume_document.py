@@ -3,12 +3,11 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-DATE_PATTERN = re.compile(r"^\d{4}(?:-(?:0[1-9]|1[0-2]))?$")
 ID_PATTERN = re.compile(r"^[a-z][a-z0-9_:-]{2,127}$")
 DANGEROUS_MARKDOWN_PATTERN = re.compile(
     r"<(?:script|iframe|object|embed|style)\b|javascript:", re.IGNORECASE
 )
-Keyword = Annotated[str, Field(min_length=1, max_length=200)]
+Keyword = Annotated[str, Field(max_length=200)]
 
 
 def _is_safe_http_url(value: str) -> bool:
@@ -55,7 +54,7 @@ class IdentifiedModel(DomainModel):
 
 
 class ResumeLink(IdentifiedModel):
-    label: str = Field(min_length=1, max_length=100)
+    label: str = Field(max_length=100)
     url: str = Field(min_length=1, max_length=2_048)
 
     @model_validator(mode="after")
@@ -90,29 +89,22 @@ class Highlight(IdentifiedModel):
 
 
 class DatedEntry(IdentifiedModel):
-    start_date: str | None = None
-    end_date: str | None = None
+    start_date: str | None = Field(default=None, max_length=100)
+    end_date: str | None = Field(default=None, max_length=100)
     current: bool = False
     source_refs: list[SourceRef] = Field(default_factory=list, max_length=50)
 
-    @model_validator(mode="after")
-    def validate_date_format(self) -> "DatedEntry":
-        for value in (self.start_date, self.end_date):
-            if value is not None and not DATE_PATTERN.fullmatch(value):
-                raise ValueError("date must use YYYY or YYYY-MM")
-        return self
-
 
 class WorkExperience(DatedEntry):
-    organization: str = Field(min_length=1, max_length=300)
-    position: str = Field(min_length=1, max_length=300)
+    organization: str = Field(max_length=300)
+    position: str = Field(max_length=300)
     location: str | None = Field(default=None, max_length=300)
     summary: RichTextV1 | None = None
     highlights: list[Highlight] = Field(default_factory=list, max_length=100)
 
 
 class Education(DatedEntry):
-    institution: str = Field(min_length=1, max_length=300)
+    institution: str = Field(max_length=300)
     area: str | None = Field(default=None, max_length=300)
     study_type: str | None = Field(default=None, max_length=200)
     score: str | None = Field(default=None, max_length=100)
@@ -121,7 +113,7 @@ class Education(DatedEntry):
 
 
 class Project(DatedEntry):
-    name: str = Field(min_length=1, max_length=300)
+    name: str = Field(max_length=300)
     role: str | None = Field(default=None, max_length=300)
     url: str | None = Field(default=None, max_length=2_048)
     summary: RichTextV1 | None = None
@@ -135,13 +127,13 @@ class Project(DatedEntry):
 
 
 class Skill(IdentifiedModel):
-    name: str = Field(min_length=1, max_length=200)
+    name: str = Field(max_length=200)
     level: str | None = Field(default=None, max_length=100)
     keywords: list[Keyword] = Field(default_factory=list, max_length=100)
 
 
 class Certificate(DatedEntry):
-    name: str = Field(min_length=1, max_length=300)
+    name: str = Field(max_length=300)
     issuer: str | None = Field(default=None, max_length=300)
     url: str | None = Field(default=None, max_length=2_048)
 
@@ -153,14 +145,14 @@ class Certificate(DatedEntry):
 
 
 class Award(DatedEntry):
-    title: str = Field(min_length=1, max_length=300)
+    title: str = Field(max_length=300)
     awarder: str | None = Field(default=None, max_length=300)
     summary: RichTextV1 | None = None
 
 
 class Language(IdentifiedModel):
-    name: str = Field(min_length=1, max_length=100)
-    fluency: str | None = Field(default=None, max_length=100)
+    name: str = Field(max_length=300)
+    fluency: str | None = Field(default=None, max_length=300)
 
 
 class CustomItem(IdentifiedModel):
@@ -171,7 +163,7 @@ class CustomItem(IdentifiedModel):
 
 
 class CustomSection(IdentifiedModel):
-    title: str = Field(min_length=1, max_length=200)
+    title: str = Field(max_length=200)
     items: list[CustomItem] = Field(default_factory=list, max_length=100)
 
 

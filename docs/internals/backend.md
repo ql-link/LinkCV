@@ -81,15 +81,15 @@ LiteLLM 只位于 `modules/llm/gateway.py` 和只读目录边界。白名单 ada
 
 模型凭据使用 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 提供的 Fernet 密钥环加密，数据库只保存 `v1:<keyId>:<token>`。列表首项负责新写入，旧 key 用于兼容解密；读取旧密文时会惰性重包到首项。普通日志、HTTP 响应和调用记录均不包含明文凭据、messages、模型完整响应或供应商原始错误。
 
-简历导入 Worker 通过 `integrations/resume_structuring.py` 以 `source=resume_import` 调用 `LLMService.structured_chat()`，复用数据库中的 Chat 当前绑定、加密凭据、调用日志和计量。模型输入只包含 SectionIR 的标题、类别和 Markdown，不包含原文件、对象键、LinkParse 元数据、warnings 或用户 ID；模型返回内容仍须通过 `ResumeExtractionDraft` 严格校验。
+简历导入 Worker 通过 `integrations/resume_structuring.py` 以 `source=resume_import` 调用 `LLMService.structured_chat()`，复用数据库中的 Chat 当前绑定、加密凭据、调用日志和计量。模型输入只包含 SectionIR 的标题、类别和 Markdown，不包含原文件、对象键、LinkParse 元数据、warnings 或用户 ID；结构化调用使用 DeepSeek 时显式发送 `thinking.type=disabled`，其他供应商和普通 Chat 不附加该专属参数；模型返回内容仍须通过 `ResumeExtractionDraft` 严格校验。
 
 `scripts/db/init_mysql.py` 只允许创建名为 `linkcv` 的 MySQL 数据库；`scripts/release/run_alembic.py` 在迁移前校验环境、host、port 和数据库并输出不含密码的摘要。FastAPI 配置支持根 `.env`、显式 `LINKCV_ENV_FILE`、同名 `.local` 和进程环境覆盖。Redis 在鉴权链路中作为唯一会话存储：`auth:session:{sid}` 保存会话哈希，`auth:user_sessions:{uid}` 索引该用户全部会话；会话不写 MySQL，撤销即删除 key。对象存储配置仅使用 `MINIO_*`。
 
 ## 导入与外部边界
 
-Markdown 文件在进程内做 UTF-8 与确定性换行清理；PDF 和 DOCX 以固定的 `engine=auto/output_formats=markdown/ocr=auto/dpi=200/include_bbox=false/include_images=false` 调用 LinkParse `POST /v1/parse`，由服务端识别文件类型。LinkParse 响应在 JSON decode 前限制为 3 MiB，随后校验 request ID、schema、页数、Markdown 质量、预期文件类型和空 assets；客户端不下载或保存外部 assets，也不自动重试同步解析请求。DOCX 响应只有 `meta.word.omitted_image_count > 0` 会形成用户告警，其余 Word 元数据只写入脱敏调用日志。
+Markdown 文件在进程内做 UTF-8 与确定性换行清理；PDF 和 DOCX 以固定的 `output_formats=markdown/include_bbox=false/include_images=false` 调用 LinkParse `POST /v1/parse`，由 LinkParse 识别文件类型并决定解析引擎、OCR 选页和渲染 DPI。LinkParse 响应在 JSON decode 前限制为 3 MiB，随后校验 request ID、schema、页数、Markdown 质量、预期文件类型和空 assets；客户端不下载或保存外部 assets，也不自动重试同步解析请求。DOCX 响应只有 `meta.word.omitted_image_count > 0` 会形成用户告警，其余 Word 元数据只写入脱敏调用日志。
 
-超过结构化输入上限的内容不会发送给模型，合规输入的 AST 被压缩为 H1–H3 `SectionIR` 后才发送给结构化模型，最终稳定 ID、日期和来源行号由程序生成。可识别日期会标准化为 `YYYY` 或 `YYYY-MM`；日期先后矛盾、`current` 与结束日期并存等内容问题按原始语义保留，不作为导入失败条件，结构、长度、危险链接和 Markdown 安全规则仍严格校验。HTTP 导入入口先校验所选模板与文件，再使用 canonical UUID `Idempotency-Key`；Redis key 按用户和 Header 哈希隔离，先以 30 秒租约占有请求，再绑定持久化导入 ID 并保留 15 分钟。`document_parse_tasks` 中 `source_type=resume_import` 的记录是上传和解析状态真值；API 只上传、更新为解析中并等待 MQ confirm，Worker 才执行转换和结果事务。单任务状态接口按当前用户和 `source_type` 查询，非法 ID、不存在和越权统一隐藏为 `RESUME_IMPORT_NOT_FOUND`，并在读取前沿用现有陈旧任务收口。转换成功后 Worker 尽力把 Markdown 存到源文件同目录的 `converted.md`，存档失败只记录告警，不改变解析结果。上传失败补偿对象；业务解析失败保留源文件、可能存在的转换存档与失败记录供用户删除，不自动重试。
+超过结构化输入上限的内容不会发送给模型，合规输入的 AST 被压缩为 H1–H3 `SectionIR` 后才发送给结构化模型，最终稳定 ID 和来源行号由程序生成。可识别日期会标准化为 `YYYY` 或 `YYYY-MM`，无法识别的日期按原文保留；日期矛盾、非标准联系方式、错别字、空缺单位或职位等内容质量问题不作为导入失败条件。字段类型、数量和长度上限、危险链接、Markdown 主动内容及内部 ID 完整性仍严格校验。HTTP 导入入口先校验所选模板与文件，再使用 canonical UUID `Idempotency-Key`；Redis key 按用户和 Header 哈希隔离，先以 30 秒租约占有请求，再绑定持久化导入 ID 并保留 15 分钟。`document_parse_tasks` 中 `source_type=resume_import` 的记录是上传和解析状态真值；API 只上传、更新为解析中并等待 MQ confirm，Worker 才执行转换和结果事务。单任务状态接口按当前用户和 `source_type` 查询，非法 ID、不存在和越权统一隐藏为 `RESUME_IMPORT_NOT_FOUND`，并在读取前沿用现有陈旧任务收口。转换成功后 Worker 尽力把 Markdown 存到源文件同目录的 `converted.md`，存档失败只记录告警，不改变解析结果。上传失败补偿对象；业务解析失败保留源文件、可能存在的转换存档与失败记录供用户删除，不自动重试。
 
 Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可用，PDF/DOCX 返回 `DOCUMENT_CONVERSION_UNAVAILABLE`；Production 缺 Key 会安全拒绝启动。默认测试全部使用确定性 Fake 和 `httpx.MockTransport`，不访问真实网络或读取密钥。PDF/DOCX 解析日志只记录 LinkCV 调用 LinkParse 的开始、结果、耗时、解析器/页数/OCR 摘要、DOCX Word 元数据和稳定错误码；不读取 LinkParse 内部日志，也不记录正文、Prompt、Cookie、密钥或完整供应商响应。Markdown 本地转换只记录格式、结果和耗时。
 

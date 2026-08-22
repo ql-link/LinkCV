@@ -1,6 +1,7 @@
 from linkcv.domain.resume_extraction import (
     DraftBasics,
     DraftLink,
+    DraftNamedItem,
     DraftProject,
     DraftSkill,
     DraftWorkExperience,
@@ -83,7 +84,7 @@ def test_date_normalization_does_not_invent_a_month() -> None:
     assert normalize_date("2024") == ("2024", False)
     assert normalize_date("2024 年 7 月") == ("2024-07", False)
     assert normalize_date("至今") == (None, True)
-    assert normalize_date("不确定") == (None, False)
+    assert normalize_date("不确定") == ("不确定", False)
 
 
 def test_draft_normalization_preserves_reversed_dates_without_failing() -> None:
@@ -104,6 +105,26 @@ def test_draft_normalization_preserves_reversed_dates_without_failing() -> None:
     work = result.document.sections.work_experiences[0]
     assert work.start_date == "2025-10"
     assert work.end_date == "2016-03"
+
+
+def test_draft_normalization_preserves_incomplete_and_noisy_content() -> None:
+    draft = ResumeExtractionDraft(
+        basics=DraftBasics(email="这不是标准邮箱"),
+        work_experiences=[DraftWorkExperience(raw_start_date="时间写得有点乱")],
+        skills=[DraftSkill()],
+        languages=[DraftNamedItem(name="语言名称可能写错", detail="熟练程度" * 30)],
+    )
+
+    result = finalize_resume_document(draft, "# 内容不完整的简历")
+
+    work = result.document.sections.work_experiences[0]
+    assert work.organization == ""
+    assert work.position == ""
+    assert work.start_date == "时间写得有点乱"
+    assert result.document.basics.email == "这不是标准邮箱"
+    assert result.document.sections.skills[0].name == ""
+    assert result.document.sections.languages[0].fluency == "熟练程度" * 30
+    assert result.warnings == []
 
 
 def test_url_normalization_adds_https_only_to_bare_hosts() -> None:

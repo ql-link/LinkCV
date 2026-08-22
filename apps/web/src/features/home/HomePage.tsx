@@ -54,6 +54,9 @@ function ImportTaskCard({
   onDelete?: () => void;
 }) {
   const stage = task.upload_status === "uploading" ? "正在上传" : "正在解析";
+  const stateLabel = failed
+    ? task.upload_status === "failed" ? "上传失败" : "解析失败"
+    : task.upload_status === "uploading" ? "上传中" : "解析中";
 
   return (
     <article
@@ -75,7 +78,7 @@ function ImportTaskCard({
           <span className="is-short" />
         </div>
         <div className="home-import-state">
-          <span className="home-import-state-label">未完成</span>
+          <span className="home-import-state-label">{stateLabel}</span>
           {!failed && (
             <div
               className="home-import-progress"
