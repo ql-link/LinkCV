@@ -1,7 +1,6 @@
 import { CircleAlert, CircleCheck, FileDown, Home, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useResumeStore } from "../store/resumeStore";
-import { exportResumePdf } from "../features/preview/exportPdf";
 import { Brand, Button, FeedbackNotice, IconButton } from "@/components/ui";
 
 type SaveToast = {
@@ -12,8 +11,9 @@ type SaveToast = {
 export function Header() {
   const title = useResumeStore((state) => state.title);
   const activeResumeId = useResumeStore((state) => state.activeResumeId);
+  const editorContent = useResumeStore((state) => state.editorContent);
+  const settings = useResumeStore((state) => state.settings);
   const setTitle = useResumeStore((state) => state.setTitle);
-  const smartOnePage = useResumeStore((state) => state.settings.smartOnePage);
   const user = useResumeStore((state) => state.user);
   const saveStatus = useResumeStore((state) => state.saveStatus);
   const dirty = useResumeStore((state) => state.dirty);
@@ -69,7 +69,12 @@ export function Header() {
         </div>
       </div>
       <div className="nav-actions">
-        <Button variant="secondary" icon={<FileDown size={14} />} disabled={!activeResumeId} onClick={() => activeResumeId && void exportResumePdf(smartOnePage, title, activeResumeId)}>
+        <Button variant="secondary" icon={<FileDown size={14} />} disabled={!activeResumeId || typeof editorContent === "string"} onClick={() => {
+          if (!activeResumeId || typeof editorContent === "string") return;
+          void import("../features/preview/exportTextPdf")
+            .then(({ exportResumeTextPdf }) => exportResumeTextPdf(editorContent, settings, title))
+            .catch(() => setSaveToast({ kind: "error", message: "PDF 生成失败" }));
+        }}>
           导出 PDF
         </Button>
         <Button icon={<Save size={14} />} disabled={isManualSaving} onClick={() => void handleManualSave()}>

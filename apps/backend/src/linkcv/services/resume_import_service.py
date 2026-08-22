@@ -1,5 +1,6 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+import logging
 from pathlib import PurePath, PurePosixPath
 from time import monotonic
 from zipfile import BadZipFile, ZipFile
@@ -20,6 +21,8 @@ from linkcv.integrations.resume_structuring import (
     StructuringModelNotConfiguredError,
 )
 
+logger = logging.getLogger(__name__)
+
 SUPPORTED_IMPORT_MIME = {
     "md": {"text/markdown", "text/plain", "text/x-markdown"},
     "docx": {
@@ -37,10 +40,47 @@ ENCRYPTED_DOCX_MARKERS = tuple(
 
 
 class ResumeImportFailure(Exception):
-    def __init__(self, status_code: int, code: str) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        code: str,
+        *,
+        stage: str | None = None,
+        exception_type: str | None = None,
+        validation_model: str | None = None,
+        validation_paths: str | None = None,
+        validation_types: str | None = None,
+    ) -> None:
         super().__init__(code)
         self.status_code = status_code
         self.code = code
+        self.stage = stage
+        self.exception_type = exception_type
+        self.validation_model = validation_model
+        self.validation_paths = validation_paths
+        self.validation_types = validation_types
+
+
+def _validation_metadata(error: ValidationError) -> dict[str, str]:
+    entries = error.errors(
+        include_url=False,
+        include_context=False,
+        include_input=False,
+    )
+    paths = sorted(
+        {
+            ".".join(str(part) for part in entry.get("loc", ())) or "<root>"
+            for entry in entries
+        }
+    )
+    error_types = sorted(
+        {str(entry.get("type", "validation_error")) for entry in entries}
+    )
+    return {
+        "validation_model": error.title,
+        "validation_paths": ",".join(paths[:20]),
+        "validation_types": ",".join(error_types[:20]),
+    }
 
 
 @dataclass(frozen=True)
@@ -157,6 +197,14 @@ class ResumeImportService:
         deadline_monotonic: float,
         on_markdown_extracted: Callable[[str], Awaitable[None]] | None = None,
     ) -> ParsedImportResult:
+        conversion_started = monotonic()
+        logger.info(
+            "resume import stage started",
+            extra={
+                "operation_id": operation_id,
+                "stage": "document_conversion",
+            },
+        )
         try:
             conversion = await self._document_converter.convert(
                 filename=filename,
@@ -166,7 +214,22 @@ class ResumeImportService:
                 deadline_monotonic=deadline_monotonic,
             )
         except DocumentConversionFailure as error:
-            raise ResumeImportFailure(error.status_code, error.code) from error
+            raise ResumeImportFailure(
+                error.status_code,
+                error.code,
+                stage="document_conversion",
+                exception_type=type(error).__name__,
+            ) from error
+        logger.info(
+            "resume import stage completed",
+            extra={
+                "operation_id": operation_id,
+                "stage": "document_conversion",
+                "duration_ms": round((monotonic() - conversion_started) * 1000),
+                "source_format": conversion.source_format,
+                "warning_count": len(conversion.warnings),
+            },
+        )
         if on_markdown_extracted is not None:
             await on_markdown_extracted(conversion.markdown)
         if len(conversion.markdown.encode("utf-8")) > self._max_structuring_bytes:
@@ -175,7 +238,19 @@ class ResumeImportService:
         section_ir = build_section_ir(conversion.markdown)
         remaining = deadline_monotonic - monotonic()
         if remaining <= 15:
-            raise ResumeImportFailure(504, "IMPORT_DEADLINE_EXCEEDED")
+            raise ResumeImportFailure(
+                504,
+                "IMPORT_DEADLINE_EXCEEDED",
+                stage="resume_structuring",
+            )
+        structuring_started = monotonic()
+        logger.info(
+            "resume import stage started",
+            extra={
+                "operation_id": operation_id,
+                "stage": "resume_structuring",
+            },
+        )
         try:
             draft = await self._structuring_client.extract(
                 user_id=user_id,
@@ -187,19 +262,75 @@ class ResumeImportService:
             )
         except StructuringModelNotConfiguredError as error:
             raise ResumeImportFailure(
-                503, "STRUCTURING_MODEL_UNAVAILABLE"
+                503,
+                "STRUCTURING_MODEL_UNAVAILABLE",
+                stage="resume_structuring",
+                exception_type=type(error).__name__,
             ) from error
         except ResumeStructureInvalidError as error:
-            raise ResumeImportFailure(422, "RESUME_STRUCTURE_INVALID") from error
+            raise ResumeImportFailure(
+                422,
+                "RESUME_STRUCTURE_INVALID",
+                stage="model_response_validation",
+                exception_type=type(error).__name__,
+            ) from error
         except StructuringModelError as error:
-            raise ResumeImportFailure(502, "STRUCTURING_MODEL_FAILED") from error
+            raise ResumeImportFailure(
+                502,
+                "STRUCTURING_MODEL_FAILED",
+                stage="resume_structuring",
+                exception_type=type(error).__name__,
+            ) from error
+        logger.info(
+            "resume import stage completed",
+            extra={
+                "operation_id": operation_id,
+                "stage": "resume_structuring",
+                "duration_ms": round((monotonic() - structuring_started) * 1000),
+            },
+        )
 
+        normalization_started = monotonic()
+        logger.info(
+            "resume import stage started",
+            extra={
+                "operation_id": operation_id,
+                "stage": "resume_normalization",
+            },
+        )
         try:
             normalized = finalize_resume_document(draft, conversion.markdown)
-        except (ValidationError, ValueError) as error:
-            raise ResumeImportFailure(422, "RESUME_STRUCTURE_INVALID") from error
+        except ValidationError as error:
+            metadata = _validation_metadata(error)
+            raise ResumeImportFailure(
+                422,
+                "RESUME_STRUCTURE_INVALID",
+                stage="resume_normalization",
+                exception_type=type(error).__name__,
+                **metadata,
+            ) from error
+        except ValueError as error:
+            raise ResumeImportFailure(
+                422,
+                "RESUME_STRUCTURE_INVALID",
+                stage="resume_normalization",
+                exception_type=type(error).__name__,
+            ) from error
+        logger.info(
+            "resume import stage completed",
+            extra={
+                "operation_id": operation_id,
+                "stage": "resume_normalization",
+                "duration_ms": round((monotonic() - normalization_started) * 1000),
+                "warning_count": len(normalized.warnings),
+            },
+        )
         if deadline_monotonic - monotonic() <= 0:
-            raise ResumeImportFailure(504, "IMPORT_DEADLINE_EXCEEDED")
+            raise ResumeImportFailure(
+                504,
+                "IMPORT_DEADLINE_EXCEEDED",
+                stage="resume_normalization",
+            )
         return ParsedImportResult(
             document=normalized.document,
             extracted_markdown=conversion.markdown,

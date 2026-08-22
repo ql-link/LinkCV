@@ -494,3 +494,44 @@ No actionable P0/P1/P2 findings remain.
 - [x] Check browser console and full-page dimensions.
 
 final result: passed
+
+## 简历模板预览弹窗 — 2026-08-21
+
+### Source visual truth
+
+- Path: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-2ac895d6-f112-40af-bef8-752b38ee48e4.png`.
+- Pixel dimensions: 1301 x 1400 at 1x density.
+- Target state: authenticated template library with the template preview dialog open.
+
+### Implementation evidence
+
+- Local URL: `http://127.0.0.1:5173/templates`.
+- Browser viewport observed: 563 x 1790 CSS pixels at 1x density.
+- Browser state observed: `/login?next=%2Ftemplates`.
+- Implementation screenshot: unavailable because the authenticated template-preview state could not be reached without the user's login session.
+- Console errors checked: no warnings or errors were present on the reachable login state.
+
+### Full-view and focused comparison evidence
+
+- The source image was opened and inspected.
+- A same-state implementation capture is unavailable: the local browser redirects to the login page before the template library and preview dialog render.
+- The preview shell, zoom rail, resume paper, close control, footer actions, typography, spacing, colors, and responsive overflow therefore remain visually unverified.
+- Code inspection and automated tests are not substitutes for a visual comparison, so no visual fidelity claim is made.
+
+### Findings
+
+- [P1] Authenticated preview state is unavailable for visual QA.
+  - Evidence: the reference shows an open preview dialog; the browser is redirected to `/login?next=%2Ftemplates`.
+  - Impact: the required same-state comparison cannot be completed.
+  - Fix: sign in locally, open any template card, capture the dialog at a desktop viewport, and rerun design QA.
+
+### Comparison history
+
+1. Source image opened; implementation navigation attempted; authentication redirected the browser to the login page.
+2. No same-state comparison or visual fix loop could be performed.
+
+### Follow-up
+
+- Sign in, open a template preview, capture the same desktop state, and compare shell dimensions, tool rail, paper scale, footer, and responsive overflow.
+
+final result: blocked

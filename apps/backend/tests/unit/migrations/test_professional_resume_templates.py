@@ -53,8 +53,6 @@ def test_0026_refuses_to_delete_referenced_templates() -> None:
     assert "NULL" in down_sql
     for template_key in TEMPLATE_KEYS:
         assert template_key in down_sql
-
-
 def test_0027_refreshes_only_guarded_professional_template_snapshots() -> None:
     up_sql = (SQL_DIR / "0027.up.sql").read_text()
     down_sql = (SQL_DIR / "0027.down.sql").read_text()

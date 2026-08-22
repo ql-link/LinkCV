@@ -757,6 +757,8 @@ export const api = {
     request<{ deleted: boolean }>(`/api/resumes/${id}/versions/${versionNo}`, {
       method: "DELETE",
     }),
+  getResumeVersion: (id: string, versionNo: number) =>
+    request<{ version: ResumeVersion }>(`/api/resumes/${id}/versions/${versionNo}`),
   restoreVersion: (id: string, versionNo: number) =>
     request<{ resume: ResumeRecord }>(
       `/api/resumes/${id}/versions/${versionNo}/restore`,
