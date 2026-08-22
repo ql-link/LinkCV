@@ -535,3 +535,74 @@ final result: passed
 - Sign in, open a template preview, capture the same desktop state, and compare shell dimensions, tool rail, paper scale, footer, and responsive overflow.
 
 final result: blocked
+
+## 新建简历弹窗 — 2026-08-22
+
+### Visual truth and evidence
+
+- Source: `/Users/jixu/.codex/generated_images/01a0290f-e37f-7502-bcfc-fa6932726e2a/exec-3fe5c740-ad0a-45ad-81fd-822cb179dd74.png` (`1600 × 1000`).
+- Implementation: `http://100.119.89.54:5173/resumes`; fictional local API fixtures were used only for browser QA.
+- Desktop screenshot: `/Users/jixu/.codex/visualizations/2026/08/22/01a0290f-e37f-7502-bcfc-fa6932726e2a/create-resume-desktop.png` (`1280 × 720`).
+- Mobile screenshot: `/Users/jixu/.codex/visualizations/2026/08/22/01a0290f-e37f-7502-bcfc-fa6932726e2a/create-resume-mobile.png` (`390 × 844`).
+
+### Comparison and interaction evidence
+
+- Preserved the existing LinkCV workspace shell instead of copying the generated image's fictional sidebar.
+- Matched the selected direction: centered modal, resume name above the template carousel, prominent selected card, page controls, and primary create-and-enter action.
+- Desktop dialog measured `760 × 647` CSS px; its template section had no overflow at `1280 × 720`.
+- Mobile collapses to one visible template card and keeps the footer actions available; the template area scrolls within the modal when needed.
+- Clicking the next arrow changed the selected template and page from `1 / 6` to `2 / 6`; the name input remained editable. Console warnings and errors: 0.
+
+### Comparison history
+
+1. Fixed the generic dialog width constraint that initially limited the modal to 512px.
+2. Added a short-viewport layout so the carousel pagination and footer remain usable at 720px height.
+3. Added the single-card mobile breakpoint to avoid a compressed three-column layout.
+
+### Findings
+
+- P0: none.
+- P1: none.
+- P2: none.
+- P3: none.
+
+final result: passed
+
+## 新建简历模板翻页视觉 — 2026-08-22
+
+### Visual truth and evidence
+
+- Source: `/Users/jixu/.codex/generated_images/01a0290f-e37f-7502-bcfc-fa6932726e2a/exec-7b9a19f4-ba3a-4af0-8ffd-26e4a53f06dc.png` (`1600 × 1000`, DPR 1).
+- Implementation screenshot: `/Users/jixu/.codex/visualizations/2026/08/22/01a0290f-e37f-7502-bcfc-fa6932726e2a/create-resume-page-turn-desktop.png` (`1280 × 720`, viewport `1280 × 720`, DPR 1).
+- Mobile screenshot: `/Users/jixu/.codex/visualizations/2026/08/22/01a0290f-e37f-7502-bcfc-fa6932726e2a/create-resume-page-turn-mobile.png` (`390 × 844`, viewport `390 × 844`, DPR 1).
+- Focused comparison: `/Users/jixu/.codex/visualizations/2026/08/22/01a0290f-e37f-7502-bcfc-fa6932726e2a/create-resume-page-turn-comparison.png`.
+- State: current-page create dialog open with one selected center template and its previous/next templates visible.
+
+### Required fidelity surfaces
+
+- Typography and copy: unchanged from the existing dialog; this pass intentionally affects only the spatial treatment of template cards.
+- Spacing and layout: the center card stays front-facing; adjacent cards now sit close to it and rotate outward around their inner edges, matching the reference's open-page composition.
+- Colors and tokens: selection blue, muted side-card opacity, borders, and elevation continue to use existing `--ui-*` tokens.
+- Image quality: all three cards continue rendering live `ResumePreview` content; no raster placeholders or recreated assets were introduced.
+- Responsive: desktop shows the three-card perspective; `390 × 844` keeps one flat center card with no horizontal page overflow.
+
+### Comparison and interaction evidence
+
+- The source and implementation carousel regions were normalized into the same focused comparison image before judgment.
+- Clicking a side page selected it, moved the page counter to `2 / 6`, and kept the dialog open.
+- Browser console warnings and errors: 0.
+
+### Comparison history
+
+1. First pass used a subtle 24-degree rotation and 1000px perspective; the page angle was less legible than the reference.
+2. Revised the side cards to a 34-degree outward rotation with 650px perspective, tightened the card gaps, and kept the center card visually forward.
+3. Replaced the provisional directional shadow with the shared elevation token, then recaptured the desktop and mobile states; no P0/P1/P2 differences remain for the requested page-turn treatment.
+
+### Findings
+
+- P0: none.
+- P1: none.
+- P2: none.
+- P3: none.
+
+final result: passed
