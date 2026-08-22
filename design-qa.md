@@ -535,3 +535,34 @@ final result: passed
 - Sign in, open a template preview, capture the same desktop state, and compare shell dimensions, tool rail, paper scale, footer, and responsive overflow.
 
 final result: blocked
+
+---
+
+# 2026-08-23 404 页面 Design QA
+
+final result: passed
+
+## Comparison target
+
+- Source: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-66ddcd04-6aed-43d4-8511-b18972b0fa1b.png`
+- Implementation: `http://127.0.0.1:5174/missing-page`
+- Final capture: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/linkcv-404-691x572-final.png`
+- Source pixels: 691 × 572; implementation pixels: 691 × 572; CSS viewport: 691 × 572.
+- Both artifacts show the default desktop 404 state. The implementation intentionally uses LinkCV background and text tokens plus Chinese copy.
+
+## Iterations
+
+1. Initial comparison found the content group too high relative to the reference and the home action implemented as button navigation. Result: blocked (P2).
+2. Increased the top visual inset, retained responsive centering, and changed the action to a real `/` link using the shared button styles. The final same-size comparison has no remaining P0, P1, or P2 differences. Result: passed.
+
+## Fidelity review
+
+- Typography: hierarchy and weights match the reference; Chinese copy uses the project UI font stack.
+- Spacing: icon, code, title, description, and action follow the reference rhythm at the same viewport.
+- Colors: intentionally adapted to `--ui-background`, `--ui-foreground`, and muted project tokens.
+- Image quality: no raster assets are required; the face and arrow use the project's configured icon library and remain sharp.
+- Copy: localized, concise, and action-oriented; the home destination is `/`.
+- Motion: the face sways between -15° and 15° using only `transform`; a reduced-motion rule disables the loop.
+- Responsive: 1024 × 768 and 390 × 844 checks show no horizontal overflow or clipping.
+
+No focused crop was needed because every fidelity-critical element is large and legible in the full-view, same-size comparison.

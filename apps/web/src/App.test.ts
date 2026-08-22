@@ -32,6 +32,40 @@ describe("App landing routes", () => {
   });
 });
 
+describe("App not-found route", () => {
+  beforeEach(() => {
+    window.history.replaceState(null, "", "/missing-page");
+    useResumeStore.setState({
+      authStatus: "authenticated",
+      user: {
+        id: "user-1",
+        email: "user@example.test",
+        nickname: "测试用户",
+        is_admin: false,
+      },
+      activeResumeId: null,
+      dirty: false,
+      hydrate: vi.fn().mockResolvedValue(undefined),
+    });
+  });
+
+  it("展示 404 页面并提供公共首页入口", () => {
+    render(createElement(App));
+
+    expect(screen.getByRole("heading", { name: "页面不存在" })).toBeInTheDocument();
+    expect(screen.getByText("404")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "返回首页" })).toHaveAttribute("href", "/");
+  });
+
+  it("访客访问未知地址时也展示 404 页面", () => {
+    useResumeStore.setState({ authStatus: "guest", user: null });
+    render(createElement(App));
+
+    expect(screen.getByRole("heading", { name: "页面不存在" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/missing-page");
+  });
+});
+
 describe("resumeLoadErrorMessage", () => {
   it("区分不存在、鉴权失效、数据格式和服务错误", () => {
     expect(resumeLoadErrorMessage(new ApiRequestError(404, "RESUME_NOT_FOUND"))).toContain("不存在");

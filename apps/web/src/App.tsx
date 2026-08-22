@@ -15,6 +15,7 @@ import { JobCenterPage } from "./features/jobs/JobCenterPage";
 import { JobDetailPage } from "./features/jobs/JobDetailPage";
 import { JobFormPage } from "./features/jobs/JobFormPage";
 import { LandingPage } from "./features/landing/LandingPage";
+import { NotFoundPage } from "./features/not-found/NotFoundPage";
 import { SharePage } from "./features/share/SharePage";
 import { ResumeWorkbench } from "./features/workbench/ResumeWorkbench";
 import { authPath, editorPath, navigateTo, useAppRoute } from "./routing";
@@ -70,8 +71,6 @@ export function App() {
       ) {
         const next = `${window.location.pathname}${window.location.search}`;
         navigateTo(authPath("login", next), { replace: true });
-      } else if (route.kind === "notFound") {
-        navigateTo("/", { replace: true });
       }
       return;
     }
@@ -145,6 +144,10 @@ export function App() {
 
   if (authStatus === "checking") {
     return <PageLoading label="正在加载简历工作台…" scope="page" />;
+  }
+
+  if (route.kind === "notFound") {
+    return <NotFoundPage />;
   }
 
   if (route.kind === "landing") {
@@ -241,21 +244,6 @@ export function App() {
       return <StatusShell><PageLoading label="正在打开简历…" scope="panel" /></StatusShell>;
     }
     return <ResumeWorkbench />;
-  }
-
-  if (route.kind === "notFound") {
-    return (
-      <StatusShell>
-        <div className="status-card">
-          <p className="status-code">404</p>
-          <h1>页面不存在</h1>
-          <p className="status-desc">这个地址可能已被移动或删除。</p>
-          <div className="status-actions">
-            <Button onClick={() => navigateTo("/resumes", { replace: true })}>返回简历主页</Button>
-          </div>
-        </div>
-      </StatusShell>
-    );
   }
 
   return <PageLoading label="正在进入简历主页…" scope="page" />;
