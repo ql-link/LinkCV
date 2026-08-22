@@ -86,6 +86,26 @@ def test_date_normalization_does_not_invent_a_month() -> None:
     assert normalize_date("不确定") == (None, False)
 
 
+def test_draft_normalization_preserves_reversed_dates_without_failing() -> None:
+    draft = ResumeExtractionDraft(
+        basics=DraftBasics(name="张三"),
+        work_experiences=[
+            DraftWorkExperience(
+                organization="示例科技有限公司",
+                position="工程师",
+                raw_start_date="2025.10",
+                raw_end_date="2016.03",
+            )
+        ],
+    )
+
+    result = finalize_resume_document(draft, "# 张三")
+
+    work = result.document.sections.work_experiences[0]
+    assert work.start_date == "2025-10"
+    assert work.end_date == "2016-03"
+
+
 def test_url_normalization_adds_https_only_to_bare_hosts() -> None:
     assert normalize_http_url("example.test/profile") == (
         "https://example.test/profile",

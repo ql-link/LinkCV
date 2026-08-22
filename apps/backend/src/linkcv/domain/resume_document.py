@@ -96,14 +96,10 @@ class DatedEntry(IdentifiedModel):
     source_refs: list[SourceRef] = Field(default_factory=list, max_length=50)
 
     @model_validator(mode="after")
-    def validate_dates(self) -> "DatedEntry":
+    def validate_date_format(self) -> "DatedEntry":
         for value in (self.start_date, self.end_date):
             if value is not None and not DATE_PATTERN.fullmatch(value):
                 raise ValueError("date must use YYYY or YYYY-MM")
-        if self.current and self.end_date is not None:
-            raise ValueError("current entry cannot have end_date")
-        if self.start_date and self.end_date and self.start_date > self.end_date:
-            raise ValueError("start_date cannot be after end_date")
         return self
 
 
