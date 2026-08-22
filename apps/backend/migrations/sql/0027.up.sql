@@ -1,75 +1,401 @@
--- 0027 expand: make candidate configs capability-neutral and add validation evidence.
+-- Refresh the four official professional template snapshots with the supplied avatar and fuller fictional samples.
+-- Digest guards prevent overwriting templates customized after 0026.
 
-ALTER TABLE llm_call_logs
-  ADD COLUMN model_config_version BIGINT UNSIGNED NULL
-    COMMENT '实际模型配置版本快照，未选中模型时为空' AFTER model_config_id,
-  ADD CONSTRAINT ck_llm_call_logs_model_config_version
-    CHECK (model_config_version IS NULL OR model_config_version >= 1);
+UPDATE resume_templates
+SET data_json = IF(
+  SHA2(JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.sections.custom_sections[0].items[0].content.content')), 256)
+    = 'f775287ac3f4737ce7bf87cbf77a0a52ffcaae16cd94bdbf6a87756d5b64cd7f',
+  JSON_SET(
+    data_json,
+    '$.sections.custom_sections[0].items[0].content.content', ':::: sidebar
+![虚构头像](/templates/avatar-cat.jpg "linkcv-avatar:108")
 
-CREATE TABLE llm_model_validations (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '模型验证主键',
-  model_config_id BIGINT UNSIGNED NOT NULL COMMENT '被验证候选主键',
-  config_version BIGINT UNSIGNED NOT NULL COMMENT '被验证候选版本',
-  capability VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL
-    COMMENT '目标模型能力',
-  probe_version BIGINT UNSIGNED NOT NULL COMMENT '验证探针版本',
-  runtime_version VARCHAR(64) NULL COMMENT '执行组件版本',
-  call_id VARCHAR(40) NOT NULL COMMENT '对应逻辑调用标识',
-  status VARCHAR(16) NOT NULL COMMENT '验证状态',
-  error_code VARCHAR(64) NULL COMMENT '非敏感稳定错误码',
-  created_by_user_id BIGINT UNSIGNED NOT NULL COMMENT '发起验证的管理员主键',
-  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-    COMMENT '创建时间（UTC）',
-  CONSTRAINT pk_llm_model_validations PRIMARY KEY (id),
-  CONSTRAINT uk_llm_model_validations_call_id UNIQUE (call_id),
-  KEY idx_llm_model_validations_latest
-    (model_config_id, capability, config_version, created_at, id),
-  CONSTRAINT fk_llm_model_validations_model
-    FOREIGN KEY (model_config_id) REFERENCES llm_model_configs (id) ON DELETE RESTRICT,
-  CONSTRAINT fk_llm_model_validations_call
-    FOREIGN KEY (call_id) REFERENCES llm_call_logs (call_id) ON DELETE RESTRICT,
-  CONSTRAINT fk_llm_model_validations_creator
-    FOREIGN KEY (created_by_user_id) REFERENCES users (id) ON DELETE RESTRICT,
-  CONSTRAINT ck_llm_model_validations_capability
-    CHECK (capability IN ('chat', 'resume_structuring', 'pi_agent')),
-  CONSTRAINT ck_llm_model_validations_status
-    CHECK (status IN ('succeeded', 'failed', 'cancelled')),
-  CONSTRAINT ck_llm_model_validations_versions
-    CHECK (config_version >= 1 AND probe_version >= 1)
-) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
-  COMMENT='模型配置按能力和版本保存的验证证据';
+### 基本信息
 
-ALTER TABLE llm_capability_bindings
-  DROP FOREIGN KEY fk_llm_capability_bindings_model,
-  DROP INDEX idx_llm_capability_bindings_capability_model;
+:icon[Calendar]: 24 岁
 
-ALTER TABLE llm_capability_bindings
-  ADD COLUMN binding_version BIGINT UNSIGNED NOT NULL DEFAULT 1
-    COMMENT '能力绑定乐观锁版本' AFTER model_config_id,
-  ADD COLUMN validation_id BIGINT UNSIGNED NULL
-    COMMENT '最近一次成功验证证据主键，存量 Chat 可为空' AFTER binding_version,
-  ADD KEY idx_llm_capability_bindings_model (model_config_id, capability),
-  ADD CONSTRAINT fk_llm_capability_bindings_model
-    FOREIGN KEY (model_config_id) REFERENCES llm_model_configs (id) ON DELETE RESTRICT,
-  ADD CONSTRAINT fk_llm_capability_bindings_validation
-    FOREIGN KEY (validation_id) REFERENCES llm_model_validations (id) ON DELETE RESTRICT,
-  ADD CONSTRAINT ck_llm_capability_bindings_capability
-    CHECK (capability IN ('chat', 'resume_structuring', 'pi_agent')),
-  ADD CONSTRAINT ck_llm_capability_bindings_version
-    CHECK (binding_version >= 1);
+:icon[MapPin]: 上海
 
-INSERT INTO llm_capability_bindings
-  (capability, model_config_id, binding_version, validation_id, created_at, updated_at)
-SELECT 'resume_structuring', NULL, 1, NULL, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6)
-FROM DUAL
-WHERE NOT EXISTS (
-  SELECT 1 FROM llm_capability_bindings WHERE capability = 'resume_structuring'
-);
+:icon[Briefcase]: 3 年经验
 
-INSERT INTO llm_capability_bindings
-  (capability, model_config_id, binding_version, validation_id, created_at, updated_at)
-SELECT 'pi_agent', NULL, 1, NULL, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6)
-FROM DUAL
-WHERE NOT EXISTS (
-  SELECT 1 FROM llm_capability_bindings WHERE capability = 'pi_agent'
-);
+:icon[Phone]: 13800000000
+
+:icon[Mail]: zhangsan@example.com
+
+### 核心能力
+
+**语言能力：** 英语六级，可完成日常商务沟通、英文邮件与材料整理。
+
+**办公能力：** 熟练使用文档、表格与演示工具，能够搭建行政、采购和费用台账。
+
+**协作能力：** 善于跨部门沟通，可独立推进会议、供应商、员工活动与接待事项。
+
+### 能力指数
+
+- 行政统筹
+- 数据整理
+- 沟通协调
+
+### 兴趣爱好
+
+- 阅读
+- 徒步
+- 摄影
+::::
+
+:::: main
+# 张三
+
+行政专员
+
+::: left
+求职方向：行政专员　期望薪资：面议
+:::
+
+::: right
+意向城市：上海　到岗时间：两周内
+:::
+
+## :icon[GraduationCap]: 教育背景
+
+::: left
+2020.09 - 2024.06　**北辰商学院**
+:::
+
+::: right
+工商管理（本科）
+:::
+
+**专业成绩：** GPA 3.7 / 4.0（专业前 10%），连续两年获得校级奖学金。
+
+**主修课程：** 管理学、组织行为学、人力资源管理、统计学、商务沟通、财务基础与办公自动化。
+
+## :icon[Briefcase]: 工作经历
+
+::: left
+2024.07 - 至今　**云杉商务服务有限公司**
+:::
+
+::: right
+行政专员
+:::
+
+- 维护会议、采购、合同与固定资产台账，每月核对 200 余条记录，确保资料完整可追溯。
+- 统筹月度员工活动和访客接待，协调供应商、场地及内部资源，保障事项按期完成。
+- 优化常用申请表、会议室预约与归档规范，减少重复沟通并提升跨部门流转效率。
+- 汇总行政费用与物资消耗数据，输出月度分析，为预算调整和集中采购提供依据。
+- 对接物业与设备供应商，跟进报修、验收及付款节点，建立问题闭环清单。
+
+::: left
+2023.07 - 2024.06　**知行文创有限公司**
+:::
+
+::: right
+行政助理
+:::
+
+- 安排会议日程、整理纪要并跟踪负责人和截止时间，推动待办按计划闭环。
+- 负责办公用品盘点、采购登记和费用凭证整理，协助完成月度对账。
+- 配合招聘预约、候选人接待与入职材料核验，维护员工基础信息。
+- 协助策划年度团建与节日活动，完成报名、物资、现场执行和满意度回访。
+
+## :icon[Briefcase]: 项目实践
+
+**办公空间优化项目｜执行成员**
+
+- 盘点 6 个区域的工位、会议室和设备使用情况，整理问题清单与调整建议。
+- 协调员工访谈、供应商报价和搬迁排期，按节点更新进度与风险台账。
+- 项目完成后汇总满意度反馈，形成空间使用规范和后续维护清单。
+
+## :icon[Award]: 荣誉证书
+
+- 全国计算机等级考试二级，熟练使用常用办公软件和数据透视表。
+- 校级优秀志愿服务个人，具备活动组织、现场协调和应急沟通经验。
+- 普通话水平测试二级甲等，可承担会议主持、接待讲解与通知撰写。
+
+## :icon[Star]: 自我评价
+
+做事细致有条理，重视时间节点和信息准确性；习惯通过清单、台账和复盘推进复杂事项，能够主动协调资源、识别风险并及时反馈，在多任务环境中保持稳定执行。
+::::'
+  ),
+  NULL
+)
+WHERE `key` = 'administrative-sidebar-cn';
+
+UPDATE resume_templates
+SET data_json = IF(
+  SHA2(JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.sections.custom_sections[0].items[0].content.content')), 256)
+    = '8b3135432b9d769cd293a3ced56ed82ea74d1d4b98412ce95dfbb044a0e3d8ac',
+  JSON_SET(
+    data_json,
+    '$.sections.custom_sections[0].items[0].content.content', '![虚构头像](/templates/avatar-cat.jpg "linkcv-avatar:82")
+
+# 张三｜校招 / 社招通用简历
+
+13800000000 ｜ zhangsan@example.com ｜ 杭州
+
+## 教育背景
+
+:::: meta
+2020.09 - 2024.06
+北辰财经大学
+市场营销 · 本科
+GPA 3.8 / 4.0
+::::
+
+- **研究实践：** 参与区域消费趋势调研，负责问卷设计、数据清洗、交叉分析与结论汇报。
+- **相关课程：** 市场营销、消费者行为、统计学、电子商务、数据可视化、商务写作。
+- **校园荣誉：** 连续两年获专业奖学金，获校级优秀学生干部与创新实践奖。
+
+## 实习经历
+
+:::: meta
+2023.06 - 2023.09
+星野零售科技有限公司
+用户运营
+运营实习生
+::::
+
+- 维护商品信息与活动排期，协同设计、客服和供应链完成日常上线检查，周均跟进 80 余项任务。
+- 分析访问、收藏与购买漏斗，提出页面信息层级和触达节奏优化建议，支持周度业务复盘。
+- 参与年度主题活动策划，负责会场信息核验、用户引导、素材验收与效果数据整理。
+- 建立活动问题清单与复盘模板，归纳高频异常和处理方案，减少后续活动重复沟通。
+- 整理用户反馈并按场景归类，与产品共同推进 6 项体验问题修复和帮助文档更新。
+
+:::: meta
+2022.07 - 2022.10
+澄海内容科技有限公司
+内容社区
+运营实习生
+::::
+
+- 完成内容审核、选题整理与用户互动，维护社区内容质量，日均处理内容 150 余条。
+- 根据阅读完成率和互动数据调整发布节奏，沉淀可复用的选题清单与标题规范。
+- 协助执行线上征集活动，跟踪报名、发布、奖品发放和复盘全流程。
+- 维护创作者沟通群与常见问题库，提升活动通知触达和问题响应效率。
+
+## 校园经历
+
+:::: meta
+2022.03 - 2022.11
+北辰大学商学院
+创新营销竞赛
+团队负责人
+::::
+
+- 组织五人团队完成需求拆解、市场调研、方案设计和现场答辩，制定周计划并跟进分工。
+- 回收并清洗 520 份有效问卷，形成目标人群、使用场景与渠道偏好分析。
+- 通过阶段评审和数据复盘迭代方案，最终获得校级一等奖。
+- 负责答辩材料结构与演示设计，将研究过程转化为清晰的商业叙事。
+
+:::: meta
+2021.03 - 2021.12
+学生媒体中心
+新媒体运营项目
+项目成员
+::::
+
+- 负责每周内容策划、排期和发布，持续优化标题、封面与互动方式。
+- 建立月度数据看板，帮助团队识别高互动内容并调整栏目结构。
+- 策划毕业季人物访谈专题，协调采访、编辑与发布，累计完成 12 篇原创内容。
+
+## 技能证书 / 其他
+
+- **语言：** 英语六级，可阅读行业报告并撰写常用英文邮件。
+- **工具：** Excel、PowerPoint、Photoshop、SPSS、XMind、Visio。
+- **能力：** 数据清洗与基础分析、活动执行、用户调研、内容策划和跨团队协作。
+- **证书：** 全国计算机等级考试二级、普通话水平测试二级甲等。
+- **项目：** 可独立完成访谈提纲、问卷回收、基础统计和结论汇报。
+- **实践：** 能够独立完成运营周报、活动复盘、竞品信息整理和基础数据看板。'
+  ),
+  NULL
+)
+WHERE `key` = 'campus-professional-cn';
+
+UPDATE resume_templates
+SET data_json = IF(
+  SHA2(JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.sections.custom_sections[0].items[0].content.content')), 256)
+    = '33817a3f33a2ada648e7432c75fd866d5011bbafa20f47f70b8978db5e22f010',
+  JSON_SET(
+    data_json,
+    '$.sections.custom_sections[0].items[0].content.content', '![虚构头像](/templates/avatar-cat.jpg "linkcv-avatar:94")
+
+# 张三｜行政事务专员
+
+13800000000 ｜ zhangsan@example.com ｜ 24 岁 ｜ 江西南昌
+
+## 教育经历
+
+::: left
+**南岭财经大学**
+
+工商管理 / 本科 / GPA 3.8
+:::
+
+::: right
+2020.09 - 2024.06
+:::
+
+- 主修课程：管理学、行政管理、人力资源管理、会计学、信息系统管理与应用写作。
+- 获学院年度学习进步奖、优秀学生干部，并参与校园公共服务满意度调研。
+- 担任班级学习委员，维护课程通知与资料台账，连续四学期获评优秀班干部。
+
+## 实习经历 / 社会实践
+
+::: left
+**青禾社区服务中心**
+
+行政事务实习生
+:::
+
+::: right
+2023.06 - 2023.09
+:::
+
+- 处理文件登记、来访接待和服务事项分流，日均接待咨询 30 余人次，保持台账及时完整。
+- 整理会议纪要和活动材料，明确负责人、完成时限与反馈方式，跟进跨岗位待办闭环。
+- 熟悉基层服务流程，协助优化常用表单、材料清单与电子归档方式。
+- 汇总居民意见和高频咨询，按主题形成周报，为服务窗口调整提供参考。
+- 协助筹办政策宣传活动，完成场地布置、物资清点、签到和现场秩序维护。
+
+::: left
+**晨光公益课堂**
+
+志愿者
+:::
+
+::: right
+2022.07 - 2022.08
+:::
+
+- 与团队共同设计阅读与写作课程，为 40 余名小学生提供暑期公益辅导。
+- 负责课堂签到、家长沟通和学习反馈，所在团队获评优秀志愿团队。
+- 制作课程进度表和学生成长记录，协助教师针对薄弱环节调整教学安排。
+
+::: left
+**校青年志愿者协会**
+
+项目组负责人
+:::
+
+::: right
+2021.09 - 2022.06
+:::
+
+- 组织 12 名志愿者开展社区便民服务，统筹排班、培训、物资与现场协调。
+- 建立志愿服务时长和反馈台账，完成 8 场活动的资料归档与总结宣传。
+
+## 自我评价
+
+- 工作细心、责任心强，能够准确理解任务要求并及时反馈进展与风险。
+- 具备良好的文字整理、语言表达和跨岗位沟通能力，可独立完成通知与纪要。
+- 服务意识强，能在多任务环境中判断优先级，遇到突发情况保持耐心和条理。
+- 乐于复盘工作方法，习惯通过清单和台账提高执行效率。
+
+## 技能 / 证书其他
+
+- **技能：** SPSS、Excel 数据透视表、PowerPoint 信息排版与常用公文格式。
+- **证书：** 全国计算机等级考试二级、普通话水平测试二级甲等。
+- **语言：** 英语六级，能够阅读常用英文材料。
+- **兴趣：** 阅读、写作、城市徒步与公益服务。
+- **实践：** 熟悉会议组织、活动执行、材料归档、居民沟通和基础数据汇总。
+
+## 致谢
+
+感谢您阅读这份简历，期待有机会进一步交流，并以认真负责的态度为团队提供支持。'
+  ),
+  NULL
+)
+WHERE `key` = 'civic-service-cn';
+
+UPDATE resume_templates
+SET data_json = IF(
+  SHA2(JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.sections.custom_sections[0].items[0].content.content')), 256)
+    = 'b519411ea8d11e028771068db1fd62ca4eb99f702c042ec2c3ab0c0533d38c98',
+  JSON_SET(
+    data_json,
+    '$.sections.custom_sections[0].items[0].content.content', '![虚构头像](/templates/avatar-cat.jpg "linkcv-avatar:112")
+
+# 张三｜UI 设计师
+
+:icon[MapPin]: 浙江杭州 ｜ :icon[Mail]: zhangsan@example.com ｜ 2024 届
+
+## :icon[GraduationCap]: 教育经历
+
+::: left
+**海岚艺术大学**　视觉传达设计（硕士）　GPA 3.8 / 4.0
+:::
+
+::: right
+2021.09 - 2024.06
+:::
+
+::: left
+**南山商学院**　数字媒体艺术（学士）　GPA 3.7 / 4.0
+:::
+
+::: right
+2017.09 - 2021.06
+:::
+
+## :icon[Code2]: 个人技能
+
+:::: trio
+**技能名称：** Photoshop
+**使用时长：** 5 年
+**熟练程度：** 精通
+::::
+
+:::: trio
+**技能名称：** Figma
+**使用时长：** 4 年
+**熟练程度：** 熟练
+::::
+
+:::: trio
+**技能名称：** After Effects
+**使用时长：** 3 年
+**熟练程度：** 熟练
+::::
+
+## :icon[Briefcase]: 工作经历
+
+::: left
+**知见数字科技有限公司｜UI 设计师｜杭州**
+:::
+
+::: right
+2023.07 - 至今
+:::
+
+1. 负责电商平台首页、专题活动和关键交易页面的视觉设计与迭代，覆盖桌面端与移动端。
+2. 建立商品素材规范与组件模板，统一布局、字体、色彩和状态表达，提高常用页面交付效率。
+3. 完成图片精修、信息排版和多尺寸推广素材适配，确保线上视觉一致性。
+4. 与产品、研发和运营协作，根据转化数据、客服反馈与可用性问题持续优化方案。
+5. 梳理设计验收清单并跟进上线还原，对间距、交互状态和异常场景进行逐项核对。
+
+## :icon[Award]: 项目经历
+
+**星图商家工作台**
+
+- **项目简介：** 面向零售商家的经营管理平台，覆盖商品、订单、会员和经营分析。
+- **工作内容：**
+  1. 访谈店长与门店员工，梳理角色权限、高频任务与信息查找路径。
+  2. 设计桌面端信息架构和关键操作流程，补齐加载、空状态、错误与权限提示。
+  3. 建立表格、筛选器、数据卡片和图表组件规范，统一交互状态与视觉层级。
+  4. 与前端共同核对组件边界和响应式规则，跟进设计验收与上线复盘。
+
+**拾光城市文化活动小程序**
+
+- **项目简介：** 为城市展览与公共活动提供发现、预约、入场和收藏服务。
+- **工作内容：**
+  1. 负责用户旅程、线框图和高保真视觉，统一活动卡片与场馆信息结构。
+  2. 设计预约冲突、名额不足和取消退款等关键反馈，降低用户理解成本。
+
+## :icon[Star]: 自我评价
+
+热爱视觉与交互设计，能够从业务目标和用户任务出发组织信息；重视设计规范、无障碍细节、交付质量与团队协作，善于通过用户反馈、可用性观察和业务数据持续迭代。'
+  ),
+  NULL
+)
+WHERE `key` = 'creative-orange-cn';

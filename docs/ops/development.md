@@ -16,7 +16,7 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace 和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker 和 Pi Service。当前 Alembic head `0028`；`0002`–`0025` 建立并演进既有业务表和官方模板，`0026` 新增四套职能与设计模板，`0027` 增加统一模型能力绑定与验证证据，`0028` 把模型候选收敛为能力中立配置。
+新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace 和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker 和 Pi Service。当前 Alembic head `0029`；`0002`–`0025` 建立并演进既有业务表和官方模板，`0026` 新增四套职能与设计模板，`0027` 刷新四套模板默认快照，`0028` 增加统一模型能力绑定与验证证据，`0029` 把模型候选收敛为能力中立配置。
 
 后端默认读取仓库根目录 `.env`。设置 `LINKCV_ENV_FILE=.env.development` 可选择共享 Dev 基础配置；如果同目录存在 `.env.development.local`，其密码和密钥会覆盖基础文件。Production 同理使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，配置路径不受当前工作目录影响。
 
@@ -36,7 +36,7 @@ local/test 未配置密钥环时，原有非 LLM 接口仍可启动，但保存�
 LINKCV_ENV_FILE=.env.development npm run db:init
 ```
 
-命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0028`。图片、导入源文件和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。
+命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0029`。图片、导入源文件和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。
 
 `PLUGIN_RELEASE_ORIGIN` 是当前环境允许正式插件访问的 LinkCV 根 Origin。默认本地值为 `http://127.0.0.1:5173`；共享 Development 和 Production 必须在各自 `.local` 覆盖中写入用户实际访问的 Origin，Production 只接受 HTTPS。该值必须与构建安装包时传给 `build_extension_release.py` 的对应 Origin 一致，否则管理员上传会被拒绝。
 

@@ -114,6 +114,44 @@ def test_rabbit_retry_exhaustion_confirms_dlt_before_ack() -> None:
     incoming.nack.assert_not_awaited()
 
 
+def test_rabbit_retry_logs_safe_attempt_and_stage(caplog) -> None:
+    processor = SimpleNamespace(
+        process=AsyncMock(
+            side_effect=WorkerTaskRetryable(
+                "stable-code",
+                stage="resume_structuring",
+                exception_type="StructuringModelError",
+            )
+        ),
+        mark_retry_exhausted=Mock(),
+    )
+    incoming = rabbit_incoming(retries=0)
+
+    with caplog.at_level("WARNING"):
+        asyncio.run(
+            _handle_rabbit_message(
+                resume_processor=processor,
+                dataset_processor=dataset_processor(),
+                exchange=SimpleNamespace(publish=AsyncMock(return_value=True)),
+                dead_letter_exchange=SimpleNamespace(publish=AsyncMock()),
+                incoming=incoming,
+                settings=settings(),
+            )
+        )
+
+    retry = next(
+        record
+        for record in caplog.records
+        if record.message == "document parse retry scheduled"
+    )
+    assert retry.task_id == 42
+    assert retry.source == "resume"
+    assert retry.attempt == 2
+    assert retry.failure_stage == "resume_structuring"
+    assert retry.exception_type == "StructuringModelError"
+    assert "stable-code" not in caplog.text
+
+
 def test_rabbit_dlt_failure_retains_original_message() -> None:
     processor = SimpleNamespace(
         process=AsyncMock(side_effect=WorkerTaskRetryable("temporary")),

@@ -1,8 +1,13 @@
 import MarkdownIt from "markdown-it";
+import {
+  INLINE_FONT_SIZE_CLOSE_MARKER,
+  normalizeInlineFontSize,
+} from "../lib/resumeInlineStyle";
+import { isInlineIconName } from "../lib/resumeInlineIcon";
 
 type Block =
   | { type: "markdown"; content: string }
-  | { type: "side"; align: "left" | "right"; content: string }
+  | { type: "side"; align: "left" | "right"; content: string; leftWidth?: number }
   | { type: "wide"; kind: "sidebar" | "main" | "meta" | "trio"; content: string };
 
 const inlineIconNames = new Set([
@@ -46,6 +51,43 @@ const md = new MarkdownIt({
   breaks: false,
   typographer: false,
 });
+
+type InlineRule = Parameters<typeof md.inline.ruler.before>[2];
+const inlineFontSizeRule: InlineRule = (state, silent) => {
+  const source = state.src.slice(state.pos);
+  const opening = source.match(/^\[\[linkcv-size:(\d+(?:\.\d+)?)pt\]\]/);
+  if (opening) {
+    const points = normalizeInlineFontSize(opening[1]);
+    if (points == null || !source.slice(opening[0].length).includes(INLINE_FONT_SIZE_CLOSE_MARKER)) return false;
+    if (!silent) {
+      const token = state.push("linkcv_font_size_open", "span", 1);
+      token.attrSet("style", `font-size:${points}pt`);
+    }
+    state.pos += opening[0].length;
+    return true;
+  }
+  if (!source.startsWith(INLINE_FONT_SIZE_CLOSE_MARKER)) return false;
+  if (!silent) state.push("linkcv_font_size_close", "span", -1);
+  state.pos += INLINE_FONT_SIZE_CLOSE_MARKER.length;
+  return true;
+};
+
+md.inline.ruler.before("emphasis", "linkcv_font_size", inlineFontSizeRule);
+
+const inlineIconRule: InlineRule = (state, silent) => {
+  const match = state.src.slice(state.pos).match(/^\[\[linkcv-icon:([A-Za-z0-9]+)\]\]/);
+  const name = match?.[1];
+  if (!match || !isInlineIconName(name)) return false;
+  if (!silent) {
+    const token = state.push("linkcv_inline_icon", "span", 0);
+    token.meta = { name };
+  }
+  state.pos += match[0].length;
+  return true;
+};
+
+md.inline.ruler.before("emphasis", "linkcv_inline_icon", inlineIconRule);
+md.renderer.rules.linkcv_inline_icon = (tokens, index) => `<span data-inline-icon data-icon-name="${tokens[index].meta.name}" class="resume-inline-icon"></span>`;
 
 const defaultImageRenderer = md.renderer.rules.image;
 const defaultLinkOpenRenderer = md.renderer.rules.link_open;
@@ -237,7 +279,7 @@ function tokenizeCustomBlocks(source: string): Block[] {
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     const wideStart = line.match(/^::::\s*(sidebar|main|meta|trio)\s*$/);
-    const start = line.match(/^:::\s*(left|right)\s*$/);
+    const start = line.match(/^:::\s*(left|right)(?:\s+(\d+(?:\.\d+)?))?\s*$/);
 
     if (!wideStart && !start) {
       buffer.push(line);
@@ -263,6 +305,10 @@ function tokenizeCustomBlocks(source: string): Block[] {
     if (!start) continue;
 
     const align = start[1] as "left" | "right";
+    const parsedLeftWidth = Number(start[2]);
+    const leftWidth = align === "left" && Number.isFinite(parsedLeftWidth)
+      ? Math.min(80, Math.max(30, parsedLeftWidth))
+      : undefined;
     const content: string[] = [];
     index += 1;
 
@@ -271,7 +317,7 @@ function tokenizeCustomBlocks(source: string): Block[] {
       index += 1;
     }
 
-    blocks.push({ type: "side", align, content: content.join("\n").trim() });
+    blocks.push({ type: "side", align, content: content.join("\n").trim(), leftWidth });
   }
 
   flushMarkdown();
@@ -299,8 +345,8 @@ function renderSideContent(content: string) {
   return renderMarkdownContent(content, true);
 }
 
-function renderPair(left: string, right: string) {
-  return `<div class="resume-row" data-type="resume-row" data-block="pair"><p class="resume-row-left">${renderSideContent(
+function renderPair(left: string, right: string, leftWidth = 70) {
+  return `<div class="resume-row" data-type="resume-row" data-block="pair" data-left-width="${leftWidth}"><p class="resume-row-left">${renderSideContent(
     left,
   )}</p><p class="resume-row-right">${renderSideContent(right)}</p></div>`;
 }
@@ -357,7 +403,8 @@ export function renderResumeMarkdown(source: string) {
     if (next?.type === "side" && next.align !== block.align) {
       const left = block.align === "left" ? block.content : next.content;
       const right = block.align === "right" ? block.content : next.content;
-      html.push(renderPair(left, right));
+      const leftWidth = block.align === "left" ? block.leftWidth : next.leftWidth;
+      html.push(renderPair(left, right, leftWidth));
       index += 1;
       continue;
     }

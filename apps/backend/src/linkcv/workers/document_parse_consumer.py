@@ -145,7 +145,7 @@ async def _handle_rabbit_message(
             settings=settings,
             mark_failed=False,
         )
-    except Exception:
+    except Exception as error:
         retries = int(incoming.headers.get("x-linkcv-retry", 0))
         if retries >= settings.mq_consume_max_retries:
             logger.exception("document parse message sent to DLT")
@@ -182,6 +182,20 @@ async def _handle_rabbit_message(
                 await asyncio.sleep(settings.mq_consume_retry_backoff_seconds)
                 await incoming.nack(requeue=True)
             else:
+                task = _task_from_body(incoming.body)
+                logger.warning(
+                    "document parse retry scheduled",
+                    extra={
+                        "task_id": task[1] if task is not None else None,
+                        "source": task[0] if task is not None else None,
+                        "attempt": retries + 2,
+                        "failure_stage": getattr(error, "stage", None) or "unknown",
+                        "exception_type": (
+                            getattr(error, "exception_type", None)
+                            or type(error).__name__
+                        ),
+                    },
+                )
                 await incoming.ack()
     else:
         await incoming.ack()

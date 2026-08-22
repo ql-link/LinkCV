@@ -6,7 +6,7 @@ ARG NPM_REGISTRY=https://registry.npmmirror.com
 WORKDIR /app/apps/web
 COPY apps/web/package.json apps/web/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --no-audit --registry="${NPM_REGISTRY}"
+    npm ci --no-audit --replace-registry-host=never --registry="${NPM_REGISTRY}"
 COPY apps/web/index.html \
     apps/web/tsconfig.json \
     apps/web/vite.config.mjs \
