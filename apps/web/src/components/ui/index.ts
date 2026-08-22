@@ -16,6 +16,7 @@ export { NumberStepper } from "./number-stepper";
 export { PageLoading, type PageLoadingProps } from "./page-loading";
 export { RandomLetterSwap, type RandomLetterSwapProps } from "./random-letter-swap";
 export { SelectField } from "./select-field";
+export { Select, SelectContent, SelectItem, SelectTrigger } from "./select";
 export { Separator } from "./separator";
 export { Skeleton } from "./skeleton";
 export { TextField } from "./text-field";

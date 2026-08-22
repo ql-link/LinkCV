@@ -26,7 +26,15 @@ import { defaultResumeMarkdown } from "../parser/defaultResume";
 import { renderResumeMarkdown } from "../parser/resumeMarkdown";
 import { buildNamedImportFile } from "../lib/resumeImport";
 
-export type ResumeTheme = "classic" | "modern" | "compact" | "classic-technical";
+export type ResumeTheme =
+  | "classic"
+  | "modern"
+  | "compact"
+  | "classic-technical"
+  | "administrative-sidebar"
+  | "campus-professional"
+  | "civic-service"
+  | "creative-orange";
 
 export type ResumeSettings = {
   fontFamily: string;

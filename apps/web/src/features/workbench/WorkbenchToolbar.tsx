@@ -13,7 +13,9 @@ import {
   Link as LinkIcon,
   List,
   ListOrdered,
+  Minus,
   Paintbrush,
+  Plus,
   Redo2,
   Smile,
   Underline,
@@ -23,7 +25,14 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
 import { inlineIconComponents, inlineIconNames, type InlineIconName } from "./editorExtensions";
+import { resumeInlineIconOptions } from "../../lib/resumeInlineIcon";
 import { convertCurrentLineToResumeRow, convertResumeRowToParagraph } from "./editorCommands";
+import {
+  INLINE_FONT_SIZE_MAX,
+  INLINE_FONT_SIZE_MIN,
+  INLINE_FONT_SIZE_STEP,
+  normalizeInlineFontSize,
+} from "../../lib/resumeInlineStyle";
 
 const textColors = ["#1d1d1f", "#3478f6", "#34c759", "#ff9f0a", "#ff3b30", "#8a8a8e"];
 const highlightColors = ["#fff3c4", "#d1f5db", "#dbe8ff", "#ffe0d1", "#f0f0f0"];
@@ -57,6 +66,30 @@ function ToolButton({ label, active, disabled, children, onClick }: ToolButtonPr
 
 function Divider() {
   return <span className="workbench-toolbar-divider" aria-hidden="true" />;
+}
+
+export function steppedInlineFontSize(value: number, direction: -1 | 1) {
+  return Math.min(
+    INLINE_FONT_SIZE_MAX,
+    Math.max(INLINE_FONT_SIZE_MIN, Number((value + direction * INLINE_FONT_SIZE_STEP).toFixed(1))),
+  );
+}
+
+function FontSizeControl({ editor, defaultFontSize }: { editor: Editor; defaultFontSize: number }) {
+  const attributes = editor.getAttributes("textStyle");
+  const current = normalizeInlineFontSize(attributes.fontSize) ?? defaultFontSize;
+  const apply = (direction: -1 | 1) => {
+    const fontSize = steppedInlineFontSize(current, direction);
+    editor.chain().focus().setMark("textStyle", { ...attributes, fontSize: `${fontSize}pt` }).run();
+  };
+
+  return (
+    <div className="workbench-inline-font-size" role="group" aria-label="所选文字字号">
+      <ToolButton label="所选文字字号减小" disabled={current <= INLINE_FONT_SIZE_MIN} onClick={() => apply(-1)}><Minus size={13} /></ToolButton>
+      <output aria-label="所选文字字号数值">{current}pt</output>
+      <ToolButton label="所选文字字号增大" disabled={current >= INLINE_FONT_SIZE_MAX} onClick={() => apply(1)}><Plus size={13} /></ToolButton>
+    </div>
+  );
 }
 
 type AnchoredPopoverProps = {
@@ -169,11 +202,13 @@ function IconControl({ editor }: { editor: Editor }) {
       <AnchoredPopover open={open} className="icon-popover">
         {inlineIconNames.map((name: InlineIconName) => {
           const Icon = inlineIconComponents[name];
+          const option = resumeInlineIconOptions.find((item) => item.name === name);
           return <motion.button
             type="button"
             key={name}
             whileTap={{ scale: 0.9 }}
-            title={name}
+            aria-label={`插入${option?.label ?? name}图标`}
+            title={option?.label ?? name}
             onClick={() => {
               editor.chain().focus().insertContent({ type: "inlineIcon", attrs: { name } }).run();
               setOpen(false);
@@ -185,7 +220,7 @@ function IconControl({ editor }: { editor: Editor }) {
   );
 }
 
-function readImage(file: File, resumeId: string, onLoad: (src: string) => void, onError: (message: string) => void) {
+export function readImage(file: File, resumeId: string, onLoad: (src: string) => void, onError: (message: string) => void) {
   if (!file.type.startsWith("image/")) {
     onError("请选择图片文件");
     return;
@@ -258,7 +293,7 @@ function ImageControl({ editor, resumeId, avatar = false, onNotice }: { editor: 
 
 function RowLayoutControl({ editor, onNotice }: { editor: Editor; onNotice: (message: string) => void }) {
   const active = editor.isActive("resumeRow");
-  const leftWidth = Number(editor.getAttributes("resumeRow").leftWidth) || 70;
+  const leftWidth = Number(editor.getAttributes("resumeRow").leftWidth) || 50;
 
   const toggleLayout = () => {
     const changed = active
@@ -266,7 +301,7 @@ function RowLayoutControl({ editor, onNotice }: { editor: Editor; onNotice: (mes
       : convertCurrentLineToResumeRow(editor);
 
     if (!changed) {
-      onNotice(active ? "当前左右栏无法还原" : "请先把光标放在要分栏的正文行中");
+      onNotice(active ? "当前左右对齐行无法还原" : "请先把光标放在要左右对齐的正文行中");
       return;
     }
 
@@ -276,7 +311,7 @@ function RowLayoutControl({ editor, onNotice }: { editor: Editor; onNotice: (mes
   return (
     <div className={`row-layout-control${active ? " active" : ""}`}>
       <ToolButton
-        label={active ? "取消左右分栏" : "为当前行添加右侧内容"}
+        label={active ? "取消当前行左右对齐" : "设置当前行为左右对齐"}
         active={active}
         onClick={toggleLayout}
       >
@@ -304,7 +339,7 @@ function RowLayoutControl({ editor, onNotice }: { editor: Editor; onNotice: (mes
   );
 }
 
-export function WorkbenchToolbar({ editor, resumeId, onNotice }: { editor: Editor | null; resumeId: string; onNotice: (message: string) => void }) {
+export function WorkbenchToolbar({ editor, resumeId, defaultFontSize, onNotice }: { editor: Editor | null; resumeId: string; defaultFontSize: number; onNotice: (message: string) => void }) {
   const [, refresh] = useState(0);
 
   useEffect(() => {
@@ -336,6 +371,7 @@ export function WorkbenchToolbar({ editor, resumeId, onNotice }: { editor: Edito
       >
         <option value="p">正文</option><option value="1">标题 1</option><option value="2">标题 2</option><option value="3">标题 3</option>
       </select>
+      <FontSizeControl editor={editor} defaultFontSize={defaultFontSize} />
       <Divider />
       <ToolButton label="加粗" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()}><Bold size={15} /></ToolButton>
       <ToolButton label="斜体" active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic size={15} /></ToolButton>

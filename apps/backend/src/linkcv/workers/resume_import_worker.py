@@ -65,6 +65,17 @@ class WorkerDependencyUnavailable(RuntimeError):
 class WorkerTaskRetryable(RuntimeError):
     """A single import hit a transient failure and may use bounded broker retries."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        stage: str | None = None,
+        exception_type: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.stage = stage
+        self.exception_type = exception_type
+
 
 def _read_storage_object(storage: AssetStorage, object_key: str) -> bytes:
     response = storage.get(object_key)
@@ -160,11 +171,18 @@ class ResumeImportProcessor:
                     )
                 )
                 if template is None:
-                    raise ResumeImportFailure(422, "TEMPLATE_INACTIVE")
+                    raise ResumeImportFailure(
+                        422, "TEMPLATE_INACTIVE", stage="task_load"
+                    )
                 try:
                     parse_resume_snapshot(template.data_json, template.style_json)
                 except ValueError as error:
-                    raise ResumeImportFailure(422, "TEMPLATE_INACTIVE") from error
+                    raise ResumeImportFailure(
+                        422,
+                        "TEMPLATE_INACTIVE",
+                        stage="task_load",
+                        exception_type=type(error).__name__,
+                    ) from error
                 db.expunge(record)
                 db.expunge(template)
                 return record, template
@@ -272,7 +290,9 @@ class ResumeImportProcessor:
                     select(User.id).where(User.id == user_id).with_for_update()
                 )
                 if locked_user is None:
-                    raise ResumeImportFailure(409, "RESUME_OWNER_MISSING")
+                    raise ResumeImportFailure(
+                        409, "RESUME_OWNER_MISSING", stage="resume_persistence"
+                    )
                 record = db.scalar(
                     select(DocumentParseTask)
                     .where(
@@ -285,7 +305,9 @@ class ResumeImportProcessor:
                 if record is None or record.parse_status != "processing":
                     return
                 if resume_slot_count(db, record.user_id) > MAX_RESUMES_PER_USER:
-                    raise ResumeImportFailure(409, "RESUME_LIMIT_REACHED")
+                    raise ResumeImportFailure(
+                        409, "RESUME_LIMIT_REACHED", stage="resume_persistence"
+                    )
                 template = db.scalar(
                     select(ResumeTemplate)
                     .where(
@@ -295,7 +317,9 @@ class ResumeImportProcessor:
                     .with_for_update()
                 )
                 if template is None:
-                    raise ResumeImportFailure(422, "TEMPLATE_INACTIVE")
+                    raise ResumeImportFailure(
+                        422, "TEMPLATE_INACTIVE", stage="resume_persistence"
+                    )
                 snapshot = parse_resume_snapshot(
                     template.data_json, template.style_json
                 )
@@ -322,10 +346,24 @@ class ResumeImportProcessor:
         except (SQLAlchemyError, OSError) as error:
             raise WorkerDependencyUnavailable("database unavailable") from error
         except ValueError as error:
-            raise ResumeImportFailure(422, "TEMPLATE_INACTIVE") from error
+            raise ResumeImportFailure(
+                422,
+                "TEMPLATE_INACTIVE",
+                stage="resume_persistence",
+                exception_type=type(error).__name__,
+            ) from error
 
     async def process(self, *, import_id: int, template_id: int) -> None:
         started = monotonic()
+        operation_id = str(import_id)
+        logger.info(
+            "resume import task started",
+            extra={
+                "task_id": import_id,
+                "operation_id": operation_id,
+                "stage": "task_load",
+            },
+        )
         token = secrets.token_urlsafe(24)
         if not await self._acquire_lock(import_id, token):
             raise WorkerDependencyUnavailable("import lock is already held")
@@ -335,6 +373,16 @@ class ResumeImportProcessor:
                 if loaded is None:
                     return
                 record, _template = loaded
+                logger.info(
+                    "resume import stage completed",
+                    extra={
+                        "task_id": import_id,
+                        "operation_id": operation_id,
+                        "stage": "task_load",
+                        "source_format": record.file_format,
+                    },
+                )
+                source_read_started = monotonic()
                 try:
                     content = await asyncio.to_thread(
                         _read_storage_object,
@@ -342,7 +390,22 @@ class ResumeImportProcessor:
                         record.object_name,
                     )
                 except Exception as error:
-                    raise WorkerTaskRetryable("source object unavailable") from error
+                    raise WorkerTaskRetryable(
+                        "source object unavailable",
+                        stage="source_read",
+                        exception_type=type(error).__name__,
+                    ) from error
+                logger.info(
+                    "resume import stage completed",
+                    extra={
+                        "task_id": import_id,
+                        "operation_id": operation_id,
+                        "stage": "source_read",
+                        "duration_ms": round(
+                            (monotonic() - source_read_started) * 1000
+                        ),
+                    },
+                )
                 parsed = await self._import_service.parse_resume(
                     user_id=record.user_id,
                     filename=record.file_name,
@@ -363,6 +426,7 @@ class ResumeImportProcessor:
                     ),
                 )
                 title = PurePath(record.file_name).stem or "未命名简历"
+                persistence_started = monotonic()
                 self._persist_success(
                     import_id=record.id,
                     template_id=template_id,
@@ -370,13 +434,65 @@ class ResumeImportProcessor:
                     parsed=parsed,
                     started=started,
                 )
+                logger.info(
+                    "resume import stage completed",
+                    extra={
+                        "task_id": import_id,
+                        "operation_id": operation_id,
+                        "stage": "resume_persistence",
+                        "duration_ms": round(
+                            (monotonic() - persistence_started) * 1000
+                        ),
+                    },
+                )
+                logger.info(
+                    "resume import task completed",
+                    extra={
+                        "task_id": import_id,
+                        "operation_id": operation_id,
+                        "duration_ms": round((monotonic() - started) * 1000),
+                        "result": "succeeded",
+                    },
+                )
             except ResumeImportFailure as error:
+                logger.warning(
+                    "resume import task failed",
+                    extra={
+                        "task_id": import_id,
+                        "operation_id": operation_id,
+                        "duration_ms": round((monotonic() - started) * 1000),
+                        "result": "failed",
+                        "error_code": error.code,
+                        "failure_stage": error.stage or "unknown",
+                        "exception_type": error.exception_type,
+                        "validation_model": error.validation_model,
+                        "validation_paths": error.validation_paths,
+                        "validation_types": error.validation_types,
+                    },
+                )
                 if error.status_code >= 500:
-                    raise WorkerTaskRetryable(error.code) from error
+                    raise WorkerTaskRetryable(
+                        error.code,
+                        stage=error.stage,
+                        exception_type=error.exception_type,
+                    ) from error
                 self._mark_failed(
                     import_id,
                     started,
                     FAILURE_REASON_BY_CODE.get(error.code, "internal_error"),
                 )
+            except WorkerTaskRetryable as error:
+                logger.warning(
+                    "resume import task retry required",
+                    extra={
+                        "task_id": import_id,
+                        "operation_id": operation_id,
+                        "duration_ms": round((monotonic() - started) * 1000),
+                        "result": "failed",
+                        "failure_stage": error.stage or "unknown",
+                        "exception_type": error.exception_type,
+                    },
+                )
+                raise
         finally:
             await self._release_lock(import_id, token)

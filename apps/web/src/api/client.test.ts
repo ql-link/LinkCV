@@ -173,6 +173,19 @@ describe("resume import polling API", () => {
   });
 });
 
+describe("resume version detail API", () => {
+  it("按简历和版本号读取完整版本快照", async () => {
+    const body = { version: { id: "9", version_no: 3, name: "投递版", data: {}, style: {} } };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, body)));
+
+    await expect(api.getResumeVersion("42", 3)).resolves.toEqual(body);
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/resumes/42/versions/3",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
+});
+
 describe("JD API client", () => {
   it("编码列表筛选和游标，并保持相对 API 路径", async () => {
     const fetchMock = vi.fn().mockResolvedValue(

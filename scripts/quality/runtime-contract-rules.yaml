@@ -289,6 +289,13 @@ contracts:
         pattern: 'LINKCV_SECRET_ENV_FILE:-\.\./\.env\.development\.local'
         message: Dev Compose 必须后加载私密覆盖
 
+  - id: node-lockfile-tarball-host
+    description: 容器构建保留 Node 锁文件中的 tarball 主机，避免镜像源缺失制品时强制改写下载地址
+    assertions:
+      - path: Dockerfile
+        pattern: 'npm ci --no-audit --replace-registry-host=never --registry="\$\{NPM_REGISTRY\}"'
+        message: npm ci 必须保留 package-lock.json 已锁定的 tarball 主机
+
   - id: sql-first-alembic-migrations
     description: 后续迁移通过独立 SQL 文件执行，容器启动前校验并执行迁移
     assertions:
