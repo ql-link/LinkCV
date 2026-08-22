@@ -14,7 +14,7 @@ git subtree add --prefix=third_party/pi https://github.com/earendil-works/pi.git
 
 ## 构建与 LinkCV 适配层
 
-`third_party/pi` 仍是独立的 npm workspaces monorepo。LinkCV 一期适配层位于 `apps/pi-service`，不修改 Pi 核心源码，直接复用 vendored `Agent`、OpenAI-compatible provider、模型目录、事件流和参数校验源码，并只映射这些模块实际需要的 `pi-ai` 运行时。Pi 上游不提交生成后的模型目录数据，因此根级 `sync` 在安装 workspace 依赖后执行 Pi 自带的 `hydrate:model-data`；CI 和 Docker 使用同一准备步骤，避免依赖开发机残留的忽略文件。`dev`、`typecheck`、`build` 和 `test` 已纳管 Pi Service。
+`third_party/pi` 仍是独立的 npm workspaces monorepo。LinkCV 一期适配层位于 `apps/pi-service`，不修改 Pi 核心源码，直接复用 vendored `Agent`、OpenAI-compatible provider、模型目录、事件流和参数校验源码，并只映射这些模块实际需要的 `pi-ai` 运行时。LinkCV 将经过 Pi manifest 校验的生成模型目录作为版本化快照保存在 `third_party/pi/packages/ai/src/providers/data/`；根级 `sync`、CI 和 Docker 只执行 `check:model-data`，因此常规安装与发布不依赖 `models.dev`、OpenRouter、NVIDIA NIM 或 Vercel AI Gateway 的实时可达性。只有主动执行 `npm run refresh:pi-model-data` 时才联网刷新快照，刷新后必须将模型分片与 `.manifest.json` 一并评审和提交。`dev`、`typecheck`、`build` 和 `test` 已纳管 Pi Service。
 
 ## 验证状态
 

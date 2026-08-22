@@ -296,6 +296,22 @@ contracts:
         pattern: 'npm ci --no-audit --replace-registry-host=never --registry="\$\{NPM_REGISTRY\}"'
         message: npm ci 必须保留 package-lock.json 已锁定的 tarball 主机
 
+  - id: pi-model-data-offline-build
+    description: Pi 模型目录使用版本化快照，常规安装和镜像构建不访问实时外部目录
+    assertions:
+      - path: Dockerfile
+        pattern: 'RUN --network=none[\s\S]*npm --prefix third_party/pi run check:model-data &&[\s\S]*npm --prefix apps/pi-service run build'
+        message: Docker 必须在禁用网络的构建层中校验 Pi 模型快照并编译 Pi Service
+      - path: package.json
+        pattern: '"prepare:pi": "npm --prefix third_party/pi run check:model-data"'
+        message: 常规环境同步不得联网刷新 Pi 模型目录
+      - path: package.json
+        pattern: '"refresh:pi-model-data": "npm --prefix third_party/pi run hydrate:model-data"'
+        message: Pi 模型快照必须使用显式维护命令刷新
+      - path: third_party/pi/packages/ai/src/providers/data/.manifest.json
+        pattern: '"schemaVersion"\s*:\s*3'
+        message: 仓库必须包含 Pi 模型快照 manifest
+
   - id: sql-first-alembic-migrations
     description: 后续迁移通过独立 SQL 文件执行，容器启动前校验并执行迁移
     assertions:
