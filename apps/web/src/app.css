@@ -670,7 +670,7 @@ select:not([data-slot]):focus-visible,
   box-sizing: border-box;
   min-height: 297mm;
   background: #294f73;
-  padding: 10mm 8mm 12mm;
+  padding: 8mm 8mm 9mm;
   color: #f8fbff;
 }
 
@@ -682,8 +682,9 @@ select:not([data-slot]):focus-visible,
 
 .theme-administrative-sidebar .resume-column-sidebar .resume-avatar,
 .theme-administrative-sidebar .resume-layout-column-sidebar .resume-avatar {
+  overflow: hidden;
   float: none;
-  margin: 0 auto 11mm;
+  margin: 0 auto 8mm;
   border: 5px solid #fff;
   border-radius: 0;
   box-shadow: none;
@@ -696,7 +697,7 @@ select:not([data-slot]):focus-visible,
 
 .theme-administrative-sidebar .resume-column-sidebar h3,
 .theme-administrative-sidebar .resume-layout-column-sidebar h3 {
-  margin: 10mm 0 4mm;
+  margin: 8mm 0 3mm;
   color: #fff;
   font-size: 11pt;
   font-weight: 700;
@@ -705,10 +706,10 @@ select:not([data-slot]):focus-visible,
 
 .theme-administrative-sidebar .resume-column-sidebar p,
 .theme-administrative-sidebar .resume-layout-column-sidebar p {
-  margin: 4mm 0;
+  margin: 3mm 0;
   color: #f8fbff;
   font-size: 9.2pt;
-  line-height: 1.8;
+  line-height: 1.7;
 }
 
 .theme-administrative-sidebar .resume-column-sidebar strong,
@@ -797,18 +798,34 @@ select:not([data-slot]):focus-visible,
 .theme-administrative-sidebar .resume-layout-column-sidebar h3:nth-of-type(4) + ul {
   display: flex;
   flex-wrap: wrap;
-  gap: 2mm;
+  gap: 2.5mm 3mm;
   margin: 0;
   list-style: none;
 }
 
 .theme-administrative-sidebar .resume-column-sidebar h3:nth-of-type(4) + ul li,
 .theme-administrative-sidebar .resume-layout-column-sidebar h3:nth-of-type(4) + ul li {
+  box-sizing: border-box;
+  min-width: 18mm;
   border-radius: 999px;
   background: #eef0f2;
-  padding: 1.5mm 4mm;
+  padding: 1.3mm 4.5mm;
   color: #294f73;
+  line-height: 1.35;
+  text-align: center;
   white-space: nowrap;
+}
+
+.theme-administrative-sidebar .resume-column-sidebar h3:nth-of-type(4) + ul li p,
+.theme-administrative-sidebar .resume-layout-column-sidebar h3:nth-of-type(4) + ul li p {
+  margin: 0;
+  color: #294f73;
+  line-height: inherit;
+}
+
+.resume-avatar img[src$="/templates/avatar-cat.jpg"] {
+  transform: scale(2.05);
+  transform-origin: 50% 43%;
 }
 
 /* 校招 / 社招通用 */
@@ -819,6 +836,7 @@ select:not([data-slot]):focus-visible,
 
 .theme-campus-professional .resume-avatar {
   position: absolute;
+  overflow: hidden;
   top: 0;
   right: 0;
   float: none;
@@ -919,6 +937,7 @@ select:not([data-slot]):focus-visible,
 
 .theme-civic-service .resume-avatar {
   position: absolute;
+  overflow: hidden;
   z-index: 2;
   top: 8mm;
   right: 10mm;
@@ -992,6 +1011,7 @@ select:not([data-slot]):focus-visible,
 
 .theme-creative-orange .resume-avatar {
   position: absolute;
+  overflow: hidden;
   z-index: 2;
   top: 22mm;
   left: 50%;

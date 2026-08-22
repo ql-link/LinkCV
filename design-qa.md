@@ -417,3 +417,80 @@ final result: passed
 - P3: 整屏章节保留了较多留白，用于把Hero展示与后续功能说明分成两个明确节奏；这是当前有意选择，不再由突兀色块制造分割。
 
 final result: passed
+
+---
+
+# 2026-08-22 头像与单页内容刷新 Design QA
+
+## Evidence
+
+- Source visual truth paths:
+  - `/Users/jixu/Library/Containers/com.tencent.qq/Data/Downloads/E3880EE6E4A197B8DAE022561C3F177E.png` (1100 × 1109, supplied cat avatar)
+  - `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-97b22b32-14e7-4007-bd61-4e6017b7af4c.png` (310 × 208, target interest pills)
+  - `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-baa496ff-95fa-4af5-8ec1-d6d0d3e57f8a.png` (903 × 1274, administrative reference)
+  - `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-44aeaac9-b9be-45ca-8abe-d051d77411f4.png` (717 × 1023, campus reference)
+  - `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-f9e11100-b223-4546-b92b-8bd4495e25c4.png` (729 × 1021, civic reference)
+  - `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-23234cd3-361e-4848-814e-4632884a1c7f.png` (737 × 1028, creative reference)
+- Browser-rendered implementation screenshots:
+  - `/private/tmp/linkcv-administrative-sidebar-cn.png`
+  - `/private/tmp/linkcv-campus-professional-cn.png`
+  - `/private/tmp/linkcv-civic-service-cn.png`
+  - `/private/tmp/linkcv-creative-orange-cn.png`
+- Combined comparison evidence:
+  - `/private/tmp/linkcv-full-comparison.png`
+  - `/private/tmp/linkcv-interest-comparison.png`
+- Viewport: 900 × 1250 CSS px, device density 1. The rendered A4 paper measured 794 × 1123 CSS px for every template.
+- Normalization: full-view source and implementation pages were proportionally fitted into equal 350 × 370 comparison cells; the interest source and implementation region were proportionally fitted into equal-height focused cells without stretching.
+- State: read-only full preview using the production `ResumePreview`, Markdown parser, Tiptap extensions, theme classes and the `0027` template content.
+- Primary interactions tested: not applicable; these are static resume previews. The same persisted Markdown constructs used by the editor were rendered successfully.
+- Console errors checked: none across all four template routes.
+
+## Full-view comparison
+
+The four implementations preserve the source themes: deep-blue full-height sidebar, blue folded section tabs, civic blue header, and orange curved header. All four remain within one A4 page. Final content bottoms were measured at 1171, 1099, 1093 and 1145 px respectively against a paper bottom of 1171 px; no paper had scroll overflow. The remaining bottom space is intentional print-safe margin and varies with each template's original spacing system.
+
+## Focused region comparison
+
+The supplied interest reference and the final administrative sidebar were placed in the same comparison image. Both use a wrapped two-column arrangement of light-gray horizontal pills on the same deep-blue field. The implementation keeps two-character labels horizontal through an 18 mm minimum width, zeroes nested paragraph margins and retains a compact 26 px pill height.
+
+The supplied avatar is used directly as `/templates/avatar-cat.jpg`. Each existing avatar frame clips the scaled image, so the cat remains centered without the original white canvas spilling outside square, rounded-square or circular masks.
+
+## Required fidelity surfaces
+
+- Fonts and typography: existing Source Han serif stack, weights, line heights and section hierarchy are preserved. Text remains legible at full A4 density with no clipping or truncation.
+- Spacing and layout rhythm: all templates fit one A4 page; the administrative sidebar and main column now end within the page, and interest pills match the source's horizontal proportions.
+- Colors and visual tokens: existing theme blues, orange, white fields, gray text and light-gray pills are unchanged except for the intended pill geometry fix.
+- Image quality and asset fidelity: the exact supplied raster asset is shipped without regeneration; theme frames use `overflow: hidden` and a consistent centered crop. No placeholder, emoji, handcrafted SVG or CSS-drawn substitute is used.
+- Copy and content: all added content is fictional, coherent with each role and dense enough for a useful full-page preview. Existing user resume snapshots are outside this change.
+
+## Comparison history
+
+### Iteration 1 — blocked
+
+- [P1] The scaled avatar image overflowed its frame because the frame did not clip descendants.
+- [P1] Interest labels appeared circular because nested list paragraphs inherited large sidebar margins.
+- [P2] The administrative page exceeded A4 while its main column still left a large empty region; the creative page also exceeded A4.
+
+Fixes: added theme-frame clipping, reset interest-label paragraph margins and line height, tightened administrative sidebar vertical rhythm, added role-appropriate main-column content, and removed two lower-value creative bullets.
+
+### Iteration 2 — passed
+
+Post-fix evidence is recorded in both combined comparison images. Avatar frames contain the supplied asset, interest pills are horizontal, all four pages measure 794 × 1123 CSS px with zero scroll overflow, and no actionable P0/P1/P2 mismatch remains.
+
+## Findings
+
+No actionable P0/P1/P2 findings remain.
+
+## Follow-up polish
+
+- [P3] Font rasterization differs slightly from the reference screenshots because the implementation uses the project's licensed Web font stack rather than fonts embedded in the source images. This does not alter hierarchy, wrapping or usability.
+
+## Implementation checklist
+
+- [x] Use the supplied avatar in every active avatar-bearing official template.
+- [x] Match the administrative interest-pill shape in preview and editor rendering.
+- [x] Fill each active professional template close to one A4 page without overflow.
+- [x] Preserve fictional sample data and existing user-created resume snapshots.
+- [x] Check browser console and full-page dimensions.
+
+final result: passed

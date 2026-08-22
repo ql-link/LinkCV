@@ -21,7 +21,7 @@ from linkcv.domain.resume_snapshot import parse_resume_snapshot
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0026"
+EXPECTED_HEAD = "0027"
 
 
 def migration_test_url() -> str:
@@ -371,14 +371,15 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
                 else row["style_json"]
             )
             parse_resume_snapshot(data_json, style_json)
+            if "custom_sections" in data_json["sections"]:
+                editor_markdown = data_json["sections"]["custom_sections"][0][
+                    "items"
+                ][0]["content"]["content"]
             if row["key"] in {
                 "modern-two-column-cn",
                 "compact-tech-cn",
                 "classic-technical-cn",
             }:
-                editor_markdown = data_json["sections"]["custom_sections"][0][
-                    "items"
-                ][0]["content"]["content"]
                 assert "::: left" in editor_markdown
                 assert "::: right" in editor_markdown
             if row["key"] == "classic-technical-cn":
@@ -399,11 +400,23 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
             if row["key"] == "administrative-sidebar-cn":
                 assert ":::: sidebar" in editor_markdown
                 assert ":::: main" in editor_markdown
+                assert "沟通协调" in editor_markdown
             if row["key"] == "campus-professional-cn":
                 assert ":::: meta" in editor_markdown
+                assert "周均跟进 80 余项任务" in editor_markdown
+            if row["key"] == "civic-service-cn":
+                assert "校青年志愿者协会" in editor_markdown
             if row["key"] == "creative-orange-cn":
                 assert ":::: trio" in editor_markdown
                 assert ":icon[GraduationCap]:" in editor_markdown
+                assert "拾光城市文化活动小程序" in editor_markdown
+            if row["key"] in {
+                "administrative-sidebar-cn",
+                "campus-professional-cn",
+                "civic-service-cn",
+                "creative-orange-cn",
+            }:
+                assert "/templates/avatar-cat.jpg" in editor_markdown
 
     with engine.begin() as connection:
         user = connection.execute(
@@ -1067,6 +1080,47 @@ def test_professional_template_seed_conflict_is_atomic() -> None:
                 "('campus-professional-cn', 'civic-service-cn', 'creative-orange-cn')"
             )
         ) == 0
+
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "head")
+    engine.dispose()
+
+
+def test_professional_template_preview_refresh_refuses_customized_snapshots() -> None:
+    database_url = migration_test_url()
+    engine = create_engine(database_url)
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0026")
+    content_path = "$.sections.custom_sections[0].items[0].content.content"
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE resume_templates "
+                "SET data_json = JSON_SET(data_json, :path, '现场自定义模板正文') "
+                "WHERE `key` = 'campus-professional-cn'"
+            ),
+            {"path": content_path},
+        )
+
+    refused_upgrade = invoke_alembic(database_url, "upgrade", "0027")
+    assert refused_upgrade.returncode != 0
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0026"
+        assert connection.scalar(
+            text(
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, :path)) "
+                "FROM resume_templates WHERE `key` = 'campus-professional-cn'"
+            ),
+            {"path": content_path},
+        ) == "现场自定义模板正文"
+        assert "/templates/avatar-administrative.svg" in connection.scalar(
+            text(
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, :path)) "
+                "FROM resume_templates WHERE `key` = 'administrative-sidebar-cn'"
+            ),
+            {"path": content_path},
+        )
 
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
