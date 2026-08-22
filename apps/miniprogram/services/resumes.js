@@ -1,4 +1,4 @@
-const { request } = require("../utils/request");
+const { download, request } = require("../utils/request");
 
 async function listResumes() {
   const body = await request("/api/miniprogram/resumes");
@@ -10,4 +10,13 @@ async function getResume(id) {
   return body.resume;
 }
 
-module.exports = { getResume, listResumes };
+async function downloadResumePreview(id, versionId, filePath, onProgress) {
+  const query = `version_id=${encodeURIComponent(versionId)}`;
+  return download(
+    `/api/miniprogram/resumes/${encodeURIComponent(id)}/preview.png?${query}`,
+    filePath,
+    onProgress,
+  );
+}
+
+module.exports = { downloadResumePreview, getResume, listResumes };

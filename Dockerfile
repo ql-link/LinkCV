@@ -15,6 +15,7 @@ COPY apps/web/index.html \
     ./
 COPY apps/web/public ./public
 COPY apps/web/src ./src
+COPY apps/web/pdf-cli ./pdf-cli
 RUN npm run build
 
 FROM node:22-bookworm-slim AS pi-build
@@ -39,6 +40,7 @@ ENV PYTHONUNBUFFERED=1 \
     BACKEND_HOST=0.0.0.0 \
     BACKEND_PORT=8000 \
     WEB_DIST_DIR=/app/web \
+    PDF_RENDERER_SCRIPT=/app/pdf/render-resume-pdf.cjs \
     TZ=Asia/Shanghai
 
 WORKDIR /app/apps/backend
@@ -58,6 +60,7 @@ COPY scripts/release/run_alembic.py /app/scripts/release/run_alembic.py
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --python .venv/bin/python --no-deps --index-url "${UV_INDEX_URL}" .
 COPY --from=web-build /app/apps/web/dist /app/web
+COPY --from=web-build /app/apps/web/dist-server /app/pdf
 COPY --from=pi-build /usr/local/bin/node /usr/local/bin/node
 COPY --from=pi-build /app/apps/pi-service/dist/server.js /app/pi/server.js
 RUN node --version

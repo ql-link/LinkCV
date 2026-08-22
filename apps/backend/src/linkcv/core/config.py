@@ -171,6 +171,13 @@ class Settings(BaseSettings):
     )
 
     resume_version_limit: int = Field(default=10, alias="RESUME_VERSION_LIMIT", ge=2)
+    pdf_renderer_script: str | None = Field(default=None, alias="PDF_RENDERER_SCRIPT")
+    pdf_renderer_timeout_seconds: float = Field(
+        default=20,
+        alias="PDF_RENDERER_TIMEOUT_SECONDS",
+        gt=0,
+        le=60,
+    )
     dataset_upload_max_bytes: int = Field(
         default=10 * 1024 * 1024,
         alias="DATASET_UPLOAD_MAX_BYTES",

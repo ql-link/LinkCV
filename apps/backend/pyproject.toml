@@ -23,6 +23,8 @@ dependencies = [
   "uvicorn[standard]>=0.34,<1.0",
   "aio-pika>=9.5,<10.0",
   "aiokafka>=0.12,<1.0",
+  "pypdfium2>=4.30,<5.0",
+  "pillow>=11,<13",
 ]
 
 [dependency-groups]

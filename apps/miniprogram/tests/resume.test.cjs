@@ -1,15 +1,17 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { formatUpdatedAt, toDisplayResume } = require("../utils/resume");
+const { formatUpdatedAt } = require("../utils/resume");
 
-test("resume service uses the dedicated mini-program read-only API", async () => {
+test("resume service uses metadata and PNG preview download APIs", async () => {
   const requests = [];
+  const downloads = [];
   require.cache[require.resolve("../utils/request")] = {
     exports: {
       request: async (path) => {
         requests.push(path);
-        return path.endsWith("/42") ? { resume: { id: "42" } } : { resumes: [] };
+        return path === "/api/miniprogram/resumes" ? { resumes: [] } : { resume: { id: "42" } };
       },
+      download: async (...args) => { downloads.push(args); return args[1]; },
     },
   };
   delete require.cache[require.resolve("../services/resumes")];
@@ -17,59 +19,58 @@ test("resume service uses the dedicated mini-program read-only API", async () =>
 
   await resumes.listResumes();
   await resumes.getResume("42");
+  await resumes.downloadResumePreview("42", "9", "/data/resume.png");
 
   assert.deepEqual(requests, [
     "/api/miniprogram/resumes",
     "/api/miniprogram/resumes/42",
   ]);
+  assert.deepEqual(downloads[0].slice(0, 2), [
+    "/api/miniprogram/resumes/42/preview.png?version_id=9",
+    "/data/resume.png",
+  ]);
 });
 
-test("maps semantic resume to read-only display sections", () => {
-  const result = toDisplayResume({
-    title: "后端简历",
-    data: {
-      basics: {
-        name: "张三",
-        headline: "后端工程师",
-        email: "zhangsan@example.test",
-        phone: null,
-        location: "合肥",
-        summary: { format: "markdown", content: "专注可靠系统。" },
-      },
-      sections: {
-        work_experiences: [{
-          id: "work-1",
-          organization: "示例科技",
-          position: "工程师",
-          start_date: "2024-01",
-          current: true,
-          summary: { format: "markdown", content: "负责服务开发。" },
-        }],
-        projects: [],
-        educations: [],
-        skills: [{ id: "skill-1", name: "Python", level: null, keywords: ["FastAPI"] }],
-        custom_sections: [],
-      },
+test("preview cache hits only the same owner, resume and version", async () => {
+  const storage = {};
+  const files = new Set();
+  const legacyPath = "/user/linkcv-resume-7-42-8.pdf";
+  storage.linkcv_resume_pdf_cache_v1 = {
+    "7:42": { ownerId: "7", versionId: "8", filePath: legacyPath },
+  };
+  files.add(legacyPath);
+  global.wx = {
+    env: { USER_DATA_PATH: "/user" },
+    getStorageSync: (key) => storage[key],
+    setStorageSync: (key, value) => { storage[key] = value; },
+    removeStorageSync: (key) => { delete storage[key]; },
+    getImageInfo({ src, success, fail }) {
+      if (files.has(src) && src.endsWith(".png")) success({ width: 1440, height: 2037 });
+      else fail();
     },
-  });
+    getFileSystemManager: () => ({
+      access({ path, success, fail }) { files.has(path) ? success() : fail(); },
+      unlink({ filePath, success }) { files.delete(filePath); success(); },
+    }),
+  };
+  delete require.cache[require.resolve("../services/resumePreviewCache")];
+  const cache = require("../services/resumePreviewCache");
+  const path = cache.resumePreviewPath("7", "42", "9");
+  assert.match(path, /linkcv-preview-v1-/);
+  files.add(path);
+  await cache.commitResumePreview("7", "42", "9", path);
 
-  assert.equal(result.name, "张三");
-  assert.deepEqual(result.contacts, ["zhangsan@example.test", "合肥"]);
-  assert.equal(result.sections[0].items[0].meta, "2024-01 - 至今");
-  assert.equal(result.sections[1].items[0].content, "FastAPI");
-});
+  assert.equal(storage.linkcv_resume_pdf_cache_v1, undefined);
+  assert.equal(files.has(legacyPath), false);
+  assert.equal(await cache.getCachedResumePreview("7", "42", "9"), path);
+  assert.equal(await cache.getCachedResumePreview("8", "42", "9"), null);
+  assert.equal(await cache.getCachedResumePreview("7", "42", "10"), null);
+  await cache.validateResumePreview(path);
+  await assert.rejects(cache.validateResumePreview("/user/invalid.png"), /无法读取/);
 
-test("ignores photo and unknown fields instead of exposing private assets", () => {
-  const result = toDisplayResume({
-    title: "最小简历",
-    data: {
-      basics: { name: "张三", photo: "/api/assets/private", secret: "hidden" },
-      sections: {},
-    },
-  });
-  assert.equal(result.photo, undefined);
-  assert.equal(JSON.stringify(result).includes("private"), false);
-  assert.equal(JSON.stringify(result).includes("hidden"), false);
+  await cache.clearResumePreviewCache();
+  assert.equal(files.has(path), false);
+  delete global.wx;
 });
 
 test("formats resume update time for the list and handles invalid values", () => {

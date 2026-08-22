@@ -154,13 +154,13 @@ contracts:
         message: Dev 发布必须在迁移与容器替换前拒绝缺失、空值或占位的微信凭据
       - path: apps/miniprogram/config/runtime.js
         pattern: 'developmentApiBaseUrl: "http://127\.0\.0\.1:8000"[\s\S]*productionApiBaseUrl: "https://linkresume\.cn"'
-        message: 小程序必须把开发默认地址与 linkresume.cn 生产地址分开
+        message: 小程序必须把 API 开发默认地址与 linkresume.cn 生产地址分开
       - path: apps/miniprogram/config/env.js
-        pattern: 'envVersion === "develop"[\s\S]*wx\.getStorageSync\("linkcv_api_base_url"\)[\s\S]*envVersion !== "develop"[\s\S]*startsWith\("https://"\)'
-        message: 内网地址覆盖只能用于开发版，体验版和正式版必须强制 HTTPS
+        pattern: 'developmentStorageKey: "linkcv_api_base_url"[\s\S]*envVersion === "develop"[\s\S]*wx\.getStorageSync\(developmentStorageKey\)[\s\S]*envVersion !== "develop"[\s\S]*startsWith\("https://"\)'
+        message: API 内网地址覆盖只能用于开发版，体验版和正式版必须强制 HTTPS
       - path: apps/miniprogram/services/resumes.js
-        pattern: '/api/miniprogram/resumes'
-        message: 小程序必须只调用后端专用只读简历接口
+        pattern: 'downloadResumePreview[\s\S]*version_id=[\s\S]*/api/miniprogram/resumes/[\s\S]*/preview\.png'
+        message: 小程序必须通过后端专用只读接口查询并下载正式版本 PNG 预览
 
   - id: environment-profile-database-isolation
     description: 三套环境都使用独立 linkcv 数据库

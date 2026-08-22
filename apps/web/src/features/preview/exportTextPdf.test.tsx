@@ -3,6 +3,7 @@ import { defaultSettings, resumeSerifFontStack } from "../../store/resumeStore";
 import {
   PDF_A4_HEIGHT,
   PDF_A4_WIDTH,
+  PDF_LIST_TEXT_LAYOUT_STYLE,
   PDF_SERIF_FONT_FAMILY,
   PDF_WENKAI_FONT_FAMILY,
   contentHeightFromLayout,
@@ -10,11 +11,25 @@ import {
   pdfPageStyle,
   pdfTextAlignment,
   resolvePdfFontFamily,
+  resumePdfHyphenationCallback,
   smartPdfMeasurementSize,
   smartPdfPageSize,
 } from "./exportTextPdf";
 
 describe("文字版 PDF 页面设置", () => {
+  it("允许连续中文和超长英文换行，同时不拆散普通英文单词", () => {
+    expect(resumePdfHyphenationCallback("中文")).toEqual(["中", "", "文", ""]);
+    expect(resumePdfHyphenationCallback("LinkCV")).toEqual(["LinkCV"]);
+    expect(resumePdfHyphenationCallback("a".repeat(33))).toHaveLength(66);
+  });
+
+  it("把列表正文约束在项目符号后的剩余宽度内", () => {
+    expect(PDF_LIST_TEXT_LAYOUT_STYLE).toEqual({
+      width: "100%",
+      paddingLeft: 15,
+    });
+  });
+
   it("没有显式对齐时沿用模板姓名区的默认居中规则", () => {
     const name = { type: "heading", attrs: { level: 1, textAlign: null } };
     const contact = { type: "paragraph", attrs: { textAlign: null } };
