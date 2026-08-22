@@ -341,6 +341,22 @@ contracts:
         pattern: 'npm ci --no-audit --replace-registry-host=never --registry="\$\{NPM_REGISTRY\}"'
         message: npm ci 必须保留 package-lock.json 已锁定的 tarball 主机
 
+  - id: pi-model-data-offline-build
+    description: Pi 模型目录使用版本化快照，常规安装和镜像构建不访问实时外部目录
+    assertions:
+      - path: deploy/Dockerfile.pi
+        pattern: 'RUN --network=none[\s\S]*npm run check:model-data &&[\s\S]*npm run build:offline'
+        message: 独立 Pi 镜像必须在禁用网络的构建层中校验模型快照并完成离线构建
+      - path: package.json
+        pattern: '"prepare:pi": "npm --prefix third_party/pi run check:model-data"'
+        message: 常规环境同步不得联网刷新 Pi 模型目录
+      - path: package.json
+        pattern: '"refresh:pi-model-data": "npm --prefix third_party/pi run hydrate:model-data"'
+        message: Pi 模型快照必须使用显式维护命令刷新
+      - path: third_party/pi/packages/ai/src/providers/data/.manifest.json
+        pattern: '"schemaVersion"\s*:\s*3'
+        message: 仓库必须包含 Pi 模型快照 manifest
+
   - id: sql-first-alembic-migrations
     description: 后续迁移通过独立 SQL 文件执行，容器启动前校验并执行迁移
     assertions:
@@ -423,6 +439,12 @@ contracts:
       - path: deploy/scripts/build-production-on-cloud.sh
         pattern: 'http_port="4174"'
         message: Production 远端健康检查必须使用宿主机端口 4174
+      - path: deploy/scripts/build-production-on-cloud.sh
+        pattern: 'required_secret_keys=\([\s\S]*PI_SERVICE_TOKEN[\s\S]*pi_health_status=.*linkcv-pi'
+        message: Production 必须在发布前要求 Pi 内部令牌并检查 Pi Service 健康状态
+      - path: deploy/scripts/build-production-on-cloud.sh
+        pattern: 'backup_compose_file="\$\{backup_dir\}/docker-compose\.production\.yml"[\s\S]*docker compose -f "\$\{backup_compose_file\}" up -d --remove-orphans'
+        message: Production 回滚必须使用发布前备份的 Compose，兼容首次引入 Pi Service
       - path: Jenkinsfile
         pattern: 'tokenCredentialId: ''linkcv-dev-webhook-token'''
         message: Production webhook token 必须来自现有 Jenkins Secret Text 凭据

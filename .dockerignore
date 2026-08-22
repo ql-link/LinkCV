@@ -7,6 +7,7 @@ dist
 data
 !third_party/pi/packages/ai/src/providers/data/
 !third_party/pi/packages/ai/src/providers/data/**
+third_party/pi/packages/telemetry/dist
 .git
 .github
 .idea

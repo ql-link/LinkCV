@@ -148,6 +148,8 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run dev:pi`                      | 单独启动无头 Pi Agent 服务                                           |
 | `npm run test:pi`                     | 运行 Pi 服务单元测试                                                  |
 | `npm run check:pi`                    | 校验静态模型目录、离线构建 Pi 并测试服务                              |
+| `npm run prepare:pi`                  | 校验仓库内版本化 Pi 模型目录快照，不访问在线模型目录                  |
+| `npm run refresh:pi-model-data`       | 维护时显式刷新并重新生成 Pi 模型目录快照                              |
 | `npm run test:miniprogram`            | 小程序纯逻辑 Node 测试                                               |
 | `npm run dev:extension`               | 启动 WXT 插件开发模式                                                |
 | `npm run test:extension`              | 插件 DOM 提取与 API 客户端测试                                       |

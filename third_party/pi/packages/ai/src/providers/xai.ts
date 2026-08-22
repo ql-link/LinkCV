@@ -6,7 +6,7 @@ import { createProvider, type Provider } from "../models.ts";
 import { XAI_MODELS } from "./xai.models.ts";
 
 export function xaiProvider(): Provider<"openai-completions" | "openai-responses"> {
-	return createProvider({
+	return createProvider<"openai-completions" | "openai-responses">({
 		id: "xai",
 		name: "xAI",
 		baseUrl: "https://api.x.ai/v1",

@@ -77,6 +77,8 @@ Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小�
 
 `.github/workflows/quality.yml` 在面向 `dev`、`release`、`master` 的 PR 和对应分支 push 上执行根级 `npm run check`。业务需求先由独立业务分支合入 `release`，合并后的 `release` push 检查成功才算 Release 测试通过；随后仍由同一业务分支向 `master` 提 PR，不使用 `release -> master` PR。本地和 CI 复用同一质量入口，完整分支规则见 [本地开发与配置](development.md#分支与发布流程)。
 
+CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并先校验仓库内版本化模型目录快照。独立 Pi 镜像在关闭网络的构建层再次校验该快照并执行离线构建，不在 Production 构建时访问实时模型目录。
+
 ## 回滚
 
 - 应用回滚必须把 `TAG` 与 `PI_TAG` 一起切回同一环境、同一版本的两个不可变镜像标签并重新执行 Compose；不得把 Dev 标签部署到 Production。

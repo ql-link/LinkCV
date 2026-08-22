@@ -170,6 +170,8 @@ RabbitMQ 是默认 Broker，使用固定 `resume.import` routing key；Kafka 兼
 
 `GET /api/datasets` 返回当前登录用户自己的资料记录，按上传时间倒序（`{datasets: [...]}`），并从关联任务返回 `upload_status`、`parse_status`、`failure_reason`。失败分类为 `format_unsupported/content_invalid/size_exceeded/service_unavailable/timeout/quota_exceeded/internal_error`。`GET /api/datasets/:id/content` 只允许资料所有者读取解析成功后保存的 Markdown，返回 `{id, file_name, file_format, markdown}`；资料不存在或越权统一返回 `404 DATASET_NOT_FOUND`，解析尚未成功或转换存档未保存返回 `409 DATASET_CONTENT_UNAVAILABLE`，对象读取、大小或 UTF-8 校验失败返回 `502 DATASET_CONTENT_READ_FAILED`。三个接口都要求登录（未登录返回 `401 UNAUTHORIZED`），响应不包含对象存储路径或 SHA-256。
 
+资料源文件 SHA-256 仅作为后端完整性元数据，以固定 64 位十六进制字符串保存；它不进入公开请求或响应契约。
+
 文件名非法返回 `400 INVALID_DATASET_FILENAME`，空文件返回 `400 EMPTY_DATASET_FILE`，不支持格式返回 `400 UNSUPPORTED_DATASET_FORMAT`，超过大小上限返回 `413 DATASET_TOO_LARGE`。对象存储上传失败返回 `502 DATASET_UPLOAD_FAILED` 且不落库；对象已上传但元信息写入失败返回 `500 DATASET_RECORD_FAILED`，已上传对象会被尽力清理；消息发布失败返回 `502 DATASET_QUEUE_UNAVAILABLE`，任务记录收口为上传失败。同一文件允许重复上传并生成新记录（不做去重或幂等）。
 
 ## JD 数据模型与管理
