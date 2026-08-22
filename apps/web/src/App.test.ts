@@ -27,7 +27,9 @@ describe("App landing routes", () => {
     window.history.replaceState(null, "", path);
     render(createElement(App));
 
-    expect(screen.getByRole("heading", { name: "把每一份经历，都写成下一份机会" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "把每一份经历，都写成下一份机会" }),
+    ).toBeInTheDocument();
     await waitFor(() => expect(window.location.pathname).toBe(path));
   });
 });
