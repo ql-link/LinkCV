@@ -149,6 +149,9 @@ contracts:
       - path: apps/backend/src/linkcv/core/config.py
         pattern: 'invalid\.append\("WECHAT_APPID"\)[\s\S]*invalid\.append\("WECHAT_SECRET"\)'
         message: Production 必须在启动时拒绝缺少微信凭据的配置
+      - path: deploy/scripts/build-development-on-primary.sh
+        pattern: 'required_secret_keys=\([\s\S]*WECHAT_APPID[\s\S]*WECHAT_SECRET[\s\S]*Missing required Development secret setting[\s\S]*Settings\(\)\.wechat_enabled[\s\S]*docker network inspect'
+        message: Dev 发布必须在迁移与容器替换前拒绝缺失、空值或占位的微信凭据
       - path: apps/miniprogram/config/runtime.js
         pattern: 'developmentApiBaseUrl: "http://127\.0\.0\.1:8000"[\s\S]*productionApiBaseUrl: "https://linkresume\.cn"'
         message: 小程序必须把开发默认地址与 linkresume.cn 生产地址分开
