@@ -18,7 +18,7 @@
 | `src/linkcv/core/mq/` | RabbitMQ/Kafka publisher、统一导入消息和 confirm 异常边界 |
 | `src/linkcv/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
 | `src/linkcv/modules/identity/` | 用户模型、管理员密码登录、双通道会话、微信自动建号、扫码状态机、`/api/account` 用户中心与管理端用户管理 |
-| `src/linkcv/modules/miniprogram/` | 只接受小程序 Bearer 的本人简历列表和详情只读路由 |
+| `src/linkcv/modules/miniprogram/` | 本人正式版本只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品 |
 | `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板及管理、简历、版本、异步导入、分享和资源路由 |
 | `src/linkcv/modules/datasets/` | `user_dataset` 资料元数据、异步解析受理与状态列表路由 |
 | `src/linkcv/modules/job_descriptions/` | JD 单表 ORM、HTTP DTO 和受保护路由 |
@@ -59,6 +59,8 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 `0019` 为 `users` 增加全局唯一的 `wechat_openid` 和可空 `wechat_bound_at`，`0020` 将 `email/password_hash` 放宽为可空。微信身份登录时，code2session 得到的 openid 存在则复用；不存在时，扫码确认和小程序登录请求只有携带 `privacy_accepted=true` 才创建无邮箱密码账号，否则返回 `400 PRIVACY_AGREEMENT_REQUIRED`。小程序进入登录页时可用一次新的 code 调用 `account-status` 判断当前微信身份是否已有账号；该查询不写用户、不更新时间、不签发 session。`privacy_accepted` 是本次建号门禁，不写入数据库作为同意审计记录；数据库唯一约束仍负责收敛并发建号。普通邮箱注册和密码登录仅在 `APP_ENV=local|development` 开放，Production 均返回 404；普通改密路由仍不公开。`GET /api/auth/capabilities` 向 Web 暴露邮箱密码能力布尔值，不返回具体环境名。`create_schema=True` 的隔离集成测试继续保留隐藏造数入口。管理员仍只通过 `/api/auth/admin-login` 使用密码登录；即使历史管理员记录已有 `wechat_openid`，扫码确认和小程序登录也会拒绝该账号。
 
 `session_service.py` 统一发放、轮换和撤销 Redis session。`auth:session:{sid}` 保存 `uid/rhash/channel/created_at`，access JWT 也保存 `channel=web|miniprogram`。Web 只从 Cookie 接受 web channel，小程序只从 Bearer 接受 miniprogram channel；Redis uid/channel 必须与 JWT 完全一致。小程序的 login/refresh/logout 返回 JSON token，refresh 每次轮换，旧 secret 重放会删除 session；管理员停用用户时原有用户会话集合仍可撤销两个 channel。
+
+小程序简历接口从 `resume_versions` 选择最新 `reason=manual` 快照，没有手动版本时选择 `reason=initial`，因此不会暴露 `resumes` 当前自动保存草稿。PDF 与 PNG 预览会再次核对小程序会话、本人归属和当前版本标识，从版本正文提取 LinkCV 私有图片引用并校验用户/简历对象键，随后用 stdin/stdout 调用一次性 Node 进程；脚本复用 Web 的 React-PDF 节点、字体和智能一页规则，不监听端口、不联网抓取图片。PNG 路由继续用 `pypdfium2`/PDFium 把唯一页面渲染为最大宽度 1440 像素的 RGB 图片；页面尺寸、总像素和输出字节都有上限，并发栅格化槽位固定。PDF 和 PNG 都不写数据库、MinIO 或服务端文件，异常以稳定 4xx/503 错误收口。
 
 `0021` 将 `resume_imports` 一次性迁移为通用 `document_parse_tasks`：任务表保存 `source_type=resume_import`、源文件和上传/解析状态，不再持有最终简历指针；`resumes.parse_task_id` 以无外键的可空唯一列记录来源任务，由 Worker 在创建简历和完成任务的同一事务中维护。迁移沿用原任务主键并回填来源指针，随后删除旧表；降级会镜像重建 `resume_imports`，存在非简历类型任务时拒绝执行。转换后的 Markdown 尽力存入 `converted_object_name`，历史迁移记录保持为空，生命周期检查不依赖该字段。
 
