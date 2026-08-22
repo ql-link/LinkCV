@@ -47,6 +47,7 @@ class FakeGateway:
         api_base,
         api_key,
         response_format=None,
+        disable_thinking=False,
     ):
         self.calls.append(
             {
@@ -55,6 +56,7 @@ class FakeGateway:
                 "apiBase": api_base,
                 "apiKey": api_key,
                 "responseFormat": response_format,
+                "disableThinking": disable_thinking,
             }
         )
         result = self.results.get(

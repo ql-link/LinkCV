@@ -1,10 +1,15 @@
 {
-  "pages": ["pages/login/index"],
+  "pages": [
+    "pages/login/index",
+    "pages/resumes/index",
+    "pages/resumes/detail"
+  ],
   "window": {
-    "navigationBarTitleText": "LinkResume 登录确认",
-    "navigationBarBackgroundColor": "#ffffff",
+    "navigationBarTitleText": "LinkCV",
+    "navigationBarBackgroundColor": "#f5f5f7",
     "navigationBarTextStyle": "black",
-    "backgroundColor": "#f7f7f7"
+    "backgroundColor": "#f5f5f7",
+    "backgroundTextStyle": "dark"
   },
   "style": "v2",
   "sitemapLocation": "sitemap.json",

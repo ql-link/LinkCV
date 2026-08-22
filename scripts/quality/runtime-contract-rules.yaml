@@ -128,6 +128,37 @@ contracts:
         pattern: '(?m)^SESSION_TTL_DAYS=7$[\s\S]*^ACCESS_TTL_MINUTES=15$[\s\S]*^ACCESS_COOKIE_NAME=resume_access$[\s\S]*^REFRESH_COOKIE_NAME=resume_refresh$'
         message: Production 配置必须声明双 Token Cookie 契约
 
+  - id: wechat-miniprogram-environment-contract
+    description: Production 普通登录使用微信，且小程序开发与正式 API 地址按环境隔离
+    assertions:
+      - path: .env.development
+        pattern: '(?m)^APP_ENV=development$'
+        message: Development 必须允许后端能力接口开放普通账号密码登录
+      - path: .env.example
+        pattern: '(?m)^APP_ENV=local$'
+        message: 本地模板必须使用允许普通账号密码登录的 local 环境
+      - path: apps/backend/src/linkcv/modules/identity/routes.py
+        pattern: 'app_environment\.strip\(\)\.lower\(\) in \{"local", "development"\}'
+        message: 本地和 Development 必须共享密码登录能力，Production 必须排除在外
+      - path: .env.production
+        pattern: '(?m)^APP_ENV=production$'
+        message: Production 必须关闭普通账号密码登录
+      - path: .env.example
+        pattern: '(?m)^WECHAT_APPID=$[\s\S]*^WECHAT_SECRET=$[\s\S]*^WECHAT_API_TIMEOUT_SECONDS=5$'
+        message: 环境模板必须声明后端实际读取的微信凭据与超时键
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'invalid\.append\("WECHAT_APPID"\)[\s\S]*invalid\.append\("WECHAT_SECRET"\)'
+        message: Production 必须在启动时拒绝缺少微信凭据的配置
+      - path: apps/miniprogram/config/runtime.js
+        pattern: 'developmentApiBaseUrl: "http://127\.0\.0\.1:8000"[\s\S]*productionApiBaseUrl: "https://linkresume\.cn"'
+        message: 小程序必须把开发默认地址与 linkresume.cn 生产地址分开
+      - path: apps/miniprogram/config/env.js
+        pattern: 'envVersion === "develop"[\s\S]*wx\.getStorageSync\("linkcv_api_base_url"\)[\s\S]*envVersion !== "develop"[\s\S]*startsWith\("https://"\)'
+        message: 内网地址覆盖只能用于开发版，体验版和正式版必须强制 HTTPS
+      - path: apps/miniprogram/services/resumes.js
+        pattern: '/api/miniprogram/resumes'
+        message: 小程序必须只调用后端专用只读简历接口
+
   - id: environment-profile-database-isolation
     description: 三套环境都使用独立 linkcv 数据库
     assertions:

@@ -6,59 +6,52 @@
 
 ## 健康检查与鉴权
 
-`GET /api/health` 返回 `{status, service, version}`。鉴权接口包括：
-
-| Method | Path                 | 成功结果                                              |
-| ------ | -------------------- | ----------------------------------------------------- |
-| `GET`  | `/api/auth/me`       | `{user}`；未登录或 Cookie 无效时为 `null`             |
-| `POST` | `/api/auth/register` | `201 {user}`，签发短 access 与 7 天 refresh 双 Cookie |
-| `POST` | `/api/auth/login`    | `{user}`，签发短 access 与 7 天 refresh 双 Cookie     |
-| `POST` | `/api/auth/refresh`  | `{user}`，轮换 refresh 密钥并下发新双 Cookie          |
-| `POST` | `/api/auth/logout`   | `{ok: true}`，删除 Redis 会话并清除双 Cookie          |
-| `POST` | `/api/auth/wechat/qrcode`  | `{scene, qr_base64}`；请求为 `{mode: "login" 或 "bind"}`，bind 模式要求已登录，按 IP 限流（默认 10 次/分钟） |
-| `GET`  | `/api/auth/wechat/status`  | `{status: "pending" 或 "success" 或 "expired", user?}`；`scene` 为 query 参数，命中 success 后 login 模式签发双 Cookie、bind 模式不签发，并删除 scene |
-| `POST` | `/api/auth/wechat/confirm` | `{ok: true}`；multipart 提交 `scene`、`code`、`mode`、`nickname?` 与可选 `avatar` 文件；scene 只能确认一次（重复提交 `409 SCENE_REUSED`） |
-
-鉴权使用“短 JWT access + 不透明 refresh + Redis 会话”的双 Token 方案。Access Cookie 名为 `resume_access`，有效期 `ACCESS_TTL_MINUTES`（默认 15 分钟），`SameSite=Lax`、`Path=/`。Refresh Cookie 名为 `resume_refresh`，有效期 `SESSION_TTL_DAYS`（默认 7 天），`HttpOnly`、`SameSite=Lax`、`Path=/api/auth`。Web 调用受保护接口收到 `401` 时，会把并发请求合并到同一次 refresh，刷新成功后各自重试一次；启动检查 `/api/auth/me` 返回空用户时也会先尝试 refresh，再进入访客态。登录或刷新失败返回 `401 INVALID_CREDENTIALS`。`/api/auth/me`、登录、注册与 refresh 返回的 `user` 对象与用户中心一致，包含 `avatar_url`（无头像时为 `null`）。
-
-每次受保护请求按“Access 自洽 → Session 存活 → 用户启用”三步校验：先校验 access JWT 签名与过期，再用 `EXISTS auth:session:{sid}` 确认 Redis 会话仍在，最后从 MySQL 读取用户并要求 `status=1`。私有接口不接受客户端 `user_id`；未登录返回 `401 UNAUTHORIZED`。会话只存 Redis（`auth:session:{sid}` 哈希与 `auth:user_sessions:{uid}` 集合），不写 MySQL；撤销即删除 key。`POST /api/auth/refresh` 校验 refresh Cookie 中的 `sid.secret`，匹配 Redis 中保存的 secret 哈希后轮换密钥、续期会话并下发新 Cookie；哈希不匹配会立即撤销该会话。密码经 Argon2id 哈希后存入 `password_hash`，不保存明文。
-
-## 用户中心
-
-`/api/account/*` 全部通过 `get_current_user` 取当前登录用户，不接受客户端传入 `user_id`。头像只暴露相对 URL（经 `/api/assets` 转发），不返回对象存储键。未登录返回 `401 UNAUTHORIZED`。
+`GET /api/health` 返回 `{status, service, version}`。`GET /api/auth/capabilities` 公开返回 `{password_login_enabled}`，Web 据此选择普通邮箱密码入口。普通用户邮箱密码登录和注册仅在 `APP_ENV=local|development` 时开放；Production 的 `POST /api/auth/login` 与 `POST /api/auth/register` 都返回 `404 NOT_FOUND`。普通改密和微信绑定接口仍不公开；`POST /api/account/change-password` 和 `/api/account/wechat/bind-*` 在正常运行环境返回 `404 NOT_FOUND`。这些环境受限路由不进入 OpenAPI。`POST /api/auth/admin-login` 保持独立，只允许管理员成功。
 
 | Method | Path | 成功结果 |
 | --- | --- | --- |
-| `GET` | `/api/account/profile` | `{user, resume_count, recent_resumes}` |
-| `PATCH` | `/api/account/profile` | `{user}`；请求为 `{nickname}` |
-| `PUT` | `/api/account/avatar` | `{url}`；请求为 `{fileName?, dataUrl}` |
-| `DELETE` | `/api/account/avatar` | `{ok: true}` |
-| `POST` | `/api/account/change-password` | `{ok, message}`；请求为 `{current_password, new_password, confirm_password}` |
-| `POST` | `/api/account/wechat/bind-request` | `{ticket, qrcode_data}`；小程序码图片为 base64 |
-| `POST` | `/api/account/wechat/bind-confirm` | `{ok: true}`；请求为 `{ticket, code}` |
-| `GET` | `/api/account/wechat/bind-status` | `{status}`；查询参数 `ticket`，状态为 `pending\|bound\|expired` |
+| `GET` | `/api/auth/me` | `{user}`；只识别 Web Cookie，无效 Cookie 或小程序 Bearer 均返回 `user: null` |
+| `POST` | `/api/auth/register` | `201 {user}`；仅 local/development，JSON `{email, password}`，成功后签发 Web 双 Cookie |
+| `POST` | `/api/auth/login` | `{user}`；仅 local/development，JSON `{email, password}`，成功后签发 Web 双 Cookie |
+| `POST` | `/api/auth/admin-login` | `{user}`，管理员登录并签发 Web 双 Cookie |
+| `POST` | `/api/auth/refresh` | `{user}`，轮换 Web refresh 并下发新双 Cookie |
+| `POST` | `/api/auth/logout` | `{ok: true}`，撤销 Web session 并清除 Cookie |
+| `POST` | `/api/auth/wechat/miniprogram/account-status` | `{registered}`；JSON `{code}`，只判断当前微信身份是否已有账号，不建号、不签发会话 |
+| `POST` | `/api/auth/wechat/miniprogram/login` | `{user, access_token, refresh_token, expires_in}`；JSON `{code, privacy_accepted?}`，未知 openid 建号时该值必须为 `true` |
+| `POST` | `/api/auth/wechat/miniprogram/refresh` | 同上；JSON `{refresh_token}`，成功后旧 refresh 立即失效 |
+| `POST` | `/api/auth/wechat/miniprogram/logout` | `{ok: true}`；JSON `{refresh_token?}`，幂等撤销小程序 session |
 
-`user` 为 `{id, email, nickname, is_admin, avatar_url, wechat_status, wechat_bound_at}`，`email` 可为 `null`（微信扫码创建的账号无邮箱密码），无头像时 `avatar_url` 为 `null`。`wechat_status` 为 `unbound\|bound\|unavailable`：已绑定微信为 `bound`，未绑定且微信能力可用为 `unbound`，未配置微信凭据时统一为 `unavailable`；`wechat_bound_at` 绑定后为带时区 ISO 8601，未绑定为 `null`。`recent_resumes` 是最近编辑的 5 份简历，每项 `{id, title, updated_at}`，按 `updated_at DESC, id DESC` 排序。
+会话统一保存为 Redis `auth:session:{sid}` hash 和 `auth:user_sessions:{uid}` 集合。Hash 包含 `uid`、refresh secret 哈希、`channel=web|miniprogram` 和创建时间；access JWT 同样携带 channel。Web 只接受 HttpOnly Cookie 中的 `channel=web` 凭据，小程序只接受 `Authorization: Bearer` 中的 `channel=miniprogram` 凭据；同时携带两种载体、JWT 与 Redis 的 uid/channel 不一致、session 被撤销或用户停用时均视为未登录。为兼容本功能上线前已签发的 Web 会话，缺少 channel 的旧 JWT/Redis session 仅按 Web 凭据接受，并在 refresh 轮换时补写 `channel=web`；它不会被小程序接口接受。Refresh 每次轮换 secret，重放旧 refresh 会撤销整个 session。
 
-昵称去空白后为空或超过 50 字符返回 `400 INVALID_NICKNAME`。头像通过 data URL 上传（≤10MB），新对象键使用 `users/{user_id}/assets/avatar/{毫秒时间戳}-{8位随机串}-{文件名}.{扩展名}`。非法图片返回 `400 INVALID_IMAGE`，超限返回 `413 IMAGE_TOO_LARGE`，对象写入失败返回 `502 ASSET_UPLOAD_FAILED`；先写新对象再更新数据库，提交失败补偿删除新对象，成功后清理旧头像对象。旧路径中的已有头像继续可读、可替换和删除，不做批量迁移。
+微信 code 只由后端提交微信平台换取 openid。`/api/auth/wechat/miniprogram/account-status` 使用当前 `wx.login` code 返回该 openid 是否已有关联账号，只返回布尔值，不创建用户、不更新登录时间、不签发会话；它与小程序登录共用来源 IP 默认每分钟 30 次的限流。openid 已存在时登录接口直接复用；不存在时，`/api/auth/wechat/confirm` 和 `/api/auth/wechat/miniprogram/login` 只有在收到 `privacy_accepted=true` 后才创建 `email/password_hash` 为空的普通账号，缺失或为 `false` 时返回 `400 PRIVACY_AGREEMENT_REQUIRED`，唯一约束负责并发建号收敛。该字段只表示本次注册请求已经通过客户端确认门禁，不是服务端持久化的同意审计记录。随仓库发布的小程序在调用建号接口或确认扫码前，还必须展示微信平台隐私保护指引、取得页面复选框确认和用户主动点击；简历页与请求重试路径只能以 `privacy_accepted=false` 尝试恢复已有账号，不能静默触发首次建号。停用账号不能登录或续期；管理员账号即使历史上已有 openid，也不能通过扫码或小程序登录，只能使用 `/api/auth/admin-login`。超出上述限流时返回 `429 WECHAT_RATE_LIMITED`。
 
-修改密码先校验当前密码（错误返回 `400 INVALID_CURRENT_PASSWORD`），再要求新密码至少 8 位且同时包含字母和数字（否则 `400 WEAK_PASSWORD`）、两次输入一致（否则 `400 PASSWORD_MISMATCH`）且不能与当前密码相同（否则 `400 PASSWORD_UNCHANGED`）。成功后更新 Argon2id 哈希，立即撤销该用户全部 Redis 会话，并在同一响应中清除双 Cookie，所有设备都必须用新密码重新登录。
-
-微信绑定由 Web 已登录用户发起：`bind-request` 生成绑定票据并返回小程序码，票据存 Redis（TTL 默认 300 秒，同用户重新发起时作废旧票据），`scene` 携带票据；用户用微信扫小程序码进入小程序确认页，小程序调 `wx.login()` 取得临时 code 后提交 `bind-confirm`，服务端用 code 换取 openid 并关联到发起用户。openid 只在服务端存储，任何接口不回传 openid 明文。openid 已被其他用户绑定时返回 `409 WECHAT_ALREADY_BOUND`，原绑定关系不被覆盖；票据不存在或已过期返回 `400 BIND_TICKET_INVALID`；已绑定用户再次发起返回 `400 WECHAT_ALREADY_BOUND`。微信凭据未配置或微信接口调用失败返回 `503 WECHAT_SERVICE_UNAVAILABLE`。Web 端通过 `bind-status` 每 3 秒轮询感知绑定成功（`bound` 后停止），票据过期返回 `expired` 提示重新发起。本周不提供解绑或更换微信身份，也不存在对应接口。
-
-### 微信扫码登录
+### 网页扫码登录
 
 | Method | Path | 成功结果 |
 | --- | --- | --- |
-| `POST` | `/api/auth/wechat/qrcode` | `{scene, qr_base64}`；无需登录 |
-| `GET` | `/api/auth/wechat/status` | `{status}`；查询参数 `scene`，状态为 `pending\|success\|expired`，`success` 时含 `user` 并发放会话 |
-| `POST` | `/api/auth/wechat/confirm` | `{ok: true}`；请求为表单 `{scene, code}`（由小程序端调用） |
+| `POST` | `/api/auth/wechat/qrcode` | `{scene, poll_token, qr_base64}`；匿名，按 IP 限流；`poll_token` 只保留在创建二维码的网页 |
+| `GET` | `/api/auth/wechat/status?scene=...&poll_token=...` | `{status, user?}`；`pending\|success\|cancelled\|expired`，success 且 poll token 匹配时设置 Web Cookie；不带 token 时只读状态 |
+| `POST` | `/api/auth/wechat/confirm` | `{ok: true}`；小程序表单 `{scene, code, privacy_accepted?}`，未知 openid 建号时该值必须为 `true` |
+| `POST` | `/api/auth/wechat/cancel` | `{ok: true, status: "cancelled"}`；小程序表单 `{scene}` |
 
-扫码登录采用 scene 状态机：Web 端请求 `qrcode` 生成携带 `scene` 的小程序码（scene 前缀 `login:`，TTL 默认 300 秒），用户用微信扫码进入小程序确认页，小程序调 `wx.login()` 取得临时 code 后提交 `confirm`，服务端用 code 换取 openid：已存在 openid 则复用该账号，否则创建无邮箱密码的微信账号（昵称为 `微信用户` 加随机后缀），并把结果写回 scene。Web 端每 2 秒轮询 `status`，命中 `success` 后发放会话并删除 scene，`expired` 提示刷新。`confirm` 用 GETSET 原子防重放：同一 scene 二次提交返回 `409 SCENE_REUSED`，scene 不存在或已过期返回 `410 SCENE_EXPIRED`，code 无效返回 `400 WECHAT_CODE_INVALID`。`qrcode` 按 IP 限流（默认 10 次/分钟），超限返回 `429 WECHAT_RATE_LIMITED`；微信凭据未配置返回 `503 WECHAT_SERVICE_UNAVAILABLE`。
+scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → cancelled` 流转，默认 TTL 300 秒。确认使用原子 claim，只有一个请求执行微信换取；外部服务或无效 code 会由 claim 所有者恢复 `pending`，允许小程序取得新 code 后重试。processing 超过 30 秒视为遗留占用，可由新的确认请求原子接管；未超时的并发请求返回 `409 SCENE_IN_PROGRESS`。重复确认已确认场景幂等成功，终态保留到 TTL，不因重复请求删除。scene 供小程序确认并查询状态，独立 poll token 才允许 Web 领取会话，服务端只保存其哈希。Web 对已确认场景重复领取时会先发新 session、原子替换 scene 上的 `web_sid` 并撤销旧 sid，因此响应丢失可重试且同一 scene 最多保留一个有效 Web session；小程序无 poll token，不会误撤销网页会话。取消已确认场景返回冲突；未知或到期 scene 返回 `410 SCENE_EXPIRED`。
+
+### 小程序只读简历
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `GET` | `/api/miniprogram/resumes` | `{resumes}`；本人简历摘要，按更新时间倒序 |
+| `GET` | `/api/miniprogram/resumes/:id` | `{resume}`；仅返回本人简历，不存在或越权统一 `404 RESUME_NOT_FOUND` |
+
+这两个端点只接受小程序 Bearer，不接受 Web Cookie。小程序 Bearer 不能调用普通 `/api/resumes*` 读写接口，因此只读限制由后端鉴权边界执行，不依赖小程序是否展示按钮。
+
+### 用户中心
+
+`/api/account/*` 通过当前用户身份确定资源归属，不接受 `user_id`。当前公开接口为 profile、昵称和头像读写；Web 账号页不再显示密码或微信绑定入口。`user.email` 对微信用户为 `null`。最近简历仍按更新时间倒序返回最多 5 条。
 
 ## 语义简历契约
 
-简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`。数据库 ID 在 HTTP 中使用十进制字符串。`data` 是 `ResumeDocumentV1`，`style` 是 `ResumeStyleV1`，两者的 `schema_version` 当前均为字符串 `"1.0"`。`style.smart_one_page` 控制连续单页或标准 A4 导出模式，并随版本快照保存。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不再是简历写契约。
+简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`。数据库 ID 在 HTTP 中使用十进制字符串。`data` 是 `ResumeDocumentV1`，`style` 是 `ResumeStyleV1`，两者的 `schema_version` 当前均为字符串 `"1.0"`。简历正文以用户内容为准：错别字、非标准邮箱或电话、无法识别或先后矛盾的日期、缺少单位或职位等内容质量问题不阻断保存、导入或版本恢复；可识别日期仍会规范化，无法识别的日期原样保留。字段类型、总量和长度上限、URL 协议、Markdown 主动内容及内部 ID 完整性仍严格校验。`style.smart_one_page` 控制连续单页或标准 A4 导出模式，并随版本快照保存。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不再是简历写契约。
 
 Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照转换为上述 `"1.0"` 契约；这些迁移期旧 JSON 从未进入 API 响应，`0012` 删除其同行备份列，因此 HTTP 请求、响应和现有 `"1.0"` 数据保持不变。发布顺序仍为先迁移数据库、再启动新应用。
 

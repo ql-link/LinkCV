@@ -37,6 +37,7 @@ class FakeGateway:
         ] = {}
         self.calls: list[tuple[str, str | None]] = []
         self.message_batches: list[tuple[ChatMessage, ...]] = []
+        self.disable_thinking_calls: list[bool] = []
 
     async def complete(
         self,
@@ -45,10 +46,12 @@ class FakeGateway:
         messages,
         api_base,
         api_key,
+        disable_thinking=False,
     ):
         del api_base
         self.calls.append((model, api_key))
         self.message_batches.append(tuple(messages))
+        self.disable_thinking_calls.append(disable_thinking)
         result = self.complete_results[model]
         if isinstance(result, GatewayError):
             raise result
@@ -152,6 +155,7 @@ def test_chat_uses_only_bound_model_and_records_cost(service_context) -> None:
 
     assert result.content == "统一结果"
     assert [model for model, _key in gateway.calls] == ["deepseek/current"]
+    assert gateway.disable_thinking_calls == [False]
     with sessions() as db:
         log = db.scalar(select(LLMCallLog))
         assert log is not None
@@ -192,6 +196,7 @@ def test_structured_chat_uses_current_and_validates_local_json(
 
     assert result.value.answer == "有效"
     assert [model for model, _key in gateway.calls] == ["deepseek/current"]
+    assert gateway.disable_thinking_calls == [True]
     assert len(gateway.message_batches) == 1
     instruction, original = gateway.message_batches[0]
     assert instruction.role == "system"

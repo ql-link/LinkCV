@@ -219,6 +219,9 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.settings = runtime_settings
+    # Public password/binding routes are retired. Integration tests temporarily
+    # keep their old setup helpers only on ephemeral create_schema applications.
+    app.state.legacy_identity_test_routes = create_schema
     app.state.session_factory = session_factory
     app.state.storage = runtime_storage
     app.state.plugin_release_service = runtime_plugin_release_service

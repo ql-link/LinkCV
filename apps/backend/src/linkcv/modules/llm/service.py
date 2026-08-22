@@ -596,6 +596,7 @@ class LLMService:
                     ),
                     api_base=config.api_base,
                     api_key=api_key,
+                    disable_thinking=True,
                 )
             except GatewayError as error:
                 await self._db(

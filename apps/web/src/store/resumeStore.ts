@@ -2,7 +2,6 @@ import { create } from "zustand";
 import type { JSONContent } from "@tiptap/core";
 import {
   api,
-  ChangePasswordPayload,
   ImportWarning,
   ResumeDocumentV1,
   ResumeRecord,
@@ -79,12 +78,11 @@ type ResumeState = {
   saveStatus: SaveStatus;
   error: string | null;
   hydrate: () => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string) => Promise<void>;
   loginWithWechat: (user: User) => Promise<void>;
   logout: () => Promise<void>;
   syncProfile: (user: UserProfile) => void;
-  changePassword: (payload: ChangePasswordPayload) => Promise<void>;
   listResumes: () => Promise<void>;
   createResume: (title: string, templateId: string) => Promise<string>;
   importResume: (file: File, templateId: string, title?: string) => Promise<string>;
@@ -289,14 +287,14 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     }
   },
 
-  register: async (email, password) => {
-    const { user } = await api.register(email, password);
+  login: async (email, password) => {
+    const { user } = await api.login(email, password);
     set({ authStatus: "authenticated", user, error: null });
     await get().listResumes();
   },
 
-  login: async (email, password) => {
-    const { user } = await api.login(email, password);
+  register: async (email, password) => {
+    const { user } = await api.register(email, password);
     set({ authStatus: "authenticated", user, error: null });
     await get().listResumes();
   },
@@ -328,25 +326,6 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     const current = get().user;
     if (!current) return;
     set({ user: { ...current, ...profile } });
-  },
-
-  changePassword: async (payload) => {
-    await api.changePassword(payload);
-    // The backend revoked every session and cleared the cookies; clear the
-    // local state so the UI redirects to the login page.
-    set({
-      authStatus: "guest",
-      user: null,
-      resumes: [],
-      activeImports: [],
-      failedImports: [],
-      versions: [],
-      versionOperationPending: false,
-      activeResumeId: null,
-      lockVersion: 0,
-      dirty: false,
-      saveStatus: "idle",
-    });
   },
 
   listResumes: async () => {

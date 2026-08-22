@@ -296,6 +296,12 @@ class Settings(BaseSettings):
         ge=1,
         le=60,
     )
+    wechat_login_requests_per_minute: int = Field(
+        default=30,
+        alias="WECHAT_LOGIN_REQUESTS_PER_MINUTE",
+        ge=1,
+        le=120,
+    )
     wechat_scene_ttl_seconds: int = Field(
         default=300,
         alias="WECHAT_SCENE_TTL_SECONDS",
@@ -472,6 +478,15 @@ class Settings(BaseSettings):
             invalid.append("LINKPARSE_API_KEY")
         if self.mq_vendor == "rabbitmq" and _is_placeholder(rabbitmq_url):
             invalid.append("RABBITMQ_URL")
+        wechat_secret = (
+            self.wechat_secret.get_secret_value()
+            if self.wechat_secret is not None
+            else None
+        )
+        if _is_placeholder(self.wechat_appid):
+            invalid.append("WECHAT_APPID")
+        if _is_placeholder(wechat_secret):
+            invalid.append("WECHAT_SECRET")
         try:
             llm_keys = parse_llm_credential_encryption_keys(
                 self.llm_credential_encryption_keys

@@ -1,174 +1,216 @@
-// pages/login/index.js
-// LinkResume 扫码登录确认页（对接后端 /api/auth/wechat scene 状态机）。
-// 1) 浏览模式（无 scene，如审核/直接打开）：仅展示品牌与流程说明，不请求任何授权，
-//    符合平台"先浏览体验功能，再自主选择授权登录"的规范要求。
-// 2) 授权确认模式（扫码携带 scene）：校验 scene 后展示确认登录按钮，
-//    点击后 wx.login() 换取临时 code，提交 POST /api/auth/wechat/confirm 完成登录。
-const app = getApp();
+const auth = require("../../services/auth");
+
+function formRequest(path, data) {
+  return new Promise((resolve, reject) => {
+    wx.request({
+      url: auth.apiUrl(path),
+      method: "POST",
+      header: { "content-type": "application/x-www-form-urlencoded" },
+      data,
+      success: resolve,
+      fail: reject,
+    });
+  });
+}
 
 Page({
   data: {
-    scene: "", // 从扫码二维码解析的 scene（URL 解码后）
-    hasSession: false, // 是否有扫码会话：false=浏览模式（可自由浏览），true=授权确认模式
-    loading: false, // 防止重复提交锁
+    scene: "",
+    loading: true,
+    submitting: false,
+    agreementAccepted: false,
+    privacyReady: false,
+    privacySupported: false,
+    privacyAuthorizationRequired: false,
+    privacyContractName: "《LinkCV 小程序隐私保护指引》",
+    accountStatusReady: false,
+    accountRegistered: false,
+    accountStatusError: "",
+    phase: "checking",
+    message: "正在校验本次登录请求…",
   },
 
   onLoad(options) {
-    // 小程序码把 scene 塞进页面参数并 URL 编码，需要解码。
     const scene = decodeURIComponent(options.scene || "");
-    if (!scene) {
-      // 无 scene（如审核或用户直接打开）：进入浏览模式，
-      // 仅展示品牌与流程说明，不请求任何授权，符合平台"先浏览后授权"规范。
-      return;
-    }
-    this.setData({ scene, hasSession: true });
-    // 校验 scene 是否仍有效（复用 status 接口做轻量校验，不消费状态）。
-    this.validateScene(scene);
-  },
-
-  // 校验 scene 有效性：状态为 expired 视为失效；pending 等其余情况交由 confirm 兜底。
-  validateScene(scene) {
-    wx.request({
-      url: `${app.globalData.apiBaseUrl}/api/auth/wechat/status`,
-      method: "GET",
-      data: { scene },
-      success: (res) => {
-        const body = res.data || {};
-        if (res.statusCode === 200 && body.status === "expired") {
-          this.abortInvalid();
-        }
-      },
-      fail: () => {
-        // 网络异常不拦截，最终由 confirm 的返回结果兜底。
-      },
+    this.setData({
+      scene,
+      agreementAccepted: auth.hasAcceptedPrivacyAgreement(),
     });
-  },
-
-  // 会话无效：弹窗提示后返回上一页
-  abortInvalid() {
-    wx.showModal({
-      title: "提示",
-      content: "登录会话已过期或无效",
-      showCancel: false,
-      confirmText: "知道了",
-      success: () => {
-        if (!this.goBack()) {
-          wx.reLaunch({
-            url: "/pages/index/index",
-            fail: () => {
-              wx.showToast({ title: "可关闭本页重新扫码", icon: "none" });
-            },
-          });
-        }
-      },
-    });
-  },
-
-  // 确认登录：wx.login() 换临时 code，POST /api/auth/wechat/confirm 提交 { scene, code }
-  async handleConfirm() {
-    const { scene, loading } = this.data;
-    if (loading) {
-      return; // 防止重复提交
-    }
+    this.loadPrivacySetting();
     if (!scene) {
-      this.abortInvalid();
-      return;
-    }
-    this.setData({ loading: true });
-    try {
-      const code = await this.getWxLoginCode();
-      const result = await this.requestConfirm(scene, code);
-      if (result.statusCode === 200 && result.body && result.body.ok) {
-        wx.showToast({ title: "登录成功", icon: "success" });
-        setTimeout(() => {
-          // 延迟 1 秒后跳转首页；若首页不存在（如直接打开本页）则回退上一页
-          wx.reLaunch({
-            url: "/pages/index/index",
-            fail: () => {
-              if (!this.goBack()) {
-                wx.showToast({ title: "登录完成，可关闭本页", icon: "none" });
-              }
-            },
-          });
-        }, 1000);
-      } else {
-        this.handleConfirmError(result);
+      if (auth.hasSession()) {
+        wx.reLaunch({ url: "/pages/resumes/index" });
+        return;
       }
-    } catch (error) {
-      this.handleConfirmError({});
-    }
-  },
-
-  // 获取微信临时登录凭证
-  getWxLoginCode() {
-    return new Promise((resolve, reject) => {
-      wx.login({
-        success: (res) => (res.code ? resolve(res.code) : reject(res)),
-        fail: reject,
+      this.setData({
+        loading: true,
+        phase: "onboarding",
+        message: "正在识别当前微信账号…",
       });
-    });
-  },
-
-  // 提交确认结果
-  requestConfirm(scene, code) {
-    return new Promise((resolve, reject) => {
-      wx.request({
-        url: `${app.globalData.apiBaseUrl}/api/auth/wechat/confirm`,
-        method: "POST",
-        header: { "content-type": "application/x-www-form-urlencoded" },
-        data: { scene, code },
-        success: (res) => resolve({ statusCode: res.statusCode, body: res.data }),
-        fail: reject,
-      });
-    });
-  },
-
-  // 错误处理：过期/重放/服务不可用给出对应提示
-  handleConfirmError({ statusCode, body }) {
-    this.setData({ loading: false });
-    const error = (body && body.error) || "";
-    const isExpired =
-      statusCode === 410 || statusCode === 409 || error === "SCENE_EXPIRED" || error === "SCENE_REUSED";
-    if (isExpired) {
-      wx.showModal({
-        title: "提示",
-        content: "登录会话已过期或无效，请重新扫码",
-        showCancel: false,
-        confirmText: "知道了",
-      });
-    } else if (statusCode === 503 || error === "WECHAT_SERVICE_UNAVAILABLE") {
-      wx.showToast({ title: "服务暂不可用，请稍后重试", icon: "none" });
-    } else {
-      wx.showToast({ title: "登录失败，请重试", icon: "error" });
-    }
-  },
-
-  // 取消（拒绝）：二次确认后返回上一页，满足审核"提供取消/拒绝返回选项"要求
-  handleCancel() {
-    const { loading } = this.data;
-    if (loading) {
+      this.loadAccountStatus();
       return;
     }
-    wx.showModal({
-      title: "提示",
-      content: "确定取消本次登录吗？",
-      confirmText: "确定",
-      cancelText: "再想想",
-      success: (res) => {
-        if (res.confirm) {
-          this.goBack();
-        }
-      },
+    this.loadStatus();
+  },
+
+  async loadPrivacySetting() {
+    const setting = await auth.getPrivacySetting();
+    this.setData({
+      privacyReady: true,
+      privacySupported: setting.supported,
+      privacyAuthorizationRequired: setting.needAuthorization,
+      privacyContractName: setting.privacyContractName,
     });
   },
 
-  // 返回上一页；无上一页时返回 false 由调用方决定兜底
-  goBack() {
-    const pages = getCurrentPages();
-    if (pages.length > 1) {
-      wx.navigateBack({ delta: 1 });
-      return true;
+  handleAgreementChange(event) {
+    this.setData({ agreementAccepted: event.detail.value.includes("accepted") });
+  },
+
+  async openPrivacyContract() {
+    try {
+      await auth.openPrivacyContract();
+    } catch (error) {
+      wx.showToast({ title: error.message, icon: "none" });
     }
-    return false;
+  },
+
+  handlePrivacyAuthorization() {
+    return this.handlePrimaryAction();
+  },
+
+  async loadAccountStatus() {
+    this.setData({
+      loading: true,
+      accountStatusReady: false,
+      accountStatusError: "",
+      message: "正在识别当前微信账号…",
+    });
+    try {
+      const registered = await auth.getAccountStatus();
+      this.setData({
+        loading: false,
+        accountStatusReady: true,
+        accountRegistered: registered,
+        message: registered
+          ? "已找到你的 LinkCV 账号，确认后即可登录。"
+          : "当前微信尚未注册，确认后将创建 LinkCV 账号。",
+      });
+    } catch (error) {
+      this.setData({
+        loading: false,
+        accountStatusReady: false,
+        accountStatusError: error.message || "账号识别失败，请稍后重试。",
+        message: error.message || "账号识别失败，请稍后重试。",
+      });
+    }
+  },
+
+  handlePrimaryAction() {
+    if (!this.data.agreementAccepted) {
+      wx.showToast({ title: "请先阅读并勾选隐私保护指引", icon: "none" });
+      return;
+    }
+    if (
+      !this.data.privacyReady
+      || !this.data.privacySupported
+      || this.data.submitting
+      || (this.data.phase === "onboarding" && !this.data.accountStatusReady)
+    ) return;
+    auth.acceptPrivacyAgreement();
+    if (this.data.phase === "onboarding") {
+      return this.handleAccountAction();
+    }
+    return this.handleConfirm();
+  },
+
+  async handleAccountAction() {
+    const registered = this.data.accountRegistered;
+    this.setData({
+      submitting: true,
+      message: registered ? "正在登录…" : "正在注册…",
+    });
+    try {
+      if (registered) await auth.loginExistingAccount();
+      else await auth.registerOrLogin();
+      wx.reLaunch({ url: "/pages/resumes/index" });
+    } catch (error) {
+      if (registered && error.code === "PRIVACY_AGREEMENT_REQUIRED") {
+        this.setData({
+          submitting: false,
+          accountRegistered: false,
+          message: "未找到原账号，确认后将为当前微信创建 LinkCV 账号。",
+        });
+        return;
+      }
+      this.setData({
+        submitting: false,
+        phase: "onboarding",
+        message: error.message || (registered ? "登录失败，请稍后重试。" : "注册失败，请稍后重试。"),
+      });
+    }
+  },
+
+  loadStatus() {
+    this.setData({ loading: true, phase: "checking", message: "正在校验本次登录请求…" });
+    wx.request({
+      url: auth.apiUrl("/api/auth/wechat/status"),
+      method: "GET",
+      data: { scene: this.data.scene },
+      success: (response) => {
+        const status = response.data && response.data.status;
+        if (status === "pending") {
+          this.setData({ loading: false, phase: "pending", message: "请确认是否允许当前网页登录 LinkCV。" });
+        } else if (status === "success") {
+          wx.reLaunch({
+            url: auth.hasSession() ? "/pages/resumes/index" : "/pages/login/index",
+          });
+        } else if (status === "cancelled") {
+          this.setData({ loading: false, phase: "cancelled", message: "已取消本次网页登录。" });
+        } else {
+          this.setData({ loading: false, phase: "expired", message: "登录请求已过期，请返回网页重新扫码。" });
+        }
+      },
+      fail: () => this.setData({ loading: false, phase: "error", message: "网络异常，请稍后重试。" }),
+    });
+  },
+
+  async handleConfirm() {
+    if (this.data.submitting || this.data.phase !== "pending") return;
+    this.setData({ submitting: true, message: "正在确认…" });
+    try {
+      const code = await auth.wxLoginCode();
+      const response = await formRequest("/api/auth/wechat/confirm", {
+        scene: this.data.scene,
+        code,
+        privacy_accepted: true,
+      });
+      if (response.statusCode !== 200) {
+        throw new Error((response.data && response.data.error) || "确认失败");
+      }
+      await auth.loginExistingAccount();
+      wx.reLaunch({ url: "/pages/resumes/index" });
+    } catch (error) {
+      const recoverable = error.message === "WECHAT_SERVICE_UNAVAILABLE" || error.message === "WECHAT_CODE_INVALID";
+      this.setData({
+        submitting: false,
+        phase: recoverable ? "pending" : "error",
+        message: recoverable ? "微信校验失败，请重新确认。" : (error.message || "确认失败，请重试。"),
+      });
+    }
+  },
+
+  async handleCancel() {
+    if (this.data.submitting || this.data.phase !== "pending") return;
+    this.setData({ submitting: true });
+    try {
+      const response = await formRequest("/api/auth/wechat/cancel", { scene: this.data.scene });
+      if (response.statusCode !== 200) {
+        throw new Error((response.data && response.data.error) || "取消失败");
+      }
+      this.setData({ submitting: false, phase: "cancelled", message: "已取消本次网页登录。" });
+    } catch (error) {
+      this.setData({ submitting: false, message: error.message || "取消失败，请重试。" });
+    }
   },
 });

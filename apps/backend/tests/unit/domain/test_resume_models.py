@@ -69,6 +69,43 @@ def test_resource_and_link_fields_reject_active_schemes() -> None:
         Project(id="project_001", name="示例项目", url="javascript:alert(1)")
 
 
+def test_dated_entries_allow_content_inconsistent_dates() -> None:
+    reversed_dates = WorkExperience(
+        id="work_001",
+        organization="示例科技有限公司",
+        position="工程师",
+        start_date="2025-10",
+        end_date="2016-03",
+    )
+    current_with_end_date = Project(
+        id="project_001",
+        name="示例项目",
+        current=True,
+        end_date="2025-01",
+    )
+
+    assert reversed_dates.start_date == "2025-10"
+    assert reversed_dates.end_date == "2016-03"
+    assert current_with_end_date.current is True
+    assert current_with_end_date.end_date == "2025-01"
+
+
+def test_resume_content_fields_do_not_enforce_content_quality() -> None:
+    work = WorkExperience(
+        id="work_001",
+        organization="",
+        position="",
+        start_date="时间写得有点乱",
+    )
+    basics = ResumeBasics(email="这不是标准邮箱", phone="电话号码可能写错了")
+
+    assert work.organization == ""
+    assert work.position == ""
+    assert work.start_date == "时间写得有点乱"
+    assert basics.email == "这不是标准邮箱"
+    assert basics.phone == "电话号码可能写错了"
+
+
 def test_snapshot_removes_unknown_style_sections_and_adds_present_sections() -> None:
     snapshot = ResumeSnapshot(
         data=ResumeDocumentV1(
