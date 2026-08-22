@@ -23,6 +23,12 @@ def test_structured_emitter_redacts_secrets_and_preserves_query_fields(capsys) -
         duration_ms=12,
         source_format="docx",
         word_meta={"omitted_image_count": 1, "table_failure_count": 2},
+        failure_stage="resume_normalization",
+        stage="resume_normalization",
+        validation_model="ResumeLink",
+        validation_paths="url",
+        validation_types="value_error",
+        warning_count=2,
         unsupported_field="must-not-be-recorded",
     )
 
@@ -35,6 +41,12 @@ def test_structured_emitter_redacts_secrets_and_preserves_query_fields(capsys) -
     assert event["source_format"] == "docx"
     assert "omitted_image_count" in event["word_meta"]
     assert "table_failure_count" in event["word_meta"]
+    assert event["failure_stage"] == "resume_normalization"
+    assert event["stage"] == "resume_normalization"
+    assert event["validation_model"] == "ResumeLink"
+    assert event["validation_paths"] == "url"
+    assert event["validation_types"] == "value_error"
+    assert event["warning_count"] == 2
     assert "unsupported_field" not in event
     serialized = json.dumps(event)
     assert "raw" not in serialized
