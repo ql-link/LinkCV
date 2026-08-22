@@ -14,6 +14,14 @@ const wechatUser: User = {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  vi.spyOn(api, "authCapabilities").mockResolvedValue({
+    password_login_enabled: false,
+  });
+  vi.spyOn(api, "wechatQrcode").mockResolvedValue({
+    scene: "login:abc123",
+    poll_token: "poll-token",
+    qr_base64: "base64-qr",
+  });
 });
 
 afterEach(() => {
@@ -22,51 +30,91 @@ afterEach(() => {
   window.history.replaceState(null, "", "/");
 });
 
-describe("AuthPage initial mode", () => {
-  it("允许 Landing CTA 直接打开注册模式", () => {
-    render(<AuthPage initialMode="register" />);
-
-    expect(
-      screen.getByRole("heading", { name: "创建账号" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "注册并创建简历" }),
-    ).toBeInTheDocument();
-  });
-
-  it("登录模式继续保留原有登录表单", () => {
-    render(<AuthPage initialMode="login" />);
-
-    expect(
-      screen.getByRole("heading", { name: "登录 LinkCV" }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "登录" })).toBeInTheDocument();
-  });
-});
-
-describe("AuthPage WeChat scan login", () => {
-  it("登录模式提供微信扫码入口，切换后请求二维码", async () => {
-    const qrcode = vi
-      .spyOn(api, "wechatQrcode")
-      .mockResolvedValue({ scene: "login:abc123", qr_base64: "base64-qr" });
-    vi.spyOn(api, "wechatStatus").mockResolvedValue({ status: "pending", user: null });
-
-    render(<AuthPage initialMode="login" />);
-    fireEvent.click(screen.getByRole("button", { name: "微信扫码登录" }));
-
-    await act(async () => {
-      // 冲刷二维码请求的微任务。
+describe("AuthPage environment-aware login", () => {
+  it("生产环境的注册或登录入口都只展示微信二维码，不展示表单", async () => {
+    vi.spyOn(api, "wechatStatus").mockResolvedValue({
+      status: "pending",
+      user: null,
     });
 
-    expect(qrcode).toHaveBeenCalledWith("login");
+    const { rerender } = render(<AuthPage initialMode="login" />);
+    await act(async () => {});
+    expect(screen.getByRole("heading", { name: "微信扫码登录 LinkCV" })).toBeInTheDocument();
     expect(screen.getByAltText("微信扫码登录二维码")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(document.querySelector("form")).toBeNull();
+
+    rerender(<AuthPage initialMode="register" />);
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
 
-  it("轮询命中成功状态后写入登录态并跳转简历主页", async () => {
-    vi.spyOn(api, "wechatQrcode").mockResolvedValue({
-      scene: "login:abc123",
-      qr_base64: "base64-qr",
+  it("开发环境展示邮箱密码登录，并允许切换到微信扫码", async () => {
+    vi.mocked(api.authCapabilities).mockResolvedValue({
+      password_login_enabled: true,
     });
+    vi.spyOn(api, "wechatStatus").mockResolvedValue({
+      status: "pending",
+      user: null,
+    });
+    const login = vi
+      .spyOn(useResumeStore.getState(), "login")
+      .mockResolvedValue();
+
+    render(<AuthPage initialMode="login" />);
+    await act(async () => {});
+
+    expect(screen.getByRole("heading", { name: "登录 LinkCV" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "邮箱" })).toBeInTheDocument();
+    expect(screen.getByLabelText("密码")).toBeInTheDocument();
+    expect(screen.queryByAltText("微信扫码登录二维码")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "邮箱" }), {
+      target: { value: "developer@example.test" },
+    });
+    fireEvent.change(screen.getByLabelText("密码"), {
+      target: { value: "password-123" },
+    });
+    fireEvent.submit(screen.getByRole("button", { name: "登录" }).closest("form")!);
+    await act(async () => {});
+    expect(login).toHaveBeenCalledWith("developer@example.test", "password-123");
+
+    fireEvent.click(screen.getByRole("button", { name: /使用微信扫码登录/ }));
+    await act(async () => {});
+    expect(screen.getByAltText("微信扫码登录二维码")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "返回邮箱密码登录" })).toBeInTheDocument();
+  });
+
+  it("开发环境的注册入口创建账号而不是提交登录", async () => {
+    vi.mocked(api.authCapabilities).mockResolvedValue({
+      password_login_enabled: true,
+    });
+    const login = vi
+      .spyOn(useResumeStore.getState(), "login")
+      .mockResolvedValue();
+    const register = vi
+      .spyOn(useResumeStore.getState(), "register")
+      .mockResolvedValue();
+
+    render(<AuthPage initialMode="register" />);
+    await act(async () => {});
+
+    expect(screen.getByRole("heading", { name: "注册 LinkCV" })).toBeInTheDocument();
+    expect(screen.getByLabelText("密码")).toHaveAttribute("autocomplete", "new-password");
+    fireEvent.change(screen.getByRole("textbox", { name: "邮箱" }), {
+      target: { value: "new@example.test" },
+    });
+    fireEvent.change(screen.getByLabelText("密码"), {
+      target: { value: "password-123" },
+    });
+    fireEvent.submit(screen.getByRole("button", { name: "注册" }).closest("form")!);
+    await act(async () => {});
+
+    expect(register).toHaveBeenCalledWith("new@example.test", "password-123");
+    expect(login).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe("/resumes");
+  });
+
+  it("轮询成功后写入登录态并跳转简历主页", async () => {
     vi.spyOn(api, "wechatStatus").mockResolvedValue({
       status: "success",
       user: wechatUser,
@@ -76,13 +124,8 @@ describe("AuthPage WeChat scan login", () => {
       .mockResolvedValue();
 
     render(<AuthPage initialMode="login" />);
-    fireEvent.click(screen.getByRole("button", { name: "微信扫码登录" }));
-
+    await act(async () => {});
     await act(async () => {
-      // 冲刷二维码请求的微任务。
-    });
-    await act(async () => {
-      // 推进轮询间隔（2 秒）触发第一次状态查询。
       vi.advanceTimersByTime(2000);
     });
 

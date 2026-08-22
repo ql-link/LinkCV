@@ -1,5 +1,5 @@
 {
-  "description": "LinkResume 微信扫码登录确认小程序",
+  "description": "LinkCV 微信登录与只读简历小程序",
   "projectname": "linkcv-miniprogram",
   "appid": "wxa56f4b15231066eb",
   "compileType": "miniprogram",
@@ -44,7 +44,20 @@
   },
   "simulatorPluginLibVersion": {},
   "packOptions": {
-    "ignore": [],
+    "ignore": [
+      {
+        "type": "folder",
+        "value": "tests"
+      },
+      {
+        "type": "file",
+        "value": "package.json"
+      },
+      {
+        "type": "file",
+        "value": "README.md"
+      }
+    ],
     "include": []
   },
   "editorSetting": {},

@@ -144,6 +144,8 @@ def test_production_rejects_missing_secrets_without_exposing_values() -> None:
     assert "LLM_CREDENTIAL_ENCRYPTION_KEYS" in message
     assert "LINKPARSE_API_KEY" in message
     assert "RABBITMQ_URL" in message
+    assert "WECHAT_APPID" in message
+    assert "WECHAT_SECRET" in message
     assert exposed not in message
     assert "replace-with-secret" not in message
 
@@ -161,6 +163,8 @@ def test_production_accepts_injected_secrets() -> None:
         ),
         linkparse_api_key="fictional-linkparse-key",
         rabbitmq_url="amqp://linkcv:fictional-secret@rabbitmq:5672/",
+        wechat_appid="fictional-production-appid",
+        wechat_secret="fictional-production-wechat-secret",
     )
     assert settings.minio_bucket == "linkcv"
     assert settings.plugin_release_origin == "https://linkcv.example.test"

@@ -1,4 +1,5 @@
 import bcrypt
+import jwt
 
 from linkcv.core.config import Settings
 from linkcv.core.security import (
@@ -48,9 +49,20 @@ def test_access_token_round_trip() -> None:
     settings = _settings()
     token = create_access_token(123, "sid-abc", settings)
 
-    assert decode_access_token(token, settings) == (123, "sid-abc")
+    assert decode_access_token(token, settings) == (123, "sid-abc", "web")
     assert decode_access_token(None, settings) is None
     assert decode_access_token("not-a-jwt", settings) is None
+
+
+def test_legacy_access_token_without_channel_is_web_only() -> None:
+    settings = _settings()
+    token = jwt.encode(
+        {"sub": "123", "sid": "legacy-sid"},
+        settings.jwt_secret,
+        algorithm=settings.jwt_algorithm,
+    )
+
+    assert decode_access_token(token, settings) == (123, "legacy-sid", "web")
 
 
 def test_refresh_token_parse_and_hash() -> None:
