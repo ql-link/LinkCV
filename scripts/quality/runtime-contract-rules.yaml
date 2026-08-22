@@ -271,11 +271,17 @@ contracts:
         message: Production MinIO 必须使用 Cloud 容器 DNS
 
   - id: environment-layering
-    description: FastAPI、Dev Compose 与 Production Compose 都支持基础配置加私密覆盖
+    description: 本地 worktree、FastAPI、Dev Compose 与 Production Compose 都支持基础配置加私密覆盖
     assertions:
       - path: apps/backend/src/linkcv/core/config.py
-        pattern: 'local = Path\(f"\{base\}\.local"\)'
-        message: Settings 必须加载同名 local 覆盖文件
+        pattern: 'configured_secret = os\.environ\.get\("LINKCV_SECRET_ENV_FILE"\)[\s\S]*_default_secret_env_file\(base\)'
+        message: Settings 必须支持显式私密文件并回退 worktree 共享覆盖
+      - path: package.json
+        pattern: '"dev:development": "node scripts/dev/run_with_env_profile\.mjs \.env\.development"'
+        message: 本地 Development 启动必须经过共享私密配置加载器
+      - path: scripts/dev/run_with_env_profile.mjs
+        pattern: 'resolveMainWorktreeRoot[\s\S]*LINKCV_SECRET_ENV_FILE[\s\S]*dev:services'
+        message: 本地启动器必须从 Git 主工作目录加载私密覆盖并启动全部服务
       - path: deploy/docker-compose.production.yml
         pattern: 'LINKCV_ENV_FILE:-\.\./\.env\.production'
         message: Production Compose 必须默认加载基础配置
