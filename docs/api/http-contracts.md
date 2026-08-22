@@ -6,21 +6,24 @@
 
 ## 健康检查与鉴权
 
-`GET /api/health` 返回 `{status, service, version}`。`GET /api/auth/capabilities` 公开返回 `{password_login_enabled}`，Web 据此选择登录入口。普通用户邮箱密码登录仅在 `APP_ENV=local|development` 时开放；Production 的 `POST /api/auth/login` 返回 `404 NOT_FOUND`。普通邮箱注册、改密和微信绑定接口仍不公开；`POST /api/auth/register`、`POST /api/account/change-password` 和 `/api/account/wechat/bind-*` 在正常运行环境返回 `404 NOT_FOUND`，且不进入 OpenAPI。`POST /api/auth/admin-login` 保持独立，只允许管理员成功。
+`GET /api/health` 返回 `{status, service, version}`。`GET /api/auth/capabilities` 公开返回 `{password_login_enabled}`，Web 据此选择普通邮箱密码入口。普通用户邮箱密码登录和注册仅在 `APP_ENV=local|development` 时开放；Production 的 `POST /api/auth/login` 与 `POST /api/auth/register` 都返回 `404 NOT_FOUND`。普通改密和微信绑定接口仍不公开；`POST /api/account/change-password` 和 `/api/account/wechat/bind-*` 在正常运行环境返回 `404 NOT_FOUND`。这些环境受限路由不进入 OpenAPI。`POST /api/auth/admin-login` 保持独立，只允许管理员成功。
 
 | Method | Path | 成功结果 |
 | --- | --- | --- |
 | `GET` | `/api/auth/me` | `{user}`；只识别 Web Cookie，无效 Cookie 或小程序 Bearer 均返回 `user: null` |
+| `POST` | `/api/auth/register` | `201 {user}`；仅 local/development，JSON `{email, password}`，成功后签发 Web 双 Cookie |
+| `POST` | `/api/auth/login` | `{user}`；仅 local/development，JSON `{email, password}`，成功后签发 Web 双 Cookie |
 | `POST` | `/api/auth/admin-login` | `{user}`，管理员登录并签发 Web 双 Cookie |
 | `POST` | `/api/auth/refresh` | `{user}`，轮换 Web refresh 并下发新双 Cookie |
 | `POST` | `/api/auth/logout` | `{ok: true}`，撤销 Web session 并清除 Cookie |
-| `POST` | `/api/auth/wechat/miniprogram/login` | `{user, access_token, refresh_token, expires_in}`；JSON `{code}` |
+| `POST` | `/api/auth/wechat/miniprogram/account-status` | `{registered}`；JSON `{code}`，只判断当前微信身份是否已有账号，不建号、不签发会话 |
+| `POST` | `/api/auth/wechat/miniprogram/login` | `{user, access_token, refresh_token, expires_in}`；JSON `{code, privacy_accepted?}`，未知 openid 建号时该值必须为 `true` |
 | `POST` | `/api/auth/wechat/miniprogram/refresh` | 同上；JSON `{refresh_token}`，成功后旧 refresh 立即失效 |
 | `POST` | `/api/auth/wechat/miniprogram/logout` | `{ok: true}`；JSON `{refresh_token?}`，幂等撤销小程序 session |
 
 会话统一保存为 Redis `auth:session:{sid}` hash 和 `auth:user_sessions:{uid}` 集合。Hash 包含 `uid`、refresh secret 哈希、`channel=web|miniprogram` 和创建时间；access JWT 同样携带 channel。Web 只接受 HttpOnly Cookie 中的 `channel=web` 凭据，小程序只接受 `Authorization: Bearer` 中的 `channel=miniprogram` 凭据；同时携带两种载体、JWT 与 Redis 的 uid/channel 不一致、session 被撤销或用户停用时均视为未登录。为兼容本功能上线前已签发的 Web 会话，缺少 channel 的旧 JWT/Redis session 仅按 Web 凭据接受，并在 refresh 轮换时补写 `channel=web`；它不会被小程序接口接受。Refresh 每次轮换 secret，重放旧 refresh 会撤销整个 session。
 
-微信 code 只由后端提交微信平台换取 openid。openid 不存在时自动创建 `email/password_hash` 为空的普通账号，存在时复用；唯一约束负责并发建号收敛。停用账号不能登录或续期；管理员账号即使历史上已有 openid，也不能通过扫码或小程序登录，只能使用 `/api/auth/admin-login`。小程序自动登录按来源 IP 限制为默认每分钟 30 次，超限返回 `429 WECHAT_RATE_LIMITED`。
+微信 code 只由后端提交微信平台换取 openid。`/api/auth/wechat/miniprogram/account-status` 使用当前 `wx.login` code 返回该 openid 是否已有关联账号，只返回布尔值，不创建用户、不更新登录时间、不签发会话；它与小程序登录共用来源 IP 默认每分钟 30 次的限流。openid 已存在时登录接口直接复用；不存在时，`/api/auth/wechat/confirm` 和 `/api/auth/wechat/miniprogram/login` 只有在收到 `privacy_accepted=true` 后才创建 `email/password_hash` 为空的普通账号，缺失或为 `false` 时返回 `400 PRIVACY_AGREEMENT_REQUIRED`，唯一约束负责并发建号收敛。该字段只表示本次注册请求已经通过客户端确认门禁，不是服务端持久化的同意审计记录。随仓库发布的小程序在调用建号接口或确认扫码前，还必须展示微信平台隐私保护指引、取得页面复选框确认和用户主动点击；简历页与请求重试路径只能以 `privacy_accepted=false` 尝试恢复已有账号，不能静默触发首次建号。停用账号不能登录或续期；管理员账号即使历史上已有 openid，也不能通过扫码或小程序登录，只能使用 `/api/auth/admin-login`。超出上述限流时返回 `429 WECHAT_RATE_LIMITED`。
 
 ### 网页扫码登录
 
@@ -28,7 +31,7 @@
 | --- | --- | --- |
 | `POST` | `/api/auth/wechat/qrcode` | `{scene, poll_token, qr_base64}`；匿名，按 IP 限流；`poll_token` 只保留在创建二维码的网页 |
 | `GET` | `/api/auth/wechat/status?scene=...&poll_token=...` | `{status, user?}`；`pending\|success\|cancelled\|expired`，success 且 poll token 匹配时设置 Web Cookie；不带 token 时只读状态 |
-| `POST` | `/api/auth/wechat/confirm` | `{ok: true}`；小程序表单 `{scene, code}` |
+| `POST` | `/api/auth/wechat/confirm` | `{ok: true}`；小程序表单 `{scene, code, privacy_accepted?}`，未知 openid 建号时该值必须为 `true` |
 | `POST` | `/api/auth/wechat/cancel` | `{ok: true, status: "cancelled"}`；小程序表单 `{scene}` |
 
 scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → cancelled` 流转，默认 TTL 300 秒。确认使用原子 claim，只有一个请求执行微信换取；外部服务或无效 code 会由 claim 所有者恢复 `pending`，允许小程序取得新 code 后重试。processing 超过 30 秒视为遗留占用，可由新的确认请求原子接管；未超时的并发请求返回 `409 SCENE_IN_PROGRESS`。重复确认已确认场景幂等成功，终态保留到 TTL，不因重复请求删除。scene 供小程序确认并查询状态，独立 poll token 才允许 Web 领取会话，服务端只保存其哈希。Web 对已确认场景重复领取时会先发新 session、原子替换 scene 上的 `web_sid` 并撤销旧 sid，因此响应丢失可重试且同一 scene 最多保留一个有效 Web session；小程序无 poll token，不会误撤销网页会话。取消已确认场景返回冲突；未知或到期 scene 返回 `410 SCENE_EXPIRED`。

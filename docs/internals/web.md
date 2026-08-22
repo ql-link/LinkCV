@@ -16,7 +16,7 @@ API 客户端只发送相对 `/api/...` 请求并携带 cookie，不在业务组
 
 React 根入口用 Error Boundary 和 `error` / `unhandledrejection` 监听器捕获登录态页面的未处理异常，通过 FastAPI 受保护入口进入统一日志链路；上报失败被吞掉，不能形成递归上报或替代原始页面错误。上报内容限制为错误类型、消息、栈和可选 request ID，不发送 Store、表单、简历正文或浏览器 Cookie。
 
-普通登录页 `/login` 先读取 `/api/auth/capabilities`。Development 默认展示邮箱密码登录，并允许切换到 `WechatQrLogin`；Production 不渲染邮箱密码入口，直接请求二维码并每 2 秒轮询 scene。`success` 时后端设置双 Cookie 并进入工作区，`cancelled/expired` 或生成失败时停止轮询并提供刷新。Landing 的登录和开始按钮都进入同一入口。普通用户注册不重新开放；个人资料页不显示改密或微信绑定操作；管理员密码表单仍只保留在 `/admin/login`。
+普通登录页 `/login` 先读取 `/api/auth/capabilities`。Local/Development 根据路由模式展示邮箱密码登录或注册表单，两者可以互相切换，也可以切换到 `WechatQrLogin`；Production 对登录与注册链接都不渲染邮箱密码表单，直接请求二维码并每 2 秒轮询 scene。`success` 时后端设置双 Cookie 并进入工作区，`cancelled/expired` 或生成失败时停止轮询并提供刷新。Landing 的“登录”进入登录模式，“开始使用”进入注册模式。个人资料页不显示改密或微信绑定操作；管理员密码表单仍只保留在 `/admin/login`。
 
 新增或迁移接口时同时检查：
 
@@ -52,7 +52,7 @@ JD 临时管理界面使用可恢复路由 `/jobs`、`/jobs/new`、`/jobs/:jobId
 - 普通工作区在 `WorkspaceLayout` 上显式使用 `data-ui-theme="light"`，保持既有浅色行为；入口层和管理端沿用各自主题。新增主题必须在 Token 层定义，不能在页面重复声明整套颜色。
 - 页面视觉方向、Design Brief、shadcn 选型、Vercel Web Interface Guidelines 审查和浏览器验收流程由 [frontend-design Skill](../../.ai/skills/frontend-design/SKILL.md) 维护。该 Skill 把 Anthropic 官方 frontend-design 方法适配到 LinkCV 的四类视觉边界；21st.dev 等外部参考只提供局部布局、材质和动效意图，最终使用 LinkCV Token 与组件重写。
 - 可在本地运行的 Web 改动由 Agent 启动并查看实际页面；大幅视觉修改先确认设计来源，按选定效果的布局、密度、间距、色彩、字体、内容和层级实现。新反馈只有在实现完成后才更新本节；尚未实现的决定留在对应 Spec。
-- 公共欢迎页位于 `src/features/landing/`，由 `/` 与 `/home` 共同访问，登录状态不会把这两个地址重定向到工作台；未登录时顶部和页尾 CTA 通过现有 `LandingPage` 回调进入 `/login`，已登录时 CTA 进入 `/resumes`，营销组件本身不持有鉴权状态。顶部可在中文和英文间切换，选择仅保存在浏览器本地并在下次访问时恢复。欢迎页使用 `.marketing-landing` 样式边界承载深浅主题、响应式营销区块与产品模拟图。登录页使用独立 `features/auth/auth.css` 保留入口构图和 Shader；Development 提供已有账号的邮箱密码表单和微信扫码切换，Production 只展示微信小程序码。
+- 公共欢迎页位于 `src/features/landing/`，由 `/` 与 `/home` 共同访问，登录状态不会把这两个地址重定向到工作台；未登录时顶部和页尾 CTA 通过现有 `LandingPage` 回调进入 `/login`，已登录时 CTA 进入 `/resumes`，营销组件本身不持有鉴权状态。顶部可在中文和英文间切换，选择仅保存在浏览器本地并在下次访问时恢复。欢迎页使用 `.marketing-landing` 样式边界承载深浅主题、响应式营销区块与产品模拟图。登录页使用独立 `features/auth/auth.css` 保留入口构图和 Shader；Local/Development 提供邮箱密码登录、注册和微信扫码切换，Production 只展示微信小程序码。
 - 默认简历使用虚构示例，当前姓名为“张三”。默认中文衬线栈使用思源宋体与系统宋体回退，不包含已移除的 Google CJK serif 字体族；UI 中的霞鹜文楷由 Web Font 依赖提供，不能依赖用户系统安装。“经典单页技术简历”使用独立主题键，在创建页、列表预览、编辑器和 PDF 中保持居中身份信息、细分隔线、高密度编号条目与非斜体右侧职位日期行。
 - 简历标题用字号、间距和分隔线建立层级，不自动加粗；显式 Markdown 粗体使用中等字重和略浅于正文的墨色，并在网页预览和 PDF 中保持可见。
 - 左右结构不自动加粗左侧内容。编辑器继续兼容旧版 `::: left` / `::: right`：把当前正文行转换为左右行时保留原内容到左侧，右侧立即可输入；聚焦提示只用于编辑，不进入导出结果。

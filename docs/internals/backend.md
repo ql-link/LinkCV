@@ -56,7 +56,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 ### 微信账号、双端会话与扫码登录
 
-`0019` 为 `users` 增加全局唯一的 `wechat_openid` 和可空 `wechat_bound_at`，`0020` 将 `email/password_hash` 放宽为可空。微信身份登录时，code2session 得到的 openid 不存在则创建无邮箱密码账号，存在则复用；数据库唯一约束收敛并发建号。普通邮箱注册和改密路由在正常应用中返回 404；普通密码登录仅在 `APP_ENV=local|development` 开放，Production 返回 404。`GET /api/auth/capabilities` 向 Web 暴露这一布尔能力，不返回具体环境名。`create_schema=True` 的隔离集成测试继续保留隐藏造数入口。管理员仍只通过 `/api/auth/admin-login` 使用密码登录；即使历史管理员记录已有 `wechat_openid`，扫码确认和小程序登录也会拒绝该账号。
+`0019` 为 `users` 增加全局唯一的 `wechat_openid` 和可空 `wechat_bound_at`，`0020` 将 `email/password_hash` 放宽为可空。微信身份登录时，code2session 得到的 openid 存在则复用；不存在时，扫码确认和小程序登录请求只有携带 `privacy_accepted=true` 才创建无邮箱密码账号，否则返回 `400 PRIVACY_AGREEMENT_REQUIRED`。小程序进入登录页时可用一次新的 code 调用 `account-status` 判断当前微信身份是否已有账号；该查询不写用户、不更新时间、不签发 session。`privacy_accepted` 是本次建号门禁，不写入数据库作为同意审计记录；数据库唯一约束仍负责收敛并发建号。普通邮箱注册和密码登录仅在 `APP_ENV=local|development` 开放，Production 均返回 404；普通改密路由仍不公开。`GET /api/auth/capabilities` 向 Web 暴露邮箱密码能力布尔值，不返回具体环境名。`create_schema=True` 的隔离集成测试继续保留隐藏造数入口。管理员仍只通过 `/api/auth/admin-login` 使用密码登录；即使历史管理员记录已有 `wechat_openid`，扫码确认和小程序登录也会拒绝该账号。
 
 `session_service.py` 统一发放、轮换和撤销 Redis session。`auth:session:{sid}` 保存 `uid/rhash/channel/created_at`，access JWT 也保存 `channel=web|miniprogram`。Web 只从 Cookie 接受 web channel，小程序只从 Bearer 接受 miniprogram channel；Redis uid/channel 必须与 JWT 完全一致。小程序的 login/refresh/logout 返回 JSON token，refresh 每次轮换，旧 secret 重放会删除 session；管理员停用用户时原有用户会话集合仍可撤销两个 channel。
 
@@ -72,9 +72,10 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 | --- | --- | --- |
 | `POST` | `/api/auth/wechat/qrcode` | 无需登录。生成 `login:{随机}` scene 和独立 Web `poll_token`，调用微信小程序码上游，返回 `{scene, poll_token, qr_base64}`；按 IP 限流（默认 10 次/分钟） |
 | `GET` | `/api/auth/wechat/status` | 返回 `pending/success/cancelled/expired`；只有携带匹配 `poll_token` 的 success 查询才发放 Web Cookie，未携带时只读状态 |
-| `POST` | `/api/auth/wechat/confirm` | 表单 `scene/code`；Redis Lua 原子进入 processing，按需建号后进入 confirmed；重复 confirmed 幂等成功 |
+| `POST` | `/api/auth/wechat/confirm` | 表单 `scene/code/privacy_accepted?`；Redis Lua 原子进入 processing，未知 openid 仅在确认标记为真时建号，否则恢复 pending；重复 confirmed 幂等成功 |
 | `POST` | `/api/auth/wechat/cancel` | 表单 `scene`；仅 pending 可原子进入 cancelled，重复取消幂等 |
-| `POST` | `/api/auth/wechat/miniprogram/login\|refresh\|logout` | 小程序自动登录、轮换 JSON token 和幂等撤销 |
+| `POST` | `/api/auth/wechat/miniprogram/account-status` | 用当前微信临时 code 只读判断账号是否存在；不建号、不发 session，与登录共用限流 |
+| `POST` | `/api/auth/wechat/miniprogram/login\|refresh\|logout` | 小程序登录或注册、轮换 JSON token 和幂等撤销；未知 openid 登录请求要求 `privacy_accepted=true` |
 
 scene 使用结构化 hash 保存 state、Web poll token 哈希、claim 所有者、claim 时间、uid 和最近发放的 web sid。小程序只持有二维码中的 scene，可读取状态但不能领取或替换 Web session；poll token 只返回给创建二维码的网页。processing 的微信调用失败时，只有 claim 所有者能恢复 pending；进程中断遗留的 processing 超过 30 秒后可由新确认原子接管，未超时的并发确认返回 `SCENE_IN_PROGRESS`。confirmed/cancelled 不被重复请求删除。携带正确 poll token 的重复 success 轮询先生成新 Web session，再原子交换 `web_sid` 并撤销旧 sid，以支持响应丢失重试。`integrations/wechat_client.py` 只封装 token、小程序码和 code2session；凭据、code、openid 和完整上游响应不写日志。微信凭据未配置时相关登录接口返回 `503 WECHAT_SERVICE_UNAVAILABLE`。
 

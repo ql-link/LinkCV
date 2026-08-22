@@ -91,3 +91,52 @@ test("transient refresh failure keeps the session and does not create a new logi
   assert.equal(storage.get("linkcv_refresh_token"), "still-valid-refresh");
   assert.equal(storage.get("linkcv_access_token"), "expired-access");
 });
+
+test("expired refresh can only log into an existing account and never registers silently", async () => {
+  const storage = new Map([
+    ["linkcv_access_token", "expired-access"],
+    ["linkcv_refresh_token", "expired-refresh"],
+    ["linkcv_user", { id: "1", nickname: "张三" }],
+  ]);
+  let loginRequestData;
+
+  global.getApp = () => ({ globalData: { apiBaseUrl: "https://linkcv.example.test" } });
+  global.wx = {
+    getStorageSync: (key) => storage.get(key),
+    setStorageSync: (key, value) => storage.set(key, value),
+    removeStorageSync: (key) => storage.delete(key),
+    login(options) {
+      queueMicrotask(() => options.success({ code: "wx-recovery-code" }));
+    },
+    request(options) {
+      queueMicrotask(() => {
+        if (options.url.endsWith("/miniprogram/refresh")) {
+          options.success({ statusCode: 401, data: { error: "INVALID_CREDENTIALS" } });
+          return;
+        }
+        if (options.url.endsWith("/miniprogram/login")) {
+          loginRequestData = options.data;
+          options.success({
+            statusCode: 400,
+            data: { error: "PRIVACY_AGREEMENT_REQUIRED" },
+          });
+          return;
+        }
+        options.success({ statusCode: 401, data: { error: "UNAUTHORIZED" } });
+      });
+    },
+  };
+
+  const { request } = require("../utils/request");
+  await assert.rejects(
+    request("/api/miniprogram/resumes"),
+    (error) => error.code === "PRIVACY_AGREEMENT_REQUIRED",
+  );
+
+  assert.deepEqual(loginRequestData, {
+    code: "wx-recovery-code",
+    privacy_accepted: false,
+  });
+  assert.equal(storage.has("linkcv_access_token"), false);
+  assert.equal(storage.has("linkcv_refresh_token"), false);
+});

@@ -78,8 +78,14 @@ def password_login_enabled(settings: Settings) -> bool:
     return settings.app_environment.strip().lower() in {"local", "development"}
 
 
-def require_legacy_test_route(request: Request) -> None:
-    if not getattr(request.app.state, "legacy_identity_test_routes", False):
+def require_password_registration_enabled(
+    request: Request,
+    settings: Settings,
+) -> None:
+    if (
+        not password_login_enabled(settings)
+        and not getattr(request.app.state, "legacy_identity_test_routes", False)
+    ):
         raise ApiError(404, "NOT_FOUND")
 
 
@@ -97,7 +103,7 @@ def register(
     settings: Settings = Depends(get_settings),
     redis_client: "redis.Redis" = Depends(get_redis),
 ) -> AuthResponse:
-    require_legacy_test_route(request)
+    require_password_registration_enabled(request, settings)
     email = normalize_email(payload.email)
     if not EMAIL_PATTERN.fullmatch(email):
         raise ApiError(400, "INVALID_EMAIL")

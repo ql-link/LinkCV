@@ -89,7 +89,7 @@ def test_retired_public_identity_routes_are_absent_outside_test_scaffolding() ->
         assert "/api/account/wechat/bind-request" not in paths
 
 
-def test_local_and_development_allow_password_login_but_not_registration() -> None:
+def test_local_and_development_allow_password_login_and_registration() -> None:
     for app_environment in ("local", "development"):
         settings = Settings(
             app_environment=app_environment,
@@ -123,10 +123,13 @@ def test_local_and_development_allow_password_login_but_not_registration() -> No
             )
             assert login.status_code == 200
             assert login.json()["user"]["email"] == "developer@example.test"
-            assert client.post(
+            registration = client.post(
                 "/api/auth/register",
                 json={"email": "new@example.test", "password": "password-123"},
-            ).status_code == 404
+            )
+            assert registration.status_code == 201, registration.text
+            assert registration.json()["user"]["email"] == "new@example.test"
+            assert client.get("/api/auth/me").json()["user"]["email"] == "new@example.test"
 
 
 def create_qrcode(client: TestClient) -> tuple[str, str, str]:
@@ -145,7 +148,7 @@ def confirm_and_poll(
     """模拟小程序 confirm 后，Web 端轮询 status 命中 success（发放 Cookie）。"""
     response = client.post(
         "/api/auth/wechat/confirm",
-        data={"scene": scene, "code": code},
+        data={"scene": scene, "code": code, "privacy_accepted": "true"},
     )
     assert response.status_code == 200, response.text
     status = client.get(
@@ -197,11 +200,34 @@ def test_wechat_login_reuses_existing_openid_account() -> None:
             assert len(users) == 1
 
 
+def test_wechat_confirm_requires_privacy_acceptance_before_registration() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        scene, _, _ = create_qrcode(client)
+
+        response = client.post(
+            "/api/auth/wechat/confirm",
+            data={"scene": scene, "code": "js-code-1"},
+        )
+
+        assert response.status_code == 400
+        assert response.json() == {"error": "PRIVACY_AGREEMENT_REQUIRED"}
+        assert client.get(
+            "/api/auth/wechat/status", params={"scene": scene}
+        ).json()["status"] == "pending"
+        with app.state.session_factory() as db:
+            assert db.scalars(select(User)).all() == []
+
+
 def test_wechat_confirm_is_idempotent_after_success() -> None:
     app = build_test_app()
     with TestClient(app) as client:
         scene, _, _ = create_qrcode(client)
-        data = {"scene": scene, "code": "js-code-1"}
+        data = {
+            "scene": scene,
+            "code": "js-code-1",
+            "privacy_accepted": "true",
+        }
         assert client.post("/api/auth/wechat/confirm", data=data).status_code == 200
         second = client.post("/api/auth/wechat/confirm", data=data)
         assert second.status_code == 200
@@ -223,7 +249,11 @@ def test_wechat_confirm_reclaims_stale_processing_scene() -> None:
 
         response = client.post(
             "/api/auth/wechat/confirm",
-            data={"scene": scene, "code": "js-code-1"},
+            data={
+                "scene": scene,
+                "code": "js-code-1",
+                "privacy_accepted": "true",
+            },
         )
 
         assert response.status_code == 200, response.text
@@ -281,7 +311,11 @@ def test_repeated_success_poll_replaces_previous_scene_session() -> None:
         scene, poll_token, _ = create_qrcode(client)
         assert client.post(
             "/api/auth/wechat/confirm",
-            data={"scene": scene, "code": "js-code-1"},
+            data={
+                "scene": scene,
+                "code": "js-code-1",
+                "privacy_accepted": "true",
+            },
         ).status_code == 200
         assert client.get(
             "/api/auth/wechat/status",
@@ -311,7 +345,8 @@ def test_miniprogram_session_rotates_and_rejects_web_carrier() -> None:
     app = build_test_app()
     with TestClient(app) as client:
         login = client.post(
-            "/api/auth/wechat/miniprogram/login", json={"code": "js-code-1"}
+            "/api/auth/wechat/miniprogram/login",
+            json={"code": "js-code-1", "privacy_accepted": True},
         )
         assert login.status_code == 200, login.text
         body = login.json()
@@ -348,11 +383,80 @@ def test_miniprogram_session_rotates_and_rejects_web_carrier() -> None:
         ).status_code == 401
 
 
+def test_miniprogram_login_requires_privacy_acceptance_before_registration() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/auth/wechat/miniprogram/login",
+            json={"code": "js-code-1"},
+        )
+
+        assert response.status_code == 400
+        assert response.json() == {"error": "PRIVACY_AGREEMENT_REQUIRED"}
+        with app.state.session_factory() as db:
+            assert db.scalars(select(User)).all() == []
+
+
+def test_miniprogram_account_status_does_not_create_unknown_account() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/auth/wechat/miniprogram/account-status",
+            json={"code": "js-code-status"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json() == {"registered": False}
+        with app.state.session_factory() as db:
+            assert db.scalars(select(User)).all() == []
+
+
+def test_miniprogram_account_status_finds_existing_account() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/auth/wechat/miniprogram/login",
+            json={"code": "js-code-1", "privacy_accepted": True},
+        )
+        assert created.status_code == 200, created.text
+
+        response = client.post(
+            "/api/auth/wechat/miniprogram/account-status",
+            json={"code": "js-code-status"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json() == {"registered": True}
+        with app.state.session_factory() as db:
+            assert len(db.scalars(select(User)).all()) == 1
+
+
+def test_existing_miniprogram_account_does_not_require_registration_flag() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/auth/wechat/miniprogram/login",
+            json={"code": "js-code-1", "privacy_accepted": True},
+        )
+        assert created.status_code == 200, created.text
+
+        reused = client.post(
+            "/api/auth/wechat/miniprogram/login",
+            json={"code": "js-code-2"},
+        )
+
+        assert reused.status_code == 200, reused.text
+        assert reused.json()["user"]["id"] == created.json()["user"]["id"]
+        with app.state.session_factory() as db:
+            assert len(db.scalars(select(User)).all()) == 1
+
+
 def test_miniprogram_logout_revokes_session_with_expired_access_independent() -> None:
     app = build_test_app()
     with TestClient(app) as client:
         body = client.post(
-            "/api/auth/wechat/miniprogram/login", json={"code": "js-code-1"}
+            "/api/auth/wechat/miniprogram/login",
+            json={"code": "js-code-1", "privacy_accepted": True},
         ).json()
         assert client.post(
             "/api/auth/wechat/miniprogram/logout",
@@ -416,7 +520,8 @@ def test_cookie_and_bearer_credentials_cannot_be_mixed() -> None:
     app = build_test_app()
     with TestClient(app) as client:
         mini = client.post(
-            "/api/auth/wechat/miniprogram/login", json={"code": "mini-code"}
+            "/api/auth/wechat/miniprogram/login",
+            json={"code": "mini-code", "privacy_accepted": True},
         ).json()
         scene, poll_token, _ = create_qrcode(client)
         confirm_and_poll(client, scene, poll_token, "web-code")

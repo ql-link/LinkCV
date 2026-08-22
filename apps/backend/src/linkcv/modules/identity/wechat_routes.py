@@ -111,6 +111,15 @@ class CancelResponse(BaseModel):
 
 class MiniProgramLoginRequest(BaseModel):
     code: str = Field(min_length=1, max_length=128)
+    privacy_accepted: bool = False
+
+
+class MiniProgramAccountStatusRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=128)
+
+
+class MiniProgramAccountStatusResponse(BaseModel):
+    registered: bool
 
 
 class MiniProgramRefreshRequest(BaseModel):
@@ -176,10 +185,17 @@ def check_miniprogram_login_rate_limit(
         raise ApiError(429, "WECHAT_RATE_LIMITED")
 
 
-def resolve_wechat_user(db: Session, wechat_openid: str) -> User:
+def resolve_wechat_user(
+    db: Session,
+    wechat_openid: str,
+    *,
+    allow_registration: bool,
+) -> User:
     user = db.scalar(select(User).where(User.wechat_openid == wechat_openid))
     if user is not None:
         return user
+    if not allow_registration:
+        raise ApiError(400, "PRIVACY_AGREEMENT_REQUIRED")
     user = User(
         wechat_openid=wechat_openid,
         email=None,
@@ -315,6 +331,7 @@ def login_status(
 def confirm_login(
     scene: str = Form(min_length=8, max_length=128),
     code: str = Form(min_length=1, max_length=128),
+    privacy_accepted: bool = Form(default=False),
     settings: Settings = Depends(get_settings),
     redis_client: "redis.Redis" = Depends(get_redis),
     db: Session = Depends(get_db),
@@ -356,7 +373,11 @@ def confirm_login(
         )
         raise
     try:
-        user = resolve_wechat_user(db, openid)
+        user = resolve_wechat_user(
+            db,
+            openid,
+            allow_registration=privacy_accepted,
+        )
     except Exception:
         redis_client.eval(
             RESTORE_SCENE_SCRIPT,
@@ -447,7 +468,11 @@ def miniprogram_login(
     check_miniprogram_login_rate_limit(
         client_ip(request), settings, redis_client
     )
-    user = resolve_wechat_user(db, exchange_openid(wechat, payload.code))
+    user = resolve_wechat_user(
+        db,
+        exchange_openid(wechat, payload.code),
+        allow_registration=payload.privacy_accepted,
+    )
     if user.status != 1:
         raise ApiError(401, "ACCOUNT_DISABLED")
     if user.is_admin:
@@ -459,6 +484,31 @@ def miniprogram_login(
         user, settings, redis_client, channel=MINIPROGRAM_CHANNEL
     )
     return mini_auth_response(user, credentials, settings)
+
+
+@router.post(
+    "/miniprogram/account-status",
+    response_model=MiniProgramAccountStatusResponse,
+)
+def miniprogram_account_status(
+    payload: MiniProgramAccountStatusRequest,
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    redis_client: "redis.Redis" = Depends(get_redis),
+    db: Session = Depends(get_db),
+    wechat: WechatClient = Depends(get_wechat_client),
+) -> MiniProgramAccountStatusResponse:
+    """判断当前微信身份是否已有关联账号，不创建账号或签发会话。"""
+    if not settings.wechat_enabled:
+        raise ApiError(503, "WECHAT_SERVICE_UNAVAILABLE")
+    check_miniprogram_login_rate_limit(
+        client_ip(request), settings, redis_client
+    )
+    openid = exchange_openid(wechat, payload.code)
+    registered = db.scalar(
+        select(User.id).where(User.wechat_openid == openid)
+    ) is not None
+    return MiniProgramAccountStatusResponse(registered=registered)
 
 
 @router.post("/miniprogram/refresh", response_model=MiniProgramAuthResponse)

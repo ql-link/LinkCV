@@ -3,7 +3,7 @@ import { ArrowRight } from "lucide-react";
 import { Button, TextField } from "@/components/ui";
 import { api, User } from "../../api/client";
 import { useResumeStore } from "../../store/resumeStore";
-import { navigateTo } from "../../routing";
+import { authPath, navigateTo } from "../../routing";
 import { WechatQrLogin } from "./WechatQrLogin";
 import "./auth.css";
 
@@ -18,7 +18,9 @@ export function AuthPage(props: {
   next?: string | null;
 }) {
   const next = props.next ?? null;
+  const isRegister = props.initialMode === "register";
   const login = useResumeStore((state) => state.login);
+  const register = useResumeStore((state) => state.register);
   const loginWithWechat = useResumeStore((state) => state.loginWithWechat);
   const [passwordLoginEnabled, setPasswordLoginEnabled] = useState<boolean | null>(null);
   const [showWechat, setShowWechat] = useState(false);
@@ -46,7 +48,8 @@ export function AuthPage(props: {
     setSubmitting(true);
     setError(null);
     try {
-      await login(email, password);
+      if (isRegister) await register(email, password);
+      else await login(email, password);
       navigateTo(next ?? "/resumes", { replace: true });
     } catch (submitError) {
       setError(normalizeAuthError((submitError as Error).message));
@@ -69,14 +72,20 @@ export function AuthPage(props: {
         <section className="flex items-center rounded-md border border-border bg-surface px-6 py-12 sm:px-10 lg:px-14 lg:py-20 xl:px-20">
           <div className="mx-auto w-full max-w-[520px]">
             <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-              {showPasswordForm ? "Development sign in" : "WeChat sign in"}
+              {showPasswordForm
+                ? (isRegister ? "Development account" : "Development sign in")
+                : "WeChat sign in"}
             </span>
             <h1 className="mt-3 text-3xl font-medium tracking-[-0.04em] sm:text-4xl lg:text-[42px] lg:leading-[1.05] xl:text-[48px]">
-              {showPasswordForm ? "登录 LinkCV" : "微信扫码登录 LinkCV"}
+              {showPasswordForm
+                ? (isRegister ? "注册 LinkCV" : "登录 LinkCV")
+                : "微信扫码登录 LinkCV"}
             </h1>
             <p className="mt-3 text-base leading-snug text-text-secondary sm:text-lg">
               {showPasswordForm
-                ? "开发环境支持使用邮箱和密码进入工作台。"
+                ? (isRegister
+                  ? "创建仅用于本地或开发环境调试的邮箱账号。"
+                  : "开发环境支持使用邮箱和密码进入工作台。")
                 : "使用微信扫描小程序码，并在小程序中确认本次登录。"}
             </p>
 
@@ -93,17 +102,20 @@ export function AuthPage(props: {
                     autoComplete="email"
                     inputClassName="h-12 text-base"
                     label="邮箱"
+                    name="email"
                     onChange={(event) => setEmail(event.target.value)}
                     placeholder="you@example.com"
                     required
+                    spellCheck={false}
                     type="email"
                     value={email}
                   />
                   <TextField
-                    autoComplete="current-password"
+                    autoComplete={isRegister ? "new-password" : "current-password"}
                     inputClassName="h-12 text-base"
                     label="密码"
                     minLength={8}
+                    name="password"
                     onChange={(event) => setPassword(event.target.value)}
                     placeholder="至少 8 位"
                     required
@@ -120,17 +132,28 @@ export function AuthPage(props: {
                     disabled={submitting}
                     type="submit"
                   >
-                    {submitting ? "登录中..." : "登录"}
+                    {submitting
+                      ? (isRegister ? "注册中…" : "登录中…")
+                      : (isRegister ? "注册" : "登录")}
                   </Button>
                 </form>
-                <button
-                  className="mt-5 inline-flex items-center gap-1.5 bg-transparent p-0 text-sm text-muted-foreground transition-colors hover:text-foreground"
-                  onClick={() => setShowWechat(true)}
-                  type="button"
-                >
-                  使用微信扫码登录
-                  <ArrowRight aria-hidden size={14} />
-                </button>
+                <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2">
+                  <a
+                    className="inline-flex items-center gap-1.5 bg-transparent p-0 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    href={authPath(isRegister ? "login" : "register", next)}
+                  >
+                    {isRegister ? "已有账号，去登录" : "没有账号，去注册"}
+                    <ArrowRight aria-hidden size={14} />
+                  </a>
+                  <button
+                    className="inline-flex items-center gap-1.5 bg-transparent p-0 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    onClick={() => setShowWechat(true)}
+                    type="button"
+                  >
+                    使用微信扫码登录
+                    <ArrowRight aria-hidden size={14} />
+                  </button>
+                </div>
               </>
             )}
 
@@ -179,7 +202,9 @@ export function AuthPage(props: {
             </h2>
             <p className="max-w-[420px] text-base leading-relaxed text-white/70 xl:text-lg">
               {showPasswordForm
-                ? "开发环境可使用已有账号调试；微信扫码登录仍可随时验证。"
+                ? (isRegister
+                  ? "本地创建测试账号，正式环境仍只开放微信身份入口。"
+                  : "开发环境可使用已有账号调试；微信扫码登录仍可随时验证。")
                 : "普通账号由微信身份自动创建，无需填写注册或登录表单。"}
             </p>
           </div>
@@ -191,6 +216,9 @@ export function AuthPage(props: {
 
 function normalizeAuthError(error: string) {
   if (error === "INVALID_CREDENTIALS") return "邮箱或密码不正确。";
-  if (error === "NOT_FOUND") return "当前环境未开放邮箱密码登录。";
-  return "登录失败，请稍后再试。";
+  if (error === "EMAIL_EXISTS") return "该邮箱已经注册，请直接登录。";
+  if (error === "INVALID_EMAIL") return "请输入有效的邮箱地址。";
+  if (error === "WEAK_PASSWORD") return "密码至少需要 8 位。";
+  if (error === "NOT_FOUND") return "当前环境未开放邮箱密码登录或注册。";
+  return "操作失败，请稍后再试。";
 }

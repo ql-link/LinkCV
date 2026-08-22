@@ -1,24 +1,46 @@
 <view class="page">
   <view class="hero">
-    <text class="eyebrow">LINKCV</text>
-    <text class="title">我的简历</text>
-    <text class="subtitle" wx:if="{{user}}">{{user.nickname}}，这里仅提供简历查阅。</text>
-  </view>
-
-  <view class="state" wx:if="{{loading}}">正在安全登录并加载简历…</view>
-  <view class="state error" wx:elif="{{error}}">
-    <text>{{error}}</text>
-    <button class="secondary" bindtap="loadPage">重新加载</button>
-  </view>
-  <view class="state" wx:elif="{{items.length === 0}}">暂无简历，请先在 LinkCV 网页端创建。</view>
-
-  <view class="list" wx:else>
-    <view class="card" wx:for="{{items}}" wx:key="id" data-id="{{item.id}}" bindtap="openResume">
-      <view class="card-main">
-        <text class="card-title">{{item.title}}</text>
-        <text class="card-time">更新于 {{item.updated_at}}</text>
-      </view>
-      <text class="arrow">›</text>
+    <view class="brand-row">
+      <view class="brand-lockup"><view class="brand-mark">L</view><text>LinkCV</text></view>
+      <view class="readonly-badge"><view class="badge-dot"></view>只读模式</view>
+    </view>
+    <text class="eyebrow">随身简历册</text>
+    <text class="title" wx:if="{{user && user.nickname}}">{{user.nickname}}的简历</text>
+    <text class="title" wx:else>我的简历</text>
+    <view class="hero-meta" wx:if="{{!loading && !error}}">
+      <text>{{items.length}} 份简历</text><text class="meta-divider">·</text><text>下拉可刷新</text>
     </view>
   </view>
+  <view class="loading-list" wx:if="{{loading}}">
+    <view class="skeleton-card" wx:for="{{[1, 2, 3]}}" wx:key="*this">
+      <view class="skeleton-preview"></view>
+      <view class="skeleton-copy"><view class="skeleton-line strong"></view><view class="skeleton-line"></view></view>
+    </view>
+    <text class="loading-label">正在安全登录并加载简历…</text>
+  </view>
+  <view class="state-card error" wx:elif="{{error}}">
+    <view class="state-icon error-icon">!</view>
+    <text class="state-title">简历暂时没有加载出来</text>
+    <text class="state-copy">{{error}}，请检查网络后重试。</text>
+    <button class="secondary" hover-class="secondary-pressed" bindtap="loadPage">重新加载</button>
+  </view>
+  <view class="state-card" wx:elif="{{items.length === 0}}">
+    <view class="empty-document"><view></view><view></view><view></view></view>
+    <text class="state-title">这里还没有简历</text>
+    <text class="state-copy">请先前往 LinkCV 网页端创建简历，完成后下拉刷新。</text>
+  </view>
+  <view class="list" wx:else>
+    <navigator class="card" hover-class="card-pressed" hover-stay-time="80" wx:for="{{items}}" wx:key="id" url="/pages/resumes/detail?id={{item.id}}">
+      <view class="paper-preview" aria-hidden="true">
+        <view class="preview-avatar"></view><view class="preview-line preview-line-strong"></view><view class="preview-line"></view><view class="preview-line preview-line-short"></view>
+      </view>
+      <view class="card-main">
+        <text class="card-title">{{item.title}}</text>
+        <text class="card-time">{{item.updatedAtLabel}}</text>
+        <text class="card-action">打开查看</text>
+      </view>
+      <view class="arrow">›</view>
+    </navigator>
+  </view>
+  <text class="page-footnote" wx:if="{{!loading && !error && items.length}}">小程序仅供查阅，编辑请前往 LinkCV 网页端</text>
 </view>

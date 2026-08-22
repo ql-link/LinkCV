@@ -362,6 +362,26 @@ describe("微信扫码登录 API", () => {
     );
   });
 
+  it("开发环境邮箱密码注册提交凭据", async () => {
+    const body = {
+      user: { id: "2", email: "new@example.test", nickname: "开发用户" },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(201, body)));
+
+    await expect(api.register("new@example.test", "password-123")).resolves.toEqual(body);
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/auth/register",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        body: JSON.stringify({
+          email: "new@example.test",
+          password: "password-123",
+        }),
+      }),
+    );
+  });
+
   it("申请登录二维码时读取 scene 与 base64 图片", async () => {
     const body = { scene: "login:abcd1234", poll_token: "poll-token", qr_base64: "base64-qr" };
     vi.stubGlobal(

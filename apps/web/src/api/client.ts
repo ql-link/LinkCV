@@ -657,6 +657,11 @@ export const api = {
       method: "POST",
       body: { email, password },
     }),
+  register: (email: string, password: string) =>
+    request<{ user: User }>("/api/auth/register", {
+      method: "POST",
+      body: { email, password },
+    }),
   adminLogin: (email: string, password: string) =>
     request<{ user: User }>("/api/auth/admin-login", {
       method: "POST",

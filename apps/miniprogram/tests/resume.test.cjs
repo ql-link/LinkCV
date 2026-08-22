@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { toDisplayResume } = require("../utils/resume");
+const { formatUpdatedAt, toDisplayResume } = require("../utils/resume");
 
 test("resume service uses the dedicated mini-program read-only API", async () => {
   const requests = [];
@@ -70,4 +70,10 @@ test("ignores photo and unknown fields instead of exposing private assets", () =
   assert.equal(result.photo, undefined);
   assert.equal(JSON.stringify(result).includes("private"), false);
   assert.equal(JSON.stringify(result).includes("hidden"), false);
+});
+
+test("formats resume update time for the list and handles invalid values", () => {
+  assert.equal(formatUpdatedAt("2026-08-21T08:00:00Z"), "更新于 2026年8月21日");
+  assert.equal(formatUpdatedAt("not-a-date"), "更新时间未知");
+  assert.equal(formatUpdatedAt(null), "更新时间未知");
 });

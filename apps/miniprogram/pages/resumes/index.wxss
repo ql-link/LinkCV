@@ -1,15 +1,48 @@
-page { background: #f5f6f8; color: #172033; }
-.page { min-height: 100vh; padding: 56rpx 32rpx 80rpx; box-sizing: border-box; }
-.hero { display: flex; flex-direction: column; margin-bottom: 42rpx; }
-.eyebrow { color: #2463eb; font-size: 20rpx; font-weight: 700; letter-spacing: 6rpx; }
-.title { margin-top: 14rpx; font-size: 56rpx; font-weight: 700; letter-spacing: -2rpx; }
-.subtitle { margin-top: 14rpx; color: #687386; font-size: 26rpx; }
-.list { display: flex; flex-direction: column; gap: 20rpx; }
-.card { display: flex; align-items: center; min-height: 132rpx; padding: 28rpx 30rpx; border: 1rpx solid #e4e7ec; border-radius: 24rpx; background: #fff; box-sizing: border-box; }
-.card-main { display: flex; flex: 1; min-width: 0; flex-direction: column; }
-.card-title { overflow: hidden; font-size: 32rpx; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.card-time { margin-top: 12rpx; color: #8a93a3; font-size: 22rpx; }
-.arrow { margin-left: 20rpx; color: #2463eb; font-size: 48rpx; }
-.state { display: flex; min-height: 260rpx; flex-direction: column; align-items: center; justify-content: center; color: #687386; font-size: 27rpx; text-align: center; }
-.error { color: #b42318; }
-.secondary { margin-top: 28rpx; border: 1rpx solid #d0d5dd; border-radius: 14rpx; background: #fff; color: #344054; font-size: 26rpx; }
+page { background: #f5f5f7; color: #1d1d1f; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif; }
+.page { min-height: 100vh; padding: 38rpx 32rpx calc(64rpx + env(safe-area-inset-bottom)); box-sizing: border-box; }
+
+.hero { display: flex; flex-direction: column; margin-bottom: 38rpx; }
+.brand-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 54rpx; }
+.brand-lockup { display: flex; align-items: center; gap: 14rpx; font-size: 27rpx; font-weight: 650; }
+.brand-mark { width: 46rpx; height: 46rpx; display: flex; align-items: center; justify-content: center; border-radius: 13rpx; background: #1d1d1f; color: #fff; font-size: 25rpx; font-weight: 700; }
+.readonly-badge { display: flex; align-items: center; gap: 10rpx; padding: 10rpx 18rpx; border: 1rpx solid #d8dde4; border-radius: 999rpx; background: rgba(255, 255, 255, .72); color: #66717f; font-size: 21rpx; }
+.badge-dot { width: 10rpx; height: 10rpx; border-radius: 50%; background: #267a4d; }
+.eyebrow { color: #3a3a3c; font-size: 21rpx; font-weight: 700; letter-spacing: 4rpx; }
+.title { margin-top: 14rpx; font-size: 52rpx; font-weight: 650; letter-spacing: -3rpx; line-height: 1.25; word-break: break-all; }
+.hero-meta { display: flex; align-items: center; margin-top: 18rpx; color: #66717f; font-size: 24rpx; }
+.meta-divider { margin: 0 12rpx; color: #a3aab4; }
+
+.list { display: flex; flex-direction: column; gap: 22rpx; }
+.card { position: relative; min-height: 178rpx; display: flex; align-items: center; padding: 26rpx 24rpx; border: 1rpx solid #e1e4e8; border-radius: 26rpx; background: #fff; box-shadow: 0 10rpx 30rpx rgba(27, 38, 59, .045); box-sizing: border-box; overflow: hidden; touch-action: manipulation; }
+.card-pressed { background: #fafafc; transform: scale(.992); }
+.paper-preview { width: 92rpx; height: 116rpx; flex-shrink: 0; padding: 17rpx 14rpx; border: 1rpx solid #d2d2d7; border-radius: 12rpx; background: linear-gradient(145deg, #fff 0%, #f7f7f8 100%); box-shadow: 7rpx 7rpx 0 #e5e5e7; box-sizing: border-box; }
+.preview-avatar { width: 22rpx; height: 22rpx; border-radius: 50%; background: #1d1d1f; }
+.preview-line { width: 100%; height: 5rpx; margin-top: 12rpx; border-radius: 4rpx; background: #d9dee6; }
+.preview-line-strong { width: 72%; background: #7b7b80; }
+.preview-line-short { width: 56%; }
+.card-main { min-width: 0; flex: 1; display: flex; flex-direction: column; margin-left: 28rpx; }
+.card-title { overflow: hidden; color: #1d1d1f; font-size: 30rpx; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.card-time { margin-top: 10rpx; overflow: hidden; color: #7b8592; font-size: 21rpx; text-overflow: ellipsis; white-space: nowrap; }
+.card-action { margin-top: 16rpx; color: #155fd7; font-size: 22rpx; font-weight: 600; }
+.arrow { width: 48rpx; height: 48rpx; flex-shrink: 0; display: flex; align-items: center; justify-content: center; margin-left: 12rpx; border-radius: 50%; background: #eeeeef; color: #1d1d1f; font-size: 38rpx; line-height: 1; }
+
+.loading-list { display: flex; flex-direction: column; gap: 22rpx; }
+.skeleton-card { height: 178rpx; display: flex; align-items: center; padding: 26rpx 24rpx; border-radius: 26rpx; background: rgba(255, 255, 255, .72); box-sizing: border-box; }
+.skeleton-preview { width: 92rpx; height: 116rpx; flex-shrink: 0; border-radius: 12rpx; background: #e8ebef; }
+.skeleton-copy { flex: 1; margin-left: 28rpx; }
+.skeleton-line { width: 58%; height: 14rpx; margin-top: 18rpx; border-radius: 10rpx; background: #e8ebef; }
+.skeleton-line.strong { width: 76%; height: 20rpx; margin-top: 0; }
+.loading-label { margin-top: 8rpx; color: #7b8592; font-size: 22rpx; text-align: center; }
+
+.state-card { min-height: 430rpx; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48rpx; border: 1rpx solid #e1e4e8; border-radius: 28rpx; background: #fff; box-sizing: border-box; text-align: center; }
+.state-icon { width: 76rpx; height: 76rpx; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: #edf1f5; color: #66717f; font-size: 34rpx; font-weight: 700; }
+.error-icon { background: #fff0f0; color: #c43b3b; }
+.state-title { margin-top: 28rpx; color: #1d1d1f; font-size: 30rpx; font-weight: 600; }
+.state-copy { max-width: 500rpx; margin-top: 14rpx; color: #66717f; font-size: 24rpx; line-height: 1.65; }
+.empty-document { width: 94rpx; height: 118rpx; padding: 24rpx 18rpx; border: 2rpx solid #d2d2d7; border-radius: 14rpx; background: #fafafa; box-shadow: 9rpx 9rpx 0 #e5e5e7; box-sizing: border-box; }
+.empty-document view { height: 6rpx; margin-bottom: 14rpx; border-radius: 6rpx; background: #c7c7cc; }
+.empty-document view:first-child { width: 60%; background: #636366; }
+.secondary { min-width: 210rpx; height: 78rpx; margin-top: 30rpx; padding: 0 28rpx; border: 2rpx solid #d2d2d7; border-radius: 20rpx; background: #fff; color: #3f4752; font-size: 25rpx; font-weight: 600; line-height: 78rpx; touch-action: manipulation; }
+.secondary::after { border: 0; }
+.secondary-pressed { border-color: #1d1d1f; background: #fafafc; }
+.page-footnote { display: block; margin-top: 36rpx; color: #8a929e; font-size: 21rpx; line-height: 1.5; text-align: center; }

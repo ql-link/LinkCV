@@ -23,7 +23,7 @@ async function renewAccess() {
     refreshPromise = auth.refreshSession()
       .catch(async (error) => {
         if (error.statusCode !== 401) throw error;
-        await auth.login();
+        await auth.loginExistingAccount();
         return auth.getAccessToken();
       })
       .finally(() => {

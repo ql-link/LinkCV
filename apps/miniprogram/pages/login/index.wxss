@@ -1,123 +1,56 @@
-/* pages/login/index.wxss */
-/* LinkCV 授权确认页（强质感背景版）样式。
-   背景由"微渐变 + 巨型品牌水印 + 中心聚焦光晕 + 底部网格"四层构成，
-   色调极浅、对比度低，只提供质感与层次，不干扰前景信息。 */
-
 page {
-  /* ===== 设计变量（Design Tokens）===== */
-  --ink: #1a1a1a;          /* 主文字、主按钮背景、水印 */
-  --bg-start: #fafaf8;     /* 背景渐变起点（极浅暖灰） */
-  --bg-end: #f2f2f0;       /* 背景渐变终点（极浅冷灰） */
-  --muted: #666666;        /* Slogan 文字 */
-  --light: #999999;        /* 授权说明文字、右上角声明 */
-  --primary: #cc785c;      /* 陶土红——装饰线、按钮按压态、光晕 */
-  --font-serif: "Cormorant Garamond", "Times New Roman", serif; /* 品牌名 */
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro", "Inter", sans-serif; /* 正文 */
-
-  /* 第一层：微渐变底色，从上到下由暖灰到冷灰，模拟纸张质感 */
-  background: linear-gradient(to bottom, var(--bg-start) 0%, var(--bg-end) 100%);
-  color: var(--ink);
-  font-family: var(--font-sans);
+  background: #f5f5f7;
+  color: #1d1d1f;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
 }
 
-/* 页面根容器：flex 纵向排列，内容居中；底部为固定按钮预留高度 */
 .page {
-  position: relative; /* 作为背景装饰绝对定位的参照 */
+  position: relative;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  padding-bottom: calc(184rpx + constant(safe-area-inset-bottom));
-  padding-bottom: calc(184rpx + env(safe-area-inset-bottom));
+  padding: 0 40rpx calc(36rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
-  overflow: hidden;
+  overflow-x: hidden;
 }
 
-/* ===== 背景装饰层（不可点击，z-index 0，置于所有内容之下）===== */
-.bg-deco {
+.page-glow {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 0;
-  overflow: hidden; /* 裁剪越界装饰，避免产生滚动条 */
-}
-
-/* 第二层：巨型品牌水印 —— 几乎不可见的 "L"，仅作为纹理存在 */
-.deco-watermark {
-  position: absolute;
-  top: 54%; /* 页面中心偏下 */
+  top: -280rpx;
   left: 50%;
-  font-family: var(--font-serif);
-  font-size: 1200rpx; /* 约 600px 高 */
-  font-weight: 900;
-  line-height: 1;
-  color: var(--ink);
-  opacity: 0.03; /* 透明度 3%，不具备可读性 */
-  transform: translate(-50%, -50%);
+  width: 900rpx;
+  height: 700rpx;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 0, 0, .055) 0%, rgba(0, 0, 0, 0) 68%);
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 
-/* 第三层：中心聚焦光晕 —— 柔和径向渐变，舞台聚光灯效果 */
-.deco-glow {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 1200rpx; /* 600px */
-  height: 800rpx; /* 400px */
-  transform: translate(-50%, -50%);
-  /* 中心陶土红 8%，边缘完全透明 */
-  background: radial-gradient(
-    ellipse at center,
-    rgba(204, 120, 92, 0.08) 0%,
-    rgba(204, 120, 92, 0) 70%
-  );
-}
-
-/* 第四层：底部点阵网格纹理 —— 细微圆点阵列 */
-.deco-grid {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 240rpx;
-  background-image: radial-gradient(circle, rgba(26, 26, 26, 0.03) 2rpx, transparent 2rpx);
-  background-size: 48rpx 48rpx; /* 点间距 24px */
-}
-
-/* ===== 自定义导航栏（无返回/退出入口，仅右上角声明）===== */
-.nav {
+.topbar {
   position: relative;
-  z-index: 1; /* 置于背景装饰之上 */
-  height: 112rpx; /* 56px */
+  z-index: 1;
+  height: 112rpx;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  padding: 0 40rpx; /* 20px */
-  box-sizing: border-box;
+  justify-content: space-between;
 }
 
-/* 右上角服务来源声明：极小、弱化、右对齐，延迟淡入 */
-.service-provider {
-  max-width: 400rpx;
-  font-size: 20rpx; /* 10px */
-  font-weight: 400;
-  color: #bbbbbb;
-  text-align: right;
-  line-height: 112rpx;
-  /* 进入动效：opacity 0 → 1，延迟 0.3s */
-  animation: providerIn 0.3s ease-out 0.3s both;
+.mini-brand { display: flex; align-items: center; gap: 14rpx; }
+.mini-brand-mark {
+  width: 48rpx;
+  height: 48rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14rpx;
+  background: #1d1d1f;
+  color: #fff;
+  font-size: 27rpx;
+  font-weight: 700;
 }
+.mini-brand-name { font-size: 28rpx; font-weight: 650; letter-spacing: -1rpx; }
+.service-provider { color: #66717f; font-size: 22rpx; }
 
-@keyframes providerIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/* ===== 核心内容区：剩余高度中完全垂直居中，置于装饰之上 ===== */
 .content {
   position: relative;
   z-index: 1;
@@ -126,171 +59,146 @@ page {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 80rpx 48rpx; /* 40px */
+  padding: 40rpx 0;
   box-sizing: border-box;
-  /* 页面进入动效：淡入 + 上浮 16px，0.4s 缓出 */
-  animation: fadeUp 0.4s ease-out;
 }
 
-@keyframes fadeUp {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.document-mark {
+  position: relative;
+  width: 184rpx;
+  height: 196rpx;
+  margin-bottom: 46rpx;
 }
-
-/* 品牌徽章：深色圆底 + 外围极淡描边（徽章质感）+ 白色大写字母 L */
-.brand-icon {
-  width: 144rpx; /* 72px */
-  height: 144rpx;
-  border-radius: 50%;
-  background: var(--ink);
-  /* 外围一圈极淡描边，形成"徽章"质感 */
-  box-shadow: 0 0 0 2rpx #e0dcd6;
-  color: var(--white, #ffffff);
-  font-size: 64rpx; /* 32px */
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  /* Logo 动效：轻微缩放入场，0.45s */
-  animation: logoIn 0.45s ease-out;
+.document-sheet {
+  position: absolute;
+  width: 150rpx;
+  height: 184rpx;
+  border: 2rpx solid #d8dadd;
+  border-radius: 22rpx;
+  box-sizing: border-box;
 }
-
-@keyframes logoIn {
-  from {
-    transform: scale(0.9);
-  }
-  to {
-    transform: scale(1);
-  }
-}
-
-/* 品牌名称：衬线字体、宽字距 */
-.brand-name {
-  margin-top: 32rpx; /* 16px */
-  font-family: var(--font-serif);
-  font-size: 56rpx; /* 28px */
-  font-weight: 400;
-  letter-spacing: 2rpx; /* 1px */
-  color: var(--ink);
-}
-
-/* 陶土红装饰线：页面唯一强彩色元素，两端略微变细（锥形收尾） */
-.decor-line {
-  margin-top: 28rpx; /* 14px */
-  width: 80rpx; /* 40px */
-  height: 4rpx; /* 2px */
-  border-radius: 4rpx;
-  /* 两端渐变透明实现锥形收尾，增加手工感 */
-  background: linear-gradient(
-    to right,
-    rgba(204, 120, 92, 0) 0%,
-    var(--primary) 15%,
-    var(--primary) 85%,
-    rgba(204, 120, 92, 0) 100%
-  );
-  /* 展开动效：宽度 0 → 80rpx，延迟 0.15s 启动，动画结束后保持最终宽度 */
-  animation: expand 0.3s ease-out 0.15s both;
-}
-
-@keyframes expand {
-  from {
-    width: 0;
-  }
-  to {
-    width: 80rpx;
-  }
-}
-
-/* Slogan */
-.brand-tagline {
-  margin-top: 28rpx; /* 14px */
-  font-size: 28rpx; /* 14px */
-  font-weight: 400;
-  color: var(--muted);
-}
-
-/* ===== 底部操作区：fixed 吸底，主按钮 + 按钮下方授权说明 ===== */
-.footer {
-  position: fixed;
-  left: 0;
+.document-sheet-back {
+  top: 2rpx;
   right: 0;
-  bottom: 0;
-  z-index: 10;
-  padding: 0 64rpx; /* 32px */
-  padding-bottom: calc(24rpx + constant(safe-area-inset-bottom));
-  padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
-  /* 背景透明，露出底部的点阵网格纹理 */
+  background: #e5e5e7;
+  transform: rotate(7deg);
 }
-
-/* 主按钮"确认登录"：纯黑、大圆角，右侧带箭头，按压平滑过渡为陶土红 */
-.btn-main {
+.document-sheet-front {
+  left: 0;
+  bottom: 0;
+  padding: 24rpx;
+  background: #fff;
+  box-shadow: 0 24rpx 70rpx rgba(38, 58, 90, .12);
+}
+.document-avatar {
+  width: 44rpx;
+  height: 44rpx;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 50%;
+  background: #1d1d1f;
+  color: #fff;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+.document-line { width: 100%; height: 6rpx; margin-top: 16rpx; border-radius: 6rpx; background: #dfe3e8; }
+.document-line-strong { width: 76%; background: #7b7b80; }
+.document-line-short { width: 58%; }
+
+.eyebrow { color: #3a3a3c; font-size: 21rpx; font-weight: 700; letter-spacing: 4rpx; }
+.title { margin-top: 18rpx; font-size: 46rpx; font-weight: 650; letter-spacing: -2rpx; text-align: center; }
+
+.status-card {
   width: 100%;
-  height: 104rpx; /* 52px */
-  padding: 0;
+  min-height: 104rpx;
+  display: flex;
+  align-items: center;
+  margin-top: 38rpx;
+  padding: 22rpx 24rpx;
+  border: 2rpx solid #e3e6ea;
+  border-radius: 22rpx;
+  background: rgba(255, 255, 255, .82);
+  box-sizing: border-box;
+}
+.status-confirmed { border-color: #b9dfcb; background: #eaf7f0; }
+.status-error, .status-expired { border-color: #f1cccc; background: #fff0f0; }
+.status-indicator {
+  width: 44rpx;
+  height: 44rpx;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #edf1f5;
+  color: #1d1d1f;
+  font-size: 26rpx;
+  font-weight: 700;
+}
+.status-confirmed .status-indicator { background: #267a4d; color: #fff; }
+.status-error .status-indicator, .status-expired .status-indicator { background: #c43b3b; color: #fff; }
+.status-message { min-width: 0; flex: 1; margin-left: 18rpx; color: #3f4752; font-size: 25rpx; line-height: 1.55; word-break: break-all; }
+
+.consent {
+  width: 100%;
+  margin-top: 30rpx;
+  padding: 22rpx 24rpx;
+  border: 2rpx solid #e3e6ea;
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, .72);
+  box-sizing: border-box;
+}
+.agreement-row { display: flex; align-items: flex-start; }
+.agreement-checkbox { flex-shrink: 0; transform: scale(.82); transform-origin: left top; }
+.agreement-copy { min-width: 0; flex: 1; color: #586271; font-size: 23rpx; line-height: 1.6; }
+.agreement-link { color: #155fd7; font-weight: 600; }
+.agreement-hint { display: block; margin-top: 10rpx; padding-left: 48rpx; color: #9a5b13; font-size: 20rpx; }
+
+.spinner {
+  width: 24rpx;
+  height: 24rpx;
+  border: 3rpx solid rgba(21, 95, 215, .2);
+  border-top-color: #155fd7;
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.actions { width: 100%; margin-top: 30rpx; }
+.btn-main, .btn-secondary {
+  width: 100%;
+  height: 96rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   margin: 0;
-  background: var(--ink);
-  border-radius: 52rpx; /* 26px */
-  color: var(--white, #ffffff);
-  transition: background 0.2s ease;
+  padding: 0 28rpx;
+  border-radius: 24rpx;
+  font-size: 29rpx;
+  font-weight: 600;
+  line-height: 96rpx;
+  box-sizing: border-box;
+  touch-action: manipulation;
 }
+.btn-main { background: #155fd7; color: #fff; box-shadow: 0 16rpx 34rpx rgba(21, 95, 215, .22); }
+.btn-main::after, .btn-secondary::after { border: 0; }
+.btn-main-pressed { background: #0f52c0; transform: translateY(1rpx); }
+.btn-main[disabled], .btn-secondary[disabled] { opacity: .55; }
+.btn-secondary { margin-top: 18rpx; border: 2rpx solid #d2d2d7; background: rgba(255, 255, 255, .72); color: #3f4752; }
+.actions .btn-secondary[disabled] { display: none; }
+.btn-secondary-pressed { border-color: #3979db; background: #fff; }
+.btn-retry { margin-top: 0; }
 
-/* 重置微信 button 默认边框 */
-.btn-main::after {
-  border: none;
-}
-
-/* 按压态：背景平滑过渡为陶土红，松开恢复纯黑 */
-.btn-pressed {
-  background: var(--primary);
-}
-
-.btn-text {
-  font-size: 34rpx; /* 17px */
-  font-weight: 500;
-  line-height: 104rpx;
-}
-
-.btn-arrow {
-  margin-left: 12rpx;
-  font-size: 30rpx;
-  line-height: 104rpx;
-}
-
-/* 提交中禁用态：降低透明度避免重复点击 */
-.btn-main[disabled] {
-  opacity: 0.6;
-}
-
-/* "取消"小字：提供取消/拒绝返回选项，满足审核"不得强制授权"规范 */
-.btn-cancel {
-  margin-top: 28rpx; /* 14px */
-  padding: 8rpx 0; /* 扩大点击热区 */
+.privacy-note {
+  position: relative;
+  z-index: 1;
+  color: #8a929e;
+  font-size: 21rpx;
+  line-height: 1.5;
   text-align: center;
-  font-size: 28rpx; /* 14px */
-  font-weight: 400;
-  color: #888888;
 }
 
-.btn-cancel-hover {
-  opacity: 0.6;
-}
-
-/* 模式说明：浏览模式 / 授权模式共用，浅灰小字，居中 */
-.mode-note {
-  margin-top: 40rpx; /* 20px */
-  padding: 0 40rpx;
-  text-align: center;
-  font-size: 24rpx; /* 12px */
-  font-weight: 400;
-  color: var(--light);
-  line-height: 1.6;
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
 }

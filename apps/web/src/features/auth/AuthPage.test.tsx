@@ -84,6 +84,36 @@ describe("AuthPage environment-aware login", () => {
     expect(screen.getByRole("button", { name: "返回邮箱密码登录" })).toBeInTheDocument();
   });
 
+  it("开发环境的注册入口创建账号而不是提交登录", async () => {
+    vi.mocked(api.authCapabilities).mockResolvedValue({
+      password_login_enabled: true,
+    });
+    const login = vi
+      .spyOn(useResumeStore.getState(), "login")
+      .mockResolvedValue();
+    const register = vi
+      .spyOn(useResumeStore.getState(), "register")
+      .mockResolvedValue();
+
+    render(<AuthPage initialMode="register" />);
+    await act(async () => {});
+
+    expect(screen.getByRole("heading", { name: "注册 LinkCV" })).toBeInTheDocument();
+    expect(screen.getByLabelText("密码")).toHaveAttribute("autocomplete", "new-password");
+    fireEvent.change(screen.getByRole("textbox", { name: "邮箱" }), {
+      target: { value: "new@example.test" },
+    });
+    fireEvent.change(screen.getByLabelText("密码"), {
+      target: { value: "password-123" },
+    });
+    fireEvent.submit(screen.getByRole("button", { name: "注册" }).closest("form")!);
+    await act(async () => {});
+
+    expect(register).toHaveBeenCalledWith("new@example.test", "password-123");
+    expect(login).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe("/resumes");
+  });
+
   it("轮询成功后写入登录态并跳转简历主页", async () => {
     vi.spyOn(api, "wechatStatus").mockResolvedValue({
       status: "success",
