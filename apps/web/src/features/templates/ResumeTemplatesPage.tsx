@@ -225,6 +225,7 @@ export function ResumeTemplatesPage() {
                   </div>
                   <Button
                     className="template-library-action"
+                    variant="accent"
                     aria-haspopup="dialog"
                     onClick={() => openCreateDialog(template)}
                   >

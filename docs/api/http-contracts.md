@@ -51,7 +51,7 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 
 ## 语义简历契约
 
-简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`。数据库 ID 在 HTTP 中使用十进制字符串。`data` 是 `ResumeDocumentV1`，`style` 是 `ResumeStyleV1`，两者的 `schema_version` 当前均为字符串 `"1.0"`。`style.smart_one_page` 控制连续单页或标准 A4 导出模式，并随版本快照保存。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不再是简历写契约。
+简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`。数据库 ID 在 HTTP 中使用十进制字符串。`data` 是 `ResumeDocumentV1`，`style` 是 `ResumeStyleV1`，两者的 `schema_version` 当前均为字符串 `"1.0"`。简历正文以用户内容为准：错别字、非标准邮箱或电话、无法识别或先后矛盾的日期、缺少单位或职位等内容质量问题不阻断保存、导入或版本恢复；可识别日期仍会规范化，无法识别的日期原样保留。字段类型、总量和长度上限、URL 协议、Markdown 主动内容及内部 ID 完整性仍严格校验。`style.smart_one_page` 控制连续单页或标准 A4 导出模式，并随版本快照保存。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不再是简历写契约。
 
 Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照转换为上述 `"1.0"` 契约；这些迁移期旧 JSON 从未进入 API 响应，`0012` 删除其同行备份列，因此 HTTP 请求、响应和现有 `"1.0"` 数据保持不变。发布顺序仍为先迁移数据库、再启动新应用。
 
@@ -219,7 +219,7 @@ PDF 导出审计只接受当前用户拥有的简历 ID；不存在或不属于�
 
 ## 大模型管理接口
 
-以下接口只允许当前数据库用户的 `is_admin=true` 时访问。未登录返回 `401 UNAUTHORIZED`，普通用户返回 `403 FORBIDDEN`。本期不公开普通用户或第三方可调用的通用 chat、stream HTTP API；模型调用只作为 FastAPI 后端内部 Python 服务提供。
+以下接口只允许当前数据库用户的 `is_admin=true` 时访问。未登录返回 `401 UNAUTHORIZED`，普通用户返回 `403 FORBIDDEN`。本期不公开普通用户或第三方可调用的通用 chat、stream HTTP API；业务模型调用只作为 FastAPI 后端内部服务提供。Pi 探针由 FastAPI 主动调用受服务令牌保护的 Pi Service，不在 FastAPI 注册模型代理路由。
 
 `users.is_admin` 不进入 access JWT 或 Redis 会话；管理员接口每次请求都从数据库读取该 `0/1` 标记，因此提权或降权对现有 Cookie 的下一次请求即时生效。公开注册始终创建普通用户。
 
@@ -228,24 +228,29 @@ PDF 导出审计只接受当前用户拥有的简历 ID；不存在或不属于�
 | Method  | Path                                            | 成功结果                                                                       |
 | ------- | ----------------------------------------------- | ------------------------------------------------------------------------------ |
 | `GET`   | `/api/admin/llm/capabilities/chat`              | `{capability, activeModelId, activeModel, models}`，返回 Chat 当前项与候选列表 |
+| `GET`   | `/api/admin/llm/capabilities`                   | `{capabilities}`，返回 Chat、`resume_structuring`、`pi_agent` 能力矩阵与共享候选列表 |
+| `GET`   | `/api/admin/llm/catalog`                         | `{capabilities, adapters}`，返回三类能力与 LiteLLM adapter 建议 |
+| `PUT`   | `/api/admin/llm/capabilities/:capability/binding` | `{modelConfigId, baseConfigVersion?, baseBindingVersion?}`；验证成功后更新能力绑定并返回验证调用 ID |
 | `GET`   | `/api/admin/llm/catalog/chat`                   | `{capability, adapters}`，返回受支持 adapter 和 LiteLLM Chat 模型建议          |
 | `POST`  | `/api/admin/llm/models`                         | `201 {model}`                                                                  |
-| `PATCH` | `/api/admin/llm/models/:modelConfigId`          | `{model, validationCallId}`；编辑当前项时先测试拟议配置                        |
+| `PATCH` | `/api/admin/llm/models/:modelConfigId`          | `{adapter?, model?, apiBase?, apiKey?, baseConfigVersion?}`；仅允许编辑未绑定候选，已绑定候选返回 `409 LLM_MODEL_IN_USE` |
 | `POST`  | `/api/admin/llm/models/:modelConfigId/test`     | `{ok: true, callId}`，测试指定配置                                             |
+| `POST`  | `/api/admin/llm/models/:modelConfigId/tests`   | `{capability, baseConfigVersion?}`；执行能力探针并返回 `validationId` 与 `callId` |
 | `POST`  | `/api/admin/llm/models/:modelConfigId/activate` | `{activeModel, callId}`，测试成功后设为 Chat 当前模型                          |
+| `DELETE`| `/api/admin/llm/models/:modelConfigId`          | `204`；删除未绑定候选、加密凭据和验证证据，调用日志保留快照并解除配置引用 |
 | `GET`   | `/api/admin/llm/calls`                          | `{calls, summary, nextCursor}`                                                 |
 
-Chat 是服务端预定义能力，管理员不填写能力标识。候选写入只接受 `adapter`、不含 adapter 前缀的 `model`、可选 `apiBase` 和只写 `apiKey`；服务端将 DeepSeek 示例组装成 `deepseek/deepseek-v4-flash`，将千问示例组装成 `dashscope/qwen-plus` 后传给 LiteLLM。目录响应使用稳定 adapter 代码，管理页面只展示供应商名称；目录建议来自锁定版本 LiteLLM 的 Chat 元数据，目录外调用名仍可提交并由真实连接测试兜底。旧 `enabled`、`priority` 和手工价格字段不再接受或返回。
+模型候选是能力中立的共享连接配置，管理员不填写能力标识。候选写入只接受 `adapter`、不含 adapter 前缀的 `model`、可选 `apiBase` 和只写 `apiKey`；Chat 与简历结构化会把 adapter 和模型名组装成 LiteLLM 标识。目录响应使用稳定 adapter 代码，管理页面只展示供应商名称；目录建议来自锁定版本 LiteLLM 的 Chat 元数据，目录外调用名仍可提交并由真实连接测试兜底。旧 `enabled`、`priority` 和手工价格字段不再接受或返回。`pi_agent` 绑定会把选定配置快照交给 Pi Service，由 Pi 的模型 profile 决定协议和兼容参数并直接执行固定 Tool 探针；Pi Service 不可达、超时、模型不受支持或 Tool 未执行分别返回稳定脱敏错误和 `callId`，原 binding 保持不变。
 
-候选读取只用 `keyConfigured` 表示是否已有凭据，绝不返回明文或数据库密文。PATCH 省略 `apiKey` 时保留原凭据，传 `null` 时清除，传非空字符串时替换。新增和编辑普通候选不会改变 Chat 当前项；启用操作先测试目标快照，成功后才切换，失败时原当前项不变。编辑当前候选也先测试拟议配置，测试或版本核对失败时不覆盖正在使用的版本。候选不提供硬删除或独立启停接口。
+候选读取只用 `keyConfigured` 表示是否已有凭据，绝不返回明文或数据库密文。PATCH 省略 `apiKey` 时保留原凭据，传 `null` 时清除，传非空字符串时替换。新增和编辑未绑定候选不会改变任何能力当前项；被任一能力绑定的候选不可原地编辑或删除，管理员需创建替代候选后再验证并切换。启用操作先测试目标快照，成功后才切换，失败时原当前项不变。未绑定候选可以硬删除；删除会移除配置、加密凭据和验证证据，并把历史调用日志的 `modelConfigId` 置空，日志中的 adapter、模型、配置版本、状态和计量快照保持不变。不提供独立启停接口。
 
 模型配置 `id`、调用记录 `userId` 和 `modelConfigId` 与其他 MySQL 业务 ID 一致，对外使用十进制字符串，内部数据库列仍为 `BIGINT UNSIGNED`。
 
-`0006` 在数据库中使用中文表注释和字段注释，这些注释只用于说明持久化语义，不改变本节约定的 JSON 字段名、错误码或状态字面值。`0008` 增加候选的 `capability/adapter/model_call_name/config_version`、Chat 唯一当前绑定，以及调用日志的能力、来源和模型快照。升级会先按外键依赖顺序永久清空旧调用日志和模型配置，不转换旧优先级、价格或调用数据；完成后 Chat 当前绑定为空，需要管理员重新配置并设为当前模型。
+`0006` 在数据库中使用中文表注释和字段注释，这些注释只用于说明持久化语义，不改变本节约定的 JSON 字段名、错误码或状态字面值。`0008` 增加候选的 LiteLLM adapter/model 调用名、Chat 唯一当前绑定，以及调用日志的能力、来源和模型快照。`0028` 扩展绑定版本、验证证据、简历结构化/Pi Agent 预置绑定和调用配置版本；`0029` 删除候选上的遗留 `capability` 列，候选正式成为能力中立配置。升级仍不转换旧优先级、价格或调用数据；存量 Chat 绑定验证证据可为空，需要管理员重新测试其他能力后才会产生对应证据。
 
-调用记录可用 `source`、`status`、精确 `callId`、`userId`、`modelConfigId`、`from`、`to`、`cursor` 和 `limit` 查询，默认每页 50、最大 200，按创建时间和内部 ID 倒序稳定分页。`source` 是由内部调用方提供的稳定小写代码，格式为 `^[a-z][a-z0-9_]{0,31}$`；本期实际接入并保证产生的来源只有管理动作使用的 `connection_test`。时间范围使用带时区的 ISO 8601，区间为左闭右开；非法值、反向区间或无效游标返回 `400 INVALID_LLM_CALL_QUERY`。每条记录只包含调用标识、能力、来源、用户、实际 adapter/模型快照、状态、耗时、Token、LiteLLM 价格快照、估算成本和非敏感错误分类，不保存或返回消息、模型完整响应和凭据。汇总针对当前筛选条件聚合全部命中记录，只累加已知值，并用 `incompleteMeteringCount` 表明不完整计量。
+调用记录可用 `source`、`status`、精确 `callId`、`userId`、`modelConfigId`、`from`、`to`、`cursor` 和 `limit` 查询，默认每页 50、最大 200，按创建时间和内部 ID 倒序稳定分页。`source` 是由内部调用方提供的稳定小写代码，格式为 `^[a-z][a-z0-9_]{0,31}$`；本期实际接入并保证产生的来源只有管理动作使用的 `connection_test`。时间范围使用带时区的 ISO 8601，区间为左闭右开；非法值、反向区间或无效游标返回 `400 INVALID_LLM_CALL_QUERY`。每条记录只包含调用标识、能力、来源、用户、实际 adapter/模型与配置版本快照、状态、耗时、Token、LiteLLM 价格快照、估算成本和非敏感错误分类，不保存或返回消息、模型完整响应和凭据。汇总针对当前筛选条件聚合全部命中记录，只累加已知值，并用 `incompleteMeteringCount` 表明不完整计量。
 
-管理错误包括 `INVALID_LLM_MODEL_CONFIG`、`INVALID_LLM_CALL_QUERY`、`LLM_MODEL_NOT_FOUND`、`LLM_MODEL_CONFIG_CHANGED`、`LLM_CHAT_NOT_CONFIGURED`、`LLM_CREDENTIALS_UNAVAILABLE`、`LLM_UNAVAILABLE` 和 `LLM_REQUEST_REJECTED`。连接测试、启用和当前项验证失败响应带可查询的 `callId`；供应商原始错误不会透传。
+管理错误包括 `INVALID_LLM_MODEL_CONFIG`、`INVALID_LLM_CALL_QUERY`、`LLM_MODEL_NOT_FOUND`、`LLM_MODEL_IN_USE`、`LLM_MODEL_CONFIG_CHANGED`、`LLM_BINDING_CHANGED`、`LLM_CHAT_NOT_CONFIGURED`、`LLM_MODEL_NOT_CONFIGURED`、`LLM_PI_AGENT_UNAVAILABLE`、`LLM_PI_AGENT_TIMEOUT`、`LLM_PI_AGENT_PROBE_FAILED`、`LLM_CREDENTIALS_UNAVAILABLE`、`LLM_UNAVAILABLE` 和 `LLM_REQUEST_REJECTED`。连接测试、绑定和当前项验证失败在已经创建调用记录时带可查询的 `callId`；供应商原始错误不会透传。
 
 结构化模型调用仍是后端内部能力，不新增 HTTP 路由或管理接口字段。服务端不会向供应商发送 `response_format` JSON Schema 参数，而是在单次调用的系统指令中提供目标 Schema；返回文本由 LinkCV 本地提取 JSON 并执行 Pydantic 严格校验。非法结构以内部 `LLM_RESPONSE_INVALID` 收口，不触发第二次供应商调用，也不把模型正文写入调用记录或管理接口响应。
 

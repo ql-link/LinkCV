@@ -17,6 +17,18 @@ COPY apps/web/public ./public
 COPY apps/web/src ./src
 RUN npm run build
 
+FROM node:22-bookworm-slim AS pi-build
+
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+WORKDIR /app
+COPY third_party/pi ./third_party/pi
+COPY apps/pi-service ./apps/pi-service
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --prefix third_party/pi --no-audit --registry="${NPM_REGISTRY}"
+RUN --network=none \
+    npm --prefix third_party/pi run check:model-data && \
+    npm --prefix apps/pi-service run build
+
 FROM python:3.13-slim AS runtime
 
 ARG UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
@@ -46,6 +58,9 @@ COPY scripts/release/run_alembic.py /app/scripts/release/run_alembic.py
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --python .venv/bin/python --no-deps --index-url "${UV_INDEX_URL}" .
 COPY --from=web-build /app/apps/web/dist /app/web
+COPY --from=pi-build /usr/local/bin/node /usr/local/bin/node
+COPY --from=pi-build /app/apps/pi-service/dist/server.js /app/pi/server.js
+RUN node --version
 RUN mkdir -p /app/logs
 
 EXPOSE 8000

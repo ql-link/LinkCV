@@ -57,6 +57,37 @@ def test_complete_forwards_zero_retries_and_timeout_without_provider_schema(
     assert captured["num_retries"] == 0
 
 
+def test_complete_disables_thinking_only_for_deepseek_when_requested(
+    monkeypatch,
+) -> None:
+    captured: list[dict[str, object]] = []
+
+    async def fake_completion(**kwargs):
+        captured.append(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"answer":"ok"}'))],
+            usage=SimpleNamespace(prompt_tokens=3, completion_tokens=2),
+        )
+
+    monkeypatch.setattr(litellm, "acompletion", fake_completion)
+    gateway = LiteLLMGateway()
+
+    async def call() -> None:
+        for model in ("deepseek/deepseek-v4-flash", "dashscope/qwen-plus"):
+            await gateway.complete(
+                model=model,
+                messages=[ChatMessage(role="user", content="结构化请求")],
+                api_base=None,
+                api_key="fictional-key",
+                disable_thinking=True,
+            )
+
+    asyncio.run(call())
+
+    assert captured[0]["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert "extra_body" not in captured[1]
+
+
 def test_stream_forwards_zero_retries_and_preserves_partial_metering(
     monkeypatch,
 ) -> None:

@@ -189,7 +189,8 @@ describe("HomeScreen", () => {
 
     renderHome({ failedImports });
 
-    expect(screen.getAllByText("未完成")).toHaveLength(2);
+    expect(screen.getByText("上传失败")).toBeInTheDocument();
+    expect(screen.getByText("解析失败")).toBeInTheDocument();
     expect(screen.getByText("上传失败 · 420 毫秒")).toBeInTheDocument();
     expect(screen.getByText("解析失败 · 1.3 秒")).toBeInTheDocument();
   });
@@ -214,14 +215,14 @@ describe("HomeScreen", () => {
       name: "导入任务 张三-后端工程师.pdf",
     });
     expect(taskCard).toHaveClass("home-import-card");
-    expect(within(taskCard).getByText("未完成")).toBeInTheDocument();
+    expect(within(taskCard).getByText("解析中")).toBeInTheDocument();
     expect(screen.getByRole("progressbar", {
       name: "张三-后端工程师.pdf 正在解析",
     })).toHaveAttribute("aria-valuetext", "正在解析，暂时无法估算完成时间");
     expect(screen.getByText("正在解析 · 请稍候")).toBeInTheDocument();
   });
 
-  it("未完成导入和正式简历展示在同一个卡片网格", () => {
+  it("导入任务和正式简历展示在同一个卡片网格", () => {
     const activeImport: ResumeImportSummary = {
       id: "41",
       source_filename: "后端工程师.pdf",

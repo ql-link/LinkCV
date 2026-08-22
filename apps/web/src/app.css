@@ -1933,7 +1933,8 @@ select:not([data-slot]):focus-visible,
   padding: 28px 32px 48px;
 }
 
-.template-library-grid {
+.template-library-grid,
+.home-card-grid {
   display: grid;
   width: 100%;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -2033,7 +2034,7 @@ select:not([data-slot]):focus-visible,
   position: relative;
   z-index: 2;
   display: flex;
-  min-height: 158px;
+  min-height: 168px;
   flex: 1;
   flex-direction: column;
   justify-content: space-between;
@@ -2368,13 +2369,6 @@ select:not([data-slot]):focus-visible,
   line-height: var(--ui-leading-normal);
 }
 
-.home-card-grid {
-  display: grid;
-  width: 100%;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 24px;
-}
-
 .home-import-card {
   position: relative;
   overflow: hidden;
@@ -2385,8 +2379,9 @@ select:not([data-slot]):focus-visible,
 
 .home-import-preview {
   position: relative;
-  aspect-ratio: 210 / 297;
+  aspect-ratio: 210 / 220;
   overflow: hidden;
+  border-bottom: 1px solid var(--ui-border);
   background: var(--ui-surface-subtle);
 }
 
@@ -2469,15 +2464,12 @@ select:not([data-slot]):focus-visible,
 }
 
 .home-import-meta {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  display: grid;
+  display: flex;
+  min-height: 168px;
+  flex-direction: column;
   gap: 3px;
-  padding: 14px 16px;
-  background: color-mix(in srgb, var(--ui-surface) 84%, transparent);
-  backdrop-filter: blur(10px);
+  padding: 18px;
+  background: var(--ui-surface);
 }
 
 .home-import-meta strong,
@@ -2501,7 +2493,7 @@ select:not([data-slot]):focus-visible,
 .home-import-meta .ui-button {
   width: 100%;
   min-height: 40px;
-  margin-top: 9px;
+  margin-top: auto;
 }
 
 .home-import-card-failed {
@@ -2529,10 +2521,13 @@ select:not([data-slot]):focus-visible,
 
 .home-resume-card {
   position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--hairline);
-  border-radius: 14px;
-  background: var(--surface-card);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-surface);
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
@@ -2555,10 +2550,11 @@ select:not([data-slot]):focus-visible,
 .home-card-preview {
   display: block;
   position: relative;
-  aspect-ratio: 210 / 297;
+  aspect-ratio: 210 / 220;
   overflow: hidden;
+  border-bottom: 1px solid var(--ui-border);
   container-type: inline-size;
-  background: var(--ui-surface);
+  background: var(--ui-surface-subtle);
 }
 
 .home-card-preview .resume-readonly-preview-card .resume-preview-paper {
@@ -2569,14 +2565,12 @@ select:not([data-slot]):focus-visible,
 }
 
 .home-card-meta {
-  display: block;
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  padding: 14px 16px 14px;
-  background: rgb(255 255 255 / 0.72);
-  backdrop-filter: blur(10px);
+  display: flex;
+  min-height: 168px;
+  flex: 1;
+  flex-direction: column;
+  padding: 18px;
+  background: var(--ui-surface);
 }
 
 .home-card-meta strong,
@@ -2591,7 +2585,8 @@ select:not([data-slot]):focus-visible,
 .home-card-meta small { margin-top: 3px; color: var(--muted); font-size: 12px; }
 
 .home-card-actions {
-  margin-top: 12px;
+  margin-top: auto;
+  padding-top: 12px;
 }
 
 .home-card-action {
@@ -3197,7 +3192,8 @@ select:not([data-slot]):focus-visible,
   .dashboard-main { padding: 20px 16px 32px; }
   .template-library-content .page-hero { padding: 22px 16px 0; }
   .template-library-body { padding: 22px 16px 32px; }
-  .template-library-grid { grid-template-columns: 1fr; gap: 16px; }
+  .template-library-grid,
+  .home-card-grid { grid-template-columns: 1fr; gap: 16px; }
   .template-preview-dialog { height: min(94vh, 900px); border-radius: 20px; }
   .template-preview-dialog-header { min-height: 60px; padding-left: 20px; }
   .template-preview-dialog-main { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
@@ -3217,9 +3213,6 @@ select:not([data-slot]):focus-visible,
   .template-preview-navigation-next { right: 8px; }
   .template-preview-navigation-icon { width: 42px; height: 42px; }
   .template-preview-dialog-footer { min-height: 66px; padding: 10px 20px; }
-  .home-card-grid { grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: 16px; }
-  .home-card-preview { padding: 14px; }
-  .home-card-meta { padding: 13px 14px 15px; }
   .dashboard-empty-state { padding: 52px 24px; }
 }
 
@@ -3233,7 +3226,6 @@ select:not([data-slot]):focus-visible,
   .dashboard-create.ui-button svg { display: none; }
   .dashboard-import.ui-button,
   .dashboard-create.ui-button { padding-inline: 10px; }
-  .home-card-grid { grid-template-columns: 1fr 1fr; }
   .home-card-action { white-space: nowrap; }
   .home-card-action svg { display: none; }
   .home-confirm-actions .ui-button { flex: 1; padding-inline: 12px; }

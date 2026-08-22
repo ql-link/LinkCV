@@ -25,9 +25,10 @@ from linkcv.integrations.resume_structuring import LLMResumeStructuringClient
 from linkcv.integrations.wechat_client import WechatClient
 from linkcv.modules.llm.crypto import CredentialCipher
 from linkcv.modules.llm.gateway import LLMGateway, LiteLLMGateway
-from linkcv.modules.llm.catalog import CHAT_CAPABILITY
+from linkcv.modules.llm.catalog import MODEL_CAPABILITIES
 from linkcv.modules.llm.models import LLMCapabilityBinding
 from linkcv.modules.llm.service import LLMService
+from linkcv.modules.llm.pi_probe import PiProbeCoordinator
 from linkcv.modules.observability.logging import StructuredLogEmitter, configure_logging
 from linkcv.modules.observability.middleware import ObservabilityMiddleware
 from linkcv.modules.observability.loki import LokiClient
@@ -70,6 +71,7 @@ def create_app(
     loki_client: Any | None = None,
     mq_publisher: MQPublisher | None = None,
     plugin_release_service: Any | None = None,
+    pi_probe_coordinator: PiProbeCoordinator | None = None,
     create_schema: bool = False,
 ) -> FastAPI:
     runtime_settings = settings or load_settings()
@@ -100,8 +102,9 @@ def create_app(
 
         Base.metadata.create_all(engine)
         with session_factory() as schema_db:
-            if schema_db.get(LLMCapabilityBinding, CHAT_CAPABILITY) is None:
-                schema_db.add(LLMCapabilityBinding(capability=CHAT_CAPABILITY))
+            for capability in MODEL_CAPABILITIES:
+                if schema_db.get(LLMCapabilityBinding, capability) is None:
+                    schema_db.add(LLMCapabilityBinding(capability=capability))
                 schema_db.commit()
 
     runtime_storage = storage or AssetStorage(runtime_settings)
@@ -116,6 +119,9 @@ def create_app(
         session_factory,
         runtime_llm_gateway,
         CredentialCipher(runtime_settings.llm_credential_encryption_keys),
+    )
+    runtime_pi_probe_coordinator = pi_probe_coordinator or PiProbeCoordinator(
+        runtime_settings
     )
     if redis is None:
         redis = build_redis_client(runtime_settings)
@@ -220,6 +226,7 @@ def create_app(
     app.state.storage = runtime_storage
     app.state.plugin_release_service = runtime_plugin_release_service
     app.state.llm_service = llm_service
+    app.state.pi_probe_coordinator = runtime_pi_probe_coordinator
     app.state.redis = redis
     app.state.document_converter = runtime_document_converter
     app.state.structuring_client = runtime_structuring_client

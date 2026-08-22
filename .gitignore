@@ -1,8 +1,11 @@
 node_modules/
 dist/
+.test-dist/
 .output/
 .wxt/
 data/
+!third_party/pi/packages/ai/src/providers/data/
+!third_party/pi/packages/ai/src/providers/data/**
 .idea/
 .vscode/
 .env

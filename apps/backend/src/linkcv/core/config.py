@@ -17,8 +17,34 @@ def settings_env_files() -> tuple[Path, ...]:
     base = Path(os.environ.get("LINKCV_ENV_FILE", REPO_ROOT / ".env")).expanduser()
     if not base.is_absolute():
         base = (REPO_ROOT / base).resolve()
-    local = Path(f"{base}.local")
+    configured_secret = os.environ.get("LINKCV_SECRET_ENV_FILE")
+    if configured_secret:
+        local = Path(configured_secret).expanduser()
+        if not local.is_absolute():
+            local = (REPO_ROOT / local).resolve()
+    else:
+        local = _default_secret_env_file(base)
     return (base, local) if local.is_file() else (base,)
+
+
+def _default_secret_env_file(base: Path) -> Path:
+    git_entry = REPO_ROOT / ".git"
+    if not git_entry.is_file() or base.parent != REPO_ROOT:
+        return Path(f"{base}.local")
+
+    prefix = "gitdir:"
+    entry = git_entry.read_text(encoding="utf-8").strip()
+    if not entry.startswith(prefix):
+        return Path(f"{base}.local")
+    git_dir = Path(entry.removeprefix(prefix).strip()).expanduser()
+    if not git_dir.is_absolute():
+        git_dir = (REPO_ROOT / git_dir).resolve()
+    try:
+        main_root = git_dir.parents[2]
+    except IndexError:
+        return Path(f"{base}.local")
+    shared = main_root / f"{base.name}.local"
+    return shared if shared.is_file() else Path(f"{base}.local")
 
 
 def _is_placeholder(value: str | None) -> bool:
@@ -116,6 +142,20 @@ class Settings(BaseSettings):
         default=75,
         alias="LLM_TIMEOUT_SECONDS",
         gt=0,
+    )
+    pi_service_url: str = Field(
+        default="http://127.0.0.1:8010",
+        alias="PI_SERVICE_URL",
+    )
+    pi_service_token: SecretStr = Field(
+        default=SecretStr("linkcv-pi-local-change-me"),
+        alias="PI_SERVICE_TOKEN",
+    )
+    pi_probe_timeout_seconds: float = Field(
+        default=45,
+        alias="PI_PROBE_TIMEOUT_SECONDS",
+        gt=0,
+        le=120,
     )
 
     minio_endpoint: str = Field(default="http://127.0.0.1:9000", alias="MINIO_ENDPOINT")
@@ -440,6 +480,8 @@ class Settings(BaseSettings):
         invalid: list[str] = []
         if _is_placeholder(self.jwt_secret) or len(self.jwt_secret) < 32:
             invalid.append("JWT_SECRET")
+        if _is_placeholder(self.pi_service_token.get_secret_value()):
+            invalid.append("PI_SERVICE_TOKEN")
         if self.database_url:
             if _is_placeholder(self.database_url):
                 invalid.append("DATABASE_URL")
