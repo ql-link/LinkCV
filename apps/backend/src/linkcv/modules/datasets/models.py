@@ -75,7 +75,9 @@ class UserDataset(Base):
         String(512), nullable=False, comment="对象存储对象键"
     )
     sha256: Mapped[str] = mapped_column(
-        String(64), nullable=False, comment="文件内容 SHA-256 十六进制摘要"
+        String(64).with_variant(mysql.CHAR(64), "mysql"),
+        nullable=False,
+        comment="文件内容 SHA-256 十六进制摘要",
     )
     created_at: Mapped[datetime] = mapped_column(
         timestamp_type(),

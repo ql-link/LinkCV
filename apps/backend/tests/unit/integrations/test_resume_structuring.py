@@ -10,6 +10,7 @@ from linkcv.integrations.resume_structuring import (
 )
 from linkcv.modules.llm.schemas import StructuredChatResult
 from linkcv.modules.llm.service import LLMError
+from linkcv.modules.llm.catalog import RESUME_STRUCTURING_CAPABILITY
 
 
 class FakeLLMService:
@@ -25,8 +26,9 @@ class FakeLLMService:
         *,
         source,
         response_model,
+        capability,
     ):
-        self.calls.append((user_id, messages, source, response_model))
+        self.calls.append((user_id, messages, source, response_model, capability))
         if self.error_code is not None:
             raise LLMError(self.error_code, "llmcall_fixture")
         assert self.content is not None
@@ -47,7 +49,7 @@ def test_structuring_client_sends_only_section_content_and_strict_schema() -> No
     )
 
     assert draft.basics.name == "张三"
-    user_id, messages, source, response_model = service.calls[0]
+    user_id, messages, source, response_model, capability = service.calls[0]
     assert user_id == 42
     payload = json.loads(messages[1].content)
     assert set(payload) == {"document"}
@@ -64,6 +66,7 @@ def test_structuring_client_sends_only_section_content_and_strict_schema() -> No
     assert "object_key" not in serialized
     assert source == "resume_import"
     assert response_model.__name__ == "ResumeExtractionDraft"
+    assert capability == RESUME_STRUCTURING_CAPABILITY
 
 
 def test_structuring_client_rejects_invalid_model_output() -> None:

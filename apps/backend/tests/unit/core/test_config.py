@@ -144,6 +144,7 @@ def test_production_rejects_missing_secrets_without_exposing_values() -> None:
     assert "LLM_CREDENTIAL_ENCRYPTION_KEYS" in message
     assert "LINKPARSE_API_KEY" in message
     assert "RABBITMQ_URL" in message
+    assert "PI_SERVICE_TOKEN" in message
     assert "WECHAT_APPID" in message
     assert "WECHAT_SECRET" in message
     assert exposed not in message
@@ -163,6 +164,7 @@ def test_production_accepts_injected_secrets() -> None:
         ),
         linkparse_api_key="fictional-linkparse-key",
         rabbitmq_url="amqp://linkcv:fictional-secret@rabbitmq:5672/",
+        pi_service_token="fictional-pi-service-token",
         wechat_appid="fictional-production-appid",
         wechat_secret="fictional-production-wechat-secret",
     )

@@ -378,6 +378,12 @@ contracts:
       - path: deploy/scripts/build-production-on-cloud.sh
         pattern: 'http_port="4174"'
         message: Production 远端健康检查必须使用宿主机端口 4174
+      - path: deploy/scripts/build-production-on-cloud.sh
+        pattern: 'required_secret_keys=\([\s\S]*PI_SERVICE_TOKEN[\s\S]*pi_health_status=.*linkcv-pi'
+        message: Production 必须在发布前要求 Pi 内部令牌并检查 Pi Service 健康状态
+      - path: deploy/scripts/build-production-on-cloud.sh
+        pattern: 'previous_compose_file="\$\{backup_dir\}/docker-compose\.production\.yml"[\s\S]*docker compose -f "\$\{previous_compose_file\}" up -d --remove-orphans'
+        message: Production 回滚必须使用发布前备份的 Compose，兼容首次引入 Pi Service
       - path: Jenkinsfile
         pattern: 'tokenCredentialId: ''linkcv-dev-webhook-token'''
         message: Production webhook token 必须来自现有 Jenkins Secret Text 凭据

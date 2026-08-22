@@ -17,6 +17,7 @@ import {
   Search,
   ShieldCheck,
   TestTube2,
+  Trash2,
   X,
 } from "lucide-react";
 import {
@@ -25,6 +26,8 @@ import {
   ChatAdapter,
   ChatCapability,
   ChatCatalog,
+  ModelCapabilityRecord,
+  ModelCapability,
   LlmCallQuery,
   LlmCallRecord,
   LlmCallSummary,
@@ -55,9 +58,16 @@ function errorMessage(
     INVALID_LLM_MODEL_CONFIG: "Chat 模型配置不合法，请检查模型供应商、模型名称和地址。",
     LLM_MODEL_NOT_FOUND: "模型配置已不存在，请刷新后重试。",
     LLM_MODEL_CONFIG_CHANGED: "测试期间配置已被其他操作修改，请刷新后重试。",
+    LLM_MODEL_IN_USE: "已绑定到系统能力的模型不可编辑或删除，请先切换对应能力的绑定。",
     LLM_CREDENTIALS_UNAVAILABLE: "API Key 缺失或服务端暂时无法安全读取凭据。",
     LLM_CONNECTION_FAILED: "连接测试失败，请检查模型供应商、模型名称、地址或 API Key。",
     LLM_CHAT_NOT_CONFIGURED: "Chat 当前尚未选择模型。",
+    LLM_MODEL_NOT_CONFIGURED: "该能力当前尚未选择模型。",
+    LLM_PI_AGENT_UNAVAILABLE: "Pi Agent 服务尚未接入，暂不能绑定。",
+    LLM_PI_AGENT_TIMEOUT: "Pi Agent 连接测试超时，原绑定未改变。",
+    LLM_PI_AGENT_PROBE_FAILED: "模型没有完成 Pi Agent 工具探针，原绑定未改变。",
+    LLM_BINDING_CHANGED: "能力绑定已被其他操作修改，请刷新后重试。",
+    LLM_CAPABILITY_NOT_FOUND: "模型能力不存在，请刷新后重试。",
     INVALID_LLM_CALL_QUERY: "调用日志筛选条件不合法，请检查后重试。",
   };
   const message = messages[error.message] ?? fallback;
@@ -90,13 +100,16 @@ function PanelHeading({
 
 export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
   const [capability, setCapability] = useState<ChatCapability | null>(null);
+  const [capabilityMatrix, setCapabilityMatrix] = useState<ModelCapabilityRecord[]>([]);
   const [catalog, setCatalog] = useState<ChatCatalog | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [loadError, setLoadError] = useState("");
   const [query, setQuery] = useState("");
   const [keyFilter, setKeyFilter] = useState("all");
   const [editor, setEditor] = useState<LlmModelConfig | "new" | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<LlmModelConfig | null>(null);
   const [bindingEditorOpen, setBindingEditorOpen] = useState(false);
+  const [genericBinding, setGenericBinding] = useState<ModelCapabilityRecord | null>(null);
   const [testingIds, setTestingIds] = useState<Set<string>>(new Set());
   const [testResults, setTestResults] = useState<
     Record<string, { ok: boolean; message: string }>
@@ -113,6 +126,13 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
         ]);
         setCapability(nextCapability);
         setCatalog(nextCatalog);
+        try {
+          const matrix = await api.getModelCapabilities();
+          setCapabilityMatrix(matrix.capabilities);
+        } catch {
+          // Keep the legacy Chat view usable while an older backend rolls out.
+          setCapabilityMatrix([]);
+        }
         setLoadState("ready");
       } catch (error) {
         setLoadError(
@@ -247,6 +267,32 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
                 {capability.activeModel ? "已绑定" : "未绑定"}
               </span>
             </button>
+            {capabilityMatrix
+              .filter((item) => item.capability !== "chat")
+              .map((item) => (
+                <button
+                  className="model-summary chat-capability-card"
+                  type="button"
+                  key={item.capability}
+                  onClick={() => setGenericBinding(item)}
+                >
+                  <div>
+                    <span className="model-summary-icon"><Bot size={20} /></span>
+                    <div>
+                      <small>能力配置</small>
+                      <strong>{item.capability === "resume_structuring" ? "简历结构化" : "Pi Agent"}</strong>
+                      <p>
+                        {item.activeModel
+                          ? `已绑定 ${adapterLabels.get(item.activeModel.adapter) ?? item.activeModel.adapter} / ${item.activeModel.model}`
+                          : "尚未绑定模型，点击这里选择。"}
+                      </p>
+                    </div>
+                  </div>
+                  <span className={item.activeModel ? "enabled-pill" : "disabled-pill"}>
+                    {item.activeModel ? "已绑定" : "未绑定"}
+                  </span>
+                </button>
+              ))}
           </section>
 
           <section className="llm-config-section" aria-labelledby="llm-models-heading">
@@ -335,6 +381,15 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
                           <TestTube2 size={14} />{testing ? "测试中…" : "测试连接"}
                         </button>
                         <button type="button" onClick={() => setEditor(model)} disabled={testing}>编辑</button>
+                        <button
+                          className="model-delete-button"
+                          type="button"
+                          aria-label={`删除 ${model.model}`}
+                          onClick={() => setDeleteTarget(model)}
+                          disabled={testing}
+                        >
+                          <Trash2 size={14} aria-hidden="true" />删除
+                        </button>
                       </div>
                     </article>
                   );
@@ -363,6 +418,20 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
         />
       )}
 
+      {genericBinding && (
+        <GenericBindingEditor
+          capability={genericBinding}
+          adapterLabels={adapterLabels}
+          onClose={() => setGenericBinding(null)}
+          onBound={async (message) => {
+            setGenericBinding(null);
+            await load(false);
+            notify(message);
+          }}
+          onSessionExpired={onSessionExpired}
+        />
+      )}
+
       {editor && catalog && (
         <ModelEditor
           model={editor === "new" ? null : editor}
@@ -376,7 +445,115 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
           onSessionExpired={onSessionExpired}
         />
       )}
+
+      {deleteTarget && (
+        <ModelDeleteDialog
+          model={deleteTarget}
+          adapterLabel={adapterLabels.get(deleteTarget.adapter) ?? deleteTarget.adapter}
+          onClose={() => setDeleteTarget(null)}
+          onDeleted={async () => {
+            const deleted = deleteTarget;
+            setDeleteTarget(null);
+            await load(false);
+            notify(`已删除 ${adapterLabels.get(deleted.adapter) ?? deleted.adapter} / ${deleted.model}`);
+          }}
+          onSessionExpired={onSessionExpired}
+        />
+      )}
     </>
+  );
+}
+
+function ModelDeleteDialog({
+  model,
+  adapterLabel,
+  onClose,
+  onDeleted,
+  onSessionExpired,
+}: {
+  model: LlmModelConfig;
+  adapterLabel: string;
+  onClose: () => void;
+  onDeleted: () => Promise<void>;
+  onSessionExpired: () => void;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState("");
+  const dialogRef = useRef<HTMLElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const titleId = `delete-model-${model.id}-title`;
+
+  useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    cancelRef.current?.focus();
+    return () => previousFocus?.focus();
+  }, []);
+
+  const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key === "Escape" && !deleting) {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const buttons = Array.from(
+      dialogRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [],
+    );
+    if (buttons.length === 0) return;
+    const first = buttons[0];
+    const last = buttons[buttons.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  const remove = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    setError("");
+    try {
+      await api.deleteLlmModel(model.id);
+      await onDeleted();
+    } catch (caught) {
+      setError(errorMessage(caught, "删除模型失败，请稍后重试。", onSessionExpired));
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div
+      className="plugin-admin-dialog-backdrop"
+      onMouseDown={(event) => {
+        if (!deleting && event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        ref={dialogRef}
+        className="plugin-admin-dialog model-delete-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onKeyDown={handleDialogKeyDown}
+      >
+        <h2 id={titleId}>删除模型配置？</h2>
+        <p>
+          将删除 <strong>{adapterLabel} / {model.model}</strong>、加密凭据和验证证据。此操作不可恢复；历史调用日志会保留模型快照，已被系统能力绑定的配置不会被删除。
+        </p>
+        {error && <p className="llm-inline-error" role="alert"><CircleAlert size={15} />{error}</p>}
+        <div>
+          <button ref={cancelRef} className="admin-secondary-button" type="button" disabled={deleting} onClick={onClose}>取消</button>
+          <button className="admin-danger-button" type="button" disabled={deleting} onClick={() => void remove()}>
+            <Trash2 size={15} aria-hidden="true" />{deleting ? "正在删除…" : "确认删除"}
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -503,6 +680,93 @@ function ChatBindingEditor({
               </button>
             </footer>
           )}
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function GenericBindingEditor({
+  capability,
+  adapterLabels,
+  onClose,
+  onBound,
+  onSessionExpired,
+}: {
+  capability: ModelCapabilityRecord;
+  adapterLabels: Map<string, string>;
+  onClose: () => void;
+  onBound: (message: string) => Promise<void>;
+  onSessionExpired: () => void;
+}) {
+  const [selectedId, setSelectedId] = useState(capability.activeModelId ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const selectedModel = capability.models.find((model) => model.id === selectedId);
+  const unchanged = selectedId === capability.activeModelId;
+  const label: Record<Exclude<ModelCapability, "chat">, string> = {
+    resume_structuring: "简历结构化",
+    pi_agent: "Pi Agent",
+  };
+  const capabilityLabel = label[capability.capability as Exclude<ModelCapability, "chat">];
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!selectedModel || unchanged || saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      const response = await api.bindModelCapability(
+        capability.capability as Exclude<ModelCapability, "chat">,
+        selectedModel.id,
+        selectedModel.configVersion,
+        capability.bindingVersion,
+      );
+      await onBound(
+        `${capabilityLabel} 已绑定 ${adapterLabels.get(selectedModel.adapter) ?? selectedModel.adapter} / ${selectedModel.model} · ${response.callId}`,
+      );
+    } catch (caught) {
+      setError(errorMessage(caught, "测试并绑定失败，原绑定保持不变。", onSessionExpired));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="llm-modal-layer"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section className="llm-modal" role="dialog" aria-modal="true" aria-labelledby="generic-binding-title">
+        <header>
+          <div><span className="page-eyebrow">能力配置</span><h2 id="generic-binding-title">设置 {capabilityLabel}</h2></div>
+          <button type="button" onClick={onClose} aria-label={`关闭${capabilityLabel}设置`}><X size={18} /></button>
+        </header>
+        <form className="drawer-form" onSubmit={submit}>
+          <div className="llm-current-binding">
+            <small>当前绑定</small>
+            <strong>{capability.activeModel ? `${adapterLabels.get(capability.activeModel.adapter) ?? capability.activeModel.adapter} / ${capability.activeModel.model}` : "尚未绑定模型"}</strong>
+          </div>
+          {capability.models.length === 0 ? (
+            <div className="llm-binding-empty"><Bot size={22} /><strong>没有可绑定的模型</strong><p>先接入一个模型，再回到这里完成绑定。</p></div>
+          ) : (
+            <fieldset className="llm-binding-list">
+              <legend>选择 {capabilityLabel} 使用的模型</legend>
+              {capability.models.map((model) => (
+                <label className={`llm-binding-option ${selectedId === model.id ? "selected" : ""}`} key={model.id}>
+                  <input type="radio" name={`${capability.capability}-model-binding`} value={model.id} checked={selectedId === model.id} onChange={() => setSelectedId(model.id)} />
+                  <span><strong>{adapterLabels.get(model.adapter) ?? model.adapter} / {model.model}</strong><small>{model.keyConfigured ? "API Key 已配置" : "API Key 未配置"}{model.lastTest ? ` · 最近测试${model.lastTest.status === "succeeded" ? "成功" : "失败"}` : " · 尚未测试"}</small></span>
+                  {capability.activeModelId === model.id && <em>当前绑定</em>}
+                </label>
+              ))}
+            </fieldset>
+          )}
+          {capability.models.length > 0 && <div className="drawer-callout"><ShieldCheck size={18} /><p>绑定前会按该能力执行连接验证；失败时原绑定保持不变。</p></div>}
+          {error && <p className="llm-inline-error" role="alert"><CircleAlert size={15} />{error}</p>}
+          {capability.models.length > 0 && <footer><button type="button" onClick={onClose}>取消</button><button type="submit" disabled={!selectedModel || unchanged || saving}>{saving ? "测试并绑定中…" : unchanged ? "当前已绑定" : "测试并绑定"}</button></footer>}
         </form>
       </section>
     </div>
