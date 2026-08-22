@@ -5,8 +5,11 @@ contracts:
     description: Development 本地脚本向四个进程加载同一配置并使用回环服务地址
     assertions:
       - path: package.json
-        pattern: '"dev:development": "bash scripts/dev/start-development\.sh"'
-        message: 根级 Development 启动入口必须使用统一脚本
+        pattern: '"dev:development": "node scripts/dev/run_with_env_profile\.mjs \.env\.development"[\s\S]*"dev:development-services": "bash scripts/dev/start-development\.sh"'
+        message: 根级 Development 启动入口必须先加载共享配置，再进入 Agent 感知的统一脚本
+      - path: scripts/dev/run_with_env_profile.mjs
+        pattern: 'serviceScriptForProfile[\s\S]*\.env\.development[\s\S]*dev:development-services'
+        message: Development profile 必须路由到 Agent 感知的四服务启动器
       - path: scripts/dev/start-development.sh
         pattern: 'BACKEND_PORT="\$\{backend_port\}"[\s\S]*PI_SERVICE_BASE_URL="http://127\.0\.0\.1:\$\{pi_port\}"[\s\S]*LINKCV_BASE_URL="http://127\.0\.0\.1:\$\{backend_port\}"[\s\S]*--env-file=\$\{base_env\}'
         message: 启动脚本必须加载 Development 配置并统一本地跨服务地址
@@ -194,6 +197,9 @@ contracts:
       - path: apps/backend/src/linkcv/core/config.py
         pattern: 'invalid\.append\("WECHAT_APPID"\)[\s\S]*invalid\.append\("WECHAT_SECRET"\)'
         message: Production 必须在启动时拒绝缺少微信凭据的配置
+      - path: deploy/scripts/build-development-on-primary.sh
+        pattern: 'required_secret_keys=\([\s\S]*WECHAT_APPID[\s\S]*WECHAT_SECRET[\s\S]*Missing required Development secret setting[\s\S]*Settings\(\)\.wechat_enabled[\s\S]*docker network inspect'
+        message: Dev 发布必须在迁移与容器替换前拒绝缺失、空值或占位的微信凭据
       - path: apps/miniprogram/config/runtime.js
         pattern: 'developmentApiBaseUrl: "http://127\.0\.0\.1:8000"[\s\S]*productionApiBaseUrl: "https://linkresume\.cn"'
         message: 小程序必须把开发默认地址与 linkresume.cn 生产地址分开
@@ -316,11 +322,23 @@ contracts:
         message: Production MinIO 必须使用 Cloud 容器 DNS
 
   - id: environment-layering
-    description: FastAPI、Dev Compose 与 Production Compose 都支持基础配置加私密覆盖
+    description: 本地 worktree、FastAPI、Dev Compose 与 Production Compose 都支持基础配置加私密覆盖
     assertions:
       - path: apps/backend/src/linkcv/core/config.py
-        pattern: 'local = Path\(f"\{base\}\.local"\)'
-        message: Settings 必须加载同名 local 覆盖文件
+        pattern: 'configured_secret = os\.environ\.get\("LINKCV_SECRET_ENV_FILE"\)[\s\S]*_default_secret_env_file\(base\)'
+        message: Settings 必须支持显式私密文件并回退 worktree 共享覆盖
+      - path: package.json
+        pattern: '"dev:development": "node scripts/dev/run_with_env_profile\.mjs \.env\.development"'
+        message: 本地 Development 启动必须经过共享私密配置加载器
+      - path: .ai/prompts/project.md
+        pattern: '`npm run dev` 只是 `dev:local` 的兼容别名[\s\S]*`APP_ENV` 控制应用功能，不负责选择 env 文件'
+        message: 项目入口必须要求显式选择本地或共享 Dev profile，不能用 APP_ENV 推断配置文件
+      - path: .ai/skills/incident-triage/SKILL.md
+        pattern: '启动器实际打印的“基础配置”和“共享私密覆盖”路径[\s\S]*`APP_ENV` 只控制应用功能，不选择 env profile'
+        message: 故障分诊必须核实真实 env 文件路径，不能用 APP_ENV 推断配置文件
+      - path: scripts/dev/run_with_env_profile.mjs
+        pattern: 'resolveMainWorktreeRoot[\s\S]*LINKCV_SECRET_ENV_FILE[\s\S]*dev:services'
+        message: 本地启动器必须从 Git 主工作目录加载私密覆盖并启动全部服务
       - path: deploy/docker-compose.production.yml
         pattern: 'LINKCV_ENV_FILE:-\.\./\.env\.production'
         message: Production Compose 必须默认加载基础配置

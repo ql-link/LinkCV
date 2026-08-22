@@ -18,8 +18,34 @@ def settings_env_files() -> tuple[Path, ...]:
     base = Path(os.environ.get("LINKCV_ENV_FILE", REPO_ROOT / ".env")).expanduser()
     if not base.is_absolute():
         base = (REPO_ROOT / base).resolve()
-    local = Path(f"{base}.local")
+    configured_secret = os.environ.get("LINKCV_SECRET_ENV_FILE")
+    if configured_secret:
+        local = Path(configured_secret).expanduser()
+        if not local.is_absolute():
+            local = (REPO_ROOT / local).resolve()
+    else:
+        local = _default_secret_env_file(base)
     return (base, local) if local.is_file() else (base,)
+
+
+def _default_secret_env_file(base: Path) -> Path:
+    git_entry = REPO_ROOT / ".git"
+    if not git_entry.is_file() or base.parent != REPO_ROOT:
+        return Path(f"{base}.local")
+
+    prefix = "gitdir:"
+    entry = git_entry.read_text(encoding="utf-8").strip()
+    if not entry.startswith(prefix):
+        return Path(f"{base}.local")
+    git_dir = Path(entry.removeprefix(prefix).strip()).expanduser()
+    if not git_dir.is_absolute():
+        git_dir = (REPO_ROOT / git_dir).resolve()
+    try:
+        main_root = git_dir.parents[2]
+    except IndexError:
+        return Path(f"{base}.local")
+    shared = main_root / f"{base.name}.local"
+    return shared if shared.is_file() else Path(f"{base}.local")
 
 
 def _is_placeholder(value: str | None) -> bool:

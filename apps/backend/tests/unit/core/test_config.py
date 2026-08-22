@@ -4,6 +4,7 @@ from cryptography.fernet import Fernet
 import pytest
 from pydantic import ValidationError
 
+from linkcv.core import config
 from linkcv.core.config import Settings, settings_env_files
 
 
@@ -37,6 +38,47 @@ def test_process_environment_has_highest_priority(
     monkeypatch.setenv("MYSQL_USER", "process")
 
     assert Settings(_env_file=settings_env_files()).mysql_user == "process"
+
+
+def test_linked_worktree_defaults_to_main_worktree_secret_overlay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    main_root = tmp_path / "main"
+    worktree = tmp_path / "worktree"
+    git_dir = main_root / ".git" / "worktrees" / "test"
+    git_dir.mkdir(parents=True)
+    worktree.mkdir()
+    (worktree / ".git").write_text(f"gitdir: {git_dir}\n", encoding="utf-8")
+    base = worktree / ".env.development"
+    shared = main_root / ".env.development.local"
+    base.write_text("MYSQL_USER=base\n", encoding="utf-8")
+    shared.write_text("MYSQL_USER=shared-secret\n", encoding="utf-8")
+    monkeypatch.setattr(config, "REPO_ROOT", worktree)
+    monkeypatch.setenv("LINKCV_ENV_FILE", str(base))
+    monkeypatch.delenv("LINKCV_SECRET_ENV_FILE", raising=False)
+    monkeypatch.delenv("MYSQL_USER", raising=False)
+
+    files = settings_env_files()
+
+    assert files == (base, shared)
+    assert Settings(_env_file=files).mysql_user == "shared-secret"
+
+
+def test_explicit_secret_env_file_has_priority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base = tmp_path / ".env.development"
+    secret = tmp_path / "explicit.local"
+    base.write_text("MYSQL_USER=base\n", encoding="utf-8")
+    secret.write_text("MYSQL_USER=explicit\n", encoding="utf-8")
+    monkeypatch.setenv("LINKCV_ENV_FILE", str(base))
+    monkeypatch.setenv("LINKCV_SECRET_ENV_FILE", str(secret))
+    monkeypatch.delenv("MYSQL_USER", raising=False)
+
+    files = settings_env_files()
+
+    assert files == (base, secret)
+    assert Settings(_env_file=files).mysql_user == "explicit"
 
 
 def test_mysql_and_redis_urls_encode_credentials() -> None:

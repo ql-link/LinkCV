@@ -75,6 +75,29 @@ if [[ "${secret_mode}" != "600" ]]; then
   echo "Development secret env file must use mode 600, got ${secret_mode}" >&2
   exit 11
 fi
+
+required_secret_keys=(
+  WECHAT_APPID
+  WECHAT_SECRET
+)
+for required_key in "${required_secret_keys[@]}"; do
+  if ! grep -Eq "^${required_key}=.+$" "${secret_env}"; then
+    echo "Missing required Development secret setting: ${required_key}" >&2
+    exit 12
+  fi
+done
+
+docker run --rm \
+  --env-file "${base_env}" \
+  --env-file "${secret_env}" \
+  -e APP_ENV=development \
+  "${image}:${tag}" \
+  python -c '
+from linkcv.core.config import Settings
+
+if not Settings().wechat_enabled:
+    raise SystemExit("Development WeChat settings are missing or unsafe")
+'
 docker network inspect "${docker_network}" >/dev/null
 
 docker run --rm \

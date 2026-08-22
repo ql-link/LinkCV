@@ -21,10 +21,10 @@ Dev Jenkins Job 使用 `deploy/jenkins/Jenkinsfile.development`。Jenkins 将当
 - 容器：`linkcv-dev`、`linkcv-worker-dev`、`linkcv-pi-dev`、`linkcv-dev-promtail`
 - 网络：外部网络 `tolink-dev-net`
 - 宿主机端口：`18002`
-- 配置：`.env.development` + 权限为 `600` 的 `.env.development.local`；后者提供部署实际 `PLUGIN_RELEASE_ORIGIN`
+- 配置：`.env.development` + 权限为 `600` 的 `.env.development.local`；后者必须提供非空的 `WECHAT_APPID`、`WECHAT_SECRET` 和部署实际 `PLUGIN_RELEASE_ORIGIN`
 - 迁移门禁：`APP_ENV=development`、MySQL `100.86.10.52:13306/linkcv`
 
-Dev Jenkins 节点需预置 `/var/jenkins_home/.ssh/primary_dev`，并能以 `root` 连接 Primary。Primary 需已有 Docker、Docker Compose、`tolink-dev-net` 和私密 env 文件。LinkCV Dev 使用独立 `linkcv` MySQL 数据库、MinIO bucket 和 Redis DB 2；本地密钥文件只保存凭据，不覆盖仓库中的地址与资源名。任一前置条件、迁移或健康检查失败都会让 Job 失败。
+Dev Jenkins 节点需预置 `/var/jenkins_home/.ssh/primary_dev`，并能以 `root` 连接 Primary。Primary 需已有 Docker、Docker Compose、`tolink-dev-net` 和私密 env 文件。发布脚本在迁移与容器替换前检查私密文件权限，并通过 FastAPI `Settings` 拒绝缺失、空值或占位的微信凭据，避免 Jenkins 成功但扫码登录不可用。LinkCV Dev 使用独立 `linkcv` MySQL 数据库、MinIO bucket 和 Redis DB 2；本地密钥文件只保存凭据，不覆盖仓库中的地址与资源名。任一前置条件、迁移或健康检查失败都会让 Job 失败。
 
 `linkcv-dev` 的 Generic Webhook Trigger 只接受 `refs/heads/dev`。token 通过 Jenkins Secret Text 凭据 `linkcv-dev-webhook-token` 注入，仓库不保存 token；GitHub 仓库 webhook 只订阅 push 事件。
 
