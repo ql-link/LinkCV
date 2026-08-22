@@ -11,7 +11,6 @@ import traceback
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import TracebackType
-from typing import Any
 from uuid import uuid4
 
 from linkcv.core.config import Settings
@@ -39,6 +38,7 @@ ALLOWED_FIELDS = {
     "dependency",
     "duration_ms",
     "error_code",
+    "failure_stage",
     "http_method",
     "http_route",
     "http_status",
@@ -47,14 +47,20 @@ ALLOWED_FIELDS = {
     "result",
     "source",
     "source_format",
+    "stage",
     "summary",
     "target_id",
     "target_type",
     "task_id",
+    "attempt",
     "actor_type",
     "exception_type",
     "exception_stack",
     "word_meta",
+    "validation_model",
+    "validation_paths",
+    "validation_types",
+    "warning_count",
 }
 
 
@@ -173,7 +179,7 @@ class StructuredLogEmitter:
         for key, value in fields.items():
             if key not in ALLOWED_FIELDS or value is None:
                 continue
-            if key in {"duration_ms", "http_status"}:
+            if key in {"attempt", "duration_ms", "http_status", "warning_count"}:
                 event[key] = max(0, int(value))
             elif key == "actor_user_id":
                 candidate = str(value)

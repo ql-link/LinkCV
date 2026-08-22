@@ -1,4 +1,4 @@
-import type { JSONContent } from "@tiptap/core";
+import { posToDOMRect, type Editor, type JSONContent } from "@tiptap/core";
 import { BubbleMenu, EditorContent, useEditor } from "@tiptap/react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
@@ -8,13 +8,16 @@ import {
   History,
   Home,
   LoaderCircle,
+  Minus,
   Pencil,
+  Plus,
   Save,
   SlidersHorizontal,
   Sparkles,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { ApiRequestError } from "../../api/client";
 import {
   Button,
@@ -29,26 +32,120 @@ import {
   Input,
   Label,
   PageLoading,
-  TogglePill,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
 } from "@/components/ui";
-import { exportResumePdf } from "../preview/exportPdf";
 import { defaultSettings, resumeSerifFontStack, useResumeStore } from "../../store/resumeStore";
 import { resumeEditorExtensions } from "./editorExtensions";
 import { WorkbenchToolbar } from "./WorkbenchToolbar";
-import { handleWheelZoom } from "./workbenchZoom";
+import { createSelectionBubbleAnchor, shouldShowWorkbenchBubbleMenu } from "./selectionBubbleAnchor";
+import { getTwoPageFitScale, getWheelZoomScale, handleWheelZoom } from "./workbenchZoom";
 import { navigateTo } from "../../routing";
+import { BlankLineMenuExtension, SlashCommandMenu, type CommandMenuState } from "./slashCommand";
+import { VersionDiffDialog } from "./VersionDiffDialog";
+import { PaginationExtension } from "./paginationPlugin";
+import {
+  capturePageViewportAnchor,
+  restorePageViewportAnchor,
+  type PageArrangement,
+  type PageViewportMetrics,
+} from "./pageArrangementTransition";
 
 type DrawerMode = "settings" | "history" | null;
 type ToastState = { label: string } | null;
+export type { PageArrangement } from "./pageArrangementTransition";
 
 const EMPTY_IMPORT_WARNINGS: string[] = [];
 const A4_WIDTH_IN_CSS_PIXELS = (210 / 25.4) * 96;
+const PAGE_ARRANGEMENT_STORAGE_KEY = "linkcv.workbench.page-arrangement";
+
+function currentSelectionRect(editor: Editor) {
+  const { ranges } = editor.state.selection;
+  const from = Math.min(...ranges.map((range) => range.$from.pos));
+  const to = Math.max(...ranges.map((range) => range.$to.pos));
+  return posToDOMRect(editor.view, from, to);
+}
+
+function StableWorkbenchBubbleMenu({ editor, children }: { editor: Editor; children: ReactNode }) {
+  const anchorRef = useRef<ReturnType<typeof createSelectionBubbleAnchor> | null>(null);
+  if (!anchorRef.current) anchorRef.current = createSelectionBubbleAnchor();
+  const anchor = anchorRef.current;
+
+  useEffect(() => {
+    const scrollArea = editor.view.dom.closest(".workbench-canvas");
+    const refresh = () => {
+      const { from, to, empty } = editor.state.selection;
+      if (empty) anchor.observe({ from, to }, () => currentSelectionRect(editor));
+      else anchor.refresh(() => currentSelectionRect(editor));
+    };
+    scrollArea?.addEventListener("scroll", refresh, { passive: true });
+    window.addEventListener("resize", refresh, { passive: true });
+    return () => {
+      scrollArea?.removeEventListener("scroll", refresh);
+      window.removeEventListener("resize", refresh);
+    };
+  }, [anchor, editor]);
+
+  return (
+    <BubbleMenu
+      editor={editor}
+      tippyOptions={{
+        duration: 150,
+        maxWidth: "none",
+        placement: "top-start",
+        getReferenceClientRect: () => anchor.getRect(() => currentSelectionRect(editor)),
+      }}
+      shouldShow={({ editor: current, view, from, to }) => {
+        const visible = shouldShowWorkbenchBubbleMenu({
+          editable: current.isEditable,
+          selectionEmpty: current.state.selection.empty,
+          resumeRowActive: current.isActive("resumeRow"),
+        });
+        anchor.observe(visible ? { from, to } : { from, to: from }, () => posToDOMRect(view, from, to));
+        return visible;
+      }}
+    >
+      {children}
+    </BubbleMenu>
+  );
+}
+
+function pageViewportMetrics(
+  scrollArea: HTMLElement,
+  paper: HTMLElement,
+  arrangement: PageArrangement,
+  scale: number,
+): PageViewportMetrics {
+  const scrollRect = scrollArea.getBoundingClientRect();
+  const paperRect = paper.getBoundingClientRect();
+  const configuredCount = Number.parseInt(getComputedStyle(paper).getPropertyValue("--resume-page-count"), 10);
+  const pageCount = Number.isFinite(configuredCount)
+    ? Math.max(1, configuredCount)
+    : paper.querySelectorAll(".workbench-page-break").length + 1;
+  return {
+    arrangement,
+    scale,
+    pageCount,
+    clientWidth: scrollArea.clientWidth,
+    clientHeight: scrollArea.clientHeight,
+    scrollLeft: scrollArea.scrollLeft,
+    scrollTop: scrollArea.scrollTop,
+    scrollWidth: scrollArea.scrollWidth,
+    scrollHeight: scrollArea.scrollHeight,
+    paperLeft: paperRect.left - scrollRect.left + scrollArea.scrollLeft,
+    paperTop: paperRect.top - scrollRect.top + scrollArea.scrollTop,
+  };
+}
 
 const fontOptions = [
   { label: "简历宋体", value: resumeSerifFontStack },
   { label: "霞鹜文楷", value: '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif' },
   { label: "系统黑体", value: '"PingFang SC", "Microsoft YaHei", Inter, system-ui, sans-serif' },
 ];
+
+const FONT_PREVIEW_TEXT = "张三的简历 Resume";
 
 const versionReasonLabels = {
   initial: "初始版本",
@@ -80,12 +177,10 @@ function versionTime(value: string) {
 }
 
 export function versionOperationErrorMessage(error: unknown, operation: "create" | "restore") {
-  if (!(error instanceof ApiRequestError) || error.message !== "RESUME_VERSION_LIMIT_REACHED") {
+  if (operation !== "create" || !(error instanceof ApiRequestError) || error.message !== "RESUME_VERSION_LIMIT_REACHED") {
     return null;
   }
-  return operation === "create"
-    ? "当前内容已保存，但版本数量已达上限。请删除一个旧版本后再保存新版本。"
-    : "版本空间不足，恢复操作没有执行。请删除一个旧版本后再重试。";
+  return "当前内容已保存，但版本数量已达上限。请删除一个旧版本后再保存新版本。";
 }
 
 export function versionRenameErrorMessage(error: unknown) {
@@ -244,16 +339,70 @@ function plainParagraphsFromHtml(html: string) {
 
 export function SmartOnePageAction({ active, onToggle, disabled }: { active: boolean; onToggle: () => void; disabled?: boolean }) {
   return (
-    <TogglePill
-      active={active}
-      className="workbench-smart-toggle"
+    <Button
+      aria-pressed={active}
+      className={`workbench-action workbench-smart-action${active ? " is-active" : ""}`}
       disabled={disabled}
-      icon={<Sparkles size={14} />}
+      icon={<Sparkles aria-hidden="true" size={16} />}
       onClick={onToggle}
+      size="sm"
       title="智能一页"
+      variant="secondary"
     >
       智能一页
-    </TogglePill>
+    </Button>
+  );
+}
+
+export function PageArrangementControl({
+  value,
+  onChange,
+  disabled,
+  disabledReason,
+}: {
+  value: PageArrangement;
+  onChange: (value: PageArrangement) => void;
+  disabled?: boolean;
+  disabledReason?: string;
+}) {
+  const nextValue: PageArrangement = value === "vertical" ? "horizontal" : "vertical";
+  const currentLabel = value === "vertical" ? "上下排列" : "左右排列";
+  const nextLabel = nextValue === "vertical" ? "上下排列" : "左右排列";
+  return (
+    <button
+      type="button"
+      aria-label={`当前${currentLabel}，切换为${nextLabel}`}
+      className="workbench-page-arrangement"
+      disabled={disabled}
+      onClick={() => onChange(nextValue)}
+      title={disabled ? disabledReason ?? "当前不可调整页面排列" : `切换为${nextLabel}`}
+    >
+      <PageArrangementIcon arrangement={value} />
+    </button>
+  );
+}
+
+function PageArrangementIcon({ arrangement }: { arrangement: PageArrangement }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className="workbench-page-arrangement-icon"
+      data-arrangement={arrangement}
+      fill="none"
+      viewBox="0 0 18 18"
+    >
+      {arrangement === "vertical" ? (
+        <>
+          <path d="M7 2.5H4v5h10v-5h-3" />
+          <path d="M7 15.5H4v-5h10v5h-3" />
+        </>
+      ) : (
+        <>
+          <path d="M2.5 7V4h5v10h-5v-3" />
+          <path d="M15.5 7V4h-5v10h5v-3" />
+        </>
+      )}
+    </svg>
   );
 }
 
@@ -305,6 +454,25 @@ export function SaveVersionAction({ pending, onSave }: { pending: boolean; onSav
   );
 }
 
+export function ExportPdfAction({ onExport, pending = false }: { onExport: () => void; pending?: boolean }) {
+  return (
+    <Button
+      aria-label={pending ? "正在导出 PDF" : "导出 PDF"}
+      className="workbench-action workbench-export-action"
+      disabled={pending}
+      icon={pending
+        ? <LoaderCircle aria-hidden="true" className="workbench-save-spinner" />
+        : <FileDown aria-hidden="true" />}
+      size="sm"
+      title={pending ? "正在导出 PDF" : "导出 PDF"}
+      variant="secondary"
+      onClick={onExport}
+    >
+      {pending ? "导出中…" : "导出 PDF"}
+    </Button>
+  );
+}
+
 export function ImportWarningBanner({ warnings, onDismiss }: { warnings: string[]; onDismiss: () => void }) {
   return (
     <div className="workbench-import-warning" role="status">
@@ -320,24 +488,70 @@ export function ImportWarningBanner({ warnings, onDismiss }: { warnings: string[
   );
 }
 
-function SettingsSlider({ label, unit, value, min, max, step, onChange, disabled }: { label: string; unit: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void; disabled?: boolean }) {
+export function steppedSettingValue(value: number, direction: -1 | 1, min: number, max: number, step: number) {
+  const precision = Math.max(0, step.toString().split(".")[1]?.length ?? 0);
+  return Math.min(max, Math.max(min, Number((value + direction * step).toFixed(precision))));
+}
+
+export function SettingsSlider({ label, unit, value, min, max, step, onChange, disabled }: { label: string; unit: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void; disabled?: boolean }) {
   return (
-    <label className="workbench-slider-row">
+    <div className="workbench-slider-row">
       <span className="workbench-slider-head">
         <span>{label}</span>
         <output>{value} {unit}</output>
       </span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        disabled={disabled}
-        aria-label={label}
-        onChange={(event) => onChange(Number(event.target.value))}
-      />
-    </label>
+      <div className="workbench-slider-control">
+        <button type="button" aria-label={`${label}减小`} disabled={disabled || value <= min} onClick={() => onChange(steppedSettingValue(value, -1, min, max, step))}><Minus aria-hidden="true" size={14} /></button>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          disabled={disabled}
+          aria-label={label}
+          onChange={(event) => onChange(Number(event.target.value))}
+        />
+        <button type="button" aria-label={`${label}增大`} disabled={disabled || value >= max} onClick={() => onChange(steppedSettingValue(value, 1, min, max, step))}><Plus aria-hidden="true" size={14} /></button>
+      </div>
+    </div>
+  );
+}
+
+export function FontPreviewSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  const labelId = useId();
+  const selectedFont = fontOptions.find((font) => font.value === value) ?? fontOptions[0];
+
+  return (
+    <div className="workbench-field">
+      <span id={labelId}>字体</span>
+      <Select value={selectedFont.value} onValueChange={onChange} disabled={disabled}>
+        <SelectTrigger className="workbench-font-select" aria-labelledby={labelId}>
+          <span className="workbench-font-current">
+            <strong>{selectedFont.label}</strong>
+            <span style={{ fontFamily: selectedFont.value }}>{FONT_PREVIEW_TEXT}</span>
+          </span>
+        </SelectTrigger>
+        <SelectContent className="workbench-font-select-content" data-ui-theme="light" position="popper">
+          {fontOptions.map((font) => (
+            <SelectItem className="workbench-font-option" key={font.label} value={font.value}>
+              <span className="workbench-font-option-copy">
+                <strong>{font.label}</strong>
+                <span style={{ fontFamily: font.value }}>{FONT_PREVIEW_TEXT}</span>
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 
@@ -348,6 +562,7 @@ export function ResumeWorkbench() {
   const title = useResumeStore((state) => state.title);
   const setTitle = useResumeStore((state) => state.setTitle);
   const editorContent = useResumeStore((state) => state.editorContent);
+  const markdown = useResumeStore((state) => state.markdown);
   const setEditorContent = useResumeStore((state) => state.setEditorContent);
   const settings = useResumeStore((state) => state.settings);
   const updateSettings = useResumeStore((state) => state.updateSettings);
@@ -373,15 +588,136 @@ export function ResumeWorkbench() {
     createdAt: string;
   } | null>(null);
   const [versionNameDialogOpen, setVersionNameDialogOpen] = useState(false);
+  const [pdfExportPending, setPdfExportPending] = useState(false);
   const [versionName, setVersionName] = useState("");
   const [versionNameError, setVersionNameError] = useState<string | null>(null);
   const [versionNameSubmitting, setVersionNameSubmitting] = useState(false);
   const [versionRenameSubmitting, setVersionRenameSubmitting] = useState<number | null>(null);
   const [versionRenameError, setVersionRenameError] = useState<{ versionNo: number; message: string } | null>(null);
+  const [pendingVersionRestore, setPendingVersionRestore] = useState<{ version_no: number; name: string; created_at: string } | null>(null);
+  const [commandMenu, setCommandMenu] = useState<CommandMenuState | null>(null);
+  const [workspaceWidth, setWorkspaceWidth] = useState(() => window.innerWidth);
+  const [horizontalScaleOverride, setHorizontalScaleOverride] = useState<number | null>(null);
+  const [pageArrangement, setPageArrangement] = useState<PageArrangement>(() => {
+    try {
+      return window.localStorage.getItem(PAGE_ARRANGEMENT_STORAGE_KEY) === "horizontal" ? "horizontal" : "vertical";
+    } catch {
+      return "vertical";
+    }
+  });
   const paperScrollRef = useRef<HTMLDivElement>(null);
+  const arrangementAnimationRef = useRef<Animation | null>(null);
+  const lastPageAnchorRef = useRef<ReturnType<typeof capturePageViewportAnchor> | null>(null);
+  const arrangementLayoutRunRef = useRef(0);
+
+  const changePageArrangement = (value: PageArrangement) => {
+    if (value === pageArrangement) return;
+    const layoutRun = ++arrangementLayoutRunRef.current;
+    const scrollArea = paperScrollRef.current;
+    const paper = scrollArea?.querySelector<HTMLElement>(".resume-paper:not(.pagination-measure-paper)") ?? null;
+    const anchor = scrollArea && paper
+      ? capturePageViewportAnchor(
+        pageViewportMetrics(scrollArea, paper, pageArrangement, renderedPreviewScale),
+        lastPageAnchorRef.current?.pageIndex,
+      )
+      : null;
+    if (anchor) lastPageAnchorRef.current = anchor;
+    const nextScale = value === "horizontal" ? horizontalAutoFitScale : previewScale * responsiveFitScale;
+    const applyArrangement = () => new Promise<void>((resolve) => {
+      flushSync(() => {
+        if (value === "horizontal") setHorizontalScaleOverride(null);
+        setPageArrangement(value);
+      });
+      try {
+        window.localStorage.setItem(PAGE_ARRANGEMENT_STORAGE_KEY, value);
+      } catch {
+        // The view preference remains active for this session when storage is unavailable.
+      }
+      requestAnimationFrame(() => {
+        const expectsHorizontal = value === "horizontal";
+        if (
+          arrangementLayoutRunRef.current === layoutRun
+          && anchor
+          && scrollArea
+          && scrollArea.classList.contains("pages-horizontal") === expectsHorizontal
+        ) {
+          const nextPaper = scrollArea.querySelector<HTMLElement>(".resume-paper:not(.pagination-measure-paper)");
+          if (nextPaper) {
+            const nextPosition = restorePageViewportAnchor(
+              pageViewportMetrics(scrollArea, nextPaper, value, nextScale),
+              anchor,
+            );
+            scrollArea.scrollTo(nextPosition);
+          }
+        }
+        resolve();
+      });
+    });
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    arrangementAnimationRef.current?.cancel();
+    const canAnimate = !reduceMotion && paper && typeof paper.animate === "function";
+    if (paper) {
+      paper.dataset.arrangementTransition = String(layoutRun);
+    }
+    const exitOffset = value === "horizontal" ? { x: -28, y: 0 } : { x: 0, y: -24 };
+    const enterOffset = value === "horizontal" ? { x: 20, y: 0 } : { x: 0, y: 18 };
+    const transitionAnimation = canAnimate
+      ? paper.animate([
+        { offset: 0, opacity: 1, transform: "none", easing: "cubic-bezier(0.4, 0, 1, 1)" },
+        {
+          offset: 0.42,
+          opacity: 0.66,
+          transform: `translate3d(${exitOffset.x}px, ${exitOffset.y}px, 0) scale(0.985)`,
+          easing: "linear",
+        },
+        {
+          offset: 0.5,
+          opacity: 0.66,
+          transform: `translate3d(${enterOffset.x}px, ${enterOffset.y}px, 0) scale(0.985)`,
+          easing: "cubic-bezier(0, 0, 0.2, 1)",
+        },
+        { offset: 1, opacity: 1, transform: "none" },
+      ], {
+        duration: 360,
+      })
+      : null;
+    arrangementAnimationRef.current = transitionAnimation;
+
+    const switchAtMotionMidpoint = transitionAnimation
+      ? new Promise<void>((resolve) => window.setTimeout(resolve, 160))
+      : Promise.resolve();
+    void switchAtMotionMidpoint.then(() => {
+      if (arrangementLayoutRunRef.current !== layoutRun) return;
+      return applyArrangement();
+    });
+    const transitionFinished = transitionAnimation?.finished.catch(() => undefined)
+      ?? new Promise<void>((resolve) => window.setTimeout(resolve, 120));
+    void transitionFinished.finally(() => {
+      if (arrangementLayoutRunRef.current !== layoutRun) return;
+      if (paper?.dataset.arrangementTransition === String(layoutRun)) {
+        delete paper.dataset.arrangementTransition;
+        paper.dispatchEvent(new Event("resume-arrangement-transition-end"));
+      }
+      if (arrangementAnimationRef.current === transitionAnimation) arrangementAnimationRef.current = null;
+    });
+  };
+
+  const responsiveFitScale = viewportWidth <= 720
+    ? Math.min(1, Math.max(0.36, (viewportWidth - 32) / A4_WIDTH_IN_CSS_PIXELS))
+    : 1;
+  const horizontalPadding = viewportWidth <= 720 ? 32 : viewportWidth <= 980 ? 48 : 96;
+  const horizontalAutoFitScale = getTwoPageFitScale(workspaceWidth, horizontalPadding);
+  const horizontalMode = pageArrangement === "horizontal" && !settings.smartOnePage;
+  const renderedPreviewScale = horizontalMode
+    ? horizontalScaleOverride ?? horizontalAutoFitScale
+    : previewScale * responsiveFitScale;
 
   const editor = useEditor({
-    extensions: resumeEditorExtensions,
+    extensions: [
+      ...resumeEditorExtensions,
+      PaginationExtension,
+      BlankLineMenuExtension.configure({ onOpen: setCommandMenu }),
+    ],
     content: editorContent,
     editorProps: {
       attributes: { class: "resume-content", spellcheck: "false" },
@@ -391,7 +727,29 @@ export function ResumeWorkbench() {
       current.commands.setTextSelection(Math.max(1, current.state.doc.content.size - 1));
       current.commands.blur();
     },
-    onUpdate: ({ editor: current }) => setEditorContent(current.getJSON()),
+    onUpdate: ({ editor: current }) => {
+      setEditorContent(current.getJSON());
+      const { from, $from } = current.state.selection;
+      if (!current.state.selection.empty) {
+        setCommandMenu(null);
+        return;
+      }
+      const line = current.state.doc.textBetween($from.start(), from, "\n", "\ufffc");
+      const match = line.match(/(?:^|\s)\/([^\s/]*)$/u);
+      if (!match) {
+        setCommandMenu((menu) => menu?.replaceRange ? null : menu);
+        return;
+      }
+      const query = match[1] ?? "";
+      const slashFrom = from - query.length - 1;
+      const coordinates = current.view.coordsAtPos(from);
+      setCommandMenu({
+        x: Math.max(12, Math.min(coordinates.left, window.innerWidth - 312)),
+        y: Math.max(12, Math.min(coordinates.bottom + 6, window.innerHeight - 432)),
+        query,
+        replaceRange: { from: slashFrom, to: from },
+      });
+    },
   }, [activeResumeId]);
 
   useEffect(() => {
@@ -423,17 +781,42 @@ export function ResumeWorkbench() {
     if (!scrollArea) return;
 
     const handleWheel = (event: WheelEvent) => {
+      if (horizontalMode) {
+        const nextScale = getWheelZoomScale(renderedPreviewScale, event, { minScale: 0.1 });
+        if (nextScale === null) return;
+        event.preventDefault();
+        setHorizontalScaleOverride(nextScale);
+        return;
+      }
       handleWheelZoom(previewScale, event, setPreviewScale);
     };
 
     scrollArea.addEventListener("wheel", handleWheel, { passive: false });
     return () => scrollArea.removeEventListener("wheel", handleWheel);
-  }, [previewScale, setPreviewScale]);
+  }, [horizontalMode, previewScale, renderedPreviewScale, setPreviewScale]);
+
+  useEffect(() => {
+    const scrollArea = paperScrollRef.current;
+    if (!scrollArea || typeof ResizeObserver === "undefined") return;
+    const updateWorkspaceWidth = () => {
+      setWorkspaceWidth(scrollArea.clientWidth);
+      if (pageArrangement === "horizontal") setHorizontalScaleOverride(null);
+    };
+    const observer = new ResizeObserver(updateWorkspaceWidth);
+    observer.observe(scrollArea);
+    updateWorkspaceWidth();
+    return () => observer.disconnect();
+  }, [pageArrangement]);
 
   useEffect(() => {
     const updateViewportWidth = () => setViewportWidth(window.innerWidth);
     window.addEventListener("resize", updateViewportWidth);
     return () => window.removeEventListener("resize", updateViewportWidth);
+  }, []);
+
+  useEffect(() => () => {
+    arrangementLayoutRunRef.current += 1;
+    arrangementAnimationRef.current?.cancel();
   }, []);
 
   useEffect(() => {
@@ -522,17 +905,17 @@ export function ResumeWorkbench() {
   };
 
   const restoreVersion = async (versionNo: number, createdAt: string) => {
-    if (!editor) return;
+    if (!editor) return false;
     setWorkbenchEditorEditable(editor, false);
     try {
       await restoreStoredVersion(versionNo);
       const restored = useResumeStore.getState().editorContent;
       setRestoredEditorContent(editor, restored);
       setToast({ label: `已恢复 ${versionTime(createdAt)} 的版本` });
-    } catch (error) {
-      const limitMessage = versionOperationErrorMessage(error, "restore");
-      if (limitMessage) setDrawerMode("history");
-      setToast({ label: limitMessage ?? "版本恢复失败，请稍后重试" });
+      return true;
+    } catch {
+      setToast({ label: "版本恢复失败，请稍后重试" });
+      return false;
     } finally {
       setWorkbenchEditorEditable(editor, true);
     }
@@ -561,10 +944,6 @@ export function ResumeWorkbench() {
     navigateTo("/resumes");
   };
 
-  const responsiveFitScale = viewportWidth <= 720
-    ? Math.min(1, Math.max(0.36, (viewportWidth - 32) / A4_WIDTH_IN_CSS_PIXELS))
-    : 1;
-  const renderedPreviewScale = previewScale * responsiveFitScale;
   const zoomPercent = Math.round(renderedPreviewScale * 100);
   const importWarnings = activeResumeId
     ? importWarningsByResumeId[activeResumeId] ?? EMPTY_IMPORT_WARNINGS
@@ -576,20 +955,44 @@ export function ResumeWorkbench() {
         <header className="workbench-header">
           <div className="workbench-header-left">
             <IconButton className="workbench-icon-action workbench-back-action" label="返回全部简历" onClick={() => void leaveSafely()}><Home size={16} /></IconButton>
-            <div className="workbench-document-identity">
-              <input autoComplete="off" className="workbench-title" name="resume-title" value={title} onChange={(event) => setTitle(event.target.value)} aria-label="简历标题" disabled={versionOperationPending} />
-              <span>简历编辑</span>
-            </div>
+            <span className="workbench-context-label">简历编辑</span>
           </div>
-          <WorkbenchSaveStatus dirty={dirty} saveStatus={saveStatus} />
+          <div className="workbench-header-center">
+            <input autoComplete="off" className="workbench-title" name="resume-title" value={title} onChange={(event) => setTitle(event.target.value)} aria-label="简历标题" disabled={versionOperationPending} />
+            <WorkbenchSaveStatus dirty={dirty} saveStatus={saveStatus} />
+          </div>
           <div className="workbench-header-actions">
             <output className="workbench-zoom" aria-label="简历缩放比例">{zoomPercent}%</output>
             <div className="workbench-header-tool-group" role="group" aria-label="编辑面板">
+              <PageArrangementControl
+                value={pageArrangement}
+                onChange={changePageArrangement}
+                disabled={settings.smartOnePage || versionOperationPending}
+                disabledReason={settings.smartOnePage ? "关闭智能一页后可调整页面排列" : "版本操作完成后可调整页面排列"}
+              />
               <IconButton aria-controls="workbench-side-panel" aria-expanded={drawerMode === "settings"} aria-pressed={drawerMode === "settings"} className={`workbench-icon-action${drawerMode === "settings" ? " is-active" : ""}`} label="页面设置" onClick={() => setDrawerMode((mode) => mode === "settings" ? null : "settings")}><SlidersHorizontal size={16} /></IconButton>
               <IconButton aria-controls="workbench-side-panel" aria-expanded={drawerMode === "history"} aria-pressed={drawerMode === "history"} className={`workbench-icon-action${drawerMode === "history" ? " is-active" : ""}`} label="版本记录" onClick={() => setDrawerMode((mode) => mode === "history" ? null : "history")}><History size={16} /></IconButton>
             </div>
             <div className="workbench-output-actions" role="group" aria-label="保存与导出">
-              <Button aria-label="导出 PDF" className="workbench-action workbench-export-action" icon={<FileDown aria-hidden="true" />} size="sm" title="导出 PDF" variant="secondary" onClick={() => activeResumeId && void exportResumePdf(settings.smartOnePage, title, activeResumeId)}>导出 PDF</Button>
+              <SmartOnePageAction
+                active={settings.smartOnePage}
+                onToggle={() => updateSettings({ smartOnePage: !settings.smartOnePage })}
+                disabled={versionOperationPending}
+              />
+              <ExportPdfAction
+                pending={pdfExportPending}
+                onExport={() => {
+                  if (!editor || pdfExportPending) return;
+                  const content = editor.getJSON();
+                  setPdfExportPending(true);
+                  setToast({ label: "正在生成 PDF…" });
+                  void import("../preview/exportTextPdf")
+                    .then(({ exportResumeTextPdf }) => exportResumeTextPdf(content, settings, title))
+                    .then(() => setToast({ label: "PDF 已下载" }))
+                    .catch(() => setToast({ label: "PDF 生成失败，请检查简历中的图片后重试" }))
+                    .finally(() => setPdfExportPending(false));
+                }}
+              />
               <SaveVersionAction pending={saveStatus === "saving" || versionOperationPending || versionNameSubmitting} onSave={openVersionNameDialog} />
             </div>
           </div>
@@ -603,25 +1006,28 @@ export function ResumeWorkbench() {
         )}
 
         {activeResumeId && editor && (
-          <BubbleMenu
+          <StableWorkbenchBubbleMenu editor={editor}>
+            <WorkbenchToolbar editor={editor} resumeId={activeResumeId} defaultFontSize={settings.fontSize} onNotice={(label) => setToast({ label })} />
+          </StableWorkbenchBubbleMenu>
+        )}
+
+        {activeResumeId && editor && commandMenu && (
+          <SlashCommandMenu
             editor={editor}
-            tippyOptions={{ duration: 150, maxWidth: "none", placement: "top-start" }}
-            shouldShow={({ editor: current, state }) => {
-              const { selection } = state;
-              return current.isEditable && !selection.empty;
-            }}
-          >
-            <WorkbenchToolbar editor={editor} resumeId={activeResumeId} onNotice={(label) => setToast({ label })} />
-          </BubbleMenu>
+            resumeId={activeResumeId}
+            state={commandMenu}
+            onClose={() => setCommandMenu(null)}
+            onNotice={(label) => setToast({ label })}
+          />
         )}
 
         <main className="workbench-canvas">
           <div
             ref={paperScrollRef}
-            className="workbench-paper-scroll"
+            className={`workbench-paper-scroll${pageArrangement === "horizontal" && !settings.smartOnePage ? " pages-horizontal" : ""}`}
             style={{ "--workbench-preview-scale": renderedPreviewScale } as React.CSSProperties}
           >
-            <article className={`resume-paper theme-${settings.theme}${settings.smartOnePage ? " smart-one-page" : ""}`} style={resumeStyle} aria-label="可编辑简历页面">
+            <article className={`resume-paper theme-${settings.theme}${settings.smartOnePage ? " smart-one-page" : ""}${pageArrangement === "horizontal" && !settings.smartOnePage ? " pages-horizontal" : ""}`} style={resumeStyle} aria-label="可编辑简历页面">
               <EditorContent editor={editor} />
             </article>
           </div>
@@ -647,37 +1053,26 @@ export function ResumeWorkbench() {
                 </div>
                 {drawerMode === "settings" ? (
                   <div className="workbench-settings">
-                    <label className="workbench-field"><span>字体</span><select value={settings.fontFamily} onChange={(event) => updateSettings({ fontFamily: event.target.value })} disabled={versionOperationPending}>{fontOptions.map((font) => <option key={font.label} value={font.value}>{font.label}</option>)}</select></label>
+                    <FontPreviewSelect value={settings.fontFamily} onChange={(fontFamily) => updateSettings({ fontFamily })} disabled={versionOperationPending} />
                     <SettingsSlider label="正文字号" unit="pt" value={settings.fontSize} min={8} max={16} step={0.5} onChange={(fontSize) => updateSettings({ fontSize })} disabled={versionOperationPending} />
                     <SettingsSlider label="行距" unit="" value={settings.lineHeight} min={1.1} max={1.8} step={0.05} onChange={(lineHeight) => updateSettings({ lineHeight })} disabled={versionOperationPending} />
                     <SettingsSlider label="左右边距" unit="mm" value={settings.pageMargin} min={10} max={30} step={2} onChange={(pageMargin) => updateSettings({ pageMargin })} disabled={versionOperationPending} />
                     <SettingsSlider label="上下边距" unit="mm" value={settings.verticalPageMargin} min={10} max={30} step={2} onChange={(verticalPageMargin) => updateSettings({ verticalPageMargin })} disabled={versionOperationPending} />
-                    <div className="workbench-settings-section">
-                      <span className="workbench-settings-kicker">导出模式</span>
-                      <div className="workbench-smart-row">
-                        <div>
-                          <strong>智能一页</strong>
-                          <small>尽量压缩为连续单页</small>
-                        </div>
-                        <SmartOnePageAction
-                          active={settings.smartOnePage}
-                          onToggle={() => updateSettings({ smartOnePage: !settings.smartOnePage })}
-                          disabled={versionOperationPending}
-                        />
-                      </div>
-                    </div>
                     <button
                       type="button"
                       className="workbench-reset-settings"
                       disabled={versionOperationPending}
-                      onClick={() => updateSettings({
-                        fontFamily: defaultSettings.fontFamily,
-                        fontSize: defaultSettings.fontSize,
-                        lineHeight: defaultSettings.lineHeight,
-                        pageMargin: defaultSettings.pageMargin,
-                        verticalPageMargin: defaultSettings.verticalPageMargin,
-                        smartOnePage: defaultSettings.smartOnePage,
-                      })}
+                      onClick={() => {
+                        changePageArrangement("vertical");
+                        updateSettings({
+                          fontFamily: defaultSettings.fontFamily,
+                          fontSize: defaultSettings.fontSize,
+                          lineHeight: defaultSettings.lineHeight,
+                          pageMargin: defaultSettings.pageMargin,
+                          verticalPageMargin: defaultSettings.verticalPageMargin,
+                          smartOnePage: defaultSettings.smartOnePage,
+                        });
+                      }}
                     >
                       恢复默认设置
                     </button>
@@ -705,7 +1100,7 @@ export function ResumeWorkbench() {
                           <span>版本 {version.version_no} · {versionTime(version.created_at)} · {versionReasonLabels[version.reason]}</span>
                         </div>
                         <span className="version-row-actions">
-                          <button type="button" disabled={versionOperationPending} onClick={() => void restoreVersion(version.version_no, version.created_at)}>恢复</button>
+                          <button type="button" disabled={versionOperationPending} onClick={() => setPendingVersionRestore(version)}>恢复</button>
                           {version.version_no !== versions[0]?.version_no && (
                             <button
                               type="button"
@@ -735,6 +1130,25 @@ export function ResumeWorkbench() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {activeResumeId ? (
+          <VersionDiffDialog
+            open={Boolean(pendingVersionRestore)}
+            resumeId={activeResumeId}
+            version={pendingVersionRestore}
+            currentMarkdown={markdown}
+            currentSettings={settings}
+            restoring={versionOperationPending}
+            onOpenChange={(open) => {
+              if (!open) setPendingVersionRestore(null);
+            }}
+            onConfirm={async () => {
+              if (!pendingVersionRestore) return;
+              const restored = await restoreVersion(pendingVersionRestore.version_no, pendingVersionRestore.created_at);
+              if (restored) setPendingVersionRestore(null);
+            }}
+          />
+        ) : null}
 
         {pendingVersionDelete && (
           <ConfirmDialog

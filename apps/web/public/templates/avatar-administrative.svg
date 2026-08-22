@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title">
+  <title id="title">虚构行政岗位头像插画</title>
+  <rect width="160" height="160" fill="#f4f7fa"/>
+  <circle cx="80" cy="60" r="31" fill="#f1c7a9"/>
+  <path d="M47 58c2-28 18-42 36-42 20 0 34 15 33 43-9-4-16-11-21-19-12 11-29 17-48 18Z" fill="#3d2b24"/>
+  <path d="M39 160c2-37 18-58 41-58s39 21 41 58Z" fill="#303744"/>
+  <path d="m69 104 11 14 11-14-3 56H72Z" fill="#8f2f28"/>
+  <path d="M55 57h22v15H55zm28 0h22v15H83z" fill="none" stroke="#27384a" stroke-width="4"/>
+  <path d="M77 64h6" stroke="#27384a" stroke-width="3"/>
+  <path d="M71 86c6 4 12 4 18 0" fill="none" stroke="#ba806e" stroke-width="2" stroke-linecap="round"/>
+</svg>

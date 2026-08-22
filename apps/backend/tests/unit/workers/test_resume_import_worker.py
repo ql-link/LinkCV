@@ -9,7 +9,11 @@ from linkcv.domain.document_conversion import (
     DocumentMarkdownResult,
 )
 from linkcv.domain.resume_document import default_resume_document
-from linkcv.domain.resume_extraction import DraftBasics, ResumeExtractionDraft
+from linkcv.domain.resume_extraction import (
+    DraftBasics,
+    DraftNamedItem,
+    ResumeExtractionDraft,
+)
 from linkcv.domain.resume_style import default_resume_style
 from linkcv.main import create_app
 from linkcv.modules.identity.models import User
@@ -70,7 +74,15 @@ class FakeStructuringClient:
         return ResumeExtractionDraft(basics=DraftBasics(name="张三"))
 
 
-def build_processor(*, converter=None):
+class InvalidFinalStructuringClient:
+    async def extract(self, **_kwargs) -> ResumeExtractionDraft:
+        return ResumeExtractionDraft(
+            basics=DraftBasics(name="张三"),
+            languages=[DraftNamedItem(name="技" * 101)],
+        )
+
+
+def build_processor(*, converter=None, structuring_client=None):
     settings = Settings(
         database_url="sqlite+pysqlite:///:memory:",
         jwt_secret="resume-import-worker-test-secret-with-32-bytes",
@@ -82,12 +94,12 @@ def build_processor(*, converter=None):
         storage=storage,
         redis=redis,
         document_converter=converter or FakeConverter(),
-        structuring_client=FakeStructuringClient(),
+        structuring_client=structuring_client or FakeStructuringClient(),
         create_schema=True,
     )
     service = ResumeImportService(
         document_converter=converter or FakeConverter(),
-        structuring_client=FakeStructuringClient(),
+        structuring_client=structuring_client or FakeStructuringClient(),
         max_structuring_bytes=settings.resume_structuring_max_bytes,
         structuring_timeout_seconds=settings.resume_structuring_timeout_seconds,
     )
@@ -151,6 +163,60 @@ def test_worker_creates_one_resume_and_repeated_delivery_is_idempotent() -> None
         assert resumes[0].title == "我的简历"
         assert resumes[0].data_json["basics"]["name"] == "张三"
         assert resumes[0].style_json["accent_color"] == "#315C6B"
+
+
+def test_worker_logs_safe_stage_chain(caplog) -> None:
+    app, _storage, processor, import_id, template_id = build_processor()
+
+    with caplog.at_level("INFO"):
+        asyncio.run(processor.process(import_id=import_id, template_id=template_id))
+
+    messages = [record.message for record in caplog.records]
+    assert messages[0] == "resume import task started"
+    assert "resume import stage completed" in messages
+    assert messages[-1] == "resume import task completed"
+    stages = {
+        record.stage
+        for record in caplog.records
+        if hasattr(record, "stage")
+    }
+    assert {
+        "task_load",
+        "source_read",
+        "document_conversion",
+        "resume_structuring",
+        "resume_normalization",
+        "resume_persistence",
+    }.issubset(stages)
+    assert "我的简历.md" not in caplog.text
+    assert "Zhang San" not in caplog.text
+
+
+def test_worker_logs_safe_normalization_failure_metadata(caplog) -> None:
+    app, _storage, processor, import_id, template_id = build_processor(
+        structuring_client=InvalidFinalStructuringClient()
+    )
+
+    with caplog.at_level("INFO"):
+        asyncio.run(processor.process(import_id=import_id, template_id=template_id))
+
+    failure = next(
+        record
+        for record in caplog.records
+        if record.message == "resume import task failed"
+    )
+    assert failure.error_code == "RESUME_STRUCTURE_INVALID"
+    assert failure.failure_stage == "resume_normalization"
+    assert failure.exception_type == "ValidationError"
+    assert failure.validation_model == "Language"
+    assert failure.validation_paths == "name"
+    assert failure.validation_types == "string_too_long"
+    assert "技" * 101 not in caplog.text
+    with app.state.session_factory() as db:
+        record = db.get(DocumentParseTask, import_id)
+        assert record is not None
+        assert record.parse_status == "failed"
+        assert record.failure_reason == "internal_error"
 
 
 def test_converted_markdown_storage_failure_does_not_fail_import(caplog) -> None:

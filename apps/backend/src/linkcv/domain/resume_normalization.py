@@ -1,4 +1,5 @@
 import re
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -31,6 +32,12 @@ class NormalizationResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+BARE_HTTP_URL_PATTERN = re.compile(
+    r"^(?:www\.)?(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,62})\.)+"
+    r"[A-Za-z]{2,63}(?::\d{1,5})?(?:[/?#].*)?$"
+)
+
+
 def new_element_id(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex[:16]}"
 
@@ -52,6 +59,20 @@ def normalize_date(value: str | None) -> tuple[str | None, bool]:
     if not 1 <= number <= 12:
         return None, False
     return f"{year}-{number:02d}", False
+
+
+def normalize_http_url(value: str | None) -> tuple[str | None, bool]:
+    """Normalize a safe bare host URL, or flag an unsupported URL for omission."""
+    if value is None or not value.strip():
+        return None, False
+    candidate = value.strip()
+    if candidate.lower().startswith(("https://", "http://")):
+        return candidate, False
+    if BARE_HTTP_URL_PATTERN.fullmatch(candidate):
+        normalized = f"https://{candidate}"
+        if urlsplit(normalized).hostname:
+            return normalized, False
+    return None, True
 
 
 def _source_refs(
@@ -93,6 +114,19 @@ def finalize_resume_document(
     extracted_markdown: str,
 ) -> NormalizationResult:
     warnings: list[str] = []
+    links: list[ResumeLink] = []
+    for link in draft.basics.links:
+        normalized_url, omitted = normalize_http_url(link.url)
+        if omitted or normalized_url is None:
+            warnings.append("invalid_link_url_omitted")
+            continue
+        links.append(
+            ResumeLink(
+                id=new_element_id("link"),
+                label=link.label,
+                url=normalized_url,
+            )
+        )
     basics = ResumeBasics(
         name=(draft.basics.name or "").strip(),
         headline=draft.basics.headline,
@@ -100,10 +134,7 @@ def finalize_resume_document(
         phone=draft.basics.phone,
         location=draft.basics.location,
         summary=_rich_text(draft.basics.summary),
-        links=[
-            ResumeLink(id=new_element_id("link"), label=link.label, url=link.url)
-            for link in draft.basics.links
-        ],
+        links=links,
     )
 
     work_experiences: list[WorkExperience] = []
@@ -162,12 +193,15 @@ def finalize_resume_document(
     for item in draft.projects:
         start_date, _ = normalize_date(item.raw_start_date)
         end_date, current = normalize_date(item.raw_end_date)
+        project_url, omitted = normalize_http_url(item.url)
+        if omitted:
+            warnings.append("invalid_project_url_omitted")
         projects.append(
             Project(
                 id=new_element_id("project"),
                 name=item.name,
                 role=item.role,
-                url=item.url,
+                url=project_url,
                 start_date=start_date,
                 end_date=end_date,
                 current=current,
