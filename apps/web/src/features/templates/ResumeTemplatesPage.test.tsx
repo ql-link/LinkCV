@@ -25,6 +25,7 @@ vi.mock("../preview/ResumePreview", () => ({
 const templates = [
   { id: "8", key: "blank-cn", name: "空白简历", description: "从空白内容开始", data: {}, style: {} },
   { id: "9", key: "modern-cn", name: "现代双栏", description: null, data: {}, style: {} },
+  { id: "10", key: "campus-cn", name: "校园简历", description: "适合校招求职", data: {}, style: {} },
 ];
 
 beforeEach(() => {
@@ -54,7 +55,7 @@ describe("ResumeTemplatesPage", () => {
     render(<ResumeTemplatesPage />);
 
     expect(await screen.findByRole("heading", { name: "现代双栏" })).toBeInTheDocument();
-    expect(screen.getAllByTestId("resume-preview-card")).toHaveLength(2);
+    expect(screen.getAllByTestId("resume-preview-card")).toHaveLength(3);
 
     fireEvent.click(screen.getAllByRole("button", { name: "创建简历" })[1]);
     expect(screen.getByRole("dialog")).toHaveTextContent("基于“现代双栏”创建简历");
@@ -129,6 +130,28 @@ describe("ResumeTemplatesPage", () => {
 
     fireEvent.click(within(previewDialog).getByRole("button", { name: "缩小模板" }));
     expect(scale).toHaveTextContent("72%");
+  });
+
+  it("可以使用按钮和方向键循环切换相邻模板，并保留缩放比例", async () => {
+    vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates } as never);
+    render(<ResumeTemplatesPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "查看模板：现代双栏" }));
+
+    let previewDialog = screen.getByRole("dialog", { name: "现代双栏" });
+    fireEvent.click(within(previewDialog).getByRole("button", { name: "放大模板" }));
+    fireEvent.click(within(previewDialog).getByRole("button", { name: "下一个模板：校园简历" }));
+
+    previewDialog = screen.getByRole("dialog", { name: "校园简历" });
+    expect(within(previewDialog).getByLabelText("模板预览缩放比例")).toHaveTextContent("80%");
+    expect(within(previewDialog).getByRole("button", { name: "上一个模板：现代双栏" })).toBeInTheDocument();
+    expect(within(previewDialog).getByRole("button", { name: "下一个模板：空白简历" })).toBeInTheDocument();
+
+    fireEvent.keyDown(previewDialog, { key: "ArrowRight" });
+    expect(screen.getByRole("dialog", { name: "空白简历" })).toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "空白简历" }), { key: "ArrowLeft" });
+    expect(screen.getByRole("dialog", { name: "校园简历" })).toBeInTheDocument();
   });
 
   it("卡片内的创建按钮不会误触模板预览", async () => {

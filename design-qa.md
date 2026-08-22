@@ -535,3 +535,58 @@ final result: passed
 - Sign in, open a template preview, capture the same desktop state, and compare shell dimensions, tool rail, paper scale, footer, and responsive overflow.
 
 final result: blocked
+
+---
+
+# 模板预览弧形画廊 Design QA
+
+## 对照基线
+
+- source visual truth path: `/Users/jixu/.codex/generated_images/01a029e2-df72-75f0-97e9-3919e111bb8a/exec-c26cf229-f39a-4f14-a728-6ca0fdd7f20a.png`
+- implementation screenshot path: `/Users/jixu/.codex/visualizations/2026/08/22/01a029e2-df72-75f0-97e9-3919e111bb8a/template-preview-implementation-1586x992.png`
+- combined comparison path: `/Users/jixu/.codex/visualizations/2026/08/22/01a029e2-df72-75f0-97e9-3919e111bb8a/template-preview-design-qa-comparison.png`
+- responsive evidence: `/Users/jixu/.codex/visualizations/2026/08/22/01a029e2-df72-75f0-97e9-3919e111bb8a/template-preview-implementation-1024x768.png`, `/Users/jixu/.codex/visualizations/2026/08/22/01a029e2-df72-75f0-97e9-3919e111bb8a/template-preview-implementation-390x844.png`
+- viewport: desktop `1586 x 992`; tablet `1024 x 768`; mobile `390 x 844`
+- pixel dimensions: source `1586 x 992`; desktop implementation `1586 x 992`
+- CSS size and density: desktop `1586 x 992` CSS px, `devicePixelRatio = 1`; no density normalization required
+- state: authenticated `/templates`; preview dialog open; desktop center uses the available real template “清晰侧栏”; source uses “深蓝行政双栏”
+
+## Full-view comparison evidence
+
+- The same-size combined comparison confirms the selected composition: large rounded dialog, fixed header and footer, left zoom rail, complete central A4 sheet, one angled neighboring sheet on each side, and edge navigation controls.
+- The implementation deliberately renders the API-provided template data and theme rather than rasterizing the mock. Local seed content is shorter and visually different from the mock, but the paper hierarchy, carousel geometry, controls, and interaction placement match the selected direction.
+- Desktop has no document or preview-stage horizontal overflow. The footer remains visible while the paper stage scrolls vertically when content or viewport height requires it.
+
+## Focused region comparison evidence
+
+- The combined comparison includes a full-resolution crop of the carousel stage. It confirms center-page dominance, outward side rotation, side-page occlusion behind the center, legible zoom controls, and consistent white/cool-gray surfaces.
+- No separate asset crop was required: resume imagery is not a raster asset in the product; all three sheets use the real `ResumePreview` renderer and existing theme assets.
+
+## Required fidelity surfaces
+
+- Fonts and typography: LinkCV UI keeps the existing Inter/system stack and current utility weights. Resume typography remains owned by each real template theme. Header truncation and compact control labels remain intact.
+- Spacing and layout rhythm: dialog proportions, 86 px zoom rail, center alignment, side-card depth, footer separation, and 48 px desktop navigation targets match the mock's hierarchy. Mobile controls remain at least 40–44 px and do not overlap persistent actions.
+- Colors and visual tokens: implementation uses existing `--ui-*` surfaces, borders, accent, ring, radii, and shadows; no page-local brand palette was introduced.
+- Image quality and asset fidelity: no placeholder, CSS-drawn resume, or rasterized mock is used. All sheets are live `ResumePreview` instances; chevrons reuse the configured Lucide icon family.
+- Copy and content: retained “模板预览”, current template name, “缩放”, percentage, “上一个模板”, “下一个模板”, “关闭”, and “创建简历”. Dynamic resume content comes from the API.
+- Responsiveness and accessibility: at 1024 px the three-sheet composition remains visible without horizontal overflow; at 390 px side sheets hide and navigation remains available around the centered paper. Buttons are semantic, labelled, keyboard reachable, focus-visible, touch-friendly, and reduced motion disables the entrance transition.
+
+## Comparison history
+
+1. Initial 1024 px pass found a P2 horizontal scrollbar caused by a fixed carousel minimum width. Removed the fixed minimum; post-fix browser evidence reports both document and stage horizontal overflow as false.
+2. Initial 390 px pass found P2 stage overflow and vertically stacked footer actions. Reduced mobile paper side padding and explicitly kept footer actions in one row; post-fix evidence reports stage overflow false and footer direction `row`.
+3. Final desktop comparison found no actionable P0, P1, or P2 mismatch. The remaining content-density difference is expected because the implementation renders current backend template data instead of mock text.
+
+## Primary interactions and console
+
+- Browser-tested previous/next buttons, side-template selection, `ArrowLeft`/`ArrowRight` switching, zoom-button updates, retained zoom percentage across template switches, close action visibility, and responsive state changes.
+- Browser console errors/warnings checked in the final desktop state: none.
+
+## Findings
+
+- No actionable P0, P1, or P2 findings remain.
+- P3: the local seed templates do not reproduce the exact deep-blue/sidebar content density shown in the generated mock. This is accepted because changing template data or themes is outside this UI-only task.
+
+## Final result
+
+final result: passed
