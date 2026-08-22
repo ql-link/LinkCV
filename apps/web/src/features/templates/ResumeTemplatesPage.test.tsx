@@ -55,6 +55,7 @@ describe("ResumeTemplatesPage", () => {
 
     expect(await screen.findByRole("heading", { name: "现代双栏" })).toBeInTheDocument();
     expect(screen.getAllByTestId("resume-preview-card")).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "创建简历" })[0]).toHaveClass("bg-[var(--ui-accent)]");
 
     fireEvent.click(screen.getAllByRole("button", { name: "创建简历" })[1]);
     expect(screen.getByRole("dialog")).toHaveTextContent("基于“现代双栏”创建简历");
