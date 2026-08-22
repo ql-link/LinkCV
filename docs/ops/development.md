@@ -16,9 +16,11 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装 Web、浏览器插件和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI 和文档解析 Worker。当前 Alembic head `0025`；`0002`–`0005` 建立并演进简历、版本和对象清理，`0006` 新增 LLM 模型配置和调用日志表，`0007` 新增用户私有 JD 单表，`0008` 增加 Chat 候选模型、唯一当前绑定与调用快照，`0009` 曾新增管理员操作审计日志表，`0010` 在对象删除改为同步后移除清理任务表，`0011` 移除仅写不读的管理员操作审计日志表，`0012` 删除已停用的旧版简历内容与样式备份列，`0013` 为简历分享新增字段，`0016` 新增导入任务表，`0017` 在旧同步导入数据清理后移除正式简历上的旧导入证据列，`0018` 新增用户知识库资料表，`0019` 新增 `users.wechat_openid` 唯一绑定与绑定时间，`0020` 将 `email`、`password_hash` 放宽为可空以支持微信扫码登录建号，`0021` 将简历导入状态迁移到通用 `document_parse_tasks` 并把来源指针改由 `resumes.parse_task_id` 持有，`0022` 增加资料解析任务、共享失败分类和资料反向指针，并清理旧资料行；`0023` 为历史简历版本新增非空名称；`0024` 新增官方经典单页技术简历模板；`0025` 将该模板的内置示例替换为虚构的平台工程师资料，并保留用户自定义模板内容不被覆盖的保护条件。
+新环境执行 `npm run setup` 安装 Web、浏览器插件和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI 和文档解析 Worker。当前 Alembic head `0027`；`0002`–`0005` 建立并演进简历、版本和对象清理，`0006` 新增 LLM 模型配置和调用日志表，`0007` 新增用户私有 JD 单表，`0008` 增加 Chat 候选模型、唯一当前绑定与调用快照，`0009` 曾新增管理员操作审计日志表，`0010` 在对象删除改为同步后移除清理任务表，`0011` 移除仅写不读的管理员操作审计日志表，`0012` 删除已停用的旧版简历内容与样式备份列，`0013` 为简历分享新增字段，`0016` 新增导入任务表，`0017` 在旧同步导入数据清理后移除正式简历上的旧导入证据列，`0018` 新增用户知识库资料表，`0019` 新增 `users.wechat_openid` 唯一绑定与绑定时间，`0020` 将 `email`、`password_hash` 放宽为可空以支持微信扫码登录建号，`0021` 将简历导入状态迁移到通用 `document_parse_tasks` 并把来源指针改由 `resumes.parse_task_id` 持有，`0022` 增加资料解析任务、共享失败分类和资料反向指针，并清理旧资料行；`0023` 为历史简历版本新增非空名称；`0024` 新增官方经典单页技术简历模板；`0025` 将该模板的内置示例替换为虚构的平台工程师资料，并保留用户自定义模板内容不被覆盖的保护条件；`0026`–`0027` 增加四套职能与设计模板并刷新其预览资产。
 
 后端默认读取仓库根目录 `.env`。设置 `LINKCV_ENV_FILE=.env.development` 可选择共享 Dev 基础配置；如果同目录存在 `.env.development.local`，其密码和密钥会覆盖基础文件。Production 同理使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，配置路径不受当前工作目录影响。
+
+`APP_ENV=local|development` 时，Web 登录页开放普通邮箱密码注册和登录，注册成功后直接进入空的简历主页；`APP_ENV=production` 时两个普通入口均隐藏且后端返回 404，只允许普通用户通过微信身份进入。管理员始终使用独立的 `/admin/login`。
 
 LLM 模型 API key 通过管理员 API 加密进入 MySQL，Fernet 根密钥环必须留在私密 env。格式为 `LLM_CREDENTIAL_ENCRYPTION_KEYS=<keyId>:<fernetKey>`；轮换时把新 key 放在首项，旧 key 以逗号分隔继续保留。可用以下命令生成一个虚构开发 key，输出只应写入被 Git 忽略的 `.env.local` 或 `.env.development.local`：
 
@@ -40,7 +42,13 @@ LINKCV_ENV_FILE=.env.development npm run db:init
 
 `PLUGIN_RELEASE_ORIGIN` 是当前环境允许正式插件访问的 LinkCV 根 Origin。默认本地值为 `http://127.0.0.1:5173`；共享 Development 和 Production 必须在各自 `.local` 覆盖中写入用户实际访问的 Origin，Production 只接受 HTTPS。该值必须与构建安装包时传给 `build_extension_release.py` 的对应 Origin 一致，否则管理员上传会被拒绝。
 
-微信绑定与扫码登录要求同时配置 `WECHAT_APPID` 与 `WECHAT_SECRET`（两者均为非占位符才开启能力开关，否则 profile 返回 `unavailable`、相关接口返回 `503 WECHAT_SERVICE_UNAVAILABLE`）。`WECHAT_QR_PAGE` 是绑定用小程序码页（默认 `pages/bind/bind`），`WECHAT_LOGIN_PAGE` 是扫码登录确认页（默认 `pages/login/index`）；`WECHAT_BIND_TICKET_TTL_SECONDS`（默认 300）与 `WECHAT_SCENE_TTL_SECONDS`（默认 300）分别控制绑定票据与登录 scene 的 Redis 有效期，`WECHAT_QRCODE_REQUESTS_PER_MINUTE`（默认 10）限制登录二维码按 IP 的生成频率。
+微信自动建号、小程序登录和网页扫码确认要求同时配置 `WECHAT_APPID` 与 `WECHAT_SECRET`；密钥只放 `.env.local`、环境对应 `.local` 或进程环境。`WECHAT_LOGIN_PAGE` 默认 `pages/login/index`，`WECHAT_SCENE_TTL_SECONDS` 默认 300 秒，`WECHAT_QRCODE_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 10 次，`WECHAT_LOGIN_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 30 次，`WECHAT_API_TIMEOUT_SECONDS` 控制微信上游超时。未配置时应用仍可启动，但微信登录接口返回 `503 WECHAT_SERVICE_UNAVAILABLE`。
+
+## 微信小程序开发
+
+用微信开发者工具直接导入 `apps/miniprogram`。直接打开时先进入 `pages/login/index`：未登录客户端使用当前微信临时 code 调用只读账号状态接口，根据结果分别显示“同意并登录”或“同意并注册”；该状态查询不创建账号或会话。用户必须查看并勾选微信公众平台配置的小程序隐私保护指引，再主动点击对应按钮；已有本地会话会直接进入简历列表。扫描 Web 生成的码也进入该页，未同意隐私指引时不能确认登录，仍可取消。客户端使用基础库 2.32.3 起提供的 `wx.getPrivacySetting`、`agreePrivacyAuthorization` 和 `wx.openPrivacyContract`；隐私 API 不可用时失败关闭并提示升级微信，不能绕过协议自动建号。明确注册和扫码确认携带 `privacy_accepted=true`，后端仅在该值为真时为未知 openid 建号；已有账号的登录以及 refresh 失效后的恢复携带 `privacy_accepted=false`，因而不能静默建号。服务端不把该请求字段保存为同意审计记录。开发版默认访问 `http://127.0.0.1:8000`；后端位于其他内网地址时，在开发者工具控制台执行 `wx.setStorageSync("linkcv_api_base_url", "http://<内网地址>:8000")` 后重新进入小程序，并关闭合法域名校验。该本地覆盖只对 `develop` 生效。体验版和正式版固定使用 `https://linkresume.cn`、强制 HTTPS 并忽略本地存储覆盖；第三方平台代开发时仍可用 `extConfig.apiBaseUrl` 覆盖。发布前还要在微信公众平台登记 request 合法域名并发布用户隐私保护指引。API URL 会打入小程序包，本来就是公开信息；仓库和小程序包内不得放 AppSecret。
+
+小程序只调用 `GET /api/miniprogram/resumes` 与 `GET /api/miniprogram/resumes/{id}` 的本人数据；专用鉴权拒绝 Web Cookie，普通 `/api/resumes*` 也拒绝小程序 Bearer，因此只读不是界面约束。纯逻辑测试运行 `npm run test:miniprogram`；微信 API、页面跳转和合法域名仍需开发者工具与真机验收，不能描述为自动化 E2E。
 
 ## 默认端口与覆盖
 
@@ -77,8 +85,6 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 
 如 LinkRag 使用了其他 Compose project/network，可通过 `LOKI_DOCKER_NETWORK` 覆盖网络名；LinkCV 日志目录可通过 `LINKCV_LOG_PATH` 覆盖。需要让本地 FastAPI 管理端查询该 Loki 时，为进程设置 `LOKI_QUERY_URL=http://127.0.0.1:3100`，该地址不传给浏览器。
 
-微信扫码登录需要 `WECHAT_APPID` 与 `WECHAT_APPSECRET`（个人主体小程序，体验版/正式版均可）；`WECHAT_LOGIN_PAGE` 指定小程序登录确认页（默认 `pages/login/index`）。`WECHAT_QRCODE_REQUESTS_PER_MINUTE`（默认 10）控制二维码请求的按 IP 限流，`WECHAT_SCENE_TTL_SECONDS`（默认 300）控制 scene 有效期，`WECHAT_TIMEOUT_SECONDS`（默认 5）控制微信上游调用超时。Development 未配置微信凭据时仍可启动应用，但二维码接口会返回 `WECHAT_UNAVAILABLE`；Production 缺 `WECHAT_APPID`/`WECHAT_APPSECRET` 会拒绝启动。
-
 ## 简历导入与版本配置
 
 | 环境变量 | 默认值 | 作用 |
@@ -109,10 +115,12 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 | `LINKPARSE_PARSE_PATH` | `/v1/parse` | 同步 PDF/DOCX 解析路径 |
 | `LINKPARSE_TIMEOUT_SECONDS` | `90` | 单次 LinkParse 阶段时限，不自动重试 |
 | `LINKPARSE_RESPONSE_MAX_BYTES` | `3145728` | LinkParse 响应读取上限 |
-| `WECHAT_APPID` | 空 | 微信小程序 appid；与 `WECHAT_SECRET` 同时配置才启用微信绑定 |
+| `WECHAT_APPID` | 空 | 微信小程序 appid；与 `WECHAT_SECRET` 同时配置才启用微信登录 |
 | `WECHAT_SECRET` | 空 | 微信小程序密钥，只放 `.local` 或进程环境 |
-| `WECHAT_QR_PAGE` | `pages/bind/bind` | 小程序码跳转的绑定确认页路径 |
-| `WECHAT_BIND_TICKET_TTL_SECONDS` | `300` | 微信绑定票据有效期，60~900 秒 |
+| `WECHAT_LOGIN_PAGE` | `pages/login/index` | 网页扫码进入的小程序确认页 |
+| `WECHAT_SCENE_TTL_SECONDS` | `300` | 网页扫码场景有效期，30~600 秒 |
+| `WECHAT_QRCODE_REQUESTS_PER_MINUTE` | `10` | 每 IP 每分钟生成网页登录码上限 |
+| `WECHAT_LOGIN_REQUESTS_PER_MINUTE` | `30` | 每 IP 每分钟小程序自动登录上限 |
 | `WECHAT_API_TIMEOUT_SECONDS` | `5` | 单次微信开放平台调用超时 |
 | `REDIS_CONNECT_TIMEOUT_SECONDS` | `2` | Redis 连接超时 |
 | `REDIS_SOCKET_TIMEOUT_SECONDS` | `2` | Redis 操作超时 |
@@ -132,6 +140,7 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run db:init`                     | 仅允许创建 `linkcv` 数据库并升级到 Alembic head                      |
 | `npm run db:revision -- -m <message>` | 创建只调用 SQL 的 revision，以及同 ID 的 `.up.sql`、`.down.sql` 文件 |
 | `npm run test:web`                    | 前端 Vitest 单元和组件测试                                           |
+| `npm run test:miniprogram`            | 小程序纯逻辑 Node 测试                                               |
 | `npm run dev:extension`               | 启动 WXT 插件开发模式                                                |
 | `npm run test:extension`              | 插件 DOM 提取与 API 客户端测试                                       |
 | `npm run build:extension`             | 构建可侧载的 Chrome MV3 目录                                         |

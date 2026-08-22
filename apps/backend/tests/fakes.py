@@ -132,6 +132,15 @@ class FakeRedis:
     def hgetall(self, name: str) -> dict[str, str]:
         return dict(self.hashes.get(name, {}))
 
+    def hdel(self, name: str, *keys: str) -> int:
+        data = self.hashes.get(name, {})
+        removed = 0
+        for key in keys:
+            if key in data:
+                data.pop(key)
+                removed += 1
+        return removed
+
     def get(self, name: str) -> str | None:
         return self.strings.get(name)
 
@@ -215,8 +224,86 @@ class FakeRedis:
             self.ttls[name] = ex
             return True
 
-    def eval(self, _script: str, _numkeys: int, name: str, token: str) -> int:
+    def eval(self, script: str, _numkeys: int, name: str, *args: object):
         with self._lock:
+            if "auth_rotate_refresh" in script:
+                old_hash, new_hash, channel, ttl = args
+                stored_channel = self.hget(name, "channel") or "web"
+                if stored_channel != str(channel):
+                    return "invalid"
+                if self.hget(name, "rhash") != str(old_hash):
+                    return "mismatch"
+                self.hset(
+                    name,
+                    mapping={"rhash": str(new_hash), "channel": str(channel)},
+                )
+                self.expire(name, float(ttl))
+                return "rotated"
+            if "wechat_claim" in script:
+                state = self.hget(name, "state")
+                if state is None:
+                    return "missing"
+                claim_id, claimed_at, ttl, claim_timeout = args
+                stale = (
+                    state == "processing"
+                    and float(claimed_at)
+                    - float(self.hget(name, "claimed_at") or 0)
+                    >= float(claim_timeout)
+                )
+                if state != "pending" and not stale:
+                    return state
+                self.hset(
+                    name,
+                    mapping={
+                        "state": "processing",
+                        "claim_id": str(claim_id),
+                        "claimed_at": str(claimed_at),
+                    },
+                )
+                self.expire(name, float(ttl))
+                return "claimed"
+            if "wechat_finalize" in script:
+                claim_id, state, uid, ttl = args
+                if self.hget(name, "state") != "processing":
+                    return 0
+                if self.hget(name, "claim_id") != str(claim_id):
+                    return 0
+                self.hset(name, mapping={"state": str(state), "uid": str(uid)})
+                self.hdel(name, "claim_id", "claimed_at")
+                self.expire(name, float(ttl))
+                return 1
+            if "wechat_restore" in script:
+                claim_id, ttl = args
+                if self.hget(name, "state") != "processing":
+                    return 0
+                if self.hget(name, "claim_id") != str(claim_id):
+                    return 0
+                self.hset(name, "state", "pending")
+                self.hdel(name, "claim_id", "claimed_at")
+                self.expire(name, float(ttl))
+                return 1
+            if "wechat_cancel" in script:
+                (ttl,) = args
+                state = self.hget(name, "state")
+                if state is None:
+                    return "missing"
+                if state == "pending":
+                    self.hset(name, "state", "cancelled")
+                    self.expire(name, float(ttl))
+                    return "cancelled"
+                return state
+            if "wechat_swap_web_session" in script:
+                uid, sid, ttl = args
+                if self.hget(name, "state") != "confirmed":
+                    return "__invalid__"
+                if self.hget(name, "uid") != str(uid):
+                    return "__invalid__"
+                previous = self.hget(name, "web_sid") or ""
+                self.hset(name, "web_sid", str(sid))
+                self.expire(name, float(ttl))
+                return previous
+
+            (token,) = args
             if self.strings.get(name) != token:
                 return 0
             self.strings.pop(name, None)

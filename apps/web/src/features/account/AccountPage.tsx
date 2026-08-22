@@ -15,11 +15,9 @@ import { api, AccountProfile, ApiRequestError, UserProfile } from "../../api/cli
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { editorPath, navigateTo } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
-import { ChangePasswordDialog } from "./ChangePasswordDialog";
 
 const MAX_AVATAR_BYTES = 10 * 1024 * 1024;
 const MAX_NICKNAME_LENGTH = 50;
-const BIND_POLL_INTERVAL_MS = 3000;
 type Notice = { kind: "success" | "error"; message: string } | null;
 
 export function accountErrorMessage(error: unknown, fallback: string) {
@@ -27,8 +25,6 @@ export function accountErrorMessage(error: unknown, fallback: string) {
     if (error.message === "INVALID_NICKNAME") return `昵称不能为空，且不能超过 ${MAX_NICKNAME_LENGTH} 个字符。`;
     if (error.message === "INVALID_IMAGE") return "请选择有效的图片文件。";
     if (error.message === "IMAGE_TOO_LARGE") return "头像图片不能超过 10MB。";
-    if (error.message === "WECHAT_SERVICE_UNAVAILABLE") return "微信绑定服务暂不可用，请稍后重试。";
-    if (error.message === "WECHAT_ALREADY_BOUND") return "该微信已绑定其他账号。";
     if (error.status === 401) return "登录状态已失效，请重新登录。";
     if (error.status >= 500) return "服务暂时不可用，请稍后重试。";
   }
@@ -47,21 +43,8 @@ export function AccountPage() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [removingAvatar, setRemovingAvatar] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
-  const [bindTicket, setBindTicket] = useState<string | null>(null);
-  const [bindQrcode, setBindQrcode] = useState<string | null>(null);
-  const [requestingBind, setRequestingBind] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const wechatBound = profile?.user.wechat_status === "bound";
-
-  const refreshProfile = async () => {
-    const data = await api.getAccountProfile();
-    setProfile(data);
-    setNickname(data.user.nickname);
-    syncProfile(data.user);
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -82,33 +65,6 @@ export function AccountPage() {
       cancelled = true;
     };
   }, [syncProfile]);
-
-  useEffect(() => {
-    if (!bindTicket || wechatBound) return;
-    let cancelled = false;
-    const timer = window.setInterval(() => {
-      void (async () => {
-        try {
-          const { status } = await api.getWechatBindStatus(bindTicket);
-          if (cancelled) return;
-          if (status === "bound") {
-            window.clearInterval(timer);
-            setBindTicket(null);
-            setBindQrcode(null);
-            await refreshProfile();
-          } else if (status === "expired") {
-            window.clearInterval(timer);
-            setBindTicket(null);
-            setBindQrcode(null);
-            setNotice({ kind: "error", message: "二维码已过期，请重新发起绑定。" });
-          }
-        } catch {
-          // Transient polling failures are retried on the next tick.
-        }
-      })();
-    }, BIND_POLL_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, [bindTicket, wechatBound]);
 
   const applyUserUpdate = (user: UserProfile) => {
     syncProfile(user);
@@ -185,21 +141,6 @@ export function AccountPage() {
       setNotice({ kind: "error", message: accountErrorMessage(error, "头像删除失败，请稍后重试。") });
     } finally {
       setRemovingAvatar(false);
-    }
-  };
-
-  const handleStartBind = async () => {
-    if (!profile || requestingBind) return;
-    setRequestingBind(true);
-    setNotice(null);
-    try {
-      const { ticket, qrcode_data } = await api.requestWechatBind();
-      setBindTicket(ticket);
-      setBindQrcode(qrcode_data);
-    } catch (error) {
-      setNotice({ kind: "error", message: accountErrorMessage(error, "发起绑定失败，请稍后重试。") });
-    } finally {
-      setRequestingBind(false);
     }
   };
 
@@ -385,22 +326,6 @@ export function AccountPage() {
             <div className="account-security-rows">
               <div className="account-security-row">
                 <div>
-                  <h3>登录密码</h3>
-                  <p>修改后，其他设备需要重新登录</p>
-                </div>
-                <Button size="sm" variant="outline" onClick={() => setPasswordDialogOpen(true)}>修改密码</Button>
-              </div>
-
-              <WechatSection
-                status={profile.user.wechat_status}
-                boundAt={profile.user.wechat_bound_at}
-                bindQrcode={bindQrcode}
-                requesting={requestingBind}
-                onStartBind={() => void handleStartBind()}
-              />
-
-              <div className="account-security-row">
-                <div>
                   <h3>退出当前账号</h3>
                   <p>结束此设备上的当前会话</p>
                 </div>
@@ -420,58 +345,7 @@ export function AccountPage() {
       )}
 
       {notice && <FeedbackNotice kind={notice.kind}>{notice.message}</FeedbackNotice>}
-      {passwordDialogOpen && (
-        <ChangePasswordDialog onClose={() => setPasswordDialogOpen(false)} />
-      )}
     </main>
-  );
-}
-
-function WechatSection({
-  status,
-  boundAt,
-  bindQrcode,
-  requesting,
-  onStartBind,
-}: {
-  status: "unbound" | "bound" | "unavailable";
-  boundAt: string | null;
-  bindQrcode: string | null;
-  requesting: boolean;
-  onStartBind: () => void;
-}) {
-  return (
-    <div className="account-security-row is-wechat">
-      <div>
-        <h3>微信绑定</h3>
-        {status === "bound" && (
-          <p>
-            已绑定微信{boundAt ? `（${formatBoundAt(boundAt)}）` : ""}。本周暂不支持解绑或更换。
-          </p>
-        )}
-        {status === "unavailable" && (
-          <p>微信绑定服务暂不可用。</p>
-        )}
-        {status === "unbound" && !bindQrcode && (
-          <p>未绑定 · 绑定后可通过小程序登录</p>
-        )}
-        {status === "unbound" && bindQrcode && (
-          <p>使用微信扫描下方小程序码，在小程序内确认绑定。</p>
-        )}
-      </div>
-      {status === "unbound" && !bindQrcode && (
-        <Button size="sm" variant="outline" disabled={requesting} onClick={onStartBind}>
-          {requesting ? "生成中..." : "绑定微信"}
-        </Button>
-      )}
-      {status === "unbound" && bindQrcode && (
-        <img
-          className="account-wechat-qr"
-          src={`data:image/png;base64,${bindQrcode}`}
-          alt="微信绑定二维码"
-        />
-      )}
-    </div>
   );
 }
 
@@ -487,10 +361,4 @@ function recentTime(value: string) {
   if (diffDays === 0) return "今天更新";
   if (diffDays === 1) return "昨天更新";
   return `${date.getMonth() + 1}月${date.getDate()}日更新`;
-}
-
-function formatBoundAt(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
