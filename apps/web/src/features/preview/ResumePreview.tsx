@@ -1,3 +1,4 @@
+import "@callmebill/lxgw-wenkai-web/lxgwwenkai-regular/result.css";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { useEffect, useMemo } from "react";
 import type { ResumeDocumentV1, ResumeStyleV1 } from "../../api/client";
