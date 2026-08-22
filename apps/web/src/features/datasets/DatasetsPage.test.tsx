@@ -52,6 +52,9 @@ describe("DatasetsPage", () => {
     expect(screen.getByText(/建议先上传一份与你当前求职方向相关的资料/)).toBeInTheDocument();
     expect(screen.queryByLabelText("选择资料文件")).not.toBeInTheDocument();
 
+    expect(screen.getByRole("button", { name: "上传资料" })).toHaveClass("ui-button-transparent");
+    expect(screen.getByRole("button", { name: "上传第一份资料" })).not.toHaveClass("ui-button-transparent");
+
     fireEvent.click(screen.getByRole("button", { name: "上传第一份资料" }));
 
     expect(screen.getByRole("dialog", { name: "上传资料" })).toBeInTheDocument();
