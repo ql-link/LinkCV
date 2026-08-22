@@ -18,7 +18,9 @@
 
 新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace 和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker 和 Pi Service。当前 Alembic head `0029`；`0002`–`0025` 建立并演进简历、版本、导入、微信身份、LLM 与官方模板等既有业务结构，`0026`–`0027` 增加四套职能与设计模板并刷新其预览资产，`0028` 增加统一模型能力绑定与验证证据，`0029` 把模型候选收敛为能力中立配置。
 
-后端默认读取仓库根目录 `.env`。设置 `LINKCV_ENV_FILE=.env.development` 可选择共享 Dev 基础配置；如果同目录存在 `.env.development.local`，其密码和密钥会覆盖基础文件。Production 同理使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，配置路径不受当前工作目录影响。
+本地开发把 Git 主工作目录中的 `.env.local` 与 `.env.development.local` 作为所有 worktree 的共享私密覆盖层。`npm run dev`/`npm run dev:local` 优先使用当前 worktree 的 `.env`，否则回退主工作目录 `.env`；两处基础文件都不存在时，完整的主目录 `.env.local` 仍可单独作为 Local 配置。`npm run dev:development` 使用当前 worktree 已跟踪的 `.env.development`，再加载主工作目录 `.env.development.local`，并把同一结果注入 Web、FastAPI、Worker 与 Pi Service。新建 worktree 后不需要复制密钥文件。需要临时隔离时可显式设置 `LINKCV_SECRET_ENV_FILE=/absolute/path/to/override.local`。
+
+FastAPI 和 Worker 单独启动时也支持 `LINKCV_ENV_FILE` + `LINKCV_SECRET_ENV_FILE`；未显式指定私密文件且当前目录是 linked worktree 时，会自动寻找主工作目录中的同名 `.local`。Production 仍使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，启动日志只显示配置文件路径，不输出变量值。
 
 `APP_ENV=local|development` 时，Web 登录页开放普通邮箱密码注册和登录，注册成功后直接进入空的简历主页；`APP_ENV=production` 时两个普通入口均隐藏且后端返回 404，只允许普通用户通过微信身份进入。管理员始终使用独立的 `/admin/login`。
 
