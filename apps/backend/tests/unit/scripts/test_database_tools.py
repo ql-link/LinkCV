@@ -55,7 +55,13 @@ def test_sql_migration_executor_keeps_json_colons_literal(tmp_path: Path) -> Non
         def __init__(self) -> None:
             self.statements: list[str] = []
 
-        def exec_driver_sql(self, statement: str) -> None:
+        def exec_driver_sql(
+            self,
+            statement: str,
+            *,
+            execution_options: dict[str, bool],
+        ) -> None:
+            assert execution_options == {"no_parameters": True}
             self.statements.append(statement)
 
     connection = Connection()
@@ -64,6 +70,74 @@ def test_sql_migration_executor_keeps_json_colons_literal(tmp_path: Path) -> Non
     assert connection.statements == [
         "INSERT INTO example (payload) VALUES "
         "('{\"font_size\":14,\"smart_one_page\":false}')"
+    ]
+
+
+def test_sql_migration_executor_keeps_percent_literals_unparameterized(
+    tmp_path: Path,
+) -> None:
+    module = load_module(
+        "linkcv_migration_sql_percent_test",
+        REPO_ROOT / "apps/backend/src/linkcv/core/migration_sql.py",
+    )
+    sql_file = tmp_path / "percent.up.sql"
+    sql_file.write_text(
+        "INSERT INTO example (payload) VALUES ('专业前 10%');",
+        encoding="utf-8",
+    )
+
+    class Connection:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, dict[str, bool]]] = []
+
+        def exec_driver_sql(
+            self,
+            statement: str,
+            *,
+            execution_options: dict[str, bool],
+        ) -> None:
+            self.calls.append((statement, execution_options))
+
+    connection = Connection()
+    module.execute_sql_file(connection, sql_file)
+
+    assert connection.calls == [
+        (
+            "INSERT INTO example (payload) VALUES ('专业前 10%')",
+            {"no_parameters": True},
+        )
+    ]
+
+
+def test_sql_migration_executor_strips_utf8_bom(tmp_path: Path) -> None:
+    module = load_module(
+        "linkcv_migration_sql_bom_test",
+        REPO_ROOT / "apps/backend/src/linkcv/core/migration_sql.py",
+    )
+    sql_file = tmp_path / "bom.up.sql"
+    sql_file.write_text(
+        "-- migration comment\nALTER TABLE example ADD COLUMN enabled BOOLEAN;",
+        encoding="utf-8-sig",
+    )
+
+    class Connection:
+        def __init__(self) -> None:
+            self.statements: list[str] = []
+
+        def exec_driver_sql(
+            self,
+            statement: str,
+            *,
+            execution_options: dict[str, bool],
+        ) -> None:
+            assert execution_options == {"no_parameters": True}
+            self.statements.append(statement)
+
+    connection = Connection()
+    module.execute_sql_file(connection, sql_file)
+
+    assert connection.statements == [
+        "ALTER TABLE example ADD COLUMN enabled BOOLEAN"
     ]
 
 

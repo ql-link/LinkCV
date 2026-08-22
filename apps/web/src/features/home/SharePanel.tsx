@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type ResumeShareState } from "../../api/client";
-import { ConfirmDialog } from "@/components/ui";
+import { ConfirmDialog, PageLoading } from "@/components/ui";
 
 type LinkStatus = "available" | "expired" | "unavailable" | null;
 
@@ -237,7 +237,7 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
         </header>
 
         {loading ? (
-          <p className="share-panel-empty">正在读取分享状态…</p>
+          <PageLoading label="正在读取分享状态…" scope="panel" />
         ) : error && !share ? (
           <div className="share-panel-body">
             <p className="share-panel-error">{error}</p>

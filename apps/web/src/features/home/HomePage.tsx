@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { ExternalLink, FileUp, MoreHorizontal, Pencil, Plus, Search, Share2, Trash2 } from "lucide-react";
+import { ExternalLink, FileUp, MoreHorizontal, Pencil, Plus, Share2, Trash2 } from "lucide-react";
 import {
   type ResumeImportSummary,
   type ResumeSummary,
@@ -7,7 +7,9 @@ import {
 import {
   Button,
   ConfirmDialog,
+  ExpandableSearch,
   FeedbackNotice,
+  PageLoading,
 } from "@/components/ui";
 import { useResumeStore } from "../../store/resumeStore";
 import { editorPath, navigateTo } from "../../routing";
@@ -15,8 +17,10 @@ import { ResumePreview } from "../preview/ResumePreview";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { RenameResumeDialog } from "./RenameResumeDialog";
 import { SharePanel } from "./SharePanel";
+import { ResumeImportDialog } from "./ResumeImportDialog";
 
 type HomeScreenProps = {
+  loading?: boolean;
   resumes: ResumeSummary[];
   activeImports: ResumeImportSummary[];
   failedImports: ResumeImportSummary[];
@@ -50,6 +54,9 @@ function ImportTaskCard({
   onDelete?: () => void;
 }) {
   const stage = task.upload_status === "uploading" ? "正在上传" : "正在解析";
+  const stateLabel = failed
+    ? task.upload_status === "failed" ? "上传失败" : "解析失败"
+    : task.upload_status === "uploading" ? "上传中" : "解析中";
 
   return (
     <article
@@ -71,7 +78,7 @@ function ImportTaskCard({
           <span className="is-short" />
         </div>
         <div className="home-import-state">
-          <span className="home-import-state-label">未完成</span>
+          <span className="home-import-state-label">{stateLabel}</span>
           {!failed && (
             <div
               className="home-import-progress"
@@ -234,6 +241,7 @@ function ResumeThumbnailCard({
 }
 
 export function HomeScreen({
+  loading = false,
   resumes,
   activeImports,
   failedImports,
@@ -251,6 +259,7 @@ export function HomeScreen({
   const [renamingResumeId, setRenamingResumeId] = useState<string | null>(null);
   const [renameError, setRenameError] = useState<string | null>(null);
   const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [notice, setNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
 
   const visibleResumes = useMemo(() => {
@@ -321,51 +330,45 @@ export function HomeScreen({
   };
 
   return (
-    <main className="dashboard-content">
+    <main className="dashboard-content home-dashboard-content">
       <WorkspacePageHero
         eyebrow="求职工作台"
         title="全部简历"
-        description={
-          resumes.length > 0
-            ? `${resumes.length} 份简历 · 按最近更新排列`
-            : "从一份有针对性的简历开始，逐步整理你的求职版本。"
-        }
         actions={
           <>
-            <label className="page-hero-field dashboard-search-field">
-              <span>搜索简历</span>
-              <span className="dashboard-search">
-                <Search size={14} aria-hidden="true" />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="请输入关键词"
-                  aria-label="搜索简历"
-                />
-              </span>
-            </label>
+            <ExpandableSearch
+              label="搜索简历"
+              name="resume-search"
+              value={query}
+              onValueChange={setQuery}
+              placeholder="搜索简历…"
+            />
             <Button
               variant="ghost"
               icon={<FileUp size={15} />}
-              onClick={() => navigateTo("/resumes/new?mode=import")}
+              onClick={() => setImportDialogOpen(true)}
             >
               导入简历
             </Button>
-            <Button icon={<Plus size={15} />} onClick={() => void onCreate()}>
+            <Button
+              className="dashboard-create"
+              variant="outline"
+              icon={<Plus size={15} />}
+              onClick={() => void onCreate()}
+            >
               新建简历
             </Button>
           </>
         }
       />
 
-      <div className="dashboard-main">
-        {visibleCardCount > 0 ? (
-          <>
-            <div className="home-filter-row">
-              <span className="filter-pill is-active">全部 {visibleCardCount}</span>
-              <span className="home-filter-sort">最近更新</span>
-            </div>
-            <section className="home-card-grid" aria-label="全部简历">
+      {loading ? (
+        <PageLoading label="正在加载我的简历…" />
+      ) : (
+        <div className="dashboard-main">
+          {visibleCardCount > 0 ? (
+            <>
+              <section className="home-card-grid" aria-label="全部简历">
               {visibleImports.map(({ task, failed }) => (
                 <ImportTaskCard
                   task={task}
@@ -390,11 +393,10 @@ export function HomeScreen({
                   deleteDisabled={deletingResumeId !== null}
                 />
               ))}
-            </section>
-            <p className="home-page-tip">提示：点击简历卡片可继续编辑，分享按钮只管理当前简历的公开链接。</p>
-          </>
-        ) : (
-          <section className="dashboard-empty-state">
+              </section>
+            </>
+          ) : (
+            <section className="dashboard-empty-state">
             <span className="empty-state-icon" aria-hidden="true"><Plus size={28} strokeWidth={1.6} /></span>
             <h2>{query ? "没有匹配的简历" : "还没有正式简历"}</h2>
             <p>
@@ -408,16 +410,17 @@ export function HomeScreen({
                 <Button
                   variant="outline"
                   icon={<FileUp size={15} />}
-                  onClick={() => navigateTo("/resumes/new?mode=import")}
+                  onClick={() => setImportDialogOpen(true)}
                 >
                   导入简历
                 </Button>
               </div>
             )}
             {!query && <small className="empty-state-hint">建议：先完成一份基础版，再为不同岗位复制出定向版本。</small>}
-          </section>
-        )}
-      </div>
+            </section>
+          )}
+        </div>
+      )}
 
       {notice && <div className="home-action-toast"><FeedbackNotice kind={notice.kind}>{notice.message}</FeedbackNotice></div>}
       {pendingDelete && (
@@ -451,11 +454,18 @@ export function HomeScreen({
           onClose={() => setSharingResume(null)}
         />
       )}
+      {importDialogOpen && (
+        <ResumeImportDialog
+          onClose={() => setImportDialogOpen(false)}
+          onAccepted={(title) => setNotice({ kind: "success", message: `已开始导入“${title}”。` })}
+        />
+      )}
     </main>
   );
 }
 
 export function HomePage() {
+  const [loading, setLoading] = useState(true);
   const resumes = useResumeStore((state) => state.resumes);
   const activeImports = useResumeStore((state) => state.activeImports);
   const failedImports = useResumeStore((state) => state.failedImports);
@@ -466,7 +476,15 @@ export function HomePage() {
   const deleteResumeImport = useResumeStore((state) => state.deleteResumeImport);
 
   useEffect(() => {
-    void listResumes();
+    let cancelled = false;
+    void listResumes()
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [listResumes]);
 
   return (
@@ -483,6 +501,7 @@ export function HomePage() {
           />
         ))}
       <HomeScreen
+        loading={loading}
         resumes={resumes}
         activeImports={activeImports}
         failedImports={failedImports}

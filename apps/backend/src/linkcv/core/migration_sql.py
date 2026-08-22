@@ -29,7 +29,10 @@ def execute_sql_file(
     require_statements: bool = True,
 ) -> None:
     """Execute one migration file without allowing it to change database scope."""
-    statements = sql_statements(path.read_text(encoding="utf-8"))
+    # ``utf-8-sig`` accepts normal UTF-8 files and strips the optional BOM.
+    # Some historical migration files contain a BOM before their first SQL
+    # comment, which MySQL otherwise receives as part of the statement.
+    statements = sql_statements(path.read_text(encoding="utf-8-sig"))
     if require_statements and not statements:
         raise ValueError(f"migration SQL file has no executable statements: {path}")
 
@@ -39,4 +42,11 @@ def execute_sql_file(
         # Migration files are reviewed, statement-only MySQL SQL. Executing the
         # driver SQL directly keeps JSON object colons literal instead of having
         # SQLAlchemy interpret values such as `"font_size":14` as bind params.
-        connection.exec_driver_sql(statement)
+        # The migration format never supplies bind parameters.  Without
+        # ``no_parameters``, SQLAlchemy still passes an empty parameter
+        # collection to some DBAPIs.  PyMySQL then applies ``%`` formatting
+        # and rejects literal percentages in seeded Markdown/JSON content.
+        connection.exec_driver_sql(
+            statement,
+            execution_options={"no_parameters": True},
+        )

@@ -85,9 +85,18 @@ export function Footer({ onStart }: { onStart: () => void }) {
                     {t.footer.cta}
                     <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                   </button>
-                  <p className="font-mono text-[10px] tracking-[0.04em] text-white/75">
-                    {t.footer.copyright}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] tracking-[0.04em] text-white/75">
+                    <p>{t.footer.copyright}</p>
+                    <span aria-hidden>·</span>
+                    <a
+                      href="https://beian.miit.gov.cn/"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-sm underline decoration-white/35 underline-offset-4 transition-colors hover:text-white hover:decoration-white/80 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
+                    >
+                      皖ICP备2026017322号
+                    </a>
+                  </div>
                 </div>
               </div>
             </Reveal>

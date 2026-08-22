@@ -3,14 +3,9 @@ import traceback
 from types import SimpleNamespace
 
 import litellm
-from pydantic import BaseModel
 
 from linkcv.modules.llm.gateway import GatewayError, LiteLLMGateway, _gateway_error
 from linkcv.modules.llm.schemas import ChatMessage
-
-
-class StructuredPayload(BaseModel):
-    answer: str
 
 
 def test_provider_errors_map_without_retry_or_switch_semantics() -> None:
@@ -32,7 +27,7 @@ def test_provider_errors_map_without_retry_or_switch_semantics() -> None:
     assert internal.may_have_reached_provider is True
 
 
-def test_complete_forwards_zero_retries_structured_format_and_timeout(
+def test_complete_forwards_zero_retries_and_timeout_without_provider_schema(
     monkeypatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -52,14 +47,45 @@ def test_complete_forwards_zero_retries_structured_format_and_timeout(
             messages=[ChatMessage(role="user", content="结构化请求")],
             api_base="https://models.example.invalid",
             api_key="fictional-key",
-            response_format=StructuredPayload,
         )
     )
 
     assert result.content == '{"answer":"ok"}'
-    assert captured["response_format"] is StructuredPayload
+    assert "response_format" not in captured
+    assert "extra_body" not in captured
     assert captured["timeout"] == 12.5
     assert captured["num_retries"] == 0
+
+
+def test_complete_disables_thinking_only_for_deepseek_when_requested(
+    monkeypatch,
+) -> None:
+    captured: list[dict[str, object]] = []
+
+    async def fake_completion(**kwargs):
+        captured.append(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"answer":"ok"}'))],
+            usage=SimpleNamespace(prompt_tokens=3, completion_tokens=2),
+        )
+
+    monkeypatch.setattr(litellm, "acompletion", fake_completion)
+    gateway = LiteLLMGateway()
+
+    async def call() -> None:
+        for model in ("deepseek/deepseek-v4-flash", "dashscope/qwen-plus"):
+            await gateway.complete(
+                model=model,
+                messages=[ChatMessage(role="user", content="结构化请求")],
+                api_base=None,
+                api_key="fictional-key",
+                disable_thinking=True,
+            )
+
+    asyncio.run(call())
+
+    assert captured[0]["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert "extra_body" not in captured[1]
 
 
 def test_stream_forwards_zero_retries_and_preserves_partial_metering(
@@ -138,29 +164,3 @@ def test_provider_exception_details_are_removed_from_traceback(monkeypatch) -> N
 
     assert "LLM provider request failed" in rendered
     assert sensitive_detail not in rendered
-
-
-def test_verified_qwen_schema_request_disables_thinking(monkeypatch) -> None:
-    captured = {}
-
-    async def fake_completion(**kwargs):
-        captured.update(kwargs)
-        return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content='{"ok":true}'))],
-            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
-        )
-
-    monkeypatch.setattr(litellm, "acompletion", fake_completion)
-    asyncio.run(
-        LiteLLMGateway().complete(
-            model="openai/qwen3.7-plus",
-            messages=[ChatMessage(role="user", content="fixture")],
-            api_base=(
-                "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-            ),
-            api_key="fictional-key",
-            response_format=StructuredPayload,
-        )
-    )
-
-    assert captured["extra_body"] == {"enable_thinking": False}

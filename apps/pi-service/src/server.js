@@ -3,7 +3,7 @@ import { configureHttpDispatcher } from "../../../third_party/pi/packages/coding
 
 import { bearerToken, tokensEqual } from "./auth.js";
 import { loadConfig } from "./config.js";
-import { executeAgentRun } from "./runtime/agent.js";
+import { executeAgentProbe, executeAgentRun } from "./runtime/agent.js";
 import { createLinkCVClient } from "./tools/linkcv-client.js";
 
 configureHttpDispatcher();
@@ -20,7 +20,7 @@ async function readJson(request) {
   let size = 0;
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > 96 * 1024) throw new Error("REQUEST_TOO_LARGE");
+    if (size > 256 * 1024) throw new Error("REQUEST_TOO_LARGE");
     parts.push(chunk);
   }
   return JSON.parse(Buffer.concat(parts).toString("utf8"));
@@ -46,6 +46,45 @@ const server = createServer(async (request, response) => {
       return json(response, 200, { ready: true, service: "linkcv-pi" });
     } catch {
       return json(response, 503, { error: "AGENT_NOT_READY" });
+    }
+  }
+  if (request.method === "POST" && url.pathname === "/internal/probes") {
+    let payload;
+    try {
+      payload = await readJson(request);
+    } catch {
+      return json(response, 400, { error: "INVALID_AGENT_PROBE" });
+    }
+    const model = payload?.model;
+    if (
+      typeof payload?.runId !== "string" ||
+      typeof payload?.nonce !== "string" ||
+      payload.nonce.length < 16 ||
+      !model ||
+      typeof model.adapter !== "string" ||
+      typeof model.id !== "string" ||
+      typeof model.name !== "string" ||
+      typeof model.apiKey !== "string" ||
+      (model.baseUrl !== undefined && typeof model.baseUrl !== "string")
+    ) {
+      return json(response, 400, { error: "INVALID_AGENT_PROBE" });
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort("timeout"), config.runTimeoutMs);
+    try {
+      const result = await executeAgentProbe({ model, nonce: payload.nonce, signal: controller.signal });
+      return json(response, 200, {
+        ok: true,
+        runId: payload.runId,
+        toolCallId: result.toolCallId,
+        usage: result.usage ?? { inputTokens: 0, outputTokens: 0 },
+      });
+    } catch {
+      return json(response, controller.signal.aborted ? 504 : 502, {
+        error: controller.signal.aborted ? "AGENT_TIMEOUT" : "AGENT_PROBE_FAILED",
+      });
+    } finally {
+      clearTimeout(timeout);
     }
   }
   if (request.method === "POST" && url.pathname === "/internal/agent/runs") {
@@ -86,7 +125,7 @@ const server = createServer(async (request, response) => {
     });
     writeEvent(response, "run.started", { runId: payload.runId });
     try {
-      await executeAgentRun({
+      const usage = await executeAgentRun({
         config,
         runId: payload.runId,
         content: payload.content.trim(),
@@ -95,12 +134,23 @@ const server = createServer(async (request, response) => {
         signal: controller.signal,
       });
       if (controller.signal.aborted) throw new Error("AGENT_ABORTED");
-      writeEvent(response, "run.completed", { runId: payload.runId });
+      writeEvent(response, "run.completed", { runId: payload.runId, usage });
     } catch (error) {
-      const cancelled = controller.signal.aborted;
+      const timedOut = controller.signal.aborted && controller.signal.reason === "timeout";
+      const cancelled = controller.signal.aborted && !timedOut;
+      const safeErrorCodes = new Set([
+        "AGENT_MODEL_UNSUPPORTED",
+        "AGENT_MODEL_TIMEOUT",
+        "AGENT_MODEL_REQUEST_FAILED",
+        "AGENT_EMPTY_RESPONSE",
+      ]);
       writeEvent(response, cancelled ? "run.cancelled" : "run.failed", {
         runId: payload.runId,
-        ...(cancelled ? {} : { error: error?.message === "AGENT_MODEL_UNSUPPORTED" ? error.message : "AGENT_EXECUTION_FAILED" }),
+        ...(cancelled ? {} : {
+          error: timedOut
+            ? "AGENT_TIMEOUT"
+            : safeErrorCodes.has(error?.message) ? error.message : "AGENT_EXECUTION_FAILED",
+        }),
       });
     } finally {
       clearTimeout(timeout);

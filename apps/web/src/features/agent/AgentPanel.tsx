@@ -62,6 +62,9 @@ function agentErrorMessage(error: unknown) {
     AGENT_STREAM_INCOMPLETE: "智能助手连接意外中断，请稍后重试。",
     AGENT_MODEL_UNAVAILABLE: "当前模型暂时不可用，请稍后重试。",
     AGENT_MODEL_UNSUPPORTED: "当前管理员模型暂不受智能助手支持。",
+    AGENT_MODEL_TIMEOUT: "当前模型响应超时，请稍后重试。",
+    AGENT_MODEL_REQUEST_FAILED: "当前模型请求失败，请稍后重试。",
+    AGENT_TIMEOUT: "智能助手本轮运行超时，请稍后重试。",
     AGENT_RUN_IN_PROGRESS: "上一条请求仍在处理中，请等待或取消后重试。",
     RESUME_EDIT_CONFLICT: "简历已发生新的修改，这份提案没有应用。请重新生成建议。",
   };

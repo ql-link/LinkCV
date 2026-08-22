@@ -26,6 +26,36 @@ const SYSTEM_PROMPT = `你是 LinkCV 的简历智能助手。你只能服务当�
 
 const SKILLS_ROOT = fileURLToPath(new URL("../../resources/skills/", import.meta.url));
 
+const PI_PROVIDER_BY_ADAPTER = {
+  openai: "openai",
+  anthropic: "anthropic",
+  deepseek: "deepseek",
+  openrouter: "openrouter",
+  gemini: "google",
+  xai: "xai",
+  groq: "groq",
+  mistral: "mistral",
+};
+
+async function configuredModel(modelConfig) {
+  const provider = PI_PROVIDER_BY_ADAPTER[modelConfig.adapter];
+  if (!provider) throw new Error("AGENT_MODEL_UNSUPPORTED");
+  const modelRuntime = await ModelRuntime.create({
+    modelsPath: null,
+    allowModelNetwork: false,
+    refreshOnCreate: false,
+  });
+  if (modelConfig.apiKey) {
+    await modelRuntime.setRuntimeApiKey(provider, modelConfig.apiKey);
+  }
+  const baseModel = modelRuntime.getModel(provider, modelConfig.name);
+  if (!baseModel) throw new Error("AGENT_MODEL_UNSUPPORTED");
+  return {
+    modelRuntime,
+    model: modelConfig.baseUrl ? { ...baseModel, baseUrl: modelConfig.baseUrl } : baseModel,
+  };
+}
+
 export function createSkillReadTool() {
   return defineTool({
     name: "read",
@@ -71,6 +101,10 @@ export function assertAgentCompleted(message) {
     throw new Error("AGENT_EMPTY_RESPONSE");
   }
   if (message.stopReason === "error") {
+    const detail = String(message.errorMessage ?? "");
+    if (/\b(?:timeout|timed out|etimedout)\b/i.test(detail)) {
+      throw new Error("AGENT_MODEL_TIMEOUT");
+    }
     throw new Error("AGENT_MODEL_REQUEST_FAILED");
   }
   if (message.stopReason === "aborted") {
@@ -78,22 +112,92 @@ export function assertAgentCompleted(message) {
   }
 }
 
+export function agentUsage(stats) {
+  if (!stats?.tokens) return null;
+  const inputTokens = Number(stats.tokens.input);
+  const outputTokens = Number(stats.tokens.output);
+  const estimatedCost = Number(stats.cost);
+  if (
+    !Number.isSafeInteger(inputTokens) || inputTokens < 0 ||
+    !Number.isSafeInteger(outputTokens) || outputTokens < 0
+  ) {
+    return null;
+  }
+  return {
+    inputTokens,
+    outputTokens,
+    estimatedCost: Number.isFinite(estimatedCost) && estimatedCost >= 0
+      ? estimatedCost.toFixed(8)
+      : null,
+  };
+}
+
+export async function executeAgentProbe({ model: modelConfig, nonce, signal }) {
+  const { modelRuntime, model } = await configuredModel(modelConfig);
+  let toolCallId = null;
+  const probeTool = defineTool({
+    name: "linkcv_probe",
+    label: "LinkCV Pi 探针",
+    description: "完成 LinkCV Pi Agent 能力验证。",
+    parameters: objectSchema({ nonce: { type: "string" } }, ["nonce"]),
+    execute: async (callId, params) => {
+      if (params.nonce !== nonce) throw new Error("AGENT_PROBE_NONCE_MISMATCH");
+      toolCallId = callId;
+      return { content: [{ type: "text", text: "OK" }], details: {} };
+    },
+  });
+  const settingsManager = SettingsManager.inMemory({
+    compaction: { enabled: false },
+    retry: { enabled: false },
+  });
+  const resourceLoader = new DefaultResourceLoader({
+    cwd: process.cwd(),
+    agentDir: fileURLToPath(new URL("../../resources/", import.meta.url)),
+    settingsManager,
+    systemPromptOverride: () =>
+      "你正在执行连接验证。必须且只能调用一次 linkcv_probe，并原样传入用户提供的 nonce；不要调用其他工具。",
+  });
+  await resourceLoader.reload();
+  const { session } = await createAgentSession({
+    model,
+    modelRuntime,
+    thinkingLevel: "off",
+    noTools: "builtin",
+    tools: ["linkcv_probe"],
+    customTools: [probeTool],
+    resourceLoader,
+    sessionManager: SessionManager.inMemory(),
+    settingsManager,
+  });
+  let finalAssistantMessage;
+  const unsubscribe = session.subscribe((event) => {
+    if (event.type === "message_end" && event.message.role === "assistant") {
+      finalAssistantMessage = event.message;
+    }
+  });
+  const abort = () => void session.abort();
+  signal.addEventListener("abort", abort, { once: true });
+  try {
+    await session.prompt(`nonce: ${nonce}`);
+    assertAgentCompleted(finalAssistantMessage);
+    if (!toolCallId) throw new Error("AGENT_PROBE_TOOL_NOT_CALLED");
+    return { toolCallId, usage: agentUsage(session.getSessionStats()) };
+  } finally {
+    signal.removeEventListener("abort", abort);
+    unsubscribe();
+    session.dispose();
+  }
+}
+
 export async function executeAgentRun({ config, runId, content, history, emit, signal }) {
   const client = createLinkCVClient(config, runId, signal);
   const runtimeConfig = await client.runtimeConfig();
-  const modelRuntime = await ModelRuntime.create({
-    modelsPath: null,
-    allowModelNetwork: false,
-    refreshOnCreate: false,
+  const { modelRuntime, model } = await configuredModel({
+    adapter: runtimeConfig.provider === "google" ? "gemini" : runtimeConfig.provider,
+    name: runtimeConfig.model,
+    apiKey: runtimeConfig.api_key,
+    baseUrl: runtimeConfig.api_base,
   });
-  if (runtimeConfig.api_key) {
-    await modelRuntime.setRuntimeApiKey(runtimeConfig.provider, runtimeConfig.api_key);
-  }
-  const baseModel = modelRuntime.getModel(runtimeConfig.provider, runtimeConfig.model);
-  if (!baseModel) throw new Error("AGENT_MODEL_UNSUPPORTED");
-  const model = runtimeConfig.api_base
-    ? { ...baseModel, baseUrl: runtimeConfig.api_base }
-    : baseModel;
 
   const getContextTool = defineTool({
     name: "get_resume_context",
@@ -222,6 +326,7 @@ export async function executeAgentRun({ config, runId, content, history, emit, s
       : content;
     await session.prompt(conversation);
     assertAgentCompleted(finalAssistantMessage);
+    return agentUsage(session.getSessionStats());
   } finally {
     signal.removeEventListener("abort", abort);
     unsubscribe();

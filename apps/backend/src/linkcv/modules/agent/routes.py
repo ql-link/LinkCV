@@ -193,10 +193,16 @@ async def cancel_agent_run(
 @router.post("/proposals/{proposal_id}/confirm", response_model=ResumeResponse)
 def confirm_agent_proposal(
     proposal_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ResumeResponse:
-    _, resume = confirm_proposal(db, public_id=proposal_id, user_id=user.id)
+    _, resume = confirm_proposal(
+        db,
+        public_id=proposal_id,
+        user_id=user.id,
+        version_limit=request.app.state.settings.resume_version_limit,
+    )
     return ResumeResponse(resume=resume_record(resume))
 
 

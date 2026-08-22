@@ -41,7 +41,7 @@ services:
       WEB_DIST_DIR: /app/web
       TZ: Asia/Shanghai
     ports:
-      - "${LINKCV_HTTP_PORT:-8000}:8000"
+      - "${LINKCV_HTTP_PORT:-4174}:8000"
     volumes:
       - linkcv-production-logs:/app/logs
     networks:

@@ -6,6 +6,10 @@ from sqlalchemy.orm import Session
 
 from linkcv.core.database import utc_now
 from linkcv.core.errors import ApiError
+from linkcv.application.resumes.service import (
+    ResumeVersionLimitExceeded,
+    append_resume_version,
+)
 from linkcv.domain.resume_snapshot import parse_resume_snapshot
 from linkcv.modules.agent.models import (
     AgentMessage,
@@ -20,7 +24,7 @@ from linkcv.modules.agent.schemas import (
     ProposalRecord,
 )
 from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.models import Resume, ResumeVersion
+from linkcv.modules.resumes.models import Resume
 
 
 def session_record(
@@ -249,7 +253,7 @@ def create_proposal(
 
 
 def confirm_proposal(
-    db: Session, *, public_id: str, user_id: int
+    db: Session, *, public_id: str, user_id: int, version_limit: int
 ) -> tuple[ResumeChangeProposal, Resume]:
     proposal = db.scalar(
         select(ResumeChangeProposal)
@@ -289,23 +293,17 @@ def confirm_proposal(
     resume.data_json = snapshot.data.model_dump(mode="json")
     resume.style_json = snapshot.style.model_dump(mode="json")
     resume.lock_version += 1
-    latest_version = int(
-        db.scalar(
-            select(func.coalesce(func.max(ResumeVersion.version_no), 0)).where(
-                ResumeVersion.resume_id == resume.id
-            )
-        )
-        or 0
-    )
-    db.add(
-        ResumeVersion(
-            resume_id=resume.id,
-            version_no=latest_version + 1,
-            data_json=resume.data_json,
-            style_json=resume.style_json,
+    try:
+        append_resume_version(
+            db,
+            resume,
             reason="agent",
+            version_limit=version_limit,
+            name="智能助手修改",
         )
-    )
+    except ResumeVersionLimitExceeded as error:
+        db.rollback()
+        raise ApiError(409, "RESUME_VERSION_LIMIT_REACHED") from error
     proposal.status = "applied"
     proposal.applied_lock_version = resume.lock_version
     proposal.applied_at = utc_now()

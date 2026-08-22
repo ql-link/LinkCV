@@ -67,12 +67,12 @@ def test_linkparse_sends_fixed_minimal_contract_and_maps_ocr_warning() -> None:
     body = captured["body"]
     assert request.url.path == "/v1/parse"
     assert request.headers["Authorization"] == "Bearer fixture-key"
-    assert b'name="engine"\r\n\r\nauto' in body
     assert b'name="output_formats"\r\n\r\nmarkdown' in body
-    assert b'name="ocr"\r\n\r\nauto' in body
-    assert b'name="dpi"\r\n\r\n200' in body
     assert b'name="include_bbox"\r\n\r\nfalse' in body
     assert b'name="include_images"\r\n\r\nfalse' in body
+    assert b'name="engine"' not in body
+    assert b'name="ocr"' not in body
+    assert b'name="dpi"' not in body
     assert result.page_count == 2
     assert result.warnings == ["pdf_ocr_applied"]
 

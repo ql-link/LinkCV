@@ -49,6 +49,9 @@ AUDIT_ACTIONS: dict[tuple[str, str], AuditAction] = {
     ("POST", "/api/resumes/{resume_id}/versions"): AuditAction(
         "resume.version_create", "resume_version", "resume_id"
     ),
+    ("PATCH", "/api/resumes/{resume_id}/versions/{version_no}"): AuditAction(
+        "resume.version_rename", "resume_version", "resume_id"
+    ),
     ("DELETE", "/api/resumes/{resume_id}/versions/{version_no}"): AuditAction(
         "resume.version_delete", "resume_version", "resume_id"
     ),

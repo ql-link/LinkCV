@@ -4,11 +4,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from linkcv.application.resumes.service import (
+    InvalidResumeVersionName,
     LatestResumeVersionRequired,
     ResumeVersionLimitExceeded,
     create_manual_version,
     delete_resume_version,
     find_owned_resume,
+    rename_resume_version,
     restore_resume_version,
 )
 from linkcv.core.config import Settings
@@ -23,6 +25,8 @@ from linkcv.modules.resumes.schemas import (
     DeleteResumeVersionResponse,
     ResumeResponse,
     ResumeVersionListResponse,
+    ResumeVersionCreateRequest,
+    ResumeVersionRenameRequest,
     ResumeVersionRecord,
     ResumeVersionResponse,
     ResumeVersionSummary,
@@ -36,6 +40,7 @@ def version_summary(version: ResumeVersion) -> ResumeVersionSummary:
     return ResumeVersionSummary(
         id=str(version.id),
         version_no=version.version_no,
+        name=version.name,
         reason=version.reason,
         created_at=version.created_at,
     )
@@ -81,6 +86,7 @@ def list_versions(
 def create_version(
     resume_id: str,
     request: Request,
+    payload: ResumeVersionCreateRequest | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
@@ -91,15 +97,45 @@ def create_version(
             resume_id,
             user.id,
             settings.resume_version_limit,
+            name=payload.name if payload is not None else None,
         )
     except ResumeVersionLimitExceeded as error:
         raise ApiError(409, "RESUME_VERSION_LIMIT_REACHED") from error
     except IntegrityError as error:
         raise ApiError(409, "VERSION_CONFLICT") from error
+    except InvalidResumeVersionName as error:
+        raise ApiError(400, "INVALID_RESUME_VERSION_NAME") from error
     except ValueError as error:
         raise ApiError(500, "RESUME_SCHEMA_INVALID") from error
     if version is None:
         raise ApiError(404, "RESUME_NOT_FOUND")
+    bind_audit_target(request, version.id)
+    return ResumeVersionResponse(version=version_record(version))
+
+
+@router.patch("/{version_no}", response_model=ResumeVersionResponse)
+def rename_version(
+    resume_id: str,
+    version_no: int,
+    payload: ResumeVersionRenameRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ResumeVersionResponse:
+    try:
+        version = rename_resume_version(
+            db,
+            resume_id,
+            version_no,
+            user.id,
+            payload.name,
+        )
+    except InvalidResumeVersionName as error:
+        raise ApiError(400, "INVALID_RESUME_VERSION_NAME") from error
+    if version is None:
+        if find_owned_resume(db, resume_id, user.id) is None:
+            raise ApiError(404, "RESUME_NOT_FOUND")
+        raise ApiError(404, "RESUME_VERSION_NOT_FOUND")
     bind_audit_target(request, version.id)
     return ResumeVersionResponse(version=version_record(version))
 
@@ -147,7 +183,6 @@ def restore_version(
     version_no: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-    settings: Settings = Depends(get_settings),
 ) -> ResumeResponse:
     try:
         resume = restore_resume_version(
@@ -155,10 +190,7 @@ def restore_version(
             resume_id,
             version_no,
             user.id,
-            settings.resume_version_limit,
         )
-    except ResumeVersionLimitExceeded as error:
-        raise ApiError(409, "RESUME_VERSION_LIMIT_REACHED") from error
     except IntegrityError as error:
         raise ApiError(409, "VERSION_CONFLICT") from error
     except ValueError as error:

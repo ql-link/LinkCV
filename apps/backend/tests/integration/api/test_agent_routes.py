@@ -24,7 +24,7 @@ from linkcv.modules.agent.models import (
 )
 from linkcv.modules.agent.pi_client import stream_pi_run
 from linkcv.modules.agent.service import create_run
-from linkcv.modules.resumes.models import ResumeTemplate
+from linkcv.modules.resumes.models import ResumeTemplate, ResumeVersion
 from tests.fakes import FakeRedis
 
 
@@ -178,6 +178,15 @@ def test_proposal_is_idempotent_and_confirmed_once() -> None:
             confirmed.json()["resume"]["data"]["basics"]["headline"]
             == "由智能助手生成的虚构标题"
         )
+        with app.state.session_factory() as db:
+            version = db.scalar(
+                select(ResumeVersion).where(
+                    ResumeVersion.resume_id == int(resume["id"]),
+                    ResumeVersion.reason == "agent",
+                )
+            )
+            assert version is not None
+            assert version.name == "智能助手修改"
 
 
 def test_proposal_confirmation_never_overwrites_concurrent_resume_edit() -> None:
@@ -217,6 +226,45 @@ def test_proposal_confirmation_never_overwrites_concurrent_resume_edit() -> None
         current = client.get(f"/api/resumes/{resume['id']}").json()["resume"]
         assert current["lock_version"] == 2
         assert current["data"]["basics"]["headline"] == "用户刚刚手动修改"
+
+
+def test_proposal_confirmation_respects_resume_version_limit() -> None:
+    app = build_app()
+    app.state.settings.resume_version_limit = 2
+    with TestClient(app) as client:
+        register(client, "agent-version-limit@example.test")
+        resume = create_resume(client, app)
+        manual = client.post(
+            f"/api/resumes/{resume['id']}/versions",
+            json={"name": "人工保留版本"},
+        )
+        assert manual.status_code == 201
+        session_id = client.post(
+            "/api/agent/sessions", json={"resume_id": resume["id"]}
+        ).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        proposed_data = resume["data"]
+        proposed_data["basics"]["headline"] = "不应应用的智能助手标题"
+        proposal = client.post(
+            f"/internal/agent/runs/{run_id}/proposals",
+            headers=internal_headers(),
+            json={
+                "call_key": "proposal-version-limit",
+                "data": proposed_data,
+                "style": resume["style"],
+                "summary": "版本空间已满时不得应用",
+            },
+        )
+
+        result = client.post(
+            f"/api/agent/proposals/{proposal.json()['proposal']['id']}/confirm"
+        )
+
+        assert result.status_code == 409
+        assert result.json() == {"error": "RESUME_VERSION_LIMIT_REACHED"}
+        current = client.get(f"/api/resumes/{resume['id']}").json()["resume"]
+        assert current["lock_version"] == 1
+        assert current["data"]["basics"]["headline"] != "不应应用的智能助手标题"
 
 
 def test_run_concurrency_is_limited_across_user_sessions() -> None:
@@ -440,6 +488,83 @@ def test_pi_stream_emits_failure_when_upstream_ends_without_terminal_event(
             assert run is not None
             assert run.status == "failed"
             assert run.error_code == "AGENT_UPSTREAM_FAILED"
+            assistant = db.scalar(
+                select(AgentMessage).where(
+                    AgentMessage.run_id == run.id,
+                    AgentMessage.role == "assistant",
+                )
+            )
+            assert assistant is None
+
+
+def test_pi_stream_persists_successful_usage_and_assistant_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = build_app()
+    app.state.settings.agent_enabled = True
+    app.state.settings.pi_service_token = SecretStr(
+        "pi-service-token-for-tests-00000000000001"
+    )
+    with TestClient(app) as client:
+        register(client, "agent-usage@example.test")
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+
+        class FakeStreamResponse:
+            status_code = 200
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args):
+                return None
+
+            async def aiter_lines(self):
+                for line in (
+                    "event: assistant.delta",
+                    'data: {"delta": "完整回复"}',
+                    "",
+                    "event: run.completed",
+                    'data: {"runId": "ignored", "usage": {"inputTokens": 120, "outputTokens": 30, "estimatedCost": "0.00123457"}}',
+                    "",
+                ):
+                    yield line
+
+        class FakeHttpClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args):
+                return None
+
+            def stream(self, *_args, **_kwargs):
+                return FakeStreamResponse()
+
+        monkeypatch.setattr(
+            "linkcv.modules.agent.pi_client.httpx.AsyncClient",
+            lambda **_kwargs: FakeHttpClient(),
+        )
+
+        async def collect_events() -> list[bytes]:
+            return [item async for item in stream_pi_run(app, run_id, "请优化简历")]
+
+        events = b"".join(asyncio.run(collect_events())).decode()
+        assert "event: run.completed" in events
+        with app.state.session_factory() as db:
+            run = db.scalar(select(AgentRun).where(AgentRun.public_id == run_id))
+            assert run is not None
+            assert run.status == "succeeded"
+            assert run.input_tokens == 120
+            assert run.output_tokens == 30
+            assert str(run.estimated_cost) == "0.00123457"
+            assistant = db.scalar(
+                select(AgentMessage).where(
+                    AgentMessage.run_id == run.id,
+                    AgentMessage.role == "assistant",
+                )
+            )
+            assert assistant is not None
+            assert assistant.content == "完整回复"
 
 
 def test_tool_event_terminal_state_is_idempotent_and_cannot_regress() -> None:

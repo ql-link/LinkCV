@@ -1,5 +1,6 @@
 import json
 from collections.abc import AsyncIterator
+from decimal import Decimal, InvalidOperation
 
 import httpx
 from sqlalchemy import func, select
@@ -27,6 +28,9 @@ async def stream_pi_run(app, run_public_id: str, content: str) -> AsyncIterator[
     final_status = "failed"
     final_error: str | None = "AGENT_UPSTREAM_FAILED"
     terminal_received = False
+    final_input_tokens: int | None = None
+    final_output_tokens: int | None = None
+    final_estimated_cost: Decimal | None = None
     url = f"{settings.pi_service_base_url}/internal/agent/runs"
     headers = {"Authorization": f"Bearer {token.get_secret_value()}"}
     timeout = httpx.Timeout(settings.agent_run_timeout_seconds, connect=5.0)
@@ -69,6 +73,11 @@ async def stream_pi_run(app, run_public_id: str, content: str) -> AsyncIterator[
                         if event_name == "run.completed":
                             terminal_received = True
                             final_status, final_error = "succeeded", None
+                            (
+                                final_input_tokens,
+                                final_output_tokens,
+                                final_estimated_cost,
+                            ) = _safe_usage(payload.get("usage"))
                         elif event_name == "run.cancelled":
                             terminal_received = True
                             final_status, final_error = "cancelled", None
@@ -105,6 +114,9 @@ async def stream_pi_run(app, run_public_id: str, content: str) -> AsyncIterator[
             final_status,
             error_code=final_error,
             assistant_content="".join(assistant_parts).strip() or None,
+            input_tokens=final_input_tokens,
+            output_tokens=final_output_tokens,
+            estimated_cost=final_estimated_cost,
         )
 
 
@@ -176,6 +188,9 @@ def _finalize(
     *,
     error_code: str | None,
     assistant_content: str | None = None,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    estimated_cost: Decimal | None = None,
 ) -> None:
     with app.state.session_factory() as db:
         row = db.execute(
@@ -191,8 +206,11 @@ def _finalize(
             return
         run.status = status
         run.error_code = error_code
+        run.input_tokens = input_tokens if status == "succeeded" else None
+        run.output_tokens = output_tokens if status == "succeeded" else None
+        run.estimated_cost = estimated_cost if status == "succeeded" else None
         run.completed_at = utc_now()
-        if assistant_content:
+        if status == "succeeded" and assistant_content:
             sequence_no = int(
                 db.scalar(
                     select(func.coalesce(func.max(AgentMessage.sequence_no), 0)).where(
@@ -212,3 +230,33 @@ def _finalize(
             )
             session.last_message_at = utc_now()
         db.commit()
+
+
+def _safe_usage(value: object) -> tuple[int | None, int | None, Decimal | None]:
+    if not isinstance(value, dict):
+        return None, None, None
+    input_tokens = value.get("inputTokens")
+    output_tokens = value.get("outputTokens")
+    if (
+        not isinstance(input_tokens, int)
+        or isinstance(input_tokens, bool)
+        or input_tokens < 0
+        or not isinstance(output_tokens, int)
+        or isinstance(output_tokens, bool)
+        or output_tokens < 0
+    ):
+        return None, None, None
+    raw_cost = value.get("estimatedCost")
+    if raw_cost is None:
+        return input_tokens, output_tokens, None
+    try:
+        cost = Decimal(str(raw_cost))
+    except (InvalidOperation, ValueError):
+        return input_tokens, output_tokens, None
+    if (
+        not cost.is_finite()
+        or cost < 0
+        or cost > Decimal("9999999999.99999999")
+    ):
+        cost = None
+    return input_tokens, output_tokens, cost

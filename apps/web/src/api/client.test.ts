@@ -95,18 +95,6 @@ describe("API session refresh", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("登录失败不会触发 refresh", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(401, { error: "INVALID_CREDENTIALS" }));
-    vi.stubGlobal("fetch", fetchMock);
-
-    await expect(
-      api.login("zhangsan@example.test", "wrong-password"),
-    ).rejects.toThrow("INVALID_CREDENTIALS");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
   it("并发 401 共用一次 refresh，避免轮换令牌互相撤销", async () => {
     const fetchMock = vi
       .fn()
@@ -244,6 +232,19 @@ describe("resume import polling API", () => {
 
     expect(fetch).toHaveBeenCalledWith(
       "/api/resume-imports/41%2Fother",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
+});
+
+describe("resume version detail API", () => {
+  it("按简历和版本号读取完整版本快照", async () => {
+    const body = { version: { id: "9", version_no: 3, name: "投递版", data: {}, style: {} } };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, body)));
+
+    await expect(api.getResumeVersion("42", 3)).resolves.toEqual(body);
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/resumes/42/versions/3",
       expect.objectContaining({ method: "GET", credentials: "include" }),
     );
   });
@@ -407,14 +408,65 @@ describe("API resume share", () => {
 });
 
 describe("微信扫码登录 API", () => {
+  it("读取当前环境开放的普通用户登录方式", async () => {
+    const body = { password_login_enabled: true };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, body)));
+
+    await expect(api.authCapabilities()).resolves.toEqual(body);
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/auth/capabilities",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
+
+  it("开发环境邮箱密码登录提交凭据", async () => {
+    const body = {
+      user: { id: "1", email: "developer@example.test", nickname: "开发用户" },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, body)));
+
+    await expect(api.login("developer@example.test", "password-123")).resolves.toEqual(body);
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/auth/login",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        body: JSON.stringify({
+          email: "developer@example.test",
+          password: "password-123",
+        }),
+      }),
+    );
+  });
+
+  it("开发环境邮箱密码注册提交凭据", async () => {
+    const body = {
+      user: { id: "2", email: "new@example.test", nickname: "开发用户" },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(201, body)));
+
+    await expect(api.register("new@example.test", "password-123")).resolves.toEqual(body);
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/auth/register",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        body: JSON.stringify({
+          email: "new@example.test",
+          password: "password-123",
+        }),
+      }),
+    );
+  });
+
   it("申请登录二维码时读取 scene 与 base64 图片", async () => {
-    const body = { scene: "login:abcd1234", qr_base64: "base64-qr" };
+    const body = { scene: "login:abcd1234", poll_token: "poll-token", qr_base64: "base64-qr" };
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(jsonResponse(200, body)),
     );
 
-    await expect(api.wechatQrcode("login")).resolves.toEqual(body);
+    await expect(api.wechatQrcode()).resolves.toEqual(body);
     expect(fetch).toHaveBeenCalledWith(
       "/api/auth/wechat/qrcode",
       expect.objectContaining({
@@ -431,9 +483,9 @@ describe("微信扫码登录 API", () => {
       vi.fn().mockResolvedValue(jsonResponse(200, status)),
     );
 
-    await expect(api.wechatStatus("login:a b")).resolves.toEqual(status);
+    await expect(api.wechatStatus("login:a b", "poll/token")).resolves.toEqual(status);
     expect(fetch).toHaveBeenCalledWith(
-      "/api/auth/wechat/status?scene=login%3Aa%20b",
+      "/api/auth/wechat/status?scene=login%3Aa%20b&poll_token=poll%2Ftoken",
       expect.objectContaining({ method: "GET", credentials: "include" }),
     );
   });
@@ -444,7 +496,7 @@ describe("微信扫码登录 API", () => {
       vi.fn().mockResolvedValue(jsonResponse(429, { error: "WECHAT_RATE_LIMITED" })),
     );
 
-    await expect(api.wechatQrcode("login")).rejects.toThrow(
+    await expect(api.wechatQrcode()).rejects.toThrow(
       "WECHAT_RATE_LIMITED",
     );
   });

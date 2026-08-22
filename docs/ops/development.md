@@ -16,9 +16,11 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker 和独立 Pi 服务。当前 Alembic head `0023`；`0002`–`0022` 的既有演进保持不变，`0023` 新增 Agent 会话、运行、消息、工具审计与简历修改提案，并允许历史版本使用 `reason=agent`。
+新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker和独立 Pi 服务。当前 Alembic head `0030`；`0002`–`0022` 建立并演进既有业务结构，`0023` 为历史简历版本新增非空名称，`0024`–`0027` 增加并刷新官方模板，`0028`–`0029` 扩展并收敛多能力模型配置，`0030` 新增 Agent 会话、运行、消息、工具审计与简历修改提案，并允许历史版本使用 `reason=agent`。
 
 后端默认读取仓库根目录 `.env`。设置 `LINKCV_ENV_FILE=.env.development` 可选择共享 Dev 基础配置；如果同目录存在 `.env.development.local`，其密码和密钥会覆盖基础文件。Production 同理使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，配置路径不受当前工作目录影响。
+
+`APP_ENV=local|development` 时，Web 登录页开放普通邮箱密码注册和登录，注册成功后直接进入空的简历主页；`APP_ENV=production` 时两个普通入口均隐藏且后端返回 404，只允许普通用户通过微信身份进入。管理员始终使用独立的 `/admin/login`。
 
 `npm run dev:development` 通过 `scripts/dev/start-development.sh` 同时启动 Web、FastAPI、解析 Worker 与 Pi。脚本使用 Node `--env-file` 把 `.env.development` 和可选 `.env.development.local` 同步交给 Node 与 Python 进程，将 Web 到 FastAPI、FastAPI 到 Pi 及 Pi 回调 FastAPI 改为本机回环地址，并把仅在 Docker 网络内可解析的 RabbitMQ 主机名在进程内替换为 Development 主机地址；原始 URL 的账号、密码和 vhost 不会被输出或改写到文件。默认使用 FastAPI 18000、Pi 8010 和 AMQP 5672，可用 `LINKCV_LOCAL_BACKEND_PORT`、`LINKCV_LOCAL_PI_PORT`、`LINKCV_LOCAL_RABBITMQ_HOST`、`LINKCV_LOCAL_RABBITMQ_PORT` 覆盖。两枚仅用于本地进程间鉴权的 Agent token 首次启动时自动生成到被忽略且权限为 600 的 `.runtime/development-agent.env`；脚本不会生成 LLM 密钥环，共享 Development 的 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 仍必须从受控密钥来源写入 `.env.development.local`。
 
@@ -38,11 +40,17 @@ local/test 未配置密钥环时，原有非 LLM 接口仍可启动，但保存�
 LINKCV_ENV_FILE=.env.development npm run db:init
 ```
 
-命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0023`。图片、导入源文件和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。
+命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0030`。图片、导入源文件和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。
 
 `PLUGIN_RELEASE_ORIGIN` 是当前环境允许正式插件访问的 LinkCV 根 Origin。默认本地值为 `http://127.0.0.1:5173`；共享 Development 和 Production 必须在各自 `.local` 覆盖中写入用户实际访问的 Origin，Production 只接受 HTTPS。该值必须与构建安装包时传给 `build_extension_release.py` 的对应 Origin 一致，否则管理员上传会被拒绝。
 
-微信绑定与扫码登录要求同时配置 `WECHAT_APPID` 与 `WECHAT_SECRET`（两者均为非占位符才开启能力开关，否则 profile 返回 `unavailable`、相关接口返回 `503 WECHAT_SERVICE_UNAVAILABLE`）。`WECHAT_QR_PAGE` 是绑定用小程序码页（默认 `pages/bind/bind`），`WECHAT_LOGIN_PAGE` 是扫码登录确认页（默认 `pages/login/index`）；`WECHAT_BIND_TICKET_TTL_SECONDS`（默认 300）与 `WECHAT_SCENE_TTL_SECONDS`（默认 300）分别控制绑定票据与登录 scene 的 Redis 有效期，`WECHAT_QRCODE_REQUESTS_PER_MINUTE`（默认 10）限制登录二维码按 IP 的生成频率。
+微信自动建号、小程序登录和网页扫码确认要求同时配置 `WECHAT_APPID` 与 `WECHAT_SECRET`；密钥只放 `.env.local`、环境对应 `.local` 或进程环境。`WECHAT_LOGIN_PAGE` 默认 `pages/login/index`，`WECHAT_SCENE_TTL_SECONDS` 默认 300 秒，`WECHAT_QRCODE_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 10 次，`WECHAT_LOGIN_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 30 次，`WECHAT_API_TIMEOUT_SECONDS` 控制微信上游超时。未配置时应用仍可启动，但微信登录接口返回 `503 WECHAT_SERVICE_UNAVAILABLE`。
+
+## 微信小程序开发
+
+用微信开发者工具直接导入 `apps/miniprogram`。直接打开时先进入 `pages/login/index`：未登录客户端使用当前微信临时 code 调用只读账号状态接口，根据结果分别显示“同意并登录”或“同意并注册”；该状态查询不创建账号或会话。用户必须查看并勾选微信公众平台配置的小程序隐私保护指引，再主动点击对应按钮；已有本地会话会直接进入简历列表。扫描 Web 生成的码也进入该页，未同意隐私指引时不能确认登录，仍可取消。客户端使用基础库 2.32.3 起提供的 `wx.getPrivacySetting`、`agreePrivacyAuthorization` 和 `wx.openPrivacyContract`；隐私 API 不可用时失败关闭并提示升级微信，不能绕过协议自动建号。明确注册和扫码确认携带 `privacy_accepted=true`，后端仅在该值为真时为未知 openid 建号；已有账号的登录以及 refresh 失效后的恢复携带 `privacy_accepted=false`，因而不能静默建号。服务端不把该请求字段保存为同意审计记录。开发版默认访问 `http://127.0.0.1:8000`；后端位于其他内网地址时，在开发者工具控制台执行 `wx.setStorageSync("linkcv_api_base_url", "http://<内网地址>:8000")` 后重新进入小程序，并关闭合法域名校验。该本地覆盖只对 `develop` 生效。体验版和正式版固定使用 `https://linkresume.cn`、强制 HTTPS 并忽略本地存储覆盖；第三方平台代开发时仍可用 `extConfig.apiBaseUrl` 覆盖。发布前还要在微信公众平台登记 request 合法域名并发布用户隐私保护指引。API URL 会打入小程序包，本来就是公开信息；仓库和小程序包内不得放 AppSecret。
+
+小程序只调用 `GET /api/miniprogram/resumes` 与 `GET /api/miniprogram/resumes/{id}` 的本人数据；专用鉴权拒绝 Web Cookie，普通 `/api/resumes*` 也拒绝小程序 Bearer，因此只读不是界面约束。纯逻辑测试运行 `npm run test:miniprogram`；微信 API、页面跳转和合法域名仍需开发者工具与真机验收，不能描述为自动化 E2E。
 
 ## 默认端口与覆盖
 
@@ -81,8 +89,6 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 
 如 LinkRag 使用了其他 Compose project/network，可通过 `LOKI_DOCKER_NETWORK` 覆盖网络名；LinkCV 日志目录可通过 `LINKCV_LOG_PATH` 覆盖。需要让本地 FastAPI 管理端查询该 Loki 时，为进程设置 `LOKI_QUERY_URL=http://127.0.0.1:3100`，该地址不传给浏览器。
 
-微信扫码登录需要 `WECHAT_APPID` 与 `WECHAT_APPSECRET`（个人主体小程序，体验版/正式版均可）；`WECHAT_LOGIN_PAGE` 指定小程序登录确认页（默认 `pages/login/index`）。`WECHAT_QRCODE_REQUESTS_PER_MINUTE`（默认 10）控制二维码请求的按 IP 限流，`WECHAT_SCENE_TTL_SECONDS`（默认 300）控制 scene 有效期，`WECHAT_TIMEOUT_SECONDS`（默认 5）控制微信上游调用超时。Development 未配置微信凭据时仍可启动应用，但二维码接口会返回 `WECHAT_UNAVAILABLE`；Production 缺 `WECHAT_APPID`/`WECHAT_APPSECRET` 会拒绝启动。
-
 ## 简历导入与版本配置
 
 | 环境变量 | 默认值 | 作用 |
@@ -113,18 +119,20 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 | `LINKPARSE_PARSE_PATH` | `/v1/parse` | 同步 PDF/DOCX 解析路径 |
 | `LINKPARSE_TIMEOUT_SECONDS` | `90` | 单次 LinkParse 阶段时限，不自动重试 |
 | `LINKPARSE_RESPONSE_MAX_BYTES` | `3145728` | LinkParse 响应读取上限 |
-| `WECHAT_APPID` | 空 | 微信小程序 appid；与 `WECHAT_SECRET` 同时配置才启用微信绑定 |
+| `WECHAT_APPID` | 空 | 微信小程序 appid；与 `WECHAT_SECRET` 同时配置才启用微信登录 |
 | `WECHAT_SECRET` | 空 | 微信小程序密钥，只放 `.local` 或进程环境 |
-| `WECHAT_QR_PAGE` | `pages/bind/bind` | 小程序码跳转的绑定确认页路径 |
-| `WECHAT_BIND_TICKET_TTL_SECONDS` | `300` | 微信绑定票据有效期，60~900 秒 |
+| `WECHAT_LOGIN_PAGE` | `pages/login/index` | 网页扫码进入的小程序确认页 |
+| `WECHAT_SCENE_TTL_SECONDS` | `300` | 网页扫码场景有效期，30~600 秒 |
+| `WECHAT_QRCODE_REQUESTS_PER_MINUTE` | `10` | 每 IP 每分钟生成网页登录码上限 |
+| `WECHAT_LOGIN_REQUESTS_PER_MINUTE` | `30` | 每 IP 每分钟小程序自动登录上限 |
 | `WECHAT_API_TIMEOUT_SECONDS` | `5` | 单次微信开放平台调用超时 |
 | `REDIS_CONNECT_TIMEOUT_SECONDS` | `2` | Redis 连接超时 |
 | `REDIS_SOCKET_TIMEOUT_SECONDS` | `2` | Redis 操作超时 |
 | `LLM_TIMEOUT_SECONDS` | `75` | 统一托管 LLM Gateway 的单次请求超时 |
 
-Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置当前 Chat binding。PDF 和 DOCX 会把原始二进制和安全文件名发送到 LinkParse；浏览器不读取地址或 Key。API 的频率与受理并发限制保存在 FastAPI 进程内，请求幂等和 Worker 防重保存在 Redis，任务终态保存在 MySQL。默认自动化测试注入 Fake，不访问真实地址或读取 Key。
+Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置当前 `resume_structuring` binding。PDF 和 DOCX 会把原始二进制和安全文件名发送到 LinkParse；浏览器不读取地址或 Key。API 的频率与受理并发限制保存在 FastAPI 进程内，请求幂等和 Worker 防重保存在 Redis，任务终态保存在 MySQL。默认自动化测试注入 Fake，不访问真实地址或读取 Key。
 
-简历导入使用数据库驱动的统一 LLM 服务和当前 Chat binding。模型地址、模型调用名与 API Key 通过管理员 API 管理，凭据由 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 加解密；调用不自动重试，也不回退其他候选。环境只保留密钥环与统一的 `LLM_TIMEOUT_SECONDS`，不再配置导入专用 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL` 或重试参数。
+简历导入使用数据库驱动的统一 LLM 服务和当前 `resume_structuring` binding。模型地址、模型调用名与 API Key 通过管理员 API 管理，凭据由 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 加解密；调用不自动重试，也不回退其他候选。环境只保留密钥环与统一的 `LLM_TIMEOUT_SECONDS`，不再配置导入专用 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL` 或重试参数。
 
 本地 PDF/DOCX 联调时，把 `LINKPARSE_API_KEY=<受控凭据>` 写入被 Git 忽略的 `.env.local` 或 `.env.development.local`，不要写入三份仓库环境文件、命令行历史、日志或测试 fixture。Key 缺失时 Development 仍可启动，Markdown 可测，PDF/DOCX 明确返回 `DOCUMENT_CONVERSION_UNAVAILABLE`。
 
@@ -140,6 +148,7 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run dev:pi`                      | 单独启动无头 Pi Agent 服务                                           |
 | `npm run test:pi`                     | 运行 Pi 服务单元测试                                                  |
 | `npm run check:pi`                    | 校验静态模型目录、离线构建 Pi 并测试服务                              |
+| `npm run test:miniprogram`            | 小程序纯逻辑 Node 测试                                               |
 | `npm run dev:extension`               | 启动 WXT 插件开发模式                                                |
 | `npm run test:extension`              | 插件 DOM 提取与 API 客户端测试                                       |
 | `npm run build:extension`             | 构建可侧载的 Chrome MV3 目录                                         |
@@ -153,5 +162,5 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 
 - 前端测试使用 Vitest、React Testing Library 和 jsdom，通过 Mock 隔离 API。
 - 后端单元测试不访问外部服务；集成测试使用内存 SQLite 和假 MinIO。
-- Pi 服务测试不访问真实模型或 FastAPI；真实 Agent 联调需要管理员配置当前 Chat 模型，并启动 FastAPI 与 Pi 两个进程。
+- Pi 服务测试不访问真实模型或 FastAPI；真实 Agent 联调需要管理员配置并验证当前 `pi_agent` 模型，并启动 FastAPI 与 Pi 两个进程。
 - 跨浏览器插件、BOSS 页面、Web、FastAPI、真实 MySQL 和 Redis 的完整导入流程由浏览器人工验证。侧载目录和步骤见 [`apps/extension/README.md`](../../apps/extension/README.md)。

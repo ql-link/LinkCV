@@ -10,12 +10,17 @@ export type User = {
 
 export type WeChatQrcodeResponse = {
   scene: string;
+  poll_token: string;
   qr_base64: string;
 };
 
 export type WeChatStatusResponse = {
-  status: "pending" | "success" | "expired";
+  status: "pending" | "success" | "cancelled" | "expired";
   user: User | null;
+};
+
+export type AuthCapabilities = {
+  password_login_enabled: boolean;
 };
 
 export type UserProfile = User & {
@@ -34,12 +39,6 @@ export type AccountProfile = {
   user: UserProfile;
   resume_count: number;
   recent_resumes: RecentResumeSummary[];
-};
-
-export type ChangePasswordPayload = {
-  currentPassword: string;
-  newPassword: string;
-  confirmPassword: string;
 };
 
 export type AdminUserSummary = User & {
@@ -115,6 +114,7 @@ export type ResumeRecord = ResumeSummary & {
 export type ResumeVersion = {
   id: string;
   version_no: number;
+  name: string;
   reason: "initial" | "manual" | "before_restore" | "restore" | "agent";
   created_at: string;
   data?: ResumeDocumentV1;
@@ -392,6 +392,38 @@ export type LlmModelConfig = {
   updatedAt: string;
 };
 
+export type ModelCapability = "chat" | "resume_structuring" | "pi_agent";
+
+export type CapabilityModelConfig = {
+  id: string;
+  adapter: ChatAdapter;
+  model: string;
+  apiBase: string | null;
+  keyConfigured: boolean;
+  configVersion: number;
+  activeCapabilities: ModelCapability[];
+  lastTest: LlmModelLastTest | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ModelCapabilityRecord = {
+  capability: ModelCapability;
+  activeModelId: string | null;
+  bindingVersion: number;
+  activeModel: CapabilityModelConfig | null;
+  models: CapabilityModelConfig[];
+};
+
+export type ModelCapabilityList = {
+  capabilities: ModelCapabilityRecord[];
+};
+
+export type ModelCatalog = {
+  capabilities: ModelCapability[];
+  adapters: ChatCatalogAdapter[];
+};
+
 export type ChatCapability = {
   capability: "chat";
   activeModelId: string | null;
@@ -421,6 +453,7 @@ export type LlmModelCreatePayload = {
 export type LlmModelPatchPayload = Partial<
   Omit<LlmModelCreatePayload, "apiKey">
 > & {
+  baseConfigVersion?: number;
   apiKey?: string | null;
 };
 
@@ -429,7 +462,7 @@ export type LlmMeteringStatus = "complete" | "partial" | "unknown";
 
 export type LlmCallRecord = {
   callId: string;
-  capability: "chat";
+  capability: ModelCapability;
   source: string;
   userId: string;
   modelConfigId: string | null;
@@ -444,6 +477,7 @@ export type LlmCallRecord = {
   estimatedCostUsd: string | null;
   latencyMs: number | null;
   errorCode: string | null;
+  modelConfigVersion?: number | null;
   createdAt: string;
 };
 
@@ -755,13 +789,15 @@ async function getCurrentUser(): Promise<{ user: User | null }> {
 
 export const api = {
   me: getCurrentUser,
-  register: (email: string, password: string) =>
-    request<{ user: User }>("/api/auth/register", {
+  authCapabilities: () =>
+    request<AuthCapabilities>("/api/auth/capabilities"),
+  login: (email: string, password: string) =>
+    request<{ user: User }>("/api/auth/login", {
       method: "POST",
       body: { email, password },
     }),
-  login: (email: string, password: string) =>
-    request<{ user: User }>("/api/auth/login", {
+  register: (email: string, password: string) =>
+    request<{ user: User }>("/api/auth/register", {
       method: "POST",
       body: { email, password },
     }),
@@ -770,14 +806,13 @@ export const api = {
       method: "POST",
       body: { email, password },
     }),
-  wechatQrcode: (mode: "login" | "bind") =>
+  wechatQrcode: () =>
     request<WeChatQrcodeResponse>("/api/auth/wechat/qrcode", {
       method: "POST",
-      body: { mode },
     }),
-  wechatStatus: (scene: string) =>
+  wechatStatus: (scene: string, pollToken: string) =>
     request<WeChatStatusResponse>(
-      `/api/auth/wechat/status?scene=${encodeURIComponent(scene)}`,
+      `/api/auth/wechat/status?scene=${encodeURIComponent(scene)}&poll_token=${encodeURIComponent(pollToken)}`,
     ),
   logout: () =>
     request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
@@ -794,29 +829,6 @@ export const api = {
     }),
   deleteAccountAvatar: () =>
     request<{ ok: boolean }>("/api/account/avatar", { method: "DELETE" }),
-  changePassword: (payload: ChangePasswordPayload) =>
-    request<{ ok: boolean; message: string }>("/api/account/change-password", {
-      method: "POST",
-      body: {
-        current_password: payload.currentPassword,
-        new_password: payload.newPassword,
-        confirm_password: payload.confirmPassword,
-      },
-    }),
-  requestWechatBind: () =>
-    request<{ ticket: string; qrcode_data: string }>(
-      "/api/account/wechat/bind-request",
-      { method: "POST" },
-    ),
-  confirmWechatBind: (payload: { ticket: string; code: string }) =>
-    request<{ ok: boolean }>("/api/account/wechat/bind-confirm", {
-      method: "POST",
-      body: payload,
-    }),
-  getWechatBindStatus: (ticket: string) =>
-    request<{ status: "pending" | "bound" | "expired" }>(
-      `/api/account/wechat/bind-status?ticket=${encodeURIComponent(ticket)}`,
-    ),
   listResumes: () => request<{ resumes: ResumeSummary[] }>("/api/resumes"),
   getResumeOverview: () => request<ResumeOverview>("/api/resume-overview"),
   listResumeTemplates: () =>
@@ -880,14 +892,22 @@ export const api = {
     request<{ deleted: boolean }>(`/api/resumes/${id}`, { method: "DELETE" }),
   listVersions: (id: string) =>
     request<{ versions: ResumeVersion[] }>(`/api/resumes/${id}/versions`),
-  createVersion: (id: string) =>
+  createVersion: (id: string, name?: string) =>
     request<{ version: ResumeVersion }>(`/api/resumes/${id}/versions`, {
       method: "POST",
+      body: name === undefined ? undefined : { name },
+    }),
+  renameVersion: (id: string, versionNo: number, name: string) =>
+    request<{ version: ResumeVersion }>(`/api/resumes/${id}/versions/${versionNo}`, {
+      method: "PATCH",
+      body: { name },
     }),
   deleteVersion: (id: string, versionNo: number) =>
     request<{ deleted: boolean }>(`/api/resumes/${id}/versions/${versionNo}`, {
       method: "DELETE",
     }),
+  getResumeVersion: (id: string, versionNo: number) =>
+    request<{ version: ResumeVersion }>(`/api/resumes/${id}/versions/${versionNo}`),
   restoreVersion: (id: string, versionNo: number) =>
     request<{ resume: ResumeRecord }>(
       `/api/resumes/${id}/versions/${versionNo}/restore`,
@@ -1086,6 +1106,9 @@ export const api = {
   adminStats: () => request<AdminStatsResponse>("/api/auth/admin/stats"),
   getChatCapability: () =>
     request<ChatCapability>("/api/admin/llm/capabilities/chat"),
+  getModelCapabilities: () =>
+    request<ModelCapabilityList>("/api/admin/llm/capabilities"),
+  getModelCatalog: () => request<ModelCatalog>("/api/admin/llm/catalog"),
   getChatCatalog: () => request<ChatCatalog>("/api/admin/llm/catalog/chat"),
   createLlmModel: (payload: LlmModelCreatePayload) =>
     request<{ model: LlmModelConfig }>("/api/admin/llm/models", {
@@ -1111,6 +1134,47 @@ export const api = {
         method: "POST",
       },
     ),
+  bindModelCapability: (
+    capability: Exclude<ModelCapability, "chat">,
+    id: string,
+    baseConfigVersion?: number,
+    baseBindingVersion?: number,
+  ) =>
+    request<{
+      capability: ModelCapability;
+      activeModelId: string;
+      bindingVersion: number;
+      validationId: string;
+      callId: string;
+      activeModel: CapabilityModelConfig;
+    }>(`/api/admin/llm/capabilities/${capability}/binding`, {
+      method: "PUT",
+      body: {
+        modelConfigId: id,
+        ...(baseConfigVersion ? { baseConfigVersion } : {}),
+        ...(baseBindingVersion ? { baseBindingVersion } : {}),
+      },
+    }),
+  testModelCapability: (
+    id: string,
+    capability: ModelCapability,
+    baseConfigVersion?: number,
+  ) =>
+    request<{
+      ok: true;
+      capability: ModelCapability;
+      validationId: string;
+      callId: string;
+      configVersion: number;
+    }>(`/api/admin/llm/models/${id}/tests`, {
+      method: "POST",
+      body: {
+        capability,
+        ...(baseConfigVersion ? { baseConfigVersion } : {}),
+      },
+    }),
+  deleteLlmModel: (id: string) =>
+    request<void>(`/api/admin/llm/models/${id}`, { method: "DELETE" }),
   listLlmCalls: (params: LlmCallQuery = {}) => {
     const search = new URLSearchParams();
     if (params.source) search.set("source", params.source);

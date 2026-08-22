@@ -5,11 +5,14 @@ from datetime import datetime, timedelta, timezone
 import jwt
 from fastapi import Response
 from pwdlib import PasswordHash
+from pwdlib.exceptions import PwdlibError
 from pwdlib.hashers.argon2 import Argon2Hasher
+from pwdlib.hashers.bcrypt import BcryptHasher
 
 from linkcv.core.config import Settings
 
-_password_hash = PasswordHash((Argon2Hasher(),))
+_argon2_hasher = Argon2Hasher()
+_password_hash = PasswordHash((_argon2_hasher, BcryptHasher()))
 
 SESSION_KEY_PREFIX = "auth:session:"
 USER_SESSIONS_KEY_PREFIX = "auth:user_sessions:"
@@ -22,14 +25,18 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, password_hash: str) -> bool:
     try:
         return _password_hash.verify(password, password_hash)
-    except (ValueError, TypeError):
+    except (PwdlibError, ValueError, TypeError):
         return False
 
 
 def password_needs_rehash(password_hash: str) -> bool:
-    # Rehash when Argon2 parameters drift from the recommended defaults.
+    # Upgrade legacy bcrypt hashes and Argon2 hashes with stale parameters.
     try:
-        return _password_hash.current_hasher.check_needs_rehash(password_hash)
+        if password_hash.startswith(("$2a$", "$2b$", "$2y$")):
+            return True
+        if password_hash.startswith("$argon2"):
+            return _argon2_hasher.check_needs_rehash(password_hash)
+        return False
     except (ValueError, TypeError):
         return False
 
@@ -87,11 +94,22 @@ def revoke_user_sessions(redis_client, user_id: int, except_sid: str | None = No
     return removed
 
 
-def create_access_token(user_id: int, sid: str, settings: Settings) -> str:
+def create_access_token(
+    user_id: int,
+    sid: str,
+    settings: Settings,
+    channel: str = "web",
+) -> str:
     now = _now()
     expires_at = now + timedelta(minutes=settings.access_ttl_minutes)
     return jwt.encode(
-        {"sub": str(user_id), "sid": sid, "iat": now, "exp": expires_at},
+        {
+            "sub": str(user_id),
+            "sid": sid,
+            "channel": channel,
+            "iat": now,
+            "exp": expires_at,
+        },
         settings.jwt_secret,
         algorithm=settings.jwt_algorithm,
     )
@@ -99,7 +117,7 @@ def create_access_token(user_id: int, sid: str, settings: Settings) -> str:
 
 def decode_access_token(
     token: str | None, settings: Settings
-) -> tuple[int, str] | None:
+) -> tuple[int, str, str] | None:
     if not token:
         return None
     try:
@@ -112,14 +130,20 @@ def decode_access_token(
         return None
     subject = payload.get("sub")
     sid = payload.get("sid")
+    # Tokens issued before channel separation are Web-only credentials. This
+    # narrow fallback preserves existing browser sessions without allowing a
+    # mini-program token to omit its explicit channel.
+    channel = payload.get("channel", "web")
     if not isinstance(subject, str) or not subject.isdecimal():
         return None
     if not isinstance(sid, str) or not sid:
         return None
+    if channel not in {"web", "miniprogram"}:
+        return None
     user_id = int(subject)
     if user_id <= 0 or str(user_id) != subject:
         return None
-    return user_id, sid
+    return user_id, sid, channel
 
 
 def access_max_age_seconds(settings: Settings) -> int:

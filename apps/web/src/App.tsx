@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { CircleAlert } from "lucide-react";
-import { Brand, Button } from "@/components/ui";
+import { Brand, Button, PageLoading } from "@/components/ui";
 import { WorkspaceLayout, type WorkspaceSection } from "./components/WorkspaceLayout";
 import { ApiRequestError } from "./api/client";
 import { AccountPage } from "./features/account/AccountPage";
@@ -10,6 +10,7 @@ import { AuthPage } from "./features/auth/AuthPage";
 import { DatasetsPage } from "./features/datasets/DatasetsPage";
 import { HomePage } from "./features/home/HomePage";
 import { ResumeCreatePage } from "./features/home/ResumeCreatePage";
+import { ResumeTemplatesPage } from "./features/templates/ResumeTemplatesPage";
 import { JobCenterPage } from "./features/jobs/JobCenterPage";
 import { JobDetailPage } from "./features/jobs/JobDetailPage";
 import { JobFormPage } from "./features/jobs/JobFormPage";
@@ -30,6 +31,7 @@ export function App() {
   const loadResume = useResumeStore((state) => state.loadResume);
   const goHome = useResumeStore((state) => state.goHome);
   const dirty = useResumeStore((state) => state.dirty);
+  const versionOperationPending = useResumeStore((state) => state.versionOperationPending);
   const editVersion = useResumeStore((state) => state.editVersion);
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
 
@@ -40,14 +42,14 @@ export function App() {
 
   useEffect(() => {
     if (isAdminArea) return;
-    if (!dirty || !activeResumeId) return;
+    if (!dirty || !activeResumeId || versionOperationPending) return;
 
     const timer = window.setTimeout(() => {
       void saveCurrentResume();
     }, 1200);
 
     return () => window.clearTimeout(timer);
-  }, [activeResumeId, dirty, editVersion, isAdminArea, saveCurrentResume]);
+  }, [activeResumeId, dirty, editVersion, isAdminArea, saveCurrentResume, versionOperationPending]);
 
   useEffect(() => {
     if (isAdminArea) return;
@@ -56,6 +58,7 @@ export function App() {
     if (authStatus === "guest") {
       if (
         route.kind === "resumes"
+        || route.kind === "templates"
         || route.kind === "resumeCreate"
         || route.kind === "editor"
         || route.kind === "jobs"
@@ -141,7 +144,7 @@ export function App() {
   }
 
   if (authStatus === "checking") {
-    return <div className="app-loading">正在加载简历工作台...</div>;
+    return <PageLoading label="正在加载简历工作台…" scope="page" />;
   }
 
   if (route.kind === "landing") {
@@ -162,7 +165,7 @@ export function App() {
       return <AuthPage key={`${route.mode}:${route.next ?? ""}`} initialMode={route.mode} next={route.next} />;
     }
 
-    return <div className="app-loading">正在进入首页...</div>;
+    return <PageLoading label="正在进入首页…" scope="page" />;
   }
 
   if (route.kind === "resumeCreate") {
@@ -171,6 +174,7 @@ export function App() {
 
   if (
     route.kind === "resumes"
+    || route.kind === "templates"
     || route.kind === "jobs"
     || route.kind === "jobCreate"
     || route.kind === "jobDetail"
@@ -180,6 +184,8 @@ export function App() {
   ) {
     const activeSection: WorkspaceSection = route.kind === "resumes"
       ? "resumes"
+      : route.kind === "templates"
+        ? "templates"
       : route.kind === "account"
         ? "account"
         : route.kind === "datasets"
@@ -189,6 +195,7 @@ export function App() {
     return (
       <WorkspaceLayout active={activeSection}>
         {route.kind === "resumes" && <HomePage />}
+        {route.kind === "templates" && <ResumeTemplatesPage />}
         {route.kind === "jobs" && <JobCenterPage />}
         {route.kind === "jobCreate" && <JobFormPage mode="create" />}
         {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}
@@ -231,20 +238,7 @@ export function App() {
       );
     }
     if (activeResumeId !== route.resumeId) {
-      return (
-        <StatusShell>
-          <div className="status-card">
-            <span className="status-spinner" aria-hidden="true" />
-            <h1>正在打开简历</h1>
-            <p className="status-desc">正在同步最新版本和编辑状态...</p>
-            <div className="status-skeleton" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-            </div>
-          </div>
-        </StatusShell>
-      );
+      return <StatusShell><PageLoading label="正在打开简历…" scope="panel" /></StatusShell>;
     }
     return <ResumeWorkbench />;
   }
@@ -264,7 +258,7 @@ export function App() {
     );
   }
 
-  return <div className="app-loading">正在进入简历主页...</div>;
+  return <PageLoading label="正在进入简历主页…" scope="page" />;
 }
 
 function StatusShell({ children }: { children: ReactNode }) {

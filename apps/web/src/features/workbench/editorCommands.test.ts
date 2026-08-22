@@ -1,7 +1,10 @@
 import { Editor } from "@tiptap/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { EditorContent } from "@tiptap/react";
+import { render } from "@testing-library/react";
+import { createElement } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { convertCurrentLineToResumeRow, convertResumeRowToParagraph } from "./editorCommands";
-import { resumeEditorExtensions } from "./editorExtensions";
+import { normalizeResumeRowWidth, resumeEditorExtensions, resumeRowWidthFromClientX } from "./editorExtensions";
 import { renderResumeMarkdown } from "../../parser/resumeMarkdown";
 
 let editor: Editor | null = null;
@@ -24,7 +27,7 @@ describe("convertCurrentLineToResumeRow", () => {
       type: "doc",
       content: [{
         type: "resumeRow",
-        attrs: { leftWidth: 70 },
+        attrs: { leftWidth: 50 },
         content: [
           { type: "paragraph", content: [{ type: "text", text: "星河云科技" }] },
           { type: "paragraph" },
@@ -33,6 +36,15 @@ describe("convertCurrentLineToResumeRow", () => {
     });
     expect(editor.isActive("resumeRow")).toBe(true);
     expect(editor.state.selection.$from.parent).toEqual(editor.state.doc.firstChild?.child(1));
+    expect(editor.state.selection.$from.parentOffset).toBe(0);
+  });
+
+  it("空白行转换后先在左栏输入并显示右栏入口", () => {
+    editor = new Editor({ extensions: resumeEditorExtensions, content: "<p></p>" });
+    editor.commands.setTextSelection(1);
+
+    expect(convertCurrentLineToResumeRow(editor)).toBe(true);
+    expect(editor.state.selection.$from.parent).toEqual(editor.state.doc.firstChild?.child(0));
     expect(editor.state.selection.$from.parentOffset).toBe(0);
   });
 
@@ -103,5 +115,96 @@ describe("convertCurrentLineToResumeRow", () => {
         { type: "paragraph", content: [{ type: "text", text: "2022 – 2026" }] },
       ],
     });
+  });
+
+  it("专业模板 Markdown 会迁移为可编辑布局节点并保留图标名称", () => {
+    const html = renderResumeMarkdown(`:::: sidebar
+联系信息
+::::
+
+:::: main
+## :icon[Briefcase]: 工作经历
+::::
+
+:::: meta
+2024.01 - 至今
+示例组织
+运营
+负责人
+::::
+
+:::: trio
+Figma
+4 年
+熟练
+::::`);
+    editor = new Editor({ extensions: resumeEditorExtensions, content: html });
+
+    expect(editor.getJSON().content).toMatchObject([
+      {
+        type: "resumeColumns",
+        content: [
+          { type: "resumeColumn", attrs: { variant: "sidebar" } },
+          {
+            type: "resumeColumn",
+            attrs: { variant: "main" },
+            content: [{
+              type: "heading",
+              content: [{ type: "inlineIcon", attrs: { name: "Briefcase" } }, { type: "text", text: " 工作经历" }],
+            }],
+          },
+        ],
+      },
+      { type: "resumeMetaRow" },
+      { type: "resumeTrioRow" },
+    ]);
+  });
+  it("保存并恢复当前行的左栏比例", () => {
+    const html = renderResumeMarkdown("::: left 62\n示例大学\n:::\n\n::: right\n2022 – 2026\n:::");
+    editor = new Editor({ extensions: resumeEditorExtensions, content: html });
+
+    expect(editor.getJSON().content?.[0]).toMatchObject({
+      type: "resumeRow",
+      attrs: { leftWidth: 62 },
+    });
+  });
+});
+
+describe("左右分栏分割线", () => {
+  it("按指针位置计算比例并限制在可编辑范围", () => {
+    expect(resumeRowWidthFromClientX(500, 0, 1000)).toBe(50);
+    expect(resumeRowWidthFromClientX(100, 0, 1000)).toBe(30);
+    expect(resumeRowWidthFromClientX(950, 0, 1000)).toBe(80);
+    expect(resumeRowWidthFromClientX(500, 0, 0)).toBe(50);
+  });
+
+  it("无有效保存值时使用一半一半", () => {
+    expect(normalizeResumeRowWidth(undefined)).toBe(50);
+    expect(normalizeResumeRowWidth("62")).toBe(62);
+  });
+
+  it("渲染可访问分割线并支持键盘调整", async () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [{
+          type: "resumeRow",
+          content: [{ type: "paragraph", content: [{ type: "text", text: "左" }] }, { type: "paragraph", content: [{ type: "text", text: "右" }] }],
+        }],
+      },
+    });
+    render(createElement(EditorContent, { editor }));
+
+    const divider = await vi.waitFor(() => {
+      const element = editor?.view.dom.querySelector<HTMLButtonElement>(".resume-row-divider");
+      expect(element).not.toBeNull();
+      return element as HTMLButtonElement;
+    });
+    expect(divider.getAttribute("aria-valuetext")).toBe("左栏 50%，右栏 50%");
+
+    divider.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+
+    await vi.waitFor(() => expect(editor?.getJSON().content?.[0].attrs?.leftWidth).toBe(51));
   });
 });

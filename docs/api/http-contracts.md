@@ -6,59 +6,52 @@
 
 ## 健康检查与鉴权
 
-`GET /api/health` 返回 `{status, service, version}`。鉴权接口包括：
-
-| Method | Path                 | 成功结果                                              |
-| ------ | -------------------- | ----------------------------------------------------- |
-| `GET`  | `/api/auth/me`       | `{user}`；未登录或 Cookie 无效时为 `null`             |
-| `POST` | `/api/auth/register` | `201 {user}`，签发短 access 与 7 天 refresh 双 Cookie |
-| `POST` | `/api/auth/login`    | `{user}`，签发短 access 与 7 天 refresh 双 Cookie     |
-| `POST` | `/api/auth/refresh`  | `{user}`，轮换 refresh 密钥并下发新双 Cookie          |
-| `POST` | `/api/auth/logout`   | `{ok: true}`，删除 Redis 会话并清除双 Cookie          |
-| `POST` | `/api/auth/wechat/qrcode`  | `{scene, qr_base64}`；请求为 `{mode: "login" 或 "bind"}`，bind 模式要求已登录，按 IP 限流（默认 10 次/分钟） |
-| `GET`  | `/api/auth/wechat/status`  | `{status: "pending" 或 "success" 或 "expired", user?}`；`scene` 为 query 参数，命中 success 后 login 模式签发双 Cookie、bind 模式不签发，并删除 scene |
-| `POST` | `/api/auth/wechat/confirm` | `{ok: true}`；multipart 提交 `scene`、`code`、`mode`、`nickname?` 与可选 `avatar` 文件；scene 只能确认一次（重复提交 `409 SCENE_REUSED`） |
-
-鉴权使用“短 JWT access + 不透明 refresh + Redis 会话”的双 Token 方案。Access Cookie 名为 `resume_access`，有效期 `ACCESS_TTL_MINUTES`（默认 15 分钟），`SameSite=Lax`、`Path=/`。Refresh Cookie 名为 `resume_refresh`，有效期 `SESSION_TTL_DAYS`（默认 7 天），`HttpOnly`、`SameSite=Lax`、`Path=/api/auth`。Web 调用受保护接口收到 `401` 时，会把并发请求合并到同一次 refresh，刷新成功后各自重试一次；启动检查 `/api/auth/me` 返回空用户时也会先尝试 refresh，再进入访客态。登录或刷新失败返回 `401 INVALID_CREDENTIALS`。`/api/auth/me`、登录、注册与 refresh 返回的 `user` 对象与用户中心一致，包含 `avatar_url`（无头像时为 `null`）。
-
-每次受保护请求按“Access 自洽 → Session 存活 → 用户启用”三步校验：先校验 access JWT 签名与过期，再用 `EXISTS auth:session:{sid}` 确认 Redis 会话仍在，最后从 MySQL 读取用户并要求 `status=1`。私有接口不接受客户端 `user_id`；未登录返回 `401 UNAUTHORIZED`。会话只存 Redis（`auth:session:{sid}` 哈希与 `auth:user_sessions:{uid}` 集合），不写 MySQL；撤销即删除 key。`POST /api/auth/refresh` 校验 refresh Cookie 中的 `sid.secret`，匹配 Redis 中保存的 secret 哈希后轮换密钥、续期会话并下发新 Cookie；哈希不匹配会立即撤销该会话。密码经 Argon2id 哈希后存入 `password_hash`，不保存明文。
-
-## 用户中心
-
-`/api/account/*` 全部通过 `get_current_user` 取当前登录用户，不接受客户端传入 `user_id`。头像只暴露相对 URL（经 `/api/assets` 转发），不返回对象存储键。未登录返回 `401 UNAUTHORIZED`。
+`GET /api/health` 返回 `{status, service, version}`。`GET /api/auth/capabilities` 公开返回 `{password_login_enabled}`，Web 据此选择普通邮箱密码入口。普通用户邮箱密码登录和注册仅在 `APP_ENV=local|development` 时开放；Production 的 `POST /api/auth/login` 与 `POST /api/auth/register` 都返回 `404 NOT_FOUND`。普通改密和微信绑定接口仍不公开；`POST /api/account/change-password` 和 `/api/account/wechat/bind-*` 在正常运行环境返回 `404 NOT_FOUND`。这些环境受限路由不进入 OpenAPI。`POST /api/auth/admin-login` 保持独立，只允许管理员成功。
 
 | Method | Path | 成功结果 |
 | --- | --- | --- |
-| `GET` | `/api/account/profile` | `{user, resume_count, recent_resumes}` |
-| `PATCH` | `/api/account/profile` | `{user}`；请求为 `{nickname}` |
-| `PUT` | `/api/account/avatar` | `{url}`；请求为 `{fileName?, dataUrl}` |
-| `DELETE` | `/api/account/avatar` | `{ok: true}` |
-| `POST` | `/api/account/change-password` | `{ok, message}`；请求为 `{current_password, new_password, confirm_password}` |
-| `POST` | `/api/account/wechat/bind-request` | `{ticket, qrcode_data}`；小程序码图片为 base64 |
-| `POST` | `/api/account/wechat/bind-confirm` | `{ok: true}`；请求为 `{ticket, code}` |
-| `GET` | `/api/account/wechat/bind-status` | `{status}`；查询参数 `ticket`，状态为 `pending\|bound\|expired` |
+| `GET` | `/api/auth/me` | `{user}`；只识别 Web Cookie，无效 Cookie 或小程序 Bearer 均返回 `user: null` |
+| `POST` | `/api/auth/register` | `201 {user}`；仅 local/development，JSON `{email, password}`，成功后签发 Web 双 Cookie |
+| `POST` | `/api/auth/login` | `{user}`；仅 local/development，JSON `{email, password}`，成功后签发 Web 双 Cookie |
+| `POST` | `/api/auth/admin-login` | `{user}`，管理员登录并签发 Web 双 Cookie |
+| `POST` | `/api/auth/refresh` | `{user}`，轮换 Web refresh 并下发新双 Cookie |
+| `POST` | `/api/auth/logout` | `{ok: true}`，撤销 Web session 并清除 Cookie |
+| `POST` | `/api/auth/wechat/miniprogram/account-status` | `{registered}`；JSON `{code}`，只判断当前微信身份是否已有账号，不建号、不签发会话 |
+| `POST` | `/api/auth/wechat/miniprogram/login` | `{user, access_token, refresh_token, expires_in}`；JSON `{code, privacy_accepted?}`，未知 openid 建号时该值必须为 `true` |
+| `POST` | `/api/auth/wechat/miniprogram/refresh` | 同上；JSON `{refresh_token}`，成功后旧 refresh 立即失效 |
+| `POST` | `/api/auth/wechat/miniprogram/logout` | `{ok: true}`；JSON `{refresh_token?}`，幂等撤销小程序 session |
 
-`user` 为 `{id, email, nickname, is_admin, avatar_url, wechat_status, wechat_bound_at}`，`email` 可为 `null`（微信扫码创建的账号无邮箱密码），无头像时 `avatar_url` 为 `null`。`wechat_status` 为 `unbound\|bound\|unavailable`：已绑定微信为 `bound`，未绑定且微信能力可用为 `unbound`，未配置微信凭据时统一为 `unavailable`；`wechat_bound_at` 绑定后为带时区 ISO 8601，未绑定为 `null`。`recent_resumes` 是最近编辑的 5 份简历，每项 `{id, title, updated_at}`，按 `updated_at DESC, id DESC` 排序。
+会话统一保存为 Redis `auth:session:{sid}` hash 和 `auth:user_sessions:{uid}` 集合。Hash 包含 `uid`、refresh secret 哈希、`channel=web|miniprogram` 和创建时间；access JWT 同样携带 channel。Web 只接受 HttpOnly Cookie 中的 `channel=web` 凭据，小程序只接受 `Authorization: Bearer` 中的 `channel=miniprogram` 凭据；同时携带两种载体、JWT 与 Redis 的 uid/channel 不一致、session 被撤销或用户停用时均视为未登录。为兼容本功能上线前已签发的 Web 会话，缺少 channel 的旧 JWT/Redis session 仅按 Web 凭据接受，并在 refresh 轮换时补写 `channel=web`；它不会被小程序接口接受。Refresh 每次轮换 secret，重放旧 refresh 会撤销整个 session。
 
-昵称去空白后为空或超过 50 字符返回 `400 INVALID_NICKNAME`。头像通过 data URL 上传（≤10MB），新对象键使用 `users/{user_id}/assets/avatar/{毫秒时间戳}-{8位随机串}-{文件名}.{扩展名}`。非法图片返回 `400 INVALID_IMAGE`，超限返回 `413 IMAGE_TOO_LARGE`，对象写入失败返回 `502 ASSET_UPLOAD_FAILED`；先写新对象再更新数据库，提交失败补偿删除新对象，成功后清理旧头像对象。旧路径中的已有头像继续可读、可替换和删除，不做批量迁移。
+微信 code 只由后端提交微信平台换取 openid。`/api/auth/wechat/miniprogram/account-status` 使用当前 `wx.login` code 返回该 openid 是否已有关联账号，只返回布尔值，不创建用户、不更新登录时间、不签发会话；它与小程序登录共用来源 IP 默认每分钟 30 次的限流。openid 已存在时登录接口直接复用；不存在时，`/api/auth/wechat/confirm` 和 `/api/auth/wechat/miniprogram/login` 只有在收到 `privacy_accepted=true` 后才创建 `email/password_hash` 为空的普通账号，缺失或为 `false` 时返回 `400 PRIVACY_AGREEMENT_REQUIRED`，唯一约束负责并发建号收敛。该字段只表示本次注册请求已经通过客户端确认门禁，不是服务端持久化的同意审计记录。随仓库发布的小程序在调用建号接口或确认扫码前，还必须展示微信平台隐私保护指引、取得页面复选框确认和用户主动点击；简历页与请求重试路径只能以 `privacy_accepted=false` 尝试恢复已有账号，不能静默触发首次建号。停用账号不能登录或续期；管理员账号即使历史上已有 openid，也不能通过扫码或小程序登录，只能使用 `/api/auth/admin-login`。超出上述限流时返回 `429 WECHAT_RATE_LIMITED`。
 
-修改密码先校验当前密码（错误返回 `400 INVALID_CURRENT_PASSWORD`），再要求新密码至少 8 位且同时包含字母和数字（否则 `400 WEAK_PASSWORD`）、两次输入一致（否则 `400 PASSWORD_MISMATCH`）且不能与当前密码相同（否则 `400 PASSWORD_UNCHANGED`）。成功后更新 Argon2id 哈希，立即撤销该用户全部 Redis 会话，并在同一响应中清除双 Cookie，所有设备都必须用新密码重新登录。
-
-微信绑定由 Web 已登录用户发起：`bind-request` 生成绑定票据并返回小程序码，票据存 Redis（TTL 默认 300 秒，同用户重新发起时作废旧票据），`scene` 携带票据；用户用微信扫小程序码进入小程序确认页，小程序调 `wx.login()` 取得临时 code 后提交 `bind-confirm`，服务端用 code 换取 openid 并关联到发起用户。openid 只在服务端存储，任何接口不回传 openid 明文。openid 已被其他用户绑定时返回 `409 WECHAT_ALREADY_BOUND`，原绑定关系不被覆盖；票据不存在或已过期返回 `400 BIND_TICKET_INVALID`；已绑定用户再次发起返回 `400 WECHAT_ALREADY_BOUND`。微信凭据未配置或微信接口调用失败返回 `503 WECHAT_SERVICE_UNAVAILABLE`。Web 端通过 `bind-status` 每 3 秒轮询感知绑定成功（`bound` 后停止），票据过期返回 `expired` 提示重新发起。本周不提供解绑或更换微信身份，也不存在对应接口。
-
-### 微信扫码登录
+### 网页扫码登录
 
 | Method | Path | 成功结果 |
 | --- | --- | --- |
-| `POST` | `/api/auth/wechat/qrcode` | `{scene, qr_base64}`；无需登录 |
-| `GET` | `/api/auth/wechat/status` | `{status}`；查询参数 `scene`，状态为 `pending\|success\|expired`，`success` 时含 `user` 并发放会话 |
-| `POST` | `/api/auth/wechat/confirm` | `{ok: true}`；请求为表单 `{scene, code}`（由小程序端调用） |
+| `POST` | `/api/auth/wechat/qrcode` | `{scene, poll_token, qr_base64}`；匿名，按 IP 限流；`poll_token` 只保留在创建二维码的网页 |
+| `GET` | `/api/auth/wechat/status?scene=...&poll_token=...` | `{status, user?}`；`pending\|success\|cancelled\|expired`，success 且 poll token 匹配时设置 Web Cookie；不带 token 时只读状态 |
+| `POST` | `/api/auth/wechat/confirm` | `{ok: true}`；小程序表单 `{scene, code, privacy_accepted?}`，未知 openid 建号时该值必须为 `true` |
+| `POST` | `/api/auth/wechat/cancel` | `{ok: true, status: "cancelled"}`；小程序表单 `{scene}` |
 
-扫码登录采用 scene 状态机：Web 端请求 `qrcode` 生成携带 `scene` 的小程序码（scene 前缀 `login:`，TTL 默认 300 秒），用户用微信扫码进入小程序确认页，小程序调 `wx.login()` 取得临时 code 后提交 `confirm`，服务端用 code 换取 openid：已存在 openid 则复用该账号，否则创建无邮箱密码的微信账号（昵称为 `微信用户` 加随机后缀），并把结果写回 scene。Web 端每 2 秒轮询 `status`，命中 `success` 后发放会话并删除 scene，`expired` 提示刷新。`confirm` 用 GETSET 原子防重放：同一 scene 二次提交返回 `409 SCENE_REUSED`，scene 不存在或已过期返回 `410 SCENE_EXPIRED`，code 无效返回 `400 WECHAT_CODE_INVALID`。`qrcode` 按 IP 限流（默认 10 次/分钟），超限返回 `429 WECHAT_RATE_LIMITED`；微信凭据未配置返回 `503 WECHAT_SERVICE_UNAVAILABLE`。
+scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → cancelled` 流转，默认 TTL 300 秒。确认使用原子 claim，只有一个请求执行微信换取；外部服务或无效 code 会由 claim 所有者恢复 `pending`，允许小程序取得新 code 后重试。processing 超过 30 秒视为遗留占用，可由新的确认请求原子接管；未超时的并发请求返回 `409 SCENE_IN_PROGRESS`。重复确认已确认场景幂等成功，终态保留到 TTL，不因重复请求删除。scene 供小程序确认并查询状态，独立 poll token 才允许 Web 领取会话，服务端只保存其哈希。Web 对已确认场景重复领取时会先发新 session、原子替换 scene 上的 `web_sid` 并撤销旧 sid，因此响应丢失可重试且同一 scene 最多保留一个有效 Web session；小程序无 poll token，不会误撤销网页会话。取消已确认场景返回冲突；未知或到期 scene 返回 `410 SCENE_EXPIRED`。
+
+### 小程序只读简历
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `GET` | `/api/miniprogram/resumes` | `{resumes}`；本人简历摘要，按更新时间倒序 |
+| `GET` | `/api/miniprogram/resumes/:id` | `{resume}`；仅返回本人简历，不存在或越权统一 `404 RESUME_NOT_FOUND` |
+
+这两个端点只接受小程序 Bearer，不接受 Web Cookie。小程序 Bearer 不能调用普通 `/api/resumes*` 读写接口，因此只读限制由后端鉴权边界执行，不依赖小程序是否展示按钮。
+
+### 用户中心
+
+`/api/account/*` 通过当前用户身份确定资源归属，不接受 `user_id`。当前公开接口为 profile、昵称和头像读写；Web 账号页不再显示密码或微信绑定入口。`user.email` 对微信用户为 `null`。最近简历仍按更新时间倒序返回最多 5 条。
 
 ## 语义简历契约
 
-简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`。数据库 ID 在 HTTP 中使用十进制字符串。`data` 是 `ResumeDocumentV1`，`style` 是 `ResumeStyleV1`，两者的 `schema_version` 当前均为字符串 `"1.0"`。`style.smart_one_page` 控制连续单页或标准 A4 导出模式，并随版本快照保存。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不再是简历写契约。
+简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`。数据库 ID 在 HTTP 中使用十进制字符串。`data` 是 `ResumeDocumentV1`，`style` 是 `ResumeStyleV1`，两者的 `schema_version` 当前均为字符串 `"1.0"`。简历正文以用户内容为准：错别字、非标准邮箱或电话、无法识别或先后矛盾的日期、缺少单位或职位等内容质量问题不阻断保存、导入或版本恢复；可识别日期仍会规范化，无法识别的日期原样保留。字段类型、总量和长度上限、URL 协议、Markdown 主动内容及内部 ID 完整性仍严格校验。`style.smart_one_page` 控制连续单页或标准 A4 导出模式，并随版本快照保存。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不再是简历写契约。
 
 Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照转换为上述 `"1.0"` 契约；这些迁移期旧 JSON 从未进入 API 响应，`0012` 删除其同行备份列，因此 HTTP 请求、响应和现有 `"1.0"` 数据保持不变。发布顺序仍为先迁移数据库、再启动新应用。
 
@@ -80,13 +73,14 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 
 | Method   | Path                                            | 鉴权 | 成功结果                                               |
 | -------- | ----------------------------------------------- | ---- | ------------------------------------------------------ |
-| `GET`    | `/api/resumes/:id/versions`                     | 是   | `{versions}`，版本号倒序                               |
-| `POST`   | `/api/resumes/:id/versions`                     | 是   | `201 {version}`，创建 `manual` 快照                    |
-| `GET`    | `/api/resumes/:id/versions/:version_no`         | 是   | `{version}` 完整快照                                   |
+| `GET`    | `/api/resumes/:id/versions`                     | 是   | `{versions}`，正式版本号倒序；每项含 `name`            |
+| `POST`   | `/api/resumes/:id/versions`                     | 是   | `201 {version}`，创建带名称的 `manual` 快照            |
+| `GET`    | `/api/resumes/:id/versions/:version_no`         | 是   | `{version}` 完整快照，含 `name`                        |
+| `PATCH`  | `/api/resumes/:id/versions/:version_no`         | 是   | `{version}`；只更新指定正式版本的 `name`               |
 | `DELETE` | `/api/resumes/:id/versions/:version_no`         | 是   | `{deleted}`；删除指定旧版本                            |
-| `POST`   | `/api/resumes/:id/versions/:version_no/restore` | 是   | `{resume}`；按需追加 `before_restore` 后追加 `restore` |
+| `POST`   | `/api/resumes/:id/versions/:version_no/restore` | 是   | `{resume}`；直接用目标正式版本替换当前简历，不创建新版本 |
 
-版本号单调递增且不复用；每份简历默认最多保存 10 个版本。创建或恢复所需的版本空间不足时返回 `409 RESUME_VERSION_LIMIT_REACHED`，不会自动删除任何历史版本；用户删除旧版本后才能继续。最新版本作为当前恢复基准不可删除，尝试删除返回 `409 LATEST_RESUME_VERSION_REQUIRED`。版本不存在返回 `404 RESUME_VERSION_NOT_FOUND`，并发兜底失败返回 `409 VERSION_CONFLICT`。
+版本号单调递增且不复用；每份简历默认最多保存 10 个正式版本。创建和重命名请求中的 `name` 会去除首尾空白并折叠连续空白，规范化后必须为 1–80 个字符；创建缺省名称兼容旧调用方并按版本号生成“版本 N”。非法名称返回 `400 INVALID_RESUME_VERSION_NAME`。`PATCH` 重命名只更新指定版本的名称，不改变 `data/style` 快照、不创建新版本，也不改变当前简历标题。恢复直接使用已存在的目标快照替换当前简历，不创建新的 `before_restore` 或 `restore` 版本，也不占用版本空间。创建版本空间不足时返回 `409 RESUME_VERSION_LIMIT_REACHED`，不会自动删除任何历史版本；用户删除旧版本后才能继续。最新版本作为当前恢复基准不可删除，尝试删除返回 `409 LATEST_RESUME_VERSION_REQUIRED`。版本不存在返回 `404 RESUME_VERSION_NOT_FOUND`，并发兜底失败返回 `409 VERSION_CONFLICT`。历史数据中的 `before_restore`、`restore` 原因仍可读取，但新恢复操作不会再生成这两类记录。旧版本名称由 `0023` 按原因回填，Web 版本抽屉只展示这些正式版本，不单独展示当前草稿。
 
 ## 简历智能助手
 
@@ -104,9 +98,9 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 | `POST` | `/api/agent/proposals/:proposalId/confirm` | `{resume}`；确认后应用完整快照并创建 `agent` 版本 |
 | `POST` | `/api/agent/proposals/:proposalId/reject` | `{proposal}`；放弃待确认提案 |
 
-SSE 事件包括 `run.started`、`assistant.delta`、`tool.started`、`tool.completed`、`proposal.created`、`run.completed`、`run.cancelled` 和 `run.failed`。每个成功建立的 SSE 响应必须以后三种 `run.*` 终态之一结束；Pi 在 HTTP 200 后提前 EOF 时 FastAPI 补发 `run.failed/AGENT_UPSTREAM_FAILED`，浏览器也会把无终态 EOF 识别为 `AGENT_STREAM_INCOMPLETE`。同一用户只允许一个 running 运行；相同 `idempotency_key` 重放现有运行状态。取消与流式完成并发时采用第一个成功写入的终态，后到操作不得覆盖。Agent 只能读取当前会话绑定的简历，并且不能直接写简历：修改必须先生成完整 data/style 提案。确认时以 `base_lock_version` 执行乐观锁；简历已改变时返回 `409 RESUME_EDIT_CONFLICT` 并把提案标记为 conflicted，过期提案返回 `410 AGENT_PROPOSAL_EXPIRED`。服务或模型不可用返回安全化的 `AGENT_UNAVAILABLE`、`AGENT_MODEL_UNAVAILABLE` 或 `AGENT_MODEL_UNSUPPORTED`，供应商原始错误和 API Key 不进入浏览器响应。
+SSE 事件包括 `run.started`、`assistant.delta`、`tool.started`、`tool.completed`、`proposal.created`、`run.completed`、`run.cancelled` 和 `run.failed`。每个成功建立的 SSE 响应必须以后三种 `run.*` 终态之一结束；Pi 在 HTTP 200 后提前 EOF 时 FastAPI 补发 `run.failed/AGENT_UPSTREAM_FAILED`，浏览器也会把无终态 EOF 识别为 `AGENT_STREAM_INCOMPLETE`。只有 `run.completed` 才把完整助手文本和可用的 Token/估算成本写入数据库；失败、取消或缺失终态不会把已经流出的部分文本保存成历史消息。同一用户只允许一个 running 运行；相同 `idempotency_key` 重放现有运行状态。取消与流式完成并发时采用第一个成功写入的终态，后到操作不得覆盖。Agent 只能读取当前会话绑定的简历，并且不能直接写简历：修改必须先生成完整 data/style 提案。确认时以 `base_lock_version` 执行乐观锁；简历已改变时返回 `409 RESUME_EDIT_CONFLICT` 并把提案标记为 conflicted，过期提案返回 `410 AGENT_PROPOSAL_EXPIRED`，正式版本已达上限时返回 `409 RESUME_VERSION_LIMIT_REACHED` 且不应用提案。服务或模型不可用返回安全化的 `AGENT_UNAVAILABLE`、`AGENT_MODEL_UNAVAILABLE`、`AGENT_MODEL_UNSUPPORTED`、`AGENT_MODEL_TIMEOUT` 或 `AGENT_MODEL_REQUEST_FAILED`，供应商原始错误和 API Key 不进入浏览器响应。
 
-`/internal/agent/**` 仅供 Pi 服务使用，以独立 Bearer token 鉴权且不出现在 OpenAPI。`GET /internal/agent/readiness` 验证当前 Chat binding、凭据解密和 Pi provider 映射，不发起供应商模型调用；工具事件以 `(run_id, call_key)` 幂等，同一工具调用进入 succeeded、failed 或 cancelled 后不可回退或改写为另一终态。内部运行配置复用管理员设置的当前 Chat binding；模型配置页面仍是 `/admin/llm/models`，不新增 Pi 专用配置 UI。
+`/internal/agent/**` 仅供 Pi 服务使用，以独立 Bearer token 鉴权且不出现在 OpenAPI。`GET /internal/agent/readiness` 验证当前 `pi_agent` binding、凭据解密和 Pi provider 映射，不发起供应商模型调用；工具事件以 `(run_id, call_key)` 幂等，同一工具调用进入 succeeded、failed 或 cancelled 后不可回退或改写为另一终态。内部运行配置复用统一模型管理中的 `pi_agent` binding；模型配置页面仍是 `/admin/llm/models`，不新增第二套 Pi 配置 UI。
 
 ## 简历分享链接
 
@@ -230,7 +224,8 @@ JD 管理接口接受和返回最终结构化数据；单独的浏览器导入�
 
 `event_type` 只允许 `unhandled_error`、`unhandled_rejection`、`render_error` 和 `api_5xx`。服务端从当前会话绑定 actor，忽略客户端提供身份；消息和栈经统一长度限制与脱敏后写入系统日志。请求非法返回 `400 INVALID_CLIENT_LOG_EVENT`，本地 sink 拒绝写入返回 `503 LOG_EVENT_UNAVAILABLE`。
 
-PDF 导出审计只接受当前用户拥有的简历 ID；不存在或不属于当前用户都返回 `404 RESUME_NOT_FOUND`，非法动作或字段返回 `400 INVALID_AUDIT_EVENT`，sink 拒绝写入返回 `503 AUDIT_EVENT_UNAVAILABLE`。其他审计动作不能通过该接口伪造，而是由服务端路由映射自动生成。自动审计覆盖鉴权/会话、账号资料和密码、简历/版本/资源、JD、管理员用户状态和模型配置等状态变更；普通 GET 不写审计。成功和受控失败都记录 action、可信 actor、target、result、错误码和 request ID，不记录请求 body。审计进入共享 Loki，不新增 MySQL 审计表；现有 `/api/admin/llm/calls` 继续是 LLM 计量和调用状态的事实源。
+PDF 导出审计只接受当前用户拥有的简历 ID；不存在或不属于当前用户都返回 `404 RESUME_NOT_FOUND`，非法动作或字段返回 `400 INVALID_AUDIT_EVENT`，sink 拒绝写入返回 `503 AUDIT_EVENT_UNAVAILABLE`。该契约为既有调用方保留；当前工作台的文字版 PDF 下载链不调用它。其他审计动作不能通过该接口伪造，而是由服务端路由映射自动生成。自动审计覆盖鉴权/会话、账号资料和密码、简历/版本/资源、JD、管理员用户状态和模型配置等状态变更；普通 GET 不写审计。成功和受控失败都记录 action、可信 actor、target、result、错误码和 request ID，不记录请求 body。审计进入共享 Loki，不新增 MySQL 审计表；现有 `/api/admin/llm/calls` 继续是 LLM 计量和调用状态的事实源。
+简历导入的后端内部日志使用 `operation_id`/`task_id` 串联阶段和重试，失败时只记录稳定错误码、失败阶段和不含字段值的验证元数据；这些内部字段不扩展本节的 HTTP 请求或响应结构。
 
 管理员日志查询接口复用 `is_admin=true` 权限；未登录返回 `401 UNAUTHORIZED`，普通用户返回 `403 FORBIDDEN`：
 
@@ -253,24 +248,33 @@ PDF 导出审计只接受当前用户拥有的简历 ID；不存在或不属于�
 | Method  | Path                                            | 成功结果                                                                       |
 | ------- | ----------------------------------------------- | ------------------------------------------------------------------------------ |
 | `GET`   | `/api/admin/llm/capabilities/chat`              | `{capability, activeModelId, activeModel, models}`，返回 Chat 当前项与候选列表 |
+| `GET`   | `/api/admin/llm/capabilities`                   | `{capabilities}`，返回 Chat、`resume_structuring`、`pi_agent` 能力矩阵与共享候选列表 |
+| `GET`   | `/api/admin/llm/catalog`                        | `{capabilities, adapters}`，返回能力与模型目录                                 |
 | `GET`   | `/api/admin/llm/catalog/chat`                   | `{capability, adapters}`，返回受支持 adapter 和 LiteLLM Chat 模型建议          |
 | `POST`  | `/api/admin/llm/models`                         | `201 {model}`                                                                  |
 | `PATCH` | `/api/admin/llm/models/:modelConfigId`          | `{model, validationCallId}`；编辑当前项时先测试拟议配置                        |
 | `POST`  | `/api/admin/llm/models/:modelConfigId/test`     | `{ok: true, callId}`，测试指定配置                                             |
+| `POST`  | `/api/admin/llm/models/:modelConfigId/tests`    | `{capability, baseConfigVersion?}`；按能力执行验证并返回验证证据                |
 | `POST`  | `/api/admin/llm/models/:modelConfigId/activate` | `{activeModel, callId}`，测试成功后设为 Chat 当前模型                          |
+| `PUT`   | `/api/admin/llm/capabilities/:capability/binding` | `{modelConfigId, baseConfigVersion?, baseBindingVersion?}`；验证成功后更新能力绑定并返回验证调用 ID |
+| `DELETE` | `/api/admin/llm/models/:modelConfigId`         | 删除未绑定候选；被任一能力绑定时返回 `409 LLM_MODEL_IN_USE`                    |
 | `GET`   | `/api/admin/llm/calls`                          | `{calls, summary, nextCursor}`                                                 |
 
-Chat 是服务端预定义能力，管理员不填写能力标识。候选写入只接受 `adapter`、不含 adapter 前缀的 `model`、可选 `apiBase` 和只写 `apiKey`；服务端将 DeepSeek 示例组装成 `deepseek/deepseek-v4-flash`，将千问示例组装成 `dashscope/qwen-plus` 后传给 LiteLLM。目录响应使用稳定 adapter 代码，管理页面只展示供应商名称；目录建议来自锁定版本 LiteLLM 的 Chat 元数据，目录外调用名仍可提交并由真实连接测试兜底。旧 `enabled`、`priority` 和手工价格字段不再接受或返回。
+模型候选是能力中立的共享连接配置，管理员不填写能力标识。候选写入只接受 `adapter`、不含 adapter 前缀的 `model`、可选 `apiBase` 和只写 `apiKey`；Chat 与简历结构化会把 adapter 和模型名组装成 LiteLLM 标识。目录响应使用稳定 adapter 代码，管理页面只展示供应商名称；目录建议来自锁定版本 LiteLLM 的 Chat 元数据，目录外调用名仍可提交并由真实连接测试兜底。旧 `enabled`、`priority` 和手工价格字段不再接受或返回。`pi_agent` 绑定会把选定配置快照交给 Pi Service，由 Pi 的模型 profile 决定协议和兼容参数并直接执行固定 Tool 探针；Pi Service 不可达、超时、模型不受支持或 Tool 未执行分别返回稳定脱敏错误和 `callId`，原 binding 保持不变。
 
-候选读取只用 `keyConfigured` 表示是否已有凭据，绝不返回明文或数据库密文。PATCH 省略 `apiKey` 时保留原凭据，传 `null` 时清除，传非空字符串时替换。新增和编辑普通候选不会改变 Chat 当前项；启用操作先测试目标快照，成功后才切换，失败时原当前项不变。编辑当前候选也先测试拟议配置，测试或版本核对失败时不覆盖正在使用的版本。候选不提供硬删除或独立启停接口。
+候选读取只用 `keyConfigured` 表示是否已有凭据，绝不返回明文或数据库密文。PATCH 省略 `apiKey` 时保留原凭据，传 `null` 时清除，传非空字符串时替换。新增和编辑未绑定候选不会改变任何能力当前项；被任一能力绑定的候选不可原地编辑或删除，管理员需创建替代候选后再验证并切换。启用操作先测试目标快照，成功后才切换，失败时原当前项不变。未绑定候选可以硬删除；删除会移除配置、加密凭据和验证证据，并把历史调用日志的 `modelConfigId` 置空，日志中的 adapter、模型、配置版本、状态和计量快照保持不变。不提供独立启停接口。
 
 模型配置 `id`、调用记录 `userId` 和 `modelConfigId` 与其他 MySQL 业务 ID 一致，对外使用十进制字符串，内部数据库列仍为 `BIGINT UNSIGNED`。
 
-`0006` 在数据库中使用中文表注释和字段注释，这些注释只用于说明持久化语义，不改变本节约定的 JSON 字段名、错误码或状态字面值。`0008` 增加候选的 `capability/adapter/model_call_name/config_version`、Chat 唯一当前绑定，以及调用日志的能力、来源和模型快照。升级会先按外键依赖顺序永久清空旧调用日志和模型配置，不转换旧优先级、价格或调用数据；完成后 Chat 当前绑定为空，需要管理员重新配置并设为当前模型。
+`0006` 在数据库中使用中文表注释和字段注释，这些注释只用于说明持久化语义，不改变本节约定的 JSON 字段名、错误码或状态字面值。`0008` 增加候选的 LiteLLM adapter/model 调用名、Chat 唯一当前绑定，以及调用日志的能力、来源和模型快照。`0028` 扩展绑定版本、验证证据、简历结构化/Pi Agent 预置绑定和调用配置版本；`0029` 删除候选上的遗留 `capability` 列，候选正式成为能力中立配置。升级仍不转换旧优先级、价格或调用数据；存量 Chat 绑定验证证据可为空，需要管理员重新测试其他能力后才会产生对应证据。
 
-调用记录可用 `source`、`status`、精确 `callId`、`userId`、`modelConfigId`、`from`、`to`、`cursor` 和 `limit` 查询，默认每页 50、最大 200，按创建时间和内部 ID 倒序稳定分页。`source` 是由内部调用方提供的稳定小写代码，格式为 `^[a-z][a-z0-9_]{0,31}$`；本期实际接入并保证产生的来源只有管理动作使用的 `connection_test`。时间范围使用带时区的 ISO 8601，区间为左闭右开；非法值、反向区间或无效游标返回 `400 INVALID_LLM_CALL_QUERY`。每条记录只包含调用标识、能力、来源、用户、实际 adapter/模型快照、状态、耗时、Token、LiteLLM 价格快照、估算成本和非敏感错误分类，不保存或返回消息、模型完整响应和凭据。汇总针对当前筛选条件聚合全部命中记录，只累加已知值，并用 `incompleteMeteringCount` 表明不完整计量。
+调用记录可用 `source`、`status`、精确 `callId`、`userId`、`modelConfigId`、`from`、`to`、`cursor` 和 `limit` 查询，默认每页 50、最大 200，按创建时间和内部 ID 倒序稳定分页。`source` 是由内部调用方提供的稳定小写代码，格式为 `^[a-z][a-z0-9_]{0,31}$`；本期实际接入并保证产生的来源只有管理动作使用的 `connection_test`。时间范围使用带时区的 ISO 8601，区间为左闭右开；非法值、反向区间或无效游标返回 `400 INVALID_LLM_CALL_QUERY`。每条记录只包含调用标识、能力、来源、用户、实际 adapter/模型与配置版本快照、状态、耗时、Token、LiteLLM 价格快照、估算成本和非敏感错误分类，不保存或返回消息、模型完整响应和凭据。汇总针对当前筛选条件聚合全部命中记录，只累加已知值，并用 `incompleteMeteringCount` 表明不完整计量。
+
+管理错误包括 `INVALID_LLM_MODEL_CONFIG`、`INVALID_LLM_CALL_QUERY`、`LLM_MODEL_NOT_FOUND`、`LLM_MODEL_IN_USE`、`LLM_MODEL_CONFIG_CHANGED`、`LLM_BINDING_CHANGED`、`LLM_CHAT_NOT_CONFIGURED`、`LLM_MODEL_NOT_CONFIGURED`、`LLM_PI_AGENT_UNAVAILABLE`、`LLM_PI_AGENT_TIMEOUT`、`LLM_PI_AGENT_PROBE_FAILED`、`LLM_CREDENTIALS_UNAVAILABLE`、`LLM_UNAVAILABLE` 和 `LLM_REQUEST_REJECTED`。连接测试、绑定和当前项验证失败在已经创建调用记录时带可查询的 `callId`；供应商原始错误不会透传。
 
 管理错误包括 `INVALID_LLM_MODEL_CONFIG`、`INVALID_LLM_CALL_QUERY`、`LLM_MODEL_NOT_FOUND`、`LLM_MODEL_CONFIG_CHANGED`、`LLM_CHAT_NOT_CONFIGURED`、`LLM_CREDENTIALS_UNAVAILABLE`、`LLM_UNAVAILABLE` 和 `LLM_REQUEST_REJECTED`。连接测试、启用和当前项验证失败响应带可查询的 `callId`；供应商原始错误不会透传。
+
+结构化模型调用仍是后端内部能力，不新增 HTTP 路由或管理接口字段。服务端不会向供应商发送 `response_format` JSON Schema 参数，而是在单次调用的系统指令中提供目标 Schema；返回文本由 LinkCV 本地提取 JSON 并执行 Pydantic 严格校验。非法结构以内部 `LLM_RESPONSE_INVALID` 收口，不触发第二次供应商调用，也不把模型正文写入调用记录或管理接口响应。
 
 ## 管理台用户管理
 

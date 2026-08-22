@@ -5,10 +5,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from linkcv.core.config import Settings
+from linkcv.core.security import parse_refresh_token, session_key
 from linkcv.main import create_app
 from linkcv.domain.resume_document import default_resume_document
 from linkcv.domain.resume_style import default_resume_style
 from linkcv.modules.identity.models import User
+from linkcv.modules.identity.session_service import MINIPROGRAM_CHANNEL, issue_session
 from linkcv.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
     DocumentParseTask,
@@ -363,6 +365,26 @@ def test_refresh_rotates_secret_and_reuse_revokes_session() -> None:
         assert client2.post("/api/auth/refresh").status_code == 401
 
 
+def test_legacy_web_refresh_without_channel_is_upgraded() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        register = client.post(
+            "/api/auth/register",
+            json={"email": "legacy-session@example.com", "password": "password-123"},
+        )
+        assert register.status_code == 201
+        refresh_token = client.cookies.get("resume_refresh")
+        parsed = parse_refresh_token(refresh_token)
+        assert parsed is not None
+        sid, _secret = parsed
+        app.state.redis.hashes[session_key(sid)].pop("channel")
+
+        refreshed = client.post("/api/auth/refresh")
+
+        assert refreshed.status_code == 200
+        assert app.state.redis.hget(session_key(sid), "channel") == "web"
+
+
 def test_disabled_account_blocks_access() -> None:
     app = build_test_app()
     with TestClient(app) as client:
@@ -376,3 +398,54 @@ def test_disabled_account_blocks_access() -> None:
             session.commit()
         # Disabling the user (without deleting the Redis key) still rejects access.
         assert client.get("/api/resumes").json() == {"error": "UNAUTHORIZED"}
+
+
+def test_miniprogram_bearer_can_only_read_its_own_resumes() -> None:
+    app = build_test_app()
+    with TestClient(app) as owner_client:
+        owner_client.post(
+            "/api/auth/register",
+            json={"email": "mini-owner@example.test", "password": "password-123"},
+        )
+        owner_resume_id = owner_client.post(
+            "/api/resumes", json=resume_payload(app, "小程序用户简历")
+        ).json()["resume"]["id"]
+    with TestClient(app) as stranger_client:
+        stranger_client.post(
+            "/api/auth/register",
+            json={"email": "mini-stranger@example.test", "password": "password-123"},
+        )
+        stranger_resume_id = stranger_client.post(
+            "/api/resumes", json=resume_payload(app, "其他用户简历")
+        ).json()["resume"]["id"]
+
+    with app.state.session_factory() as session:
+        owner = session.scalar(select(User).where(User.email == "mini-owner@example.test"))
+        assert owner is not None
+        credentials = issue_session(
+            owner,
+            app.state.settings,
+            app.state.redis,
+            channel=MINIPROGRAM_CHANNEL,
+        )
+    headers = {"Authorization": f"Bearer {credentials.access_token}"}
+    with TestClient(app) as mini_client:
+        listed = mini_client.get("/api/miniprogram/resumes", headers=headers)
+        assert [item["id"] for item in listed.json()["resumes"]] == [owner_resume_id]
+        assert mini_client.get(
+            f"/api/miniprogram/resumes/{owner_resume_id}", headers=headers
+        ).status_code == 200
+        assert mini_client.get(
+            f"/api/miniprogram/resumes/{stranger_resume_id}", headers=headers
+        ).status_code == 404
+        assert mini_client.get("/api/resumes", headers=headers).status_code == 401
+        assert mini_client.post(
+            "/api/resumes", json=resume_payload(app, "禁止写入"), headers=headers
+        ).status_code == 401
+
+    with TestClient(app) as web_client:
+        web_client.post(
+            "/api/auth/login",
+            json={"email": "mini-owner@example.test", "password": "password-123"},
+        )
+        assert web_client.get("/api/miniprogram/resumes").status_code == 401

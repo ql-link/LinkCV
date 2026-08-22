@@ -308,6 +308,43 @@ describe("ModelsPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "测试连接" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("llmcall_failed_1");
   });
+
+  it("confirms deletion, refreshes the list and reports success", async () => {
+    const candidate = { ...model, active: false, lastTest: null };
+    mockModels(capability([candidate]));
+    const remove = vi.spyOn(api, "deleteLlmModel").mockResolvedValue(undefined);
+    const notify = vi.fn();
+
+    render(<ModelsPanel notify={notify} onSessionExpired={vi.fn()} />);
+    await screen.findByText("deepseek-v4-flash", { selector: "h3" });
+    fireEvent.click(screen.getByRole("button", { name: "删除 deepseek-v4-flash" }));
+
+    expect(screen.getByRole("alertdialog", { name: "删除模型配置？" })).toHaveTextContent(
+      "DeepSeek / deepseek-v4-flash",
+    );
+    expect(remove).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("7"));
+    await waitFor(() => expect(notify).toHaveBeenCalledWith("已删除 DeepSeek / deepseek-v4-flash"));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps the delete dialog open when the model is bound to a capability", async () => {
+    const candidate = { ...model, active: false, lastTest: null };
+    mockModels(capability([candidate]));
+    vi.spyOn(api, "deleteLlmModel").mockRejectedValue(
+      new ApiRequestError(409, "LLM_MODEL_IN_USE"),
+    );
+
+    renderModels();
+    await screen.findByText("deepseek-v4-flash", { selector: "h3" });
+    fireEvent.click(screen.getByRole("button", { name: "删除 deepseek-v4-flash" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("请先切换对应能力的绑定");
+    expect(screen.getByRole("alertdialog", { name: "删除模型配置？" })).toBeInTheDocument();
+  });
 });
 
 describe("LogsPanel", () => {

@@ -1,0 +1,39 @@
+<view class="page">
+  <view class="loading-document" wx:if="{{loading}}">
+    <view class="loading-head"></view><view class="loading-line loading-line-wide"></view><view class="loading-line"></view>
+    <view class="loading-section"></view><view class="loading-line loading-line-wide"></view><view class="loading-line"></view>
+    <text>正在加载简历…</text>
+  </view>
+  <view class="state-card error" wx:elif="{{error}}">
+    <view class="state-icon">!</view><text class="state-title">无法打开这份简历</text><text class="state-copy">{{error}}</text>
+    <button class="secondary" wx:if="{{retryable}}" hover-class="secondary-pressed" bindtap="retryLoad">重新加载</button>
+    <button class="secondary" wx:else hover-class="secondary-pressed" bindtap="backToResumes">返回简历列表</button>
+  </view>
+  <view class="content" wx:else>
+    <view class="readonly-strip"><view class="status-dot"></view><text>只读预览</text><text class="strip-note">编辑请前往网页端</text></view>
+    <view class="document">
+      <view class="header">
+        <text class="document-label">LINKCV RESUME</text>
+        <text class="name">{{resume.name || resume.title}}</text>
+        <text class="headline" wx:if="{{resume.headline}}">{{resume.headline}}</text>
+        <view class="contacts" wx:if="{{resume.contacts.length}}">
+          <text class="contact" wx:for="{{resume.contacts}}" wx:key="*this">{{item}}</text>
+        </view>
+        <text class="summary" wx:if="{{resume.summary}}">{{resume.summary}}</text>
+      </view>
+      <view class="section" wx:for="{{resume.sections}}" wx:key="title">
+        <view class="section-heading"><view class="section-rule"></view><text class="section-title">{{item.title}}</text></view>
+        <view class="entry" wx:for="{{item.items}}" wx:for-item="entry" wx:key="id">
+          <view class="entry-heading">
+            <text class="entry-title">{{entry.title}}</text>
+            <text class="entry-meta">{{entry.meta}}</text>
+          </view>
+          <text class="entry-subtitle" wx:if="{{entry.subtitle}}">{{entry.subtitle}}</text>
+          <text class="entry-content" wx:if="{{entry.content}}">{{entry.content}}</text>
+          <text class="highlight" wx:for="{{entry.highlights}}" wx:for-item="highlight" wx:key="*this">• {{highlight}}</text>
+        </view>
+      </view>
+      <view class="document-end"><view></view><text>仅供查阅</text><view></view></view>
+    </view>
+  </view>
+</view>

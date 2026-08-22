@@ -28,6 +28,10 @@ class InvalidResumeTitle(ValueError):
     pass
 
 
+class InvalidResumeVersionName(ValueError):
+    pass
+
+
 class ResumeTitleConflict(RuntimeError):
     pass
 
@@ -42,6 +46,19 @@ class ResumeVersionLimitExceeded(RuntimeError):
 
 class LatestResumeVersionRequired(RuntimeError):
     pass
+
+
+MAX_RESUME_VERSION_NAME_LENGTH = 80
+
+
+def default_resume_version_name(reason: str, version_no: int) -> str:
+    if reason == "initial":
+        return "初始版本"
+    if reason == "before_restore":
+        return "恢复前备份"
+    if reason == "restore":
+        return "恢复结果（历史记录）"
+    return f"版本 {version_no}"
 
 
 def parse_decimal_id(value: str) -> int | None:
@@ -194,6 +211,7 @@ def persist_resume_with_initial_version(
             data_json=deepcopy(resume.data_json),
             style_json=deepcopy(resume.style_json),
             reason="initial",
+            name=default_resume_version_name("initial", 1),
         )
     )
     db.flush()
@@ -335,14 +353,31 @@ def _next_version_number(db: Session, resume_id: int) -> int:
     return int(current or 0) + 1
 
 
-def _append_version(db: Session, resume: Resume, reason: str) -> ResumeVersion:
+def normalize_resume_version_name(value: str | None, *, default: str) -> str:
+    normalized = default if value is None else " ".join(value.split())
+    if not normalized or len(normalized) > MAX_RESUME_VERSION_NAME_LENGTH:
+        raise InvalidResumeVersionName
+    return normalized
+
+
+def _append_version(
+    db: Session,
+    resume: Resume,
+    reason: str,
+    name: str | None = None,
+) -> ResumeVersion:
     snapshot = parse_resume_snapshot(resume.data_json, resume.style_json)
+    version_no = _next_version_number(db, resume.id)
     version = ResumeVersion(
         resume_id=resume.id,
-        version_no=_next_version_number(db, resume.id),
+        version_no=version_no,
         data_json=deepcopy(snapshot.data.model_dump(mode="json")),
         style_json=deepcopy(snapshot.style.model_dump(mode="json")),
         reason=reason,
+        name=normalize_resume_version_name(
+            name,
+            default=default_resume_version_name(reason, version_no),
+        ),
     )
     db.add(version)
     db.flush()
@@ -356,19 +391,67 @@ def _version_count(db: Session, resume_id: int) -> int:
     return int(count or 0)
 
 
+def append_resume_version(
+    db: Session,
+    resume: Resume,
+    *,
+    reason: str,
+    version_limit: int,
+    name: str | None = None,
+) -> ResumeVersion:
+    """Append a version while the caller holds the resume row lock."""
+    if _version_count(db, resume.id) >= version_limit:
+        raise ResumeVersionLimitExceeded
+    return _append_version(db, resume, reason, name)
+
+
 def create_manual_version(
     db: Session,
     resume_id: str,
     user_id: int,
     version_limit: int,
+    name: str | None = None,
 ) -> ResumeVersion | None:
     resume = lock_owned_resume(db, resume_id, user_id)
     if resume is None:
         return None
     try:
-        if _version_count(db, resume.id) >= version_limit:
-            raise ResumeVersionLimitExceeded
-        version = _append_version(db, resume, "manual")
+        version = append_resume_version(
+            db,
+            resume,
+            reason="manual",
+            version_limit=version_limit,
+            name=name,
+        )
+        db.refresh(version)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return version
+
+
+def rename_resume_version(
+    db: Session,
+    resume_id: str,
+    version_no: int,
+    user_id: int,
+    name: str,
+) -> ResumeVersion | None:
+    resume = lock_owned_resume(db, resume_id, user_id)
+    if resume is None:
+        return None
+    version = db.scalar(
+        select(ResumeVersion).where(
+            ResumeVersion.resume_id == resume.id,
+            ResumeVersion.version_no == version_no,
+        )
+    )
+    if version is None:
+        return None
+    try:
+        version.name = normalize_resume_version_name(name, default=version.name)
+        db.flush()
         db.refresh(version)
         db.commit()
     except Exception:
@@ -382,7 +465,6 @@ def restore_resume_version(
     resume_id: str,
     version_no: int,
     user_id: int,
-    version_limit: int,
 ) -> Resume | None:
     resume = lock_owned_resume(db, resume_id, user_id)
     if resume is None:
@@ -397,28 +479,12 @@ def restore_resume_version(
         return None
 
     target_snapshot = parse_resume_snapshot(target.data_json, target.style_json)
-    latest = db.scalar(
-        select(ResumeVersion)
-        .where(ResumeVersion.resume_id == resume.id)
-        .order_by(ResumeVersion.version_no.desc())
-        .limit(1)
-    )
-    needs_backup = latest is None or (
-        latest.data_json != resume.data_json or latest.style_json != resume.style_json
-    )
     try:
-        required_slots = 2 if needs_backup else 1
-        if _version_count(db, resume.id) + required_slots > version_limit:
-            raise ResumeVersionLimitExceeded
-        if needs_backup:
-            _append_version(db, resume, "before_restore")
-
         resume.data_json = target_snapshot.data.model_dump(mode="json")
         resume.style_json = target_snapshot.style.model_dump(mode="json")
         resume.lock_version += 1
         resume.updated_at = utc_now()
         db.flush()
-        _append_version(db, resume, "restore")
         db.refresh(resume)
         db.commit()
     except Exception:

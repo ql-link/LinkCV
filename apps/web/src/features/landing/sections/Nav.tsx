@@ -35,7 +35,10 @@ export function Nav({
       }`}
     >
       <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-        <a href="#top" className="flex items-center gap-2.5">
+        <a
+          href="#top"
+          className="flex items-center gap-2.5"
+        >
           <span className="flex h-7 w-7 items-center justify-center rounded-md bg-zinc-900 font-display text-sm font-bold text-white dark:bg-white dark:text-black">
             L
           </span>
@@ -46,18 +49,6 @@ export function Nav({
             </span>
           </span>
         </a>
-
-        <div className="hidden items-center gap-8 md:flex">
-          {t.nav.links.map((l) => (
-            <a
-              key={l.href}
-              href={l.href}
-              className="text-[13px] text-zinc-500 transition-colors hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
-            >
-              {l.label}
-            </a>
-          ))}
-        </div>
 
         <div className="flex items-center gap-3">
           <PillButton

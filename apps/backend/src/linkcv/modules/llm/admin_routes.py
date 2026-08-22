@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import Select, case, func, or_, select, update
+from sqlalchemy import Select, case, delete as sql_delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from linkcv.core.database import get_db, utc_now
@@ -16,16 +16,20 @@ from linkcv.modules.identity.models import User
 from linkcv.modules.llm.catalog import (
     CHAT_ADAPTERS,
     CHAT_CAPABILITY,
+    MODEL_CAPABILITIES,
+    PI_AGENT_CAPABILITY,
     assemble_model_identifier,
     chat_model_suggestions,
+    normalize_capability,
     normalize_model_call_name,
 )
 from linkcv.modules.llm.crypto import CredentialUnavailableError
-from linkcv.modules.llm.dependencies import get_llm_service
+from linkcv.modules.llm.dependencies import get_llm_service, get_pi_probe_coordinator
 from linkcv.modules.llm.models import (
     LLMCallLog,
     LLMCapabilityBinding,
     LLMModelConfig,
+    LLMModelValidation,
 )
 from linkcv.modules.llm.schemas import (
     CallLogListResponse,
@@ -43,8 +47,17 @@ from linkcv.modules.llm.schemas import (
     ModelConfigResponse,
     ModelConnectionTestResponse,
     ModelLastTest,
+    ModelBindingRequest,
+    ModelBindingResponse,
+    CapabilityModelConfigRecord,
+    ModelCapabilityListResponse,
+    ModelCapabilityRecord,
+    ModelCapabilityTestRequest,
+    ModelCatalogResponse,
+    ModelValidationResponse,
 )
 from linkcv.modules.llm.service import LLMError, LLMService, RuntimeModelConfig
+from linkcv.modules.llm.pi_probe import PiProbeCoordinator, PiProbeError
 from linkcv.modules.observability.audit import bind_audit_target
 
 router = APIRouter(prefix="/admin/llm", tags=["llm-admin"])
@@ -75,6 +88,27 @@ def require_binding(db: Session, *, lock: bool = False) -> LLMCapabilityBinding:
     return binding
 
 
+def require_capability_binding(
+    db: Session,
+    capability: str,
+    *,
+    lock: bool = False,
+) -> LLMCapabilityBinding:
+    try:
+        normalized = normalize_capability(capability)
+    except ValueError as error:
+        raise ApiError(404, "LLM_CAPABILITY_NOT_FOUND") from error
+    statement = select(LLMCapabilityBinding).where(
+        LLMCapabilityBinding.capability == normalized
+    )
+    if lock:
+        statement = statement.with_for_update()
+    binding = db.scalar(statement)
+    if binding is None:
+        raise ApiError(503, "LLM_MODEL_NOT_CONFIGURED")
+    return binding
+
+
 def require_config(
     db: Session,
     config_id: int,
@@ -83,7 +117,25 @@ def require_config(
 ) -> LLMModelConfig:
     statement = select(LLMModelConfig).where(
         LLMModelConfig.id == config_id,
-        LLMModelConfig.capability == CHAT_CAPABILITY,
+        LLMModelConfig.adapter.is_not(None),
+        LLMModelConfig.model_call_name.is_not(None),
+    )
+    if lock:
+        statement = statement.with_for_update()
+    config = db.scalar(statement)
+    if config is None:
+        raise ApiError(404, "LLM_MODEL_NOT_FOUND")
+    return config
+
+
+def require_capability_config(
+    db: Session,
+    config_id: int,
+    *,
+    lock: bool = False,
+) -> LLMModelConfig:
+    statement = select(LLMModelConfig).where(
+        LLMModelConfig.id == config_id,
         LLMModelConfig.adapter.is_not(None),
         LLMModelConfig.model_call_name.is_not(None),
     )
@@ -98,16 +150,21 @@ def require_config(
 def latest_tests(
     db: Session,
     config_ids: list[int],
+    *,
+    capability: str | None = None,
 ) -> dict[int, LLMCallLog]:
     if not config_ids:
         return {}
+    filters = [
+        LLMCallLog.model_config_id.in_(config_ids),
+        LLMCallLog.source == "connection_test",
+        LLMCallLog.status.in_(("succeeded", "failed", "cancelled")),
+    ]
+    if capability is not None:
+        filters.append(LLMCallLog.capability == capability)
     latest_ids = (
         select(func.max(LLMCallLog.id).label("id"))
-        .where(
-            LLMCallLog.model_config_id.in_(config_ids),
-            LLMCallLog.source == "connection_test",
-            LLMCallLog.status.in_(("succeeded", "failed", "cancelled")),
-        )
+        .where(*filters)
         .group_by(LLMCallLog.model_config_id)
     )
     rows = db.scalars(select(LLMCallLog).where(LLMCallLog.id.in_(latest_ids))).all()
@@ -153,13 +210,14 @@ def capability_response(db: Session) -> ChatCapabilityResponse:
     configs = db.scalars(
         select(LLMModelConfig)
         .where(
-            LLMModelConfig.capability == CHAT_CAPABILITY,
             LLMModelConfig.adapter.is_not(None),
             LLMModelConfig.model_call_name.is_not(None),
         )
         .order_by(LLMModelConfig.id.asc())
     ).all()
-    tests = latest_tests(db, [config.id for config in configs])
+    tests = latest_tests(
+        db, [config.id for config in configs], capability=CHAT_CAPABILITY
+    )
     records = [
         model_record(
             config,
@@ -175,6 +233,119 @@ def capability_response(db: Session) -> ChatCapabilityResponse:
         active_model=active,
         models=records,
     )
+
+
+def capability_model_record(
+    config: LLMModelConfig,
+    *,
+    active_capabilities: list[str],
+    last_test: LLMCallLog | None,
+) -> CapabilityModelConfigRecord:
+    if config.adapter is None or config.model_call_name is None:
+        raise ValueError("legacy model config cannot be exposed by the capability API")
+    return CapabilityModelConfigRecord(
+        id=config.id,
+        adapter=config.adapter,
+        model=config.model_call_name,
+        api_base=config.api_base,
+        key_configured=config.encrypted_api_key is not None,
+        config_version=config.config_version,
+        active_capabilities=sorted(
+            capability for capability in active_capabilities
+            if capability in MODEL_CAPABILITIES
+        ),
+        last_test=(
+            ModelLastTest(
+                status=last_test.status,
+                call_id=last_test.call_id,
+                tested_at=as_utc(last_test.created_at),
+            )
+            if last_test is not None and last_test.status != "pending"
+            else None
+        ),
+        created_at=as_utc(config.created_at),
+        updated_at=as_utc(config.updated_at),
+    )
+
+
+def capability_list_response(db: Session) -> ModelCapabilityListResponse:
+    configs = db.scalars(
+        select(LLMModelConfig)
+        .where(
+            LLMModelConfig.adapter.is_not(None),
+            LLMModelConfig.model_call_name.is_not(None),
+        )
+        .order_by(LLMModelConfig.id.asc())
+    ).all()
+    config_ids = [config.id for config in configs]
+    tests_by_capability = {
+        capability: latest_tests(db, config_ids, capability=capability)
+        for capability in MODEL_CAPABILITIES
+    }
+    bindings = db.scalars(select(LLMCapabilityBinding)).all()
+    active_by_config: dict[int, list[str]] = {}
+    active_by_capability: dict[str, int | None] = {}
+    binding_versions: dict[str, int] = {}
+    for binding in bindings:
+        active_by_capability[binding.capability] = binding.model_config_id
+        binding_versions[binding.capability] = binding.binding_version
+        if binding.model_config_id is not None:
+            active_by_config.setdefault(binding.model_config_id, []).append(
+                binding.capability
+            )
+
+    capabilities = []
+    for capability in MODEL_CAPABILITIES:
+        active_id = active_by_capability.get(capability)
+        records = [
+            capability_model_record(
+                config,
+                active_capabilities=active_by_config.get(config.id, []),
+                last_test=tests_by_capability[capability].get(config.id),
+            )
+            for config in configs
+        ]
+        records_by_capability = {int(record.id): record for record in records}
+        capabilities.append(
+            ModelCapabilityRecord(
+                capability=capability,
+                active_model_id=active_id,
+                binding_version=binding_versions.get(capability, 1),
+                active_model=(
+                    records_by_capability.get(active_id) if active_id else None
+                ),
+                models=records,
+            )
+        )
+    return ModelCapabilityListResponse(capabilities=capabilities)
+
+
+def validation_for_call(
+    db: Session,
+    *,
+    config: LLMModelConfig,
+    capability: str,
+    call_id: str,
+    user_id: int,
+) -> LLMModelValidation:
+    call = db.scalar(select(LLMCallLog).where(LLMCallLog.call_id == call_id))
+    if call is None:
+        raise ApiError(500, "LLM_VALIDATION_EVIDENCE_MISSING")
+    validation = LLMModelValidation(
+        model_config_id=config.id,
+        config_version=config.config_version,
+        capability=capability,
+        probe_version=1,
+        runtime_version="linkcv-llm-v1",
+        call_id=call_id,
+        status=call.status,
+        error_code=call.error_code,
+        created_by_user_id=user_id,
+        created_at=utc_now(),
+    )
+    db.add(validation)
+    db.flush()
+    return validation
 
 
 def encrypt_key(service: LLMService, value: str) -> str:
@@ -215,16 +386,18 @@ def proposed_values(
 def runtime_snapshot(
     config: LLMModelConfig,
     values: tuple[str, str, str, str | None, str | None] | None = None,
+    *,
+    capability: str = CHAT_CAPABILITY,
 ) -> RuntimeModelConfig:
     if values is None:
-        runtime = RuntimeModelConfig.from_record(config)
+        runtime = RuntimeModelConfig.from_record(config, capability=capability)
         if runtime is None:
             raise ApiError(404, "LLM_MODEL_NOT_FOUND")
         return runtime
     adapter, model_call_name, model_name, api_base, encrypted_api_key = values
     return RuntimeModelConfig(
         id=config.id,
-        capability=CHAT_CAPABILITY,
+        capability=capability,
         adapter=adapter,
         model_call_name=model_call_name,
         model_name=model_name,
@@ -260,6 +433,42 @@ def raise_service_error(error: LLMError) -> None:
     raise ApiError(status, error.code, {"callId": error.call_id}) from error
 
 
+def raise_pi_probe_error(error: PiProbeError) -> None:
+    status = {
+        "LLM_PI_AGENT_UNAVAILABLE": 503,
+        "LLM_PI_AGENT_TIMEOUT": 504,
+    }.get(error.code, 502)
+    details = {"callId": error.call_id} if error.call_id else None
+    raise ApiError(status, error.code, details) from error
+
+
+@router.get("/capabilities", response_model=ModelCapabilityListResponse)
+def get_capabilities(
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_admin),
+) -> ModelCapabilityListResponse:
+    """Return the capability matrix without exposing encrypted credentials."""
+    return capability_list_response(db)
+
+
+@router.get("/catalog", response_model=ModelCatalogResponse)
+def get_model_catalog(
+    _admin: User = Depends(get_current_admin),
+) -> ModelCatalogResponse:
+    return ModelCatalogResponse(
+        capabilities=list(MODEL_CAPABILITIES),
+        adapters=[
+            ChatCatalogAdapter(
+                code=adapter.code,
+                label=adapter.label,
+                requires_api_key=adapter.requires_api_key,
+                models=chat_model_suggestions(adapter.code),
+            )
+            for adapter in CHAT_ADAPTERS
+        ],
+    )
+
+
 @router.get("/capabilities/chat", response_model=ChatCapabilityResponse)
 def get_chat_capability(
     db: Session = Depends(get_db),
@@ -286,6 +495,98 @@ def get_chat_catalog(
     )
 
 
+@router.put(
+    "/capabilities/{capability}/binding",
+    response_model=ModelBindingResponse,
+)
+async def bind_capability(
+    capability: str,
+    payload: ModelBindingRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+    service: LLMService = Depends(get_llm_service),
+    pi_probe: PiProbeCoordinator = Depends(get_pi_probe_coordinator),
+) -> ModelBindingResponse:
+    admin_id = admin.id
+    try:
+        normalized_capability = normalize_capability(capability)
+    except ValueError as error:
+        raise ApiError(404, "LLM_CAPABILITY_NOT_FOUND") from error
+    parsed_config_id = parse_id(payload.model_config_id)
+    if parsed_config_id is None:
+        raise ApiError(404, "LLM_MODEL_NOT_FOUND")
+    binding = require_capability_binding(db, normalized_capability, lock=True)
+    expected_binding_version = payload.base_binding_version or binding.binding_version
+    if expected_binding_version != binding.binding_version:
+        db.rollback()
+        raise ApiError(409, "LLM_BINDING_CHANGED")
+    config = require_capability_config(db, parsed_config_id, lock=True)
+    expected_config_version = config.config_version
+    if (
+        payload.base_config_version is not None
+        and payload.base_config_version != expected_config_version
+    ):
+        db.rollback()
+        raise ApiError(409, "LLM_MODEL_CONFIG_CHANGED")
+    snapshot = runtime_snapshot(config, capability=normalized_capability)
+    db.rollback()
+    try:
+        call_id = (
+            await service.test_external_runtime_config(
+                admin_id,
+                snapshot,
+                invoke=lambda api_key: pi_probe.run_probe(snapshot, api_key),
+            )
+            if normalized_capability == PI_AGENT_CAPABILITY
+            else await service.test_runtime_config(admin_id, snapshot)
+        )
+    except PiProbeError as error:
+        raise_pi_probe_error(error)
+    except LLMError as error:
+        raise_service_error(error)
+
+    binding = require_capability_binding(db, normalized_capability, lock=True)
+    config = require_capability_config(db, parsed_config_id, lock=True)
+    if binding.binding_version != expected_binding_version:
+        db.rollback()
+        raise ApiError(409, "LLM_BINDING_CHANGED", {"callId": call_id})
+    if config.config_version != expected_config_version:
+        db.rollback()
+        raise ApiError(409, "LLM_MODEL_CONFIG_CHANGED", {"callId": call_id})
+    validation = validation_for_call(
+        db,
+        config=config,
+        capability=normalized_capability,
+        call_id=call_id,
+        user_id=admin_id,
+    )
+    binding.model_config_id = config.id
+    binding.validation_id = validation.id
+    binding.binding_version += 1
+    binding.updated_at = utc_now()
+    db.commit()
+    db.refresh(binding)
+    records = capability_list_response(db)
+    active = next(
+        (
+            entry.active_model
+            for entry in records.capabilities
+            if entry.capability == normalized_capability
+        ),
+        None,
+    )
+    if active is None:
+        raise ApiError(500, "LLM_BINDING_RESPONSE_INVALID")
+    return ModelBindingResponse(
+        capability=normalized_capability,
+        active_model_id=config.id,
+        binding_version=binding.binding_version,
+        validation_id=str(validation.id),
+        call_id=call_id,
+        active_model=active,
+    )
+
+
 @router.post("/models", response_model=ModelConfigResponse, status_code=201)
 def create_model(
     payload: ModelConfigCreate,
@@ -306,7 +607,6 @@ def create_model(
     )
     now = utc_now()
     config = LLMModelConfig(
-        capability=CHAT_CAPABILITY,
         adapter=payload.adapter,
         model_call_name=model_call_name,
         model_name=model_name,
@@ -345,14 +645,25 @@ async def update_model(
 
     binding = require_binding(db, lock=True)
     config = require_config(db, parsed_config_id, lock=True)
+    if db.scalar(
+        select(LLMCapabilityBinding.capability).where(
+            LLMCapabilityBinding.model_config_id == config.id
+        )
+    ) is not None:
+        db.rollback()
+        raise ApiError(409, "LLM_MODEL_IN_USE")
+    expected_config_version = payload.base_config_version or config.config_version
+    if expected_config_version != config.config_version:
+        db.rollback()
+        raise ApiError(409, "LLM_MODEL_CONFIG_CHANGED")
     values = proposed_values(config, payload, service)
-    base_version = config.config_version
+    base_version = expected_config_version
     is_active = binding.model_config_id == config.id
     if not is_active:
         apply_values(config, values)
         db.commit()
         db.refresh(config)
-        tests = latest_tests(db, [config.id])
+        tests = latest_tests(db, [config.id], capability=CHAT_CAPABILITY)
         return ModelConfigPatchResponse(
             model=model_record(
                 config,
@@ -381,7 +692,7 @@ async def update_model(
     config.enabled = True
     db.commit()
     db.refresh(config)
-    tests = latest_tests(db, [config.id])
+    tests = latest_tests(db, [config.id], capability=CHAT_CAPABILITY)
     return ModelConfigPatchResponse(
         model=model_record(
             config,
@@ -390,6 +701,40 @@ async def update_model(
         ),
         validation_call_id=validation_call_id,
     )
+
+
+@router.delete("/models/{config_id}", status_code=204)
+def delete_model(
+    config_id: str,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_admin),
+) -> None:
+    parsed_config_id = parse_id(config_id)
+    if parsed_config_id is None:
+        raise ApiError(404, "LLM_MODEL_NOT_FOUND")
+    # Binding writes lock a capability row before the candidate. Lock the
+    # low-cardinality binding set in the same order so delete cannot race a bind.
+    bindings = db.scalars(
+        select(LLMCapabilityBinding)
+        .order_by(LLMCapabilityBinding.capability.asc())
+        .with_for_update()
+    ).all()
+    config = require_capability_config(db, parsed_config_id, lock=True)
+    if any(binding.model_config_id == config.id for binding in bindings):
+        db.rollback()
+        raise ApiError(409, "LLM_MODEL_IN_USE")
+    db.execute(
+        sql_delete(LLMModelValidation).where(
+            LLMModelValidation.model_config_id == config.id
+        )
+    )
+    db.execute(
+        update(LLMCallLog)
+        .where(LLMCallLog.model_config_id == config.id)
+        .values(model_config_id=None)
+    )
+    db.delete(config)
+    db.commit()
 
 
 @router.post("/models/{config_id}/test", response_model=ModelConnectionTestResponse)
@@ -408,6 +753,67 @@ async def test_model(
     return ModelConnectionTestResponse(call_id=call_id)
 
 
+@router.post(
+    "/models/{config_id}/tests",
+    response_model=ModelValidationResponse,
+)
+async def test_model_capability(
+    config_id: str,
+    payload: ModelCapabilityTestRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+    service: LLMService = Depends(get_llm_service),
+    pi_probe: PiProbeCoordinator = Depends(get_pi_probe_coordinator),
+) -> ModelValidationResponse:
+    admin_id = admin.id
+    try:
+        normalized_capability = normalize_capability(payload.capability)
+    except ValueError as error:
+        raise ApiError(404, "LLM_CAPABILITY_NOT_FOUND") from error
+    parsed_config_id = parse_id(config_id)
+    if parsed_config_id is None:
+        raise ApiError(404, "LLM_MODEL_NOT_FOUND")
+    config = require_capability_config(db, parsed_config_id, lock=True)
+    expected_config_version = payload.base_config_version or config.config_version
+    if expected_config_version != config.config_version:
+        db.rollback()
+        raise ApiError(409, "LLM_MODEL_CONFIG_CHANGED")
+    snapshot = runtime_snapshot(config, capability=normalized_capability)
+    db.rollback()
+    try:
+        call_id = (
+            await service.test_external_runtime_config(
+                admin_id,
+                snapshot,
+                invoke=lambda api_key: pi_probe.run_probe(snapshot, api_key),
+            )
+            if normalized_capability == PI_AGENT_CAPABILITY
+            else await service.test_runtime_config(admin_id, snapshot)
+        )
+    except PiProbeError as error:
+        raise_pi_probe_error(error)
+    except LLMError as error:
+        raise_service_error(error)
+    config = require_capability_config(db, parsed_config_id, lock=True)
+    if config.config_version != expected_config_version:
+        db.rollback()
+        raise ApiError(409, "LLM_MODEL_CONFIG_CHANGED", {"callId": call_id})
+    validation = validation_for_call(
+        db,
+        config=config,
+        capability=normalized_capability,
+        call_id=call_id,
+        user_id=admin_id,
+    )
+    db.commit()
+    return ModelValidationResponse(
+        capability=normalized_capability,
+        validation_id=str(validation.id),
+        call_id=call_id,
+        config_version=config.config_version,
+    )
+
+
 @router.post("/models/{config_id}/activate", response_model=ModelActivationResponse)
 async def activate_model(
     config_id: str,
@@ -415,6 +821,7 @@ async def activate_model(
     admin: User = Depends(get_current_admin),
     service: LLMService = Depends(get_llm_service),
 ) -> ModelActivationResponse:
+    admin_id = admin.id
     parsed_config_id = parse_id(config_id)
     if parsed_config_id is None:
         raise ApiError(404, "LLM_MODEL_NOT_FOUND")
@@ -425,7 +832,7 @@ async def activate_model(
     base_version = config.config_version
     db.rollback()
     try:
-        call_id = await service.test_runtime_config(admin.id, snapshot)
+        call_id = await service.test_runtime_config(admin_id, snapshot)
     except LLMError as error:
         raise_service_error(error)
 
@@ -434,17 +841,25 @@ async def activate_model(
     if config.config_version != base_version:
         db.rollback()
         raise ApiError(409, "LLM_MODEL_CONFIG_CHANGED", {"callId": call_id})
+    validation = validation_for_call(
+        db,
+        config=config,
+        capability=CHAT_CAPABILITY,
+        call_id=call_id,
+        user_id=admin_id,
+    )
     binding.model_config_id = config.id
+    binding.validation_id = validation.id
+    binding.binding_version += 1
     binding.updated_at = utc_now()
     db.execute(
         update(LLMModelConfig)
-        .where(LLMModelConfig.capability == CHAT_CAPABILITY)
         .values(enabled=False)
     )
     config.enabled = True
     db.commit()
     db.refresh(config)
-    tests = latest_tests(db, [config.id])
+    tests = latest_tests(db, [config.id], capability=CHAT_CAPABILITY)
     return ModelActivationResponse(
         active_model=model_record(
             config,
@@ -495,6 +910,7 @@ def call_record(row: LLMCallLog) -> CallLogRecord:
         estimated_cost_usd=row.estimated_cost,
         latency_ms=row.latency_ms,
         error_code=row.error_code,
+        model_config_version=row.model_config_version,
         created_at=as_utc(row.created_at),
     )
 

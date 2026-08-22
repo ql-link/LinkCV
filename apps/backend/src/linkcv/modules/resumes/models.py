@@ -366,6 +366,11 @@ class ResumeVersion(Base):
         nullable=False,
         comment="创建原因：initial、manual、before_restore 或 restore",
     )
+    name: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        comment="正式版本名称",
+    )
     created_at: Mapped[datetime] = mapped_column(
         timestamp_type(),
         nullable=False,

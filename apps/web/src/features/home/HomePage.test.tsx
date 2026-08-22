@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  api,
   type ResumeImportSummary,
   type ResumeSummary,
 } from "../../api/client";
@@ -52,24 +53,48 @@ describe("HomeScreen", () => {
     window.history.replaceState(null, "", "/resumes");
   });
 
+  it("首次读取时在页头下方展示统一加载状态", () => {
+    const { container } = renderHome({ loading: true });
+
+    expect(screen.getByRole("status", { name: "正在加载我的简历…" })).toBeInTheDocument();
+    expect(container.querySelector(".home-dashboard-content > .page-loading")).toBeInTheDocument();
+    expect(container.querySelector(".dashboard-main")).not.toBeInTheDocument();
+  });
+
   it("按名称筛选简历并从新建按钮进入创建流程", () => {
     const onCreate = vi.fn();
     renderHome({ onCreate });
 
-    fireEvent.change(screen.getByLabelText("搜索简历"), {
+    expect(screen.queryByText(/按最近更新排列/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/点击简历卡片可继续编辑/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("searchbox", { name: "搜索简历" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "搜索简历" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索简历" }), {
       target: { value: "frontend" },
     });
     expect(screen.getByText("Frontend Resume")).toBeInTheDocument();
     expect(screen.queryByText("产品经理")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "新建简历" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "清除并收起搜索" }));
+    expect(screen.getByText("产品经理")).toBeInTheDocument();
+    expect(screen.queryByRole("searchbox", { name: "搜索简历" })).not.toBeInTheDocument();
+
+    const createButton = screen.getByRole("button", { name: "新建简历" });
+    expect(createButton).toHaveClass("ui-button-transparent");
+    fireEvent.click(createButton);
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("导入简历入口跳转到新建页的导入模式", () => {
+  it("导入简历入口在当前列表打开弹窗而不改变地址", async () => {
+    vi.spyOn(api, "listResumeTemplates").mockResolvedValue({ templates: [] });
     renderHome();
     fireEvent.click(screen.getByRole("button", { name: "导入简历" }));
-    expect(window.location.pathname).toBe("/resumes/new");
-    expect(window.location.search).toBe("?mode=import");
+    expect(await screen.findByRole("alertdialog", { name: "导入简历" })).toBeInTheDocument();
+    expect(screen.queryByText("选择模板")).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe("/resumes");
+    expect(window.location.search).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(screen.queryByRole("alertdialog", { name: "导入简历" })).not.toBeInTheDocument();
   });
 
   it("通过站内确认弹窗删除正式简历", async () => {
@@ -164,7 +189,8 @@ describe("HomeScreen", () => {
 
     renderHome({ failedImports });
 
-    expect(screen.getAllByText("未完成")).toHaveLength(2);
+    expect(screen.getByText("上传失败")).toBeInTheDocument();
+    expect(screen.getByText("解析失败")).toBeInTheDocument();
     expect(screen.getByText("上传失败 · 420 毫秒")).toBeInTheDocument();
     expect(screen.getByText("解析失败 · 1.3 秒")).toBeInTheDocument();
   });
@@ -189,14 +215,14 @@ describe("HomeScreen", () => {
       name: "导入任务 张三-后端工程师.pdf",
     });
     expect(taskCard).toHaveClass("home-import-card");
-    expect(within(taskCard).getByText("未完成")).toBeInTheDocument();
+    expect(within(taskCard).getByText("解析中")).toBeInTheDocument();
     expect(screen.getByRole("progressbar", {
       name: "张三-后端工程师.pdf 正在解析",
     })).toHaveAttribute("aria-valuetext", "正在解析，暂时无法估算完成时间");
     expect(screen.getByText("正在解析 · 请稍候")).toBeInTheDocument();
   });
 
-  it("未完成导入和正式简历展示在同一个卡片网格", () => {
+  it("导入任务和正式简历展示在同一个卡片网格", () => {
     const activeImport: ResumeImportSummary = {
       id: "41",
       source_filename: "后端工程师.pdf",
@@ -217,7 +243,8 @@ describe("HomeScreen", () => {
       name: "导入任务 后端工程师.pdf",
     })).toBeInTheDocument();
     expect(within(cardGrid).getByText("Frontend Resume")).toBeInTheDocument();
-    expect(screen.getByText("全部 3")).toBeInTheDocument();
+    expect(screen.queryByText("全部 3")).not.toBeInTheDocument();
+    expect(screen.queryByText("最近更新")).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "导入任务" })).not.toBeInTheDocument();
   });
 

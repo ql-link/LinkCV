@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from io import BytesIO
 from time import monotonic
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -6,7 +7,10 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import pytest
 
 from linkcv.domain.document_conversion import DocumentMarkdownResult
-from linkcv.domain.resume_extraction import DraftBasics, ResumeExtractionDraft
+from linkcv.domain.resume_extraction import (
+    DraftBasics,
+    ResumeExtractionDraft,
+)
 from linkcv.services.resume_import_service import (
     ResumeImportFailure,
     ResumeImportService,
@@ -41,6 +45,13 @@ class FakeConverter:
 class FakeStructuringClient:
     async def extract(self, **_kwargs) -> ResumeExtractionDraft:
         return ResumeExtractionDraft(basics=DraftBasics(name="张三"))
+
+
+class InvalidFinalStructuringClient:
+    async def extract(self, **_kwargs) -> ResumeExtractionDraft:
+        return ResumeExtractionDraft(
+            basics=DraftBasics(name="张三", summary="<script>alert(1)</script>"),
+        )
 
 
 def test_file_validation_and_safe_filename_are_side_effect_free() -> None:
@@ -131,3 +142,40 @@ def test_parse_resume_calls_markdown_callback_without_changing_result() -> None:
 
     assert archived == [result.extracted_markdown]
     assert result.document.basics.name == "张三"
+
+
+def test_parse_resume_reports_safe_normalization_metadata(caplog) -> None:
+    service = ResumeImportService(
+        document_converter=FakeConverter(),
+        structuring_client=InvalidFinalStructuringClient(),
+        max_structuring_bytes=10_000,
+        structuring_timeout_seconds=30,
+    )
+
+    with caplog.at_level(logging.INFO), pytest.raises(ResumeImportFailure) as raised:
+        asyncio.run(
+            service.parse_resume(
+                user_id=1,
+                filename="resume.md",
+                content_type="text/markdown",
+                content=b"# Zhang San",
+                operation_id="task-2",
+                deadline_monotonic=monotonic() + 60,
+            )
+        )
+
+    error = raised.value
+    assert error.code == "RESUME_STRUCTURE_INVALID"
+    assert error.stage == "resume_normalization"
+    assert error.exception_type == "ValidationError"
+    assert error.validation_model == "RichTextV1"
+    assert error.validation_paths == "<root>"
+    assert error.validation_types == "value_error"
+    assert "<script>" not in caplog.text
+    assert [record.message for record in caplog.records] == [
+        "resume import stage started",
+        "resume import stage completed",
+        "resume import stage started",
+        "resume import stage completed",
+        "resume import stage started",
+    ]

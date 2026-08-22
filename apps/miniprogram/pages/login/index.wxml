@@ -1,46 +1,73 @@
-<!-- pages/login/index.wxml -->
-<!-- LinkResume 授权确认页（强设计感版）：背景叠加多组极浅几何装饰，
-     右上角带服务来源声明，聚焦"确认登录"单一动作。 -->
 <view class="page">
-  <!-- 背景装饰层（不可点击，z-index 0，置于所有内容之下） -->
-  <view class="bg-deco">
-    <!-- 巨型品牌水印：几乎不可见的 "L" 纹理 -->
-    <view class="deco-watermark">L</view>
-    <!-- 中心聚焦光晕：径向渐变聚光灯效果 -->
-    <view class="deco-glow"></view>
-    <!-- 底部点阵网格纹理 -->
-    <view class="deco-grid"></view>
+  <view class="page-glow"></view>
+  <view class="topbar">
+    <view class="mini-brand">
+      <view class="mini-brand-mark">L</view>
+      <text class="mini-brand-name">LinkCV</text>
+    </view>
+    <text class="service-provider">微信安全登录</text>
   </view>
-
-  <!-- 自定义导航栏：右上角服务来源声明，无返回/退出入口 -->
-  <view class="nav">
-    <view class="nav-center"></view>
-    <text class="service-provider">相关服务由 LinkResume 小程序提供</text>
-  </view>
-
-  <!-- 核心内容区：垂直居中，置于装饰之上 -->
   <view class="content">
-    <!-- 品牌徽章：深色圆底 + 外围极淡描边 + 白色大写字母 L -->
-    <view class="brand-icon">L</view>
-    <!-- 品牌名称：衬线字体，宽字距 -->
-    <view class="brand-name">LinkResume</view>
-    <!-- 陶土红装饰线：两端略微变细，加载时从左向右展开 -->
-    <view class="decor-line"></view>
-    <!-- Slogan -->
-    <view class="brand-tagline">安全连接你的职业档案</view>
-    <!-- 模式说明：浏览模式（无会话）展示流程说明，不请求任何授权；
-         授权模式（有会话）展示授权范围 -->
-    <view class="mode-note" wx:if="{{!hasSession}}">本小程序用于 LinkResume 网页版扫码登录确认。可先自由浏览本页内容；如需登录，请前往 LinkResume 网页端扫码，将自动进入授权确认。</view>
-    <view class="mode-note" wx:if="{{hasSession}}">· 确认后，网页端将使用您的微信身份登录 LinkResume ·</view>
+    <view class="document-mark" aria-hidden="true">
+      <view class="document-sheet document-sheet-back"></view>
+      <view class="document-sheet document-sheet-front">
+        <view class="document-avatar">L</view>
+        <view class="document-line document-line-strong"></view>
+        <view class="document-line"></view>
+        <view class="document-line document-line-short"></view>
+      </view>
+    </view>
+    <view class="eyebrow">LINKCV 微信登录</view>
+    <text class="title" wx:if="{{phase === 'onboarding' && !accountStatusReady}}">识别微信账号</text>
+    <text class="title" wx:elif="{{phase === 'onboarding' && accountRegistered}}">登录 LinkCV</text>
+    <text class="title" wx:elif="{{phase === 'onboarding'}}">注册 LinkCV</text>
+    <text class="title" wx:elif="{{phase === 'pending'}}">确认是你本人操作</text>
+    <text class="title" wx:elif="{{phase === 'confirmed'}}">网页已安全登录</text>
+    <text class="title" wx:elif="{{phase === 'cancelled'}}">本次登录已取消</text>
+    <text class="title" wx:elif="{{phase === 'expired'}}">登录请求已过期</text>
+    <text class="title" wx:elif="{{phase === 'error'}}">暂时无法确认</text>
+    <text class="title" wx:else>正在检查登录请求</text>
+    <view class="status-card status-{{phase}}">
+      <view class="status-indicator">
+        <view class="spinner" wx:if="{{loading || submitting}}"></view>
+        <text wx:else>{{phase === 'confirmed' ? '✓' : phase === 'cancelled' ? '×' : phase === 'pending' || phase === 'onboarding' ? '!' : '·'}}</text>
+      </view>
+      <text class="status-message">{{message}}</text>
+    </view>
+    <view class="consent" wx:if="{{phase === 'onboarding' || phase === 'pending'}}">
+      <checkbox-group bindchange="handleAgreementChange">
+        <label class="agreement-row">
+          <checkbox class="agreement-checkbox" value="accepted" checked="{{agreementAccepted}}" color="#155fd7" />
+          <view class="agreement-copy">我已阅读并同意 <text class="agreement-link" catchtap="openPrivacyContract">{{privacyContractName}}</text></view>
+        </label>
+      </checkbox-group>
+      <text class="agreement-hint" wx:if="{{!privacyReady}}">正在读取隐私保护指引…</text>
+      <text class="agreement-hint" wx:elif="{{!privacySupported}}">当前微信版本无法读取隐私指引，请升级微信后重试</text>
+      <text class="agreement-hint" wx:elif="{{!agreementAccepted}}">勾选后才能继续</text>
+    </view>
+    <view class="actions" wx:if="{{phase === 'onboarding' || phase === 'pending'}}">
+      <button
+        wx:if="{{privacyAuthorizationRequired}}"
+        id="agree-btn"
+        class="btn-main"
+        hover-class="btn-main-pressed"
+        open-type="agreePrivacyAuthorization"
+        bindagreeprivacyauthorization="handlePrivacyAuthorization"
+        disabled="{{submitting || !privacyReady || !privacySupported || !agreementAccepted || (phase === 'onboarding' && !accountStatusReady)}}"
+      >{{submitting ? '正在处理…' : phase === 'onboarding' ? (accountRegistered ? '同意并登录' : '同意并注册') : '同意并确认网页登录'}}</button>
+      <button
+        wx:else
+        class="btn-main"
+        hover-class="btn-main-pressed"
+        bindtap="handlePrimaryAction"
+        disabled="{{submitting || !privacyReady || !privacySupported || !agreementAccepted || (phase === 'onboarding' && !accountStatusReady)}}"
+      >{{submitting ? '正在处理…' : phase === 'onboarding' ? (accountRegistered ? '同意并登录' : '同意并注册') : '同意并确认网页登录'}}</button>
+      <button class="btn-secondary" wx:if="{{phase === 'onboarding' && accountStatusError}}" hover-class="btn-secondary-pressed" bindtap="loadAccountStatus" disabled="{{submitting}}">重新识别账号</button>
+      <button class="btn-secondary" wx:if="{{phase === 'pending'}}" hover-class="btn-secondary-pressed" bindtap="handleCancel" disabled="{{submitting}}">取消本次登录</button>
+    </view>
+    <view class="actions" wx:elif="{{phase === 'expired' || phase === 'error'}}">
+      <button class="btn-secondary btn-retry" hover-class="btn-secondary-pressed" bindtap="loadStatus">重新检查</button>
+    </view>
   </view>
-
-  <!-- 底部操作区：仅授权确认模式显示，含确认按钮 + 取消入口（审核规范要求） -->
-  <view class="footer" wx:if="{{hasSession}}">
-    <button class="btn-main" hover-class="btn-pressed" bindtap="handleConfirm" disabled="{{loading}}">
-      <view class="btn-text">{{loading ? '正在授权…' : '确认登录'}}</view>
-      <view class="btn-arrow">→</view>
-    </button>
-    <!-- 取消入口：提供取消/拒绝返回选项，避免强制授权 -->
-    <view class="btn-cancel" hover-class="btn-cancel-hover" bindtap="handleCancel">取消</view>
-  </view>
+  <view class="privacy-note">微信身份仅用于登录和保护你的简历数据</view>
 </view>
