@@ -159,7 +159,6 @@ Figma
       { type: "resumeTrioRow" },
     ]);
   });
-
   it("保存并恢复当前行的左栏比例", () => {
     const html = renderResumeMarkdown("::: left 62\n示例大学\n:::\n\n::: right\n2022 – 2026\n:::");
     editor = new Editor({ extensions: resumeEditorExtensions, content: html });
