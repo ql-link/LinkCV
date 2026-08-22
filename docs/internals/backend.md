@@ -95,7 +95,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 ## 可观测性与业务审计
 
-`ObservabilityMiddleware` 为每次 HTTP 尝试接受格式合法的 `X-Request-ID` 或生成新值，并在响应中回传；它写入一条包含路由模板、状态码、耗时、可信用户和稳定错误码的 access 事件。未处理异常额外保留异常类型和脱敏后的栈。MinIO、Redis、MySQL、LinkParse 和 LLM 调用使用 `dependency` 分类，简历导入使用 `operation_id` 关联上传、转换、结构化和 HTTP 结果。Uvicorn 自带 access log 已关闭，避免同一请求重复记录。
+`ObservabilityMiddleware` 为每次 HTTP 尝试接受格式合法的 `X-Request-ID` 或生成新值，并在响应中回传；它写入一条包含路由模板、状态码、耗时、可信用户和稳定错误码的 access 事件。未处理异常额外保留异常类型和脱敏后的栈。MinIO、Redis、MySQL、LinkParse 和 LLM 调用使用 `dependency` 分类，简历导入使用 `operation_id` 关联上传、转换、结构化和 HTTP 结果。导入 Worker 另以 `task_load → source_read → document_conversion → resume_structuring → resume_normalization → resume_persistence` 记录阶段结果与耗时；失败事件只增加稳定错误码、失败阶段、异常类型，以及不含字段值的 Pydantic 验证模型、路径和错误类型，不写文件名、简历正文或模型响应。Uvicorn 自带 access log 已关闭，避免同一请求重复记录。
 
 状态变更和安全动作通过 `modules/observability/audit.py` 的固定映射写入审计事件，包括鉴权/会话、账号资料与密码、简历/版本/资源、JD、管理员用户状态和模型配置。普通读取不写审计。actor 只从已验证会话或登录结果绑定，target 从路由参数、归属校验后的实体或创建结果绑定；成功与受控失败都记录，响应以 `X-Audit-Recorded` 表示本地 sink 是否接受。浏览器可通过单独的受保护接口上报既有 `resume.pdf_export` 动作，接口会先校验简历归属；当前工作台的文字版 PDF 下载链不调用该接口。审计不新增 MySQL 表，也不替代既有 `llm_call_logs`。
 
