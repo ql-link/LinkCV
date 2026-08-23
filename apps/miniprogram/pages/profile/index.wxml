@@ -22,10 +22,6 @@
         <button class="avatar-button" open-type="chooseAvatar" bindchooseavatar="handleChooseAvatar" hover-class="avatar-button-pressed" disabled="{{saving}}">
           <image class="avatar-image" wx:if="{{localAvatarPath}}" src="{{localAvatarPath}}" mode="aspectFill"></image>
           <view class="avatar-placeholder" wx:else>{{nickname ? nickname[0] : '客'}}</view>
-          <view class="avatar-camera" aria-hidden="true">
-            <view class="camera-body"></view>
-            <view class="camera-head"></view>
-          </view>
         </button>
         <text class="avatar-hint">点击头像更换，可选微信头像或相册图片</text>
       </view>
