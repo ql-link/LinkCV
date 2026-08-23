@@ -48,12 +48,53 @@ class MessageCreateRequest(BaseModel):
         min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"
     )
     selection_context: AgentSelectionContext | None = None
+    reply_to_sequence_no: int | None = Field(default=None, ge=1)
+
+
+class ClarificationOption(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=48, pattern=r"^[A-Za-z0-9_-]+$")
+    label: str = Field(min_length=1, max_length=80)
+    description: str | None = Field(default=None, max_length=240)
+
+
+class ClarificationQuestion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=48, pattern=r"^[A-Za-z0-9_-]+$")
+    header: str = Field(min_length=1, max_length=24)
+    question: str = Field(min_length=1, max_length=500)
+    options: list[ClarificationOption] = Field(min_length=2, max_length=3)
+
+    @model_validator(mode="after")
+    def validate_option_ids(self) -> "ClarificationQuestion":
+        option_ids = [item.id for item in self.options]
+        if len(option_ids) != len(set(option_ids)):
+            raise ValueError("clarification option ids must be unique")
+        return self
+
+
+class AgentClarification(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[1] = 1
+    questions: list[ClarificationQuestion] = Field(min_length=1, max_length=3)
+
+    @model_validator(mode="after")
+    def validate_question_ids(self) -> "AgentClarification":
+        question_ids = [item.id for item in self.questions]
+        if len(question_ids) != len(set(question_ids)):
+            raise ValueError("clarification question ids must be unique")
+        return self
 
 
 class AgentMessageRecord(BaseModel):
     sequence_no: int
     role: Literal["user", "assistant"]
+    message_type: Literal["text", "clarification"] = "text"
     content: str
+    clarification: AgentClarification | None = None
     created_at: datetime
 
 
@@ -138,6 +179,7 @@ class ToolEventRequest(BaseModel):
         "search_resume_materials",
         "analyze_resume_content",
         "create_resume_change_proposal",
+        "request_user_input",
     ]
     status: Literal["running", "succeeded", "failed", "cancelled"]
     target_type: str | None = Field(default=None, max_length=32)

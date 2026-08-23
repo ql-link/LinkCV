@@ -3,11 +3,13 @@ from collections.abc import AsyncIterator
 from decimal import Decimal, InvalidOperation
 
 import httpx
+from pydantic import ValidationError
 from sqlalchemy import func, select
 
 from linkcv.core.database import utc_now
 from linkcv.core.errors import ApiError
 from linkcv.modules.agent.models import AgentMessage, AgentRun, AgentSession
+from linkcv.modules.agent.schemas import AgentClarification
 
 
 def sse_event(event_type: str, data: dict[str, object]) -> bytes:
@@ -27,6 +29,7 @@ async def stream_pi_run(
         return
 
     assistant_parts: list[str] = []
+    clarification: AgentClarification | None = None
     final_status = "failed"
     final_error: str | None = "AGENT_UPSTREAM_FAILED"
     terminal_received = False
@@ -85,6 +88,29 @@ async def stream_pi_run(
                             payload.get("delta"), str
                         ):
                             assistant_parts.append(payload["delta"])
+                        if event_name == "clarification.requested":
+                            if clarification is not None:
+                                final_status = "failed"
+                                final_error = "AGENT_CLARIFICATION_INVALID"
+                                terminal_received = True
+                                yield sse_event(
+                                    "run.failed",
+                                    {"runId": run_public_id, "error": final_error},
+                                )
+                                break
+                            try:
+                                clarification = AgentClarification.model_validate(
+                                    payload.get("clarification")
+                                )
+                            except ValidationError:
+                                final_status = "failed"
+                                final_error = "AGENT_CLARIFICATION_INVALID"
+                                terminal_received = True
+                                yield sse_event(
+                                    "run.failed",
+                                    {"runId": run_public_id, "error": final_error},
+                                )
+                                break
                         if event_name == "run.completed":
                             terminal_received = True
                             final_status, final_error = "succeeded", None
@@ -127,6 +153,11 @@ async def stream_pi_run(
             final_status,
             error_code=final_error,
             assistant_content="".join(assistant_parts).strip() or None,
+            clarification=(
+                clarification.model_dump(mode="json", exclude_none=True)
+                if clarification
+                else None
+            ),
             input_tokens=final_input_tokens,
             output_tokens=final_output_tokens,
             estimated_cost=final_estimated_cost,
@@ -201,6 +232,7 @@ def _finalize(
     *,
     error_code: str | None,
     assistant_content: str | None = None,
+    clarification: dict[str, object] | None = None,
     input_tokens: int | None = None,
     output_tokens: int | None = None,
     estimated_cost: Decimal | None = None,
@@ -223,7 +255,7 @@ def _finalize(
         run.output_tokens = output_tokens if status == "succeeded" else None
         run.estimated_cost = estimated_cost if status == "succeeded" else None
         run.completed_at = utc_now()
-        if status == "succeeded" and assistant_content:
+        if status == "succeeded" and (assistant_content or clarification):
             sequence_no = (
                 int(
                     db.scalar(
@@ -241,11 +273,38 @@ def _finalize(
                     run_id=run.id,
                     sequence_no=sequence_no,
                     role="assistant",
-                    content=assistant_content,
+                    message_type="clarification" if clarification else "text",
+                    content=assistant_content or _clarification_text(clarification),
+                    metadata_json=clarification,
                 )
             )
             session.last_message_at = utc_now()
         db.commit()
+
+
+def _clarification_text(value: dict[str, object] | None) -> str:
+    if value is None:
+        return "需要补充信息后才能继续。"
+    questions = value.get("questions")
+    if not isinstance(questions, list):
+        return "需要补充信息后才能继续。"
+    lines = ["继续前需要确认："]
+    for index, question in enumerate(questions, start=1):
+        if not isinstance(question, dict):
+            continue
+        prompt = question.get("question")
+        if isinstance(prompt, str):
+            lines.append(f"{index}. {prompt}")
+        options = question.get("options")
+        if isinstance(options, list):
+            labels = [
+                item.get("label")
+                for item in options
+                if isinstance(item, dict) and isinstance(item.get("label"), str)
+            ]
+            if labels:
+                lines.append("   选项：" + " / ".join(labels) + " / 其他")
+    return "\n".join(lines)
 
 
 def _safe_usage(value: object) -> tuple[int | None, int | None, Decimal | None]:

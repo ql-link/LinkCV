@@ -1,10 +1,12 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "../../api/client";
 import {
   ImportWarningBanner,
   AgentFloatingEntry,
+  clampAgentDrawerWidth,
+  clampAgentFloatingPosition,
   ExportPdfAction,
   FontPreviewSelect,
   normalizeVersionName,
@@ -38,6 +40,51 @@ describe("ResumeWorkbench AI 悬浮入口", () => {
     rerender(<AgentFloatingEntry open onToggle={onToggle} />);
     expect(screen.getByRole("button", { name: "收起智能助手" })).toHaveTextContent("AI 助手");
   });
+
+  it("允许拖动到工作台内的新位置且松手时不会误打开助手", () => {
+    const onToggle = vi.fn();
+    render(<AgentFloatingEntry open={false} onToggle={onToggle} />);
+
+    const entry = screen.getByRole("button", { name: "打开智能助手" });
+    const canvas = entry.parentElement as HTMLElement;
+    Object.defineProperties(canvas, {
+      clientWidth: { configurable: true, value: 500 },
+      clientHeight: { configurable: true, value: 400 },
+    });
+    Object.defineProperties(entry, {
+      offsetWidth: { configurable: true, value: 120 },
+      offsetHeight: { configurable: true, value: 56 },
+    });
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      left: 0, top: 0, right: 500, bottom: 400, width: 500, height: 400, x: 0, y: 0, toJSON: () => ({}),
+    });
+    vi.spyOn(entry, "getBoundingClientRect").mockReturnValue({
+      left: 360, top: 320, right: 480, bottom: 376, width: 120, height: 56, x: 360, y: 320, toJSON: () => ({}),
+    });
+
+    const dispatchPointer = (type: string, values: Record<string, number | boolean>) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, Object.fromEntries(
+        Object.entries(values).map(([key, value]) => [key, { configurable: true, value }]),
+      ));
+      fireEvent(entry, event);
+    };
+    dispatchPointer("pointerdown", { button: 0, isPrimary: true, pointerId: 1, clientX: 400, clientY: 340 });
+    dispatchPointer("pointermove", { pointerId: 1, clientX: 100, clientY: 90 });
+    dispatchPointer("pointerup", { pointerId: 1, clientX: 100, clientY: 90 });
+    fireEvent.click(entry);
+
+    expect(entry).toHaveClass("has-custom-position");
+    expect(entry).toHaveStyle({ left: "60px", top: "70px" });
+    expect(onToggle).not.toHaveBeenCalled();
+  });
+
+  it("将拖动位置限制在工作台可视边界内", () => {
+    expect(clampAgentFloatingPosition(
+      { left: -100, top: 900 },
+      { width: 500, height: 400, entryWidth: 120, entryHeight: 56 },
+    )).toEqual({ left: 8, top: 336 });
+  });
 });
 
 describe("ResumeWorkbench 抽屉布局", () => {
@@ -46,6 +93,13 @@ describe("ResumeWorkbench 抽屉布局", () => {
     expect(workbenchCanvasClassName("settings")).toBe("workbench-canvas has-drawer");
     expect(workbenchCanvasClassName("history")).toBe("workbench-canvas has-drawer");
     expect(workbenchCanvasClassName("agent")).toBe("workbench-canvas has-drawer has-agent-drawer");
+  });
+
+  it("把智能助手宽度限制在桌面范围和当前视口内", () => {
+    expect(clampAgentDrawerWidth(200, 1440)).toBe(320);
+    expect(clampAgentDrawerWidth(900, 1440)).toBe(640);
+    expect(clampAgentDrawerWidth(600, 500)).toBe(476);
+    expect(clampAgentDrawerWidth(390, 300)).toBe(320);
   });
 });
 

@@ -22,7 +22,7 @@ const objectSchema = (properties, required = []) => ({
 const SYSTEM_PROMPT = `你是 LinkCV 的简历智能助手，只能服务当前已授权运行。
 每轮必须先用 read 读取 resume-edit-workflow/SKILL.md，并严格执行其中的定位、读取和诊断顺序。
 修改请求在诊断后只能选择并读取一个执行 Skill：resume-edit-local、resume-edit-entry-star、resume-generate-from-materials；禁止同轮混用。
-必须先调用 resolve_resume_target；未唯一定位时只能向用户澄清，不能生成提案。随后调用 get_resume_context 和 analyze_resume_content。
+必须先调用 resolve_resume_target；未唯一定位或缺失会改变结果的关键信息时，必须调用 request_user_input 生成结构化问题，不能用普通文本代替澄清，也不能生成提案。调用 request_user_input 后本轮立即停止其他工具和最终回答。随后调用 get_resume_context 和 analyze_resume_content。
 任何修改都必须调用 create_resume_change_proposal 生成待确认 diff，绝不能声称已经直接修改简历，也不能编造事实或量化数据。
 只允许使用 read 读取已注册 Skill；禁止读取其他文件、执行 Shell、浏览网络或调用未注册工具。
 工具选择、调用、参数校验、失败重试和内部执行顺序不得向用户叙述；只输出需要用户澄清的内容或工具执行完成后的最终结果。回答使用清晰、克制的中文。`;
@@ -136,7 +136,7 @@ export function agentUsage(stats) {
   };
 }
 
-export function createAssistantOutputFilter(emit, runId) {
+export function createAssistantOutputFilter(emit, runId, shouldSuppress = () => false) {
   let pendingText = [];
   return (event) => {
     if (
@@ -153,11 +153,21 @@ export function createAssistantOutputFilter(emit, runId) {
     pendingText = [];
     if (
       visibleText &&
+      !shouldSuppress() &&
       (event.message.stopReason === "stop" || event.message.stopReason === "length")
     ) {
       emit("assistant.delta", { runId, delta: visibleText });
     }
   };
+}
+
+export function clarificationFallbackText(clarification) {
+  const lines = ["继续前需要确认："];
+  clarification.questions.forEach((question, index) => {
+    lines.push(`${index + 1}. ${question.question}`);
+    lines.push(`   选项：${question.options.map((option) => option.label).join(" / ")} / 其他`);
+  });
+  return lines.join("\n");
 }
 
 export async function executeAgentProbe({ model: modelConfig, nonce, signal }) {
@@ -239,6 +249,7 @@ export async function executeAgentRun({
   let selectedMode = null;
   let resolvedTarget = null;
   let diagnosisResult = null;
+  let pendingClarification = null;
   const executionSkills = new Map([
     ["resume-edit-local/SKILL.md", "polish_local"],
     ["resume-edit-entry-star/SKILL.md", "rewrite_entry_star"],
@@ -267,6 +278,7 @@ export async function executeAgentRun({
     description,
     parameters,
     execute: async (toolCallId, params) => {
+      if (pendingClarification) throw new Error("USER_INPUT_REQUIRED");
       const startedAt = Date.now();
       emit("tool.started", { runId, tool: name, callKey: toolCallId });
       await client.toolEvent({ call_key: toolCallId, tool_name: name, status: "running" });
@@ -296,6 +308,51 @@ export async function executeAgentRun({
         }).catch(() => {});
         throw error;
       }
+    },
+  });
+
+  const requestUserInputTool = auditedTool({
+    name: "request_user_input",
+    label: "向用户澄清",
+    description: "仅当缺失信息会改变结果时调用。一次提供 1–3 个短问题，每题 2–3 个互斥选项；界面会自动提供“其他”输入。调用后本轮不得继续任何工具或普通回答。",
+    parameters: objectSchema({
+      questions: {
+        type: "array",
+        minItems: 1,
+        maxItems: 3,
+        items: objectSchema({
+          id: { type: "string", pattern: "^[A-Za-z0-9_-]+$", minLength: 1, maxLength: 48 },
+          header: { type: "string", minLength: 1, maxLength: 24 },
+          question: { type: "string", minLength: 1, maxLength: 500 },
+          options: {
+            type: "array",
+            minItems: 2,
+            maxItems: 3,
+            items: objectSchema({
+              id: { type: "string", pattern: "^[A-Za-z0-9_-]+$", minLength: 1, maxLength: 48 },
+              label: { type: "string", minLength: 1, maxLength: 80 },
+              description: { type: "string", maxLength: 240 },
+            }, ["id", "label"]),
+          },
+        }, ["id", "header", "question", "options"]),
+      },
+    }, ["questions"]),
+    run: async (params) => {
+      requireWorkflow();
+      const questionIds = params.questions.map((question) => question.id);
+      if (new Set(questionIds).size !== questionIds.length) {
+        throw new Error("AGENT_CLARIFICATION_INVALID");
+      }
+      for (const question of params.questions) {
+        const optionIds = question.options.map((option) => option.id);
+        if (new Set(optionIds).size !== optionIds.length) {
+          throw new Error("AGENT_CLARIFICATION_INVALID");
+        }
+      }
+      pendingClarification = { version: 1, questions: params.questions };
+      emit("clarification.requested", { runId, clarification: pendingClarification });
+      emit("assistant.delta", { runId, delta: clarificationFallbackText(pendingClarification) });
+      return { text: "已向用户请求补充信息；本轮到此结束。" };
     },
   });
 
@@ -448,6 +505,7 @@ export async function executeAgentRun({
       "search_resume_materials",
       "analyze_resume_content",
       "create_resume_change_proposal",
+      "request_user_input",
     ],
     customTools: [
       skillReadTool,
@@ -456,13 +514,18 @@ export async function executeAgentRun({
       searchMaterialsTool,
       analyzeTool,
       createProposalTool,
+      requestUserInputTool,
     ],
     resourceLoader,
     sessionManager: SessionManager.inMemory(),
     settingsManager,
   });
   let finalAssistantMessage;
-  const filterAssistantOutput = createAssistantOutputFilter(emit, runId);
+  const filterAssistantOutput = createAssistantOutputFilter(
+    emit,
+    runId,
+    () => pendingClarification !== null,
+  );
   const unsubscribe = session.subscribe((event) => {
     filterAssistantOutput(event);
     if (event.type === "message_end" && event.message.role === "assistant") {
