@@ -111,7 +111,7 @@ Page({
     try {
       if (registered) await auth.loginExistingAccount();
       else await auth.registerOrLogin();
-      wx.switchTab({ url: "/pages/resumes/index" });
+      await this.enterResumes();
     } catch (error) {
       if (registered && error.code === "PRIVACY_AGREEMENT_REQUIRED") {
         this.setData({
@@ -126,6 +126,12 @@ Page({
         message: error.message || (registered ? "登录失败，请稍后重试。" : "注册失败，请稍后重试。"),
       });
     }
+  },
+
+  async enterResumes() {
+    this.setData({ submitting: false, message: "登录成功，正在进入…" });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    wx.switchTab({ url: "/pages/resumes/index" });
   },
 
   handleDismiss() {

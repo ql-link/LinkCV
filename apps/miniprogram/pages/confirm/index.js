@@ -119,6 +119,8 @@ Page({
         throw new Error((response.data && response.data.error) || "确认失败");
       }
       await auth.loginExistingAccount();
+      this.setData({ submitting: false, phase: "confirmed", message: "网页已安全登录，正在进入…" });
+      await new Promise((resolve) => setTimeout(resolve, 120));
       wx.switchTab({ url: "/pages/resumes/index" });
     } catch (error) {
       const recoverable = error.message === "WECHAT_SERVICE_UNAVAILABLE" || error.message === "WECHAT_CODE_INVALID";
