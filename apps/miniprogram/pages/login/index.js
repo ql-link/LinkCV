@@ -1,24 +1,13 @@
 const auth = require("../../services/auth");
-
-function formRequest(path, data) {
-  return new Promise((resolve, reject) => {
-    wx.request({
-      url: auth.apiUrl(path),
-      method: "POST",
-      header: { "content-type": "application/x-www-form-urlencoded" },
-      data,
-      success: resolve,
-      fail: reject,
-    });
-  });
-}
+const { getStatusBarHeight } = require("../../utils/system");
 
 Page({
   data: {
-    scene: "",
     loading: true,
+    statusBarHeight: getStatusBarHeight(),
     submitting: false,
     agreementAccepted: false,
+    agreementActionHint: "",
     privacyReady: false,
     privacySupported: false,
     privacyAuthorizationRequired: false,
@@ -26,31 +15,22 @@ Page({
     accountStatusReady: false,
     accountRegistered: false,
     accountStatusError: "",
-    phase: "checking",
-    message: "正在校验本次登录请求…",
+    message: "正在识别当前微信账号…",
   },
 
   onLoad(options) {
-    const scene = decodeURIComponent(options.scene || "");
-    this.setData({
-      scene,
-      agreementAccepted: auth.hasAcceptedPrivacyAgreement(),
-    });
-    this.loadPrivacySetting();
-    if (!scene) {
-      if (auth.hasSession()) {
-        wx.reLaunch({ url: "/pages/resumes/index" });
-        return;
-      }
-      this.setData({
-        loading: true,
-        phase: "onboarding",
-        message: "正在识别当前微信账号…",
-      });
-      this.loadAccountStatus();
+    const scene = decodeURIComponent((options && options.scene) || "");
+    if (scene) {
+      wx.reLaunch({ url: `/pages/confirm/index?scene=${encodeURIComponent(scene)}` });
       return;
     }
-    this.loadStatus();
+    if (auth.hasSession()) {
+      wx.switchTab({ url: "/pages/resumes/index" });
+      return;
+    }
+    this.setData({ agreementAccepted: auth.hasAcceptedPrivacyAgreement() });
+    this.loadPrivacySetting();
+    this.loadAccountStatus();
   },
 
   async loadPrivacySetting() {
@@ -64,7 +44,10 @@ Page({
   },
 
   handleAgreementChange(event) {
-    this.setData({ agreementAccepted: event.detail.value.includes("accepted") });
+    this.setData({
+      agreementAccepted: event.detail.value.includes("accepted"),
+      agreementActionHint: "",
+    });
   },
 
   async openPrivacyContract() {
@@ -108,20 +91,17 @@ Page({
 
   handlePrimaryAction() {
     if (!this.data.agreementAccepted) {
-      wx.showToast({ title: "请先阅读并勾选隐私保护指引", icon: "none" });
+      this.setData({ agreementActionHint: "请先勾选隐私保护指引后再继续" });
       return;
     }
     if (
       !this.data.privacyReady
       || !this.data.privacySupported
       || this.data.submitting
-      || (this.data.phase === "onboarding" && !this.data.accountStatusReady)
+      || !this.data.accountStatusReady
     ) return;
     auth.acceptPrivacyAgreement();
-    if (this.data.phase === "onboarding") {
-      return this.handleAccountAction();
-    }
-    return this.handleConfirm();
+    return this.handleAccountAction();
   },
 
   async handleAccountAction() {
@@ -133,7 +113,7 @@ Page({
     try {
       if (registered) await auth.loginExistingAccount();
       else await auth.registerOrLogin();
-      wx.reLaunch({ url: "/pages/resumes/index" });
+      await this.enterResumes();
     } catch (error) {
       if (registered && error.code === "PRIVACY_AGREEMENT_REQUIRED") {
         this.setData({
@@ -145,72 +125,19 @@ Page({
       }
       this.setData({
         submitting: false,
-        phase: "onboarding",
         message: error.message || (registered ? "登录失败，请稍后重试。" : "注册失败，请稍后重试。"),
       });
     }
   },
 
-  loadStatus() {
-    this.setData({ loading: true, phase: "checking", message: "正在校验本次登录请求…" });
-    wx.request({
-      url: auth.apiUrl("/api/auth/wechat/status"),
-      method: "GET",
-      data: { scene: this.data.scene },
-      success: (response) => {
-        const status = response.data && response.data.status;
-        if (status === "pending") {
-          this.setData({ loading: false, phase: "pending", message: "请确认是否允许当前网页登录 LinkCV。" });
-        } else if (status === "success") {
-          wx.reLaunch({
-            url: auth.hasSession() ? "/pages/resumes/index" : "/pages/login/index",
-          });
-        } else if (status === "cancelled") {
-          this.setData({ loading: false, phase: "cancelled", message: "已取消本次网页登录。" });
-        } else {
-          this.setData({ loading: false, phase: "expired", message: "登录请求已过期，请返回网页重新扫码。" });
-        }
-      },
-      fail: () => this.setData({ loading: false, phase: "error", message: "网络异常，请稍后重试。" }),
-    });
+  async enterResumes() {
+    this.setData({ submitting: false, message: "登录成功，正在进入…" });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    wx.switchTab({ url: "/pages/resumes/index" });
   },
 
-  async handleConfirm() {
-    if (this.data.submitting || this.data.phase !== "pending") return;
-    this.setData({ submitting: true, message: "正在确认…" });
-    try {
-      const code = await auth.wxLoginCode();
-      const response = await formRequest("/api/auth/wechat/confirm", {
-        scene: this.data.scene,
-        code,
-        privacy_accepted: true,
-      });
-      if (response.statusCode !== 200) {
-        throw new Error((response.data && response.data.error) || "确认失败");
-      }
-      await auth.loginExistingAccount();
-      wx.reLaunch({ url: "/pages/resumes/index" });
-    } catch (error) {
-      const recoverable = error.message === "WECHAT_SERVICE_UNAVAILABLE" || error.message === "WECHAT_CODE_INVALID";
-      this.setData({
-        submitting: false,
-        phase: recoverable ? "pending" : "error",
-        message: recoverable ? "微信校验失败，请重新确认。" : (error.message || "确认失败，请重试。"),
-      });
-    }
-  },
-
-  async handleCancel() {
-    if (this.data.submitting || this.data.phase !== "pending") return;
-    this.setData({ submitting: true });
-    try {
-      const response = await formRequest("/api/auth/wechat/cancel", { scene: this.data.scene });
-      if (response.statusCode !== 200) {
-        throw new Error((response.data && response.data.error) || "取消失败");
-      }
-      this.setData({ submitting: false, phase: "cancelled", message: "已取消本次网页登录。" });
-    } catch (error) {
-      this.setData({ submitting: false, message: error.message || "取消失败，请重试。" });
-    }
+  handleDismiss() {
+    if (this.data.submitting) return;
+    wx.switchTab({ url: "/pages/home/index" });
   },
 });

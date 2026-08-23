@@ -2,7 +2,9 @@
 
 ## 当前状态
 
-根级 `Dockerfile` 构建 Vite 静态产物和 FastAPI Python 环境。Web 构建阶段会把 `postcss.config.cjs` 与 `tailwind.config.cjs` 和应用源码一起复制到 `/app/apps/web`，确保容器内的 Vite 生产构建生成 Tailwind 工具类，而不是只打包手写 CSS。Node 依赖查询默认使用 npmmirror，但 `npm ci` 禁止替换 `package-lock.json` 已锁定的 tarball 主机：锁文件指向 npm 官方源的制品继续从官方源下载，已经指向 npmmirror 的制品仍使用镜像，避免镜像尚未同步某个锁定制品时错误改写并返回 404。固定版本的 `uv` 与 Python 依赖默认使用阿里云 PyPI，避免部署节点依赖 GHCR。构建过程静默地从 `uv.lock` 导出带哈希的 requirements 后再从指定镜像安装，既保留锁定版本与制品校验，也避免锁文件里的外部下载地址绕过镜像或把完整依赖清单写入 Jenkins 日志。镜像构建只打包 `migrations/sql/`、Alembic revision 和迁移 runner，不连接数据库。容器启动时 runner 先核对 `APP_ENV`、MySQL host、port 和 database，再只读比对 Alembic 当前版本与 `0030` Agent 表、`0031` 范围化提案字段等已知 schema 标记；任一对象提前存在、缺失或处于部分应用状态都会在执行 DDL 前终止部署。目标和 schema 对齐后才升级到 Alembic head，并由 Uvicorn 在 `8000` 端口提供 `/api` 与 Web 静态文件。
+Web 构建还会把共享 React-PDF 核心的一次性 Node CLI 与字体输出到 `dist-server`，FastAPI 生产镜像复制为 `/app/pdf`。FastAPI 仅在小程序下载正式版本时启动该脚本，通过 stdin 传入快照并从 stdout 接收 PDF；PNG 预览再由 Python 进程内的 PDFium 临时栅格化。进程完成即退出，PDF 和 PNG 都不写入服务端持久存储。FastAPI 镜像中的 Node 22 只承载该一次性脚本，Pi Service 继续运行在独立镜像中，不新增常驻 PDF 服务。
+
+根级 `Dockerfile` 构建 Vite 静态产物和 FastAPI Python 环境，并把 Node 22 复制到运行镜像供按需 PDF CLI 使用；独立的 `deploy/Dockerfile.pi` 构建无头 Pi Service 镜像。Web 构建阶段会把 `postcss.config.cjs`、`tailwind.config.cjs`、PDF CLI 与应用源码一起复制到 `/app/apps/web`；Pi 构建阶段安装 vendored workspace 的锁定依赖并校验仓库中版本化的模型目录快照。常规 Docker 构建不访问 `models.dev`、OpenRouter、NVIDIA NIM 或 Vercel AI Gateway，只有维护者主动执行 `npm run refresh:pi-model-data` 时才联网刷新模型快照。Node 依赖查询默认使用 npmmirror，但 `npm ci` 禁止替换 `package-lock.json` 已锁定的 tarball 主机。固定版本的 `uv` 与 Python 依赖默认使用阿里云 PyPI；构建过程从 `uv.lock` 导出带哈希的 requirements。镜像构建不连接数据库。FastAPI 容器启动时 runner 先核对 `APP_ENV`、MySQL host、port 和 database，再只读比对 Alembic 当前版本与 `0030` Agent 表、`0031` 范围化提案字段等已知 schema 标记；任一对象提前存在、缺失或部分应用都会在执行 DDL 前终止部署。目标和 schema 对齐后才升级到 Alembic head，并由 Uvicorn 在 `8000` 端口提供 `/api` 与 Web 静态文件。
 
 仓库提供相互独立的 Dev 与 Production Jenkins Pipeline。两者都以同一 commit/build 标识生成不可变 `linkcv` 与 `linkcv-pi` 镜像，先用 `linkcv` 镜像以显式目标参数运行迁移 runner，再更新 Compose，最后等待 FastAPI `/api/health`、Pi `/health`、本环境 Promtail 和 FastAPI `/api/agent/readiness` 进入正常状态；构建镜像阶段不连接数据库。Agent readiness 会穿透 FastAPI→Pi→FastAPI 内部回调并验证当前 `pi_agent` 模型配置与 provider 映射，但不发起供应商模型调用；任一服务令牌、回调网络或模型配置无效都会阻止发布被标记为成功。
 
@@ -41,6 +43,8 @@ Production Jenkins Job 使用根目录 `Jenkinsfile`。Jenkins 位于 Primary，
 - 配置：`.env.production` + 权限为 `600` 的 `.env.production.local`；后者必须提供 HTTPS `PLUGIN_RELEASE_ORIGIN`
 - 迁移门禁：`APP_ENV=production`、MySQL `tolink-mysql:3306/linkcv`
 
+Production 公网 Nginx 对 `/assets/` 保留一年 `immutable` 缓存，并为 JS、CSS、JSON 和 SVG 开启 gzip；FastAPI 静态文件层提供相同的压缩与缓存兜底。`index.html` 不做长期缓存，保证新部署能及时引用新的哈希资源。网关调整后必须同时验证 `Content-Encoding: gzip`、`Cache-Control`、LinkCV 健康接口和共享网关上的其他域名。
+
 `linkcv-prod` 的 Generic Webhook Trigger 复用 Jenkins Secret Text 凭据
 `linkcv-dev-webhook-token`，但只接受 `refs/heads/master`。同一个 GitHub push
 webhook 因此会分别把 `dev` 推送交给 Dev Job、把 PR 合并产生的 `master` 推送交给
@@ -49,7 +53,7 @@ Production Job。首次加入触发器后需手动运行一次 `linkcv-prod`，�
 
 Jenkins 容器需预置权限为 `600` 的 `/var/jenkins_home/.ssh/cloud_prod`，Cloud 只授权这把发布密钥并限制来源。Production Pipeline 会把仓库中的非敏感 `.env.production`、Compose 和 Promtail 配置复制到部署目录；私密覆盖必须由部署密钥存储预先提供且权限为 `600`。除 JWT、MySQL 和 MinIO 凭据外，新版本还要求覆盖提供有效的 `LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY`、`RABBITMQ_URL`、`WECHAT_APPID`、`WECHAT_SECRET`、两枚不同的 `PI_SERVICE_TOKEN`/`LINKCV_INTERNAL_AGENT_TOKEN` 与实际 HTTPS `PLUGIN_RELEASE_ORIGIN`，否则相关 preflight、Settings、Pi 服务或微信登录会安全失败。生产网络还必须允许后端访问 `api.weixin.qq.com`。Origin 不是密钥，但因为部署域名不提交到仓库而通过同一覆盖文件提供。LLM 密钥环用于解密 MySQL 中的模型凭据，不是供应商 API key；轮换时先发布“新 key 在首项、旧 key 仍保留”的配置，确认旧密文已经重包后才能移除旧 key。LinkParse Key、微信 AppSecret 和 Agent 服务令牌都只供服务端使用，不进入 Web 或小程序制品。
 
-Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小程序扫码登录；管理员仍使用独立 `/admin/login`。微信公众平台必须把 `https://linkresume.cn` 配置为 request 合法域名并使用有效公网 HTTPS 证书。上线前还要核对既有邮箱账号：系统不会仅凭同一使用者自动把新 openid 关联到旧邮箱账号，未绑定账号会生成新的微信账号而看不到旧简历；必须先完成受控账号映射或明确接受账号分离，不能直接假设历史数据会自动归并。
+Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小程序扫码登录；管理员仍使用独立 `/admin/login`。微信公众平台必须把 `https://linkresume.cn` 同时配置为 request 与 downloadFile 合法域名并使用有效公网 HTTPS 证书；简历以 PNG 在小程序当前页面阅读，不使用 `web-view`，个人主体无需配置业务域名。上线前还要核对既有邮箱账号：系统不会仅凭同一使用者自动把新 openid 关联到旧邮箱账号，未绑定账号会生成新的微信账号而看不到旧简历；必须先完成受控账号映射或明确接受账号分离，不能直接假设历史数据会自动归并。
 
 ### 首次 Production SQLite 切换
 
@@ -75,7 +79,7 @@ Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小�
 
 ## CI
 
-`.github/workflows/quality.yml` 在面向 `dev`、`release`、`master` 的 PR 和对应分支 push 上执行根级 `npm run check`。业务需求先由独立业务分支合入 `release`，合并后的 `release` push 检查成功才算 Release 测试通过；随后仍由同一业务分支向 `master` 提 PR，不使用 `release -> master` PR。本地和 CI 复用同一质量入口，完整分支规则见 [本地开发与配置](development.md#分支与发布流程)。
+`.github/workflows/quality.yml` 在面向 `dev`、`master` 的 PR 和对应分支 push 上执行根级 `npm run check`。业务需求从最新 `origin/master` 创建独立业务分支，完成后向 `dev` 提 PR。本地和 CI 复用同一质量入口，完整分支规则见 [本地开发与配置](development.md#分支与发布流程)。
 
 CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并先校验仓库内版本化模型目录快照。独立 Pi 镜像在关闭网络的构建层再次校验该快照并执行离线构建，不在 Production 构建时访问实时模型目录。
 

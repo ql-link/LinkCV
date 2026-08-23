@@ -1,4 +1,4 @@
-import { Eye, LayoutTemplate, Minus, Plus, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, LayoutTemplate, Minus, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 
 import { api, ApiRequestError, type ResumeTemplate } from "../../api/client";
@@ -94,6 +94,23 @@ export function ResumeTemplatesPage() {
       1.2,
       Math.max(0.3, Number((currentScale + direction * 0.08).toFixed(2))),
     ));
+  };
+
+  const previewTemplateIndex = previewTemplate
+    ? templates.findIndex((template) => template.id === previewTemplate.id)
+    : -1;
+  const hasPreviewNeighbors = previewTemplateIndex >= 0 && templates.length > 1;
+  const previousTemplate = hasPreviewNeighbors
+    ? templates[(previewTemplateIndex - 1 + templates.length) % templates.length]
+    : null;
+  const nextTemplate = hasPreviewNeighbors
+    ? templates[(previewTemplateIndex + 1) % templates.length]
+    : null;
+
+  const changePreviewTemplate = (direction: -1 | 1) => {
+    if (previewTemplateIndex < 0 || templates.length <= 1) return;
+    const nextIndex = (previewTemplateIndex + direction + templates.length) % templates.length;
+    setPreviewTemplate(templates[nextIndex]);
   };
 
   const setPreviewStage = useCallback((stage: HTMLDivElement | null) => {
@@ -226,7 +243,20 @@ export function ResumeTemplatesPage() {
         open={previewTemplate !== null}
         onOpenChange={(open) => !open && setPreviewTemplate(null)}
       >
-        <DialogContent className="template-preview-dialog">
+        <DialogContent
+          className="template-preview-dialog"
+          onKeyDown={(event) => {
+            if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+            if (event.key === "ArrowLeft") {
+              event.preventDefault();
+              changePreviewTemplate(-1);
+            }
+            if (event.key === "ArrowRight") {
+              event.preventDefault();
+              changePreviewTemplate(1);
+            }
+          }}
+        >
           <header className="template-preview-dialog-header">
             <span>模板预览</span>
             <span className="template-preview-dialog-divider" aria-hidden="true">/</span>
@@ -271,13 +301,75 @@ export function ResumeTemplatesPage() {
               className="template-preview-dialog-stage"
               style={{ "--template-preview-scale": previewScale } as React.CSSProperties}
             >
-              {previewTemplate && (
-                <ResumePreview
-                  data={previewTemplate.data}
-                  style={previewTemplate.style}
-                  mode="full"
-                />
-              )}
+              <div className="template-preview-carousel">
+                {previousTemplate && (
+                  <button
+                    className="template-preview-neighbor template-preview-neighbor-previous"
+                    type="button"
+                    aria-label={`预览上一个模板：${previousTemplate.name}`}
+                    onClick={() => changePreviewTemplate(-1)}
+                  >
+                    <span aria-hidden="true">
+                      <ResumePreview
+                        data={previousTemplate.data}
+                        style={previousTemplate.style}
+                      />
+                    </span>
+                  </button>
+                )}
+
+                <div className="template-preview-current" key={previewTemplate?.id}>
+                  {previewTemplate && (
+                    <ResumePreview
+                      data={previewTemplate.data}
+                      style={previewTemplate.style}
+                      mode="full"
+                    />
+                  )}
+                </div>
+
+                {nextTemplate && (
+                  <button
+                    className="template-preview-neighbor template-preview-neighbor-next"
+                    type="button"
+                    aria-label={`预览下一个模板：${nextTemplate.name}`}
+                    onClick={() => changePreviewTemplate(1)}
+                  >
+                    <span aria-hidden="true">
+                      <ResumePreview
+                        data={nextTemplate.data}
+                        style={nextTemplate.style}
+                      />
+                    </span>
+                  </button>
+                )}
+
+                <button
+                  className="template-preview-navigation template-preview-navigation-previous"
+                  type="button"
+                  aria-label={previousTemplate ? `上一个模板：${previousTemplate.name}` : "没有上一个模板"}
+                  disabled={!previousTemplate}
+                  onClick={() => changePreviewTemplate(-1)}
+                >
+                  <span className="template-preview-navigation-icon" aria-hidden="true">
+                    <ChevronLeft size={28} />
+                  </span>
+                  <span>上一个模板</span>
+                </button>
+
+                <button
+                  className="template-preview-navigation template-preview-navigation-next"
+                  type="button"
+                  aria-label={nextTemplate ? `下一个模板：${nextTemplate.name}` : "没有下一个模板"}
+                  disabled={!nextTemplate}
+                  onClick={() => changePreviewTemplate(1)}
+                >
+                  <span className="template-preview-navigation-icon" aria-hidden="true">
+                    <ChevronRight size={28} />
+                  </span>
+                  <span>下一个模板</span>
+                </button>
+              </div>
             </div>
           </div>
           <DialogFooter className="template-preview-dialog-footer">

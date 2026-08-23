@@ -31,10 +31,11 @@ const child = spawn(
   [
     concurrently,
     "-n",
-    "web,backend,worker,pi",
+    "web,pdf,backend,worker,pi",
     "-c",
-    "cyan,green,yellow,magenta",
+    "cyan,blue,green,yellow,magenta",
     "npm:dev:web",
+    "npm:dev:pdf",
     "npm:dev:backend",
     "npm:dev:worker",
     "npm:dev:pi",

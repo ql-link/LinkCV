@@ -1,6 +1,7 @@
 import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { useInView } from "motion/react";
 import { lazy, Suspense, useRef } from "react";
+import { Brand } from "@/components/ui";
 import { Reveal } from "../components/Reveal";
 import { useT } from "../locales/LanguageContext";
 
@@ -59,10 +60,7 @@ export function Footer({ onStart }: { onStart: () => void }) {
             <Reveal>
               <div>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white font-display text-sm font-bold text-[#155fd7] shadow-sm">
-                    L
-                  </span>
-                  <span className="font-display text-base font-semibold tracking-tight">LinkCV</span>
+                  <Brand className="landing-footer-brand" label="LinkResume" />
                   <span className="hidden h-4 w-px bg-white/30 sm:block" aria-hidden />
                   <p className="font-mono text-[10px] tracking-[0.16em] text-white/85 uppercase">
                     {t.footer.tagline}

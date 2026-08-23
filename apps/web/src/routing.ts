@@ -10,6 +10,7 @@ export type AppRoute =
   | { kind: "resumeCreate" }
   | { kind: "editor"; resumeId: string }
   | { kind: "jobs" }
+  | { kind: "interviews"; view: InterviewView }
   | { kind: "jobCreate" }
   | { kind: "jobDetail"; jobId: string }
   | { kind: "jobEdit"; jobId: string }
@@ -17,6 +18,8 @@ export type AppRoute =
   | { kind: "account" }
   | { kind: "share"; token: string }
   | { kind: "notFound" };
+
+export type InterviewView = "overview" | "schedule" | "records";
 
 type NavigateOptions = {
   replace?: boolean;
@@ -33,7 +36,7 @@ function normalizePathname(pathname: string) {
 }
 
 export function isSafeAppPath(value: string | null) {
-  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && /^\/(?:resumes|templates|jobs|account|datasets)(?:\/|$)/.test(value));
+  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && /^\/(?:resumes|templates|jobs|interviews|account|datasets)(?:\/|$|\?)/.test(value));
 }
 
 export function isSafeAdminPath(value: string | null) {
@@ -68,6 +71,13 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
   if (normalizedPath === "/templates") return { kind: "templates" };
   if (normalizedPath === "/resumes/new") return { kind: "resumeCreate" };
   if (normalizedPath === "/jobs") return { kind: "jobs" };
+  if (normalizedPath === "/interviews") {
+    const requestedView = new URLSearchParams(search).get("view");
+    const view: InterviewView = requestedView === "schedule" || requestedView === "records"
+      ? requestedView
+      : "overview";
+    return { kind: "interviews", view };
+  }
   if (normalizedPath === "/jobs/new") return { kind: "jobCreate" };
   if (normalizedPath === "/datasets") return { kind: "datasets" };
   if (normalizedPath === "/account") return { kind: "account" };

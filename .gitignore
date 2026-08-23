@@ -1,5 +1,7 @@
 node_modules/
 dist/
+apps/web/dist-server/
+.test-dist/
 .output/
 .wxt/
 data/
