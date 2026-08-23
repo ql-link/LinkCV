@@ -134,6 +134,14 @@ function inlineNodes(node: JSONContent, keyPrefix: string): ReactNode[] {
       const name = child.attrs?.name;
       return [<Text key={key}>{isInlineIconName(name) ? resumeInlineIconGlyphs[name] : "★"}</Text>];
     }
+    if (child.type === "inlineImage") {
+      const src = typeof child.attrs?.pdfSrc === "string" ? child.attrs.pdfSrc : "";
+      if (!src) return [<Text key={key}>[{String(child.attrs?.alt ?? "行内图片")}无法嵌入]</Text>];
+      const width = Math.min(180, Math.max(12, Number(child.attrs?.width) * 0.75 || 54));
+      const aspectRatio = Math.min(20, Math.max(0.1, Number(child.attrs?.aspectRatio) || 3));
+      const height = Math.min(180, Math.max(12, Number(child.attrs?.height) * 0.75 || width / aspectRatio));
+      return [<Image key={key} src={src} style={{ width, height, marginRight: 4 }} />];
+    }
     return inlineNodes(child, key);
   });
 }
@@ -251,7 +259,7 @@ function blobToDataUrl(blob: Blob) {
 
 async function prepareNode(node: JSONContent): Promise<PreparedPdfContent> {
   const prepared: PreparedPdfContent = { ...node, attrs: node.attrs ? { ...node.attrs } : undefined };
-  if (node.type === "resumeImage" || node.type === "avatarImage") {
+  if (node.type === "resumeImage" || node.type === "avatarImage" || node.type === "inlineImage") {
     const src = typeof node.attrs?.src === "string" ? node.attrs.src : "";
     if (src && !/^data:image\/(?:png|jpe?g);/i.test(src)) {
       try {

@@ -375,6 +375,12 @@ function nodeText(node: JSONContent): string {
   if (node.type === "text") return markedText(node);
   if (node.type === "hardBreak") return "\n";
   if (node.type === "inlineIcon" && isInlineIconName(node.attrs?.name)) return inlineIconMarkdown(node.attrs.name);
+  if (node.type === "inlineImage") {
+    const width = Math.min(240, Math.max(16, Number(node.attrs?.width) || 72));
+    const aspectRatio = Math.min(20, Math.max(0.1, Number(node.attrs?.aspectRatio) || 3));
+    const height = Math.min(240, Math.max(16, Number(node.attrs?.height) || width / aspectRatio));
+    return markdownImage(node, `linkcv-inline-image-v2:${width}:${Number(height.toFixed(2))}`);
+  }
   return (node.content ?? []).map(nodeText).join("");
 }
 
@@ -390,11 +396,22 @@ function markdownImage(node: JSONContent, title: string) {
   return `![${alt}](${destination} "${title}")`;
 }
 
+function alignedBlockMarkdown(node: JSONContent, content: string) {
+  const alignment = String(node.attrs?.textAlign ?? "");
+  return content && ["left", "center", "right"].includes(alignment)
+    ? `::: text-align ${alignment}\n${content}\n:::`
+    : content;
+}
+
 function nodeMarkdown(node: JSONContent): string {
   if (node.type === "text") return markedText(node);
-  if (node.type === "heading") return `${"#".repeat(Number(node.attrs?.level ?? 2))} ${nodeText(node)}`;
-  if (node.type === "paragraph") return nodeText(node);
-  if (node.type === "listItem") return (node.content ?? []).map(nodeMarkdown).join("\n");
+  if (node.type === "heading") {
+    return alignedBlockMarkdown(node, `${"#".repeat(Number(node.attrs?.level ?? 2))} ${nodeText(node)}`);
+  }
+  if (node.type === "paragraph") return alignedBlockMarkdown(node, nodeText(node));
+  if (node.type === "listItem") {
+    return (node.content ?? []).map((child) => child.type === "paragraph" ? nodeText(child) : nodeMarkdown(child)).join("\n");
+  }
   if (node.type === "bulletList") return (node.content ?? []).map((item) => `- ${nodeMarkdown(item)}`).join("\n");
   if (node.type === "orderedList") return (node.content ?? []).map((item, index) => `${index + 1}. ${nodeMarkdown(item)}`).join("\n");
   if (node.type === "resumeRow") {
@@ -417,6 +434,7 @@ function nodeMarkdown(node: JSONContent): string {
     return `:::: ${kind}\n${(node.content ?? []).map(nodeText).join("\n")}\n::::`;
   }
   if (node.type === "inlineIcon") return nodeText(node);
+  if (node.type === "inlineImage") return nodeText(node);
   if (node.type === "avatarImage") {
     const size = Math.min(220, Math.max(56, Number(node.attrs?.size) || 96));
     return markdownImage(node, `linkcv-avatar:${size}`);

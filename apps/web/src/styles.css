@@ -1858,7 +1858,6 @@ select:not([data-slot]):focus-visible {
   touch-action: manipulation;
 }
 .resume-workbench .resume-content.ProseMirror > p:hover .resume-empty-line-add,
-.resume-empty-line-add[data-active="true"],
 .resume-empty-line-add:focus-visible {
   opacity: 1;
 }
@@ -1943,6 +1942,8 @@ select:not([data-slot]):focus-visible {
   min-width: 0;
   min-height: 1.45em;
   margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 .resume-layout-row [data-node-view-content-react] > p:last-child {
   padding-left: 10px;
@@ -2074,6 +2075,19 @@ select:not([data-slot]):focus-visible {
 .media-alt-field:focus { border-color: rgba(52, 120, 246, 0.5); box-shadow: 0 0 0 2px rgba(52, 120, 246, 0.12); }
 .media-error { max-width: 132px; color: #c73a31; font: 0.68rem/1.25 var(--ui-font); font-style: normal; }
 .media-resize-handle { position: absolute; right: -8px; bottom: -8px; width: 14px; height: 14px; border: 2px solid #fff; border-radius: 50%; background: var(--ui-accent); padding: 0; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); cursor: nwse-resize; touch-action: none; }
+.resume-inline-image {
+  position: relative;
+  display: inline-block;
+  max-width: 40%;
+  margin-right: 0.4em;
+  vertical-align: middle;
+  line-height: 0;
+}
+.resume-inline-image img { display: block; width: 100%; height: 100%; }
+.resume-inline-image.is-selected { outline: 2px solid rgba(52, 120, 246, 0.38); outline-offset: 2px; }
+.inline-image-toolbar { line-height: normal; }
+.inline-image-size-field > span { width: auto; height: auto; margin-left: 7px; background: transparent; color: var(--ui-text-muted); font: 0.68rem/1 var(--ui-font); }
+.inline-image-size-field input { width: 44px; padding-left: 3px; }
 .resume-inline-icon { display: inline-flex; margin: 0 2px; vertical-align: -0.12em; color: #4b5563; }
 
 .workbench-drawer {

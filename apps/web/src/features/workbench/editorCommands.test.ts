@@ -117,6 +117,55 @@ describe("convertCurrentLineToResumeRow", () => {
     });
   });
 
+  it("左右分栏内按 Enter 会退出分栏并进入后续空白行", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [{
+          type: "resumeRow",
+          content: [
+            { type: "paragraph", content: [{ type: "text", text: "左栏" }] },
+            { type: "paragraph", content: [{ type: "text", text: "右栏" }] },
+          ],
+        }],
+      },
+    });
+    editor.commands.setTextSelection(4);
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    expect(editor.getJSON().content).toMatchObject([
+      { type: "resumeRow" },
+      { type: "paragraph" },
+    ]);
+    expect(editor.state.selection.$from.parent).toEqual(editor.state.doc.child(1));
+    expect(editor.state.selection.$from.parentOffset).toBe(0);
+  });
+
+  it("分栏后已有空白行时按 Enter 不会重复插入", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          {
+            type: "resumeRow",
+            content: [
+              { type: "paragraph", content: [{ type: "text", text: "左栏" }] },
+              { type: "paragraph", content: [{ type: "text", text: "右栏" }] },
+            ],
+          },
+          { type: "paragraph" },
+        ],
+      },
+    });
+    editor.commands.setTextSelection(8);
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    expect(editor.getJSON().content).toHaveLength(2);
+    expect(editor.state.selection.$from.parent).toEqual(editor.state.doc.child(1));
+  });
+
   it("专业模板 Markdown 会迁移为可编辑布局节点并保留图标名称", () => {
     const html = renderResumeMarkdown(`:::: sidebar
 联系信息

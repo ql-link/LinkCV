@@ -101,7 +101,6 @@ function StableWorkbenchBubbleMenu({ editor, children }: { editor: Editor; child
         const visible = shouldShowWorkbenchBubbleMenu({
           editable: current.isEditable,
           selectionEmpty: current.state.selection.empty,
-          resumeRowActive: current.isActive("resumeRow"),
         });
         anchor.observe(visible ? { from, to } : { from, to: from }, () => posToDOMRect(view, from, to));
         return visible;

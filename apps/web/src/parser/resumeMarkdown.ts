@@ -8,6 +8,7 @@ import { isInlineIconName } from "../lib/resumeInlineIcon";
 type Block =
   | { type: "markdown"; content: string }
   | { type: "side"; align: "left" | "right"; content: string; leftWidth?: number }
+  | { type: "text-align"; align: "left" | "center" | "right"; content: string }
   | { type: "wide"; kind: "sidebar" | "main" | "meta" | "trio"; content: string };
 
 const inlineIconNames = new Set([
@@ -169,6 +170,19 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
   const title = token.attrGet("title") ?? "";
   const alt = escapeAttribute(token.content || "简历图片");
   const escapedSrc = escapeAttribute(src);
+  const inlineImageV2 = title.match(/^linkcv-inline-image-v2:(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/);
+  if (inlineImageV2) {
+    const width = Math.min(240, Math.max(16, Number(inlineImageV2[1]) || 72));
+    const height = Math.min(240, Math.max(16, Number(inlineImageV2[2]) || 24));
+    return `<img data-inline-image data-src="${escapedSrc}" data-width="${width}" data-height="${height}" data-alt="${alt}" class="resume-inline-image" style="width:${width}px;height:${height}px" src="${escapedSrc}" width="${width}" height="${height}" alt="${alt}">`;
+  }
+  const legacyInlineImage = title.match(/^linkcv-inline-image:(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/);
+  if (legacyInlineImage) {
+    const width = Math.min(240, Math.max(16, Number(legacyInlineImage[1]) || 72));
+    const aspectRatio = Math.min(20, Math.max(0.1, Number(legacyInlineImage[2]) || 3));
+    const height = Math.min(240, Math.max(16, width / aspectRatio));
+    return `<img data-inline-image data-src="${escapedSrc}" data-width="${width}" data-height="${Number(height.toFixed(2))}" data-aspect-ratio="${aspectRatio}" data-alt="${alt}" class="resume-inline-image" style="width:${width}px;height:${Number(height.toFixed(2))}px" src="${escapedSrc}" width="${width}" height="${Number(height.toFixed(2))}" alt="${alt}">`;
+  }
   const avatar = title.match(/^linkcv-avatar:(\d+)$/);
   if (avatar) {
     const size = Math.min(220, Math.max(56, Number(avatar[1]) || 96));
@@ -280,8 +294,9 @@ function tokenizeCustomBlocks(source: string): Block[] {
     const line = lines[index];
     const wideStart = line.match(/^::::\s*(sidebar|main|meta|trio)\s*$/);
     const start = line.match(/^:::\s*(left|right)(?:\s+(\d+(?:\.\d+)?))?\s*$/);
+    const textAlignStart = line.match(/^:::\s*text-align\s+(left|center|right)\s*$/);
 
-    if (!wideStart && !start) {
+    if (!wideStart && !start && !textAlignStart) {
       buffer.push(line);
       continue;
     }
@@ -299,6 +314,21 @@ function tokenizeCustomBlocks(source: string): Block[] {
       }
 
       blocks.push({ type: "wide", kind, content: content.join("\n").trim() });
+      continue;
+    }
+
+    if (textAlignStart) {
+      const content: string[] = [];
+      index += 1;
+      while (index < lines.length && !/^:::\s*$/.test(lines[index])) {
+        content.push(lines[index]);
+        index += 1;
+      }
+      blocks.push({
+        type: "text-align",
+        align: textAlignStart[1] as "left" | "center" | "right",
+        content: content.join("\n").trim(),
+      });
       continue;
     }
 
@@ -345,6 +375,11 @@ function renderSideContent(content: string) {
   return renderMarkdownContent(content, true);
 }
 
+function renderTextAlignedContent(content: string, align: "left" | "center" | "right") {
+  const rendered = renderMarkdownContent(content);
+  return rendered.replace(/^<(p|h[1-3])\b[^>]*>/, (tag) => rewriteAttribute(tag, "style", `text-align:${align}`));
+}
+
 function renderPair(left: string, right: string, leftWidth = 70) {
   return `<div class="resume-row" data-type="resume-row" data-block="pair" data-left-width="${leftWidth}"><p class="resume-row-left">${renderSideContent(
     left,
@@ -360,6 +395,11 @@ export function renderResumeMarkdown(source: string) {
 
     if (block.type === "markdown") {
       html.push(renderMarkdownContent(block.content));
+      continue;
+    }
+
+    if (block.type === "text-align") {
+      html.push(renderTextAlignedContent(block.content, block.align));
       continue;
     }
 

@@ -6,9 +6,19 @@ function rect(left: number) {
 }
 
 describe("selectionBubbleAnchor", () => {
-  it("折叠光标位于左右对齐行时仍显示工具栏", () => {
-    expect(shouldShowWorkbenchBubbleMenu({ editable: true, selectionEmpty: true, resumeRowActive: true })).toBe(true);
-    expect(shouldShowWorkbenchBubbleMenu({ editable: true, selectionEmpty: true, resumeRowActive: false })).toBe(false);
+  it("仅在形成非空文字选区时显示工具栏", () => {
+    expect(shouldShowWorkbenchBubbleMenu({
+      editable: true,
+      selectionEmpty: true,
+    })).toBe(false);
+    expect(shouldShowWorkbenchBubbleMenu({
+      editable: true,
+      selectionEmpty: false,
+    })).toBe(true);
+    expect(shouldShowWorkbenchBubbleMenu({
+      editable: false,
+      selectionEmpty: false,
+    })).toBe(false);
   });
 
   it("同一选区格式变化时保持原锚点", () => {

@@ -13,7 +13,8 @@ export type WorkbenchBlockCommandId =
   | "resume-row"
   | "image"
   | "avatar"
-  | "inline-icon";
+  | "inline-icon"
+  | "inline-image";
 
 export type WorkbenchBlockCommand = {
   id: WorkbenchBlockCommandId;
@@ -30,6 +31,7 @@ export const workbenchBlockCommands: WorkbenchBlockCommand[] = [
   { id: "bullet-list", label: "无序列表", keywords: ["分点", "项目符号", "ul"] },
   { id: "ordered-list", label: "有序列表", keywords: ["编号", "ol"] },
   { id: "image", label: "插入图片", keywords: ["正文图片", "image"] },
+  { id: "inline-image", label: "插入行内图片", keywords: ["公司 Logo", "文字内嵌图片", "行内", "logo"] },
   { id: "avatar", label: "上传或更换头像", keywords: ["照片", "avatar"] },
   { id: "inline-icon", label: "插入图标", keywords: ["图标", "学校", "教育", "电话", "邮箱", "icon"] },
 ];
@@ -97,6 +99,28 @@ export function convertResumeRowToParagraph(editor: Editor) {
     const from = $from.before(rowDepth);
     const transaction = state.tr.replaceWith(from, from + row.nodeSize, paragraph);
     transaction.setSelection(TextSelection.near(transaction.doc.resolve(from + paragraph.nodeSize - 1)));
+    dispatch?.(transaction.scrollIntoView());
+    return true;
+  });
+}
+
+export function exitResumeRowToBlankParagraph(editor: Editor) {
+  return editor.commands.command(({ state, dispatch }) => {
+    const { $from } = state.selection;
+    let rowDepth = $from.depth;
+    while (rowDepth > 0 && $from.node(rowDepth).type.name !== "resumeRow") rowDepth -= 1;
+    if (rowDepth === 0) return false;
+
+    const paragraphType = state.schema.nodes.paragraph;
+    if (!paragraphType) return false;
+
+    const rowEnd = $from.after(rowDepth);
+    const nextNode = state.doc.nodeAt(rowEnd);
+    const transaction = state.tr;
+    if (nextNode?.type !== paragraphType || nextNode.content.size > 0) {
+      transaction.insert(rowEnd, paragraphType.create());
+    }
+    transaction.setSelection(TextSelection.create(transaction.doc, rowEnd + 1));
     dispatch?.(transaction.scrollIntoView());
     return true;
   });

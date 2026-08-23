@@ -36,7 +36,7 @@ describe("空白行格式入口", () => {
     expect(buttons).toHaveLength(2);
     expect(blankPositions).toHaveLength(2);
     expect(buttons[0]?.getAttribute("aria-label")).toBe("在此空白行设置格式");
-    expect(buttons[0]?.dataset.active).toBe("true");
+    expect(buttons[0]).not.toHaveAttribute("data-active");
 
     buttons[1]?.click();
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ query: "", replaceRange: null }));
@@ -45,7 +45,7 @@ describe("空白行格式入口", () => {
     editor.commands.setTextSelection(3);
     expect(editor.view.dom.querySelectorAll(".resume-empty-line-add")).toHaveLength(2);
     expect([...editor.view.dom.querySelectorAll<HTMLElement>(".resume-empty-line-add")]
-      .every((button) => button.dataset.active === "false")).toBe(true);
+      .every((button) => !button.hasAttribute("data-active"))).toBe(true);
     editor.destroy();
   });
 

@@ -8,13 +8,11 @@ export type SelectionRectReader = () => DOMRect;
 export function shouldShowWorkbenchBubbleMenu({
   editable,
   selectionEmpty,
-  resumeRowActive,
 }: {
   editable: boolean;
   selectionEmpty: boolean;
-  resumeRowActive: boolean;
 }) {
-  return editable && (!selectionEmpty || resumeRowActive);
+  return editable && !selectionEmpty;
 }
 
 export function createSelectionBubbleAnchor() {

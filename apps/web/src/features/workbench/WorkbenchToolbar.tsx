@@ -9,6 +9,7 @@ import {
   Eraser,
   Highlighter,
   Image,
+  ImagePlus,
   Italic,
   Link as LinkIcon,
   List,
@@ -220,7 +221,14 @@ function IconControl({ editor }: { editor: Editor }) {
   );
 }
 
-export function readImage(file: File, resumeId: string, onLoad: (src: string) => void, onError: (message: string) => void) {
+export type UploadedImageMetadata = { naturalWidth: number; naturalHeight: number };
+
+export function readImage(
+  file: File,
+  resumeId: string,
+  onLoad: (src: string, metadata: UploadedImageMetadata) => void,
+  onError: (message: string) => void,
+) {
   if (!file.type.startsWith("image/")) {
     onError("请选择图片文件");
     return;
@@ -239,7 +247,10 @@ export function readImage(file: File, resumeId: string, onLoad: (src: string) =>
     const preview = new window.Image();
     preview.onload = () => {
       void api.uploadResumeAsset(resumeId, { file_name: file.name, data_url: reader.result as string })
-        .then(({ asset }) => onLoad(asset.url))
+        .then(({ asset }) => onLoad(asset.url, {
+          naturalWidth: preview.naturalWidth,
+          naturalHeight: preview.naturalHeight,
+        }))
         .catch((error) => onError(`图片上传失败：${(error as Error).message}`));
     };
     preview.onerror = () => onError("图片已损坏或格式不受支持");
@@ -248,10 +259,19 @@ export function readImage(file: File, resumeId: string, onLoad: (src: string) =>
   reader.readAsDataURL(file);
 }
 
-function ImageControl({ editor, resumeId, avatar = false, onNotice }: { editor: Editor; resumeId: string; avatar?: boolean; onNotice: (message: string) => void }) {
+function ImageControl({ editor, resumeId, avatar = false, inline = false, onNotice }: { editor: Editor; resumeId: string; avatar?: boolean; inline?: boolean; onNotice: (message: string) => void }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const insert = (file: File) => {
-    readImage(file, resumeId, (src) => {
+    readImage(file, resumeId, (src, metadata) => {
+      if (inline) {
+        const aspectRatio = metadata.naturalWidth / Math.max(1, metadata.naturalHeight);
+        const width = Math.round(Math.min(120, Math.max(20, 24 * aspectRatio)));
+        editor.chain().focus().insertContent([
+          { type: "inlineImage", attrs: { src, width, height: 24, aspectRatio, alt: file.name } },
+          { type: "text", text: " " },
+        ]).run();
+        return;
+      }
       if (!avatar) {
         editor.chain().focus().insertContent({ type: "resumeImage", attrs: { src, width: 55, widthUnit: "%", align: "center", alt: file.name } }).run();
         return;
@@ -279,8 +299,8 @@ function ImageControl({ editor, resumeId, avatar = false, onNotice }: { editor: 
   };
   return (
     <>
-      <ToolButton label={avatar ? "上传或更换头像" : "插入正文图片"} onClick={() => inputRef.current?.click()}>
-        {avatar ? <UserRound size={15} /> : <Image size={15} />}
+      <ToolButton label={avatar ? "上传或更换头像" : inline ? "插入行内图片" : "插入正文图片"} onClick={() => inputRef.current?.click()}>
+        {avatar ? <UserRound size={15} /> : inline ? <ImagePlus size={15} /> : <Image size={15} />}
       </ToolButton>
       <input ref={inputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" onChange={(event) => {
         const file = event.target.files?.[0];
@@ -389,6 +409,7 @@ export function WorkbenchToolbar({ editor, resumeId, defaultFontSize, onNotice }
       <Divider />
       <LinkControl editor={editor} />
       <ImageControl editor={editor} resumeId={resumeId} onNotice={onNotice} />
+      <ImageControl editor={editor} resumeId={resumeId} inline onNotice={onNotice} />
       <ImageControl editor={editor} resumeId={resumeId} avatar onNotice={onNotice} />
       <IconControl editor={editor} />
       <RowLayoutControl editor={editor} onNotice={onNotice} />

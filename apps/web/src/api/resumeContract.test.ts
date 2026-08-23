@@ -204,14 +204,42 @@ describe("resume semantic contract adapter", () => {
             alt: "项目图",
           },
         },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "inlineImage",
+              attrs: {
+                src: "/api/resumes/1/assets/company.png",
+                width: 84,
+                height: 30,
+                aspectRatio: 3.5,
+                alt: "示例公司 Logo",
+              },
+            },
+            { type: "text", text: " 示例公司 - 后端实习生" },
+          ],
+        },
       ],
     });
     const html = renderResumeMarkdown(markdown);
 
     expect(markdown).toContain('"linkcv-avatar:108"');
     expect(markdown).toContain('"linkcv-image:60:%:right"');
+    expect(markdown).toContain('"linkcv-inline-image-v2:84:30"');
     expect(html).toContain('data-type="avatar-image"');
     expect(html).toContain('data-type="resume-image"');
+    expect(html).toContain('data-inline-image');
+    expect(html).toContain('data-width="84"');
+    expect(html).toContain('data-height="30"');
+  });
+
+  it("兼容读取按宽高比保存的旧版行内图片", () => {
+    const html = renderResumeMarkdown('![示例 Logo](/api/resumes/1/assets/company.png "linkcv-inline-image:84:3.5") 示例公司');
+
+    expect(html).toContain('data-width="84"');
+    expect(html).toContain('data-height="24"');
+    expect(html).toContain('data-aspect-ratio="3.5"');
   });
 
   it("preserves a left-right row and its left column width", () => {
@@ -229,6 +257,25 @@ describe("resume semantic contract adapter", () => {
 
     expect(markdown).toContain("::: left 62\n示例大学");
     expect(renderResumeMarkdown(markdown)).toContain('data-left-width="62"');
+  });
+
+  it("不会把列表项段落对齐写成无效的块指令", () => {
+    const markdown = editorDocumentToMarkdown({
+      type: "doc",
+      content: [{
+        type: "bulletList",
+        content: [{
+          type: "listItem",
+          content: [{
+            type: "paragraph",
+            attrs: { textAlign: "right" },
+            content: [{ type: "text", text: "负责示例模块" }],
+          }],
+        }],
+      }],
+    });
+
+    expect(markdown).toBe("- 负责示例模块");
   });
 
   it("renders raw HTML as text instead of executable markup", () => {

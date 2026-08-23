@@ -63,4 +63,55 @@ describe("WorkbenchToolbar 当前行左右对齐", () => {
       content: [{ type: "text", text: "示例大学 2022–2026" }],
     });
   });
+
+  it("光标位于行内图片文字行时右对齐作用于整段", async () => {
+    const user = userEvent.setup();
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [{
+          type: "paragraph",
+          content: [
+            {
+              type: "inlineImage",
+              attrs: { src: "/api/resumes/42/assets/company.png", width: 72, height: 32, aspectRatio: 3, alt: "示例公司 Logo" },
+            },
+            { type: "text", text: " 公司实习" },
+          ],
+        }],
+      },
+    });
+    editor.commands.setTextSelection(3);
+    render(<WorkbenchToolbar editor={editor} resumeId="42" defaultFontSize={10.5} onNotice={() => undefined} />);
+
+    await user.click(screen.getByRole("button", { name: "右对齐" }));
+
+    expect(editor.getJSON().content?.[0]).toMatchObject({
+      type: "paragraph",
+      attrs: expect.objectContaining({ textAlign: "right" }),
+      content: [
+        {
+          type: "inlineImage",
+          attrs: expect.objectContaining({ src: "/api/resumes/42/assets/company.png", width: 72, height: 32 }),
+        },
+        { type: "text", text: " 公司实习" },
+      ],
+    });
+
+    const markdown = editorDocumentToMarkdown(editor.getJSON());
+    const restored = new Editor({ extensions: resumeEditorExtensions, content: renderResumeMarkdown(markdown) });
+    expect(restored.getJSON().content?.[0]).toMatchObject({
+      type: "paragraph",
+      attrs: expect.objectContaining({ textAlign: "right" }),
+      content: [
+        {
+          type: "inlineImage",
+          attrs: expect.objectContaining({ src: "/api/resumes/42/assets/company.png", width: 72, height: 32 }),
+        },
+        { type: "text", text: " 公司实习" },
+      ],
+    });
+    restored.destroy();
+  });
 });
