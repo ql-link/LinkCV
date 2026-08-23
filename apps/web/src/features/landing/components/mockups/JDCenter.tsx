@@ -1,5 +1,6 @@
 import { Search, Archive, Bookmark, CheckCircle2 } from 'lucide-react'
 import { ChromeIcon } from '../ChromeIcon'
+import brandMark from '@/assets/linkresume-mark.png'
 
 const jobs = [
   { title: '高级产品经理', company: '某科技公司', salary: '30-50K·14薪', tag: '已投递', active: true },
@@ -57,7 +58,7 @@ export function ExtensionPopup() {
   return (
     <div className="w-full max-w-[300px] overflow-hidden rounded-lg border border-black/[0.08] bg-white shadow-2xl shadow-black/15 dark:border-white/10 dark:bg-[#101013] dark:shadow-black/60">
       <div className="flex items-center gap-2 border-b border-black/[0.06] px-3.5 py-2.5 dark:border-white/[0.07]">
-        <span className="flex h-5 w-5 items-center justify-center rounded-sm bg-zinc-900 text-[10px] font-bold text-white dark:bg-white dark:text-black">L</span>
+        <img className="h-5 w-5 object-contain dark:invert" src={brandMark} alt="" aria-hidden="true" width="1080" height="1080" />
         <span className="text-[11px] font-medium text-zinc-800 dark:text-zinc-200">LinkCV 采集助手</span>
         <ChromeIcon className="ml-auto h-3.5 w-3.5 text-zinc-400 dark:text-zinc-600" />
       </div>

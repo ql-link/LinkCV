@@ -14,9 +14,8 @@ describe("WorkspaceNavigation", () => {
 
     expect(screen.getByRole("navigation", { name: "工作区导航" })).toBeInTheDocument();
     const brandLink = screen.getByRole("link", { name: "LinkResume 首页" });
-    expect(brandLink).toHaveTextContent("LinkResume");
     expect(brandLink).toHaveClass("no-underline", "hover:no-underline");
-    expect(screen.getByText("LinkResume")).toHaveAttribute("translate", "no");
+    expect(brandLink.querySelector(".ui-brand-wordmark")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "JD 中心" })).toHaveAttribute("aria-current", "page");
     const resumesLink = screen.getByRole("link", { name: "我的简历" });
     const templatesLink = screen.getByRole("link", { name: "简历模板" });

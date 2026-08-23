@@ -341,10 +341,22 @@ select:not([data-slot]):focus-visible,
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  .ui-brand-mark img {
-    filter: brightness(0);
-  }
+.ui-brand-mark {
+  display: block;
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.ui-brand-responsive-mark {
+  display: none;
+}
+
+.ui-brand-wordmark {
+  display: block;
+  width: 144px;
+  height: 32px;
+  object-fit: contain;
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -356,10 +368,14 @@ select:not([data-slot]):focus-visible,
 }
 
 @media (max-width: 1080px) {
-  .top-nav .ui-brand-name,
+  .top-nav .ui-brand-wordmark,
   .top-nav .nav-divider,
   .top-nav .save-status {
     display: none;
+  }
+
+  .top-nav .ui-brand-responsive-mark {
+    display: block;
   }
 
   .document-title-input {
@@ -3170,7 +3186,7 @@ select:not([data-slot]):focus-visible,
   .landing-section-heading { margin-bottom: 48px; }
   .landing-footer { gap: 20px; }
 
-  .dashboard-brand .ui-brand-name { display: none; }
+  .dashboard-brand .ui-brand-wordmark { width: 124px; }
   .dashboard-tabs > a { gap: 6px; padding-inline: 10px; font-size: 12px; }
   .home-dashboard-content .page-hero { flex-direction: column; }
   .home-dashboard-content .page-hero-actions {
@@ -4095,15 +4111,14 @@ select:not([data-slot]):focus-visible,
 
 .share-brand { display: inline-flex; align-items: center; gap: 10px; }
 
-.share-brand .ui-brand-mark {
-  width: 28px;
+.share-brand .ui-brand-wordmark {
+  width: 132px;
   height: 28px;
-  border-radius: 8px;
+  object-fit: contain;
 }
 
-.share-brand .ui-brand-mark img {
-  width: 22px;
-  height: 22px;
+.share-brand .ui-brand-responsive-mark {
+  display: none;
 }
 
 .share-page-header-note {
