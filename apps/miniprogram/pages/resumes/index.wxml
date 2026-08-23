@@ -6,8 +6,11 @@
     </view>
   </view>
   <view class="page-head">
-    <text class="page-title" wx:if="{{user && user.nickname}}">{{user.nickname}}的简历</text>
-    <text class="page-title" wx:else>我的简历</text>
+    <view class="page-title-row">
+      <text class="page-title" wx:if="{{user && user.nickname}}">{{user.nickname}}的简历</text>
+      <text class="page-title" wx:else>我的简历</text>
+      <navigator class="profile-entry" url="/pages/profile/index" wx:if="{{!guest}}">资料设置 ›</navigator>
+    </view>
     <view class="page-meta-row" wx:if="{{!loading && !error && !guest}}">
       <text class="page-meta">{{items.length}} 份简历 · 下拉可刷新</text>
       <text class="readonly-tag">只读</text>

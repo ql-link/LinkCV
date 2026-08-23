@@ -60,6 +60,17 @@ class ProfileUpdateRequest(BaseModel):
     nickname: str
 
 
+class MiniProgramProfileResponse(BaseModel):
+    """小程序专用资料视图；头像只暴露小程序专用只读 URL。"""
+
+    nickname: str
+    avatar_url: str | None = None
+
+
+class MiniProgramProfileUpdateRequest(BaseModel):
+    nickname: str
+
+
 class WechatBindRequestResponse(BaseModel):
     ticket: str
     qrcode_data: str

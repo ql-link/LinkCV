@@ -3,6 +3,7 @@
     "pages/home/index",
     "pages/login/index",
     "pages/confirm/index",
+    "pages/profile/index",
     "pages/resumes/index",
     "pages/resumes/detail"
   ],

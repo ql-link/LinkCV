@@ -1,0 +1,46 @@
+<view class="page" style="padding-top: calc({{statusBarHeight}}px + 32rpx)">
+  <view class="topbar">
+    <view class="ui-brand">
+      <image class="ui-brand-mark" src="/assets/linkcv-mark.png" mode="aspectFit" aria-hidden="true"></image>
+      <text>LinkCV</text>
+    </view>
+  </view>
+  <view class="content">
+    <text class="title">资料设置</text>
+    <view class="context-note">
+      <text class="context-icon">▤</text>
+      <text class="context-text">点击头像可使用微信头像，昵称输入时可一键使用微信昵称</text>
+    </view>
+
+    <view class="loading-block" wx:if="{{loading}}">
+      <view class="spinner"></view>
+      <text class="loading-text">正在加载资料…</text>
+    </view>
+
+    <view wx:else>
+      <view class="avatar-row">
+        <button class="avatar-button" open-type="chooseAvatar" bindchooseavatar="handleChooseAvatar" hover-class="avatar-button-pressed">
+          <image class="avatar-image" wx:if="{{localAvatarPath}}" src="{{localAvatarPath}}" mode="aspectFill"></image>
+          <view class="avatar-placeholder" wx:else>{{nickname ? nickname[0] : '客'}}</view>
+          <view class="avatar-edit">修改</view>
+        </button>
+      </view>
+
+      <view class="field">
+        <text class="field-label">昵称</text>
+        <input
+          class="field-input"
+          type="nickname"
+          value="{{nickname}}"
+          placeholder="点击输入，可一键使用微信昵称"
+          bindinput="handleNicknameInput"
+        />
+      </view>
+
+      <text class="form-message" wx:if="{{message}}">{{message}}</text>
+
+      <button class="save-button" hover-class="save-button-pressed" bindtap="handleSave" disabled="{{saving || loading}}">{{saving ? '正在保存…' : '保存'}}</button>
+    </view>
+  </view>
+  <view class="privacy-note">头像与昵称仅用于在小程序内展示，可随时修改</view>
+</view>

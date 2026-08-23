@@ -52,6 +52,14 @@ function clearSession() {
   void require("./resumePreviewCache").clearResumePreviewCache();
 }
 
+function updateStoredUser(patch) {
+  const user = wx.getStorageSync(USER_KEY);
+  if (!user) return null;
+  const merged = { ...user, ...patch };
+  wx.setStorageSync(USER_KEY, merged);
+  return merged;
+}
+
 function agreementRequiredError() {
   const error = new Error("请先阅读并同意隐私保护指引");
   error.code = "AGREEMENT_REQUIRED";
@@ -216,5 +224,6 @@ module.exports = {
   openPrivacyContract,
   registerOrLogin,
   refreshSession,
+  updateStoredUser,
   wxLoginCode,
 };

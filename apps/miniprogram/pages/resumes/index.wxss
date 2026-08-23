@@ -31,6 +31,20 @@
   padding: 8rpx 8rpx 26rpx;
 }
 
+.page-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.profile-entry {
+  flex-shrink: 0;
+  color: var(--ui-accent);
+  font-size: 23rpx;
+  font-weight: 600;
+}
+
 .page-title {
   color: var(--ui-foreground);
   font-size: 44rpx;
