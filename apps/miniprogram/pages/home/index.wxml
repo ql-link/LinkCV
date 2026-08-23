@@ -10,20 +10,29 @@
     <text class="hero-title">你的简历
 随身翻阅</text>
     <text class="hero-sub">在网页端创建简历，面试路上随时翻阅。</text>
-    <button class="hero-cta" hover-class="hero-cta-pressed" bindtap="handlePrimaryAction">{{loggedIn ? '查看我的简历' : '微信登录查看简历'}}</button>
-    <text class="hero-hint">登录前可自由浏览本页</text>
   </view>
 
   <view class="sample">
-    <view class="sample-paper" aria-hidden="true">
-      <view class="s-head"></view>
-      <view class="s-line"></view>
-      <view class="s-line is-short"></view>
-      <view class="s-line"></view>
-      <view class="s-line is-short"></view>
-      <view class="s-line"></view>
+    <view class="sample-stack" aria-hidden="true">
+      <view class="sample-paper is-back"></view>
+      <view class="sample-paper">
+        <view class="s-name"></view>
+        <view class="s-role"></view>
+        <view class="s-divider"></view>
+        <view class="s-section"></view>
+        <view class="s-line"></view>
+        <view class="s-line is-short"></view>
+        <view class="s-section"></view>
+        <view class="s-line"></view>
+        <view class="s-line is-short"></view>
+      </view>
     </view>
     <text class="sample-hint">示例简历 · 登录后展示你的</text>
+  </view>
+
+  <view class="cta-area">
+    <button class="hero-cta" hover-class="hero-cta-pressed" bindtap="handlePrimaryAction">{{loggedIn ? '查看我的简历' : '微信登录查看简历'}}</button>
+    <text class="hero-hint">登录前可自由浏览本页</text>
   </view>
 
   <view class="points">

@@ -16,7 +16,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-top: 40rpx;
+  margin-top: 36rpx;
   text-align: center;
 }
 
@@ -35,6 +35,90 @@
   line-height: 1.6;
 }
 
+.sample {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 56rpx;
+}
+
+.sample-stack {
+  position: relative;
+  width: 300rpx;
+  height: 400rpx;
+}
+
+.sample-paper {
+  position: absolute;
+  inset: 0;
+  padding: 34rpx 30rpx;
+  border: 2rpx solid var(--ui-border);
+  border-radius: 14rpx;
+  background: var(--ui-surface);
+  box-sizing: border-box;
+}
+
+.sample-paper.is-back {
+  top: 20rpx;
+  left: 26rpx;
+  background: var(--ui-surface-subtle);
+  transform: rotate(5deg);
+}
+
+.s-name {
+  width: 44%;
+  height: 18rpx;
+  border-radius: 8rpx;
+  background: var(--ui-foreground);
+}
+
+.s-role {
+  width: 28%;
+  height: 9rpx;
+  margin-top: 14rpx;
+  border-radius: 6rpx;
+  background: var(--ui-accent);
+  opacity: 0.55;
+}
+
+.s-divider {
+  height: 2rpx;
+  margin-top: 24rpx;
+  background: var(--ui-border);
+}
+
+.s-section {
+  width: 30%;
+  height: 10rpx;
+  margin-top: 26rpx;
+  border-radius: 6rpx;
+  background: var(--ui-text-subtle);
+}
+
+.s-line {
+  height: 8rpx;
+  margin-top: 16rpx;
+  border-radius: 6rpx;
+  background: var(--ui-border);
+}
+
+.s-line.is-short {
+  width: 62%;
+}
+
+.sample-hint {
+  margin-top: 20rpx;
+  color: var(--ui-text-subtle);
+  font-size: 20rpx;
+}
+
+.cta-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 56rpx;
+}
+
 .hero-cta {
   width: 100%;
   max-width: 520rpx;
@@ -42,7 +126,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 44rpx 0 0;
+  margin: 0;
   padding: 0 32rpx;
   border-radius: 18rpx;
   background: var(--ui-accent);
@@ -68,51 +152,11 @@
   font-size: 21rpx;
 }
 
-.sample {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-top: 64rpx;
-}
-
-.sample-paper {
-  width: 260rpx;
-  padding: 30rpx 26rpx;
-  border: 2rpx solid var(--ui-border);
-  border-radius: 12rpx;
-  background: var(--ui-surface);
-}
-
-.s-head {
-  width: 44%;
-  height: 14rpx;
-  margin-bottom: 20rpx;
-  border-radius: 6rpx;
-  background: var(--ui-foreground);
-}
-
-.s-line {
-  height: 8rpx;
-  margin-top: 16rpx;
-  border-radius: 6rpx;
-  background: var(--ui-border);
-}
-
-.s-line.is-short {
-  width: 62%;
-}
-
-.sample-hint {
-  margin-top: 18rpx;
-  color: var(--ui-text-subtle);
-  font-size: 20rpx;
-}
-
 .points {
   display: flex;
   justify-content: center;
   gap: 64rpx;
-  margin-top: 72rpx;
+  margin-top: 64rpx;
 }
 
 .point {
