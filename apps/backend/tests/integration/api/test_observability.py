@@ -158,7 +158,9 @@ def test_request_id_and_business_audit_are_recorded_once() -> None:
         assert response.headers["X-Audit-Recorded"] == "true"
 
         register_audits = [
-            event for event in emitter.audit_events if event["action"] == "auth.register"
+            event
+            for event in emitter.audit_events
+            if event["action"] == "auth.register"
         ]
         assert len(register_audits) == 1
         assert register_audits[0]["result"] == "succeeded"
@@ -181,6 +183,45 @@ def test_request_id_and_business_audit_are_recorded_once() -> None:
         assert update_audit["action"] == "resume.update"
         assert update_audit["result"] == "failed"
         assert update_audit["error_code"] == "RESUME_EDIT_CONFLICT"
+
+
+def test_interview_creation_audit_uses_the_created_application_id() -> None:
+    app, emitter, _loki = build_app()
+    with TestClient(app) as client:
+        register(client, "interview-audit@example.test")
+        job = client.post(
+            "/api/job-descriptions",
+            json={
+                "job_title": "后端开发工程师",
+                "company_name": "虚构审计科技",
+                "description": "用于验证面试中心审计目标绑定。",
+                "source_type": "manual",
+            },
+        )
+        assert job.status_code == 201, job.text
+
+        created = client.post(
+            "/api/job-applications",
+            json={
+                "job_description_id": job.json()["job_description"]["id"],
+                "current_stage_type": "interview",
+                "current_round_no": 1,
+                "current_stage_label": "一面",
+                "stage_state": "awaiting_schedule",
+            },
+        )
+        assert created.status_code == 201, created.text
+        application_id = created.json()["application"]["id"]
+
+        interview_audits = [
+            event
+            for event in emitter.audit_events
+            if event["action"] == "interview.application_create"
+        ]
+        assert len(interview_audits) == 1
+        assert interview_audits[0]["result"] == "succeeded"
+        assert interview_audits[0]["target_type"] == "job_application"
+        assert interview_audits[0]["target_id"] == str(application_id)
 
 
 def test_client_error_and_pdf_export_audit_require_auth_and_owned_resume() -> None:

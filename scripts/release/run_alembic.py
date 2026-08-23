@@ -28,6 +28,13 @@ REVISION_TABLE_MARKERS = {
             "resume_change_proposals",
         }
     ),
+    "0033": frozenset(
+        {
+            "job_applications",
+            "interview_sessions",
+            "interview_assets",
+        }
+    ),
 }
 REVISION_COLUMN_MARKERS = {
     "0031": {
@@ -99,7 +106,7 @@ def _applied_revisions(
 def validate_schema_revision_alignment(
     connection: Connection, script: ScriptDirectory
 ) -> tuple[str, ...]:
-    """Reject known partial or manually stamped Agent migrations before DDL."""
+    """Reject known partial or manually stamped migrations before DDL."""
     current_heads = MigrationContext.configure(connection).get_current_heads()
     applied = _applied_revisions(script, current_heads)
     inspector = inspect(connection)

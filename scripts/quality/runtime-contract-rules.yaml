@@ -223,6 +223,22 @@ contracts:
         pattern: '(?m)^MYSQL_DATABASE=linkcv$'
         message: Production 配置必须使用独立 linkcv 数据库
 
+  - id: interview-asset-upload-limit
+    description: FastAPI 与三套环境使用一致的面试素材上传上限
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default=500 \* 1024 \* 1024,[\s\S]*alias="INTERVIEW_ASSET_UPLOAD_MAX_BYTES"'
+        message: FastAPI 必须使用 500 MiB 的面试素材上传上限
+      - path: .env.example
+        pattern: '(?m)^INTERVIEW_ASSET_UPLOAD_MAX_BYTES=524288000$'
+        message: 本地环境模板必须声明面试素材上传上限
+      - path: .env.development
+        pattern: '(?m)^INTERVIEW_ASSET_UPLOAD_MAX_BYTES=524288000$'
+        message: Development 必须声明面试素材上传上限
+      - path: .env.production
+        pattern: '(?m)^INTERVIEW_ASSET_UPLOAD_MAX_BYTES=524288000$'
+        message: Production 必须声明面试素材上传上限
+
   - id: redis-local-port
     description: 本地配置与 Compose 使用同一个 Redis 默认端口
     assertions:

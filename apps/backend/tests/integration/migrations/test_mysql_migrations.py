@@ -33,7 +33,7 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0032"
+EXPECTED_HEAD = "0033"
 
 
 def migration_test_url() -> str:
@@ -113,6 +113,9 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "agent_messages",
         "agent_tool_calls",
         "resume_change_proposals",
+        "job_applications",
+        "interview_sessions",
+        "interview_assets",
     } <= set(inspector.get_table_names())
     assert "admin_operation_logs" not in inspector.get_table_names()
     for agent_table in {
@@ -897,6 +900,30 @@ def test_agent_clarification_message_forward_migration() -> None:
             column["name"] for column in upgraded.get_columns("agent_messages")
         }
 
+    finally:
+        engine.dispose()
+
+
+def test_interview_center_forward_migration() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0032")
+
+    engine = create_engine(database_url)
+    try:
+        interview_tables = {
+            "job_applications",
+            "interview_sessions",
+            "interview_assets",
+        }
+        assert interview_tables.isdisjoint(inspect(engine).get_table_names())
+
+        run_alembic(database_url, "upgrade", "0033")
+        assert interview_tables <= set(inspect(engine).get_table_names())
+        with engine.connect() as connection:
+            assert connection.scalar(
+                text("SELECT version_num FROM alembic_version")
+            ) == "0033"
     finally:
         engine.dispose()
 
