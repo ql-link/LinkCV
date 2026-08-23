@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | Web | `apps/web` | React 19、TypeScript、Vite 前端，以及简历和临时 JD 管理页面 |
 | Browser extension | `apps/extension` | WXT、React、TypeScript Chrome MV3 插件；读取当前 BOSS 详情页并提交确认后的采集字段 |
-| WeChat miniprogram | `apps/miniprogram` | 原生小程序，界面采用与 Web 内部功能区同源 `--ui-*` Token 的小屏简洁单列布局与蓝色 accent 主操作，四个主页面统一自定义导航并按状态栏高度动态留白；冷启动进入游客可浏览的首页（标题、虚构信息的仿真示例简历、登录入口依次排布），登录由用户主动进入登录页并确认平台隐私保护指引后完成，可随时暂不登录返回；扫码进入独立确认页（与小程序登录页分离并各自标注用途）确认或取消网页登录，登录后以紧凑列表只读查看本人简历并以智能一页图片阅读详情 |
+| WeChat miniprogram | `apps/miniprogram` | 原生小程序，界面采用与 Web 内部功能区同源 `--ui-*` Token 的小屏简洁单列布局与蓝色 accent 主操作，四个主页面统一自定义导航并按状态栏高度动态留白；冷启动进入游客可浏览的首页（标题、虚构信息的仿真示例简历、登录入口依次排布），登录由用户主动进入登录页并确认平台隐私保护指引后完成，可随时暂不登录返回；扫码进入独立确认页（与小程序登录页分离，各自带单行用途说明）确认或取消网页登录，登录后以紧凑列表只读查看本人简历并以智能一页图片阅读详情 |
 | Backend | `apps/backend` | FastAPI、JWT/Redis 鉴权、简历与 JD API、MinIO 图片接口、SQLAlchemy 模型和 Alembic 迁移 |
 | Infrastructure | `deploy` | MySQL、Redis、MinIO 本地依赖和 Dev/Production Jenkins、Compose 拓扑 |
 | pi agent 工具包（第三方，一次性引入） | `third_party/pi` | Node/TypeScript AI agent 工具包，独立 npm workspace，不被根级脚本纳管；引入方式、验证状态与对接约束见 [internals/third-party-pi.md](third-party-pi.md) |

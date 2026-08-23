@@ -8,10 +8,7 @@
   <view class="content">
     <view class="context-note" wx:if="{{phase === 'pending'}}">
       <text class="context-icon">⌂</text>
-      <view class="context-copy">
-        <text class="context-title">来自 LinkCV 网页端的登录请求</text>
-        <text class="context-desc">确认后，发起扫码的浏览器将以你的微信身份登录 LinkCV 网页版；这与登录小程序互相独立。</text>
-      </view>
+      <text class="context-text">来自网页端的登录请求，确认后浏览器将登录 LinkCV</text>
     </view>
     <text class="title" wx:if="{{phase === 'pending'}}">确认是你本人操作</text>
     <text class="title" wx:elif="{{phase === 'confirmed'}}">网页已安全登录</text>

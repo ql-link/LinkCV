@@ -25,8 +25,6 @@
 
 .privacy-note { padding: 0 32rpx calc(24rpx + env(safe-area-inset-bottom)); color: var(--ui-text-subtle); font-size: 20rpx; line-height: 1.5; text-align: center; }
 
-.context-note { display: flex; align-items: flex-start; margin-top: 28rpx; padding: 22rpx 24rpx; border: 1rpx solid var(--ui-border); border-radius: 16rpx; background: var(--ui-surface); }
-.context-icon { width: 52rpx; height: 52rpx; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 12rpx; background: var(--ui-accent-subtle); color: var(--ui-accent); font-size: 26rpx; }
-.context-copy { display: flex; flex-direction: column; min-width: 0; flex: 1; margin-left: 18rpx; }
-.context-title { color: var(--ui-foreground); font-size: 25rpx; font-weight: 600; }
-.context-desc { margin-top: 6rpx; color: var(--ui-text-muted); font-size: 21rpx; line-height: 1.6; }
+.context-note { display: flex; align-items: center; margin-top: 28rpx; padding: 18rpx 22rpx; border: 1rpx solid var(--ui-border); border-radius: 16rpx; background: var(--ui-surface); }
+.context-icon { width: 44rpx; height: 44rpx; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 11rpx; background: var(--ui-accent-subtle); color: var(--ui-accent); font-size: 23rpx; }
+.context-text { min-width: 0; flex: 1; margin-left: 16rpx; color: var(--ui-text-secondary); font-size: 23rpx; line-height: 1.5; }
