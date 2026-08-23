@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { api, type AgentProposal, type AgentSession } from "../../api/client";
 import { defaultSemanticDocument, defaultSemanticStyle } from "../../api/resumeContract";
-import { AgentPanel } from "./AgentPanel";
+import { AgentPanel, AgentUserAvatar } from "./AgentPanel";
 
 const session: AgentSession = {
   id: "session-1",
@@ -33,9 +33,27 @@ const proposal: AgentProposal = {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("AgentPanel", () => {
+  it("用户消息头像使用当前用户图片，并在缺少图片时回退到昵称首字", async () => {
+    class LoadedImage extends EventTarget {
+      complete = true;
+      naturalWidth = 32;
+      crossOrigin: string | null = null;
+      referrerPolicy = "";
+      src = "";
+    }
+    vi.stubGlobal("Image", LoadedImage);
+
+    const { rerender } = render(<AgentUserAvatar avatarUrl="/api/assets/user-avatar.png" displayName="测试用户" />);
+    expect(await screen.findByRole("img", { name: "测试用户的头像" })).toHaveAttribute("src", "/api/assets/user-avatar.png");
+
+    rerender(<AgentUserAvatar avatarUrl={null} displayName="测试用户" />);
+    expect(screen.getByLabelText("测试用户的头像")).toHaveTextContent("测");
+  });
+
   it("使用截图对应的欢迎语、快捷操作和紧凑输入入口", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
@@ -63,11 +81,20 @@ describe("AgentPanel", () => {
     vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
     vi.spyOn(api, "getAgentSession").mockResolvedValue({ session });
     const streamMessage = vi.spyOn(api, "streamAgentMessage").mockResolvedValue(undefined);
+    const onBeforeRun = vi.fn().mockResolvedValue(true);
+    const selectionContext = {
+      block_ids: ["blk_1234567890abcdef"],
+      from: 10,
+      to: 19,
+      selected_text: "负责平台性能优化",
+      selected_text_hash: `sha256:${"a".repeat(64)}`,
+    };
 
     render(
       <AgentPanel
         resumeId="resume-1"
-        draft={{ id: 1, instruction: "优化表达", selectedText: "负责平台性能优化" }}
+        draft={{ id: 1, instruction: "优化表达", selectionContext }}
+        onBeforeRun={onBeforeRun}
         onBeforeConfirm={vi.fn().mockResolvedValue(true)}
         onApplied={vi.fn()}
       />,
@@ -79,7 +106,11 @@ describe("AgentPanel", () => {
     await user.click(screen.getByRole("button", { name: "发送" }));
 
     await waitFor(() => expect(streamMessage).toHaveBeenCalled());
-    expect(streamMessage.mock.calls[0]?.[1].content).toBe("优化表达\n\n选中的简历内容：\n负责平台性能优化");
+    expect(onBeforeRun).toHaveBeenCalledOnce();
+    expect(streamMessage.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
+      content: "优化表达",
+      selection_context: selectionContext,
+    }));
   });
 
   it("流式展示回答与提案，并在用户确认后应用到简历", async () => {

@@ -34,8 +34,16 @@ export const workbenchBlockCommands: WorkbenchBlockCommand[] = [
   { id: "inline-icon", label: "插入图标", keywords: ["图标", "学校", "教育", "电话", "邮箱", "icon"] },
 ];
 
-export function insertInlineIcon(editor: Editor, name: InlineIconName) {
-  return editor.chain().focus().insertContent([
+export function insertInlineIcon(
+  editor: Editor,
+  name: InlineIconName,
+  replaceRange?: { from: number; to: number },
+) {
+  const chain = editor.chain().focus();
+  if (replaceRange) {
+    chain.deleteRange(replaceRange).setTextSelection(replaceRange.from);
+  }
+  return chain.insertContent([
     { type: "inlineIcon", attrs: { name } },
     { type: "text", text: " " },
   ]).run();
@@ -67,7 +75,7 @@ export function convertCurrentLineToResumeRow(editor: Editor) {
     const row = rowType.create({ leftWidth: 50 }, [left, right]);
     const transaction = state.tr.replaceWith(from, from + paragraph.nodeSize, row);
     const rightTextPosition = from + 2 + left.nodeSize;
-    const targetPosition = paragraph.content.size === 0
+    const targetPosition = paragraph.textContent.length === 0
       ? from + 2
       : rightTextPosition;
     transaction.setSelection(TextSelection.create(transaction.doc, targetPosition));

@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-根级 `Dockerfile` 构建 Vite 静态产物和 FastAPI Python 环境。Web 构建阶段会把 `postcss.config.cjs` 与 `tailwind.config.cjs` 和应用源码一起复制到 `/app/apps/web`，确保容器内的 Vite 生产构建生成 Tailwind 工具类，而不是只打包手写 CSS。Node 依赖查询默认使用 npmmirror，但 `npm ci` 禁止替换 `package-lock.json` 已锁定的 tarball 主机：锁文件指向 npm 官方源的制品继续从官方源下载，已经指向 npmmirror 的制品仍使用镜像，避免镜像尚未同步某个锁定制品时错误改写并返回 404。固定版本的 `uv` 与 Python 依赖默认使用阿里云 PyPI，避免部署节点依赖 GHCR。构建过程静默地从 `uv.lock` 导出带哈希的 requirements 后再从指定镜像安装，既保留锁定版本与制品校验，也避免锁文件里的外部下载地址绕过镜像或把完整依赖清单写入 Jenkins 日志。镜像构建只打包 `migrations/sql/`、Alembic revision 和迁移 runner，不连接数据库。容器启动时 runner 先核对 `APP_ENV`、MySQL host、port 和 database，再升级到 Alembic head；目标不一致时拒绝启动，校验成功后才由 Uvicorn 在 `8000` 端口提供 `/api` 与 Web 静态文件。
+根级 `Dockerfile` 构建 Vite 静态产物和 FastAPI Python 环境。Web 构建阶段会把 `postcss.config.cjs` 与 `tailwind.config.cjs` 和应用源码一起复制到 `/app/apps/web`，确保容器内的 Vite 生产构建生成 Tailwind 工具类，而不是只打包手写 CSS。Node 依赖查询默认使用 npmmirror，但 `npm ci` 禁止替换 `package-lock.json` 已锁定的 tarball 主机：锁文件指向 npm 官方源的制品继续从官方源下载，已经指向 npmmirror 的制品仍使用镜像，避免镜像尚未同步某个锁定制品时错误改写并返回 404。固定版本的 `uv` 与 Python 依赖默认使用阿里云 PyPI，避免部署节点依赖 GHCR。构建过程静默地从 `uv.lock` 导出带哈希的 requirements 后再从指定镜像安装，既保留锁定版本与制品校验，也避免锁文件里的外部下载地址绕过镜像或把完整依赖清单写入 Jenkins 日志。镜像构建只打包 `migrations/sql/`、Alembic revision 和迁移 runner，不连接数据库。容器启动时 runner 先核对 `APP_ENV`、MySQL host、port 和 database，再只读比对 Alembic 当前版本与 `0030` Agent 表、`0031` 范围化提案字段等已知 schema 标记；任一对象提前存在、缺失或处于部分应用状态都会在执行 DDL 前终止部署。目标和 schema 对齐后才升级到 Alembic head，并由 Uvicorn 在 `8000` 端口提供 `/api` 与 Web 静态文件。
 
 仓库提供相互独立的 Dev 与 Production Jenkins Pipeline。两者都以同一 commit/build 标识生成不可变 `linkcv` 与 `linkcv-pi` 镜像，先用 `linkcv` 镜像以显式目标参数运行迁移 runner，再更新 Compose，最后等待 FastAPI `/api/health`、Pi `/health`、本环境 Promtail 和 FastAPI `/api/agent/readiness` 进入正常状态；构建镜像阶段不连接数据库。Agent readiness 会穿透 FastAPI→Pi→FastAPI 内部回调并验证当前 `pi_agent` 模型配置与 provider 映射，但不发起供应商模型调用；任一服务令牌、回调网络或模型配置无效都会阻止发布被标记为成功。
 
@@ -82,7 +82,8 @@ CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并�
 ## 回滚
 
 - 应用回滚必须把 `TAG` 与 `PI_TAG` 一起切回同一环境、同一版本的两个不可变镜像标签并重新执行 Compose；不得把 Dev 标签部署到 Production。
-- 当前 head `0030`。`0016` 新增旧版 `resume_imports` 且非空时拒绝 downgrade；`0017` 删除旧同步导入证据列，执行前必须完成不可逆的旧对象、版本和简历清理；`0018` 新增用户数据集表；`0019`–`0020` 增加微信绑定并支持无邮箱密码账号；`0021` 将旧导入表迁移为 `document_parse_tasks`；`0022` 将资料解析接入该任务表，并在迁移前清理旧资料；`0023` 为历史简历版本新增名称；`0024`–`0025` 增加并修订官方经典技术模板；`0026` 新增四套职能与设计模板；`0027` 受保护地刷新四套模板；`0028`–`0029` 扩展并收敛多能力模型配置；`0030` 增加 Agent 状态和提案表。
+- 当前 head `0031`。`0016` 新增旧版 `resume_imports` 且非空时拒绝 downgrade；`0017` 删除旧同步导入证据列，执行前必须完成不可逆的旧对象、版本和简历清理；`0018` 新增用户数据集表；`0019`–`0020` 增加微信绑定并支持无邮箱密码账号；`0021` 将旧导入表迁移为 `document_parse_tasks`；`0022` 将资料解析接入该任务表，并在迁移前清理旧资料；`0023` 为历史简历版本新增名称；`0024`–`0025` 增加并修订官方经典技术模板；`0026` 新增四套职能与设计模板；`0027` 受保护地刷新四套模板；`0028`–`0029` 扩展并收敛多能力模型配置；`0030` 增加 Agent 状态和提案表；`0031` 增加范围化提案的稳定定位、诊断、类型化操作、修改依据与资料引用。
+- `0031 → 0030` 会删除范围化提案的模式、locator、目标哈希、诊断、operation、修改依据和资料引用；完整候选简历快照仍保留，但这些结构化证据无法由 downgrade 恢复，执行前必须确认允许丢失。
 - `0030 → 0029` 会永久删除全部 Agent 会话、消息、运行、工具审计和待确认提案，并把已经生成的 `reason=agent` 简历版本改记为 `manual`。降级前先停止 Pi 服务、阻断新 Agent 请求并确认这些数据允许丢弃；只回切 Pi 镜像或只降 schema 都不是有效回滚。
 - `0021 → 0020` 会从 `document_parse_tasks` 和 `resumes.parse_task_id` 镜像重建 `resume_imports`，并拒绝丢弃非简历类型任务。由于升级已删除旧表，执行前仍需以部署前备份作为完整恢复保障；应用与 schema 必须配套回滚，不能单独回切镜像。
 - `0022 → 0021` 会删除全部资料及 `source_type=dataset` 的解析任务，再移除资料任务指针和失败分类；它不能恢复升级前删除的资料记录或对象。降级前必须确认不存在需要保留的资料任务，并与应用整体回滚。

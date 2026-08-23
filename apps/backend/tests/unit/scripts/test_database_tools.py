@@ -4,6 +4,9 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+from sqlalchemy import create_engine, text
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 INITIAL_REVISION = "0001"
@@ -347,3 +350,108 @@ def test_release_runner_fails_before_migration_on_target_mismatch() -> None:
         )
 
     assert "super-secret" not in str(error.value)
+
+
+def migration_script_directory(module: ModuleType) -> ScriptDirectory:
+    config = Config(str(module.BACKEND_ROOT / "alembic.ini"))
+    config.set_main_option(
+        "script_location", str(module.BACKEND_ROOT / "migrations")
+    )
+    return ScriptDirectory.from_config(config)
+
+
+def test_release_runner_rejects_agent_tables_ahead_of_alembic_revision() -> None:
+    module = load_module(
+        "linkcv_run_alembic_table_drift_test",
+        REPO_ROOT / "scripts/release/run_alembic.py",
+    )
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0029')"))
+        connection.execute(text("CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY)"))
+
+    with engine.connect() as connection, pytest.raises(
+        RuntimeError, match="0030 tables exist before revision"
+    ):
+        module.validate_schema_revision_alignment(
+            connection, migration_script_directory(module)
+        )
+    engine.dispose()
+
+
+def test_release_runner_rejects_missing_tables_for_applied_revision() -> None:
+    module = load_module(
+        "linkcv_run_alembic_missing_table_test",
+        REPO_ROOT / "scripts/release/run_alembic.py",
+    )
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0030')"))
+        connection.execute(text("CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY)"))
+
+    with engine.connect() as connection, pytest.raises(
+        RuntimeError, match="0030 missing tables"
+    ):
+        module.validate_schema_revision_alignment(
+            connection, migration_script_directory(module)
+        )
+    engine.dispose()
+
+
+def test_release_runner_rejects_scoped_columns_ahead_of_revision() -> None:
+    module = load_module(
+        "linkcv_run_alembic_column_drift_test",
+        REPO_ROOT / "scripts/release/run_alembic.py",
+    )
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0030')"))
+        for table_name in module.REVISION_TABLE_MARKERS["0030"]:
+            connection.execute(text(f"CREATE TABLE {table_name} (id INTEGER PRIMARY KEY)"))
+        connection.execute(
+            text("ALTER TABLE resume_change_proposals ADD COLUMN proposal_mode VARCHAR(32)")
+        )
+
+    with engine.connect() as connection, pytest.raises(
+        RuntimeError, match="0031 columns exist before revision"
+    ):
+        module.validate_schema_revision_alignment(
+            connection, migration_script_directory(module)
+        )
+    engine.dispose()
+
+
+def test_release_runner_accepts_aligned_agent_schema() -> None:
+    module = load_module(
+        "linkcv_run_alembic_aligned_test",
+        REPO_ROOT / "scripts/release/run_alembic.py",
+    )
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0031')"))
+        for table_name in module.REVISION_TABLE_MARKERS["0030"]:
+            if table_name == "resume_change_proposals":
+                columns = ", ".join(
+                    f"{column} TEXT"
+                    for column in module.REVISION_COLUMN_MARKERS["0031"][table_name]
+                )
+                connection.execute(
+                    text(
+                        "CREATE TABLE resume_change_proposals "
+                        f"(id INTEGER PRIMARY KEY, {columns})"
+                    )
+                )
+            else:
+                connection.execute(
+                    text(f"CREATE TABLE {table_name} (id INTEGER PRIMARY KEY)")
+                )
+
+    with engine.connect() as connection:
+        assert module.validate_schema_revision_alignment(
+            connection, migration_script_directory(module)
+        ) == ("0031",)
+    engine.dispose()

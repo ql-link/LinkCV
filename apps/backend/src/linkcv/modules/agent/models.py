@@ -21,8 +21,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from linkcv.core.database import Base
 
 
-UNSIGNED_BIGINT = BigInteger().with_variant(Integer(), "sqlite").with_variant(
-    mysql.BIGINT(unsigned=True), "mysql"
+UNSIGNED_BIGINT = (
+    BigInteger()
+    .with_variant(Integer(), "sqlite")
+    .with_variant(mysql.BIGINT(unsigned=True), "mysql")
 )
 TIMESTAMP = DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql")
 
@@ -35,13 +37,13 @@ class AgentSession(Base):
             "status IN ('active', 'archived')", name="ck_agent_sessions_status"
         ),
         Index("idx_agent_sessions_user_updated", "user_id", "updated_at", "id"),
-        Index(
-            "idx_agent_sessions_resume_updated", "resume_id", "updated_at", "id"
-        ),
+        Index("idx_agent_sessions_resume_updated", "resume_id", "updated_at", "id"),
         {"comment": "用户智能助手会话"},
     )
 
-    id: Mapped[int] = mapped_column(UNSIGNED_BIGINT, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        UNSIGNED_BIGINT, primary_key=True, autoincrement=True
+    )
     public_id: Mapped[str] = mapped_column(String(36), nullable=False)
     user_id: Mapped[int] = mapped_column(UNSIGNED_BIGINT, nullable=False)
     resume_id: Mapped[int | None] = mapped_column(UNSIGNED_BIGINT, nullable=True)
@@ -85,7 +87,9 @@ class AgentRun(Base):
         {"comment": "智能助手单次运行"},
     )
 
-    id: Mapped[int] = mapped_column(UNSIGNED_BIGINT, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        UNSIGNED_BIGINT, primary_key=True, autoincrement=True
+    )
     public_id: Mapped[str] = mapped_column(String(36), nullable=False)
     session_id: Mapped[int] = mapped_column(UNSIGNED_BIGINT, nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -116,21 +120,21 @@ class AgentMessage(Base):
         UniqueConstraint(
             "session_id", "sequence_no", name="uk_agent_messages_session_sequence"
         ),
-        CheckConstraint(
-            "role IN ('user', 'assistant')", name="ck_agent_messages_role"
-        ),
-        Index(
-            "idx_agent_messages_session_created", "session_id", "created_at", "id"
-        ),
+        CheckConstraint("role IN ('user', 'assistant')", name="ck_agent_messages_role"),
+        Index("idx_agent_messages_session_created", "session_id", "created_at", "id"),
         {"comment": "智能助手对话消息"},
     )
 
-    id: Mapped[int] = mapped_column(UNSIGNED_BIGINT, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        UNSIGNED_BIGINT, primary_key=True, autoincrement=True
+    )
     session_id: Mapped[int] = mapped_column(UNSIGNED_BIGINT, nullable=False)
     run_id: Mapped[int | None] = mapped_column(UNSIGNED_BIGINT, nullable=True)
     sequence_no: Mapped[int] = mapped_column(UNSIGNED_BIGINT, nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False)
-    content: Mapped[str] = mapped_column(Text().with_variant(mysql.MEDIUMTEXT(), "mysql"), nullable=False)
+    content: Mapped[str] = mapped_column(
+        Text().with_variant(mysql.MEDIUMTEXT(), "mysql"), nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now()
     )
@@ -145,13 +149,13 @@ class AgentToolCall(Base):
             name="ck_agent_tool_calls_status",
         ),
         Index("idx_agent_tool_calls_run_created", "run_id", "created_at", "id"),
-        Index(
-            "idx_agent_tool_calls_tool_created", "tool_name", "created_at", "id"
-        ),
+        Index("idx_agent_tool_calls_tool_created", "tool_name", "created_at", "id"),
         {"comment": "受控智能助手工具调用审计"},
     )
 
-    id: Mapped[int] = mapped_column(UNSIGNED_BIGINT, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        UNSIGNED_BIGINT, primary_key=True, autoincrement=True
+    )
     run_id: Mapped[int] = mapped_column(UNSIGNED_BIGINT, nullable=False)
     call_key: Mapped[str] = mapped_column(String(128), nullable=False)
     tool_name: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -171,15 +175,18 @@ class AgentToolCall(Base):
 class ResumeChangeProposal(Base):
     __tablename__ = "resume_change_proposals"
     __table_args__ = (
-        UniqueConstraint(
-            "public_id", name="uk_resume_change_proposals_public_id"
-        ),
+        UniqueConstraint("public_id", name="uk_resume_change_proposals_public_id"),
         UniqueConstraint(
             "run_id", "call_key", name="uk_resume_change_proposals_run_call_key"
         ),
         CheckConstraint(
             "status IN ('pending', 'applied', 'rejected', 'expired', 'conflicted')",
             name="ck_resume_change_proposals_status",
+        ),
+        CheckConstraint(
+            "proposal_mode IN ('legacy_snapshot', 'polish_local', "
+            "'rewrite_entry_star', 'generate_from_materials')",
+            name="ck_resume_change_proposals_mode",
         ),
         CheckConstraint(
             "base_lock_version >= 1 AND "
@@ -205,7 +212,9 @@ class ResumeChangeProposal(Base):
         {"comment": "用户确认前的简历修改提案"},
     )
 
-    id: Mapped[int] = mapped_column(UNSIGNED_BIGINT, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        UNSIGNED_BIGINT, primary_key=True, autoincrement=True
+    )
     public_id: Mapped[str] = mapped_column(String(36), nullable=False)
     run_id: Mapped[int] = mapped_column(UNSIGNED_BIGINT, nullable=False)
     call_key: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -215,6 +224,30 @@ class ResumeChangeProposal(Base):
     proposed_data_json: Mapped[dict[str, Any]] = mapped_column(JSON(), nullable=False)
     proposed_style_json: Mapped[dict[str, Any]] = mapped_column(JSON(), nullable=False)
     summary: Mapped[str] = mapped_column(Text(), nullable=False)
+    proposal_mode: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="legacy_snapshot",
+        comment="提案模式：旧快照、局部润色、经历整体优化或资料生成",
+    )
+    target_locator_json: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON(), nullable=True, comment="稳定目标定位；旧快照提案为空"
+    )
+    target_content_hash: Mapped[str | None] = mapped_column(
+        String(71), nullable=True, comment="目标内容 SHA-256 前置条件，含算法前缀"
+    )
+    diagnosis_json: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON(), nullable=True, comment="创建范围化提案所依据的结构化诊断"
+    )
+    operations_json: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON(), nullable=True, comment="后端已验证的类型化修改操作"
+    )
+    rationale_json: Mapped[list[dict[str, str]] | None] = mapped_column(
+        JSON(), nullable=True, comment="面向用户的逐项修改依据；旧提案为空"
+    )
+    source_refs_json: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON(), nullable=True, comment="提案引用的职位或资料来源；旧提案为空"
+    )
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     applied_lock_version: Mapped[int | None] = mapped_column(
         UNSIGNED_BIGINT, nullable=True

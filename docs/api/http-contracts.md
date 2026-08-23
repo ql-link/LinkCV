@@ -92,15 +92,15 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 | `GET` | `/api/agent/sessions?resume_id=:id` | `{sessions}`，最近更新优先 |
 | `POST` | `/api/agent/sessions` | `201 {session}`；请求为 `{resume_id, title?}` |
 | `GET` | `/api/agent/sessions/:sessionId` | `{session}`，包含最近 100 条消息 |
-| `POST` | `/api/agent/sessions/:sessionId/messages` | SSE；请求为 `{content, idempotency_key}` |
+| `POST` | `/api/agent/sessions/:sessionId/messages` | SSE；请求为 `{content, idempotency_key, selection_context?}`，选区包含稳定块 ID、编辑器范围、原文和 SHA-256 |
 | `POST` | `/api/agent/runs/:runId/cancel` | `{run_id, status}`；重复取消幂等 |
 | `GET` | `/api/agent/proposals?resume_id=:id` | `{proposals}`，只返回当前待确认提案 |
 | `POST` | `/api/agent/proposals/:proposalId/confirm` | `{resume}`；确认后应用完整快照并创建 `agent` 版本 |
 | `POST` | `/api/agent/proposals/:proposalId/reject` | `{proposal}`；放弃待确认提案 |
 
-SSE 事件包括 `run.started`、`assistant.delta`、`tool.started`、`tool.completed`、`proposal.created`、`run.completed`、`run.cancelled` 和 `run.failed`。每个成功建立的 SSE 响应必须以后三种 `run.*` 终态之一结束；Pi 在 HTTP 200 后提前 EOF 时 FastAPI 补发 `run.failed/AGENT_UPSTREAM_FAILED`，浏览器也会把无终态 EOF 识别为 `AGENT_STREAM_INCOMPLETE`。只有 `run.completed` 才把完整助手文本和可用的 Token/估算成本写入数据库；失败、取消或缺失终态不会把已经流出的部分文本保存成历史消息。同一用户只允许一个 running 运行；相同 `idempotency_key` 重放现有运行状态。取消与流式完成并发时采用第一个成功写入的终态，后到操作不得覆盖。Agent 只能读取当前会话绑定的简历，并且不能直接写简历：修改必须先生成完整 data/style 提案。确认时以 `base_lock_version` 执行乐观锁；简历已改变时返回 `409 RESUME_EDIT_CONFLICT` 并把提案标记为 conflicted，过期提案返回 `410 AGENT_PROPOSAL_EXPIRED`，正式版本已达上限时返回 `409 RESUME_VERSION_LIMIT_REACHED` 且不应用提案。服务或模型不可用返回安全化的 `AGENT_UNAVAILABLE`、`AGENT_MODEL_UNAVAILABLE`、`AGENT_MODEL_UNSUPPORTED`、`AGENT_MODEL_TIMEOUT` 或 `AGENT_MODEL_REQUEST_FAILED`，供应商原始错误和 API Key 不进入浏览器响应。
+SSE 事件包括 `run.started`、`assistant.delta`、`tool.started`、`tool.completed`、`proposal.created`、`run.completed`、`run.cancelled` 和 `run.failed`。每个成功建立的 SSE 响应必须以后三种 `run.*` 终态之一结束；Pi 在 HTTP 200 后提前 EOF 时 FastAPI 补发 `run.failed/AGENT_UPSTREAM_FAILED`，浏览器也会把无终态 EOF 识别为 `AGENT_STREAM_INCOMPLETE`。只有 `run.completed` 才把完整助手文本和可用的 Token/估算成本写入数据库；失败、取消或缺失终态不会把已经流出的部分文本保存成历史消息。同一用户只允许一个 running 运行；相同 `idempotency_key` 重放现有运行状态。取消与流式完成并发时采用第一个成功写入的终态，后到操作不得覆盖。Agent 只能读取当前会话绑定的简历，并且不能直接写简历：修改先解析稳定 locator，再读取最小范围、生成结构化诊断并创建类型化 operation 提案；服务端在快照副本上应用 operation 后仍保存完整候选 data/style。旧的完整快照内部提案接口保留一个兼容期，存量 pending 提案仍可确认。确认时同时校验 `base_lock_version`、locator 和目标内容哈希；整份简历发生并发变化返回 `409 RESUME_EDIT_CONFLICT`，目标块失效返回 `409 TARGET_STALE` 并把提案标记为 conflicted。过期提案返回 `410 AGENT_PROPOSAL_EXPIRED`，正式版本已达上限时返回 `409 RESUME_VERSION_LIMIT_REACHED` 且不应用提案。服务或模型不可用返回安全化的 `AGENT_UNAVAILABLE`、`AGENT_MODEL_UNAVAILABLE`、`AGENT_MODEL_UNSUPPORTED`、`AGENT_MODEL_TIMEOUT` 或 `AGENT_MODEL_REQUEST_FAILED`，供应商原始错误和 API Key 不进入浏览器响应。
 
-`/internal/agent/**` 仅供 Pi 服务使用，以独立 Bearer token 鉴权且不出现在 OpenAPI。`GET /internal/agent/readiness` 验证当前 `pi_agent` binding、凭据解密和 Pi provider 映射，不发起供应商模型调用；工具事件以 `(run_id, call_key)` 幂等，同一工具调用进入 succeeded、failed 或 cancelled 后不可回退或改写为另一终态。内部运行配置复用统一模型管理中的 `pi_agent` binding；模型配置页面仍是 `/admin/llm/models`，不新增第二套 Pi 配置 UI。
+`/internal/agent/**` 仅供 Pi 服务使用，以独立 Bearer token 鉴权且不出现在 OpenAPI。除兼容的完整上下文和快照提案接口外，范围化工具依次使用 `POST /runs/:runId/targets:resolve`、`context:read`、`materials:search`、`diagnoses` 和 `proposals:v2`。目标出现零处或多处时不允许创建提案；诊断 fingerprint、资料版本、执行模式和 operation 范围由 FastAPI 复验。`GET /internal/agent/readiness` 验证当前 `pi_agent` binding、凭据解密和 Pi provider 映射，不发起供应商模型调用；工具事件以 `(run_id, call_key)` 幂等，同一工具调用进入 succeeded、failed 或 cancelled 后不可回退或改写为另一终态。内部运行配置复用统一模型管理中的 `pi_agent` binding；模型配置页面仍是 `/admin/llm/models`，不新增第二套 Pi 配置 UI。
 
 ## 简历分享链接
 

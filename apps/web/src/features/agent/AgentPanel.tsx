@@ -1,22 +1,26 @@
-import { CircleCheck, LoaderCircle, Pencil, Plus, RotateCcw, Send, Sparkles, Square, UserRound, X } from "lucide-react";
+import { CircleCheck, LoaderCircle, Pencil, Plus, RotateCcw, Send, Sparkles, Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 
 import {
   AgentMessage,
   AgentProposal,
+  AgentSelectionContext,
   AgentStreamEvent,
   ApiRequestError,
   ResumeDocumentV1,
   ResumeStyleV1,
   api,
 } from "../../api/client";
-import { Button } from "@/components/ui";
+import { Avatar, AvatarFallback, AvatarImage, Button } from "@/components/ui";
 
 type AgentPanelProps = {
   resumeId: string;
   currentData?: ResumeDocumentV1;
   currentStyle?: ResumeStyleV1;
+  userAvatarUrl?: string | null;
+  userDisplayName?: string;
+  onBeforeRun?: () => Promise<boolean>;
   onBeforeConfirm: () => Promise<boolean>;
   onApplied: () => Promise<void>;
   onClose?: () => void;
@@ -26,7 +30,7 @@ type AgentPanelProps = {
 export type AgentSelectionDraft = {
   id: number;
   instruction: string;
-  selectedText: string;
+  selectionContext: AgentSelectionContext;
 };
 
 const agentQuickPrompts = [
@@ -51,6 +55,15 @@ function proposalChanges(
   currentData?: ResumeDocumentV1,
   currentStyle?: ResumeStyleV1,
 ) {
+  if (proposal.operations?.length) {
+    return proposal.operations.map((operation, index) => ({
+      label: operation.op === "insert_after_target" ? `新增内容 ${index + 1}` : `修改内容 ${index + 1}`,
+      before: typeof operation.target.selected_text === "string"
+        ? operation.target.selected_text
+        : "当前定位内容",
+      after: operation.new_text,
+    }));
+  }
   if (!currentData || !currentStyle) return [];
   const changes: Array<{ label: string; before: string; after: string }> = [];
   if (JSON.stringify(currentData.basics) !== JSON.stringify(proposal.data.basics)) {
@@ -81,6 +94,13 @@ function agentErrorMessage(error: unknown) {
     AGENT_TIMEOUT: "智能助手本轮运行超时，请稍后重试。",
     AGENT_RUN_IN_PROGRESS: "上一条请求仍在处理中，请等待或取消后重试。",
     RESUME_EDIT_CONFLICT: "简历已发生新的修改，这份提案没有应用。请重新生成建议。",
+    TARGET_STALE: "所选内容已发生变化，请重新选择后再试。",
+    TARGET_RESOLUTION_REQUIRED: "还不能唯一定位要处理的内容，请重新选择或说得更具体。",
+    DIAGNOSIS_REQUIRED: "诊断依据已失效，请重新分析后再生成修改。",
+    SKILL_MODE_CONFLICT: "本轮同时出现了不同修改方式，请新建对话后只选择一种方式。",
+    PATCH_OUT_OF_SCOPE: "修改超出了已定位范围，系统没有创建提案。",
+    SOURCE_REQUIRED: "从资料生成内容前需要先选择可追溯的授权资料。",
+    SOURCE_FORBIDDEN: "引用资料不存在、已变化或不属于当前账号。",
   };
   return messages[code] ?? "智能助手没有完成这次请求，请稍后重试。";
 }
@@ -88,6 +108,15 @@ function agentErrorMessage(error: unknown) {
 function messageKey(message: AgentMessage, index: number) {
   return `${message.sequence_no}-${message.role}-${index}`;
 }
+
+const agentToolLabels: Record<string, string> = {
+  resolve_resume_target: "正在定位所选内容…",
+  get_resume_context: "正在读取授权简历上下文…",
+  search_resume_materials: "正在查找你的资料…",
+  analyze_resume_content: "正在进行结构化诊断…",
+  create_resume_change_proposal: "正在生成待确认修改…",
+  create_resume_proposal: "正在生成待确认修改…",
+};
 
 function messageTime(createdAt: string) {
   const created = new Date(createdAt);
@@ -97,6 +126,19 @@ function messageTime(createdAt: string) {
     minute: "2-digit",
     hour12: false,
   }).format(created);
+}
+
+function avatarFallback(displayName: string) {
+  return [...displayName.trim()][0]?.toLocaleUpperCase("zh-CN") ?? "用";
+}
+
+export function AgentUserAvatar({ avatarUrl, displayName = "用户" }: { avatarUrl?: string | null; displayName?: string }) {
+  return (
+    <Avatar className="agent-user-avatar">
+      {avatarUrl && <AvatarImage src={avatarUrl} alt={`${displayName}的头像`} width={32} height={32} />}
+      <AvatarFallback aria-label={`${displayName}的头像`}>{avatarFallback(displayName)}</AvatarFallback>
+    </Avatar>
+  );
 }
 
 function inlineMarkdown(text: string): ReactNode[] {
@@ -143,7 +185,18 @@ function AgentMarkdown({ content }: { content: string }) {
   return <div className="agent-message-content">{blocks}</div>;
 }
 
-export function AgentPanel({ resumeId, currentData, currentStyle, onBeforeConfirm, onApplied, onClose = () => undefined, draft }: AgentPanelProps) {
+export function AgentPanel({
+  resumeId,
+  currentData,
+  currentStyle,
+  userAvatarUrl,
+  userDisplayName = "用户",
+  onBeforeRun = async () => true,
+  onBeforeConfirm,
+  onApplied,
+  onClose = () => undefined,
+  draft,
+}: AgentPanelProps) {
   const [sessionBinding, setSessionBinding] = useState<{ resumeId: string; sessionId: string } | null>(null);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [proposals, setProposals] = useState<AgentProposal[]>([]);
@@ -154,7 +207,7 @@ export function AgentPanel({ resumeId, currentData, currentStyle, onBeforeConfir
   const [toolStatus, setToolStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [proposalBusyId, setProposalBusyId] = useState<string | null>(null);
-  const [selectedContext, setSelectedContext] = useState<string | null>(null);
+  const [selectedContext, setSelectedContext] = useState<AgentSelectionContext | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const activeResumeIdRef = useRef(resumeId);
   const messageListRef = useRef<HTMLDivElement>(null);
@@ -204,7 +257,7 @@ export function AgentPanel({ resumeId, currentData, currentStyle, onBeforeConfir
   useEffect(() => {
     if (!draft || handledDraftIdRef.current === draft.id) return;
     handledDraftIdRef.current = draft.id;
-    setSelectedContext(draft.selectedText);
+    setSelectedContext(draft.selectionContext);
     setInput(draft.instruction);
     setError(null);
   }, [draft]);
@@ -244,7 +297,7 @@ export function AgentPanel({ resumeId, currentData, currentStyle, onBeforeConfir
         }];
       });
     } else if (event.type === "tool.started") {
-      setToolStatus(event.tool === "get_resume_context" ? "正在读取当前简历…" : "正在生成待确认提案…");
+      setToolStatus(agentToolLabels[event.tool] ?? "正在处理…");
     } else if (event.type === "tool.completed") {
       setToolStatus(null);
     } else if (event.type === "proposal.created") {
@@ -256,9 +309,8 @@ export function AgentPanel({ resumeId, currentData, currentStyle, onBeforeConfir
 
   const runMessage = async (content: string) => {
     if (!content || loading || running) return;
-    const requestContent = selectedContext
-      ? `${content}\n\n选中的简历内容：\n${selectedContext}`
-      : content;
+    const runSelectionContext = selectedContext;
+    if (runSelectionContext && !await onBeforeRun()) return;
     const requestedResumeId = resumeId;
     setInput("");
     setError(null);
@@ -277,7 +329,11 @@ export function AgentPanel({ resumeId, currentData, currentStyle, onBeforeConfir
       const idempotencyKey = globalThis.crypto?.randomUUID?.().replace(/-/g, "") ?? `${Date.now()}_agent`;
       await api.streamAgentMessage(
         currentSessionId,
-        { content: requestContent, idempotency_key: idempotencyKey },
+        {
+          content,
+          idempotency_key: idempotencyKey,
+          ...(runSelectionContext ? { selection_context: runSelectionContext } : {}),
+        },
         controller.signal,
         (streamEvent) => {
           if (activeResumeIdRef.current === requestedResumeId) handleEvent(streamEvent);
@@ -320,7 +376,7 @@ export function AgentPanel({ resumeId, currentData, currentStyle, onBeforeConfir
 
   const regenerateLastAnswer = () => {
     const latestUserMessage = [...messages].reverse().find((message) => message.role === "user");
-    const content = latestUserMessage?.content.split("\n\n选中的简历内容：\n")[0]?.trim();
+    const content = latestUserMessage?.content.trim();
     if (content) void runMessage(content);
   };
 
@@ -387,7 +443,7 @@ export function AgentPanel({ resumeId, currentData, currentStyle, onBeforeConfir
                 {message.role === "assistant" && <span className="agent-message-mark" aria-hidden="true"><Sparkles size={15} /></span>}
                 <AgentMarkdown content={message.content} />
               </div>
-              {message.role === "user" && <span className="agent-user-avatar" aria-hidden="true"><UserRound size={15} /></span>}
+              {message.role === "user" && <AgentUserAvatar avatarUrl={userAvatarUrl} displayName={userDisplayName} />}
             </div>
             <time dateTime={message.created_at}>{messageTime(message.created_at)}</time>
           </article>
@@ -403,6 +459,13 @@ export function AgentPanel({ resumeId, currentData, currentStyle, onBeforeConfir
             <small>基于版本 {proposal.base_lock_version}</small>
           </header>
           <p>{proposal.summary}</p>
+          {proposal.rationale && proposal.rationale.length > 0 && (
+            <ul className="agent-proposal-rationale" aria-label="修改依据">
+              {proposal.rationale.map((item, index) => (
+                <li key={`${item.code ?? "reason"}-${index}`}>{item.reason ?? item.message ?? JSON.stringify(item)}</li>
+              ))}
+            </ul>
+          )}
           {proposalChanges(proposal, currentData, currentStyle).length > 0 && (
             <details className="agent-proposal-diff">
               <summary>查看修改范围</summary>
@@ -450,7 +513,7 @@ export function AgentPanel({ resumeId, currentData, currentStyle, onBeforeConfir
         {selectedContext && (
           <div className="agent-selection-context">
             <span><Sparkles aria-hidden="true" size={13} />已选内容</span>
-            <p>{selectedContext}</p>
+            <p>{selectedContext.selected_text}</p>
             <button type="button" onClick={() => setSelectedContext(null)}>移除上下文</button>
           </div>
         )}

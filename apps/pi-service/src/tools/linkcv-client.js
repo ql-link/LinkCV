@@ -37,7 +37,27 @@ export function createLinkCVClient(config, runId, signal) {
     readiness: () => request("/internal/agent/readiness"),
     runtimeConfig: () => request(`/internal/agent/runtime-config?run_id=${encodeURIComponent(runId)}`),
     context: () => request(`/internal/agent/runs/${encodeURIComponent(runId)}/context`),
+    resolveTarget: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/targets:resolve`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+    scopedContext: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/context:read`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+    searchMaterials: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/materials:search`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+    diagnose: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/diagnoses`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
     proposal: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/proposals`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+    scopedProposal: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/proposals:v2`, {
       method: "POST",
       body: JSON.stringify(payload),
     }),

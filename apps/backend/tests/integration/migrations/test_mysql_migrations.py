@@ -33,7 +33,7 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0030"
+EXPECTED_HEAD = "0031"
 
 
 def migration_test_url() -> str:
@@ -134,6 +134,37 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "resume_change_proposals",
     }:
         assert inspector.get_foreign_keys(agent_table) == []
+    proposal_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("resume_change_proposals")
+    }
+    scoped_proposal_columns = {
+        "proposal_mode",
+        "target_locator_json",
+        "target_content_hash",
+        "diagnosis_json",
+        "operations_json",
+        "rationale_json",
+        "source_refs_json",
+    }
+    assert scoped_proposal_columns <= set(proposal_columns)
+    assert proposal_columns["proposal_mode"]["nullable"] is False
+    assert proposal_columns["proposal_mode"]["type"].length == 32
+    assert proposal_columns["target_content_hash"]["type"].length == 71
+    for json_column in {
+        "target_locator_json",
+        "diagnosis_json",
+        "operations_json",
+        "rationale_json",
+        "source_refs_json",
+    }:
+        assert proposal_columns[json_column]["type"].__class__.__name__ == "JSON"
+    assert "ck_resume_change_proposals_mode" in {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints(
+            "resume_change_proposals"
+        )
+    }
     assert {column["name"] for column in inspector.get_columns("users")} == {
         "id",
         "email",
@@ -255,6 +286,29 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     )
     assert "storage_cleanup_jobs" not in inspector.get_table_names()
     assert "resume_imports" not in inspector.get_table_names()
+
+    run_alembic(database_url, "downgrade", "0030")
+    downgraded_proposal_inspector = inspect(engine)
+    assert scoped_proposal_columns.isdisjoint(
+        {
+            column["name"]
+            for column in downgraded_proposal_inspector.get_columns(
+                "resume_change_proposals"
+            )
+        }
+    )
+    assert "ck_resume_change_proposals_mode" not in {
+        constraint["name"]
+        for constraint in downgraded_proposal_inspector.get_check_constraints(
+            "resume_change_proposals"
+        )
+    }
+    with engine.connect() as connection:
+        assert connection.scalar(
+            text("SELECT version_num FROM alembic_version")
+        ) == "0030"
+    run_alembic(database_url, "upgrade", "head")
+    inspector = inspect(engine)
 
     run_alembic(database_url, "downgrade", "0009")
     downgraded_inspector = inspect(engine)

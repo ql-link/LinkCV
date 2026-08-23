@@ -14,7 +14,9 @@ def sse_event(event_type: str, data: dict[str, object]) -> bytes:
     return f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n".encode()
 
 
-async def stream_pi_run(app, run_public_id: str, content: str) -> AsyncIterator[bytes]:
+async def stream_pi_run(
+    app, run_public_id: str, content: str, selection_context=None
+) -> AsyncIterator[bytes]:
     settings = app.state.settings
     token = settings.pi_service_token
     if not settings.agent_enabled or token is None:
@@ -41,7 +43,20 @@ async def stream_pi_run(app, run_public_id: str, content: str) -> AsyncIterator[
                 "POST",
                 url,
                 headers=headers,
-                json={"runId": run_public_id, "content": content, "history": history},
+                json={
+                    "runId": run_public_id,
+                    "content": content,
+                    "history": history,
+                    **(
+                        {
+                            "selectionContext": selection_context.model_dump(
+                                mode="json", by_alias=True
+                            )
+                        }
+                        if selection_context is not None
+                        else {}
+                    ),
+                },
             ) as response:
                 if response.status_code != 200:
                     error = (
@@ -85,7 +100,9 @@ async def stream_pi_run(app, run_public_id: str, content: str) -> AsyncIterator[
                             terminal_received = True
                             final_status = "failed"
                             value = payload.get("error")
-                            final_error = value if isinstance(value, str) else final_error
+                            final_error = (
+                                value if isinstance(value, str) else final_error
+                            )
                         if event_name:
                             yield sse_event(event_name, payload)
                     elif not line:
@@ -99,14 +116,10 @@ async def stream_pi_run(app, run_public_id: str, content: str) -> AsyncIterator[
                     )
     except httpx.TimeoutException:
         final_error = "AGENT_TIMEOUT"
-        yield sse_event(
-            "run.failed", {"runId": run_public_id, "error": final_error}
-        )
+        yield sse_event("run.failed", {"runId": run_public_id, "error": final_error})
     except httpx.HTTPError:
         final_error = "AGENT_UNAVAILABLE"
-        yield sse_event(
-            "run.failed", {"runId": run_public_id, "error": final_error}
-        )
+        yield sse_event("run.failed", {"runId": run_public_id, "error": final_error})
     finally:
         _finalize(
             app,
@@ -211,14 +224,17 @@ def _finalize(
         run.estimated_cost = estimated_cost if status == "succeeded" else None
         run.completed_at = utc_now()
         if status == "succeeded" and assistant_content:
-            sequence_no = int(
-                db.scalar(
-                    select(func.coalesce(func.max(AgentMessage.sequence_no), 0)).where(
-                        AgentMessage.session_id == session.id
+            sequence_no = (
+                int(
+                    db.scalar(
+                        select(
+                            func.coalesce(func.max(AgentMessage.sequence_no), 0)
+                        ).where(AgentMessage.session_id == session.id)
                     )
+                    or 0
                 )
-                or 0
-            ) + 1
+                + 1
+            )
             db.add(
                 AgentMessage(
                     session_id=session.id,
@@ -253,10 +269,6 @@ def _safe_usage(value: object) -> tuple[int | None, int | None, Decimal | None]:
         cost = Decimal(str(raw_cost))
     except (InvalidOperation, ValueError):
         return input_tokens, output_tokens, None
-    if (
-        not cost.is_finite()
-        or cost < 0
-        or cost > Decimal("9999999999.99999999")
-    ):
+    if not cost.is_finite() or cost < 0 or cost > Decimal("9999999999.99999999"):
         cost = None
     return input_tokens, output_tokens, cost

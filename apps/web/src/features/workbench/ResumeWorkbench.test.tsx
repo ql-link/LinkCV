@@ -18,7 +18,6 @@ import {
   setRestoredEditorContent,
   setWorkbenchEditorEditable,
   versionNameValidationMessage,
-  WorkbenchZoomControl,
   ZoomFeedback,
   WorkbenchSaveStatus,
   workbenchCanvasClassName,
@@ -147,19 +146,6 @@ describe("ResumeWorkbench 页面排列", () => {
 });
 
 describe("ResumeWorkbench 预览缩放", () => {
-  it("在简历名称旁保留缩放操作但不常驻显示比例", async () => {
-    const user = userEvent.setup();
-    const onChange = vi.fn();
-    const onReset = vi.fn();
-    render(<WorkbenchZoomControl scale={0.8} onChange={onChange} onReset={onReset} />);
-
-    expect(screen.queryByText("80%")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "简历缩放增大" }));
-    expect(onChange).toHaveBeenCalledWith(0.88);
-    await user.click(screen.getByRole("button", { name: "适应" }));
-    expect(onReset).toHaveBeenCalledOnce();
-  });
-
   it("缩放发生时在屏幕中央展示当前比例", () => {
     render(<ZoomFeedback scale={0.88} />);
     expect(screen.getByRole("status")).toHaveTextContent("88%");

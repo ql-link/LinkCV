@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -106,6 +107,27 @@ def internal_headers(token: str = INTERNAL_TOKEN) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def editor_data(base: dict, markdown: str) -> dict:
+    data = base.copy()
+    data["sections"] = {**base["sections"]}
+    data["sections"]["custom_sections"] = [
+        {
+            "id": "custom_section_editor",
+            "title": "简历正文",
+            "items": [
+                {
+                    "id": "custom_item_editor",
+                    "title": None,
+                    "subtitle": None,
+                    "content": {"format": "markdown", "content": markdown},
+                    "source_refs": [],
+                }
+            ],
+        }
+    ]
+    return data
+
+
 def test_session_is_owned_and_internal_context_requires_service_token() -> None:
     app = build_app()
     with TestClient(app) as owner, TestClient(app) as stranger:
@@ -187,6 +209,182 @@ def test_proposal_is_idempotent_and_confirmed_once() -> None:
             )
             assert version is not None
             assert version.name == "智能助手修改"
+
+
+def test_scoped_edit_requires_resolved_target_and_diagnosis_before_confirmation() -> (
+    None
+):
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-scoped@example.test")
+        resume = create_resume(client, app)
+        markdown = "\n\n".join(
+            [
+                "## [[linkcv-block:blk_section000000001]]工作经历",
+                "### [[linkcv-block:blk_entry00000000001]]示例公司 · 后端工程师",
+                "- [[linkcv-block:blk_bullet0000000001]]负责平台性能优化",
+                "- [[linkcv-block:blk_bullet0000000002]]负责平台性能优化",
+            ]
+        )
+        saved = client.put(
+            f"/api/resumes/{resume['id']}",
+            json={
+                "data": editor_data(resume["data"], markdown),
+                "base_lock_version": 1,
+            },
+        )
+        assert saved.status_code == 200
+        session_id = client.post(
+            "/api/agent/sessions", json={"resume_id": resume["id"]}
+        ).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+
+        ambiguous = client.post(
+            f"/internal/agent/runs/{run_id}/targets:resolve",
+            headers=internal_headers(),
+            json={"quoted_text": "负责平台性能优化"},
+        )
+        assert ambiguous.status_code == 200
+        assert ambiguous.json()["status"] == "ambiguous"
+        assert len(ambiguous.json()["candidates"]) == 2
+
+        entry_selection = "示例公司 · 后端工程师\n负责平台性能优化\n负责平台性能优化"
+        entry_resolved = client.post(
+            f"/internal/agent/runs/{run_id}/targets:resolve",
+            headers=internal_headers(),
+            json={
+                "selection_context": {
+                    "block_ids": [
+                        "blk_entry00000000001",
+                        "blk_bullet0000000001",
+                        "blk_bullet0000000002",
+                    ],
+                    "from": 2,
+                    "to": 30,
+                    "selected_text": entry_selection,
+                    "selected_text_hash": "sha256:"
+                    + hashlib.sha256(entry_selection.encode()).hexdigest(),
+                }
+            },
+        )
+        assert entry_resolved.status_code == 200
+        assert entry_resolved.json()["status"] == "resolved"
+        assert entry_resolved.json()["target"]["block_id"] == "blk_entry00000000001"
+
+        selected_text = "负责平台性能优化"
+        resolved = client.post(
+            f"/internal/agent/runs/{run_id}/targets:resolve",
+            headers=internal_headers(),
+            json={
+                "selection_context": {
+                    "block_ids": ["blk_bullet0000000002"],
+                    "from": 10,
+                    "to": 18,
+                    "selected_text": selected_text,
+                    "selected_text_hash": "sha256:"
+                    + hashlib.sha256(selected_text.encode()).hexdigest(),
+                }
+            },
+        )
+        assert resolved.status_code == 200
+        target = resolved.json()["target"]
+        assert resolved.json()["status"] == "resolved"
+        assert target["block_id"] == "blk_bullet0000000002"
+        context = client.post(
+            f"/internal/agent/runs/{run_id}/context:read",
+            headers=internal_headers(),
+            json={"target": target, "scope": "entry"},
+        )
+        assert context.status_code == 200
+        assert [item["target"]["block_id"] for item in context.json()["blocks"]] == [
+            "blk_entry00000000001",
+            "blk_bullet0000000001",
+            "blk_bullet0000000002",
+        ]
+        diagnosed = client.post(
+            f"/internal/agent/runs/{run_id}/diagnoses",
+            headers=internal_headers(),
+            json={"target": target, "scope": "target"},
+        )
+        assert diagnosed.status_code == 200
+        assert (
+            diagnosed.json()["diagnosis"]["quantification"]["has_result_metric"]
+            is False
+        )
+
+        proposal_payload = {
+            "call_key": "scoped-proposal-1",
+            "mode": "polish_local",
+            "target": target,
+            "diagnosis": diagnosed.json()["diagnosis"],
+            "diagnosis_fingerprint": diagnosed.json()["diagnosis_fingerprint"],
+            "operations": [
+                {
+                    "op": "replace_target_text",
+                    "target": target,
+                    "new_text": "优化平台性能，具体结果待补充",
+                    "expected_text_hash": target["expected_text_hash"],
+                }
+            ],
+            "rationale": [
+                {
+                    "code": "MISSING_RESULT_EVIDENCE",
+                    "reason": "保留事实边界并提示补充结果",
+                }
+            ],
+            "source_ids": [],
+            "summary": "优化行动表达，未虚构量化结果",
+        }
+        tampered = client.post(
+            f"/internal/agent/runs/{run_id}/proposals:v2",
+            headers=internal_headers(),
+            json={
+                **proposal_payload,
+                "call_key": "tampered-diagnosis",
+                "diagnosis": {**proposal_payload["diagnosis"], "scope": "resume"},
+            },
+        )
+        assert tampered.status_code == 422
+        assert tampered.json() == {"error": "DIAGNOSIS_REQUIRED"}
+
+        wrong_target = {
+            **target,
+            "block_id": "blk_bullet0000000001",
+        }
+        out_of_scope = client.post(
+            f"/internal/agent/runs/{run_id}/proposals:v2",
+            headers=internal_headers(),
+            json={
+                **proposal_payload,
+                "call_key": "out-of-scope-target",
+                "operations": [
+                    {
+                        **proposal_payload["operations"][0],
+                        "target": wrong_target,
+                    }
+                ],
+            },
+        )
+        assert out_of_scope.status_code == 422
+        assert out_of_scope.json() == {"error": "PATCH_OUT_OF_SCOPE"}
+
+        proposed = client.post(
+            f"/internal/agent/runs/{run_id}/proposals:v2",
+            headers=internal_headers(),
+            json=proposal_payload,
+        )
+        assert proposed.status_code == 201
+        proposal = proposed.json()["proposal"]
+        assert proposal["proposal_mode"] == "polish_local"
+        assert proposal["rationale"][0]["code"] == "MISSING_RESULT_EVIDENCE"
+        confirmed = client.post(f"/api/agent/proposals/{proposal['id']}/confirm")
+        assert confirmed.status_code == 200
+        content = confirmed.json()["resume"]["data"]["sections"]["custom_sections"][0][
+            "items"
+        ][0]["content"]["content"]
+        assert "优化平台性能，具体结果待补充" in content
+        assert content.count("负责平台性能优化") == 1
+        assert "[[linkcv-block:blk_bullet0000000001]]负责平台性能优化" in content
 
 
 def test_proposal_confirmation_never_overwrites_concurrent_resume_edit() -> None:
@@ -387,9 +585,7 @@ def test_deleting_resume_explicitly_cleans_agent_rows_without_foreign_keys() -> 
             )
             db.commit()
 
-        assert client.delete(f"/api/resumes/{resume['id']}").json() == {
-            "deleted": True
-        }
+        assert client.delete(f"/api/resumes/{resume['id']}").json() == {"deleted": True}
         with app.state.session_factory() as db:
             assert db.scalar(select(AgentSession.id)) is None
             assert db.scalar(select(AgentRun.id)) is None
@@ -581,8 +777,14 @@ def test_tool_event_terminal_state_is_idempotent_and_cannot_regress() -> None:
         }
         succeeded = {**running, "status": "succeeded", "duration_ms": 17}
 
-        assert client.post(path, headers=internal_headers(), json=running).status_code == 204
-        assert client.post(path, headers=internal_headers(), json=succeeded).status_code == 204
+        assert (
+            client.post(path, headers=internal_headers(), json=running).status_code
+            == 204
+        )
+        assert (
+            client.post(path, headers=internal_headers(), json=succeeded).status_code
+            == 204
+        )
         repeated = client.post(path, headers=internal_headers(), json=succeeded)
         regressed = client.post(path, headers=internal_headers(), json=running)
 
@@ -606,13 +808,9 @@ def test_agent_readiness_checks_model_config_and_full_service_chain(
         return_value=SimpleNamespace(adapter="openai")
     )
     check_chain = AsyncMock()
-    monkeypatch.setattr(
-        "linkcv.modules.agent.routes.check_pi_readiness", check_chain
-    )
+    monkeypatch.setattr("linkcv.modules.agent.routes.check_pi_readiness", check_chain)
     with TestClient(app) as client:
-        internal = client.get(
-            "/internal/agent/readiness", headers=internal_headers()
-        )
+        internal = client.get("/internal/agent/readiness", headers=internal_headers())
         public = client.get("/api/agent/readiness")
 
     assert internal.status_code == 200

@@ -24,7 +24,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { api } from "../../api/client";
+import { api, type AgentSelectionContext } from "../../api/client";
 import { inlineIconComponents, inlineIconNames, type InlineIconName } from "./editorExtensions";
 import { resumeInlineIconOptions } from "../../lib/resumeInlineIcon";
 import { convertCurrentLineToResumeRow, convertResumeRowToParagraph } from "./editorCommands";
@@ -71,12 +71,39 @@ function Divider() {
 
 export const selectionAgentActions = ["优化表达", "生成亮点", "调整专业度", "解释内容", "继续改写"] as const;
 
+async function sha256Text(value: string) {
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+export async function agentSelectionContext(editor: Editor): Promise<AgentSelectionContext | null> {
+  const { from, to } = editor.state.selection;
+  const selectedText = editor.state.doc.textBetween(from, to, "\n").trim();
+  if (!selectedText) return null;
+  const blockIds = new Set<string>();
+  editor.state.doc.nodesBetween(from, to, (node) => {
+    if (!node.isTextblock) return;
+    const anchor = node.firstChild;
+    if (anchor?.type.name === "resumeBlockAnchor" && typeof anchor.attrs.blockId === "string") {
+      blockIds.add(anchor.attrs.blockId);
+    }
+  });
+  if (!blockIds.size) return null;
+  return {
+    block_ids: [...blockIds],
+    from,
+    to,
+    selected_text: selectedText,
+    selected_text_hash: await sha256Text(selectedText),
+  };
+}
+
 function SelectionAgentControl({
   editor,
   onAgentAction,
 }: {
   editor: Editor;
-  onAgentAction: (instruction: string, selectedText: string) => void;
+  onAgentAction: (instruction: string, selection: AgentSelectionContext) => void;
 }) {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLDivElement | null>(null);
@@ -114,10 +141,9 @@ function SelectionAgentControl({
               key={action}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
-                const { from, to } = editor.state.selection;
-                const selectedText = editor.state.doc.textBetween(from, to, "\n").trim();
-                if (!selectedText) return;
-                onAgentAction(action, selectedText);
+                void agentSelectionContext(editor).then((selection) => {
+                  if (selection) onAgentAction(action, selection);
+                });
                 setOpen(false);
               }}
             >
@@ -401,7 +427,7 @@ function RowLayoutControl({ editor, onNotice }: { editor: Editor; onNotice: (mes
   );
 }
 
-export function WorkbenchToolbar({ editor, resumeId, defaultFontSize, onNotice, onAgentAction }: { editor: Editor | null; resumeId: string; defaultFontSize: number; onNotice: (message: string) => void; onAgentAction?: (instruction: string, selectedText: string) => void }) {
+export function WorkbenchToolbar({ editor, resumeId, defaultFontSize, onNotice, onAgentAction }: { editor: Editor | null; resumeId: string; defaultFontSize: number; onNotice: (message: string) => void; onAgentAction?: (instruction: string, selection: AgentSelectionContext) => void }) {
   const [, refresh] = useState(0);
 
   useEffect(() => {

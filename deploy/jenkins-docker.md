@@ -12,7 +12,7 @@ The private file contains only credentials and the JWT secret. The committed
 `.env.development` remains authoritative for `100.86.10.52:13306/linkcv`, Redis
 DB 2, the MinIO endpoint, and bucket `linkcv`.
 
-The guarded migration target is `development / 100.86.10.52:13306 / linkcv`; a mismatch fails before Alembic runs.
+The guarded migration target is `development / 100.86.10.52:13306 / linkcv`; a target mismatch or a known Alembic/schema marker drift fails before any migration DDL runs.
 
 Create a Jenkins Secret Text credential named `linkcv-dev-webhook-token`. The
 pipeline declares a Generic Webhook Trigger that accepts only

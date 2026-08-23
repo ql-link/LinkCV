@@ -22,6 +22,15 @@ from linkcv.modules.agent.schemas import (
     AgentMessageRecord,
     AgentSessionRecord,
     ProposalRecord,
+    ResumeTargetLocator,
+)
+from linkcv.modules.agent.resume_tools import (
+    apply_operations,
+    editor_markdown,
+    replace_editor_markdown,
+    target_content,
+    validate_source_ids,
+    verify_diagnosis_fingerprint,
 )
 from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import Resume
@@ -50,7 +59,9 @@ def session_record(
     )
 
 
-def proposal_record(proposal: ResumeChangeProposal, run_public_id: str) -> ProposalRecord:
+def proposal_record(
+    proposal: ResumeChangeProposal, run_public_id: str
+) -> ProposalRecord:
     snapshot = parse_resume_snapshot(
         proposal.proposed_data_json, proposal.proposed_style_json
     )
@@ -62,6 +73,12 @@ def proposal_record(proposal: ResumeChangeProposal, run_public_id: str) -> Propo
         data=snapshot.data,
         style=snapshot.style,
         summary=proposal.summary,
+        proposal_mode=proposal.proposal_mode,
+        target=proposal.target_locator_json,
+        diagnosis=proposal.diagnosis_json,
+        operations=proposal.operations_json or [],
+        rationale=proposal.rationale_json or [],
+        source_refs=proposal.source_refs_json or [],
         status=proposal.status,
         applied_lock_version=proposal.applied_lock_version,
         expires_at=proposal.expires_at,
@@ -167,14 +184,17 @@ def create_run(
     )
     db.add(run)
     db.flush()
-    sequence_no = int(
-        db.scalar(
-            select(func.coalesce(func.max(AgentMessage.sequence_no), 0)).where(
-                AgentMessage.session_id == session.id
+    sequence_no = (
+        int(
+            db.scalar(
+                select(func.coalesce(func.max(AgentMessage.sequence_no), 0)).where(
+                    AgentMessage.session_id == session.id
+                )
             )
+            or 0
         )
-        or 0
-    ) + 1
+        + 1
+    )
     db.add(
         AgentMessage(
             session_id=session.id,
@@ -252,6 +272,102 @@ def create_proposal(
     return proposal
 
 
+def create_scoped_proposal(
+    db: Session,
+    *,
+    run: AgentRun,
+    session: AgentSession,
+    payload: object,
+    ttl_days: int,
+    fingerprint_secret: str,
+) -> ResumeChangeProposal:
+    if session.resume_id is None:
+        raise ApiError(409, "AGENT_RESUME_REQUIRED")
+    resume = db.scalar(
+        select(Resume)
+        .where(Resume.id == session.resume_id, Resume.user_id == session.user_id)
+        .with_for_update()
+    )
+    if resume is None:
+        raise ApiError(404, "RESUME_NOT_FOUND")
+    existing = db.scalar(
+        select(ResumeChangeProposal).where(
+            ResumeChangeProposal.run_id == run.id,
+            ResumeChangeProposal.call_key == payload.call_key,
+        )
+    )
+    if existing is not None:
+        return existing
+    existing_mode = db.scalar(
+        select(ResumeChangeProposal.proposal_mode).where(
+            ResumeChangeProposal.run_id == run.id,
+            ResumeChangeProposal.proposal_mode != "legacy_snapshot",
+        )
+    )
+    if existing_mode is not None and existing_mode != payload.mode:
+        raise ApiError(409, "SKILL_MODE_CONFLICT")
+    if (
+        payload.target.resume_id != str(resume.id)
+        or payload.target.base_lock_version != resume.lock_version
+    ):
+        raise ApiError(409, "TARGET_STALE")
+    verify_diagnosis_fingerprint(
+        payload.diagnosis, payload.diagnosis_fingerprint, fingerprint_secret
+    )
+    if payload.diagnosis.get("target") != payload.target.model_dump(mode="json"):
+        raise ApiError(422, "DIAGNOSIS_REQUIRED")
+    source_refs = validate_source_ids(
+        db, user_id=session.user_id, source_ids=payload.source_ids
+    )
+    diagnosed_source_ids = sorted(
+        item.get("source_id")
+        for item in payload.diagnosis.get("source_refs", [])
+        if isinstance(item, dict) and isinstance(item.get("source_id"), str)
+    )
+    if diagnosed_source_ids != sorted(payload.source_ids):
+        raise ApiError(422, "DIAGNOSIS_REQUIRED")
+    if payload.mode == "generate_from_materials" and not source_refs:
+        raise ApiError(422, "SOURCE_REQUIRED")
+    snapshot = parse_resume_snapshot(resume.data_json, resume.style_json)
+    target_content(resume, snapshot.data, payload.target, "target")
+    markdown = editor_markdown(snapshot.data)
+    if markdown is None:
+        raise ApiError(422, "TARGET_INVALID")
+    updated_markdown = apply_operations(
+        markdown,
+        mode=payload.mode,
+        main_target=payload.target,
+        operations=payload.operations,
+    )
+    updated_snapshot = parse_resume_snapshot(
+        replace_editor_markdown(snapshot.data, updated_markdown), snapshot.style
+    )
+    proposal = ResumeChangeProposal(
+        public_id=str(uuid4()),
+        run_id=run.id,
+        call_key=payload.call_key,
+        resume_id=resume.id,
+        user_id=session.user_id,
+        base_lock_version=resume.lock_version,
+        proposed_data_json=updated_snapshot.data.model_dump(mode="json"),
+        proposed_style_json=updated_snapshot.style.model_dump(mode="json"),
+        summary=payload.summary.strip(),
+        proposal_mode=payload.mode,
+        target_locator_json=payload.target.model_dump(mode="json"),
+        target_content_hash=payload.target.expected_text_hash,
+        diagnosis_json=payload.diagnosis,
+        operations_json=[item.model_dump(mode="json") for item in payload.operations],
+        rationale_json=payload.rationale,
+        source_refs_json=source_refs,
+        status="pending",
+        expires_at=utc_now() + timedelta(days=ttl_days),
+    )
+    db.add(proposal)
+    db.commit()
+    db.refresh(proposal)
+    return proposal
+
+
 def confirm_proposal(
     db: Session, *, public_id: str, user_id: int, version_limit: int
 ) -> tuple[ResumeChangeProposal, Resume]:
@@ -287,6 +403,15 @@ def confirm_proposal(
         proposal.status = "conflicted"
         db.commit()
         raise ApiError(409, "RESUME_EDIT_CONFLICT")
+    if proposal.target_locator_json is not None:
+        try:
+            current = parse_resume_snapshot(resume.data_json, resume.style_json)
+            target = ResumeTargetLocator.model_validate(proposal.target_locator_json)
+            target_content(resume, current.data, target, "target")
+        except (ApiError, ValueError):
+            proposal.status = "conflicted"
+            db.commit()
+            raise ApiError(409, "TARGET_STALE")
     snapshot = parse_resume_snapshot(
         proposal.proposed_data_json, proposal.proposed_style_json
     )
@@ -312,7 +437,9 @@ def confirm_proposal(
     return proposal, resume
 
 
-def reject_proposal(db: Session, *, public_id: str, user_id: int) -> ResumeChangeProposal:
+def reject_proposal(
+    db: Session, *, public_id: str, user_id: int
+) -> ResumeChangeProposal:
     proposal = db.scalar(
         select(ResumeChangeProposal)
         .where(
@@ -363,9 +490,7 @@ def delete_resume_agent_data(db: Session, *, resume_id: int, user_id: int) -> No
     db.execute(delete(AgentSession).where(AgentSession.id.in_(session_ids)))
 
 
-def upsert_tool_event(
-    db: Session, *, run: AgentRun, payload: object
-) -> AgentToolCall:
+def upsert_tool_event(db: Session, *, run: AgentRun, payload: object) -> AgentToolCall:
     # A run-scoped lock serializes first-write retries as well as subsequent
     # transitions without introducing a database foreign key.
     locked_run_status = db.scalar(

@@ -433,38 +433,6 @@ export function PageArrangementControl({
   );
 }
 
-export function WorkbenchZoomControl({
-  scale,
-  autoFit,
-  onChange,
-  onReset,
-  disabled,
-}: {
-  scale: number;
-  autoFit?: boolean;
-  onChange: (scale: number) => void;
-  onReset: () => void;
-  disabled?: boolean;
-}) {
-  const minScale = 0.1;
-  const maxScale = 1.6;
-  const step = 0.08;
-  const changeBy = (direction: -1 | 1) => {
-    const nextScale = Math.min(maxScale, Math.max(minScale, scale + direction * step));
-    onChange(Number(nextScale.toFixed(2)));
-  };
-
-  return (
-    <div className="workbench-header-zoom" role="group" aria-label="预览缩放" title={autoFit ? "当前按左右两页自动适配工作区" : "预览缩放不影响 PDF 排版"}>
-      <div className="workbench-zoom-control">
-        <button type="button" aria-label="简历缩放减小" disabled={disabled || scale <= minScale} onClick={() => changeBy(-1)}><Minus aria-hidden="true" size={14} /></button>
-        <button type="button" aria-label="简历缩放增大" disabled={disabled || scale >= maxScale} onClick={() => changeBy(1)}><Plus aria-hidden="true" size={14} /></button>
-        <button type="button" className="workbench-zoom-reset" disabled={disabled} onClick={onReset}>{autoFit ? "已适配" : "适应"}</button>
-      </div>
-    </div>
-  );
-}
-
 export function ZoomFeedback({ scale }: { scale: number }) {
   return <div className="workbench-zoom-feedback" role="status" aria-live="polite">{Math.round(scale * 100)}%</div>;
 }
@@ -686,6 +654,7 @@ export function ResumeWorkbench() {
   const settings = useResumeStore((state) => state.settings);
   const data = useResumeStore((state) => state.data);
   const style = useResumeStore((state) => state.style);
+  const user = useResumeStore((state) => state.user);
   const updateSettings = useResumeStore((state) => state.updateSettings);
   const previewScale = useResumeStore((state) => state.previewScale);
   const setPreviewScale = useResumeStore((state) => state.setPreviewScale);
@@ -1096,6 +1065,15 @@ export function ResumeWorkbench() {
     return true;
   };
 
+  const prepareAgentRun = async () => {
+    await saveCurrentResume();
+    if (useResumeStore.getState().error) {
+      setToast({ label: "当前草稿保存失败，智能助手没有读取所选内容" });
+      return false;
+    }
+    return true;
+  };
+
   const refreshAppliedAgentProposal = async () => {
     if (!activeResumeId || !editor) return;
     await loadResume(activeResumeId);
@@ -1117,22 +1095,6 @@ export function ResumeWorkbench() {
           </div>
           <div className="workbench-header-center">
             <input autoComplete="off" className="workbench-title" name="resume-title" value={title} onChange={(event) => setTitle(event.target.value)} aria-label="简历标题" disabled={versionOperationPending} />
-            <WorkbenchZoomControl
-              scale={horizontalMode ? renderedPreviewScale : previewScale}
-              autoFit={horizontalMode && horizontalScaleOverride === null}
-              disabled={versionOperationPending}
-              onChange={(scale) => {
-                if (horizontalMode) setHorizontalScaleOverride(scale);
-                else setPreviewScale(scale);
-                showZoomFeedback(scale);
-              }}
-              onReset={() => {
-                const scale = horizontalMode ? horizontalAutoFitScale : 1;
-                if (horizontalMode) setHorizontalScaleOverride(null);
-                else setPreviewScale(1);
-                showZoomFeedback(scale);
-              }}
-            />
             <WorkbenchSaveStatus dirty={dirty} saveStatus={saveStatus} />
           </div>
           <div className="workbench-header-actions">
@@ -1176,8 +1138,8 @@ export function ResumeWorkbench() {
               resumeId={activeResumeId}
               defaultFontSize={settings.fontSize}
               onNotice={(label) => setToast({ label })}
-              onAgentAction={(instruction, selectedText) => {
-                setAgentDraft({ id: Date.now(), instruction, selectedText });
+              onAgentAction={(instruction, selectionContext) => {
+                setAgentDraft({ id: Date.now(), instruction, selectionContext });
                 setDrawerMode("agent");
               }}
             />
@@ -1340,6 +1302,9 @@ export function ResumeWorkbench() {
                     resumeId={activeResumeId}
                     currentData={data}
                     currentStyle={style}
+                    userAvatarUrl={user?.avatar_url}
+                    userDisplayName={user?.nickname || user?.email || "用户"}
+                    onBeforeRun={prepareAgentRun}
                     onBeforeConfirm={prepareAgentProposalConfirmation}
                     onApplied={refreshAppliedAgentProposal}
                     onClose={() => setDrawerMode(null)}

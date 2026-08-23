@@ -5,7 +5,12 @@ from sqlalchemy.orm import Session
 
 from linkcv.core.database import get_db, utc_now
 from linkcv.core.errors import ApiError
-from linkcv.modules.agent.models import AgentMessage, AgentRun, AgentSession, ResumeChangeProposal
+from linkcv.modules.agent.models import (
+    AgentMessage,
+    AgentRun,
+    AgentSession,
+    ResumeChangeProposal,
+)
 from linkcv.modules.agent.pi_client import (
     cancel_pi_run,
     check_pi_readiness,
@@ -139,18 +144,23 @@ def send_agent_message(
         timeout_seconds=request.app.state.settings.agent_run_timeout_seconds,
     )
     if not created:
+
         async def replay():
             event_status = "completed" if run.status == "succeeded" else run.status
             payload: dict[str, object] = {"runId": run.public_id, "replayed": True}
             if run.status == "running":
                 event_status = "failed"
                 payload["error"] = "AGENT_RUN_IN_PROGRESS"
-            yield sse_event(
-                f"run.{event_status}", payload
-            )
+            yield sse_event(f"run.{event_status}", payload)
+
         return StreamingResponse(replay(), media_type="text/event-stream")
     return StreamingResponse(
-        stream_pi_run(request.app, run.public_id, payload.content.strip()),
+        stream_pi_run(
+            request.app,
+            run.public_id,
+            payload.content.strip(),
+            payload.selection_context,
+        ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

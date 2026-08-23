@@ -374,6 +374,9 @@ function markedText(node: JSONContent) {
 function nodeText(node: JSONContent): string {
   if (node.type === "text") return markedText(node);
   if (node.type === "hardBreak") return "\n";
+  if (node.type === "resumeBlockAnchor" && typeof node.attrs?.blockId === "string") {
+    return `[[linkcv-block:${node.attrs.blockId}]]`;
+  }
   if (node.type === "inlineIcon" && isInlineIconName(node.attrs?.name)) return inlineIconMarkdown(node.attrs.name);
   return (node.content ?? []).map(nodeText).join("");
 }

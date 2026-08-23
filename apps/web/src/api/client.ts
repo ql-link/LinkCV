@@ -128,6 +128,14 @@ export type AgentMessage = {
   created_at: string;
 };
 
+export type AgentSelectionContext = {
+  block_ids: string[];
+  from: number;
+  to: number;
+  selected_text: string;
+  selected_text_hash: string;
+};
+
 export type AgentSession = {
   id: string;
   resume_id: string | null;
@@ -147,6 +155,17 @@ export type AgentProposal = {
   data: ResumeDocumentV1;
   style: ResumeStyleV1;
   summary: string;
+  proposal_mode?: "legacy_snapshot" | "polish_local" | "rewrite_entry_star" | "generate_from_materials";
+  target?: Record<string, unknown> | null;
+  diagnosis?: Record<string, unknown> | null;
+  operations?: Array<{
+    op: "replace_target_text" | "insert_after_target";
+    target: Record<string, unknown>;
+    new_text: string;
+    expected_text_hash: string;
+  }>;
+  rationale?: Array<Record<string, string>>;
+  source_refs?: Array<Record<string, unknown>>;
   status: "pending" | "applied" | "rejected" | "expired" | "conflicted";
   applied_lock_version: number | null;
   expires_at: string;
@@ -716,7 +735,7 @@ async function requestBlob(path: string, retryAuth = true): Promise<Blob> {
 
 async function streamAgentMessage(
   sessionId: string,
-  payload: { content: string; idempotency_key: string },
+  payload: { content: string; idempotency_key: string; selection_context?: AgentSelectionContext },
   signal: AbortSignal,
   onEvent: (event: AgentStreamEvent) => void,
   retryAuth = true,

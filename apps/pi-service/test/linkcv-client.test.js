@@ -31,3 +31,36 @@ test("readiness calls the protected LinkCV internal endpoint", async (context) =
   assert.equal(captured.url, "http://linkcv:8000/internal/agent/readiness");
   assert.equal(captured.options.headers.Authorization, "Bearer internal-token");
 });
+
+test("scoped tools call run-bound LinkCV endpoints", async (context) => {
+  const originalFetch = globalThis.fetch;
+  context.after(() => { globalThis.fetch = originalFetch; });
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options });
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  const client = createLinkCVClient(
+    { linkcvBaseUrl: "http://linkcv:8000", linkcvToken: "internal-token", toolTimeoutMs: 1000 },
+    "run/with spaces",
+    new AbortController().signal,
+  );
+
+  await client.resolveTarget({ quoted_text: "目标" });
+  await client.scopedContext({ target: { resume_id: "1" }, scope: "target" });
+  await client.searchMaterials({ query: "Java" });
+  await client.diagnose({ target: { resume_id: "1" }, scope: "target" });
+  await client.scopedProposal({ mode: "polish_local" });
+
+  assert.deepEqual(calls.map((call) => new URL(call.url).pathname), [
+    "/internal/agent/runs/run%2Fwith%20spaces/targets:resolve",
+    "/internal/agent/runs/run%2Fwith%20spaces/context:read",
+    "/internal/agent/runs/run%2Fwith%20spaces/materials:search",
+    "/internal/agent/runs/run%2Fwith%20spaces/diagnoses",
+    "/internal/agent/runs/run%2Fwith%20spaces/proposals:v2",
+  ]);
+  assert.ok(calls.every((call) => call.options.method === "POST"));
+});

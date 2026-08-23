@@ -86,13 +86,13 @@ describe("行首图标", () => {
       extensions: resumeEditorExtensions,
       content: "<p>/图标示例大学</p>",
     });
-    editor.commands.setTextSelection(4);
+    editor.commands.setTextSelection(5);
 
     render(
       <SlashCommandMenu
         editor={editor}
         resumeId="42"
-        state={{ x: 10, y: 10, query: "图标", replaceRange: { from: 1, to: 4 } }}
+        state={{ x: 10, y: 10, query: "图标", replaceRange: { from: 2, to: 5 } }}
         onClose={onClose}
         onNotice={vi.fn()}
       />,
@@ -102,15 +102,21 @@ describe("行首图标", () => {
     await user.click(screen.getByRole("option", { name: "学校" }));
 
     const paragraph = editor.getJSON().content?.[0];
-    expect(paragraph?.content?.[0]).toMatchObject({ type: "inlineIcon", attrs: { name: "GraduationCap" } });
-    expect(paragraph?.content?.[1]?.text).toBe(" 示例大学");
+    expect(paragraph?.content?.find((node) => node.type === "inlineIcon")).toMatchObject({
+      type: "inlineIcon",
+      attrs: { name: "GraduationCap" },
+    });
+    expect(paragraph?.content?.find((node) => node.type === "text")?.text).toBe(" 示例大学");
     expect(editor.state.selection.empty).toBe(true);
-    expect(editor.state.selection.from).toBe(3);
+    expect(editor.state.selection.$from.parentOffset).toBe(3);
     expect(onClose).toHaveBeenCalledOnce();
 
     const markdown = editorDocumentToMarkdown(editor.getJSON());
     const restored = new Editor({ extensions: resumeEditorExtensions, content: renderResumeMarkdown(markdown) });
-    expect(restored.getJSON().content?.[0]?.content?.[0]).toMatchObject({ type: "inlineIcon", attrs: { name: "GraduationCap" } });
+    expect(restored.getJSON().content?.[0]?.content?.find((node) => node.type === "inlineIcon")).toMatchObject({
+      type: "inlineIcon",
+      attrs: { name: "GraduationCap" },
+    });
     restored.destroy();
     editor.destroy();
   });

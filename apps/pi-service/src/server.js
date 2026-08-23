@@ -104,7 +104,15 @@ const server = createServer(async (request, response) => {
         !message ||
         !["user", "assistant"].includes(message.role) ||
         typeof message.content !== "string"
-      )
+      ) ||
+      (payload.selectionContext != null && (
+        !Array.isArray(payload.selectionContext.block_ids) ||
+        payload.selectionContext.block_ids.length === 0 ||
+        typeof payload.selectionContext.from !== "number" ||
+        typeof payload.selectionContext.to !== "number" ||
+        typeof payload.selectionContext.selected_text !== "string" ||
+        typeof payload.selectionContext.selected_text_hash !== "string"
+      ))
     ) {
       return json(response, 400, { error: "INVALID_AGENT_RUN" });
     }
@@ -130,6 +138,7 @@ const server = createServer(async (request, response) => {
         runId: payload.runId,
         content: payload.content.trim(),
         history: payload.history ?? [],
+        selectionContext: payload.selectionContext ?? null,
         emit: (type, data) => writeEvent(response, type, data),
         signal: controller.signal,
       });
@@ -143,6 +152,14 @@ const server = createServer(async (request, response) => {
         "AGENT_MODEL_TIMEOUT",
         "AGENT_MODEL_REQUEST_FAILED",
         "AGENT_EMPTY_RESPONSE",
+        "WORKFLOW_SKILL_REQUIRED",
+        "TARGET_RESOLUTION_REQUIRED",
+        "DIAGNOSIS_REQUIRED",
+        "SKILL_MODE_CONFLICT",
+        "TARGET_STALE",
+        "PATCH_OUT_OF_SCOPE",
+        "SOURCE_REQUIRED",
+        "SOURCE_FORBIDDEN",
       ]);
       writeEvent(response, cancelled ? "run.cancelled" : "run.failed", {
         runId: payload.runId,
