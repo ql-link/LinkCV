@@ -511,3 +511,19 @@ contracts:
       - path: .env.development
         pattern: '(?m)^MINIO_BUCKET=linkcv$'
         message: LinkCV Dev 必须使用独立 linkcv Bucket
+
+  - id: desktop-shell-window-contract
+    description: 桌面壳固定无标题栏沉浸形态、隐藏滚动条、顶部拖动区，并以工作区为入口跳过宣传落地页
+    assertions:
+      - path: apps/desktop/src/main.ts
+        pattern: 'titleBarStyle: "hiddenInset"'
+        message: 桌面壳窗口必须保持无标题栏沉浸形态（红绿灯内嵌，不显示横栏与程序名）
+      - path: apps/desktop/src/main.ts
+        pattern: '-webkit-app-region: drag'
+        message: 桌面壳必须注入顶部透明拖动区，保证无标题栏窗口可移动
+      - path: apps/desktop/src/main.ts
+        pattern: '::-webkit-scrollbar \{[\s\S]*width: 0;[\s\S]*height: 0;'
+        message: 桌面壳必须注入隐藏滚动条样式（滚动能力保留，不显示竖条）
+      - path: apps/desktop/src/config.ts
+        pattern: 'PACKAGE_ENTRY_PATH = "/resumes"'
+        message: 打包版必须以工作区为入口跳过宣传落地页（浏览器端落地页行为不变）

@@ -5,6 +5,7 @@
 | 模块 | 位置 | 当前职责 |
 | --- | --- | --- |
 | Web | `apps/web` | React 19、TypeScript、Vite 前端，以及简历和临时 JD 管理页面 |
+| Desktop shell | `apps/desktop` | Electron macOS 桌面壳：加载线上 LinkCV Web 端（开发窗口连本地 Vite，打包产物按目标环境连 Dev 或生产），与业务代码和后端零耦合；窗口采用无标题栏沉浸形态，业务迭代不需要修改壳。打包、环境区分（本地/开发版/正式版）与产物管理由 `desktop-release` Skill 引导 |
 | Browser extension | `apps/extension` | WXT、React、TypeScript Chrome MV3 插件；读取当前 BOSS 详情页并提交确认后的采集字段 |
 | WeChat miniprogram | `apps/miniprogram` | 原生小程序，界面采用与 Web 内部功能区同源 `--ui-*` Token 的小屏简洁单列布局与蓝色 accent 主操作，四个主页面统一自定义导航并按状态栏高度动态留白；冷启动进入游客可浏览的首页（标题、虚构信息的仿真示例简历、登录入口依次排布），登录由用户主动进入登录页并确认平台隐私保护指引后完成，可随时暂不登录返回；扫码进入独立确认页（与小程序登录页分离，各自带单行用途说明）确认或取消网页登录，登录后以紧凑列表只读查看本人简历并以智能一页图片阅读详情，并可在资料页维护可选头像与昵称（居中头像、文字提示更换） |
 | Backend | `apps/backend` | FastAPI、JWT/Redis 鉴权、简历与 JD API、MinIO 图片接口、SQLAlchemy 模型和 Alembic 迁移 |
