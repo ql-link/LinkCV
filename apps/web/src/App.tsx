@@ -14,6 +14,7 @@ import { ResumeTemplatesPage } from "./features/templates/ResumeTemplatesPage";
 import { JobCenterPage } from "./features/jobs/JobCenterPage";
 import { JobDetailPage } from "./features/jobs/JobDetailPage";
 import { JobFormPage } from "./features/jobs/JobFormPage";
+import { InterviewCenterPage } from "./features/interviews/InterviewCenterPage";
 import { LandingPage } from "./features/landing/LandingPage";
 import { SharePage } from "./features/share/SharePage";
 import { ResumeWorkbench } from "./features/workbench/ResumeWorkbench";
@@ -22,6 +23,9 @@ import { useResumeStore } from "./store/resumeStore";
 
 export function App() {
   const route = useAppRoute();
+  const isInterviewMockPreview = import.meta.env.DEV
+    && route.kind === "interviews"
+    && new URLSearchParams(window.location.search).get("mock") === "1";
   const routeResumeId = route.kind === "editor" ? route.resumeId : null;
   const isAdminArea = route.kind === "admin" || route.kind === "adminLogin";
   const [routeError, setRouteError] = useState<{ resumeId: string; message: string } | null>(null);
@@ -36,12 +40,12 @@ export function App() {
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
 
   useEffect(() => {
-    if (isAdminArea) return;
+    if (isAdminArea || isInterviewMockPreview) return;
     void hydrate();
-  }, [hydrate, isAdminArea]);
+  }, [hydrate, isAdminArea, isInterviewMockPreview]);
 
   useEffect(() => {
-    if (isAdminArea) return;
+    if (isAdminArea || isInterviewMockPreview) return;
     if (!dirty || !activeResumeId || versionOperationPending) return;
 
     const timer = window.setTimeout(() => {
@@ -49,10 +53,10 @@ export function App() {
     }, 1200);
 
     return () => window.clearTimeout(timer);
-  }, [activeResumeId, dirty, editVersion, isAdminArea, saveCurrentResume, versionOperationPending]);
+  }, [activeResumeId, dirty, editVersion, isAdminArea, isInterviewMockPreview, saveCurrentResume, versionOperationPending]);
 
   useEffect(() => {
-    if (isAdminArea) return;
+    if (isAdminArea || isInterviewMockPreview) return;
     if (authStatus === "checking") return;
 
     if (authStatus === "guest") {
@@ -65,6 +69,7 @@ export function App() {
         || route.kind === "jobCreate"
         || route.kind === "jobDetail"
         || route.kind === "jobEdit"
+        || route.kind === "interviews"
         || route.kind === "datasets"
         || route.kind === "account"
       ) {
@@ -79,7 +84,7 @@ export function App() {
     if (route.kind === "auth") {
       navigateTo("/resumes", { replace: true });
     }
-  }, [authStatus, route.kind]);
+  }, [authStatus, isInterviewMockPreview, route.kind]);
 
   useEffect(() => {
     if (authStatus !== "authenticated" || !routeResumeId) return;
@@ -143,6 +148,14 @@ export function App() {
     return <SharePage token={route.token} />;
   }
 
+  if (isInterviewMockPreview && route.kind === "interviews") {
+    return (
+      <WorkspaceLayout active="interviews">
+        <InterviewCenterPage view={route.view} />
+      </WorkspaceLayout>
+    );
+  }
+
   if (authStatus === "checking") {
     return <PageLoading label="正在加载简历工作台…" scope="page" />;
   }
@@ -179,6 +192,7 @@ export function App() {
     || route.kind === "jobCreate"
     || route.kind === "jobDetail"
     || route.kind === "jobEdit"
+    || route.kind === "interviews"
     || route.kind === "datasets"
     || route.kind === "account"
   ) {
@@ -190,6 +204,8 @@ export function App() {
         ? "account"
         : route.kind === "datasets"
           ? "datasets"
+          : route.kind === "interviews"
+            ? "interviews"
           : "jobs";
 
     return (
@@ -200,6 +216,7 @@ export function App() {
         {route.kind === "jobCreate" && <JobFormPage mode="create" />}
         {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}
         {route.kind === "jobEdit" && <JobFormPage mode="edit" jobId={route.jobId} />}
+        {route.kind === "interviews" && <InterviewCenterPage view={route.view} />}
         {route.kind === "datasets" && <DatasetsPage />}
         {route.kind === "account" && <AccountPage />}
       </WorkspaceLayout>
