@@ -1,10 +1,12 @@
 .page {
   min-height: 100vh;
-  padding: 0 32rpx calc(52rpx + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  padding: 0 32rpx calc(48rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 
-.topbar {
+.brand-row {
   height: 116rpx;
   display: flex;
   align-items: center;
@@ -12,107 +14,89 @@
 }
 
 .readonly-tag {
-  padding: 8rpx 18rpx;
+  padding: 6rpx 16rpx;
   border: 1rpx solid var(--ui-border);
   border-radius: 999rpx;
   color: var(--ui-text-muted);
-  font-size: 20rpx;
+  font-size: 19rpx;
 }
 
 .page-head {
-  display: flex;
-  flex-direction: column;
-  padding: 8rpx 8rpx 28rpx;
+  padding: 8rpx 8rpx 26rpx;
 }
 
 .page-title {
   color: var(--ui-foreground);
   font-size: 44rpx;
-  font-weight: 650;
+  font-weight: 700;
   letter-spacing: -1rpx;
   line-height: 1.3;
   word-break: break-all;
 }
 
 .page-meta {
-  display: flex;
-  align-items: center;
-  margin-top: 14rpx;
+  display: block;
+  margin-top: 12rpx;
   color: var(--ui-text-muted);
   font-size: 22rpx;
 }
 
-.meta-divider {
-  margin: 0 12rpx;
-  color: var(--ui-border-strong);
-}
-
-.card-list {
+.resume-list {
   display: flex;
   flex-direction: column;
-  gap: 22rpx;
+  gap: 16rpx;
 }
 
-.resume-card {
+.resume-item {
   display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  align-items: center;
+  padding: 24rpx 24rpx;
   border: 1rpx solid var(--ui-border);
-  border-radius: 24rpx;
+  border-radius: 18rpx;
   background: var(--ui-surface);
   touch-action: manipulation;
 }
 
-.resume-card-pressed {
-  border-color: var(--ui-border-strong);
-  box-shadow: var(--ui-shadow-md);
-}
-
-.card-preview {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 30rpx 0 26rpx;
-  border-bottom: 1rpx solid var(--ui-border);
+.resume-item-pressed {
   background: var(--ui-surface-subtle);
 }
 
-.card-document {
-  width: 172rpx;
-  padding: 20rpx 18rpx;
-  border: 1rpx solid var(--ui-border-strong);
+.item-icon {
+  width: 56rpx;
+  height: 68rpx;
+  flex-shrink: 0;
+  padding: 10rpx 10rpx;
+  border: 1rpx solid var(--ui-border);
   border-radius: 8rpx;
-  background: var(--ui-surface);
-  box-shadow: var(--ui-shadow-sm);
+  box-sizing: border-box;
 }
 
-.doc-title {
-  width: 48%;
-  height: 11rpx;
-  margin-bottom: 13rpx;
-  border-radius: 999rpx;
-  background: var(--ui-foreground);
-}
-
-.doc-line {
-  height: 7rpx;
-  margin-top: 11rpx;
-  border-radius: 999rpx;
+.icon-line {
+  height: 5rpx;
+  border-radius: 4rpx;
   background: var(--ui-border-strong);
 }
 
-.doc-line.is-short {
-  width: 66%;
+.icon-line:first-child {
+  width: 60%;
+  margin-bottom: 8rpx;
+  background: var(--ui-text-subtle);
 }
 
-.card-meta {
+.icon-line.is-short {
+  width: 70%;
+  margin: 8rpx 0;
+}
+
+.item-copy {
+  min-width: 0;
+  flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 20rpx 24rpx 22rpx;
-  background: var(--ui-surface);
+  margin-left: 24rpx;
 }
 
-.card-name {
+.item-title {
   overflow: hidden;
   color: var(--ui-foreground);
   font-size: 28rpx;
@@ -121,42 +105,41 @@
   white-space: nowrap;
 }
 
-.card-time {
+.item-time {
   margin-top: 6rpx;
   overflow: hidden;
   color: var(--ui-text-muted);
-  font-size: 22rpx;
+  font-size: 21rpx;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.card-open {
-  margin-top: 18rpx;
-  color: var(--ui-accent);
-  font-size: 23rpx;
-  font-weight: 600;
+.item-arrow {
+  flex-shrink: 0;
+  margin-left: 16rpx;
+  color: var(--ui-text-subtle);
+  font-size: 36rpx;
+  line-height: 1;
 }
 
 .loading-list {
   display: flex;
   flex-direction: column;
-  gap: 22rpx;
+  gap: 16rpx;
 }
 
-.skeleton-card {
-  height: 168rpx;
+.skeleton-row {
   display: flex;
   align-items: center;
   padding: 24rpx;
   border: 1rpx solid var(--ui-border);
-  border-radius: 24rpx;
+  border-radius: 18rpx;
   background: var(--ui-surface);
-  box-sizing: border-box;
 }
 
-.skeleton-preview {
-  width: 96rpx;
-  height: 120rpx;
+.skeleton-icon {
+  width: 56rpx;
+  height: 68rpx;
   flex-shrink: 0;
   border-radius: 8rpx;
   background: var(--ui-surface-muted);
@@ -164,25 +147,25 @@
 
 .skeleton-copy {
   flex: 1;
-  margin-left: 26rpx;
+  margin-left: 24rpx;
 }
 
 .skeleton-line {
-  width: 58%;
-  height: 14rpx;
-  margin-top: 18rpx;
-  border-radius: 10rpx;
+  width: 56%;
+  height: 13rpx;
+  margin-top: 14rpx;
+  border-radius: 8rpx;
   background: var(--ui-surface-muted);
 }
 
 .skeleton-line.strong {
-  width: 76%;
-  height: 20rpx;
+  width: 74%;
+  height: 18rpx;
   margin-top: 0;
 }
 
 .loading-label {
-  margin-top: 8rpx;
+  margin-top: 6rpx;
   color: var(--ui-text-muted);
   font-size: 21rpx;
   text-align: center;
@@ -193,10 +176,10 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 420rpx;
+  min-height: 400rpx;
   padding: 48rpx 44rpx;
   border: 1rpx solid var(--ui-border);
-  border-radius: 24rpx;
+  border-radius: 18rpx;
   background: var(--ui-surface);
   box-sizing: border-box;
   text-align: center;
@@ -210,20 +193,65 @@
 
 .state-copy {
   max-width: 480rpx;
-  margin-top: 14rpx;
+  margin-top: 12rpx;
   color: var(--ui-text-muted);
   font-size: 23rpx;
   line-height: 1.7;
 }
 
 .state-action {
-  width: 340rpx;
-  margin-top: 30rpx;
+  width: 320rpx;
+  height: 84rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 32rpx 0 0;
+  padding: 0 28rpx;
+  border-radius: 16rpx;
+  background: var(--ui-primary);
+  color: var(--ui-primary-foreground);
+  font-size: 26rpx;
+  font-weight: 600;
+  line-height: 84rpx;
+  box-sizing: border-box;
+  touch-action: manipulation;
+}
+
+.state-action::after,
+.state-ghost::after {
+  border: 0;
+}
+
+.state-action-pressed {
+  background: var(--ui-primary-hover);
+}
+
+.state-ghost {
+  width: 320rpx;
+  height: 84rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 32rpx 0 0;
+  padding: 0 28rpx;
+  border: 1rpx solid var(--ui-border-strong);
+  border-radius: 16rpx;
+  background: var(--ui-secondary);
+  color: var(--ui-secondary-foreground);
+  font-size: 26rpx;
+  font-weight: 600;
+  line-height: 84rpx;
+  box-sizing: border-box;
+  touch-action: manipulation;
+}
+
+.state-ghost-pressed {
+  background: var(--ui-secondary-hover);
 }
 
 .page-footnote {
   display: block;
-  margin-top: 34rpx;
+  margin-top: 30rpx;
   color: var(--ui-text-subtle);
   font-size: 20rpx;
   text-align: center;

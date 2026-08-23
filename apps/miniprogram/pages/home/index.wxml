@@ -1,60 +1,45 @@
 <view class="page">
-  <view class="topbar">
+  <view class="brand-row">
     <view class="ui-brand">
       <image class="ui-brand-mark" src="/assets/linkcv-mark.png" mode="aspectFit" aria-hidden="true"></image>
       <text>LinkCV</text>
     </view>
-    <text class="topbar-tag">随身简历册</text>
   </view>
 
-  <view class="page-head">
-    <text class="page-title">你的简历，随时翻阅</text>
-    <text class="page-subtitle">在网页端创建和管理简历，打开小程序即可随身查看。</text>
-    <button class="ui-primary-button head-action" hover-class="ui-primary-button-pressed" bindtap="handlePrimaryAction">{{loggedIn ? '查看我的简历' : '微信登录查看简历'}}</button>
-    <text class="head-hint">登录前可自由浏览本页内容</text>
+  <view class="hero">
+    <text class="hero-title">你的简历
+随身翻阅</text>
+    <text class="hero-sub">在网页端创建简历，面试路上随时翻阅。</text>
+    <button class="hero-cta" hover-class="hero-cta-pressed" bindtap="handlePrimaryAction">{{loggedIn ? '查看我的简历' : '微信登录查看简历'}}</button>
+    <text class="hero-hint">登录前可自由浏览本页</text>
   </view>
 
-  <view class="sample-card">
-    <view class="sample-preview" aria-hidden="true">
-      <view class="sample-document">
-        <view class="doc-title"></view>
-        <view class="doc-line"></view>
-        <view class="doc-line is-short"></view>
-        <view class="doc-heading"></view>
-        <view class="doc-line"></view>
-        <view class="doc-line is-short"></view>
-      </view>
+  <view class="sample">
+    <view class="sample-paper" aria-hidden="true">
+      <view class="s-head"></view>
+      <view class="s-line"></view>
+      <view class="s-line is-short"></view>
+      <view class="s-line"></view>
+      <view class="s-line is-short"></view>
+      <view class="s-line"></view>
     </view>
-    <view class="sample-meta">
-      <text class="sample-name">张三 · 前端工程师简历</text>
-      <text class="sample-time">示例简历 · 结构化排版</text>
-      <view class="sample-actions">
-        <button class="sample-open" hover-class="sample-open-pressed" bindtap="handlePrimaryAction">{{loggedIn ? '打开我的简历' : '登录后查看你自己的'}}</button>
-      </view>
-    </view>
+    <text class="sample-hint">示例简历 · 登录后展示你的</text>
   </view>
-  <text class="sample-hint">以上为示例内容，登录后这里会展示你的真实简历</text>
 
-  <view class="feature-card">
-    <view class="feature-row">
-      <view class="feature-copy">
-        <text class="feature-title">网页端编辑</text>
-        <text class="feature-desc">多套模板与实时预览，在电脑上完成简历创作</text>
-      </view>
+  <view class="points">
+    <view class="point">
+      <text class="point-icon">✎</text>
+      <text class="point-label">网页端编辑</text>
     </view>
-    <view class="feature-row">
-      <view class="feature-copy">
-        <text class="feature-title">小程序随身查看</text>
-        <text class="feature-desc">面试前快速翻阅自己的简历内容，随时心中有数</text>
-      </view>
+    <view class="point">
+      <text class="point-icon">▤</text>
+      <text class="point-label">随身查看</text>
     </view>
-    <view class="feature-row is-last">
-      <view class="feature-copy">
-        <text class="feature-title">扫码安全登录网页</text>
-        <text class="feature-desc">在网页端扫码并于小程序确认，无需记忆额外密码</text>
-      </view>
+    <view class="point">
+      <text class="point-icon">⌘</text>
+      <text class="point-label">扫码登录网页</text>
     </view>
   </view>
 
-  <view class="page-footnote">简历数据仅在登录后加载 · 微信身份只用于登录</view>
+  <view class="footnote">简历数据仅在登录后加载 · 微信身份只用于登录</view>
 </view>
