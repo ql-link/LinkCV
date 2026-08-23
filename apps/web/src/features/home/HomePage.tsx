@@ -18,6 +18,7 @@ import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { RenameResumeDialog } from "./RenameResumeDialog";
 import { SharePanel } from "./SharePanel";
 import { ResumeImportDialog } from "./ResumeImportDialog";
+import { ResumeCreateDialog } from "./ResumeCreateDialog";
 
 type HomeScreenProps = {
   loading?: boolean;
@@ -27,7 +28,6 @@ type HomeScreenProps = {
   onOpen: (id: string) => void | Promise<void>;
   onRename: (id: string, title: string) => void | Promise<void>;
   onDelete: (id: string) => void | Promise<void>;
-  onCreate: () => void | Promise<void>;
   onDeleteImport: (id: string) => void | Promise<void>;
 };
 
@@ -54,6 +54,9 @@ function ImportTaskCard({
   onDelete?: () => void;
 }) {
   const stage = task.upload_status === "uploading" ? "正在上传" : "正在解析";
+  const stateLabel = failed
+    ? task.upload_status === "failed" ? "上传失败" : "解析失败"
+    : task.upload_status === "uploading" ? "上传中" : "解析中";
 
   return (
     <article
@@ -75,7 +78,7 @@ function ImportTaskCard({
           <span className="is-short" />
         </div>
         <div className="home-import-state">
-          <span className="home-import-state-label">未完成</span>
+          <span className="home-import-state-label">{stateLabel}</span>
           {!failed && (
             <div
               className="home-import-progress"
@@ -245,7 +248,6 @@ export function HomeScreen({
   onOpen,
   onRename,
   onDelete,
-  onCreate,
   onDeleteImport,
 }: HomeScreenProps) {
   const [query, setQuery] = useState("");
@@ -257,6 +259,7 @@ export function HomeScreen({
   const [renameError, setRenameError] = useState<string | null>(null);
   const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [notice, setNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
 
   const visibleResumes = useMemo(() => {
@@ -351,7 +354,7 @@ export function HomeScreen({
               className="dashboard-create"
               variant="outline"
               icon={<Plus size={15} />}
-              onClick={() => void onCreate()}
+              onClick={() => setCreateDialogOpen(true)}
             >
               新建简历
             </Button>
@@ -403,7 +406,7 @@ export function HomeScreen({
             </p>
             {!query && (
               <div className="empty-state-actions">
-                <Button icon={<Plus size={15} />} onClick={() => void onCreate()}>创建第一份简历</Button>
+                <Button icon={<Plus size={15} />} onClick={() => setCreateDialogOpen(true)}>创建第一份简历</Button>
                 <Button
                   variant="outline"
                   icon={<FileUp size={15} />}
@@ -457,6 +460,9 @@ export function HomeScreen({
           onAccepted={(title) => setNotice({ kind: "success", message: `已开始导入“${title}”。` })}
         />
       )}
+      {createDialogOpen && (
+        <ResumeCreateDialog onClose={() => setCreateDialogOpen(false)} />
+      )}
     </main>
   );
 }
@@ -502,7 +508,6 @@ export function HomePage() {
         resumes={resumes}
         activeImports={activeImports}
         failedImports={failedImports}
-        onCreate={() => navigateTo("/resumes/new")}
         onOpen={(id) => navigateTo(editorPath(id))}
         onRename={renameResume}
         onDelete={deleteResume}

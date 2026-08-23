@@ -77,6 +77,7 @@ required_secret_keys=(
   MINIO_ACCESS_KEY
   MINIO_SECRET_KEY
   LLM_CREDENTIAL_ENCRYPTION_KEYS
+  PI_SERVICE_TOKEN
   LINKPARSE_API_KEY
   RABBITMQ_URL
   PLUGIN_RELEASE_ORIGIN
@@ -141,12 +142,17 @@ rollback_old_application() {
   fi
   old_tag="${old_image#linkcv:}"
   if [[ "${old_image}" == linkcv:prod-* ]]; then
+    previous_compose_file="${backup_dir}/docker-compose.production.yml"
+    if [[ ! -f "${previous_compose_file}" ]]; then
+      echo "Previous Production compose file is unavailable" >&2
+      return 1
+    fi
     TAG="${old_tag}" \
     LINKCV_ENV_FILE="${backup_dir}/.env.production" \
     LINKCV_SECRET_ENV_FILE="${secret_env}" \
     LINKCV_DOCKER_NETWORK="${docker_network}" \
     LINKCV_HTTP_PORT="${http_port}" \
-      docker compose -f "${compose_file}" up -d --remove-orphans
+      docker compose -f "${previous_compose_file}" up -d --remove-orphans
   elif [[ -f "${old_compose_file}" ]]; then
     TAG="${old_tag}" \
     LINKCV_ENV_FILE="${deploy_dir}/.env" \
@@ -235,13 +241,16 @@ LINKCV_HTTP_PORT="${http_port}" \
 for _ in $(seq 1 30); do
   health_status="$(docker inspect --format='{{.State.Health.Status}}' linkcv 2>/dev/null || true)"
   worker_status="$(docker inspect --format='{{.State.Status}}' linkcv-worker 2>/dev/null || true)"
+  pi_health_status="$(docker inspect --format='{{.State.Health.Status}}' linkcv-pi 2>/dev/null || true)"
   promtail_status="$(docker inspect --format='{{.State.Status}}' linkcv-promtail 2>/dev/null || true)"
   if [[ "${health_status}" == "healthy" ]] && \
     [[ "${worker_status}" == "running" ]] && \
+    [[ "${pi_health_status}" == "healthy" ]] && \
     [[ "${promtail_status}" == "running" ]] && \
     curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null; then
     echo "Container health: ${health_status}"
     echo "Worker status: ${worker_status}"
+    echo "Pi Service health: ${pi_health_status}"
     echo "Promtail status: ${promtail_status}"
     docker image prune -f >/dev/null
     echo "Production deployed: ${image}:${tag}"
@@ -251,7 +260,7 @@ for _ in $(seq 1 30); do
   sleep 2
 done
 
-docker compose -f "${compose_file}" logs --tail=100 linkcv linkcv-worker promtail || true
+docker compose -f "${compose_file}" logs --tail=100 linkcv linkcv-worker linkcv-pi promtail || true
 echo "Production health check timed out; restoring previous application" >&2
 rollback_old_application || true
 cutover_started="false"

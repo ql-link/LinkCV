@@ -30,8 +30,8 @@
 .admin-login-context { position: relative; display: flex; min-height: 100%; flex-direction: column; overflow: hidden; background: #1d1d1f; padding: clamp(2rem, 3.4vw, 3.35rem); color: #f5f5f7; }
 .admin-wordmark, .sidebar-brand { display: inline-flex; align-items: center; gap: .7rem; color: inherit; font-size: 1.08rem; font-weight: 720; letter-spacing: -.02em; text-decoration: none; }
 .admin-login-context .ui-brand { color: #f5f5f7; }
-.admin-login-context .ui-brand-mark { background: #f5f5f7; }
-.admin-login-context .ui-brand-mark img { filter: brightness(0); }
+.admin-login-context .ui-brand-wordmark { filter: brightness(0) invert(1); }
+.admin-login-context .ui-brand-responsive-mark { display: none; }
 .login-context-copy { position: relative; z-index: 1; max-width: 25rem; margin: auto 0; padding: 3rem 0; will-change: transform, opacity; }
 .eyebrow, .page-eyebrow { display: inline-flex; align-items: center; gap: .45rem; color: var(--admin-muted); font-size: .72rem; font-weight: 680; letter-spacing: .08em; line-height: 1.2; text-transform: uppercase; }
 .login-access-label { display: inline-flex; align-items: center; gap: .5rem; color: rgba(245,245,247,.58); font-size: .66rem; font-weight: 700; letter-spacing: .11em; }
@@ -208,6 +208,9 @@
 .model-actions { display: flex; gap: .38rem; }
 .model-actions button { height: 2.2rem; border: 1px solid var(--admin-line); border-radius: .55rem; background: var(--surface-card); padding: 0 .65rem; color: var(--admin-ink); cursor: pointer; font-size: .62rem; }
 .model-actions button:disabled { cursor: wait; opacity: .58; }
+.model-actions .model-delete-button { border-color: color-mix(in srgb, #e53e3e 30%, var(--admin-line)); color: #b33636; }
+.model-actions .model-delete-button:hover { background: color-mix(in srgb, #e53e3e 8%, var(--surface-card)); }
+.model-actions button:focus-visible, .model-delete-dialog button:focus-visible { outline: 3px solid var(--accent-soft); outline-offset: 2px; }
 .model-test-ok, .model-test-error { display: flex; align-items: center; gap: .35rem; margin-bottom: 0 !important; }
 .model-test-ok { color: var(--admin-green) !important; }
 .model-test-error { color: #a5423a !important; }
@@ -913,6 +916,10 @@
 .plugin-admin-dialog h2 { margin-top: 0; }
 .plugin-admin-dialog > div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
 .plugin-admin-dialog .admin-danger-button { min-height: 2.6rem; padding: 0 1rem; }
+.model-delete-dialog > p { color: var(--admin-muted); line-height: 1.6; }
+.model-delete-dialog { overscroll-behavior: contain; }
+.model-delete-dialog > p strong { overflow-wrap: anywhere; color: var(--admin-ink); }
+.model-delete-dialog .llm-inline-error { margin: 1rem 0 0; }
 
 @media (max-width: 760px) {
   .plugin-page-heading { align-items: flex-start; flex-direction: column; }
