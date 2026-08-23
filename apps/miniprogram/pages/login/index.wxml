@@ -1,43 +1,33 @@
-<view class="page">
-  <view class="page-glow"></view>
+<view class="canvas">
+  <view class="canvas-grid"></view>
   <view class="topbar">
-    <view class="mini-brand">
-      <view class="mini-brand-mark">L</view>
-      <text class="mini-brand-name">LinkCV</text>
-    </view>
-    <text class="service-provider">微信安全登录</text>
-  </view>
-  <view class="content">
-    <view class="document-mark" aria-hidden="true">
-      <view class="document-sheet document-sheet-back"></view>
-      <view class="document-sheet document-sheet-front">
-        <view class="document-avatar">L</view>
-        <view class="document-line document-line-strong"></view>
-        <view class="document-line"></view>
-        <view class="document-line document-line-short"></view>
+    <view class="brand">
+      <view class="brand-mark">L</view>
+      <view class="brand-copy">
+        <text class="brand-name">LinkCV</text>
+        <text class="brand-sub">随 身 简 历 册</text>
       </view>
     </view>
-    <view class="eyebrow">LINKCV 微信登录</view>
-    <text class="title" wx:if="{{phase === 'onboarding' && !accountStatusReady}}">识别微信账号</text>
-    <text class="title" wx:elif="{{phase === 'onboarding' && accountRegistered}}">登录 LinkCV</text>
-    <text class="title" wx:elif="{{phase === 'onboarding'}}">注册 LinkCV</text>
-    <text class="title" wx:elif="{{phase === 'pending'}}">确认是你本人操作</text>
-    <text class="title" wx:elif="{{phase === 'confirmed'}}">网页已安全登录</text>
-    <text class="title" wx:elif="{{phase === 'cancelled'}}">本次登录已取消</text>
-    <text class="title" wx:elif="{{phase === 'expired'}}">登录请求已过期</text>
-    <text class="title" wx:elif="{{phase === 'error'}}">暂时无法确认</text>
-    <text class="title" wx:else>正在检查登录请求</text>
-    <view class="status-card status-{{phase}}">
+    <text class="topbar-tag">SIGN IN</text>
+  </view>
+  <view class="content">
+    <view class="head">
+      <text class="kicker">LINKCV · WECHAT LOGIN</text>
+      <text class="head-title" wx:if="{{!accountStatusReady}}">识别微信账号</text>
+      <text class="head-title" wx:elif="{{accountRegistered}}">登录 LinkCV</text>
+      <text class="head-title" wx:else>注册 LinkCV</text>
+    </view>
+    <view class="status-card paper-card">
       <view class="status-indicator">
         <view class="spinner" wx:if="{{loading || submitting}}"></view>
-        <text wx:else>{{phase === 'confirmed' ? '✓' : phase === 'cancelled' ? '×' : phase === 'pending' || phase === 'onboarding' ? '!' : '·'}}</text>
+        <text wx:else>·</text>
       </view>
       <text class="status-message">{{message}}</text>
     </view>
-    <view class="consent" wx:if="{{phase === 'onboarding' || phase === 'pending'}}">
+    <view class="consent">
       <checkbox-group bindchange="handleAgreementChange">
         <label class="agreement-row">
-          <checkbox class="agreement-checkbox" value="accepted" checked="{{agreementAccepted}}" color="#155fd7" />
+          <checkbox class="agreement-checkbox" value="accepted" checked="{{agreementAccepted}}" color="#18181b" />
           <view class="agreement-copy">我已阅读并同意 <text class="agreement-link" catchtap="openPrivacyContract">{{privacyContractName}}</text></view>
         </label>
       </checkbox-group>
@@ -45,29 +35,26 @@
       <text class="agreement-hint" wx:elif="{{!privacySupported}}">当前微信版本无法读取隐私指引，请升级微信后重试</text>
       <text class="agreement-hint" wx:elif="{{!agreementAccepted}}">勾选后才能继续</text>
     </view>
-    <view class="actions" wx:if="{{phase === 'onboarding' || phase === 'pending'}}">
+    <view class="actions">
       <button
         wx:if="{{privacyAuthorizationRequired}}"
         id="agree-btn"
-        class="btn-main"
-        hover-class="btn-main-pressed"
+        class="btn-primary"
+        hover-class="btn-primary-pressed"
         open-type="agreePrivacyAuthorization"
         bindagreeprivacyauthorization="handlePrivacyAuthorization"
-        disabled="{{submitting || !privacyReady || !privacySupported || !agreementAccepted || (phase === 'onboarding' && !accountStatusReady)}}"
-      >{{submitting ? '正在处理…' : phase === 'onboarding' ? (accountRegistered ? '同意并登录' : '同意并注册') : '同意并确认网页登录'}}</button>
+        disabled="{{submitting || !privacyReady || !privacySupported || !agreementAccepted || !accountStatusReady}}"
+      >{{submitting ? '正在处理…' : accountRegistered ? '同意并登录' : '同意并注册'}}</button>
       <button
         wx:else
-        class="btn-main"
-        hover-class="btn-main-pressed"
+        class="btn-primary"
+        hover-class="btn-primary-pressed"
         bindtap="handlePrimaryAction"
-        disabled="{{submitting || !privacyReady || !privacySupported || !agreementAccepted || (phase === 'onboarding' && !accountStatusReady)}}"
-      >{{submitting ? '正在处理…' : phase === 'onboarding' ? (accountRegistered ? '同意并登录' : '同意并注册') : '同意并确认网页登录'}}</button>
-      <button class="btn-secondary" wx:if="{{phase === 'onboarding' && accountStatusError}}" hover-class="btn-secondary-pressed" bindtap="loadAccountStatus" disabled="{{submitting}}">重新识别账号</button>
-      <button class="btn-secondary" wx:if="{{phase === 'pending'}}" hover-class="btn-secondary-pressed" bindtap="handleCancel" disabled="{{submitting}}">取消本次登录</button>
-    </view>
-    <view class="actions" wx:elif="{{phase === 'expired' || phase === 'error'}}">
-      <button class="btn-secondary btn-retry" hover-class="btn-secondary-pressed" bindtap="loadStatus">重新检查</button>
+        disabled="{{submitting || !privacyReady || !privacySupported || !agreementAccepted || !accountStatusReady}}"
+      >{{submitting ? '正在处理…' : accountRegistered ? '同意并登录' : '同意并注册'}}</button>
+      <button class="btn-ghost" wx:if="{{accountStatusError}}" hover-class="btn-ghost-pressed" bindtap="loadAccountStatus" disabled="{{submitting}}">重新识别账号</button>
+      <button class="btn-ghost" hover-class="btn-ghost-pressed" bindtap="handleDismiss" disabled="{{submitting}}">暂不登录</button>
     </view>
   </view>
-  <view class="privacy-note">微信身份仅用于登录和保护你的简历数据</view>
+  <view class="footnote">微信身份仅用于登录和保护你的简历数据</view>
 </view>

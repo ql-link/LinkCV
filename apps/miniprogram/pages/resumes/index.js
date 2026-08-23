@@ -5,21 +5,46 @@ const { formatUpdatedAt } = require("../../utils/resume");
 Page({
   data: {
     loading: true,
+    guest: false,
     error: "",
     items: [],
     user: null,
   },
 
   onLoad() {
+    if (!auth.hasSession()) {
+      this.enterGuestMode();
+      return;
+    }
     this.loadPage();
   },
 
+  onShow() {
+    if (!auth.hasSession()) {
+      if (!this.data.guest) this.enterGuestMode();
+      return;
+    }
+    if (this.data.guest) this.loadPage();
+  },
+
   onPullDownRefresh() {
+    if (!auth.hasSession()) {
+      wx.stopPullDownRefresh();
+      return;
+    }
     this.loadPage().finally(() => wx.stopPullDownRefresh());
   },
 
+  enterGuestMode() {
+    this.setData({ guest: true, loading: false, error: "", items: [], user: null });
+  },
+
+  goLogin() {
+    wx.navigateTo({ url: "/pages/login/index" });
+  },
+
   async loadPage() {
-    this.setData({ loading: true, error: "" });
+    this.setData({ loading: true, error: "", guest: false });
     try {
       const user = await auth.ensureSession();
       const records = await resumes.listResumes();
@@ -29,8 +54,8 @@ Page({
       }));
       this.setData({ user, items, loading: false });
     } catch (error) {
-      if (error.code === "AGREEMENT_REQUIRED" || error.code === "PRIVACY_AGREEMENT_REQUIRED") {
-        wx.reLaunch({ url: "/pages/login/index" });
+      if (!auth.hasSession()) {
+        this.enterGuestMode();
         return;
       }
       this.setData({ loading: false, error: error.message || "加载失败，请稍后重试" });

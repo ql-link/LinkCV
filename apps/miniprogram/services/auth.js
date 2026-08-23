@@ -53,6 +53,12 @@ function agreementRequiredError() {
   return error;
 }
 
+function sessionRequiredError() {
+  const error = new Error("尚未登录，请先登录后再查看简历");
+  error.code = "SESSION_REQUIRED";
+  return error;
+}
+
 function acceptPrivacyAgreement() {
   wx.setStorageSync(PRIVACY_AGREEMENT_KEY, true);
 }
@@ -147,7 +153,7 @@ async function getAccountStatus() {
 async function ensureSession() {
   const accessToken = wx.getStorageSync(ACCESS_KEY);
   if (accessToken) return wx.getStorageSync(USER_KEY) || null;
-  throw agreementRequiredError();
+  throw sessionRequiredError();
 }
 
 async function refreshSession() {

@@ -42,6 +42,15 @@
   box-sizing: border-box;
 }
 
+.status-confirmed {
+  border-color: rgba(38, 122, 77, 0.3);
+}
+
+.status-expired,
+.status-error {
+  border-color: rgba(196, 59, 59, 0.28);
+}
+
 .status-indicator {
   width: 44rpx;
   height: 44rpx;
@@ -53,6 +62,20 @@
   border: 1rpx solid var(--hairline);
   color: var(--ink);
   font-size: 26rpx;
+  font-weight: 700;
+}
+
+.status-confirmed .status-indicator {
+  border-color: #267a4d;
+  background: #267a4d;
+  color: #fff;
+}
+
+.status-expired .status-indicator,
+.status-error .status-indicator {
+  border-color: #c43b3b;
+  background: #c43b3b;
+  color: #fff;
 }
 
 .status-message {
@@ -124,7 +147,8 @@
   margin-top: 36rpx;
 }
 
-.actions .btn-ghost {
+.actions .btn-ghost,
+.actions .btn-primary + .btn-primary {
   margin-top: 16rpx;
 }
 
