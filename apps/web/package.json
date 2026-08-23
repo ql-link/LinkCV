@@ -9,7 +9,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build && npm run build:pdf-cli",
-    "build:pdf-cli": "esbuild pdf-cli/renderResumePdfCli.ts --bundle --platform=node --format=cjs --target=node22 --outfile=dist-server/render-resume-pdf.cjs --external:playwright-core --loader:.css=text --loader:.otf=file --loader:.ttf=file --loader:.png=dataurl --asset-names=fonts/[name]-[hash]",
+    "build:pdf-cli": "esbuild pdf-cli/renderResumePdfCli.ts --bundle --platform=node --format=cjs --target=node22 --outfile=dist-server/render-resume-pdf.cjs --external:playwright-core --loader:.css=text --loader:.otf=file --loader:.ttf=file --loader:.jpg=dataurl --loader:.png=dataurl --asset-names=fonts/[name]-[hash]",
     "dev:pdf-cli": "npm run build:pdf-cli -- --watch",
     "preview": "vite preview --host 127.0.0.1"
   },

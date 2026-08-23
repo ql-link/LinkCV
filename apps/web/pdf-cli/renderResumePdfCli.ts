@@ -7,6 +7,7 @@ import wenkaiRegularAsset from "../node_modules/@fontpkg/lxgw-wen-kai/LXGWWenKai
 import type { ResumeDocumentV1, ResumeStyleV1 } from "../src/api/resumeContract";
 import administrativeAvatar from "../public/templates/avatar-administrative.png";
 import campusAvatar from "../public/templates/avatar-campus.png";
+import templateAvatar from "../public/templates/avatar-cat.jpg";
 import civicAvatar from "../public/templates/avatar-civic.png";
 import creativeAvatar from "../public/templates/avatar-creative.png";
 import applicationStyles from "../src/app.css?raw";
@@ -18,6 +19,7 @@ import {
 } from "../src/features/preview/print/resumePrintDocument";
 import {
   A4_MIN_HEIGHT_MM,
+  A4_WIDTH_MM,
   DEFAULT_MAX_SMART_HEIGHT_MM,
   smartPageHeightMm,
 } from "../src/features/preview/print/resumePrintReady";
@@ -26,9 +28,17 @@ const MAX_INPUT_BYTES = 12 * 1024 * 1024;
 const MAX_OUTPUT_BYTES = 15 * 1024 * 1024;
 const TEMPLATE_PDF_ASSETS: Record<string, string> = {
   "/templates/avatar-administrative.png": administrativeAvatar,
+  // Resumes created before template revision 0027 retain SVG source paths.
+  // The print document accepts bounded raster data URLs, so keep those paths
+  // renderable through their reviewed PNG counterparts.
+  "/templates/avatar-administrative.svg": administrativeAvatar,
   "/templates/avatar-campus.png": campusAvatar,
+  "/templates/avatar-campus.svg": campusAvatar,
+  "/templates/avatar-cat.jpg": templateAvatar,
   "/templates/avatar-civic.png": civicAvatar,
+  "/templates/avatar-civic.svg": civicAvatar,
   "/templates/avatar-creative.png": creativeAvatar,
+  "/templates/avatar-creative.svg": creativeAvatar,
 };
 const FONT_ORIGIN = "https://linkcv-render.local";
 const FONT_ASSETS = new Map([
@@ -134,7 +144,11 @@ function printMargins(style: ResumeStyleV1) {
 
 function pageMarginStyles(style: ResumeStyleV1) {
   const margins = printMargins(style);
-  return `@page{size:A4;margin:${margins.y}mm ${margins.x}mm}`;
+  const printableWidth = A4_WIDTH_MM - (2 * margins.x);
+  return [
+    `@page{size:A4;margin:${margins.y}mm ${margins.x}mm}`,
+    `html[data-resume-pdf-cli],html[data-resume-pdf-cli] body{width:${printableWidth}mm!important}`,
+  ].join("");
 }
 
 function withPrintStyles(html: string, style: ResumeStyleV1) {
@@ -160,7 +174,11 @@ async function main() {
   });
 
   try {
-    const page = await browser.newPage({ viewport: { width: 794, height: 1123 }, deviceScaleFactor: 1 });
+    // Keep the layout viewport below the smallest supported printable A4 area.
+    // Chromium otherwise treats an A4-high viewport as document content and
+    // can fragment its invisible remainder onto a blank second page once
+    // @page margins are applied. Actual resume content still expands the body.
+    const page = await browser.newPage({ viewport: { width: 794, height: 600 }, deviceScaleFactor: 1 });
     await page.route("**/*", async (route) => {
       const url = route.request().url();
       const fontAsset = FONT_ASSETS.get(url);
@@ -218,7 +236,7 @@ async function main() {
       await page.locator("[data-resume-print-document]").evaluate((element) => {
         const paper = element as HTMLElement;
         paper.style.height = "auto";
-        paper.style.minHeight = "297mm";
+        paper.style.minHeight = "0";
         paper.style.overflow = "visible";
         paper.style.breakAfter = "auto";
         paper.style.pageBreakAfter = "auto";
@@ -227,6 +245,11 @@ async function main() {
       // The shared stylesheet defaults to A4 for the screen/regular print
       // path. Override the fragmentainer as well as the PDF option so a smart
       // page remains one physical page instead of being split at 297mm.
+      await page.locator("html, body").evaluateAll((elements) => {
+        for (const element of elements) {
+          (element as HTMLElement).style.overflow = "hidden";
+        }
+      });
       await page.addStyleTag({
         content: `@page { size: 210mm ${heightMm}mm !important; margin: ${margins.y}mm ${margins.x}mm !important; }`,
       });

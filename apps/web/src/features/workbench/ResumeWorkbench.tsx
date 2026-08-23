@@ -614,6 +614,8 @@ export function steppedSettingValue(value: number, direction: -1 | 1, min: numbe
   return Math.min(max, Math.max(min, Number((value + direction * step).toFixed(precision))));
 }
 
+export const WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM = 6;
+
 export function SettingsStepper({ label, unit, value, min, max, step, onChange, disabled }: { label: string; unit: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void; disabled?: boolean }) {
   return (
     <div className="workbench-value-row">
@@ -1259,7 +1261,7 @@ export function ResumeWorkbench() {
                     <WorkbenchSettingsSection title="页边距（单位：mm）" description="上下和左右分别同步调整，修改后立即更新页面。">
                       <div className="workbench-margin-layout">
                         <div className="workbench-margin-controls">
-                          <SettingsStepper label="上下边距" unit="mm" value={settings.verticalPageMargin} min={10} max={30} step={2} onChange={(verticalPageMargin) => updateSettings({ verticalPageMargin })} disabled={versionOperationPending} />
+                          <SettingsStepper label="上下边距" unit="mm" value={settings.verticalPageMargin} min={WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM} max={30} step={2} onChange={(verticalPageMargin) => updateSettings({ verticalPageMargin })} disabled={versionOperationPending} />
                           <SettingsStepper label="左右边距" unit="mm" value={settings.pageMargin} min={10} max={30} step={2} onChange={(pageMargin) => updateSettings({ pageMargin })} disabled={versionOperationPending} />
                         </div>
                         <div className="workbench-margin-preview" aria-label={`当前上下边距 ${settings.verticalPageMargin} 毫米，左右边距 ${settings.pageMargin} 毫米`}>

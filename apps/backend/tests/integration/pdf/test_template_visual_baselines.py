@@ -43,15 +43,30 @@ TEMPLATE_CASES = (
     ("creative-orange-cn", "creative-orange", 9.6, 1.4, "#FF8A00", True, 0, 10, 8, 10),
 )
 
+LEGACY_TEMPLATE_AVATARS = (
+    ("administrative-sidebar-cn", "/templates/avatar-administrative.svg"),
+    ("campus-professional-cn", "/templates/avatar-campus.svg"),
+    ("civic-service-cn", "/templates/avatar-civic.svg"),
+    ("creative-orange-cn", "/templates/avatar-creative.svg"),
+)
 
-def render_request(template: tuple[object, ...]) -> dict[str, object]:
+
+def render_request(
+    template: tuple[object, ...],
+    *,
+    avatar_override: str | None = None,
+) -> dict[str, object]:
     key, _, font_size, line_height, accent, smart, top, right, bottom, left = template
-    avatar = {
-        "administrative-sidebar-cn": "/templates/avatar-administrative.png",
-        "campus-professional-cn": "/templates/avatar-campus.png",
-        "civic-service-cn": "/templates/avatar-civic.png",
-        "creative-orange-cn": "/templates/avatar-creative.png",
-    }.get(str(key))
+    avatar = avatar_override or (
+        "/templates/avatar-cat.jpg"
+        if key in {
+            "administrative-sidebar-cn",
+            "campus-professional-cn",
+            "civic-service-cn",
+            "creative-orange-cn",
+        }
+        else None
+    )
     content = (
         "::: left 55\n"
         "星河云科技有限公司\n"
@@ -200,3 +215,88 @@ def test_all_enabled_templates_have_stable_pdf_structure_and_visual_baselines() 
         assert height >= 841.89 - 1.5, name
         document.close()
         _assert_visual_baseline(name, _render_thumbnail(pdf_bytes))
+
+
+def test_legacy_professional_template_avatars_remain_renderable() -> None:
+    _ensure_cli()
+    templates_by_key = {str(template[0]): template for template in TEMPLATE_CASES}
+    for template_key, avatar in LEGACY_TEMPLATE_AVATARS:
+        pdf_bytes = _render_pdf(
+            render_request(templates_by_key[template_key], avatar_override=avatar)
+        )
+        assert pdf_bytes.startswith(b"%PDF-"), template_key
+
+
+def test_short_smart_resume_with_small_vertical_margin_stays_on_one_page() -> None:
+    _ensure_cli()
+    campus_template = next(
+        template for template in TEMPLATE_CASES if template[0] == "campus-professional-cn"
+    )
+    payload = render_request(campus_template)
+    style = payload["style"]
+    assert isinstance(style, dict)
+    page_style = style["page"]
+    assert isinstance(page_style, dict)
+    page_style["margin_top_mm"] = 6
+    page_style["margin_bottom_mm"] = 6
+
+    data = payload["data"]
+    assert isinstance(data, dict)
+    sections = data["sections"]
+    assert isinstance(sections, dict)
+    sections["custom_sections"] = [{
+        "id": "short-resume",
+        "title": "简介",
+        "items": [{
+            "id": "short-item",
+            "title": None,
+            "subtitle": None,
+            "content": {"format": "markdown", "content": "专注于可靠的软件交付。"},
+            "source_refs": [],
+        }],
+    }]
+
+    document = pdfium.PdfDocument(_render_pdf(payload))
+    assert len(document) == 1
+    width, height = document[0].get_size()
+    assert width == pytest.approx(595.28, abs=1.5)
+    assert height == pytest.approx(841.89, abs=1.5)
+    document.close()
+
+
+def test_standard_resume_still_fragments_long_content_across_a4_pages() -> None:
+    _ensure_cli()
+    payload = render_request(TEMPLATE_CASES[0])
+    data = payload["data"]
+    assert isinstance(data, dict)
+    sections = data["sections"]
+    assert isinstance(sections, dict)
+    sections["custom_sections"] = [{
+        "id": "long-resume",
+        "title": "项目经历",
+        "items": [{
+            "id": "long-item",
+            "title": None,
+            "subtitle": None,
+            "content": {
+                "format": "markdown",
+                "content": "\n".join(
+                    f"- 第 {index:03d} 项：负责稳定的简历编辑与 PDF 导出。"
+                    for index in range(1, 121)
+                ),
+            },
+            "source_refs": [],
+        }],
+    }]
+
+    document = pdfium.PdfDocument(_render_pdf(payload))
+    assert len(document) >= 2
+    page_texts: list[str] = []
+    for page in document:
+        text_page = page.get_textpage()
+        page_texts.append(text_page.get_text_bounded())
+        text_page.close()
+    text = "".join(page_texts)
+    assert "第 001 项" in text
+    assert "第 120 项" in text
+    document.close()

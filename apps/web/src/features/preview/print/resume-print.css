@@ -61,6 +61,12 @@ html[data-resume-pdf-cli] [data-resume-print-document] {
   padding: 0 !important;
 }
 
+html[data-resume-pdf-cli],
+html[data-resume-pdf-cli] body {
+  width: auto;
+  min-height: 0;
+}
+
 html[data-resume-pdf-cli] [data-resume-print-document] .resume-print-content { min-height: 0; }
 
 @media print {

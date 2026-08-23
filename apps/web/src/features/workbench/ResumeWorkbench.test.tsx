@@ -14,6 +14,7 @@ import {
   SaveVersionAction,
   VersionRenameAction,
   VersionHistoryAction,
+  WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM,
   versionRenameErrorMessage,
   setRestoredEditorContent,
   setWorkbenchEditorEditable,
@@ -105,6 +106,38 @@ describe("ResumeWorkbench 页面设置步进按钮", () => {
 
     expect(onChange).toHaveBeenNthCalledWith(1, 10);
     expect(onChange).toHaveBeenNthCalledWith(2, 11);
+  });
+
+  it("允许上下页边距减小到 6 毫米", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <SettingsStepper
+        label="上下边距"
+        unit="mm"
+        value={8}
+        min={WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM}
+        max={30}
+        step={2}
+        onChange={onChange}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "上下边距减小" }));
+    expect(onChange).toHaveBeenCalledWith(6);
+
+    rerender(
+      <SettingsStepper
+        label="上下边距"
+        unit="mm"
+        value={6}
+        min={WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM}
+        max={30}
+        step={2}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "上下边距减小" })).toBeDisabled();
   });
 });
 
