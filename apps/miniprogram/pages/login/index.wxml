@@ -7,8 +7,15 @@
   </view>
   <view class="content">
     <text class="title" wx:if="{{!accountStatusReady}}">识别微信账号</text>
-    <text class="title" wx:elif="{{accountRegistered}}">登录 LinkCV</text>
-    <text class="title" wx:else>注册 LinkCV</text>
+    <text class="title" wx:elif="{{accountRegistered}}">登录 LinkCV 小程序</text>
+    <text class="title" wx:else>注册 LinkCV 小程序</text>
+    <view class="context-note">
+      <text class="context-icon">▤</text>
+      <view class="context-copy">
+        <text class="context-title">登录你的随身简历册</text>
+        <text class="context-desc">登录后即可在小程序中查看本人简历；扫码确认网页登录是另一条独立流程。</text>
+      </view>
+    </view>
     <view class="status-line">
       <view class="status-indicator" wx:if="{{loading || submitting}}">
         <view class="spinner"></view>
