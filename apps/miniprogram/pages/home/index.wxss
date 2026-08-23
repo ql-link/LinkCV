@@ -45,8 +45,8 @@
   margin: 44rpx 0 0;
   padding: 0 32rpx;
   border-radius: 18rpx;
-  background: var(--ui-primary);
-  color: var(--ui-primary-foreground);
+  background: var(--ui-accent);
+  color: #fff;
   font-size: 28rpx;
   font-weight: 600;
   line-height: 92rpx;
@@ -59,7 +59,7 @@
 }
 
 .hero-cta-pressed {
-  background: var(--ui-primary-hover);
+  background: var(--ui-accent-hover);
 }
 
 .hero-hint {
