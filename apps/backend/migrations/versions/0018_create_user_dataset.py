@@ -25,5 +25,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    connection = op.get_bind()
-    execute_sql_file(connection, SQL_DIR / "0018.down.sql")
+    raise RuntimeError("LinkCV database migrations are forward-only")

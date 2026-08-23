@@ -34,13 +34,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    connection = op.get_bind()
-    row_count = connection.scalar(
-        text("SELECT COUNT(*) FROM resumes WHERE source_type = 'import'")
-    )
-    if row_count:
-        raise RuntimeError(
-            "0017 cannot restore removed import evidence for existing resumes: "
-            f"count={row_count}"
-        )
-    execute_sql_file(connection, SQL_DIR / "0017.down.sql")
+    raise RuntimeError("LinkCV database migrations are forward-only")
