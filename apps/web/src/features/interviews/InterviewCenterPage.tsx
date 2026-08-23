@@ -26,7 +26,6 @@ import {
   Video,
 } from "lucide-react";
 import { Button, ExpandableSearch } from "@/components/ui";
-import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { navigateTo, type InterviewView } from "../../routing";
 import "./interviews.css";
 
@@ -182,20 +181,21 @@ export function InterviewCenterPage({ view }: { view: InterviewView }) {
 
   return (
     <main className="dashboard-content interview-center-content">
-      <WorkspacePageHero
-        eyebrow="求职进度"
-        title="面试中心"
-        description={view === "records" ? "记录每一次面试，复盘每一个细节，持续提升，拿下 Offer。" : "统一管理你的 JD、面试排期、面试记录与复盘，让每一次准备都有迹可循。"}
-        actions={(
-          <>
+      <header className="interview-module-header" aria-labelledby="interview-center-title">
+        <div className="interview-module-summary">
+          <span className="interview-module-mark" aria-hidden="true"><BriefcaseBusiness /></span>
+          <div className="interview-module-copy">
+            <h1 id="interview-center-title">面试中心</h1>
+            <p>{view === "records" ? "记录每一次面试，复盘每一个细节，持续提升，拿下 Offer。" : "统一管理你的 JD、面试排期、面试记录与复盘，让每一次准备都有迹可循。"}</p>
+          </div>
+          <div className="interview-module-actions">
             <ExpandableSearch label="搜索面试" name="interview-search" value={query} onValueChange={setQuery} placeholder="搜索公司、职位或阶段…" />
             <Button variant="outline" icon={<Import />} onClick={() => setNotice("素材导入将在后续素材视图中接入，本版保留入口。")}>导入面试素材</Button>
             <Button icon={<Plus />} onClick={() => setNotice("“新建面试”表单将在 CRUD 接口确认后接入，当前展示 mock 数据。")}>新建面试</Button>
-          </>
-        )}
-      />
-
-      <InterviewTabs active={view} />
+          </div>
+        </div>
+        <InterviewTabs active={view} />
+      </header>
       {notice && <div className="interview-demo-notice" role="status"><Sparkles />{notice}<button type="button" onClick={() => setNotice(null)}>知道了</button></div>}
 
       {view === "overview" && <OverviewView query={query} onNavigate={(nextView) => navigateTo(interviewViewPath(nextView))} />}
@@ -224,35 +224,28 @@ export function InterviewCenterPage({ view }: { view: InterviewView }) {
 }
 
 function InterviewTabs({ active }: { active: InterviewView }) {
-  const tabs: Array<{ id: InterviewView | "materials"; label: string; icon: typeof CalendarDays }> = [
+  const tabs: Array<{ id: InterviewView; label: string; icon: typeof CalendarDays }> = [
     { id: "overview", label: "总览", icon: BriefcaseBusiness },
     { id: "schedule", label: "排期", icon: CalendarDays },
     { id: "records", label: "记录复盘", icon: ListChecks },
-    { id: "materials", label: "素材", icon: FolderOpen },
   ];
   return (
     <div className="interview-view-tabs" role="tablist" aria-label="面试中心视图">
       {tabs.map(({ id, label, icon: Icon }) => (
-        id === "materials" ? (
-          <button key={id} type="button" role="tab" aria-selected="false" aria-disabled="true">
-            <Icon />{label}<span>后续</span>
-          </button>
-        ) : (
-          <a
-            key={id}
-            role="tab"
-            aria-selected={id === active}
-            className={id === active ? "is-active" : ""}
-            href={interviewViewPath(id)}
-            onClick={(event) => {
-              if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-              event.preventDefault();
-              navigateTo(interviewViewPath(id));
-            }}
-          >
-            <Icon />{label}
-          </a>
-        )
+        <a
+          key={id}
+          role="tab"
+          aria-selected={id === active}
+          className={id === active ? "is-active" : ""}
+          href={interviewViewPath(id)}
+          onClick={(event) => {
+            if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+            event.preventDefault();
+            navigateTo(interviewViewPath(id));
+          }}
+        >
+          <Icon />{label}
+        </a>
       ))}
     </div>
   );

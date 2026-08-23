@@ -9,15 +9,18 @@ afterEach(() => {
 });
 
 describe("InterviewCenterPage", () => {
-  it("展示三个可用视图并将素材标记为后续范围", () => {
+  it("展示三个可用视图", () => {
     window.history.replaceState(null, "", "/interviews");
     render(<InterviewCenterPage view="overview" />);
 
     const tabs = screen.getByRole("tablist", { name: "面试中心视图" });
+    expect(screen.getByRole("heading", { name: "面试中心", level: 1 })).toBeInTheDocument();
+    expect(tabs.closest(".interview-module-header")).toBeInTheDocument();
     expect(within(tabs).getByRole("tab", { name: "总览" })).toHaveAttribute("aria-selected", "true");
+    expect(within(tabs).getByRole("tab", { name: "总览" })).toHaveClass("is-active");
     expect(within(tabs).getByRole("tab", { name: "排期" })).toBeEnabled();
     expect(within(tabs).getByRole("tab", { name: "记录复盘" })).toBeEnabled();
-    expect(within(tabs).getByRole("tab", { name: /素材/ })).toHaveAttribute("aria-disabled", "true");
+    expect(within(tabs).queryByRole("tab", { name: "素材" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "面试流程总览" })).toBeInTheDocument();
     expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
     expect(screen.getByText("待面试")).toBeInTheDocument();
