@@ -42,7 +42,8 @@ describe("SharePage", () => {
     });
     render(<SharePage token="token_123" />);
 
-    await waitFor(() => expect(screen.getByText("linkresume")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText("linkresume")).toBeInTheDocument());
+    expect(screen.getByLabelText("linkresume").querySelector(".ui-brand-wordmark")).toBeInTheDocument();
     expect(screen.getByText("由 于晏 分享")).toBeInTheDocument();
     // 默认简历内容含姓名「张三」；仅渲染正文，不包含私密字段入口
     expect(screen.getByText("张三")).toBeInTheDocument();

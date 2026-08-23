@@ -1,11 +1,12 @@
-import brandMark from "@/assets/linkcv-mark.svg";
+import brandMark from "@/assets/linkresume-mark.png";
+import brandWordmark from "@/assets/linkresume-wordmark.png";
 import { cn } from "@/lib/utils";
 
 export function Brand({
   compact = false,
   className,
-  label = "LinkCV",
-  name = "LinkCV",
+  label = "LinkResume",
+  name = "LinkResume",
 }: {
   compact?: boolean;
   className?: string;
@@ -13,11 +14,30 @@ export function Brand({
   name?: string;
 }) {
   return (
-    <span aria-label={label} className={cn("ui-brand inline-flex items-center gap-2", className)} data-slot="brand">
-      <span aria-hidden="true" className="ui-brand-mark grid size-8 place-items-center overflow-hidden rounded-md bg-foreground">
-        <img alt="" className="size-full [filter:brightness(0)_invert(1)]" src={brandMark} />
-      </span>
-      {!compact && <span className="ui-brand-name font-display text-base font-bold tracking-[-0.02em]" translate="no">{name}</span>}
+    <span
+      aria-label={label}
+      className={cn("ui-brand inline-flex items-center", className)}
+      data-slot="brand"
+      title={name}
+    >
+      <img
+        alt=""
+        aria-hidden="true"
+        className={cn("ui-brand-mark", !compact && "ui-brand-responsive-mark")}
+        height="1080"
+        src={brandMark}
+        width="1080"
+      />
+      {!compact && (
+        <img
+          alt=""
+          aria-hidden="true"
+          className="ui-brand-wordmark"
+          height="349"
+          src={brandWordmark}
+          width="1701"
+        />
+      )}
     </span>
   );
 }

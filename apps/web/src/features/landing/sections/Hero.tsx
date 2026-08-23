@@ -8,6 +8,7 @@ import {
   useTransform,
 } from "motion/react";
 import { ArrowDown, ArrowRight } from "lucide-react";
+import { Brand } from "@/components/ui";
 import {
   useEffect,
   useRef,
@@ -186,10 +187,7 @@ export function Hero({
             transition={{ duration: 0.65, ease }}
             className="landing-orbit-brand"
           >
-            <span className="landing-orbit-brand-mark" aria-hidden>
-              L
-            </span>
-            <span className="landing-orbit-brand-name">{t.hero.brand}</span>
+            <Brand label={t.hero.brand} />
           </motion.div>
           <motion.h1
             initial={reduceMotion ? false : { opacity: 0 }}

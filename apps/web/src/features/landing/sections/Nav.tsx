@@ -1,5 +1,6 @@
 import { useEffect, useState, type RefObject } from 'react'
 import { ArrowUpRight, Moon, Sun } from 'lucide-react'
+import { Brand } from '@/components/ui'
 import { useLanguage, useT } from '../locales/LanguageContext'
 import { motion, AnimatePresence } from 'motion/react'
 
@@ -37,16 +38,12 @@ export function Nav({
       <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
         <a
           href="#top"
-          className="flex items-center gap-2.5"
+          aria-label="返回 LinkResume 首页"
+          className="flex items-center gap-3"
         >
-          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-zinc-900 font-display text-sm font-bold text-white dark:bg-white dark:text-black">
-            L
-          </span>
-          <span className="font-display text-[15px] font-semibold tracking-tight text-zinc-900 dark:text-white">
-            LinkCV
-            <span className="ml-2 hidden font-mono text-[10px] font-normal tracking-[0.12em] text-zinc-400 dark:text-zinc-500 sm:inline">
-              {t.nav.brandSub}
-            </span>
+          <Brand className="landing-nav-brand" label="LinkResume" />
+          <span className="hidden font-mono text-[10px] font-normal tracking-[0.12em] text-zinc-400 dark:text-zinc-500 sm:inline">
+            {t.nav.brandSub}
           </span>
         </a>
 
