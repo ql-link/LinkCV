@@ -160,6 +160,8 @@ const server = createServer(async (request, response) => {
         "PATCH_OUT_OF_SCOPE",
         "SOURCE_REQUIRED",
         "SOURCE_FORBIDDEN",
+        "USER_INPUT_REQUIRED",
+        "AGENT_CLARIFICATION_INVALID",
       ]);
       writeEvent(response, cancelled ? "run.cancelled" : "run.failed", {
         runId: payload.runId,

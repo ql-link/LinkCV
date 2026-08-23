@@ -51,7 +51,13 @@ def session_record(
             AgentMessageRecord(
                 sequence_no=item.sequence_no,
                 role=item.role,
+                message_type=item.message_type,
                 content=item.content,
+                clarification=(
+                    item.metadata_json
+                    if item.message_type == "clarification"
+                    else None
+                ),
                 created_at=item.created_at,
             )
             for item in (messages or [])
@@ -112,9 +118,9 @@ def create_session(
         )
         if resume is None:
             raise ApiError(404, "RESUME_NOT_FOUND")
-        default_title = f"{resume.title} · 智能助手"
+        default_title = "新对话"
     else:
-        default_title = "智能简历助手"
+        default_title = "新对话"
     normalized_title = " ".join((title or default_title).split())
     if not normalized_title or len(normalized_title) > 128:
         raise ApiError(400, "INVALID_AGENT_SESSION")
@@ -138,6 +144,7 @@ def create_run(
     content: str,
     idempotency_key: str,
     timeout_seconds: float,
+    reply_to_sequence_no: int | None = None,
 ) -> tuple[AgentRun, bool]:
     # Serialize run creation for the whole account so opening multiple sessions
     # cannot bypass the concurrency guard and multiply model cost. The
@@ -152,6 +159,21 @@ def create_run(
     )
     if existing is not None:
         return existing, False
+    if reply_to_sequence_no is not None:
+        latest_message = db.scalar(
+            select(AgentMessage)
+            .where(AgentMessage.session_id == session.id)
+            .order_by(AgentMessage.sequence_no.desc())
+            .limit(1)
+            .with_for_update()
+        )
+        if (
+            latest_message is None
+            or latest_message.sequence_no != reply_to_sequence_no
+            or latest_message.role != "assistant"
+            or latest_message.message_type != "clarification"
+        ):
+            raise ApiError(409, "AGENT_CLARIFICATION_STALE")
     running = db.scalars(
         select(AgentRun)
         .join(AgentSession, AgentSession.id == AgentRun.session_id)
@@ -204,6 +226,9 @@ def create_run(
             content=content.strip(),
         )
     )
+    if sequence_no == 1 and session.title == "新对话":
+        title_source = " ".join(content.split())
+        session.title = title_source[:24] + ("…" if len(title_source) > 24 else "")
     session.last_message_at = now
     db.commit()
     db.refresh(run)

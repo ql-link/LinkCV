@@ -53,12 +53,13 @@ async def get_agent_readiness(request: Request) -> AgentReadinessResponse:
 @router.get("/proposals", response_model=ProposalListResponse)
 def list_agent_proposals(
     resume_id: str,
+    session_id: str | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ProposalListResponse:
     if not resume_id.isascii() or not resume_id.isdecimal():
         raise ApiError(404, "RESUME_NOT_FOUND")
-    rows = db.execute(
+    query = (
         select(ResumeChangeProposal, AgentRun)
         .join(AgentRun, AgentRun.id == ResumeChangeProposal.run_id)
         .where(
@@ -68,7 +69,13 @@ def list_agent_proposals(
         )
         .order_by(ResumeChangeProposal.created_at.desc())
         .limit(20)
-    ).all()
+    )
+    if session_id is not None:
+        session = get_owned_session(db, session_id, user.id)
+        if session.resume_id != int(resume_id):
+            raise ApiError(404, "AGENT_SESSION_NOT_FOUND")
+        query = query.where(AgentRun.session_id == session.id)
+    rows = db.execute(query).all()
     return ProposalListResponse(
         proposals=[proposal_record(proposal, run.public_id) for proposal, run in rows]
     )
@@ -142,6 +149,7 @@ def send_agent_message(
         content=payload.content,
         idempotency_key=payload.idempotency_key,
         timeout_seconds=request.app.state.settings.agent_run_timeout_seconds,
+        reply_to_sequence_no=payload.reply_to_sequence_no,
     )
     if not created:
 

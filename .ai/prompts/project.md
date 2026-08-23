@@ -71,7 +71,7 @@ npm run check           # 完整本地质量入口
 ## 5. 实现与安全底线
 
 - 先读离目标最近的实现、测试和文档；API、持久化模型、迁移、权限、失败路径和消费方要同步考虑。
-- 数据库 schema 使用 SQL-first Alembic；ORM 与升级到 head 后的 schema 保持一致，每个 revision 配对并验证 `.up.sql`、`.down.sql`。具体设计和迁移分别读取 `mysql-ddl-conventions`、`alembic-migration`。
+- 数据库 schema 使用 forward-only 的 SQL-first Alembic；ORM 与升级到 head 后的 schema 保持一致，每个 revision 只配套并验证 `.up.sql`，`downgrade()` 明确拒绝执行。恢复依赖备份，修正通过新的向前 revision 完成。具体设计和迁移分别读取 `mysql-ddl-conventions`、`alembic-migration`。
 - `docs/` 只描述已经实现的长期事实；方案、Acceptance、实施报告和人工验收记录放在 `.specs/<KEY>/`。
 - 新依赖必须说明必要性并更新对应 lockfile。
 - 示例和测试使用虚构信息，不得写入真实简历、联系方式、账号、密钥或私有部署凭据。

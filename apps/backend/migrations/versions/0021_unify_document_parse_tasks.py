@@ -8,7 +8,6 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from alembic import op
-from sqlalchemy import text
 
 from linkcv.core.migration_sql import execute_sql_file
 
@@ -25,16 +24,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    connection = op.get_bind()
-    other_task_count = connection.scalar(
-        text(
-            "SELECT COUNT(*) FROM document_parse_tasks "
-            "WHERE source_type <> 'resume_import'"
-        )
-    )
-    if other_task_count:
-        raise RuntimeError(
-            "0021 refuses downgrade while non-resume document parse tasks exist: "
-            f"count={other_task_count}"
-        )
-    execute_sql_file(connection, SQL_DIR / "0021.down.sql")
+    raise RuntimeError("LinkCV database migrations are forward-only")

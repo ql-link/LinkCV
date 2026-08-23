@@ -60,21 +60,150 @@ import {
 
 type DrawerMode = "settings" | "history" | "agent" | null;
 
+type AgentFloatingPosition = { left: number; top: number };
+type AgentFloatingBounds = { width: number; height: number; entryWidth: number; entryHeight: number };
+
+const AGENT_FLOATING_MARGIN = 8;
+const AGENT_DRAG_THRESHOLD = 5;
+const AGENT_DRAWER_MIN_WIDTH = 320;
+const AGENT_DRAWER_MAX_WIDTH = 640;
+const AGENT_DRAWER_DEFAULT_WIDTH = 390;
+const AGENT_DRAWER_WIDTH_STORAGE_KEY = "linkcv.workbench.agent-drawer-width";
+
+export function clampAgentDrawerWidth(width: number, viewportWidth: number) {
+  return Math.round(Math.min(
+    Math.max(AGENT_DRAWER_MIN_WIDTH, width),
+    Math.max(AGENT_DRAWER_MIN_WIDTH, Math.min(AGENT_DRAWER_MAX_WIDTH, viewportWidth - 24)),
+  ));
+}
+
 export function workbenchCanvasClassName(drawerMode: DrawerMode) {
   return `workbench-canvas${drawerMode ? " has-drawer" : ""}${drawerMode === "agent" ? " has-agent-drawer" : ""}`;
 }
 
+export function clampAgentFloatingPosition(
+  position: AgentFloatingPosition,
+  bounds: AgentFloatingBounds,
+): AgentFloatingPosition {
+  return {
+    left: Math.min(
+      Math.max(AGENT_FLOATING_MARGIN, position.left),
+      Math.max(AGENT_FLOATING_MARGIN, bounds.width - bounds.entryWidth - AGENT_FLOATING_MARGIN),
+    ),
+    top: Math.min(
+      Math.max(AGENT_FLOATING_MARGIN, position.top),
+      Math.max(AGENT_FLOATING_MARGIN, bounds.height - bounds.entryHeight - AGENT_FLOATING_MARGIN),
+    ),
+  };
+}
+
 export function AgentFloatingEntry({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  const entryRef = useRef<HTMLButtonElement>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    clientX: number;
+    clientY: number;
+    left: number;
+    top: number;
+    moved: boolean;
+  } | null>(null);
+  const suppressClickUntilRef = useRef(0);
+  const [position, setPosition] = useState<AgentFloatingPosition | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  const clampToCanvas = useCallback((nextPosition: AgentFloatingPosition) => {
+    const entry = entryRef.current;
+    const canvas = entry?.parentElement;
+    if (!entry || !canvas) return nextPosition;
+    const agentDrawer = open ? canvas.querySelector<HTMLElement>(".workbench-drawer.is-agent") : null;
+    const drawerRight = agentDrawer ? Number.parseFloat(window.getComputedStyle(agentDrawer).right) || 0 : 0;
+    const availableWidth = agentDrawer
+      ? canvas.clientWidth - agentDrawer.offsetWidth - drawerRight
+      : canvas.clientWidth;
+    return clampAgentFloatingPosition(nextPosition, {
+      width: availableWidth,
+      height: canvas.clientHeight,
+      entryWidth: entry.offsetWidth,
+      entryHeight: entry.offsetHeight,
+    });
+  }, [open]);
+
+  useEffect(() => {
+    const keepEntryVisible = () => setPosition((current) => current ? clampToCanvas(current) : current);
+    const entry = entryRef.current;
+    const canvas = entry?.parentElement;
+    const resizeObserver = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(keepEntryVisible);
+    keepEntryVisible();
+    if (canvas) resizeObserver?.observe(canvas);
+    if (entry) resizeObserver?.observe(entry);
+    window.addEventListener("resize", keepEntryVisible, { passive: true });
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", keepEntryVisible);
+    };
+  }, [clampToCanvas, open]);
+
+  const finishDragging = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (drag.moved) suppressClickUntilRef.current = Date.now() + 300;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    dragRef.current = null;
+    setDragging(false);
+  };
+
   return (
     <motion.button
+      ref={entryRef}
       type="button"
-      className={`agent-floating-entry${open ? " is-open" : ""}`}
+      className={`agent-floating-entry${open ? " is-open" : ""}${position ? " has-custom-position" : ""}${dragging ? " is-dragging" : ""}`}
+      style={position ?? undefined}
       aria-controls="workbench-side-panel"
       aria-expanded={open}
       aria-label={open ? "收起智能助手" : "打开智能助手"}
-      title={open ? "收起智能助手" : "让 AI 帮你完善简历"}
+      title={open ? "拖动调整位置，点击收起智能助手" : "拖动调整位置，点击打开智能助手"}
       whileTap={{ scale: 0.97 }}
-      onClick={onToggle}
+      onPointerDown={(event) => {
+        if (event.button !== 0 || event.isPrimary === false) return;
+        const canvas = event.currentTarget.parentElement;
+        if (!canvas) return;
+        const canvasRect = canvas.getBoundingClientRect();
+        const entryRect = event.currentTarget.getBoundingClientRect();
+        dragRef.current = {
+          pointerId: event.pointerId,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          left: entryRect.left - canvasRect.left,
+          top: entryRect.top - canvasRect.top,
+          moved: false,
+        };
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+      }}
+      onPointerMove={(event) => {
+        const drag = dragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        const deltaX = event.clientX - drag.clientX;
+        const deltaY = event.clientY - drag.clientY;
+        if (!drag.moved && Math.hypot(deltaX, deltaY) < AGENT_DRAG_THRESHOLD) return;
+        drag.moved = true;
+        event.preventDefault();
+        setDragging(true);
+        setPosition(clampToCanvas({ left: drag.left + deltaX, top: drag.top + deltaY }));
+      }}
+      onPointerUp={finishDragging}
+      onPointerCancel={finishDragging}
+      onClick={(event) => {
+        if (Date.now() < suppressClickUntilRef.current) {
+          suppressClickUntilRef.current = 0;
+          event.preventDefault();
+          return;
+        }
+        onToggle();
+      }}
     >
       <span className="agent-floating-mark" aria-hidden="true"><Sparkles size={22} /></span>
       <span className="agent-floating-copy"><strong>AI 助手</strong></span>
@@ -671,6 +800,14 @@ export function ResumeWorkbench() {
   const restoreStoredVersion = useResumeStore((state) => state.restoreVersion);
   const goHome = useResumeStore((state) => state.goHome);
   const [drawerMode, setDrawerMode] = useState<DrawerMode>(null);
+  const [agentDrawerWidth, setAgentDrawerWidth] = useState(() => {
+    try {
+      const stored = Number.parseFloat(window.localStorage.getItem(AGENT_DRAWER_WIDTH_STORAGE_KEY) ?? "");
+      return clampAgentDrawerWidth(Number.isFinite(stored) ? stored : AGENT_DRAWER_DEFAULT_WIDTH, window.innerWidth);
+    } catch {
+      return AGENT_DRAWER_DEFAULT_WIDTH;
+    }
+  });
   const [agentDraft, setAgentDraft] = useState<AgentSelectionDraft | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
@@ -701,6 +838,21 @@ export function ResumeWorkbench() {
   const arrangementAnimationRef = useRef<Animation | null>(null);
   const lastPageAnchorRef = useRef<ReturnType<typeof capturePageViewportAnchor> | null>(null);
   const arrangementLayoutRunRef = useRef(0);
+  const agentDrawerResizeRef = useRef<{ pointerId: number; clientX: number; width: number; currentWidth: number } | null>(null);
+
+  const persistAgentDrawerWidth = useCallback((width: number) => {
+    const nextWidth = clampAgentDrawerWidth(width, window.innerWidth);
+    setAgentDrawerWidth(nextWidth);
+    try {
+      window.localStorage.setItem(AGENT_DRAWER_WIDTH_STORAGE_KEY, String(nextWidth));
+    } catch {
+      // Browser privacy settings may disable local storage; resizing still works for this visit.
+    }
+  }, []);
+
+  useEffect(() => {
+    setAgentDrawerWidth((current) => clampAgentDrawerWidth(current, viewportWidth));
+  }, [viewportWidth]);
 
   const changePageArrangement = (value: PageArrangement) => {
     if (value === pageArrangement) return;
@@ -1152,7 +1304,10 @@ export function ResumeWorkbench() {
           />
         )}
 
-        <main className={workbenchCanvasClassName(drawerMode)}>
+        <main
+          className={workbenchCanvasClassName(drawerMode)}
+          style={{ "--agent-drawer-width": `${agentDrawerWidth}px` } as React.CSSProperties}
+        >
           <div
             ref={paperScrollRef}
             className={`workbench-paper-scroll${pageArrangement === "horizontal" && !settings.smartOnePage ? " pages-horizontal" : ""}`}
@@ -1305,19 +1460,72 @@ export function ResumeWorkbench() {
                     <p className="workbench-version-footnote">自动保存不会创建正式版本；恢复会直接替换当前编辑内容。</p>
                   </div>
                 ) : activeResumeId ? (
-                  <AgentPanel
-                    key={activeResumeId}
-                    resumeId={activeResumeId}
-                    currentData={data}
-                    currentStyle={style}
-                    userAvatarUrl={user?.avatar_url}
-                    userDisplayName={user?.nickname || user?.email || "用户"}
-                    onBeforeRun={prepareAgentRun}
-                    onBeforeConfirm={prepareAgentProposalConfirmation}
-                    onApplied={refreshAppliedAgentProposal}
-                    onClose={() => setDrawerMode(null)}
-                    draft={agentDraft}
-                  />
+                  <>
+                    <div
+                      className="agent-drawer-resize-handle"
+                      role="separator"
+                      tabIndex={0}
+                      aria-label="调整智能助手宽度"
+                      aria-orientation="vertical"
+                      aria-valuemin={AGENT_DRAWER_MIN_WIDTH}
+                      aria-valuemax={clampAgentDrawerWidth(AGENT_DRAWER_MAX_WIDTH, viewportWidth)}
+                      aria-valuenow={agentDrawerWidth}
+                      onPointerDown={(event) => {
+                        if (event.button !== 0 || event.isPrimary === false || window.innerWidth <= 720) return;
+                        agentDrawerResizeRef.current = {
+                          pointerId: event.pointerId,
+                          clientX: event.clientX,
+                          width: agentDrawerWidth,
+                          currentWidth: agentDrawerWidth,
+                        };
+                        event.currentTarget.setPointerCapture?.(event.pointerId);
+                      }}
+                      onPointerMove={(event) => {
+                        const resize = agentDrawerResizeRef.current;
+                        if (!resize || resize.pointerId !== event.pointerId) return;
+                        event.preventDefault();
+                        resize.currentWidth = clampAgentDrawerWidth(
+                          resize.width + resize.clientX - event.clientX,
+                          window.innerWidth,
+                        );
+                        setAgentDrawerWidth(resize.currentWidth);
+                      }}
+                      onPointerUp={(event) => {
+                        const resize = agentDrawerResizeRef.current;
+                        if (!resize || resize.pointerId !== event.pointerId) return;
+                        persistAgentDrawerWidth(resize.currentWidth);
+                        if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+                          event.currentTarget.releasePointerCapture(event.pointerId);
+                        }
+                        agentDrawerResizeRef.current = null;
+                      }}
+                      onPointerCancel={() => { agentDrawerResizeRef.current = null; }}
+                      onKeyDown={(event) => {
+                        let nextWidth: number | null = null;
+                        const step = event.shiftKey ? 32 : 16;
+                        if (event.key === "ArrowLeft") nextWidth = agentDrawerWidth + step;
+                        if (event.key === "ArrowRight") nextWidth = agentDrawerWidth - step;
+                        if (event.key === "Home") nextWidth = AGENT_DRAWER_MIN_WIDTH;
+                        if (event.key === "End") nextWidth = AGENT_DRAWER_MAX_WIDTH;
+                        if (nextWidth === null) return;
+                        event.preventDefault();
+                        persistAgentDrawerWidth(nextWidth);
+                      }}
+                    />
+                    <AgentPanel
+                      key={activeResumeId}
+                      resumeId={activeResumeId}
+                      currentData={data}
+                      currentStyle={style}
+                      userAvatarUrl={user?.avatar_url}
+                      userDisplayName={user?.nickname || user?.email || "用户"}
+                      onBeforeRun={prepareAgentRun}
+                      onBeforeConfirm={prepareAgentProposalConfirmation}
+                      onApplied={refreshAppliedAgentProposal}
+                      onClose={() => setDrawerMode(null)}
+                      draft={agentDraft}
+                    />
+                  </>
                 ) : null}
               </motion.aside>
             )}

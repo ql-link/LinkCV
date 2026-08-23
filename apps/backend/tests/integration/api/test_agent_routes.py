@@ -763,6 +763,151 @@ def test_pi_stream_persists_successful_usage_and_assistant_message(
             assert assistant.content == "完整回复"
 
 
+def test_new_session_uses_first_message_title_and_rejects_stale_clarification_reply() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-clarification-reply@example.test")
+        resume = create_resume(client, app)
+        session = client.post(
+            "/api/agent/sessions", json={"resume_id": resume["id"]}
+        ).json()["session"]
+        assert session["title"] == "新对话"
+
+        first = client.post(
+            f"/api/agent/sessions/{session['id']}/messages",
+            json={
+                "content": "优化这段项目经历的表达并突出技术影响",
+                "idempotency_key": "first_message_001",
+            },
+        )
+        assert first.status_code == 200
+        detail = client.get(f"/api/agent/sessions/{session['id']}").json()["session"]
+        assert detail["title"] == "优化这段项目经历的表达并突出技术影响"
+
+        with app.state.session_factory() as db:
+            record = db.scalar(
+                select(AgentSession).where(AgentSession.public_id == session["id"])
+            )
+            assert record is not None
+            latest_sequence = max(item["sequence_no"] for item in detail["messages"])
+            db.add(
+                AgentMessage(
+                    session_id=record.id,
+                    sequence_no=latest_sequence + 1,
+                    role="assistant",
+                    message_type="clarification",
+                    content="请选择修改范围",
+                    metadata_json={
+                        "version": 1,
+                        "questions": [{
+                            "id": "scope",
+                            "header": "修改范围",
+                            "question": "要修改哪段经历？",
+                            "options": [
+                                {"id": "internship", "label": "实习经历"},
+                                {"id": "project", "label": "项目经历"},
+                            ],
+                        }],
+                    },
+                )
+            )
+            db.commit()
+
+        stale = client.post(
+            f"/api/agent/sessions/{session['id']}/messages",
+            json={
+                "content": "实习经历",
+                "idempotency_key": "stale_reply_001",
+                "reply_to_sequence_no": latest_sequence,
+            },
+        )
+        assert stale.status_code == 409
+        assert stale.json() == {"error": "AGENT_CLARIFICATION_STALE"}
+
+
+def test_pi_stream_persists_structured_clarification_only_after_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = build_app()
+    app.state.settings.agent_enabled = True
+    app.state.settings.pi_service_token = SecretStr(
+        "pi-service-token-for-tests-00000000000001"
+    )
+    with TestClient(app) as client:
+        register(client, "agent-structured-question@example.test")
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        clarification = {
+            "version": 1,
+            "questions": [{
+                "id": "role",
+                "header": "目标岗位",
+                "question": "你的目标岗位是什么？",
+                "options": [
+                    {"id": "backend", "label": "后端开发"},
+                    {"id": "product", "label": "产品经理"},
+                ],
+            }],
+        }
+
+        class FakeStreamResponse:
+            status_code = 200
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args):
+                return None
+
+            async def aiter_lines(self):
+                frames = (
+                    ("clarification.requested", {"runId": run_id, "clarification": clarification}),
+                    ("assistant.delta", {"runId": run_id, "delta": "请选择目标岗位"}),
+                    ("run.completed", {"runId": run_id}),
+                )
+                for event, payload in frames:
+                    yield f"event: {event}"
+                    import json
+                    yield "data: " + json.dumps(payload, ensure_ascii=False)
+                    yield ""
+
+        class FakeHttpClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args):
+                return None
+
+            def stream(self, *_args, **_kwargs):
+                return FakeStreamResponse()
+
+        monkeypatch.setattr(
+            "linkcv.modules.agent.pi_client.httpx.AsyncClient",
+            lambda **_kwargs: FakeHttpClient(),
+        )
+
+        events = b"".join(asyncio.run(
+            _collect_stream_events(app, run_id, "请优化简历")
+        )).decode()
+        assert "event: clarification.requested" in events
+        with app.state.session_factory() as db:
+            message = db.scalar(
+                select(AgentMessage).where(
+                    AgentMessage.run_id == db.scalar(
+                        select(AgentRun.id).where(AgentRun.public_id == run_id)
+                    ),
+                    AgentMessage.role == "assistant",
+                )
+            )
+            assert message is not None
+            assert message.message_type == "clarification"
+            assert message.metadata_json == clarification
+
+
+async def _collect_stream_events(app, run_id: str, content: str) -> list[bytes]:
+    return [item async for item in stream_pi_run(app, run_id, content)]
+
+
 def test_tool_event_terminal_state_is_idempotent_and_cannot_regress() -> None:
     app = build_app()
     with TestClient(app) as client:

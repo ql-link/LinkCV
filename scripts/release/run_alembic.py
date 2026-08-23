@@ -43,6 +43,9 @@ REVISION_COLUMN_MARKERS = {
             }
         ),
     },
+    "0032": {
+        "agent_messages": frozenset({"message_type", "metadata_json"}),
+    },
 }
 
 

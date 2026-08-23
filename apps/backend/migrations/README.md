@@ -1,100 +1,82 @@
 # LinkCV Alembic 迁移约束
 
-本目录管理 LinkCV MySQL schema 版本。迁移采用 **SQL-first**：表、字段、索引、外键和可表达的数据变更写在 SQL 文件中，Python revision 只负责按版本顺序调用 SQL 文件。
+本目录管理 LinkCV MySQL schema 版本。迁移采用 **SQL-first、forward-only**：表、字段、索引、外键和可表达的数据变更写在 up SQL 中，Python revision 按版本顺序执行；仓库不保存 down SQL，也不支持数据库降级。
 
-## 当前迁移链
-
-根 revision `0001` 用于建立旧版 `users` 与 `resumes`；`0002` 在确认旧业务表为空后
-建立正式鉴权、模板、简历和历史版本结构。后续 revision 依次补充模板删除兼容、
-对象清理任务、语义简历迁移、LLM 治理、用户私有 JD 和管理员操作审计。`0008`
-在建立 Chat 候选和当前绑定前，按外键依赖顺序永久清空旧模型配置及调用日志；
-`0009` 新增 `admin_operation_logs`；`0010` 移除对象存储清理任务表；`0011`
-删除仅写不读的管理员操作审计表；`0012` 删除已停用的旧版简历内容与样式备份列；
-`0013` 为简历分享新增字段；`0019` 为账号绑定新增 `wechat_openid` 唯一绑定与
-`wechat_bound_at`；后续 revision 将 `email`、`password_hash` 放宽为可空
-（微信扫码登录用户无邮箱密码）。
-`0022` 扩展通用文档解析任务以承载资料库，并在增加资料任务指针前删除旧资料行；对象存储源文件由发布前清理脚本处理，执行前必须确认备份。当前唯一 head 见 `alembic heads`。每个版本都提供配对升级和降级 SQL；原型 SQLite 数据
-仍不迁移到 MySQL。
+## 目录
 
 ```text
 migrations/
 ├── env.py                       # Alembic 连接与执行入口
-├── script.py.mako               # 新 revision 的 SQL-first Python 模板
+├── script.py.mako               # 新 revision 的 SQL-first 模板
 ├── sql/
-│   ├── <revision>.up.sql         # 升级 SQL
-│   └── <revision>.down.sql       # 降级 SQL
+│   └── <revision>.up.sql         # 从上一版本升级到当前版本
 └── versions/
-    └── <revision>_<name>.py      # 仅调用对应 SQL 文件
+    └── <revision>_<name>.py      # upgrade 执行 up SQL，downgrade 明确拒绝
 ```
+
+当前唯一 head 以 `alembic heads` 的真实输出为准。仓库存在 revision 不代表目标环境已经迁移到 head；执行前必须读取目标数据库的 current revision。
 
 ## 新建迁移
 
-不要使用 `alembic revision --autogenerate`，它会生成难以审查的 `op.create_table` 等 Python DDL。
-
-在仓库根目录执行：
+不要使用 `alembic revision --autogenerate`，它会生成难以审查的 Python DDL。在仓库根目录执行：
 
 ```bash
 npm run db:revision -- -m "create resume tables"
 ```
 
-该命令自动生成：
+该命令只生成：
 
 ```text
 apps/backend/migrations/versions/<revision>_create_resume_tables.py
 apps/backend/migrations/sql/<revision>.up.sql
-apps/backend/migrations/sql/<revision>.down.sql
 ```
 
-必须在提交前完成两个 SQL 文件：
+`up.sql` 使用 MySQL 8.4 语法表达从上一版本到当前版本的变化。Python 文件不手写 `op.create_table`、`op.add_column` 或 `op.create_index` 等 DDL；`downgrade()` 固定抛出 forward-only 错误。
 
-- `up.sql`：从上一版本升级到当前版本的 MySQL SQL。当前基线使用已部署
-  MySQL 8.0 与目标 MySQL 8.4 都支持的语法。
-- `down.sql`：可安全回退时的反向 SQL；确实不可逆时写明原因，并在 Python revision 中显式失败，不得伪装成成功回滚。
-
-新 revision 的 Python 文件不应手写 `op.create_table`、`op.add_column`、`op.create_index` 等 DDL。
-
-## SQL 文件规则
+## SQL 规则
 
 - 每条语句以英文分号结尾，并在分号后换行。
 - 单行说明使用 `--` 注释。
-- 不允许 `CREATE DATABASE`、`DROP DATABASE` 或 `USE`；迁移 runner 已锁定目标为 `linkcv`。
-- 使用 MySQL 8.4 语法，明确字符集、排序规则、外键和索引。
-- 破坏性变更优先采用“扩展 → 回填 → 切换 → 收缩”；不要把生产数据删除与应用切换混在同一不可恢复步骤。
-- SQL 无法安全表达的分批回填、外部调用等逻辑才允许少量 Python，且必须在 revision 文件头说明原因、幂等性与回滚方式。
+- 不允许 `CREATE DATABASE`、`DROP DATABASE` 或 `USE`；runner 已锁定目标为 `linkcv`。
+- 明确字符集、排序规则、外键、约束和索引。
+- 破坏性变更优先“扩展 → 回填 → 切换 → 收缩”。
+- 分批回填、外部调用等 SQL 无法安全表达的逻辑才允许少量 Python，并说明原因和幂等性。
+- 已进入共享环境的 revision 和 up SQL 不原地修改；用新 revision 向前修正。
 
 ## 执行与核验
 
 ```bash
-# 查看迁移链和当前数据库版本；head 应唯一
 uv run --directory apps/backend alembic heads
 uv run --directory apps/backend alembic current
-
-# 升级到 head
 npm run db:migrate
-
-# 首次创建 linkcv 数据库后升级到 head
 npm run db:init
 ```
 
-共享 Dev 环境使用前，显式选择基础环境文件：
+共享 Dev 环境显式选择配置：
 
 ```bash
 LINKCV_ENV_FILE=.env.development npm run db:migrate
 ```
 
-部署时不直接运行 Alembic CLI；Jenkins 和容器通过 `scripts/release/run_alembic.py` 先核对 `APP_ENV`、MySQL host、port 与 database，再升级到 head。
-
-真实 MySQL 往返测试需要显式提供专用、可清理的 `linkcv` 测试库，测试会执行
-`upgrade → downgrade → upgrade`，不得指向共享 Dev 或 Production：
+部署通过 `scripts/release/run_alembic.py` 核对环境、MySQL host、port 和 database 后升级到 head。迁移测试只覆盖空库到 head、受支持历史版本到 head 和重复 upgrade；不执行升级降级往返：
 
 ```bash
 LINKCV_TEST_MYSQL_URL='mysql+pymysql://<user>:<password>@127.0.0.1:<port>/linkcv' \
   uv run --directory apps/backend pytest tests/integration/migrations
 ```
 
+测试 URL 只能指向可清理的本地 `linkcv` 库，不能指向共享 Dev 或 Production。
+
+## 恢复策略
+
+- 数据库发布前必须按风险准备可用备份并明确恢复目标。
+- schema 或数据问题通过新的 forward revision 修正。
+- 只有旧应用兼容新 schema 时才回退应用镜像；回退镜像不会回退数据库。
+- 需要恢复旧数据库状态时使用已验证备份，不执行 Alembic downgrade。
+
 ## 禁止项
 
+- 不生成、恢复或执行 `.down.sql`。
 - 不手工在共享数据库执行未进入版本控制的 `ALTER TABLE`。
-- 不原地修改已被共享环境执行过的 revision 或 SQL 文件；修正通过新的 revision 完成。
-- 不在镜像 `docker build` 阶段连接数据库或执行迁移。
-- 不向 `tolink_rag_db` 或 Production 数据库执行 Dev 迁移。
+- 不在镜像构建阶段连接数据库或执行迁移。
+- 不向其他业务库或 Production 执行 Dev 迁移。

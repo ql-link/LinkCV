@@ -45,7 +45,7 @@
 | 技能 | 职责 | 边界或下一站 |
 | --- | --- | --- |
 | `mysql-ddl-conventions` | 设计和审查 MySQL 物理表结构、约束与索引 | 由方案编写过程调用定稿；落地迁移转 `alembic-migration` |
-| `alembic-migration` | 编写、校验和排查 SQL-first Alembic 迁移链与配对 up/down SQL | 业务实现转实施，文档转同步 |
+| `alembic-migration` | 编写、校验和排查 forward-only SQL-first Alembic 迁移链与 up SQL | 业务实现转实施，文档转同步 |
 
 ## 运维与故障
 
