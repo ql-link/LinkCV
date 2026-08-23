@@ -18,17 +18,7 @@ COPY apps/web/src ./src
 COPY apps/web/pdf-cli ./pdf-cli
 RUN npm run build
 
-FROM node:22-bookworm-slim AS pi-build
-
-ARG NPM_REGISTRY=https://registry.npmmirror.com
-WORKDIR /app
-COPY third_party/pi ./third_party/pi
-COPY apps/pi-service ./apps/pi-service
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --prefix third_party/pi --no-audit --registry="${NPM_REGISTRY}"
-RUN --network=none \
-    npm --prefix third_party/pi run check:model-data && \
-    npm --prefix apps/pi-service run build
+FROM node:22-bookworm-slim AS node-runtime
 
 FROM python:3.13-slim AS runtime
 
@@ -61,8 +51,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --python .venv/bin/python --no-deps --index-url "${UV_INDEX_URL}" .
 COPY --from=web-build /app/apps/web/dist /app/web
 COPY --from=web-build /app/apps/web/dist-server /app/pdf
-COPY --from=pi-build /usr/local/bin/node /usr/local/bin/node
-COPY --from=pi-build /app/apps/pi-service/dist/server.js /app/pi/server.js
+COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 RUN node --version
 RUN mkdir -p /app/logs
 

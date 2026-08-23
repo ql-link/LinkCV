@@ -68,6 +68,12 @@ export function buildProfileEnvironment(options) {
   };
 }
 
+export function serviceScriptForProfile(profile) {
+  return basename(profile) === ".env.development"
+    ? "dev:development-services"
+    : "dev:services";
+}
+
 function run() {
   const profile = process.argv[2];
   if (!profile) {
@@ -87,7 +93,7 @@ function run() {
   console.log(`基础配置：${runtime.files.base}`);
   console.log(`共享私密覆盖：${runtime.files.secret}（${secretState}）`);
 
-  const child = spawn("npm", ["run", "dev:services"], {
+  const child = spawn("npm", ["run", serviceScriptForProfile(profile)], {
     cwd: process.cwd(),
     env: runtime.env,
     stdio: "inherit",

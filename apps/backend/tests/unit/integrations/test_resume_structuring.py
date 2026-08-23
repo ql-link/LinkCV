@@ -8,9 +8,9 @@ from linkcv.integrations.resume_structuring import (
     LLMResumeStructuringClient,
     ResumeStructureInvalidError,
 )
+from linkcv.modules.llm.catalog import RESUME_STRUCTURING_CAPABILITY
 from linkcv.modules.llm.schemas import StructuredChatResult
 from linkcv.modules.llm.service import LLMError
-from linkcv.modules.llm.catalog import RESUME_STRUCTURING_CAPABILITY
 
 
 class FakeLLMService:

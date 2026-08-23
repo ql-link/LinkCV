@@ -168,6 +168,41 @@ def test_chat_uses_only_bound_model_and_records_cost(service_context) -> None:
         assert log.estimated_cost == Decimal("2.5000000000")
 
 
+def test_agent_runtime_model_uses_pi_binding_not_chat_binding(service_context) -> None:
+    service, _gateway, sessions = service_context
+    chat_id = add_candidate(sessions, service, "chat-current", current=True)
+    with sessions() as db:
+        pi_config = LLMModelConfig(
+            adapter="deepseek",
+            model_call_name="pi-current",
+            model_name="deepseek/pi-current",
+            api_base="https://api.example.invalid/v1",
+            encrypted_api_key=service.encrypt_credential("fictional-pi-key"),
+            enabled=True,
+            priority=100,
+            config_version=3,
+        )
+        db.add(pi_config)
+        db.flush()
+        db.add(
+            LLMCapabilityBinding(
+                capability="pi_agent",
+                model_config_id=pi_config.id,
+            )
+        )
+        db.commit()
+        pi_id = pi_config.id
+
+    runtime = asyncio.run(service.agent_runtime_model())
+
+    assert runtime.id == pi_id
+    assert runtime.id != chat_id
+    assert runtime.model_call_name == "pi-current"
+    assert runtime.api_base == "https://api.example.invalid/v1"
+    assert runtime.api_key == "fictional-pi-key"
+    assert runtime.config_version == 3
+
+
 @pytest.mark.parametrize(
     "content",
     [

@@ -5,10 +5,12 @@ import os
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Event
+from time import sleep
+from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, delete, inspect, select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
@@ -17,11 +19,21 @@ from linkcv.application.resumes.service import (
     ResumeTitleConflict,
     create_resume_from_template,
 )
+from linkcv.core.database import utc_now
+from linkcv.core.errors import ApiError
 from linkcv.domain.resume_snapshot import parse_resume_snapshot
+from linkcv.modules.agent.models import AgentRun, AgentSession, ResumeChangeProposal
+from linkcv.modules.agent.service import (
+    create_proposal,
+    create_session,
+    delete_resume_agent_data,
+    reject_proposal,
+)
+from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0029"
+EXPECTED_HEAD = "0031"
 
 
 def migration_test_url() -> str:
@@ -107,8 +119,52 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "resume_versions",
         "document_parse_tasks",
         "job_descriptions",
+        "agent_sessions",
+        "agent_runs",
+        "agent_messages",
+        "agent_tool_calls",
+        "resume_change_proposals",
     } <= set(inspector.get_table_names())
     assert "admin_operation_logs" not in inspector.get_table_names()
+    for agent_table in {
+        "agent_sessions",
+        "agent_runs",
+        "agent_messages",
+        "agent_tool_calls",
+        "resume_change_proposals",
+    }:
+        assert inspector.get_foreign_keys(agent_table) == []
+    proposal_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("resume_change_proposals")
+    }
+    scoped_proposal_columns = {
+        "proposal_mode",
+        "target_locator_json",
+        "target_content_hash",
+        "diagnosis_json",
+        "operations_json",
+        "rationale_json",
+        "source_refs_json",
+    }
+    assert scoped_proposal_columns <= set(proposal_columns)
+    assert proposal_columns["proposal_mode"]["nullable"] is False
+    assert proposal_columns["proposal_mode"]["type"].length == 32
+    assert proposal_columns["target_content_hash"]["type"].length == 71
+    for json_column in {
+        "target_locator_json",
+        "diagnosis_json",
+        "operations_json",
+        "rationale_json",
+        "source_refs_json",
+    }:
+        assert proposal_columns[json_column]["type"].__class__.__name__ == "JSON"
+    assert "ck_resume_change_proposals_mode" in {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints(
+            "resume_change_proposals"
+        )
+    }
     assert {column["name"] for column in inspector.get_columns("users")} == {
         "id",
         "email",
@@ -231,6 +287,29 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     assert "storage_cleanup_jobs" not in inspector.get_table_names()
     assert "resume_imports" not in inspector.get_table_names()
 
+    run_alembic(database_url, "downgrade", "0030")
+    downgraded_proposal_inspector = inspect(engine)
+    assert scoped_proposal_columns.isdisjoint(
+        {
+            column["name"]
+            for column in downgraded_proposal_inspector.get_columns(
+                "resume_change_proposals"
+            )
+        }
+    )
+    assert "ck_resume_change_proposals_mode" not in {
+        constraint["name"]
+        for constraint in downgraded_proposal_inspector.get_check_constraints(
+            "resume_change_proposals"
+        )
+    }
+    with engine.connect() as connection:
+        assert connection.scalar(
+            text("SELECT version_num FROM alembic_version")
+        ) == "0030"
+    run_alembic(database_url, "upgrade", "head")
+    inspector = inspect(engine)
+
     run_alembic(database_url, "downgrade", "0009")
     downgraded_inspector = inspect(engine)
     assert {
@@ -279,10 +358,9 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     inspector = inspect(engine)
     assert "storage_cleanup_jobs" not in inspector.get_table_names()
 
-    assert {
-        constraint["name"]
-        for constraint in inspector.get_unique_constraints("users")
-    } == {"uk_users_email", "uk_users_wechat_openid"}
+    assert {constraint["name"] for constraint in inspector.get_unique_constraints("users")} == {
+        "uk_users_email"
+    }
     user_columns = {column["name"]: column for column in inspector.get_columns("users")}
     resume_columns = {
         column["name"]: column for column in inspector.get_columns("resumes")
@@ -481,7 +559,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "llm_model_configs",
         "llm_capability_bindings",
         "llm_call_logs",
-        "llm_model_validations",
         "job_descriptions",
     } <= set(inspector.get_table_names())
     assert "admin_operation_logs" not in inspector.get_table_names()
@@ -545,6 +622,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         column["name"] for column in inspector.get_columns("llm_model_configs")
     } == {
         "id",
+        "capability",
         "model_name",
         "adapter",
         "model_call_name",
@@ -561,14 +639,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     assert {
         column["name"]
         for column in inspector.get_columns("llm_capability_bindings")
-    } == {
-        "capability",
-        "model_config_id",
-        "binding_version",
-        "validation_id",
-        "created_at",
-        "updated_at",
-    }
+    } == {"capability", "model_config_id", "created_at", "updated_at"}
     assert {
         column["name"] for column in inspector.get_columns("llm_call_logs")
     } == {
@@ -578,7 +649,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "source",
         "user_id",
         "model_config_id",
-        "model_config_version",
         "model_name",
         "adapter",
         "model_call_name",
@@ -598,6 +668,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         for column in inspector.get_columns("llm_model_configs")
     } == {
         "id": "模型配置主键",
+        "capability": "系统模型能力标识，当前仅 chat",
         "model_name": "LiteLLM 模型标识",
         "adapter": "LiteLLM adapter 标识",
         "model_call_name": "不含 adapter 前缀的模型调用名",
@@ -612,7 +683,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "updated_at": "最后更新时间（UTC）",
     }
     assert inspector.get_table_comment("llm_model_configs")["text"] == (
-        "能力中立的模型连接配置"
+        "系统模型能力的候选连接配置（含发布兼容列）"
     )
     assert {
         column["name"]: column["comment"]
@@ -624,7 +695,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "source": "稳定调用来源代码",
         "user_id": "发起调用的用户主键",
         "model_config_id": "实际使用的模型配置主键，未选中模型时为空",
-        "model_config_version": "实际模型配置版本快照，未选中模型时为空",
         "model_name": "实际模型标识快照",
         "adapter": "实际 LiteLLM adapter 快照",
         "model_call_name": "实际模型调用名快照",
@@ -671,7 +741,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     assert {
         constraint["name"]
         for constraint in inspector.get_unique_constraints("users")
-    } == {"uk_users_email", "uk_users_wechat_openid"}
+    } == {"uk_users_email"}
     assert {
         constraint["name"] for constraint in inspector.get_check_constraints("users")
     } == {"ck_users_is_admin", "ck_users_status"}
@@ -694,7 +764,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "ck_llm_call_logs_input_price_nonnegative",
         "ck_llm_call_logs_input_tokens_nonnegative",
         "ck_llm_call_logs_latency_nonnegative",
-        "ck_llm_call_logs_model_config_version",
         "ck_llm_call_logs_metering_status",
         "ck_llm_call_logs_output_price_nonnegative",
         "ck_llm_call_logs_output_tokens_nonnegative",
@@ -718,7 +787,7 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     assert {
         constraint["name"]
         for constraint in inspector.get_unique_constraints("llm_model_configs")
-    } == set()
+    } == {"uk_llm_model_configs_capability_id"}
     assert any(
         index["name"] == "idx_llm_model_configs_enabled_priority"
         and index["column_names"] == ["enabled", "priority", "id"]
@@ -756,17 +825,10 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     }
     assert binding_foreign_keys["fk_llm_capability_bindings_model"][
         "constrained_columns"
-    ] == ["model_config_id"]
+    ] == ["capability", "model_config_id"]
     assert binding_foreign_keys["fk_llm_capability_bindings_model"][
         "referred_columns"
-    ] == ["id"]
-    assert {
-        constraint["name"]
-        for constraint in inspector.get_check_constraints("llm_capability_bindings")
-    } == {
-        "ck_llm_capability_bindings_capability",
-        "ck_llm_capability_bindings_version",
-    }
+    ] == ["capability", "id"]
 
     resume_foreign_keys = {
         foreign_key["name"]: foreign_key
@@ -816,13 +878,9 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         assert connection.execute(
             text(
                 "SELECT capability, model_config_id "
-                "FROM llm_capability_bindings ORDER BY capability"
+                "FROM llm_capability_bindings"
             )
-        ).all() == [
-            ("chat", None),
-            ("pi_agent", None),
-            ("resume_structuring", None),
-        ]
+        ).one() == ("chat", None)
 
     run_alembic(database_url, "upgrade", "head")
     with engine.begin() as connection:
@@ -1257,6 +1315,207 @@ def test_mysql_serializes_concurrent_normalized_resume_titles() -> None:
     engine.dispose()
 
 
+def test_mysql_serializes_agent_session_creation_with_resume_deletion() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "head")
+    engine = create_engine(database_url)
+    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+
+    with engine.begin() as connection:
+        user_id = connection.execute(
+            text(
+                "INSERT INTO users (email, password_hash, nickname) "
+                "VALUES ('agent-delete-race@example.invalid', '$2b$12$fictional', '张三')"
+            )
+        ).lastrowid
+        template_id = connection.scalar(
+            text("SELECT id FROM resume_templates WHERE `key` = 'blank-cn'")
+        )
+    assert template_id is not None
+    with session_factory() as db:
+        resume = create_resume_from_template(
+            db=db,
+            user_id=user_id,
+            title="张三的并发测试简历",
+            template_id=template_id,
+        )
+        resume_id = resume.id
+
+    delete_has_lock = Event()
+    allow_delete_commit = Event()
+    create_started = Event()
+
+    def delete_resume_while_holding_lock() -> None:
+        with session_factory() as db:
+            locked = db.scalar(
+                select(Resume)
+                .where(Resume.id == resume_id, Resume.user_id == user_id)
+                .with_for_update()
+            )
+            assert locked is not None
+            delete_has_lock.set()
+            assert allow_delete_commit.wait(timeout=5)
+            delete_resume_agent_data(db, resume_id=resume_id, user_id=user_id)
+            db.execute(
+                delete(ResumeVersion).where(ResumeVersion.resume_id == resume_id)
+            )
+            db.execute(delete(Resume).where(Resume.id == resume_id))
+            db.commit()
+
+    def create_agent_session_during_delete() -> str:
+        with session_factory() as db:
+            create_started.set()
+            try:
+                create_session(
+                    db,
+                    user_id=user_id,
+                    resume_id=str(resume_id),
+                    title=None,
+                )
+            except ApiError as error:
+                return error.code
+            return "created"
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            delete_future = executor.submit(delete_resume_while_holding_lock)
+            assert delete_has_lock.wait(timeout=5)
+            create_future = executor.submit(create_agent_session_during_delete)
+            assert create_started.wait(timeout=5)
+            sleep(0.2)
+            try:
+                assert not create_future.done()
+            finally:
+                allow_delete_commit.set()
+            delete_future.result(timeout=5)
+            assert create_future.result(timeout=5) == "RESUME_NOT_FOUND"
+
+        with engine.connect() as connection:
+            assert connection.scalar(
+                select(AgentSession.id).where(AgentSession.resume_id == resume_id)
+            ) is None
+            assert connection.scalar(
+                select(Resume.id).where(Resume.id == resume_id)
+            ) is None
+    finally:
+        allow_delete_commit.set()
+        reset_test_database_to_base(database_url)
+        run_alembic(database_url, "upgrade", "head")
+        engine.dispose()
+
+
+def test_mysql_reject_cannot_overwrite_an_applied_proposal() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "head")
+    engine = create_engine(database_url)
+    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+
+    with engine.begin() as connection:
+        user_id = connection.execute(
+            text(
+                "INSERT INTO users (email, password_hash, nickname) "
+                "VALUES ('agent-proposal-race@example.invalid', '$2b$12$fictional', '张三')"
+            )
+        ).lastrowid
+        template_id = connection.scalar(
+            text("SELECT id FROM resume_templates WHERE `key` = 'blank-cn'")
+        )
+    assert template_id is not None
+    with session_factory() as db:
+        resume = create_resume_from_template(
+            db=db,
+            user_id=user_id,
+            title="张三的提案并发测试简历",
+            template_id=template_id,
+        )
+        agent_session = create_session(
+            db,
+            user_id=user_id,
+            resume_id=str(resume.id),
+            title=None,
+        )
+        run = AgentRun(
+            public_id=str(uuid4()),
+            session_id=agent_session.id,
+            idempotency_key=uuid4().hex,
+            status="running",
+            started_at=utc_now(),
+        )
+        db.add(run)
+        db.commit()
+        proposal = create_proposal(
+            db,
+            run=run,
+            session=agent_session,
+            call_key="proposal-confirm-reject-race",
+            data=resume.data_json,
+            style=resume.style_json,
+            summary="并发终态测试提案",
+            ttl_days=30,
+        )
+        proposal_public_id = proposal.public_id
+        resume_id = resume.id
+
+    reject_started = Event()
+
+    def reject_while_confirmation_holds_lock() -> str:
+        with session_factory() as db:
+            reject_started.set()
+            try:
+                result = reject_proposal(
+                    db,
+                    public_id=proposal_public_id,
+                    user_id=user_id,
+                )
+            except ApiError as error:
+                return error.code
+            return result.status
+
+    try:
+        with session_factory() as confirmation_db:
+            locked_proposal = confirmation_db.scalar(
+                select(ResumeChangeProposal)
+                .where(ResumeChangeProposal.public_id == proposal_public_id)
+                .with_for_update()
+            )
+            locked_resume = confirmation_db.scalar(
+                select(Resume).where(Resume.id == resume_id).with_for_update()
+            )
+            assert locked_proposal is not None and locked_resume is not None
+            locked_resume.lock_version += 1
+            locked_proposal.status = "applied"
+            locked_proposal.applied_lock_version = locked_resume.lock_version
+            locked_proposal.applied_at = utc_now()
+
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                reject_future = executor.submit(reject_while_confirmation_holds_lock)
+                assert reject_started.wait(timeout=5)
+                sleep(0.2)
+                try:
+                    assert not reject_future.done()
+                finally:
+                    confirmation_db.commit()
+                assert reject_future.result(timeout=5) == "AGENT_PROPOSAL_NOT_PENDING"
+
+        with session_factory() as db:
+            final_proposal = db.scalar(
+                select(ResumeChangeProposal).where(
+                    ResumeChangeProposal.public_id == proposal_public_id
+                )
+            )
+            final_resume = db.get(Resume, resume_id)
+            assert final_proposal is not None and final_resume is not None
+            assert final_proposal.status == "applied"
+            assert final_proposal.applied_lock_version == 2
+            assert final_resume.lock_version == 2
+    finally:
+        reset_test_database_to_base(database_url)
+        run_alembic(database_url, "upgrade", "head")
+        engine.dispose()
+
+
 def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
     database_url = migration_test_url()
     engine = create_engine(database_url)
@@ -1568,7 +1827,7 @@ def test_mysql_0008_clears_legacy_llm_data_and_supports_rollback() -> None:
     run_alembic(database_url, "upgrade", "head")
     assert "admin_operation_logs" not in inspect(engine).get_table_names()
     assert inspect(engine).get_table_comment("llm_model_configs")["text"] == (
-        "能力中立的模型连接配置"
+        "系统模型能力的候选连接配置（含发布兼容列）"
     )
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT COUNT(*) FROM llm_model_configs")) == 3
@@ -1655,13 +1914,9 @@ def test_mysql_0008_clears_legacy_llm_data_and_supports_rollback() -> None:
         assert connection.execute(
             text(
                 "SELECT capability, model_config_id "
-                "FROM llm_capability_bindings ORDER BY capability"
+                "FROM llm_capability_bindings"
             )
-        ).all() == [
-            ("chat", None),
-            ("pi_agent", None),
-            ("resume_structuring", None),
-        ]
+        ).one() == ("chat", None)
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
     engine.dispose()

@@ -36,13 +36,14 @@ npm run setup
 
 ### 共享开发环境
 
-从已提交的开发环境模板创建本机私密覆盖文件：
+创建只保存账号、密码和密钥的本机私密覆盖文件：
 
 ```bash
-cp .env.development .env.development.local
+touch .env.development.local
+chmod 600 .env.development.local
 ```
 
-在 `.env.development.local` 填写必要的私密值，例如 `MYSQL_USER`、`MYSQL_PASSWORD`、`MINIO_ACCESS_KEY`、`MINIO_SECRET_KEY` 与 `JWT_SECRET`。然后通过一条命令同时启动 Web 和 FastAPI：
+不要把 `.env.development` 中的服务地址、端口、数据库名或完整连接 URL 复制进覆盖文件。在 `.env.development.local` 填写必要的私密值，例如 `MYSQL_USER`、`MYSQL_PASSWORD`、`MINIO_ACCESS_KEY`、`MINIO_SECRET_KEY`、`JWT_SECRET` 与共享 Development 的 `LLM_CREDENTIAL_ENCRYPTION_KEYS`。然后通过一条命令同时启动 Web、FastAPI、解析 Worker 和 Pi Agent：
 
 ```bash
 npm run dev:development
@@ -58,7 +59,7 @@ npm run infra:up
 npm run dev:local
 ```
 
-两个命令都会启动 Web（`http://127.0.0.1:5173`）与 FastAPI（`http://127.0.0.1:8000`）。API 文档位于 `http://127.0.0.1:8000/api/docs`；本地基础设施运行时，MinIO 控制台位于 `http://127.0.0.1:9001`。
+`dev:development` 默认启动 Web（`http://127.0.0.1:5173`）、FastAPI（`http://127.0.0.1:18000`）与 Pi（`http://127.0.0.1:8010`）；`dev:local` 保持 FastAPI 默认端口 8000。本地基础设施运行时，MinIO 控制台位于 `http://127.0.0.1:9001`。
 
 Vite 会将所有相对 `/api` 请求代理到 FastAPI。鉴权使用有效期七天的 HttpOnly Cookie JWT；简历存储在 MySQL，私有图片存储在 MinIO。原型阶段的 SQLite 数据不会导入。
 

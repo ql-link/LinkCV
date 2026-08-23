@@ -32,6 +32,9 @@ class PiProbeCoordinator:
         config: RuntimeModelConfig,
         api_key: str,
     ) -> GatewayUsage:
+        token = self._settings.pi_service_token
+        if token is None:
+            raise PiProbeError("LLM_PI_AGENT_UNAVAILABLE")
         run_id = f"pirun_{secrets.token_hex(16)}"
         nonce = secrets.token_urlsafe(24)
         payload = {
@@ -47,15 +50,15 @@ class PiProbeCoordinator:
         }
         try:
             async with httpx.AsyncClient(
-                base_url=self._settings.pi_service_url.rstrip("/"),
-                timeout=self._settings.pi_probe_timeout_seconds,
+                base_url=self._settings.pi_service_base_url,
+                timeout=self._settings.agent_run_timeout_seconds,
                 transport=self._transport,
             ) as client:
                 response = await client.post(
                     "/internal/probes",
                     headers={
                         "Authorization": "Bearer "
-                        + self._settings.pi_service_token.get_secret_value()
+                        + token.get_secret_value()
                     },
                     json=payload,
                 )

@@ -1,6 +1,54 @@
 version: 1
 
 contracts:
+  - id: development-local-agent-startup
+    description: Development 本地脚本向四个进程加载同一配置并使用回环服务地址
+    assertions:
+      - path: package.json
+        pattern: '"dev:development": "node scripts/dev/run_with_env_profile\.mjs \.env\.development"[\s\S]*"dev:development-services": "bash scripts/dev/start-development\.sh"'
+        message: 根级 Development 启动入口必须先加载共享配置，再进入 Agent 感知的统一脚本
+      - path: scripts/dev/run_with_env_profile.mjs
+        pattern: 'serviceScriptForProfile[\s\S]*\.env\.development[\s\S]*dev:development-services'
+        message: Development profile 必须路由到 Agent 感知的四服务启动器
+      - path: scripts/dev/start-development.sh
+        pattern: 'BACKEND_PORT="\$\{backend_port\}"[\s\S]*PI_SERVICE_BASE_URL="http://127\.0\.0\.1:\$\{pi_port\}"[\s\S]*LINKCV_BASE_URL="http://127\.0\.0\.1:\$\{backend_port\}"[\s\S]*--env-file=\$\{base_env\}'
+        message: 启动脚本必须加载 Development 配置并统一本地跨服务地址
+      - path: scripts/dev/run-development.mjs
+        pattern: 'RABBITMQ_URL[\s\S]*LINKCV_LOCAL_RABBITMQ_HOST[\s\S]*MYSQL_HOST[\s\S]*LINKCV_LOCAL_RABBITMQ_PORT'
+        message: 本机 Worker 必须把 Development 容器 DNS 转换为可达的 AMQP 地址
+      - path: scripts/dev/run-development.mjs
+        pattern: 'npm:dev:web[\s\S]*npm:dev:backend[\s\S]*npm:dev:worker[\s\S]*npm:dev:pi'
+        message: 启动器必须同时启动 Web、FastAPI、Worker 与 Pi
+
+  - id: agent-readiness-deployment-contract
+    description: Dev 与 Production 通过 FastAPI 检查完整 Agent 服务链后才完成部署
+    assertions:
+      - path: apps/backend/src/linkcv/modules/agent/routes.py
+        pattern: '@router\.get\("/readiness", response_model=AgentReadinessResponse\)'
+        message: FastAPI 必须暴露不泄露配置的 Agent readiness 入口
+      - path: apps/pi-service/src/server.js
+        pattern: 'GET" && url\.pathname === "/internal/agent/readiness"'
+        message: Pi 必须提供受服务令牌保护的内部 readiness
+      - path: deploy/scripts/build-production-on-cloud.sh
+        pattern: 'pi_image="linkcv-pi"[\s\S]*PI_TAG="\$\{tag\}"[\s\S]*/api/agent/readiness'
+        message: Production 远端发布必须部署同版本 Pi 镜像并检查完整 Agent 服务链
+      - path: deploy/scripts/build-development-on-primary.sh
+        pattern: '/api/agent/readiness'
+        message: Dev 发布必须检查完整 Agent 服务链
+
+  - id: pi-provider-network-contract
+    description: Pi SDK 服务继承部署环境代理并把供应商失败作为运行失败上报
+    assertions:
+      - path: third_party/pi/packages/coding-agent/src/index.ts
+        pattern: 'export \{ configureHttpDispatcher \} from "\./core/http-dispatcher\.ts"'
+        message: Pi SDK 公共入口必须暴露 HTTP 代理初始化能力
+      - path: apps/pi-service/src/server.js
+        pattern: 'configureHttpDispatcher\(\);[\s\S]*const config = loadConfig\(\);'
+        message: Pi 服务必须在处理模型请求前启用环境代理
+      - path: apps/pi-service/src/runtime/agent.js
+        pattern: 'message\.stopReason === "error"[\s\S]*AGENT_MODEL_REQUEST_FAILED[\s\S]*assertAgentCompleted\(finalAssistantMessage\)'
+        message: Pi 服务不得把模型供应商错误误报为运行成功
+
   - id: observability-loki-promtail-contract
     description: LinkCV 三套环境固定七天 JSONL 契约，Dev/Production 使用独立 Promtail 和共享 Loki
     assertions:
@@ -314,9 +362,9 @@ contracts:
   - id: pi-model-data-offline-build
     description: Pi 模型目录使用版本化快照，常规安装和镜像构建不访问实时外部目录
     assertions:
-      - path: Dockerfile
-        pattern: 'RUN --network=none[\s\S]*npm --prefix third_party/pi run check:model-data &&[\s\S]*npm --prefix apps/pi-service run build'
-        message: Docker 必须在禁用网络的构建层中校验 Pi 模型快照并编译 Pi Service
+      - path: deploy/Dockerfile.pi
+        pattern: 'RUN --network=none[\s\S]*npm run check:model-data &&[\s\S]*npm run build:offline'
+        message: 独立 Pi 镜像必须在禁用网络的构建层中校验模型快照并完成离线构建
       - path: package.json
         pattern: '"prepare:pi": "npm --prefix third_party/pi run check:model-data"'
         message: 常规环境同步不得联网刷新 Pi 模型目录
@@ -413,7 +461,7 @@ contracts:
         pattern: 'required_secret_keys=\([\s\S]*PI_SERVICE_TOKEN[\s\S]*pi_health_status=.*linkcv-pi'
         message: Production 必须在发布前要求 Pi 内部令牌并检查 Pi Service 健康状态
       - path: deploy/scripts/build-production-on-cloud.sh
-        pattern: 'previous_compose_file="\$\{backup_dir\}/docker-compose\.production\.yml"[\s\S]*docker compose -f "\$\{previous_compose_file\}" up -d --remove-orphans'
+        pattern: 'backup_compose_file="\$\{backup_dir\}/docker-compose\.production\.yml"[\s\S]*docker compose -f "\$\{backup_compose_file\}" up -d --remove-orphans'
         message: Production 回滚必须使用发布前备份的 Compose，兼容首次引入 Pi Service
       - path: Jenkinsfile
         pattern: 'tokenCredentialId: ''linkcv-dev-webhook-token'''

@@ -29,6 +29,7 @@ if [[ "${import_legacy_sqlite}" != "true" && "${import_legacy_sqlite}" != "false
 fi
 
 image="linkcv"
+pi_image="linkcv-pi"
 tag="prod-${commit_short}-b${build_number}"
 prod_root="/opt/tolink/LinkCV"
 deploy_dir="${prod_root}"
@@ -77,9 +78,12 @@ required_secret_keys=(
   MINIO_ACCESS_KEY
   MINIO_SECRET_KEY
   LLM_CREDENTIAL_ENCRYPTION_KEYS
-  PI_SERVICE_TOKEN
   LINKPARSE_API_KEY
   RABBITMQ_URL
+  WECHAT_APPID
+  WECHAT_SECRET
+  PI_SERVICE_TOKEN
+  LINKCV_INTERNAL_AGENT_TOKEN
   PLUGIN_RELEASE_ORIGIN
 )
 for required_key in "${required_secret_keys[@]}"; do
@@ -88,6 +92,12 @@ for required_key in "${required_secret_keys[@]}"; do
     exit 12
   fi
 done
+pi_service_token="$(grep -E '^PI_SERVICE_TOKEN=.+' "${secret_env}" | tail -n 1 | cut -d= -f2-)"
+internal_agent_token="$(grep -E '^LINKCV_INTERNAL_AGENT_TOKEN=.+' "${secret_env}" | tail -n 1 | cut -d= -f2-)"
+if [[ "${pi_service_token}" == "${internal_agent_token}" ]]; then
+  echo "PI_SERVICE_TOKEN and LINKCV_INTERNAL_AGENT_TOKEN must be different" >&2
+  exit 12
+fi
 for forbidden_key in DATABASE_URL REDIS_URL MINIO_ENDPOINT; do
   if grep -Eq "^${forbidden_key}=" "${secret_env}"; then
     echo "Production secret env must not override ${forbidden_key}" >&2
@@ -120,6 +130,11 @@ DOCKER_BUILDKIT=1 docker build \
   --label "org.opencontainers.image.revision=${commit_short}" \
   -t "${image}:${tag}" \
   "${build_dir}"
+DOCKER_BUILDKIT=1 docker build \
+  --label "org.opencontainers.image.revision=${commit_short}" \
+  -f "${build_dir}/deploy/Dockerfile.pi" \
+  -t "${pi_image}:${tag}" \
+  "${build_dir}"
 
 backup_dir="${backup_root}/build-${build_number}"
 mkdir -m 0700 -p "${backup_dir}"
@@ -133,7 +148,24 @@ for deployed_file in \
 done
 
 old_image="$(docker inspect --format='{{.Config.Image}}' linkcv 2>/dev/null || true)"
+old_pi_image="$(docker inspect --format='{{.Config.Image}}' linkcv-pi 2>/dev/null || true)"
 printf '%s\n' "${old_image}" >"${backup_dir}/previous-image.txt"
+printf '%s\n' "${old_pi_image}" >"${backup_dir}/previous-pi-image.txt"
+
+backup_compose_file="${backup_dir}/docker-compose.production.yml"
+if [[ "${old_image}" == linkcv:prod-* ]]; then
+  if [[ ! -f "${backup_compose_file}" || ! -f "${backup_dir}/.env.production" ]]; then
+    echo "Previous Production configuration is unavailable for rollback" >&2
+    exit 20
+  fi
+  if grep -q 'linkcv-pi:' "${backup_compose_file}"; then
+    if [[ "${old_pi_image}" != linkcv-pi:prod-* ]] || \
+      [[ "${old_pi_image#linkcv-pi:}" != "${old_image#linkcv:}" ]]; then
+      echo "Previous Production application and Pi images are not a matching rollback pair" >&2
+      exit 20
+    fi
+  fi
+fi
 
 rollback_old_application() {
   if [[ "${old_image}" != linkcv:* ]]; then
@@ -141,18 +173,29 @@ rollback_old_application() {
     return 1
   fi
   old_tag="${old_image#linkcv:}"
+  rollback_has_pi="false"
   if [[ "${old_image}" == linkcv:prod-* ]]; then
-    previous_compose_file="${backup_dir}/docker-compose.production.yml"
-    if [[ ! -f "${previous_compose_file}" ]]; then
-      echo "Previous Production compose file is unavailable" >&2
-      return 1
+    if grep -q 'linkcv-pi:' "${backup_compose_file}"; then
+      if [[ "${old_pi_image}" != linkcv-pi:prod-* ]]; then
+        echo "Previous Pi image is unavailable for paired rollback" >&2
+        return 1
+      fi
+      rollback_has_pi="true"
+      TAG="${old_tag}" \
+      PI_TAG="${old_tag}" \
+      LINKCV_ENV_FILE="${backup_dir}/.env.production" \
+      LINKCV_SECRET_ENV_FILE="${secret_env}" \
+      LINKCV_DOCKER_NETWORK="${docker_network}" \
+      LINKCV_HTTP_PORT="${http_port}" \
+        docker compose -f "${backup_compose_file}" up -d --remove-orphans
+    else
+      TAG="${old_tag}" \
+      LINKCV_ENV_FILE="${backup_dir}/.env.production" \
+      LINKCV_SECRET_ENV_FILE="${secret_env}" \
+      LINKCV_DOCKER_NETWORK="${docker_network}" \
+      LINKCV_HTTP_PORT="${http_port}" \
+        docker compose -f "${backup_compose_file}" up -d --remove-orphans
     fi
-    TAG="${old_tag}" \
-    LINKCV_ENV_FILE="${backup_dir}/.env.production" \
-    LINKCV_SECRET_ENV_FILE="${secret_env}" \
-    LINKCV_DOCKER_NETWORK="${docker_network}" \
-    LINKCV_HTTP_PORT="${http_port}" \
-      docker compose -f "${previous_compose_file}" up -d --remove-orphans
   elif [[ -f "${old_compose_file}" ]]; then
     TAG="${old_tag}" \
     LINKCV_ENV_FILE="${deploy_dir}/.env" \
@@ -162,7 +205,9 @@ rollback_old_application() {
     return 1
   fi
   for _ in $(seq 1 30); do
-    if curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null; then
+    if curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null && \
+      { [[ "${rollback_has_pi}" != "true" ]] || \
+        curl -fsS "http://127.0.0.1:${http_port}/api/agent/readiness" >/dev/null; }; then
       echo "Previous Production application restored: ${old_image}"
       return 0
     fi
@@ -232,6 +277,7 @@ fi
 cutover_started="true"
 
 TAG="${tag}" \
+PI_TAG="${tag}" \
 LINKCV_ENV_FILE="${base_env}" \
 LINKCV_SECRET_ENV_FILE="${secret_env}" \
 LINKCV_DOCKER_NETWORK="${docker_network}" \
@@ -240,27 +286,29 @@ LINKCV_HTTP_PORT="${http_port}" \
 
 for _ in $(seq 1 30); do
   health_status="$(docker inspect --format='{{.State.Health.Status}}' linkcv 2>/dev/null || true)"
-  worker_status="$(docker inspect --format='{{.State.Status}}' linkcv-worker 2>/dev/null || true)"
   pi_health_status="$(docker inspect --format='{{.State.Health.Status}}' linkcv-pi 2>/dev/null || true)"
+  worker_status="$(docker inspect --format='{{.State.Status}}' linkcv-worker 2>/dev/null || true)"
   promtail_status="$(docker inspect --format='{{.State.Status}}' linkcv-promtail 2>/dev/null || true)"
   if [[ "${health_status}" == "healthy" ]] && \
-    [[ "${worker_status}" == "running" ]] && \
     [[ "${pi_health_status}" == "healthy" ]] && \
+    [[ "${worker_status}" == "running" ]] && \
     [[ "${promtail_status}" == "running" ]] && \
-    curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null; then
+    curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null && \
+    curl -fsS "http://127.0.0.1:${http_port}/api/agent/readiness" >/dev/null; then
     echo "Container health: ${health_status}"
+    echo "Pi container health: ${pi_health_status}"
     echo "Worker status: ${worker_status}"
-    echo "Pi Service health: ${pi_health_status}"
     echo "Promtail status: ${promtail_status}"
     docker image prune -f >/dev/null
-    echo "Production deployed: ${image}:${tag}"
+    echo "Production deployed: ${image}:${tag} + ${pi_image}:${tag}"
     cutover_started="false"
     exit 0
   fi
   sleep 2
 done
 
-docker compose -f "${compose_file}" logs --tail=100 linkcv linkcv-worker linkcv-pi promtail || true
+TAG="${tag}" PI_TAG="${tag}" \
+  docker compose -f "${compose_file}" logs --tail=100 linkcv linkcv-pi linkcv-worker promtail || true
 echo "Production health check timed out; restoring previous application" >&2
 rollback_old_application || true
 cutover_started="false"

@@ -24,6 +24,7 @@ if [[ ! -f "${source_archive}" ]]; then
 fi
 
 image="linkcv"
+pi_image="linkcv-pi"
 tag="dev-${commit_short}-b${build_number}"
 dev_root="/opt/tolink/dev"
 deploy_dir="${dev_root}/linkcv"
@@ -49,6 +50,12 @@ tar -xzf "${source_archive}" -C "${build_dir}"
 DOCKER_BUILDKIT=1 docker build \
   --label "org.opencontainers.image.revision=${commit_short}" \
   -t "${image}:${tag}" \
+  "${build_dir}"
+
+DOCKER_BUILDKIT=1 docker build \
+  --label "org.opencontainers.image.revision=${commit_short}" \
+  -f "${build_dir}/deploy/Dockerfile.pi" \
+  -t "${pi_image}:${tag}" \
   "${build_dir}"
 
 install -m 0644 "${build_dir}/.env.development" "${base_env}"
@@ -106,6 +113,7 @@ docker run --rm \
     --expected-database linkcv
 
 TAG="${tag}" \
+PI_TAG="${tag}" \
 LINKCV_ENV_FILE="${base_env}" \
 LINKCV_SECRET_ENV_FILE="${secret_env}" \
 LINKCV_DOCKER_NETWORK="${docker_network}" \
@@ -116,14 +124,14 @@ for _ in $(seq 1 30); do
   health_status="$(docker inspect --format='{{.State.Health.Status}}' linkcv-dev 2>/dev/null || true)"
   pi_health_status="$(docker inspect --format='{{.State.Health.Status}}' linkcv-pi-dev 2>/dev/null || true)"
   promtail_status="$(docker inspect --format='{{.State.Status}}' linkcv-dev-promtail 2>/dev/null || true)"
-  if [[ "${health_status}" == "healthy" ]] && [[ "${pi_health_status}" == "healthy" ]] && \
-    [[ "${promtail_status}" == "running" ]] && \
-    curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null; then
+  if [[ "${health_status}" == "healthy" ]] && [[ "${pi_health_status}" == "healthy" ]] && [[ "${promtail_status}" == "running" ]] && \
+    curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null && \
+    curl -fsS "http://127.0.0.1:${http_port}/api/agent/readiness" >/dev/null; then
     echo "Container health: ${health_status}"
-    echo "Pi Service health: ${pi_health_status}"
+    echo "Pi container health: ${pi_health_status}"
     echo "Promtail status: ${promtail_status}"
     docker image prune -f >/dev/null
-    echo "Development deployed: ${image}:${tag}"
+    echo "Development deployed: ${image}:${tag} + ${pi_image}:${tag}"
     exit 0
   fi
   sleep 2

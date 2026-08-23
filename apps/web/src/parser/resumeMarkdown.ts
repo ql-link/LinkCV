@@ -89,6 +89,20 @@ const inlineIconRule: InlineRule = (state, silent) => {
 md.inline.ruler.before("emphasis", "linkcv_inline_icon", inlineIconRule);
 md.renderer.rules.linkcv_inline_icon = (tokens, index) => `<span data-inline-icon data-icon-name="${tokens[index].meta.name}" class="resume-inline-icon"></span>`;
 
+const resumeBlockAnchorRule: InlineRule = (state, silent) => {
+  const match = state.src.slice(state.pos).match(/^\[\[linkcv-block:(blk_[a-z0-9]{16,64})\]\]/);
+  if (!match) return false;
+  if (!silent) {
+    const token = state.push("linkcv_resume_block_anchor", "span", 0);
+    token.meta = { blockId: match[1] };
+  }
+  state.pos += match[0].length;
+  return true;
+};
+
+md.inline.ruler.before("emphasis", "linkcv_resume_block_anchor", resumeBlockAnchorRule);
+md.renderer.rules.linkcv_resume_block_anchor = (tokens, index) => `<span data-resume-block-id="${tokens[index].meta.blockId}" aria-hidden="true" class="resume-block-anchor"></span>`;
+
 const defaultImageRenderer = md.renderer.rules.image;
 const defaultLinkOpenRenderer = md.renderer.rules.link_open;
 

@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   buildProfileEnvironment,
   resolveProfileFiles,
+  serviceScriptForProfile,
 } from "./run_with_env_profile.mjs";
 
 function fixture() {
@@ -66,4 +67,12 @@ test("LINKCV_SECRET_ENV_FILE explicitly overrides the shared default", () => {
   });
 
   assert.equal(files.secret, join(paths.worktree, "custom.local"));
+});
+
+test("Development profile keeps the Agent-aware four-service launcher", () => {
+  assert.equal(
+    serviceScriptForProfile(".env.development"),
+    "dev:development-services",
+  );
+  assert.equal(serviceScriptForProfile(".env"), "dev:services");
 });

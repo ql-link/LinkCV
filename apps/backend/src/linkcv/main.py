@@ -13,6 +13,7 @@ from starlette.types import Scope
 from sqlalchemy.orm import Session, sessionmaker
 
 from linkcv.api.router import api_router
+from linkcv.modules.agent.internal_routes import router as internal_agent_router
 from linkcv.core.config import Settings, load_settings
 from linkcv.core.database import Base, build_engine, build_session_factory
 from linkcv.core.errors import ApiError, install_error_handlers
@@ -28,8 +29,8 @@ from linkcv.modules.llm.crypto import CredentialCipher
 from linkcv.modules.llm.gateway import LLMGateway, LiteLLMGateway
 from linkcv.modules.llm.catalog import MODEL_CAPABILITIES
 from linkcv.modules.llm.models import LLMCapabilityBinding
-from linkcv.modules.llm.service import LLMService
 from linkcv.modules.llm.pi_probe import PiProbeCoordinator
+from linkcv.modules.llm.service import LLMService
 from linkcv.modules.observability.logging import StructuredLogEmitter, configure_logging
 from linkcv.modules.observability.middleware import ObservabilityMiddleware
 from linkcv.modules.observability.loki import LokiClient
@@ -124,7 +125,7 @@ def create_app(
             for capability in MODEL_CAPABILITIES:
                 if schema_db.get(LLMCapabilityBinding, capability) is None:
                     schema_db.add(LLMCapabilityBinding(capability=capability))
-                schema_db.commit()
+            schema_db.commit()
 
     runtime_storage = storage or AssetStorage(runtime_settings)
     runtime_plugin_release_service = plugin_release_service or PluginReleaseService(
@@ -263,6 +264,7 @@ def create_app(
     app.add_middleware(ObservabilityMiddleware, emitter=runtime_emitter)
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
     app.include_router(api_router, prefix="/api")
+    app.include_router(internal_agent_router)
 
     @app.api_route(
         "/api/{path:path}",

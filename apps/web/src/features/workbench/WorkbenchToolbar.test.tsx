@@ -1,7 +1,7 @@
 import { Editor } from "@tiptap/core";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { editorDocumentToMarkdown } from "../../api/resumeContract";
 import { renderResumeMarkdown } from "../../parser/resumeMarkdown";
 import { resumeEditorExtensions } from "./editorExtensions";
@@ -24,7 +24,7 @@ describe("WorkbenchToolbar 局部字号", () => {
     expect(screen.getByLabelText("所选文字字号数值")).toHaveTextContent("10.5pt");
     await user.click(screen.getByRole("button", { name: "所选文字字号减小" }));
 
-    const text = editor.getJSON().content?.[0]?.content?.[0];
+    const text = editor.getJSON().content?.[0]?.content?.find((node) => node.type === "text");
     expect(text?.marks).toContainEqual({ type: "textStyle", attrs: expect.objectContaining({ fontSize: "10pt" }) });
   });
 
@@ -43,7 +43,7 @@ describe("WorkbenchToolbar 局部字号", () => {
 
     editor = new Editor({ extensions: resumeEditorExtensions, content: renderResumeMarkdown(markdown) });
 
-    const text = editor.getJSON().content?.[0]?.content?.[0];
+    const text = editor.getJSON().content?.[0]?.content?.find((node) => node.type === "text");
     expect(text?.marks).toContainEqual({ type: "textStyle", attrs: expect.objectContaining({ fontSize: "9.5pt" }) });
   });
 });
@@ -60,7 +60,36 @@ describe("WorkbenchToolbar 当前行左右对齐", () => {
     expect(editor.getJSON().content?.[0]).toMatchObject({
       type: "paragraph",
       attrs: expect.objectContaining({ textAlign: "right" }),
-      content: [{ type: "text", text: "示例大学 2022–2026" }],
+      content: expect.arrayContaining([{ type: "text", text: "示例大学 2022–2026" }]),
     });
+  });
+});
+
+describe("WorkbenchToolbar 选中文字 AI 快捷操作", () => {
+  it("把所选文字和快捷指令交给右侧智能助手", async () => {
+    const user = userEvent.setup();
+    const onAgentAction = vi.fn();
+    editor = new Editor({ extensions: resumeEditorExtensions, content: "<p>负责平台性能优化</p>" });
+    editor.commands.setTextSelection({ from: 1, to: 9 });
+
+    render(
+      <WorkbenchToolbar
+        editor={editor}
+        resumeId="42"
+        defaultFontSize={10.5}
+        onNotice={() => undefined}
+        onAgentAction={onAgentAction}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "AI" }));
+    expect(screen.getByRole("menu", { name: "所选文字 AI 快捷操作" })).toBeInTheDocument();
+    await user.click(screen.getByRole("menuitem", { name: "优化表达" }));
+
+    expect(onAgentAction).toHaveBeenCalledWith("优化表达", expect.objectContaining({
+      block_ids: [expect.stringMatching(/^blk_[a-z0-9]{16,64}$/)],
+      selected_text: "负责平台性能优化",
+      selected_text_hash: "sha256:3d4d668a9062835f402347676f24927855bb46bc4f627768d160265c63d16c87",
+    }));
   });
 });
