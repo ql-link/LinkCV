@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import {
   BriefcaseBusiness,
+  CalendarClock,
   Database,
   FileText,
   LayoutTemplate,
@@ -10,7 +11,7 @@ import { useResumeStore } from "../store/resumeStore";
 import { Brand } from "@/components/ui";
 import RandomLetterSwapNav from "@/components/ui/m-random-letter-swap-1";
 
-export type WorkspaceSection = "resumes" | "templates" | "jobs" | "datasets" | "account";
+export type WorkspaceSection = "resumes" | "templates" | "jobs" | "interviews" | "datasets" | "account";
 
 type WorkspaceNavigationProps = {
   active: WorkspaceSection;
@@ -50,6 +51,14 @@ const NAV_ITEMS: Array<{
     label: "JD 中心",
     href: "/jobs",
     icon: BriefcaseBusiness,
+  },
+  {
+    activeColor: "var(--ui-interview-accent)",
+    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-interview-accent) 26%, transparent) 0%, color-mix(in srgb, var(--ui-interview-accent) 12%, transparent) 48%, transparent 76%)",
+    key: "interviews",
+    label: "面试中心",
+    href: "/interviews",
+    icon: CalendarClock,
   },
   {
     activeColor: "var(--ui-success)",
