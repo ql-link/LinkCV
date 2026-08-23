@@ -44,8 +44,8 @@
 
 .sample-stack {
   position: relative;
-  width: 300rpx;
-  height: 400rpx;
+  width: 340rpx;
+  height: 500rpx;
 }
 
 .sample-paper {
@@ -65,45 +65,90 @@
   transform: rotate(5deg);
 }
 
-.s-name {
-  width: 44%;
-  height: 18rpx;
-  border-radius: 8rpx;
-  background: var(--ui-foreground);
+.rs-head {
+  padding-bottom: 18rpx;
+  border-bottom: 2rpx solid var(--ui-foreground);
 }
 
-.s-role {
-  width: 28%;
-  height: 9rpx;
-  margin-top: 14rpx;
-  border-radius: 6rpx;
-  background: var(--ui-accent);
-  opacity: 0.55;
+.rs-name {
+  display: block;
+  color: var(--ui-foreground);
+  font-size: 34rpx;
+  font-weight: 700;
+  letter-spacing: -1rpx;
+  line-height: 1.2;
 }
 
-.s-divider {
-  height: 2rpx;
-  margin-top: 24rpx;
-  background: var(--ui-border);
+.rs-role {
+  display: block;
+  margin-top: 8rpx;
+  color: var(--ui-accent);
+  font-size: 16rpx;
+  font-weight: 600;
 }
 
-.s-section {
-  width: 30%;
-  height: 10rpx;
-  margin-top: 26rpx;
-  border-radius: 6rpx;
-  background: var(--ui-text-subtle);
+.rs-contact {
+  display: block;
+  margin-top: 8rpx;
+  color: var(--ui-text-subtle);
+  font-size: 13rpx;
+  letter-spacing: 0.5rpx;
 }
 
-.s-line {
-  height: 8rpx;
-  margin-top: 16rpx;
-  border-radius: 6rpx;
-  background: var(--ui-border);
+.rs-section {
+  margin-top: 22rpx;
 }
 
-.s-line.is-short {
-  width: 62%;
+.rs-section-title {
+  display: block;
+  color: var(--ui-accent);
+  font-size: 14rpx;
+  font-weight: 700;
+  letter-spacing: 2rpx;
+}
+
+.rs-entry {
+  margin-top: 12rpx;
+}
+
+.rs-entry-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10rpx;
+}
+
+.rs-entry-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--ui-foreground);
+  font-size: 15rpx;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rs-time {
+  flex-shrink: 0;
+  color: var(--ui-text-subtle);
+  font-size: 12rpx;
+}
+
+.rs-entry-desc {
+  display: block;
+  margin-top: 5rpx;
+  color: var(--ui-text-muted);
+  font-size: 13rpx;
+  line-height: 1.5;
+}
+
+.rs-skills {
+  display: block;
+  margin-top: 10rpx;
+  color: var(--ui-text-muted);
+  font-size: 13rpx;
+  line-height: 1.6;
 }
 
 .sample-hint {

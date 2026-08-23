@@ -16,18 +16,42 @@
     <view class="sample-stack" aria-hidden="true">
       <view class="sample-paper is-back"></view>
       <view class="sample-paper">
-        <view class="s-name"></view>
-        <view class="s-role"></view>
-        <view class="s-divider"></view>
-        <view class="s-section"></view>
-        <view class="s-line"></view>
-        <view class="s-line is-short"></view>
-        <view class="s-section"></view>
-        <view class="s-line"></view>
-        <view class="s-line is-short"></view>
+        <view class="rs-head">
+          <text class="rs-name">张三</text>
+          <text class="rs-role">前端工程师 · 北京</text>
+          <text class="rs-contact">zhangsan@example.com · 138-0000-0000</text>
+        </view>
+        <view class="rs-section">
+          <text class="rs-section-title">工作经历</text>
+          <view class="rs-entry">
+            <view class="rs-entry-row">
+              <text class="rs-entry-title">星云科技 · 高级前端工程师</text>
+              <text class="rs-time">2023 – 至今</text>
+            </view>
+            <text class="rs-entry-desc">负责在线简历编辑器与协同排版引擎</text>
+          </view>
+          <view class="rs-entry">
+            <view class="rs-entry-row">
+              <text class="rs-entry-title">远山信息 · 前端工程师</text>
+              <text class="rs-time">2021 – 2023</text>
+            </view>
+            <text class="rs-entry-desc">搭建组件库与数据可视化模块</text>
+          </view>
+        </view>
+        <view class="rs-section">
+          <text class="rs-section-title">教育背景</text>
+          <view class="rs-entry-row">
+            <text class="rs-entry-title">临江大学 · 计算机科学与技术</text>
+            <text class="rs-time">2017 – 2021</text>
+          </view>
+        </view>
+        <view class="rs-section">
+          <text class="rs-section-title">技能</text>
+          <text class="rs-skills">TypeScript / React / Node.js / 富文本排版</text>
+        </view>
       </view>
     </view>
-    <text class="sample-hint">示例简历 · 登录后展示你的</text>
+    <text class="sample-hint">示例内容为虚构信息 · 登录后展示你的简历</text>
   </view>
 
   <view class="cta-area">
