@@ -1,7 +1,7 @@
 import { Editor } from "@tiptap/core";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { editorDocumentToMarkdown } from "../../api/resumeContract";
 import { renderResumeMarkdown } from "../../parser/resumeMarkdown";
 import { resumeEditorExtensions } from "./editorExtensions";
@@ -62,5 +62,30 @@ describe("WorkbenchToolbar 当前行左右对齐", () => {
       attrs: expect.objectContaining({ textAlign: "right" }),
       content: [{ type: "text", text: "示例大学 2022–2026" }],
     });
+  });
+});
+
+describe("WorkbenchToolbar 选中文字 AI 快捷操作", () => {
+  it("把所选文字和快捷指令交给右侧智能助手", async () => {
+    const user = userEvent.setup();
+    const onAgentAction = vi.fn();
+    editor = new Editor({ extensions: resumeEditorExtensions, content: "<p>负责平台性能优化</p>" });
+    editor.commands.setTextSelection({ from: 1, to: 9 });
+
+    render(
+      <WorkbenchToolbar
+        editor={editor}
+        resumeId="42"
+        defaultFontSize={10.5}
+        onNotice={() => undefined}
+        onAgentAction={onAgentAction}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "AI" }));
+    expect(screen.getByRole("menu", { name: "所选文字 AI 快捷操作" })).toBeInTheDocument();
+    await user.click(screen.getByRole("menuitem", { name: "优化表达" }));
+
+    expect(onAgentAction).toHaveBeenCalledWith("优化表达", "负责平台性能优化");
   });
 });

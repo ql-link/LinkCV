@@ -4,24 +4,66 @@ import { describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "../../api/client";
 import {
   ImportWarningBanner,
+  AgentFloatingEntry,
   ExportPdfAction,
   FontPreviewSelect,
   normalizeVersionName,
   PageArrangementControl,
-  SettingsSlider,
+  SettingsStepper,
+  SaveResumeAction,
   SaveVersionAction,
   VersionRenameAction,
+  VersionHistoryAction,
   versionRenameErrorMessage,
   setRestoredEditorContent,
   setWorkbenchEditorEditable,
-  SmartOnePageAction,
   versionNameValidationMessage,
+  WorkbenchZoomControl,
+  ZoomFeedback,
   WorkbenchSaveStatus,
+  workbenchCanvasClassName,
   versionOperationErrorMessage,
 } from "./ResumeWorkbench";
 
+describe("ResumeWorkbench AI 悬浮入口", () => {
+  it("用同一个低打扰入口打开和收起智能助手", async () => {
+    const user = userEvent.setup();
+    const onToggle = vi.fn();
+    const { rerender } = render(<AgentFloatingEntry open={false} onToggle={onToggle} />);
+
+    const openButton = screen.getByRole("button", { name: "打开智能助手" });
+    expect(openButton).toHaveTextContent("AI 助手");
+    await user.click(openButton);
+    expect(onToggle).toHaveBeenCalledOnce();
+
+    rerender(<AgentFloatingEntry open onToggle={onToggle} />);
+    expect(screen.getByRole("button", { name: "收起智能助手" })).toHaveTextContent("AI 助手");
+  });
+});
+
+describe("ResumeWorkbench 抽屉布局", () => {
+  it("为普通抽屉和更宽的智能助手抽屉提供对应画布状态", () => {
+    expect(workbenchCanvasClassName(null)).toBe("workbench-canvas");
+    expect(workbenchCanvasClassName("settings")).toBe("workbench-canvas has-drawer");
+    expect(workbenchCanvasClassName("history")).toBe("workbench-canvas has-drawer");
+    expect(workbenchCanvasClassName("agent")).toBe("workbench-canvas has-drawer has-agent-drawer");
+  });
+});
+
+describe("ResumeWorkbench 版本记录入口", () => {
+  it("在页面设置中显示版本数量并打开版本记录", async () => {
+    const user = userEvent.setup();
+    const onOpen = vi.fn();
+    render(<VersionHistoryAction count={3} onOpen={onOpen} />);
+
+    expect(screen.getByText("查看、恢复和管理 3 个已保存版本。")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "查看版本记录" }));
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+});
+
 describe("ResumeWorkbench 字体选择", () => {
-  it("用每个候选字体展示统一样例并允许选择", async () => {
+  it("只显示候选字体名称并允许选择", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     const serifFont = '"Source Han Serif SC", "Songti SC", STSong, SimSun, serif';
@@ -30,13 +72,14 @@ describe("ResumeWorkbench 字体选择", () => {
 
     const trigger = screen.getByRole("combobox", { name: "字体" });
     expect(trigger).toHaveTextContent("简历宋体");
-    expect(screen.getByText("张三的简历 Resume")).toHaveStyle({ fontFamily: serifFont });
+    expect(trigger).not.toHaveTextContent("张三的简历 Resume");
 
     await user.click(trigger);
     expect(screen.getByRole("listbox")).toHaveAttribute("data-ui-theme", "light");
     const wenkaiOption = screen.getByRole("option", { name: /霞鹜文楷/ });
-    expect(wenkaiOption).toHaveTextContent("张三的简历 Resume");
-    expect(wenkaiOption.querySelector(".workbench-font-option-copy > span")).toHaveStyle({
+    expect(wenkaiOption).toHaveTextContent("霞鹜文楷");
+    expect(wenkaiOption).not.toHaveTextContent("张三的简历 Resume");
+    expect(wenkaiOption.querySelector(".workbench-font-option-copy")).toHaveStyle({
       fontFamily: '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif',
     });
 
@@ -52,10 +95,10 @@ describe("ResumeWorkbench 字体选择", () => {
 });
 
 describe("ResumeWorkbench 页面设置步进按钮", () => {
-  it("按滑杆步长增大或减小当前数值", async () => {
+  it("按指定步长增大或减小当前数值", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<SettingsSlider label="正文字号" unit="pt" value={10.5} min={8} max={16} step={0.5} onChange={onChange} />);
+    render(<SettingsStepper label="正文字号" unit="pt" value={10.5} min={8} max={16} step={0.5} onChange={onChange} />);
 
     await user.click(screen.getByRole("button", { name: "正文字号减小" }));
     await user.click(screen.getByRole("button", { name: "正文字号增大" }));
@@ -65,41 +108,61 @@ describe("ResumeWorkbench 页面设置步进按钮", () => {
   });
 });
 
-describe("ResumeWorkbench 智能一页入口", () => {
-  it("显示当前状态并允许切换", async () => {
+describe("ResumeWorkbench 页面排列", () => {
+  it("在页面设置中明确选择上下、左右或智能一页", async () => {
     const user = userEvent.setup();
-    const onToggle = vi.fn();
+    const onChange = vi.fn();
+    const onSmartOnePageChange = vi.fn();
 
-    render(<SmartOnePageAction active onToggle={onToggle} />);
+    const { rerender } = render(<PageArrangementControl value="vertical" onChange={onChange} onSmartOnePageChange={onSmartOnePageChange} />);
 
-    const action = screen.getByRole("button", { name: "智能一页" });
-    expect(action).toHaveAttribute("aria-pressed", "true");
+    const verticalButton = screen.getByRole("button", { name: "上下排列" });
+    const horizontalButton = screen.getByRole("button", { name: "左右排列" });
+    expect(verticalButton).toHaveAttribute("aria-pressed", "true");
+    expect(verticalButton.querySelector('[data-arrangement="vertical"]')).toBeInTheDocument();
+    await user.click(horizontalButton);
+    expect(onChange).toHaveBeenCalledWith("horizontal");
+    await user.click(screen.getByRole("button", { name: "智能一页" }));
+    expect(onSmartOnePageChange).toHaveBeenCalledWith(true);
 
-    await user.click(action);
-    expect(onToggle).toHaveBeenCalledOnce();
+    onChange.mockClear();
+    onSmartOnePageChange.mockClear();
+    rerender(<PageArrangementControl value="horizontal" onChange={onChange} smartOnePage onSmartOnePageChange={onSmartOnePageChange} />);
+    expect(screen.getByRole("button", { name: "左右排列" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "智能一页" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "上下排列" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "左右排列" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "上下排列" }));
+    expect(onSmartOnePageChange).toHaveBeenCalledWith(false);
+    expect(onChange).toHaveBeenCalledWith("vertical");
+  });
+
+  it("版本操作期间禁用全部页面布局选择", () => {
+    render(<PageArrangementControl value="horizontal" onChange={vi.fn()} onSmartOnePageChange={vi.fn()} disabled />);
+    expect(screen.getByRole("button", { name: "上下排列" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "左右排列" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "智能一页" })).toBeDisabled();
   });
 });
 
-describe("ResumeWorkbench 页面排列", () => {
-  it("使用一个按钮切换排列并随当前方向改变图标", async () => {
+describe("ResumeWorkbench 预览缩放", () => {
+  it("在简历名称旁保留缩放操作但不常驻显示比例", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
+    const onReset = vi.fn();
+    render(<WorkbenchZoomControl scale={0.8} onChange={onChange} onReset={onReset} />);
 
-    const { rerender } = render(<PageArrangementControl value="vertical" onChange={onChange} />);
-
-    const verticalButton = screen.getByRole("button", { name: "当前上下排列，切换为左右排列" });
-    expect(verticalButton.querySelector('[data-arrangement="vertical"]')).toBeInTheDocument();
-    await user.click(verticalButton);
-    expect(onChange).toHaveBeenCalledWith("horizontal");
-
-    rerender(<PageArrangementControl value="horizontal" onChange={onChange} />);
-    const horizontalButton = screen.getByRole("button", { name: "当前左右排列，切换为上下排列" });
-    expect(horizontalButton.querySelector('[data-arrangement="horizontal"]')).toBeInTheDocument();
+    expect(screen.queryByText("80%")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "简历缩放增大" }));
+    expect(onChange).toHaveBeenCalledWith(0.88);
+    await user.click(screen.getByRole("button", { name: "适应" }));
+    expect(onReset).toHaveBeenCalledOnce();
   });
 
-  it("智能一页开启时禁用排列选择", () => {
-    render(<PageArrangementControl value="horizontal" onChange={vi.fn()} disabled />);
-    expect(screen.getByRole("button", { name: "当前左右排列，切换为上下排列" })).toBeDisabled();
+  it("缩放发生时在屏幕中央展示当前比例", () => {
+    render(<ZoomFeedback scale={0.88} />);
+    expect(screen.getByRole("status")).toHaveTextContent("88%");
   });
 });
 
@@ -115,17 +178,30 @@ describe("ResumeWorkbench 顶部保存反馈", () => {
     expect(screen.getByRole("status")).toHaveTextContent("已保存");
   });
 
-  it("保存版本期间禁用重复操作并保留明确文案", async () => {
+  it("顶部保存简历按钮触发主记录保存并在保存期间禁用重复操作", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    const { rerender } = render(<SaveResumeAction pending={false} onSave={onSave} />);
+
+    await user.click(screen.getByRole("button", { name: "保存简历" }));
+    expect(onSave).toHaveBeenCalledOnce();
+
+    rerender(<SaveResumeAction pending onSave={onSave} />);
+    expect(screen.getByRole("button", { name: "正在保存简历" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "正在保存简历" })).toHaveTextContent("保存中…");
+  });
+
+  it("页面设置中的保存版本入口保留命名版本操作", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn();
     const { rerender } = render(<SaveVersionAction pending={false} onSave={onSave} />);
 
     await user.click(screen.getByRole("button", { name: "保存版本" }));
     expect(onSave).toHaveBeenCalledOnce();
+    expect(screen.getByText(/可命名、可恢复/)).toBeInTheDocument();
 
     rerender(<SaveVersionAction pending onSave={onSave} />);
     expect(screen.getByRole("button", { name: "正在保存版本" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "正在保存版本" })).toHaveTextContent("保存中…");
   });
 });
 

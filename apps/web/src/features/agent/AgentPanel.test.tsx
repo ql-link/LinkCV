@@ -36,6 +36,52 @@ afterEach(() => {
 });
 
 describe("AgentPanel", () => {
+  it("使用截图对应的欢迎语、快捷操作和紧凑输入入口", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+
+    render(
+      <AgentPanel
+        resumeId="resume-1"
+        onBeforeConfirm={vi.fn().mockResolvedValue(true)}
+        onApplied={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText("你好！我是你的 AI 简历助手")).toBeInTheDocument();
+    expect(screen.getByText("智能优化，高效提升")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "优化内容" }));
+    expect(screen.getByLabelText("告诉助手你想改善什么")).toHaveValue("让经历更贴合目标岗位");
+    expect(screen.getByRole("button", { name: "发送" })).toBeEnabled();
+  });
+
+  it("把选中文字作为上下文带入真实 Agent 请求", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session });
+    const streamMessage = vi.spyOn(api, "streamAgentMessage").mockResolvedValue(undefined);
+
+    render(
+      <AgentPanel
+        resumeId="resume-1"
+        draft={{ id: 1, instruction: "优化表达", selectedText: "负责平台性能优化" }}
+        onBeforeConfirm={vi.fn().mockResolvedValue(true)}
+        onApplied={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText("已选内容")).toBeInTheDocument();
+    expect(screen.getByText("负责平台性能优化")).toBeInTheDocument();
+    expect(screen.getByLabelText("告诉助手你想改善什么")).toHaveValue("优化表达");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => expect(streamMessage).toHaveBeenCalled());
+    expect(streamMessage.mock.calls[0]?.[1].content).toBe("优化表达\n\n选中的简历内容：\n负责平台性能优化");
+  });
+
   it("流式展示回答与提案，并在用户确认后应用到简历", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
@@ -62,7 +108,7 @@ describe("AgentPanel", () => {
 
     render(<AgentPanel resumeId="resume-1" onBeforeConfirm={onBeforeConfirm} onApplied={onApplied} />);
 
-    expect(await screen.findByText("从一个具体目标开始")).toBeInTheDocument();
+    expect(await screen.findByText("你好！我是你的 AI 简历助手")).toBeInTheDocument();
     await user.type(screen.getByLabelText("告诉助手你想改善什么"), "帮我优化项目经历");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
@@ -143,7 +189,7 @@ describe("AgentPanel", () => {
       expect(screen.getByLabelText("告诉助手你想改善什么")).toBeDisabled();
     });
     resolveSecondSessions?.({ sessions: [] });
-    expect(await screen.findByText("从一个具体目标开始")).toBeInTheDocument();
+    expect(await screen.findByText("你好！我是你的 AI 简历助手")).toBeInTheDocument();
 
     await user.type(screen.getByLabelText("告诉助手你想改善什么"), "只修改第二份简历");
     await user.click(screen.getByRole("button", { name: "发送" }));
