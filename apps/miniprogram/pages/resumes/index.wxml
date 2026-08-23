@@ -1,15 +1,17 @@
-<view class="page">
+<view class="page" style="padding-top: {{statusBarHeight}}px">
   <view class="brand-row">
     <view class="ui-brand">
       <image class="ui-brand-mark" src="/assets/linkcv-mark.png" mode="aspectFit" aria-hidden="true"></image>
       <text>LinkCV</text>
     </view>
-    <text class="readonly-tag">只读</text>
   </view>
   <view class="page-head">
     <text class="page-title" wx:if="{{user && user.nickname}}">{{user.nickname}}的简历</text>
     <text class="page-title" wx:else>我的简历</text>
-    <text class="page-meta" wx:if="{{!loading && !error && !guest}}">{{items.length}} 份简历 · 下拉可刷新</text>
+    <view class="page-meta-row" wx:if="{{!loading && !error && !guest}}">
+      <text class="page-meta">{{items.length}} 份简历 · 下拉可刷新</text>
+      <text class="readonly-tag">只读</text>
+    </view>
   </view>
 
   <view class="loading-list" wx:if="{{loading}}">

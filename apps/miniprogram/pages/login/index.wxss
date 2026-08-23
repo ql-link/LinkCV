@@ -1,4 +1,4 @@
-.page { min-height: 100vh; display: flex; flex-direction: column; padding: calc(88rpx + env(safe-area-inset-top)) 32rpx calc(32rpx + env(safe-area-inset-bottom)); box-sizing: border-box; overflow-x: hidden; }
+.page { min-height: 100vh; display: flex; flex-direction: column; padding: 0 32rpx calc(32rpx + env(safe-area-inset-bottom)); box-sizing: border-box; overflow-x: hidden; }
 .topbar { min-height: 88rpx; display: flex; align-items: center; padding-right: 180rpx; }
 .content { flex: 1; display: flex; flex-direction: column; justify-content: center; width: 100%; max-width: 680rpx; margin: 0 auto; padding: 24rpx 8rpx 80rpx; box-sizing: border-box; }
 .title { color: var(--ui-foreground); font-size: 54rpx; font-weight: 700; letter-spacing: -2rpx; line-height: 1.2; }

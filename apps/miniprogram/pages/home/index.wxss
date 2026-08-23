@@ -2,7 +2,7 @@
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  padding: env(safe-area-inset-top) 56rpx calc(40rpx + env(safe-area-inset-bottom));
+  padding: 0 56rpx calc(40rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 

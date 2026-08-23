@@ -1,6 +1,7 @@
 const auth = require("../../services/auth");
 const resumes = require("../../services/resumes");
 const { formatUpdatedAt } = require("../../utils/resume");
+const { getStatusBarHeight } = require("../../utils/system");
 
 Page({
   data: {
@@ -9,6 +10,7 @@ Page({
     error: "",
     items: [],
     user: null,
+    statusBarHeight: getStatusBarHeight(),
   },
 
   onLoad() {

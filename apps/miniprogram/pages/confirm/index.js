@@ -1,4 +1,5 @@
 const auth = require("../../services/auth");
+const { getStatusBarHeight } = require("../../utils/system");
 
 function formRequest(path, data) {
   return new Promise((resolve, reject) => {
@@ -16,6 +17,7 @@ function formRequest(path, data) {
 Page({
   data: {
     scene: "",
+    statusBarHeight: getStatusBarHeight(),
     loading: true,
     submitting: false,
     agreementAccepted: false,

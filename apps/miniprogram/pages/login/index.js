@@ -1,8 +1,10 @@
 const auth = require("../../services/auth");
+const { getStatusBarHeight } = require("../../utils/system");
 
 Page({
   data: {
     loading: true,
+    statusBarHeight: getStatusBarHeight(),
     submitting: false,
     agreementAccepted: false,
     agreementActionHint: "",

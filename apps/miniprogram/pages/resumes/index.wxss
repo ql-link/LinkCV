@@ -2,7 +2,7 @@
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  padding: env(safe-area-inset-top) 32rpx calc(48rpx + env(safe-area-inset-bottom));
+  padding: 0 32rpx calc(48rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 
@@ -10,7 +10,13 @@
   height: 116rpx;
   display: flex;
   align-items: center;
+}
+
+.page-meta-row {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
+  margin-top: 12rpx;
 }
 
 .readonly-tag {
@@ -35,8 +41,6 @@
 }
 
 .page-meta {
-  display: block;
-  margin-top: 12rpx;
   color: var(--ui-text-muted);
   font-size: 22rpx;
 }
