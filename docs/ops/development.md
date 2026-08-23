@@ -152,7 +152,8 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run dev:extension`               | 启动 WXT 插件开发模式                                                |
 | `npm run test:extension`              | 插件 DOM 提取与 API 客户端测试                                       |
 | `npm run dev:desktop`                 | 等待本地 Vite 就绪后打开 Electron 桌面窗口（加载本地页面，支持热更新） |
-| `npm run build:desktop`               | 打包未签名 macOS dmg（默认连生产源，`LINKCV_DESKTOP_ORIGIN` 可覆盖） |
+| `npm run build:desktop`             | 打包未签名 macOS 正式版 dmg（连生产源，仅微信扫码登录）           |
+| `npm run build:desktop:dev`         | 打包未签名 macOS 开发版 dmg（LinkCV-Dev，连内网 Dev，密码登录） |
 | `npm run test:desktop`                | 桌面壳配置解析与导航守卫的 Node 测试                                  |
 | `npm run build:extension`             | 构建可侧载的 Chrome MV3 目录                                         |
 | `uv run --directory apps/backend python ../../scripts/release/build_extension_release.py ...` | 生成并校验 Development/Production 插件发布 ZIP 与 SHA256SUMS |

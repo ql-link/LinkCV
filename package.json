@@ -34,6 +34,7 @@
     "release:extension": "uv run --directory apps/backend python ../../scripts/release/build_extension_release.py",
     "build:backend": "uv build --directory apps/backend",
     "build:desktop": "npm --prefix apps/desktop run build",
+    "build:desktop:dev": "npm --prefix apps/desktop run build:dev",
     "typecheck": "npm run typecheck:web && npm run typecheck:extension && npm run typecheck:desktop",
     "typecheck:web": "npm --prefix apps/web run typecheck",
     "typecheck:extension": "npm --prefix apps/extension run typecheck",

@@ -8,7 +8,8 @@
     "build:main": "esbuild src/main.ts --bundle --platform=node --format=cjs --target=node22 --outfile=dist/main.cjs --external:electron && esbuild src/config.ts --bundle --platform=node --format=cjs --target=node22 --outfile=dist/config.cjs && cp src/error.html dist/error.html",
     "dev": "npm run build:main && node scripts/dev.mjs",
     "start": "electron .",
-    "build": "npm run build:main && electron-builder",
+    "build": "npm run build:main && node scripts/write-build-env.mjs && electron-builder",
+    "build:dev": "npm run build:main && LINKCV_DESKTOP_ENV=development node scripts/write-build-env.mjs && electron-builder -c.productName=LinkCV-Dev -c.appId=cn.linkresume.desktop.dev",
     "typecheck": "tsc --noEmit",
     "test": "npm run build:main && node --test"
   },

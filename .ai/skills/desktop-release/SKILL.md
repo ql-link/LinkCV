@@ -36,10 +36,23 @@ description: 引导 LinkCV macOS 桌面客户端的开发启动、验证打包�
 
 ## 5. 模式二:打验证包
 
-- 命令:`npm run build:desktop`(编译主进程并由 electron-builder 产出 dmg)。
+客户端分两种打包目标,按使用者意图直接映射:
+
+| 使用者意图 | 命令 | 目标环境 | 登录方式 |
+| --- | --- | --- | --- |
+| "打一个测试包""开发版打包""打一个连 Dev 的包" | `npm run build:desktop:dev` | Dev `http://100.86.10.52:18002` | 邮箱密码 + 微信扫码 |
+| "打一个正式包""生产包""对外分发的包" | `npm run build:desktop` | 生产 `https://linkresume.cn` | 仅微信扫码 |
+
+映射原则:提到"测试/开发版/Dev/联调"一律走开发版包;提到"正式/生产/对外/发布给用户"一律走正式包;意图含糊时先与使用者确认目标环境再执行,不猜。本地验证不需要打包——`npm run dev:desktop` 即本地版(密码登录)。
+
+补充规则:
+
+- 登录方式由目标后端的 `/api/auth/capabilities` 决定(`APP_ENV` 为 local/development 时提供邮箱密码登录,production 仅微信扫码),壳只负责指向正确环境。
+- 开发版产物使用独立应用名 LinkCV-Dev 与 appId `cn.linkresume.desktop.dev`,不与正式版互相覆盖安装。
+- 两种打包均可用 `LINKCV_DESKTOP_ORIGIN` 显式覆盖目标源(production 包拒绝非回环 http,连内网 Dev 必须使用开发版目标);`scripts/write-build-env.mjs` 在构建期把目标写入产物并在非法输入时硬失败。
 - 产物位置:`apps/desktop/release/`;记录实际文件名与大小。
-- 验证:双击 dmg 安装并启动,确认连接默认生产源(`https://linkresume.cn`)、微信扫码登录可用;需要连 Dev 环境时以 `LINKCV_DESKTOP_ORIGIN` 覆盖后重新打包。
-- 如实告知:该包未签名,仅用于本机或团队内验证。
+- 验证:双击 dmg 安装并启动——开发版确认连 Dev 环境且登录页出现邮箱密码表单;正式版确认连生产源、微信扫码登录可用。
+- 如实告知:两种包均未签名,仅用于本机或团队内验证。
 
 ## 6. 模式三:正式发布(当前未启用)
 
