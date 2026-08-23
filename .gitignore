@@ -1,6 +1,7 @@
 node_modules/
 dist/
 apps/web/dist-server/
+apps/desktop/release/
 .test-dist/
 .output/
 .wxt/

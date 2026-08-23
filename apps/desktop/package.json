@@ -1,0 +1,25 @@
+{
+  "name": "@linkcv/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LinkCV macOS desktop shell",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build:main": "esbuild src/main.ts --bundle --platform=node --format=cjs --target=node22 --outfile=dist/main.cjs --external:electron && esbuild src/config.ts --bundle --platform=node --format=cjs --target=node22 --outfile=dist/config.cjs && cp src/error.html dist/error.html",
+    "dev": "npm run build:main && node scripts/dev.mjs",
+    "start": "electron .",
+    "build": "npm run build:main && electron-builder",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build:main && node --test"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "typescript": "^6.0.3"
+  },
+  "allowScripts": {
+    "electron@43.4.1": true
+  }
+}
