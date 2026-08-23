@@ -50,14 +50,14 @@ def normalize_date(value: str | None) -> tuple[str | None, bool]:
         return None, True
     match = re.search(r"(?P<year>\d{4})(?:\D+(?P<month>\d{1,2}))?", normalized)
     if not match:
-        return None, False
+        return value.strip(), False
     year = match.group("year")
     month = match.group("month")
     if month is None:
         return year, False
     number = int(month)
     if not 1 <= number <= 12:
-        return None, False
+        return value.strip(), False
     return f"{year}-{number:02d}", False
 
 
@@ -141,10 +141,6 @@ def finalize_resume_document(
     for item in draft.work_experiences:
         start_date, _ = normalize_date(item.raw_start_date)
         end_date, current = normalize_date(item.raw_end_date)
-        if item.raw_start_date and start_date is None:
-            warnings.append("unparsed_work_start_date")
-        if item.raw_end_date and end_date is None and not current:
-            warnings.append("unparsed_work_end_date")
         work_experiences.append(
             WorkExperience(
                 id=new_element_id("work"),

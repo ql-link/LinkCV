@@ -68,6 +68,29 @@ if [[ "${secret_mode}" != "600" ]]; then
   echo "Development secret env file must use mode 600, got ${secret_mode}" >&2
   exit 11
 fi
+
+required_secret_keys=(
+  WECHAT_APPID
+  WECHAT_SECRET
+)
+for required_key in "${required_secret_keys[@]}"; do
+  if ! grep -Eq "^${required_key}=.+$" "${secret_env}"; then
+    echo "Missing required Development secret setting: ${required_key}" >&2
+    exit 12
+  fi
+done
+
+docker run --rm \
+  --env-file "${base_env}" \
+  --env-file "${secret_env}" \
+  -e APP_ENV=development \
+  "${image}:${tag}" \
+  python -c '
+from linkcv.core.config import Settings
+
+if not Settings().wechat_enabled:
+    raise SystemExit("Development WeChat settings are missing or unsafe")
+'
 docker network inspect "${docker_network}" >/dev/null
 
 docker run --rm \
@@ -91,10 +114,13 @@ LINKCV_DEV_HTTP_PORT="${http_port}" \
 
 for _ in $(seq 1 30); do
   health_status="$(docker inspect --format='{{.State.Health.Status}}' linkcv-dev 2>/dev/null || true)"
+  pi_health_status="$(docker inspect --format='{{.State.Health.Status}}' linkcv-pi-dev 2>/dev/null || true)"
   promtail_status="$(docker inspect --format='{{.State.Status}}' linkcv-dev-promtail 2>/dev/null || true)"
-  if [[ "${health_status}" == "healthy" ]] && [[ "${promtail_status}" == "running" ]] && \
+  if [[ "${health_status}" == "healthy" ]] && [[ "${pi_health_status}" == "healthy" ]] && \
+    [[ "${promtail_status}" == "running" ]] && \
     curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null; then
     echo "Container health: ${health_status}"
+    echo "Pi Service health: ${pi_health_status}"
     echo "Promtail status: ${promtail_status}"
     docker image prune -f >/dev/null
     echo "Development deployed: ${image}:${tag}"
@@ -103,6 +129,6 @@ for _ in $(seq 1 30); do
   sleep 2
 done
 
-docker compose -f "${compose_file}" logs --tail=100 linkcv promtail
+docker compose -f "${compose_file}" logs --tail=100 linkcv linkcv-pi promtail
 echo "Development health check timed out." >&2
 exit 12

@@ -10,6 +10,8 @@
 - `apps/web/src/api/resumeContract.ts`：语义简历 TypeScript 契约，以及领域 JSON、Markdown 和现有 Tiptap 编辑器之间的过渡适配。
 - `apps/web/vite.config.mjs`：开发服务器、FastAPI 代理和本地图片预览插件。
 
+生产构建按页面路由拆分 React 功能包，公共 HTML 不依赖 Google Fonts 等境外样式服务；入口只加载应用壳和当前页面所需代码。霞鹜文楷 Web Font 仅随简历只读预览、编辑预览和公开分享页面加载，不阻塞落地页或登录页首屏。
+
 ## API 调用
 
 API 客户端只发送相对 `/api/...` 请求并携带 cookie，不在业务组件中写死后端主机。每次请求附加 `X-Request-ID`，错误对象保留服务端回传的追踪值；API 5xx 会异步上报稳定错误码和追踪值，不发送原响应 body。开发期全部 `/api` 请求由 Vite 代理到 FastAPI，见 [架构文档](architecture.md#本地请求路径)。短 access 过期后，受保护请求会复用单个 `/api/auth/refresh` 请求轮换双 Cookie，并重试一次原请求；应用启动时 `/api/auth/me` 返回空用户也会先尝试 refresh，再判定为访客。
@@ -37,7 +39,7 @@ React 根入口用 Error Boundary 和 `error` / `unhandledrejection` 监听器�
 
 JD 临时管理界面使用可恢复路由 `/jobs`、`/jobs/new`、`/jobs/:jobId` 和 `/jobs/:jobId/edit`，与简历页面共享现有 Cookie 会话和工作区顶部导航；在简历、JD 列表、JD 详情及编辑页之间切换时只替换顶部导航下方的内容区。列表默认展示全部记录，可切换到已归档范围，并支持关键词搜索和游标加载更多；详情页提供编辑、归档和恢复，只有归档记录在列表及详情页展示站内确认后的永久删除入口。新建页允许手工填写最终结构化字段和可选来源链接。编辑页把来源身份完整显示为只读，不向更新接口发送来源字段。创建遇到来源重复时，页面根据服务端 `allowed_actions` 显示取消、恢复原内容或更新原记录；动作回传记录 ID 和 `lock_version`。浏览器采集插件是独立的 `apps/extension` 应用，通过相同 Cookie 会话调用后端导入接口；Web 不承载页面抓取或插件 API Key 管理。
 
-管理端入口为 `/admin`，模型配置页使用 `/admin/llm/models`，日志中心使用 `/admin/logs/system`、`/admin/logs/audit` 和兼容原 LLM 页的 `/admin/logs`。模型页突出可点击的系统 `Chat 模型` 能力区，展示唯一当前模型和多个候选；管理员只填写模型供应商、模型名称、可选 API Base 与 API Key，不填写能力、优先级或价格。供应商选项展示用户可识别的名称，不暴露 LiteLLM adapter 代码；当前支持列表包含以 `dashscope` 路由调用的阿里云百炼（千问）。保存普通候选不改变当前项，“设为当前”会先执行真实测试再切换；编辑当前项也必须先验证拟议配置。密钥字段只写，编辑留空时不进入 PATCH，显式清除才发送 `null`。
+管理端入口为 `/admin`，模型配置页使用 `/admin/llm/models`，日志中心使用 `/admin/logs/system`、`/admin/logs/audit` 和兼容原 LLM 页的 `/admin/logs`。模型页展示 Chat、简历结构化和 Pi Agent 三项系统能力；候选模型不再携带能力字段，管理员只填写模型供应商、模型名称、可选 API Base 与 API Key，不填写优先级或价格。供应商选项展示用户可识别的名称，不暴露 LiteLLM adapter 代码；当前支持列表包含以 `dashscope` 路由调用的阿里云百炼（千问）。保存普通候选不改变任何能力绑定，绑定其他能力前会执行对应验证；Pi Agent 会运行固定 Tool 探针，只有真实执行成功才更新绑定。密钥字段只写，编辑留空时不进入 PATCH，显式清除才发送 `null`。模型卡片提供二次确认的删除入口；未绑定候选可删除配置、密钥和验证证据，历史调用日志保留快照并解除配置引用，失败时保留弹窗并显示后端稳定错误。
 
 日志中心的系统页支持按级别、依赖、request ID 和关键词筛选；审计页支持按固定动作、操作者、目标和结果筛选；两者展示最近 24 小时摘要、部分脏行提示和游标分页。LLM 页继续读取 MySQL 中的真实调用记录，支持来源、状态、模型、用户、精确 `callId` 和时间范围筛选。三个页面都只通过 FastAPI 查询，不直连 Loki，也不轮询。后端保留既有 `resume.pdf_export` 客户端审计契约以兼容已有调用方；当前工作台的文字版 PDF 下载链不调用该接口。
 

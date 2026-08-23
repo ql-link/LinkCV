@@ -9,7 +9,6 @@ import pytest
 from linkcv.domain.document_conversion import DocumentMarkdownResult
 from linkcv.domain.resume_extraction import (
     DraftBasics,
-    DraftNamedItem,
     ResumeExtractionDraft,
 )
 from linkcv.services.resume_import_service import (
@@ -51,8 +50,7 @@ class FakeStructuringClient:
 class InvalidFinalStructuringClient:
     async def extract(self, **_kwargs) -> ResumeExtractionDraft:
         return ResumeExtractionDraft(
-            basics=DraftBasics(name="张三"),
-            languages=[DraftNamedItem(name="语" * 101)],
+            basics=DraftBasics(name="张三", summary="<script>alert(1)</script>"),
         )
 
 
@@ -170,10 +168,10 @@ def test_parse_resume_reports_safe_normalization_metadata(caplog) -> None:
     assert error.code == "RESUME_STRUCTURE_INVALID"
     assert error.stage == "resume_normalization"
     assert error.exception_type == "ValidationError"
-    assert error.validation_model == "Language"
-    assert error.validation_paths == "name"
-    assert error.validation_types == "string_too_long"
-    assert "语" * 101 not in caplog.text
+    assert error.validation_model == "RichTextV1"
+    assert error.validation_paths == "<root>"
+    assert error.validation_types == "value_error"
+    assert "<script>" not in caplog.text
     assert [record.message for record in caplog.records] == [
         "resume import stage started",
         "resume import stage completed",

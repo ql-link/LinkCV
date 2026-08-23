@@ -5,6 +5,7 @@ __pycache__
 .ruff_cache
 dist
 data
+third_party/pi/packages/telemetry/dist
 .git
 .github
 .idea

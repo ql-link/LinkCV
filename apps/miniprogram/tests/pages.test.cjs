@@ -42,21 +42,52 @@ const privacySetting = async () => ({
   privacyContractName: "《LinkCV 隐私保护指引》",
 });
 
-test("resume detail retry loads the same resume again", async () => {
+test("resume detail downloads, embeds and commits the selected preview version", async () => {
   const calls = [];
+  let finalState = null;
   await withPage("../pages/resumes/detail", {
     "../services/resumes": {
-      getResume: async (id) => {
-        calls.push(id);
-        return { title: "示例简历", data: { basics: {}, sections: {} } };
+      getResume: async (id) => { calls.push(["metadata", id]); return { pdf_version_id: "9" }; },
+      downloadResumePreview: async (id, versionId, filePath) => {
+        calls.push(["download", id, versionId, filePath]);
+        return filePath;
       },
+    },
+    "../services/auth": {
+      getCurrentUser: () => ({ id: "7" }),
+    },
+    "../services/resumePreviewCache": {
+      getCachedResumePreview: async () => null,
+      resumePreviewPath: () => "/user/resume-42-9.png",
+      validateResumePreview: async (filePath) => { calls.push(["validate", filePath]); },
+      commitResumePreview: async (...args) => { calls.push(["commit", ...args]); },
+      invalidateResumePreview: async (...args) => { calls.push(["invalidate", ...args]); },
+      removeFile: async () => {},
     },
   }, { setNavigationBarTitle() {} }, async (page) => {
     page.data.resumeId = "resume-1";
-    await page.retryLoad();
+    await Promise.all([page.retryLoad(), page.retryLoad()]);
+
+    await page.handlePreviewError();
+    await page.handlePreviewError();
+    finalState = { previewPath: page.data.previewPath, error: page.data.error, loading: page.data.loading };
   });
 
-  assert.deepEqual(calls, ["resume-1"]);
+  assert.deepEqual(calls.slice(0, 4), [
+    ["metadata", "resume-1"],
+    ["download", "resume-1", "9", "/user/resume-42-9.png"],
+    ["validate", "/user/resume-42-9.png"],
+    ["commit", "7", "resume-1", "9", "/user/resume-42-9.png"],
+  ]);
+  assert.deepEqual(calls.slice(4, 9), [
+    ["invalidate", "7", "resume-1"],
+    ["metadata", "resume-1"],
+    ["download", "resume-1", "9", "/user/resume-42-9.png"],
+    ["validate", "/user/resume-42-9.png"],
+    ["commit", "7", "resume-1", "9", "/user/resume-42-9.png"],
+  ]);
+  assert.equal(finalState.previewPath, "");
+  assert.equal(finalState.error, "预览图无法显示，请重新加载");
 });
 
 test("login page requires agreement before registering after the user opts in", async () => {

@@ -7,7 +7,6 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
-    ForeignKeyConstraint,
     Index,
     Integer,
     Numeric,
@@ -40,11 +39,6 @@ ASCII_SOURCE = String(32).with_variant(
 class LLMModelConfig(Base):
     __tablename__ = "llm_model_configs"
     __table_args__ = (
-        UniqueConstraint(
-            "capability",
-            "id",
-            name="uk_llm_model_configs_capability_id",
-        ),
         Index(
             "idx_llm_model_configs_enabled_priority",
             "enabled",
@@ -71,7 +65,7 @@ class LLMModelConfig(Base):
             "config_version >= 1",
             name="ck_llm_model_configs_config_version",
         ),
-        {"comment": "系统模型能力的候选连接配置（含发布兼容列）"},
+        {"comment": "能力中立的模型连接配置"},
     )
 
     id: Mapped[int] = mapped_column(
@@ -79,13 +73,6 @@ class LLMModelConfig(Base):
         primary_key=True,
         autoincrement=True,
         comment="模型配置主键",
-    )
-    capability: Mapped[str] = mapped_column(
-        ASCII_CAPABILITY,
-        nullable=False,
-        default="chat",
-        server_default="chat",
-        comment="系统模型能力标识，当前仅 chat",
     )
     model_name: Mapped[str] = mapped_column(
         String(128),
@@ -157,20 +144,24 @@ class LLMModelConfig(Base):
         comment="最后更新时间（UTC）",
     )
 
+    def __init__(self, **kwargs: object) -> None:
+        # Older tests/integrations may still pass the pre-contract capability
+        # keyword. It is intentionally ignored after the 0025 contract.
+        kwargs.pop("capability", None)
+        super().__init__(**kwargs)
+
 
 class LLMCapabilityBinding(Base):
     __tablename__ = "llm_capability_bindings"
     __table_args__ = (
-        Index(
-            "idx_llm_capability_bindings_capability_model",
-            "capability",
-            "model_config_id",
+        Index("idx_llm_capability_bindings_model", "model_config_id", "capability"),
+        CheckConstraint(
+            "capability IN ('chat', 'resume_structuring', 'pi_agent')",
+            name="ck_llm_capability_bindings_capability",
         ),
-        ForeignKeyConstraint(
-            ["capability", "model_config_id"],
-            ["llm_model_configs.capability", "llm_model_configs.id"],
-            name="fk_llm_capability_bindings_model",
-            ondelete="RESTRICT",
+        CheckConstraint(
+            "binding_version >= 1",
+            name="ck_llm_capability_bindings_version",
         ),
         {"comment": "系统模型能力到唯一当前候选的低基数绑定"},
     )
@@ -182,8 +173,30 @@ class LLMCapabilityBinding(Base):
     )
     model_config_id: Mapped[int | None] = mapped_column(
         UNSIGNED_BIGINT,
+        ForeignKey(
+            "llm_model_configs.id",
+            name="fk_llm_capability_bindings_model",
+            ondelete="RESTRICT",
+        ),
         nullable=True,
         comment="当前候选模型配置主键，空表示未配置",
+    )
+    binding_version: Mapped[int] = mapped_column(
+        UNSIGNED_BIGINT,
+        nullable=False,
+        default=1,
+        server_default="1",
+        comment="能力绑定乐观锁版本",
+    )
+    validation_id: Mapped[int | None] = mapped_column(
+        UNSIGNED_BIGINT,
+        ForeignKey(
+            "llm_model_validations.id",
+            name="fk_llm_capability_bindings_validation",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+        comment="最近一次成功验证证据主键，存量 Chat 可为空",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),
@@ -263,6 +276,10 @@ class LLMCallLog(Base):
             "latency_ms IS NULL OR latency_ms >= 0",
             name="ck_llm_call_logs_latency_nonnegative",
         ),
+        CheckConstraint(
+            "model_config_version IS NULL OR model_config_version >= 1",
+            name="ck_llm_call_logs_model_config_version",
+        ),
         {"comment": "大模型逻辑调用的状态、计量与成本快照"},
     )
 
@@ -308,6 +325,11 @@ class LLMCallLog(Base):
         ),
         nullable=True,
         comment="实际使用的模型配置主键，未选中模型时为空",
+    )
+    model_config_version: Mapped[int | None] = mapped_column(
+        UNSIGNED_BIGINT,
+        nullable=True,
+        comment="实际模型配置版本快照，未选中模型时为空",
     )
     model_name: Mapped[str | None] = mapped_column(
         String(128),
@@ -371,4 +393,99 @@ class LLMCallLog(Base):
         nullable=False,
         server_default=func.now(),
         comment="调用创建时间（UTC）",
+    )
+
+
+class LLMModelValidation(Base):
+    __tablename__ = "llm_model_validations"
+    __table_args__ = (
+        UniqueConstraint("call_id", name="uk_llm_model_validations_call_id"),
+        Index(
+            "idx_llm_model_validations_latest",
+            "model_config_id",
+            "capability",
+            "config_version",
+            "created_at",
+            "id",
+        ),
+        CheckConstraint(
+            "capability IN ('chat', 'resume_structuring', 'pi_agent')",
+            name="ck_llm_model_validations_capability",
+        ),
+        CheckConstraint(
+            "status IN ('succeeded', 'failed', 'cancelled')",
+            name="ck_llm_model_validations_status",
+        ),
+        CheckConstraint(
+            "config_version >= 1 AND probe_version >= 1",
+            name="ck_llm_model_validations_versions",
+        ),
+        {"comment": "模型配置按能力和版本保存的验证证据"},
+    )
+
+    id: Mapped[int] = mapped_column(
+        UNSIGNED_BIGINT,
+        primary_key=True,
+        autoincrement=True,
+        comment="模型验证主键",
+    )
+    model_config_id: Mapped[int] = mapped_column(
+        UNSIGNED_BIGINT,
+        ForeignKey(
+            "llm_model_configs.id",
+            name="fk_llm_model_validations_model",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        comment="被验证候选主键",
+    )
+    config_version: Mapped[int] = mapped_column(
+        UNSIGNED_BIGINT,
+        nullable=False,
+        comment="被验证候选版本",
+    )
+    capability: Mapped[str] = mapped_column(
+        ASCII_CAPABILITY,
+        nullable=False,
+        comment="目标模型能力",
+    )
+    probe_version: Mapped[int] = mapped_column(
+        UNSIGNED_BIGINT,
+        nullable=False,
+        comment="验证探针版本",
+    )
+    runtime_version: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="执行组件版本"
+    )
+    call_id: Mapped[str] = mapped_column(
+        String(40),
+        ForeignKey(
+            "llm_call_logs.call_id",
+            name="fk_llm_model_validations_call",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        comment="对应逻辑调用标识",
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, comment="验证状态"
+    )
+    error_code: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="非敏感稳定错误码"
+    )
+    created_by_user_id: Mapped[int] = mapped_column(
+        UNSIGNED_BIGINT,
+        ForeignKey(
+            "users.id",
+            name="fk_llm_model_validations_creator",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        comment="发起验证的管理员主键",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),
+        nullable=False,
+        server_default=func.now(),
+        comment="创建时间（UTC）",
     )

@@ -10,12 +10,6 @@ import {
   View,
   pdf,
 } from "@react-pdf/renderer";
-import notoSansHansRegularUrl from "../../../node_modules/@embedpdf/fonts-sc/fonts/NotoSansHans-Regular.otf?url";
-import notoSansHansMediumUrl from "../../../node_modules/@embedpdf/fonts-sc/fonts/NotoSansHans-Medium.otf?url";
-import sourceHanSerifRegularUrl from "../../../node_modules/@fontpkg/source-han-serif-sc/SourceHanSerifSC-Regular.otf?url";
-import sourceHanSerifSemiBoldUrl from "../../../node_modules/@fontpkg/source-han-serif-sc/SourceHanSerifSC-SemiBold.otf?url";
-import lxgwWenKaiRegularUrl from "../../../node_modules/@fontpkg/lxgw-wen-kai/LXGWWenKai-Regular.ttf?url";
-import lxgwWenKaiMediumUrl from "../../../node_modules/@fontpkg/lxgw-wen-kai/LXGWWenKai-Medium.ttf?url";
 import type { ReactNode } from "react";
 import type { ResumeSettings } from "../../store/resumeStore";
 import { inlineFontSizeFromNode } from "../../lib/resumeInlineStyle";
@@ -28,35 +22,63 @@ export const PDF_A4_WIDTH = 595.28;
 export const PDF_A4_HEIGHT = 841.89;
 const SMART_PDF_HEIGHT_EPSILON = 4;
 
-Font.register({
-  family: PDF_FONT_FAMILY,
-  fonts: [
-    { src: notoSansHansRegularUrl, fontWeight: 400 },
-    { src: notoSansHansRegularUrl, fontWeight: 400, fontStyle: "italic" },
-    { src: notoSansHansMediumUrl, fontWeight: 600 },
-    { src: notoSansHansMediumUrl, fontWeight: 600, fontStyle: "italic" },
-  ],
-});
+export type ResumePdfFontSources = {
+  sansRegular: string;
+  sansMedium: string;
+  serifRegular: string;
+  serifSemiBold: string;
+  wenkaiRegular: string;
+  wenkaiMedium: string;
+};
 
-Font.register({
-  family: PDF_SERIF_FONT_FAMILY,
-  fonts: [
-    { src: sourceHanSerifRegularUrl, fontWeight: 400 },
-    { src: sourceHanSerifRegularUrl, fontWeight: 400, fontStyle: "italic" },
-    { src: sourceHanSerifSemiBoldUrl, fontWeight: 600 },
-    { src: sourceHanSerifSemiBoldUrl, fontWeight: 600, fontStyle: "italic" },
-  ],
-});
+export type PdfImageResolver = (source: string) => Promise<string>;
 
-Font.register({
-  family: PDF_WENKAI_FONT_FAMILY,
-  fonts: [
-    { src: lxgwWenKaiRegularUrl, fontWeight: 400 },
-    { src: lxgwWenKaiRegularUrl, fontWeight: 400, fontStyle: "italic" },
-    { src: lxgwWenKaiMediumUrl, fontWeight: 600 },
-    { src: lxgwWenKaiMediumUrl, fontWeight: 600, fontStyle: "italic" },
-  ],
-});
+const registeredFontSets = new Set<string>();
+let pdfHyphenationRegistered = false;
+
+export function resumePdfHyphenationCallback(word: string) {
+  const characters = Array.from(word);
+  const needsCharacterWrapping = /[\u3400-\u9fff\uf900-\ufaff]/u.test(word) || characters.length > 32;
+  // Empty syllables keep character-level break opportunities without drawing Latin hyphens.
+  return needsCharacterWrapping ? characters.flatMap((character) => [character, ""]) : [word];
+}
+
+export function registerResumePdfFonts(sources: ResumePdfFontSources) {
+  if (!pdfHyphenationRegistered) {
+    Font.registerHyphenationCallback(resumePdfHyphenationCallback);
+    pdfHyphenationRegistered = true;
+  }
+  const key = JSON.stringify(sources);
+  if (registeredFontSets.has(key)) return;
+  registeredFontSets.add(key);
+  Font.register({
+    family: PDF_FONT_FAMILY,
+    fonts: [
+      { src: sources.sansRegular, fontWeight: 400 },
+      { src: sources.sansRegular, fontWeight: 400, fontStyle: "italic" },
+      { src: sources.sansMedium, fontWeight: 600 },
+      { src: sources.sansMedium, fontWeight: 600, fontStyle: "italic" },
+    ],
+  });
+  Font.register({
+    family: PDF_SERIF_FONT_FAMILY,
+    fonts: [
+      { src: sources.serifRegular, fontWeight: 400 },
+      { src: sources.serifRegular, fontWeight: 400, fontStyle: "italic" },
+      { src: sources.serifSemiBold, fontWeight: 600 },
+      { src: sources.serifSemiBold, fontWeight: 600, fontStyle: "italic" },
+    ],
+  });
+  Font.register({
+    family: PDF_WENKAI_FONT_FAMILY,
+    fonts: [
+      { src: sources.wenkaiRegular, fontWeight: 400 },
+      { src: sources.wenkaiRegular, fontWeight: 400, fontStyle: "italic" },
+      { src: sources.wenkaiMedium, fontWeight: 600 },
+      { src: sources.wenkaiMedium, fontWeight: 600, fontStyle: "italic" },
+    ],
+  });
+}
 
 export function resolvePdfFontFamily(fontFamily: string) {
   if (/LXGW WenKai|霞鹜文楷/i.test(fontFamily)) return PDF_WENKAI_FONT_FAMILY;
@@ -216,6 +238,11 @@ function blockNode(
   return <View key={key}>{(node.content ?? []).map((child, index, siblings) => blockNode(child, `${key}-${index}`, listDepth + 1, theme, siblings[index - 1]))}</View>;
 }
 
+export const PDF_LIST_TEXT_LAYOUT_STYLE = {
+  width: "100%" as const,
+  paddingLeft: 15,
+};
+
 const styles = StyleSheet.create({
   page: { color: "#111827", fontFamily: PDF_FONT_FAMILY, fontSize: 10.5, lineHeight: 1.32 },
   heading1: { marginBottom: 7, fontSize: 20, fontWeight: 400, textAlign: "center" },
@@ -223,10 +250,10 @@ const styles = StyleSheet.create({
   modernHeading2: { borderBottomColor: "#155fd7", color: "#1d4ed8" },
   heading3: { marginTop: 7, marginBottom: 3, fontSize: 11, fontWeight: 400 },
   paragraph: { marginTop: 2, marginBottom: 2 },
-  list: { marginTop: 3, marginBottom: 4 },
-  listItem: { flexDirection: "row", marginBottom: 1 },
-  listMarker: { width: 15, flexShrink: 0 },
-  listText: { flexGrow: 1, flexShrink: 1 },
+  list: { width: "100%", marginTop: 3, marginBottom: 4 },
+  listItem: { position: "relative", width: "100%", marginBottom: 1 },
+  listMarker: { position: "absolute", left: 0, top: 0, width: 15 },
+  listText: PDF_LIST_TEXT_LAYOUT_STYLE,
   row: { flexDirection: "row", alignItems: "flex-start", marginTop: 3, marginBottom: 3 },
   rowLeft: { paddingRight: 8 },
   rowRight: { textAlign: "right", fontStyle: "italic" },
@@ -249,25 +276,39 @@ function blobToDataUrl(blob: Blob) {
   });
 }
 
-async function prepareNode(node: JSONContent): Promise<PreparedPdfContent> {
+async function browserImageResolver(src: string) {
+  if (/^data:image\/(?:png|jpe?g);/i.test(src)) return src;
+  const imageUrl = new URL(src, window.location.href);
+  const response = await fetch(imageUrl.href, {
+    credentials: imageUrl.origin === window.location.origin ? "include" : "omit",
+  });
+  const type = response.headers.get("content-type") ?? "";
+  if (!response.ok || !/^image\/(?:png|jpe?g)/i.test(type)) {
+    throw new Error("PDF_IMAGE_UNSUPPORTED");
+  }
+  return blobToDataUrl(await response.blob());
+}
+
+async function prepareNode(
+  node: JSONContent,
+  resolveImage: PdfImageResolver,
+): Promise<PreparedPdfContent> {
   const prepared: PreparedPdfContent = { ...node, attrs: node.attrs ? { ...node.attrs } : undefined };
   if (node.type === "resumeImage" || node.type === "avatarImage") {
     const src = typeof node.attrs?.src === "string" ? node.attrs.src : "";
-    if (src && !/^data:image\/(?:png|jpe?g);/i.test(src)) {
+    if (src) {
       try {
-        const imageUrl = new URL(src, window.location.href);
-        const response = await fetch(imageUrl.href, { credentials: imageUrl.origin === window.location.origin ? "include" : "omit" });
-        const type = response.headers.get("content-type") ?? "";
-        if (!response.ok || !/^image\/(?:png|jpe?g)/i.test(type)) throw new Error("PDF_IMAGE_UNSUPPORTED");
-        prepared.attrs = { ...prepared.attrs, pdfSrc: await blobToDataUrl(await response.blob()) };
+        prepared.attrs = { ...prepared.attrs, pdfSrc: await resolveImage(src) };
       } catch {
         prepared.attrs = { ...prepared.attrs, pdfSrc: "" };
       }
-    } else {
-      prepared.attrs = { ...prepared.attrs, pdfSrc: src };
     }
   }
-  if (node.content) prepared.content = await Promise.all(node.content.map(prepareNode));
+  if (node.content) {
+    prepared.content = await Promise.all(
+      node.content.map((child) => prepareNode(child, resolveImage)),
+    );
+  }
   return prepared;
 }
 
@@ -323,8 +364,13 @@ export function ResumePdfDocument({ content, settings, title = "LinkCV Resume", 
   );
 }
 
-export async function createResumePdfBlob(content: JSONContent, settings: ResumeSettings, title = "LinkCV Resume") {
-  const prepared = await prepareNode(content);
+export async function createResumePdfBlob(
+  content: JSONContent,
+  settings: ResumeSettings,
+  title = "LinkCV Resume",
+  resolveImage: PdfImageResolver = browserImageResolver,
+) {
+  const prepared = await prepareNode(content, resolveImage);
   const standardBlob = await pdf(<ResumePdfDocument content={prepared} settings={settings} title={title} />).toBlob();
   if (!settings.smartOnePage) return standardBlob;
 
@@ -351,7 +397,34 @@ export async function createResumePdfBlob(content: JSONContent, settings: Resume
   ).toBlob();
 }
 
+async function registerBrowserPdfFonts() {
+  const [
+    { default: sansRegular },
+    { default: sansMedium },
+    { default: serifRegular },
+    { default: serifSemiBold },
+    { default: wenkaiRegular },
+    { default: wenkaiMedium },
+  ] = await Promise.all([
+    import("../../../node_modules/@embedpdf/fonts-sc/fonts/NotoSansHans-Regular.otf?url"),
+    import("../../../node_modules/@embedpdf/fonts-sc/fonts/NotoSansHans-Medium.otf?url"),
+    import("../../../node_modules/@fontpkg/source-han-serif-sc/SourceHanSerifSC-Regular.otf?url"),
+    import("../../../node_modules/@fontpkg/source-han-serif-sc/SourceHanSerifSC-SemiBold.otf?url"),
+    import("../../../node_modules/@fontpkg/lxgw-wen-kai/LXGWWenKai-Regular.ttf?url"),
+    import("../../../node_modules/@fontpkg/lxgw-wen-kai/LXGWWenKai-Medium.ttf?url"),
+  ]);
+  registerResumePdfFonts({
+    sansRegular,
+    sansMedium,
+    serifRegular,
+    serifSemiBold,
+    wenkaiRegular,
+    wenkaiMedium,
+  });
+}
+
 export async function exportResumeTextPdf(content: JSONContent, settings: ResumeSettings, title: string) {
+  await registerBrowserPdfFonts();
   const blob = await createResumePdfBlob(content, settings, title);
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");

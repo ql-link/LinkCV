@@ -1,0 +1,2 @@
+/* 全局样式入口。视觉 Token 与组件类统一由各页面 @import styles/shared.wxss 提供，
+   与 Web 落地页同源（纸白 #fafaf9 / 石墨黑 #18181b / 衬线 display / 等宽 utility）。 */
