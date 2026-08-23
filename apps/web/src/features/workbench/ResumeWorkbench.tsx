@@ -3,7 +3,9 @@ import { BubbleMenu, EditorContent, useEditor } from "@tiptap/react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
   AlertTriangle,
+  AlignLeft,
   CircleCheck,
+  Columns2,
   FileDown,
   History,
   Home,
@@ -11,12 +13,14 @@ import {
   Minus,
   Pencil,
   Plus,
+  Rows3,
   Save,
   SlidersHorizontal,
   Sparkles,
+  Type,
   X,
 } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { api, ApiRequestError } from "../../api/client";
 import {
@@ -37,12 +41,13 @@ import {
   SelectItem,
   SelectTrigger,
 } from "@/components/ui";
-import { defaultSettings, resumeSerifFontStack, useResumeStore } from "../../store/resumeStore";
+import { resumeSerifFontStack, useResumeStore } from "../../store/resumeStore";
 import { resumeEditorExtensions } from "./editorExtensions";
 import { WorkbenchToolbar } from "./WorkbenchToolbar";
 import { createSelectionBubbleAnchor, shouldShowWorkbenchBubbleMenu } from "./selectionBubbleAnchor";
 import { getTwoPageFitScale, getWheelZoomScale, handleWheelZoom } from "./workbenchZoom";
 import { navigateTo } from "../../routing";
+import { AgentPanel } from "../agent/AgentPanel";
 import { BlankLineMenuExtension, SlashCommandMenu, type CommandMenuState } from "./slashCommand";
 import { VersionDiffDialog } from "./VersionDiffDialog";
 import { PaginationExtension } from "./paginationPlugin";
@@ -62,7 +67,30 @@ import {
   type PageViewportMetrics,
 } from "./pageArrangementTransition";
 
-type DrawerMode = "settings" | "history" | null;
+type DrawerMode = "settings" | "history" | "agent" | null;
+
+export function workbenchCanvasClassName(drawerMode: DrawerMode) {
+  return `workbench-canvas${drawerMode ? " has-drawer" : ""}${drawerMode === "agent" ? " has-agent-drawer" : ""}`;
+}
+
+export function AgentFloatingEntry({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <motion.button
+      type="button"
+      className={`agent-floating-entry${open ? " is-open" : ""}`}
+      aria-controls="workbench-side-panel"
+      aria-expanded={open}
+      aria-label={open ? "收起智能助手" : "打开智能助手"}
+      title={open ? "收起智能助手" : "让 AI 帮你完善简历"}
+      whileTap={{ scale: 0.97 }}
+      onClick={onToggle}
+    >
+      <span className="agent-floating-mark" aria-hidden="true"><Sparkles size={22} /></span>
+      <span className="agent-floating-copy"><strong>AI 助手</strong></span>
+    </motion.button>
+  );
+}
+
 type ToastState = { label: string } | null;
 type InlineAiUiState = {
   instruction: string;
@@ -159,12 +187,11 @@ const fontOptions = [
   { label: "系统黑体", value: '"PingFang SC", "Microsoft YaHei", Inter, system-ui, sans-serif' },
 ];
 
-const FONT_PREVIEW_TEXT = "张三的简历 Resume";
-
 const versionReasonLabels = {
   initial: "初始版本",
   manual: "手动保存",
   before_restore: "恢复前备份",
+  agent: "智能助手修改",
   restore: "恢复结果（历史记录）",
 } as const;
 
@@ -351,72 +378,100 @@ function plainParagraphsFromHtml(html: string) {
   return plain.split(/\n+/).map((line) => `<p>${escape(line) || "<br>"}</p>`).join("");
 }
 
-export function SmartOnePageAction({ active, onToggle, disabled }: { active: boolean; onToggle: () => void; disabled?: boolean }) {
-  return (
-    <Button
-      aria-pressed={active}
-      className={`workbench-action workbench-smart-action${active ? " is-active" : ""}`}
-      disabled={disabled}
-      icon={<Sparkles aria-hidden="true" size={16} />}
-      onClick={onToggle}
-      size="sm"
-      title="智能一页"
-      variant="secondary"
-    >
-      智能一页
-    </Button>
-  );
-}
-
 export function PageArrangementControl({
   value,
   onChange,
+  smartOnePage = false,
+  onSmartOnePageChange,
   disabled,
   disabledReason,
 }: {
   value: PageArrangement;
   onChange: (value: PageArrangement) => void;
+  smartOnePage?: boolean;
+  onSmartOnePageChange: (enabled: boolean) => void;
   disabled?: boolean;
   disabledReason?: string;
 }) {
-  const nextValue: PageArrangement = value === "vertical" ? "horizontal" : "vertical";
-  const currentLabel = value === "vertical" ? "上下排列" : "左右排列";
-  const nextLabel = nextValue === "vertical" ? "上下排列" : "左右排列";
   return (
-    <button
-      type="button"
-      aria-label={`当前${currentLabel}，切换为${nextLabel}`}
-      className="workbench-page-arrangement"
-      disabled={disabled}
-      onClick={() => onChange(nextValue)}
-      title={disabled ? disabledReason ?? "当前不可调整页面排列" : `切换为${nextLabel}`}
-    >
-      <PageArrangementIcon arrangement={value} />
-    </button>
+    <div className="workbench-layout-setting">
+      <div className="workbench-layout-options" role="group" aria-label="页面排列">
+        {(["vertical", "horizontal"] as const).map((arrangement) => {
+          const label = arrangement === "vertical" ? "上下排列" : "左右排列";
+          return (
+            <button
+              type="button"
+              aria-label={label}
+              aria-pressed={!smartOnePage && value === arrangement}
+              className={!smartOnePage && value === arrangement ? "is-active" : undefined}
+              disabled={disabled}
+              key={arrangement}
+              onClick={() => {
+                if (smartOnePage) onSmartOnePageChange(false);
+                onChange(arrangement);
+              }}
+              title={disabled ? disabledReason ?? "当前不可调整页面排列" : label}
+            >
+              <span className="workbench-layout-option-preview">
+                {arrangement === "vertical"
+                  ? <Rows3 aria-hidden="true" data-arrangement={arrangement} />
+                  : <Columns2 aria-hidden="true" data-arrangement={arrangement} />}
+              </span>
+              <strong>{label}</strong>
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          aria-label="智能一页"
+          aria-pressed={smartOnePage}
+          className={smartOnePage ? "is-active" : undefined}
+          disabled={disabled}
+          onClick={() => {
+            if (!smartOnePage) onSmartOnePageChange(true);
+          }}
+          title={disabled ? disabledReason ?? "当前不可调整页面布局" : "连续排成单页"}
+        >
+          <span className="workbench-layout-option-preview"><Sparkles aria-hidden="true" data-arrangement="smart" /></span>
+          <strong>智能一页</strong>
+        </button>
+      </div>
+      <small className="workbench-layout-help">
+        {disabled
+          ? disabledReason ?? "当前不可调整页面布局"
+          : smartOnePage
+            ? "连续排成单页；导出时保持当前字号与行距。"
+            : "排列只影响编辑时的浏览方向。"}
+      </small>
+    </div>
   );
 }
 
-function PageArrangementIcon({ arrangement }: { arrangement: PageArrangement }) {
+export function ZoomFeedback({ scale }: { scale: number }) {
+  return <div className="workbench-zoom-feedback" role="status" aria-live="polite">{Math.round(scale * 100)}%</div>;
+}
+
+function WorkbenchSettingsSection({
+  title,
+  description,
+  icon,
+  variant = "plain",
+  children,
+}: {
+  title: string;
+  description: string;
+  icon?: ReactNode;
+  variant?: "plain" | "card";
+  children: ReactNode;
+}) {
   return (
-    <svg
-      aria-hidden="true"
-      className="workbench-page-arrangement-icon"
-      data-arrangement={arrangement}
-      fill="none"
-      viewBox="0 0 18 18"
-    >
-      {arrangement === "vertical" ? (
-        <>
-          <path d="M7 2.5H4v5h10v-5h-3" />
-          <path d="M7 15.5H4v-5h10v5h-3" />
-        </>
-      ) : (
-        <>
-          <path d="M2.5 7V4h5v10h-5v-3" />
-          <path d="M15.5 7V4h-5v10h5v-3" />
-        </>
-      )}
-    </svg>
+    <section className={`workbench-settings-section${variant === "card" ? " is-card" : ""}`}>
+      <header>
+        <div className="workbench-settings-section-title">{icon}<h3>{title}</h3></div>
+        <p>{description}</p>
+      </header>
+      <div className="workbench-settings-section-body">{children}</div>
+    </section>
   );
 }
 
@@ -453,18 +508,64 @@ export function WorkbenchSaveStatus({ saveStatus, dirty }: WorkbenchSaveStatusPr
   );
 }
 
-export function SaveVersionAction({ pending, onSave }: { pending: boolean; onSave: () => void }) {
+export function SaveResumeAction({ pending, onSave }: { pending: boolean; onSave: () => void }) {
   return (
     <Button
-      aria-label={pending ? "正在保存版本" : "保存版本"}
+      aria-label={pending ? "正在保存简历" : "保存简历"}
       className="workbench-action workbench-save-action"
       disabled={pending}
       icon={pending ? <LoaderCircle aria-hidden="true" className="workbench-save-spinner" /> : <Save aria-hidden="true" />}
       size="sm"
       onClick={onSave}
+      variant="secondary"
     >
-      {pending ? "保存中…" : "保存版本"}
+      {pending ? "保存中…" : "保存简历"}
     </Button>
+  );
+}
+
+export function SaveVersionAction({ pending, onSave }: { pending: boolean; onSave: () => void }) {
+  return (
+    <div className="workbench-setting-action">
+      <span className="workbench-setting-item-icon" aria-hidden="true"><Save size={16} /></span>
+      <span className="workbench-setting-toggle-copy">
+        <strong>保存版本</strong>
+        <small>为当前简历创建一个可命名、可恢复的历史节点。</small>
+      </span>
+      <Button
+        aria-label={pending ? "正在保存版本" : "保存版本"}
+        className="workbench-setting-row-action"
+        disabled={pending}
+        icon={pending ? <LoaderCircle aria-hidden="true" className="workbench-save-spinner" /> : undefined}
+        onClick={onSave}
+        size="sm"
+        variant="secondary"
+      >
+        {pending ? "保存中…" : "保存版本"}
+      </Button>
+    </div>
+  );
+}
+
+export function VersionHistoryAction({ count, disabled, onOpen }: { count: number; disabled?: boolean; onOpen: () => void }) {
+  return (
+    <div className="workbench-setting-action">
+      <span className="workbench-setting-item-icon" aria-hidden="true"><History size={16} /></span>
+      <span className="workbench-setting-toggle-copy">
+        <strong>版本记录</strong>
+        <small>查看、恢复和管理 {count} 个已保存版本。</small>
+      </span>
+      <Button
+        aria-label="查看版本记录"
+        className="workbench-setting-row-action"
+        disabled={disabled}
+        onClick={onOpen}
+        size="sm"
+        variant="secondary"
+      >
+        查看
+      </Button>
+    </div>
   );
 }
 
@@ -507,25 +608,13 @@ export function steppedSettingValue(value: number, direction: -1 | 1, min: numbe
   return Math.min(max, Math.max(min, Number((value + direction * step).toFixed(precision))));
 }
 
-export function SettingsSlider({ label, unit, value, min, max, step, onChange, disabled }: { label: string; unit: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void; disabled?: boolean }) {
+export function SettingsStepper({ label, unit, value, min, max, step, onChange, disabled }: { label: string; unit: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void; disabled?: boolean }) {
   return (
-    <div className="workbench-slider-row">
-      <span className="workbench-slider-head">
-        <span>{label}</span>
-        <output>{value} {unit}</output>
-      </span>
-      <div className="workbench-slider-control">
+    <div className="workbench-value-row">
+      <span>{label}</span>
+      <div className="workbench-value-control">
         <button type="button" aria-label={`${label}减小`} disabled={disabled || value <= min} onClick={() => onChange(steppedSettingValue(value, -1, min, max, step))}><Minus aria-hidden="true" size={14} /></button>
-        <input
-          type="range"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          disabled={disabled}
-          aria-label={label}
-          onChange={(event) => onChange(Number(event.target.value))}
-        />
+        <output aria-label={`${label}当前值`}>{value}{unit ? ` ${unit}` : ""}</output>
         <button type="button" aria-label={`${label}增大`} disabled={disabled || value >= max} onClick={() => onChange(steppedSettingValue(value, 1, min, max, step))}><Plus aria-hidden="true" size={14} /></button>
       </div>
     </div>
@@ -549,17 +638,15 @@ export function FontPreviewSelect({
       <span id={labelId}>字体</span>
       <Select value={selectedFont.value} onValueChange={onChange} disabled={disabled}>
         <SelectTrigger className="workbench-font-select" aria-labelledby={labelId}>
-          <span className="workbench-font-current">
-            <strong>{selectedFont.label}</strong>
-            <span style={{ fontFamily: selectedFont.value }}>{FONT_PREVIEW_TEXT}</span>
+          <span className="workbench-font-current" style={{ fontFamily: selectedFont.value }}>
+            {selectedFont.label}
           </span>
         </SelectTrigger>
         <SelectContent className="workbench-font-select-content" data-ui-theme="light" position="popper">
           {fontOptions.map((font) => (
             <SelectItem className="workbench-font-option" key={font.label} value={font.value}>
-              <span className="workbench-font-option-copy">
-                <strong>{font.label}</strong>
-                <span style={{ fontFamily: font.value }}>{FONT_PREVIEW_TEXT}</span>
+              <span className="workbench-font-option-copy" style={{ fontFamily: font.value }}>
+                {font.label}
               </span>
             </SelectItem>
           ))}
@@ -579,6 +666,9 @@ export function ResumeWorkbench() {
   const markdown = useResumeStore((state) => state.markdown);
   const setEditorContent = useResumeStore((state) => state.setEditorContent);
   const settings = useResumeStore((state) => state.settings);
+  const data = useResumeStore((state) => state.data);
+  const style = useResumeStore((state) => state.style);
+  const user = useResumeStore((state) => state.user);
   const updateSettings = useResumeStore((state) => state.updateSettings);
   const previewScale = useResumeStore((state) => state.previewScale);
   const setPreviewScale = useResumeStore((state) => state.setPreviewScale);
@@ -589,6 +679,7 @@ export function ResumeWorkbench() {
   const versionsLoading = useResumeStore((state) => state.versionsLoading);
   const versionOperationPending = useResumeStore((state) => state.versionOperationPending);
   const loadVersions = useResumeStore((state) => state.loadVersions);
+  const loadResume = useResumeStore((state) => state.loadResume);
   const createVersion = useResumeStore((state) => state.createVersion);
   const renameStoredVersion = useResumeStore((state) => state.renameVersion);
   const deleteStoredVersion = useResumeStore((state) => state.deleteVersion);
@@ -614,6 +705,7 @@ export function ResumeWorkbench() {
   const [inlineAiSuggestion, setInlineAiSuggestionState] = useState<InlineAiSuggestion | null>(null);
   const [workspaceWidth, setWorkspaceWidth] = useState(() => window.innerWidth);
   const [horizontalScaleOverride, setHorizontalScaleOverride] = useState<number | null>(null);
+  const [zoomFeedback, setZoomFeedback] = useState<{ scale: number; sequence: number } | null>(null);
   const [pageArrangement, setPageArrangement] = useState<PageArrangement>(() => {
     try {
       return window.localStorage.getItem(PAGE_ARRANGEMENT_STORAGE_KEY) === "horizontal" ? "horizontal" : "vertical";
@@ -728,6 +820,9 @@ export function ResumeWorkbench() {
   const renderedPreviewScale = horizontalMode
     ? horizontalScaleOverride ?? horizontalAutoFitScale
     : previewScale * responsiveFitScale;
+  const showZoomFeedback = useCallback((scale: number) => {
+    setZoomFeedback({ scale, sequence: Date.now() });
+  }, []);
 
   const editor = useEditor({
     extensions: [
@@ -888,6 +983,12 @@ export function ResumeWorkbench() {
   }, [toast]);
 
   useEffect(() => {
+    if (!zoomFeedback) return;
+    const timer = window.setTimeout(() => setZoomFeedback(null), 900);
+    return () => window.clearTimeout(timer);
+  }, [zoomFeedback]);
+
+  useEffect(() => {
     const scrollArea = paperScrollRef.current;
     if (!scrollArea) return;
 
@@ -897,14 +998,18 @@ export function ResumeWorkbench() {
         if (nextScale === null) return;
         event.preventDefault();
         setHorizontalScaleOverride(nextScale);
+        showZoomFeedback(nextScale);
         return;
       }
-      handleWheelZoom(previewScale, event, setPreviewScale);
+      handleWheelZoom(previewScale, event, (nextScale) => {
+        setPreviewScale(nextScale);
+        showZoomFeedback(nextScale);
+      });
     };
 
     scrollArea.addEventListener("wheel", handleWheel, { passive: false });
     return () => scrollArea.removeEventListener("wheel", handleWheel);
-  }, [horizontalMode, previewScale, renderedPreviewScale, setPreviewScale]);
+  }, [horizontalMode, previewScale, renderedPreviewScale, setPreviewScale, showZoomFeedback]);
 
   useEffect(() => {
     const scrollArea = paperScrollRef.current;
@@ -986,7 +1091,13 @@ export function ResumeWorkbench() {
     }
   };
 
-  const manualSave = async () => {
+  const saveResume = async () => {
+    if (!editor || saveStatus === "saving" || versionOperationPending || versionNameSubmitting) return;
+    await saveCurrentResume();
+    setToast({ label: useResumeStore.getState().saveStatus === "error" ? "简历保存失败，请稍后重试" : "简历已保存" });
+  };
+
+  const saveNamedVersion = async () => {
     if (!editor || versionNameSubmitting) return;
     const validationMessage = versionNameValidationMessage(versionName);
     if (validationMessage) {
@@ -997,7 +1108,7 @@ export function ResumeWorkbench() {
     setVersionNameError(null);
     setVersionNameSubmitting(true);
     await saveCurrentResume();
-    if (useResumeStore.getState().error) {
+    if (useResumeStore.getState().saveStatus === "error") {
       setToast({ label: "保存失败，请稍后重试" });
       setVersionNameSubmitting(false);
       return;
@@ -1055,7 +1166,31 @@ export function ResumeWorkbench() {
     navigateTo("/resumes");
   };
 
-  const zoomPercent = Math.round(renderedPreviewScale * 100);
+  const prepareAgentProposalConfirmation = async () => {
+    await saveCurrentResume();
+    if (useResumeStore.getState().error) {
+      setToast({ label: "当前草稿保存失败，提案没有应用" });
+      return false;
+    }
+    return true;
+  };
+
+  const prepareAgentRun = async () => {
+    await saveCurrentResume();
+    if (useResumeStore.getState().error) {
+      setToast({ label: "当前草稿保存失败，智能助手没有读取所选内容" });
+      return false;
+    }
+    return true;
+  };
+
+  const refreshAppliedAgentProposal = async () => {
+    if (!activeResumeId || !editor) return;
+    await loadResume(activeResumeId);
+    editor.commands.setContent(useResumeStore.getState().editorContent);
+    setToast({ label: "智能修改已应用，并保存为可恢复版本" });
+  };
+
   const importWarnings = activeResumeId
     ? importWarningsByResumeId[activeResumeId] ?? EMPTY_IMPORT_WARNINGS
     : EMPTY_IMPORT_WARNINGS;
@@ -1073,23 +1208,10 @@ export function ResumeWorkbench() {
             <WorkbenchSaveStatus dirty={dirty} saveStatus={saveStatus} />
           </div>
           <div className="workbench-header-actions">
-            <output className="workbench-zoom" aria-label="简历缩放比例">{zoomPercent}%</output>
             <div className="workbench-header-tool-group" role="group" aria-label="编辑面板">
-              <PageArrangementControl
-                value={pageArrangement}
-                onChange={changePageArrangement}
-                disabled={settings.smartOnePage || versionOperationPending}
-                disabledReason={settings.smartOnePage ? "关闭智能一页后可调整页面排列" : "版本操作完成后可调整页面排列"}
-              />
               <IconButton aria-controls="workbench-side-panel" aria-expanded={drawerMode === "settings"} aria-pressed={drawerMode === "settings"} className={`workbench-icon-action${drawerMode === "settings" ? " is-active" : ""}`} label="页面设置" onClick={() => setDrawerMode((mode) => mode === "settings" ? null : "settings")}><SlidersHorizontal size={16} /></IconButton>
-              <IconButton aria-controls="workbench-side-panel" aria-expanded={drawerMode === "history"} aria-pressed={drawerMode === "history"} className={`workbench-icon-action${drawerMode === "history" ? " is-active" : ""}`} label="版本记录" onClick={() => setDrawerMode((mode) => mode === "history" ? null : "history")}><History size={16} /></IconButton>
             </div>
             <div className="workbench-output-actions" role="group" aria-label="保存与导出">
-              <SmartOnePageAction
-                active={settings.smartOnePage}
-                onToggle={() => updateSettings({ smartOnePage: !settings.smartOnePage })}
-                disabled={versionOperationPending}
-              />
               <ExportPdfAction
                 pending={pdfExportPending}
                 onExport={() => {
@@ -1104,7 +1226,10 @@ export function ResumeWorkbench() {
                     .finally(() => setPdfExportPending(false));
                 }}
               />
-              <SaveVersionAction pending={saveStatus === "saving" || versionOperationPending || versionNameSubmitting} onSave={openVersionNameDialog} />
+              <SaveResumeAction
+                pending={saveStatus === "saving" || versionOperationPending || versionNameSubmitting}
+                onSave={() => { void saveResume(); }}
+              />
             </div>
           </div>
         </header>
@@ -1155,7 +1280,7 @@ export function ResumeWorkbench() {
           />
         )}
 
-        <main className="workbench-canvas">
+        <main className={workbenchCanvasClassName(drawerMode)}>
           <div
             ref={paperScrollRef}
             className={`workbench-paper-scroll${pageArrangement === "horizontal" && !settings.smartOnePage ? " pages-horizontal" : ""}`}
@@ -1166,52 +1291,96 @@ export function ResumeWorkbench() {
             </article>
           </div>
 
+          {activeResumeId && (
+            <AgentFloatingEntry
+              open={drawerMode === "agent"}
+              onToggle={() => setDrawerMode((mode) => mode === "agent" ? null : "agent")}
+            />
+          )}
+
           <AnimatePresence initial={false}>
             {drawerMode && (
               <motion.aside
                 id="workbench-side-panel"
-                className="workbench-drawer"
+                className={`workbench-drawer${drawerMode === "agent" ? " is-agent" : ""}`}
                 role="region"
-                aria-labelledby="workbench-drawer-title"
-                initial={{ x: 360 }}
+                aria-labelledby={drawerMode === "agent" ? "workbench-agent-title" : "workbench-drawer-title"}
+                initial={{ x: drawerMode === "agent" ? 390 : 392 }}
                 animate={{ x: 0 }}
-                exit={{ x: 360 }}
-                transition={{ type: "spring", bounce: 0, duration: 0.36 }}
+                exit={{ x: drawerMode === "agent" ? 390 : 392 }}
+                transition={{ type: "spring", bounce: 0, duration: 0.26 }}
               >
-                <div className="workbench-drawer-head">
+                {drawerMode !== "agent" && <div className="workbench-drawer-head">
                   <div>
-                    <h2 id="workbench-drawer-title">{drawerMode === "settings" ? "页面设置" : "版本记录"}</h2>
-                    <p>{drawerMode === "settings" ? "只在需要时打开，关闭后不占用工作区。" : "每次手动保存都会留下一个可恢复版本。"}</p>
+                    <h2 id="workbench-drawer-title">{drawerMode === "settings" ? "页面设置" : drawerMode === "history" ? "版本记录" : "智能助手"}</h2>
+                    {drawerMode !== "settings" && <p>{drawerMode === "history" ? "每次手动保存都会留下一个可恢复版本。" : "分析当前简历；任何修改都先生成提案。"}</p>}
                   </div>
-                  <button type="button" className="workbench-drawer-done" onClick={() => setDrawerMode(null)} aria-label="关闭面板">完成</button>
-                </div>
+                  <button
+                    type="button"
+                    className="workbench-drawer-done"
+                    onClick={() => setDrawerMode(drawerMode === "history" ? "settings" : null)}
+                    aria-label={drawerMode === "history" ? "返回页面设置" : "关闭面板"}
+                  >
+                    {drawerMode === "history" ? "返回" : <X aria-hidden="true" size={17} />}
+                  </button>
+                </div>}
                 {drawerMode === "settings" ? (
                   <div className="workbench-settings">
-                    <FontPreviewSelect value={settings.fontFamily} onChange={(fontFamily) => updateSettings({ fontFamily })} disabled={versionOperationPending} />
-                    <SettingsSlider label="正文字号" unit="pt" value={settings.fontSize} min={8} max={16} step={0.5} onChange={(fontSize) => updateSettings({ fontSize })} disabled={versionOperationPending} />
-                    <SettingsSlider label="行距" unit="" value={settings.lineHeight} min={1.1} max={1.8} step={0.05} onChange={(lineHeight) => updateSettings({ lineHeight })} disabled={versionOperationPending} />
-                    <SettingsSlider label="左右边距" unit="mm" value={settings.pageMargin} min={10} max={30} step={2} onChange={(pageMargin) => updateSettings({ pageMargin })} disabled={versionOperationPending} />
-                    <SettingsSlider label="上下边距" unit="mm" value={settings.verticalPageMargin} min={10} max={30} step={2} onChange={(verticalPageMargin) => updateSettings({ verticalPageMargin })} disabled={versionOperationPending} />
-                    <button
-                      type="button"
-                      className="workbench-reset-settings"
-                      disabled={versionOperationPending}
-                      onClick={() => {
-                        changePageArrangement("vertical");
-                        updateSettings({
-                          fontFamily: defaultSettings.fontFamily,
-                          fontSize: defaultSettings.fontSize,
-                          lineHeight: defaultSettings.lineHeight,
-                          pageMargin: defaultSettings.pageMargin,
-                          verticalPageMargin: defaultSettings.verticalPageMargin,
-                          smartOnePage: defaultSettings.smartOnePage,
-                        });
-                      }}
-                    >
-                      恢复默认设置
-                    </button>
+                    <WorkbenchSettingsSection title="页面布局" description="选择多页简历在工作区中的排列方式。">
+                      <PageArrangementControl
+                        value={pageArrangement}
+                        onChange={changePageArrangement}
+                        smartOnePage={settings.smartOnePage}
+                        onSmartOnePageChange={(smartOnePage) => updateSettings({ smartOnePage })}
+                        disabled={versionOperationPending}
+                        disabledReason="版本操作完成后可调整页面布局"
+                      />
+                    </WorkbenchSettingsSection>
+
+                    <WorkbenchSettingsSection title="页边距（单位：mm）" description="上下和左右分别同步调整，修改后立即更新页面。">
+                      <div className="workbench-margin-layout">
+                        <div className="workbench-margin-controls">
+                          <SettingsStepper label="上下边距" unit="mm" value={settings.verticalPageMargin} min={10} max={30} step={2} onChange={(verticalPageMargin) => updateSettings({ verticalPageMargin })} disabled={versionOperationPending} />
+                          <SettingsStepper label="左右边距" unit="mm" value={settings.pageMargin} min={10} max={30} step={2} onChange={(pageMargin) => updateSettings({ pageMargin })} disabled={versionOperationPending} />
+                        </div>
+                        <div className="workbench-margin-preview" aria-label={`当前上下边距 ${settings.verticalPageMargin} 毫米，左右边距 ${settings.pageMargin} 毫米`}>
+                          <span className="workbench-margin-preview-page">
+                            <Rows3 aria-hidden="true" />
+                          </span>
+                          <small>页面预览</small>
+                        </div>
+                      </div>
+                    </WorkbenchSettingsSection>
+
+                    <WorkbenchSettingsSection title="字体设置" description="选择简历字体并调整正文大小。" icon={<Type aria-hidden="true" size={15} />} variant="card">
+                      <div className="workbench-font-settings-grid">
+                        <FontPreviewSelect value={settings.fontFamily} onChange={(fontFamily) => updateSettings({ fontFamily })} disabled={versionOperationPending} />
+                        <SettingsStepper label="正文字号" unit="pt" value={settings.fontSize} min={8} max={16} step={0.5} onChange={(fontSize) => updateSettings({ fontSize })} disabled={versionOperationPending} />
+                      </div>
+                    </WorkbenchSettingsSection>
+
+                    <WorkbenchSettingsSection title="排版设置" description="调整正文行距，修改后立即同步到简历和 PDF。" icon={<AlignLeft aria-hidden="true" size={15} />} variant="card">
+                      <div className="workbench-typesetting-grid">
+                        <SettingsStepper label="行距" unit="" value={settings.lineHeight} min={1.1} max={1.8} step={0.05} onChange={(lineHeight) => updateSettings({ lineHeight })} disabled={versionOperationPending} />
+                      </div>
+                    </WorkbenchSettingsSection>
+
+                    <WorkbenchSettingsSection title="版本管理" description="为重要节点留档，或回到之前保存的内容。" icon={<History aria-hidden="true" size={15} />} variant="card">
+                      <div className="workbench-version-settings">
+                        <SaveVersionAction
+                          pending={saveStatus === "saving" || versionOperationPending || versionNameSubmitting}
+                          onSave={openVersionNameDialog}
+                        />
+                        <VersionHistoryAction
+                          count={versions.length}
+                          disabled={versionOperationPending}
+                          onOpen={() => setDrawerMode("history")}
+                        />
+                      </div>
+                    </WorkbenchSettingsSection>
+
                   </div>
-                ) : (
+                ) : drawerMode === "history" ? (
                   <div className="workbench-versions">
                     <p className="workbench-version-summary">
                       <strong>{versions.length} 个版本</strong>
@@ -1251,13 +1420,37 @@ export function ResumeWorkbench() {
                     ))}
                     <p className="workbench-version-footnote">自动保存不会创建正式版本；恢复会直接替换当前编辑内容。</p>
                   </div>
-                )}
+                ) : activeResumeId ? (
+                  <AgentPanel
+                    key={activeResumeId}
+                    resumeId={activeResumeId}
+                    currentData={data}
+                    currentStyle={style}
+                    userAvatarUrl={user?.avatar_url}
+                    userDisplayName={user?.nickname || user?.email || "用户"}
+                    onBeforeRun={prepareAgentRun}
+                    onBeforeConfirm={prepareAgentProposalConfirmation}
+                    onApplied={refreshAppliedAgentProposal}
+                    onClose={() => setDrawerMode(null)}
+                  />
+                ) : null}
               </motion.aside>
             )}
           </AnimatePresence>
         </main>
 
         <AnimatePresence>
+          {zoomFeedback && (
+            <motion.div
+              key={zoomFeedback.sequence}
+              className="workbench-zoom-feedback-wrap"
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+            >
+              <ZoomFeedback scale={zoomFeedback.scale} />
+            </motion.div>
+          )}
           {toast && (
             <motion.div className="workbench-toast" role="status" initial={{ opacity: 0, scale: 0.9, y: -8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.94, y: -6 }}>
               <CircleCheck size={18} />{toast.label}
@@ -1306,7 +1499,7 @@ export function ResumeWorkbench() {
               <DialogTitle>保存正式版本</DialogTitle>
               <DialogDescription>为这个重要节点命名，之后可以从版本记录中恢复。</DialogDescription>
             </DialogHeader>
-            <form className="version-name-form" onSubmit={(event) => { event.preventDefault(); void manualSave(); }}>
+            <form className="version-name-form" onSubmit={(event) => { event.preventDefault(); void saveNamedVersion(); }}>
               <div className="version-name-field">
                 <Label htmlFor="resume-version-name">版本名称</Label>
                 <Input

@@ -46,7 +46,12 @@ describe("LinkCV UI components", () => {
   });
 
   it("紧凑品牌只保留图形标识", () => {
-    render(<Brand compact />);
-    expect(screen.getByLabelText("LinkCV")).not.toHaveTextContent("LinkCV");
+    const { rerender } = render(<Brand compact />);
+    expect(screen.getByLabelText("LinkResume").querySelectorAll("img")).toHaveLength(1);
+    expect(screen.getByLabelText("LinkResume").querySelector("img")).toHaveClass("ui-brand-mark");
+
+    rerender(<Brand />);
+    expect(screen.getByLabelText("LinkResume").querySelectorAll("img")).toHaveLength(2);
+    expect(screen.getByLabelText("LinkResume").querySelector(".ui-brand-wordmark")).toBeInTheDocument();
   });
 });

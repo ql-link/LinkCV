@@ -9,6 +9,23 @@ function jsonResponse(status: number, body: unknown): Response {
   } as unknown as Response;
 }
 
+function streamResponse(chunks: string[]): Response {
+  const encoder = new TextEncoder();
+  let index = 0;
+  return {
+    ok: true,
+    status: 200,
+    headers: new Headers(),
+    body: {
+      getReader: () => ({
+        read: vi.fn(async () => index < chunks.length
+          ? { done: false, value: encoder.encode(chunks[index++]) }
+          : { done: true, value: undefined }),
+      }),
+    },
+  } as unknown as Response;
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -156,6 +173,53 @@ describe("API observability", () => {
       message: "SERVICE_UNAVAILABLE",
     });
     expect(JSON.stringify(reportBody)).not.toContain("hidden");
+  });
+});
+
+describe("Agent SSE client", () => {
+  it("正常 EOF 前没有终态事件时按协议失败", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        streamResponse([
+          'event: assistant.delta\ndata: {"delta":"半条回复"}\n\n',
+        ]),
+      ),
+    );
+
+    await expect(
+      api.streamAgentMessage(
+        "session-1",
+        { content: "优化简历", idempotency_key: "retry_key_1" },
+        new AbortController().signal,
+        vi.fn(),
+      ),
+    ).rejects.toMatchObject({
+      status: 502,
+      message: "AGENT_STREAM_INCOMPLETE",
+    });
+  });
+
+  it("收到终态事件后正常完成", async () => {
+    const onEvent = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        streamResponse([
+          'event: run.completed\ndata: {"runId":"run-1"}\n\n',
+        ]),
+      ),
+    );
+
+    await expect(
+      api.streamAgentMessage(
+        "session-1",
+        { content: "优化简历", idempotency_key: "retry_key_2" },
+        new AbortController().signal,
+        onEvent,
+      ),
+    ).resolves.toBeUndefined();
+    expect(onEvent).toHaveBeenCalledWith({ type: "run.completed", runId: "run-1" });
   });
 });
 

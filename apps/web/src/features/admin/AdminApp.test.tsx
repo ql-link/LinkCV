@@ -134,7 +134,17 @@ describe("AdminApp access control", () => {
     window.history.replaceState(null, "", "/admin/logs/system");
     render(<AdminApp />);
 
-    expect(await screen.findByRole("button", { name: "查看日志 event-system-1" })).toBeInTheDocument();
+    await waitFor(
+      () => expect(api.adminListSystemLogs).toHaveBeenCalledTimes(1),
+      { timeout: 4_000 },
+    );
+    expect(
+      await screen.findByRole(
+        "button",
+        { name: "查看日志 event-system-1" },
+        { timeout: 4_000 },
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: "摘要" })).not.toBeInTheDocument();
     expect(screen.queryByText("健康检查完成")).not.toBeInTheDocument();
 

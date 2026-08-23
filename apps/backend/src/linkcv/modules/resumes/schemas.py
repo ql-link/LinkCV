@@ -155,7 +155,7 @@ class ResumeVersionSummary(BaseModel):
     id: str
     version_no: int
     name: str
-    reason: Literal["initial", "manual", "before_restore", "restore"]
+    reason: Literal["initial", "manual", "before_restore", "restore", "agent"]
     created_at: datetime
 
 

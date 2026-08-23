@@ -35,6 +35,10 @@ function wxLoginCode() {
 }
 
 function saveSession(body) {
+  const previousUser = wx.getStorageSync(USER_KEY);
+  if (previousUser && String(previousUser.id) !== String(body.user && body.user.id)) {
+    void require("./resumePreviewCache").clearResumePreviewCache();
+  }
   wx.setStorageSync(ACCESS_KEY, body.access_token);
   wx.setStorageSync(REFRESH_KEY, body.refresh_token);
   wx.setStorageSync(USER_KEY, body.user);
@@ -45,11 +49,26 @@ function clearSession() {
   wx.removeStorageSync(ACCESS_KEY);
   wx.removeStorageSync(REFRESH_KEY);
   wx.removeStorageSync(USER_KEY);
+  void require("./resumePreviewCache").clearResumePreviewCache();
+}
+
+function updateStoredUser(patch) {
+  const user = wx.getStorageSync(USER_KEY);
+  if (!user) return null;
+  const merged = { ...user, ...patch };
+  wx.setStorageSync(USER_KEY, merged);
+  return merged;
 }
 
 function agreementRequiredError() {
   const error = new Error("请先阅读并同意隐私保护指引");
   error.code = "AGREEMENT_REQUIRED";
+  return error;
+}
+
+function sessionRequiredError() {
+  const error = new Error("尚未登录，请先登录后再查看简历");
+  error.code = "SESSION_REQUIRED";
   return error;
 }
 
@@ -147,7 +166,7 @@ async function getAccountStatus() {
 async function ensureSession() {
   const accessToken = wx.getStorageSync(ACCESS_KEY);
   if (accessToken) return wx.getStorageSync(USER_KEY) || null;
-  throw agreementRequiredError();
+  throw sessionRequiredError();
 }
 
 async function refreshSession() {
@@ -185,12 +204,17 @@ function getAccessToken() {
   return wx.getStorageSync(ACCESS_KEY) || "";
 }
 
+function getCurrentUser() {
+  return wx.getStorageSync(USER_KEY) || null;
+}
+
 module.exports = {
   acceptPrivacyAgreement,
   apiUrl,
   clearSession,
   ensureSession,
   getAccessToken,
+  getCurrentUser,
   getAccountStatus,
   getPrivacySetting,
   hasAcceptedPrivacyAgreement,
@@ -200,5 +224,6 @@ module.exports = {
   openPrivacyContract,
   registerOrLogin,
   refreshSession,
+  updateStoredUser,
   wxLoginCode,
 };

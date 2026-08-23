@@ -20,7 +20,7 @@ test("does not create a mini-program session before privacy agreement", async ()
 
   await assert.rejects(
     auth.ensureSession(),
-    (error) => error.code === "AGREEMENT_REQUIRED",
+    (error) => error.code === "SESSION_REQUIRED",
   );
   await assert.rejects(
     auth.registerOrLogin(),

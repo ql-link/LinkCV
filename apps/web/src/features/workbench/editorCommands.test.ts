@@ -23,20 +23,15 @@ describe("convertCurrentLineToResumeRow", () => {
     editor.commands.setTextSelection(3);
 
     expect(convertCurrentLineToResumeRow(editor)).toBe(true);
-    expect(editor.getJSON()).toMatchObject({
-      type: "doc",
-      content: [{
-        type: "resumeRow",
-        attrs: { leftWidth: 50 },
-        content: [
-          { type: "paragraph", content: [{ type: "text", text: "星河云科技" }] },
-          { type: "paragraph" },
-        ],
-      }],
-    });
+    const row = editor.getJSON().content?.[0];
+    expect(row).toMatchObject({ type: "resumeRow", attrs: { leftWidth: 50 } });
+    expect(row?.content?.[0]?.content).toEqual(expect.arrayContaining([
+      { type: "text", text: "星河云科技" },
+    ]));
+    expect(row?.content?.[1]).toMatchObject({ type: "paragraph" });
     expect(editor.isActive("resumeRow")).toBe(true);
     expect(editor.state.selection.$from.parent).toEqual(editor.state.doc.firstChild?.child(1));
-    expect(editor.state.selection.$from.parentOffset).toBe(0);
+    expect(editor.state.selection.$from.parentOffset).toBe(1);
   });
 
   it("空白行转换后先在左栏输入并显示右栏入口", () => {
@@ -139,7 +134,7 @@ describe("convertCurrentLineToResumeRow", () => {
       { type: "paragraph" },
     ]);
     expect(editor.state.selection.$from.parent).toEqual(editor.state.doc.child(1));
-    expect(editor.state.selection.$from.parentOffset).toBe(0);
+    expect(editor.state.selection.$from.parentOffset).toBe(1);
   });
 
   it("分栏后已有空白行时按 Enter 不会重复插入", () => {

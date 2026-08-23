@@ -27,8 +27,44 @@ describe("App landing routes", () => {
     window.history.replaceState(null, "", path);
     render(createElement(App));
 
-    expect(screen.getByRole("heading", { name: "把每一份经历，都写成下一份机会" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "把每一份经历，都写成下一份机会" }),
+    ).toBeInTheDocument();
     await waitFor(() => expect(window.location.pathname).toBe(path));
+  });
+});
+
+describe("App not-found route", () => {
+  beforeEach(() => {
+    window.history.replaceState(null, "", "/missing-page");
+    useResumeStore.setState({
+      authStatus: "authenticated",
+      user: {
+        id: "user-1",
+        email: "user@example.test",
+        nickname: "测试用户",
+        is_admin: false,
+      },
+      activeResumeId: null,
+      dirty: false,
+      hydrate: vi.fn().mockResolvedValue(undefined),
+    });
+  });
+
+  it("展示 404 页面并提供公共首页入口", async () => {
+    render(createElement(App));
+
+    expect(await screen.findByRole("heading", { name: "页面不存在" })).toBeInTheDocument();
+    expect(screen.getByText("404")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "返回首页" })).toHaveAttribute("href", "/");
+  });
+
+  it("访客访问未知地址时也展示 404 页面", async () => {
+    useResumeStore.setState({ authStatus: "guest", user: null });
+    render(createElement(App));
+
+    expect(await screen.findByRole("heading", { name: "页面不存在" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/missing-page");
   });
 });
 

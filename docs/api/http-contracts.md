@@ -23,7 +23,7 @@
 
 会话统一保存为 Redis `auth:session:{sid}` hash 和 `auth:user_sessions:{uid}` 集合。Hash 包含 `uid`、refresh secret 哈希、`channel=web|miniprogram` 和创建时间；access JWT 同样携带 channel。Web 只接受 HttpOnly Cookie 中的 `channel=web` 凭据，小程序只接受 `Authorization: Bearer` 中的 `channel=miniprogram` 凭据；同时携带两种载体、JWT 与 Redis 的 uid/channel 不一致、session 被撤销或用户停用时均视为未登录。为兼容本功能上线前已签发的 Web 会话，缺少 channel 的旧 JWT/Redis session 仅按 Web 凭据接受，并在 refresh 轮换时补写 `channel=web`；它不会被小程序接口接受。Refresh 每次轮换 secret，重放旧 refresh 会撤销整个 session。
 
-微信 code 只由后端提交微信平台换取 openid。`/api/auth/wechat/miniprogram/account-status` 使用当前 `wx.login` code 返回该 openid 是否已有关联账号，只返回布尔值，不创建用户、不更新登录时间、不签发会话；它与小程序登录共用来源 IP 默认每分钟 30 次的限流。openid 已存在时登录接口直接复用；不存在时，`/api/auth/wechat/confirm` 和 `/api/auth/wechat/miniprogram/login` 只有在收到 `privacy_accepted=true` 后才创建 `email/password_hash` 为空的普通账号，缺失或为 `false` 时返回 `400 PRIVACY_AGREEMENT_REQUIRED`，唯一约束负责并发建号收敛。该字段只表示本次注册请求已经通过客户端确认门禁，不是服务端持久化的同意审计记录。随仓库发布的小程序在调用建号接口或确认扫码前，还必须展示微信平台隐私保护指引、取得页面复选框确认和用户主动点击；简历页与请求重试路径只能以 `privacy_accepted=false` 尝试恢复已有账号，不能静默触发首次建号。停用账号不能登录或续期；管理员账号即使历史上已有 openid，也不能通过扫码或小程序登录，只能使用 `/api/auth/admin-login`。超出上述限流时返回 `429 WECHAT_RATE_LIMITED`。
+微信 code 只由后端提交微信平台换取 openid。`/api/auth/wechat/miniprogram/account-status` 使用当前 `wx.login` code 返回该 openid 是否已有关联账号，只返回布尔值，不创建用户、不更新登录时间、不签发会话；它与小程序登录共用来源 IP 默认每分钟 30 次的限流。openid 已存在时登录接口直接复用；不存在时，`/api/auth/wechat/confirm` 和 `/api/auth/wechat/miniprogram/login` 只有在收到 `privacy_accepted=true` 后才创建 `email/password_hash` 为空的普通账号，缺失或为 `false` 时返回 `400 PRIVACY_AGREEMENT_REQUIRED`，唯一约束负责并发建号收敛。该字段只表示本次注册请求已经通过客户端确认门禁，不是服务端持久化的同意审计记录。随仓库发布的小程序在调用建号接口或确认扫码前，还必须展示微信平台隐私保护指引、取得页面复选框确认和用户主动点击（未勾选时在协议区行内提示，不弹系统窗）；账号状态探测和登录请求只能出现在用户主动进入登录页之后，游客首页不发起任何认证请求；登录或确认成功后客户端先展示完成提示再进入简历页；简历页与请求重试路径只能以 `privacy_accepted=false` 尝试恢复已有账号，不能静默触发首次建号。停用账号不能登录或续期；管理员账号即使历史上已有 openid，也不能通过扫码或小程序登录，只能使用 `/api/auth/admin-login`。超出上述限流时返回 `429 WECHAT_RATE_LIMITED`。
 
 ### 网页扫码登录
 
@@ -40,10 +40,16 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 
 | Method | Path | 成功结果 |
 | --- | --- | --- |
-| `GET` | `/api/miniprogram/resumes` | `{resumes}`；本人简历摘要，按更新时间倒序 |
-| `GET` | `/api/miniprogram/resumes/:id` | `{resume}`；仅返回本人简历，不存在或越权统一 `404 RESUME_NOT_FOUND` |
+| `GET` | `/api/miniprogram/resumes` | `{resumes}`；本人简历摘要，按更新时间倒序；`preview` 与 `pdf_version_id/pdf_version_no` 来自最新手动版本，无手动版本时来自初始版本 |
+| `GET` | `/api/miniprogram/resumes/:id` | `{resume}`；返回本人当前可读正式版本及 PDF 版本标识，不返回自动保存草稿；不存在或越权统一 `404 RESUME_NOT_FOUND` |
+| `GET` | `/api/miniprogram/resumes/:id/pdf?version_id=...` | 当前可读正式版本的文字 PDF；`version_id` 必须仍等于最新可读版本，响应 `application/pdf`、`private, no-store` 并携带版本响应头 |
+| `GET` | `/api/miniprogram/resumes/:id/preview.png?version_id=...` | 当前可读正式版本的智能一页 PNG；响应 `image/png`、`private, no-store` 并携带版本响应头，供小程序在当前页面内显示和本机缓存 |
+| `GET` | `/api/miniprogram/account/profile` | `{nickname, avatar_url}`；本人资料，`avatar_url` 恒为 `/api/miniprogram/account/avatar` 或 `null` |
+| `PATCH` | `/api/miniprogram/account/profile` | 同上；JSON `{nickname}`，去空白后非空且不超过 50 字，否则 `400 INVALID_NICKNAME` |
+| `PUT` | `/api/miniprogram/account/avatar` | `{url}`；JSON `{dataUrl, fileName?}`，复用 `/api/account/avatar` 的解码、10MB 上限与 MinIO 归属键规则，替换后删除旧头像对象 |
+| `GET` | `/api/miniprogram/account/avatar` | 本人头像二进制流（`image/*`、`private`）；无头像返回 `404 ASSET_NOT_FOUND`。普通 `/api/assets/*` 仍只接受 Web Cookie，小程序只能经此专用端点读取头像 |
 
-这两个端点只接受小程序 Bearer，不接受 Web Cookie。小程序 Bearer 不能调用普通 `/api/resumes*` 读写接口，因此只读限制由后端鉴权边界执行，不依赖小程序是否展示按钮。
+四个端点只接受小程序 Bearer，不接受 Web Cookie；小程序 Bearer 也不能调用普通 `/api/resumes*` 读写接口。预览选择最新 `reason=manual` 快照，没有手动版本时回退 `reason=initial`；客户端版本过期或无可读版本返回 `409 RESUME_VERSION_UNAVAILABLE`。服务端按请求启动一次性 Node 渲染进程，强制智能一页，从该版本真实引用且通过用户/简历对象键校验的 PNG/JPEG 私有图片构造输入；`preview.png` 再用 PDFium 把单页 PDF 栅格化为宽度不超过 1440 像素的 PNG。PDF 和 PNG 都只保留在请求内存，不写 MySQL、MinIO 或服务端文件缓存。输入、页面尺寸、像素数和输出大小都有上限；渲染脚本缺失、超时、异常退出、非法 PDF 或栅格化失败以稳定的 4xx/503 错误收口。
 
 ### 用户中心
 
@@ -51,7 +57,7 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 
 ## 语义简历契约
 
-简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`。数据库 ID 在 HTTP 中使用十进制字符串。`data` 是 `ResumeDocumentV1`，`style` 是 `ResumeStyleV1`，两者的 `schema_version` 当前均为字符串 `"1.0"`。`style.smart_one_page` 控制连续单页或标准 A4 导出模式，并随版本快照保存。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不再是简历写契约。
+简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`。数据库 ID 在 HTTP 中使用十进制字符串。`data` 是 `ResumeDocumentV1`，`style` 是 `ResumeStyleV1`，两者的 `schema_version` 当前均为字符串 `"1.0"`。简历正文以用户内容为准：错别字、非标准邮箱或电话、无法识别或先后矛盾的日期、缺少单位或职位等内容质量问题不阻断保存、导入或版本恢复；可识别日期仍会规范化，无法识别的日期原样保留。字段类型、总量和长度上限、URL 协议、Markdown 主动内容及内部 ID 完整性仍严格校验。`style.smart_one_page` 控制连续单页或标准 A4 导出模式，并随版本快照保存。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不再是简历写契约。
 
 Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照转换为上述 `"1.0"` 契约；这些迁移期旧 JSON 从未进入 API 响应，`0012` 删除其同行备份列，因此 HTTP 请求、响应和现有 `"1.0"` 数据保持不变。发布顺序仍为先迁移数据库、再启动新应用。
 
@@ -84,6 +90,26 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 | `POST`   | `/api/resumes/:id/versions/:version_no/restore` | 是   | `{resume}`；直接用目标正式版本替换当前简历，不创建新版本 |
 
 版本号单调递增且不复用；每份简历默认最多保存 10 个正式版本。创建和重命名请求中的 `name` 会去除首尾空白并折叠连续空白，规范化后必须为 1–80 个字符；创建缺省名称兼容旧调用方并按版本号生成“版本 N”。非法名称返回 `400 INVALID_RESUME_VERSION_NAME`。`PATCH` 重命名只更新指定版本的名称，不改变 `data/style` 快照、不创建新版本，也不改变当前简历标题。恢复直接使用已存在的目标快照替换当前简历，不创建新的 `before_restore` 或 `restore` 版本，也不占用版本空间。创建版本空间不足时返回 `409 RESUME_VERSION_LIMIT_REACHED`，不会自动删除任何历史版本；用户删除旧版本后才能继续。最新版本作为当前恢复基准不可删除，尝试删除返回 `409 LATEST_RESUME_VERSION_REQUIRED`。版本不存在返回 `404 RESUME_VERSION_NOT_FOUND`，并发兜底失败返回 `409 VERSION_CONFLICT`。历史数据中的 `before_restore`、`restore` 原因仍可读取，但新恢复操作不会再生成这两类记录。旧版本名称由 `0023` 按原因回填，Web 版本抽屉只展示这些正式版本，不单独展示当前草稿。
+
+## 简历智能助手
+
+除部署探针 `GET /api/agent/readiness` 外，智能助手接口全部要求登录，且会话、运行与提案都按当前用户重新校验归属；不存在或越权资源返回对应 `AGENT_*_NOT_FOUND`，不暴露其他用户数据。消息发送使用 POST SSE，不使用浏览器原生 `EventSource`。
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `GET` | `/api/agent/readiness` | `200 {ready: true}`；只读校验完整 Agent 服务链，不返回模型或凭据 |
+| `GET` | `/api/agent/sessions?resume_id=:id` | `{sessions}`，最近更新优先 |
+| `POST` | `/api/agent/sessions` | `201 {session}`；请求为 `{resume_id, title?}` |
+| `GET` | `/api/agent/sessions/:sessionId` | `{session}`，包含最近 100 条消息 |
+| `POST` | `/api/agent/sessions/:sessionId/messages` | SSE；请求为 `{content, idempotency_key, selection_context?}`，选区包含稳定块 ID、编辑器范围、原文和 SHA-256 |
+| `POST` | `/api/agent/runs/:runId/cancel` | `{run_id, status}`；重复取消幂等 |
+| `GET` | `/api/agent/proposals?resume_id=:id` | `{proposals}`，只返回当前待确认提案 |
+| `POST` | `/api/agent/proposals/:proposalId/confirm` | `{resume}`；确认后应用完整快照并创建 `agent` 版本 |
+| `POST` | `/api/agent/proposals/:proposalId/reject` | `{proposal}`；放弃待确认提案 |
+
+SSE 事件包括 `run.started`、`assistant.delta`、`tool.started`、`tool.completed`、`proposal.created`、`run.completed`、`run.cancelled` 和 `run.failed`。每个成功建立的 SSE 响应必须以后三种 `run.*` 终态之一结束；Pi 在 HTTP 200 后提前 EOF 时 FastAPI 补发 `run.failed/AGENT_UPSTREAM_FAILED`，浏览器也会把无终态 EOF 识别为 `AGENT_STREAM_INCOMPLETE`。只有 `run.completed` 才把完整助手文本和可用的 Token/估算成本写入数据库；失败、取消或缺失终态不会把已经流出的部分文本保存成历史消息。同一用户只允许一个 running 运行；相同 `idempotency_key` 重放现有运行状态。取消与流式完成并发时采用第一个成功写入的终态，后到操作不得覆盖。Agent 只能读取当前会话绑定的简历，并且不能直接写简历：修改先解析稳定 locator，再读取最小范围、生成结构化诊断并创建类型化 operation 提案；服务端在快照副本上应用 operation 后仍保存完整候选 data/style。旧的完整快照内部提案接口保留一个兼容期，存量 pending 提案仍可确认。确认时同时校验 `base_lock_version`、locator 和目标内容哈希；整份简历发生并发变化返回 `409 RESUME_EDIT_CONFLICT`，目标块失效返回 `409 TARGET_STALE` 并把提案标记为 conflicted。过期提案返回 `410 AGENT_PROPOSAL_EXPIRED`，正式版本已达上限时返回 `409 RESUME_VERSION_LIMIT_REACHED` 且不应用提案。服务或模型不可用返回安全化的 `AGENT_UNAVAILABLE`、`AGENT_MODEL_UNAVAILABLE`、`AGENT_MODEL_UNSUPPORTED`、`AGENT_MODEL_TIMEOUT` 或 `AGENT_MODEL_REQUEST_FAILED`，供应商原始错误和 API Key 不进入浏览器响应。
+
+`/internal/agent/**` 仅供 Pi 服务使用，以独立 Bearer token 鉴权且不出现在 OpenAPI。除兼容的完整上下文和快照提案接口外，范围化工具依次使用 `POST /runs/:runId/targets:resolve`、`context:read`、`materials:search`、`diagnoses` 和 `proposals:v2`。目标出现零处或多处时不允许创建提案；诊断 fingerprint、资料版本、执行模式和 operation 范围由 FastAPI 复验。`GET /internal/agent/readiness` 验证当前 `pi_agent` binding、凭据解密和 Pi provider 映射，不发起供应商模型调用；工具事件以 `(run_id, call_key)` 幂等，同一工具调用进入 succeeded、failed 或 cancelled 后不可回退或改写为另一终态。内部运行配置复用统一模型管理中的 `pi_agent` binding；模型配置页面仍是 `/admin/llm/models`，不新增第二套 Pi 配置 UI。
 
 ## 简历分享链接
 
@@ -152,6 +178,8 @@ RabbitMQ 是默认 Broker，使用固定 `resume.import` routing key；Kafka 兼
 ```
 
 `GET /api/datasets` 返回当前登录用户自己的资料记录，按上传时间倒序（`{datasets: [...]}`），并从关联任务返回 `upload_status`、`parse_status`、`failure_reason`。失败分类为 `format_unsupported/content_invalid/size_exceeded/service_unavailable/timeout/quota_exceeded/internal_error`。`GET /api/datasets/:id/content` 只允许资料所有者读取解析成功后保存的 Markdown，返回 `{id, file_name, file_format, markdown}`；资料不存在或越权统一返回 `404 DATASET_NOT_FOUND`，解析尚未成功或转换存档未保存返回 `409 DATASET_CONTENT_UNAVAILABLE`，对象读取、大小或 UTF-8 校验失败返回 `502 DATASET_CONTENT_READ_FAILED`。三个接口都要求登录（未登录返回 `401 UNAUTHORIZED`），响应不包含对象存储路径或 SHA-256。
+
+资料源文件 SHA-256 仅作为后端完整性元数据，以固定 64 位十六进制字符串保存；它不进入公开请求或响应契约。
 
 文件名非法返回 `400 INVALID_DATASET_FILENAME`，空文件返回 `400 EMPTY_DATASET_FILE`，不支持格式返回 `400 UNSUPPORTED_DATASET_FORMAT`，超过大小上限返回 `413 DATASET_TOO_LARGE`。对象存储上传失败返回 `502 DATASET_UPLOAD_FAILED` 且不落库；对象已上传但元信息写入失败返回 `500 DATASET_RECORD_FAILED`，已上传对象会被尽力清理；消息发布失败返回 `502 DATASET_QUEUE_UNAVAILABLE`，任务记录收口为上传失败。同一文件允许重复上传并生成新记录（不做去重或幂等）。
 
@@ -231,24 +259,29 @@ PDF 导出审计只接受当前用户拥有的简历 ID；不存在或不属于�
 | Method  | Path                                            | 成功结果                                                                       |
 | ------- | ----------------------------------------------- | ------------------------------------------------------------------------------ |
 | `GET`   | `/api/admin/llm/capabilities/chat`              | `{capability, activeModelId, activeModel, models}`，返回 Chat 当前项与候选列表 |
+| `GET`   | `/api/admin/llm/capabilities`                   | `{capabilities}`，返回 Chat、`resume_structuring`、`pi_agent` 能力矩阵与共享候选列表 |
+| `GET`   | `/api/admin/llm/catalog`                        | `{capabilities, adapters}`，返回能力与模型目录                                 |
 | `GET`   | `/api/admin/llm/catalog/chat`                   | `{capability, adapters}`，返回受支持 adapter 和 LiteLLM Chat 模型建议          |
 | `POST`  | `/api/admin/llm/models`                         | `201 {model}`                                                                  |
 | `PATCH` | `/api/admin/llm/models/:modelConfigId`          | `{model, validationCallId}`；编辑当前项时先测试拟议配置                        |
 | `POST`  | `/api/admin/llm/models/:modelConfigId/test`     | `{ok: true, callId}`，测试指定配置                                             |
+| `POST`  | `/api/admin/llm/models/:modelConfigId/tests`    | `{capability, baseConfigVersion?}`；按能力执行验证并返回验证证据                |
 | `POST`  | `/api/admin/llm/models/:modelConfigId/activate` | `{activeModel, callId}`，测试成功后设为 Chat 当前模型                          |
+| `PUT`   | `/api/admin/llm/capabilities/:capability/binding` | `{modelConfigId, baseConfigVersion?, baseBindingVersion?}`；验证成功后更新能力绑定并返回验证调用 ID |
+| `DELETE` | `/api/admin/llm/models/:modelConfigId`         | 删除未绑定候选；被任一能力绑定时返回 `409 LLM_MODEL_IN_USE`                    |
 | `GET`   | `/api/admin/llm/calls`                          | `{calls, summary, nextCursor}`                                                 |
 
-Chat 是服务端预定义能力，管理员不填写能力标识。候选写入只接受 `adapter`、不含 adapter 前缀的 `model`、可选 `apiBase` 和只写 `apiKey`；服务端将 DeepSeek 示例组装成 `deepseek/deepseek-v4-flash`，将千问示例组装成 `dashscope/qwen-plus` 后传给 LiteLLM。目录响应使用稳定 adapter 代码，管理页面只展示供应商名称；目录建议来自锁定版本 LiteLLM 的 Chat 元数据，目录外调用名仍可提交并由真实连接测试兜底。旧 `enabled`、`priority` 和手工价格字段不再接受或返回。
+模型候选是能力中立的共享连接配置，管理员不填写能力标识。候选写入只接受 `adapter`、不含 adapter 前缀的 `model`、可选 `apiBase` 和只写 `apiKey`；Chat 与简历结构化会把 adapter 和模型名组装成 LiteLLM 标识。目录响应使用稳定 adapter 代码，管理页面只展示供应商名称；目录建议来自锁定版本 LiteLLM 的 Chat 元数据，目录外调用名仍可提交并由真实连接测试兜底。旧 `enabled`、`priority` 和手工价格字段不再接受或返回。`pi_agent` 绑定会把选定配置快照交给 Pi Service，由 Pi 的模型 profile 决定协议和兼容参数并直接执行固定 Tool 探针；Pi Service 不可达、超时、模型不受支持或 Tool 未执行分别返回稳定脱敏错误和 `callId`，原 binding 保持不变。
 
-候选读取只用 `keyConfigured` 表示是否已有凭据，绝不返回明文或数据库密文。PATCH 省略 `apiKey` 时保留原凭据，传 `null` 时清除，传非空字符串时替换。新增和编辑普通候选不会改变 Chat 当前项；启用操作先测试目标快照，成功后才切换，失败时原当前项不变。编辑当前候选也先测试拟议配置，测试或版本核对失败时不覆盖正在使用的版本。候选不提供硬删除或独立启停接口。
+候选读取只用 `keyConfigured` 表示是否已有凭据，绝不返回明文或数据库密文。PATCH 省略 `apiKey` 时保留原凭据，传 `null` 时清除，传非空字符串时替换。新增和编辑未绑定候选不会改变任何能力当前项；被任一能力绑定的候选不可原地编辑或删除，管理员需创建替代候选后再验证并切换。启用操作先测试目标快照，成功后才切换，失败时原当前项不变。未绑定候选可以硬删除；删除会移除配置、加密凭据和验证证据，并把历史调用日志的 `modelConfigId` 置空，日志中的 adapter、模型、配置版本、状态和计量快照保持不变。不提供独立启停接口。
 
 模型配置 `id`、调用记录 `userId` 和 `modelConfigId` 与其他 MySQL 业务 ID 一致，对外使用十进制字符串，内部数据库列仍为 `BIGINT UNSIGNED`。
 
-`0006` 在数据库中使用中文表注释和字段注释，这些注释只用于说明持久化语义，不改变本节约定的 JSON 字段名、错误码或状态字面值。`0008` 增加候选的 `capability/adapter/model_call_name/config_version`、Chat 唯一当前绑定，以及调用日志的能力、来源和模型快照。升级会先按外键依赖顺序永久清空旧调用日志和模型配置，不转换旧优先级、价格或调用数据；完成后 Chat 当前绑定为空，需要管理员重新配置并设为当前模型。
+`0006` 在数据库中使用中文表注释和字段注释，这些注释只用于说明持久化语义，不改变本节约定的 JSON 字段名、错误码或状态字面值。`0008` 增加候选的 LiteLLM adapter/model 调用名、Chat 唯一当前绑定，以及调用日志的能力、来源和模型快照。`0028` 扩展绑定版本、验证证据、简历结构化/Pi Agent 预置绑定和调用配置版本；`0029` 删除候选上的遗留 `capability` 列，候选正式成为能力中立配置。升级仍不转换旧优先级、价格或调用数据；存量 Chat 绑定验证证据可为空，需要管理员重新测试其他能力后才会产生对应证据。
 
-调用记录可用 `source`、`status`、精确 `callId`、`userId`、`modelConfigId`、`from`、`to`、`cursor` 和 `limit` 查询，默认每页 50、最大 200，按创建时间和内部 ID 倒序稳定分页。`source` 是由内部调用方提供的稳定小写代码，格式为 `^[a-z][a-z0-9_]{0,31}$`；当前接入来源包括管理动作的 `connection_test`、简历导入的 `resume_import` 和正文局部修改的 `resume_inline_edit`。时间范围使用带时区的 ISO 8601，区间为左闭右开；非法值、反向区间或无效游标返回 `400 INVALID_LLM_CALL_QUERY`。每条记录只包含调用标识、能力、来源、用户、实际 adapter/模型快照、状态、耗时、Token、LiteLLM 价格快照、估算成本和非敏感错误分类，不保存或返回消息、模型完整响应和凭据。汇总针对当前筛选条件聚合全部命中记录，只累加已知值，并用 `incompleteMeteringCount` 表明不完整计量。
+调用记录可用 `source`、`status`、精确 `callId`、`userId`、`modelConfigId`、`from`、`to`、`cursor` 和 `limit` 查询，默认每页 50、最大 200，按创建时间和内部 ID 倒序稳定分页。`source` 是由内部调用方提供的稳定小写代码，格式为 `^[a-z][a-z0-9_]{0,31}$`；当前接入来源包括管理动作的 `connection_test`、简历导入的 `resume_import` 和正文局部修改的 `resume_inline_edit`。时间范围使用带时区的 ISO 8601，区间为左闭右开；非法值、反向区间或无效游标返回 `400 INVALID_LLM_CALL_QUERY`。每条记录只包含调用标识、能力、来源、用户、实际 adapter/模型与配置版本快照、状态、耗时、Token、LiteLLM 价格快照、估算成本和非敏感错误分类，不保存或返回消息、模型完整响应和凭据。汇总针对当前筛选条件聚合全部命中记录，只累加已知值，并用 `incompleteMeteringCount` 表明不完整计量。
 
-管理错误包括 `INVALID_LLM_MODEL_CONFIG`、`INVALID_LLM_CALL_QUERY`、`LLM_MODEL_NOT_FOUND`、`LLM_MODEL_CONFIG_CHANGED`、`LLM_CHAT_NOT_CONFIGURED`、`LLM_CREDENTIALS_UNAVAILABLE`、`LLM_UNAVAILABLE` 和 `LLM_REQUEST_REJECTED`。连接测试、启用和当前项验证失败响应带可查询的 `callId`；供应商原始错误不会透传。
+管理错误包括 `INVALID_LLM_MODEL_CONFIG`、`INVALID_LLM_CALL_QUERY`、`LLM_MODEL_NOT_FOUND`、`LLM_MODEL_IN_USE`、`LLM_MODEL_CONFIG_CHANGED`、`LLM_BINDING_CHANGED`、`LLM_CHAT_NOT_CONFIGURED`、`LLM_MODEL_NOT_CONFIGURED`、`LLM_PI_AGENT_UNAVAILABLE`、`LLM_PI_AGENT_TIMEOUT`、`LLM_PI_AGENT_PROBE_FAILED`、`LLM_CREDENTIALS_UNAVAILABLE`、`LLM_UNAVAILABLE` 和 `LLM_REQUEST_REJECTED`。连接测试、绑定和当前项验证失败在已经创建调用记录时带可查询的 `callId`；供应商原始错误不会透传。
 
 结构化模型调用仍是后端内部能力，不新增 HTTP 路由或管理接口字段。服务端不会向供应商发送 `response_format` JSON Schema 参数，而是在单次调用的系统指令中提供目标 Schema；返回文本由 LinkCV 本地提取 JSON 并执行 Pydantic 严格校验。非法结构以内部 `LLM_RESPONSE_INVALID` 收口，不触发第二次供应商调用，也不把模型正文写入调用记录或管理接口响应。
 

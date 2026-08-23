@@ -1,5 +1,6 @@
 import os
 import re
+import secrets
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -17,8 +18,34 @@ def settings_env_files() -> tuple[Path, ...]:
     base = Path(os.environ.get("LINKCV_ENV_FILE", REPO_ROOT / ".env")).expanduser()
     if not base.is_absolute():
         base = (REPO_ROOT / base).resolve()
-    local = Path(f"{base}.local")
+    configured_secret = os.environ.get("LINKCV_SECRET_ENV_FILE")
+    if configured_secret:
+        local = Path(configured_secret).expanduser()
+        if not local.is_absolute():
+            local = (REPO_ROOT / local).resolve()
+    else:
+        local = _default_secret_env_file(base)
     return (base, local) if local.is_file() else (base,)
+
+
+def _default_secret_env_file(base: Path) -> Path:
+    git_entry = REPO_ROOT / ".git"
+    if not git_entry.is_file() or base.parent != REPO_ROOT:
+        return Path(f"{base}.local")
+
+    prefix = "gitdir:"
+    entry = git_entry.read_text(encoding="utf-8").strip()
+    if not entry.startswith(prefix):
+        return Path(f"{base}.local")
+    git_dir = Path(entry.removeprefix(prefix).strip()).expanduser()
+    if not git_dir.is_absolute():
+        git_dir = (REPO_ROOT / git_dir).resolve()
+    try:
+        main_root = git_dir.parents[2]
+    except IndexError:
+        return Path(f"{base}.local")
+    shared = main_root / f"{base.name}.local"
+    return shared if shared.is_file() else Path(f"{base}.local")
 
 
 def _is_placeholder(value: str | None) -> bool:
@@ -118,6 +145,24 @@ class Settings(BaseSettings):
         gt=0,
     )
 
+    agent_enabled: bool = Field(default=False, alias="AGENT_ENABLED")
+    pi_service_base_url: str = Field(
+        default="http://127.0.0.1:8010", alias="PI_SERVICE_BASE_URL"
+    )
+    pi_service_token: SecretStr | None = Field(default=None, alias="PI_SERVICE_TOKEN")
+    linkcv_internal_agent_token: SecretStr | None = Field(
+        default=None, alias="LINKCV_INTERNAL_AGENT_TOKEN"
+    )
+    agent_run_timeout_seconds: float = Field(
+        default=120, alias="AGENT_RUN_TIMEOUT_SECONDS", gt=0, le=600
+    )
+    agent_tool_timeout_seconds: float = Field(
+        default=15, alias="AGENT_TOOL_TIMEOUT_SECONDS", gt=0, le=60
+    )
+    agent_proposal_ttl_days: int = Field(
+        default=30, alias="AGENT_PROPOSAL_TTL_DAYS", ge=1, le=90
+    )
+
     minio_endpoint: str = Field(default="http://127.0.0.1:9000", alias="MINIO_ENDPOINT")
     minio_access_key: str = Field(default="linkcv", alias="MINIO_ACCESS_KEY")
     minio_secret_key: str = Field(
@@ -131,6 +176,13 @@ class Settings(BaseSettings):
     )
 
     resume_version_limit: int = Field(default=10, alias="RESUME_VERSION_LIMIT", ge=2)
+    pdf_renderer_script: str | None = Field(default=None, alias="PDF_RENDERER_SCRIPT")
+    pdf_renderer_timeout_seconds: float = Field(
+        default=20,
+        alias="PDF_RENDERER_TIMEOUT_SECONDS",
+        gt=0,
+        le=60,
+    )
     dataset_upload_max_bytes: int = Field(
         default=10 * 1024 * 1024,
         alias="DATASET_UPLOAD_MAX_BYTES",
@@ -434,6 +486,18 @@ class Settings(BaseSettings):
             authority = f"{authority}:{port}"
         self.plugin_release_origin = f"{origin.scheme}://{authority}"
 
+        pi_origin = urlsplit(self.pi_service_base_url.strip())
+        if (
+            pi_origin.scheme not in {"http", "https"}
+            or not pi_origin.hostname
+            or pi_origin.query
+            or pi_origin.fragment
+            or pi_origin.username
+            or pi_origin.password
+        ):
+            raise ValueError("PI_SERVICE_BASE_URL must be an HTTP(S) URL")
+        self.pi_service_base_url = self.pi_service_base_url.rstrip("/")
+
         if self.app_environment.lower() != "production":
             return self
 
@@ -479,6 +543,23 @@ class Settings(BaseSettings):
             llm_keys = ()
         if not llm_keys:
             invalid.append("LLM_CREDENTIAL_ENCRYPTION_KEYS")
+        if self.agent_enabled:
+            pi_token = (
+                self.pi_service_token.get_secret_value()
+                if self.pi_service_token is not None
+                else None
+            )
+            internal_token = (
+                self.linkcv_internal_agent_token.get_secret_value()
+                if self.linkcv_internal_agent_token is not None
+                else None
+            )
+            if _is_placeholder(pi_token) or len(pi_token or "") < 32:
+                invalid.append("PI_SERVICE_TOKEN")
+            if _is_placeholder(internal_token) or len(internal_token or "") < 32:
+                invalid.append("LINKCV_INTERNAL_AGENT_TOKEN")
+            if pi_token and internal_token and secrets.compare_digest(pi_token, internal_token):
+                invalid.append("AGENT_SERVICE_TOKENS_MUST_DIFFER")
         if invalid:
             names = ", ".join(sorted(set(invalid)))
             raise ValueError(f"production secrets are missing or unsafe: {names}")

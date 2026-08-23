@@ -333,7 +333,7 @@ class ResumeVersion(Base):
         UniqueConstraint("resume_id", "version_no", name="uk_resume_versions_no"),
         CheckConstraint("version_no >= 1", name="ck_resume_versions_no"),
         CheckConstraint(
-            "reason IN ('initial', 'manual', 'before_restore', 'restore')",
+            "reason IN ('initial', 'manual', 'before_restore', 'restore', 'agent')",
             name="ck_resume_versions_reason",
         ),
         {"comment": "不可变简历历史快照"},

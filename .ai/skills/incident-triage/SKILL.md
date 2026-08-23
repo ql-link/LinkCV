@@ -36,10 +36,13 @@ description: 沿 LinkCV 的浏览器、Vite 代理、FastAPI、SQLAlchemy、MySQ
 
 能从仓库和本机核实的事实自行调查；只询问会改变诊断方向且无法本地获取的信息。
 
+本地开发还要记录启动器实际打印的“基础配置”和“共享私密覆盖”路径。`npm run dev` 是 `dev:local` 的兼容别名；全部本地使用 `npm run dev:local`，本地代码连接共享 Dev 中间件使用 `npm run dev:development`。`APP_ENV` 只控制应用功能，不选择 env profile，不能据此推断当前进程加载了哪套文件。
+
 ## 4. 分诊决策树
 
 ### A. 服务无法启动或页面打不开
 
+- 先核对实际启动命令、`LINKCV_ENV_FILE`、`LINKCV_SECRET_ENV_FILE` 与启动器打印路径，区分 Local profile 和共享 Dev profile；
 - 分别运行或读取 `npm run dev:web`、`npm run dev:backend` 的真实错误；
 - 核对 Node、Python、uv、依赖锁、工作目录和端口占用；
 - 区分进程未启动、监听地址不对、端口冲突、依赖缺失和浏览器访问目标错误；

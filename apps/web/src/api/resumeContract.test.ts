@@ -186,6 +186,24 @@ describe("resume semantic contract adapter", () => {
     expect(html).toContain("</span> 示例大学");
   });
 
+  it("persists stable resume block ids as hidden markdown anchors", () => {
+    const markdown = editorDocumentToMarkdown({
+      type: "doc",
+      content: [{
+        type: "paragraph",
+        content: [
+          { type: "resumeBlockAnchor", attrs: { blockId: "blk_1234567890abcdef" } },
+          { type: "text", text: "负责平台性能优化" },
+        ],
+      }],
+    });
+    const html = renderResumeMarkdown(markdown);
+
+    expect(markdown).toBe("[[linkcv-block:blk_1234567890abcdef]]负责平台性能优化");
+    expect(html).toContain('data-resume-block-id="blk_1234567890abcdef"');
+    expect(html).toContain('class="resume-block-anchor"');
+  });
+
   it("preserves private images and their editor layout metadata", () => {
     const markdown = editorDocumentToMarkdown({
       type: "doc",

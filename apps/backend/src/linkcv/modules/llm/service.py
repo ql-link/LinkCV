@@ -19,6 +19,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from linkcv.core.database import utc_now
 from linkcv.modules.llm.catalog import (
     CHAT_CAPABILITY,
+    PI_AGENT_CAPABILITY,
+    RESUME_STRUCTURING_CAPABILITY,
     adapter_requires_api_key,
     assemble_model_identifier,
 )
@@ -156,16 +158,17 @@ class RuntimeModelConfig:
     config_version: int
 
     @classmethod
-    def from_record(cls, config: LLMModelConfig) -> RuntimeModelConfig | None:
-        if (
-            config.capability != CHAT_CAPABILITY
-            or config.adapter is None
-            or config.model_call_name is None
-        ):
+    def from_record(
+        cls,
+        config: LLMModelConfig,
+        *,
+        capability: str = CHAT_CAPABILITY,
+    ) -> RuntimeModelConfig | None:
+        if config.adapter is None or config.model_call_name is None:
             return None
         return cls(
             id=config.id,
-            capability=config.capability,
+            capability=capability,
             adapter=config.adapter,
             model_call_name=config.model_call_name,
             model_name=assemble_model_identifier(
@@ -176,6 +179,16 @@ class RuntimeModelConfig:
             encrypted_api_key=config.encrypted_api_key,
             config_version=config.config_version,
         )
+
+
+@dataclass(frozen=True)
+class AgentRuntimeModel:
+    id: int
+    adapter: str
+    model_call_name: str
+    api_base: str | None
+    api_key: str | None
+    config_version: int
 
 
 @dataclass(frozen=True)
@@ -293,15 +306,51 @@ class LLMService:
     def encrypt_credential(self, plaintext: str) -> str:
         return self._cipher.encrypt(plaintext)
 
+    async def agent_runtime_model(self) -> AgentRuntimeModel:
+        """Resolve and decrypt the model bound to the Pi Agent capability."""
+        config = await self._db(self._current_config_sync, PI_AGENT_CAPABILITY)
+        if config is None:
+            raise LLMError("LLM_MODEL_NOT_CONFIGURED", "agent-runtime-config")
+        if config.encrypted_api_key is None:
+            if adapter_requires_api_key(config.adapter):
+                raise LLMError(
+                    "LLM_CREDENTIALS_UNAVAILABLE", "agent-runtime-config"
+                )
+            api_key = None
+        else:
+            try:
+                credential = self._cipher.decrypt(config.encrypted_api_key)
+            except CredentialUnavailableError as error:
+                raise LLMError(
+                    "LLM_CREDENTIALS_UNAVAILABLE", "agent-runtime-config"
+                ) from error
+            api_key = credential.plaintext
+            if credential.needs_rewrap:
+                await self._db(self._rewrap_sync, config, credential.plaintext)
+        return AgentRuntimeModel(
+            id=config.id,
+            adapter=config.adapter,
+            model_call_name=config.model_call_name,
+            api_base=config.api_base,
+            api_key=api_key,
+            config_version=config.config_version,
+        )
+
     async def _db(self, function, *args, **kwargs):
         return await to_thread.run_sync(lambda: function(*args, **kwargs))
 
-    def _create_log_sync(self, call_id: str, user_id: int, source: str) -> None:
+    def _create_log_sync(
+        self,
+        call_id: str,
+        user_id: int,
+        source: str,
+        capability: str = CHAT_CAPABILITY,
+    ) -> None:
         with self._session_factory() as db:
             db.add(
                 LLMCallLog(
                     call_id=call_id,
-                    capability=CHAT_CAPABILITY,
+                    capability=capability,
                     source=normalize_call_source(source),
                     user_id=user_id,
                     created_at=utc_now(),
@@ -309,18 +358,30 @@ class LLMService:
             )
             db.commit()
 
-    def _current_config_sync(self) -> RuntimeModelConfig | None:
+    def _current_config_sync(
+        self, capability: str = CHAT_CAPABILITY
+    ) -> RuntimeModelConfig | None:
         with self._session_factory() as db:
-            binding = db.get(LLMCapabilityBinding, CHAT_CAPABILITY)
+            binding = db.get(LLMCapabilityBinding, capability)
             if binding is None or binding.model_config_id is None:
                 return None
             config = db.get(LLMModelConfig, binding.model_config_id)
-            return RuntimeModelConfig.from_record(config) if config is not None else None
+            return (
+                RuntimeModelConfig.from_record(config, capability=capability)
+                if config is not None
+                else None
+            )
 
-    def _config_sync(self, config_id: int) -> RuntimeModelConfig | None:
+    def _config_sync(
+        self, config_id: int, capability: str = CHAT_CAPABILITY
+    ) -> RuntimeModelConfig | None:
         with self._session_factory() as db:
             config = db.get(LLMModelConfig, config_id)
-            return RuntimeModelConfig.from_record(config) if config is not None else None
+            return (
+                RuntimeModelConfig.from_record(config, capability=capability)
+                if config is not None
+                else None
+            )
 
     def _select_model_sync(self, call_id: str, config: RuntimeModelConfig) -> None:
         with self._session_factory() as db:
@@ -329,6 +390,7 @@ class LLMService:
                 .where(LLMCallLog.call_id == call_id)
                 .values(
                     model_config_id=config.id,
+                    model_config_version=config.config_version,
                     model_name=config.model_name,
                     adapter=config.adapter,
                     model_call_name=config.model_call_name,
@@ -452,17 +514,27 @@ class LLMService:
         self,
         call_id: str,
         started_at: float,
+        capability: str = CHAT_CAPABILITY,
     ) -> RuntimeModelConfig:
-        config = await self._db(self._current_config_sync)
+        config = await self._db(self._current_config_sync, capability)
         if config is None:
             await self._db(
                 self._finalize_sync,
                 call_id,
                 status="failed",
                 latency_ms=self._latency(started_at),
-                error_code="LLM_CHAT_NOT_CONFIGURED",
+                error_code=(
+                    "LLM_CHAT_NOT_CONFIGURED"
+                    if capability == CHAT_CAPABILITY
+                    else "LLM_MODEL_NOT_CONFIGURED"
+                ),
             )
-            raise LLMError("LLM_CHAT_NOT_CONFIGURED", call_id)
+            raise LLMError(
+                "LLM_CHAT_NOT_CONFIGURED"
+                if capability == CHAT_CAPABILITY
+                else "LLM_MODEL_NOT_CONFIGURED",
+                call_id,
+            )
         await self._db(self._select_model_sync, call_id, config)
         return config
 
@@ -472,6 +544,7 @@ class LLMService:
         messages: Sequence[ChatMessage],
         *,
         source: str,
+        capability: str = CHAT_CAPABILITY,
     ) -> ChatResult:
         validated_messages = tuple(messages)
         if not validated_messages:
@@ -480,8 +553,14 @@ class LLMService:
         call_id = create_call_id()
         started_at = perf_counter()
         try:
-            await self._db(self._create_log_sync, call_id, user_id, normalized_source)
-            config = await self._resolve_current(call_id, started_at)
+            await self._db(
+                self._create_log_sync,
+                call_id,
+                user_id,
+                normalized_source,
+                capability,
+            )
+            config = await self._resolve_current(call_id, started_at, capability)
             api_key = await self._credential(config, call_id, started_at)
             try:
                 result = await self._gateway.complete(
@@ -531,6 +610,7 @@ class LLMService:
         *,
         source: str,
         response_model: type[StructuredValue],
+        capability: str = CHAT_CAPABILITY,
     ) -> StructuredChatResult[StructuredValue]:
         validated_messages = tuple(messages)
         if not validated_messages:
@@ -539,8 +619,14 @@ class LLMService:
         call_id = create_call_id()
         started_at = perf_counter()
         try:
-            await self._db(self._create_log_sync, call_id, user_id, normalized_source)
-            config = await self._resolve_current(call_id, started_at)
+            await self._db(
+                self._create_log_sync,
+                call_id,
+                user_id,
+                normalized_source,
+                capability,
+            )
+            config = await self._resolve_current(call_id, started_at, capability)
             api_key = await self._credential(config, call_id, started_at)
             try:
                 result = await self._gateway.complete(
@@ -551,6 +637,7 @@ class LLMService:
                     ),
                     api_base=config.api_base,
                     api_key=api_key,
+                    disable_thinking=True,
                 )
             except GatewayError as error:
                 await self._db(
@@ -607,6 +694,7 @@ class LLMService:
         messages: Sequence[ChatMessage],
         *,
         source: str,
+        capability: str = CHAT_CAPABILITY,
     ) -> ChatStream:
         validated_messages = tuple(messages)
         if not validated_messages:
@@ -615,8 +703,14 @@ class LLMService:
         call_id = create_call_id()
         started_at = perf_counter()
         try:
-            await self._db(self._create_log_sync, call_id, user_id, normalized_source)
-            config = await self._resolve_current(call_id, started_at)
+            await self._db(
+                self._create_log_sync,
+                call_id,
+                user_id,
+                normalized_source,
+                capability,
+            )
+            config = await self._resolve_current(call_id, started_at, capability)
             api_key = await self._credential(config, call_id, started_at)
             try:
                 events = await self._gateway.start_stream(
@@ -756,8 +850,14 @@ class LLMService:
             force_partial=True,
         )
 
-    async def test_config(self, user_id: int, config_id: int) -> str:
-        config = await self._db(self._config_sync, config_id)
+    async def test_config(
+        self,
+        user_id: int,
+        config_id: int,
+        *,
+        capability: str = CHAT_CAPABILITY,
+    ) -> str:
+        config = await self._db(self._config_sync, config_id, capability)
         if config is None:
             call_id = create_call_id()
             started_at = perf_counter()
@@ -766,6 +866,7 @@ class LLMService:
                 call_id,
                 user_id,
                 "connection_test",
+                capability,
             )
             await self._db(
                 self._finalize_sync,
@@ -790,13 +891,23 @@ class LLMService:
                 call_id,
                 user_id,
                 "connection_test",
+                config.capability,
             )
             await self._db(self._select_model_sync, call_id, config)
             api_key = await self._credential(config, call_id, started_at)
             try:
                 result: GatewayResult = await self._gateway.complete(
                     model=config.model_name,
-                    messages=(ChatMessage(role="user", content="Reply with OK."),),
+                    messages=(
+                        ChatMessage(
+                            role="user",
+                            content=(
+                                "Reply only with this valid JSON object: {\"ok\": true}"
+                                if config.capability == RESUME_STRUCTURING_CAPABILITY
+                                else "Reply with OK."
+                            ),
+                        ),
+                    ),
                     api_base=config.api_base,
                     api_key=api_key,
                 )
@@ -814,6 +925,77 @@ class LLMService:
                 usage=result.usage,
                 input_price_per_million=result.input_price_per_million,
                 output_price_per_million=result.output_price_per_million,
+            )
+            if config.capability == RESUME_STRUCTURING_CAPABILITY:
+                try:
+                    probe_payload = json.loads(result.content)
+                except (TypeError, ValueError):
+                    probe_payload = None
+                if (
+                    not isinstance(probe_payload, dict)
+                    or probe_payload.get("ok") is not True
+                ):
+                    await self._db(
+                        self._finalize_sync,
+                        call_id,
+                        status="failed",
+                        latency_ms=self._latency(started_at),
+                        error_code="LLM_RESPONSE_INVALID",
+                        metering=metering,
+                    )
+                    raise LLMError("LLM_RESPONSE_INVALID", call_id)
+            await self._db(
+                self._finalize_sync,
+                call_id,
+                status="succeeded",
+                latency_ms=self._latency(started_at),
+                error_code=None,
+                metering=metering,
+            )
+            return call_id
+        except asyncio.CancelledError:
+            await self._finalize_cancelled(call_id, started_at)
+            raise
+
+    async def test_external_runtime_config(
+        self,
+        user_id: int,
+        config: RuntimeModelConfig,
+        *,
+        invoke: Callable[[str], Awaitable[GatewayUsage]],
+    ) -> str:
+        call_id = create_call_id()
+        started_at = perf_counter()
+        try:
+            await self._db(
+                self._create_log_sync,
+                call_id,
+                user_id,
+                "connection_test",
+                config.capability,
+            )
+            await self._db(self._select_model_sync, call_id, config)
+            api_key = await self._credential(config, call_id, started_at)
+            try:
+                usage = await invoke(api_key)
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                error_code = getattr(error, "code", "LLM_CONNECTION_FAILED")
+                await self._db(
+                    self._finalize_sync,
+                    call_id,
+                    status="failed",
+                    latency_ms=self._latency(started_at),
+                    error_code=str(error_code),
+                )
+                if hasattr(error, "call_id"):
+                    error.call_id = call_id
+                raise
+            metering = calculate_metering(
+                usage=usage,
+                input_price_per_million=None,
+                output_price_per_million=None,
             )
             await self._db(
                 self._finalize_sync,
