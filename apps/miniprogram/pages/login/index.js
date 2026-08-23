@@ -5,6 +5,7 @@ Page({
     loading: true,
     submitting: false,
     agreementAccepted: false,
+    agreementActionHint: "",
     privacyReady: false,
     privacySupported: false,
     privacyAuthorizationRequired: false,
@@ -41,7 +42,10 @@ Page({
   },
 
   handleAgreementChange(event) {
-    this.setData({ agreementAccepted: event.detail.value.includes("accepted") });
+    this.setData({
+      agreementAccepted: event.detail.value.includes("accepted"),
+      agreementActionHint: "",
+    });
   },
 
   async openPrivacyContract() {
@@ -85,7 +89,7 @@ Page({
 
   handlePrimaryAction() {
     if (!this.data.agreementAccepted) {
-      wx.showToast({ title: "请先阅读并勾选隐私保护指引", icon: "none" });
+      this.setData({ agreementActionHint: "请先勾选隐私保护指引后再继续" });
       return;
     }
     if (

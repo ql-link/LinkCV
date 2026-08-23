@@ -25,6 +25,7 @@
       </checkbox-group>
       <text class="agreement-hint" wx:if="{{!privacyReady}}">正在读取隐私保护指引…</text>
       <text class="agreement-hint" wx:elif="{{!privacySupported}}">当前微信版本无法读取隐私指引，请升级微信后重试</text>
+      <text class="agreement-hint" wx:elif="{{agreementActionHint}}">{{agreementActionHint}}</text>
     </view>
     <view class="actions">
       <button

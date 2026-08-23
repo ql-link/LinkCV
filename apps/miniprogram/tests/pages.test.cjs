@@ -116,10 +116,12 @@ test("login page requires agreement before registering after the user opts in", 
     assert.equal(registrationCalls.length, 0);
 
     page.handlePrimaryAction();
-    assert.deepEqual(toasts, ["请先阅读并勾选隐私保护指引"]);
+    assert.equal(page.data.agreementActionHint, "请先勾选隐私保护指引后再继续");
+    assert.equal(toasts.length, 0);
     assert.equal(registrationCalls.length, 0);
 
     page.handleAgreementChange({ detail: { value: ["accepted"] } });
+    assert.equal(page.data.agreementActionHint, "");
     await page.handlePrimaryAction();
     assert.equal(accepted.length, 1);
   });
