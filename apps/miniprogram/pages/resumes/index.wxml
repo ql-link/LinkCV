@@ -1,20 +1,15 @@
-<view class="canvas">
-  <view class="canvas-grid"></view>
-  <view class="hero">
-    <view class="topbar">
-      <view class="brand">
-        <view class="brand-mark">L</view>
-        <view class="brand-copy">
-          <text class="brand-name">LinkCV</text>
-          <text class="brand-sub">随 身 简 历 册</text>
-        </view>
-      </view>
-      <text class="readonly-tag">READ ONLY</text>
+<view class="page">
+  <view class="topbar">
+    <view class="ui-brand">
+      <image class="ui-brand-mark" src="/assets/linkcv-mark.png" mode="aspectFit" aria-hidden="true"></image>
+      <text>LinkCV</text>
     </view>
-    <text class="kicker hero-kicker">MY RESUMES</text>
-    <text class="hero-title" wx:if="{{user && user.nickname}}">{{user.nickname}}的简历</text>
-    <text class="hero-title" wx:else>我的简历</text>
-    <view class="hero-meta" wx:if="{{!loading && !error && !guest}}">
+    <text class="readonly-tag">只读模式</text>
+  </view>
+  <view class="page-head">
+    <text class="page-title" wx:if="{{user && user.nickname}}">{{user.nickname}}的简历</text>
+    <text class="page-title" wx:else>我的简历</text>
+    <view class="page-meta" wx:if="{{!loading && !error && !guest}}">
       <text>{{items.length}} 份简历</text><text class="meta-divider">·</text><text>下拉可刷新</text>
     </view>
   </view>
@@ -25,35 +20,34 @@
     </view>
     <text class="loading-label">正在安全登录并加载简历…</text>
   </view>
-  <view class="state-card paper-card" wx:elif="{{guest}}">
-    <text class="state-kicker">SIGN IN</text>
+  <view class="state-card" wx:elif="{{guest}}">
     <text class="state-title">登录后查看你的简历</text>
     <text class="state-copy">简历数据只在登录后加载。你可以随时返回首页继续了解 LinkCV，也可以现在使用微信登录。</text>
-    <button class="btn-primary state-action" hover-class="btn-primary-pressed" bindtap="goLogin">微信登录</button>
+    <button class="ui-primary-button state-action" hover-class="ui-primary-button-pressed" bindtap="goLogin">微信登录</button>
   </view>
-  <view class="state-card paper-card" wx:elif="{{error}}">
-    <text class="state-kicker state-kicker-error">ERROR</text>
+  <view class="state-card" wx:elif="{{error}}">
     <text class="state-title">简历暂时没有加载出来</text>
     <text class="state-copy">{{error}}，请检查网络后重试。</text>
-    <button class="btn-ghost state-action" hover-class="btn-ghost-pressed" bindtap="loadPage">重新加载</button>
+    <button class="ui-secondary-button state-action" hover-class="ui-secondary-button-pressed" bindtap="loadPage">重新加载</button>
   </view>
-  <view class="state-card paper-card" wx:elif="{{items.length === 0}}">
-    <text class="state-kicker">EMPTY</text>
+  <view class="state-card" wx:elif="{{items.length === 0}}">
     <text class="state-title">这里还没有简历</text>
     <text class="state-copy">请先前往 LinkCV 网页端创建简历，完成后下拉刷新。</text>
   </view>
-  <view class="list" wx:else>
-    <navigator class="card paper-card" hover-class="card-pressed" hover-stay-time="80" wx:for="{{items}}" wx:key="id" url="/pages/resumes/detail?id={{item.id}}">
-      <view class="paper-preview" aria-hidden="true">
-        <view class="preview-avatar"></view>
-        <view class="preview-line preview-line-strong"></view>
-        <view class="preview-line"></view>
-        <view class="preview-line preview-line-short"></view>
+  <view class="card-list" wx:else>
+    <navigator class="resume-card" hover-class="resume-card-pressed" hover-stay-time="80" wx:for="{{items}}" wx:key="id" url="/pages/resumes/detail?id={{item.id}}">
+      <view class="card-preview" aria-hidden="true">
+        <view class="card-document">
+          <view class="doc-title"></view>
+          <view class="doc-line"></view>
+          <view class="doc-line is-short"></view>
+          <view class="doc-line"></view>
+        </view>
       </view>
-      <view class="card-main">
-        <text class="card-title">{{item.title}}</text>
+      <view class="card-meta">
+        <text class="card-name">{{item.title}}</text>
         <text class="card-time">{{item.updatedAtLabel}}</text>
-        <text class="card-action">打开查看 →</text>
+        <text class="card-open">打开查看 →</text>
       </view>
     </navigator>
   </view>

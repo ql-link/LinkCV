@@ -8,14 +8,14 @@
   ],
   "window": {
     "navigationBarTitleText": "LinkCV",
-    "navigationBarBackgroundColor": "#fafaf9",
+    "navigationBarBackgroundColor": "#f4f6f8",
     "navigationBarTextStyle": "black",
-    "backgroundColor": "#fafaf9",
+    "backgroundColor": "#f4f6f8",
     "backgroundTextStyle": "dark"
   },
   "tabBar": {
-    "color": "#a1a1aa",
-    "selectedColor": "#18181b",
+    "color": "#8791a1",
+    "selectedColor": "#17191c",
     "backgroundColor": "#ffffff",
     "borderStyle": "black",
     "list": [
