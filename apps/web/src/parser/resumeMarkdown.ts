@@ -4,6 +4,7 @@ import {
   normalizeInlineFontSize,
 } from "../lib/resumeInlineStyle";
 import { isInlineIconName } from "../lib/resumeInlineIcon";
+import { isResumeEmailLink } from "../lib/resumeLink";
 
 type Block =
   | { type: "markdown"; content: string }
@@ -106,6 +107,7 @@ md.renderer.rules.linkcv_resume_block_anchor = (tokens, index) => `<span data-re
 
 const defaultImageRenderer = md.renderer.rules.image;
 const defaultLinkOpenRenderer = md.renderer.rules.link_open;
+const defaultLinkCloseRenderer = md.renderer.rules.link_close;
 
 function isDomainLikeHref(href: string) {
   return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:[/:?#].*)?$/i.test(
@@ -151,6 +153,12 @@ md.renderer.rules.link_open = (tokens, index, options, env, self) => {
 
   if (hrefIndex >= 0) {
     const href = token.attrs?.[hrefIndex]?.[1];
+    if (href && isResumeEmailLink(href)) {
+      token.meta = { ...token.meta, resumePlainEmail: true };
+      const closingToken = tokens.slice(index + 1).find((candidate) => candidate.type === "link_close");
+      if (closingToken) closingToken.meta = { ...closingToken.meta, resumePlainEmail: true };
+      return "";
+    }
     if (href) token.attrs![hrefIndex][1] = normalizeLinkHref(href);
   }
 
@@ -159,6 +167,13 @@ md.renderer.rules.link_open = (tokens, index, options, env, self) => {
 
   return defaultLinkOpenRenderer
     ? defaultLinkOpenRenderer(tokens, index, options, env, self)
+    : self.renderToken(tokens, index, options);
+};
+
+md.renderer.rules.link_close = (tokens, index, options, env, self) => {
+  if (tokens[index].meta?.resumePlainEmail) return "";
+  return defaultLinkCloseRenderer
+    ? defaultLinkCloseRenderer(tokens, index, options, env, self)
     : self.renderToken(tokens, index, options);
 };
 

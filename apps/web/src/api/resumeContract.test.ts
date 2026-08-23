@@ -150,6 +150,40 @@ describe("resume semantic contract adapter", () => {
     expect(markdown).toBe("# 张三\n\n**后端工程师**");
   });
 
+  it("serializes email links as plain text while preserving website links", () => {
+    const markdown = editorDocumentToMarkdown({
+      type: "doc",
+      content: [{
+        type: "paragraph",
+        content: [
+          {
+            type: "text",
+            text: "zhangsan@example.com",
+            marks: [{ type: "link", attrs: { href: "mailto:zhangsan@example.com" } }],
+          },
+          { type: "text", text: " ｜ " },
+          {
+            type: "text",
+            text: "个人主页",
+            marks: [{ type: "link", attrs: { href: "https://example.com" } }],
+          },
+        ],
+      }],
+    });
+
+    expect(markdown).toBe("zhangsan@example.com ｜ [个人主页](https://example.com)");
+  });
+
+  it("renders historical mailto markdown as plain text while preserving website links", () => {
+    const html = renderResumeMarkdown(
+      "[zhangsan@example.com](mailto:zhangsan@example.com) ｜ [个人主页](https://example.com)",
+    );
+
+    expect(html).toContain("zhangsan@example.com");
+    expect(html).not.toContain("mailto:");
+    expect(html).toContain('<a href="https://example.com"');
+  });
+
   it("round-trips an inline font size through the markdown extension", () => {
     const markdown = editorDocumentToMarkdown({
       type: "doc",

@@ -80,4 +80,35 @@ describe("统一简历打印文档", () => {
     expect(html).not.toContain("javascript:");
     expect(html).not.toContain("<script");
   });
+
+  it("将历史邮箱链接渲染为普通文本", () => {
+    const data = {
+      ...defaultSemanticDocument,
+      sections: {
+        ...defaultSemanticDocument.sections,
+        custom_sections: [{
+          id: "contact",
+          title: "联系方式",
+          items: [{
+            id: "email",
+            title: null,
+            subtitle: null,
+            content: {
+              format: "markdown" as const,
+              content: "[zhangsan@example.com](mailto:zhangsan@example.com)",
+            },
+            source_refs: [],
+          }],
+        }],
+      },
+    };
+
+    const html = renderResumePrintDocument(
+      createResumeRenderRequest("邮箱纯文本", data, defaultSemanticStyle),
+    );
+
+    expect(html).toContain("zhangsan@example.com");
+    expect(html).not.toContain("mailto:");
+    expect(html).not.toContain('<a href="mailto:');
+  });
 });

@@ -1,5 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import { inlineIconMarkdown, isInlineIconName } from "../lib/resumeInlineIcon";
+import { isResumeEmailLink } from "../lib/resumeLink";
 import { inlineFontSizeOpenMarker, INLINE_FONT_SIZE_CLOSE_MARKER, normalizeInlineFontSize } from "../lib/resumeInlineStyle";
 
 export type RichTextV1 = {
@@ -364,7 +365,13 @@ function markedText(node: JSONContent) {
   for (const mark of node.marks ?? []) {
     if (mark.type === "bold") value = `**${value}**`;
     if (mark.type === "italic") value = `*${value}*`;
-    if (mark.type === "link" && typeof mark.attrs?.href === "string") value = `[${value}](${mark.attrs.href})`;
+    if (
+      mark.type === "link" &&
+      typeof mark.attrs?.href === "string" &&
+      !isResumeEmailLink(mark.attrs.href)
+    ) {
+      value = `[${value}](${mark.attrs.href})`;
+    }
   }
   const fontSize = normalizeInlineFontSize(
     node.marks?.find((mark) => mark.type === "textStyle")?.attrs?.fontSize,

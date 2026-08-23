@@ -32,6 +32,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
 import { resumeInlineIconOptions, type InlineIconName } from "../../lib/resumeInlineIcon";
+import { isResumeEmailLink, shouldAutoLinkResumeValue } from "../../lib/resumeLink";
 import { useResumeStore } from "../../store/resumeStore";
 import {
   exitResumeRowToBlankParagraph,
@@ -754,7 +755,15 @@ export const resumeEditorExtensions: Extensions = [
   Color,
   Highlight.configure({ multicolor: true }),
   TextAlign.configure({ types: ["heading", "paragraph"] }),
-  Link.configure({ openOnClick: false, autolink: true, HTMLAttributes: { rel: "noopener noreferrer", target: "_blank" } }),
+  Link.configure({
+    openOnClick: false,
+    autolink: true,
+    shouldAutoLink: shouldAutoLinkResumeValue,
+    isAllowedUri: (value, { defaultValidate }) => (
+      defaultValidate(value) && !isResumeEmailLink(value)
+    ),
+    HTMLAttributes: { rel: "noopener noreferrer", target: "_blank" },
+  }),
   Placeholder.configure({ placeholder: "直接输入你的简历内容…" }),
   AvatarImage,
   ResumeImage,

@@ -48,6 +48,37 @@ describe("WorkbenchToolbar 局部字号", () => {
   });
 });
 
+describe("简历邮箱文本", () => {
+  it("不自动链接邮箱，但继续自动链接普通网址", () => {
+    editor = new Editor({ extensions: resumeEditorExtensions, content: "<p></p>" });
+
+    editor.commands.insertContent("zhangsan@example.com ");
+    editor.commands.insertContent("https://example.com ");
+
+    const textNodes = editor.getJSON().content?.[0]?.content ?? [];
+    const email = textNodes.find((node) => node.text === "zhangsan@example.com");
+    const website = textNodes.find((node) => node.text === "https://example.com");
+    expect(email?.marks?.some((mark) => mark.type === "link")).not.toBe(true);
+    expect(website?.marks).toContainEqual(expect.objectContaining({
+      type: "link",
+      attrs: expect.objectContaining({ href: "https://example.com" }),
+    }));
+  });
+
+  it("拒绝手动把邮箱设置为 mailto 链接", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: "<p>zhangsan@example.com</p>",
+    });
+    editor.commands.setTextSelection({ from: 1, to: 21 });
+
+    const applied = editor.commands.setLink({ href: "mailto:zhangsan@example.com" });
+
+    expect(applied).toBe(false);
+    expect(editor.getJSON().content?.[0]?.content?.[0]?.marks).toBeUndefined();
+  });
+});
+
 describe("WorkbenchToolbar 当前行左右对齐", () => {
   it("右对齐保持普通段落语义，不转换为左右对齐行", async () => {
     const user = userEvent.setup();
