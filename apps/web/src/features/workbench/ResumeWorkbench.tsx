@@ -43,8 +43,8 @@ import {
 } from "@/components/ui";
 import { resumeSerifFontStack, useResumeStore } from "../../store/resumeStore";
 import { resumeEditorExtensions } from "./editorExtensions";
-import { WorkbenchToolbar } from "./WorkbenchToolbar";
-import { createSelectionBubbleAnchor, shouldShowWorkbenchBubbleMenu } from "./selectionBubbleAnchor";
+import { SelectionAgentPrompt, WorkbenchToolbar } from "./WorkbenchToolbar";
+import { createSelectionBubbleAnchor, shouldShowSelectionAgentBubble } from "./selectionBubbleAnchor";
 import { getTwoPageFitScale, getWheelZoomScale, handleWheelZoom } from "./workbenchZoom";
 import { navigateTo } from "../../routing";
 import { AgentPanel, type AgentSelectionDraft } from "../agent/AgentPanel";
@@ -96,7 +96,7 @@ function currentSelectionRect(editor: Editor) {
   return posToDOMRect(editor.view, from, to);
 }
 
-function StableWorkbenchBubbleMenu({ editor, children }: { editor: Editor; children: ReactNode }) {
+function StableSelectionAgentBubble({ editor, children }: { editor: Editor; children: ReactNode }) {
   const anchorRef = useRef<ReturnType<typeof createSelectionBubbleAnchor> | null>(null);
   if (!anchorRef.current) anchorRef.current = createSelectionBubbleAnchor();
   const anchor = anchorRef.current;
@@ -126,10 +126,9 @@ function StableWorkbenchBubbleMenu({ editor, children }: { editor: Editor; child
         getReferenceClientRect: () => anchor.getRect(() => currentSelectionRect(editor)),
       }}
       shouldShow={({ editor: current, view, from, to }) => {
-        const visible = shouldShowWorkbenchBubbleMenu({
+        const visible = shouldShowSelectionAgentBubble({
           editable: current.isEditable,
           selectionEmpty: current.state.selection.empty,
-          resumeRowActive: current.isActive("resumeRow"),
         });
         anchor.observe(visible ? { from, to } : { from, to: from }, () => posToDOMRect(view, from, to));
         return visible;
@@ -1132,18 +1131,15 @@ export function ResumeWorkbench() {
         )}
 
         {activeResumeId && editor && (
-          <StableWorkbenchBubbleMenu editor={editor}>
-            <WorkbenchToolbar
+          <StableSelectionAgentBubble editor={editor}>
+            <SelectionAgentPrompt
               editor={editor}
-              resumeId={activeResumeId}
-              defaultFontSize={settings.fontSize}
-              onNotice={(label) => setToast({ label })}
               onAgentAction={(instruction, selectionContext) => {
                 setAgentDraft({ id: Date.now(), instruction, selectionContext });
                 setDrawerMode("agent");
               }}
             />
-          </StableWorkbenchBubbleMenu>
+          </StableSelectionAgentBubble>
         )}
 
         {activeResumeId && editor && commandMenu && (
@@ -1162,9 +1158,21 @@ export function ResumeWorkbench() {
             className={`workbench-paper-scroll${pageArrangement === "horizontal" && !settings.smartOnePage ? " pages-horizontal" : ""}`}
             style={{ "--workbench-preview-scale": renderedPreviewScale } as React.CSSProperties}
           >
-            <article className={`resume-paper theme-${settings.theme}${settings.smartOnePage ? " smart-one-page" : ""}${pageArrangement === "horizontal" && !settings.smartOnePage ? " pages-horizontal" : ""}`} style={resumeStyle} aria-label="可编辑简历页面">
-              <EditorContent editor={editor} />
-            </article>
+            <div className={`workbench-document-stack${pageArrangement === "horizontal" && !settings.smartOnePage ? " pages-horizontal" : ""}`}>
+              <article className={`resume-paper theme-${settings.theme}${settings.smartOnePage ? " smart-one-page" : ""}${pageArrangement === "horizontal" && !settings.smartOnePage ? " pages-horizontal" : ""}`} style={resumeStyle} aria-label="可编辑简历页面">
+                <EditorContent editor={editor} />
+              </article>
+              {activeResumeId && editor && (
+                <section className="workbench-formatting-module" aria-label="简历功能栏">
+                  <WorkbenchToolbar
+                    editor={editor}
+                    resumeId={activeResumeId}
+                    defaultFontSize={settings.fontSize}
+                    onNotice={(label) => setToast({ label })}
+                  />
+                </section>
+              )}
+            </div>
           </div>
 
           {activeResumeId && (

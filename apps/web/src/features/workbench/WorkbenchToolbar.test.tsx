@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { editorDocumentToMarkdown } from "../../api/resumeContract";
 import { renderResumeMarkdown } from "../../parser/resumeMarkdown";
 import { resumeEditorExtensions } from "./editorExtensions";
-import { WorkbenchToolbar } from "./WorkbenchToolbar";
+import { SelectionAgentPrompt, WorkbenchToolbar } from "./WorkbenchToolbar";
 
 let editor: Editor | null = null;
 
@@ -15,6 +15,15 @@ afterEach(() => {
 });
 
 describe("WorkbenchToolbar 局部字号", () => {
+  it("光标未选中文字时仍显示独立格式功能栏", () => {
+    editor = new Editor({ extensions: resumeEditorExtensions, content: "<p>正文</p>" });
+    editor.commands.setTextSelection(1);
+
+    render(<WorkbenchToolbar editor={editor} resumeId="42" defaultFontSize={10.5} onNotice={() => undefined} />);
+
+    expect(screen.getByRole("toolbar", { name: "简历格式工具栏" })).toBeVisible();
+  });
+
   it("以全局正文字号为基准调整选中文字", async () => {
     const user = userEvent.setup();
     editor = new Editor({ extensions: resumeEditorExtensions, content: "<p>重点文字</p>" });
@@ -72,15 +81,7 @@ describe("WorkbenchToolbar 选中文字 AI 快捷操作", () => {
     editor = new Editor({ extensions: resumeEditorExtensions, content: "<p>负责平台性能优化</p>" });
     editor.commands.setTextSelection({ from: 1, to: 9 });
 
-    render(
-      <WorkbenchToolbar
-        editor={editor}
-        resumeId="42"
-        defaultFontSize={10.5}
-        onNotice={() => undefined}
-        onAgentAction={onAgentAction}
-      />,
-    );
+    render(<SelectionAgentPrompt editor={editor} onAgentAction={onAgentAction} />);
 
     await user.click(screen.getByRole("button", { name: "AI" }));
     expect(screen.getByRole("menu", { name: "所选文字 AI 快捷操作" })).toBeInTheDocument();
