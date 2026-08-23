@@ -187,21 +187,20 @@ describe("resume version detail API", () => {
 });
 
 describe("JD API client", () => {
-  it("编码列表筛选和游标，并保持相对 API 路径", async () => {
+  it("编码列表搜索和游标，并保持相对 API 路径", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse(200, { items: [], next_cursor: null }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
     await api.listJobDescriptions({
-      scope: "archived",
       keyword: "Java 后端",
       cursor: "cursor/value",
       limit: 30,
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/job-descriptions?scope=archived&keyword=Java+%E5%90%8E%E7%AB%AF&cursor=cursor%2Fvalue&limit=30",
+      "/api/job-descriptions?keyword=Java+%E5%90%8E%E7%AB%AF&cursor=cursor%2Fvalue&limit=30",
       expect.objectContaining({ method: "GET", credentials: "include" }),
     );
   });

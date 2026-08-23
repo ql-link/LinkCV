@@ -4,6 +4,7 @@ from cryptography.fernet import Fernet
 import pytest
 from pydantic import ValidationError
 
+from linkcv.core import config
 from linkcv.core.config import Settings, settings_env_files
 
 
@@ -37,6 +38,47 @@ def test_process_environment_has_highest_priority(
     monkeypatch.setenv("MYSQL_USER", "process")
 
     assert Settings(_env_file=settings_env_files()).mysql_user == "process"
+
+
+def test_linked_worktree_defaults_to_main_worktree_secret_overlay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    main_root = tmp_path / "main"
+    worktree = tmp_path / "worktree"
+    git_dir = main_root / ".git" / "worktrees" / "test"
+    git_dir.mkdir(parents=True)
+    worktree.mkdir()
+    (worktree / ".git").write_text(f"gitdir: {git_dir}\n", encoding="utf-8")
+    base = worktree / ".env.development"
+    shared = main_root / ".env.development.local"
+    base.write_text("MYSQL_USER=base\n", encoding="utf-8")
+    shared.write_text("MYSQL_USER=shared-secret\n", encoding="utf-8")
+    monkeypatch.setattr(config, "REPO_ROOT", worktree)
+    monkeypatch.setenv("LINKCV_ENV_FILE", str(base))
+    monkeypatch.delenv("LINKCV_SECRET_ENV_FILE", raising=False)
+    monkeypatch.delenv("MYSQL_USER", raising=False)
+
+    files = settings_env_files()
+
+    assert files == (base, shared)
+    assert Settings(_env_file=files).mysql_user == "shared-secret"
+
+
+def test_explicit_secret_env_file_has_priority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base = tmp_path / ".env.development"
+    secret = tmp_path / "explicit.local"
+    base.write_text("MYSQL_USER=base\n", encoding="utf-8")
+    secret.write_text("MYSQL_USER=explicit\n", encoding="utf-8")
+    monkeypatch.setenv("LINKCV_ENV_FILE", str(base))
+    monkeypatch.setenv("LINKCV_SECRET_ENV_FILE", str(secret))
+    monkeypatch.delenv("MYSQL_USER", raising=False)
+
+    files = settings_env_files()
+
+    assert files == (base, secret)
+    assert Settings(_env_file=files).mysql_user == "explicit"
 
 
 def test_mysql_and_redis_urls_encode_credentials() -> None:
@@ -140,7 +182,6 @@ def test_production_rejects_missing_secrets_without_exposing_values() -> None:
     assert "JWT_SECRET" in message
     assert "MINIO_ACCESS_KEY" in message
     assert "MINIO_SECRET_KEY" in message
-    assert "PLUGIN_RELEASE_ORIGIN" in message
     assert "LLM_CREDENTIAL_ENCRYPTION_KEYS" in message
     assert "LINKPARSE_API_KEY" in message
     assert "RABBITMQ_URL" in message
@@ -157,7 +198,6 @@ def test_production_accepts_injected_secrets() -> None:
         mysql_password="production-db-secret",
         minio_access_key="production-minio-access",
         minio_secret_key="production-minio-secret",
-        plugin_release_origin="https://linkcv.example.test",
         llm_credential_encryption_keys=(
             f"production:{Fernet.generate_key().decode('ascii')}"
         ),
@@ -167,12 +207,23 @@ def test_production_accepts_injected_secrets() -> None:
         wechat_secret="fictional-production-wechat-secret",
     )
     assert settings.minio_bucket == "linkcv"
-    assert settings.plugin_release_origin == "https://linkcv.example.test"
 
 
-def test_plugin_release_origin_must_be_a_root_origin() -> None:
-    with pytest.raises(ValidationError, match="PLUGIN_RELEASE_ORIGIN"):
-        Settings(plugin_release_origin="https://linkcv.example.test/path")
-
-    with pytest.raises(ValidationError, match="PLUGIN_RELEASE_ORIGIN"):
-        Settings(plugin_release_origin="https://linkcv.example.test:invalid")
+def test_production_rejects_reused_agent_service_token() -> None:
+    shared_token = "fictional-shared-agent-token-at-least-32-bytes"
+    with pytest.raises(ValidationError, match="AGENT_SERVICE_TOKENS_MUST_DIFFER"):
+        Settings(
+            app_environment="production",
+            agent_enabled=True,
+            pi_service_token=shared_token,
+            linkcv_internal_agent_token=shared_token,
+            jwt_secret="a-production-jwt-secret-with-more-than-32-characters",
+            mysql_password="production-db-secret",
+            minio_access_key="production-minio-access",
+            minio_secret_key="production-minio-secret",
+            llm_credential_encryption_keys=f"production:{Fernet.generate_key().decode('ascii')}",
+            linkparse_api_key="fictional-linkparse-key",
+            rabbitmq_url="amqp://linkcv:fictional-secret@rabbitmq:5672/",
+            wechat_appid="fictional-production-appid",
+            wechat_secret="fictional-production-wechat-secret",
+        )

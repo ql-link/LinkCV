@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, ApiRequestError, type JobDescriptionRecord } from "../../api/client";
+import { api, type JobDescriptionRecord } from "../../api/client";
 import { JobDetailPage } from "./JobDetailPage";
 
 const activeJob: JobDescriptionRecord = {
@@ -36,7 +36,6 @@ const activeJob: JobDescriptionRecord = {
   source_url_hash: null,
   imported_at: null,
   notes: null,
-  archived_at: null,
   lock_version: 2,
   created_at: "2026-07-29T08:00:00Z",
   updated_at: "2026-07-29T08:00:00Z",
@@ -48,29 +47,140 @@ afterEach(() => {
 });
 
 describe("JobDetailPage", () => {
-  it("活动岗位不展示删除入口", async () => {
+  it("普通 JD 不显示全局编辑按钮，并为字段提供就地编辑入口", async () => {
     vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
 
     render(<JobDetailPage jobId={activeJob.id} />);
 
-    expect(await screen.findByRole("heading", { name: activeJob.job_title })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "删除" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "JD 详情", level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: activeJob.job_title, level: 2 })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "返回 JD 中心" })).toHaveAttribute("href", "/jobs");
+    expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "编辑职位名称" })).toHaveClass("job-quick-edit-display");
+    expect(screen.getByRole("button", { name: "编辑职位描述" })).toHaveClass("job-quick-edit-display");
+    expect(screen.queryByText("编辑")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "删除" })).toBeInTheDocument();
+    expect(screen.queryByText("活动岗位")).not.toBeInTheDocument();
   });
 
-  it("归档岗位允许发起删除，并反馈并发恢复冲突", async () => {
-    const archivedJob = { ...activeJob, archived_at: "2026-07-29T09:00:00Z", lock_version: 3 };
-    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: archivedJob });
-    const remove = vi.spyOn(api, "deleteJobDescription").mockRejectedValue(
-      new ApiRequestError(409, "JD_DELETE_REQUIRES_ARCHIVE"),
-    );
+  it("点击字段编辑入口后聚焦文本末尾，按 Enter 保存且不跳转", async () => {
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
+    const updatedJob = { ...activeJob, job_title: "高级 Java 开发工程师", lock_version: 3 };
+    const update = vi.spyOn(api, "updateJobDescription").mockResolvedValue({ job_description: updatedJob });
+    window.history.replaceState(null, "", `/jobs/${activeJob.id}`);
 
-    render(<JobDetailPage jobId={archivedJob.id} />);
+    render(<JobDetailPage jobId={activeJob.id} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑职位名称" }));
+    expect(window.location.pathname).toBe(`/jobs/${activeJob.id}`);
+    const titleInput = screen.getByLabelText("职位名称") as HTMLInputElement;
+    expect(screen.queryByText(/Enter 保存/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Esc 取消/)).not.toBeInTheDocument();
+    expect(titleInput).toHaveFocus();
+    expect(titleInput.selectionStart).toBe(activeJob.job_title.length);
+    fireEvent.change(titleInput, { target: { value: updatedJob.job_title } });
+    fireEvent.keyDown(titleInput, { key: "Enter" });
+
+    await waitFor(() => expect(update).toHaveBeenCalled());
+    expect(update).toHaveBeenCalledWith(activeJob.id, expect.objectContaining({
+      job_title: updatedJob.job_title,
+      base_lock_version: activeJob.lock_version,
+    }));
+    expect(update.mock.calls[0]?.[1]).not.toHaveProperty("source_url");
+    expect(await screen.findByRole("heading", { name: updatedJob.job_title, level: 2 })).toBeInTheDocument();
+    expect(window.location.pathname).toBe(`/jobs/${activeJob.id}`);
+  });
+
+  it("按 Escape 取消当前字段编辑", async () => {
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
+    const update = vi.spyOn(api, "updateJobDescription");
+
+    render(<JobDetailPage jobId={activeJob.id} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑职位名称" }));
+    const titleInput = screen.getByLabelText("职位名称");
+    fireEvent.change(titleInput, { target: { value: "尚未保存的标题" } });
+    fireEvent.keyDown(titleInput, { key: "Escape" });
+
+    expect(screen.getByRole("heading", { name: activeJob.job_title, level: 2 })).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("尚未保存的标题")).not.toBeInTheDocument();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("编辑框失去焦点时自动退出并恢复字段", async () => {
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
+    const update = vi.spyOn(api, "updateJobDescription");
+
+    render(<JobDetailPage jobId={activeJob.id} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑职位名称" }));
+    const titleInput = screen.getByLabelText("职位名称");
+    fireEvent.change(titleInput, { target: { value: "" } });
+    fireEvent.blur(titleInput);
+
+    expect(screen.queryByLabelText("职位名称")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "编辑职位名称" })).toBeInTheDocument();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("已填写但未保存的内容失去焦点时也会退出", async () => {
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
+    const update = vi.spyOn(api, "updateJobDescription");
+
+    render(<JobDetailPage jobId={activeJob.id} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑职位名称" }));
+    const titleInput = screen.getByLabelText("职位名称");
+    fireEvent.change(titleInput, { target: { value: "临时修改" } });
+    fireEvent.blur(titleInput);
+
+    expect(screen.queryByDisplayValue("临时修改")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "编辑职位名称" })).toBeInTheDocument();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("必填字段为空时保留当前编辑框并给出提示", async () => {
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
+    const update = vi.spyOn(api, "updateJobDescription");
+
+    render(<JobDetailPage jobId={activeJob.id} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑职位名称" }));
+    const titleInput = screen.getByLabelText("职位名称");
+    fireEvent.change(titleInput, { target: { value: "" } });
+    fireEvent.keyDown(titleInput, { key: "Enter" });
+
+    expect(screen.getByRole("alert")).toHaveTextContent("该字段为必填项");
+    expect(screen.getByLabelText("职位名称")).toBeInTheDocument();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("多行描述使用 Shift+Enter 换行，Enter 才保存", async () => {
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
+    const updatedJob = { ...activeJob, description: "参与后端业务开发。\n负责接口维护。", lock_version: 3 };
+    const update = vi.spyOn(api, "updateJobDescription").mockResolvedValue({ job_description: updatedJob });
+
+    render(<JobDetailPage jobId={activeJob.id} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑职位描述" }));
+    const description = screen.getByLabelText("职位描述");
+    fireEvent.change(description, { target: { value: updatedJob.description } });
+    fireEvent.keyDown(description, { key: "Enter", shiftKey: true });
+    expect(update).not.toHaveBeenCalled();
+    fireEvent.keyDown(description, { key: "Enter" });
+
+    await waitFor(() => expect(update).toHaveBeenCalledWith(activeJob.id, expect.objectContaining({ description: updatedJob.description })));
+  });
+
+  it("删除前要求确认，失败时关闭弹窗并保留详情", async () => {
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
+    const remove = vi.spyOn(api, "deleteJobDescription").mockRejectedValue(new Error("offline"));
+
+    render(<JobDetailPage jobId={activeJob.id} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "删除" }));
     fireEvent.click(screen.getByRole("button", { name: "永久删除" }));
 
-    await waitFor(() => expect(remove).toHaveBeenCalledWith(archivedJob.id));
-    expect(screen.getByRole("alert")).toHaveTextContent("岗位已经恢复为活动状态");
+    await waitFor(() => expect(remove).toHaveBeenCalledWith(activeJob.id));
+    expect(screen.getByRole("alert")).toHaveTextContent("岗位服务暂时不可用");
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 });

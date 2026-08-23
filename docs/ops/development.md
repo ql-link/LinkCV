@@ -2,13 +2,9 @@
 
 ## 分支与发布流程
 
-新的业务需求分支以 `master` 为唯一创建基线。开始开发前先获取远端状态，并从最新 `origin/master` 创建独立业务分支；不得从 `dev`、`release` 或其他业务分支派生。完整实现和本地验证完成后，按以下顺序交付：
+新的业务需求分支以 `master` 为唯一创建基线。开始开发前先获取远端状态，并从最新 `origin/master` 创建独立业务分支；不得从 `dev` 或其他业务分支派生。完整实现和本地验证完成后，推送业务分支并创建 `业务分支 -> dev` PR，由用户或远端审核合并。
 
-1. 推送业务分支，创建 `业务分支 -> release` PR。
-2. 由用户或远端审核合并该 PR；确认包含该业务分支变更的 `release` 分支质量检查已经成功。仅有 PR 检查成功、尚未合并，不能视为 Release 测试完成。
-3. 保持同一业务分支作为来源，创建 `业务分支 -> master` PR，再由用户或远端审核合并。
-
-`release` 是共享测试分支，`master` 是最终回合分支；两者都禁止默认直推、自动合并、强推或改写历史。不得创建 `release -> master` PR，因为 `release` 可能同时包含其他尚未获准回合 `master` 的业务变更。`origin/release` 不存在时应停止交付并报告缺失，不得静默改投 `dev`。分支创建命令、两阶段 PR 检查、授权边界和中文提交规范以 [`branch-pr-workflow`](../../.ai/skills/branch-pr-workflow/SKILL.md) 为唯一操作策略来源。
+`dev` 是业务需求的共享集成分支，禁止默认直推、自动合并、强推或改写历史。分支创建命令、PR 检查、授权边界和中文提交规范以 [`branch-pr-workflow`](../../.ai/skills/branch-pr-workflow/SKILL.md) 为唯一操作策略来源。
 
 ## 环境要求
 
@@ -16,11 +12,15 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装 Web、浏览器插件和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI 和文档解析 Worker。当前 Alembic head `0027`；`0002`–`0005` 建立并演进简历、版本和对象清理，`0006` 新增 LLM 模型配置和调用日志表，`0007` 新增用户私有 JD 单表，`0008` 增加 Chat 候选模型、唯一当前绑定与调用快照，`0009` 曾新增管理员操作审计日志表，`0010` 在对象删除改为同步后移除清理任务表，`0011` 移除仅写不读的管理员操作审计日志表，`0012` 删除已停用的旧版简历内容与样式备份列，`0013` 为简历分享新增字段，`0016` 新增导入任务表，`0017` 在旧同步导入数据清理后移除正式简历上的旧导入证据列，`0018` 新增用户知识库资料表，`0019` 新增 `users.wechat_openid` 唯一绑定与绑定时间，`0020` 将 `email`、`password_hash` 放宽为可空以支持微信扫码登录建号，`0021` 将简历导入状态迁移到通用 `document_parse_tasks` 并把来源指针改由 `resumes.parse_task_id` 持有，`0022` 增加资料解析任务、共享失败分类和资料反向指针，并清理旧资料行；`0023` 为历史简历版本新增非空名称；`0024` 新增官方经典单页技术简历模板；`0025` 将该模板的内置示例替换为虚构的平台工程师资料，并保留用户自定义模板内容不被覆盖的保护条件；`0026`–`0027` 增加四套职能与设计模板并刷新其预览资产。
+新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker和独立 Pi 服务。当前 Alembic head `0034`；`0002`–`0022` 建立并演进既有业务结构，`0023` 为历史简历版本新增非空名称，`0024`–`0027` 增加并刷新官方模板，`0028`–`0029` 扩展并收敛多能力模型配置，`0030` 新增 Agent 会话、运行、消息、工具审计与简历修改提案，并允许历史版本使用 `reason=agent`；`0031` 为提案增加稳定定位、诊断、类型化操作、修改依据与资料引用；`0032` 为 Agent 消息增加结构化澄清类型和版本化元数据；`0033` 增加面试求职进程、排期复盘和素材元数据；`0034` 删除存量已归档 JD 并移除 JD 归档字段和索引。
 
-后端默认读取仓库根目录 `.env`。设置 `LINKCV_ENV_FILE=.env.development` 可选择共享 Dev 基础配置；如果同目录存在 `.env.development.local`，其密码和密钥会覆盖基础文件。Production 同理使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，配置路径不受当前工作目录影响。
+本地开发把 Git 主工作目录中的 `.env.local` 与 `.env.development.local` 作为所有 worktree 的共享私密覆盖层。`npm run dev`/`npm run dev:local` 优先使用当前 worktree 的 `.env`，否则回退主工作目录 `.env`；两处基础文件都不存在时，完整的主目录 `.env.local` 仍可单独作为 Local 配置。`npm run dev:development` 使用当前 worktree 已跟踪的 `.env.development`，再加载主工作目录 `.env.development.local`，并把同一结果注入 Web、FastAPI、Worker 与 Pi Service。新建 worktree 后不需要复制密钥文件。需要临时隔离时可显式设置 `LINKCV_SECRET_ENV_FILE=/absolute/path/to/override.local`。
+
+FastAPI 和 Worker 单独启动时也支持 `LINKCV_ENV_FILE` + `LINKCV_SECRET_ENV_FILE`；未显式指定私密文件且当前目录是 linked worktree 时，会自动寻找主工作目录中的同名 `.local`。Production 仍使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，启动日志只显示配置文件路径，不输出变量值。
 
 `APP_ENV=local|development` 时，Web 登录页开放普通邮箱密码注册和登录，注册成功后直接进入空的简历主页；`APP_ENV=production` 时两个普通入口均隐藏且后端返回 404，只允许普通用户通过微信身份进入。管理员始终使用独立的 `/admin/login`。
+
+`npm run dev:development` 先通过 `scripts/dev/run_with_env_profile.mjs` 加载当前 worktree 的 `.env.development` 与 Git 主工作目录共享的 `.env.development.local`，再转入 `scripts/dev/start-development.sh` 同时启动 Web、FastAPI、解析 Worker 与 Pi。Agent 启动脚本把 Web 到 FastAPI、FastAPI 到 Pi 及 Pi 回调 FastAPI 改为本机回环地址，并把仅在 Docker 网络内可解析的 RabbitMQ 主机名在进程内替换为 Development 主机地址；原始 URL 的账号、密码和 vhost 不会被输出或改写到文件。默认使用 FastAPI 18000、Pi 8010 和 AMQP 5672，可用 `LINKCV_LOCAL_BACKEND_PORT`、`LINKCV_LOCAL_PI_PORT`、`LINKCV_LOCAL_RABBITMQ_HOST`、`LINKCV_LOCAL_RABBITMQ_PORT` 覆盖。两枚仅用于本地进程间鉴权的 Agent token 首次启动时自动生成到被忽略且权限为 600 的 `.runtime/development-agent.env`；脚本不会生成 LLM 密钥环，共享 Development 的 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 仍必须从受控密钥来源写入 `.env.development.local`。
 
 LLM 模型 API key 通过管理员 API 加密进入 MySQL，Fernet 根密钥环必须留在私密 env。格式为 `LLM_CREDENTIAL_ENCRYPTION_KEYS=<keyId>:<fernetKey>`；轮换时把新 key 放在首项，旧 key 以逗号分隔继续保留。可用以下命令生成一个虚构开发 key，输出只应写入被 Git 忽略的 `.env.local` 或 `.env.development.local`：
 
@@ -38,17 +38,15 @@ local/test 未配置密钥环时，原有非 LLM 接口仍可启动，但保存�
 LINKCV_ENV_FILE=.env.development npm run db:init
 ```
 
-命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0025`。图片、导入源文件和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。
-
-`PLUGIN_RELEASE_ORIGIN` 是当前环境允许正式插件访问的 LinkCV 根 Origin。默认本地值为 `http://127.0.0.1:5173`；共享 Development 和 Production 必须在各自 `.local` 覆盖中写入用户实际访问的 Origin，Production 只接受 HTTPS。该值必须与构建安装包时传给 `build_extension_release.py` 的对应 Origin 一致，否则管理员上传会被拒绝。
+命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0034`。图片、导入源文件、面试素材和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。面试素材默认最多 500 MiB，由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 在 Local、Development 和 Production 分别配置；上传直接进入 FastAPI 和 MinIO，不经过 RabbitMQ，RabbitMQ 仍只服务异步文档解析等既有 Worker 流程。
 
 微信自动建号、小程序登录和网页扫码确认要求同时配置 `WECHAT_APPID` 与 `WECHAT_SECRET`；密钥只放 `.env.local`、环境对应 `.local` 或进程环境。`WECHAT_LOGIN_PAGE` 默认 `pages/login/index`，`WECHAT_SCENE_TTL_SECONDS` 默认 300 秒，`WECHAT_QRCODE_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 10 次，`WECHAT_LOGIN_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 30 次，`WECHAT_API_TIMEOUT_SECONDS` 控制微信上游超时。未配置时应用仍可启动，但微信登录接口返回 `503 WECHAT_SERVICE_UNAVAILABLE`。
 
 ## 微信小程序开发
 
-用微信开发者工具直接导入 `apps/miniprogram`。直接打开时先进入 `pages/login/index`：未登录客户端使用当前微信临时 code 调用只读账号状态接口，根据结果分别显示“同意并登录”或“同意并注册”；该状态查询不创建账号或会话。用户必须查看并勾选微信公众平台配置的小程序隐私保护指引，再主动点击对应按钮；已有本地会话会直接进入简历列表。扫描 Web 生成的码也进入该页，未同意隐私指引时不能确认登录，仍可取消。客户端使用基础库 2.32.3 起提供的 `wx.getPrivacySetting`、`agreePrivacyAuthorization` 和 `wx.openPrivacyContract`；隐私 API 不可用时失败关闭并提示升级微信，不能绕过协议自动建号。明确注册和扫码确认携带 `privacy_accepted=true`，后端仅在该值为真时为未知 openid 建号；已有账号的登录以及 refresh 失效后的恢复携带 `privacy_accepted=false`，因而不能静默建号。服务端不把该请求字段保存为同意审计记录。开发版默认访问 `http://127.0.0.1:8000`；后端位于其他内网地址时，在开发者工具控制台执行 `wx.setStorageSync("linkcv_api_base_url", "http://<内网地址>:8000")` 后重新进入小程序，并关闭合法域名校验。该本地覆盖只对 `develop` 生效。体验版和正式版固定使用 `https://linkresume.cn`、强制 HTTPS 并忽略本地存储覆盖；第三方平台代开发时仍可用 `extConfig.apiBaseUrl` 覆盖。发布前还要在微信公众平台登记 request 合法域名并发布用户隐私保护指引。API URL 会打入小程序包，本来就是公开信息；仓库和小程序包内不得放 AppSecret。
+用微信开发者工具直接导入 `apps/miniprogram`。直接打开时先进入游客首页 `pages/home/index`：该页展示功能介绍、示例简历预览和登录入口，不发起任何账号识别、登录或隐私授权请求；底部提供“首页 / 我的简历”两个标签页，未登录进入“我的简历”只显示可返回的登录引导。用户从首页或引导态主动进入 `pages/login/index` 后，客户端才使用当前微信临时 code 调用只读账号状态接口，根据结果分别显示“同意并登录”或“同意并注册”；登录页与网页登录确认页是两个独立页面，各自在标题下展示单行用途说明（“登录后即可在小程序中查看本人简历”与“来自网页端的登录请求，确认后浏览器将登录 LinkCV”）；该状态查询不创建账号或会话。用户必须查看并勾选微信公众平台配置的小程序隐私保护指引，再主动点击对应按钮（未勾选时在协议区显示行内提示，不使用系统弹窗），也可以选择“暂不登录”返回首页；已有本地会话会直接进入简历列表。扫描 Web 生成的码按 `WECHAT_LOGIN_PAGE`（默认 `pages/login/index`）落地并立即转交独立的 `pages/confirm/index` 确认页（首页收到 scene 参数同样转交），未同意隐私指引时不能确认登录，仍可取消并返回首页。客户端使用基础库 2.32.3 起提供的 `wx.getPrivacySetting`、`agreePrivacyAuthorization` 和 `wx.openPrivacyContract`；隐私 API 不可用时失败关闭并提示升级微信，不能绕过协议自动建号。明确注册和扫码确认携带 `privacy_accepted=true`，后端仅在该值为真时为未知 openid 建号；已有账号的登录以及 refresh 失效后的恢复携带 `privacy_accepted=false`，因而不能静默建号；恢复彻底失败时清除本地凭据并回到“我的简历”登录引导。服务端不把该请求字段保存为同意审计记录。简历详情按最新手动版本下载智能一页 PNG 到本机阅读；本地联调预览图需要 PDF CLI，根级 `npm run dev:local` / `npm run dev:development` 会监听构建，单独启动后端时先执行 `npm --prefix apps/web run build:pdf-cli`。开发版默认访问 `http://127.0.0.1:8000`；后端位于其他内网地址时，在开发者工具控制台执行 `wx.setStorageSync("linkcv_api_base_url", "http://<内网地址>:8000")` 后重新进入小程序，并关闭合法域名校验。该本地覆盖只对 `develop` 生效。体验版和正式版固定使用 `https://linkresume.cn`、强制 HTTPS 并忽略本地存储覆盖；第三方平台代开发时仍可用 `extConfig.apiBaseUrl` 覆盖。发布前还要在微信公众平台登记 request 与 downloadFile 合法域名并发布用户隐私保护指引。API URL 会打入小程序包，本来就是公开信息；仓库和小程序包内不得放 AppSecret。小程序界面与 Web 内部功能区共用同一套 `--ui-*` 设计 Token（`apps/web/src/design-system/tokens.css`，经 `apps/miniprogram/app.wxss` 移植）：冷灰页面背景、白色圆角卡片、蓝色 accent 实心主操作按钮与描边次按钮（同 Web 内容主操作），不使用落地页的营销样式。布局保持小屏简洁：游客首页为居中单列，按标题、示例简历、登录入口、三点说明的顺序排布（登录按钮位于示例内容之后；示例简历为虚构信息的真实文字排版，默认姓名张三，不含任何真实用户数据），简历列表为紧凑单行列表项（小图标 + 标题时间 + 箭头）。两个标签页统一使用自定义导航，顶部间距按 `wx.getWindowInfo` 的 `statusBarHeight` 动态预留（`apps/miniprogram/utils/system.js`），不依赖 CSS 安全区变量；登录与扫码确认成功后先展示完成提示再切换页面，避免切换动画叠加加载态残影。
 
-小程序只调用 `GET /api/miniprogram/resumes` 与 `GET /api/miniprogram/resumes/{id}` 的本人数据；专用鉴权拒绝 Web Cookie，普通 `/api/resumes*` 也拒绝小程序 Bearer，因此只读不是界面约束。纯逻辑测试运行 `npm run test:miniprogram`；微信 API、页面跳转和合法域名仍需开发者工具与真机验收，不能描述为自动化 E2E。
+简历列表和详情元数据使用 `/api/miniprogram/resumes*`，页面内预览使用 `GET /api/miniprogram/resumes/{id}/preview.png`；`/pdf` 端点仍保留文字 PDF 响应。资料设置页 `pages/profile/index` 从“我的简历”进入，采用居中大头像布局（头像下方文字提示可更换）：`button open-type="chooseAvatar"` 让用户主动选择微信头像，`input type="nickname"` 支持一键使用微信昵称；昵称走 `PATCH /api/miniprogram/account/profile` 并同步本地会话用户，头像以 data URL 走 `PUT /api/miniprogram/account/avatar`，展示用 `wx.downloadFile` 从 `GET /api/miniprogram/account/avatar` 下载本机文件（普通 `/api/assets/*` 只接受 Web Cookie）。该页为可选设置项，不并入注册或登录流程；上线前需在微信公众平台《小程序用户隐私保护指引》中声明收集“头像、昵称”。根级本地启动脚本会同时监听构建 `apps/web/dist-server/render-resume-pdf.cjs`；若单独启动 FastAPI，先运行 `npm --prefix apps/web run build:pdf-cli`。首次打开由 `wx.downloadFile` 把 PNG 保存到 `USER_DATA_PATH`，详情页用 `<image mode="widthFix">` 直接展示；同一正式版本后续复用本地文件，退出、会话失效和账号切换清理缓存。发布前须把 `https://linkresume.cn` 同时配置为 request 与 downloadFile 合法域名，不需要业务域名。纯逻辑测试运行 `npm run test:miniprogram`；页面内图片缩放、全部模板排版、私有图片、文件持久化和合法域名仍需开发者工具与真机验收，不能描述为自动化 E2E。
 
 ## 默认端口与覆盖
 
@@ -56,6 +54,8 @@ LINKCV_ENV_FILE=.env.development npm run db:init
 | ------------- | -------: | --------------------------------------------------- |
 | Vite Web      |     5173 | Vite 默认值                                         |
 | FastAPI       |     8000 | `BACKEND_HOST`、`BACKEND_PORT`                      |
+| FastAPI（`dev:development`） | 18000 | `LINKCV_LOCAL_BACKEND_PORT`             |
+| Pi Agent      |     8010 | `PI_SERVICE_HOST`、`PI_SERVICE_PORT`                 |
 | MySQL         |     3306 | `MYSQL_HOST`、`MYSQL_PORT`                          |
 | Redis         |     6379 | `REDIS_HOST`、`REDIS_PORT`、`REDIS_DB`、`REDIS_URL` |
 | MinIO API     |     9000 | `MINIO_API_PORT`、`MINIO_ENDPOINT`                  |
@@ -63,7 +63,7 @@ LINKCV_ENV_FILE=.env.development npm run db:init
 | RabbitMQ AMQP |     5672 | `RABBITMQ_PORT`、`RABBITMQ_URL`                     |
 | RabbitMQ UI   |    15672 | `RABBITMQ_MANAGEMENT_PORT`                          |
 
-`BACKEND_PROXY_TARGET` 可以覆盖 Vite 使用的完整 FastAPI 地址。数据库可以用完整 `DATABASE_URL` 覆盖分项 MySQL 配置，Redis 可以用 `REDIS_URL` 覆盖分项配置。Production 必须通过私密覆盖提供足够随机的 `JWT_SECRET`、`LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY`、MySQL 和 MinIO 凭据，否则后端拒绝启动。鉴权会话和简历导入幂等共用 `REDIS_*` 指向的隔离数据库。
+`BACKEND_PROXY_TARGET` 可以覆盖 Vite 使用的完整 FastAPI 地址。数据库可以用完整 `DATABASE_URL` 覆盖分项 MySQL 配置，Redis 可以用 `REDIS_URL` 覆盖分项配置。`AGENT_ENABLED` 控制用户 Agent 入口；`PI_SERVICE_BASE_URL` 是 FastAPI 调 Pi 的内网地址，`LINKCV_BASE_URL` 是 Pi 回调 FastAPI 的内网地址。`PI_SERVICE_TOKEN` 与 `LINKCV_INTERNAL_AGENT_TOKEN` 必须使用两枚不同的高熵值，只写入被忽略的本地或环境私密覆盖。`AGENT_RUN_TIMEOUT_SECONDS`、`AGENT_TOOL_TIMEOUT_SECONDS` 和 `AGENT_PROPOSAL_TTL_DAYS` 分别限制运行、工具调用和待确认提案寿命。Production 开启 Agent 时缺 token 会拒绝启动。鉴权会话和简历导入幂等共用 `REDIS_*` 指向的隔离数据库。
 
 Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都维护相同别名。新增 shadcn 组件时从 `apps/web` 运行 CLI，使 `components.json` 能把源码写入 `src/components/ui/`。
 
@@ -126,9 +126,9 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 | `REDIS_SOCKET_TIMEOUT_SECONDS` | `2` | Redis 操作超时 |
 | `LLM_TIMEOUT_SECONDS` | `75` | 统一托管 LLM Gateway 的单次请求超时 |
 
-Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置当前 Chat binding。PDF 和 DOCX 会把原始二进制和安全文件名发送到 LinkParse；浏览器不读取地址或 Key。API 的频率与受理并发限制保存在 FastAPI 进程内，请求幂等和 Worker 防重保存在 Redis，任务终态保存在 MySQL。默认自动化测试注入 Fake，不访问真实地址或读取 Key。
+Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置当前 `resume_structuring` binding。PDF 和 DOCX 会把原始二进制和安全文件名发送到 LinkParse；浏览器不读取地址或 Key。API 的频率与受理并发限制保存在 FastAPI 进程内，请求幂等和 Worker 防重保存在 Redis，任务终态保存在 MySQL。默认自动化测试注入 Fake，不访问真实地址或读取 Key。
 
-简历导入使用数据库驱动的统一 LLM 服务和当前 Chat binding。模型地址、模型调用名与 API Key 通过管理员 API 管理，凭据由 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 加解密；调用不自动重试，也不回退其他候选。环境只保留密钥环与统一的 `LLM_TIMEOUT_SECONDS`，不再配置导入专用 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL` 或重试参数。
+简历导入使用数据库驱动的统一 LLM 服务和当前 `resume_structuring` binding。模型地址、模型调用名与 API Key 通过管理员 API 管理，凭据由 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 加解密；调用不自动重试，也不回退其他候选。环境只保留密钥环与统一的 `LLM_TIMEOUT_SECONDS`，不再配置导入专用 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL` 或重试参数。
 
 本地 PDF/DOCX 联调时，把 `LINKPARSE_API_KEY=<受控凭据>` 写入被 Git 忽略的 `.env.local` 或 `.env.development.local`，不要写入三份仓库环境文件、命令行历史、日志或测试 fixture。Key 缺失时 Development 仍可启动，Markdown 可测，PDF/DOCX 明确返回 `DOCUMENT_CONVERSION_UNAVAILABLE`。
 
@@ -138,8 +138,14 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | ------------------------------------- | -------------------------------------------------------------------- |
 | `npm run db:migrate`                  | 将数据库升级到 Alembic 最新版本                                      |
 | `npm run db:init`                     | 仅允许创建 `linkcv` 数据库并升级到 Alembic head                      |
-| `npm run db:revision -- -m <message>` | 创建只调用 SQL 的 revision，以及同 ID 的 `.up.sql`、`.down.sql` 文件 |
+| `npm run db:revision -- -m <message>` | 创建 forward-only 的 SQL revision，以及同 ID 的 `.up.sql` 文件       |
+| `npm run dev:development`             | 使用共享 Development 中间件，一键启动 Web、FastAPI、Worker 与 Pi    |
 | `npm run test:web`                    | 前端 Vitest 单元和组件测试                                           |
+| `npm run dev:pi`                      | 单独启动无头 Pi Agent 服务                                           |
+| `npm run test:pi`                     | 运行 Pi 服务单元测试                                                  |
+| `npm run check:pi`                    | 校验静态模型目录、离线构建 Pi 并测试服务                              |
+| `npm run prepare:pi`                  | 校验仓库内版本化 Pi 模型目录快照，不访问在线模型目录                  |
+| `npm run refresh:pi-model-data`       | 维护时显式刷新并重新生成 Pi 模型目录快照                              |
 | `npm run test:miniprogram`            | 小程序纯逻辑 Node 测试                                               |
 | `npm run dev:extension`               | 启动 WXT 插件开发模式                                                |
 | `npm run test:extension`              | 插件 DOM 提取与 API 客户端测试                                       |
@@ -154,4 +160,5 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 
 - 前端测试使用 Vitest、React Testing Library 和 jsdom，通过 Mock 隔离 API。
 - 后端单元测试不访问外部服务；集成测试使用内存 SQLite 和假 MinIO。
+- Pi 服务测试不访问真实模型或 FastAPI；真实 Agent 联调需要管理员配置并验证当前 `pi_agent` 模型，并启动 FastAPI 与 Pi 两个进程。
 - 跨浏览器插件、BOSS 页面、Web、FastAPI、真实 MySQL 和 Redis 的完整导入流程由浏览器人工验证。侧载目录和步骤见 [`apps/extension/README.md`](../../apps/extension/README.md)。

@@ -107,7 +107,6 @@ def create_app(
     runtime_storage = storage or AssetStorage(runtime_settings)
     runtime_plugin_release_service = plugin_release_service or PluginReleaseService(
         runtime_storage,
-        expected_origin=runtime_settings.plugin_release_origin,
     )
     runtime_llm_gateway = llm_gateway or LiteLLMGateway(
         runtime_settings.llm_timeout_seconds

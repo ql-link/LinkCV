@@ -78,7 +78,7 @@ def import_payload(**overrides: object) -> dict[str, object]:
     return result
 
 
-def test_manual_crud_search_lifecycle_and_hard_delete_release_source() -> None:
+def test_manual_crud_search_and_direct_delete_release_source() -> None:
     app = build_app()
     with TestClient(app) as client:
         register(client)
@@ -100,6 +100,7 @@ def test_manual_crud_search_lifecycle_and_hard_delete_release_source() -> None:
         assert job["imported_at"] is None
         assert job["created_at"].endswith("Z")
         assert job["updated_at"].endswith("Z")
+        assert "archived_at" not in job
 
         listed = client.get("/api/job-descriptions").json()
         assert [item["id"] for item in listed["items"]] == [job["id"]]
@@ -136,37 +137,14 @@ def test_manual_crud_search_lifecycle_and_hard_delete_release_source() -> None:
         assert stale.status_code == 409
         assert stale.json() == {"error": "JD_EDIT_CONFLICT"}
 
-        archived = client.post(
+        assert client.post(
             f"/api/job-descriptions/{job['id']}/archive",
             json={"base_lock_version": 2},
-        )
-        assert archived.status_code == 200
-        archived_job = archived.json()["job_description"]
-        assert archived_job["archived_at"] is not None
-        assert archived_job["lock_version"] == 3
-        assert client.get("/api/job-descriptions").json()["items"] == []
-        assert client.get("/api/job-descriptions?scope=archived").json()["items"][
-            0
-        ]["id"] == job["id"]
-
-        restored = client.post(
+        ).status_code == 404
+        assert client.post(
             f"/api/job-descriptions/{job['id']}/restore",
-            json={"base_lock_version": 3},
-        )
-        assert restored.status_code == 200
-        assert restored.json()["job_description"]["lock_version"] == 4
-
-        active_delete = client.delete(f"/api/job-descriptions/{job['id']}")
-        assert active_delete.status_code == 409
-        assert active_delete.json() == {"error": "JD_DELETE_REQUIRES_ARCHIVE"}
-        assert client.get(f"/api/job-descriptions/{job['id']}").status_code == 200
-
-        rearchived = client.post(
-            f"/api/job-descriptions/{job['id']}/archive",
-            json={"base_lock_version": 4},
-        )
-        assert rearchived.status_code == 200
-        assert rearchived.json()["job_description"]["lock_version"] == 5
+            json={"base_lock_version": 2},
+        ).status_code == 404
 
         deleted = client.delete(f"/api/job-descriptions/{job['id']}")
         assert deleted.status_code == 200
@@ -224,7 +202,7 @@ def test_external_boss_duplicate_update_preserves_source_identity_and_notes() ->
         assert updated["source_url"] == original["source_url"]
         assert updated["imported_at"] == original["imported_at"]
         assert updated["lock_version"] == 2
-        assert len(client.get("/api/job-descriptions?scope=all").json()["items"]) == 1
+        assert len(client.get("/api/job-descriptions").json()["items"]) == 1
 
 
 def test_browser_capture_import_is_cleaned_stored_and_uses_existing_duplicate_flow() -> None:
@@ -296,64 +274,6 @@ def test_browser_capture_import_rejects_invalid_contract_without_writing() -> No
             assert session.scalar(select(func.count(JobDescription.id))) == 0
 
 
-def test_archived_duplicate_can_restore_old_content_or_update_and_restore() -> None:
-    app = build_app()
-    with TestClient(app) as client:
-        register(client)
-        original = create_job(
-            client,
-            description="旧正文",
-            source_type="external_import",
-            source_url="https://www.zhipin.com/job_detail/archive42.html",
-            notes="继续观察",
-        )
-        client.post(
-            f"/api/job-descriptions/{original['id']}/archive",
-            json={"base_lock_version": 1},
-        )
-        incoming = payload(
-            description="新正文",
-            source_type="external_import",
-            source_url="https://m.zhipin.com/job_detail/archive42.html?from=new",
-        )
-
-        duplicate = client.post("/api/job-descriptions", json=incoming)
-        assert duplicate.status_code == 409
-        assert duplicate.json()["duplicate"]["allowed_actions"] == [
-            "restore",
-            "update",
-            "cancel",
-        ]
-
-        incoming["duplicate_resolution"] = {
-            "action": "restore",
-            "job_description_id": original["id"],
-            "base_lock_version": 2,
-        }
-        restored = client.post("/api/job-descriptions", json=incoming)
-        assert restored.status_code == 200
-        restored_job = restored.json()["job_description"]
-        assert restored_job["description"] == "旧正文"
-        assert restored_job["notes"] == "继续观察"
-        assert restored_job["archived_at"] is None
-        assert restored_job["lock_version"] == 3
-
-        client.post(
-            f"/api/job-descriptions/{original['id']}/archive",
-            json={"base_lock_version": 3},
-        )
-        incoming["duplicate_resolution"] = {
-            "action": "update",
-            "job_description_id": original["id"],
-            "base_lock_version": 4,
-        }
-        updated = client.post("/api/job-descriptions", json=incoming)
-        assert updated.status_code == 200
-        assert updated.json()["job_description"]["description"] == "新正文"
-        assert updated.json()["job_description"]["notes"] == "继续观察"
-        assert updated.json()["job_description"]["archived_at"] is None
-
-
 def test_validation_is_atomic_and_source_fields_are_immutable() -> None:
     app = build_app()
     with TestClient(app) as client:
@@ -409,12 +329,6 @@ def test_authentication_ownership_and_user_scoped_uniqueness() -> None:
             "/api/job-descriptions/1",
             json={"notes": "x", "base_lock_version": 1},
         ).status_code == 401
-        assert anonymous.post(
-            "/api/job-descriptions/1/archive", json={"base_lock_version": 1}
-        ).status_code == 401
-        assert anonymous.post(
-            "/api/job-descriptions/1/restore", json={"base_lock_version": 1}
-        ).status_code == 401
         assert anonymous.delete("/api/job-descriptions/1").status_code == 401
 
     with TestClient(app) as owner:
@@ -433,16 +347,6 @@ def test_authentication_ownership_and_user_scoped_uniqueness() -> None:
                 "put",
                 f"/api/job-descriptions/{owned['id']}",
                 {"notes": "越权", "base_lock_version": 1},
-            ),
-            (
-                "post",
-                f"/api/job-descriptions/{owned['id']}/archive",
-                {"base_lock_version": 1},
-            ),
-            (
-                "post",
-                f"/api/job-descriptions/{owned['id']}/restore",
-                {"base_lock_version": 1},
             ),
             ("delete", f"/api/job-descriptions/{owned['id']}", None),
         ]:
@@ -468,10 +372,10 @@ def test_source_less_manual_jobs_are_not_content_deduplicated_and_pagination_is_
         third = create_job(client, job_title="Python 开发")
         assert len({first["id"], second["id"], third["id"]}) == 3
 
-        first_page = client.get("/api/job-descriptions?scope=all&limit=2").json()
+        first_page = client.get("/api/job-descriptions?limit=2").json()
         second_page = client.get(
             "/api/job-descriptions",
-            params={"scope": "all", "limit": 2, "cursor": first_page["next_cursor"]},
+            params={"limit": 2, "cursor": first_page["next_cursor"]},
         ).json()
         combined = [item["id"] for item in first_page["items"] + second_page["items"]]
         assert len(combined) == 3
@@ -480,7 +384,7 @@ def test_source_less_manual_jobs_are_not_content_deduplicated_and_pagination_is_
 
         invalid_cursor = client.get(
             "/api/job-descriptions",
-            params={"scope": "archived", "cursor": first_page["next_cursor"]},
+            params={"keyword": "different", "cursor": first_page["next_cursor"]},
         )
         assert invalid_cursor.status_code == 400
         assert invalid_cursor.json() == {"error": "INVALID_JOB_QUERY"}
@@ -490,7 +394,7 @@ def test_source_less_manual_jobs_are_not_content_deduplicated_and_pagination_is_
         tampered_cursor = f"{encoded_cursor[:4]}%{encoded_cursor[4:]}"
         invalid_encoding = client.get(
             "/api/job-descriptions",
-            params={"scope": "all", "cursor": tampered_cursor},
+            params={"cursor": tampered_cursor},
         )
         assert invalid_encoding.status_code == 400
         assert invalid_encoding.json() == {"error": "INVALID_JOB_QUERY"}
@@ -500,14 +404,13 @@ def test_source_less_manual_jobs_are_not_content_deduplicated_and_pagination_is_
                 {
                     "updated_at": "2026-07-29T12:00:00",
                     "id": first["id"],
-                    "scope": "all",
                     "keyword_hash": hashlib.sha256(b"").hexdigest(),
                 }
             ).encode("utf-8")
         ).decode("ascii").rstrip("=")
         invalid_timezone = client.get(
             "/api/job-descriptions",
-            params={"scope": "all", "cursor": naive_cursor},
+            params={"cursor": naive_cursor},
         )
         assert invalid_timezone.status_code == 400
         assert invalid_timezone.json() == {"error": "INVALID_JOB_QUERY"}
@@ -522,7 +425,7 @@ def test_delete_reports_not_found_if_target_disappears_during_atomic_delete(
         job = create_job(client)
         monkeypatch.setattr(
             "linkcv.modules.job_descriptions.routes.hard_delete_owned_job",
-            lambda _db, _job_id, _user_id: "not_found",
+            lambda _db, _job_id, _user_id: False,
         )
 
         response = client.delete(f"/api/job-descriptions/{job['id']}")

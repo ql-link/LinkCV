@@ -158,16 +158,14 @@ JD 管理接口接受和返回最终结构化数据；单独的浏览器导入�
 
 | Method   | Path                                | 成功结果                                                                 |
 | -------- | ----------------------------------- | ------------------------------------------------------------------------ |
-| `GET`    | `/api/job-descriptions`             | `{items, next_cursor}`，默认只列活动记录                                 |
+| `GET`    | `/api/job-descriptions`             | `{items, next_cursor}`，列出当前用户保留的全部 JD                         |
 | `POST`   | `/api/job-descriptions`             | 新建时 `201 {job_description}`；解决重复时 `200`                         |
 | `POST`   | `/api/job-descriptions/import`      | 清洗 BOSS 页面采集字段；新建时 `201 {job_description}`，解决重复时 `200` |
 | `GET`    | `/api/job-descriptions/:id`         | `{job_description}`                                                      |
 | `PUT`    | `/api/job-descriptions/:id`         | `{job_description}`；请求含 `base_lock_version` 和至少一个可编辑字段     |
-| `POST`   | `/api/job-descriptions/:id/archive` | `{job_description}`；请求含 `base_lock_version`                          |
-| `POST`   | `/api/job-descriptions/:id/restore` | `{job_description}`；请求含 `base_lock_version`                          |
-| `DELETE` | `/api/job-descriptions/:id`         | 仅归档记录返回 `{deleted: true}`，永久删除并释放来源唯一标识             |
+| `DELETE` | `/api/job-descriptions/:id`         | `{deleted: true}`，直接永久删除并释放来源唯一标识                        |
 
-列表查询支持 `scope=active|archived|all`、最长 200 字符的 `keyword`、不透明 `cursor` 和 `limit=1..100`。关键词忽略大小写，覆盖岗位名、公司名、城市、地址、正文和技能；分页按 `updated_at DESC, id DESC` 稳定排序。非法筛选或游标返回 `400 INVALID_JOB_QUERY`。
+列表查询支持最长 200 字符的 `keyword`、不透明 `cursor` 和 `limit=1..100`。关键词忽略大小写，覆盖岗位名、公司名、城市、地址、正文和技能；分页按 `updated_at DESC, id DESC` 稳定排序。非法筛选或游标返回 `400 INVALID_JOB_QUERY`。JD 不维护活动、归档、投递或面试状态。
 
 创建必填 `job_title`、`company_name`、`description` 和 `source_type=manual|external_import`。`external_import` 必须带 `http/https source_url`；服务端负责规范化 URL 并计算来源身份。当前 BOSS 直聘岗位链接提取 `/job_detail/{source_job_id}.html`，保存 `source_site=boss`、原生 `source_job_id`、规范化 `source_url` 及其 SHA-256；其他链接保存 `source_site=web` 和 URL 哈希。`source_type`、`source_site`、`source_job_id`、`source_url`、`source_url_hash`、`imported_at` 创建后均不可通过更新接口修改。
 
@@ -175,9 +173,9 @@ JD 管理接口接受和返回最终结构化数据；单独的浏览器导入�
 
 导入请求字段非法、非 BOSS 详情 URL 或必填采集内容缺失时返回 `400 INVALID_JOB_IMPORT`。它与普通创建复用相同的 `JD_SOURCE_DUPLICATE`、`duplicate_resolution`、`JD_EDIT_CONFLICT` 和 `JD_WRITE_FAILED` 契约；插件不需要也不能提交 `user_id`、来源身份哈希或数据库字段。
 
-同一用户的 `(source_site, source_job_id)` 或 `source_url_hash` 重复时返回 `409 JD_SOURCE_DUPLICATE`，响应 `duplicate` 包含现有摘要和可选动作。活动记录允许 `update|cancel`；归档记录允许 `restore|update|cancel`。`duplicate_resolution` 必须回传现有 `job_description_id` 和 `base_lock_version`：`restore` 只恢复原内容，`update` 用本次结构化内容更新原记录并在必要时恢复；两者都不创建第二条记录。普通更新、归档、恢复及重复解决使用 `lock_version`，并发过期返回 `409 JD_EDIT_CONFLICT`。
+同一用户的 `(source_site, source_job_id)` 或 `source_url_hash` 重复时返回 `409 JD_SOURCE_DUPLICATE`，响应 `duplicate` 包含现有摘要和 `update|cancel` 动作。`duplicate_resolution` 必须回传现有 `job_description_id`、`base_lock_version` 和 `action=update`；更新使用本次结构化内容覆盖原记录但保留个人备注和来源身份，不创建第二条记录。普通更新及重复解决使用 `lock_version`，并发过期返回 `409 JD_EDIT_CONFLICT`。
 
-硬删除只允许 `archived_at` 非空的归档记录；活动记录（包括已恢复记录）返回 `409 JD_DELETE_REQUIRES_ARCHIVE` 且不产生删除副作用。删除语句同时约束记录 ID、当前用户和归档状态，因此记录在并发删除前恢复后不会被误删。不存在和不属于当前用户的记录仍返回 `404 JD_NOT_FOUND`。
+硬删除语句同时约束记录 ID 和当前用户，不要求中间状态或 `lock_version`。成功后 JD 无法恢复，相同来源可再次写入；已有求职进程通过 `ON DELETE SET NULL` 解除来源引用并继续保存建立时的岗位快照。不存在和不属于当前用户的记录返回 `404 JD_NOT_FOUND`。
 
 技能以最多 100 个字符串的 JSON 数组保存，写入时去空和去重。数值薪资非空时必须同时给出三字母币种与计薪周期，最高值不得低于最低值。请求字段、长度或组合非法返回 `400 INVALID_JOB_DESCRIPTION`，来源非法返回 `400 INVALID_JOB_SOURCE`。福利、原始抓取数据和插件 API Key 不属于当前契约。
 
@@ -269,7 +267,7 @@ Chat 是服务端预定义能力，管理员不填写能力标识。候选写入
 | Method | Path | 成功结果 |
 | --- | --- | --- |
 | `GET` | `/api/plugin-releases/current` | `200 {status, release}`；未发布为 `{status: "unpublished", release: null}`，可用 release 含 `version`、`released_at`、`browser`、`manifest_version`、`size`、`sha256`、`download_url` |
-| `GET` | `/api/plugin-releases/{version}/download` | 当前版本匹配时返回名为 `linkcv-job-capture-v<version>.zip` 的 `200 application/zip` 附件流，带 `Content-Length`、SHA-256 `ETag`、`private, no-store` 和 `nosniff` |
+| `GET` | `/api/plugin-releases/{version}/download` | 当前版本匹配时返回名为 `linkresume-job-capture-v<version>.zip` 的 `200 application/zip` 附件流，带 `Content-Length`、SHA-256 `ETag`、`private, no-store` 和 `nosniff` |
 | `GET` | `/api/admin/plugin-releases/current` | `200 {status, release}`；管理员状态为 `absent/published/unpublished`，已下架时仍返回保留版本信息 |
 | `POST` | `/api/admin/plugin-releases` | multipart 字段 `file` 接收一个 ZIP，校验并发布成功返回 `201 {release, cleanup_pending}`；新版生效后自动删除其他版本 ZIP |
 | `DELETE` | `/api/admin/plugin-releases/current` | 下架当前插件并返回 `200 {unpublished: true, release}`；把 current 指针状态改为 `unpublished`，保留当前唯一版本信息和 ZIP |
@@ -278,7 +276,7 @@ Chat 是服务端预定义能力，管理员不填写能力标识。候选写入
 
 current 或下载读取存储失败、指针/对象大小或摘要非法时返回 `503`，不会返回旧缓存或 MinIO URL。下载版本不是当前版本时返回 `409 PLUGIN_RELEASE_VERSION_CHANGED`，非法或未发布版本返回 `404 PLUGIN_RELEASE_NOT_FOUND`。
 
-上传只接受最大 20 MiB 的 ZIP。压缩包、Manifest、离线说明或环境权限不合法返回 `422 PLUGIN_RELEASE_*`；超过上限返回 `413 PLUGIN_RELEASE_TOO_LARGE`；版本降级、同版本不同内容或当前对象冲突返回 `409`；新对象或指针写入失败返回 `503`，当前指针和旧版保持原值。指针成功切换后，服务端删除 `system/plugin-releases/` 下除 current 引用对象外的其他 ZIP；清理失败不回滚已经生效的新版本，响应为 `cleanup_pending=true`，管理端提示待重试，后续上传会重新清理。前端不得从文件名推断版本或环境，也不得自行拼接存储路径。
+上传只接受最大 20 MiB 的 ZIP。压缩包结构、根目录 Manifest、Manifest V3 或三段数字版本不合法时返回 `422 PLUGIN_RELEASE_*`；上传不校验安装说明、站点权限、IP 或端口。超过上限返回 `413 PLUGIN_RELEASE_TOO_LARGE`；版本降级、同版本不同内容或当前对象冲突返回 `409`；新对象或指针写入失败返回 `503`，当前指针和旧版保持原值。指针成功切换后，服务端删除 `system/plugin-releases/` 下除 current 引用对象外的其他 ZIP；清理失败不回滚已经生效的新版本，响应为 `cleanup_pending=true`，管理端提示待重试，后续上传会重新清理。前端不得从文件名推断版本或环境，也不得自行拼接存储路径。
 
 下架必须二次确认。没有 current 指针或指针已经是 `unpublished` 时返回 `404 PLUGIN_RELEASE_NOT_FOUND`；状态指针写入失败返回 `503 PLUGIN_RELEASE_UNPUBLISH_FAILED`，当前发布状态保持不变。成功下架后 current 查询返回 unpublished，当前唯一版本下载关闭；`current.json` 和该版本 ZIP 继续保留。保留的版本仍作为后续发布下限，同版本同摘要安装包可以重新上架；上架和下架都不创建第二个版本。
 

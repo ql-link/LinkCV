@@ -254,9 +254,6 @@ class JobDescription(Base):
         timestamp_type(), nullable=True, comment="外部结构化数据写入时间（UTC）"
     )
     notes: Mapped[str | None] = mapped_column(Text(), nullable=True, comment="用户个人备注")
-    archived_at: Mapped[datetime | None] = mapped_column(
-        timestamp_type(), nullable=True, comment="归档时间（UTC）"
-    )
     lock_version: Mapped[int] = mapped_column(
         unsigned_int_type(), nullable=False, default=1, comment="乐观锁版本"
     )
@@ -272,13 +269,6 @@ class JobDescription(Base):
     )
 
 
-Index(
-    "idx_job_descriptions_user_archive_updated_id",
-    JobDescription.user_id,
-    JobDescription.archived_at,
-    JobDescription.updated_at.desc(),
-    JobDescription.id.desc(),
-)
 Index(
     "idx_job_descriptions_user_updated_id",
     JobDescription.user_id,

@@ -228,7 +228,6 @@ export type JobDescriptionSummary = {
   source_type: JobSourceType;
   source_site: string | null;
   source_url: string | null;
-  archived_at: string | null;
   lock_version: number;
   updated_at: string;
 };
@@ -309,7 +308,7 @@ export type AdminPluginReleaseCurrentResponse = {
 };
 
 export type DuplicateResolution = {
-  action: "update" | "restore";
+  action: "update";
   job_description_id: string;
   base_lock_version: number;
 };
@@ -430,7 +429,7 @@ export type LlmCallQuery = {
 export type JobDuplicateDetails = {
   duplicate: {
     existing: JobDescriptionSummary;
-    allowed_actions: Array<"restore" | "update" | "cancel">;
+    allowed_actions: Array<"update" | "cancel">;
   };
 };
 
@@ -819,14 +818,12 @@ export const api = {
     request<DatasetContent>(`/api/datasets/${id}/content`),
   listJobDescriptions: (
     params: {
-      scope?: "active" | "archived" | "all";
       keyword?: string;
       cursor?: string;
       limit?: number;
     } = {},
   ) => {
     const search = new URLSearchParams();
-    if (params.scope) search.set("scope", params.scope);
     if (params.keyword) search.set("keyword", params.keyword);
     if (params.cursor) search.set("cursor", params.cursor);
     if (params.limit) search.set("limit", String(params.limit));
@@ -852,22 +849,6 @@ export const api = {
     request<{ job_description: JobDescriptionRecord }>(
       `/api/job-descriptions/${id}`,
       { method: "PUT", body: payload },
-    ),
-  archiveJobDescription: (id: string, baseLockVersion: number) =>
-    request<{ job_description: JobDescriptionRecord }>(
-      `/api/job-descriptions/${id}/archive`,
-      {
-        method: "POST",
-        body: { base_lock_version: baseLockVersion },
-      },
-    ),
-  restoreJobDescription: (id: string, baseLockVersion: number) =>
-    request<{ job_description: JobDescriptionRecord }>(
-      `/api/job-descriptions/${id}/restore`,
-      {
-        method: "POST",
-        body: { base_lock_version: baseLockVersion },
-      },
     ),
   deleteJobDescription: (id: string) =>
     request<{ deleted: boolean }>(`/api/job-descriptions/${id}`, {

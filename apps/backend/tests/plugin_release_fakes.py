@@ -111,14 +111,13 @@ def build_plugin_zip(
     output = BytesIO()
     manifest = {
         "manifest_version": 3,
-        "name": "LinkCV 岗位采集",
+        "name": "LinkResume 岗位采集",
         "version": version,
         "permissions": ["activeTab"],
         "host_permissions": permissions or [*BOSS_PERMISSIONS, f"{origin}/*"],
     }
     with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("manifest.json", json.dumps(manifest))
-        archive.writestr("安装与使用说明.html", "<h1>安装说明</h1>")
         archive.writestr("background.js", "export {};")
         for name, data in (extra or {}).items():
             archive.writestr(name, data)

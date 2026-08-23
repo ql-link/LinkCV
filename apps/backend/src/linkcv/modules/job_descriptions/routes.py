@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Literal
-
 from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
 
@@ -13,7 +11,6 @@ from linkcv.application.job_descriptions.service import (
     find_owned_job,
     hard_delete_owned_job,
     list_owned_jobs,
-    set_job_archived,
     update_owned_job,
 )
 from linkcv.application.job_descriptions.import_service import (
@@ -35,7 +32,6 @@ from linkcv.modules.job_descriptions.schemas import (
     JobDescriptionResponse,
     JobDescriptionSummary,
     JobDescriptionUpdateRequest,
-    JobLifecycleRequest,
 )
 from linkcv.modules.observability.audit import bind_audit_target
 
@@ -59,22 +55,16 @@ def job_record(job: JobDescription) -> JobDescriptionRecord:
 
 def duplicate_details(error: DuplicateJobDescription) -> dict[str, object]:
     existing = job_summary(error.existing).model_dump(mode="json")
-    allowed_actions = (
-        ["restore", "update", "cancel"]
-        if error.existing.archived_at is not None
-        else ["update", "cancel"]
-    )
     return {
         "duplicate": {
             "existing": existing,
-            "allowed_actions": allowed_actions,
+            "allowed_actions": ["update", "cancel"],
         }
     }
 
 
 @router.get("", response_model=JobDescriptionListResponse)
 def list_job_descriptions(
-    scope: Literal["active", "archived", "all"] = "active",
     keyword: str | None = Query(default=None, max_length=200),
     cursor: str | None = Query(default=None, max_length=4096),
     limit: int = Query(default=20, ge=1, le=100),
@@ -85,7 +75,6 @@ def list_job_descriptions(
         jobs, next_cursor = list_owned_jobs(
             db=db,
             user_id=user.id,
-            scope=scope,
             keyword=keyword,
             cursor=cursor,
             limit=limit,
@@ -179,56 +168,13 @@ def update_job_description(
     return JobDescriptionResponse(job_description=job_record(updated_job))
 
 
-@router.post("/{job_id}/archive", response_model=JobDescriptionResponse)
-def archive_job_description(
-    job_id: str,
-    payload: JobLifecycleRequest,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> JobDescriptionResponse:
-    return _change_archive_state(db, user.id, job_id, payload, archived=True)
-
-
-@router.post("/{job_id}/restore", response_model=JobDescriptionResponse)
-def restore_job_description(
-    job_id: str,
-    payload: JobLifecycleRequest,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> JobDescriptionResponse:
-    return _change_archive_state(db, user.id, job_id, payload, archived=False)
-
-
-def _change_archive_state(
-    db: Session,
-    user_id: int,
-    job_id: str,
-    payload: JobLifecycleRequest,
-    *,
-    archived: bool,
-) -> JobDescriptionResponse:
-    job = require_owned_job(db, job_id, user_id)
-    updated_job = set_job_archived(
-        db=db,
-        job=job,
-        user_id=user_id,
-        base_lock_version=payload.base_lock_version,
-        archived=archived,
-    )
-    if updated_job is None:
-        raise ApiError(409, "JD_EDIT_CONFLICT")
-    return JobDescriptionResponse(job_description=job_record(updated_job))
-
-
 @router.delete("/{job_id}", response_model=DeleteJobDescriptionResponse)
 def delete_job_description(
     job_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DeleteJobDescriptionResponse:
-    result = hard_delete_owned_job(db, job_id, user.id)
-    if result == "not_found":
+    deleted = hard_delete_owned_job(db, job_id, user.id)
+    if not deleted:
         raise ApiError(404, "JD_NOT_FOUND")
-    if result == "requires_archive":
-        raise ApiError(409, "JD_DELETE_REQUIRES_ARCHIVE")
     return DeleteJobDescriptionResponse(deleted=True)

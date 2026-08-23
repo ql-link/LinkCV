@@ -12,10 +12,7 @@ ORIGIN = "http://127.0.0.1:5173"
 def build_service() -> tuple[PluginReleaseService, FakePluginStorage]:
     storage = FakePluginStorage()
     return (
-        PluginReleaseService(
-            storage,
-            expected_origin=ORIGIN,
-        ),
+        PluginReleaseService(storage),
         storage,
     )
 

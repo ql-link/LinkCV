@@ -20,7 +20,7 @@ Skill = Annotated[str, Field(max_length=100)]
 class DuplicateResolution(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    action: Literal["update", "restore"]
+    action: Literal["update"]
     job_description_id: str
     base_lock_version: int = Field(ge=1)
 
@@ -266,12 +266,6 @@ class JobDescriptionUpdateRequest(BaseModel):
         return self
 
 
-class JobLifecycleRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    base_lock_version: int = Field(ge=1)
-
-
 class JobDescriptionSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
@@ -284,7 +278,6 @@ class JobDescriptionSummary(BaseModel):
     source_type: SourceType
     source_site: str | None
     source_url: str | None
-    archived_at: datetime | None
     lock_version: int
     updated_at: datetime
 
@@ -293,7 +286,7 @@ class JobDescriptionSummary(BaseModel):
     def stringify_id(cls, value: object) -> str:
         return str(value)
 
-    @field_validator("archived_at", "updated_at", mode="before")
+    @field_validator("updated_at", mode="before")
     @classmethod
     def normalize_summary_timestamps(cls, value: object) -> object:
         return _as_utc(value)

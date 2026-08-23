@@ -196,8 +196,9 @@ export function App() {
       <WorkspaceLayout active={activeSection}>
         {route.kind === "resumes" && <HomePage />}
         {route.kind === "templates" && <ResumeTemplatesPage />}
-        {route.kind === "jobs" && <JobCenterPage />}
-        {route.kind === "jobCreate" && <JobFormPage mode="create" />}
+        {(route.kind === "jobs" || route.kind === "jobCreate") && (
+          <JobCenterPage createDialogOpen={route.kind === "jobCreate"} />
+        )}
         {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}
         {route.kind === "jobEdit" && <JobFormPage mode="edit" jobId={route.jobId} />}
         {route.kind === "datasets" && <DatasetsPage />}

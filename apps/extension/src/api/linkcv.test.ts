@@ -11,6 +11,7 @@ function jsonResponse(status: number, body: object): Response {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe("LinkCV extension API client", () => {
@@ -37,6 +38,34 @@ describe("LinkCV extension API client", () => {
     ]);
   });
 
+  it("release channels only connect to the origin injected into that package", async () => {
+    vi.stubEnv("WXT_PUBLIC_LINKCV_CHANNEL", "production");
+    vi.stubEnv("WXT_PUBLIC_LINKCV_ORIGIN", "https://linkresume.cn");
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, { user: { id: "7", email: "user@example.test" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const connection = await connectToLinkCV();
+
+    expect(connection?.origin).toBe("https://linkresume.cn");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://linkresume.cn/api/auth/me",
+      expect.objectContaining({ credentials: "include" }),
+    );
+  });
+
+  it("a release channel without an injected origin does not fall back to another environment", async () => {
+    vi.stubEnv("WXT_PUBLIC_LINKCV_CHANNEL", "development");
+    vi.stubEnv("WXT_PUBLIC_LINKCV_ORIGIN", "");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(connectToLinkCV()).resolves.toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("refreshes an expired session once before retrying an import", async () => {
     const fetchMock = vi
       .fn()
@@ -51,7 +80,6 @@ describe("LinkCV extension API client", () => {
             job_title: "后端工程师",
             company_name: "示例公司",
             source_url: "https://www.zhipin.com/job_detail/abc.html",
-            archived_at: null,
             lock_version: 1,
           },
         }),

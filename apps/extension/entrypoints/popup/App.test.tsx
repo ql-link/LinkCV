@@ -3,12 +3,14 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
+import { LinkCVApiError } from "../../src/api/linkcv";
 
 const mocks = vi.hoisted(() => ({
   connect: vi.fn(),
   query: vi.fn(),
   sendMessage: vi.fn(),
   create: vi.fn(),
+  importJob: vi.fn(),
 }));
 
 vi.mock("wxt/browser", () => ({
@@ -22,9 +24,21 @@ vi.mock("wxt/browser", () => ({
 }));
 
 vi.mock("../../src/api/linkcv", () => ({
-  LinkCVApiError: class LinkCVApiError extends Error {},
+  LinkCVApiError: class LinkCVApiError extends Error {
+    constructor(
+      readonly status: number,
+      readonly code: string,
+      readonly details: Record<string, unknown>,
+    ) {
+      super(code);
+    }
+
+    get duplicate() {
+      return this.details.duplicate ?? null;
+    }
+  },
   connectToLinkCV: mocks.connect,
-  importJob: vi.fn(),
+  importJob: mocks.importJob,
   linkCVUrl: (origin: string, path: string) => `${origin}${path}`,
 }));
 
@@ -72,7 +86,11 @@ describe("extension popup", () => {
 
     await renderApp();
 
-    expect(document.body.textContent).toContain("导入预览");
+    expect(document.querySelector("img.mark")?.getAttribute("src")).toBe(
+      "/linkresume-mark.png",
+    );
+    expect(document.body.textContent).toContain("LinkResume");
+    expect(document.body.textContent).toContain("核对岗位信息");
     expect(document.body.textContent).toContain("确认导入");
     const inputs = [...document.querySelectorAll("input")];
     expect(inputs.map((input) => input.value)).toContain("后端工程师");
@@ -87,8 +105,9 @@ describe("extension popup", () => {
 
     await renderApp();
 
-    expect(document.body.textContent).toContain("请先在 LinkCV 登录");
-    expect(document.body.textContent).toContain("打开 LinkCV 登录");
+    expect(document.body.textContent).toContain("请先登录 LinkResume");
+    expect(document.body.textContent).toContain("打开 LinkResume 登录");
+    expect(document.body.textContent).not.toContain("LinkCV");
   });
 
   it("allows the BOSS list page to request the selected detail capture", async () => {
@@ -103,7 +122,42 @@ describe("extension popup", () => {
     await renderApp();
 
     expect(mocks.sendMessage).toHaveBeenCalledWith(9, { type: "LINKCV_CAPTURE_BOSS_JOB" });
-    expect(document.body.textContent).toContain("导入预览");
+    expect(document.body.textContent).toContain("核对岗位信息");
+  });
+
+  it("offers update without restore when the imported source already exists", async () => {
+    mocks.connect.mockResolvedValue({
+      origin: "http://127.0.0.1:5173",
+      user: { id: "7", email: "user@example.test" },
+    });
+    mocks.importJob.mockRejectedValueOnce(
+      new LinkCVApiError(409, "JD_SOURCE_DUPLICATE", {
+        duplicate: {
+          existing: {
+            id: "42",
+            job_title: "后端工程师",
+            company_name: "示例公司",
+            lock_version: 3,
+          },
+          allowed_actions: ["update", "cancel"],
+        },
+      }),
+    );
+
+    await renderApp();
+    const submit = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent === "确认导入",
+    );
+    await act(async () => {
+      submit?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(document.body.textContent).toContain("发现重复来源");
+    expect(document.body.textContent).toContain("用本次内容更新");
+    expect(document.body.textContent).toContain("打开现有 JD");
+    expect(document.body.textContent).not.toContain("恢复原记录");
   });
 });
 
