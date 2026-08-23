@@ -1662,6 +1662,107 @@ select:not([data-slot]):focus-visible {
   box-shadow: 0 12px 32px rgba(15, 18, 22, 0.14);
 }
 
+.workbench-selection-menu {
+  display: grid;
+  width: min(720px, calc(100vw - 24px));
+  gap: 7px;
+}
+
+.workbench-selection-menu .workbench-toolbar { width: fit-content; max-width: 100%; }
+
+.workbench-ai-composer {
+  overflow: hidden;
+  width: min(520px, 100%);
+  border: 1px solid color-mix(in srgb, var(--ui-accent) 30%, var(--ui-border));
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface);
+  box-shadow: 0 14px 36px rgba(15, 18, 22, 0.16);
+}
+
+.workbench-ai-composer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px 5px;
+  color: var(--ui-text-muted);
+  font-size: 0.6875rem;
+  font-weight: 650;
+}
+
+.workbench-ai-composer-head > span { display: inline-flex; align-items: center; gap: 5px; color: var(--ui-accent); }
+.workbench-ai-composer-head button,
+.workbench-ai-send,
+.workbench-ai-actions button { border: 0; background: transparent; color: inherit; cursor: pointer; }
+.workbench-ai-composer-head button { display: grid; width: 26px; height: 26px; place-items: center; border-radius: var(--ui-radius-sm); }
+.workbench-ai-composer-head button:hover { background: var(--ui-surface-muted); color: var(--ui-foreground); }
+.workbench-ai-composer button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 2px; }
+
+.workbench-ai-input-row { display: flex; align-items: center; gap: 6px; padding: 0 9px 9px; }
+.workbench-ai-input-row input {
+  min-width: 0;
+  height: 36px;
+  flex: 1;
+  border: 1px solid var(--ui-input);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface-subtle);
+  padding: 0 11px;
+  color: var(--ui-foreground);
+  font: 0.8125rem/1 var(--ui-font-sans);
+  outline: none;
+}
+.workbench-ai-input-row input:focus { border-color: var(--ui-ring); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-ring) 16%, transparent); }
+.workbench-ai-send { display: grid; width: 36px; height: 36px; flex: 0 0 36px; place-items: center; border-radius: var(--ui-radius-sm); background: var(--ui-accent); color: white; }
+.workbench-ai-send:hover { background: var(--ui-accent-hover); }
+.workbench-ai-send:disabled { cursor: default; opacity: 0.45; }
+.workbench-ai-status,
+.workbench-ai-error { margin: -2px 11px 9px; font-size: 0.6875rem; line-height: 1.4; }
+.workbench-ai-status { color: var(--ui-text-muted); }
+.workbench-ai-error { color: var(--ui-destructive); }
+
+.workbench-ai-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid var(--ui-border);
+  padding: 7px 9px;
+  color: var(--ui-text-muted);
+  font-size: 0.625rem;
+}
+.workbench-ai-actions > span { min-width: 0; text-wrap: pretty; }
+.workbench-ai-actions > div { display: flex; flex: 0 0 auto; align-items: center; gap: 3px; }
+.workbench-ai-actions button { display: inline-flex; height: 28px; align-items: center; gap: 4px; border-radius: var(--ui-radius-sm); padding: 0 8px; font-size: 0.6875rem; font-weight: 600; }
+.workbench-ai-actions button:hover { background: var(--ui-surface-muted); color: var(--ui-foreground); }
+.workbench-ai-actions button.is-primary { background: var(--ui-accent); color: white; }
+.workbench-ai-actions button.is-primary:hover { background: var(--ui-accent-hover); }
+.workbench-ai-actions button:disabled { cursor: default; opacity: 0.4; }
+
+.resume-ai-selection {
+  border-radius: 2px;
+  background: rgba(20, 94, 214, 0.14);
+  box-shadow: inset 0 -1px 0 rgba(20, 94, 214, 0.48);
+}
+.resume-ai-selection.is-stale { background: rgba(196, 59, 59, 0.13); box-shadow: inset 0 -1px 0 rgba(196, 59, 59, 0.45); }
+.resume-ai-source-hidden { display: none; }
+.resume-ai-inline-diff { white-space: pre-wrap; }
+.resume-ai-diff-removed {
+  border-radius: 2px;
+  background: rgba(196, 59, 59, 0.10);
+  color: #9f3c3c;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.resume-ai-diff-added {
+  border-radius: 2px;
+  background: rgba(20, 94, 214, 0.09);
+  color: inherit;
+  text-decoration-line: underline;
+  text-decoration-color: #145ed6;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
+.resume-ai-diff-equal { color: inherit; }
+
 .workbench-tool-button { width: 32px; height: 32px; flex: 0 0 32px; border-radius: var(--ui-radius-sm); background: transparent; font-size: 0.75rem; }
 .workbench-tool-button:disabled { cursor: default; opacity: 0.28; }
 .workbench-toolbar-divider { width: 1px; height: 20px; flex: 0 0 1px; margin: 0 6px; background: var(--ui-border); }

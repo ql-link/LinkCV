@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
-import { ApiRequestError } from "../../api/client";
+import { api, ApiRequestError } from "../../api/client";
 import {
   Button,
   ConfirmDialog,
@@ -46,6 +46,15 @@ import { navigateTo } from "../../routing";
 import { BlankLineMenuExtension, SlashCommandMenu, type CommandMenuState } from "./slashCommand";
 import { VersionDiffDialog } from "./VersionDiffDialog";
 import { PaginationExtension } from "./paginationPlugin";
+import { InlineAiComposer } from "./InlineAiComposer";
+import {
+  applyInlineAiSuggestion,
+  canStartInlineAiEdit,
+  clearInlineAiSuggestion,
+  getInlineAiSuggestion,
+  setInlineAiSuggestion,
+  type InlineAiSuggestion,
+} from "./inlineAiSuggestion";
 import {
   capturePageViewportAnchor,
   restorePageViewportAnchor,
@@ -55,6 +64,12 @@ import {
 
 type DrawerMode = "settings" | "history" | null;
 type ToastState = { label: string } | null;
+type InlineAiUiState = {
+  instruction: string;
+  lastInstruction: string;
+  loading: boolean;
+  error: string | null;
+};
 export type { PageArrangement } from "./pageArrangementTransition";
 
 const EMPTY_IMPORT_WARNINGS: string[] = [];
@@ -595,6 +610,8 @@ export function ResumeWorkbench() {
   const [versionRenameError, setVersionRenameError] = useState<{ versionNo: number; message: string } | null>(null);
   const [pendingVersionRestore, setPendingVersionRestore] = useState<{ version_no: number; name: string; created_at: string } | null>(null);
   const [commandMenu, setCommandMenu] = useState<CommandMenuState | null>(null);
+  const [inlineAiUi, setInlineAiUi] = useState<InlineAiUiState | null>(null);
+  const [inlineAiSuggestion, setInlineAiSuggestionState] = useState<InlineAiSuggestion | null>(null);
   const [workspaceWidth, setWorkspaceWidth] = useState(() => window.innerWidth);
   const [horizontalScaleOverride, setHorizontalScaleOverride] = useState<number | null>(null);
   const [pageArrangement, setPageArrangement] = useState<PageArrangement>(() => {
@@ -606,6 +623,7 @@ export function ResumeWorkbench() {
   });
   const paperScrollRef = useRef<HTMLDivElement>(null);
   const arrangementAnimationRef = useRef<Animation | null>(null);
+  const inlineAiRequestRef = useRef(0);
   const lastPageAnchorRef = useRef<ReturnType<typeof capturePageViewportAnchor> | null>(null);
   const arrangementLayoutRunRef = useRef(0);
 
@@ -754,6 +772,100 @@ export function ResumeWorkbench() {
   useEffect(() => {
     if (editor) setWorkbenchEditorEditable(editor, !versionOperationPending);
   }, [editor, versionOperationPending]);
+
+  useEffect(() => {
+    if (!editor) return;
+    const sync = () => setInlineAiSuggestionState(getInlineAiSuggestion(editor));
+    editor.on("transaction", sync);
+    sync();
+    return () => {
+      editor.off("transaction", sync);
+    };
+  }, [editor]);
+
+  useEffect(() => {
+    inlineAiRequestRef.current += 1;
+    setInlineAiUi(null);
+    setInlineAiSuggestionState(null);
+  }, [activeResumeId]);
+
+  const discardInlineAiEdit = () => {
+    inlineAiRequestRef.current += 1;
+    if (editor) clearInlineAiSuggestion(editor);
+    setInlineAiUi(null);
+    setInlineAiSuggestionState(null);
+  };
+
+  const openInlineAiEdit = () => {
+    if (!editor || !canStartInlineAiEdit(editor)) {
+      setToast({ label: "首版仅支持同一段落内的非空文字选区" });
+      return;
+    }
+    const { from, to } = editor.state.selection;
+    const original = editor.state.doc.textBetween(from, to, "", "\ufffc");
+    setInlineAiSuggestion(editor, { from, to, original, replacement: null });
+    setInlineAiUi({ instruction: "", lastInstruction: "", loading: false, error: null });
+  };
+
+  const inlineAiErrorMessage = (error: unknown) => {
+    if (!(error instanceof ApiRequestError)) return "生成失败，请稍后重试";
+    if (error.message === "LLM_CHAT_NOT_CONFIGURED") return "当前尚未配置可用的 AI 模型";
+    if (error.message === "LLM_REQUEST_REJECTED") return "模型无法处理这次修改，请换一种说法";
+    if (error.status === 503) return "AI 服务暂时不可用，请稍后重试";
+    return "生成失败，请稍后重试";
+  };
+
+  const requestInlineAiEdit = async (regenerate = false) => {
+    if (!editor || !activeResumeId || !inlineAiUi) return;
+    const suggestion = getInlineAiSuggestion(editor);
+    if (!suggestion || suggestion.stale) return;
+    const instruction = (regenerate ? inlineAiUi.lastInstruction : inlineAiUi.instruction).trim();
+    if (!instruction) return;
+    const requestVersion = ++inlineAiRequestRef.current;
+    setInlineAiUi((current) => current ? { ...current, loading: true, error: null } : current);
+    try {
+      const response = await api.editResumeSelection(activeResumeId, {
+        selected_text: suggestion.original,
+        instruction,
+        ...(suggestion.replacement && !regenerate ? { previous_suggestion: suggestion.replacement } : {}),
+      });
+      if (inlineAiRequestRef.current !== requestVersion) return;
+      const latest = getInlineAiSuggestion(editor);
+      if (!latest || latest.stale || latest.original !== suggestion.original) return;
+      setInlineAiSuggestion(editor, {
+        from: latest.from,
+        to: latest.to,
+        original: latest.original,
+        replacement: response.replacement,
+      });
+      setInlineAiUi((current) => current ? {
+        ...current,
+        instruction: "",
+        lastInstruction: instruction,
+        loading: false,
+        error: null,
+      } : current);
+    } catch (error) {
+      if (inlineAiRequestRef.current !== requestVersion) return;
+      setInlineAiUi((current) => current ? {
+        ...current,
+        loading: false,
+        error: inlineAiErrorMessage(error),
+      } : current);
+    }
+  };
+
+  const applyInlineAiEdit = () => {
+    if (!editor || !applyInlineAiSuggestion(editor)) {
+      setInlineAiUi((current) => current ? { ...current, error: "原文已经变化，请重新选择后再修改" } : current);
+      return;
+    }
+    inlineAiRequestRef.current += 1;
+    setInlineAiUi(null);
+    setInlineAiSuggestionState(null);
+    editor.commands.focus();
+    setToast({ label: "AI 修改已应用，可使用撤销恢复" });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -1006,7 +1118,30 @@ export function ResumeWorkbench() {
 
         {activeResumeId && editor && (
           <StableWorkbenchBubbleMenu editor={editor}>
-            <WorkbenchToolbar editor={editor} resumeId={activeResumeId} defaultFontSize={settings.fontSize} onNotice={(label) => setToast({ label })} />
+            <div className="workbench-selection-menu">
+              <WorkbenchToolbar
+                editor={editor}
+                resumeId={activeResumeId}
+                defaultFontSize={settings.fontSize}
+                onNotice={(label) => setToast({ label })}
+                onAiEdit={openInlineAiEdit}
+                aiEditActive={Boolean(inlineAiUi)}
+              />
+              {inlineAiUi && (
+                <InlineAiComposer
+                  instruction={inlineAiUi.instruction}
+                  loading={inlineAiUi.loading}
+                  hasSuggestion={Boolean(inlineAiSuggestion?.replacement)}
+                  stale={Boolean(inlineAiSuggestion?.stale)}
+                  error={inlineAiUi.error}
+                  onInstructionChange={(instruction) => setInlineAiUi((current) => current ? { ...current, instruction } : current)}
+                  onSubmit={() => void requestInlineAiEdit(false)}
+                  onApply={applyInlineAiEdit}
+                  onRegenerate={() => void requestInlineAiEdit(true)}
+                  onDiscard={discardInlineAiEdit}
+                />
+              )}
+            </div>
           </StableWorkbenchBubbleMenu>
         )}
 

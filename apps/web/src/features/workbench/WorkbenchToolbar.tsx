@@ -18,6 +18,7 @@ import {
   Paintbrush,
   Plus,
   Redo2,
+  Sparkles,
   Smile,
   Underline,
   Undo2,
@@ -359,7 +360,7 @@ function RowLayoutControl({ editor, onNotice }: { editor: Editor; onNotice: (mes
   );
 }
 
-export function WorkbenchToolbar({ editor, resumeId, defaultFontSize, onNotice }: { editor: Editor | null; resumeId: string; defaultFontSize: number; onNotice: (message: string) => void }) {
+export function WorkbenchToolbar({ editor, resumeId, defaultFontSize, onNotice, onAiEdit, aiEditActive = false }: { editor: Editor | null; resumeId: string; defaultFontSize: number; onNotice: (message: string) => void; onAiEdit?: () => void; aiEditActive?: boolean }) {
   const [, refresh] = useState(0);
 
   useEffect(() => {
@@ -378,6 +379,12 @@ export function WorkbenchToolbar({ editor, resumeId, defaultFontSize, onNotice }
     <div className="workbench-toolbar" role="toolbar" aria-label="简历格式工具栏">
       <ToolButton label="撤销" disabled={!editor.can().undo()} onClick={() => editor.chain().focus().undo().run()}><Undo2 size={15} /></ToolButton>
       <ToolButton label="重做" disabled={!editor.can().redo()} onClick={() => editor.chain().focus().redo().run()}><Redo2 size={15} /></ToolButton>
+      {onAiEdit && (
+        <>
+          <Divider />
+          <ToolButton label="AI 修改所选文字" active={aiEditActive} onClick={onAiEdit}><Sparkles size={15} /></ToolButton>
+        </>
+      )}
       <Divider />
       <select
         className="workbench-block-select"

@@ -23,6 +23,36 @@ class ResumeUpdateRequest(BaseModel):
     base_lock_version: int = Field(ge=1)
 
 
+class ResumeAiEditRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    selected_text: str = Field(strict=True, min_length=1, max_length=4_000)
+    instruction: str = Field(strict=True, min_length=1, max_length=1_000)
+    previous_suggestion: str | None = Field(
+        default=None,
+        strict=True,
+        min_length=1,
+        max_length=8_000,
+    )
+
+    @field_validator("selected_text", "instruction", "previous_suggestion")
+    @classmethod
+    def reject_blank_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("text must not be blank")
+        return normalized
+
+
+class ResumeAiEditResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    replacement: str
+    call_id: str
+
+
 class ResumePreview(BaseModel):
     data: ResumeDocumentV1
     style: ResumeStyleV1

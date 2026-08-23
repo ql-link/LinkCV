@@ -716,6 +716,18 @@ export const api = {
       method: "PUT",
       body: payload,
     }),
+  editResumeSelection: (
+    id: string,
+    payload: {
+      selected_text: string;
+      instruction: string;
+      previous_suggestion?: string;
+    },
+  ) =>
+    request<{ replacement: string; call_id: string }>(`/api/resumes/${id}/ai-edit`, {
+      method: "POST",
+      body: payload,
+    }),
   deleteResume: (id: string) =>
     request<{ deleted: boolean }>(`/api/resumes/${id}`, { method: "DELETE" }),
   listVersions: (id: string) =>

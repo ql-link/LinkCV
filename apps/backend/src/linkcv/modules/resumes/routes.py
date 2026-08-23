@@ -22,6 +22,9 @@ from linkcv.core.storage import AssetStorage, get_storage
 from linkcv.domain.resume_snapshot import parse_resume_snapshot
 from linkcv.modules.identity.dependencies import get_current_user
 from linkcv.modules.identity.models import User
+from linkcv.modules.llm.dependencies import get_llm_service
+from linkcv.modules.llm.service import LLMError, LLMService
+from linkcv.modules.resumes.ai_edit import ResumeAiEditDraft, build_resume_ai_edit_messages
 from linkcv.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
     DocumentParseTask,
@@ -30,6 +33,8 @@ from linkcv.modules.resumes.models import (
 )
 from linkcv.modules.resumes.schemas import (
     DeleteResumeResponse,
+    ResumeAiEditRequest,
+    ResumeAiEditResponse,
     ResumeCreateRequest,
     ResumeListResponse,
     ResumePreview,
@@ -145,6 +150,36 @@ def get_resume(
     user: User = Depends(get_current_user),
 ) -> ResumeResponse:
     return ResumeResponse(resume=resume_record(require_owned_resume(db, resume_id, user.id)))
+
+
+@router.post("/{resume_id}/ai-edit", response_model=ResumeAiEditResponse)
+async def edit_resume_selection_with_ai(
+    resume_id: str,
+    payload: ResumeAiEditRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    llm_service: LLMService = Depends(get_llm_service),
+) -> ResumeAiEditResponse:
+    require_owned_resume(db, resume_id, user.id)
+    try:
+        result = await llm_service.structured_chat(
+            user.id,
+            build_resume_ai_edit_messages(payload),
+            source="resume_inline_edit",
+            response_model=ResumeAiEditDraft,
+        )
+    except LLMError as error:
+        status = {
+            "LLM_CHAT_NOT_CONFIGURED": 503,
+            "LLM_CREDENTIALS_UNAVAILABLE": 503,
+            "LLM_UNAVAILABLE": 503,
+            "LLM_REQUEST_REJECTED": 422,
+        }.get(error.code, 502)
+        raise ApiError(status, error.code, {"callId": error.call_id}) from error
+    return ResumeAiEditResponse(
+        replacement=result.value.replacement,
+        call_id=result.call_id,
+    )
 
 
 @router.put("/{resume_id}", response_model=ResumeResponse)

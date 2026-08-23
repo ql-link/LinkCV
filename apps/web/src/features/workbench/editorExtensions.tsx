@@ -33,6 +33,7 @@ import { api } from "../../api/client";
 import { resumeInlineIconOptions, type InlineIconName } from "../../lib/resumeInlineIcon";
 import { useResumeStore } from "../../store/resumeStore";
 import { exitResumeRowToBlankParagraph } from "./editorCommands";
+import { InlineAiSuggestionExtension } from "./inlineAiSuggestion";
 
 export const inlineIconComponents = {
   Mail,
@@ -687,4 +688,5 @@ export const resumeEditorExtensions: Extensions = [
   ResumeTrioRow,
   InlineImage,
   InlineIcon,
+  InlineAiSuggestionExtension,
 ];
