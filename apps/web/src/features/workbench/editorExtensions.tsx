@@ -33,8 +33,11 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
 import { resumeInlineIconOptions, type InlineIconName } from "../../lib/resumeInlineIcon";
 import { useResumeStore } from "../../store/resumeStore";
-import { exitResumeRowToBlankParagraph } from "./editorCommands";
-import { InlineAiSuggestionExtension } from "./inlineAiSuggestion";
+import {
+  exitResumeRowToBlankParagraph,
+  removeBlankParagraphAfterResumeRow,
+  removeVisuallyBlankResumeLine,
+} from "./editorCommands";
 
 export const inlineIconComponents = {
   Mail,
@@ -511,6 +514,16 @@ export const ResumeRow = Node.create({
   addNodeView: () => ReactNodeViewRenderer(ResumeRowView),
 });
 
+export const ResumeRowExitKeymap = Extension.create({
+  name: "resumeRowExitKeymap",
+  addKeyboardShortcuts() {
+    return {
+      Backspace: () => removeBlankParagraphAfterResumeRow(this.editor)
+        || removeVisuallyBlankResumeLine(this.editor),
+    };
+  },
+});
+
 export const ResumeColumn = Node.create({
   name: "resumeColumn",
   content: "block+",
@@ -746,11 +759,11 @@ export const resumeEditorExtensions: Extensions = [
   AvatarImage,
   ResumeImage,
   ResumeRow,
+  ResumeRowExitKeymap,
   ResumeColumn,
   ResumeColumns,
   ResumeMetaRow,
   ResumeTrioRow,
   InlineImage,
   InlineIcon,
-  InlineAiSuggestionExtension,
 ];

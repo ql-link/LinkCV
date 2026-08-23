@@ -46,6 +46,9 @@ AUDIT_ACTIONS: dict[tuple[str, str], AuditAction] = {
     ("DELETE", "/api/resumes/{resume_id}"): AuditAction(
         "resume.delete", "resume", "resume_id"
     ),
+    ("GET", "/api/resumes/{resume_id}/pdf"): AuditAction(
+        "resume.pdf_export", "resume", "resume_id"
+    ),
     ("POST", "/api/resumes/{resume_id}/versions"): AuditAction(
         "resume.version_create", "resume_version", "resume_id"
     ),

@@ -10,7 +10,8 @@ afterEach(() => {
 
 describe("WorkspaceNavigation", () => {
   it("使用顶部胶囊导航切换简历、模板、JD、面试和资料库，并标记当前模块", () => {
-    render(<WorkspaceNavigation active="jobs" email="user@example.test" />);
+    const onItemIntent = vi.fn();
+    render(<WorkspaceNavigation active="jobs" email="user@example.test" onItemIntent={onItemIntent} />);
 
     expect(screen.getByRole("navigation", { name: "工作区导航" })).toBeInTheDocument();
     const brandLink = screen.getByRole("link", { name: "LinkResume 首页" });
@@ -27,6 +28,11 @@ describe("WorkspaceNavigation", () => {
     expect(interviewsLink.style.getPropertyValue("--nav-item-color")).toBe("var(--ui-interview-accent)");
     expect(interviewsLink.style.getPropertyValue("--nav-item-glow")).toContain("var(--ui-interview-accent)");
     expect(screen.queryByRole("link", { name: "个人资料" })).not.toBeInTheDocument();
+
+    fireEvent.mouseEnter(templatesLink);
+    fireEvent.focus(interviewsLink);
+    expect(onItemIntent).toHaveBeenCalledWith("/templates");
+    expect(onItemIntent).toHaveBeenCalledWith("/interviews");
 
     fireEvent.click(screen.getByRole("link", { name: "我的简历" }));
     expect(`${window.location.pathname}${window.location.search}`).toBe("/resumes");

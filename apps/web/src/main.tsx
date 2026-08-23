@@ -6,6 +6,7 @@ import "./styles.css";
 import "./design-system/tokens.css";
 import "./design-system/utilities.css";
 import "./app.css";
+import "./features/preview/print/resume-fonts.css";
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

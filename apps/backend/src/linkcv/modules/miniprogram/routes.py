@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -53,11 +54,15 @@ def _render_pdf(
         user_id=user.id,
         resume_id=resume.id,
     )
+    style = deepcopy(version.style_json)
+    # The mini-program contract is a single long page even when the Web
+    # editing preference is fixed A4, because preview.png rasterizes one page.
+    style["smart_one_page"] = True
     return renderer.render(
         {
             "title": resume.title,
             "data": version.data_json,
-            "style": version.style_json,
+            "style": style,
             "assets": assets,
         }
     )

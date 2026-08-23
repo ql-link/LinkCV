@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -7,7 +5,6 @@ from linkcv.core.config import Settings
 from linkcv.domain.resume_document import default_resume_document
 from linkcv.domain.resume_style import default_resume_style
 from linkcv.main import create_app
-from linkcv.modules.llm.service import LLMError
 from linkcv.modules.resumes.models import ResumeTemplate, ResumeVersion
 from tests.fakes import FakeRedis
 
@@ -62,89 +59,6 @@ def create_resume(client: TestClient, app, title: str = "测试简历"):
         "/api/resumes",
         json={"title": title, "template_id": app.state.test_template_id},
     )
-
-
-class FakeResumeAiService:
-    def __init__(self, replacement: str = "负责核心接口建设，将响应耗时降低 30%。") -> None:
-        self.replacement = replacement
-        self.calls = []
-        self.error_code: str | None = None
-
-    async def structured_chat(self, user_id, messages, *, source, response_model):
-        self.calls.append({"user_id": user_id, "messages": messages, "source": source})
-        if self.error_code:
-            raise LLMError(self.error_code, "llmcall_resume_ai_fixture")
-        return SimpleNamespace(
-            value=response_model(replacement=self.replacement),
-            call_id="llmcall_resume_ai_fixture",
-        )
-
-
-def test_resume_inline_ai_edit_uses_owned_resume_and_selected_text_only() -> None:
-    app = build_app()
-    fake_llm = FakeResumeAiService()
-    app.state.llm_service = fake_llm
-    with TestClient(app) as client:
-        register(client)
-        resume_id = create_resume(client, app).json()["resume"]["id"]
-
-        response = client.post(
-            f"/api/resumes/{resume_id}/ai-edit",
-            json={
-                "selected_text": "负责核心接口建设",
-                "instruction": "增加量化结果，但不要虚构事实",
-            },
-        )
-
-        assert response.status_code == 200
-        assert response.json() == {
-            "replacement": fake_llm.replacement,
-            "call_id": "llmcall_resume_ai_fixture",
-        }
-        assert len(fake_llm.calls) == 1
-        call = fake_llm.calls[0]
-        assert call["source"] == "resume_inline_edit"
-        prompt = "\n".join(message.content for message in call["messages"])
-        assert "负责核心接口建设" in prompt
-        assert "增加量化结果" in prompt
-        assert "测试简历" not in prompt
-
-        client.post("/api/auth/logout")
-        register(client, "stranger@example.com")
-        forbidden = client.post(
-            f"/api/resumes/{resume_id}/ai-edit",
-            json={"selected_text": "原文", "instruction": "精简"},
-        )
-        assert forbidden.status_code == 404
-        assert forbidden.json() == {"error": "RESUME_NOT_FOUND"}
-        assert len(fake_llm.calls) == 1
-
-
-def test_resume_inline_ai_edit_validates_payload_and_maps_unavailable_model() -> None:
-    app = build_app()
-    fake_llm = FakeResumeAiService()
-    fake_llm.error_code = "LLM_CHAT_NOT_CONFIGURED"
-    app.state.llm_service = fake_llm
-    with TestClient(app) as client:
-        register(client)
-        resume_id = create_resume(client, app).json()["resume"]["id"]
-
-        invalid = client.post(
-            f"/api/resumes/{resume_id}/ai-edit",
-            json={"selected_text": "   ", "instruction": "精简"},
-        )
-        assert invalid.status_code == 422
-        assert fake_llm.calls == []
-
-        unavailable = client.post(
-            f"/api/resumes/{resume_id}/ai-edit",
-            json={"selected_text": "原文", "instruction": "精简"},
-        )
-        assert unavailable.status_code == 503
-        assert unavailable.json() == {
-            "error": "LLM_CHAT_NOT_CONFIGURED",
-            "callId": "llmcall_resume_ai_fixture",
-        }
 
 
 def test_blank_create_update_versions_and_restore() -> None:

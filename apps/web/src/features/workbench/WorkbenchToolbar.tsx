@@ -447,7 +447,7 @@ function RowLayoutControl({ editor, onNotice }: { editor: Editor; onNotice: (mes
   );
 }
 
-export function WorkbenchToolbar({ editor, resumeId, defaultFontSize, onNotice, onAgentAction, onAiEdit, aiEditActive = false }: { editor: Editor | null; resumeId: string; defaultFontSize: number; onNotice: (message: string) => void; onAgentAction?: (instruction: string, selection: AgentSelectionContext) => void; onAiEdit?: () => void; aiEditActive?: boolean }) {
+export function WorkbenchToolbar({ editor, resumeId, defaultFontSize, onNotice, onAgentAction }: { editor: Editor | null; resumeId: string; defaultFontSize: number; onNotice: (message: string) => void; onAgentAction?: (instruction: string, selection: AgentSelectionContext) => void }) {
   const [, refresh] = useState(0);
 
   useEffect(() => {
@@ -464,16 +464,10 @@ export function WorkbenchToolbar({ editor, resumeId, defaultFontSize, onNotice, 
   if (!editor) return null;
   return (
     <div className="workbench-toolbar" role="toolbar" aria-label="简历格式工具栏">
-      {onAgentAction && !onAiEdit && <SelectionAgentControl editor={editor} onAgentAction={onAgentAction} />}
-      {onAgentAction && !onAiEdit && !editor.state.selection.empty && <Divider />}
+      {onAgentAction && <SelectionAgentControl editor={editor} onAgentAction={onAgentAction} />}
+      {onAgentAction && !editor.state.selection.empty && <Divider />}
       <ToolButton label="撤销" disabled={!editor.can().undo()} onClick={() => editor.chain().focus().undo().run()}><Undo2 size={15} /></ToolButton>
       <ToolButton label="重做" disabled={!editor.can().redo()} onClick={() => editor.chain().focus().redo().run()}><Redo2 size={15} /></ToolButton>
-      {onAiEdit && (
-        <>
-          <Divider />
-          <ToolButton label="AI 修改所选文字" active={aiEditActive} onClick={onAiEdit}><Sparkles size={15} /></ToolButton>
-        </>
-      )}
       <Divider />
       <select
         className="workbench-block-select"

@@ -395,7 +395,7 @@ function renderTextAlignedContent(content: string, align: "left" | "center" | "r
 }
 
 function renderPair(left: string, right: string, leftWidth = 70) {
-  return `<div class="resume-row" data-type="resume-row" data-block="pair" data-left-width="${leftWidth}"><p class="resume-row-left">${renderSideContent(
+  return `<div class="resume-row" data-type="resume-row" data-block="pair" data-left-width="${leftWidth}" style="--resume-row-left:${leftWidth}%"><p class="resume-row-left">${renderSideContent(
     left,
   )}</p><p class="resume-row-right">${renderSideContent(right)}</p></div>`;
 }

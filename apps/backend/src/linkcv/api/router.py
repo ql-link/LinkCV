@@ -20,6 +20,7 @@ from linkcv.modules.resumes.overview_routes import (
     import_router as resume_import_router,
     overview_router,
 )
+from linkcv.modules.resumes.pdf_routes import router as resume_pdf_router
 from linkcv.modules.resumes.routes import router as resume_router
 from linkcv.modules.resumes.share_routes import public_router as public_share_router
 from linkcv.modules.resumes.share_routes import router as resume_share_router
@@ -51,6 +52,7 @@ api_router.include_router(import_router)
 api_router.include_router(overview_router)
 api_router.include_router(resume_import_router)
 api_router.include_router(resume_router)
+api_router.include_router(resume_pdf_router)
 api_router.include_router(version_router)
 api_router.include_router(resume_share_router)
 api_router.include_router(public_share_router)

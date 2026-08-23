@@ -1,4 +1,3 @@
-import "@callmebill/lxgw-wenkai-web/lxgwwenkai-regular/result.css";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { renderResumeMarkdown } from "../../parser/resumeMarkdown";

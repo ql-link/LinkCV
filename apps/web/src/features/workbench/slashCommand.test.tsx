@@ -8,7 +8,12 @@ import { describe, expect, it, vi } from "vitest";
 import { editorDocumentToMarkdown } from "../../api/resumeContract";
 import { renderResumeMarkdown } from "../../parser/resumeMarkdown";
 import { resumeEditorExtensions } from "./editorExtensions";
-import { BlankLineMenuExtension, filterWorkbenchCommands, SlashCommandMenu, topLevelBlankLinePositions } from "./slashCommand";
+import {
+  editableLineStartPositions,
+  filterWorkbenchCommands,
+  LineInsertMenuExtension,
+  SlashCommandMenu,
+} from "./slashCommand";
 
 describe("命令面板过滤", () => {
   it("支持按中文命令名和关键词过滤", () => {
@@ -22,30 +27,70 @@ describe("命令面板过滤", () => {
   });
 });
 
-describe("空白行格式入口", () => {
-  it("为每个顶层空白行提供方框加号，并能打开命令面板", () => {
+describe("逐行插入入口", () => {
+  it("为空白行和非空行都提供加号，并能把光标放到对应行开头", () => {
     const onOpen = vi.fn();
     const editor = new Editor({
-      extensions: [Document, Paragraph, Text, BlankLineMenuExtension.configure({ onOpen })],
+      extensions: [Document, Paragraph, Text, LineInsertMenuExtension.configure({ onOpen })],
       content: "<p></p><p>已有内容</p><p></p>",
     });
 
     editor.commands.setTextSelection(1);
-    const buttons = editor.view.dom.querySelectorAll<HTMLButtonElement>(".resume-empty-line-add");
-    const blankPositions = topLevelBlankLinePositions(editor.state);
-    expect(buttons).toHaveLength(2);
-    expect(blankPositions).toHaveLength(2);
-    expect(buttons[0]?.getAttribute("aria-label")).toBe("在此空白行设置格式");
+    const buttons = editor.view.dom.querySelectorAll<HTMLButtonElement>(".resume-line-add");
+    const linePositions = editableLineStartPositions(editor.state);
+    expect(buttons).toHaveLength(3);
+    expect(linePositions).toHaveLength(3);
+    expect(buttons[0]?.getAttribute("aria-label")).toBe("在此行开头插入内容");
     expect(buttons[0]).not.toHaveAttribute("data-active");
 
     buttons[1]?.click();
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ query: "", replaceRange: null }));
-    expect(editor.state.selection.from).toBe(blankPositions[1]);
+    expect(editor.state.selection.from).toBe(linePositions[1]);
 
     editor.commands.setTextSelection(3);
-    expect(editor.view.dom.querySelectorAll(".resume-empty-line-add")).toHaveLength(2);
-    expect([...editor.view.dom.querySelectorAll<HTMLElement>(".resume-empty-line-add")]
+    expect(editor.view.dom.querySelectorAll(".resume-line-add")).toHaveLength(3);
+    expect([...editor.view.dom.querySelectorAll<HTMLElement>(".resume-line-add")]
       .every((button) => !button.hasAttribute("data-active"))).toBe(true);
+    editor.destroy();
+  });
+
+  it("左右分栏的两侧都提供独立入口，并定位到稳定定位符之后", () => {
+    const onOpen = vi.fn();
+    const editor = new Editor({
+      extensions: [...resumeEditorExtensions, LineInsertMenuExtension.configure({ onOpen })],
+      content: {
+        type: "doc",
+        content: [{
+          type: "resumeRow",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "resumeBlockAnchor", attrs: { blockId: "blk_1234567890abcdef" } },
+                { type: "text", text: "公司实习" },
+              ],
+            },
+            {
+              type: "paragraph",
+              content: [
+                { type: "resumeBlockAnchor", attrs: { blockId: "blk_fedcba0987654321" } },
+                { type: "text", text: "2025.01" },
+              ],
+            },
+          ],
+        }],
+      },
+    });
+
+    const positions = editableLineStartPositions(editor.state);
+    const buttons = editor.view.dom.querySelectorAll<HTMLButtonElement>(".resume-line-add");
+    expect(positions).toHaveLength(2);
+    expect(buttons).toHaveLength(2);
+
+    buttons[0]?.click();
+    expect(editor.state.selection.from).toBe(positions[0]);
+    expect(editor.state.selection.$from.parent.firstChild?.type.name).toBe("resumeBlockAnchor");
+    expect(editor.state.selection.$from.parentOffset).toBe(1);
     editor.destroy();
   });
 

@@ -16,20 +16,24 @@ export type CommandMenuState = {
   replaceRange: { from: number; to: number } | null;
 };
 
-type BlankLineMenuOptions = {
+type LineInsertMenuOptions = {
   onOpen: (state: CommandMenuState) => void;
 };
 
-export function topLevelBlankLinePositions(state: EditorState) {
+export function editableLineStartPositions(state: EditorState) {
   const positions: number[] = [];
-  state.doc.forEach((node, offset) => {
-    if (node.type.name === "paragraph" && node.textContent.length === 0) positions.push(offset + 1);
+  state.doc.descendants((node, position) => {
+    if (!node.isTextblock || node.type.name === "codeBlock") return true;
+    const firstChild = node.firstChild;
+    positions.push(position + 1
+      + (firstChild?.type.name === "resumeBlockAnchor" ? firstChild.nodeSize : 0));
+    return false;
   });
   return positions;
 }
 
-export const BlankLineMenuExtension = Extension.create<BlankLineMenuOptions>({
-  name: "blankLineMenu",
+export const LineInsertMenuExtension = Extension.create<LineInsertMenuOptions>({
+  name: "lineInsertMenu",
 
   addOptions() {
     return { onOpen: () => undefined };
@@ -43,15 +47,15 @@ export const BlankLineMenuExtension = Extension.create<BlankLineMenuOptions>({
         props: {
           decorations(state) {
             if (!editor.isEditable) return DecorationSet.empty;
-            const positions = topLevelBlankLinePositions(state);
+            const positions = editableLineStartPositions(state);
             if (positions.length === 0) return DecorationSet.empty;
             return DecorationSet.create(state.doc, positions.map((position) =>
               Decoration.widget(position, () => {
                 const button = document.createElement("button");
                 button.type = "button";
-                button.className = "resume-empty-line-add";
-                button.setAttribute("aria-label", "在此空白行设置格式");
-                button.setAttribute("title", "在此空白行设置格式");
+                button.className = "resume-line-add";
+                button.setAttribute("aria-label", "在此行开头插入内容");
+                button.setAttribute("title", "在此行开头插入内容");
                 button.setAttribute("contenteditable", "false");
                 button.textContent = "+";
                 button.addEventListener("mousedown", (event) => event.preventDefault());
@@ -69,7 +73,7 @@ export const BlankLineMenuExtension = Extension.create<BlankLineMenuOptions>({
                 });
                 return button;
               }, {
-                key: `blank-line-menu-${position}`,
+                key: `line-insert-menu-${position}`,
                 side: -1,
                 ignoreSelection: true,
               }),

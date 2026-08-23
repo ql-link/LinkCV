@@ -23,6 +23,7 @@ import {
   workbenchCanvasClassName,
   versionOperationErrorMessage,
 } from "./ResumeWorkbench";
+import { resumePdfExportErrorMessage } from "../preview/pdfExport";
 
 describe("ResumeWorkbench AI 悬浮入口", () => {
   it("用同一个低打扰入口打开和收起智能助手", async () => {
@@ -211,6 +212,11 @@ describe("ResumeWorkbench PDF 导出按钮", () => {
     expect(pdfAction).toBeDisabled();
     await user.click(pdfAction);
     expect(onExport).not.toHaveBeenCalled();
+  });
+
+  it("把服务端快照过期错误显示为可重试提示", () => {
+    expect(resumePdfExportErrorMessage(new ApiRequestError(409, "RESUME_PDF_SNAPSHOT_STALE")))
+      .toBe("简历内容已变化，请重新导出");
   });
 });
 

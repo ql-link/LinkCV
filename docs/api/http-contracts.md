@@ -69,14 +69,14 @@ Alembic `0005` 将历史 `schema_version=1` 的 Tiptap 当前态和版本快照�
 | `POST`   | `/api/resumes`              | 是   | `201 {resume}`；请求必填 `{title, template_id}`                  |
 | `GET`    | `/api/resumes/:id`          | 是   | `{resume}`                                                       |
 | `PUT`    | `/api/resumes/:id`          | 是   | `{resume}`；请求含 `base_lock_version` 及可选 `title/data/style` |
-| `POST`   | `/api/resumes/:id/ai-edit`  | 是   | `{replacement, call_id}`；为局部选中文字生成替换建议             |
+| `GET`    | `/api/resumes/:id/pdf?lock_version=...` | 是 | 当前 Web 快照的 PDF；版本不一致返回 `409 RESUME_PDF_SNAPSHOT_STALE` |
 | `DELETE` | `/api/resumes/:id`          | 是   | `{deleted}`                                                      |
 
 所有新简历都从模板创建，官方模板中包含空白简历模板。普通创建先把名称去首尾空白、折叠连续空白，再按 Unicode `casefold` 比较同一用户已有名称；重复返回 `409 RESUME_TITLE_CONFLICT`，名称为空或超过 255 字符返回 `400 INVALID_RESUME_TITLE`，缺模板返回 `400 TEMPLATE_REQUIRED`，模板不存在、停用或结构无效返回 `422 TEMPLATE_INACTIVE`。历史无模板简历继续可读写，历史重名不回填也不阻止保持原名。
 
-每个用户最多保存 10 份正式简历；创建事务锁定用户行后检查，达到上限返回 `409 RESUME_LIMIT_REACHED`。创建在同一事务写入当前简历及 `version_no=1/reason=initial` 快照。更新同时保存完整 data/style 并递增 `lock_version`，不创建历史版本；过期基准返回 `409 RESUME_EDIT_CONFLICT`。非法内容和样式分别返回 `400 INVALID_RESUME_DOCUMENT`、`400 INVALID_RESUME_STYLE`。不存在或不属于当前用户的简历统一返回 `404 RESUME_NOT_FOUND`。
+Web PDF 请求必须携带当前保存成功后的 `lock_version`。服务端再次校验 Cookie 用户、简历归属和版本，然后以当前 `data/style` 快照调用受控 Chromium；成功响应为 `application/pdf`、`private, no-store`，并携带 `Content-Disposition`、`X-LinkCV-Pdf-Lock-Version` 和 `X-Content-Type-Options: nosniff`。固定模式按 A4 分页，智能一页保持 210mm 宽并按内容增长，超过 2000mm 返回 `413 RESUME_PDF_PAGE_TOO_TALL`。私有图片只从已校验的用户/简历对象键读取，缺失、不支持或超限分别以稳定 `RESUME_PDF_*` 错误失败关闭；正文中的外部资源不会被渲染器联网获取。
 
-局部 AI 修改请求只接受 `selected_text`（1–4000 字符）、`instruction`（1–1000 字符）和可选 `previous_suggestion`（1–8000 字符），额外字段或纯空白值返回 `422`。服务端先按本人简历校验归属，再以 `source=resume_inline_edit` 调用当前 Chat 模型；不会读取或发送整份简历快照，也不会在该接口中写回简历。模型建议经结构化响应校验后返回，只有 Web 随后的普通简历更新才会持久化用户已应用的结果。未配置模型、凭据不可用或上游暂时不可用返回 `503`，请求被模型供应方拒绝返回 `422`，非法模型响应返回 `502`；LLM 受控错误带 `callId`，不存在或越权仍统一返回 `404 RESUME_NOT_FOUND`。
+每个用户最多保存 10 份正式简历；创建事务锁定用户行后检查，达到上限返回 `409 RESUME_LIMIT_REACHED`。创建在同一事务写入当前简历及 `version_no=1/reason=initial` 快照。更新同时保存完整 data/style 并递增 `lock_version`，不创建历史版本；过期基准返回 `409 RESUME_EDIT_CONFLICT`。非法内容和样式分别返回 `400 INVALID_RESUME_DOCUMENT`、`400 INVALID_RESUME_STYLE`。不存在或不属于当前用户的简历统一返回 `404 RESUME_NOT_FOUND`。
 
 ## 历史版本
 
@@ -235,7 +235,7 @@ JD 管理接口接受和返回最终结构化数据；单独的浏览器导入�
 
 `event_type` 只允许 `unhandled_error`、`unhandled_rejection`、`render_error` 和 `api_5xx`。服务端从当前会话绑定 actor，忽略客户端提供身份；消息和栈经统一长度限制与脱敏后写入系统日志。请求非法返回 `400 INVALID_CLIENT_LOG_EVENT`，本地 sink 拒绝写入返回 `503 LOG_EVENT_UNAVAILABLE`。
 
-PDF 导出审计只接受当前用户拥有的简历 ID；不存在或不属于当前用户都返回 `404 RESUME_NOT_FOUND`，非法动作或字段返回 `400 INVALID_AUDIT_EVENT`，sink 拒绝写入返回 `503 AUDIT_EVENT_UNAVAILABLE`。该契约为既有调用方保留；当前工作台的文字版 PDF 下载链不调用它。其他审计动作不能通过该接口伪造，而是由服务端路由映射自动生成。自动审计覆盖鉴权/会话、账号资料和密码、简历/版本/资源、JD、管理员用户状态和模型配置等状态变更；普通 GET 不写审计。成功和受控失败都记录 action、可信 actor、target、result、错误码和 request ID，不记录请求 body。审计进入共享 Loki，不新增 MySQL 审计表；现有 `/api/admin/llm/calls` 继续是 LLM 计量和调用状态的事实源。
+PDF 导出审计上报接口只接受当前用户拥有的简历 ID；不存在或不属于当前用户都返回 `404 RESUME_NOT_FOUND`，非法动作或字段返回 `400 INVALID_AUDIT_EVENT`，sink 拒绝写入返回 `503 AUDIT_EVENT_UNAVAILABLE`。该接口为既有调用方保留；新的 `GET /api/resumes/:id/pdf` 由服务端路由自动记录同一个 `resume.pdf_export` 动作。其他审计动作不能通过该接口伪造。自动审计还覆盖鉴权/会话、账号资料和密码、简历/版本/资源、JD、管理员用户状态和模型配置等动作；成功和受控失败都记录可信 actor、target、result、错误码和 request ID，不记录请求 body。审计进入共享 Loki，不新增 MySQL 审计表；现有 `/api/admin/llm/calls` 继续是 LLM 计量和调用状态的事实源。
 简历导入的后端内部日志使用 `operation_id`/`task_id` 串联阶段和重试，失败时只记录稳定错误码、失败阶段和不含字段值的验证元数据；这些内部字段不扩展本节的 HTTP 请求或响应结构。
 
 管理员日志查询接口复用 `is_admin=true` 权限；未登录返回 `401 UNAUTHORIZED`，普通用户返回 `403 FORBIDDEN`：
@@ -279,7 +279,7 @@ PDF 导出审计只接受当前用户拥有的简历 ID；不存在或不属于�
 
 `0006` 在数据库中使用中文表注释和字段注释，这些注释只用于说明持久化语义，不改变本节约定的 JSON 字段名、错误码或状态字面值。`0008` 增加候选的 LiteLLM adapter/model 调用名、Chat 唯一当前绑定，以及调用日志的能力、来源和模型快照。`0028` 扩展绑定版本、验证证据、简历结构化/Pi Agent 预置绑定和调用配置版本；`0029` 删除候选上的遗留 `capability` 列，候选正式成为能力中立配置。升级仍不转换旧优先级、价格或调用数据；存量 Chat 绑定验证证据可为空，需要管理员重新测试其他能力后才会产生对应证据。
 
-调用记录可用 `source`、`status`、精确 `callId`、`userId`、`modelConfigId`、`from`、`to`、`cursor` 和 `limit` 查询，默认每页 50、最大 200，按创建时间和内部 ID 倒序稳定分页。`source` 是由内部调用方提供的稳定小写代码，格式为 `^[a-z][a-z0-9_]{0,31}$`；当前接入来源包括管理动作的 `connection_test`、简历导入的 `resume_import` 和正文局部修改的 `resume_inline_edit`。时间范围使用带时区的 ISO 8601，区间为左闭右开；非法值、反向区间或无效游标返回 `400 INVALID_LLM_CALL_QUERY`。每条记录只包含调用标识、能力、来源、用户、实际 adapter/模型与配置版本快照、状态、耗时、Token、LiteLLM 价格快照、估算成本和非敏感错误分类，不保存或返回消息、模型完整响应和凭据。汇总针对当前筛选条件聚合全部命中记录，只累加已知值，并用 `incompleteMeteringCount` 表明不完整计量。
+调用记录可用 `source`、`status`、精确 `callId`、`userId`、`modelConfigId`、`from`、`to`、`cursor` 和 `limit` 查询，默认每页 50、最大 200，按创建时间和内部 ID 倒序稳定分页。`source` 是由内部调用方提供的稳定小写代码，格式为 `^[a-z][a-z0-9_]{0,31}$`；当前接入来源包括管理动作的 `connection_test` 和简历导入的 `resume_import`。时间范围使用带时区的 ISO 8601，区间为左闭右开；非法值、反向区间或无效游标返回 `400 INVALID_LLM_CALL_QUERY`。每条记录只包含调用标识、能力、来源、用户、实际 adapter/模型与配置版本快照、状态、耗时、Token、LiteLLM 价格快照、估算成本和非敏感错误分类，不保存或返回消息、模型完整响应和凭据。汇总针对当前筛选条件聚合全部命中记录，只累加已知值，并用 `incompleteMeteringCount` 表明不完整计量。
 
 管理错误包括 `INVALID_LLM_MODEL_CONFIG`、`INVALID_LLM_CALL_QUERY`、`LLM_MODEL_NOT_FOUND`、`LLM_MODEL_IN_USE`、`LLM_MODEL_CONFIG_CHANGED`、`LLM_BINDING_CHANGED`、`LLM_CHAT_NOT_CONFIGURED`、`LLM_MODEL_NOT_CONFIGURED`、`LLM_PI_AGENT_UNAVAILABLE`、`LLM_PI_AGENT_TIMEOUT`、`LLM_PI_AGENT_PROBE_FAILED`、`LLM_CREDENTIALS_UNAVAILABLE`、`LLM_UNAVAILABLE` 和 `LLM_REQUEST_REJECTED`。连接测试、绑定和当前项验证失败在已经创建调用记录时带可查询的 `callId`；供应商原始错误不会透传。
 

@@ -3,7 +3,12 @@ import { EditorContent } from "@tiptap/react";
 import { render } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { convertCurrentLineToResumeRow, convertResumeRowToParagraph } from "./editorCommands";
+import {
+  convertCurrentLineToResumeRow,
+  convertResumeRowToParagraph,
+  removeBlankParagraphAfterResumeRow,
+  removeVisuallyBlankResumeLine,
+} from "./editorCommands";
 import { normalizeResumeRowWidth, resumeEditorExtensions, resumeRowWidthFromClientX } from "./editorExtensions";
 import { renderResumeMarkdown } from "../../parser/resumeMarkdown";
 
@@ -13,6 +18,24 @@ afterEach(() => {
   editor?.destroy();
   editor = null;
 });
+
+function visualStartOfTextblock(targetEditor: Editor, typeName: string, occurrence = 0) {
+  let currentOccurrence = 0;
+  let targetPosition: number | null = null;
+  targetEditor.state.doc.descendants((node, position) => {
+    if (targetPosition !== null || node.type.name !== typeName || !node.isTextblock) return;
+    if (currentOccurrence !== occurrence) {
+      currentOccurrence += 1;
+      return;
+    }
+    const anchorSize = node.firstChild?.type.name === "resumeBlockAnchor"
+      ? node.firstChild.nodeSize
+      : 0;
+    targetPosition = position + 1 + anchorSize;
+  });
+  if (targetPosition === null) throw new Error(`未找到第 ${occurrence + 1} 个 ${typeName}`);
+  return targetPosition;
+}
 
 describe("convertCurrentLineToResumeRow", () => {
   it("保留当前行内容并创建可独立编辑的右栏", () => {
@@ -159,6 +182,145 @@ describe("convertCurrentLineToResumeRow", () => {
     editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
     expect(editor.getJSON().content).toHaveLength(2);
     expect(editor.state.selection.$from.parent).toEqual(editor.state.doc.child(1));
+  });
+
+  it("分栏退出后的空白行可以按 Backspace 删除并回到右栏", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [{
+          type: "resumeRow",
+          content: [
+            { type: "paragraph", content: [{ type: "text", text: "左栏" }] },
+            { type: "paragraph", content: [{ type: "text", text: "右栏" }] },
+          ],
+        }],
+      },
+    });
+    editor.commands.setTextSelection(4);
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+
+    expect(editor.getJSON().content).toHaveLength(1);
+    expect(editor.getJSON().content?.[0]).toMatchObject({ type: "resumeRow" });
+    expect(editor.state.selection.$from.parent).toEqual(editor.state.doc.firstChild?.child(1));
+    expect(editor.state.doc.firstChild?.textContent).toBe("左栏右栏");
+  });
+
+  it("不会把分栏后的非空正文误判成可删除空行", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          {
+            type: "resumeRow",
+            content: [
+              { type: "paragraph", content: [{ type: "text", text: "左栏" }] },
+              { type: "paragraph", content: [{ type: "text", text: "右栏" }] },
+            ],
+          },
+          { type: "paragraph", content: [{ type: "text", text: "需要保留" }] },
+        ],
+      },
+    });
+    const rowSize = editor.state.doc.firstChild?.nodeSize ?? 0;
+    editor.commands.setTextSelection(rowSize + 2);
+
+    expect(removeBlankParagraphAfterResumeRow(editor)).toBe(false);
+    expect(editor.getJSON().content).toHaveLength(2);
+    expect(editor.state.doc.child(1).textContent).toBe("需要保留");
+  });
+
+  it("通过加号设置的空标题可以直接按 Backspace 删除", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "上一行" }] },
+          { type: "heading", attrs: { level: 2 } },
+          { type: "paragraph", content: [{ type: "text", text: "下一行" }] },
+        ],
+      },
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "heading"));
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+
+    expect(editor.getJSON().content?.map((node) => node.type)).toEqual(["paragraph", "paragraph"]);
+    expect(editor.getText()).toContain("上一行");
+    expect(editor.getText()).toContain("下一行");
+  });
+
+  it("通过加号设置的空列表项可以直接按 Backspace 删除", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [{
+          type: "bulletList",
+          content: [
+            { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "保留项" }] }] },
+            { type: "listItem", content: [{ type: "paragraph" }] },
+          ],
+        }],
+      },
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "paragraph", 1));
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+
+    const list = editor.state.doc.firstChild;
+    expect(list?.type.name).toBe("bulletList");
+    expect(list?.childCount).toBe(1);
+    expect(list?.textContent).toBe("保留项");
+  });
+
+  it("完全清空的左右分栏可以直接按 Backspace 删除", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          {
+            type: "resumeRow",
+            content: [{ type: "paragraph" }, { type: "paragraph" }],
+          },
+          { type: "paragraph", content: [{ type: "text", text: "保留正文" }] },
+        ],
+      },
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "paragraph"));
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+
+    expect(editor.getJSON().content).toHaveLength(1);
+    expect(editor.state.doc.firstChild?.type.name).toBe("paragraph");
+    expect(editor.state.doc.firstChild?.textContent).toBe("保留正文");
+  });
+
+  it("左右分栏另一侧仍有内容时不会误删整行", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [{
+          type: "resumeRow",
+          content: [
+            { type: "paragraph" },
+            { type: "paragraph", content: [{ type: "text", text: "右侧内容" }] },
+          ],
+        }],
+      },
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "paragraph"));
+
+    expect(removeVisuallyBlankResumeLine(editor)).toBe(false);
+    expect(editor.state.doc.firstChild?.type.name).toBe("resumeRow");
+    expect(editor.state.doc.firstChild?.textContent).toBe("右侧内容");
   });
 
   it("专业模板 Markdown 会迁移为可编辑布局节点并保留图标名称", () => {

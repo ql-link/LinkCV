@@ -320,10 +320,14 @@ export function styleToEditorSettings(style: ResumeStyleV1): EditorSettings {
     "compact",
   ] as const;
   const theme = supportedThemes.find((candidate) => style.template_key.startsWith(candidate)) ?? "classic";
+  const persistedFontFamily = style.font_family === "source-han-serif"
+    ? '"Source Han Serif SC", "Songti SC", STSong, SimSun, serif'
+    : style.font_family;
+  const fontFamily = /PingFang SC|Microsoft YaHei|system-ui/u.test(persistedFontFamily)
+    ? '"LinkCV Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif'
+    : persistedFontFamily;
   return {
-    fontFamily: style.font_family === "source-han-serif"
-      ? '"Source Han Serif SC", "Songti SC", STSong, SimSun, serif'
-      : style.font_family,
+    fontFamily,
     fontSize: style.font_size,
     lineHeight: style.line_height,
     pageMargin: style.page.margin_left_mm,
