@@ -30,11 +30,11 @@ page {
 .ui-brand-mark { width: 64rpx; height: 64rpx; flex-shrink: 0; border-radius: 16rpx; }
 
 .ui-primary-button, .ui-secondary-button { height: 88rpx; display: flex; align-items: center; justify-content: center; margin: 0; padding: 0 30rpx; box-sizing: border-box; font-size: 27rpx; font-weight: 600; line-height: 88rpx; touch-action: manipulation; }
-.ui-primary-button { border-radius: 16rpx; background: var(--ui-primary); color: #fff; }
+.ui-primary-button { border-radius: 16rpx; background: var(--ui-accent); color: #fff; }
 .ui-secondary-button { border: 2rpx solid var(--ui-border-strong); border-radius: 999rpx; background: transparent; color: var(--ui-foreground); }
 .ui-primary-button::after, .ui-secondary-button::after { border: 0; }
 .ui-primary-button[disabled], .ui-secondary-button[disabled] { opacity: .5; }
-.ui-primary-button-pressed { background: var(--ui-primary-hover); transform: translateY(1rpx); }
+.ui-primary-button-pressed { background: var(--ui-accent-hover); transform: translateY(1rpx); }
 .ui-secondary-button-pressed { border-color: var(--ui-ring); background: var(--ui-surface); }
 
 @media (prefers-reduced-motion: reduce) {

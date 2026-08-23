@@ -1,14 +1,17 @@
 <view class="preview-state" wx:if="{{loading}}">
   <view class="spinner"></view>
-  <text>{{progress > 0 ? '正在下载简历 ' + progress + '%' : '正在准备简历…'}}</text>
+  <text class="state-title">{{progress > 0 ? '正在下载简历 ' + progress + '%' : '正在准备简历…'}}</text>
   <text class="state-copy">首次打开会保存到本机，同一版本下次可直接查看</text>
 </view>
 <view class="preview-state" wx:elif="{{error}}">
-    <text class="state-title">无法打开这份简历</text>
-    <text class="state-copy">{{error}}</text>
-    <button class="ui-primary-button state-action" hover-class="ui-primary-button-pressed" bindtap="retryLoad">重新加载</button>
-  <button class="back-action" bindtap="backToResumes">返回简历列表</button>
+  <text class="state-title">无法打开这份简历</text>
+  <text class="state-copy">{{error}}</text>
+  <button class="ui-primary-button state-action" hover-class="ui-primary-button-pressed" bindtap="retryLoad">重新加载</button>
+  <button class="ui-secondary-button state-action" hover-class="ui-secondary-button-pressed" bindtap="backToResumes">返回简历列表</button>
 </view>
 <view class="preview-document" wx:else>
-  <image class="resume-preview-image" src="{{previewPath}}" mode="widthFix" binderror="handlePreviewError" />
+  <view class="preview-paper">
+    <image class="resume-preview-image" src="{{previewPath}}" mode="widthFix" binderror="handlePreviewError" />
+  </view>
+  <text class="preview-footnote">只读预览 · 编辑请前往 LinkCV 网页端</text>
 </view>

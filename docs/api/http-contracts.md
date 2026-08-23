@@ -23,7 +23,7 @@
 
 会话统一保存为 Redis `auth:session:{sid}` hash 和 `auth:user_sessions:{uid}` 集合。Hash 包含 `uid`、refresh secret 哈希、`channel=web|miniprogram` 和创建时间；access JWT 同样携带 channel。Web 只接受 HttpOnly Cookie 中的 `channel=web` 凭据，小程序只接受 `Authorization: Bearer` 中的 `channel=miniprogram` 凭据；同时携带两种载体、JWT 与 Redis 的 uid/channel 不一致、session 被撤销或用户停用时均视为未登录。为兼容本功能上线前已签发的 Web 会话，缺少 channel 的旧 JWT/Redis session 仅按 Web 凭据接受，并在 refresh 轮换时补写 `channel=web`；它不会被小程序接口接受。Refresh 每次轮换 secret，重放旧 refresh 会撤销整个 session。
 
-微信 code 只由后端提交微信平台换取 openid。`/api/auth/wechat/miniprogram/account-status` 使用当前 `wx.login` code 返回该 openid 是否已有关联账号，只返回布尔值，不创建用户、不更新登录时间、不签发会话；它与小程序登录共用来源 IP 默认每分钟 30 次的限流。openid 已存在时登录接口直接复用；不存在时，`/api/auth/wechat/confirm` 和 `/api/auth/wechat/miniprogram/login` 只有在收到 `privacy_accepted=true` 后才创建 `email/password_hash` 为空的普通账号，缺失或为 `false` 时返回 `400 PRIVACY_AGREEMENT_REQUIRED`，唯一约束负责并发建号收敛。该字段只表示本次注册请求已经通过客户端确认门禁，不是服务端持久化的同意审计记录。随仓库发布的小程序在调用建号接口或确认扫码前，还必须展示微信平台隐私保护指引、取得页面复选框确认和用户主动点击；简历页与请求重试路径只能以 `privacy_accepted=false` 尝试恢复已有账号，不能静默触发首次建号。停用账号不能登录或续期；管理员账号即使历史上已有 openid，也不能通过扫码或小程序登录，只能使用 `/api/auth/admin-login`。超出上述限流时返回 `429 WECHAT_RATE_LIMITED`。
+微信 code 只由后端提交微信平台换取 openid。`/api/auth/wechat/miniprogram/account-status` 使用当前 `wx.login` code 返回该 openid 是否已有关联账号，只返回布尔值，不创建用户、不更新登录时间、不签发会话；它与小程序登录共用来源 IP 默认每分钟 30 次的限流。openid 已存在时登录接口直接复用；不存在时，`/api/auth/wechat/confirm` 和 `/api/auth/wechat/miniprogram/login` 只有在收到 `privacy_accepted=true` 后才创建 `email/password_hash` 为空的普通账号，缺失或为 `false` 时返回 `400 PRIVACY_AGREEMENT_REQUIRED`，唯一约束负责并发建号收敛。该字段只表示本次注册请求已经通过客户端确认门禁，不是服务端持久化的同意审计记录。随仓库发布的小程序在调用建号接口或确认扫码前，还必须展示微信平台隐私保护指引、取得页面复选框确认和用户主动点击（未勾选时在协议区行内提示，不弹系统窗）；账号状态探测和登录请求只能出现在用户主动进入登录页之后，游客首页不发起任何认证请求；登录或确认成功后客户端先展示完成提示再进入简历页；简历页与请求重试路径只能以 `privacy_accepted=false` 尝试恢复已有账号，不能静默触发首次建号。停用账号不能登录或续期；管理员账号即使历史上已有 openid，也不能通过扫码或小程序登录，只能使用 `/api/auth/admin-login`。超出上述限流时返回 `429 WECHAT_RATE_LIMITED`。
 
 ### 网页扫码登录
 
@@ -44,6 +44,10 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 | `GET` | `/api/miniprogram/resumes/:id` | `{resume}`；返回本人当前可读正式版本及 PDF 版本标识，不返回自动保存草稿；不存在或越权统一 `404 RESUME_NOT_FOUND` |
 | `GET` | `/api/miniprogram/resumes/:id/pdf?version_id=...` | 当前可读正式版本的文字 PDF；`version_id` 必须仍等于最新可读版本，响应 `application/pdf`、`private, no-store` 并携带版本响应头 |
 | `GET` | `/api/miniprogram/resumes/:id/preview.png?version_id=...` | 当前可读正式版本的智能一页 PNG；响应 `image/png`、`private, no-store` 并携带版本响应头，供小程序在当前页面内显示和本机缓存 |
+| `GET` | `/api/miniprogram/account/profile` | `{nickname, avatar_url}`；本人资料，`avatar_url` 恒为 `/api/miniprogram/account/avatar` 或 `null` |
+| `PATCH` | `/api/miniprogram/account/profile` | 同上；JSON `{nickname}`，去空白后非空且不超过 50 字，否则 `400 INVALID_NICKNAME` |
+| `PUT` | `/api/miniprogram/account/avatar` | `{url}`；JSON `{dataUrl, fileName?}`，复用 `/api/account/avatar` 的解码、10MB 上限与 MinIO 归属键规则，替换后删除旧头像对象 |
+| `GET` | `/api/miniprogram/account/avatar` | 本人头像二进制流（`image/*`、`private`）；无头像返回 `404 ASSET_NOT_FOUND`。普通 `/api/assets/*` 仍只接受 Web Cookie，小程序只能经此专用端点读取头像 |
 
 四个端点只接受小程序 Bearer，不接受 Web Cookie；小程序 Bearer 也不能调用普通 `/api/resumes*` 读写接口。预览选择最新 `reason=manual` 快照，没有手动版本时回退 `reason=initial`；客户端版本过期或无可读版本返回 `409 RESUME_VERSION_UNAVAILABLE`。服务端按请求启动一次性 Node 渲染进程，强制智能一页，从该版本真实引用且通过用户/简历对象键校验的 PNG/JPEG 私有图片构造输入；`preview.png` 再用 PDFium 把单页 PDF 栅格化为宽度不超过 1440 像素的 PNG。PDF 和 PNG 都只保留在请求内存，不写 MySQL、MinIO 或服务端文件缓存。输入、页面尺寸、像素数和输出大小都有上限；渲染脚本缺失、超时、异常退出、非法 PDF 或栅格化失败以稳定的 4xx/503 错误收口。
 

@@ -1,6 +1,9 @@
 {
   "pages": [
+    "pages/home/index",
     "pages/login/index",
+    "pages/confirm/index",
+    "pages/profile/index",
     "pages/resumes/index",
     "pages/resumes/detail"
   ],
@@ -10,6 +13,22 @@
     "navigationBarTextStyle": "black",
     "backgroundColor": "#f4f6f8",
     "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#8791a1",
+    "selectedColor": "#17191c",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/home/index",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/resumes/index",
+        "text": "我的简历"
+      }
+    ]
   },
   "style": "v2",
   "sitemapLocation": "sitemap.json",

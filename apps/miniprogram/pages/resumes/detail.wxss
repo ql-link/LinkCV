@@ -1,38 +1,87 @@
-.preview-state {
+.page {
   min-height: 100vh;
+  padding: 24rpx 32rpx calc(48rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  background: var(--ui-background);
+}
+
+.preview-state {
+  min-height: 70vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 64rpx;
+  padding: 48rpx 44rpx;
+  border: 1rpx solid var(--ui-border);
+  border-radius: 24rpx;
+  background: var(--ui-surface);
   box-sizing: border-box;
   text-align: center;
 }
+
+.state-title {
+  margin-top: 26rpx;
+  color: var(--ui-foreground);
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.state-copy {
+  max-width: 480rpx;
+  margin-top: 12rpx;
+  color: var(--ui-text-muted);
+  font-size: 23rpx;
+  line-height: 1.7;
+}
+
+.state-action {
+  width: 340rpx;
+  margin-top: 16rpx;
+}
+
+.state-action.ui-primary-button {
+  margin-top: 32rpx;
+}
+
 .spinner {
-  width: 44rpx;
-  height: 44rpx;
-  margin-bottom: 24rpx;
-  border: 4rpx solid var(--ui-border);
-  border-top-color: var(--ui-foreground);
+  width: 40rpx;
+  height: 40rpx;
+  border: 3rpx solid var(--ui-border);
+  border-top-color: var(--ui-accent);
   border-radius: 50%;
-  animation: spin .8s linear infinite;
+  animation: spin 0.8s linear infinite;
 }
-.preview-state > text { color: var(--ui-text-muted); font-size: 25rpx; }
-.state-title { color: var(--ui-foreground) !important; font-size: 32rpx !important; font-weight: 600; }
-.state-copy { max-width: 560rpx; margin-top: 18rpx; line-height: 1.6; }
-.state-action { min-width: 260rpx; margin-top: 36rpx; }
-.back-action { margin-top: 24rpx; padding: 12rpx 24rpx; color: var(--ui-text-muted); background: transparent; font-size: 24rpx; }
-.back-action::after { border: 0; }
-@keyframes spin { to { transform: rotate(360deg); } }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
+}
+
 .preview-document {
-  min-height: 100vh;
-  padding: 20rpx;
-  box-sizing: border-box;
-  background: #e9edf2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
+
+.preview-paper {
+  width: 100%;
+  overflow: hidden;
+  border: 1rpx solid var(--ui-border);
+  border-radius: 16rpx;
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-md);
+}
+
 .resume-preview-image {
   display: block;
   width: 100%;
-  background: #fff;
-  box-shadow: 0 8rpx 28rpx rgba(15, 23, 42, .12);
+}
+
+.preview-footnote {
+  margin-top: 24rpx;
+  color: var(--ui-text-subtle);
+  font-size: 20rpx;
 }

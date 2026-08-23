@@ -52,9 +52,23 @@ function clearSession() {
   void require("./resumePreviewCache").clearResumePreviewCache();
 }
 
+function updateStoredUser(patch) {
+  const user = wx.getStorageSync(USER_KEY);
+  if (!user) return null;
+  const merged = { ...user, ...patch };
+  wx.setStorageSync(USER_KEY, merged);
+  return merged;
+}
+
 function agreementRequiredError() {
   const error = new Error("请先阅读并同意隐私保护指引");
   error.code = "AGREEMENT_REQUIRED";
+  return error;
+}
+
+function sessionRequiredError() {
+  const error = new Error("尚未登录，请先登录后再查看简历");
+  error.code = "SESSION_REQUIRED";
   return error;
 }
 
@@ -152,7 +166,7 @@ async function getAccountStatus() {
 async function ensureSession() {
   const accessToken = wx.getStorageSync(ACCESS_KEY);
   if (accessToken) return wx.getStorageSync(USER_KEY) || null;
-  throw agreementRequiredError();
+  throw sessionRequiredError();
 }
 
 async function refreshSession() {
@@ -210,5 +224,6 @@ module.exports = {
   openPrivacyContract,
   registerOrLogin,
   refreshSession,
+  updateStoredUser,
   wxLoginCode,
 };

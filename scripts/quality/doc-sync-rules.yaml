@@ -18,14 +18,25 @@ rules:
       - docs/api/http-contracts.md
 
   - id: miniprogram-contract
-    description: 微信小程序页面、请求和会话变化必须同步 HTTP、架构与开发文档
+    description: 微信小程序请求和会话逻辑变化必须同步 HTTP、架构与开发文档
     when_changed:
-      - apps/miniprogram/**/*.js
-      - apps/miniprogram/**/*.json
-      - apps/miniprogram/**/*.wxml
-      - apps/miniprogram/**/*.wxss
+      - apps/miniprogram/services/**/*.js
+      - apps/miniprogram/utils/request.js
+      - apps/miniprogram/utils/resume.js
+      - apps/miniprogram/config/**
     must_update:
       - docs/api/http-contracts.md
+      - docs/internals/architecture.md
+      - docs/ops/development.md
+
+  - id: miniprogram-ui-contract
+    description: 微信小程序页面行为、结构、样式或配置变化必须同步架构与开发文档
+    when_changed:
+      - apps/miniprogram/pages/**
+      - apps/miniprogram/utils/system.js
+      - apps/miniprogram/app.json
+      - apps/miniprogram/app.wxss
+    must_update:
       - docs/internals/architecture.md
       - docs/ops/development.md
 
