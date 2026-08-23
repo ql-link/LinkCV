@@ -209,6 +209,38 @@ JD 管理接口接受和返回最终结构化数据；单独的浏览器导入�
 
 技能以最多 100 个字符串的 JSON 数组保存，写入时去空和去重。数值薪资非空时必须同时给出三字母币种与计薪周期，最高值不得低于最低值。请求字段、长度或组合非法返回 `400 INVALID_JOB_DESCRIPTION`，来源非法返回 `400 INVALID_JOB_SOURCE`。福利、原始抓取数据和插件 API Key 不属于当前契约。
 
+## 面试中心
+
+面试中心以 `job_applications` 表达一家公司和岗位的一次完整求职尝试，以 `interview_sessions` 表达其中一场可排期、可完成、可复盘的面试。所有接口都要求当前登录用户，后端只从会话取得所有者；不存在和越权资源统一返回 `404 INTERVIEW_NOT_FOUND`。创建求职进程必须引用本人 JD，并保存公司、岗位和完整 JD 快照；后续修改原 JD 不会改写历史求职进程。公司颜色第一次创建时从 Mac 日历语义色中随机选择，之后同一求职进程的所有面试共用该颜色，也可通过进程更新接口修改。
+
+求职进程的初始状态必须可达：`screening` 从 `awaiting_result` 开始，`interview/hr` 从 `awaiting_schedule` 开始，`offer` 从 `negotiating` 开始；其他阶段与等待状态组合返回 `400 INVALID_INTERVIEW_REQUEST`。筛选结果可在没有面试场次时直接推进；面试或 HR 阶段推进只消费当前阶段、当前轮次且仍待确认的已完成场次，不会把旧轮次或其他阶段误标为通过。归档进程从默认求职进程列表、总览和排期中隐藏，只有显式 `scope=all|archived` 或 `include_archived=true` 才返回历史；归档进程不能创建、调整、完成或取消排期，恢复后才能继续排期生命周期。
+
+| Method | Path | 行为 |
+| --- | --- | --- |
+| `GET` | `/api/interview-overview` | 返回本周指标、当前阶段流程和周排期；支持 `week_start` 与 IANA `timezone` |
+| `GET/POST` | `/api/job-applications` | 列出或创建求职进程 |
+| `GET/PUT/DELETE` | `/api/job-applications/:id` | 读取、乐观锁更新，或永久删除已归档且无面试记录的进程 |
+| `POST` | `/api/job-applications/:id/advance` | 将已完成且等待结果的当前阶段确认通过并推进 |
+| `POST` | `/api/job-applications/:id/offer` | 记录 OC 或书面 Offer |
+| `POST` | `/api/job-applications/:id/close` | 记录未通过、主动结束、接受或婉拒 Offer |
+| `POST` | `/api/job-applications/:id/archive\|restore` | 乐观锁归档或恢复进程 |
+| `GET` | `/api/interview-sessions` | 按时间、状态、`application_id`、归档范围和游标列出当前用户的面试记录 |
+| `POST` | `/api/job-applications/:id/interview-sessions` | 在指定求职进程的当前阶段创建排期 |
+| `GET/PUT/DELETE` | `/api/interview-sessions/:id` | 读取、乐观锁更新或删除无素材的单场记录 |
+| `POST` | `/api/interview-sessions/:id/reschedule` | 调整排期，开始时间只接受整点或半点 |
+| `POST` | `/api/interview-sessions/:id/complete\|cancel` | 明确完成或取消一场面试 |
+| `GET/POST` | `/api/interview-sessions/:id/assets` | 列出或上传录音、视频和文档素材 |
+| `GET` | `/api/interview-assets/:id/content` | 所有权校验后流式读取素材 |
+| `DELETE` | `/api/interview-assets/:id` | 所有权校验后删除素材记录和对象存储文件 |
+
+排期使用带时区的 `start_at/end_at`，服务端转成 UTC 保存；不画半点辅助线不影响 30 分钟吸附契约。与本人其他未取消面试重叠时返回 `409 INTERVIEW_TIME_CONFLICT` 和冲突摘要，只有请求再次携带 `allow_conflict=true` 才保存。完成面试会保存自由文本题目、复盘和改进点，并把求职进程置为 `awaiting_result`；它不会自动推断通过或把卡片移动到下一阶段。`advance` 负责把最近一场待确认结果标为通过并移动进程，`close` 负责标记未通过或其他终态。过期 `base_lock_version` 返回 `409 INTERVIEW_EDIT_CONFLICT`，不合法状态跳转返回 `409 INTERVIEW_INVALID_TRANSITION`。
+
+`GET /api/job-applications` 按 `updated_at DESC, id DESC` 分页，`GET /api/interview-sessions` 按 `start_at ASC, id ASC` 分页；两者的 `next_cursor` 都是不透明且与当前筛选条件绑定的游标。调用方必须把游标与原筛选一起回传；游标损坏、跨筛选复用或超长都返回 `400 INVALID_INTERVIEW_QUERY`。创建面试的 `(application_id, client_request_id)` 唯一：相同请求重放返回原场次，相同标识绑定到不同时间或内容时返回 `409 INTERVIEW_EDIT_CONFLICT`。
+
+面试模块的求职进程、岗位、简历版本、单场面试和素材 ID 与项目其他 BIGINT 资源一致，在 JSON、查询参数和路径中都使用无前导零的十进制字符串；前端不得把这些 ID 转成 JavaScript `number`。
+
+素材上传是 `multipart/form-data`，`source_type=recorded|uploaded` 仅记录来源路径，两者写入同一 MinIO 私有前缀。服务端按扩展名与规范化 MIME 双重校验，流式计算大小和 SHA-256，默认上限由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES=524288000` 控制；空文件、不支持格式、超限和对象存储失败分别返回 `EMPTY_INTERVIEW_ASSET`、`UNSUPPORTED_INTERVIEW_ASSET`、`INTERVIEW_ASSET_TOO_LARGE` 和 `INTERVIEW_ASSET_UPLOAD_FAILED`。音视频内容使用 `inline` 分发以支持播放，文档使用附件下载；响应不暴露对象键。
+
 ## 对象资源
 
 原用户级 `/api/assets` 图片接口继续保留。新增简历级资源接口：

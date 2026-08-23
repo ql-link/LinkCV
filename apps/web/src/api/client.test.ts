@@ -301,6 +301,72 @@ describe("JD API client", () => {
   });
 });
 
+describe("面试中心 API client", () => {
+  it("编码求职进程与面试记录的游标和历史范围", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, { items: [], next_cursor: null }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.listJobApplications({
+      scope: "all",
+      keyword: "后端 面试",
+      stage_type: "interview",
+      cursor: "application/cursor",
+      limit: 40,
+    });
+    await api.listInterviewSessions({
+      include_archived: true,
+      status: "completed",
+      cursor: "session/cursor",
+      limit: 80,
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/job-applications?scope=all&keyword=%E5%90%8E%E7%AB%AF+%E9%9D%A2%E8%AF%95&stage_type=interview&cursor=application%2Fcursor&limit=40",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/interview-sessions?status=completed&include_archived=true&cursor=session%2Fcursor&limit=80",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
+
+  it("调用取消、归档、恢复和永久清理接口时保留版本契约", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { deleted: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.cancelInterviewSession("31", {
+      reason: "时间变化",
+      base_lock_version: 2,
+    });
+    await api.archiveJobApplication("21", 3);
+    await api.restoreJobApplication("21", 4);
+    await api.deleteInterviewSession("31");
+    await api.deleteJobApplication("21");
+
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      "/api/interview-sessions/31/cancel",
+      "/api/job-applications/21/archive",
+      "/api/job-applications/21/restore",
+      "/api/interview-sessions/31",
+      "/api/job-applications/21",
+    ]);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
+      reason: "时间变化",
+      base_lock_version: 2,
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({
+      base_lock_version: 3,
+    });
+    expect(fetchMock.mock.calls[3][1]).toEqual(
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+});
+
 describe("知识库资料 API", () => {
   it("以 FormData 上传资料并保持相对路径", async () => {
     const record = {

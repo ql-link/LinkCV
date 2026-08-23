@@ -4,7 +4,7 @@
 
 Web 构建还会把共享 React-PDF 核心的一次性 Node CLI 与字体输出到 `dist-server`，FastAPI 生产镜像复制为 `/app/pdf`。FastAPI 仅在小程序下载正式版本时启动该脚本，通过 stdin 传入快照并从 stdout 接收 PDF；PNG 预览再由 Python 进程内的 PDFium 临时栅格化。进程完成即退出，PDF 和 PNG 都不写入服务端持久存储。FastAPI 镜像中的 Node 22 只承载该一次性脚本，Pi Service 继续运行在独立镜像中，不新增常驻 PDF 服务。
 
-根级 `Dockerfile` 构建 Vite 静态产物和 FastAPI Python 环境，并把 Node 22 复制到运行镜像供按需 PDF CLI 使用；独立的 `deploy/Dockerfile.pi` 构建无头 Pi Service 镜像。Web 构建阶段会把 `postcss.config.cjs`、`tailwind.config.cjs`、PDF CLI 与应用源码一起复制到 `/app/apps/web`；Pi 构建阶段安装 vendored workspace 的锁定依赖并校验仓库中版本化的模型目录快照。常规 Docker 构建不访问 `models.dev`、OpenRouter、NVIDIA NIM 或 Vercel AI Gateway，只有维护者主动执行 `npm run refresh:pi-model-data` 时才联网刷新模型快照。Node 依赖查询默认使用 npmmirror，但 `npm ci` 禁止替换 `package-lock.json` 已锁定的 tarball 主机。固定版本的 `uv` 与 Python 依赖默认使用阿里云 PyPI；构建过程从 `uv.lock` 导出带哈希的 requirements。镜像构建不连接数据库。FastAPI 容器启动时 runner 先核对 `APP_ENV`、MySQL host、port 和 database，再只读比对 Alembic 当前版本与 `0030` Agent 表、`0031` 范围化提案字段等已知 schema 标记；任一对象提前存在、缺失或部分应用都会在执行 DDL 前终止部署。目标和 schema 对齐后才升级到 Alembic head，并由 Uvicorn 在 `8000` 端口提供 `/api` 与 Web 静态文件。
+根级 `Dockerfile` 构建 Vite 静态产物和 FastAPI Python 环境，并把 Node 22 复制到运行镜像供按需 PDF CLI 使用；独立的 `deploy/Dockerfile.pi` 构建无头 Pi Service 镜像。Web 构建阶段会把 `postcss.config.cjs`、`tailwind.config.cjs`、PDF CLI 与应用源码一起复制到 `/app/apps/web`；Pi 构建阶段安装 vendored workspace 的锁定依赖并校验仓库中版本化的模型目录快照。常规 Docker 构建不访问 `models.dev`、OpenRouter、NVIDIA NIM 或 Vercel AI Gateway，只有维护者主动执行 `npm run refresh:pi-model-data` 时才联网刷新模型快照。Node 依赖查询默认使用 npmmirror，但 `npm ci` 禁止替换 `package-lock.json` 已锁定的 tarball 主机。固定版本的 `uv` 与 Python 依赖默认使用阿里云 PyPI；构建过程从 `uv.lock` 导出带哈希的 requirements。镜像构建不连接数据库。FastAPI 容器启动时 runner 先核对 `APP_ENV`、MySQL host、port 和 database，再只读比对 Alembic 当前版本与 `0030` Agent 表、`0031` 范围化提案字段、`0032` 面试中心三张表等已知 schema 标记；任一对象提前存在、缺失或部分应用都会在执行 DDL 前终止部署。目标和 schema 对齐后才升级到 Alembic head，并由 Uvicorn 在 `8000` 端口提供 `/api` 与 Web 静态文件。
 
 仓库提供相互独立的 Dev 与 Production Jenkins Pipeline。两者都以同一 commit/build 标识生成不可变 `linkcv` 与 `linkcv-pi` 镜像，先用 `linkcv` 镜像以显式目标参数运行迁移 runner，再更新 Compose，最后等待 FastAPI `/api/health`、Pi `/health`、本环境 Promtail 和 FastAPI `/api/agent/readiness` 进入正常状态；构建镜像阶段不连接数据库。Agent readiness 会穿透 FastAPI→Pi→FastAPI 内部回调并验证当前 `pi_agent` 模型配置与 provider 映射，但不发起供应商模型调用；任一服务令牌、回调网络或模型配置无效都会阻止发布被标记为成功。
 
@@ -86,7 +86,8 @@ CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并�
 ## 回滚
 
 - 应用回滚必须把 `TAG` 与 `PI_TAG` 一起切回同一环境、同一版本的两个不可变镜像标签并重新执行 Compose；不得把 Dev 标签部署到 Production。
-- 当前 head `0031`。`0016` 新增旧版 `resume_imports` 且非空时拒绝 downgrade；`0017` 删除旧同步导入证据列，执行前必须完成不可逆的旧对象、版本和简历清理；`0018` 新增用户数据集表；`0019`–`0020` 增加微信绑定并支持无邮箱密码账号；`0021` 将旧导入表迁移为 `document_parse_tasks`；`0022` 将资料解析接入该任务表，并在迁移前清理旧资料；`0023` 为历史简历版本新增名称；`0024`–`0025` 增加并修订官方经典技术模板；`0026` 新增四套职能与设计模板；`0027` 受保护地刷新四套模板；`0028`–`0029` 扩展并收敛多能力模型配置；`0030` 增加 Agent 状态和提案表；`0031` 增加范围化提案的稳定定位、诊断、类型化操作、修改依据与资料引用。
+- 当前 head `0032`。`0016` 新增旧版 `resume_imports` 且非空时拒绝 downgrade；`0017` 删除旧同步导入证据列，执行前必须完成不可逆的旧对象、版本和简历清理；`0018` 新增用户数据集表；`0019`–`0020` 增加微信绑定并支持无邮箱密码账号；`0021` 将旧导入表迁移为 `document_parse_tasks`；`0022` 将资料解析接入该任务表，并在迁移前清理旧资料；`0023` 为历史简历版本新增名称；`0024`–`0025` 增加并修订官方经典技术模板；`0026` 新增四套职能与设计模板；`0027` 受保护地刷新四套模板；`0028`–`0029` 扩展并收敛多能力模型配置；`0030` 增加 Agent 状态和提案表；`0031` 增加范围化提案的稳定定位、诊断、类型化操作、修改依据与资料引用；`0032` 增加面试求职进程、单场面试和素材元数据。
+- `0032 → 0031` 会删除全部面试求职进程、排期复盘与素材元数据，但不会删除 MinIO 中已经上传的面试对象。执行前必须停止面试中心写入，备份数据库并确认这些记录和可能遗留的对象允许人工处理；应用与 schema 必须一起回滚。
 - `0031 → 0030` 会删除范围化提案的模式、locator、目标哈希、诊断、operation、修改依据和资料引用；完整候选简历快照仍保留，但这些结构化证据无法由 downgrade 恢复，执行前必须确认允许丢失。
 - `0030 → 0029` 会永久删除全部 Agent 会话、消息、运行、工具审计和待确认提案，并把已经生成的 `reason=agent` 简历版本改记为 `manual`。降级前先停止 Pi 服务、阻断新 Agent 请求并确认这些数据允许丢弃；只回切 Pi 镜像或只降 schema 都不是有效回滚。
 - `0021 → 0020` 会从 `document_parse_tasks` 和 `resumes.parse_task_id` 镜像重建 `resume_imports`，并拒绝丢弃非简历类型任务。由于升级已删除旧表，执行前仍需以部署前备份作为完整恢复保障；应用与 schema 必须配套回滚，不能单独回切镜像。

@@ -2,7 +2,7 @@
 
 ## 当前职责与结构
 
-`apps/backend` 承接健康检查、Web/小程序双通道 Redis 会话鉴权、微信自动建号、网页扫码确认、小程序只读简历、语义简历生命周期、历史版本、简历分享链接、智能助手会话与修改提案、异步文件导入、私有对象资源、结构化 JD 生命周期、用户中心、统一 LLM 调用和管理员模型治理 API、管理台用户管理、知识库资料异步解析，以及统一系统日志、业务审计和管理员日志查询。
+`apps/backend` 承接健康检查、Web/小程序双通道 Redis 会话鉴权、微信自动建号、网页扫码确认、小程序只读简历、语义简历生命周期、历史版本、简历分享链接、智能助手会话与修改提案、异步文件导入、私有对象资源、结构化 JD 生命周期、面试求职进程与排期复盘、用户中心、统一 LLM 调用和管理员模型治理 API、管理台用户管理、知识库资料异步解析，以及统一系统日志、业务审计和管理员日志查询。
 
 | 位置 | 职责 |
 | --- | --- |
@@ -12,6 +12,7 @@
 | `src/linkcv/domain/job_source.py` | JD 来源 URL 校验、规范化、站点识别和 SHA-256 身份计算 |
 | `src/linkcv/application/resumes/` | 统一创建、乐观锁保存、版本创建/重命名/恢复、分享链接创建/覆盖/更新与事务规则 |
 | `src/linkcv/application/job_descriptions/` | JD 创建、重复解决、搜索分页、乐观锁更新、归档和永久删除 |
+| `src/linkcv/application/interviews/` | 求职进程状态机、面试排期冲突、完成/推进/关闭和素材元数据事务 |
 | `src/linkcv/integrations/` | LinkParse PDF/DOCX Adapter、转换分发、微信小程序上游封装和统一 LLM 简历结构化 Adapter |
 | `src/linkcv/services/resume_import_service.py` | Worker 使用的 Markdown 转换、结构化与规范化原语，不提交业务事务 |
 | `src/linkcv/services/resume_import_idempotency.py` | Redis Lua 请求指纹到导入 ID 的短期绑定与冲突保护 |
@@ -22,10 +23,11 @@
 | `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板及管理、简历、版本、异步导入、分享和资源路由 |
 | `src/linkcv/modules/datasets/` | `user_dataset` 资料元数据、异步解析受理与状态列表路由 |
 | `src/linkcv/modules/job_descriptions/` | JD 单表 ORM、HTTP DTO 和受保护路由 |
+| `src/linkcv/modules/interviews/` | 求职进程、单场面试和素材 ORM、HTTP DTO 与受保护路由 |
 | `src/linkcv/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkcv/modules/agent/` | 用户会话、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0031` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0032` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -70,6 +72,8 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 `0022` 扩展 `document_parse_tasks.source_type` 与文件格式约束以支持资料解析，并新增两个消费方共用的可空 `failure_reason`。迁移会删除上线前的全部 `user_dataset` 行；对象存储源文件必须在迁移前、确认数据库与对象存储备份后，通过 `scripts/release/cleanup_legacy_user_datasets.py --execute` 清理。该数据删除不可由 downgrade 恢复。`0023` 为 `resume_versions` 增加非空 `name`，先按版本原因和编号回填存量快照，再允许新建正式版本时保存用户名称；downgrade 删除该列并丢失名称，执行前必须确认数据库备份。
 
 `0028`–`0029` 扩展并收敛多能力模型配置；`0030` 新增 `agent_sessions`、`agent_runs`、`agent_messages`、`agent_tool_calls` 和 `resume_change_proposals`；`0031` 为提案增加兼容模式、稳定 locator、目标哈希、结构化诊断、类型化 operation、修改依据和资料引用。五张 Agent 表不建立数据库外键，关联 ID、所有权、引用完整性和删除清理由 FastAPI 在事务中显式维护；查询仍使用对应关联列索引。`0031` 对旧记录使用 `legacy_snapshot` 且新增 JSON 字段可空，因此旧 pending 提案仍可确认。MySQL 保存产品会话和审计真值；Pi 容器不持有业务数据库连接。范围化提案由 FastAPI 在当前快照副本上应用经过模式和作用域校验的 operation 后保存完整候选简历与样式；确认事务使用行锁、乐观锁和目标哈希更新 `resumes`，并创建 `resume_versions.reason=agent` 的不可变版本。降级 `0030` 会永久删除全部 Agent 对话、运行审计和提案，并把已有 `agent` 版本原因改为 `manual`，执行前必须先停 Pi 服务并确认数据可丢弃。
+
+`0032` 新增 `job_applications`、`interview_sessions` 和 `interview_assets`。一次求职进程保存建立时的 JD/简历快照、公司统一日历颜色和当前阶段；排期与复盘共用同一条 `interview_sessions` 记录，通过 `scheduled/completed/cancelled` 区分生命周期。创建 DTO 只接受可达的阶段与等待状态组合；筛选可以无场次推进，面试和 HR 推进只消费当前阶段的待确认完成场次。完成一场面试只把进程置为等待结果，必须再由用户明确确认通过并推进到下一轮、HR 面或 Offer，或确认未通过后关闭。排期开始时间使用 IANA 时区校验并限制为整点或半点，时间重叠默认返回冲突，用户显式确认后才允许保存；归档进程不能再执行排期生命周期，也不会进入总览统计。求职进程和场次列表使用与筛选摘要绑定的时间加 ID 游标稳定分页，全部 BIGINT 资源 ID 在 HTTP 与 TypeScript 中保持规范十进制字符串。三类写操作均校验当前用户归属；进程和单场记录使用 `lock_version` 拒绝过期修改，场次创建的请求标识重放还会核对原业务内容。进程、排期和素材的创建、更新、状态动作与删除沿用统一审计链，创建型接口显式绑定新记录 ID，普通读取不写审计。
 
 绑定由 Web 已登录用户发起，走 `/api/account/wechat/bind-request|bind-confirm|bind-status`（ticket 票据）。绑定票据是临时凭证，只存 Redis（`wechat:bind_ticket:<ticket>` 存用户、`wechat:bind_status:<ticket>` 存 `pending/bound`、`wechat:bind_user_ticket:<uid>` 指向当前票据），TTL 默认 300 秒，同用户重新发起时覆盖旧票据。`bind-confirm` 提交小程序 `wx.login()` 的临时 code，服务端换 openid 后关联到发起用户；openid 已被其他用户绑定时返回 `409 WECHAT_ALREADY_BOUND`，原绑定关系不被覆盖。
 
@@ -125,8 +129,9 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 - 导入原文件：`users/{user_id}/resume-imports/{operation_id}/...`。
 - 导入转换存档：`users/{user_id}/resume-imports/{operation_id}/converted.md`。
 - 简历资源：`users/{user_id}/resumes/{resume_id}/assets/...`。
+- 面试素材：`users/{user_id}/interviews/{application_id}/{session_id}/...`。
 
-简历级读取先校验所属简历。资源删除会递归检查当前和历史 `data_json` 引用；仍在使用时拒绝删除。删除导入生成的正式简历时通过 `resumes.parse_task_id` 读取对应 `document_parse_tasks`，删除源文件、转换存档和任务记录，再删除简历资源、版本和简历；任务记录异常缺失时只记录告警，不阻断简历删除。MinIO 删除失败返回 `502 ASSET_DELETE_FAILED` 并保留数据库记录。数据库与 MinIO 仍不是同一事务：多个对象可能只删除一部分，且对象删除成功后的数据库提交失败无法恢复对象。
+简历级读取先校验所属简历。资源删除会递归检查当前和历史 `data_json` 引用；仍在使用时拒绝删除。删除导入生成的正式简历时通过 `resumes.parse_task_id` 读取对应 `document_parse_tasks`，删除源文件、转换存档和任务记录，再删除简历资源、版本和简历；任务记录异常缺失时只记录告警，不阻断简历删除。面试录音、视频和文档使用流式上传，服务端在传输中计算 SHA-256 并执行 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 上限，不把完整文件读入内存；浏览器录制和事后上传最终进入同一私有前缀。MinIO 与 MySQL 不是同一事务，元数据提交失败会尽力补偿删除新对象，对象删除成功后的数据库提交失败仍无法恢复对象。
 
 ## 用户中心
 
@@ -140,7 +145,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于 `0002`–`0031` 往返、模板初始化和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于 `0002`–`0032` 往返、模板初始化和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 

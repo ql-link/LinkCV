@@ -33,7 +33,7 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0031"
+EXPECTED_HEAD = "0032"
 
 
 def migration_test_url() -> str:
@@ -124,6 +124,9 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "agent_messages",
         "agent_tool_calls",
         "resume_change_proposals",
+        "job_applications",
+        "interview_sessions",
+        "interview_assets",
     } <= set(inspector.get_table_names())
     assert "admin_operation_logs" not in inspector.get_table_names()
     for agent_table in {
@@ -289,6 +292,11 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
 
     run_alembic(database_url, "downgrade", "0030")
     downgraded_proposal_inspector = inspect(engine)
+    assert {
+        "job_applications",
+        "interview_sessions",
+        "interview_assets",
+    }.isdisjoint(downgraded_proposal_inspector.get_table_names())
     assert scoped_proposal_columns.isdisjoint(
         {
             column["name"]

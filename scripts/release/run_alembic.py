@@ -28,6 +28,13 @@ REVISION_TABLE_MARKERS = {
             "resume_change_proposals",
         }
     ),
+    "0032": frozenset(
+        {
+            "job_applications",
+            "interview_sessions",
+            "interview_assets",
+        }
+    ),
 }
 REVISION_COLUMN_MARKERS = {
     "0031": {

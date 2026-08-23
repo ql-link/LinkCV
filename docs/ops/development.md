@@ -12,7 +12,7 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker和独立 Pi 服务。当前 Alembic head `0031`；`0002`–`0022` 建立并演进既有业务结构，`0023` 为历史简历版本新增非空名称，`0024`–`0027` 增加并刷新官方模板，`0028`–`0029` 扩展并收敛多能力模型配置，`0030` 新增 Agent 会话、运行、消息、工具审计与简历修改提案，并允许历史版本使用 `reason=agent`；`0031` 为提案增加稳定定位、诊断、类型化操作、修改依据与资料引用。
+新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker和独立 Pi 服务。当前 Alembic head `0032`；`0002`–`0022` 建立并演进既有业务结构，`0023` 为历史简历版本新增非空名称，`0024`–`0027` 增加并刷新官方模板，`0028`–`0029` 扩展并收敛多能力模型配置，`0030` 新增 Agent 会话、运行、消息、工具审计与简历修改提案并允许历史版本使用 `reason=agent`，`0031` 为提案增加稳定定位、诊断、类型化操作、修改依据与资料引用，`0032` 增加面试求职进程、排期复盘和素材元数据。
 
 本地开发把 Git 主工作目录中的 `.env.local` 与 `.env.development.local` 作为所有 worktree 的共享私密覆盖层。`npm run dev`/`npm run dev:local` 优先使用当前 worktree 的 `.env`，否则回退主工作目录 `.env`；两处基础文件都不存在时，完整的主目录 `.env.local` 仍可单独作为 Local 配置。`npm run dev:development` 使用当前 worktree 已跟踪的 `.env.development`，再加载主工作目录 `.env.development.local`，并把同一结果注入 Web、FastAPI、Worker 与 Pi Service。新建 worktree 后不需要复制密钥文件。需要临时隔离时可显式设置 `LINKCV_SECRET_ENV_FILE=/absolute/path/to/override.local`。
 
@@ -38,7 +38,7 @@ local/test 未配置密钥环时，原有非 LLM 接口仍可启动，但保存�
 LINKCV_ENV_FILE=.env.development npm run db:init
 ```
 
-命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0031`。图片、导入源文件和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。
+命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0032`。图片、导入源文件、面试素材和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。面试素材默认最多 500 MiB，由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 在 Local、Development 和 Production 分别配置；上传直接进入 FastAPI 和 MinIO，不经过 RabbitMQ，RabbitMQ 仍只服务异步文档解析等既有 Worker 流程。
 
 `PLUGIN_RELEASE_ORIGIN` 是当前环境允许正式插件访问的 LinkCV 根 Origin。默认本地值为 `http://127.0.0.1:5173`；共享 Development 和 Production 必须在各自 `.local` 覆盖中写入用户实际访问的 Origin，Production 只接受 HTTPS。该值必须与构建安装包时传给 `build_extension_release.py` 的对应 Origin 一致，否则管理员上传会被拒绝。
 

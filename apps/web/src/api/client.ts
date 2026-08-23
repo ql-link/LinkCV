@@ -347,6 +347,126 @@ export type JobDescriptionFields = {
   notes?: string | null;
 };
 
+export type InterviewCalendarColor =
+  | "red"
+  | "orange"
+  | "yellow"
+  | "green"
+  | "blue"
+  | "purple"
+  | "gray";
+export type ApplicationStageType = "screening" | "interview" | "hr" | "offer";
+export type ApplicationStageState =
+  | "awaiting_schedule"
+  | "scheduled"
+  | "awaiting_result"
+  | "negotiating";
+export type InterviewMode = "video" | "onsite" | "phone" | "other";
+export type InterviewSessionStatus = "scheduled" | "completed" | "cancelled";
+
+export type JobApplicationRecord = {
+  id: string;
+  job_description_id: string | null;
+  resume_version_id: string | null;
+  company_name_snapshot: string;
+  job_title_snapshot: string;
+  job_snapshot: Record<string, unknown>;
+  resume_title_snapshot: string | null;
+  calendar_color: InterviewCalendarColor;
+  current_stage_type: ApplicationStageType;
+  current_round_no: number | null;
+  current_stage_label: string;
+  stage_state: ApplicationStageState;
+  status: "active" | "rejected" | "withdrawn" | "closed";
+  offer_status:
+    | "none"
+    | "oc_received"
+    | "written_offer_received"
+    | "accepted"
+    | "declined";
+  is_favorite: boolean;
+  applied_at: string | null;
+  notes: string | null;
+  archived_at: string | null;
+  lock_version: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type JobApplicationSummary = JobApplicationRecord & {
+  next_session_id: string | null;
+  next_session_start_at: string | null;
+  next_session_end_at: string | null;
+  next_session_mode: InterviewMode | null;
+};
+
+export type InterviewSessionRecord = {
+  id: string;
+  application_id: string;
+  client_request_id: string;
+  stage_type: "interview" | "hr" | "offer" | "other";
+  round_no: number | null;
+  stage_label: string;
+  status: InterviewSessionStatus;
+  round_result: "pending" | "passed" | "rejected";
+  start_at: string;
+  end_at: string;
+  timezone: string;
+  mode: InterviewMode;
+  meeting_url: string | null;
+  location: string | null;
+  interviewer_name: string | null;
+  interviewer_title: string | null;
+  reminder_minutes: number | null;
+  preparation_note: string | null;
+  questions_markdown: string | null;
+  review_summary: string | null;
+  improvement_markdown: string | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+  cancellation_reason: string | null;
+  lock_version: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InterviewSessionSummary = InterviewSessionRecord & {
+  company_name: string;
+  job_title: string;
+  calendar_color: InterviewCalendarColor;
+  application_stage_state: ApplicationStageState;
+};
+
+export type InterviewAssetRecord = {
+  id: string;
+  interview_session_id: string;
+  source_type: "recorded" | "uploaded";
+  asset_type: "audio" | "video" | "document";
+  original_file_name: string;
+  content_type: string;
+  file_size: number;
+  duration_ms: number | null;
+  sha256: string | null;
+  created_at: string;
+};
+
+export type InterviewSessionDetail = {
+  session: InterviewSessionRecord;
+  application: JobApplicationRecord;
+  assets: InterviewAssetRecord[];
+};
+
+export type InterviewOverview = {
+  metrics: {
+    weekly_interviews: number;
+    upcoming_interviews: number;
+    completed_interviews: number;
+    written_offers: number;
+  };
+  pipeline: JobApplicationSummary[];
+  week_sessions: InterviewSessionSummary[];
+};
+
 export type PluginRelease = {
   version: string;
   released_at: string;
@@ -1062,6 +1182,244 @@ export const api = {
     ),
   deleteJobDescription: (id: string) =>
     request<{ deleted: boolean }>(`/api/job-descriptions/${id}`, {
+      method: "DELETE",
+    }),
+  getInterviewOverview: (weekStart: string, timezone: string) => {
+    const search = new URLSearchParams({ week_start: weekStart, timezone });
+    return request<InterviewOverview>(`/api/interview-overview?${search}`);
+  },
+  listJobApplications: (
+    params: {
+      scope?: "active" | "archived" | "all";
+      keyword?: string;
+      status?: JobApplicationRecord["status"];
+      stage_type?: ApplicationStageType;
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.scope) search.set("scope", params.scope);
+    if (params.keyword) search.set("keyword", params.keyword);
+    if (params.status) search.set("status", params.status);
+    if (params.stage_type) search.set("stage_type", params.stage_type);
+    if (params.cursor) search.set("cursor", params.cursor);
+    search.set("limit", String(params.limit ?? 200));
+    return request<{ items: JobApplicationSummary[]; next_cursor: string | null }>(
+      `/api/job-applications?${search}`,
+    );
+  },
+  createJobApplication: (payload: {
+    job_description_id: string;
+    resume_version_id?: string | null;
+    current_stage_type: ApplicationStageType;
+    current_round_no?: number | null;
+    current_stage_label: string;
+    stage_state: ApplicationStageState;
+    applied_at?: string | null;
+    notes?: string | null;
+  }) =>
+    request<{ application: JobApplicationRecord }>("/api/job-applications", {
+      method: "POST",
+      body: payload,
+    }),
+  updateJobApplication: (
+    id: string,
+    payload: Partial<{
+      calendar_color: InterviewCalendarColor;
+      is_favorite: boolean;
+      notes: string | null;
+      applied_at: string | null;
+      resume_version_id: string | null;
+    }> & { base_lock_version: number },
+  ) =>
+    request<{ application: JobApplicationRecord }>(`/api/job-applications/${id}`, {
+      method: "PUT",
+      body: payload,
+    }),
+  advanceJobApplication: (
+    id: string,
+    payload: {
+      target_stage_type: ApplicationStageType;
+      target_round_no?: number | null;
+      target_stage_label: string;
+      base_lock_version: number;
+    },
+  ) =>
+    request<{ application: JobApplicationRecord }>(
+      `/api/job-applications/${id}/advance`,
+      { method: "POST", body: payload },
+    ),
+  recordJobApplicationOffer: (
+    id: string,
+    offerStatus: "oc_received" | "written_offer_received",
+    baseLockVersion: number,
+  ) =>
+    request<{ application: JobApplicationRecord }>(
+      `/api/job-applications/${id}/offer`,
+      {
+        method: "POST",
+        body: {
+          offer_status: offerStatus,
+          base_lock_version: baseLockVersion,
+        },
+      },
+    ),
+  closeJobApplication: (
+    id: string,
+    payload: {
+      status: "rejected" | "withdrawn" | "closed";
+      offer_status?: "accepted" | "declined" | null;
+      base_lock_version: number;
+    },
+  ) =>
+    request<{ application: JobApplicationRecord }>(
+      `/api/job-applications/${id}/close`,
+      { method: "POST", body: payload },
+    ),
+  archiveJobApplication: (id: string, baseLockVersion: number) =>
+    request<{ application: JobApplicationRecord }>(
+      `/api/job-applications/${id}/archive`,
+      { method: "POST", body: { base_lock_version: baseLockVersion } },
+    ),
+  restoreJobApplication: (id: string, baseLockVersion: number) =>
+    request<{ application: JobApplicationRecord }>(
+      `/api/job-applications/${id}/restore`,
+      { method: "POST", body: { base_lock_version: baseLockVersion } },
+    ),
+  deleteJobApplication: (id: string) =>
+    request<{ deleted: boolean }>(`/api/job-applications/${id}`, {
+      method: "DELETE",
+    }),
+  listInterviewSessions: (
+    params: {
+      start_at?: string;
+      end_at?: string;
+      status?: InterviewSessionStatus;
+      application_id?: string;
+      include_archived?: boolean;
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.start_at) search.set("start_at", params.start_at);
+    if (params.end_at) search.set("end_at", params.end_at);
+    if (params.status) search.set("status", params.status);
+    if (params.application_id)
+      search.set("application_id", String(params.application_id));
+    if (params.include_archived) search.set("include_archived", "true");
+    if (params.cursor) search.set("cursor", params.cursor);
+    search.set("limit", String(params.limit ?? 500));
+    return request<{
+      items: InterviewSessionSummary[];
+      next_cursor: string | null;
+    }>(`/api/interview-sessions${search.size ? `?${search}` : ""}`);
+  },
+  getInterviewSession: (id: string) =>
+    request<InterviewSessionDetail>(`/api/interview-sessions/${id}`),
+  createInterviewSession: (
+    applicationId: string,
+    payload: {
+      client_request_id: string;
+      stage_type: "interview" | "hr" | "offer" | "other";
+      round_no?: number | null;
+      stage_label: string;
+      start_at: string;
+      end_at: string;
+      timezone: string;
+      mode: InterviewMode;
+      meeting_url?: string | null;
+      location?: string | null;
+      interviewer_name?: string | null;
+      interviewer_title?: string | null;
+      reminder_minutes?: number | null;
+      preparation_note?: string | null;
+      allow_conflict?: boolean;
+    },
+  ) =>
+    request<InterviewSessionDetail>(
+      `/api/job-applications/${applicationId}/interview-sessions`,
+      { method: "POST", body: payload },
+    ),
+  updateInterviewSession: (
+    id: string,
+    payload: Partial<{
+      mode: InterviewMode;
+      meeting_url: string | null;
+      location: string | null;
+      interviewer_name: string | null;
+      interviewer_title: string | null;
+      reminder_minutes: number | null;
+      preparation_note: string | null;
+      questions_markdown: string | null;
+      review_summary: string | null;
+      improvement_markdown: string | null;
+    }> & { base_lock_version: number },
+  ) =>
+    request<InterviewSessionDetail>(`/api/interview-sessions/${id}`, {
+      method: "PUT",
+      body: payload,
+    }),
+  rescheduleInterviewSession: (
+    id: string,
+    payload: {
+      start_at: string;
+      end_at: string;
+      timezone: string;
+      allow_conflict: boolean;
+      base_lock_version: number;
+    },
+  ) =>
+    request<InterviewSessionDetail>(
+      `/api/interview-sessions/${id}/reschedule`,
+      { method: "POST", body: payload },
+    ),
+  completeInterviewSession: (
+    id: string,
+    payload: {
+      questions_markdown?: string | null;
+      review_summary?: string | null;
+      improvement_markdown?: string | null;
+      base_lock_version: number;
+    },
+  ) =>
+    request<InterviewSessionDetail>(`/api/interview-sessions/${id}/complete`, {
+      method: "POST",
+      body: payload,
+    }),
+  cancelInterviewSession: (
+    id: string,
+    payload: { reason?: string | null; base_lock_version: number },
+  ) =>
+    request<InterviewSessionDetail>(`/api/interview-sessions/${id}/cancel`, {
+      method: "POST",
+      body: payload,
+    }),
+  deleteInterviewSession: (id: string) =>
+    request<{ deleted: boolean; application: JobApplicationRecord }>(
+      `/api/interview-sessions/${id}`,
+      { method: "DELETE" },
+    ),
+  uploadInterviewAsset: (
+    sessionId: string,
+    file: File,
+    sourceType: "recorded" | "uploaded",
+    durationMs?: number,
+  ) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("source_type", sourceType);
+    if (durationMs) formData.append("duration_ms", String(durationMs));
+    return request<{ asset: InterviewAssetRecord }>(
+      `/api/interview-sessions/${sessionId}/assets`,
+      { method: "POST", formData },
+    );
+  },
+  downloadInterviewAsset: (assetId: string) =>
+    requestBlob(`/api/interview-assets/${assetId}/content`),
+  deleteInterviewAsset: (assetId: string) =>
+    request<{ deleted: boolean }>(`/api/interview-assets/${assetId}`, {
       method: "DELETE",
     }),
   getPluginRelease: () =>
