@@ -155,6 +155,8 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run build:desktop`             | 打包未签名 macOS 正式版 dmg（连生产源，仅微信扫码登录）           |
 | `npm run build:desktop:dev`         | 打包未签名 macOS 开发版 dmg（LinkCV-Dev，连内网 Dev，密码登录） |
 | `npm run test:desktop`                | 桌面壳配置解析与导航守卫的 Node 测试                                  |
+
+桌面壳的打包规范：产物只落在被 Git 忽略的 `apps/desktop/release/`，不提交任何 dmg 或构建产物；应用图标使用 `apps/desktop/build/icon.png`（复制自 `apps/web/src/assets/linkresume-mark.png`，品牌图更新时需同步该副本）；目标环境在构建期由 `scripts/write-build-env.mjs` 写入产物，正式版强制 https，开发版允许内网 http 并在启动日志提示；开发版使用独立应用名 LinkCV-Dev 与 appId，不与正式版互相覆盖。完整引导见 `desktop-release` Skill。
 | `npm run build:extension`             | 构建可侧载的 Chrome MV3 目录                                         |
 | `uv run --directory apps/backend python ../../scripts/release/build_extension_release.py ...` | 生成并校验 Development/Production 插件发布 ZIP 与 SHA256SUMS |
 | `npm run test:backend:unit`           | 后端快速单元测试                                                     |

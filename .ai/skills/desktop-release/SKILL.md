@@ -51,6 +51,8 @@ description: 引导 LinkCV macOS 桌面客户端的开发启动、验证打包�
 - 开发版产物使用独立应用名 LinkCV-Dev 与 appId `cn.linkresume.desktop.dev`,不与正式版互相覆盖安装。
 - 两种打包均可用 `LINKCV_DESKTOP_ORIGIN` 显式覆盖目标源(production 包拒绝非回环 http,连内网 Dev 必须使用开发版目标);`scripts/write-build-env.mjs` 在构建期把目标写入产物并在非法输入时硬失败。
 - 产物位置:`apps/desktop/release/`;记录实际文件名与大小。
+- **产物管理规范**:`release/`、`dist/` 与 `node_modules/` 均被 Git 忽略,任何 dmg、blockmap 或构建中间产物不得提交;需要交付给使用者时把 dmg 移动或复制到约定位置(如对方下载文件夹),随后清空 `release/`,不留待提交产物。
+- **图标规范**:应用图标使用 `apps/desktop/build/icon.png`(复制自 `apps/web/src/assets/linkresume-mark.png`,1080×1080 带透明);品牌图更新后必须重新复制该副本再打包,不在线引用 Web 资产;开发版与正式版共用同一图标,以应用名区分。
 - 验证:双击 dmg 安装并启动——开发版确认连 Dev 环境且登录页出现邮箱密码表单;正式版确认连生产源、微信扫码登录可用。
 - 如实告知:两种包均未签名,仅用于本机或团队内验证。
 
