@@ -124,8 +124,20 @@ export type ResumeVersion = {
 export type AgentMessage = {
   sequence_no: number;
   role: "user" | "assistant";
+  message_type?: "text" | "clarification";
   content: string;
+  clarification?: AgentClarification | null;
   created_at: string;
+};
+
+export type AgentClarification = {
+  version: 1;
+  questions: Array<{
+    id: string;
+    header: string;
+    question: string;
+    options: Array<{ id: string; label: string; description?: string | null }>;
+  }>;
 };
 
 export type AgentSelectionContext = {
@@ -175,6 +187,7 @@ export type AgentProposal = {
 export type AgentStreamEvent =
   | { type: "run.started"; runId: string }
   | { type: "assistant.delta"; runId: string; delta: string }
+  | { type: "clarification.requested"; runId: string; clarification: AgentClarification }
   | { type: "tool.started" | "tool.completed"; runId: string; tool: string; callKey: string }
   | { type: "proposal.created"; runId: string; proposal: AgentProposal }
   | { type: "run.completed" | "run.cancelled"; runId: string }
@@ -855,7 +868,7 @@ async function requestBlob(path: string, retryAuth = true): Promise<Blob> {
 
 async function streamAgentMessage(
   sessionId: string,
-  payload: { content: string; idempotency_key: string; selection_context?: AgentSelectionContext },
+  payload: { content: string; idempotency_key: string; selection_context?: AgentSelectionContext; reply_to_sequence_no?: number },
   signal: AbortSignal,
   onEvent: (event: AgentStreamEvent) => void,
   retryAuth = true,
@@ -889,7 +902,7 @@ async function streamAgentMessage(
   let terminalReceived = false;
   const terminalEvents = new Set(["run.completed", "run.failed", "run.cancelled"]);
   const allowedEvents = new Set([
-    "run.started", "assistant.delta", "tool.started", "tool.completed",
+    "run.started", "assistant.delta", "clarification.requested", "tool.started", "tool.completed",
     "proposal.created", ...terminalEvents,
   ]);
   while (true) {
@@ -985,9 +998,9 @@ export const api = {
     request<{ sessions: AgentSession[] }>(
       `/api/agent/sessions?resume_id=${encodeURIComponent(resumeId)}`,
     ),
-  listAgentProposals: (resumeId: string) =>
+  listAgentProposals: (resumeId: string, sessionId?: string) =>
     request<{ proposals: AgentProposal[] }>(
-      `/api/agent/proposals?resume_id=${encodeURIComponent(resumeId)}`,
+      `/api/agent/proposals?resume_id=${encodeURIComponent(resumeId)}${sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : ""}`,
     ),
   getAgentSession: (sessionId: string) =>
     request<{ session: AgentSession }>(

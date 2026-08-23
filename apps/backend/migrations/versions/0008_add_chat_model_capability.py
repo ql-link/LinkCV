@@ -6,7 +6,7 @@
 
 本 revision 不迁移旧模型配置和调用日志。upgrade 在执行 DDL 前按外键
 依赖顺序清空两张旧表，再建立新的 Chat 能力结构。数据删除和 DDL 均位于
-配对 SQL 文件，downgrade 不恢复被清理的旧数据。
+up SQL 文件；恢复被清理的旧数据必须使用迁移前备份。
 """
 from collections.abc import Sequence
 from pathlib import Path
@@ -28,4 +28,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    execute_sql_file(op.get_bind(), SQL_DIR / "0008.down.sql")
+    raise RuntimeError("LinkCV database migrations are forward-only")

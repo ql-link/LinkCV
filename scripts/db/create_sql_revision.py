@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create an Alembic revision with paired reviewed MySQL SQL files."""
+"""Create a forward-only Alembic revision with reviewed MySQL upgrade SQL."""
 
 from __future__ import annotations
 
@@ -17,23 +17,20 @@ VERSIONS_DIR = BACKEND_ROOT / "migrations" / "versions"
 REVISION_FILE_PATTERN = re.compile(r"^(\d{4})_.+\.py$")
 
 
-def sql_template(direction: str, revision_id: str, message: str) -> str:
+def sql_template(revision_id: str, message: str) -> str:
     return (
-        f"-- {direction.title()} migration for {revision_id}: {message}\n"
+        f"-- Upgrade migration for {revision_id}: {message}\n"
         "-- Add reviewed MySQL 8.4 statements below.\n"
     )
 
 
-def create_sql_files(revision_id: str, message: str, sql_dir: Path = SQL_DIR) -> None:
+def create_up_sql_file(revision_id: str, message: str, sql_dir: Path = SQL_DIR) -> None:
     sql_dir.mkdir(parents=True, exist_ok=True)
     normalized_message = " ".join(message.splitlines()).strip()
-    for direction in ("up", "down"):
-        path = sql_dir / f"{revision_id}.{direction}.sql"
-        if path.exists():
-            raise FileExistsError(f"migration SQL file already exists: {path}")
-        path.write_text(
-            sql_template(direction, revision_id, normalized_message), encoding="utf-8"
-        )
+    path = sql_dir / f"{revision_id}.up.sql"
+    if path.exists():
+        raise FileExistsError(f"migration SQL file already exists: {path}")
+    path.write_text(sql_template(revision_id, normalized_message), encoding="utf-8")
 
 
 def next_revision_id(versions_dir: Path = VERSIONS_DIR) -> str:
@@ -56,7 +53,7 @@ def next_revision_id(versions_dir: Path = VERSIONS_DIR) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Create an Alembic revision and paired .up.sql/.down.sql files"
+        description="Create a forward-only Alembic revision and its .up.sql file"
     )
     parser.add_argument("-m", "--message", required=True)
     args = parser.parse_args()
@@ -72,7 +69,7 @@ def main() -> int:
     if revision is None or isinstance(revision, list):
         raise RuntimeError("expected exactly one generated Alembic revision")
 
-    create_sql_files(revision.revision, args.message)
+    create_up_sql_file(revision.revision, args.message)
     print(f"Created SQL migration: {revision.revision}")
     return 0
 

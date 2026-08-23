@@ -121,6 +121,10 @@ class AgentMessage(Base):
             "session_id", "sequence_no", name="uk_agent_messages_session_sequence"
         ),
         CheckConstraint("role IN ('user', 'assistant')", name="ck_agent_messages_role"),
+        CheckConstraint(
+            "message_type IN ('text', 'clarification')",
+            name="ck_agent_messages_message_type",
+        ),
         Index("idx_agent_messages_session_created", "session_id", "created_at", "id"),
         {"comment": "智能助手对话消息"},
     )
@@ -132,9 +136,13 @@ class AgentMessage(Base):
     run_id: Mapped[int | None] = mapped_column(UNSIGNED_BIGINT, nullable=True)
     sequence_no: Mapped[int] = mapped_column(UNSIGNED_BIGINT, nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False)
+    message_type: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="text", server_default="text"
+    )
     content: Mapped[str] = mapped_column(
         Text().with_variant(mysql.MEDIUMTEXT(), "mysql"), nullable=False
     )
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now()
     )
