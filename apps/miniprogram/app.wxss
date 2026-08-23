@@ -1,0 +1,42 @@
+page {
+  --ui-background: #f4f6f8;
+  --ui-foreground: #17191c;
+  --ui-surface: #ffffff;
+  --ui-surface-subtle: #f9fafb;
+  --ui-surface-muted: #edf1f5;
+  --ui-text-secondary: #3f4752;
+  --ui-text-muted: #6f7a8c;
+  --ui-text-subtle: #8791a1;
+  --ui-primary: #17191c;
+  --ui-primary-hover: #2c3137;
+  --ui-accent: #145ed6;
+  --ui-accent-hover: #0f4eb4;
+  --ui-border: #dbe0e8;
+  --ui-border-strong: #c3ccd6;
+  --ui-ring: #3979db;
+  --ui-destructive: #c43b3b;
+  --ui-destructive-subtle: #fff0f0;
+  --ui-success: #267a4d;
+  --ui-success-subtle: #eaf7f0;
+  --ui-warning: #9a5b13;
+  --ui-warning-subtle: #fff6e8;
+  background: var(--ui-background);
+  color: var(--ui-foreground);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-synthesis: none;
+}
+
+.ui-brand { display: flex; align-items: center; gap: 16rpx; color: var(--ui-foreground); font-size: 30rpx; font-weight: 700; letter-spacing: -1rpx; }
+.ui-brand-mark { width: 64rpx; height: 64rpx; flex-shrink: 0; border-radius: 16rpx; }
+
+.ui-primary-button, .ui-secondary-button { height: 88rpx; display: flex; align-items: center; justify-content: center; margin: 0; padding: 0 30rpx; box-sizing: border-box; font-size: 27rpx; font-weight: 600; line-height: 88rpx; touch-action: manipulation; }
+.ui-primary-button { border-radius: 16rpx; background: var(--ui-primary); color: #fff; }
+.ui-secondary-button { border: 2rpx solid var(--ui-border-strong); border-radius: 999rpx; background: transparent; color: var(--ui-foreground); }
+.ui-primary-button::after, .ui-secondary-button::after { border: 0; }
+.ui-primary-button[disabled], .ui-secondary-button[disabled] { opacity: .5; }
+.ui-primary-button-pressed { background: var(--ui-primary-hover); transform: translateY(1rpx); }
+.ui-secondary-button-pressed { border-color: var(--ui-ring); background: var(--ui-surface); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-primary-button-pressed { transform: none; }
+}

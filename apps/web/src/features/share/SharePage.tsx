@@ -1,3 +1,4 @@
+import "@callmebill/lxgw-wenkai-web/lxgwwenkai-regular/result.css";
 import { useEffect, useMemo, useState } from "react";
 import { Link2Off, Printer } from "lucide-react";
 import { Brand, Button, PageLoading } from "@/components/ui";

@@ -6,9 +6,9 @@
   ],
   "window": {
     "navigationBarTitleText": "LinkCV",
-    "navigationBarBackgroundColor": "#f5f5f7",
+    "navigationBarBackgroundColor": "#f4f6f8",
     "navigationBarTextStyle": "black",
-    "backgroundColor": "#f5f5f7",
+    "backgroundColor": "#f4f6f8",
     "backgroundTextStyle": "dark"
   },
   "style": "v2",

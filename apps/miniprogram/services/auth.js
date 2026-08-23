@@ -35,6 +35,10 @@ function wxLoginCode() {
 }
 
 function saveSession(body) {
+  const previousUser = wx.getStorageSync(USER_KEY);
+  if (previousUser && String(previousUser.id) !== String(body.user && body.user.id)) {
+    void require("./resumePreviewCache").clearResumePreviewCache();
+  }
   wx.setStorageSync(ACCESS_KEY, body.access_token);
   wx.setStorageSync(REFRESH_KEY, body.refresh_token);
   wx.setStorageSync(USER_KEY, body.user);
@@ -45,6 +49,7 @@ function clearSession() {
   wx.removeStorageSync(ACCESS_KEY);
   wx.removeStorageSync(REFRESH_KEY);
   wx.removeStorageSync(USER_KEY);
+  void require("./resumePreviewCache").clearResumePreviewCache();
 }
 
 function agreementRequiredError() {
@@ -185,12 +190,17 @@ function getAccessToken() {
   return wx.getStorageSync(ACCESS_KEY) || "";
 }
 
+function getCurrentUser() {
+  return wx.getStorageSync(USER_KEY) || null;
+}
+
 module.exports = {
   acceptPrivacyAgreement,
   apiUrl,
   clearSession,
   ensureSession,
   getAccessToken,
+  getCurrentUser,
   getAccountStatus,
   getPrivacySetting,
   hasAcceptedPrivacyAgreement,

@@ -32,7 +32,8 @@ scripts        初始化、质量、契约和开发脚本
 
 ```bash
 npm run setup           # 初始化环境
-npm run dev             # 启动 Web 和 FastAPI
+npm run dev:local       # 本地代码 + 本地中间件（.env + .env.local）
+npm run dev:development # 本地代码 + 共享 Dev 中间件（.env.development + .env.development.local）
 npm run check:ai        # 校验 AI 入口和 Skill
 npm run check:docs      # 校验长期文档同步
 npm run check:contracts # 校验确定性运行时契约
@@ -41,6 +42,8 @@ npm run check:app       # 测试、类型检查和构建三个应用
 npm run check           # 完整本地质量入口
 ```
 
+- 启动或重启开发服务时必须按用户要连接的中间件显式选择 profile：“全部本地”使用 `npm run dev:local`，“本地项目使用共享 Dev 中间件”使用 `npm run dev:development`。`npm run dev` 只是 `dev:local` 的兼容别名，不作为未说明目标时的默认选择。
+- `APP_ENV` 控制应用功能，不负责选择 env 文件；不得根据 `APP_ENV=development` 推断进程已加载 `.env.development`。以启动器打印的“基础配置”和“共享私密覆盖”路径为准，启动后再核对 5173 Web、8000 FastAPI 和目标中间件的实际连通性。
 - Python 命令统一通过 `uv run --directory apps/backend` 执行，不依赖系统 `python`。
 - 当前任务运行与改动范围和风险匹配的检查；创建 PR 前，对当前可提交内容运行完整 `npm run check`。
 - 只报告亲自运行并看到结果的测试、构建、迁移或部署命令；环境阻塞和未执行项要如实说明。

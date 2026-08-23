@@ -1,10 +1,14 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-test("resume detail retry loads the same resume again", async () => {
+test("resume detail downloads, embeds and commits the selected preview version", async () => {
   const servicePath = require.resolve("../services/resumes");
+  const authPath = require.resolve("../services/auth");
+  const cachePath = require.resolve("../services/resumePreviewCache");
   const pagePath = require.resolve("../pages/resumes/detail");
   const previousService = require.cache[servicePath];
+  const previousAuth = require.cache[authPath];
+  const previousCache = require.cache[cachePath];
   const previousPage = global.Page;
   const previousWx = global.wx;
   const calls = [];
@@ -12,14 +16,28 @@ test("resume detail retry loads the same resume again", async () => {
 
   require.cache[servicePath] = {
     exports: {
-      getResume: async (id) => {
-        calls.push(id);
-        return { title: "示例简历", data: { basics: {}, sections: {} } };
+      getResume: async (id) => { calls.push(["metadata", id]); return { pdf_version_id: "9" }; },
+      downloadResumePreview: async (id, versionId, filePath) => {
+        calls.push(["download", id, versionId, filePath]);
+        return filePath;
       },
     },
   };
+  require.cache[authPath] = { exports: { getCurrentUser: () => ({ id: "7" }) } };
+  require.cache[cachePath] = {
+    exports: {
+      getCachedResumePreview: async () => null,
+      resumePreviewPath: () => "/user/resume-42-9.png",
+      validateResumePreview: async (filePath) => { calls.push(["validate", filePath]); },
+      commitResumePreview: async (...args) => { calls.push(["commit", ...args]); },
+      invalidateResumePreview: async (...args) => { calls.push(["invalidate", ...args]); },
+      removeFile: async () => {},
+    },
+  };
   global.Page = (definition) => { pageDefinition = definition; };
-  global.wx = { setNavigationBarTitle() {} };
+  global.wx = {
+    setNavigationBarTitle() {},
+  };
 
   try {
     delete require.cache[pagePath];
@@ -30,15 +48,39 @@ test("resume detail retry loads the same resume again", async () => {
       setData(update) { Object.assign(this.data, update); },
     };
 
-    await page.retryLoad();
+    await Promise.all([page.retryLoad(), page.retryLoad()]);
 
-    assert.deepEqual(calls, ["resume-1"]);
+    assert.deepEqual(calls, [
+      ["metadata", "resume-1"],
+      ["download", "resume-1", "9", "/user/resume-42-9.png"],
+      ["validate", "/user/resume-42-9.png"],
+      ["commit", "7", "resume-1", "9", "/user/resume-42-9.png"],
+    ]);
     assert.equal(page.data.loading, false);
-    assert.equal(page.data.resume.title, "示例简历");
+    assert.equal(page.data.progress, 100);
+    assert.equal(page.data.previewPath, "/user/resume-42-9.png");
+
+    await page.handlePreviewError();
+    assert.deepEqual(calls.slice(4), [
+      ["invalidate", "7", "resume-1"],
+      ["metadata", "resume-1"],
+      ["download", "resume-1", "9", "/user/resume-42-9.png"],
+      ["validate", "/user/resume-42-9.png"],
+      ["commit", "7", "resume-1", "9", "/user/resume-42-9.png"],
+    ]);
+    assert.equal(page.data.previewPath, "/user/resume-42-9.png");
+
+    await page.handlePreviewError();
+    assert.equal(page.data.previewPath, "");
+    assert.equal(page.data.error, "预览图无法显示，请重新加载");
   } finally {
     delete require.cache[pagePath];
     if (previousService) require.cache[servicePath] = previousService;
     else delete require.cache[servicePath];
+    if (previousAuth) require.cache[authPath] = previousAuth;
+    else delete require.cache[authPath];
+    if (previousCache) require.cache[cachePath] = previousCache;
+    else delete require.cache[cachePath];
     global.Page = previousPage;
     global.wx = previousWx;
   }
