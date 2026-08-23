@@ -18,6 +18,7 @@ const JobCenterPage = lazy(() => import("./features/jobs/JobCenterPage").then((m
 const JobDetailPage = lazy(() => import("./features/jobs/JobDetailPage").then((module) => ({ default: module.JobDetailPage })));
 const JobFormPage = lazy(() => import("./features/jobs/JobFormPage").then((module) => ({ default: module.JobFormPage })));
 const LandingPage = lazy(() => import("./features/landing/LandingPage").then((module) => ({ default: module.LandingPage })));
+const NotFoundPage = lazy(() => import("./features/not-found/NotFoundPage").then((module) => ({ default: module.NotFoundPage })));
 const SharePage = lazy(() => import("./features/share/SharePage").then((module) => ({ default: module.SharePage })));
 const ResumeWorkbench = lazy(() => import("./features/workbench/ResumeWorkbench").then((module) => ({ default: module.ResumeWorkbench })));
 
@@ -79,8 +80,6 @@ function AppContent() {
       ) {
         const next = `${window.location.pathname}${window.location.search}`;
         navigateTo(authPath("login", next), { replace: true });
-      } else if (route.kind === "notFound") {
-        navigateTo("/", { replace: true });
       }
       return;
     }
@@ -154,6 +153,10 @@ function AppContent() {
 
   if (authStatus === "checking") {
     return <PageLoading label="正在加载简历工作台…" scope="page" />;
+  }
+
+  if (route.kind === "notFound") {
+    return <NotFoundPage />;
   }
 
   if (route.kind === "landing") {
@@ -250,21 +253,6 @@ function AppContent() {
       return <StatusShell><PageLoading label="正在打开简历…" scope="panel" /></StatusShell>;
     }
     return <ResumeWorkbench />;
-  }
-
-  if (route.kind === "notFound") {
-    return (
-      <StatusShell>
-        <div className="status-card">
-          <p className="status-code">404</p>
-          <h1>页面不存在</h1>
-          <p className="status-desc">这个地址可能已被移动或删除。</p>
-          <div className="status-actions">
-            <Button onClick={() => navigateTo("/resumes", { replace: true })}>返回简历主页</Button>
-          </div>
-        </div>
-      </StatusShell>
-    );
   }
 
   return <PageLoading label="正在进入简历主页…" scope="page" />;
