@@ -7,6 +7,10 @@
   </view>
   <view class="content">
     <text class="page-title">资料设置</text>
+    <view class="context-note">
+      <text class="context-icon">▤</text>
+      <text class="context-text">头像与昵称仅在小程序内展示，可随时修改</text>
+    </view>
 
     <view class="loading-block" wx:if="{{loading}}">
       <view class="spinner"></view>
@@ -14,34 +18,35 @@
     </view>
 
     <view wx:else>
-      <view class="group">
-        <button class="row avatar-row" open-type="chooseAvatar" bindchooseavatar="handleChooseAvatar" hover-class="row-pressed" disabled="{{saving}}">
-          <text class="row-label">头像</text>
-          <view class="row-value">
-            <image class="avatar" wx:if="{{localAvatarPath}}" src="{{localAvatarPath}}" mode="aspectFill"></image>
-            <view class="avatar avatar-placeholder" wx:else>{{nickname ? nickname[0] : '客'}}</view>
-            <text class="chevron">›</text>
+      <view class="avatar-wrap">
+        <button class="avatar-button" open-type="chooseAvatar" bindchooseavatar="handleChooseAvatar" hover-class="avatar-button-pressed" disabled="{{saving}}">
+          <image class="avatar-image" wx:if="{{localAvatarPath}}" src="{{localAvatarPath}}" mode="aspectFill"></image>
+          <view class="avatar-placeholder" wx:else>{{nickname ? nickname[0] : '客'}}</view>
+          <view class="avatar-camera" aria-hidden="true">
+            <view class="camera-body"></view>
+            <view class="camera-head"></view>
           </view>
         </button>
-        <view class="divider"></view>
-        <view class="row">
-          <text class="row-label">昵称</text>
+        <text class="avatar-hint">点击头像更换，可选微信头像或相册图片</text>
+      </view>
+
+      <view class="field-card">
+        <text class="field-label">昵称</text>
+        <view class="field-row">
           <input
-            class="nickname-input"
+            class="field-input"
             type="nickname"
             value="{{nickname}}"
-            placeholder="点击输入"
-            placeholder-class="nickname-placeholder"
+            placeholder="点击输入，可一键使用微信昵称"
+            placeholder-class="field-placeholder"
             bindinput="handleNicknameInput"
           />
         </view>
       </view>
 
-      <text class="hint">点击头像可使用微信头像或从相册选择；输入昵称时键盘上方可一键使用微信昵称</text>
       <text class="form-message" wx:if="{{message}}">{{message}}</text>
 
       <button class="save-button" hover-class="save-button-pressed" bindtap="handleSave" disabled="{{saving || loading}}">{{saving ? '正在保存…' : '保存修改'}}</button>
     </view>
   </view>
-  <view class="privacy-note">头像与昵称仅用于在小程序内展示，可随时修改</view>
 </view>
