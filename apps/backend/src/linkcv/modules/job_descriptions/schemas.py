@@ -17,6 +17,67 @@ SourceType = Literal["manual", "external_import"]
 Skill = Annotated[str, Field(max_length=100)]
 
 
+class JobDescriptionDraft(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    job_title: str | None = Field(default=None, max_length=200)
+    company_name: str | None = Field(default=None, max_length=200)
+    employment_type: EmploymentType | None = None
+    description: str | None = Field(default=None, max_length=200_000)
+    skills: list[Skill] = Field(default_factory=list, max_length=100)
+    education_requirement: str | None = Field(default=None, max_length=100)
+    experience_requirement: str | None = Field(default=None, max_length=100)
+    work_schedule: str | None = Field(default=None, max_length=100)
+    work_city: str | None = Field(default=None, max_length=100)
+    work_address: str | None = Field(default=None, max_length=500)
+    work_mode: WorkMode | None = None
+    salary_text: str | None = Field(default=None, max_length=128)
+    salary_min: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    salary_max: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    salary_currency: str | None = Field(default=None, max_length=3)
+    salary_period: SalaryPeriod | None = None
+    salary_months_per_year: int | None = Field(default=None, ge=1, le=65_535)
+    company_legal_name: str | None = Field(default=None, max_length=255)
+    company_industry: str | None = Field(default=None, max_length=100)
+    company_size: str | None = Field(default=None, max_length=50)
+    company_financing_stage: str | None = Field(default=None, max_length=50)
+    company_description: str | None = Field(default=None, max_length=200_000)
+    recruiter_name: str | None = Field(default=None, max_length=100)
+    recruiter_title: str | None = Field(default=None, max_length=100)
+    source_url: str | None = Field(default=None, max_length=2048)
+    notes: str | None = Field(default=None, max_length=16_000)
+
+    @field_validator(
+        "job_title", "company_name", "description", "education_requirement",
+        "experience_requirement", "work_schedule", "work_city", "work_address",
+        "salary_text", "company_legal_name", "company_industry", "company_size",
+        "company_financing_stage", "company_description", "recruiter_name",
+        "recruiter_title", "source_url", "notes",
+    )
+    @classmethod
+    def trim_optional_text(cls, value: str | None) -> str | None:
+        return value.strip() or None if value is not None else None
+
+    @field_validator("skills")
+    @classmethod
+    def normalize_draft_skills(cls, values: list[str]) -> list[str]:
+        result: list[str] = []
+        for value in values:
+            normalized = value.strip()
+            if normalized and normalized not in result:
+                result.append(normalized)
+        return result
+
+
+class JobDescriptionDraftResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    draft: JobDescriptionDraft
+    warnings: list[str]
+    input_type: Literal["text", "image"] = Field(alias="inputType")
+    call_id: str = Field(alias="callId")
+
+
 class DuplicateResolution(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

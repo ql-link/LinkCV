@@ -1,5 +1,6 @@
 import type {
   JobDescriptionCreatePayload,
+  JobDescriptionDraft,
   JobDescriptionRecord,
   JobEmploymentType,
   JobSalaryPeriod,
@@ -103,6 +104,37 @@ export function jobFormFromRecord(record: JobDescriptionRecord): JobFormState {
     recruiter_name: record.recruiter_name ?? "",
     recruiter_title: record.recruiter_title ?? "",
     notes: record.notes ?? "",
+  };
+}
+
+export function jobFormFromDraft(draft: JobDescriptionDraft): JobFormState {
+  return {
+    ...emptyJobForm,
+    job_title: draft.job_title ?? "",
+    company_name: draft.company_name ?? "",
+    employment_type: draft.employment_type ?? "",
+    description: draft.description ?? "",
+    skills: draft.skills?.join(", ") ?? "",
+    education_requirement: draft.education_requirement ?? "",
+    experience_requirement: draft.experience_requirement ?? "",
+    work_schedule: draft.work_schedule ?? "",
+    work_city: draft.work_city ?? "",
+    work_address: draft.work_address ?? "",
+    work_mode: draft.work_mode ?? "",
+    salary_text: draft.salary_text ?? "",
+    salary_min: draft.salary_min ?? "",
+    salary_max: draft.salary_max ?? "",
+    salary_currency: draft.salary_currency ?? "",
+    salary_period: draft.salary_period ?? "",
+    salary_months_per_year: draft.salary_months_per_year?.toString() ?? "",
+    company_legal_name: draft.company_legal_name ?? "",
+    company_industry: draft.company_industry ?? "",
+    company_size: draft.company_size ?? "",
+    company_financing_stage: draft.company_financing_stage ?? "",
+    company_description: draft.company_description ?? "",
+    recruiter_name: draft.recruiter_name ?? "",
+    recruiter_title: draft.recruiter_title ?? "",
+    notes: draft.notes ?? "",
   };
 }
 

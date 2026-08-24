@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { BriefcaseBusiness, Download, MapPin, Plus, Trash2, WalletCards } from "lucide-react";
-import { api, type JobDescriptionSummary } from "../../api/client";
+import { api, type JobDescriptionDraft, type JobDescriptionSummary } from "../../api/client";
 import { Button, ConfirmDialog, ExpandableSearch, IconButton, PageLoading } from "@/components/ui";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { jobDetailPath, navigateTo } from "../../routing";
 import { PluginInstallDialog } from "./PluginInstallDialog";
 import { JobFormPage } from "./JobFormPage";
+import { JobCreateMethodDialog } from "./JobCreateMethodDialog";
+import { JobSmartImportDialog } from "./JobSmartImportDialog";
+import { jobFormFromDraft, type JobFormState } from "./jobFormModel";
 import "./jobs.css";
 
 export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?: boolean }) {
@@ -19,8 +22,26 @@ export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?:
   const [pendingDelete, setPendingDelete] = useState<JobDescriptionSummary | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [showPluginInstall, setShowPluginInstall] = useState(false);
+  const [createStage, setCreateStage] = useState<"method" | "smart" | "form">("method");
+  const [initialJobForm, setInitialJobForm] = useState<JobFormState | undefined>();
+  const [draftWarnings, setDraftWarnings] = useState<string[]>([]);
   const activeKeywordRef = useRef(keyword.trim());
   activeKeywordRef.current = keyword.trim();
+
+  useEffect(() => {
+    if (createDialogOpen) {
+      setCreateStage("method");
+      setInitialJobForm(undefined);
+      setDraftWarnings([]);
+    }
+  }, [createDialogOpen]);
+
+  const closeCreate = () => navigateTo("/jobs", { replace: true });
+  const useDraft = (draft: JobDescriptionDraft, warnings: string[]) => {
+    setInitialJobForm(jobFormFromDraft(draft));
+    setDraftWarnings(warnings);
+    setCreateStage("form");
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -154,11 +175,27 @@ export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?:
       )}
       {pendingDelete && <ConfirmDialog kind="delete" title={`永久删除「${pendingDelete.job_title}」？`} description="删除后无法恢复，并会释放该岗位的来源标识。" confirmLabel="永久删除" busyLabel="正在删除…" busy={busyId === pendingDelete.id} onCancel={() => setPendingDelete(null)} onConfirm={deleteJob} />}
       {showPluginInstall && <PluginInstallDialog onClose={() => setShowPluginInstall(false)} />}
-      {createDialogOpen && (
+      {createDialogOpen && createStage === "method" && (
+        <JobCreateMethodDialog
+          onClose={closeCreate}
+          onManual={() => setCreateStage("form")}
+          onSmartImport={() => setCreateStage("smart")}
+        />
+      )}
+      {createDialogOpen && createStage === "smart" && (
+        <JobSmartImportDialog
+          onBack={() => setCreateStage("method")}
+          onClose={closeCreate}
+          onParsed={useDraft}
+        />
+      )}
+      {createDialogOpen && createStage === "form" && (
         <JobFormPage
           mode="create"
           presentation="dialog"
-          onClose={() => navigateTo("/jobs", { replace: true })}
+          initialForm={initialJobForm}
+          initialWarnings={draftWarnings}
+          onClose={closeCreate}
         />
       )}
     </main>

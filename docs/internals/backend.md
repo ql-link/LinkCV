@@ -11,7 +11,7 @@
 | `src/linkcv/domain/` | `ResumeDocumentV1`、`ResumeStyleV1`、联合快照、SectionIR、Draft 和确定性标准化 |
 | `src/linkcv/domain/job_source.py` | JD 来源 URL 校验、规范化、站点识别和 SHA-256 身份计算 |
 | `src/linkcv/application/resumes/` | 统一创建、乐观锁保存、版本创建/重命名/恢复、分享链接创建/覆盖/更新与事务规则 |
-| `src/linkcv/application/job_descriptions/` | JD 创建、重复解决、搜索分页、乐观锁更新和直接永久删除 |
+| `src/linkcv/application/job_descriptions/` | JD 创建、AI 草稿提取、重复解决、搜索分页、乐观锁更新和直接永久删除 |
 | `src/linkcv/application/interviews/` | 求职进程状态机、面试排期冲突、完成/推进/关闭和素材元数据事务 |
 | `src/linkcv/integrations/` | LinkParse PDF/DOCX Adapter、转换分发、微信小程序上游封装和统一 LLM 简历结构化 Adapter |
 | `src/linkcv/services/resume_import_service.py` | Worker 使用的 Markdown 转换、结构化与规范化原语，不提交业务事务 |
@@ -27,7 +27,7 @@
 | `src/linkcv/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkcv/modules/agent/` | 用户会话、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0034` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0035` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -50,6 +50,8 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 `0007` 新增用户私有 `job_descriptions` 单表。岗位、要求、工作地点、薪资、公司与招聘者快照、来源身份、备注和乐观锁保存在同行；福利和原始抓取内容不落库。`skills` 是字符串 JSON 数组。来源 URL 只在后端规范化，随后同时保存规范化值和二进制 SHA-256；BOSS 岗位链接还保存站点原生 ID。`(user_id, source_site, source_job_id)` 与 `(user_id, source_url_hash)` 两组唯一约束处理同用户重复。`0034` 永久删除当时所有已归档 JD，随后删除 `archived_at` 和归档联合索引；JD 从此不保存生命周期状态。列表、搜索、编辑和直接删除始终带用户条件，删除成功后真实释放来源唯一键。用户外键继续使用 `ON DELETE RESTRICT`；`0033` 建立的求职进程外键使用 `ON DELETE SET NULL`，因此删除 JD 只解除来源引用，完整岗位快照和后续面试历史继续保留。
 
 `POST /api/job-descriptions/import` 是浏览器插件的受保护入口，只接受 BOSS 岗位详情 URL 和有限的页面采集字段。`application/job_descriptions/import_service.py` 先清理不可见字符、空白和明确页尾噪声，再映射就业类型、工作形态、月薪/日薪/时薪及公司标签；它还会把 `5天/周`、`6个月` 等实习安排从误传的经验字段移入 `work_schedule`，并在入库前剔除福利标签。最后构造已有 `JobDescriptionCreateRequest` 并复用统一创建与重复解决事务。该过程不调用 LLM，不保存输入 DTO，也不绕过既有用户条件、来源唯一键或乐观锁。
+
+`POST /api/job-descriptions/parse-draft` 是 Web 新建流程的受保护智能导入入口，只接受一份文字或一张受限图片。`ai_import_service.py` 把文字交给 `chat` binding，把图片以多模态消息交给独立 `job_image_structuring` binding，并通过同一个可空 `JobDescriptionDraft` Schema 严格解析。接口只返回待确认草稿、核心字段缺失提示和调用 ID，不创建或更新 `job_descriptions`；原始输入、消息和模型正文不落库。`0035` 只扩展 LLM binding/validation 的能力约束并预置空视觉 binding，不修改 JD schema。
 
 `0008` 在模型配置上增加 `capability`、LiteLLM `adapter`、不含前缀的模型调用名和配置版本；新增按能力保存唯一当前候选的 `llm_capability_bindings`，并预置一行可为空的 `chat` 绑定。调用日志增加能力、来源、adapter 和调用名快照。旧的完整 `model_name`、`enabled`、`priority` 和手工价格列暂时保留用于应用回退兼容，新 HTTP 契约和运行时不读取其旧产品语义。revision 在 DDL 前先删除 `llm_call_logs`，再删除 `llm_model_configs`；旧数据不迁移，恢复依赖迁移前备份，升级完成后的 `chat` 绑定为空。
 
@@ -96,13 +98,13 @@ scene 使用结构化 hash 保存 state、Web poll token 哈希、claim 所有�
 
 `LLMService.chat()`、`LLMService.stream_chat()` 和 `LLMService.structured_chat()` 是后端业务模块使用的内部异步接口，不注册 HTTP route。调用方只提供可信 `user_id`、稳定 `source`、messages，以及结构化调用所需的响应模型；不传候选 ID、adapter、模型名、地址或密钥。服务按调用方传入的能力解析唯一当前 binding；当前能力未绑定时，Chat 返回 `LLM_CHAT_NOT_CONFIGURED`，其他能力返回 `LLM_MODEL_NOT_CONFIGURED`。单次逻辑调用只调用当前模型一次，供应商失败直接收口，不重试、不遍历其他候选、不自动切换 binding。结构化调用把 Pydantic JSON Schema 作为系统指令加入 messages，不向供应商传递 `response_format`；模型文本由 LinkCV 本地提取 JSON 对象并执行 Pydantic 严格校验，非法结果以 `LLM_RESPONSE_INVALID` 收口且不追加模型调用。
 
-LiteLLM 只位于 `modules/llm/gateway.py` 和只读目录边界。白名单 adapter 与不含前缀的调用名组装成 LiteLLM 模型标识；阿里云百炼（千问）使用 `dashscope/<model>` 路由，和其他当前支持的简单 API Key 供应商共享模型名、可选 API Base 与加密 API Key 配置。所有 `acompletion` 显式传 `num_retries=0`，价格只读 `litellm.model_cost`，缺价格不阻断调用。供应商异常转换成稳定分类。同步 SQLAlchemy 操作使用独立短 Session 在线程池执行，外部调用和流式迭代期间不持有数据库事务。成功、失败和取消都会收口同一条逻辑调用记录；进程被强制终止造成的 `pending` 记录保留为崩溃排查信号。
+LiteLLM 只位于 `modules/llm/gateway.py` 和只读目录边界。白名单 adapter 与不含前缀的调用名组装成 LiteLLM 模型标识；阿里云百炼（千问）使用 `dashscope/<model>` 路由，和其他当前支持的简单 API Key 供应商共享模型名、可选 API Base 与加密 API Key 配置。消息内容既可为文字，也可为 LiteLLM 兼容的受控文字/图片 part。所有 `acompletion` 显式传 `num_retries=0`，价格只读 `litellm.model_cost`，缺价格不阻断调用；供应商超时单独映射为 `LLM_TIMEOUT`，其余异常转换成稳定分类。同步 SQLAlchemy 操作使用独立短 Session 在线程池执行，外部调用和流式迭代期间不持有数据库事务。成功、失败和取消都会收口同一条逻辑调用记录；进程被强制终止造成的 `pending` 记录保留为崩溃排查信号。
 
 模型凭据使用 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 提供的 Fernet 密钥环加密，数据库只保存 `v1:<keyId>:<token>`。列表首项负责新写入，旧 key 用于兼容解密；读取旧密文时会惰性重包到首项。普通日志、HTTP 响应和调用记录均不包含明文凭据、messages、模型完整响应或供应商原始错误。
 
 简历导入 Worker 通过 `integrations/resume_structuring.py` 以 `source=resume_import` 调用 `LLMService.structured_chat()`，使用数据库中的 `resume_structuring` 当前绑定、加密凭据、调用日志和计量。模型输入只包含 SectionIR 的标题、类别和 Markdown，不包含原文件、对象键、LinkParse 元数据、warnings 或用户 ID；结构化调用使用 DeepSeek 时显式发送 `thinking.type=disabled`，其他供应商和普通 Chat 不附加该专属参数；模型返回内容仍须通过 `ResumeExtractionDraft` 严格校验。
 
-模型候选在 `0029` 后不再携带能力列；`llm_capability_bindings` 为 `chat`、`resume_structuring`、`pi_agent` 各保存一行当前候选、绑定版本和最近验证证据。`llm_model_validations` 按候选配置版本、能力、探针版本和调用 ID 保存验证结果；`llm_call_logs.model_config_version` 保存实际调用时的候选版本快照。管理员使用 `/api/admin/llm/capabilities` 查看能力矩阵，并通过 `/api/admin/llm/capabilities/{capability}/binding` 以真实探针成功后切换绑定。
+模型候选在 `0029` 后不再携带能力列；`llm_capability_bindings` 为 `chat`、`resume_structuring`、`pi_agent`、`job_image_structuring` 各保存一行当前候选、绑定版本和最近验证证据。`llm_model_validations` 按候选配置版本、能力、探针版本和调用 ID 保存验证结果；`llm_call_logs.model_config_version` 保存实际调用时的候选版本快照。管理员使用 `/api/admin/llm/capabilities` 查看能力矩阵，并通过 `/api/admin/llm/capabilities/{capability}/binding` 以真实探针成功后切换绑定；JD 图片解析探针向候选发送内置红色 PNG，只有返回约定的结构化颜色结果才更新绑定。
 
 `scripts/db/init_mysql.py` 只允许创建名为 `linkcv` 的 MySQL 数据库；`scripts/release/run_alembic.py` 在迁移前校验环境、host、port 和数据库并输出不含密码的摘要，再只读核对 Alembic 当前版本与已知 revision 的表、字段标记。发现版本落后但后续对象已存在，或版本已应用但标记对象缺失时，runner 会在任何 DDL 前停止，要求先人工核实并对齐 schema 与 `alembic_version`。FastAPI 配置支持根 `.env`、显式 `LINKCV_ENV_FILE`、同名 `.local` 和进程环境覆盖。Redis 在鉴权链路中作为唯一会话存储：`auth:session:{sid}` 保存会话哈希，`auth:user_sessions:{uid}` 索引该用户全部会话；会话不写 MySQL，撤销即删除 key。Web Cookie 和小程序 Bearer 分别要求 `web` 与 `miniprogram` channel；上线前缺少 channel 的旧会话仅兼容为 Web，并在续期时补写 channel。对象存储配置仅使用 `MINIO_*`。
 
@@ -145,7 +147,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0034`、模板初始化和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0035`、模板初始化和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 

@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Generic, Literal, TypeVar
+from typing import Annotated, Generic, Literal, TypeVar
 
 from pydantic import (
     BaseModel,
@@ -31,14 +31,51 @@ class AdminWriteModel(CamelModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
+class ChatTextContentPart(BaseModel):
+    type: Literal["text"] = "text"
+    text: str
+
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("text content must not be empty")
+        return value
+
+
+class ChatImageUrl(BaseModel):
+    url: str
+    detail: Literal["auto", "low", "high"] = "auto"
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str) -> str:
+        if not value.startswith(("data:image/png;base64,", "data:image/jpeg;base64,", "data:image/webp;base64,")):
+            raise ValueError("unsupported image URL")
+        return value
+
+
+class ChatImageContentPart(BaseModel):
+    type: Literal["image_url"] = "image_url"
+    image_url: ChatImageUrl
+
+
+ChatContentPart = Annotated[
+    ChatTextContentPart | ChatImageContentPart,
+    Field(discriminator="type"),
+]
+
+
 class ChatMessage(BaseModel):
     role: Literal["system", "user", "assistant"]
-    content: str
+    content: str | list[ChatContentPart]
 
     @field_validator("content")
     @classmethod
-    def validate_content(cls, value: str) -> str:
-        if not value.strip():
+    def validate_content(cls, value: str | list[ChatContentPart]) -> str | list[ChatContentPart]:
+        if isinstance(value, str) and not value.strip():
+            raise ValueError("message content must not be empty")
+        if isinstance(value, list) and not value:
             raise ValueError("message content must not be empty")
         return value
 
@@ -116,6 +153,7 @@ class ModelConfigCreate(AdminWriteModel):
 
 
 class ModelConfigPatch(AdminWriteModel):
+    base_config_version: int | None = Field(default=None, alias="baseConfigVersion", ge=1)
     adapter: str | None = Field(default=None, min_length=1, max_length=64)
     model: str | None = Field(default=None, min_length=1, max_length=128)
     api_base: HttpUrl | None = Field(default=None, alias="apiBase", max_length=512)
@@ -175,6 +213,79 @@ class ModelConfigRecord(CamelModel):
         return str(value)
 
 
+ModelCapability = Literal[
+    "chat", "resume_structuring", "pi_agent", "job_image_structuring"
+]
+
+
+class CapabilityModelConfigRecord(CamelModel):
+    id: str
+    adapter: str
+    model: str
+    api_base: str | None = Field(alias="apiBase")
+    key_configured: bool = Field(alias="keyConfigured")
+    config_version: int = Field(alias="configVersion", ge=1)
+    active_capabilities: list[ModelCapability] = Field(alias="activeCapabilities")
+    last_test: ModelLastTest | None = Field(alias="lastTest")
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def stringify_id(cls, value: object) -> str:
+        return str(value)
+
+
+class ModelCapabilityRecord(CamelModel):
+    capability: ModelCapability
+    active_model_id: str | None = Field(alias="activeModelId")
+    binding_version: int = Field(alias="bindingVersion", ge=1)
+    active_model: CapabilityModelConfigRecord | None = Field(alias="activeModel")
+    models: list[CapabilityModelConfigRecord]
+
+    @field_validator("active_model_id", mode="before")
+    @classmethod
+    def stringify_active_id(cls, value: object) -> str | None:
+        return None if value is None else str(value)
+
+
+class ModelCapabilityListResponse(CamelModel):
+    capabilities: list[ModelCapabilityRecord]
+
+
+class ModelBindingRequest(AdminWriteModel):
+    model_config_id: str = Field(alias="modelConfigId", min_length=1)
+    base_config_version: int | None = Field(default=None, alias="baseConfigVersion", ge=1)
+    base_binding_version: int | None = Field(default=None, alias="baseBindingVersion", ge=1)
+
+
+class ModelBindingResponse(CamelModel):
+    capability: ModelCapability
+    active_model_id: str | None = Field(alias="activeModelId")
+    binding_version: int = Field(alias="bindingVersion", ge=1)
+    validation_id: str = Field(alias="validationId")
+    call_id: str = Field(alias="callId")
+    active_model: CapabilityModelConfigRecord = Field(alias="activeModel")
+
+    @field_validator("active_model_id", mode="before")
+    @classmethod
+    def stringify_active_id(cls, value: object) -> str | None:
+        return None if value is None else str(value)
+
+
+class ModelCapabilityTestRequest(AdminWriteModel):
+    capability: ModelCapability
+    base_config_version: int | None = Field(default=None, alias="baseConfigVersion", ge=1)
+
+
+class ModelValidationResponse(CamelModel):
+    ok: Literal[True] = True
+    capability: ModelCapability
+    validation_id: str = Field(alias="validationId")
+    call_id: str = Field(alias="callId")
+    config_version: int = Field(alias="configVersion", ge=1)
+
+
 class ModelConfigResponse(CamelModel):
     model: ModelConfigRecord
 
@@ -217,12 +328,17 @@ class ChatCatalogResponse(CamelModel):
     adapters: list[ChatCatalogAdapter]
 
 
+class ModelCatalogResponse(CamelModel):
+    capabilities: list[ModelCapability]
+    adapters: list[ChatCatalogAdapter]
+
+
 Price = Decimal | None
 
 
 class CallLogRecord(CamelModel):
     call_id: str = Field(alias="callId")
-    capability: Literal["chat"]
+    capability: ModelCapability
     source: str
     user_id: str = Field(alias="userId")
     model_config_id: str | None = Field(alias="modelConfigId")
@@ -237,6 +353,7 @@ class CallLogRecord(CamelModel):
     estimated_cost_usd: Decimal | None = Field(alias="estimatedCostUsd")
     latency_ms: int | None = Field(alias="latencyMs")
     error_code: str | None = Field(alias="errorCode")
+    model_config_version: int | None = Field(default=None, alias="modelConfigVersion")
     created_at: datetime = Field(alias="createdAt")
 
     @field_validator("user_id", mode="before")

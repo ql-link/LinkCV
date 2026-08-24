@@ -34,13 +34,17 @@ export function JobFormPage({
   jobId,
   presentation = "page",
   onClose,
+  initialForm,
+  initialWarnings = [],
 }: {
   mode: "create" | "edit";
   jobId?: string;
   presentation?: "page" | "dialog";
   onClose?: () => void;
+  initialForm?: JobFormState;
+  initialWarnings?: string[];
 }) {
-  const [form, setForm] = useState<JobFormState>(emptyJobForm);
+  const [form, setForm] = useState<JobFormState>(() => initialForm ?? emptyJobForm);
   const [record, setRecord] = useState<JobDescriptionRecord | null>(null);
   const [loading, setLoading] = useState(mode === "edit");
   const [saving, setSaving] = useState(false);
@@ -203,6 +207,7 @@ export function JobFormPage({
 
             <div className="job-create-dialog-body">
               {error && <div className="job-error job-create-dialog-error" role="alert">{error}</div>}
+              {initialWarnings.length > 0 && <div className="job-create-draft-warning" role="status">{initialWarnings.join(" ")}</div>}
 
               <section className="job-create-primary" aria-labelledby="job-create-core-title">
                 <div className="job-create-section-heading">

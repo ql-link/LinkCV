@@ -105,16 +105,52 @@ describe("JobCenterPage", () => {
     expect(screen.getByText("暂未提供插件安装包。")).toBeInTheDocument();
   });
 
-  it("在新建路由中保留 JD 中心背景并打开创建弹窗", async () => {
+  it("在新建路由中先选择创建方式，填写后打开现有表单", async () => {
     vi.spyOn(api, "listJobDescriptions").mockResolvedValue({ items: [], next_cursor: null });
 
     const { container } = render(<JobCenterPage createDialogOpen />);
 
     await waitFor(() => expect(container.querySelector(".page-hero h1")).toHaveTextContent("JD 中心"));
     expect(screen.getByRole("dialog", { name: "新建 JD" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /填写/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /智能导入/ })).toBeInTheDocument();
+    expect(screen.queryByLabelText("职位名称")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /填写/ }));
     expect(screen.getByLabelText("职位名称")).toHaveFocus();
 
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     expect(window.location.pathname).toBe("/jobs");
+  });
+
+  it("智能导入只预填表单，用户提交前不创建 JD", async () => {
+    vi.spyOn(api, "listJobDescriptions").mockResolvedValue({ items: [], next_cursor: null });
+    const parse = vi.spyOn(api, "parseJobDescriptionDraft").mockResolvedValue({
+      draft: {
+        job_title: "平台工程师",
+        company_name: "示例科技",
+        description: "负责内部平台建设",
+        skills: ["Kubernetes", "Go"],
+      },
+      warnings: [],
+      inputType: "text",
+      callId: "llmcall_fixture",
+    });
+    const create = vi.spyOn(api, "createJobDescription");
+
+    render(<JobCenterPage createDialogOpen />);
+    fireEvent.click(screen.getByRole("button", { name: /智能导入/ }));
+    fireEvent.change(screen.getByLabelText("岗位文字"), {
+      target: { value: "示例科技招聘平台工程师，负责内部平台建设" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "开始识别" }));
+
+    await waitFor(() => expect(parse).toHaveBeenCalledWith(expect.objectContaining({
+      text: "示例科技招聘平台工程师，负责内部平台建设",
+      signal: expect.any(AbortSignal),
+    })));
+    expect(await screen.findByDisplayValue("平台工程师")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Kubernetes, Go")).toBeInTheDocument();
+    expect(create).not.toHaveBeenCalled();
   });
 });

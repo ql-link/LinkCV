@@ -5,6 +5,15 @@ from dataclasses import dataclass
 import litellm
 
 CHAT_CAPABILITY = "chat"
+RESUME_STRUCTURING_CAPABILITY = "resume_structuring"
+PI_AGENT_CAPABILITY = "pi_agent"
+JOB_IMAGE_STRUCTURING_CAPABILITY = "job_image_structuring"
+MODEL_CAPABILITIES = (
+    CHAT_CAPABILITY,
+    RESUME_STRUCTURING_CAPABILITY,
+    PI_AGENT_CAPABILITY,
+    JOB_IMAGE_STRUCTURING_CAPABILITY,
+)
 
 
 @dataclass(frozen=True)
@@ -34,6 +43,13 @@ def normalize_adapter(value: str) -> str:
     normalized = value.strip()
     if normalized not in CHAT_ADAPTER_BY_CODE:
         raise ValueError("unsupported Chat adapter")
+    return normalized
+
+
+def normalize_capability(value: str) -> str:
+    normalized = value.strip()
+    if normalized not in MODEL_CAPABILITIES:
+        raise ValueError("unsupported model capability")
     return normalized
 
 

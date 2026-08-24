@@ -7,6 +7,7 @@ import {
   ChatCatalog,
   LlmCallRecord,
   LlmModelConfig,
+  ModelCapabilityRecord,
 } from "../../api/client";
 import { LogsPanel, ModelsPanel } from "./AdminLlmPanels";
 
@@ -109,6 +110,29 @@ afterEach(() => {
 });
 
 describe("ModelsPanel", () => {
+  it("展示 JD 图片解析能力并可打开独立绑定设置", async () => {
+    mockModels();
+    const visualCapability: ModelCapabilityRecord = {
+      capability: "job_image_structuring",
+      activeModelId: null,
+      activeModel: null,
+      bindingVersion: 1,
+      models: [{ ...model, configVersion: 1, activeCapabilities: ["chat"] }],
+    };
+    vi.spyOn(api, "getModelCapabilities").mockResolvedValue({
+      capabilities: [visualCapability],
+    });
+
+    renderModels();
+
+    const visualCard = await screen.findByRole("button", { name: /JD 图片解析/ });
+    expect(visualCard).toHaveTextContent("尚未绑定模型");
+    fireEvent.click(visualCard);
+    expect(
+      screen.getByRole("dialog", { name: "设置 JD 图片解析" }),
+    ).toBeInTheDocument();
+  });
+
   it("opens Chat binding settings from the capability card instead of editing the model", async () => {
     mockModels();
 
