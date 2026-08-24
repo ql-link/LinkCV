@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, type JobDescriptionSummary } from "../../api/client";
 import { useResumeStore } from "../../store/resumeStore";
@@ -18,8 +18,25 @@ const job: JobDescriptionSummary = {
   updated_at: "2026-07-29T08:00:00Z",
 };
 
+function stubIntersectionObserver() {
+  const observer: { callback?: IntersectionObserverCallback } = {};
+  class IntersectionObserverMock {
+    constructor(callback: IntersectionObserverCallback) { observer.callback = callback; }
+    observe = vi.fn();
+    disconnect = vi.fn();
+    unobserve = vi.fn();
+    takeRecords = vi.fn(() => []);
+    root = null;
+    rootMargin = "280px 0px";
+    thresholds = [0];
+  }
+  vi.stubGlobal("IntersectionObserver", IntersectionObserverMock);
+  return observer;
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   window.history.replaceState(null, "", "/");
 });
 
@@ -64,6 +81,51 @@ describe("JobCenterPage", () => {
     expect(searchInput).toHaveAttribute("name", "job-search");
     fireEvent.change(searchInput, { target: { value: "Java 后端" } });
     await waitFor(() => expect(list).toHaveBeenLastCalledWith({ keyword: "Java 后端" }));
+  });
+
+  it("滚动接近列表底部时自动读取下一页直到没有更多数据", async () => {
+    const intersection = stubIntersectionObserver();
+    const secondJob = { ...job, id: "job-2", job_title: "前端工程师" };
+    const list = vi.spyOn(api, "listJobDescriptions")
+      .mockResolvedValueOnce({ items: [job], next_cursor: "cursor-2" })
+      .mockResolvedValueOnce({ items: [secondJob], next_cursor: null });
+
+    render(<JobCenterPage />);
+
+    expect(await screen.findByText("Java 开发实习生")).toBeInTheDocument();
+    await waitFor(() => expect(intersection.callback).toBeDefined());
+    await act(async () => {
+      intersection.callback?.([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+      intersection.callback?.([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+    });
+
+    expect(await screen.findByText("前端工程师")).toBeInTheDocument();
+    expect(list).toHaveBeenLastCalledWith({ keyword: undefined, cursor: "cursor-2" });
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("button", { name: "加载更多" })).not.toBeInTheDocument();
+  });
+
+  it("自动加载失败后暂停请求，用户重试成功后继续追加", async () => {
+    const intersection = stubIntersectionObserver();
+    const secondJob = { ...job, id: "job-2", job_title: "前端工程师" };
+    const list = vi.spyOn(api, "listJobDescriptions")
+      .mockResolvedValueOnce({ items: [job], next_cursor: "cursor-2" })
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce({ items: [secondJob], next_cursor: null });
+
+    render(<JobCenterPage />);
+
+    expect(await screen.findByText("Java 开发实习生")).toBeInTheDocument();
+    await waitFor(() => expect(intersection.callback).toBeDefined());
+    await act(async () => {
+      intersection.callback?.([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+    });
+
+    expect(await screen.findByText("后续 JD 加载失败。")).toBeInTheDocument();
+    expect(list).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    expect(await screen.findByText("前端工程师")).toBeInTheDocument();
+    expect(list).toHaveBeenCalledTimes(3);
   });
 
   it("永久删除前显示站内确认，取消时不调用接口", async () => {
@@ -117,9 +179,10 @@ describe("JobCenterPage", () => {
     expect(screen.queryByLabelText("职位名称")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /填写/ }));
+    expect(screen.getByRole("dialog", { name: "手动填写JD信息" })).toBeInTheDocument();
     expect(screen.getByLabelText("职位名称")).toHaveFocus();
 
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
     expect(window.location.pathname).toBe("/jobs");
   });
 
@@ -140,6 +203,7 @@ describe("JobCenterPage", () => {
 
     render(<JobCenterPage createDialogOpen />);
     fireEvent.click(screen.getByRole("button", { name: /智能导入/ }));
+    expect(screen.getByRole("dialog", { name: "智能填写JD信息" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("岗位文字"), {
       target: { value: "示例科技招聘平台工程师，负责内部平台建设" },
     });
