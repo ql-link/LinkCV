@@ -75,6 +75,11 @@ class User(Base):
         nullable=True,
         comment="微信绑定时间（UTC）",
     )
+    last_notice_read_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),
+        nullable=True,
+        comment="用户最近一次打开更新通知弹窗的时间 UTC；NULL 表示从未读取",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),
         nullable=False,

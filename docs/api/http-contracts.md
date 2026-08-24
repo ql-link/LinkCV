@@ -354,3 +354,16 @@ current 或下载读取存储失败、指针/对象大小或摘要非法时返�
 重新上架只接受 `unpublished` 指针：没有 current 指针返回 `404`，已经上架返回 `409 PLUGIN_RELEASE_ALREADY_PUBLISHED`，保留 ZIP 缺失或校验不一致返回 `503`。永久删除也必须二次确认；若插件仍已上架，服务端先把指针改为 `unpublished` 以关闭下载，再依次删除 ZIP 和 `current.json`。任一步骤失败返回 `503 PLUGIN_RELEASE_DELETE_FAILED`，保留 unpublished 状态供管理员安全重试；没有 current 指针返回 `404`。
 
 Development 与 Production 使用独立 MinIO。各自 Bucket 内的当前指针固定为 `system/plugin-releases/current.json`，版本对象固定为 `system/plugin-releases/v<version>/linkcv-job-capture-v<version>.zip`；对象键不重复携带环境名。服务端新写的指针使用 `schema_version=3` 并显式包含 `status=published|unpublished`；读取兼容既有不含 `status` 的 v2 指针，并按已发布处理。
+
+## 版本更新通知
+
+管理员发布的全站更新通知；用户接口要求普通登录会话，所有 `/api/admin/notices` 接口要求 `is_admin=true`。通知 `id` 为规范十进制字符串。未读计数为"已发布且 `published_at` 晚于该用户 `last_notice_read_at`（从未读取视为全部未读）"的条数；已下架通知对用户接口不可见，重新上架后对已读用户不重新计未读。
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `GET` | `/api/notices` | `200 {items, unread_count}`；items 为已发布通知按 `published_at` 倒序，每条含 `id`、`title`、`content`（受限 Markdown 文本）、`published_at` |
+| `POST` | `/api/notices/mark-read` | `200 {ok: true, unread_count: 0}`；把当前用户 `last_notice_read_at` 更新为当前时间，幂等 |
+| `GET` | `/api/admin/notices` | `200 {items}`；全量通知（含已下架）按发布时间倒序，每条额外含 `revoked_at` |
+| `POST` | `/api/admin/notices` | `200 {notice}`；body 为 `{title, content}`，strip 后非空且长度分别不超过 128 与 10000，否则 `400 NOTICE_TITLE_INVALID` / `400 NOTICE_CONTENT_INVALID` |
+| `POST` | `/api/admin/notices/{noticeId}/revoke` | `200 {notice}`；置 `revoked_at`，重复调用幂等；不存在返回 `404 NOTICE_NOT_FOUND` |
+| `POST` | `/api/admin/notices/{noticeId}/restore` | `200 {notice}`；清空 `revoked_at`，重复调用幂等；不存在返回 `404 NOTICE_NOT_FOUND` |

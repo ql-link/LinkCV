@@ -137,6 +137,15 @@ AUDIT_ACTIONS: dict[tuple[str, str], AuditAction] = {
     ("POST", "/api/admin/llm/models/{config_id}/activate"): AuditAction(
         "admin.llm_model_activate", "llm_model", "config_id"
     ),
+    ("POST", "/api/admin/notices"): AuditAction(
+        "admin.notice_create", "release_notice"
+    ),
+    ("POST", "/api/admin/notices/{notice_id}/revoke"): AuditAction(
+        "admin.notice_revoke", "release_notice", "notice_id"
+    ),
+    ("POST", "/api/admin/notices/{notice_id}/restore"): AuditAction(
+        "admin.notice_restore", "release_notice", "notice_id"
+    ),
 }
 
 AUDIT_ACTION_NAMES = frozenset(action.action for action in AUDIT_ACTIONS.values())

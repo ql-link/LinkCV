@@ -931,3 +931,32 @@
   .plugin-selected-file-actions { width: 100%; }
   .plugin-selected-file-actions button { flex: 1; }
 }
+
+/* 更新通知管理 */
+.notice-publish-form { display: flex; flex-direction: column; gap: .7rem; width: min(38rem, 100%); padding: .35rem 0; }
+.notice-publish-field { display: flex; flex-direction: column; gap: .35rem; }
+.notice-publish-field > span { color: var(--admin-muted); font-size: .62rem; letter-spacing: .03em; }
+.notice-publish-field input,
+.notice-publish-field textarea {
+  border: 1px solid var(--admin-line); border-radius: var(--radius-xs);
+  background: var(--surface-card); color: var(--admin-ink);
+  padding: .5rem .65rem; font-size: .72rem; font-family: inherit;
+}
+.notice-publish-field textarea { resize: vertical; line-height: 1.6; }
+.notice-publish-actions { display: flex; gap: .5rem; }
+.notice-action-button {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 2.3rem; padding: 0 .85rem; cursor: pointer;
+  border: 1px solid var(--admin-line); border-radius: var(--radius-xs);
+  background: var(--surface-card); color: var(--admin-ink); font-size: .66rem;
+}
+.notice-action-button.primary { background: #2563eb; border-color: transparent; color: #fff; }
+.notice-action-button:disabled { opacity: .55; cursor: not-allowed; }
+.notice-error { color: #e11d48; padding: .6rem .85rem; font-size: .7rem; }
+.notice-summary-cell { max-width: 22rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notice-badge {
+  display: inline-block; padding: .12rem .5rem; border-radius: 999px;
+  font-size: .6rem; letter-spacing: .03em;
+}
+.notice-badge-active { background: rgba(37, 99, 235, .12); color: #2563eb; }
+.notice-badge-revoked { background: rgba(23, 35, 59, .08); color: var(--admin-muted); }

@@ -33,7 +33,7 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0035"
+EXPECTED_HEAD = "0036"
 
 
 def migration_test_url() -> str:
@@ -116,6 +116,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "job_applications",
         "interview_sessions",
         "interview_assets",
+        "release_notices",
     } <= set(inspector.get_table_names())
     assert "admin_operation_logs" not in inspector.get_table_names()
     for agent_table in {
@@ -1001,6 +1002,50 @@ def test_job_description_archiving_removal_forward_migration() -> None:
             assert application["job_description_id"] is None
             assert application["job_title_snapshot"] == "归档岗位"
             assert application["description"] == "归档正文"
+    finally:
+        engine.dispose()
+
+
+def test_release_notices_forward_migration() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0035")
+
+    engine = create_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            user_id = connection.execute(
+                text(
+                    "INSERT INTO users (email, password_hash, nickname) "
+                    "VALUES ('notice-migration@example.invalid', '$2b$12$fictional', '张三')"
+                )
+            ).lastrowid
+
+        inspector = inspect(engine)
+        assert "release_notices" not in inspector.get_table_names()
+        assert "last_notice_read_at" not in {
+            column["name"] for column in inspector.get_columns("users")
+        }
+
+        run_alembic(database_url, "upgrade", "0036")
+
+        upgraded = inspect(engine)
+        assert "release_notices" in upgraded.get_table_names()
+        assert "last_notice_read_at" in {
+            column["name"] for column in upgraded.get_columns("users")
+        }
+        assert {
+            index["name"]: index["column_names"]
+            for index in upgraded.get_indexes("release_notices")
+        }["idx_release_notices_published"] == ["published_at", "id"]
+        with engine.connect() as connection:
+            assert connection.scalar(
+                text("SELECT version_num FROM alembic_version")
+            ) == "0036"
+            assert connection.scalar(
+                text("SELECT last_notice_read_at FROM users WHERE id = :user_id"),
+                {"user_id": user_id},
+            ) is None
     finally:
         engine.dispose()
 

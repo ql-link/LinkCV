@@ -531,3 +531,54 @@ def test_release_runner_rejects_job_archive_column_removed_before_0034() -> None
             connection, migration_script_directory(module)
         )
     engine.dispose()
+
+
+def test_release_runner_rejects_notice_schema_ahead_of_0036() -> None:
+    module = load_module(
+        "linkcv_run_alembic_notice_ahead_test",
+        REPO_ROOT / "scripts/release/run_alembic.py",
+    )
+    module.REVISION_TABLE_MARKERS = {"0036": frozenset({"release_notices"})}
+    module.REVISION_COLUMN_MARKERS = {
+        "0036": {"users": frozenset({"last_notice_read_at"})}
+    }
+    module.REVISION_REMOVED_COLUMN_MARKERS = {}
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0035')"))
+        connection.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY)"))
+        connection.execute(text("CREATE TABLE release_notices (id INTEGER PRIMARY KEY)"))
+
+    with engine.connect() as connection, pytest.raises(
+        RuntimeError, match="0036 tables exist before revision"
+    ):
+        module.validate_schema_revision_alignment(
+            connection, migration_script_directory(module)
+        )
+    engine.dispose()
+
+
+def test_release_runner_rejects_missing_notice_schema_after_0036() -> None:
+    module = load_module(
+        "linkcv_run_alembic_notice_missing_test",
+        REPO_ROOT / "scripts/release/run_alembic.py",
+    )
+    module.REVISION_TABLE_MARKERS = {"0036": frozenset({"release_notices"})}
+    module.REVISION_COLUMN_MARKERS = {
+        "0036": {"users": frozenset({"last_notice_read_at"})}
+    }
+    module.REVISION_REMOVED_COLUMN_MARKERS = {}
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0036')"))
+        connection.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY)"))
+
+    with engine.connect() as connection, pytest.raises(
+        RuntimeError, match="0036 missing"
+    ):
+        module.validate_schema_revision_alignment(
+            connection, migration_script_directory(module)
+        )
+    engine.dispose()

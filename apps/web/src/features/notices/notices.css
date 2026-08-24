@@ -1,0 +1,353 @@
+.notice-bell-button {
+  position: relative;
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.notice-bell-button:hover {
+  background: var(--ui-hover, rgba(23, 35, 59, 0.06));
+}
+
+.notice-bell-button:focus-visible {
+  outline: 2px solid var(--ui-focus, #2563eb);
+  outline-offset: 2px;
+}
+
+.notice-bell-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #e11d48;
+  border: 2px solid var(--ui-surface, #ffffff);
+  animation: notice-dot-pulse 2.4s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+}
+
+@keyframes notice-dot-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(225, 29, 72, 0.4);
+  }
+
+  70%,
+  100% {
+    box-shadow: 0 0 0 8px rgba(225, 29, 72, 0);
+  }
+}
+
+/* 弹窗尺寸与层级退让：详情弹窗打开时列表整体后缩、压暗，形成纵深。 */
+.notice-dialog-content,
+.notice-detail-dialog {
+  transition:
+    opacity 200ms ease,
+    scale 280ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.notice-dialog-receded {
+  scale: 0.96;
+  opacity: 0.5;
+}
+
+/* 进出场动效挂在内部 frame 上，避免与 Radix 的定位 transform 冲突。 */
+.notice-dialog-frame {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.notice-dialog-content[data-state="open"] .notice-dialog-frame {
+  animation: notice-frame-in 320ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.notice-dialog-content[data-state="closed"] .notice-dialog-frame {
+  animation: notice-frame-out 170ms cubic-bezier(1, 0, 0.68, 0.28) both;
+}
+
+.notice-detail-dialog[data-state="open"] .notice-dialog-frame {
+  animation: notice-detail-frame-in 360ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.notice-detail-dialog[data-state="closed"] .notice-dialog-frame {
+  animation: notice-frame-out 170ms cubic-bezier(1, 0, 0.68, 0.28) both;
+}
+
+@keyframes notice-frame-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes notice-detail-frame-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.94);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes notice-frame-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+
+.notice-dialog-content {
+  max-width: 560px;
+  max-height: min(72vh, 640px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.notice-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.notice-item {
+  padding: 14px 4px;
+  border-bottom: 1px solid var(--ui-border, rgba(23, 35, 59, 0.1));
+  animation: notice-item-in 300ms cubic-bezier(0.32, 0.72, 0, 1) 40ms both;
+}
+
+.notice-item:nth-child(2) {
+  animation-delay: 90ms;
+}
+
+.notice-item:nth-child(3) {
+  animation-delay: 140ms;
+}
+
+.notice-item:nth-child(4) {
+  animation-delay: 190ms;
+}
+
+.notice-item:nth-child(n + 5) {
+  animation-delay: 240ms;
+}
+
+@keyframes notice-item-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.notice-item:last-child {
+  border-bottom: none;
+}
+
+.notice-item-trigger {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 120ms ease-out,
+    opacity 120ms ease-out;
+}
+
+.notice-item-trigger:active {
+  transform: scale(0.985);
+  opacity: 0.92;
+}
+
+.notice-item-trigger:focus-visible {
+  outline: 2px solid var(--ui-focus, #2563eb);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.notice-item-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.notice-item-title {
+  font-weight: 600;
+  font-size: 15px;
+  flex: 1;
+  min-width: 0;
+  transition: color 150ms ease;
+}
+
+.notice-item-trigger:hover .notice-item-title {
+  color: #2563eb;
+}
+
+.notice-item-time {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--ui-muted, #5b6577);
+}
+
+.notice-chevron {
+  flex-shrink: 0;
+  color: var(--ui-muted, #5b6577);
+  transition:
+    color 150ms ease,
+    transform 150ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.notice-item-trigger:hover .notice-item-title,
+.notice-item-trigger:hover .notice-chevron {
+  color: #2563eb;
+}
+
+.notice-item-trigger:hover .notice-chevron {
+  transform: translateX(2px);
+}
+
+.notice-item-preview {
+  margin-top: 0;
+}
+
+.notice-item-preview .notice-markdown {
+  color: var(--ui-muted, #5b6577);
+  font-size: 13px;
+}
+
+/* 预览位于整行按钮内，链接点击统一进入详情弹窗，不直接跳转。 */
+.notice-item-trigger .notice-item-preview a {
+  pointer-events: none;
+}
+
+.notice-detail-link {
+  display: inline-block;
+  margin-top: 6px;
+  color: #2563eb;
+  font-size: 13px;
+  transition: color 150ms ease;
+}
+
+.notice-item-trigger:hover .notice-detail-link {
+  color: #1d4ed8;
+}
+
+.notice-empty {
+  margin: 24px 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--ui-muted, #5b6577);
+}
+
+.notice-detail-dialog {
+  max-width: 640px;
+  max-height: min(80vh, 720px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.notice-detail-body {
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.7;
+  padding-right: 4px;
+}
+
+.notice-markdown > :first-child {
+  margin-top: 0;
+}
+
+.notice-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.notice-markdown ul,
+.notice-markdown ol {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+
+.notice-markdown li {
+  margin: 2px 0;
+}
+
+.notice-markdown pre {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--ui-surface-muted, rgba(23, 35, 59, 0.05));
+  overflow-x: auto;
+  font-size: 13px;
+}
+
+.notice-markdown code {
+  font-size: 13px;
+}
+
+.notice-markdown a {
+  color: #2563eb;
+}
+
+/* 弱动效偏好：退位为纯淡入淡出，不做位移与缩放。 */
+@media (prefers-reduced-motion: reduce) {
+  .notice-bell-dot,
+  .notice-item,
+  .notice-item-trigger,
+  .notice-item-title,
+  .notice-chevron,
+  .notice-detail-link {
+    animation: none;
+    transition: none;
+  }
+
+  .notice-dialog-content .notice-dialog-frame,
+  .notice-detail-dialog .notice-dialog-frame {
+    animation: none;
+  }
+
+  .notice-dialog-content,
+  .notice-detail-dialog {
+    transition: opacity 150ms ease;
+  }
+}

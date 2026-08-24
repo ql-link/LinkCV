@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
+import { NoticeBell } from "../features/notices/NoticeBell";
 import { Brand } from "@/components/ui";
 import RandomLetterSwapNav from "@/components/ui/m-random-letter-swap-1";
 import { preloadWorkspacePage } from "../workspacePageLoaders";
@@ -111,24 +112,27 @@ export function WorkspaceNavigation({
           />
         </nav>
       </div>
-      <a
-        aria-current={active === "account" ? "page" : undefined}
-        aria-label={`打开个人资料，当前账号：${displayName}`}
-        className="dashboard-account-badge"
-        href="/account"
-        onFocus={() => { void onItemIntent("/account"); }}
-        onMouseEnter={() => { void onItemIntent("/account"); }}
-        title={`个人资料：${displayName}`}
-        onClick={(event) => {
-          if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-          event.preventDefault();
-          navigateTo("/account");
-        }}
-      >
-        {avatarUrl
-          ? <img src={avatarUrl} alt="" width="34" height="34" />
-          : [...displayName][0]}
-      </a>
+      <div className="dashboard-topbar-actions">
+        <NoticeBell />
+        <a
+          aria-current={active === "account" ? "page" : undefined}
+          aria-label={`打开个人资料，当前账号：${displayName}`}
+          className="dashboard-account-badge"
+          href="/account"
+          onFocus={() => { void onItemIntent("/account"); }}
+          onMouseEnter={() => { void onItemIntent("/account"); }}
+          title={`个人资料：${displayName}`}
+          onClick={(event) => {
+            if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+            event.preventDefault();
+            navigateTo("/account");
+          }}
+        >
+          {avatarUrl
+            ? <img src={avatarUrl} alt="" width="34" height="34" />
+            : [...displayName][0]}
+        </a>
+      </div>
     </header>
   );
 }

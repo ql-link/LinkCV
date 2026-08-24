@@ -510,6 +510,30 @@ export type AdminPluginReleaseCurrentResponse = {
   release: PluginRelease | null;
 };
 
+export type ReleaseNoticeItem = {
+  id: string;
+  title: string;
+  content: string;
+  published_at: string;
+};
+
+export type NoticesResponse = {
+  items: ReleaseNoticeItem[];
+  unread_count: number;
+};
+
+export type AdminReleaseNotice = ReleaseNoticeItem & {
+  revoked_at: string | null;
+};
+
+export type AdminNoticesResponse = {
+  items: AdminReleaseNotice[];
+};
+
+export type AdminNoticeMutationResponse = {
+  notice: AdminReleaseNotice;
+};
+
 export type DuplicateResolution = {
   action: "update";
   job_description_id: string;
@@ -1504,6 +1528,28 @@ export const api = {
     request<{ deleted: boolean }>(`/api/interview-assets/${assetId}`, {
       method: "DELETE",
     }),
+  getNotices: () => request<NoticesResponse>("/api/notices"),
+  markNoticesRead: () =>
+    request<{ ok: boolean; unread_count: number }>("/api/notices/mark-read", {
+      method: "POST",
+    }),
+  adminListNotices: () =>
+    request<AdminNoticesResponse>("/api/admin/notices"),
+  adminCreateNotice: (title: string, content: string) =>
+    request<AdminNoticeMutationResponse>("/api/admin/notices", {
+      method: "POST",
+      body: { title, content },
+    }),
+  adminRevokeNotice: (noticeId: string) =>
+    request<AdminNoticeMutationResponse>(
+      `/api/admin/notices/${encodeURIComponent(noticeId)}/revoke`,
+      { method: "POST" },
+    ),
+  adminRestoreNotice: (noticeId: string) =>
+    request<AdminNoticeMutationResponse>(
+      `/api/admin/notices/${encodeURIComponent(noticeId)}/restore`,
+      { method: "POST" },
+    ),
   getPluginRelease: () =>
     request<PluginReleaseCurrentResponse>("/api/plugin-releases/current"),
   downloadPluginRelease: (version: string) =>

@@ -19,6 +19,7 @@ from linkcv.modules.llm.models import (
     LLMModelConfig,
     LLMModelValidation,
 )
+from linkcv.modules.notices.models import ReleaseNotice
 from linkcv.modules.resumes.models import (
     DocumentParseTask,
     Resume,
@@ -40,6 +41,7 @@ __all__ = [
     "InterviewSession",
     "JobApplication",
     "JobDescription",
+    "ReleaseNotice",
     "DocumentParseTask",
     "Resume",
     "ResumeTemplate",

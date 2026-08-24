@@ -19,6 +19,7 @@ import {
   FileText,
   LayoutDashboard,
   LogOut,
+  Megaphone,
   Menu,
   MoreHorizontal,
   PackageOpen,
@@ -31,6 +32,7 @@ import {
 import { Brand } from "@/components/ui";
 import { ModelsPanel } from "./AdminLlmPanels";
 import { AdminLogsCenter } from "./AdminObservabilityPanels";
+import { AdminNoticePanel } from "./AdminNoticePanel";
 import { AdminTemplatePanel } from "./AdminTemplatePanel";
 import { PluginReleasePanel } from "./PluginReleasePanel";
 import "./admin.css";
@@ -44,7 +46,7 @@ import {
   type AdminUserDetail as AdminUserDetailType,
 } from "../../api/client";
 import { adminLoginPath, navigateTo } from "../../routing";
-type AdminSection = "overview" | "users" | "templates" | "models" | "plugins" | "logs";
+type AdminSection = "overview" | "users" | "templates" | "models" | "plugins" | "notices" | "logs";
 
 function initialAdminSection(): AdminSection {
   const path = window.location.pathname;
@@ -52,6 +54,7 @@ function initialAdminSection(): AdminSection {
   if (path.startsWith("/admin/templates")) return "templates";
   if (path.startsWith("/admin/llm")) return "models";
   if (path.startsWith("/admin/plugins")) return "plugins";
+  if (path.startsWith("/admin/notices")) return "notices";
   if (path.startsWith("/admin/logs")) return "logs";
   return "overview";
 }
@@ -62,6 +65,7 @@ const adminSectionPaths: Record<AdminSection, string> = {
   templates: "/admin/templates",
   models: "/admin/llm/models",
   plugins: "/admin/plugins",
+  notices: "/admin/notices",
   logs: "/admin/logs/system",
 };
 
@@ -359,6 +363,7 @@ function AdminWorkspace({
                 />
               )}
               {section === "plugins" && <PluginReleasePanel />}
+              {section === "notices" && <AdminNoticePanel />}
               {section === "logs" && (
                 <AdminLogsCenter
                   notify={notify}
@@ -408,6 +413,7 @@ const sectionLabels: Record<AdminSection, string> = {
   templates: "简历模板",
   models: "模型配置",
   plugins: "插件发布",
+  notices: "更新通知",
   logs: "日志中心",
 };
 
@@ -430,6 +436,7 @@ function SidebarContent({
     { id: "templates", label: "简历模板", icon: FileText },
     { id: "models", label: "模型配置", icon: Bot },
     { id: "plugins", label: "插件发布", icon: PackageOpen },
+    { id: "notices", label: "更新通知", icon: Megaphone },
     { id: "logs", label: "日志中心", icon: Activity },
   ];
   return (

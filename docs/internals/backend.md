@@ -26,8 +26,9 @@
 | `src/linkcv/modules/interviews/` | 求职进程、单场面试和素材 ORM、HTTP DTO 与受保护路由 |
 | `src/linkcv/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkcv/modules/agent/` | 用户会话、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
+| `src/linkcv/modules/notices/` | 全站版本更新通知的管理端发布、下架/上架与用户端列表、未读时间点 |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0035` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0036` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -122,7 +123,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 `ObservabilityMiddleware` 为每次 HTTP 尝试接受格式合法的 `X-Request-ID` 或生成新值，并在响应中回传；它写入一条包含路由模板、状态码、耗时、可信用户和稳定错误码的 access 事件。未处理异常额外保留异常类型和脱敏后的栈。MinIO、Redis、MySQL、LinkParse 和 LLM 调用使用 `dependency` 分类，简历导入使用 `operation_id` 关联上传、转换、结构化和 HTTP 结果。导入 Worker 另以 `task_load → source_read → document_conversion → resume_structuring → resume_normalization → resume_persistence` 记录阶段结果与耗时；失败事件只增加稳定错误码、失败阶段、异常类型，以及不含字段值的 Pydantic 验证模型、路径和错误类型，不写文件名、简历正文或模型响应。Uvicorn 自带 access log 已关闭，避免同一请求重复记录。
 
-状态变更和安全动作通过 `modules/observability/audit.py` 的固定映射写入审计事件，包括鉴权/会话、账号资料与密码、简历/版本/资源、PDF 导出、JD、管理员用户状态和模型配置。actor 只从已验证会话或登录结果绑定，target 从路由参数、归属校验后的实体或创建结果绑定；成功与受控失败都记录，响应以 `X-Audit-Recorded` 表示本地 sink 是否接受。浏览器单独上报 `resume.pdf_export` 的旧接口继续兼容；新的 Web PDF 路由自动记录该动作。审计不新增 MySQL 表，也不替代既有 `llm_call_logs`。
+状态变更和安全动作通过 `modules/observability/audit.py` 的固定映射写入审计事件，包括鉴权/会话、账号资料与密码、简历/版本/资源、PDF 导出、JD、管理员用户状态、模型配置和更新通知发布状态。actor 只从已验证会话或登录结果绑定，target 从路由参数、归属校验后的实体或创建结果绑定；成功与受控失败都记录，响应以 `X-Audit-Recorded` 表示本地 sink 是否接受。浏览器单独上报 `resume.pdf_export` 的旧接口继续兼容；新的 Web PDF 路由自动记录该动作。审计不新增 MySQL 表，也不替代既有 `llm_call_logs`。
 
 所有事件由后端白名单生成 `event_version=1` JSON Lines，同时写 stderr 和可选 `LOG_DIRECTORY/linkcv.jsonl`。日志正文会截断并遮盖 URL query、Bearer/JWT、邮箱和常见 secret 赋值；日志文件按 UTC 日期轮转并清理七天以前的缓冲文件。容器将目录挂入命名卷，由 LinkCV 自己的 Promtail 异步推送到共享 Loki。业务请求不直接调用 Loki；管理查询使用固定 `{service="linkcv", environment, log_type}` selector 和允许字段，最多查询七天、单页最多 200 条，并按 `event_id` 去重。Loki 不可用只使管理查询返回 `LOG_QUERY_UNAVAILABLE`，不阻断其他业务。
 
@@ -149,7 +150,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0035`、模板初始化和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0036`、模板初始化和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 
@@ -158,3 +159,8 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 插件不使用数据库表。Development 与 Production 使用彼此独立的 MinIO，因此各自 Bucket 内统一以 `system/plugin-releases/current.json` 保存当前指针，以 `system/plugin-releases/v<version>/linkcv-job-capture-v<version>.zip` 保存当前版本 ZIP，不在对象键中重复环境名。新写指针使用 schema v3，并显式包含 `published` 或 `unpublished` 状态；读取兼容既有不含状态的 v2 指针，并按已发布处理。发布顺序固定为先写 ZIP 并核对 size/SHA-256 元数据，再覆盖当前指针，最后枚举插件保留前缀并删除除 current 引用对象外的其他 ZIP。指针失败时上一状态和旧 ZIP 继续有效；清理失败时新版保持有效并返回 `cleanup_pending=true`，同版本重试或后续上传会再次清理。同版本同摘要可以幂等重试或从下架状态重新上架，同版本不同内容或低于指针保留版本的发布返回冲突。当前 Docker 入口是单 Uvicorn 进程，进程锁只保证当前部署内发布串行；扩为多副本前必须改成跨实例协调。
 
 普通登录用户通过 FastAPI 读取当前元数据和流式下载，MinIO Bucket policy、Endpoint 和对象键都不暴露给浏览器。下载前重新核对当前版本、对象大小和 SHA-256 元数据，页面停留期间版本已变化时要求刷新，不回退到已删除的历史对象。管理员通过独立 current 接口区分无插件、已上架和已下架三种状态。下架将 `current.json.status` 改为 `unpublished`，成功后用户下载关闭，但当前版本信息和该版本 ZIP 均保留；重新上架校验保留 ZIP 后切回 `published`，无需再次上传。永久删除与发布共用进程锁，并在插件仍已上架时先写入 unpublished 指针关闭下载，再删除 ZIP 和指针；部分失败保留 unpublished 状态，允许重复删除完成收尾。
+# 版本更新通知
+
+`modules/notices/` 负责全站版本更新通知的发布与读取。`0036` 新增 `release_notices` 表并为 `users` 增加 `last_notice_read_at` 列；发布时间与 ID 联合索引支持稳定倒序列表。管理员通过 `/api/admin/notices` 发布、下架与重新上架通知（标题 strip 后 1–128 字符，正文 strip 后 1–10000 字符的受限 Markdown 文本），下架写入 `revoked_at` 且幂等，重新上架清空该列。HTTP 中通知 ID 使用十进制字符串。
+
+普通登录用户通过 `/api/notices` 读取按 `published_at` 倒序的已发布通知；未读计数为发布时间晚于该用户 `last_notice_read_at`（从未读取视为全部未读）的条数，已下架条目不参与列表与计数。`/api/notices/mark-read` 把当前用户的读取时间更新为当前时间，幂等。重新上架不改变原 `published_at`，因此对已读用户不重新计未读。

@@ -47,7 +47,7 @@ JD 资料库使用可恢复路由 `/jobs`、`/jobs/new`、`/jobs/:jobId` 和 `/j
 
 日志中心的系统页支持按级别、依赖、request ID 和关键词筛选；审计页支持按固定动作、操作者、目标和结果筛选；两者展示最近 24 小时摘要、部分脏行提示和游标分页。LLM 页继续读取 MySQL 中的真实调用记录，支持来源、状态、模型、用户、精确 `callId` 和时间范围筛选。三个页面都只通过 FastAPI 查询，不直连 Loki，也不轮询。后端保留既有 `resume.pdf_export` 客户端审计契约以兼容已有调用方；当前工作台的文字版 PDF 下载链不调用该接口。
 
-管理端新增 `/admin/templates` 模板工作区，可查看启用、停用和结构无效模板，上传严格 JSON 包、真实预览并幂等启停；不提供覆盖或删除。`/admin/plugins` 提供插件发布管理。
+管理端新增 `/admin/templates` 模板工作区，可查看启用、停用和结构无效模板，上传严格 JSON 包、真实预览并幂等启停；不提供覆盖或删除。`/admin/plugins` 提供插件发布管理，`/admin/notices` 提供受限 Markdown 更新通知的发布、下架与重新上架。
 
 ## 视觉与交互基线
 
@@ -55,7 +55,7 @@ JD 资料库使用可恢复路由 `/jobs`、`/jobs/new`、`/jobs/:jobId` 和 `/j
 - shadcn primitive 与 LinkCV 通用组合组件只放在 `src/components/ui/`，页面统一从 `@/components/ui` 导入；`components.json` 保存 shadcn CLI 与 Registry 配置，MCP 连接由 Codex 配置管理。UI 目录不保存 API、权限和页面状态，也不另建 `components/product`。
 - 用户侧页面首次加载统一使用 `src/components/ui/page-loading.tsx`：应用级状态占满视口，工作区模块在页面标题下方使用同一高度和居中位置，弹窗与侧栏使用紧凑面板高度；分页、上传、保存和删除等局部进行中状态仍留在对应操作附近。管理后台保持独立视觉边界。
 - 简历、资料、模板 JSON 和插件 ZIP 等文件导入入口统一使用 `src/components/ui/file-upload.tsx`：保留各业务自己的格式、大小和提交规则，共享点击选择、拖放、焦点、禁用与响应式上传区视觉；头像和编辑器正文图片等媒体编辑操作不使用该组件。
-- 普通工作区在 `WorkspaceLayout` 上显式使用 `data-ui-theme="light"`，保持既有浅色行为；入口层和管理端沿用各自主题。新增主题必须在 Token 层定义，不能在页面重复声明整套颜色。
+- 普通工作区在 `WorkspaceLayout` 上显式使用 `data-ui-theme="light"`，保持既有浅色行为；入口层和管理端沿用各自主题。工作区顶部右侧将更新通知铃铛与个人资料入口组成同一操作区；铃铛显示未读点，打开列表后标记已读，最新条目显示受限 Markdown 摘要并可进入独立详情弹窗。新增主题必须在 Token 层定义，不能在页面重复声明整套颜色。
 - 页面视觉方向、Design Brief、shadcn 选型、Vercel Web Interface Guidelines 审查和浏览器验收流程由 [frontend-design Skill](../../.ai/skills/frontend-design/SKILL.md) 维护。该 Skill 把 Anthropic 官方 frontend-design 方法适配到 LinkCV 的四类视觉边界；21st.dev 等外部参考只提供局部布局、材质和动效意图，最终使用 LinkCV Token 与组件重写。
 - 可在本地运行的 Web 改动由 Agent 启动并查看实际页面；大幅视觉修改先确认设计来源，按选定效果的布局、密度、间距、色彩、字体、内容和层级实现。新反馈只有在实现完成后才更新本节；尚未实现的决定留在对应 Spec。
 - 公共欢迎页位于 `src/features/landing/`，由 `/` 与 `/home` 共同访问，登录状态不会把这两个地址重定向到工作台；未登录时顶部和页尾 CTA 通过现有 `LandingPage` 回调进入 `/login`，已登录时 CTA 进入 `/resumes`，营销组件本身不持有鉴权状态。顶部可在中文和英文间切换，选择仅保存在浏览器本地并在下次访问时恢复。欢迎页使用 `.marketing-landing` 样式边界承载深浅主题、响应式营销区块与产品模拟图。登录/注册页使用独立 `features/auth/auth.css` 保留入口构图和 Shader，表单的 TextField 与 Button 来自集中 UI；入口不再导入 `landing.css`。Local/Development 提供邮箱密码登录、注册和微信扫码切换，Production 只展示微信小程序码。

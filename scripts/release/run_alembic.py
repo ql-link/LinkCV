@@ -35,6 +35,7 @@ REVISION_TABLE_MARKERS = {
             "interview_assets",
         }
     ),
+    "0036": frozenset({"release_notices"}),
 }
 REVISION_COLUMN_MARKERS = {
     "0031": {
@@ -52,6 +53,9 @@ REVISION_COLUMN_MARKERS = {
     },
     "0032": {
         "agent_messages": frozenset({"message_type", "metadata_json"}),
+    },
+    "0036": {
+        "users": frozenset({"last_notice_read_at"}),
     },
 }
 REVISION_REMOVED_COLUMN_MARKERS = {
