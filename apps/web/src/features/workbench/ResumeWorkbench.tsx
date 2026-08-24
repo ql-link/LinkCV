@@ -3,7 +3,6 @@ import { BubbleMenu, EditorContent, useEditor } from "@tiptap/react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
   AlertTriangle,
-  AlignLeft,
   CircleCheck,
   Columns2,
   FileDown,
@@ -128,6 +127,49 @@ export function clampAgentDrawerWidth(width: number, viewportWidth: number) {
 
 export function workbenchCanvasClassName(drawerMode: DrawerMode) {
   return `workbench-canvas${drawerMode ? " has-drawer" : ""}${drawerMode === "agent" ? " has-agent-drawer" : ""}`;
+}
+
+export function defaultWorkbenchDrawerMode(viewportWidth: number) {
+  return viewportWidth > 980 ? "settings" as const : null;
+}
+
+export function WorkbenchNavigationRail({
+  drawerMode,
+  onSettings,
+  onHistory,
+}: {
+  drawerMode: DrawerMode;
+  onSettings: () => void;
+  onHistory: () => void;
+}) {
+  return (
+    <nav className="workbench-rail" aria-label="简历编辑导航">
+      <div className="workbench-rail-primary">
+        <button
+          className={drawerMode === "settings" ? "is-active" : undefined}
+          type="button"
+          aria-controls="workbench-side-panel"
+          aria-expanded={drawerMode === "settings"}
+          aria-pressed={drawerMode === "settings"}
+          onClick={onSettings}
+        >
+          <SlidersHorizontal aria-hidden="true" size={18} />
+          <span>设计</span>
+        </button>
+        <button
+          className={drawerMode === "history" ? "is-active" : undefined}
+          type="button"
+          aria-controls="workbench-side-panel"
+          aria-expanded={drawerMode === "history"}
+          aria-pressed={drawerMode === "history"}
+          onClick={onHistory}
+        >
+          <History aria-hidden="true" size={18} />
+          <span>版本</span>
+        </button>
+      </div>
+    </nav>
+  );
 }
 
 export function clampAgentFloatingPosition(
@@ -629,17 +671,15 @@ function WorkbenchSettingsSection({
   title,
   description,
   icon,
-  variant = "plain",
   children,
 }: {
   title: string;
   description: string;
   icon?: ReactNode;
-  variant?: "plain" | "card";
   children: ReactNode;
 }) {
   return (
-    <section className={`workbench-settings-section${variant === "card" ? " is-card" : ""}`}>
+    <section className="workbench-settings-section">
       <header>
         <div className="workbench-settings-section-title">{icon}<h3>{title}</h3></div>
         <p>{description}</p>
@@ -716,28 +756,6 @@ export function SaveVersionAction({ pending, onSave }: { pending: boolean; onSav
         variant="secondary"
       >
         {pending ? "保存中…" : "保存版本"}
-      </Button>
-    </div>
-  );
-}
-
-export function VersionHistoryAction({ count, disabled, onOpen }: { count: number; disabled?: boolean; onOpen: () => void }) {
-  return (
-    <div className="workbench-setting-action">
-      <span className="workbench-setting-item-icon" aria-hidden="true"><History size={16} /></span>
-      <span className="workbench-setting-toggle-copy">
-        <strong>版本记录</strong>
-        <small>查看、恢复和管理 {count} 个已保存版本。</small>
-      </span>
-      <Button
-        aria-label="查看版本记录"
-        className="workbench-setting-row-action"
-        disabled={disabled}
-        onClick={onOpen}
-        size="sm"
-        variant="secondary"
-      >
-        查看
       </Button>
     </div>
   );
@@ -861,7 +879,7 @@ export function ResumeWorkbench() {
   const deleteStoredVersion = useResumeStore((state) => state.deleteVersion);
   const restoreStoredVersion = useResumeStore((state) => state.restoreVersion);
   const goHome = useResumeStore((state) => state.goHome);
-  const [drawerMode, setDrawerMode] = useState<DrawerMode>(null);
+  const [drawerMode, setDrawerMode] = useState<DrawerMode>(() => defaultWorkbenchDrawerMode(window.innerWidth));
   const [agentDrawerWidth, setAgentDrawerWidth] = useState(() => {
     try {
       const stored = Number.parseFloat(window.localStorage.getItem(AGENT_DRAWER_WIDTH_STORAGE_KEY) ?? "");
@@ -1339,6 +1357,11 @@ export function ResumeWorkbench() {
   return (
     <MotionConfig reducedMotion="user" transition={{ type: "spring", bounce: 0, duration: 0.34 }}>
       <div className="resume-workbench" data-ui-theme="light">
+        <WorkbenchNavigationRail
+          drawerMode={drawerMode}
+          onSettings={() => setDrawerMode((mode) => mode === "settings" ? null : "settings")}
+          onHistory={() => setDrawerMode((mode) => mode === "history" ? "settings" : "history")}
+        />
         <header className="workbench-header">
           <div className="workbench-header-left">
             <IconButton className="workbench-icon-action workbench-back-action" label="返回全部简历" onClick={() => void leaveSafely()}><Home size={16} /></IconButton>
@@ -1350,7 +1373,7 @@ export function ResumeWorkbench() {
           </div>
           <div className="workbench-header-actions">
             <div className="workbench-header-tool-group" role="group" aria-label="编辑面板">
-              <IconButton aria-controls="workbench-side-panel" aria-expanded={drawerMode === "settings"} aria-pressed={drawerMode === "settings"} className={`workbench-icon-action${drawerMode === "settings" ? " is-active" : ""}`} label="页面设置" onClick={() => setDrawerMode((mode) => mode === "settings" ? null : "settings")}><SlidersHorizontal size={16} /></IconButton>
+              <IconButton aria-controls="workbench-side-panel" aria-expanded={drawerMode === "settings"} aria-pressed={drawerMode === "settings"} className={`workbench-icon-action workbench-mobile-settings-action${drawerMode === "settings" ? " is-active" : ""}`} label="页面设置" onClick={() => setDrawerMode((mode) => mode === "settings" ? null : "settings")}><SlidersHorizontal size={16} /></IconButton>
             </div>
             <div className="workbench-output-actions" role="group" aria-label="保存与导出">
               <ExportPdfAction
@@ -1429,10 +1452,22 @@ export function ResumeWorkbench() {
                 exit={{ x: drawerMode === "agent" ? 390 : 392 }}
                 transition={{ type: "spring", bounce: 0, duration: 0.26 }}
               >
-                {drawerMode !== "agent" && <div className="workbench-drawer-head">
+                {drawerMode === "settings" ? (
+                  <div className="workbench-settings-head">
+                    <h2 id="workbench-drawer-title">页面</h2>
+                    <button
+                      type="button"
+                      className="workbench-drawer-done"
+                      onClick={() => setDrawerMode(null)}
+                      aria-label="关闭设置面板"
+                    >
+                      <X aria-hidden="true" size={17} />
+                    </button>
+                  </div>
+                ) : drawerMode !== "agent" && <div className="workbench-drawer-head">
                   <div>
-                    <h2 id="workbench-drawer-title">{drawerMode === "settings" ? "页面设置" : drawerMode === "history" ? "版本记录" : "智能助手"}</h2>
-                    {drawerMode !== "settings" && <p>{drawerMode === "history" ? "每次手动保存都会留下一个可恢复版本。" : "分析当前简历；任何修改都先生成提案。"}</p>}
+                    <h2 id="workbench-drawer-title">版本记录</h2>
+                    <p>保存重要节点，随时比较或恢复。</p>
                   </div>
                   <button
                     type="button"
@@ -1445,7 +1480,7 @@ export function ResumeWorkbench() {
                 </div>}
                 {drawerMode === "settings" ? (
                   <div className="workbench-settings">
-                    <WorkbenchSettingsSection title="页面布局" description="选择多页简历在工作区中的排列方式。">
+                    <WorkbenchSettingsSection title="页面排列" description="选择多页简历在编辑区中的浏览方式。">
                       <PageArrangementControl
                         value={pageArrangement}
                         onChange={changePageArrangement}
@@ -1456,7 +1491,7 @@ export function ResumeWorkbench() {
                       />
                     </WorkbenchSettingsSection>
 
-                    <WorkbenchSettingsSection title="页边距（单位：mm）" description="上下和左右分别同步调整，修改后立即更新页面。">
+                    <WorkbenchSettingsSection title="页边距" description="分别调整上下和左右留白，单位为毫米。">
                       <div className="workbench-margin-layout">
                         <div className="workbench-margin-controls">
                           <SettingsStepper label="上下边距" unit="mm" value={settings.verticalPageMargin} min={WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM} max={30} step={2} onChange={(verticalPageMargin) => updateSettings({ verticalPageMargin })} disabled={versionOperationPending} />
@@ -1471,36 +1506,22 @@ export function ResumeWorkbench() {
                       </div>
                     </WorkbenchSettingsSection>
 
-                    <WorkbenchSettingsSection title="字体设置" description="选择简历字体并调整正文大小。" icon={<Type aria-hidden="true" size={15} />} variant="card">
-                      <div className="workbench-font-settings-grid">
+                    <WorkbenchSettingsSection title="排版" description="统一调整简历正文的字体、字号和行距。" icon={<Type aria-hidden="true" size={15} />}>
+                      <div className="workbench-typography-settings">
                         <FontPreviewSelect value={settings.fontFamily} onChange={(fontFamily) => updateSettings({ fontFamily })} disabled={versionOperationPending} />
                         <SettingsStepper label="正文字号" unit="pt" value={settings.fontSize} min={8} max={16} step={0.5} onChange={(fontSize) => updateSettings({ fontSize })} disabled={versionOperationPending} />
+                        <SettingsStepper label="正文行距" unit="" value={settings.lineHeight} min={1.1} max={1.8} step={0.05} onChange={(lineHeight) => updateSettings({ lineHeight })} disabled={versionOperationPending} />
                       </div>
                     </WorkbenchSettingsSection>
-
-                    <WorkbenchSettingsSection title="排版设置" description="调整正文行距，修改后立即同步到简历和 PDF。" icon={<AlignLeft aria-hidden="true" size={15} />} variant="card">
-                      <div className="workbench-typesetting-grid">
-                        <SettingsStepper label="行距" unit="" value={settings.lineHeight} min={1.1} max={1.8} step={0.05} onChange={(lineHeight) => updateSettings({ lineHeight })} disabled={versionOperationPending} />
-                      </div>
-                    </WorkbenchSettingsSection>
-
-                    <WorkbenchSettingsSection title="版本管理" description="为重要节点留档，或回到之前保存的内容。" icon={<History aria-hidden="true" size={15} />} variant="card">
-                      <div className="workbench-version-settings">
-                        <SaveVersionAction
-                          pending={saveStatus === "saving" || versionOperationPending || versionNameSubmitting}
-                          onSave={openVersionNameDialog}
-                        />
-                        <VersionHistoryAction
-                          count={versions.length}
-                          disabled={versionOperationPending}
-                          onOpen={() => setDrawerMode("history")}
-                        />
-                      </div>
-                    </WorkbenchSettingsSection>
-
                   </div>
                 ) : drawerMode === "history" ? (
                   <div className="workbench-versions">
+                    <div className="workbench-version-create">
+                      <SaveVersionAction
+                        pending={saveStatus === "saving" || versionOperationPending || versionNameSubmitting}
+                        onSave={openVersionNameDialog}
+                      />
+                    </div>
                     <p className="workbench-version-summary">
                       <strong>{versions.length} 个版本</strong>
                       <span>正式保存 · 自动保存不计入</span>

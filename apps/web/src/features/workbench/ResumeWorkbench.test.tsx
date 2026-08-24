@@ -7,6 +7,7 @@ import {
   AgentFloatingEntry,
   clampAgentDrawerWidth,
   clampAgentFloatingPosition,
+  defaultWorkbenchDrawerMode,
   ExportPdfAction,
   FontPreviewSelect,
   normalizeVersionName,
@@ -15,7 +16,6 @@ import {
   SaveResumeAction,
   SaveVersionAction,
   VersionRenameAction,
-  VersionHistoryAction,
   WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM,
   versionRenameErrorMessage,
   setRestoredEditorContent,
@@ -24,6 +24,7 @@ import {
   truncateWorkbenchTitle,
   ZoomFeedback,
   WorkbenchSaveStatus,
+  WorkbenchNavigationRail,
   WorkbenchTitleInput,
   workbenchCanvasClassName,
   versionOperationErrorMessage,
@@ -134,17 +135,35 @@ describe("ResumeWorkbench 抽屉布局", () => {
     expect(clampAgentDrawerWidth(600, 500)).toBe(476);
     expect(clampAgentDrawerWidth(390, 300)).toBe(320);
   });
+
+  it("桌面默认展开设置，小屏默认保留完整编辑画布", () => {
+    expect(defaultWorkbenchDrawerMode(1440)).toBe("settings");
+    expect(defaultWorkbenchDrawerMode(1024)).toBe("settings");
+    expect(defaultWorkbenchDrawerMode(980)).toBeNull();
+    expect(defaultWorkbenchDrawerMode(390)).toBeNull();
+  });
 });
 
-describe("ResumeWorkbench 版本记录入口", () => {
-  it("在页面设置中显示版本数量并打开版本记录", async () => {
+describe("ResumeWorkbench 编辑导航", () => {
+  it("通过左侧导航打开设计和版本面板", async () => {
     const user = userEvent.setup();
-    const onOpen = vi.fn();
-    render(<VersionHistoryAction count={3} onOpen={onOpen} />);
+    const onSettings = vi.fn();
+    const onHistory = vi.fn();
+    render(
+      <WorkbenchNavigationRail
+        drawerMode="settings"
+        onSettings={onSettings}
+        onHistory={onHistory}
+      />,
+    );
 
-    expect(screen.getByText("查看、恢复和管理 3 个已保存版本。")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "查看版本记录" }));
-    expect(onOpen).toHaveBeenCalledOnce();
+    expect(screen.getByRole("navigation", { name: "简历编辑导航" }).querySelectorAll("button")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "设计" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "版本" })).toHaveAttribute("aria-pressed", "false");
+    await user.click(screen.getByRole("button", { name: "设计" }));
+    await user.click(screen.getByRole("button", { name: "版本" }));
+    expect(onSettings).toHaveBeenCalledOnce();
+    expect(onHistory).toHaveBeenCalledOnce();
   });
 });
 
