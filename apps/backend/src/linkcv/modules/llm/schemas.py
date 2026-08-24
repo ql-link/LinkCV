@@ -116,6 +116,7 @@ class ModelConfigCreate(AdminWriteModel):
 
 
 class ModelConfigPatch(AdminWriteModel):
+    base_config_version: int | None = Field(default=None, alias="baseConfigVersion", ge=1)
     adapter: str | None = Field(default=None, min_length=1, max_length=64)
     model: str | None = Field(default=None, min_length=1, max_length=128)
     api_base: HttpUrl | None = Field(default=None, alias="apiBase", max_length=512)
@@ -175,6 +176,77 @@ class ModelConfigRecord(CamelModel):
         return str(value)
 
 
+ModelCapability = Literal["chat", "resume_structuring", "pi_agent"]
+
+
+class CapabilityModelConfigRecord(CamelModel):
+    id: str
+    adapter: str
+    model: str
+    api_base: str | None = Field(alias="apiBase")
+    key_configured: bool = Field(alias="keyConfigured")
+    config_version: int = Field(alias="configVersion", ge=1)
+    active_capabilities: list[ModelCapability] = Field(alias="activeCapabilities")
+    last_test: ModelLastTest | None = Field(alias="lastTest")
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def stringify_id(cls, value: object) -> str:
+        return str(value)
+
+
+class ModelCapabilityRecord(CamelModel):
+    capability: ModelCapability
+    active_model_id: str | None = Field(alias="activeModelId")
+    binding_version: int = Field(alias="bindingVersion", ge=1)
+    active_model: CapabilityModelConfigRecord | None = Field(alias="activeModel")
+    models: list[CapabilityModelConfigRecord]
+
+    @field_validator("active_model_id", mode="before")
+    @classmethod
+    def stringify_active_id(cls, value: object) -> str | None:
+        return None if value is None else str(value)
+
+
+class ModelCapabilityListResponse(CamelModel):
+    capabilities: list[ModelCapabilityRecord]
+
+
+class ModelBindingRequest(AdminWriteModel):
+    model_config_id: str = Field(alias="modelConfigId", min_length=1)
+    base_config_version: int | None = Field(default=None, alias="baseConfigVersion", ge=1)
+    base_binding_version: int | None = Field(default=None, alias="baseBindingVersion", ge=1)
+
+
+class ModelBindingResponse(CamelModel):
+    capability: ModelCapability
+    active_model_id: str | None = Field(alias="activeModelId")
+    binding_version: int = Field(alias="bindingVersion", ge=1)
+    validation_id: str = Field(alias="validationId")
+    call_id: str = Field(alias="callId")
+    active_model: CapabilityModelConfigRecord = Field(alias="activeModel")
+
+    @field_validator("active_model_id", mode="before")
+    @classmethod
+    def stringify_active_id(cls, value: object) -> str | None:
+        return None if value is None else str(value)
+
+
+class ModelCapabilityTestRequest(AdminWriteModel):
+    capability: ModelCapability
+    base_config_version: int | None = Field(default=None, alias="baseConfigVersion", ge=1)
+
+
+class ModelValidationResponse(CamelModel):
+    ok: Literal[True] = True
+    capability: ModelCapability
+    validation_id: str = Field(alias="validationId")
+    call_id: str = Field(alias="callId")
+    config_version: int = Field(alias="configVersion", ge=1)
+
+
 class ModelConfigResponse(CamelModel):
     model: ModelConfigRecord
 
@@ -217,12 +289,17 @@ class ChatCatalogResponse(CamelModel):
     adapters: list[ChatCatalogAdapter]
 
 
+class ModelCatalogResponse(CamelModel):
+    capabilities: list[ModelCapability]
+    adapters: list[ChatCatalogAdapter]
+
+
 Price = Decimal | None
 
 
 class CallLogRecord(CamelModel):
     call_id: str = Field(alias="callId")
-    capability: Literal["chat"]
+    capability: ModelCapability
     source: str
     user_id: str = Field(alias="userId")
     model_config_id: str | None = Field(alias="modelConfigId")
@@ -237,6 +314,7 @@ class CallLogRecord(CamelModel):
     estimated_cost_usd: Decimal | None = Field(alias="estimatedCostUsd")
     latency_ms: int | None = Field(alias="latencyMs")
     error_code: str | None = Field(alias="errorCode")
+    model_config_version: int | None = Field(default=None, alias="modelConfigVersion")
     created_at: datetime = Field(alias="createdAt")
 
     @field_validator("user_id", mode="before")

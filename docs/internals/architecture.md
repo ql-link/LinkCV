@@ -6,10 +6,11 @@
 | --- | --- | --- |
 | Web | `apps/web` | React 19、TypeScript、Vite 前端，以及简历和临时 JD 管理页面 |
 | Browser extension | `apps/extension` | WXT、React、TypeScript Chrome MV3 插件；读取当前 BOSS 详情页并提交确认后的采集字段 |
-| WeChat miniprogram | `apps/miniprogram` | 原生小程序；首次登录或注册前展示并确认平台隐私保护指引，扫码时确认或取消网页登录，并只读查看本人简历 |
+| WeChat miniprogram | `apps/miniprogram` | 原生小程序，界面采用与 Web 内部功能区同源 `--ui-*` Token 的小屏简洁单列布局与蓝色 accent 主操作，四个主页面统一自定义导航并按状态栏高度动态留白；冷启动进入游客可浏览的首页（标题、虚构信息的仿真示例简历、登录入口依次排布），登录由用户主动进入登录页并确认平台隐私保护指引后完成，可随时暂不登录返回；扫码进入独立确认页（与小程序登录页分离，各自带单行用途说明）确认或取消网页登录，登录后以紧凑列表只读查看本人简历并以智能一页图片阅读详情，并可在资料页维护可选头像与昵称（居中头像、文字提示更换） |
 | Backend | `apps/backend` | FastAPI、JWT/Redis 鉴权、简历与 JD API、MinIO 图片接口、SQLAlchemy 模型和 Alembic 迁移 |
+| Pi Agent service | `apps/pi-service` | 独立无头 Node 服务；运行 Pi Agent loop，并仅通过受控 HTTP 工具调用 FastAPI |
 | Infrastructure | `deploy` | MySQL、Redis、MinIO 本地依赖和 Dev/Production Jenkins、Compose 拓扑 |
-| pi agent 工具包（第三方，一次性引入） | `third_party/pi` | Node/TypeScript AI agent 工具包，独立 npm workspace，不被根级脚本纳管；引入方式、验证状态与对接约束见 [internals/third-party-pi.md](third-party-pi.md) |
+| pi agent 工具包（第三方，一次性引入） | `third_party/pi` | Node/TypeScript AI agent 工具包和离线模型目录快照；由根级 Pi 安装、测试和检查脚本显式纳管，详见 [internals/third-party-pi.md](third-party-pi.md) |
 | AI workflow | `.ai`、`.specs`、`scripts/quality` | 项目规则、以方案为中心的本地 Spec 和质量检查 |
 
 ## 本地请求路径
@@ -20,13 +21,14 @@ Web 页面统一请求相对 `/api` 路径。`apps/web/vite.config.mjs` 将全�
 
 浏览器插件从独立的 `chrome-extension://` 源运行，默认通过 `http://127.0.0.1:5173` 或 `http://localhost:5173` 调用同一 Vite `/api` 代理，并携带用户已经在对应 Web 源站建立的 HttpOnly Cookie 会话。插件 Manifest 只声明 BOSS 站点、本地 LinkCV 源站和构建时显式配置的 LinkCV 源站权限；内容脚本不直接访问 LinkCV API。
 
-FastAPI 在 `apps/backend/src/linkcv/main.py` 以 `/api` 前缀挂载路由。Vite 为最长 180 秒的同步导入设置 190 秒代理预算，避免代理先于后端业务 deadline 关闭连接。PDF 和 DOCX 导入由 FastAPI 使用后端 Secret 直接访问 `http://100.86.10.52:18743/v1/parse`；浏览器不连接 LinkParse，Markdown 在 Worker 内本地转换。详细接口见 [HTTP 契约](../api/http-contracts.md)。
+FastAPI 在 `apps/backend/src/linkcv/main.py` 以 `/api` 前缀挂载浏览器路由，并在根路径挂载不出现在 OpenAPI 的 `/internal/agent` 服务间路由。智能助手请求由 FastAPI 写入 MySQL 后以服务 token 转发到独立 Pi 服务；Pi 再用另一枚 token 调用受控内部工具，浏览器不直接访问 Pi。Vite 为最长 180 秒的同步导入设置 190 秒代理预算，避免代理先于后端业务 deadline 关闭连接。PDF 和 DOCX 导入由 FastAPI 使用后端 Secret 直接访问 `http://100.86.10.52:18743/v1/parse`；浏览器不连接 LinkParse，Markdown 在 Worker 内本地转换。详细接口见 [HTTP 契约](../api/http-contracts.md)。
 
 ## 数据与鉴权
 
-- MySQL 是用户、简历、结构化 JD 和治理数据的权威存储，表结构只通过 Alembic 迁移演进。
-- Web 登录态使用短 JWT access Cookie 与不透明 refresh Cookie；小程序使用 Bearer access 与 JSON refresh。Redis session 的 channel 阻止两端凭据混用并支持统一撤销；小程序 Bearer 只能访问 `/api/miniprogram/resumes*` 专用只读接口。小程序登录页先以当前微信临时 code 只读判断账号是否存在，分别展示登录或注册动作；该探测不建号、不发 session。客户端在取得新会话前要求用户勾选微信平台隐私保护指引并主动确认，不能从简历页或请求重试路径静默建号；后端对未知 openid 还要求本次请求携带 `privacy_accepted=true`，但不把该请求字段当作持久化的同意审计记录。
-- 普通 Web 登录页由 `/api/auth/capabilities` 控制：Development 可使用邮箱密码或微信扫码，Production 只显示微信小程序码；管理员密码表单只存在于 `/admin/login`。小程序 `develop` 默认访问本机 8000 端口，并允许开发者工具本地存储覆盖为内网地址；`trial/release` 固定回到公开的 `https://linkresume.cn`，第三方平台扩展配置可覆盖但必须使用 HTTPS。
+- MySQL 是用户、简历、Agent 会话/提案、结构化 JD 和治理数据的权威存储，表结构只通过 Alembic 迁移演进。
+- Web 登录态使用短 JWT access Cookie 与不透明 refresh Cookie；小程序使用 Bearer access 与 JSON refresh。Redis session 的 channel 阻止两端凭据混用并支持统一撤销；小程序 Bearer 只能访问 `/api/miniprogram/resumes*` 只读接口与 `/api/miniprogram/account/*` 本人资料接口。小程序冷启动落在游客首页，该页不发起任何账号识别、登录或隐私授权请求；登录页只能由用户从首页或“我的简历”引导态主动进入，进入后才以当前微信临时 code 只读判断账号是否存在，分别展示登录或注册动作；该探测不建号、不发 session。客户端在取得新会话前要求用户勾选微信平台隐私保护指引并主动确认（未勾选时在协议区行内提示），可暂不登录返回游客状态，不能从简历页或请求重试路径静默建号；后端对未知 openid 还要求本次请求携带 `privacy_accepted=true`，但不把该请求字段当作持久化的同意审计记录。
+- 小程序简历详情先查询最新手动版本（缺失时初始版本），本机不存在同版本文件时从 FastAPI 下载由共享 React-PDF 核心生成并经 PDFium 栅格化的智能一页 PNG，保存到 `wx.env.USER_DATA_PATH` 后用小程序 `<image mode="widthFix">` 在当前详情页阅读；服务端不保存 PDF 或 PNG 成品。退出、会话失效或账号切换会清理本地索引和文件。
+- 普通 Web 登录页由 `/api/auth/capabilities` 控制：Development 可使用邮箱密码或微信扫码，Production 只显示微信小程序码；管理员密码表单只存在于 `/admin/login`。小程序 `develop` 默认访问本机 API 8000 端口并允许开发者工具覆盖内网地址；`trial/release` 固定访问 `https://linkresume.cn`，第三方平台扩展配置可覆盖但必须使用 HTTPS。
 - 图片存储在私有 MinIO bucket 中；现有兼容资源位于 `users/<user-id>/assets/`，简历编辑器新增资源位于 `users/<user-id>/resumes/<resume-id>/assets/`，两者都由服务端生成对象键并在读取时校验所有权。
 - 原型 Express/SQLite 数据不迁移到 MySQL。
 
@@ -34,4 +36,5 @@ FastAPI 在 `apps/backend/src/linkcv/main.py` 以 `/api` 前缀挂载路由。Vi
 
 - FastAPI 读取 `BACKEND_HOST` 和 `BACKEND_PORT`，默认 `127.0.0.1:8000`。
 - Vite 使用 `BACKEND_PORT` 构造默认代理目标，也允许 `BACKEND_PROXY_TARGET` 覆盖完整地址。
+- Pi 服务默认监听 `127.0.0.1:8010`；FastAPI 与 Pi 使用相反方向的内网 URL 和两枚独立服务 token，不复用用户 Cookie。
 - 数据库、JWT、MinIO 和 LinkParse 变量以 `.env.example` 为入口；本地依赖端口以 `deploy/docker-compose.yml` 为入口。LinkParse API Key 只进入被忽略的 `.local` 覆盖或进程环境。

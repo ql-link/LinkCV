@@ -15,7 +15,10 @@ COPY apps/web/index.html \
     ./
 COPY apps/web/public ./public
 COPY apps/web/src ./src
+COPY apps/web/pdf-cli ./pdf-cli
 RUN npm run build
+
+FROM node:22-bookworm-slim AS node-runtime
 
 FROM python:3.13-slim AS runtime
 
@@ -27,9 +30,17 @@ ENV PYTHONUNBUFFERED=1 \
     BACKEND_HOST=0.0.0.0 \
     BACKEND_PORT=8000 \
     WEB_DIST_DIR=/app/web \
+    PDF_RENDERER_SCRIPT=/app/pdf/render-resume-pdf.cjs \
+    CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
+    PDF_RENDERER_MAX_SMART_HEIGHT_MM=2000 \
     TZ=Asia/Shanghai
 
 WORKDIR /app/apps/backend
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends chromium && \
+    rm -rf /var/lib/apt/lists/* && \
+    useradd --system --create-home --home-dir /var/lib/linkcv-pdf --shell /usr/sbin/nologin linkcv-pdf && \
+    install -d -o linkcv-pdf -g linkcv-pdf /tmp/linkcv-pdf
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -m pip install --index-url "${UV_INDEX_URL}" "uv==${UV_VERSION}"
 COPY apps/backend/pyproject.toml apps/backend/uv.lock ./
@@ -46,6 +57,10 @@ COPY scripts/release/run_alembic.py /app/scripts/release/run_alembic.py
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --python .venv/bin/python --no-deps --index-url "${UV_INDEX_URL}" .
 COPY --from=web-build /app/apps/web/dist /app/web
+COPY --from=web-build /app/apps/web/dist-server /app/pdf
+COPY --from=web-build /app/apps/web/node_modules/playwright-core /app/pdf/node_modules/playwright-core
+COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+RUN node --version
 RUN mkdir -p /app/logs
 
 EXPOSE 8000

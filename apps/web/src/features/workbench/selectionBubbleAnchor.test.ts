@@ -1,14 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
-import { createSelectionBubbleAnchor, shouldShowWorkbenchBubbleMenu } from "./selectionBubbleAnchor";
+import {
+  createSelectionBubbleAnchor,
+  refreshSelectionBubblePosition,
+  shouldShowSelectionAgentBubble,
+} from "./selectionBubbleAnchor";
 
 function rect(left: number) {
   return { left } as DOMRect;
 }
 
 describe("selectionBubbleAnchor", () => {
-  it("折叠光标位于左右对齐行时仍显示工具栏", () => {
-    expect(shouldShowWorkbenchBubbleMenu({ editable: true, selectionEmpty: true, resumeRowActive: true })).toBe(true);
-    expect(shouldShowWorkbenchBubbleMenu({ editable: true, selectionEmpty: true, resumeRowActive: false })).toBe(false);
+  it("只在可编辑状态选中文字后显示 AI 提示", () => {
+    expect(shouldShowSelectionAgentBubble({ editable: true, selectionEmpty: false })).toBe(true);
+    expect(shouldShowSelectionAgentBubble({ editable: true, selectionEmpty: true })).toBe(false);
+    expect(shouldShowSelectionAgentBubble({ editable: false, selectionEmpty: false })).toBe(false);
   });
 
   it("同一选区格式变化时保持原锚点", () => {
@@ -35,5 +40,18 @@ describe("selectionBubbleAnchor", () => {
 
     anchor.observe({ from: 10, to: 10 }, () => rect(0));
     expect(anchor.getRect(() => rect(320)).left).toBe(320);
+  });
+
+  it("滚动刷新锚点后通知浮层重新定位，空选区不触发更新", () => {
+    const anchor = createSelectionBubbleAnchor();
+    const updatePosition = vi.fn();
+
+    expect(refreshSelectionBubblePosition(anchor, () => rect(80), updatePosition)).toBe(false);
+    expect(updatePosition).not.toHaveBeenCalled();
+
+    anchor.observe({ from: 2, to: 8 }, () => rect(120));
+    expect(refreshSelectionBubblePosition(anchor, () => rect(88), updatePosition)).toBe(true);
+    expect(anchor.getRect(() => rect(0)).left).toBe(88);
+    expect(updatePosition).toHaveBeenCalledOnce();
   });
 });

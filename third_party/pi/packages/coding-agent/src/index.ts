@@ -49,6 +49,7 @@ export {
 	shouldCompact,
 } from "./core/compaction/index.ts";
 export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.ts";
+export { configureHttpDispatcher } from "./core/http-dispatcher.ts";
 // Extension system
 export type {
 	AgentEndEvent,

@@ -16,9 +16,7 @@ class AuditAction:
 AUDIT_ACTIONS: dict[tuple[str, str], AuditAction] = {
     ("POST", "/api/auth/register"): AuditAction("auth.register", "user"),
     ("POST", "/api/auth/login"): AuditAction("auth.login", "user"),
-    ("POST", "/api/auth/admin-login"): AuditAction(
-        "auth.admin_login", "user"
-    ),
+    ("POST", "/api/auth/admin-login"): AuditAction("auth.admin_login", "user"),
     ("POST", "/api/auth/refresh"): AuditAction("auth.session_refresh", "session"),
     ("POST", "/api/auth/logout"): AuditAction("auth.logout", "session"),
     ("PATCH", "/api/account/profile"): AuditAction(
@@ -37,14 +35,15 @@ AUDIT_ACTIONS: dict[tuple[str, str], AuditAction] = {
         "account.asset_upload", "user", target_actor=True
     ),
     ("POST", "/api/resumes"): AuditAction("resume.create", "resume"),
-    ("POST", "/api/resumes/import"): AuditAction(
-        "resume.import", "resume_import"
-    ),
+    ("POST", "/api/resumes/import"): AuditAction("resume.import", "resume_import"),
     ("PUT", "/api/resumes/{resume_id}"): AuditAction(
         "resume.update", "resume", "resume_id"
     ),
     ("DELETE", "/api/resumes/{resume_id}"): AuditAction(
         "resume.delete", "resume", "resume_id"
+    ),
+    ("GET", "/api/resumes/{resume_id}/pdf"): AuditAction(
+        "resume.pdf_export", "resume", "resume_id"
     ),
     ("POST", "/api/resumes/{resume_id}/versions"): AuditAction(
         "resume.version_create", "resume_version", "resume_id"
@@ -79,6 +78,55 @@ AUDIT_ACTIONS: dict[tuple[str, str], AuditAction] = {
     ),
     ("DELETE", "/api/job-descriptions/{job_id}"): AuditAction(
         "job.delete", "job", "job_id"
+    ),
+    ("POST", "/api/job-applications"): AuditAction(
+        "interview.application_create", "job_application"
+    ),
+    ("PUT", "/api/job-applications/{application_id}"): AuditAction(
+        "interview.application_update", "job_application", "application_id"
+    ),
+    ("POST", "/api/job-applications/{application_id}/advance"): AuditAction(
+        "interview.application_advance", "job_application", "application_id"
+    ),
+    ("POST", "/api/job-applications/{application_id}/offer"): AuditAction(
+        "interview.offer_update", "job_application", "application_id"
+    ),
+    ("POST", "/api/job-applications/{application_id}/close"): AuditAction(
+        "interview.application_close", "job_application", "application_id"
+    ),
+    ("POST", "/api/job-applications/{application_id}/archive"): AuditAction(
+        "interview.application_archive", "job_application", "application_id"
+    ),
+    ("POST", "/api/job-applications/{application_id}/restore"): AuditAction(
+        "interview.application_restore", "job_application", "application_id"
+    ),
+    ("DELETE", "/api/job-applications/{application_id}"): AuditAction(
+        "interview.application_delete", "job_application", "application_id"
+    ),
+    (
+        "POST",
+        "/api/job-applications/{application_id}/interview-sessions",
+    ): AuditAction("interview.session_create", "interview_session"),
+    ("PUT", "/api/interview-sessions/{session_id}"): AuditAction(
+        "interview.session_update", "interview_session", "session_id"
+    ),
+    ("POST", "/api/interview-sessions/{session_id}/reschedule"): AuditAction(
+        "interview.session_reschedule", "interview_session", "session_id"
+    ),
+    ("POST", "/api/interview-sessions/{session_id}/complete"): AuditAction(
+        "interview.session_complete", "interview_session", "session_id"
+    ),
+    ("POST", "/api/interview-sessions/{session_id}/cancel"): AuditAction(
+        "interview.session_cancel", "interview_session", "session_id"
+    ),
+    ("DELETE", "/api/interview-sessions/{session_id}"): AuditAction(
+        "interview.session_delete", "interview_session", "session_id"
+    ),
+    ("POST", "/api/interview-sessions/{session_id}/assets"): AuditAction(
+        "interview.asset_upload", "interview_asset"
+    ),
+    ("DELETE", "/api/interview-assets/{asset_id}"): AuditAction(
+        "interview.asset_delete", "interview_asset", "asset_id"
     ),
     ("PATCH", "/api/auth/admin/users/{user_id}/status"): AuditAction(
         "admin.user_status_change", "user", "user_id"

@@ -4,17 +4,16 @@ export type SelectionRange = {
 };
 
 export type SelectionRectReader = () => DOMRect;
+export type SelectionPositionUpdater = () => void;
 
-export function shouldShowWorkbenchBubbleMenu({
+export function shouldShowSelectionAgentBubble({
   editable,
   selectionEmpty,
-  resumeRowActive,
 }: {
   editable: boolean;
   selectionEmpty: boolean;
-  resumeRowActive: boolean;
 }) {
-  return editable && (!selectionEmpty || resumeRowActive);
+  return editable && !selectionEmpty;
 }
 
 export function createSelectionBubbleAnchor() {
@@ -34,11 +33,23 @@ export function createSelectionBubbleAnchor() {
       activeRange = range;
     },
     refresh(readRect: SelectionRectReader) {
-      if (activeRange) rect = readRect();
+      if (!activeRange) return false;
+      rect = readRect();
+      return true;
     },
     getRect(readRect: SelectionRectReader) {
       if (!rect) rect = readRect();
       return rect;
     },
   };
+}
+
+export function refreshSelectionBubblePosition(
+  anchor: ReturnType<typeof createSelectionBubbleAnchor>,
+  readRect: SelectionRectReader,
+  updatePosition: SelectionPositionUpdater,
+) {
+  if (!anchor.refresh(readRect)) return false;
+  updatePosition();
+  return true;
 }

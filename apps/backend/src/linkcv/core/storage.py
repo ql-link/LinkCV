@@ -1,10 +1,13 @@
 import base64
 import binascii
+import hashlib
 import re
 import time
 import unicodedata
+from dataclasses import dataclass
 from io import BytesIO
 from pathlib import PurePath
+from typing import BinaryIO
 from urllib.parse import quote, urlsplit
 
 from fastapi import Request
@@ -26,6 +29,38 @@ IMAGE_CONTENT_TYPES = {
     extension: content_type for content_type, extension in SUPPORTED_IMAGE_TYPES.items()
 }
 DATA_URL_PATTERN = re.compile(r"^data:([^;,]+);base64,(.+)$", re.DOTALL)
+
+
+class UploadTooLarge(ValueError):
+    pass
+
+
+class EmptyUpload(ValueError):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class StreamUploadResult:
+    file_size: int
+    sha256: str
+
+
+class _BoundedHashingReader:
+    def __init__(self, stream: BinaryIO, max_bytes: int) -> None:
+        self.stream = stream
+        self.max_bytes = max_bytes
+        self.file_size = 0
+        self.digest = hashlib.sha256()
+
+    def read(self, size: int = -1) -> bytes:
+        data = self.stream.read(size)
+        if not data:
+            return b""
+        self.file_size += len(data)
+        if self.file_size > self.max_bytes:
+            raise UploadTooLarge
+        self.digest.update(data)
+        return data
 
 
 class AssetStorage:
@@ -79,6 +114,41 @@ class AssetStorage:
             data,
             content_type,
             cache_control="private, max-age=31536000, immutable",
+        )
+
+    def upload_stream(
+        self,
+        object_name: str,
+        stream: BinaryIO,
+        content_type: str,
+        *,
+        max_bytes: int,
+    ) -> StreamUploadResult:
+        """Stream a private object without buffering the full upload in memory."""
+        self.ensure_bucket()
+        reader = _BoundedHashingReader(stream, max_bytes)
+        try:
+            self.client.put_object(
+                self.bucket,
+                object_name,
+                reader,
+                length=-1,
+                part_size=10 * 1024 * 1024,
+                content_type=content_type,
+                metadata={"Cache-Control": "private, max-age=31536000, immutable"},
+            )
+            if reader.file_size == 0:
+                self.client.remove_object(self.bucket, object_name)
+                raise EmptyUpload
+        except Exception:
+            try:
+                self.client.remove_object(self.bucket, object_name)
+            except Exception:
+                pass
+            raise
+        return StreamUploadResult(
+            file_size=reader.file_size,
+            sha256=reader.digest.hexdigest(),
         )
 
     def get(self, object_name: str):
@@ -191,6 +261,22 @@ def build_dataset_object_name(user_id: int, file_name: str) -> str:
         safe_name = "dataset.bin"
     unique = f"{int(time.time() * 1000)}-{secrets_token(8)}"
     return f"users/{user_id}/datasets/{unique}-{safe_name}"
+
+
+def build_interview_asset_object_name(
+    user_id: int,
+    application_id: int,
+    session_id: int,
+    file_name: str,
+) -> str:
+    normalized = unicodedata.normalize("NFKD", file_name)
+    safe_name = re.sub(r"[^\w.-]+", "-", normalized).strip("-.")[:120]
+    if not safe_name:
+        safe_name = "interview-asset.bin"
+    unique = f"{int(time.time() * 1000)}-{secrets_token(8)}"
+    return (
+        f"users/{user_id}/interviews/{application_id}/{session_id}/{unique}-{safe_name}"
+    )
 
 
 def build_resume_asset_object_name(

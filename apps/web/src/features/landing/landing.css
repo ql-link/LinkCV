@@ -234,38 +234,33 @@
 .landing-orbit-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
 }
 
-.landing-orbit-brand-mark {
-  display: flex;
-  width: 34px;
-  height: 34px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9px;
-  background: #18181b;
-  color: #fafafa;
-  font-family: var(--display-font, serif);
-  font-size: 17px;
-  font-weight: 700;
+.landing-nav-brand .ui-brand-wordmark {
+  width: 132px;
+  height: 28px;
 }
 
-.dark .landing-orbit-brand-mark {
-  background: #fafafa;
-  color: #18181b;
+.landing-nav-brand .ui-brand-responsive-mark,
+.landing-orbit-brand .ui-brand-responsive-mark,
+.landing-footer-brand .ui-brand-responsive-mark {
+  display: none;
 }
 
-.landing-orbit-brand-name {
-  color: #18181b;
-  font-family: var(--display-font, serif);
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+.landing-orbit-brand .ui-brand-wordmark {
+  width: clamp(180px, 19vw, 248px);
+  height: auto;
 }
 
-.dark .landing-orbit-brand-name {
-  color: #fafafa;
+.landing-footer-brand .ui-brand-wordmark {
+  width: 154px;
+  height: auto;
+  filter: brightness(0) invert(1);
+}
+
+.dark .landing-nav-brand .ui-brand-wordmark,
+.dark .landing-orbit-brand .ui-brand-wordmark {
+  filter: brightness(0) invert(1);
 }
 
 .landing-orbit-copy h1 {

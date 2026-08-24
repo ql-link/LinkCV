@@ -150,6 +150,40 @@ describe("resume semantic contract adapter", () => {
     expect(markdown).toBe("# 张三\n\n**后端工程师**");
   });
 
+  it("serializes email links as plain text while preserving website links", () => {
+    const markdown = editorDocumentToMarkdown({
+      type: "doc",
+      content: [{
+        type: "paragraph",
+        content: [
+          {
+            type: "text",
+            text: "zhangsan@example.com",
+            marks: [{ type: "link", attrs: { href: "mailto:zhangsan@example.com" } }],
+          },
+          { type: "text", text: " ｜ " },
+          {
+            type: "text",
+            text: "个人主页",
+            marks: [{ type: "link", attrs: { href: "https://example.com" } }],
+          },
+        ],
+      }],
+    });
+
+    expect(markdown).toBe("zhangsan@example.com ｜ [个人主页](https://example.com)");
+  });
+
+  it("renders historical mailto markdown as plain text while preserving website links", () => {
+    const html = renderResumeMarkdown(
+      "[zhangsan@example.com](mailto:zhangsan@example.com) ｜ [个人主页](https://example.com)",
+    );
+
+    expect(html).toContain("zhangsan@example.com");
+    expect(html).not.toContain("mailto:");
+    expect(html).toContain('<a href="https://example.com"');
+  });
+
   it("round-trips an inline font size through the markdown extension", () => {
     const markdown = editorDocumentToMarkdown({
       type: "doc",
@@ -186,6 +220,24 @@ describe("resume semantic contract adapter", () => {
     expect(html).toContain("</span> 示例大学");
   });
 
+  it("persists stable resume block ids as hidden markdown anchors", () => {
+    const markdown = editorDocumentToMarkdown({
+      type: "doc",
+      content: [{
+        type: "paragraph",
+        content: [
+          { type: "resumeBlockAnchor", attrs: { blockId: "blk_1234567890abcdef" } },
+          { type: "text", text: "负责平台性能优化" },
+        ],
+      }],
+    });
+    const html = renderResumeMarkdown(markdown);
+
+    expect(markdown).toBe("[[linkcv-block:blk_1234567890abcdef]]负责平台性能优化");
+    expect(html).toContain('data-resume-block-id="blk_1234567890abcdef"');
+    expect(html).toContain('class="resume-block-anchor"');
+  });
+
   it("preserves private images and their editor layout metadata", () => {
     const markdown = editorDocumentToMarkdown({
       type: "doc",
@@ -204,14 +256,42 @@ describe("resume semantic contract adapter", () => {
             alt: "项目图",
           },
         },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "inlineImage",
+              attrs: {
+                src: "/api/resumes/1/assets/company.png",
+                width: 84,
+                height: 30,
+                aspectRatio: 3.5,
+                alt: "示例公司 Logo",
+              },
+            },
+            { type: "text", text: " 示例公司 - 后端实习生" },
+          ],
+        },
       ],
     });
     const html = renderResumeMarkdown(markdown);
 
     expect(markdown).toContain('"linkcv-avatar:108"');
     expect(markdown).toContain('"linkcv-image:60:%:right"');
+    expect(markdown).toContain('"linkcv-inline-image-v2:84:30"');
     expect(html).toContain('data-type="avatar-image"');
     expect(html).toContain('data-type="resume-image"');
+    expect(html).toContain('data-inline-image');
+    expect(html).toContain('data-width="84"');
+    expect(html).toContain('data-height="30"');
+  });
+
+  it("兼容读取按宽高比保存的旧版行内图片", () => {
+    const html = renderResumeMarkdown('![示例 Logo](/api/resumes/1/assets/company.png "linkcv-inline-image:84:3.5") 示例公司');
+
+    expect(html).toContain('data-width="84"');
+    expect(html).toContain('data-height="24"');
+    expect(html).toContain('data-aspect-ratio="3.5"');
   });
 
   it("preserves a left-right row and its left column width", () => {
@@ -229,6 +309,25 @@ describe("resume semantic contract adapter", () => {
 
     expect(markdown).toContain("::: left 62\n示例大学");
     expect(renderResumeMarkdown(markdown)).toContain('data-left-width="62"');
+  });
+
+  it("不会把列表项段落对齐写成无效的块指令", () => {
+    const markdown = editorDocumentToMarkdown({
+      type: "doc",
+      content: [{
+        type: "bulletList",
+        content: [{
+          type: "listItem",
+          content: [{
+            type: "paragraph",
+            attrs: { textAlign: "right" },
+            content: [{ type: "text", text: "负责示例模块" }],
+          }],
+        }],
+      }],
+    });
+
+    expect(markdown).toBe("- 负责示例模块");
   });
 
   it("renders raw HTML as text instead of executable markup", () => {

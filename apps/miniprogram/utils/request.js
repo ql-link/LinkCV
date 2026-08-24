@@ -48,4 +48,34 @@ async function request(path, options = {}) {
   return response.data;
 }
 
-module.exports = { request };
+function sendDownload(path, filePath, accessToken, onProgress) {
+  return new Promise((resolve, reject) => {
+    const task = wx.downloadFile({
+      url: auth.apiUrl(path),
+      filePath,
+      header: { Authorization: `Bearer ${accessToken}` },
+      success: resolve,
+      fail: (result) => reject(new Error(result.errMsg || "简历下载失败")),
+    });
+    if (onProgress && task && typeof task.onProgressUpdate === "function") {
+      task.onProgressUpdate(onProgress);
+    }
+  });
+}
+
+async function download(path, filePath, onProgress) {
+  await auth.ensureSession();
+  let response = await sendDownload(path, filePath, auth.getAccessToken(), onProgress);
+  if (response.statusCode === 401) {
+    const accessToken = await renewAccess();
+    response = await sendDownload(path, filePath, accessToken, onProgress);
+  }
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    const error = new Error(`HTTP_${response.statusCode}`);
+    error.statusCode = response.statusCode;
+    throw error;
+  }
+  return response.filePath || filePath || response.tempFilePath;
+}
+
+module.exports = { download, request };

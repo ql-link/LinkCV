@@ -32,7 +32,8 @@ scripts        初始化、质量、契约和开发脚本
 
 ```bash
 npm run setup           # 初始化环境
-npm run dev             # 启动 Web 和 FastAPI
+npm run dev:local       # 本地代码 + 本地中间件（.env + .env.local）
+npm run dev:development # 本地代码 + 共享 Dev 中间件（.env.development + .env.development.local）
 npm run check:ai        # 校验 AI 入口和 Skill
 npm run check:docs      # 校验长期文档同步
 npm run check:contracts # 校验确定性运行时契约
@@ -41,6 +42,8 @@ npm run check:app       # 测试、类型检查和构建三个应用
 npm run check           # 完整本地质量入口
 ```
 
+- 启动或重启开发服务时必须按用户要连接的中间件显式选择 profile：“全部本地”使用 `npm run dev:local`，“本地项目使用共享 Dev 中间件”使用 `npm run dev:development`。`npm run dev` 只是 `dev:local` 的兼容别名，不作为未说明目标时的默认选择。
+- `APP_ENV` 控制应用功能，不负责选择 env 文件；不得根据 `APP_ENV=development` 推断进程已加载 `.env.development`。以启动器打印的“基础配置”和“共享私密覆盖”路径为准，启动后再核对 5173 Web、8000 FastAPI 和目标中间件的实际连通性。
 - Python 命令统一通过 `uv run --directory apps/backend` 执行，不依赖系统 `python`。
 - 当前任务运行与改动范围和风险匹配的检查；创建 PR 前，对当前可提交内容运行完整 `npm run check`。
 - 只报告亲自运行并看到结果的测试、构建、迁移或部署命令；环境阻塞和未执行项要如实说明。
@@ -68,7 +71,7 @@ npm run check           # 完整本地质量入口
 ## 5. 实现与安全底线
 
 - 先读离目标最近的实现、测试和文档；API、持久化模型、迁移、权限、失败路径和消费方要同步考虑。
-- 数据库 schema 使用 SQL-first Alembic；ORM 与升级到 head 后的 schema 保持一致，每个 revision 配对并验证 `.up.sql`、`.down.sql`。具体设计和迁移分别读取 `mysql-ddl-conventions`、`alembic-migration`。
+- 数据库 schema 使用 forward-only 的 SQL-first Alembic；ORM 与升级到 head 后的 schema 保持一致，每个 revision 只配套并验证 `.up.sql`，`downgrade()` 明确拒绝执行。恢复依赖备份，修正通过新的向前 revision 完成。具体设计和迁移分别读取 `mysql-ddl-conventions`、`alembic-migration`。
 - `docs/` 只描述已经实现的长期事实；方案、Acceptance、实施报告和人工验收记录放在 `.specs/<KEY>/`。
 - 新依赖必须说明必要性并更新对应 lockfile。
 - 示例和测试使用虚构信息，不得写入真实简历、联系方式、账号、密钥或私有部署凭据。
@@ -77,8 +80,8 @@ npm run check           # 完整本地质量入口
 
 ## 6. Git 与完成定义
 
-- 禁止改写远端 `release`、`dev`、`main`、`master` 历史，默认也禁止直接推送或合并。只有用户明确要求绕过 PR、直接推送并点名目标共享分支时，才可例外直推；执行前仍须复述目标和影响范围，不能据此代替用户执行远端合并。
-- 创建分支、提交、推送或 PR 时使用 `branch-pr-workflow`。新的业务需求分支必须从最新 `origin/master` 创建；修改完成后先由业务分支向 `release` 提 PR，`release` 合并并测试通过后，再由同一业务分支向 `master` 提 PR。不得默认以 `dev` 为目标，也不得用 `release -> master` PR 代替业务分支回合 `master`；每一步都要核对 base/head、提交范围、完整 diff 和真实验证结果。
+- 禁止改写远端 `dev`、`main`、`master` 历史，默认也禁止直接推送或合并。只有用户明确要求绕过 PR、直接推送并点名目标共享分支时，才可例外直推；执行前仍须复述目标和影响范围，不能据此代替用户执行远端合并。
+- 创建分支、提交、推送或 PR 时使用 `branch-pr-workflow`。新的业务需求分支必须从最新 `origin/master` 创建；修改完成后由业务分支向 `dev` 提 PR。不得从 `dev` 或其他业务分支派生新的业务分支，也不得直接推送或自动合并 `dev`；每一步都要核对 base/head、提交范围、完整 diff 和真实验证结果。
 - PR 创建后交由用户或远端审核；没有新的明确授权，不代替用户合并。
 - 完成时范围应与确认结论一致，与范围和风险匹配的检查须通过，受影响的契约、配置、部署和文档已同步。检查失败或环境阻塞时如实说明，不得宣称通过或完整完成。
 - 提交中不得包含真实用户数据、凭据、构建产物或无关文件。

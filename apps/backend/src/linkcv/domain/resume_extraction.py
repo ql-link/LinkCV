@@ -6,8 +6,8 @@ class DraftModel(BaseModel):
 
 
 class DraftLink(DraftModel):
-    label: str = Field(min_length=1, max_length=100)
-    url: str = Field(min_length=1, max_length=2_048)
+    label: str = Field(default="", max_length=100)
+    url: str = Field(default="", max_length=2_048)
 
 
 class DraftBasics(DraftModel):
@@ -21,8 +21,8 @@ class DraftBasics(DraftModel):
 
 
 class DraftWorkExperience(DraftModel):
-    organization: str = Field(min_length=1, max_length=300)
-    position: str = Field(min_length=1, max_length=300)
+    organization: str = Field(default="", max_length=300)
+    position: str = Field(default="", max_length=300)
     location: str | None = Field(default=None, max_length=300)
     raw_start_date: str | None = Field(default=None, max_length=100)
     raw_end_date: str | None = Field(default=None, max_length=100)
@@ -32,7 +32,7 @@ class DraftWorkExperience(DraftModel):
 
 
 class DraftEducation(DraftModel):
-    institution: str = Field(min_length=1, max_length=300)
+    institution: str = Field(default="", max_length=300)
     area: str | None = Field(default=None, max_length=300)
     study_type: str | None = Field(default=None, max_length=200)
     raw_start_date: str | None = Field(default=None, max_length=100)
@@ -42,7 +42,7 @@ class DraftEducation(DraftModel):
 
 
 class DraftProject(DraftModel):
-    name: str = Field(min_length=1, max_length=300)
+    name: str = Field(default="", max_length=300)
     role: str | None = Field(default=None, max_length=300)
     url: str | None = Field(default=None, max_length=2_048)
     raw_start_date: str | None = Field(default=None, max_length=100)
@@ -53,20 +53,20 @@ class DraftProject(DraftModel):
 
 
 class DraftSkill(DraftModel):
-    name: str = Field(min_length=1, max_length=200)
+    name: str = Field(default="", max_length=200)
     level: str | None = Field(default=None, max_length=100)
     keywords: list[str] = Field(default_factory=list, max_length=100)
 
 
 class DraftNamedItem(DraftModel):
-    name: str = Field(min_length=1, max_length=300)
+    name: str = Field(default="", max_length=300)
     detail: str | None = Field(default=None, max_length=300)
     raw_date: str | None = Field(default=None, max_length=100)
     source_quotes: list[str] = Field(default_factory=list, max_length=50)
 
 
 class DraftCustomSection(DraftModel):
-    title: str = Field(min_length=1, max_length=200)
+    title: str = Field(default="", max_length=200)
     items: list[str] = Field(default_factory=list, max_length=100)
     source_quotes: list[str] = Field(default_factory=list, max_length=50)
 

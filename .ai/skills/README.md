@@ -28,7 +28,7 @@
 | `doc-maintenance-sync` | 维护 `docs/` 长期项目知识 | 文档与契约门禁 |
 | `implementation-execution` | 直接任务按确认来源、方案任务以 `solution.md` 为中心编码；只在已允许偏差、已接受限制或必须交接的遗留事项存在时补实施报告 | 测试 |
 | `frontend-design` | 用 Anthropic 视觉方法、LinkCV Token、shadcn 选型和 Vercel 界面审查完成页面与浏览器闭环 | 测试与人工验收 |
-| `branch-pr-workflow` | 从 `master` 准备业务分支，依次完成面向 `release` 和 `master` 的提交与 PR，每次 PR 前执行完整本地检查 | 用户审核与 Release 测试 |
+| `branch-pr-workflow` | 从 `master` 准备业务分支，完成面向 `dev` 的提交与 PR，PR 前执行完整本地检查 | 用户审核与 Dev 集成测试 |
 
 ## 测试与质量
 
@@ -45,7 +45,7 @@
 | 技能 | 职责 | 边界或下一站 |
 | --- | --- | --- |
 | `mysql-ddl-conventions` | 设计和审查 MySQL 物理表结构、约束与索引 | 由方案编写过程调用定稿；落地迁移转 `alembic-migration` |
-| `alembic-migration` | 编写、校验和排查 SQL-first Alembic 迁移链与配对 up/down SQL | 业务实现转实施，文档转同步 |
+| `alembic-migration` | 编写、校验和排查 forward-only SQL-first Alembic 迁移链与 up SQL | 业务实现转实施，文档转同步 |
 
 ## 运维与故障
 

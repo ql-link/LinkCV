@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import {
   BriefcaseBusiness,
+  CalendarClock,
   Database,
   FileText,
   LayoutTemplate,
@@ -9,14 +10,16 @@ import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
 import { Brand } from "@/components/ui";
 import RandomLetterSwapNav from "@/components/ui/m-random-letter-swap-1";
+import { preloadWorkspacePage } from "../workspacePageLoaders";
 
-export type WorkspaceSection = "resumes" | "templates" | "jobs" | "datasets" | "account";
+export type WorkspaceSection = "resumes" | "templates" | "jobs" | "interviews" | "datasets" | "account";
 
 type WorkspaceNavigationProps = {
   active: WorkspaceSection;
   email: string;
   nickname?: string;
   avatarUrl?: string | null;
+  onItemIntent?: (href: string) => void;
 };
 
 const NAV_ITEMS: Array<{
@@ -52,6 +55,14 @@ const NAV_ITEMS: Array<{
     icon: BriefcaseBusiness,
   },
   {
+    activeColor: "var(--ui-interview-accent)",
+    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-interview-accent) 26%, transparent) 0%, color-mix(in srgb, var(--ui-interview-accent) 12%, transparent) 48%, transparent 76%)",
+    key: "interviews",
+    label: "面试中心",
+    href: "/interviews",
+    icon: CalendarClock,
+  },
+  {
     activeColor: "var(--ui-success)",
     gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-success) 24%, transparent) 0%, color-mix(in srgb, var(--ui-success) 10%, transparent) 48%, transparent 76%)",
     key: "datasets",
@@ -61,7 +72,13 @@ const NAV_ITEMS: Array<{
   },
 ];
 
-export function WorkspaceNavigation({ active, avatarUrl, email, nickname }: WorkspaceNavigationProps) {
+export function WorkspaceNavigation({
+  active,
+  avatarUrl,
+  email,
+  nickname,
+  onItemIntent = preloadWorkspacePage,
+}: WorkspaceNavigationProps) {
   const displayName = nickname || email || "个人资料";
   const activeHref = NAV_ITEMS.find((item) => item.key === active)?.href ?? "";
 
@@ -70,6 +87,8 @@ export function WorkspaceNavigation({ active, avatarUrl, email, nickname }: Work
       <a
         className="dashboard-brand-link no-underline hover:no-underline"
         href="/resumes"
+        onFocus={() => { void onItemIntent("/resumes"); }}
+        onMouseEnter={() => { void onItemIntent("/resumes"); }}
         onClick={(event) => {
           if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
           event.preventDefault();
@@ -88,6 +107,7 @@ export function WorkspaceNavigation({ active, avatarUrl, email, nickname }: Work
             links={NAV_ITEMS}
             navigationMode="client"
             onItemClick={navigateTo}
+            onItemIntent={(href) => { void onItemIntent(href); }}
           />
         </nav>
       </div>
@@ -96,6 +116,8 @@ export function WorkspaceNavigation({ active, avatarUrl, email, nickname }: Work
         aria-label={`打开个人资料，当前账号：${displayName}`}
         className="dashboard-account-badge"
         href="/account"
+        onFocus={() => { void onItemIntent("/account"); }}
+        onMouseEnter={() => { void onItemIntent("/account"); }}
         title={`个人资料：${displayName}`}
         onClick={(event) => {
           if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;

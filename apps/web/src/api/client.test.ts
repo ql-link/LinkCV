@@ -9,6 +9,23 @@ function jsonResponse(status: number, body: unknown): Response {
   } as unknown as Response;
 }
 
+function streamResponse(chunks: string[]): Response {
+  const encoder = new TextEncoder();
+  let index = 0;
+  return {
+    ok: true,
+    status: 200,
+    headers: new Headers(),
+    body: {
+      getReader: () => ({
+        read: vi.fn(async () => index < chunks.length
+          ? { done: false, value: encoder.encode(chunks[index++]) }
+          : { done: true, value: undefined }),
+      }),
+    },
+  } as unknown as Response;
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -159,6 +176,53 @@ describe("API observability", () => {
   });
 });
 
+describe("Agent SSE client", () => {
+  it("正常 EOF 前没有终态事件时按协议失败", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        streamResponse([
+          'event: assistant.delta\ndata: {"delta":"半条回复"}\n\n',
+        ]),
+      ),
+    );
+
+    await expect(
+      api.streamAgentMessage(
+        "session-1",
+        { content: "优化简历", idempotency_key: "retry_key_1" },
+        new AbortController().signal,
+        vi.fn(),
+      ),
+    ).rejects.toMatchObject({
+      status: 502,
+      message: "AGENT_STREAM_INCOMPLETE",
+    });
+  });
+
+  it("收到终态事件后正常完成", async () => {
+    const onEvent = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        streamResponse([
+          'event: run.completed\ndata: {"runId":"run-1"}\n\n',
+        ]),
+      ),
+    );
+
+    await expect(
+      api.streamAgentMessage(
+        "session-1",
+        { content: "优化简历", idempotency_key: "retry_key_2" },
+        new AbortController().signal,
+        onEvent,
+      ),
+    ).resolves.toBeUndefined();
+    expect(onEvent).toHaveBeenCalledWith({ type: "run.completed", runId: "run-1" });
+  });
+});
+
 describe("resume import polling API", () => {
   it("按任务 ID 查询单个导入状态并编码路径参数", async () => {
     const body = { import: { id: "41", parse_status: "processing" } };
@@ -183,6 +247,51 @@ describe("resume version detail API", () => {
       "/api/resumes/42/versions/3",
       expect.objectContaining({ method: "GET", credentials: "include" }),
     );
+  });
+});
+
+describe("resume PDF download API", () => {
+  it("按当前锁版本请求 PDF，传递取消信号并读取 UTF-8 文件名", async () => {
+    const signal = new AbortController().signal;
+    const blob = new Blob(["%PDF-test"], { type: "application/pdf" });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        "Content-Disposition": "attachment; filename*=UTF-8''%E5%BC%A0%E4%B8%89-%E7%AE%80%E5%8E%86.pdf",
+      }),
+      blob: vi.fn().mockResolvedValue(blob),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.downloadResumePdf("resume/42", 7, signal)).resolves.toEqual({
+      blob,
+      filename: "张三-简历.pdf",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/resumes/resume%2F42/pdf?lock_version=7",
+      expect.objectContaining({
+        method: "GET",
+        credentials: "include",
+        signal,
+        headers: expect.objectContaining({ "X-Request-ID": expect.any(String) }),
+      }),
+    );
+  });
+
+  it("保留服务端 PDF 错误码和请求追踪 ID", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      headers: new Headers({ "X-Request-ID": "request-pdf-1" }),
+      json: vi.fn().mockResolvedValue({ error: "RESUME_PDF_SNAPSHOT_STALE" }),
+    }));
+
+    await expect(api.downloadResumePdf("42", 3)).rejects.toMatchObject({
+      status: 409,
+      message: "RESUME_PDF_SNAPSHOT_STALE",
+      requestId: "request-pdf-1",
+    });
   });
 });
 
@@ -234,6 +343,72 @@ describe("JD API client", () => {
         duplicate,
       });
     }
+  });
+});
+
+describe("面试中心 API client", () => {
+  it("编码求职进程与面试记录的游标和历史范围", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, { items: [], next_cursor: null }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.listJobApplications({
+      scope: "all",
+      keyword: "后端 面试",
+      stage_type: "interview",
+      cursor: "application/cursor",
+      limit: 40,
+    });
+    await api.listInterviewSessions({
+      include_archived: true,
+      status: "completed",
+      cursor: "session/cursor",
+      limit: 80,
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/job-applications?scope=all&keyword=%E5%90%8E%E7%AB%AF+%E9%9D%A2%E8%AF%95&stage_type=interview&cursor=application%2Fcursor&limit=40",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/interview-sessions?status=completed&include_archived=true&cursor=session%2Fcursor&limit=80",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
+
+  it("调用取消、归档、恢复和永久清理接口时保留版本契约", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { deleted: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.cancelInterviewSession("31", {
+      reason: "时间变化",
+      base_lock_version: 2,
+    });
+    await api.archiveJobApplication("21", 3);
+    await api.restoreJobApplication("21", 4);
+    await api.deleteInterviewSession("31");
+    await api.deleteJobApplication("21");
+
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      "/api/interview-sessions/31/cancel",
+      "/api/job-applications/21/archive",
+      "/api/job-applications/21/restore",
+      "/api/interview-sessions/31",
+      "/api/job-applications/21",
+    ]);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
+      reason: "时间变化",
+      base_lock_version: 2,
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({
+      base_lock_version: 3,
+    });
+    expect(fetchMock.mock.calls[3][1]).toEqual(
+      expect.objectContaining({ method: "DELETE" }),
+    );
   });
 });
 

@@ -16,20 +16,27 @@ export type CommandMenuState = {
   replaceRange: { from: number; to: number } | null;
 };
 
-type BlankLineMenuOptions = {
+type LineInsertMenuOptions = {
   onOpen: (state: CommandMenuState) => void;
 };
 
-export function topLevelBlankLinePositions(state: EditorState) {
+const groupedVisualLineNodeNames = new Set(["resumeRow", "resumeMetaRow", "resumeTrioRow"]);
+
+export function editableLineStartPositions(state: EditorState) {
   const positions: number[] = [];
-  state.doc.forEach((node, offset) => {
-    if (node.type.name === "paragraph" && node.content.size === 0) positions.push(offset + 1);
+  state.doc.descendants((node, position, parent, index) => {
+    if (!node.isTextblock || node.type.name === "codeBlock") return true;
+    if (parent && groupedVisualLineNodeNames.has(parent.type.name) && index > 0) return false;
+    const firstChild = node.firstChild;
+    positions.push(position + 1
+      + (firstChild?.type.name === "resumeBlockAnchor" ? firstChild.nodeSize : 0));
+    return false;
   });
   return positions;
 }
 
-export const BlankLineMenuExtension = Extension.create<BlankLineMenuOptions>({
-  name: "blankLineMenu",
+export const LineInsertMenuExtension = Extension.create<LineInsertMenuOptions>({
+  name: "lineInsertMenu",
 
   addOptions() {
     return { onOpen: () => undefined };
@@ -43,24 +50,16 @@ export const BlankLineMenuExtension = Extension.create<BlankLineMenuOptions>({
         props: {
           decorations(state) {
             if (!editor.isEditable) return DecorationSet.empty;
-            const positions = topLevelBlankLinePositions(state);
+            const positions = editableLineStartPositions(state);
             if (positions.length === 0) return DecorationSet.empty;
-            const activePosition = state.selection.empty
-              && state.selection.$from.depth === 1
-              && state.selection.$from.parent.type.name === "paragraph"
-              && state.selection.$from.parent.content.size === 0
-              ? state.selection.$from.pos
-              : null;
-
             return DecorationSet.create(state.doc, positions.map((position) =>
               Decoration.widget(position, () => {
                 const button = document.createElement("button");
                 button.type = "button";
-                button.className = "resume-empty-line-add";
-                button.setAttribute("aria-label", "在此空白行设置格式");
-                button.setAttribute("title", "在此空白行设置格式");
+                button.className = "resume-line-add";
+                button.setAttribute("aria-label", "在此行开头插入内容");
+                button.setAttribute("title", "在此行开头插入内容");
                 button.setAttribute("contenteditable", "false");
-                button.dataset.active = String(position === activePosition);
                 button.textContent = "+";
                 button.addEventListener("mousedown", (event) => event.preventDefault());
                 button.addEventListener("click", (event) => {
@@ -77,7 +76,7 @@ export const BlankLineMenuExtension = Extension.create<BlankLineMenuOptions>({
                 });
                 return button;
               }, {
-                key: `blank-line-menu-${position}-${position === activePosition ? "active" : "idle"}`,
+                key: `line-insert-menu-${position}`,
                 side: -1,
                 ignoreSelection: true,
               }),
@@ -97,13 +96,17 @@ export function filterWorkbenchCommands(query: string) {
   );
 }
 
-function chooseImage(resumeId: string, onLoad: (file: File, src: string) => void, onNotice: (message: string) => void) {
+function chooseImage(
+  resumeId: string,
+  onLoad: (file: File, src: string, metadata: { naturalWidth: number; naturalHeight: number }) => void,
+  onNotice: (message: string) => void,
+) {
   const input = document.createElement("input");
   input.type = "file";
   input.accept = "image/png,image/jpeg,image/gif,image/webp,image/svg+xml";
   input.onchange = () => {
     const file = input.files?.[0];
-    if (file) readImage(file, resumeId, (src) => onLoad(file, src), onNotice);
+    if (file) readImage(file, resumeId, (src, metadata) => onLoad(file, src, metadata), onNotice);
   };
   input.click();
 }
@@ -148,6 +151,17 @@ export function runWorkbenchBlockCommand(
     return changed;
   }
   if (command.id === "inline-icon") return insertInlineIcon(editor, "Star");
+  if (command.id === "inline-image") {
+    chooseImage(resumeId, (file, src, metadata) => {
+      const aspectRatio = metadata.naturalWidth / Math.max(1, metadata.naturalHeight);
+      const width = Math.round(Math.min(120, Math.max(20, 24 * aspectRatio)));
+      editor.chain().focus().insertContent([
+        { type: "inlineImage", attrs: { src, width, height: 24, aspectRatio, alt: file.name } },
+        { type: "text", text: " " },
+      ]).run();
+    }, onNotice);
+    return true;
+  }
   if (command.id === "image") {
     chooseImage(resumeId, (file, src) => {
       editor.chain().focus().insertContent({ type: "resumeImage", attrs: { src, width: 55, widthUnit: "%", align: "center", alt: file.name } }).run();
@@ -201,8 +215,7 @@ export function SlashCommandMenu({
   };
 
   const insertSelectedIcon = (name: InlineIconName) => {
-    if (state.replaceRange) editor.chain().focus().deleteRange(state.replaceRange).run();
-    insertInlineIcon(editor, name);
+    insertInlineIcon(editor, name, state.replaceRange ?? undefined);
     onClose();
   };
 

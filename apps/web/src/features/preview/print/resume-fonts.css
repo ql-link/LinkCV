@@ -1,0 +1,23 @@
+@font-face {
+  font-family: "LXGW WenKai";
+  src: url("../../../../node_modules/@fontpkg/lxgw-wen-kai/LXGWWenKai-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Source Han Serif SC";
+  src: url("../../../../node_modules/@fontpkg/source-han-serif-sc/SourceHanSerifSC-Regular.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "LinkCV Noto Sans SC";
+  src: url("../../../../node_modules/@embedpdf/fonts-sc/fonts/NotoSansHans-Regular.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}

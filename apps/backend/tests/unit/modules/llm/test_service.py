@@ -37,6 +37,7 @@ class FakeGateway:
         ] = {}
         self.calls: list[tuple[str, str | None]] = []
         self.message_batches: list[tuple[ChatMessage, ...]] = []
+        self.disable_thinking_calls: list[bool] = []
 
     async def complete(
         self,
@@ -45,10 +46,12 @@ class FakeGateway:
         messages,
         api_base,
         api_key,
+        disable_thinking=False,
     ):
         del api_base
         self.calls.append((model, api_key))
         self.message_batches.append(tuple(messages))
+        self.disable_thinking_calls.append(disable_thinking)
         result = self.complete_results[model]
         if isinstance(result, GatewayError):
             raise result
@@ -152,6 +155,7 @@ def test_chat_uses_only_bound_model_and_records_cost(service_context) -> None:
 
     assert result.content == "统一结果"
     assert [model for model, _key in gateway.calls] == ["deepseek/current"]
+    assert gateway.disable_thinking_calls == [False]
     with sessions() as db:
         log = db.scalar(select(LLMCallLog))
         assert log is not None
@@ -162,6 +166,41 @@ def test_chat_uses_only_bound_model_and_records_cost(service_context) -> None:
         assert log.status == "succeeded"
         assert log.metering_status == "complete"
         assert log.estimated_cost == Decimal("2.5000000000")
+
+
+def test_agent_runtime_model_uses_pi_binding_not_chat_binding(service_context) -> None:
+    service, _gateway, sessions = service_context
+    chat_id = add_candidate(sessions, service, "chat-current", current=True)
+    with sessions() as db:
+        pi_config = LLMModelConfig(
+            adapter="deepseek",
+            model_call_name="pi-current",
+            model_name="deepseek/pi-current",
+            api_base="https://api.example.invalid/v1",
+            encrypted_api_key=service.encrypt_credential("fictional-pi-key"),
+            enabled=True,
+            priority=100,
+            config_version=3,
+        )
+        db.add(pi_config)
+        db.flush()
+        db.add(
+            LLMCapabilityBinding(
+                capability="pi_agent",
+                model_config_id=pi_config.id,
+            )
+        )
+        db.commit()
+        pi_id = pi_config.id
+
+    runtime = asyncio.run(service.agent_runtime_model())
+
+    assert runtime.id == pi_id
+    assert runtime.id != chat_id
+    assert runtime.model_call_name == "pi-current"
+    assert runtime.api_base == "https://api.example.invalid/v1"
+    assert runtime.api_key == "fictional-pi-key"
+    assert runtime.config_version == 3
 
 
 @pytest.mark.parametrize(
@@ -192,6 +231,7 @@ def test_structured_chat_uses_current_and_validates_local_json(
 
     assert result.value.answer == "有效"
     assert [model for model, _key in gateway.calls] == ["deepseek/current"]
+    assert gateway.disable_thinking_calls == [True]
     assert len(gateway.message_batches) == 1
     instruction, original = gateway.message_batches[0]
     assert instruction.role == "system"

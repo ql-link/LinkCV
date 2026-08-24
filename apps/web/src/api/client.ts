@@ -115,11 +115,83 @@ export type ResumeVersion = {
   id: string;
   version_no: number;
   name: string;
-  reason: "initial" | "manual" | "before_restore" | "restore";
+  reason: "initial" | "manual" | "before_restore" | "restore" | "agent";
   created_at: string;
   data?: ResumeDocumentV1;
   style?: ResumeStyleV1;
 };
+
+export type AgentMessage = {
+  sequence_no: number;
+  role: "user" | "assistant";
+  message_type?: "text" | "clarification";
+  content: string;
+  clarification?: AgentClarification | null;
+  created_at: string;
+};
+
+export type AgentClarification = {
+  version: 1;
+  questions: Array<{
+    id: string;
+    header: string;
+    question: string;
+    options: Array<{ id: string; label: string; description?: string | null }>;
+  }>;
+};
+
+export type AgentSelectionContext = {
+  block_ids: string[];
+  from: number;
+  to: number;
+  selected_text: string;
+  selected_text_hash: string;
+};
+
+export type AgentSession = {
+  id: string;
+  resume_id: string | null;
+  title: string;
+  status: "active" | "archived";
+  last_message_at: string | null;
+  created_at: string;
+  updated_at: string;
+  messages: AgentMessage[];
+};
+
+export type AgentProposal = {
+  id: string;
+  run_id: string;
+  resume_id: string;
+  base_lock_version: number;
+  data: ResumeDocumentV1;
+  style: ResumeStyleV1;
+  summary: string;
+  proposal_mode?: "legacy_snapshot" | "polish_local" | "rewrite_entry_star" | "generate_from_materials";
+  target?: Record<string, unknown> | null;
+  diagnosis?: Record<string, unknown> | null;
+  operations?: Array<{
+    op: "replace_target_text" | "insert_after_target";
+    target: Record<string, unknown>;
+    new_text: string;
+    expected_text_hash: string;
+  }>;
+  rationale?: Array<Record<string, string>>;
+  source_refs?: Array<Record<string, unknown>>;
+  status: "pending" | "applied" | "rejected" | "expired" | "conflicted";
+  applied_lock_version: number | null;
+  expires_at: string;
+  created_at: string;
+};
+
+export type AgentStreamEvent =
+  | { type: "run.started"; runId: string }
+  | { type: "assistant.delta"; runId: string; delta: string }
+  | { type: "clarification.requested"; runId: string; clarification: AgentClarification }
+  | { type: "tool.started" | "tool.completed"; runId: string; tool: string; callKey: string }
+  | { type: "proposal.created"; runId: string; proposal: AgentProposal }
+  | { type: "run.completed" | "run.cancelled"; runId: string }
+  | { type: "run.failed"; runId: string; error: string };
 
 export type ResumeShareState = {
   share_token: string;
@@ -288,6 +360,126 @@ export type JobDescriptionFields = {
   notes?: string | null;
 };
 
+export type InterviewCalendarColor =
+  | "red"
+  | "orange"
+  | "yellow"
+  | "green"
+  | "blue"
+  | "purple"
+  | "gray";
+export type ApplicationStageType = "screening" | "interview" | "hr" | "offer";
+export type ApplicationStageState =
+  | "awaiting_schedule"
+  | "scheduled"
+  | "awaiting_result"
+  | "negotiating";
+export type InterviewMode = "video" | "onsite" | "phone" | "other";
+export type InterviewSessionStatus = "scheduled" | "completed" | "cancelled";
+
+export type JobApplicationRecord = {
+  id: string;
+  job_description_id: string | null;
+  resume_version_id: string | null;
+  company_name_snapshot: string;
+  job_title_snapshot: string;
+  job_snapshot: Record<string, unknown>;
+  resume_title_snapshot: string | null;
+  calendar_color: InterviewCalendarColor;
+  current_stage_type: ApplicationStageType;
+  current_round_no: number | null;
+  current_stage_label: string;
+  stage_state: ApplicationStageState;
+  status: "active" | "rejected" | "withdrawn" | "closed";
+  offer_status:
+    | "none"
+    | "oc_received"
+    | "written_offer_received"
+    | "accepted"
+    | "declined";
+  is_favorite: boolean;
+  applied_at: string | null;
+  notes: string | null;
+  archived_at: string | null;
+  lock_version: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type JobApplicationSummary = JobApplicationRecord & {
+  next_session_id: string | null;
+  next_session_start_at: string | null;
+  next_session_end_at: string | null;
+  next_session_mode: InterviewMode | null;
+};
+
+export type InterviewSessionRecord = {
+  id: string;
+  application_id: string;
+  client_request_id: string;
+  stage_type: "interview" | "hr" | "offer" | "other";
+  round_no: number | null;
+  stage_label: string;
+  status: InterviewSessionStatus;
+  round_result: "pending" | "passed" | "rejected";
+  start_at: string;
+  end_at: string;
+  timezone: string;
+  mode: InterviewMode;
+  meeting_url: string | null;
+  location: string | null;
+  interviewer_name: string | null;
+  interviewer_title: string | null;
+  reminder_minutes: number | null;
+  preparation_note: string | null;
+  questions_markdown: string | null;
+  review_summary: string | null;
+  improvement_markdown: string | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+  cancellation_reason: string | null;
+  lock_version: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InterviewSessionSummary = InterviewSessionRecord & {
+  company_name: string;
+  job_title: string;
+  calendar_color: InterviewCalendarColor;
+  application_stage_state: ApplicationStageState;
+};
+
+export type InterviewAssetRecord = {
+  id: string;
+  interview_session_id: string;
+  source_type: "recorded" | "uploaded";
+  asset_type: "audio" | "video" | "document";
+  original_file_name: string;
+  content_type: string;
+  file_size: number;
+  duration_ms: number | null;
+  sha256: string | null;
+  created_at: string;
+};
+
+export type InterviewSessionDetail = {
+  session: InterviewSessionRecord;
+  application: JobApplicationRecord;
+  assets: InterviewAssetRecord[];
+};
+
+export type InterviewOverview = {
+  metrics: {
+    weekly_interviews: number;
+    upcoming_interviews: number;
+    completed_interviews: number;
+    written_offers: number;
+  };
+  pipeline: JobApplicationSummary[];
+  week_sessions: InterviewSessionSummary[];
+};
+
 export type PluginRelease = {
   version: string;
   released_at: string;
@@ -352,6 +544,38 @@ export type LlmModelConfig = {
   updatedAt: string;
 };
 
+export type ModelCapability = "chat" | "resume_structuring" | "pi_agent";
+
+export type CapabilityModelConfig = {
+  id: string;
+  adapter: ChatAdapter;
+  model: string;
+  apiBase: string | null;
+  keyConfigured: boolean;
+  configVersion: number;
+  activeCapabilities: ModelCapability[];
+  lastTest: LlmModelLastTest | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ModelCapabilityRecord = {
+  capability: ModelCapability;
+  activeModelId: string | null;
+  bindingVersion: number;
+  activeModel: CapabilityModelConfig | null;
+  models: CapabilityModelConfig[];
+};
+
+export type ModelCapabilityList = {
+  capabilities: ModelCapabilityRecord[];
+};
+
+export type ModelCatalog = {
+  capabilities: ModelCapability[];
+  adapters: ChatCatalogAdapter[];
+};
+
 export type ChatCapability = {
   capability: "chat";
   activeModelId: string | null;
@@ -381,6 +605,7 @@ export type LlmModelCreatePayload = {
 export type LlmModelPatchPayload = Partial<
   Omit<LlmModelCreatePayload, "apiKey">
 > & {
+  baseConfigVersion?: number;
   apiKey?: string | null;
 };
 
@@ -389,7 +614,7 @@ export type LlmMeteringStatus = "complete" | "partial" | "unknown";
 
 export type LlmCallRecord = {
   callId: string;
-  capability: "chat";
+  capability: ModelCapability;
   source: string;
   userId: string;
   modelConfigId: string | null;
@@ -404,6 +629,7 @@ export type LlmCallRecord = {
   estimatedCostUsd: string | null;
   latencyMs: number | null;
   errorCode: string | null;
+  modelConfigVersion?: number | null;
   createdAt: string;
 };
 
@@ -511,6 +737,12 @@ type ApiOptions = {
   body?: unknown;
   formData?: FormData;
   headers?: Record<string, string>;
+  signal?: AbortSignal;
+};
+
+export type ResumePdfDownload = {
+  blob: Blob;
+  filename: string | null;
 };
 
 export class ApiRequestError extends Error {
@@ -590,6 +822,7 @@ async function request<T>(
       options.formData ??
       (options.body ? JSON.stringify(options.body) : undefined),
     credentials: "include",
+    signal: options.signal,
   });
 
   const data = await response.json().catch(() => ({}));
@@ -638,6 +871,119 @@ async function requestBlob(path: string, retryAuth = true): Promise<Blob> {
     );
   }
   return response.blob();
+}
+
+function filenameFromContentDisposition(value: string | null): string | null {
+  if (!value) return null;
+  const encoded = value.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)?.[1];
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded.trim().replace(/^"|"$/g, ""));
+    } catch {
+      // Fall through to the legacy filename parameter when decoding fails.
+    }
+  }
+  return value.match(/filename\s*=\s*"([^"]+)"/i)?.[1]
+    ?? value.match(/filename\s*=\s*([^;]+)/i)?.[1]?.trim()
+    ?? null;
+}
+
+async function requestResumePdf(
+  path: string,
+  signal?: AbortSignal,
+  retryAuth = true,
+): Promise<ResumePdfDownload> {
+  const requestId = createRequestId();
+  const response = await fetch(path, {
+    method: "GET",
+    headers: { "X-Request-ID": requestId },
+    credentials: "include",
+    signal,
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401 && retryAuth && !signal?.aborted) {
+      const refreshed = await refreshSession();
+      if (refreshed) return requestResumePdf(path, signal, false);
+    }
+    const error = new ApiRequestError(
+      response.status,
+      typeof data.error === "string" ? data.error : `HTTP_${response.status}`,
+      data && typeof data === "object" ? data as Record<string, unknown> : null,
+      response.headers?.get?.("X-Request-ID") ?? requestId,
+    );
+    if (response.status >= 500) reportApi5xx(error);
+    throw error;
+  }
+  return {
+    blob: await response.blob(),
+    filename: filenameFromContentDisposition(response.headers?.get?.("Content-Disposition") ?? null),
+  };
+}
+
+async function streamAgentMessage(
+  sessionId: string,
+  payload: { content: string; idempotency_key: string; selection_context?: AgentSelectionContext; reply_to_sequence_no?: number },
+  signal: AbortSignal,
+  onEvent: (event: AgentStreamEvent) => void,
+  retryAuth = true,
+): Promise<void> {
+  const path = `/api/agent/sessions/${encodeURIComponent(sessionId)}/messages`;
+  const requestId = createRequestId();
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
+    body: JSON.stringify(payload),
+    credentials: "include",
+    signal,
+  });
+  if (response.status === 401 && retryAuth && await refreshSession()) {
+    return streamAgentMessage(sessionId, payload, signal, onEvent, false);
+  }
+  if (!response.ok || !response.body) {
+    const data = await response.json().catch(() => ({}));
+    const error = new ApiRequestError(
+      response.status,
+      typeof data.error === "string" ? data.error : `HTTP_${response.status}`,
+      data && typeof data === "object" ? data as Record<string, unknown> : null,
+      response.headers.get("X-Request-ID") ?? requestId,
+    );
+    if (response.status >= 500) reportApi5xx(error);
+    throw error;
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let terminalReceived = false;
+  const terminalEvents = new Set(["run.completed", "run.failed", "run.cancelled"]);
+  const allowedEvents = new Set([
+    "run.started", "assistant.delta", "clarification.requested", "tool.started", "tool.completed",
+    "proposal.created", ...terminalEvents,
+  ]);
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() ?? "";
+    for (const frame of frames) {
+      const eventName = frame.split("\n").find((line) => line.startsWith("event: "))?.slice(7);
+      const rawData = frame.split("\n").find((line) => line.startsWith("data: "))?.slice(6);
+      if (!eventName || !rawData) continue;
+      try {
+        const data = JSON.parse(rawData) as Record<string, unknown>;
+        if (allowedEvents.has(eventName)) {
+          if (terminalEvents.has(eventName)) terminalReceived = true;
+          onEvent({ type: eventName, ...data } as AgentStreamEvent);
+        }
+      } catch {
+        // Ignore an isolated malformed or future event without losing the stream.
+      }
+    }
+    if (done) break;
+  }
+  if (!terminalReceived) {
+    throw new ApiRequestError(502, "AGENT_STREAM_INCOMPLETE", null, requestId);
+  }
 }
 
 async function getCurrentUser(): Promise<{ user: User | null }> {
@@ -703,6 +1049,44 @@ export const api = {
     }),
   getResume: (id: string) =>
     request<{ resume: ResumeRecord }>(`/api/resumes/${id}`),
+  downloadResumePdf: (id: string, lockVersion: number, signal?: AbortSignal) =>
+    requestResumePdf(
+      `/api/resumes/${encodeURIComponent(id)}/pdf?lock_version=${encodeURIComponent(lockVersion)}`,
+      signal,
+    ),
+  listAgentSessions: (resumeId: string) =>
+    request<{ sessions: AgentSession[] }>(
+      `/api/agent/sessions?resume_id=${encodeURIComponent(resumeId)}`,
+    ),
+  listAgentProposals: (resumeId: string, sessionId?: string) =>
+    request<{ proposals: AgentProposal[] }>(
+      `/api/agent/proposals?resume_id=${encodeURIComponent(resumeId)}${sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : ""}`,
+    ),
+  getAgentSession: (sessionId: string) =>
+    request<{ session: AgentSession }>(
+      `/api/agent/sessions/${encodeURIComponent(sessionId)}`,
+    ),
+  createAgentSession: (resumeId: string) =>
+    request<{ session: AgentSession }>("/api/agent/sessions", {
+      method: "POST",
+      body: { resume_id: resumeId },
+    }),
+  streamAgentMessage,
+  cancelAgentRun: (runId: string) =>
+    request<{ run_id: string; status: string }>(
+      `/api/agent/runs/${encodeURIComponent(runId)}/cancel`,
+      { method: "POST" },
+    ),
+  confirmAgentProposal: (proposalId: string) =>
+    request<{ resume: ResumeRecord }>(
+      `/api/agent/proposals/${encodeURIComponent(proposalId)}/confirm`,
+      { method: "POST" },
+    ),
+  rejectAgentProposal: (proposalId: string) =>
+    request<{ proposal: AgentProposal }>(
+      `/api/agent/proposals/${encodeURIComponent(proposalId)}/reject`,
+      { method: "POST" },
+    ),
   updateResume: (
     id: string,
     payload: {
@@ -873,6 +1257,244 @@ export const api = {
     request<{ deleted: boolean }>(`/api/job-descriptions/${id}`, {
       method: "DELETE",
     }),
+  getInterviewOverview: (weekStart: string, timezone: string) => {
+    const search = new URLSearchParams({ week_start: weekStart, timezone });
+    return request<InterviewOverview>(`/api/interview-overview?${search}`);
+  },
+  listJobApplications: (
+    params: {
+      scope?: "active" | "archived" | "all";
+      keyword?: string;
+      status?: JobApplicationRecord["status"];
+      stage_type?: ApplicationStageType;
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.scope) search.set("scope", params.scope);
+    if (params.keyword) search.set("keyword", params.keyword);
+    if (params.status) search.set("status", params.status);
+    if (params.stage_type) search.set("stage_type", params.stage_type);
+    if (params.cursor) search.set("cursor", params.cursor);
+    search.set("limit", String(params.limit ?? 200));
+    return request<{ items: JobApplicationSummary[]; next_cursor: string | null }>(
+      `/api/job-applications?${search}`,
+    );
+  },
+  createJobApplication: (payload: {
+    job_description_id: string;
+    resume_version_id?: string | null;
+    current_stage_type: ApplicationStageType;
+    current_round_no?: number | null;
+    current_stage_label: string;
+    stage_state: ApplicationStageState;
+    applied_at?: string | null;
+    notes?: string | null;
+  }) =>
+    request<{ application: JobApplicationRecord }>("/api/job-applications", {
+      method: "POST",
+      body: payload,
+    }),
+  updateJobApplication: (
+    id: string,
+    payload: Partial<{
+      calendar_color: InterviewCalendarColor;
+      is_favorite: boolean;
+      notes: string | null;
+      applied_at: string | null;
+      resume_version_id: string | null;
+    }> & { base_lock_version: number },
+  ) =>
+    request<{ application: JobApplicationRecord }>(`/api/job-applications/${id}`, {
+      method: "PUT",
+      body: payload,
+    }),
+  advanceJobApplication: (
+    id: string,
+    payload: {
+      target_stage_type: ApplicationStageType;
+      target_round_no?: number | null;
+      target_stage_label: string;
+      base_lock_version: number;
+    },
+  ) =>
+    request<{ application: JobApplicationRecord }>(
+      `/api/job-applications/${id}/advance`,
+      { method: "POST", body: payload },
+    ),
+  recordJobApplicationOffer: (
+    id: string,
+    offerStatus: "oc_received" | "written_offer_received",
+    baseLockVersion: number,
+  ) =>
+    request<{ application: JobApplicationRecord }>(
+      `/api/job-applications/${id}/offer`,
+      {
+        method: "POST",
+        body: {
+          offer_status: offerStatus,
+          base_lock_version: baseLockVersion,
+        },
+      },
+    ),
+  closeJobApplication: (
+    id: string,
+    payload: {
+      status: "rejected" | "withdrawn" | "closed";
+      offer_status?: "accepted" | "declined" | null;
+      base_lock_version: number;
+    },
+  ) =>
+    request<{ application: JobApplicationRecord }>(
+      `/api/job-applications/${id}/close`,
+      { method: "POST", body: payload },
+    ),
+  archiveJobApplication: (id: string, baseLockVersion: number) =>
+    request<{ application: JobApplicationRecord }>(
+      `/api/job-applications/${id}/archive`,
+      { method: "POST", body: { base_lock_version: baseLockVersion } },
+    ),
+  restoreJobApplication: (id: string, baseLockVersion: number) =>
+    request<{ application: JobApplicationRecord }>(
+      `/api/job-applications/${id}/restore`,
+      { method: "POST", body: { base_lock_version: baseLockVersion } },
+    ),
+  deleteJobApplication: (id: string) =>
+    request<{ deleted: boolean }>(`/api/job-applications/${id}`, {
+      method: "DELETE",
+    }),
+  listInterviewSessions: (
+    params: {
+      start_at?: string;
+      end_at?: string;
+      status?: InterviewSessionStatus;
+      application_id?: string;
+      include_archived?: boolean;
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.start_at) search.set("start_at", params.start_at);
+    if (params.end_at) search.set("end_at", params.end_at);
+    if (params.status) search.set("status", params.status);
+    if (params.application_id)
+      search.set("application_id", String(params.application_id));
+    if (params.include_archived) search.set("include_archived", "true");
+    if (params.cursor) search.set("cursor", params.cursor);
+    search.set("limit", String(params.limit ?? 500));
+    return request<{
+      items: InterviewSessionSummary[];
+      next_cursor: string | null;
+    }>(`/api/interview-sessions${search.size ? `?${search}` : ""}`);
+  },
+  getInterviewSession: (id: string) =>
+    request<InterviewSessionDetail>(`/api/interview-sessions/${id}`),
+  createInterviewSession: (
+    applicationId: string,
+    payload: {
+      client_request_id: string;
+      stage_type: "interview" | "hr" | "offer" | "other";
+      round_no?: number | null;
+      stage_label: string;
+      start_at: string;
+      end_at: string;
+      timezone: string;
+      mode: InterviewMode;
+      meeting_url?: string | null;
+      location?: string | null;
+      interviewer_name?: string | null;
+      interviewer_title?: string | null;
+      reminder_minutes?: number | null;
+      preparation_note?: string | null;
+      allow_conflict?: boolean;
+    },
+  ) =>
+    request<InterviewSessionDetail>(
+      `/api/job-applications/${applicationId}/interview-sessions`,
+      { method: "POST", body: payload },
+    ),
+  updateInterviewSession: (
+    id: string,
+    payload: Partial<{
+      mode: InterviewMode;
+      meeting_url: string | null;
+      location: string | null;
+      interviewer_name: string | null;
+      interviewer_title: string | null;
+      reminder_minutes: number | null;
+      preparation_note: string | null;
+      questions_markdown: string | null;
+      review_summary: string | null;
+      improvement_markdown: string | null;
+    }> & { base_lock_version: number },
+  ) =>
+    request<InterviewSessionDetail>(`/api/interview-sessions/${id}`, {
+      method: "PUT",
+      body: payload,
+    }),
+  rescheduleInterviewSession: (
+    id: string,
+    payload: {
+      start_at: string;
+      end_at: string;
+      timezone: string;
+      allow_conflict: boolean;
+      base_lock_version: number;
+    },
+  ) =>
+    request<InterviewSessionDetail>(
+      `/api/interview-sessions/${id}/reschedule`,
+      { method: "POST", body: payload },
+    ),
+  completeInterviewSession: (
+    id: string,
+    payload: {
+      questions_markdown?: string | null;
+      review_summary?: string | null;
+      improvement_markdown?: string | null;
+      base_lock_version: number;
+    },
+  ) =>
+    request<InterviewSessionDetail>(`/api/interview-sessions/${id}/complete`, {
+      method: "POST",
+      body: payload,
+    }),
+  cancelInterviewSession: (
+    id: string,
+    payload: { reason?: string | null; base_lock_version: number },
+  ) =>
+    request<InterviewSessionDetail>(`/api/interview-sessions/${id}/cancel`, {
+      method: "POST",
+      body: payload,
+    }),
+  deleteInterviewSession: (id: string) =>
+    request<{ deleted: boolean; application: JobApplicationRecord }>(
+      `/api/interview-sessions/${id}`,
+      { method: "DELETE" },
+    ),
+  uploadInterviewAsset: (
+    sessionId: string,
+    file: File,
+    sourceType: "recorded" | "uploaded",
+    durationMs?: number,
+  ) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("source_type", sourceType);
+    if (durationMs) formData.append("duration_ms", String(durationMs));
+    return request<{ asset: InterviewAssetRecord }>(
+      `/api/interview-sessions/${sessionId}/assets`,
+      { method: "POST", formData },
+    );
+  },
+  downloadInterviewAsset: (assetId: string) =>
+    requestBlob(`/api/interview-assets/${assetId}/content`),
+  deleteInterviewAsset: (assetId: string) =>
+    request<{ deleted: boolean }>(`/api/interview-assets/${assetId}`, {
+      method: "DELETE",
+    }),
   getPluginRelease: () =>
     request<PluginReleaseCurrentResponse>("/api/plugin-releases/current"),
   downloadPluginRelease: (version: string) =>
@@ -934,6 +1556,9 @@ export const api = {
   adminStats: () => request<AdminStatsResponse>("/api/auth/admin/stats"),
   getChatCapability: () =>
     request<ChatCapability>("/api/admin/llm/capabilities/chat"),
+  getModelCapabilities: () =>
+    request<ModelCapabilityList>("/api/admin/llm/capabilities"),
+  getModelCatalog: () => request<ModelCatalog>("/api/admin/llm/catalog"),
   getChatCatalog: () => request<ChatCatalog>("/api/admin/llm/catalog/chat"),
   createLlmModel: (payload: LlmModelCreatePayload) =>
     request<{ model: LlmModelConfig }>("/api/admin/llm/models", {
@@ -959,6 +1584,47 @@ export const api = {
         method: "POST",
       },
     ),
+  bindModelCapability: (
+    capability: Exclude<ModelCapability, "chat">,
+    id: string,
+    baseConfigVersion?: number,
+    baseBindingVersion?: number,
+  ) =>
+    request<{
+      capability: ModelCapability;
+      activeModelId: string;
+      bindingVersion: number;
+      validationId: string;
+      callId: string;
+      activeModel: CapabilityModelConfig;
+    }>(`/api/admin/llm/capabilities/${capability}/binding`, {
+      method: "PUT",
+      body: {
+        modelConfigId: id,
+        ...(baseConfigVersion ? { baseConfigVersion } : {}),
+        ...(baseBindingVersion ? { baseBindingVersion } : {}),
+      },
+    }),
+  testModelCapability: (
+    id: string,
+    capability: ModelCapability,
+    baseConfigVersion?: number,
+  ) =>
+    request<{
+      ok: true;
+      capability: ModelCapability;
+      validationId: string;
+      callId: string;
+      configVersion: number;
+    }>(`/api/admin/llm/models/${id}/tests`, {
+      method: "POST",
+      body: {
+        capability,
+        ...(baseConfigVersion ? { baseConfigVersion } : {}),
+      },
+    }),
+  deleteLlmModel: (id: string) =>
+    request<void>(`/api/admin/llm/models/${id}`, { method: "DELETE" }),
   listLlmCalls: (params: LlmCallQuery = {}) => {
     const search = new URLSearchParams();
     if (params.source) search.set("source", params.source);

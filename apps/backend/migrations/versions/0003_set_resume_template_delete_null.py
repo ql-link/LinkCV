@@ -9,7 +9,6 @@ from pathlib import Path
 
 from alembic import op
 from linkcv.core.migration_sql import execute_sql_file
-from sqlalchemy import text
 
 revision: str = '0003'
 down_revision: str | None = '0002'
@@ -24,16 +23,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    connection = op.get_bind()
-    missing_template_count = connection.scalar(
-        text(
-            "SELECT COUNT(*) FROM resumes "
-            "WHERE source_type = 'template' AND template_id IS NULL"
-        )
-    )
-    if missing_template_count:
-        raise RuntimeError(
-            "0003 downgrade cannot restore deleted template references; "
-            f"template resumes without template_id={int(missing_template_count)}"
-        )
-    execute_sql_file(connection, SQL_DIR / "0003.down.sql")
+    raise RuntimeError("LinkCV database migrations are forward-only")

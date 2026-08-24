@@ -2,11 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link2Off, Printer } from "lucide-react";
 import { Brand, Button, PageLoading } from "@/components/ui";
 import { api, type PublicSharePayload } from "../../api/client";
-import {
-  resumeDocumentToMarkdown,
-  styleToEditorSettings,
-} from "../../api/resumeContract";
-import { renderResumeMarkdown } from "../../parser/resumeMarkdown";
+import "../preview/print/resume-print.css";
+import { renderResumePrintDocument } from "../preview/print/resumePrintDocument";
 
 function ShareBrand() {
   return <Brand className="share-brand" label="linkresume" name="linkresume" />;
@@ -16,17 +13,6 @@ type ShareStatus = "loading" | "ready" | "unavailable";
 
 // 210mm A4 纸宽约 794px；除以略大的基准让移动端留出边距
 const PAPER_WIDTH_PX = 820;
-
-function paperStyle(payload: PublicSharePayload) {
-  const settings = styleToEditorSettings(payload.style);
-  return {
-    "--resume-font-family": settings.fontFamily,
-    "--resume-font-size": `${settings.fontSize}pt`,
-    "--resume-line-height": settings.lineHeight,
-    "--resume-page-margin-x": `${settings.pageMargin}mm`,
-    "--resume-page-margin-y": `${settings.verticalPageMargin}mm`,
-  } as React.CSSProperties;
-}
 
 function useMobilePaperZoom() {
   const [zoom, setZoom] = useState(1);
@@ -66,11 +52,16 @@ export function SharePage({ token }: { token: string }) {
     };
   }, [token]);
 
-  const markdown = useMemo(
-    () => (payload ? resumeDocumentToMarkdown(payload.data) : ""),
+  const documentHtml = useMemo(
+    () => payload
+      ? renderResumePrintDocument({
+        title: payload.data.basics.name || "LinkCV Resume",
+        data: payload.data,
+        style: payload.style,
+      }, { className: "share-page-paper", ariaLabel: "分享简历内容" })
+      : "",
     [payload],
   );
-  const html = useMemo(() => renderResumeMarkdown(markdown), [markdown]);
 
   if (status === "loading") {
     return <PageLoading label="正在加载分享内容…" scope="page" />;
@@ -109,21 +100,11 @@ export function SharePage({ token }: { token: string }) {
         </span>
       </header>
       <section className="share-page-paper-scroll">
-        <article
-          className={`resume-paper theme-${
-            styleToEditorSettings(payload.style).theme
-          } smart-one-page share-page-paper`}
-          style={{
-            ...paperStyle(payload),
-            zoom: paperZoom,
-          }}
-          aria-label="分享简历内容"
-        >
-          <div
-            className="resume-content share-page-content"
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
-        </article>
+        <div
+          className="share-page-paper-wrap"
+          style={{ zoom: paperZoom } as React.CSSProperties}
+          dangerouslySetInnerHTML={{ __html: documentHtml }}
+        />
       </section>
       <footer className="share-page-footer">由 linkresume 生成</footer>
     </main>

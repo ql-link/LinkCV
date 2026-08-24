@@ -2,6 +2,7 @@ import { motion } from 'motion/react'
 import { FileText, Globe, MessageSquare, LayoutTemplate, type LucideIcon } from 'lucide-react'
 import { SiGooglechrome } from 'react-icons/si'
 import type { IconType } from 'react-icons'
+import brandMark from '@/assets/linkresume-mark.png'
 
 type AnyIcon = LucideIcon | IconType
 
@@ -101,7 +102,7 @@ export function ConnectionMap() {
         transition={{ duration: 0.7, delay: 0.1, ease: [0.21, 0.47, 0.32, 0.98] }}
       >
         <div className="flex h-[88px] w-[88px] flex-col items-center justify-center gap-1.5 rounded-2xl bg-zinc-900 shadow-2xl shadow-black/25 ring-4 ring-zinc-900/10 dark:bg-white dark:shadow-white/10 dark:ring-white/10">
-          <span className="font-display text-lg font-bold leading-none text-white dark:text-black">L</span>
+          <img className="h-8 w-8 object-contain invert dark:invert-0" src={brandMark} alt="" aria-hidden="true" width="1080" height="1080" />
           <span className="font-mono text-[9px] tracking-[0.18em] text-zinc-400 dark:text-zinc-600">LinkCV</span>
         </div>
       </motion.div>

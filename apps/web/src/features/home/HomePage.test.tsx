@@ -35,7 +35,6 @@ function renderHome(overrides: Partial<React.ComponentProps<typeof HomeScreen>> 
     onOpen: vi.fn(),
     onRename: vi.fn(),
     onDelete: vi.fn(),
-    onCreate: vi.fn(),
     onDeleteImport: vi.fn(),
     ...overrides,
   };
@@ -61,9 +60,9 @@ describe("HomeScreen", () => {
     expect(container.querySelector(".dashboard-main")).not.toBeInTheDocument();
   });
 
-  it("按名称筛选简历并从新建按钮进入创建流程", () => {
-    const onCreate = vi.fn();
-    renderHome({ onCreate });
+  it("按名称筛选简历并从新建按钮在当前页打开创建弹窗", async () => {
+    vi.spyOn(api, "listResumeTemplates").mockResolvedValue({ templates: [] });
+    renderHome();
 
     expect(screen.queryByText(/按最近更新排列/)).not.toBeInTheDocument();
     expect(screen.queryByText(/点击简历卡片可继续编辑/)).not.toBeInTheDocument();
@@ -82,7 +81,10 @@ describe("HomeScreen", () => {
     const createButton = screen.getByRole("button", { name: "新建简历" });
     expect(createButton).toHaveClass("ui-button-transparent");
     fireEvent.click(createButton);
-    expect(onCreate).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole("dialog", { name: "新建简历" })).toBeInTheDocument();
+    expect(screen.getByText("命名并选择一个起点，创建后直接进入编辑器。")).toBeInTheDocument();
+    expect(screen.queryByText("导入文件")).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe("/resumes");
   });
 
   it("导入简历入口在当前列表打开弹窗而不改变地址", async () => {
@@ -189,7 +191,8 @@ describe("HomeScreen", () => {
 
     renderHome({ failedImports });
 
-    expect(screen.getAllByText("未完成")).toHaveLength(2);
+    expect(screen.getByText("上传失败")).toBeInTheDocument();
+    expect(screen.getByText("解析失败")).toBeInTheDocument();
     expect(screen.getByText("上传失败 · 420 毫秒")).toBeInTheDocument();
     expect(screen.getByText("解析失败 · 1.3 秒")).toBeInTheDocument();
   });
@@ -214,14 +217,14 @@ describe("HomeScreen", () => {
       name: "导入任务 张三-后端工程师.pdf",
     });
     expect(taskCard).toHaveClass("home-import-card");
-    expect(within(taskCard).getByText("未完成")).toBeInTheDocument();
+    expect(within(taskCard).getByText("解析中")).toBeInTheDocument();
     expect(screen.getByRole("progressbar", {
       name: "张三-后端工程师.pdf 正在解析",
     })).toHaveAttribute("aria-valuetext", "正在解析，暂时无法估算完成时间");
     expect(screen.getByText("正在解析 · 请稍候")).toBeInTheDocument();
   });
 
-  it("未完成导入和正式简历展示在同一个卡片网格", () => {
+  it("导入任务和正式简历展示在同一个卡片网格", () => {
     const activeImport: ResumeImportSummary = {
       id: "41",
       source_filename: "后端工程师.pdf",
