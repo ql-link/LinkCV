@@ -1904,6 +1904,62 @@ select:not([data-slot]):focus-visible,
   gap: 16px;
 }
 
+.page-hero.is-module {
+  align-items: center;
+  gap: 24px;
+  padding: 18px 30px 14px;
+}
+
+.page-hero-module-summary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 14px;
+}
+
+.page-hero-module-mark {
+  --page-hero-tone: var(--ui-accent);
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--page-hero-tone) 48%, var(--ui-border));
+  border-radius: var(--ui-radius-md);
+  color: var(--page-hero-tone);
+}
+
+.page-hero-module-mark.is-template { --page-hero-tone: var(--ui-template-accent); }
+.page-hero-module-mark.is-success { --page-hero-tone: var(--ui-success); }
+.page-hero-module-mark svg { width: 21px; height: 21px; }
+
+.page-hero-module-copy {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 22px;
+}
+
+.page-hero.is-module h1 {
+  flex: 0 0 auto;
+  font-size: 23px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.page-hero.is-module .page-hero-description {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-hero.is-module .page-hero-actions {
+  align-items: center;
+  gap: 10px;
+}
+
 .page-hero-field {
   display: flex;
   flex-direction: column;
@@ -3216,6 +3272,21 @@ select:not([data-slot]):focus-visible,
   .dashboard-create.ui-button { padding-inline: 12px; }
   .dashboard-main { padding: 20px 16px 32px; }
   .template-library-content .page-hero { padding: 22px 16px 0; }
+  .page-hero.is-module {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px 16px 12px;
+  }
+  .page-hero-module-copy {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .page-hero.is-module .page-hero-description {
+    overflow: visible;
+    white-space: normal;
+  }
   .template-library-body { padding: 22px 16px 32px; }
   .template-library-grid,
   .home-card-grid { grid-template-columns: 1fr; gap: 16px; }
@@ -4391,7 +4462,6 @@ select:not([data-slot]):focus-visible,
   object-fit: contain;
 }
 
-.wechat-qr-loading,
 .wechat-qr-fallback {
   display: grid;
   gap: 10px;

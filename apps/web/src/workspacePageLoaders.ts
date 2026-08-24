@@ -7,6 +7,11 @@ export const loadResumeTemplatesPage = () => import("./features/templates/Resume
 
 const workspacePageLoaders: Record<string, () => Promise<unknown>> = {
   "/account": loadAccountPage,
+  "/career": loadInterviewCenterPage,
+  "/career/applications": loadInterviewCenterPage,
+  "/career/jobs": loadJobCenterPage,
+  "/career/reviews": loadInterviewCenterPage,
+  "/career/schedule": loadInterviewCenterPage,
   "/datasets": loadDatasetsPage,
   "/interviews": loadInterviewCenterPage,
   "/jobs": loadJobCenterPage,

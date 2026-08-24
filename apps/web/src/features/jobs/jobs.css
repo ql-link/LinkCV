@@ -345,6 +345,17 @@
   font-weight: 650;
 }
 
+.job-career-section { margin-top: 20px; }
+.job-career-section > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.job-career-section > header h2 { margin: 5px 0 16px; }
+.job-application-history { display: grid; gap: 10px; }
+.job-application-history article { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 14px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-lg); padding: 13px 14px; }
+.job-application-history article > div { display: grid; min-width: 0; gap: 4px; }
+.job-application-history article strong { font-size: 14px; }
+.job-application-history article span { color: var(--ui-text-muted); font-size: 12px; }
+.job-career-empty { border: 1px dashed var(--ui-border-strong); border-radius: var(--ui-radius-lg); padding: 22px; color: var(--ui-text-muted); text-align: center; }
+.job-career-empty p { margin: 0; }
+
 .job-markdown,
 .job-long-copy { margin: 0; white-space: pre-wrap; color: var(--body-muted); font-size: 14px; line-height: 1.75; }
 .job-long-copy { margin-top: 14px; }

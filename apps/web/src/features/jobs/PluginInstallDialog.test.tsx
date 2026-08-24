@@ -16,6 +16,17 @@ const release = {
 afterEach(() => vi.restoreAllMocks());
 
 describe("PluginInstallDialog", () => {
+  it("读取发布状态时使用统一的面板加载状态", () => {
+    vi.spyOn(api, "getPluginRelease").mockReturnValue(new Promise(() => {}));
+
+    render(<PluginInstallDialog onClose={vi.fn()} />);
+
+    expect(screen.getByRole("status", { name: "正在检查安装包…" })).toHaveClass(
+      "page-loading",
+      "is-panel",
+    );
+  });
+
   it("展示完整安装与使用说明，不暴露发布元数据", async () => {
     vi.spyOn(api, "getPluginRelease").mockResolvedValue({ status: "available", release });
     const { container } = render(<PluginInstallDialog onClose={vi.fn()} />);

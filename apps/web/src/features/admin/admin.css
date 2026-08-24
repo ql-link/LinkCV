@@ -218,7 +218,6 @@
 .llm-state strong { font-size: .8rem; }
 .llm-state p { max-width: 32rem; margin: 0; color: var(--admin-muted); font-size: .68rem; line-height: 1.6; }
 .llm-state > button { border: 1px solid var(--admin-line); border-radius: .58rem; background: var(--surface-card); padding: .55rem .8rem; color: var(--admin-ink); cursor: pointer; font-size: .66rem; }
-.llm-state .loading-spinner { width: 1.4rem; height: 1.4rem; border: 2px solid var(--admin-line); border-top-color: var(--admin-accent); border-radius: 50%; animation: spin .7s linear infinite; }
 .llm-error { border-color: rgba(198,69,69,.2); color: #a5423a; }
 .llm-filter-bar { display: flex; align-items: center; gap: .55rem; margin-bottom: .85rem; padding: .85rem; }
 .llm-filter-bar .table-search { flex: 1; width: auto; }
@@ -402,27 +401,6 @@
   .admin-nav button.active { outline: 1px solid var(--admin-ink); }
 }
 
-.admin-page-loading {
-  display: grid;
-  place-items: center;
-  min-height: 100vh;
-  gap: 1rem;
-}
-.admin-page-loading .loading-spinner {
-  width: 1.8rem;
-  height: 1.8rem;
-  border: 2px solid var(--admin-line);
-  border-top-color: var(--admin-accent);
-  border-radius: 50%;
-  animation: spin .7s linear infinite;
-}
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-.admin-page-loading span {
-  font-size: .82rem;
-  color: var(--admin-muted);
-}
 .admin-login-submit:disabled {
   opacity: .6;
   cursor: not-allowed;

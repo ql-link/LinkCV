@@ -178,25 +178,50 @@ afterEach(() => {
 });
 
 describe("InterviewCenterPage API projections", () => {
-  it("renders overview metrics and the application in its current stage", async () => {
+  it("renders the career module header before its subnavigation", () => {
+    render(
+      <InterviewCenterPage
+        view="overview"
+        navigation={<nav aria-label="测试求职子导航">总览 岗位库</nav>}
+      />,
+    );
+
+    const heading = screen.getByRole("heading", { name: "求职中心" });
+    const navigation = screen.getByRole("navigation", { name: "测试求职子导航" });
+    expect(heading.closest("header")?.compareDocumentPosition(navigation)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("uses the shared loading component while career data is pending", () => {
+    mocks.getInterviewOverview.mockReturnValue(new Promise(() => {}));
+
     render(<InterviewCenterPage view="overview" />);
 
-    expect(await screen.findByText("累计完成场次")).toBeInTheDocument();
-    expect(screen.getByText("已获书面 Offer")).toBeInTheDocument();
-    const tabs = screen.getByRole("tablist", { name: "面试中心视图" });
-    expect(within(tabs).getByRole("tab", { name: "总览" })).toHaveAttribute(
-      "aria-selected",
-      "true",
+    expect(screen.getByRole("status", { name: "正在加载求职数据…" })).toHaveClass(
+      "page-loading",
+      "is-workspace",
     );
-    expect(within(tabs).queryByRole("tab", { name: "素材" })).not.toBeInTheDocument();
-    const pipelineCard = screen.getByRole("article", {
-      name: "腾讯 后端开发工程师",
-    });
-    expect(pipelineCard.closest(".interview-pipeline-column")).toHaveTextContent("二面");
-    expect(screen.getByRole("region", { name: /00:00 至 24:00/ })).toHaveProperty(
-      "scrollTop",
-      360,
+  });
+
+  it("renders the reference-led overview with focus, progress, interviews, activity, and tasks", async () => {
+    render(<InterviewCenterPage view="overview" />);
+
+    expect(await screen.findByRole("heading", { name: "本周重点" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "求职进度概览" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "本周面试" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "最近动态" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "待处理事项" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /14 条进行中进程/ })).toHaveAccessibleName(
+      "14 条进行中进程：简历投递 7 条，笔试 2 条，面试中 4 条，Offer 1 条",
     );
+    expect(screen.getByText("7（50%）")).toBeInTheDocument();
+    expect(screen.getByText("4（29%）")).toBeInTheDocument();
+    expect(screen.getAllByText("小米科技").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("字节跳动").length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "求职中心" })).toBeInTheDocument();
+    expect(screen.getAllByText("腾讯科技").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/二面/).length).toBeGreaterThan(0);
     expect(mocks.listInterviewSessions).toHaveBeenCalledWith({
       include_archived: false,
       start_at: fixtureWeekStart.toISOString(),
@@ -209,6 +234,7 @@ describe("InterviewCenterPage API projections", () => {
       cursor: undefined,
       limit: 200,
     });
+    expect(screen.getByText("简历优化建议已生成")).toBeInTheDocument();
   });
 
   it("renders the full-day draggable schedule from API data", async () => {
@@ -217,27 +243,113 @@ describe("InterviewCenterPage API projections", () => {
     const calendar = await screen.findByRole("grid", {
       name: "面试周排期，可拖动并按 30 分钟调整",
     });
+    const moduleHeader = document.querySelector(".interview-module-header") as HTMLElement;
+    expect(screen.queryByRole("heading", { name: "面试排期" })).not.toBeInTheDocument();
+    expect(within(moduleHeader).getByRole("button", { name: "搜索面试排期" })).toBeInTheDocument();
+    expect(within(moduleHeader).getByRole("button", { name: "安排面试" })).toBeInTheDocument();
     expect(within(calendar).getByText("00:00")).toBeInTheDocument();
     expect(within(calendar).getByText("23:00")).toBeInTheDocument();
-    expect(
-      within(calendar).getByRole("button", { name: /腾讯 · 二面/ }),
-    ).toHaveClass("calendar-blue");
-    expect(screen.getByRole("complementary", { name: "腾讯面试上下文" })).toHaveTextContent(
-      "王老师（后端技术专家）",
-    );
-    const filterPanel = document.querySelector(".schedule-filter-panel");
-    expect(filterPanel).not.toBeNull();
-    expect(
-      within(filterPanel as HTMLElement).getByRole("button", { name: /全部/ }),
-    ).toHaveTextContent("1");
-    expect(
-      within(filterPanel as HTMLElement).getByRole("button", { name: /待面试/ }),
-    ).toHaveTextContent("1");
-    expect(
-      within(filterPanel as HTMLElement).getByRole("button", {
-        name: /已完成面试/,
-      }),
-    ).toHaveTextContent("0");
+    const event = within(calendar).getByRole("button", { name: /腾讯.*二面/ });
+    expect(event).toHaveClass("calendar-blue");
+    fireEvent.click(event);
+    const dialog = await screen.findByRole("dialog", { name: "面试详情" });
+    expect(within(dialog).getByText("后端开发工程师")).toBeInTheDocument();
+    expect(within(dialog).getByText("王老师（后端技术专家）")).toBeInTheDocument();
+    expect(within(dialog).getByRole("link", { name: "https://meeting.example/31" })).toBeInTheDocument();
+    expect(within(dialog).getByText("interview.m4a")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getAllByRole("button", { name: "关闭" })[0]);
+    expect(screen.queryByRole("dialog", { name: "面试详情" })).not.toBeInTheDocument();
+  });
+
+  it("shows mock schedule events and mock detail when the development database is empty", async () => {
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+
+    render(<InterviewCenterPage view="schedule" />);
+
+    const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 30 分钟调整" });
+    const event = within(calendar).getByRole("button", { name: /阿里巴巴.*二面/ });
+    fireEvent.click(event);
+    const dialog = await screen.findByRole("dialog", { name: "面试详情" });
+    expect(within(dialog).getByText("李明（技术专家）")).toBeInTheDocument();
+    expect(within(dialog).getByText("项目经验整理.pdf")).toBeInTheDocument();
+    expect(within(dialog).getByText("准备提问：团队技术栈与挑战")).toBeInTheDocument();
+  });
+
+  it("does not replace real schedule data with mock events when a search has no matches", async () => {
+    render(<InterviewCenterPage view="schedule" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "搜索面试排期" }));
+    const search = screen.getByRole("searchbox", { name: "搜索面试排期" });
+    fireEvent.change(search, { target: { value: "不存在的公司" } });
+
+    const calendar = screen.getByRole("grid", { name: "面试周排期，可拖动并按 30 分钟调整" });
+    expect(within(calendar).queryByRole("button", { name: /腾讯.*二面/ })).not.toBeInTheDocument();
+    expect(within(calendar).queryByRole("button", { name: /阿里巴巴.*二面/ })).not.toBeInTheDocument();
+  });
+
+  it("renders the dedicated application board and creates a screening process from the job library", async () => {
+    mocks.listJobDescriptions.mockResolvedValue({
+      items: [{
+        id: "8",
+        job_title: "后端开发工程师",
+        company_name: "腾讯",
+        work_city: "深圳",
+        salary_text: "25-40K",
+        skills: ["Java"],
+        source_type: "manual",
+        source_site: null,
+        source_url: null,
+        archived_at: null,
+        lock_version: 1,
+        updated_at: "2026-08-20T12:00:00Z",
+      }],
+      next_cursor: null,
+    });
+    mocks.createJobApplication.mockResolvedValue({ application });
+
+    render(<InterviewCenterPage view="applications" />);
+
+    expect(await screen.findByRole("article", { name: "腾讯 后端开发工程师" })).toBeInTheDocument();
+    const moduleHeader = document.querySelector(".interview-module-header") as HTMLElement;
+    expect(screen.queryByRole("heading", { name: "求职进程" })).not.toBeInTheDocument();
+    expect(within(moduleHeader).getByRole("searchbox", { name: "搜索求职进程" })).toBeInTheDocument();
+    expect(within(moduleHeader).getByRole("button", { name: "筛选" })).toBeInTheDocument();
+    expect(within(moduleHeader).getByRole("button", { name: "看板" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "新建求职进程" }));
+    expect(await screen.findByRole("dialog", { name: "新建求职进程" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "创建求职进程" }));
+    await waitFor(() => expect(mocks.createJobApplication).toHaveBeenCalledWith(expect.objectContaining({
+      job_description_id: "8",
+      current_stage_type: "screening",
+      current_round_no: null,
+      current_stage_label: "筛选中",
+      stage_state: "awaiting_result",
+    })));
+  });
+
+  it("renders a complete seven-stage mock board when the development database has no applications", async () => {
+    mocks.listJobApplications.mockResolvedValue({ items: [], next_cursor: null });
+
+    render(<InterviewCenterPage view="applications" />);
+
+    expect(await screen.findByText("进行中的进程")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "求职进程" })).not.toBeInTheDocument();
+    expect(screen.getByText("进行中的进程").closest("article")).toHaveTextContent("18");
+    expect(screen.getByText("本周待面试").closest("article")).toHaveTextContent("6");
+    expect(screen.getByText("待跟进").closest("article")).toHaveTextContent("7");
+    expect(screen.getByText("已拿 Offer").closest("article")).toHaveTextContent("2");
+    for (const stage of ["筛选中", "等待沟通", "一面", "二面", "HR 面", "Offer", "已结束"]) {
+      expect(screen.getByRole("heading", { name: new RegExp(stage) })).toBeInTheDocument();
+    }
+    expect(screen.getAllByRole("article", { name: /算法工程师|产品经理|开发工程师|数据分析师/ }).length).toBeGreaterThan(0);
+    const tencentCard = screen.getByRole("article", { name: "腾讯 前端开发工程师" });
+    expect(within(tencentCard).queryByText("一面")).not.toBeInTheDocument();
+    expect(within(tencentCard).queryByText(/简历 v/)).not.toBeInTheDocument();
+    expect(tencentCard.querySelector("time.pipeline-card-time")).toHaveTextContent(/\d{2}:\d{2}/);
+    fireEvent.click(screen.getByRole("button", { name: "列表" }));
+    expect(screen.getByRole("table", { name: "求职进程列表" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "筛选" }));
+    expect(screen.getByRole("group", { name: "求职进程状态范围" })).toBeInTheDocument();
   });
 
   it("moves a scheduled interview by half an hour without adding half-hour grid lines", async () => {
@@ -250,7 +362,7 @@ describe("InterviewCenterPage API projections", () => {
     });
     render(<InterviewCenterPage view="schedule" />);
 
-    const event = await screen.findByRole("button", { name: /腾讯 · 二面/ });
+    const event = await screen.findByRole("button", { name: /腾讯.*二面/ });
     fireEvent.keyDown(event, { key: "ArrowDown" });
     await waitFor(() =>
       expect(mocks.rescheduleInterviewSession).toHaveBeenCalledWith(
@@ -397,27 +509,19 @@ describe("InterviewCenterPage API projections", () => {
     });
   });
 
-  it("adds a dedicated pipeline column for interview rounds beyond the second", async () => {
-    const thirdRound = {
-      ...application,
-      id: "23",
-      company_name_snapshot: "三轮公司",
-      current_round_no: 3,
-      current_stage_label: "三面",
-      next_session_id: null,
-      next_session_start_at: null,
-      next_session_end_at: null,
-      next_session_mode: null,
-    };
+  it("keeps the front-end overview mock stable when the development database is empty", async () => {
     mocks.getInterviewOverview.mockResolvedValue({
       metrics: { weekly_interviews: 0, upcoming_interviews: 0, completed_interviews: 2, written_offers: 0 },
-      pipeline: [thirdRound],
+      pipeline: [],
       week_sessions: [],
     });
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications.mockResolvedValue({ items: [], next_cursor: null });
 
     render(<InterviewCenterPage view="overview" />);
-    const card = await screen.findByRole("article", { name: "三轮公司 后端开发工程师" });
-    expect(card.closest(".interview-pipeline-column")).toHaveTextContent("第 3 轮");
+    expect(await screen.findByRole("img", { name: /14 条进行中进程/ })).toBeInTheDocument();
+    expect(screen.getAllByText("小米科技").length).toBeGreaterThan(0);
+    expect(screen.getByText("查看全部（5）")).toBeInTheDocument();
   });
 
   it("follows every cursor so historical records are not silently truncated", async () => {

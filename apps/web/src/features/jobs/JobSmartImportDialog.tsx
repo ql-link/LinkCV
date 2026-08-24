@@ -106,8 +106,8 @@ export function JobSmartImportDialog({
       >
         <form onSubmit={submit}>
           <DialogHeader>
-            <DialogTitle className="job-smart-title"><Sparkles aria-hidden="true" />智能填写JD信息</DialogTitle>
-            <DialogDescription>提供招聘内容，生成一份可继续修改的 JD 草稿。</DialogDescription>
+            <DialogTitle className="job-smart-title"><Sparkles aria-hidden="true" />智能填写岗位信息</DialogTitle>
+            <DialogDescription>提供招聘内容，生成一份可继续修改的岗位草稿。</DialogDescription>
           </DialogHeader>
 
           <div className="job-smart-import-body">
