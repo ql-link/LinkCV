@@ -69,8 +69,18 @@ export function AuthPage(props: {
   return (
     <main className="auth-entry min-h-screen bg-background p-3 text-foreground antialiased [font-synthesis:none]">
       <div className="grid min-h-[calc(100vh-1.5rem)] gap-6 lg:grid-cols-[0.94fr_1.06fr]">
-        <section className="flex items-center rounded-md border border-border bg-surface px-6 py-12 sm:px-10 lg:px-14 lg:py-20 xl:px-20">
-          <div className="mx-auto w-full max-w-[520px]">
+        <section
+          className={`flex rounded-md border border-border bg-surface py-12 sm:py-14 ${
+            showWechatLogin
+              ? "items-start px-6 sm:px-10 lg:px-12 lg:py-12 xl:px-14"
+              : "items-center px-6 sm:px-10 lg:px-14 lg:py-20 xl:px-20"
+          }`}
+        >
+          <div
+            className={showWechatLogin
+              ? "mr-auto w-full max-w-[444px]"
+              : "mx-auto w-full max-w-[520px]"}
+          >
             <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
               {showPasswordForm
                 ? (isRegister ? "Development account" : "Development sign in")
@@ -158,11 +168,14 @@ export function AuthPage(props: {
             )}
 
             {showWechatLogin && (
-              <div className="mt-10 rounded-xl border border-border bg-surface-subtle p-6">
-                <WechatQrLogin onSuccess={(user) => void handleWechatSuccess(user)} />
+              <div className="auth-wechat-login mt-12 sm:mt-14">
+                <WechatQrLogin
+                  appearance="auth"
+                  onSuccess={(user) => void handleWechatSuccess(user)}
+                />
                 {passwordLoginEnabled && (
                   <button
-                    className="mx-auto mt-4 block bg-transparent p-0 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    className="mx-auto mt-6 block bg-transparent p-0 text-sm text-muted-foreground transition-colors hover:text-foreground"
                     onClick={() => setShowWechat(false)}
                     type="button"
                   >
