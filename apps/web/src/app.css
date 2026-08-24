@@ -603,6 +603,10 @@ select:not([data-slot]):focus-visible,
   --resume-row-left: 57% !important;
 }
 
+.theme-classic-technical .resume-row {
+  --resume-row-left: 57% !important;
+}
+
 .theme-classic-technical .resume-row-right,
 .theme-classic-technical .resume-row.single.right,
 .theme-classic-technical .resume-layout-row [data-node-view-content-react] > p:last-child {
@@ -1742,6 +1746,11 @@ select:not([data-slot]):focus-visible,
   background: var(--canvas);
   color: var(--ink);
   font-family: var(--ui-font);
+}
+
+.workspace-route-loading {
+  min-height: 0;
+  flex: 1;
 }
 
 .dashboard-topbar {

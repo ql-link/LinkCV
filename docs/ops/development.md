@@ -107,6 +107,8 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 | `RESUME_IMPORT_IDEMPOTENCY_BIND_TTL_SECONDS` | `30` | 请求占有但尚未绑定导入 ID 的短 TTL |
 | `RESUME_IMPORT_IDEMPOTENCY_TTL_SECONDS` | `900` | 请求指纹到导入 ID 映射的重放窗口 |
 | `RESUME_IMPORT_WORKER_CONCURRENCY` | `4` | Worker 消费预取并发 |
+| `CHROMIUM_EXECUTABLE_PATH` | `/usr/bin/chromium` | PDF CLI 使用的受控 Chromium；macOS 本地开发可在非 Production 下回退到已安装 Chrome/Chromium |
+| `PDF_RENDERER_MAX_SMART_HEIGHT_MM` | `2000` | 智能一页 PDF 的最大物理页高，超出返回 413 |
 | `MQ_VENDOR` | `rabbitmq` | Broker 实现，可显式切换为 `kafka` |
 | `RABBITMQ_URL` | 本地 RabbitMQ | AMQP 地址；Dev/Production 由私密覆盖提供 |
 | `RABBITMQ_EXCHANGE_NAME` | `tolink.cv.resume_import` | durable direct exchange |
@@ -127,6 +129,8 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 | `REDIS_CONNECT_TIMEOUT_SECONDS` | `2` | Redis 连接超时 |
 | `REDIS_SOCKET_TIMEOUT_SECONDS` | `2` | Redis 操作超时 |
 | `LLM_TIMEOUT_SECONDS` | `75` | 统一托管 LLM Gateway 的单次请求超时 |
+
+PDF 模板视觉门禁位于 `apps/backend/tests/integration/pdf/test_template_visual_baselines.py`。测试会先重新构建当前 PDF CLI，再让全部内置启用模板经真实 Chromium 生成 PDF、由 PDFium 栅格化，并与仓库中的低分辨率 PNG 基线比较。日常运行不得更新基线；只有维护者人工检查全部差异后，才可显式执行 `UPDATE_TEMPLATE_BASELINES=1 uv run --directory apps/backend pytest tests/integration/pdf/test_template_visual_baselines.py -q` 更新并重新审查基线。
 
 Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置当前 `resume_structuring` binding。PDF 和 DOCX 会把原始二进制和安全文件名发送到 LinkParse；浏览器不读取地址或 Key。API 的频率与受理并发限制保存在 FastAPI 进程内，请求幂等和 Worker 防重保存在 Redis，任务终态保存在 MySQL。默认自动化测试注入 Fake，不访问真实地址或读取 Key。
 

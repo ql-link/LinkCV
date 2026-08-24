@@ -1,0 +1,89 @@
+/*
+ * Renderer-only paper rules. Resume typography and template decoration stay
+ * in styles.css/app.css so every renderer consumes the same declarations.
+ */
+@page { size: A4; margin: 0; }
+
+html,
+body { margin: 0; padding: 0; background: #fff; }
+
+[data-resume-print-document] {
+  --resume-page-margin-x: 20mm;
+  --resume-page-margin-y: 16mm;
+  box-sizing: border-box;
+  width: 210mm;
+  min-height: 297mm;
+  overflow: hidden;
+  padding: var(--resume-page-margin-y) var(--resume-page-margin-x);
+  background: #fff;
+  box-shadow: none;
+  color: #111827;
+  font-family: var(--resume-font-family, sans-serif);
+  font-synthesis: weight;
+  transform: none;
+}
+
+[data-resume-print-document].smart-one-page {
+  height: auto;
+  min-height: 297mm;
+  overflow: visible;
+}
+
+[data-resume-print-document] .resume-print-content {
+  height: auto;
+  min-height: calc(297mm - (2 * var(--resume-page-margin-y)));
+  overflow: visible;
+  padding: 0;
+  font-size: var(--resume-font-size, 11pt);
+  line-height: var(--resume-line-height, 1.45);
+}
+
+[data-resume-print-document].theme-administrative-sidebar { padding: 0 !important; }
+
+[data-resume-print-document].theme-civic-service,
+[data-resume-print-document].theme-creative-orange {
+  padding-right: 0 !important;
+  padding-left: 0 !important;
+}
+
+[data-resume-print-document] .resume-inline-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* The CLI supplies repeating margins through @page. */
+html[data-resume-pdf-cli] [data-resume-print-document] {
+  width: auto;
+  height: auto;
+  min-height: auto;
+  overflow: visible;
+  padding: 0 !important;
+}
+
+html[data-resume-pdf-cli],
+html[data-resume-pdf-cli] body {
+  width: auto;
+  min-height: 0;
+}
+
+html[data-resume-pdf-cli] [data-resume-print-document] .resume-print-content { min-height: 0; }
+
+@media print {
+  [data-resume-print-document] {
+    box-shadow: none !important;
+    transform: none !important;
+    page-break-after: auto;
+    break-after: auto;
+  }
+
+  [data-resume-print-document] .resume-print-content { height: auto; }
+
+  [data-resume-print-document] .resume-print-content h2,
+  [data-resume-print-document] .resume-row,
+  [data-resume-print-document] .resume-print-content li,
+  [data-resume-print-document] .resume-print-content blockquote {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}

@@ -10,6 +10,7 @@ import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
 import { Brand } from "@/components/ui";
 import RandomLetterSwapNav from "@/components/ui/m-random-letter-swap-1";
+import { preloadWorkspacePage } from "../workspacePageLoaders";
 
 export type WorkspaceSection = "resumes" | "templates" | "jobs" | "interviews" | "datasets" | "account";
 
@@ -18,6 +19,7 @@ type WorkspaceNavigationProps = {
   email: string;
   nickname?: string;
   avatarUrl?: string | null;
+  onItemIntent?: (href: string) => void;
 };
 
 const NAV_ITEMS: Array<{
@@ -70,7 +72,13 @@ const NAV_ITEMS: Array<{
   },
 ];
 
-export function WorkspaceNavigation({ active, avatarUrl, email, nickname }: WorkspaceNavigationProps) {
+export function WorkspaceNavigation({
+  active,
+  avatarUrl,
+  email,
+  nickname,
+  onItemIntent = preloadWorkspacePage,
+}: WorkspaceNavigationProps) {
   const displayName = nickname || email || "个人资料";
   const activeHref = NAV_ITEMS.find((item) => item.key === active)?.href ?? "";
 
@@ -79,6 +87,8 @@ export function WorkspaceNavigation({ active, avatarUrl, email, nickname }: Work
       <a
         className="dashboard-brand-link no-underline hover:no-underline"
         href="/resumes"
+        onFocus={() => { void onItemIntent("/resumes"); }}
+        onMouseEnter={() => { void onItemIntent("/resumes"); }}
         onClick={(event) => {
           if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
           event.preventDefault();
@@ -97,6 +107,7 @@ export function WorkspaceNavigation({ active, avatarUrl, email, nickname }: Work
             links={NAV_ITEMS}
             navigationMode="client"
             onItemClick={navigateTo}
+            onItemIntent={(href) => { void onItemIntent(href); }}
           />
         </nav>
       </div>
@@ -105,6 +116,8 @@ export function WorkspaceNavigation({ active, avatarUrl, email, nickname }: Work
         aria-label={`打开个人资料，当前账号：${displayName}`}
         className="dashboard-account-badge"
         href="/account"
+        onFocus={() => { void onItemIntent("/account"); }}
+        onMouseEnter={() => { void onItemIntent("/account"); }}
         title={`个人资料：${displayName}`}
         onClick={(event) => {
           if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;

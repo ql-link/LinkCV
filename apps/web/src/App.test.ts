@@ -2,7 +2,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { createElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "./api/client";
-import { App, resumeLoadErrorMessage } from "./App";
+import { App, AppRouteLoadingFallback, resumeLoadErrorMessage, WorkspacePageBoundary } from "./App";
+import { WorkspaceLayout } from "./components/WorkspaceLayout";
 import { useResumeStore } from "./store/resumeStore";
 
 describe("App landing routes", () => {
@@ -82,5 +83,30 @@ describe("resumeLoadErrorMessage", () => {
 
   it("网络异常提示检查本地服务", () => {
     expect(resumeLoadErrorMessage(new TypeError("fetch failed"))).toContain("无法连接到服务");
+  });
+});
+
+describe("workspace route loading", () => {
+  it("模块首次挂起时保留浅色工作区导航，只替换正文区域", () => {
+    const PendingPage = () => {
+      throw new Promise(() => undefined);
+    };
+    render(createElement(WorkspaceLayout, {
+      active: "templates",
+      children: createElement(WorkspacePageBoundary, null, createElement(PendingPage)),
+    }));
+
+    expect(screen.getByRole("navigation", { name: "工作区导航" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "正在加载模块…" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "正在加载模块…" }).closest("[data-ui-theme]"))
+      .toHaveAttribute("data-ui-theme", "light");
+  });
+
+  it("工作区冷启动的全屏兜底也固定为浅色主题", () => {
+    window.history.replaceState(null, "", "/resumes/new");
+    render(createElement(AppRouteLoadingFallback));
+
+    expect(screen.getByRole("status", { name: "正在加载页面…" }).closest("[data-ui-theme]"))
+      .toHaveAttribute("data-ui-theme", "light");
   });
 });

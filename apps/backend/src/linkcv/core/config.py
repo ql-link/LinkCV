@@ -183,6 +183,17 @@ class Settings(BaseSettings):
         gt=0,
         le=60,
     )
+    chromium_executable_path: str = Field(
+        default="/usr/bin/chromium",
+        alias="CHROMIUM_EXECUTABLE_PATH",
+        min_length=1,
+    )
+    pdf_renderer_max_smart_height_mm: float = Field(
+        default=2000,
+        alias="PDF_RENDERER_MAX_SMART_HEIGHT_MM",
+        ge=297,
+        le=5000,
+    )
     dataset_upload_max_bytes: int = Field(
         default=10 * 1024 * 1024,
         alias="DATASET_UPLOAD_MAX_BYTES",

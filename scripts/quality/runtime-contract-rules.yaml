@@ -375,6 +375,25 @@ contracts:
         pattern: 'npm ci --no-audit --replace-registry-host=never --registry="\$\{NPM_REGISTRY\}"'
         message: npm ci 必须保留 package-lock.json 已锁定的 tarball 主机
 
+  - id: resume-pdf-chromium-runtime
+    description: FastAPI、三套环境与生产镜像使用同一个受控 Chromium 路径和智能一页高度上限
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default="/usr/bin/chromium",[\s\S]*alias="CHROMIUM_EXECUTABLE_PATH"[\s\S]*default=2000,[\s\S]*alias="PDF_RENDERER_MAX_SMART_HEIGHT_MM"'
+        message: FastAPI 必须读取受控 Chromium 路径和智能一页高度上限
+      - path: .env.example
+        pattern: '(?m)^CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium$[\s\S]*^PDF_RENDERER_MAX_SMART_HEIGHT_MM=2000$'
+        message: 本地环境模板必须声明 PDF Chromium 运行契约
+      - path: .env.development
+        pattern: '(?m)^CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium$[\s\S]*^PDF_RENDERER_MAX_SMART_HEIGHT_MM=2000$'
+        message: Development 必须声明 PDF Chromium 运行契约
+      - path: .env.production
+        pattern: '(?m)^CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium$[\s\S]*^PDF_RENDERER_MAX_SMART_HEIGHT_MM=2000$'
+        message: Production 必须声明 PDF Chromium 运行契约
+      - path: Dockerfile
+        pattern: 'CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium[\s\S]*PDF_RENDERER_MAX_SMART_HEIGHT_MM=2000[\s\S]*apt-get install -y --no-install-recommends chromium[\s\S]*node_modules/playwright-core /app/pdf/node_modules/playwright-core'
+        message: 生产镜像必须提供与 FastAPI 配置一致的 Chromium、页面上限和 Playwright 运行库
+
   - id: pi-model-data-offline-build
     description: Pi 模型目录使用版本化快照，常规安装和镜像构建不访问实时外部目录
     assertions:

@@ -250,6 +250,51 @@ describe("resume version detail API", () => {
   });
 });
 
+describe("resume PDF download API", () => {
+  it("按当前锁版本请求 PDF，传递取消信号并读取 UTF-8 文件名", async () => {
+    const signal = new AbortController().signal;
+    const blob = new Blob(["%PDF-test"], { type: "application/pdf" });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        "Content-Disposition": "attachment; filename*=UTF-8''%E5%BC%A0%E4%B8%89-%E7%AE%80%E5%8E%86.pdf",
+      }),
+      blob: vi.fn().mockResolvedValue(blob),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.downloadResumePdf("resume/42", 7, signal)).resolves.toEqual({
+      blob,
+      filename: "张三-简历.pdf",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/resumes/resume%2F42/pdf?lock_version=7",
+      expect.objectContaining({
+        method: "GET",
+        credentials: "include",
+        signal,
+        headers: expect.objectContaining({ "X-Request-ID": expect.any(String) }),
+      }),
+    );
+  });
+
+  it("保留服务端 PDF 错误码和请求追踪 ID", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      headers: new Headers({ "X-Request-ID": "request-pdf-1" }),
+      json: vi.fn().mockResolvedValue({ error: "RESUME_PDF_SNAPSHOT_STALE" }),
+    }));
+
+    await expect(api.downloadResumePdf("42", 3)).rejects.toMatchObject({
+      status: 409,
+      message: "RESUME_PDF_SNAPSHOT_STALE",
+      requestId: "request-pdf-1",
+    });
+  });
+});
+
 describe("JD API client", () => {
   it("编码列表筛选和游标，并保持相对 API 路径", async () => {
     const fetchMock = vi.fn().mockResolvedValue(

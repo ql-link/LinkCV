@@ -737,6 +737,12 @@ type ApiOptions = {
   body?: unknown;
   formData?: FormData;
   headers?: Record<string, string>;
+  signal?: AbortSignal;
+};
+
+export type ResumePdfDownload = {
+  blob: Blob;
+  filename: string | null;
 };
 
 export class ApiRequestError extends Error {
@@ -816,6 +822,7 @@ async function request<T>(
       options.formData ??
       (options.body ? JSON.stringify(options.body) : undefined),
     credentials: "include",
+    signal: options.signal,
   });
 
   const data = await response.json().catch(() => ({}));
@@ -864,6 +871,54 @@ async function requestBlob(path: string, retryAuth = true): Promise<Blob> {
     );
   }
   return response.blob();
+}
+
+function filenameFromContentDisposition(value: string | null): string | null {
+  if (!value) return null;
+  const encoded = value.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)?.[1];
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded.trim().replace(/^"|"$/g, ""));
+    } catch {
+      // Fall through to the legacy filename parameter when decoding fails.
+    }
+  }
+  return value.match(/filename\s*=\s*"([^"]+)"/i)?.[1]
+    ?? value.match(/filename\s*=\s*([^;]+)/i)?.[1]?.trim()
+    ?? null;
+}
+
+async function requestResumePdf(
+  path: string,
+  signal?: AbortSignal,
+  retryAuth = true,
+): Promise<ResumePdfDownload> {
+  const requestId = createRequestId();
+  const response = await fetch(path, {
+    method: "GET",
+    headers: { "X-Request-ID": requestId },
+    credentials: "include",
+    signal,
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401 && retryAuth && !signal?.aborted) {
+      const refreshed = await refreshSession();
+      if (refreshed) return requestResumePdf(path, signal, false);
+    }
+    const error = new ApiRequestError(
+      response.status,
+      typeof data.error === "string" ? data.error : `HTTP_${response.status}`,
+      data && typeof data === "object" ? data as Record<string, unknown> : null,
+      response.headers?.get?.("X-Request-ID") ?? requestId,
+    );
+    if (response.status >= 500) reportApi5xx(error);
+    throw error;
+  }
+  return {
+    blob: await response.blob(),
+    filename: filenameFromContentDisposition(response.headers?.get?.("Content-Disposition") ?? null),
+  };
 }
 
 async function streamAgentMessage(
@@ -994,6 +1049,11 @@ export const api = {
     }),
   getResume: (id: string) =>
     request<{ resume: ResumeRecord }>(`/api/resumes/${id}`),
+  downloadResumePdf: (id: string, lockVersion: number, signal?: AbortSignal) =>
+    requestResumePdf(
+      `/api/resumes/${encodeURIComponent(id)}/pdf?lock_version=${encodeURIComponent(lockVersion)}`,
+      signal,
+    ),
   listAgentSessions: (resumeId: string) =>
     request<{ sessions: AgentSession[] }>(
       `/api/agent/sessions?resume_id=${encodeURIComponent(resumeId)}`,

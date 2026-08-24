@@ -5,19 +5,27 @@ import { WorkspaceLayout, type WorkspaceSection } from "./components/WorkspaceLa
 import { ApiRequestError } from "./api/client";
 import { authPath, editorPath, navigateTo, useAppRoute } from "./routing";
 import { useResumeStore } from "./store/resumeStore";
+import {
+  loadAccountPage,
+  loadDatasetsPage,
+  loadHomePage,
+  loadInterviewCenterPage,
+  loadJobCenterPage,
+  loadResumeTemplatesPage,
+} from "./workspacePageLoaders";
 
-const AccountPage = lazy(() => import("./features/account/AccountPage").then((module) => ({ default: module.AccountPage })));
+const AccountPage = lazy(() => loadAccountPage().then((module) => ({ default: module.AccountPage })));
 const AdminApp = lazy(() => import("./features/admin/AdminApp").then((module) => ({ default: module.AdminApp })));
 const AdminLoginPage = lazy(() => import("./features/admin/AdminLoginPage").then((module) => ({ default: module.AdminLoginPage })));
 const AuthPage = lazy(() => import("./features/auth/AuthPage").then((module) => ({ default: module.AuthPage })));
-const DatasetsPage = lazy(() => import("./features/datasets/DatasetsPage").then((module) => ({ default: module.DatasetsPage })));
-const HomePage = lazy(() => import("./features/home/HomePage").then((module) => ({ default: module.HomePage })));
+const DatasetsPage = lazy(() => loadDatasetsPage().then((module) => ({ default: module.DatasetsPage })));
+const HomePage = lazy(() => loadHomePage().then((module) => ({ default: module.HomePage })));
 const ResumeCreatePage = lazy(() => import("./features/home/ResumeCreatePage").then((module) => ({ default: module.ResumeCreatePage })));
-const ResumeTemplatesPage = lazy(() => import("./features/templates/ResumeTemplatesPage").then((module) => ({ default: module.ResumeTemplatesPage })));
-const JobCenterPage = lazy(() => import("./features/jobs/JobCenterPage").then((module) => ({ default: module.JobCenterPage })));
+const ResumeTemplatesPage = lazy(() => loadResumeTemplatesPage().then((module) => ({ default: module.ResumeTemplatesPage })));
+const JobCenterPage = lazy(() => loadJobCenterPage().then((module) => ({ default: module.JobCenterPage })));
 const JobDetailPage = lazy(() => import("./features/jobs/JobDetailPage").then((module) => ({ default: module.JobDetailPage })));
 const JobFormPage = lazy(() => import("./features/jobs/JobFormPage").then((module) => ({ default: module.JobFormPage })));
-const InterviewCenterPage = lazy(() => import("./features/interviews/InterviewCenterPage").then((module) => ({ default: module.InterviewCenterPage })));
+const InterviewCenterPage = lazy(() => loadInterviewCenterPage().then((module) => ({ default: module.InterviewCenterPage })));
 const LandingPage = lazy(() => import("./features/landing/LandingPage").then((module) => ({ default: module.LandingPage })));
 const NotFoundPage = lazy(() => import("./features/not-found/NotFoundPage").then((module) => ({ default: module.NotFoundPage })));
 const SharePage = lazy(() => import("./features/share/SharePage").then((module) => ({ default: module.SharePage })));
@@ -25,8 +33,37 @@ const ResumeWorkbench = lazy(() => import("./features/workbench/ResumeWorkbench"
 
 export function App() {
   return (
-    <Suspense fallback={<PageLoading label="正在加载页面…" scope="page" />}>
+    <Suspense fallback={<AppRouteLoadingFallback />}>
       <AppContent />
+    </Suspense>
+  );
+}
+
+export function AppRouteLoadingFallback() {
+  const route = useAppRoute();
+  const loading = <PageLoading label="正在加载页面…" scope="page" />;
+  const usesLightWorkspace = route.kind === "resumes"
+    || route.kind === "templates"
+    || route.kind === "resumeCreate"
+    || route.kind === "editor"
+    || route.kind === "jobs"
+    || route.kind === "jobCreate"
+    || route.kind === "jobDetail"
+    || route.kind === "jobEdit"
+    || route.kind === "interviews"
+    || route.kind === "datasets"
+    || route.kind === "account";
+  return usesLightWorkspace ? <div data-ui-theme="light">{loading}</div> : loading;
+}
+
+export function WorkspacePageBoundary({ children }: { children: ReactNode }) {
+  return (
+    <Suspense fallback={(
+      <main className="dashboard-content workspace-route-loading">
+        <PageLoading label="正在加载模块…" scope="workspace" />
+      </main>
+    )}>
+      {children}
     </Suspense>
   );
 }
@@ -159,7 +196,9 @@ function AppContent() {
   if (isInterviewMockPreview && route.kind === "interviews") {
     return (
       <WorkspaceLayout active="interviews">
-        <InterviewCenterPage view={route.view} />
+        <WorkspacePageBoundary>
+          <InterviewCenterPage view={route.view} />
+        </WorkspacePageBoundary>
       </WorkspaceLayout>
     );
   }
@@ -222,15 +261,17 @@ function AppContent() {
 
     return (
       <WorkspaceLayout active={activeSection}>
-        {route.kind === "resumes" && <HomePage />}
-        {route.kind === "templates" && <ResumeTemplatesPage />}
-        {route.kind === "jobs" && <JobCenterPage />}
-        {route.kind === "jobCreate" && <JobFormPage mode="create" />}
-        {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}
-        {route.kind === "jobEdit" && <JobFormPage mode="edit" jobId={route.jobId} />}
-        {route.kind === "interviews" && <InterviewCenterPage view={route.view} />}
-        {route.kind === "datasets" && <DatasetsPage />}
-        {route.kind === "account" && <AccountPage />}
+        <WorkspacePageBoundary>
+          {route.kind === "resumes" && <HomePage />}
+          {route.kind === "templates" && <ResumeTemplatesPage />}
+          {route.kind === "jobs" && <JobCenterPage />}
+          {route.kind === "jobCreate" && <JobFormPage mode="create" />}
+          {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}
+          {route.kind === "jobEdit" && <JobFormPage mode="edit" jobId={route.jobId} />}
+          {route.kind === "interviews" && <InterviewCenterPage view={route.view} />}
+          {route.kind === "datasets" && <DatasetsPage />}
+          {route.kind === "account" && <AccountPage />}
+        </WorkspacePageBoundary>
       </WorkspaceLayout>
     );
   }
