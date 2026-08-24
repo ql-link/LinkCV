@@ -1931,6 +1931,7 @@ select:not([data-slot]):focus-visible,
 
 .page-hero-module-mark.is-template { --page-hero-tone: var(--ui-template-accent); }
 .page-hero-module-mark.is-success { --page-hero-tone: var(--ui-success); }
+.page-hero-module-mark.is-warning { --page-hero-tone: var(--ui-warning); }
 .page-hero-module-mark svg { width: 21px; height: 21px; }
 
 .page-hero-module-copy {

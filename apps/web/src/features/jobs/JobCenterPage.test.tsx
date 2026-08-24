@@ -48,11 +48,21 @@ describe("JobCenterPage", () => {
   it("首次读取时在页头下方展示统一加载状态", () => {
     vi.spyOn(api, "listJobDescriptions").mockReturnValue(new Promise(() => undefined));
 
-    const { container } = render(<JobCenterPage />);
+    const { container } = render(<JobCenterPage navigation={<nav aria-label="测试求职中心导航">岗位库 求职进程</nav>} />);
 
     expect(screen.getByRole("status", { name: "正在加载岗位…" })).toBeInTheDocument();
     expect(container.querySelector(".job-center-content > .page-loading")).toBeInTheDocument();
     expect(container.querySelector(".job-center-body")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "求职中心" })).toBeInTheDocument();
+    const header = container.querySelector(".page-hero.is-module");
+    const navigation = screen.getByRole("navigation", { name: "测试求职中心导航" });
+    const content = container.querySelector(".job-center-content");
+    expect(header).toBeInTheDocument();
+    expect(header).toHaveClass("career-module-header", "job-center-header");
+    expect(content).toBeInTheDocument();
+    if (!header || !content) throw new Error("岗位库页面结构不完整");
+    expect(header.compareDocumentPosition(navigation) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(navigation.compareDocumentPosition(content) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("读取全部岗位并展示求职入口、搜索与基础操作", async () => {
@@ -67,14 +77,15 @@ describe("JobCenterPage", () => {
     expect(screen.queryByText("按最近更新")).not.toBeInTheDocument();
     expect(screen.getByText("仅收藏")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "开始求职" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "新建岗位" })).toHaveClass("ui-button-transparent");
-    expect(container.querySelector(".job-center-content > .page-hero")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新建岗位" })).not.toHaveClass("ui-button-transparent");
+    expect(container.querySelector(".page-hero.is-module")).toBeInTheDocument();
     expect(container.querySelector(".job-center-content > .job-center-body")).toBeInTheDocument();
     const heroActions = container.querySelector(".page-hero-actions");
     expect(heroActions?.children[0]).toBe(screen.getByRole("button", { name: "搜索职位" }));
     expect(heroActions?.children[1]).toBe(screen.getByRole("button", { name: "安装采集插件" }));
     expect(screen.getByRole("button", { name: "删除 Java 开发实习生" })).toBeInTheDocument();
     expect(container.querySelector(".job-card-heading")).toHaveTextContent("Java 开发实习生·示例科技");
+    expect(screen.getByRole("link", { name: /Java 开发实习生/ })).toHaveAttribute("href", "/career/jobs/job-1");
     expect(container.querySelector(".job-card-meta .lucide-map-pin")).toBeInTheDocument();
     expect(container.querySelector(".job-card-meta .lucide-wallet-cards")).toBeInTheDocument();
     expect(container.querySelector(".job-card-skills")).toHaveTextContent("Java、MySQL");
@@ -176,7 +187,7 @@ describe("JobCenterPage", () => {
 
     const { container } = render(<JobCenterPage createDialogOpen />);
 
-    await waitFor(() => expect(container.querySelector(".page-hero h1")).toHaveTextContent("岗位库"));
+    await waitFor(() => expect(container.querySelector(".page-hero h1")).toHaveTextContent("求职中心"));
     expect(screen.getByRole("dialog", { name: "新建岗位" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /填写/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /智能导入/ })).toBeInTheDocument();

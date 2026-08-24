@@ -279,11 +279,14 @@ function AppContent() {
     return (
       <WorkspaceLayout active={activeSection}>
         <WorkspacePageBoundary>
-          {careerSection && route.kind !== "interviews" && <CareerNavigation active={careerSection} />}
+          {careerSection && route.kind !== "interviews" && route.kind !== "jobs" && route.kind !== "jobCreate" && <CareerNavigation active={careerSection} />}
           {route.kind === "resumes" && <HomePage />}
           {route.kind === "templates" && <ResumeTemplatesPage />}
           {(route.kind === "jobs" || route.kind === "jobCreate") && (
-            <JobCenterPage createDialogOpen={route.kind === "jobCreate"} />
+            <JobCenterPage
+              createDialogOpen={route.kind === "jobCreate"}
+              navigation={<CareerNavigation active="jobs" />}
+            />
           )}
           {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}
           {route.kind === "jobEdit" && <JobFormPage mode="edit" jobId={route.jobId} />}
@@ -294,7 +297,7 @@ function AppContent() {
               initialSessionId={route.sessionId}
               initialJobId={route.jobId}
               initialCreateApplication={route.createApplication}
-              navigation={<CareerNavigation active={careerSection ?? "overview"} />}
+              navigation={<CareerNavigation active={careerSection ?? "applications"} />}
             />
           )}
           {route.kind === "datasets" && <DatasetsPage />}

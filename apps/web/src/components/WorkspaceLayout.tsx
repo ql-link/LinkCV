@@ -4,7 +4,6 @@ import {
   CalendarDays,
   Database,
   FileText,
-  LayoutDashboard,
   LayoutTemplate,
   ListChecks,
   NotebookTabs,
@@ -17,7 +16,7 @@ import { preloadWorkspacePage } from "../workspacePageLoaders";
 import "./career-navigation.css";
 
 export type WorkspaceSection = "resumes" | "templates" | "career" | "datasets" | "account";
-export type CareerSection = "overview" | "jobs" | "applications" | "schedule" | "reviews";
+export type CareerSection = "jobs" | "applications" | "schedule" | "reviews";
 
 type WorkspaceNavigationProps = {
   active: WorkspaceSection;
@@ -52,11 +51,11 @@ const NAV_ITEMS: Array<{
     icon: LayoutTemplate,
   },
   {
-    activeColor: "var(--ui-interview-accent)",
-    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-interview-accent) 26%, transparent) 0%, color-mix(in srgb, var(--ui-interview-accent) 12%, transparent) 48%, transparent 76%)",
+    activeColor: "var(--ui-career-accent)",
+    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-career-accent) 28%, transparent) 0%, color-mix(in srgb, var(--ui-career-accent) 13%, transparent) 48%, transparent 76%)",
     key: "career",
     label: "求职中心",
-    href: "/career",
+    href: "/career/jobs",
     icon: BriefcaseBusiness,
   },
   {
@@ -137,17 +136,19 @@ export function WorkspacePageHero({
   actions,
   icon,
   tone = "accent",
+  className,
 }: {
   eyebrow?: string;
   title: string;
   description?: string;
   actions?: ReactNode;
   icon?: ReactNode;
-  tone?: "accent" | "template" | "success";
+  tone?: "accent" | "template" | "success" | "warning";
+  className?: string;
 }) {
   if (icon) {
     return (
-      <header className="page-hero is-module">
+      <header className={`page-hero is-module${className ? ` ${className}` : ""}`}>
         <div className="page-hero-module-summary">
           <span className={`page-hero-module-mark is-${tone}`} aria-hidden="true">
             {icon}
@@ -163,7 +164,7 @@ export function WorkspacePageHero({
   }
 
   return (
-    <header className="page-hero">
+    <header className={`page-hero${className ? ` ${className}` : ""}`}>
       <div className="page-hero-text">
         {eyebrow && <p className="page-hero-eyebrow">{eyebrow}</p>}
         <h1>{title}</h1>
@@ -175,7 +176,6 @@ export function WorkspacePageHero({
 }
 
 const CAREER_ITEMS: Array<{ key: CareerSection; label: string; href: string; icon: typeof BriefcaseBusiness }> = [
-  { key: "overview", label: "总览", href: "/career", icon: LayoutDashboard },
   { key: "jobs", label: "岗位库", href: "/career/jobs", icon: BriefcaseBusiness },
   { key: "applications", label: "求职进程", href: "/career/applications", icon: ListChecks },
   { key: "schedule", label: "面试排期", href: "/career/schedule", icon: CalendarDays },

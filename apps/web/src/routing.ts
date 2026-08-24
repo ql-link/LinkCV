@@ -19,7 +19,7 @@ export type AppRoute =
   | { kind: "share"; token: string }
   | { kind: "notFound" };
 
-export type InterviewView = "overview" | "applications" | "schedule" | "records";
+export type InterviewView = "applications" | "schedule" | "records";
 
 type NavigateOptions = {
   replace?: boolean;
@@ -71,13 +71,13 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
   if (normalizedPath === "/resumes") return { kind: "resumes" };
   if (normalizedPath === "/templates") return { kind: "templates" };
   if (normalizedPath === "/resumes/new") return { kind: "resumeCreate" };
-  if (normalizedPath === "/career/jobs" || normalizedPath === "/jobs") return { kind: "jobs" };
-  if (normalizedPath === "/career" || normalizedPath === "/interviews") {
+  if (normalizedPath === "/career" || normalizedPath === "/career/jobs" || normalizedPath === "/jobs") return { kind: "jobs" };
+  if (normalizedPath === "/interviews") {
     const requestedView = new URLSearchParams(search).get("view");
-    const view: InterviewView = requestedView === "applications" || requestedView === "schedule" || requestedView === "records"
-      ? requestedView
-      : "overview";
-    return { kind: "interviews", view };
+    if (requestedView === "applications" || requestedView === "schedule" || requestedView === "records") {
+      return { kind: "interviews", view: requestedView };
+    }
+    return { kind: "jobs" };
   }
   if (normalizedPath === "/career/applications") {
     const params = new URLSearchParams(search);
@@ -167,13 +167,11 @@ export function jobEditPath(jobId: string) {
 }
 
 export function careerViewPath(view: InterviewView) {
-  return view === "overview"
-    ? "/career"
-    : view === "applications"
-      ? "/career/applications"
-      : view === "schedule"
-        ? "/career/schedule"
-        : "/career/reviews";
+  return view === "applications"
+    ? "/career/applications"
+    : view === "schedule"
+      ? "/career/schedule"
+      : "/career/reviews";
 }
 
 export function careerApplicationPath(applicationId: string, sessionId?: string | null) {
@@ -188,15 +186,16 @@ export function startCareerApplicationPath(jobId: string) {
 
 export function legacyCareerRedirect(pathname: string, search = ""): string | null {
   const normalizedPath = normalizePathname(pathname);
+  if (normalizedPath === "/career") return "/career/jobs";
   if (normalizedPath === "/jobs" || normalizedPath.startsWith("/jobs/")) {
     return `/career${normalizedPath}${search}`;
   }
   if (normalizedPath === "/interviews") {
     const requestedView = new URLSearchParams(search).get("view");
-    const view: InterviewView = requestedView === "applications" || requestedView === "schedule" || requestedView === "records"
-      ? requestedView
-      : "overview";
-    return careerViewPath(view);
+    if (requestedView === "applications" || requestedView === "schedule" || requestedView === "records") {
+      return careerViewPath(requestedView);
+    }
+    return "/career/jobs";
   }
   return null;
 }

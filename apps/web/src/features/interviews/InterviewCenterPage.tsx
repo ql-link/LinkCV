@@ -34,11 +34,11 @@ import {
   Lightbulb,
   Mic,
   MoreHorizontal,
+  NotebookTabs,
   Pencil,
   Plus,
   RotateCcw,
   Search,
-  Send,
   Square,
   ArrowUpDown,
   Trash2,
@@ -48,13 +48,13 @@ import {
   X,
 } from "lucide-react";
 import { Button, ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, ExpandableSearch, PageLoading } from "@/components/ui";
+import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { useResumeStore } from "@/store/resumeStore";
 import {
   ApiRequestError,
   api,
   type InterviewAssetRecord,
   type InterviewCalendarColor,
-  type InterviewOverview,
   type InterviewSessionDetail,
   type InterviewSessionSummary,
   type ApplicationStageType,
@@ -286,7 +286,6 @@ export function InterviewCenterPage({
 }) {
   const weekStart = useMemo(() => startOfWeek(), []);
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";
-  const [, setOverview] = useState<InterviewOverview | null>(null);
   const [sessions, setSessions] = useState<InterviewSessionSummary[]>([]);
   const [applications, setApplications] = useState<JobApplicationSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(initialSessionId ?? null);
@@ -345,13 +344,11 @@ export function InterviewCenterPage({
             startAt: weekStart.toISOString(),
             endAt: addDays(weekStart, 7).toISOString(),
           };
-      const [nextOverview, nextSessions, nextApplications] = await Promise.all([
-        api.getInterviewOverview(isoDate(weekStart), timezone),
+      const [nextSessions, nextApplications] = await Promise.all([
         listAllInterviewSessions({ includeArchived: includeArchivedSessions, ...sessionRange }),
         listAllJobApplications(applicationScope),
       ]);
       if (requestId !== loadRequestRef.current) return;
-      setOverview(nextOverview);
       setSessions(nextSessions);
       setApplications(nextApplications);
       const requestedId = preferredId === null ? null : preferredId ?? selectedIdRef.current;
@@ -473,19 +470,14 @@ export function InterviewCenterPage({
 
   return (
     <>
-      <header
-        className="interview-module-header"
-        aria-labelledby="interview-center-title"
-      >
-        <div className="interview-module-summary">
-          <span className="interview-module-mark" aria-hidden="true">
-            <BriefcaseBusiness />
-          </span>
-          <div className="interview-module-copy">
-            <h1 id="interview-center-title">求职中心</h1>
-            <p>集中管理求职进程、面试排期、复盘记录与相关素材。</p>
-          </div>
-          <div className="interview-module-actions">
+      <WorkspacePageHero
+        className="career-module-header"
+        icon={<BriefcaseBusiness />}
+        tone="warning"
+        title="求职中心"
+        description="集中管理岗位机会、求职进程、面试排期与复盘记录。"
+        actions={(
+          <>
             {view === "applications" ? (
               <ApplicationHeaderControls
                 displayMode={applicationDisplayMode}
@@ -516,19 +508,12 @@ export function InterviewCenterPage({
                   onValueChange={setQuery}
                   placeholder="搜索公司、职位或阶段…"
                 />
-                {view === "overview" && (
-                  <Button variant="outline" onClick={() => setShowCreate(true)}>新建面试</Button>
-                )}
-                {view === "overview" ? (
-                  <Button icon={<Plus />} onClick={() => setShowCreateApplication(true)}>新建求职进程</Button>
-                ) : (
-                  <Button icon={<Plus />} onClick={() => setShowCreate(true)}>新建面试</Button>
-                )}
+                <Button icon={<Plus />} onClick={() => setShowCreate(true)}>新建面试</Button>
               </>
             )}
-          </div>
-        </div>
-      </header>
+          </>
+        )}
+      />
       {navigation}
       <main className="dashboard-content interview-center-content">
       {notice && (
@@ -574,12 +559,6 @@ export function InterviewCenterPage({
       )}
       {loading && sessions.length === 0 ? (
         <PageLoading label="正在加载求职数据…" />
-      ) : view === "overview" ? (
-        <OverviewView
-          query={query}
-          interviews={interviews}
-          onNavigate={(nextView) => navigateTo(interviewViewPath(nextView))}
-        />
       ) : view === "applications" ? (
         <ApplicationsView
           applications={applications}
@@ -658,219 +637,12 @@ export function InterviewCenterPage({
   );
 }
 
-function OverviewView({
-  query,
-  interviews,
-  onNavigate,
-}: {
-  query: string;
-  interviews: Interview[];
-  onNavigate: (view: InterviewView) => void;
-}) {
-  const mock = useMemo(createCareerOverviewMock, []);
-  const filtered = query.trim()
-    ? interviews.filter((item) =>
-        `${item.company}${item.role}${item.stage}`
-          .toLowerCase()
-          .includes(query.trim().toLowerCase()),
-      )
-    : [];
-  return (
-    <div className="interview-overview-layout">
-      <div className="interview-overview-main">
-        {query.trim() && (
-          <section className="interview-surface overview-search-results" aria-live="polite">
-            <SectionHeading
-              title={`搜索结果 · ${filtered.length}`}
-              action="进入记录复盘"
-              onAction={() => onNavigate("records")}
-            />
-            {filtered.length ? (
-              <div>
-                {filtered.map((item) => (
-                  <article key={item.id}>
-                    <CompanyLogo item={item} />
-                    <span>
-                      <strong>{item.company}</strong>
-                      <small>
-                        {item.role} · {item.stage}
-                      </small>
-                    </span>
-                    <time>
-                      {item.date} {item.time}
-                    </time>
-                    <StatusBadge status={item.status} />
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p>没有匹配的面试，试试公司、职位或面试阶段。</p>
-            )}
-          </section>
-        )}
-        <div className="career-overview-grid">
-          <section className="interview-surface career-focus-card" aria-labelledby="career-focus-title">
-            <header className="career-overview-heading">
-              <h2 id="career-focus-title">本周重点</h2>
-            </header>
-            <div className="career-focus-content">
-              <article className="career-focus-item">
-                <header><strong>下次面试</strong><span className="career-deadline tone-purple">{relativeScheduleLabel(mock.nextInterview.startAt)}</span></header>
-                <>
-                  <div className="career-focus-identity"><CompanyLogo item={mock.nextInterview} /><span><strong>{mock.nextInterview.company}</strong><small>{mock.nextInterview.role}</small></span></div>
-                  <dl>
-                    <div><dt>面试轮次</dt><dd>{mock.nextInterview.stage}</dd></div>
-                    <div><dt>面试官</dt><dd>{mock.nextInterview.interviewer}</dd></div>
-                    <div><dt>面试形式</dt><dd>{mock.nextInterview.mode}</dd></div>
-                  </dl>
-                  <OverviewLink className="career-card-action" href={careerViewPath("schedule")}>查看详情<ChevronRight /></OverviewLink>
-                </>
-              </article>
-              <article className="career-focus-item">
-                <header><strong>最紧急跟进</strong><span className="career-deadline tone-red">今天到期</span></header>
-                <>
-                  <div className="career-focus-identity"><CompanyLogo item={mock.urgentFollowUp} /><span><strong>{mock.urgentFollowUp.company}</strong><small>{mock.urgentFollowUp.role}</small></span></div>
-                  <dl>
-                    <div><dt>当前阶段</dt><dd>{mock.urgentFollowUp.stage}</dd></div>
-                    <div><dt>进程状态</dt><dd>{mock.urgentFollowUp.status}</dd></div>
-                    <div><dt>待办事项</dt><dd>{mock.urgentFollowUp.task}</dd></div>
-                  </dl>
-                  <OverviewLink className="career-card-action is-primary" href={careerViewPath("applications")}>去跟进<ChevronRight /></OverviewLink>
-                </>
-              </article>
-            </div>
-          </section>
-
-          <section className="interview-surface career-progress-card" aria-labelledby="career-progress-title">
-            <header className="career-overview-heading"><h2 id="career-progress-title">求职进度概览</h2><OverviewLink href={careerViewPath("applications")}>查看全部进程<ChevronRight /></OverviewLink></header>
-            <div className="career-progress-chart" role="img" aria-label={`${mock.progressTotal} 条进行中进程：${mock.progressGroups.map((group) => `${group.label} ${group.value} 条`).join("，")}`}>
-              <div className="career-progress-donut" aria-hidden="true">
-                <svg viewBox="0 0 120 120">
-                  <circle className="career-progress-track" cx="60" cy="60" r="44" pathLength="100" />
-                  {mock.progressGroups.map((group, index) => {
-                    const offset = mock.progressGroups.slice(0, index).reduce((total, item) => total + item.percentage, 0);
-                    return <circle key={group.label} className={`career-progress-segment tone-${group.tone}`} cx="60" cy="60" r="44" pathLength="100" strokeDasharray={`${group.percentage} ${100 - group.percentage}`} strokeDashoffset={-offset} />;
-                  })}
-                </svg>
-                <span><strong>{mock.progressTotal}</strong><small>进行中</small></span>
-              </div>
-              <ul className="career-progress-legend">
-                {mock.progressGroups.map((group) => <li key={group.label} className={`tone-${group.tone}`}><i aria-hidden="true" /><span>{group.label}</span><b>{group.value}（{group.percentage}%）</b></li>)}
-              </ul>
-            </div>
-            <footer>较上周 <strong>+2 个进行中进程</strong></footer>
-          </section>
-
-          <section className="interview-surface career-week-card" aria-labelledby="career-week-title">
-            <header className="career-overview-heading"><h2 id="career-week-title">本周面试</h2><OverviewLink href={careerViewPath("schedule")}>查看全部<ChevronRight /></OverviewLink></header>
-            <div className="career-week-list">{mock.weekInterviews.map((item) => <OverviewLink key={item.id} href={careerViewPath("schedule")}><CompanyLogo item={item} /><span><strong>{item.company}</strong><small>{item.role} · {item.stage}</small></span><time><b>{formatOverviewDay(item.startAt)}</b>{item.time}</time><em className={`career-deadline ${relativeScheduleTone(item.startAt)}`}>{relativeScheduleLabel(item.startAt)}</em></OverviewLink>)}</div>
-            <OverviewLink className="career-card-link" href={careerViewPath("schedule")}>查看完整面试排期<ChevronRight /></OverviewLink>
-          </section>
-
-          <section className="interview-surface career-activity-card" aria-labelledby="career-activity-title">
-            <header className="career-overview-heading"><h2 id="career-activity-title">最近动态</h2><OverviewLink href={careerViewPath("applications")}>查看全部<ChevronRight /></OverviewLink></header>
-            <div className="career-activity-list">{mock.activities.map(({ id, title, detail, time, icon: Icon, tone }) => <article key={id}><span className={`career-activity-icon tone-${tone}`}><Icon /></span><div><strong>{title}</strong><small>{detail}</small></div><time>{time}</time></article>)}</div>
-          </section>
-
-          <section className="interview-surface career-task-card" aria-labelledby="career-task-title">
-            <header className="career-overview-heading"><h2 id="career-task-title">待处理事项</h2><OverviewLink href={careerViewPath("applications")}>查看全部（{mock.tasks.length}）<ChevronRight /></OverviewLink></header>
-            <div className="career-task-list">{mock.tasks.map((item) => <OverviewLink key={item.id} href={careerViewPath("applications")}><Square /><CompanyLogo item={item} /><span><strong>{item.title}</strong><small>{item.detail}</small></span><em className={`career-deadline tone-${item.tone}`}>{item.badge}</em><ChevronRight /></OverviewLink>)}</div>
-          </section>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function createCareerOverviewMock() {
-  const at = (daysFromToday: number, hour: number, minute = 0) => {
-    const value = new Date();
-    value.setDate(value.getDate() + daysFromToday);
-    value.setHours(hour, minute, 0, 0);
-    return value.toISOString();
-  };
-  const nextInterview = {
-    id: "mock-xiaomi-session",
-    company: "小米科技",
-    logo: "米",
-    color: "orange" as const,
-    role: "高级产品经理",
-    stage: "三面 · 业务复盘面",
-    interviewer: "张伟 · 产品总监",
-    mode: "线下面试 · 北京",
-    startAt: at(1, 10),
-    time: "10:00",
-  };
-
-  return {
-    progressTotal: 14,
-    progressGroups: [
-      { label: "简历投递", value: 7, percentage: 50, tone: "blue" },
-      { label: "笔试", value: 2, percentage: 14, tone: "purple" },
-      { label: "面试中", value: 4, percentage: 29, tone: "orange" },
-      { label: "Offer", value: 1, percentage: 7, tone: "green" },
-    ],
-    nextInterview,
-    urgentFollowUp: {
-      company: "字节跳动",
-      logo: "字",
-      color: "blue" as const,
-      role: "产品经理",
-      stage: "二面 · 等待反馈",
-      status: "面试已完成，等待 HR 确认",
-      task: "跟进面试反馈",
-    },
-    weekInterviews: [
-      nextInterview,
-      { id: "mock-byte-session", company: "字节跳动", logo: "字", color: "blue" as const, role: "产品经理", stage: "二面", startAt: at(3, 14), time: "14:00" },
-      { id: "mock-tencent-session", company: "腾讯科技", logo: "T", color: "blue" as const, role: "产品经理", stage: "一面", startAt: at(4, 10, 30), time: "10:30" },
-      { id: "mock-netease-session", company: "网易互娱", logo: "网", color: "red" as const, role: "产品经理", stage: "三面", startAt: at(5, 15), time: "15:00" },
-    ],
-    activities: [
-      { id: "activity-1", title: "你在 腾讯科技 · 产品经理 的一面已完成", detail: "面试官评价已更新", time: "今天 11:20", icon: CircleCheck, tone: "green" },
-      { id: "activity-2", title: "你申请的 美团 · 高级产品经理 已进入笔试", detail: "请在 3 天内完成在线笔试", time: "昨天 16:45", icon: Send, tone: "blue" },
-      { id: "activity-3", title: "字节跳动 · 产品经理 的二面反馈已更新", detail: "面试官已提交反馈，等待 HR 评估", time: "周六 20:10", icon: UserRound, tone: "orange" },
-      { id: "activity-4", title: "简历优化建议已生成", detail: "基于 3 个岗位的 JD 分析，发现 12 条可优化项", time: "周六 10:30", icon: FileText, tone: "purple" },
-    ],
-    tasks: [
-      { id: "task-1", company: "字节跳动", logo: "字", color: "blue" as const, title: "跟进 字节跳动 · 产品经理", detail: "二面反馈", badge: "今天到期", tone: "red" },
-      { id: "task-2", company: "小米科技", logo: "米", color: "orange" as const, title: "准备 小米科技 · 高级产品经理", detail: "三面", badge: "面试准备", tone: "blue" },
-      { id: "task-3", company: "美团", logo: "美", color: "yellow" as const, title: "完成 美团 · 高级产品经理", detail: "在线笔试", badge: "笔试", tone: "purple" },
-      { id: "task-4", company: "腾讯科技", logo: "T", color: "blue" as const, title: "完善 腾讯科技 · 产品经理", detail: "一面复盘", badge: "复盘记录", tone: "blue" },
-      { id: "task-5", company: "网易互娱", logo: "网", color: "red" as const, title: "跟进 网易互娱 · 产品经理", detail: "三面安排", badge: "待沟通", tone: "orange" },
-    ],
-  };
-}
-
 function OverviewLink({ href, className, children }: { href: string; className?: string; children: ReactNode }) {
   return <a className={className} href={href} onClick={(event) => {
     if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     event.preventDefault();
     navigateTo(href);
   }}>{children}</a>;
-}
-
-function relativeScheduleLabel(value: string): string {
-  const source = new Date(value);
-  const today = new Date();
-  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const target = new Date(source.getFullYear(), source.getMonth(), source.getDate()).getTime();
-  const days = Math.round((target - start) / 86_400_000);
-  if (days <= 0) return "今天";
-  if (days === 1) return "明天";
-  if (days <= 7) return `${days} 天后`;
-  return new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric" }).format(source);
-}
-
-function relativeScheduleTone(value: string): string {
-  const distance = new Date(value).getTime() - Date.now();
-  if (distance <= 24 * 60 * 60 * 1000) return "tone-purple";
-  if (distance <= 3 * 24 * 60 * 60 * 1000) return "tone-orange";
-  return "tone-blue";
-}
-
-function formatOverviewDay(value: string): string {
-  return new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", weekday: "short" }).format(new Date(value));
 }
 
 function ApplicationHeaderControls({
@@ -1429,7 +1201,11 @@ function RecordsView({
   if (!selected)
     return (
       <div className="records-empty-layout">
-        <div className="interview-empty-state">还没有面试记录，请先新建面试。</div>
+        <div className="records-empty-state">
+          <NotebookTabs aria-hidden="true" />
+          <h2>还没有面试记录</h2>
+          <p>安排并完成面试后，可以在这里整理题目、复盘和相关素材。</p>
+        </div>
         <ApplicationHistoryList
           applications={applicationsWithoutSessions}
           onChanged={onChanged}
@@ -1859,9 +1635,9 @@ function RecordDetail({
           pendingLifecycle === "cancel"
             ? "该场次会保留在记录复盘中，并从当前排期退出；求职进程回到待安排状态。"
             : pendingLifecycle === "archive"
-              ? "归档后会从总览和排期中隐藏，历史面试与复盘仍会保留。"
+              ? "归档后会从默认求职进程和排期中隐藏，历史面试与复盘仍会保留。"
               : pendingLifecycle === "restore"
-                ? "恢复后，这条仍在进行的求职进程会重新进入默认列表和总览。"
+                ? "恢复后，这条仍在进行的求职进程会重新进入默认求职进程列表。"
                 : "删除后不可恢复。若存在关联素材，系统会拒绝删除并保留原记录。",
         confirmLabel:
           pendingLifecycle === "cancel"
