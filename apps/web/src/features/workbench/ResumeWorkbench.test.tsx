@@ -21,12 +21,43 @@ import {
   setRestoredEditorContent,
   setWorkbenchEditorEditable,
   versionNameValidationMessage,
+  truncateWorkbenchTitle,
   ZoomFeedback,
   WorkbenchSaveStatus,
+  WorkbenchTitleInput,
   workbenchCanvasClassName,
   versionOperationErrorMessage,
 } from "./ResumeWorkbench";
 import { resumePdfExportErrorMessage } from "../preview/pdfExport";
+
+describe("ResumeWorkbench 标题", () => {
+  it("只在标题超过 30 个字符时省略", () => {
+    const thirtyCharacters = "简".repeat(30);
+    const thirtyOneCharacters = `${thirtyCharacters}历`;
+
+    expect(truncateWorkbenchTitle(thirtyCharacters)).toBe(thirtyCharacters);
+    expect(truncateWorkbenchTitle(thirtyOneCharacters)).toBe(`${thirtyCharacters}…`);
+    expect(truncateWorkbenchTitle("😀".repeat(31))).toBe(`${"😀".repeat(30)}…`);
+  });
+
+  it("聚焦编辑时恢复完整标题，失焦后重新省略", async () => {
+    const user = userEvent.setup();
+    const fullTitle = `${"开发演示简历".repeat(5)}完整标题`;
+    const onChange = vi.fn();
+    render(<WorkbenchTitleInput value={fullTitle} disabled={false} onChange={onChange} />);
+
+    const input = screen.getByRole("textbox", { name: "简历标题" });
+    expect(input).toHaveValue(truncateWorkbenchTitle(fullTitle));
+    expect(input).toHaveAttribute("title", fullTitle);
+
+    await user.click(input);
+    expect(input).toHaveValue(fullTitle);
+    expect(input).not.toHaveAttribute("title");
+
+    await user.tab();
+    expect(input).toHaveValue(truncateWorkbenchTitle(fullTitle));
+  });
+});
 
 describe("ResumeWorkbench AI 悬浮入口", () => {
   it("用同一个低打扰入口打开和收起智能助手", async () => {

@@ -44,7 +44,7 @@ import {
 } from "@/components/ui";
 import { resumeSerifFontStack, useResumeStore } from "../../store/resumeStore";
 import { resumeEditorExtensions } from "./editorExtensions";
-import { SelectionAgentPrompt, WorkbenchToolbar } from "./WorkbenchToolbar";
+import { SelectionFormattingToolbar } from "./WorkbenchToolbar";
 import {
   createSelectionBubbleAnchor,
   refreshSelectionBubblePosition,
@@ -83,6 +83,41 @@ const AGENT_DRAWER_MIN_WIDTH = 320;
 const AGENT_DRAWER_MAX_WIDTH = 640;
 const AGENT_DRAWER_DEFAULT_WIDTH = 390;
 const AGENT_DRAWER_WIDTH_STORAGE_KEY = "linkcv.workbench.agent-drawer-width";
+const WORKBENCH_TITLE_CHARACTER_LIMIT = 30;
+
+export function truncateWorkbenchTitle(title: string) {
+  const characters = Array.from(title);
+  return characters.length > WORKBENCH_TITLE_CHARACTER_LIMIT
+    ? `${characters.slice(0, WORKBENCH_TITLE_CHARACTER_LIMIT).join("")}…`
+    : title;
+}
+
+type WorkbenchTitleInputProps = {
+  value: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+};
+
+export function WorkbenchTitleInput({ value, disabled, onChange }: WorkbenchTitleInputProps) {
+  const [focused, setFocused] = useState(false);
+  const displayValue = focused ? value : truncateWorkbenchTitle(value);
+  const truncated = displayValue !== value;
+
+  return (
+    <input
+      autoComplete="off"
+      className="workbench-title"
+      name="resume-title"
+      value={displayValue}
+      onChange={(event) => onChange(event.target.value)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      aria-label="简历标题"
+      disabled={disabled}
+      title={truncated ? value : undefined}
+    />
+  );
+}
 
 export function clampAgentDrawerWidth(width: number, viewportWidth: number) {
   return Math.round(Math.min(
@@ -239,7 +274,7 @@ function currentSelectionRect(editor: Editor) {
   return posToDOMRect(editor.view, from, to);
 }
 
-function StableSelectionAgentBubble({ editor, children }: { editor: Editor; children: ReactNode }) {
+function StableSelectionToolbarBubble({ editor, children }: { editor: Editor; children: ReactNode }) {
   const anchorRef = useRef<ReturnType<typeof createSelectionBubbleAnchor> | null>(null);
   const tippyRef = useRef<TippyInstance | null>(null);
   if (!anchorRef.current) anchorRef.current = createSelectionBubbleAnchor();
@@ -268,7 +303,8 @@ function StableSelectionAgentBubble({ editor, children }: { editor: Editor; chil
       tippyOptions={{
         duration: 150,
         maxWidth: "none",
-        placement: "top-start",
+        placement: "top",
+        offset: [0, 8],
         getReferenceClientRect: () => anchor.getRect(() => currentSelectionRect(editor)),
         onCreate: (instance) => { tippyRef.current = instance; },
         onDestroy: (instance) => {
@@ -280,7 +316,10 @@ function StableSelectionAgentBubble({ editor, children }: { editor: Editor; chil
           editable: current.isEditable,
           selectionEmpty: current.state.selection.empty,
         });
-        anchor.observe(visible ? { from, to } : { from, to: from }, () => posToDOMRect(view, from, to));
+        anchor.observe(
+          visible ? { from, to } : { from, to: from },
+          () => posToDOMRect(view, from, to),
+        );
         return visible;
       }}
     >
@@ -1306,7 +1345,7 @@ export function ResumeWorkbench() {
             <span className="workbench-context-label">简历编辑</span>
           </div>
           <div className="workbench-header-center">
-            <input autoComplete="off" className="workbench-title" name="resume-title" value={title} onChange={(event) => setTitle(event.target.value)} aria-label="简历标题" disabled={versionOperationPending} />
+            <WorkbenchTitleInput value={title} onChange={setTitle} disabled={versionOperationPending} />
             <WorkbenchSaveStatus dirty={dirty} saveStatus={saveStatus} />
           </div>
           <div className="workbench-header-actions">
@@ -1334,15 +1373,15 @@ export function ResumeWorkbench() {
         )}
 
         {activeResumeId && editor && (
-          <StableSelectionAgentBubble editor={editor}>
-            <SelectionAgentPrompt
+          <StableSelectionToolbarBubble editor={editor}>
+            <SelectionFormattingToolbar
               editor={editor}
               onAgentAction={(instruction, selectionContext) => {
                 setAgentDraft({ id: Date.now(), instruction, selectionContext });
                 setDrawerMode("agent");
               }}
             />
-          </StableSelectionAgentBubble>
+          </StableSelectionToolbarBubble>
         )}
 
         {activeResumeId && editor && commandMenu && (
@@ -1368,16 +1407,6 @@ export function ResumeWorkbench() {
               <article className={`resume-paper theme-${settings.theme}${settings.smartOnePage ? " smart-one-page" : ""}${pageArrangement === "horizontal" && !settings.smartOnePage ? " pages-horizontal" : ""}`} style={resumeStyle} aria-label="可编辑简历页面">
                 <EditorContent editor={editor} />
               </article>
-              {activeResumeId && editor && (
-                <section className="workbench-formatting-module" aria-label="简历功能栏">
-                  <WorkbenchToolbar
-                    editor={editor}
-                    resumeId={activeResumeId}
-                    defaultFontSize={settings.fontSize}
-                    onNotice={(label) => setToast({ label })}
-                  />
-                </section>
-              )}
             </div>
           </div>
 
