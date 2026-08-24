@@ -125,6 +125,21 @@ def test_resume_version_limit_defaults_to_ten() -> None:
     assert settings.resume_version_limit == 10
 
 
+def test_pdf_renderer_uses_bounded_chromium_defaults() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.chromium_executable_path == "/usr/bin/chromium"
+    assert settings.pdf_renderer_max_smart_height_mm == 2000
+
+
+def test_pdf_renderer_smart_page_height_is_bounded() -> None:
+    with pytest.raises(ValidationError):
+        Settings(pdf_renderer_max_smart_height_mm=296)
+
+    with pytest.raises(ValidationError):
+        Settings(pdf_renderer_max_smart_height_mm=5001)
+
+
 def test_resume_import_timeout_defaults_leave_cleanup_budget() -> None:
     settings = Settings(
         _env_file=None,

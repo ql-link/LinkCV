@@ -129,6 +129,7 @@ def test_pdf_uses_latest_manual_version_and_rejects_stale_version_id() -> None:
         assert downloaded.headers["x-linkcv-pdf-version-id"] == manual["id"]
         assert downloaded.headers["cache-control"] == "private, no-store"
         assert app.state.resume_pdf_renderer.payloads[-1]["data"]["basics"]["name"] == "手动保存版本"
+        assert app.state.resume_pdf_renderer.payloads[-1]["style"]["smart_one_page"] is True
 
         preview = mini_client.get(
             f"/api/miniprogram/resumes/{resume_id}/preview.png",

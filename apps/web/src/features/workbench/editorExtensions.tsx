@@ -32,7 +32,13 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
 import { resumeInlineIconOptions, type InlineIconName } from "../../lib/resumeInlineIcon";
+import { isResumeEmailLink, shouldAutoLinkResumeValue } from "../../lib/resumeLink";
 import { useResumeStore } from "../../store/resumeStore";
+import {
+  exitResumeRowToBlankParagraph,
+  removeBlankParagraphAfterResumeRow,
+  removeVisuallyBlankResumeLine,
+} from "./editorCommands";
 
 export const inlineIconComponents = {
   Mail,
@@ -354,7 +360,7 @@ export const ResumeImage = Node.create({
       } : false,
     },
     {
-      tag: "img",
+      tag: "img:not([data-inline-image])",
       getAttrs: (element) => element instanceof HTMLImageElement ? {
         src: element.getAttribute("src") || "",
         alt: element.alt || "简历图片",
@@ -492,6 +498,11 @@ export const ResumeRow = Node.create({
   content: "paragraph paragraph",
   defining: true,
   isolating: true,
+  addKeyboardShortcuts() {
+    return {
+      Enter: () => exitResumeRowToBlankParagraph(this.editor),
+    };
+  },
   addAttributes: () => ({ leftWidth: { default: 50 } }),
   parseHTML: () => [
     {
@@ -502,6 +513,16 @@ export const ResumeRow = Node.create({
   ],
   renderHTML: ({ HTMLAttributes }) => ["div", mergeAttributes(HTMLAttributes, { "data-type": "resume-row", "data-left-width": HTMLAttributes.leftWidth ?? 50 }), 0],
   addNodeView: () => ReactNodeViewRenderer(ResumeRowView),
+});
+
+export const ResumeRowExitKeymap = Extension.create({
+  name: "resumeRowExitKeymap",
+  addKeyboardShortcuts() {
+    return {
+      Backspace: () => removeBlankParagraphAfterResumeRow(this.editor)
+        || removeVisuallyBlankResumeLine(this.editor),
+    };
+  },
 });
 
 export const ResumeColumn = Node.create({
@@ -565,6 +586,134 @@ function InlineIconView({ node }: NodeViewProps) {
   return <NodeViewWrapper as="span" className="resume-inline-icon"><Icon size="1em" /></NodeViewWrapper>;
 }
 
+function InlineImageView({ node, selected, updateAttributes, deleteNode }: NodeViewProps) {
+  const width = Math.min(240, Math.max(16, Number(node.attrs.width) || 72));
+  const legacyAspectRatio = Math.min(20, Math.max(0.1, Number(node.attrs.aspectRatio) || 3));
+  const height = Math.min(240, Math.max(16, Number(node.attrs.height) || width / legacyAspectRatio));
+  const [widthDraft, setWidthDraft] = useState(String(width));
+  const [heightDraft, setHeightDraft] = useState(String(Math.round(height)));
+  useEffect(() => setWidthDraft(String(width)), [width]);
+  useEffect(() => setHeightDraft(String(Math.round(height))), [height]);
+  const commitSize = (dimension: "width" | "height") => {
+    const draft = dimension === "width" ? widthDraft : heightDraft;
+    const fallback = dimension === "width" ? width : height;
+    const next = Number(draft);
+    if (Number.isFinite(next)) updateAttributes({ [dimension]: Math.round(Math.min(240, Math.max(16, next))) });
+    else if (dimension === "width") setWidthDraft(String(Math.round(fallback)));
+    else setHeightDraft(String(Math.round(fallback)));
+  };
+  return (
+    <NodeViewWrapper
+      as="span"
+      className={`resume-inline-image${selected ? " is-selected" : ""}`}
+      style={{ width, height }}
+    >
+      {selected && (
+        <span className="media-context-toolbar inline-image-toolbar" contentEditable={false}>
+          <label className="media-size-field inline-image-size-field" aria-label="行内图片宽度">
+            <span>宽</span>
+            <input
+              type="number"
+              name="inline-image-width"
+              autoComplete="off"
+              inputMode="numeric"
+              min="16"
+              max="240"
+              step="1"
+              value={widthDraft}
+              onChange={(event) => setWidthDraft(event.target.value)}
+              onBlur={() => commitSize("width")}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  commitSize("width");
+                  event.currentTarget.blur();
+                }
+              }}
+            />
+            <output>px</output>
+          </label>
+          <label className="media-size-field inline-image-size-field" aria-label="行内图片高度">
+            <span>高</span>
+            <input
+              type="number"
+              name="inline-image-height"
+              autoComplete="off"
+              inputMode="numeric"
+              min="16"
+              max="240"
+              step="1"
+              value={heightDraft}
+              onChange={(event) => setHeightDraft(event.target.value)}
+              onBlur={() => commitSize("height")}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  commitSize("height");
+                  event.currentTarget.blur();
+                }
+              }}
+            />
+            <output>px</output>
+          </label>
+          <input
+            className="media-alt-field"
+            name="inline-image-alt"
+            autoComplete="off"
+            aria-label="行内图片替代文字"
+            value={node.attrs.alt ?? ""}
+            placeholder="例如：示例公司 Logo…"
+            onChange={(event) => updateAttributes({ alt: event.target.value })}
+          />
+          <button type="button" aria-label="删除行内图片" onClick={deleteNode}><Trash2 size={14} /></button>
+        </span>
+      )}
+      <img src={node.attrs.src} width={Math.round(width)} height={Math.round(height)} alt={node.attrs.alt || "行内图片"} draggable={false} />
+    </NodeViewWrapper>
+  );
+}
+
+export const InlineImage = Node.create({
+  name: "inlineImage",
+  group: "inline",
+  inline: true,
+  atom: true,
+  selectable: true,
+  addAttributes: () => ({
+    src: { default: "" },
+    width: { default: 72 },
+    height: { default: null },
+    aspectRatio: { default: 3 },
+    alt: { default: "行内图片" },
+  }),
+  parseHTML: () => [{
+    tag: "img[data-inline-image]",
+    getAttrs: (element) => element instanceof HTMLElement ? {
+      src: element.dataset.src ?? element.getAttribute("src") ?? "",
+      width: Number(element.dataset.width) || 72,
+      height: Number(element.dataset.height) || null,
+      aspectRatio: Number(element.dataset.aspectRatio) || 3,
+      alt: element.dataset.alt ?? element.getAttribute("alt") ?? "行内图片",
+    } : false,
+  }],
+  renderHTML: ({ node, HTMLAttributes }) => [
+    "img",
+    mergeAttributes(HTMLAttributes, {
+      "data-inline-image": "",
+      "data-src": node.attrs.src,
+      "data-width": node.attrs.width,
+      "data-height": node.attrs.height,
+      "data-aspect-ratio": node.attrs.aspectRatio,
+      "data-alt": node.attrs.alt,
+      class: "resume-inline-image",
+      style: `width:${node.attrs.width}px;height:${node.attrs.height ?? Math.round(node.attrs.width / node.attrs.aspectRatio)}px`,
+      src: node.attrs.src,
+      alt: node.attrs.alt,
+      width: node.attrs.width,
+      height: node.attrs.height ?? Math.round(node.attrs.width / node.attrs.aspectRatio),
+    }),
+  ],
+  addNodeView: () => ReactNodeViewRenderer(InlineImageView),
+});
+
 export const InlineIcon = Node.create({
   name: "inlineIcon",
   group: "inline",
@@ -606,14 +755,24 @@ export const resumeEditorExtensions: Extensions = [
   Color,
   Highlight.configure({ multicolor: true }),
   TextAlign.configure({ types: ["heading", "paragraph"] }),
-  Link.configure({ openOnClick: false, autolink: true, HTMLAttributes: { rel: "noopener noreferrer", target: "_blank" } }),
+  Link.configure({
+    openOnClick: false,
+    autolink: true,
+    shouldAutoLink: shouldAutoLinkResumeValue,
+    isAllowedUri: (value, { defaultValidate }) => (
+      defaultValidate(value) && !isResumeEmailLink(value)
+    ),
+    HTMLAttributes: { rel: "noopener noreferrer", target: "_blank" },
+  }),
   Placeholder.configure({ placeholder: "直接输入你的简历内容…" }),
   AvatarImage,
   ResumeImage,
   ResumeRow,
+  ResumeRowExitKeymap,
   ResumeColumn,
   ResumeColumns,
   ResumeMetaRow,
   ResumeTrioRow,
+  InlineImage,
   InlineIcon,
 ];

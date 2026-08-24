@@ -22,7 +22,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
-import { ApiRequestError } from "../../api/client";
+import type { Instance as TippyInstance } from "tippy.js";
+import { api, ApiRequestError } from "../../api/client";
 import {
   Button,
   ConfirmDialog,
@@ -44,13 +45,26 @@ import {
 import { resumeSerifFontStack, useResumeStore } from "../../store/resumeStore";
 import { resumeEditorExtensions } from "./editorExtensions";
 import { SelectionAgentPrompt, WorkbenchToolbar } from "./WorkbenchToolbar";
-import { createSelectionBubbleAnchor, shouldShowSelectionAgentBubble } from "./selectionBubbleAnchor";
+import {
+  createSelectionBubbleAnchor,
+  refreshSelectionBubblePosition,
+  shouldShowSelectionAgentBubble,
+} from "./selectionBubbleAnchor";
 import { getTwoPageFitScale, getWheelZoomScale, handleWheelZoom } from "./workbenchZoom";
 import { navigateTo } from "../../routing";
 import { AgentPanel, type AgentSelectionDraft } from "../agent/AgentPanel";
-import { BlankLineMenuExtension, SlashCommandMenu, type CommandMenuState } from "./slashCommand";
+import {
+  LineInsertMenuExtension,
+  SlashCommandMenu,
+  type CommandMenuState,
+} from "./slashCommand";
 import { VersionDiffDialog } from "./VersionDiffDialog";
 import { PaginationExtension } from "./paginationPlugin";
+import {
+  exportResumePdf,
+  isResumePdfExportCancelled,
+  resumePdfExportErrorMessage,
+} from "../preview/pdfExport";
 import {
   capturePageViewportAnchor,
   restorePageViewportAnchor,
@@ -227,15 +241,18 @@ function currentSelectionRect(editor: Editor) {
 
 function StableSelectionAgentBubble({ editor, children }: { editor: Editor; children: ReactNode }) {
   const anchorRef = useRef<ReturnType<typeof createSelectionBubbleAnchor> | null>(null);
+  const tippyRef = useRef<TippyInstance | null>(null);
   if (!anchorRef.current) anchorRef.current = createSelectionBubbleAnchor();
   const anchor = anchorRef.current;
 
   useEffect(() => {
-    const scrollArea = editor.view.dom.closest(".workbench-canvas");
+    const scrollArea = editor.view.dom.closest(".workbench-paper-scroll");
     const refresh = () => {
-      const { from, to, empty } = editor.state.selection;
-      if (empty) anchor.observe({ from, to }, () => currentSelectionRect(editor));
-      else anchor.refresh(() => currentSelectionRect(editor));
+      refreshSelectionBubblePosition(
+        anchor,
+        () => currentSelectionRect(editor),
+        () => { void tippyRef.current?.popperInstance?.update(); },
+      );
     };
     scrollArea?.addEventListener("scroll", refresh, { passive: true });
     window.addEventListener("resize", refresh, { passive: true });
@@ -253,6 +270,10 @@ function StableSelectionAgentBubble({ editor, children }: { editor: Editor; chil
         maxWidth: "none",
         placement: "top-start",
         getReferenceClientRect: () => anchor.getRect(() => currentSelectionRect(editor)),
+        onCreate: (instance) => { tippyRef.current = instance; },
+        onDestroy: (instance) => {
+          if (tippyRef.current === instance) tippyRef.current = null;
+        },
       }}
       shouldShow={({ editor: current, view, from, to }) => {
         const visible = shouldShowSelectionAgentBubble({
@@ -298,7 +319,7 @@ function pageViewportMetrics(
 const fontOptions = [
   { label: "简历宋体", value: resumeSerifFontStack },
   { label: "霞鹜文楷", value: '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif' },
-  { label: "系统黑体", value: '"PingFang SC", "Microsoft YaHei", Inter, system-ui, sans-serif' },
+  { label: "系统黑体", value: '"LinkCV Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif' },
 ];
 
 const versionReasonLabels = {
@@ -722,6 +743,8 @@ export function steppedSettingValue(value: number, direction: -1 | 1, min: numbe
   return Math.min(max, Math.max(min, Number((value + direction * step).toFixed(precision))));
 }
 
+export const WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM = 6;
+
 export function SettingsStepper({ label, unit, value, min, max, step, onChange, disabled }: { label: string; unit: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void; disabled?: boolean }) {
   return (
     <div className="workbench-value-row">
@@ -836,6 +859,7 @@ export function ResumeWorkbench() {
   });
   const paperScrollRef = useRef<HTMLDivElement>(null);
   const arrangementAnimationRef = useRef<Animation | null>(null);
+  const pdfExportAbortRef = useRef<AbortController | null>(null);
   const lastPageAnchorRef = useRef<ReturnType<typeof capturePageViewportAnchor> | null>(null);
   const arrangementLayoutRunRef = useRef(0);
   const agentDrawerResizeRef = useRef<{ pointerId: number; clientX: number; width: number; currentWidth: number } | null>(null);
@@ -963,7 +987,7 @@ export function ResumeWorkbench() {
     extensions: [
       ...resumeEditorExtensions,
       PaginationExtension,
-      BlankLineMenuExtension.configure({ onOpen: setCommandMenu }),
+      LineInsertMenuExtension.configure({ onOpen: setCommandMenu }),
     ],
     content: editorContent,
     editorProps: {
@@ -1074,6 +1098,7 @@ export function ResumeWorkbench() {
   useEffect(() => () => {
     arrangementLayoutRunRef.current += 1;
     arrangementAnimationRef.current?.cancel();
+    pdfExportAbortRef.current?.abort();
   }, []);
 
   useEffect(() => {
@@ -1138,6 +1163,41 @@ export function ResumeWorkbench() {
     setToast({ label: useResumeStore.getState().saveStatus === "error" ? "简历保存失败，请稍后重试" : "简历已保存" });
   };
 
+  const exportPdf = () => {
+    if (!editor || !activeResumeId || pdfExportPending) return;
+    pdfExportAbortRef.current?.abort();
+    const controller = new AbortController();
+    pdfExportAbortRef.current = controller;
+    setPdfExportPending(true);
+    setToast({ label: "正在生成 PDF…" });
+    void exportResumePdf({
+      resumeId: activeResumeId,
+      title,
+      saveCurrentResume,
+      signal: controller.signal,
+      getSnapshot: () => {
+        const state = useResumeStore.getState();
+        return {
+          activeResumeId: state.activeResumeId,
+          lockVersion: state.lockVersion,
+          saveStatus: state.saveStatus,
+        };
+      },
+    })
+      .then(() => setToast({ label: "PDF 已下载" }))
+      .catch((error: unknown) => {
+        if (!isResumePdfExportCancelled(error)) {
+          setToast({ label: resumePdfExportErrorMessage(error) });
+        }
+      })
+      .finally(() => {
+        if (pdfExportAbortRef.current === controller) {
+          pdfExportAbortRef.current = null;
+          setPdfExportPending(false);
+        }
+      });
+  };
+
   const saveNamedVersion = async () => {
     if (!editor || versionNameSubmitting) return;
     const validationMessage = versionNameValidationMessage(versionName);
@@ -1196,6 +1256,7 @@ export function ResumeWorkbench() {
   };
 
   const leaveSafely = async () => {
+    pdfExportAbortRef.current?.abort();
     if (dirty) {
       await saveCurrentResume();
       if (useResumeStore.getState().error) {
@@ -1255,17 +1316,7 @@ export function ResumeWorkbench() {
             <div className="workbench-output-actions" role="group" aria-label="保存与导出">
               <ExportPdfAction
                 pending={pdfExportPending}
-                onExport={() => {
-                  if (!editor || pdfExportPending) return;
-                  const content = editor.getJSON();
-                  setPdfExportPending(true);
-                  setToast({ label: "正在生成 PDF…" });
-                  void import("../preview/exportTextPdf")
-                    .then(({ exportResumeTextPdf }) => exportResumeTextPdf(content, settings, title))
-                    .then(() => setToast({ label: "PDF 已下载" }))
-                    .catch(() => setToast({ label: "PDF 生成失败，请检查简历中的图片后重试" }))
-                    .finally(() => setPdfExportPending(false));
-                }}
+                onExport={exportPdf}
               />
               <SaveResumeAction
                 pending={saveStatus === "saving" || versionOperationPending || versionNameSubmitting}
@@ -1379,7 +1430,7 @@ export function ResumeWorkbench() {
                     <WorkbenchSettingsSection title="页边距（单位：mm）" description="上下和左右分别同步调整，修改后立即更新页面。">
                       <div className="workbench-margin-layout">
                         <div className="workbench-margin-controls">
-                          <SettingsStepper label="上下边距" unit="mm" value={settings.verticalPageMargin} min={10} max={30} step={2} onChange={(verticalPageMargin) => updateSettings({ verticalPageMargin })} disabled={versionOperationPending} />
+                          <SettingsStepper label="上下边距" unit="mm" value={settings.verticalPageMargin} min={WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM} max={30} step={2} onChange={(verticalPageMargin) => updateSettings({ verticalPageMargin })} disabled={versionOperationPending} />
                           <SettingsStepper label="左右边距" unit="mm" value={settings.pageMargin} min={10} max={30} step={2} onChange={(pageMargin) => updateSettings({ pageMargin })} disabled={versionOperationPending} />
                         </div>
                         <div className="workbench-margin-preview" aria-label={`当前上下边距 ${settings.verticalPageMargin} 毫米，左右边距 ${settings.pageMargin} 毫米`}>
