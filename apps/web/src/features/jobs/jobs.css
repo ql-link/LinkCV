@@ -249,11 +249,11 @@
 .job-document-highlights {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  gap: 28px;
-  align-items: end;
+  gap: clamp(20px, 3vw, 44px);
 }
 
 .job-document-fact {
@@ -267,9 +267,10 @@
 .job-document-fact > span { display: grid; color: var(--ui-muted); place-items: center; }
 .job-document-fact > span svg { width: 27px; height: 27px; stroke-width: 1.75; }
 .job-document-fact small { display: block; margin-bottom: 4px; color: var(--ui-muted); font-size: 11px; line-height: 1; }
-.job-document-fact .job-quick-edit-value { display: block; overflow: hidden; font-size: clamp(22px, 2.35vw, 28px); font-weight: 680; letter-spacing: -0.02em; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
+.job-document-fact .job-quick-edit { height: calc(28px * 1.1 + 16px); }
+.job-document-fact .job-quick-edit-value { display: block; overflow: visible; font-size: 22px; font-weight: 680; letter-spacing: -0.02em; line-height: 1.1; text-overflow: clip; white-space: nowrap; }
 .job-document-fact.is-emphasis > span { color: var(--ink); }
-.job-document-fact.is-emphasis .job-quick-edit-value { color: var(--ui-accent); }
+.job-document-fact.is-emphasis .job-quick-edit-value { color: var(--ui-accent); letter-spacing: -0.03em; }
 
 .job-document-intro {
   display: grid;
@@ -331,6 +332,88 @@
 .job-document-definition dd { display: flex; min-height: 38px; align-items: center; margin: 0; color: var(--ink); font-size: 14px; font-weight: 550; line-height: 1.55; overflow-wrap: anywhere; }
 .job-document-definition dd > .job-quick-edit { width: 100%; }
 
+.job-structured-salary { position: relative; }
+.job-structured-salary.is-editing { z-index: 4; }
+.job-structured-salary dd { display: block; }
+.job-structured-salary-trigger .job-quick-edit-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job-structured-salary .job-structured-salary-trigger:focus-visible { border-color: var(--ui-foreground); outline: 0; box-shadow: none; }
+.job-structured-salary-trigger[aria-expanded="true"] { border-color: var(--ui-foreground); border-style: solid; background: var(--ui-surface-subtle); }
+
+.job-structured-salary-controls {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: -9px;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(130px, 1fr));
+  gap: 12px;
+  width: min(520px, calc(100vw - 64px));
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface-elevated);
+  padding: 14px;
+  box-shadow: var(--ui-shadow-sm);
+  transform-origin: top right;
+}
+
+.job-structured-salary-control {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.job-structured-salary-control > span {
+  color: var(--ui-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.job-structured-salary-control input,
+.job-structured-salary-control .job-structured-salary-period-trigger {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  min-height: 38px;
+  border: 1px solid var(--ui-foreground);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  padding: 7px 8px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.55;
+  outline: 0;
+  box-shadow: none;
+}
+
+.job-structured-salary-control input:focus,
+.job-structured-salary-control input:focus-visible,
+.job-structured-salary-control .job-structured-salary-period-trigger:focus,
+.job-structured-salary-control .job-structured-salary-period-trigger:focus-visible {
+  border-color: var(--ui-foreground);
+  outline: 0;
+  box-shadow: none;
+}
+
+.job-structured-salary-control .job-structured-salary-period-trigger {
+  overflow: hidden;
+  justify-content: space-between;
+  font-weight: 400;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.job-structured-salary-control .job-structured-salary-period-trigger > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-structured-salary-period-content { min-width: 140px; }
+
 .job-source-summary {
   margin: 0 0 8px;
   color: var(--ui-muted);
@@ -359,6 +442,11 @@
 }
 
 .job-quick-edit-heading { margin: 0; }
+
+.job-quick-edit.is-multiline {
+  display: grid;
+  align-items: stretch;
+}
 
 .job-quick-edit-display {
   display: block;
@@ -414,11 +502,117 @@
   box-shadow: none;
 }
 
+.job-quick-edit input:focus,
+.job-quick-edit input:focus-visible,
+.job-quick-edit textarea:focus,
+.job-quick-edit textarea:focus-visible,
+.job-quick-edit select:focus,
+.job-quick-edit select:focus-visible {
+  border-color: var(--ui-foreground);
+  outline: 0;
+  box-shadow: none;
+}
+
 .job-quick-edit textarea { min-height: 38px; resize: vertical; }
+.job-quick-edit-select-trigger {
+  width: calc(100% + 18px);
+  min-width: 0;
+  max-width: calc(100% + 18px);
+  height: 38px;
+  min-height: 38px;
+  margin-inline: -9px;
+  border: 1px solid var(--ui-foreground);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  padding: 7px 8px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.55;
+  outline: 0;
+  box-shadow: none;
+}
+
+.job-quick-edit-select-trigger:focus,
+.job-quick-edit-select-trigger:focus-visible {
+  border-color: var(--ui-foreground);
+  outline: 0;
+  box-shadow: none;
+}
+
+.job-quick-edit-select-trigger > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-quick-edit-select-content {
+  min-width: 140px;
+}
+
+.job-quick-edit.is-multiline > .job-quick-edit-display,
+.job-quick-edit.is-multiline > .job-quick-edit-multiline-mirror,
+.job-quick-edit.is-multiline > textarea {
+  grid-area: 1 / 1;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.job-quick-edit.is-multiline > .job-quick-edit-display,
+.job-quick-edit.is-multiline > textarea {
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.job-quick-edit-multiline-mirror {
+  display: block;
+  visibility: hidden;
+  width: calc(100% + 18px);
+  min-width: 0;
+  max-width: calc(100% + 18px);
+  min-height: 38px;
+  margin-inline: -9px;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius-md);
+  padding: 7px 8px;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.job-quick-edit.is-multiline > textarea {
+  align-self: stretch;
+  height: 100%;
+  min-height: 0;
+  resize: none;
+  overflow: hidden;
+}
 .job-document-title-main .job-quick-edit input { font-size: clamp(26px, 3.2vw, 36px); font-weight: 680; letter-spacing: -0.02em; line-height: 1.2; }
-.job-document-fact .job-quick-edit-display,
+.job-document-fact .job-quick-edit-display {
+  height: calc(28px * 1.1 + 16px);
+  min-height: 0;
+}
+
 .job-document-fact .job-quick-edit input,
-.job-document-fact .job-quick-edit select { height: calc(clamp(22px, 2.35vw, 28px) * 1.1 + 16px); min-height: 0; font-size: clamp(22px, 2.35vw, 28px); font-weight: 680; letter-spacing: -0.02em; line-height: 1.1; }
+.job-document-fact .job-quick-edit-select-trigger {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  width: 100%;
+  max-width: 100%;
+  height: 38px;
+  min-height: 38px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.55;
+  transform: translateY(-50%);
+}
 
 /* ---------- 表单页（15E） ---------- */
 
@@ -1084,8 +1278,9 @@
   .job-document { width: calc(100% - 32px); }
   .job-detail-actions { justify-content: flex-start; }
   .job-document-hero { gap: 24px; padding: 24px 20px; }
-  .job-document-highlights { grid-template-columns: 1fr; gap: 14px; }
+  .job-document-highlights { display: grid; grid-template-columns: 1fr; gap: 14px; }
   .job-document-body { padding-right: 20px; padding-left: 20px; }
+  .job-structured-salary-controls { right: -9px; width: calc(100vw - 48px); grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .job-inline-editor { padding-right: 20px; padding-left: 20px; }
   .job-inline-grid .is-wide { grid-column: auto; }
   .job-create-dialog {
