@@ -552,7 +552,8 @@ def test_skill_check_rejects_incomplete_flow_router_contract(tmp_path: Path) -> 
     skill_file = target_skill / "SKILL.md"
     skill_file.write_text(
         skill_file.read_text(encoding="utf-8").replace(
-            "默认只向用户展示三行", "默认展示完整七维表"
+            "用户明确给出的控制项必须原样传给下游",
+            "用户控制项可以由入口重新选择",
         ),
         encoding="utf-8",
     )
@@ -563,20 +564,36 @@ def test_skill_check_rejects_incomplete_flow_router_contract(tmp_path: Path) -> 
     )
 
     assert result.returncode == 1
-    assert "七维分流契约缺少必要内容" in result.stderr
-    assert "默认只向用户展示三行" in result.stderr
+    assert "薄领域入口契约缺少必要内容" in result.stderr
+    assert "用户明确给出的控制项必须原样传给下游" in result.stderr
 
 
-def test_skill_check_protects_flow_router_core_semantics(tmp_path: Path) -> None:
+def test_skill_check_protects_visual_frontend_delivery_contract(
+    tmp_path: Path,
+) -> None:
     protected_markers = (
-        "七个维度仍必须在内部完整判断",
-        "没有 Issue 不阻止分流",
-        "严格风险本身不自动升级为方案先行",
-        "记录需要不改变交付路径",
-        "记录为持久记录也不自动升级方案",
-        "不要由分流阶段提前主持方案讨论",
-        "其他准备为 `需澄清` 或 `需调查` 的情况",
-        "只有准备不足、风险严格、需要持久记录或用户主动要求查看判断依据时",
+        "标准和完整档以对话作为设计主线",
+        "每轮最多问一个问题",
+        "不在开工前收集完整偏好表",
+        "不要追问色值、字号、圆角、精确间距、具体断点或控件坐标",
+        "不设固定轮数",
+        "对话中的最新明确反馈优先",
+        "不要把同一个原型文件",
+        "每轮从当前请求、最新反馈、浏览器实际画面、Git 差异和真实代码重新判断",
+        "已有可运行路由或组件，且用户已经授权修改当前工作区",
+        "全新页面、尚无可运行入口",
+        "用户明确指定 Figma：使用 Figma",
+        "`.specs/<KEY>/prototype/` 创建自包含的 `index.html`",
+        "不新增依赖，不请求外部资源",
+        "`imagegen` 只用于视觉探索",
+        "只覆盖当前轮次的短交接",
+        "继承真实应用壳，不自行发明导航、品牌或全局视觉语言",
+        "主 Agent 在浏览器查看桌面或本轮受影响断点，并执行视觉拒收门禁",
+        "确认前不得提交、推送或创建 PR",
+        "每轮由 Luna 完成一个可回退的小步修改",
+        "用户的下一句反馈直接开启下一轮",
+        "不要每轮运行完整测试",
+        "用户明确表示方向稳定、可以收口或要求交付",
     )
 
     for index, marker in enumerate(protected_markers):
@@ -588,8 +605,8 @@ def test_skill_check_protects_flow_router_core_semantics(tmp_path: Path) -> None
         skills_root = case_root / ".ai" / "skills"
         skills_root.mkdir(parents=True)
         (skills_root / "README.md").write_text("skills", encoding="utf-8")
-        source_skill = REPO_ROOT / ".ai" / "skills" / "flow-router"
-        target_skill = skills_root / "flow-router"
+        source_skill = REPO_ROOT / ".ai" / "skills" / "frontend-delivery"
+        target_skill = skills_root / "frontend-delivery"
         shutil.copytree(source_skill, target_skill)
         skill_file = target_skill / "SKILL.md"
         skill_file.write_text(
@@ -603,7 +620,78 @@ def test_skill_check_protects_flow_router_core_semantics(tmp_path: Path) -> None
         )
 
         assert result.returncode == 1
-        assert "七维分流契约缺少必要内容" in result.stderr
+        assert "对话式可视设计契约缺少必要内容" in result.stderr
+        assert marker in result.stderr
+
+
+def test_skill_check_rejects_text_only_frontend_design_gate(tmp_path: Path) -> None:
+    (tmp_path / ".ai" / "prompts").mkdir(parents=True)
+    (tmp_path / ".ai" / "prompts" / "project.md").write_text(
+        "rules", encoding="utf-8"
+    )
+    skills_root = tmp_path / ".ai" / "skills"
+    skills_root.mkdir(parents=True)
+    (skills_root / "README.md").write_text("skills", encoding="utf-8")
+    source_skill = REPO_ROOT / ".ai" / "skills" / "frontend-delivery"
+    target_skill = skills_root / "frontend-delivery"
+    shutil.copytree(source_skill, target_skill)
+    skill_file = target_skill / "SKILL.md"
+    skill_file.write_text(
+        skill_file.read_text(encoding="utf-8")
+        + "\n完整必须创建 `ui-design.md`。\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        SKILL_CHECK,
+        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result.returncode == 1
+    assert "仍存在一次性冻结设计的过期契约" in result.stderr
+
+
+def test_skill_check_protects_backend_delivery_core_semantics(tmp_path: Path) -> None:
+    protected_markers = (
+        "七个维度仍必须在内部完整判断",
+        "没有 Issue 不阻止七维判断或交付",
+        "严格风险本身不自动升级为方案先行",
+        "记录需要不改变交付路径",
+        "记录为持久记录也不自动升级方案",
+        "不要为方案路径再启动第二个 Sol 规划 Agent",
+        "准备为`需澄清`或`需调查`",
+        "只有准备不足、风险严格、需要持久记录或用户主动要求查看判断依据时",
+        "`model`: `gpt-5.6-sol`",
+        "`reasoning_effort`: `medium`",
+        "`model`: `gpt-5.6-luna`",
+        "`reasoning_effort`: `max`",
+    )
+
+    for index, marker in enumerate(protected_markers):
+        case_root = tmp_path / f"case-{index}"
+        (case_root / ".ai" / "prompts").mkdir(parents=True)
+        (case_root / ".ai" / "prompts" / "project.md").write_text(
+            "rules", encoding="utf-8"
+        )
+        skills_root = case_root / ".ai" / "skills"
+        skills_root.mkdir(parents=True)
+        (skills_root / "README.md").write_text("skills", encoding="utf-8")
+        source_skill = REPO_ROOT / ".ai" / "skills" / "backend-delivery"
+        target_skill = skills_root / "backend-delivery"
+        shutil.copytree(source_skill, target_skill)
+        skill_file = target_skill / "SKILL.md"
+        skill_file.write_text(
+            skill_file.read_text(encoding="utf-8").replace(marker, "核心语义已删除"),
+            encoding="utf-8",
+        )
+
+        result = run_script(
+            SKILL_CHECK,
+            env={"LINKCV_REPO_ROOT": str(case_root)},
+        )
+
+        assert result.returncode == 1
+        assert "七维判断、模型路由或回流契约缺少必要内容" in result.stderr
         assert marker in result.stderr
 
 
@@ -682,12 +770,14 @@ def test_skill_check_protects_five_reduction_contracts(tmp_path: Path) -> None:
         assert marker in result.stderr
 
 
-def test_skill_check_protects_flow_router_downstream_contract(tmp_path: Path) -> None:
+def test_skill_check_protects_backend_delivery_downstream_contract(
+    tmp_path: Path,
+) -> None:
     protected_markers = (
         (
             "implementation-execution",
             "方案先行任务以当前 `solution.md` 为准；"
-            "直接实现以来源材料、当前确认结论和 `flow-router` 列出的严格检查项为准",
+            "直接实现以来源材料、当前确认结论和 `backend-delivery` 七维简报列出的严格检查项为准",
             "实现入口或实施报告契约缺少必要内容",
         ),
         (
@@ -698,7 +788,7 @@ def test_skill_check_protects_flow_router_downstream_contract(tmp_path: Path) ->
         (
             "contract-guard",
             "已经明确属于方案先行的单需求分歧直接交 `solution-generator` 修订当前方案",
-            "七维分流下游契约缺少必要内容",
+            "领域或七维回流契约缺少必要内容",
         ),
     )
 
@@ -734,9 +824,9 @@ def test_skill_check_protects_source_authority_and_one_way_delivery(
     tmp_path: Path,
 ) -> None:
     cases = (
-        (
-            Path(".ai/skills/README.md"),
-            "飞书文档只作为方案形成前的初步设计输入",
+            (
+                Path(".ai/skills/README.md"),
+                "飞书文档只作为方案或 UI 设计形成前的初始输入",
         ),
         (
             Path(".ai/skills/solution-generator/SKILL.md"),
@@ -746,9 +836,9 @@ def test_skill_check_protects_source_authority_and_one_way_delivery(
             Path(".ai/skills/implementation-execution/SKILL.md"),
             "飞书冲突本身不触发 `module-planning`",
         ),
-        (
-            Path(".specs/README.md"),
-            "飞书只提供方案形成前的初步设计",
+            (
+                Path(".specs/README.md"),
+                "飞书只提供方案或视觉设计形成前的初始输入",
         ),
         (
             Path(".ai/prompts/project.md"),
@@ -886,4 +976,4 @@ def test_skill_check_rejects_legacy_flow_router_rule(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 1
-    assert "仍含旧的一票升级判据" in result.stderr
+    assert "仍含应由 backend-delivery 拥有的路径判断" in result.stderr

@@ -109,15 +109,33 @@ SOLUTION_FIXED_SECTION_RE = re.compile(
     r"(?:方案文档|`?solution\.md`?)(?:的)?(?:第 ?\d+ ?节| ?\d+\.\d+)"
 )
 FLOW_ROUTER_REQUIRED_MARKERS = (
+    "本技能只回答两个问题",
+    "它不判断准备程度、简单/中等/复杂、严格风险、持久记录、直接实现或方案先行",
+    "没有 Issue 不阻止路由",
+    "纯前端",
+    "纯后端",
+    "前后端混合",
+    "用户明确给出的控制项必须原样传给下游",
+    "下一站：frontend-delivery | backend-delivery",
+    "准备程度、复杂度、风险、记录需要或后端直接/方案路径变化不返回本技能",
+)
+FLOW_ROUTER_FORBIDDEN_MARKERS = (
+    "七个维度仍必须在内部完整判断",
+    "只使用 4.2 至 4.5 四个维度",
+    "默认只向用户展示三行",
+    "任意一条不满足即判方案先行",
+    "只有五条全部满足才判直接实现",
+)
+BACKEND_DELIVERY_REQUIRED_MARKERS = (
     "准备程度、复杂度、风险和记录需要必须分开表达",
     "七个维度仍必须在内部完整判断",
-    "没有 Issue 不阻止分流",
+    "没有 Issue 不阻止七维判断或交付",
     "只使用 4.2 至 4.5 四个维度",
     "严格风险本身不自动升级为方案先行",
     "记录需要不改变交付路径",
     "记录为持久记录也不自动升级方案",
-    "不要由分流阶段提前主持方案讨论",
-    "其他准备为 `需澄清` 或 `需调查` 的情况",
+    "不要为方案路径再启动第二个 Sol 规划 Agent",
+    "准备为`需澄清`或`需调查`",
     "准备：可实施 | 需澄清 | 需调查",
     "复杂度：简单 | 中等 | 复杂 | 暂不判定",
     "风险：常规 | 严格",
@@ -127,14 +145,51 @@ FLOW_ROUTER_REQUIRED_MARKERS = (
     "原因：<只写一个决定当前路径的主导事实>",
     "额外检查：无 |",
     "只有准备不足、风险严格、需要持久记录或用户主动要求查看判断依据时",
+    "`model`: `gpt-5.6-sol`",
+    "`reasoning_effort`: `medium`",
+    "`model`: `gpt-5.6-luna`",
+    "`reasoning_effort`: `max`",
+    "准备、复杂度、风险、记录或后端路径变化：留在本技能",
 )
-FLOW_ROUTER_FORBIDDEN_MARKERS = (
-    "任意一条不满足即判方案先行",
-    "只有五条全部满足才判直接实现",
+FRONTEND_DELIVERY_REQUIRED_MARKERS = (
+    "标准和完整档以对话作为设计主线",
+    "每轮最多问一个问题",
+    "不在开工前收集完整偏好表",
+    "不要追问色值、字号、圆角、精确间距、具体断点或控件坐标",
+    "不设固定轮数",
+    "对话中的最新明确反馈优先",
+    "不要把同一个原型文件",
+    "每轮从当前请求、最新反馈、浏览器实际画面、Git 差异和真实代码重新判断",
+    "已有可运行路由或组件，且用户已经授权修改当前工作区",
+    "全新页面、尚无可运行入口",
+    "用户明确指定 Figma：使用 Figma",
+    "不先询问产物格式",
+    "`.specs/<KEY>/prototype/` 创建自包含的 `index.html`",
+    "不新增依赖，不请求外部资源",
+    "`imagegen` 只用于视觉探索",
+    "只覆盖当前轮次的短交接",
+    "继承真实应用壳，不自行发明导航、品牌或全局视觉语言",
+    "主 Agent 在浏览器查看桌面或本轮受影响断点，并执行视觉拒收门禁",
+    "确认前不得提交、推送或创建 PR",
+    "不要先交付一篇 `ui-design.md`",
+    "每轮由 Luna 完成一个可回退的小步修改",
+    "用户的下一句反馈直接开启下一轮",
+    "不要每轮运行完整测试",
+    "用户明确表示方向稳定、可以收口或要求交付",
+    "`model`: `gpt-5.6-sol`",
+    "`reasoning_effort`: `medium`",
+    "`model`: `gpt-5.6-luna`",
+    "`reasoning_effort`: `max`",
+)
+FRONTEND_DELIVERY_FORBIDDEN_MARKERS = (
+    "完整必须创建 `ui-design.md`",
+    "创建或修订唯一的 `.specs/<KEY>/ui-design.md`",
+    "标准和完整档在设计前必须先做一次轻量偏好确认",
+    "用户确认选定方案后才实施",
 )
 IMPLEMENTATION_EXECUTION_REQUIRED_MARKERS = (
     "方案先行任务以当前 `solution.md` 为准；"
-    "直接实现以来源材料、当前确认结论和 `flow-router` 列出的严格检查项为准",
+    "直接实现以来源材料、当前确认结论和 `backend-delivery` 七维简报列出的严格检查项为准",
     "不因选择影响大就自动升级为模块规划",
     "没有 Issue 不阻止直接实现",
     "数据库迁移、跨端契约",
@@ -145,7 +200,7 @@ IMPLEMENTATION_EXECUTION_REQUIRED_MARKERS = (
 )
 CONTRACT_GUARD_REQUIRED_MARKERS = (
     "已经明确属于方案先行的单需求分歧直接交 `solution-generator` 修订当前方案",
-    "只有分流维度或交付路径也可能变化时才返回 `flow-router`",
+    "只有七维判断或后端路径可能变化时才返回 `backend-delivery`，领域可能变化时才返回 `flow-router`",
 )
 DELIVERY_FLOW_REQUIRED_MARKERS = {
     Path(".ai/prompts/project.md"): (
@@ -155,8 +210,8 @@ DELIVERY_FLOW_REQUIRED_MARKERS = {
         "由业务分支向 `dev` 提 PR",
     ),
     Path(".ai/skills/README.md"): (
-        "飞书文档只作为方案形成前的初步设计输入",
-        "确认后的 `solution.md` 是方案任务的当前实施依据",
+        "飞书文档只作为方案或 UI 设计形成前的初始输入",
+        "确认后的 `solution.md` 是后端和混合方案的实施依据",
         "## 单向交付层次",
         "| 初始设计层 | 飞书文档 |",
         "| 任务入口与跟踪层 | Issue 正文 |",
@@ -197,7 +252,7 @@ DELIVERY_FLOW_REQUIRED_MARKERS = {
         "未完成与后续：",
     ),
     Path(".specs/README.md"): (
-        "飞书只提供方案形成前的初步设计",
+        "飞书只提供方案或视觉设计形成前的初始输入",
         "不反向同步飞书或 Issue 正文",
         "普通文件组织、命名、测试落点",
         "PR 创建后只追加一条交付评论",
@@ -256,17 +311,17 @@ STATELESS_SPEC_REQUIRED_MARKERS = {
     ),
     Path(".ai/skills/solution-generator/SKILL.md"): (
         "`solution.md` 是方案任务的唯一中心文档",
-        "AI 根据当前请求、Spec 文档、Git 差异、真实代码和实际测试判断下一步",
+        "AI 根据当前请求、Spec 文档、视觉产物、Git 差异、真实代码和实际测试判断下一步",
         "不创建额外机器状态文件",
     ),
     Path(".specs/README.md"): (
         "顺序是内容关系，不是机器状态机",
-        "AI 根据最新用户指令、Spec 文档、Git 差异、真实代码和本次实际验证自行判断下一步",
-        "跨会话恢复后不继承以前会话的测试结论",
+        "AI 根据最新用户指令、当前方案、确认的视觉产物、Git 差异、真实代码和本次验证判断下一步",
+        "跨会话不继承以前会话的测试结论",
     ),
     Path(".ai/skills/run-all-tests/SKILL.md"): (
         "不创建验证状态文件",
-        "不把较早会话中的“已通过”当作当前代码证据",
+        "不继承较早会话的“已通过”",
     ),
     Path(".ai/skills/code-review-and-quality/SKILL.md"): (
         "不写入工作流状态",
@@ -302,6 +357,8 @@ STATELESS_SPEC_CORE_ROOTS = (
     Path(".ai/prompts/project.md"),
     Path(".ai/skills/README.md"),
     Path(".ai/skills/flow-router"),
+    Path(".ai/skills/backend-delivery"),
+    Path(".ai/skills/frontend-delivery"),
     Path(".ai/skills/solution-generator"),
     Path(".ai/skills/acceptance-generator"),
     Path(".ai/skills/implementation-execution"),
@@ -496,12 +553,55 @@ def validate_flow_router_contract() -> list[str]:
     errors: list[str] = []
     if missing:
         errors.append(
-            "flow-router: 七维分流契约缺少必要内容 "
+            "flow-router: 薄领域入口契约缺少必要内容 "
             + ", ".join(repr(marker) for marker in missing)
         )
     if stale:
         errors.append(
-            "flow-router: 仍含旧的一票升级判据 "
+            "flow-router: 仍含应由 backend-delivery 拥有的路径判断 "
+            + ", ".join(repr(marker) for marker in stale)
+        )
+    return errors
+
+
+def validate_backend_delivery_contract() -> list[str]:
+    skill_file = SKILLS_ROOT / "backend-delivery" / "SKILL.md"
+    if not skill_file.is_file():
+        return []
+
+    text = skill_file.read_text(encoding="utf-8")
+    missing = [
+        marker for marker in BACKEND_DELIVERY_REQUIRED_MARKERS if marker not in text
+    ]
+    if not missing:
+        return []
+    return [
+        "backend-delivery: 七维判断、模型路由或回流契约缺少必要内容 "
+        + ", ".join(repr(marker) for marker in missing)
+    ]
+
+
+def validate_frontend_delivery_contract() -> list[str]:
+    skill_file = SKILLS_ROOT / "frontend-delivery" / "SKILL.md"
+    if not skill_file.is_file():
+        return []
+
+    text = skill_file.read_text(encoding="utf-8")
+    missing = [
+        marker for marker in FRONTEND_DELIVERY_REQUIRED_MARKERS if marker not in text
+    ]
+    stale = [
+        marker for marker in FRONTEND_DELIVERY_FORBIDDEN_MARKERS if marker in text
+    ]
+    errors: list[str] = []
+    if missing:
+        errors.append(
+            "frontend-delivery: 对话式可视设计契约缺少必要内容 "
+            + ", ".join(repr(marker) for marker in missing)
+        )
+    if stale:
+        errors.append(
+            "frontend-delivery: 仍存在一次性冻结设计的过期契约 "
             + ", ".join(repr(marker) for marker in stale)
         )
     return errors
@@ -538,7 +638,7 @@ def validate_contract_guard_routing() -> list[str]:
     if not missing:
         return []
     return [
-        "contract-guard: 七维分流下游契约缺少必要内容 "
+        "contract-guard: 领域或七维回流契约缺少必要内容 "
         + ", ".join(repr(marker) for marker in missing)
     ]
 
@@ -711,6 +811,8 @@ def main() -> int:
     )
     errors.extend(validate_solution_template())
     errors.extend(validate_flow_router_contract())
+    errors.extend(validate_backend_delivery_contract())
+    errors.extend(validate_frontend_delivery_contract())
     errors.extend(validate_implementation_execution_contract())
     errors.extend(validate_contract_guard_routing())
     errors.extend(validate_delivery_flow_contract())
