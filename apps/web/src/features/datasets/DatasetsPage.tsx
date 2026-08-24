@@ -286,7 +286,8 @@ export function DatasetsPage() {
   return (
     <main className="dashboard-content datasets-page">
       <WorkspacePageHero
-        eyebrow="知识储备"
+        icon={<Database />}
+        tone="success"
         title="资料库"
         description={datasets.length > 0 ? `${datasets.length} 份资料 · 按最近上传排列` : "把履历、项目记录和参考资料集中在这里，写简历时随时调用。"}
         actions={(

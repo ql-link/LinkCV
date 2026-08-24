@@ -14,7 +14,7 @@ import {
   ResumeStyleV1,
   api,
 } from "../../api/client";
-import { Avatar, AvatarFallback, AvatarImage, Button } from "@/components/ui";
+import { Avatar, AvatarFallback, AvatarImage, Button, PageLoading } from "@/components/ui";
 
 type AgentPanelProps = {
   resumeId: string;
@@ -607,7 +607,7 @@ export function AgentPanel({
       {conversationView === "history" ? (
         <section className="agent-conversation-history" aria-label="历史对话">
           <header><strong>历史对话</strong><small>当前简历 · 最近 50 条</small></header>
-          {historyLoading && <p className="agent-empty"><LoaderCircle aria-hidden="true" className="agent-spinner" />正在读取历史对话…</p>}
+          {historyLoading && <PageLoading label="正在读取历史对话…" scope="panel" />}
           {historyError && <div className="agent-error" role="alert">{historyError}<button type="button" onClick={() => void openHistory()}>重试</button></div>}
           {!historyLoading && !historyError && sessions.length === 0 && <p className="agent-empty">暂无历史对话。发送第一条消息后会显示在这里。</p>}
           {!historyLoading && !historyError && sessions.length > 0 && (
@@ -628,7 +628,7 @@ export function AgentPanel({
         </section>
       ) : <>
       <div className="agent-message-list" ref={messageListRef} aria-live="polite">
-        {loading && <p className="agent-empty"><LoaderCircle aria-hidden="true" className="agent-spinner" />正在读取对话…</p>}
+        {loading && <PageLoading label="正在读取对话…" scope="panel" />}
         {!loading && messages.length === 0 && (
           <div className="agent-welcome-message">
             <strong>你好！我是你的 AI 简历助手</strong>

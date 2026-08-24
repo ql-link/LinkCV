@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BriefcaseBusiness, Download, MapPin, Plus, Trash2, WalletCards } from "lucide-react";
-import { api, type JobDescriptionDraft, type JobDescriptionSummary } from "../../api/client";
+import { api, type JobApplicationSummary, type JobDescriptionDraft, type JobDescriptionSummary } from "../../api/client";
 import { Button, ConfirmDialog, ExpandableSearch, IconButton, PageLoading } from "@/components/ui";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
-import { jobDetailPath, navigateTo } from "../../routing";
+import { careerApplicationPath, jobDetailPath, navigateTo, startCareerApplicationPath } from "../../routing";
 import { PluginInstallDialog } from "./PluginInstallDialog";
 import { JobFormPage } from "./JobFormPage";
 import { JobCreateMethodDialog } from "./JobCreateMethodDialog";
 import { JobSmartImportDialog } from "./JobSmartImportDialog";
 import { jobFormFromDraft, type JobFormState } from "./jobFormModel";
+import { activeApplicationForJob, applicationOutcome, applicationsForJob, listAllJobApplications } from "./jobApplications";
 import "./jobs.css";
 
 export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?: boolean }) {
   const [keyword, setKeyword] = useState("");
   const [items, setItems] = useState<JobDescriptionSummary[]>([]);
+  const [applications, setApplications] = useState<JobApplicationSummary[]>([]);
+  const [applicationsLoaded, setApplicationsLoaded] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
@@ -39,12 +42,30 @@ export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?:
     }
   }, [createDialogOpen]);
 
-  const closeCreate = () => navigateTo("/jobs", { replace: true });
+  const closeCreate = () => navigateTo("/career/jobs", { replace: true });
   const useDraft = (draft: JobDescriptionDraft, warnings: string[]) => {
     setInitialJobForm(jobFormFromDraft(draft));
     setDraftWarnings(warnings);
     setCreateStage("form");
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    void listAllJobApplications()
+      .then((result) => {
+        if (!cancelled) {
+          setApplications(result);
+          setApplicationsLoaded(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setApplications([]);
+          setApplicationsLoaded(false);
+        }
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,7 +81,7 @@ export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?:
           setNextCursor(result.next_cursor);
         })
         .catch(() => {
-          if (!cancelled) setError("无法加载 JD 列表，请稍后重试。");
+          if (!cancelled) setError("无法加载岗位列表，请稍后重试。");
         })
         .finally(() => {
           if (!cancelled) {
@@ -131,7 +152,7 @@ export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?:
     <main className="dashboard-content job-center-content">
       <WorkspacePageHero
         eyebrow="岗位资料库"
-        title="JD 中心"
+        title="岗位库"
         description="集中保存岗位要求和公司信息，方便随时搜索、查看与编辑。"
         actions={(
           <>
@@ -143,30 +164,33 @@ export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?:
               placeholder="搜索职位、公司或技能…"
             />
             <Button variant="ghost" icon={<Download size={15} />} onClick={() => setShowPluginInstall(true)}>安装采集插件</Button>
-            <Button variant="outline" icon={<Plus size={15} />} onClick={() => navigateTo("/jobs/new")}>新建 JD</Button>
+            <Button variant="outline" icon={<Plus size={15} />} onClick={() => navigateTo("/career/jobs/new")}>新建岗位</Button>
           </>
         )}
       />
 
       {loading && !initialized ? (
-        <PageLoading label="正在加载 JD…" />
+        <PageLoading label="正在加载岗位…" />
       ) : (
         <div className="job-center-body">
         {error && <div className="job-error" role="alert">{error}</div>}
 
         {loading ? (
-          <PageLoading label="正在更新 JD…" />
+          <PageLoading label="正在更新岗位…" />
         ) : items.length === 0 ? (
           <div className="job-empty-state">
             <BriefcaseBusiness size={44} strokeWidth={1.2} />
-            <h2>{keyword ? "没有匹配的 JD" : "还没有 JD"}</h2>
+            <h2>{keyword ? "没有匹配的岗位" : "还没有岗位"}</h2>
             <p>{keyword ? "换个关键词试试。" : "手工填写一条结构化岗位信息，后续可继续编辑和整理。"}</p>
-            {!keyword && <Button icon={<Plus size={15} />} onClick={() => navigateTo("/jobs/new")}>创建第一条 JD</Button>}
+            {!keyword && <Button icon={<Plus size={15} />} onClick={() => navigateTo("/career/jobs/new")}>创建第一个岗位</Button>}
           </div>
         ) : (
           <div className="job-card-list">
-            {items.map((job) => (
-              <article key={job.id} className="job-card">
+            {items.map((job) => {
+              const history = applicationsForJob(applications, job.id);
+              const activeApplication = activeApplicationForJob(applications, job.id);
+              const latestApplication = history[0] ?? null;
+              return <article key={job.id} className="job-card">
                 <button className="job-card-main" type="button" onClick={() => navigateTo(jobDetailPath(job.id))}>
                   <div className="job-card-heading">
                     <h2>{job.job_title}</h2>
@@ -180,17 +204,25 @@ export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?:
                   </div>
                 </button>
                 <div className="job-card-side">
-                  <span className="job-card-updated">更新于 {formatTime(job.updated_at)}</span>
-                  <IconButton className="job-card-delete" disabled={busyId !== null} label={`删除 ${job.job_title}`} onClick={() => setPendingDelete(job)}><Trash2 size={15} /></IconButton>
+                  <span className={`job-status-badge${!applicationsLoaded ? " is-archived" : ""}`}>{!applicationsLoaded ? "进程状态不可用" : activeApplication ? activeApplication.current_stage_label : latestApplication ? applicationOutcome(latestApplication) : "仅收藏"}</span>
+                  <div className="job-card-actions">
+                    {applicationsLoaded && (activeApplication ? (
+                      <Button size="sm" variant="outline" onClick={() => navigateTo(careerApplicationPath(activeApplication.id))}>查看进程</Button>
+                    ) : (
+                      <Button size="sm" variant="outline" onClick={() => navigateTo(startCareerApplicationPath(job.id))}>{latestApplication ? "再次求职" : "开始求职"}</Button>
+                    ))}
+                    <span className="job-card-updated">更新于 {formatTime(job.updated_at)}</span>
+                    <IconButton className="job-card-delete" disabled={busyId !== null} label={`删除 ${job.job_title}`} onClick={() => setPendingDelete(job)}><Trash2 size={15} /></IconButton>
+                  </div>
                 </div>
-              </article>
-            ))}
+              </article>;
+            })}
             {nextCursor && (
               <div ref={loadMoreSentinelRef} className="job-infinite-scroll-sentinel" aria-live="polite">
-                {loadingMore && <span role="status">正在加载更多 JD…</span>}
+                {loadingMore && <span role="status">正在加载更多岗位…</span>}
                 {loadMoreError && (
                   <div className="job-infinite-scroll-error">
-                    <span>后续 JD 加载失败。</span>
+                    <span>后续岗位加载失败。</span>
                     <Button variant="secondary" onClick={() => void loadMore()}>重试</Button>
                   </div>
                 )}
