@@ -24,7 +24,6 @@ BOSS_PERMISSIONS = {
     "https://m.zhipin.com/*",
 }
 VERSION_PATTERN = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
-GUIDE_NAME = "安装与使用说明.html"
 MAX_FILES = 512
 MAX_FILE_BYTES = 20 * 1024 * 1024
 MAX_TOTAL_BYTES = 50 * 1024 * 1024
@@ -48,7 +47,7 @@ def normalize_origin(value: str) -> str:
     return f"{parsed.scheme}://{authority}"
 
 
-def validate_zip(path: Path, *, version: str, origin: str) -> None:
+def validate_zip(path: Path, *, version: str, origin: str, environment: str) -> None:
     with zipfile.ZipFile(path) as archive:
         infos = archive.infolist()
         if not infos or len(infos) > MAX_FILES:
@@ -75,14 +74,21 @@ def validate_zip(path: Path, *, version: str, origin: str) -> None:
             total += info.file_size
         if total > MAX_TOTAL_BYTES:
             raise ValueError("extension ZIP expands beyond the allowed size")
-        if "manifest.json" not in names or GUIDE_NAME not in names:
-            raise ValueError("extension ZIP must contain manifest.json and the offline guide at its root")
+        if "manifest.json" not in names:
+            raise ValueError("extension ZIP must contain manifest.json at its root")
         manifest = json.loads(archive.read("manifest.json"))
 
     if manifest.get("manifest_version") != 3:
         raise ValueError("extension manifest_version must be 3")
     if manifest.get("version") != version:
         raise ValueError("extension manifest version does not match package.json")
+    expected_name = (
+        "LinkResume 岗位采集（开发版）"
+        if environment == "development"
+        else "LinkResume 岗位采集"
+    )
+    if manifest.get("name") != expected_name:
+        raise ValueError("extension name does not match the target environment")
     expected_permissions = BOSS_PERMISSIONS | {f"{origin}/*"}
     if set(manifest.get("host_permissions", [])) != expected_permissions:
         raise ValueError("extension host_permissions do not exactly match the target environment")
@@ -99,6 +105,7 @@ def locate_wxt_zip() -> Path:
 def build_environment(environment: str, origin: str, version: str, destination: Path) -> tuple[str, str]:
     env = os.environ.copy()
     env["WXT_RELEASE_BUILD"] = "1"
+    env["WXT_PUBLIC_LINKCV_CHANNEL"] = environment
     env["WXT_PUBLIC_LINKCV_ORIGIN"] = origin
     subprocess.run(
         ["npm", "--prefix", str(EXTENSION_ROOT), "run", "zip:release"],
@@ -107,10 +114,10 @@ def build_environment(environment: str, origin: str, version: str, destination: 
         check=True,
     )
     source = locate_wxt_zip()
-    file_name = f"linkcv-job-capture-{environment}-v{version}.zip"
+    file_name = f"linkresume-job-capture-{environment}-v{version}.zip"
     target = destination / file_name
     shutil.copyfile(source, target)
-    validate_zip(target, version=version, origin=origin)
+    validate_zip(target, version=version, origin=origin, environment=environment)
     digest = hashlib.sha256(target.read_bytes()).hexdigest()
     return file_name, digest
 

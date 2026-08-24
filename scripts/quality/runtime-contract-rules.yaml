@@ -86,22 +86,6 @@ contracts:
         pattern: 'linkcv-worker:[\s\S]*LOG_DIRECTORY: /app/logs/worker[\s\S]*linkcv-production-logs:/app/logs'
         message: Production Worker 必须使用共享卷中的独立日志子目录
 
-  - id: plugin-release-origin-contract
-    description: FastAPI 和三套环境声明当前环境允许插件访问的精确 LinkCV Origin
-    assertions:
-      - path: apps/backend/src/linkcv/core/config.py
-        pattern: 'default="http://127\.0\.0\.1:5173",[\s\S]*alias="PLUGIN_RELEASE_ORIGIN"'
-        message: FastAPI 必须保留本地插件发布 Origin 默认值
-      - path: .env.example
-        pattern: '(?m)^PLUGIN_RELEASE_ORIGIN=http://127\.0\.0\.1:5173$'
-        message: 本地模板必须声明插件发布 Origin
-      - path: .env.development
-        pattern: '(?m)^PLUGIN_RELEASE_ORIGIN=http://127\.0\.0\.1:5173$'
-        message: Dev 基础配置必须声明可由私密环境文件覆盖的插件发布 Origin
-      - path: .env.production
-        pattern: '(?m)^PLUGIN_RELEASE_ORIGIN=$'
-        message: Production 基础配置不得提交实际公开 Origin，必须由环境覆盖提供
-
   - id: llm-credential-encryption-key-ring
     description: 三套环境都声明后端模型凭据密钥环且不把真实密钥提交到仓库
     assertions:

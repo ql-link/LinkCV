@@ -45,9 +45,8 @@ def _close_response(response: Any) -> None:
 
 
 class PluginReleaseService:
-    def __init__(self, storage: Any, *, expected_origin: str) -> None:
+    def __init__(self, storage: Any) -> None:
         self.storage = storage
-        self.expected_origin = expected_origin
         self._publish_lock = threading.Lock()
 
     @property
@@ -185,7 +184,7 @@ class PluginReleaseService:
         return cleanup_pending
 
     def publish(self, data: bytes) -> PluginReleasePublishResult:
-        package = validate_plugin_package(data, self.expected_origin)
+        package = validate_plugin_package(data)
         with self._publish_lock:
             current = self._read_pointer()
             if current is not None:

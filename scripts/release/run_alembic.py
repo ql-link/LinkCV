@@ -54,6 +54,11 @@ REVISION_COLUMN_MARKERS = {
         "agent_messages": frozenset({"message_type", "metadata_json"}),
     },
 }
+REVISION_REMOVED_COLUMN_MARKERS = {
+    "0034": {
+        "job_descriptions": frozenset({"archived_at"}),
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -143,6 +148,26 @@ def validate_schema_revision_alignment(
                 drift.append(
                     f"{revision} columns exist before revision on {table_name}: "
                     f"{', '.join(sorted(present))}"
+                )
+
+    for revision, table_markers in REVISION_REMOVED_COLUMN_MARKERS.items():
+        for table_name, removed_columns in table_markers.items():
+            if table_name not in existing_tables:
+                continue
+            existing_columns = {
+                column["name"] for column in inspector.get_columns(table_name)
+            }
+            present = removed_columns & existing_columns
+            missing = removed_columns - existing_columns
+            if revision in applied and present:
+                drift.append(
+                    f"{revision} removed columns still exist on {table_name}: "
+                    f"{', '.join(sorted(present))}"
+                )
+            elif revision not in applied and missing:
+                drift.append(
+                    f"{revision} columns removed before revision on {table_name}: "
+                    f"{', '.join(sorted(missing))}"
                 )
 
     if drift:

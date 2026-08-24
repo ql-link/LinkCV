@@ -37,7 +37,7 @@ class GatewayError(Exception):
     def __init__(
         self,
         *,
-        code: Literal["LLM_UNAVAILABLE", "LLM_REQUEST_REJECTED"],
+        code: Literal["LLM_UNAVAILABLE", "LLM_REQUEST_REJECTED", "LLM_TIMEOUT"],
         may_have_reached_provider: bool,
         usage: GatewayUsage | None = None,
         input_price_per_million: Decimal | None = None,
@@ -126,14 +126,13 @@ def _gateway_error(
             may_have_reached_provider=False,
             **details,
         )
-    if isinstance(
-        error,
-        (
-            litellm.Timeout,
-            litellm.ServiceUnavailableError,
-            litellm.InternalServerError,
-        ),
-    ):
+    if isinstance(error, litellm.Timeout):
+        return GatewayError(
+            code="LLM_TIMEOUT",
+            may_have_reached_provider=True,
+            **details,
+        )
+    if isinstance(error, (litellm.ServiceUnavailableError, litellm.InternalServerError)):
         return GatewayError(
             code="LLM_UNAVAILABLE",
             may_have_reached_provider=True,

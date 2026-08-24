@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { Archive, BriefcaseBusiness, Download, MapPin, Plus, RotateCcw, Trash2 } from "lucide-react";
-import { api, ApiRequestError, type JobDescriptionSummary } from "../../api/client";
-import { Button, ConfirmDialog, ExpandableSearch, PageLoading } from "@/components/ui";
+import { BriefcaseBusiness, Download, MapPin, Plus, Trash2, WalletCards } from "lucide-react";
+import { api, type JobDescriptionDraft, type JobDescriptionSummary } from "../../api/client";
+import { Button, ConfirmDialog, ExpandableSearch, IconButton, PageLoading } from "@/components/ui";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { jobDetailPath, navigateTo } from "../../routing";
 import { PluginInstallDialog } from "./PluginInstallDialog";
+import { JobFormPage } from "./JobFormPage";
+import { JobCreateMethodDialog } from "./JobCreateMethodDialog";
+import { JobSmartImportDialog } from "./JobSmartImportDialog";
+import { jobFormFromDraft, type JobFormState } from "./jobFormModel";
 import "./jobs.css";
 
-type JobScope = "archived" | "all";
-
-export function JobCenterPage() {
-  const [scope, setScope] = useState<JobScope>("all");
+export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?: boolean }) {
   const [keyword, setKeyword] = useState("");
   const [items, setItems] = useState<JobDescriptionSummary[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -21,8 +22,26 @@ export function JobCenterPage() {
   const [pendingDelete, setPendingDelete] = useState<JobDescriptionSummary | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [showPluginInstall, setShowPluginInstall] = useState(false);
-  const activeQueryRef = useRef({ scope, keyword: keyword.trim() });
-  activeQueryRef.current = { scope, keyword: keyword.trim() };
+  const [createStage, setCreateStage] = useState<"method" | "smart" | "form">("method");
+  const [initialJobForm, setInitialJobForm] = useState<JobFormState | undefined>();
+  const [draftWarnings, setDraftWarnings] = useState<string[]>([]);
+  const activeKeywordRef = useRef(keyword.trim());
+  activeKeywordRef.current = keyword.trim();
+
+  useEffect(() => {
+    if (createDialogOpen) {
+      setCreateStage("method");
+      setInitialJobForm(undefined);
+      setDraftWarnings([]);
+    }
+  }, [createDialogOpen]);
+
+  const closeCreate = () => navigateTo("/jobs", { replace: true });
+  const useDraft = (draft: JobDescriptionDraft, warnings: string[]) => {
+    setInitialJobForm(jobFormFromDraft(draft));
+    setDraftWarnings(warnings);
+    setCreateStage("form");
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -30,7 +49,7 @@ export function JobCenterPage() {
     setError(null);
     setNextCursor(null);
     const timer = window.setTimeout(() => {
-      void api.listJobDescriptions({ scope, keyword: keyword.trim() || undefined })
+      void api.listJobDescriptions({ keyword: keyword.trim() || undefined })
         .then((result) => {
           if (cancelled) return;
           setItems(result.items);
@@ -50,52 +69,28 @@ export function JobCenterPage() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [keyword, scope]);
+  }, [keyword]);
 
   const loadMore = async () => {
     if (!nextCursor || loadingMore) return;
-    const requestQuery = { scope, keyword: keyword.trim(), cursor: nextCursor };
+    const requestQuery = { keyword: keyword.trim(), cursor: nextCursor };
     setLoadingMore(true);
     try {
       const result = await api.listJobDescriptions({
-        scope: requestQuery.scope,
         keyword: requestQuery.keyword || undefined,
         cursor: requestQuery.cursor,
       });
       if (
-        activeQueryRef.current.scope !== requestQuery.scope
-        || activeQueryRef.current.keyword !== requestQuery.keyword
+        activeKeywordRef.current !== requestQuery.keyword
       ) return;
       setItems((current) => [...current, ...result.items]);
       setNextCursor(result.next_cursor);
     } catch {
       if (
-        activeQueryRef.current.scope === requestQuery.scope
-        && activeQueryRef.current.keyword === requestQuery.keyword
+        activeKeywordRef.current === requestQuery.keyword
       ) setError("无法加载更多 JD，请稍后重试。");
     } finally {
       setLoadingMore(false);
-    }
-  };
-
-  const changeArchived = async (job: JobDescriptionSummary) => {
-    if (busyId) return;
-    setBusyId(job.id);
-    setError(null);
-    try {
-      const result = job.archived_at
-        ? await api.restoreJobDescription(job.id, job.lock_version)
-        : await api.archiveJobDescription(job.id, job.lock_version);
-      const updated = result.job_description;
-      if (scope === "all") {
-        setItems((current) => current.map((item) => item.id === job.id ? updated : item));
-      } else {
-        setItems((current) => current.filter((item) => item.id !== job.id));
-      }
-    } catch {
-      setError("岗位状态已经变化，请刷新列表后重试。");
-    } finally {
-      setBusyId(null);
     }
   };
 
@@ -107,8 +102,8 @@ export function JobCenterPage() {
       await api.deleteJobDescription(pendingDelete.id);
       setItems((current) => current.filter((item) => item.id !== pendingDelete.id));
       setPendingDelete(null);
-    } catch (deleteError) {
-      setError(deleteErrorMessage(deleteError));
+    } catch {
+      setError("删除失败，请稍后重试。");
       setPendingDelete(null);
     } finally {
       setBusyId(null);
@@ -120,7 +115,7 @@ export function JobCenterPage() {
       <WorkspacePageHero
         eyebrow="岗位资料库"
         title="JD 中心"
-        description="把岗位身份和下一步判断放在第一层，来源与更新时间退到辅助信息。"
+        description="集中保存岗位要求和公司信息，方便随时搜索、查看与编辑。"
         actions={(
           <>
             <ExpandableSearch
@@ -140,27 +135,6 @@ export function JobCenterPage() {
         <PageLoading label="正在加载 JD…" />
       ) : (
         <div className="job-center-body">
-          <div className="job-toolbar">
-            <div className="job-filter-row">
-              <div className="job-scope-tabs" aria-label="归档范围">
-                {(["all", "archived"] as const).map((value) => (
-                  <Button
-                    key={value}
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    aria-pressed={scope === value}
-                    className={scope === value ? "is-active" : ""}
-                    onClick={() => setScope(value)}
-                  >
-                    {value === "archived" ? "已归档" : "全部"}
-                  </Button>
-                ))}
-              </div>
-              <span className="job-sort-note">按最近更新</span>
-            </div>
-          </div>
-
         {error && <div className="job-error" role="alert">{error}</div>}
 
         {loading ? (
@@ -168,29 +142,29 @@ export function JobCenterPage() {
         ) : items.length === 0 ? (
           <div className="job-empty-state">
             <BriefcaseBusiness size={44} strokeWidth={1.2} />
-            <h2>{keyword ? "没有匹配的 JD" : scope === "archived" ? "没有已归档 JD" : "还没有 JD"}</h2>
+            <h2>{keyword ? "没有匹配的 JD" : "还没有 JD"}</h2>
             <p>{keyword ? "换个关键词试试。" : "手工填写一条结构化岗位信息，后续可继续编辑和整理。"}</p>
-            {!keyword && scope !== "archived" && <Button icon={<Plus size={15} />} onClick={() => navigateTo("/jobs/new")}>创建第一条 JD</Button>}
+            {!keyword && <Button icon={<Plus size={15} />} onClick={() => navigateTo("/jobs/new")}>创建第一条 JD</Button>}
           </div>
         ) : (
           <div className="job-card-list">
             {items.map((job) => (
               <article key={job.id} className="job-card">
                 <button className="job-card-main" type="button" onClick={() => navigateTo(jobDetailPath(job.id))}>
-                  <div className="job-card-heading"><h2>{job.job_title}</h2><p>{job.company_name}</p></div>
-                  <div className="job-card-facts">{job.work_city && <span><MapPin size={13} />{job.work_city}</span>}{job.salary_text && <span>{job.salary_text}</span>}</div>
-                  {job.skills.length > 0 && <div className="job-skill-row">{job.skills.slice(0, 6).map((skill, index) => <span key={skill} className={index === 0 ? "is-primary" : ""}>{skill}</span>)}</div>}
+                  <div className="job-card-heading">
+                    <h2>{job.job_title}</h2>
+                    <span className="job-card-heading-separator" aria-hidden="true">·</span>
+                    <p>{job.company_name}</p>
+                  </div>
+                  <div className="job-card-meta">
+                    {job.work_city && <span className="job-card-meta-item"><MapPin size={13} aria-hidden="true" />{job.work_city}</span>}
+                    {job.salary_text && <span className="job-card-meta-item"><WalletCards size={13} aria-hidden="true" />{job.salary_text}</span>}
+                    {job.skills.length > 0 && <span className="job-card-skills">{job.skills.slice(0, 6).join("、")}</span>}
+                  </div>
                 </button>
                 <div className="job-card-side">
-                  <span className={`job-status-badge${job.archived_at ? " is-archived" : ""}`}>{job.archived_at ? "已归档" : "活动"}</span>
-                  <div className="job-card-source">
-                    {job.source_site && <span>{job.source_site}</span>}
-                    <span>更新于 {formatTime(job.updated_at)}</span>
-                  </div>
-                  <div className="job-card-actions">
-                    <button type="button" disabled={busyId !== null} aria-label={`${job.archived_at ? "恢复" : "归档"} ${job.job_title}`} onClick={() => void changeArchived(job)}>{job.archived_at ? <RotateCcw size={15} /> : <Archive size={15} />}</button>
-                    {job.archived_at && <button type="button" disabled={busyId !== null} aria-label={`删除 ${job.job_title}`} onClick={() => setPendingDelete(job)}><Trash2 size={15} /></button>}
-                  </div>
+                  <span className="job-card-updated">更新于 {formatTime(job.updated_at)}</span>
+                  <IconButton className="job-card-delete" disabled={busyId !== null} label={`删除 ${job.job_title}`} onClick={() => setPendingDelete(job)}><Trash2 size={15} /></IconButton>
                 </div>
               </article>
             ))}
@@ -201,17 +175,33 @@ export function JobCenterPage() {
       )}
       {pendingDelete && <ConfirmDialog kind="delete" title={`永久删除「${pendingDelete.job_title}」？`} description="删除后无法恢复，并会释放该岗位的来源标识。" confirmLabel="永久删除" busyLabel="正在删除…" busy={busyId === pendingDelete.id} onCancel={() => setPendingDelete(null)} onConfirm={deleteJob} />}
       {showPluginInstall && <PluginInstallDialog onClose={() => setShowPluginInstall(false)} />}
+      {createDialogOpen && createStage === "method" && (
+        <JobCreateMethodDialog
+          onClose={closeCreate}
+          onManual={() => setCreateStage("form")}
+          onSmartImport={() => setCreateStage("smart")}
+        />
+      )}
+      {createDialogOpen && createStage === "smart" && (
+        <JobSmartImportDialog
+          onBack={() => setCreateStage("method")}
+          onClose={closeCreate}
+          onParsed={useDraft}
+        />
+      )}
+      {createDialogOpen && createStage === "form" && (
+        <JobFormPage
+          mode="create"
+          presentation="dialog"
+          initialForm={initialJobForm}
+          initialWarnings={draftWarnings}
+          onClose={closeCreate}
+        />
+      )}
     </main>
   );
 }
 
 function formatTime(value: string): string {
   return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
-}
-
-function deleteErrorMessage(error: unknown): string {
-  if (error instanceof ApiRequestError && error.message === "JD_DELETE_REQUIRES_ARCHIVE") {
-    return "岗位已经恢复为活动状态，请刷新列表后重试。";
-  }
-  return "删除失败，请稍后重试。";
 }

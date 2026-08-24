@@ -187,7 +187,7 @@ export const en: Translations = {
       { num: '01', title: 'A4 Paper Editing', desc: 'Edit text, images, and left-right layouts directly on an A4 page that matches the final output — what you see is what you get' },
       { num: '02', title: 'Version Control', desc: 'Auto-save current changes, manually save named versions, restore any previous content at any time' },
       { num: '03', title: 'PDF Export', desc: 'Standard A4 pagination or Smart One-Page mode — export high-quality PDFs ready for submission' },
-      { num: '04', title: 'JD Center', desc: 'Record, search, archive, and organize job listings. Compare resumes with JDs in the same workspace' },
+      { num: '04', title: 'JD Center', desc: 'Record, search, and edit job listings. Compare resumes with JDs in the same workspace' },
       { num: '05', title: 'Chrome Extension', desc: 'Read the currently open BOSS Zhipin job listing and import it into LinkCV with one click after your confirmation' },
     ],
     manifesto: ['CONTENT FIRST.', 'LAYOUT UNDER CONTROL.', 'EVERY CHANGE RECOVERABLE.'],
@@ -234,11 +234,11 @@ export const en: Translations = {
     eyebrow: 'JD Center + Chrome Extension',
     title1: 'Job listings,',
     title2: 'kept alongside your resume',
-    description: 'When you find a promising position, use the Chrome extension to capture the currently open BOSS Zhipin listing into JD Center. Compare requirements while writing your resume, mark status after applying — all without leaving the workspace',
+    description: 'When you find a promising position, use the Chrome extension to capture the currently open BOSS Zhipin listing into JD Center. Compare requirements while writing your resume without leaving the workspace',
     points: [
       { title: 'Import on Confirmation', desc: 'The extension only reads the BOSS Zhipin page you currently have open. Nothing is written until you click confirm — no background scraping' },
-      { title: 'Searchable & Organizable', desc: 'Search by position, company, or keyword. Tag with status labels as you go' },
-      { title: 'Archive, Not Delete', desc: 'Archive unsuitable positions to keep the list clean. Records remain searchable' },
+      { title: 'Searchable & Editable', desc: 'Search by position, company, or keyword, and correct the listing whenever needed' },
+      { title: 'Job Data Stays Focused', desc: 'JD Center stores job information without mixing in application or interview progress' },
     ],
   },
 
@@ -276,7 +276,7 @@ export const en: Translations = {
       { q: 'What data does the Chrome extension collect?', a: 'The extension only reads the BOSS Zhipin job listing page you currently have open, and only imports into LinkCV after you manually click confirm. It does not scrape in bulk in the background, nor does it apply on your behalf' },
       { q: 'How does Smart One-Page work?', a: 'When exporting to PDF, choose Smart One-Page mode. The system automatically adjusts layout density to fit content into one A4 page. For multi-page needs, use Standard A4 Pagination mode instead' },
       { q: 'What if I accidentally delete or mess up content?', a: 'LinkCV auto-saves your current changes. You can also proactively save named versions. All historical versions are viewable and restorable with one click' },
-      { q: 'How many job listings can JD Center manage?', a: "There's no hard limit. Listings can be searched, tagged, and marked with application status. Unsuitable ones can be archived — records remain searchable at any time" },
+      { q: 'How many job listings can JD Center manage?', a: "There's no hard limit. Listings can be searched, viewed, and edited, then permanently deleted after confirmation when no longer needed" },
     ],
   },
 

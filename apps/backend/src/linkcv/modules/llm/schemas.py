@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Generic, Literal, TypeVar
+from typing import Annotated, Generic, Literal, TypeVar
 
 from pydantic import (
     BaseModel,
@@ -31,14 +31,51 @@ class AdminWriteModel(CamelModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
+class ChatTextContentPart(BaseModel):
+    type: Literal["text"] = "text"
+    text: str
+
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("text content must not be empty")
+        return value
+
+
+class ChatImageUrl(BaseModel):
+    url: str
+    detail: Literal["auto", "low", "high"] = "auto"
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str) -> str:
+        if not value.startswith(("data:image/png;base64,", "data:image/jpeg;base64,", "data:image/webp;base64,")):
+            raise ValueError("unsupported image URL")
+        return value
+
+
+class ChatImageContentPart(BaseModel):
+    type: Literal["image_url"] = "image_url"
+    image_url: ChatImageUrl
+
+
+ChatContentPart = Annotated[
+    ChatTextContentPart | ChatImageContentPart,
+    Field(discriminator="type"),
+]
+
+
 class ChatMessage(BaseModel):
     role: Literal["system", "user", "assistant"]
-    content: str
+    content: str | list[ChatContentPart]
 
     @field_validator("content")
     @classmethod
-    def validate_content(cls, value: str) -> str:
-        if not value.strip():
+    def validate_content(cls, value: str | list[ChatContentPart]) -> str | list[ChatContentPart]:
+        if isinstance(value, str) and not value.strip():
+            raise ValueError("message content must not be empty")
+        if isinstance(value, list) and not value:
             raise ValueError("message content must not be empty")
         return value
 
@@ -176,7 +213,9 @@ class ModelConfigRecord(CamelModel):
         return str(value)
 
 
-ModelCapability = Literal["chat", "resume_structuring", "pi_agent"]
+ModelCapability = Literal[
+    "chat", "resume_structuring", "pi_agent", "job_image_structuring"
+]
 
 
 class CapabilityModelConfigRecord(CamelModel):

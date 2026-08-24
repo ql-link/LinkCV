@@ -33,7 +33,7 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0033"
+EXPECTED_HEAD = "0035"
 
 
 def migration_test_url() -> str:
@@ -928,6 +928,83 @@ def test_interview_center_forward_migration() -> None:
         engine.dispose()
 
 
+def test_job_description_archiving_removal_forward_migration() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0033")
+
+    engine = create_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            user_id = connection.execute(
+                text(
+                    "INSERT INTO users (email, password_hash, nickname) "
+                    "VALUES ('jd-archive-migration@example.invalid', '$2b$12$fictional', '张三')"
+                )
+            ).lastrowid
+            kept_job_id = connection.execute(
+                text(
+                    "INSERT INTO job_descriptions "
+                    "(user_id, job_title, company_name, description, skills, source_type) "
+                    "VALUES (:user_id, '保留岗位', '示例科技', '保留正文', JSON_ARRAY(), 'manual')"
+                ),
+                {"user_id": user_id},
+            ).lastrowid
+            archived_job_id = connection.execute(
+                text(
+                    "INSERT INTO job_descriptions "
+                    "(user_id, job_title, company_name, description, skills, source_type, archived_at) "
+                    "VALUES (:user_id, '归档岗位', '示例科技', '归档正文', JSON_ARRAY(), "
+                    "'manual', UTC_TIMESTAMP(6))"
+                ),
+                {"user_id": user_id},
+            ).lastrowid
+            application_id = connection.execute(
+                text(
+                    "INSERT INTO job_applications "
+                    "(user_id, job_description_id, company_name_snapshot, job_title_snapshot, "
+                    "job_snapshot, calendar_color, current_stage_type, current_round_no, "
+                    "current_stage_label, stage_state) "
+                    "VALUES (:user_id, :job_id, '示例科技', '归档岗位', "
+                    "JSON_OBJECT('schema_version', 1, 'description', '归档正文'), "
+                    "'blue', 'interview', 1, '一面', 'awaiting_schedule')"
+                ),
+                {"user_id": user_id, "job_id": archived_job_id},
+            ).lastrowid
+
+        run_alembic(database_url, "upgrade", "0034")
+
+        inspector = inspect(engine)
+        assert "archived_at" not in {
+            column["name"] for column in inspector.get_columns("job_descriptions")
+        }
+        assert "idx_job_descriptions_user_archive_updated_id" not in {
+            index["name"] for index in inspector.get_indexes("job_descriptions")
+        }
+        with engine.connect() as connection:
+            assert connection.scalar(
+                text("SELECT COUNT(*) FROM job_descriptions WHERE id = :id"),
+                {"id": kept_job_id},
+            ) == 1
+            assert connection.scalar(
+                text("SELECT COUNT(*) FROM job_descriptions WHERE id = :id"),
+                {"id": archived_job_id},
+            ) == 0
+            application = connection.execute(
+                text(
+                    "SELECT job_description_id, job_title_snapshot, "
+                    "JSON_UNQUOTE(JSON_EXTRACT(job_snapshot, '$.description')) AS description "
+                    "FROM job_applications WHERE id = :id"
+                ),
+                {"id": application_id},
+            ).mappings().one()
+            assert application["job_description_id"] is None
+            assert application["job_title_snapshot"] == "归档岗位"
+            assert application["description"] == "归档正文"
+    finally:
+        engine.dispose()
+
+
 def test_document_parse_task_forward_migration_preserves_import_data() -> None:
     database_url = migration_test_url()
     engine = create_engine(database_url)
@@ -1457,7 +1534,6 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
         "source_url_hash",
         "imported_at",
         "notes",
-        "archived_at",
         "lock_version",
         "created_at",
         "updated_at",
@@ -1507,12 +1583,6 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
         index["name"]: index["column_names"]
         for index in inspector.get_indexes("job_descriptions")
     }
-    assert indexes["idx_job_descriptions_user_archive_updated_id"] == [
-        "user_id",
-        "archived_at",
-        "updated_at",
-        "id",
-    ]
     assert indexes["idx_job_descriptions_user_updated_id"] == [
         "user_id",
         "updated_at",
@@ -1613,6 +1683,7 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
 
     assert "job_descriptions" in inspect(engine).get_table_names()
     with engine.begin() as connection:
+        connection.execute(text("DELETE FROM job_descriptions"))
         connection.execute(text("DELETE FROM users"))
     reset_test_database_to_base(database_url)
     engine.dispose()

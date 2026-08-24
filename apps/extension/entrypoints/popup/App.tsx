@@ -20,6 +20,9 @@ import { isBossJobUrl } from "../../src/extractor/boss";
 
 type Phase = "loading" | "unavailable" | "login" | "capture-error" | "preview" | "submitting" | "duplicate" | "success";
 
+const CONNECTING_MESSAGE = "正在连接 LinkResume 并读取当前页面…";
+const isDevelopmentBuild = import.meta.env.WXT_PUBLIC_LINKCV_CHANNEL !== "production";
+
 interface ReadyCapture {
   sourceUrl: string;
   capture: BossJobCapture;
@@ -32,7 +35,7 @@ export default function App() {
   const [ready, setReady] = useState<ReadyCapture | null>(null);
   const [form, setForm] = useState<BossJobCapture | null>(null);
   const [skillsText, setSkillsText] = useState("");
-  const [message, setMessage] = useState("正在连接 LinkCV 并读取当前页面…");
+  const [message, setMessage] = useState(CONNECTING_MESSAGE);
   const [duplicate, setDuplicate] = useState<DuplicateDetails | null>(null);
   const [created, setCreated] = useState<JobRecord | null>(null);
 
@@ -42,7 +45,7 @@ export default function App() {
 
   async function initialize() {
     setPhase("loading");
-    setMessage("正在连接 LinkCV 并读取当前页面…");
+    setMessage(CONNECTING_MESSAGE);
     try {
       const [nextConnection, capture] = await Promise.all([
         connectToLinkCV(),
@@ -51,12 +54,12 @@ export default function App() {
       setConnection(nextConnection);
       if (!nextConnection) {
         setPhase("unavailable");
-        setMessage("没有连接到本地 LinkCV。请先启动 npm run dev。");
+        setMessage("无法连接 LinkResume，请确认对应环境已经启动。");
         return;
       }
       if (!nextConnection.user) {
         setPhase("login");
-        setMessage("请先在 LinkCV 登录，登录后重新点击插件。");
+        setMessage("请先登录 LinkResume，登录后重新点击插件。");
         return;
       }
       if (!capture.ok) {
@@ -85,7 +88,7 @@ export default function App() {
       return;
     }
     setPhase("submitting");
-    setMessage("正在清洗并保存到 LinkCV…");
+    setMessage("正在整理并保存到 LinkResume…");
     try {
       const job = await importJob(connection.origin, {
         source_url: ready.sourceUrl,
@@ -106,7 +109,7 @@ export default function App() {
       }
       if (error instanceof LinkCVApiError && error.status === 401) {
         setPhase("login");
-        setMessage("LinkCV 登录已失效，请重新登录后再试。");
+        setMessage("LinkResume 登录已失效，请重新登录后再试。");
         return;
       }
       setPhase("preview");
@@ -121,20 +124,23 @@ export default function App() {
 
   const header = (
     <header className="app-header">
-      <div className="mark">LC</div>
-      <div>
-        <strong>LinkCV 岗位采集</strong>
-        <span>只读取当前 BOSS 详情页</span>
+      <div className="brand-lockup">
+        <img className="mark" src="/linkresume-mark.png" alt="" aria-hidden="true" />
+        <div className="brand-copy">
+          <strong>LinkResume</strong>
+          <span>岗位采集</span>
+        </div>
       </div>
+      {isDevelopmentBuild && <span className="environment-badge">开发版</span>}
     </header>
   );
 
   if (phase === "loading" || phase === "submitting") {
-    return <main>{header}<StatusView busy message={message} /></main>;
+    return <main>{header}<StatusView busy title={phase === "loading" ? "正在准备岗位" : "正在保存岗位"} message={message} /></main>;
   }
 
   if (phase === "unavailable") {
-    return <main>{header}<StatusView message={message} actionLabel="重试连接" onAction={() => void initialize()} /></main>;
+    return <main>{header}<StatusView title="无法连接 LinkResume" message={message} actionLabel="重试连接" onAction={() => void initialize()} /></main>;
   }
 
   if (phase === "login") {
@@ -142,8 +148,9 @@ export default function App() {
       <main>
         {header}
         <StatusView
+          title="需要登录"
           message={message}
-          actionLabel="打开 LinkCV 登录"
+          actionLabel="打开 LinkResume 登录"
           onAction={() => void openLinkCV("/login")}
           secondaryLabel="我已登录，重试"
           onSecondary={() => void initialize()}
@@ -153,7 +160,7 @@ export default function App() {
   }
 
   if (phase === "capture-error") {
-    return <main>{header}<StatusView message={message} actionLabel="重新读取" onAction={() => void initialize()} /></main>;
+    return <main>{header}<StatusView title="无法读取岗位" message={message} actionLabel="重新读取" onAction={() => void initialize()} /></main>;
   }
 
   if (phase === "success" && created) {
@@ -161,6 +168,7 @@ export default function App() {
       <main>
         {header}
         <StatusView
+          title="岗位已保存"
           tone="success"
           message={`已保存「${created.job_title}」`}
           actionLabel="打开 JD 详情"
@@ -173,8 +181,8 @@ export default function App() {
   }
 
   if (phase === "duplicate" && duplicate) {
-    const resolution = (action: "update" | "restore"): DuplicateResolution => ({
-      action,
+    const resolution = (): DuplicateResolution => ({
+      action: "update",
       job_description_id: duplicate.existing.id,
       base_lock_version: duplicate.existing.lock_version,
     });
@@ -183,17 +191,14 @@ export default function App() {
         {header}
         <section className="status-card compact">
           <span className="eyebrow">发现重复来源</span>
-          <h2>{duplicate.existing.job_title}</h2>
-          <p>{duplicate.existing.company_name} 已存在于你的 LinkCV。</p>
+          <h1>{duplicate.existing.job_title}</h1>
+          <p>{duplicate.existing.company_name} 已存在于你的 LinkResume。</p>
           <div className="actions vertical">
             {duplicate.allowed_actions.includes("update") && (
-              <button className="primary" onClick={() => void submit(resolution("update"))}>用本次内容更新</button>
+              <button className="primary" type="button" onClick={() => void submit(resolution())}>用本次内容更新</button>
             )}
-            {duplicate.allowed_actions.includes("restore") && (
-              <button onClick={() => void submit(resolution("restore"))}>恢复原记录</button>
-            )}
-            <button onClick={() => void openLinkCV(`/jobs/${duplicate.existing.id}`)}>打开现有 JD</button>
-            <button className="ghost" onClick={() => setPhase("preview")}>返回预览</button>
+            <button className="secondary" type="button" onClick={() => void openLinkCV(`/jobs/${duplicate.existing.id}`)}>打开现有 JD</button>
+            <button className="ghost" type="button" onClick={() => setPhase("preview")}>返回预览</button>
           </div>
         </section>
       </main>
@@ -206,14 +211,15 @@ export default function App() {
       {header}
       <section className="preview-heading">
         <div>
-          <span className="eyebrow">导入预览</span>
-          <p>可修改后再保存；页面原文不会直接落库。</p>
+          <span className="eyebrow">保存到 LinkResume</span>
+          <h1>核对岗位信息</h1>
+          <p>必要时修改内容，再确认导入 JD 中心。</p>
         </div>
-        <span className="source-pill">BOSS</span>
+        <span className="source-pill">BOSS 直聘</span>
       </section>
 
-      {message !== "正在连接 LinkCV 并读取当前页面…" && <div className="notice">{message}</div>}
-      {ready.warnings.length > 0 && <div className="notice muted">{ready.warnings.join("；")}</div>}
+      {message !== CONNECTING_MESSAGE && <div className="notice" role="alert">{message}</div>}
+      {ready.warnings.length > 0 && <div className="notice muted" role="status">{ready.warnings.join("；")}</div>}
 
       <section className="form-grid">
         <Field label="岗位名称 *" value={form.job_title ?? ""} onChange={(value) => updateField("job_title", value)} />
@@ -240,8 +246,8 @@ export default function App() {
       </section>
 
       <footer className="sticky-footer">
-        <button className="ghost" onClick={() => void initialize()}>重新读取</button>
-        <button className="primary" onClick={() => void submit()}>确认导入</button>
+        <button className="secondary" type="button" onClick={() => void initialize()}>重新读取</button>
+        <button className="primary" type="button" onClick={() => void submit()}>确认导入</button>
       </footer>
     </main>
   );
@@ -257,6 +263,7 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
 }
 
 function StatusView({
+  title,
   message,
   busy = false,
   tone = "neutral",
@@ -265,6 +272,7 @@ function StatusView({
   secondaryLabel,
   onSecondary,
 }: {
+  title: string;
   message: string;
   busy?: boolean;
   tone?: "neutral" | "success";
@@ -274,17 +282,30 @@ function StatusView({
   onSecondary?: () => void;
 }) {
   return (
-    <section className={`status-card ${tone}`}>
-      <div className={busy ? "spinner" : `status-icon ${tone}`}>{busy ? "" : tone === "success" ? "✓" : "i"}</div>
-      <p>{message}</p>
+    <section className={`status-card ${tone}`} aria-live="polite">
+      <div className={busy ? "spinner" : `status-icon ${tone}`} aria-hidden="true">
+        {!busy && (tone === "success" ? <CheckIcon /> : <InfoIcon />)}
+      </div>
+      <div className="status-copy">
+        <h1>{title}</h1>
+        <p>{message}</p>
+      </div>
       {(actionLabel || secondaryLabel) && (
         <div className="actions vertical">
-          {actionLabel && <button className="primary" onClick={onAction}>{actionLabel}</button>}
-          {secondaryLabel && <button onClick={onSecondary}>{secondaryLabel}</button>}
+          {actionLabel && <button className="primary" type="button" onClick={onAction}>{actionLabel}</button>}
+          {secondaryLabel && <button className="secondary" type="button" onClick={onSecondary}>{secondaryLabel}</button>}
         </div>
       )}
     </section>
   );
+}
+
+function CheckIcon() {
+  return <svg viewBox="0 0 24 24" focusable="false"><path d="m5 12.5 4.2 4.2L19 7" /></svg>;
+}
+
+function InfoIcon() {
+  return <svg viewBox="0 0 24 24" focusable="false"><path d="M12 10.5v6M12 7.5h.01" /></svg>;
 }
 
 async function captureActiveBossTab(): Promise<BossCaptureResult> {
@@ -304,7 +325,7 @@ function captureErrorMessage(error: unknown): string {
 }
 
 function importErrorMessage(error: unknown): string {
-  if (!(error instanceof LinkCVApiError)) return "网络请求失败，请确认 LinkCV 仍在运行。";
+  if (!(error instanceof LinkCVApiError)) return "网络请求失败，请确认 LinkResume 仍在运行。";
   const messages: Record<string, string> = {
     INVALID_JOB_IMPORT: "抓取内容不完整或格式无效，请检查必填字段。",
     JD_EDIT_CONFLICT: "现有 JD 已被修改，请重新读取后再处理。",
