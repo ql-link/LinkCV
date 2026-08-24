@@ -7,6 +7,7 @@ import {
   isSafeAppPath,
   jobDetailPath,
   jobEditPath,
+  legacyCareerRedirect,
   navigateTo,
   parseAppRoute,
   sharePath,
@@ -26,16 +27,32 @@ describe("LinkCV routes", () => {
     expect(parseAppRoute("/jobs/new")).toEqual({ kind: "jobCreate" });
     expect(parseAppRoute("/jobs/job_123")).toEqual({ kind: "jobDetail", jobId: "job_123" });
     expect(parseAppRoute("/jobs/job_123/edit")).toEqual({ kind: "jobEdit", jobId: "job_123" });
-    expect(parseAppRoute("/interviews")).toEqual({ kind: "interviews", view: "overview" });
+    expect(parseAppRoute("/interviews")).toEqual({ kind: "jobs" });
+    expect(parseAppRoute("/career")).toEqual({ kind: "jobs" });
+    expect(parseAppRoute("/career/jobs")).toEqual({ kind: "jobs" });
+    expect(parseAppRoute("/career/jobs/new")).toEqual({ kind: "jobCreate" });
+    expect(parseAppRoute("/career/applications")).toEqual({ kind: "interviews", view: "applications", jobId: undefined, createApplication: undefined });
+    expect(parseAppRoute("/career/applications", "?job=job_123&create=1")).toEqual({ kind: "interviews", view: "applications", jobId: "job_123", createApplication: true });
+    expect(parseAppRoute("/career/applications/application_1")).toEqual({ kind: "interviews", view: "applications", applicationId: "application_1", sessionId: undefined });
+    expect(parseAppRoute("/career/applications/application_1", "?session=session_1")).toEqual({ kind: "interviews", view: "records", applicationId: "application_1", sessionId: "session_1" });
+    expect(parseAppRoute("/career/schedule")).toEqual({ kind: "interviews", view: "schedule" });
+    expect(parseAppRoute("/career/reviews")).toEqual({ kind: "interviews", view: "records", sessionId: undefined });
     expect(parseAppRoute("/interviews", "?view=schedule")).toEqual({ kind: "interviews", view: "schedule" });
     expect(parseAppRoute("/interviews", "?view=records")).toEqual({ kind: "interviews", view: "records" });
-    expect(parseAppRoute("/interviews", "?view=unknown")).toEqual({ kind: "interviews", view: "overview" });
+    expect(parseAppRoute("/interviews", "?view=unknown")).toEqual({ kind: "jobs" });
     expect(parseAppRoute("/datasets")).toEqual({ kind: "datasets" });
     expect(parseAppRoute("/account")).toEqual({ kind: "account" });
     expect(parseAppRoute("/account/password")).toEqual({ kind: "notFound" });
     expect(parseAppRoute("/share/abc123")).toEqual({ kind: "share", token: "abc123" });
     expect(parseAppRoute("/share/a%20b")).toEqual({ kind: "share", token: "a b" });
     expect(parseAppRoute("/missing")).toEqual({ kind: "notFound" });
+  });
+
+  it("redirects removed career overview routes to the job library", () => {
+    expect(legacyCareerRedirect("/career")).toBe("/career/jobs");
+    expect(legacyCareerRedirect("/interviews")).toBe("/career/jobs");
+    expect(legacyCareerRedirect("/interviews", "?view=overview")).toBe("/career/jobs");
+    expect(legacyCareerRedirect("/interviews", "?view=applications")).toBe("/career/applications");
   });
 
   it("encodes share tokens when building share paths", () => {
@@ -52,12 +69,13 @@ describe("LinkCV routes", () => {
 
   it("encodes resume identifiers and only accepts internal resume return paths", () => {
     expect(editorPath("resume/a b")).toBe("/resumes/resume%2Fa%20b/edit");
-    expect(jobDetailPath("job/a b")).toBe("/jobs/job%2Fa%20b");
-    expect(jobEditPath("job/a b")).toBe("/jobs/job%2Fa%20b/edit");
+    expect(jobDetailPath("job/a b")).toBe("/career/jobs/job%2Fa%20b");
+    expect(jobEditPath("job/a b")).toBe("/career/jobs/job%2Fa%20b/edit");
     expect(isSafeAppPath("/resumes/resume_123/edit")).toBe(true);
     expect(isSafeAppPath("/templates")).toBe(true);
     expect(isSafeAppPath("/jobs/job_123/edit")).toBe(true);
     expect(isSafeAppPath("/interviews?view=records")).toBe(true);
+    expect(isSafeAppPath("/career?view=applications")).toBe(true);
     expect(isSafeAppPath("/datasets")).toBe(true);
     expect(isSafeAppPath("/account")).toBe(true);
     expect(isSafeAppPath("/account/password")).toBe(true);

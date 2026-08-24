@@ -22,6 +22,22 @@ afterEach(() => {
 });
 
 describe("WechatQrLogin", () => {
+  it("生成二维码期间使用统一的面板加载状态", async () => {
+    let resolveQr!: (value: WeChatQrcodeResponse) => void;
+    vi.spyOn(api, "wechatQrcode").mockReturnValue(new Promise((resolve) => { resolveQr = resolve; }));
+    vi.spyOn(api, "wechatStatus").mockResolvedValue({ status: "pending", user: null });
+
+    render(<WechatQrLogin onSuccess={() => undefined} />);
+
+    expect(screen.getByRole("status", { name: "正在生成二维码…" })).toHaveClass(
+      "page-loading",
+      "is-panel",
+    );
+    await act(async () => {
+      resolveQr({ scene: "login:loading", poll_token: "poll-loading", qr_base64: "base64-qr" });
+    });
+  });
+
   it("生成登录二维码并提示扫码后自动登录", async () => {
     const qrcode = vi
       .spyOn(api, "wechatQrcode")

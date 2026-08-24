@@ -14,7 +14,7 @@ export function JDCenter() {
   return (
     <div className="w-full overflow-hidden rounded-lg border border-black/[0.07] bg-white shadow-sm dark:border-white/10 dark:bg-[#0e0e11] dark:shadow-none">
       <div className="flex items-center justify-between border-b border-black/[0.06] px-4 py-3 dark:border-white/[0.07]">
-        <span className="text-xs text-zinc-500 dark:text-zinc-400">JD 中心</span>
+        <span className="text-xs text-zinc-500 dark:text-zinc-400">岗位库</span>
         <div className="flex items-center gap-2 rounded border border-black/10 bg-black/[0.03] px-2.5 py-1 text-[11px] text-zinc-400 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-500">
           <Search className="h-3 w-3" />
           搜索岗位、公司、关键词…

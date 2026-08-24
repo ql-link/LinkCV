@@ -4,7 +4,7 @@ export const zh = {
     links: [
       { href: '#features', label: '功能' },
       { href: '#editor', label: '编辑器' },
-      { href: '#jd', label: 'JD 中心' },
+      { href: '#jd', label: '岗位库' },
       { href: '#philosophy', label: '理念' },
       { href: '#faq', label: 'FAQ' },
     ],
@@ -161,7 +161,7 @@ export const zh = {
     eyebrow: 'LINKCV / ONE WORKSPACE',
     title: '一份简历，只是开始',
     subtitle: '继续向下，进入完整的求职工作台',
-    keywords: ['A4 纸面编辑', '版本管理', 'PDF 导出', '智能一页', 'JD 中心', 'Chrome 插件', '模板导入', '自动保存'],
+    keywords: ['A4 纸面编辑', '版本管理', 'PDF 导出', '智能一页', '岗位库', 'Chrome 插件', '模板导入', '自动保存'],
   },
 
   chaos: {
@@ -185,7 +185,7 @@ export const zh = {
       { num: '01', title: 'A4 纸面编辑', desc: '直接在接近最终效果的 A4 页面上编辑文字、图片与左右布局，所见即所得' },
       { num: '02', title: '版本管理', desc: '自动保存当前修改，主动保存历史版本，随时可以恢复到任意旧内容' },
       { num: '03', title: 'PDF 导出', desc: '标准 A4 分页，或「智能一页」模式，导出适合投递的高质量 PDF' },
-      { num: '04', title: 'JD 中心', desc: '记录、搜索和编辑岗位资料，简历与 JD 在同一个工作区对照' },
+      { num: '04', title: '岗位库', desc: '记录、搜索和编辑岗位资料，简历与岗位要求在同一个工作区对照' },
       { num: '05', title: 'Chrome 插件采集', desc: '读取当前打开的 BOSS 直聘岗位详情，经你确认后一键导入 LinkResume' },
     ],
     manifesto: ['CONTENT FIRST.', 'LAYOUT UNDER CONTROL.', 'EVERY CHANGE RECOVERABLE.'],
@@ -229,14 +229,14 @@ export const zh = {
 
   jd: {
     index: '05',
-    eyebrow: 'JD 中心 + Chrome 插件',
+    eyebrow: '岗位库 + Chrome 插件',
     title1: '岗位信息，',
     title2: '和简历放在一起',
-    description: '看到合适的岗位，用 Chrome 插件把当前打开的 BOSS 直聘岗位详情采进 JD 中心，写简历时随时对照要求，全程不离开工作区',
+    description: '看到合适的岗位，用 Chrome 插件把当前打开的 BOSS 直聘岗位详情采进岗位库，写简历时随时对照要求，全程不离开工作区',
     points: [
       { title: '确认后导入', desc: '插件只读取你当前打开的 BOSS 直聘岗位页，点击确认才写入，不后台批量抓取' },
       { title: '可搜索、可编辑', desc: '按岗位、公司、关键词检索，随时修正岗位资料' },
-      { title: '资料保持纯粹', desc: 'JD 只保存岗位资料，不混入投递或面试进度' },
+      { title: '资料保持纯粹', desc: '岗位只保存机会资料，求职进程独立记录投递和面试进度' },
     ],
   },
 
@@ -247,7 +247,7 @@ export const zh = {
     steps: [
       { num: '01', title: '创建', desc: '从空白、内置模板，或导入 Markdown / DOCX / PDF 开始' },
       { num: '02', title: '编辑', desc: '在 A4 纸面上写内容、调排版，修改自动保存' },
-      { num: '03', title: '采集', desc: 'Chrome 插件采集 BOSS 直聘岗位，存入 JD 中心' },
+      { num: '03', title: '采集', desc: 'Chrome 插件采集 BOSS 直聘岗位，存入岗位库' },
       { num: '04', title: '导出', desc: '按 JD 微调后，导出标准分页或智能一页 PDF' },
     ],
   },
@@ -274,7 +274,7 @@ export const zh = {
       { q: 'Chrome 插件会抓取哪些数据？', a: '插件只读取你当前打开的 BOSS 直聘岗位详情页，并且在你手动点击确认后才会导入 LinkResume，它不会在后台批量抓取，也不会替你投递' },
       { q: '「智能一页」是怎么工作的？', a: '导出 PDF 时选择智能一页模式，系统会自动调节排版密度，把内容收进一页 A4；需要多页时则使用标准 A4 分页模式' },
       { q: '误删或改错了内容怎么办？', a: 'LinkCV 会自动保存当前修改，你也可以主动保存命名版本，历史版本随时可查看，一键即可恢复旧内容' },
-      { q: 'JD 中心能管理多少岗位？', a: '没有硬性上限。岗位资料可以搜索、查看和编辑；不再需要时可确认后直接删除' },
+      { q: '岗位库能管理多少岗位？', a: '没有硬性上限。岗位资料可以搜索、查看和编辑；不再需要时可确认后直接删除' },
     ],
   },
 
@@ -287,7 +287,7 @@ export const zh = {
     copyright: '© 2026 LinkCV · RESUME · VERSION · PDF · JD',
     navLabel: '页脚导航',
     linkGroups: [
-      { title: '产品', links: [{ label: '功能总览', href: '#features' }, { label: 'A4 编辑器', href: '#editor' }, { label: 'JD 中心', href: '#jd' }] },
+      { title: '产品', links: [{ label: '功能总览', href: '#features' }, { label: 'A4 编辑器', href: '#editor' }, { label: '岗位库', href: '#jd' }] },
       { title: '了解', links: [{ label: '工作区', href: '#chaos' }, { label: '产品理念', href: '#philosophy' }, { label: '常见问题', href: '#faq' }] },
       { title: '导航', links: [{ label: '首页导览', href: '#workspace-intro' }, { label: '返回顶部', href: '#top' }] },
     ],
