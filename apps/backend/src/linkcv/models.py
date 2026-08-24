@@ -7,6 +7,11 @@ from linkcv.modules.agent.models import (
 )
 from linkcv.modules.datasets.models import UserDataset
 from linkcv.modules.identity.models import User
+from linkcv.modules.interviews.models import (
+    InterviewAsset,
+    InterviewSession,
+    JobApplication,
+)
 from linkcv.modules.job_descriptions.models import JobDescription
 from linkcv.modules.llm.models import (
     LLMCallLog,
@@ -31,6 +36,9 @@ __all__ = [
     "LLMCapabilityBinding",
     "LLMModelConfig",
     "LLMModelValidation",
+    "InterviewAsset",
+    "InterviewSession",
+    "JobApplication",
     "JobDescription",
     "DocumentParseTask",
     "Resume",

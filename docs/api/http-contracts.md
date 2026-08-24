@@ -101,13 +101,13 @@ Web PDF 请求必须携带当前保存成功后的 `lock_version`。服务端再
 | `GET` | `/api/agent/sessions?resume_id=:id` | `{sessions}`，最近更新优先 |
 | `POST` | `/api/agent/sessions` | `201 {session}`；请求为 `{resume_id, title?}` |
 | `GET` | `/api/agent/sessions/:sessionId` | `{session}`，包含最近 100 条消息 |
-| `POST` | `/api/agent/sessions/:sessionId/messages` | SSE；请求为 `{content, idempotency_key, selection_context?}`，选区包含稳定块 ID、编辑器范围、原文和 SHA-256 |
+| `POST` | `/api/agent/sessions/:sessionId/messages` | SSE；请求为 `{content, idempotency_key, selection_context?, reply_to_sequence_no?}`，选区包含稳定块 ID、编辑器范围、原文和 SHA-256；回答结构化澄清问题时必须携带对应助手消息序号 |
 | `POST` | `/api/agent/runs/:runId/cancel` | `{run_id, status}`；重复取消幂等 |
-| `GET` | `/api/agent/proposals?resume_id=:id` | `{proposals}`，只返回当前待确认提案 |
+| `GET` | `/api/agent/proposals?resume_id=:id&session_id=:sessionId` | `{proposals}`，只返回当前待确认提案；`session_id` 可选，传入时同时校验会话归属和简历绑定并按会话过滤 |
 | `POST` | `/api/agent/proposals/:proposalId/confirm` | `{resume}`；确认后应用完整快照并创建 `agent` 版本 |
 | `POST` | `/api/agent/proposals/:proposalId/reject` | `{proposal}`；放弃待确认提案 |
 
-SSE 事件包括 `run.started`、`assistant.delta`、`tool.started`、`tool.completed`、`proposal.created`、`run.completed`、`run.cancelled` 和 `run.failed`。每个成功建立的 SSE 响应必须以后三种 `run.*` 终态之一结束；Pi 在 HTTP 200 后提前 EOF 时 FastAPI 补发 `run.failed/AGENT_UPSTREAM_FAILED`，浏览器也会把无终态 EOF 识别为 `AGENT_STREAM_INCOMPLETE`。只有 `run.completed` 才把完整助手文本和可用的 Token/估算成本写入数据库；失败、取消或缺失终态不会把已经流出的部分文本保存成历史消息。同一用户只允许一个 running 运行；相同 `idempotency_key` 重放现有运行状态。取消与流式完成并发时采用第一个成功写入的终态，后到操作不得覆盖。Agent 只能读取当前会话绑定的简历，并且不能直接写简历：修改先解析稳定 locator，再读取最小范围、生成结构化诊断并创建类型化 operation 提案；服务端在快照副本上应用 operation 后仍保存完整候选 data/style。旧的完整快照内部提案接口保留一个兼容期，存量 pending 提案仍可确认。确认时同时校验 `base_lock_version`、locator 和目标内容哈希；整份简历发生并发变化返回 `409 RESUME_EDIT_CONFLICT`，目标块失效返回 `409 TARGET_STALE` 并把提案标记为 conflicted。过期提案返回 `410 AGENT_PROPOSAL_EXPIRED`，正式版本已达上限时返回 `409 RESUME_VERSION_LIMIT_REACHED` 且不应用提案。服务或模型不可用返回安全化的 `AGENT_UNAVAILABLE`、`AGENT_MODEL_UNAVAILABLE`、`AGENT_MODEL_UNSUPPORTED`、`AGENT_MODEL_TIMEOUT` 或 `AGENT_MODEL_REQUEST_FAILED`，供应商原始错误和 API Key 不进入浏览器响应。
+SSE 事件包括 `run.started`、`assistant.delta`、`clarification.requested`、`tool.started`、`tool.completed`、`proposal.created`、`run.completed`、`run.cancelled` 和 `run.failed`。`clarification.requested` 携带版本化的 `clarification`：1–3 个问题，每题 2–3 个 `{id,label,description?}` 选项；客户端额外提供自由输入的“其他”。该成功运行把助手消息以 `message_type=clarification` 持久化，普通文本消息为 `message_type=text`。回答只有在 `reply_to_sequence_no` 仍指向当前会话最后一条澄清消息时才创建新运行，否则返回 `409 AGENT_CLARIFICATION_STALE`，客户端应刷新当前会话。每个成功建立的 SSE 响应必须以后三种 `run.*` 终态之一结束；Pi 在 HTTP 200 后提前 EOF 时 FastAPI 补发 `run.failed/AGENT_UPSTREAM_FAILED`，浏览器也会把无终态 EOF 识别为 `AGENT_STREAM_INCOMPLETE`。只有 `run.completed` 才把完整助手文本或结构化澄清消息和可用的 Token/估算成本写入数据库；失败、取消或缺失终态不会把已经流出的部分文本保存成历史消息。同一用户只允许一个 running 运行；相同 `idempotency_key` 重放现有运行状态。取消与流式完成并发时采用第一个成功写入的终态，后到操作不得覆盖。Agent 只能读取当前会话绑定的简历，并且不能直接写简历：修改先解析稳定 locator，再读取最小范围、生成结构化诊断并创建类型化 operation 提案；服务端在快照副本上应用 operation 后仍保存完整候选 data/style。旧的完整快照内部提案接口保留一个兼容期，存量 pending 提案仍可确认。确认时同时校验 `base_lock_version`、locator 和目标内容哈希；整份简历发生并发变化返回 `409 RESUME_EDIT_CONFLICT`，目标块失效返回 `409 TARGET_STALE` 并把提案标记为 conflicted。过期提案返回 `410 AGENT_PROPOSAL_EXPIRED`，正式版本已达上限时返回 `409 RESUME_VERSION_LIMIT_REACHED` 且不应用提案。服务或模型不可用返回安全化的 `AGENT_UNAVAILABLE`、`AGENT_MODEL_UNAVAILABLE`、`AGENT_MODEL_UNSUPPORTED`、`AGENT_MODEL_TIMEOUT` 或 `AGENT_MODEL_REQUEST_FAILED`，供应商原始错误和 API Key 不进入浏览器响应。
 
 `/internal/agent/**` 仅供 Pi 服务使用，以独立 Bearer token 鉴权且不出现在 OpenAPI。除兼容的完整上下文和快照提案接口外，范围化工具依次使用 `POST /runs/:runId/targets:resolve`、`context:read`、`materials:search`、`diagnoses` 和 `proposals:v2`。目标出现零处或多处时不允许创建提案；诊断 fingerprint、资料版本、执行模式和 operation 范围由 FastAPI 复验。`GET /internal/agent/readiness` 验证当前 `pi_agent` binding、凭据解密和 Pi provider 映射，不发起供应商模型调用；工具事件以 `(run_id, call_key)` 幂等，同一工具调用进入 succeeded、failed 或 cancelled 后不可回退或改写为另一终态。内部运行配置复用统一模型管理中的 `pi_agent` binding；模型配置页面仍是 `/admin/llm/models`，不新增第二套 Pi 配置 UI。
 
@@ -211,6 +211,38 @@ JD 管理接口接受和返回最终结构化数据；单独的浏览器导入�
 硬删除只允许 `archived_at` 非空的归档记录；活动记录（包括已恢复记录）返回 `409 JD_DELETE_REQUIRES_ARCHIVE` 且不产生删除副作用。删除语句同时约束记录 ID、当前用户和归档状态，因此记录在并发删除前恢复后不会被误删。不存在和不属于当前用户的记录仍返回 `404 JD_NOT_FOUND`。
 
 技能以最多 100 个字符串的 JSON 数组保存，写入时去空和去重。数值薪资非空时必须同时给出三字母币种与计薪周期，最高值不得低于最低值。请求字段、长度或组合非法返回 `400 INVALID_JOB_DESCRIPTION`，来源非法返回 `400 INVALID_JOB_SOURCE`。福利、原始抓取数据和插件 API Key 不属于当前契约。
+
+## 面试中心
+
+面试中心以 `job_applications` 表达一家公司和岗位的一次完整求职尝试，以 `interview_sessions` 表达其中一场可排期、可完成、可复盘的面试。所有接口都要求当前登录用户，后端只从会话取得所有者；不存在和越权资源统一返回 `404 INTERVIEW_NOT_FOUND`。创建求职进程必须引用本人 JD，并保存公司、岗位和完整 JD 快照；后续修改原 JD 不会改写历史求职进程。公司颜色第一次创建时从 Mac 日历语义色中随机选择，之后同一求职进程的所有面试共用该颜色，也可通过进程更新接口修改。
+
+求职进程的初始状态必须可达：`screening` 从 `awaiting_result` 开始，`interview/hr` 从 `awaiting_schedule` 开始，`offer` 从 `negotiating` 开始；其他阶段与等待状态组合返回 `400 INVALID_INTERVIEW_REQUEST`。筛选结果可在没有面试场次时直接推进；面试或 HR 阶段推进只消费当前阶段、当前轮次且仍待确认的已完成场次，不会把旧轮次或其他阶段误标为通过。归档进程从默认求职进程列表、总览和排期中隐藏，只有显式 `scope=all|archived` 或 `include_archived=true` 才返回历史；归档进程不能创建、调整、完成或取消排期，恢复后才能继续排期生命周期。
+
+| Method | Path | 行为 |
+| --- | --- | --- |
+| `GET` | `/api/interview-overview` | 返回本周指标、当前阶段流程和周排期；支持 `week_start` 与 IANA `timezone` |
+| `GET/POST` | `/api/job-applications` | 列出或创建求职进程 |
+| `GET/PUT/DELETE` | `/api/job-applications/:id` | 读取、乐观锁更新，或永久删除已归档且无面试记录的进程 |
+| `POST` | `/api/job-applications/:id/advance` | 将已完成且等待结果的当前阶段确认通过并推进 |
+| `POST` | `/api/job-applications/:id/offer` | 记录 OC 或书面 Offer |
+| `POST` | `/api/job-applications/:id/close` | 记录未通过、主动结束、接受或婉拒 Offer |
+| `POST` | `/api/job-applications/:id/archive\|restore` | 乐观锁归档或恢复进程 |
+| `GET` | `/api/interview-sessions` | 按时间、状态、`application_id`、归档范围和游标列出当前用户的面试记录 |
+| `POST` | `/api/job-applications/:id/interview-sessions` | 在指定求职进程的当前阶段创建排期 |
+| `GET/PUT/DELETE` | `/api/interview-sessions/:id` | 读取、乐观锁更新或删除无素材的单场记录 |
+| `POST` | `/api/interview-sessions/:id/reschedule` | 调整排期，开始时间只接受整点或半点 |
+| `POST` | `/api/interview-sessions/:id/complete\|cancel` | 明确完成或取消一场面试 |
+| `GET/POST` | `/api/interview-sessions/:id/assets` | 列出或上传录音、视频和文档素材 |
+| `GET` | `/api/interview-assets/:id/content` | 所有权校验后流式读取素材 |
+| `DELETE` | `/api/interview-assets/:id` | 所有权校验后删除素材记录和对象存储文件 |
+
+排期使用带时区的 `start_at/end_at`，服务端转成 UTC 保存；不画半点辅助线不影响 30 分钟吸附契约。与本人其他未取消面试重叠时返回 `409 INTERVIEW_TIME_CONFLICT` 和冲突摘要，只有请求再次携带 `allow_conflict=true` 才保存。完成面试会保存自由文本题目、复盘和改进点，并把求职进程置为 `awaiting_result`；它不会自动推断通过或把卡片移动到下一阶段。`advance` 负责把最近一场待确认结果标为通过并移动进程，`close` 负责标记未通过或其他终态。过期 `base_lock_version` 返回 `409 INTERVIEW_EDIT_CONFLICT`，不合法状态跳转返回 `409 INTERVIEW_INVALID_TRANSITION`。
+
+`GET /api/job-applications` 按 `updated_at DESC, id DESC` 分页，`GET /api/interview-sessions` 按 `start_at ASC, id ASC` 分页；两者的 `next_cursor` 都是不透明且与当前筛选条件绑定的游标。调用方必须把游标与原筛选一起回传；游标损坏、跨筛选复用或超长都返回 `400 INVALID_INTERVIEW_QUERY`。创建面试的 `(application_id, client_request_id)` 唯一：相同请求重放返回原场次，相同标识绑定到不同时间或内容时返回 `409 INTERVIEW_EDIT_CONFLICT`。
+
+面试模块的求职进程、岗位、简历版本、单场面试和素材 ID 与项目其他 BIGINT 资源一致，在 JSON、查询参数和路径中都使用无前导零的十进制字符串；前端不得把这些 ID 转成 JavaScript `number`。
+
+素材上传是 `multipart/form-data`，`source_type=recorded|uploaded` 仅记录来源路径，两者写入同一 MinIO 私有前缀。服务端按扩展名与规范化 MIME 双重校验，流式计算大小和 SHA-256，默认上限由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES=524288000` 控制；空文件、不支持格式、超限和对象存储失败分别返回 `EMPTY_INTERVIEW_ASSET`、`UNSUPPORTED_INTERVIEW_ASSET`、`INTERVIEW_ASSET_TOO_LARGE` 和 `INTERVIEW_ASSET_UPLOAD_FAILED`。音视频内容使用 `inline` 分发以支持播放，文档使用附件下载；响应不暴露对象键。
 
 ## 对象资源
 

@@ -157,6 +157,22 @@ function SelectionAgentControl({
   );
 }
 
+export function SelectionAgentPrompt({
+  editor,
+  onAgentAction,
+}: {
+  editor: Editor;
+  onAgentAction: (instruction: string, selection: AgentSelectionContext) => void;
+}) {
+  if (editor.state.selection.empty) return null;
+
+  return (
+    <div className="selection-agent-bubble" role="toolbar" aria-label="所选文字 AI 操作">
+      <SelectionAgentControl editor={editor} onAgentAction={onAgentAction} />
+    </div>
+  );
+}
+
 export function steppedInlineFontSize(value: number, direction: -1 | 1) {
   return Math.min(
     INLINE_FONT_SIZE_MAX,
@@ -447,7 +463,7 @@ function RowLayoutControl({ editor, onNotice }: { editor: Editor; onNotice: (mes
   );
 }
 
-export function WorkbenchToolbar({ editor, resumeId, defaultFontSize, onNotice, onAgentAction }: { editor: Editor | null; resumeId: string; defaultFontSize: number; onNotice: (message: string) => void; onAgentAction?: (instruction: string, selection: AgentSelectionContext) => void }) {
+export function WorkbenchToolbar({ editor, resumeId, defaultFontSize, onNotice }: { editor: Editor | null; resumeId: string; defaultFontSize: number; onNotice: (message: string) => void }) {
   const [, refresh] = useState(0);
 
   useEffect(() => {
@@ -464,8 +480,6 @@ export function WorkbenchToolbar({ editor, resumeId, defaultFontSize, onNotice, 
   if (!editor) return null;
   return (
     <div className="workbench-toolbar" role="toolbar" aria-label="简历格式工具栏">
-      {onAgentAction && <SelectionAgentControl editor={editor} onAgentAction={onAgentAction} />}
-      {onAgentAction && !editor.state.selection.empty && <Divider />}
       <ToolButton label="撤销" disabled={!editor.can().undo()} onClick={() => editor.chain().focus().undo().run()}><Undo2 size={15} /></ToolButton>
       <ToolButton label="重做" disabled={!editor.can().redo()} onClick={() => editor.chain().focus().redo().run()}><Redo2 size={15} /></ToolButton>
       <Divider />

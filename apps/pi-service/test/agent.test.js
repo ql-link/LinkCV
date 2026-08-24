@@ -6,6 +6,7 @@ import {
   assertAgentCompleted,
   createAssistantOutputFilter,
   createSkillReadTool,
+  clarificationFallbackText,
 } from "../src/runtime/agent.js";
 
 test("agent completion accepts a successful assistant message", () => {
@@ -92,6 +93,36 @@ test("assistant output filter does not expose failed or aborted model text", () 
   }
 
   assert.deepEqual(emitted, []);
+});
+
+test("assistant output filter suppresses final prose after a clarification request", () => {
+  const emitted = [];
+  const filter = createAssistantOutputFilter(
+    (...event) => emitted.push(event),
+    "run-3",
+    () => true,
+  );
+  filter({
+    type: "message_update",
+    assistantMessageEvent: { type: "text_delta", delta: "请回答上面的问题。" },
+  });
+  filter({ type: "message_end", message: { role: "assistant", stopReason: "stop" } });
+  assert.deepEqual(emitted, []);
+});
+
+test("clarification fallback remains readable for clients that ignore the structured event", () => {
+  assert.equal(clarificationFallbackText({
+    version: 1,
+    questions: [{
+      id: "scope",
+      header: "修改范围",
+      question: "要修改哪段经历？",
+      options: [
+        { id: "internship", label: "实习经历" },
+        { id: "project", label: "项目经历" },
+      ],
+    }],
+  }), "继续前需要确认：\n1. 要修改哪段经历？\n   选项：实习经历 / 项目经历 / 其他");
 });
 
 test("read tool can load a registered resume skill", async () => {

@@ -33,7 +33,7 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0031"
+EXPECTED_HEAD = "0033"
 
 
 def migration_test_url() -> str:
@@ -75,34 +75,23 @@ def run_alembic(database_url: str, *arguments: str) -> None:
 
 
 def reset_test_database_to_base(database_url: str) -> None:
-    """Remove business rows before resetting the disposable database to base.
-
-    Several historical downgrades correctly refuse to discard non-empty tables
-    or restore template references that no longer exist. The suite only accepts
-    a local database named ``linkcv``, so clear every business table while
-    retaining Alembic's revision row, then exercise the real downgrade chain.
-    """
+    """Drop every table in the guarded disposable local migration database."""
     engine = create_engine(database_url)
     try:
-        table_names = [
-            table_name
-            for table_name in inspect(engine).get_table_names()
-            if table_name != "alembic_version"
-        ]
+        table_names = inspect(engine).get_table_names()
         with engine.begin() as connection:
             connection.exec_driver_sql("SET FOREIGN_KEY_CHECKS = 0")
             try:
                 for table_name in table_names:
                     escaped_name = table_name.replace("`", "``")
-                    connection.exec_driver_sql(f"DELETE FROM `{escaped_name}`")
+                    connection.exec_driver_sql(f"DROP TABLE `{escaped_name}`")
             finally:
                 connection.exec_driver_sql("SET FOREIGN_KEY_CHECKS = 1")
     finally:
         engine.dispose()
-    run_alembic(database_url, "downgrade", "base")
 
 
-def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
+def test_mysql_upgrade_and_idempotent_rerun() -> None:
     database_url = migration_test_url()
     engine = create_engine(database_url)
 
@@ -124,6 +113,9 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         "agent_messages",
         "agent_tool_calls",
         "resume_change_proposals",
+        "job_applications",
+        "interview_sessions",
+        "interview_assets",
     } <= set(inspector.get_table_names())
     assert "admin_operation_logs" not in inspector.get_table_names()
     for agent_table in {
@@ -164,6 +156,18 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         for constraint in inspector.get_check_constraints(
             "resume_change_proposals"
         )
+    }
+    message_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("agent_messages")
+    }
+    assert {"message_type", "metadata_json"} <= set(message_columns)
+    assert message_columns["message_type"]["nullable"] is False
+    assert message_columns["message_type"]["type"].length == 24
+    assert message_columns["metadata_json"]["type"].__class__.__name__ == "JSON"
+    assert "ck_agent_messages_message_type" in {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("agent_messages")
     }
     assert {column["name"] for column in inspector.get_columns("users")} == {
         "id",
@@ -286,77 +290,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     )
     assert "storage_cleanup_jobs" not in inspector.get_table_names()
     assert "resume_imports" not in inspector.get_table_names()
-
-    run_alembic(database_url, "downgrade", "0030")
-    downgraded_proposal_inspector = inspect(engine)
-    assert scoped_proposal_columns.isdisjoint(
-        {
-            column["name"]
-            for column in downgraded_proposal_inspector.get_columns(
-                "resume_change_proposals"
-            )
-        }
-    )
-    assert "ck_resume_change_proposals_mode" not in {
-        constraint["name"]
-        for constraint in downgraded_proposal_inspector.get_check_constraints(
-            "resume_change_proposals"
-        )
-    }
-    with engine.connect() as connection:
-        assert connection.scalar(
-            text("SELECT version_num FROM alembic_version")
-        ) == "0030"
-    run_alembic(database_url, "upgrade", "head")
-    inspector = inspect(engine)
-
-    run_alembic(database_url, "downgrade", "0009")
-    downgraded_inspector = inspect(engine)
-    assert {
-        column["name"]
-        for column in downgraded_inspector.get_columns("storage_cleanup_jobs")
-    } == {
-        "id",
-        "operation",
-        "object_key",
-        "attempts",
-        "last_error_type",
-        "last_attempt_at",
-        "created_at",
-        "updated_at",
-    }
-    assert {
-        "legacy_data_json_backup",
-        "legacy_style_json_backup",
-    } <= {
-        column["name"]
-        for column in downgraded_inspector.get_columns("resumes")
-    }
-    assert {
-        "legacy_data_json_backup",
-        "legacy_style_json_backup",
-    } <= {
-        column["name"]
-        for column in downgraded_inspector.get_columns("resume_versions")
-    }
-    assert "admin_operation_logs" in downgraded_inspector.get_table_names()
-
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                "INSERT INTO storage_cleanup_jobs (operation, object_key) "
-                "VALUES ('object', 'users/1/resume-imports/pending/file.pdf')"
-            )
-        )
-    refused_upgrade = invoke_alembic(database_url, "upgrade", "head")
-    assert refused_upgrade.returncode != 0
-    assert "refuses to drop storage_cleanup_jobs" in refused_upgrade.stderr
-    with engine.begin() as connection:
-        connection.execute(text("DELETE FROM storage_cleanup_jobs"))
-
-    run_alembic(database_url, "upgrade", "head")
-    inspector = inspect(engine)
-    assert "storage_cleanup_jobs" not in inspector.get_table_names()
 
     assert {constraint["name"] for constraint in inspector.get_unique_constraints("users")} == {
         "uk_users_email"
@@ -889,13 +822,6 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
         connection.execute(text("DELETE FROM resume_templates"))
         connection.execute(text("DELETE FROM users"))
 
-    run_alembic(database_url, "downgrade", "0002")
-    downgraded_fk = {
-        foreign_key["name"]: foreign_key
-        for foreign_key in inspect(engine).get_foreign_keys("resumes")
-    }["fk_resumes_template"]
-    assert downgraded_fk["options"]["ondelete"] == "RESTRICT"
-    run_alembic(database_url, "upgrade", "head")
     upgraded_fk = {
         foreign_key["name"]: foreign_key
         for foreign_key in inspect(engine).get_foreign_keys("resumes")
@@ -929,7 +855,80 @@ def test_mysql_upgrade_downgrade_and_idempotent_rerun() -> None:
     engine.dispose()
 
 
-def test_document_parse_task_migration_preserves_import_data_round_trip() -> None:
+def test_storage_cleanup_forward_migration_refuses_pending_tasks() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0009")
+
+    engine = create_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO storage_cleanup_jobs (operation, object_key) "
+                    "VALUES ('object', 'users/1/resume-imports/pending/file.pdf')"
+                )
+            )
+
+        refused_upgrade = invoke_alembic(database_url, "upgrade", "head")
+        assert refused_upgrade.returncode != 0
+        assert "refuses to drop storage_cleanup_jobs" in refused_upgrade.stderr
+
+        with engine.begin() as connection:
+            connection.execute(text("DELETE FROM storage_cleanup_jobs"))
+        run_alembic(database_url, "upgrade", "head")
+        assert "storage_cleanup_jobs" not in inspect(engine).get_table_names()
+    finally:
+        engine.dispose()
+
+
+def test_agent_clarification_message_forward_migration() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0031")
+
+    engine = create_engine(database_url)
+    try:
+        assert {
+            column["name"]
+            for column in inspect(engine).get_columns("agent_messages")
+        }.isdisjoint({"message_type", "metadata_json"})
+
+        run_alembic(database_url, "upgrade", "0032")
+        upgraded = inspect(engine)
+        assert {"message_type", "metadata_json"} <= {
+            column["name"] for column in upgraded.get_columns("agent_messages")
+        }
+
+    finally:
+        engine.dispose()
+
+
+def test_interview_center_forward_migration() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0032")
+
+    engine = create_engine(database_url)
+    try:
+        interview_tables = {
+            "job_applications",
+            "interview_sessions",
+            "interview_assets",
+        }
+        assert interview_tables.isdisjoint(inspect(engine).get_table_names())
+
+        run_alembic(database_url, "upgrade", "0033")
+        assert interview_tables <= set(inspect(engine).get_table_names())
+        with engine.connect() as connection:
+            assert connection.scalar(
+                text("SELECT version_num FROM alembic_version")
+            ) == "0033"
+    finally:
+        engine.dispose()
+
+
+def test_document_parse_task_forward_migration_preserves_import_data() -> None:
     database_url = migration_test_url()
     engine = create_engine(database_url)
     reset_test_database_to_base(database_url)
@@ -999,35 +998,6 @@ def test_document_parse_task_migration_preserves_import_data_round_trip() -> Non
             {"resume_id": resume_id},
         ) == import_id
 
-    run_alembic(database_url, "downgrade", "0020")
-    downgraded = inspect(engine)
-    assert "document_parse_tasks" not in downgraded.get_table_names()
-    assert "resume_imports" in downgraded.get_table_names()
-    assert "parse_task_id" not in {
-        column["name"] for column in downgraded.get_columns("resumes")
-    }
-    with engine.connect() as connection:
-        assert connection.execute(
-            text(
-                "SELECT id, user_id, result_resume_id, source_filename, "
-                "source_file_format, source_object_key, upload_status, "
-                "upload_duration_ms, parse_status, parse_duration_ms "
-                "FROM resume_imports WHERE id = :import_id"
-            ),
-            {"import_id": import_id},
-        ).one() == (
-            import_id,
-            user_id,
-            resume_id,
-            "resume.md",
-            "md",
-            "users/1/resume-imports/task/resume.md",
-            "succeeded",
-            12,
-            "succeeded",
-            34,
-        )
-
     run_alembic(database_url, "upgrade", "head")
     assert "document_parse_tasks" in inspect(engine).get_table_names()
     reset_test_database_to_base(database_url)
@@ -1070,7 +1040,6 @@ def test_classic_template_content_migration_refuses_customized_snapshots() -> No
     run_alembic(database_url, "upgrade", "0024")
 
     headline_path = "$.basics.headline"
-    location_path = "$.basics.location"
     with engine.begin() as connection:
         connection.execute(
             text(
@@ -1094,32 +1063,6 @@ def test_classic_template_content_migration_refuses_customized_snapshots() -> No
             ),
             {"path": headline_path},
         ) == "现场自定义职位"
-
-    reset_test_database_to_base(database_url)
-    run_alembic(database_url, "upgrade", "head")
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                "UPDATE resume_templates "
-                "SET data_json = JSON_SET(data_json, :path, '现场自定义城市') "
-                "WHERE `key` = 'classic-technical-cn'"
-            ),
-            {"path": location_path},
-        )
-    refused_downgrade = invoke_alembic(database_url, "downgrade", "0024")
-    assert refused_downgrade.returncode != 0
-    with engine.connect() as connection:
-        assert (
-            connection.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0025"
-        )
-        assert connection.scalar(
-            text(
-                "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, :path)) "
-                "FROM resume_templates WHERE `key` = 'classic-technical-cn'"
-            ),
-            {"path": location_path},
-        ) == "现场自定义城市"
 
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
@@ -1200,53 +1143,6 @@ def test_professional_template_preview_refresh_refuses_customized_snapshots() ->
             ),
             {"path": content_path},
         )
-
-    reset_test_database_to_base(database_url)
-    run_alembic(database_url, "upgrade", "head")
-    engine.dispose()
-
-
-def test_professional_template_downgrade_refuses_referenced_seed() -> None:
-    database_url = migration_test_url()
-    engine = create_engine(database_url)
-    reset_test_database_to_base(database_url)
-    run_alembic(database_url, "upgrade", "head")
-
-    with engine.begin() as connection:
-        user = connection.execute(
-            text(
-                "INSERT INTO users (email, password_hash, nickname) "
-                "VALUES ('template-guard@example.invalid', '$2b$12$fictional', '张三')"
-            )
-        )
-        template_id = connection.scalar(
-            text(
-                "SELECT id FROM resume_templates "
-                "WHERE `key` = 'creative-orange-cn'"
-            )
-        )
-        connection.execute(
-            text(
-                "INSERT INTO resumes "
-                "(user_id, template_id, title, data_json, style_json, source_type) "
-                "VALUES (:user_id, :template_id, '张三设计简历', "
-                "JSON_OBJECT('schema_version', '1.0'), "
-                "JSON_OBJECT('schema_version', '1.0'), 'template')"
-            ),
-            {"user_id": user.lastrowid, "template_id": template_id},
-        )
-
-    refused_downgrade = invoke_alembic(database_url, "downgrade", "0025")
-    assert refused_downgrade.returncode != 0
-    with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0026"
-        assert connection.scalar(
-            text(
-                "SELECT COUNT(*) FROM resume_templates WHERE `key` IN "
-                "('administrative-sidebar-cn', 'campus-professional-cn', "
-                "'civic-service-cn', 'creative-orange-cn')"
-            )
-        ) == 4
 
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
@@ -1715,9 +1611,6 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
 
     assert sorted(results) == ["created", "duplicate"]
 
-    run_alembic(database_url, "downgrade", "0006")
-    assert "job_descriptions" not in inspect(engine).get_table_names()
-    run_alembic(database_url, "upgrade", "head")
     assert "job_descriptions" in inspect(engine).get_table_names()
     with engine.begin() as connection:
         connection.execute(text("DELETE FROM users"))
@@ -1725,7 +1618,7 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
     engine.dispose()
 
 
-def test_mysql_0008_clears_legacy_llm_data_and_supports_rollback() -> None:
+def test_mysql_0008_clears_legacy_llm_data_and_supports_forward_upgrade() -> None:
     database_url = migration_test_url()
     engine = create_engine(database_url)
 
@@ -1888,22 +1781,6 @@ def test_mysql_0008_clears_legacy_llm_data_and_supports_rollback() -> None:
             )
     assert error.value.orig.args[0] == 3819
 
-    run_alembic(database_url, "downgrade", "0007")
-    assert "llm_capability_bindings" not in inspect(engine).get_table_names()
-    assert {"capability", "adapter", "model_call_name", "config_version"}.isdisjoint(
-        column["name"]
-        for column in inspect(engine).get_columns("llm_model_configs")
-    )
-    assert {"capability", "source", "adapter", "model_call_name"}.isdisjoint(
-        column["name"] for column in inspect(engine).get_columns("llm_call_logs")
-    )
-    assert inspect(engine).get_table_comment("llm_model_configs")["text"] == (
-        "大模型连接、优先级与可选价格配置"
-    )
-    with engine.connect() as connection:
-        assert connection.scalar(text("SELECT COUNT(*) FROM llm_model_configs")) == 3
-        assert connection.scalar(text("SELECT COUNT(*) FROM llm_call_logs")) == 1
-
     with engine.begin() as connection:
         connection.execute(text("DELETE FROM llm_call_logs"))
         connection.execute(text("DELETE FROM llm_model_configs"))
@@ -1922,7 +1799,7 @@ def test_mysql_0008_clears_legacy_llm_data_and_supports_rollback() -> None:
     engine.dispose()
 
 
-def test_mysql_migrates_and_restores_legacy_resume_snapshots() -> None:
+def test_mysql_migrates_legacy_resume_snapshots_forward() -> None:
     database_url = migration_test_url()
     engine = create_engine(database_url)
     legacy_data = {
@@ -2028,37 +1905,6 @@ def test_mysql_migrates_and_restores_legacy_resume_snapshots() -> None:
             ),
             {"resume_id": resume_id},
         ) == "1.0"
-
-    run_alembic(database_url, "downgrade", "0004")
-    assert "legacy_data_json_backup" not in {
-        column["name"] for column in inspect(engine).get_columns("resumes")
-    }
-    with engine.connect() as connection:
-        assert connection.scalar(
-            text(
-                "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.schema_version')) "
-                "FROM resumes WHERE id = :resume_id"
-            ),
-            {"resume_id": resume_id},
-        ) == "1"
-        assert connection.scalar(
-            text(
-                "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.schema_version')) "
-                "FROM resume_versions WHERE resume_id = :resume_id"
-            ),
-            {"resume_id": resume_id},
-        ) == "1"
-
-    run_alembic(database_url, "upgrade", "0010")
-    with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0010"
-        assert connection.scalar(
-            text(
-                "SELECT JSON_UNQUOTE(JSON_EXTRACT(legacy_data_json_backup, "
-                "'$.schema_version')) FROM resumes WHERE id = :resume_id"
-            ),
-            {"resume_id": resume_id},
-        ) == "1"
 
     run_alembic(database_url, "upgrade", "head")
     head_inspector = inspect(engine)

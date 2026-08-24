@@ -50,6 +50,23 @@ def install_error_handlers(app: FastAPI) -> None:
                 code = "INVALID_JOB_DESCRIPTION"
             request.state.error_code = code
             return JSONResponse(status_code=400, content={"error": code})
+        if (
+            request.url.path.startswith(
+                (
+                    "/api/job-applications",
+                    "/api/interview-sessions",
+                    "/api/interview-assets",
+                )
+            )
+            or request.url.path == "/api/interview-overview"
+        ):
+            code = (
+                "INVALID_INTERVIEW_QUERY"
+                if request.method == "GET"
+                else "INVALID_INTERVIEW_REQUEST"
+            )
+            request.state.error_code = code
+            return JSONResponse(status_code=400, content={"error": code})
         if request.url.path.startswith("/api/admin/llm"):
             code = (
                 "INVALID_LLM_CALL_QUERY"

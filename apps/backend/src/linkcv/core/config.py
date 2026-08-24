@@ -199,6 +199,11 @@ class Settings(BaseSettings):
         alias="DATASET_UPLOAD_MAX_BYTES",
         ge=1,
     )
+    interview_asset_upload_max_bytes: int = Field(
+        default=500 * 1024 * 1024,
+        alias="INTERVIEW_ASSET_UPLOAD_MAX_BYTES",
+        ge=1,
+    )
     resume_import_max_bytes: int = Field(
         default=10 * 1024 * 1024,
         alias="RESUME_IMPORT_MAX_BYTES",

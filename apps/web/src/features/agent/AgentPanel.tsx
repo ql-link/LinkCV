@@ -1,10 +1,12 @@
-import { CircleCheck, LoaderCircle, Pencil, Plus, RotateCcw, Send, Sparkles, Square, X } from "lucide-react";
+import { ChevronLeft, CircleCheck, History, LoaderCircle, Pencil, Plus, RotateCcw, Send, Sparkles, Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 
 import {
   AgentMessage,
+  AgentClarification,
   AgentProposal,
+  AgentSession,
   AgentSelectionContext,
   AgentStreamEvent,
   ApiRequestError,
@@ -101,6 +103,7 @@ function agentErrorMessage(error: unknown) {
     PATCH_OUT_OF_SCOPE: "修改超出了已定位范围，系统没有创建提案。",
     SOURCE_REQUIRED: "从资料生成内容前需要先选择可追溯的授权资料。",
     SOURCE_FORBIDDEN: "引用资料不存在、已变化或不属于当前账号。",
+    AGENT_CLARIFICATION_STALE: "这个问题已经更新，请按当前问题重新回答。",
   };
   return messages[code] ?? "智能助手没有完成这次请求，请稍后重试。";
 }
@@ -126,6 +129,38 @@ function messageTime(createdAt: string) {
     minute: "2-digit",
     hour12: false,
   }).format(created);
+}
+
+function conversationTime(createdAt: string) {
+  const created = new Date(createdAt);
+  if (Number.isNaN(created.getTime())) return "";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(created);
+}
+
+function pendingClarificationMessage(messages: AgentMessage[]) {
+  const last = messages[messages.length - 1];
+  return last?.role === "assistant" && last.message_type === "clarification" && last.clarification
+    ? last
+    : null;
+}
+
+type ClarificationAnswer = { optionId: string; other: string };
+
+function clarificationAnswerText(
+  clarification: AgentClarification,
+  answers: Record<string, ClarificationAnswer>,
+) {
+  return clarification.questions.map((question) => {
+    const answer = answers[question.id];
+    const selected = question.options.find((option) => option.id === answer?.optionId);
+    return `${question.header}：${answer?.optionId === "__other__" ? answer.other.trim() : selected?.label ?? ""}`;
+  }).join("\n");
 }
 
 function avatarFallback(displayName: string) {
@@ -199,6 +234,10 @@ export function AgentPanel({
 }: AgentPanelProps) {
   const [sessionBinding, setSessionBinding] = useState<{ resumeId: string; sessionId: string } | null>(null);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
+  const [conversationView, setConversationView] = useState<"conversation" | "history">("conversation");
+  const [sessions, setSessions] = useState<AgentSession[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [proposals, setProposals] = useState<AgentProposal[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
@@ -208,51 +247,48 @@ export function AgentPanel({
   const [error, setError] = useState<string | null>(null);
   const [proposalBusyId, setProposalBusyId] = useState<string | null>(null);
   const [selectedContext, setSelectedContext] = useState<AgentSelectionContext | null>(null);
+  const [clarificationAnswers, setClarificationAnswers] = useState<Record<string, ClarificationAnswer>>({});
+  const [clarificationAttempted, setClarificationAttempted] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const sessionRequestRef = useRef(0);
+  const streamRequestRef = useRef(0);
   const activeResumeIdRef = useRef(resumeId);
   const messageListRef = useRef<HTMLDivElement>(null);
   const handledDraftIdRef = useRef<number | null>(null);
   activeResumeIdRef.current = resumeId;
   const sessionId = sessionBinding?.resumeId === resumeId ? sessionBinding.sessionId : null;
+  const pendingClarification = pendingClarificationMessage(messages);
 
   useEffect(() => {
-    let cancelled = false;
+    streamRequestRef.current += 1;
     abortRef.current?.abort();
     abortRef.current = null;
     setSessionBinding(null);
     setMessages([]);
     setProposals([]);
     setInput("");
-    setLoading(true);
+    setLoading(false);
     setRunning(false);
     setRunId(null);
     setToolStatus(null);
     setError(null);
     setProposalBusyId(null);
     setSelectedContext(null);
-    Promise.all([api.listAgentSessions(resumeId), api.listAgentProposals(resumeId)])
-      .then(async ([sessionResult, proposalResult]) => {
-        if (cancelled) return;
-        setProposals(proposalResult.proposals);
-        const session = sessionResult.sessions[0];
-        if (!session) return;
-        const detail = await api.getAgentSession(session.id);
-        if (!cancelled) {
-          setSessionBinding({ resumeId, sessionId: session.id });
-          setMessages(detail.session.messages);
-        }
-      })
-      .catch((reason: unknown) => {
-        if (!cancelled) setError(agentErrorMessage(reason));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    setConversationView("conversation");
+    setSessions([]);
+    setHistoryLoading(false);
+    setHistoryError(null);
+    setClarificationAnswers({});
+    setClarificationAttempted(false);
     return () => {
-      cancelled = true;
       abortRef.current?.abort();
     };
   }, [resumeId]);
+
+  useEffect(() => {
+    setClarificationAnswers({});
+    setClarificationAttempted(false);
+  }, [pendingClarification?.sequence_no]);
 
   useEffect(() => {
     if (!draft || handledDraftIdRef.current === draft.id) return;
@@ -286,6 +322,9 @@ export function AgentPanel({
     } else if (event.type === "assistant.delta") {
       setMessages((current) => {
         const last = current[current.length - 1];
+        if (last?.role === "assistant" && last.sequence_no === -1 && last.message_type === "clarification") {
+          return current;
+        }
         if (last?.role === "assistant" && last.sequence_no === -1) {
           return [...current.slice(0, -1), { ...last, content: last.content + event.delta }];
         }
@@ -293,6 +332,18 @@ export function AgentPanel({
           sequence_no: -1,
           role: "assistant",
           content: event.delta,
+          created_at: new Date().toISOString(),
+        }];
+      });
+    } else if (event.type === "clarification.requested") {
+      setMessages((current) => {
+        const withoutTemporaryAssistant = current.filter((message) => !(message.role === "assistant" && message.sequence_no === -1));
+        return [...withoutTemporaryAssistant, {
+          sequence_no: -1,
+          role: "assistant",
+          message_type: "clarification",
+          clarification: event.clarification,
+          content: "",
           created_at: new Date().toISOString(),
         }];
       });
@@ -307,8 +358,8 @@ export function AgentPanel({
     }
   };
 
-  const runMessage = async (content: string) => {
-    if (!content || loading || running) return;
+  const runMessage = async (content: string, replyToSequenceNo?: number) => {
+    if (!content || loading || running || (pendingClarification && replyToSequenceNo === undefined)) return;
     const runSelectionContext = selectedContext;
     if (runSelectionContext && !await onBeforeRun()) return;
     const requestedResumeId = resumeId;
@@ -323,9 +374,12 @@ export function AgentPanel({
       created_at: new Date().toISOString(),
     }]);
     const controller = new AbortController();
+    const streamRequestId = streamRequestRef.current + 1;
+    streamRequestRef.current = streamRequestId;
     abortRef.current = controller;
+    let currentSessionId: string | null = null;
     try {
-      const currentSessionId = await ensureSession();
+      currentSessionId = await ensureSession();
       const idempotencyKey = globalThis.crypto?.randomUUID?.().replace(/-/g, "") ?? `${Date.now()}_agent`;
       await api.streamAgentMessage(
         currentSessionId,
@@ -333,22 +387,63 @@ export function AgentPanel({
           content,
           idempotency_key: idempotencyKey,
           ...(runSelectionContext ? { selection_context: runSelectionContext } : {}),
+          ...(replyToSequenceNo !== undefined ? { reply_to_sequence_no: replyToSequenceNo } : {}),
         },
         controller.signal,
         (streamEvent) => {
-          if (activeResumeIdRef.current === requestedResumeId) handleEvent(streamEvent);
+          if (
+            streamRequestRef.current === streamRequestId &&
+            activeResumeIdRef.current === requestedResumeId
+          ) handleEvent(streamEvent);
         },
       );
-      if (activeResumeIdRef.current !== requestedResumeId) return;
+      if (
+        streamRequestRef.current !== streamRequestId ||
+        activeResumeIdRef.current !== requestedResumeId
+      ) return;
       const detail = await api.getAgentSession(currentSessionId);
-      if (activeResumeIdRef.current === requestedResumeId) setMessages(detail.session.messages);
+      if (
+        streamRequestRef.current === streamRequestId &&
+        activeResumeIdRef.current === requestedResumeId
+      ) {
+        setMessages(detail.session.messages);
+        const proposalResult = await api.listAgentProposals(requestedResumeId, currentSessionId);
+        if (
+          streamRequestRef.current === streamRequestId &&
+          activeResumeIdRef.current === requestedResumeId
+        ) setProposals(proposalResult.proposals);
+      }
     } catch (reason) {
-      if (!controller.signal.aborted && activeResumeIdRef.current === requestedResumeId) {
+      if (
+        !controller.signal.aborted &&
+        streamRequestRef.current === streamRequestId &&
+        activeResumeIdRef.current === requestedResumeId
+      ) {
         setError(agentErrorMessage(reason));
+        if (reason instanceof ApiRequestError && reason.message === "AGENT_CLARIFICATION_STALE" && currentSessionId) {
+          try {
+            const [detail, proposalResult] = await Promise.all([
+              api.getAgentSession(currentSessionId),
+              api.listAgentProposals(requestedResumeId, currentSessionId),
+            ]);
+            if (
+              streamRequestRef.current === streamRequestId &&
+              activeResumeIdRef.current === requestedResumeId
+            ) {
+              setMessages(detail.session.messages);
+              setProposals(proposalResult.proposals);
+            }
+          } catch {
+            // Keep the actionable stale-answer error when refreshing the latest question also fails.
+          }
+        }
       }
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
-      if (activeResumeIdRef.current === requestedResumeId) {
+      if (
+        streamRequestRef.current === streamRequestId &&
+        activeResumeIdRef.current === requestedResumeId
+      ) {
         setRunning(false);
         setRunId(null);
         setToolStatus(null);
@@ -362,16 +457,82 @@ export function AgentPanel({
   };
 
   const startNewConversation = () => {
+    streamRequestRef.current += 1;
+    if (runId) void api.cancelAgentRun(runId).catch(() => undefined);
     abortRef.current?.abort();
     abortRef.current = null;
     setSessionBinding(null);
     setMessages([]);
+    setProposals([]);
     setInput("");
     setSelectedContext(null);
+    setConversationView("conversation");
+    setClarificationAnswers({});
+    setClarificationAttempted(false);
     setRunning(false);
     setRunId(null);
     setToolStatus(null);
     setError(null);
+  };
+
+  const openHistory = async () => {
+    setConversationView("history");
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const result = await api.listAgentSessions(resumeId);
+      setSessions(result.sessions);
+    } catch (reason) {
+      setHistoryError(agentErrorMessage(reason));
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const selectSession = async (selectedSession: AgentSession) => {
+    const requestId = sessionRequestRef.current + 1;
+    sessionRequestRef.current = requestId;
+    streamRequestRef.current += 1;
+    if (runId) await api.cancelAgentRun(runId).catch(() => undefined);
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setRunning(false);
+    setRunId(null);
+    setToolStatus(null);
+    setLoading(true);
+    setError(null);
+    setMessages([]);
+    setProposals([]);
+    setSelectedContext(null);
+    try {
+      const [detail, proposalResult] = await Promise.all([
+        api.getAgentSession(selectedSession.id),
+        api.listAgentProposals(resumeId, selectedSession.id),
+      ]);
+      if (sessionRequestRef.current !== requestId) return;
+      setSessionBinding({ resumeId, sessionId: selectedSession.id });
+      setMessages(detail.session.messages);
+      setProposals(proposalResult.proposals);
+      setConversationView("conversation");
+    } catch (reason) {
+      if (sessionRequestRef.current === requestId) setHistoryError(agentErrorMessage(reason));
+    } finally {
+      if (sessionRequestRef.current === requestId) setLoading(false);
+    }
+  };
+
+  const submitClarification = () => {
+    if (!pendingClarification?.clarification) return;
+    setClarificationAttempted(true);
+    const complete = pendingClarification.clarification.questions.every((question) => {
+      const answer = clarificationAnswers[question.id];
+      return Boolean(answer?.optionId && (answer.optionId !== "__other__" || answer.other.trim()));
+    });
+    if (!complete) return;
+    void runMessage(
+      clarificationAnswerText(pendingClarification.clarification, clarificationAnswers),
+      pendingClarification.sequence_no,
+    );
   };
 
   const regenerateLastAnswer = () => {
@@ -381,10 +542,20 @@ export function AgentPanel({
   };
 
   const cancelRun = async () => {
+    streamRequestRef.current += 1;
     if (runId) await api.cancelAgentRun(runId).catch(() => undefined);
     abortRef.current?.abort();
+    abortRef.current = null;
     setRunning(false);
+    setRunId(null);
     setToolStatus(null);
+  };
+
+  const closePanel = () => {
+    streamRequestRef.current += 1;
+    if (runId) void api.cancelAgentRun(runId).catch(() => undefined);
+    abortRef.current?.abort();
+    onClose();
   };
 
   const confirmProposal = async (proposal: AgentProposal) => {
@@ -423,11 +594,39 @@ export function AgentPanel({
           <span><strong id="workbench-agent-title">AI 简历助手</strong><small>{selectedContext ? "正在处理所选内容" : "智能优化，高效提升"}</small></span>
         </div>
         <div className="agent-panel-head-actions">
+          {conversationView === "history" ? (
+            <button type="button" aria-label="返回当前对话" title="返回当前对话" onClick={() => setConversationView("conversation")}><ChevronLeft size={17} /></button>
+          ) : (
+            <button type="button" aria-label="历史对话" title="历史对话" onClick={() => void openHistory()}><History size={17} /></button>
+          )}
           <button type="button" aria-label="新建对话" title="新建对话" onClick={startNewConversation}><Plus size={17} /></button>
-          <button type="button" aria-label="关闭智能助手" title="关闭" onClick={onClose}><X size={17} /></button>
+          <button type="button" aria-label="关闭智能助手" title="关闭" onClick={closePanel}><X size={17} /></button>
         </div>
       </header>
 
+      {conversationView === "history" ? (
+        <section className="agent-conversation-history" aria-label="历史对话">
+          <header><strong>历史对话</strong><small>当前简历 · 最近 50 条</small></header>
+          {historyLoading && <p className="agent-empty"><LoaderCircle aria-hidden="true" className="agent-spinner" />正在读取历史对话…</p>}
+          {historyError && <div className="agent-error" role="alert">{historyError}<button type="button" onClick={() => void openHistory()}>重试</button></div>}
+          {!historyLoading && !historyError && sessions.length === 0 && <p className="agent-empty">暂无历史对话。发送第一条消息后会显示在这里。</p>}
+          {!historyLoading && !historyError && sessions.length > 0 && (
+            <div className="agent-conversation-list">
+              {sessions.map((item) => (
+                <button
+                  type="button"
+                  className={item.id === sessionId ? "is-current" : undefined}
+                  key={item.id}
+                  onClick={() => void selectSession(item)}
+                >
+                  <span>{item.title}</span>
+                  <small>{conversationTime(item.last_message_at ?? item.created_at)}</small>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : <>
       <div className="agent-message-list" ref={messageListRef} aria-live="polite">
         {loading && <p className="agent-empty"><LoaderCircle aria-hidden="true" className="agent-spinner" />正在读取对话…</p>}
         {!loading && messages.length === 0 && (
@@ -436,7 +635,7 @@ export function AgentPanel({
             <p>专注于为你提供简历优化建议。你可以直接输入问题，也可以先选中一段简历内容。</p>
           </div>
         )}
-        {messages.map((message, index) => (
+        {messages.filter((message) => message !== pendingClarification).map((message, index) => (
           <article className={`agent-message is-${message.role}`} key={messageKey(message, index)}>
             <div className="agent-message-row">
               <div className="agent-message-bubble">
@@ -503,7 +702,7 @@ export function AgentPanel({
 
       {error && <div className="agent-error" role="alert">{error}</div>}
 
-      {messages.some((message) => message.role === "assistant") && !running && (
+      {messages.some((message) => message.role === "assistant") && !running && !pendingClarification && (
         <button type="button" className="agent-regenerate" onClick={regenerateLastAnswer}>
           <RotateCcw aria-hidden="true" size={14} />重新生成
         </button>
@@ -517,31 +716,79 @@ export function AgentPanel({
             <button type="button" onClick={() => setSelectedContext(null)}>移除上下文</button>
           </div>
         )}
-        <div className="agent-quick-prompts" aria-label="AI 快捷指令">
+        {pendingClarification?.clarification && (
+          <section className="agent-clarification" aria-label="需要你确认">
+            <header><Sparkles aria-hidden="true" size={15} /><span><strong>需要你确认</strong><small>回答后我再继续处理</small></span></header>
+            {pendingClarification.clarification.questions.map((question) => {
+              const answer = clarificationAnswers[question.id] ?? { optionId: "", other: "" };
+              const missing = clarificationAttempted && (!answer.optionId || (answer.optionId === "__other__" && !answer.other.trim()));
+              return (
+                <fieldset key={question.id} aria-describedby={missing ? `${question.id}-error` : undefined}>
+                  <legend><span>{question.header}</span>{question.question}</legend>
+                  {question.options.map((option) => (
+                    <label key={option.id}>
+                      <input
+                        type="radio"
+                        name={`clarification-${question.id}`}
+                        value={option.id}
+                        checked={answer.optionId === option.id}
+                        onChange={() => setClarificationAnswers((current) => ({ ...current, [question.id]: { optionId: option.id, other: "" } }))}
+                      />
+                      <span><strong>{option.label}</strong>{option.description && <small>{option.description}</small>}</span>
+                    </label>
+                  ))}
+                  <label>
+                    <input
+                      type="radio"
+                      name={`clarification-${question.id}`}
+                      value="__other__"
+                      checked={answer.optionId === "__other__"}
+                      onChange={() => setClarificationAnswers((current) => ({ ...current, [question.id]: { optionId: "__other__", other: current[question.id]?.other ?? "" } }))}
+                    />
+                    <span><strong>其他</strong><small>用自己的话补充</small></span>
+                  </label>
+                  {answer.optionId === "__other__" && (
+                    <input
+                      className="agent-clarification-other"
+                      aria-label={`${question.header}的其他回答`}
+                      maxLength={500}
+                      value={answer.other}
+                      onChange={(event) => setClarificationAnswers((current) => ({ ...current, [question.id]: { optionId: "__other__", other: event.target.value } }))}
+                    />
+                  )}
+                  {missing && <small className="agent-clarification-error" id={`${question.id}-error`}>请选择一个选项或填写其他答案。</small>}
+                </fieldset>
+              );
+            })}
+            <Button type="button" variant="accent" disabled={running} onClick={submitClarification}>提交回答</Button>
+          </section>
+        )}
+        {!pendingClarification && <div className="agent-quick-prompts" aria-label="AI 快捷指令">
           {agentQuickPrompts.map(({ label, prompt, icon: PromptIcon }) => (
             <button type="button" key={label} onClick={() => setInput(prompt)}>
               <PromptIcon aria-hidden="true" size={14} />{label}
             </button>
           ))}
-        </div>
+        </div>}
         <label className="visually-hidden" htmlFor="agent-message-input">告诉助手你想改善什么</label>
         <div className="agent-input-shell">
           <textarea
             id="agent-message-input"
             value={input}
             maxLength={32_768}
-            placeholder="输入你的问题…"
-            disabled={loading || running}
+            placeholder={pendingClarification ? "请先回答上方问题…" : "输入你的问题…"}
+            disabled={loading || running || Boolean(pendingClarification)}
             onChange={(event) => setInput(event.target.value)}
           />
           {running ? (
             <button className="agent-send-button is-stop" type="button" aria-label="停止生成" onClick={() => void cancelRun()}><Square aria-hidden="true" size={15} /></button>
           ) : (
-            <button className="agent-send-button" disabled={loading || !input.trim()} type="submit" aria-label="发送"><Send aria-hidden="true" size={17} /></button>
+            <button className="agent-send-button" disabled={loading || !input.trim() || Boolean(pendingClarification)} type="submit" aria-label="发送"><Send aria-hidden="true" size={17} /></button>
           )}
         </div>
         <small className="agent-composer-note">修改提案不会自动覆盖简历，需要你确认后应用。</small>
       </form>
+      </>}
     </section>
   );
 }

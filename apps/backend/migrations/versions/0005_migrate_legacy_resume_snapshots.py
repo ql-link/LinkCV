@@ -3,7 +3,7 @@
 The legacy Tiptap document cannot be transformed safely with SQL alone, so this
 revision uses bounded Python conversion after reviewed SQL adds nullable backup
 columns. Re-running the conversion is safe: converted rows retain the original
-JSON in those columns, and downgrade restores it before dropping the columns.
+JSON in those columns. Restoring the pre-migration state requires a backup.
 
 Revision ID: 0005
 Revises: 0004
@@ -524,9 +524,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    connection = op.get_bind()
-    if not _backup_columns_exist(connection):
-        raise RuntimeError("0005 backup columns are missing before downgrade")
-    _restore_table(connection, "resume_versions")
-    _restore_table(connection, "resumes")
-    execute_sql_file(connection, SQL_DIR / "0005.down.sql")
+    raise RuntimeError("LinkCV database migrations are forward-only")

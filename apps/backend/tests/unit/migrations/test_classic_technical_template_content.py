@@ -58,13 +58,3 @@ def test_classic_technical_template_upgrade_guard_matches_0024_content() -> None
     assert seeded_digest in update_sql
     assert "$.basics.headline')) <=> '后端开发工程师'" in update_sql
     assert "$.basics.location')) <=> '杭州'" in update_sql
-
-
-def test_classic_technical_template_downgrade_guard_matches_new_content() -> None:
-    up_sql = (SQL_DIR / "0025.up.sql").read_text()
-    down_sql = (SQL_DIR / "0025.down.sql").read_text()
-    markdown_digest = hashlib.sha256(_updated_markdown(up_sql).encode()).hexdigest()
-
-    assert markdown_digest in down_sql
-    assert "$.basics.headline')) <=> '平台工程师'" in down_sql
-    assert "$.basics.location')) <=> '成都'" in down_sql

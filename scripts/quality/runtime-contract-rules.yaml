@@ -223,6 +223,22 @@ contracts:
         pattern: '(?m)^MYSQL_DATABASE=linkcv$'
         message: Production 配置必须使用独立 linkcv 数据库
 
+  - id: interview-asset-upload-limit
+    description: FastAPI 与三套环境使用一致的面试素材上传上限
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default=500 \* 1024 \* 1024,[\s\S]*alias="INTERVIEW_ASSET_UPLOAD_MAX_BYTES"'
+        message: FastAPI 必须使用 500 MiB 的面试素材上传上限
+      - path: .env.example
+        pattern: '(?m)^INTERVIEW_ASSET_UPLOAD_MAX_BYTES=524288000$'
+        message: 本地环境模板必须声明面试素材上传上限
+      - path: .env.development
+        pattern: '(?m)^INTERVIEW_ASSET_UPLOAD_MAX_BYTES=524288000$'
+        message: Development 必须声明面试素材上传上限
+      - path: .env.production
+        pattern: '(?m)^INTERVIEW_ASSET_UPLOAD_MAX_BYTES=524288000$'
+        message: Production 必须声明面试素材上传上限
+
   - id: redis-local-port
     description: 本地配置与 Compose 使用同一个 Redis 默认端口
     assertions:
@@ -401,17 +417,17 @@ contracts:
         pattern: 'execute_sql_file\(op\.get_bind\(\), SQL_DIR / "\$\{up_revision\}\.up\.sql"\)'
         message: 新 revision 必须通过独立 up SQL 文件执行
       - path: apps/backend/migrations/script.py.mako
-        pattern: 'execute_sql_file\(op\.get_bind\(\), SQL_DIR / "\$\{up_revision\}\.down\.sql"\)'
-        message: 新 revision 必须通过独立 down SQL 文件执行
+        pattern: 'LinkCV database migrations are forward-only'
+        message: 新 revision 必须明确拒绝 downgrade
       - path: scripts/db/create_sql_revision.py
-        pattern: 'create_sql_files\(revision\.revision, args\.message\)'
-        message: 生成 revision 时必须同步创建 SQL 文件对
+        pattern: 'create_up_sql_file\(revision\.revision, args\.message\)'
+        message: 生成 revision 时只创建 up SQL 文件
       - path: Dockerfile
         pattern: 'run_alembic\.py.*&& exec uvicorn'
         message: 容器必须先通过迁移 runner 再启动 FastAPI
       - path: .ai/skills/alembic-migration/SKILL.md
-        pattern: '同 ID 的 `\.up\.sql`、`\.down\.sql` 文件对'
-        message: 迁移 Skill 必须要求配对 up/down SQL
+        pattern: '只生成同 ID 的 `\.up\.sql`'
+        message: 迁移 Skill 必须要求 forward-only up SQL
       - path: .ai/skills/alembic-migration/SKILL.md
         pattern: '禁止使用 `alembic revision --autogenerate`'
         message: 迁移 Skill 不得把 autogenerate 作为 SQL-first 入口

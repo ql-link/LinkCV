@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createSelectionBubbleAnchor,
   refreshSelectionBubblePosition,
-  shouldShowWorkbenchBubbleMenu,
+  shouldShowSelectionAgentBubble,
 } from "./selectionBubbleAnchor";
 
 function rect(left: number) {
@@ -10,19 +10,10 @@ function rect(left: number) {
 }
 
 describe("selectionBubbleAnchor", () => {
-  it("仅在形成非空文字选区时显示工具栏", () => {
-    expect(shouldShowWorkbenchBubbleMenu({
-      editable: true,
-      selectionEmpty: true,
-    })).toBe(false);
-    expect(shouldShowWorkbenchBubbleMenu({
-      editable: true,
-      selectionEmpty: false,
-    })).toBe(true);
-    expect(shouldShowWorkbenchBubbleMenu({
-      editable: false,
-      selectionEmpty: false,
-    })).toBe(false);
+  it("只在可编辑状态选中文字后显示 AI 提示", () => {
+    expect(shouldShowSelectionAgentBubble({ editable: true, selectionEmpty: false })).toBe(true);
+    expect(shouldShowSelectionAgentBubble({ editable: true, selectionEmpty: true })).toBe(false);
+    expect(shouldShowSelectionAgentBubble({ editable: false, selectionEmpty: false })).toBe(false);
   });
 
   it("同一选区格式变化时保持原锚点", () => {

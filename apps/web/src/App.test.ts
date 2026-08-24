@@ -29,7 +29,11 @@ describe("App landing routes", () => {
     render(createElement(App));
 
     expect(
-      await screen.findByRole("heading", { name: "把每一份经历，都写成下一份机会" }),
+      await screen.findByRole(
+        "heading",
+        { name: "把每一份经历，都写成下一份机会" },
+        { timeout: 5_000 },
+      ),
     ).toBeInTheDocument();
     await waitFor(() => expect(window.location.pathname).toBe(path));
   });

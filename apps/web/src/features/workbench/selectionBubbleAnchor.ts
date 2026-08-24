@@ -6,7 +6,7 @@ export type SelectionRange = {
 export type SelectionRectReader = () => DOMRect;
 export type SelectionPositionUpdater = () => void;
 
-export function shouldShowWorkbenchBubbleMenu({
+export function shouldShowSelectionAgentBubble({
   editable,
   selectionEmpty,
 }: {
