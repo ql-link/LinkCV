@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { BriefcaseBusiness, Check } from "lucide-react";
+import { Check, FilePenLine } from "lucide-react";
 import {
   api,
   ApiRequestError,
@@ -200,8 +200,8 @@ export function JobFormPage({
           <form className="job-create-dialog-form" noValidate onSubmit={submit}>
             <DialogHeader className="job-create-dialog-header">
               <DialogTitle className="job-create-dialog-title">
-                <BriefcaseBusiness size={18} strokeWidth={1.8} aria-hidden="true" />
-                <span>新建 JD</span>
+                <FilePenLine size={18} strokeWidth={1.8} aria-hidden="true" />
+                <span>手动填写JD信息</span>
               </DialogTitle>
             </DialogHeader>
 
@@ -280,7 +280,6 @@ export function JobFormPage({
             </div>
 
             <DialogFooter className="job-create-dialog-footer">
-              <Button variant="outline" disabled={saving} onClick={closeDialog}>取消</Button>
               <Button type="submit" disabled={saving}>{saving ? "正在创建…" : "创建 JD"}</Button>
             </DialogFooter>
           </form>

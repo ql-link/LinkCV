@@ -59,14 +59,14 @@ describe("JobFormPage", () => {
   it("明确标记创建表单中的必填字段", () => {
     const { container } = render(<JobFormPage mode="create" presentation="dialog" />);
 
-    expect(screen.getByRole("dialog", { name: "新建 JD" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "手动填写JD信息" })).toBeInTheDocument();
     expect(screen.queryByText("先填写岗位核心信息，其余内容可按需补充。")).not.toBeInTheDocument();
-    expect(document.querySelector(".job-create-dialog-title svg")).toBeInTheDocument();
+    expect(document.querySelector(".job-create-dialog-title .lucide-file-pen-line")).toBeInTheDocument();
     expect(screen.queryByText("保存前检查")).not.toBeInTheDocument();
     expect(screen.queryByText("更多字段（可选）")).not.toBeInTheDocument();
     expect(document.querySelectorAll(".job-create-more details")).toHaveLength(0);
     expect(document.querySelectorAll(".job-create-optional-section")).toHaveLength(4);
-    expect(screen.getByRole("button", { name: "取消" })).toHaveClass("ui-button-transparent", "rounded-full");
+    expect(screen.queryByRole("button", { name: "取消" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "创建 JD" })).toHaveClass("rounded-lg");
     expect(screen.getByPlaceholderText("使用逗号或换行分隔，例如：Java、SQL")).toBeInTheDocument();
 

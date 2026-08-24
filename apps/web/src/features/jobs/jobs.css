@@ -36,6 +36,8 @@
   grid-template-columns: minmax(0, 1fr) auto;
   min-height: 76px;
   background: var(--ui-surface-subtle);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 76px;
   transition: background-color var(--ui-duration-fast) var(--ui-ease-standard), box-shadow var(--ui-duration-fast) var(--ui-ease-standard);
 }
 
@@ -105,7 +107,36 @@
 }
 
 .job-card-delete.ui-icon-button:hover { background: var(--error-bg); color: var(--error); }
-.job-load-more { display: flex; margin: 12px auto; }
+
+.job-center-content .expandable-search {
+  border-color: var(--ui-input);
+  box-shadow: none;
+}
+
+.job-center-content .expandable-search:focus-within,
+.job-center-content .expandable-search-trigger:focus-visible {
+  border-color: var(--ui-foreground);
+  outline: 0;
+  box-shadow: none;
+}
+
+.job-infinite-scroll-sentinel {
+  display: grid;
+  min-height: 32px;
+  place-items: center;
+  padding: 8px 20px;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.job-infinite-scroll-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.job-infinite-scroll-error .ui-button { height: 32px; padding-inline: 14px; }
 
 .job-empty-state {
   display: grid;
@@ -454,7 +485,7 @@
   min-width: 0;
   min-height: 38px;
   margin-inline: -9px;
-  border: 1px dashed transparent;
+  border: 1px solid transparent;
   border-radius: var(--ui-radius-md);
   background: transparent;
   padding: 7px 8px;
@@ -485,6 +516,7 @@
 .job-quick-edit input,
 .job-quick-edit textarea,
 .job-quick-edit select {
+  display: block;
   width: calc(100% + 18px);
   min-width: 0;
   max-width: calc(100% + 18px);
@@ -698,7 +730,7 @@
 .job-field select,
 .job-field textarea {
   width: 100%;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--ui-input);
   border-radius: var(--radius-xs);
   background: var(--canvas);
   padding: 11px 12px;
@@ -711,7 +743,11 @@
 .job-field textarea { min-height: 120px; resize: vertical; line-height: 1.55; }
 .job-field input:focus,
 .job-field select:focus,
-.job-field textarea:focus { border-color: var(--form-focus); box-shadow: 0 0 0 3px var(--accent-soft); }
+.job-field textarea:focus {
+  border-color: var(--ui-foreground);
+  outline: 0;
+  box-shadow: none;
+}
 .job-field small { color: var(--ui-muted); }
 
 .job-rail-section {
@@ -827,6 +863,7 @@
 .job-method-header { padding-right: 42px; }
 .job-method-title { display: inline-flex; align-items: center; gap: 9px; font-size: var(--ui-text-xl); }
 .job-method-title svg { width: 20px; height: 20px; color: var(--ui-accent); }
+.job-method-dialog > [data-slot="dialog-close"] { top: 20px; right: 20px; }
 
 .job-method-options {
   overflow: hidden;
@@ -869,9 +906,10 @@
 .job-smart-import-dialog form > div:first-child { padding: 24px 64px 0 28px; }
 .job-smart-title { display: inline-flex; align-items: center; gap: 8px; }
 .job-smart-title svg { width: 19px; height: 19px; color: var(--ui-accent); }
+.job-smart-import-dialog > [data-slot="dialog-close"] { top: 15px; right: 16px; }
 .job-smart-import-body { display: grid; min-height: 0; gap: 12px; overflow-y: auto; overscroll-behavior: contain; padding: 20px 28px 24px; }
-.job-smart-workspace { overflow: hidden; border: 1px solid var(--ui-input); border-radius: var(--ui-radius-lg); background: var(--ui-surface); transition: border-color var(--ui-duration-fast) var(--ui-ease-press), box-shadow var(--ui-duration-fast) var(--ui-ease-press); }
-.job-smart-workspace:focus-within { border-color: var(--ui-ring); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-ring) 24%, transparent); }
+.job-smart-workspace { overflow: hidden; border: 1px solid var(--ui-input); border-radius: var(--ui-radius-lg); background: var(--ui-surface); transition: border-color var(--ui-duration-fast) var(--ui-ease-press); }
+.job-smart-workspace:focus-within { border-color: var(--ui-foreground); box-shadow: none; }
 .job-smart-text-field { display: grid; gap: 8px; padding: 16px 16px 10px; }
 .job-smart-text-field > span { display: inline-flex; align-items: center; gap: 7px; color: var(--ui-text-secondary); font-size: var(--ui-text-sm); font-weight: 600; }
 .job-smart-text-field > span svg { width: 16px; height: 16px; }
@@ -922,7 +960,7 @@
   flex-direction: row;
   align-items: center;
   border-bottom: 1px solid var(--ui-border);
-  padding: 8px 64px 8px 26px;
+  padding: 12px 64px 12px 26px;
   text-align: left;
 }
 
@@ -935,6 +973,7 @@
 }
 
 .job-create-dialog-title svg { color: var(--ui-accent); }
+.job-create-dialog > [data-slot="dialog-close"] { top: 6px; right: 16px; }
 
 .job-create-dialog-body {
   display: block;
@@ -1013,6 +1052,12 @@
   height: 38px;
 }
 
+.job-create-field input {
+  border-color: var(--ui-input);
+  outline: 0;
+  box-shadow: none;
+}
+
 .job-create-field button[role="combobox"] {
   border: 1px solid var(--ui-input);
   border-radius: var(--ui-radius-xs);
@@ -1022,8 +1067,21 @@
 }
 
 .job-create-field button[role="combobox"][data-placeholder] { color: var(--ui-text-muted); }
-.job-create-field button[role="combobox"]:hover:not(:disabled) { border-color: var(--ui-border-strong); }
-.job-create-field button[role="combobox"]:focus-visible { border-color: var(--ui-ring); outline: 0; box-shadow: 0 0 0 2px var(--ui-ring); }
+.job-create-field input:hover:not(:disabled):not(:focus),
+.job-create-field textarea:hover:not(:disabled):not(:focus),
+.job-create-field button[role="combobox"]:hover:not(:disabled):not(:focus) { border-color: var(--ui-border-strong); }
+
+.job-create-field input:focus,
+.job-create-field input:focus-visible,
+.job-create-field textarea:focus,
+.job-create-field textarea:focus-visible,
+.job-create-field button[role="combobox"]:focus,
+.job-create-field button[role="combobox"]:focus-visible,
+.job-create-field button[role="combobox"][aria-expanded="true"] {
+  border-color: var(--ui-foreground);
+  outline: 0;
+  box-shadow: none;
+}
 
 .job-create-field textarea {
   width: 100%;
@@ -1043,7 +1101,6 @@
 .job-create-field textarea::placeholder { color: var(--ui-text-muted); }
 .job-create-field input:focus::placeholder,
 .job-create-field textarea:focus::placeholder { color: transparent; }
-.job-create-field textarea:focus-visible { border-color: var(--ui-ring); outline: 0; box-shadow: 0 0 0 2px var(--ui-ring); }
 
 .job-create-section-divider {
   height: 1px;
@@ -1140,8 +1197,9 @@
 
 .plugin-dialog-chip svg { flex: none; }
 
-.plugin-dialog-close { display: grid; flex: none; width: 34px; height: 34px; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--ui-muted); }
-.plugin-dialog-close:hover { background: var(--surface-subtle); color: var(--ink); }
+.plugin-dialog-close { display: grid; flex: none; width: 34px; height: 34px; place-items: center; border: 0; background: transparent; color: var(--ui-muted); }
+.plugin-dialog-close:hover { background: transparent; color: var(--ink); }
+.plugin-dialog-close:focus-visible { outline: 1px solid var(--ink); outline-offset: 2px; }
 
 .plugin-steps {
   display: grid;
@@ -1293,6 +1351,8 @@
   .job-method-dialog,
   .job-smart-import-dialog { width: calc(100% - 24px); padding: 20px; }
   .job-smart-import-dialog { padding: 0; }
+  .job-method-dialog > [data-slot="dialog-close"] { top: 12px; right: 12px; }
+  .job-smart-import-dialog > [data-slot="dialog-close"] { top: 11px; right: 12px; }
   .job-method-header { padding-right: 34px; }
   .job-method-option { grid-template-columns: 38px minmax(0, 1fr); gap: 12px; padding: 15px 14px; }
   .job-method-icon { width: 38px; height: 38px; }
@@ -1307,6 +1367,7 @@
   .job-smart-image-preview > .ui-button { grid-column: 2; justify-self: start; }
   .job-smart-footer { padding: 12px 20px; }
   .job-create-dialog-header { padding: 8px 58px 8px 16px; }
+  .job-create-dialog > [data-slot="dialog-close"] { top: 2px; }
   .job-create-dialog-body { display: block; }
   .job-create-primary { padding: 20px 16px 18px; }
   .job-create-secondary { padding: 0 16px 24px; }

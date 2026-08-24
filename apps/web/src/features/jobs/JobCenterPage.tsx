@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { BriefcaseBusiness, Download, MapPin, Plus, Trash2, WalletCards } from "lucide-react";
 import { api, type JobDescriptionDraft, type JobDescriptionSummary } from "../../api/client";
 import { Button, ConfirmDialog, ExpandableSearch, IconButton, PageLoading } from "@/components/ui";
@@ -18,6 +18,7 @@ export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?:
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<JobDescriptionSummary | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -25,6 +26,8 @@ export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?:
   const [createStage, setCreateStage] = useState<"method" | "smart" | "form">("method");
   const [initialJobForm, setInitialJobForm] = useState<JobFormState | undefined>();
   const [draftWarnings, setDraftWarnings] = useState<string[]>([]);
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
+  const loadingMoreRef = useRef(false);
   const activeKeywordRef = useRef(keyword.trim());
   activeKeywordRef.current = keyword.trim();
 
@@ -48,6 +51,7 @@ export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?:
     setLoading(true);
     setError(null);
     setNextCursor(null);
+    setLoadMoreError(false);
     const timer = window.setTimeout(() => {
       void api.listJobDescriptions({ keyword: keyword.trim() || undefined })
         .then((result) => {
@@ -71,10 +75,12 @@ export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?:
     };
   }, [keyword]);
 
-  const loadMore = async () => {
-    if (!nextCursor || loadingMore) return;
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || loadingMoreRef.current) return;
     const requestQuery = { keyword: keyword.trim(), cursor: nextCursor };
+    loadingMoreRef.current = true;
     setLoadingMore(true);
+    setLoadMoreError(false);
     try {
       const result = await api.listJobDescriptions({
         keyword: requestQuery.keyword || undefined,
@@ -88,11 +94,22 @@ export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?:
     } catch {
       if (
         activeKeywordRef.current === requestQuery.keyword
-      ) setError("无法加载更多 JD，请稍后重试。");
+      ) setLoadMoreError(true);
     } finally {
+      loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  };
+  }, [keyword, nextCursor]);
+
+  useEffect(() => {
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel || !nextCursor || loading || loadingMore || loadMoreError || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) void loadMore();
+    }, { rootMargin: "280px 0px" });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loadMore, loadMoreError, loading, loadingMore, nextCursor]);
 
   const deleteJob = async () => {
     if (!pendingDelete || busyId) return;
@@ -168,7 +185,17 @@ export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?:
                 </div>
               </article>
             ))}
-            {nextCursor && <Button className="job-load-more" variant="secondary" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "正在加载…" : "加载更多"}</Button>}
+            {nextCursor && (
+              <div ref={loadMoreSentinelRef} className="job-infinite-scroll-sentinel" aria-live="polite">
+                {loadingMore && <span role="status">正在加载更多 JD…</span>}
+                {loadMoreError && (
+                  <div className="job-infinite-scroll-error">
+                    <span>后续 JD 加载失败。</span>
+                    <Button variant="secondary" onClick={() => void loadMore()}>重试</Button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
         </div>
@@ -184,7 +211,6 @@ export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?:
       )}
       {createDialogOpen && createStage === "smart" && (
         <JobSmartImportDialog
-          onBack={() => setCreateStage("method")}
           onClose={closeCreate}
           onParsed={useDraft}
         />
