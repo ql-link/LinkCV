@@ -16,11 +16,9 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const SUPPORTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 export function JobSmartImportDialog({
-  onBack,
   onClose,
   onParsed,
 }: {
-  onBack: () => void;
   onClose: () => void;
   onParsed: (draft: JobDescriptionDraft, warnings: string[]) => void;
 }) {
@@ -34,11 +32,10 @@ export function JobSmartImportDialog({
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
   useEffect(() => () => requestRef.current?.abort(), []);
 
-  const leave = (destination: "back" | "close") => {
+  const close = () => {
     requestRef.current?.abort();
     requestRef.current = null;
-    if (destination === "back") onBack();
-    else onClose();
+    onClose();
   };
 
   const chooseImage = (file: File | undefined) => {
@@ -93,7 +90,7 @@ export function JobSmartImportDialog({
   };
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) leave("close"); }}>
+    <Dialog open onOpenChange={(open) => { if (!open) close(); }}>
       <DialogContent
         className="job-smart-import-dialog"
         onPaste={(event) => {
@@ -109,7 +106,7 @@ export function JobSmartImportDialog({
       >
         <form onSubmit={submit}>
           <DialogHeader>
-            <DialogTitle className="job-smart-title"><Sparkles aria-hidden="true" />智能导入</DialogTitle>
+            <DialogTitle className="job-smart-title"><Sparkles aria-hidden="true" />智能填写JD信息</DialogTitle>
             <DialogDescription>提供招聘内容，生成一份可继续修改的 JD 草稿。</DialogDescription>
           </DialogHeader>
 
@@ -153,7 +150,6 @@ export function JobSmartImportDialog({
           </div>
 
           <DialogFooter className="job-smart-footer">
-            <Button type="button" variant="ghost" onClick={() => leave("back")}>返回</Button>
             <Button type="submit" disabled={busy} aria-busy={busy}>{busy ? "正在识别…" : "开始识别"}</Button>
           </DialogFooter>
         </form>

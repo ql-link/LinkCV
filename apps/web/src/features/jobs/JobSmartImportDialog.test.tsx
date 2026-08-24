@@ -7,7 +7,9 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("JobSmartImportDialog", () => {
   it("拒绝不受支持的图片且保留已有文字", () => {
-    render(<JobSmartImportDialog onBack={vi.fn()} onClose={vi.fn()} onParsed={vi.fn()} />);
+    render(<JobSmartImportDialog onClose={vi.fn()} onParsed={vi.fn()} />);
+    expect(screen.getByRole("dialog", { name: "智能填写JD信息" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "返回" })).not.toBeInTheDocument();
     const text = screen.getByLabelText("岗位文字");
     fireEvent.change(text, { target: { value: "一段有效岗位文字" } });
 
@@ -30,7 +32,7 @@ describe("JobSmartImportDialog", () => {
         callId: "llmcall_retry",
       });
     const parsed = vi.fn();
-    render(<JobSmartImportDialog onBack={vi.fn()} onClose={vi.fn()} onParsed={parsed} />);
+    render(<JobSmartImportDialog onClose={vi.fn()} onParsed={parsed} />);
     const text = screen.getByLabelText("岗位文字");
     fireEvent.change(text, { target: { value: "招聘后端工程师" } });
 
@@ -47,7 +49,7 @@ describe("JobSmartImportDialog", () => {
     );
   });
 
-  it("识别中返回会取消请求并忽略迟到结果", async () => {
+  it("识别中关闭会取消请求并忽略迟到结果", async () => {
     let resolveRequest:
       | ((value: Awaited<ReturnType<typeof api.parseJobDescriptionDraft>>) => void)
       | undefined;
@@ -59,12 +61,11 @@ describe("JobSmartImportDialog", () => {
         });
       }),
     );
-    const onBack = vi.fn();
+    const onClose = vi.fn();
     const onParsed = vi.fn();
     render(
       <JobSmartImportDialog
-        onBack={onBack}
-        onClose={vi.fn()}
+        onClose={onClose}
         onParsed={onParsed}
       />,
     );
@@ -74,9 +75,9 @@ describe("JobSmartImportDialog", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "开始识别" }));
     await waitFor(() => expect(parse).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole("button", { name: "返回" }));
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
 
-    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
     expect(parse.mock.calls[0][0].signal?.aborted).toBe(true);
     resolveRequest?.({
       draft: { job_title: "不应回填" },
@@ -91,7 +92,7 @@ describe("JobSmartImportDialog", () => {
   it("粘贴图片后切换为图片输入并显示本地预览", () => {
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview");
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
-    render(<JobSmartImportDialog onBack={vi.fn()} onClose={vi.fn()} onParsed={vi.fn()} />);
+    render(<JobSmartImportDialog onClose={vi.fn()} onParsed={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("岗位文字"), { target: { value: "旧文字" } });
     const image = new File(["png"], "job.png", { type: "image/png" });
 
