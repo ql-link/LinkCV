@@ -52,6 +52,8 @@ describe("AuthPage environment-aware login", () => {
     await act(async () => {});
     expect(screen.getByRole("heading", { name: "微信扫码登录 LinkCV" })).toBeInTheDocument();
     expect(screen.getByAltText("微信扫码登录二维码")).toBeInTheDocument();
+    expect(screen.getByText("扫码后在微信中确认登录，保障账号安全")).toBeInTheDocument();
+    expect(document.querySelector(".wechat-qr-panel--auth")).toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(document.querySelector("form")).toBeNull();
 
