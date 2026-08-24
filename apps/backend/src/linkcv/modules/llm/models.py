@@ -156,7 +156,8 @@ class LLMCapabilityBinding(Base):
     __table_args__ = (
         Index("idx_llm_capability_bindings_model", "model_config_id", "capability"),
         CheckConstraint(
-            "capability IN ('chat', 'resume_structuring', 'pi_agent')",
+            "capability IN ('chat', 'resume_structuring', 'pi_agent', "
+            "'job_image_structuring')",
             name="ck_llm_capability_bindings_capability",
         ),
         CheckConstraint(
@@ -409,7 +410,8 @@ class LLMModelValidation(Base):
             "id",
         ),
         CheckConstraint(
-            "capability IN ('chat', 'resume_structuring', 'pi_agent')",
+            "capability IN ('chat', 'resume_structuring', 'pi_agent', "
+            "'job_image_structuring')",
             name="ck_llm_model_validations_capability",
         ),
         CheckConstraint(

@@ -2,9 +2,9 @@
 
 ## 职责与边界
 
-`apps/extension` 是 WXT + React + TypeScript 的 Chrome Manifest V3 插件。它只处理用户主动打开的 BOSS 直聘岗位详情：既支持独立岗位详情页，也支持职位列表页右侧当前选中的详情面板。用户点击插件后，内容脚本读取当前 DOM，弹窗展示可编辑预览，确认后由弹窗调用 `POST /api/job-descriptions/import`。
+`apps/extension` 是以 LinkResume 为用户可见品牌的 WXT + React + TypeScript Chrome Manifest V3 插件。它只处理用户主动打开的 BOSS 直聘岗位详情：既支持独立岗位详情页，也支持职位列表页右侧当前选中的详情面板。用户点击插件后，内容脚本读取当前 DOM，弹窗展示可编辑预览，确认后由弹窗调用 `POST /api/job-descriptions/import`。弹窗沿用 Web 功能区的暖灰画布、白色表面、近黑主操作、蓝色交互提示、表单圆角和焦点样式；插件仍保持独立构建，不直接依赖 Web 组件包。
 
-插件不做岗位分析、简历匹配、自动投递、批量抓取、后台轮询或反爬绕过。页面采集字段只保存在当前弹窗内存中；插件不使用 `storage` 权限，不保存 Cookie、密码、API Key 或原始页面。后端执行确定性清洗、来源规范化、去重和最终结构化入库，原始抓取内容不落库。
+插件不做岗位分析、简历匹配、自动投递、批量抓取、后台轮询或反爬绕过。页面采集字段只保存在当前弹窗内存中；插件不使用 `storage` 权限，不保存 Cookie、密码、API Key 或原始页面。后端执行确定性清洗、来源规范化、去重和最终结构化入库，原始抓取内容不落库。来源重复时弹窗只允许用本次内容更新已有 JD、打开已有 JD 或返回预览，不提供归档恢复动作。
 
 ## 代码入口
 
@@ -16,7 +16,7 @@
 | `entrypoints/popup/` | 登录状态、可编辑预览、提交、重复来源和结果反馈 |
 | `src/api/linkcv.ts` | 本地 LinkCV 源站探测、Cookie 会话刷新和导入客户端 |
 
-内容脚本和 API 客户端分开：BOSS 页面上下文只返回采集字段，带 LinkCV `host_permissions` 的扩展弹窗才发送受保护 API 请求。普通开发构建保留 `127.0.0.1:5173` 和 `localhost:5173` 候选，并优先选择已有登录态的源站。正式发布构建设置 `WXT_RELEASE_BUILD=1`，此时移除本地默认权限，只保留 `WXT_PUBLIC_LINKCV_ORIGIN` 指定的一个精确 LinkCV Origin 与受控 BOSS Origin。
+内容脚本和 API 客户端分开：BOSS 页面上下文只返回采集字段，带 LinkResume `host_permissions` 的扩展弹窗才发送受保护 API 请求。普通本地构建使用“LinkResume 岗位采集（开发版）”名称，保留 `127.0.0.1:5173` 和 `localhost:5173` 候选，并优先选择已有登录态的源站。发布脚本设置 `WXT_RELEASE_BUILD=1`，并分别注入 `development` 或 `production` 渠道及唯一 `WXT_PUBLIC_LINKCV_ORIGIN`；发布包运行时不回退到其他环境，Manifest 也只包含对应 LinkResume Origin 与受控 BOSS Origin。Development 包保留“开发版”名称，Production 包使用“LinkResume 岗位采集”。
 
 ## 提取与失败策略
 
@@ -26,7 +26,7 @@ BOSS DOM 不是稳定公共契约。站点结构变化时优先新增最窄的�
 
 ## 构建和人工验证
 
-安装、侧载和环境构建命令见 [`apps/extension/README.md`](../../apps/extension/README.md)。自动化测试覆盖 DOM 详情选择、必填失败、登录源站选择和 access 过期刷新；真实 BOSS 页面、真实 Chrome Cookie 与 FastAPI/MySQL 的完整链路仍需人工验收。
+安装、侧载和环境构建命令见 [`apps/extension/README.md`](../../apps/extension/README.md)。自动化测试覆盖 DOM 详情选择、必填失败、登录源站选择、access 过期刷新和重复来源更新动作；真实 BOSS 页面、真实 Chrome Cookie 与 FastAPI/MySQL 的完整链路仍需人工验收。
 
 面向管理员发布的安装包通过根目录脚本一次生成 Development 与 Production 两个 ZIP：
 
@@ -37,4 +37,4 @@ uv run --directory apps/backend python ../../scripts/release/build_extension_rel
   --output-dir ../../.tmp/plugin-release
 ```
 
-脚本以 `apps/extension/package.json.version` 为版本真值，分别注入精确 Origin，运行 WXT ZIP 构建，并检查 Manifest V3、三段数字版本、精确 `host_permissions`、压缩包路径与大小，以及根目录的 `安装与使用说明.html`。输出包含两个确定命名的 ZIP 和 `SHA256SUMS`；管理员只把与当前环境匹配的 ZIP 上传到管理台。
+脚本以 `apps/extension/package.json.version` 为版本真值，分别注入渠道和精确 Origin，运行 WXT ZIP 构建，并检查 Manifest V3、三段数字版本、环境名称、精确 `host_permissions`、压缩包路径与大小。输出包含两个确定命名的 ZIP 和 `SHA256SUMS`；管理员只把与当前环境匹配的 ZIP 上传到管理台。上传接口不根据 Origin 或端口判断环境，环境包的选择由发布者负责。

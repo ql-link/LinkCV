@@ -5,8 +5,6 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Literal
-
 from sqlalchemy import String, and_, cast, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -172,82 +170,22 @@ def update_owned_job(
         raise
 
 
-def set_job_archived(
-    *,
-    db: Session,
-    job: JobDescription,
-    user_id: int,
-    base_lock_version: int,
-    archived: bool,
-) -> JobDescription | None:
-    state_filter = (
-        JobDescription.archived_at.is_(None)
-        if archived
-        else JobDescription.archived_at.is_not(None)
-    )
-    now = utc_now()
-    try:
-        result = db.execute(
-            update(JobDescription)
-            .where(
-                JobDescription.id == job.id,
-                JobDescription.user_id == user_id,
-                JobDescription.lock_version == base_lock_version,
-                state_filter,
-            )
-            .values(
-                archived_at=now if archived else None,
-                lock_version=JobDescription.lock_version + 1,
-                updated_at=now,
-            )
-        )
-        if result.rowcount != 1:
-            db.rollback()
-            return None
-        updated_job = db.scalar(
-            select(JobDescription).where(JobDescription.id == job.id)
-        )
-        db.commit()
-        return updated_job
-    except Exception:
-        db.rollback()
-        raise
-
-
-HardDeleteJobResult = Literal["deleted", "not_found", "requires_archive"]
-
-
-def hard_delete_owned_job(
-    db: Session, job_id: str, user_id: int
-) -> HardDeleteJobResult:
+def hard_delete_owned_job(db: Session, job_id: str, user_id: int) -> bool:
     parsed = parse_decimal_id(job_id)
     if parsed is None:
-        return "not_found"
+        return False
     try:
         result = db.execute(
             delete(JobDescription).where(
                 JobDescription.id == parsed,
                 JobDescription.user_id == user_id,
-                JobDescription.archived_at.is_not(None),
             )
         )
         if result.rowcount == 1:
             db.commit()
-            return "deleted"
-
-        # Locking read observes the current row state after a concurrent restore.
-        # This distinguishes an active owned row from a missing or foreign row
-        # without weakening the archived predicate on the DELETE itself.
-        owned_job_id = db.scalar(
-            select(JobDescription.id)
-            .where(
-                JobDescription.id == parsed,
-                JobDescription.user_id == user_id,
-            )
-            .with_for_update()
-        )
+            return True
         db.rollback()
-        return "requires_archive" if owned_job_id is not None else "not_found"
+        return False
     except Exception:
         db.rollback()
         raise
@@ -257,17 +195,12 @@ def list_owned_jobs(
     *,
     db: Session,
     user_id: int,
-    scope: Literal["active", "archived", "all"],
     keyword: str | None,
     cursor: str | None,
     limit: int,
 ) -> tuple[list[JobDescription], str | None]:
     normalized_keyword = keyword.strip() if keyword else ""
     query = select(JobDescription).where(JobDescription.user_id == user_id)
-    if scope == "active":
-        query = query.where(JobDescription.archived_at.is_(None))
-    elif scope == "archived":
-        query = query.where(JobDescription.archived_at.is_not(None))
 
     if normalized_keyword:
         pattern = f"%{_escape_like(normalized_keyword.lower())}%"
@@ -292,7 +225,6 @@ def list_owned_jobs(
     if cursor:
         cursor_time, cursor_id = _decode_cursor(
             cursor,
-            scope=scope,
             normalized_keyword=normalized_keyword,
         )
         query = query.where(
@@ -315,7 +247,7 @@ def list_owned_jobs(
     has_more = len(rows) > limit
     items = rows[:limit]
     next_cursor = (
-        _encode_cursor(items[-1], scope, normalized_keyword)
+        _encode_cursor(items[-1], normalized_keyword)
         if has_more and items
         else None
     )
@@ -387,17 +319,10 @@ def _resolve_duplicate(
         raise JobEditConflict
 
     now = utc_now()
-    if resolution.action == "restore":
-        if target.archived_at is None:
-            db.rollback()
-            raise JobEditConflict
-        target.archived_at = None
-    else:
-        values = _create_values(payload)
-        values.pop("notes", None)
-        for field, value in values.items():
-            setattr(target, field, value)
-        target.archived_at = None
+    values = _create_values(payload)
+    values.pop("notes", None)
+    for field, value in values.items():
+        setattr(target, field, value)
     target.lock_version += 1
     target.updated_at = now
     try:
@@ -443,7 +368,7 @@ def _keyword_digest(keyword: str) -> str:
     return hashlib.sha256(keyword.encode("utf-8")).hexdigest()
 
 
-def _encode_cursor(job: JobDescription, scope: str, keyword: str) -> str:
+def _encode_cursor(job: JobDescription, keyword: str) -> str:
     cursor_time = job.updated_at
     if cursor_time.tzinfo is None:
         # MySQL DATETIME intentionally has no timezone metadata; the application
@@ -454,7 +379,6 @@ def _encode_cursor(job: JobDescription, scope: str, keyword: str) -> str:
     payload = {
         "updated_at": cursor_time.isoformat(),
         "id": str(job.id),
-        "scope": scope,
         "keyword_hash": _keyword_digest(keyword),
     }
     encoded = base64.urlsafe_b64encode(
@@ -463,7 +387,7 @@ def _encode_cursor(job: JobDescription, scope: str, keyword: str) -> str:
     return encoded.rstrip("=")
 
 
-def _decode_cursor(cursor: str, *, scope: str, normalized_keyword: str) -> tuple[datetime, int]:
+def _decode_cursor(cursor: str, *, normalized_keyword: str) -> tuple[datetime, int]:
     try:
         padded = cursor + "=" * (-len(cursor) % 4)
         decoded = base64.b64decode(padded, altchars=b"-_", validate=True)
@@ -474,7 +398,6 @@ def _decode_cursor(cursor: str, *, scope: str, normalized_keyword: str) -> tuple
             cursor_id is None
             or cursor_time.tzinfo is None
             or cursor_time.utcoffset() != timedelta(0)
-            or payload["scope"] != scope
             or payload["keyword_hash"] != _keyword_digest(normalized_keyword)
         ):
             raise ValueError

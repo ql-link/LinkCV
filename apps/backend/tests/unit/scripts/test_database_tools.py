@@ -482,3 +482,52 @@ def test_release_runner_rejects_clarification_columns_ahead_of_revision() -> Non
             connection, migration_script_directory(module)
         )
     engine.dispose()
+
+
+def test_release_runner_rejects_job_archive_column_still_present_after_0034() -> None:
+    module = load_module(
+        "linkcv_run_alembic_removed_column_applied_test",
+        REPO_ROOT / "scripts/release/run_alembic.py",
+    )
+    module.REVISION_TABLE_MARKERS = {}
+    module.REVISION_COLUMN_MARKERS = {}
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0034')"))
+        connection.execute(
+            text(
+                "CREATE TABLE job_descriptions "
+                "(id INTEGER PRIMARY KEY, archived_at TEXT)"
+            )
+        )
+
+    with engine.connect() as connection, pytest.raises(
+        RuntimeError, match="0034 removed columns still exist"
+    ):
+        module.validate_schema_revision_alignment(
+            connection, migration_script_directory(module)
+        )
+    engine.dispose()
+
+
+def test_release_runner_rejects_job_archive_column_removed_before_0034() -> None:
+    module = load_module(
+        "linkcv_run_alembic_removed_column_ahead_test",
+        REPO_ROOT / "scripts/release/run_alembic.py",
+    )
+    module.REVISION_TABLE_MARKERS = {}
+    module.REVISION_COLUMN_MARKERS = {}
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0033')"))
+        connection.execute(text("CREATE TABLE job_descriptions (id INTEGER PRIMARY KEY)"))
+
+    with engine.connect() as connection, pytest.raises(
+        RuntimeError, match="0034 columns removed before revision"
+    ):
+        module.validate_schema_revision_alignment(
+            connection, migration_script_directory(module)
+        )
+    engine.dispose()

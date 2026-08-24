@@ -48,7 +48,6 @@ WECHAT_APPID=<wechat-appid>
 WECHAT_SECRET=<wechat-app-secret>
 PI_SERVICE_TOKEN=<at-least-32-random-characters>
 LINKCV_INTERNAL_AGENT_TOKEN=<different-at-least-32-random-characters>
-PLUGIN_RELEASE_ORIGIN=https://linkresume.cn
 ```
 
 连接地址和 Bucket 由仓库中的 `.env.production` 管理。私密文件不要设置

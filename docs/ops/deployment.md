@@ -23,7 +23,7 @@ Dev Jenkins Job 使用 `deploy/jenkins/Jenkinsfile.development`。Jenkins 将当
 - 容器：`linkcv-dev`、`linkcv-worker-dev`、`linkcv-pi-dev`、`linkcv-dev-promtail`
 - 网络：外部网络 `tolink-dev-net`
 - 宿主机端口：`18002`
-- 配置：`.env.development` + 权限为 `600` 的 `.env.development.local`；后者必须提供非空的 `WECHAT_APPID`、`WECHAT_SECRET` 和部署实际 `PLUGIN_RELEASE_ORIGIN`
+- 配置：`.env.development` + 权限为 `600` 的 `.env.development.local`；后者必须提供非空的 `WECHAT_APPID` 和 `WECHAT_SECRET`
 - 迁移门禁：`APP_ENV=development`、MySQL `100.86.10.52:13306/linkcv`
 
 Dev Jenkins 节点需预置 `/var/jenkins_home/.ssh/primary_dev`，并能以 `root` 连接 Primary。Primary 需已有 Docker、Docker Compose、`tolink-dev-net` 和私密 env 文件。发布脚本在迁移与容器替换前检查私密文件权限，并通过 FastAPI `Settings` 拒绝缺失、空值或占位的微信凭据，避免 Jenkins 成功但扫码登录不可用。LinkCV Dev 使用独立 `linkcv` MySQL 数据库、MinIO bucket 和 Redis DB 2；本地密钥文件只保存凭据，不覆盖仓库中的地址与资源名。任一前置条件、迁移或健康检查失败都会让 Job 失败。
@@ -40,7 +40,7 @@ Production Jenkins Job 使用根目录 `Jenkinsfile`。Jenkins 位于 Primary，
 - 容器：`linkcv`、`linkcv-worker`、`linkcv-pi`、`linkcv-promtail`
 - 网络：外部网络 `tolink-app-net`
 - 宿主机端口：`4174`（容器内 FastAPI 仍监听 `8000`，保持现有生产反向代理上游）
-- 配置：`.env.production` + 权限为 `600` 的 `.env.production.local`；后者必须提供 HTTPS `PLUGIN_RELEASE_ORIGIN`
+- 配置：`.env.production` + 权限为 `600` 的 `.env.production.local`
 - 迁移门禁：`APP_ENV=production`、MySQL `tolink-mysql:3306/linkcv`
 
 Production 公网 Nginx 对 `/assets/` 保留一年 `immutable` 缓存，并为 JS、CSS、JSON 和 SVG 开启 gzip；FastAPI 静态文件层提供相同的压缩与缓存兜底。`index.html` 不做长期缓存，保证新部署能及时引用新的哈希资源。网关调整后必须同时验证 `Content-Encoding: gzip`、`Cache-Control`、LinkCV 健康接口和共享网关上的其他域名。
@@ -51,7 +51,7 @@ webhook 因此会分别把 `dev` 推送交给 Dev Job、把 PR 合并产生的 `
 Production Job。首次加入触发器后需手动运行一次 `linkcv-prod`，让 Jenkins 从根
 `Jenkinsfile` 加载并注册触发器；后续 `master` push 自动构建。
 
-Jenkins 容器需预置权限为 `600` 的 `/var/jenkins_home/.ssh/cloud_prod`，Cloud 只授权这把发布密钥并限制来源。Production Pipeline 会把仓库中的非敏感 `.env.production`、Compose 和 Promtail 配置复制到部署目录；私密覆盖必须由部署密钥存储预先提供且权限为 `600`。除 JWT、MySQL 和 MinIO 凭据外，新版本还要求覆盖提供有效的 `LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY`、`RABBITMQ_URL`、`WECHAT_APPID`、`WECHAT_SECRET`、两枚不同的 `PI_SERVICE_TOKEN`/`LINKCV_INTERNAL_AGENT_TOKEN` 与实际 HTTPS `PLUGIN_RELEASE_ORIGIN`，否则相关 preflight、Settings、Pi 服务或微信登录会安全失败。生产网络还必须允许后端访问 `api.weixin.qq.com`。Origin 不是密钥，但因为部署域名不提交到仓库而通过同一覆盖文件提供。LLM 密钥环用于解密 MySQL 中的模型凭据，不是供应商 API key；轮换时先发布“新 key 在首项、旧 key 仍保留”的配置，确认旧密文已经重包后才能移除旧 key。LinkParse Key、微信 AppSecret 和 Agent 服务令牌都只供服务端使用，不进入 Web 或小程序制品。
+Jenkins 容器需预置权限为 `600` 的 `/var/jenkins_home/.ssh/cloud_prod`，Cloud 只授权这把发布密钥并限制来源。Production Pipeline 会把仓库中的非敏感 `.env.production`、Compose 和 Promtail 配置复制到部署目录；私密覆盖必须由部署密钥存储预先提供且权限为 `600`。除 JWT、MySQL 和 MinIO 凭据外，新版本还要求覆盖提供有效的 `LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY`、`RABBITMQ_URL`、`WECHAT_APPID`、`WECHAT_SECRET` 与两枚不同的 `PI_SERVICE_TOKEN`/`LINKCV_INTERNAL_AGENT_TOKEN`，否则相关 preflight、Settings、Pi 服务或微信登录会安全失败。生产网络还必须允许后端访问 `api.weixin.qq.com`。LLM 密钥环用于解密 MySQL 中的模型凭据，不是供应商 API key；轮换时先发布“新 key 在首项、旧 key 仍保留”的配置，确认旧密文已经重包后才能移除旧 key。LinkParse Key、微信 AppSecret 和 Agent 服务令牌都只供服务端使用，不进入 Web 或小程序制品。
 
 Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小程序扫码登录；管理员仍使用独立 `/admin/login`。微信公众平台必须把 `https://linkresume.cn` 同时配置为 request 与 downloadFile 合法域名并使用有效公网 HTTPS 证书；简历以 PNG 在小程序当前页面阅读，不使用 `web-view`，个人主体无需配置业务域名。上线前还要核对既有邮箱账号：系统不会仅凭同一使用者自动把新 openid 关联到旧邮箱账号，未绑定账号会生成新的微信账号而看不到旧简历；必须先完成受控账号映射或明确接受账号分离，不能直接假设历史数据会自动归并。
 

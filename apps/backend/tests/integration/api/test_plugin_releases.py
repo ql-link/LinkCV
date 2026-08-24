@@ -17,7 +17,6 @@ def build_app():
         Settings(
             database_url="sqlite+pysqlite:///:memory:",
             jwt_secret="integration-test-secret-with-32-bytes",
-            plugin_release_origin="http://127.0.0.1:5173",
         ),
         storage=storage,
         redis=FakeRedis(),
@@ -84,7 +83,7 @@ def test_auth_permissions_publish_current_and_download() -> None:
         assert download.headers["content-type"] == "application/zip"
         assert download.headers["x-content-type-options"] == "nosniff"
         assert download.headers["content-disposition"] == (
-            'attachment; filename="linkcv-job-capture-v0.1.0.zip"'
+            'attachment; filename="linkresume-job-capture-v0.1.0.zip"'
         )
         assert "minio" not in download.text.lower()
 

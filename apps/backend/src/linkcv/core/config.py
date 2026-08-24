@@ -170,11 +170,6 @@ class Settings(BaseSettings):
         alias="MINIO_SECRET_KEY",
     )
     minio_bucket: str = Field(default="linkcv", alias="MINIO_BUCKET")
-    plugin_release_origin: str = Field(
-        default="http://127.0.0.1:5173",
-        alias="PLUGIN_RELEASE_ORIGIN",
-    )
-
     resume_version_limit: int = Field(default=10, alias="RESUME_VERSION_LIMIT", ge=2)
     pdf_renderer_script: str | None = Field(default=None, alias="PDF_RENDERER_SCRIPT")
     pdf_renderer_timeout_seconds: float = Field(
@@ -478,30 +473,6 @@ class Settings(BaseSettings):
             raise ValueError(
                 "KAFKA_BOOTSTRAP_SERVERS is required when MQ_VENDOR=kafka"
             )
-        origin = urlsplit(self.plugin_release_origin.strip())
-        try:
-            port = origin.port
-        except ValueError as error:
-            raise ValueError(
-                "PLUGIN_RELEASE_ORIGIN must be an HTTP(S) root origin"
-            ) from error
-        if (
-            origin.scheme not in {"http", "https"}
-            or not origin.hostname
-            or origin.path not in {"", "/"}
-            or origin.query
-            or origin.fragment
-            or origin.username
-            or origin.password
-        ):
-            raise ValueError("PLUGIN_RELEASE_ORIGIN must be an HTTP(S) root origin")
-        authority = origin.hostname
-        if ":" in authority:
-            authority = f"[{authority}]"
-        if port is not None:
-            authority = f"{authority}:{port}"
-        self.plugin_release_origin = f"{origin.scheme}://{authority}"
-
         pi_origin = urlsplit(self.pi_service_base_url.strip())
         if (
             pi_origin.scheme not in {"http", "https"}
@@ -529,8 +500,6 @@ class Settings(BaseSettings):
             invalid.append("MINIO_ACCESS_KEY")
         if _is_placeholder(self.minio_secret_key):
             invalid.append("MINIO_SECRET_KEY")
-        if origin.scheme != "https":
-            invalid.append("PLUGIN_RELEASE_ORIGIN")
         if _is_placeholder(self.linkparse_base_url):
             invalid.append("LINKPARSE_BASE_URL")
         linkparse_key = (

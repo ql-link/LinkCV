@@ -197,7 +197,6 @@ def test_production_rejects_missing_secrets_without_exposing_values() -> None:
     assert "JWT_SECRET" in message
     assert "MINIO_ACCESS_KEY" in message
     assert "MINIO_SECRET_KEY" in message
-    assert "PLUGIN_RELEASE_ORIGIN" in message
     assert "LLM_CREDENTIAL_ENCRYPTION_KEYS" in message
     assert "LINKPARSE_API_KEY" in message
     assert "RABBITMQ_URL" in message
@@ -214,7 +213,6 @@ def test_production_accepts_injected_secrets() -> None:
         mysql_password="production-db-secret",
         minio_access_key="production-minio-access",
         minio_secret_key="production-minio-secret",
-        plugin_release_origin="https://linkcv.example.test",
         llm_credential_encryption_keys=(
             f"production:{Fernet.generate_key().decode('ascii')}"
         ),
@@ -224,7 +222,6 @@ def test_production_accepts_injected_secrets() -> None:
         wechat_secret="fictional-production-wechat-secret",
     )
     assert settings.minio_bucket == "linkcv"
-    assert settings.plugin_release_origin == "https://linkcv.example.test"
 
 
 def test_production_rejects_reused_agent_service_token() -> None:
@@ -239,18 +236,9 @@ def test_production_rejects_reused_agent_service_token() -> None:
             mysql_password="production-db-secret",
             minio_access_key="production-minio-access",
             minio_secret_key="production-minio-secret",
-            plugin_release_origin="https://linkcv.example.test",
             llm_credential_encryption_keys=f"production:{Fernet.generate_key().decode('ascii')}",
             linkparse_api_key="fictional-linkparse-key",
             rabbitmq_url="amqp://linkcv:fictional-secret@rabbitmq:5672/",
             wechat_appid="fictional-production-appid",
             wechat_secret="fictional-production-wechat-secret",
         )
-
-
-def test_plugin_release_origin_must_be_a_root_origin() -> None:
-    with pytest.raises(ValidationError, match="PLUGIN_RELEASE_ORIGIN"):
-        Settings(plugin_release_origin="https://linkcv.example.test/path")
-
-    with pytest.raises(ValidationError, match="PLUGIN_RELEASE_ORIGIN"):
-        Settings(plugin_release_origin="https://linkcv.example.test:invalid")

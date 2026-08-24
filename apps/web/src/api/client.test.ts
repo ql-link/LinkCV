@@ -296,21 +296,20 @@ describe("resume PDF download API", () => {
 });
 
 describe("JD API client", () => {
-  it("编码列表筛选和游标，并保持相对 API 路径", async () => {
+  it("编码列表搜索和游标，并保持相对 API 路径", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse(200, { items: [], next_cursor: null }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
     await api.listJobDescriptions({
-      scope: "archived",
       keyword: "Java 后端",
       cursor: "cursor/value",
       limit: 30,
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/job-descriptions?scope=archived&keyword=Java+%E5%90%8E%E7%AB%AF&cursor=cursor%2Fvalue&limit=30",
+      "/api/job-descriptions?keyword=Java+%E5%90%8E%E7%AB%AF&cursor=cursor%2Fvalue&limit=30",
       expect.objectContaining({ method: "GET", credentials: "include" }),
     );
   });
@@ -343,6 +342,42 @@ describe("JD API client", () => {
         duplicate,
       });
     }
+  });
+
+  it("使用 multipart 分别提交文字和图片草稿解析请求", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        draft: {},
+        warnings: [],
+        inputType: "text",
+        callId: "llmcall_fictional",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const controller = new AbortController();
+    await api.parseJobDescriptionDraft({
+      text: "虚构的产品经理岗位",
+      signal: controller.signal,
+    });
+    const image = new File([new Uint8Array([1, 2, 3])], "job.png", {
+      type: "image/png",
+    });
+    await api.parseJobDescriptionDraft({ image });
+
+    for (const [, options] of fetchMock.mock.calls) {
+      expect(options).toEqual(
+        expect.objectContaining({ method: "POST", credentials: "include" }),
+      );
+      expect(options.headers).not.toHaveProperty("Content-Type");
+      expect(options.body).toBeInstanceOf(FormData);
+    }
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/job-descriptions/parse-draft");
+    expect((fetchMock.mock.calls[0][1].body as FormData).get("text")).toBe(
+      "虚构的产品经理岗位",
+    );
+    expect(fetchMock.mock.calls[0][1].signal).toBe(controller.signal);
+    expect((fetchMock.mock.calls[1][1].body as FormData).get("image")).toBe(image);
   });
 });
 

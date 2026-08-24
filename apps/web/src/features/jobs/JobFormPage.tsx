@@ -1,87 +1,63 @@
-import { FormEvent, useEffect, useState } from "react";
-import { Check } from "lucide-react";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { BriefcaseBusiness, Check } from "lucide-react";
 import {
   api,
   ApiRequestError,
   type JobDescriptionCreatePayload,
   type JobDescriptionRecord,
   type JobDuplicateDetails,
-  type JobEmploymentType,
-  type JobSalaryPeriod,
-  type JobWorkMode,
 } from "../../api/client";
-import { Button, PageLoading } from "@/components/ui";
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Label,
+  PageLoading,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui";
+import { SelectValue } from "@/components/ui/select";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { jobDetailPath, navigateTo } from "../../routing";
 import { JobDuplicateDialog } from "./JobDuplicateDialog";
+import { emptyJobForm, jobFormFromRecord, jobPayloadFromForm, type JobFormState } from "./jobFormModel";
 import "./jobs.css";
 
-type JobFormState = {
-  job_title: string;
-  company_name: string;
-  employment_type: JobEmploymentType | "";
-  description: string;
-  skills: string;
-  education_requirement: string;
-  experience_requirement: string;
-  work_schedule: string;
-  work_city: string;
-  work_address: string;
-  work_mode: JobWorkMode | "";
-  salary_text: string;
-  salary_min: string;
-  salary_max: string;
-  salary_currency: string;
-  salary_period: JobSalaryPeriod | "";
-  salary_months_per_year: string;
-  company_legal_name: string;
-  company_industry: string;
-  company_size: string;
-  company_financing_stage: string;
-  company_description: string;
-  recruiter_name: string;
-  recruiter_title: string;
-  source_url: string;
-  notes: string;
-};
-
-const emptyForm: JobFormState = {
-  job_title: "",
-  company_name: "",
-  employment_type: "",
-  description: "",
-  skills: "",
-  education_requirement: "",
-  experience_requirement: "",
-  work_schedule: "",
-  work_city: "",
-  work_address: "",
-  work_mode: "",
-  salary_text: "",
-  salary_min: "",
-  salary_max: "",
-  salary_currency: "",
-  salary_period: "",
-  salary_months_per_year: "",
-  company_legal_name: "",
-  company_industry: "",
-  company_size: "",
-  company_financing_stage: "",
-  company_description: "",
-  recruiter_name: "",
-  recruiter_title: "",
-  source_url: "",
-  notes: "",
-};
-
-export function JobFormPage({ mode, jobId }: { mode: "create" | "edit"; jobId?: string }) {
-  const [form, setForm] = useState<JobFormState>(emptyForm);
+export function JobFormPage({
+  mode,
+  jobId,
+  presentation = "page",
+  onClose,
+  initialForm,
+  initialWarnings = [],
+}: {
+  mode: "create" | "edit";
+  jobId?: string;
+  presentation?: "page" | "dialog";
+  onClose?: () => void;
+  initialForm?: JobFormState;
+  initialWarnings?: string[];
+}) {
+  const [form, setForm] = useState<JobFormState>(() => initialForm ?? emptyJobForm);
   const [record, setRecord] = useState<JobDescriptionRecord | null>(null);
   const [loading, setLoading] = useState(mode === "edit");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [requiredToast, setRequiredToast] = useState<string | null>(null);
   const [duplicate, setDuplicate] = useState<JobDuplicateDetails["duplicate"] | null>(null);
   const [pendingPayload, setPendingPayload] = useState<JobDescriptionCreatePayload | null>(null);
+  const createTitleRef = useRef<HTMLInputElement>(null);
+  const requiredToastTimerRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (requiredToastTimerRef.current !== null) window.clearTimeout(requiredToastTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (mode !== "edit" || !jobId) return;
@@ -90,7 +66,7 @@ export function JobFormPage({ mode, jobId }: { mode: "create" | "edit"; jobId?: 
       .then(({ job_description }) => {
         if (cancelled) return;
         setRecord(job_description);
-        setForm(formFromRecord(job_description));
+        setForm(jobFormFromRecord(job_description));
       })
       .catch((loadError: unknown) => {
         if (!cancelled) setError(jobErrorMessage(loadError, "无法加载岗位，请稍后重试。"));
@@ -110,11 +86,24 @@ export function JobFormPage({ mode, jobId }: { mode: "create" | "edit"; jobId?: 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (saving) return;
+    if (mode === "create") {
+      const missing = [
+        !form.job_title.trim() && "职位名称",
+        !form.company_name.trim() && "公司名称",
+        !form.description.trim() && "职位描述",
+      ].filter(Boolean) as string[];
+      if (missing.length > 0) {
+        setRequiredToast(`请先填写${missing.join("、")}`);
+        if (requiredToastTimerRef.current !== null) window.clearTimeout(requiredToastTimerRef.current);
+        requiredToastTimerRef.current = window.setTimeout(() => setRequiredToast(null), 2600);
+        return;
+      }
+    }
     setSaving(true);
     setError(null);
     try {
       if (mode === "create") {
-        const payload = createPayload(form);
+        const payload = jobPayloadFromForm(form);
         setPendingPayload(payload);
         const { job_description } = await api.createJobDescription(payload);
         navigateTo(jobDetailPath(job_description.id), { replace: true });
@@ -124,7 +113,7 @@ export function JobFormPage({ mode, jobId }: { mode: "create" | "edit"; jobId?: 
           source_type: _sourceType,
           duplicate_resolution: _duplicateResolution,
           ...fields
-        } = createPayload(form);
+        } = jobPayloadFromForm(form);
         void _sourceUrl;
         void _sourceType;
         void _duplicateResolution;
@@ -146,7 +135,7 @@ export function JobFormPage({ mode, jobId }: { mode: "create" | "edit"; jobId?: 
     }
   };
 
-  const resolveDuplicate = async (action: "restore" | "update" | "cancel") => {
+  const resolveDuplicate = async (action: "update" | "cancel") => {
     if (action === "cancel") {
       setDuplicate(null);
       return;
@@ -166,7 +155,7 @@ export function JobFormPage({ mode, jobId }: { mode: "create" | "edit"; jobId?: 
       navigateTo(jobDetailPath(job_description.id), { replace: true });
     } catch (resolveError) {
       setDuplicate(null);
-      setError(jobErrorMessage(resolveError, "重复岗位状态已经变化，请刷新后重试。"));
+      setError(jobErrorMessage(resolveError, "重复岗位内容已经变化，请刷新后重试。"));
     } finally {
       setSaving(false);
     }
@@ -189,6 +178,118 @@ export function JobFormPage({ mode, jobId }: { mode: "create" | "edit"; jobId?: 
 
   const cancelTarget = jobId ? jobDetailPath(jobId) : "/jobs";
   const requiredFilled = [form.job_title, form.company_name, form.description].filter((value) => value.trim()).length;
+  if (mode === "create" && presentation === "dialog") {
+    const closeDialog = () => {
+      if (saving) return;
+      if (onClose) onClose();
+      else navigateTo("/jobs", { replace: true });
+    };
+
+    return (
+      <Dialog open onOpenChange={(open) => { if (!open) closeDialog(); }}>
+        <DialogContent
+          className="job-create-dialog"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            const isMobile = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 760px)").matches;
+            if (!isMobile) createTitleRef.current?.focus();
+          }}
+          onEscapeKeyDown={(event) => { if (saving) event.preventDefault(); }}
+          onPointerDownOutside={(event) => { if (saving) event.preventDefault(); }}
+        >
+          <form className="job-create-dialog-form" noValidate onSubmit={submit}>
+            <DialogHeader className="job-create-dialog-header">
+              <DialogTitle className="job-create-dialog-title">
+                <BriefcaseBusiness size={18} strokeWidth={1.8} aria-hidden="true" />
+                <span>新建 JD</span>
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="job-create-dialog-body">
+              {error && <div className="job-error job-create-dialog-error" role="alert">{error}</div>}
+              {initialWarnings.length > 0 && <div className="job-create-draft-warning" role="status">{initialWarnings.join(" ")}</div>}
+
+              <section className="job-create-primary" aria-labelledby="job-create-core-title">
+                <div className="job-create-section-heading">
+                  <p>必填 3 项</p>
+                  <h3 id="job-create-core-title">核心信息</h3>
+                </div>
+                <div className="job-create-grid is-two">
+                  <DialogJobInput inputRef={createTitleRef} label="职位名称" hint="使用招聘信息中的正式岗位名称" required value={form.job_title} maxLength={200} onChange={(value) => setField("job_title", value)} />
+                  <DialogJobInput label="公司名称" hint="填写公司或组织名称" required value={form.company_name} maxLength={200} onChange={(value) => setField("company_name", value)} />
+                  <DialogJobTextarea className="is-wide" label="职位描述" hint="填写岗位职责、工作内容和任职要求" required value={form.description} onChange={(value) => setField("description", value)} />
+                </div>
+
+                <div className="job-create-section-divider" />
+
+                <div className="job-create-section-heading">
+                  <p>用于后续匹配与分析</p>
+                  <h3>岗位判断</h3>
+                </div>
+                <div className="job-create-grid is-three">
+                  <DialogJobInput className="is-wide" label="技能" hint="使用逗号或换行分隔，例如：Java、SQL" value={form.skills} onChange={(value) => setField("skills", value)} />
+                  <DialogJobInput label="工作城市" hint="填写工作所在城市" value={form.work_city} onChange={(value) => setField("work_city", value)} />
+                  <DialogJobInput label="薪资范围" hint="例如：25-40K，或填写面议" value={form.salary_text} onChange={(value) => setField("salary_text", value)} />
+                  <DialogJobSelect label="用工类型" value={form.employment_type} onChange={(value) => setField("employment_type", value as JobFormState["employment_type"])} options={[
+                    ["full_time", "全职"], ["part_time", "兼职"], ["internship", "实习"], ["contract", "合同"], ["temporary", "临时"],
+                  ]} />
+                  <DialogJobInput label="学历要求" hint="例如：本科及以上" value={form.education_requirement} onChange={(value) => setField("education_requirement", value)} />
+                  <DialogJobInput label="经验要求" hint="例如：3-5年" value={form.experience_requirement} onChange={(value) => setField("experience_requirement", value)} />
+                  <DialogJobSelect label="工作方式" value={form.work_mode} onChange={(value) => setField("work_mode", value as JobFormState["work_mode"])} options={[
+                    ["onsite", "现场"], ["hybrid", "混合"], ["remote", "远程"],
+                  ]} />
+                </div>
+              </section>
+
+              <section className="job-create-secondary" aria-label="可选补充信息">
+                <div className="job-create-optional-sections">
+                  <DialogOptionalSection title="薪资明细">
+                    <div className="job-create-grid is-two">
+                      <DialogJobInput label="最低薪资" hint="只填写数字" inputMode="decimal" value={form.salary_min} onChange={(value) => setField("salary_min", value)} />
+                      <DialogJobInput label="最高薪资" hint="只填写数字" inputMode="decimal" value={form.salary_max} onChange={(value) => setField("salary_max", value)} />
+                      <DialogJobInput label="币种" hint="例如：CNY" maxLength={3} value={form.salary_currency} onChange={(value) => setField("salary_currency", value)} />
+                      <DialogJobSelect label="计薪周期" value={form.salary_period} onChange={(value) => setField("salary_period", value as JobFormState["salary_period"])} options={[
+                        ["hour", "小时"], ["day", "天"], ["month", "月"], ["year", "年"],
+                      ]} />
+                      <DialogJobInput label="每年薪资月数" hint="例如：12或13" type="number" min={1} max={65535} value={form.salary_months_per_year} onChange={(value) => setField("salary_months_per_year", value)} />
+                    </div>
+                  </DialogOptionalSection>
+                  <DialogOptionalSection title="公司快照">
+                    <div className="job-create-grid is-two">
+                      <DialogJobInput className="is-wide" label="公司工商全称" hint="填写公司工商注册全称" value={form.company_legal_name} onChange={(value) => setField("company_legal_name", value)} />
+                      <DialogJobInput label="行业" hint="例如：互联网、金融" value={form.company_industry} onChange={(value) => setField("company_industry", value)} />
+                      <DialogJobInput label="公司规模" hint="例如：100-499人" value={form.company_size} onChange={(value) => setField("company_size", value)} />
+                      <DialogJobInput label="融资阶段" hint="例如：A轮、上市公司" value={form.company_financing_stage} onChange={(value) => setField("company_financing_stage", value)} />
+                      <DialogJobInput label="招聘者姓名" hint="填写联系人姓名" value={form.recruiter_name} onChange={(value) => setField("recruiter_name", value)} />
+                      <DialogJobInput label="招聘者职位" hint="填写联系人职位" value={form.recruiter_title} onChange={(value) => setField("recruiter_title", value)} />
+                      <DialogJobTextarea className="is-wide" label="公司简介" hint="填写公司业务和团队简介" value={form.company_description} onChange={(value) => setField("company_description", value)} />
+                    </div>
+                  </DialogOptionalSection>
+                  <DialogOptionalSection title="来源信息">
+                    <div className="job-create-grid is-three">
+                      <DialogJobInput label="来源链接（可选）" hint="粘贴岗位原始链接" type="url" value={form.source_url} onChange={(value) => setField("source_url", value)} />
+                      <DialogJobInput label="详细地址" hint="填写办公地点或详细地址" value={form.work_address} onChange={(value) => setField("work_address", value)} />
+                      <DialogJobInput label="工作安排" hint="例如：双休、弹性打卡" value={form.work_schedule} onChange={(value) => setField("work_schedule", value)} />
+                    </div>
+                  </DialogOptionalSection>
+                  <DialogOptionalSection title="个人备注">
+                    <DialogJobTextarea label="个人备注" hint="填写你对这条 JD 的补充备注" value={form.notes} onChange={(value) => setField("notes", value)} />
+                  </DialogOptionalSection>
+                </div>
+              </section>
+            </div>
+
+            <DialogFooter className="job-create-dialog-footer">
+              <Button variant="outline" disabled={saving} onClick={closeDialog}>取消</Button>
+              <Button type="submit" disabled={saving}>{saving ? "正在创建…" : "创建 JD"}</Button>
+            </DialogFooter>
+          </form>
+          {requiredToast && <div className="job-create-validation-toast" role="status" aria-live="polite">{requiredToast}</div>}
+          {duplicate && <JobDuplicateDialog details={duplicate} busy={saving} onAction={resolveDuplicate} />}
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <main className="dashboard-content job-page-shell">
@@ -336,71 +437,57 @@ function JobSelect({ label, value, options, onChange }: { label: string; value: 
   return <label className="job-field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}</select></label>;
 }
 
-function createPayload(form: JobFormState): JobDescriptionCreatePayload {
-  return {
-    job_title: form.job_title,
-    company_name: form.company_name,
-    employment_type: form.employment_type || null,
-    description: form.description,
-    skills: form.skills.split(/[,，\n]/).map((value) => value.trim()).filter(Boolean),
-    education_requirement: nullable(form.education_requirement),
-    experience_requirement: nullable(form.experience_requirement),
-    work_schedule: nullable(form.work_schedule),
-    work_city: nullable(form.work_city),
-    work_address: nullable(form.work_address),
-    work_mode: form.work_mode || null,
-    salary_text: nullable(form.salary_text),
-    salary_min: nullable(form.salary_min),
-    salary_max: nullable(form.salary_max),
-    salary_currency: nullable(form.salary_currency),
-    salary_period: form.salary_period || null,
-    salary_months_per_year: form.salary_months_per_year ? Number(form.salary_months_per_year) : null,
-    company_legal_name: nullable(form.company_legal_name),
-    company_industry: nullable(form.company_industry),
-    company_size: nullable(form.company_size),
-    company_financing_stage: nullable(form.company_financing_stage),
-    company_description: nullable(form.company_description),
-    recruiter_name: nullable(form.recruiter_name),
-    recruiter_title: nullable(form.recruiter_title),
-    notes: nullable(form.notes),
-    source_type: "manual",
-    source_url: nullable(form.source_url),
-  };
+function DialogJobInput({ label, hint, className = "", inputRef, onChange, ...props }: Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange"> & { label: string; hint?: string; inputRef?: React.Ref<HTMLInputElement>; onChange: (value: string) => void }) {
+  const id = `job-create-${label.replace(/[（）\s]/g, "-")}`;
+  return (
+    <div className={`job-create-field ${className}`.trim()}>
+      <Label htmlFor={id}>{label}{props.required && <em aria-hidden="true">*</em>}</Label>
+      <Input {...props} ref={inputRef} id={id} name={id} autoComplete="off" placeholder={props.placeholder ?? hint} aria-label={label} onChange={(event) => onChange(event.target.value)} />
+    </div>
+  );
 }
 
-function formFromRecord(record: JobDescriptionRecord): JobFormState {
-  return {
-    ...emptyForm,
-    ...record,
-    employment_type: record.employment_type ?? "",
-    skills: record.skills.join(", "),
-    work_mode: record.work_mode ?? "",
-    salary_min: record.salary_min ?? "",
-    salary_max: record.salary_max ?? "",
-    salary_currency: record.salary_currency ?? "",
-    salary_period: record.salary_period ?? "",
-    salary_months_per_year: record.salary_months_per_year?.toString() ?? "",
-    source_url: record.source_url ?? "",
-    education_requirement: record.education_requirement ?? "",
-    experience_requirement: record.experience_requirement ?? "",
-    work_schedule: record.work_schedule ?? "",
-    work_city: record.work_city ?? "",
-    work_address: record.work_address ?? "",
-    salary_text: record.salary_text ?? "",
-    company_legal_name: record.company_legal_name ?? "",
-    company_industry: record.company_industry ?? "",
-    company_size: record.company_size ?? "",
-    company_financing_stage: record.company_financing_stage ?? "",
-    company_description: record.company_description ?? "",
-    recruiter_name: record.recruiter_name ?? "",
-    recruiter_title: record.recruiter_title ?? "",
-    notes: record.notes ?? "",
-  };
+function DialogJobTextarea({ label, hint, className = "", value, required, placeholder, onChange }: { label: string; hint?: string; className?: string; value: string; required?: boolean; placeholder?: string; onChange: (value: string) => void }) {
+  const id = `job-create-${label.replace(/[（）\s]/g, "-")}`;
+  return (
+    <div className={`job-create-field ${className}`.trim()}>
+      <Label htmlFor={id}>{label}{required && <em aria-hidden="true">*</em>}</Label>
+      <textarea id={id} name={id} autoComplete="off" aria-label={label} value={value} required={required} placeholder={placeholder ?? hint} onChange={(event) => onChange(event.target.value)} />
+    </div>
+  );
 }
 
-function nullable(value: string): string | null {
-  return value.trim() || null;
+const emptySelectValue = "__empty__";
+
+function DialogJobSelect({ label, value, options, onChange }: { label: string; value: string; options: Array<[string, string]>; onChange: (value: string) => void }) {
+  const id = `job-create-${label.replace(/[（）\s]/g, "-")}`;
+  return (
+    <div className="job-create-field">
+      <Label htmlFor={id}>{label}</Label>
+      <Select name={id} value={value || emptySelectValue} onValueChange={(nextValue) => onChange(nextValue === emptySelectValue ? "" : nextValue)}>
+        <SelectTrigger id={id} aria-label={label}>
+          <SelectValue placeholder="未填写" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={emptySelectValue}>未填写</SelectItem>
+          {options.map(([optionValue, optionLabel]) => <SelectItem key={optionValue} value={optionValue}>{optionLabel}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    </div>
+  );
 }
+
+function DialogOptionalSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="job-create-optional-section">
+      <div className="job-create-optional-heading">
+        <h3>{title}</h3>
+      </div>
+      <div className="job-create-optional-body">{children}</div>
+    </section>
+  );
+}
+
 
 function duplicateFromError(error: unknown): JobDuplicateDetails["duplicate"] | null {
   if (!(error instanceof ApiRequestError) || error.message !== "JD_SOURCE_DUPLICATE") return null;
