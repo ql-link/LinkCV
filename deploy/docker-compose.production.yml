@@ -1,4 +1,32 @@
 services:
+  linkcv-pi:
+    image: linkcv-pi:${PI_TAG:?PI_TAG is required}
+    container_name: linkcv-pi
+    restart: always
+    env_file:
+      - ${LINKCV_ENV_FILE:-../.env.production}
+      - ${LINKCV_SECRET_ENV_FILE:-../.env.production.local}
+    environment:
+      APP_ENV: production
+      LINKCV_BASE_URL: http://linkcv:8000
+      PI_SERVICE_HOST: 0.0.0.0
+      PI_SERVICE_PORT: 8010
+      TZ: Asia/Shanghai
+    networks:
+      - linkcv-runtime
+    labels:
+      com.linkcv.environment: production
+      com.linkcv.role: pi-agent
+    depends_on:
+      linkcv:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8010/health').then(r=>{if(!r.ok)process.exit(1)})"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
   linkcv:
     image: linkcv:${TAG:-latest}
     container_name: linkcv

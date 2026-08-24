@@ -18,12 +18,13 @@ import {
   Plus,
   Redo2,
   Smile,
+  Sparkles,
   Underline,
   Undo2,
   UserRound,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { api } from "../../api/client";
+import { api, type AgentSelectionContext } from "../../api/client";
 import { inlineIconComponents, inlineIconNames, type InlineIconName } from "./editorExtensions";
 import { resumeInlineIconOptions } from "../../lib/resumeInlineIcon";
 import { convertCurrentLineToResumeRow, convertResumeRowToParagraph } from "./editorCommands";
@@ -66,6 +67,109 @@ function ToolButton({ label, active, disabled, children, onClick }: ToolButtonPr
 
 function Divider() {
   return <span className="workbench-toolbar-divider" aria-hidden="true" />;
+}
+
+export const selectionAgentActions = ["优化表达", "生成亮点", "调整专业度", "解释内容", "继续改写"] as const;
+
+async function sha256Text(value: string) {
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+export async function agentSelectionContext(editor: Editor): Promise<AgentSelectionContext | null> {
+  const { from, to } = editor.state.selection;
+  const selectedText = editor.state.doc.textBetween(from, to, "\n").trim();
+  if (!selectedText) return null;
+  const blockIds = new Set<string>();
+  editor.state.doc.nodesBetween(from, to, (node) => {
+    if (!node.isTextblock) return;
+    const anchor = node.firstChild;
+    if (anchor?.type.name === "resumeBlockAnchor" && typeof anchor.attrs.blockId === "string") {
+      blockIds.add(anchor.attrs.blockId);
+    }
+  });
+  if (!blockIds.size) return null;
+  return {
+    block_ids: [...blockIds],
+    from,
+    to,
+    selected_text: selectedText,
+    selected_text_hash: await sha256Text(selectedText),
+  };
+}
+
+function SelectionAgentControl({
+  editor,
+  onAgentAction,
+}: {
+  editor: Editor;
+  onAgentAction: (instruction: string, selection: AgentSelectionContext) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+  const selectionEmpty = editor.state.selection.empty;
+  useDismissPopover(open, () => setOpen(false), anchorRef);
+
+  useEffect(() => {
+    if (selectionEmpty) setOpen(false);
+  }, [selectionEmpty]);
+
+  if (selectionEmpty) return null;
+  return (
+    <div ref={anchorRef} className="workbench-popover-anchor selection-agent-anchor">
+      <button
+        type="button"
+        className={`selection-agent-trigger${open ? " is-open" : ""}`}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Sparkles aria-hidden="true" size={14} />
+        <span>AI</span>
+      </button>
+      <AnchoredPopover open={open} className="selection-agent-menu">
+        <div className="selection-agent-menu-head">
+          <span><Sparkles aria-hidden="true" size={14} />用 AI 处理所选内容</span>
+          <small>结果将在右侧助手中展示</small>
+        </div>
+        <div role="menu" aria-label="所选文字 AI 快捷操作">
+          {selectionAgentActions.map((action) => (
+            <button
+              type="button"
+              role="menuitem"
+              key={action}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                void agentSelectionContext(editor).then((selection) => {
+                  if (selection) onAgentAction(action, selection);
+                });
+                setOpen(false);
+              }}
+            >
+              {action}
+            </button>
+          ))}
+        </div>
+      </AnchoredPopover>
+    </div>
+  );
+}
+
+export function SelectionAgentPrompt({
+  editor,
+  onAgentAction,
+}: {
+  editor: Editor;
+  onAgentAction: (instruction: string, selection: AgentSelectionContext) => void;
+}) {
+  if (editor.state.selection.empty) return null;
+
+  return (
+    <div className="selection-agent-bubble" role="toolbar" aria-label="所选文字 AI 操作">
+      <SelectionAgentControl editor={editor} onAgentAction={onAgentAction} />
+    </div>
+  );
 }
 
 export function steppedInlineFontSize(value: number, direction: -1 | 1) {

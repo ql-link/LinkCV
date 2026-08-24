@@ -11,7 +11,6 @@ from linkcv.domain.document_conversion import (
 from linkcv.domain.resume_document import default_resume_document
 from linkcv.domain.resume_extraction import (
     DraftBasics,
-    DraftNamedItem,
     ResumeExtractionDraft,
 )
 from linkcv.domain.resume_style import default_resume_style
@@ -77,8 +76,7 @@ class FakeStructuringClient:
 class InvalidFinalStructuringClient:
     async def extract(self, **_kwargs) -> ResumeExtractionDraft:
         return ResumeExtractionDraft(
-            basics=DraftBasics(name="张三"),
-            languages=[DraftNamedItem(name="技" * 101)],
+            basics=DraftBasics(name="张三", summary="<script>alert(1)</script>"),
         )
 
 
@@ -208,10 +206,10 @@ def test_worker_logs_safe_normalization_failure_metadata(caplog) -> None:
     assert failure.error_code == "RESUME_STRUCTURE_INVALID"
     assert failure.failure_stage == "resume_normalization"
     assert failure.exception_type == "ValidationError"
-    assert failure.validation_model == "Language"
-    assert failure.validation_paths == "name"
-    assert failure.validation_types == "string_too_long"
-    assert "技" * 101 not in caplog.text
+    assert failure.validation_model == "RichTextV1"
+    assert failure.validation_paths == "<root>"
+    assert failure.validation_types == "value_error"
+    assert "<script>" not in caplog.text
     with app.state.session_factory() as db:
         record = db.get(DocumentParseTask, import_id)
         assert record is not None

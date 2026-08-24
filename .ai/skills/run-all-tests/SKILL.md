@@ -32,7 +32,7 @@ description: 根据 LinkCV 的实际改动范围选择并运行验证命令，�
 | 后端集成测试 | `npm run test:backend:integration` |
 | 后端测试 | `npm run test:backend` |
 | 后端构建 | `npm run build:backend` |
-| SQLAlchemy/Alembic 迁移 | 按 `alembic-migration` 核实的真实入口执行 heads、空库升级、旧版升级和可逆往返，再运行后端集成测试 |
+| SQLAlchemy/Alembic 迁移 | 按 `alembic-migration` 核实的真实入口执行 heads、空库升级和受支持历史版本向 head 升级，再运行后端集成测试；不执行 downgrade 或往返测试 |
 | 前后端自动化测试 | `npm test` |
 | 完整仓库 | `npm run check` |
 

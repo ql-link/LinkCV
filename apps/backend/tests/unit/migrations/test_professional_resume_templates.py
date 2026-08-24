@@ -45,22 +45,11 @@ def test_0026_seeds_four_guarded_fictional_templates() -> None:
         assert rejected_source_value not in up_sql
 
 
-def test_0026_refuses_to_delete_referenced_templates() -> None:
-    down_sql = (SQL_DIR / "0026.down.sql").read_text()
-
-    assert "FROM resumes AS resume" in down_sql
-    assert "resume.template_id = template.id" in down_sql
-    assert "NULL" in down_sql
-    for template_key in TEMPLATE_KEYS:
-        assert template_key in down_sql
 def test_0027_refreshes_only_guarded_professional_template_snapshots() -> None:
     up_sql = (SQL_DIR / "0027.up.sql").read_text()
-    down_sql = (SQL_DIR / "0027.down.sql").read_text()
 
     assert up_sql.count("UPDATE resume_templates") == 4
-    assert down_sql.count("UPDATE resume_templates") == 4
     assert up_sql.count("SHA2(JSON_UNQUOTE(JSON_EXTRACT") == 4
-    assert down_sql.count("SHA2(JSON_UNQUOTE(JSON_EXTRACT") == 4
     assert up_sql.count("/templates/avatar-cat.jpg") == 4
     assert up_sql.count("NULL\n)\nWHERE `key`") == 4
     assert ":::: sidebar" in up_sql
@@ -71,7 +60,6 @@ def test_0027_refreshes_only_guarded_professional_template_snapshots() -> None:
 
     for template_key in TEMPLATE_KEYS:
         assert template_key in up_sql
-        assert template_key in down_sql
 
     for rejected_source_value in (
         "韩跑跑",

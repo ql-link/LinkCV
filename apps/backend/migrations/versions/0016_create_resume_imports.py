@@ -8,7 +8,6 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from alembic import op
-from sqlalchemy import text
 
 from linkcv.core.migration_sql import execute_sql_file
 
@@ -25,11 +24,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    connection = op.get_bind()
-    row_count = connection.scalar(text("SELECT COUNT(*) FROM resume_imports"))
-    if row_count:
-        raise RuntimeError(
-            "0016 refuses to drop resume_imports while import records exist: "
-            f"count={row_count}"
-        )
-    execute_sql_file(connection, SQL_DIR / "0016.down.sql")
+    raise RuntimeError("LinkCV database migrations are forward-only")

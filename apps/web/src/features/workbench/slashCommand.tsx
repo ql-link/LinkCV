@@ -23,7 +23,7 @@ type BlankLineMenuOptions = {
 export function topLevelBlankLinePositions(state: EditorState) {
   const positions: number[] = [];
   state.doc.forEach((node, offset) => {
-    if (node.type.name === "paragraph" && node.content.size === 0) positions.push(offset + 1);
+    if (node.type.name === "paragraph" && node.textContent.length === 0) positions.push(offset + 1);
   });
   return positions;
 }
@@ -48,7 +48,7 @@ export const BlankLineMenuExtension = Extension.create<BlankLineMenuOptions>({
             const activePosition = state.selection.empty
               && state.selection.$from.depth === 1
               && state.selection.$from.parent.type.name === "paragraph"
-              && state.selection.$from.parent.content.size === 0
+              && state.selection.$from.parent.textContent.length === 0
               ? state.selection.$from.pos
               : null;
 
@@ -201,8 +201,7 @@ export function SlashCommandMenu({
   };
 
   const insertSelectedIcon = (name: InlineIconName) => {
-    if (state.replaceRange) editor.chain().focus().deleteRange(state.replaceRange).run();
-    insertInlineIcon(editor, name);
+    insertInlineIcon(editor, name, state.replaceRange ?? undefined);
     onClose();
   };
 

@@ -2,12 +2,15 @@ from fastapi import APIRouter
 
 from linkcv.api.routes.health import router as health_router
 from linkcv.modules.datasets.routes import router as dataset_router
+from linkcv.modules.agent.routes import router as agent_router
 from linkcv.modules.identity.admin_routes import router as admin_identity_router
 from linkcv.modules.identity.account_routes import router as account_router
 from linkcv.modules.identity.routes import router as identity_router
 from linkcv.modules.identity.wechat_routes import router as wechat_router
+from linkcv.modules.interviews.routes import router as interview_router
 from linkcv.modules.job_descriptions.routes import router as job_description_router
 from linkcv.modules.llm.admin_routes import router as llm_admin_router
+from linkcv.modules.miniprogram.account_routes import router as miniprogram_account_router
 from linkcv.modules.miniprogram.routes import router as miniprogram_router
 from linkcv.modules.observability.routes import router as observability_router
 from linkcv.modules.plugin_releases.admin_routes import router as plugin_release_admin_router
@@ -30,14 +33,17 @@ from linkcv.modules.resumes.version_routes import router as version_router
 
 api_router = APIRouter()
 api_router.include_router(health_router)
+api_router.include_router(agent_router)
 api_router.include_router(admin_identity_router)
 api_router.include_router(dataset_router)
 api_router.include_router(identity_router)
+api_router.include_router(interview_router)
 api_router.include_router(wechat_router)
 api_router.include_router(account_router)
 api_router.include_router(job_description_router)
 api_router.include_router(llm_admin_router)
 api_router.include_router(miniprogram_router)
+api_router.include_router(miniprogram_account_router)
 api_router.include_router(observability_router)
 api_router.include_router(plugin_release_admin_router)
 api_router.include_router(plugin_release_router)

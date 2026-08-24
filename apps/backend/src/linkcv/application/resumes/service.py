@@ -391,6 +391,20 @@ def _version_count(db: Session, resume_id: int) -> int:
     return int(count or 0)
 
 
+def append_resume_version(
+    db: Session,
+    resume: Resume,
+    *,
+    reason: str,
+    version_limit: int,
+    name: str | None = None,
+) -> ResumeVersion:
+    """Append a version while the caller holds the resume row lock."""
+    if _version_count(db, resume.id) >= version_limit:
+        raise ResumeVersionLimitExceeded
+    return _append_version(db, resume, reason, name)
+
+
 def create_manual_version(
     db: Session,
     resume_id: str,
@@ -402,9 +416,13 @@ def create_manual_version(
     if resume is None:
         return None
     try:
-        if _version_count(db, resume.id) >= version_limit:
-            raise ResumeVersionLimitExceeded
-        version = _append_version(db, resume, "manual", name)
+        version = append_resume_version(
+            db,
+            resume,
+            reason="manual",
+            version_limit=version_limit,
+            name=name,
+        )
         db.refresh(version)
         db.commit()
     except Exception:

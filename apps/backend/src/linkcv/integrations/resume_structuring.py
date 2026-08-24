@@ -6,6 +6,7 @@ from typing import Protocol
 
 from linkcv.domain.resume_extraction import ResumeExtractionDraft
 from linkcv.domain.section_ir import SectionFragment, SectionIR
+from linkcv.modules.llm.catalog import RESUME_STRUCTURING_CAPABILITY
 from linkcv.modules.llm.schemas import ChatMessage
 from linkcv.modules.llm.service import LLMError, LLMService
 
@@ -85,12 +86,14 @@ class LLMResumeStructuringClient:
                     messages,
                     source="resume_import",
                     response_model=ResumeExtractionDraft,
+                    capability=RESUME_STRUCTURING_CAPABILITY,
                 )
         except TimeoutError as error:
             raise StructuringModelError("structured resume extraction timed out") from error
         except LLMError as error:
             if error.code in {
                 "LLM_CHAT_NOT_CONFIGURED",
+                "LLM_MODEL_NOT_CONFIGURED",
                 "LLM_CREDENTIALS_UNAVAILABLE",
             }:
                 raise StructuringModelNotConfiguredError(error.code) from error

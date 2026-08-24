@@ -1,4 +1,4 @@
-import { mergeAttributes, Node, type Extensions } from "@tiptap/core";
+import { Extension, mergeAttributes, Node, type Extensions } from "@tiptap/core";
 import Color from "@tiptap/extension-color";
 import Highlight from "@tiptap/extension-highlight";
 import Link from "@tiptap/extension-link";
@@ -8,6 +8,7 @@ import TextStyle from "@tiptap/extension-text-style";
 import Underline from "@tiptap/extension-underline";
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
 import {
   AlignCenter,
   AlignLeft,
@@ -50,6 +51,67 @@ export const inlineIconComponents = {
 
 export type { InlineIconName } from "../../lib/resumeInlineIcon";
 export const inlineIconNames = resumeInlineIconOptions.map((option) => option.name);
+
+const BLOCK_ID_PATTERN = /^blk_[a-z0-9]{16,64}$/;
+const blockIdentityPluginKey = new PluginKey("resume-block-identity");
+
+export function createResumeBlockId() {
+  const random = globalThis.crypto?.randomUUID?.().replace(/-/g, "")
+    ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+  return `blk_${random.toLowerCase()}`.slice(0, 68);
+}
+
+export function normalizeResumeBlockId(value: unknown) {
+  return typeof value === "string" && BLOCK_ID_PATTERN.test(value) ? value : null;
+}
+
+export const ResumeBlockAnchor = Node.create({
+  name: "resumeBlockAnchor",
+  group: "inline",
+  inline: true,
+  atom: true,
+  selectable: false,
+  addAttributes: () => ({ blockId: { default: null } }),
+  parseHTML: () => [{
+    tag: "span[data-resume-block-id]",
+    getAttrs: (element) => element instanceof HTMLElement
+      ? { blockId: normalizeResumeBlockId(element.dataset.resumeBlockId) }
+      : false,
+  }],
+  renderHTML: ({ node }) => ["span", {
+    "data-resume-block-id": normalizeResumeBlockId(node.attrs.blockId) ?? createResumeBlockId(),
+    "aria-hidden": "true",
+    class: "resume-block-anchor",
+  }],
+});
+
+export const ResumeBlockIdentity = Extension.create({
+  name: "resumeBlockIdentity",
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      key: blockIdentityPluginKey,
+      appendTransaction: (_transactions, _oldState, newState) => {
+        const anchorType = newState.schema.nodes.resumeBlockAnchor;
+        if (!anchorType) return null;
+        const missing: number[] = [];
+        newState.doc.descendants((node, position) => {
+          if (node.isTextblock && node.type.name !== "codeBlock") {
+            const first = node.firstChild;
+            if (first?.type !== anchorType || !normalizeResumeBlockId(first.attrs.blockId)) {
+              missing.push(position + 1);
+            }
+          }
+        });
+        if (!missing.length) return null;
+        const transaction = newState.tr;
+        for (const position of missing.reverse()) {
+          transaction.insert(position, anchorType.create({ blockId: createResumeBlockId() }));
+        }
+        return transaction;
+      },
+    })];
+  },
+});
 
 function uploadImage(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -537,6 +599,8 @@ export const FontSize = TextStyle.extend({
 
 export const resumeEditorExtensions: Extensions = [
   StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
+  ResumeBlockAnchor,
+  ResumeBlockIdentity,
   Underline,
   FontSize,
   Color,

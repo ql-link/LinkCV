@@ -9,20 +9,23 @@ afterEach(() => {
 });
 
 describe("WorkspaceNavigation", () => {
-  it("使用顶部胶囊导航切换简历、模板、JD 和资料库，并标记当前模块", () => {
+  it("使用顶部胶囊导航切换简历、模板、JD、面试和资料库，并标记当前模块", () => {
     render(<WorkspaceNavigation active="jobs" email="user@example.test" />);
 
     expect(screen.getByRole("navigation", { name: "工作区导航" })).toBeInTheDocument();
     const brandLink = screen.getByRole("link", { name: "LinkResume 首页" });
-    expect(brandLink).toHaveTextContent("LinkResume");
     expect(brandLink).toHaveClass("no-underline", "hover:no-underline");
-    expect(screen.getByText("LinkResume")).toHaveAttribute("translate", "no");
+    expect(brandLink.querySelector(".ui-brand-wordmark")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "JD 中心" })).toHaveAttribute("aria-current", "page");
     const resumesLink = screen.getByRole("link", { name: "我的简历" });
     const templatesLink = screen.getByRole("link", { name: "简历模板" });
+    const interviewsLink = screen.getByRole("link", { name: "面试中心" });
     expect(templatesLink).toHaveAttribute("href", "/templates");
+    expect(interviewsLink).toHaveAttribute("href", "/interviews");
     expect(resumesLink.style.getPropertyValue("--nav-item-color")).toBe("var(--ui-accent)");
     expect(templatesLink.style.getPropertyValue("--nav-item-color")).toBe("var(--ui-template-accent)");
+    expect(interviewsLink.style.getPropertyValue("--nav-item-color")).toBe("var(--ui-interview-accent)");
+    expect(interviewsLink.style.getPropertyValue("--nav-item-glow")).toContain("var(--ui-interview-accent)");
     expect(screen.queryByRole("link", { name: "个人资料" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("link", { name: "我的简历" }));
@@ -33,6 +36,9 @@ describe("WorkspaceNavigation", () => {
 
     fireEvent.click(screen.getByRole("link", { name: "资料库" }));
     expect(`${window.location.pathname}${window.location.search}`).toBe("/datasets");
+
+    fireEvent.click(screen.getByRole("link", { name: "面试中心" }));
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/interviews");
 
     window.history.replaceState(null, "", "/jobs");
     const preventNativeNavigation = (event: MouseEvent) => event.preventDefault();

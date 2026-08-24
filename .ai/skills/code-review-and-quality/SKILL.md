@@ -68,9 +68,9 @@ description: 审查 LinkCV 代码差异的正确性、范围、契约、安全�
 
 - 模型变更是否有迁移和旧数据处理；
 - 约束、索引、事务和关联关系是否保持完整性；
-- 升级、回滚和重复执行是否安全；
+- 向前升级、备份恢复、向前修复和重复执行是否安全；
 - 失败后是否可能产生孤立、重复或半完成数据。
-- Alembic revision 是否接到预期 head、是否使用配对 up/down SQL、是否存在 Python DDL、改写已发布历史或伪 downgrade；需要深入迁移审查时使用 `alembic-migration` 的已有结论，不在本技能复制完整流程。
+- Alembic revision 是否接到预期 head、是否只使用 up SQL、`downgrade()` 是否明确拒绝、是否存在 Python DDL、down SQL 或改写已发布历史；需要深入迁移审查时使用 `alembic-migration` 的已有结论，不在本技能复制完整流程。
 
 ### 外部服务与 LLM（适用时）
 

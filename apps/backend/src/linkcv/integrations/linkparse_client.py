@@ -254,10 +254,7 @@ class LinkParseClient:
             "X-Request-ID": request_id,
         }
         form = {
-            "engine": "auto",
             "output_formats": "markdown",
-            "ocr": "auto",
-            "dpi": "200",
             "include_bbox": "false",
             "include_images": "false",
         }

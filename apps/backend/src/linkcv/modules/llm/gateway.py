@@ -59,6 +59,7 @@ class LLMGateway(Protocol):
         messages: Sequence[ChatMessage],
         api_base: str | None,
         api_key: str | None,
+        disable_thinking: bool = False,
     ) -> GatewayResult: ...
 
     async def start_stream(
@@ -168,8 +169,9 @@ class LiteLLMGateway:
         messages: Sequence[ChatMessage],
         api_base: str | None,
         api_key: str | None,
+        disable_thinking: bool = False,
     ) -> dict[str, object]:
-        return {
+        request: dict[str, object] = {
             "model": model,
             "messages": [message.model_dump() for message in messages],
             "base_url": api_base,
@@ -177,6 +179,9 @@ class LiteLLMGateway:
             "timeout": self.timeout_seconds,
             "num_retries": 0,
         }
+        if disable_thinking and model.startswith("deepseek/"):
+            request["extra_body"] = {"thinking": {"type": "disabled"}}
+        return request
 
     async def complete(
         self,
@@ -185,6 +190,7 @@ class LiteLLMGateway:
         messages: Sequence[ChatMessage],
         api_base: str | None,
         api_key: str | None,
+        disable_thinking: bool = False,
     ) -> GatewayResult:
         try:
             response = await litellm.acompletion(
@@ -193,6 +199,7 @@ class LiteLLMGateway:
                     messages=messages,
                     api_base=api_base,
                     api_key=api_key,
+                    disable_thinking=disable_thinking,
                 )
             )
             content = response.choices[0].message.content or ""
