@@ -4,7 +4,6 @@ import { ApiRequestError } from "@/api/client";
 import { InterviewCenterPage } from "./InterviewCenterPage";
 
 const mocks = vi.hoisted(() => ({
-  getInterviewOverview: vi.fn(),
   listInterviewSessions: vi.fn(),
   listJobApplications: vi.fn(),
   getInterviewSession: vi.fn(),
@@ -113,24 +112,6 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
-  mocks.getInterviewOverview.mockResolvedValue({
-    metrics: {
-      weekly_interviews: 1,
-      upcoming_interviews: 1,
-      completed_interviews: 4,
-      written_offers: 1,
-    },
-    pipeline: [
-      {
-        ...application,
-        next_session_id: "31",
-        next_session_start_at: session.start_at,
-        next_session_end_at: session.end_at,
-        next_session_mode: "video",
-      },
-    ],
-    week_sessions: [session],
-  });
   mocks.listInterviewSessions.mockResolvedValue({ items: [session], next_cursor: null });
   mocks.listJobApplications.mockResolvedValue({
     items: [
@@ -181,22 +162,24 @@ describe("InterviewCenterPage API projections", () => {
   it("renders the career module header before its subnavigation", () => {
     render(
       <InterviewCenterPage
-        view="overview"
-        navigation={<nav aria-label="测试求职子导航">总览 岗位库</nav>}
+        view="applications"
+        navigation={<nav aria-label="测试求职子导航">岗位库 求职进程</nav>}
       />,
     );
 
     const heading = screen.getByRole("heading", { name: "求职中心" });
     const navigation = screen.getByRole("navigation", { name: "测试求职子导航" });
+    expect(heading.closest("header")).toHaveClass("page-hero", "is-module", "career-module-header");
+    expect(document.querySelector(".interview-module-header")).not.toBeInTheDocument();
     expect(heading.closest("header")?.compareDocumentPosition(navigation)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
   });
 
   it("uses the shared loading component while career data is pending", () => {
-    mocks.getInterviewOverview.mockReturnValue(new Promise(() => {}));
+    mocks.listInterviewSessions.mockReturnValue(new Promise(() => {}));
 
-    render(<InterviewCenterPage view="overview" />);
+    render(<InterviewCenterPage view="applications" />);
 
     expect(screen.getByRole("status", { name: "正在加载求职数据…" })).toHaveClass(
       "page-loading",
@@ -204,37 +187,16 @@ describe("InterviewCenterPage API projections", () => {
     );
   });
 
-  it("renders the reference-led overview with focus, progress, interviews, activity, and tasks", async () => {
-    render(<InterviewCenterPage view="overview" />);
+  it("renders the records empty state directly on the workspace background", async () => {
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications.mockResolvedValue({ items: [], next_cursor: null });
 
-    expect(await screen.findByRole("heading", { name: "本周重点" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "求职进度概览" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "本周面试" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "最近动态" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "待处理事项" })).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: /14 条进行中进程/ })).toHaveAccessibleName(
-      "14 条进行中进程：简历投递 7 条，笔试 2 条，面试中 4 条，Offer 1 条",
-    );
-    expect(screen.getByText("7（50%）")).toBeInTheDocument();
-    expect(screen.getByText("4（29%）")).toBeInTheDocument();
-    expect(screen.getAllByText("小米科技").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("字节跳动").length).toBeGreaterThan(0);
-    expect(screen.getByRole("heading", { name: "求职中心" })).toBeInTheDocument();
-    expect(screen.getAllByText("腾讯科技").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/二面/).length).toBeGreaterThan(0);
-    expect(mocks.listInterviewSessions).toHaveBeenCalledWith({
-      include_archived: false,
-      start_at: fixtureWeekStart.toISOString(),
-      end_at: fixtureWeekEnd.toISOString(),
-      cursor: undefined,
-      limit: 500,
-    });
-    expect(mocks.listJobApplications).toHaveBeenCalledWith({
-      scope: "active",
-      cursor: undefined,
-      limit: 200,
-    });
-    expect(screen.getByText("简历优化建议已生成")).toBeInTheDocument();
+    const { container } = render(<InterviewCenterPage view="records" />);
+
+    expect(await screen.findByRole("heading", { name: "还没有面试记录" })).toBeInTheDocument();
+    expect(container.querySelector(".records-empty-state")).toBeInTheDocument();
+    expect(container.querySelector(".interview-empty-state")).not.toBeInTheDocument();
+    expect(container.querySelector(".records-empty-state.interview-surface")).not.toBeInTheDocument();
   });
 
   it("renders the full-day draggable schedule from API data", async () => {
@@ -243,7 +205,7 @@ describe("InterviewCenterPage API projections", () => {
     const calendar = await screen.findByRole("grid", {
       name: "面试周排期，可拖动并按 30 分钟调整",
     });
-    const moduleHeader = document.querySelector(".interview-module-header") as HTMLElement;
+    const moduleHeader = document.querySelector(".career-module-header") as HTMLElement;
     expect(screen.queryByRole("heading", { name: "面试排期" })).not.toBeInTheDocument();
     expect(within(moduleHeader).getByRole("button", { name: "搜索面试排期" })).toBeInTheDocument();
     expect(within(moduleHeader).getByRole("button", { name: "安排面试" })).toBeInTheDocument();
@@ -310,7 +272,7 @@ describe("InterviewCenterPage API projections", () => {
     render(<InterviewCenterPage view="applications" />);
 
     expect(await screen.findByRole("article", { name: "腾讯 后端开发工程师" })).toBeInTheDocument();
-    const moduleHeader = document.querySelector(".interview-module-header") as HTMLElement;
+    const moduleHeader = document.querySelector(".career-module-header") as HTMLElement;
     expect(screen.queryByRole("heading", { name: "求职进程" })).not.toBeInTheDocument();
     expect(within(moduleHeader).getByRole("searchbox", { name: "搜索求职进程" })).toBeInTheDocument();
     expect(within(moduleHeader).getByRole("button", { name: "筛选" })).toBeInTheDocument();
@@ -509,21 +471,6 @@ describe("InterviewCenterPage API projections", () => {
     });
   });
 
-  it("keeps the front-end overview mock stable when the development database is empty", async () => {
-    mocks.getInterviewOverview.mockResolvedValue({
-      metrics: { weekly_interviews: 0, upcoming_interviews: 0, completed_interviews: 2, written_offers: 0 },
-      pipeline: [],
-      week_sessions: [],
-    });
-    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
-    mocks.listJobApplications.mockResolvedValue({ items: [], next_cursor: null });
-
-    render(<InterviewCenterPage view="overview" />);
-    expect(await screen.findByRole("img", { name: /14 条进行中进程/ })).toBeInTheDocument();
-    expect(screen.getAllByText("小米科技").length).toBeGreaterThan(0);
-    expect(screen.getByText("查看全部（5）")).toBeInTheDocument();
-  });
-
   it("follows every cursor so historical records are not silently truncated", async () => {
     const laterStart = new Date(fixtureSessionStart.getTime() + 2 * 60 * 60 * 1000);
     const laterSession = {
@@ -592,8 +539,8 @@ describe("InterviewCenterPage API projections", () => {
         assets: [],
       });
 
-    render(<InterviewCenterPage view="overview" />);
-    fireEvent.click(await screen.findByRole("button", { name: "新建面试" }));
+    render(<InterviewCenterPage view="schedule" />);
+    fireEvent.click(await screen.findByRole("button", { name: "安排面试" }));
     fireEvent.change(screen.getByLabelText("公司"), { target: { value: "新建公司" } });
     fireEvent.change(screen.getByLabelText("岗位"), { target: { value: "后端开发工程师" } });
     fireEvent.click(screen.getByRole("button", { name: "创建面试" }));

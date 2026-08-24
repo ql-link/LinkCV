@@ -1,3 +1,8 @@
+.career-module-header {
+  min-height: 76px;
+  box-sizing: border-box;
+}
+
 .career-subnav {
   display: flex;
   gap: 4px;
@@ -29,7 +34,12 @@
 .career-subnav a.is-active::after { position: absolute; right: 9px; bottom: -1px; left: 9px; height: 2px; border-radius: 2px 2px 0 0; background: var(--ui-warning); content: ""; }
 .career-subnav a:focus-visible { border-radius: var(--ui-radius-sm); outline: 2px solid var(--ui-ring); outline-offset: -2px; }
 
+@media (max-width: 1250px) {
+  .career-module-header .page-hero-description { display: none; }
+}
+
 @media (max-width: 640px) {
+  .career-module-header { min-height: 0; }
   .career-subnav { padding-inline: 8px; }
   .career-subnav a { min-height: 44px; padding-inline: 10px; }
 }

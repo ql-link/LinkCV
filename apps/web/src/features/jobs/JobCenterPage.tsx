@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { BriefcaseBusiness, Download, MapPin, Plus, Trash2, WalletCards } from "lucide-react";
 import { api, type JobApplicationSummary, type JobDescriptionDraft, type JobDescriptionSummary } from "../../api/client";
 import { Button, ConfirmDialog, ExpandableSearch, IconButton, PageLoading } from "@/components/ui";
@@ -12,7 +12,13 @@ import { jobFormFromDraft, type JobFormState } from "./jobFormModel";
 import { activeApplicationForJob, applicationOutcome, applicationsForJob, listAllJobApplications } from "./jobApplications";
 import "./jobs.css";
 
-export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?: boolean }) {
+export function JobCenterPage({
+  createDialogOpen = false,
+  navigation,
+}: {
+  createDialogOpen?: boolean;
+  navigation?: ReactNode;
+}) {
   const [keyword, setKeyword] = useState("");
   const [items, setItems] = useState<JobDescriptionSummary[]>([]);
   const [applications, setApplications] = useState<JobApplicationSummary[]>([]);
@@ -149,11 +155,13 @@ export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?:
   };
 
   return (
-    <main className="dashboard-content job-center-content">
+    <>
       <WorkspacePageHero
-        eyebrow="岗位资料库"
-        title="岗位库"
-        description="集中保存岗位要求和公司信息，方便随时搜索、查看与编辑。"
+        className="career-module-header job-center-header"
+        icon={<BriefcaseBusiness />}
+        tone="warning"
+        title="求职中心"
+        description="集中管理岗位机会、求职进程、面试排期与复盘记录。"
         actions={(
           <>
             <ExpandableSearch
@@ -164,11 +172,12 @@ export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?:
               placeholder="搜索职位、公司或技能…"
             />
             <Button variant="ghost" icon={<Download size={15} />} onClick={() => setShowPluginInstall(true)}>安装采集插件</Button>
-            <Button variant="outline" icon={<Plus size={15} />} onClick={() => navigateTo("/career/jobs/new")}>新建岗位</Button>
+            <Button icon={<Plus size={15} />} onClick={() => navigateTo("/career/jobs/new")}>新建岗位</Button>
           </>
         )}
       />
-
+      {navigation}
+      <main className="dashboard-content job-center-content">
       {loading && !initialized ? (
         <PageLoading label="正在加载岗位…" />
       ) : (
@@ -190,8 +199,13 @@ export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?:
               const history = applicationsForJob(applications, job.id);
               const activeApplication = activeApplicationForJob(applications, job.id);
               const latestApplication = history[0] ?? null;
+              const detailHref = jobDetailPath(job.id);
               return <article key={job.id} className="job-card">
-                <button className="job-card-main" type="button" onClick={() => navigateTo(jobDetailPath(job.id))}>
+                <a className="job-card-main" href={detailHref} onClick={(event) => {
+                  if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+                  event.preventDefault();
+                  navigateTo(detailHref);
+                }}>
                   <div className="job-card-heading">
                     <h2>{job.job_title}</h2>
                     <span className="job-card-heading-separator" aria-hidden="true">·</span>
@@ -202,7 +216,7 @@ export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?:
                     {job.salary_text && <span className="job-card-meta-item"><WalletCards size={13} aria-hidden="true" />{job.salary_text}</span>}
                     {job.skills.length > 0 && <span className="job-card-skills">{job.skills.slice(0, 6).join("、")}</span>}
                   </div>
-                </button>
+                </a>
                 <div className="job-card-side">
                   <span className={`job-status-badge${!applicationsLoaded ? " is-archived" : ""}`}>{!applicationsLoaded ? "进程状态不可用" : activeApplication ? activeApplication.current_stage_label : latestApplication ? applicationOutcome(latestApplication) : "仅收藏"}</span>
                   <div className="job-card-actions">
@@ -256,7 +270,8 @@ export function JobCenterPage({ createDialogOpen = false }: { createDialogOpen?:
           onClose={closeCreate}
         />
       )}
-    </main>
+      </main>
+    </>
   );
 }
 
