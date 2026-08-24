@@ -1,6 +1,6 @@
 ---
 name: solution-delegated-delivery
-description: 在 LinkCV 的方案先行任务中，用 GPT-5.6 Sol 调查并生成或修订 solution.md，待用户确认后把大部分有界实施工作分派给 GPT-5.6 Luna Max，只在严格风险或 Luna 失败时直接升级到 Sol，并由主 Agent 完成整合、验证和回流控制。适用于 flow-router 已判为方案先行且允许子 Agent 施工，或用户明确要求 Sol 规划、Luna 主实施的普通模式任务；不改变直接实现路径，也不用于只读分析或单纯文档讨论。
+description: 在 LinkCV 的纯后端和前后端混合方案任务中，用 GPT-5.6 Sol 调查并生成或修订 solution.md，待用户确认后把大部分有界后端实施分派给 GPT-5.6 Luna Max，只在严格风险或 Luna 失败时升级到 Sol。纯前端任务转 frontend-delivery；混合任务由本技能固定业务与契约后，再把 UI 设计和前端实施交给 frontend-delivery。
 ---
 
 # 方案驱动的分层模型交付
@@ -14,7 +14,8 @@ flow-router
   → Sol 规划 Agent 使用 solution-generator
   → 用户确认 solution.md 与后续路径
   → acceptance-generator（命中契约验收时）
-  → Luna Max 实施 Agent 使用 implementation-execution
+  → Luna Max 后端实施 Agent 使用 implementation-execution
+  → frontend-delivery（混合任务的 UI 设计与前端实施）
   → 严格风险或 Luna 失败时直接升级 Sol Medium 实施 Agent
   → 主 Agent 整合并进入既有验证与质量链
 ```
@@ -25,12 +26,13 @@ flow-router
 
 满足任一条件时使用：
 
-- `flow-router` 已判为方案先行，且当前环境允许子 Agent；
+- `flow-router` 已判纯后端或混合任务需要方案先行，且当前环境允许子 Agent；
 - 用户明确要求由 Sol 先制定方案，再主要由 Luna 实施。
 
 以下情况不使用：
 
 - `flow-router` 判为直接实现，且用户没有明确要求本技能；
+- 任务是纯前端页面、组件、布局或视觉改动，此时使用 `frontend-delivery`；
 - 用户只要求解释、调查或评审，没有要求生成或实施方案；
 - 工作无法拆成边界清晰的任务，或多个实施者必须频繁修改同一可变状态。此时由主 Agent 按现有工作流直接协调。
 
@@ -54,6 +56,8 @@ flow-router
 4. 遇到需要用户决定的选择时，返回问题、推荐答案和影响，不自行猜测；
 5. 返回方案路径、尚待确认的决定、推荐后续路径和可施工性结论。
 
+混合任务的 `solution.md` 必须固定业务结果、API、权限、数据、状态与失败语义，并列出前端需要呈现的用户结果；详细信息结构、视觉、布局、组件选择和响应式由后续 `frontend-delivery` 写入从属 `ui-design.md`，不在两处重复维护。
+
 主 Agent 负责把待决问题逐项交给用户。收到回答后，优先向同一个 Sol 规划 Agent 发送 follow-up，让它更新原方案；不要创建新的方案文件或让主 Agent 在未复核真实代码时代写决定。
 
 没有用户对当前方案及后续路径的明确确认，不得启动实施 Agent。用户只授权生成方案时，在方案交付后停止。
@@ -70,7 +74,7 @@ flow-router
 - 不要求实施 Agent 重新决定需求、契约、数据模型或发布策略；
 - 与其他并行工作包没有写入冲突，也不依赖其尚未完成的结果。
 
-前端任务按用户可见结果和页面边界拆包。同一路由或同一页面的组件、样式、状态逻辑和邻近测试默认作为一个工作包交给同一个 Luna Max，不按“组件 / CSS / 测试”机械拆给多个 Agent；只有文件互斥、行为独立且整合成本确实更低时才拆开。实施 Agent 使用 `frontend-design` 选择轻量、标准或完整档；`solution.md` 已经明确用户结果、页面结构、状态和响应式规则时，把它作为设计判断来源，只补缺口，不重新生成一份同义 Design Brief。
+混合任务只在这里拆后端、契约和配置工作包。确认当前 `solution.md` 后，把前端用户结果、不可改写契约和依赖状态交给 `frontend-delivery`；不得把 TSX、CSS 或页面测试混入后端工作包，也不让前端流程重新决定 API、权限或数据语义。
 
 每个实施 Agent 的消息至少包含：
 
@@ -101,7 +105,7 @@ flow-router
 - `reasoning_effort`: `max`
 - `fork_turns`: `none` 或必要的有限轮次。
 
-确认后的实施工作包默认交给 Luna，包括局部修改、多文件同步、按已确认契约进行的前后端集成和邻近测试。只有命中下一节的 Sol 升级条件时才跳过 Luna。
+确认后的后端实施工作包默认交给 Luna，包括局部修改、多文件同步、接口实现和邻近测试。只有命中下一节的 Sol 升级条件时才跳过 Luna；前端实施模型由 `frontend-delivery` 管理。
 
 交给 Luna 前仍必须满足：
 
