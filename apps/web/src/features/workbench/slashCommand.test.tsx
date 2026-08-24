@@ -54,7 +54,7 @@ describe("逐行插入入口", () => {
     editor.destroy();
   });
 
-  it("左右分栏的两侧都提供独立入口，并定位到稳定定位符之后", () => {
+  it("左右分栏整行只提供一个入口，并定位到左侧稳定定位符之后", () => {
     const onOpen = vi.fn();
     const editor = new Editor({
       extensions: [...resumeEditorExtensions, LineInsertMenuExtension.configure({ onOpen })],
@@ -84,13 +84,49 @@ describe("逐行插入入口", () => {
 
     const positions = editableLineStartPositions(editor.state);
     const buttons = editor.view.dom.querySelectorAll<HTMLButtonElement>(".resume-line-add");
-    expect(positions).toHaveLength(2);
-    expect(buttons).toHaveLength(2);
+    expect(positions).toHaveLength(1);
+    expect(buttons).toHaveLength(1);
 
     buttons[0]?.click();
     expect(editor.state.selection.from).toBe(positions[0]);
     expect(editor.state.selection.$from.parent.firstChild?.type.name).toBe("resumeBlockAnchor");
     expect(editor.state.selection.$from.parentOffset).toBe(1);
+    editor.destroy();
+  });
+
+  it("固定多列信息行各自只提供一个入口，普通列表项仍逐行提供", () => {
+    const editor = new Editor({
+      extensions: [...resumeEditorExtensions, LineInsertMenuExtension.configure({ onOpen: vi.fn() })],
+      content: {
+        type: "doc",
+        content: [
+          {
+            type: "resumeMetaRow",
+            content: ["日期", "学校", "专业", "成绩"].map((text) => ({
+              type: "paragraph",
+              content: [{ type: "text", text }],
+            })),
+          },
+          {
+            type: "resumeTrioRow",
+            content: ["Java", "TypeScript", "Python"].map((text) => ({
+              type: "paragraph",
+              content: [{ type: "text", text }],
+            })),
+          },
+          {
+            type: "bulletList",
+            content: ["第一项", "第二项"].map((text) => ({
+              type: "listItem",
+              content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+            })),
+          },
+        ],
+      },
+    });
+
+    expect(editableLineStartPositions(editor.state)).toHaveLength(4);
+    expect(editor.view.dom.querySelectorAll(".resume-line-add")).toHaveLength(4);
     editor.destroy();
   });
 

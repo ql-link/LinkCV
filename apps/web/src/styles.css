@@ -1906,6 +1906,11 @@ select:not([data-slot]):focus-visible {
   --resume-line-add-list-indent: 57px;
 }
 .resume-workbench .resume-content.ProseMirror :is(p, h1, h2, h3):hover > .resume-line-add,
+.resume-workbench .resume-content.ProseMirror :is(
+  [data-type="resume-row"],
+  [data-type="resume-meta-row"],
+  [data-type="resume-trio-row"]
+):hover .resume-line-add,
 .resume-line-add:hover,
 .resume-line-add:focus-visible {
   opacity: 1;

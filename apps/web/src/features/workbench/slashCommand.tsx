@@ -20,10 +20,13 @@ type LineInsertMenuOptions = {
   onOpen: (state: CommandMenuState) => void;
 };
 
+const groupedVisualLineNodeNames = new Set(["resumeRow", "resumeMetaRow", "resumeTrioRow"]);
+
 export function editableLineStartPositions(state: EditorState) {
   const positions: number[] = [];
-  state.doc.descendants((node, position) => {
+  state.doc.descendants((node, position, parent, index) => {
     if (!node.isTextblock || node.type.name === "codeBlock") return true;
+    if (parent && groupedVisualLineNodeNames.has(parent.type.name) && index > 0) return false;
     const firstChild = node.firstChild;
     positions.push(position + 1
       + (firstChild?.type.name === "resumeBlockAnchor" ? firstChild.nodeSize : 0));
