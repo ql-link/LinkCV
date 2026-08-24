@@ -8,7 +8,7 @@
 | --- | --- |
 | 任务标识 | `<KEY>` |
 | 关联 Issue | `<存在时填写链接或编号；没有时写“无”>` |
-| 验收依据 | `.specs/<KEY>/solution.md` / `.specs/<KEY>/acceptance.feature`（按实际路径填写） |
+| 验收依据 | `.specs/<KEY>/solution.md` / `.specs/<KEY>/ui-design.md` / `.specs/<KEY>/acceptance.feature`（按实际路径填写） |
 | 分支或提交 | `<开始执行人工验收时的分支名或提交哈希>` |
 | 可提交内容状态 | `<开始执行时是否有未提交改动；不得填密钥或真实数据>` |
 | 执行环境 | `<本地/测试环境；浏览器；关键服务版本>` |
@@ -35,7 +35,7 @@
 
 ### MAN-01 · <场景名称>
 
-- 来源：`solution.md` 中 `<R/BR/验证项>` / `acceptance.feature` 中 `<Scenario 名称>`（按实际路径填写）
+- 来源：`solution.md` 中 `<R/BR/验证项>` / `ui-design.md` 中 `<用户结果/验证项>` / `acceptance.feature` 中 `<Scenario 名称>`（按实际路径填写）
 - 前置条件：<可实际建立的状态>
 - 操作步骤：
   1. <单个用户动作>
