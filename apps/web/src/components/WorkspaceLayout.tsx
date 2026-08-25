@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
-import { Brand } from "@/components/ui";
+import { Brand, PageHeader } from "@/components/ui";
 import RandomLetterSwapNav from "@/components/ui/m-random-letter-swap-1";
 import { preloadWorkspacePage } from "../workspacePageLoaders";
 import "./career-navigation.css";
@@ -164,14 +164,13 @@ export function WorkspacePageHero({
   }
 
   return (
-    <header className={`page-hero${className ? ` ${className}` : ""}`}>
-      <div className="page-hero-text">
-        {eyebrow && <p className="page-hero-eyebrow">{eyebrow}</p>}
-        <h1>{title}</h1>
-        {description && <p className="page-hero-description">{description}</p>}
-      </div>
-      {actions && <div className="page-hero-actions">{actions}</div>}
-    </header>
+    <PageHeader
+      eyebrow={eyebrow}
+      title={title}
+      description={description}
+      actions={actions}
+      className={className}
+    />
   );
 }
 

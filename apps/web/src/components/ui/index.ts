@@ -4,6 +4,7 @@ export { Badge, badgeVariants } from "./badge";
 export { Brand } from "./brand";
 export { Button, buttonVariants, type ButtonProps } from "./button";
 export { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "./card";
+export { ContentFrame, contentFrameVariants, type ContentFrameProps } from "./content-frame";
 export { ConfirmDialog } from "./confirm-dialog";
 export { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "./dialog";
 export { ExpandableSearch, type ExpandableSearchProps } from "./expandable-search";
@@ -14,11 +15,22 @@ export { Input } from "./input";
 export { Label } from "./label";
 export { NumberStepper } from "./number-stepper";
 export { PageLoading, type PageLoadingProps } from "./page-loading";
+export { PageHeader, type PageHeaderProps } from "./page-header";
 export { RandomLetterSwap, type RandomLetterSwapProps } from "./random-letter-swap";
 export { SelectField } from "./select-field";
 export { Select, SelectContent, SelectItem, SelectTrigger } from "./select";
 export { Separator } from "./separator";
 export { Skeleton } from "./skeleton";
+export {
+  SettingsLayout,
+  SettingsRow,
+  SettingsSection,
+  SettingsSectionHeader,
+  settingsLayoutVariants,
+  settingsSectionVariants,
+  type SettingsLayoutProps,
+  type SettingsSectionProps,
+} from "./settings-pattern";
 export { TextField } from "./text-field";
 export { TogglePill } from "./toggle-pill";
 export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./tooltip";
