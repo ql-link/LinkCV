@@ -5,12 +5,19 @@ import {
   editorSettingsToStyle,
   editorDocumentToMarkdown,
   resumeDocumentFromMarkdown,
+  resumeDocumentContentHash,
   resumeDocumentToMarkdown,
   styleToEditorSettings,
 } from "./resumeContract";
 import { renderResumeMarkdown } from "../parser/resumeMarkdown";
 
 describe("resume semantic contract adapter", () => {
+  it("uses the same sorted UTF-8 content hash contract as the backend", async () => {
+    await expect(resumeDocumentContentHash({ b: "中", a: 1 } as never)).resolves.toBe(
+      "sha256:2831299868169bc527f55f88ebbdcd8b785d78d9e7dc64e6887dfbd2825dd247",
+    );
+  });
+
   it("renders semantic fields as editable markdown", () => {
     const document = {
       ...defaultSemanticDocument,
@@ -24,20 +31,28 @@ describe("resume semantic contract adapter", () => {
     expect(resumeDocumentToMarkdown(document)).toContain("- Python：FastAPI");
   });
 
-  it("stores editor markdown in the official custom section escape hatch", () => {
+  it("stores every editor section as an independently identified canonical block", () => {
     const markdown = "# 张三\n\n## 经历\n正文";
     const document = resumeDocumentFromMarkdown(markdown, defaultSemanticDocument);
 
-    expect(document.schema_version).toBe("1.0");
+    expect(document.semantic_sections).toContainEqual(expect.objectContaining({
+      semantic_kind: "custom",
+      display_title: "经历",
+      content_key: "custom_sections",
+    }));
+    expect(document.sections.custom_sections).toHaveLength(2);
     expect(document.sections.custom_sections[0].items[0].content).toEqual({
       format: "markdown",
-      content: "# 张三\n\n## 经历\n正文",
+      content: "# 张三",
     });
+    expect(new Set(document.sections.custom_sections.map((section) => section.id)).size).toBe(2);
     expect(JSON.stringify(document)).not.toContain('"type":"doc"');
-    expect(resumeDocumentToMarkdown(document)).toBe(markdown);
+    expect(resumeDocumentToMarkdown(document)).toMatch(
+      /^# 张三\n\n## \[\[linkcv-block:blk_[a-z0-9]{16,64}:custom\]\]经历\n\n正文$/u,
+    );
   });
 
-  it("preserves imported structured sections when the editor markdown changes", () => {
+  it("canonicalizes imported structured sections without keeping a duplicate typed copy", () => {
     const previous = {
       ...defaultSemanticDocument,
       sections: {
@@ -47,12 +62,81 @@ describe("resume semantic contract adapter", () => {
       },
     };
 
-    const document = resumeDocumentFromMarkdown("# 张三\n\n正文已修改", previous);
+    const markdown = resumeDocumentToMarkdown(previous);
+    const document = resumeDocumentFromMarkdown(markdown, previous);
 
-    expect(document.sections.skills).toEqual(previous.sections.skills);
-    expect(document.sections.certificates).toEqual(previous.sections.certificates);
+    expect(document.sections.skills).toEqual([]);
+    expect(document.sections.certificates).toEqual([]);
+    expect(document.sections.custom_sections.map((section) => section.title)).toEqual([
+      "基本信息",
+      "专业技能",
+      "证书",
+    ]);
     expect(resumeDocumentToMarkdown(previous)).toContain("## 证书");
     expect(resumeDocumentToMarkdown(previous)).toContain("示例证书");
+    expect(resumeDocumentToMarkdown(document)).toContain("示例证书");
+  });
+
+  it("keeps semantic identity when a heading is renamed", () => {
+    const original = resumeDocumentFromMarkdown(
+      "# [[linkcv-block:blk_1111111111111111]]张三\n\n## [[linkcv-block:blk_2222222222222222]]工作经历\n\n正文",
+      defaultSemanticDocument,
+    );
+    const classified = {
+      ...original,
+      semantic_sections: original.semantic_sections.map((section) => section.custom_section_id === "blk_2222222222222222"
+        ? { ...section, semantic_kind: "work" as const, semantic_source: "user" as const }
+        : section),
+    };
+    const renamed = resumeDocumentFromMarkdown(
+      "# [[linkcv-block:blk_1111111111111111]]张三\n\n## [[linkcv-block:blk_2222222222222222]]职业历程\n\n正文",
+      classified,
+    );
+    const section = renamed.semantic_sections.find((item) => item.custom_section_id === "blk_2222222222222222");
+
+    expect(section).toMatchObject({ semantic_kind: "work", semantic_source: "user", display_title: "职业历程" });
+  });
+
+  it("removes page regions while preserving content row structures", () => {
+    const document = resumeDocumentFromMarkdown(
+      [
+        ":::: meta",
+        "# 张三",
+        "电话",
+        "邮箱",
+        "杭州",
+        "::::",
+        "",
+        "## 工作经历",
+        "::: left 60",
+        "示例公司",
+        ":::",
+        "::: right",
+        "2024.01 - 至今",
+        ":::",
+      ].join("\n"),
+      defaultSemanticDocument,
+    );
+
+    const serialized = resumeDocumentToMarkdown(document);
+    expect(serialized).toContain(":::: meta");
+    expect(serialized).toContain("杭州\n::::");
+    expect(serialized).toContain("::: left 60");
+    expect(serialized).toContain("::: right");
+    expect(serialized).toContain("# 张三");
+    expect(serialized).toContain("示例公司");
+    expect(serialized).toContain("2024.01 - 至今");
+  });
+
+  it("does not interpret page-region markers inside fenced code as template layout", () => {
+    const document = resumeDocumentFromMarkdown(
+      "# 张三\n\n```text\n:::: sidebar\n示例文本\n::::\n```",
+      defaultSemanticDocument,
+    );
+
+    expect(resumeDocumentToMarkdown(document)).toContain(
+      "```text\n:::: sidebar\n示例文本\n::::\n```",
+    );
   });
 
   it("round-trips the smart one page setting through the persisted style", () => {

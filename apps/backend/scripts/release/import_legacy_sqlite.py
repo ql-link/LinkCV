@@ -20,9 +20,9 @@ from sqlalchemy.orm import Session
 import linkcv.models  # noqa: F401  # Register every mapped model.
 from linkcv.core.config import load_settings
 from linkcv.core.database import build_engine
-from linkcv.domain.resume_document import ResumeDocumentV1
+from linkcv.domain.resume_document import ResumeDocument, with_default_semantics
 from linkcv.domain.resume_snapshot import ResumeSnapshot
-from linkcv.domain.resume_style import ResumeStyleV1
+from linkcv.domain.resume_style import ResumePresentation, default_template_manifest
 from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import Resume, ResumeVersion
 
@@ -100,7 +100,6 @@ def _legacy_document(markdown: object) -> dict[str, Any]:
     heading = re.search(r"^#\s+(.+)$", markdown, re.MULTILINE)
     name = heading.group(1).strip() if heading else "张三"
     document = {
-        "schema_version": "1.0",
         "basics": {
             "name": name,
             "headline": None,
@@ -135,9 +134,10 @@ def _legacy_document(markdown: object) -> dict[str, Any]:
                 }
             ],
         },
+        "semantic_sections": [],
     }
     try:
-        return ResumeDocumentV1.model_validate(document).model_dump(mode="json")
+        return with_default_semantics(ResumeDocument.model_validate(document)).model_dump(mode="json")
     except ValueError:
         raise RuntimeError("legacy markdown cannot be converted safely") from None
 
@@ -194,7 +194,6 @@ def _legacy_style(
         maximum=50,
     )
     style = {
-        "schema_version": "1.0",
         "template_key": f"{theme}-cn",
         "font_family": font_family,
         "font_size": _number(
@@ -221,9 +220,10 @@ def _legacy_style(
             "margin_left_mm": horizontal_margin,
         },
         "section_order": ["basics", "custom_sections"],
+        "manifest": default_template_manifest().model_dump(mode="json"),
     }
     try:
-        return ResumeStyleV1.model_validate(style).model_dump(mode="json")
+        return ResumePresentation.model_validate(style).model_dump(mode="json")
     except ValueError:
         raise RuntimeError("legacy style cannot be converted safely") from None
 

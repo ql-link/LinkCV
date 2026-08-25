@@ -86,7 +86,6 @@ def render_request(
     if avatar:
         content = f'![头像]({avatar} "linkcv-avatar:72")\n\n{content}'
     data = {
-        "schema_version": "1.0",
         "basics": {
             "name": "张三",
             "headline": "软件工程实习生",
@@ -117,13 +116,32 @@ def render_request(
                 }],
             }],
         },
+        "semantic_sections": [
+            {
+                "id": "semantic_basics",
+                "semantic_kind": "basics",
+                "display_title": "基本信息",
+                "semantic_source": "system",
+                "semantic_confidence": None,
+                "content_key": "basics",
+                "custom_section_id": None,
+            },
+            {
+                "id": "semantic_quality-gate",
+                "semantic_kind": "custom",
+                "display_title": "模板质量门禁",
+                "semantic_source": "system",
+                "semantic_confidence": None,
+                "content_key": "custom_sections",
+                "custom_section_id": "quality-gate",
+            },
+        ],
     }
     return {
         "protocol_version": 1,
         "title": f"模板质量门禁 - {key}",
         "data": data,
         "style": {
-            "schema_version": "1.0",
             "template_key": key,
             "font_family": "source-han-serif",
             "font_size": font_size,
@@ -138,6 +156,25 @@ def render_request(
                 "margin_left_mm": left,
             },
             "section_order": ["basics", "custom_sections"],
+            "manifest": {
+                "renderer_key": "flow",
+                "regions": [{"id": "main", "kind": "main", "order": 1}],
+                "slots": [
+                    {
+                        "id": "main-content",
+                        "region_id": "main",
+                        "accepts": ["basics", "custom"],
+                        "required": False,
+                        "fallback": True,
+                        "order": 0,
+                    }
+                ],
+                "avatar": {
+                    "visibility": "show" if avatar else "hide",
+                    "fallback_asset": "none",
+                    "size": 72,
+                },
+            },
         },
     }
 

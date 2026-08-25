@@ -92,18 +92,21 @@ md.inline.ruler.before("emphasis", "linkcv_inline_icon", inlineIconRule);
 md.renderer.rules.linkcv_inline_icon = (tokens, index) => `<span data-inline-icon data-icon-name="${tokens[index].meta.name}" class="resume-inline-icon"></span>`;
 
 const resumeBlockAnchorRule: InlineRule = (state, silent) => {
-  const match = state.src.slice(state.pos).match(/^\[\[linkcv-block:(blk_[a-z0-9]{16,64})\]\]/);
+  const match = state.src.slice(state.pos).match(/^\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::(basics|work|education|project|skills|activity|certificates|awards|languages|custom))?\]\]/);
   if (!match) return false;
   if (!silent) {
     const token = state.push("linkcv_resume_block_anchor", "span", 0);
-    token.meta = { blockId: match[1] };
+    token.meta = { blockId: match[1], semanticKind: match[2] ?? null };
   }
   state.pos += match[0].length;
   return true;
 };
 
 md.inline.ruler.before("emphasis", "linkcv_resume_block_anchor", resumeBlockAnchorRule);
-md.renderer.rules.linkcv_resume_block_anchor = (tokens, index) => `<span data-resume-block-id="${tokens[index].meta.blockId}" aria-hidden="true" class="resume-block-anchor"></span>`;
+md.renderer.rules.linkcv_resume_block_anchor = (tokens, index) => {
+  const kind = tokens[index].meta.semanticKind;
+  return `<span data-resume-block-id="${tokens[index].meta.blockId}"${kind ? ` data-resume-semantic-kind="${kind}"` : ""} aria-hidden="true" class="resume-block-anchor"></span>`;
+};
 
 const defaultImageRenderer = md.renderer.rules.image;
 const defaultLinkOpenRenderer = md.renderer.rules.link_open;
@@ -212,10 +215,10 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
     const height = Math.min(240, Math.max(16, width / aspectRatio));
     return `<img data-inline-image data-src="${escapedSrc}" data-width="${width}" data-height="${Number(height.toFixed(2))}" data-aspect-ratio="${aspectRatio}" data-alt="${alt}" class="resume-inline-image" style="width:${width}px;height:${Number(height.toFixed(2))}px" src="${escapedSrc}" width="${width}" height="${Number(height.toFixed(2))}" alt="${alt}">`;
   }
-  const avatar = title.match(/^linkcv-avatar:(\d+)$/);
+  const avatar = title.match(/^linkcv-avatar:(\d+)(:system)?$/);
   if (avatar) {
     const size = Math.min(220, Math.max(56, Number(avatar[1]) || 96));
-    return `<figure data-type="avatar-image" data-src="${escapedSrc}" data-size="${size}" data-alt="${alt}" class="resume-media-node resume-avatar" style="width:${size}px;height:${size}px"><img src="${escapedSrc}" alt="${alt}"></figure>`;
+    return `<figure data-type="avatar-image" data-src="${escapedSrc}" data-size="${size}" data-alt="${alt}"${avatar[2] ? ' data-system-fallback="true"' : ""} class="resume-media-node resume-avatar" style="width:${size}px;height:${size}px"><img src="${escapedSrc}" alt="${alt}"></figure>`;
   }
   const bodyImage = title.match(/^linkcv-image:(\d+(?:\.\d+)?):(%|px):(left|center|right|full)$/);
   if (bodyImage) {
@@ -335,9 +338,20 @@ function tokenizeCustomBlocks(source: string): Block[] {
     if (wideStart) {
       const kind = wideStart[1] as "sidebar" | "main" | "meta" | "trio";
       const content: string[] = [];
+      let depth = 1;
       index += 1;
 
-      while (index < lines.length && !/^::::\s*$/.test(lines[index])) {
+      while (index < lines.length) {
+        if (/^::::\s*(?:sidebar|main|meta|trio)\s*$/.test(lines[index])) {
+          depth += 1;
+          content.push(lines[index]);
+          index += 1;
+          continue;
+        }
+        if (/^::::\s*$/.test(lines[index])) {
+          depth -= 1;
+          if (depth === 0) break;
+        }
         content.push(lines[index]);
         index += 1;
       }

@@ -101,8 +101,8 @@ def test_create_share_public_read_and_overwrite() -> None:
         assert set(payload) == {"data", "style", "sharer"}
         assert set(payload["sharer"]) == {"nickname", "avatar_url"}
         assert payload["sharer"]["nickname"]
-        assert payload["data"]["schema_version"] == "1.0"
-        assert payload["style"]["schema_version"] == "1.0"
+        assert payload["data"]["semantic_sections"]
+        assert payload["style"]["manifest"]["renderer_key"] == "flow"
 
         # 覆盖：新 token 生效，旧 token 立即失效
         overwritten = owner.post(f"/api/resumes/{resume_id}/share")

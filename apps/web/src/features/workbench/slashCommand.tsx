@@ -111,27 +111,6 @@ function chooseImage(
   input.click();
 }
 
-function insertAvatar(editor: Editor, file: File, src: string) {
-  let avatarPosition: number | null = null;
-  editor.state.doc.descendants((node, position) => {
-    if (node.type.name === "avatarImage") {
-      avatarPosition = position;
-      return false;
-    }
-    return true;
-  });
-  if (avatarPosition === null) {
-    editor.chain().focus().insertContentAt(0, { type: "avatarImage", attrs: { src, size: 96, alt: file.name } }).run();
-  } else {
-    editor.chain().focus().command(({ tr }) => {
-      const node = tr.doc.nodeAt(avatarPosition as number);
-      if (!node) return false;
-      tr.setNodeMarkup(avatarPosition as number, undefined, { ...node.attrs, src, alt: file.name });
-      return true;
-    }).run();
-  }
-}
-
 export function runWorkbenchBlockCommand(
   editor: Editor,
   command: WorkbenchBlockCommand,
@@ -168,8 +147,7 @@ export function runWorkbenchBlockCommand(
     }, onNotice);
     return true;
   }
-  chooseImage(resumeId, (file, src) => insertAvatar(editor, file, src), onNotice);
-  return true;
+  return false;
 }
 
 export function SlashCommandMenu({

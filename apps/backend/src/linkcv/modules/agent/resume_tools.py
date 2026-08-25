@@ -16,7 +16,13 @@ from linkcv.modules.job_descriptions.models import JobDescription
 from linkcv.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask, Resume
 
 
-BLOCK_MARKER_PATTERN = re.compile(r"\[\[linkcv-block:(blk_[a-z0-9]{16,64})\]\]")
+BLOCK_MARKER_PATTERN = re.compile(
+    r"\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::(?:basics|work|education|project|skills|activity|certificates|awards|languages|custom))?\]\]"
+)
+SECTION_HEADING_PATTERN = re.compile(
+    r"^##\s+\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::(?:basics|work|education|project|skills|activity|certificates|awards|languages|custom))?\]\](.*)$",
+    re.MULTILINE,
+)
 NUMBER_PATTERN = re.compile(
     r"(?<![A-Za-z0-9])\d+(?:\.\d+)?\s*(?:%|％|倍|万|亿|ms|s|秒|分钟|小时|天|人|次|个|元|美元)?",
     re.IGNORECASE,
@@ -71,7 +77,23 @@ def editor_markdown(data: Any) -> str | None:
         for item in section.items:
             if item.id == "custom_item_editor":
                 return item.content.content
-    return None
+    custom = {section.id: section for section in data.sections.custom_sections}
+    parts: list[str] = []
+    for semantic in data.semantic_sections:
+        if semantic.content_key != "custom_sections" or not semantic.custom_section_id:
+            continue
+        section = custom.get(semantic.custom_section_id)
+        if section is None:
+            continue
+        body = "\n\n".join(item.content.content for item in section.items if item.content.content)
+        if semantic.semantic_kind == "basics":
+            parts.append(body)
+        else:
+            parts.append(
+                f"## [[linkcv-block:{section.id}:{semantic.semantic_kind}]]{semantic.display_title}"
+                + (f"\n\n{body}" if body else "")
+            )
+    return "\n\n".join(part for part in parts if part).strip() or None
 
 
 def replace_editor_markdown(data: Any, markdown: str) -> dict[str, Any]:
@@ -83,7 +105,40 @@ def replace_editor_markdown(data: Any, markdown: str) -> dict[str, Any]:
             if item["id"] == "custom_item_editor":
                 item["content"]["content"] = markdown
                 return payload
-    raise ApiError(422, "TARGET_INVALID")
+    matches = list(SECTION_HEADING_PATTERN.finditer(markdown))
+    custom = {
+        section["id"]: section for section in payload["sections"]["custom_sections"]
+    }
+    semantic = {
+        section["custom_section_id"]: section
+        for section in payload["semantic_sections"]
+        if section["content_key"] == "custom_sections"
+    }
+    basics = next(
+        (
+            section
+            for section in payload["semantic_sections"]
+            if section["semantic_kind"] == "basics"
+            and section["content_key"] == "custom_sections"
+        ),
+        None,
+    )
+    if basics and basics["custom_section_id"] in custom:
+        intro_end = matches[0].start() if matches else len(markdown)
+        custom[basics["custom_section_id"]]["items"][0]["content"]["content"] = (
+            markdown[:intro_end].strip()
+        )
+    for index, match in enumerate(matches):
+        section_id = match.group(1)
+        section = custom.get(section_id)
+        section_semantic = semantic.get(section_id)
+        if section is None or section_semantic is None or not section["items"]:
+            raise ApiError(422, "TARGET_INVALID")
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(markdown)
+        section_semantic["display_title"] = match.group(2).strip() or "未命名章节"
+        section["title"] = section_semantic["display_title"]
+        section["items"][0]["content"]["content"] = markdown[match.end() : end].strip()
+    return payload
 
 
 def parse_editor_blocks(markdown: str) -> list[EditorBlock]:

@@ -67,10 +67,10 @@ class ResumeTemplate(Base):
         Text(), nullable=True, comment="模板说明"
     )
     data_json: Mapped[dict[str, Any]] = mapped_column(
-        JSON(), nullable=False, comment="ResumeDocumentV1 初始内容"
+        JSON(), nullable=False, comment="ResumeDocument 初始内容"
     )
     style_json: Mapped[dict[str, Any]] = mapped_column(
-        JSON(), nullable=False, comment="ResumeStyleV1 默认样式"
+        JSON(), nullable=False, comment="ResumePresentation 默认样式"
     )
     is_active: Mapped[int] = mapped_column(
         unsigned_tinyint_type(),
@@ -147,10 +147,10 @@ class Resume(Base):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False, comment="简历标题")
     data_json: Mapped[dict[str, Any]] = mapped_column(
-        JSON(), nullable=False, comment="当前 ResumeDocumentV1 内容"
+        JSON(), nullable=False, comment="当前 ResumeDocument 内容"
     )
     style_json: Mapped[dict[str, Any]] = mapped_column(
-        JSON(), nullable=False, comment="当前 ResumeStyleV1 样式"
+        JSON(), nullable=False, comment="当前 ResumePresentation 样式"
     )
     lock_version: Mapped[int] = mapped_column(
         unsigned_int_type(), nullable=False, default=1, comment="乐观锁版本"
@@ -356,10 +356,10 @@ class ResumeVersion(Base):
         unsigned_int_type(), nullable=False, comment="简历内单调递增版本号"
     )
     data_json: Mapped[dict[str, Any]] = mapped_column(
-        JSON(), nullable=False, comment="ResumeDocumentV1 内容快照"
+        JSON(), nullable=False, comment="ResumeDocument 内容快照"
     )
     style_json: Mapped[dict[str, Any]] = mapped_column(
-        JSON(), nullable=False, comment="ResumeStyleV1 样式快照"
+        JSON(), nullable=False, comment="ResumePresentation 样式快照"
     )
     reason: Mapped[str] = mapped_column(
         String(32),

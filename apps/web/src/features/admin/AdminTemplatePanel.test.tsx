@@ -18,6 +18,8 @@ const inactiveTemplate: AdminResumeTemplate = {
   active: false,
   valid: true,
   validation_error: null,
+  switchable: true,
+  incompatibility_reason: null,
 };
 
 describe("AdminTemplatePanel", () => {

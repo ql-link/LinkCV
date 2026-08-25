@@ -1,13 +1,13 @@
 import { diffLines, type Change } from "diff";
 import { useEffect, useMemo, useState } from "react";
-import { api, type ResumeStyleV1, type ResumeVersion } from "../../api/client";
+import { api, type ResumePresentation, type ResumeVersion } from "../../api/client";
 import { resumeDocumentToMarkdown, styleToEditorSettings } from "../../api/resumeContract";
 import type { ResumeSettings } from "../../store/resumeStore";
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui";
 
 type StyleDifference = { label: string; current: string; historical: string };
 
-export function compareVersionStyles(current: ResumeSettings, historical: ResumeStyleV1): StyleDifference[] {
+export function compareVersionStyles(current: ResumeSettings, historical: ResumePresentation): StyleDifference[] {
   const previous = styleToEditorSettings(historical);
   const values: Array<[string, string, string]> = [
     ["字体", current.fontFamily, previous.fontFamily],

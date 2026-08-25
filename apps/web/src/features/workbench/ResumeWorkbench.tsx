@@ -1,13 +1,14 @@
 import { posToDOMRect, type Editor, type JSONContent } from "@tiptap/core";
 import { BubbleMenu, EditorContent, useEditor } from "@tiptap/react";
+import { TextSelection } from "@tiptap/pm/state";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
   AlertTriangle,
   CircleCheck,
   Columns2,
   FileDown,
-  History,
   Home,
+  LayoutTemplate,
   LoaderCircle,
   Minus,
   Pencil,
@@ -17,12 +18,13 @@ import {
   SlidersHorizontal,
   Sparkles,
   Type,
+  RefreshCw,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import type { Instance as TippyInstance } from "tippy.js";
-import { api, ApiRequestError } from "../../api/client";
+import { api, ApiRequestError, type ResumeTemplate } from "../../api/client";
 import {
   Button,
   ConfirmDialog,
@@ -58,6 +60,7 @@ import {
   type CommandMenuState,
 } from "./slashCommand";
 import { VersionDiffDialog } from "./VersionDiffDialog";
+import { TemplatePreviewDialog } from "../templates/TemplatePreviewDialog";
 import { PaginationExtension } from "./paginationPlugin";
 import {
   exportResumePdf,
@@ -70,6 +73,7 @@ import {
   type PageArrangement,
   type PageViewportMetrics,
 } from "./pageArrangementTransition";
+import { resumeDocumentContentHash } from "../../api/resumeContract";
 
 type DrawerMode = "settings" | "history" | "agent" | null;
 
@@ -83,6 +87,17 @@ const AGENT_DRAWER_MAX_WIDTH = 640;
 const AGENT_DRAWER_DEFAULT_WIDTH = 390;
 const AGENT_DRAWER_WIDTH_STORAGE_KEY = "linkcv.workbench.agent-drawer-width";
 const WORKBENCH_TITLE_CHARACTER_LIMIT = 30;
+const SEMANTIC_KIND_LABELS = {
+  work: "工作",
+  education: "教育",
+  project: "项目",
+  skills: "技能",
+  activity: "活动",
+  certificates: "证书",
+  awards: "荣誉",
+  languages: "语言",
+  custom: "自定义",
+} as const;
 
 export function truncateWorkbenchTitle(title: string) {
   const characters = Array.from(title);
@@ -133,42 +148,91 @@ export function defaultWorkbenchDrawerMode(viewportWidth: number) {
   return viewportWidth > 980 ? "settings" as const : null;
 }
 
-export function WorkbenchNavigationRail({
-  drawerMode,
-  onSettings,
-  onHistory,
+export function WorkbenchDesignAction({
+  panelOpen,
+  onToggle,
 }: {
-  drawerMode: DrawerMode;
-  onSettings: () => void;
-  onHistory: () => void;
+  panelOpen: boolean;
+  onToggle: () => void;
 }) {
   return (
-    <nav className="workbench-rail" aria-label="简历编辑导航">
-      <div className="workbench-rail-primary">
+    <Button
+      aria-label="设计"
+      aria-controls="workbench-side-panel"
+      aria-expanded={panelOpen}
+      aria-pressed={panelOpen}
+      className={`workbench-action workbench-design-action${panelOpen ? " is-active" : ""}`}
+      icon={<SlidersHorizontal aria-hidden="true" />}
+      size="sm"
+      title="设计"
+      variant="secondary"
+      onClick={onToggle}
+    >
+      设计
+    </Button>
+  );
+}
+
+export function WorkbenchPanelSwitcher({
+  activePanel,
+  onSettings,
+  onHistory,
+  onClose,
+}: {
+  activePanel: "settings" | "history";
+  onSettings: () => void;
+  onHistory: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="workbench-panel-head">
+      <div className="workbench-panel-tabs" role="tablist" aria-label="简历编辑面板">
         <button
-          className={drawerMode === "settings" ? "is-active" : undefined}
+          id="workbench-settings-tab"
           type="button"
-          aria-controls="workbench-side-panel"
-          aria-expanded={drawerMode === "settings"}
-          aria-pressed={drawerMode === "settings"}
+          role="tab"
+          aria-controls="workbench-settings-panel"
+          aria-selected={activePanel === "settings"}
+          tabIndex={activePanel === "settings" ? 0 : -1}
+          className={activePanel === "settings" ? "is-active" : undefined}
           onClick={onSettings}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowRight" && event.key !== "End") return;
+            event.preventDefault();
+            onHistory();
+            document.getElementById("workbench-history-tab")?.focus();
+          }}
         >
-          <SlidersHorizontal aria-hidden="true" size={18} />
-          <span>设计</span>
+          页面设置
         </button>
         <button
-          className={drawerMode === "history" ? "is-active" : undefined}
+          id="workbench-history-tab"
           type="button"
-          aria-controls="workbench-side-panel"
-          aria-expanded={drawerMode === "history"}
-          aria-pressed={drawerMode === "history"}
+          role="tab"
+          aria-controls="workbench-history-panel"
+          aria-selected={activePanel === "history"}
+          tabIndex={activePanel === "history" ? 0 : -1}
+          className={activePanel === "history" ? "is-active" : undefined}
           onClick={onHistory}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowLeft" && event.key !== "Home") return;
+            event.preventDefault();
+            onSettings();
+            document.getElementById("workbench-settings-tab")?.focus();
+          }}
         >
-          <History aria-hidden="true" size={18} />
-          <span>版本</span>
+          版本记录
         </button>
       </div>
-    </nav>
+      <button
+        type="button"
+        className="workbench-drawer-done"
+        onClick={onClose}
+        aria-label="关闭编辑面板"
+      >
+        <X aria-hidden="true" size={17} />
+      </button>
+    </div>
   );
 }
 
@@ -357,6 +421,7 @@ function StableSelectionToolbarBubble({ editor, children }: { editor: Editor; ch
         const visible = shouldShowSelectionAgentBubble({
           editable: current.isEditable,
           selectionEmpty: current.state.selection.empty,
+          selectionIsText: current.state.selection instanceof TextSelection,
         });
         anchor.observe(
           visible ? { from, to } : { from, to: from },
@@ -780,6 +845,121 @@ export function ExportPdfAction({ onExport, pending = false }: { onExport: () =>
   );
 }
 
+export function ResumeTemplateSwitcher({
+  currentTemplateKey,
+  disabled = false,
+  onApply,
+}: {
+  currentTemplateKey: string;
+  disabled?: boolean;
+  onApply: (template: ResumeTemplate) => void | Promise<void>;
+}) {
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [previewTemplate, setPreviewTemplate] = useState<ResumeTemplate | null>(null);
+  const [templates, setTemplates] = useState<ResumeTemplate[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [applying, setApplying] = useState(false);
+
+  const loadTemplates = useCallback(async () => {
+    setLoading(true);
+    setFailed(false);
+    setStatusOpen(true);
+    try {
+      const result = await api.listResumeTemplates();
+      setTemplates(result.templates);
+      const initialTemplate = result.templates.find(
+        (template) => template.style.template_key === currentTemplateKey,
+      ) ?? result.templates[0] ?? null;
+      if (initialTemplate) {
+        setStatusOpen(false);
+        setPreviewTemplate(initialTemplate);
+      }
+    } catch {
+      setFailed(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentTemplateKey]);
+
+  const openTemplatePreview = () => {
+    const initialTemplate = templates.find(
+      (template) => template.style.template_key === currentTemplateKey,
+    ) ?? templates[0] ?? null;
+    if (initialTemplate) {
+      setPreviewTemplate(initialTemplate);
+      return;
+    }
+    if (!loading) void loadTemplates();
+  };
+
+  return (
+    <>
+      <Button
+        aria-haspopup="dialog"
+        aria-label="简历模板"
+        className="workbench-action workbench-template-action"
+        disabled={disabled}
+        icon={<LayoutTemplate aria-hidden="true" />}
+        size="sm"
+        title="模板"
+        variant="secondary"
+        onClick={openTemplatePreview}
+      >
+        模板
+      </Button>
+      <Dialog open={statusOpen} onOpenChange={setStatusOpen}>
+        <DialogContent className="workbench-template-state-dialog">
+          <DialogHeader>
+            <DialogTitle>模板预览</DialogTitle>
+            <DialogDescription>加载可用模板后，可完整预览并应用到当前简历。</DialogDescription>
+          </DialogHeader>
+          <div aria-live="polite">
+            {loading ? <PageLoading label="正在加载简历模板…" scope="panel" /> : null}
+            {!loading && failed ? (
+              <div className="workbench-template-state" role="alert">
+                <strong>模板暂时无法加载</strong>
+                <p>请检查网络后重试，当前简历不会受到影响。</p>
+                <Button
+                  icon={<RefreshCw aria-hidden="true" size={15} />}
+                  onClick={() => void loadTemplates()}
+                  size="sm"
+                  variant="outline"
+                >
+                  重新加载
+                </Button>
+              </div>
+            ) : null}
+            {!loading && !failed && templates.length === 0 ? (
+              <div className="workbench-template-state">
+                <strong>当前没有可用模板</strong>
+                <p>模板启用后会显示在这里。</p>
+              </div>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+      <TemplatePreviewDialog
+        templates={templates}
+        template={previewTemplate}
+        primaryActionLabel={(template) => (
+          template.style.template_key === currentTemplateKey ? "当前模板" : "应用模板"
+        )}
+        isPrimaryActionDisabled={(template) => applying || template.style.template_key === currentTemplateKey}
+        onTemplateChange={setPreviewTemplate}
+        onPrimaryAction={(template) => {
+          setApplying(true);
+          void Promise.resolve(onApply(template))
+            .then(() => setPreviewTemplate(null))
+            .catch(() => undefined)
+            .finally(() => setApplying(false));
+        }}
+        onClose={() => setPreviewTemplate(null)}
+      />
+    </>
+  );
+}
+
 export function ImportWarningBanner({ warnings, onDismiss }: { warnings: string[]; onDismiss: () => void }) {
   return (
     <div className="workbench-import-warning" role="status">
@@ -864,6 +1044,8 @@ export function ResumeWorkbench() {
   const style = useResumeStore((state) => state.style);
   const user = useResumeStore((state) => state.user);
   const updateSettings = useResumeStore((state) => state.updateSettings);
+  const applyTemplate = useResumeStore((state) => state.applyTemplate);
+  const setSectionSemanticKind = useResumeStore((state) => state.setSectionSemanticKind);
   const previewScale = useResumeStore((state) => state.previewScale);
   const setPreviewScale = useResumeStore((state) => state.setPreviewScale);
   const saveStatus = useResumeStore((state) => state.saveStatus);
@@ -907,6 +1089,7 @@ export function ResumeWorkbench() {
   const [workspaceWidth, setWorkspaceWidth] = useState(() => window.innerWidth);
   const [horizontalScaleOverride, setHorizontalScaleOverride] = useState<number | null>(null);
   const [zoomFeedback, setZoomFeedback] = useState<{ scale: number; sequence: number } | null>(null);
+  const [semanticClassificationPending, setSemanticClassificationPending] = useState(false);
   const [pageArrangement, setPageArrangement] = useState<PageArrangement>(() => {
     try {
       return window.localStorage.getItem(PAGE_ARRANGEMENT_STORAGE_KEY) === "horizontal" ? "horizontal" : "vertical";
@@ -1255,6 +1438,56 @@ export function ResumeWorkbench() {
       });
   };
 
+  const editableSemanticSections = data.semantic_sections.filter(
+    (section) => section.content_key === "custom_sections"
+      && section.semantic_kind !== "basics"
+      && section.custom_section_id !== "custom_section_editor",
+  );
+  const classifiableSections = editableSemanticSections.filter(
+    (section) => section.semantic_kind === "custom" && section.semantic_source !== "user",
+  );
+
+  const classifySemanticSections = async () => {
+    if (!activeResumeId || semanticClassificationPending || classifiableSections.length === 0) return;
+    setSemanticClassificationPending(true);
+    try {
+      await saveCurrentResume();
+      const latestState = useResumeStore.getState();
+      if (latestState.saveStatus === "error") {
+        throw new Error("RESUME_SAVE_FAILED");
+      }
+      const contentHash = await resumeDocumentContentHash(latestState.data);
+      const result = await api.classifyResumeSemantics(activeResumeId, {
+        content_hash: contentHash,
+        section_ids: classifiableSections.map((section) => section.id),
+      });
+      let applied = 0;
+      for (const suggestion of result.suggestions) {
+        if (suggestion.confidence < 0.8) continue;
+        setSectionSemanticKind(
+          suggestion.section_id,
+          suggestion.semantic_kind,
+          "model",
+          suggestion.confidence,
+        );
+        applied += 1;
+      }
+      setToast({
+        label: applied > 0
+          ? `已识别 ${applied} 个章节，低置信度结果保留为自定义`
+          : "未发现可自动确认的章节，请手动选择类型",
+      });
+    } catch (error) {
+      const label = error instanceof ApiRequestError
+        && error.message === "RESUME_SEMANTIC_CLASSIFICATION_STALE"
+        ? "正文已变化，请保存或刷新后重试识别"
+        : "章节识别暂不可用，仍可手动选择类型";
+      setToast({ label });
+    } finally {
+      setSemanticClassificationPending(false);
+    }
+  };
+
   const saveNamedVersion = async () => {
     if (!editor || versionNameSubmitting) return;
     const validationMessage = versionNameValidationMessage(versionName);
@@ -1357,11 +1590,6 @@ export function ResumeWorkbench() {
   return (
     <MotionConfig reducedMotion="user" transition={{ type: "spring", bounce: 0, duration: 0.34 }}>
       <div className="resume-workbench" data-ui-theme="light">
-        <WorkbenchNavigationRail
-          drawerMode={drawerMode}
-          onSettings={() => setDrawerMode((mode) => mode === "settings" ? null : "settings")}
-          onHistory={() => setDrawerMode((mode) => mode === "history" ? "settings" : "history")}
-        />
         <header className="workbench-header">
           <div className="workbench-header-left">
             <IconButton className="workbench-icon-action workbench-back-action" label="返回全部简历" onClick={() => void leaveSafely()}><Home size={16} /></IconButton>
@@ -1373,7 +1601,25 @@ export function ResumeWorkbench() {
           </div>
           <div className="workbench-header-actions">
             <div className="workbench-header-tool-group" role="group" aria-label="编辑面板">
-              <IconButton aria-controls="workbench-side-panel" aria-expanded={drawerMode === "settings"} aria-pressed={drawerMode === "settings"} className={`workbench-icon-action workbench-mobile-settings-action${drawerMode === "settings" ? " is-active" : ""}`} label="页面设置" onClick={() => setDrawerMode((mode) => mode === "settings" ? null : "settings")}><SlidersHorizontal size={16} /></IconButton>
+              <WorkbenchDesignAction
+                panelOpen={drawerMode === "settings" || drawerMode === "history"}
+                onToggle={() => setDrawerMode((mode) => mode === "settings" ? null : "settings")}
+              />
+              <ResumeTemplateSwitcher
+                currentTemplateKey={style.template_key}
+                disabled={versionOperationPending || saveStatus === "saving"}
+                onApply={async (template) => {
+                  if (!editor) return;
+                  try {
+                    await applyTemplate(template.id);
+                    editor.commands.setContent(useResumeStore.getState().editorContent, false);
+                    setToast({ label: `已切换为“${template.name}”，内容已按新模板重新排版` });
+                  } catch {
+                    setToast({ label: "模板切换失败，当前简历未被替换" });
+                    throw new Error("TEMPLATE_APPLY_FAILED");
+                  }
+                }}
+              />
             </div>
             <div className="workbench-output-actions" role="group" aria-label="保存与导出">
               <ExportPdfAction
@@ -1446,40 +1692,28 @@ export function ResumeWorkbench() {
                 id="workbench-side-panel"
                 className={`workbench-drawer${drawerMode === "agent" ? " is-agent" : ""}`}
                 role="region"
-                aria-labelledby={drawerMode === "agent" ? "workbench-agent-title" : "workbench-drawer-title"}
+                aria-label={drawerMode === "agent" ? undefined : "简历编辑面板"}
+                aria-labelledby={drawerMode === "agent" ? "workbench-agent-title" : undefined}
                 initial={{ x: drawerMode === "agent" ? 390 : 392 }}
                 animate={{ x: 0 }}
                 exit={{ x: drawerMode === "agent" ? 390 : 392 }}
                 transition={{ type: "spring", bounce: 0, duration: 0.26 }}
               >
+                {drawerMode !== "agent" && (
+                  <WorkbenchPanelSwitcher
+                    activePanel={drawerMode}
+                    onSettings={() => setDrawerMode("settings")}
+                    onHistory={() => setDrawerMode("history")}
+                    onClose={() => setDrawerMode(null)}
+                  />
+                )}
                 {drawerMode === "settings" ? (
-                  <div className="workbench-settings-head">
-                    <h2 id="workbench-drawer-title">页面</h2>
-                    <button
-                      type="button"
-                      className="workbench-drawer-done"
-                      onClick={() => setDrawerMode(null)}
-                      aria-label="关闭设置面板"
-                    >
-                      <X aria-hidden="true" size={17} />
-                    </button>
-                  </div>
-                ) : drawerMode !== "agent" && <div className="workbench-drawer-head">
-                  <div>
-                    <h2 id="workbench-drawer-title">版本记录</h2>
-                    <p>保存重要节点，随时比较或恢复。</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="workbench-drawer-done"
-                    onClick={() => setDrawerMode(drawerMode === "history" ? "settings" : null)}
-                    aria-label={drawerMode === "history" ? "返回页面设置" : "关闭面板"}
+                  <div
+                    id="workbench-settings-panel"
+                    className="workbench-settings"
+                    role="tabpanel"
+                    aria-labelledby="workbench-settings-tab"
                   >
-                    {drawerMode === "history" ? "返回" : <X aria-hidden="true" size={17} />}
-                  </button>
-                </div>}
-                {drawerMode === "settings" ? (
-                  <div className="workbench-settings">
                     <WorkbenchSettingsSection title="页面排列" description="选择多页简历在编辑区中的浏览方式。">
                       <PageArrangementControl
                         value={pageArrangement}
@@ -1513,9 +1747,60 @@ export function ResumeWorkbench() {
                         <SettingsStepper label="正文行距" unit="" value={settings.lineHeight} min={1.1} max={1.8} step={0.05} onChange={(lineHeight) => updateSettings({ lineHeight })} disabled={versionOperationPending} />
                       </div>
                     </WorkbenchSettingsSection>
+
+                    {editableSemanticSections.length > 0 && (
+                      <WorkbenchSettingsSection
+                        title="章节类型"
+                        description="标题与章节含义分别保存；可手动确认，或结合正文和上下文识别一次。"
+                        icon={<Sparkles aria-hidden="true" size={15} />}
+                      >
+                        <div className="workbench-semantic-settings">
+                          {editableSemanticSections.map((section) => (
+                            <div className="workbench-semantic-row" key={section.id}>
+                              <span title={section.display_title}>{section.display_title}</span>
+                              <Select
+                                value={section.semantic_kind}
+                                disabled={versionOperationPending || semanticClassificationPending}
+                                onValueChange={(semanticKind) => setSectionSemanticKind(
+                                  section.id,
+                                  semanticKind as keyof typeof SEMANTIC_KIND_LABELS,
+                                )}
+                              >
+                                <SelectTrigger aria-label={`${section.display_title}章节类型`}>
+                                  {SEMANTIC_KIND_LABELS[section.semantic_kind as keyof typeof SEMANTIC_KIND_LABELS]}
+                                </SelectTrigger>
+                                <SelectContent data-ui-theme="light" position="popper">
+                                  {Object.entries(SEMANTIC_KIND_LABELS).filter(([value]) => value !== "basics").map(([value, label]) => (
+                                    <SelectItem key={value} value={value}>{label}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          ))}
+                          {classifiableSections.length > 0 && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={versionOperationPending || semanticClassificationPending}
+                              onClick={() => void classifySemanticSections()}
+                            >
+                              {semanticClassificationPending
+                                ? <LoaderCircle aria-hidden="true" className="spin" size={15} />
+                                : <Sparkles aria-hidden="true" size={15} />}
+                              识别未分类章节
+                            </Button>
+                          )}
+                        </div>
+                      </WorkbenchSettingsSection>
+                    )}
                   </div>
                 ) : drawerMode === "history" ? (
-                  <div className="workbench-versions">
+                  <div
+                    id="workbench-history-panel"
+                    className="workbench-versions"
+                    role="tabpanel"
+                    aria-labelledby="workbench-history-tab"
+                  >
                     <div className="workbench-version-create">
                       <SaveVersionAction
                         pending={saveStatus === "saving" || versionOperationPending || versionNameSubmitting}

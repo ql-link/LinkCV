@@ -111,4 +111,28 @@ describe("统一简历打印文档", () => {
     expect(html).not.toContain("mailto:");
     expect(html).not.toContain('<a href="mailto:');
   });
+
+  it("uses the manifest for columns and a non-persisted system avatar", () => {
+    const style = {
+      ...defaultSemanticStyle,
+      manifest: {
+        renderer_key: "columns" as const,
+        regions: [
+          { id: "sidebar", kind: "sidebar" as const, order: 0 },
+          { id: "main", kind: "main" as const, order: 1 },
+        ],
+        slots: [
+          { id: "sidebar", region_id: "sidebar", accepts: ["basics" as const, "avatar" as const], required: false, fallback: false, order: 0 },
+          { id: "main", region_id: "main", accepts: ["custom" as const], required: false, fallback: true, order: 1 },
+        ],
+        avatar: { visibility: "show" as const, fallback_asset: "system-default" as const, size: 88 },
+      },
+    };
+    const html = renderResumePrintDocument(createResumeRenderRequest("模板投射", defaultSemanticDocument, style));
+
+    expect(html).toContain('data-type="resume-columns"');
+    expect(html).toContain('data-column="sidebar"');
+    expect(html).toContain('/templates/avatar-cat.jpg');
+    expect(defaultSemanticDocument.basics.photo).toBeNull();
+  });
 });

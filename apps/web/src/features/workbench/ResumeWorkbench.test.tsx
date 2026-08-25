@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { ApiRequestError } from "../../api/client";
+import { api, ApiRequestError, type ResumeTemplate } from "../../api/client";
+import { defaultSemanticDocument, defaultSemanticStyle } from "../../api/resumeContract";
 import {
   ImportWarningBanner,
   AgentFloatingEntry,
@@ -15,6 +16,7 @@ import {
   SettingsStepper,
   SaveResumeAction,
   SaveVersionAction,
+  ResumeTemplateSwitcher,
   VersionRenameAction,
   WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM,
   versionRenameErrorMessage,
@@ -24,7 +26,8 @@ import {
   truncateWorkbenchTitle,
   ZoomFeedback,
   WorkbenchSaveStatus,
-  WorkbenchNavigationRail,
+  WorkbenchDesignAction,
+  WorkbenchPanelSwitcher,
   WorkbenchTitleInput,
   workbenchCanvasClassName,
   versionOperationErrorMessage,
@@ -144,26 +147,128 @@ describe("ResumeWorkbench 抽屉布局", () => {
   });
 });
 
-describe("ResumeWorkbench 编辑导航", () => {
-  it("通过左侧导航打开设计和版本面板", async () => {
+describe("ResumeWorkbench 编辑面板入口", () => {
+  it("从顶部设计按钮打开或收起编辑面板", async () => {
+    const user = userEvent.setup();
+    const onToggle = vi.fn();
+    const { rerender } = render(<WorkbenchDesignAction panelOpen={false} onToggle={onToggle} />);
+
+    const design = screen.getByRole("button", { name: "设计" });
+    expect(design).toHaveAttribute("aria-expanded", "false");
+    await user.click(design);
+    expect(onToggle).toHaveBeenCalledOnce();
+
+    rerender(<WorkbenchDesignAction panelOpen onToggle={onToggle} />);
+    expect(screen.getByRole("button", { name: "设计" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "设计" })).toHaveClass("is-active");
+  });
+
+  it("在右侧面板内切换页面设置和版本记录", async () => {
     const user = userEvent.setup();
     const onSettings = vi.fn();
     const onHistory = vi.fn();
+    const onClose = vi.fn();
     render(
-      <WorkbenchNavigationRail
-        drawerMode="settings"
+      <WorkbenchPanelSwitcher
+        activePanel="settings"
         onSettings={onSettings}
         onHistory={onHistory}
+        onClose={onClose}
       />,
     );
 
-    expect(screen.getByRole("navigation", { name: "简历编辑导航" }).querySelectorAll("button")).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "设计" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "版本" })).toHaveAttribute("aria-pressed", "false");
-    await user.click(screen.getByRole("button", { name: "设计" }));
-    await user.click(screen.getByRole("button", { name: "版本" }));
-    expect(onSettings).toHaveBeenCalledOnce();
+    expect(screen.getByRole("tab", { name: "页面设置" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "版本记录" })).toHaveAttribute("aria-selected", "false");
+    await user.click(screen.getByRole("tab", { name: "页面设置" }));
+    await user.click(screen.getByRole("tab", { name: "版本记录" }));
+    await user.keyboard("{ArrowLeft}");
+    expect(screen.getByRole("tab", { name: "页面设置" })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "关闭编辑面板" }));
+    expect(onSettings).toHaveBeenCalledTimes(2);
     expect(onHistory).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+});
+
+describe("ResumeWorkbench 简历模板", () => {
+  it("展示现有模板并在切换时保留当前模板状态", async () => {
+    const user = userEvent.setup();
+    const templates: ResumeTemplate[] = [
+      {
+        id: "1",
+        key: "classic-cn",
+        name: "经典模板",
+        description: "清晰稳妥的单栏结构",
+        data: defaultSemanticDocument,
+        style: defaultSemanticStyle,
+        switchable: true,
+        incompatibility_reason: null,
+      },
+      {
+        id: "2",
+        key: "creative-orange-cn",
+        name: "创意橙色",
+        description: "强调视觉层级的创意版式",
+        data: defaultSemanticDocument,
+        style: { ...defaultSemanticStyle, template_key: "creative-orange-cn" },
+        switchable: true,
+        incompatibility_reason: null,
+      },
+    ];
+    vi.spyOn(api, "listResumeTemplates").mockResolvedValue({ templates });
+    const onApply = vi.fn();
+
+    render(
+      <ResumeTemplateSwitcher
+        currentTemplateKey="classic-cn"
+        onApply={onApply}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "简历模板" }));
+    const previewDialog = await screen.findByRole("dialog", { name: "经典模板" });
+    expect(previewDialog).toHaveClass("template-preview-dialog");
+    expect(screen.getByRole("button", { name: "当前模板" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "下一个模板：创意橙色" }));
+    expect(await screen.findByRole("dialog", { name: "创意橙色" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "应用模板" }));
+    expect(onApply).toHaveBeenCalledWith(templates[1]);
+    expect(screen.queryByRole("dialog", { name: "创意橙色" })).not.toBeInTheDocument();
+  });
+
+  it("模板加载失败时保留弹窗并允许重新加载", async () => {
+    const user = userEvent.setup();
+    const listTemplates = vi
+      .spyOn(api, "listResumeTemplates")
+      .mockRejectedValueOnce(new Error("HTTP_503"))
+      .mockResolvedValueOnce({
+        templates: [{
+          id: "1",
+          key: "classic-cn",
+          name: "经典模板",
+          description: null,
+          data: defaultSemanticDocument,
+          style: defaultSemanticStyle,
+          switchable: true,
+          incompatibility_reason: null,
+        }],
+      });
+
+    render(
+      <ResumeTemplateSwitcher
+        currentTemplateKey="creative-orange-cn"
+        onApply={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "简历模板" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("模板暂时无法加载");
+    await user.click(screen.getByRole("button", { name: "重新加载" }));
+
+    expect(await screen.findByRole("dialog", { name: "经典模板" })).toHaveClass("template-preview-dialog");
+    expect(screen.getByRole("button", { name: "应用模板" })).toBeEnabled();
+    expect(listTemplates).toHaveBeenCalledTimes(2);
   });
 });
 

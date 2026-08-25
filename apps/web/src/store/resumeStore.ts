@@ -3,10 +3,10 @@ import type { JSONContent } from "@tiptap/core";
 import {
   api,
   ImportWarning,
-  ResumeDocumentV1,
+  ResumeDocument,
   ResumeRecord,
   ResumeImportSummary,
-  ResumeStyleV1,
+  ResumePresentation,
   ResumeSummary,
   ResumeVersion,
   User,
@@ -22,6 +22,7 @@ import {
   styleToEditorSettings,
 } from "../api/resumeContract";
 import { defaultResumeDocument } from "../features/workbench/defaultDocument";
+import { composeResumeMarkdownForTemplate } from "../features/workbench/templateLayout";
 import { defaultResumeMarkdown } from "../parser/defaultResume";
 import { renderResumeMarkdown } from "../parser/resumeMarkdown";
 import { buildNamedImportFile } from "../lib/resumeImport";
@@ -53,6 +54,8 @@ export const resumeSerifFontStack =
 type AuthStatus = "checking" | "guest" | "authenticated";
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
+let templateOperationSequence = 0;
+
 type ResumeState = {
   authStatus: AuthStatus;
   user: User | null;
@@ -65,8 +68,8 @@ type ResumeState = {
   importWarningsByResumeId: Record<string, ImportWarning[]>;
   activeResumeId: string | null;
   lockVersion: number;
-  data: ResumeDocumentV1;
-  style: ResumeStyleV1;
+  data: ResumeDocument;
+  style: ResumePresentation;
   title: string;
   markdown: string;
   editorContent: JSONContent | string;
@@ -105,13 +108,20 @@ type ResumeState = {
   setSplitRatio: (ratio: number) => void;
   setPreviewScale: (scale: number) => void;
   updateSettings: (settings: Partial<ResumeSettings>) => void;
+  applyTemplate: (templateId: string) => Promise<void>;
+  setSectionSemanticKind: (
+    sectionId: string,
+    semanticKind: ResumeDocument["semantic_sections"][number]["semantic_kind"],
+    source?: "model" | "user",
+    confidence?: number | null,
+  ) => void;
 };
 
 type SaveSnapshot = {
   activeResumeId: string;
   lockVersion: number;
-  data: ResumeDocumentV1;
-  style: ResumeStyleV1;
+  data: ResumeDocument;
+  style: ResumePresentation;
   title: string;
   markdown: string;
   editorContent: JSONContent | string;
@@ -169,7 +179,7 @@ function normalizeSettings(settings: Partial<ResumeSettings> = {}) {
 }
 
 function applyResume(resume: ResumeRecord, localState?: ResumeState) {
-  const markdown = resumeDocumentToMarkdown(resume.data);
+  const markdown = composeResumeMarkdownForTemplate(resume.data, resume.style.manifest);
   const semanticSettings = normalizeSettings(styleToEditorSettings(resume.style));
   return {
     activeResumeId: resume.id,
@@ -683,6 +693,67 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   updateSettings: (settings) =>
     set((state) => ({
       settings: { ...state.settings, ...settings },
+      dirty: true,
+      editVersion: state.editVersion + 1,
+      saveStatus: "idle",
+    })),
+  applyTemplate: async (templateId) => {
+    await get().saveCurrentResume();
+    let state = get();
+    if (state.error) throw new Error(state.error);
+    if (!state.activeResumeId) throw new Error("RESUME_NOT_FOUND");
+    // A concurrent edit made while the save was in flight must not be
+    // overwritten by the template response. Keep the draft and let the user
+    // retry after the next save instead.
+    if (state.dirty || state.versionOperationPending) {
+      throw new Error("RESUME_TEMPLATE_APPLY_REQUIRES_SAVED_DRAFT");
+    }
+    const resumeId = state.activeResumeId;
+    const operationVersion = state.editVersion;
+    const operationId = ++templateOperationSequence;
+    set({ saveStatus: "saving", versionOperationPending: true, error: null });
+    try {
+      const { resume } = await api.applyResumeTemplate(resumeId, {
+        template_id: templateId,
+        base_lock_version: state.lockVersion,
+      });
+      state = get();
+      if (operationId !== templateOperationSequence) return;
+      if (state.activeResumeId !== resumeId) {
+        set({ saveStatus: "idle", versionOperationPending: false });
+        return;
+      }
+      set({
+        resumes: mergeResumeSummary(state.resumes, resume),
+        ...applyResume(resume, state),
+        versionOperationPending: false,
+      });
+    } catch (error) {
+      state = get();
+      if (operationId !== templateOperationSequence) throw error;
+      // Do not attach an obsolete request failure to another resume, but always
+      // release the global operation lock owned by this request.
+      set(state.activeResumeId === resumeId && state.editVersion === operationVersion
+        ? { saveStatus: "error", versionOperationPending: false, error: (error as Error).message }
+        : { saveStatus: "idle", versionOperationPending: false });
+      throw error;
+    }
+  },
+  setSectionSemanticKind: (sectionId, semanticKind, source = "user", confidence = null) =>
+    set((state) => ({
+      data: {
+        ...state.data,
+        semantic_sections: state.data.semantic_sections.map((section) => (
+          section.id === sectionId
+            ? {
+              ...section,
+              semantic_kind: semanticKind,
+              semantic_source: source,
+              semantic_confidence: confidence,
+            }
+            : section
+        )),
+      },
       dirty: true,
       editVersion: state.editVersion + 1,
       saveStatus: "idle",

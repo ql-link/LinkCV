@@ -76,6 +76,119 @@ beforeEach(() => {
 });
 
 describe("resume save serialization", () => {
+  it("通过原子接口切换模板并保留服务端返回的规范内容", async () => {
+    const currentData = resumeDocumentFromMarkdown("# 保留的正文", defaultSemanticDocument);
+    const templateStyle = {
+      ...defaultSemanticStyle,
+      template_key: "creative-orange-cn",
+      accent_color: "#F97316",
+      font_size: 11,
+      line_height: 1.4,
+    };
+    useResumeStore.setState({
+      data: currentData,
+      markdown: "# 保留的正文",
+      editorContent: "# 保留的正文",
+      dirty: false,
+      editVersion: 4,
+      saveStatus: "saved",
+    });
+    const switched = {
+      ...record(2, "# 保留的正文"),
+      template_id: "9",
+      data: currentData,
+      style: templateStyle,
+    };
+    const apply = vi.spyOn(api, "applyResumeTemplate").mockResolvedValue({ resume: switched });
+
+    await useResumeStore.getState().applyTemplate("9");
+
+    expect(apply).toHaveBeenCalledWith("1", { template_id: "9", base_lock_version: 1 });
+    expect(useResumeStore.getState()).toMatchObject({
+      data: currentData,
+      style: templateStyle,
+      lockVersion: 2,
+      settings: {
+        theme: "creative-orange",
+        fontSize: 11,
+        lineHeight: 1.4,
+      },
+      dirty: false,
+      saveStatus: "saved",
+    });
+  });
+
+  it("切换前保存期间又发生编辑时保留草稿且不调用切换接口", async () => {
+    const saveResponse = deferred<{ resume: ResumeRecord }>();
+    const update = vi.spyOn(api, "updateResume").mockImplementationOnce(() => saveResponse.promise);
+    const apply = vi.spyOn(api, "applyResumeTemplate");
+
+    const switching = useResumeStore.getState().applyTemplate("9");
+    await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    useResumeStore.getState().setMarkdown("# 保存期间的新编辑");
+    saveResponse.resolve({ resume: record(2, "# 第一次编辑") });
+
+    await expect(switching).rejects.toThrow("RESUME_TEMPLATE_APPLY_REQUIRES_SAVED_DRAFT");
+    expect(apply).not.toHaveBeenCalled();
+    expect(useResumeStore.getState()).toMatchObject({
+      markdown: "# 保存期间的新编辑",
+      dirty: true,
+    });
+  });
+
+  it("切换请求返回前离开当前简历时释放全局操作锁", async () => {
+    const applyResponse = deferred<{ resume: ResumeRecord }>();
+    vi.spyOn(api, "applyResumeTemplate").mockImplementationOnce(() => applyResponse.promise);
+    useResumeStore.setState({ dirty: false, saveStatus: "saved" });
+
+    const switching = useResumeStore.getState().applyTemplate("9");
+    await vi.waitFor(() => expect(useResumeStore.getState().versionOperationPending).toBe(true));
+    useResumeStore.setState({ activeResumeId: "2" });
+    applyResponse.resolve({ resume: { ...record(2, "# 已切换"), template_id: "9" } });
+
+    await switching;
+
+    expect(useResumeStore.getState()).toMatchObject({
+      activeResumeId: "2",
+      versionOperationPending: false,
+      saveStatus: "idle",
+    });
+  });
+
+  it("旧简历的延迟响应不会释放新简历正在使用的操作锁", async () => {
+    const firstResponse = deferred<{ resume: ResumeRecord }>();
+    const secondResponse = deferred<{ resume: ResumeRecord }>();
+    vi.spyOn(api, "applyResumeTemplate")
+      .mockImplementationOnce(() => firstResponse.promise)
+      .mockImplementationOnce(() => secondResponse.promise);
+    useResumeStore.setState({ dirty: false, saveStatus: "saved" });
+
+    const first = useResumeStore.getState().applyTemplate("8");
+    await vi.waitFor(() => expect(useResumeStore.getState().versionOperationPending).toBe(true));
+    useResumeStore.setState({
+      activeResumeId: "2",
+      dirty: false,
+      saveStatus: "saved",
+      versionOperationPending: false,
+    });
+    const second = useResumeStore.getState().applyTemplate("9");
+    await vi.waitFor(() => expect(useResumeStore.getState().versionOperationPending).toBe(true));
+
+    firstResponse.resolve({ resume: { ...record(2, "# 旧响应"), template_id: "8" } });
+    await first;
+    expect(useResumeStore.getState().versionOperationPending).toBe(true);
+
+    secondResponse.resolve({
+      resume: { ...record(2, "# 新响应"), id: "2", template_id: "9" },
+    });
+    await second;
+    expect(useResumeStore.getState()).toMatchObject({
+      activeResumeId: "2",
+      versionOperationPending: false,
+      saveStatus: "saved",
+    });
+  });
+
   it("uses the refreshed lock version when another edit is saved during an in-flight request", async () => {
     const firstResponse = deferred<{ resume: ResumeRecord }>();
     const update = vi

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, ApiRequestError } from "./client";
+import { defaultSemanticDocument, defaultSemanticStyle } from "./resumeContract";
 
 function jsonResponse(status: number, body: unknown): Response {
   return {
@@ -512,8 +513,8 @@ describe("API resume share", () => {
       .mockResolvedValueOnce(jsonResponse(200, { deleted: true }))
       .mockResolvedValueOnce(
         jsonResponse(200, {
-          data: { schema_version: "1.0" },
-          style: { schema_version: "1.0" },
+          data: defaultSemanticDocument,
+          style: defaultSemanticStyle,
           sharer: { nickname: "于晏", avatar_url: null },
         }),
       );

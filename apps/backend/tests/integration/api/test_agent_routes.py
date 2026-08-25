@@ -109,21 +109,71 @@ def internal_headers(token: str = INTERNAL_TOKEN) -> dict[str, str]:
 
 def editor_data(base: dict, markdown: str) -> dict:
     data = base.copy()
-    data["sections"] = {**base["sections"]}
+    data["basics"] = {
+        **base["basics"],
+        "headline": None,
+        "email": None,
+        "phone": None,
+        "location": None,
+        "summary": None,
+        "links": [],
+    }
+    data["sections"] = {
+        "work_experiences": [],
+        "educations": [],
+        "projects": [],
+        "skills": [],
+        "certificates": [],
+        "awards": [],
+        "languages": [],
+    }
+    first_line, _, body = markdown.partition("\n")
+    section_id = "blk_section000000001"
     data["sections"]["custom_sections"] = [
         {
-            "id": "custom_section_editor",
-            "title": "简历正文",
+            "id": "blk_basics0000000001",
+            "title": "基本信息",
             "items": [
                 {
-                    "id": "custom_item_editor",
+                    "id": "item_basics000000001",
                     "title": None,
                     "subtitle": None,
-                    "content": {"format": "markdown", "content": markdown},
+                    "content": {"format": "markdown", "content": "# 测试用户"},
                     "source_refs": [],
                 }
             ],
+        },
+        {
+            "id": section_id,
+            "title": first_line.split("]]", 1)[-1],
+            "items": [{
+                "id": "item_section00000001",
+                "title": None,
+                "subtitle": None,
+                "content": {"format": "markdown", "content": body.strip()},
+                "source_refs": [],
+            }],
         }
+    ]
+    data["semantic_sections"] = [
+        {
+            "id": "sem_basics00000000001",
+            "semantic_kind": "basics",
+            "display_title": "基本信息",
+            "semantic_source": "system",
+            "semantic_confidence": None,
+            "content_key": "custom_sections",
+            "custom_section_id": "blk_basics0000000001",
+        },
+        {
+            "id": "sem_section0000000001",
+            "semantic_kind": "work",
+            "display_title": first_line.split("]]", 1)[-1],
+            "semantic_source": "user",
+            "semantic_confidence": None,
+            "content_key": "custom_sections",
+            "custom_section_id": section_id,
+        },
     ]
     return data
 
@@ -379,9 +429,11 @@ def test_scoped_edit_requires_resolved_target_and_diagnosis_before_confirmation(
         assert proposal["rationale"][0]["code"] == "MISSING_RESULT_EVIDENCE"
         confirmed = client.post(f"/api/agent/proposals/{proposal['id']}/confirm")
         assert confirmed.status_code == 200
-        content = confirmed.json()["resume"]["data"]["sections"]["custom_sections"][0][
-            "items"
-        ][0]["content"]["content"]
+        content = "\n".join(
+            item["content"]["content"]
+            for section in confirmed.json()["resume"]["data"]["sections"]["custom_sections"]
+            for item in section["items"]
+        )
         assert "优化平台性能，具体结果待补充" in content
         assert content.count("负责平台性能优化") == 1
         assert "[[linkcv-block:blk_bullet0000000001]]负责平台性能优化" in content
