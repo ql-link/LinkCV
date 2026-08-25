@@ -137,7 +137,7 @@ description: 审查 LinkCV 代码差异的正确性、范围、契约、安全�
 
 ## 6. 后续处理
 
-- 存在严重、必须修复或影响当前交付的一般问题：返回 `implementation-execution`；
+- 存在严重、必须修复或影响当前交付的一般问题：按领域返回 `frontend-delivery` 或 `backend-delivery`；前端由 Sol 判断直接修正或 Luna 工作包，后端和混合任务由 Sol 重新拆包并调度 Luna；
 - 发现规格与实现冲突：返回 `solution-generator` 或 `acceptance-generator`；
 - 没有阻断问题时直接报告审查结论、证据和残余风险，不写入工作流状态。代码随后变化时由 AI 根据影响重新验证和复审；无法可靠缩小影响时扩大审查。
 - 用户要求发布时转 `branch-pr-workflow`，由它检查提交范围并执行 PR 前完整 `npm run check`；

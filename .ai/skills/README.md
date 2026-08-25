@@ -23,10 +23,10 @@
 | `frontend-delivery` | 薄协调器：当前对话的 Sol（主 Agent）核对用户原型和现有代码、直接完成低风险局部修改或拆分实质工作包调度 Luna，并操控真实浏览器验收，不自行设计界面 | 非视觉直接修改或原型驱动实现；需要委派时交给 `frontend-implementation`，原型核对使用 `prototype-acceptance` |
 | `module-planning` | 调查模块、主持决策，并按用户要求把初步设计写入和读回飞书 | 没有继续授权时停止；已有继续授权时进入已指定的实现或方案路径，否则分流 |
 | `decision-grilling` | 只沿决策树一次处理一个真实选择 | 把 `confirmed`、`blocked` 或 `replan` 结果返回调用方 |
-| `solution-generator` | 需求与技术方案合一：保留完整章节库并按需求选择，固定收敛需求描述、现状问题、主流程、真实文件、实施步骤和验证映射；状态机与数据模型命中时优先完整展开，其他章节按需；直接确认真实待决选择，已有后续路径时复用、未选择时随方案确认 | 验收契约或实现 |
-| `acceptance-generator` | 生成可验证行为场景；只在选定契约验收路径时执行 | 实现 |
-| `contract-guard` | 分析契约结构、语义、兼容影响和同步范围 | 按需转配置核对、实现或文档同步 |
-| `config-contract-sync` | 核对跨代码、配置和部署位置的具体契约值 | 诊断结束或转实现修复 |
+| `solution-generator` | 需求与技术方案合一：保留完整章节库并按需求选择，固定收敛需求描述、现状问题、主流程、真实文件、实施步骤和验证映射；状态机与数据模型命中时优先完整展开，其他章节按需；直接确认真实待决选择，已有后续路径时复用、未选择时随方案确认 | 契约验收转 `acceptance-generator`；直接施工返回 `backend-delivery` 拆包和调度 Luna |
+| `acceptance-generator` | 生成可验证行为场景；只在选定契约验收路径时执行 | 确认后返回 `backend-delivery` 拆包和调度 Luna |
+| `contract-guard` | 分析契约结构、语义、兼容影响和同步范围 | 按需转配置核对、文档同步或返回 `backend-delivery` 实施 |
+| `config-contract-sync` | 核对跨代码、配置和部署位置的具体契约值 | 诊断结束或返回 `backend-delivery` 实施修复 |
 | `doc-maintenance-sync` | 维护 `docs/` 长期项目知识 | 文档与契约门禁 |
 | `implementation-execution` | 执行纯后端任务及混合任务的后端、契约和配置工作包；方案任务以 `solution.md` 为中心 | 测试 |
 | `frontend-implementation` | Luna 严格按用户原型和 Sol 的会话级映射实现具有实质实施量的代码、样式和测试工作包，不承接 Sol 可直接完成的低风险局部修改，不重新设计或改变业务契约 | 返回 `frontend-delivery`，由 Sol 整合和复核 |
@@ -82,9 +82,14 @@
                     │                    ├── 低风险局部修改 → Sol 直接实施
                     │                    └── 实质工作包 → frontend-implementation → Luna
                     │                    → Sol 使用 prototype-acceptance 操作真实浏览器 ─┐
-                    └── 后端/混合 → backend-delivery（七维判断）           │
-                                      ├── 直接实现 ───────────────────────┤
-                                      └── solution.md → 用户原型 / Figma 输入 ┤
+                    └── 后端/混合 → backend-delivery（Sol 七维判断）
+                                      ├── 直接实现 ───────────────────────┐
+                                      └── solution.md → 用户确认          │
+                                                       → 可选契约验收 ────┤
+                                                                         ↓
+                                                Sol 拆分工作包并调度一个或多个 Luna
+                                                                         ↓
+                                                     implementation-execution
                                                                          ↓
                                                               代码与测试 → PR → 一条 Issue 交付评论
 ```
