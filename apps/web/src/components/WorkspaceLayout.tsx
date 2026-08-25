@@ -204,36 +204,6 @@ export function CareerNavigation({ active }: { active: CareerSection }) {
   );
 }
 
-const CAREER_ITEMS: Array<{ key: CareerSection; label: string; href: string; icon: typeof BriefcaseBusiness }> = [
-  { key: "jobs", label: "岗位库", href: "/career/jobs", icon: BriefcaseBusiness },
-  { key: "applications", label: "求职进程", href: "/career/applications", icon: ListChecks },
-  { key: "schedule", label: "面试排期", href: "/career/schedule", icon: CalendarDays },
-  { key: "reviews", label: "记录复盘", href: "/career/reviews", icon: NotebookTabs },
-];
-
-export function CareerNavigation({ active }: { active: CareerSection }) {
-  return (
-    <nav className="career-subnav" aria-label="求职中心导航">
-      {CAREER_ITEMS.map(({ key, label, href, icon: Icon }) => (
-        <a
-          key={key}
-          className={active === key ? "is-active" : ""}
-          aria-current={active === key ? "page" : undefined}
-          href={href}
-          onClick={(event) => {
-            if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-            event.preventDefault();
-            navigateTo(href);
-          }}
-        >
-          <Icon />
-          {label}
-        </a>
-      ))}
-    </nav>
-  );
-}
-
 export function WorkspaceLayout({ active, children }: { active: WorkspaceSection; children: ReactNode }) {
   const user = useResumeStore((state) => state.user);
   return (
