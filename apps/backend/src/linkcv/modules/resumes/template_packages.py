@@ -1,17 +1,17 @@
 import json
 import re
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from linkcv.domain.resume_document import ResumeDocumentV1
+from linkcv.domain.resume_document import ResumeDocument
 from linkcv.domain.resume_snapshot import parse_resume_snapshot
-from linkcv.domain.resume_style import ResumeStyleV1
+from linkcv.domain.resume_style import ResumePresentation
 
 TEMPLATE_PACKAGE_MAX_BYTES = 512 * 1024
 TEMPLATE_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 UNSAFE_TEMPLATE_TEXT = re.compile(
-    r"<(?:script|iframe|object|embed|style|html)\b|javascript:|file://|https?://",
+    r"<[^>]+>|javascript:|file://|https?://|\{[^}]*\}|(?:^|;)\s*[-a-z]+\s*:[^;]+;",
     re.IGNORECASE,
 )
 LOCAL_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\)")
@@ -20,12 +20,24 @@ LOCAL_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\)")
 class TemplatePackage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[1]
     key: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=1000)
-    data: ResumeDocumentV1
-    style: ResumeStyleV1
+    data: ResumeDocument
+    style: ResumePresentation
+
+    @model_validator(mode="before")
+    @classmethod
+    def require_canonical_contract(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            raise ValueError("template package must be an object")
+        data = value.get("data")
+        style = value.get("style")
+        if not isinstance(data, dict) or "semantic_sections" not in data:
+            raise ValueError("template package requires semantic sections")
+        if not isinstance(style, dict) or "manifest" not in style:
+            raise ValueError("template package requires a manifest")
+        return value
 
     @model_validator(mode="after")
     def validate_package(self) -> "TemplatePackage":

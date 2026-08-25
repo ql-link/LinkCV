@@ -10,16 +10,16 @@ import {
   AgentSelectionContext,
   AgentStreamEvent,
   ApiRequestError,
-  ResumeDocumentV1,
-  ResumeStyleV1,
+  ResumeDocument,
+  ResumePresentation,
   api,
 } from "../../api/client";
 import { Avatar, AvatarFallback, AvatarImage, Button, PageLoading } from "@/components/ui";
 
 type AgentPanelProps = {
   resumeId: string;
-  currentData?: ResumeDocumentV1;
-  currentStyle?: ResumeStyleV1;
+  currentData?: ResumeDocument;
+  currentStyle?: ResumePresentation;
   userAvatarUrl?: string | null;
   userDisplayName?: string;
   onBeforeRun?: () => Promise<boolean>;
@@ -41,7 +41,7 @@ const agentQuickPrompts = [
   { label: "提炼亮点", prompt: "提炼这份简历的技术亮点", icon: Sparkles },
 ];
 
-const sectionLabels: Record<keyof ResumeDocumentV1["sections"], string> = {
+const sectionLabels: Record<keyof ResumeDocument["sections"], string> = {
   work_experiences: "工作经历",
   educations: "教育经历",
   projects: "项目经历",
@@ -54,8 +54,8 @@ const sectionLabels: Record<keyof ResumeDocumentV1["sections"], string> = {
 
 function proposalChanges(
   proposal: AgentProposal,
-  currentData?: ResumeDocumentV1,
-  currentStyle?: ResumeStyleV1,
+  currentData?: ResumeDocument,
+  currentStyle?: ResumePresentation,
 ) {
   if (proposal.operations?.length) {
     return proposal.operations.map((operation, index) => ({
@@ -71,7 +71,7 @@ function proposalChanges(
   if (JSON.stringify(currentData.basics) !== JSON.stringify(proposal.data.basics)) {
     changes.push({ label: "基本信息", before: "当前内容", after: "有修改" });
   }
-  for (const key of Object.keys(sectionLabels) as Array<keyof ResumeDocumentV1["sections"]>) {
+  for (const key of Object.keys(sectionLabels) as Array<keyof ResumeDocument["sections"]>) {
     const before = currentData.sections[key];
     const after = proposal.data.sections[key];
     if (JSON.stringify(before) !== JSON.stringify(after)) {

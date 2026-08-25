@@ -47,7 +47,6 @@ def package(key: str = "portfolio-cn") -> bytes:
     style = default_resume_style().model_copy(update={"template_key": key})
     return json.dumps(
         {
-            "schema_version": 1,
             "key": key,
             "name": "作品集模板",
             "description": "测试模板包",
@@ -126,14 +125,38 @@ def test_invalid_oversized_and_duplicate_packages_never_overwrite() -> None:
                 )
             },
         )
+        html_payload = json.loads(package("html-template-cn"))
+        html_payload["description"] = "<div>不允许的模板标记</div>"
+        html_unsafe = client.post(
+            "/api/admin/resume-templates/import",
+            files={"file": ("html.json", json.dumps(html_payload).encode(), "application/json")},
+        )
+        css_payload = json.loads(package("css-template-cn"))
+        css_payload["description"] = ".resume { color: red; }"
+        css_unsafe = client.post(
+            "/api/admin/resume-templates/import",
+            files={"file": ("css.json", json.dumps(css_payload).encode(), "application/json")},
+        )
         oversized = client.post(
             "/api/admin/resume-templates/import",
             files={"file": ("large.json", b"x" * (512 * 1024 + 1), "application/json")},
+        )
+        missing_manifest_payload = json.loads(package("missing-manifest-cn"))
+        del missing_manifest_payload["style"]["manifest"]
+        missing_manifest = client.post(
+            "/api/admin/resume-templates/import",
+            files={
+                "file": (
+                    "missing-manifest.json",
+                    json.dumps(missing_manifest_payload).encode(),
+                    "application/json",
+                )
+            },
         )
 
     assert first.status_code == 201
     assert duplicate.status_code == 409
     assert duplicate.json() == {"error": "TEMPLATE_KEY_CONFLICT"}
-    assert unsafe.status_code == oversized.status_code == 400
+    assert unsafe.status_code == html_unsafe.status_code == css_unsafe.status_code == oversized.status_code == missing_manifest.status_code == 400
     with app.state.session_factory() as db:
         assert db.scalar(select(func.count(ResumeTemplate.id))) == 1

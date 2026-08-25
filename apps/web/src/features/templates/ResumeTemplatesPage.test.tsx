@@ -23,7 +23,7 @@ vi.mock("../preview/ResumePreview", () => ({
 }));
 
 const templates = [
-  { id: "8", key: "blank-cn", name: "空白简历", description: "从空白内容开始", data: {}, style: {} },
+  { id: "8", key: "classic-technical-cn", name: "经典单页技术简历", description: "技术岗位单页版式", data: {}, style: {} },
   { id: "9", key: "modern-cn", name: "现代双栏", description: null, data: {}, style: {} },
   { id: "10", key: "campus-cn", name: "校园简历", description: "适合校招求职", data: {}, style: {} },
 ];
@@ -96,9 +96,9 @@ describe("ResumeTemplatesPage", () => {
     vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates } as never);
     render(<ResumeTemplatesPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "查看模板：空白简历" }));
+    fireEvent.click(await screen.findByRole("button", { name: "查看模板：经典单页技术简历" }));
 
-    const previewDialog = screen.getByRole("dialog", { name: "空白简历" });
+    const previewDialog = screen.getByRole("dialog", { name: "经典单页技术简历" });
     const stage = previewDialog.querySelector(".template-preview-dialog-stage");
     expect(stage).not.toBeNull();
     expect(within(previewDialog).getByLabelText("模板预览缩放比例")).toHaveTextContent("72%");
@@ -121,9 +121,9 @@ describe("ResumeTemplatesPage", () => {
     vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates } as never);
     render(<ResumeTemplatesPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "查看模板：空白简历" }));
+    fireEvent.click(await screen.findByRole("button", { name: "查看模板：经典单页技术简历" }));
 
-    const previewDialog = screen.getByRole("dialog", { name: "空白简历" });
+    const previewDialog = screen.getByRole("dialog", { name: "经典单页技术简历" });
     const scale = within(previewDialog).getByLabelText("模板预览缩放比例");
 
     fireEvent.click(within(previewDialog).getByRole("button", { name: "放大模板" }));
@@ -146,12 +146,12 @@ describe("ResumeTemplatesPage", () => {
     previewDialog = screen.getByRole("dialog", { name: "校园简历" });
     expect(within(previewDialog).getByLabelText("模板预览缩放比例")).toHaveTextContent("80%");
     expect(within(previewDialog).getByRole("button", { name: "上一个模板：现代双栏" })).toBeInTheDocument();
-    expect(within(previewDialog).getByRole("button", { name: "下一个模板：空白简历" })).toBeInTheDocument();
+    expect(within(previewDialog).getByRole("button", { name: "下一个模板：经典单页技术简历" })).toBeInTheDocument();
 
     fireEvent.keyDown(previewDialog, { key: "ArrowRight" });
-    expect(screen.getByRole("dialog", { name: "空白简历" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "经典单页技术简历" })).toBeInTheDocument();
 
-    fireEvent.keyDown(screen.getByRole("dialog", { name: "空白简历" }), { key: "ArrowLeft" });
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "经典单页技术简历" }), { key: "ArrowLeft" });
     expect(screen.getByRole("dialog", { name: "校园简历" })).toBeInTheDocument();
   });
 
@@ -162,7 +162,7 @@ describe("ResumeTemplatesPage", () => {
     fireEvent.click((await screen.findAllByRole("button", { name: "创建简历" }))[0]);
 
     expect(screen.getByRole("dialog", { name: "创建简历" })).toHaveTextContent(
-      "基于“空白简历”创建简历",
+      "基于“经典单页技术简历”创建简历",
     );
     expect(screen.queryByTestId("resume-preview-full")).not.toBeInTheDocument();
   });
@@ -205,7 +205,7 @@ describe("ResumeTemplatesPage", () => {
 
     expect(await screen.findByRole("heading", { name: "模板暂时无法加载" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
-    expect(await screen.findByRole("heading", { name: "空白简历" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "经典单页技术简历" })).toBeInTheDocument();
   });
 
   it("没有启用模板时展示空状态并允许返回简历列表", async () => {

@@ -12,7 +12,6 @@ export type WorkbenchBlockCommandId =
   | "ordered-list"
   | "resume-row"
   | "image"
-  | "avatar"
   | "inline-icon"
   | "inline-image";
 
@@ -32,7 +31,6 @@ export const workbenchBlockCommands: WorkbenchBlockCommand[] = [
   { id: "ordered-list", label: "有序列表", keywords: ["编号", "ol"] },
   { id: "image", label: "插入图片", keywords: ["正文图片", "image"] },
   { id: "inline-image", label: "插入行内图片", keywords: ["公司 Logo", "文字内嵌图片", "行内", "logo"] },
-  { id: "avatar", label: "上传或更换头像", keywords: ["照片", "avatar"] },
   { id: "inline-icon", label: "插入图标", keywords: ["图标", "学校", "教育", "电话", "邮箱", "icon"] },
 ];
 

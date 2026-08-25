@@ -5,8 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from linkcv.domain.resume_document import ResumeDocumentV1
-from linkcv.domain.resume_style import ResumeStyleV1
+from linkcv.domain.resume_document import ResumeDocument
+from linkcv.domain.resume_style import ResumePresentation
 
 
 class SessionCreateRequest(BaseModel):
@@ -130,8 +130,8 @@ class ProposalCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     call_key: str = Field(min_length=1, max_length=128)
-    data: ResumeDocumentV1
-    style: ResumeStyleV1
+    data: ResumeDocument
+    style: ResumePresentation
     summary: str = Field(min_length=1, max_length=4_000)
 
 
@@ -140,8 +140,8 @@ class ProposalRecord(BaseModel):
     run_id: str
     resume_id: str
     base_lock_version: int
-    data: ResumeDocumentV1
-    style: ResumeStyleV1
+    data: ResumeDocument
+    style: ResumePresentation
     summary: str
     proposal_mode: Literal[
         "legacy_snapshot",
@@ -247,8 +247,8 @@ class ScopedResumeContextResponse(BaseModel):
     scope: Literal["target", "entry", "section", "resume"]
     content: str
     blocks: list[dict[str, Any]] = Field(default_factory=list)
-    data: ResumeDocumentV1 | None = None
-    style: ResumeStyleV1
+    data: ResumeDocument | None = None
+    style: ResumePresentation
 
 
 class MaterialSearchRequest(BaseModel):
@@ -317,8 +317,8 @@ class ResumeContextResponse(BaseModel):
     resume_id: str
     title: str
     lock_version: int
-    data: ResumeDocumentV1
-    style: ResumeStyleV1
+    data: ResumeDocument
+    style: ResumePresentation
 
 
 class RuntimeConfigResponse(BaseModel):

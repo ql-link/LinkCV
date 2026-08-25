@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, ApiRequestError } from "./client";
+import { defaultSemanticDocument, defaultSemanticStyle } from "./resumeContract";
 
 function jsonResponse(status: number, body: unknown): Response {
   return {
@@ -146,6 +147,21 @@ describe("API session refresh", () => {
         headers: expect.objectContaining({ "Idempotency-Key": key }),
       }),
     );
+  });
+});
+
+describe("resume template API", () => {
+  it("兼容旧数据库响应时也不会向产品暴露已退役空白模板", async () => {
+    const retained = { id: "5", key: "classic-technical-cn", name: "经典单页技术简历" };
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, {
+      templates: [
+        { id: "1", key: "blank-cn", name: "空白简历" },
+        retained,
+      ],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.listResumeTemplates()).resolves.toEqual({ templates: [retained] });
   });
 });
 
@@ -512,8 +528,8 @@ describe("API resume share", () => {
       .mockResolvedValueOnce(jsonResponse(200, { deleted: true }))
       .mockResolvedValueOnce(
         jsonResponse(200, {
-          data: { schema_version: "1.0" },
-          style: { schema_version: "1.0" },
+          data: defaultSemanticDocument,
+          style: defaultSemanticStyle,
           sharer: { nickname: "于晏", avatar_url: null },
         }),
       );
