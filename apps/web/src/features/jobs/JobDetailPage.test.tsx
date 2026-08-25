@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type JobDescriptionRecord } from "../../api/client";
 import { JobDetailPage } from "./JobDetailPage";
 
@@ -41,20 +41,25 @@ const activeJob: JobDescriptionRecord = {
   updated_at: "2026-07-29T08:00:00Z",
 };
 
+beforeEach(() => {
+  vi.spyOn(api, "listJobApplications").mockResolvedValue({ items: [], next_cursor: null });
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
   window.history.replaceState(null, "", "/");
 });
 
 describe("JobDetailPage", () => {
-  it("普通 JD 不显示全局编辑按钮，并为字段提供就地编辑入口", async () => {
+  it("岗位详情提供求职入口和字段就地编辑", async () => {
     vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
 
     render(<JobDetailPage jobId={activeJob.id} />);
 
-    expect(await screen.findByRole("heading", { name: "JD 详情", level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "岗位详情", level: 1 })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: activeJob.job_title, level: 2 })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "返回 JD 中心" })).toHaveAttribute("href", "/jobs");
+    expect(screen.getByRole("link", { name: "返回岗位库" })).toHaveAttribute("href", "/career/jobs");
+    expect(await screen.findByRole("button", { name: "开始求职" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "编辑职位名称" })).toHaveClass("job-quick-edit-display");
     expect(screen.getByRole("button", { name: "编辑职位描述" })).toHaveClass("job-quick-edit-display");
@@ -85,12 +90,12 @@ describe("JobDetailPage", () => {
     vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
     const updatedJob = { ...activeJob, job_title: "高级 Java 开发工程师", lock_version: 3 };
     const update = vi.spyOn(api, "updateJobDescription").mockResolvedValue({ job_description: updatedJob });
-    window.history.replaceState(null, "", `/jobs/${activeJob.id}`);
+    window.history.replaceState(null, "", `/career/jobs/${activeJob.id}`);
 
     render(<JobDetailPage jobId={activeJob.id} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "编辑职位名称" }));
-    expect(window.location.pathname).toBe(`/jobs/${activeJob.id}`);
+    expect(window.location.pathname).toBe(`/career/jobs/${activeJob.id}`);
     const titleInput = screen.getByLabelText("职位名称") as HTMLInputElement;
     expect(screen.queryByText(/Enter 保存/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Esc 取消/)).not.toBeInTheDocument();
@@ -106,7 +111,7 @@ describe("JobDetailPage", () => {
     }));
     expect(update.mock.calls[0]?.[1]).not.toHaveProperty("source_url");
     expect(await screen.findByRole("heading", { name: updatedJob.job_title, level: 2 })).toBeInTheDocument();
-    expect(window.location.pathname).toBe(`/jobs/${activeJob.id}`);
+    expect(window.location.pathname).toBe(`/career/jobs/${activeJob.id}`);
   });
 
   it("按 Escape 取消当前字段编辑", async () => {

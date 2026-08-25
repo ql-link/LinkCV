@@ -1,6 +1,6 @@
 import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
 import { ArrowRight } from "lucide-react";
-import { Button, TextField } from "@/components/ui";
+import { Button, PageLoading, TextField } from "@/components/ui";
 import { api, User } from "../../api/client";
 import { useResumeStore } from "../../store/resumeStore";
 import { authPath, navigateTo } from "../../routing";
@@ -90,9 +90,7 @@ export function AuthPage(props: {
             </p>
 
             {passwordLoginEnabled === null && (
-              <p className="mt-10 text-sm text-muted-foreground" role="status">
-                正在确认登录方式...
-              </p>
+              <PageLoading className="mt-10" label="正在确认登录方式…" scope="panel" />
             )}
 
             {showPasswordForm && (

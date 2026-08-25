@@ -11,7 +11,7 @@ import {
   UserRound,
   Users,
 } from "lucide-react";
-import { Brand } from "@/components/ui";
+import { Brand, PageLoading } from "@/components/ui";
 import "./admin.css";
 
 import {
@@ -79,12 +79,7 @@ export function AdminLoginPage({ next = null }: { next?: string | null }) {
   };
 
   if (checking) {
-    return (
-      <div className="admin-page-loading">
-        <div className="loading-spinner" />
-        <span>正在验证身份...</span>
-      </div>
-    );
+    return <PageLoading label="正在验证身份…" scope="page" />;
   }
 
   return (

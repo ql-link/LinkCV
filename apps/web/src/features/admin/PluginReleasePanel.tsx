@@ -1,7 +1,7 @@
 import { CheckCircle2, PackageOpen, RefreshCw, RotateCcw, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { FileUpload, type FileUploadHandle } from "@/components/ui";
+import { FileUpload, PageLoading, type FileUploadHandle } from "@/components/ui";
 import {
   api,
   ApiRequestError,
@@ -148,7 +148,7 @@ export function PluginReleasePanel() {
       </header>
 
       <section className="admin-surface plugin-release-panel">
-        {loading ? <p className="plugin-admin-state">正在读取插件状态…</p> : loadError ? <p className="plugin-admin-state is-error" role="alert">无法读取当前插件状态。</p> : (
+        {loading ? <PageLoading label="正在读取插件状态…" scope="panel" /> : loadError ? <p className="plugin-admin-state is-error" role="alert">无法读取当前插件状态。</p> : (
           <div className={`plugin-status-card is-${current.status}`}>
             <div className="plugin-status-icon">{hasPlugin ? <CheckCircle2 size={24} /> : <PackageOpen size={24} />}</div>
             <div className="plugin-status-copy">

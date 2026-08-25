@@ -5,7 +5,7 @@ import {
   ApiRequestError,
   type AdminResumeTemplate,
 } from "../../api/client";
-import { FileUpload } from "@/components/ui";
+import { FileUpload, PageLoading } from "@/components/ui";
 import { ResumePreview } from "../preview/ResumePreview";
 
 export function AdminTemplatePanel({ notify }: { notify: (message: string) => void }) {
@@ -81,7 +81,7 @@ export function AdminTemplatePanel({ notify }: { notify: (message: string) => vo
       </div>
 
       <div className="admin-surface admin-template-list">
-        {loading ? <p>正在读取模板…</p> : templates.map((template) => (
+        {loading ? <PageLoading label="正在读取模板…" scope="panel" /> : templates.map((template) => (
           <article key={template.id} className="admin-template-row">
             <div>
               <strong>{template.name}</strong>

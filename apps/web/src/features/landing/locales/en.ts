@@ -6,7 +6,7 @@ export const en: Translations = {
     links: [
       { href: '#features', label: 'Features' },
       { href: '#editor', label: 'Editor' },
-      { href: '#jd', label: 'JD Center' },
+      { href: '#jd', label: 'Job Library' },
       { href: '#philosophy', label: 'Philosophy' },
       { href: '#faq', label: 'FAQ' },
     ],
@@ -163,7 +163,7 @@ export const en: Translations = {
     eyebrow: 'LINKCV / ONE WORKSPACE',
     title: 'A resume is just the beginning',
     subtitle: 'Keep scrolling to enter the complete job hunting workspace',
-    keywords: ['A4 Editor', 'Version Control', 'PDF Export', 'Smart One-Page', 'JD Center', 'Chrome Extension', 'Template Import', 'Auto Save'],
+    keywords: ['A4 Editor', 'Version Control', 'PDF Export', 'Smart One-Page', 'Job Library', 'Chrome Extension', 'Template Import', 'Auto Save'],
   },
 
   chaos: {
@@ -187,7 +187,7 @@ export const en: Translations = {
       { num: '01', title: 'A4 Paper Editing', desc: 'Edit text, images, and left-right layouts directly on an A4 page that matches the final output — what you see is what you get' },
       { num: '02', title: 'Version Control', desc: 'Auto-save current changes, manually save named versions, restore any previous content at any time' },
       { num: '03', title: 'PDF Export', desc: 'Standard A4 pagination or Smart One-Page mode — export high-quality PDFs ready for submission' },
-      { num: '04', title: 'JD Center', desc: 'Record, search, and edit job listings. Compare resumes with JDs in the same workspace' },
+      { num: '04', title: 'Job Library', desc: 'Record, search, and edit job listings. Compare resumes with job requirements in the same workspace' },
       { num: '05', title: 'Chrome Extension', desc: 'Read the currently open BOSS Zhipin job listing and import it into LinkCV with one click after your confirmation' },
     ],
     manifesto: ['CONTENT FIRST.', 'LAYOUT UNDER CONTROL.', 'EVERY CHANGE RECOVERABLE.'],
@@ -231,14 +231,14 @@ export const en: Translations = {
 
   jd: {
     index: '05',
-    eyebrow: 'JD Center + Chrome Extension',
+    eyebrow: 'Job Library + Chrome Extension',
     title1: 'Job listings,',
     title2: 'kept alongside your resume',
-    description: 'When you find a promising position, use the Chrome extension to capture the currently open BOSS Zhipin listing into JD Center. Compare requirements while writing your resume without leaving the workspace',
+    description: 'When you find a promising position, use the Chrome extension to capture the currently open BOSS Zhipin listing into Job Library. Compare requirements while writing your resume without leaving the workspace',
     points: [
       { title: 'Import on Confirmation', desc: 'The extension only reads the BOSS Zhipin page you currently have open. Nothing is written until you click confirm — no background scraping' },
       { title: 'Searchable & Editable', desc: 'Search by position, company, or keyword, and correct the listing whenever needed' },
-      { title: 'Job Data Stays Focused', desc: 'JD Center stores job information without mixing in application or interview progress' },
+      { title: 'Job Data Stays Focused', desc: 'Job Library stores opportunities while application progress tracks submissions and interviews separately' },
     ],
   },
 
@@ -249,7 +249,7 @@ export const en: Translations = {
     steps: [
       { num: '01', title: 'Create', desc: 'Start from blank, built-in templates, or import Markdown / DOCX / PDF' },
       { num: '02', title: 'Edit', desc: 'Write content and adjust layout on the A4 canvas. Changes auto-save' },
-      { num: '03', title: 'Capture', desc: 'Chrome extension captures BOSS Zhipin listings into JD Center' },
+      { num: '03', title: 'Capture', desc: 'Chrome extension captures BOSS Zhipin listings into Job Library' },
       { num: '04', title: 'Export', desc: 'Fine-tune for the JD, then export as standard pagination or smart one-page PDF' },
     ],
   },
@@ -276,7 +276,7 @@ export const en: Translations = {
       { q: 'What data does the Chrome extension collect?', a: 'The extension only reads the BOSS Zhipin job listing page you currently have open, and only imports into LinkCV after you manually click confirm. It does not scrape in bulk in the background, nor does it apply on your behalf' },
       { q: 'How does Smart One-Page work?', a: 'When exporting to PDF, choose Smart One-Page mode. The system automatically adjusts layout density to fit content into one A4 page. For multi-page needs, use Standard A4 Pagination mode instead' },
       { q: 'What if I accidentally delete or mess up content?', a: 'LinkCV auto-saves your current changes. You can also proactively save named versions. All historical versions are viewable and restorable with one click' },
-      { q: 'How many job listings can JD Center manage?', a: "There's no hard limit. Listings can be searched, viewed, and edited, then permanently deleted after confirmation when no longer needed" },
+      { q: 'How many job listings can Job Library manage?', a: "There's no hard limit. Listings can be searched, viewed, and edited, then permanently deleted after confirmation when no longer needed" },
     ],
   },
 
@@ -289,7 +289,7 @@ export const en: Translations = {
     copyright: '© 2026 LinkCV · RESUME · VERSION · PDF · JD',
     navLabel: 'Footer navigation',
     linkGroups: [
-      { title: 'Product', links: [{ label: 'Features', href: '#features' }, { label: 'A4 Editor', href: '#editor' }, { label: 'JD Center', href: '#jd' }] },
+      { title: 'Product', links: [{ label: 'Features', href: '#features' }, { label: 'A4 Editor', href: '#editor' }, { label: 'Job Library', href: '#jd' }] },
       { title: 'Learn', links: [{ label: 'Workspace', href: '#chaos' }, { label: 'Philosophy', href: '#philosophy' }, { label: 'FAQ', href: '#faq' }] },
       { title: 'Navigate', links: [{ label: 'Tour', href: '#workspace-intro' }, { label: 'Back to Top', href: '#top' }] },
     ],
