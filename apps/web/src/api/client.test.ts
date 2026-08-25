@@ -223,6 +223,21 @@ describe("Agent SSE client", () => {
   });
 });
 
+describe("Agent session list API", () => {
+  it("支持按简历筛选，也支持读取当前用户最近会话", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { sessions: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.listAgentSessions("resume/42");
+    await api.listAgentSessions();
+
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      "/api/agent/sessions?resume_id=resume%2F42",
+      "/api/agent/sessions",
+    ]);
+  });
+});
+
 describe("resume import polling API", () => {
   it("按任务 ID 查询单个导入状态并编码路径参数", async () => {
     const body = { import: { id: "41", parse_status: "processing" } };

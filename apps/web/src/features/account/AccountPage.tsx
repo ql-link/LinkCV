@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { ChevronRight, Pencil, UserRound } from "lucide-react";
+import { Camera, ChevronRight, LogOut, MessageCircle, Pencil, UserRound } from "lucide-react";
 
 import {
   Avatar,
@@ -14,13 +14,13 @@ import {
   DialogTitle,
   FeedbackNotice,
   Input,
-  Label,
   PageLoading,
 } from "@/components/ui";
-import { api, AccountProfile, ApiRequestError, UserProfile } from "../../api/client";
+import { api, AccountProfile, AgentSession, ApiRequestError, UserProfile } from "../../api/client";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { editorPath, navigateTo } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
+import "./account.css";
 import {
   AVATAR_CROP_MAX_ZOOM,
   AVATAR_CROP_MIN_ZOOM,
@@ -61,14 +61,21 @@ export function AccountPage() {
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [nickname, setNickname] = useState("");
+  const [nicknameEditing, setNicknameEditing] = useState(false);
   const [savingName, setSavingName] = useState(false);
+  const [sessions, setSessions] = useState<AgentSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [sessionsFailed, setSessionsFailed] = useState(false);
   const [avatarDraft, setAvatarDraft] = useState<AvatarCropDraft | null>(null);
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
+  const [avatarPreviewOpen, setAvatarPreviewOpen] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [removingAvatar, setRemovingAvatar] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const nicknameInputRef = useRef<HTMLInputElement>(null);
   const cropImageRef = useRef<HTMLImageElement>(null);
   const avatarDragRef = useRef<AvatarDrag | null>(null);
   const avatarReadRequestRef = useRef(0);
@@ -93,6 +100,32 @@ export function AccountPage() {
     };
   }, [syncProfile]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setSessionsLoading(true);
+    setSessionsFailed(false);
+    void api.listAgentSessions()
+      .then((result) => {
+        if (!cancelled) setSessions(result.sessions);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSessions([]);
+          setSessionsFailed(true);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSessionsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (nicknameEditing) nicknameInputRef.current?.focus();
+  }, [nicknameEditing]);
+
   const applyUserUpdate = (user: UserProfile) => {
     syncProfile(user);
     setProfile((current) => (current ? { ...current, user } : current));
@@ -110,11 +143,36 @@ export function AccountPage() {
       const updated = await api.updateAccountProfile(trimmed);
       applyUserUpdate(updated);
       setNickname(updated.nickname);
-      setNotice({ kind: "success", message: "昵称已更新。" });
+      setNicknameEditing(false);
     } catch (error) {
       setNotice({ kind: "error", message: accountErrorMessage(error, "昵称保存失败，请稍后重试。") });
     } finally {
       setSavingName(false);
+    }
+  };
+
+  const startNicknameEdit = () => {
+    if (!profile) return;
+    setNickname(profile.user.nickname);
+    setNicknameEditing(true);
+    setNotice(null);
+  };
+
+  const cancelNicknameEdit = () => {
+    if (profile) setNickname(profile.user.nickname);
+    setNicknameEditing(false);
+    setNotice(null);
+  };
+
+  const handleNicknameKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelNicknameEdit();
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void saveNickname();
     }
   };
 
@@ -263,13 +321,22 @@ export function AccountPage() {
     }
   };
 
+  const handleLogoutDialogOpenChange = (open: boolean) => {
+    if (!open && loggingOut) return;
+    setLogoutDialogOpen(open);
+  };
+
   const displayAvatar = profile?.user.avatar_url ?? null;
   const cropLayout = avatarDraft ? getAvatarCropLayout(avatarDraft) : null;
+
+  const openAvatarPreview = () => {
+    if (displayAvatar) setAvatarPreviewOpen(true);
+  };
 
   return (
     <main className="dashboard-content account-page">
       <WorkspacePageHero
-        eyebrow="账号设置"
+        eyebrow=""
         title="个人资料"
         description="管理你的身份信息、简历和当前会话。"
       />
@@ -289,28 +356,36 @@ export function AccountPage() {
 
       {profile && (
         <div className="account-layout">
-          <section className="account-settings" aria-label="账号设置">
-            <section className="account-section account-identity-section" aria-labelledby="account-identity-heading">
-              <div className="account-identity">
-                <button
-                  type="button"
-                  className="account-avatar-trigger"
-                  aria-label={profile.user.avatar_url ? "更换头像" : "设置头像"}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Avatar className="account-avatar-lg">
-                    <AvatarImage alt="" className="object-cover" src={displayAvatar ?? undefined} />
-                    <AvatarFallback className="account-avatar-lg-fallback">
-                      {profileInitial(profile.user.nickname)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="account-avatar-edit-overlay" aria-hidden="true">
-                    <span className="account-avatar-edit-mark"><Pencil size={17} /></span>
-                  </span>
-                </button>
+          <div className="account-overview-grid">
+            <aside className="account-profile-card" aria-label="个人资料摘要">
+              <div className="account-profile-banner" aria-hidden="true" />
+              <div className="account-profile-card-body">
+                <div className="account-avatar-control">
+                  <button
+                    type="button"
+                    className="account-avatar-trigger"
+                    aria-label={displayAvatar ? "查看头像原图" : "头像预览不可用"}
+                    disabled={!displayAvatar}
+                    onClick={openAvatarPreview}
+                  >
+                    <Avatar className="account-avatar-lg">
+                      <AvatarImage alt="" className="object-cover" src={displayAvatar ?? undefined} />
+                      <AvatarFallback className="account-avatar-lg-fallback">
+                        {profileInitial(profile.user.nickname)}
+                      </AvatarFallback>
+                    </Avatar>
+                  </button>
+                  <button
+                    type="button"
+                    className="account-avatar-edit-trigger"
+                    aria-label="修改头像"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Camera aria-hidden size={16} />
+                  </button>
+                </div>
                 <div className="account-identity-text">
                   <h2 id="account-identity-heading">{profile.user.nickname}</h2>
-                  <p>{profile.user.email}</p>
                 </div>
                 <input
                   ref={fileInputRef}
@@ -326,109 +401,140 @@ export function AccountPage() {
                   }}
                 />
               </div>
-            </section>
+              <div className="account-profile-stats" aria-label="账户统计">
+                <div className="account-profile-stat">
+                  <span>简历</span>
+                  <strong>{profile.resume_count}</strong>
+                </div>
+                <div className="account-profile-stat">
+                  <span>对话</span>
+                  <strong>{sessionsLoading ? "…" : sessionsFailed ? "—" : sessions.length >= 50 ? "50+" : sessions.length}</strong>
+                </div>
+              </div>
+            </aside>
 
-            <section className="account-section" aria-labelledby="account-personal-heading">
-              <header className="account-section-heading">
+            <section className="account-info-card" role="region" aria-label="个人信息">
+              <header className="account-info-card-header">
                 <h2 id="account-personal-heading">个人信息</h2>
               </header>
-              <div className="account-setting-rows">
-                <div className="account-setting-row">
-                  <div className="account-field-label">
-                    <Label htmlFor="account-nickname">昵称</Label>
-                    <p>用于工作区中的身份展示</p>
-                  </div>
-                  <div className="account-field-content">
-                    <Input
-                      id="account-nickname"
-                      value={nickname}
-                      maxLength={MAX_NICKNAME_LENGTH}
-                      aria-describedby="account-nickname-hint"
-                      onChange={(event) => setNickname(event.target.value)}
-                    />
-                    <span id="account-nickname-hint" className="sr-only">最多 {MAX_NICKNAME_LENGTH} 个字符</span>
-                  </div>
-                  <Button
-                    className="account-field-action"
-                    size="sm"
-                    variant="ghost"
-                    disabled={savingName || nickname.trim() === profile.user.nickname}
-                    onClick={() => void saveNickname()}
-                  >
-                    {savingName ? "保存中..." : "保存昵称"}
-                  </Button>
-                </div>
-
-                <div className="account-setting-row">
-                  <div className="account-field-label">
-                    <span className="account-field-name">登录邮箱</span>
-                    <p>当前暂不支持修改</p>
-                  </div>
-                  <p className="account-field-content account-email-value">{profile.user.email}</p>
-                  <span className="account-field-action-spacer" aria-hidden="true" />
-                </div>
-              </div>
-            </section>
-
-            <section className="account-section" aria-labelledby="account-resumes-heading">
-              <header className="account-section-heading account-resumes-heading">
-                <div className="account-section-title-group">
-                  <h2 id="account-resumes-heading">简历</h2>
-                  <p className="account-resume-summary">共 <strong>{profile.resume_count}</strong> 份</p>
-                </div>
-                <button type="button" className="account-text-link" onClick={() => navigateTo("/resumes")}>
-                  查看全部
-                </button>
-              </header>
-              <div className="account-recent-block">
-                <p className="account-subsection-label">最近更新</p>
-                <ul className="account-recent-list">
-                  {profile.recent_resumes.length === 0 && (
-                    <li className="account-recent-empty">暂无简历</li>
-                  )}
-                  {profile.recent_resumes.map((resume) => (
-                    <li key={resume.id}>
-                      <button
-                        type="button"
-                        className="account-recent-row"
-                        onClick={() => navigateTo(editorPath(String(resume.id)))}
+              <div className="account-info-card-body">
+                <section className="account-info-group" aria-label="昵称">
+                  <div className="account-nickname-row">
+                    <div className="account-field-label">
+                      <span className="account-field-name">昵称</span>
+                      <p>用于工作区中的身份展示</p>
+                    </div>
+                    {nicknameEditing ? (
+                      <form
+                        className="account-nickname-edit-form"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void saveNickname();
+                        }}
                       >
-                        <span className="account-recent-text">
-                          <strong>{resume.title}</strong>
-                          <small>{recentTime(resume.updated_at)}</small>
-                        </span>
-                        <ChevronRight aria-hidden size={16} />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </section>
-
-            <section className="account-section account-session-section" aria-labelledby="account-session-heading">
-              <header className="account-section-heading">
-                <h2 id="account-session-heading">当前会话</h2>
-              </header>
-              <div className="account-setting-rows">
-                <div className="account-setting-row account-session-row">
-                  <div className="account-field-label">
-                    <span className="account-field-name">此设备</span>
-                    <p>退出后需要重新登录</p>
+                        <Input
+                          ref={nicknameInputRef}
+                          id="account-nickname"
+                          aria-label="昵称"
+                          value={nickname}
+                          maxLength={MAX_NICKNAME_LENGTH}
+                          aria-describedby="account-nickname-hint"
+                          onChange={(event) => setNickname(event.target.value)}
+                          onKeyDown={handleNicknameKeyDown}
+                          disabled={savingName}
+                        />
+                        <span id="account-nickname-hint" className="sr-only">最多 {MAX_NICKNAME_LENGTH} 个字符，按 Enter 保存，按 Escape 取消</span>
+                      </form>
+                    ) : (
+                      <div className="account-nickname-view">
+                        <button type="button" className="account-nickname-edit-trigger" aria-label="修改昵称" onClick={startNicknameEdit}>
+                          <Pencil aria-hidden size={15} />
+                        </button>
+                        <span className="account-nickname-value">{profile.user.nickname}</span>
+                      </div>
+                    )}
                   </div>
-                  <p className="account-field-content account-session-description">当前登录会话</p>
+                </section>
+
+                <section className="account-info-group" aria-labelledby="account-resumes-heading">
+                  <div className="account-info-group-header">
+                    <h3 id="account-resumes-heading">最近简历</h3>
+                    <button type="button" className="account-text-link" onClick={() => navigateTo("/resumes")}>查看全部</button>
+                  </div>
+                  {profile.recent_resumes.length === 0 ? (
+                    <p className="account-recent-empty">暂无简历内容</p>
+                  ) : (
+                    <ul className="account-recent-list">
+                      {profile.recent_resumes.map((resume) => (
+                        <li key={resume.id}>
+                          <button
+                            type="button"
+                            className="account-recent-row"
+                            onClick={() => navigateTo(editorPath(String(resume.id)))}
+                          >
+                            <span className="account-recent-text">
+                              <strong>{resume.title}</strong>
+                              <small>{recentTime(resume.updated_at)}</small>
+                            </span>
+                            <ChevronRight aria-hidden size={16} />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+
+                <section className="account-info-group" aria-labelledby="account-conversations-heading">
+                  <div className="account-info-group-header">
+                    <h3 id="account-conversations-heading">最近对话</h3>
+                    <MessageCircle aria-hidden className="account-info-group-icon" size={17} />
+                  </div>
+                  {sessionsLoading ? (
+                    <p className="account-recent-empty">正在加载对话…</p>
+                  ) : sessionsFailed ? (
+                    <p className="account-recent-empty">最近对话暂不可用</p>
+                  ) : sessions.length === 0 ? (
+                    <p className="account-recent-empty">暂无对话记录</p>
+                  ) : (
+                    <ul className="account-session-list">
+                      {sessions.slice(0, 3).map((session) => (
+                        <li key={session.id} className="account-session-list-item">
+                          <span className="account-session-text">
+                            <strong>{session.title || "未命名对话"}</strong>
+                            <small>{recentTime(session.last_message_at ?? session.updated_at)}</small>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+
+                <div className="account-info-card-footer">
                   <Button
                     className="account-danger-text"
+                    variant="link"
                     size="sm"
-                    variant="ghost"
-                    disabled={loggingOut}
-                    onClick={() => void handleLogout()}
+                    onClick={() => {
+                      setNotice(null);
+                      setLogoutDialogOpen(true);
+                    }}
                   >
-                    {loggingOut ? "正在退出…" : "退出登录"}
+                    <LogOut aria-hidden size={15} />
+                    退出登录
                   </Button>
                 </div>
               </div>
             </section>
-          </section>
+          </div>
+
+          {displayAvatar && (
+            <Dialog open={avatarPreviewOpen} onOpenChange={setAvatarPreviewOpen}>
+              <DialogContent className="account-avatar-preview-dialog" aria-describedby={undefined}>
+                <DialogTitle className="sr-only">查看头像原图</DialogTitle>
+                <img className="account-avatar-preview-image" src={displayAvatar} alt="头像原图" />
+              </DialogContent>
+            </Dialog>
+          )}
 
           <Dialog open={avatarDialogOpen} onOpenChange={handleAvatarDialogOpenChange}>
             {avatarDraft && (
@@ -510,6 +616,31 @@ export function AccountPage() {
                 </DialogFooter>
               </DialogContent>
             )}
+          </Dialog>
+
+          <Dialog open={logoutDialogOpen} onOpenChange={handleLogoutDialogOpenChange}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>确认退出登录</DialogTitle>
+                <DialogDescription>退出后需要重新登录。</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  variant="ghost"
+                  disabled={loggingOut}
+                  onClick={() => setLogoutDialogOpen(false)}
+                >
+                  取消
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={loggingOut}
+                  onClick={() => void handleLogout()}
+                >
+                  {loggingOut ? "正在退出…" : "退出登录"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
           </Dialog>
         </div>
       )}

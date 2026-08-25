@@ -98,7 +98,7 @@ Web PDF 请求必须携带当前保存成功后的 `lock_version`。服务端再
 | Method | Path | 成功结果 |
 | --- | --- | --- |
 | `GET` | `/api/agent/readiness` | `200 {ready: true}`；只读校验完整 Agent 服务链，不返回模型或凭据 |
-| `GET` | `/api/agent/sessions?resume_id=:id` | `{sessions}`，最近更新优先 |
+| `GET` | `/api/agent/sessions[?resume_id=:id]` | `{sessions}`，`resume_id` 可选；传入时按本人简历过滤，省略时返回当前用户跨简历最近更新的至多 50 个会话 |
 | `POST` | `/api/agent/sessions` | `201 {session}`；请求为 `{resume_id, title?}` |
 | `GET` | `/api/agent/sessions/:sessionId` | `{session}`，包含最近 100 条消息 |
 | `POST` | `/api/agent/sessions/:sessionId/messages` | SSE；请求为 `{content, idempotency_key, selection_context?, reply_to_sequence_no?}`，选区包含稳定块 ID、编辑器范围、原文和 SHA-256；回答结构化澄清问题时必须携带对应助手消息序号 |

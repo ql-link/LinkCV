@@ -1,11 +1,14 @@
 ---
 version: alpha
 name: LinkCV Product UI
-description: An Apple-inspired, task-first interface with warm neutral surfaces and LinkCV blue as its single interaction accent.
+description: An Apple-inspired, task-first interface with warm neutral surfaces, near-black primary actions and LinkCV blue as the interaction accent.
 colors:
-  primary: "#155FD7"
-  primary-hover: "#0F52C0"
+  primary: "#17191C"
+  primary-hover: "#2C3137"
   on-primary: "#FFFFFF"
+  accent: "#145ED6"
+  accent-hover: "#0F4EB4"
+  accent-subtle: "#E9F1FD"
   background: "#F5F5F7"
   surface: "#FFFFFF"
   surface-subtle: "#FAFAFC"
@@ -35,6 +38,11 @@ typography:
   section-title:
     fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 1.25rem
+    fontWeight: 600
+    lineHeight: 1.25
+  subsection-title:
+    fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
+    fontSize: 1rem
     fontWeight: 600
     lineHeight: 1.25
   body-md:
@@ -117,10 +125,10 @@ components:
     backgroundColor: "transparent"
     borderColor: "{colors.ring}"
   link:
-    textColor: "{colors.primary}"
+    textColor: "{colors.accent}"
     typography: "{typography.body-sm}"
   link-hover:
-    textColor: "{colors.primary-hover}"
+    textColor: "{colors.accent-hover}"
   input-field:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.on-surface}"
@@ -143,6 +151,9 @@ components:
   section-heading:
     textColor: "{colors.on-surface}"
     typography: "{typography.section-title}"
+  subsection-heading:
+    textColor: "{colors.on-surface}"
+    typography: "{typography.subsection-title}"
   technical-metadata:
     textColor: "{colors.muted}"
     typography: "{typography.metadata}"
@@ -177,23 +188,94 @@ components:
     textColor: "{colors.on-surface-secondary}"
     rounded: "{rounded.full}"
     size: 36px
+sourceHierarchy:
+  - id: design-contract
+    path: DESIGN.md
+    role: "视觉语义、组合 Pattern、例外边界和机器可读契约的唯一设计事实源"
+  - id: runtime-tokens
+    path: apps/web/src/design-system/tokens.css
+    role: "浏览器运行时 Token 实现，必须与 DESIGN.md frontmatter 的契约值一致"
+  - id: settings-implementation
+    path: apps/web/src/components/ui/layout-patterns.css
+    role: "共享布局 Pattern 的实现；只能映射到已确认 Token，显式消费方通过 variant 或页面作用域表达局部差异"
+  - id: feature-local-implementation
+    path: apps/web/src/features/*
+    role: "页面和用户原型的局部实现；复用基础 Token，但不因页面结构相似而自动消费 Settings Pattern"
+  - id: quality-gate
+    path: scripts/quality/check_design_system.py
+    role: "确定性校验设计契约和共享 Pattern 映射"
+settingsPattern:
+  id: settings
+  name: "LinkCV Settings Pattern"
+  tokenContract:
+    --ui-settings-content-max: "60rem"
+    --ui-settings-section-inset: "var(--ui-space-5)"
+    --ui-settings-row-min-size: "3.5rem"
+    --ui-settings-action-track: "5rem"
+    --ui-settings-label-track: "10rem"
+  layout:
+    desktop:
+      content: "min(var(--ui-settings-content-max), 100%)"
+      sectionInset: "var(--ui-settings-section-inset)"
+      columns: "var(--ui-settings-label-track) minmax(0, 1fr) var(--ui-settings-action-track)"
+      gap: "var(--ui-space-3)"
+      rowMinSize: "var(--ui-settings-row-min-size)"
+    mobile:
+      pageInset: "var(--ui-space-4)"
+      sectionInset: "var(--ui-space-4)"
+      columns: "1fr"
+  invariants:
+    - id: task-order
+      rule: "设置页按页面上下文、身份摘要、可编辑信息、关联资料、当前会话的顺序组织；Pattern 不改变业务顺序"
+    - id: shared-edges
+      rule: "页面标题与主体使用同一工作区左侧基准线；宽屏内容不因 max-width 自动居中到独立轴线"
+    - id: one-frame
+      rule: "同一设置任务使用一个外框承载语义分区，内部仅在需要表达分组时使用分隔线"
+  variants:
+    content:
+      default: "min(var(--ui-settings-content-max), 100%)"
+      narrow: "56rem 页面局部最大宽度，通过 ui-content-frame--narrow 选择"
+      wide: "72rem 页面局部最大宽度，通过 ui-content-frame--wide 选择"
+    frame:
+      framed: "外框、背景和内部 section 分隔"
+      plain: "不提供外框，适用于已由宿主提供表面或需要普通文档流的页面"
+    section:
+      default: "标准 section inset"
+      identity: "身份摘要的较宽上下留白"
+      compact: "高频或低复杂度 section 的较紧上下留白"
+    row:
+      desktop: "标签 / 可伸缩内容 / 操作三轨"
+      mobile: "按 DOM 顺序堆叠为单列，操作留在相关字段之后"
+  notApplicable:
+    - "营销落地页、登录入口和简历纸张不使用 Settings Pattern"
+    - "固定媒体几何和产品特定控件不使用字段列轨道"
+    - "列表、仪表盘和编辑器不因存在表单字段而套用 Settings Pattern"
+  pageLocalFreedom:
+    - "页面可以选择不消费 Pattern，或通过 content/frame/section variant 改变结构密度"
+    - "单页可在自身作用域调整内容宽度、媒体尺寸和内容驱动断点；不得新增品牌色或替代基础 spacing/font Token"
+    - "仅当出现两个真实消费者、共享组件或明确跨页不变量时，才把页面试值晋升为 Pattern"
+  typography:
+    subsectionTitle: "var(--ui-text-md)"
+    body: "var(--ui-text-sm)"
+    helper: "var(--ui-text-sm)"
+    metadata: "var(--ui-text-xs)"
 ---
 
 # LinkCV Product Design System
 
 ## Overview
 
-LinkCV 的登录后功能区采用 Apple 式克制与 OpenAI 式任务效率：温和的中性表面、系统化排版、单一交互蓝和接近无感的界面层级。它不是 Apple 官网的产品陈列复刻，而是适合简历管理、编辑和后台操作的中等密度工具。用户进入页面后应能迅速判断当前位置、主要内容和下一步操作。
+LinkCV 的登录后功能区采用 Apple 式克制与 OpenAI 式任务效率：温和的中性表面、近黑色主操作、蓝色交互反馈和接近无感的界面层级。它不是 Apple 官网的产品陈列复刻，而是适合简历管理、编辑和后台操作的中等密度工具。用户进入页面后应能迅速判断当前位置、主要内容和下一步操作。
 
 这套系统面向简历管理、岗位管理、设置、编辑工作台和管理端等软件功能。公共营销落地页可以拥有独立的品牌构图；登录页可以保留一处简短品牌表达，但表单仍服从本系统；简历纸张和 PDF 使用文档排版规则，不使用软件界面 Token。
 
 ## Colors
 
-界面以暖中性浅灰背景、白色表面和近黑文本构成。页脚已经使用的 LinkCV 蓝 `primary`（#155FD7）是唯一品牌级交互色，用于主要操作、链接、选中状态和焦点关联；不直接复制 Apple Action Blue，也不把整页染成蓝色。
+界面以暖中性浅灰背景、白色表面和近黑文本构成。近黑 `primary`（#17191C）用于主要操作和结构性强调；LinkCV 蓝 `accent`（#145ED6）用于链接、选中状态和焦点关联，不把整页染成蓝色。
 
 - `background` 承载页面画布，`surface` 承载输入、弹窗和必要容器；`surface-subtle` 与 `surface-muted` 只做低层级分组。
 - `on-surface-secondary` 用于真实有用的补充说明，`muted` 用于元信息、占位和弱化内容。
-- `primary` 只表达可交互的重要动作；近黑色 `on-surface` 只负责文字和结构。
+- `primary` 表达需要用户确认的主操作；`accent` 表达链接、选中和焦点等交互关联；近黑色 `on-surface` 只负责文字和结构。
 - `error`、`success`、`warning` 只表达对应语义，不能作为装饰色。
 - 普通文本及交互状态至少满足 WCAG AA；焦点必须使用清晰的 `ring`，不能只依赖颜色变化。
 
@@ -205,6 +287,18 @@ LinkCV 的登录后功能区采用 Apple 式克制与 OpenAI 式任务效率：�
 - 正文和控件使用无衬线字体；正文默认 16px，密集控件和说明使用 14px。
 - 技术标识、时间、版本和短元数据可以使用等宽字体，但正文不使用。
 - 删除“欢迎使用”“轻松完成”“一站式管理”等不能帮助用户决策的文案；说明文字只解释限制、后果或下一步动作。
+
+设置页使用 `subsection-title`（16px/600）作为区域标题；核心正文、字段标签和控件使用 14–16px，只有时间、短状态和其他元信息使用 12px `metadata`。不把账户页个案字号直接推广为全局规则。
+
+## Design source hierarchy
+
+机器可读的 `sourceHierarchy` 与 `settingsPattern` 位于本文 frontmatter，是稳定设计语义和组合布局的事实源。`apps/web/src/design-system/tokens.css` 必须逐项实现 `settingsPattern.tokenContract`；显式选择 Settings Pattern 的共享组件或页面必须把对应 selector/property 映射到这些 Token。质量门禁脚本只检查这条稳定链路，不能用某个页面尚未确认的试值反向改写 Pattern。
+
+尚未形成共享 Pattern 的页面允许在 feature/page 作用域验证内容驱动的局部几何；两个以上真实消费者复用、准备形成共享组件、用户明确确认为跨页面标准，或需要长期防漂移时，才晋升为 Pattern 和 checker。用户原型采用其他结构时仍复用基础 Token，但不需要伪装成 Settings Pattern；已经显式消费 Pattern 的页面也不得借页面试值绕过已声明的设置行、section inset 或文字语义。
+
+## Settings Pattern
+
+Settings Pattern 只约束显式选择它的共享组件或页面，不是所有设置表单、卡片、列表或用户原型的全局模板。默认桌面内容最大宽度为 60rem；显式消费方可以选择窄版 56rem，并与页面标题共享左侧基准线。section 使用 24px inset，字段行采用“10rem 标签 / 可伸缩内容 / 5rem 操作”三列和 12px gap，行最小高度约 56px。移动端保留 16px 页面/section inset，按同一 DOM 顺序堆叠为单列。helper text 属于字段说明，使用 14px；时间和短元信息才使用 12px。未选择 Settings Pattern 的页面仍应复用基础字体、间距、颜色和圆角 Token，并根据用户原型实现自身结构。
 
 ## Layout
 

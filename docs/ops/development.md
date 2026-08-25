@@ -158,6 +158,9 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run test:backend:unit`           | 后端快速单元测试                                                     |
 | `npm run test:backend:integration`    | 后端隔离 HTTP 集成测试                                               |
 | `npm run test:backend`                | 全部后端和仓库工具测试                                               |
+| `npm run check:design`                | 校验 DESIGN.md、Settings Pattern、运行时 Token 与关键页面映射        |
+| `npm run check:ai`                    | 校验 AI 入口、项目 Skill、文档同步和运行时契约                       |
+| `npm run check:app`                   | 执行设计门禁、类型检查、构建、应用测试和 Pi 质量检查                 |
 | `npm run check`                       | 完整本地质量入口                                                     |
 
 ## 测试分层

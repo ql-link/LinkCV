@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
-import { Brand } from "@/components/ui";
+import { Brand, PageHeader } from "@/components/ui";
 import RandomLetterSwapNav from "@/components/ui/m-random-letter-swap-1";
 import { preloadWorkspacePage } from "../workspacePageLoaders";
 
@@ -144,16 +144,7 @@ export function WorkspacePageHero({
   description?: string;
   actions?: ReactNode;
 }) {
-  return (
-    <header className="page-hero">
-      <div className="page-hero-text">
-        <p className="page-hero-eyebrow">{eyebrow}</p>
-        <h1>{title}</h1>
-        {description && <p className="page-hero-description">{description}</p>}
-      </div>
-      {actions && <div className="page-hero-actions">{actions}</div>}
-    </header>
-  );
+  return <PageHeader eyebrow={eyebrow} title={title} description={description} actions={actions} />;
 }
 
 export function WorkspaceLayout({ active, children }: { active: WorkspaceSection; children: ReactNode }) {

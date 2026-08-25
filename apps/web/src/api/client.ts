@@ -1064,9 +1064,9 @@ export const api = {
       `/api/resumes/${encodeURIComponent(id)}/pdf?lock_version=${encodeURIComponent(lockVersion)}`,
       signal,
     ),
-  listAgentSessions: (resumeId: string) =>
+  listAgentSessions: (resumeId?: string) =>
     request<{ sessions: AgentSession[] }>(
-      `/api/agent/sessions?resume_id=${encodeURIComponent(resumeId)}`,
+      `/api/agent/sessions${resumeId ? `?resume_id=${encodeURIComponent(resumeId)}` : ""}`,
     ),
   listAgentProposals: (resumeId: string, sessionId?: string) =>
     request<{ proposals: AgentProposal[] }>(
