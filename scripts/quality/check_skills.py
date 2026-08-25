@@ -18,6 +18,7 @@ AI_ROOT = REPO_ROOT / ".ai"
 SKILLS_ROOT = REPO_ROOT / ".ai" / "skills"
 NAME_RE = re.compile(r"^[a-z0-9-]+$")
 MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+SKILL_REGISTRY_ROW_RE = re.compile(r"^\| `([a-z0-9-]+)` \|", re.MULTILINE)
 STALE_REFERENCES = (
     ".agent/skills",
     "docs/api/schemas/elasticsearch.md",
@@ -25,6 +26,32 @@ STALE_REFERENCES = (
     "src/core/",
 )
 ALLOWED_AI_ENTRIES = {"prompts", "skills"}
+OBSOLETE_SKILL_DIRS = {
+    "apple-design",
+    "frontend-design",
+    "solution-delegated-delivery",
+    "ui-layout-design",
+}
+OBSOLETE_WORKFLOW_FILES = (
+    Path(".ai/skills/frontend-delivery/ui_design.template.md"),
+)
+OBSOLETE_WORKFLOW_MARKERS = (
+    "由它选择轻量、标准或完整 UI 交付档位",
+    "前端标准或完整",
+    "标准或完整档",
+    "轻量任务不强制生成视觉产物",
+    "全新页面默认制作隔离的 HTML/CSS 原型",
+    "全新页面才生成可运行的 HTML 原型",
+    "再生成从属原型或 Figma",
+    "修订视觉产物并确认受影响内容",
+    "用户确认验收契约后转 `implementation-execution`",
+    "直接施工路径转 `implementation-execution`",
+    "按“后续路径”转 `acceptance-generator` 或 `implementation-execution`",
+    "需要落实代码、配置或迁移：转 `implementation-execution`",
+    "把确认后的统一方案交给 `implementation-execution`",
+    "发现生产缺陷时转 `implementation-execution`",
+    "完整业务实现转 `implementation-execution`",
+)
 SOLUTION_TEMPLATE_REQUIRED_MARKERS = (
     "# <KEY> · <标题> 方案文档",
     "| 任务标识 |",
@@ -116,6 +143,7 @@ FLOW_ROUTER_REQUIRED_MARKERS = (
     "纯后端",
     "前后端混合",
     "用户明确给出的控制项必须原样传给下游",
+    "不解释关闭后的实施者或模型编排",
     "下一站：frontend-delivery | backend-delivery",
     "准备程度、复杂度、风险、记录需要或后端直接/方案路径变化不返回本技能",
 )
@@ -125,6 +153,7 @@ FLOW_ROUTER_FORBIDDEN_MARKERS = (
     "默认只向用户展示三行",
     "任意一条不满足即判方案先行",
     "只有五条全部满足才判直接实现",
+    "下游跳过交付文档和模型编排",
 )
 BACKEND_DELIVERY_REQUIRED_MARKERS = (
     "Sol（主 Agent）始终拥有用户沟通、授权边界、七维判断、方案、工作包拆分、Luna 调度、工作区协调、实施整合复核",
@@ -193,6 +222,9 @@ FRONTEND_DELIVERY_REQUIRED_MARKERS = (
     "新增或改变交互状态、组件结构、主要区域或响应式布局",
     "一个或多个 Luna Max",
     "可独立、边界清楚且文件所有权不重叠的工作包可以并行",
+    "`model`: `gpt-5.6-luna`",
+    "`reasoning_effort`: `max`",
+    "不得为了匹配某个 Sol reasoning 档位再创建同级 Sol",
     "使用 `prototype-acceptance`",
     "未获得交付授权前不提交、推送或创建 PR",
 )
@@ -481,8 +513,72 @@ def validate_ai_layout() -> list[str]:
         )
     if not (AI_ROOT / "prompts" / "project.md").is_file():
         errors.append("缺少 .ai/prompts/project.md 项目规则源")
-    if not (SKILLS_ROOT / "README.md").is_file():
+    registry_file = SKILLS_ROOT / "README.md"
+    if not registry_file.is_file():
         errors.append("缺少 .ai/skills/README.md Skill 注册表")
+    elif all(
+        path.exists()
+        for path in (
+            REPO_ROOT / "package.json",
+            REPO_ROOT / "apps" / "web",
+            REPO_ROOT / "apps" / "backend",
+        )
+    ):
+        registered = set(
+            SKILL_REGISTRY_ROW_RE.findall(registry_file.read_text(encoding="utf-8"))
+        )
+        actual = {path.name for path in SKILLS_ROOT.iterdir() if path.is_dir()}
+        unregistered = sorted(actual - registered)
+        if unregistered:
+            errors.append(
+                ".ai/skills 含未登记到 README 正式清单的 Skill "
+                f"{unregistered}"
+            )
+        missing = sorted(registered - actual)
+        if missing:
+            errors.append(
+                ".ai/skills/README.md 登记了不存在的 Skill "
+                f"{missing}"
+            )
+    obsolete = sorted(
+        name for name in OBSOLETE_SKILL_DIRS if (SKILLS_ROOT / name).exists()
+    )
+    if obsolete:
+        errors.append(
+            "仍含已退出当前工作流的 Skill "
+            f"{obsolete}；前端只保留原型驱动交付，方案任务由当前 Sol 编排"
+        )
+    obsolete_files = [
+        path.as_posix()
+        for path in OBSOLETE_WORKFLOW_FILES
+        if (REPO_ROOT / path).exists()
+    ]
+    if obsolete_files:
+        errors.append(f"仍含已退出当前工作流的文件 {obsolete_files}")
+    return errors
+
+
+def validate_obsolete_workflow_contract() -> list[str]:
+    if not (REPO_ROOT / "package.json").is_file():
+        return []
+
+    files = [
+        AI_ROOT / "prompts" / "project.md",
+        SKILLS_ROOT / "README.md",
+        REPO_ROOT / ".specs" / "README.md",
+    ]
+    files.extend(sorted(SKILLS_ROOT.glob("*/SKILL.md")))
+    errors: list[str] = []
+    for path in files:
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        stale = [marker for marker in OBSOLETE_WORKFLOW_MARKERS if marker in text]
+        if stale:
+            errors.append(
+                f"{path.relative_to(REPO_ROOT).as_posix()}: 仍含已退出当前工作流的规则 "
+                + ", ".join(repr(marker) for marker in stale)
+            )
     return errors
 
 
@@ -623,7 +719,7 @@ def validate_flow_router_contract() -> list[str]:
         )
     if stale:
         errors.append(
-            "flow-router: 仍含应由 backend-delivery 拥有的路径判断 "
+            "flow-router: 仍含应由领域交付 Skill 拥有的路径或模型判断 "
             + ", ".join(repr(marker) for marker in stale)
         )
     return errors
@@ -962,6 +1058,7 @@ def main() -> int:
     errors.extend(
         error for skill_dir in skill_dirs for error in validate_skill(skill_dir)
     )
+    errors.extend(validate_obsolete_workflow_contract())
     errors.extend(validate_solution_template())
     errors.extend(validate_flow_router_contract())
     errors.extend(validate_backend_delivery_contract())

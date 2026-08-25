@@ -9,7 +9,7 @@ description: 为 LinkCV 编写、校验和排查 forward-only 的 SQLAlchemy 与
 
 把“物理 schema 已确认 → 修改 ORM → 编写 migration → 向前验证 → 同步长期文档”固化为可执行流程。schema 演进建立后，权威源必须是 SQLAlchemy 模型与 Alembic 迁移链，不能通过手工 `ALTER TABLE` 绕开版本管理。
 
-本技能负责迁移本身；字段与索引设计转 `mysql-ddl-conventions`，完整业务实现转 `implementation-execution`，长期文档维护转 `doc-maintenance-sync`。
+本技能负责迁移本身；字段与索引设计转 `mysql-ddl-conventions`，完整业务实现返回 `backend-delivery`，由当前 Sol 拆分工作包并调度 Luna 使用 `implementation-execution`，长期文档维护转 `doc-maintenance-sync`。
 
 ## 2. LinkCV 基线
 

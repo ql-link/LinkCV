@@ -37,7 +37,7 @@ description: 为 LinkCV 经 backend-delivery 七维判断后选定方案先行�
 以下情况停止或转交：
 
 - 后端交付路径尚未确定：转 `backend-delivery`；领域尚未确定时才转 `flow-router`；
-- 任务经核实是纯前端：转 `frontend-delivery`，由它选择轻量、标准或完整 UI 交付档位；
+- 任务经核实是纯前端：转 `frontend-delivery`，由当前 Sol 判断非视觉直接修改或用户原型驱动实现；
 - 整个模块的目标、边界或商业前提尚未成形，不是若干具体选择可以补齐：转 `module-planning`；
 - 已有用户确认的方案，用户要求生成验收场景：转 `acceptance-generator`；
 - 用户要求直接写代码，但方案仍有会改变实现的未确认内容：指出具体缺口，不用阶段名称阻塞；
@@ -305,7 +305,7 @@ description: 为 LinkCV 经 backend-delivery 七维判断后选定方案先行�
 9. 编写文件结构与实现方案，建立 `R/BR → 实施步骤 → 验证项` 映射，补齐按需发布和回退。
 10. 按第 10 节自检，不通过就回到对应内容。
 11. 短方案整份展示并确认一次；长方案按第 6 步确定的自然边界完成必要确认。若路径尚未选择，把推荐路径并入最后一次确认；若已经选择，直接复用。
-12. 方案和后续路径获得确认后，按“后续路径”转 `acceptance-generator` 或 `implementation-execution`。用户先前的明确选择属于有效确认，不需要再问一次。
+12. 方案和后续路径获得确认后，契约验收路径转 `acceptance-generator`；直接施工路径返回 `backend-delivery`，由当前 Sol 拆分工作包并调度一个或多个 Luna 使用 `implementation-execution`。用户先前的明确选择属于有效确认，不需要再问一次。
 
 ## 13. 方案确认质量标准
 
@@ -322,4 +322,4 @@ description: 为 LinkCV 经 backend-delivery 七维判断后选定方案先行�
 - 没有未确认的行为、权限、数据、兼容、成本或不可逆选择；
 - 用户已经确认方案；后续路径已经在当前请求或本阶段选定并被正确复用。
 
-确认后，契约验收路径转 `acceptance-generator`；直接施工路径转 `implementation-execution`，由它按“代码实施计划”和“验证与验收”执行，不依赖固定章节编号。
+确认后，契约验收路径转 `acceptance-generator`；直接施工路径返回 `backend-delivery`，由当前 Sol 按“代码实施计划”和“验证与验收”拆包并调度一个或多个 Luna，不依赖固定章节编号。
