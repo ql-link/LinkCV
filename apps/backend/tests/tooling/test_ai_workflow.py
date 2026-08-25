@@ -568,32 +568,29 @@ def test_skill_check_rejects_incomplete_flow_router_contract(tmp_path: Path) -> 
     assert "用户明确给出的控制项必须原样传给下游" in result.stderr
 
 
-def test_skill_check_protects_visual_frontend_delivery_contract(
+def test_skill_check_protects_prototype_frontend_delivery_contract(
     tmp_path: Path,
 ) -> None:
     protected_markers = (
-        "标准和完整档以对话作为设计主线",
-        "每轮最多问一个问题",
-        "不在开工前收集完整偏好表",
-        "不要追问色值、字号、圆角、精确间距、具体断点或控件坐标",
-        "不设固定轮数",
-        "对话中的最新明确反馈优先",
-        "不要把同一个原型文件",
-        "每轮从当前请求、最新反馈、浏览器实际画面、Git 差异和真实代码重新判断",
-        "已有可运行路由或组件，且用户已经授权修改当前工作区",
-        "全新页面、尚无可运行入口",
-        "用户明确指定 Figma：使用 Figma",
-        "`.specs/<KEY>/prototype/` 创建自包含的 `index.html`",
-        "不新增依赖，不请求外部资源",
-        "`imagegen` 只用于视觉探索",
-        "只覆盖当前轮次的短交接",
-        "继承真实应用壳，不自行发明导航、品牌或全局视觉语言",
-        "主 Agent 在浏览器查看桌面或本轮受影响断点，并执行视觉拒收门禁",
-        "确认前不得提交、推送或创建 PR",
-        "每轮由 Luna 完成一个可回退的小步修改",
-        "用户的下一句反馈直接开启下一轮",
-        "不要每轮运行完整测试",
-        "用户明确表示方向稳定、可以收口或要求交付",
+        "本技能处理 `apps/web` 的页面、组件、交互、状态和样式交付",
+        "非视觉直接修改",
+        "原型驱动实现",
+        "不再按轻量、标准、完整分档",
+        "AI 不创作替代原型",
+        "当前对话的 Sol 是流程所有者",
+        "会话级原型映射",
+        "原型来源、目标路由和本轮可观察结果",
+        "原型区域 → 现有组件或最接近实现的映射",
+        "`DESIGN.md`、`tokens.css`",
+        "不创建 `ui-design.md`、`layout.md`",
+        "低风险局部修改由当前对话的 Sol 直接实施",
+        "Luna 调度收益必须高于交接、重复读代码和等待产生的开销",
+        "一次真实浏览器反馈产生的局部样式修正默认由 Sol 直接完成",
+        "新增或改变交互状态、组件结构、主要区域或响应式布局",
+        "一个或多个 Luna Max",
+        "可独立、边界清楚且文件所有权不重叠的工作包可以并行",
+        "使用 `prototype-acceptance`",
+        "未获得交付授权前不提交、推送或创建 PR",
     )
 
     for index, marker in enumerate(protected_markers):
@@ -620,11 +617,11 @@ def test_skill_check_protects_visual_frontend_delivery_contract(
         )
 
         assert result.returncode == 1
-        assert "对话式可视设计契约缺少必要内容" in result.stderr
+        assert "原型驱动交付契约缺少必要内容" in result.stderr
         assert marker in result.stderr
 
 
-def test_skill_check_rejects_text_only_frontend_design_gate(tmp_path: Path) -> None:
+def test_skill_check_rejects_ai_created_prototype_gate(tmp_path: Path) -> None:
     (tmp_path / ".ai" / "prompts").mkdir(parents=True)
     (tmp_path / ".ai" / "prompts" / "project.md").write_text(
         "rules", encoding="utf-8"
@@ -638,7 +635,7 @@ def test_skill_check_rejects_text_only_frontend_design_gate(tmp_path: Path) -> N
     skill_file = target_skill / "SKILL.md"
     skill_file.write_text(
         skill_file.read_text(encoding="utf-8")
-        + "\n完整必须创建 `ui-design.md`。\n",
+        + "\nAI 可以自行绘制页面原型。\n",
         encoding="utf-8",
     )
 
@@ -651,18 +648,115 @@ def test_skill_check_rejects_text_only_frontend_design_gate(tmp_path: Path) -> N
     assert "仍存在一次性冻结设计的过期契约" in result.stderr
 
 
+def test_skill_check_protects_frontend_implementation_contract(
+    tmp_path: Path,
+) -> None:
+    protected_markers = (
+        "本技能是 `frontend-delivery` 交给 Luna Max 的实施入口",
+        "Sol 已核对用户原型、真实路由、现有组件和项目事实",
+        "低风险局部修改由 Sol 留在当前对话直接完成",
+        "自行绘制、修改或补造原型/Figma",
+        "猜测原型未覆盖且会改变结构、交互结果或用户行为的内容",
+        "代替当前对话的 Sol 操作真实浏览器或给出原型验收结论",
+        "Sol 工作包是唯一交接",
+        "用户原型是可见结构和视觉尺度的来源",
+        "原型中的像素值映射到项目已有字体、间距、颜色、圆角和尺寸 Token",
+        "没有明确行为、存在多个合理答案或需要改变结构时停止并返回 Sol",
+        "使用 `apply_patch`",
+        "组件测试不能替代当前 Sol 的真实浏览器原型核对",
+        "创建同级 Sol、分支、提交、推送、PR 或外部记录",
+    )
+
+    for index, marker in enumerate(protected_markers):
+        case_root = tmp_path / f"case-{index}"
+        (case_root / ".ai" / "prompts").mkdir(parents=True)
+        (case_root / ".ai" / "prompts" / "project.md").write_text(
+            "rules", encoding="utf-8"
+        )
+        skills_root = case_root / ".ai" / "skills"
+        skills_root.mkdir(parents=True)
+        (skills_root / "README.md").write_text("skills", encoding="utf-8")
+        source_skill = REPO_ROOT / ".ai" / "skills" / "frontend-implementation"
+        target_skill = skills_root / "frontend-implementation"
+        shutil.copytree(source_skill, target_skill)
+        skill_file = target_skill / "SKILL.md"
+        skill_file.write_text(
+            skill_file.read_text(encoding="utf-8").replace(marker, "实施契约已删除"),
+            encoding="utf-8",
+        )
+
+        result = run_script(
+            SKILL_CHECK,
+            env={"LINKCV_REPO_ROOT": str(case_root)},
+        )
+
+        assert result.returncode == 1
+        assert "frontend-implementation: Luna 前端实施边界或 Pattern 契约缺少必要内容" in result.stderr
+        assert marker in result.stderr
+
+
+def test_skill_check_protects_prototype_acceptance_contract(tmp_path: Path) -> None:
+    protected_markers = (
+        "用户提供的 PNG、JPG、截图或 Figma",
+        "当前对话的 Sol 亲自打开真实消费路由",
+        "不是美观评审，也不是新的布局设计环节",
+        "窄、中、宽视口",
+        "不建立 Playwright 截图基线",
+        "原型没有覆盖",
+        "不得让 Luna 猜测审美、布局或产品行为",
+        "组件测试、类型检查和构建只能证明代码质量",
+    )
+
+    for index, marker in enumerate(protected_markers):
+        case_root = tmp_path / f"case-{index}"
+        (case_root / ".ai" / "prompts").mkdir(parents=True)
+        (case_root / ".ai" / "prompts" / "project.md").write_text(
+            "rules", encoding="utf-8"
+        )
+        skills_root = case_root / ".ai" / "skills"
+        skills_root.mkdir(parents=True)
+        (skills_root / "README.md").write_text("skills", encoding="utf-8")
+        source_skill = REPO_ROOT / ".ai" / "skills" / "prototype-acceptance"
+        target_skill = skills_root / "prototype-acceptance"
+        shutil.copytree(source_skill, target_skill)
+        skill_file = target_skill / "SKILL.md"
+        skill_file.write_text(
+            skill_file.read_text(encoding="utf-8").replace(marker, "验收契约已删除"),
+            encoding="utf-8",
+        )
+
+        result = run_script(
+            SKILL_CHECK,
+            env={"LINKCV_REPO_ROOT": str(case_root)},
+        )
+
+        assert result.returncode == 1
+        assert "prototype-acceptance: Sol 原型浏览器核对契约缺少必要内容" in result.stderr
+        assert marker in result.stderr
+
+
 def test_skill_check_protects_backend_delivery_core_semantics(tmp_path: Path) -> None:
     protected_markers = (
+        "Sol（主 Agent）始终拥有用户沟通、授权边界、七维判断、方案、工作包拆分、Luna 调度、工作区协调、实施整合复核",
+        "不要为了满足工作流形式启动同级 Sol",
+        "确认后的实施可以交给一个或多个 Luna",
+        "不得仅因为需要七维判断、方案先行、严格风险或任务复杂而创建同级 Sol Agent",
         "七个维度仍必须在内部完整判断",
         "没有 Issue 不阻止七维判断或交付",
         "严格风险本身不自动升级为方案先行",
         "记录需要不改变交付路径",
         "记录为持久记录也不自动升级方案",
-        "不要为方案路径再启动第二个 Sol 规划 Agent",
         "准备为`需澄清`或`需调查`",
         "只有准备不足、风险严格、需要持久记录或用户主动要求查看判断依据时",
-        "`model`: `gpt-5.6-sol`",
-        "`reasoning_effort`: `medium`",
+        "Sol 调度 Luna 实施与复核",
+        "Sol 先把实现拆成边界清楚的工作包，再决定由多少个 Luna 承担",
+        "不固定 Luna 数量",
+        "可独立、边界清楚、文件所有权不重叠且没有未满足前置依赖的工作包可以并行交给多个 Luna",
+        "共享契约、迁移链、同一核心文件或存在前后依赖的工作包必须串行",
+        "不为了并行而拆分本来紧密耦合的任务",
+        "Sol 根据 `solution.md`、依赖、写冲突和工作包边界调度",
+        "失败后由 Sol 判断继续原 Luna，还是把未完成工作重新分派给另一个 Luna",
+        "严格风险由 Sol 完成判断和方案约束，再由 Luna",
         "`model`: `gpt-5.6-luna`",
         "`reasoning_effort`: `max`",
     )
@@ -691,8 +785,109 @@ def test_skill_check_protects_backend_delivery_core_semantics(tmp_path: Path) ->
         )
 
         assert result.returncode == 1
-        assert "七维判断、模型路由或回流契约缺少必要内容" in result.stderr
+        assert "七维判断、Luna 实施或回流契约缺少必要内容" in result.stderr
         assert marker in result.stderr
+
+
+def test_skill_check_rejects_mandatory_backend_peer_sol(tmp_path: Path) -> None:
+    (tmp_path / ".ai" / "prompts").mkdir(parents=True)
+    (tmp_path / ".ai" / "prompts" / "project.md").write_text(
+        "rules", encoding="utf-8"
+    )
+    skills_root = tmp_path / ".ai" / "skills"
+    skills_root.mkdir(parents=True)
+    (skills_root / "README.md").write_text("skills", encoding="utf-8")
+    source_skill = REPO_ROOT / ".ai" / "skills" / "backend-delivery"
+    target_skill = skills_root / "backend-delivery"
+    shutil.copytree(source_skill, target_skill)
+    skill_file = target_skill / "SKILL.md"
+    skill_file.write_text(
+        skill_file.read_text(encoding="utf-8")
+        + "\n自动或开启工作流时创建一个独立评估 Agent。\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        SKILL_CHECK,
+        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result.returncode == 1
+    assert "仍存在强制独立 Sol 的过期契约" in result.stderr
+
+
+def test_skill_check_rejects_mandatory_frontend_peer_sol(tmp_path: Path) -> None:
+    (tmp_path / ".ai" / "prompts").mkdir(parents=True)
+    (tmp_path / ".ai" / "prompts" / "project.md").write_text(
+        "rules", encoding="utf-8"
+    )
+    skills_root = tmp_path / ".ai" / "skills"
+    skills_root.mkdir(parents=True)
+    (skills_root / "README.md").write_text("skills", encoding="utf-8")
+    source_skill = REPO_ROOT / ".ai" / "skills" / "frontend-delivery"
+    target_skill = skills_root / "frontend-delivery"
+    shutil.copytree(source_skill, target_skill)
+    skill_file = target_skill / "SKILL.md"
+    skill_file.write_text(
+        skill_file.read_text(encoding="utf-8")
+        + "\n标准或完整档由独立 Sol Agent 判断当前轮次。\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        SKILL_CHECK,
+        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result.returncode == 1
+    assert "仍存在一次性冻结设计的过期契约" in result.stderr
+
+
+def test_skill_check_rejects_fixed_single_luna_dispatch(tmp_path: Path) -> None:
+    legacy_cases = (
+        (
+            "backend-delivery",
+            "所有代码、配置、迁移和测试实施统一交给一个 Luna Max",
+        ),
+        (
+            "frontend-delivery",
+            "任何需要修改代码、样式、测试或原型文件的轮次，都交给一个 Luna Max",
+        ),
+        (
+            "frontend-delivery",
+            "任何需要修改 React、样式、测试或配置的实施，都通过 `frontend-implementation`",
+        ),
+        (
+            "implementation-execution",
+            "写操作默认串行，不并行派发多个实施 Agent",
+        ),
+    )
+
+    for index, (skill_name, legacy_marker) in enumerate(legacy_cases):
+        case_root = tmp_path / f"case-{index}"
+        (case_root / ".ai" / "prompts").mkdir(parents=True)
+        (case_root / ".ai" / "prompts" / "project.md").write_text(
+            "rules", encoding="utf-8"
+        )
+        skills_root = case_root / ".ai" / "skills"
+        skills_root.mkdir(parents=True)
+        (skills_root / "README.md").write_text("skills", encoding="utf-8")
+        target_skill = skills_root / skill_name
+        shutil.copytree(REPO_ROOT / ".ai" / "skills" / skill_name, target_skill)
+        skill_file = target_skill / "SKILL.md"
+        skill_file.write_text(
+            skill_file.read_text(encoding="utf-8") + f"\n{legacy_marker}\n",
+            encoding="utf-8",
+        )
+
+        result = run_script(
+            SKILL_CHECK,
+            env={"LINKCV_REPO_ROOT": str(case_root)},
+        )
+
+        assert result.returncode == 1
+        assert "仍存在固定单一 Luna 的过期契约" in result.stderr
+        assert legacy_marker in result.stderr
 
 
 def test_skill_check_protects_five_reduction_contracts(tmp_path: Path) -> None:
@@ -786,6 +981,26 @@ def test_skill_check_protects_backend_delivery_downstream_contract(
             "实现入口或实施报告契约缺少必要内容",
         ),
         (
+            "implementation-execution",
+            "只执行 Sol 已明确的工作包，不自行重新规划、拆分或调度其他工作包",
+            "实现入口或实施报告契约缺少必要内容",
+        ),
+        (
+            "implementation-execution",
+            "可独立、边界清楚且文件所有权不重叠时，Sol 可以并行调度多个 Luna",
+            "实现入口或实施报告契约缺少必要内容",
+        ),
+        (
+            "implementation-execution",
+            "共享契约、迁移链、同一核心文件或存在前后依赖时，必须按依赖串行",
+            "实现入口或实施报告契约缺少必要内容",
+        ),
+        (
+            "implementation-execution",
+            "由 Sol 决定继续原 Luna 或重新分派给另一个 Luna，不引入同级 Sol",
+            "实现入口或实施报告契约缺少必要内容",
+        ),
+        (
             "contract-guard",
             "已经明确属于方案先行的单需求分歧直接交 `solution-generator` 修订当前方案",
             "领域或七维回流契约缺少必要内容",
@@ -826,7 +1041,7 @@ def test_skill_check_protects_source_authority_and_one_way_delivery(
     cases = (
             (
                 Path(".ai/skills/README.md"),
-                "飞书文档只作为方案或 UI 设计形成前的初始输入",
+                "飞书文档只作为方案形成前的初始输入",
         ),
         (
             Path(".ai/skills/solution-generator/SKILL.md"),

@@ -127,6 +127,10 @@ FLOW_ROUTER_FORBIDDEN_MARKERS = (
     "只有五条全部满足才判直接实现",
 )
 BACKEND_DELIVERY_REQUIRED_MARKERS = (
+    "Sol（主 Agent）始终拥有用户沟通、授权边界、七维判断、方案、工作包拆分、Luna 调度、工作区协调、实施整合复核",
+    "不要为了满足工作流形式启动同级 Sol",
+    "确认后的实施可以交给一个或多个 Luna",
+    "不得仅因为需要七维判断、方案先行、严格风险或任务复杂而创建同级 Sol Agent",
     "准备程度、复杂度、风险和记录需要必须分开表达",
     "七个维度仍必须在内部完整判断",
     "没有 Issue 不阻止七维判断或交付",
@@ -134,7 +138,6 @@ BACKEND_DELIVERY_REQUIRED_MARKERS = (
     "严格风险本身不自动升级为方案先行",
     "记录需要不改变交付路径",
     "记录为持久记录也不自动升级方案",
-    "不要为方案路径再启动第二个 Sol 规划 Agent",
     "准备为`需澄清`或`需调查`",
     "准备：可实施 | 需澄清 | 需调查",
     "复杂度：简单 | 中等 | 复杂 | 暂不判定",
@@ -145,48 +148,96 @@ BACKEND_DELIVERY_REQUIRED_MARKERS = (
     "原因：<只写一个决定当前路径的主导事实>",
     "额外检查：无 |",
     "只有准备不足、风险严格、需要持久记录或用户主动要求查看判断依据时",
-    "`model`: `gpt-5.6-sol`",
-    "`reasoning_effort`: `medium`",
+    "Sol 调度 Luna 实施与复核",
+    "Sol 先把实现拆成边界清楚的工作包，再决定由多少个 Luna 承担",
+    "不固定 Luna 数量",
+    "可独立、边界清楚、文件所有权不重叠且没有未满足前置依赖的工作包可以并行交给多个 Luna",
+    "共享契约、迁移链、同一核心文件或存在前后依赖的工作包必须串行",
+    "不为了并行而拆分本来紧密耦合的任务",
+    "Sol 根据 `solution.md`、依赖、写冲突和工作包边界调度",
+    "失败后由 Sol 判断继续原 Luna，还是把未完成工作重新分派给另一个 Luna",
+    "严格风险由 Sol 完成判断和方案约束，再由 Luna",
     "`model`: `gpt-5.6-luna`",
     "`reasoning_effort`: `max`",
     "准备、复杂度、风险、记录或后端路径变化：留在本技能",
 )
+BACKEND_DELIVERY_FORBIDDEN_MARKERS = (
+    "自动或开启工作流时创建一个独立评估 Agent",
+    "以下情况直接使用独立 Sol Medium 实施 Agent",
+    "由 GPT-5.6 Sol Medium 基于真实代码完成七维判断",
+)
+LUNA_DISPATCH_FORBIDDEN_MARKERS = (
+    "所有代码、配置、迁移和测试实施统一交给一个 Luna Max",
+    "所有代码和原型修改统一交给 Luna Max",
+    "任何需要修改 React、样式、测试或配置的实施，都通过 `frontend-implementation`",
+    "任何需要修改代码、样式、测试或原型文件的轮次，都交给一个 Luna Max",
+    "同一连续任务优先复用一个 Agent",
+    "同一 Luna 具体证据继续修正",
+    "写操作默认串行，不并行派发多个实施 Agent",
+)
 FRONTEND_DELIVERY_REQUIRED_MARKERS = (
-    "标准和完整档以对话作为设计主线",
-    "每轮最多问一个问题",
-    "不在开工前收集完整偏好表",
-    "不要追问色值、字号、圆角、精确间距、具体断点或控件坐标",
-    "不设固定轮数",
-    "对话中的最新明确反馈优先",
-    "不要把同一个原型文件",
-    "每轮从当前请求、最新反馈、浏览器实际画面、Git 差异和真实代码重新判断",
-    "已有可运行路由或组件，且用户已经授权修改当前工作区",
-    "全新页面、尚无可运行入口",
-    "用户明确指定 Figma：使用 Figma",
-    "不先询问产物格式",
-    "`.specs/<KEY>/prototype/` 创建自包含的 `index.html`",
-    "不新增依赖，不请求外部资源",
-    "`imagegen` 只用于视觉探索",
-    "只覆盖当前轮次的短交接",
-    "继承真实应用壳，不自行发明导航、品牌或全局视觉语言",
-    "主 Agent 在浏览器查看桌面或本轮受影响断点，并执行视觉拒收门禁",
-    "确认前不得提交、推送或创建 PR",
-    "不要先交付一篇 `ui-design.md`",
-    "每轮由 Luna 完成一个可回退的小步修改",
-    "用户的下一句反馈直接开启下一轮",
-    "不要每轮运行完整测试",
-    "用户明确表示方向稳定、可以收口或要求交付",
-    "`model`: `gpt-5.6-sol`",
-    "`reasoning_effort`: `medium`",
-    "`model`: `gpt-5.6-luna`",
-    "`reasoning_effort`: `max`",
+    "本技能处理 `apps/web` 的页面、组件、交互、状态和样式交付",
+    "非视觉直接修改",
+    "原型驱动实现",
+    "不再按轻量、标准、完整分档",
+    "AI 不创作替代原型",
+    "当前对话的 Sol 是流程所有者",
+    "会话级原型映射",
+    "原型来源、目标路由和本轮可观察结果",
+    "原型区域 → 现有组件或最接近实现的映射",
+    "`DESIGN.md`、`tokens.css`",
+    "不创建 `ui-design.md`、`layout.md`",
+    "低风险局部修改由当前对话的 Sol 直接实施",
+    "Luna 调度收益必须高于交接、重复读代码和等待产生的开销",
+    "一次真实浏览器反馈产生的局部样式修正默认由 Sol 直接完成",
+    "新增或改变交互状态、组件结构、主要区域或响应式布局",
+    "一个或多个 Luna Max",
+    "可独立、边界清楚且文件所有权不重叠的工作包可以并行",
+    "使用 `prototype-acceptance`",
+    "未获得交付授权前不提交、推送或创建 PR",
 )
 FRONTEND_DELIVERY_FORBIDDEN_MARKERS = (
-    "完整必须创建 `ui-design.md`",
+    "选择轻量、标准或完整范围",
+    "标准和完整档",
+    "一次性冻结设计",
+    "AI 可以自行绘制页面原型",
     "创建或修订唯一的 `.specs/<KEY>/ui-design.md`",
-    "标准和完整档在设计前必须先做一次轻量偏好确认",
-    "用户确认选定方案后才实施",
+    "先询问产物格式",
+    "独立 Sol Agent 判断当前轮次",
+    "标准或完整档由独立 Sol Agent 判断当前轮次",
 )
+FRONTEND_IMPLEMENTATION_REQUIRED_MARKERS = (
+    "本技能是 `frontend-delivery` 交给 Luna Max 的实施入口",
+    "Sol 已核对用户原型、真实路由、现有组件和项目事实",
+    "低风险局部修改由 Sol 留在当前对话直接完成",
+    "Luna 不负责：",
+    "自行绘制、修改或补造原型/Figma",
+    "猜测原型未覆盖且会改变结构、交互结果或用户行为的内容",
+    "代替当前对话的 Sol 操作真实浏览器或给出原型验收结论",
+    "Sol 工作包是唯一交接",
+    "用户原型是可见结构和视觉尺度的来源",
+    "原型中的像素值映射到项目已有字体、间距、颜色、圆角和尺寸 Token",
+    "没有明确行为、存在多个合理答案或需要改变结构时停止并返回 Sol",
+    "使用 `apply_patch`",
+    "组件测试不能替代当前 Sol 的真实浏览器原型核对",
+    "创建同级 Sol、分支、提交、推送、PR 或外部记录",
+)
+PROTOTYPE_ACCEPTANCE_REQUIRED_MARKERS = (
+    "用户提供的 PNG、JPG、截图或 Figma",
+    "当前对话的 Sol 亲自打开真实消费路由",
+    "不是美观评审，也不是新的布局设计环节",
+    "窄、中、宽视口",
+    "不建立 Playwright 截图基线",
+    "原型没有覆盖",
+    "不得让 Luna 猜测审美、布局或产品行为",
+    "组件测试、类型检查和构建只能证明代码质量",
+)
+DESIGN_SYSTEM_REQUIRED_MARKERS = {
+    Path("run-all-tests/SKILL.md"): (
+        "npm run check:design",
+        "修改 `DESIGN.md`、`tokens.css`",
+    ),
+}
 IMPLEMENTATION_EXECUTION_REQUIRED_MARKERS = (
     "方案先行任务以当前 `solution.md` 为准；"
     "直接实现以来源材料、当前确认结论和 `backend-delivery` 七维简报列出的严格检查项为准",
@@ -197,6 +248,12 @@ IMPLEMENTATION_EXECUTION_REQUIRED_MARKERS = (
     "与方案的实际偏差",
     "已接受限制",
     "跨会话遗留风险与接手点",
+    "只执行 Sol 已明确的工作包，不自行重新规划、拆分或调度其他工作包",
+    "### Sol 提供的工作包",
+    "可独立、边界清楚且文件所有权不重叠时，Sol 可以并行调度多个 Luna",
+    "共享契约、迁移链、同一核心文件或存在前后依赖时，必须按依赖串行",
+    "不得为了并行而拆分或扩展工作包",
+    "由 Sol 决定继续原 Luna 或重新分派给另一个 Luna，不引入同级 Sol",
 )
 CONTRACT_GUARD_REQUIRED_MARKERS = (
     "已经明确属于方案先行的单需求分歧直接交 `solution-generator` 修订当前方案",
@@ -208,10 +265,16 @@ DELIVERY_FLOW_REQUIRED_MARKERS = {
         "在 PR 创建后只补一条交付评论",
         "新的业务需求分支必须从最新 `origin/master` 创建",
         "由业务分支向 `dev` 提 PR",
+        "当前对话的 Sol（主 Agent）",
+        "不为了并行而拆分",
     ),
     Path(".ai/skills/README.md"): (
-        "飞书文档只作为方案或 UI 设计形成前的初始输入",
+        "飞书文档只作为方案形成前的初始输入",
         "确认后的 `solution.md` 是后端和混合方案的实施依据",
+        "## Sol 调度与 Luna 工作包",
+        "可独立、边界清楚且文件所有权不重叠的工作包可以并行交给多个 Luna",
+        "共享契约、迁移链、同一核心文件或存在前后依赖的工作包必须串行",
+        "实施失败后由 Sol 根据具体证据判断继续原 Luna",
         "## 单向交付层次",
         "| 初始设计层 | 飞书文档 |",
         "| 任务入口与跟踪层 | Issue 正文 |",
@@ -359,6 +422,8 @@ STATELESS_SPEC_CORE_ROOTS = (
     Path(".ai/skills/flow-router"),
     Path(".ai/skills/backend-delivery"),
     Path(".ai/skills/frontend-delivery"),
+    Path(".ai/skills/frontend-implementation"),
+    Path(".ai/skills/prototype-acceptance"),
     Path(".ai/skills/solution-generator"),
     Path(".ai/skills/acceptance-generator"),
     Path(".ai/skills/implementation-execution"),
@@ -573,12 +638,29 @@ def validate_backend_delivery_contract() -> list[str]:
     missing = [
         marker for marker in BACKEND_DELIVERY_REQUIRED_MARKERS if marker not in text
     ]
-    if not missing:
-        return []
-    return [
-        "backend-delivery: 七维判断、模型路由或回流契约缺少必要内容 "
-        + ", ".join(repr(marker) for marker in missing)
+    stale = [
+        marker for marker in BACKEND_DELIVERY_FORBIDDEN_MARKERS if marker in text
     ]
+    fixed_luna = [
+        marker for marker in LUNA_DISPATCH_FORBIDDEN_MARKERS if marker in text
+    ]
+    errors: list[str] = []
+    if missing:
+        errors.append(
+            "backend-delivery: 七维判断、Luna 实施或回流契约缺少必要内容 "
+            + ", ".join(repr(marker) for marker in missing)
+        )
+    if stale:
+        errors.append(
+            "backend-delivery: 仍存在强制独立 Sol 的过期契约 "
+            + ", ".join(repr(marker) for marker in stale)
+        )
+    if fixed_luna:
+        errors.append(
+            "backend-delivery: 仍存在固定单一 Luna 的过期契约 "
+            + ", ".join(repr(marker) for marker in fixed_luna)
+        )
+    return errors
 
 
 def validate_frontend_delivery_contract() -> list[str]:
@@ -593,10 +675,13 @@ def validate_frontend_delivery_contract() -> list[str]:
     stale = [
         marker for marker in FRONTEND_DELIVERY_FORBIDDEN_MARKERS if marker in text
     ]
+    fixed_luna = [
+        marker for marker in LUNA_DISPATCH_FORBIDDEN_MARKERS if marker in text
+    ]
     errors: list[str] = []
     if missing:
         errors.append(
-            "frontend-delivery: 对话式可视设计契约缺少必要内容 "
+            "frontend-delivery: 原型驱动交付契约缺少必要内容 "
             + ", ".join(repr(marker) for marker in missing)
         )
     if stale:
@@ -604,6 +689,65 @@ def validate_frontend_delivery_contract() -> list[str]:
             "frontend-delivery: 仍存在一次性冻结设计的过期契约 "
             + ", ".join(repr(marker) for marker in stale)
         )
+    if fixed_luna:
+        errors.append(
+            "frontend-delivery: 仍存在固定单一 Luna 的过期契约 "
+            + ", ".join(repr(marker) for marker in fixed_luna)
+        )
+    return errors
+
+
+def validate_frontend_implementation_contract() -> list[str]:
+    skill_file = SKILLS_ROOT / "frontend-implementation" / "SKILL.md"
+    if not skill_file.is_file():
+        return []
+
+    text = skill_file.read_text(encoding="utf-8")
+    missing = [
+        marker
+        for marker in FRONTEND_IMPLEMENTATION_REQUIRED_MARKERS
+        if marker not in text
+    ]
+    if not missing:
+        return []
+    return [
+        "frontend-implementation: Luna 前端实施边界或 Pattern 契约缺少必要内容 "
+        + ", ".join(repr(marker) for marker in missing)
+    ]
+
+
+def validate_prototype_acceptance_contract() -> list[str]:
+    skill_file = SKILLS_ROOT / "prototype-acceptance" / "SKILL.md"
+    if not skill_file.is_file():
+        return []
+
+    text = skill_file.read_text(encoding="utf-8")
+    missing = [
+        marker
+        for marker in PROTOTYPE_ACCEPTANCE_REQUIRED_MARKERS
+        if marker not in text
+    ]
+    if not missing:
+        return []
+    return [
+        "prototype-acceptance: Sol 原型浏览器核对契约缺少必要内容 "
+        + ", ".join(repr(marker) for marker in missing)
+    ]
+
+
+def validate_design_system_contract() -> list[str]:
+    errors: list[str] = []
+    for relative_path, markers in DESIGN_SYSTEM_REQUIRED_MARKERS.items():
+        path = SKILLS_ROOT / relative_path
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        missing = [marker for marker in markers if marker not in text]
+        if missing:
+            errors.append(
+                f"{relative_path.as_posix()}: 设计系统事实源契约缺少必要内容 "
+                + ", ".join(repr(marker) for marker in missing)
+            )
     return errors
 
 
@@ -618,12 +762,21 @@ def validate_implementation_execution_contract() -> list[str]:
         for marker in IMPLEMENTATION_EXECUTION_REQUIRED_MARKERS
         if marker not in text
     ]
-    if not missing:
-        return []
-    return [
-        "implementation-execution: 实现入口或实施报告契约缺少必要内容 "
-        + ", ".join(repr(marker) for marker in missing)
+    fixed_luna = [
+        marker for marker in LUNA_DISPATCH_FORBIDDEN_MARKERS if marker in text
     ]
+    errors: list[str] = []
+    if missing:
+        errors.append(
+            "implementation-execution: 实现入口或实施报告契约缺少必要内容 "
+            + ", ".join(repr(marker) for marker in missing)
+        )
+    if fixed_luna:
+        errors.append(
+            "implementation-execution: 仍存在固定单一 Luna 的过期契约 "
+            + ", ".join(repr(marker) for marker in fixed_luna)
+        )
+    return errors
 
 
 def validate_contract_guard_routing() -> list[str]:
@@ -813,6 +966,9 @@ def main() -> int:
     errors.extend(validate_flow_router_contract())
     errors.extend(validate_backend_delivery_contract())
     errors.extend(validate_frontend_delivery_contract())
+    errors.extend(validate_frontend_implementation_contract())
+    errors.extend(validate_prototype_acceptance_contract())
+    errors.extend(validate_design_system_contract())
     errors.extend(validate_implementation_execution_contract())
     errors.extend(validate_contract_guard_routing())
     errors.extend(validate_delivery_flow_contract())
