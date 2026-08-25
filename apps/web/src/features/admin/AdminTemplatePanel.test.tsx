@@ -23,6 +23,17 @@ const inactiveTemplate: AdminResumeTemplate = {
 describe("AdminTemplatePanel", () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it("读取模板时使用统一的面板加载状态", () => {
+    vi.spyOn(api, "listAdminResumeTemplates").mockReturnValue(new Promise(() => {}));
+
+    render(<AdminTemplatePanel notify={vi.fn()} />);
+
+    expect(screen.getByRole("status", { name: "正在读取模板…" })).toHaveClass(
+      "page-loading",
+      "is-panel",
+    );
+  });
+
   it("使用统一上传区导入 JSON 模板包", async () => {
     vi.spyOn(api, "listAdminResumeTemplates").mockResolvedValue({ templates: [] });
     const upload = vi.spyOn(api, "importAdminResumeTemplate").mockResolvedValue({

@@ -9,6 +9,28 @@ import { compareVersionStyles, VersionDiffDialog } from "./VersionDiffDialog";
 afterEach(() => vi.restoreAllMocks());
 
 describe("版本页面设置差异", () => {
+  it("读取历史版本时使用统一的面板加载状态", () => {
+    vi.spyOn(api, "getResumeVersion").mockReturnValue(new Promise(() => {}));
+
+    render(
+      <VersionDiffDialog
+        open
+        resumeId="42"
+        version={{ version_no: 2, name: "历史投递版" }}
+        currentMarkdown="# 当前内容"
+        currentSettings={defaultSettings}
+        restoring={false}
+        onOpenChange={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("status", { name: "正在读取版本内容…" })).toHaveClass(
+      "page-loading",
+      "is-panel",
+    );
+  });
+
   it("只返回发生变化的设置", () => {
     const differences = compareVersionStyles(
       { ...defaultSettings, fontSize: 12, smartOnePage: true },

@@ -59,7 +59,7 @@ describe("JobFormPage", () => {
   it("明确标记创建表单中的必填字段", () => {
     const { container } = render(<JobFormPage mode="create" presentation="dialog" />);
 
-    expect(screen.getByRole("dialog", { name: "手动填写JD信息" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "手动填写岗位信息" })).toBeInTheDocument();
     expect(screen.queryByText("先填写岗位核心信息，其余内容可按需补充。")).not.toBeInTheDocument();
     expect(document.querySelector(".job-create-dialog-title .lucide-file-pen-line")).toBeInTheDocument();
     expect(screen.queryByText("保存前检查")).not.toBeInTheDocument();
@@ -67,7 +67,7 @@ describe("JobFormPage", () => {
     expect(document.querySelectorAll(".job-create-more details")).toHaveLength(0);
     expect(document.querySelectorAll(".job-create-optional-section")).toHaveLength(4);
     expect(screen.queryByRole("button", { name: "取消" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "创建 JD" })).toHaveClass("rounded-lg");
+    expect(screen.getByRole("button", { name: "创建岗位" })).toHaveClass("rounded-lg");
     expect(screen.getByPlaceholderText("使用逗号或换行分隔，例如：Java、SQL")).toBeInTheDocument();
 
     for (const label of ["职位名称", "公司名称", "职位描述"]) {
@@ -98,7 +98,7 @@ describe("JobFormPage", () => {
     fireEvent.change(screen.getByLabelText("公司名称"), { target: { value: "示例科技" } });
     fireEvent.change(screen.getByLabelText("职位描述"), { target: { value: "参与业务系统后端开发" } });
     fireEvent.change(screen.getByLabelText("来源链接（可选）"), { target: { value: summary.source_url } });
-    fireEvent.click(screen.getByRole("button", { name: "创建 JD" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建岗位" }));
 
     expect(await screen.findByRole("dialog", { name: "Java 开发实习生" })).toBeInTheDocument();
     expect(create).toHaveBeenCalledTimes(1);
@@ -110,7 +110,7 @@ describe("JobFormPage", () => {
       job_description_id: "job-1",
       base_lock_version: 3,
     });
-    expect(window.location.pathname).toBe("/jobs/job-1");
+    expect(window.location.pathname).toBe("/career/jobs/job-1");
   });
 
   it("编辑时展示只读来源且提交中不包含任何来源身份字段", async () => {
@@ -125,7 +125,7 @@ describe("JobFormPage", () => {
     expect(screen.getByRole("link", { name: summary.source_url as string })).toHaveAttribute("href", summary.source_url);
     expect(screen.queryByLabelText("来源链接（可选）")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("职位名称"), { target: { value: "高级 Java 开发实习生" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存 JD" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存岗位" }));
 
     await waitFor(() => expect(update).toHaveBeenCalledOnce());
     const payload = update.mock.calls[0][1];
@@ -145,8 +145,8 @@ describe("JobFormPage", () => {
 
     render(<JobFormPage mode="edit" jobId="missing" />);
 
-    expect(await screen.findByRole("heading", { name: "无法打开这条 JD" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "无法打开这个岗位" })).toBeInTheDocument();
     expect(screen.getByText("岗位不存在，或当前账号没有访问权限。")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "保存 JD" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "保存岗位" })).not.toBeInTheDocument();
   });
 });

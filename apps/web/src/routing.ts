@@ -10,7 +10,7 @@ export type AppRoute =
   | { kind: "resumeCreate" }
   | { kind: "editor"; resumeId: string }
   | { kind: "jobs" }
-  | { kind: "interviews"; view: InterviewView }
+  | { kind: "interviews"; view: InterviewView; applicationId?: string; sessionId?: string; jobId?: string; createApplication?: boolean }
   | { kind: "jobCreate" }
   | { kind: "jobDetail"; jobId: string }
   | { kind: "jobEdit"; jobId: string }
@@ -19,15 +19,16 @@ export type AppRoute =
   | { kind: "share"; token: string }
   | { kind: "notFound" };
 
-export type InterviewView = "overview" | "schedule" | "records";
+export type InterviewView = "applications" | "schedule" | "records";
 
 type NavigateOptions = {
   replace?: boolean;
 };
 
 const editorPathPattern = /^\/resumes\/([^/]+)\/edit$/;
-const jobDetailPathPattern = /^\/jobs\/([^/]+)$/;
-const jobEditPathPattern = /^\/jobs\/([^/]+)\/edit$/;
+const jobDetailPathPattern = /^\/(?:career\/jobs|jobs)\/([^/]+)$/;
+const jobEditPathPattern = /^\/(?:career\/jobs|jobs)\/([^/]+)\/edit$/;
+const applicationDetailPathPattern = /^\/career\/applications\/([^/]+)$/;
 const sharePathPattern = /^\/share\/([^/]+)$/;
 
 function normalizePathname(pathname: string) {
@@ -36,7 +37,7 @@ function normalizePathname(pathname: string) {
 }
 
 export function isSafeAppPath(value: string | null) {
-  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && /^\/(?:resumes|templates|jobs|interviews|account|datasets)(?:\/|$|\?)/.test(value));
+  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && /^\/(?:resumes|templates|jobs|career|interviews|account|datasets)(?:\/|$|\?)/.test(value));
 }
 
 export function isSafeAdminPath(value: string | null) {
@@ -70,15 +71,28 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
   if (normalizedPath === "/resumes") return { kind: "resumes" };
   if (normalizedPath === "/templates") return { kind: "templates" };
   if (normalizedPath === "/resumes/new") return { kind: "resumeCreate" };
-  if (normalizedPath === "/jobs") return { kind: "jobs" };
+  if (normalizedPath === "/career" || normalizedPath === "/career/jobs" || normalizedPath === "/jobs") return { kind: "jobs" };
   if (normalizedPath === "/interviews") {
     const requestedView = new URLSearchParams(search).get("view");
-    const view: InterviewView = requestedView === "schedule" || requestedView === "records"
-      ? requestedView
-      : "overview";
-    return { kind: "interviews", view };
+    if (requestedView === "applications" || requestedView === "schedule" || requestedView === "records") {
+      return { kind: "interviews", view: requestedView };
+    }
+    return { kind: "jobs" };
   }
-  if (normalizedPath === "/jobs/new") return { kind: "jobCreate" };
+  if (normalizedPath === "/career/applications") {
+    const params = new URLSearchParams(search);
+    return {
+      kind: "interviews",
+      view: "applications",
+      jobId: params.get("job") ?? undefined,
+      createApplication: params.get("create") === "1" || undefined,
+    };
+  }
+  if (normalizedPath === "/career/schedule") return { kind: "interviews", view: "schedule" };
+  if (normalizedPath === "/career/reviews") {
+    return { kind: "interviews", view: "records", sessionId: new URLSearchParams(search).get("session") ?? undefined };
+  }
+  if (normalizedPath === "/career/jobs/new" || normalizedPath === "/jobs/new") return { kind: "jobCreate" };
   if (normalizedPath === "/datasets") return { kind: "datasets" };
   if (normalizedPath === "/account") return { kind: "account" };
 
@@ -86,6 +100,21 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
   if (editorMatch) {
     try {
       return { kind: "editor", resumeId: decodeURIComponent(editorMatch[1]) };
+    } catch {
+      return { kind: "notFound" };
+    }
+  }
+
+  const applicationDetailMatch = normalizedPath.match(applicationDetailPathPattern);
+  if (applicationDetailMatch) {
+    try {
+      const sessionId = new URLSearchParams(search).get("session") ?? undefined;
+      return {
+        kind: "interviews",
+        view: sessionId ? "records" : "applications",
+        applicationId: decodeURIComponent(applicationDetailMatch[1]),
+        sessionId,
+      };
     } catch {
       return { kind: "notFound" };
     }
@@ -130,11 +159,45 @@ export function editorPath(resumeId: string) {
 }
 
 export function jobDetailPath(jobId: string) {
-  return `/jobs/${encodeURIComponent(jobId)}`;
+  return `/career/jobs/${encodeURIComponent(jobId)}`;
 }
 
 export function jobEditPath(jobId: string) {
-  return `/jobs/${encodeURIComponent(jobId)}/edit`;
+  return `/career/jobs/${encodeURIComponent(jobId)}/edit`;
+}
+
+export function careerViewPath(view: InterviewView) {
+  return view === "applications"
+    ? "/career/applications"
+    : view === "schedule"
+      ? "/career/schedule"
+      : "/career/reviews";
+}
+
+export function careerApplicationPath(applicationId: string, sessionId?: string | null) {
+  const path = `/career/applications/${encodeURIComponent(applicationId)}`;
+  return sessionId ? `${path}?session=${encodeURIComponent(sessionId)}` : path;
+}
+
+export function startCareerApplicationPath(jobId: string) {
+  const params = new URLSearchParams({ job: jobId, create: "1" });
+  return `/career/applications?${params}`;
+}
+
+export function legacyCareerRedirect(pathname: string, search = ""): string | null {
+  const normalizedPath = normalizePathname(pathname);
+  if (normalizedPath === "/career") return "/career/jobs";
+  if (normalizedPath === "/jobs" || normalizedPath.startsWith("/jobs/")) {
+    return `/career${normalizedPath}${search}`;
+  }
+  if (normalizedPath === "/interviews") {
+    const requestedView = new URLSearchParams(search).get("view");
+    if (requestedView === "applications" || requestedView === "schedule" || requestedView === "records") {
+      return careerViewPath(requestedView);
+    }
+    return "/career/jobs";
+  }
+  return null;
 }
 
 export function authPath(mode: "login" | "register", next?: string | null) {

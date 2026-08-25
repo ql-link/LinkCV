@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw, ScanLine, ShieldCheck } from "lucide-react";
 import { api, ApiRequestError, User } from "../../api/client";
-import { Button } from "@/components/ui";
+import { Button, PageLoading } from "@/components/ui";
 
 const POLL_INTERVAL_MS = 2000;
 let qrRequestInFlight: ReturnType<typeof api.wechatQrcode> | null = null;
@@ -107,7 +107,7 @@ export function WechatQrLogin({ appearance = "default", onSuccess }: WechatQrLog
   return (
     <div className={`wechat-qr-panel${appearance === "auth" ? " wechat-qr-panel--auth" : ""}`}>
       <div className={`wechat-qr-box is-${phase}`} aria-live="polite">
-        {phase === "loading" && <span className="wechat-qr-loading">正在生成二维码…</span>}
+        {phase === "loading" && <PageLoading label="正在生成二维码…" scope="panel" />}
         {phase === "waiting" && (
           <img
             className="wechat-qr-img"

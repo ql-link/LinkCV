@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, BriefcaseBusiness, ExternalLink, MapPin, Trash2, WalletCards } from "lucide-react";
-import { api, ApiRequestError, type JobDescriptionRecord } from "../../api/client";
+import { api, ApiRequestError, type JobApplicationSummary, type JobDescriptionRecord } from "../../api/client";
 import { Button, ConfirmDialog, PageLoading } from "@/components/ui";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { navigateTo } from "../../routing";
+import { careerApplicationPath, navigateTo, startCareerApplicationPath } from "../../routing";
 import { jobFormFromRecord, jobPayloadFromForm, type JobFormState } from "./jobFormModel";
+import { activeApplicationForJob, applicationOutcome, applicationsForJob, listAllJobApplications } from "./jobApplications";
 import "./jobs.css";
 
 export function JobDetailPage({ jobId }: { jobId: string }) {
   const [job, setJob] = useState<JobDescriptionRecord | null>(null);
+  const [applications, setApplications] = useState<JobApplicationSummary[]>([]);
+  const [applicationsLoaded, setApplicationsLoaded] = useState(false);
   const [editingField, setEditingField] = useState<EditableTarget | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -27,6 +30,24 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
     });
     return () => { cancelled = true; };
   }, [jobId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void listAllJobApplications()
+      .then((result) => {
+        if (!cancelled) {
+          setApplications(result);
+          setApplicationsLoaded(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setApplications([]);
+          setApplicationsLoaded(false);
+        }
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const saveFields = async (changes: Partial<JobFormState>) => {
     if (!job || busy) return;
@@ -58,7 +79,7 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
     setError(null);
     try {
       await api.deleteJobDescription(job.id);
-      navigateTo("/jobs", { replace: true });
+      navigateTo("/career/jobs", { replace: true });
     } catch (actionError) {
       setError(detailErrorMessage(actionError));
       setDeleteOpen(false);
@@ -67,24 +88,52 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
   };
 
   if (loading) return <main className="dashboard-content job-page-shell"><PageLoading label="正在加载岗位详情…" /></main>;
-  if (!job) return <main className="dashboard-content job-page-shell"><section className="job-workspace-state"><h1>无法打开这条 JD</h1><p>{error}</p><Button onClick={() => navigateTo("/jobs", { replace: true })}>返回 JD 中心</Button></section></main>;
+  if (!job) return <main className="dashboard-content job-page-shell"><section className="job-workspace-state"><h1>无法打开这个岗位</h1><p>{error}</p><Button onClick={() => navigateTo("/career/jobs", { replace: true })}>返回岗位库</Button></section></main>;
+
+  const jobApplications = applicationsForJob(applications, job.id);
+  const activeApplication = activeApplicationForJob(applications, job.id);
 
   return (
     <main className="dashboard-content job-page-shell">
       <article className="job-detail">
         <div className="job-detail-topbar">
           <div className="job-detail-heading">
-            <h1 className="job-detail-page-title">JD 详情</h1>
-            <a className="job-back-link" href="/jobs" onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); navigateTo("/jobs"); }}><ArrowLeft size={14} />返回 JD 中心</a>
+            <h1 className="job-detail-page-title">岗位详情</h1>
+            <a className="job-back-link" href="/career/jobs" onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); navigateTo("/career/jobs"); }}><ArrowLeft size={14} />返回岗位库</a>
           </div>
           <div className="job-detail-actions">
+            {applicationsLoaded && (activeApplication ? (
+              <Button onClick={() => navigateTo(careerApplicationPath(activeApplication.id))}>查看求职进程</Button>
+            ) : (
+              <Button onClick={() => navigateTo(startCareerApplicationPath(job.id))}>{jobApplications.length ? "再次开始求职" : "开始求职"}</Button>
+            ))}
             <Button variant="ghost" icon={<Trash2 size={15} />} disabled={busy} onClick={() => setDeleteOpen(true)}>删除</Button>
           </div>
         </div>
         {error && <div className="job-error job-detail-error" role="alert">{error}</div>}
         <JobDocument job={job} editingField={editingField} busy={busy} onEdit={setEditingField} onSave={saveField} onSaveFields={saveFields} />
+        <section className="job-document-section job-career-section">
+          <header>
+            <div><p className="job-eyebrow">求职进程</p><h2>这个岗位的求职记录</h2></div>
+          </header>
+          {!applicationsLoaded ? (
+            <div className="job-career-empty"><p>暂时无法读取求职进程。为避免重复创建，请稍后刷新再试。</p></div>
+          ) : jobApplications.length ? (
+            <div className="job-application-history">
+              {jobApplications.map((application) => (
+                <article key={application.id}>
+                  <div><strong>{application.current_stage_label}</strong><span>{applicationOutcome(application)} · {formatTime(application.created_at)}</span></div>
+                  <span className={`job-status-badge${application.status !== "active" || application.archived_at ? " is-archived" : ""}`}>{applicationOutcome(application)}</span>
+                  <Button size="sm" variant="outline" onClick={() => navigateTo(careerApplicationPath(application.id))}>查看进程</Button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="job-career-empty"><p>这个岗位还没有求职进程。开始后会保存当前岗位与简历版本快照，并进入筛选阶段。</p></div>
+          )}
+        </section>
       </article>
-      {deleteOpen && <ConfirmDialog kind="delete" title={`永久删除「${job.job_title}」？`} description="删除后无法恢复，并会释放该来源，之后再次写入会创建新的 JD。" confirmLabel="永久删除" busyLabel="正在删除…" busy={busy} onCancel={() => setDeleteOpen(false)} onConfirm={deleteJob} />}
+      {deleteOpen && <ConfirmDialog kind="delete" title={`永久删除「${job.job_title}」？`} description="删除后无法恢复，并会释放该来源，之后再次写入会创建新的岗位。" confirmLabel="永久删除" busyLabel="正在删除…" busy={busy} onCancel={() => setDeleteOpen(false)} onConfirm={deleteJob} />}
     </main>
   );
 }
