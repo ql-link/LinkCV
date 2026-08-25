@@ -1,24 +1,47 @@
-﻿import { useEffect, useRef, useState } from "react";
-import { ChevronRight, UserRound } from "lucide-react";
+﻿import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { Camera, ChevronRight, LogOut, MessageCircle, Pencil, UserRound } from "lucide-react";
 
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
   Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   FeedbackNotice,
   Input,
-  Label,
   PageLoading,
 } from "@/components/ui";
-import { api, AccountProfile, ApiRequestError, UserProfile } from "../../api/client";
+import { api, AccountProfile, AgentSession, ApiRequestError, UserProfile } from "../../api/client";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { editorPath, navigateTo } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
+import "./account.css";
+import {
+  AVATAR_CROP_MAX_ZOOM,
+  AVATAR_CROP_MIN_ZOOM,
+  AVATAR_CROP_VIEWPORT_SIZE,
+  clampAvatarCropDraft,
+  createAvatarCropDataUrl,
+  getAvatarCropLayout,
+  readAvatarImage,
+  type AvatarCropDraft,
+} from "./avatarCrop";
 
 const MAX_AVATAR_BYTES = 10 * 1024 * 1024;
 const MAX_NICKNAME_LENGTH = 50;
 type Notice = { kind: "success" | "error"; message: string } | null;
+type AvatarDrag = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  offsetX: number;
+  offsetY: number;
+};
 
 export function accountErrorMessage(error: unknown, fallback: string) {
   if (error instanceof ApiRequestError) {
@@ -38,13 +61,24 @@ export function AccountPage() {
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [nickname, setNickname] = useState("");
+  const [nicknameEditing, setNicknameEditing] = useState(false);
   const [savingName, setSavingName] = useState(false);
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<AgentSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [sessionsFailed, setSessionsFailed] = useState(false);
+  const [avatarDraft, setAvatarDraft] = useState<AvatarCropDraft | null>(null);
+  const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
+  const [avatarPreviewOpen, setAvatarPreviewOpen] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [removingAvatar, setRemovingAvatar] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const nicknameInputRef = useRef<HTMLInputElement>(null);
+  const cropImageRef = useRef<HTMLImageElement>(null);
+  const avatarDragRef = useRef<AvatarDrag | null>(null);
+  const avatarReadRequestRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,6 +100,32 @@ export function AccountPage() {
     };
   }, [syncProfile]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setSessionsLoading(true);
+    setSessionsFailed(false);
+    void api.listAgentSessions()
+      .then((result) => {
+        if (!cancelled) setSessions(result.sessions);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSessions([]);
+          setSessionsFailed(true);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSessionsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (nicknameEditing) nicknameInputRef.current?.focus();
+  }, [nicknameEditing]);
+
   const applyUserUpdate = (user: UserProfile) => {
     syncProfile(user);
     setProfile((current) => (current ? { ...current, user } : current));
@@ -83,7 +143,7 @@ export function AccountPage() {
       const updated = await api.updateAccountProfile(trimmed);
       applyUserUpdate(updated);
       setNickname(updated.nickname);
-      setNotice({ kind: "success", message: "昵称已更新。" });
+      setNicknameEditing(false);
     } catch (error) {
       setNotice({ kind: "error", message: accountErrorMessage(error, "昵称保存失败，请稍后重试。") });
     } finally {
@@ -91,39 +151,139 @@ export function AccountPage() {
     }
   };
 
-  const pickAvatarFile = (file: File | undefined) => {
+  const startNicknameEdit = () => {
+    if (!profile) return;
+    setNickname(profile.user.nickname);
+    setNicknameEditing(true);
+    setNotice(null);
+  };
+
+  const cancelNicknameEdit = () => {
+    if (profile) setNickname(profile.user.nickname);
+    setNicknameEditing(false);
+    setNotice(null);
+  };
+
+  const handleNicknameKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelNicknameEdit();
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void saveNickname();
+    }
+  };
+
+  const pickAvatarFile = async (file: File | undefined) => {
     if (!file) return;
     if (file.size > MAX_AVATAR_BYTES) {
       setNotice({ kind: "error", message: "头像图片不能超过 10MB。" });
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = typeof reader.result === "string" ? reader.result : null;
-      if (!dataUrl) return;
-      setAvatarPreview(dataUrl);
-      setNotice(null);
-    };
-    reader.readAsDataURL(file);
+    const requestId = ++avatarReadRequestRef.current;
+    setNotice(null);
+    try {
+      const image = await readAvatarImage(file);
+      if (requestId !== avatarReadRequestRef.current) return;
+      setAvatarDraft({ ...image, zoom: AVATAR_CROP_MIN_ZOOM, offsetX: 0, offsetY: 0 });
+      setAvatarDialogOpen(true);
+    } catch {
+      if (requestId !== avatarReadRequestRef.current) return;
+      setNotice({ kind: "error", message: "头像图片无法读取，请选择其他图片。" });
+    }
   };
 
-  const cancelAvatarPreview = () => {
-    setAvatarPreview(null);
+  const updateAvatarDraft = (update: (current: AvatarCropDraft) => AvatarCropDraft) => {
+    setAvatarDraft((current) => (current ? clampAvatarCropDraft(update(current)) : current));
+  };
+
+  const discardAvatarDraft = () => {
+    if (uploadingAvatar || removingAvatar) return;
+    avatarDragRef.current = null;
+    cropImageRef.current = null;
+    setAvatarDraft(null);
+    setAvatarDialogOpen(false);
     setNotice(null);
+  };
+
+  const handleAvatarDialogOpenChange = (open: boolean) => {
+    if (open) {
+      setAvatarDialogOpen(true);
+      setNotice(null);
+      return;
+    }
+    discardAvatarDraft();
+  };
+
+  const handleCropPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!avatarDraft || uploadingAvatar || removingAvatar || event.button !== 0) return;
+    event.preventDefault();
+    if (typeof event.currentTarget.setPointerCapture === "function") {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+    avatarDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      offsetX: avatarDraft.offsetX,
+      offsetY: avatarDraft.offsetY,
+    };
+  };
+
+  const handleCropPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = avatarDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    updateAvatarDraft((current) => ({
+      ...current,
+      offsetX: drag.offsetX + event.clientX - drag.startX,
+      offsetY: drag.offsetY + event.clientY - drag.startY,
+    }));
+  };
+
+  const handleCropPointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (avatarDragRef.current?.pointerId !== event.pointerId) return;
+    avatarDragRef.current = null;
+    if (typeof event.currentTarget.hasPointerCapture === "function" && event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const handleCropKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!avatarDraft || uploadingAvatar || removingAvatar) return;
+    const amount = event.shiftKey ? 16 : 4;
+    let deltaX = 0;
+    let deltaY = 0;
+    if (event.key === "ArrowLeft") deltaX = -amount;
+    if (event.key === "ArrowRight") deltaX = amount;
+    if (event.key === "ArrowUp") deltaY = -amount;
+    if (event.key === "ArrowDown") deltaY = amount;
+    if (!deltaX && !deltaY) return;
+    event.preventDefault();
+    updateAvatarDraft((current) => ({
+      ...current,
+      offsetX: current.offsetX + deltaX,
+      offsetY: current.offsetY + deltaY,
+    }));
   };
 
   const saveAvatar = async () => {
-    if (!profile || !avatarPreview) return;
+    if (!profile || !avatarDraft || uploadingAvatar || removingAvatar) return;
     setUploadingAvatar(true);
     setNotice(null);
     try {
-      const { url } = await api.uploadAccountAvatar({ fileName: "avatar.png", dataUrl: avatarPreview });
+      if (!cropImageRef.current) throw new Error("IMAGE_NOT_READY");
+      const dataUrl = createAvatarCropDataUrl(cropImageRef.current, avatarDraft);
+      const { url } = await api.uploadAccountAvatar({ fileName: "avatar.png", dataUrl });
       applyUserUpdate({ ...profile.user, avatar_url: url });
-      setAvatarPreview(null);
+      avatarDragRef.current = null;
+      cropImageRef.current = null;
+      setAvatarDraft(null);
+      setAvatarDialogOpen(false);
       setNotice({ kind: "success", message: "头像已更新。" });
     } catch (error) {
-      setAvatarPreview(null);
-      setNotice({ kind: "error", message: accountErrorMessage(error, "头像上传失败，请稍后重试。") });
+      setNotice({ kind: "error", message: accountErrorMessage(error, "头像处理或上传失败，请重试。") });
     } finally {
       setUploadingAvatar(false);
     }
@@ -136,6 +296,10 @@ export function AccountPage() {
     try {
       await api.deleteAccountAvatar();
       applyUserUpdate({ ...profile.user, avatar_url: null });
+      avatarDragRef.current = null;
+      cropImageRef.current = null;
+      setAvatarDraft(null);
+      setAvatarDialogOpen(false);
       setNotice({ kind: "success", message: "头像已删除。" });
     } catch (error) {
       setNotice({ kind: "error", message: accountErrorMessage(error, "头像删除失败，请稍后重试。") });
@@ -157,14 +321,24 @@ export function AccountPage() {
     }
   };
 
-  const displayAvatar = avatarPreview ?? profile?.user.avatar_url ?? null;
+  const handleLogoutDialogOpenChange = (open: boolean) => {
+    if (!open && loggingOut) return;
+    setLogoutDialogOpen(open);
+  };
+
+  const displayAvatar = profile?.user.avatar_url ?? null;
+  const cropLayout = avatarDraft ? getAvatarCropLayout(avatarDraft) : null;
+
+  const openAvatarPreview = () => {
+    if (displayAvatar) setAvatarPreviewOpen(true);
+  };
 
   return (
     <main className="dashboard-content account-page">
       <WorkspacePageHero
-        eyebrow="账号设置"
+        eyebrow=""
         title="个人资料"
-        description="管理你的身份信息、使用情况和登录安全。"
+        description="管理你的身份信息、简历和当前会话。"
       />
 
       {loading && <PageLoading label="正在加载个人资料…" />}
@@ -182,21 +356,36 @@ export function AccountPage() {
 
       {profile && (
         <div className="account-layout">
-          <section className="account-top-card" aria-label="账号设置">
-            <div className="account-profile-col">
-              <div className="account-identity">
-                <Avatar className="account-avatar-lg">
-                  <AvatarImage alt="当前头像" className="object-cover" src={displayAvatar ?? undefined} />
-                  <AvatarFallback className="account-avatar-lg-fallback">
-                    {profileInitial(profile.user.nickname)}
-                  </AvatarFallback>
-                </Avatar>
+          <div className="account-overview-grid">
+            <aside className="account-profile-card" aria-label="个人资料摘要">
+              <div className="account-profile-banner" aria-hidden="true" />
+              <div className="account-profile-card-body">
+                <div className="account-avatar-control">
+                  <button
+                    type="button"
+                    className="account-avatar-trigger"
+                    aria-label={displayAvatar ? "查看头像原图" : "头像预览不可用"}
+                    disabled={!displayAvatar}
+                    onClick={openAvatarPreview}
+                  >
+                    <Avatar className="account-avatar-lg">
+                      <AvatarImage alt="" className="object-cover" src={displayAvatar ?? undefined} />
+                      <AvatarFallback className="account-avatar-lg-fallback">
+                        {profileInitial(profile.user.nickname)}
+                      </AvatarFallback>
+                    </Avatar>
+                  </button>
+                  <button
+                    type="button"
+                    className="account-avatar-edit-trigger"
+                    aria-label="修改头像"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Camera aria-hidden size={16} />
+                  </button>
+                </div>
                 <div className="account-identity-text">
-                  <h3>{profile.user.nickname}</h3>
-                  <p>{profile.user.email}</p>
-                  {avatarPreview && (
-                    <p className="account-avatar-note">新头像已预览，尚未保存</p>
-                  )}
+                  <h2 id="account-identity-heading">{profile.user.nickname}</h2>
                 </div>
                 <input
                   ref={fileInputRef}
@@ -208,139 +397,251 @@ export function AccountPage() {
                   onChange={(event) => {
                     const file = event.currentTarget.files?.[0];
                     event.currentTarget.value = "";
-                    pickAvatarFile(file);
+                    void pickAvatarFile(file);
                   }}
                 />
-                <div className="account-avatar-actions">
-                  {avatarPreview ? (
-                    <>
-                      <Button size="sm" disabled={uploadingAvatar} onClick={() => void saveAvatar()}>
-                        {uploadingAvatar ? "保存中..." : "保存新头像"}
-                      </Button>
-                      <Button size="sm" variant="ghost" disabled={uploadingAvatar} onClick={cancelAvatarPreview}>
-                        取消
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={uploadingAvatar || removingAvatar}
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        {uploadingAvatar ? "上传中..." : "更换头像"}
-                      </Button>
-                      {profile.user.avatar_url && (
-                        <Button
-                          className="account-danger-text"
-                          size="sm"
-                          variant="ghost"
-                          disabled={uploadingAvatar || removingAvatar}
-                          onClick={() => void removeAvatar()}
-                        >
-                          {removingAvatar ? "移除中..." : "移除"}
-                        </Button>
-                      )}
-                    </>
-                  )}
-                </div>
               </div>
-
-              <div className="account-field-row">
-                <div className="account-field-label">
-                  <Label htmlFor="account-nickname">昵称</Label>
-                  <p>用于工作区中的身份展示</p>
-                </div>
-                <Input
-                  id="account-nickname"
-                  value={nickname}
-                  maxLength={MAX_NICKNAME_LENGTH}
-                  aria-describedby="account-nickname-hint"
-                  onChange={(event) => setNickname(event.target.value)}
-                />
-                <Button
-                  className="account-field-action"
-                  size="sm"
-                  variant="ghost"
-                  disabled={savingName || nickname.trim() === profile.user.nickname}
-                  onClick={() => void saveNickname()}
-                >
-                  {savingName ? "保存中..." : "保存昵称"}
-                </Button>
-                <span id="account-nickname-hint" className="sr-only">最多 {MAX_NICKNAME_LENGTH} 个字符</span>
-              </div>
-
-              <div className="account-field-row">
-                <div className="account-field-label">
-                  <span className="account-field-name">登录邮箱</span>
-                  <p>当前暂不支持修改</p>
-                </div>
-                <p className="account-email-value">{profile.user.email}</p>
-              </div>
-            </div>
-
-            <aside className="account-usage">
-              <h3>使用概况</h3>
-              <p className="account-usage-sub">当前账号的简历使用情况</p>
-              <div className="account-usage-count">
-                <span className="account-usage-number">
+              <div className="account-profile-stats" aria-label="账户统计">
+                <div className="account-profile-stat">
+                  <span>简历</span>
                   <strong>{profile.resume_count}</strong>
-                  <span>份简历</span>
-                </span>
-                <button type="button" className="account-usage-link" onClick={() => navigateTo("/resumes")}>
-                  查看全部 →
-                </button>
+                </div>
+                <div className="account-profile-stat">
+                  <span>对话</span>
+                  <strong>{sessionsLoading ? "…" : sessionsFailed ? "—" : sessions.length >= 50 ? "50+" : sessions.length}</strong>
+                </div>
               </div>
-              <p className="account-usage-recent-label">最近简历</p>
-              <ul className="account-recent-list">
-                {profile.recent_resumes.length === 0 && (
-                  <li className="account-recent-empty">暂无简历</li>
-                )}
-                {profile.recent_resumes.map((resume) => (
-                  <li key={resume.id}>
+            </aside>
+
+            <section className="account-info-card" role="region" aria-label="个人信息">
+              <header className="account-info-card-header">
+                <h2 id="account-personal-heading">个人信息</h2>
+              </header>
+              <div className="account-info-card-body">
+                <section className="account-info-group" aria-label="昵称">
+                  <div className="account-nickname-row">
+                    <div className="account-field-label">
+                      <span className="account-field-name">昵称</span>
+                      <p>用于工作区中的身份展示</p>
+                    </div>
+                    {nicknameEditing ? (
+                      <form
+                        className="account-nickname-edit-form"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void saveNickname();
+                        }}
+                      >
+                        <Input
+                          ref={nicknameInputRef}
+                          id="account-nickname"
+                          aria-label="昵称"
+                          value={nickname}
+                          maxLength={MAX_NICKNAME_LENGTH}
+                          aria-describedby="account-nickname-hint"
+                          onChange={(event) => setNickname(event.target.value)}
+                          onKeyDown={handleNicknameKeyDown}
+                          disabled={savingName}
+                        />
+                        <span id="account-nickname-hint" className="sr-only">最多 {MAX_NICKNAME_LENGTH} 个字符，按 Enter 保存，按 Escape 取消</span>
+                      </form>
+                    ) : (
+                      <div className="account-nickname-view">
+                        <button type="button" className="account-nickname-edit-trigger" aria-label="修改昵称" onClick={startNicknameEdit}>
+                          <Pencil aria-hidden size={15} />
+                        </button>
+                        <span className="account-nickname-value">{profile.user.nickname}</span>
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                <section className="account-info-group" aria-labelledby="account-resumes-heading">
+                  <div className="account-info-group-header">
+                    <h3 id="account-resumes-heading">最近简历</h3>
+                    <button type="button" className="account-text-link" onClick={() => navigateTo("/resumes")}>查看全部</button>
+                  </div>
+                  {profile.recent_resumes.length === 0 ? (
+                    <p className="account-recent-empty">暂无简历内容</p>
+                  ) : (
+                    <ul className="account-recent-list">
+                      {profile.recent_resumes.map((resume) => (
+                        <li key={resume.id}>
+                          <button
+                            type="button"
+                            className="account-recent-row"
+                            onClick={() => navigateTo(editorPath(String(resume.id)))}
+                          >
+                            <span className="account-recent-text">
+                              <strong>{resume.title}</strong>
+                              <small>{recentTime(resume.updated_at)}</small>
+                            </span>
+                            <ChevronRight aria-hidden size={16} />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+
+                <section className="account-info-group" aria-labelledby="account-conversations-heading">
+                  <div className="account-info-group-header">
+                    <h3 id="account-conversations-heading">最近对话</h3>
+                    <MessageCircle aria-hidden className="account-info-group-icon" size={17} />
+                  </div>
+                  {sessionsLoading ? (
+                    <p className="account-recent-empty">正在加载对话…</p>
+                  ) : sessionsFailed ? (
+                    <p className="account-recent-empty">最近对话暂不可用</p>
+                  ) : sessions.length === 0 ? (
+                    <p className="account-recent-empty">暂无对话记录</p>
+                  ) : (
+                    <ul className="account-session-list">
+                      {sessions.slice(0, 3).map((session) => (
+                        <li key={session.id} className="account-session-list-item">
+                          <span className="account-session-text">
+                            <strong>{session.title || "未命名对话"}</strong>
+                            <small>{recentTime(session.last_message_at ?? session.updated_at)}</small>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+
+                <div className="account-info-card-footer">
+                  <Button
+                    className="account-danger-text"
+                    variant="link"
+                    size="sm"
+                    onClick={() => {
+                      setNotice(null);
+                      setLogoutDialogOpen(true);
+                    }}
+                  >
+                    <LogOut aria-hidden size={15} />
+                    退出登录
+                  </Button>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          {displayAvatar && (
+            <Dialog open={avatarPreviewOpen} onOpenChange={setAvatarPreviewOpen}>
+              <DialogContent className="account-avatar-preview-dialog" aria-describedby={undefined}>
+                <DialogTitle className="sr-only">查看头像原图</DialogTitle>
+                <img className="account-avatar-preview-image" src={displayAvatar} alt="头像原图" />
+              </DialogContent>
+            </Dialog>
+          )}
+
+          <Dialog open={avatarDialogOpen} onOpenChange={handleAvatarDialogOpenChange}>
+            {avatarDraft && (
+              <DialogContent
+                className="account-avatar-dialog"
+                data-uploading={uploadingAvatar || removingAvatar ? "true" : "false"}
+                aria-busy={uploadingAvatar || removingAvatar}
+              >
+                <DialogHeader>
+                  <DialogTitle>调整头像</DialogTitle>
+                  <DialogDescription>拖动图片调整位置，使用滑块缩放，圆形区域将作为头像。</DialogDescription>
+                </DialogHeader>
+
+                <div className="account-avatar-dialog-body">
+                  <div
+                    className="account-avatar-crop-viewport"
+                    role="group"
+                    tabIndex={0}
+                    aria-label="头像裁剪区域，可使用方向键移动"
+                    onKeyDown={handleCropKeyDown}
+                    onPointerDown={handleCropPointerDown}
+                    onPointerMove={handleCropPointerMove}
+                    onPointerUp={handleCropPointerEnd}
+                    onPointerCancel={handleCropPointerEnd}
+                  >
+                    <img
+                      ref={cropImageRef}
+                      className="account-avatar-crop-image"
+                      src={avatarDraft.dataUrl}
+                      alt=""
+                      draggable={false}
+                      style={{
+                        width: `${cropLayout?.renderedWidth ?? AVATAR_CROP_VIEWPORT_SIZE}px`,
+                        height: `${cropLayout?.renderedHeight ?? AVATAR_CROP_VIEWPORT_SIZE}px`,
+                        transform: `translate(-50%, -50%) translate(${avatarDraft.offsetX}px, ${avatarDraft.offsetY}px)`,
+                      }}
+                    />
+                    <span className="account-avatar-crop-shade" aria-hidden="true" />
+                    <span className="account-avatar-crop-window" aria-hidden="true" />
+                  </div>
+
+                  <label className="account-avatar-zoom-control" htmlFor="account-avatar-zoom">
+                    <span>缩放</span>
+                    <input
+                      id="account-avatar-zoom"
+                      type="range"
+                      min={AVATAR_CROP_MIN_ZOOM}
+                      max={AVATAR_CROP_MAX_ZOOM}
+                      step="0.01"
+                      value={avatarDraft.zoom}
+                      disabled={uploadingAvatar || removingAvatar}
+                      onChange={(event) => {
+                        const zoom = Number(event.currentTarget.value);
+                        updateAvatarDraft((current) => ({ ...current, zoom }));
+                      }}
+                    />
+                    <output>{avatarDraft.zoom.toFixed(1)}x</output>
+                  </label>
+
+                  {profile.user.avatar_url && (
                     <button
                       type="button"
-                      className="account-recent-row"
-                      onClick={() => navigateTo(editorPath(String(resume.id)))}
+                      className="account-avatar-dialog-delete"
+                      disabled={uploadingAvatar || removingAvatar}
+                      onClick={() => void removeAvatar()}
                     >
-                      <span className="account-recent-badge" aria-hidden="true">cv</span>
-                      <span className="account-recent-text">
-                        <strong>{resume.title}</strong>
-                        <small>{recentTime(resume.updated_at)}</small>
-                      </span>
-                      <ChevronRight aria-hidden size={15} />
+                      {removingAvatar ? "删除中…" : "删除当前头像"}
                     </button>
-                  </li>
-                ))}
-              </ul>
-            </aside>
-          </section>
-
-          <section className="account-card-block" aria-label="安全设置">
-            <header className="account-block-head">
-              <h2>安全设置</h2>
-              <p>登录、绑定与会话管理</p>
-            </header>
-
-            <div className="account-security-rows">
-              <div className="account-security-row">
-                <div>
-                  <h3>退出当前账号</h3>
-                  <p>结束此设备上的当前会话</p>
+                  )}
                 </div>
+
+                <DialogFooter className="account-avatar-dialog-footer">
+                  <Button variant="ghost" disabled={uploadingAvatar || removingAvatar} onClick={discardAvatarDraft}>
+                    取消
+                  </Button>
+                  <Button variant="accent" disabled={uploadingAvatar || removingAvatar} onClick={() => void saveAvatar()}>
+                    {uploadingAvatar ? "保存中…" : "确定"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            )}
+          </Dialog>
+
+          <Dialog open={logoutDialogOpen} onOpenChange={handleLogoutDialogOpenChange}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>确认退出登录</DialogTitle>
+                <DialogDescription>退出后需要重新登录。</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
                 <Button
-                  className="account-danger-text"
-                  size="sm"
                   variant="ghost"
+                  disabled={loggingOut}
+                  onClick={() => setLogoutDialogOpen(false)}
+                >
+                  取消
+                </Button>
+                <Button
+                  variant="destructive"
                   disabled={loggingOut}
                   onClick={() => void handleLogout()}
                 >
                   {loggingOut ? "正在退出…" : "退出登录"}
                 </Button>
-              </div>
-            </div>
-          </section>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       )}
 

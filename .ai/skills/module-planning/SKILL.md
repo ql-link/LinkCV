@@ -24,9 +24,10 @@ description: 在 LinkCV 模块进入方案文档或代码开发前，从用户�
 | `decision-grilling` | 对每个阻塞性决策调用一次，按 `confirmed`、`blocked`、`replan` 结果维护当前决策树 | 不调查整个模块、不组织文档、不写飞书 |
 | `lark-doc` | 完整草稿确认后执行飞书读取、创建、更新和读回 | 不判断内容是否充分，不发起产品或技术决策 |
 | `lark-drive` | 仅在用户未给出目标文档或目录、确需定位位置时使用 | 不负责文档正文 |
-| `flow-router` | 规划完成且用户只授权继续开发、没有指定路径时，判断准备、复杂度、风险和记录需要并选择交付路径 | 不主持讨论、不写飞书 |
-| `solution-generator` | 用户已经指定方案先行且飞书文档确认完成后直接进入 | 不重复已确认内容；在 `solution.md` 内收敛来源差异和后续变化 |
-| `implementation-execution` | 用户已经指定直接实现且飞书文档确认完成后直接进入 | 不重新分流，只按已确认范围施工 |
+| `flow-router` | 规划完成并获得继续开发授权后判断纯前端、纯后端或混合领域，并把用户已选路径原样传给领域交付 Skill | 不做七维判断、不选择直接或方案路径、不主持讨论或写飞书 |
+| `backend-delivery` | 纯后端或混合任务进入领域交付后完成七维判断，并解释用户已选或自动路径 | 不重复模块规划，不写飞书 |
+| `solution-generator` | 由 `backend-delivery` 选定方案先行后调用 | 不重复已确认内容；在 `solution.md` 内收敛来源差异和后续变化 |
+| `implementation-execution` | 由领域交付 Skill 确定实施依据后调用 | 不重新分流或判断路径，只按已确认范围施工 |
 
 标准调用方向是：
 
@@ -36,10 +37,10 @@ description: 在 LinkCV 模块进入方案文档或代码开发前，从用户�
 module-planning ──单个决策──> decision-grilling ──确认结论──> module-planning
 module-planning ──草稿已确认──> lark-doc ──写入并读回──> module-planning
 module-planning ──只要求规划或未授权继续──> 完成交接并停止
-module-planning ──原请求已授权继续开发──> 已指定的 implementation-execution / solution-generator，或未指定路径时的 flow-router
+module-planning ──原请求已授权继续开发──> flow-router ──> frontend-delivery / backend-delivery
 ```
 
-调用方拥有阶段和产物，被调用技能只返回自己边界内的结果。不要让 `decision-grilling` 直接写飞书，也不要让 `lark-doc` 决定正文。读回一致后是否继续只看用户当前请求是否已经明确授权：只要求规划时停止；已经要求“规划后继续方案或开发”时复用该授权，不再索要一遍相同指令。已经指定直接实现时进入 `implementation-execution`，指定方案先行时进入 `solution-generator`，没有指定路径时才进入 `flow-router`；本技能本身不生成方案文档或编写代码。进入 `solution-generator` 后，由 `solution.md` 承接并收敛初始设计，后续差异不回写本飞书文档。
+调用方拥有阶段和产物，被调用技能只返回自己边界内的结果。不要让 `decision-grilling` 直接写飞书，也不要让 `lark-doc` 决定正文。读回一致后是否继续只看用户当前请求是否已经明确授权：只要求规划时停止；已经要求“规划后继续方案或开发”时复用该授权，不再索要一遍相同指令。继续开发统一进入 `flow-router` 判断领域，并把用户指定的直接实现、方案先行或自动路径原样传给 `frontend-delivery` 或 `backend-delivery`；本技能本身不生成 Spec 或编写代码。后续中心文档承接并收敛初始设计，差异不回写本飞书文档。
 
 ## 3. 进入和停止条件
 
@@ -49,7 +50,7 @@ module-planning ──原请求已授权继续开发──> 已指定的 impleme
 - 用户当前请求以及其中明确引用的材料；
 - 可用的 Issue、飞书周文档、既有详情文档或目标位置（存在时）。
 
-用户明确要求讨论或撰写模块方案时，即使同时指定了交付路径，也直接使用本技能，不先让 `flow-router` 重复判断。已指定直接实现且已经授权继续时，读回后直接进入 `implementation-execution`；已指定方案先行时直接进入 `solution-generator`；只授权继续开发但没有指定路径时才进入 `flow-router`。只有“准备改代码但尚未判断”的请求才先进入 `flow-router`。准备可实施并判为直接实现的任务不强制创建详情文档；但用户明确要求模块规划时仍按本技能执行。
+用户明确要求讨论或撰写模块方案时，即使同时指定了交付路径，也直接使用本技能，不先让 `flow-router` 重复判断。已授权继续开发时，读回后统一进入 `flow-router` 判断领域，并传递用户指定的直接实现、方案先行或自动路径；`backend-delivery` 或 `frontend-delivery` 不得覆盖用户选择。只有“准备改代码但尚未判断领域”的请求才先进入 `flow-router`。直接实现任务不强制创建详情文档；但用户明确要求模块规划时仍按本技能执行。
 
 遇到以下情况停止在当前阶段，不越界补救：
 
@@ -115,7 +116,7 @@ module-planning ──原请求已授权继续开发──> 已指定的 impleme
 飞书详情文档：<链接；未写入时说明原因>
 确认范围：<一句话>
 未解决决策：无 | <具体事项>
-下一站：仅规划时写“停止并交接”；已授权继续时按原选择写“进入 implementation-execution”“进入 solution-generator”或“进入 flow-router”
+下一站：仅规划时写“停止并交接”；已授权继续时写“进入 flow-router，并传递用户已选路径”
 ```
 
-读回内容与确认草稿一致后，先向用户报告上述结果。用户只要求规划或没有授权后续开发时到此停止；用户原请求已经明确要求规划后继续时，按已指定路径进入 `implementation-execution` 或 `solution-generator`，未指定路径时进入 `flow-router`，不得重复索要同一授权。飞书草稿确认和写入后的读回核对始终是前置门槛，不能用继续开发授权代替。
+读回内容与确认草稿一致后，先向用户报告上述结果。用户只要求规划或没有授权后续开发时到此停止；用户原请求已经明确要求规划后继续时进入 `flow-router` 判断领域，并把已指定路径传给对应 delivery Skill，不得重复索要同一授权。飞书草稿确认和写入后的读回核对始终是前置门槛，不能用继续开发授权代替。

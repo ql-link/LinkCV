@@ -24,6 +24,7 @@ description: 根据 LinkCV 的实际改动范围选择并运行验证命令，�
 | --- | --- |
 | 仅 AI 规则、项目技能、链接或门禁脚本 | `npm run check:ai` |
 | 仅长期项目文档或文档同步规则 | `npm run check:docs` |
+| DESIGN.md、设计 Token、Settings Pattern 或页面 CSS 事实源 | `npm run check:design` |
 | 路由、端口、环境变量、代理或部署契约 | `npm run check:contracts` |
 | 前端自动化测试 | `npm run test:web` |
 | 前端类型 | `npm run typecheck` |
@@ -44,13 +45,14 @@ Python 命令统一通过项目脚本或 `uv run --directory apps/backend` 执�
 2. 修改项目技能或 AI 链接时至少运行 `npm run check:ai`。
 3. 修改 `docs/` 或代码到文档映射时至少运行 `npm run check:docs`。
 4. 修改路由、端口、环境变量、代理或部署契约时运行 `npm run check:contracts`。
-5. 修改前端 TypeScript、组件、Hook、状态或 API 客户端时运行 `npm run test:web`、前端类型检查和构建。
-6. 修改 FastAPI、Python 依赖、后端配置或门禁脚本时运行对应后端测试和构建。
-7. 同时涉及前后端，或只需要统一执行已有自动化测试时运行 `npm test`。
-8. 修改共享契约、跨前后端行为、依赖或部署时，组合运行受影响应用的测试、类型检查、构建和契约检查；只有影响实际覆盖全仓、无法可靠缩小范围或用户明确要求时，任务范围验证才提前运行 `npm run check`。
-9. 准备创建 PR 时始终运行完整 `npm run check`。较早的任务范围验证、其他人的结果和远端 CI 都不能替代这次本地执行；环境阻塞时准确报告并停止创建 PR。
-10. 只运行任务范围检查时，明确说明完整检查尚未执行以及当前没有据此创建 PR，不得宣称仓库全部通过。
-11. 数据库变更不能只跑 pytest；必须包含与目标 MySQL 8.4 一致的 SQL-first migration 链验证。仓库根 revision `0001` 已存在，但不能把仓库 head、入口存在或 SQLite 测试通过当作目标环境 schema 验证。
+5. 修改 `DESIGN.md`、`tokens.css`、设计 Skill 或受 Pattern 约束的页面 CSS 时运行 `npm run check:design`；若同时修改 AI Skill，再运行 `npm run check:ai`。
+6. 修改前端 TypeScript、组件、Hook、状态或 API 客户端时运行 `npm run test:web`、前端类型检查和构建。
+7. 修改 FastAPI、Python 依赖、后端配置或门禁脚本时运行对应后端测试和构建。
+8. 同时涉及前后端，或只需要统一执行已有自动化测试时运行 `npm test`。
+9. 修改共享契约、跨前后端行为、依赖或部署时，组合运行受影响应用的测试、类型检查、构建和契约检查；只有影响实际覆盖全仓、无法可靠缩小范围或用户明确要求时，任务范围验证才提前运行 `npm run check`。
+10. 准备创建 PR 时始终运行完整 `npm run check`。较早的任务范围验证、其他人的结果和远端 CI 都不能替代这次本地执行；环境阻塞时准确报告并停止创建 PR。
+11. 只运行任务范围检查时，明确说明完整检查尚未执行以及当前没有据此创建 PR，不得宣称仓库全部通过。
+12. 数据库变更不能只跑 pytest；必须包含与目标 MySQL 8.4 一致的 SQL-first migration 链验证。仓库根 revision `0001` 已存在，但不能把仓库 head、入口存在或 SQLite 测试通过当作目标环境 schema 验证。
 
 前端已有 Vitest + React Testing Library 单元和组件测试基础，但没有自动化端到端测试。跨 Web 与 FastAPI 的完整浏览器流程仍需人工验证；组件测试、类型检查和生产构建不能替代该结果。
 
@@ -68,7 +70,7 @@ Python 命令统一通过项目脚本或 `uv run --directory apps/backend` 执�
 
 ## 5. 当前代码的验证方式
 
-持久设计和直接实现使用同一套真实命令。后端与混合方案任务执行前读取 `solution.md` 的“验证与验收”，纯前端持久设计任务读取 `ui-design.md` 的验证计划，混合任务存在 UI 附件时同时读取且不允许 UI 验证改写上游契约；直接实现读取当前请求、来源材料和已确认结果。所有路径都要结合当前实现、Git 差异和实际风险，选择一条或多条必要命令直接运行；不创建验证状态文件，不把较早会话中的“已通过”当作当前代码证据。
+持久设计和直接实现使用同一套真实命令。后端与混合方案任务执行前读取 `solution.md` 的“验证与验收”；前端读取当前请求、已确认原型或 Figma、确认后的短交接与真实实现，混合任务同时服从上游契约；直接实现读取当前请求、来源材料和已确认结果。所有路径都结合当前差异和实际风险选择必要命令，不创建验证状态文件，也不继承较早会话的“已通过”。
 
 代码或配置在验证后发生变化时，由 AI 根据真实影响重跑受影响检查；无法可靠缩小影响时扩大验证。创建 PR 时无论之前跑过哪些局部命令，都在当前可提交内容上重新运行完整 `npm run check`。
 
