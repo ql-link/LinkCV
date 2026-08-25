@@ -6,14 +6,19 @@ from sqlalchemy.orm import Session
 
 from linkcv.application.resumes.commands import CreateResumeCommand
 from linkcv.core.database import utc_now
-from linkcv.domain.resume_document import ResumeDocumentV1
+from linkcv.domain.resume_document import ResumeDocument
 from linkcv.domain.resume_snapshot import ResumeSnapshot, parse_resume_snapshot
-from linkcv.domain.resume_style import ResumeStyleV1, default_resume_style
+from linkcv.domain.resume_style import (
+    ResumePresentation,
+    default_resume_style,
+    template_content_assignments,
+)
 from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
     DocumentParseTask,
     Resume,
+    ResumeTemplate,
     ResumeVersion,
 )
 
@@ -37,6 +42,10 @@ class ResumeTitleConflict(RuntimeError):
 
 
 class ResumeTemplateUnavailable(RuntimeError):
+    pass
+
+
+class ResumeTemplateCompositionInvalid(RuntimeError):
     pass
 
 
@@ -301,8 +310,8 @@ def update_resume_snapshot(
     user_id: int,
     base_lock_version: int,
     title: str | None,
-    data: ResumeDocumentV1 | None,
-    style: ResumeStyleV1 | None,
+    data: ResumeDocument | None,
+    style: ResumePresentation | None,
 ) -> Resume | None:
     current = parse_resume_snapshot(resume.data_json, resume.style_json)
     snapshot = ResumeSnapshot(
@@ -335,6 +344,76 @@ def update_resume_snapshot(
             Resume.lock_version == base_lock_version,
         )
         .values(**values)
+    )
+    if result.rowcount != 1:
+        db.rollback()
+        return None
+    updated = db.scalar(select(Resume).where(Resume.id == resume.id))
+    db.commit()
+    return updated
+
+
+def apply_resume_template(
+    *,
+    db: Session,
+    resume: Resume,
+    user_id: int,
+    template_id: int,
+    base_lock_version: int,
+    title: str | None = None,
+    data: ResumeDocument | None = None,
+) -> Resume | None:
+    """Atomically save current content and switch presentation provenance."""
+    template = db.scalar(
+        select(ResumeTemplate).where(
+            ResumeTemplate.id == template_id,
+            ResumeTemplate.is_active == 1,
+        )
+    )
+    if template is None:
+        raise ResumeTemplateUnavailable
+    try:
+        target = parse_resume_snapshot(template.data_json, template.style_json)
+        current = parse_resume_snapshot(resume.data_json, resume.style_json)
+    except ValueError as error:
+        raise ResumeTemplateUnavailable from error
+
+    candidate_data = data if data is not None else current.data
+    try:
+        candidate = ResumeSnapshot(data=candidate_data, style=target.style)
+        template_content_assignments(candidate.data, candidate.style.manifest)
+    except ValueError as error:
+        raise ResumeTemplateCompositionInvalid from error
+
+    next_title = resume.title
+    if title is not None:
+        next_title = normalize_resume_title(title)
+        db.scalar(select(User.id).where(User.id == user_id).with_for_update())
+        if resume_title_key(next_title) != resume_title_key(resume.title):
+            _assert_unique_resume_title(
+                db,
+                user_id=user_id,
+                title=next_title,
+                exclude_resume_id=resume.id,
+            )
+
+    result = db.execute(
+        update(Resume)
+        .where(
+            Resume.id == resume.id,
+            Resume.user_id == user_id,
+            Resume.lock_version == base_lock_version,
+        )
+        .values(
+            title=next_title,
+            template_id=template.id,
+            # Content is the resume's single source of truth. The target
+            # template contributes presentation and layout manifest only.
+            data_json=candidate.data.model_dump(mode="json"),
+            style_json=candidate.style.model_dump(mode="json"),
+            lock_version=Resume.lock_version + 1,
+            updated_at=utc_now(),
+        )
     )
     if result.rowcount != 1:
         db.rollback()

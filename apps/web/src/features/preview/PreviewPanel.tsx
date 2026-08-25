@@ -1,13 +1,18 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { JSONContent } from "@tiptap/core";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
-import { renderResumeMarkdown } from "../../parser/resumeMarkdown";
 import { useResumeStore } from "../../store/resumeStore";
 import { PreviewToolbar } from "./PreviewToolbar";
 import { SourceModal } from "./SourceModal";
+import { renderResumeEditorDocument } from "./print/resumeEditorRenderer";
 
 type PageFragment = {
   html: string;
 };
+
+export function renderPreviewEditorContent(content: JSONContent | string) {
+  return typeof content === "string" ? content : renderResumeEditorDocument(content);
+}
 
 function serializeAttributes(element: Element, excludedNames: string[] = []) {
   return Array.from(element.attributes)
@@ -41,12 +46,15 @@ function buildPageFragments(children: Element[]): PageFragment[] {
 }
 
 export function PreviewPanel() {
-  const markdown = useResumeStore((state) => state.markdown);
+  const editorContent = useResumeStore((state) => state.editorContent);
   const settings = useResumeStore((state) => state.settings);
   const previewScale = useResumeStore((state) => state.previewScale);
   const setPreviewScale = useResumeStore((state) => state.setPreviewScale);
-  const debouncedMarkdown = useDebouncedValue(markdown, 80);
-  const html = useMemo(() => renderResumeMarkdown(debouncedMarkdown), [debouncedMarkdown]);
+  const debouncedEditorContent = useDebouncedValue(editorContent, 80);
+  const html = useMemo(
+    () => renderPreviewEditorContent(debouncedEditorContent),
+    [debouncedEditorContent],
+  );
   const [pages, setPages] = useState<string[]>([html]);
   const pagesRootRef = useRef<HTMLDivElement | null>(null);
   const sourceMeasureRef = useRef<HTMLDivElement | null>(null);

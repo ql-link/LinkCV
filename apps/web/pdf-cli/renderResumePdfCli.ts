@@ -4,7 +4,7 @@ import { chromium } from "playwright-core";
 import sansRegularAsset from "../node_modules/@embedpdf/fonts-sc/fonts/NotoSansHans-Regular.otf";
 import serifRegularAsset from "../node_modules/@fontpkg/source-han-serif-sc/SourceHanSerifSC-Regular.otf";
 import wenkaiRegularAsset from "../node_modules/@fontpkg/lxgw-wen-kai/LXGWWenKai-Regular.ttf";
-import type { ResumeDocumentV1, ResumeStyleV1 } from "../src/api/resumeContract";
+import type { ResumeDocument, ResumePresentation } from "../src/api/resumeContract";
 import administrativeAvatar from "../public/templates/avatar-administrative.png";
 import campusAvatar from "../public/templates/avatar-campus.png";
 import templateAvatar from "../public/templates/avatar-cat.jpg";
@@ -59,8 +59,8 @@ function fontUrl(asset: string) {
 type RenderRequest = {
   protocol_version?: typeof RESUME_RENDER_PROTOCOL_VERSION;
   title: string;
-  data: ResumeDocumentV1;
-  style: ResumeStyleV1;
+  data: ResumeDocument;
+  style: ResumePresentation;
   assets?: Record<string, string>;
 };
 
@@ -130,19 +130,19 @@ function maxSmartHeightMm() {
     : DEFAULT_MAX_SMART_HEIGHT_MM;
 }
 
-function printMargins(style: ResumeStyleV1) {
+function printMargins(style: ResumePresentation) {
   const x = Number.isFinite(style.page.margin_left_mm) ? style.page.margin_left_mm : 20;
   const y = Number.isFinite(style.page.margin_top_mm) ? style.page.margin_top_mm : 16;
-  if (style.template_key.startsWith("administrative-sidebar")) {
-    return { x: 0, y: 0 };
-  }
-  if (style.template_key.startsWith("civic-service") || style.template_key.startsWith("creative-orange")) {
-    return { x: 0, y };
-  }
-  return { x, y };
+  // Column layouts and flow layouts with a zero top margin own the complete
+  // A4 canvas (for example a full-bleed header). Their inner spacing is
+  // already expressed by the resume CSS variables, so Chromium must not add
+  // a second @page margin around the template.
+  return style.manifest.renderer_key === "columns" || y === 0
+    ? { x: 0, y: 0 }
+    : { x, y };
 }
 
-function pageMarginStyles(style: ResumeStyleV1) {
+function pageMarginStyles(style: ResumePresentation) {
   const margins = printMargins(style);
   const printableWidth = A4_WIDTH_MM - (2 * margins.x);
   return [
@@ -151,7 +151,7 @@ function pageMarginStyles(style: ResumeStyleV1) {
   ].join("");
 }
 
-function withPrintStyles(html: string, style: ResumeStyleV1) {
+function withPrintStyles(html: string, style: ResumePresentation) {
   return html.replace(
     '<style data-resume-print-styles>/* injected by the renderer */</style>',
     `<style data-resume-print-styles>${baseStyles}\n${applicationStyles}\n${printStyles}\n${EMBEDDED_FONT_STYLES}\n${pageMarginStyles(style)}</style>`,

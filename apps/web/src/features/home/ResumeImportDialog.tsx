@@ -21,6 +21,7 @@ import {
   validateImportTitle,
 } from "@/lib/resumeImport";
 import { useResumeStore } from "../../store/resumeStore";
+import { selectImportTemplate } from "./importTemplate";
 
 type ResumeImportDialogProps = {
   onClose: () => void;
@@ -42,12 +43,12 @@ export function ResumeImportDialog({ onClose, onAccepted }: ResumeImportDialogPr
     void api.listResumeTemplates().then(
       ({ templates }) => {
         if (cancelled) return;
-        setImportTemplate(templates.find((template) => template.key === "blank-cn") ?? templates[0] ?? null);
+        setImportTemplate(selectImportTemplate(templates));
         setLoadingTemplate(false);
       },
       () => {
         if (cancelled) return;
-        setError("导入所需的空白模板暂时无法加载，请稍后重试。");
+        setError("导入所需的默认版式暂时无法加载，请稍后重试。");
         setLoadingTemplate(false);
       },
     );
@@ -78,7 +79,7 @@ export function ResumeImportDialog({ onClose, onAccepted }: ResumeImportDialogPr
       return;
     }
     if (!importTemplate) {
-      setError("导入所需的空白模板暂时不可用，请稍后重试。");
+      setError("导入所需的默认版式暂时不可用，请稍后重试。");
       return;
     }
     setSubmitting(true);

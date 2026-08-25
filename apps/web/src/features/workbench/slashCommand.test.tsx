@@ -24,6 +24,9 @@ describe("命令面板过滤", () => {
   it("空查询展示全部块命令", () => {
     expect(filterWorkbenchCommands("").length).toBeGreaterThan(8);
     expect(filterWorkbenchCommands("")[1]).toMatchObject({ id: "resume-row", label: "左右分栏" });
+    expect(filterWorkbenchCommands("").map((item) => item.id)).not.toContain("avatar");
+    expect(filterWorkbenchCommands("").map((item) => item.label)).not.toContain("上传或更换头像");
+    expect(filterWorkbenchCommands("头像")).toEqual([]);
   });
 });
 

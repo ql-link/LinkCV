@@ -3,8 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from linkcv.domain.resume_document import ResumeDocumentV1
-from linkcv.domain.resume_style import ResumeStyleV1
+from linkcv.domain.resume_document import ResumeDocument
+from linkcv.domain.resume_style import ResumePresentation
 
 
 class ResumeCreateRequest(BaseModel):
@@ -18,14 +18,67 @@ class ResumeUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str | None = Field(default=None, strict=True, max_length=20_000)
-    data: ResumeDocumentV1 | None = None
-    style: ResumeStyleV1 | None = None
+    data: ResumeDocument | None = None
+    style: ResumePresentation | None = None
     base_lock_version: int = Field(ge=1)
 
 
+class ResumeApplyTemplateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    template_id: str = Field(strict=True)
+    base_lock_version: int = Field(ge=1)
+    title: str | None = Field(default=None, strict=True, max_length=20_000)
+    data: ResumeDocument | None = None
+
+
+SemanticClassificationKind = Literal[
+    "profile",
+    "work",
+    "education",
+    "project",
+    "skills",
+    "activity",
+    "interests",
+    "certificates",
+    "awards",
+    "languages",
+    "custom",
+]
+
+
+class SemanticClassificationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content_hash: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
+    section_ids: list[str] | None = Field(default=None, min_length=1, max_length=50)
+
+
+class SemanticClassificationSuggestion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    section_id: str = Field(min_length=3, max_length=128)
+    semantic_kind: SemanticClassificationKind
+    confidence: float = Field(ge=0, le=1)
+    reason: str = Field(min_length=1, max_length=240)
+
+
+class SemanticClassificationModelResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    suggestions: list[SemanticClassificationSuggestion] = Field(max_length=50)
+
+
+class SemanticClassificationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content_hash: str
+    suggestions: list[SemanticClassificationSuggestion]
+
+
 class ResumePreview(BaseModel):
-    data: ResumeDocumentV1
-    style: ResumeStyleV1
+    data: ResumeDocument
+    style: ResumePresentation
 
 
 class ResumeSummary(BaseModel):
@@ -47,8 +100,8 @@ class ResumeSummary(BaseModel):
 
 class ResumeRecord(ResumeSummary):
     template_id: str | None
-    data: ResumeDocumentV1
-    style: ResumeStyleV1
+    data: ResumeDocument
+    style: ResumePresentation
 
 
 class ResumeResponse(BaseModel):
@@ -109,8 +162,10 @@ class ResumeTemplateRecord(BaseModel):
     key: str
     name: str
     description: str | None
-    data: ResumeDocumentV1
-    style: ResumeStyleV1
+    data: ResumeDocument
+    style: ResumePresentation
+    switchable: Literal[True] = True
+    incompatibility_reason: None = None
 
 
 class ResumeTemplateListResponse(BaseModel):
@@ -130,8 +185,8 @@ class ResumeVersionSummary(BaseModel):
 
 
 class ResumeVersionRecord(ResumeVersionSummary):
-    data: ResumeDocumentV1
-    style: ResumeStyleV1
+    data: ResumeDocument
+    style: ResumePresentation
 
 
 class ResumeVersionListResponse(BaseModel):
@@ -203,6 +258,6 @@ class PublicShareSharer(BaseModel):
 class PublicSharePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    data: ResumeDocumentV1
-    style: ResumeStyleV1
+    data: ResumeDocument
+    style: ResumePresentation
     sharer: PublicShareSharer

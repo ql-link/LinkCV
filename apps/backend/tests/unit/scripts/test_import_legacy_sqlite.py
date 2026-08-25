@@ -131,7 +131,7 @@ def test_dry_run_then_execute_imports_users_resumes_and_initial_versions(
         assert resume is not None
         assert resume.user_id == user.id
         assert resume.source_type == "blank"
-        assert resume.data_json["schema_version"] == "1.0"
+        assert resume.data_json["semantic_sections"]
         assert version is not None
         assert version.resume_id == resume.id
         assert version.name == "初始版本"

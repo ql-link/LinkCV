@@ -4,7 +4,7 @@ export function importErrorMessage(error: unknown) {
   if (!(error instanceof ApiRequestError)) return "导入请求失败，请检查网络后重试。";
   const messages: Record<string, string> = {
     RESUME_LIMIT_REACHED: "每个账号最多保存 10 份简历，请先删除一份后再导入。",
-    TEMPLATE_INACTIVE: "导入所需的空白模板暂时不可用，请稍后重试。",
+    TEMPLATE_INACTIVE: "导入所需的默认版式暂时不可用，请稍后重试。",
     EMPTY_IMPORT_FILE: "文件为空，请重新选择。",
     IMPORT_FILE_TOO_LARGE: "文件过大，最大支持 10 MB。",
     UNSUPPORTED_IMPORT_FORMAT: "仅支持 Markdown、DOCX 和 PDF 文件。",

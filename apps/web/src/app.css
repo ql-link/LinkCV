@@ -515,6 +515,10 @@ select:not([data-slot]):focus-visible,
   font-family: var(--preview-font-family);
 }
 
+.resume-readonly-preview .resume-preview-paper.smart-one-page {
+  overflow: hidden;
+}
+
 .resume-preview-paper {
   box-sizing: border-box;
   width: 210mm;
@@ -2266,6 +2270,9 @@ select:not([data-slot]):focus-visible,
   padding: 0;
   box-shadow: 0 18px 44px rgba(15, 18, 22, 0.12);
   opacity: 0.86;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   container-type: inline-size;
   touch-action: manipulation;

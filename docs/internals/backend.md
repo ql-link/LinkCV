@@ -8,12 +8,12 @@
 | --- | --- |
 | `src/linkcv/main.py` | 装配数据库、Redis、MinIO、统一 LLM、导入幂等和 MQ publisher；托管 SPA 静态产物并为哈希资源设置 gzip 与长期 immutable 缓存；测试可注入 Fake |
 | `src/linkcv/core/` | 配置、数据库、错误、安全、Redis 和 MinIO 基础设施 |
-| `src/linkcv/domain/` | `ResumeDocumentV1`、`ResumeStyleV1`、联合快照、SectionIR、Draft 和确定性标准化 |
+| `src/linkcv/domain/` | 唯一运行时 `ResumeDocument`、`ResumePresentation`、`TemplateManifest`、联合快照、SectionIR、Draft 和确定性标准化 |
 | `src/linkcv/domain/job_source.py` | JD 来源 URL 校验、规范化、站点识别和 SHA-256 身份计算 |
 | `src/linkcv/application/resumes/` | 统一创建、乐观锁保存、版本创建/重命名/恢复、分享链接创建/覆盖/更新与事务规则 |
 | `src/linkcv/application/job_descriptions/` | JD 创建、AI 草稿提取、重复解决、搜索分页、乐观锁更新和直接永久删除 |
 | `src/linkcv/application/interviews/` | 求职进程状态机、面试排期冲突、完成/推进/关闭和素材元数据事务 |
-| `src/linkcv/integrations/` | LinkParse PDF/DOCX Adapter、转换分发、微信小程序上游封装和统一 LLM 简历结构化 Adapter |
+| `src/linkcv/integrations/` | LinkParse PDF/DOCX Adapter、转换分发、微信小程序上游封装、统一 LLM 简历结构化与未分类章节语义建议 Adapter |
 | `src/linkcv/services/resume_import_service.py` | Worker 使用的 Markdown 转换、结构化与规范化原语，不提交业务事务 |
 | `src/linkcv/services/resume_import_idempotency.py` | Redis Lua 请求指纹到导入 ID 的短期绑定与冲突保护 |
 | `src/linkcv/core/mq/` | RabbitMQ/Kafka publisher、统一导入消息和 confirm 异常边界 |
@@ -27,7 +27,7 @@
 | `src/linkcv/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkcv/modules/agent/` | 用户会话、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0035` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0042` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -41,7 +41,21 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0016` 新增 12 字段 `resume_imports` 过程表，保存用户、源文件对象、上传/解析状态和唯一结果简历关联。`0017` 要求旧 `source_type=import` 简历已通过发布清理命令归零，再删除 `resumes` 中旧同步导入使用的 `source_filename/source_object_key/extracted_markdown`。
 
-普通创建必须提供名称和启用模板，在用户行锁内完成容量、名称规范键和模板快照校验，再以 `source_type=template` 原子创建当前简历和 initial 版本。正式简历与活动导入任务共享每用户 10 个名额。异步导入同样必须提供启用模板，其标题来自安全化源文件名并允许与已有简历同名；解析内容作为 data，所选模板提供 style。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。手动正式版本在创建和重命名时保存 1–80 字符的名称；旧调用方缺省时按版本号生成“版本 N”。手动版本、重命名、删除版本与恢复都先锁定所属简历；重命名只更新名称，恢复直接替换当前简历且不创建新版本；每份简历最多保存 10 个版本。`0023` 为 `resume_versions.name` 回填历史名称，历史初始版本、恢复前备份和 restore 记录使用系统名称。
+`0036` 在不新增物理列的前提下，把 `resume_templates`、`resumes` 和 `resume_versions` 的全部 `data_json/style_json` 一次性转换为唯一规范结构：内容增加稳定的 `semantic_sections`，呈现增加受控 `TemplateManifest`，并删除运行时 `schema_version`。revision 在任何更新前读取并验证全部目标记录、比较递归叶子内容是否守恒；写入后再次逐行读取并核对完整 JSON 与模板启用状态，任一记录不可转换或写后不一致都会抛错并回滚事务。维护窗口可先运行 `uv run --directory apps/backend python scripts/release/preflight_canonical_resume_snapshots.py` 做只读全量预检。官方深蓝行政模板使用 `columns` 清单，其他官方模板使用 `flow`；缺少可信布局信息的历史导入模板获得安全单栏清单并保持停用。该 revision 是 forward-only，回退依赖发布前备份，不运行 downgrade。
+
+`0037` 只修正九个稳定 key 的官方模板快照，不修改用户简历或历史版本。它把 `0036` 保留在单个 `custom_section_editor` 中的整篇模板 Markdown 按二级标题拆为稳定 `custom_sections`，并让页首信息也通过自定义内容引用，避免读取时同时输出 typed `basics` 和整篇模板正文；原有 `::: left/right`、`:::: sidebar/main`、`:::: meta/trio` 与头像 Markdown 保持原顺序。revision 同时把官方模板字号、行距、主题色、智能一页和页边距恢复为 PDF 视觉基线使用的受审参数。升级前先全量读取并验证九个官方模板，写入后逐行重读完整 JSON，集合不完整、结构歧义或写后不一致都会回滚。
+
+`0038` 是 `0037` 的前向完整性修正：官方模板一旦采用全 custom 的规范编辑章节，就清空工作、教育、项目等 typed 列表以及已进入编辑 Markdown 的联系方式，仅保留契约允许的姓名与头像元数据。迁移在第一笔更新前用完整 `ResumeSnapshot` 校验九个官方模板，并在写后重新执行同一全量预检，保证模板只有一份内容真值。用户简历和历史版本仍不在迁移范围内。
+
+`0039` 继续前向修正官方模板的编辑区块标识：把不受 Web 编辑器识别的 `template_*` custom section ID 转换为确定性的 `blk_*` 不透明 ID，并同步更新 semantic section 引用。迁移在写前和写后校验九个完整模板快照，不改用户简历与历史版本；受旧模板影响的开发测试简历需要在迁移后从模板重新创建。
+
+`0040` 前向修正官方双栏模板的插槽清单：从侧栏插槽移除完整 `basics` 章节，使姓名与职位继续进入主内容区，同时保留侧栏技能、语言和头像。迁移预检并同步 `resume_templates`、`resumes` 与 `resume_versions` 中使用官方双栏模板的规范快照，正文和其他呈现参数保持不变；失败依赖发布前备份恢复或后续 forward revision 修正。
+
+`0041` 从正文中移除模板拥有的页级投影。迁移全量读取 `resume_templates`、`resumes` 和 `resume_versions`：旧 `custom_section_editor` 整篇 Markdown 以及跨规范章节残留的 `:::: sidebar/main` 被拆成无投影 `custom_sections`，侧栏标题映射为 `profile/skills/interests/languages` 等独立语义，私有用户头像转入 `basics.photo`，系统模板头像继续由 manifest 提供。转换在首笔写入前比较去除页栏标记与模板头像后的全部可见行，校验完整 `ResumeSnapshot`；写后再次全量转换并核对幂等结果。revision 不新增物理列，失败按 forward-only 规则从备份恢复或增加后续 revision。
+
+`0042` 先验证 `blank-cn`、其历史简历引用以及所有 `classic-technical-cn` 模板/简历/版本快照，再把经典单页技术模板的 A4 页边距恢复为生产审查值 `9/11/9/11mm` 并删除空白模板行。`resumes.template_id` 的既有 `ON DELETE SET NULL` 只清除历史简历的来源引用；简历和版本自有的 `data_json/style_json` 不变。迁移写后逐项验证模板不存在、旧简历仍存在且来源已置空、经典技术快照内容不变。revision 为 forward-only，恢复删除的模板和原引用依赖升级前备份。
+
+普通创建必须提供名称和启用模板，在用户行锁内完成容量、名称规范键和模板快照校验，再以 `source_type=template` 原子创建当前简历和 initial 版本。正式简历与活动导入任务共享每用户 10 个名额。异步导入同样必须提供启用模板，其标题来自安全化源文件名并允许与已有简历同名；Web 默认选择 `classic-technical-cn`，不可用时只回退到其他非空白启用模板，解析内容作为 data，所选模板提供 style。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。模板切换使用同一乐观锁边界的独立原子服务：当前 `data_json` 保持不变，目标启用模板提供 `style_json` 与 `template_id`，成功后只递增一次锁；目标无效或版本冲突不会写入部分结果。手动正式版本在创建和重命名时保存 1–80 字符的名称；旧调用方缺省时按版本号生成“版本 N”。手动版本、重命名、删除版本与恢复都先锁定所属简历；重命名只更新名称，恢复直接替换当前简历且不创建新版本；每份简历最多保存 10 个版本。`0023` 为 `resume_versions.name` 回填历史名称，历史初始版本、恢复前备份和 restore 记录使用系统名称。
 
 `0003` 将模板外键改为 `ON DELETE SET NULL`，同时允许历史模板来源在模板删除后保留 `source_type=template/template_id=NULL`。MySQL 8.4 禁止 `SET NULL` 外键列参与 CHECK，因此 `ck_resumes_source_fields` 只约束来源证据字段，`template_id/source_type` 组合由统一创建服务保证，外键继续保证非空引用有效。`0004` 曾新增对象存储清理任务表；`0010` 在删除链路改为同步后移除该表，upgrade 会先锁表并在存在待处理任务时拒绝删表。部署流水线先迁移再替换应用，因此迁移到 `0010` 前须确认任务表为空；迁移和容器替换之间的旧应用删除请求可能短暂失败。`0005` 在批量转换前核对旧节点和样式字段，只接受可完整表达的上一版结构；遇到未知字段、危险 Markdown 或无法保留的内嵌图片会中止。`0012` 删除 `resumes` 和 `resume_versions` 的旧版内容与样式备份列；恢复旧 JSON 必须使用迁移前的外部数据库备份。已进入共享环境的 revision 不原地修改，修正通过新的向前 revision 完成。
 
@@ -149,7 +163,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0035`、模板初始化和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0042`、模板初始化和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 

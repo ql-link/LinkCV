@@ -14,6 +14,11 @@ describe("selectionBubbleAnchor", () => {
     expect(shouldShowSelectionAgentBubble({ editable: true, selectionEmpty: false })).toBe(true);
     expect(shouldShowSelectionAgentBubble({ editable: true, selectionEmpty: true })).toBe(false);
     expect(shouldShowSelectionAgentBubble({ editable: false, selectionEmpty: false })).toBe(false);
+    expect(shouldShowSelectionAgentBubble({
+      editable: true,
+      selectionEmpty: false,
+      selectionIsText: false,
+    })).toBe(false);
   });
 
   it("同一选区格式变化时保持原锚点", () => {

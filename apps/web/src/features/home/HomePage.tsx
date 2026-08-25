@@ -403,7 +403,7 @@ export function HomeScreen({
             <p>
               {query
                 ? "换个关键词试试。"
-                : "从空白模板创建，或导入一份已有文件作为起点。之后可以复制出不同岗位版本，分别维护和分享。"}
+                : "从一套完整模板创建，或导入一份已有文件作为起点。之后可以复制出不同岗位版本，分别维护和分享。"}
             </p>
             {!query && (
               <div className="empty-state-actions">

@@ -365,6 +365,56 @@ Figma
       { type: "resumeTrioRow" },
     ]);
   });
+
+  it("双栏模板会完整解析侧栏与正文中的嵌套布局块", () => {
+    const html = renderResumeMarkdown(`:::: sidebar
+# 张三｜UI 设计师
+
+:::: trio
+Photoshop
+5 年
+精通
+::::
+::::
+
+:::: main
+## :icon[GraduationCap]: 教育经历
+
+::: left
+海岚艺术大学
+:::
+
+::: right
+2021.09 - 2024.06
+:::
+::::`);
+    editor = new Editor({ extensions: resumeEditorExtensions, content: html });
+
+    expect(html).not.toContain("::::");
+    expect(html).not.toContain("::: left");
+    expect(editor.getJSON().content).toMatchObject([{
+      type: "resumeColumns",
+      content: [
+        {
+          type: "resumeColumn",
+          attrs: { variant: "sidebar" },
+          content: [
+            { type: "heading", attrs: { level: 1 } },
+            { type: "resumeTrioRow" },
+          ],
+        },
+        {
+          type: "resumeColumn",
+          attrs: { variant: "main" },
+          content: [
+            { type: "heading", attrs: { level: 2 } },
+            { type: "resumeRow" },
+          ],
+        },
+      ],
+    }]);
+  });
+
   it("保存并恢复当前行的左栏比例", () => {
     const html = renderResumeMarkdown("::: left 62\n示例大学\n:::\n\n::: right\n2022 – 2026\n:::");
     editor = new Editor({ extensions: resumeEditorExtensions, content: html });
