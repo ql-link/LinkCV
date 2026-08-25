@@ -1,4 +1,4 @@
-import type { ResumeDocumentV1, ResumeStyleV1 } from "./resumeContract";
+import type { ResumeDocument, ResumePresentation } from "./resumeContract";
 
 export type User = {
   id: string;
@@ -81,7 +81,7 @@ export type ResumeSummary = {
   lock_version: number;
   created_at: string;
   updated_at: string;
-  preview?: { data: ResumeDocumentV1; style: ResumeStyleV1 } | null;
+  preview?: { data: ResumeDocument; style: ResumePresentation } | null;
 };
 
 export type ResumeTemplate = {
@@ -89,26 +89,54 @@ export type ResumeTemplate = {
   key: string;
   name: string;
   description: string | null;
-  data: ResumeDocumentV1;
-  style: ResumeStyleV1;
+  data: ResumeDocument;
+  style: ResumePresentation;
+  switchable: true;
+  incompatibility_reason: null;
 };
+
+const RETIRED_RESUME_TEMPLATE_KEYS = new Set(["blank-cn"]);
+
+function selectableResumeTemplates(templates: ResumeTemplate[]): ResumeTemplate[] {
+  return templates.filter((template) => !RETIRED_RESUME_TEMPLATE_KEYS.has(template.key));
+}
 
 export type AdminResumeTemplate = {
   id: string;
   key: string;
   name: string;
   description: string | null;
-  data: ResumeDocumentV1 | null;
-  style: ResumeStyleV1 | null;
+  data: ResumeDocument | null;
+  style: ResumePresentation | null;
   active: boolean;
   valid: boolean;
   validation_error: string | null;
+  switchable: boolean;
+  incompatibility_reason: string | null;
 };
 
 export type ResumeRecord = ResumeSummary & {
   template_id: string | null;
-  data: ResumeDocumentV1;
-  style: ResumeStyleV1;
+  data: ResumeDocument;
+  style: ResumePresentation;
+};
+
+export type SemanticClassificationSuggestion = {
+  section_id: string;
+  semantic_kind:
+    | "profile"
+    | "work"
+    | "education"
+    | "project"
+    | "skills"
+    | "activity"
+    | "interests"
+    | "certificates"
+    | "awards"
+    | "languages"
+    | "custom";
+  confidence: number;
+  reason: string;
 };
 
 export type ResumeVersion = {
@@ -117,8 +145,8 @@ export type ResumeVersion = {
   name: string;
   reason: "initial" | "manual" | "before_restore" | "restore" | "agent";
   created_at: string;
-  data?: ResumeDocumentV1;
-  style?: ResumeStyleV1;
+  data?: ResumeDocument;
+  style?: ResumePresentation;
 };
 
 export type AgentMessage = {
@@ -164,8 +192,8 @@ export type AgentProposal = {
   run_id: string;
   resume_id: string;
   base_lock_version: number;
-  data: ResumeDocumentV1;
-  style: ResumeStyleV1;
+  data: ResumeDocument;
+  style: ResumePresentation;
   summary: string;
   proposal_mode?: "legacy_snapshot" | "polish_local" | "rewrite_entry_star" | "generate_from_materials";
   target?: Record<string, unknown> | null;
@@ -211,8 +239,8 @@ export type PublicShareSharer = {
 };
 
 export type PublicSharePayload = {
-  data: ResumeDocumentV1;
-  style: ResumeStyleV1;
+  data: ResumeDocument;
+  style: ResumePresentation;
   sharer: PublicShareSharer;
 };
 
@@ -1049,7 +1077,8 @@ export const api = {
   listResumes: () => request<{ resumes: ResumeSummary[] }>("/api/resumes"),
   getResumeOverview: () => request<ResumeOverview>("/api/resume-overview"),
   listResumeTemplates: () =>
-    request<{ templates: ResumeTemplate[] }>("/api/resume-templates"),
+    request<{ templates: ResumeTemplate[] }>("/api/resume-templates")
+      .then(({ templates }) => ({ templates: selectableResumeTemplates(templates) })),
   getResumeTemplate: (id: string) =>
     request<{ template: ResumeTemplate }>(`/api/resume-templates/${id}`),
   createResume: (payload: { title: string; template_id: string }) =>
@@ -1059,6 +1088,13 @@ export const api = {
     }),
   getResume: (id: string) =>
     request<{ resume: ResumeRecord }>(`/api/resumes/${id}`),
+  classifyResumeSemantics: (
+    id: string,
+    payload: { content_hash: string; section_ids?: string[] },
+  ) => request<{ content_hash: string; suggestions: SemanticClassificationSuggestion[] }>(
+    `/api/resumes/${id}/semantic-classification`,
+    { method: "POST", body: payload },
+  ),
   downloadResumePdf: (id: string, lockVersion: number, signal?: AbortSignal) =>
     requestResumePdf(
       `/api/resumes/${encodeURIComponent(id)}/pdf?lock_version=${encodeURIComponent(lockVersion)}`,
@@ -1101,8 +1137,8 @@ export const api = {
     id: string,
     payload: {
       title?: string;
-      data?: ResumeDocumentV1;
-      style?: ResumeStyleV1;
+      data?: ResumeDocument;
+      style?: ResumePresentation;
       base_lock_version: number;
     },
   ) =>
@@ -1110,6 +1146,18 @@ export const api = {
       method: "PUT",
       body: payload,
     }),
+  applyResumeTemplate: (
+    id: string,
+    payload: {
+      template_id: string;
+      base_lock_version: number;
+      title?: string;
+      data?: ResumeDocument;
+    },
+  ) => request<{ resume: ResumeRecord }>(`/api/resumes/${id}/apply-template`, {
+    method: "POST",
+    body: payload,
+  }),
   deleteResume: (id: string) =>
     request<{ deleted: boolean }>(`/api/resumes/${id}`, { method: "DELETE" }),
   listVersions: (id: string) =>
@@ -1706,4 +1754,4 @@ function withLogQuery(path: string, params: Record<string, unknown>): string {
   return `${path}${suffix ? `?${suffix}` : ""}`;
 }
 
-export type { ResumeDocumentV1, ResumeStyleV1 } from "./resumeContract";
+export type { ResumeDocument, ResumePresentation } from "./resumeContract";

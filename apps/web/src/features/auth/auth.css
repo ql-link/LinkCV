@@ -6,6 +6,44 @@
   contain: paint;
 }
 
+.auth-entry .wechat-qr-panel--auth {
+  gap: 44px;
+  padding: 0;
+}
+
+.auth-entry .wechat-qr-panel--auth .wechat-qr-box {
+  width: clamp(236px, 25vw, 288px);
+  height: clamp(236px, 25vw, 288px);
+  border: 0;
+  border-radius: var(--ui-radius-full);
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-md);
+}
+
+.auth-entry .wechat-qr-panel--auth .wechat-qr-img {
+  display: block;
+  border-radius: inherit;
+}
+
+.auth-entry .wechat-qr-panel--auth .wechat-qr-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--ui-text-subtle);
+  font-size: 14px;
+}
+
+.auth-entry .wechat-qr-panel--auth .wechat-qr-hint svg {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 639px) {
+  .auth-entry .wechat-qr-panel--auth {
+    gap: 32px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .auth-entry-shader {
     display: none;

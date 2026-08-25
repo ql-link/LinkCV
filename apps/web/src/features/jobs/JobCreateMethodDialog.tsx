@@ -20,7 +20,7 @@ export function JobCreateMethodDialog({
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="job-method-dialog">
         <DialogHeader className="job-method-header">
-          <DialogTitle className="job-method-title"><BriefcaseBusiness aria-hidden="true" />新建 JD</DialogTitle>
+          <DialogTitle className="job-method-title"><BriefcaseBusiness aria-hidden="true" />新建岗位</DialogTitle>
           <DialogDescription>选择录入方式，内容会在保存前进入同一份表单。</DialogDescription>
         </DialogHeader>
         <div className="job-method-options">

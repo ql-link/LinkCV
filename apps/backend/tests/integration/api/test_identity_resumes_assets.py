@@ -121,7 +121,7 @@ def test_authentication_and_resume_crud() -> None:
         assert created.status_code == 201
         resume = created.json()["resume"]
         assert resume["title"] == "测试简历"
-        assert resume["data"]["schema_version"] == "1.0"
+        assert resume["data"]["semantic_sections"]
         assert resume["style"]["template_key"] == "classic-cn"
         assert resume["source_type"] == "template"
         assert resume["lock_version"] == 1

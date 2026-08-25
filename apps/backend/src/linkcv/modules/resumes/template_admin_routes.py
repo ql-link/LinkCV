@@ -31,6 +31,8 @@ class AdminTemplateRecord(BaseModel):
     active: bool
     valid: bool
     validation_error: str | None
+    switchable: bool
+    incompatibility_reason: str | None
 
 
 class AdminTemplateListResponse(BaseModel):
@@ -61,6 +63,8 @@ def admin_template_record(template: ResumeTemplate) -> AdminTemplateRecord:
             active=bool(template.is_active),
             valid=False,
             validation_error="TEMPLATE_SCHEMA_INVALID",
+            switchable=False,
+            incompatibility_reason="TEMPLATE_SCHEMA_INVALID",
         )
     return AdminTemplateRecord(
         id=str(template.id),
@@ -72,6 +76,8 @@ def admin_template_record(template: ResumeTemplate) -> AdminTemplateRecord:
         active=bool(template.is_active),
         valid=True,
         validation_error=None,
+        switchable=True,
+        incompatibility_reason=None,
     )
 
 

@@ -206,7 +206,7 @@ def test_worker_logs_safe_normalization_failure_metadata(caplog) -> None:
     assert failure.error_code == "RESUME_STRUCTURE_INVALID"
     assert failure.failure_stage == "resume_normalization"
     assert failure.exception_type == "ValidationError"
-    assert failure.validation_model == "RichTextV1"
+    assert failure.validation_model == "RichText"
     assert failure.validation_paths == "<root>"
     assert failure.validation_types == "value_error"
     assert "<script>" not in caplog.text

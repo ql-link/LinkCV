@@ -12,7 +12,7 @@ from linkcv.domain.document_conversion import (
 )
 from linkcv.domain.import_warnings import merge_import_warnings
 from linkcv.domain.resume_normalization import finalize_resume_document
-from linkcv.domain.resume_document import ResumeDocumentV1
+from linkcv.domain.resume_document import ResumeDocument
 from linkcv.domain.section_ir import build_section_ir
 from linkcv.integrations.resume_structuring import (
     ResumeStructureInvalidError,
@@ -85,7 +85,7 @@ def _validation_metadata(error: ValidationError) -> dict[str, str]:
 
 @dataclass(frozen=True)
 class ParsedImportResult:
-    document: ResumeDocumentV1
+    document: ResumeDocument
     extracted_markdown: str
     source_file_format: str
     warnings: list[str]

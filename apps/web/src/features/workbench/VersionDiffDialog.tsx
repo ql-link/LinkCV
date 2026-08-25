@@ -1,13 +1,13 @@
 import { diffLines, type Change } from "diff";
 import { useEffect, useMemo, useState } from "react";
-import { api, type ResumeStyleV1, type ResumeVersion } from "../../api/client";
+import { api, type ResumePresentation, type ResumeVersion } from "../../api/client";
 import { resumeDocumentToMarkdown, styleToEditorSettings } from "../../api/resumeContract";
 import type { ResumeSettings } from "../../store/resumeStore";
-import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui";
+import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, PageLoading } from "@/components/ui";
 
 type StyleDifference = { label: string; current: string; historical: string };
 
-export function compareVersionStyles(current: ResumeSettings, historical: ResumeStyleV1): StyleDifference[] {
+export function compareVersionStyles(current: ResumeSettings, historical: ResumePresentation): StyleDifference[] {
   const previous = styleToEditorSettings(historical);
   const values: Array<[string, string, string]> = [
     ["字体", current.fontFamily, previous.fontFamily],
@@ -75,7 +75,7 @@ export function VersionDiffDialog({
           <DialogTitle>恢复“{version?.name ?? "历史版本"}”前确认差异</DialogTitle>
           <DialogDescription>红色是当前版本将被移除的内容，绿色是恢复后写入的内容。确认前不会修改简历。</DialogDescription>
         </DialogHeader>
-        {loading ? <p className="version-diff-status" role="status">正在读取版本内容…</p> : null}
+        {loading ? <PageLoading label="正在读取版本内容…" scope="panel" /> : null}
         {error ? <p className="version-diff-status is-error" role="alert">{error}</p> : null}
         {!loading && !error && record ? (
           <div className="version-diff-body">

@@ -1,18 +1,22 @@
 import type { ReactNode } from "react";
 import {
   BriefcaseBusiness,
-  CalendarClock,
+  CalendarDays,
   Database,
   FileText,
   LayoutTemplate,
+  ListChecks,
+  NotebookTabs,
 } from "lucide-react";
 import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
 import { Brand, PageHeader } from "@/components/ui";
 import RandomLetterSwapNav from "@/components/ui/m-random-letter-swap-1";
 import { preloadWorkspacePage } from "../workspacePageLoaders";
+import "./career-navigation.css";
 
-export type WorkspaceSection = "resumes" | "templates" | "jobs" | "interviews" | "datasets" | "account";
+export type WorkspaceSection = "resumes" | "templates" | "career" | "datasets" | "account";
+export type CareerSection = "jobs" | "applications" | "schedule" | "reviews";
 
 type WorkspaceNavigationProps = {
   active: WorkspaceSection;
@@ -47,20 +51,12 @@ const NAV_ITEMS: Array<{
     icon: LayoutTemplate,
   },
   {
-    activeColor: "var(--ui-warning)",
-    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-warning) 24%, transparent) 0%, color-mix(in srgb, var(--ui-warning) 10%, transparent) 48%, transparent 76%)",
-    key: "jobs",
-    label: "JD 中心",
-    href: "/jobs",
+    activeColor: "var(--ui-career-accent)",
+    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-career-accent) 28%, transparent) 0%, color-mix(in srgb, var(--ui-career-accent) 13%, transparent) 48%, transparent 76%)",
+    key: "career",
+    label: "求职中心",
+    href: "/career/jobs",
     icon: BriefcaseBusiness,
-  },
-  {
-    activeColor: "var(--ui-interview-accent)",
-    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-interview-accent) 26%, transparent) 0%, color-mix(in srgb, var(--ui-interview-accent) 12%, transparent) 48%, transparent 76%)",
-    key: "interviews",
-    label: "面试中心",
-    href: "/interviews",
-    icon: CalendarClock,
   },
   {
     activeColor: "var(--ui-success)",
@@ -138,13 +134,74 @@ export function WorkspacePageHero({
   title,
   description,
   actions,
+  icon,
+  tone = "accent",
+  className,
 }: {
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   description?: string;
   actions?: ReactNode;
+  icon?: ReactNode;
+  tone?: "accent" | "template" | "success" | "warning";
+  className?: string;
 }) {
-  return <PageHeader eyebrow={eyebrow} title={title} description={description} actions={actions} />;
+  if (icon) {
+    return (
+      <header className={`page-hero is-module${className ? ` ${className}` : ""}`}>
+        <div className="page-hero-module-summary">
+          <span className={`page-hero-module-mark is-${tone}`} aria-hidden="true">
+            {icon}
+          </span>
+          <div className="page-hero-module-copy">
+            <h1>{title}</h1>
+            {description && <p className="page-hero-description">{description}</p>}
+          </div>
+        </div>
+        {actions && <div className="page-hero-actions">{actions}</div>}
+      </header>
+    );
+  }
+
+  return (
+    <PageHeader
+      eyebrow={eyebrow}
+      title={title}
+      description={description}
+      actions={actions}
+      className={className}
+    />
+  );
+}
+
+const CAREER_ITEMS: Array<{ key: CareerSection; label: string; href: string; icon: typeof BriefcaseBusiness }> = [
+  { key: "jobs", label: "岗位库", href: "/career/jobs", icon: BriefcaseBusiness },
+  { key: "applications", label: "求职进程", href: "/career/applications", icon: ListChecks },
+  { key: "schedule", label: "面试排期", href: "/career/schedule", icon: CalendarDays },
+  { key: "reviews", label: "记录复盘", href: "/career/reviews", icon: NotebookTabs },
+];
+
+export function CareerNavigation({ active }: { active: CareerSection }) {
+  return (
+    <nav className="career-subnav" aria-label="求职中心导航">
+      {CAREER_ITEMS.map(({ key, label, href, icon: Icon }) => (
+        <a
+          key={key}
+          className={active === key ? "is-active" : ""}
+          aria-current={active === key ? "page" : undefined}
+          href={href}
+          onClick={(event) => {
+            if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+            event.preventDefault();
+            navigateTo(href);
+          }}
+        >
+          <Icon />
+          {label}
+        </a>
+      ))}
+    </nav>
+  );
 }
 
 export function WorkspaceLayout({ active, children }: { active: WorkspaceSection; children: ReactNode }) {

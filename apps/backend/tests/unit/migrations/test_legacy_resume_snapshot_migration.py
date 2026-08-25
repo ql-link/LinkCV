@@ -14,10 +14,26 @@ REVISION_PATH = (
     / "versions"
     / "0005_migrate_legacy_resume_snapshots.py"
 )
+CANONICAL_REVISION_PATH = (
+    BACKEND_ROOT
+    / "migrations"
+    / "versions"
+    / "0036_migrate_resume_snapshots_to_canonical_.py"
+)
 
 
 def load_revision():
     spec = importlib.util.spec_from_file_location("linkcv_revision_0005", REVISION_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_canonical_revision():
+    spec = importlib.util.spec_from_file_location(
+        "linkcv_revision_0036", CANONICAL_REVISION_PATH
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -86,9 +102,14 @@ def legacy_style() -> dict[str, object]:
 
 def test_legacy_snapshot_converts_to_current_contract() -> None:
     revision = load_revision()
+    canonical = load_canonical_revision()
 
-    data = revision.legacy_data_to_v1(legacy_data())
-    style = revision.legacy_style_to_v1(legacy_style())
+    data = canonical._convert_data(
+        revision.legacy_data_to_v1(legacy_data()), field="test.data"
+    )
+    style = canonical._convert_style(
+        revision.legacy_style_to_v1(legacy_style()), field="test.style"
+    )
     snapshot = parse_resume_snapshot(data, style)
 
     markdown = snapshot.data.sections.custom_sections[0].items[0].content.content

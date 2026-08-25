@@ -1,9 +1,9 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { CircleAlert } from "lucide-react";
 import { Brand, Button, PageLoading } from "@/components/ui";
-import { WorkspaceLayout, type WorkspaceSection } from "./components/WorkspaceLayout";
+import { CareerNavigation, WorkspaceLayout, type CareerSection, type WorkspaceSection } from "./components/WorkspaceLayout";
 import { ApiRequestError } from "./api/client";
-import { authPath, editorPath, navigateTo, useAppRoute } from "./routing";
+import { authPath, editorPath, legacyCareerRedirect, navigateTo, useAppRoute } from "./routing";
 import { useResumeStore } from "./store/resumeStore";
 import {
   loadAccountPage,
@@ -70,6 +70,7 @@ export function WorkspacePageBoundary({ children }: { children: ReactNode }) {
 
 function AppContent() {
   const route = useAppRoute();
+  const currentLocation = `${window.location.pathname}${window.location.search}`;
   const isInterviewMockPreview = import.meta.env.DEV
     && route.kind === "interviews"
     && new URLSearchParams(window.location.search).get("mock") === "1";
@@ -85,6 +86,12 @@ function AppContent() {
   const versionOperationPending = useResumeStore((state) => state.versionOperationPending);
   const editVersion = useResumeStore((state) => state.editVersion);
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
+
+  useEffect(() => {
+    if (isInterviewMockPreview) return;
+    const redirect = legacyCareerRedirect(window.location.pathname, window.location.search);
+    if (redirect) navigateTo(redirect, { replace: true });
+  }, [currentLocation, isInterviewMockPreview]);
 
   useEffect(() => {
     if (isAdminArea || isInterviewMockPreview) return;
@@ -195,9 +202,12 @@ function AppContent() {
 
   if (isInterviewMockPreview && route.kind === "interviews") {
     return (
-      <WorkspaceLayout active="interviews">
+      <WorkspaceLayout active="career">
         <WorkspacePageBoundary>
-          <InterviewCenterPage view={route.view} />
+          <InterviewCenterPage
+            view={route.view}
+            navigation={<CareerNavigation active={route.view === "records" ? "reviews" : route.view} />}
+          />
         </WorkspacePageBoundary>
       </WorkspaceLayout>
     );
@@ -255,21 +265,41 @@ function AppContent() {
         ? "account"
         : route.kind === "datasets"
           ? "datasets"
-          : route.kind === "interviews"
-            ? "interviews"
-          : "jobs";
+          : "career";
+
+    const careerSection: CareerSection | null = route.kind === "jobs"
+      || route.kind === "jobCreate"
+      || route.kind === "jobDetail"
+      || route.kind === "jobEdit"
+      ? "jobs"
+      : route.kind === "interviews"
+        ? route.view === "records" ? "reviews" : route.view
+        : null;
 
     return (
       <WorkspaceLayout active={activeSection}>
         <WorkspacePageBoundary>
+          {careerSection && route.kind !== "interviews" && route.kind !== "jobs" && route.kind !== "jobCreate" && <CareerNavigation active={careerSection} />}
           {route.kind === "resumes" && <HomePage />}
           {route.kind === "templates" && <ResumeTemplatesPage />}
           {(route.kind === "jobs" || route.kind === "jobCreate") && (
-            <JobCenterPage createDialogOpen={route.kind === "jobCreate"} />
+            <JobCenterPage
+              createDialogOpen={route.kind === "jobCreate"}
+              navigation={<CareerNavigation active="jobs" />}
+            />
           )}
           {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}
           {route.kind === "jobEdit" && <JobFormPage mode="edit" jobId={route.jobId} />}
-          {route.kind === "interviews" && <InterviewCenterPage view={route.view} />}
+          {route.kind === "interviews" && (
+            <InterviewCenterPage
+              view={route.view}
+              initialApplicationId={route.applicationId}
+              initialSessionId={route.sessionId}
+              initialJobId={route.jobId}
+              initialCreateApplication={route.createApplication}
+              navigation={<CareerNavigation active={careerSection ?? "applications"} />}
+            />
+          )}
           {route.kind === "datasets" && <DatasetsPage />}
           {route.kind === "account" && <AccountPage />}
         </WorkspacePageBoundary>

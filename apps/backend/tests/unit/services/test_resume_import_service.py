@@ -168,7 +168,7 @@ def test_parse_resume_reports_safe_normalization_metadata(caplog) -> None:
     assert error.code == "RESUME_STRUCTURE_INVALID"
     assert error.stage == "resume_normalization"
     assert error.exception_type == "ValidationError"
-    assert error.validation_model == "RichTextV1"
+    assert error.validation_model == "RichText"
     assert error.validation_paths == "<root>"
     assert error.validation_types == "value_error"
     assert "<script>" not in caplog.text

@@ -1,14 +1,20 @@
-import type { ResumeDocumentV1, ResumeStyleV1 } from "../../../api/resumeContract";
-import { resumeDocumentToMarkdown, styleToEditorSettings } from "../../../api/resumeContract";
+import type { ResumeDocument, ResumePresentation } from "../../../api/resumeContract";
+import { styleToEditorSettings } from "../../../api/resumeContract";
 import { renderResumeMarkdown } from "../../../parser/resumeMarkdown";
+import {
+  composeEditorDocumentForTemplate,
+  composeResumeMarkdownForTemplate,
+} from "../../workbench/templateLayout";
+import { resumeDocumentToEditorDocument } from "../../workbench/resumeEditorPersistence";
+import { renderResumeEditorDocument } from "./resumeEditorRenderer";
 
 export const RESUME_RENDER_PROTOCOL_VERSION = 1 as const;
 
 export type ResumeRenderRequestV1 = {
   protocol_version?: typeof RESUME_RENDER_PROTOCOL_VERSION;
   title: string;
-  data: ResumeDocumentV1;
-  style: ResumeStyleV1;
+  data: ResumeDocument;
+  style: ResumePresentation;
   assets?: Record<string, string>;
 };
 
@@ -45,7 +51,7 @@ function replaceEmbeddedAssets(html: string, assets: Record<string, string>) {
   });
 }
 
-function printCssVariables(style: ResumeStyleV1) {
+function printCssVariables(style: ResumePresentation) {
   const settings = styleToEditorSettings(style);
   const marginX = Number.isFinite(style.page.margin_left_mm) ? style.page.margin_left_mm : settings.pageMargin;
   const marginY = Number.isFinite(style.page.margin_top_mm) ? style.page.margin_top_mm : settings.verticalPageMargin;
@@ -73,8 +79,16 @@ export function renderResumePrintDocument(
   options: ResumePrintDocumentOptions = {},
 ) {
   const settings = styleToEditorSettings(request.style);
-  const markdown = resumeDocumentToMarkdown(request.data);
-  const content = replaceEmbeddedAssets(renderResumeMarkdown(markdown), request.assets ?? {});
+  const editorDocument = resumeDocumentToEditorDocument(request.data);
+  const rendered = editorDocument
+    ? renderResumeEditorDocument(composeEditorDocumentForTemplate(
+      editorDocument,
+      request.style.manifest,
+      request.data.basics.photo,
+      request.data,
+    ))
+    : renderResumeMarkdown(composeResumeMarkdownForTemplate(request.data, request.style.manifest));
+  const content = replaceEmbeddedAssets(rendered, request.assets ?? {});
   const paperClasses = [
     "resume-paper",
     "resume-preview-paper",
@@ -94,8 +108,8 @@ export function renderResumePrintDocument(
 
 export function createResumeRenderRequest(
   title: string,
-  data: ResumeDocumentV1,
-  style: ResumeStyleV1,
+  data: ResumeDocument,
+  style: ResumePresentation,
   assets?: Record<string, string>,
 ): ResumeRenderRequestV1 {
   return {

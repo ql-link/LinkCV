@@ -6,6 +6,7 @@ import { editorPath, navigateTo } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
 import { ResumePreview } from "../preview/ResumePreview";
 import { formatImportFileSize, importErrorMessage, validateImportTitle } from "@/lib/resumeImport";
+import { selectImportTemplate } from "./importTemplate";
 
 function createErrorMessage(error: unknown) {
   if (!(error instanceof ApiRequestError)) return "创建简历失败，请稍后重试。";
@@ -54,7 +55,7 @@ export function ResumeCreatePage() {
     };
   }, []);
 
-  const importTemplate = templates.find((template) => template.key === "blank-cn") ?? templates[0] ?? null;
+  const importTemplate = selectImportTemplate(templates);
 
   const pickFile = (next: File | null) => {
     setFile(next);

@@ -9,11 +9,13 @@ export type SelectionPositionUpdater = () => void;
 export function shouldShowSelectionAgentBubble({
   editable,
   selectionEmpty,
+  selectionIsText = true,
 }: {
   editable: boolean;
   selectionEmpty: boolean;
+  selectionIsText?: boolean;
 }) {
-  return editable && !selectionEmpty;
+  return editable && selectionIsText && !selectionEmpty;
 }
 
 export function createSelectionBubbleAnchor() {

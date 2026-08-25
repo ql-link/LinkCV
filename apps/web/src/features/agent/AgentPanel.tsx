@@ -10,16 +10,16 @@ import {
   AgentSelectionContext,
   AgentStreamEvent,
   ApiRequestError,
-  ResumeDocumentV1,
-  ResumeStyleV1,
+  ResumeDocument,
+  ResumePresentation,
   api,
 } from "../../api/client";
-import { Avatar, AvatarFallback, AvatarImage, Button } from "@/components/ui";
+import { Avatar, AvatarFallback, AvatarImage, Button, PageLoading } from "@/components/ui";
 
 type AgentPanelProps = {
   resumeId: string;
-  currentData?: ResumeDocumentV1;
-  currentStyle?: ResumeStyleV1;
+  currentData?: ResumeDocument;
+  currentStyle?: ResumePresentation;
   userAvatarUrl?: string | null;
   userDisplayName?: string;
   onBeforeRun?: () => Promise<boolean>;
@@ -41,7 +41,7 @@ const agentQuickPrompts = [
   { label: "提炼亮点", prompt: "提炼这份简历的技术亮点", icon: Sparkles },
 ];
 
-const sectionLabels: Record<keyof ResumeDocumentV1["sections"], string> = {
+const sectionLabels: Record<keyof ResumeDocument["sections"], string> = {
   work_experiences: "工作经历",
   educations: "教育经历",
   projects: "项目经历",
@@ -54,8 +54,8 @@ const sectionLabels: Record<keyof ResumeDocumentV1["sections"], string> = {
 
 function proposalChanges(
   proposal: AgentProposal,
-  currentData?: ResumeDocumentV1,
-  currentStyle?: ResumeStyleV1,
+  currentData?: ResumeDocument,
+  currentStyle?: ResumePresentation,
 ) {
   if (proposal.operations?.length) {
     return proposal.operations.map((operation, index) => ({
@@ -71,7 +71,7 @@ function proposalChanges(
   if (JSON.stringify(currentData.basics) !== JSON.stringify(proposal.data.basics)) {
     changes.push({ label: "基本信息", before: "当前内容", after: "有修改" });
   }
-  for (const key of Object.keys(sectionLabels) as Array<keyof ResumeDocumentV1["sections"]>) {
+  for (const key of Object.keys(sectionLabels) as Array<keyof ResumeDocument["sections"]>) {
     const before = currentData.sections[key];
     const after = proposal.data.sections[key];
     if (JSON.stringify(before) !== JSON.stringify(after)) {
@@ -607,7 +607,7 @@ export function AgentPanel({
       {conversationView === "history" ? (
         <section className="agent-conversation-history" aria-label="历史对话">
           <header><strong>历史对话</strong><small>当前简历 · 最近 50 条</small></header>
-          {historyLoading && <p className="agent-empty"><LoaderCircle aria-hidden="true" className="agent-spinner" />正在读取历史对话…</p>}
+          {historyLoading && <PageLoading label="正在读取历史对话…" scope="panel" />}
           {historyError && <div className="agent-error" role="alert">{historyError}<button type="button" onClick={() => void openHistory()}>重试</button></div>}
           {!historyLoading && !historyError && sessions.length === 0 && <p className="agent-empty">暂无历史对话。发送第一条消息后会显示在这里。</p>}
           {!historyLoading && !historyError && sessions.length > 0 && (
@@ -628,7 +628,7 @@ export function AgentPanel({
         </section>
       ) : <>
       <div className="agent-message-list" ref={messageListRef} aria-live="polite">
-        {loading && <p className="agent-empty"><LoaderCircle aria-hidden="true" className="agent-spinner" />正在读取对话…</p>}
+        {loading && <PageLoading label="正在读取对话…" scope="panel" />}
         {!loading && messages.length === 0 && (
           <div className="agent-welcome-message">
             <strong>你好！我是你的 AI 简历助手</strong>
