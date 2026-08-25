@@ -17,12 +17,20 @@ import {
   defaultSemanticStyle,
   editorDocumentToMarkdown,
   editorSettingsToStyle,
-  resumeDocumentFromMarkdown,
   resumeDocumentToMarkdown,
   styleToEditorSettings,
 } from "../api/resumeContract";
 import { defaultResumeDocument } from "../features/workbench/defaultDocument";
-import { composeResumeMarkdownForTemplate } from "../features/workbench/templateLayout";
+import {
+  composeEditorDocumentForTemplate,
+  composeResumeMarkdownForTemplate,
+  stripTemplateProjectionFromEditorDocument,
+} from "../features/workbench/templateLayout";
+import {
+  editorDocumentUserAvatar,
+  resumeDocumentFromEditorDocument,
+  resumeDocumentToEditorDocument,
+} from "../features/workbench/resumeEditorPersistence";
 import { defaultResumeMarkdown } from "../parser/defaultResume";
 import { renderResumeMarkdown } from "../parser/resumeMarkdown";
 import { buildNamedImportFile } from "../lib/resumeImport";
@@ -108,7 +116,7 @@ type ResumeState = {
   setSplitRatio: (ratio: number) => void;
   setPreviewScale: (scale: number) => void;
   updateSettings: (settings: Partial<ResumeSettings>) => void;
-  applyTemplate: (templateId: string) => Promise<void>;
+  applyTemplate: (templateId: string, editorDocument: JSONContent) => Promise<void>;
   setSectionSemanticKind: (
     sectionId: string,
     semanticKind: ResumeDocument["semantic_sections"][number]["semantic_kind"],
@@ -179,7 +187,16 @@ function normalizeSettings(settings: Partial<ResumeSettings> = {}) {
 }
 
 function applyResume(resume: ResumeRecord, localState?: ResumeState) {
-  const markdown = composeResumeMarkdownForTemplate(resume.data, resume.style.manifest);
+  const markdown = resumeDocumentToMarkdown(resume.data);
+  const canonicalEditor = resumeDocumentToEditorDocument(resume.data);
+  const editorContent = canonicalEditor
+    ? composeEditorDocumentForTemplate(
+      canonicalEditor,
+      resume.style.manifest,
+      resume.data.basics.photo,
+      resume.data,
+    )
+    : renderResumeMarkdown(composeResumeMarkdownForTemplate(resume.data, resume.style.manifest));
   const semanticSettings = normalizeSettings(styleToEditorSettings(resume.style));
   return {
     activeResumeId: resume.id,
@@ -188,7 +205,7 @@ function applyResume(resume: ResumeRecord, localState?: ResumeState) {
     style: resume.style,
     title: resume.title,
     markdown,
-    editorContent: renderResumeMarkdown(markdown),
+    editorContent,
     settings: semanticSettings,
     splitRatio: localState?.splitRatio ?? 0.4,
     previewScale: localState?.previewScale ?? 1,
@@ -503,14 +520,27 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       set({ saveStatus: "saving", error: null });
 
       try {
-        const dataChanged = snapshot.markdown !== resumeDocumentToMarkdown(snapshot.data);
+        const nextData = typeof snapshot.editorContent === "string"
+          ? snapshot.data
+          : resumeDocumentFromEditorDocument(snapshot.editorContent, snapshot.data);
+        let nextStyle = editorSettingsToStyle(snapshot.settings, snapshot.style);
+        if (typeof snapshot.editorContent !== "string") {
+          const avatar = editorDocumentUserAvatar(snapshot.editorContent);
+          if (avatar && nextStyle.manifest.avatar.visibility === "show") {
+            nextStyle = {
+              ...nextStyle,
+              manifest: {
+                ...nextStyle.manifest,
+                avatar: { ...nextStyle.manifest.avatar, size: avatar.size },
+              },
+            };
+          }
+        }
         const { resume } = await api.updateResume(snapshot.activeResumeId, {
           title: snapshot.title,
           base_lock_version: snapshot.lockVersion,
-          ...(dataChanged
-            ? { data: resumeDocumentFromMarkdown(snapshot.markdown, snapshot.data) }
-            : {}),
-          style: editorSettingsToStyle(snapshot.settings, snapshot.style),
+          data: nextData,
+          style: nextStyle,
         });
         set((current) => {
           const resumes = mergeResumeSummary(current.resumes, resume);
@@ -670,9 +700,10 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   setEditorContent: (editorContent) =>
     set((state) => {
       if (JSON.stringify(editorContent) === JSON.stringify(state.editorContent)) return {};
+      const canonical = stripTemplateProjectionFromEditorDocument(editorContent, state.data);
       return {
         editorContent,
-        markdown: editorDocumentToMarkdown(editorContent),
+        markdown: editorDocumentToMarkdown(canonical),
         dirty: true,
         editVersion: state.editVersion + 1,
         saveStatus: "idle",
@@ -697,30 +728,59 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       editVersion: state.editVersion + 1,
       saveStatus: "idle",
     })),
-  applyTemplate: async (templateId) => {
-    await get().saveCurrentResume();
+  applyTemplate: async (templateId, editorDocument) => {
     let state = get();
-    if (state.error) throw new Error(state.error);
     if (!state.activeResumeId) throw new Error("RESUME_NOT_FOUND");
-    // A concurrent edit made while the save was in flight must not be
-    // overwritten by the template response. Keep the draft and let the user
-    // retry after the next save instead.
-    if (state.dirty || state.versionOperationPending) {
-      throw new Error("RESUME_TEMPLATE_APPLY_REQUIRES_SAVED_DRAFT");
-    }
+    if (state.versionOperationPending) throw new Error("RESUME_TEMPLATE_APPLY_PENDING");
     const resumeId = state.activeResumeId;
     const operationVersion = state.editVersion;
     const operationId = ++templateOperationSequence;
+    const nextData = resumeDocumentFromEditorDocument(editorDocument, state.data);
     set({ saveStatus: "saving", versionOperationPending: true, error: null });
     try {
       const { resume } = await api.applyResumeTemplate(resumeId, {
         template_id: templateId,
         base_lock_version: state.lockVersion,
+        title: state.title,
+        data: nextData,
       });
       state = get();
       if (operationId !== templateOperationSequence) return;
       if (state.activeResumeId !== resumeId) {
         set({ saveStatus: "idle", versionOperationPending: false });
+        return;
+      }
+      if (state.editVersion !== operationVersion) {
+        const latestData = typeof state.editorContent === "string"
+          ? state.data
+          : resumeDocumentFromEditorDocument(state.editorContent, state.data);
+        const canonical = typeof state.editorContent === "string"
+          ? resumeDocumentToEditorDocument(latestData)
+          : stripTemplateProjectionFromEditorDocument(state.editorContent, latestData);
+        const latestRecord = {
+          ...resume,
+          title: state.title,
+          data: latestData,
+        };
+        set({
+          resumes: mergeResumeSummary(state.resumes, latestRecord),
+          lockVersion: resume.lock_version,
+          data: latestData,
+          style: resume.style,
+          editorContent: canonical
+            ? composeEditorDocumentForTemplate(
+              canonical,
+              resume.style.manifest,
+              latestData.basics.photo,
+              latestData,
+            )
+            : state.editorContent,
+          settings: normalizeSettings(styleToEditorSettings(resume.style)),
+          dirty: true,
+          saveStatus: "idle",
+          versionOperationPending: false,
+          error: null,
+        });
         return;
       }
       set({

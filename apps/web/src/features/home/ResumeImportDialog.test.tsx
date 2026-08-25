@@ -17,7 +17,7 @@ vi.mock("../../api/client", async (importOriginal) => {
 
 const templates = [
   { id: "8", key: "blank-cn", name: "空白简历", description: null, data: {}, style: {} },
-  { id: "9", key: "modern-cn", name: "现代双栏", description: null, data: {}, style: {} },
+  { id: "9", key: "classic-technical-cn", name: "经典单页技术简历", description: null, data: {}, style: {} },
 ];
 
 describe("ResumeImportDialog", () => {
@@ -25,7 +25,7 @@ describe("ResumeImportDialog", () => {
     vi.restoreAllMocks();
   });
 
-  it("选择文件后默认填写名称，并用空白模板提交自定义名称", async () => {
+  it("选择文件后默认填写名称，并忽略已退役空白模板使用默认版式", async () => {
     vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates } as never);
     const importResume = vi.fn().mockResolvedValue("task-1");
     useResumeStore.setState({ importResume });
@@ -46,7 +46,7 @@ describe("ResumeImportDialog", () => {
     fireEvent.change(screen.getByLabelText(/简历名称/), { target: { value: "产品经理定向简历" } });
     fireEvent.click(await screen.findByRole("button", { name: "导入并开始解析" }));
 
-    await waitFor(() => expect(importResume).toHaveBeenCalledWith(file, "8", "产品经理定向简历"));
+    await waitFor(() => expect(importResume).toHaveBeenCalledWith(file, "9", "产品经理定向简历"));
     expect(onAccepted).toHaveBeenCalledWith("产品经理定向简历");
     expect(onClose).toHaveBeenCalledTimes(1);
   });

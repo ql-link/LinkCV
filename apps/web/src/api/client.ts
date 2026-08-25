@@ -95,6 +95,12 @@ export type ResumeTemplate = {
   incompatibility_reason: null;
 };
 
+const RETIRED_RESUME_TEMPLATE_KEYS = new Set(["blank-cn"]);
+
+function selectableResumeTemplates(templates: ResumeTemplate[]): ResumeTemplate[] {
+  return templates.filter((template) => !RETIRED_RESUME_TEMPLATE_KEYS.has(template.key));
+}
+
 export type AdminResumeTemplate = {
   id: string;
   key: string;
@@ -118,11 +124,13 @@ export type ResumeRecord = ResumeSummary & {
 export type SemanticClassificationSuggestion = {
   section_id: string;
   semantic_kind:
+    | "profile"
     | "work"
     | "education"
     | "project"
     | "skills"
     | "activity"
+    | "interests"
     | "certificates"
     | "awards"
     | "languages"
@@ -1069,7 +1077,8 @@ export const api = {
   listResumes: () => request<{ resumes: ResumeSummary[] }>("/api/resumes"),
   getResumeOverview: () => request<ResumeOverview>("/api/resume-overview"),
   listResumeTemplates: () =>
-    request<{ templates: ResumeTemplate[] }>("/api/resume-templates"),
+    request<{ templates: ResumeTemplate[] }>("/api/resume-templates")
+      .then(({ templates }) => ({ templates: selectableResumeTemplates(templates) })),
   getResumeTemplate: (id: string) =>
     request<{ template: ResumeTemplate }>(`/api/resume-templates/${id}`),
   createResume: (payload: { title: string; template_id: string }) =>
@@ -1139,7 +1148,12 @@ export const api = {
     }),
   applyResumeTemplate: (
     id: string,
-    payload: { template_id: string; base_lock_version: number },
+    payload: {
+      template_id: string;
+      base_lock_version: number;
+      title?: string;
+      data?: ResumeDocument;
+    },
   ) => request<{ resume: ResumeRecord }>(`/api/resumes/${id}/apply-template`, {
     method: "POST",
     body: payload,

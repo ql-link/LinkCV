@@ -3,10 +3,9 @@ import { inlineIconMarkdown, isInlineIconName } from "../lib/resumeInlineIcon";
 import { isResumeEmailLink } from "../lib/resumeLink";
 import { inlineFontSizeOpenMarker, INLINE_FONT_SIZE_CLOSE_MARKER, normalizeInlineFontSize } from "../lib/resumeInlineStyle";
 
-export type RichText = {
-  format: "markdown";
-  content: string;
-};
+export type RichText =
+  | { format: "markdown"; content: string }
+  | { format: "tiptap-json"; content: JSONContent };
 
 export type SourceRef = {
   field: string;
@@ -53,11 +52,13 @@ export type ResumeDocument = {
     id: string;
     semantic_kind:
       | "basics"
+      | "profile"
       | "work"
       | "education"
       | "project"
       | "skills"
       | "activity"
+      | "interests"
       | "certificates"
       | "awards"
       | "languages"
@@ -133,11 +134,13 @@ export type TemplateManifest = {
     region_id: string;
     accepts: Array<
       | "basics"
+      | "profile"
       | "work"
       | "education"
       | "project"
       | "skills"
       | "activity"
+      | "interests"
       | "certificates"
       | "awards"
       | "languages"
@@ -230,7 +233,7 @@ export const defaultSemanticStyle: ResumePresentation = {
       {
         id: "main-content",
         region_id: "main",
-        accepts: ["basics", "work", "education", "project", "skills", "activity", "certificates", "awards", "languages", "custom"],
+        accepts: ["basics", "profile", "work", "education", "project", "skills", "activity", "interests", "certificates", "awards", "languages", "custom"],
         required: false,
         fallback: true,
         order: 0,
@@ -261,8 +264,18 @@ type EditorSettings = {
 
 function richText(value: unknown) {
   if (!value || typeof value !== "object") return "";
-  const content = (value as { content?: unknown }).content;
-  return typeof content === "string" ? content : "";
+  const candidate = value as Partial<RichText>;
+  if (candidate.format === "markdown" && typeof candidate.content === "string") {
+    return candidate.content;
+  }
+  if (
+    candidate.format === "tiptap-json"
+    && candidate.content
+    && typeof candidate.content === "object"
+  ) {
+    return editorDocumentToMarkdown(candidate.content as JSONContent);
+  }
+  return "";
 }
 
 function datedRange(value: Record<string, unknown>) {
@@ -308,7 +321,10 @@ export function resumeDocumentToMarkdown(document: ResumeDocument) {
     return document.semantic_sections.map((semantic) => {
       const section = sections.get(semantic.custom_section_id ?? "");
       if (!section) return "";
-      const body = section.items.map((item) => item.content.content).filter(Boolean).join("\n\n");
+      const body = section.items.map((item) => richText(item.content)).filter(Boolean).join("\n\n");
+      if (section.items.length > 0 && section.items.every(
+        (item) => item.content.format === "tiptap-json",
+      )) return body;
       if (semantic.semantic_kind === "basics") return body;
       return [
         `## [[linkcv-block:${section.id}:${semantic.semantic_kind}]]${semantic.display_title}`,
@@ -425,7 +441,8 @@ export function resumeDocumentToMarkdown(document: ResumeDocument) {
     for (const item of section.items) {
       if (item.title) lines.push("", `### ${item.title}`);
       if (item.subtitle) lines.push(item.subtitle);
-      if (item.content.content) lines.push("", item.content.content);
+      const content = richText(item.content);
+      if (content) lines.push("", content);
     }
   }
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
@@ -443,7 +460,7 @@ export function resumeDocumentFromMarkdown(
     .trim();
   const lines = normalized.split("\n");
   const sections: Array<{ id: string; title: string; body: string; kind: ResumeDocument["semantic_sections"][number]["semantic_kind"] }> = [];
-  const headingPattern = /^##\s+(?:\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::(basics|work|education|project|skills|activity|certificates|awards|languages|custom))?\]\])?(.*)$/u;
+  const headingPattern = /^##\s+(?:\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::(basics|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\])?(.*)$/u;
   let start = 0;
   let current: RegExpMatchArray | null = null;
   const stableBlockId = (seed: string, index: number) => {
@@ -601,6 +618,9 @@ function markedText(node: JSONContent) {
   for (const mark of node.marks ?? []) {
     if (mark.type === "bold") value = `**${value}**`;
     if (mark.type === "italic") value = `*${value}*`;
+    if (mark.type === "underline") value = `[[linkcv-underline]]${value}[[/linkcv-underline]]`;
+    if (mark.type === "strike") value = `~~${value}~~`;
+    if (mark.type === "code") value = `\`${value}\``;
     if (
       mark.type === "link" &&
       typeof mark.attrs?.href === "string" &&
@@ -608,10 +628,20 @@ function markedText(node: JSONContent) {
     ) {
       value = `[${value}](${mark.attrs.href})`;
     }
+    if (
+      mark.type === "highlight"
+      && typeof mark.attrs?.color === "string"
+      && /^#[0-9a-f]{6}$/iu.test(mark.attrs.color)
+    ) {
+      value = `[[linkcv-highlight:${mark.attrs.color}]]${value}[[/linkcv-highlight]]`;
+    }
   }
-  const fontSize = normalizeInlineFontSize(
-    node.marks?.find((mark) => mark.type === "textStyle")?.attrs?.fontSize,
-  );
+  const textStyle = node.marks?.find((mark) => mark.type === "textStyle")?.attrs;
+  const color = typeof textStyle?.color === "string" && /^#[0-9a-f]{6}$/iu.test(textStyle.color)
+    ? textStyle.color
+    : null;
+  if (color) value = `[[linkcv-color:${color}]]${value}[[/linkcv-color]]`;
+  const fontSize = normalizeInlineFontSize(textStyle?.fontSize);
   if (fontSize != null) {
     value = `${inlineFontSizeOpenMarker(fontSize)}${value}${INLINE_FONT_SIZE_CLOSE_MARKER}`;
   }
@@ -665,6 +695,16 @@ function nodeMarkdown(node: JSONContent): string {
   }
   if (node.type === "bulletList") return (node.content ?? []).map((item) => `- ${nodeMarkdown(item)}`).join("\n");
   if (node.type === "orderedList") return (node.content ?? []).map((item, index) => `${index + 1}. ${nodeMarkdown(item)}`).join("\n");
+  if (node.type === "blockquote") return (node.content ?? []).map(nodeMarkdown)
+    .join("\n")
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+  if (node.type === "codeBlock") {
+    const language = typeof node.attrs?.language === "string" ? node.attrs.language : "";
+    return `\`\`\`${language}\n${nodeText(node)}\n\`\`\``;
+  }
+  if (node.type === "horizontalRule") return "---";
   if (node.type === "resumeRow") {
     const [left, right] = node.content ?? [];
     const leftWidth = Math.min(80, Math.max(30, Number(node.attrs?.leftWidth) || 50));

@@ -27,7 +27,7 @@
 | `src/linkcv/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkcv/modules/agent/` | 用户会话、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0040` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0042` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -51,7 +51,11 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0040` 前向修正官方双栏模板的插槽清单：从侧栏插槽移除完整 `basics` 章节，使姓名与职位继续进入主内容区，同时保留侧栏技能、语言和头像。迁移预检并同步 `resume_templates`、`resumes` 与 `resume_versions` 中使用官方双栏模板的规范快照，正文和其他呈现参数保持不变；失败依赖发布前备份恢复或后续 forward revision 修正。
 
-普通创建必须提供名称和启用模板，在用户行锁内完成容量、名称规范键和模板快照校验，再以 `source_type=template` 原子创建当前简历和 initial 版本。正式简历与活动导入任务共享每用户 10 个名额。异步导入同样必须提供启用模板，其标题来自安全化源文件名并允许与已有简历同名；解析内容作为 data，所选模板提供 style。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。模板切换使用同一乐观锁边界的独立原子服务：当前 `data_json` 保持不变，目标启用模板提供 `style_json` 与 `template_id`，成功后只递增一次锁；目标无效或版本冲突不会写入部分结果。手动正式版本在创建和重命名时保存 1–80 字符的名称；旧调用方缺省时按版本号生成“版本 N”。手动版本、重命名、删除版本与恢复都先锁定所属简历；重命名只更新名称，恢复直接替换当前简历且不创建新版本；每份简历最多保存 10 个版本。`0023` 为 `resume_versions.name` 回填历史名称，历史初始版本、恢复前备份和 restore 记录使用系统名称。
+`0041` 从正文中移除模板拥有的页级投影。迁移全量读取 `resume_templates`、`resumes` 和 `resume_versions`：旧 `custom_section_editor` 整篇 Markdown 以及跨规范章节残留的 `:::: sidebar/main` 被拆成无投影 `custom_sections`，侧栏标题映射为 `profile/skills/interests/languages` 等独立语义，私有用户头像转入 `basics.photo`，系统模板头像继续由 manifest 提供。转换在首笔写入前比较去除页栏标记与模板头像后的全部可见行，校验完整 `ResumeSnapshot`；写后再次全量转换并核对幂等结果。revision 不新增物理列，失败按 forward-only 规则从备份恢复或增加后续 revision。
+
+`0042` 先验证 `blank-cn`、其历史简历引用以及所有 `classic-technical-cn` 模板/简历/版本快照，再把经典单页技术模板的 A4 页边距恢复为生产审查值 `9/11/9/11mm` 并删除空白模板行。`resumes.template_id` 的既有 `ON DELETE SET NULL` 只清除历史简历的来源引用；简历和版本自有的 `data_json/style_json` 不变。迁移写后逐项验证模板不存在、旧简历仍存在且来源已置空、经典技术快照内容不变。revision 为 forward-only，恢复删除的模板和原引用依赖升级前备份。
+
+普通创建必须提供名称和启用模板，在用户行锁内完成容量、名称规范键和模板快照校验，再以 `source_type=template` 原子创建当前简历和 initial 版本。正式简历与活动导入任务共享每用户 10 个名额。异步导入同样必须提供启用模板，其标题来自安全化源文件名并允许与已有简历同名；Web 默认选择 `classic-technical-cn`，不可用时只回退到其他非空白启用模板，解析内容作为 data，所选模板提供 style。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。模板切换使用同一乐观锁边界的独立原子服务：当前 `data_json` 保持不变，目标启用模板提供 `style_json` 与 `template_id`，成功后只递增一次锁；目标无效或版本冲突不会写入部分结果。手动正式版本在创建和重命名时保存 1–80 字符的名称；旧调用方缺省时按版本号生成“版本 N”。手动版本、重命名、删除版本与恢复都先锁定所属简历；重命名只更新名称，恢复直接替换当前简历且不创建新版本；每份简历最多保存 10 个版本。`0023` 为 `resume_versions.name` 回填历史名称，历史初始版本、恢复前备份和 restore 记录使用系统名称。
 
 `0003` 将模板外键改为 `ON DELETE SET NULL`，同时允许历史模板来源在模板删除后保留 `source_type=template/template_id=NULL`。MySQL 8.4 禁止 `SET NULL` 外键列参与 CHECK，因此 `ck_resumes_source_fields` 只约束来源证据字段，`template_id/source_type` 组合由统一创建服务保证，外键继续保证非空引用有效。`0004` 曾新增对象存储清理任务表；`0010` 在删除链路改为同步后移除该表，upgrade 会先锁表并在存在待处理任务时拒绝删表。部署流水线先迁移再替换应用，因此迁移到 `0010` 前须确认任务表为空；迁移和容器替换之间的旧应用删除请求可能短暂失败。`0005` 在批量转换前核对旧节点和样式字段，只接受可完整表达的上一版结构；遇到未知字段、危险 Markdown 或无法保留的内嵌图片会中止。`0012` 删除 `resumes` 和 `resume_versions` 的旧版内容与样式备份列；恢复旧 JSON 必须使用迁移前的外部数据库备份。已进入共享环境的 revision 不原地修改，修正通过新的向前 revision 完成。
 
@@ -159,7 +163,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0040`、模板初始化和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0042`、模板初始化和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 

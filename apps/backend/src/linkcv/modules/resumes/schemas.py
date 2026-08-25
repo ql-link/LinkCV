@@ -28,14 +28,18 @@ class ResumeApplyTemplateRequest(BaseModel):
 
     template_id: str = Field(strict=True)
     base_lock_version: int = Field(ge=1)
+    title: str | None = Field(default=None, strict=True, max_length=20_000)
+    data: ResumeDocument | None = None
 
 
 SemanticClassificationKind = Literal[
+    "profile",
     "work",
     "education",
     "project",
     "skills",
     "activity",
+    "interests",
     "certificates",
     "awards",
     "languages",

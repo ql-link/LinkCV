@@ -150,6 +150,21 @@ describe("API session refresh", () => {
   });
 });
 
+describe("resume template API", () => {
+  it("兼容旧数据库响应时也不会向产品暴露已退役空白模板", async () => {
+    const retained = { id: "5", key: "classic-technical-cn", name: "经典单页技术简历" };
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, {
+      templates: [
+        { id: "1", key: "blank-cn", name: "空白简历" },
+        retained,
+      ],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.listResumeTemplates()).resolves.toEqual({ templates: [retained] });
+  });
+});
+
 describe("API observability", () => {
   it("adds a request id and reports API 5xx without exposing the response body", async () => {
     const fetchMock = vi

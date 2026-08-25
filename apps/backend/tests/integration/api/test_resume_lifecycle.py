@@ -454,14 +454,27 @@ def test_apply_template_atomically_preserves_content_and_updates_provenance() ->
         register(client)
         original = create_resume(client, app).json()["resume"]
         original_data = original["data"]
+        edited_data = {
+            **original_data,
+            "basics": {
+                **original_data["basics"],
+                "headline": "原子切换保留的最新内容",
+            },
+        }
 
         switched = client.post(
             f"/api/resumes/{original['id']}/apply-template",
-            json={"template_id": target_id, "base_lock_version": 1},
+            json={
+                "template_id": target_id,
+                "base_lock_version": 1,
+                "title": "原子切换后的简历",
+                "data": edited_data,
+            },
         )
         assert switched.status_code == 200
         resume = switched.json()["resume"]
-        assert resume["data"] == original_data
+        assert resume["title"] == "原子切换后的简历"
+        assert resume["data"] == edited_data
         assert resume["template_id"] == target_id
         assert resume["style"]["template_key"] == "target-template-cn"
         assert resume["lock_version"] == 2

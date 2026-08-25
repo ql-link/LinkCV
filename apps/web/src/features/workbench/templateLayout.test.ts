@@ -9,6 +9,7 @@ import {
 import {
   composeEditorDocumentForTemplate,
   composeResumeMarkdownForTemplate,
+  stripTemplateProjectionFromEditorDocument,
 } from "./templateLayout";
 
 const flowManifest = defaultSemanticStyle.manifest;
@@ -161,7 +162,7 @@ describe("template manifest composer", () => {
     expect(JSON.stringify(shown)).toContain("avatar.jpg");
   });
 
-  it("renders a required empty slot as an editable blank without persisting sample content", () => {
+  it("keeps a required empty slot out of persisted editor content", () => {
     const manifest = {
       ...flowManifest,
       slots: [
@@ -186,17 +187,9 @@ describe("template manifest composer", () => {
 
     const composed = composeEditorDocumentForTemplate(document, manifest, null, resumeDocument);
 
-    expect(editorDocumentToMarkdown(composed)).toContain("证书");
-    expect(editorDocumentToMarkdown(composed)).not.toContain("示例证书");
-
-    const filledMarkdown = `${editorDocumentToMarkdown(composed)}\n\n云服务认证`;
-    const canonical = resumeDocumentFromMarkdown(filledMarkdown, resumeDocument);
-    const certificate = canonical.semantic_sections.find((section) => section.display_title === "证书");
-    expect(certificate).toMatchObject({
-      semantic_kind: "certificates",
-      content_key: "custom_sections",
-    });
-    expect(certificate?.custom_section_id).toMatch(/^blk_[a-z0-9]{16,64}$/u);
+    expect(editorDocumentToMarkdown(composed)).toBe(editorDocumentToMarkdown(document));
+    expect(JSON.stringify(composed)).not.toContain("示例证书");
+    expect(JSON.stringify(composed)).not.toContain("证书");
   });
 
   it("preserves every stable content id exactly once across every manifest pair", () => {
@@ -248,5 +241,59 @@ describe("template manifest composer", () => {
         expect(serialized.match(/logo\.png/gu)).toHaveLength(1);
       }
     }
+  });
+
+  it("restores one global semantic order instead of concatenating main before sidebar", () => {
+    const orderedDocument = {
+      type: "doc",
+      content: [
+        { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "张三" }] },
+        {
+          type: "heading",
+          attrs: { level: 2 },
+          content: [
+            { type: "resumeBlockAnchor", attrs: { blockId: "blk_3333333333333333", semanticKind: "skills" } },
+            { type: "text", text: "专业技能" },
+          ],
+        },
+        { type: "paragraph", content: [{ type: "text", text: "TypeScript" }] },
+        {
+          type: "heading",
+          attrs: { level: 2 },
+          content: [
+            { type: "resumeBlockAnchor", attrs: { blockId: "blk_2222222222222222", semanticKind: "work" } },
+            { type: "text", text: "工作经历" },
+          ],
+        },
+        { type: "paragraph", content: [{ type: "text", text: "虚构公司" }] },
+      ],
+    };
+    const data = resumeDocumentFromMarkdown(
+      editorDocumentToMarkdown(orderedDocument),
+      defaultSemanticDocument,
+    );
+    const projected = composeEditorDocumentForTemplate(
+      orderedDocument,
+      columnsManifest,
+      null,
+      data,
+    );
+
+    expect(stripTemplateProjectionFromEditorDocument(projected, data)).toEqual(orderedDocument);
+  });
+
+  it("does not persist the blank paragraph used only to keep an empty column editable", () => {
+    const noAvatarColumns = {
+      ...columnsManifest,
+      avatar: { visibility: "hide" as const, fallback_asset: "none" as const, size: 96 },
+    };
+    const projected = composeEditorDocumentForTemplate(
+      document,
+      noAvatarColumns,
+      null,
+      resumeDocument,
+    );
+
+    expect(stripTemplateProjectionFromEditorDocument(projected, resumeDocument)).toEqual(document);
   });
 });

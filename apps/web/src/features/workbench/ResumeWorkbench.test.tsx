@@ -17,6 +17,7 @@ import {
   SaveResumeAction,
   SaveVersionAction,
   ResumeTemplateSwitcher,
+  semanticSectionDisplayTitle,
   VersionRenameAction,
   WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM,
   versionRenameErrorMessage,
@@ -35,6 +36,12 @@ import {
 import { resumePdfExportErrorMessage } from "../preview/pdfExport";
 
 describe("ResumeWorkbench 标题", () => {
+  it("在章节类型面板隐藏内部图标标记", () => {
+    expect(semanticSectionDisplayTitle(":icon[GraduationCap]: 教育经历")).toBe("教育经历");
+    expect(semanticSectionDisplayTitle(":icon[Star]: 自我评价")).toBe("自我评价");
+    expect(semanticSectionDisplayTitle(":icon[Star]:")).toBe("未命名章节");
+  });
+
   it("只在标题超过 30 个字符时省略", () => {
     const thirtyCharacters = "简".repeat(30);
     const thirtyOneCharacters = `${thirtyCharacters}历`;

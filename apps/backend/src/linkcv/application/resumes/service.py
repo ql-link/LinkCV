@@ -360,8 +360,10 @@ def apply_resume_template(
     user_id: int,
     template_id: int,
     base_lock_version: int,
+    title: str | None = None,
+    data: ResumeDocument | None = None,
 ) -> Resume | None:
-    """Atomically switch presentation provenance without replacing resume content."""
+    """Atomically save current content and switch presentation provenance."""
     template = db.scalar(
         select(ResumeTemplate).where(
             ResumeTemplate.id == template_id,
@@ -376,10 +378,24 @@ def apply_resume_template(
     except ValueError as error:
         raise ResumeTemplateUnavailable from error
 
+    candidate_data = data if data is not None else current.data
     try:
-        template_content_assignments(current.data, target.style.manifest)
+        candidate = ResumeSnapshot(data=candidate_data, style=target.style)
+        template_content_assignments(candidate.data, candidate.style.manifest)
     except ValueError as error:
         raise ResumeTemplateCompositionInvalid from error
+
+    next_title = resume.title
+    if title is not None:
+        next_title = normalize_resume_title(title)
+        db.scalar(select(User.id).where(User.id == user_id).with_for_update())
+        if resume_title_key(next_title) != resume_title_key(resume.title):
+            _assert_unique_resume_title(
+                db,
+                user_id=user_id,
+                title=next_title,
+                exclude_resume_id=resume.id,
+            )
 
     result = db.execute(
         update(Resume)
@@ -389,11 +405,12 @@ def apply_resume_template(
             Resume.lock_version == base_lock_version,
         )
         .values(
+            title=next_title,
             template_id=template.id,
             # Content is the resume's single source of truth. The target
             # template contributes presentation and layout manifest only.
-            data_json=current.data.model_dump(mode="json"),
-            style_json=target.style.model_dump(mode="json"),
+            data_json=candidate.data.model_dump(mode="json"),
+            style_json=candidate.style.model_dump(mode="json"),
             lock_version=Resume.lock_version + 1,
             updated_at=utc_now(),
         )

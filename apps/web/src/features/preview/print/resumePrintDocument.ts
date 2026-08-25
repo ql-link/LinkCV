@@ -1,7 +1,12 @@
 import type { ResumeDocument, ResumePresentation } from "../../../api/resumeContract";
 import { styleToEditorSettings } from "../../../api/resumeContract";
 import { renderResumeMarkdown } from "../../../parser/resumeMarkdown";
-import { composeResumeMarkdownForTemplate } from "../../workbench/templateLayout";
+import {
+  composeEditorDocumentForTemplate,
+  composeResumeMarkdownForTemplate,
+} from "../../workbench/templateLayout";
+import { resumeDocumentToEditorDocument } from "../../workbench/resumeEditorPersistence";
+import { renderResumeEditorDocument } from "./resumeEditorRenderer";
 
 export const RESUME_RENDER_PROTOCOL_VERSION = 1 as const;
 
@@ -74,8 +79,16 @@ export function renderResumePrintDocument(
   options: ResumePrintDocumentOptions = {},
 ) {
   const settings = styleToEditorSettings(request.style);
-  const markdown = composeResumeMarkdownForTemplate(request.data, request.style.manifest);
-  const content = replaceEmbeddedAssets(renderResumeMarkdown(markdown), request.assets ?? {});
+  const editorDocument = resumeDocumentToEditorDocument(request.data);
+  const rendered = editorDocument
+    ? renderResumeEditorDocument(composeEditorDocumentForTemplate(
+      editorDocument,
+      request.style.manifest,
+      request.data.basics.photo,
+      request.data,
+    ))
+    : renderResumeMarkdown(composeResumeMarkdownForTemplate(request.data, request.style.manifest));
+  const content = replaceEmbeddedAssets(rendered, request.assets ?? {});
   const paperClasses = [
     "resume-paper",
     "resume-preview-paper",

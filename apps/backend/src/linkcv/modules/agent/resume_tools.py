@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from linkcv.core.errors import ApiError
+from linkcv.domain.resume_document import rich_text_to_markdown
 from linkcv.modules.datasets.models import UserDataset
 from linkcv.modules.datasets.routes import read_dataset_markdown
 from linkcv.modules.job_descriptions.models import JobDescription
@@ -17,10 +18,10 @@ from linkcv.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
 
 
 BLOCK_MARKER_PATTERN = re.compile(
-    r"\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::(?:basics|work|education|project|skills|activity|certificates|awards|languages|custom))?\]\]"
+    r"\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::(?:basics|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\]"
 )
 SECTION_HEADING_PATTERN = re.compile(
-    r"^##\s+\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::(?:basics|work|education|project|skills|activity|certificates|awards|languages|custom))?\]\](.*)$",
+    r"^##\s+\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::(?:basics|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\](.*)$",
     re.MULTILINE,
 )
 NUMBER_PATTERN = re.compile(
@@ -76,7 +77,7 @@ def editor_markdown(data: Any) -> str | None:
             continue
         for item in section.items:
             if item.id == "custom_item_editor":
-                return item.content.content
+                return rich_text_to_markdown(item.content)
     custom = {section.id: section for section in data.sections.custom_sections}
     parts: list[str] = []
     for semantic in data.semantic_sections:
@@ -85,8 +86,14 @@ def editor_markdown(data: Any) -> str | None:
         section = custom.get(semantic.custom_section_id)
         if section is None:
             continue
-        body = "\n\n".join(item.content.content for item in section.items if item.content.content)
-        if semantic.semantic_kind == "basics":
+        body = "\n\n".join(
+            part
+            for item in section.items
+            if (part := rich_text_to_markdown(item.content))
+        )
+        if section.items and all(item.content.format == "tiptap-json" for item in section.items):
+            parts.append(body)
+        elif semantic.semantic_kind == "basics":
             parts.append(body)
         else:
             parts.append(
@@ -123,10 +130,39 @@ def replace_editor_markdown(data: Any, markdown: str) -> dict[str, Any]:
         ),
         None,
     )
+
+    def replace_content(section: dict[str, Any], value: str, *, heading: str | None) -> None:
+        if not section["items"]:
+            raise ApiError(422, "TARGET_INVALID")
+        content = section["items"][0]["content"]
+        current = ""
+        if content.get("format") == "markdown" and isinstance(content.get("content"), str):
+            current = content["content"]
+        elif content.get("format") == "tiptap-json" and isinstance(content.get("content"), dict):
+            from linkcv.domain.resume_document import RichText
+
+            current = rich_text_to_markdown(RichText.model_validate(content))
+            if heading is not None:
+                first_break = current.find("\n")
+                current_heading = current[:first_break if first_break >= 0 else len(current)]
+                expected_prefix = f"## [[linkcv-block:{section['id']}"
+                if (
+                    not current_heading.startswith(expected_prefix)
+                    or not current_heading.endswith(heading)
+                ):
+                    current = ""
+                else:
+                    current = current[first_break + 1 :].strip() if first_break >= 0 else ""
+        if current == value:
+            return
+        section["items"][0]["content"] = {"format": "markdown", "content": value}
+
     if basics and basics["custom_section_id"] in custom:
         intro_end = matches[0].start() if matches else len(markdown)
-        custom[basics["custom_section_id"]]["items"][0]["content"]["content"] = (
-            markdown[:intro_end].strip()
+        replace_content(
+            custom[basics["custom_section_id"]],
+            markdown[:intro_end].strip(),
+            heading=None,
         )
     for index, match in enumerate(matches):
         section_id = match.group(1)
@@ -137,7 +173,11 @@ def replace_editor_markdown(data: Any, markdown: str) -> dict[str, Any]:
         end = matches[index + 1].start() if index + 1 < len(matches) else len(markdown)
         section_semantic["display_title"] = match.group(2).strip() or "未命名章节"
         section["title"] = section_semantic["display_title"]
-        section["items"][0]["content"]["content"] = markdown[match.end() : end].strip()
+        replace_content(
+            section,
+            markdown[match.end() : end].strip(),
+            heading=section_semantic["display_title"],
+        )
     return payload
 
 

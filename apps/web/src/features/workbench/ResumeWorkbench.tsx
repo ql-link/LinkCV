@@ -88,16 +88,22 @@ const AGENT_DRAWER_DEFAULT_WIDTH = 390;
 const AGENT_DRAWER_WIDTH_STORAGE_KEY = "linkcv.workbench.agent-drawer-width";
 const WORKBENCH_TITLE_CHARACTER_LIMIT = 30;
 const SEMANTIC_KIND_LABELS = {
+  profile: "个人信息",
   work: "工作",
   education: "教育",
   project: "项目",
   skills: "技能",
   activity: "活动",
+  interests: "兴趣爱好",
   certificates: "证书",
   awards: "荣誉",
   languages: "语言",
   custom: "自定义",
 } as const;
+
+export function semanticSectionDisplayTitle(title: string) {
+  return title.replace(/:icon\[[^\]]+\]:/gu, "").trim() || "未命名章节";
+}
 
 export function truncateWorkbenchTitle(title: string) {
   const characters = Array.from(title);
@@ -1611,7 +1617,7 @@ export function ResumeWorkbench() {
                 onApply={async (template) => {
                   if (!editor) return;
                   try {
-                    await applyTemplate(template.id);
+                    await applyTemplate(template.id, editor.getJSON());
                     editor.commands.setContent(useResumeStore.getState().editorContent, false);
                     setToast({ label: `已切换为“${template.name}”，内容已按新模板重新排版` });
                   } catch {
@@ -1755,28 +1761,31 @@ export function ResumeWorkbench() {
                         icon={<Sparkles aria-hidden="true" size={15} />}
                       >
                         <div className="workbench-semantic-settings">
-                          {editableSemanticSections.map((section) => (
-                            <div className="workbench-semantic-row" key={section.id}>
-                              <span title={section.display_title}>{section.display_title}</span>
-                              <Select
-                                value={section.semantic_kind}
-                                disabled={versionOperationPending || semanticClassificationPending}
-                                onValueChange={(semanticKind) => setSectionSemanticKind(
-                                  section.id,
-                                  semanticKind as keyof typeof SEMANTIC_KIND_LABELS,
-                                )}
-                              >
-                                <SelectTrigger aria-label={`${section.display_title}章节类型`}>
-                                  {SEMANTIC_KIND_LABELS[section.semantic_kind as keyof typeof SEMANTIC_KIND_LABELS]}
-                                </SelectTrigger>
-                                <SelectContent data-ui-theme="light" position="popper">
-                                  {Object.entries(SEMANTIC_KIND_LABELS).filter(([value]) => value !== "basics").map(([value, label]) => (
-                                    <SelectItem key={value} value={value}>{label}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          ))}
+                          {editableSemanticSections.map((section) => {
+                            const displayTitle = semanticSectionDisplayTitle(section.display_title);
+                            return (
+                              <div className="workbench-semantic-row" key={section.id}>
+                                <span title={displayTitle}>{displayTitle}</span>
+                                <Select
+                                  value={section.semantic_kind}
+                                  disabled={versionOperationPending || semanticClassificationPending}
+                                  onValueChange={(semanticKind) => setSectionSemanticKind(
+                                    section.id,
+                                    semanticKind as keyof typeof SEMANTIC_KIND_LABELS,
+                                  )}
+                                >
+                                  <SelectTrigger aria-label={`${displayTitle}章节类型`}>
+                                    {SEMANTIC_KIND_LABELS[section.semantic_kind as keyof typeof SEMANTIC_KIND_LABELS]}
+                                  </SelectTrigger>
+                                  <SelectContent data-ui-theme="light" position="popper">
+                                    {Object.entries(SEMANTIC_KIND_LABELS).filter(([value]) => value !== "basics").map(([value, label]) => (
+                                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            );
+                          })}
                           {classifiableSections.length > 0 && (
                             <Button
                               type="button"

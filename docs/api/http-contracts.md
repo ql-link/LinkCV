@@ -57,9 +57,9 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 
 ## 语义简历契约
 
-简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`。数据库 ID 在 HTTP 中使用十进制字符串。运行期只接受字段完整的 `ResumeDocument data` 与 `ResumePresentation style`，不再携带或协商 `schema_version`；缺少 `semantic_sections` 或 `manifest` 的请求不会被静默补齐。`data.semantic_sections` 把用户可见标题、稳定语义类型、来源、置信度和真实内容引用分离保存，每份实际内容必须被恰好引用一次；编辑器章节使用独立 `blk_*` ID，标题改名不改变章节身份。`style.manifest` 只允许受控 renderer、区域、插槽、唯一自定义兜底区和头像策略。简历正文以用户内容为准：错别字、非标准邮箱或电话、无法识别或先后矛盾的日期、缺少单位或职位等内容质量问题不阻断保存、导入或版本恢复；可识别日期仍会规范化，无法识别的日期原样保留。字段类型、总量和长度上限、URL 协议、Markdown 主动内容及内部 ID 完整性仍严格校验。`style.smart_one_page` 控制连续单页或标准 A4 导出模式，并随版本快照保存。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不再是简历写契约。
+简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`。数据库 ID 在 HTTP 中使用十进制字符串。运行期只接受字段完整的 `ResumeDocument data` 与 `ResumePresentation style`，不再携带或协商 `schema_version`；缺少 `semantic_sections` 或 `manifest` 的请求不会被静默补齐。`data.semantic_sections` 把用户可见标题、稳定语义类型、来源、置信度和真实内容引用分离保存，每份实际内容必须被恰好引用一次；编辑器章节使用独立 `blk_*` ID，标题改名不改变章节身份。已进入编辑器的章节正文以受控 `{format: "tiptap-json", content: JSONContent}` 保存，保留段落、列表、双列、信息行、图片、对齐和富文本 marks；历史 `{format: "markdown", content: string}` 只作为兼容输入继续可读，首次正文保存后转成规范 Tiptap JSON。页级 `sidebar/main` 属于 `style.manifest` 投影，禁止作为正文持久化；`profile`、`interests` 等侧栏内容仍是独立语义章节。`style.manifest` 只允许受控 renderer、区域、插槽、唯一自定义兜底区和头像策略。简历正文以用户内容为准：错别字、非标准邮箱或电话、无法识别或先后矛盾的日期、缺少单位或职位等内容质量问题不阻断保存、导入或版本恢复；可识别日期仍会规范化，无法识别的日期原样保留。字段类型、总量和长度上限、URL 协议、Markdown 主动内容、Tiptap 节点/marks/属性白名单及内部 ID 完整性仍严格校验。`style.smart_one_page` 控制连续单页或标准 A4 导出模式，并随版本快照保存。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不再是简历写契约。
 
-Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，把旧 `"1.0"` JSON 一次性转换为上述唯一契约；`0037` 再把九个官方模板的整篇编辑 Markdown 拆为按稳定 ID 引用的规范章节并恢复受审样式参数，`0038` 移除这些规范编辑章节对应的 typed 内容副本并以完整 `ResumeSnapshot` 复验，从而避免基本信息与模板正文重复输出；`0039` 把官方模板 custom section 标识规范为 Web 编辑器识别的 `blk_*` 不透明 ID，避免内部区块锚点显示为简历正文。成功后请求、响应、版本恢复和 PDF 均不再读取旧结构。发布顺序仍为停止旧写入、备份、执行迁移、验证后启动新应用；失败时依赖备份恢复，不执行 downgrade。
+Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，把旧 `"1.0"` JSON 一次性转换为上述唯一契约；`0037`–`0040` 依次拆分官方编辑 Markdown、移除 typed 副本、规范区块 ID 并修正双栏插槽。`0041` 再对模板、当前简历和历史版本全量预检，把旧整篇编辑正文及跨章节残留的 `sidebar/main` 页级包装转换为无投影语义块，保留可见文字与私有用户头像，并为双栏 manifest 补齐 `profile/interests` 路由；写后重复完整校验。`0042` 恢复经典技术模板及既有快照的生产页边距并删除 `blank-cn`，历史简历依靠 `ON DELETE SET NULL` 只清空来源引用。发布顺序仍为停止旧写入、备份、执行迁移、验证后启动新应用；失败时依赖备份恢复，不执行 downgrade。
 
 | Method   | Path                        | 鉴权 | 成功结果                                                         |
 | -------- | --------------------------- | ---- | ---------------------------------------------------------------- |
@@ -70,13 +70,13 @@ Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，�
 | `GET`    | `/api/resumes/:id`          | 是   | `{resume}`                                                       |
 | `POST`   | `/api/resumes/:id/semantic-classification` | 是 | 对当前自定义章节返回 `{content_hash, suggestions}`，不写入简历 |
 | `PUT`    | `/api/resumes/:id`          | 是   | `{resume}`；请求含 `base_lock_version` 及可选 `title/data/style` |
-| `POST`   | `/api/resumes/:id/apply-template` | 是 | `{resume}`；请求含 `{template_id, base_lock_version}`，原子更新模板身份与呈现 |
+| `POST`   | `/api/resumes/:id/apply-template` | 是 | `{resume}`；请求含 `{template_id, base_lock_version}` 及可选 `title/data`，原子保存最新内容并切换模板 |
 | `GET`    | `/api/resumes/:id/pdf?lock_version=...` | 是 | 当前 Web 快照的 PDF；版本不一致返回 `409 RESUME_PDF_SNAPSHOT_STALE` |
 | `DELETE` | `/api/resumes/:id`          | 是   | `{deleted}`                                                      |
 
-所有新简历都从模板创建，官方模板中包含空白简历模板。普通创建先把名称去首尾空白、折叠连续空白，再按 Unicode `casefold` 比较同一用户已有名称；重复返回 `409 RESUME_TITLE_CONFLICT`，名称为空或超过 255 字符返回 `400 INVALID_RESUME_TITLE`，缺模板返回 `400 TEMPLATE_REQUIRED`，模板不存在、停用或结构无效返回 `422 TEMPLATE_INACTIVE`。历史无模板简历继续可读写，历史重名不回填也不阻止保持原名。
+所有新简历都从当前启用的非空白模板创建；历史 `blank-cn` 已由 `0042` 退役并删除。普通创建先把名称去首尾空白、折叠连续空白，再按 Unicode `casefold` 比较同一用户已有名称；重复返回 `409 RESUME_TITLE_CONFLICT`，名称为空或超过 255 字符返回 `400 INVALID_RESUME_TITLE`，缺模板返回 `400 TEMPLATE_REQUIRED`，模板不存在、停用或结构无效返回 `422 TEMPLATE_INACTIVE`。历史无模板简历继续可读写，历史重名不回填也不阻止保持原名。
 
-模板切换使用独立原子接口，不通过普通 `PUT` 猜测模板身份。服务端验证简历归属、目标模板启用状态、完整快照和内容 ID 到目标插槽的唯一组合计划后，在同一条件更新中保留当前 `data`、替换目标模板 `style`、写入 `template_id` 并递增 `lock_version`。过期基准返回 `409 RESUME_EDIT_CONFLICT`，模板不存在、停用或结构无效返回 `422 TEMPLATE_INACTIVE`，内容无法完整且唯一地映射到目标模板时返回 `422 TEMPLATE_COMPOSITION_INVALID`；任一失败都不产生半切换状态。
+模板切换使用独立原子接口，不通过普通 `PUT` 猜测模板身份。旧调用方可只发送模板 ID 和锁版本；Web 同时发送当前 `title/data`，服务端验证简历归属、目标模板启用状态、完整快照和内容 ID 到目标插槽的唯一组合计划后，在同一条件更新中保存最新标题与正文、替换目标模板 `style`、写入 `template_id` 并递增 `lock_version`。目标模板只提供呈现，不能用自己的示例正文覆盖用户数据。过期基准返回 `409 RESUME_EDIT_CONFLICT`，标题冲突返回 `409 RESUME_TITLE_CONFLICT`，模板不存在、停用或结构无效返回 `422 TEMPLATE_INACTIVE`，内容无法完整且唯一地映射到目标模板时返回 `422 TEMPLATE_COMPOSITION_INVALID`；任一失败都不产生“内容已保存但模板未切换”或相反的半状态。
 
 语义分类请求携带当前规范 `data` 的 `sha256:` 内容哈希和可选章节 ID 列表。分类器只接收自定义章节的标题、正文和相邻标题，必须综合上下文，不在模板切换时调用，也不改写正文或持久化建议；相同用户、简历、内容哈希和章节集合的成功结果在 Redis 缓存 1 小时，重复请求不重复调用模型；响应包含稳定章节 ID、建议类型、置信度和依据。内容已变化返回 `409 RESUME_SEMANTIC_CLASSIFICATION_STALE`，章节选择非法返回 `400 INVALID_RESUME_SEMANTIC_CLASSIFICATION`，模型不可用或返回越界 ID 返回 `503 RESUME_SEMANTIC_CLASSIFICATION_UNAVAILABLE`。未登录返回 `401 UNAUTHORIZED`，不存在或越权统一返回 `404 RESUME_NOT_FOUND`。
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from linkcv.domain.resume_document import ResumeDocument
+from linkcv.domain.resume_document import ResumeDocument, rich_text_to_markdown
 from linkcv.modules.llm.catalog import RESUME_STRUCTURING_CAPABILITY
 from linkcv.modules.llm.schemas import ChatMessage
 from linkcv.modules.llm.service import LLMService
@@ -38,7 +38,11 @@ def classification_payload(
         body = "\n\n".join(
             part
             for item in custom.items
-            for part in (item.title or "", item.subtitle or "", item.content.content)
+            for part in (
+                item.title or "",
+                item.subtitle or "",
+                rich_text_to_markdown(item.content),
+            )
             if part
         )
         fragments.append(

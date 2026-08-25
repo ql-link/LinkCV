@@ -296,7 +296,13 @@ def apply_template(
             user_id=user.id,
             template_id=template_id,
             base_lock_version=payload.base_lock_version,
+            title=payload.title,
+            data=payload.data,
         )
+    except InvalidResumeTitle as error:
+        raise ApiError(400, "INVALID_RESUME_TITLE") from error
+    except ResumeTitleConflict as error:
+        raise ApiError(409, "RESUME_TITLE_CONFLICT") from error
     except ResumeTemplateUnavailable as error:
         raise ApiError(422, "TEMPLATE_INACTIVE") from error
     except ResumeTemplateCompositionInvalid as error:

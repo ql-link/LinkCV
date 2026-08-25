@@ -53,39 +53,13 @@ function emptyParagraph(): JSONContent {
   return { type: "paragraph" };
 }
 
-const EMPTY_SLOT_TITLES: Partial<Record<SemanticKind, string>> = {
-  work: "工作经历",
-  education: "教育经历",
-  project: "项目经历",
-  skills: "专业技能",
-  activity: "校园经历",
-  certificates: "证书",
-  awards: "荣誉奖项",
-  languages: "语言能力",
-  custom: "其他经历",
-};
-
-function slotBlockId(slotId: string) {
-  let hash = 2166136261;
-  for (const char of slotId) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
-  const suffix = (hash >>> 0).toString(16).padStart(8, "0");
-  return `blk_${suffix}${suffix}`;
-}
-
-function emptySlotNodes(slot: TemplateSlot): JSONContent[] {
-  const kind = slot.accepts.find((candidate): candidate is SemanticKind => candidate !== "avatar");
-  if (!kind || kind === "basics") return [emptyParagraph()];
-  return [
-    {
-      type: "heading",
-      attrs: { level: 2 },
-      content: [
-        { type: "resumeBlockAnchor", attrs: { blockId: slotBlockId(slot.id), semanticKind: kind } },
-        { type: "text", text: EMPTY_SLOT_TITLES[kind] ?? "其他经历" },
-      ],
-    },
-    emptyParagraph(),
-  ];
+function withoutEmptyColumnPlaceholder(content: JSONContent[] | undefined) {
+  if (
+    content?.length === 1
+    && content[0].type === "paragraph"
+    && !(content[0].content?.length)
+  ) return [];
+  return content ?? [];
 }
 
 function resumeColumn(variant: "sidebar" | "main", content: JSONContent[]): JSONContent {
@@ -198,7 +172,7 @@ function markdownBlocks(markdown: string, document: ResumeDocument): MarkdownBlo
       continue;
     }
     if (fenced) continue;
-    const match = lines[index].match(/^##\s+(?:\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::(basics|work|education|project|skills|activity|certificates|awards|languages|custom))?\]\])?(.*)$/u);
+    const match = lines[index].match(/^##\s+(?:\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::(basics|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\])?(.*)$/u);
     if (!match) continue;
     flush(index);
     const title = (match[3] ?? "").replace(/:icon\[[^\]]+\]:/gu, "").trim();
@@ -210,6 +184,51 @@ function markdownBlocks(markdown: string, document: ResumeDocument): MarkdownBlo
   }
   flush(lines.length);
   return blocks;
+}
+
+/**
+ * Removes presentation-owned page regions from an editor tree. The returned
+ * document is safe to persist: semantic blocks are restored to their content
+ * order, while column containers and template-provided avatar nodes are not
+ * copied into the content snapshot.
+ */
+export function stripTemplateProjectionFromEditorDocument(
+  editorDocument: JSONContent,
+  resumeDocument: ResumeDocument,
+): JSONContent {
+  if (editorDocument.type !== "doc") return editorDocument;
+  const sourceIds = blockAnchorIds(editorDocument);
+  const sourceContent = editorDocument.content ?? [];
+  const columnGroups = sourceContent.filter((node) => node.type === "resumeColumns");
+  const ordinaryContent = sourceContent.filter(
+    (node) => node.type !== "resumeColumns" && node.type !== "avatarImage",
+  );
+  const columnContent = columnGroups.flatMap((group) => {
+    const columns = group.content ?? [];
+    const main = columns.find((column) => column.attrs?.variant === "main") ?? columns[1];
+    const sidebar = columns.find((column) => column.attrs?.variant === "sidebar") ?? columns[0];
+    return [
+      withoutEmptyColumnPlaceholder(main?.content),
+      withoutEmptyColumnPlaceholder(sidebar?.content),
+    ];
+  });
+  const unorderedBlocks = [ordinaryContent, ...columnContent].flatMap((nodes) => editorBlocks(
+    nodes.filter((node) => node.type !== "avatarImage"),
+    resumeDocument,
+    false,
+  ));
+  const blocks = columnGroups.length > 0
+    ? unorderedBlocks.map((block, index) => ({ block, index })).sort(
+      (left, right) => left.block.semanticOrder - right.block.semanticOrder
+        || left.index - right.index,
+    ).map(({ block }) => block)
+    : unorderedBlocks;
+  const result = {
+    ...editorDocument,
+    content: blocks.flatMap((block) => block.nodes),
+  };
+  assertExactlyOnceContentIds(sourceIds, result);
+  return result;
 }
 
 /** Shared manifest projection for preview, share and PDF rendering. */
@@ -294,42 +313,24 @@ export function composeEditorDocumentForTemplate(
 ): JSONContent {
   if (editorDocument.type !== "doc") return editorDocument;
 
-  const sourceIds = blockAnchorIds(editorDocument);
-
   const sourceContent = editorDocument.content ?? [];
-  const columnGroups = sourceContent.filter((node) => node.type === "resumeColumns");
-  const restoreSemanticOrder = columnGroups.length > 0;
-  const ordinaryContent = sourceContent.filter((node) => node.type !== "resumeColumns");
-  const columnContent = columnGroups.flatMap((group) => {
-    const columns = group.content ?? [];
-    const main = columns.find((column) => column.attrs?.variant === "main") ?? columns[1];
-    const sidebar = columns.find((column) => column.attrs?.variant === "sidebar") ?? columns[0];
-    return [main?.content ?? [], sidebar?.content ?? []];
-  });
-  const allContent = [ordinaryContent, ...columnContent];
-  const flattened = allContent.flat();
+  const flattened = sourceContent.flatMap((node) => node.type === "resumeColumns"
+    ? (node.content ?? []).flatMap((column) => column.content ?? [])
+    : [node]);
   const existingAvatar = flattened.find((node) => node.type === "avatarImage");
+  const canonical = stripTemplateProjectionFromEditorDocument(editorDocument, resumeDocument);
+  const sourceIds = blockAnchorIds(canonical);
   const avatar = visibleAvatar(existingAvatar, manifest, userPhoto);
   const regions = [...manifest.regions].sort((left, right) => left.order - right.order);
   const slots = [...manifest.slots].sort((left, right) => left.order - right.order);
   const regionContent = new Map(regions.map((region) => [region.id, [] as JSONContent[]]));
-  const assignedSlots = new Set<string>();
-
   if (avatar) {
     const avatarSlot = slots.find((slot) => slot.accepts.includes("avatar"));
     if (avatarSlot) {
       regionContent.get(avatarSlot.region_id)?.push(avatar);
-      assignedSlots.add(avatarSlot.id);
     }
   }
-  const blocks = allContent.flatMap((nodes) => editorBlocks(
-    nodes.filter((node) => node.type !== "avatarImage"),
-    resumeDocument,
-    false,
-  ));
-  if (restoreSemanticOrder) {
-    blocks.sort((left, right) => left.semanticOrder - right.semanticOrder);
-  }
+  const blocks = editorBlocks(canonical.content ?? [], resumeDocument, false);
   const blockIds = blocks.flatMap((block) => block.nodes
     .filter(isSectionHeading)
     .map(headingBlockId)
@@ -341,17 +342,10 @@ export function composeEditorDocumentForTemplate(
     const slot = targetSlot(block, slots);
     if (!slot) throw new Error("TEMPLATE_MANIFEST_FALLBACK_MISSING");
     regionContent.get(slot.region_id)?.push(...block.nodes);
-    assignedSlots.add(slot.id);
   }
-  for (const slot of slots) {
-    if (slot.required && !assignedSlots.has(slot.id) && !slot.accepts.includes("avatar")) {
-      regionContent.get(slot.region_id)?.push(...emptySlotNodes(slot));
-    }
-  }
-
   if (manifest.renderer_key === "flow") {
     const result = {
-      ...editorDocument,
+      ...canonical,
       content: regions.flatMap((region) => regionContent.get(region.id) ?? []),
     };
     assertExactlyOnceContentIds(sourceIds, result);
@@ -372,7 +366,7 @@ export function composeEditorDocumentForTemplate(
     .filter((region) => region.kind === "footer")
     .flatMap((region) => regionContent.get(region.id) ?? []);
   const result = {
-    ...editorDocument,
+    ...canonical,
     content: [
       ...beforeColumns,
       {

@@ -21,11 +21,13 @@ TemplateRegionKind = Literal["header", "sidebar", "main", "footer"]
 TemplateRendererKey = Literal["flow", "columns"]
 TemplateContentKind = Literal[
     "basics",
+    "profile",
     "work",
     "education",
     "project",
     "skills",
     "activity",
+    "interests",
     "certificates",
     "awards",
     "languages",
@@ -130,11 +132,13 @@ def default_template_manifest(
             region_id="main",
             accepts=[
                 "basics",
+                "profile",
                 "work",
                 "education",
                 "project",
                 "skills",
                 "activity",
+                "interests",
                 "certificates",
                 "awards",
                 "languages",
@@ -155,7 +159,7 @@ def default_template_manifest(
                 # avatar, but moving the complete basics block here would also
                 # move the candidate name and headline out of the template
                 # header.
-                accepts=["skills", "languages", "avatar"],
+                accepts=["profile", "skills", "interests", "languages", "avatar"],
                 order=0,
             ),
         )

@@ -85,6 +85,58 @@ def test_rich_text_rejects_active_content() -> None:
         RichText(content='<script>alert("x")</script>')
 
 
+def test_tiptap_rich_text_preserves_supported_marks_and_nodes() -> None:
+    payload = {
+        "type": "doc",
+        "content": [
+            {
+                "type": "paragraph",
+                "attrs": {"textAlign": "center"},
+                "content": [
+                    {
+                        "type": "resumeBlockAnchor",
+                        "attrs": {"blockId": "blk_1111111111111111", "semanticKind": None},
+                    },
+                    {
+                        "type": "text",
+                        "text": "重点文字",
+                        "marks": [
+                            {"type": "underline"},
+                            {"type": "textStyle", "attrs": {"color": "#3478f6", "fontSize": "11.5pt"}},
+                            {"type": "highlight", "attrs": {"color": "#fff3c4"}},
+                        ],
+                    },
+                ],
+            }
+        ],
+    }
+
+    rich_text = RichText(format="tiptap-json", content=payload)
+
+    assert rich_text.model_dump(mode="json")["content"] == payload
+
+
+def test_tiptap_rich_text_rejects_unknown_nodes_and_unsafe_assets() -> None:
+    with pytest.raises(ValidationError, match="unsupported tiptap node"):
+        RichText(
+            format="tiptap-json",
+            content={"type": "doc", "content": [{"type": "iframe"}]},
+        )
+    with pytest.raises(ValidationError, match="unsafe tiptap image source"):
+        RichText(
+            format="tiptap-json",
+            content={
+                "type": "doc",
+                "content": [
+                    {
+                        "type": "resumeImage",
+                        "attrs": {"src": "javascript:alert(1)"},
+                    }
+                ],
+            },
+        )
+
+
 def test_resource_and_link_fields_reject_active_schemes() -> None:
     with pytest.raises(ValidationError, match="photo must use"):
         ResumeBasics(photo="javascript:alert(1)")

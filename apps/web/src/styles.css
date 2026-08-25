@@ -1896,7 +1896,8 @@ select:not([data-slot]):focus-visible {
   opacity: 0;
   touch-action: manipulation;
 }
-.resume-workbench .resume-content.ProseMirror :is(p, h1, h2, h3):has(> .resume-line-add) {
+:where(.resume-workbench .resume-content.ProseMirror)
+  :where(p, h1, h2, h3):has(> .resume-line-add) {
   position: relative;
 }
 .resume-workbench .resume-content.ProseMirror li > p:has(> .resume-line-add) {

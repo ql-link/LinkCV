@@ -34,7 +34,7 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0040"
+EXPECTED_HEAD = "0042"
 
 
 def canonical_editor_markdown(data: dict[str, Any]) -> str:
@@ -371,7 +371,6 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
             )
         ) == {
             "administrative-sidebar-cn",
-            "blank-cn",
             "campus-professional-cn",
             "classic-cn",
             "classic-technical-cn",
@@ -384,7 +383,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
             text(
                 "SELECT `key`, data_json, style_json FROM resume_templates "
                 "WHERE `key` IN "
-                "('administrative-sidebar-cn', 'blank-cn', 'campus-professional-cn', "
+                "('administrative-sidebar-cn', 'campus-professional-cn', "
                 "'classic-cn', 'classic-technical-cn', 'civic-service-cn', "
                 "'creative-orange-cn', 'modern-two-column-cn', 'compact-tech-cn')"
             )
@@ -423,10 +422,10 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
                 assert style_json["line_height"] == 1.42
                 assert style_json["page"] == {
                     "size": "A4",
-                    "margin_top_mm": 12.0,
-                    "margin_right_mm": 14.0,
-                    "margin_bottom_mm": 12.0,
-                    "margin_left_mm": 14.0,
+                    "margin_top_mm": 9.0,
+                    "margin_right_mm": 11.0,
+                    "margin_bottom_mm": 9.0,
+                    "margin_left_mm": 11.0,
                 }
                 assert "# 张三" in editor_markdown
                 assert "zhangsan@example.com" in editor_markdown
@@ -832,12 +831,12 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
             == 0
         )
         assert connection.scalar(text("SELECT COUNT(*) FROM users")) == 1
-        assert connection.scalar(text("SELECT COUNT(*) FROM resume_templates")) == 9
+        assert connection.scalar(text("SELECT COUNT(*) FROM resume_templates")) == 8
         assert (
             connection.scalar(
                 text("SELECT COUNT(*) FROM resume_templates WHERE is_active = 1")
             )
-            == 9
+            == 8
         )
         assert connection.scalar(text("SELECT COUNT(*) FROM resumes")) == 1
         assert connection.scalar(text("SELECT COUNT(*) FROM resume_versions")) == 1
@@ -1117,6 +1116,184 @@ def test_0040_repairs_existing_official_column_template_manifest() -> None:
         )
         assert "basics" not in sidebar["accepts"]
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0040"
+    engine.dispose()
+
+
+def test_0041_removes_official_template_page_projection_without_losing_content() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0040")
+    engine = create_engine(database_url)
+    with engine.connect() as connection:
+        before_value = connection.scalar(
+            text(
+                "SELECT data_json FROM resume_templates "
+                "WHERE `key` = 'administrative-sidebar-cn'"
+            )
+        )
+        before = json.loads(before_value) if isinstance(before_value, str) else before_value
+        assert ":::: sidebar" in canonical_editor_markdown(before)
+
+    run_alembic(database_url, "upgrade", "0041")
+    with engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT data_json, style_json FROM resume_templates "
+                "WHERE `key` = 'administrative-sidebar-cn'"
+            )
+        ).one()
+        data = json.loads(row.data_json) if isinstance(row.data_json, str) else row.data_json
+        style = json.loads(row.style_json) if isinstance(row.style_json, str) else row.style_json
+        snapshot = parse_resume_snapshot(data, style)
+        markdown = canonical_editor_markdown(data)
+        sidebar = next(
+            slot
+            for slot in snapshot.style.manifest.slots
+            if slot.region_id == "sidebar"
+        )
+
+        assert ":::: sidebar" not in markdown
+        assert ":::: main" not in markdown
+        assert {"profile", "skills", "interests"} <= {
+            section.semantic_kind for section in snapshot.data.semantic_sections
+        }
+        assert {"profile", "interests"} <= set(sidebar.accepts)
+        assert "维护会议、采购、合同与固定资产台账" in markdown
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0041"
+    engine.dispose()
+
+
+def test_0042_deletes_blank_template_without_deleting_resumes_and_restores_layout() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0041")
+    engine = create_engine(database_url)
+
+    def json_object(value: object) -> dict[str, Any]:
+        decoded = json.loads(value) if isinstance(value, str) else value
+        assert isinstance(decoded, dict)
+        return decoded
+
+    with engine.begin() as connection:
+        user_id = connection.execute(
+            text(
+                "INSERT INTO users (email, password_hash, nickname) "
+                "VALUES ('template-retirement@example.invalid', '$2b$12$fictional', '张三')"
+            )
+        ).lastrowid
+        templates = {
+            row.key: row
+            for row in connection.execute(
+                text(
+                    "SELECT id, `key`, data_json, style_json FROM resume_templates "
+                    "WHERE `key` IN ('blank-cn', 'classic-technical-cn')"
+                )
+            )
+        }
+        blank = templates["blank-cn"]
+        classic = templates["classic-technical-cn"]
+        blank_data = json_object(blank.data_json)
+        blank_style = json_object(blank.style_json)
+        classic_data = json_object(classic.data_json)
+        classic_style = json_object(classic.style_json)
+        assert classic_style["page"] == {
+            "size": "A4",
+            "margin_top_mm": 12.0,
+            "margin_right_mm": 14.0,
+            "margin_bottom_mm": 12.0,
+            "margin_left_mm": 14.0,
+        }
+
+        blank_resume_id = connection.execute(
+            text(
+                "INSERT INTO resumes "
+                "(user_id, template_id, title, data_json, style_json, source_type) "
+                "VALUES (:user_id, :template_id, '历史空白简历', :data_json, :style_json, 'template')"
+            ),
+            {
+                "user_id": user_id,
+                "template_id": blank.id,
+                "data_json": json.dumps(blank_data, ensure_ascii=False),
+                "style_json": json.dumps(blank_style, ensure_ascii=False),
+            },
+        ).lastrowid
+        classic_resume_id = connection.execute(
+            text(
+                "INSERT INTO resumes "
+                "(user_id, template_id, title, data_json, style_json, source_type) "
+                "VALUES (:user_id, :template_id, '经典技术简历', :data_json, :style_json, 'template')"
+            ),
+            {
+                "user_id": user_id,
+                "template_id": classic.id,
+                "data_json": json.dumps(classic_data, ensure_ascii=False),
+                "style_json": json.dumps(classic_style, ensure_ascii=False),
+            },
+        ).lastrowid
+        for resume_id, data, style in (
+            (blank_resume_id, blank_data, blank_style),
+            (classic_resume_id, classic_data, classic_style),
+        ):
+            connection.execute(
+                text(
+                    "INSERT INTO resume_versions "
+                    "(resume_id, version_no, data_json, style_json, reason, name) "
+                    "VALUES (:resume_id, 1, :data_json, :style_json, 'initial', '初始版本')"
+                ),
+                {
+                    "resume_id": resume_id,
+                    "data_json": json.dumps(data, ensure_ascii=False),
+                    "style_json": json.dumps(style, ensure_ascii=False),
+                },
+            )
+
+    run_alembic(database_url, "upgrade", "0042")
+    with engine.connect() as connection:
+        assert connection.scalar(
+            text("SELECT COUNT(*) FROM resume_templates WHERE `key` = 'blank-cn'")
+        ) == 0
+        retired_resume = connection.execute(
+            text(
+                "SELECT template_id, data_json, style_json FROM resumes WHERE id = :id"
+            ),
+            {"id": blank_resume_id},
+        ).one()
+        assert retired_resume.template_id is None
+        assert json_object(retired_resume.data_json) == blank_data
+        assert json_object(retired_resume.style_json) == blank_style
+
+        expected_page = {
+            "size": "A4",
+            "margin_top_mm": 9.0,
+            "margin_right_mm": 11.0,
+            "margin_bottom_mm": 9.0,
+            "margin_left_mm": 11.0,
+        }
+        classic_styles = [
+            connection.scalar(
+                text(
+                    "SELECT style_json FROM resume_templates "
+                    "WHERE `key` = 'classic-technical-cn'"
+                )
+            ),
+            connection.scalar(
+                text("SELECT style_json FROM resumes WHERE id = :id"),
+                {"id": classic_resume_id},
+            ),
+            connection.scalar(
+                text(
+                    "SELECT style_json FROM resume_versions "
+                    "WHERE resume_id = :resume_id AND version_no = 1"
+                ),
+                {"resume_id": classic_resume_id},
+            ),
+        ]
+        assert [json_object(style)["page"] for style in classic_styles] == [
+            expected_page,
+            expected_page,
+            expected_page,
+        ]
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0042"
     engine.dispose()
 
 
@@ -1514,7 +1691,7 @@ def test_mysql_serializes_concurrent_normalized_resume_titles() -> None:
             )
         ).lastrowid
         template_id = connection.scalar(
-            text("SELECT id FROM resume_templates WHERE `key` = 'blank-cn'")
+            text("SELECT id FROM resume_templates WHERE `key` = 'classic-technical-cn'")
         )
     assert template_id is not None
 
@@ -1582,7 +1759,7 @@ def test_mysql_serializes_agent_session_creation_with_resume_deletion() -> None:
             )
         ).lastrowid
         template_id = connection.scalar(
-            text("SELECT id FROM resume_templates WHERE `key` = 'blank-cn'")
+            text("SELECT id FROM resume_templates WHERE `key` = 'classic-technical-cn'")
         )
     assert template_id is not None
     with session_factory() as db:
@@ -1676,7 +1853,7 @@ def test_mysql_reject_cannot_overwrite_an_applied_proposal() -> None:
             )
         ).lastrowid
         template_id = connection.scalar(
-            text("SELECT id FROM resume_templates WHERE `key` = 'blank-cn'")
+            text("SELECT id FROM resume_templates WHERE `key` = 'classic-technical-cn'")
         )
     assert template_id is not None
     with session_factory() as db:
