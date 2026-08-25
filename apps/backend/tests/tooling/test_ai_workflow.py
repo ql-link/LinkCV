@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -355,6 +356,135 @@ def test_skill_check_rejects_unowned_ai_top_level_entry(tmp_path: Path) -> None:
     assert "长期知识应放 docs" in result.stderr
 
 
+def test_skill_check_rejects_obsolete_workflow_skill(tmp_path: Path) -> None:
+    (tmp_path / ".ai" / "prompts").mkdir(parents=True)
+    skills_root = tmp_path / ".ai" / "skills"
+    obsolete_skill = skills_root / "ui-layout-design"
+    obsolete_skill.mkdir(parents=True)
+    (tmp_path / ".ai" / "prompts" / "project.md").write_text(
+        "rules", encoding="utf-8"
+    )
+    (skills_root / "README.md").write_text("skills", encoding="utf-8")
+    (obsolete_skill / "SKILL.md").write_text(
+        """---
+name: ui-layout-design
+description: 旧版 UI 布局设计入口，仅用于验证退出工作流的 Skill 不得重新出现。
+---
+
+旧规则。
+""",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        SKILL_CHECK,
+        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result.returncode == 1
+    assert "仍含已退出当前工作流的 Skill" in result.stderr
+    assert "ui-layout-design" in result.stderr
+
+
+def test_project_skill_directories_match_registry() -> None:
+    skills_root = REPO_ROOT / ".ai" / "skills"
+    registered = {
+        match.group(1)
+        for match in re.finditer(
+            r"^\| `([a-z0-9-]+)` \|",
+            (skills_root / "README.md").read_text(encoding="utf-8"),
+            re.MULTILINE,
+        )
+    }
+    actual = {path.name for path in skills_root.iterdir() if path.is_dir()}
+
+    assert actual == registered
+    assert not {
+        "apple-design",
+        "frontend-design",
+        "solution-delegated-delivery",
+        "ui-layout-design",
+    } & actual
+    assert not (skills_root / "frontend-delivery" / "ui_design.template.md").exists()
+
+
+def test_skill_check_rejects_unregistered_or_missing_skill_directory(
+    tmp_path: Path,
+) -> None:
+    for case_name, readme, directory, expected in (
+        (
+            "unregistered",
+            "# Skills\n",
+            "orphan-workflow",
+            "含未登记到 README 正式清单的 Skill",
+        ),
+        (
+            "missing",
+            "| 技能 | 职责 | 下一站 |\n| --- | --- | --- |\n"
+            "| `missing-workflow` | 测试 | 停止 |\n",
+            None,
+            "登记了不存在的 Skill",
+        ),
+    ):
+        case_root = tmp_path / case_name
+        (case_root / ".ai" / "prompts").mkdir(parents=True)
+        skills_root = case_root / ".ai" / "skills"
+        skills_root.mkdir(parents=True)
+        (case_root / "apps" / "web").mkdir(parents=True)
+        (case_root / "apps" / "backend").mkdir(parents=True)
+        (case_root / "package.json").write_text("{}", encoding="utf-8")
+        (case_root / ".ai" / "prompts" / "project.md").write_text(
+            "rules", encoding="utf-8"
+        )
+        (skills_root / "README.md").write_text(readme, encoding="utf-8")
+        if directory:
+            skill_root = skills_root / directory
+            skill_root.mkdir()
+            (skill_root / "SKILL.md").write_text(
+                f"""---
+name: {directory}
+description: 用于验证未登记工作流目录会被项目级确定性检查识别并阻止继续交付。
+---
+
+测试规则。
+""",
+                encoding="utf-8",
+            )
+
+        result = run_script(
+            SKILL_CHECK,
+            env={"LINKCV_REPO_ROOT": str(case_root)},
+        )
+
+        assert result.returncode == 1
+        assert expected in result.stderr
+
+
+def test_skill_check_rejects_obsolete_frontend_workflow_rule(tmp_path: Path) -> None:
+    (tmp_path / ".ai" / "prompts").mkdir(parents=True)
+    (tmp_path / ".ai" / "skills").mkdir(parents=True)
+    (tmp_path / ".specs").mkdir()
+    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+    (tmp_path / ".ai" / "prompts" / "project.md").write_text(
+        "rules", encoding="utf-8"
+    )
+    (tmp_path / ".ai" / "skills" / "README.md").write_text(
+        "# Skills\n", encoding="utf-8"
+    )
+    (tmp_path / ".specs" / "README.md").write_text(
+        "前端标准或完整任务由 AI 生成原型。", encoding="utf-8"
+    )
+
+    result = run_script(
+        SKILL_CHECK,
+        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result.returncode == 1
+    assert "仍含已退出当前工作流的规则" in result.stderr
+    assert "前端标准或完整" in result.stderr
+
+
 def test_skill_check_accepts_linkcv_backend_test_paths(tmp_path: Path) -> None:
     skill_root = tmp_path / ".ai" / "skills" / "test-authoring"
     skill_root.mkdir(parents=True)
@@ -568,6 +698,34 @@ def test_skill_check_rejects_incomplete_flow_router_contract(tmp_path: Path) -> 
     assert "用户明确给出的控制项必须原样传给下游" in result.stderr
 
 
+def test_skill_check_rejects_flow_router_model_orchestration(tmp_path: Path) -> None:
+    (tmp_path / ".ai" / "prompts").mkdir(parents=True)
+    (tmp_path / ".ai" / "prompts" / "project.md").write_text(
+        "rules", encoding="utf-8"
+    )
+    skills_root = tmp_path / ".ai" / "skills"
+    skills_root.mkdir(parents=True)
+    (skills_root / "README.md").write_text("skills", encoding="utf-8")
+    source_skill = REPO_ROOT / ".ai" / "skills" / "flow-router"
+    target_skill = skills_root / "flow-router"
+    shutil.copytree(source_skill, target_skill)
+    skill_file = target_skill / "SKILL.md"
+    skill_file.write_text(
+        skill_file.read_text(encoding="utf-8")
+        + "\n工作流关闭时，下游跳过交付文档和模型编排。\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        SKILL_CHECK,
+        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result.returncode == 1
+    assert "仍含应由领域交付 Skill 拥有的路径或模型判断" in result.stderr
+    assert "下游跳过交付文档和模型编排" in result.stderr
+
+
 def test_skill_check_protects_prototype_frontend_delivery_contract(
     tmp_path: Path,
 ) -> None:
@@ -589,6 +747,9 @@ def test_skill_check_protects_prototype_frontend_delivery_contract(
         "新增或改变交互状态、组件结构、主要区域或响应式布局",
         "一个或多个 Luna Max",
         "可独立、边界清楚且文件所有权不重叠的工作包可以并行",
+        "`model`: `gpt-5.6-luna`",
+        "`reasoning_effort`: `max`",
+        "不得为了匹配某个 Sol reasoning 档位再创建同级 Sol",
         "使用 `prototype-acceptance`",
         "未获得交付授权前不提交、推送或创建 PR",
     )
@@ -1191,4 +1352,4 @@ def test_skill_check_rejects_legacy_flow_router_rule(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 1
-    assert "仍含应由 backend-delivery 拥有的路径判断" in result.stderr
+    assert "仍含应由领域交付 Skill 拥有的路径或模型判断" in result.stderr
