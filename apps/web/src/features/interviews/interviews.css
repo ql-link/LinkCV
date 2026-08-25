@@ -4,35 +4,6 @@
   padding-bottom: 40px;
 }
 
-.interview-module-header {
-  margin: 18px 30px 14px;
-  background: transparent;
-}
-
-.interview-module-summary {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 14px;
-  padding: 0 0 7px;
-}
-
-.interview-module-mark {
-  display: grid;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--ui-warning) 48%, var(--ui-border));
-  border-radius: var(--ui-radius-md);
-  color: var(--ui-warning);
-}
-
-.interview-module-mark svg { width: 21px; height: 21px; }
-.interview-module-copy { display: flex; min-width: 0; align-items: baseline; gap: 22px; }
-.interview-module-copy h1 { flex: 0 0 auto; margin: 0; font-size: 23px; font-weight: 650; letter-spacing: -0.02em; }
-.interview-module-copy p { overflow: hidden; margin: 0; color: var(--ui-text-muted); font-size: 12px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
-.interview-module-actions { display: flex; align-items: center; gap: 10px; }
-
 .interview-view-tabs {
   display: flex;
   width: 100%;
@@ -119,33 +90,6 @@
 .interview-section-heading button:hover { color: var(--ui-accent); }
 .interview-section-heading button svg { width: 13px; height: 13px; }
 
-/* Overview */
-.interview-overview-layout {
-  padding: 0 30px;
-}
-
-.interview-overview-main { display: grid; min-width: 0; align-content: start; gap: 12px; }
-
-.overview-search-results { overflow: hidden; }
-.overview-search-results .interview-section-heading { border-bottom: 1px solid var(--ui-border); }
-.overview-search-results > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; padding: 10px; }
-.overview-search-results article { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-md); background: var(--ui-surface-subtle); padding: 9px; }
-.overview-search-results article > span { display: flex; min-width: 0; flex-direction: column; }
-.overview-search-results article strong, .overview-search-results article small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.overview-search-results article strong { font-size: 11px; }.overview-search-results article small, .overview-search-results article time { color: var(--ui-text-muted); font-size: 8px; }
-.overview-search-results article .interview-status-badge { grid-column: 3; }
-.overview-search-results > p { margin: 0; padding: 18px; color: var(--ui-text-muted); font-size: 12px; }
-
-.interview-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.interview-metric-card { display: flex; min-width: 0; align-items: center; gap: 12px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-xl); background: var(--ui-surface); padding: 15px 13px; }
-.interview-metric-card > div { display: grid; grid-template-columns: auto 1fr; min-width: 0; align-items: end; column-gap: 9px; }
-.interview-metric-card p { grid-column: 1 / -1; margin: 0; color: var(--ui-text-secondary); font-size: 12px; }
-.interview-metric-card strong { font-size: 23px; font-weight: 600; line-height: 1; }
-.interview-metric-card small { overflow: hidden; color: var(--ui-success); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.interview-metric-card:nth-child(4) small { color: var(--ui-text-muted); }
-.interview-metric-icon { display: grid; width: 46px; height: 46px; flex: 0 0 auto; place-items: center; border-radius: 50%; }
-.interview-metric-icon svg { width: 24px; height: 24px; }
-
 .tone-blue { --tone: var(--ui-accent); --tone-soft: var(--ui-accent-subtle); }
 .tone-orange { --tone: var(--ui-warning); --tone-soft: var(--ui-warning-subtle); }
 .tone-green { --tone: var(--ui-success); --tone-soft: var(--ui-success-subtle); }
@@ -153,42 +97,25 @@
 .tone-red { --tone: var(--ui-destructive); --tone-soft: var(--ui-destructive-subtle); }
 .tone-purple { --tone: var(--ui-template-accent); --tone-soft: color-mix(in srgb, var(--ui-template-accent) 10%, var(--ui-surface)); }
 
-.interview-metric-icon,
 .company-logo { background: var(--tone-soft); color: var(--tone); }
 
 .interview-pipeline { overflow: hidden; }
 .interview-pipeline .interview-section-heading { border-bottom: 1px solid var(--ui-border); }
-.interview-pipeline-grid { display: grid; grid-template-columns: repeat(var(--pipeline-column-count, 5), minmax(145px, 1fr)); gap: 7px; min-height: 250px; padding: 7px; overflow-x: auto; }
-.interview-pipeline-column { min-width: 145px; border-radius: var(--ui-radius-md); background: var(--ui-surface-subtle); padding: 8px; }
-.interview-pipeline-column h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 7px; padding-inline: 3px; font-size: 12px; font-weight: 600; }
+.interview-pipeline-grid { display: grid; grid-template-columns: repeat(var(--pipeline-column-count, 7), minmax(196px, 1fr)); gap: 7px; min-height: 560px; overflow-x: auto; }
+.interview-pipeline-column { display: flex; min-width: 196px; min-height: 560px; flex-direction: column; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-lg); background: color-mix(in srgb, var(--ui-surface-subtle) 72%, var(--ui-surface)); padding: 9px; }
+.interview-pipeline-column h3 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 12px; font-weight: 650; }
 .interview-pipeline-column h3 span { display: grid; min-width: 17px; height: 17px; place-items: center; border-radius: 50%; background: var(--ui-surface-muted); color: var(--ui-text-muted); font-size: 9px; }
-.pipeline-card { position: relative; display: grid; width: 100%; height: 82px; box-sizing: border-box; grid-template-rows: 28px minmax(0, 1fr); margin-top: 6px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-md); background: var(--ui-surface); padding: 9px; }
-.pipeline-card-header { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) minmax(46px, auto); align-items: center; gap: 7px; }
-.pipeline-card-company { display: flex; min-width: 0; align-items: center; gap: 7px; }
+.pipeline-card { position: relative; display: grid; width: 100%; min-height: 84px; box-sizing: border-box; margin-top: 7px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-md); background: var(--ui-surface); padding: 11px; }
+.pipeline-card-open { display: block; width: calc(100% + 22px); min-height: calc(100% + 22px); margin: -11px; border: 0; border-radius: inherit; background: transparent; padding: 11px; color: inherit; text-align: left; cursor: pointer; }
+.pipeline-card-open:hover { background: var(--ui-surface-subtle); }
+.pipeline-card-open:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: -2px; }
+.pipeline-card-header { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 9px; }
+.pipeline-card-header > span { display: grid; min-width: 0; gap: 3px; }
+.pipeline-card-title-row { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: 8px; }
 .pipeline-card strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.pipeline-card-role { overflow: hidden; color: var(--ui-text-secondary); font-size: 9px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
-.pipeline-card-meta { display: flex; min-width: 0; align-items: end; justify-content: space-between; gap: 8px; color: var(--ui-text-secondary); font-size: 9px; }
-.pipeline-card-meta span { overflow: hidden; color: var(--tone); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.pipeline-card-meta .pipeline-card-time { overflow: hidden; color: var(--ui-text-secondary); font-variant-numeric: tabular-nums; font-weight: 400; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.pipeline-card-role { overflow: hidden; color: var(--ui-text-secondary); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.pipeline-card-time { flex: 0 0 auto; overflow: hidden; color: var(--ui-text-secondary); font-size: 10px; font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .company-logo { display: grid; width: 26px; height: 26px; flex: 0 0 auto; place-items: center; border-radius: 7px; font-size: 10px; font-weight: 800; }
-.interview-add-stage { display: flex; width: 100%; min-height: 52px; align-items: center; justify-content: center; gap: 3px; margin-top: 6px; border: 1px dashed var(--ui-border-strong); border-radius: var(--ui-radius-md); background: transparent; color: var(--ui-text-muted); font-size: 10px; cursor: pointer; }
-.interview-add-stage svg { width: 12px; height: 12px; }
-
-.overview-week-section { overflow: hidden; }
-.overview-week-section .interview-section-heading { border-bottom: 1px solid var(--ui-border); }
-.overview-week-content { display: grid; grid-template-columns: 205px minmax(0, 1fr); min-height: 230px; }
-.overview-week-content > .mini-calendar { border-right: 1px solid var(--ui-border); padding: 10px 13px; }
-.overview-week-grid { position: relative; min-width: 600px; overflow: hidden; }
-.overview-week-head { display: grid; height: 34px; grid-template-columns: 64px repeat(7, 1fr); align-items: center; border-bottom: 1px solid var(--ui-border); color: var(--ui-text-muted); font-size: 9px; text-align: center; }
-.overview-week-head span:first-child { font-family: var(--ui-font-mono); }
-.overview-week-scroll { height: 360px; overflow-y: auto; overscroll-behavior: contain; scrollbar-color: var(--ui-border-strong) transparent; scrollbar-gutter: stable; scrollbar-width: thin; }
-.overview-week-scroll:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: -2px; }
-.overview-week-timeline { position: relative; height: 960px; }
-.overview-week-hours { display: grid; width: 64px; height: 960px; grid-template-rows: repeat(24, 40px); padding-top: 3px; color: var(--ui-text-muted); font-family: var(--ui-font-mono); font-size: 8px; text-align: center; }
-.overview-week-events { position: absolute; inset: 0 0 0 64px; display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: repeat(48, 20px); background: repeating-linear-gradient(to bottom, transparent 0 39px, var(--ui-border) 40px), repeating-linear-gradient(to right, transparent 0 calc(14.285% - 1px), var(--ui-border) calc(14.285% - 1px) 14.285%); }
-.overview-event { z-index: 1; grid-column: calc(var(--event-day) + 1); grid-row: calc(var(--event-slot) + 1) / span var(--event-span); overflow: hidden; border-left: 2px solid var(--calendar-color); border-radius: 5px; background: var(--calendar-soft); padding: 4px 5px; color: var(--calendar-color); }
-.overview-event strong, .overview-event span, .overview-event small { display: block; overflow: hidden; font-size: 8px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
-
 .recent-record-card { overflow: hidden; padding-bottom: 12px; }
 .recent-record-card .interview-section-heading { border-bottom: 1px solid var(--ui-border); }
 .recent-record-identity { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; margin: 10px 12px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-md); background: var(--ui-surface-subtle); padding: 9px; }
@@ -232,20 +159,11 @@
 .mini-calendar-days button i { position: absolute; bottom: 1px; width: 3px; height: 3px; border-radius: 50%; background: var(--ui-accent); }
 
 /* Schedule */
-.interview-schedule-layout { display: grid; grid-template-columns: 220px minmax(620px, 1fr) 290px; gap: 10px; padding: 0 24px; }
-.schedule-filter-panel { padding: 16px 12px; }
-.schedule-filter-panel .mini-calendar { padding: 0 3px 13px; border-bottom: 1px solid var(--ui-border); }
-.schedule-filter-group { padding: 14px 0; border-bottom: 1px solid var(--ui-border); }
-.schedule-filter-group:last-child { border-bottom: 0; }
-.schedule-filter-group h3 { margin: 0 7px 8px; font-size: 12px; }
-.schedule-filter-group button { display: flex; width: 100%; min-height: 32px; align-items: center; gap: 9px; border: 0; border-radius: var(--ui-radius-sm); background: transparent; padding: 6px 8px; color: var(--ui-text-secondary); font-size: 11px; text-align: left; cursor: pointer; }
-.schedule-filter-group button.is-active { background: var(--ui-surface-muted); color: var(--ui-foreground); }
-.schedule-filter-group button b { margin-left: auto; color: var(--ui-text-muted); font-size: 10px; font-weight: 500; }
-.schedule-filter-group button svg { width: 14px; height: 14px; }
-.status-dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--ui-text-subtle); }
-.status-all, .status-upcoming { background: var(--ui-accent); }
-.status-completed { background: var(--ui-success); }
-.status-cancelled { background: var(--ui-text-subtle); }
+.interview-schedule-layout { display: grid; gap: 14px; padding: 14px 24px 30px; }
+.schedule-page-actions { display: flex; min-width: 0; align-items: center; justify-content: flex-end; gap: 9px; }
+.schedule-page-actions .expandable-search { flex: 0 0 auto; }
+.schedule-week-range { display: inline-flex; min-height: 40px; align-items: center; gap: 8px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-md); background: var(--ui-surface); padding: 0 13px; color: var(--ui-text-secondary); font-size: 10px; font-weight: 600; white-space: nowrap; }
+.schedule-week-range svg { width: 14px; height: 14px; color: var(--ui-text-muted); }
 
 .calendar-red { --calendar-color: #ff3b30; --calendar-soft: color-mix(in srgb, #ff3b30 15%, var(--ui-surface)); }
 .calendar-orange { --calendar-color: #ff9500; --calendar-soft: color-mix(in srgb, #ff9500 16%, var(--ui-surface)); }
@@ -256,35 +174,57 @@
 .calendar-gray { --calendar-color: #8e8e93; --calendar-soft: color-mix(in srgb, #8e8e93 14%, var(--ui-surface)); }
 .company-logo[class*="calendar-"] { background: var(--calendar-soft); color: var(--calendar-color); }
 
-.schedule-calendar-panel { min-width: 0; overflow: hidden; }
-.schedule-calendar-toolbar { display: grid; min-height: 54px; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; border-bottom: 1px solid var(--ui-border); padding: 0 14px; }
-.schedule-calendar-toolbar > strong { font-size: 12px; font-weight: 600; }
-.schedule-scope-tabs, .schedule-view-switch { display: flex; width: max-content; border-radius: var(--ui-radius-full); background: var(--ui-surface-muted); padding: 2px; }
-.schedule-scope-tabs button, .schedule-view-switch button { min-width: 48px; border: 0; border-radius: var(--ui-radius-full); background: transparent; padding: 6px 9px; color: var(--ui-text-secondary); font-size: 10px; cursor: pointer; }
-.schedule-scope-tabs button.is-active, .schedule-view-switch button.is-active { background: var(--ui-surface); color: var(--ui-foreground); box-shadow: var(--ui-shadow-xs); }
-.schedule-view-switch { justify-self: end; }
-
-.week-calendar { min-width: 650px; }
+.schedule-calendar-panel { min-width: 0; overflow-x: auto; overflow-y: hidden; border-radius: var(--ui-radius-lg); }
+.week-calendar { min-width: 1050px; }
 .week-calendar-head { display: grid; height: 54px; grid-template-columns: 58px repeat(7, 1fr); align-items: center; border-bottom: 1px solid var(--ui-border); color: var(--ui-text-secondary); font-size: 10px; text-align: center; }
 .week-calendar-head span.is-today { color: var(--ui-foreground); font-weight: 650; }
 .week-calendar-head span.is-today::after { content: ""; display: block; width: 25px; height: 2px; margin: 8px auto -10px; border-radius: 2px; background: var(--ui-primary); }
-.week-calendar-scroll { height: 590px; overflow-y: auto; overscroll-behavior: contain; scrollbar-color: var(--ui-border-strong) transparent; scrollbar-width: thin; }
-.week-calendar-body { position: relative; display: grid; height: 1104px; grid-template-columns: 58px repeat(7, 1fr); grid-template-rows: repeat(48, 1fr); }
+.week-calendar-scroll { height: clamp(540px, calc(100vh - 320px), 640px); overflow-y: auto; overscroll-behavior: contain; scrollbar-color: var(--ui-border-strong) transparent; scrollbar-width: thin; }
+.week-calendar-body { position: relative; display: grid; height: 1440px; grid-template-columns: 58px repeat(7, 1fr); grid-template-rows: repeat(48, 1fr); }
 .week-calendar-body.is-dragging { user-select: none; }
 .week-hour-labels { display: grid; grid-row: 1 / -1; grid-template-rows: repeat(24, 1fr); color: var(--ui-text-muted); font-family: var(--ui-font-mono); font-size: 9px; text-align: center; }
 .week-hour-labels span { padding-top: 4px; }
-.week-grid-lines { position: absolute; inset: 0 0 0 58px; background: repeating-linear-gradient(to bottom, transparent 0 45px, var(--ui-border) 46px), repeating-linear-gradient(to right, transparent 0 calc(14.285% - 1px), var(--ui-border) calc(14.285% - 1px) 14.285%); opacity: 0.72; }
-.week-event { z-index: 2; align-self: stretch; overflow: hidden; margin: 2px; border: 0; border-left: 3px solid var(--calendar-color); border-radius: 3px; background: var(--calendar-soft); padding: 7px 8px; color: color-mix(in srgb, var(--calendar-color) 78%, var(--ui-foreground)); text-align: left; cursor: grab; }
+.week-today-column { z-index: 0; grid-row: 1 / -1; background: color-mix(in srgb, var(--ui-warning-subtle) 40%, transparent); pointer-events: none; }
+.week-grid-lines { position: absolute; z-index: 1; inset: 0 0 0 58px; background: repeating-linear-gradient(to bottom, transparent 0 59px, var(--ui-border) 60px), repeating-linear-gradient(to right, transparent 0 calc(14.285% - 1px), var(--ui-border) calc(14.285% - 1px) 14.285%); opacity: 0.72; pointer-events: none; }
+.week-event {
+  z-index: 2;
+  align-self: stretch;
+  overflow: hidden;
+  margin: 4px 8px;
+  border: 1.5px solid color-mix(in srgb, var(--calendar-color) 58%, var(--ui-border));
+  border-radius: 9px 7px 10px 8px / 8px 10px 7px 9px;
+  background: color-mix(in srgb, var(--calendar-color) 7%, var(--ui-surface));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--calendar-color) 9%, transparent),
+    0 1px 2px color-mix(in srgb, var(--calendar-color) 10%, transparent);
+  padding: 7px 9px;
+  color: color-mix(in srgb, var(--calendar-color) 78%, var(--ui-foreground));
+  text-align: left;
+  cursor: grab;
+}
+.week-event:hover { border-color: color-mix(in srgb, var(--calendar-color) 72%, var(--ui-border)); }
 .week-event:active { cursor: grabbing; }
-.week-event.is-selected { box-shadow: inset 0 0 0 1px var(--calendar-color), 0 0 0 1px color-mix(in srgb, var(--calendar-color) 38%, transparent); }
+.week-event.is-selected {
+  border-color: color-mix(in srgb, var(--calendar-color) 82%, var(--ui-border));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--calendar-color) 30%, transparent),
+    0 0 0 2px color-mix(in srgb, var(--calendar-color) 20%, transparent);
+}
 .week-event.is-dragging { opacity: 0.45; }
 .week-drop-preview { z-index: 1; align-self: stretch; margin: 2px; border: 1px dashed var(--calendar-color); border-radius: 3px; background: var(--calendar-soft); color: var(--calendar-color); pointer-events: none; }
 .week-drop-preview span { display: block; padding: 5px 7px; font-family: var(--ui-font-mono); font-size: 8px; font-variant-numeric: tabular-nums; }
-.week-event strong, .week-event span, .week-event small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.week-event strong { margin-top: 5px; color: var(--ui-foreground); font-size: 10px; }
-.week-event .week-event-time { display: flex; align-items: center; gap: 4px; margin: 0; color: var(--calendar-color); font-size: 9px; font-variant-numeric: tabular-nums; font-weight: 600; }
-.week-event-time svg { width: 10px; height: 10px; flex: 0 0 auto; }
-.week-event small { margin-top: 3px; color: var(--ui-text-secondary); font-size: 8px; }
+.week-event strong, .week-event span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.week-event .week-event-time { display: flex; align-items: center; gap: 5px; color: var(--ui-text-secondary); font-size: 9px; font-variant-numeric: tabular-nums; }
+.week-event-time i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--calendar-color); }
+.week-event-company { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 7px; }
+.week-event-company strong { min-width: 0; color: var(--ui-foreground); font-size: 10px; }
+.week-event-company em {
+  flex: 0 0 auto;
+  color: var(--ui-foreground);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+}
 .current-time-line { position: absolute; z-index: 3; top: 51.2%; left: 0; right: 43%; height: 1px; background: var(--ui-destructive); }
 .current-time-line::after { position: absolute; right: -3px; top: -3px; width: 7px; height: 7px; border-radius: 50%; background: var(--ui-destructive); content: ""; }
 .current-time-line span { position: absolute; left: 5px; top: -9px; border-radius: var(--ui-radius-full); background: var(--ui-destructive); padding: 2px 5px; color: var(--ui-destructive-foreground); font-family: var(--ui-font-mono); font-size: 8px; }
@@ -317,6 +257,45 @@
 .schedule-recent-card p, .schedule-recent-card ol { color: var(--ui-text-secondary); font-size: 8px; line-height: 1.55; }
 .schedule-recent-card h4 { margin: 8px 0 3px; font-size: 9px; }
 .schedule-recent-card ol { margin: 0; padding-left: 18px; }
+
+.interview-schedule-dialog { width: min(560px, calc(100vw - 32px)); max-width: 560px; max-height: calc(100vh - 40px); gap: 16px; overflow-y: auto; padding: 22px 24px 24px; overscroll-behavior: contain; }
+.interview-schedule-dialog [data-slot="dialog-title"] { font-size: 18px; }
+.schedule-dialog-card { overflow: hidden; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-lg); padding: 0 18px 18px; }
+.schedule-dialog-card > header { display: flex; min-height: 66px; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--ui-border); }
+.schedule-dialog-card > header h3 { margin: 0; font-size: 18px; }
+.schedule-dialog-card > header > div { display: flex; align-items: center; gap: 7px; }
+.schedule-stage-badge { display: inline-flex; align-items: center; border-radius: var(--ui-radius-xs); background: var(--calendar-soft); padding: 4px 8px; color: var(--calendar-color); font-size: 9px; font-weight: 650; }
+.schedule-dialog-loading { margin: 12px 0 0; border-radius: var(--ui-radius-sm); background: var(--ui-surface-muted); padding: 8px 10px; color: var(--ui-text-muted); font-size: 9px; }
+.schedule-dialog-details { display: grid; gap: 13px; margin: 16px 0; }
+.schedule-dialog-details > div { display: grid; grid-template-columns: 126px minmax(0, 1fr); align-items: start; gap: 10px; font-size: 10px; line-height: 1.5; }
+.schedule-dialog-details dt { display: flex; align-items: center; gap: 8px; color: var(--ui-text-muted); }
+.schedule-dialog-details dt svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.schedule-dialog-details dd { min-width: 0; margin: 0; color: var(--ui-text-secondary); overflow-wrap: anywhere; }
+.schedule-dialog-details a { color: var(--ui-accent); text-decoration: none; }
+.schedule-dialog-details a:hover { text-decoration: underline; }
+.schedule-dialog-details a:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 2px; }
+.schedule-dialog-application { display: grid; min-height: 54px; grid-template-columns: auto 112px minmax(0, 1fr) auto; align-items: center; gap: 10px; border-top: 1px solid var(--ui-border); border-bottom: 1px solid var(--ui-border); color: var(--ui-foreground); font-size: 10px; text-decoration: none; }
+.schedule-dialog-application > svg { width: 14px; height: 14px; color: var(--ui-text-muted); }
+.schedule-dialog-application strong { overflow: hidden; color: var(--ui-accent); text-overflow: ellipsis; white-space: nowrap; }
+.schedule-dialog-application:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: -2px; }
+.schedule-dialog-materials, .schedule-dialog-tasks { padding-top: 15px; }
+.schedule-dialog-materials h4, .schedule-dialog-tasks h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; color: var(--ui-text-secondary); font-size: 10px; font-weight: 550; }
+.schedule-dialog-materials h4 svg, .schedule-dialog-tasks h4 svg { width: 14px; height: 14px; color: var(--ui-text-muted); }
+.schedule-dialog-materials > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; padding-left: 24px; }
+.schedule-dialog-materials span { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); gap: 2px 8px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); padding: 9px; }
+.schedule-dialog-materials span > svg { width: 17px; height: 17px; grid-row: 1 / 3; color: var(--ui-destructive); }
+.schedule-dialog-materials b, .schedule-dialog-materials small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.schedule-dialog-materials b { font-size: 9px; font-weight: 550; }
+.schedule-dialog-materials small { color: var(--ui-text-muted); font-size: 8px; }
+.schedule-dialog-tasks ul { display: grid; gap: 10px; margin: 0; padding: 0 0 0 24px; list-style: none; }
+.schedule-dialog-tasks li { display: flex; align-items: center; gap: 9px; color: var(--ui-text-secondary); font-size: 9px; }
+.schedule-dialog-tasks li svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--ui-text-muted); }
+.schedule-dialog-tasks li:nth-child(-n+2) svg { color: var(--ui-success); }
+.schedule-dialog-footer { gap: 9px; }
+.schedule-dialog-footer .ui-button { min-width: 96px; }
+.schedule-dialog-join { display: inline-flex; min-width: 96px; min-height: 40px; align-items: center; justify-content: center; border-radius: var(--ui-radius-md); background: var(--ui-primary); padding: 0 16px; color: var(--ui-primary-foreground); font-size: 12px; font-weight: 650; text-decoration: none; }
+.schedule-dialog-join:hover { background: var(--ui-primary-hover); }
+.schedule-dialog-join:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 2px; }
 
 /* Records */
 .interview-records-layout { display: grid; grid-template-columns: 335px minmax(520px, 1fr) 290px; gap: 10px; padding: 0 24px; }
@@ -351,8 +330,11 @@
 .record-detail-header p svg { width: 10px; height: 10px; }
 .record-detail-actions { display: flex; align-items: center; justify-content: flex-end; gap: 5px; flex-wrap: wrap; }
 .record-detail-loading { display: grid; min-height: 240px; place-items: center; color: var(--ui-text-muted); font-size: 11px; }
-.records-empty-layout { display: grid; gap: 10px; padding: 0 24px; }
-.records-empty-layout .interview-empty-state { margin: 0; }
+.records-empty-layout { display: grid; gap: 10px; padding: 14px 24px 30px; }
+.records-empty-state { display: grid; min-height: 360px; place-content: center; justify-items: center; gap: 12px; padding: 40px 20px; color: var(--ui-text-muted); text-align: center; }
+.records-empty-state > svg { width: 44px; height: 44px; stroke-width: 1.2; }
+.records-empty-state h2 { margin: 0; color: var(--ui-foreground); font-size: 24px; }
+.records-empty-state p { max-width: 420px; margin: 0; color: var(--ui-text-muted); font-size: 13px; line-height: 1.55; }
 .application-history-card { padding: 12px; }
 .application-history-card > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .application-history-card h2 { margin: 0; font-size: 11px; }
@@ -442,9 +424,82 @@
 .ai-coming-card { padding: 12px; background: color-mix(in srgb, var(--ui-accent-subtle) 45%, var(--ui-surface)); }
 .ai-coming-card > div { display: flex; align-items: center; justify-content: space-between; }.ai-coming-card > div span { border-radius: var(--ui-radius-full); background: color-mix(in srgb, var(--ui-template-accent) 12%, var(--ui-surface)); padding: 3px 6px; color: var(--ui-template-accent); font-size: 7px; }
 
-.interview-empty-state { min-height: 180px; margin: 0 30px; border: 1px dashed var(--ui-border-strong); border-radius: var(--ui-radius-xl); background: var(--ui-surface); padding: 48px 20px; color: var(--ui-text-muted); text-align: center; }
 .pipeline-empty { margin: 24px 0 0; color: var(--ui-text-muted); font-size: 10px; text-align: center; }
 
+/* Applications */
+.career-applications-layout {
+  display: grid;
+  gap: 14px;
+  padding: 14px 30px 30px;
+}
+
+.career-applications-controls { display: flex; min-width: 0; align-items: center; justify-content: flex-end; gap: 8px; }
+.career-process-search { position: relative; display: block; width: clamp(210px, 22vw, 300px); }
+.career-process-search input { width: 100%; height: 38px; box-sizing: border-box; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-full); background: var(--ui-surface); padding: 0 38px 0 14px; color: var(--ui-foreground); font: inherit; font-size: 10px; }
+.career-process-search input:focus-visible { border-color: var(--ui-ring); outline: 2px solid var(--ui-ring); outline-offset: 1px; }
+.career-process-search > svg { position: absolute; top: 50%; right: 13px; width: 16px; height: 16px; color: var(--ui-text-muted); transform: translateY(-50%); }
+.career-control-button { display: inline-flex; height: 38px; align-items: center; gap: 6px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-full); background: var(--ui-surface); padding: 0 13px; color: var(--ui-text-secondary); font-size: 10px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.career-control-button:hover { border-color: var(--ui-border-strong); }
+.career-control-button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 2px; }
+.career-control-button svg { width: 14px; height: 14px; }
+.career-filter-control { position: relative; }
+.career-filter-popover { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: grid; width: 130px; overflow: hidden; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-md); background: var(--ui-surface-elevated); box-shadow: var(--ui-shadow-sm); padding: 5px; }
+.career-filter-popover button { border: 0; border-radius: var(--ui-radius-xs); background: transparent; padding: 8px 9px; color: var(--ui-text-secondary); font-size: 10px; text-align: left; cursor: pointer; }
+.career-filter-popover button:hover, .career-filter-popover button[aria-pressed="true"] { background: var(--ui-surface-muted); color: var(--ui-foreground); }
+.career-filter-popover button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: -2px; }
+.career-view-switch { display: flex; border-radius: var(--ui-radius-full); background: var(--ui-surface-muted); padding: 3px; }
+.career-view-switch button { display: inline-flex; height: 32px; align-items: center; gap: 5px; border: 0; border-radius: var(--ui-radius-full); background: transparent; padding: 0 12px; color: var(--ui-text-muted); font-size: 10px; cursor: pointer; }
+.career-view-switch button svg { width: 13px; height: 13px; }
+.career-view-switch button[aria-pressed="true"] { background: var(--ui-surface); box-shadow: var(--ui-shadow-xs); color: var(--ui-foreground); font-weight: 650; }
+.career-view-switch button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 1px; }
+.career-application-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.career-application-metric { display: grid; min-height: 84px; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 13px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-lg); background: var(--ui-surface); padding: 13px 16px; }
+.career-application-metric > span { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 50%; background: var(--tone-soft); color: var(--tone); }
+.career-application-metric > span svg { width: 20px; height: 20px; }
+.career-application-metric > div { display: grid; grid-template-columns: auto 1fr; align-items: end; gap: 2px 8px; }
+.career-application-metric small { grid-column: 1 / -1; color: var(--ui-text-muted); font-size: 10px; }
+.career-application-metric strong { font-size: 21px; line-height: 1; font-variant-numeric: tabular-nums; }
+.career-application-metric p { margin: 0; color: var(--ui-text-muted); font-size: 8px; }
+.career-application-metric p b { color: var(--ui-success); font-weight: 650; }
+.career-applications-board { overflow-x: auto; border: 0; background: transparent; }
+.career-pipeline-column-heading { display: flex; min-height: 28px; align-items: center; justify-content: space-between; gap: 8px; padding: 0 3px 4px; }
+.career-pipeline-column-heading > div { display: flex; align-items: center; gap: 7px; color: var(--ui-text-muted); }
+.career-pipeline-column-heading button { display: grid; width: 24px; height: 24px; place-items: center; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+.career-pipeline-column-heading button:hover { background: var(--ui-surface-muted); color: var(--ui-foreground); }
+.career-pipeline-column-heading button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 1px; }
+.career-pipeline-column-heading svg { width: 13px; height: 13px; }
+.career-pipeline-add { display: flex; width: 100%; min-height: 40px; align-items: center; justify-content: center; gap: 5px; margin-top: 7px; border: 0; border-radius: var(--ui-radius-md); background: transparent; color: var(--ui-text-muted); font-size: 9px; cursor: pointer; }
+.career-pipeline-add:hover { background: var(--ui-surface-muted); color: var(--ui-foreground); }
+.career-pipeline-add:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: -2px; }
+.career-pipeline-add svg { width: 12px; height: 12px; }
+.career-demo-label { color: var(--ui-text-muted); font-size: 9px; }
+.career-application-list { min-width: 760px; overflow-x: auto; }
+.career-application-list > div { display: grid; min-height: 52px; grid-template-columns: 1.5fr .75fr .8fr 1fr auto; align-items: center; gap: 12px; border-top: 1px solid var(--ui-border); padding: 8px 14px; color: var(--ui-text-secondary); font-size: 11px; }
+.career-application-list > div:first-child { min-height: 38px; border-top: 0; background: var(--ui-surface-subtle); color: var(--ui-text-muted); font-size: 10px; }
+.career-application-list [role="cell"]:first-child { display: grid; min-width: 0; gap: 2px; }
+.career-application-list strong, .career-application-list small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.career-application-list strong { color: var(--ui-foreground); font-size: 11px; }
+.career-application-list small { color: var(--ui-text-muted); font-size: 9px; }
+.career-applications-empty { display: grid; min-height: 300px; place-items: center; align-content: center; gap: 8px; padding: 40px 20px; text-align: center; }
+.career-applications-empty > svg { width: 34px; height: 34px; color: var(--ui-text-muted); stroke-width: 1.4; }
+.career-applications-empty h2 { margin: 4px 0 0; font-size: 16px; }
+.career-applications-empty p { margin: 0 0 8px; color: var(--ui-text-muted); font-size: 11px; }
+.career-dialog-empty { display: grid; min-height: 220px; place-items: center; align-content: center; gap: 8px; border: 1px dashed var(--ui-border-strong); border-radius: var(--ui-radius-lg); padding: 24px; text-align: center; }
+.career-dialog-empty > svg { width: 30px; height: 30px; color: var(--ui-text-muted); }
+.career-dialog-empty strong { font-size: 14px; }
+.career-dialog-empty span { color: var(--ui-text-muted); font-size: 11px; }
+.career-application-detail { padding: 18px; }
+.career-application-detail > header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--ui-border); padding-bottom: 16px; }
+.career-application-detail > header > div:last-child { display: flex; gap: 8px; }
+.career-application-detail > header button:not(.ui-button) { display: inline-flex; align-items: center; gap: 3px; border: 0; background: transparent; padding: 0; color: var(--ui-text-muted); font-size: 11px; cursor: pointer; }
+.career-application-detail > header button svg { width: 13px; height: 13px; }
+.career-application-detail h2 { margin: 8px 0 4px; font-size: 20px; }
+.career-application-detail header p { margin: 0; color: var(--ui-text-muted); font-size: 11px; }
+.career-application-detail > dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 16px 0 0; }
+.career-application-detail > dl > div { display: grid; gap: 5px; border-radius: var(--ui-radius-md); background: var(--ui-surface-subtle); padding: 12px; }
+.career-application-detail dt { color: var(--ui-text-muted); font-size: 10px; }
+.career-application-detail dd { overflow-wrap: anywhere; margin: 0; font-size: 12px; font-weight: 600; }
+.career-application-notes { margin: 12px 0 0; border-left: 2px solid var(--ui-warning); padding: 8px 12px; color: var(--ui-text-secondary); font-size: 11px; line-height: 1.6; }
 .interview-dialog-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--ui-foreground) 24%, transparent); padding: 24px; }
 .interview-dialog { width: min(680px, 100%); max-height: calc(100vh - 48px); overflow-y: auto; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-xl); background: var(--ui-surface); box-shadow: var(--ui-shadow-lg); }
 .interview-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--ui-border); padding: 18px 20px; }
@@ -489,54 +544,62 @@
 }
 
 @media (max-width: 1250px) {
-  .interview-schedule-layout { grid-template-columns: 190px minmax(620px, 1fr); overflow-x: auto; }
-  .schedule-detail-aside { grid-column: 1 / -1; grid-template-columns: 1.2fr 1fr 1fr; }
   .interview-records-layout { grid-template-columns: 310px minmax(520px, 1fr); overflow-x: auto; }
   .record-assets-column { grid-column: 1 / -1; grid-template-columns: repeat(3, 1fr); }
   .record-assets-column > :nth-child(n + 4) { grid-column: auto; }
 }
 
 @media (max-width: 900px) {
-  .interview-module-summary { grid-template-columns: auto minmax(0, 1fr); }
-  .interview-module-copy { align-items: flex-start; flex-direction: column; gap: 2px; }
-  .interview-module-copy p { white-space: normal; }
-  .interview-module-actions { grid-column: 1 / -1; width: 100%; flex-wrap: wrap; }
-  .interview-module-actions .expandable-search { flex: 1 1 100%; }
-  .interview-metrics { grid-template-columns: repeat(2, 1fr); }
-  .interview-pipeline-grid { grid-template-columns: repeat(var(--pipeline-column-count, 5), 165px); }
-  .overview-week-content { overflow-x: auto; }
-  .interview-schedule-layout { grid-template-columns: 185px 680px; }
-  .schedule-detail-aside { grid-template-columns: 1fr 1fr; }
-  .schedule-detail-aside .ai-preview { grid-column: 1 / -1; }
+  .career-application-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .interview-pipeline-grid { grid-template-columns: repeat(var(--pipeline-column-count, 7), 196px); }
+  .schedule-page-actions { flex-wrap: nowrap; }
+  .schedule-week-range { flex: 1 1 auto; justify-content: center; }
   .record-assets-column { grid-template-columns: 1fr 1fr; }
+  .career-application-detail > dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 640px) {
-  .interview-module-header { margin: 14px 16px 12px; }
-  .interview-module-summary { gap: 11px; padding: 0 0 6px; }
-  .interview-module-mark { width: 34px; height: 34px; }
-  .interview-module-copy h1 { font-size: 21px; }
-  .interview-module-copy p { font-size: 11px; }
-  .interview-module-actions .ui-button { flex: 1 1 auto; padding-inline: 12px; }
   .interview-view-tabs { padding: 0; }
   .interview-view-tabs a { min-height: 40px; padding-inline: 11px; }
   .interview-demo-notice { width: calc(100% - 32px); margin: 0 16px 12px; }
-  .interview-overview-layout, .interview-schedule-layout, .interview-records-layout { padding: 0 16px; }
-  .interview-metrics { grid-template-columns: 1fr 1fr; gap: 8px; }
-  .interview-metric-card { padding: 12px 10px; }
-  .interview-metric-icon { width: 36px; height: 36px; }
-  .interview-metric-icon svg { width: 19px; height: 19px; }
-  .interview-metric-card strong { font-size: 20px; }
-  .interview-pipeline-grid { grid-template-columns: repeat(var(--pipeline-column-count, 5), 155px); }
-  .overview-week-content { grid-template-columns: 180px 620px; }
+  .interview-records-layout { padding: 0 16px; }
+  .career-card-action { min-height: 40px; }
+  .career-applications-layout { padding: 14px 16px 30px; }
+  .career-applications-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .career-process-search { width: 100%; grid-column: 1 / -1; }
+  .career-process-search input { height: 44px; font-size: 16px; }
+  .career-control-button { justify-content: center; }
+  .career-control-button, .career-view-switch button { min-height: 44px; }
+  .career-view-switch { display: grid; grid-template-columns: 1fr 1fr; grid-column: 1 / -1; }
+  .career-view-switch button { justify-content: center; }
+  .career-applications-controls .ui-button { width: 100%; grid-column: 1 / -1; }
+  .career-application-metrics { gap: 8px; }
+  .career-application-metric { min-height: 76px; gap: 9px; padding: 11px; }
+  .career-application-metric > span { width: 34px; height: 34px; }
+  .career-application-detail > header { align-items: stretch; flex-direction: column; }
+  .career-application-detail > header > div:last-child { display: grid; grid-template-columns: 1fr 1fr; }
+  .career-application-detail > dl { grid-template-columns: 1fr; }
+  .interview-pipeline-grid { grid-template-columns: repeat(var(--pipeline-column-count, 7), 196px); }
   .import-flow { grid-template-columns: 1fr; }
   .import-flow > svg { justify-self: center; transform: rotate(90deg); }
   .ai-preview > div { grid-template-columns: 1fr; }
-  .interview-schedule-layout { grid-template-columns: minmax(0, 1fr); overflow: visible; }
+  .interview-schedule-layout { overflow: visible; padding: 14px 16px 30px; }
+  .schedule-page-actions { display: grid; grid-template-columns: auto minmax(0, 1fr); }
+  .schedule-page-actions .expandable-search { justify-self: start; }
+  .schedule-week-range { min-height: 44px; }
+  .schedule-page-actions .ui-button { width: 100%; grid-column: 1 / -1; }
+  .interview-schedule-dialog { width: calc(100vw - 24px); max-height: calc(100vh - 24px); padding: 20px 16px; }
+  .schedule-dialog-card { padding-inline: 14px; }
+  .schedule-dialog-details > div { grid-template-columns: 1fr; gap: 4px; }
+  .schedule-dialog-application { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .schedule-dialog-application > span { display: none; }
+  .schedule-dialog-materials > div { grid-template-columns: 1fr; padding-left: 0; }
+  .schedule-dialog-tasks ul { padding-left: 0; }
+  .schedule-dialog-footer { display: grid; grid-template-columns: 1fr 1fr; }
+  .schedule-dialog-footer .ui-button, .schedule-dialog-join { width: 100%; }
   .schedule-calendar-panel { overflow-x: auto; }
-  .schedule-detail-aside { display: contents; }
   .interview-records-layout { grid-template-columns: minmax(0, 1fr); overflow: visible; }
-  .records-empty-layout { padding: 0 16px; }
+  .records-empty-layout { padding: 14px 16px 30px; }
   .record-assets-column { display: grid; grid-column: auto; grid-template-columns: 1fr; }
   .record-section dl { grid-template-columns: 1fr; }
   .record-detail-header { grid-template-columns: auto 1fr; }
@@ -547,7 +610,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .interview-view-tabs a,
-  .interview-metric-card,
   .week-event { transition-duration: 0.01ms !important; }
 }
 

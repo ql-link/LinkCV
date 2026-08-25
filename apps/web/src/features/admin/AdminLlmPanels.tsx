@@ -20,6 +20,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { PageLoading } from "@/components/ui";
 import {
   api,
   ApiRequestError,
@@ -223,9 +224,8 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
       />
 
       {loadState === "loading" && (
-        <section className="admin-surface llm-state" aria-live="polite">
-          <span className="loading-spinner" />
-          <p>正在加载 Chat 模型配置…</p>
+        <section className="admin-surface">
+          <PageLoading label="正在加载 Chat 模型配置…" scope="panel" />
         </section>
       )}
       {loadState === "error" && (
@@ -983,7 +983,7 @@ export function LogsPanel({
   return (
     <>
       {!embedded && <PanelHeading eyebrow="可观测性" title="LLM 调用日志" description="查询真实 Chat 调用的安全元数据；数据仅在手动刷新后更新。" action={<button className="admin-secondary-button" type="button" onClick={refresh} disabled={pagePending}><RefreshCw size={15} />{pagePending ? "刷新中…" : "刷新"}</button>} />}
-      {loadState === "loading" && <section className="admin-surface llm-state" aria-live="polite"><span className="loading-spinner" /><p>正在加载 LLM 调用日志…</p></section>}
+      {loadState === "loading" && <section className="admin-surface"><PageLoading label="正在加载 LLM 调用日志…" scope="panel" /></section>}
       {loadState === "error" && <section className="admin-surface llm-state llm-error" role="alert"><CircleAlert size={22} /><strong>无法加载 LLM 调用日志</strong><p>{loadError}</p><button type="button" onClick={() => void loadPage(appliedQuery, currentCursor, true)}>重试</button></section>}
       {loadState === "ready" && (
         <>

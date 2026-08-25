@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { ExternalLink, FileUp, MoreHorizontal, Pencil, Plus, Share2, Trash2 } from "lucide-react";
+import { ExternalLink, FileText, FileUp, MoreHorizontal, Pencil, Plus, Share2, Trash2 } from "lucide-react";
 import {
   type ResumeImportSummary,
   type ResumeSummary,
@@ -332,8 +332,9 @@ export function HomeScreen({
   return (
     <main className="dashboard-content home-dashboard-content">
       <WorkspacePageHero
-        eyebrow="求职工作台"
-        title="全部简历"
+        icon={<FileText />}
+        title="我的简历"
+        description="集中管理简历、版本与分享，随时继续编辑或导入新内容。"
         actions={
           <>
             <ExpandableSearch

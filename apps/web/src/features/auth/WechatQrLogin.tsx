@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { RefreshCw, ScanLine } from "lucide-react";
+import { RefreshCw, ScanLine, ShieldCheck } from "lucide-react";
 import { api, ApiRequestError, User } from "../../api/client";
-import { Button } from "@/components/ui";
+import { Button, PageLoading } from "@/components/ui";
 
 const POLL_INTERVAL_MS = 2000;
 let qrRequestInFlight: ReturnType<typeof api.wechatQrcode> | null = null;
@@ -18,10 +18,11 @@ function requestLoginQr() {
 type QrPhase = "loading" | "waiting" | "cancelled" | "expired" | "error";
 
 type WechatQrLoginProps = {
+  appearance?: "default" | "auth";
   onSuccess: (user: User) => void;
 };
 
-export function WechatQrLogin({ onSuccess }: WechatQrLoginProps) {
+export function WechatQrLogin({ appearance = "default", onSuccess }: WechatQrLoginProps) {
   const [phase, setPhase] = useState<QrPhase>("loading");
   const [qrBase64, setQrBase64] = useState("");
   const [message, setMessage] = useState("");
@@ -104,14 +105,17 @@ export function WechatQrLogin({ onSuccess }: WechatQrLoginProps) {
   }, []);
 
   return (
-    <div className="wechat-qr-panel">
-      <div className={`wechat-qr-box is-${phase}`}>
-        {phase === "loading" && <span className="wechat-qr-loading">正在生成二维码...</span>}
+    <div className={`wechat-qr-panel${appearance === "auth" ? " wechat-qr-panel--auth" : ""}`}>
+      <div className={`wechat-qr-box is-${phase}`} aria-live="polite">
+        {phase === "loading" && <PageLoading label="正在生成二维码…" scope="panel" />}
         {phase === "waiting" && (
           <img
             className="wechat-qr-img"
+            fetchPriority="high"
+            height={280}
             src={`data:image/png;base64,${qrBase64}`}
             alt="微信扫码登录二维码"
+            width={280}
           />
         )}
         {(phase === "expired" || phase === "cancelled") && (
@@ -129,7 +133,16 @@ export function WechatQrLogin({ onSuccess }: WechatQrLoginProps) {
       </div>
 
       <p className="wechat-qr-hint">
-        {phase === "waiting" ? "使用微信扫一扫，扫码确认后自动登录。" : message}
+        {appearance === "auth" && phase === "waiting" && (
+          <ShieldCheck aria-hidden="true" size={20} strokeWidth={1.8} />
+        )}
+        <span>
+          {phase === "waiting"
+            ? (appearance === "auth"
+              ? "扫码后在微信中确认登录，保障账号安全"
+              : "使用微信扫一扫，扫码确认后自动登录。")
+            : message}
+        </span>
       </p>
 
       {(phase === "expired" || phase === "cancelled" || phase === "error") && (

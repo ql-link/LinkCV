@@ -28,7 +28,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { Brand } from "@/components/ui";
+import { Brand, PageLoading } from "@/components/ui";
 import { ModelsPanel } from "./AdminLlmPanels";
 import { AdminLogsCenter } from "./AdminObservabilityPanels";
 import { AdminTemplatePanel } from "./AdminTemplatePanel";
@@ -188,10 +188,7 @@ export function AdminApp() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            <div className="admin-page-loading">
-              <div className="loading-spinner" />
-              <span>正在验证身份...</span>
-            </div>
+            <PageLoading label="正在验证身份…" scope="page" />
           </motion.div>
         ) : user?.is_admin ? (
           <motion.div
@@ -213,10 +210,7 @@ export function AdminApp() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            <div className="admin-page-loading">
-              <div className="loading-spinner" />
-              <span>正在前往登录页...</span>
-            </div>
+            <PageLoading label="正在前往登录页…" scope="page" />
           </motion.div>
         )}
       </AnimatePresence>
@@ -807,7 +801,7 @@ function UsersPanel({
           </div>
         </div>
         <div className="admin-table-wrap">
-          {loading && <div className="table-status-row">加载中...</div>}
+          {loading && <PageLoading label="正在加载用户…" scope="panel" />}
           {!loading && error && (
             <div className="table-status-row">
               加载失败
@@ -1085,11 +1079,7 @@ function UserDetail({
   };
 
   if (detail === "loading") {
-    return (
-      <div className="user-detail" style={{ padding: 24, textAlign: "center" }}>
-        加载中...
-      </div>
-    );
+    return <PageLoading label="正在加载用户详情…" scope="panel" />;
   }
   if (!detail) {
     return (

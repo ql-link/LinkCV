@@ -16,6 +16,17 @@ const release = {
 afterEach(() => vi.restoreAllMocks());
 
 describe("PluginReleasePanel", () => {
+  it("读取插件状态时使用统一的面板加载状态", () => {
+    vi.spyOn(api, "getAdminPluginRelease").mockReturnValue(new Promise(() => {}));
+
+    render(<PluginReleasePanel />);
+
+    expect(screen.getByRole("status", { name: "正在读取插件状态…" })).toHaveClass(
+      "page-loading",
+      "is-panel",
+    );
+  });
+
   it("没有插件时只显示上传入口", async () => {
     vi.spyOn(api, "getAdminPluginRelease").mockResolvedValue({ status: "absent", release: null });
     render(<PluginReleasePanel />);

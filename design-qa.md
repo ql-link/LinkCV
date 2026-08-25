@@ -692,3 +692,63 @@ final result: passed
 ## Final result
 
 final result: passed
+
+---
+
+# 登录页左侧微信扫码样式 — 2026-08-24
+
+**Source visual truth**
+
+- Path: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-023030af-5bac-4fc9-8aa7-e8f43318deae.png`
+- Source pixels: 640 × 674 at 1× density.
+- State: WeChat QR waiting state, left login region only.
+
+**Rendered implementation**
+
+- URL: `http://127.0.0.1:5180/login`
+- Desktop screenshot: `/tmp/linkcv-auth-waiting-1440-final.png` at a 1440 × 900 CSS viewport and 1× density.
+- Responsive screenshots: `/tmp/linkcv-auth-waiting-1024-final.png` and `/tmp/linkcv-auth-waiting-390-final.png`.
+- Comparison image: `/tmp/linkcv-auth-design-comparison.png`.
+- Normalization: the 640 × 674 source was resized to 654 × 689; the implementation's 654 × 689 left-panel content region was cropped from the 1440 × 900 screenshot. Browser chrome and the unchanged right visual region were excluded.
+
+**Full-view comparison evidence**
+
+- The left region follows the source order and proportions: eyebrow, single-line desktop heading, explanatory copy, isolated circular QR area, then the shield security hint.
+- The previous card background, border, padding shell, and square QR frame are absent. The QR image is clipped by the circular holder and uses only the existing light elevation token outside the image.
+- The unchanged right visual region remains present in the full desktop screenshot. At 1024 px the heading wraps within the narrower left track; at 390 px the left region remains readable and precedes the existing stacked right region without horizontal overflow.
+
+**Focused region comparison evidence**
+
+- The entire left panel was used as the focused region because all requested changes are confined there. In `/tmp/linkcv-auth-design-comparison.png`, the source is on the left and the normalized implementation is on the right.
+- Typography: existing LinkCV display and body fonts are retained; hierarchy, weight, line height, and wrapping match the reference intent.
+- Spacing: desktop left inset, content width, QR scale, and the security-hint position align with the source. Responsive spacing contracts without overlapping the QR image.
+- Colors and tokens: existing surface and muted-text tokens are retained; no new page palette was introduced.
+- Image quality: the browser check used a temporary crop of the supplied QR as controlled API fixture data, while production continues to render the real backend-provided `qr_base64`. The image has explicit dimensions, high fetch priority, circular clipping, and no overlay layer.
+- Copy: title and explanatory copy are unchanged; the waiting hint now matches the reference's security message.
+
+**Comparison history**
+
+- Initial finding [P2]: the QR state still inherited the old centered content column, leaving the left content visibly lower and farther right than the source; the circular elevation was also too pronounced.
+- Fix: added a WeChat-only top reading flow and narrower left-aligned content track, removed the surrounding card shell, and replaced the custom shadow with `--ui-shadow-md`.
+- Post-fix evidence: `/tmp/linkcv-auth-waiting-1440-final.png` and `/tmp/linkcv-auth-design-comparison.png` show the corrected desktop alignment and unobstructed QR image. No actionable P0/P1/P2 mismatch remains.
+
+**Browser checks**
+
+- Checked 1440 × 900, 1024 × 768, and 390 × 844.
+- Verified the waiting-state QR image, security hint, pending polling state, and existing responsive stacking.
+- A fresh browser tab reported no console errors with the controlled local API fixture.
+- The external WeChat scan-and-confirm step was not executed; this visual task does not change that API or polling behavior, which remains covered by existing component tests.
+
+**Findings**
+
+- No actionable P0/P1/P2 findings remain.
+- P3: minor raster softness comes from the supplied screenshot crop used only for visual QA; it is not shipped by the application.
+
+**Implementation Checklist**
+
+- [x] Remove the QR card overlay and square framing.
+- [x] Match the source's desktop composition and responsive behavior.
+- [x] Preserve API, polling, password-login, and right-region behavior.
+- [x] Verify automated checks, browser rendering, and console state.
+
+final result: passed

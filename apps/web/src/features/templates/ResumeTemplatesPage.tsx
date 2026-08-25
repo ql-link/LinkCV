@@ -108,7 +108,8 @@ export function ResumeTemplatesPage() {
   return (
     <main className="dashboard-content template-library-content">
       <WorkspacePageHero
-        eyebrow="创建起点"
+        icon={<LayoutTemplate />}
+        tone="template"
         title="简历模板"
         description="浏览当前可用版式，选择后填写简历名称并进入编辑器。"
       />

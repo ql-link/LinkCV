@@ -168,15 +168,15 @@ export function JobFormPage({
     return (
       <main className="dashboard-content job-page-shell">
         <section className="job-workspace-state">
-          <h1>无法打开这条 JD</h1>
+          <h1>无法打开这个岗位</h1>
           <p>{error ?? "岗位不存在，或当前账号没有访问权限。"}</p>
-          <Button onClick={() => navigateTo("/jobs", { replace: true })}>返回 JD 中心</Button>
+          <Button onClick={() => navigateTo("/career/jobs", { replace: true })}>返回岗位库</Button>
         </section>
       </main>
     );
   }
 
-  const cancelTarget = jobId ? jobDetailPath(jobId) : "/jobs";
+  const cancelTarget = jobId ? jobDetailPath(jobId) : "/career/jobs";
   const requiredFilled = [form.job_title, form.company_name, form.description].filter((value) => value.trim()).length;
   if (mode === "create" && presentation === "dialog") {
     const closeDialog = () => {
@@ -201,7 +201,7 @@ export function JobFormPage({
             <DialogHeader className="job-create-dialog-header">
               <DialogTitle className="job-create-dialog-title">
                 <FilePenLine size={18} strokeWidth={1.8} aria-hidden="true" />
-                <span>手动填写JD信息</span>
+                <span>手动填写岗位信息</span>
               </DialogTitle>
             </DialogHeader>
 
@@ -273,14 +273,14 @@ export function JobFormPage({
                     </div>
                   </DialogOptionalSection>
                   <DialogOptionalSection title="个人备注">
-                    <DialogJobTextarea label="个人备注" hint="填写你对这条 JD 的补充备注" value={form.notes} onChange={(value) => setField("notes", value)} />
+                    <DialogJobTextarea label="个人备注" hint="填写你对这个岗位的补充备注" value={form.notes} onChange={(value) => setField("notes", value)} />
                   </DialogOptionalSection>
                 </div>
               </section>
             </div>
 
             <DialogFooter className="job-create-dialog-footer">
-              <Button type="submit" disabled={saving}>{saving ? "正在创建…" : "创建 JD"}</Button>
+              <Button type="submit" disabled={saving}>{saving ? "正在创建…" : "创建岗位"}</Button>
             </DialogFooter>
           </form>
           {requiredToast && <div className="job-create-validation-toast" role="status" aria-live="polite">{requiredToast}</div>}
@@ -294,13 +294,13 @@ export function JobFormPage({
     <main className="dashboard-content job-page-shell">
       <form className="job-form" onSubmit={submit}>
         <WorkspacePageHero
-          eyebrow="JD 管理"
-          title={mode === "create" ? "新建 JD" : "编辑 JD"}
+          eyebrow="岗位管理"
+          title={mode === "create" ? "新建岗位" : "编辑岗位"}
           description="先录入岗位核心信息，保存后再补充公司与来源。"
           actions={(
             <>
               <Button variant="ghost" onClick={() => navigateTo(cancelTarget)}>取消</Button>
-              <Button type="submit" disabled={saving}>{saving ? "正在保存…" : mode === "create" ? "创建 JD" : "保存 JD"}</Button>
+              <Button type="submit" disabled={saving}>{saving ? "正在保存…" : mode === "create" ? "创建岗位" : "保存岗位"}</Button>
             </>
           )}
         />

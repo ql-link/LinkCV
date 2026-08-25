@@ -8,7 +8,7 @@ afterEach(() => vi.restoreAllMocks());
 describe("JobSmartImportDialog", () => {
   it("拒绝不受支持的图片且保留已有文字", () => {
     render(<JobSmartImportDialog onClose={vi.fn()} onParsed={vi.fn()} />);
-    expect(screen.getByRole("dialog", { name: "智能填写JD信息" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "智能填写岗位信息" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "返回" })).not.toBeInTheDocument();
     const text = screen.getByLabelText("岗位文字");
     fireEvent.change(text, { target: { value: "一段有效岗位文字" } });
