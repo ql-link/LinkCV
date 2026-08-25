@@ -1932,6 +1932,63 @@ select:not([data-slot]):focus-visible,
   gap: 10px;
 }
 
+.page-hero.is-module {
+  align-items: center;
+  gap: 24px;
+  padding: 18px 30px 14px;
+}
+
+.page-hero-module-summary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 14px;
+}
+
+.page-hero-module-mark {
+  --page-hero-tone: var(--ui-accent);
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--page-hero-tone) 48%, var(--ui-border));
+  border-radius: var(--ui-radius-md);
+  color: var(--page-hero-tone);
+}
+
+.page-hero-module-mark.is-template { --page-hero-tone: var(--ui-template-accent); }
+.page-hero-module-mark.is-success { --page-hero-tone: var(--ui-success); }
+.page-hero-module-mark.is-warning { --page-hero-tone: var(--ui-warning); }
+.page-hero-module-mark svg { width: 21px; height: 21px; }
+
+.page-hero-module-copy {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 22px;
+}
+
+.page-hero.is-module h1 {
+  flex: 0 0 auto;
+  font-size: 23px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.page-hero.is-module .page-hero-description {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-hero.is-module .page-hero-actions {
+  align-items: center;
+  gap: 10px;
+}
+
 .page-hero-field {
   display: flex;
   flex-direction: column;
