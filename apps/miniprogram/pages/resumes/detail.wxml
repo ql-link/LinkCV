@@ -10,26 +10,7 @@
   <button class="ui-secondary-button state-action" hover-class="ui-secondary-button-pressed" bindtap="backToResumes">返回简历列表</button>
 </view>
 <view class="preview-document" wx:else>
-  <!-- 顶部缩放与操作工具条 -->
-  <view class="preview-toolbar">
-    <view class="toolbar-hint">
-      <text class="hint-icon">🔍</text>
-      <text class="hint-txt">区域内支持双指缩放与自由拖拽</text>
-    </view>
-    <view class="toolbar-controls">
-      <view class="tool-btn" hover-class="tool-btn-hover" bindtap="zoomOut" role="button" aria-label="缩小">
-        <text class="tool-btn-symbol">−</text>
-      </view>
-      <view class="tool-btn tool-btn-reset" hover-class="tool-btn-hover" bindtap="resetZoom" role="button" aria-label="还原">
-        <text class="tool-btn-txt">100%</text>
-      </view>
-      <view class="tool-btn" hover-class="tool-btn-hover" bindtap="zoomIn" role="button" aria-label="放大">
-        <text class="tool-btn-symbol">+</text>
-      </view>
-    </view>
-  </view>
-
-  <!-- 专门的图片展示与交互区域（直接在当前页面缩放、拖拽） -->
+  <!-- 专门的图片展示与手势交互区域（纯粹双指缩放、平移拖拽） -->
   <movable-area class="preview-viewport">
     <movable-view
       class="preview-movable-sheet"
@@ -37,7 +18,6 @@
       scale="{{true}}"
       scale-min="1"
       scale-max="4"
-      scale-value="{{scaleValue}}"
       inertia="{{true}}"
       out-of-bounds="{{true}}"
     >

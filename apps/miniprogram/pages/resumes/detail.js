@@ -9,7 +9,6 @@ Page({
     error: "",
     resumeId: "",
     previewPath: "",
-    scaleValue: 1,
   },
 
   onLoad(options) {
@@ -90,20 +89,6 @@ Page({
     } finally {
       this.recoveringPreview = false;
     }
-  },
-
-  zoomIn() {
-    const next = Math.min(4, Number(((this.data.scaleValue || 1) + 0.5).toFixed(1)));
-    this.setData({ scaleValue: next });
-  },
-
-  zoomOut() {
-    const next = Math.max(1, Number(((this.data.scaleValue || 1) - 0.5).toFixed(1)));
-    this.setData({ scaleValue: next });
-  },
-
-  resetZoom() {
-    this.setData({ scaleValue: 1 });
   },
 
   handleImagePreview() {

@@ -70,78 +70,10 @@
   width: 100%;
 }
 
-/* 顶部操作工具条 */
-.preview-toolbar {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 14rpx;
-  padding: 0 4rpx;
-  box-sizing: border-box;
-}
-
-.toolbar-hint {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-}
-
-.hint-icon {
-  font-size: 22rpx;
-}
-
-.hint-txt {
-  font-size: 22rpx;
-  color: #64748b;
-  font-weight: 500;
-}
-
-.toolbar-controls {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
-}
-
-.tool-btn {
-  height: 52rpx;
-  min-width: 52rpx;
-  padding: 0 16rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 14rpx;
-  background: #ffffff;
-  border: 1rpx solid rgba(15, 23, 42, 0.08);
-  box-shadow: 0 2rpx 8rpx rgba(15, 23, 42, 0.04);
-  box-sizing: border-box;
-  touch-action: manipulation;
-  transition: all 0.15s ease;
-}
-
-.tool-btn-hover {
-  background: #f1f5f9;
-  transform: scale(0.95);
-}
-
-.tool-btn-symbol {
-  font-size: 28rpx;
-  font-weight: 600;
-  color: #0f172a;
-  line-height: 1;
-}
-
-.tool-btn-txt {
-  font-size: 20rpx;
-  font-weight: 600;
-  color: #475569;
-  line-height: 1;
-}
-
-/* 专用图片可交互视口区域 */
+/* 专用图片可手势交互视口区域（纯粹双指捏合缩放与拖拽） */
 .preview-viewport {
   width: 100%;
-  height: calc(100vh - 160rpx - env(safe-area-inset-bottom));
+  height: calc(100vh - 100rpx - env(safe-area-inset-bottom));
   overflow: hidden;
   border-radius: 28rpx;
   background: #e2e8f0;
@@ -175,8 +107,8 @@
 }
 
 .preview-footnote {
-  margin-top: 14rpx;
+  margin-top: 16rpx;
   color: #94a3b8;
-  font-size: 20rpx;
+  font-size: 21rpx;
   letter-spacing: 0.2rpx;
 }
