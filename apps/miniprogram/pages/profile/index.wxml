@@ -1,7 +1,7 @@
 <view class="page" style="padding-top: calc({{statusBarHeight}}px + 32rpx)">
   <view class="topbar">
     <view class="ui-brand">
-      <image class="ui-brand-mark" src="/assets/linkcv-mark.png" mode="aspectFit" aria-hidden="true"></image>
+      <image class="ui-brand-mark" src="/assets/linkresume-mark.png" mode="aspectFit" aria-hidden="true"></image>
       <text>LinkCV</text>
     </view>
   </view>

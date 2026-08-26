@@ -1,30 +1,37 @@
-.page { min-height: 100vh; display: flex; flex-direction: column; padding: 0 32rpx calc(32rpx + env(safe-area-inset-bottom)); box-sizing: border-box; overflow-x: hidden; }
-.topbar { min-height: 88rpx; display: flex; align-items: center; padding-right: 180rpx; }
-.content { flex: 1; display: flex; flex-direction: column; justify-content: center; width: 100%; max-width: 680rpx; margin: 0 auto; padding: 24rpx 8rpx 80rpx; box-sizing: border-box; }
-.title { color: var(--ui-foreground); font-size: 54rpx; font-weight: 700; letter-spacing: -2rpx; line-height: 1.2; }
-.status-line { display: flex; align-items: flex-start; margin-top: 28rpx; }
-.status-indicator { width: 38rpx; height: 38rpx; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--ui-surface-muted); color: var(--ui-foreground); font-size: 22rpx; font-weight: 700; }
-.status-confirmed .status-indicator { background: var(--ui-success); color: #fff; }
-.status-error .status-indicator, .status-expired .status-indicator { background: var(--ui-destructive); color: #fff; }
-.status-message { min-width: 0; flex: 1; margin-left: 16rpx; color: var(--ui-text-secondary); font-size: 26rpx; line-height: 1.5; word-break: break-word; }
-.status-message:first-child { margin-left: 0; }
-.consent { margin-top: 48rpx; }
-.agreement-row { display: flex; align-items: center; white-space: nowrap; }
-.agreement-checkbox { flex-shrink: 0; margin-right: 4rpx; transform: scale(.76); transform-origin: center; }
-.agreement-copy { color: var(--ui-text-secondary); font-size: 22rpx; line-height: 1.5; white-space: nowrap; }
-.agreement-link { color: var(--ui-accent); font-weight: 600; }
-.agreement-hint { display: block; margin-top: 10rpx; padding-left: 46rpx; color: var(--ui-warning); font-size: 21rpx; }
-.spinner { width: 24rpx; height: 24rpx; border: 3rpx solid var(--ui-border); border-top-color: var(--ui-accent); border-radius: 50%; animation: spin .8s linear infinite; }
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding-right: 48rpx;
+  padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
+  padding-left: 48rpx;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  background: var(--ui-surface);
+}
+.topbar { position: relative; width: 100%; min-height: 88rpx; }
+.close-button { position: absolute; top: 8rpx; left: -16rpx; z-index: 2; width: 72rpx; height: 72rpx; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: transparent; line-height: 1; }
+.close-button::after, .retry-button::after { border: 0; }
+.close-button-pressed { background: var(--ui-surface-muted); }
+.content { min-height: 0; flex: 1; display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 654rpx; margin: 0 auto; }
+.identity { display: flex; flex-direction: column; align-items: center; width: 100%; margin-top: min(22vh, 280rpx); text-align: center; }
+.brand-card { width: 144rpx; height: 144rpx; display: flex; align-items: center; justify-content: center; border: 1rpx solid #eef0f3; border-radius: 24rpx; background: var(--ui-surface); box-shadow: 0 5rpx 14rpx rgba(23, 25, 28, .06); }
+.brand-mark { width: 92rpx; height: 92rpx; }
+.title { margin-top: 46rpx; color: var(--ui-foreground); font-size: 52rpx; font-weight: 700; letter-spacing: -2rpx; line-height: 1.2; }
+.subtitle { display: block; max-width: 590rpx; margin-top: 14rpx; color: #50627c; font-size: 25rpx; line-height: 1.55; word-break: break-word; }
+.inline-status { height: 28rpx; display: flex; align-items: center; justify-content: center; margin-top: 18rpx; }
+.spinner { width: 22rpx; height: 22rpx; border: 3rpx solid var(--ui-border); border-top-color: var(--ui-foreground); border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.actions { width: 100%; margin-top: 24rpx; }
-.actions .ui-primary-button, .actions .ui-secondary-button { width: 100%; }
-.actions .ui-secondary-button { margin-top: 18rpx; }
-.actions .ui-secondary-button:first-child { margin-top: 0; }
-.actions .ui-secondary-button[disabled] { display: none; }
-@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
-
-.privacy-note { padding: 0 32rpx calc(24rpx + env(safe-area-inset-bottom)); color: var(--ui-text-subtle); font-size: 20rpx; line-height: 1.5; text-align: center; }
-
-.context-note { display: flex; align-items: center; margin-top: 28rpx; padding: 18rpx 22rpx; border: 1rpx solid var(--ui-border); border-radius: 16rpx; background: var(--ui-surface); }
-.context-icon { width: 44rpx; height: 44rpx; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 11rpx; background: var(--ui-accent-subtle); color: var(--ui-accent); font-size: 23rpx; }
-.context-text { min-width: 0; flex: 1; margin-left: 16rpx; color: var(--ui-text-secondary); font-size: 23rpx; line-height: 1.5; }
+.actions { width: 100%; margin-top: 102rpx; }
+.auth-primary-button { width: 100%; height: 108rpx; border-radius: 22rpx; background: #000; color: #fff; font-size: 29rpx; font-weight: 600; line-height: 108rpx; }
+.auth-primary-button-pressed { background: #232323; transform: translateY(1rpx); }
+.retry-button { height: 76rpx; margin: 18rpx auto 0; padding: 0 24rpx; background: transparent; color: var(--ui-text-secondary); font-size: 25rpx; line-height: 76rpx; }
+.retry-button-pressed { color: var(--ui-foreground); }
+.consent { width: 100%; margin-top: auto; padding-top: 72rpx; padding-bottom: 18rpx; box-sizing: border-box; }
+.agreement-row { display: flex; align-items: center; justify-content: center; }
+.agreement-checkbox { flex-shrink: 0; margin-right: 4rpx; transform: scale(.76); transform-origin: center; }
+.agreement-copy { color: #526079; font-size: 22rpx; line-height: 1.55; }
+.agreement-link { color: var(--ui-accent); font-weight: 600; }
+.agreement-hint { display: block; margin-top: 10rpx; color: var(--ui-warning); font-size: 21rpx; line-height: 1.5; text-align: center; }
+@media (max-height: 700px) { .identity { margin-top: 80rpx; } .actions { margin-top: 64rpx; } .consent { padding-top: 48rpx; } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } .auth-primary-button-pressed { transform: none; } }
