@@ -752,3 +752,60 @@ final result: passed
 - [x] Verify automated checks, browser rendering, and console state.
 
 final result: passed
+
+---
+
+# 求职进程五列看板 Design QA
+
+## Evidence
+
+- Source visual truth: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-5b314263-5205-4caf-969f-8963e5e49eb3.png`
+- Browser-rendered implementation: `/private/tmp/linkcv-career-progress-qa/implementation-career-progress-source-size.png`
+- Full-view comparison: `/private/tmp/linkcv-career-progress-qa/career-progress-design-comparison.png`
+- Focused board comparison: `/private/tmp/linkcv-career-progress-qa/career-progress-focused-comparison.png`
+- Responsive captures:
+  - `/private/tmp/linkcv-career-progress-qa/implementation-career-progress-mid.png`
+  - `/private/tmp/linkcv-career-progress-qa/implementation-career-progress-narrow.png`
+- Route: `http://127.0.0.1:5174/career/applications`
+- State: signed-in Development session, empty real application list using the existing development mock projection.
+- Source pixels: 1379 x 861. Implementation pixels: 1378 x 860. Both use CSS density 1; the implementation was normalized by one pixel in each dimension for the side-by-side comparison.
+
+## Findings
+
+No actionable P0, P1, or P2 mismatch remains.
+
+- Fonts and typography: the implementation retains the project Inter/PingFang stack, compact 9-13px board hierarchy, medium company-name weight, numeric emphasis, single-line role truncation, and title tooltips. The hierarchy remains readable at the requested desktop widths.
+- Spacing and layout rhythm: the title/navigation/tool stack is compact, the summary is one 84px surface, the board uses five equal tracks with 10-12px gaps, and cards use restrained 8-11px internal rhythm. The five-column board does not overflow at the measured 1435px and 1216px browser content widths. At 818px it intentionally becomes a horizontally scrollable five-column track without creating page-level overflow.
+- Colors and tokens: warm neutral canvas, white surfaces, near-black primary action, career orange selection/drop emphasis, existing semantic success/warning/accent colors, fine borders, and minimal elevation all map to existing `--ui-*` tokens. Stage color is restricted to small low-saturation badges.
+- Image quality and assets: the existing LinkResume wordmark and account avatar remain unchanged. Cards use the existing company-initial avatar treatment allowed by the brief; all UI icons come from the existing Lucide dependency. No replacement CSS art, emoji, handcrafted SVG, gradient, or placeholder asset was introduced.
+- Copy and content: title, description, four subnavigation items, metrics, five stage labels, mock company/job data, dates, next actions, and one-/two-round labels match the requested content model. The five-column grouping intentionally changes counts relative to the seven-column reference while preserving the underlying stage values.
+- Interaction states: list/board switching, search, filter popover, and new-process dialog were exercised in the browser. Searching `字节跳动` returned three cards; the dialog opened and closed without submission. Drag transition semantics are covered by component tests and use the existing advance endpoint; destructive/ambiguous end-state drops remain read-only and direct the user to details.
+- Console: no browser console errors were present after the interaction pass.
+
+## Full-view comparison evidence
+
+The side-by-side full view confirms the same global shell, title/tool placement, horizontal summary weight, five-column proportions, card density, and restrained surface treatment. The implementation differs only where the written brief overrides the screenshot: screening/communication are merged into `待推进`, interview rounds are merged into `面试中`, and one-/two-round identity moves to card badges.
+
+## Focused region comparison evidence
+
+The focused comparison covers subnavigation, summary icons/numbers/dividers, the first three columns, card avatar/title/role hierarchy, stage badges, metadata rows, add actions, and empty-column behavior. Text, borders, radii, and spacing remain visually consistent with the supplied target and current LinkCV design system.
+
+## Comparison history
+
+- Pass 1: no actionable P0/P1/P2 finding was identified, so no visual-fix iteration was required. The same browser state was used for the full-view and focused comparisons.
+
+## Implementation checklist
+
+- [x] Five-column board projection without changing backend stage values.
+- [x] One-/two-round labels preserved on interview cards.
+- [x] Four metrics combined into one horizontal summary surface.
+- [x] Search, filter, sort, list/board switch, create and detail entry retained.
+- [x] Forward drag uses the existing API; same-column, reverse, mock and ambiguous end-state drops do not perform unsafe writes.
+- [x] 1200+ desktop layout remains free of horizontal overflow; narrow view scrolls inside the board.
+- [x] Browser interaction and console checks completed.
+
+## Follow-up polish
+
+No P3 follow-up is required for this pass.
+
+final result: passed
