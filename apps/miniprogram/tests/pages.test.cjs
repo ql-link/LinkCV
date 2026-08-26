@@ -54,6 +54,7 @@ test("app starts on resumes and exposes only resumes and profile tabs", () => {
 
 test("resume detail downloads, embeds and commits the selected preview version", async () => {
   const calls = [];
+  const previewImages = [];
   let finalState = null;
   await withPage("../pages/resumes/detail", {
     "../services/resumes": {
@@ -74,15 +75,24 @@ test("resume detail downloads, embeds and commits the selected preview version",
       invalidateResumePreview: async (...args) => { calls.push(["invalidate", ...args]); },
       removeFile: async () => {},
     },
-  }, { setNavigationBarTitle() {} }, async (page) => {
+  }, {
+    setNavigationBarTitle() {},
+    previewImage(options) { previewImages.push(options); },
+  }, async (page) => {
     page.data.resumeId = "resume-1";
     await Promise.all([page.retryLoad(), page.retryLoad()]);
+
+    page.handleImagePreview();
 
     await page.handlePreviewError();
     await page.handlePreviewError();
     finalState = { previewPath: page.data.previewPath, error: page.data.error, loading: page.data.loading };
   });
 
+  assert.deepEqual(previewImages, [{
+    current: "/user/resume-42-9.png",
+    urls: ["/user/resume-42-9.png"],
+  }]);
   assert.deepEqual(calls.slice(0, 4), [
     ["metadata", "resume-1"],
     ["download", "resume-1", "9", "/user/resume-42-9.png"],

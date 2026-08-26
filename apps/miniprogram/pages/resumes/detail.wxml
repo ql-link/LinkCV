@@ -10,8 +10,21 @@
   <button class="ui-secondary-button state-action" hover-class="ui-secondary-button-pressed" bindtap="backToResumes">返回简历列表</button>
 </view>
 <view class="preview-document" wx:else>
-  <view class="preview-paper">
-    <image class="resume-preview-image" src="{{previewPath}}" mode="widthFix" binderror="handlePreviewError" />
+  <!-- 顶部缩放查阅提示胶囊 -->
+  <view class="preview-tip-pill" bindtap="handleImagePreview">
+    <text class="tip-icon">🔍</text>
+    <text class="tip-text">点击图片可全屏双指放大、拖动查阅</text>
+  </view>
+
+  <!-- 简历纸张展示区 -->
+  <view class="preview-paper" hover-class="preview-paper-pressed" bindtap="handleImagePreview">
+    <image
+      class="resume-preview-image"
+      src="{{previewPath}}"
+      mode="widthFix"
+      show-menu-by-longpress="{{true}}"
+      binderror="handlePreviewError"
+    />
   </view>
   <text class="preview-footnote">只读预览 · 编辑请前往 LinkResume 网页端</text>
 </view>

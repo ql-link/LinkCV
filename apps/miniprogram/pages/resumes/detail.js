@@ -85,6 +85,14 @@ Page({
     }
   },
 
+  handleImagePreview() {
+    if (!this.data.previewPath) return;
+    wx.previewImage({
+      current: this.data.previewPath,
+      urls: [this.data.previewPath],
+    });
+  },
+
   backToResumes() {
     wx.reLaunch({ url: "/pages/resumes/index" });
   },
