@@ -56,6 +56,15 @@
   box-sizing: border-box;
 }
 
+/* 真实简历封面图片 */
+.gallery-real-preview {
+  width: 100%;
+  height: 100%;
+  border-radius: 18rpx;
+  background: #ffffff;
+  display: block;
+}
+
 /* 悬浮微缩 A4 纸张 */
 .mini-paper {
   width: 172rpx;

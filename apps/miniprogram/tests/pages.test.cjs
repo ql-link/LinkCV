@@ -394,6 +394,38 @@ test("resumes page keeps the error state for network failures while logged in", 
   assert.equal(finalState.error, "网络异常");
 });
 
+test("resumes page lists resumes and populates preview thumbnail from cache", async () => {
+  let finalItems = null;
+  await withPage("../pages/resumes", {
+    "../services/auth": {
+      hasSession: () => true,
+      ensureSession: async () => ({ id: "u1", nickname: "张三" }),
+    },
+    "../services/resumes": {
+      listResumes: async () => [
+        { id: "r1", title: "前端工程师", updated_at: "2026-08-26T10:00:00Z", pdf_version_id: "v1" },
+      ],
+    },
+    "../services/resumePreviewCache": {
+      getCachedResumePreview: async (userId, resumeId, versionId) => {
+        if (userId === "u1" && resumeId === "r1" && versionId === "v1") {
+          return "/tmp/cached-preview.png";
+        }
+        return null;
+      },
+      resumePreviewPath: () => "/tmp/fallback.png",
+    },
+  }, { navigateTo() {} }, async (page) => {
+    await page.loadPage();
+    await page.prefetchPreviews({ id: "u1" }, page.data.items);
+    finalItems = page.data.items;
+  });
+
+  assert.equal(finalItems.length, 1);
+  assert.equal(finalItems[0].title, "前端工程师");
+  assert.equal(finalItems[0].previewUrl, "/tmp/cached-preview.png");
+});
+
 test("profile tab shows a guest state without requesting account data", async () => {
   const navigations = [];
   await withPage("../pages/profile", {
