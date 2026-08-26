@@ -5,12 +5,14 @@
     </view>
   </view>
 
-  <view class="loading-list" wx:if="{{loading}}">
-    <view class="skeleton-row" wx:for="{{[1, 2, 3]}}" wx:key="*this">
-      <view class="skeleton-icon"></view>
-      <view class="skeleton-copy"><view class="skeleton-line strong"></view><view class="skeleton-line"></view></view>
+  <view class="loading-grid" wx:if="{{loading}}">
+    <view class="skeleton-grid-card" wx:for="{{[1, 2, 3, 4]}}" wx:key="*this">
+      <view class="skeleton-thumb"></view>
+      <view class="skeleton-info">
+        <view class="skeleton-line strong"></view>
+        <view class="skeleton-line"></view>
+      </view>
     </view>
-    <text class="loading-label">正在加载简历…</text>
   </view>
   <view class="state-card" wx:elif="{{guest}}">
     <text class="state-title">开启你的第一份创意简历</text>
@@ -26,40 +28,57 @@
     <text class="state-title">这里还没有简历</text>
     <text class="state-copy">前往 LinkResume 网页端自由编辑与排版，多端实时同步查阅。</text>
   </view>
-  <view class="resume-list" wx:else>
+  <view class="resume-grid" wx:else>
     <navigator
-      class="resume-card"
-      hover-class="resume-card-pressed"
+      class="resume-gallery-card"
+      hover-class="resume-gallery-card-pressed"
       hover-stay-time="70"
       wx:for="{{items}}"
       wx:key="id"
       url="/pages/resumes/detail?id={{item.id}}"
     >
-      <!-- 左侧高质感文档标识 -->
-      <view class="doc-badge-wrap" aria-hidden="true">
-        <view class="doc-badge-paper">
-          <view class="badge-line l1"></view>
-          <view class="badge-line l2"></view>
-          <view class="badge-line l3"></view>
+      <!-- 上部画廊 A4 封面拟物视口 -->
+      <view class="gallery-thumb-box" aria-hidden="true">
+        <!-- 悬浮 A4 拟物纸张 -->
+        <view class="mini-paper">
+          <!-- 头部微缩头像与标题 -->
+          <view class="paper-header">
+            <view class="paper-avatar"></view>
+            <view class="paper-title-lines">
+              <view class="paper-line h1"></view>
+              <view class="paper-line h2"></view>
+            </view>
+          </view>
+          <!-- 分割装饰线 -->
+          <view class="paper-divider"></view>
+          <!-- 段落线条 -->
+          <view class="paper-body">
+            <view class="paper-line p1"></view>
+            <view class="paper-line p2"></view>
+            <view class="paper-line p3"></view>
+            <view class="paper-line p4"></view>
+          </view>
+          <!-- 底部微印章 -->
+          <view class="paper-seal">CV</view>
         </view>
-        <view class="doc-badge-tag">CV</view>
+
+        <!-- 封面右上角状态胶囊 -->
+        <view class="gallery-badge">
+          <text class="badge-dot"></text>
+          <text>智能一页</text>
+        </view>
       </view>
 
-      <!-- 中间简历信息 -->
-      <view class="resume-info">
-        <text class="resume-title">{{item.title}}</text>
-        <view class="resume-meta-row">
-          <text class="resume-time">{{item.updatedAtLabel}}</text>
-          <view class="resume-status-tag">
-            <text class="status-dot"></text>
-            <text>可查阅</text>
+      <!-- 下部卡片信息区 -->
+      <view class="gallery-info">
+        <text class="gallery-title">{{item.title}}</text>
+        <view class="gallery-meta-row">
+          <text class="gallery-time">{{item.updatedAtLabel}}</text>
+          <view class="gallery-action-pill">
+            <text>查阅</text>
+            <text class="gallery-arrow">›</text>
           </view>
         </view>
-      </view>
-
-      <!-- 右侧轻操作按钮 -->
-      <view class="resume-arrow-wrap">
-        <text class="resume-arrow">›</text>
       </view>
     </navigator>
   </view>

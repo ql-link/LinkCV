@@ -13,196 +13,244 @@
   align-items: center;
 }
 
-/* 简历列表容器 */
-.resume-list {
-  display: flex;
-  flex-direction: column;
-  gap: 20rpx;
+/* 简历画廊网格容器 */
+.resume-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 22rpx;
   margin-top: 16rpx;
 }
 
-/* 现代纯白高圆角卡片 */
-.resume-card {
+/* 画廊卡片主体 */
+.resume-gallery-card {
   display: flex;
-  align-items: center;
-  padding: 30rpx 28rpx;
+  flex-direction: column;
+  padding: 16rpx 16rpx 20rpx;
   background: #ffffff;
   border-radius: 28rpx;
-  border: 1rpx solid rgba(15, 23, 42, 0.04);
-  box-shadow: 0 4rpx 20rpx -4rpx rgba(15, 23, 42, 0.04);
+  border: 1rpx solid rgba(15, 23, 42, 0.05);
+  box-shadow: 0 4rpx 16rpx -2rpx rgba(15, 23, 42, 0.04);
   box-sizing: border-box;
   touch-action: manipulation;
   transition: all 0.15s ease;
 }
 
-.resume-card-pressed {
-  background: #f8fafc;
-  transform: scale(0.985);
-  box-shadow: 0 2rpx 10rpx -2rpx rgba(15, 23, 42, 0.03);
+.resume-gallery-card-pressed {
+  transform: scale(0.97);
+  background: #fcfdfe;
+  box-shadow: 0 2rpx 8rpx -2rpx rgba(15, 23, 42, 0.03);
 }
 
-/* 左侧文档徽章 */
-.doc-badge-wrap {
-  width: 90rpx;
-  height: 96rpx;
-  flex-shrink: 0;
-  border-radius: 22rpx;
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  border: 1rpx solid #e2e8f0;
+/* 顶部画廊封面视口 */
+.gallery-thumb-box {
+  width: 100%;
+  height: 270rpx;
+  background: linear-gradient(150deg, #f8fafc 0%, #edf2f7 100%);
+  border-radius: 20rpx;
+  border: 1rpx solid rgba(226, 232, 240, 0.9);
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   position: relative;
+  overflow: hidden;
   box-sizing: border-box;
-  box-shadow: 0 2rpx 8rpx rgba(15, 23, 42, 0.03);
 }
 
-.doc-badge-paper {
-  width: 52rpx;
+/* 悬浮微缩 A4 纸张 */
+.mini-paper {
+  width: 172rpx;
+  height: 226rpx;
+  background: #ffffff;
+  border-radius: 10rpx;
+  border: 1rpx solid rgba(203, 213, 225, 0.6);
+  box-shadow: 0 10rpx 22rpx -4rpx rgba(15, 23, 42, 0.1), 0 2rpx 6rpx rgba(15, 23, 42, 0.04);
+  padding: 16rpx 14rpx;
+  box-sizing: border-box;
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 6rpx;
+  gap: 10rpx;
 }
 
-.badge-line {
-  height: 4.5rpx;
-  border-radius: 3rpx;
-  background: #94a3b8;
+/* 纸张微缩排版 */
+.paper-header {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
 }
 
-.badge-line.l1 {
-  width: 60%;
+.paper-avatar {
+  width: 24rpx;
+  height: 24rpx;
+  border-radius: 50%;
   background: #0f172a;
+  flex-shrink: 0;
 }
 
-.badge-line.l2 {
-  width: 100%;
-}
-
-.badge-line.l3 {
-  width: 75%;
-  background: #cbd5e1;
-}
-
-.doc-badge-tag {
-  position: absolute;
-  top: -6rpx;
-  right: -6rpx;
-  background: #0f172a;
-  color: #ffffff;
-  font-size: 16rpx;
-  font-weight: 700;
-  line-height: 1;
-  padding: 4rpx 8rpx;
-  border-radius: 8rpx;
-  letter-spacing: 0.5rpx;
-}
-
-/* 中间简历信息 */
-.resume-info {
-  min-width: 0;
+.paper-title-lines {
   flex: 1;
   display: flex;
   flex-direction: column;
-  margin-left: 24rpx;
+  gap: 4rpx;
 }
 
-.resume-title {
-  overflow: hidden;
-  color: #0f172a;
-  font-size: 31rpx;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  letter-spacing: -0.3rpx;
+.paper-line {
+  height: 4rpx;
+  border-radius: 2rpx;
+  background: #cbd5e1;
 }
 
-.resume-meta-row {
-  margin-top: 10rpx;
+.paper-line.h1 {
+  width: 80%;
+  background: #0f172a;
+  height: 5rpx;
+}
+
+.paper-line.h2 {
+  width: 50%;
+  background: #94a3b8;
+}
+
+.paper-divider {
+  width: 100%;
+  height: 2rpx;
+  background: #e2e8f0;
+  margin: 2rpx 0;
+}
+
+.paper-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.paper-line.p1 {
+  width: 100%;
+}
+
+.paper-line.p2 {
+  width: 90%;
+}
+
+.paper-line.p3 {
+  width: 75%;
+}
+
+.paper-line.p4 {
+  width: 85%;
+}
+
+.paper-seal {
+  position: absolute;
+  bottom: 12rpx;
+  right: 12rpx;
+  font-size: 14rpx;
+  font-weight: 800;
+  color: #94a3b8;
+  letter-spacing: 0.5rpx;
+  line-height: 1;
+}
+
+/* 封面右上角状态胶囊 */
+.gallery-badge {
+  position: absolute;
+  top: 12rpx;
+  right: 12rpx;
   display: flex;
   align-items: center;
-  gap: 12rpx;
-}
-
-.resume-time {
-  overflow: hidden;
-  color: #64748b;
-  font-size: 23rpx;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.resume-status-tag {
-  display: inline-flex;
-  align-items: center;
   gap: 6rpx;
-  padding: 2rpx 12rpx;
+  padding: 4rpx 12rpx;
   border-radius: 999rpx;
-  background: #f1f5f9;
-  color: #475569;
-  font-size: 20rpx;
-  font-weight: 500;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  color: #334155;
+  font-size: 17rpx;
+  font-weight: 600;
+  box-shadow: 0 2rpx 8rpx rgba(15, 23, 42, 0.06);
 }
 
-.status-dot {
+.badge-dot {
   width: 6rpx;
   height: 6rpx;
   border-radius: 50%;
   background: #10b981;
 }
 
-/* 右侧箭头容器 */
-.resume-arrow-wrap {
-  width: 52rpx;
-  height: 52rpx;
-  flex-shrink: 0;
-  margin-left: 16rpx;
-  border-radius: 50%;
-  background: #f8fafc;
-  border: 1rpx solid #f1f5f9;
+/* 下部卡片信息区 */
+.gallery-info {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  margin-top: 14rpx;
+  padding: 0 4rpx;
 }
 
-.resume-arrow {
-  color: #94a3b8;
-  font-size: 32rpx;
-  font-weight: 500;
+.gallery-title {
+  color: #0f172a;
+  font-size: 27rpx;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: -0.2rpx;
+}
+
+.gallery-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10rpx;
+}
+
+.gallery-time {
+  color: #64748b;
+  font-size: 21rpx;
+}
+
+.gallery-action-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2rpx;
+  padding: 2rpx 10rpx;
+  border-radius: 8rpx;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 20rpx;
+  font-weight: 600;
+}
+
+.gallery-arrow {
+  font-size: 22rpx;
   line-height: 1;
+  color: #64748b;
   margin-left: 2rpx;
 }
 
-.loading-list {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 20rpx;
-  padding: 80rpx 0;
+/* 加载骨架屏 */
+.loading-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 22rpx;
+  margin-top: 16rpx;
 }
 
-.skeleton-row {
-  display: flex;
-  align-items: center;
-  padding: 30rpx 28rpx;
-  border: 1rpx solid rgba(15, 23, 42, 0.04);
+.skeleton-grid-card {
+  padding: 16rpx 16rpx 20rpx;
   border-radius: 28rpx;
   background: #ffffff;
+  border: 1rpx solid rgba(15, 23, 42, 0.04);
 }
 
-.skeleton-icon {
-  width: 90rpx;
-  height: 96rpx;
-  flex-shrink: 0;
-  border-radius: 22rpx;
+.skeleton-thumb {
+  width: 100%;
+  height: 270rpx;
+  border-radius: 20rpx;
   background: #f1f5f9;
 }
 
-.skeleton-copy {
-  flex: 1;
-  margin-left: 24rpx;
+.skeleton-info {
+  margin-top: 14rpx;
+  padding: 0 4rpx;
 }
 
 .skeleton-line {
