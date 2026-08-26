@@ -89,24 +89,34 @@ export function detectLocalLanIp() {
   return preferred ? preferred.address : "127.0.0.1";
 }
 
-export function syncMiniprogramLocalConfig(cwd) {
+export function syncMiniprogramLocalConfig(cwd, mainRoot) {
   const lanIp = detectLocalLanIp();
-  const miniprogramConfigDir = resolve(cwd, "apps/miniprogram/config");
-  if (existsSync(miniprogramConfigDir)) {
-    const targetFile = resolve(miniprogramConfigDir, "local.json");
-    const content = JSON.stringify(
-      {
-        apiBaseUrl: `http://${lanIp}:8000`,
-        detectedLanIp: lanIp,
-        updatedAt: new Date().toISOString(),
-      },
-      null,
-      2,
-    ) + "\n";
-    writeFileSync(targetFile, content, "utf8");
-    return { targetFile, lanIp };
+  const roots = [cwd];
+  if (mainRoot && mainRoot !== cwd) roots.push(mainRoot);
+
+  const targets = [];
+  const jsContent = `// 本地自动生成的局域网联调配置（已被 .gitignore 忽略，不会提交到 Git）\nmodule.exports = {\n  apiBaseUrl: "http://${lanIp}:8000",\n  detectedLanIp: "${lanIp}",\n};\n`;
+  const jsonContent = JSON.stringify(
+    {
+      apiBaseUrl: `http://${lanIp}:8000`,
+      detectedLanIp: lanIp,
+      updatedAt: new Date().toISOString(),
+    },
+    null,
+    2,
+  ) + "\n";
+
+  for (const root of roots) {
+    const configDir = resolve(root, "apps/miniprogram/config");
+    if (existsSync(configDir)) {
+      const jsFile = resolve(configDir, "local.js");
+      const jsonFile = resolve(configDir, "local.json");
+      writeFileSync(jsFile, jsContent, "utf8");
+      writeFileSync(jsonFile, jsonContent, "utf8");
+      targets.push(jsFile);
+    }
   }
-  return null;
+  return targets.length > 0 ? { targetFile: targets[0], lanIp } : null;
 }
 
 export function serviceScriptForProfile(profile) {

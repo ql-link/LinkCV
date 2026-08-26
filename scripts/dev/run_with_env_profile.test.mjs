@@ -78,13 +78,13 @@ test("Development profile keeps the Agent-aware four-service launcher", () => {
   assert.equal(serviceScriptForProfile(".env"), "dev:services");
 });
 
-test("syncMiniprogramLocalConfig writes gitignored local.json with detected LAN IP", () => {
+test("syncMiniprogramLocalConfig writes gitignored local.js with detected LAN IP", () => {
   const root = mkdtempSync(join(tmpdir(), "linkcv-miniprogram-"));
   const configDir = join(root, "apps/miniprogram/config");
   mkdirSync(configDir, { recursive: true });
 
   const result = syncMiniprogramLocalConfig(root);
   assert.ok(result);
-  assert.equal(result.targetFile, join(configDir, "local.json"));
+  assert.equal(result.targetFile, join(configDir, "local.js"));
   assert.ok(result.lanIp);
 });

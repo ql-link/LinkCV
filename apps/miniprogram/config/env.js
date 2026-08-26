@@ -5,7 +5,7 @@ function readLocalConfig() {
     return null;
   }
   try {
-    return require("./local.json");
+    return require("./local");
   } catch {
     return null;
   }
