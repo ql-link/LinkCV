@@ -17,37 +17,37 @@
 .resume-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 22rpx;
+  gap: 24rpx;
   margin-top: 16rpx;
 }
 
-/* 画廊卡片主体 */
+/* 画廊卡片主体（一体化设计，消除大框套小框） */
 .resume-gallery-card {
   display: flex;
   flex-direction: column;
-  padding: 16rpx 16rpx 20rpx;
+  padding: 0;
   background: #ffffff;
   border-radius: 28rpx;
-  border: 1rpx solid rgba(15, 23, 42, 0.05);
-  box-shadow: 0 4rpx 16rpx -2rpx rgba(15, 23, 42, 0.04);
+  border: 1rpx solid rgba(15, 23, 42, 0.06);
+  box-shadow: 0 6rpx 20rpx -4rpx rgba(15, 23, 42, 0.05);
+  overflow: hidden;
   box-sizing: border-box;
   touch-action: manipulation;
   transition: all 0.15s ease;
 }
 
 .resume-gallery-card-pressed {
-  transform: scale(0.97);
-  background: #fcfdfe;
-  box-shadow: 0 2rpx 8rpx -2rpx rgba(15, 23, 42, 0.03);
+  transform: scale(0.975);
+  box-shadow: 0 2rpx 10rpx -2rpx rgba(15, 23, 42, 0.04);
 }
 
-/* 顶部画廊封面视口 */
+/* 顶部画廊封面视口（无缝填满顶部与左右边界） */
 .gallery-thumb-box {
   width: 100%;
-  height: 270rpx;
-  background: linear-gradient(150deg, #f8fafc 0%, #edf2f7 100%);
-  border-radius: 20rpx;
-  border: 1rpx solid rgba(226, 232, 240, 0.9);
+  height: 330rpx;
+  background: #f1f5f9;
+  border: none;
+  border-radius: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -56,21 +56,21 @@
   box-sizing: border-box;
 }
 
-/* 真实简历封面图片 */
+/* 真实简历封面图片（无框贴合） */
 .gallery-real-preview {
   width: 100%;
   height: 100%;
-  border-radius: 18rpx;
+  border-radius: 0;
   background: #ffffff;
   display: block;
 }
 
-/* 悬浮微缩 A4 纸张 */
+/* 悬浮微缩 A4 纸张（仅在加载/占位时居中显示） */
 .mini-paper {
   width: 172rpx;
   height: 226rpx;
   background: #ffffff;
-  border-radius: 10rpx;
+  border-radius: 8rpx;
   border: 1rpx solid rgba(203, 213, 225, 0.6);
   box-shadow: 0 10rpx 22rpx -4rpx rgba(15, 23, 42, 0.1), 0 2rpx 6rpx rgba(15, 23, 42, 0.04);
   padding: 16rpx 14rpx;
@@ -160,68 +160,68 @@
   line-height: 1;
 }
 
-/* 封面右上角状态胶囊 */
+/* 封面右上角浮动状态胶囊（深色半透明毛玻璃） */
 .gallery-badge {
   position: absolute;
-  top: 12rpx;
-  right: 12rpx;
+  top: 14rpx;
+  right: 14rpx;
   display: flex;
   align-items: center;
   gap: 6rpx;
-  padding: 4rpx 12rpx;
+  padding: 6rpx 14rpx;
   border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(8px);
-  color: #334155;
-  font-size: 17rpx;
-  font-weight: 600;
-  box-shadow: 0 2rpx 8rpx rgba(15, 23, 42, 0.06);
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(10px);
+  color: #ffffff;
+  font-size: 18rpx;
+  font-weight: 500;
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.15);
 }
 
 .badge-dot {
   width: 6rpx;
   height: 6rpx;
   border-radius: 50%;
-  background: #10b981;
+  background: #34d399;
 }
 
-/* 下部卡片信息区 */
+/* 下部卡片信息区（自然延伸自底部） */
 .gallery-info {
   display: flex;
   flex-direction: column;
-  margin-top: 14rpx;
-  padding: 0 4rpx;
+  padding: 20rpx 20rpx 22rpx;
+  background: #ffffff;
 }
 
 .gallery-title {
   color: #0f172a;
-  font-size: 27rpx;
+  font-size: 28rpx;
   font-weight: 600;
   line-height: 1.35;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  letter-spacing: -0.2rpx;
+  letter-spacing: -0.3rpx;
 }
 
 .gallery-meta-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 10rpx;
+  margin-top: 12rpx;
 }
 
 .gallery-time {
   color: #64748b;
-  font-size: 21rpx;
+  font-size: 22rpx;
 }
 
 .gallery-action-pill {
   display: inline-flex;
   align-items: center;
   gap: 2rpx;
-  padding: 2rpx 10rpx;
-  border-radius: 8rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 999rpx;
   background: #f1f5f9;
   color: #334155;
   font-size: 20rpx;
@@ -239,27 +239,27 @@
 .loading-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 22rpx;
+  gap: 24rpx;
   margin-top: 16rpx;
 }
 
 .skeleton-grid-card {
-  padding: 16rpx 16rpx 20rpx;
+  padding: 0;
   border-radius: 28rpx;
   background: #ffffff;
-  border: 1rpx solid rgba(15, 23, 42, 0.04);
+  border: 1rpx solid rgba(15, 23, 42, 0.05);
+  overflow: hidden;
 }
 
 .skeleton-thumb {
   width: 100%;
-  height: 270rpx;
-  border-radius: 20rpx;
+  height: 330rpx;
   background: #f1f5f9;
+  border-radius: 0;
 }
 
 .skeleton-info {
-  margin-top: 14rpx;
-  padding: 0 4rpx;
+  padding: 20rpx 20rpx 22rpx;
 }
 
 .skeleton-line {
