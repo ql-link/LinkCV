@@ -24,6 +24,8 @@ __pycache__/
 
 # WeChat DevTools local private config
 apps/miniprogram/project.private.config.json
+apps/miniprogram/config/local.json
+apps/miniprogram/config/local.js
 
 # Local Spec documents; reusable templates live with their owning Skills.
 .specs/*/

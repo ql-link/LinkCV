@@ -3,7 +3,13 @@ const cache = require("../../services/resumePreviewCache");
 const resumes = require("../../services/resumes");
 
 Page({
-  data: { loading: true, progress: 0, error: "", resumeId: "", previewPath: "" },
+  data: {
+    loading: true,
+    progress: 0,
+    error: "",
+    resumeId: "",
+    previewPath: "",
+  },
 
   onLoad(options) {
     const id = decodeURIComponent(options.id || "");
@@ -83,6 +89,14 @@ Page({
     } finally {
       this.recoveringPreview = false;
     }
+  },
+
+  handleImagePreview() {
+    if (!this.data.previewPath) return;
+    wx.previewImage({
+      current: this.data.previewPath,
+      urls: [this.data.previewPath],
+    });
   },
 
   backToResumes() {
