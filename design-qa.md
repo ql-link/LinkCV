@@ -802,3 +802,29 @@ final result: passed
 通过。参考图覆盖的登录/注册主状态没有未解决的 P0—P2 视觉偏差；扫码确认页完成同语言重构，但仍需在真实扫码会话中做一次人工端到端核验。
 
 final result: passed
+
+# LinkResume 小程序品牌字标 — 2026-08-26
+
+## Visual truth and evidence
+
+- Source asset: `/Users/fang/Downloads/LinkCV-app-icons/web-brand-wordmark-1701x349.png`，原图 `1701 × 349` px、RGBA 透明背景；有效像素边界为 `(20, 20)–(1681, 329)`。
+- Implementation asset: `apps/miniprogram/assets/linkresume-wordmark.png`，逐文件复用用户提供的原始 PNG，没有重绘或生成替代图标。
+- Actual runtime capture: `/Users/fang/.codex/visualizations/2026/08/26/01a03cbe-fff8-73c3-9f80-d9a13eb0527a/miniprogram-brand-qa/resumes-linkresume-wordmark.png`，微信开发者工具 iPhone 15 Pro Max 模拟器、访客态“我的简历”页。
+- Focused comparison: `/tmp/linkresume-brand-comparison.jpg`，同屏比较原始字标与小程序顶部真实渲染区域。
+
+## Required fidelity surfaces
+
+- Asset fidelity: 小程序顶部使用 `220 × 46rpx` 的 `aspectFit` 容器；登录页与扫码确认页使用 `320 × 66rpx` 的 `aspectFit` 容器，均保持原始约 `4.87:1` 的长宽比。
+- Rendering: 真实模拟器截图中图形、`LinkResume` 字标和透明背景均完整可见，没有拉伸、裁切、模糊底色或错误反色。
+- Accessibility: 品牌图片暴露 `LinkResume` 可访问名称；微信开发者工具可访问性树识别为 `image LinkResume`。
+- Copy consistency: 小程序导航标题、登录与扫码确认文案、访客空状态、简历详情、隐私协议兜底名称和项目说明中的可见产品名统一为 `LinkResume`。
+- Compatibility: `linkcv_*` 本地存储键、包名、项目技术标识和示例域名保持不变，避免品牌展示替换破坏已有数据与运行契约。
+
+## Findings
+
+- P0: none.
+- P1: none.
+- P2: none.
+- P3: 登录页与扫码确认页使用同一原始资产和同一 `aspectFit` 策略，已通过编译与样式检查；本次真实模拟器截图聚焦默认访客简历页，发布前仍可在真机上补一次两个入口页的视觉巡检。
+
+final result: passed

@@ -77,7 +77,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 ### 微信账号、双端会话与扫码登录
 
-`0019` 为 `users` 增加全局唯一的 `wechat_openid` 和可空 `wechat_bound_at`，`0020` 将 `email/password_hash` 放宽为可空。微信身份登录时，code2session 得到的 openid 存在则复用；不存在时，扫码确认和小程序登录请求只有携带 `privacy_accepted=true` 才创建无邮箱密码账号，否则返回 `400 PRIVACY_AGREEMENT_REQUIRED`。小程序进入登录页时可用一次新的 code 调用 `account-status` 判断当前微信身份是否已有账号；该查询不写用户、不更新时间、不签发 session。`privacy_accepted` 是本次建号门禁，不写入数据库作为同意审计记录；数据库唯一约束仍负责收敛并发建号。普通邮箱注册和密码登录仅在 `APP_ENV=local|development` 开放，Production 均返回 404；普通改密路由仍不公开。`GET /api/auth/capabilities` 向 Web 暴露邮箱密码能力布尔值，不返回具体环境名。`create_schema=True` 的隔离集成测试继续保留隐藏造数入口。管理员仍只通过 `/api/auth/admin-login` 使用密码登录；即使历史管理员记录已有 `wechat_openid`，扫码确认和小程序登录也会拒绝该账号。
+`0019` 为 `users` 增加全局唯一的 `wechat_openid` 和可空 `wechat_bound_at`，`0020` 将 `email/password_hash` 放宽为可空。微信身份登录时，code2session 得到的 openid 存在则复用；不存在时，扫码确认和小程序登录请求只有携带 `privacy_accepted=true` 才创建无邮箱密码账号，否则返回 `400 PRIVACY_AGREEMENT_REQUIRED`。`account-status` 仍提供只读账号存在性查询，不写用户、不更新时间、不签发 session，但随仓库发布的小程序不再在统一登录前调用它；客户端只在用户确认隐私指引并主动点击后调用登录接口，由后端自动复用或创建账号。`privacy_accepted` 是本次建号门禁，不写入数据库作为同意审计记录；数据库唯一约束仍负责收敛并发建号。普通邮箱注册和密码登录仅在 `APP_ENV=local|development` 开放，Production 均返回 404；普通改密路由仍不公开。`GET /api/auth/capabilities` 向 Web 暴露邮箱密码能力布尔值，不返回具体环境名。`create_schema=True` 的隔离集成测试继续保留隐藏造数入口。管理员仍只通过 `/api/auth/admin-login` 使用密码登录；即使历史管理员记录已有 `wechat_openid`，扫码确认和小程序登录也会拒绝该账号。
 
 `session_service.py` 统一发放、轮换和撤销 Redis session。`auth:session:{sid}` 保存 `uid/rhash/channel/created_at`，access JWT 也保存 `channel=web|miniprogram`。Web 只从 Cookie 接受 web channel，小程序只从 Bearer 接受 miniprogram channel；Redis uid/channel 必须与 JWT 完全一致。小程序的 login/refresh/logout 返回 JSON token，refresh 每次轮换，旧 secret 重放会删除 session；管理员停用用户时原有用户会话集合仍可撤销两个 channel。
 

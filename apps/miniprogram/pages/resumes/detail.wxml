@@ -13,5 +13,5 @@
   <view class="preview-paper">
     <image class="resume-preview-image" src="{{previewPath}}" mode="widthFix" binderror="handlePreviewError" />
   </view>
-  <text class="preview-footnote">只读预览 · 编辑请前往 LinkCV 网页端</text>
+  <text class="preview-footnote">只读预览 · 编辑请前往 LinkResume 网页端</text>
 </view>

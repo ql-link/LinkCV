@@ -15,8 +15,8 @@
 .close-button-pressed { background: var(--ui-surface-muted); }
 .content { min-height: 0; flex: 1; display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 654rpx; margin: 0 auto; }
 .identity { display: flex; flex-direction: column; align-items: center; width: 100%; margin-top: min(22vh, 280rpx); text-align: center; }
-.brand-card { width: 144rpx; height: 144rpx; display: flex; align-items: center; justify-content: center; border: 1rpx solid #eef0f3; border-radius: 24rpx; background: var(--ui-surface); box-shadow: 0 5rpx 14rpx rgba(23, 25, 28, .06); }
-.brand-mark { width: 92rpx; height: 92rpx; }
+.brand-card { width: 320rpx; height: 72rpx; display: flex; align-items: center; justify-content: center; }
+.brand-mark { width: 320rpx; height: 66rpx; display: block; }
 .title { margin-top: 46rpx; color: var(--ui-foreground); font-size: 52rpx; font-weight: 700; letter-spacing: -2rpx; line-height: 1.2; }
 .subtitle { display: block; max-width: 590rpx; margin-top: 14rpx; color: #50627c; font-size: 25rpx; line-height: 1.55; word-break: break-word; }
 .inline-status { height: 28rpx; display: flex; align-items: center; justify-content: center; margin-top: 18rpx; }

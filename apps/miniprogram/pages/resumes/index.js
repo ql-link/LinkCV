@@ -42,7 +42,9 @@ Page({
   },
 
   goLogin() {
-    wx.navigateTo({ url: "/pages/login/index" });
+    wx.navigateTo({
+      url: `/pages/login/index?returnTo=${encodeURIComponent("/pages/resumes/index")}`,
+    });
   },
 
   async loadPage() {

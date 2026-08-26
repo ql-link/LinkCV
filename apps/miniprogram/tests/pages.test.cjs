@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const appConfig = require("../app.json");
 
 async function withPage(pageRelativePath, mockedModules, wxMock, run) {
   const moduleCaches = Object.entries(mockedModules).map(([modulePath, exports]) => {
@@ -39,7 +40,16 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 const privacySetting = async () => ({
   supported: true,
   needAuthorization: false,
-  privacyContractName: "《LinkCV 隐私保护指引》",
+  privacyContractName: "《LinkResume 隐私保护指引》",
+});
+
+test("app starts on resumes and exposes only resumes and profile tabs", () => {
+  assert.equal(appConfig.pages[0], "pages/resumes/index");
+  assert.deepEqual(appConfig.tabBar.list, [
+    { pagePath: "pages/resumes/index", text: "简历" },
+    { pagePath: "pages/profile/index", text: "我的" },
+  ]);
+  assert.equal(appConfig.pages.includes("pages/home/index"), false);
 });
 
 test("resume detail downloads, embeds and commits the selected preview version", async () => {
@@ -90,7 +100,7 @@ test("resume detail downloads, embeds and commits the selected preview version",
   assert.equal(finalState.error, "预览图无法显示，请重新加载");
 });
 
-test("login page requires agreement before registering after the user opts in", async () => {
+test("login page stays unified and requires agreement before the user opts in", async () => {
   const accepted = [];
   const registrationCalls = [];
   const toasts = [];
@@ -101,7 +111,6 @@ test("login page requires agreement before registering after the user opts in", 
       getPrivacySetting: privacySetting,
       hasAcceptedPrivacyAgreement: () => false,
       hasSession: () => false,
-      getAccountStatus: async () => false,
       registerOrLogin: async () => { registrationCalls.push(true); },
     },
   }, {
@@ -111,8 +120,6 @@ test("login page requires agreement before registering after the user opts in", 
     page.onLoad();
     await flush();
     assert.equal(page.data.privacyReady, true);
-    assert.equal(page.data.accountStatusReady, true);
-    assert.equal(page.data.accountRegistered, false);
     assert.equal(registrationCalls.length, 0);
 
     page.handlePrimaryAction();
@@ -130,40 +137,37 @@ test("login page requires agreement before registering after the user opts in", 
   assert.deepEqual(switches, ["/pages/resumes/index"]);
 });
 
-test("login page logs into an existing account and never registers", async () => {
-  const loginCalls = [];
+test("login page reuses one explicit action for existing and new accounts", async () => {
   const registrationCalls = [];
+  const switches = [];
   await withPage("../pages/login", {
     "../services/auth": {
       acceptPrivacyAgreement() {},
       getPrivacySetting: privacySetting,
       hasAcceptedPrivacyAgreement: () => true,
       hasSession: () => false,
-      getAccountStatus: async () => true,
-      loginExistingAccount: async () => { loginCalls.push(true); },
       registerOrLogin: async () => { registrationCalls.push(true); },
     },
-  }, { switchTab() {}, showToast() {} }, async (page) => {
-    page.onLoad();
+  }, { switchTab: ({ url }) => switches.push(url), showToast() {} }, async (page) => {
+    page.onLoad({ returnTo: encodeURIComponent("/pages/profile/index") });
     await flush();
-    assert.equal(page.data.accountRegistered, true);
+    assert.equal(page.data.message, "登录后即可在小程序中查看你的简历");
 
     page.handleAgreementChange({ detail: { value: ["accepted"] } });
     await page.handlePrimaryAction();
   });
 
-  assert.equal(loginCalls.length, 1);
-  assert.equal(registrationCalls.length, 0);
+  assert.equal(registrationCalls.length, 1);
+  assert.deepEqual(switches, ["/pages/profile/index"]);
 });
 
-test("login page lets the user dismiss back to the guest home", async () => {
+test("login page lets the user dismiss back to the requested tab", async () => {
   const switches = [];
   await withPage("../pages/login", {
     "../services/auth": {
       getPrivacySetting: privacySetting,
       hasAcceptedPrivacyAgreement: () => false,
       hasSession: () => false,
-      getAccountStatus: async () => false,
     },
   }, {
     switchTab: ({ url }) => switches.push(url),
@@ -174,32 +178,30 @@ test("login page lets the user dismiss back to the guest home", async () => {
     page.handleDismiss();
   });
 
-  assert.deepEqual(switches, ["/pages/home/index"]);
+  assert.deepEqual(switches, ["/pages/resumes/index"]);
 });
 
-test("login page sends an already logged-in user straight to resumes", async () => {
+test("login page sends an already logged-in user to the verified requested tab", async () => {
   const switches = [];
   await withPage("../pages/login", {
-    "../services/auth": { hasSession: () => true },
+    "../services/auth": {
+      hasSession: () => true,
+      hasAcceptedPrivacyAgreement: () => true,
+    },
   }, {
     switchTab: ({ url }) => switches.push(url),
   }, async (page) => {
-    page.onLoad();
+    page.onLoad({ returnTo: encodeURIComponent("/pages/profile/index") });
   });
 
-  assert.deepEqual(switches, ["/pages/resumes/index"]);
+  assert.deepEqual(switches, ["/pages/profile/index"]);
 });
 
 test("login page forwards a scan scene to the confirm page without opening the login gate", async () => {
   const relaunches = [];
-  const accountStatusCalls = [];
   await withPage("../pages/login", {
     "../services/auth": {
       hasSession: () => false,
-      getAccountStatus: async () => {
-        accountStatusCalls.push(true);
-        return false;
-      },
     },
   }, {
     reLaunch: ({ url }) => relaunches.push(url),
@@ -210,23 +212,25 @@ test("login page forwards a scan scene to the confirm page without opening the l
   });
 
   assert.deepEqual(relaunches, [`/pages/confirm/index?scene=${encodeURIComponent("login:from-qrcode")}`]);
-  assert.equal(accountStatusCalls.length, 0);
 });
 
 test("confirm page confirms the web login and enters resumes without an extra action", async () => {
-  const loginCalls = [];
+  const callOrder = [];
+  const accepted = [];
   const requests = [];
   const switches = [];
   await withPage("../pages/confirm", {
     "../services/auth": {
+      acceptPrivacyAgreement: () => { accepted.push(true); },
       apiUrl: (path) => `http://127.0.0.1:8000${path}`,
-      loginExistingAccount: async () => { loginCalls.push(true); },
-      wxLoginCode: async () => "wx-code",
+      loginExistingAccount: async () => { callOrder.push("miniprogram-login"); },
+      wxLoginCode: async () => { callOrder.push("confirm-code"); return "wx-code"; },
     },
   }, {
     switchTab: ({ url }) => switches.push(url),
     request(options) {
       requests.push(options);
+      callOrder.push("confirm");
       queueMicrotask(() => options.success({ statusCode: 200, data: { ok: true } }));
     },
   }, async (page) => {
@@ -236,7 +240,8 @@ test("confirm page confirms the web login and enters resumes without an extra ac
     await page.handleConfirm();
   });
 
-  assert.equal(loginCalls.length, 1);
+  assert.deepEqual(callOrder, ["confirm-code", "confirm", "miniprogram-login"]);
+  assert.deepEqual(accepted, [true]);
   assert.equal(requests.length, 1);
   assert.deepEqual(requests[0].data, {
     scene: "login:fixture-scene",
@@ -294,7 +299,7 @@ test("confirm page returns an already confirmed scan to resumes when a session e
   assert.deepEqual(switches, ["/pages/resumes/index"]);
 });
 
-test("confirm page without a scene falls back to the guest home", async () => {
+test("confirm page without a scene falls back to the resumes tab", async () => {
   const switches = [];
   await withPage("../pages/confirm", {
     "../services/auth": {},
@@ -305,7 +310,7 @@ test("confirm page without a scene falls back to the guest home", async () => {
     page.onLoad({});
   });
 
-  assert.deepEqual(switches, ["/pages/home/index"]);
+  assert.deepEqual(switches, ["/pages/resumes/index"]);
 });
 
 test("resumes page shows a dismissible login guide instead of forcing login", async () => {
@@ -336,7 +341,7 @@ test("resumes page shows a dismissible login guide instead of forcing login", as
 
   assert.equal(guestState, true);
   assert.equal(loadingState, false);
-  assert.deepEqual(navigations, ["/pages/login/index"]);
+  assert.deepEqual(navigations, ["/pages/login/index?returnTo=%2Fpages%2Fresumes%2Findex"]);
 });
 
 test("resumes page returns to the login guide when recovery fails without a session", async () => {
@@ -377,4 +382,27 @@ test("resumes page keeps the error state for network failures while logged in", 
 
   assert.equal(finalState.guest, false);
   assert.equal(finalState.error, "网络异常");
+});
+
+test("profile tab shows a guest state without requesting account data", async () => {
+  const navigations = [];
+  await withPage("../pages/profile", {
+    "../services/auth": {
+      hasSession: () => false,
+    },
+    "../services/account": {
+      getProfile: async () => { throw new Error("profile request must not run"); },
+    },
+  }, {
+    env: { USER_DATA_PATH: "/user-data" },
+    navigateTo: ({ url }) => navigations.push(url),
+  }, async (page) => {
+    page.onLoad();
+    page.onShow();
+    assert.equal(page.data.guest, true);
+    assert.equal(page.data.loading, false);
+    page.goLogin();
+  });
+
+  assert.deepEqual(navigations, ["/pages/login/index?returnTo=%2Fpages%2Fprofile%2Findex"]);
 });

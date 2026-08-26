@@ -45,7 +45,7 @@ test("profile page loads nickname and downloads existing avatar", async () => {
         return filePath;
       },
     },
-    "../services/auth": {},
+    "../services/auth": { hasSession: () => true },
     "../utils/system": { getStatusBarHeight: () => 20 },
   }, {
     env: { USER_DATA_PATH: "/user-data" },
@@ -70,7 +70,7 @@ test("profile page uploads chosen avatar as data url", async () => {
         uploads.push({ dataUrl, fileName });
       },
     },
-    "../services/auth": {},
+    "../services/auth": { hasSession: () => true },
     "../utils/system": { getStatusBarHeight: () => 0 },
   }, {
     env: { USER_DATA_PATH: "/user-data" },
@@ -101,6 +101,7 @@ test("profile page saves nickname and syncs stored user", async () => {
       updateNickname: async (nickname) => ({ nickname, avatar_url: null }),
     },
     "../services/auth": {
+      hasSession: () => true,
       updateStoredUser: (patch) => { patches.push(patch); },
     },
     "../utils/system": { getStatusBarHeight: () => 0 },
@@ -117,7 +118,7 @@ test("profile page saves nickname and syncs stored user", async () => {
   });
 
   assert.deepEqual(patches, [{ nickname: "张三" }]);
-  assert.deepEqual(navigations, [true]);
+  assert.deepEqual(navigations, []);
   assert.equal(finalState.message, "");
 });
 
@@ -133,7 +134,7 @@ test("profile page rejects empty nickname without calling api", async () => {
         return { nickname, avatar_url: null };
       },
     },
-    "../services/auth": {},
+    "../services/auth": { hasSession: () => true },
     "../utils/system": { getStatusBarHeight: () => 0 },
   }, {
     env: { USER_DATA_PATH: "/user-data" },
@@ -149,4 +150,30 @@ test("profile page rejects empty nickname without calling api", async () => {
 
   assert.deepEqual(updates, []);
   assert.equal(finalState, "昵称不能为空");
+});
+
+test("profile tab logs out and returns to its guest state", async () => {
+  let active = true;
+  let logoutCalls = 0;
+  let finalState = null;
+  await withProfilePage({
+    "../services/account": {
+      getProfile: async () => ({ nickname: "张三", avatar_url: null }),
+      downloadAvatar: async () => { throw new Error("not expected"); },
+    },
+    "../services/auth": {
+      hasSession: () => active,
+      logout: async () => { logoutCalls += 1; active = false; },
+    },
+    "../utils/system": { getStatusBarHeight: () => 0 },
+  }, {
+    env: { USER_DATA_PATH: "/user-data" },
+  }, async (page) => {
+    await page.loadProfile();
+    await page.handleLogout();
+    finalState = { guest: page.data.guest, loading: page.data.loading };
+  });
+
+  assert.equal(logoutCalls, 1);
+  assert.deepEqual(finalState, { guest: true, loading: false });
 });

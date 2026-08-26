@@ -1,6 +1,6 @@
 <view class="page" style="padding-top: calc({{statusBarHeight}}px + 12rpx)">
   <view class="topbar">
-    <view class="close-button" hover-class="close-button-pressed" bindtap="handleDismiss" wx:if="{{!submitting}}" role="button" aria-label="暂不登录，返回首页">
+    <view class="close-button" hover-class="close-button-pressed" bindtap="handleDismiss" wx:if="{{!submitting}}" role="button" aria-label="暂不登录，返回简历">
       <icon type="cancel" size="22" color="#17191c"></icon>
     </view>
   </view>
@@ -8,14 +8,10 @@
   <view class="content">
     <view class="identity">
       <view class="brand-card">
-        <image class="brand-mark" src="/assets/linkresume-mark.png" mode="aspectFit" aria-label="LinkCV"></image>
+        <image class="brand-mark" src="/assets/linkresume-wordmark.png" mode="aspectFit" aria-label="LinkResume"></image>
       </view>
-      <text class="title" wx:if="{{!accountStatusReady}}">识别微信账号</text>
-      <text class="title" wx:elif="{{accountRegistered}}">欢迎回来</text>
-      <text class="title" wx:else>开启职场新篇章</text>
-      <text class="subtitle" wx:if="{{loading || submitting || accountStatusError}}">{{message}}</text>
-      <text class="subtitle" wx:elif="{{accountRegistered}}">登录 LinkCV，继续管理你的职业履历</text>
-      <text class="subtitle" wx:else>创建一个账户，发现更多职业机遇</text>
+      <text class="title">登录 LinkResume</text>
+      <text class="subtitle">{{message}}</text>
       <view class="inline-status" wx:if="{{loading || submitting}}"><view class="spinner"></view></view>
     </view>
 
@@ -27,16 +23,15 @@
         hover-class="auth-primary-button-pressed"
         open-type="agreePrivacyAuthorization"
         bindagreeprivacyauthorization="handlePrivacyAuthorization"
-        disabled="{{submitting || !privacyReady || !privacySupported || !agreementAccepted || !accountStatusReady}}"
-      >{{submitting ? '正在处理…' : accountRegistered ? '微信快捷登录' : '微信快捷注册'}}</button>
+        disabled="{{submitting || !privacyReady || !privacySupported || !agreementAccepted}}"
+      >{{submitting ? '正在登录…' : '继续使用微信'}}</button>
       <button
         wx:else
         class="ui-primary-button auth-primary-button"
         hover-class="auth-primary-button-pressed"
         bindtap="handlePrimaryAction"
-        disabled="{{submitting || !privacyReady || !privacySupported || !agreementAccepted || !accountStatusReady}}"
-      >{{submitting ? '正在处理…' : accountRegistered ? '微信快捷登录' : '微信快捷注册'}}</button>
-      <button class="retry-button" hover-class="retry-button-pressed" bindtap="loadAccountStatus" disabled="{{submitting}}" wx:if="{{accountStatusError}}">重新识别账号</button>
+        disabled="{{submitting || !privacyReady || !privacySupported || !agreementAccepted}}"
+      >{{submitting ? '正在登录…' : '继续使用微信'}}</button>
     </view>
 
     <view class="consent">
