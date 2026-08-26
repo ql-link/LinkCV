@@ -112,10 +112,8 @@ export function WechatQrLogin({ appearance = "default", onSuccess }: WechatQrLog
           <img
             className="wechat-qr-img"
             fetchPriority="high"
-            height={280}
             src={`data:image/png;base64,${qrBase64}`}
             alt="微信扫码登录二维码"
-            width={280}
           />
         )}
         {(phase === "expired" || phase === "cancelled") && (
