@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from pydantic import ValidationError
 
@@ -13,7 +15,7 @@ from linkcv.domain.resume_document import (
     default_resume_document,
     with_default_semantics,
 )
-from linkcv.domain.resume_snapshot import ResumeSnapshot
+from linkcv.domain.resume_snapshot import ResumeSnapshot, parse_resume_snapshot
 from linkcv.domain.resume_style import (
     ResumePresentation,
     default_resume_style,
@@ -33,6 +35,26 @@ def test_default_snapshot_uses_the_single_canonical_contract() -> None:
     assert snapshot.style.manifest.renderer_key == "flow"
     assert snapshot.style.section_order[0] == "basics"
     assert snapshot.style.smart_one_page is False
+
+
+def test_parse_snapshot_accepts_serialized_mysql_json_fields() -> None:
+    data = default_resume_document().model_dump(mode="json")
+    style = default_resume_style().model_dump(mode="json")
+
+    snapshot = parse_resume_snapshot(
+        json.dumps(data, ensure_ascii=False),
+        json.dumps(style, ensure_ascii=False),
+    )
+
+    assert snapshot.data == default_resume_document()
+    assert snapshot.style == default_resume_style()
+
+
+def test_parse_snapshot_rejects_invalid_serialized_json_fields() -> None:
+    style = json.dumps(default_resume_style().model_dump(mode="json"))
+
+    with pytest.raises(ValidationError, match="data"):
+        parse_resume_snapshot("{not-json", style)
 
 
 def test_columns_manifest_keeps_identity_in_main_and_secondary_content_in_sidebar() -> None:
