@@ -33,7 +33,6 @@ import {
   Link2,
   ListChecks,
   Mic,
-  MoreHorizontal,
   NotebookTabs,
   Pencil,
   Plus,
@@ -42,7 +41,6 @@ import {
   Square,
   ArrowUpDown,
   Trash2,
-  Trophy,
   UserRound,
   Video,
   X,
@@ -62,6 +60,13 @@ import {
   type JobDescriptionSummary,
 } from "@/api/client";
 import { careerApplicationPath, careerViewPath, navigateTo, type InterviewView } from "../../routing";
+import {
+  ApplicationsBoard,
+  applicationStatusLabel,
+  formatApplicationDate,
+  formatApplicationDateTime,
+  interviewRoundLabel,
+} from "./ApplicationsBoard";
 import "./interviews.css";
 
 type InterviewStatus = "upcoming" | "active" | "completed" | "cancelled";
@@ -109,7 +114,6 @@ const CALENDAR_COLORS: Array<{
   { id: "gray", label: "灰色" },
 ];
 const SCHEDULE_SLOT_COUNT = 48;
-const APPLICATION_DRAG_DATA_TYPE = "text/job-application-id";
 const SCHEDULE_HOURS = Array.from(
   { length: 24 },
   (_, hour) => `${String(hour).padStart(2, "0")}:00`,
@@ -569,7 +573,7 @@ export function InterviewCenterPage({
           scope={applicationScope}
           sortNewestFirst={sortApplicationsNewestFirst}
           onCreate={() => setShowCreateApplication(true)}
-          onChanged={() => loadData()}
+          onChanged={() => loadData(initialSessionId)}
           onNotice={setNotice}
           onCreateInterview={(applicationId) => {
             setCreateInterviewApplicationId(applicationId);
@@ -715,9 +719,9 @@ function ApplicationsView({
   scope,
   sortNewestFirst,
   onCreate,
-  onCreateInterview,
   onChanged,
   onNotice,
+  onCreateInterview,
 }: {
   applications: JobApplicationSummary[];
   selectedApplicationId?: string;
@@ -726,14 +730,10 @@ function ApplicationsView({
   scope: "all" | "active" | "ended" | "archived";
   sortNewestFirst: boolean;
   onCreate: () => void;
-  onCreateInterview: (applicationId: string) => void;
   onChanged: () => Promise<void>;
   onNotice: (notice: string) => void;
+  onCreateInterview: (applicationId: string) => void;
 }) {
-  const [draggingApplicationId, setDraggingApplicationId] = useState<string | null>(null);
-  const [dropTargetKey, setDropTargetKey] = useState<string | null>(null);
-  const [advancingApplicationId, setAdvancingApplicationId] = useState<string | null>(null);
-  const suppressCardClickRef = useRef(false);
   const normalizedQuery = query.trim().toLowerCase();
   const visibleApplications = applications.filter((item) => {
     const matchesScope = scope === "all"
@@ -749,30 +749,6 @@ function ApplicationsView({
     const difference = new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime();
     return sortNewestFirst ? difference : -difference;
   });
-  const interviewRounds = visibleApplications
-    .filter((item) => item.current_stage_type === "interview")
-    .map((item) => item.current_round_no ?? 1);
-  const highestInterviewRound = interviewRounds.length ? Math.max(...interviewRounds) : 0;
-  const extraInterviewRounds = Array.from(new Set([
-    ...interviewRounds.filter((roundNo) => roundNo > 2),
-    ...(highestInterviewRound >= 2 ? [highestInterviewRound + 1] : []),
-  ])).sort((left, right) => left - right);
-  const columnDefinitions = [
-    { key: "screening", label: "筛选中" },
-    { key: "communication", label: "等待沟通" },
-    { key: "interview:1", label: "一面" },
-    { key: "interview:2", label: "二面" },
-    ...extraInterviewRounds.map((roundNo) => ({ key: `interview:${roundNo}`, label: interviewRoundLabel(roundNo) })),
-    { key: "hr", label: "HR 面" },
-    { key: "offer", label: "Offer" },
-    { key: "ended", label: "已结束" },
-    ...(visibleApplications.some((item) => item.archived_at) ? [{ key: "archived", label: "已归档" }] : []),
-  ];
-  const columns = columnDefinitions.map(({ key, label }) => ({
-    key,
-    label,
-    items: visibleApplications.filter((item) => pipelineColumnKey(item) === key),
-  }));
   const selectedApplication = selectedApplicationId
     ? applications.find((item) => item.id === selectedApplicationId) ?? null
     : null;
@@ -789,142 +765,18 @@ function ApplicationsView({
     offers: applications.filter((item) => item.offer_status === "written_offer_received" || item.offer_status === "accepted").length,
   };
 
-  const draggingApplication = draggingApplicationId
-    ? applications.find((item) => item.id === draggingApplicationId) ?? null
-    : null;
-
-  const clearDragState = () => {
-    setDraggingApplicationId(null);
-    setDropTargetKey(null);
-  };
-
-  const beginDragging = (event: ReactDragEvent<HTMLElement>, application: JobApplicationSummary) => {
-    if (!isApplicationDraggable(application) || advancingApplicationId !== null) {
-      event.preventDefault();
-      return;
-    }
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData(APPLICATION_DRAG_DATA_TYPE, application.id);
-    event.dataTransfer.setData("application-id", application.id);
-    event.dataTransfer.setData("text/plain", application.id);
-    suppressCardClickRef.current = true;
-    setDraggingApplicationId(application.id);
-    setDropTargetKey(null);
-  };
-
-  const endDragging = () => {
-    clearDragState();
-    window.setTimeout(() => {
-      suppressCardClickRef.current = false;
-    }, 0);
-  };
-
-  const advanceTo = async (
-    application: JobApplicationSummary,
-    target: ApplicationDropTarget,
-  ) => {
-    setAdvancingApplicationId(application.id);
-    try {
-      await api.advanceJobApplication(application.id, {
-        target_stage_type: target.stageType,
-        target_round_no: target.roundNo,
-        target_stage_label: target.stageLabel,
-        base_lock_version: application.lock_version,
-      });
-      await onChanged();
-    } catch (error) {
-      onNotice(errorMessage(error));
-      await onChanged();
-    } finally {
-      setAdvancingApplicationId(null);
-    }
-  };
-
-  const handleColumnDragOver = (
-    event: ReactDragEvent<HTMLDivElement>,
-    columnKey: string,
-  ) => {
-    if (!draggingApplication || !canDropApplicationOnColumn(draggingApplication, columnKey)) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-    setDropTargetKey(columnKey);
-  };
-
-  const handleColumnDragLeave = (
-    event: ReactDragEvent<HTMLDivElement>,
-    columnKey: string,
-  ) => {
-    const relatedTarget = event.relatedTarget;
-    if (relatedTarget instanceof Node && event.currentTarget.contains(relatedTarget)) return;
-    if (dropTargetKey === columnKey) setDropTargetKey(null);
-  };
-
-  const handleColumnDrop = (
-    event: ReactDragEvent<HTMLDivElement>,
-    columnKey: string,
-  ) => {
-    const applicationId = event.dataTransfer.getData(APPLICATION_DRAG_DATA_TYPE)
-      || event.dataTransfer.getData("application-id")
-      || event.dataTransfer.getData("text/plain")
-      || draggingApplicationId;
-    const application = applicationId
-      ? applications.find((item) => item.id === applicationId) ?? null
-      : null;
-    const target = application ? applicationDropTarget(columnKey) : null;
-    if (!application || !target || !canDropApplicationOnColumn(application, columnKey)) {
-      clearDragState();
-      return;
-    }
-    event.preventDefault();
-    suppressCardClickRef.current = true;
-    clearDragState();
-    void advanceTo(application, target);
-  };
-
   return (
     <div className="career-applications-layout">
-      <section className="career-application-metrics" aria-label="求职进程数据概览">
-        <CareerApplicationMetric icon={<BriefcaseBusiness />} tone="blue" label="进行中的进程" value={dashboardMetrics.active} hint="当前全部进程" />
-        <CareerApplicationMetric icon={<Clock3 />} tone="orange" label="本周待面试" value={dashboardMetrics.weekly} hint="已安排场次" />
-        <CareerApplicationMetric icon={<Bell />} tone="purple" label="待跟进" value={dashboardMetrics.followUp} hint="需要及时跟进" />
-        <CareerApplicationMetric icon={<Trophy />} tone="green" label="已拿 Offer" value={dashboardMetrics.offers} hint="书面 Offer" />
-      </section>
-
-      <section className="interview-surface career-applications-board">
-        {visibleApplications.length > 0 && displayMode === "board" ? (
-          <div
-            className="interview-pipeline-grid"
-            style={{ "--pipeline-column-count": columns.length } as CSSProperties}
-          >
-            {columns.map((column) => (
-              <div
-                className={`interview-pipeline-column${draggingApplication && canDropApplicationOnColumn(draggingApplication, column.key) ? " is-drop-target" : ""}${dropTargetKey === column.key ? " is-drop-target-active" : ""}`}
-                key={column.key}
-                onDragOver={(event) => handleColumnDragOver(event, column.key)}
-                onDragLeave={(event) => handleColumnDragLeave(event, column.key)}
-                onDrop={(event) => handleColumnDrop(event, column.key)}
-              >
-                <header className="career-pipeline-column-heading"><h3>{column.label}<span>{column.items.length}</span></h3><div><button type="button" aria-label={`在${column.label}中新建求职进程`} onClick={onCreate}><Plus /></button><MoreHorizontal aria-hidden="true" /></div></header>
-                {column.items.map((item) => (
-                  <PipelineCard
-                    key={item.id}
-                    item={item}
-                    draggable={isApplicationDraggable(item) && advancingApplicationId !== item.id}
-                    isDragging={draggingApplicationId === item.id}
-                    isAdvancing={advancingApplicationId === item.id}
-                    onOpen={() => {
-                      if (!suppressCardClickRef.current) navigateTo(careerApplicationPath(item.id));
-                    }}
-                    onDragStart={(event) => beginDragging(event, item)}
-                    onDragEnd={endDragging}
-                  />
-                ))}
-                {!column.items.length && <p className="pipeline-empty">暂无进程</p>}
-                <button type="button" className="career-pipeline-add" onClick={onCreate}><Plus />添加进程</button>
-              </div>
-            ))}
-          </div>
-        ) : visibleApplications.length ? (
+      <ApplicationsBoard
+        visibleApplications={visibleApplications}
+        displayMode={displayMode}
+        metrics={dashboardMetrics}
+        onCreate={onCreate}
+        onChanged={onChanged}
+        onNotice={onNotice}
+      />
+      {displayMode === "list" && visibleApplications.length ? (
+        <section className="interview-surface career-applications-board">
           <div className="career-application-list" role="table" aria-label="求职进程列表">
             <div role="row"><span role="columnheader">公司与岗位</span><span role="columnheader">当前阶段</span><span role="columnheader">状态</span><span role="columnheader">下一场面试</span><span role="columnheader">操作</span></div>
             {visibleApplications.map((item) => (
@@ -937,15 +789,17 @@ function ApplicationsView({
               </div>
             ))}
           </div>
-        ) : (
+        </section>
+      ) : !visibleApplications.length ? (
+        <section className="interview-surface career-applications-board">
           <div className="career-applications-empty">
             <BriefcaseBusiness />
             <h2>{normalizedQuery ? "没有匹配的求职进程" : scope === "archived" ? "还没有已归档进程" : scope === "ended" ? "还没有已结束进程" : "还没有求职进程"}</h2>
             <p>{normalizedQuery ? "换个公司、职位或阶段关键词试试。" : scope === "archived" ? "归档后的进程会集中显示在这里。" : scope === "ended" ? "已结束或未通过的进程会显示在这里。" : "先从岗位库选择目标岗位，再开始记录投递进度。"}</p>
             {!normalizedQuery && scope !== "archived" && scope !== "ended" && <Button onClick={onCreate}>创建第一条求职进程</Button>}
           </div>
-        )}
-      </section>
+        </section>
+      ) : null}
       {selectedApplicationId && (
         selectedApplication ? (
           <section className="interview-surface career-application-detail" aria-labelledby="career-application-detail-title">
@@ -983,153 +837,8 @@ function ApplicationsView({
   );
 }
 
-function CareerApplicationMetric({ icon, tone, label, value, change, hint }: { icon: ReactNode; tone: string; label: string; value: number; change?: string; hint?: string }) {
-  return <article className="career-application-metric"><span className={`tone-${tone}`} aria-hidden="true">{icon}</span><div><small>{label}</small><strong>{value}</strong><p>{change && <>较上周 <b>{change}</b></>}{hint}</p></div></article>;
-}
-
-function interviewRoundLabel(roundNo: number): string {
-  if (roundNo === 1) return "一面";
-  if (roundNo === 2) return "二面";
-  return `第 ${roundNo} 轮`;
-}
-
-type ApplicationDropTarget = {
-  stageType: ApplicationStageType;
-  roundNo: number | null;
-  stageLabel: string;
-};
-
-function applicationDropTarget(columnKey: string): ApplicationDropTarget | null {
-  if (columnKey.startsWith("interview:")) {
-    const roundNo = Number(columnKey.slice("interview:".length));
-    if (!Number.isInteger(roundNo) || roundNo < 1) return null;
-    return {
-      stageType: "interview",
-      roundNo,
-      stageLabel: interviewRoundLabel(roundNo),
-    };
-  }
-  if (columnKey === "hr") return { stageType: "hr", roundNo: null, stageLabel: "HR 面" };
-  if (columnKey === "offer") return { stageType: "offer", roundNo: null, stageLabel: "Offer" };
-  return null;
-}
-
-function isApplicationDraggable(application: JobApplicationSummary): boolean {
-  return application.status === "active"
-    && application.archived_at === null
-    && application.current_stage_type !== "offer";
-}
-
-function canDropApplicationOnColumn(
-  application: JobApplicationSummary,
-  columnKey: string,
-): boolean {
-  if (!isApplicationDraggable(application)) return false;
-  const sourceColumn = pipelineColumnKey(application);
-  if (columnKey === sourceColumn) return false;
-  const target = applicationDropTarget(columnKey);
-  if (!target) return false;
-  if (application.current_stage_type === "screening") {
-    return target.stageType === "hr"
-      || target.stageType === "offer"
-      || (target.stageType === "interview" && target.roundNo === 1);
-  }
-  if (application.current_stage_type === "interview") {
-    return target.stageType === "hr"
-      || target.stageType === "offer"
-      || (target.stageType === "interview"
-        && target.roundNo !== null
-        && target.roundNo > (application.current_round_no ?? 0));
-  }
-  return application.current_stage_type === "hr" && target.stageType === "offer";
-}
-
-function pipelineColumnKey(application: JobApplicationSummary): string {
-  if (application.archived_at) return "archived";
-  if (application.status !== "active") return "ended";
-  if (application.current_stage_type === "screening" && application.current_stage_label.includes("沟通"))
-    return "communication";
-  if (application.current_stage_type !== "interview")
-    return application.current_stage_type;
-  return `interview:${application.current_round_no ?? 1}`;
-}
-
-function PipelineCard({
-  item,
-  onOpen,
-  draggable = false,
-  isDragging = false,
-  isAdvancing = false,
-  onDragStart,
-  onDragEnd,
-}: {
-  item: JobApplicationSummary;
-  onOpen?: () => void;
-  draggable?: boolean;
-  isDragging?: boolean;
-  isAdvancing?: boolean;
-  onDragStart?: (event: ReactDragEvent<HTMLElement>) => void;
-  onDragEnd?: () => void;
-}) {
-  const timeLabel = item.next_session_start_at
-    ? new Intl.DateTimeFormat("zh-CN", {
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }).format(new Date(item.next_session_start_at))
-    : item.applied_at
-      ? `投递 ${formatApplicationDate(item.applied_at)}`
-      : "暂未排期";
-  return (
-    <article
-      className={`pipeline-card${draggable ? " is-draggable" : ""}${isDragging ? " is-dragging" : ""}${isAdvancing ? " is-advancing" : ""}`}
-      aria-label={`${item.company_name_snapshot} ${item.job_title_snapshot}`}
-      aria-grabbed={draggable ? isDragging : undefined}
-      aria-busy={isAdvancing || undefined}
-      draggable={draggable}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-    >
-      {onOpen ? <button type="button" className="pipeline-card-open" aria-label={`查看 ${item.company_name_snapshot} ${item.job_title_snapshot} 求职进程`} onClick={onOpen}><PipelineCardContent item={item} timeLabel={timeLabel} /></button> : <PipelineCardContent item={item} timeLabel={timeLabel} />}
-    </article>
-  );
-}
-
-function PipelineCardContent({ item, timeLabel }: { item: JobApplicationSummary; timeLabel: string }) {
-  return (
-    <header className="pipeline-card-header">
-      <CompanyLogo item={{ company: item.company_name_snapshot, logo: item.company_name_snapshot.slice(0, 1), color: item.calendar_color }} />
-      <span>
-        <span className="pipeline-card-title-row">
-          <strong>{item.company_name_snapshot}</strong>
-          <time className="pipeline-card-time">{timeLabel}</time>
-        </span>
-        <small className="pipeline-card-role">{item.job_title_snapshot}</small>
-      </span>
-    </header>
-  );
-}
-
 function jobDetailPathFromApplication(application: JobApplicationSummary): string {
   return application.job_description_id ? `/career/jobs/${encodeURIComponent(application.job_description_id)}` : "/career/jobs";
-}
-
-function applicationStatusLabel(application: JobApplicationSummary): string {
-  if (application.archived_at) return "已归档";
-  if (application.status === "rejected") return "未通过";
-  if (application.status === "withdrawn") return "已主动结束";
-  if (application.status === "closed") return application.offer_status === "accepted" ? "已接受 Offer" : "已结束";
-  return application.stage_state === "awaiting_schedule" ? "等待安排" : application.stage_state === "awaiting_result" ? "等待结果" : application.stage_state === "negotiating" ? "Offer 沟通中" : "进行中";
-}
-
-function formatApplicationDate(value: string): string {
-  return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
-}
-
-function formatApplicationDateTime(value: string): string {
-  return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
 }
 
 function createScheduleMockInterviews(weekStart: Date): Interview[] {

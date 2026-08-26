@@ -7,6 +7,7 @@ import {
   LayoutTemplate,
   ListChecks,
   NotebookTabs,
+  Sparkles,
 } from "lucide-react";
 import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
@@ -15,7 +16,7 @@ import RandomLetterSwapNav from "@/components/ui/m-random-letter-swap-1";
 import { preloadWorkspacePage } from "../workspacePageLoaders";
 import "./career-navigation.css";
 
-export type WorkspaceSection = "resumes" | "templates" | "career" | "datasets" | "account";
+export type WorkspaceSection = "resumes" | "assistant" | "templates" | "career" | "datasets" | "account";
 export type CareerSection = "jobs" | "applications" | "schedule" | "reviews";
 
 type WorkspaceNavigationProps = {
@@ -41,6 +42,14 @@ const NAV_ITEMS: Array<{
     label: "我的简历",
     href: "/resumes",
     icon: FileText,
+  },
+  {
+    activeColor: "var(--ui-accent)",
+    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-accent) 24%, transparent) 0%, color-mix(in srgb, var(--ui-accent) 10%, transparent) 48%, transparent 76%)",
+    key: "assistant",
+    label: "AI 助手",
+    href: "/assistant",
+    icon: Sparkles,
   },
   {
     activeColor: "var(--ui-template-accent)",
@@ -204,10 +213,18 @@ export function CareerNavigation({ active }: { active: CareerSection }) {
   );
 }
 
-export function WorkspaceLayout({ active, children }: { active: WorkspaceSection; children: ReactNode }) {
+export function WorkspaceLayout({
+  active,
+  children,
+  className,
+}: {
+  active: WorkspaceSection;
+  children: ReactNode;
+  className?: string;
+}) {
   const user = useResumeStore((state) => state.user);
   return (
-    <div className="dashboard-shell" data-ui-theme="light">
+    <div className={`dashboard-shell${className ? ` ${className}` : ""}`} data-ui-theme="light">
       <WorkspaceNavigation
         active={active}
         email={user?.email ?? ""}

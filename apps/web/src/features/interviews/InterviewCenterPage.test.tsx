@@ -297,36 +297,35 @@ describe("InterviewCenterPage API projections", () => {
     expect(await screen.findByRole("heading", { name: "还没有求职进程" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "求职进程" })).not.toBeInTheDocument();
     for (const label of ["进行中的进程", "本周待面试", "待跟进", "已拿 Offer"]) {
-      const metric = screen.getByText(label).closest("article");
-      expect(metric).toHaveTextContent("0");
+      expect(screen.getByText(label).closest("article")).toHaveTextContent("0");
     }
     expect(screen.queryByText("展示数据")).not.toBeInTheDocument();
     expect(screen.queryByRole("article", { name: /算法工程师|产品经理|开发工程师|数据分析师/ })).not.toBeInTheDocument();
   });
 
-  it("advances a real application by dragging it to a reachable stage and refreshes the list", async () => {
+  it("advances a real screening card to the interview aggregate column", async () => {
     const screeningApplication = {
       ...application,
-      id: "56",
+      id: "57",
       current_stage_type: "screening" as const,
       current_round_no: null,
       current_stage_label: "筛选中",
       stage_state: "awaiting_result" as const,
-      lock_version: 1,
+      lock_version: 4,
       next_session_id: null,
       next_session_start_at: null,
       next_session_end_at: null,
       next_session_mode: null,
     };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
     const advancedApplication = {
       ...screeningApplication,
       current_stage_type: "interview" as const,
       current_round_no: 1,
       current_stage_label: "一面",
       stage_state: "awaiting_schedule" as const,
-      lock_version: 2,
+      lock_version: 5,
     };
-    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
     mocks.listJobApplications
       .mockResolvedValueOnce({ items: [screeningApplication], next_cursor: null })
       .mockResolvedValueOnce({ items: [advancedApplication], next_cursor: null });
@@ -334,33 +333,48 @@ describe("InterviewCenterPage API projections", () => {
 
     render(<InterviewCenterPage view="applications" />);
 
-    const source = await screen.findByRole("article", { name: "腾讯 后端开发工程师" });
-    const targetColumn = screen.getByRole("heading", { name: /^一面/ }).closest(".interview-pipeline-column") as HTMLElement;
+    const card = await screen.findByRole("article", { name: "腾讯 后端开发工程师" });
+    const interviewColumn = document.querySelector('[data-column-key="interview"]');
+    expect(interviewColumn).toBeInTheDocument();
     const dataTransfer = {
       effectAllowed: "",
-      dropEffect: "",
-      getData: vi.fn((type: string) => type === "application-id" ? "56" : ""),
       setData: vi.fn(),
-    };
+      getData: vi.fn().mockReturnValue("57"),
+    } as unknown as DataTransfer;
+    fireEvent.dragStart(card, { dataTransfer });
+    fireEvent.dragOver(interviewColumn as HTMLElement, { dataTransfer });
+    expect(interviewColumn).toHaveClass("is-drop-target");
+    fireEvent.drop(interviewColumn as HTMLElement, { dataTransfer });
 
-    expect(source).toHaveAttribute("draggable", "true");
-    fireEvent.dragStart(source, { dataTransfer });
-    expect(source).toHaveClass("is-dragging");
-    fireEvent.dragOver(targetColumn, { dataTransfer });
-    expect(targetColumn).toHaveClass("is-drop-target-active");
-    fireEvent.drop(targetColumn, { dataTransfer });
-
-    await waitFor(() => expect(mocks.advanceJobApplication).toHaveBeenCalledWith("56", {
+    await waitFor(() => expect(mocks.advanceJobApplication).toHaveBeenCalledWith("57", {
       target_stage_type: "interview",
       target_round_no: 1,
       target_stage_label: "一面",
-      base_lock_version: 1,
+      base_lock_version: 4,
     }));
     await waitFor(() => expect(mocks.listJobApplications).toHaveBeenCalledTimes(2));
-    expect(await screen.findByRole("article", { name: "腾讯 后端开发工程师" })).toBeInTheDocument();
   });
 
-  it("shows an error and refreshes the real card when advancing conflicts", async () => {
+  it("does not call the advance API when an interview card stays in its aggregate column", async () => {
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications.mockResolvedValue({ items: [application], next_cursor: null });
+
+    render(<InterviewCenterPage view="applications" />);
+
+    const card = await screen.findByRole("article", { name: "腾讯 后端开发工程师" });
+    const interviewColumn = document.querySelector('[data-column-key="interview"]');
+    const dataTransfer = {
+      effectAllowed: "",
+      setData: vi.fn(),
+      getData: vi.fn().mockReturnValue("21"),
+    } as unknown as DataTransfer;
+    fireEvent.dragStart(card, { dataTransfer });
+    fireEvent.drop(interviewColumn as HTMLElement, { dataTransfer });
+
+    await waitFor(() => expect(mocks.advanceJobApplication).not.toHaveBeenCalled());
+  });
+
+  it("shows an error, refreshes real data, and restores the card after a drag conflict", async () => {
     mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
     mocks.listJobApplications
       .mockResolvedValueOnce({ items: [application], next_cursor: null })
@@ -371,57 +385,25 @@ describe("InterviewCenterPage API projections", () => {
 
     render(<InterviewCenterPage view="applications" />);
 
-    const source = await screen.findByRole("article", { name: "腾讯 后端开发工程师" });
-    const targetColumn = screen.getByRole("heading", { name: /^HR 面/ }).closest(".interview-pipeline-column") as HTMLElement;
+    const card = await screen.findByRole("article", { name: "腾讯 后端开发工程师" });
+    const hrColumn = document.querySelector('[data-column-key="hr"]');
     const dataTransfer = {
       effectAllowed: "",
       dropEffect: "",
-      getData: vi.fn((type: string) => type === "application-id" ? application.id : ""),
       setData: vi.fn(),
-    };
+      getData: vi.fn().mockReturnValue("21"),
+    } as unknown as DataTransfer;
+    fireEvent.dragStart(card, { dataTransfer });
+    fireEvent.dragOver(hrColumn as HTMLElement, { dataTransfer });
+    fireEvent.drop(hrColumn as HTMLElement, { dataTransfer });
 
-    fireEvent.dragStart(source, { dataTransfer });
-    fireEvent.dragOver(targetColumn, { dataTransfer });
-    fireEvent.drop(targetColumn, { dataTransfer });
-
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveClass("interview-error-notice");
-    expect(alert).toHaveTextContent("请刷新后再试");
-    await waitFor(() => expect(mocks.advanceJobApplication).toHaveBeenCalledWith("21", {
-      target_stage_type: "hr",
-      target_round_no: null,
-      target_stage_label: "HR 面",
-      base_lock_version: 3,
-    }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("请刷新后再试");
     await waitFor(() => expect(mocks.listJobApplications).toHaveBeenCalledTimes(2));
     await waitFor(() => {
       const restoredCard = screen.getByRole("article", { name: "腾讯 后端开发工程师" });
       expect(restoredCard).not.toHaveClass("is-advancing");
       expect(restoredCard).toHaveAttribute("draggable", "true");
     });
-  });
-
-  it("does not call advance when dragging an application backwards", async () => {
-    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
-
-    render(<InterviewCenterPage view="applications" />);
-
-    const source = await screen.findByRole("article", { name: "腾讯 后端开发工程师" });
-    const previousColumn = screen.getByRole("heading", { name: /^一面/ }).closest(".interview-pipeline-column") as HTMLElement;
-    const dataTransfer = {
-      effectAllowed: "",
-      dropEffect: "",
-      getData: vi.fn((type: string) => type === "application-id" ? application.id : ""),
-      setData: vi.fn(),
-    };
-
-    expect(source).toHaveAttribute("draggable", "true");
-    fireEvent.dragStart(source, { dataTransfer });
-    fireEvent.dragOver(previousColumn, { dataTransfer });
-    expect(previousColumn).not.toHaveClass("is-drop-target");
-    fireEvent.drop(previousColumn, { dataTransfer });
-
-    await waitFor(() => expect(mocks.advanceJobApplication).not.toHaveBeenCalled());
   });
 
   it("moves a scheduled interview by half an hour without adding half-hour grid lines", async () => {
