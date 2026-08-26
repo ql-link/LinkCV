@@ -52,22 +52,22 @@
 }
 .interview-view-tabs a:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 1px; }
 
-.interview-demo-notice {
+.interview-error-notice {
   display: flex;
   width: min(720px, calc(100% - 60px));
   align-items: center;
   gap: 9px;
   margin: 0 30px 12px;
-  border: 1px solid color-mix(in srgb, var(--ui-accent) 22%, var(--ui-border));
+  border: 1px solid color-mix(in srgb, var(--ui-destructive) 34%, var(--ui-border));
   border-radius: var(--ui-radius-md);
-  background: var(--ui-accent-subtle);
+  background: var(--ui-destructive-subtle);
   padding: 10px 12px;
   color: var(--ui-text-secondary);
   font-size: 12px;
 }
 
-.interview-demo-notice svg { width: 15px; color: var(--ui-accent); }
-.interview-demo-notice button { margin-left: auto; border: 0; background: transparent; color: var(--ui-accent); cursor: pointer; }
+.interview-error-notice svg { width: 15px; flex: 0 0 auto; color: var(--ui-destructive); }
+.interview-error-notice button { margin-left: auto; border: 0; background: transparent; color: var(--ui-destructive); cursor: pointer; }
 
 .interview-surface {
   min-width: 0;
@@ -106,6 +106,10 @@
 .interview-pipeline-column h3 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 12px; font-weight: 650; }
 .interview-pipeline-column h3 span { display: grid; min-width: 17px; height: 17px; place-items: center; border-radius: 50%; background: var(--ui-surface-muted); color: var(--ui-text-muted); font-size: 9px; }
 .pipeline-card { position: relative; display: grid; width: 100%; min-height: 84px; box-sizing: border-box; margin-top: 7px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-md); background: var(--ui-surface); padding: 11px; }
+.pipeline-card.is-draggable { cursor: grab; }
+.pipeline-card.is-draggable:active { cursor: grabbing; }
+.pipeline-card.is-dragging { opacity: .42; }
+.pipeline-card.is-advancing { opacity: .6; }
 .pipeline-card-open { display: block; width: calc(100% + 22px); min-height: calc(100% + 22px); margin: -11px; border: 0; border-radius: inherit; background: transparent; padding: 11px; color: inherit; text-align: left; cursor: pointer; }
 .pipeline-card-open:hover { background: var(--ui-surface-subtle); }
 .pipeline-card-open:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: -2px; }
@@ -468,11 +472,12 @@
 .career-pipeline-column-heading button:hover { background: var(--ui-surface-muted); color: var(--ui-foreground); }
 .career-pipeline-column-heading button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 1px; }
 .career-pipeline-column-heading svg { width: 13px; height: 13px; }
+.interview-pipeline-column.is-drop-target { border-color: color-mix(in srgb, var(--ui-warning) 62%, var(--ui-border)); background: color-mix(in srgb, var(--ui-warning-subtle) 38%, var(--ui-surface)); }
+.interview-pipeline-column.is-drop-target-active { border-color: var(--ui-warning); box-shadow: inset 0 0 0 1px var(--ui-warning); }
 .career-pipeline-add { display: flex; width: 100%; min-height: 40px; align-items: center; justify-content: center; gap: 5px; margin-top: 7px; border: 0; border-radius: var(--ui-radius-md); background: transparent; color: var(--ui-text-muted); font-size: 9px; cursor: pointer; }
 .career-pipeline-add:hover { background: var(--ui-surface-muted); color: var(--ui-foreground); }
 .career-pipeline-add:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: -2px; }
 .career-pipeline-add svg { width: 12px; height: 12px; }
-.career-demo-label { color: var(--ui-text-muted); font-size: 9px; }
 .career-application-list { min-width: 760px; overflow-x: auto; }
 .career-application-list > div { display: grid; min-height: 52px; grid-template-columns: 1.5fr .75fr .8fr 1fr auto; align-items: center; gap: 12px; border-top: 1px solid var(--ui-border); padding: 8px 14px; color: var(--ui-text-secondary); font-size: 11px; }
 .career-application-list > div:first-child { min-height: 38px; border-top: 0; background: var(--ui-surface-subtle); color: var(--ui-text-muted); font-size: 10px; }
@@ -561,7 +566,7 @@
 @media (max-width: 640px) {
   .interview-view-tabs { padding: 0; }
   .interview-view-tabs a { min-height: 40px; padding-inline: 11px; }
-  .interview-demo-notice { width: calc(100% - 32px); margin: 0 16px 12px; }
+  .interview-error-notice { width: calc(100% - 32px); margin: 0 16px 12px; }
   .interview-records-layout { padding: 0 16px; }
   .career-card-action { min-height: 40px; }
   .career-applications-layout { padding: 14px 16px 30px; }
