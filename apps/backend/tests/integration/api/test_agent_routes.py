@@ -25,7 +25,8 @@ from linkcv.modules.agent.models import (
 )
 from linkcv.modules.agent.pi_client import stream_pi_run
 from linkcv.modules.agent.service import create_run
-from linkcv.modules.resumes.models import ResumeTemplate, ResumeVersion
+from linkcv.modules.job_descriptions.models import JobDescription
+from linkcv.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
 from tests.fakes import FakeRedis
 
 
@@ -146,14 +147,16 @@ def editor_data(base: dict, markdown: str) -> dict:
         {
             "id": section_id,
             "title": first_line.split("]]", 1)[-1],
-            "items": [{
-                "id": "item_section00000001",
-                "title": None,
-                "subtitle": None,
-                "content": {"format": "markdown", "content": body.strip()},
-                "source_refs": [],
-            }],
-        }
+            "items": [
+                {
+                    "id": "item_section00000001",
+                    "title": None,
+                    "subtitle": None,
+                    "content": {"format": "markdown", "content": body.strip()},
+                    "source_refs": [],
+                }
+            ],
+        },
     ]
     data["semantic_sections"] = [
         {
@@ -207,6 +210,208 @@ def test_session_is_owned_and_internal_context_requires_service_token() -> None:
         assert context.status_code == 200
         assert context.json()["resume_id"] == resume["id"]
         assert context.json()["lock_version"] == 1
+
+
+def test_context_catalog_is_owner_scoped_and_message_snapshot_binds_first_resume() -> (
+    None
+):
+    app = build_app()
+    with TestClient(app) as owner, TestClient(app) as stranger:
+        register(owner, "agent-context-owner@example.test")
+        owner_resume = create_resume(owner, app)
+        register(stranger, "agent-context-stranger@example.test")
+        stranger_resume = create_resume(stranger, app)
+
+        catalog = owner.get("/api/agent/contexts?type=resume")
+        assert catalog.status_code == 200
+        assert [item["id"] for item in catalog.json()["contexts"]] == [
+            owner_resume["id"]
+        ]
+        assert all("data" not in item for item in catalog.json()["contexts"])
+
+        session = owner.post("/api/agent/sessions", json={}).json()["session"]
+        sent = owner.post(
+            f"/api/agent/sessions/{session['id']}/messages",
+            json={
+                "content": "请分析这份简历",
+                "idempotency_key": "context-snapshot-001",
+                "contexts": [
+                    {
+                        "type": "resume",
+                        "id": owner_resume["id"],
+                        "lock_version": owner_resume["lock_version"],
+                        "label": "客户端标签不可信",
+                    }
+                ],
+            },
+        )
+        assert sent.status_code == 200
+        with app.state.session_factory() as db:
+            record = db.scalar(
+                select(AgentSession).where(AgentSession.public_id == session["id"])
+            )
+            assert record is not None
+            assert str(record.resume_id) == owner_resume["id"]
+            message = db.scalar(
+                select(AgentMessage).where(AgentMessage.session_id == record.id)
+            )
+            assert message is not None
+            assert message.metadata_json is not None
+            assert (
+                message.metadata_json["contexts"][0]["label"] == owner_resume["title"]
+            )
+            assert "data" not in message.metadata_json["contexts"][0]
+
+        hidden = owner.post(
+            f"/api/agent/sessions/{session['id']}/messages",
+            json={
+                "content": "读取另一用户资料",
+                "idempotency_key": "context-owner-check-001",
+                "contexts": [
+                    {
+                        "type": "resume",
+                        "id": stranger_resume["id"],
+                        "lock_version": stranger_resume["lock_version"],
+                    }
+                ],
+            },
+        )
+        assert hidden.status_code == 404
+        assert hidden.json() == {"error": "AGENT_CONTEXT_NOT_FOUND"}
+
+
+def test_stale_context_is_rejected_before_run_or_message_creation() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-context-stale@example.test")
+        resume = create_resume(client, app)
+        session = client.post("/api/agent/sessions", json={}).json()["session"]
+        with app.state.session_factory() as db:
+            target_resume = db.scalar(
+                select(Resume).where(Resume.id == int(resume["id"]))
+            )
+            assert target_resume is not None
+            target_resume.lock_version = 2
+            db.commit()
+
+        stale = client.post(
+            f"/api/agent/sessions/{session['id']}/messages",
+            json={
+                "content": "使用旧资料继续",
+                "idempotency_key": "context-stale-001",
+                "contexts": [
+                    {
+                        "type": "resume",
+                        "id": resume["id"],
+                        "version": "1",
+                    }
+                ],
+            },
+        )
+        assert stale.status_code == 409
+        assert stale.json() == {"error": "AGENT_CONTEXT_STALE"}
+        with app.state.session_factory() as db:
+            assert db.scalar(select(AgentRun.id)) is None
+            assert db.scalar(select(AgentMessage.id)) is None
+
+
+def test_existing_idempotency_replays_before_context_stale_resolution() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-context-replay@example.test")
+        resume = create_resume(client, app)
+        session = client.post("/api/agent/sessions", json={}).json()["session"]
+        payload = {
+            "content": "请分析这份简历",
+            "idempotency_key": "context-replay-001",
+            "contexts": [
+                {
+                    "type": "resume",
+                    "id": resume["id"],
+                    "lock_version": resume["lock_version"],
+                }
+            ],
+        }
+
+        first = client.post(
+            f"/api/agent/sessions/{session['id']}/messages", json=payload
+        )
+        assert first.status_code == 200
+        with app.state.session_factory() as db:
+            target = db.scalar(select(Resume).where(Resume.id == int(resume["id"])))
+            assert target is not None
+            target.lock_version = 2
+            db.commit()
+
+        replay = client.post(
+            f"/api/agent/sessions/{session['id']}/messages", json=payload
+        )
+        assert replay.status_code == 200
+        assert '"replayed": true' in replay.text
+        with app.state.session_factory() as db:
+            assert len(db.scalars(select(AgentRun)).all()) == 1
+            assert len(db.scalars(select(AgentMessage)).all()) == 1
+
+
+def test_context_search_is_applied_before_limit_for_resume_and_job() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-context-search@example.test")
+        old_resume = create_resume(client, app)
+        newest_resume_response = client.post(
+            "/api/resumes",
+            json={"title": "最新无关简历", "template_id": app.state.test_template_id},
+        )
+        assert newest_resume_response.status_code == 201
+        newest_resume = newest_resume_response.json()["resume"]
+        with app.state.session_factory() as db:
+            old_record = db.scalar(
+                select(Resume).where(Resume.id == int(old_resume["id"]))
+            )
+            newest_record = db.scalar(
+                select(Resume).where(Resume.id == int(newest_resume["id"]))
+            )
+            assert old_record is not None and newest_record is not None
+            old_record.title = "历史目标简历"
+            old_record.updated_at = utc_now() - timedelta(days=1)
+            newest_record.updated_at = utc_now()
+            db.commit()
+
+        resumes = client.get("/api/agent/contexts?type=resume&q=目标&limit=1")
+        assert resumes.status_code == 200
+        assert [item["id"] for item in resumes.json()["contexts"]] == [old_resume["id"]]
+
+        def create_job(title: str, company: str) -> dict:
+            response = client.post(
+                "/api/job-descriptions",
+                json={
+                    "job_title": title,
+                    "company_name": company,
+                    "description": f"{company} 的岗位描述",
+                    "skills": ["Python"],
+                    "source_type": "manual",
+                },
+            )
+            assert response.status_code == 201
+            return response.json()["job_description"]
+
+        old_job = create_job("历史目标岗位", "旧公司")
+        newest_job = create_job("最新无关岗位", "新公司")
+        with app.state.session_factory() as db:
+            old_job_record = db.scalar(
+                select(JobDescription).where(JobDescription.id == int(old_job["id"]))
+            )
+            newest_job_record = db.scalar(
+                select(JobDescription).where(JobDescription.id == int(newest_job["id"]))
+            )
+            assert old_job_record is not None and newest_job_record is not None
+            old_job_record.updated_at = utc_now() - timedelta(days=1)
+            newest_job_record.updated_at = utc_now()
+            db.commit()
+
+        jobs = client.get("/api/agent/contexts?type=job&q=目标&limit=1")
+        assert jobs.status_code == 200
+        assert [item["id"] for item in jobs.json()["contexts"]] == [old_job["id"]]
 
 
 def test_proposal_is_idempotent_and_confirmed_once() -> None:
@@ -427,16 +632,113 @@ def test_scoped_edit_requires_resolved_target_and_diagnosis_before_confirmation(
         proposal = proposed.json()["proposal"]
         assert proposal["proposal_mode"] == "polish_local"
         assert proposal["rationale"][0]["code"] == "MISSING_RESULT_EVIDENCE"
+        assert proposal["operations"][0]["target"]["selected_text"] == selected_text
         confirmed = client.post(f"/api/agent/proposals/{proposal['id']}/confirm")
         assert confirmed.status_code == 200
         content = "\n".join(
             item["content"]["content"]
-            for section in confirmed.json()["resume"]["data"]["sections"]["custom_sections"]
+            for section in confirmed.json()["resume"]["data"]["sections"][
+                "custom_sections"
+            ]
             for item in section["items"]
         )
         assert "优化平台性能，具体结果待补充" in content
         assert content.count("负责平台性能优化") == 1
         assert "[[linkcv-block:blk_bullet0000000001]]负责平台性能优化" in content
+
+
+def test_whole_block_proposal_materializes_before_text_and_confirms() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-whole-block-proposal@example.test")
+        resume = create_resume(client, app)
+        markdown = "\n\n".join(
+            [
+                "## [[linkcv-block:blk_section000000001]]工作经历",
+                "### [[linkcv-block:blk_entry00000000001]]示例公司 · 后端工程师",
+                "- [[linkcv-block:blk_bullet0000000001]]负责平台性能优化",
+            ]
+        )
+        saved = client.put(
+            f"/api/resumes/{resume['id']}",
+            json={
+                "data": editor_data(resume["data"], markdown),
+                "base_lock_version": 1,
+            },
+        )
+        assert saved.status_code == 200
+        session_id = client.post(
+            "/api/agent/sessions", json={"resume_id": resume["id"]}
+        ).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+
+        selected_entry = "示例公司 · 后端工程师\n负责平台性能优化"
+        resolved = client.post(
+            f"/internal/agent/runs/{run_id}/targets:resolve",
+            headers=internal_headers(),
+            json={
+                "selection_context": {
+                    "block_ids": [
+                        "blk_entry00000000001",
+                        "blk_bullet0000000001",
+                    ],
+                    "from": 1,
+                    "to": 24,
+                    "selected_text": selected_entry,
+                    "selected_text_hash": "sha256:"
+                    + hashlib.sha256(selected_entry.encode()).hexdigest(),
+                }
+            },
+        )
+        assert resolved.status_code == 200
+        target = resolved.json()["target"]
+        assert target["selected_text"] is None
+        diagnosed = client.post(
+            f"/internal/agent/runs/{run_id}/diagnoses",
+            headers=internal_headers(),
+            json={"target": target, "scope": "target"},
+        )
+        assert diagnosed.status_code == 200
+
+        proposed = client.post(
+            f"/internal/agent/runs/{run_id}/proposals:v2",
+            headers=internal_headers(),
+            json={
+                "call_key": "whole-block-proposal-1",
+                "mode": "polish_local",
+                "target": target,
+                "diagnosis": diagnosed.json()["diagnosis"],
+                "diagnosis_fingerprint": diagnosed.json()["diagnosis_fingerprint"],
+                "operations": [
+                    {
+                        "op": "replace_target_text",
+                        "target": target,
+                        "new_text": "示例公司 · 高级后端工程师",
+                        "expected_text_hash": target["expected_text_hash"],
+                    }
+                ],
+                "rationale": [],
+                "source_ids": [],
+                "summary": "更新岗位标题",
+            },
+        )
+        assert proposed.status_code == 201
+        proposal = proposed.json()["proposal"]
+        assert (
+            proposal["operations"][0]["target"]["selected_text"]
+            == "示例公司 · 后端工程师"
+        )
+
+        confirmed = client.post(f"/api/agent/proposals/{proposal['id']}/confirm")
+        assert confirmed.status_code == 200
+        content = "\n".join(
+            item["content"]["content"]
+            for section in confirmed.json()["resume"]["data"]["sections"][
+                "custom_sections"
+            ]
+            for item in section["items"]
+        )
+        assert "示例公司 · 高级后端工程师" in content
 
 
 def test_proposal_confirmation_never_overwrites_concurrent_resume_edit() -> None:
@@ -815,7 +1117,9 @@ def test_pi_stream_persists_successful_usage_and_assistant_message(
             assert assistant.content == "完整回复"
 
 
-def test_new_session_uses_first_message_title_and_rejects_stale_clarification_reply() -> None:
+def test_new_session_uses_first_message_title_and_rejects_stale_clarification_reply() -> (
+    None
+):
     app = build_app()
     with TestClient(app) as client:
         register(client, "agent-clarification-reply@example.test")
@@ -851,15 +1155,17 @@ def test_new_session_uses_first_message_title_and_rejects_stale_clarification_re
                     content="请选择修改范围",
                     metadata_json={
                         "version": 1,
-                        "questions": [{
-                            "id": "scope",
-                            "header": "修改范围",
-                            "question": "要修改哪段经历？",
-                            "options": [
-                                {"id": "internship", "label": "实习经历"},
-                                {"id": "project", "label": "项目经历"},
-                            ],
-                        }],
+                        "questions": [
+                            {
+                                "id": "scope",
+                                "header": "修改范围",
+                                "question": "要修改哪段经历？",
+                                "options": [
+                                    {"id": "internship", "label": "实习经历"},
+                                    {"id": "project", "label": "项目经历"},
+                                ],
+                            }
+                        ],
                     },
                 )
             )
@@ -891,15 +1197,17 @@ def test_pi_stream_persists_structured_clarification_only_after_success(
         run_id = create_active_run(app, session_id)
         clarification = {
             "version": 1,
-            "questions": [{
-                "id": "role",
-                "header": "目标岗位",
-                "question": "你的目标岗位是什么？",
-                "options": [
-                    {"id": "backend", "label": "后端开发"},
-                    {"id": "product", "label": "产品经理"},
-                ],
-            }],
+            "questions": [
+                {
+                    "id": "role",
+                    "header": "目标岗位",
+                    "question": "你的目标岗位是什么？",
+                    "options": [
+                        {"id": "backend", "label": "后端开发"},
+                        {"id": "product", "label": "产品经理"},
+                    ],
+                }
+            ],
         }
 
         class FakeStreamResponse:
@@ -913,13 +1221,17 @@ def test_pi_stream_persists_structured_clarification_only_after_success(
 
             async def aiter_lines(self):
                 frames = (
-                    ("clarification.requested", {"runId": run_id, "clarification": clarification}),
+                    (
+                        "clarification.requested",
+                        {"runId": run_id, "clarification": clarification},
+                    ),
                     ("assistant.delta", {"runId": run_id, "delta": "请选择目标岗位"}),
                     ("run.completed", {"runId": run_id}),
                 )
                 for event, payload in frames:
                     yield f"event: {event}"
                     import json
+
                     yield "data: " + json.dumps(payload, ensure_ascii=False)
                     yield ""
 
@@ -938,14 +1250,15 @@ def test_pi_stream_persists_structured_clarification_only_after_success(
             lambda **_kwargs: FakeHttpClient(),
         )
 
-        events = b"".join(asyncio.run(
-            _collect_stream_events(app, run_id, "请优化简历")
-        )).decode()
+        events = b"".join(
+            asyncio.run(_collect_stream_events(app, run_id, "请优化简历"))
+        ).decode()
         assert "event: clarification.requested" in events
         with app.state.session_factory() as db:
             message = db.scalar(
                 select(AgentMessage).where(
-                    AgentMessage.run_id == db.scalar(
+                    AgentMessage.run_id
+                    == db.scalar(
                         select(AgentRun.id).where(AgentRun.public_id == run_id)
                     ),
                     AgentMessage.role == "assistant",
