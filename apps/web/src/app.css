@@ -4302,7 +4302,7 @@ select:not([data-slot]):focus-visible,
 .datasets-page .dataset-row {
   position: relative;
   min-height: 76px;
-  padding: 0 20px 0 24px;
+  padding: 0 24px;
   color: var(--ink);
 }
 
@@ -4448,14 +4448,6 @@ select:not([data-slot]):focus-visible,
 .dataset-action-menu button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: -2px; }
 .dataset-action-menu button.is-danger { color: var(--ui-destructive); }
 
-.dataset-list-footer {
-  border-top: 1px solid var(--hairline);
-  padding: 16px 24px;
-  color: var(--muted);
-  font-size: 12px;
-  text-align: center;
-}
-
 .dataset-upload-queue {
   display: grid;
   max-height: 230px;
@@ -4557,7 +4549,6 @@ select:not([data-slot]):focus-visible,
   .dataset-cell-size { font-size: 12px; }
   .dataset-cell-size::before { content: "大小："; color: var(--ui-text-muted); }
   .dataset-cell-time::before { content: "上传于："; color: var(--ui-text-muted); }
-  .dataset-list-footer { padding: 14px 18px; }
 }
 
 @media (max-width: 480px) {
