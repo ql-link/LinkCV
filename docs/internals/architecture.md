@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | Web | `apps/web` | React 19、TypeScript、Vite 前端，以及简历和临时 JD 管理页面 |
 | Browser extension | `apps/extension` | WXT、React、TypeScript Chrome MV3 插件；读取当前 BOSS 详情页并提交确认后的采集字段 |
-| WeChat miniprogram | `apps/miniprogram` | 原生小程序，界面采用与 Web 内部功能区同源 `--ui-*` Token 的小屏简洁单列布局与蓝色 accent 主操作；冷启动直接展示游客可浏览的“简历”列表壳层，底部仅有“简历 / 我的”两个标签页，两页游客态都不请求个人数据。登录由用户主动进入统一登录页并确认平台隐私保护指引后完成，后端自动复用已有微信账号或创建普通账号；扫码进入独立确认页确认或取消网页登录。登录后可用紧凑列表只读查看本人简历、以智能一页图片阅读详情，并在“我的”维护可选头像与昵称或退出登录。 |
+| WeChat miniprogram | `apps/miniprogram` | 原生小程序，界面采用与 Web 内部功能区同源 `--ui-*` Token 的小屏简洁单列布局与深色/中性 accent 主操作；冷启动直接展示游客可浏览的“简历”列表壳层，底部仅有“简历 / 我的”两个标签页，两页游客态都不请求个人数据。“我的”页面在游客态完整呈现页面框架、默认头像、字段与操作入口并明确提示未登录，点击引导可跳转至登录页。登录由用户主动进入统一登录页并确认平台隐私保护指引后完成，后端自动复用已有微信账号或创建普通账号；扫码进入独立确认页确认或取消网页登录。登录后可用紧凑列表只读查看本人简历、以智能一页图片阅读详情，并在“我的”维护可选头像与昵称或退出登录。 |
 | Backend | `apps/backend` | FastAPI、JWT/Redis 鉴权、简历与 JD API、MinIO 图片接口、SQLAlchemy 模型和 Alembic 迁移 |
 | Pi Agent service | `apps/pi-service` | 独立无头 Node 服务；运行 Pi Agent loop，并仅通过受控 HTTP 工具调用 FastAPI |
 | Infrastructure | `deploy` | MySQL、Redis、MinIO 本地依赖和 Dev/Production Jenkins、Compose 拓扑 |

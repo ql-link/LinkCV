@@ -141,9 +141,12 @@
 }
 
 .loading-list {
+  flex: 1;
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 16rpx;
+  padding: 80rpx 0;
 }
 
 .skeleton-row {
@@ -190,47 +193,50 @@
 }
 
 .state-card {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 400rpx;
-  padding: 48rpx 44rpx;
+  min-height: 480rpx;
+  margin: auto 0;
+  padding: 56rpx 44rpx;
   border: 1rpx solid var(--ui-border);
-  border-radius: 18rpx;
+  border-radius: 24rpx;
   background: var(--ui-surface);
+  box-shadow: 0 4rpx 20rpx -4rpx rgba(15, 23, 42, 0.04);
   box-sizing: border-box;
   text-align: center;
 }
 
 .state-title {
   color: var(--ui-foreground);
-  font-size: 30rpx;
+  font-size: 32rpx;
   font-weight: 600;
 }
 
 .state-copy {
-  max-width: 480rpx;
-  margin-top: 12rpx;
+  max-width: 520rpx;
+  margin-top: 14rpx;
   color: var(--ui-text-muted);
-  font-size: 23rpx;
+  font-size: 24rpx;
   line-height: 1.7;
 }
 
 .state-action {
-  width: 320rpx;
-  height: 84rpx;
+  width: 340rpx;
+  height: 88rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 32rpx 0 0;
+  margin: 36rpx 0 0;
   padding: 0 28rpx;
-  border-radius: 16rpx;
+  border-radius: 18rpx;
   background: var(--ui-accent);
   color: #fff;
-  font-size: 26rpx;
+  font-size: 27rpx;
   font-weight: 600;
-  line-height: 84rpx;
+  line-height: 88rpx;
   box-sizing: border-box;
   touch-action: manipulation;
 }

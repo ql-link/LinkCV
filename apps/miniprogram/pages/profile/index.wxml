@@ -1,54 +1,108 @@
-<view class="page" style="padding-top: calc({{statusBarHeight}}px + 32rpx)">
+<view class="page" style="padding-top: calc({{statusBarHeight}}px + 24rpx)">
+  <!-- 顶部轻柔渐变背景 -->
+  <view class="header-ambient-glow"></view>
+
+  <!-- 顶部品牌字标 -->
   <view class="topbar">
     <view class="ui-brand">
       <image class="ui-brand-wordmark" src="/assets/linkresume-wordmark.png" mode="aspectFit" aria-label="LinkResume"></image>
     </view>
   </view>
+
   <view class="content">
-    <text class="page-title">我的</text>
-    <view class="context-note" wx:if="{{!guest}}">
-      <text class="context-icon">▤</text>
-      <text class="context-text">头像与昵称仅在小程序内展示，可随时修改</text>
+    <!-- 用户个人头部：自然通透的开放式无框排布 -->
+    <view class="user-profile-header">
+      <!-- 头像区域 -->
+      <view class="avatar-box">
+        <!-- 访客态头像 -->
+        <view class="avatar-round guest-avatar" hover-class="avatar-hover" bindtap="goLogin" wx:if="{{guest}}">
+          <view class="avatar-silhouette-head"></view>
+          <view class="avatar-silhouette-body"></view>
+        </view>
+        <!-- 已登录态头像 -->
+        <button class="avatar-round user-avatar-button" open-type="chooseAvatar" bindchooseavatar="handleChooseAvatar" hover-class="avatar-hover" disabled="{{saving}}" wx:else>
+          <image class="avatar-img" wx:if="{{localAvatarPath}}" src="{{localAvatarPath}}" mode="aspectFill"></image>
+          <view class="avatar-text" wx:else>{{nickname ? nickname[0] : '客'}}</view>
+          <view class="avatar-edit-tag">✎</view>
+        </button>
+      </view>
+
+      <!-- 用户昵称与状态 -->
+      <view class="profile-info" bindtap="{{guest ? 'goLogin' : ''}}">
+        <view class="name-line">
+          <text class="user-name" wx:if="{{guest}}">点击登录 / 注册</text>
+          <text class="user-name" wx:else>{{nickname || '微信用户'}}</text>
+          <view class="status-pill {{guest ? 'is-guest' : 'is-active'}}">
+            <text class="status-dot"></text>
+            <text>{{guest ? '未登录' : '微信已绑定'}}</text>
+          </view>
+        </view>
+        <view class="hint-line">
+          <text class="hint-text" wx:if="{{guest}}">登录后管理个人资料并同步简历 ›</text>
+          <text class="hint-text" wx:else>点击头像或输入框可修改资料</text>
+        </view>
+      </view>
     </view>
 
+    <!-- 加载中提示 -->
     <view class="loading-block" wx:if="{{loading && !guest}}">
       <view class="spinner"></view>
       <text class="loading-text">正在加载资料…</text>
     </view>
 
-    <view class="guest-card" wx:elif="{{guest}}">
-      <text class="guest-title">登录后管理你的资料</text>
-      <text class="guest-copy">登录后可编辑头像和昵称，并查看与你账号关联的简历。</text>
-      <button class="guest-action" hover-class="guest-action-pressed" bindtap="goLogin">微信登录</button>
-    </view>
+    <!-- 设置与操作区域 -->
+    <view class="profile-body" wx:else>
+      <!-- 通透式列表行（去除外层大方框，仅保留优雅细分隔线） -->
+      <view class="settings-list">
+        <!-- 昵称设置行 -->
+        <view class="setting-row" bindtap="{{guest ? 'goLogin' : ''}}">
+          <text class="setting-label">昵称</text>
+          <view class="setting-action" wx:if="{{guest}}">
+            <text class="placeholder-text">暂未登录，点击去登录</text>
+            <text class="arrow-icon">›</text>
+          </view>
+          <view class="setting-action is-input" wx:else>
+            <input
+              class="nickname-input"
+              type="nickname"
+              value="{{nickname}}"
+              placeholder="点击输入微信昵称"
+              placeholder-class="input-placeholder"
+              bindinput="handleNicknameInput"
+            />
+          </view>
+        </view>
 
-    <view wx:else>
-      <view class="avatar-wrap">
-        <button class="avatar-button" open-type="chooseAvatar" bindchooseavatar="handleChooseAvatar" hover-class="avatar-button-pressed" disabled="{{saving}}">
-          <image class="avatar-image" wx:if="{{localAvatarPath}}" src="{{localAvatarPath}}" mode="aspectFill"></image>
-          <view class="avatar-placeholder" wx:else>{{nickname ? nickname[0] : '客'}}</view>
-        </button>
-        <text class="avatar-hint">点击头像更换，可选微信头像或相册图片</text>
-      </view>
+        <view class="setting-divider"></view>
 
-      <view class="field-card">
-        <text class="field-label">昵称</text>
-        <view class="field-row">
-          <input
-            class="field-input"
-            type="nickname"
-            value="{{nickname}}"
-            placeholder="点击输入，可一键使用微信昵称"
-            placeholder-class="field-placeholder"
-            bindinput="handleNicknameInput"
-          />
+        <!-- 账号绑定状态行 -->
+        <view class="setting-row" bindtap="{{guest ? 'goLogin' : ''}}">
+          <text class="setting-label">微信账号</text>
+          <view class="setting-action">
+            <text class="status-val {{guest ? 'is-muted' : 'is-success'}}">{{guest ? '未登录' : '已授权绑定'}}</text>
+            <text class="arrow-icon" wx:if="{{guest}}">›</text>
+          </view>
         </view>
       </view>
 
-      <text class="form-message" wx:if="{{message}}">{{message}}</text>
+      <text class="form-message" wx:if="{{message && !guest}}">{{message}}</text>
 
-      <button class="save-button" hover-class="save-button-pressed" bindtap="handleSave" disabled="{{saving || loading}}">{{saving ? '正在保存…' : '保存修改'}}</button>
-      <button class="logout-button" hover-class="logout-button-pressed" bindtap="handleLogout" disabled="{{saving || loggingOut}}">{{loggingOut ? '正在退出…' : '退出登录'}}</button>
+      <!-- 底部操作按钮 -->
+      <view class="btn-group">
+        <block wx:if="{{guest}}">
+          <button class="btn-primary" hover-class="btn-primary-hover" bindtap="goLogin">
+            <text>微信登录 / 注册</text>
+          </button>
+        </block>
+        <block wx:else>
+          <button class="btn-primary" hover-class="btn-primary-hover" bindtap="handleSave" disabled="{{saving || loading}}">
+            <text>{{saving ? '正在保存…' : '保存修改'}}</text>
+          </button>
+          <button class="btn-secondary" hover-class="btn-secondary-hover" bindtap="handleLogout" disabled="{{saving || loggingOut}}">
+            <text>{{loggingOut ? '正在退出…' : '退出登录'}}</text>
+          </button>
+        </block>
+      </view>
     </view>
   </view>
 </view>
