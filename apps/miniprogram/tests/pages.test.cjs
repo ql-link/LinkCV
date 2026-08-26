@@ -82,6 +82,14 @@ test("resume detail downloads, embeds and commits the selected preview version",
     page.data.resumeId = "resume-1";
     await Promise.all([page.retryLoad(), page.retryLoad()]);
 
+    page.zoomIn();
+    assert.equal(page.data.scaleValue, 1.5);
+    page.zoomOut();
+    assert.equal(page.data.scaleValue, 1);
+    page.zoomIn();
+    page.resetZoom();
+    assert.equal(page.data.scaleValue, 1);
+
     page.handleImagePreview();
 
     await page.handlePreviewError();

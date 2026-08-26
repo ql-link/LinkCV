@@ -3,7 +3,14 @@ const cache = require("../../services/resumePreviewCache");
 const resumes = require("../../services/resumes");
 
 Page({
-  data: { loading: true, progress: 0, error: "", resumeId: "", previewPath: "" },
+  data: {
+    loading: true,
+    progress: 0,
+    error: "",
+    resumeId: "",
+    previewPath: "",
+    scaleValue: 1,
+  },
 
   onLoad(options) {
     const id = decodeURIComponent(options.id || "");
@@ -83,6 +90,20 @@ Page({
     } finally {
       this.recoveringPreview = false;
     }
+  },
+
+  zoomIn() {
+    const next = Math.min(4, Number(((this.data.scaleValue || 1) + 0.5).toFixed(1)));
+    this.setData({ scaleValue: next });
+  },
+
+  zoomOut() {
+    const next = Math.max(1, Number(((this.data.scaleValue || 1) - 0.5).toFixed(1)));
+    this.setData({ scaleValue: next });
+  },
+
+  resetZoom() {
+    this.setData({ scaleValue: 1 });
   },
 
   handleImagePreview() {

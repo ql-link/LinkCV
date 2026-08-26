@@ -10,21 +10,48 @@
   <button class="ui-secondary-button state-action" hover-class="ui-secondary-button-pressed" bindtap="backToResumes">返回简历列表</button>
 </view>
 <view class="preview-document" wx:else>
-  <!-- 顶部缩放查阅提示胶囊 -->
-  <view class="preview-tip-pill" bindtap="handleImagePreview">
-    <text class="tip-icon">🔍</text>
-    <text class="tip-text">点击图片可全屏双指放大、拖动查阅</text>
+  <!-- 顶部缩放与操作工具条 -->
+  <view class="preview-toolbar">
+    <view class="toolbar-hint">
+      <text class="hint-icon">🔍</text>
+      <text class="hint-txt">区域内支持双指缩放与自由拖拽</text>
+    </view>
+    <view class="toolbar-controls">
+      <view class="tool-btn" hover-class="tool-btn-hover" bindtap="zoomOut" role="button" aria-label="缩小">
+        <text class="tool-btn-symbol">−</text>
+      </view>
+      <view class="tool-btn tool-btn-reset" hover-class="tool-btn-hover" bindtap="resetZoom" role="button" aria-label="还原">
+        <text class="tool-btn-txt">100%</text>
+      </view>
+      <view class="tool-btn" hover-class="tool-btn-hover" bindtap="zoomIn" role="button" aria-label="放大">
+        <text class="tool-btn-symbol">+</text>
+      </view>
+    </view>
   </view>
 
-  <!-- 简历纸张展示区 -->
-  <view class="preview-paper" hover-class="preview-paper-pressed" bindtap="handleImagePreview">
-    <image
-      class="resume-preview-image"
-      src="{{previewPath}}"
-      mode="widthFix"
-      show-menu-by-longpress="{{true}}"
-      binderror="handlePreviewError"
-    />
-  </view>
-  <text class="preview-footnote">只读预览 · 编辑请前往 LinkResume 网页端</text>
+  <!-- 专门的图片展示与交互区域（直接在当前页面缩放、拖拽） -->
+  <movable-area class="preview-viewport">
+    <movable-view
+      class="preview-movable-sheet"
+      direction="all"
+      scale="{{true}}"
+      scale-min="1"
+      scale-max="4"
+      scale-value="{{scaleValue}}"
+      inertia="{{true}}"
+      out-of-bounds="{{true}}"
+    >
+      <view class="preview-paper">
+        <image
+          class="resume-preview-image"
+          src="{{previewPath}}"
+          mode="widthFix"
+          show-menu-by-longpress="{{true}}"
+          binderror="handlePreviewError"
+        />
+      </view>
+    </movable-view>
+  </movable-area>
+
+  <text class="preview-footnote">只读查阅 · 编辑请前往 LinkResume 网页端</text>
 </view>

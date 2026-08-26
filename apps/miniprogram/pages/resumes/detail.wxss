@@ -1,8 +1,10 @@
 .page {
   min-height: 100vh;
-  padding: 24rpx 32rpx calc(48rpx + env(safe-area-inset-bottom));
+  padding: 16rpx 24rpx calc(24rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
-  background: var(--ui-background);
+  background: #f6f8fa;
+  display: flex;
+  flex-direction: column;
 }
 
 .preview-state {
@@ -61,47 +63,110 @@
 }
 
 .preview-document {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
+  width: 100%;
 }
 
-.preview-tip-pill {
-  display: inline-flex;
+/* 顶部操作工具条 */
+.preview-toolbar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14rpx;
+  padding: 0 4rpx;
+  box-sizing: border-box;
+}
+
+.toolbar-hint {
+  display: flex;
   align-items: center;
   gap: 8rpx;
-  margin-bottom: 24rpx;
-  padding: 10rpx 24rpx;
-  border-radius: 999rpx;
-  background: #ffffff;
-  border: 1rpx solid rgba(15, 23, 42, 0.06);
-  box-shadow: 0 4rpx 16rpx -2rpx rgba(15, 23, 42, 0.04);
 }
 
-.tip-icon {
-  font-size: 24rpx;
+.hint-icon {
+  font-size: 22rpx;
 }
 
-.tip-text {
+.hint-txt {
   font-size: 22rpx;
   color: #64748b;
   font-weight: 500;
 }
 
+.toolbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.tool-btn {
+  height: 52rpx;
+  min-width: 52rpx;
+  padding: 0 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14rpx;
+  background: #ffffff;
+  border: 1rpx solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 2rpx 8rpx rgba(15, 23, 42, 0.04);
+  box-sizing: border-box;
+  touch-action: manipulation;
+  transition: all 0.15s ease;
+}
+
+.tool-btn-hover {
+  background: #f1f5f9;
+  transform: scale(0.95);
+}
+
+.tool-btn-symbol {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1;
+}
+
+.tool-btn-txt {
+  font-size: 20rpx;
+  font-weight: 600;
+  color: #475569;
+  line-height: 1;
+}
+
+/* 专用图片可交互视口区域 */
+.preview-viewport {
+  width: 100%;
+  height: calc(100vh - 160rpx - env(safe-area-inset-bottom));
+  overflow: hidden;
+  border-radius: 28rpx;
+  background: #e2e8f0;
+  border: 1rpx solid rgba(15, 23, 42, 0.06);
+  position: relative;
+  box-sizing: border-box;
+}
+
+.preview-movable-sheet {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 12rpx;
+}
+
 .preview-paper {
   width: 100%;
   overflow: hidden;
-  border-radius: 24rpx;
-  background: var(--ui-surface);
+  border-radius: 20rpx;
+  background: #ffffff;
   border: 1rpx solid rgba(15, 23, 42, 0.06);
-  box-shadow: 0 12rpx 40rpx -8rpx rgba(15, 23, 42, 0.12), 0 2rpx 8rpx rgba(15, 23, 42, 0.04);
-  touch-action: manipulation;
-  transition: transform 0.15s ease;
-}
-
-.preview-paper-pressed {
-  transform: scale(0.99);
-  opacity: 0.96;
+  box-shadow: 0 10rpx 32rpx -6rpx rgba(15, 23, 42, 0.12), 0 2rpx 8rpx rgba(15, 23, 42, 0.04);
 }
 
 .resume-preview-image {
@@ -110,8 +175,8 @@
 }
 
 .preview-footnote {
-  margin-top: 32rpx;
+  margin-top: 14rpx;
   color: #94a3b8;
-  font-size: 22rpx;
+  font-size: 20rpx;
   letter-spacing: 0.2rpx;
 }
