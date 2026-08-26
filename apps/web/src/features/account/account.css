@@ -629,6 +629,184 @@ body:has(.account-avatar-preview-dialog) [data-slot="dialog-overlay"] {
   gap: var(--ui-space-2);
 }
 
+.account-profile-panel {
+  margin-top: var(--ui-space-5);
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-sm);
+}
+
+.account-profile-panel-header {
+  padding: var(--ui-space-4) var(--ui-space-5);
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.account-profile-panel-header h2 {
+  margin: 0;
+  font-size: var(--ui-text-lg);
+  font-weight: 600;
+}
+
+.account-profile-panel-header p {
+  margin: var(--ui-space-1) 0 0;
+  color: var(--ui-muted-foreground);
+  font-size: var(--ui-text-sm);
+}
+
+.account-profile-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-5);
+  padding: var(--ui-space-5);
+}
+
+.account-profile-panel-empty {
+  margin: 0;
+  padding: var(--ui-space-5);
+  color: var(--ui-muted-foreground);
+  font-size: var(--ui-text-sm);
+}
+
+.account-profile-group {
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+.account-profile-group legend {
+  padding: 0;
+  margin-bottom: var(--ui-space-3);
+  font-size: var(--ui-text-sm);
+  font-weight: 600;
+  color: var(--ui-foreground);
+}
+
+.account-profile-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: var(--ui-space-3) var(--ui-space-4);
+  align-items: end;
+}
+
+.account-profile-salary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: var(--ui-space-3) var(--ui-space-4);
+  margin-top: var(--ui-space-3);
+}
+
+.account-profile-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-1);
+  min-width: 0;
+}
+
+.account-profile-field-label {
+  font-size: var(--ui-text-xs);
+  font-weight: 500;
+  color: var(--ui-muted-foreground);
+}
+
+.account-profile-tag-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-1);
+  margin-top: var(--ui-space-3);
+  min-width: 0;
+}
+
+.account-profile-pill-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-2);
+}
+
+.account-profile-salary-toggle {
+  margin-top: var(--ui-space-3);
+}
+
+.account-profile-tag-input {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-space-1);
+  min-height: 2.5rem;
+  padding: var(--ui-space-1) var(--ui-space-2);
+  border: 1px solid var(--ui-input);
+  border-radius: var(--ui-radius-xs);
+  background: var(--ui-surface);
+}
+
+.account-profile-tag-input:focus-within {
+  border-color: var(--ui-ring);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-ring) 35%, transparent);
+}
+
+.account-profile-tag-list {
+  display: contents;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.account-profile-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-space-1);
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ui-accent) 14%, var(--ui-surface));
+  color: var(--ui-foreground);
+  font-size: var(--ui-text-xs);
+}
+
+.account-profile-tag-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ui-muted-foreground);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.account-profile-tag-remove:hover {
+  color: var(--ui-destructive);
+}
+
+.account-profile-tag-input-field {
+  flex: 1 1 8rem;
+  min-width: 0;
+  padding: 0.25rem 0;
+  border: none;
+  background: transparent;
+  color: var(--ui-foreground);
+  font-size: var(--ui-text-sm);
+}
+
+.account-profile-tag-input-field:focus {
+  outline: none;
+}
+
+.account-profile-panel-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-space-3);
+  padding: var(--ui-space-4) var(--ui-space-5);
+  border-top: 1px solid var(--ui-border);
+}
+
 @media (max-width: 62rem) {
   .account-overview-grid {
     grid-template-columns: 1fr;
