@@ -52,22 +52,22 @@
 }
 .interview-view-tabs a:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 1px; }
 
-.interview-demo-notice {
+.interview-error-notice {
   display: flex;
   width: min(720px, calc(100% - 60px));
   align-items: center;
   gap: 9px;
   margin: 0 30px 12px;
-  border: 1px solid color-mix(in srgb, var(--ui-accent) 22%, var(--ui-border));
+  border: 1px solid color-mix(in srgb, var(--ui-destructive) 34%, var(--ui-border));
   border-radius: var(--ui-radius-md);
-  background: var(--ui-accent-subtle);
+  background: var(--ui-destructive-subtle);
   padding: 10px 12px;
   color: var(--ui-text-secondary);
   font-size: 12px;
 }
 
-.interview-demo-notice svg { width: 15px; color: var(--ui-accent); }
-.interview-demo-notice button { margin-left: auto; border: 0; background: transparent; color: var(--ui-accent); cursor: pointer; }
+.interview-error-notice svg { width: 15px; flex: 0 0 auto; color: var(--ui-destructive); }
+.interview-error-notice button { margin-left: auto; border: 0; background: transparent; color: var(--ui-destructive); cursor: pointer; }
 
 .interview-surface {
   min-width: 0;
@@ -514,6 +514,9 @@
   background: color-mix(in srgb, var(--ui-warning-subtle) 46%, var(--ui-surface));
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-warning) 12%, transparent);
 }
+.progress-column.is-valid-drop-target:not(.is-drop-target) {
+  border-color: color-mix(in srgb, var(--ui-warning) 34%, var(--ui-border));
+}
 .progress-column-heading { display: flex; min-height: 29px; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px 6px; }
 .progress-column-heading h3 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 12px; font-weight: 650; }
 .progress-column-heading h3 span { display: grid; min-width: 17px; height: 17px; place-items: center; border-radius: var(--ui-radius-full); background: var(--ui-surface-muted); color: var(--ui-text-muted); font-size: 9px; font-variant-numeric: tabular-nums; }
@@ -525,7 +528,10 @@
 .progress-column-cards { display: grid; min-height: 0; flex: 1; align-content: start; gap: 8px; }
 .progress-card { position: relative; display: grid; min-width: 0; margin: 0; border: 1px solid var(--ui-border); border-radius: 10px; background: var(--ui-surface); padding: 11px; transition: border-color 180ms var(--ui-ease-press), box-shadow 180ms var(--ui-ease-press), transform 180ms var(--ui-ease-press), opacity 180ms var(--ui-ease-press); }
 .progress-card:hover { border-color: var(--ui-border-strong); box-shadow: var(--ui-shadow-xs); }
+.progress-card.is-draggable { cursor: grab; }
+.progress-card.is-draggable:active { cursor: grabbing; }
 .progress-card.is-dragging { opacity: .72; transform: translateY(-3px) scale(1.01); box-shadow: var(--ui-shadow-sm); }
+.progress-card.is-advancing { opacity: .6; }
 .progress-card-main-row { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto auto; align-items: start; gap: 6px; }
 .progress-card-open { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px; border: 0; background: transparent; padding: 0; color: inherit; text-align: left; cursor: pointer; }
 .progress-card-open.is-static { cursor: grab; }
@@ -548,7 +554,6 @@
 .stage-badge-offer { background: var(--ui-success-subtle); color: var(--ui-success); }
 .stage-badge-muted { background: var(--ui-surface-muted); color: var(--ui-text-muted); }
 .progress-column .pipeline-empty { flex: 1; margin: 28px 0 0; }
-.career-demo-label { color: var(--ui-text-muted); font-size: 9px; }
 .career-application-list { min-width: 760px; overflow-x: auto; }
 .career-application-list > div { display: grid; min-height: 52px; grid-template-columns: 1.5fr .75fr .8fr 1fr auto; align-items: center; gap: 12px; border-top: 1px solid var(--ui-border); padding: 8px 14px; color: var(--ui-text-secondary); font-size: 11px; }
 .career-application-list > div:first-child { min-height: 38px; border-top: 0; background: var(--ui-surface-subtle); color: var(--ui-text-muted); font-size: 10px; }
@@ -648,7 +653,7 @@
 @media (max-width: 640px) {
   .interview-view-tabs { padding: 0; }
   .interview-view-tabs a { min-height: 40px; padding-inline: 11px; }
-  .interview-demo-notice { width: calc(100% - 32px); margin: 0 16px 12px; }
+  .interview-error-notice { width: calc(100% - 32px); margin: 0 16px 12px; }
   .interview-records-layout { padding: 0 16px; }
   .career-card-action { min-height: 40px; }
   .career-applications-layout { padding: 14px 16px 30px; }
