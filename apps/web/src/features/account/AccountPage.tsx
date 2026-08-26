@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Camera, ChevronRight, LogOut, MessageCircle, Pencil, UserRound } from "lucide-react";
 
 import {
@@ -31,6 +31,7 @@ import {
   readAvatarImage,
   type AvatarCropDraft,
 } from "./avatarCrop";
+import { UserProfilePanel } from "./UserProfilePanel";
 
 const MAX_AVATAR_BYTES = 10 * 1024 * 1024;
 const MAX_NICKNAME_LENGTH = 50;
@@ -526,6 +527,8 @@ export function AccountPage() {
               </div>
             </section>
           </div>
+
+          <UserProfilePanel initialProfile={profile.profile ?? null} />
 
           {displayAvatar && (
             <Dialog open={avatarPreviewOpen} onOpenChange={setAvatarPreviewOpen}>

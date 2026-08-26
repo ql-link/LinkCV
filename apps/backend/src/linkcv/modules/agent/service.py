@@ -20,6 +20,7 @@ from linkcv.modules.agent.models import (
 )
 from linkcv.modules.agent.schemas import (
     AgentMessageRecord,
+    AgentContextSnapshot,
     AgentSessionRecord,
     ProposalRecord,
     ResumeTargetLocator,
@@ -39,6 +40,23 @@ from linkcv.modules.resumes.models import Resume
 def session_record(
     session: AgentSession, messages: list[AgentMessage] | None = None
 ) -> AgentSessionRecord:
+    def message_contexts(item: AgentMessage) -> list[AgentContextSnapshot] | None:
+        if item.message_type != "text" or not isinstance(item.metadata_json, dict):
+            return None
+        raw = item.metadata_json.get("contexts")
+        if not isinstance(raw, list):
+            return None
+        contexts: list[AgentContextSnapshot] = []
+        for value in raw:
+            try:
+                contexts.append(AgentContextSnapshot.model_validate(value))
+            except Exception:
+                # A malformed historical metadata blob must not make the whole
+                # conversation unreadable.  It is never treated as an active
+                # authorization grant.
+                continue
+        return contexts or None
+
     return AgentSessionRecord(
         id=session.public_id,
         resume_id=str(session.resume_id) if session.resume_id is not None else None,
@@ -54,10 +72,9 @@ def session_record(
                 message_type=item.message_type,
                 content=item.content,
                 clarification=(
-                    item.metadata_json
-                    if item.message_type == "clarification"
-                    else None
+                    item.metadata_json if item.message_type == "clarification" else None
                 ),
+                contexts=message_contexts(item),
                 created_at=item.created_at,
             )
             for item in (messages or [])
@@ -145,12 +162,39 @@ def create_run(
     idempotency_key: str,
     timeout_seconds: float,
     reply_to_sequence_no: int | None = None,
+    context_snapshots: list[AgentContextSnapshot] | None = None,
 ) -> tuple[AgentRun, bool]:
+    normalized_content = content.strip()
+    if not normalized_content:
+        raise ApiError(400, "INVALID_AGENT_MESSAGE")
+    context_snapshots = context_snapshots or []
+    context_resume_ids = {
+        item.resume_id for item in context_snapshots if item.resume_id is not None
+    }
+    target_resume_ids = {
+        item.resume_id
+        for item in context_snapshots
+        if item.type in {"resume", "resume_version"} and item.resume_id is not None
+    }
+    if len(target_resume_ids) > 1:
+        raise ApiError(409, "AGENT_SESSION_RESUME_MISMATCH")
+
     # Serialize run creation for the whole account so opening multiple sessions
     # cannot bypass the concurrency guard and multiply model cost. The
     # idempotency lookup intentionally happens after this lock to close the race
     # between two simultaneous retries with the same key.
     db.execute(select(User.id).where(User.id == session.user_id).with_for_update())
+    locked_session = db.scalar(
+        select(AgentSession)
+        .where(
+            AgentSession.id == session.id,
+            AgentSession.user_id == session.user_id,
+        )
+        .with_for_update()
+    )
+    if locked_session is None:
+        raise ApiError(404, "AGENT_SESSION_NOT_FOUND")
+    session = locked_session
     existing = db.scalar(
         select(AgentRun).where(
             AgentRun.session_id == session.id,
@@ -174,6 +218,22 @@ def create_run(
             or latest_message.message_type != "clarification"
         ):
             raise ApiError(409, "AGENT_CLARIFICATION_STALE")
+    target_resume_id = next(iter(target_resume_ids), None)
+    expected_resume_id = (
+        str(session.resume_id) if session.resume_id is not None else target_resume_id
+    )
+    if expected_resume_id is not None and any(
+        resume_id != expected_resume_id for resume_id in context_resume_ids
+    ):
+        raise ApiError(409, "AGENT_SESSION_RESUME_MISMATCH")
+    if target_resume_id is not None:
+        if session.resume_id is not None and str(session.resume_id) != target_resume_id:
+            raise ApiError(409, "AGENT_SESSION_RESUME_MISMATCH")
+        if session.resume_id is None:
+            # Context resolution already checked ownership and held the source
+            # row where possible.  The session binding and user message are
+            # committed below together with the run.
+            session.resume_id = int(target_resume_id)
     running = db.scalars(
         select(AgentRun)
         .join(AgentSession, AgentSession.id == AgentRun.session_id)
@@ -223,11 +283,21 @@ def create_run(
             run_id=run.id,
             sequence_no=sequence_no,
             role="user",
-            content=content.strip(),
+            content=normalized_content,
+            metadata_json=(
+                {
+                    "version": 1,
+                    "contexts": [
+                        item.model_dump(mode="json") for item in context_snapshots
+                    ],
+                }
+                if context_snapshots
+                else None
+            ),
         )
     )
     if sequence_no == 1 and session.title == "新对话":
-        title_source = " ".join(content.split())
+        title_source = " ".join(normalized_content.split())
         session.title = title_source[:24] + ("…" if len(title_source) > 24 else "")
     session.last_message_at = now
     db.commit()

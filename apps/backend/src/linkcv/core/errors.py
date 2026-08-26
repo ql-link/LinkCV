@@ -51,6 +51,14 @@ def install_error_handlers(app: FastAPI) -> None:
             request.state.error_code = code
             return JSONResponse(status_code=400, content={"error": code})
         if (
+            request.method == "PUT"
+            and request.url.path.rstrip("/") == "/api/account/user-profile"
+        ):
+            request.state.error_code = "INVALID_USER_PROFILE"
+            return JSONResponse(
+                status_code=400, content={"error": "INVALID_USER_PROFILE"}
+            )
+        if (
             request.url.path.startswith(
                 (
                     "/api/job-applications",
