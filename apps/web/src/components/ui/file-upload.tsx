@@ -12,11 +12,13 @@ type FileUploadProps = {
   accept: string;
   inputLabel: string;
   supportingText: string;
-  onFileSelect: (file: File | undefined) => void;
+  onFileSelect?: (file: File | undefined) => void;
+  onFilesSelect?: (files: File[]) => void;
   browseLabel?: string;
   className?: string;
   disabled?: boolean;
   file?: File | null;
+  multiple?: boolean;
   name?: string;
   replaceLabel?: string;
 };
@@ -26,10 +28,12 @@ export const FileUpload = forwardRef<FileUploadHandle, FileUploadProps>(function
   inputLabel,
   supportingText,
   onFileSelect,
+  onFilesSelect,
   browseLabel = "浏览文件",
   className,
   disabled = false,
   file = null,
+  multiple = false,
   name = "import-file",
   replaceLabel = "重新选择",
 }, forwardedRef) {
@@ -46,9 +50,15 @@ export const FileUpload = forwardRef<FileUploadHandle, FileUploadProps>(function
     open,
   }));
 
-  const selectFile = (selected: File | undefined) => {
+  const selectFiles = (selectedFiles: FileList | File[] | null | undefined) => {
     setDragActive(false);
-    onFileSelect(selected);
+    const files = selectedFiles ? Array.from(selectedFiles) : [];
+    if (multiple || onFilesSelect) {
+      if (onFilesSelect) onFilesSelect(files);
+      else onFileSelect?.(files[0]);
+      return;
+    }
+    onFileSelect?.(files[0]);
   };
 
   return (
@@ -69,12 +79,12 @@ export const FileUpload = forwardRef<FileUploadHandle, FileUploadProps>(function
         }}
         onDrop={(event) => {
           event.preventDefault();
-          if (!disabled) selectFile(event.dataTransfer.files?.[0]);
+          if (!disabled) selectFiles(event.dataTransfer.files);
         }}
       >
         <span className="file-upload-icon" aria-hidden="true"><FileUp /></span>
         <span className="file-upload-copy">
-          <strong>{file ? "点击重新选择或拖放文件替换" : "点击上传或拖放文件"}</strong>
+          <strong>{file ? "点击重新选择或拖放文件替换" : multiple ? "点击上传或拖放多个文件" : "点击上传或拖放文件"}</strong>
           <small>{supportingText}</small>
           <span className="file-upload-browse"><FileUp aria-hidden="true" />{file ? replaceLabel : browseLabel}</span>
         </span>
@@ -86,12 +96,15 @@ export const FileUpload = forwardRef<FileUploadHandle, FileUploadProps>(function
         name={name}
         aria-label={inputLabel}
         accept={accept}
+        multiple={multiple}
         disabled={disabled}
         tabIndex={-1}
         onChange={(event) => {
-          const selected = event.currentTarget.files?.[0];
+          const selected = event.currentTarget.files
+            ? Array.from(event.currentTarget.files)
+            : [];
           event.currentTarget.value = "";
-          selectFile(selected);
+          selectFiles(selected);
         }}
       />
     </div>

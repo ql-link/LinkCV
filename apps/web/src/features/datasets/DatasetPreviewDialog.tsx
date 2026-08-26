@@ -34,12 +34,15 @@ export function DatasetPreviewDialog({
   onClose,
 }: {
   dataset: DatasetRecord;
-  returnFocusTo: HTMLButtonElement | null;
+  returnFocusTo: HTMLElement | null;
   onClose: () => void;
 }) {
   const [open, setOpen] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
   const [state, setState] = useState<PreviewState>({ status: "loading" });
+  const displayName = dataset.file_name.toLowerCase().endsWith(`.${dataset.file_format.toLowerCase()}`)
+    ? dataset.file_name.slice(0, -(dataset.file_format.length + 1))
+    : dataset.file_name;
 
   useEffect(() => {
     let cancelled = false;
@@ -73,9 +76,9 @@ export function DatasetPreviewDialog({
         }}
       >
         <DialogHeader className="dataset-preview-header">
-          <DialogTitle title={dataset.file_name}>{dataset.file_name}</DialogTitle>
+          <DialogTitle title={displayName}>{displayName}</DialogTitle>
           <DialogDescription>
-            {dataset.file_format.toUpperCase()} · 解析结果
+            解析结果
           </DialogDescription>
         </DialogHeader>
 

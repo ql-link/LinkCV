@@ -171,6 +171,7 @@ class DatasetParseProcessor:
         started: float,
     ) -> None:
         converted_object_name = f"users/{user_id}/datasets/converted/{parse_task_id}.md"
+        persistence_failed = False
         try:
             self._storage.upload(
                 converted_object_name,
@@ -183,6 +184,7 @@ class DatasetParseProcessor:
                 extra={"parse_task_id": parse_task_id},
                 exc_info=True,
             )
+            persistence_failed = True
             converted_object_name = None
         try:
             with self._session_factory() as db:
@@ -198,8 +200,10 @@ class DatasetParseProcessor:
                 if task is None or task.parse_status != "processing":
                     return
                 task.converted_object_name = converted_object_name
-                task.parse_status = "succeeded"
-                task.failure_reason = None
+                task.parse_status = "failed" if persistence_failed else "succeeded"
+                task.failure_reason = (
+                    "service_unavailable" if persistence_failed else None
+                )
                 task.parse_duration_ms = min(
                     max(0, round((monotonic() - started) * 1000)),
                     2**32 - 1,

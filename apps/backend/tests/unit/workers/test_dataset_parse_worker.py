@@ -158,7 +158,7 @@ def test_dataset_worker_maps_conversion_failures(code: str, reason: str) -> None
         assert task.failure_reason == reason
 
 
-def test_converted_storage_failure_is_best_effort() -> None:
+def test_converted_storage_failure_is_retryable_parse_failure() -> None:
     app, storage, processor, task_id = build_processor()
     storage.fail_upload = True
 
@@ -167,7 +167,8 @@ def test_converted_storage_failure_is_best_effort() -> None:
     with app.state.session_factory() as db:
         task = db.get(DocumentParseTask, task_id)
         assert task is not None
-        assert task.parse_status == "succeeded"
+        assert task.parse_status == "failed"
+        assert task.failure_reason == "service_unavailable"
         assert task.converted_object_name is None
 
 
