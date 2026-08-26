@@ -1,4 +1,5 @@
 export const loadAccountPage = () => import("./features/account/AccountPage");
+export const loadAssistantPage = () => import("./features/assistant/AssistantPage");
 export const loadDatasetsPage = () => import("./features/datasets/DatasetsPage");
 export const loadHomePage = () => import("./features/home/HomePage");
 export const loadInterviewCenterPage = () => import("./features/interviews/InterviewCenterPage");
@@ -7,6 +8,7 @@ export const loadResumeTemplatesPage = () => import("./features/templates/Resume
 
 const workspacePageLoaders: Record<string, () => Promise<unknown>> = {
   "/account": loadAccountPage,
+  "/assistant": loadAssistantPage,
   "/career": loadJobCenterPage,
   "/career/applications": loadInterviewCenterPage,
   "/career/jobs": loadJobCenterPage,

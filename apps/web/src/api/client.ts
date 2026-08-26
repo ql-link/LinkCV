@@ -155,17 +155,27 @@ export type AgentMessage = {
   message_type?: "text" | "clarification";
   content: string;
   clarification?: AgentClarification | null;
+  /**
+   * References are intentionally lightweight snapshots.  The API keeps this
+   * field optional so messages created by the editor before the assistant
+   * workspace was introduced remain readable.
+   */
+  contexts?: AgentContextSnapshot[] | null;
   created_at: string;
+};
+
+export type AgentClarificationQuestion = {
+  id: string;
+  header: string;
+  question: string;
+  allow_custom?: boolean;
+  options: Array<{ id: string; label: string; description?: string | null }>;
 };
 
 export type AgentClarification = {
   version: 1;
-  questions: Array<{
-    id: string;
-    header: string;
-    question: string;
-    options: Array<{ id: string; label: string; description?: string | null }>;
-  }>;
+  allow_custom?: boolean;
+  questions: AgentClarificationQuestion[];
 };
 
 export type AgentSelectionContext = {
@@ -174,6 +184,32 @@ export type AgentSelectionContext = {
   to: number;
   selected_text: string;
   selected_text_hash: string;
+};
+
+export type AgentContextType =
+  | "resume"
+  | "resume_version"
+  | "job"
+  | "application"
+  | "interview";
+
+export type AgentContextRef = {
+  type: AgentContextType;
+  id: string;
+  version_id?: string | null;
+  version?: string | null;
+};
+
+export type AgentContextSnapshot = AgentContextRef & {
+  resume_id?: string | null;
+  label: string;
+  description?: string | null;
+  updated_at?: string | null;
+};
+
+export type AgentContextListResponse = {
+  contexts?: AgentContextSnapshot[];
+  groups?: Array<{ type: AgentContextType; items: AgentContextSnapshot[] }>;
 };
 
 export type AgentSession = {
@@ -214,6 +250,13 @@ export type AgentProposal = {
 
 export type AgentStreamEvent =
   | { type: "run.started"; runId: string }
+  | {
+      type: "run.phase";
+      runId: string;
+      phase?: string;
+      label?: string;
+      referencedContextCount?: number;
+    }
   | { type: "assistant.delta"; runId: string; delta: string }
   | { type: "clarification.requested"; runId: string; clarification: AgentClarification }
   | { type: "tool.started" | "tool.completed"; runId: string; tool: string; callKey: string }
@@ -961,7 +1004,13 @@ async function requestResumePdf(
 
 async function streamAgentMessage(
   sessionId: string,
-  payload: { content: string; idempotency_key: string; selection_context?: AgentSelectionContext; reply_to_sequence_no?: number },
+  payload: {
+    content: string;
+    idempotency_key: string;
+    selection_context?: AgentSelectionContext;
+    contexts?: AgentContextRef[];
+    reply_to_sequence_no?: number;
+  },
   signal: AbortSignal,
   onEvent: (event: AgentStreamEvent) => void,
   retryAuth = true,
@@ -995,7 +1044,7 @@ async function streamAgentMessage(
   let terminalReceived = false;
   const terminalEvents = new Set(["run.completed", "run.failed", "run.cancelled"]);
   const allowedEvents = new Set([
-    "run.started", "assistant.delta", "clarification.requested", "tool.started", "tool.completed",
+    "run.started", "run.phase", "assistant.delta", "clarification.requested", "tool.started", "tool.completed",
     "proposal.created", ...terminalEvents,
   ]);
   while (true) {
@@ -1104,6 +1153,19 @@ export const api = {
     request<{ sessions: AgentSession[] }>(
       `/api/agent/sessions${resumeId ? `?resume_id=${encodeURIComponent(resumeId)}` : ""}`,
     ),
+  getAgentReadiness: () => request<{ ready: boolean }>("/api/agent/readiness"),
+  listAgentContexts: (options: {
+    type?: AgentContextType;
+    search?: string;
+    limit?: number;
+  } = {}) => {
+    const params = new URLSearchParams();
+    if (options.type) params.set("type", options.type);
+    if (options.search?.trim()) params.set("q", options.search.trim());
+    if (options.limit !== undefined) params.set("limit", String(options.limit));
+    const query = params.toString();
+    return request<AgentContextListResponse>(`/api/agent/contexts${query ? `?${query}` : ""}`);
+  },
   listAgentProposals: (resumeId: string, sessionId?: string) =>
     request<{ proposals: AgentProposal[] }>(
       `/api/agent/proposals?resume_id=${encodeURIComponent(resumeId)}${sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : ""}`,
@@ -1112,10 +1174,13 @@ export const api = {
     request<{ session: AgentSession }>(
       `/api/agent/sessions/${encodeURIComponent(sessionId)}`,
     ),
-  createAgentSession: (resumeId: string) =>
+  createAgentSession: (resumeId?: string | null, title?: string) =>
     request<{ session: AgentSession }>("/api/agent/sessions", {
       method: "POST",
-      body: { resume_id: resumeId },
+      body: {
+        ...(resumeId ? { resume_id: resumeId } : {}),
+        ...(title ? { title } : {}),
+      },
     }),
   streamAgentMessage,
   cancelAgentRun: (runId: string) =>

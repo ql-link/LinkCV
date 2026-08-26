@@ -3,6 +3,7 @@ import { configureHttpDispatcher } from "../../../third_party/pi/packages/coding
 
 import { bearerToken, tokensEqual } from "./auth.js";
 import { loadConfig } from "./config.js";
+import { validateContextMaterials } from "./context.js";
 import { executeAgentProbe, executeAgentRun } from "./runtime/agent.js";
 import { createLinkCVClient } from "./tools/linkcv-client.js";
 
@@ -29,6 +30,7 @@ async function readJson(request) {
 function writeEvent(response, type, payload) {
   response.write(`event: ${type}\ndata: ${JSON.stringify(payload)}\n\n`);
 }
+
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
@@ -94,6 +96,15 @@ const server = createServer(async (request, response) => {
     } catch {
       return json(response, 400, { error: "INVALID_AGENT_RUN" });
     }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return json(response, 400, { error: "INVALID_AGENT_RUN" });
+    }
+    let contextMaterials;
+    try {
+      contextMaterials = validateContextMaterials(payload.contextMaterials);
+    } catch {
+      return json(response, 400, { error: "INVALID_AGENT_RUN" });
+    }
     if (
       typeof payload.runId !== "string" ||
       typeof payload.content !== "string" ||
@@ -139,6 +150,7 @@ const server = createServer(async (request, response) => {
         content: payload.content.trim(),
         history: payload.history ?? [],
         selectionContext: payload.selectionContext ?? null,
+        contextMaterials,
         emit: (type, data) => writeEvent(response, type, data),
         signal: controller.signal,
       });

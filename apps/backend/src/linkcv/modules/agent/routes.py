@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -18,6 +18,7 @@ from linkcv.modules.agent.pi_client import (
     stream_pi_run,
 )
 from linkcv.modules.agent.schemas import (
+    AgentContextListResponse,
     AgentReadinessResponse,
     MessageCreateRequest,
     ProposalListResponse,
@@ -27,6 +28,7 @@ from linkcv.modules.agent.schemas import (
     SessionListResponse,
     SessionResponse,
 )
+from linkcv.modules.agent.context_service import list_contexts, resolve_contexts
 from linkcv.modules.agent.service import (
     confirm_proposal,
     create_run,
@@ -48,6 +50,26 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 async def get_agent_readiness(request: Request) -> AgentReadinessResponse:
     await check_pi_readiness(request.app)
     return AgentReadinessResponse(ready=True)
+
+
+@router.get("/contexts", response_model=AgentContextListResponse)
+def list_agent_contexts(
+    type: str | None = Query(default=None),
+    q: str | None = Query(default=None, max_length=200),
+    search: str | None = Query(default=None, max_length=200),
+    limit: int = Query(default=50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AgentContextListResponse:
+    return AgentContextListResponse(
+        contexts=list_contexts(
+            db,
+            user_id=user.id,
+            context_type=type,
+            query=q or search,
+            limit=limit,
+        )
+    )
 
 
 @router.get("/proposals", response_model=ProposalListResponse)
@@ -143,6 +165,21 @@ def send_agent_message(
     session = get_owned_session(db, session_id, user.id)
     if session.status != "active":
         raise ApiError(409, "AGENT_SESSION_ARCHIVED")
+    # Idempotent retries must replay the original run even if one of the
+    # referenced records has since changed or been removed.  The session was
+    # already resolved through the authenticated owner, and create_run keeps
+    # the locked second lookup for the concurrent-create race.
+    existing_run = db.scalar(
+        select(AgentRun).where(
+            AgentRun.session_id == session.id,
+            AgentRun.idempotency_key == payload.idempotency_key,
+        )
+    )
+    resolved_contexts = (
+        resolve_contexts(db, user_id=user.id, refs=payload.contexts)
+        if existing_run is None
+        else None
+    )
     run, created = create_run(
         db,
         session=session,
@@ -150,6 +187,7 @@ def send_agent_message(
         idempotency_key=payload.idempotency_key,
         timeout_seconds=request.app.state.settings.agent_run_timeout_seconds,
         reply_to_sequence_no=payload.reply_to_sequence_no,
+        context_snapshots=resolved_contexts.snapshots if resolved_contexts else None,
     )
     if not created:
 
@@ -168,6 +206,11 @@ def send_agent_message(
             run.public_id,
             payload.content.strip(),
             payload.selection_context,
+            (
+                resolved_contexts.materials
+                if payload.contexts is not None and resolved_contexts is not None
+                else None
+            ),
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
