@@ -68,6 +68,47 @@ export function buildProfileEnvironment(options) {
   };
 }
 
+import { networkInterfaces } from "node:os";
+import { writeFileSync } from "node:fs";
+
+export function detectLocalLanIp() {
+  const interfaces = networkInterfaces();
+  const candidates = [];
+  for (const [name, addrs] of Object.entries(interfaces)) {
+    if (!addrs) continue;
+    for (const addr of addrs) {
+      if (addr.family === "IPv4" && !addr.internal) {
+        const isLan = addr.address.startsWith("192.168.")
+          || addr.address.startsWith("10.")
+          || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(addr.address);
+        candidates.push({ name, address: addr.address, isLan });
+      }
+    }
+  }
+  const preferred = candidates.find((c) => c.isLan) || candidates[0];
+  return preferred ? preferred.address : "127.0.0.1";
+}
+
+export function syncMiniprogramLocalConfig(cwd) {
+  const lanIp = detectLocalLanIp();
+  const miniprogramConfigDir = resolve(cwd, "apps/miniprogram/config");
+  if (existsSync(miniprogramConfigDir)) {
+    const targetFile = resolve(miniprogramConfigDir, "local.json");
+    const content = JSON.stringify(
+      {
+        apiBaseUrl: `http://${lanIp}:8000`,
+        detectedLanIp: lanIp,
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    ) + "\n";
+    writeFileSync(targetFile, content, "utf8");
+    return { targetFile, lanIp };
+  }
+  return null;
+}
+
 export function serviceScriptForProfile(profile) {
   return basename(profile) === ".env.development"
     ? "dev:development-services"
@@ -92,6 +133,11 @@ function run() {
   const secretState = existsSync(runtime.files.secret) ? "已加载" : "不存在";
   console.log(`基础配置：${runtime.files.base}`);
   console.log(`共享私密覆盖：${runtime.files.secret}（${secretState}）`);
+
+  const miniprogramSync = syncMiniprogramLocalConfig(process.cwd());
+  if (miniprogramSync) {
+    console.log(`小程序联调：已自动配置局域网地址 ${miniprogramSync.lanIp}:8000 -> ${miniprogramSync.targetFile}`);
+  }
 
   const child = spawn("npm", ["run", serviceScriptForProfile(profile)], {
     cwd: process.cwd(),

@@ -1,5 +1,16 @@
 const runtimeConfig = require("./runtime");
 
+function readLocalConfig() {
+  if (typeof process !== "undefined" && process.env && (process.env.NODE_ENV === "test" || process.env.npm_lifecycle_event === "test")) {
+    return null;
+  }
+  try {
+    return require("./local.json");
+  } catch {
+    return null;
+  }
+}
+
 function resolveApiBaseUrl() {
   return resolveBaseUrl({
     extConfigKey: "apiBaseUrl",
@@ -23,13 +34,17 @@ function resolveBaseUrl({ extConfigKey, developmentStorageKey, developmentDefaul
   const envVersion = account && account.miniProgram
     ? account.miniProgram.envVersion
     : "develop";
+  const localConfig = envVersion === "develop" ? readLocalConfig() : null;
+  const localOverride = localConfig && typeof localConfig[extConfigKey] === "string"
+    ? localConfig[extConfigKey]
+    : "";
   const developmentOverride = envVersion === "develop"
     && typeof wx !== "undefined"
     && wx.getStorageSync
-    ? wx.getStorageSync(developmentStorageKey)
+    ? (wx.getStorageSync(developmentStorageKey) || localOverride)
     : "";
   const defaultApiBaseUrl = envVersion === "develop"
-    ? developmentDefault
+    ? (localOverride || developmentDefault)
     : productionDefault;
   const configured = (
     (typeof developmentOverride === "string" ? developmentOverride : "")
