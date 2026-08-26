@@ -51,12 +51,13 @@ const privacySetting = async () => ({
   privacyContractName: "《LinkResume 隐私保护指引》",
 });
 
-test("app starts on resumes and exposes only resumes and profile tabs", () => {
+test("app starts on resumes and exposes resumes, career and profile tabs", () => {
   assert.equal(appConfig.pages[0], "pages/resumes/index");
   assert.equal(resumesPageConfig.disableScroll, true);
   assert.equal(resumesPageConfig.enablePullDownRefresh, false);
   assert.deepEqual(appConfig.tabBar.list, [
     { pagePath: "pages/resumes/index", text: "简历" },
+    { pagePath: "pages/career/index", text: "求职" },
     { pagePath: "pages/profile/index", text: "我的" },
   ]);
   assert.equal(appConfig.pages.includes("pages/home/index"), false);
@@ -642,4 +643,137 @@ test("demo resume contact details stay visibly fictional and the disclaimer rema
   assert.match(demoDetailScript, /phone: "138 XXXX XXXX"/);
   assert.match(demoDetailTemplate, /示例简历 · 内容为虚构信息/);
   assert.match(demoDetailTemplate, /以上姓名、联系方式与经历均为虚构，仅用于示例浏览。/);
+});
+
+test("career tab shows guest state and directs to login when unauthenticated", async () => {
+  const navigations = [];
+  await withPage("../pages/career/index", {
+    "../services/auth": {
+      hasSession: () => false,
+    },
+    "../services/career": {
+      getOverview: async () => { throw new Error("overview must not be called in guest mode"); },
+      listSessions: async () => { throw new Error("sessions must not be called in guest mode"); },
+      listApplications: async () => { throw new Error("applications must not be called in guest mode"); },
+    },
+  }, {
+    navigateTo: ({ url }) => navigations.push(url),
+  }, async (page) => {
+    page.onLoad();
+    page.onShow();
+    assert.equal(page.data.guest, true);
+    assert.equal(page.data.loading, false);
+    page.goLogin();
+  });
+
+  assert.deepEqual(navigations, ["/pages/login/index?returnTo=%2Fpages%2Fcareer%2Findex"]);
+});
+
+test("career tab loads overview, sessions and applications when authenticated", async () => {
+  const completedSessions = [];
+  const advancedApps = [];
+  let clipboardData = null;
+
+  await withPage("../pages/career/index", {
+    "../services/auth": {
+      hasSession: () => true,
+    },
+    "../services/career": {
+      getOverview: async () => ({
+        metrics: {
+          weekly_interviews: 2,
+          upcoming_interviews: 1,
+          completed_interviews: 3,
+          written_offers: 1,
+        },
+      }),
+      listSessions: async () => ({
+        items: [
+          {
+            id: "session-1",
+            company_name: "字节跳动",
+            job_title: "前端架构师",
+            stage_label: "技术终面",
+            start_at: "2026-08-28T06:00:00Z",
+            end_at: "2026-08-28T07:00:00Z",
+            mode: "video",
+            meeting_url: "https://meeting.tencent.com/dm/999888",
+            status: "scheduled",
+            lock_version: 1,
+          },
+        ],
+      }),
+      listApplications: async () => ({
+        items: [
+          {
+            id: "app-1",
+            company_name_snapshot: "腾讯",
+            job_title_snapshot: "高级前端",
+            current_stage_type: "interview",
+            current_round_no: 2,
+            current_stage_label: "技术二面",
+            status: "active",
+            applied_at: "2026-08-20T00:00:00Z",
+            lock_version: 2,
+          },
+        ],
+      }),
+      completeSession: async (id, payload) => {
+        completedSessions.push({ id, payload });
+      },
+      advanceApplication: async (id, payload) => {
+        advancedApps.push({ id, payload });
+      },
+    },
+  }, {
+    setClipboardData: ({ data, success }) => {
+      clipboardData = data;
+      if (success) success();
+    },
+    showModal: ({ success }) => success({ confirm: true }),
+    showActionSheet: ({ success }) => success({ tapIndex: 0 }),
+    showLoading: () => {},
+    hideLoading: () => {},
+    showToast: () => {},
+  }, async (page) => {
+    page.onLoad();
+    await page.loadPage();
+
+    assert.equal(page.data.guest, false);
+    assert.equal(page.data.overview.upcoming_interviews, 1);
+    assert.equal(page.data.sessions.length, 1);
+    assert.equal(page.data.sessions[0].company_name, "字节跳动");
+    assert.equal(page.data.applications.length, 1);
+    assert.equal(page.data.applications[0].company_name_snapshot, "腾讯");
+
+    // 测试复制会议链接
+    page.copyMeetingInfo({ currentTarget: { dataset: { info: "https://meeting.tencent.com/dm/999888" } } });
+    assert.equal(clipboardData, "https://meeting.tencent.com/dm/999888");
+
+    // 测试切换子 Tab
+    page.switchSubTab({ currentTarget: { dataset: { tab: "applications" } } });
+    assert.equal(page.data.activeTab, "applications");
+
+    // 测试标记完成面试
+    await page.handleCompleteSession({
+      currentTarget: {
+        dataset: {
+          session: page.data.sessions[0],
+        },
+      },
+    });
+    assert.equal(completedSessions.length, 1);
+    assert.equal(completedSessions[0].id, "session-1");
+
+    // 测试推进投递阶段
+    await page.handleAdvanceApplication({
+      currentTarget: {
+        dataset: {
+          application: page.data.applications[0],
+        },
+      },
+    });
+    assert.equal(advancedApps.length, 1);
+    assert.equal(advancedApps[0].id, "app-1");
+  });
 });

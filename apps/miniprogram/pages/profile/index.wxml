@@ -1,12 +1,13 @@
-<view class="page" style="padding-top: {{statusBarHeight}}px">
-  <!-- 顶部轻柔渐变背景 -->
-  <view class="header-ambient-glow"></view>
-
-  <!-- 顶部品牌字标 -->
-  <view class="brand-row">
-    <view class="ui-brand">
-      <image class="ui-brand-wordmark" src="/assets/linkresume-wordmark.png" mode="aspectFit" aria-label="LinkResume"></image>
+<view class="page" style="padding-top: {{statusBarHeight + 52}}px">
+  <!-- 顶部固定导航栏（固定在屏幕左上角，带羽化遮盖底色） -->
+  <view class="fixed-top-navbar" style="padding-top: {{statusBarHeight}}px">
+    <view class="navbar-content">
+      <view class="ui-brand">
+        <image class="ui-brand-wordmark" src="/assets/linkresume-wordmark.png" mode="aspectFit" aria-label="LinkResume"></image>
+      </view>
     </view>
+    <!-- 底部柔和羽化遮罩 -->
+    <view class="navbar-bottom-mask"></view>
   </view>
 
   <view class="content">

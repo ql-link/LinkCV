@@ -1,6 +1,7 @@
 {
   "pages": [
     "pages/resumes/index",
+    "pages/career/index",
     "pages/login/index",
     "pages/confirm/index",
     "pages/profile/index",
@@ -11,7 +12,8 @@
     "navigationBarBackgroundColor": "#f4f6f8",
     "navigationBarTextStyle": "black",
     "backgroundColor": "#f4f6f8",
-    "backgroundTextStyle": "dark"
+    "backgroundTextStyle": "dark",
+    "allowsBounceVertical": "NO"
   },
   "tabBar": {
     "custom": true,
@@ -23,6 +25,10 @@
       {
         "pagePath": "pages/resumes/index",
         "text": "简历"
+      },
+      {
+        "pagePath": "pages/career/index",
+        "text": "求职"
       },
       {
         "pagePath": "pages/profile/index",

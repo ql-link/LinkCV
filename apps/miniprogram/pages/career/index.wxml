@@ -1,0 +1,498 @@
+<view class="page" style="padding-top: {{statusBarHeight + 52}}px">
+  <!-- 顶部固定导航栏（固定在屏幕左上角，带羽化遮盖底色） -->
+  <view class="fixed-top-navbar" style="padding-top: {{statusBarHeight}}px">
+    <view class="navbar-content">
+      <view class="ui-brand">
+        <image class="ui-brand-wordmark" src="/assets/linkresume-wordmark.png" mode="aspectFit" aria-label="LinkResume"></image>
+      </view>
+    </view>
+    <!-- 底部柔和羽化遮罩（向上滚动内容接近顶栏时平滑隐没遮盖） -->
+    <view class="navbar-bottom-mask"></view>
+  </view>
+
+  <!-- 游客引导态（与简历、我的页面统一） -->
+  <view class="state-card" wx:if="{{guest}}">
+    <text class="state-title">开启你的求职与面试看板</text>
+    <text class="state-copy">随时随地查阅投递动态、管理面试日程与会议号，多端实时同步进展。</text>
+    <button class="state-action" hover-class="state-action-pressed" bindtap="goLogin">微信一键登录</button>
+  </view>
+
+  <!-- 加载中骨架 -->
+  <view class="loading-wrap" wx:elif="{{loading}}">
+    <view class="skeleton-metric-bar"></view>
+    <view class="skeleton-card" wx:for="{{[1, 2]}}" wx:key="*this"></view>
+  </view>
+
+  <!-- 错误状态 -->
+  <view class="state-card" wx:elif="{{error}}">
+    <text class="state-title">求职数据未能加载</text>
+    <text class="state-copy">{{error}}，请检查网络后重试。</text>
+    <button class="state-ghost" hover-class="state-ghost-pressed" bindtap="loadPage">重新加载</button>
+  </view>
+
+  <!-- 主体登录态内容 -->
+  <view class="content" wx:else>
+    <!-- 1. 顶部三段式互动指标看板（左右横向流式微卡，大图标+清晰信息） -->
+    <view class="overview-segmented-board">
+      <!-- 指标卡 1：投递中 -->
+      <view
+        class="metric-segment-card {{activeTab === 'applications' && (!applicationFilter || applicationFilter === 'all') ? 'is-active' : ''}}"
+        data-tab="applications"
+        data-filter="all"
+        bindtap="switchMetricTab"
+        hover-class="metric-card-hover"
+      >
+        <view class="metric-icon-box">
+          <view class="m-icon icon-send"></view>
+        </view>
+        <view class="metric-info-col">
+          <text class="metric-label">投递中</text>
+          <view class="metric-num-wrap">
+            <text class="metric-number">{{activeApplicationsCount}}</text>
+            <text class="metric-unit">个</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 指标卡 2：待面试 -->
+      <view
+        class="metric-segment-card {{activeTab === 'schedule' ? 'is-active' : ''}}"
+        data-tab="schedule"
+        bindtap="switchMetricTab"
+        hover-class="metric-card-hover"
+      >
+        <view class="metric-icon-box">
+          <view class="m-icon icon-schedule"></view>
+        </view>
+        <view class="metric-info-col">
+          <text class="metric-label">待面试</text>
+          <view class="metric-num-wrap">
+            <text class="metric-number">{{overview.upcoming_interviews}}</text>
+            <text class="metric-unit">场</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 指标卡 3：录用Offer -->
+      <view
+        class="metric-segment-card highlight {{activeTab === 'applications' && applicationFilter === 'offer' ? 'is-active' : ''}}"
+        data-tab="applications"
+        data-filter="offer"
+        bindtap="switchMetricTab"
+        hover-class="metric-card-hover"
+      >
+        <view class="metric-icon-box">
+          <view class="m-icon icon-offer"></view>
+        </view>
+        <view class="metric-info-col">
+          <text class="metric-label">录用Offer</text>
+          <view class="metric-num-wrap">
+            <text class="metric-number">{{overview.written_offers}}</text>
+            <text class="metric-unit">份</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 2. 面试日程视图（点击待面试时展示） -->
+    <view wx:if="{{activeTab === 'schedule'}}" class="tab-pane">
+      <!-- 连续时间表卡片（08:00 - 18:00 连续逐小时网格） -->
+      <view class="schedule-timeline-card">
+        <!-- 头部：左侧大标题，右上角自定义日期选择胶囊与弹窗 -->
+        <view class="timeline-header">
+          <view class="timeline-title-wrap">
+            <text class="timeline-main-title">面试安排表</text>
+            <text class="timeline-sub-title">08:00 - 18:00 全天时段</text>
+          </view>
+
+          <!-- 右上角极简线框日期按钮（强引导线框，去除三角形，单行统一基线与颜色） -->
+          <view class="date-picker-anchor">
+            <view
+              class="date-picker-outline-btn {{showDatePickerPopover ? 'is-open' : ''}}"
+              bindtap="toggleDatePicker"
+              hover-class="date-btn-hover"
+            >
+              <text class="date-btn-txt">{{selectedDateInfo.monthDay}} {{selectedDateInfo.weekDay}}</text>
+            </view>
+
+            <!-- 自定义微型月日历 Popover 气泡弹窗（对齐用户参考图） -->
+            <view wx:if="{{showDatePickerPopover}}" class="custom-calendar-popover" catchtap="true">
+              <!-- 弹窗顶栏：月份与翻月箭头 -->
+              <view class="popover-nav-row">
+                <view class="popover-arrow-btn" bindtap="prevPickerMonth" hover-class="btn-hover">
+                  <text class="pop-arrow">‹</text>
+                </view>
+                <text class="popover-month-title">{{pickerCalendar.monthYearTitle}}</text>
+                <view class="popover-arrow-btn" bindtap="nextPickerMonth" hover-class="btn-hover">
+                  <text class="pop-arrow">›</text>
+                </view>
+              </view>
+
+              <!-- 星期表头：M T W T F S S -->
+              <view class="popover-weekdays-row">
+                <text class="pop-weekday">M</text>
+                <text class="pop-weekday">T</text>
+                <text class="pop-weekday">W</text>
+                <text class="pop-weekday">T</text>
+                <text class="pop-weekday">F</text>
+                <text class="pop-weekday">S</text>
+                <text class="pop-weekday">S</text>
+              </view>
+
+              <!-- 7 列日期网格 -->
+              <view class="popover-days-matrix">
+                <view
+                  wx:for="{{pickerCalendar.days}}"
+                  wx:key="isoDate"
+                  class="pop-day-cell {{item.isCurrentMonth ? 'in-month' : 'out-month'}} {{item.isSelected ? 'is-selected' : ''}} {{item.isToday ? 'is-today' : ''}}"
+                  data-iso="{{item.isoDate}}"
+                  bindtap="selectDateCell"
+                  hover-class="day-cell-hover"
+                >
+                  <view class="pop-day-badge">
+                    <text class="pop-day-num">{{item.dayNumber}}</text>
+                  </view>
+                </view>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <!-- 连续形式每小时时间网格（Continuous Hourly Grid） -->
+        <view class="continuous-hourly-grid">
+          <view
+            class="hourly-cell-row {{item.hasSession ? 'is-occupied' : 'is-free'}}"
+            wx:for="{{hourlySlots}}"
+            wx:key="hour"
+            data-slot="{{item}}"
+            bindtap="onSlotClick"
+            hover-class="cell-hover"
+          >
+            <!-- 左侧时间刻度标尺 -->
+            <view class="hour-scale-col">
+              <text class="hour-num-txt">{{item.time}}</text>
+              <view class="hour-axis-track"></view>
+            </view>
+
+            <!-- 右侧连续小时格子 -->
+            <view class="hour-cell-box">
+              <!-- 有面试安排态 -->
+              <block wx:if="{{item.hasSession}}">
+                <view class="occupied-chip">
+                  <view class="occupied-accent"></view>
+                  <view class="occupied-info">
+                    <view class="occupied-top">
+                      <text class="occupied-company">{{item.session.company_name}}</text>
+                      <text class="occupied-stage">{{item.session.stage_label}}</text>
+                    </view>
+                    <text class="occupied-time">{{item.session.formattedTime}} · {{item.session.modeLabel}}</text>
+                  </view>
+                  <view
+                    class="occupied-copy-btn"
+                    wx:if="{{item.session.meeting_url}}"
+                    catchtap="copyMeetingInfo"
+                    data-info="{{item.session.meeting_url}}"
+                  >
+                    <text>复制会议</text>
+                  </view>
+                </view>
+              </block>
+
+              <!-- 空白时段格子（连续、干净、通透） -->
+              <block wx:else>
+                <view class="free-hour-slot">
+                  <text class="free-slot-hint">{{item.time}} - {{item.end}}</text>
+                </view>
+              </block>
+            </view>
+          </view>
+
+          <!-- 底部 18:00 结束刻度线 -->
+          <view class="hourly-grid-end-row">
+            <view class="hour-scale-col">
+              <text class="hour-num-txt">18:00</text>
+            </view>
+            <view class="hour-cell-box end-line-box"></view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 全局透明点击遮罩（展开日历弹窗时点击外部可快速关闭） -->
+      <view
+        wx:if="{{showDatePickerPopover}}"
+        class="popover-backdrop-mask"
+        bindtap="closeDatePicker"
+      ></view>
+    </view>
+
+    <!-- 4. 投递进展视图（宏观漏斗 + 微观马尔可夫状态机流水线） -->
+    <view wx:elif="{{activeTab === 'applications'}}" class="tab-pane">
+      <!-- 空状态 -->
+      <view wx:if="{{applications.length === 0}}" class="state-card inline-empty">
+        <text class="state-title">暂无投递记录</text>
+        <text class="state-copy">在网页端职位库中投递岗位后，进度将在此实时跟踪。</text>
+      </view>
+
+      <!-- 有数据状态 -->
+      <view wx:else class="list-flow">
+        <!-- 1. 宏观：求职全景统计看板（支持 漏斗图 / 桑基图 自由切换） -->
+        <view class="conversion-funnel-card">
+          <!-- 统计顶栏：标题 + 双模式切换分段器 -->
+          <view class="funnel-header">
+            <view class="funnel-title-row">
+              <view class="funnel-title-group">
+                <text class="funnel-main-title">{{chartViewMode === 'sankey' ? '求职流向桑基图' : '求职全景转化漏斗'}}</text>
+                <text class="funnel-total-badge">共 {{conversionFunnel.total}} 岗位</text>
+              </view>
+
+              <!-- 切换分段胶囊 -->
+              <view class="chart-mode-pill">
+                <view
+                  class="chart-pill-btn {{chartViewMode === 'funnel' ? 'is-active' : ''}}"
+                  data-mode="funnel"
+                  bindtap="switchChartViewMode"
+                >
+                  <text>漏斗图</text>
+                </view>
+                <view
+                  class="chart-pill-btn {{chartViewMode === 'sankey' ? 'is-active' : ''}}"
+                  data-mode="sankey"
+                  bindtap="switchChartViewMode"
+                >
+                  <text>桑基图</text>
+                </view>
+              </view>
+            </view>
+            <text class="funnel-sub-hint">{{chartViewMode === 'sankey' ? '直观展现各应聘阶段的分流走向与最终沉淀' : '点击漏斗阶梯可按招聘阶段精准联动筛选'}}</text>
+          </view>
+
+          <!-- 模式 A: 4 阶梯漏斗轨道 -->
+          <view class="funnel-track-list" wx:if="{{chartViewMode === 'funnel'}}">
+            <!-- 阶梯 1: 简历投递 -->
+            <view
+              class="funnel-step-item step-applied {{applicationFilter === 'all' || applicationFilter === 'applied' ? 'is-active' : ''}}"
+              data-filter="applied"
+              bindtap="setFunnelFilter"
+              hover-class="funnel-hover"
+            >
+              <view class="funnel-bar-wrap">
+                <view class="funnel-bar-fill fill-applied" style="width: 100%;"></view>
+                <view class="funnel-bar-content">
+                  <text class="funnel-step-name">1. 简历投递</text>
+                  <text class="funnel-step-count">{{conversionFunnel.applied.count}} 家</text>
+                </view>
+              </view>
+              <text class="funnel-rate-tag">100%</text>
+            </view>
+
+            <!-- 阶梯 2: 初筛/笔试 -->
+            <view
+              class="funnel-step-item step-screening {{applicationFilter === 'screening' ? 'is-active' : ''}}"
+              data-filter="screening"
+              bindtap="setFunnelFilter"
+              hover-class="funnel-hover"
+            >
+              <view class="funnel-bar-wrap">
+                <view class="funnel-bar-fill fill-screening" style="width: {{conversionFunnel.screening.rate}};"></view>
+                <view class="funnel-bar-content">
+                  <text class="funnel-step-name">2. 初筛 / 笔试</text>
+                  <text class="funnel-step-count">{{conversionFunnel.screening.count}} 家</text>
+                </view>
+              </view>
+              <text class="funnel-rate-tag">{{conversionFunnel.screening.rate}}</text>
+            </view>
+
+            <!-- 阶梯 3: 技术面试 -->
+            <view
+              class="funnel-step-item step-interview {{applicationFilter === 'interview' ? 'is-active' : ''}}"
+              data-filter="interview"
+              bindtap="setFunnelFilter"
+              hover-class="funnel-hover"
+            >
+              <view class="funnel-bar-wrap">
+                <view class="funnel-bar-fill fill-interview" style="width: {{conversionFunnel.interview.rate}};"></view>
+                <view class="funnel-bar-content">
+                  <text class="funnel-step-name">3. 技术面试</text>
+                  <text class="funnel-step-count">{{conversionFunnel.interview.count}} 家</text>
+                </view>
+              </view>
+              <text class="funnel-rate-tag">{{conversionFunnel.interview.rate}}</text>
+            </view>
+
+            <!-- 阶梯 4: 录用Offer -->
+            <view
+              class="funnel-step-item step-offer {{applicationFilter === 'offer' ? 'is-active' : ''}}"
+              data-filter="offer"
+              bindtap="setFunnelFilter"
+              hover-class="funnel-hover"
+            >
+              <view class="funnel-bar-wrap">
+                <view class="funnel-bar-fill fill-offer" style="width: {{conversionFunnel.offer.rate}};"></view>
+                <view class="funnel-bar-content">
+                  <text class="funnel-step-name">4. 录用 Offer</text>
+                  <text class="funnel-step-count">{{conversionFunnel.offer.count}} 份</text>
+                </view>
+              </view>
+              <text class="funnel-rate-tag offer-highlight">{{conversionFunnel.offer.rate}}</text>
+            </view>
+          </view>
+
+          <!-- 模式 B: 纯原生桑基分流全景网格（100% 绝对即时渲染，高质感分流图） -->
+          <view class="sankey-pure-grid" wx:else>
+            <!-- 阶段 1: 投递源头 -->
+            <view class="sankey-stage-col col-start">
+              <view class="sankey-node-pill pill-source">
+                <view class="sankey-pill-indicator bg-dark"></view>
+                <view class="sankey-pill-body">
+                  <text class="pill-label">全部投递</text>
+                  <text class="pill-val">5 家</text>
+                </view>
+              </view>
+            </view>
+
+            <!-- 流动连线 1 -> 2 -->
+            <view class="sankey-stream-connector">
+              <view class="stream-arrow-line"></view>
+            </view>
+
+            <!-- 阶段 2: 初筛/笔试 -->
+            <view class="sankey-stage-col col-screening">
+              <view class="sankey-node-pill pill-blue">
+                <view class="sankey-pill-indicator bg-blue"></view>
+                <view class="sankey-pill-body">
+                  <text class="pill-label">初筛/笔试</text>
+                  <text class="pill-val">4 通过</text>
+                </view>
+              </view>
+              <view class="sankey-node-pill pill-gray">
+                <view class="sankey-pill-indicator bg-gray"></view>
+                <view class="sankey-pill-body">
+                  <text class="pill-label">初筛未过</text>
+                  <text class="pill-val">1 归档</text>
+                </view>
+              </view>
+            </view>
+
+            <!-- 流动连线 2 -> 3 -->
+            <view class="sankey-stream-connector">
+              <view class="stream-arrow-line"></view>
+            </view>
+
+            <!-- 阶段 3: 技术面试 -->
+            <view class="sankey-stage-col col-interview">
+              <view class="sankey-node-pill pill-purple">
+                <view class="sankey-pill-indicator bg-purple"></view>
+                <view class="sankey-pill-body">
+                  <text class="pill-label">技术面试</text>
+                  <text class="pill-val">3 推进</text>
+                </view>
+              </view>
+            </view>
+
+            <!-- 流动连线 3 -> 4 -->
+            <view class="sankey-stream-connector">
+              <view class="stream-arrow-line line-green"></view>
+            </view>
+
+            <!-- 阶段 4: 终态分流 -->
+            <view class="sankey-stage-col col-final">
+              <view class="sankey-node-pill pill-green">
+                <view class="sankey-pill-indicator bg-green"></view>
+                <view class="sankey-pill-body">
+                  <text class="pill-label">录用Offer</text>
+                  <text class="pill-val text-green">1 份</text>
+                </view>
+              </view>
+              <view class="sankey-node-pill pill-ongoing">
+                <view class="sankey-pill-indicator bg-blue"></view>
+                <view class="sankey-pill-body">
+                  <text class="pill-label">流程中</text>
+                  <text class="pill-val">2 家</text>
+                </view>
+              </view>
+              <view class="sankey-node-pill pill-gray">
+                <view class="sankey-pill-indicator bg-gray"></view>
+                <view class="sankey-pill-body">
+                  <text class="pill-label">已结束</text>
+                  <text class="pill-val">2 家</text>
+                </view>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <!-- 2. 职位流水线列表 -->
+        <view
+          wx:for="{{applications}}"
+          wx:key="id"
+          class="application-card {{item.status}}"
+        >
+          <!-- 头部公司与岗位 -->
+          <view class="card-header">
+            <view class="company-block">
+              <text class="company-name">{{item.company_name_snapshot}}</text>
+              <text class="job-title">{{item.job_title_snapshot}}</text>
+            </view>
+            <view class="stage-tag {{item.current_stage_type}}">
+              <text>{{item.stageDisplay}}</text>
+            </view>
+          </view>
+
+          <!-- 微观：马尔可夫状态流 5 步进度轴（Markov Stepper Track） -->
+          <view class="markov-stepper-track">
+            <view
+              wx:for="{{item.pipelineSteps}}"
+              wx:for-item="step"
+              wx:for-index="sIdx"
+              wx:key="key"
+              class="stepper-node-col {{step.isPassed ? 'is-passed' : ''}} {{step.isCurrent ? 'is-current' : ''}} {{step.isFuture ? 'is-future' : ''}}"
+            >
+              <!-- 节点点位 -->
+              <view class="stepper-node-dot">
+                <text class="dot-check" wx:if="{{step.isPassed}}">✓</text>
+                <view class="dot-pulse" wx:elif="{{step.isCurrent}}"></view>
+              </view>
+
+              <!-- 节点名称 -->
+              <text class="stepper-node-label">{{step.label}}</text>
+
+              <!-- 节点连接线 -->
+              <view class="stepper-connector-line" wx:if="{{sIdx < item.pipelineSteps.length - 1}}"></view>
+            </view>
+          </view>
+
+          <!-- 元信息与临近面试提示 -->
+          <view class="card-meta">
+            <view class="meta-line" wx:if="{{item.appliedDate}}">
+              <text class="meta-label">投递时间：</text>
+              <text class="meta-val">{{item.appliedDate}}</text>
+            </view>
+            <view class="next-session-bar" wx:if="{{item.nextSessionFormatted}}">
+              <text class="next-session-text">📌 下场面试：{{item.nextSessionFormatted}}</text>
+            </view>
+          </view>
+
+          <!-- 操作按钮栏 -->
+          <view class="card-footer-actions" wx:if="{{item.status === 'active'}}">
+            <button
+              class="action-btn ghost-action"
+              data-application="{{item}}"
+              bindtap="handleCloseApplication"
+              hover-class="btn-pressed"
+            >
+              结束 / 录用
+            </button>
+            <button
+              class="action-btn primary-action"
+              data-application="{{item}}"
+              bindtap="handleAdvanceApplication"
+              hover-class="btn-pressed"
+            >
+              推进阶段 ›
+            </button>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

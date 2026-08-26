@@ -1,7 +1,6 @@
 {
   "navigationStyle": "custom",
-  "disableScroll": true,
-  "enablePullDownRefresh": false,
+  "enablePullDownRefresh": true,
   "backgroundTextStyle": "dark",
   "allowsBounceVertical": "NO",
   "usingComponents": {}

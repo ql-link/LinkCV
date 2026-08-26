@@ -20,6 +20,14 @@
         </view>
       </view>
 
+      <!-- 求职图标 -->
+      <view class="tab-icon icon-career" wx:elif="{{item.icon === 'career'}}">
+        <view class="case-handle {{selected === index ? 'is-active' : ''}}"></view>
+        <view class="case-body {{selected === index ? 'is-active' : ''}}">
+          <view class="case-lock {{selected === index ? 'is-active' : ''}}"></view>
+        </view>
+      </view>
+
       <!-- 我的图标 -->
       <view class="tab-icon icon-profile" wx:elif="{{item.icon === 'profile'}}">
         <view class="user-avatar-head {{selected === index ? 'is-active' : ''}}"></view>

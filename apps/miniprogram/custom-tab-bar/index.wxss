@@ -9,7 +9,7 @@
   padding-bottom: env(safe-area-inset-bottom);
   border-top: 1rpx solid #e2e8f0;
   box-shadow: 0 -4rpx 20rpx rgba(15, 23, 42, 0.04);
-  z-index: 9999;
+  z-index: 999999;
 }
 
 .tab-bar-item {
@@ -87,6 +87,65 @@
 .doc-line.l3 { width: 70%; }
 
 .doc-line.is-active {
+  background: #ffffff;
+}
+
+/* 求职图标（公文包） */
+.icon-career {
+  width: 44rpx;
+  height: 42rpx;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.case-handle {
+  width: 14rpx;
+  height: 7rpx;
+  border-radius: 5rpx 5rpx 0 0;
+  border: 3rpx solid #64748b;
+  border-bottom: none;
+  box-sizing: border-box;
+  margin-bottom: 2rpx;
+  background: transparent;
+  transition: all 0.2s ease;
+}
+
+.case-handle.is-active {
+  border-color: #0f172a;
+}
+
+.case-body {
+  width: 38rpx;
+  height: 28rpx;
+  border-radius: 6rpx;
+  border: 3.5rpx solid #64748b;
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  transition: all 0.2s ease;
+}
+
+.case-body.is-active {
+  border-color: #0f172a;
+  background: #0f172a;
+  box-shadow: 0 4rpx 12rpx rgba(15, 23, 42, 0.2);
+}
+
+.case-lock {
+  width: 8rpx;
+  height: 6rpx;
+  border-radius: 2rpx;
+  background: #64748b;
+  transition: all 0.2s ease;
+}
+
+.case-lock.is-active {
   background: #ffffff;
 }
 

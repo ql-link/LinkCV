@@ -8,6 +8,11 @@ Component({
         icon: "resume",
       },
       {
+        pagePath: "/pages/career/index",
+        text: "求职",
+        icon: "career",
+      },
+      {
         pagePath: "/pages/profile/index",
         text: "我的",
         icon: "profile",

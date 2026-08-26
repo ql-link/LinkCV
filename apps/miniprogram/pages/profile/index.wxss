@@ -4,7 +4,6 @@
   flex-direction: column;
   padding: 0 32rpx calc(130rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
-  overflow-x: hidden;
   background: #f6f8fa;
   position: relative;
 }
