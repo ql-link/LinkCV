@@ -38,7 +38,9 @@ Page({
       wx.stopPullDownRefresh();
       return;
     }
-    this.loadPage().finally(() => wx.stopPullDownRefresh());
+    return this.loadPage({ silent: true }).finally(() => {
+      wx.stopPullDownRefresh();
+    });
   },
 
   enterGuestMode() {
@@ -96,16 +98,28 @@ Page({
     }
   },
 
-  async loadPage() {
-    this.setData({ loading: true, error: "", guest: false });
+  async loadPage(options = {}) {
+    const isSilent = Boolean(options && options.silent);
+    if (!isSilent) {
+      this.setData({ loading: true, error: "", guest: false });
+    } else {
+      this.setData({ error: "", guest: false });
+    }
     try {
       const user = await auth.ensureSession();
       const records = await resumes.listResumes();
-      const items = records.map((item) => ({
-        ...item,
-        updatedAtLabel: formatUpdatedAt(item.updated_at),
-        previewUrl: "",
-      }));
+      const currentItems = this.data.items || [];
+      const items = records.map((item) => {
+        const existing = currentItems.find((it) => it.id === item.id);
+        const previewUrl = existing && existing.pdf_version_id === item.pdf_version_id
+          ? (existing.previewUrl || "")
+          : "";
+        return {
+          ...item,
+          updatedAtLabel: formatUpdatedAt(item.updated_at),
+          previewUrl,
+        };
+      });
       this.setData({ user, items, loading: false });
       void this.prefetchPreviews(user, items);
     } catch (error) {

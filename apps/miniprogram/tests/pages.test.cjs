@@ -426,6 +426,40 @@ test("resumes page lists resumes and populates preview thumbnail from cache", as
   assert.equal(finalItems[0].previewUrl, "/tmp/cached-preview.png");
 });
 
+test("resumes page handles onPullDownRefresh silently and stops pull down refresh", async () => {
+  let stopped = false;
+  let loadingHistory = [];
+  await withPage("../pages/resumes", {
+    "../services/auth": {
+      hasSession: () => true,
+      ensureSession: async () => ({ id: "u1", nickname: "张三" }),
+    },
+    "../services/resumes": {
+      listResumes: async () => [
+        { id: "r1", title: "前端工程师", updated_at: "2026-08-26T10:00:00Z", pdf_version_id: "v1" },
+      ],
+    },
+    "../services/resumePreviewCache": {
+      getCachedResumePreview: async () => null,
+      resumePreviewPath: () => "/tmp/fallback.png",
+    },
+  }, {
+    stopPullDownRefresh: () => { stopped = true; },
+  }, async (page) => {
+    // first regular load
+    await page.loadPage();
+    page.data.items[0].previewUrl = "/tmp/cached-preview.png";
+
+    // trigger pull down refresh
+    const promise = page.onPullDownRefresh();
+    loadingHistory.push(page.data.loading);
+    await promise;
+  });
+
+  assert.equal(stopped, true);
+  assert.equal(loadingHistory[0], false, "pull down refresh must remain silent without full-page loading flip");
+});
+
 test("profile tab shows a guest state without requesting account data", async () => {
   const navigations = [];
   await withPage("../pages/profile", {
