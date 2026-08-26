@@ -77,7 +77,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0013` 为 `resumes` 增加分享字段：`share_token`（VARCHAR(64)，全局唯一索引）、`share_visibility`（VARCHAR(16)，`private|public`）、`share_expires_at`（可空，UTC 过期时间）和 `share_created_at`。两个 CHECK 约束保证分享字段要么全部为空（未分享）、要么全部非空（已分享），且可见性只允许 `private/public`。分享不单独建表、不落内容快照，公开读取时实时取 `resume_versions` 中 `version_no` 最大的正式版本。
 
-`0018` 新增 `user_dataset` 用户知识库数据集表。`0022` 为每行增加无数据库外键的唯一 `parse_task_id`，解析状态只以 `document_parse_tasks` 为真值源；同一事务创建资料和 `source_type=dataset` 的任务。`POST /api/datasets` 校验并上传源文件、提交两行记录后向既有文档解析队列发布 `DATASET_PARSE_TASK`；发布失败将任务收口为上传失败并返回 `502 DATASET_QUEUE_UNAVAILABLE`。Worker 对 DOCX/PDF 调用 LinkParse，对 Markdown/TXT 本地执行 UTF-8 与换行规范化，结果尽力存入 `users/{uid}/datasets/converted/{task_id}.md`。`GET /api/datasets` 联表按当前用户过滤并返回上传、解析状态和失败分类，不暴露对象键或 SHA-256；`GET /api/datasets/:id/content` 在再次校验资料与任务归属、解析成功状态后读取转换存档并返回 Markdown。转换存档缺失或对象读取失败不会退回源文件。本期不做分片、RAG、常规删除、源文件下载和去重。
+`0018` 新增 `user_dataset` 用户知识库数据集表。`0022` 为每行增加无数据库外键的唯一 `parse_task_id`，解析状态只以 `document_parse_tasks` 为真值源；同一事务创建资料和 `source_type=dataset` 的任务。`POST /api/datasets` 校验并上传源文件、提交两行记录时即把任务收口为 `upload_status=succeeded/parse_status=processing`，再向既有文档解析队列发布 `DATASET_PARSE_TASK`；首次发布失败保留源文件和两行记录，收口为 `parse_status=failed/failure_reason=service_unavailable` 并返回 `502 DATASET_QUEUE_UNAVAILABLE`。Worker 对 DOCX/PDF 调用 LinkParse，对 Markdown/TXT 本地执行 UTF-8 与换行规范化，只有转换 Markdown 成功保存到 `users/{uid}/datasets/converted/{task_id}.md` 后资料才可通过内容接口读取。`GET /api/datasets` 联表按当前用户过滤并返回上传、解析状态和失败分类，不暴露对象键或 SHA-256；`GET /api/datasets/:id/content` 在再次校验资料与任务归属、解析成功状态和转换对象键后读取转换存档并返回 Markdown。`PATCH /api/datasets/:id` 只更新 `user_dataset.file_name` 的显示名称并保留扩展名；`POST /api/datasets/:id/retry` 仅复用仍存在的源对象重发失败任务；`DELETE /api/datasets/:id` 对终态资料清理源/转换对象后在同一事务删除资料和任务，处理中拒绝删除，对象清理失败保留数据库记录。本模块不提供分片、RAG、源文件下载和去重。
 
 ### 微信账号、双端会话与扫码登录
 
@@ -150,6 +150,8 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 - 账号头像：`users/{user_id}/assets/avatar/...`，对象键记录在 `users.avatar_object_key`；旧路径中的已有头像保持兼容。
 - 导入原文件：`users/{user_id}/resume-imports/{operation_id}/...`。
 - 导入转换存档：`users/{user_id}/resume-imports/{operation_id}/converted.md`。
+- 知识库原文件：`users/{user_id}/datasets/...`。
+- 知识库转换存档：`users/{user_id}/datasets/converted/{parse_task_id}.md`。
 - 简历资源：`users/{user_id}/resumes/{resume_id}/assets/...`。
 - 面试素材：`users/{user_id}/interviews/{application_id}/{session_id}/...`。
 

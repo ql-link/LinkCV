@@ -552,6 +552,26 @@ describe("知识库资料 API", () => {
       expect.objectContaining({ method: "GET", credentials: "include" }),
     );
   });
+
+  it("支持资料重命名、解析重试和删除契约", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(200, { id: "42", file_name: "新名称.md" }))
+      .mockResolvedValueOnce(jsonResponse(200, { id: "42", file_name: "新名称.md", parse_status: "processing" }))
+      .mockResolvedValueOnce(jsonResponse(200, { deleted: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.renameDataset("42", "新名称");
+    await api.retryDataset("42");
+    await api.deleteDataset("42");
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/datasets/42");
+    expect(fetchMock.mock.calls[0][1]).toEqual(expect.objectContaining({ method: "PATCH", body: JSON.stringify({ name: "新名称" }) }));
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/datasets/42/retry");
+    expect(fetchMock.mock.calls[1][1]).toEqual(expect.objectContaining({ method: "POST" }));
+    expect(fetchMock.mock.calls[2][0]).toBe("/api/datasets/42");
+    expect(fetchMock.mock.calls[2][1]).toEqual(expect.objectContaining({ method: "DELETE" }));
+  });
 });
 
 describe("API resume share", () => {

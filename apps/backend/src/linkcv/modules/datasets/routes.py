@@ -1,9 +1,10 @@
 import hashlib
+import logging
 from pathlib import PurePath
 from time import monotonic
 
 from fastapi import APIRouter, Depends, File, Request, UploadFile
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from linkcv.core.config import Settings
@@ -19,7 +20,9 @@ from linkcv.core.storage import (
 from linkcv.modules.datasets.models import UserDataset
 from linkcv.modules.datasets.schemas import (
     UserDatasetContentResponse,
+    UserDatasetDeleteResponse,
     UserDatasetListResponse,
+    UserDatasetRenameRequest,
     UserDatasetRecord,
 )
 from linkcv.modules.identity.dependencies import get_current_user, get_settings
@@ -27,6 +30,7 @@ from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
+logger = logging.getLogger(__name__)
 
 SUPPORTED_DATASET_FORMATS = {"docx", "pdf", "md", "txt"}
 
@@ -68,6 +72,115 @@ def safe_dataset_filename(filename: str) -> str:
     ):
         raise ApiError(400, "INVALID_DATASET_FILENAME")
     return safe_filename
+
+
+def dataset_extension(dataset: UserDataset) -> str:
+    suffix = PurePath(dataset.file_name).suffix
+    if suffix and suffix.lower() == f".{dataset.file_format}":
+        return suffix
+    return f".{dataset.file_format}"
+
+
+def safe_dataset_display_filename(name: str, dataset: UserDataset) -> str:
+    display_name = name.strip()
+    extension = dataset_extension(dataset)
+    if display_name.lower().endswith(extension.lower()) and len(display_name) > len(
+        extension
+    ):
+        display_name = display_name[: -len(extension)].rstrip()
+    if (
+        not display_name
+        or "/" in display_name
+        or "\\" in display_name
+        or any(ord(character) < 32 or ord(character) == 127 for character in display_name)
+        or len(f"{display_name}{extension}") > 255
+    ):
+        raise ApiError(400, "INVALID_DATASET_NAME")
+    return f"{display_name}{extension}"
+
+
+def dataset_source_prefix(user_id: int) -> str:
+    return f"users/{user_id}/datasets/"
+
+
+def dataset_converted_prefix(user_id: int) -> str:
+    return f"users/{user_id}/datasets/converted/"
+
+
+def dataset_converted_object_name(user_id: int, task_id: int) -> str:
+    return f"{dataset_converted_prefix(user_id)}{task_id}.md"
+
+
+def validate_dataset_object_keys(
+    dataset: UserDataset,
+    task: DocumentParseTask,
+    user_id: int,
+) -> None:
+    if (
+        dataset.object_name != task.object_name
+        or not dataset.object_name.startswith(dataset_source_prefix(user_id))
+        or task.object_name.startswith(dataset_converted_prefix(user_id))
+    ):
+        raise ApiError(502, "ASSET_DELETE_FAILED")
+    if task.converted_object_name and task.converted_object_name != (
+        dataset_converted_object_name(user_id, task.id)
+    ):
+        raise ApiError(502, "ASSET_DELETE_FAILED")
+
+
+def get_dataset_publisher(request: Request, settings: Settings):
+    publisher = request.app.state.mq_publisher
+    if publisher is not None:
+        return publisher
+    try:
+        publisher = build_mq_publisher(settings)
+    except ValueError as error:
+        raise MQPublishError("dataset queue unavailable") from error
+    request.app.state.mq_publisher = publisher
+    return publisher
+
+
+def mark_dataset_parse_failed(
+    db: Session,
+    task_id: int,
+    *,
+    failure_reason: str,
+) -> None:
+    db.execute(
+        update(DocumentParseTask)
+        .where(
+            DocumentParseTask.id == task_id,
+            DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
+            DocumentParseTask.parse_status == "processing",
+        )
+        .values(
+            parse_status="failed",
+            parse_duration_ms=0,
+            failure_reason=failure_reason,
+        )
+    )
+    db.commit()
+
+
+def load_owned_dataset(
+    db: Session,
+    dataset_id: int,
+    user_id: int,
+):
+    return db.execute(
+        select(UserDataset, DocumentParseTask)
+        .join(
+            DocumentParseTask,
+            DocumentParseTask.id == UserDataset.parse_task_id,
+        )
+        .where(
+            UserDataset.id == dataset_id,
+            UserDataset.user_id == user_id,
+            DocumentParseTask.user_id == user_id,
+            DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
+        )
+        .with_for_update()
+    ).one_or_none()
 
 
 def dataset_record(
@@ -125,7 +238,9 @@ async def upload_dataset(
         file_name=filename,
         file_format=extension,
         object_name=object_name,
-        upload_status="uploading",
+        upload_status="succeeded",
+        upload_duration_ms=upload_duration_ms,
+        parse_status="processing",
     )
     dataset = UserDataset(
         user_id=user.id,
@@ -152,40 +267,15 @@ async def upload_dataset(
     db.refresh(dataset)
     db.refresh(task)
 
-    publisher = request.app.state.mq_publisher
-    if publisher is None:
-        try:
-            publisher = build_mq_publisher(settings)
-        except ValueError as error:
-            publisher = None
-            publish_error = error
-        else:
-            request.app.state.mq_publisher = publisher
-            publish_error = None
-    else:
-        publish_error = None
     try:
-        if publisher is None:
-            raise MQPublishError("dataset queue unavailable") from publish_error
+        publisher = get_dataset_publisher(request, settings)
         await publisher.publish(DatasetParseMessage.create(parse_task_id=task.id))
     except MQPublishError as error:
-        db.execute(
-            update(DocumentParseTask)
-            .where(
-                DocumentParseTask.id == task.id,
-                DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
-                DocumentParseTask.upload_status == "uploading",
-                DocumentParseTask.parse_status.is_(None),
-            )
-            .values(
-                upload_status="failed",
-                upload_duration_ms=upload_duration_ms,
-                parse_status=None,
-                parse_duration_ms=None,
-                failure_reason=None,
-            )
+        mark_dataset_parse_failed(
+            db,
+            task.id,
+            failure_reason="service_unavailable",
         )
-        db.commit()
         raise ApiError(502, "DATASET_QUEUE_UNAVAILABLE") from error
     return dataset_record(dataset, task)
 
@@ -210,6 +300,135 @@ def list_datasets(
     ).all()
     return UserDatasetListResponse(
         datasets=[dataset_record(dataset, task) for dataset, task in rows]
+    )
+
+
+@router.patch("/{dataset_id}", response_model=UserDatasetRecord)
+def rename_dataset(
+    dataset_id: int,
+    payload: UserDatasetRenameRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> UserDatasetRecord:
+    row = load_owned_dataset(db, dataset_id, user.id)
+    if row is None:
+        raise ApiError(404, "DATASET_NOT_FOUND")
+    dataset, task = row
+    dataset.file_name = safe_dataset_display_filename(payload.name, dataset)
+    db.commit()
+    db.refresh(dataset)
+    db.refresh(task)
+    return dataset_record(dataset, task)
+
+
+def source_object_is_owned(
+    dataset: UserDataset,
+    task: DocumentParseTask,
+    user_id: int,
+) -> bool:
+    return (
+        dataset.object_name == task.object_name
+        and task.object_name.startswith(dataset_source_prefix(user_id))
+        and not task.object_name.startswith(dataset_converted_prefix(user_id))
+    )
+
+
+@router.post("/{dataset_id}/retry", response_model=UserDatasetRecord)
+async def retry_dataset(
+    dataset_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+    storage: AssetStorage = Depends(get_storage),
+) -> UserDatasetRecord:
+    row = load_owned_dataset(db, dataset_id, user.id)
+    if row is None:
+        raise ApiError(404, "DATASET_NOT_FOUND")
+    dataset, task = row
+    if task.upload_status != "succeeded" or task.parse_status != "failed":
+        raise ApiError(409, "DATASET_NOT_RETRYABLE")
+    if not source_object_is_owned(dataset, task, user.id):
+        raise ApiError(502, "DATASET_SOURCE_UNAVAILABLE")
+    try:
+        storage.stat(task.object_name)
+    except Exception as error:
+        raise ApiError(502, "DATASET_SOURCE_UNAVAILABLE") from error
+
+    task.parse_status = "processing"
+    task.parse_duration_ms = None
+    task.failure_reason = None
+    db.commit()
+
+    try:
+        publisher = get_dataset_publisher(request, settings)
+        await publisher.publish(DatasetParseMessage.create(parse_task_id=task.id))
+    except MQPublishError as error:
+        mark_dataset_parse_failed(
+            db,
+            task.id,
+            failure_reason="service_unavailable",
+        )
+        raise ApiError(503, "DATASET_QUEUE_UNAVAILABLE") from error
+
+    db.refresh(dataset)
+    db.refresh(task)
+    return dataset_record(dataset, task)
+
+
+@router.delete("/{dataset_id}", response_model=UserDatasetDeleteResponse)
+def delete_dataset(
+    dataset_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    storage: AssetStorage = Depends(get_storage),
+) -> UserDatasetDeleteResponse:
+    row = load_owned_dataset(db, dataset_id, user.id)
+    if row is None:
+        raise ApiError(404, "DATASET_NOT_FOUND")
+    dataset, task = row
+    if task.upload_status == "uploading" or task.parse_status == "processing":
+        raise ApiError(409, "DATASET_IN_PROGRESS")
+    try:
+        validate_dataset_object_keys(dataset, task, user.id)
+        storage.delete(dataset.object_name)
+        # The converted key is deterministic. Clean it even when a previous upload
+        # failed before the task could persist converted_object_name.
+        storage.delete(dataset_converted_object_name(user.id, task.id))
+    except ApiError:
+        db.rollback()
+        raise
+    except Exception as error:
+        db.rollback()
+        logger.warning(
+            "dataset storage cleanup failed",
+            extra={
+                "dataset_id": dataset.id,
+                "error_type": type(error).__name__,
+            },
+        )
+        raise ApiError(502, "ASSET_DELETE_FAILED") from error
+
+    try:
+        dataset_result = db.execute(
+            delete(UserDataset).where(
+                UserDataset.id == dataset.id,
+                UserDataset.user_id == user.id,
+            )
+        )
+        task_result = db.execute(
+            delete(DocumentParseTask).where(
+                DocumentParseTask.id == task.id,
+                DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
+                DocumentParseTask.user_id == user.id,
+            )
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return UserDatasetDeleteResponse(
+        deleted=dataset_result.rowcount == 1 and task_result.rowcount == 1
     )
 
 

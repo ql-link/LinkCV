@@ -171,7 +171,7 @@ RabbitMQ 是默认 Broker，使用固定 `resume.import` routing key；Kafka 兼
 
 ## 知识库资料
 
-`POST /api/datasets` 使用 `multipart/form-data`，字段为 `file`，支持 docx/pdf/md/txt 四种格式（按扩展名判定、大小写不敏感），单文件上限 `DATASET_UPLOAD_MAX_BYTES`（默认 10MB）。上传成功后文件保存到对象存储，元信息与解析任务在同一事务写入，再向共用文档解析队列发布消息并返回：
+`POST /api/datasets` 使用 `multipart/form-data`，字段为 `file`，支持 docx/pdf/md/txt 四种格式（按扩展名判定、大小写不敏感），单文件上限 `DATASET_UPLOAD_MAX_BYTES`（默认 10MB）。上传成功后文件保存到对象存储，元信息与解析任务在同一事务写入；事务提交时任务已收口为 `upload_status=succeeded`、`parse_status=processing`，随后向共用文档解析队列发布消息并返回：
 
 ```json
 {
@@ -179,18 +179,20 @@ RabbitMQ 是默认 Broker，使用固定 `resume.import` routing key；Kafka 兼
   "file_name": "notes.md",
   "file_format": "md",
   "file_size": 12,
-  "upload_status": "uploading",
-  "parse_status": null,
+  "upload_status": "succeeded",
+  "parse_status": "processing",
   "failure_reason": null,
   "created_at": "…"
 }
 ```
 
-`GET /api/datasets` 返回当前登录用户自己的资料记录，按上传时间倒序（`{datasets: [...]}`），并从关联任务返回 `upload_status`、`parse_status`、`failure_reason`。失败分类为 `format_unsupported/content_invalid/size_exceeded/service_unavailable/timeout/quota_exceeded/internal_error`。`GET /api/datasets/:id/content` 只允许资料所有者读取解析成功后保存的 Markdown，返回 `{id, file_name, file_format, markdown}`；资料不存在或越权统一返回 `404 DATASET_NOT_FOUND`，解析尚未成功或转换存档未保存返回 `409 DATASET_CONTENT_UNAVAILABLE`，对象读取、大小或 UTF-8 校验失败返回 `502 DATASET_CONTENT_READ_FAILED`。三个接口都要求登录（未登录返回 `401 UNAUTHORIZED`），响应不包含对象存储路径或 SHA-256。
+`GET /api/datasets` 返回当前登录用户自己的资料记录，按上传时间倒序（`{datasets: [...]}`），并从关联任务返回 `upload_status`、`parse_status`、`failure_reason`。失败分类为 `format_unsupported/content_invalid/size_exceeded/service_unavailable/timeout/quota_exceeded/internal_error`。`GET /api/datasets/:id/content` 只允许资料所有者读取解析成功且已保存 `converted_object_name` 的 Markdown，返回 `{id, file_name, file_format, markdown}`；资料不存在或越权统一返回 `404 DATASET_NOT_FOUND`，解析尚未成功或转换存档未保存返回 `409 DATASET_CONTENT_UNAVAILABLE`，对象读取、大小或 UTF-8 校验失败返回 `502 DATASET_CONTENT_READ_FAILED`。六个接口都要求登录（未登录返回 `401 UNAUTHORIZED`），响应不包含对象存储路径或 SHA-256。
 
 资料源文件 SHA-256 仅作为后端完整性元数据，以固定 64 位十六进制字符串保存；它不进入公开请求或响应契约。
 
-文件名非法返回 `400 INVALID_DATASET_FILENAME`，空文件返回 `400 EMPTY_DATASET_FILE`，不支持格式返回 `400 UNSUPPORTED_DATASET_FORMAT`，超过大小上限返回 `413 DATASET_TOO_LARGE`。对象存储上传失败返回 `502 DATASET_UPLOAD_FAILED` 且不落库；对象已上传但元信息写入失败返回 `500 DATASET_RECORD_FAILED`，已上传对象会被尽力清理；消息发布失败返回 `502 DATASET_QUEUE_UNAVAILABLE`，任务记录收口为上传失败。同一文件允许重复上传并生成新记录（不做去重或幂等）。
+`PATCH /api/datasets/:id` 接受 JSON `{name: string}`，只更新资料显示名称并沿用原始扩展名；`document_parse_tasks.file_name`、源对象键和转换对象键不变。名称为空、过长、含控制字符或路径分隔符返回 `400 INVALID_DATASET_NAME`。`POST /api/datasets/:id/retry` 只允许 `parse_status=failed` 且源对象仍可读取的本人资料，成功返回 `processing`；任务进行中或其他终态返回 `409 DATASET_NOT_RETRYABLE`，源对象不可用返回 `502 DATASET_SOURCE_UNAVAILABLE`，队列不可用返回 `503 DATASET_QUEUE_UNAVAILABLE` 并保留失败状态。`DELETE /api/datasets/:id` 只允许删除本人的终态资料，正在处理返回 `409 DATASET_IN_PROGRESS`；删除前清理源文件和已保存的转换对象，任一对象清理失败返回 `502 ASSET_DELETE_FAILED` 并保留数据库记录，成功后在同一事务删除资料与解析任务。所有新增操作对不存在或越权资料统一返回 `404 DATASET_NOT_FOUND`。
+
+文件名非法返回 `400 INVALID_DATASET_FILENAME`，空文件返回 `400 EMPTY_DATASET_FILE`，不支持格式返回 `400 UNSUPPORTED_DATASET_FORMAT`，超过大小上限返回 `413 DATASET_TOO_LARGE`。对象存储上传失败返回 `502 DATASET_UPLOAD_FAILED` 且不落库；对象已上传但元信息写入失败返回 `500 DATASET_RECORD_FAILED`，已上传对象会被尽力清理；首次消息发布失败返回 `502 DATASET_QUEUE_UNAVAILABLE`，任务保留且收口为 `upload_status=succeeded/parse_status=failed/failure_reason=service_unavailable`。同一文件允许重复上传并生成新记录（不做去重或幂等）。
 
 ## JD 数据模型与管理
 

@@ -1322,6 +1322,19 @@ export const api = {
     });
   },
   listDatasets: () => request<{ datasets: DatasetRecord[] }>("/api/datasets"),
+  renameDataset: (id: string, name: string) =>
+    request<DatasetRecord>(`/api/datasets/${id}`, {
+      method: "PATCH",
+      body: { name },
+    }),
+  retryDataset: (id: string) =>
+    request<DatasetRecord>(`/api/datasets/${id}/retry`, {
+      method: "POST",
+    }),
+  deleteDataset: (id: string) =>
+    request<{ deleted: boolean }>(`/api/datasets/${id}`, {
+      method: "DELETE",
+    }),
   getDatasetContent: (id: string) =>
     request<DatasetContent>(`/api/datasets/${id}/content`),
   listJobDescriptions: (

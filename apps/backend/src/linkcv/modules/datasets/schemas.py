@@ -1,6 +1,16 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class UserDatasetRenameRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(strict=True)
+
+
+class UserDatasetDeleteResponse(BaseModel):
+    deleted: bool
 
 
 class UserDatasetRecord(BaseModel):
