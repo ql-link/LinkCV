@@ -39,12 +39,12 @@
     >
       <!-- 上部画廊 A4 封面拟物视口 -->
       <view class="gallery-thumb-box" aria-hidden="true">
-        <!-- 真实渲染的简历封面图片 -->
+        <!-- 真实渲染的简历封面图片（顶部顶格对齐） -->
         <image
           wx:if="{{item.previewUrl}}"
           class="gallery-real-preview"
           src="{{item.previewUrl}}"
-          mode="aspectFill"
+          mode="widthFix"
         ></image>
         <!-- 资源准备中的优雅 A4 占位纸张 -->
         <view wx:else class="mini-paper">
