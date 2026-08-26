@@ -78,8 +78,8 @@ export function AuthPage(props: {
             </span>
             <h1 className="mt-3 text-3xl font-medium tracking-[-0.04em] sm:text-4xl lg:text-[42px] lg:leading-[1.05] xl:text-[48px]">
               {showPasswordForm
-                ? (isRegister ? "注册 LinkCV" : "登录 LinkCV")
-                : "微信扫码登录 LinkCV"}
+                ? (isRegister ? "注册 LinkResume" : "登录 LinkResume")
+                : "微信扫码登录 LinkResume"}
             </h1>
             <p className="mt-3 text-base leading-snug text-text-secondary sm:text-lg">
               {showPasswordForm
