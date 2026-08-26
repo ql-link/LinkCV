@@ -160,36 +160,12 @@
   line-height: 1;
 }
 
-/* 封面右上角浮动状态胶囊（深色半透明毛玻璃） */
-.gallery-badge {
-  position: absolute;
-  top: 14rpx;
-  right: 14rpx;
-  display: flex;
-  align-items: center;
-  gap: 6rpx;
-  padding: 6rpx 14rpx;
-  border-radius: 999rpx;
-  background: rgba(15, 23, 42, 0.65);
-  backdrop-filter: blur(10px);
-  color: #ffffff;
-  font-size: 18rpx;
-  font-weight: 500;
-  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.15);
-}
-
-.badge-dot {
-  width: 6rpx;
-  height: 6rpx;
-  border-radius: 50%;
-  background: #34d399;
-}
-
-/* 下部卡片信息区（自然延伸自底部） */
+/* 下部卡片信息区（自然延伸自底部，极简纯粹） */
 .gallery-info {
   display: flex;
   flex-direction: column;
-  padding: 20rpx 20rpx 22rpx;
+  gap: 8rpx;
+  padding: 18rpx 20rpx 22rpx;
   background: #ffffff;
 }
 
@@ -204,35 +180,10 @@
   letter-spacing: -0.3rpx;
 }
 
-.gallery-meta-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 12rpx;
-}
-
 .gallery-time {
   color: #64748b;
   font-size: 22rpx;
-}
-
-.gallery-action-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 2rpx;
-  padding: 4rpx 12rpx;
-  border-radius: 999rpx;
-  background: #f1f5f9;
-  color: #334155;
-  font-size: 20rpx;
-  font-weight: 600;
-}
-
-.gallery-arrow {
-  font-size: 22rpx;
-  line-height: 1;
-  color: #64748b;
-  margin-left: 2rpx;
+  line-height: 1.2;
 }
 
 /* 加载骨架屏 */

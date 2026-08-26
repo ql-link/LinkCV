@@ -68,24 +68,12 @@
           <!-- 底部微印章 -->
           <view class="paper-seal">CV</view>
         </view>
-
-        <!-- 封面右上角状态胶囊 -->
-        <view class="gallery-badge">
-          <text class="badge-dot"></text>
-          <text>智能一页</text>
-        </view>
       </view>
 
       <!-- 下部卡片信息区 -->
       <view class="gallery-info">
         <text class="gallery-title">{{item.title}}</text>
-        <view class="gallery-meta-row">
-          <text class="gallery-time">{{item.updatedAtLabel}}</text>
-          <view class="gallery-action-pill">
-            <text>查阅</text>
-            <text class="gallery-arrow">›</text>
-          </view>
-        </view>
+        <text class="gallery-time">{{item.updatedAtLabel}}</text>
       </view>
     </navigator>
   </view>
