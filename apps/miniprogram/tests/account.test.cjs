@@ -2,7 +2,11 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 async function withProfilePage(mockedModules, wxMock, run) {
-  const moduleCaches = Object.entries(mockedModules).map(([modulePath, exports]) => {
+  const mergedModules = {
+    "../services/resumes": { listResumes: async () => [] },
+    ...mockedModules,
+  };
+  const moduleCaches = Object.entries(mergedModules).map(([modulePath, exports]) => {
     const resolved = require.resolve(modulePath);
     const previous = require.cache[resolved];
     require.cache[resolved] = { exports };
@@ -45,18 +49,28 @@ test("profile page loads nickname and downloads existing avatar", async () => {
         return filePath;
       },
     },
+    "../services/resumes": {
+      listResumes: async () => [{ id: "res_1" }, { id: "res_2" }],
+    },
     "../services/auth": { hasSession: () => true },
     "../utils/system": { getStatusBarHeight: () => 20 },
   }, {
     env: { USER_DATA_PATH: "/user-data" },
   }, async (page) => {
     await page.loadProfile();
-    finalState = { nickname: page.data.nickname, avatar: page.data.localAvatarPath };
+    finalState = {
+      nickname: page.data.nickname,
+      avatar: page.data.localAvatarPath,
+      resumeCount: page.data.resumeCount,
+      chatCount: page.data.chatCount,
+    };
   });
 
   assert.deepEqual(downloads, ["/user-data/account-avatar"]);
   assert.equal(finalState.nickname, "张三");
   assert.equal(finalState.avatar, "/user-data/account-avatar");
+  assert.equal(finalState.resumeCount, 2);
+  assert.equal(finalState.chatCount, 0);
 });
 
 test("profile page uploads chosen avatar as data url", async () => {

@@ -35,7 +35,7 @@ Page({
     privacyAuthorizationRequired: false,
     privacyContractName: "《LinkResume 小程序隐私保护指引》",
     returnTo: DEFAULT_RETURN_TARGET,
-    message: "登录后即可在小程序中查看你的简历",
+    message: "让每一次投递更有底气 · 随时随地同步查阅",
   },
 
   onLoad(options) {

@@ -69,10 +69,10 @@
 .preview-paper {
   width: 100%;
   overflow: hidden;
-  border: 1rpx solid var(--ui-border);
-  border-radius: 16rpx;
+  border-radius: 24rpx;
   background: var(--ui-surface);
-  box-shadow: var(--ui-shadow-md);
+  border: 1rpx solid rgba(15, 23, 42, 0.06);
+  box-shadow: 0 12rpx 40rpx -8rpx rgba(15, 23, 42, 0.12), 0 2rpx 8rpx rgba(15, 23, 42, 0.04);
 }
 
 .resume-preview-image {
@@ -81,7 +81,8 @@
 }
 
 .preview-footnote {
-  margin-top: 24rpx;
-  color: var(--ui-text-subtle);
-  font-size: 20rpx;
+  margin-top: 32rpx;
+  color: #94a3b8;
+  font-size: 22rpx;
+  letter-spacing: 0.2rpx;
 }

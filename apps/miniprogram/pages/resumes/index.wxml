@@ -4,17 +4,6 @@
       <image class="ui-brand-wordmark" src="/assets/linkresume-wordmark.png" mode="aspectFit" aria-label="LinkResume"></image>
     </view>
   </view>
-  <view class="page-head">
-    <view class="page-title-row">
-      <text class="page-title" wx:if="{{user && user.nickname}}">{{user.nickname}}的简历</text>
-      <text class="page-title" wx:else>我的简历</text>
-      <navigator class="profile-entry" open-type="switchTab" url="/pages/profile/index" wx:if="{{!guest}}">我的 ›</navigator>
-    </view>
-    <view class="page-meta-row" wx:if="{{!loading && !error && !guest}}">
-      <text class="page-meta">{{items.length}} 份简历 · 下拉可刷新</text>
-      <text class="readonly-tag">只读</text>
-    </view>
-  </view>
 
   <view class="loading-list" wx:if="{{loading}}">
     <view class="skeleton-row" wx:for="{{[1, 2, 3]}}" wx:key="*this">
@@ -24,9 +13,9 @@
     <text class="loading-label">正在加载简历…</text>
   </view>
   <view class="state-card" wx:elif="{{guest}}">
-    <text class="state-title">登录后查看你的简历</text>
-    <text class="state-copy">简历数据只在登录后加载。登录后即可查看你在网页端创建的简历。</text>
-    <button class="state-action" hover-class="state-action-pressed" bindtap="goLogin">微信登录</button>
+    <text class="state-title">开启你的第一份创意简历</text>
+    <text class="state-copy">随时随地查阅你的职业档案，让每一次展示都专业出彩。</text>
+    <button class="state-action" hover-class="state-action-pressed" bindtap="goLogin">微信一键登录</button>
   </view>
   <view class="state-card" wx:elif="{{error}}">
     <text class="state-title">简历暂时没有加载出来</text>
@@ -35,21 +24,43 @@
   </view>
   <view class="state-card" wx:elif="{{items.length === 0}}">
     <text class="state-title">这里还没有简历</text>
-    <text class="state-copy">请先前往 LinkResume 网页端创建简历，完成后下拉刷新。</text>
+    <text class="state-copy">前往 LinkResume 网页端自由编辑与排版，多端实时同步查阅。</text>
   </view>
   <view class="resume-list" wx:else>
-    <navigator class="resume-item" hover-class="resume-item-pressed" hover-stay-time="80" wx:for="{{items}}" wx:key="id" url="/pages/resumes/detail?id={{item.id}}">
-      <view class="item-icon" aria-hidden="true">
-        <view class="icon-line"></view>
-        <view class="icon-line is-short"></view>
-        <view class="icon-line"></view>
+    <navigator
+      class="resume-card"
+      hover-class="resume-card-pressed"
+      hover-stay-time="70"
+      wx:for="{{items}}"
+      wx:key="id"
+      url="/pages/resumes/detail?id={{item.id}}"
+    >
+      <!-- 左侧高质感文档标识 -->
+      <view class="doc-badge-wrap" aria-hidden="true">
+        <view class="doc-badge-paper">
+          <view class="badge-line l1"></view>
+          <view class="badge-line l2"></view>
+          <view class="badge-line l3"></view>
+        </view>
+        <view class="doc-badge-tag">CV</view>
       </view>
-      <view class="item-copy">
-        <text class="item-title">{{item.title}}</text>
-        <text class="item-time">{{item.updatedAtLabel}}</text>
+
+      <!-- 中间简历信息 -->
+      <view class="resume-info">
+        <text class="resume-title">{{item.title}}</text>
+        <view class="resume-meta-row">
+          <text class="resume-time">{{item.updatedAtLabel}}</text>
+          <view class="resume-status-tag">
+            <text class="status-dot"></text>
+            <text>可查阅</text>
+          </view>
+        </view>
       </view>
-      <text class="item-arrow">›</text>
+
+      <!-- 右侧轻操作按钮 -->
+      <view class="resume-arrow-wrap">
+        <text class="resume-arrow">›</text>
+      </view>
     </navigator>
   </view>
-  <text class="page-footnote" wx:if="{{!loading && !error && items.length}}">小程序仅供查阅 · 编辑请前往网页端</text>
 </view>

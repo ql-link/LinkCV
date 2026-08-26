@@ -2,8 +2,9 @@
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  padding: 0 32rpx calc(48rpx + env(safe-area-inset-bottom));
+  padding: 0 32rpx calc(130rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
+  background: #f6f8fa;
 }
 
 .brand-row {
@@ -12,101 +13,94 @@
   align-items: center;
 }
 
-.page-meta-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 12rpx;
-}
-
-.readonly-tag {
-  padding: 6rpx 16rpx;
-  border: 1rpx solid var(--ui-border);
-  border-radius: 999rpx;
-  color: var(--ui-text-muted);
-  font-size: 19rpx;
-}
-
-.page-head {
-  padding: 8rpx 8rpx 26rpx;
-}
-
-.page-title-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16rpx;
-}
-
-.profile-entry {
-  flex-shrink: 0;
-  color: var(--ui-accent);
-  font-size: 23rpx;
-  font-weight: 600;
-}
-
-.page-title {
-  color: var(--ui-foreground);
-  font-size: 44rpx;
-  font-weight: 700;
-  letter-spacing: -1rpx;
-  line-height: 1.3;
-  word-break: break-all;
-}
-
-.page-meta {
-  color: var(--ui-text-muted);
-  font-size: 22rpx;
-}
-
+/* 简历列表容器 */
 .resume-list {
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
+  gap: 20rpx;
+  margin-top: 16rpx;
 }
 
-.resume-item {
+/* 现代纯白高圆角卡片 */
+.resume-card {
   display: flex;
   align-items: center;
-  padding: 24rpx 24rpx;
-  border: 1rpx solid var(--ui-border);
-  border-radius: 18rpx;
-  background: var(--ui-surface);
-  touch-action: manipulation;
-}
-
-.resume-item-pressed {
-  background: var(--ui-surface-subtle);
-}
-
-.item-icon {
-  width: 56rpx;
-  height: 68rpx;
-  flex-shrink: 0;
-  padding: 10rpx 10rpx;
-  border: 1rpx solid var(--ui-border);
-  border-radius: 8rpx;
+  padding: 30rpx 28rpx;
+  background: #ffffff;
+  border-radius: 28rpx;
+  border: 1rpx solid rgba(15, 23, 42, 0.04);
+  box-shadow: 0 4rpx 20rpx -4rpx rgba(15, 23, 42, 0.04);
   box-sizing: border-box;
+  touch-action: manipulation;
+  transition: all 0.15s ease;
 }
 
-.icon-line {
-  height: 5rpx;
-  border-radius: 4rpx;
-  background: var(--ui-border-strong);
+.resume-card-pressed {
+  background: #f8fafc;
+  transform: scale(0.985);
+  box-shadow: 0 2rpx 10rpx -2rpx rgba(15, 23, 42, 0.03);
 }
 
-.icon-line:first-child {
+/* 左侧文档徽章 */
+.doc-badge-wrap {
+  width: 90rpx;
+  height: 96rpx;
+  flex-shrink: 0;
+  border-radius: 22rpx;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 1rpx solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  box-sizing: border-box;
+  box-shadow: 0 2rpx 8rpx rgba(15, 23, 42, 0.03);
+}
+
+.doc-badge-paper {
+  width: 52rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.badge-line {
+  height: 4.5rpx;
+  border-radius: 3rpx;
+  background: #94a3b8;
+}
+
+.badge-line.l1 {
   width: 60%;
-  margin-bottom: 8rpx;
-  background: var(--ui-text-subtle);
+  background: #0f172a;
 }
 
-.icon-line.is-short {
-  width: 70%;
-  margin: 8rpx 0;
+.badge-line.l2 {
+  width: 100%;
 }
 
-.item-copy {
+.badge-line.l3 {
+  width: 75%;
+  background: #cbd5e1;
+}
+
+.doc-badge-tag {
+  position: absolute;
+  top: -6rpx;
+  right: -6rpx;
+  background: #0f172a;
+  color: #ffffff;
+  font-size: 16rpx;
+  font-weight: 700;
+  line-height: 1;
+  padding: 4rpx 8rpx;
+  border-radius: 8rpx;
+  letter-spacing: 0.5rpx;
+}
+
+/* 中间简历信息 */
+.resume-info {
   min-width: 0;
   flex: 1;
   display: flex;
@@ -114,30 +108,70 @@
   margin-left: 24rpx;
 }
 
-.item-title {
+.resume-title {
   overflow: hidden;
-  color: var(--ui-foreground);
-  font-size: 28rpx;
+  color: #0f172a;
+  font-size: 31rpx;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+  letter-spacing: -0.3rpx;
 }
 
-.item-time {
-  margin-top: 6rpx;
+.resume-meta-row {
+  margin-top: 10rpx;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.resume-time {
   overflow: hidden;
-  color: var(--ui-text-muted);
-  font-size: 21rpx;
+  color: #64748b;
+  font-size: 23rpx;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.item-arrow {
+.resume-status-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 20rpx;
+  font-weight: 500;
+}
+
+.status-dot {
+  width: 6rpx;
+  height: 6rpx;
+  border-radius: 50%;
+  background: #10b981;
+}
+
+/* 右侧箭头容器 */
+.resume-arrow-wrap {
+  width: 52rpx;
+  height: 52rpx;
   flex-shrink: 0;
   margin-left: 16rpx;
-  color: var(--ui-text-subtle);
-  font-size: 36rpx;
+  border-radius: 50%;
+  background: #f8fafc;
+  border: 1rpx solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.resume-arrow {
+  color: #94a3b8;
+  font-size: 32rpx;
+  font-weight: 500;
   line-height: 1;
+  margin-left: 2rpx;
 }
 
 .loading-list {
@@ -145,25 +179,25 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 16rpx;
+  gap: 20rpx;
   padding: 80rpx 0;
 }
 
 .skeleton-row {
   display: flex;
   align-items: center;
-  padding: 24rpx;
-  border: 1rpx solid var(--ui-border);
-  border-radius: 18rpx;
-  background: var(--ui-surface);
+  padding: 30rpx 28rpx;
+  border: 1rpx solid rgba(15, 23, 42, 0.04);
+  border-radius: 28rpx;
+  background: #ffffff;
 }
 
 .skeleton-icon {
-  width: 56rpx;
-  height: 68rpx;
+  width: 90rpx;
+  height: 96rpx;
   flex-shrink: 0;
-  border-radius: 8rpx;
-  background: var(--ui-surface-muted);
+  border-radius: 22rpx;
+  background: #f1f5f9;
 }
 
 .skeleton-copy {
@@ -172,16 +206,16 @@
 }
 
 .skeleton-line {
-  width: 56%;
-  height: 13rpx;
+  width: 50%;
+  height: 16rpx;
   margin-top: 14rpx;
   border-radius: 8rpx;
-  background: var(--ui-surface-muted);
+  background: #f1f5f9;
 }
 
 .skeleton-line.strong {
-  width: 74%;
-  height: 18rpx;
+  width: 70%;
+  height: 22rpx;
   margin-top: 0;
 }
 
@@ -200,19 +234,20 @@
   justify-content: center;
   min-height: 480rpx;
   margin: auto 0;
-  padding: 56rpx 44rpx;
-  border: 1rpx solid var(--ui-border);
-  border-radius: 24rpx;
-  background: var(--ui-surface);
-  box-shadow: 0 4rpx 20rpx -4rpx rgba(15, 23, 42, 0.04);
+  padding: 40rpx 32rpx;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   box-sizing: border-box;
   text-align: center;
 }
 
 .state-title {
   color: var(--ui-foreground);
-  font-size: 32rpx;
-  font-weight: 600;
+  font-size: 34rpx;
+  font-weight: 700;
+  letter-spacing: -0.5rpx;
 }
 
 .state-copy {
@@ -220,23 +255,24 @@
   margin-top: 14rpx;
   color: var(--ui-text-muted);
   font-size: 24rpx;
-  line-height: 1.7;
+  line-height: 1.6;
 }
 
 .state-action {
-  width: 340rpx;
-  height: 88rpx;
+  width: 360rpx;
+  height: 92rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 36rpx 0 0;
+  margin: 44rpx 0 0;
   padding: 0 28rpx;
-  border-radius: 18rpx;
-  background: var(--ui-accent);
-  color: #fff;
-  font-size: 27rpx;
+  border-radius: 24rpx;
+  background: #0f172a;
+  color: #ffffff;
+  font-size: 28rpx;
   font-weight: 600;
-  line-height: 88rpx;
+  line-height: 92rpx;
+  box-shadow: 0 6rpx 20rpx -2rpx rgba(15, 23, 42, 0.18);
   box-sizing: border-box;
   touch-action: manipulation;
 }
@@ -247,7 +283,9 @@
 }
 
 .state-action-pressed {
-  background: var(--ui-accent-hover);
+  background: #1e293b;
+  opacity: 0.92;
+  transform: scale(0.99);
 }
 
 .state-ghost {
@@ -271,12 +309,4 @@
 
 .state-ghost-pressed {
   background: var(--ui-secondary-hover);
-}
-
-.page-footnote {
-  display: block;
-  margin-top: 30rpx;
-  color: var(--ui-text-subtle);
-  font-size: 20rpx;
-  text-align: center;
 }

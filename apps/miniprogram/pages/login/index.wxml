@@ -10,7 +10,7 @@
       <view class="brand-card">
         <image class="brand-mark" src="/assets/linkresume-wordmark.png" mode="aspectFit" aria-label="LinkResume"></image>
       </view>
-      <text class="title">登录 LinkResume</text>
+      <text class="title">开启你的创意简历</text>
       <text class="subtitle">{{message}}</text>
       <view class="inline-status" wx:if="{{loading || submitting}}"><view class="spinner"></view></view>
     </view>

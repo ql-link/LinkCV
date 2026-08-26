@@ -151,7 +151,7 @@ test("login page reuses one explicit action for existing and new accounts", asyn
   }, { switchTab: ({ url }) => switches.push(url), showToast() {} }, async (page) => {
     page.onLoad({ returnTo: encodeURIComponent("/pages/profile/index") });
     await flush();
-    assert.equal(page.data.message, "登录后即可在小程序中查看你的简历");
+    assert.equal(page.data.message, "让每一次投递更有底气 · 随时随地同步查阅");
 
     page.handleAgreementChange({ detail: { value: ["accepted"] } });
     await page.handlePrimaryAction();

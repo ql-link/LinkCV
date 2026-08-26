@@ -30,7 +30,10 @@ Page({
     loggingOut: false,
     nickname: "",
     serverNickname: "",
+    hasChanges: false,
     localAvatarPath: "",
+    resumeCount: 0,
+    chatCount: 0,
     message: "",
   },
 
@@ -39,6 +42,9 @@ Page({
   },
 
   onShow() {
+    if (typeof this.getTabBar === "function" && this.getTabBar()) {
+      this.getTabBar().setData({ selected: 1 });
+    }
     if (!auth.hasSession()) {
       this.enterGuestMode();
       return;
@@ -62,7 +68,10 @@ Page({
       loggingOut: false,
       nickname: "",
       serverNickname: "",
+      hasChanges: false,
       localAvatarPath: "",
+      resumeCount: 0,
+      chatCount: 0,
       message: "",
     });
   },
@@ -80,11 +89,24 @@ Page({
     }
     this.setData({ loading: true, guest: false, message: "" });
     try {
+      let resumeCount = 0;
+      try {
+        const resumes = require("../../services/resumes");
+        if (typeof resumes.listResumes === "function") {
+          const items = await resumes.listResumes();
+          resumeCount = Array.isArray(items) ? items.length : 0;
+        }
+      } catch (e) {
+        resumeCount = 0;
+      }
       const profile = await account.getProfile();
       this.setData({
         loading: false,
         nickname: profile.nickname,
         serverNickname: profile.nickname,
+        hasChanges: false,
+        resumeCount,
+        chatCount: 0,
       });
       if (profile.avatar_url) {
         try {
@@ -116,6 +138,9 @@ Page({
       const dataUrl = await readAvatarAsDataUrl(filePath);
       await account.uploadAvatarDataUrl(dataUrl, "avatar");
       this.setData({ saving: false, localAvatarPath: filePath });
+      if (typeof wx.showToast === "function") {
+        wx.showToast({ title: "头像已更新", icon: "success", duration: 1500 });
+      }
     } catch (error) {
       if (!auth.hasSession()) {
         this.enterGuestMode();
@@ -129,7 +154,20 @@ Page({
   },
 
   handleNicknameInput(event) {
-    this.setData({ nickname: event.detail.value });
+    const nextNickname = event.detail.value;
+    this.setData({
+      nickname: nextNickname,
+      hasChanges: nextNickname.trim() !== this.data.serverNickname,
+      message: "",
+    });
+  },
+
+  handleNicknameBlur(event) {
+    const nextNickname = (event.detail && event.detail.value != null ? event.detail.value : this.data.nickname);
+    this.setData({
+      nickname: nextNickname,
+      hasChanges: nextNickname.trim() !== this.data.serverNickname,
+    });
   },
 
   async handleSave() {
@@ -143,7 +181,7 @@ Page({
       return;
     }
     if (this.data.saving || nickname === this.data.serverNickname) {
-      this.setData({ message: "" });
+      this.setData({ message: "", hasChanges: false });
       return;
     }
     this.setData({ saving: true, message: "" });
@@ -154,7 +192,11 @@ Page({
         saving: false,
         nickname: profile.nickname,
         serverNickname: profile.nickname,
+        hasChanges: false,
       });
+      if (typeof wx.showToast === "function") {
+        wx.showToast({ title: "修改已保存", icon: "success", duration: 1500 });
+      }
     } catch (error) {
       if (!auth.hasSession()) {
         this.enterGuestMode();
