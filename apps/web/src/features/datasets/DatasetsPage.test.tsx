@@ -94,6 +94,7 @@ describe("DatasetsPage", () => {
     expect(screen.getByText("解析完成")).toBeInTheDocument();
     expect(screen.getByText("解析失败")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /操作菜单/ })).toHaveLength(3);
+    expect(screen.queryByText("共 3 份资料")).not.toBeInTheDocument();
   });
 
   it("搜索按去扩展名的资料显示名称过滤且兼容大小写", async () => {
@@ -155,6 +156,33 @@ describe("DatasetsPage", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "重新解析" }));
     await waitFor(() => expect(retry).toHaveBeenCalledWith("3"));
     expect(await screen.findByText("正在解析")).toBeInTheDocument();
+  });
+
+  it("点击菜单外区域会关闭菜单，点击资料行时只关闭而不打开预览", async () => {
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [record] });
+    const getContent = vi.spyOn(api, "getDatasetContent").mockResolvedValue({
+      id: record.id,
+      file_name: record.file_name,
+      file_format: record.file_format,
+      markdown: "内容",
+    });
+    render(<DatasetsPage />);
+
+    const menuButton = await screen.findByRole("button", { name: /操作菜单/ });
+    const row = screen.getByRole("button", { name: "打开「岗位要求」解析预览" });
+    fireEvent.click(menuButton);
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+
+    fireEvent.click(row);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(getContent).not.toHaveBeenCalled();
+
+    fireEvent.click(menuButton);
+    fireEvent.click(document.body);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+
+    fireEvent.click(row);
+    await waitFor(() => expect(getContent).toHaveBeenCalledWith("1"));
   });
 
   it("重命名调用独立 API，并只更新列表显示名称", async () => {

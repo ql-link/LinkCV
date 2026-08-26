@@ -292,6 +292,13 @@ export function DatasetsPage() {
   }, [notice]);
 
   useEffect(() => {
+    if (menuDatasetId === null) return;
+    const closeMenu = () => setMenuDatasetId(null);
+    document.addEventListener("click", closeMenu);
+    return () => document.removeEventListener("click", closeMenu);
+  }, [menuDatasetId]);
+
+  useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
@@ -461,8 +468,11 @@ export function DatasetsPage() {
   };
 
   const openPreview = (dataset: DatasetRecord, trigger: HTMLElement) => {
+    if (menuDatasetId !== null) {
+      setMenuDatasetId(null);
+      return;
+    }
     previewTriggerRef.current = trigger;
-    setMenuDatasetId(null);
     setPreviewDataset(dataset);
   };
 
@@ -612,7 +622,6 @@ export function DatasetsPage() {
                   />
                 ))
               )}
-              <footer className="dataset-list-footer">共 {filteredDatasets.length} 份资料</footer>
             </section>
           )}
         </div>
