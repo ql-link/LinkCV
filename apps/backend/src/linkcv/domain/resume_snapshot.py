@@ -1,3 +1,5 @@
+import json
+
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from linkcv.domain.resume_document import ResumeDocument
@@ -84,8 +86,22 @@ class ResumeSnapshot(BaseModel):
         return self
 
 
+def _decode_serialized_json(value: object) -> object:
+    if not isinstance(value, str):
+        return value
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return value
+
+
 def parse_resume_snapshot(
     data: object,
     style: object,
 ) -> ResumeSnapshot:
-    return ResumeSnapshot.model_validate({"data": data, "style": style})
+    return ResumeSnapshot.model_validate(
+        {
+            "data": _decode_serialized_json(data),
+            "style": _decode_serialized_json(style),
+        }
+    )
