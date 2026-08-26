@@ -752,3 +752,79 @@ final result: passed
 - [x] Verify automated checks, browser rendering, and console state.
 
 final result: passed
+
+
+---
+
+# 小程序登录与扫码确认页 — 2026-08-26
+
+## 验收范围
+
+- 页面：`pages/login/index` 的未注册、已注册、加载和错误状态；`pages/confirm/index` 的待确认及结果状态。
+- 视觉基准：用户上传的登录/注册参考图 `/var/folders/q0/866dc7b55j3c61s7h1hfx1r40000gn/T/codex-clipboard-35c725a0-06d2-4e0b-a80f-a93254b92e66.png`（382 × 862）。
+- 实现预览：微信开发者工具 iPhone 12/13 Pro 模拟器（390 × 844），未注册状态已在工具会话内完成整屏视觉核对；该临时截图未作为仓库文件保存。
+- 密度处理：以完整视口的相对位置、留白比例、控件宽高和排版层级比较；参考图与模拟器宽度差异为 8 px，未按绝对像素一一映射。
+
+## 对比结果
+
+| 区域 | 结果 | 说明 |
+| --- | --- | --- |
+| 页面骨架 | 通过 | 白色全屏、左上关闭、中部身份区、主操作和底部协议的纵向层级与参考图一致。 |
+| 品牌区 | 通过 | 使用用户提供的透明底羽毛图标，保留浅边框、圆角和轻阴影容器。 |
+| 标题与说明 | 通过 | 未注册态采用“开启职场新篇章 / 创建一个账户，发现更多职业机遇”；注册态和确认态复用同一视觉层级。 |
+| 主操作 | 通过 | 黑底白字、整行宽按钮及圆角比例与参考图一致；协议未勾选时继续沿用原有禁用语义。 |
+| 隐私协议 | 通过 | 固定在页面下部并保留微信动态隐私指引名称、打开协议和授权处理逻辑。 |
+| 扫码确认 | 通过（结构） | 已统一到同一页面骨架，确认、取消、重试及结果状态的原有行为入口均保留。 |
+| 短屏适配 | 通过（样式检查） | 小于 700 px 高度时收紧身份区、操作区和协议区的垂直间距。 |
+
+## 修正记录
+
+1. 首轮预览发现原生 `button` 的默认盒模型使关闭图标偏向页面中部，严重度 P2。
+2. 将关闭控件改为可访问的 `view + icon`，保留点击行为和语义标签，并重新预览确认其回到左上安全区。
+3. 最终未发现 P0、P1 或 P2 视觉问题。
+
+## 限制
+
+- 登录/注册页与扫码确认页均已在微信开发者工具的分离 iPhone 12/13 Pro 模拟器中呈现并核对；确认页截图为 `/var/folders/q0/866dc7b55j3c61s7h1hfx1r40000gn/T/com.openai.sky.CUAService/Wechat Devtools Screenshot 2026-08-26 at 3.04.17 PM.jpeg`。
+- 本次没有接入真实微信身份和真实网页扫码会话，因此不把本次结果描述为自动化跨端 E2E 验收。
+
+## 品牌图标替换复核
+
+- 来源资产：`/var/folders/q0/866dc7b55j3c61s7h1hfx1r40000gn/T/codex-clipboard-a4262b33-285e-41e3-aa2b-324f43eeae5f.png`，透明底 `256 × 256`；用户同时提供的第二张方形图与该文件 SHA-256 完全相同。
+- 实现截图：`/var/folders/q0/866dc7b55j3c61s7h1hfx1r40000gn/T/com.openai.sky.CUAService/Wechat Devtools Screenshot 2026-08-26 at 3.05.00 PM.jpeg`，微信开发者工具 iPhone 12/13 Pro 登录页未注册状态。
+- 聚焦对比：`/tmp/linkresume-mark-design-qa.png` 将原始图标与登录页品牌卡片渲染结果并列归一化到 `256 × 256`；轮廓、透明背景、完整羽毛与环形笔画均正确，未发现裁切、变形或黑底。
+- 使用范围：方形标替换登录、扫码确认、首页、简历列表和个人资料页的品牌入口；横向 `LinkResume` 字标不压缩进方形登录卡片。
+- 修正记录：开发者工具最初命中旧文件缓存，改为新的 `linkresume-mark.png` 资源路径并清理项目文件列表缓存后，分离模拟器复核通过。
+- 最终未发现 P0、P1 或 P2 视觉问题。
+
+## 结论
+
+通过。参考图覆盖的登录/注册主状态没有未解决的 P0—P2 视觉偏差；扫码确认页完成同语言重构，但仍需在真实扫码会话中做一次人工端到端核验。
+
+final result: passed
+
+# LinkResume 小程序品牌字标 — 2026-08-26
+
+## Visual truth and evidence
+
+- Source asset: `/Users/fang/Downloads/LinkCV-app-icons/web-brand-wordmark-1701x349.png`，原图 `1701 × 349` px、RGBA 透明背景；有效像素边界为 `(20, 20)–(1681, 329)`。
+- Implementation asset: `apps/miniprogram/assets/linkresume-wordmark.png`，逐文件复用用户提供的原始 PNG，没有重绘或生成替代图标。
+- Actual runtime capture: `/Users/fang/.codex/visualizations/2026/08/26/01a03cbe-fff8-73c3-9f80-d9a13eb0527a/miniprogram-brand-qa/resumes-linkresume-wordmark.png`，微信开发者工具 iPhone 15 Pro Max 模拟器、访客态“我的简历”页。
+- Focused comparison: `/tmp/linkresume-brand-comparison.jpg`，同屏比较原始字标与小程序顶部真实渲染区域。
+
+## Required fidelity surfaces
+
+- Asset fidelity: 小程序顶部使用 `220 × 46rpx` 的 `aspectFit` 容器；登录页与扫码确认页使用 `320 × 66rpx` 的 `aspectFit` 容器，均保持原始约 `4.87:1` 的长宽比。
+- Rendering: 真实模拟器截图中图形、`LinkResume` 字标和透明背景均完整可见，没有拉伸、裁切、模糊底色或错误反色。
+- Accessibility: 品牌图片暴露 `LinkResume` 可访问名称；微信开发者工具可访问性树识别为 `image LinkResume`。
+- Copy consistency: 小程序导航标题、登录与扫码确认文案、访客空状态、简历详情、隐私协议兜底名称和项目说明中的可见产品名统一为 `LinkResume`。
+- Compatibility: `linkcv_*` 本地存储键、包名、项目技术标识和示例域名保持不变，避免品牌展示替换破坏已有数据与运行契约。
+
+## Findings
+
+- P0: none.
+- P1: none.
+- P2: none.
+- P3: 登录页与扫码确认页使用同一原始资产和同一 `aspectFit` 策略，已通过编译与样式检查；本次真实模拟器截图聚焦默认访客简历页，发布前仍可在真机上补一次两个入口页的视觉巡检。
+
+final result: passed

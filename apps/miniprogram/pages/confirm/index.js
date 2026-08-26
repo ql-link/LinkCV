@@ -25,15 +25,20 @@ Page({
     privacyReady: false,
     privacySupported: false,
     privacyAuthorizationRequired: false,
-    privacyContractName: "《LinkCV 小程序隐私保护指引》",
+    privacyContractName: "《LinkResume 小程序隐私保护指引》",
     phase: "checking",
     message: "正在校验本次登录请求…",
   },
 
   onLoad(options) {
-    const scene = decodeURIComponent(options.scene || "");
+    let scene = "";
+    try {
+      scene = decodeURIComponent((options && options.scene) || "");
+    } catch (error) {
+      scene = "";
+    }
     if (!scene) {
-      wx.switchTab({ url: "/pages/home/index" });
+      wx.switchTab({ url: "/pages/resumes/index" });
       return;
     }
     this.setData({
@@ -82,12 +87,14 @@ Page({
       success: (response) => {
         const status = response.data && response.data.status;
         if (status === "pending") {
-          this.setData({ loading: false, phase: "pending", message: "请确认是否允许当前网页登录 LinkCV。" });
+          this.setData({ loading: false, phase: "pending", message: "请确认是否允许当前网页登录 LinkResume。" });
         } else if (status === "success") {
           if (auth.hasSession()) {
             wx.switchTab({ url: "/pages/resumes/index" });
           } else {
-            wx.reLaunch({ url: "/pages/login/index" });
+            wx.reLaunch({
+              url: `/pages/login/index?returnTo=${encodeURIComponent("/pages/resumes/index")}`,
+            });
           }
         } else if (status === "cancelled") {
           this.setData({ loading: false, phase: "cancelled", message: "已取消本次网页登录。" });
@@ -100,7 +107,7 @@ Page({
   },
 
   handleBackHome() {
-    wx.switchTab({ url: "/pages/home/index" });
+    wx.switchTab({ url: "/pages/resumes/index" });
   },
 
   async handleConfirm() {
@@ -109,6 +116,7 @@ Page({
       return;
     }
     if (this.data.submitting || this.data.phase !== "pending") return;
+    auth.acceptPrivacyAgreement();
     this.setData({ submitting: true, message: "正在确认…" });
     try {
       const code = await auth.wxLoginCode();

@@ -10,8 +10,28 @@
   <button class="ui-secondary-button state-action" hover-class="ui-secondary-button-pressed" bindtap="backToResumes">返回简历列表</button>
 </view>
 <view class="preview-document" wx:else>
-  <view class="preview-paper">
-    <image class="resume-preview-image" src="{{previewPath}}" mode="widthFix" binderror="handlePreviewError" />
-  </view>
-  <text class="preview-footnote">只读预览 · 编辑请前往 LinkCV 网页端</text>
+  <!-- 专门的图片展示与手势交互区域（纯粹双指缩放、平移拖拽） -->
+  <movable-area class="preview-viewport">
+    <movable-view
+      class="preview-movable-sheet"
+      direction="all"
+      scale="{{true}}"
+      scale-min="1"
+      scale-max="4"
+      inertia="{{true}}"
+      out-of-bounds="{{true}}"
+    >
+      <view class="preview-paper">
+        <image
+          class="resume-preview-image"
+          src="{{previewPath}}"
+          mode="widthFix"
+          show-menu-by-longpress="{{true}}"
+          binderror="handlePreviewError"
+        />
+      </view>
+    </movable-view>
+  </movable-area>
+
+  <text class="preview-footnote">只读查阅 · 编辑请前往 LinkResume 网页端</text>
 </view>

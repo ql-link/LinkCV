@@ -1,48 +1,179 @@
-<view class="page" style="padding-top: calc({{statusBarHeight}}px + 32rpx)">
-  <view class="topbar">
+<view class="page" style="padding-top: {{statusBarHeight}}px">
+  <!-- 顶部轻柔渐变背景 -->
+  <view class="header-ambient-glow"></view>
+
+  <!-- 顶部品牌字标 -->
+  <view class="brand-row">
     <view class="ui-brand">
-      <image class="ui-brand-mark" src="/assets/linkcv-mark.png" mode="aspectFit" aria-hidden="true"></image>
-      <text>LinkCV</text>
+      <image class="ui-brand-wordmark" src="/assets/linkresume-wordmark.png" mode="aspectFit" aria-label="LinkResume"></image>
     </view>
   </view>
+
   <view class="content">
-    <text class="page-title">资料设置</text>
-    <view class="context-note">
-      <text class="context-icon">▤</text>
-      <text class="context-text">头像与昵称仅在小程序内展示，可随时修改</text>
+    <!-- 用户个人头部：自然通透的开放式无框排布 -->
+    <view class="user-profile-header">
+      <!-- 头像区域 -->
+      <view class="avatar-box">
+        <!-- 访客态头像 -->
+        <view class="avatar-round guest-avatar" hover-class="avatar-hover" bindtap="goLogin" wx:if="{{guest}}">
+          <view class="avatar-silhouette-head"></view>
+          <view class="avatar-silhouette-body"></view>
+        </view>
+        <!-- 已登录态头像 -->
+        <block wx:else>
+          <button class="avatar-round user-avatar-button" open-type="chooseAvatar" bindchooseavatar="handleChooseAvatar" hover-class="avatar-hover" disabled="{{saving}}">
+            <image class="avatar-img" wx:if="{{localAvatarPath}}" src="{{localAvatarPath}}" mode="aspectFill"></image>
+            <view class="avatar-text" wx:else>{{nickname ? nickname[0] : '客'}}</view>
+          </button>
+          <view class="avatar-edit-badge" aria-hidden="true">
+            <text class="edit-badge-icon">✎</text>
+          </view>
+        </block>
+      </view>
+
+      <!-- 用户昵称与状态 -->
+      <view class="profile-info" bindtap="goLogin" wx:if="{{guest}}">
+        <view class="name-line">
+          <text class="user-name">点击登录 / 注册</text>
+          <view class="status-pill is-guest">
+            <text class="status-dot"></text>
+            <text>未登录</text>
+          </view>
+        </view>
+        <view class="hint-line">
+          <text class="hint-text">登录同步多端数据，开启精彩职场之旅 ›</text>
+        </view>
+      </view>
+
+      <view class="profile-info" wx:else>
+        <view class="name-line">
+          <view class="name-edit-box">
+            <view class="name-display-layer" aria-hidden="true">
+              <text class="user-name-text {{nickname ? '' : 'is-placeholder'}}">{{nickname || '点击输入昵称'}}</text>
+              <text class="name-edit-icon">✎</text>
+            </view>
+            <input
+              class="user-name-input-overlay"
+              type="nickname"
+              value="{{nickname}}"
+              placeholder="点击输入微信昵称"
+              placeholder-class="name-input-placeholder"
+              bindinput="handleNicknameInput"
+              bindblur="handleNicknameBlur"
+              disabled="{{saving}}"
+            />
+          </view>
+          <view class="status-pill is-active">
+            <text class="status-dot"></text>
+            <text>微信已绑定</text>
+          </view>
+        </view>
+        <view class="hint-line">
+          <text class="hint-text">点击头像或昵称可直接修改</text>
+        </view>
+      </view>
     </view>
 
-    <view class="loading-block" wx:if="{{loading}}">
+    <!-- 加载中提示 -->
+    <view class="loading-block" wx:if="{{loading && !guest}}">
       <view class="spinner"></view>
       <text class="loading-text">正在加载资料…</text>
     </view>
 
-    <view wx:else>
-      <view class="avatar-wrap">
-        <button class="avatar-button" open-type="chooseAvatar" bindchooseavatar="handleChooseAvatar" hover-class="avatar-button-pressed" disabled="{{saving}}">
-          <image class="avatar-image" wx:if="{{localAvatarPath}}" src="{{localAvatarPath}}" mode="aspectFill"></image>
-          <view class="avatar-placeholder" wx:else>{{nickname ? nickname[0] : '客'}}</view>
-        </button>
-        <text class="avatar-hint">点击头像更换，可选微信头像或相册图片</text>
-      </view>
+    <!-- 主体分组卡片区域 -->
+    <view class="profile-body" wx:else>
+      <!-- 分组卡片 1：个人活动 -->
+      <view class="section-group">
+        <view class="section-header">
+          <text class="section-title">个人活动</text>
+        </view>
+        <view class="activity-card">
+          <view class="activity-stat-item">
+            <view class="stat-num-wrap">
+              <text class="stat-number">{{guest ? '--' : resumeCount}}</text>
+              <text class="stat-unit" wx:if="{{!guest}}">份</text>
+            </view>
+            <view class="stat-label-wrap">
+              <text class="stat-label">创建的简历</text>
+            </view>
+          </view>
 
-      <view class="field-card">
-        <text class="field-label">昵称</text>
-        <view class="field-row">
-          <input
-            class="field-input"
-            type="nickname"
-            value="{{nickname}}"
-            placeholder="点击输入，可一键使用微信昵称"
-            placeholder-class="field-placeholder"
-            bindinput="handleNicknameInput"
-          />
+          <view class="activity-divider"></view>
+
+          <view class="activity-stat-item">
+            <view class="stat-num-wrap">
+              <text class="stat-number">{{guest ? '--' : chatCount}}</text>
+              <text class="stat-unit" wx:if="{{!guest}}">次</text>
+            </view>
+            <view class="stat-label-wrap">
+              <text class="stat-label">对话总次数</text>
+            </view>
+          </view>
         </view>
       </view>
 
-      <text class="form-message" wx:if="{{message}}">{{message}}</text>
+      <!-- 分组卡片 2：账号与服务信息卡片 -->
+      <view class="section-group">
+        <view class="section-header">
+          <text class="section-title">账号与服务</text>
+        </view>
+        <view class="settings-card">
+          <!-- 微信账号授权状态 -->
+          <view class="setting-row" bindtap="{{guest ? 'goLogin' : ''}}">
+            <view class="setting-label-col">
+              <text class="setting-label">微信账号</text>
+            </view>
+            <view class="setting-action">
+              <view class="badge-tag {{guest ? 'is-muted' : 'is-success'}}">
+                <text>{{guest ? '未登录' : '已授权绑定'}}</text>
+              </view>
+              <text class="arrow-icon" wx:if="{{guest}}">›</text>
+            </view>
+          </view>
 
-      <button class="save-button" hover-class="save-button-pressed" bindtap="handleSave" disabled="{{saving || loading}}">{{saving ? '正在保存…' : '保存修改'}}</button>
+          <view class="setting-divider"></view>
+
+          <!-- 简历同步方式说明 -->
+          <view class="setting-row">
+            <view class="setting-label-col">
+              <text class="setting-label">简历同步</text>
+            </view>
+            <view class="setting-action">
+              <text class="info-val">网页端实时同步</text>
+            </view>
+          </view>
+
+          <view class="setting-divider"></view>
+
+          <!-- 客户端版本 -->
+          <view class="setting-row">
+            <view class="setting-label-col">
+              <text class="setting-label">客户端版本</text>
+            </view>
+            <view class="setting-action">
+              <text class="info-val is-muted">LinkResume v1.0.0</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 退出登录（独立白底圆角卡片，现代红色文字，仅在登录态显示） -->
+      <view class="logout-card" hover-class="logout-card-hover" bindtap="handleLogout" wx:if="{{!guest}}">
+        <text class="logout-text">{{loggingOut ? '正在退出…' : '退出当前账号'}}</text>
+      </view>
+
+      <!-- 提示信息 -->
+      <text class="form-message" wx:if="{{message && !guest}}">{{message}}</text>
+
+      <!-- 底部操作主按钮：访客态展示登录按钮 / 登录态有修改时展示“保存修改” -->
+      <view class="btn-group" wx:if="{{guest || hasChanges || (nickname && serverNickname && nickname !== serverNickname)}}">
+        <button class="btn-primary" hover-class="btn-primary-hover" bindtap="goLogin" wx:if="{{guest}}">
+          <text>微信登录 / 注册</text>
+        </button>
+        <button class="btn-primary" hover-class="btn-primary-hover" bindtap="handleSave" disabled="{{saving || loading}}" wx:else>
+          <text>{{saving ? '正在保存…' : '保存修改'}}</text>
+        </button>
+      </view>
     </view>
   </view>
 </view>
