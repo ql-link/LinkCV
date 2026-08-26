@@ -55,6 +55,13 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 
 `/api/account/*` 通过当前用户身份确定资源归属，不接受 `user_id`。当前公开接口为 profile、昵称和头像读写；Web 账号页不再显示密码或微信绑定入口。`user.email` 对微信用户为 `null`。最近简历仍按更新时间倒序返回最多 5 条。
 
+`GET/PUT /api/account/user-profile` 维护跨简历共享的个人画像，聚合求职偏好、基础信息与技能荣誉，独立保存于 `user_profiles` 表，不修改任何简历内容。未创建时 `GET` 返回 `lock_version=1` 的约定空对象且不写库；`PUT` 整体替换全部可编辑字段，缺省字段以 `null`/空数组覆盖旧值。`PUT` 必须携带 `base_lock_version`（首次创建固定为 1），服务端原子比较版本号，并发基准过期返回 `409 USER_PROFILE_VERSION_CONFLICT`，响应 `{profile}` 携带最新画像供调用方刷新后重试。薪资必须成组填写：`salary_min`/`salary_max` 任一非空时要求 `salary_currency`（大写三字母 ISO 4217）与 `salary_period` 同时非空；`available_from` 仅在 `availability=custom` 时允许填写。数组类字段（`target_positions`/`exclusions`/`target_companies`/`languages`/`skills`/`certifications`/`honors`/`campus_experiences`）空文本去重并保留提交顺序，单元素最长 100 字符、数组最长 100 项；`school_tier` 只接受 `project_985`/`project_211`/`double_first_class`，最长 10 项。非法枚举、超长列表或违反联动约束返回 `422` 字段校验；`GET /api/account/profile` 响应新增 `profile` 字段（未创建为 `null`）。
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `GET` | `/api/account/user-profile` | `{profile}`；未创建返回 `lock_version=1` 空对象 |
+| `PUT` | `/api/account/user-profile` | `{profile}`；请求含 `base_lock_version` 及可编辑字段，并发过期返回 `409 USER_PROFILE_VERSION_CONFLICT` |
+
 ## 语义简历契约
 
 简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`。数据库 ID 在 HTTP 中使用十进制字符串。运行期只接受字段完整的 `ResumeDocument data` 与 `ResumePresentation style`，不再携带或协商 `schema_version`；缺少 `semantic_sections` 或 `manifest` 的请求不会被静默补齐。`data.semantic_sections` 把用户可见标题、稳定语义类型、来源、置信度和真实内容引用分离保存，每份实际内容必须被恰好引用一次；编辑器章节使用独立 `blk_*` ID，标题改名不改变章节身份。已进入编辑器的章节正文以受控 `{format: "tiptap-json", content: JSONContent}` 保存，保留段落、列表、双列、信息行、图片、对齐和富文本 marks；历史 `{format: "markdown", content: string}` 只作为兼容输入继续可读，首次正文保存后转成规范 Tiptap JSON。页级 `sidebar/main` 属于 `style.manifest` 投影，禁止作为正文持久化；`profile`、`interests` 等侧栏内容仍是独立语义章节。`style.manifest` 只允许受控 renderer、区域、插槽、唯一自定义兜底区和头像策略。简历正文以用户内容为准：错别字、非标准邮箱或电话、无法识别或先后矛盾的日期、缺少单位或职位等内容质量问题不阻断保存、导入或版本恢复；可识别日期仍会规范化，无法识别的日期原样保留。字段类型、总量和长度上限、URL 协议、Markdown 主动内容、Tiptap 节点/marks/属性白名单及内部 ID 完整性仍严格校验。`style.smart_one_page` 控制连续单页或标准 A4 导出模式，并随版本快照保存。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不再是简历写契约。

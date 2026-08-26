@@ -39,6 +39,74 @@ export type AccountProfile = {
   user: UserProfile;
   resume_count: number;
   recent_resumes: RecentResumeSummary[];
+  profile: UserProfileData | null;
+};
+
+export type EmploymentType =
+  | "full_time"
+  | "part_time"
+  | "internship"
+  | "contract"
+  | "temporary";
+
+export type WorkMode = "onsite" | "hybrid" | "remote";
+
+export type SalaryPeriod = "hour" | "day" | "month" | "year";
+
+export type Availability =
+  | "immediately"
+  | "one_week"
+  | "two_weeks"
+  | "one_month"
+  | "custom";
+
+export type EducationLevel =
+  | "high_school"
+  | "junior_college"
+  | "bachelor"
+  | "master"
+  | "doctor";
+
+export type SchoolTier = "project_985" | "project_211" | "double_first_class";
+
+export type UserProfileData = {
+  work_city: string | null;
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_currency: string | null;
+  salary_period: SalaryPeriod | null;
+  employment_type: EmploymentType | null;
+  work_mode: WorkMode | null;
+  target_positions: string[];
+  exclusions: string[];
+  target_companies: string[];
+  availability: Availability | null;
+  available_from: string | null;
+  school: string | null;
+  school_tier: SchoolTier[];
+  major: string | null;
+  education_level: EducationLevel | null;
+  years_experience: number | null;
+  birth_date: string | null;
+  languages: string[];
+  skills: string[];
+  certifications: string[];
+  honors: string[];
+  campus_experiences: string[];
+  lock_version: number;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type UserProfileUpdate = Omit<
+  UserProfileData,
+  "lock_version" | "created_at" | "updated_at"
+> & {
+  base_lock_version: number;
+};
+
+export type UserProfileConflict = {
+  profile: UserProfileData;
 };
 
 export type AdminUserSummary = User & {
@@ -1115,6 +1183,12 @@ export const api = {
     request<UserProfile>("/api/account/profile", {
       method: "PATCH",
       body: { nickname },
+    }),
+  getUserProfile: () => request<UserProfileData>("/api/account/user-profile"),
+  putUserProfile: (payload: UserProfileUpdate) =>
+    request<UserProfileData>("/api/account/user-profile", {
+      method: "PUT",
+      body: payload,
     }),
   uploadAccountAvatar: (payload: { fileName: string; dataUrl: string }) =>
     request<{ url: string }>("/api/account/avatar", {

@@ -18,7 +18,7 @@
 | `src/linkcv/services/resume_import_idempotency.py` | Redis Lua 请求指纹到导入 ID 的短期绑定与冲突保护 |
 | `src/linkcv/core/mq/` | RabbitMQ/Kafka publisher、统一导入消息和 confirm 异常边界 |
 | `src/linkcv/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
-| `src/linkcv/modules/identity/` | 用户模型、管理员密码登录、双通道会话、微信自动建号、扫码状态机、`/api/account` 用户中心与管理端用户管理 |
+| `src/linkcv/modules/identity/` | 用户模型、管理员密码登录、双通道会话、微信自动建号、扫码状态机、`/api/account` 用户中心、个人画像（`user_profiles`）与管理端用户管理 |
 | `src/linkcv/modules/miniprogram/` | 本人正式版本只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品。`account_routes.py` 提供小程序专用昵称与头像读写（头像二进制仅经 `/api/miniprogram/account/avatar` 分发） |
 | `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板及管理、简历、版本、异步导入、分享和资源路由 |
 | `src/linkcv/modules/datasets/` | `user_dataset` 资料元数据、异步解析受理与状态列表路由 |
@@ -27,7 +27,7 @@
 | `src/linkcv/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkcv/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0042` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0043` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -54,6 +54,8 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 `0041` 从正文中移除模板拥有的页级投影。迁移全量读取 `resume_templates`、`resumes` 和 `resume_versions`：旧 `custom_section_editor` 整篇 Markdown 以及跨规范章节残留的 `:::: sidebar/main` 被拆成无投影 `custom_sections`，侧栏标题映射为 `profile/skills/interests/languages` 等独立语义，私有用户头像转入 `basics.photo`，系统模板头像继续由 manifest 提供。转换在首笔写入前比较去除页栏标记与模板头像后的全部可见行，校验完整 `ResumeSnapshot`；写后再次全量转换并核对幂等结果。revision 不新增物理列，失败按 forward-only 规则从备份恢复或增加后续 revision。
 
 `0042` 先验证 `blank-cn`、其历史简历引用以及所有 `classic-technical-cn` 模板/简历/版本快照，再把经典单页技术模板的 A4 页边距恢复为生产审查值 `9/11/9/11mm` 并删除空白模板行。`resumes.template_id` 的既有 `ON DELETE SET NULL` 只清除历史简历的来源引用；简历和版本自有的 `data_json/style_json` 不变。迁移写后逐项验证模板不存在、旧简历仍存在且来源已置空、经典技术快照内容不变。revision 为 forward-only，恢复删除的模板和原引用依赖升级前备份。
+
+`0043` 新增 `user_profiles` 用户个人画像表：与 `users` 一对一（唯一 `user_id`、`RESTRICT` 外键），独立于简历内容保存求职偏好、基础信息与技能荣誉。关键偏好用独立列并以 CHECK 约束拦截非法枚举（期望工作性质、工作方式、计薪周期、可到岗时间、学历层次）与联动非法（薪资成组、`available_from` 要求 `availability=custom`、`salary_max >= salary_min`）；多变列表（职位方向、排除条件、目标公司、语言、技能、证书、荣誉、校园经历、学校层级）用 JSON 数组列并校验 `json_type`。`lock_version` 乐观锁初始为 1。revision 为 forward-only。
 
 普通创建必须提供名称和启用模板，在用户行锁内完成容量、名称规范键和模板快照校验，再以 `source_type=template` 原子创建当前简历和 initial 版本。正式简历与活动导入任务共享每用户 10 个名额。异步导入同样必须提供启用模板，其标题来自安全化源文件名并允许与已有简历同名；Web 默认选择 `classic-technical-cn`，不可用时只回退到其他非空白启用模板，解析内容作为 data，所选模板提供 style。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。模板切换使用同一乐观锁边界的独立原子服务：当前 `data_json` 保持不变，目标启用模板提供 `style_json` 与 `template_id`，成功后只递增一次锁；目标无效或版本冲突不会写入部分结果。手动正式版本在创建和重命名时保存 1–80 字符的名称；旧调用方缺省时按版本号生成“版本 N”。手动版本、重命名、删除版本与恢复都先锁定所属简历；重命名只更新名称，恢复直接替换当前简历且不创建新版本；每份简历最多保存 10 个版本。`0023` 为 `resume_versions.name` 回填历史名称，历史初始版本、恢复前备份和 restore 记录使用系统名称。
 
@@ -155,6 +157,8 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 公开的 `/api/account/*` 通过 `get_current_user` 获取当前用户，不接受客户端 `user_id`。`GET /api/account/profile` 返回资料并附带简历数量与最近 5 份简历；`PATCH /api/account/profile` 只允许修改昵称（去空白后 1–50 字符）。头像上传复用 `decode_image_data_url`、`build_avatar_object_name` 和 `asset_url`：新对象写入 `users/{user_id}/assets/avatar/...`，再更新 `users.avatar_object_key`，提交失败补偿删除新对象，成功后才清理旧对象；响应只含相对 URL。普通改密和微信绑定不是运行时公开契约；用户停用或管理员操作仍通过 `revoke_user_sessions` 撤销该用户的 Web 与小程序 session。
 
+`UserProfile` 模型承载每个用户至多一份的个人画像（`user_profiles` 表，迁移 `0043`），`GET/PUT /api/account/user-profile` 负责读写。`GET` 未创建时返回 `lock_version=1` 的约定空对象且不写库；`PUT` 整体替换全部可编辑字段（缺省以 `null`/空数组覆盖），首次创建要求 `base_lock_version=1`。更新使用 `user_id + lock_version` 条件写并递增版本，影响 0 行即并发冲突，`USER_PROFILE_VERSION_CONFLICT` 附最新画像供前端刷新重试；创建时 `IntegrityError` 冲突同样转成该错误。薪资币种统一转大写三字母，数组字段去除空串与重复并保留提交顺序；schema 侧 `UserProfileData` 追加 `lock_version` 与 UTC 时间戳，`GET /api/account/profile` 的 `profile` 字段未创建时为 `null`。
+
 ## 简历分享
 
 `application/resumes/share_service.py` 承担分享业务，`modules/resumes/share_routes.py` 暴露管理端 4 个端点（`/api/resumes/{resume_id}/share` 的 GET/POST/PATCH/DELETE）和公开只读端点（`/api/share/{token}`，依赖 `get_optional_user` 以支持 `private` 可见性判断）。token 使用 `secrets.token_urlsafe(16)`，全局唯一且冲突重试 3 次；`POST` 可选携带 `visibility`（缺省 `public`）与 `expires_at`（缺省永久）指定创建/覆盖时的权限和有效期，已有链接时作废旧 token 生成新 token，`DELETE` 清空分享字段，重复删除幂等。公开解析按「token 存在 → 未过期（SQLite naive datetime 按 UTC 解释后比较）→ 非 `private` 或访问者是分享者本人 → 简历与最新版本存在」的顺序校验，任一不满足统一抛 `SHARE_LINK_UNAVAILABLE`，路由转成 `404`，防止枚举探测。分享内容实时读取 `resume_versions` 最新正式版本并脱敏返回 `data/style/sharer`，不保存快照，因此所有者后续保存新版本会立即反映到分享页。
@@ -163,7 +167,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0042`、模板初始化和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0043`、模板初始化和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 
