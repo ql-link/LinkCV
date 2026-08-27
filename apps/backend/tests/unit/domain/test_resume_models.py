@@ -138,6 +138,52 @@ def test_tiptap_rich_text_preserves_supported_marks_and_nodes() -> None:
     assert rich_text.model_dump(mode="json")["content"] == payload
 
 
+def test_tiptap_rich_text_normalizes_the_ordered_list_noop_type_default() -> None:
+    payload = {
+        "type": "doc",
+        "content": [
+            {
+                "type": "orderedList",
+                "attrs": {"start": 1, "type": None},
+                "content": [
+                    {
+                        "type": "listItem",
+                        "content": [
+                            {
+                                "type": "paragraph",
+                                "content": [{"type": "text", "text": "第一项"}],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+    rich_text = RichText(format="tiptap-json", content=payload)
+
+    ordered_list = rich_text.model_dump(mode="json")["content"]["content"][0]
+    assert ordered_list["attrs"] == {"start": 1}
+    assert payload["content"][0]["attrs"] == {"start": 1, "type": None}
+
+
+def test_tiptap_rich_text_rejects_a_non_null_ordered_list_type() -> None:
+    with pytest.raises(ValidationError, match="unsupported tiptap keys"):
+        RichText(
+            format="tiptap-json",
+            content={
+                "type": "doc",
+                "content": [
+                    {
+                        "type": "orderedList",
+                        "attrs": {"start": 1, "type": "A"},
+                        "content": [],
+                    }
+                ],
+            },
+        )
+
+
 def test_tiptap_rich_text_rejects_unknown_nodes_and_unsafe_assets() -> None:
     with pytest.raises(ValidationError, match="unsupported tiptap node"):
         RichText(
