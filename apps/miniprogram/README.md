@@ -20,7 +20,7 @@
 1. 打开微信开发者工具，选择"导入项目"。
 2. 项目目录选择本目录 `apps/miniprogram`，不要选择仓库根目录。
 3. AppID 使用 `project.config.json` 中的项目 AppID；如果实际发布主体不同，先替换为该主体的小程序 AppID。
-4. 开发版默认访问 `http://127.0.0.1:8000`。后端在其他内网地址时，在开发者工具控制台执行 `wx.setStorageSync("linkcv_api_base_url", "http://<内网地址>:8000")`，重新进入小程序即可；该覆盖只在 `develop` 生效，不需要修改受版本控制的文件。开发者工具中还需临时关闭"校验合法域名、web-view（业务域名）、TLS 版本以及 HTTPS 证书"。
+4. 开发者工具中的 `develop` 包会自动读取启动脚本生成的 `config/local.js`，没有该文件时默认访问 `http://127.0.0.1:8000`。真机上的 `develop` 包不会读取包内的 `local.js`，没有设备本地覆盖时默认访问 `https://linkresume.cn`；如需真机联调，在开发者工具或真机调试控制台执行 `wx.setStorageSync("linkcv_api_base_url", "http://<内网地址>:8000")` 后重新进入小程序即可，该覆盖只在 `develop` 生效。开发者工具中还需临时关闭"校验合法域名、web-view（业务域名）、TLS 版本以及 HTTPS 证书"。
 5. 根级 `npm run dev:local` / `npm run dev:development` 会监听构建 PDF CLI；若单独启动后端，先执行 `npm --prefix apps/web run build:pdf-cli`。
 6. 在微信公众平台配置并发布“小程序用户隐私保护指引”；启动后端并配置与小程序 AppID 配对的 `WECHAT_APPID` 和 `WECHAT_SECRET`，再测试两个游客标签页、统一微信登录、扫码确认和简历图片预览。
 
@@ -35,7 +35,7 @@ module.exports = {
 };
 ```
 
-该地址是小程序包内公开的服务根地址，不是密钥。体验版和正式版忽略开发者工具中的本地存储覆盖，并拒绝 HTTP 地址。通过第三方平台代开发时可用 ext config 的 `apiBaseUrl` 覆盖；普通开发者工具联调优先使用上面的本地存储方式。`WECHAT_SECRET` 只能保存在后端私密环境中，禁止写入本目录。
+该地址是小程序包内公开的服务根地址，不是密钥。`config/local.js` 只在微信开发者工具的 `develop` 运行时读取；真机 `develop` 忽略包内的该文件，没有 `linkcv_api_base_url` 设备本地覆盖时回退到 `https://linkresume.cn`，仍可用该 storage key 显式覆盖局域网地址。体验版和正式版忽略开发配置与本地存储覆盖，并拒绝 HTTP 地址。通过第三方平台代开发时可用 ext config 的 `apiBaseUrl` 覆盖，但同样必须使用 HTTPS。`WECHAT_SECRET` 只能保存在后端私密环境中，禁止写入本目录。
 
 还必须在微信公众平台完成：
 

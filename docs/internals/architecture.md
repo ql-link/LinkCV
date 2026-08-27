@@ -28,7 +28,7 @@ FastAPI 在 `apps/backend/src/linkcv/main.py` 以 `/api` 前缀挂载浏览器�
 - MySQL 是用户、简历、Agent 会话/提案、结构化 JD 和治理数据的权威存储，表结构只通过 Alembic 迁移演进。
 - Web 登录态使用短 JWT access Cookie 与不透明 refresh Cookie；小程序使用 Bearer access 与 JSON refresh。Redis session 的 channel 阻止两端凭据混用并支持统一撤销；小程序 Bearer 只能访问 `/api/miniprogram/resumes*` 只读接口与 `/api/miniprogram/account/*` 本人资料接口。小程序冷启动落在“简历”游客态，可切换“我的”游客态，两页都不发起账号识别、登录、隐私授权或个人数据请求；登录页只能由用户从页面引导主动进入，也不预先探测账号。客户端在取得新会话前要求用户勾选微信平台隐私保护指引并主动确认（未勾选时在协议区行内提示），后端自动复用已有 openid 账号，或在 `privacy_accepted=true` 时创建普通账号；登录可取消并返回原标签页。扫码确认同样只在用户主动确认后建号或登录，并以新的微信 code 建立独立小程序会话；请求重试路径不能静默触发首次建号。`privacy_accepted` 不作为服务端持久化的同意审计记录。
 - 小程序简历列表采用双列一体化画廊海报卡片（顶部顶格真实预览图 + 标题时间，点击直达详情），下拉刷新支持静默就地更新与极速回弹，并在列表加载后异步预取正式版本 PNG 缩略图并直出真实外观。简历详情先查询最新手动版本（缺失时初始版本），本机不存在同版本文件时从 FastAPI 下载由共享 React-PDF 核心生成并经 PDFium 栅格化的智能一页 PNG，保存到 `wx.env.USER_DATA_PATH` 后，在当前详情页专门划分的交互视口（`movable-area` 与 `movable-view`）中直接进行双指手势缩放与自由拖拽平移查阅；服务端不保存 PDF 或 PNG 成品。退出、会话失效或账号切换会清理本地索引和文件。
-- 普通 Web 登录页由 `/api/auth/capabilities` 控制：Development 可使用邮箱密码或微信扫码，Production 只显示微信小程序码；管理员密码表单只存在于 `/admin/login`。小程序 `develop` 默认自动识别启动时生成的 `local.js` 局域网地址直连 API 8000 端口，并允许开发者工具覆盖内网地址；`trial/release` 固定访问 `https://linkresume.cn`，第三方平台扩展配置可覆盖但必须使用 HTTPS。
+- 普通 Web 登录页由 `/api/auth/capabilities` 控制：Development 可使用邮箱密码或微信扫码，Production 只显示微信小程序码；管理员密码表单只存在于 `/admin/login`。小程序 `develop` 仅在微信开发者工具中自动读取启动时生成的 `local.js` 局域网地址直连 API 8000 端口；真机 `develop` 忽略包内 `local.js`，无 `linkcv_api_base_url` 设备本地覆盖时使用 `https://linkresume.cn`，仍允许通过该 storage key 显式覆盖内网地址；`trial/release` 固定使用 `https://linkresume.cn`，第三方平台扩展配置可覆盖但必须使用 HTTPS。
 - 图片存储在私有 MinIO bucket 中；现有兼容资源位于 `users/<user-id>/assets/`，简历编辑器新增资源位于 `users/<user-id>/resumes/<resume-id>/assets/`，两者都由服务端生成对象键并在读取时校验所有权。
 - 原型 Express/SQLite 数据不迁移到 MySQL。
 

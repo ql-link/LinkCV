@@ -33,32 +33,98 @@ test("static runtime config supports a standalone release build", () => {
   }
 });
 
-test("develop build defaults to the local FastAPI origin", () => {
+test("DevTools develop build defaults to the local FastAPI origin", () => {
   global.wx = {
     getExtConfigSync: () => ({}),
+    getSystemInfoSync: () => ({ platform: "devtools" }),
     getAccountInfoSync: () => ({ miniProgram: { envVersion: "develop" } }),
   };
   assert.equal(resolveApiBaseUrl(), "http://127.0.0.1:8000");
 });
 
+test("DevTools develop build uses the bundled local config", () => {
+  global.wx = {
+    getExtConfigSync: () => ({}),
+    getSystemInfoSync: () => ({ platform: "devtools" }),
+    getAccountInfoSync: () => ({ miniProgram: { envVersion: "develop" } }),
+  };
+  let localConfigReads = 0;
+  assert.equal(
+    resolveApiBaseUrl({
+      readLocalConfig: () => {
+        localConfigReads += 1;
+        return { apiBaseUrl: "http://192.168.3.20:8000/" };
+      },
+    }),
+    "http://192.168.3.20:8000",
+  );
+  assert.equal(localConfigReads, 1);
+});
+
+test("real-device develop build ignores local config and defaults to production", () => {
+  global.wx = {
+    getExtConfigSync: () => ({}),
+    getSystemInfoSync: () => ({ platform: "ios" }),
+    getAccountInfoSync: () => ({ miniProgram: { envVersion: "develop" } }),
+  };
+  let localConfigReads = 0;
+  assert.equal(
+    resolveApiBaseUrl({
+      readLocalConfig: () => {
+        localConfigReads += 1;
+        return { apiBaseUrl: "http://192.168.3.20:8000" };
+      },
+    }),
+    "https://linkresume.cn",
+  );
+  assert.equal(localConfigReads, 0);
+});
+
 test("develop build accepts a device-local internal API URL override", () => {
   global.wx = {
     getExtConfigSync: () => ({}),
+    getSystemInfoSync: () => ({ platform: "android" }),
     getStorageSync: (key) => key === "linkcv_api_base_url"
       ? "http://192.168.1.23:8000/"
       : "",
     getAccountInfoSync: () => ({ miniProgram: { envVersion: "develop" } }),
   };
-  assert.equal(resolveApiBaseUrl(), "http://192.168.1.23:8000");
+  assert.equal(
+    resolveApiBaseUrl({
+      readLocalConfig: () => ({ apiBaseUrl: "http://192.168.3.20:8000" }),
+    }),
+    "http://192.168.1.23:8000",
+  );
 });
 
 test("release build ignores a device-local development override", () => {
   global.wx = {
     getExtConfigSync: () => ({}),
+    getSystemInfoSync: () => ({ platform: "ios" }),
     getStorageSync: () => "http://192.168.1.23:8000",
     getAccountInfoSync: () => ({ miniProgram: { envVersion: "release" } }),
   };
-  assert.equal(resolveApiBaseUrl(), "https://linkresume.cn");
+  assert.equal(
+    resolveApiBaseUrl({
+      readLocalConfig: () => ({ apiBaseUrl: "http://192.168.3.20:8000" }),
+    }),
+    "https://linkresume.cn",
+  );
+});
+
+test("trial build ignores local development sources and keeps the production default", () => {
+  global.wx = {
+    getExtConfigSync: () => ({}),
+    getSystemInfoSync: () => ({ platform: "android" }),
+    getStorageSync: () => "http://192.168.1.23:8000",
+    getAccountInfoSync: () => ({ miniProgram: { envVersion: "trial" } }),
+  };
+  assert.equal(
+    resolveApiBaseUrl({
+      readLocalConfig: () => ({ apiBaseUrl: "http://192.168.3.20:8000" }),
+    }),
+    "https://linkresume.cn",
+  );
 });
 
 test("release build rejects an insecure configured API URL", () => {
