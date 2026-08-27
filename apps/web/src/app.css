@@ -1028,6 +1028,7 @@ select:not([data-slot]):focus-visible,
   z-index: 0;
   border-radius: 0 0 50% 50%;
   background: #ff8a00;
+  clip-path: inset(0 15mm);
   content: "";
 }
 

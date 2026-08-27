@@ -55,6 +55,13 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 
 `/api/account/*` 通过当前用户身份确定资源归属，不接受 `user_id`。当前公开接口为 profile、昵称和头像读写；Web 账号页不再显示密码或微信绑定入口。`user.email` 对微信用户为 `null`。最近简历仍按更新时间倒序返回最多 5 条。
 
+`GET/PUT /api/account/user-profile` 维护跨简历共享的个人画像，聚合求职偏好、基础信息与技能荣誉，独立保存于 `user_profiles` 表，不修改任何简历内容。未创建时 `GET` 返回 `lock_version=1` 的约定空对象且不写库；`PUT` 整体替换全部可编辑字段，缺省字段以 `null`/空数组覆盖旧值。`PUT` 必须携带 `base_lock_version`（首次创建固定为 1），服务端原子比较版本号，并发基准过期返回 `409 USER_PROFILE_VERSION_CONFLICT`，响应 `{profile}` 携带最新画像供调用方刷新后重试。薪资必须成组填写：`salary_min`/`salary_max` 任一非空时要求 `salary_currency`（大写三字母 ISO 4217）与 `salary_period` 同时非空；`available_from` 仅在 `availability=custom` 时允许填写。数组类字段（`target_positions`/`exclusions`/`target_companies`/`languages`/`skills`/`certifications`/`honors`/`campus_experiences`）空文本去重并保留提交顺序，单元素最长 100 字符、数组最长 100 项；`school_tier` 只接受 `project_985`/`project_211`/`double_first_class`，最长 10 项。非法枚举、超长列表或违反联动约束返回 `422` 字段校验；`GET /api/account/profile` 响应新增 `profile` 字段（未创建为 `null`）。
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `GET` | `/api/account/user-profile` | `{profile}`；未创建返回 `lock_version=1` 空对象 |
+| `PUT` | `/api/account/user-profile` | `{profile}`；请求含 `base_lock_version` 及可编辑字段，并发过期返回 `409 USER_PROFILE_VERSION_CONFLICT` |
+
 ## 语义简历契约
 
 简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`。数据库 ID 在 HTTP 中使用十进制字符串。运行期只接受字段完整的 `ResumeDocument data` 与 `ResumePresentation style`，不再携带或协商 `schema_version`；缺少 `semantic_sections` 或 `manifest` 的请求不会被静默补齐。`data.semantic_sections` 把用户可见标题、稳定语义类型、来源、置信度和真实内容引用分离保存，每份实际内容必须被恰好引用一次；编辑器章节使用独立 `blk_*` ID，标题改名不改变章节身份。已进入编辑器的章节正文以受控 `{format: "tiptap-json", content: JSONContent}` 保存，保留段落、列表、双列、信息行、图片、对齐和富文本 marks；历史 `{format: "markdown", content: string}` 只作为兼容输入继续可读，首次正文保存后转成规范 Tiptap JSON。页级 `sidebar/main` 属于 `style.manifest` 投影，禁止作为正文持久化；`profile`、`interests` 等侧栏内容仍是独立语义章节。`style.manifest` 只允许受控 renderer、区域、插槽、唯一自定义兜底区和头像策略。简历正文以用户内容为准：错别字、非标准邮箱或电话、无法识别或先后矛盾的日期、缺少单位或职位等内容质量问题不阻断保存、导入或版本恢复；可识别日期仍会规范化，无法识别的日期原样保留。字段类型、总量和长度上限、URL 协议、Markdown 主动内容、Tiptap 节点/marks/属性白名单及内部 ID 完整性仍严格校验。`style.smart_one_page` 控制连续单页或标准 A4 导出模式，并随版本快照保存。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不再是简历写契约。
@@ -104,16 +111,19 @@ Web PDF 请求必须携带当前保存成功后的 `lock_version`。服务端再
 | Method | Path | 成功结果 |
 | --- | --- | --- |
 | `GET` | `/api/agent/readiness` | `200 {ready: true}`；只读校验完整 Agent 服务链，不返回模型或凭据 |
+| `GET` | `/api/agent/contexts[?type=:type&q=:query&limit=:limit]` | `{contexts}`；返回当前用户可选的轻量资料引用，类型为 `resume`、`resume_version`、`job`、`application` 或 `interview`；不返回正文 |
 | `GET` | `/api/agent/sessions[?resume_id=:id]` | `{sessions}`，`resume_id` 可选；传入时按本人简历过滤，省略时返回当前用户跨简历最近更新的至多 50 个会话 |
-| `POST` | `/api/agent/sessions` | `201 {session}`；请求为 `{resume_id, title?}` |
+| `POST` | `/api/agent/sessions` | `201 {session}`；请求为 `{resume_id?, title?}`，独立助手页可先创建未绑定简历的会话 |
 | `GET` | `/api/agent/sessions/:sessionId` | `{session}`，包含最近 100 条消息 |
-| `POST` | `/api/agent/sessions/:sessionId/messages` | SSE；请求为 `{content, idempotency_key, selection_context?, reply_to_sequence_no?}`，选区包含稳定块 ID、编辑器范围、原文和 SHA-256；回答结构化澄清问题时必须携带对应助手消息序号 |
+| `POST` | `/api/agent/sessions/:sessionId/messages` | SSE；请求为 `{content, idempotency_key, selection_context?, contexts?, reply_to_sequence_no?}`；`contexts` 最多 10 项且同类型只能选择一项，每项携带服务端返回的 `type`、`id` 和版本标记；选区包含稳定块 ID、编辑器范围、原文和 SHA-256；回答结构化澄清问题时必须携带对应助手消息序号 |
 | `POST` | `/api/agent/runs/:runId/cancel` | `{run_id, status}`；重复取消幂等 |
 | `GET` | `/api/agent/proposals?resume_id=:id&session_id=:sessionId` | `{proposals}`，只返回当前待确认提案；`session_id` 可选，传入时同时校验会话归属和简历绑定并按会话过滤 |
 | `POST` | `/api/agent/proposals/:proposalId/confirm` | `{resume}`；确认后应用完整快照并创建 `agent` 版本 |
 | `POST` | `/api/agent/proposals/:proposalId/reject` | `{proposal}`；放弃待确认提案 |
 
-SSE 事件包括 `run.started`、`assistant.delta`、`clarification.requested`、`tool.started`、`tool.completed`、`proposal.created`、`run.completed`、`run.cancelled` 和 `run.failed`。`clarification.requested` 携带版本化的 `clarification`：1–3 个问题，每题 2–3 个 `{id,label,description?}` 选项；客户端额外提供自由输入的“其他”。该成功运行把助手消息以 `message_type=clarification` 持久化，普通文本消息为 `message_type=text`。回答只有在 `reply_to_sequence_no` 仍指向当前会话最后一条澄清消息时才创建新运行，否则返回 `409 AGENT_CLARIFICATION_STALE`，客户端应刷新当前会话。每个成功建立的 SSE 响应必须以后三种 `run.*` 终态之一结束；Pi 在 HTTP 200 后提前 EOF 时 FastAPI 补发 `run.failed/AGENT_UPSTREAM_FAILED`，浏览器也会把无终态 EOF 识别为 `AGENT_STREAM_INCOMPLETE`。只有 `run.completed` 才把完整助手文本或结构化澄清消息和可用的 Token/估算成本写入数据库；失败、取消或缺失终态不会把已经流出的部分文本保存成历史消息。同一用户只允许一个 running 运行；相同 `idempotency_key` 重放现有运行状态。取消与流式完成并发时采用第一个成功写入的终态，后到操作不得覆盖。Agent 只能读取当前会话绑定的简历，并且不能直接写简历：修改先解析稳定 locator，再读取最小范围、生成结构化诊断并创建类型化 operation 提案；服务端在快照副本上应用 operation 后仍保存完整候选 data/style。旧的完整快照内部提案接口保留一个兼容期，存量 pending 提案仍可确认。确认时同时校验 `base_lock_version`、locator 和目标内容哈希；整份简历发生并发变化返回 `409 RESUME_EDIT_CONFLICT`，目标块失效返回 `409 TARGET_STALE` 并把提案标记为 conflicted。过期提案返回 `410 AGENT_PROPOSAL_EXPIRED`，正式版本已达上限时返回 `409 RESUME_VERSION_LIMIT_REACHED` 且不应用提案。服务或模型不可用返回安全化的 `AGENT_UNAVAILABLE`、`AGENT_MODEL_UNAVAILABLE`、`AGENT_MODEL_UNSUPPORTED`、`AGENT_MODEL_TIMEOUT` 或 `AGENT_MODEL_REQUEST_FAILED`，供应商原始错误和 API Key 不进入浏览器响应。
+SSE 事件包括 `run.started`、`run.phase`、`assistant.delta`、`clarification.requested`、`tool.started`、`tool.completed`、`proposal.created`、`run.completed`、`run.cancelled` 和 `run.failed`。`run.phase` 只允许服务端定义的稳定阶段和安全化文案，并可携带实际引用资料数量，不暴露工具参数或推理内容。`clarification.requested` 携带版本化的 `clarification`：1–3 个问题，每题 2–3 个 `{id,label,description?}` 选项；客户端额外提供自由输入的“其他”。该成功运行把助手消息以 `message_type=clarification` 持久化，普通文本消息为 `message_type=text`。回答只有在 `reply_to_sequence_no` 仍指向当前会话最后一条澄清消息时才创建新运行，否则返回 `409 AGENT_CLARIFICATION_STALE`，客户端应刷新当前会话。每个成功建立的 SSE 响应必须以后三种 `run.*` 终态之一结束；Pi 在 HTTP 200 后提前 EOF 时 FastAPI 补发 `run.failed/AGENT_UPSTREAM_FAILED`，浏览器也会把无终态 EOF 识别为 `AGENT_STREAM_INCOMPLETE`。只有 `run.completed` 才把完整助手文本或结构化澄清消息和可用的 Token/估算成本写入数据库；失败、取消或缺失终态不会把已经流出的部分文本保存成历史消息。同一用户只允许一个 running 运行；相同 `idempotency_key` 重放现有运行状态。取消与流式完成并发时采用第一个成功写入的终态，后到操作不得覆盖。
+
+独立助手页选择的资料不是可信正文：FastAPI 按当前用户重新查询每项资源、核对版本标记、拒绝不存在、越权或已过期的引用，并仅把受控字段和有界正文作为本轮只读 `contextMaterials` 交给 Pi。用户消息只持久化轻量引用快照，后续读取不会把历史正文重新注入。会话首次成功发送带简历归属的资料时绑定该简历；已经绑定的会话不能改绑其他简历。Agent 只能修改会话绑定的简历，并且不能直接写简历：修改先解析稳定 locator，再读取最小范围、生成结构化诊断并创建类型化 operation 提案；服务端在快照副本上应用 operation 后仍保存完整候选 data/style。旧的完整快照内部提案接口保留一个兼容期，存量 pending 提案仍可确认。确认时同时校验 `base_lock_version`、locator 和目标内容哈希；整份简历发生并发变化返回 `409 RESUME_EDIT_CONFLICT`，目标块失效返回 `409 TARGET_STALE` 并把提案标记为 conflicted。过期提案返回 `410 AGENT_PROPOSAL_EXPIRED`，正式版本已达上限时返回 `409 RESUME_VERSION_LIMIT_REACHED` 且不应用提案。上下文不存在或过期分别返回 `AGENT_CONTEXT_NOT_FOUND`、`AGENT_CONTEXT_STALE`；会话改绑返回 `AGENT_SESSION_RESUME_MISMATCH`。服务或模型不可用返回安全化的 `AGENT_UNAVAILABLE`、`AGENT_MODEL_UNAVAILABLE`、`AGENT_MODEL_UNSUPPORTED`、`AGENT_MODEL_TIMEOUT` 或 `AGENT_MODEL_REQUEST_FAILED`，供应商原始错误和 API Key 不进入浏览器响应。
 
 `/internal/agent/**` 仅供 Pi 服务使用，以独立 Bearer token 鉴权且不出现在 OpenAPI。除兼容的完整上下文和快照提案接口外，范围化工具依次使用 `POST /runs/:runId/targets:resolve`、`context:read`、`materials:search`、`diagnoses` 和 `proposals:v2`。目标出现零处或多处时不允许创建提案；诊断 fingerprint、资料版本、执行模式和 operation 范围由 FastAPI 复验。`GET /internal/agent/readiness` 验证当前 `pi_agent` binding、凭据解密和 Pi provider 映射，不发起供应商模型调用；工具事件以 `(run_id, call_key)` 幂等，同一工具调用进入 succeeded、failed 或 cancelled 后不可回退或改写为另一终态。内部运行配置复用统一模型管理中的 `pi_agent` binding；模型配置页面仍是 `/admin/llm/models`，不新增第二套 Pi 配置 UI。
 

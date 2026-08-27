@@ -18,14 +18,14 @@
 | `src/linkcv/services/resume_import_idempotency.py` | Redis Lua 请求指纹到导入 ID 的短期绑定与冲突保护 |
 | `src/linkcv/core/mq/` | RabbitMQ/Kafka publisher、统一导入消息和 confirm 异常边界 |
 | `src/linkcv/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
-| `src/linkcv/modules/identity/` | 用户模型、管理员密码登录、双通道会话、微信自动建号、扫码状态机、`/api/account` 用户中心与管理端用户管理 |
+| `src/linkcv/modules/identity/` | 用户模型、管理员密码登录、双通道会话、微信自动建号、扫码状态机、`/api/account` 用户中心、个人画像（`user_profiles`）与管理端用户管理 |
 | `src/linkcv/modules/miniprogram/` | 本人正式版本只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品。`account_routes.py` 提供小程序专用昵称与头像读写（头像二进制仅经 `/api/miniprogram/account/avatar` 分发） |
 | `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板及管理、简历、版本、异步导入、分享和资源路由 |
 | `src/linkcv/modules/datasets/` | `user_dataset` 资料元数据、异步解析受理与状态列表路由 |
 | `src/linkcv/modules/job_descriptions/` | JD 单表 ORM、HTTP DTO 和受保护路由 |
 | `src/linkcv/modules/interviews/` | 求职进程、单场面试和素材 ORM、HTTP DTO 与受保护路由 |
 | `src/linkcv/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
-| `src/linkcv/modules/agent/` | 用户会话、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
+| `src/linkcv/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
 | `migrations/` | SQL-first Alembic revision；当前 head 为 `0044` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
@@ -55,7 +55,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0042` 先验证 `blank-cn`、其历史简历引用以及所有 `classic-technical-cn` 模板/简历/版本快照，再把经典单页技术模板的 A4 页边距恢复为生产审查值 `9/11/9/11mm` 并删除空白模板行。`resumes.template_id` 的既有 `ON DELETE SET NULL` 只清除历史简历的来源引用；简历和版本自有的 `data_json/style_json` 不变。迁移写后逐项验证模板不存在、旧简历仍存在且来源已置空、经典技术快照内容不变。revision 为 forward-only，恢复删除的模板和原引用依赖升级前备份。
 
-`0043` 来自 Development 已有基线，新增 `user_profiles` 用户个人画像表；稳定 revision ID 已在共享环境应用，后续迁移不得复用或改写。
+`0043` 是 Development 已有稳定基线，新增 `user_profiles` 用户个人画像表：与 `users` 一对一（唯一 `user_id`、`RESTRICT` 外键），独立于简历内容保存求职偏好、基础信息与技能荣誉。关键偏好用独立列并以 CHECK 约束拦截非法枚举（期望工作性质、工作方式、计薪周期、可到岗时间、学历层次）与联动非法（薪资成组、`available_from` 要求 `availability=custom`、`salary_max >= salary_min`）；多变列表（职位方向、排除条件、目标公司、语言、技能、证书、荣誉、校园经历、学校层级）用 JSON 数组列并校验 `json_type`。`lock_version` 乐观锁初始为 1。稳定 revision ID 已在共享环境应用，后续迁移不得复用或改写；revision 为 forward-only。
 
 `0044` 只锁定并更新稳定 key 唯一的 `classic-technical-cn` 官方模板行，把后续创建或导入快照使用的字号、行距和主题色恢复为受审的 `9.5 / 1.25 / #202632`；A4 页边距、模板正文、manifest、模板 ID 与启用状态保持不变。既有 `resumes` 和不可变 `resume_versions` 不在写集内，继续保留各自完整快照。迁移在更新前要求目标严格匹配受保护的 `0042` 样式，写后重新解析并比较完整目标快照；任何现场漂移都会在写入前失败。revision 仍为 forward-only，恢复依赖升级前备份或新的向前修正。
 
@@ -114,7 +114,7 @@ scene 使用结构化 hash 保存 state、Web poll token 哈希、claim 所有�
 
 ## 统一 LLM 调用
 
-智能助手的浏览器请求先由 FastAPI 创建运行并写入 MySQL，再代理到独立 `apps/pi-service`。Pi 通过服务间 HTTP 读取当前 `pi_agent` binding 的解密运行配置，并把所选模型 ID 与配置版本快照到 `agent_runs`；它不使用 LiteLLM，也不提供独立模型治理。FastAPI 每轮从当前 `agent_session` 的消息恢复有限上下文；成功运行把完整助手文本或结构化澄清消息、Token 和可用的估算成本写回数据库，失败、取消或缺失终态时只保存运行终态，不把已经流出的半条文本写成历史助手消息。澄清回答以助手消息序号做并发校验，只有它仍是当前会话最后一条结构化澄清消息时才允许创建下一轮。取消与流式收口以条件更新和运行行锁保证终态只写一次。工具审计先锁运行行再按 call key 幂等写入，终态不可回退。Pi 对 FastAPI 只允许调用目标解析、范围上下文、当前用户资料召回、结构化诊断和范围化提案工具；受限 `read` 仅加载 Pi 镜像内四个已注册 Skill Markdown，不访问业务存储或其他服务端文件。内部路由从可信 `runId` 反查用户与简历，不接受调用方传入用户身份。完整边界见 [Pi 集成文档](third-party-pi.md)。
+智能助手的浏览器请求先由 FastAPI 创建运行并写入 MySQL，再代理到独立 `apps/pi-service`。`context_service.py` 为独立助手页列出简历、历史版本、岗位、求职进程和面试的轻量引用；发送时在同一事务链中按当前用户重新查询、锁定并核对版本标记，只把字段白名单内且有长度上限的资料交给 Pi，消息元数据只保存展示用引用快照。未绑定会话第一次成功发送含简历归属的上下文时绑定该简历，已绑定会话拒绝切换到另一份简历。Pi 通过服务间 HTTP 读取当前 `pi_agent` binding 的解密运行配置，并把所选模型 ID 与配置版本快照到 `agent_runs`；它不使用 LiteLLM，也不提供独立模型治理。FastAPI 每轮从当前 `agent_session` 的消息恢复有限上下文；成功运行把完整助手文本或结构化澄清消息、Token 和可用的估算成本写回数据库，失败、取消或缺失终态时只保存运行终态，不把已经流出的半条文本写成历史助手消息。澄清回答以助手消息序号做并发校验，只有它仍是当前会话最后一条结构化澄清消息时才允许创建下一轮。取消与流式收口以条件更新和运行行锁保证终态只写一次。工具审计先锁运行行再按 call key 幂等写入，终态不可回退。Pi 对 FastAPI 只允许调用目标解析、范围上下文、当前用户资料召回、结构化诊断和范围化提案工具；受限 `read` 仅加载 Pi 镜像内四个已注册 Skill Markdown，不访问业务存储或其他服务端文件。内部路由从可信 `runId` 反查用户与简历，不接受调用方传入用户身份。完整边界见 [Pi 集成文档](third-party-pi.md)。
 
 `LLMService.chat()`、`LLMService.stream_chat()` 和 `LLMService.structured_chat()` 是后端业务模块使用的内部异步接口，不注册 HTTP route。调用方只提供可信 `user_id`、稳定 `source`、messages，以及结构化调用所需的响应模型；不传候选 ID、adapter、模型名、地址或密钥。服务按调用方传入的能力解析唯一当前 binding；当前能力未绑定时，Chat 返回 `LLM_CHAT_NOT_CONFIGURED`，其他能力返回 `LLM_MODEL_NOT_CONFIGURED`。单次逻辑调用只调用当前模型一次，供应商失败直接收口，不重试、不遍历其他候选、不自动切换 binding。结构化调用把 Pydantic JSON Schema 作为系统指令加入 messages，不向供应商传递 `response_format`；模型文本由 LinkCV 本地提取 JSON 对象并执行 Pydantic 严格校验，非法结果以 `LLM_RESPONSE_INVALID` 收口且不追加模型调用。
 
@@ -162,6 +162,8 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 ## 用户中心
 
 公开的 `/api/account/*` 通过 `get_current_user` 获取当前用户，不接受客户端 `user_id`。`GET /api/account/profile` 返回资料并附带简历数量与最近 5 份简历；`PATCH /api/account/profile` 只允许修改昵称（去空白后 1–50 字符）。头像上传复用 `decode_image_data_url`、`build_avatar_object_name` 和 `asset_url`：新对象写入 `users/{user_id}/assets/avatar/...`，再更新 `users.avatar_object_key`，提交失败补偿删除新对象，成功后才清理旧对象；响应只含相对 URL。普通改密和微信绑定不是运行时公开契约；用户停用或管理员操作仍通过 `revoke_user_sessions` 撤销该用户的 Web 与小程序 session。
+
+`UserProfile` 模型承载每个用户至多一份的个人画像（`user_profiles` 表，迁移 `0043`），`GET/PUT /api/account/user-profile` 负责读写。`GET` 未创建时返回 `lock_version=1` 的约定空对象且不写库；`PUT` 整体替换全部可编辑字段（缺省以 `null`/空数组覆盖），首次创建要求 `base_lock_version=1`。更新使用 `user_id + lock_version` 条件写并递增版本，影响 0 行即并发冲突，`USER_PROFILE_VERSION_CONFLICT` 附最新画像供前端刷新重试；创建时 `IntegrityError` 冲突同样转成该错误。薪资币种统一转大写三字母，数组字段去除空串与重复并保留提交顺序；schema 侧 `UserProfileData` 追加 `lock_version` 与 UTC 时间戳，`GET /api/account/profile` 的 `profile` 字段未创建时为 `null`。
 
 ## 简历分享
 

@@ -26,6 +26,7 @@ const profile: AccountProfile = {
   recent_resumes: [
     { id: "11", title: "产品经理简历", updated_at: "2026-07-30T08:00:00Z" },
   ],
+  profile: null,
 };
 
 const sessions: AgentSession[] = [

@@ -18,6 +18,7 @@ import {
   BriefcaseBusiness,
   CalendarDays,
   Check,
+  CircleAlert,
   ChevronLeft,
   ChevronRight,
   CircleCheck,
@@ -31,9 +32,7 @@ import {
   LayoutGrid,
   Link2,
   ListChecks,
-  Lightbulb,
   Mic,
-  MoreHorizontal,
   NotebookTabs,
   Pencil,
   Plus,
@@ -42,7 +41,6 @@ import {
   Square,
   ArrowUpDown,
   Trash2,
-  Trophy,
   UserRound,
   Video,
   X,
@@ -62,6 +60,13 @@ import {
   type JobDescriptionSummary,
 } from "@/api/client";
 import { careerApplicationPath, careerViewPath, navigateTo, type InterviewView } from "../../routing";
+import {
+  ApplicationsBoard,
+  applicationStatusLabel,
+  formatApplicationDate,
+  formatApplicationDateTime,
+  interviewRoundLabel,
+} from "./ApplicationsBoard";
 import "./interviews.css";
 
 type InterviewStatus = "upcoming" | "active" | "completed" | "cancelled";
@@ -517,8 +522,8 @@ export function InterviewCenterPage({
       {navigation}
       <main className="dashboard-content interview-center-content">
       {notice && (
-        <div className="interview-demo-notice" role="status">
-          <Lightbulb />
+        <div className="interview-error-notice" role="alert" aria-live="assertive">
+          <CircleAlert aria-hidden="true" />
           {notice}
           {pendingConflict && (
             <button
@@ -568,6 +573,8 @@ export function InterviewCenterPage({
           scope={applicationScope}
           sortNewestFirst={sortApplicationsNewestFirst}
           onCreate={() => setShowCreateApplication(true)}
+          onChanged={() => loadData(initialSessionId)}
+          onNotice={setNotice}
           onCreateInterview={(applicationId) => {
             setCreateInterviewApplicationId(applicationId);
             setShowCreate(true);
@@ -712,6 +719,8 @@ function ApplicationsView({
   scope,
   sortNewestFirst,
   onCreate,
+  onChanged,
+  onNotice,
   onCreateInterview,
 }: {
   applications: JobApplicationSummary[];
@@ -721,13 +730,12 @@ function ApplicationsView({
   scope: "all" | "active" | "ended" | "archived";
   sortNewestFirst: boolean;
   onCreate: () => void;
+  onChanged: () => Promise<void>;
+  onNotice: (notice: string) => void;
   onCreateInterview: (applicationId: string) => void;
 }) {
-  const mockApplications = useMemo(createCareerApplicationsMock, []);
-  const isUsingMock = applications.length === 0;
-  const sourceApplications = isUsingMock ? mockApplications : applications;
   const normalizedQuery = query.trim().toLowerCase();
-  const visibleApplications = sourceApplications.filter((item) => {
+  const visibleApplications = applications.filter((item) => {
     const matchesScope = scope === "all"
       || (scope === "active" && item.status === "active" && !item.archived_at)
       || (scope === "ended" && item.status !== "active" && !item.archived_at)
@@ -741,74 +749,34 @@ function ApplicationsView({
     const difference = new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime();
     return sortNewestFirst ? difference : -difference;
   });
-  const extraInterviewRounds = Array.from(new Set(visibleApplications
-    .filter((item) => item.current_stage_type === "interview" && (item.current_round_no ?? 1) > 2)
-    .map((item) => item.current_round_no ?? 1))).sort((left, right) => left - right);
-  const columnDefinitions = [
-    { key: "screening", label: "筛选中" },
-    { key: "communication", label: "等待沟通" },
-    { key: "interview:1", label: "一面" },
-    { key: "interview:2", label: "二面" },
-    ...extraInterviewRounds.map((roundNo) => ({ key: `interview:${roundNo}`, label: interviewRoundLabel(roundNo) })),
-    { key: "hr", label: "HR 面" },
-    { key: "offer", label: "Offer" },
-    { key: "ended", label: "已结束" },
-    ...(visibleApplications.some((item) => item.archived_at) ? [{ key: "archived", label: "已归档" }] : []),
-  ];
-  const columns = columnDefinitions.map(({ key, label }) => ({
-    key,
-    label,
-    items: visibleApplications.filter((item) => pipelineColumnKey(item) === key),
-  }));
   const selectedApplication = selectedApplicationId
     ? applications.find((item) => item.id === selectedApplicationId) ?? null
     : null;
   const applicationWeekStart = startOfWeek().getTime();
   const applicationWeekEnd = addDays(new Date(applicationWeekStart), 7).getTime();
-  const dashboardMetrics = isUsingMock
-    ? { active: 18, weekly: 6, followUp: 7, offers: 2 }
-    : {
-        active: sourceApplications.filter((item) => item.status === "active" && !item.archived_at).length,
-        weekly: sourceApplications.filter((item) => {
-          if (!item.next_session_start_at) return false;
-          const startAt = new Date(item.next_session_start_at).getTime();
-          return startAt >= applicationWeekStart && startAt < applicationWeekEnd;
-        }).length,
-        followUp: sourceApplications.filter((item) => item.status === "active" && item.stage_state === "awaiting_result").length,
-        offers: sourceApplications.filter((item) => item.offer_status === "written_offer_received" || item.offer_status === "accepted").length,
-      };
+  const dashboardMetrics = {
+    active: applications.filter((item) => item.status === "active" && !item.archived_at).length,
+    weekly: applications.filter((item) => {
+      if (!item.next_session_start_at) return false;
+      const startAt = new Date(item.next_session_start_at).getTime();
+      return startAt >= applicationWeekStart && startAt < applicationWeekEnd;
+    }).length,
+    followUp: applications.filter((item) => item.status === "active" && item.stage_state === "awaiting_result").length,
+    offers: applications.filter((item) => item.offer_status === "written_offer_received" || item.offer_status === "accepted").length,
+  };
 
   return (
     <div className="career-applications-layout">
-      <section className="career-application-metrics" aria-label="求职进程数据概览">
-        <CareerApplicationMetric icon={<BriefcaseBusiness />} tone="blue" label="进行中的进程" value={dashboardMetrics.active} change={isUsingMock ? "+2" : undefined} hint={isUsingMock ? undefined : "当前全部进程"} />
-        <CareerApplicationMetric icon={<Clock3 />} tone="orange" label="本周待面试" value={dashboardMetrics.weekly} change={isUsingMock ? "+1" : undefined} hint={isUsingMock ? undefined : "已安排场次"} />
-        <CareerApplicationMetric icon={<Bell />} tone="purple" label="待跟进" value={dashboardMetrics.followUp} hint="需要及时跟进" />
-        <CareerApplicationMetric icon={<Trophy />} tone="green" label="已拿 Offer" value={dashboardMetrics.offers} change={isUsingMock ? "+1" : undefined} hint={isUsingMock ? undefined : "书面 Offer"} />
-      </section>
-
-      <section className="interview-surface career-applications-board">
-        {visibleApplications.length && displayMode === "board" ? (
-          <div
-            className="interview-pipeline-grid"
-            style={{ "--pipeline-column-count": columns.length } as CSSProperties}
-          >
-            {columns.map((column) => (
-              <div className="interview-pipeline-column" key={column.key}>
-                <header className="career-pipeline-column-heading"><h3>{column.label}<span>{column.items.length}</span></h3><div><button type="button" aria-label={`在${column.label}中新建求职进程`} onClick={onCreate}><Plus /></button><MoreHorizontal aria-hidden="true" /></div></header>
-                {column.items.map((item) => (
-                  <PipelineCard
-                    key={item.id}
-                    item={item}
-                    onOpen={isUsingMock ? undefined : () => navigateTo(careerApplicationPath(item.id))}
-                  />
-                ))}
-                {!column.items.length && <p className="pipeline-empty">暂无进程</p>}
-                <button type="button" className="career-pipeline-add" onClick={onCreate}><Plus />添加进程</button>
-              </div>
-            ))}
-          </div>
-        ) : visibleApplications.length ? (
+      <ApplicationsBoard
+        visibleApplications={visibleApplications}
+        displayMode={displayMode}
+        metrics={dashboardMetrics}
+        onCreate={onCreate}
+        onChanged={onChanged}
+        onNotice={onNotice}
+      />
+      {displayMode === "list" && visibleApplications.length ? (
+        <section className="interview-surface career-applications-board">
           <div className="career-application-list" role="table" aria-label="求职进程列表">
             <div role="row"><span role="columnheader">公司与岗位</span><span role="columnheader">当前阶段</span><span role="columnheader">状态</span><span role="columnheader">下一场面试</span><span role="columnheader">操作</span></div>
             {visibleApplications.map((item) => (
@@ -817,19 +785,21 @@ function ApplicationsView({
                 <span role="cell">{item.current_stage_label}</span>
                 <span role="cell">{applicationStatusLabel(item)}</span>
                 <span role="cell">{item.next_session_start_at ? formatApplicationDateTime(item.next_session_start_at) : "暂未安排"}</span>
-                <span role="cell">{isUsingMock ? <span className="career-demo-label">展示数据</span> : <Button size="sm" variant="outline" onClick={() => navigateTo(careerApplicationPath(item.id))}>查看进程</Button>}</span>
+                <span role="cell"><Button size="sm" variant="outline" onClick={() => navigateTo(careerApplicationPath(item.id))}>查看进程</Button></span>
               </div>
             ))}
           </div>
-        ) : (
+        </section>
+      ) : !visibleApplications.length ? (
+        <section className="interview-surface career-applications-board">
           <div className="career-applications-empty">
             <BriefcaseBusiness />
             <h2>{normalizedQuery ? "没有匹配的求职进程" : scope === "archived" ? "还没有已归档进程" : scope === "ended" ? "还没有已结束进程" : "还没有求职进程"}</h2>
             <p>{normalizedQuery ? "换个公司、职位或阶段关键词试试。" : scope === "archived" ? "归档后的进程会集中显示在这里。" : scope === "ended" ? "已结束或未通过的进程会显示在这里。" : "先从岗位库选择目标岗位，再开始记录投递进度。"}</p>
             {!normalizedQuery && scope !== "archived" && scope !== "ended" && <Button onClick={onCreate}>创建第一条求职进程</Button>}
           </div>
-        )}
-      </section>
+        </section>
+      ) : null}
       {selectedApplicationId && (
         selectedApplication ? (
           <section className="interview-surface career-application-detail" aria-labelledby="career-application-detail-title">
@@ -867,149 +837,8 @@ function ApplicationsView({
   );
 }
 
-function CareerApplicationMetric({ icon, tone, label, value, change, hint }: { icon: ReactNode; tone: string; label: string; value: number; change?: string; hint?: string }) {
-  return <article className="career-application-metric"><span className={`tone-${tone}`} aria-hidden="true">{icon}</span><div><small>{label}</small><strong>{value}</strong><p>{change && <>较上周 <b>{change}</b></>}{hint}</p></div></article>;
-}
-
-function interviewRoundLabel(roundNo: number): string {
-  if (roundNo === 1) return "一面";
-  if (roundNo === 2) return "二面";
-  return `第 ${roundNo} 轮`;
-}
-
-function createCareerApplicationsMock(): JobApplicationSummary[] {
-  const now = new Date();
-  const dateAt = (days: number, hour = 10) => {
-    const value = new Date(now);
-    value.setDate(value.getDate() + days);
-    value.setHours(hour, 0, 0, 0);
-    return value.toISOString();
-  };
-  const build = (
-    id: string,
-    company: string,
-    role: string,
-    stageType: ApplicationStageType,
-    stageLabel: string,
-    color: InterviewCalendarColor,
-    overrides: Partial<JobApplicationSummary> = {},
-  ): JobApplicationSummary => ({
-    id: `mock-application-${id}`,
-    job_description_id: null,
-    resume_version_id: null,
-    company_name_snapshot: company,
-    job_title_snapshot: role,
-    job_snapshot: {},
-    resume_title_snapshot: `简历 v2.${Number(id) % 3}`,
-    calendar_color: color,
-    current_stage_type: stageType,
-    current_round_no: stageType === "interview" ? 1 : null,
-    current_stage_label: stageLabel,
-    stage_state: "awaiting_result",
-    status: "active",
-    offer_status: "none",
-    is_favorite: false,
-    applied_at: dateAt(-Number(id), 9),
-    notes: null,
-    archived_at: null,
-    lock_version: 1,
-    created_at: dateAt(-Number(id) - 2, 9),
-    updated_at: dateAt(-Math.ceil(Number(id) / 4), 12),
-    next_session_id: null,
-    next_session_start_at: null,
-    next_session_end_at: null,
-    next_session_mode: null,
-    ...overrides,
-  });
-
-  return [
-    build("1", "百度", "算法工程师（NLP）", "screening", "筛选中", "blue"),
-    build("2", "小米", "后端开发工程师", "screening", "筛选中", "orange"),
-    build("3", "美团", "数据分析师", "screening", "筛选中", "yellow"),
-    build("4", "小红书", "产品运营（社区）", "screening", "筛选中", "red"),
-    build("5", "BOSS直聘", "商业产品经理", "screening", "筛选中", "green"),
-    build("6", "腾讯", "产品经理（PCG）", "screening", "等待沟通", "blue", { stage_state: "awaiting_schedule" }),
-    build("7", "字节跳动", "数据科学家", "screening", "等待沟通", "blue", { stage_state: "awaiting_schedule" }),
-    build("8", "阿里云", "云计算研发工程师", "screening", "等待沟通", "orange", { stage_state: "awaiting_schedule" }),
-    build("9", "腾讯", "前端开发工程师", "interview", "一面", "blue", { current_round_no: 1, stage_state: "scheduled", next_session_id: "mock-session-9", next_session_start_at: dateAt(1, 10), next_session_end_at: dateAt(1, 11), next_session_mode: "video" }),
-    build("10", "字节跳动", "算法工程师", "interview", "一面", "blue", { current_round_no: 1, stage_state: "scheduled", next_session_id: "mock-session-10", next_session_start_at: dateAt(2, 14), next_session_end_at: dateAt(2, 15), next_session_mode: "video" }),
-    build("11", "美团", "用户研究员", "interview", "一面", "yellow", { current_round_no: 1, stage_state: "scheduled", next_session_id: "mock-session-11", next_session_start_at: dateAt(3, 10), next_session_end_at: dateAt(3, 11), next_session_mode: "video" }),
-    build("12", "小红书", "产品经理", "interview", "一面", "red", { current_round_no: 1, stage_state: "scheduled", next_session_id: "mock-session-12", next_session_start_at: dateAt(4, 15), next_session_end_at: dateAt(4, 16), next_session_mode: "onsite" }),
-    build("13", "阿里云", "后端开发工程师", "interview", "二面", "orange", { current_round_no: 2, stage_state: "scheduled", next_session_id: "mock-session-13", next_session_start_at: dateAt(5, 14), next_session_end_at: dateAt(5, 15), next_session_mode: "video" }),
-    build("14", "腾讯", "测试开发工程师", "interview", "二面", "blue", { current_round_no: 2, stage_state: "scheduled", next_session_id: "mock-session-14", next_session_start_at: dateAt(6, 10), next_session_end_at: dateAt(6, 11), next_session_mode: "video" }),
-    build("15", "字节跳动", "运营经理（商业化）", "hr", "HR 面", "blue", { stage_state: "scheduled", next_session_id: "mock-session-15", next_session_start_at: dateAt(7, 16), next_session_end_at: dateAt(7, 17), next_session_mode: "video" }),
-    build("16", "美团", "数据分析师", "offer", "Offer", "yellow", { stage_state: "negotiating", offer_status: "written_offer_received" }),
-    build("17", "阿里云", "云计算研发工程师", "offer", "Offer", "orange", { stage_state: "negotiating", offer_status: "written_offer_received" }),
-    build("18", "小米", "算法工程师", "interview", "已结束", "orange", { status: "withdrawn", current_round_no: 1, stage_state: "awaiting_result" }),
-    build("19", "百度", "后端开发工程师", "interview", "已结束", "blue", { status: "rejected", current_round_no: 2, stage_state: "awaiting_result", resume_title_snapshot: "简历 v1.9" }),
-  ];
-}
-
-function pipelineColumnKey(application: JobApplicationSummary): string {
-  if (application.archived_at) return "archived";
-  if (application.status !== "active") return "ended";
-  if (application.current_stage_type === "screening" && application.current_stage_label.includes("沟通"))
-    return "communication";
-  if (application.current_stage_type !== "interview")
-    return application.current_stage_type;
-  return `interview:${application.current_round_no ?? 1}`;
-}
-
-function PipelineCard({ item, onOpen }: { item: JobApplicationSummary; onOpen?: () => void }) {
-  const timeLabel = item.next_session_start_at
-    ? new Intl.DateTimeFormat("zh-CN", {
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }).format(new Date(item.next_session_start_at))
-    : item.applied_at
-      ? `投递 ${formatApplicationDate(item.applied_at)}`
-      : "暂未排期";
-  return (
-    <article
-      className="pipeline-card"
-      aria-label={`${item.company_name_snapshot} ${item.job_title_snapshot}`}
-    >
-      {onOpen ? <button type="button" className="pipeline-card-open" aria-label={`查看 ${item.company_name_snapshot} ${item.job_title_snapshot} 求职进程`} onClick={onOpen}><PipelineCardContent item={item} timeLabel={timeLabel} /></button> : <PipelineCardContent item={item} timeLabel={timeLabel} />}
-    </article>
-  );
-}
-
-function PipelineCardContent({ item, timeLabel }: { item: JobApplicationSummary; timeLabel: string }) {
-  return (
-    <header className="pipeline-card-header">
-      <CompanyLogo item={{ company: item.company_name_snapshot, logo: item.company_name_snapshot.slice(0, 1), color: item.calendar_color }} />
-      <span>
-        <span className="pipeline-card-title-row">
-          <strong>{item.company_name_snapshot}</strong>
-          <time className="pipeline-card-time">{timeLabel}</time>
-        </span>
-        <small className="pipeline-card-role">{item.job_title_snapshot}</small>
-      </span>
-    </header>
-  );
-}
-
 function jobDetailPathFromApplication(application: JobApplicationSummary): string {
   return application.job_description_id ? `/career/jobs/${encodeURIComponent(application.job_description_id)}` : "/career/jobs";
-}
-
-function applicationStatusLabel(application: JobApplicationSummary): string {
-  if (application.archived_at) return "已归档";
-  if (application.status === "rejected") return "未通过";
-  if (application.status === "withdrawn") return "已主动结束";
-  if (application.status === "closed") return application.offer_status === "accepted" ? "已接受 Offer" : "已结束";
-  return application.stage_state === "awaiting_schedule" ? "等待安排" : application.stage_state === "awaiting_result" ? "等待结果" : application.stage_state === "negotiating" ? "Offer 沟通中" : "进行中";
-}
-
-function formatApplicationDate(value: string): string {
-  return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
-}
-
-function formatApplicationDateTime(value: string): string {
-  return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
 }
 
 function createScheduleMockInterviews(weekStart: Date): Interview[] {
