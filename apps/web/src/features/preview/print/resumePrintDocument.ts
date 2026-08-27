@@ -1,5 +1,8 @@
 import type { ResumeDocument, ResumePresentation } from "../../../api/resumeContract";
-import { styleToEditorSettings } from "../../../api/resumeContract";
+import {
+  normalizeResumeAccentColor,
+  styleToEditorSettings,
+} from "../../../api/resumeContract";
 import { renderResumeMarkdown } from "../../../parser/resumeMarkdown";
 import {
   composeEditorDocumentForTemplate,
@@ -33,8 +36,8 @@ function escapeHtml(value: string) {
 }
 
 function safeCssValue(value: string, fallback: string) {
-  // Font family and accent are persisted values, but still need to be treated as
-  // untrusted input when the document is rendered outside React.
+  // Font family is persisted user input, so it needs to be treated as untrusted
+  // when the document is rendered outside React.
   if (!value || /[{};<>]/u.test(value)) return fallback;
   return value;
 }
@@ -66,7 +69,7 @@ function printCssVariables(style: ResumePresentation) {
     `--preview-line-height:${settings.lineHeight}`,
     `--preview-margin-x:${marginX}mm`,
     `--preview-margin-y:${marginY}mm`,
-    `--preview-accent:${safeCssValue(style.accent_color, "#3478f6")}`,
+    `--preview-accent:${normalizeResumeAccentColor(style.accent_color)}`,
   ].join(";");
 }
 

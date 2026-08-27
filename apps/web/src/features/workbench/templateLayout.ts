@@ -74,6 +74,10 @@ function isSectionHeading(node: JSONContent) {
   return node.type === "heading" && Number(node.attrs?.level) === 2;
 }
 
+function isBasicsHeading(node: JSONContent) {
+  return node.type === "heading" && Number(node.attrs?.level) === 1;
+}
+
 function nodeText(node: JSONContent): string {
   if (typeof node.text === "string") return node.text;
   return (node.content ?? []).map(nodeText).join("");
@@ -123,6 +127,19 @@ function editorBlocks(
     nodes: [],
   };
   for (const node of content) {
+    // A columns manifest may place the basics region after a section region.
+    // Keep the H1/contact block identifiable so restoring the canonical order
+    // does not attach it to the preceding section merely because it appeared
+    // later in the projected DOM.
+    if (isBasicsHeading(node) && current.kind !== "basics") {
+      if (current.nodes.length > 0) blocks.push(current);
+      current = {
+        kind: "basics",
+        semanticOrder: basicsOrder < 0 ? 0 : basicsOrder,
+        nodes: [node],
+      };
+      continue;
+    }
     if (isSectionHeading(node)) {
       if (current.nodes.length > 0) blocks.push(current);
       const sectionMetadata = (headingBlockId(node) && metadata.byId.get(headingBlockId(node) ?? ""))

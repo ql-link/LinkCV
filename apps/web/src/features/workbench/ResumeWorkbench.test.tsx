@@ -32,10 +32,27 @@ import {
   WorkbenchTitleInput,
   workbenchCanvasClassName,
   versionOperationErrorMessage,
+  resumeWorkbenchStyle,
 } from "./ResumeWorkbench";
 import { resumePdfExportErrorMessage } from "../preview/pdfExport";
 
 describe("ResumeWorkbench 标题", () => {
+  it("把持久化强调色注入可编辑简历根节点", () => {
+    const style = resumeWorkbenchStyle({
+      fontFamily: "sans-serif",
+      fontSize: 9.5,
+      lineHeight: 1.25,
+      pageMargin: 11,
+      verticalPageMargin: 9,
+    }, "#202632");
+
+    expect(style).toMatchObject({
+      "--preview-accent": "#202632",
+      "--resume-font-size": "9.5pt",
+      "--resume-line-height": 1.25,
+    });
+  });
+
   it("在章节类型面板隐藏内部图标标记", () => {
     expect(semanticSectionDisplayTitle(":icon[GraduationCap]: 教育经历")).toBe("教育经历");
     expect(semanticSectionDisplayTitle(":icon[Star]: 自我评价")).toBe("自我评价");

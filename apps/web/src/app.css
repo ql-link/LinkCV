@@ -543,7 +543,7 @@ select:not([data-slot]):focus-visible,
 .theme-classic-technical .resume-content h1,
 .resume-preview-paper.theme-classic-technical h1 {
   margin: 0 0 5px;
-  color: #171b24;
+  color: var(--preview-accent);
   font-size: 21pt;
   font-weight: 400;
   line-height: 1.1;
@@ -560,13 +560,18 @@ select:not([data-slot]):focus-visible,
 .theme-classic-technical .resume-content h2,
 .resume-preview-paper.theme-classic-technical h2 {
   margin: 6px 0 3px;
-  border-bottom: 1px solid #252d3a;
+  border-bottom: 1px solid var(--preview-accent);
   padding-bottom: 1px;
-  color: #171b24;
+  color: var(--preview-accent);
   font-size: 12.25pt;
   font-weight: 400;
   line-height: 1.08;
   letter-spacing: 0;
+}
+
+.theme-classic-technical .resume-content h3,
+.resume-preview-paper.theme-classic-technical h3 {
+  color: var(--preview-accent);
 }
 
 .theme-classic-technical .resume-content p {
@@ -594,8 +599,13 @@ select:not([data-slot]):focus-visible,
 }
 
 .theme-classic-technical .resume-content a {
-  color: #28303d;
+  color: var(--preview-accent);
   text-decoration: none;
+}
+
+.theme-classic-technical .resume-content hr,
+.resume-preview-paper.theme-classic-technical hr {
+  border-top-color: var(--preview-accent);
 }
 
 .theme-classic-technical .resume-row,
