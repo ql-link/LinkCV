@@ -254,6 +254,33 @@ describe("Agent session list API", () => {
   });
 });
 
+describe("Agent readiness API", () => {
+  it("读取助手运行时就绪状态", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ready: false }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.getAgentReadiness()).resolves.toEqual({ ready: false });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/agent/readiness",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
+});
+
+describe("Agent context API", () => {
+  it("按类型、搜索词和上限读取轻量上下文列表", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { contexts: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.listAgentContexts({ type: "resume_version", search: "投递版", limit: 10 });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/agent/contexts?type=resume_version&q=%E6%8A%95%E9%80%92%E7%89%88&limit=10",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
+});
+
 describe("resume import polling API", () => {
   it("按任务 ID 查询单个导入状态并编码路径参数", async () => {
     const body = { import: { id: "41", parse_status: "processing" } };

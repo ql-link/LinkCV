@@ -218,9 +218,7 @@ class DatasetParseProcessor:
                     created_at = task.created_at
                     if created_at.tzinfo is None:
                         created_at = created_at.replace(tzinfo=timezone.utc)
-                    elapsed_ms = round(
-                        (utc_now() - created_at).total_seconds() * 1000
-                    )
+                    elapsed_ms = round((utc_now() - created_at).total_seconds() * 1000)
                     task.upload_status = "succeeded"
                     task.upload_duration_ms = min(max(0, elapsed_ms), 2**32 - 1)
                     task.parse_status = "processing"
@@ -525,6 +523,7 @@ class DatasetParseProcessor:
                     content_type=CONTENT_TYPES[task.file_format],
                     content=content,
                     operation_id=str(task.id),
+                    require_pdf_layout=False,
                     deadline_monotonic=(
                         monotonic()
                         + self._settings.resume_import_parse_deadline_seconds

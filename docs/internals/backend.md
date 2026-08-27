@@ -8,26 +8,26 @@
 | --- | --- |
 | `src/linkcv/main.py` | 装配数据库、Redis、MinIO、统一 LLM、导入幂等和 MQ publisher；托管 SPA 静态产物并为哈希资源设置 gzip 与长期 immutable 缓存；测试可注入 Fake |
 | `src/linkcv/core/` | 配置、数据库、错误、安全、Redis 和 MinIO 基础设施 |
-| `src/linkcv/domain/` | 唯一运行时 `ResumeDocument`、`ResumePresentation`、`TemplateManifest`、联合快照、SectionIR、Draft 和确定性标准化 |
+| `src/linkcv/domain/` | 唯一运行时 `ResumeDocument`、`ResumePresentation`、`TemplateManifest`、联合快照、保留来源顺序与列表语义的 `SourceLayoutIR`、模型映射决策和确定性导入组合 |
 | `src/linkcv/domain/job_source.py` | JD 来源 URL 校验、规范化、站点识别和 SHA-256 身份计算 |
 | `src/linkcv/application/resumes/` | 统一创建、乐观锁保存、版本创建/重命名/恢复、分享链接创建/覆盖/更新与事务规则 |
 | `src/linkcv/application/job_descriptions/` | JD 创建、AI 草稿提取、重复解决、搜索分页、乐观锁更新和直接永久删除 |
 | `src/linkcv/application/interviews/` | 求职进程状态机、面试排期冲突、完成/推进/关闭和素材元数据事务 |
 | `src/linkcv/integrations/` | LinkParse PDF/DOCX Adapter、转换分发、微信小程序上游封装、统一 LLM 简历结构化与未分类章节语义建议 Adapter |
-| `src/linkcv/services/resume_import_service.py` | Worker 使用的 Markdown 转换、结构化与规范化原语，不提交业务事务 |
+| `src/linkcv/services/resume_import_service.py` | Worker 使用的 Markdown 转换、严格布局损失检查、决策式结构化与规范组合原语，不提交业务事务 |
 | `src/linkcv/services/resume_import_idempotency.py` | Redis Lua 请求指纹到导入 ID 的短期绑定与冲突保护 |
 | `src/linkcv/core/mq/` | RabbitMQ/Kafka publisher、统一导入消息和 confirm 异常边界 |
 | `src/linkcv/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
-| `src/linkcv/modules/identity/` | 用户模型、管理员密码登录、双通道会话、微信自动建号、扫码状态机、`/api/account` 用户中心与管理端用户管理 |
+| `src/linkcv/modules/identity/` | 用户模型、管理员密码登录、双通道会话、微信自动建号、扫码状态机、`/api/account` 用户中心、个人画像（`user_profiles`）与管理端用户管理 |
 | `src/linkcv/modules/miniprogram/` | 本人正式版本只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品。`account_routes.py` 提供小程序专用昵称与头像读写（头像二进制仅经 `/api/miniprogram/account/avatar` 分发） |
 | `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板及管理、简历、版本、异步导入、分享和资源路由 |
 | `src/linkcv/modules/datasets/` | `user_dataset` 资料元数据、异步解析受理与状态列表路由 |
 | `src/linkcv/modules/job_descriptions/` | JD 单表 ORM、HTTP DTO 和受保护路由 |
 | `src/linkcv/modules/interviews/` | 求职进程、单场面试和素材 ORM、HTTP DTO 与受保护路由 |
 | `src/linkcv/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
-| `src/linkcv/modules/agent/` | 用户会话、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
+| `src/linkcv/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0043` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0045` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -55,7 +55,11 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0042` 先验证 `blank-cn`、其历史简历引用以及所有 `classic-technical-cn` 模板/简历/版本快照，再把经典单页技术模板的 A4 页边距恢复为生产审查值 `9/11/9/11mm` 并删除空白模板行。`resumes.template_id` 的既有 `ON DELETE SET NULL` 只清除历史简历的来源引用；简历和版本自有的 `data_json/style_json` 不变。迁移写后逐项验证模板不存在、旧简历仍存在且来源已置空、经典技术快照内容不变。revision 为 forward-only，恢复删除的模板和原引用依赖升级前备份。
 
-`0043` 为资料上传增加数据库幂等和可靠调度字段：`user_dataset` 保存 `idempotency_key/request_fingerprint` 并以 `(user_id, idempotency_key)` 唯一约束收敛并发请求；`document_parse_tasks` 支持 `queued`，并保存解析尝试次数和最近分发时间。历史资料获得确定性兼容键与指纹；原有解析状态和对象引用保持不变，历史 `processing` 任务随后按陈旧租约规则恢复。revision 是 forward-only；部署必须先升级 schema，再同时替换 FastAPI、Worker 和 Web。
+`0043` 是 Development 已有稳定基线，新增 `user_profiles` 用户个人画像表：与 `users` 一对一（唯一 `user_id`、`RESTRICT` 外键），独立于简历内容保存求职偏好、基础信息与技能荣誉。关键偏好用独立列并以 CHECK 约束拦截非法枚举（期望工作性质、工作方式、计薪周期、可到岗时间、学历层次）与联动非法（薪资成组、`available_from` 要求 `availability=custom`、`salary_max >= salary_min`）；多变列表（职位方向、排除条件、目标公司、语言、技能、证书、荣誉、校园经历、学校层级）用 JSON 数组列并校验 `json_type`。`lock_version` 乐观锁初始为 1。稳定 revision ID 已在共享环境应用，后续迁移不得复用或改写；revision 为 forward-only。
+
+`0044` 只锁定并更新稳定 key 唯一的 `classic-technical-cn` 官方模板行，把后续创建或导入快照使用的字号、行距和主题色恢复为受审的 `9.5 / 1.25 / #202632`；A4 页边距、模板正文、manifest、模板 ID 与启用状态保持不变。既有 `resumes` 和不可变 `resume_versions` 不在写集内，继续保留各自完整快照。迁移在更新前要求目标严格匹配受保护的 `0042` 样式，写后重新解析并比较完整目标快照；任何现场漂移都会在写入前失败。revision 仍为 forward-only，恢复依赖升级前备份或新的向前修正。
+
+`0045` 为资料上传增加数据库幂等和可靠调度字段：`user_dataset` 保存 `idempotency_key/request_fingerprint` 并以 `(user_id, idempotency_key)` 唯一约束收敛并发请求；`document_parse_tasks` 支持 `queued`，并保存解析尝试次数和最近分发时间。历史资料获得确定性兼容键与指纹；原有解析状态和对象引用保持不变，历史 `processing` 任务随后按陈旧租约规则恢复。revision 是 forward-only；部署必须先升级 schema，再同时替换 FastAPI、Worker 和 Web。
 
 普通创建必须提供名称和启用模板，在用户行锁内完成容量、名称规范键和模板快照校验，再以 `source_type=template` 原子创建当前简历和 initial 版本。正式简历与活动导入任务共享每用户 10 个名额。异步导入同样必须提供启用模板，其标题来自安全化源文件名并允许与已有简历同名；Web 默认选择 `classic-technical-cn`，不可用时只回退到其他非空白启用模板，解析内容作为 data，所选模板提供 style。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。模板切换使用同一乐观锁边界的独立原子服务：当前 `data_json` 保持不变，目标启用模板提供 `style_json` 与 `template_id`，成功后只递增一次锁；目标无效或版本冲突不会写入部分结果。手动正式版本在创建和重命名时保存 1–80 字符的名称；旧调用方缺省时按版本号生成“版本 N”。手动版本、重命名、删除版本与恢复都先锁定所属简历；重命名只更新名称，恢复直接替换当前简历且不创建新版本；每份简历最多保存 10 个版本。`0023` 为 `resume_versions.name` 回填历史名称，历史初始版本、恢复前备份和 restore 记录使用系统名称。
 
@@ -75,7 +79,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0013` 为 `resumes` 增加分享字段：`share_token`（VARCHAR(64)，全局唯一索引）、`share_visibility`（VARCHAR(16)，`private|public`）、`share_expires_at`（可空，UTC 过期时间）和 `share_created_at`。两个 CHECK 约束保证分享字段要么全部为空（未分享）、要么全部非空（已分享），且可见性只允许 `private/public`。分享不单独建表、不落内容快照，公开读取时实时取 `resume_versions` 中 `version_no` 最大的正式版本。
 
-`0018` 新增 `user_dataset` 用户知识库数据集表，`0022` 让资料通过唯一 `parse_task_id` 关联通用解析任务，`0043` 增加数据库幂等键、请求指纹和可靠调度字段。`POST /api/datasets` 先执行有界格式与内容校验，在用户行锁内检查数量和总容量，再创建 `uploading` 预留；MinIO 成功后提交为 `upload_status=succeeded/parse_status=queued`，RabbitMQ confirm 失败仍返回已受理记录。Worker 扫描器周期补发未分发或超时的 `queued` 任务，消费方用数据库条件更新把任务原子抢占为 `processing`；陈旧处理任务在尝试上限内回到 `queued`，超过上限收口失败。每次尝试把转换 Markdown 保存为 `users/{uid}/datasets/converted/{task_id}-{attempt}.md`，条件提交失败会删除本次对象，避免陈旧消费者覆盖较新结果；读取仍兼容历史 `{task_id}.md`。上传失败预留由 Worker 清理，只有对象删除成功才删除数据库记录。列表只暴露上传成功资料；重试把失败任务重新置为 `queued`，活动任务禁止删除。本模块不使用 Outbox，不提供分片、RAG 或源文件下载。
+`0018` 新增 `user_dataset` 用户知识库数据集表。`0022` 为每行增加无数据库外键的唯一 `parse_task_id`，解析状态只以 `document_parse_tasks` 为真值源；同一事务创建资料和 `source_type=dataset` 的任务。`POST /api/datasets` 校验并上传源文件、提交两行记录后向既有文档解析队列发布 `DATASET_PARSE_TASK`；发布失败将任务收口为上传失败并返回 `502 DATASET_QUEUE_UNAVAILABLE`。Worker 对 DOCX/PDF 调用 LinkParse，对 Markdown/TXT 本地执行 UTF-8 与换行规范化，结果尽力存入 `users/{uid}/datasets/converted/{task_id}.md`。`GET /api/datasets` 联表按当前用户过滤并返回上传、解析状态和失败分类，不暴露对象键或 SHA-256；`GET /api/datasets/:id/content` 在再次校验资料与任务归属、解析成功状态后读取转换存档并返回 Markdown。转换存档缺失或对象读取失败不会退回源文件。本期不做分片、RAG、常规删除、源文件下载和去重。
 
 ### 微信账号、双端会话与扫码登录
 
@@ -112,7 +116,7 @@ scene 使用结构化 hash 保存 state、Web poll token 哈希、claim 所有�
 
 ## 统一 LLM 调用
 
-智能助手的浏览器请求先由 FastAPI 创建运行并写入 MySQL，再代理到独立 `apps/pi-service`。Pi 通过服务间 HTTP 读取当前 `pi_agent` binding 的解密运行配置，并把所选模型 ID 与配置版本快照到 `agent_runs`；它不使用 LiteLLM，也不提供独立模型治理。FastAPI 每轮从当前 `agent_session` 的消息恢复有限上下文；成功运行把完整助手文本或结构化澄清消息、Token 和可用的估算成本写回数据库，失败、取消或缺失终态时只保存运行终态，不把已经流出的半条文本写成历史助手消息。澄清回答以助手消息序号做并发校验，只有它仍是当前会话最后一条结构化澄清消息时才允许创建下一轮。取消与流式收口以条件更新和运行行锁保证终态只写一次。工具审计先锁运行行再按 call key 幂等写入，终态不可回退。Pi 对 FastAPI 只允许调用目标解析、范围上下文、当前用户资料召回、结构化诊断和范围化提案工具；受限 `read` 仅加载 Pi 镜像内四个已注册 Skill Markdown，不访问业务存储或其他服务端文件。内部路由从可信 `runId` 反查用户与简历，不接受调用方传入用户身份。完整边界见 [Pi 集成文档](third-party-pi.md)。
+智能助手的浏览器请求先由 FastAPI 创建运行并写入 MySQL，再代理到独立 `apps/pi-service`。`context_service.py` 为独立助手页列出简历、历史版本、岗位、求职进程和面试的轻量引用；发送时在同一事务链中按当前用户重新查询、锁定并核对版本标记，只把字段白名单内且有长度上限的资料交给 Pi，消息元数据只保存展示用引用快照。未绑定会话第一次成功发送含简历归属的上下文时绑定该简历，已绑定会话拒绝切换到另一份简历。Pi 通过服务间 HTTP 读取当前 `pi_agent` binding 的解密运行配置，并把所选模型 ID 与配置版本快照到 `agent_runs`；它不使用 LiteLLM，也不提供独立模型治理。FastAPI 每轮从当前 `agent_session` 的消息恢复有限上下文；成功运行把完整助手文本或结构化澄清消息、Token 和可用的估算成本写回数据库，失败、取消或缺失终态时只保存运行终态，不把已经流出的半条文本写成历史助手消息。澄清回答以助手消息序号做并发校验，只有它仍是当前会话最后一条结构化澄清消息时才允许创建下一轮。取消与流式收口以条件更新和运行行锁保证终态只写一次。工具审计先锁运行行再按 call key 幂等写入，终态不可回退。Pi 对 FastAPI 只允许调用目标解析、范围上下文、当前用户资料召回、结构化诊断和范围化提案工具；受限 `read` 仅加载 Pi 镜像内四个已注册 Skill Markdown，不访问业务存储或其他服务端文件。内部路由从可信 `runId` 反查用户与简历，不接受调用方传入用户身份。完整边界见 [Pi 集成文档](third-party-pi.md)。
 
 `LLMService.chat()`、`LLMService.stream_chat()` 和 `LLMService.structured_chat()` 是后端业务模块使用的内部异步接口，不注册 HTTP route。调用方只提供可信 `user_id`、稳定 `source`、messages，以及结构化调用所需的响应模型；不传候选 ID、adapter、模型名、地址或密钥。服务按调用方传入的能力解析唯一当前 binding；当前能力未绑定时，Chat 返回 `LLM_CHAT_NOT_CONFIGURED`，其他能力返回 `LLM_MODEL_NOT_CONFIGURED`。单次逻辑调用只调用当前模型一次，供应商失败直接收口，不重试、不遍历其他候选、不自动切换 binding。结构化调用把 Pydantic JSON Schema 作为系统指令加入 messages，不向供应商传递 `response_format`；模型文本由 LinkCV 本地提取 JSON 对象并执行 Pydantic 严格校验，非法结果以 `LLM_RESPONSE_INVALID` 收口且不追加模型调用。
 
@@ -120,7 +124,7 @@ LiteLLM 只位于 `modules/llm/gateway.py` 和只读目录边界。白名单 ada
 
 模型凭据使用 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 提供的 Fernet 密钥环加密，数据库只保存 `v1:<keyId>:<token>`。列表首项负责新写入，旧 key 用于兼容解密；读取旧密文时会惰性重包到首项。普通日志、HTTP 响应和调用记录均不包含明文凭据、messages、模型完整响应或供应商原始错误。
 
-简历导入 Worker 通过 `integrations/resume_structuring.py` 以 `source=resume_import` 调用 `LLMService.structured_chat()`，使用数据库中的 `resume_structuring` 当前绑定、加密凭据、调用日志和计量。模型输入只包含 SectionIR 的标题、类别和 Markdown，不包含原文件、对象键、LinkParse 元数据、warnings 或用户 ID；结构化调用使用 DeepSeek 时显式发送 `thinking.type=disabled`，其他供应商和普通 Chat 不附加该专属参数；模型返回内容仍须通过 `ResumeExtractionDraft` 严格校验。
+简历导入 Worker 通过 `integrations/resume_structuring.py` 以 `source=resume_import` 调用 `LLMService.structured_chat()`，使用数据库中的 `resume_structuring` 当前绑定、加密凭据、调用日志和计量。程序先把转换结果解析为保留全局顺序、来源跨度、列表类型、起始序号、项目序号与嵌套深度的 `SourceLayoutIR`；模型只接收稳定源块及必要布局元数据，只能返回每个源块的语义/布局角色和受限分组，不能返回、改写或丢弃可见文字。原文件、对象键、LinkParse 元数据、warnings 和用户 ID 不进入模型输入。结构化调用使用 DeepSeek 时显式发送 `thinking.type=disabled`，其他供应商和普通 Chat 不附加该专属参数；模型结果仍须通过 `ResumeExtractionDraft` 严格校验，再由程序核对源块恰好一次闭包。
 
 模型候选在 `0029` 后不再携带能力列；`llm_capability_bindings` 为 `chat`、`resume_structuring`、`pi_agent`、`job_image_structuring` 各保存一行当前候选、绑定版本和最近验证证据。`llm_model_validations` 按候选配置版本、能力、探针版本和调用 ID 保存验证结果；`llm_call_logs.model_config_version` 保存实际调用时的候选版本快照。管理员使用 `/api/admin/llm/capabilities` 查看能力矩阵，并通过 `/api/admin/llm/capabilities/{capability}/binding` 以真实探针成功后切换绑定；JD 图片解析探针向候选发送内置红色 PNG，只有返回约定的结构化颜色结果才更新绑定。
 
@@ -128,15 +132,19 @@ LiteLLM 只位于 `modules/llm/gateway.py` 和只读目录边界。白名单 ada
 
 ## 导入与外部边界
 
-Markdown 文件在进程内做 UTF-8 与确定性换行清理；PDF 和 DOCX 以固定的 `output_formats=markdown/include_bbox=false/include_images=false` 调用 LinkParse `POST /v1/parse`，由 LinkParse 识别文件类型并决定解析引擎、OCR 选页和渲染 DPI。LinkParse 响应在 JSON decode 前限制为 3 MiB，随后校验 request ID、schema、页数、Markdown 质量、预期文件类型和空 assets；客户端不下载或保存外部 assets，也不自动重试同步解析请求。DOCX 响应只有 `meta.word.omitted_image_count > 0` 会形成用户告警，其余 Word 元数据只写入脱敏调用日志。
+Markdown 文件在进程内做 UTF-8 与确定性换行清理；DOCX 以固定的 `output_formats=markdown/include_bbox=false/include_images=false` 调用 LinkParse `POST /v1/parse`，PDF 在此基础上额外发送 `include_layout=true`。LinkParse 识别文件类型并决定 OpenDataLoader、OCR 选页和渲染 DPI；layout 模式内部即使公开 `include_bbox=false` 也必须保留 OCR 坐标，并在 `meta.pdf.layout` 返回版本化物理行、归一化 bbox、来源顺序、语义角色、同行、续行和质量计数，`outputs.markdown` 只能由这些 blocks 确定性生成。LinkParse 响应在 JSON decode 前限制为 3 MiB，随后校验 request ID、外层兼容 envelope、严格 layout schema、页数、完整闭包、来源单调顺序、关系引用、质量计数、warning allowlist、Markdown 一致性、预期文件类型和空 assets；客户端不下载或保存外部 assets，也不自动重试同步解析请求。通过 layout 门禁的扫描、混合和 OCR PDF 可以继续导入；缺失、降级、畸形或不一致的 layout，以及含嵌入图片的文本 PDF，统一以 `RESUME_LAYOUT_UNSUPPORTED` 失败。含图片、表格或文本框的 DOCX 仍失败；转换 Markdown 中仍存在图片、表格、嵌入或主动 HTML 时同样失败。LinkParse 的 Word omitted-image/table 信号参与该严格检查，其余 Word 元数据只写入脱敏调用日志。
 
-超过结构化输入上限的内容不会发送给模型，合规输入的 AST 被压缩为 H1–H3 `SectionIR` 后才发送给结构化模型，最终稳定 ID 和来源行号由程序生成。可识别日期会标准化为 `YYYY` 或 `YYYY-MM`，无法识别的日期按原文保留；日期矛盾、非标准联系方式、错别字、空缺单位或职位等内容质量问题不作为导入失败条件。字段类型、数量和长度上限、危险链接、Markdown 主动内容及内部 ID 完整性仍严格校验。HTTP 导入入口先校验所选模板与文件，再使用 canonical UUID `Idempotency-Key`；Redis key 按用户和 Header 哈希隔离，先以 30 秒租约占有请求，再绑定持久化导入 ID 并保留 15 分钟。`document_parse_tasks` 中 `source_type=resume_import` 的记录是上传和解析状态真值；API 只上传、更新为解析中并等待 MQ confirm，Worker 才执行转换和结果事务。单任务状态接口按当前用户和 `source_type` 查询，非法 ID、不存在和越权统一隐藏为 `RESUME_IMPORT_NOT_FOUND`，并在读取前沿用现有陈旧任务收口。转换成功后 Worker 尽力把 Markdown 存到源文件同目录的 `converted.md`，存档失败只记录告警，不改变解析结果。上传失败补偿对象；业务解析失败保留源文件、可能存在的转换存档与失败记录供用户删除，不自动重试。
+超过结构化输入上限的内容不会发送给模型。合规输入经 `SourceLayoutIR → 模型映射决策 → 规范组合器` 处理：组合器只复制已校验源块文字，并按任务开始时锁定的模板 key/renderer 选择受控联系信息行、左右条目和 CommonMark 列表配方；同块经历头只有显式 `entry_header` 决策及原文确定性分隔符同时存在时才生成左右行，普通 `body` 中的 `｜`/`|` 原样保留。与父章节语义相同的嵌套 heading 作为父章节可见标题保留，只有根标题或语义切换才建立新章节。有序列表的起始值、项目编号和嵌套深度由程序输出，超过单 item 50 个源引用时在安全边界确定性分片并延续实际序号。所有源块必须保持来源顺序且恰好进入一个规范 custom 章节，不存在“未分类内容”运行时兜底。模型引用未知/重复/缺失源块、非法分组或模板布局无法完整承载时分别以 `RESUME_STRUCTURE_INVALID` 或 `RESUME_LAYOUT_UNSUPPORTED` 失败，不创建半成品。日期、联系方式、错别字和空缺字段作为可见源文字原样保留；字段类型、数量和长度上限、危险链接、Markdown 主动内容及内部 ID 完整性仍严格校验。
+
+HTTP 导入入口先校验所选模板与文件，再使用 canonical UUID `Idempotency-Key`；Redis key 按用户和 Header 哈希隔离，先以 30 秒租约占有请求，再绑定持久化导入 ID 并保留 15 分钟。`document_parse_tasks` 中 `source_type=resume_import` 的记录是上传和解析状态真值；API 只上传、更新为解析中并等待 MQ confirm，Worker 才执行转换和结果事务。单任务状态接口按当前用户和 `source_type` 查询，非法 ID、不存在和越权统一隐藏为 `RESUME_IMPORT_NOT_FOUND`，并在读取前沿用现有陈旧任务收口。Worker 只有在仍持有本人 `processing` 任务行锁时才上传转换存档并写回引用；删除或终态并发胜出时不会产生新的转换对象。上传失败补偿对象；业务解析失败保留源文件、可能存在的转换存档与失败记录供用户删除，不自动重试。
 
 Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可用，PDF/DOCX 返回 `DOCUMENT_CONVERSION_UNAVAILABLE`；Production 缺 Key 会安全拒绝启动。默认测试全部使用确定性 Fake 和 `httpx.MockTransport`，不访问真实网络或读取密钥。PDF/DOCX 解析日志只记录 LinkCV 调用 LinkParse 的开始、结果、耗时、解析器/页数/OCR 摘要、DOCX Word 元数据和稳定错误码；不读取 LinkParse 内部日志，也不记录正文、Prompt、Cookie、密钥或完整供应商响应。Markdown 本地转换只记录格式、结果和耗时。
 
 ## 可观测性与业务审计
 
-`ObservabilityMiddleware` 为每次 HTTP 尝试接受格式合法的 `X-Request-ID` 或生成新值，并在响应中回传；它写入一条包含路由模板、状态码、耗时、可信用户和稳定错误码的 access 事件。未处理异常额外保留异常类型和脱敏后的栈。MinIO、Redis、MySQL、LinkParse 和 LLM 调用使用 `dependency` 分类，简历导入使用 `operation_id` 关联上传、转换、结构化和 HTTP 结果。导入 Worker 另以 `task_load → source_read → document_conversion → resume_structuring → resume_normalization → resume_persistence` 记录阶段结果与耗时；失败事件只增加稳定错误码、失败阶段、异常类型，以及不含字段值的 Pydantic 验证模型、路径和错误类型，不写文件名、简历正文或模型响应。Uvicorn 自带 access log 已关闭，避免同一请求重复记录。
+`ObservabilityMiddleware` 为每次 HTTP 尝试接受格式合法的 `X-Request-ID` 或生成新值，并在响应中回传；它写入一条包含路由模板、状态码、耗时、可信用户和稳定错误码的 access 事件。未处理异常额外保留异常类型和脱敏后的栈。MinIO、Redis、MySQL、LinkParse 和 LLM 调用使用 `dependency` 分类，简历导入使用 `operation_id` 关联上传、转换、结构化和 HTTP 结果。导入 Worker 另以 `task_load → source_read → document_conversion → resume_structuring → resume_composition → resume_persistence` 记录阶段结果与耗时；失败事件只增加稳定错误码、失败阶段、异常类型，以及不含字段值的 Pydantic 验证模型、路径和错误类型，不写文件名、简历正文或模型响应。Uvicorn 自带 access log 已关闭，避免同一请求重复记录。
+
+文档解析 MQ 使用强制身份的 V2 envelope：Resume 与 Dataset 消息都要求 `pipeline_version="v2"`、`mq_name="tolink.cv.resume_import.v2"` 且拒绝未知字段。RabbitMQ 使用 `tolink.cv.resume_import.v2` exchange、`linkcv.resume_import.worker.v2` queue、`resume.import.v2` routing key，并添加同版本 header；Kafka 使用同名 V2 topic 和 `linkcv.resume_import.worker.v2` group。重试和 DLT 保留原正文与诊断 headers，Worker 日志只记录受控的 message ID、版本、来源、任务 ID、尝试次数、vendor 和 route，不记录消息正文。
 
 状态变更和安全动作通过 `modules/observability/audit.py` 的固定映射写入审计事件，包括鉴权/会话、账号资料与密码、简历/版本/资源、PDF 导出、JD、管理员用户状态和模型配置。actor 只从已验证会话或登录结果绑定，target 从路由参数、归属校验后的实体或创建结果绑定；成功与受控失败都记录，响应以 `X-Audit-Recorded` 表示本地 sink 是否接受。浏览器单独上报 `resume.pdf_export` 的旧接口继续兼容；新的 Web PDF 路由自动记录该动作。审计不新增 MySQL 表，也不替代既有 `llm_call_logs`。
 
@@ -146,10 +154,10 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - 用户级兼容图片：`users/{user_id}/assets/...`。
 - 账号头像：`users/{user_id}/assets/avatar/...`，对象键记录在 `users.avatar_object_key`；旧路径中的已有头像保持兼容。
-- 导入原文件：`users/{user_id}/resume-imports/{operation_id}/...`。
-- 导入转换存档：`users/{user_id}/resume-imports/{operation_id}/converted.md`。
+- 导入原文件：`users/{user_id}/resume-imports/{operation_id}/source/{safe_name}`。
+- 导入转换存档：`users/{user_id}/resume-imports/{operation_id}/artifacts/converted.md`；删除时同时兼容旧的 `.../{operation_id}/converted.md`。
 - 知识库原文件：`users/{user_id}/datasets/...`。
-- 知识库转换存档：`users/{user_id}/datasets/converted/{parse_task_id}.md`。
+- 知识库转换存档：`users/{user_id}/datasets/converted/{parse_task_id}-{attempt}.md`；读取和删除兼容旧的 `{parse_task_id}.md`。
 - 简历资源：`users/{user_id}/resumes/{resume_id}/assets/...`。
 - 面试素材：`users/{user_id}/interviews/{application_id}/{session_id}/...`。
 
@@ -159,6 +167,8 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 公开的 `/api/account/*` 通过 `get_current_user` 获取当前用户，不接受客户端 `user_id`。`GET /api/account/profile` 返回资料并附带简历数量与最近 5 份简历；`PATCH /api/account/profile` 只允许修改昵称（去空白后 1–50 字符）。头像上传复用 `decode_image_data_url`、`build_avatar_object_name` 和 `asset_url`：新对象写入 `users/{user_id}/assets/avatar/...`，再更新 `users.avatar_object_key`，提交失败补偿删除新对象，成功后才清理旧对象；响应只含相对 URL。普通改密和微信绑定不是运行时公开契约；用户停用或管理员操作仍通过 `revoke_user_sessions` 撤销该用户的 Web 与小程序 session。
 
+`UserProfile` 模型承载每个用户至多一份的个人画像（`user_profiles` 表，迁移 `0043`），`GET/PUT /api/account/user-profile` 负责读写。`GET` 未创建时返回 `lock_version=1` 的约定空对象且不写库；`PUT` 整体替换全部可编辑字段（缺省以 `null`/空数组覆盖），首次创建要求 `base_lock_version=1`。更新使用 `user_id + lock_version` 条件写并递增版本，影响 0 行即并发冲突，`USER_PROFILE_VERSION_CONFLICT` 附最新画像供前端刷新重试；创建时 `IntegrityError` 冲突同样转成该错误。薪资币种统一转大写三字母，数组字段去除空串与重复并保留提交顺序；schema 侧 `UserProfileData` 追加 `lock_version` 与 UTC 时间戳，`GET /api/account/profile` 的 `profile` 字段未创建时为 `null`。
+
 ## 简历分享
 
 `application/resumes/share_service.py` 承担分享业务，`modules/resumes/share_routes.py` 暴露管理端 4 个端点（`/api/resumes/{resume_id}/share` 的 GET/POST/PATCH/DELETE）和公开只读端点（`/api/share/{token}`，依赖 `get_optional_user` 以支持 `private` 可见性判断）。token 使用 `secrets.token_urlsafe(16)`，全局唯一且冲突重试 3 次；`POST` 可选携带 `visibility`（缺省 `public`）与 `expires_at`（缺省永久）指定创建/覆盖时的权限和有效期，已有链接时作废旧 token 生成新 token，`DELETE` 清空分享字段，重复删除幂等。公开解析按「token 存在 → 未过期（SQLite naive datetime 按 UTC 解释后比较）→ 非 `private` 或访问者是分享者本人 → 简历与最新版本存在」的顺序校验，任一不满足统一抛 `SHARE_LINK_UNAVAILABLE`，路由转成 `404`，防止枚举探测。分享内容实时读取 `resume_versions` 最新正式版本并脱敏返回 `data/style/sharer`，不保存快照，因此所有者后续保存新版本会立即反映到分享页。
@@ -167,7 +177,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0042`、模板初始化和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0045`、模板初始化和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 

@@ -14,7 +14,11 @@ from linkcv.application.resumes.service import (
 from linkcv.core.config import Settings
 from linkcv.core.database import get_db
 from linkcv.core.errors import ApiError
-from linkcv.core.storage import AssetStorage, get_storage
+from linkcv.core.storage import (
+    AssetStorage,
+    build_import_cleanup_object_names,
+    get_storage,
+)
 from linkcv.modules.identity.dependencies import get_current_user, get_settings
 from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.import_routes import import_summary
@@ -214,9 +218,12 @@ def delete_resume_import(
     if record.parse_status == "succeeded":
         raise ApiError(409, "RESUME_IMPORT_HAS_RESULT")
     try:
-        storage.delete(record.object_name)
-        if record.converted_object_name:
-            storage.delete(record.converted_object_name)
+        for object_name in build_import_cleanup_object_names(
+            user.id,
+            record.object_name,
+            record.converted_object_name,
+        ):
+            storage.delete(object_name)
     except Exception as error:
         db.rollback()
         logger.warning(

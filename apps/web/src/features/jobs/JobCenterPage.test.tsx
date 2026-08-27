@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api, type JobDescriptionSummary } from "../../api/client";
+import { api, type JobApplicationSummary, type JobDescriptionSummary } from "../../api/client";
 import { useResumeStore } from "../../store/resumeStore";
 import { JobCenterPage } from "./JobCenterPage";
 
@@ -53,7 +53,7 @@ describe("JobCenterPage", () => {
     expect(screen.getByRole("status", { name: "正在加载岗位…" })).toBeInTheDocument();
     expect(container.querySelector(".job-center-content > .page-loading")).toBeInTheDocument();
     expect(container.querySelector(".job-center-body")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "求职中心" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "岗位库" })).toBeInTheDocument();
     const header = container.querySelector(".page-hero.is-module");
     const navigation = screen.getByRole("navigation", { name: "测试求职中心导航" });
     const content = container.querySelector(".job-center-content");
@@ -73,29 +73,103 @@ describe("JobCenterPage", () => {
 
     expect(await screen.findByText("Java 开发实习生")).toBeInTheDocument();
     expect(list).toHaveBeenCalledWith({ keyword: undefined });
-    expect(screen.queryByText("全部岗位资料")).not.toBeInTheDocument();
-    expect(screen.queryByText("按最近更新")).not.toBeInTheDocument();
-    expect(screen.getByText("仅收藏")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "开始求职" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "新建岗位" })).not.toHaveClass("ui-button-transparent");
+    expect(screen.queryByRole("button", { name: "全部岗位" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "最近导入" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "未建立进程" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "已建立进程" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "更新时间排序：从新到旧" })).toBeInTheDocument();
+    expect(container.querySelector(".job-table-process-state")).toHaveTextContent("未建立进程");
+    const startApplicationButton = screen.getByRole("button", { name: "开始求职" });
+    expect(startApplicationButton).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "导入岗位" })).not.toHaveClass("ui-button-transparent");
     expect(container.querySelector(".page-hero.is-module")).toBeInTheDocument();
     expect(container.querySelector(".job-center-content > .job-center-body")).toBeInTheDocument();
     const heroActions = container.querySelector(".page-hero-actions");
     expect(heroActions?.children[0]).toBe(screen.getByRole("button", { name: "搜索职位" }));
-    expect(heroActions?.children[1]).toBe(screen.getByRole("button", { name: "安装采集插件" }));
-    expect(screen.getByRole("button", { name: "删除 Java 开发实习生" })).toBeInTheDocument();
-    expect(container.querySelector(".job-card-heading")).toHaveTextContent("Java 开发实习生·示例科技");
+    expect(heroActions?.children[2]).toBe(screen.getByRole("button", { name: "安装采集插件" }));
+    expect(heroActions?.children[3]).toBe(screen.getByRole("button", { name: "导入岗位" }));
+    expect(container.querySelector(".job-list-surface .job-list-toolbar")).not.toBeInTheDocument();
+    expect(container.querySelector(".job-list-surface .job-toolbar-search")).not.toBeInTheDocument();
+    expect(container.querySelector(".job-list-surface .job-filter-group")).not.toBeInTheDocument();
+    expect(container.querySelector(".job-list-surface .job-sort-button")).not.toBeInTheDocument();
+    const deleteButton = screen.getByRole("button", { name: "删除 Java 开发实习生" });
+    expect(deleteButton).toBeInTheDocument();
+    expect(container.querySelector(".job-table")).toBeInTheDocument();
+    expect(container.querySelector(".job-table thead")).toHaveTextContent("求职状态操作删除");
+    expect(startApplicationButton.closest("td")).toHaveClass("job-table-actions-cell");
+    expect(deleteButton.closest("td")).toHaveClass("job-table-delete-cell");
+    expect(container.querySelector(".job-table-job-copy")).toHaveTextContent("Java 开发实习生");
+    expect(container.querySelector(".job-table-text")).toHaveTextContent("示例科技");
     expect(screen.getByRole("link", { name: /Java 开发实习生/ })).toHaveAttribute("href", "/career/jobs/job-1");
-    expect(container.querySelector(".job-card-meta .lucide-map-pin")).toBeInTheDocument();
-    expect(container.querySelector(".job-card-meta .lucide-wallet-cards")).toBeInTheDocument();
-    expect(container.querySelector(".job-card-skills")).toHaveTextContent("Java、MySQL");
-    expect(container.querySelector(".job-skill-row")).not.toBeInTheDocument();
+    expect(container.querySelector(".job-table-location .lucide-map-pin")).toBeInTheDocument();
+    expect(container.querySelector(".job-table-salary .lucide-wallet-cards")).toBeInTheDocument();
+    expect(container.querySelector(".job-skill-row")).toHaveTextContent("JavaMySQL");
+    expect(container.querySelector(".job-table-source")).toHaveTextContent("BOSS 直聘");
 
     fireEvent.click(screen.getByRole("button", { name: "搜索职位" }));
     const searchInput = screen.getByRole("searchbox", { name: "搜索职位" });
+    expect(heroActions).toContainElement(searchInput);
     expect(searchInput).toHaveAttribute("name", "job-search");
     fireEvent.change(searchInput, { target: { value: "Java 后端" } });
     await waitFor(() => expect(list).toHaveBeenLastCalledWith({ keyword: "Java 后端" }));
+  });
+
+  it("展示真实求职进程状态并支持更新时间排序", async () => {
+    const importedJob: JobDescriptionSummary = {
+      ...job,
+      id: "job-2",
+      job_title: "平台工程师",
+      company_name: "另一家科技",
+      source_type: "external_import",
+      updated_at: "2026-08-01T08:00:00Z",
+    };
+    const application = {
+      id: "application-1",
+      job_description_id: job.id,
+      resume_version_id: null,
+      company_name_snapshot: job.company_name,
+      job_title_snapshot: job.job_title,
+      job_snapshot: {},
+      resume_title_snapshot: null,
+      calendar_color: "orange",
+      current_stage_type: "screening",
+      current_round_no: null,
+      current_stage_label: "待沟通",
+      stage_state: "awaiting_schedule",
+      status: "active",
+      offer_status: "none",
+      is_favorite: false,
+      applied_at: null,
+      notes: null,
+      archived_at: null,
+      lock_version: 1,
+      created_at: "2026-07-29T08:00:00Z",
+      updated_at: "2026-07-29T08:00:00Z",
+      next_session_id: null,
+      next_session_start_at: null,
+      next_session_end_at: null,
+      next_session_mode: null,
+    } satisfies JobApplicationSummary;
+    vi.spyOn(api, "listJobDescriptions").mockResolvedValue({ items: [job, importedJob], next_cursor: null });
+    vi.spyOn(api, "listJobApplications").mockResolvedValue({ items: [application], next_cursor: null });
+
+    const { container } = render(<JobCenterPage />);
+    expect(await screen.findByText("平台工程师")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "查看进程" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "更新时间排序：从新到旧" }));
+    expect(screen.getByRole("button", { name: "更新时间排序：从旧到新" })).toBeInTheDocument();
+    expect([...container.querySelectorAll(".job-table-job-copy strong")].map((node) => node.textContent)).toEqual(["Java 开发实习生", "平台工程师"]);
+  });
+
+  it("求职进程加载失败时展示不可用状态并隐藏求职操作", async () => {
+    vi.spyOn(api, "listJobDescriptions").mockResolvedValue({ items: [job], next_cursor: null });
+    vi.spyOn(api, "listJobApplications").mockRejectedValue(new Error("offline"));
+
+    render(<JobCenterPage />);
+    expect(await screen.findByText("Java 开发实习生")).toBeInTheDocument();
+    expect(screen.getByText("进程状态不可用")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "开始求职" })).not.toBeInTheDocument();
   });
 
   it("滚动接近列表底部时自动读取下一页直到没有更多数据", async () => {
@@ -187,7 +261,7 @@ describe("JobCenterPage", () => {
 
     const { container } = render(<JobCenterPage createDialogOpen />);
 
-    await waitFor(() => expect(container.querySelector(".page-hero h1")).toHaveTextContent("求职中心"));
+    await waitFor(() => expect(container.querySelector(".page-hero h1")).toHaveTextContent("岗位库"));
     expect(screen.getByRole("dialog", { name: "新建岗位" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /填写/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /智能导入/ })).toBeInTheDocument();

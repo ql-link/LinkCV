@@ -10,6 +10,9 @@ from linkcv.core.storage import (
     build_avatar_object_name,
     build_converted_markdown_object_name,
     build_dataset_object_name,
+    build_import_cleanup_object_names,
+    build_import_object_name,
+    build_legacy_converted_markdown_object_name,
     build_interview_asset_object_name,
     decode_image_data_url,
 )
@@ -91,9 +94,20 @@ def test_stream_upload_hashes_content_and_cleans_oversized_objects() -> None:
     assert "users/1/interviews/2/3/large.webm" not in storage.client.objects
 
 
-def test_converted_markdown_object_name_shares_import_directory() -> None:
+def test_import_objects_are_isolated_and_cleanup_candidates_are_deduplicated() -> None:
+    source = build_import_object_name(42, "task-123", "converted.md")
     assert build_converted_markdown_object_name(42, "task-123") == (
+        "users/42/resume-imports/task-123/artifacts/converted.md"
+    )
+    assert source == "users/42/resume-imports/task-123/source/converted.md"
+    assert source != build_converted_markdown_object_name(42, "task-123")
+    assert build_legacy_converted_markdown_object_name(42, "task-123") == (
         "users/42/resume-imports/task-123/converted.md"
+    )
+    assert build_import_cleanup_object_names(42, source, None) == (
+        source,
+        "users/42/resume-imports/task-123/artifacts/converted.md",
+        "users/42/resume-imports/task-123/converted.md",
     )
 
 

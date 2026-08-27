@@ -12,7 +12,7 @@
 | 简历智能助手 | `modules/agent/`、`apps/pi-service/`、`third_party/pi/` | Web Agent 面板、管理员 Chat 模型、Compose/Jenkins | `docs/api/http-contracts.md`、`docs/internals/third-party-pi.md`、`docs/ops/deployment.md` |
 | 图片对象存储 | `core/storage.py`、`modules/resumes/asset_routes.py` | Web 上传与预览、MinIO | `docs/internals/backend.md`、`docs/api/http-contracts.md` |
 | 简历文件导入 | `modules/resumes/import_routes.py`、`overview_routes.py`、`core/mq/`、`workers/`、`resume_import_idempotency.py` | Web API client、MySQL、Redis、RabbitMQ/Kafka、统一 LLM、MinIO | `docs/api/http-contracts.md`、`docs/internals/backend.md`、`docs/ops/development.md` |
-| 资料库文件上传 | `modules/datasets/`、`services/dataset_upload_service.py`、`core/mq/`、`workers/`、迁移 `0043` | Web 资料库、MySQL、MinIO、RabbitMQ、LinkParse | `docs/api/http-contracts.md`、`docs/internals/backend.md`、`docs/internals/web.md`、`docs/ops/development.md`、`docs/ops/deployment.md` |
+| 资料库文件上传 | `modules/datasets/`、`services/dataset_upload_service.py`、`core/mq/`、`workers/`、迁移 `0045` | Web 资料库、MySQL、MinIO、RabbitMQ、LinkParse | `docs/api/http-contracts.md`、`docs/internals/backend.md`、`docs/internals/web.md`、`docs/ops/development.md`、`docs/ops/deployment.md` |
 | 系统日志与业务审计 | `modules/observability/`、Web API client、Promtail Compose | 管理端日志中心、共享 Loki | `docs/api/http-contracts.md`、`docs/internals/backend.md`、`docs/internals/web.md`、`docs/ops/deployment.md` |
 | 插件发布与下载 | `modules/plugin_releases/`、`core/storage.py` | 岗位库安装入口、管理台、MinIO、浏览器插件构建 | `docs/api/http-contracts.md`、`docs/internals/backend.md`、`docs/internals/extension.md` |
 | 本地环境变量 | `.env.example`、根级 `package.json`、Vite、Compose | 开发者与本地进程 | `docs/ops/development.md` |

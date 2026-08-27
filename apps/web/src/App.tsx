@@ -7,6 +7,7 @@ import { authPath, editorPath, legacyCareerRedirect, navigateTo, useAppRoute } f
 import { useResumeStore } from "./store/resumeStore";
 import {
   loadAccountPage,
+  loadAssistantPage,
   loadDatasetsPage,
   loadHomePage,
   loadInterviewCenterPage,
@@ -15,6 +16,7 @@ import {
 } from "./workspacePageLoaders";
 
 const AccountPage = lazy(() => loadAccountPage().then((module) => ({ default: module.AccountPage })));
+const AssistantPage = lazy(() => loadAssistantPage().then((module) => ({ default: module.AssistantPage })));
 const AdminApp = lazy(() => import("./features/admin/AdminApp").then((module) => ({ default: module.AdminApp })));
 const AdminLoginPage = lazy(() => import("./features/admin/AdminLoginPage").then((module) => ({ default: module.AdminLoginPage })));
 const AuthPage = lazy(() => import("./features/auth/AuthPage").then((module) => ({ default: module.AuthPage })));
@@ -43,6 +45,7 @@ export function AppRouteLoadingFallback() {
   const route = useAppRoute();
   const loading = <PageLoading label="正在加载页面…" scope="page" />;
   const usesLightWorkspace = route.kind === "resumes"
+    || route.kind === "assistant"
     || route.kind === "templates"
     || route.kind === "resumeCreate"
     || route.kind === "editor"
@@ -116,6 +119,7 @@ function AppContent() {
     if (authStatus === "guest") {
       if (
         route.kind === "resumes"
+        || route.kind === "assistant"
         || route.kind === "templates"
         || route.kind === "resumeCreate"
         || route.kind === "editor"
@@ -244,6 +248,16 @@ function AppContent() {
 
   if (route.kind === "resumeCreate") {
     return <ResumeCreatePage />;
+  }
+
+  if (route.kind === "assistant") {
+    return (
+      <WorkspaceLayout active="assistant" className="assistant-workspace-shell">
+        <WorkspacePageBoundary>
+          <AssistantPage />
+        </WorkspacePageBoundary>
+      </WorkspaceLayout>
+    );
   }
 
   if (

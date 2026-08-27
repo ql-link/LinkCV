@@ -37,6 +37,7 @@ describe("SharePage", () => {
       style: {
         ...defaultSemanticStyle,
         template_key: "classic-technical-cn",
+        accent_color: "#202632",
       },
       sharer: { nickname: "于晏", avatar_url: null },
     });
@@ -49,6 +50,10 @@ describe("SharePage", () => {
     expect(screen.getByText("张三")).toBeInTheDocument();
     expect(screen.getByLabelText("分享简历内容")).toHaveClass(
       "theme-classic-technical",
+    );
+    expect(screen.getByLabelText("分享简历内容")).toHaveAttribute(
+      "style",
+      expect.stringContaining("--preview-accent:#202632"),
     );
   });
 
