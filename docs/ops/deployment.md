@@ -65,7 +65,7 @@ Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小�
 
 本期没有管理员开通接口。发布方还需在受控流程中确保至少一个既有用户被标记为 `users.is_admin=true`；公开注册始终是普通用户。没有管理员只会使 `/api/admin/llm/**` 无法使用，不会放宽权限。
 
-生产容器通过 `tolink-app-net` 使用 Docker DNS 连接 MySQL、Redis、MinIO 和平台 RabbitMQ，并须能访问仓库配置的 LinkParse。MySQL、Redis、MinIO、RabbitMQ 与 LinkParse 都不由 Production Compose 创建。Worker 使用 RabbitMQ durable queue、固定 `resume.import` 路由和 DLX/DLT；业务解析失败落 MySQL 终态且不自动重试，Redis、数据库或对象存储等公共依赖不可用时保留消息等待恢复。
+生产容器通过 `tolink-app-net` 使用 Docker DNS 连接 MySQL、Redis、MinIO 和平台 RabbitMQ，并须能访问仓库配置的 LinkParse。MySQL、Redis、MinIO、RabbitMQ 与 LinkParse 都不由 Production Compose 创建。Worker 使用 RabbitMQ durable queue、固定 `resume.import` 路由和 DLX/DLT。简历导入的业务解析失败落 MySQL 终态且不自动重试，公共依赖不可用时保留消息；资料任务额外以 MySQL `queued` 为持久待分发标记，由 Worker 扫描补发、原子抢占并恢复陈旧尝试，不依赖 Outbox。
 
 模板创建与异步导入是同一版本的跨端契约，Web、FastAPI、Worker 和迁移必须一起发布。执行 `0017` 前先运行 `uv run --directory apps/backend python scripts/release/cleanup_legacy_resume_imports.py` 获取 dry-run 清单，人工确认后再加 `--execute`；旧导入未归零时迁移会拒绝继续。
 
@@ -74,6 +74,8 @@ Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小�
 执行 `0022` 前必须同时确认数据库和对象存储已有可恢复备份，并先运行 `uv run --directory apps/backend python scripts/release/cleanup_legacy_user_datasets.py` 核对清理清单；人工确认后才加 `--execute`，再迁移数据库。该 revision 删除上线前全部 `user_dataset` 行，扩展通用解析任务以承载 `dataset` 来源及失败分类，并为资料记录增加任务指针；旧资料与源文件只能从备份恢复。迁移成功后必须同时替换 FastAPI 与 Worker，使资料任务与既有简历导入共用同一消费链路。
 
 执行 `0023` 前必须确认目标数据库已有可恢复备份。该 revision 为 `resume_versions` 增加非空 `name` 并回填已有版本名称。新后端依赖该列读取和写入版本，旧后端不能向新 schema 创建缺少名称的版本，因此迁移成功后必须配套替换 FastAPI 与 Web，不能让新旧应用与该 schema 混用。
+
+执行 `0043` 前必须确认数据库已有可恢复备份。迁移会给历史资料回填幂等键与请求指纹，但保留原有解析状态和对象引用；历史 `processing` 任务由新 Worker 按陈旧租约规则恢复。新 FastAPI、Worker 和 Web 依赖新增字段与 `queued` 状态。发布顺序固定为迁移、Worker、FastAPI、Web，应用回退必须评估新旧任务状态兼容性，不能只回退其中一个组件。
 
 两条 Pipeline 都提供 `RUN_TESTS` 参数；开启后会在镜像构建前运行 `npm run setup && npm run check`。常规 PR/push 质量检查仍由 GitHub Actions 执行。
 
@@ -88,7 +90,7 @@ CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并�
 - 应用回滚必须把 `TAG` 与 `PI_TAG` 一起切回同一环境、同一版本的两个不可变镜像标签并重新执行 Compose；不得把 Dev 标签部署到 Production。
 - 数据库迁移是 forward-only：当前与历史 revision 都不提供 down SQL，禁止执行 Alembic downgrade，也不做升级降级往返测试。
 - 发布前按迁移风险准备并验证数据库及相关对象存储备份。需要恢复旧数据库状态时使用备份；普通 schema 或数据缺陷通过新的向前 revision 修正。
-- 当前 head `0033`；`0032` 为 Agent 消息增加结构化澄清字段，`0033` 新增面试求职进程、单场面试和素材元数据。面试迁移是加法 DDL，不回填样例数据。
+- 当前 head `0043`；`0043` 为资料上传增加幂等、可靠排队与解析尝试字段，并回填历史资料任务。
 - 如果使用执行 `0033` 前的数据库备份恢复，必须同时处理备份之后写入 MinIO 的面试对象；只恢复数据库会产生失去元数据索引的对象。
 - 只有旧应用兼容当前新 schema 时才允许回退应用镜像。若不兼容，必须继续向前修复或按完整恢复方案同时恢复数据库与应用，不能只回切镜像。
 - MySQL DDL 可能隐式提交；迁移失败后停止自动重试，核对实际 current 和 schema，再决定新 revision 或备份恢复。

@@ -34,7 +34,7 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0042"
+EXPECTED_HEAD = "0043"
 
 
 def canonical_editor_markdown(data: dict[str, Any]) -> str:
@@ -255,6 +255,8 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "upload_duration_ms",
         "parse_status",
         "parse_duration_ms",
+        "parse_attempt_count",
+        "last_dispatched_at",
         "failure_reason",
         "created_at",
         "updated_at",
@@ -283,6 +285,12 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "upload_status",
         "parse_status",
     ]
+    assert task_indexes["idx_document_parse_tasks_dispatch"] == [
+        "source_type",
+        "parse_status",
+        "last_dispatched_at",
+        "id",
+    ]
     task_foreign_keys = {
         foreign_key["name"]: foreign_key
         for foreign_key in inspector.get_foreign_keys("document_parse_tasks")
@@ -295,13 +303,30 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "parse_task_id" not in foreign_key["constrained_columns"]
         for foreign_key in inspector.get_foreign_keys("resumes")
     )
-    assert "parse_task_id" in {
+    assert {
         column["name"] for column in inspector.get_columns("user_dataset")
+    } == {
+        "id",
+        "user_id",
+        "idempotency_key",
+        "request_fingerprint",
+        "parse_task_id",
+        "file_name",
+        "file_format",
+        "content_type",
+        "file_size",
+        "object_name",
+        "sha256",
+        "created_at",
     }
     assert {
         constraint["name"]
         for constraint in inspector.get_unique_constraints("user_dataset")
-    } == {"uk_user_dataset_object_name", "uk_user_dataset_parse_task_id"}
+    } == {
+        "uk_user_dataset_object_name",
+        "uk_user_dataset_parse_task_id",
+        "uk_user_dataset_user_idempotency",
+    }
     assert all(
         "parse_task_id" not in foreign_key["constrained_columns"]
         for foreign_key in inspector.get_foreign_keys("user_dataset")
@@ -313,6 +338,14 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         constraint["name"] for constraint in inspector.get_unique_constraints("users")
     } == {"uk_users_email"}
     user_columns = {column["name"]: column for column in inspector.get_columns("users")}
+    dataset_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("user_dataset")
+    }
+    task_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("document_parse_tasks")
+    }
     resume_columns = {
         column["name"]: column for column in inspector.get_columns("resumes")
     }
@@ -320,6 +353,15 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     assert user_columns["status"]["type"].unsigned is True
     assert user_columns["is_admin"]["type"].unsigned is True
     assert user_columns["created_at"]["type"].fsp == 6
+    assert dataset_columns["idempotency_key"]["nullable"] is False
+    assert dataset_columns["idempotency_key"]["type"].length == 64
+    assert dataset_columns["request_fingerprint"]["nullable"] is False
+    assert dataset_columns["request_fingerprint"]["type"].length == 64
+    assert dataset_columns["content_type"]["comment"] == "服务端规范化内容类型"
+    assert task_columns["parse_attempt_count"]["nullable"] is False
+    assert task_columns["parse_attempt_count"]["type"].unsigned is True
+    assert task_columns["parse_attempt_count"]["default"] in {0, "0"}
+    assert task_columns["last_dispatched_at"]["type"].fsp == 6
     assert resume_columns["id"]["type"].unsigned is True
     assert resume_columns["user_id"]["type"].unsigned is True
     assert resume_columns["data_json"]["type"].__class__.__name__ == "JSON"
@@ -1295,6 +1337,105 @@ def test_0042_deletes_blank_template_without_deleting_resumes_and_restores_layou
         ]
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0042"
     engine.dispose()
+
+
+def test_0043_adds_dataset_idempotency_and_dispatch_recovery_fields() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0042")
+    engine = create_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            user_id = connection.execute(
+                text(
+                    "INSERT INTO users (email, password_hash, nickname) "
+                    "VALUES ('dataset-migration@example.invalid', "
+                    "'$2b$12$fictional', '张三')"
+                )
+            ).lastrowid
+            task_id = connection.execute(
+                text(
+                    "INSERT INTO document_parse_tasks "
+                    "(source_type, user_id, file_name, file_format, object_name, "
+                    "upload_status, upload_duration_ms, parse_status) VALUES "
+                    "('dataset', :user_id, 'notes.md', 'md', "
+                    "CONCAT('users/', :user_id, '/datasets/legacy-notes.md'), "
+                    "'succeeded', 12, 'processing')"
+                ),
+                {"user_id": user_id},
+            ).lastrowid
+            dataset_id = connection.execute(
+                text(
+                    "INSERT INTO user_dataset "
+                    "(user_id, parse_task_id, file_name, file_format, content_type, "
+                    "file_size, object_name, sha256) VALUES "
+                    "(:user_id, :task_id, 'notes.md', 'md', 'text/markdown', 12, "
+                    "CONCAT('users/', :user_id, '/datasets/legacy-notes.md'), :sha256)"
+                ),
+                {
+                    "user_id": user_id,
+                    "task_id": task_id,
+                    "sha256": "a" * 64,
+                },
+            ).lastrowid
+
+        run_alembic(database_url, "upgrade", "0043")
+        inspector = inspect(engine)
+        assert {
+            column["name"] for column in inspector.get_columns("user_dataset")
+        } >= {"idempotency_key", "request_fingerprint"}
+        assert {
+            column["name"]
+            for column in inspector.get_columns("document_parse_tasks")
+        } >= {"parse_attempt_count", "last_dispatched_at"}
+        assert {
+            constraint["name"]
+            for constraint in inspector.get_unique_constraints("user_dataset")
+        } >= {"uk_user_dataset_user_idempotency"}
+        assert {
+            index["name"] for index in inspector.get_indexes("document_parse_tasks")
+        } >= {"idx_document_parse_tasks_dispatch"}
+
+        with engine.connect() as connection:
+            dataset = connection.execute(
+                text(
+                    "SELECT idempotency_key, request_fingerprint "
+                    "FROM user_dataset WHERE id = :id"
+                ),
+                {"id": dataset_id},
+            ).one()
+            assert dataset == (f"legacy-{dataset_id}", "a" * 64)
+            task = connection.execute(
+                text(
+                    "SELECT parse_attempt_count, last_dispatched_at "
+                    "FROM document_parse_tasks WHERE id = :id"
+                ),
+                {"id": task_id},
+            ).one()
+            assert task == (0, None)
+            queued_task_id = connection.execute(
+                text(
+                    "INSERT INTO document_parse_tasks "
+                    "(source_type, user_id, file_name, file_format, object_name, "
+                    "upload_status, upload_duration_ms, parse_status) VALUES "
+                    "('dataset', :user_id, 'queued.md', 'md', "
+                    "CONCAT('users/', :user_id, '/datasets/queued.md'), "
+                    "'succeeded', 1, 'queued')"
+                ),
+                {"user_id": user_id},
+            ).lastrowid
+            assert queued_task_id is not None
+            assert connection.scalar(
+                text(
+                    "SELECT parse_attempt_count FROM document_parse_tasks "
+                    "WHERE id = :id"
+                ),
+                {"id": queued_task_id},
+            ) == 0
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0043"
+    finally:
+        engine.dispose()
+        reset_test_database_to_base(database_url)
 
 
 def test_agent_clarification_message_forward_migration() -> None:
