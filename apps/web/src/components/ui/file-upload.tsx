@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useImperativeHandle, useRef, useState, type ReactNode } from "react";
 import { FileUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import "./file-upload.css";
@@ -16,6 +16,7 @@ type FileUploadProps = {
   onFilesSelect?: (files: File[]) => void;
   browseLabel?: string;
   className?: string;
+  children?: ReactNode;
   disabled?: boolean;
   file?: File | null;
   multiple?: boolean;
@@ -31,6 +32,7 @@ export const FileUpload = forwardRef<FileUploadHandle, FileUploadProps>(function
   onFilesSelect,
   browseLabel = "浏览文件",
   className,
+  children,
   disabled = false,
   file = null,
   multiple = false,
@@ -38,15 +40,19 @@ export const FileUpload = forwardRef<FileUploadHandle, FileUploadProps>(function
   replaceLabel = "重新选择",
 }, forwardedRef) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const lastHandledFilesRef = useRef<File[] | null>(null);
   const [dragActive, setDragActive] = useState(false);
 
   const open = () => {
-    if (!disabled) inputRef.current?.click();
+    if (disabled) return;
+    const input = inputRef.current;
+    if (!input) return;
+    input.value = "";
+    input.click();
   };
 
   useImperativeHandle(forwardedRef, () => ({
-    focus: () => triggerRef.current?.focus(),
+    focus: () => inputRef.current?.focus(),
     open,
   }));
 
@@ -61,52 +67,72 @@ export const FileUpload = forwardRef<FileUploadHandle, FileUploadProps>(function
     onFileSelect?.(files[0]);
   };
 
+  const handleNativeSelection = (input: HTMLInputElement) => {
+    const files = input.files ? Array.from(input.files) : [];
+    if (files.length === 0) return;
+    const previous = lastHandledFilesRef.current;
+    if (previous?.length === files.length && previous.every((file, index) => file === files[index])) {
+      return;
+    }
+    lastHandledFilesRef.current = files;
+    selectFiles(files);
+  };
+
   return (
-    <div className={cn("file-upload", className)}>
-      <button
-        ref={triggerRef}
-        type="button"
-        className={cn("file-upload-dropzone", dragActive && "is-dragging")}
-        disabled={disabled}
-        onClick={open}
-        onDragEnter={(event) => {
-          event.preventDefault();
-          if (!disabled) setDragActive(true);
-        }}
-        onDragOver={(event) => event.preventDefault()}
-        onDragLeave={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragActive(false);
-        }}
-        onDrop={(event) => {
-          event.preventDefault();
-          if (!disabled) selectFiles(event.dataTransfer.files);
-        }}
-      >
-        <span className="file-upload-icon" aria-hidden="true"><FileUp /></span>
-        <span className="file-upload-copy">
-          <strong>{file ? "点击重新选择或拖放文件替换" : multiple ? "点击上传或拖放多个文件" : "点击上传或拖放文件"}</strong>
-          <small>{supportingText}</small>
-          <span className="file-upload-browse"><FileUp aria-hidden="true" />{file ? replaceLabel : browseLabel}</span>
-        </span>
-      </button>
-      <input
-        ref={inputRef}
-        className="visually-hidden"
-        type="file"
-        name={name}
-        aria-label={inputLabel}
-        accept={accept}
-        multiple={multiple}
-        disabled={disabled}
-        tabIndex={-1}
-        onChange={(event) => {
-          const selected = event.currentTarget.files
-            ? Array.from(event.currentTarget.files)
-            : [];
-          event.currentTarget.value = "";
-          selectFiles(selected);
-        }}
-      />
+    <div className={cn("file-upload", disabled && "is-disabled", className)}>
+      <div className="file-upload-picker">
+        <div
+          className={cn("file-upload-dropzone", dragActive && "is-dragging")}
+          aria-hidden="true"
+          onDragEnter={(event) => {
+            event.preventDefault();
+            if (!disabled) setDragActive(true);
+          }}
+          onDragOver={(event) => event.preventDefault()}
+          onDragLeave={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragActive(false);
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            if (!disabled) selectFiles(event.dataTransfer.files);
+          }}
+        >
+          <span className="file-upload-icon" aria-hidden="true"><FileUp /></span>
+          <span className="file-upload-copy">
+            <strong>{file ? "点击重新选择或拖放文件替换" : multiple ? "点击上传或拖放多个文件" : "点击上传或拖放文件"}</strong>
+            <small>{supportingText}</small>
+            <span className="file-upload-browse"><FileUp aria-hidden="true" />{file ? replaceLabel : browseLabel}</span>
+          </span>
+        </div>
+        <input
+          ref={inputRef}
+          className="file-upload-native-input"
+          type="file"
+          name={name}
+          aria-label={inputLabel}
+          accept={accept}
+          multiple={multiple}
+          disabled={disabled}
+          onClick={(event) => {
+            // Clear before the native picker opens so choosing the same file
+            // again still produces a selection event.
+            lastHandledFilesRef.current = null;
+            event.currentTarget.value = "";
+          }}
+          onDragEnter={() => {
+            if (!disabled) setDragActive(true);
+          }}
+          onDragOver={(event) => event.preventDefault()}
+          onDragLeave={() => setDragActive(false)}
+          onDrop={(event) => {
+            event.preventDefault();
+            if (!disabled) selectFiles(event.dataTransfer.files);
+          }}
+          onInput={(event) => handleNativeSelection(event.currentTarget)}
+          onChange={(event) => handleNativeSelection(event.currentTarget)}
+        />
+      </div>
+      {children}
     </div>
   );
 });

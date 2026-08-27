@@ -31,8 +31,15 @@ class UserDatasetRecord(BaseModel):
         return str(value)
 
 
+class UserDatasetLimits(BaseModel):
+    max_file_bytes: int
+    max_files_per_batch: int
+    allowed_extensions: list[str]
+
+
 class UserDatasetListResponse(BaseModel):
     datasets: list[UserDatasetRecord]
+    limits: UserDatasetLimits
 
 
 class UserDatasetContentResponse(BaseModel):

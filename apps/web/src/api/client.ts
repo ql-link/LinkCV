@@ -272,7 +272,7 @@ export type DatasetRecord = {
   file_format: string;
   file_size: number;
   upload_status: "uploading" | "succeeded" | "failed";
-  parse_status: "processing" | "succeeded" | "failed" | null;
+  parse_status: "queued" | "processing" | "succeeded" | "failed" | null;
   failure_reason:
     | "format_unsupported"
     | "content_invalid"
@@ -283,6 +283,18 @@ export type DatasetRecord = {
     | "internal_error"
     | null;
   created_at: string;
+};
+
+export type DatasetLimits = {
+  max_file_bytes: number;
+  max_files_per_batch: number;
+  allowed_extensions: string[];
+};
+
+export type DatasetListResponse = {
+  datasets: DatasetRecord[];
+  /** Older API responses did not include limits; callers normalize that case. */
+  limits?: DatasetLimits;
 };
 
 export type DatasetContent = {
@@ -1248,15 +1260,16 @@ export const api = {
       method: "POST",
       body: payload,
     }),
-  uploadDataset: (file: File) => {
+  uploadDataset: (file: File, idempotencyKey: string) => {
     const formData = new FormData();
     formData.append("file", file);
     return request<DatasetRecord>("/api/datasets", {
       method: "POST",
       formData,
+      headers: { "Idempotency-Key": idempotencyKey },
     });
   },
-  listDatasets: () => request<{ datasets: DatasetRecord[] }>("/api/datasets"),
+  listDatasets: () => request<DatasetListResponse>("/api/datasets"),
   renameDataset: (id: string, name: string) =>
     request<DatasetRecord>(`/api/datasets/${id}`, {
       method: "PATCH",

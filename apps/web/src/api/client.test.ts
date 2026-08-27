@@ -479,7 +479,7 @@ describe("面试中心 API client", () => {
 });
 
 describe("知识库资料 API", () => {
-  it("以 FormData 上传资料并保持相对路径", async () => {
+  it("以 FormData 上传资料并发送稳定的幂等键", async () => {
     const record = {
       id: "42",
       file_name: "岗位要求.md",
@@ -490,15 +490,17 @@ describe("知识库资料 API", () => {
     };
     const fetchMock = vi
       .fn()
-      .mockResolvedValue(jsonResponse(201, record));
+      .mockResolvedValue(jsonResponse(202, record));
     vi.stubGlobal("fetch", fetchMock);
     const file = new File(["# 岗位要求"], "岗位要求.md", { type: "text/markdown" });
+    const idempotencyKey = "8d42a61f-2396-4dbc-a63d-a1770e398f61";
 
-    await expect(api.uploadDataset(file)).resolves.toEqual(record);
+    await expect(api.uploadDataset(file, idempotencyKey)).resolves.toEqual(record);
 
     const [, init] = fetchMock.mock.calls[0];
     expect(init.method).toBe("POST");
     expect(init.headers).not.toHaveProperty("Content-Type");
+    expect(init.headers).toHaveProperty("Idempotency-Key", idempotencyKey);
     expect(init.body).toBeInstanceOf(FormData);
     expect((init.body as FormData).get("file")).toBe(file);
   });
@@ -514,16 +516,41 @@ describe("知识库资料 API", () => {
         created_at: "2026-08-07T08:00:00Z",
       },
     ];
+    const limits = {
+      max_file_bytes: 10 * 1024 * 1024,
+      max_files_per_batch: 10,
+      allowed_extensions: [".pdf", ".docx", ".md", ".txt"],
+    };
     const fetchMock = vi
       .fn()
-      .mockResolvedValue(jsonResponse(200, { datasets }));
+      .mockResolvedValue(jsonResponse(200, { datasets, limits }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(api.listDatasets()).resolves.toEqual({ datasets });
+    await expect(api.listDatasets()).resolves.toEqual({ datasets, limits });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/datasets",
       expect.objectContaining({ method: "GET", credentials: "include" }),
     );
+  });
+
+  it("资料上传遇到 401 刷新会话后复用同一个幂等键", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(401, { error: "UNAUTHORIZED" }))
+      .mockResolvedValueOnce(jsonResponse(200, { user: { id: "1" } }))
+      .mockResolvedValueOnce(jsonResponse(202, { id: "42", parse_status: "queued" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const file = new File(["# 资料"], "资料.md", { type: "text/markdown" });
+    const key = "8d42a61f-2396-4dbc-a63d-a1770e398f61";
+
+    await api.uploadDataset(file, key);
+
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
+      headers: expect.objectContaining({ "Idempotency-Key": key }),
+    }));
+    expect(fetchMock.mock.calls[2]?.[1]).toEqual(expect.objectContaining({
+      headers: expect.objectContaining({ "Idempotency-Key": key }),
+    }));
   });
 
   it("支持资料重命名、解析重试和删除契约", async () => {

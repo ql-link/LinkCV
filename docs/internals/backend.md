@@ -27,7 +27,7 @@
 | `src/linkcv/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkcv/modules/agent/` | 用户会话、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0042` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0043` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -55,6 +55,8 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0042` 先验证 `blank-cn`、其历史简历引用以及所有 `classic-technical-cn` 模板/简历/版本快照，再把经典单页技术模板的 A4 页边距恢复为生产审查值 `9/11/9/11mm` 并删除空白模板行。`resumes.template_id` 的既有 `ON DELETE SET NULL` 只清除历史简历的来源引用；简历和版本自有的 `data_json/style_json` 不变。迁移写后逐项验证模板不存在、旧简历仍存在且来源已置空、经典技术快照内容不变。revision 为 forward-only，恢复删除的模板和原引用依赖升级前备份。
 
+`0043` 为资料上传增加数据库幂等和可靠调度字段：`user_dataset` 保存 `idempotency_key/request_fingerprint` 并以 `(user_id, idempotency_key)` 唯一约束收敛并发请求；`document_parse_tasks` 支持 `queued`，并保存解析尝试次数和最近分发时间。历史资料获得确定性兼容键与指纹；原有解析状态和对象引用保持不变，历史 `processing` 任务随后按陈旧租约规则恢复。revision 是 forward-only；部署必须先升级 schema，再同时替换 FastAPI、Worker 和 Web。
+
 普通创建必须提供名称和启用模板，在用户行锁内完成容量、名称规范键和模板快照校验，再以 `source_type=template` 原子创建当前简历和 initial 版本。正式简历与活动导入任务共享每用户 10 个名额。异步导入同样必须提供启用模板，其标题来自安全化源文件名并允许与已有简历同名；Web 默认选择 `classic-technical-cn`，不可用时只回退到其他非空白启用模板，解析内容作为 data，所选模板提供 style。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。模板切换使用同一乐观锁边界的独立原子服务：当前 `data_json` 保持不变，目标启用模板提供 `style_json` 与 `template_id`，成功后只递增一次锁；目标无效或版本冲突不会写入部分结果。手动正式版本在创建和重命名时保存 1–80 字符的名称；旧调用方缺省时按版本号生成“版本 N”。手动版本、重命名、删除版本与恢复都先锁定所属简历；重命名只更新名称，恢复直接替换当前简历且不创建新版本；每份简历最多保存 10 个版本。`0023` 为 `resume_versions.name` 回填历史名称，历史初始版本、恢复前备份和 restore 记录使用系统名称。
 
 `0003` 将模板外键改为 `ON DELETE SET NULL`，同时允许历史模板来源在模板删除后保留 `source_type=template/template_id=NULL`。MySQL 8.4 禁止 `SET NULL` 外键列参与 CHECK，因此 `ck_resumes_source_fields` 只约束来源证据字段，`template_id/source_type` 组合由统一创建服务保证，外键继续保证非空引用有效。`0004` 曾新增对象存储清理任务表；`0010` 在删除链路改为同步后移除该表，upgrade 会先锁表并在存在待处理任务时拒绝删表。部署流水线先迁移再替换应用，因此迁移到 `0010` 前须确认任务表为空；迁移和容器替换之间的旧应用删除请求可能短暂失败。`0005` 在批量转换前核对旧节点和样式字段，只接受可完整表达的上一版结构；遇到未知字段、危险 Markdown 或无法保留的内嵌图片会中止。`0012` 删除 `resumes` 和 `resume_versions` 的旧版内容与样式备份列；恢复旧 JSON 必须使用迁移前的外部数据库备份。已进入共享环境的 revision 不原地修改，修正通过新的向前 revision 完成。
@@ -73,7 +75,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0013` 为 `resumes` 增加分享字段：`share_token`（VARCHAR(64)，全局唯一索引）、`share_visibility`（VARCHAR(16)，`private|public`）、`share_expires_at`（可空，UTC 过期时间）和 `share_created_at`。两个 CHECK 约束保证分享字段要么全部为空（未分享）、要么全部非空（已分享），且可见性只允许 `private/public`。分享不单独建表、不落内容快照，公开读取时实时取 `resume_versions` 中 `version_no` 最大的正式版本。
 
-`0018` 新增 `user_dataset` 用户知识库数据集表。`0022` 为每行增加无数据库外键的唯一 `parse_task_id`，解析状态只以 `document_parse_tasks` 为真值源；同一事务创建资料和 `source_type=dataset` 的任务。`POST /api/datasets` 校验并上传源文件、提交两行记录时即把任务收口为 `upload_status=succeeded/parse_status=processing`，再向既有文档解析队列发布 `DATASET_PARSE_TASK`；首次发布失败保留源文件和两行记录，收口为 `parse_status=failed/failure_reason=service_unavailable` 并返回 `502 DATASET_QUEUE_UNAVAILABLE`。Worker 对 DOCX/PDF 调用 LinkParse，对 Markdown/TXT 本地执行 UTF-8 与换行规范化，只有转换 Markdown 成功保存到 `users/{uid}/datasets/converted/{task_id}.md` 后资料才可通过内容接口读取。`GET /api/datasets` 联表按当前用户过滤并返回上传、解析状态和失败分类，不暴露对象键或 SHA-256；`GET /api/datasets/:id/content` 在再次校验资料与任务归属、解析成功状态和转换对象键后读取转换存档并返回 Markdown。`PATCH /api/datasets/:id` 只更新 `user_dataset.file_name` 的显示名称并保留扩展名；`POST /api/datasets/:id/retry` 仅复用仍存在的源对象重发失败任务；`DELETE /api/datasets/:id` 对终态资料清理源/转换对象后在同一事务删除资料和任务，处理中拒绝删除，对象清理失败保留数据库记录。本模块不提供分片、RAG、源文件下载和去重。
+`0018` 新增 `user_dataset` 用户知识库数据集表，`0022` 让资料通过唯一 `parse_task_id` 关联通用解析任务，`0043` 增加数据库幂等键、请求指纹和可靠调度字段。`POST /api/datasets` 先执行有界格式与内容校验，在用户行锁内检查数量和总容量，再创建 `uploading` 预留；MinIO 成功后提交为 `upload_status=succeeded/parse_status=queued`，RabbitMQ confirm 失败仍返回已受理记录。Worker 扫描器周期补发未分发或超时的 `queued` 任务，消费方用数据库条件更新把任务原子抢占为 `processing`；陈旧处理任务在尝试上限内回到 `queued`，超过上限收口失败。每次尝试把转换 Markdown 保存为 `users/{uid}/datasets/converted/{task_id}-{attempt}.md`，条件提交失败会删除本次对象，避免陈旧消费者覆盖较新结果；读取仍兼容历史 `{task_id}.md`。上传失败预留由 Worker 清理，只有对象删除成功才删除数据库记录。列表只暴露上传成功资料；重试把失败任务重新置为 `queued`，活动任务禁止删除。本模块不使用 Outbox，不提供分片、RAG 或源文件下载。
 
 ### 微信账号、双端会话与扫码登录
 

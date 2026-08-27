@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Database, MoreHorizontal, Pencil, Plus, RotateCcw, Trash2, X } from "lucide-react";
 
-import { api, ApiRequestError, type DatasetRecord } from "../../api/client";
+import { api, ApiRequestError, type DatasetLimits, type DatasetRecord } from "../../api/client";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import {
   Button,
@@ -18,23 +18,32 @@ import {
   PageLoading,
 } from "@/components/ui";
 import { DatasetPreviewDialog } from "./DatasetPreviewDialog";
+import {
+  datasetFormatError,
+  datasetUploadErrorMessage,
+  DEFAULT_DATASET_LIMITS,
+  formatDatasetFileSize,
+  normalizeDatasetLimits,
+} from "./datasetUploadValidation";
+import { useDatasetUploads, type DatasetUploadFailure } from "./useDatasetUploads";
 
-export const MAX_DATASET_BYTES = 10 * 1024 * 1024;
-export const MAX_DATASET_BATCH_FILES = 10;
+export const MAX_DATASET_BYTES = DEFAULT_DATASET_LIMITS.max_file_bytes;
+export const MAX_DATASET_BATCH_FILES = DEFAULT_DATASET_LIMITS.max_files_per_batch;
 export const DATASET_UPLOAD_CONCURRENCY = 3;
-const SUPPORTED_DATASET_EXTENSIONS = ["docx", "pdf", "md", "txt"];
 
 type Notice = { kind: "success" | "error"; message: string } | null;
-type DatasetVisualStatus = "processing" | "succeeded" | "failed";
-type UploadItemStatus = "ready" | "uploading" | "failed";
-type UploadItem = {
-  id: string;
-  file: File;
-  status: UploadItemStatus;
-  error: string | null;
-  retryable: boolean;
-};
+type DatasetVisualStatus = "queued" | "processing" | "succeeded" | "failed";
 type DatasetAction = { kind: "rename" | "retry" | "delete"; id: string } | null;
+
+function formatUploadFailureNotice(failures: DatasetUploadFailure[], limitMessage?: string | null) {
+  const trimTerminalPunctuation = (value: string) => value.replace(/[。；，、\s]+$/u, "");
+  const details = failures
+    .map(({ fileName, reason }) => `${fileName}：${trimTerminalPunctuation(reason)}`)
+    .join("；");
+  const prefix = failures.length === 1 ? "文件上传失败：" : "部分文件上传失败：";
+  const limitSuffix = limitMessage ? `；${trimTerminalPunctuation(limitMessage)}` : "";
+  return `${prefix}${details}${limitSuffix}`;
+}
 
 const FAILURE_REASON_LABELS: Record<NonNullable<DatasetRecord["failure_reason"]>, string> = {
   format_unsupported: "文件格式不受支持，请重新选择文件。",
@@ -46,41 +55,7 @@ const FAILURE_REASON_LABELS: Record<NonNullable<DatasetRecord["failure_reason"]>
   internal_error: "解析失败，请稍后重试。",
 };
 
-export function datasetFormatError(file: File): string | null {
-  if (file.size === 0) return "文件为空，请重新选择。";
-  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-  if (!SUPPORTED_DATASET_EXTENSIONS.includes(extension)) {
-    return "仅支持 DOCX、PDF、Markdown 和 TXT 文件。";
-  }
-  if (file.size > MAX_DATASET_BYTES) {
-    return "文件过大，最大支持 10 MB。";
-  }
-  return null;
-}
-
-export function datasetUploadErrorMessage(error: unknown, fallback: string) {
-  if (!(error instanceof ApiRequestError)) return fallback;
-
-  switch (error.message) {
-    case "INVALID_DATASET_FILENAME":
-      return "文件名无效，请重命名后再上传。";
-    case "UNSUPPORTED_DATASET_FORMAT":
-      return "仅支持 DOCX、PDF、Markdown 和 TXT 文件。";
-    case "EMPTY_DATASET_FILE":
-      return "文件为空，请重新选择。";
-    case "DATASET_TOO_LARGE":
-      return "文件过大，最大支持 10 MB。";
-    case "DATASET_UPLOAD_FAILED":
-      return "上传失败，请稍后重试。";
-    case "DATASET_RECORD_FAILED":
-      return "资料保存失败，请稍后重试。";
-    case "DATASET_QUEUE_UNAVAILABLE":
-      return "资料已保存，但解析服务暂不可用，已标记为解析失败。";
-    default:
-      if (error.status === 401) return "登录状态已失效，请重新登录。";
-      return error.status >= 500 ? "服务暂时不可用，请稍后重试。" : fallback;
-  }
-}
+export { datasetFormatError, datasetUploadErrorMessage } from "./datasetUploadValidation";
 
 function datasetActionErrorMessage(error: unknown, fallback: string) {
   if (!(error instanceof ApiRequestError)) return fallback;
@@ -90,6 +65,7 @@ function datasetActionErrorMessage(error: unknown, fallback: string) {
     case "DATASET_NOT_FOUND":
       return "这份资料不存在或你无权操作。";
     case "DATASET_IN_PROGRESS":
+    case "DATASET_BUSY":
       return "资料正在解析，处理完成后再删除。";
     case "DATASET_NOT_RETRYABLE":
       return "只有解析失败的资料可以重新解析。";
@@ -106,9 +82,7 @@ function datasetActionErrorMessage(error: unknown, fallback: string) {
 }
 
 function formatFileSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return formatDatasetFileSize(bytes);
 }
 
 function formatDateTime(value: string) {
@@ -134,11 +108,13 @@ export function datasetDisplayName(dataset: Pick<DatasetRecord, "file_name" | "f
 function datasetVisualStatus(dataset: DatasetRecord): DatasetVisualStatus {
   if (dataset.parse_status === "succeeded") return "succeeded";
   if (dataset.parse_status === "failed" || dataset.upload_status === "failed") return "failed";
-  return "processing";
+  if (dataset.parse_status === "processing") return "processing";
+  return "queued";
 }
 
 function datasetStatusLabel(status: DatasetVisualStatus) {
-  if (status === "succeeded") return "解析完成";
+  if (status === "queued") return "等待解析";
+  if (status === "succeeded") return "可用";
   if (status === "failed") return "解析失败";
   return "正在解析";
 }
@@ -151,8 +127,13 @@ function datasetStatusReason(dataset: DatasetRecord) {
 function DatasetStatus({ dataset }: { dataset: DatasetRecord }) {
   const status = datasetVisualStatus(dataset);
   const reason = status === "failed" ? datasetStatusReason(dataset) : null;
+  const styleStatus = status === "queued" ? "processing" : status;
   return (
-    <span className={`dataset-status is-${status}`} title={reason ?? undefined}>
+    <span
+      className={`dataset-status is-${styleStatus}`}
+      data-status={status}
+      title={reason ?? undefined}
+    >
       <span className="dataset-status-mark" aria-hidden="true" />
       {datasetStatusLabel(status)}
     </span>
@@ -243,16 +224,24 @@ function DatasetRow({
 
 function DatasetDropzone({
   disabled,
+  uploading,
+  limits,
   onFilesSelect,
 }: {
   disabled: boolean;
+  uploading: boolean;
+  limits: DatasetLimits;
   onFilesSelect: (files: File[]) => void;
 }) {
+  const accept = limits.allowed_extensions.join(",");
   return (
     <FileUpload
-      accept=".docx,.pdf,.md,.txt,application/pdf,text/markdown,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      className="dataset-file-upload"
+      accept={`${accept},application/pdf,text/markdown,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document`}
       inputLabel="选择资料文件"
-      supportingText="支持 DOCX、PDF、Markdown 和 TXT；一次最多 10 个，每个不超过 10 MB"
+      supportingText={uploading
+        ? "正在上传…"
+        : `支持 PDF、DOCX、Markdown、TXT · 单个不超过 ${formatFileSize(limits.max_file_bytes)}`}
       disabled={disabled}
       multiple
       onFilesSelect={onFilesSelect}
@@ -260,17 +249,36 @@ function DatasetDropzone({
   );
 }
 
+const ACCEPTED_SYNC_FAILURE = "资料已接受，但列表同步失败";
+
+function upsertDataset(items: DatasetRecord[], dataset: DatasetRecord): DatasetRecord[] {
+  const index = items.findIndex((item) => item.id === dataset.id);
+  if (index < 0) return [dataset, ...items];
+  return items.map((item) => item.id === dataset.id ? dataset : item);
+}
+
+function mergeDatasetResponse(
+  datasets: DatasetRecord[],
+  locallyAccepted: Map<string, DatasetRecord>,
+): DatasetRecord[] {
+  const serverIds = new Set(datasets.map((dataset) => dataset.id));
+  for (const id of serverIds) locallyAccepted.delete(id);
+  const missingAccepted = Array.from(locallyAccepted.values());
+  return missingAccepted.length > 0 ? [...missingAccepted, ...datasets] : datasets;
+}
+
 export function DatasetsPage() {
   const previewTriggerRef = useRef<HTMLElement | null>(null);
-  const uploadItemSequence = useRef(0);
+  const locallyAccepted = useRef(new Map<string, DatasetRecord>());
+  const pageMounted = useRef(true);
   const [datasets, setDatasets] = useState<DatasetRecord[]>([]);
+  const [limits, setLimits] = useState<DatasetLimits>(DEFAULT_DATASET_LIMITS);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadItems, setUploadItems] = useState<UploadItem[]>([]);
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState<Notice>(null);
+  const [syncFailure, setSyncFailure] = useState<string | null>(null);
   const [fading, setFading] = useState(false);
   const [previewDataset, setPreviewDataset] = useState<DatasetRecord | null>(null);
   const [menuDatasetId, setMenuDatasetId] = useState<string | null>(null);
@@ -280,11 +288,50 @@ export function DatasetsPage() {
   const [deleteTarget, setDeleteTarget] = useState<DatasetRecord | null>(null);
   const [busyAction, setBusyAction] = useState<DatasetAction>(null);
 
+  const refreshDatasets = useCallback(async (options: { initial?: boolean; accepted?: boolean } = {}) => {
+    const { initial = false, accepted = false } = options;
+    try {
+      const data = await api.listDatasets();
+      if (!pageMounted.current) return false;
+      const nextLimits = normalizeDatasetLimits(data.limits);
+      setLimits(nextLimits);
+      setDatasets(mergeDatasetResponse(data.datasets, locallyAccepted.current));
+      setLoadFailed(false);
+      setSyncFailure(null);
+      return true;
+    } catch {
+      if (!pageMounted.current) return false;
+      if (initial) setLoadFailed(true);
+      else setSyncFailure(accepted ? ACCEPTED_SYNC_FAILURE : "资料列表同步失败，请稍后重试。");
+      return false;
+    } finally {
+      if (initial && pageMounted.current) setLoading(false);
+    }
+  }, []);
+
+  const {
+    uploading,
+    uploadFiles,
+  } = useDatasetUploads({
+    limits,
+    concurrency: DATASET_UPLOAD_CONCURRENCY,
+    onAccepted: (dataset) => {
+      if (!pageMounted.current) return;
+      locallyAccepted.current.set(dataset.id, dataset);
+      setDatasets((current) => upsertDataset(current, dataset));
+      setLoadFailed(false);
+    },
+    onLimitExceeded: (message) => {
+      setNotice(message ? { kind: "error", message } : null);
+    },
+  });
+
   useEffect(() => {
     if (!notice) return;
     setFading(false);
-    const fadeTimer = window.setTimeout(() => setFading(true), 3000);
-    const removeTimer = window.setTimeout(() => setNotice(null), 3300);
+    const visibleDuration = notice.kind === "error" ? 5000 : 3000;
+    const fadeTimer = window.setTimeout(() => setFading(true), visibleDuration);
+    const removeTimer = window.setTimeout(() => setNotice(null), visibleDuration + 300);
     return () => {
       window.clearTimeout(fadeTimer);
       window.clearTimeout(removeTimer);
@@ -299,46 +346,65 @@ export function DatasetsPage() {
   }, [menuDatasetId]);
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const data = await api.listDatasets();
-        if (!cancelled) {
-          setDatasets(data.datasets);
-          setLoadFailed(false);
-        }
-      } catch {
-        if (!cancelled) setLoadFailed(true);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
+    pageMounted.current = true;
+    void refreshDatasets({ initial: true });
     return () => {
-      cancelled = true;
+      pageMounted.current = false;
     };
   }, []);
 
-  const hasActiveParsing = datasets.some((dataset) => datasetVisualStatus(dataset) === "processing");
+  const hasActiveParsing = datasets.some((dataset) => {
+    const status = datasetVisualStatus(dataset);
+    return status === "queued" || status === "processing";
+  });
 
   useEffect(() => {
     if (!hasActiveParsing) return;
     let cancelled = false;
-    const timer = window.setInterval(() => {
-      void api.listDatasets().then((data) => {
-        if (!cancelled) setDatasets(data.datasets);
-      }).catch(() => undefined);
-    }, 2000);
+    let timer: number | undefined;
+    let delay = 2000;
+    let requestInFlight = false;
+
+    const clearTimer = () => {
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+        timer = undefined;
+      }
+    };
+    const schedule = (wait: number) => {
+      if (cancelled || document.visibilityState === "hidden") return;
+      clearTimer();
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        void poll();
+      }, wait);
+    };
+    const poll = async () => {
+      if (cancelled || requestInFlight || document.visibilityState === "hidden") return;
+      requestInFlight = true;
+      const refreshed = await refreshDatasets();
+      requestInFlight = false;
+      if (cancelled) return;
+      if (refreshed) delay = 2000;
+      else delay = Math.min(delay * 2, 30000);
+      schedule(delay);
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        clearTimer();
+      } else if (!requestInFlight) {
+        schedule(0);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    schedule(delay);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      clearTimer();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [hasActiveParsing]);
-
-  const refresh = async () => {
-    const data = await api.listDatasets();
-    setDatasets(data.datasets);
-    setLoadFailed(false);
-  };
 
   const openUploadDialog = () => {
     setDialogOpen(true);
@@ -348,123 +414,41 @@ export function DatasetsPage() {
   const closeUploadDialog = () => {
     if (uploading) return;
     setDialogOpen(false);
-    setUploadItems([]);
   };
 
   const appendFiles = (files: File[]) => {
-    if (files.length === 0) return;
-    const available = MAX_DATASET_BATCH_FILES - uploadItems.length;
-    if (available <= 0) {
-      setNotice({ kind: "error", message: `一次最多选择 ${MAX_DATASET_BATCH_FILES} 个文件。` });
-      return;
-    }
-    const selected = files.slice(0, available);
-    const nextItems = selected.map((file) => {
-      const error = datasetFormatError(file);
-      return {
-        id: `dataset-upload-${uploadItemSequence.current++}`,
-        file,
-        status: error ? "failed" as const : "ready" as const,
-        error,
-        retryable: false,
-      };
-    });
-    setUploadItems((items) => [...items, ...nextItems]);
-    if (files.length > available) {
-      setNotice({ kind: "error", message: `一次最多选择 ${MAX_DATASET_BATCH_FILES} 个文件，已保留前 ${MAX_DATASET_BATCH_FILES} 个。` });
-    } else {
-      setNotice(null);
-    }
-  };
-
-  const removeUploadItem = (id: string) => {
-    if (uploading) return;
-    setUploadItems((items) => items.filter((item) => item.id !== id));
-  };
-
-  const retryUploadItem = (id: string) => {
-    if (uploading) return;
-    setUploadItems((items) => items.map((item) => item.id === id
-      ? { ...item, status: "ready", error: null, retryable: false }
-      : item));
-  };
-
-  const confirmUpload = async () => {
-    if (uploading) return;
-    const itemsToUpload = uploadItems.filter((item) => item.status === "ready" && !item.error);
-    if (itemsToUpload.length === 0) {
-      setNotice({ kind: "error", message: "请先选择至少一个符合要求的文件。" });
-      return;
-    }
-
-    setUploading(true);
+    if (files.length === 0 || uploading) return;
     setNotice(null);
-    const itemIds = new Set(itemsToUpload.map((item) => item.id));
-    setUploadItems((items) => items.map((item) => itemIds.has(item.id) ? { ...item, status: "uploading" } : item));
+    void (async () => {
+      const result = await uploadFiles(files);
+      if (!pageMounted.current) return;
 
-    const successfulIds = new Set<string>();
-    const savedParseFailureIds = new Set<string>();
-    const failedMessages = new Map<string, string>();
-    let nextIndex = 0;
-    const uploadOne = async (item: UploadItem) => {
-      try {
-        await api.uploadDataset(item.file);
-        successfulIds.add(item.id);
-      } catch (error) {
-        if (error instanceof ApiRequestError && error.message === "DATASET_QUEUE_UNAVAILABLE") {
-          savedParseFailureIds.add(item.id);
-          return;
-        }
-        failedMessages.set(item.id, datasetUploadErrorMessage(error, "上传失败，请稍后重试。"));
+      if (result.attemptedCount > 0) {
+        await refreshDatasets({ accepted: result.acceptedCount > 0 });
       }
-    };
-    const worker = async () => {
-      while (nextIndex < itemsToUpload.length) {
-        const item = itemsToUpload[nextIndex];
-        nextIndex += 1;
-        if (item) await uploadOne(item);
-      }
-    };
-    await Promise.all(
-      Array.from({ length: Math.min(DATASET_UPLOAD_CONCURRENCY, itemsToUpload.length) }, () => worker()),
-    );
 
-    // Upload errors can still mean that the server saved a failed parse record.
-    // Always read the authoritative list after the batch instead of inserting rows locally.
-    await refresh().catch(() => undefined);
-
-    setUploadItems((items) => items
-      .filter((item) => !successfulIds.has(item.id) && !savedParseFailureIds.has(item.id))
-      .map((item) => failedMessages.has(item.id)
-        ? {
-            ...item,
-            status: "failed" as const,
-            error: failedMessages.get(item.id) ?? "上传失败，请稍后重试。",
-            retryable: true,
-          }
-        : item.status === "uploading" ? { ...item, status: "ready" as const } : item));
-    setUploading(false);
-
-    const remainingFailures = uploadItems.filter((item) => (
-      !successfulIds.has(item.id) && !savedParseFailureIds.has(item.id)
-    )).length;
-    if (remainingFailures === 0) {
       setDialogOpen(false);
-      setUploadItems([]);
-      if (savedParseFailureIds.size > 0) {
+      if (result.failures.length > 0) {
         setNotice({
           kind: "error",
-          message: `${savedParseFailureIds.size} 份资料已保存但解析提交失败，请在列表中重新解析。`,
+          message: formatUploadFailureNotice(result.failures, result.limitMessage),
         });
-      } else {
-        setNotice({ kind: "success", message: `已上传 ${successfulIds.size} 份资料，正在后台解析。` });
+      } else if (result.deferredCount > 0) {
+        setNotice({
+          kind: "error",
+          message: `资料已保存，但解析提交失败（${result.deferredCount} 份），请在列表中重新解析。`,
+        });
+      } else if (result.acceptedCount > 0) {
+        setNotice({
+          kind: "success",
+          message: result.limitMessage
+            ? `已上传 ${result.acceptedCount} 份资料，${result.limitMessage}`
+            : `已上传 ${result.acceptedCount} 份资料，正在后台解析。`,
+        });
+      } else if (result.limitMessage) {
+        setNotice({ kind: "error", message: result.limitMessage });
       }
-    } else {
-      const acceptedCount = successfulIds.size + savedParseFailureIds.size;
-      setNotice({ kind: "error", message: acceptedCount > 0
-        ? `${acceptedCount} 份资料已保存，${remainingFailures} 份需要处理。`
-        : "没有资料上传成功，请检查失败项后重试。" });
-    }
+    })();
   };
 
   const openPreview = (dataset: DatasetRecord, trigger: HTMLElement) => {
@@ -496,6 +480,7 @@ export function DatasetsPage() {
     setRenameError(null);
     try {
       const updated = await api.renameDataset(renameTarget.id, value);
+      if (locallyAccepted.current.has(updated.id)) locallyAccepted.current.set(updated.id, updated);
       setDatasets((items) => items.map((item) => item.id === updated.id ? updated : item));
       setRenameTarget(null);
       setNotice({ kind: "success", message: "资料名称已更新。" });
@@ -512,10 +497,11 @@ export function DatasetsPage() {
     setNotice(null);
     try {
       const updated = await api.retryDataset(dataset.id);
+      if (locallyAccepted.current.has(updated.id)) locallyAccepted.current.set(updated.id, updated);
       setDatasets((items) => items.map((item) => item.id === updated.id ? updated : item));
       setNotice({ kind: "success", message: "已重新提交解析。" });
     } catch (error) {
-      await refresh().catch(() => undefined);
+      await refreshDatasets();
       setNotice({ kind: "error", message: datasetActionErrorMessage(error, "重新解析失败，请稍后重试。") });
     } finally {
       setBusyAction(null);
@@ -532,6 +518,7 @@ export function DatasetsPage() {
     setBusyAction({ kind: "delete", id: deleteTarget.id });
     try {
       await api.deleteDataset(deleteTarget.id);
+      locallyAccepted.current.delete(deleteTarget.id);
       setDatasets((items) => items.filter((item) => item.id !== deleteTarget.id));
       setDeleteTarget(null);
       setNotice({ kind: "success", message: `已删除「${datasetDisplayName(deleteTarget)}」。` });
@@ -548,11 +535,6 @@ export function DatasetsPage() {
     if (!keyword) return datasets;
     return datasets.filter((dataset) => datasetDisplayName(dataset).toLocaleLowerCase().includes(keyword));
   }, [datasets, keyword]);
-  const uploadableCount = uploadItems.filter((item) => item.status === "ready" && !item.error).length;
-  const uploadBusyLabel = uploadItems.length > 0
-    ? `正在上传（${uploadItems.filter((item) => item.status === "uploading").length}/${uploadItems.filter((item) => item.status === "uploading" || item.status === "ready").length}）`
-    : "正在上传…";
-
   return (
     <main className="dashboard-content datasets-page">
       <WorkspacePageHero
@@ -584,8 +566,23 @@ export function DatasetsPage() {
               <Database size={48} strokeWidth={1.2} />
               <h2>资料加载失败</h2>
               <p>请稍后重试。</p>
-              <Button variant="secondary" onClick={() => window.location.reload()}>重新加载</Button>
+              <Button variant="secondary" onClick={() => void refreshDatasets({ initial: true })}>重新加载</Button>
             </section>
+          )}
+
+          {syncFailure && (
+            <div className="datasets-toast dataset-sync-toast">
+              <FeedbackNotice kind="error">
+                <span>{syncFailure}</span>
+                <Button
+                  variant="link"
+                  size="sm"
+                  onClick={() => void refreshDatasets({ accepted: syncFailure === ACCEPTED_SYNC_FAILURE })}
+                >
+                  重新刷新
+                </Button>
+              </FeedbackNotice>
+            </div>
           )}
 
           {!loadFailed && datasets.length === 0 && (
@@ -632,45 +629,11 @@ export function DatasetsPage() {
           if (event.target === event.currentTarget) closeUploadDialog();
         }}>
           <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="dataset-upload-title">
-            <button className="dataset-dialog-close" type="button" aria-label="关闭上传窗口" onClick={closeUploadDialog}><X size={18} /></button>
+            <button className="dataset-dialog-close" type="button" aria-label="关闭上传窗口" disabled={uploading} onClick={closeUploadDialog}><X size={18} /></button>
             <h2 id="dataset-upload-title">上传资料</h2>
-            <p>一次选择多个文件，逐项校验并提交解析。</p>
+            <p>选择文件后会立即上传并进入资料列表。</p>
 
-            <DatasetDropzone disabled={uploading} onFilesSelect={appendFiles} />
-
-            {uploadItems.length > 0 && (
-              <div className="dataset-pending-block" aria-label="待上传的文件">
-                <p className="dataset-pending-label">待上传文件（{uploadItems.length}/{MAX_DATASET_BATCH_FILES}）</p>
-                <div className="dataset-upload-queue">
-                  {uploadItems.map((item) => (
-                    <div key={item.id} className={`dataset-pending-row is-${item.status}`}>
-                      <span className="dataset-meta">
-                        <strong className="dataset-name" title={item.file.name}>{item.file.name}</strong>
-                        <small className="dataset-sub">
-                          <span>{formatFileSize(item.file.size)}</span>
-                          <span>{item.status === "uploading" ? "正在提交…" : item.status === "failed" ? item.error : "等待上传"}</span>
-                        </small>
-                      </span>
-                      <span className="dataset-pending-actions">
-                        {item.retryable && (
-                          <button type="button" className="dataset-text-btn" disabled={uploading} onClick={() => retryUploadItem(item.id)} aria-label={`重试上传 ${item.file.name}`}>重试上传</button>
-                        )}
-                        <button type="button" className="dataset-text-btn" disabled={uploading} onClick={() => removeUploadItem(item.id)} aria-label={`移除 ${item.file.name}`}>移除</button>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <p className="dataset-dialog-hint">资料进入列表后只展示正在解析、解析完成或解析失败状态。</p>
-
-            <footer className="dataset-dialog-actions">
-              <Button variant="ghost" disabled={uploading} onClick={closeUploadDialog}>取消</Button>
-              <Button disabled={uploading || uploadableCount === 0} onClick={() => void confirmUpload()} aria-busy={uploading}>
-                {uploading ? uploadBusyLabel : "上传资料"}
-              </Button>
-            </footer>
+            <DatasetDropzone disabled={uploading} uploading={uploading} limits={limits} onFilesSelect={appendFiles} />
           </section>
         </div>
       )}
@@ -731,7 +694,9 @@ export function DatasetsPage() {
 
       {notice && (
         <div className={`datasets-toast${fading ? " is-fading" : ""}`}>
-          <FeedbackNotice kind={notice.kind}>{notice.message}</FeedbackNotice>
+          <FeedbackNotice kind={notice.kind}>
+            <span className="dataset-notice-message" title={notice.message}>{notice.message}</span>
+          </FeedbackNotice>
         </div>
       )}
 

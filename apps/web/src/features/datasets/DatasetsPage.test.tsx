@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api, ApiRequestError, type DatasetRecord } from "../../api/client";
@@ -6,7 +7,6 @@ import { useResumeStore } from "../../store/resumeStore";
 import {
   DATASET_UPLOAD_CONCURRENCY,
   DatasetsPage,
-  MAX_DATASET_BATCH_FILES,
   datasetUploadErrorMessage,
 } from "./DatasetsPage";
 
@@ -54,6 +54,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   window.history.replaceState(null, "", "/");
 });
 
@@ -91,7 +92,7 @@ describe("DatasetsPage", () => {
     expect(screen.queryByText("MD")).not.toBeInTheDocument();
     expect(screen.queryByText("查看结果")).not.toBeInTheDocument();
     expect(screen.getByText("正在解析")).toBeInTheDocument();
-    expect(screen.getByText("解析完成")).toBeInTheDocument();
+    expect(screen.getByText("可用")).toBeInTheDocument();
     expect(screen.getByText("解析失败")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /操作菜单/ })).toHaveLength(3);
     expect(screen.queryByText("共 3 份资料")).not.toBeInTheDocument();
@@ -230,28 +231,106 @@ describe("DatasetsPage", () => {
     expect(screen.getByText("进行中的资料")).toBeInTheDocument();
   });
 
-  it("上传弹窗支持多选、拖放、逐项移除和最多十个文件", async () => {
+  it("上传弹窗只保留单层选择区域，选择文件后立即上传", async () => {
+    const accepted = { ...record, id: "auto-upload", file_name: "自动上传.md", parse_status: "queued" as const };
+    const upload = vi.spyOn(api, "uploadDataset").mockResolvedValue(accepted);
+    vi.spyOn(api, "listDatasets")
+      .mockResolvedValueOnce({ datasets: [] })
+      .mockResolvedValue({ datasets: [accepted] });
+
     render(<DatasetsPage />);
     const dialog = openUploadDialog();
     const input = screen.getByLabelText("选择资料文件");
     expect(input).toHaveAttribute("multiple");
+    expect(dialog.querySelector(".dataset-file-upload")).toBeInTheDocument();
+    expect(dialog.querySelector(".dataset-upload-queue")).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "上传资料" })).not.toBeInTheDocument();
 
-    const files = Array.from({ length: MAX_DATASET_BATCH_FILES + 1 }, (_, index) => (
-      new File([`# ${index}`], `资料-${index}.md`, { type: "text/markdown" })
+    const file = new File(["# 自动上传"], "自动上传.md", { type: "text/markdown" });
+    selectFiles([file]);
+
+    await waitFor(() => expect(upload).toHaveBeenCalledWith(
+      file,
+      expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
     ));
-    selectFiles(files);
-    expect(await within(dialog).findByText(`待上传文件（${MAX_DATASET_BATCH_FILES}/${MAX_DATASET_BATCH_FILES}）`)).toBeInTheDocument();
-    expect(screen.getByText(/一次最多选择 10 个文件/)).toBeInTheDocument();
-
-    fireEvent.drop(screen.getByRole("button", { name: /点击上传或拖放多个文件/ }), {
-      dataTransfer: { files: [new File(["x"], "extra.md")] },
-    });
-    expect(screen.getAllByRole("button", { name: /^移除 / })).toHaveLength(MAX_DATASET_BATCH_FILES);
-    fireEvent.click(screen.getByRole("button", { name: "移除 资料-0.md" }));
-    expect(screen.queryByText("资料-0.md")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "上传资料" })).not.toBeInTheDocument());
+    expect(await screen.findByText("自动上传")).toBeInTheDocument();
   });
 
-  it("批量上传逐项校验、并发不超过三且部分失败留在弹窗", async () => {
+  it("StrictMode 下选择文件只触发一次上传", async () => {
+    const upload = vi.spyOn(api, "uploadDataset").mockResolvedValue({
+      ...record,
+      id: "strict-mode",
+      file_name: "严格模式.md",
+      parse_status: "queued",
+    });
+    render(
+      <StrictMode>
+        <DatasetsPage />
+      </StrictMode>,
+    );
+    openUploadDialog();
+    selectFiles([new File(["# 严格模式"], "严格模式.md", { type: "text/markdown" })]);
+
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+  });
+
+  it("内置浏览器缺少 Web Crypto 时仍生成规范幂等键并自动上传", async () => {
+    vi.stubGlobal("crypto", undefined);
+    const upload = vi.spyOn(api, "uploadDataset").mockResolvedValue({
+      ...record,
+      id: "fallback-key",
+      file_name: "兼容浏览器.md",
+      parse_status: "queued",
+    });
+    render(<DatasetsPage />);
+    openUploadDialog();
+    selectFiles([new File(["# 兼容"], "兼容浏览器.md")]);
+
+    await waitFor(() => expect(upload).toHaveBeenCalledWith(
+      expect.any(File),
+      expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
+    ));
+  });
+
+  it("幂等键生成异常时显示反馈而不是静默清空文件", async () => {
+    vi.stubGlobal("crypto", undefined);
+    vi.spyOn(Math, "random").mockImplementation(() => {
+      throw new Error("random unavailable");
+    });
+    render(<DatasetsPage />);
+    await screen.findByText("还没有资料");
+    openUploadDialog();
+    selectFiles([new File(["# 失败"], "无法生成.md")]);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("无法生成.md：无法创建上传请求，请刷新页面后重试");
+    expect(screen.queryByRole("dialog", { name: "上传资料" })).not.toBeInTheDocument();
+  });
+
+  it("失败提示展示五秒后淡出并自动移除", async () => {
+    vi.useFakeTimers();
+    try {
+      render(<DatasetsPage />);
+      openUploadDialog();
+      await act(async () => {
+        selectFiles([new File(["binary"], "不支持.exe")]);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByRole("alert")).toHaveTextContent("不支持.exe");
+      act(() => vi.advanceTimersByTime(5000));
+      expect(screen.getByRole("alert").parentElement).toHaveClass("is-fading");
+      act(() => vi.advanceTimersByTime(300));
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("批量上传逐项校验、并发不超过三，失败原因显示在顶部提示条", async () => {
     const upload = vi.spyOn(api, "uploadDataset");
     let active = 0;
     let maximumActive = 0;
@@ -264,7 +343,7 @@ describe("DatasetsPage", () => {
       return { ...record, file_name: file.name };
     });
     render(<DatasetsPage />);
-    const dialog = openUploadDialog();
+    openUploadDialog();
     selectFiles([
       new File(["1"], "一.md"),
       new File(["2"], "二.md"),
@@ -273,17 +352,17 @@ describe("DatasetsPage", () => {
       new File(["5"], "失败.md"),
       new File(["x"], "错误.exe"),
     ]);
-    fireEvent.click(within(dialog).getByRole("button", { name: "上传资料" }));
 
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(5));
     expect(maximumActive).toBeLessThanOrEqual(DATASET_UPLOAD_CONCURRENCY);
-    expect(await within(dialog).findByText("上传失败，请稍后重试。")).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "重试上传 失败.md" })).toBeInTheDocument();
-    expect(within(dialog).getByText("仅支持 DOCX、PDF、Markdown 和 TXT 文件。")).toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "上传资料" })).toBeInTheDocument();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("部分文件上传失败：");
+    expect(alert).toHaveTextContent("失败.md：上传失败，请稍后重试");
+    expect(alert).toHaveTextContent("错误.exe：仅支持 DOCX、PDF、Markdown 和 TXT 文件");
+    expect(alert.querySelector(".dataset-notice-message")?.textContent).not.toContain("\n");
+    expect(screen.queryByRole("dialog", { name: "上传资料" })).not.toBeInTheDocument();
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "重试上传 失败.md" }));
-    expect(within(dialog).queryByText("上传失败，请稍后重试。")).not.toBeInTheDocument();
+    expect(within(alert).queryByRole("button")).not.toBeInTheDocument();
   });
 
   it("上传请求失败后仍刷新列表，以显示服务端已保存的解析失败资料且不乐观插行", async () => {
@@ -293,19 +372,18 @@ describe("DatasetsPage", () => {
       .mockResolvedValue({ datasets: [failedSaved] });
     const upload = vi.spyOn(api, "uploadDataset").mockRejectedValue(new ApiRequestError(502, "DATASET_QUEUE_UNAVAILABLE"));
     render(<DatasetsPage />);
-    const dialog = openUploadDialog();
+    openUploadDialog();
     selectFiles([new File(["# x"], "队列失败.md")]);
-    fireEvent.click(within(dialog).getByRole("button", { name: "上传资料" }));
 
-    await waitFor(() => expect(upload).toHaveBeenCalledWith(expect.any(File)));
+    await waitFor(() => expect(upload).toHaveBeenCalledWith(expect.any(File), expect.stringMatching(/^[0-9a-f-]{36}$/)));
     expect(await screen.findByText("队列失败")).toBeInTheDocument();
     expect(screen.getByText("解析失败")).toBeInTheDocument();
     expect(list).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole("dialog", { name: "上传资料" })).not.toBeInTheDocument();
-    expect(screen.getByText("1 份资料已保存但解析提交失败，请在列表中重新解析。")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("队列失败.md：资料已保存，但解析提交失败，请在列表中重新解析");
   });
 
-  it("上传期间重复提交不会产生重复请求", async () => {
+  it("上传期间禁用文件选择和关闭按钮，避免重复提交", async () => {
     let resolveUpload: ((value: DatasetRecord) => void) | undefined;
     const upload = vi.spyOn(api, "uploadDataset").mockImplementation(
       () => new Promise((resolve) => { resolveUpload = resolve; }),
@@ -313,12 +391,133 @@ describe("DatasetsPage", () => {
     render(<DatasetsPage />);
     const dialog = openUploadDialog();
     selectFiles([new File(["x"], "资料.md")]);
-    const submit = within(dialog).getByRole("button", { name: "上传资料" });
-    fireEvent.click(submit);
-    fireEvent.click(submit);
-    expect(upload).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+    expect(screen.getByLabelText("选择资料文件")).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "关闭上传窗口" })).toBeDisabled();
+    expect(within(dialog).getByText("正在上传…")).toBeInTheDocument();
     resolveUpload?.(record);
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "上传资料" })).not.toBeInTheDocument());
+  });
+
+  it("服务端接受后立即 upsert 正式列表并从上传框移除", async () => {
+    let resolveRefresh: ((value: { datasets: DatasetRecord[] }) => void) | undefined;
+    const accepted = { ...record, id: "accepted", file_name: "刚上传.md", parse_status: "queued" as const };
+    vi.spyOn(api, "listDatasets")
+      .mockResolvedValueOnce({ datasets: [] })
+      .mockReturnValueOnce(new Promise((resolve) => { resolveRefresh = resolve; }));
+    vi.spyOn(api, "uploadDataset").mockResolvedValue(accepted);
+
+    render(<DatasetsPage />);
+    openUploadDialog();
+    selectFiles([new File(["# x"], "刚上传.md", { type: "text/markdown" })]);
+
+    await waitFor(() => expect(screen.getByText("刚上传")).toBeInTheDocument());
+    expect(screen.getByText("等待解析")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "上传资料" })).toBeInTheDocument();
+
+    resolveRefresh?.({ datasets: [accepted] });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "上传资料" })).not.toBeInTheDocument());
+  });
+
+  it("列表同步失败时保留已接受行并提供重新刷新", async () => {
+    const accepted = { ...record, id: "accepted-sync", file_name: "同步失败.md", parse_status: "queued" as const };
+    const list = vi.spyOn(api, "listDatasets")
+      .mockResolvedValueOnce({ datasets: [] })
+      .mockRejectedValueOnce(new Error("list unavailable"))
+      .mockResolvedValue({ datasets: [accepted] });
+    vi.spyOn(api, "uploadDataset").mockResolvedValue(accepted);
+
+    render(<DatasetsPage />);
+    openUploadDialog();
+    selectFiles([new File(["# x"], "同步失败.md", { type: "text/markdown" })]);
+
+    expect(await screen.findByText("同步失败")).toBeInTheDocument();
+    expect(await screen.findByText("资料已接受，但列表同步失败")).toBeInTheDocument();
+    const refreshButton = screen.getByRole("button", { name: "重新刷新" });
+    expect(refreshButton).toBeInTheDocument();
+    fireEvent.click(refreshButton);
+    await waitFor(() => expect(screen.queryByText("资料已接受，但列表同步失败")).not.toBeInTheDocument());
+    expect(list).toHaveBeenCalledTimes(3);
+  });
+
+  it("明确服务端失败后重新上传生成新幂等键", async () => {
+    const accepted = { ...record, id: "retry-key", file_name: "明确失败.md", parse_status: "queued" as const };
+    const upload = vi.spyOn(api, "uploadDataset")
+      .mockRejectedValueOnce(new ApiRequestError(413, "DATASET_FILE_TOO_LARGE"))
+      .mockResolvedValueOnce(accepted);
+    render(<DatasetsPage />);
+    const file = new File(["# x"], "明确失败.md", { type: "text/markdown" });
+    openUploadDialog();
+    selectFiles([file]);
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+    const firstKey = upload.mock.calls[0]?.[1];
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "上传资料" })).not.toBeInTheDocument());
+
+    openUploadDialog();
+    selectFiles([file]);
+
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
+    expect(upload.mock.calls[1]?.[1]).toEqual(expect.any(String));
+    expect(upload.mock.calls[1]?.[1]).not.toBe(firstKey);
+    expect(await screen.findByText("明确失败")).toBeInTheDocument();
+  });
+
+  it("网络结果不明确时重试复用原幂等键", async () => {
+    const accepted = { ...record, id: "retry-network", file_name: "网络重试.md", parse_status: "queued" as const };
+    const upload = vi.spyOn(api, "uploadDataset")
+      .mockRejectedValueOnce(new TypeError("network failed"))
+      .mockResolvedValueOnce(accepted);
+    render(<DatasetsPage />);
+    const file = new File(["# x"], "网络重试.md", { type: "text/markdown" });
+    openUploadDialog();
+    selectFiles([file]);
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+    const firstKey = upload.mock.calls[0]?.[1];
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "上传资料" })).not.toBeInTheDocument());
+
+    openUploadDialog();
+    selectFiles([file]);
+
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
+    expect(upload.mock.calls[1]?.[1]).toBe(firstKey);
+    expect(await screen.findByText("网络重试")).toBeInTheDocument();
+  });
+
+  it("使用服务端 limits 校验单文件大小和批次数量", async () => {
+    vi.spyOn(api, "listDatasets").mockResolvedValue({
+      datasets: [],
+      limits: { max_file_bytes: 2, max_files_per_batch: 2, allowed_extensions: [".md"] },
+    });
+    const upload = vi.spyOn(api, "uploadDataset").mockResolvedValue({
+      ...record,
+      id: "within-limit",
+      file_name: "小文件.md",
+      parse_status: "queued",
+    });
+    render(<DatasetsPage />);
+    await screen.findByText("还没有资料");
+    openUploadDialog();
+    selectFiles([
+      new File(["x"], "小文件.md"),
+      new File(["xyz"], "超限.md"),
+      new File(["z"], "被截断.md"),
+    ]);
+
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+    expect(upload.mock.calls[0]?.[0].name).toBe("小文件.md");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("超限.md：文件过大，最大支持 2 B");
+    expect(alert).toHaveTextContent("一次最多选择 2 个文件，已保留前 2 个");
+    expect(alert).not.toHaveTextContent("被截断.md");
+  });
+
+  it("正式列表将 queued 显示为等待解析并持续参与状态刷新", async () => {
+    const queued = { ...record, id: "queued", file_name: "等待.md", parse_status: "queued" as const };
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [queued] });
+    render(<DatasetsPage />);
+
+    const status = await screen.findByText("等待解析");
+    expect(status).toHaveAttribute("data-status", "queued");
   });
 
   it("将资料上传与操作错误映射为稳定文案", () => {

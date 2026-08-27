@@ -4073,14 +4073,6 @@ select:not([data-slot]):focus-visible,
   margin: 0 7px;
 }
 
-.datasets-toast {
-  transition: opacity 200ms ease;
-}
-
-.datasets-toast.is-fading {
-  opacity: 0;
-}
-
 /* 资料库空态（16A） */
 .datasets-empty {
   display: grid;
@@ -4150,52 +4142,71 @@ select:not([data-slot]):focus-visible,
 }
 
 .dataset-dialog-close:hover { background: var(--surface-subtle); color: var(--ink); }
+.dataset-dialog-close:disabled { cursor: not-allowed; opacity: .5; }
 
-.dataset-pending-block { margin-top: 18px; }
-
-.dataset-pending-label {
-  margin: 0 0 8px;
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 600;
+/* 资料页只保留一个上传表面；共享 FileUpload 的其他消费方不受影响。 */
+.datasets-page .dataset-file-upload.file-upload {
+  overflow: hidden;
+  border: 1px dashed var(--ui-border-strong);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface-subtle);
+  padding: 0;
 }
 
-.dataset-pending-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
-  background: var(--surface-card);
-  padding: 14px 18px;
+.datasets-page .dataset-file-upload .file-upload-picker,
+.datasets-page .dataset-file-upload .file-upload-dropzone {
+  min-height: 184px;
 }
 
-.dataset-text-btn {
-  margin-left: auto;
+.datasets-page .dataset-file-upload .file-upload-dropzone {
+  gap: var(--ui-space-2);
+  border: 0;
+  border-radius: 0;
   background: transparent;
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
+  padding: var(--ui-space-6) var(--ui-space-5);
 }
 
-.dataset-text-btn:hover { color: var(--action-blue); }
-
-.dataset-dialog-hint {
-  margin: 16px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.8;
-  text-align: center;
+.datasets-page .dataset-file-upload .file-upload-icon {
+  width: 34px;
+  height: 34px;
+  margin: 0 0 var(--ui-space-1);
+  border: 0;
+  border-radius: var(--ui-radius-md);
+  background: transparent;
+  box-shadow: none;
+  color: var(--ui-text-secondary);
 }
 
-.dataset-dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 20px;
-  border-top: 1px solid var(--hairline);
-  padding-top: 18px;
+.datasets-page .dataset-file-upload .file-upload-icon::before,
+.datasets-page .dataset-file-upload .file-upload-icon::after { display: none; }
+
+.datasets-page .dataset-file-upload .file-upload-icon svg { width: 20px; height: 20px; }
+
+.datasets-page .dataset-file-upload .file-upload-copy { gap: var(--ui-space-1); }
+
+.datasets-page .dataset-file-upload .file-upload-browse {
+  min-height: 0;
+  margin-top: var(--ui-space-2);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--ui-accent);
+  box-shadow: none;
+}
+
+.datasets-page .dataset-file-upload.is-disabled .file-upload-dropzone {
+  background: var(--ui-surface-subtle);
+  opacity: 1;
+}
+
+.datasets-page .dataset-file-upload.is-disabled .file-upload-copy strong,
+.datasets-page .dataset-file-upload.is-disabled .file-upload-browse { display: none; }
+
+.datasets-page .dataset-file-upload.is-disabled .file-upload-copy small {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-text-sm);
+  font-weight: 600;
 }
 
 .share-unavailable p {
@@ -4448,34 +4459,6 @@ select:not([data-slot]):focus-visible,
 .dataset-action-menu button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: -2px; }
 .dataset-action-menu button.is-danger { color: var(--ui-destructive); }
 
-.dataset-upload-queue {
-  display: grid;
-  max-height: 230px;
-  gap: 8px;
-  overflow: auto;
-}
-
-.dataset-pending-row {
-  min-width: 0;
-}
-
-.dataset-pending-row.is-failed {
-  border-color: color-mix(in srgb, var(--ui-destructive) 34%, var(--hairline));
-}
-
-.dataset-pending-row.is-failed .dataset-sub span:last-child { color: var(--ui-destructive); }
-.dataset-pending-row.is-uploading .dataset-sub span:last-child { color: var(--action-blue); }
-
-.dataset-pending-actions {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 10px;
-  margin-left: auto;
-}
-
-.dataset-pending-actions .dataset-text-btn { margin-left: 0; }
-
 .dataset-action-dialog {
   width: min(440px, calc(100vw - 32px));
 }
@@ -4512,7 +4495,38 @@ select:not([data-slot]):focus-visible,
   font-weight: 400;
 }
 
+.datasets-toast .ui-feedback-notice {
+  top: 96px;
+  width: max-content;
+  max-width: min(840px, calc(100vw - 32px));
+  padding: 14px 16px;
+  font-size: 14px;
+  line-height: 20px;
+  opacity: 1;
+  translate: 0 0;
+  animation: dataset-toast-enter 220ms var(--ui-ease-standard) both;
+  transition: opacity 220ms var(--ui-ease-standard), translate 220ms var(--ui-ease-standard);
+}
+
+.datasets-toast.is-fading .ui-feedback-notice {
+  opacity: 0;
+  translate: 0 -6px;
+}
+
+.dataset-notice-message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes dataset-toast-enter {
+  from { opacity: 0; translate: 0 -8px; }
+  to { opacity: 1; translate: 0 0; }
+}
+
 @media (max-width: 760px) {
+  .datasets-toast .ui-feedback-notice { top: 136px; }
   .datasets-page .page-hero-actions {
     width: 100%;
     justify-content: flex-end;
@@ -4558,10 +4572,9 @@ select:not([data-slot]):focus-visible,
   .datasets-page .datasets-hero-search.expandable-search-trigger { flex: 0 0 44px; }
   .datasets-body { padding: 16px 12px 32px; }
   .dataset-dialog { padding: 22px 18px; }
-  .dataset-dialog-actions { flex-wrap: wrap; }
-  .dataset-dialog-actions .ui-button { flex: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .datasets-page .dataset-status.is-processing .dataset-status-mark { animation: none; }
+  .datasets-toast .ui-feedback-notice { animation: none; transition: none; }
 }
