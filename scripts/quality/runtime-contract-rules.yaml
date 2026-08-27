@@ -161,7 +161,7 @@ contracts:
         message: Production 配置必须声明双 Token Cookie 契约
 
   - id: wechat-miniprogram-environment-contract
-    description: Production 普通登录使用微信，且小程序开发与正式 API 地址按运行端隔离
+    description: Production 普通登录使用微信，且小程序本地联调必须显式 opt-in
     assertions:
       - path: .env.development
         pattern: '(?m)^APP_ENV=development$'
@@ -185,14 +185,23 @@ contracts:
         pattern: 'required_secret_keys=\([\s\S]*WECHAT_APPID[\s\S]*WECHAT_SECRET[\s\S]*Missing required Development secret setting[\s\S]*Settings\(\)\.wechat_enabled[\s\S]*docker network inspect'
         message: Dev 发布必须在迁移与容器替换前拒绝缺失、空值或占位的微信凭据
       - path: apps/miniprogram/config/runtime.js
-        pattern: 'developmentApiBaseUrl: "http://127\.0\.0\.1:8000"[\s\S]*productionApiBaseUrl: "https://linkresume\.cn"'
-        message: 小程序必须把 API 开发默认地址与 linkresume.cn 生产地址分开
+        pattern: 'productionApiBaseUrl: "https://linkresume\.cn"'
+        message: 小程序必须保留 linkresume.cn 作为生产默认 API 地址
       - path: apps/miniprogram/config/env.js
-        pattern: 'developmentStorageKey: "linkcv_api_base_url"[\s\S]*envVersion === "develop"[\s\S]*wx\.getStorageSync\(developmentStorageKey\)[\s\S]*envVersion !== "develop"[\s\S]*startsWith\("https://"\)'
+        pattern: 'developmentStorageKey: "linkcv_api_base_url"[\s\S]*envVersion === "develop"[\s\S]*readStorageValue\(developmentStorageKey\)[\s\S]*!isDevelop[\s\S]*startsWith\("https://"\)'
         message: API 内网地址覆盖只能用于开发版，体验版和正式版必须强制 HTTPS
       - path: apps/miniprogram/config/env.js
-        pattern: 'function isDevToolsRuntime\(\)[\s\S]*systemInfo\.platform === "devtools"[\s\S]*const isDevTools = envVersion === "develop" && isDevToolsRuntime\(\);[\s\S]*const localConfig = isDevTools \? localConfigReader\(\) : null[\s\S]*const defaultApiBaseUrl = envVersion === "develop"[\s\S]*\? \(isDevTools \? \(localOverride \|\| developmentDefault\) : productionDefault\)'
-        message: 包内 local.js 只能由开发者工具 develop 运行时读取，真机 develop 必须回退到生产地址
+        pattern: 'LOCAL_DEBUG_ENABLED_STORAGE_KEY = "linkcv_local_debug_enabled"[\s\S]*const localDebugEnabled = isDevelop[\s\S]*readStorageValue\(LOCAL_DEBUG_ENABLED_STORAGE_KEY\) === true[\s\S]*const localConfig = localDebugEnabled[\s\S]*readLocalConfigSafely\(localConfigReader\)[\s\S]*: null'
+        message: 包内 local.js 只能在 develop 且显式开启 linkcv_local_debug_enabled 后读取
+      - path: apps/miniprogram/config/env.js
+        pattern: 'function readAccountInfoSafely\(\)[\s\S]*typeof wx\.getAccountInfoSync !== "function"[\s\S]*return null[\s\S]*try[\s\S]*const account = wx\.getAccountInfoSync\(\)[\s\S]*typeof account\.miniProgram\.envVersion !== "string"[\s\S]*return null[\s\S]*catch \{[\s\S]*return null'
+        message: 小程序环境识别缺失、字段不完整或异常时必须安全失败
+      - path: apps/miniprogram/config/env.js
+        pattern: 'const account = readAccountInfoSafely\(\);[\s\S]*const envVersion = account \? account\.miniProgram\.envVersion : null;[\s\S]*const isDevelop = envVersion === "develop";'
+        message: 只有明确 envVersion 为 develop 才允许读取开发配置与 storage 覆盖
+      - path: apps/miniprogram/config/env.js
+        pattern: 'const developmentOverride = typeof developmentOverrideValue === "string"[\s\S]*const configured = \([\s\S]*developmentOverride[\s\S]*\|\| localOverride[\s\S]*\|\| extBaseUrl[\s\S]*\|\| productionDefault'
+        message: develop 的显式 linkcv_api_base_url 必须优先于 local.js，其他环境只能回退生产地址
       - path: apps/miniprogram/services/resumes.js
         pattern: 'downloadResumePreview[\s\S]*version_id=[\s\S]*/api/miniprogram/resumes/[\s\S]*/preview\.png'
         message: 小程序必须通过后端专用只读接口查询并下载正式版本 PNG 预览
