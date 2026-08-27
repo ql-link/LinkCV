@@ -108,6 +108,116 @@ describe("DatasetsPage", () => {
     expect(screen.queryByText("进行中的资料")).not.toBeInTheDocument();
   });
 
+  it("进入和退出批量模式，并在未选择资料时禁用删除", async () => {
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [record] });
+    render(<DatasetsPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "批量操作" }));
+
+    expect(screen.getByRole("button", { name: "取消批量操作" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "全选当前筛选结果" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "选择「岗位要求」" })).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "删除资料（已选择 0 份）" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "上传资料" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "取消批量操作" }));
+    expect(screen.getByRole("button", { name: "批量操作" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "上传资料" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "全选当前筛选结果" })).not.toBeInTheDocument();
+  });
+
+  it("支持逐项选择，并且表头全选只添加当前筛选结果", async () => {
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [record, processingRecord, failedRecord] });
+    render(<DatasetsPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "批量操作" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择「岗位要求」" }));
+    expect(screen.getByRole("button", { name: "删除资料（已选择 1 份）" })).not.toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "搜索资料" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索资料" }), { target: { value: "进行中" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "全选当前筛选结果" }));
+
+    expect(screen.getByRole("checkbox", { name: "选择「进行中的资料」" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "删除资料（已选择 2 份）" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索资料" }), { target: { value: "" } });
+    expect(screen.getByRole("checkbox", { name: "选择「岗位要求」" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "选择「进行中的资料」" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "选择「失败资料」" })).not.toBeChecked();
+  });
+
+  it("批量模式下选择控件和资料行不会打开预览，且隐藏行尾菜单", async () => {
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [record] });
+    const getContent = vi.spyOn(api, "getDatasetContent").mockResolvedValue({
+      id: record.id,
+      file_name: record.file_name,
+      file_format: record.file_format,
+      markdown: "内容",
+    });
+    render(<DatasetsPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "批量操作" }));
+    const row = screen.getByText("岗位要求").closest("article");
+    const rowCheckbox = screen.getByRole("checkbox", { name: "选择「岗位要求」" });
+    const headerCheckbox = screen.getByRole("checkbox", { name: "全选当前筛选结果" });
+    expect(row).not.toHaveAttribute("role", "button");
+    expect(row?.firstElementChild).toHaveClass("dataset-cell-name");
+    expect(rowCheckbox.closest(".dataset-row-actions")).not.toBeNull();
+    expect(rowCheckbox.closest(".dataset-row-selection")).not.toBeNull();
+    expect(headerCheckbox.closest(".dataset-list-header")?.lastElementChild).toBe(headerCheckbox.closest(".dataset-header-selection"));
+    expect(screen.queryByRole("button", { name: /操作菜单/ })).not.toBeInTheDocument();
+    fireEvent.click(rowCheckbox);
+    fireEvent.click(row!);
+
+    expect(getContent).not.toHaveBeenCalled();
+  });
+
+  it("确认后逐条删除选中资料并移除成功项", async () => {
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [record, failedRecord] });
+    const remove = vi.spyOn(api, "deleteDataset").mockResolvedValue({ deleted: true });
+    render(<DatasetsPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "批量操作" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "全选当前筛选结果" }));
+    fireEvent.click(screen.getByRole("button", { name: "删除资料（已选择 2 份）" }));
+
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText("永久删除所选资料（2 份）？")).toBeInTheDocument();
+    expect(within(dialog).getByText(/无法恢复/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "永久删除所选" }));
+
+    await waitFor(() => expect(remove).toHaveBeenCalledTimes(2));
+    expect(remove).toHaveBeenNthCalledWith(1, "1");
+    expect(remove).toHaveBeenNthCalledWith(2, "3");
+    expect(screen.queryByText("岗位要求")).not.toBeInTheDocument();
+    expect(screen.queryByText("失败资料")).not.toBeInTheDocument();
+    expect(await screen.findByText("已删除 2 份资料。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "批量操作" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "全选当前筛选结果" })).not.toBeInTheDocument();
+  });
+
+  it("批量删除部分失败时保留失败项并展示失败反馈", async () => {
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [record, processingRecord] });
+    const remove = vi.spyOn(api, "deleteDataset")
+      .mockResolvedValueOnce({ deleted: true })
+      .mockRejectedValueOnce(new ApiRequestError(409, "DATASET_IN_PROGRESS"));
+    render(<DatasetsPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "批量操作" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "全选当前筛选结果" }));
+    fireEvent.click(screen.getByRole("button", { name: "删除资料（已选择 2 份）" }));
+    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "永久删除所选" }));
+
+    await waitFor(() => expect(remove).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText("岗位要求")).not.toBeInTheDocument();
+    expect(screen.getByText("进行中的资料")).toBeInTheDocument();
+    expect(await screen.findByText("已删除 1 份资料，1 份删除失败：进行中的资料：资料正在解析，处理完成后再删除"))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "批量操作" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "选择「进行中的资料」" })).not.toBeInTheDocument();
+  });
+
   it("点击解析完成的整行直接打开安全 Markdown 预览", async () => {
     vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [record] });
     const getContent = vi.spyOn(api, "getDatasetContent").mockResolvedValue({
@@ -123,6 +233,12 @@ describe("DatasetsPage", () => {
 
     const dialog = await screen.findByRole("dialog");
     expect(getContent).toHaveBeenCalledWith("1");
+    expect(dialog.querySelector(".dataset-preview-header")).toBeInTheDocument();
+    expect(within(dialog).getByRole("heading", { name: "岗位要求" })).toBeInTheDocument();
+    expect(within(dialog).getByText(/上传于/)).toBeInTheDocument();
+    expect(dialog.querySelector(".dataset-preview-body")).toBeInTheDocument();
+    expect(dialog.querySelector(".dataset-markdown-preview")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "关闭" })).toBeInTheDocument();
     expect(within(dialog).getByRole("heading", { name: "解析标题" })).toBeInTheDocument();
     expect(within(dialog).getByText("第一项")).toBeInTheDocument();
     expect(within(dialog).getByText("[图片：架构图]")).toBeInTheDocument();

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiRequestError, type DatasetContent, type DatasetRecord } from "../../api/client";
 import {
   Button,
@@ -11,6 +11,7 @@ import {
   PageLoading,
 } from "@/components/ui";
 import { renderDatasetMarkdown } from "./datasetMarkdown";
+import { renderDatasetMermaid } from "./datasetMermaid";
 
 type PreviewState =
   | { status: "loading" }
@@ -28,6 +29,19 @@ function previewErrorMessage(error: unknown) {
   return "解析结果读取失败，请稍后重试。";
 }
 
+function formatUploadTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date).replace(/\//g, "-");
+}
+
 export function DatasetPreviewDialog({
   dataset,
   returnFocusTo,
@@ -40,6 +54,7 @@ export function DatasetPreviewDialog({
   const [open, setOpen] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
   const [state, setState] = useState<PreviewState>({ status: "loading" });
+  const previewRef = useRef<HTMLElement | null>(null);
   const displayName = dataset.file_name.toLowerCase().endsWith(`.${dataset.file_format.toLowerCase()}`)
     ? dataset.file_name.slice(0, -(dataset.file_format.length + 1))
     : dataset.file_name;
@@ -65,6 +80,16 @@ export function DatasetPreviewDialog({
     [state],
   );
 
+  useEffect(() => {
+    if (state.status !== "loaded") return;
+    const container = previewRef.current;
+    if (!container) return;
+
+    const controller = new AbortController();
+    void renderDatasetMermaid(container, controller.signal);
+    return () => controller.abort();
+  }, [rendered, state.status]);
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
@@ -77,9 +102,7 @@ export function DatasetPreviewDialog({
       >
         <DialogHeader className="dataset-preview-header">
           <DialogTitle title={displayName}>{displayName}</DialogTitle>
-          <DialogDescription>
-            解析结果
-          </DialogDescription>
+          <DialogDescription>上传于 {formatUploadTime(dataset.created_at)}</DialogDescription>
         </DialogHeader>
 
         <div className="dataset-preview-body" aria-live="polite">
@@ -96,6 +119,7 @@ export function DatasetPreviewDialog({
           )}
           {state.status === "loaded" && (
             <article
+              ref={previewRef}
               className="dataset-markdown-preview"
               dangerouslySetInnerHTML={{ __html: rendered }}
             />

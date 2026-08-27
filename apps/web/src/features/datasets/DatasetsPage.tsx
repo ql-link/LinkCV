@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Database, MoreHorizontal, Pencil, Plus, RotateCcw, Trash2, X } from "lucide-react";
+import { CheckSquare, Database, MoreHorizontal, Pencil, Plus, RotateCcw, Trash2, X } from "lucide-react";
 
 import { api, ApiRequestError, type DatasetLimits, type DatasetRecord } from "../../api/client";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
@@ -33,7 +33,7 @@ export const DATASET_UPLOAD_CONCURRENCY = 3;
 
 type Notice = { kind: "success" | "error"; message: string } | null;
 type DatasetVisualStatus = "queued" | "processing" | "succeeded" | "failed";
-type DatasetAction = { kind: "rename" | "retry" | "delete"; id: string } | null;
+type DatasetAction = { kind: "rename" | "retry" | "delete" | "bulk-delete"; id: string } | null;
 
 function formatUploadFailureNotice(failures: DatasetUploadFailure[], limitMessage?: string | null) {
   const trimTerminalPunctuation = (value: string) => value.replace(/[。；，、\s]+$/u, "");
@@ -79,6 +79,22 @@ function datasetActionErrorMessage(error: unknown, fallback: string) {
       if (error.status === 401) return "登录状态已失效，请重新登录。";
       return error.status >= 500 ? "服务暂时不可用，请稍后重试。" : fallback;
   }
+}
+
+type DatasetDeleteFailure = { dataset: DatasetRecord; reason: string };
+
+function formatBulkDeleteNotice(
+  successCount: number,
+  failures: DatasetDeleteFailure[],
+  totalCount: number,
+) {
+  const trimTerminalPunctuation = (value: string) => value.replace(/[。；，、\s]+$/u, "");
+  const details = failures
+    .map(({ dataset, reason }) => `${datasetDisplayName(dataset)}：${trimTerminalPunctuation(reason)}`)
+    .join("；");
+  if (failures.length === 0) return `已删除 ${successCount} 份资料。`;
+  if (successCount === 0) return `所选 ${totalCount} 份资料删除失败：${details}`;
+  return `已删除 ${successCount} 份资料，${failures.length} 份删除失败：${details}`;
 }
 
 function formatFileSize(bytes: number) {
@@ -140,20 +156,60 @@ function DatasetStatus({ dataset }: { dataset: DatasetRecord }) {
   );
 }
 
+function DatasetSelectionCheckbox({
+  checked,
+  disabled,
+  indeterminate = false,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  indeterminate?: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  const checkboxRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (checkboxRef.current) checkboxRef.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+
+  return (
+    <input
+      ref={checkboxRef}
+      className="dataset-selection-checkbox"
+      type="checkbox"
+      aria-label={label}
+      checked={checked}
+      disabled={disabled}
+      onChange={(event) => onChange(event.currentTarget.checked)}
+    />
+  );
+}
+
 function DatasetRow({
   dataset,
+  batchMode,
+  selected,
+  selectionDisabled,
   menuOpen,
   busy,
   onPreview,
+  onToggleSelection,
   onToggleMenu,
   onRename,
   onRetry,
   onDelete,
 }: {
   dataset: DatasetRecord;
+  batchMode: boolean;
+  selected: boolean;
+  selectionDisabled: boolean;
   menuOpen: boolean;
   busy: boolean;
   onPreview: (dataset: DatasetRecord, trigger: HTMLElement) => void;
+  onToggleSelection: (id: string, checked: boolean) => void;
   onToggleMenu: (id: string) => void;
   onRename: (dataset: DatasetRecord) => void;
   onRetry: (dataset: DatasetRecord) => void;
@@ -161,19 +217,20 @@ function DatasetRow({
 }) {
   const displayName = datasetDisplayName(dataset);
   const canPreview = datasetVisualStatus(dataset) === "succeeded";
+  const isInteractive = canPreview && !batchMode;
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (!canPreview || (event.key !== "Enter" && event.key !== " ")) return;
+    if (!isInteractive || (event.key !== "Enter" && event.key !== " ")) return;
     event.preventDefault();
     onPreview(dataset, event.currentTarget);
   };
 
   return (
     <article
-      className={`dataset-row${canPreview ? " is-clickable" : ""}`}
-      role={canPreview ? "button" : undefined}
-      tabIndex={canPreview ? 0 : undefined}
-      aria-label={canPreview ? `打开「${displayName}」解析预览` : undefined}
-      onClick={canPreview ? (event) => onPreview(dataset, event.currentTarget) : undefined}
+      className={`dataset-row${isInteractive ? " is-clickable" : ""}`}
+      role={isInteractive ? "button" : undefined}
+      tabIndex={isInteractive ? 0 : undefined}
+      aria-label={isInteractive ? `打开「${displayName}」解析预览` : undefined}
+      onClick={isInteractive ? (event) => onPreview(dataset, event.currentTarget) : undefined}
       onKeyDown={handleKeyDown}
     >
       <div className="dataset-cell dataset-cell-name">
@@ -187,35 +244,48 @@ function DatasetRow({
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
       >
-        <button
-          type="button"
-          className="dataset-menu-trigger"
-          aria-label={`打开「${displayName}」操作菜单`}
-          aria-expanded={menuOpen}
-          disabled={busy}
-          onClick={() => onToggleMenu(dataset.id)}
-        >
-          <MoreHorizontal size={18} aria-hidden="true" />
-        </button>
-        {menuOpen && (
-          <div
-            className="dataset-action-menu"
-            role="menu"
-            aria-label={`${displayName} 操作`}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button type="button" role="menuitem" onClick={() => onRename(dataset)}>
-              <Pencil size={15} aria-hidden="true" />重命名
-            </button>
-            {datasetVisualStatus(dataset) === "failed" && (
-              <button type="button" role="menuitem" onClick={() => onRetry(dataset)}>
-                <RotateCcw size={15} aria-hidden="true" />重新解析
-              </button>
-            )}
-            <button type="button" role="menuitem" className="is-danger" onClick={() => onDelete(dataset)}>
-              <Trash2 size={15} aria-hidden="true" />删除
-            </button>
+        {batchMode ? (
+          <div className="dataset-selection-cell dataset-row-selection">
+            <DatasetSelectionCheckbox
+              checked={selected}
+              disabled={selectionDisabled}
+              label={`选择「${displayName}」`}
+              onChange={(checked) => onToggleSelection(dataset.id, checked)}
+            />
           </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="dataset-menu-trigger"
+              aria-label={`打开「${displayName}」操作菜单`}
+              aria-expanded={menuOpen}
+              disabled={busy}
+              onClick={() => onToggleMenu(dataset.id)}
+            >
+              <MoreHorizontal size={18} aria-hidden="true" />
+            </button>
+            {menuOpen && (
+              <div
+                className="dataset-action-menu"
+                role="menu"
+                aria-label={`${displayName} 操作`}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button type="button" role="menuitem" onClick={() => onRename(dataset)}>
+                  <Pencil size={15} aria-hidden="true" />重命名
+                </button>
+                {datasetVisualStatus(dataset) === "failed" && (
+                  <button type="button" role="menuitem" onClick={() => onRetry(dataset)}>
+                    <RotateCcw size={15} aria-hidden="true" />重新解析
+                  </button>
+                )}
+                <button type="button" role="menuitem" className="is-danger" onClick={() => onDelete(dataset)}>
+                  <Trash2 size={15} aria-hidden="true" />删除
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </article>
@@ -286,6 +356,9 @@ export function DatasetsPage() {
   const [renameValue, setRenameValue] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DatasetRecord | null>(null);
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedDatasetIds, setSelectedDatasetIds] = useState<Set<string>>(() => new Set());
+  const [bulkDeleteTarget, setBulkDeleteTarget] = useState<DatasetRecord[] | null>(null);
   const [busyAction, setBusyAction] = useState<DatasetAction>(null);
 
   const refreshDatasets = useCallback(async (options: { initial?: boolean; accepted?: boolean } = {}) => {
@@ -352,6 +425,14 @@ export function DatasetsPage() {
       pageMounted.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    const existingIds = new Set(datasets.map((dataset) => dataset.id));
+    setSelectedDatasetIds((current) => {
+      const next = new Set(Array.from(current).filter((id) => existingIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [datasets]);
 
   const hasActiveParsing = datasets.some((dataset) => {
     const status = datasetVisualStatus(dataset);
@@ -520,6 +601,12 @@ export function DatasetsPage() {
       await api.deleteDataset(deleteTarget.id);
       locallyAccepted.current.delete(deleteTarget.id);
       setDatasets((items) => items.filter((item) => item.id !== deleteTarget.id));
+      setSelectedDatasetIds((ids) => {
+        if (!ids.has(deleteTarget.id)) return ids;
+        const next = new Set(ids);
+        next.delete(deleteTarget.id);
+        return next;
+      });
       setDeleteTarget(null);
       setNotice({ kind: "success", message: `已删除「${datasetDisplayName(deleteTarget)}」。` });
     } catch (error) {
@@ -535,6 +622,97 @@ export function DatasetsPage() {
     if (!keyword) return datasets;
     return datasets.filter((dataset) => datasetDisplayName(dataset).toLocaleLowerCase().includes(keyword));
   }, [datasets, keyword]);
+
+  const selectedDatasetCount = selectedDatasetIds.size;
+  const filteredDatasetIds = filteredDatasets.map((dataset) => dataset.id);
+  const allFilteredSelected = filteredDatasetIds.length > 0
+    && filteredDatasetIds.every((id) => selectedDatasetIds.has(id));
+  const someFilteredSelected = filteredDatasetIds.some((id) => selectedDatasetIds.has(id));
+  const batchDeleteBusy = busyAction?.kind === "bulk-delete";
+
+  const toggleBatchMode = () => {
+    if (batchDeleteBusy) return;
+    setMenuDatasetId(null);
+    if (batchMode) {
+      setBatchMode(false);
+      setSelectedDatasetIds(new Set());
+      return;
+    }
+    setSelectedDatasetIds(new Set());
+    setBatchMode(true);
+  };
+
+  const toggleDatasetSelection = (id: string, checked: boolean) => {
+    if (batchDeleteBusy) return;
+    setSelectedDatasetIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleAllFilteredDatasets = (checked: boolean) => {
+    if (batchDeleteBusy) return;
+    setSelectedDatasetIds((current) => {
+      const next = new Set(current);
+      for (const id of filteredDatasetIds) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const startBulkDelete = () => {
+    if (!batchMode || batchDeleteBusy || selectedDatasetCount === 0) return;
+    const targets = datasets.filter((dataset) => selectedDatasetIds.has(dataset.id));
+    if (targets.length === 0) {
+      setSelectedDatasetIds(new Set());
+      return;
+    }
+    setMenuDatasetId(null);
+    setBulkDeleteTarget(targets);
+  };
+
+  const confirmBulkDelete = async () => {
+    if (!bulkDeleteTarget || bulkDeleteTarget.length === 0 || busyAction) return;
+    const targets = bulkDeleteTarget;
+    const succeededIds = new Set<string>();
+    const failures: DatasetDeleteFailure[] = [];
+    setBusyAction({ kind: "bulk-delete", id: "bulk" });
+
+    for (const target of targets) {
+      try {
+        await api.deleteDataset(target.id);
+        succeededIds.add(target.id);
+        locallyAccepted.current.delete(target.id);
+      } catch (error) {
+        failures.push({
+          dataset: target,
+          reason: datasetActionErrorMessage(error, "删除失败，请稍后重试。"),
+        });
+      }
+    }
+
+    if (succeededIds.size > 0) {
+      setDatasets((items) => items.filter((item) => !succeededIds.has(item.id)));
+      setSelectedDatasetIds((current) => {
+        const next = new Set(current);
+        for (const id of succeededIds) next.delete(id);
+        return next;
+      });
+    }
+    setBulkDeleteTarget(null);
+    setBatchMode(false);
+    setSelectedDatasetIds(new Set());
+    setNotice({
+      kind: failures.length > 0 ? "error" : "success",
+      message: formatBulkDeleteNotice(succeededIds.size, failures, targets.length),
+    });
+    setBusyAction(null);
+  };
+
   return (
     <main className="dashboard-content datasets-page">
       <WorkspacePageHero
@@ -552,7 +730,38 @@ export function DatasetsPage() {
               placeholder="搜索资料…"
               className="datasets-hero-search"
             />
-            <Button variant="outline" icon={<Plus size={15} />} onClick={openUploadDialog}>上传资料</Button>
+            {batchMode ? (
+              <Button
+                className="datasets-hero-primary-action datasets-hero-delete-action"
+                variant="outline"
+                icon={<Trash2 size={15} />}
+                aria-label={`删除资料（已选择 ${selectedDatasetCount} 份）`}
+                title={selectedDatasetCount > 0 ? `已选择 ${selectedDatasetCount} 份资料` : "请先选择资料"}
+                disabled={selectedDatasetCount === 0 || batchDeleteBusy}
+                onClick={startBulkDelete}
+              >
+                删除资料
+              </Button>
+            ) : (
+              <Button
+                className="datasets-hero-primary-action"
+                variant="outline"
+                icon={<Plus size={15} />}
+                onClick={openUploadDialog}
+              >
+                上传资料
+              </Button>
+            )}
+            <Button
+              className="datasets-hero-batch-action"
+              variant="outline"
+              icon={batchMode ? <X size={15} /> : <CheckSquare size={15} />}
+              aria-label={batchMode ? "取消批量操作" : undefined}
+              disabled={batchDeleteBusy}
+              onClick={toggleBatchMode}
+            >
+              {batchMode ? "取消" : "批量操作"}
+            </Button>
           </>
         )}
       />
@@ -595,12 +804,22 @@ export function DatasetsPage() {
 
           {!loadFailed && datasets.length > 0 && (
             <section className="dataset-list-card" aria-label="资料列表">
-              <div className="dataset-list-header" aria-hidden="true">
+              <div className="dataset-list-header">
                 <span>资料名称</span>
                 <span>上传时间</span>
                 <span>大小</span>
                 <span>解析状态</span>
-                <span />
+                {batchMode ? (
+                  <div className="dataset-selection-cell dataset-header-selection">
+                    <DatasetSelectionCheckbox
+                      checked={allFilteredSelected}
+                      disabled={filteredDatasets.length === 0 || batchDeleteBusy}
+                      indeterminate={someFilteredSelected && !allFilteredSelected}
+                      label="全选当前筛选结果"
+                      onChange={toggleAllFilteredDatasets}
+                    />
+                  </div>
+                ) : <span />}
               </div>
               {filteredDatasets.length === 0 ? (
                 <p className="dataset-list-empty">没有匹配的资料。</p>
@@ -609,9 +828,13 @@ export function DatasetsPage() {
                   <DatasetRow
                     key={dataset.id}
                     dataset={dataset}
+                    batchMode={batchMode}
+                    selected={selectedDatasetIds.has(dataset.id)}
+                    selectionDisabled={batchDeleteBusy}
                     menuOpen={menuDatasetId === dataset.id}
                     busy={busyAction?.id === dataset.id}
                     onPreview={openPreview}
+                    onToggleSelection={toggleDatasetSelection}
                     onToggleMenu={(id) => setMenuDatasetId((current) => current === id ? null : id)}
                     onRename={startRename}
                     onRetry={(item) => void startRetry(item)}
@@ -689,6 +912,21 @@ export function DatasetsPage() {
             if (!busyAction) setDeleteTarget(null);
           }}
           onConfirm={() => void confirmDelete()}
+        />
+      )}
+
+      {bulkDeleteTarget && (
+        <ConfirmDialog
+          kind="delete"
+          title={`永久删除所选资料（${bulkDeleteTarget.length} 份）？`}
+          description={`将删除所选 ${bulkDeleteTarget.length} 份资料，移除源文件、解析结果和资料记录，且无法恢复。`}
+          confirmLabel="永久删除所选"
+          busyLabel="正在删除…"
+          busy={batchDeleteBusy}
+          onCancel={() => {
+            if (!batchDeleteBusy) setBulkDeleteTarget(null);
+          }}
+          onConfirm={() => void confirmBulkDelete()}
         />
       )}
 
