@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { JSONContent } from "@tiptap/core";
+import { Editor, type JSONContent } from "@tiptap/core";
 import type { ResumeDocument, TemplateManifest } from "../../api/resumeContract";
+import { resumeEditorExtensions } from "./editorExtensions";
 import {
   hasCanonicalTiptapSections,
   resumeDocumentFromEditorDocument,
@@ -231,6 +232,33 @@ const projected: JSONContent = {
 };
 
 describe("resume editor persistence", () => {
+  it("normalizes the no-op ordered-list type emitted by Tiptap before persistence", () => {
+    const editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: "<h1>张三</h1><h2>工作经历</h2><ol><li><p>第一项</p></li></ol>",
+    });
+    try {
+      const editorDocument = editor.getJSON();
+      const editorOrderedList = editorDocument.content?.find((node) => node.type === "orderedList");
+      expect(editorOrderedList?.attrs).toEqual({ start: 1, type: null });
+
+      const data = resumeDocumentFromEditorDocument(editorDocument, previous);
+      const persistedWork = data.sections.custom_sections.find(
+        (section) => section.id === "blk_2222222222222222",
+      );
+      const persistedOrderedList = persistedWork?.items[0]?.content.format === "tiptap-json"
+        ? persistedWork.items[0].content.content.content?.find(
+          (node) => node.type === "orderedList",
+        )
+        : undefined;
+
+      expect(persistedOrderedList?.attrs).toEqual({ start: 1 });
+      expect(editorOrderedList?.attrs).toEqual({ start: 1, type: null });
+    } finally {
+      editor.destroy();
+    }
+  });
+
   it("persists a projection-free Tiptap tree without losing marks, ids or the user avatar", () => {
     const data = resumeDocumentFromEditorDocument(projected, previous);
     const restored = resumeDocumentToEditorDocument(data);
