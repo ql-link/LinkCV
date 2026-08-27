@@ -12,7 +12,7 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker和独立 Pi 服务。当前 Alembic head `0042`；`0002`–`0022` 建立并演进既有业务结构，`0023` 为历史简历版本新增非空名称，`0024`–`0027` 增加并刷新官方模板，`0028`–`0029` 扩展并收敛多能力模型配置，`0030` 新增 Agent 会话、运行、消息、工具审计与简历修改提案，并允许历史版本使用 `reason=agent`；`0031` 为提案增加稳定定位、诊断、类型化操作、修改依据与资料引用；`0032` 为 Agent 消息增加结构化澄清类型和版本化元数据；`0033` 增加面试求职进程、排期复盘和素材元数据；`0034` 删除存量已归档 JD 并移除 JD 归档字段和索引；`0035` 收敛可见性索引，`0036` 把全部简历快照转换为唯一规范结构，`0037`–`0040` 收敛官方编辑章节、区块 ID 与双栏插槽，`0041` 清除模板、当前简历和历史版本正文中的页级模板投影并恢复独立侧栏语义，`0042` 恢复经典技术模板的生产页边距并删除空白模板，历史简历只清空可空来源引用。
+新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker和独立 Pi 服务。当前 Alembic head `0044`；`0002`–`0022` 建立并演进既有业务结构，`0023` 为历史简历版本新增非空名称，`0024`–`0027` 增加并刷新官方模板，`0028`–`0029` 扩展并收敛多能力模型配置，`0030` 新增 Agent 会话、运行、消息、工具审计与简历修改提案，并允许历史版本使用 `reason=agent`；`0031` 为提案增加稳定定位、诊断、类型化操作、修改依据与资料引用；`0032` 为 Agent 消息增加结构化澄清类型和版本化元数据；`0033` 增加面试求职进程、排期复盘和素材元数据；`0034` 删除存量已归档 JD 并移除 JD 归档字段和索引；`0035` 收敛可见性索引，`0036` 把全部简历快照转换为唯一规范结构，`0037`–`0040` 收敛官方编辑章节、区块 ID 与双栏插槽，`0041` 清除模板、当前简历和历史版本正文中的页级模板投影并恢复独立侧栏语义，`0042` 恢复经典技术模板的生产页边距并删除空白模板，历史简历只清空可空来源引用，`0043` 新增用户个人画像表，`0044` 只恢复后续经典技术模板快照的紧凑字号、行距与主题色，既有简历和版本不变。
 
 本地开发把 Git 主工作目录中的 `.env.local` 与 `.env.development.local` 作为所有 worktree 的共享私密覆盖层。`npm run dev`/`npm run dev:local` 优先使用当前 worktree 的 `.env`，否则回退主工作目录 `.env`；两处基础文件都不存在时，完整的主目录 `.env.local` 仍可单独作为 Local 配置。`npm run dev:development` 使用当前 worktree 已跟踪的 `.env.development`，再加载主工作目录 `.env.development.local`，并把同一结果注入 Web、FastAPI、Worker 与 Pi Service。新建 worktree 后不需要复制密钥文件。需要临时隔离时可显式设置 `LINKCV_SECRET_ENV_FILE=/absolute/path/to/override.local`。
 
@@ -38,7 +38,7 @@ local/test 未配置密钥环时，原有非 LLM 接口仍可启动，但保存�
 LINKCV_ENV_FILE=.env.development npm run db:init
 ```
 
-命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0042`。图片、导入源文件、面试素材和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。面试素材默认最多 500 MiB，由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 在 Local、Development 和 Production 分别配置；上传直接进入 FastAPI 和 MinIO，不经过 RabbitMQ，RabbitMQ 仍只服务异步文档解析等既有 Worker 流程。
+命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0044`。图片、导入源文件、面试素材和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。面试素材默认最多 500 MiB，由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 在 Local、Development 和 Production 分别配置；上传直接进入 FastAPI 和 MinIO，不经过 RabbitMQ，RabbitMQ 仍只服务异步文档解析等既有 Worker 流程。
 
 微信自动建号、小程序登录和网页扫码确认要求同时配置 `WECHAT_APPID` 与 `WECHAT_SECRET`；密钥只放 `.env.local`、环境对应 `.local` 或进程环境。`WECHAT_LOGIN_PAGE` 默认 `pages/login/index`，`WECHAT_SCENE_TTL_SECONDS` 默认 300 秒，`WECHAT_QRCODE_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 10 次，`WECHAT_LOGIN_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 30 次，`WECHAT_API_TIMEOUT_SECONDS` 控制微信上游超时。未配置时应用仍可启动，但微信登录接口返回 `503 WECHAT_SERVICE_UNAVAILABLE`。
 
@@ -113,9 +113,11 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 | `PDF_RENDERER_MAX_SMART_HEIGHT_MM` | `2000` | 智能一页 PDF 的最大物理页高，超出返回 413 |
 | `MQ_VENDOR` | `rabbitmq` | Broker 实现，可显式切换为 `kafka` |
 | `RABBITMQ_URL` | 本地 RabbitMQ | AMQP 地址；Dev/Production 由私密覆盖提供 |
-| `RABBITMQ_EXCHANGE_NAME` | `tolink.cv.resume_import` | durable direct exchange |
-| `RABBITMQ_QUEUE` | `linkcv.resume_import.worker` | durable Worker queue |
-| `RABBITMQ_ROUTING_KEY` | `resume.import` | RabbitMQ 固定业务路由 |
+| `RABBITMQ_EXCHANGE_NAME` | `tolink.cv.resume_import.v2` | V2 durable direct exchange；不得与旧消费者共用 |
+| `RABBITMQ_QUEUE` | `linkcv.resume_import.worker.v2` | V2 durable Worker queue |
+| `RABBITMQ_ROUTING_KEY` | `resume.import.v2` | RabbitMQ V2 固定业务路由 |
+| `KAFKA_TOPIC` | `tolink.cv.resume_import.v2` | Kafka V2 topic |
+| `KAFKA_CONSUMER_GROUP` | `linkcv.resume_import.worker.v2` | Kafka V2 consumer group |
 | `LINKPARSE_BASE_URL` | `http://100.86.10.52:18743` | PDF/DOCX 解析服务地址 |
 | `LINKPARSE_API_KEY` | 空 | LinkParse Bearer 凭据，只放 `.local` 或进程环境 |
 | `LINKPARSE_PARSE_PATH` | `/v1/parse` | 同步 PDF/DOCX 解析路径 |
@@ -134,9 +136,13 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 
 PDF 模板视觉门禁位于 `apps/backend/tests/integration/pdf/test_template_visual_baselines.py`。测试会先重新构建当前 PDF CLI，再让全部内置启用模板经真实 Chromium 生成 PDF、由 PDFium 栅格化，并与仓库中的低分辨率 PNG 基线比较。日常运行不得更新基线；只有维护者人工检查全部差异后，才可显式执行 `UPDATE_TEMPLATE_BASELINES=1 uv run --directory apps/backend pytest tests/integration/pdf/test_template_visual_baselines.py -q` 更新并重新审查基线。
 
-Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置当前 `resume_structuring` binding。PDF 和 DOCX 会把原始二进制和安全文件名发送到 LinkParse；浏览器不读取地址或 Key。API 的频率与受理并发限制保存在 FastAPI 进程内，请求幂等和 Worker 防重保存在 Redis，任务终态保存在 MySQL。默认自动化测试注入 Fake，不访问真实地址或读取 Key。
+Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置当前 `resume_structuring` binding。PDF 和 DOCX 会把原始二进制和安全文件名发送到 LinkParse；浏览器不读取地址或 Key。PDF 请求额外发送 `include_layout=true`，LinkParse 必须返回通过质量门禁的 `meta.pdf.layout`，LinkCV 再从严格校验的物理行、来源顺序、列表、同行和续行关系确定性重建 Markdown；扫描、混合和 OCR PDF 只有在这份 V1 layout 完整闭包时才可继续。缺失、降级、字段不合法或与 `outputs.markdown` 不一致的 layout，以及含嵌入图片的文本 PDF，会以 `RESUME_LAYOUT_UNSUPPORTED` 失败。DOCX 含图片、表格或文本框时仍失败，不能用缺失内容的模板结果冒充保真导入。API 的频率与受理并发限制保存在 FastAPI 进程内，请求幂等和 Worker 防重保存在 Redis，任务终态保存在 MySQL。默认自动化测试注入 Fake，不访问真实地址或读取 Key。
 
-简历导入使用数据库驱动的统一 LLM 服务和当前 `resume_structuring` binding。模型地址、模型调用名与 API Key 通过管理员 API 管理，凭据由 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 加解密；调用不自动重试，也不回退其他候选。环境只保留密钥环与统一的 `LLM_TIMEOUT_SECONDS`，不再配置导入专用 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL` 或重试参数。
+简历导入使用数据库驱动的统一 LLM 服务和当前 `resume_structuring` binding。模型只返回稳定源块的语义/布局映射，不能生成正文或决定丢弃；程序负责完整闭包、来源顺序、联系信息同排、有序/嵌套 CommonMark 与模板布局配方。模型地址、模型调用名与 API Key 通过管理员 API 管理，凭据由 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 加解密；调用不自动重试，也不回退其他候选。环境只保留密钥环与统一的 `LLM_TIMEOUT_SECONDS`，不再配置导入专用 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL` 或重试参数。
+
+共享 Development 验证必须使用 `npm run dev:development`，不得先启动本地 MySQL、Redis、MinIO 或 RabbitMQ。升级 Development 前先只读确认 `alembic_version=0043`、无在途导入且 `classic-technical-cn` 仍匹配受保护的 `0042` 样式，保存该模板行备份并记录既有简历/版本快照摘要；执行 `0044` 后复核 head、模板仅三个呈现 token 改变且既有简历/版本摘要完全一致，再启动 Web、FastAPI、Worker 与 Pi。若版本已是 `0043` 但模板仍为旧 token，这是预期的升级前状态，不得复用编号、重跑或改写 `0043`。
+
+共享 Development 中不得让当前 worktree 与已部署旧 Worker 竞争同一队列。常规配置使用上表 V2 topology；并行调试多个未部署 worktree 时，还应给 exchange、queue 和 routing key 增加同一个短期 worktree 后缀并同时传给本地 FastAPI 与 Worker。V2 消息正文要求 `pipeline_version="v2"`，RabbitMQ 同时携带 `x-linkcv-pipeline-version=v2` 诊断 header；缺版本、V1、未知版本或未知字段都进入当前 V2 DLT，不调用业务 Processor。
 
 本地 PDF/DOCX 联调时，把 `LINKPARSE_API_KEY=<受控凭据>` 写入被 Git 忽略的 `.env.local` 或 `.env.development.local`，不要写入三份仓库环境文件、命令行历史、日志或测试 fixture。Key 缺失时 Development 仍可启动，Markdown 可测，PDF/DOCX 明确返回 `DOCUMENT_CONVERSION_UNAVAILABLE`。
 

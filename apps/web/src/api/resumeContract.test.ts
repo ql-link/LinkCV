@@ -1,7 +1,10 @@
+import { Editor } from "@tiptap/core";
+import StarterKit from "@tiptap/starter-kit";
 import { describe, expect, it } from "vitest";
 import {
   defaultSemanticDocument,
   defaultSemanticStyle,
+  normalizeResumeAccentColor,
   editorSettingsToStyle,
   editorDocumentToMarkdown,
   resumeDocumentFromMarkdown,
@@ -12,6 +15,12 @@ import {
 import { renderResumeMarkdown } from "../parser/resumeMarkdown";
 
 describe("resume semantic contract adapter", () => {
+  it("uses a safe fallback for invalid persisted accent colors", () => {
+    expect(normalizeResumeAccentColor("#202632")).toBe("#202632");
+    expect(normalizeResumeAccentColor("rgb(1, 2, 3)")).toBe("#3478f6");
+    expect(normalizeResumeAccentColor("#202632; color: red")).toBe("#3478f6");
+  });
+
   it("uses the same sorted UTF-8 content hash contract as the backend", async () => {
     await expect(resumeDocumentContentHash({ b: "中", a: 1 } as never)).resolves.toBe(
       "sha256:2831299868169bc527f55f88ebbdcd8b785d78d9e7dc64e6887dfbd2825dd247",
@@ -29,6 +38,73 @@ describe("resume semantic contract adapter", () => {
 
     expect(resumeDocumentToMarkdown(document)).toContain("# 张三");
     expect(resumeDocumentToMarkdown(document)).toContain("- Python：FastAPI");
+  });
+
+  it("keeps historical contact links in the same paragraph as typed contact fields", () => {
+    const document = {
+      ...defaultSemanticDocument,
+      basics: {
+        ...defaultSemanticDocument.basics,
+        phone: "13000000000",
+        email: "test@example.invalid",
+        location: "杭州",
+        links: [
+          { id: "link_001", label: "个人网站", url: "https://example.invalid" },
+          { id: "link_002", label: "备用邮箱", url: "mailto:backup@example.invalid" },
+        ],
+      },
+    };
+
+    const markdown = resumeDocumentToMarkdown(document);
+    const html = renderResumeMarkdown(markdown);
+
+    expect(markdown).toContain(
+      "13000000000 ｜ test@example.invalid ｜ 杭州 ｜ [个人网站](https://example.invalid) ｜ 备用邮箱",
+    );
+    expect(markdown).not.toMatch(/\n- \[个人网站\]/u);
+    expect(markdown).not.toContain("[备用邮箱](mailto:");
+    expect(html).toContain("<p>13000000000 ｜ test@example.invalid ｜ 杭州 ｜ ");
+    expect(html).toContain('<a href="https://example.invalid"');
+    expect(html).toContain("备用邮箱");
+    expect(html).not.toContain("mailto:");
+    expect(html).not.toContain("<ul>");
+  });
+
+  it.each([
+    "- -&#x20;正文",
+    "- -&#32;正文",
+    "- -&nbsp;正文",
+  ])("cleans only deterministic legacy highlight prefixes: %s", (legacyContent) => {
+    const document = {
+      ...defaultSemanticDocument,
+      sections: {
+        ...defaultSemanticDocument.sections,
+        work_experiences: [{
+          id: "work_001",
+          organization: "示例公司",
+          position: "后端实习生",
+          start_date: null,
+          end_date: null,
+          current: false,
+          highlights: [
+            { id: "highlight_001", content: { format: "markdown" as const, content: legacyContent } },
+            { id: "highlight_002", content: { format: "markdown" as const, content: "-1°C 环境测试" } },
+            { id: "highlight_003", content: { format: "markdown" as const, content: "2024-2025 项目周期" } },
+          ],
+        }],
+      },
+    };
+
+    const markdown = resumeDocumentToMarkdown(document);
+    const html = renderResumeMarkdown(markdown);
+
+    expect(markdown).toContain("- 正文");
+    expect(markdown).toContain("- -1°C 环境测试");
+    expect(markdown).toContain("- 2024-2025 项目周期");
+    expect(markdown).not.toContain("&#x20;");
+    expect(html).toContain("<li>正文</li>");
+    expect(html).toContain("<li>-1°C 环境测试</li>");
+    expect(html).toContain("<li>2024-2025 项目周期</li>");
   });
 
   it("stores every editor section as an independently identified canonical block", () => {
@@ -232,6 +308,73 @@ describe("resume semantic contract adapter", () => {
     });
 
     expect(markdown).toBe("# 张三\n\n**后端工程师**");
+  });
+
+  it("preserves ordered-list starts and nested list structure in Markdown", () => {
+    const markdown = editorDocumentToMarkdown({
+      type: "doc",
+      content: [{
+        type: "orderedList",
+        attrs: { start: 3 },
+        content: [
+          {
+            type: "listItem",
+            content: [
+              { type: "paragraph", content: [{ type: "text", text: "外层第一项" }] },
+              {
+                type: "bulletList",
+                content: [
+                  { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "子项目 A" }] }] },
+                  { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "子项目 B" }] }] },
+                ],
+              },
+            ],
+          },
+          {
+            type: "listItem",
+            content: [
+              { type: "paragraph", content: [{ type: "text", text: "外层第二项" }] },
+              {
+                type: "orderedList",
+                attrs: { start: 7 },
+                content: [{
+                  type: "listItem",
+                  content: [{ type: "paragraph", content: [{ type: "text", text: "子编号" }] }],
+                }],
+              },
+            ],
+          },
+        ],
+      }],
+    });
+
+    expect(markdown).toBe(
+      "3. 外层第一项\n   - 子项目 A\n   - 子项目 B\n4. 外层第二项\n\n   7. 子编号",
+    );
+    const html = renderResumeMarkdown(markdown);
+    expect(html).toContain('<ol start="3">');
+    expect(html).toContain("<ul>");
+    expect(html).toContain("<p>外层第一项</p>");
+    expect(html).toContain("<li>子项目 A</li>");
+    expect(html).toContain('<ol start="7">');
+
+    const editor = new Editor({ extensions: [StarterKit], content: html });
+    try {
+      expect(editor.getJSON().content?.[0]).toMatchObject({
+        type: "orderedList",
+        attrs: { start: 3 },
+      });
+      expect(editor.getJSON().content?.[0]?.content?.[0]?.content?.[1]).toMatchObject({
+        type: "bulletList",
+      });
+      expect(editor.getJSON().content?.[0]?.content?.[1]?.content?.[1]).toMatchObject({
+        type: "orderedList",
+        attrs: { start: 7 },
+      });
+      expect(editorDocumentToMarkdown(editor.getJSON())).toBe(markdown);
+    } finally {
+      editor.destroy();
+    }
   });
 
   it("serializes email links as plain text while preserving website links", () => {

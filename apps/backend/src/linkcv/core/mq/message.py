@@ -2,7 +2,7 @@ from time import time
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, TypeAdapter, field_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
 
 
 def _canonical_positive_id(value: str) -> str:
@@ -15,6 +15,8 @@ def _canonical_positive_id(value: str) -> str:
 
 
 class ResumeImportPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     message_id: UUID = Field(default_factory=uuid4)
     timestamp: float = Field(default_factory=time)
     import_id: str
@@ -27,13 +29,19 @@ class ResumeImportPayload(BaseModel):
 
 
 class ResumeImportMessage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pipeline_version: Literal["v2"]
     mq_type: Literal["RESUME_IMPORT_TASK"] = "RESUME_IMPORT_TASK"
-    mq_name: Literal["tolink.cv.resume_import"] = "tolink.cv.resume_import"
+    mq_name: Literal["tolink.cv.resume_import.v2"] = "tolink.cv.resume_import.v2"
     payload: ResumeImportPayload
 
     @classmethod
     def create(cls, *, import_id: int, template_id: int) -> "ResumeImportMessage":
         return cls(
+            mq_type="RESUME_IMPORT_TASK",
+            pipeline_version="v2",
+            mq_name="tolink.cv.resume_import.v2",
             payload=ResumeImportPayload(
                 import_id=str(import_id),
                 template_id=str(template_id),
@@ -45,6 +53,8 @@ class ResumeImportMessage(BaseModel):
 
 
 class DatasetParsePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     message_id: UUID = Field(default_factory=uuid4)
     timestamp: float = Field(default_factory=time)
     parse_task_id: str
@@ -56,13 +66,21 @@ class DatasetParsePayload(BaseModel):
 
 
 class DatasetParseMessage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pipeline_version: Literal["v2"]
     mq_type: Literal["DATASET_PARSE_TASK"] = "DATASET_PARSE_TASK"
-    mq_name: Literal["tolink.cv.resume_import"] = "tolink.cv.resume_import"
+    mq_name: Literal["tolink.cv.resume_import.v2"] = "tolink.cv.resume_import.v2"
     payload: DatasetParsePayload
 
     @classmethod
     def create(cls, *, parse_task_id: int) -> "DatasetParseMessage":
-        return cls(payload=DatasetParsePayload(parse_task_id=str(parse_task_id)))
+        return cls(
+            mq_type="DATASET_PARSE_TASK",
+            pipeline_version="v2",
+            mq_name="tolink.cv.resume_import.v2",
+            payload=DatasetParsePayload(parse_task_id=str(parse_task_id)),
+        )
 
     def body(self) -> bytes:
         return self.model_dump_json().encode("utf-8")

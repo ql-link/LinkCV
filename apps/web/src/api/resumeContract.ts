@@ -176,6 +176,14 @@ export type ResumePresentation = {
   manifest: TemplateManifest;
 };
 
+export const DEFAULT_RESUME_ACCENT_COLOR = "#3478f6";
+
+export function normalizeResumeAccentColor(value: unknown) {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/iu.test(value)
+    ? value
+    : DEFAULT_RESUME_ACCENT_COLOR;
+}
+
 export const defaultSemanticDocument: ResumeDocument = {
   basics: {
     name: "张三",
@@ -288,13 +296,41 @@ function optionalText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
+/**
+ * Old structured imports already model highlights as list items.  A few
+ * LinkParse/model combinations persisted the list marker a second time (and
+ * encoded the separating space), so adding the current wrapper would render
+ * two markers.  Only a marker followed by whitespace or a known space entity
+ * is removed; values such as "-1°C" remain ordinary text.
+ */
+function normalizeLegacyHighlightContent(value: string) {
+  let normalized = value.trim();
+  while (true) {
+    const marker = normalized.match(/^-[ \t]+/u)
+      ?? normalized.match(/^-(?=(?:&#x20;|&#32;|&nbsp;))/iu);
+    if (!marker) return normalized;
+
+    normalized = normalized.slice(marker[0].length)
+      .replace(/^(?:&#x20;|&#32;|&nbsp;)[ \t]*/iu, "");
+  }
+}
+
 function appendHighlights(lines: string[], value: unknown) {
   if (!Array.isArray(value)) return;
   for (const highlight of value) {
     if (!highlight || typeof highlight !== "object") continue;
-    const content = richText((highlight as Record<string, unknown>).content);
+    const content = normalizeLegacyHighlightContent(
+      richText((highlight as Record<string, unknown>).content),
+    );
     if (content) lines.push(`- ${content}`);
   }
+}
+
+function markdownContactPart(value: { label: string; url: string }) {
+  const label = optionalText(value.label);
+  const url = optionalText(value.url);
+  if (!url || isResumeEmailLink(url)) return label || url;
+  return `[${label || url}](${url})`;
 }
 
 function semanticTitle(
@@ -337,12 +373,15 @@ export function resumeDocumentToMarkdown(document: ResumeDocument) {
   const { basics, sections } = document;
   if (basics.name) lines.push(`# ${basics.name}`);
   if (basics.headline) lines.push("", basics.headline);
-  const contacts = [basics.phone, basics.email, basics.location].filter(Boolean);
-  if (contacts.length) lines.push("", contacts.join(" ｜ "));
+  const contacts = [basics.phone, basics.email, basics.location]
+    .map(optionalText)
+    .filter(Boolean);
+  const contactLinks = basics.links
+    .map(markdownContactPart)
+    .filter(Boolean);
+  const contactParts = [...contacts, ...contactLinks];
+  if (contactParts.length) lines.push("", contactParts.join(" ｜ "));
   if (basics.summary) lines.push("", richText(basics.summary));
-  if (basics.links.length) {
-    for (const link of basics.links) lines.push(`- [${link.label}](${link.url})`);
-  }
   if (basics.photo) {
     lines.push("", `![简历头像](${basics.photo} \"linkcv-avatar:96\")`);
   }
@@ -669,6 +708,43 @@ function childBlocksMarkdown(node: JSONContent) {
   return (node.content ?? []).map(nodeMarkdown).filter(Boolean).join("\n\n");
 }
 
+function listStart(node: JSONContent) {
+  const value = Number(node.attrs?.start);
+  return Number.isFinite(value) ? Math.max(1, Math.round(value)) : 1;
+}
+
+function indentMarkdown(value: string, count: number) {
+  const prefix = " ".repeat(count);
+  return value.split("\n").map((line) => `${prefix}${line}`).join("\n");
+}
+
+function listItemMarkdown(node: JSONContent, marker: string) {
+  const continuationIndent = marker.length + 1;
+  let value = "";
+  for (const child of node.content ?? []) {
+    const childValue = child.type === "paragraph" ? nodeText(child) : nodeMarkdown(child);
+    if (!childValue) continue;
+
+    if (!value) {
+      value = childValue;
+      continue;
+    }
+
+    const separator = child.type === "bulletList" ? "\n" : "\n\n";
+    value += `${separator}${indentMarkdown(childValue, continuationIndent)}`;
+  }
+  return value;
+}
+
+function listMarkdown(node: JSONContent, ordered: boolean) {
+  const start = ordered ? listStart(node) : 1;
+  return (node.content ?? []).map((item, index) => {
+    const marker = ordered ? `${start + index}.` : "-";
+    const value = listItemMarkdown(item, marker);
+    return value ? `${marker} ${value}` : marker;
+  }).join("\n");
+}
+
 function markdownImage(node: JSONContent, title: string) {
   const src = typeof node.attrs?.src === "string" ? node.attrs.src : "";
   if (!src || src.startsWith("data:") || src.startsWith("blob:")) return "";
@@ -690,11 +766,9 @@ function nodeMarkdown(node: JSONContent): string {
     return alignedBlockMarkdown(node, `${"#".repeat(Number(node.attrs?.level ?? 2))} ${nodeText(node)}`);
   }
   if (node.type === "paragraph") return alignedBlockMarkdown(node, nodeText(node));
-  if (node.type === "listItem") {
-    return (node.content ?? []).map((child) => child.type === "paragraph" ? nodeText(child) : nodeMarkdown(child)).join("\n");
-  }
-  if (node.type === "bulletList") return (node.content ?? []).map((item) => `- ${nodeMarkdown(item)}`).join("\n");
-  if (node.type === "orderedList") return (node.content ?? []).map((item, index) => `${index + 1}. ${nodeMarkdown(item)}`).join("\n");
+  if (node.type === "listItem") return listItemMarkdown(node, "-");
+  if (node.type === "bulletList") return listMarkdown(node, false);
+  if (node.type === "orderedList") return listMarkdown(node, true);
   if (node.type === "blockquote") return (node.content ?? []).map(nodeMarkdown)
     .join("\n")
     .split("\n")

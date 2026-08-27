@@ -65,7 +65,9 @@ Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小�
 
 本期没有管理员开通接口。发布方还需在受控流程中确保至少一个既有用户被标记为 `users.is_admin=true`；公开注册始终是普通用户。没有管理员只会使 `/api/admin/llm/**` 无法使用，不会放宽权限。
 
-生产容器通过 `tolink-app-net` 使用 Docker DNS 连接 MySQL、Redis、MinIO 和平台 RabbitMQ，并须能访问仓库配置的 LinkParse。MySQL、Redis、MinIO、RabbitMQ 与 LinkParse 都不由 Production Compose 创建。Worker 使用 RabbitMQ durable queue、固定 `resume.import` 路由和 DLX/DLT；业务解析失败落 MySQL 终态且不自动重试，Redis、数据库或对象存储等公共依赖不可用时保留消息等待恢复。
+生产容器通过 `tolink-app-net` 使用 Docker DNS 连接 MySQL、Redis、MinIO 和平台 RabbitMQ，并须能访问仓库配置的 LinkParse。MySQL、Redis、MinIO、RabbitMQ 与 LinkParse 都不由 Production Compose 创建。Worker 使用 V2 RabbitMQ durable queue、固定 `resume.import.v2` 路由和独立 DLX/DLT；业务解析失败落 MySQL 终态且不自动重试，Redis、数据库或对象存储等公共依赖不可用时保留消息等待恢复。
+
+PDF layout 与消息 V2 必须按兼容窗口发布：先发布支持 `include_layout=true` 的 LinkParse 并验证旧默认请求仍兼容，再启动连接 V2 topology 的新 LinkCV Worker，确认 V2 queue 只有新消费者后才替换 FastAPI 生产者。V1 exchange、queue 和 DLT 在确认旧队列无在途/重试消息且观察窗口结束前保留，不自动删除；若新 FastAPI 误连旧 LinkParse，PDF 导入会安全失败为 `RESUME_LAYOUT_UNSUPPORTED`，不得回退到旧 Markdown 成功路径。
 
 模板创建与异步导入是同一版本的跨端契约，Web、FastAPI、Worker 和迁移必须一起发布。执行 `0017` 前先运行 `uv run --directory apps/backend python scripts/release/cleanup_legacy_resume_imports.py` 获取 dry-run 清单，人工确认后再加 `--execute`；旧导入未归零时迁移会拒绝继续。
 

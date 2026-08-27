@@ -114,6 +114,16 @@ describe("统一简历打印文档", () => {
     expect(html).not.toContain('<a href="mailto:');
   });
 
+  it("把持久化强调色写入分享与 PDF 共用的打印根节点", () => {
+    const html = renderResumePrintDocument(createResumeRenderRequest(
+      "强调色",
+      defaultSemanticDocument,
+      { ...defaultSemanticStyle, accent_color: "#202632" },
+    ));
+
+    expect(html).toContain("--preview-accent:#202632");
+  });
+
   it("uses the manifest for columns and a non-persisted system avatar", () => {
     const style = {
       ...defaultSemanticStyle,

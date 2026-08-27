@@ -145,6 +145,15 @@ describe("template manifest composer", () => {
     expect(markdown.indexOf("张三")).toBeLessThan(markdown.indexOf("工作历程"));
   });
 
+  it("restores a basics block placed after the main column to canonical order", () => {
+    const columns = composeEditorDocumentForTemplate(document, columnsManifest, null, resumeDocument);
+    const restored = stripTemplateProjectionFromEditorDocument(columns, resumeDocument);
+    const flow = composeEditorDocumentForTemplate(columns, flowManifest, null, resumeDocument);
+
+    expect(restored).toEqual(document);
+    expect(editorDocumentToMarkdown(flow)).toBe(editorDocumentToMarkdown(document));
+  });
+
   it("renders a system fallback avatar without persisting it as user content", () => {
     const composed = composeEditorDocumentForTemplate(document, columnsManifest, null, resumeDocument);
     const serialized = JSON.stringify(composed);

@@ -13,10 +13,20 @@ class FakeLinkParse:
     def __init__(self) -> None:
         self.pdf_calls = 0
         self.docx_calls = 0
+        self.pdf_layout_requirements: list[bool] = []
 
-    async def parse_pdf(self, *, filename, content, operation_id, deadline_monotonic):
+    async def parse_pdf(
+        self,
+        *,
+        filename,
+        content,
+        operation_id,
+        deadline_monotonic,
+        require_layout=False,
+    ):
         del content, operation_id, deadline_monotonic
         self.pdf_calls += 1
+        self.pdf_layout_requirements.append(require_layout)
         return DocumentMarkdownResult(
             markdown="# PDF",
             source_file_name=filename,
@@ -39,7 +49,13 @@ class FakeLinkParse:
         )
 
 
-def convert(instance: DocumentConverter, filename: str, content: bytes):
+def convert(
+    instance: DocumentConverter,
+    filename: str,
+    content: bytes,
+    *,
+    require_pdf_layout: bool = False,
+):
     content_types = {
         "md": "text/markdown",
         "txt": "text/plain",
@@ -54,6 +70,7 @@ def convert(instance: DocumentConverter, filename: str, content: bytes):
             content=content,
             operation_id="operation",
             deadline_monotonic=monotonic() + 120,
+            require_pdf_layout=require_pdf_layout,
         )
     )
 
@@ -78,6 +95,21 @@ def test_dispatcher_keeps_markdown_local_and_routes_docx_and_pdf_to_linkparse() 
     assert pdf.parser == "fake-linkparse"
     assert linkparse.docx_calls == 1
     assert linkparse.pdf_calls == 1
+    assert linkparse.pdf_layout_requirements == [False]
+
+
+def test_dispatcher_only_requests_pdf_layout_when_caller_opts_in() -> None:
+    linkparse = FakeLinkParse()
+    instance = DocumentConverter(linkparse=linkparse, markdown_max_bytes=1024)
+
+    convert(
+        instance,
+        "resume.pdf",
+        b"%PDF-fixture",
+        require_pdf_layout=True,
+    )
+
+    assert linkparse.pdf_layout_requirements == [True]
 
 
 def test_txt_is_normalized_locally() -> None:
