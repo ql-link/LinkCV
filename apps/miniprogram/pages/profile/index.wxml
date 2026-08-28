@@ -32,9 +32,9 @@
       </view>
 
       <!-- 用户昵称与状态 -->
-      <view class="profile-info" bindtap="goLogin" wx:if="{{guest}}">
+      <view class="profile-info" wx:if="{{guest}}">
         <view class="name-line">
-          <text class="user-name">点击登录 / 注册</text>
+          <text class="user-name">点击左侧头像登录 / 注册</text>
           <view class="status-pill is-guest">
             <text class="status-dot"></text>
             <text>未登录</text>
@@ -119,7 +119,7 @@
         </view>
         <view class="settings-card">
           <!-- 微信账号授权状态 -->
-          <view class="setting-row" bindtap="{{guest ? 'goLogin' : ''}}">
+          <view class="setting-row">
             <view class="setting-label-col">
               <text class="setting-label">微信账号</text>
             </view>
@@ -127,7 +127,6 @@
               <view class="badge-tag {{guest ? 'is-muted' : 'is-success'}}">
                 <text>{{guest ? '未登录' : '已授权绑定'}}</text>
               </view>
-              <text class="arrow-icon" wx:if="{{guest}}">›</text>
             </view>
           </view>
 
@@ -165,12 +164,9 @@
       <!-- 提示信息 -->
       <text class="form-message" wx:if="{{message && !guest}}">{{message}}</text>
 
-      <!-- 底部操作主按钮：访客态展示登录按钮 / 登录态有修改时展示“保存修改” -->
-      <view class="btn-group" wx:if="{{guest || hasChanges || (nickname && serverNickname && nickname !== serverNickname)}}">
-        <button class="btn-primary" hover-class="btn-primary-hover" bindtap="goLogin" wx:if="{{guest}}">
-          <text>微信登录 / 注册</text>
-        </button>
-        <button class="btn-primary" hover-class="btn-primary-hover" bindtap="handleSave" disabled="{{saving || loading}}" wx:else>
+      <!-- 底部操作主按钮：登录态有修改时展示“保存修改” -->
+      <view class="btn-group" wx:if="{{!guest && (hasChanges || (nickname && serverNickname && nickname !== serverNickname))}}">
+        <button class="btn-primary" hover-class="btn-primary-hover" bindtap="handleSave" disabled="{{saving || loading}}">
           <text>{{saving ? '正在保存…' : '保存修改'}}</text>
         </button>
       </view>
