@@ -42,20 +42,20 @@ const NAV_ITEMS: Array<{
     icon: FileText,
   },
   {
-    activeColor: "var(--ui-accent)",
-    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-accent) 24%, transparent) 0%, color-mix(in srgb, var(--ui-accent) 10%, transparent) 48%, transparent 76%)",
-    key: "assistant",
-    label: "AI 助手",
-    href: "/assistant",
-    icon: Sparkles,
-  },
-  {
     activeColor: "var(--ui-template-accent)",
     gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-template-accent) 24%, transparent) 0%, color-mix(in srgb, var(--ui-template-accent) 10%, transparent) 48%, transparent 76%)",
     key: "templates",
     label: "简历模板",
     href: "/templates",
     icon: LayoutTemplate,
+  },
+  {
+    activeColor: "var(--ui-accent)",
+    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-accent) 24%, transparent) 0%, color-mix(in srgb, var(--ui-accent) 10%, transparent) 48%, transparent 76%)",
+    key: "assistant",
+    label: "AI 助手",
+    href: "/assistant",
+    icon: Sparkles,
   },
   {
     activeColor: "var(--ui-career-accent)",

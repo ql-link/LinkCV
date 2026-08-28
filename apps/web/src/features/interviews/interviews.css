@@ -146,8 +146,41 @@
 .interview-schedule-layout { display: grid; gap: 14px; padding: 14px 24px 30px; }
 .schedule-page-actions { display: flex; min-width: 0; align-items: center; justify-content: flex-end; gap: 9px; }
 .schedule-page-actions .expandable-search { flex: 0 0 auto; }
-.schedule-week-range { display: inline-flex; min-height: 40px; align-items: center; gap: 8px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-md); background: var(--ui-surface); padding: 0 13px; color: var(--ui-text-secondary); font-size: 10px; font-weight: 600; white-space: nowrap; }
-.schedule-week-range svg { width: 14px; height: 14px; color: var(--ui-text-muted); }
+.schedule-toolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--ui-border);
+  padding: 12px 16px;
+}
+.schedule-toolbar-title,
+.schedule-toolbar-period,
+.schedule-toolbar-actions,
+.schedule-view-segment { display: flex; min-width: 0; align-items: center; }
+.schedule-toolbar-title { width: 156px; margin: 0; color: var(--ui-foreground); font-size: 14px; font-weight: 600; }
+.schedule-toolbar-period { justify-content: center; gap: 8px; }
+.schedule-toolbar-period strong { min-width: 154px; color: var(--ui-foreground); font-size: 13px; font-weight: 650; text-align: center; }
+.schedule-toolbar-period button {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid var(--ui-border);
+  border-radius: 50%;
+  background: var(--ui-surface);
+  color: var(--ui-text-secondary);
+  cursor: pointer;
+}
+.schedule-toolbar-period button:hover { border-color: var(--ui-border-strong); background: var(--ui-surface-subtle); }
+.schedule-toolbar-period button:focus-visible,
+.schedule-view-segment button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 2px; }
+.schedule-toolbar-period button svg { width: 15px; height: 15px; }
+.schedule-toolbar-actions { justify-content: flex-end; gap: 8px; }
+.schedule-view-segment { overflow: hidden; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-full); background: var(--ui-surface-subtle); padding: 2px; }
+.schedule-view-segment button { min-height: 28px; border: 0; border-radius: var(--ui-radius-full); background: transparent; padding: 0 10px; color: var(--ui-text-muted); font-size: 10px; cursor: pointer; }
+.schedule-view-segment button[aria-pressed="true"] { background: var(--ui-surface); box-shadow: var(--ui-shadow-xs); color: var(--ui-foreground); font-weight: 650; }
 
 .calendar-red { --calendar-color: #ff3b30; --calendar-soft: color-mix(in srgb, #ff3b30 15%, var(--ui-surface)); }
 .calendar-orange { --calendar-color: #ff9500; --calendar-soft: color-mix(in srgb, #ff9500 16%, var(--ui-surface)); }
@@ -160,7 +193,7 @@
 
 .schedule-calendar-panel { min-width: 0; overflow-x: auto; overflow-y: hidden; border-radius: var(--ui-radius-lg); }
 .week-calendar { min-width: 1050px; }
-.week-calendar-head { display: grid; height: 54px; grid-template-columns: 58px repeat(7, 1fr); align-items: center; border-bottom: 1px solid var(--ui-border); color: var(--ui-text-secondary); font-size: 10px; text-align: center; }
+.week-calendar-head { display: grid; height: 56px; grid-template-columns: 58px repeat(7, 1fr); align-items: center; border-bottom: 1px solid var(--ui-border); color: var(--ui-text-secondary); font-size: 10px; text-align: center; }
 .week-calendar-head span.is-today { color: var(--ui-foreground); font-weight: 650; }
 .week-calendar-head span.is-today::after { content: ""; display: block; width: 25px; height: 2px; margin: 8px auto -10px; border-radius: 2px; background: var(--ui-primary); }
 .week-calendar-scroll { height: clamp(540px, calc(100vh - 320px), 640px); overflow-y: auto; overscroll-behavior: contain; scrollbar-color: var(--ui-border-strong) transparent; scrollbar-width: thin; }
@@ -195,8 +228,23 @@
     0 0 0 2px color-mix(in srgb, var(--calendar-color) 20%, transparent);
 }
 .week-event.is-dragging { opacity: 0.45; }
+.week-event.is-draft {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--ui-text-muted) 62%, var(--ui-border));
+  background: color-mix(in srgb, var(--ui-text-muted) 5%, var(--ui-surface));
+  box-shadow: none;
+  color: var(--ui-text-muted);
+  cursor: default;
+}
+.week-event.is-draft:hover { border-color: var(--ui-text-muted); }
+.week-event.is-draft .week-event-time { color: var(--ui-text-muted); }
+.week-event.is-draft .week-event-time i { background: var(--ui-text-muted); }
+.week-event.is-draft .week-event-company strong,
+.week-event.is-draft .week-event-company em { color: var(--ui-text-secondary); }
 .week-drop-preview { z-index: 1; align-self: stretch; margin: 2px; border: 1px dashed var(--calendar-color); border-radius: 3px; background: var(--calendar-soft); color: var(--calendar-color); pointer-events: none; }
 .week-drop-preview span { display: block; padding: 5px 7px; font-family: var(--ui-font-mono); font-size: 8px; font-variant-numeric: tabular-nums; }
+.week-drop-preview .week-drop-tooltip { width: max-content; max-width: calc(100% - 14px); border-radius: var(--ui-radius-xs); background: var(--ui-primary); padding: 4px 6px; color: var(--ui-primary-foreground); font-family: var(--ui-font-sans); font-size: 9px; font-weight: 650; }
+.week-drop-preview .week-drop-range { color: var(--calendar-color); }
 .week-event strong, .week-event span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .week-event .week-event-time { display: flex; align-items: center; gap: 5px; color: var(--ui-text-secondary); font-size: 9px; font-variant-numeric: tabular-nums; }
 .week-event-time i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--calendar-color); }
@@ -209,6 +257,26 @@
   font-style: normal;
   font-weight: 700;
 }
+.month-calendar { min-width: 0; overflow: hidden; }
+.month-calendar-head { display: grid; height: 44px; grid-template-columns: repeat(7, minmax(0, 1fr)); align-items: center; border-bottom: 1px solid var(--ui-border); color: var(--ui-text-muted); font-size: 10px; font-weight: 600; text-align: center; }
+.month-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: repeat(6, minmax(108px, 1fr)); }
+.month-day { min-width: 0; min-height: 108px; border-right: 1px solid var(--ui-border); border-bottom: 1px solid var(--ui-border); background: var(--ui-surface); padding: 8px; }
+.month-day:nth-child(7n) { border-right: 0; }
+.month-day.is-outside { background: var(--ui-surface-subtle); }
+.month-day.is-today { background: color-mix(in srgb, var(--ui-warning-subtle) 58%, var(--ui-surface)); }
+.month-day:focus-visible { position: relative; z-index: 1; outline: 2px solid var(--ui-ring); outline-offset: -2px; }
+.month-day-number { display: block; margin-bottom: 7px; color: var(--ui-foreground); font-size: 11px; font-weight: 650; }
+.month-day.is-outside .month-day-number { color: var(--ui-text-subtle); }
+.month-day.is-today .month-day-number { color: var(--ui-warning); }
+.month-day-events { display: grid; align-content: start; gap: 4px; }
+.month-event { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 5px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--calendar-color) 42%, var(--ui-border)); border-left: 3px solid var(--calendar-color); border-radius: var(--ui-radius-xs); background: var(--calendar-soft); padding: 5px 6px; color: var(--ui-foreground); text-align: left; cursor: pointer; }
+.month-event:hover { border-color: color-mix(in srgb, var(--calendar-color) 68%, var(--ui-border)); }
+.month-event:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 1px; }
+.month-event.is-selected { box-shadow: 0 0 0 2px color-mix(in srgb, var(--calendar-color) 22%, transparent); }
+.month-event span, .month-event strong, .month-event em { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.month-event span { color: var(--ui-text-secondary); font-family: var(--ui-font-mono); font-size: 8px; font-variant-numeric: tabular-nums; }
+.month-event strong { font-size: 9px; font-weight: 650; }
+.month-event em { color: var(--calendar-color); font-size: 8px; font-style: normal; font-weight: 650; }
 .current-time-line { position: absolute; z-index: 3; top: 51.2%; left: 0; right: 43%; height: 1px; background: var(--ui-destructive); }
 .current-time-line::after { position: absolute; right: -3px; top: -3px; width: 7px; height: 7px; border-radius: 50%; background: var(--ui-destructive); content: ""; }
 .current-time-line span { position: absolute; left: 5px; top: -9px; border-radius: var(--ui-radius-full); background: var(--ui-destructive); padding: 2px 5px; color: var(--ui-destructive-foreground); font-family: var(--ui-font-mono); font-size: 8px; }
@@ -247,7 +315,9 @@
 .schedule-dialog-card { overflow: hidden; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-lg); padding: 0 18px 18px; }
 .schedule-dialog-card > header { display: flex; min-height: 66px; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--ui-border); }
 .schedule-dialog-card > header h3 { margin: 0; font-size: 18px; }
-.schedule-dialog-card > header > div { display: flex; align-items: center; gap: 7px; }
+.schedule-dialog-card > header > div:first-child { display: block; min-width: 0; }
+.schedule-dialog-card > header h3 { color: var(--ui-foreground); }
+.schedule-dialog-card > header p { overflow: hidden; margin: 4px 0 0; color: var(--ui-text-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .schedule-stage-badge { display: inline-flex; align-items: center; border-radius: var(--ui-radius-xs); background: var(--calendar-soft); padding: 4px 8px; color: var(--calendar-color); font-size: 9px; font-weight: 650; }
 .schedule-dialog-loading { margin: 12px 0 0; border-radius: var(--ui-radius-sm); background: var(--ui-surface-muted); padding: 8px 10px; color: var(--ui-text-muted); font-size: 9px; }
 .schedule-dialog-details { display: grid; gap: 13px; margin: 16px 0; }
@@ -258,28 +328,12 @@
 .schedule-dialog-details a { color: var(--ui-accent); text-decoration: none; }
 .schedule-dialog-details a:hover { text-decoration: underline; }
 .schedule-dialog-details a:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 2px; }
-.schedule-dialog-application { display: grid; min-height: 54px; grid-template-columns: auto 112px minmax(0, 1fr) auto; align-items: center; gap: 10px; border-top: 1px solid var(--ui-border); border-bottom: 1px solid var(--ui-border); color: var(--ui-foreground); font-size: 10px; text-decoration: none; }
-.schedule-dialog-application > svg { width: 14px; height: 14px; color: var(--ui-text-muted); }
-.schedule-dialog-application strong { overflow: hidden; color: var(--ui-accent); text-overflow: ellipsis; white-space: nowrap; }
-.schedule-dialog-application:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: -2px; }
-.schedule-dialog-materials, .schedule-dialog-tasks { padding-top: 15px; }
-.schedule-dialog-materials h4, .schedule-dialog-tasks h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; color: var(--ui-text-secondary); font-size: 10px; font-weight: 550; }
-.schedule-dialog-materials h4 svg, .schedule-dialog-tasks h4 svg { width: 14px; height: 14px; color: var(--ui-text-muted); }
-.schedule-dialog-materials > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; padding-left: 24px; }
-.schedule-dialog-materials span { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); gap: 2px 8px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); padding: 9px; }
-.schedule-dialog-materials span > svg { width: 17px; height: 17px; grid-row: 1 / 3; color: var(--ui-destructive); }
-.schedule-dialog-materials b, .schedule-dialog-materials small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.schedule-dialog-materials b { font-size: 9px; font-weight: 550; }
-.schedule-dialog-materials small { color: var(--ui-text-muted); font-size: 8px; }
-.schedule-dialog-tasks ul { display: grid; gap: 10px; margin: 0; padding: 0 0 0 24px; list-style: none; }
-.schedule-dialog-tasks li { display: flex; align-items: center; gap: 9px; color: var(--ui-text-secondary); font-size: 9px; }
-.schedule-dialog-tasks li svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--ui-text-muted); }
-.schedule-dialog-tasks li:nth-child(-n+2) svg { color: var(--ui-success); }
 .schedule-dialog-footer { gap: 9px; }
-.schedule-dialog-footer .ui-button { min-width: 96px; }
-.schedule-dialog-join { display: inline-flex; min-width: 96px; min-height: 40px; align-items: center; justify-content: center; border-radius: var(--ui-radius-md); background: var(--ui-primary); padding: 0 16px; color: var(--ui-primary-foreground); font-size: 12px; font-weight: 650; text-decoration: none; }
-.schedule-dialog-join:hover { background: var(--ui-primary-hover); }
-.schedule-dialog-join:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 2px; }
+.schedule-dialog-footer .ui-button { min-width: 64px; }
+.schedule-dialog-record-link { display: inline-flex; min-width: 122px; min-height: 40px; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--ui-border-strong); border-radius: 999px; background: var(--ui-surface); padding: 0 14px; color: var(--ui-foreground); font-size: 12px; font-weight: 650; text-decoration: none; }
+.schedule-dialog-record-link:hover { border-color: var(--ui-foreground); background: var(--ui-surface-subtle); }
+.schedule-dialog-record-link:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 2px; }
+.schedule-dialog-record-link svg { width: 14px; height: 14px; }
 
 /* Records */
 .interview-records-layout { display: grid; grid-template-columns: 335px minmax(520px, 1fr) 290px; gap: 10px; padding: 0 24px; }
@@ -418,21 +472,13 @@
 }
 
 .career-applications-controls { display: flex; min-width: 0; align-items: center; justify-content: flex-end; gap: 8px; }
-.career-process-search { position: relative; display: block; width: clamp(210px, 22vw, 300px); }
-.career-process-search input { width: 100%; height: 38px; box-sizing: border-box; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-full); background: var(--ui-surface); padding: 0 38px 0 14px; color: var(--ui-foreground); font: inherit; font-size: 10px; }
-.career-process-search input:focus-visible { border-color: var(--ui-ring); outline: 2px solid var(--ui-ring); outline-offset: 1px; }
-.career-process-search > svg { position: absolute; top: 50%; right: 13px; width: 16px; height: 16px; color: var(--ui-text-muted); transform: translateY(-50%); }
-.career-control-button { display: inline-flex; height: 38px; align-items: center; gap: 6px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-full); background: var(--ui-surface); padding: 0 13px; color: var(--ui-text-secondary); font-size: 10px; font-weight: 600; cursor: pointer; white-space: nowrap; }
-.career-control-button:hover { border-color: var(--ui-border-strong); }
-.career-control-button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 2px; }
-.career-control-button svg { width: 14px; height: 14px; }
 .career-filter-control { position: relative; }
 .career-filter-popover { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: grid; width: 130px; overflow: hidden; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-md); background: var(--ui-surface-elevated); box-shadow: var(--ui-shadow-sm); padding: 5px; }
 .career-filter-popover button { border: 0; border-radius: var(--ui-radius-xs); background: transparent; padding: 8px 9px; color: var(--ui-text-secondary); font-size: 10px; text-align: left; cursor: pointer; }
 .career-filter-popover button:hover, .career-filter-popover button[aria-pressed="true"] { background: var(--ui-surface-muted); color: var(--ui-foreground); }
 .career-filter-popover button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: -2px; }
-.career-view-switch { display: flex; border-radius: var(--ui-radius-full); background: var(--ui-surface-muted); padding: 3px; }
-.career-view-switch button { display: inline-flex; height: 32px; align-items: center; gap: 5px; border: 0; border-radius: var(--ui-radius-full); background: transparent; padding: 0 12px; color: var(--ui-text-muted); font-size: 10px; cursor: pointer; }
+.career-view-switch { display: grid; min-width: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--ui-border); border-radius: var(--ui-radius-full); background: var(--ui-surface-muted); padding: 3px; }
+.career-view-switch button { display: inline-flex; min-width: 0; height: 32px; align-items: center; justify-content: center; gap: 5px; overflow: hidden; border: 0; border-radius: var(--ui-radius-full); background: transparent; padding: 0 12px; color: var(--ui-text-muted); font-size: 10px; cursor: pointer; white-space: nowrap; }
 .career-view-switch button svg { width: 13px; height: 13px; }
 .career-view-switch button[aria-pressed="true"] { background: var(--ui-surface); box-shadow: var(--ui-shadow-xs); color: var(--ui-foreground); font-weight: 650; }
 .career-view-switch button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 1px; }
@@ -967,7 +1013,10 @@
   .progress-board-grid { grid-template-columns: repeat(5, minmax(196px, 1fr)); overflow-x: auto; padding-bottom: 4px; }
   .progress-column { min-width: 196px; }
   .schedule-page-actions { flex-wrap: nowrap; }
-  .schedule-week-range { flex: 1 1 auto; justify-content: center; }
+  .schedule-toolbar { flex-wrap: wrap; }
+  .schedule-toolbar-title { flex: 1 1 100%; width: auto; }
+  .schedule-toolbar-period { margin: 0 auto; }
+  .schedule-toolbar-actions { margin-left: auto; }
   .record-assets-column { grid-template-columns: 1fr 1fr; }
   .career-application-detail > dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -980,8 +1029,6 @@
   .career-card-action { min-height: 40px; }
   .career-applications-layout { padding: 14px 16px 30px; }
   .career-applications-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .career-process-search { width: 100%; grid-column: 1 / -1; }
-  .career-process-search input { height: 44px; font-size: 16px; }
   .career-control-button { justify-content: center; }
   .career-control-button, .career-view-switch button { min-height: 44px; }
   .career-view-switch { display: grid; grid-template-columns: 1fr 1fr; grid-column: 1 / -1; }
@@ -996,18 +1043,19 @@
   .interview-schedule-layout { overflow: visible; padding: 14px 16px 30px; }
   .schedule-page-actions { display: grid; grid-template-columns: auto minmax(0, 1fr); }
   .schedule-page-actions .expandable-search { justify-self: start; }
-  .schedule-week-range { min-height: 44px; }
   .schedule-page-actions .ui-button { width: 100%; grid-column: 1 / -1; }
   .interview-schedule-dialog { width: calc(100vw - 24px); max-height: calc(100vh - 24px); padding: 20px 16px; }
   .schedule-dialog-card { padding-inline: 14px; }
   .schedule-dialog-details > div { grid-template-columns: 1fr; gap: 4px; }
-  .schedule-dialog-application { grid-template-columns: auto minmax(0, 1fr) auto; }
-  .schedule-dialog-application > span { display: none; }
-  .schedule-dialog-materials > div { grid-template-columns: 1fr; padding-left: 0; }
-  .schedule-dialog-tasks ul { padding-left: 0; }
   .schedule-dialog-footer { display: grid; grid-template-columns: 1fr 1fr; }
-  .schedule-dialog-footer .ui-button, .schedule-dialog-join { width: 100%; }
+  .schedule-dialog-footer .ui-button, .schedule-dialog-record-link { width: 100%; }
   .schedule-calendar-panel { overflow-x: auto; }
+  .schedule-toolbar { align-items: stretch; padding: 11px 12px; }
+  .schedule-toolbar-title { width: 100%; }
+  .schedule-toolbar-period { flex: 1 1 100%; justify-content: space-between; }
+  .schedule-toolbar-period strong { flex: 1; }
+  .schedule-toolbar-actions { width: 100%; flex-wrap: wrap; margin-left: 0; }
+  .month-calendar { min-width: 760px; }
   .interview-records-layout { grid-template-columns: minmax(0, 1fr); overflow: visible; }
   .records-empty-layout { padding: 14px 16px 30px; }
   .record-assets-column { display: grid; grid-column: auto; grid-template-columns: 1fr; }
@@ -1095,26 +1143,26 @@
   padding-inline: 24px;
 }
 
-.career-module-header .career-process-search { width: 260px; }
-
 .career-applications-layout {
   gap: 16px;
   padding: 24px 24px 48px;
 }
 
 .career-applications-controls {
+  align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
 
-.career-process-search input,
-.career-control-button {
-  min-height: 40px;
+.career-applications-controls .career-view-switch {
+  width: 172px;
+  flex: 0 0 172px;
 }
 
-.career-view-switch button {
-  min-height: 40px;
-  height: 40px;
+.career-applications-controls .career-view-switch button {
+  min-height: 28px;
+  height: 28px;
+  padding-inline: 7px;
 }
 
 .career-applications-list-surface,
@@ -1122,40 +1170,17 @@
   overflow: hidden;
 }
 
-.career-record-toolbar {
+.career-subnav-row {
   display: flex;
+  min-width: 0;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  min-height: 32px;
+  border-bottom: 1px solid var(--ui-border);
 }
 
-.career-record-toolbar .career-view-switch button,
-.career-record-toolbar .career-control-button {
-  min-height: 32px;
-  height: 32px;
-}
-
-.career-record-toolbar .career-view-switch { padding: 0; }
-
-.career-record-toolbar h2 {
-  margin: 0;
-  color: var(--ui-foreground);
-  font-size: 17px;
-  font-weight: 700;
-}
-
-.career-record-toolbar h2 span {
-  margin-left: 5px;
-  color: var(--ui-text-muted);
-  font-size: 13px;
-  font-weight: 550;
-}
-
-.career-record-toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.career-subnav-row > .career-subnav {
+  min-width: 0;
+  flex: 1 1 auto;
+  border-bottom: 0;
 }
 
 .career-application-filter-count {
@@ -1184,8 +1209,11 @@
   font-weight: 650;
 }
 
+.career-application-list [role="columnheader"],
 .career-application-list [role="cell"] {
   min-width: 0;
+  justify-self: stretch;
+  text-align: center;
   overflow-wrap: anywhere;
 }
 
@@ -1228,12 +1256,14 @@
   display: grid;
   width: max-content;
   min-width: 100%;
+  min-height: calc(100dvh - 260px);
   grid-template-columns: repeat(6, minmax(180px, 1fr));
   gap: 12px;
+  align-items: stretch;
 }
 
 .progress-column {
-  min-height: 470px;
+  min-height: 0;
   border-radius: var(--ui-radius-lg);
   padding: 12px;
   transition: none;
@@ -1379,19 +1409,13 @@
 
 @media (max-width: 640px) {
   .page-hero.is-module.career-module-header { padding-inline: 16px; }
-  .career-module-header .career-process-search { width: 100%; }
   .career-applications-layout { padding: 16px 16px 30px; }
-  .career-applications-controls { width: 100%; justify-content: stretch; gap: 6px; }
-  .career-process-search { width: 100%; flex: 1 1 100%; }
-  .career-process-search input { height: 40px; }
-  .career-control-button { flex: 1 1 auto; }
-  .career-view-switch { flex: 1 1 auto; }
+  .career-applications-controls { display: flex; width: 100%; justify-content: stretch; gap: 6px; }
+  .career-applications-controls .career-view-switch { width: min(172px, 100%); flex: 0 1 172px; }
   .career-view-switch button { flex: 1 1 50%; padding-inline: 8px; }
   .career-applications-controls > .ui-button { flex: 1 1 100%; }
-  .career-record-toolbar { align-items: flex-start; flex-direction: column; }
-  .career-record-toolbar-actions { width: 100%; flex-wrap: wrap; }
-  .career-record-toolbar-actions .career-view-switch { flex: 1 1 auto; }
-  .career-record-toolbar-actions .career-sort-button { flex: 0 0 auto; }
+  .career-subnav-row { flex-wrap: wrap; }
+  .career-subnav-row > .career-subnav { flex: 1 1 100%; }
   .career-application-list { min-width: 920px; }
   .career-application-list > div { gap: 12px; padding-inline: 16px; }
   .progress-board-grid { grid-template-columns: repeat(6, minmax(168px, 1fr)); }

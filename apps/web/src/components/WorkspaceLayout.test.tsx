@@ -18,6 +18,10 @@ describe("WorkspaceNavigation", () => {
     expect(brandLink).toHaveClass("no-underline", "hover:no-underline");
     expect(brandLink.querySelector(".ui-brand-wordmark")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "岗位库" })).not.toBeInTheDocument();
+    expect(
+      Array.from(screen.getByRole("navigation", { name: "工作区导航" }).querySelectorAll("a"))
+        .map((link) => link.getAttribute("href")),
+    ).toEqual(["/resumes", "/templates", "/assistant", "/career/applications", "/datasets"]);
     const resumesLink = screen.getByRole("link", { name: "我的简历" });
     const assistantLink = screen.getByRole("link", { name: "AI 助手" });
     const templatesLink = screen.getByRole("link", { name: "简历模板" });
