@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Barrier, Event
 from time import sleep
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -33,13 +34,35 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0035"
+EXPECTED_HEAD = "0044"
+
+
+def canonical_editor_markdown(data: dict[str, Any]) -> str:
+    sections = data["sections"]
+    assert isinstance(sections, dict)
+    custom_sections = sections["custom_sections"]
+    assert isinstance(custom_sections, list)
+    custom_by_id = {section["id"]: section for section in custom_sections}
+    semantic_sections = data["semantic_sections"]
+    assert isinstance(semantic_sections, list)
+    parts: list[str] = []
+    for semantic in semantic_sections:
+        assert semantic["content_key"] == "custom_sections"
+        custom = custom_by_id[semantic["custom_section_id"]]
+        body = "\n\n".join(item["content"]["content"] for item in custom["items"])
+        if semantic["semantic_kind"] == "basics":
+            parts.append(body)
+        else:
+            parts.append(f"## {semantic['display_title']}\n\n{body}")
+    return "\n\n".join(parts)
 
 
 def migration_test_url() -> str:
     raw = os.environ.get("LINKCV_TEST_MYSQL_URL")
     if not raw:
-        pytest.skip("LINKCV_TEST_MYSQL_URL is required for destructive MySQL migration tests")
+        pytest.skip(
+            "LINKCV_TEST_MYSQL_URL is required for destructive MySQL migration tests"
+        )
     url = make_url(raw)
     if url.database != "linkcv" or url.host not in {"127.0.0.1", "localhost"}:
         pytest.fail(
@@ -153,13 +176,10 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         assert proposal_columns[json_column]["type"].__class__.__name__ == "JSON"
     assert "ck_resume_change_proposals_mode" in {
         constraint["name"]
-        for constraint in inspector.get_check_constraints(
-            "resume_change_proposals"
-        )
+        for constraint in inspector.get_check_constraints("resume_change_proposals")
     }
     message_columns = {
-        column["name"]: column
-        for column in inspector.get_columns("agent_messages")
+        column["name"]: column for column in inspector.get_columns("agent_messages")
     }
     assert {"message_type", "metadata_json"} <= set(message_columns)
     assert message_columns["message_type"]["nullable"] is False
@@ -222,8 +242,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "created_at",
     }
     assert {
-        column["name"]
-        for column in inspector.get_columns("document_parse_tasks")
+        column["name"] for column in inspector.get_columns("document_parse_tasks")
     } == {
         "id",
         "source_type",
@@ -270,8 +289,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     }
     assert set(task_foreign_keys) == {"fk_document_parse_tasks_user"}
     assert {
-        constraint["name"]
-        for constraint in inspector.get_unique_constraints("resumes")
+        constraint["name"] for constraint in inspector.get_unique_constraints("resumes")
     } == {"uk_resumes_parse_task_id", "uk_resumes_share_token"}
     assert all(
         "parse_task_id" not in foreign_key["constrained_columns"]
@@ -291,9 +309,9 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     assert "storage_cleanup_jobs" not in inspector.get_table_names()
     assert "resume_imports" not in inspector.get_table_names()
 
-    assert {constraint["name"] for constraint in inspector.get_unique_constraints("users")} == {
-        "uk_users_email"
-    }
+    assert {
+        constraint["name"] for constraint in inspector.get_unique_constraints("users")
+    } == {"uk_users_email"}
     user_columns = {column["name"]: column for column in inspector.get_columns("users")}
     resume_columns = {
         column["name"]: column for column in inspector.get_columns("resumes")
@@ -307,7 +325,9 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     assert resume_columns["data_json"]["type"].__class__.__name__ == "JSON"
     assert resume_columns["style_json"]["type"].__class__.__name__ == "JSON"
     assert resume_columns["created_at"]["type"].fsp == 6
-    assert {constraint["name"] for constraint in inspector.get_check_constraints("users")} == {
+    assert {
+        constraint["name"] for constraint in inspector.get_check_constraints("users")
+    } == {
         "ck_users_is_admin",
         "ck_users_status",
     }
@@ -329,9 +349,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         foreign_key["name"]: foreign_key
         for foreign_key in inspector.get_foreign_keys("resumes")
     }
-    assert resume_foreign_keys["fk_resumes_user"]["constrained_columns"] == [
-        "user_id"
-    ]
+    assert resume_foreign_keys["fk_resumes_user"]["constrained_columns"] == ["user_id"]
     assert resume_foreign_keys["fk_resumes_user"]["referred_table"] == "users"
     assert resume_foreign_keys["fk_resumes_template"]["constrained_columns"] == [
         "template_id"
@@ -341,8 +359,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         == "resume_templates"
     )
     assert (
-        resume_foreign_keys["fk_resumes_template"]["options"]["ondelete"]
-        == "SET NULL"
+        resume_foreign_keys["fk_resumes_template"]["options"]["ondelete"] == "SET NULL"
     )
     with engine.connect() as connection:
         assert set(
@@ -354,7 +371,6 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
             )
         ) == {
             "administrative-sidebar-cn",
-            "blank-cn",
             "campus-professional-cn",
             "classic-cn",
             "classic-technical-cn",
@@ -367,7 +383,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
             text(
                 "SELECT `key`, data_json, style_json FROM resume_templates "
                 "WHERE `key` IN "
-                "('administrative-sidebar-cn', 'blank-cn', 'campus-professional-cn', "
+                "('administrative-sidebar-cn', 'campus-professional-cn', "
                 "'classic-cn', 'classic-technical-cn', 'civic-service-cn', "
                 "'creative-orange-cn', 'modern-two-column-cn', 'compact-tech-cn')"
             )
@@ -383,10 +399,15 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
                 else row["style_json"]
             )
             parse_resume_snapshot(data_json, style_json)
-            if "custom_sections" in data_json["sections"]:
-                editor_markdown = data_json["sections"]["custom_sections"][0][
-                    "items"
-                ][0]["content"]["content"]
+            if data_json["semantic_sections"] and all(
+                section["content_key"] == "custom_sections"
+                for section in data_json["semantic_sections"]
+            ):
+                editor_markdown = canonical_editor_markdown(data_json)
+                assert "简历正文" not in {
+                    section["display_title"]
+                    for section in data_json["semantic_sections"]
+                }
             if row["key"] in {
                 "modern-two-column-cn",
                 "compact-tech-cn",
@@ -397,6 +418,16 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
             if row["key"] == "classic-technical-cn":
                 assert style_json["smart_one_page"] is True
                 assert style_json["template_key"] == "classic-technical-cn"
+                assert style_json["font_size"] == 9.5
+                assert style_json["line_height"] == 1.25
+                assert style_json["accent_color"] == "#202632"
+                assert style_json["page"] == {
+                    "size": "A4",
+                    "margin_top_mm": 9.0,
+                    "margin_right_mm": 11.0,
+                    "margin_bottom_mm": 9.0,
+                    "margin_left_mm": 11.0,
+                }
                 assert "# 张三" in editor_markdown
                 assert "zhangsan@example.com" in editor_markdown
                 assert "极昼气象服务有限公司" in editor_markdown
@@ -473,10 +504,13 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
             text("DELETE FROM resume_templates WHERE id = :template_id"),
             {"template_id": template_id},
         )
-        assert connection.scalar(
-            text("SELECT template_id FROM resumes WHERE id = :resume_id"),
-            {"resume_id": resume_id},
-        ) is None
+        assert (
+            connection.scalar(
+                text("SELECT template_id FROM resumes WHERE id = :resume_id"),
+                {"resume_id": resume_id},
+            )
+            is None
+        )
 
     run_alembic(database_url, "upgrade", "head")
     run_alembic(database_url, "check")
@@ -509,9 +543,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "created_at",
         "updated_at",
     }
-    assert {
-        column["name"] for column in inspector.get_columns("resume_templates")
-    } == {
+    assert {column["name"] for column in inspector.get_columns("resume_templates")} == {
         "id",
         "key",
         "name",
@@ -539,9 +571,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "created_at",
         "updated_at",
     }
-    assert {
-        column["name"] for column in inspector.get_columns("resume_versions")
-    } == {
+    assert {column["name"] for column in inspector.get_columns("resume_versions")} == {
         "id",
         "resume_id",
         "version_no",
@@ -570,12 +600,9 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "updated_at",
     }
     assert {
-        column["name"]
-        for column in inspector.get_columns("llm_capability_bindings")
+        column["name"] for column in inspector.get_columns("llm_capability_bindings")
     } == {"capability", "model_config_id", "created_at", "updated_at"}
-    assert {
-        column["name"] for column in inspector.get_columns("llm_call_logs")
-    } == {
+    assert {column["name"] for column in inspector.get_columns("llm_call_logs")} == {
         "id",
         "call_id",
         "capability",
@@ -647,9 +674,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "error_code": "非敏感稳定错误码",
         "created_at": "调用创建时间（UTC）",
     }
-    user_columns = {
-        column["name"]: column for column in inspector.get_columns("users")
-    }
+    user_columns = {column["name"]: column for column in inspector.get_columns("users")}
     resume_columns = {
         column["name"]: column for column in inspector.get_columns("resumes")
     }
@@ -672,22 +697,20 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     assert str(call_columns["source"]["default"]).strip("'") == "connection_test"
     assert call_columns["created_at"]["type"].fsp == 6
     assert {
-        constraint["name"]
-        for constraint in inspector.get_unique_constraints("users")
+        constraint["name"] for constraint in inspector.get_unique_constraints("users")
     } == {"uk_users_email"}
     assert {
         constraint["name"] for constraint in inspector.get_check_constraints("users")
     } == {"ck_users_is_admin", "ck_users_status"}
     assert {
-        constraint["name"]
-        for constraint in inspector.get_check_constraints("resumes")
-        } == {
-            "ck_resumes_lock_version",
-            "ck_resumes_share_fields",
-            "ck_resumes_share_visibility",
-            "ck_resumes_source_type",
-            "ck_resumes_title_not_blank",
-        }
+        constraint["name"] for constraint in inspector.get_check_constraints("resumes")
+    } == {
+        "ck_resumes_lock_version",
+        "ck_resumes_share_fields",
+        "ck_resumes_share_visibility",
+        "ck_resumes_source_type",
+        "ck_resumes_title_not_blank",
+    }
     assert {
         constraint["name"]
         for constraint in inspector.get_check_constraints("llm_call_logs")
@@ -767,9 +790,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         foreign_key["name"]: foreign_key
         for foreign_key in inspector.get_foreign_keys("resumes")
     }
-    assert resume_foreign_keys["fk_resumes_user"]["constrained_columns"] == [
-        "user_id"
-    ]
+    assert resume_foreign_keys["fk_resumes_user"]["constrained_columns"] == ["user_id"]
     assert resume_foreign_keys["fk_resumes_user"]["referred_table"] == "users"
     assert resume_foreign_keys["fk_resumes_template"]["constrained_columns"] == [
         "template_id"
@@ -785,34 +806,43 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     assert call_foreign_keys["fk_llm_call_logs_user_id_users"][
         "constrained_columns"
     ] == ["user_id"]
-    assert call_foreign_keys["fk_llm_call_logs_user_id_users"][
-        "referred_table"
-    ] == "users"
-    assert call_foreign_keys[
-        "fk_llm_call_logs_model_config_id_llm_model_configs"
-    ]["constrained_columns"] == ["model_config_id"]
-    assert call_foreign_keys[
-        "fk_llm_call_logs_model_config_id_llm_model_configs"
-    ]["referred_table"] == "llm_model_configs"
+    assert (
+        call_foreign_keys["fk_llm_call_logs_user_id_users"]["referred_table"] == "users"
+    )
+    assert call_foreign_keys["fk_llm_call_logs_model_config_id_llm_model_configs"][
+        "constrained_columns"
+    ] == ["model_config_id"]
+    assert (
+        call_foreign_keys["fk_llm_call_logs_model_config_id_llm_model_configs"][
+            "referred_table"
+        ]
+        == "llm_model_configs"
+    )
 
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == EXPECTED_HEAD
-        assert connection.scalar(
-            text("SELECT is_admin FROM users WHERE id = :user_id"),
-            {"user_id": user_id},
-        ) == 0
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version"))
+            == EXPECTED_HEAD
+        )
+        assert (
+            connection.scalar(
+                text("SELECT is_admin FROM users WHERE id = :user_id"),
+                {"user_id": user_id},
+            )
+            == 0
+        )
         assert connection.scalar(text("SELECT COUNT(*) FROM users")) == 1
-        assert connection.scalar(text("SELECT COUNT(*) FROM resume_templates")) == 9
-        assert connection.scalar(
-            text("SELECT COUNT(*) FROM resume_templates WHERE is_active = 1")
-        ) == 9
+        assert connection.scalar(text("SELECT COUNT(*) FROM resume_templates")) == 8
+        assert (
+            connection.scalar(
+                text("SELECT COUNT(*) FROM resume_templates WHERE is_active = 1")
+            )
+            == 8
+        )
         assert connection.scalar(text("SELECT COUNT(*) FROM resumes")) == 1
         assert connection.scalar(text("SELECT COUNT(*) FROM resume_versions")) == 1
         assert connection.execute(
-            text(
-                "SELECT capability, model_config_id "
-                "FROM llm_capability_bindings"
-            )
+            text("SELECT capability, model_config_id FROM llm_capability_bindings")
         ).one() == ("chat", None)
 
     run_alembic(database_url, "upgrade", "head")
@@ -882,6 +912,643 @@ def test_storage_cleanup_forward_migration_refuses_pending_tasks() -> None:
         engine.dispose()
 
 
+def test_0036_preflight_failure_keeps_every_snapshot_unmodified() -> None:
+    database_url = migration_test_url()
+    engine = create_engine(database_url)
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0035")
+    with engine.begin() as connection:
+        template_ids = connection.scalars(
+            text("SELECT id FROM resume_templates ORDER BY id LIMIT 2")
+        ).all()
+        assert len(template_ids) == 2
+        connection.execute(
+            text(
+                "UPDATE resume_templates SET data_json = JSON_SET(data_json, '$.schema_version', 'unsupported') "
+                "WHERE id = :id"
+            ),
+            {"id": template_ids[1]},
+        )
+
+    refused = invoke_alembic(database_url, "upgrade", "0036")
+    assert refused.returncode != 0
+    with engine.connect() as connection:
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0035"
+        )
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.schema_version')) "
+                    "FROM resume_templates WHERE id = :id"
+                ),
+                {"id": template_ids[0]},
+            )
+            == "1.0"
+        )
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.schema_version')) "
+                    "FROM resume_templates WHERE id = :id"
+                ),
+                {"id": template_ids[1]},
+            )
+            == "unsupported"
+        )
+    engine.dispose()
+
+
+def test_0037_preflight_failure_keeps_official_templates_unmodified() -> None:
+    database_url = migration_test_url()
+    engine = create_engine(database_url)
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0036")
+    with engine.begin() as connection:
+        before = connection.execute(
+            text(
+                "SELECT data_json, style_json FROM resume_templates "
+                "WHERE `key` = 'administrative-sidebar-cn'"
+            )
+        ).one()
+        connection.execute(
+            text(
+                "UPDATE resume_templates SET data_json = JSON_SET("
+                "data_json, '$.sections.custom_sections[0].items[0].content.content', '') "
+                "WHERE `key` = 'classic-technical-cn'"
+            )
+        )
+
+    refused = invoke_alembic(database_url, "upgrade", "0037")
+    assert refused.returncode != 0
+    with engine.connect() as connection:
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0036"
+        )
+        after = connection.execute(
+            text(
+                "SELECT data_json, style_json FROM resume_templates "
+                "WHERE `key` = 'administrative-sidebar-cn'"
+            )
+        ).one()
+        assert after == before
+    engine.dispose()
+
+
+def test_0038_preflight_failure_keeps_official_templates_unmodified() -> None:
+    database_url = migration_test_url()
+    engine = create_engine(database_url)
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0037")
+    with engine.begin() as connection:
+        before = connection.execute(
+            text(
+                "SELECT data_json, style_json FROM resume_templates "
+                "WHERE `key` = 'administrative-sidebar-cn'"
+            )
+        ).one()
+        connection.execute(
+            text(
+                "UPDATE resume_templates SET data_json = JSON_SET("
+                "data_json, '$.semantic_sections[0].content_key', 'basics', "
+                "'$.semantic_sections[0].custom_section_id', NULL) "
+                "WHERE `key` = 'classic-technical-cn'"
+            )
+        )
+
+    refused = invoke_alembic(database_url, "upgrade", "0038")
+    assert refused.returncode != 0
+    with engine.connect() as connection:
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0037"
+        )
+        after = connection.execute(
+            text(
+                "SELECT data_json, style_json FROM resume_templates "
+                "WHERE `key` = 'administrative-sidebar-cn'"
+            )
+        ).one()
+        assert after == before
+    engine.dispose()
+
+
+def test_0039_preflight_failure_keeps_official_templates_unmodified() -> None:
+    database_url = migration_test_url()
+    engine = create_engine(database_url)
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0038")
+    with engine.begin() as connection:
+        before = connection.execute(
+            text(
+                "SELECT data_json, style_json FROM resume_templates "
+                "WHERE `key` = 'administrative-sidebar-cn'"
+            )
+        ).one()
+        connection.execute(
+            text(
+                "UPDATE resume_templates SET data_json = JSON_SET("
+                "data_json, '$.semantic_sections[0].custom_section_id', 'missing_section') "
+                "WHERE `key` = 'classic-technical-cn'"
+            )
+        )
+
+    refused = invoke_alembic(database_url, "upgrade", "0039")
+    assert refused.returncode != 0
+    with engine.connect() as connection:
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0038"
+        )
+        after = connection.execute(
+            text(
+                "SELECT data_json, style_json FROM resume_templates "
+                "WHERE `key` = 'administrative-sidebar-cn'"
+            )
+        ).one()
+        assert after == before
+    engine.dispose()
+
+
+def test_0040_repairs_existing_official_column_template_manifest() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0039")
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        style_value = connection.scalar(
+            text(
+                "SELECT style_json FROM resume_templates "
+                "WHERE `key` = 'administrative-sidebar-cn'"
+            )
+        )
+        style = json.loads(style_value) if isinstance(style_value, str) else style_value
+        sidebar_index = next(
+            index
+            for index, slot in enumerate(style["manifest"]["slots"])
+            if slot["region_id"] == "sidebar"
+        )
+        accepts = style["manifest"]["slots"][sidebar_index]["accepts"]
+        if "basics" not in accepts:
+            accepts.insert(0, "basics")
+        connection.execute(
+            text(
+                "UPDATE resume_templates SET style_json = :style_json "
+                "WHERE `key` = 'administrative-sidebar-cn'"
+            ),
+            {"style_json": json.dumps(style, ensure_ascii=False)},
+        )
+
+    run_alembic(database_url, "upgrade", "0040")
+    with engine.connect() as connection:
+        repaired_value = connection.scalar(
+            text(
+                "SELECT style_json FROM resume_templates "
+                "WHERE `key` = 'administrative-sidebar-cn'"
+            )
+        )
+        repaired = (
+            json.loads(repaired_value)
+            if isinstance(repaired_value, str)
+            else repaired_value
+        )
+        sidebar = next(
+            slot
+            for slot in repaired["manifest"]["slots"]
+            if slot["region_id"] == "sidebar"
+        )
+        assert "basics" not in sidebar["accepts"]
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0040"
+    engine.dispose()
+
+
+def test_0041_removes_official_template_page_projection_without_losing_content() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0040")
+    engine = create_engine(database_url)
+    with engine.connect() as connection:
+        before_value = connection.scalar(
+            text(
+                "SELECT data_json FROM resume_templates "
+                "WHERE `key` = 'administrative-sidebar-cn'"
+            )
+        )
+        before = json.loads(before_value) if isinstance(before_value, str) else before_value
+        assert ":::: sidebar" in canonical_editor_markdown(before)
+
+    run_alembic(database_url, "upgrade", "0041")
+    with engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT data_json, style_json FROM resume_templates "
+                "WHERE `key` = 'administrative-sidebar-cn'"
+            )
+        ).one()
+        data = json.loads(row.data_json) if isinstance(row.data_json, str) else row.data_json
+        style = json.loads(row.style_json) if isinstance(row.style_json, str) else row.style_json
+        snapshot = parse_resume_snapshot(data, style)
+        markdown = canonical_editor_markdown(data)
+        sidebar = next(
+            slot
+            for slot in snapshot.style.manifest.slots
+            if slot.region_id == "sidebar"
+        )
+
+        assert ":::: sidebar" not in markdown
+        assert ":::: main" not in markdown
+        assert {"profile", "skills", "interests"} <= {
+            section.semantic_kind for section in snapshot.data.semantic_sections
+        }
+        assert {"profile", "interests"} <= set(sidebar.accepts)
+        assert "维护会议、采购、合同与固定资产台账" in markdown
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0041"
+    engine.dispose()
+
+
+def test_0042_deletes_blank_template_without_deleting_resumes_and_restores_layout() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0041")
+    engine = create_engine(database_url)
+
+    def json_object(value: object) -> dict[str, Any]:
+        decoded = json.loads(value) if isinstance(value, str) else value
+        assert isinstance(decoded, dict)
+        return decoded
+
+    with engine.begin() as connection:
+        user_id = connection.execute(
+            text(
+                "INSERT INTO users (email, password_hash, nickname) "
+                "VALUES ('template-retirement@example.invalid', '$2b$12$fictional', '张三')"
+            )
+        ).lastrowid
+        templates = {
+            row.key: row
+            for row in connection.execute(
+                text(
+                    "SELECT id, `key`, data_json, style_json FROM resume_templates "
+                    "WHERE `key` IN ('blank-cn', 'classic-technical-cn')"
+                )
+            )
+        }
+        blank = templates["blank-cn"]
+        classic = templates["classic-technical-cn"]
+        blank_data = json_object(blank.data_json)
+        blank_style = json_object(blank.style_json)
+        classic_data = json_object(classic.data_json)
+        classic_style = json_object(classic.style_json)
+        assert classic_style["page"] == {
+            "size": "A4",
+            "margin_top_mm": 12.0,
+            "margin_right_mm": 14.0,
+            "margin_bottom_mm": 12.0,
+            "margin_left_mm": 14.0,
+        }
+
+        blank_resume_id = connection.execute(
+            text(
+                "INSERT INTO resumes "
+                "(user_id, template_id, title, data_json, style_json, source_type) "
+                "VALUES (:user_id, :template_id, '历史空白简历', :data_json, :style_json, 'template')"
+            ),
+            {
+                "user_id": user_id,
+                "template_id": blank.id,
+                "data_json": json.dumps(blank_data, ensure_ascii=False),
+                "style_json": json.dumps(blank_style, ensure_ascii=False),
+            },
+        ).lastrowid
+        classic_resume_id = connection.execute(
+            text(
+                "INSERT INTO resumes "
+                "(user_id, template_id, title, data_json, style_json, source_type) "
+                "VALUES (:user_id, :template_id, '经典技术简历', :data_json, :style_json, 'template')"
+            ),
+            {
+                "user_id": user_id,
+                "template_id": classic.id,
+                "data_json": json.dumps(classic_data, ensure_ascii=False),
+                "style_json": json.dumps(classic_style, ensure_ascii=False),
+            },
+        ).lastrowid
+        for resume_id, data, style in (
+            (blank_resume_id, blank_data, blank_style),
+            (classic_resume_id, classic_data, classic_style),
+        ):
+            connection.execute(
+                text(
+                    "INSERT INTO resume_versions "
+                    "(resume_id, version_no, data_json, style_json, reason, name) "
+                    "VALUES (:resume_id, 1, :data_json, :style_json, 'initial', '初始版本')"
+                ),
+                {
+                    "resume_id": resume_id,
+                    "data_json": json.dumps(data, ensure_ascii=False),
+                    "style_json": json.dumps(style, ensure_ascii=False),
+                },
+            )
+
+    run_alembic(database_url, "upgrade", "0042")
+    with engine.connect() as connection:
+        assert connection.scalar(
+            text("SELECT COUNT(*) FROM resume_templates WHERE `key` = 'blank-cn'")
+        ) == 0
+        retired_resume = connection.execute(
+            text(
+                "SELECT template_id, data_json, style_json FROM resumes WHERE id = :id"
+            ),
+            {"id": blank_resume_id},
+        ).one()
+        assert retired_resume.template_id is None
+        assert json_object(retired_resume.data_json) == blank_data
+        assert json_object(retired_resume.style_json) == blank_style
+
+        expected_page = {
+            "size": "A4",
+            "margin_top_mm": 9.0,
+            "margin_right_mm": 11.0,
+            "margin_bottom_mm": 9.0,
+            "margin_left_mm": 11.0,
+        }
+        classic_styles = [
+            connection.scalar(
+                text(
+                    "SELECT style_json FROM resume_templates "
+                    "WHERE `key` = 'classic-technical-cn'"
+                )
+            ),
+            connection.scalar(
+                text("SELECT style_json FROM resumes WHERE id = :id"),
+                {"id": classic_resume_id},
+            ),
+            connection.scalar(
+                text(
+                    "SELECT style_json FROM resume_versions "
+                    "WHERE resume_id = :resume_id AND version_no = 1"
+                ),
+                {"resume_id": classic_resume_id},
+            ),
+        ]
+        assert [json_object(style)["page"] for style in classic_styles] == [
+            expected_page,
+            expected_page,
+            expected_page,
+        ]
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0042"
+    engine.dispose()
+
+
+def test_0044_restores_future_classic_density_without_changing_existing_snapshots() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0043")
+    engine = create_engine(database_url)
+
+    def json_object(value: object) -> dict[str, Any]:
+        decoded = json.loads(value) if isinstance(value, str) else value
+        assert isinstance(decoded, dict)
+        return decoded
+
+    with engine.begin() as connection:
+        user_id = connection.execute(
+            text(
+                "INSERT INTO users (email, password_hash, nickname) "
+                "VALUES ('density-migration@example.invalid', '$2b$12$fictional', '张三')"
+            )
+        ).lastrowid
+        template_rows = connection.execute(
+            text(
+                "SELECT id, data_json, style_json, is_active FROM resume_templates "
+                "WHERE `key` = 'classic-technical-cn' ORDER BY id"
+            )
+        ).mappings().all()
+        assert len(template_rows) == 1
+        template_before = dict(template_rows[0])
+        data_before = json_object(template_before["data_json"])
+        style_before = json_object(template_before["style_json"])
+        assert style_before["font_size"] == 11.5
+        assert style_before["line_height"] == 1.42
+        assert style_before["accent_color"] == "#2F4858"
+        assert style_before["page"] == {
+            "size": "A4",
+            "margin_top_mm": 9.0,
+            "margin_right_mm": 11.0,
+            "margin_bottom_mm": 9.0,
+            "margin_left_mm": 11.0,
+        }
+
+        resume_id = connection.execute(
+            text(
+                "INSERT INTO resumes "
+                "(user_id, template_id, title, data_json, style_json, source_type) "
+                "VALUES (:user_id, :template_id, '密度迁移保护简历', "
+                ":data_json, :style_json, 'template')"
+            ),
+            {
+                "user_id": user_id,
+                "template_id": template_before["id"],
+                "data_json": json.dumps(data_before, ensure_ascii=False),
+                "style_json": json.dumps(style_before, ensure_ascii=False),
+            },
+        ).lastrowid
+        connection.execute(
+            text(
+                "INSERT INTO resume_versions "
+                "(resume_id, version_no, data_json, style_json, reason, name) "
+                "VALUES (:resume_id, 1, :data_json, :style_json, 'initial', '初始版本')"
+            ),
+            {
+                "resume_id": resume_id,
+                "data_json": json.dumps(data_before, ensure_ascii=False),
+                "style_json": json.dumps(style_before, ensure_ascii=False),
+            },
+        )
+        resume_before = dict(
+            connection.execute(
+                text(
+                    "SELECT id, template_id, data_json, style_json, lock_version, source_type "
+                    "FROM resumes WHERE id = :resume_id"
+                ),
+                {"resume_id": resume_id},
+            ).mappings().one()
+        )
+        version_before = dict(
+            connection.execute(
+                text(
+                    "SELECT id, resume_id, version_no, data_json, style_json, reason, name "
+                    "FROM resume_versions WHERE resume_id = :resume_id AND version_no = 1"
+                ),
+                {"resume_id": resume_id},
+            ).mappings().one()
+        )
+
+    run_alembic(database_url, "upgrade", "0044")
+    with engine.connect() as connection:
+        template_rows = connection.execute(
+            text(
+                "SELECT id, data_json, style_json, is_active FROM resume_templates "
+                "WHERE `key` = 'classic-technical-cn' ORDER BY id"
+            )
+        ).mappings().all()
+        assert len(template_rows) == 1
+        template_after = template_rows[0]
+        data_after = json_object(template_after["data_json"])
+        style_after = json_object(template_after["style_json"])
+
+        assert template_after["id"] == template_before["id"]
+        assert template_after["is_active"] == template_before["is_active"]
+        assert data_after == data_before
+        assert style_after["manifest"] == style_before["manifest"]
+        assert style_after["page"] == style_before["page"]
+        assert style_after == {
+            **style_before,
+            "font_size": 9.5,
+            "line_height": 1.25,
+            "accent_color": "#202632",
+        }
+        assert dict(
+            connection.execute(
+                text(
+                    "SELECT id, template_id, data_json, style_json, lock_version, source_type "
+                    "FROM resumes WHERE id = :resume_id"
+                ),
+                {"resume_id": resume_id},
+            ).mappings().one()
+        ) == resume_before
+        assert dict(
+            connection.execute(
+                text(
+                    "SELECT id, resume_id, version_no, data_json, style_json, reason, name "
+                    "FROM resume_versions WHERE resume_id = :resume_id AND version_no = 1"
+                ),
+                {"resume_id": resume_id},
+            ).mappings().one()
+        ) == version_before
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0044"
+    engine.dispose()
+
+
+def test_0044_preflight_failure_keeps_template_and_snapshots_unmodified() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0043")
+    engine = create_engine(database_url)
+
+    def json_object(value: object) -> dict[str, Any]:
+        decoded = json.loads(value) if isinstance(value, str) else value
+        assert isinstance(decoded, dict)
+        return decoded
+
+    with engine.begin() as connection:
+        user_id = connection.execute(
+            text(
+                "INSERT INTO users (email, password_hash, nickname) "
+                "VALUES ('density-preflight@example.invalid', '$2b$12$fictional', '张三')"
+            )
+        ).lastrowid
+        template_id = connection.scalar(
+            text(
+                "SELECT id FROM resume_templates WHERE `key` = 'classic-technical-cn'"
+            )
+        )
+        connection.execute(
+            text(
+                "UPDATE resume_templates SET style_json = JSON_SET("
+                "style_json, '$.font_size', 10.75) WHERE id = :template_id"
+            ),
+            {"template_id": template_id},
+        )
+        template_before = dict(
+            connection.execute(
+                text(
+                    "SELECT id, data_json, style_json, is_active FROM resume_templates "
+                    "WHERE id = :template_id"
+                ),
+                {"template_id": template_id},
+            ).mappings().one()
+        )
+        template_data = json_object(template_before["data_json"])
+        template_style = json_object(template_before["style_json"])
+        resume_id = connection.execute(
+            text(
+                "INSERT INTO resumes "
+                "(user_id, template_id, title, data_json, style_json, source_type) "
+                "VALUES (:user_id, :template_id, '异常旧值保护简历', "
+                ":data_json, :style_json, 'template')"
+            ),
+            {
+                "user_id": user_id,
+                "template_id": template_id,
+                "data_json": json.dumps(template_data, ensure_ascii=False),
+                "style_json": json.dumps(template_style, ensure_ascii=False),
+            },
+        ).lastrowid
+        connection.execute(
+            text(
+                "INSERT INTO resume_versions "
+                "(resume_id, version_no, data_json, style_json, reason, name) "
+                "VALUES (:resume_id, 1, :data_json, :style_json, 'initial', '初始版本')"
+            ),
+            {
+                "resume_id": resume_id,
+                "data_json": json.dumps(template_data, ensure_ascii=False),
+                "style_json": json.dumps(template_style, ensure_ascii=False),
+            },
+        )
+        resume_before = dict(
+            connection.execute(
+                text(
+                    "SELECT id, template_id, data_json, style_json, lock_version, source_type "
+                    "FROM resumes WHERE id = :resume_id"
+                ),
+                {"resume_id": resume_id},
+            ).mappings().one()
+        )
+        version_before = dict(
+            connection.execute(
+                text(
+                    "SELECT id, resume_id, version_no, data_json, style_json, reason, name "
+                    "FROM resume_versions WHERE resume_id = :resume_id AND version_no = 1"
+                ),
+                {"resume_id": resume_id},
+            ).mappings().one()
+        )
+
+    refused = invoke_alembic(database_url, "upgrade", "0044")
+    assert refused.returncode != 0
+    assert "protected 0043" in f"{refused.stdout}\n{refused.stderr}"
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0043"
+        assert dict(
+            connection.execute(
+                text(
+                    "SELECT id, data_json, style_json, is_active FROM resume_templates "
+                    "WHERE id = :template_id"
+                ),
+                {"template_id": template_id},
+            ).mappings().one()
+        ) == template_before
+        assert dict(
+            connection.execute(
+                text(
+                    "SELECT id, template_id, data_json, style_json, lock_version, source_type "
+                    "FROM resumes WHERE id = :resume_id"
+                ),
+                {"resume_id": resume_id},
+            ).mappings().one()
+        ) == resume_before
+        assert dict(
+            connection.execute(
+                text(
+                    "SELECT id, resume_id, version_no, data_json, style_json, reason, name "
+                    "FROM resume_versions WHERE resume_id = :resume_id AND version_no = 1"
+                ),
+                {"resume_id": resume_id},
+            ).mappings().one()
+        ) == version_before
+    engine.dispose()
+
+
 def test_agent_clarification_message_forward_migration() -> None:
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)
@@ -890,8 +1557,7 @@ def test_agent_clarification_message_forward_migration() -> None:
     engine = create_engine(database_url)
     try:
         assert {
-            column["name"]
-            for column in inspect(engine).get_columns("agent_messages")
+            column["name"] for column in inspect(engine).get_columns("agent_messages")
         }.isdisjoint({"message_type", "metadata_json"})
 
         run_alembic(database_url, "upgrade", "0032")
@@ -921,9 +1587,10 @@ def test_interview_center_forward_migration() -> None:
         run_alembic(database_url, "upgrade", "0033")
         assert interview_tables <= set(inspect(engine).get_table_names())
         with engine.connect() as connection:
-            assert connection.scalar(
-                text("SELECT version_num FROM alembic_version")
-            ) == "0033"
+            assert (
+                connection.scalar(text("SELECT version_num FROM alembic_version"))
+                == "0033"
+            )
     finally:
         engine.dispose()
 
@@ -982,22 +1649,32 @@ def test_job_description_archiving_removal_forward_migration() -> None:
             index["name"] for index in inspector.get_indexes("job_descriptions")
         }
         with engine.connect() as connection:
-            assert connection.scalar(
-                text("SELECT COUNT(*) FROM job_descriptions WHERE id = :id"),
-                {"id": kept_job_id},
-            ) == 1
-            assert connection.scalar(
-                text("SELECT COUNT(*) FROM job_descriptions WHERE id = :id"),
-                {"id": archived_job_id},
-            ) == 0
-            application = connection.execute(
-                text(
-                    "SELECT job_description_id, job_title_snapshot, "
-                    "JSON_UNQUOTE(JSON_EXTRACT(job_snapshot, '$.description')) AS description "
-                    "FROM job_applications WHERE id = :id"
-                ),
-                {"id": application_id},
-            ).mappings().one()
+            assert (
+                connection.scalar(
+                    text("SELECT COUNT(*) FROM job_descriptions WHERE id = :id"),
+                    {"id": kept_job_id},
+                )
+                == 1
+            )
+            assert (
+                connection.scalar(
+                    text("SELECT COUNT(*) FROM job_descriptions WHERE id = :id"),
+                    {"id": archived_job_id},
+                )
+                == 0
+            )
+            application = (
+                connection.execute(
+                    text(
+                        "SELECT job_description_id, job_title_snapshot, "
+                        "JSON_UNQUOTE(JSON_EXTRACT(job_snapshot, '$.description')) AS description "
+                        "FROM job_applications WHERE id = :id"
+                    ),
+                    {"id": application_id},
+                )
+                .mappings()
+                .one()
+            )
             assert application["job_description_id"] is None
             assert application["job_title_snapshot"] == "归档岗位"
             assert application["description"] == "归档正文"
@@ -1070,10 +1747,13 @@ def test_document_parse_task_forward_migration_preserves_import_data() -> None:
             "succeeded",
             34,
         )
-        assert connection.scalar(
-            text("SELECT parse_task_id FROM resumes WHERE id = :resume_id"),
-            {"resume_id": resume_id},
-        ) == import_id
+        assert (
+            connection.scalar(
+                text("SELECT parse_task_id FROM resumes WHERE id = :resume_id"),
+                {"resume_id": resume_id},
+            )
+            == import_id
+        )
 
     run_alembic(database_url, "upgrade", "head")
     assert "document_parse_tasks" in inspect(engine).get_table_names()
@@ -1099,12 +1779,19 @@ def test_resume_template_seed_conflict_does_not_overwrite_existing_data() -> Non
     refused_seed = invoke_alembic(database_url, "upgrade", "0014")
     assert refused_seed.returncode != 0
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0013"
-        assert connection.scalar(
-            text("SELECT name FROM resume_templates WHERE `key` = 'blank-cn'")
-        ) == "现场同名模板"
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0013"
+        )
+        assert (
+            connection.scalar(
+                text("SELECT name FROM resume_templates WHERE `key` = 'blank-cn'")
+            )
+            == "现场同名模板"
+        )
     with engine.begin() as connection:
-        connection.execute(text("DELETE FROM resume_templates WHERE `key` = 'blank-cn'"))
+        connection.execute(
+            text("DELETE FROM resume_templates WHERE `key` = 'blank-cn'")
+        )
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
     engine.dispose()
@@ -1130,16 +1817,18 @@ def test_classic_template_content_migration_refuses_customized_snapshots() -> No
     assert refused_upgrade.returncode != 0
     with engine.connect() as connection:
         assert (
-            connection.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0024"
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0024"
         )
-        assert connection.scalar(
-            text(
-                "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, :path)) "
-                "FROM resume_templates WHERE `key` = 'classic-technical-cn'"
-            ),
-            {"path": headline_path},
-        ) == "现场自定义职位"
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, :path)) "
+                    "FROM resume_templates WHERE `key` = 'classic-technical-cn'"
+                ),
+                {"path": headline_path},
+            )
+            == "现场自定义职位"
+        )
 
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
@@ -1166,19 +1855,27 @@ def test_professional_template_seed_conflict_is_atomic() -> None:
     refused_upgrade = invoke_alembic(database_url, "upgrade", "0026")
     assert refused_upgrade.returncode != 0
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0025"
-        assert connection.scalar(
-            text(
-                "SELECT name FROM resume_templates "
-                "WHERE `key` = 'administrative-sidebar-cn'"
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0025"
+        )
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT name FROM resume_templates "
+                    "WHERE `key` = 'administrative-sidebar-cn'"
+                )
             )
-        ) == "现场行政模板"
-        assert connection.scalar(
-            text(
-                "SELECT COUNT(*) FROM resume_templates WHERE `key` IN "
-                "('campus-professional-cn', 'civic-service-cn', 'creative-orange-cn')"
+            == "现场行政模板"
+        )
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT COUNT(*) FROM resume_templates WHERE `key` IN "
+                    "('campus-professional-cn', 'civic-service-cn', 'creative-orange-cn')"
+                )
             )
-        ) == 0
+            == 0
+        )
 
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
@@ -1205,14 +1902,19 @@ def test_professional_template_preview_refresh_refuses_customized_snapshots() ->
     refused_upgrade = invoke_alembic(database_url, "upgrade", "0027")
     assert refused_upgrade.returncode != 0
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0026"
-        assert connection.scalar(
-            text(
-                "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, :path)) "
-                "FROM resume_templates WHERE `key` = 'campus-professional-cn'"
-            ),
-            {"path": content_path},
-        ) == "现场自定义模板正文"
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0026"
+        )
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, :path)) "
+                    "FROM resume_templates WHERE `key` = 'campus-professional-cn'"
+                ),
+                {"path": content_path},
+            )
+            == "现场自定义模板正文"
+        )
         assert "/templates/avatar-administrative.svg" in connection.scalar(
             text(
                 "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, :path)) "
@@ -1241,7 +1943,7 @@ def test_mysql_serializes_concurrent_normalized_resume_titles() -> None:
             )
         ).lastrowid
         template_id = connection.scalar(
-            text("SELECT id FROM resume_templates WHERE `key` = 'blank-cn'")
+            text("SELECT id FROM resume_templates WHERE `key` = 'classic-technical-cn'")
         )
     assert template_id is not None
 
@@ -1275,13 +1977,19 @@ def test_mysql_serializes_concurrent_normalized_resume_titles() -> None:
     assert created_titles[0] is not None
     assert created_titles[0].casefold() == "senior product manager"
     with engine.connect() as connection:
-        assert connection.scalar(
-            text("SELECT COUNT(*) FROM resumes WHERE user_id = :user_id"),
-            {"user_id": user_id},
-        ) == 1
-        assert connection.scalar(
-            text("SELECT COUNT(*) FROM resume_versions WHERE version_no = 1")
-        ) == 1
+        assert (
+            connection.scalar(
+                text("SELECT COUNT(*) FROM resumes WHERE user_id = :user_id"),
+                {"user_id": user_id},
+            )
+            == 1
+        )
+        assert (
+            connection.scalar(
+                text("SELECT COUNT(*) FROM resume_versions WHERE version_no = 1")
+            )
+            == 1
+        )
 
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
@@ -1303,7 +2011,7 @@ def test_mysql_serializes_agent_session_creation_with_resume_deletion() -> None:
             )
         ).lastrowid
         template_id = connection.scalar(
-            text("SELECT id FROM resume_templates WHERE `key` = 'blank-cn'")
+            text("SELECT id FROM resume_templates WHERE `key` = 'classic-technical-cn'")
         )
     assert template_id is not None
     with session_factory() as db:
@@ -1365,12 +2073,16 @@ def test_mysql_serializes_agent_session_creation_with_resume_deletion() -> None:
             assert create_future.result(timeout=5) == "RESUME_NOT_FOUND"
 
         with engine.connect() as connection:
-            assert connection.scalar(
-                select(AgentSession.id).where(AgentSession.resume_id == resume_id)
-            ) is None
-            assert connection.scalar(
-                select(Resume.id).where(Resume.id == resume_id)
-            ) is None
+            assert (
+                connection.scalar(
+                    select(AgentSession.id).where(AgentSession.resume_id == resume_id)
+                )
+                is None
+            )
+            assert (
+                connection.scalar(select(Resume.id).where(Resume.id == resume_id))
+                is None
+            )
     finally:
         allow_delete_commit.set()
         reset_test_database_to_base(database_url)
@@ -1393,7 +2105,7 @@ def test_mysql_reject_cannot_overwrite_an_applied_proposal() -> None:
             )
         ).lastrowid
         template_id = connection.scalar(
-            text("SELECT id FROM resume_templates WHERE `key` = 'blank-cn'")
+            text("SELECT id FROM resume_templates WHERE `key` = 'classic-technical-cn'")
         )
     assert template_id is not None
     with session_factory() as db:
@@ -1497,8 +2209,7 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
 
     inspector = inspect(engine)
     columns = {
-        column["name"]: column
-        for column in inspector.get_columns("job_descriptions")
+        column["name"]: column for column in inspector.get_columns("job_descriptions")
     }
     assert set(columns) == {
         "id",
@@ -1589,8 +2300,7 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
         "id",
     ]
     foreign_key = {
-        item["name"]: item
-        for item in inspector.get_foreign_keys("job_descriptions")
+        item["name"]: item for item in inspector.get_foreign_keys("job_descriptions")
     }["fk_job_descriptions_user"]
     assert foreign_key["constrained_columns"] == ["user_id"]
     assert foreign_key["referred_table"] == "users"
@@ -1677,7 +2387,9 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
         return "created"
 
     with ThreadPoolExecutor(max_workers=2) as executor:
-        results = list(executor.map(lambda _index: insert_concurrent_source(), range(2)))
+        results = list(
+            executor.map(lambda _index: insert_concurrent_source(), range(2))
+        )
 
     assert sorted(results) == ["created", "duplicate"]
 
@@ -1730,10 +2442,7 @@ def test_mysql_0008_clears_legacy_llm_data_and_supports_forward_upgrade() -> Non
             )
         )
         assert connection.execute(
-            text(
-                "SELECT capability, model_config_id "
-                "FROM llm_capability_bindings"
-            )
+            text("SELECT capability, model_config_id FROM llm_capability_bindings")
         ).one() == ("chat", None)
         legacy_model_id = connection.execute(
             text(
@@ -1773,12 +2482,15 @@ def test_mysql_0008_clears_legacy_llm_data_and_supports_forward_upgrade() -> Non
             ),
             {"model_id": new_model_id},
         )
-        assert connection.scalar(
-            text(
-                "SELECT model_config_id FROM llm_capability_bindings "
-                "WHERE capability = 'chat'"
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT model_config_id FROM llm_capability_bindings "
+                    "WHERE capability = 'chat'"
+                )
             )
-        ) == new_model_id
+            == new_model_id
+        )
         alternate_model_id = connection.execute(
             text(
                 "INSERT INTO llm_model_configs "
@@ -1830,9 +2542,14 @@ def test_mysql_0008_clears_legacy_llm_data_and_supports_forward_upgrade() -> Non
         )
     assert set(activated) == {new_model_id, alternate_model_id}
     with engine.connect() as connection:
-        assert connection.scalar(
-            text("SELECT COUNT(*) FROM llm_capability_bindings WHERE capability = 'chat'")
-        ) == 1
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT COUNT(*) FROM llm_capability_bindings WHERE capability = 'chat'"
+                )
+            )
+            == 1
+        )
         assert connection.scalar(
             text(
                 "SELECT model_config_id FROM llm_capability_bindings "
@@ -1860,10 +2577,7 @@ def test_mysql_0008_clears_legacy_llm_data_and_supports_forward_upgrade() -> Non
     run_alembic(database_url, "upgrade", "head")
     with engine.connect() as connection:
         assert connection.execute(
-            text(
-                "SELECT capability, model_config_id "
-                "FROM llm_capability_bindings"
-            )
+            text("SELECT capability, model_config_id FROM llm_capability_bindings")
         ).one() == ("chat", None)
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
@@ -1943,39 +2657,51 @@ def test_mysql_migrates_legacy_resume_snapshots_forward() -> None:
 
     run_alembic(database_url, "upgrade", "0010")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0010"
-        assert connection.scalar(
-            text(
-                "SELECT JSON_UNQUOTE(JSON_EXTRACT(legacy_data_json_backup, "
-                "'$.schema_version')) FROM resumes WHERE id = :resume_id"
-            ),
-            {"resume_id": resume_id},
-        ) == "1"
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0010"
+        )
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT JSON_UNQUOTE(JSON_EXTRACT(legacy_data_json_backup, "
+                    "'$.schema_version')) FROM resumes WHERE id = :resume_id"
+                ),
+                {"resume_id": resume_id},
+            )
+            == "1"
+        )
 
     with engine.connect() as connection:
-        row = connection.execute(
-            text(
-                "SELECT "
-                "JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.schema_version')) AS current_version, "
-                "JSON_UNQUOTE(JSON_EXTRACT(legacy_data_json_backup, '$.schema_version')) AS backup_version, "
-                "JSON_UNQUOTE(JSON_EXTRACT(data_json, "
-                "'$.sections.custom_sections[0].items[0].content.content')) AS markdown, "
-                "updated_at "
-                "FROM resumes WHERE id = :resume_id"
-            ),
-            {"resume_id": resume_id},
-        ).mappings().one()
+        row = (
+            connection.execute(
+                text(
+                    "SELECT "
+                    "JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.schema_version')) AS current_version, "
+                    "JSON_UNQUOTE(JSON_EXTRACT(legacy_data_json_backup, '$.schema_version')) AS backup_version, "
+                    "JSON_UNQUOTE(JSON_EXTRACT(data_json, "
+                    "'$.sections.custom_sections[0].items[0].content.content')) AS markdown, "
+                    "updated_at "
+                    "FROM resumes WHERE id = :resume_id"
+                ),
+                {"resume_id": resume_id},
+            )
+            .mappings()
+            .one()
+        )
         assert row["current_version"] == "1.0"
         assert row["backup_version"] == "1"
         assert "# 张三" in row["markdown"]
         assert str(row["updated_at"]) == "2026-07-01 00:00:00"
-        assert connection.scalar(
-            text(
-                "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.schema_version')) "
-                "FROM resume_versions WHERE resume_id = :resume_id"
-            ),
-            {"resume_id": resume_id},
-        ) == "1.0"
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.schema_version')) "
+                    "FROM resume_versions WHERE resume_id = :resume_id"
+                ),
+                {"resume_id": resume_id},
+            )
+            == "1.0"
+        )
 
     run_alembic(database_url, "upgrade", "head")
     head_inspector = inspect(engine)
@@ -1992,14 +2718,37 @@ def test_mysql_migrates_legacy_resume_snapshots_forward() -> None:
         column["name"] for column in head_inspector.get_columns("resume_versions")
     }
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == EXPECTED_HEAD
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version"))
+            == EXPECTED_HEAD
+        )
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.schema_version')) "
+                    "FROM resumes WHERE id = :resume_id"
+                ),
+                {"resume_id": resume_id},
+            )
+            is None
+        )
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT JSON_LENGTH(JSON_EXTRACT(data_json, '$.semantic_sections')) "
+                    "FROM resumes WHERE id = :resume_id"
+                ),
+                {"resume_id": resume_id},
+            )
+            >= 1
+        )
         assert connection.scalar(
             text(
-                "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.schema_version')) "
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(style_json, '$.manifest.renderer_key')) "
                 "FROM resumes WHERE id = :resume_id"
             ),
             {"resume_id": resume_id},
-        ) == "1.0"
+        ) in {"flow", "columns"}
 
     with engine.begin() as connection:
         connection.execute(text("DELETE FROM resume_versions"))

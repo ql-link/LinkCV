@@ -24,7 +24,7 @@ from linkcv.application.resumes.service import (
 from linkcv.core.config import Settings
 from linkcv.core.database import get_db
 from linkcv.core.errors import ApiError
-from linkcv.core.mq import MQPublishError, MQPublisher, ResumeImportMessage
+from linkcv.core.mq import MQPublisher, ResumeImportMessage
 from linkcv.core.mq.factory import build_mq_publisher
 from linkcv.core.storage import AssetStorage, build_import_object_name, get_storage
 from linkcv.domain.resume_snapshot import parse_resume_snapshot
@@ -71,7 +71,7 @@ def get_mq_publisher(request: Request, settings: Settings) -> MQPublisher:
     if publisher is None:
         try:
             publisher = build_mq_publisher(settings)
-        except ValueError as error:
+        except Exception as error:
             raise ApiError(503, "RESUME_IMPORT_QUEUE_UNAVAILABLE") from error
         request.app.state.mq_publisher = publisher
     return publisher
@@ -145,6 +145,42 @@ def _replay_response(
         raise ApiError(409, "IMPORT_PREVIOUSLY_FAILED", import_details(db, record))
     response.status_code = 200 if record.parse_status == "succeeded" else 202
     return ResumeImportResponse.model_validate({"import": import_summary(db, record)})
+
+
+def _mark_queue_unavailable(
+    db: Session,
+    record: DocumentParseTask,
+    response: Response,
+) -> ResumeImportResponse:
+    """Close an accepted task unless a worker has already completed it.
+
+    Publisher construction and confirm failures happen after the source file
+    is durable.  The conditional update makes that task user-cleanable while
+    preserving a worker result that won the race with the failed request.
+    """
+    result = db.execute(
+        update(DocumentParseTask)
+        .where(
+            DocumentParseTask.id == record.id,
+            DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+            DocumentParseTask.parse_status == "processing",
+        )
+        .values(
+            parse_status="failed",
+            parse_duration_ms=0,
+            failure_reason="service_unavailable",
+        )
+    )
+    db.commit()
+    db.expire_all()
+    latest = _load_owned_import(db, str(record.id), record.user_id)
+    if result.rowcount != 1:
+        return _replay_response(db, latest, response)
+    raise ApiError(
+        503,
+        "RESUME_IMPORT_QUEUE_UNAVAILABLE",
+        import_details(db, latest),
+    )
 
 
 @router.post("/import", response_model=ResumeImportResponse, status_code=202)
@@ -342,38 +378,19 @@ async def import_resume(
         db.commit()
         record = _load_owned_import(db, str(record.id), user.id)
 
-        publisher = get_mq_publisher(request, settings)
         try:
+            publisher = get_mq_publisher(request, settings)
             await publisher.publish(
                 ResumeImportMessage.create(
                     import_id=record.id,
                     template_id=template.id,
                 )
             )
-        except MQPublishError as error:
-            result = db.execute(
-                update(DocumentParseTask)
-                .where(
-                    DocumentParseTask.id == record.id,
-                    DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
-                    DocumentParseTask.parse_status == "processing",
-                )
-                .values(
-                    parse_status="failed",
-                    parse_duration_ms=0,
-                    failure_reason="service_unavailable",
-                )
-            )
-            db.commit()
-            db.expire_all()
-            record = _load_owned_import(db, str(record.id), user.id)
-            if result.rowcount != 1:
-                return _replay_response(db, record, response)
-            raise ApiError(
-                503,
-                "RESUME_IMPORT_QUEUE_UNAVAILABLE",
-                import_details(db, record),
-            ) from error
+        except Exception as error:
+            try:
+                return _mark_queue_unavailable(db, record, response)
+            except ApiError as queue_error:
+                raise queue_error from error
         return ResumeImportResponse.model_validate(
             {"import": import_summary(db, record)}
         )

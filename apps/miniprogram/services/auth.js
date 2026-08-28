@@ -2,7 +2,7 @@ const ACCESS_KEY = "linkcv_access_token";
 const REFRESH_KEY = "linkcv_refresh_token";
 const USER_KEY = "linkcv_user";
 const PRIVACY_AGREEMENT_KEY = "linkcv_privacy_agreement_v1";
-const DEFAULT_PRIVACY_CONTRACT_NAME = "《LinkCV 小程序隐私保护指引》";
+const DEFAULT_PRIVACY_CONTRACT_NAME = "《LinkResume 小程序隐私保护指引》";
 
 function apiUrl(path) {
   const app = getApp();
@@ -150,19 +150,6 @@ async function registerOrLogin() {
   return authenticate(true);
 }
 
-async function getAccountStatus() {
-  const code = await wxLoginCode();
-  const response = await rawRequest(
-    "/api/auth/wechat/miniprogram/account-status",
-    "POST",
-    { code },
-  );
-  if (response.statusCode !== 200) {
-    throw responseError(response, `账号识别失败（HTTP ${response.statusCode || "未知"}）`);
-  }
-  return Boolean(response.data && response.data.registered);
-}
-
 async function ensureSession() {
   const accessToken = wx.getStorageSync(ACCESS_KEY);
   if (accessToken) return wx.getStorageSync(USER_KEY) || null;
@@ -215,7 +202,6 @@ module.exports = {
   ensureSession,
   getAccessToken,
   getCurrentUser,
-  getAccountStatus,
   getPrivacySetting,
   hasAcceptedPrivacyAgreement,
   hasSession,

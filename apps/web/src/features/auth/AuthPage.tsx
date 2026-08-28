@@ -69,18 +69,8 @@ export function AuthPage(props: {
   return (
     <main className="auth-entry min-h-screen bg-background p-3 text-foreground antialiased [font-synthesis:none]">
       <div className="grid min-h-[calc(100vh-1.5rem)] gap-6 lg:grid-cols-[0.94fr_1.06fr]">
-        <section
-          className={`flex rounded-md border border-border bg-surface py-12 sm:py-14 ${
-            showWechatLogin
-              ? "items-start px-6 sm:px-10 lg:px-12 lg:py-12 xl:px-14"
-              : "items-center px-6 sm:px-10 lg:px-14 lg:py-20 xl:px-20"
-          }`}
-        >
-          <div
-            className={showWechatLogin
-              ? "mr-auto w-full max-w-[444px]"
-              : "mx-auto w-full max-w-[520px]"}
-          >
+        <section className="flex items-center rounded-md border border-border bg-surface px-6 py-12 sm:px-10 lg:px-14 lg:py-20 xl:px-20">
+          <div className="mx-auto w-full max-w-[520px]">
             <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
               {showPasswordForm
                 ? (isRegister ? "Development account" : "Development sign in")
@@ -88,8 +78,8 @@ export function AuthPage(props: {
             </span>
             <h1 className="mt-3 text-3xl font-medium tracking-[-0.04em] sm:text-4xl lg:text-[42px] lg:leading-[1.05] xl:text-[48px]">
               {showPasswordForm
-                ? (isRegister ? "注册 LinkCV" : "登录 LinkCV")
-                : "微信扫码登录 LinkCV"}
+                ? (isRegister ? "注册 LinkResume" : "登录 LinkResume")
+                : "微信扫码登录 LinkResume"}
             </h1>
             <p className="mt-3 text-base leading-snug text-text-secondary sm:text-lg">
               {showPasswordForm
@@ -166,7 +156,7 @@ export function AuthPage(props: {
             )}
 
             {showWechatLogin && (
-              <div className="auth-wechat-login mt-12 sm:mt-14">
+              <div className="auth-wechat-login mt-10">
                 <WechatQrLogin
                   appearance="auth"
                   onSuccess={(user) => void handleWechatSuccess(user)}

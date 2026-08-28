@@ -1,5 +1,5 @@
 {
-  "description": "LinkCV 微信登录与只读简历小程序",
+  "description": "LinkResume 微信登录与只读简历小程序",
   "projectname": "linkcv-miniprogram",
   "appid": "wxa56f4b15231066eb",
   "compileType": "miniprogram",

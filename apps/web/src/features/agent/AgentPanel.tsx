@@ -10,16 +10,16 @@ import {
   AgentSelectionContext,
   AgentStreamEvent,
   ApiRequestError,
-  ResumeDocumentV1,
-  ResumeStyleV1,
+  ResumeDocument,
+  ResumePresentation,
   api,
 } from "../../api/client";
 import { Avatar, AvatarFallback, AvatarImage, Button, PageLoading } from "@/components/ui";
 
 type AgentPanelProps = {
   resumeId: string;
-  currentData?: ResumeDocumentV1;
-  currentStyle?: ResumeStyleV1;
+  currentData?: ResumeDocument;
+  currentStyle?: ResumePresentation;
   userAvatarUrl?: string | null;
   userDisplayName?: string;
   onBeforeRun?: () => Promise<boolean>;
@@ -41,7 +41,7 @@ const agentQuickPrompts = [
   { label: "提炼亮点", prompt: "提炼这份简历的技术亮点", icon: Sparkles },
 ];
 
-const sectionLabels: Record<keyof ResumeDocumentV1["sections"], string> = {
+const sectionLabels: Record<keyof ResumeDocument["sections"], string> = {
   work_experiences: "工作经历",
   educations: "教育经历",
   projects: "项目经历",
@@ -54,8 +54,8 @@ const sectionLabels: Record<keyof ResumeDocumentV1["sections"], string> = {
 
 function proposalChanges(
   proposal: AgentProposal,
-  currentData?: ResumeDocumentV1,
-  currentStyle?: ResumeStyleV1,
+  currentData?: ResumeDocument,
+  currentStyle?: ResumePresentation,
 ) {
   if (proposal.operations?.length) {
     return proposal.operations.map((operation, index) => ({
@@ -71,7 +71,7 @@ function proposalChanges(
   if (JSON.stringify(currentData.basics) !== JSON.stringify(proposal.data.basics)) {
     changes.push({ label: "基本信息", before: "当前内容", after: "有修改" });
   }
-  for (const key of Object.keys(sectionLabels) as Array<keyof ResumeDocumentV1["sections"]>) {
+  for (const key of Object.keys(sectionLabels) as Array<keyof ResumeDocument["sections"]>) {
     const before = currentData.sections[key];
     const after = proposal.data.sections[key];
     if (JSON.stringify(before) !== JSON.stringify(after)) {
@@ -84,7 +84,7 @@ function proposalChanges(
   return changes;
 }
 
-function agentErrorMessage(error: unknown) {
+export function agentErrorMessage(error: unknown) {
   const code = error instanceof ApiRequestError ? error.message : "";
   const messages: Record<string, string> = {
     AGENT_UNAVAILABLE: "智能助手暂时不可用，简历编辑不受影响。",
@@ -143,16 +143,23 @@ function conversationTime(createdAt: string) {
   }).format(created);
 }
 
-function pendingClarificationMessage(messages: AgentMessage[]) {
+export function pendingClarificationMessage(messages: AgentMessage[]) {
   const last = messages[messages.length - 1];
   return last?.role === "assistant" && last.message_type === "clarification" && last.clarification
     ? last
     : null;
 }
 
-type ClarificationAnswer = { optionId: string; other: string };
+export type ClarificationAnswer = { optionId: string; other: string };
 
-function clarificationAnswerText(
+export function clarificationAllowsCustom(
+  clarification: AgentClarification,
+  question: AgentClarification["questions"][number],
+) {
+  return question.allow_custom ?? clarification.allow_custom ?? true;
+}
+
+export function clarificationAnswerText(
   clarification: AgentClarification,
   answers: Record<string, ClarificationAnswer>,
 ) {
@@ -184,7 +191,7 @@ function inlineMarkdown(text: string): ReactNode[] {
   });
 }
 
-function AgentMarkdown({ content }: { content: string }) {
+export function AgentMarkdown({ content }: { content: string }) {
   const lines = content.split("\n");
   const blocks: ReactNode[] = [];
   for (let index = 0; index < lines.length;) {
@@ -721,7 +728,8 @@ export function AgentPanel({
             <header><Sparkles aria-hidden="true" size={15} /><span><strong>需要你确认</strong><small>回答后我再继续处理</small></span></header>
             {pendingClarification.clarification.questions.map((question) => {
               const answer = clarificationAnswers[question.id] ?? { optionId: "", other: "" };
-              const missing = clarificationAttempted && (!answer.optionId || (answer.optionId === "__other__" && !answer.other.trim()));
+              const allowCustom = clarificationAllowsCustom(pendingClarification.clarification!, question);
+              const missing = clarificationAttempted && (!answer.optionId || (answer.optionId === "__other__" && allowCustom && !answer.other.trim()));
               return (
                 <fieldset key={question.id} aria-describedby={missing ? `${question.id}-error` : undefined}>
                   <legend><span>{question.header}</span>{question.question}</legend>
@@ -737,24 +745,28 @@ export function AgentPanel({
                       <span><strong>{option.label}</strong>{option.description && <small>{option.description}</small>}</span>
                     </label>
                   ))}
-                  <label>
-                    <input
-                      type="radio"
-                      name={`clarification-${question.id}`}
-                      value="__other__"
-                      checked={answer.optionId === "__other__"}
-                      onChange={() => setClarificationAnswers((current) => ({ ...current, [question.id]: { optionId: "__other__", other: current[question.id]?.other ?? "" } }))}
-                    />
-                    <span><strong>其他</strong><small>用自己的话补充</small></span>
-                  </label>
-                  {answer.optionId === "__other__" && (
-                    <input
-                      className="agent-clarification-other"
-                      aria-label={`${question.header}的其他回答`}
-                      maxLength={500}
-                      value={answer.other}
-                      onChange={(event) => setClarificationAnswers((current) => ({ ...current, [question.id]: { optionId: "__other__", other: event.target.value } }))}
-                    />
+                  {allowCustom && (
+                    <>
+                      <label>
+                        <input
+                          type="radio"
+                          name={`clarification-${question.id}`}
+                          value="__other__"
+                          checked={answer.optionId === "__other__"}
+                          onChange={() => setClarificationAnswers((current) => ({ ...current, [question.id]: { optionId: "__other__", other: current[question.id]?.other ?? "" } }))}
+                        />
+                        <span><strong>其他</strong><small>用自己的话补充</small></span>
+                      </label>
+                      {answer.optionId === "__other__" && (
+                        <input
+                          className="agent-clarification-other"
+                          aria-label={`${question.header}的其他回答`}
+                          maxLength={500}
+                          value={answer.other}
+                          onChange={(event) => setClarificationAnswers((current) => ({ ...current, [question.id]: { optionId: "__other__", other: event.target.value } }))}
+                        />
+                      )}
+                    </>
                   )}
                   {missing && <small className="agent-clarification-error" id={`${question.id}-error`}>请选择一个选项或填写其他答案。</small>}
                 </fieldset>

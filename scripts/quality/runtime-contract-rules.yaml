@@ -161,7 +161,7 @@ contracts:
         message: Production 配置必须声明双 Token Cookie 契约
 
   - id: wechat-miniprogram-environment-contract
-    description: Production 普通登录使用微信，且小程序开发与正式 API 地址按环境隔离
+    description: Production 普通登录使用微信，且小程序本地联调必须显式 opt-in
     assertions:
       - path: .env.development
         pattern: '(?m)^APP_ENV=development$'
@@ -185,11 +185,23 @@ contracts:
         pattern: 'required_secret_keys=\([\s\S]*WECHAT_APPID[\s\S]*WECHAT_SECRET[\s\S]*Missing required Development secret setting[\s\S]*Settings\(\)\.wechat_enabled[\s\S]*docker network inspect'
         message: Dev 发布必须在迁移与容器替换前拒绝缺失、空值或占位的微信凭据
       - path: apps/miniprogram/config/runtime.js
-        pattern: 'developmentApiBaseUrl: "http://127\.0\.0\.1:8000"[\s\S]*productionApiBaseUrl: "https://linkresume\.cn"'
-        message: 小程序必须把 API 开发默认地址与 linkresume.cn 生产地址分开
+        pattern: 'productionApiBaseUrl: "https://linkresume\.cn"'
+        message: 小程序必须保留 linkresume.cn 作为生产默认 API 地址
       - path: apps/miniprogram/config/env.js
-        pattern: 'developmentStorageKey: "linkcv_api_base_url"[\s\S]*envVersion === "develop"[\s\S]*wx\.getStorageSync\(developmentStorageKey\)[\s\S]*envVersion !== "develop"[\s\S]*startsWith\("https://"\)'
+        pattern: 'developmentStorageKey: "linkcv_api_base_url"[\s\S]*envVersion === "develop"[\s\S]*readStorageValue\(developmentStorageKey\)[\s\S]*!isDevelop[\s\S]*startsWith\("https://"\)'
         message: API 内网地址覆盖只能用于开发版，体验版和正式版必须强制 HTTPS
+      - path: apps/miniprogram/config/env.js
+        pattern: 'LOCAL_DEBUG_ENABLED_STORAGE_KEY = "linkcv_local_debug_enabled"[\s\S]*const localDebugEnabled = isDevelop[\s\S]*readStorageValue\(LOCAL_DEBUG_ENABLED_STORAGE_KEY\) === true[\s\S]*const localConfig = localDebugEnabled[\s\S]*readLocalConfigSafely\(localConfigReader\)[\s\S]*: null'
+        message: 包内 local.js 只能在 develop 且显式开启 linkcv_local_debug_enabled 后读取
+      - path: apps/miniprogram/config/env.js
+        pattern: 'function readAccountInfoSafely\(\)[\s\S]*typeof wx\.getAccountInfoSync !== "function"[\s\S]*return null[\s\S]*try[\s\S]*const account = wx\.getAccountInfoSync\(\)[\s\S]*typeof account\.miniProgram\.envVersion !== "string"[\s\S]*return null[\s\S]*catch \{[\s\S]*return null'
+        message: 小程序环境识别缺失、字段不完整或异常时必须安全失败
+      - path: apps/miniprogram/config/env.js
+        pattern: 'const account = readAccountInfoSafely\(\);[\s\S]*const envVersion = account \? account\.miniProgram\.envVersion : null;[\s\S]*const isDevelop = envVersion === "develop";'
+        message: 只有明确 envVersion 为 develop 才允许读取开发配置与 storage 覆盖
+      - path: apps/miniprogram/config/env.js
+        pattern: 'const developmentOverride = typeof developmentOverrideValue === "string"[\s\S]*const configured = \([\s\S]*developmentOverride[\s\S]*\|\| localOverride[\s\S]*\|\| extBaseUrl[\s\S]*\|\| productionDefault'
+        message: develop 的显式 linkcv_api_base_url 必须优先于 local.js，其他环境只能回退生产地址
       - path: apps/miniprogram/services/resumes.js
         pattern: 'downloadResumePreview[\s\S]*version_id=[\s\S]*/api/miniprogram/resumes/[\s\S]*/preview\.png'
         message: 小程序必须通过后端专用只读接口查询并下载正式版本 PNG 预览
@@ -287,17 +299,29 @@ contracts:
     description: FastAPI、Worker、环境模板与 Compose 使用同一套异步导入 Broker 契约
     assertions:
       - path: apps/backend/src/linkcv/core/config.py
-        pattern: 'default="rabbitmq", alias="MQ_VENDOR"[\s\S]*default="tolink\.cv\.resume_import"[\s\S]*alias="RABBITMQ_EXCHANGE_NAME"[\s\S]*default="resume\.import"[\s\S]*alias="RABBITMQ_ROUTING_KEY"'
-        message: 后端必须默认使用 RabbitMQ 固定 exchange 和 routing key
+        pattern: 'default="rabbitmq", alias="MQ_VENDOR"[\s\S]*default="tolink\.cv\.resume_import\.v2"[\s\S]*alias="RABBITMQ_EXCHANGE_NAME"[\s\S]*default="linkcv\.resume_import\.worker\.v2"[\s\S]*alias="RABBITMQ_QUEUE"[\s\S]*default="resume\.import\.v2"[\s\S]*alias="RABBITMQ_ROUTING_KEY"'
+        message: 后端必须默认使用 RabbitMQ V2 exchange、queue 和 routing key
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default="tolink\.cv\.resume_import\.v2"[\s\S]*alias="KAFKA_TOPIC"[\s\S]*default="linkcv\.resume_import\.worker\.v2"[\s\S]*alias="KAFKA_CONSUMER_GROUP"'
+        message: 后端必须默认使用 Kafka V2 topic 和 consumer group
+      - path: apps/backend/src/linkcv/core/mq/message.py
+        pattern: 'ConfigDict\(extra="forbid"\)[\s\S]*pipeline_version: Literal\["v2"\][\s\S]*mq_name: Literal\["tolink\.cv\.resume_import\.v2"\]'
+        message: 文档解析消息必须使用严格的 V2 envelope 和必填 pipeline version
+      - path: apps/backend/src/linkcv/core/mq/rabbitmq.py
+        pattern: 'headers=\{\"x-linkcv-pipeline-version\": message\.pipeline_version\}'
+        message: RabbitMQ 发布必须以 header 观测 V2 pipeline version
+      - path: apps/backend/src/linkcv/modules/observability/logging.py
+        pattern: 'ALLOWED_FIELDS = \{[\s\S]*"message_id"[\s\S]*"pipeline_version"[\s\S]*"vendor"[\s\S]*"route"'
+        message: 结构化日志必须保留受控的 V2 消息诊断字段
       - path: .env.example
-        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=amqp://linkcv:linkcv-rabbit-local-change-me@127\.0\.0\.1:5672/$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import$'
-        message: 本地模板必须连接本地 RabbitMQ 并声明固定路由
+        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=amqp://linkcv:linkcv-rabbit-local-change-me@127\.0\.0\.1:5672/$[\s\S]*^RABBITMQ_EXCHANGE_NAME=tolink\.cv\.resume_import\.v2$[\s\S]*^RABBITMQ_QUEUE=linkcv\.resume_import\.worker\.v2$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import\.v2$[\s\S]*^KAFKA_TOPIC=tolink\.cv\.resume_import\.v2$[\s\S]*^KAFKA_CONSUMER_GROUP=linkcv\.resume_import\.worker\.v2$'
+        message: 本地模板必须连接本地 RabbitMQ 并声明 V2 路由和 Kafka 标识
       - path: .env.development
-        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import$'
-        message: Dev 必须由私密覆盖提供平台 RabbitMQ 地址
+        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=$[\s\S]*^RABBITMQ_EXCHANGE_NAME=tolink\.cv\.resume_import\.v2$[\s\S]*^RABBITMQ_QUEUE=linkcv\.resume_import\.worker\.v2$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import\.v2$[\s\S]*^KAFKA_TOPIC=tolink\.cv\.resume_import\.v2$[\s\S]*^KAFKA_CONSUMER_GROUP=linkcv\.resume_import\.worker\.v2$'
+        message: Dev 必须由私密覆盖提供平台 RabbitMQ 地址并使用 V2 标识
       - path: .env.production
-        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import$'
-        message: Production 必须由私密覆盖提供平台 RabbitMQ 地址
+        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=$[\s\S]*^RABBITMQ_EXCHANGE_NAME=tolink\.cv\.resume_import\.v2$[\s\S]*^RABBITMQ_QUEUE=linkcv\.resume_import\.worker\.v2$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import\.v2$[\s\S]*^KAFKA_TOPIC=tolink\.cv\.resume_import\.v2$[\s\S]*^KAFKA_CONSUMER_GROUP=linkcv\.resume_import\.worker\.v2$'
+        message: Production 必须由私密覆盖提供平台 RabbitMQ 地址并使用 V2 标识
       - path: deploy/docker-compose.yml
         pattern: '(?m)^  rabbitmq:$[\s\S]*rabbitmq:4-management-alpine'
         message: 本地 Compose 必须提供 RabbitMQ

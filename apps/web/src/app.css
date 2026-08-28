@@ -515,6 +515,10 @@ select:not([data-slot]):focus-visible,
   font-family: var(--preview-font-family);
 }
 
+.resume-readonly-preview .resume-preview-paper.smart-one-page {
+  overflow: hidden;
+}
+
 .resume-preview-paper {
   box-sizing: border-box;
   width: 210mm;
@@ -539,7 +543,7 @@ select:not([data-slot]):focus-visible,
 .theme-classic-technical .resume-content h1,
 .resume-preview-paper.theme-classic-technical h1 {
   margin: 0 0 5px;
-  color: #171b24;
+  color: var(--preview-accent);
   font-size: 21pt;
   font-weight: 400;
   line-height: 1.1;
@@ -556,13 +560,18 @@ select:not([data-slot]):focus-visible,
 .theme-classic-technical .resume-content h2,
 .resume-preview-paper.theme-classic-technical h2 {
   margin: 6px 0 3px;
-  border-bottom: 1px solid #252d3a;
+  border-bottom: 1px solid var(--preview-accent);
   padding-bottom: 1px;
-  color: #171b24;
+  color: var(--preview-accent);
   font-size: 12.25pt;
   font-weight: 400;
   line-height: 1.08;
   letter-spacing: 0;
+}
+
+.theme-classic-technical .resume-content h3,
+.resume-preview-paper.theme-classic-technical h3 {
+  color: var(--preview-accent);
 }
 
 .theme-classic-technical .resume-content p {
@@ -590,8 +599,13 @@ select:not([data-slot]):focus-visible,
 }
 
 .theme-classic-technical .resume-content a {
-  color: #28303d;
+  color: var(--preview-accent);
   text-decoration: none;
+}
+
+.theme-classic-technical .resume-content hr,
+.resume-preview-paper.theme-classic-technical hr {
+  border-top-color: var(--preview-accent);
 }
 
 .theme-classic-technical .resume-row,
@@ -1014,6 +1028,7 @@ select:not([data-slot]):focus-visible,
   z-index: 0;
   border-radius: 0 0 50% 50%;
   background: #ff8a00;
+  clip-path: inset(0 15mm);
   content: "";
 }
 
@@ -1860,48 +1875,72 @@ select:not([data-slot]):focus-visible,
   object-fit: cover;
 }
 
-.page-hero {
+/* Shared page-header geometry lives in components/ui/layout-patterns.css. */
+
+.page-hero.is-module {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 24px;
-  padding: 28px 32px 0;
+  padding: 18px 30px 14px;
 }
 
-.page-hero-text {
+.page-hero-module-summary {
   display: flex;
   min-width: 0;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: 14px;
 }
 
-.page-hero-eyebrow {
-  margin: 0;
-  color: var(--action-blue);
-  font-size: 13px;
-  font-weight: 600;
+.page-hero-module-mark {
+  --page-hero-tone: var(--ui-accent);
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--page-hero-tone) 48%, var(--ui-border));
+  border-radius: var(--ui-radius-md);
+  color: var(--page-hero-tone);
 }
 
-.page-hero h1 {
+.page-hero-module-mark.is-template { --page-hero-tone: var(--ui-template-accent); }
+.page-hero-module-mark.is-success { --page-hero-tone: var(--ui-success); }
+.page-hero-module-mark.is-warning { --page-hero-tone: var(--ui-warning); }
+.page-hero-module-mark svg { width: 21px; height: 21px; }
+
+.page-hero-module-copy {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 22px;
+}
+
+.page-hero.is-module h1 {
   margin: 0;
+  flex: 0 0 auto;
   color: var(--ink);
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-size: 23px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
   line-height: 1.2;
 }
 
-.page-hero-description {
+.page-hero.is-module .page-hero-description {
   margin: 0;
+  overflow: hidden;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.page-hero-actions {
+.page-hero.is-module .page-hero-actions {
   display: flex;
   flex-shrink: 0;
-  align-items: flex-end;
-  gap: 16px;
+  align-items: center;
+  gap: 10px;
 }
 
 .page-hero.is-module {
@@ -1971,7 +2010,6 @@ select:not([data-slot]):focus-visible,
   color: var(--muted);
   font-size: 12px;
 }
-
 .dashboard-content {
   position: relative;
   min-width: 0;
@@ -2266,6 +2304,9 @@ select:not([data-slot]):focus-visible,
   padding: 0;
   box-shadow: 0 18px 44px rgba(15, 18, 22, 0.12);
   opacity: 0.86;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   container-type: inline-size;
   touch-action: manipulation;
@@ -2935,261 +2976,8 @@ select:not([data-slot]):focus-visible,
   to { opacity: 1; transform: translateX(-50%) scale(1); }
 }
 
-/* Handoff: account center (LCV-29) */
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
-
-.account-page {
-  display: flex;
-  flex-direction: column;
-}
-
-.account-layout {
-  display: grid;
-  width: min(1080px, calc(100% - 40px));
-  margin: 0 auto;
-  gap: 20px;
-  padding-bottom: 88px;
-}
-
-.account-top-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 32px;
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius-xl);
-  background: var(--surface-card);
-  padding: clamp(20px, 3.5vw, 28px);
-}
-
-.account-profile-col { min-width: 0; }
-
-.account-identity {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.account-avatar-lg {
-  width: 64px;
-  height: 64px;
-  flex: 0 0 64px;
-  border-radius: 50%;
-}
-
-.account-avatar-lg-fallback {
-  background: var(--ui-primary);
-  color: var(--ui-primary-foreground);
-  font-size: 22px;
-  font-weight: 600;
-}
-
-.account-identity-text { min-width: 0; }
-
-.account-identity-text h3 {
-  margin: 0;
-  overflow: hidden;
-  font-size: 16px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.account-identity-text p {
-  margin: 3px 0 0;
-  overflow: hidden;
-  color: var(--ui-muted);
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.account-identity-text .account-avatar-note { color: var(--warning, #b45309); font-size: 12px; }
-
-.account-avatar-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-left: auto;
-}
-
-.account-danger-text { color: var(--error) !important; }
-
-.account-field-row {
-  display: grid;
-  grid-template-columns: 170px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 16px;
-  margin-top: 18px;
-  border-top: 1px solid var(--card-border);
-  padding-top: 18px;
-}
-
-.account-field-label p { margin: 4px 0 0; color: var(--ui-muted); font-size: 12px; }
-.account-field-name { font-size: 14px; font-weight: 500; }
-
-.account-email-value {
-  margin: 0;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-md);
-  background: var(--gray-100);
-  padding: 10px 12px;
-  color: var(--ui-muted);
-  font-size: 14px;
-  word-break: break-all;
-}
-
-.account-usage {
-  border-left: 1px solid var(--card-border);
-  padding-left: 28px;
-}
-
-.account-usage h3 { margin: 0; font-size: 15px; }
-.account-usage-sub { margin: 4px 0 0; color: var(--ui-muted); font-size: 12px; }
-
-.account-usage-count {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.account-usage-number { display: flex; align-items: baseline; gap: 8px; }
-.account-usage-number strong { font-size: 30px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.account-usage-number span { color: var(--ui-muted); font-size: 13px; }
-
-.account-usage-link {
-  border: 0;
-  background: transparent;
-  color: var(--ui-accent);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.account-usage-link:hover { text-decoration: underline; }
-
-.account-usage-recent-label { margin: 22px 0 8px; color: var(--ui-muted); font-size: 12px; }
-
-.account-recent-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
-.account-recent-empty { color: var(--ui-muted); font-size: 13px; }
-
-.account-recent-row {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 10px;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  padding: 8px;
-  color: var(--ink);
-  text-align: left;
-  cursor: pointer;
-}
-
-.account-recent-row:hover { background: var(--accent-soft); }
-.account-recent-row > svg { flex: 0 0 auto; color: var(--ui-muted); }
-
-.account-recent-badge {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
-  place-items: center;
-  border-radius: 8px;
-  background: var(--accent-soft);
-  color: var(--ui-accent);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.account-recent-text { display: grid; flex: 1; min-width: 0; gap: 1px; }
-.account-recent-text strong { overflow: hidden; font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.account-recent-text small { color: var(--ui-muted); font-size: 12px; }
-
-.account-card-block {
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius-xl);
-  background: var(--surface-card);
-  padding: clamp(20px, 3.5vw, 28px);
-}
-
-.account-block-head h2 { margin: 0; font-size: 17px; }
-.account-block-head p { margin: 4px 0 0; color: var(--ui-muted); font-size: 13px; }
-
-.account-security-rows { margin-top: 8px; }
-
-.account-security-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border-top: 1px solid var(--card-border);
-  padding: 16px 0;
-}
-
-.account-security-row h3 { margin: 0; font-size: 14px; font-weight: 500; }
-.account-security-row p { margin: 4px 0 0; color: var(--ui-muted); font-size: 12px; line-height: 1.55; }
-
-.account-security-row.is-wechat { align-items: flex-start; }
-
-.account-wechat-qr {
-  width: 128px;
-  height: 128px;
-  flex: 0 0 auto;
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius-md);
-  object-fit: contain;
-}
-
-.account-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  padding: 48px 24px;
-  color: var(--muted);
-}
-
-.account-password-dialog {
-  max-width: 440px;
-}
-
-.account-fields { display: grid; gap: 16px; margin-top: 18px; }
-
-.account-form-error {
-  margin: 0;
-  border-radius: var(--radius-md);
-  background: var(--error-bg);
-  color: var(--error);
-  font-size: 13px;
-  padding: 10px 14px;
-}
-
-.account-password-dialog-done {
-  margin: 0;
-  padding: 12px 0 4px;
-  color: var(--muted);
-  font-size: 14px;
-}
-
+/* Account layout and media styles live in features/account/account.css. */
 @media (max-width: 900px) {
-  .account-top-card { grid-template-columns: 1fr; }
-
-  .account-usage {
-    border-top: 1px solid var(--card-border);
-    border-left: 0;
-    padding-top: 20px;
-    padding-left: 0;
-  }
-
   .template-preview-dialog {
     width: min(1080px, calc(100vw - 32px));
   }

@@ -20,8 +20,8 @@ vi.mock("../preview/ResumePreview", () => ({
 }));
 
 const templates = [
-  { id: "8", key: "blank-cn", name: "空白简历", description: null, data: {}, style: {} },
-  { id: "9", key: "modern-cn", name: "现代双栏", description: null, data: {}, style: {} },
+  { id: "9", key: "classic-technical-cn", name: "经典单页技术简历", description: null, data: {}, style: {} },
+  { id: "10", key: "civic-service-cn", name: "蓝色政务行政", description: null, data: {}, style: {} },
 ];
 
 function mockTemplates() {
@@ -41,7 +41,7 @@ describe("ResumeCreatePage", () => {
     window.history.replaceState(null, "", "/resumes/new");
     render(<ResumeCreatePage />);
 
-    fireEvent.click(await screen.findByRole("option", { name: /现代双栏/ }));
+    fireEvent.click(await screen.findByRole("option", { name: /经典单页技术简历/ }));
     fireEvent.change(screen.getByLabelText("简历名称"), {
       target: { value: "2026 产品经理简历" },
     });
@@ -62,7 +62,7 @@ describe("ResumeCreatePage", () => {
     });
     render(<ResumeCreatePage />);
 
-    await screen.findByRole("option", { name: /空白简历/ });
+    await screen.findByRole("option", { name: /经典单页技术简历/ });
     fireEvent.change(screen.getByLabelText("简历名称"), {
       target: { value: "重复名称" },
     });
@@ -85,7 +85,7 @@ describe("ResumeCreatePage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /导入并开始解析/ }));
     await waitFor(() => {
-      expect(importResume).toHaveBeenCalledWith(file, "8", "resume");
+      expect(importResume).toHaveBeenCalledWith(file, "9", "resume");
       expect(window.location.pathname).toBe("/resumes");
     });
   });

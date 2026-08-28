@@ -1,6 +1,6 @@
 import "./print/resume-print.css";
 import { useMemo } from "react";
-import type { ResumeDocumentV1, ResumeStyleV1 } from "../../api/client";
+import type { ResumeDocument, ResumePresentation } from "../../api/client";
 import { renderResumePrintDocument } from "./print/resumePrintDocument";
 
 export function ResumePreview({
@@ -8,8 +8,8 @@ export function ResumePreview({
   style,
   mode = "card",
 }: {
-  data: ResumeDocumentV1;
-  style: ResumeStyleV1;
+  data: ResumeDocument;
+  style: ResumePresentation;
   mode?: "card" | "full";
 }) {
   const documentHtml = useMemo(

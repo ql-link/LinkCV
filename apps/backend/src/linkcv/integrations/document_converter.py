@@ -50,6 +50,7 @@ class DocumentConverter:
         content: bytes,
         operation_id: str,
         deadline_monotonic: float,
+        require_pdf_layout: bool = False,
     ) -> DocumentMarkdownResult:
         del content_type
         extension = filename.rsplit(".", 1)[-1].lower()
@@ -59,6 +60,7 @@ class DocumentConverter:
                 content=content,
                 operation_id=operation_id,
                 deadline_monotonic=deadline_monotonic,
+                require_layout=require_pdf_layout,
             )
         if extension == "docx":
             return await self._linkparse.parse_docx(

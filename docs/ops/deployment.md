@@ -4,7 +4,7 @@
 
 Web 构建会把统一打印文档、页面现有主题 CSS、固定字体文件和一次性 Chromium 驱动 CLI 输出到 `dist-server`，FastAPI 生产镜像复制为 `/app/pdf`。Web 当前快照与小程序正式版本都通过有界 stdin 传入该脚本并从 stdout 接收完整 PDF；小程序 PNG 再由 Python 进程内的 PDFium 临时栅格化。进程完成即退出，快照、PDF 和 PNG 都不写入服务端持久存储。FastAPI 镜像中的 Node 22 只承载该脚本，不新增常驻 PDF 服务。
 
-根级 `Dockerfile` 构建 Vite 静态产物和 FastAPI Python 环境，并把 Node 22、锁定的 `playwright-core` 运行库和 Debian Chromium 复制/安装到运行镜像。PDF 子进程以专用非登录用户 `linkcv-pdf` 运行，保留 Chromium 沙箱；固定路径为 `/usr/bin/chromium`，智能一页默认上限为 2000mm。独立的 `deploy/Dockerfile.pi` 构建无头 Pi Service 镜像。Web 构建阶段会把 `postcss.config.cjs`、`tailwind.config.cjs`、PDF CLI 与应用源码一起复制到 `/app/apps/web`；Pi 构建阶段安装 vendored workspace 的锁定依赖并校验仓库中版本化的模型目录快照。常规 Docker 构建不访问 `models.dev`、OpenRouter、NVIDIA NIM 或 Vercel AI Gateway，只有维护者主动执行 `npm run refresh:pi-model-data` 时才联网刷新模型快照。Node 依赖查询默认使用 npmmirror，但 `npm ci` 禁止替换 `package-lock.json` 已锁定的 tarball 主机。固定版本的 `uv` 与 Python 依赖默认使用阿里云 PyPI；构建过程从 `uv.lock` 导出带哈希的 requirements。镜像构建不连接数据库。FastAPI 容器启动时 runner 先核对 `APP_ENV`、MySQL host、port 和 database，再只读比对 Alembic 当前版本与 `0030` Agent 表、`0031` 范围化提案字段、`0032` 结构化澄清消息字段、`0033` 面试中心三张表和 `0034` 已移除的 JD 归档字段等已知 schema 标记；任一对象提前存在、缺失或部分应用都会在执行 DDL 前终止部署。目标和 schema 对齐后才升级到 Alembic head，并由 Uvicorn 在 `8000` 端口提供 `/api` 与 Web 静态文件。
+根级 `Dockerfile` 构建 Vite 静态产物和 FastAPI Python 环境，并把 Node 22、锁定的 `playwright-core` 运行库和 Debian Chromium 复制/安装到运行镜像。PDF 子进程以专用非登录用户 `linkcv-pdf` 运行，保留 Chromium 沙箱；固定路径为 `/usr/bin/chromium`，智能一页默认上限为 2000mm。独立的 `deploy/Dockerfile.pi` 构建无头 Pi Service 镜像。Web 构建阶段会把 `postcss.config.cjs`、`tailwind.config.cjs`、PDF CLI 与应用源码一起复制到 `/app/apps/web`；Pi 构建阶段安装 vendored workspace 的锁定依赖并校验仓库中版本化的模型目录快照。常规 Docker 构建不访问 `models.dev`、OpenRouter、NVIDIA NIM 或 Vercel AI Gateway，只有维护者主动执行 `npm run refresh:pi-model-data` 时才联网刷新模型快照。Node 依赖查询默认使用 npmmirror，但 `npm ci` 禁止替换 `package-lock.json` 已锁定的 tarball 主机。固定版本的 `uv` 与 Python 依赖默认使用阿里云 PyPI；构建过程从 `uv.lock` 导出带哈希的 requirements。镜像构建不连接数据库。FastAPI 容器启动时 runner 先核对 `APP_ENV`、MySQL host、port 和 database，再只读比对 Alembic 当前版本与 `0030` Agent 表、`0031` 范围化提案字段、`0032` 结构化澄清消息字段、`0033` 面试中心三张表等已知 schema 标记；任一对象提前存在、缺失或部分应用都会在执行 DDL 前终止部署。目标和 schema 对齐后才升级到 Alembic head，并由 Uvicorn 在 `8000` 端口提供 `/api` 与 Web 静态文件。
 
 仓库提供相互独立的 Dev 与 Production Jenkins Pipeline。两者都以同一 commit/build 标识生成不可变 `linkcv` 与 `linkcv-pi` 镜像，先用 `linkcv` 镜像以显式目标参数运行迁移 runner，再更新 Compose，最后等待 FastAPI `/api/health`、Pi `/health`、本环境 Promtail 和 FastAPI `/api/agent/readiness` 进入正常状态；构建镜像阶段不连接数据库。Agent readiness 会穿透 FastAPI→Pi→FastAPI 内部回调并验证当前 `pi_agent` 模型配置与 provider 映射，但不发起供应商模型调用；任一服务令牌、回调网络或模型配置无效都会阻止发布被标记为成功。
 
@@ -65,7 +65,9 @@ Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小�
 
 本期没有管理员开通接口。发布方还需在受控流程中确保至少一个既有用户被标记为 `users.is_admin=true`；公开注册始终是普通用户。没有管理员只会使 `/api/admin/llm/**` 无法使用，不会放宽权限。
 
-生产容器通过 `tolink-app-net` 使用 Docker DNS 连接 MySQL、Redis、MinIO 和平台 RabbitMQ，并须能访问仓库配置的 LinkParse。MySQL、Redis、MinIO、RabbitMQ 与 LinkParse 都不由 Production Compose 创建。Worker 使用 RabbitMQ durable queue、固定 `resume.import` 路由和 DLX/DLT；业务解析失败落 MySQL 终态且不自动重试，Redis、数据库或对象存储等公共依赖不可用时保留消息等待恢复。
+生产容器通过 `tolink-app-net` 使用 Docker DNS 连接 MySQL、Redis、MinIO 和平台 RabbitMQ，并须能访问仓库配置的 LinkParse。MySQL、Redis、MinIO、RabbitMQ 与 LinkParse 都不由 Production Compose 创建。Worker 使用 V2 RabbitMQ durable queue、固定 `resume.import.v2` 路由和独立 DLX/DLT；业务解析失败落 MySQL 终态且不自动重试，Redis、数据库或对象存储等公共依赖不可用时保留消息等待恢复。
+
+PDF layout 与消息 V2 必须按兼容窗口发布：先发布支持 `include_layout=true` 的 LinkParse 并验证旧默认请求仍兼容，再启动连接 V2 topology 的新 LinkCV Worker，确认 V2 queue 只有新消费者后才替换 FastAPI 生产者。V1 exchange、queue 和 DLT 在确认旧队列无在途/重试消息且观察窗口结束前保留，不自动删除；若新 FastAPI 误连旧 LinkParse，PDF 导入会安全失败为 `RESUME_LAYOUT_UNSUPPORTED`，不得回退到旧 Markdown 成功路径。
 
 模板创建与异步导入是同一版本的跨端契约，Web、FastAPI、Worker 和迁移必须一起发布。执行 `0017` 前先运行 `uv run --directory apps/backend python scripts/release/cleanup_legacy_resume_imports.py` 获取 dry-run 清单，人工确认后再加 `--execute`；旧导入未归零时迁移会拒绝继续。
 
@@ -88,7 +90,7 @@ CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并�
 - 应用回滚必须把 `TAG` 与 `PI_TAG` 一起切回同一环境、同一版本的两个不可变镜像标签并重新执行 Compose；不得把 Dev 标签部署到 Production。
 - 数据库迁移是 forward-only：当前与历史 revision 都不提供 down SQL，禁止执行 Alembic downgrade，也不做升级降级往返测试。
 - 发布前按迁移风险准备并验证数据库及相关对象存储备份。需要恢复旧数据库状态时使用备份；普通 schema 或数据缺陷通过新的向前 revision 修正。
-- 当前 head `0035`；`0032` 为 Agent 消息增加结构化澄清字段，`0033` 新增面试求职进程、单场面试和素材元数据，`0034` 永久删除当时已归档的 JD 并移除归档字段和索引，`0035` 为 JD 图片智能导入新增空的 `job_image_structuring` 模型能力绑定。面试迁移是加法 DDL，不回填样例数据。
+- 当前 head `0044`；`0032` 为 Agent 消息增加结构化澄清字段，`0033` 新增面试求职进程、单场面试和素材元数据，`0034` 删除存量已归档 JD 并移除对应字段和索引，`0035` 为 JD 图片智能导入新增空的 `job_image_structuring` 模型能力绑定，`0036`–`0043` 继续收敛简历快照、模板与用户个人画像 schema，`0044` 只恢复后续 `classic-technical-cn` 模板快照的紧凑字号、行距与主题色，既有简历和版本不变。
 - 如果使用执行 `0033` 前的数据库备份恢复，必须同时处理备份之后写入 MinIO 的面试对象；只恢复数据库会产生失去元数据索引的对象。
 - 只有旧应用兼容当前新 schema 时才允许回退应用镜像。若不兼容，必须继续向前修复或按完整恢复方案同时恢复数据库与应用，不能只回切镜像。
 - MySQL DDL 可能隐式提交；迁移失败后停止自动重试，核对实际 current 和 schema，再决定新 revision 或备份恢复。

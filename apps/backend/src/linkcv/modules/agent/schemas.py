@@ -3,10 +3,17 @@ import re
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
-from linkcv.domain.resume_document import ResumeDocumentV1
-from linkcv.domain.resume_style import ResumeStyleV1
+from linkcv.domain.resume_document import ResumeDocument
+from linkcv.domain.resume_style import ResumePresentation
 
 
 class SessionCreateRequest(BaseModel):
@@ -40,6 +47,116 @@ class AgentSelectionContext(BaseModel):
         return self
 
 
+AgentContextType = Literal[
+    "resume",
+    "resume_version",
+    "job",
+    "application",
+    "interview",
+]
+
+
+class AgentContextRef(BaseModel):
+    """A client supplied reference to one explicitly selected private object.
+
+    The client may send the stable marker as ``version`` (the canonical wire
+    name), or one of the aliases used by older handoff examples.  Display
+    fields are accepted for Web-client round trips but are always rebuilt from
+    the owner-scoped record by FastAPI.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+
+    type: AgentContextType
+    id: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
+    version_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("version_id", "versionId"),
+        pattern=r"^[1-9][0-9]{0,19}$",
+    )
+    version: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "version", "stable_version", "lock_version", "updated_at"
+        ),
+        max_length=128,
+    )
+    # These display fields are accepted for the Web client convenience, but
+    # context_service deliberately ignores them and rebuilds authoritative
+    # values from the owner-scoped row.
+    label: str | None = Field(default=None, max_length=255)
+    description: str | None = Field(default=None, max_length=500)
+    updated_at: str | datetime | None = Field(default=None, max_length=128)
+    lock_version: int | None = Field(default=None, ge=1)
+    resume_id: str | None = Field(default=None, pattern=r"^[1-9][0-9]{0,19}$")
+
+    @field_validator("version", mode="before")
+    @classmethod
+    def normalize_version(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return str(value)
+
+    @field_validator("updated_at", mode="before")
+    @classmethod
+    def normalize_updated_at(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return str(value)
+
+
+class AgentContextListItem(BaseModel):
+    """The light-weight selector entry returned by ``GET /api/agent/contexts``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: AgentContextType
+    id: str
+    version: str
+    lock_version: int | None = None
+    version_id: str | None = None
+    resume_id: str | None = None
+    label: str
+    description: str | None = None
+    updated_at: datetime
+
+
+class AgentContextSnapshot(AgentContextListItem):
+    """The immutable, display-only reference persisted on a user message."""
+
+
+class AgentContextMaterial(BaseModel):
+    """Bounded, already owner-checked material sent from FastAPI to Pi.
+
+    ``content`` is intentionally a small field allow-list assembled by
+    ``context_service``.  It is never persisted in ``agent_messages``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: AgentContextType
+    id: str
+    version: str
+    lock_version: int | None = None
+    version_id: str | None = None
+    resume_id: str | None = None
+    label: str
+    description: str | None = None
+    updated_at: datetime
+    content: dict[str, object] = Field(default_factory=dict)
+
+
+class AgentContextListResponse(BaseModel):
+    contexts: list[AgentContextListItem]
+
+
 class MessageCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -48,7 +165,24 @@ class MessageCreateRequest(BaseModel):
         min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"
     )
     selection_context: AgentSelectionContext | None = None
+    contexts: list[AgentContextRef] | None = Field(default=None, max_length=10)
     reply_to_sequence_no: int | None = Field(default=None, ge=1)
+
+    @field_validator("content")
+    @classmethod
+    def reject_blank_content(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("message content cannot be blank")
+        return value
+
+    @model_validator(mode="after")
+    def validate_context_types(self) -> "MessageCreateRequest":
+        if self.contexts is None:
+            return self
+        context_types = [item.type for item in self.contexts]
+        if len(context_types) != len(set(context_types)):
+            raise ValueError("agent context types must be unique")
+        return self
 
 
 class ClarificationOption(BaseModel):
@@ -95,6 +229,7 @@ class AgentMessageRecord(BaseModel):
     message_type: Literal["text", "clarification"] = "text"
     content: str
     clarification: AgentClarification | None = None
+    contexts: list[AgentContextSnapshot] | None = None
     created_at: datetime
 
 
@@ -130,8 +265,8 @@ class ProposalCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     call_key: str = Field(min_length=1, max_length=128)
-    data: ResumeDocumentV1
-    style: ResumeStyleV1
+    data: ResumeDocument
+    style: ResumePresentation
     summary: str = Field(min_length=1, max_length=4_000)
 
 
@@ -140,8 +275,8 @@ class ProposalRecord(BaseModel):
     run_id: str
     resume_id: str
     base_lock_version: int
-    data: ResumeDocumentV1
-    style: ResumeStyleV1
+    data: ResumeDocument
+    style: ResumePresentation
     summary: str
     proposal_mode: Literal[
         "legacy_snapshot",
@@ -193,7 +328,11 @@ class PiRunRequest(BaseModel):
 
     run_id: str
     content: str = Field(min_length=1, max_length=32_768)
+    history: list[dict[str, str]] = Field(default_factory=list, max_length=41)
     selection_context: AgentSelectionContext | None = None
+    context_materials: list[AgentContextMaterial] = Field(
+        default_factory=list, max_length=10
+    )
 
 
 class ResumeTargetLocator(BaseModel):
@@ -247,8 +386,8 @@ class ScopedResumeContextResponse(BaseModel):
     scope: Literal["target", "entry", "section", "resume"]
     content: str
     blocks: list[dict[str, Any]] = Field(default_factory=list)
-    data: ResumeDocumentV1 | None = None
-    style: ResumeStyleV1
+    data: ResumeDocument | None = None
+    style: ResumePresentation
 
 
 class MaterialSearchRequest(BaseModel):
@@ -317,8 +456,8 @@ class ResumeContextResponse(BaseModel):
     resume_id: str
     title: str
     lock_version: int
-    data: ResumeDocumentV1
-    style: ResumeStyleV1
+    data: ResumeDocument
+    style: ResumePresentation
 
 
 class RuntimeConfigResponse(BaseModel):

@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Eye, LayoutTemplate, Minus, Plus, RefreshCw } from "lucide-react";
+import { Eye, LayoutTemplate, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 
 import { api, ApiRequestError, type ResumeTemplate } from "../../api/client";
@@ -6,17 +6,15 @@ import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { editorPath, navigateTo } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
 import { ResumePreview } from "../preview/ResumePreview";
-import { getWheelZoomScale } from "../workbench/workbenchZoom";
+import { TemplatePreviewDialog } from "./TemplatePreviewDialog";
 import {
   Button,
   Dialog,
-  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  IconButton,
   Input,
   Label,
   PageLoading,
@@ -38,22 +36,13 @@ function createErrorMessage(error: unknown) {
   return "创建简历失败，请稍后重试。";
 }
 
-function initialTemplatePreviewScale() {
-  if (typeof window === "undefined") return 0.72;
-  if (window.innerWidth <= 420) return 0.39;
-  if (window.innerWidth <= 640) return 0.54;
-  return 0.72;
-}
-
 export function ResumeTemplatesPage() {
   const createResume = useResumeStore((state) => state.createResume);
   const titleInputRef = useRef<HTMLInputElement>(null);
-  const previewStageRef = useRef<HTMLDivElement | null>(null);
   const [templates, setTemplates] = useState<ResumeTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [previewTemplate, setPreviewTemplate] = useState<ResumeTemplate | null>(null);
-  const [previewScale, setPreviewScale] = useState(0.72);
   const [selectedTemplate, setSelectedTemplate] = useState<ResumeTemplate | null>(null);
   const [title, setTitle] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -76,49 +65,6 @@ export function ResumeTemplatesPage() {
     void loadTemplates();
   }, [loadTemplates]);
 
-  const handlePreviewWheel = useCallback((event: WheelEvent) => {
-    if ((!event.ctrlKey && !event.metaKey) || event.deltaY === 0) return;
-
-    event.preventDefault();
-    setPreviewScale((currentScale) => (
-      getWheelZoomScale(currentScale, event, {
-        minScale: 0.3,
-        maxScale: 1.2,
-        step: 0.08,
-      }) ?? currentScale
-    ));
-  }, []);
-
-  const changePreviewScale = (direction: -1 | 1) => {
-    setPreviewScale((currentScale) => Math.min(
-      1.2,
-      Math.max(0.3, Number((currentScale + direction * 0.08).toFixed(2))),
-    ));
-  };
-
-  const previewTemplateIndex = previewTemplate
-    ? templates.findIndex((template) => template.id === previewTemplate.id)
-    : -1;
-  const hasPreviewNeighbors = previewTemplateIndex >= 0 && templates.length > 1;
-  const previousTemplate = hasPreviewNeighbors
-    ? templates[(previewTemplateIndex - 1 + templates.length) % templates.length]
-    : null;
-  const nextTemplate = hasPreviewNeighbors
-    ? templates[(previewTemplateIndex + 1) % templates.length]
-    : null;
-
-  const changePreviewTemplate = (direction: -1 | 1) => {
-    if (previewTemplateIndex < 0 || templates.length <= 1) return;
-    const nextIndex = (previewTemplateIndex + direction + templates.length) % templates.length;
-    setPreviewTemplate(templates[nextIndex]);
-  };
-
-  const setPreviewStage = useCallback((stage: HTMLDivElement | null) => {
-    previewStageRef.current?.removeEventListener("wheel", handlePreviewWheel);
-    previewStageRef.current = stage;
-    stage?.addEventListener("wheel", handlePreviewWheel, { passive: false });
-  }, [handlePreviewWheel]);
-
   const closeCreateDialog = () => {
     if (submitting) return;
     setSelectedTemplate(null);
@@ -134,7 +80,6 @@ export function ResumeTemplatesPage() {
   };
 
   const openPreviewDialog = (template: ResumeTemplate) => {
-    setPreviewScale(initialTemplatePreviewScale());
     setPreviewTemplate(template);
   };
 
@@ -240,153 +185,14 @@ export function ResumeTemplatesPage() {
         </section>
       )}
 
-      <Dialog
-        open={previewTemplate !== null}
-        onOpenChange={(open) => !open && setPreviewTemplate(null)}
-      >
-        <DialogContent
-          className="template-preview-dialog"
-          onKeyDown={(event) => {
-            if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-            if (event.key === "ArrowLeft") {
-              event.preventDefault();
-              changePreviewTemplate(-1);
-            }
-            if (event.key === "ArrowRight") {
-              event.preventDefault();
-              changePreviewTemplate(1);
-            }
-          }}
-        >
-          <header className="template-preview-dialog-header">
-            <span>模板预览</span>
-            <span className="template-preview-dialog-divider" aria-hidden="true">/</span>
-            <DialogTitle>{previewTemplate?.name}</DialogTitle>
-          </header>
-          <DialogDescription className="sr-only">
-            完整预览所选简历模板，可按住 Ctrl 或 Command 并滚动鼠标滚轮进行缩放。
-          </DialogDescription>
-          <div className="template-preview-dialog-main">
-            <aside className="template-preview-tools" aria-label="模板预览工具">
-              <span className="template-preview-tools-label">缩放</span>
-              <output
-                className="template-preview-zoom-indicator"
-                aria-live="polite"
-                aria-label="模板预览缩放比例"
-              >
-                {Math.round(previewScale * 100)}%
-              </output>
-              <IconButton
-                className="template-preview-tool-button"
-                disabled={previewScale >= 1.2}
-                label="放大模板"
-                type="button"
-                variant="circular"
-                onClick={() => changePreviewScale(1)}
-              >
-                <Plus size={20} aria-hidden="true" />
-              </IconButton>
-              <IconButton
-                className="template-preview-tool-button"
-                disabled={previewScale <= 0.3}
-                label="缩小模板"
-                type="button"
-                variant="circular"
-                onClick={() => changePreviewScale(-1)}
-              >
-                <Minus size={20} aria-hidden="true" />
-              </IconButton>
-            </aside>
-            <div
-              ref={setPreviewStage}
-              className="template-preview-dialog-stage"
-              style={{ "--template-preview-scale": previewScale } as React.CSSProperties}
-            >
-              <div className="template-preview-carousel">
-                {previousTemplate && (
-                  <button
-                    className="template-preview-neighbor template-preview-neighbor-previous"
-                    type="button"
-                    aria-label={`预览上一个模板：${previousTemplate.name}`}
-                    onClick={() => changePreviewTemplate(-1)}
-                  >
-                    <span aria-hidden="true">
-                      <ResumePreview
-                        data={previousTemplate.data}
-                        style={previousTemplate.style}
-                      />
-                    </span>
-                  </button>
-                )}
-
-                <div className="template-preview-current" key={previewTemplate?.id}>
-                  {previewTemplate && (
-                    <ResumePreview
-                      data={previewTemplate.data}
-                      style={previewTemplate.style}
-                      mode="full"
-                    />
-                  )}
-                </div>
-
-                {nextTemplate && (
-                  <button
-                    className="template-preview-neighbor template-preview-neighbor-next"
-                    type="button"
-                    aria-label={`预览下一个模板：${nextTemplate.name}`}
-                    onClick={() => changePreviewTemplate(1)}
-                  >
-                    <span aria-hidden="true">
-                      <ResumePreview
-                        data={nextTemplate.data}
-                        style={nextTemplate.style}
-                      />
-                    </span>
-                  </button>
-                )}
-
-                <button
-                  className="template-preview-navigation template-preview-navigation-previous"
-                  type="button"
-                  aria-label={previousTemplate ? `上一个模板：${previousTemplate.name}` : "没有上一个模板"}
-                  disabled={!previousTemplate}
-                  onClick={() => changePreviewTemplate(-1)}
-                >
-                  <span className="template-preview-navigation-icon" aria-hidden="true">
-                    <ChevronLeft size={28} />
-                  </span>
-                  <span>上一个模板</span>
-                </button>
-
-                <button
-                  className="template-preview-navigation template-preview-navigation-next"
-                  type="button"
-                  aria-label={nextTemplate ? `下一个模板：${nextTemplate.name}` : "没有下一个模板"}
-                  disabled={!nextTemplate}
-                  onClick={() => changePreviewTemplate(1)}
-                >
-                  <span className="template-preview-navigation-icon" aria-hidden="true">
-                    <ChevronRight size={28} />
-                  </span>
-                  <span>下一个模板</span>
-                </button>
-              </div>
-            </div>
-          </div>
-          <DialogFooter className="template-preview-dialog-footer">
-            <DialogClose asChild>
-              <Button type="button" variant="secondary">关闭</Button>
-            </DialogClose>
-            <Button
-              type="button"
-              variant="accent"
-              onClick={() => previewTemplate && openCreateDialog(previewTemplate)}
-            >
-              创建简历
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <TemplatePreviewDialog
+        templates={templates}
+        template={previewTemplate}
+        primaryActionLabel="创建简历"
+        onTemplateChange={setPreviewTemplate}
+        onPrimaryAction={openCreateDialog}
+        onClose={() => setPreviewTemplate(null)}
+      />
 
       <Dialog open={selectedTemplate !== null} onOpenChange={(open) => !open && closeCreateDialog()}>
         <DialogContent>

@@ -3,10 +3,9 @@ import { inlineIconMarkdown, isInlineIconName } from "../lib/resumeInlineIcon";
 import { isResumeEmailLink } from "../lib/resumeLink";
 import { inlineFontSizeOpenMarker, INLINE_FONT_SIZE_CLOSE_MARKER, normalizeInlineFontSize } from "../lib/resumeInlineStyle";
 
-export type RichTextV1 = {
-  format: "markdown";
-  content: string;
-};
+export type RichText =
+  | { format: "markdown"; content: string }
+  | { format: "tiptap-json"; content: JSONContent };
 
 export type SourceRef = {
   field: string;
@@ -23,12 +22,11 @@ export type ResumeBasics = {
   phone: string | null;
   location: string | null;
   photo: string | null;
-  summary: RichTextV1 | null;
+  summary: RichText | null;
   links: Array<{ id: string; label: string; url: string }>;
 };
 
-export type ResumeDocumentV1 = {
-  schema_version: "1.0";
+export type ResumeDocument = {
   basics: ResumeBasics;
   sections: {
     work_experiences: Array<Record<string, unknown> & { id: string }>;
@@ -45,15 +43,122 @@ export type ResumeDocumentV1 = {
         id: string;
         title: string | null;
         subtitle: string | null;
-        content: RichTextV1;
+        content: RichText;
         source_refs: SourceRef[];
       }>;
     }>;
   };
+  semantic_sections: Array<{
+    id: string;
+    semantic_kind:
+      | "basics"
+      | "profile"
+      | "work"
+      | "education"
+      | "project"
+      | "skills"
+      | "activity"
+      | "interests"
+      | "certificates"
+      | "awards"
+      | "languages"
+      | "custom";
+    display_title: string;
+    semantic_source: "import" | "model" | "user" | "system";
+    semantic_confidence: number | null;
+    content_key:
+      | "basics"
+      | "work_experiences"
+      | "educations"
+      | "projects"
+      | "skills"
+      | "certificates"
+      | "awards"
+      | "languages"
+      | "custom_sections";
+    custom_section_id: string | null;
+  }>;
 };
 
-export type ResumeStyleV1 = {
-  schema_version: "1.0";
+export function stripTemplatePageRegions(markdown: string) {
+  const stack: Array<"sidebar" | "main" | "meta" | "trio"> = [];
+  let fenced = false;
+  return markdown.split("\n").filter((line) => {
+    if (/^\s*(?:```|~~~)/u.test(line)) {
+      fenced = !fenced;
+      return true;
+    }
+    if (fenced) return true;
+    const opening = line.trim().match(/^::::\s+(sidebar|main|meta|trio)\s*$/u);
+    if (opening) {
+      const kind = opening[1] as "sidebar" | "main" | "meta" | "trio";
+      stack.push(kind);
+      return kind === "meta" || kind === "trio";
+    }
+    if (/^::::\s*$/u.test(line.trim())) {
+      const kind = stack.pop();
+      return kind === "meta" || kind === "trio" || kind == null;
+    }
+    return true;
+  }).join("\n");
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+export async function resumeDocumentContentHash(document: ResumeDocument) {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(stableJson(document)),
+  );
+  return `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+export type TemplateManifest = {
+  renderer_key: "flow" | "columns";
+  regions: Array<{
+    id: string;
+    kind: "header" | "sidebar" | "main" | "footer";
+    order: number;
+  }>;
+  slots: Array<{
+    id: string;
+    region_id: string;
+    accepts: Array<
+      | "basics"
+      | "profile"
+      | "work"
+      | "education"
+      | "project"
+      | "skills"
+      | "activity"
+      | "interests"
+      | "certificates"
+      | "awards"
+      | "languages"
+      | "custom"
+      | "avatar"
+    >;
+    required: boolean;
+    fallback: boolean;
+    order: number;
+  }>;
+  avatar: {
+    visibility: "show" | "hide";
+    fallback_asset: "system-default" | "none";
+    size: number;
+  };
+};
+
+export type ResumePresentation = {
   template_key: string;
   font_family: string;
   font_size: number;
@@ -68,10 +173,18 @@ export type ResumeStyleV1 = {
     margin_left_mm: number;
   };
   section_order: string[];
+  manifest: TemplateManifest;
 };
 
-export const defaultSemanticDocument: ResumeDocumentV1 = {
-  schema_version: "1.0",
+export const DEFAULT_RESUME_ACCENT_COLOR = "#3478f6";
+
+export function normalizeResumeAccentColor(value: unknown) {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/iu.test(value)
+    ? value
+    : DEFAULT_RESUME_ACCENT_COLOR;
+}
+
+export const defaultSemanticDocument: ResumeDocument = {
   basics: {
     name: "张三",
     headline: "后端开发工程师",
@@ -92,10 +205,20 @@ export const defaultSemanticDocument: ResumeDocumentV1 = {
     languages: [],
     custom_sections: [],
   },
+  semantic_sections: [
+    {
+      id: "semantic_basics",
+      semantic_kind: "basics",
+      display_title: "基本信息",
+      semantic_source: "system",
+      semantic_confidence: null,
+      content_key: "basics",
+      custom_section_id: null,
+    },
+  ],
 };
 
-export const defaultSemanticStyle: ResumeStyleV1 = {
-  schema_version: "1.0",
+export const defaultSemanticStyle: ResumePresentation = {
   template_key: "classic-cn",
   font_family: "source-han-serif",
   font_size: 14,
@@ -110,6 +233,22 @@ export const defaultSemanticStyle: ResumeStyleV1 = {
     margin_left_mm: 16,
   },
   section_order: ["basics", "work_experiences", "projects", "educations", "skills"],
+  manifest: {
+    renderer_key: "flow",
+    regions: [{ id: "main", kind: "main", order: 1 }],
+    slots: [
+      { id: "avatar", region_id: "main", accepts: ["avatar"], required: false, fallback: false, order: 0 },
+      {
+        id: "main-content",
+        region_id: "main",
+        accepts: ["basics", "profile", "work", "education", "project", "skills", "activity", "interests", "certificates", "awards", "languages", "custom"],
+        required: false,
+        fallback: true,
+        order: 0,
+      },
+    ],
+    avatar: { visibility: "hide", fallback_asset: "none", size: 96 },
+  },
 };
 
 type EditorSettings = {
@@ -133,8 +272,18 @@ type EditorSettings = {
 
 function richText(value: unknown) {
   if (!value || typeof value !== "object") return "";
-  const content = (value as { content?: unknown }).content;
-  return typeof content === "string" ? content : "";
+  const candidate = value as Partial<RichText>;
+  if (candidate.format === "markdown" && typeof candidate.content === "string") {
+    return candidate.content;
+  }
+  if (
+    candidate.format === "tiptap-json"
+    && candidate.content
+    && typeof candidate.content === "object"
+  ) {
+    return editorDocumentToMarkdown(candidate.content as JSONContent);
+  }
+  return "";
 }
 
 function datedRange(value: Record<string, unknown>) {
@@ -147,38 +296,98 @@ function optionalText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
+/**
+ * Old structured imports already model highlights as list items.  A few
+ * LinkParse/model combinations persisted the list marker a second time (and
+ * encoded the separating space), so adding the current wrapper would render
+ * two markers.  Only a marker followed by whitespace or a known space entity
+ * is removed; values such as "-1°C" remain ordinary text.
+ */
+function normalizeLegacyHighlightContent(value: string) {
+  let normalized = value.trim();
+  while (true) {
+    const marker = normalized.match(/^-[ \t]+/u)
+      ?? normalized.match(/^-(?=(?:&#x20;|&#32;|&nbsp;))/iu);
+    if (!marker) return normalized;
+
+    normalized = normalized.slice(marker[0].length)
+      .replace(/^(?:&#x20;|&#32;|&nbsp;)[ \t]*/iu, "");
+  }
+}
+
 function appendHighlights(lines: string[], value: unknown) {
   if (!Array.isArray(value)) return;
   for (const highlight of value) {
     if (!highlight || typeof highlight !== "object") continue;
-    const content = richText((highlight as Record<string, unknown>).content);
+    const content = normalizeLegacyHighlightContent(
+      richText((highlight as Record<string, unknown>).content),
+    );
     if (content) lines.push(`- ${content}`);
   }
 }
 
-export function resumeDocumentToMarkdown(document: ResumeDocumentV1) {
-  const editorSection = document.sections.custom_sections.find(
-    (section) => section.id === "custom_section_editor",
-  );
-  const editorItem = editorSection?.items.find((item) => item.id === "custom_item_editor");
-  if (editorItem) return editorItem.content.content;
+function markdownContactPart(value: { label: string; url: string }) {
+  const label = optionalText(value.label);
+  const url = optionalText(value.url);
+  if (!url || isResumeEmailLink(url)) return label || url;
+  return `[${label || url}](${url})`;
+}
+
+function semanticTitle(
+  document: ResumeDocument,
+  contentKey: ResumeDocument["semantic_sections"][number]["content_key"],
+  fallback: string,
+  customSectionId: string | null = null,
+) {
+  return document.semantic_sections.find(
+    (section) => section.content_key === contentKey
+      && section.custom_section_id === customSectionId,
+  )?.display_title ?? fallback;
+}
+
+export function hasCanonicalEditorSections(document: ResumeDocument) {
+  return document.semantic_sections.length > 0
+    && document.semantic_sections.every((section) => section.content_key === "custom_sections")
+    && document.semantic_sections.every((section) => section.custom_section_id);
+}
+
+export function resumeDocumentToMarkdown(document: ResumeDocument) {
+  if (hasCanonicalEditorSections(document)) {
+    const sections = new Map(document.sections.custom_sections.map((section) => [section.id, section]));
+    return document.semantic_sections.map((semantic) => {
+      const section = sections.get(semantic.custom_section_id ?? "");
+      if (!section) return "";
+      const body = section.items.map((item) => richText(item.content)).filter(Boolean).join("\n\n");
+      if (section.items.length > 0 && section.items.every(
+        (item) => item.content.format === "tiptap-json",
+      )) return body;
+      if (semantic.semantic_kind === "basics") return body;
+      return [
+        `## [[linkcv-block:${section.id}:${semantic.semantic_kind}]]${semantic.display_title}`,
+        body,
+      ].filter(Boolean).join("\n\n");
+    }).filter(Boolean).join("\n\n").trim();
+  }
 
   const lines: string[] = [];
   const { basics, sections } = document;
   if (basics.name) lines.push(`# ${basics.name}`);
   if (basics.headline) lines.push("", basics.headline);
-  const contacts = [basics.phone, basics.email, basics.location].filter(Boolean);
-  if (contacts.length) lines.push("", contacts.join(" ｜ "));
+  const contacts = [basics.phone, basics.email, basics.location]
+    .map(optionalText)
+    .filter(Boolean);
+  const contactLinks = basics.links
+    .map(markdownContactPart)
+    .filter(Boolean);
+  const contactParts = [...contacts, ...contactLinks];
+  if (contactParts.length) lines.push("", contactParts.join(" ｜ "));
   if (basics.summary) lines.push("", richText(basics.summary));
-  if (basics.links.length) {
-    for (const link of basics.links) lines.push(`- [${link.label}](${link.url})`);
-  }
   if (basics.photo) {
     lines.push("", `![简历头像](${basics.photo} \"linkcv-avatar:96\")`);
   }
 
   if (sections.work_experiences.length) {
-    lines.push("", "## 工作经历");
+    lines.push("", `## ${semanticTitle(document, "work_experiences", "工作经历")}`);
     for (const raw of sections.work_experiences) {
       const item = raw as Record<string, unknown>;
       lines.push("", `### ${String(item.organization ?? "")} - ${String(item.position ?? "")}`);
@@ -193,7 +402,7 @@ export function resumeDocumentToMarkdown(document: ResumeDocumentV1) {
   }
 
   if (sections.projects.length) {
-    lines.push("", "## 项目经历");
+    lines.push("", `## ${semanticTitle(document, "projects", "项目经历")}`);
     for (const raw of sections.projects) {
       const item = raw as Record<string, unknown>;
       lines.push("", `### ${String(item.name ?? "")}`);
@@ -208,7 +417,7 @@ export function resumeDocumentToMarkdown(document: ResumeDocumentV1) {
   }
 
   if (sections.educations.length) {
-    lines.push("", "## 教育经历");
+    lines.push("", `## ${semanticTitle(document, "educations", "教育经历")}`);
     for (const raw of sections.educations) {
       const item = raw as Record<string, unknown>;
       lines.push("", `### ${String(item.institution ?? "")}`);
@@ -225,7 +434,7 @@ export function resumeDocumentToMarkdown(document: ResumeDocumentV1) {
   }
 
   if (sections.skills.length) {
-    lines.push("", "## 专业技能");
+    lines.push("", `## ${semanticTitle(document, "skills", "专业技能")}`);
     for (const skill of sections.skills) {
       const keywords = skill.keywords.length ? `：${skill.keywords.join("、")}` : "";
       const level = skill.level ? `（${skill.level}）` : "";
@@ -234,7 +443,7 @@ export function resumeDocumentToMarkdown(document: ResumeDocumentV1) {
   }
 
   if (sections.certificates.length) {
-    lines.push("", "## 证书");
+    lines.push("", `## ${semanticTitle(document, "certificates", "证书")}`);
     for (const raw of sections.certificates) {
       const item = raw as Record<string, unknown>;
       const details = [optionalText(item.issuer), datedRange(item)].filter(Boolean);
@@ -246,7 +455,7 @@ export function resumeDocumentToMarkdown(document: ResumeDocumentV1) {
   }
 
   if (sections.awards.length) {
-    lines.push("", "## 荣誉奖项");
+    lines.push("", `## ${semanticTitle(document, "awards", "荣誉奖项")}`);
     for (const raw of sections.awards) {
       const item = raw as Record<string, unknown>;
       const details = [optionalText(item.awarder), datedRange(item)].filter(Boolean);
@@ -258,7 +467,7 @@ export function resumeDocumentToMarkdown(document: ResumeDocumentV1) {
   }
 
   if (sections.languages.length) {
-    lines.push("", "## 语言能力");
+    lines.push("", `## ${semanticTitle(document, "languages", "语言能力")}`);
     for (const raw of sections.languages) {
       const item = raw as Record<string, unknown>;
       const fluency = optionalText(item.fluency);
@@ -267,11 +476,12 @@ export function resumeDocumentToMarkdown(document: ResumeDocumentV1) {
   }
 
   for (const section of sections.custom_sections) {
-    lines.push("", `## ${section.title}`);
+    lines.push("", `## ${semanticTitle(document, "custom_sections", section.title, section.id)}`);
     for (const item of section.items) {
       if (item.title) lines.push("", `### ${item.title}`);
       if (item.subtitle) lines.push(item.subtitle);
-      if (item.content.content) lines.push("", item.content.content);
+      const content = richText(item.content);
+      if (content) lines.push("", content);
     }
   }
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
@@ -279,38 +489,121 @@ export function resumeDocumentToMarkdown(document: ResumeDocumentV1) {
 
 export function resumeDocumentFromMarkdown(
   markdown: string,
-  previous: ResumeDocumentV1,
-): ResumeDocumentV1 {
-  const heading = markdown.match(/^#\s+(.+)$/m)?.[1]?.trim();
-  const preservedCustomSections = previous.sections.custom_sections.filter(
-    (section) => section.id !== "custom_section_editor",
-  );
+  previous: ResumeDocument,
+): ResumeDocument {
+  const normalized = stripTemplatePageRegions(markdown)
+    .split("\n")
+    .filter((line) => !/!\[[^\]]*\]\([^)]*\s+"linkcv-avatar:[^"]+"\)/u.test(line))
+    .join("\n")
+    .replace(/\n{3,}/gu, "\n\n")
+    .trim();
+  const lines = normalized.split("\n");
+  const sections: Array<{ id: string; title: string; body: string; kind: ResumeDocument["semantic_sections"][number]["semantic_kind"] }> = [];
+  const headingPattern = /^##\s+(?:\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::(basics|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\])?(.*)$/u;
+  let start = 0;
+  let current: RegExpMatchArray | null = null;
+  const stableBlockId = (seed: string, index: number) => {
+    let hash = 2166136261;
+    for (const char of `${seed}:${index}`) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+    const suffix = (hash >>> 0).toString(16).padStart(8, "0");
+    return `blk_${suffix}${suffix}`;
+  };
+  const cleanTitle = (value: string) => value
+    .replace(/:icon\[[^\]]+\]:/gu, "")
+    .replace(/^\s+|\s+$/gu, "") || "未命名章节";
+  const previousById = new Map(previous.semantic_sections.map((section) => [section.custom_section_id, section]));
+  const titleCounts = new Map<string, number>();
+  for (const section of previous.semantic_sections) {
+    const title = section.display_title.trim();
+    titleCounts.set(title, (titleCounts.get(title) ?? 0) + 1);
+  }
+  const previousByTitle = new Map(previous.semantic_sections
+    .filter((section) => titleCounts.get(section.display_title.trim()) === 1)
+    .map((section) => [section.display_title.trim(), section]));
+  const pushSection = (end: number, match: RegExpMatchArray | null, index: number) => {
+    const raw = lines.slice(start, end).join("\n").trim();
+    if (!raw && match) return;
+    const title = match ? cleanTitle(match[3] ?? "") : "基本信息";
+    const id = match?.[1]
+      ?? (match ? previousByTitle.get(title)?.custom_section_id : previous.semantic_sections.find((item) => item.semantic_kind === "basics")?.custom_section_id)
+      ?? stableBlockId(title, index);
+    const previousSemantic = previousById.get(id) ?? previousByTitle.get(title);
+    sections.push({
+      id,
+      title,
+      body: raw || `# ${previous.basics.name || "未命名简历"}`,
+      kind: match
+        ? (match[2] as ResumeDocument["semantic_sections"][number]["semantic_kind"] | undefined)
+          ?? previousSemantic?.semantic_kind
+          ?? "custom"
+        : "basics",
+    });
+  };
+  let fenced = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (/^\s*(?:```|~~~)/u.test(lines[index])) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced) continue;
+    const match = lines[index].match(headingPattern);
+    if (!match) continue;
+    pushSection(index, current, sections.length);
+    current = match;
+    start = index + 1;
+  }
+  pushSection(lines.length, current, sections.length);
+  const heading = normalized.match(/^#\s+(?:\[\[linkcv-block:blk_[a-z0-9]{16,64}\]\])?(.+)$/m)?.[1]?.trim();
+  const customSections = sections.map((section) => ({
+    id: section.id,
+    title: section.title,
+    items: [{
+      id: `item_${section.id.slice(4)}`,
+      title: null,
+      subtitle: null,
+      content: { format: "markdown" as const, content: section.body },
+      source_refs: [],
+    }],
+  }));
+  const semanticSections = sections.map((section) => {
+    const previousSemantic = previousById.get(section.id) ?? previousByTitle.get(section.title);
+    return {
+      id: previousSemantic?.id ?? `sem_${section.id.slice(4)}`,
+      semantic_kind: section.kind,
+      display_title: section.title,
+      semantic_source: previousSemantic?.semantic_source ?? "system" as const,
+      semantic_confidence: previousSemantic?.semantic_confidence ?? null,
+      content_key: "custom_sections" as const,
+      custom_section_id: section.id,
+    };
+  });
   return {
     ...previous,
-    basics: { ...previous.basics, name: heading || previous.basics.name },
-    sections: {
-      ...previous.sections,
-      custom_sections: [
-        ...preservedCustomSections,
-        {
-          id: "custom_section_editor",
-          title: "简历正文",
-          items: [
-            {
-              id: "custom_item_editor",
-              title: null,
-              subtitle: null,
-              content: { format: "markdown", content: markdown },
-              source_refs: [],
-            },
-          ],
-        },
-      ],
+    basics: {
+      ...previous.basics,
+      name: heading || previous.basics.name,
+      headline: null,
+      email: null,
+      phone: null,
+      location: null,
+      summary: null,
+      links: [],
     },
+    sections: {
+      work_experiences: [],
+      educations: [],
+      projects: [],
+      skills: [],
+      certificates: [],
+      awards: [],
+      languages: [],
+      custom_sections: customSections,
+    },
+    semantic_sections: semanticSections,
   };
 }
 
-export function styleToEditorSettings(style: ResumeStyleV1): EditorSettings {
+export function styleToEditorSettings(style: ResumePresentation): EditorSettings {
   const supportedThemes = [
     "classic-technical",
     "administrative-sidebar",
@@ -341,11 +634,10 @@ export function styleToEditorSettings(style: ResumeStyleV1): EditorSettings {
 
 export function editorSettingsToStyle(
   settings: EditorSettings,
-  previous: ResumeStyleV1,
-): ResumeStyleV1 {
+  previous: ResumePresentation,
+): ResumePresentation {
   return {
     ...previous,
-    template_key: `${settings.theme}-cn`,
     font_family: settings.fontFamily.includes("Source Han Serif") ? "source-han-serif" : settings.fontFamily,
     font_size: settings.fontSize,
     line_height: settings.lineHeight,
@@ -365,6 +657,9 @@ function markedText(node: JSONContent) {
   for (const mark of node.marks ?? []) {
     if (mark.type === "bold") value = `**${value}**`;
     if (mark.type === "italic") value = `*${value}*`;
+    if (mark.type === "underline") value = `[[linkcv-underline]]${value}[[/linkcv-underline]]`;
+    if (mark.type === "strike") value = `~~${value}~~`;
+    if (mark.type === "code") value = `\`${value}\``;
     if (
       mark.type === "link" &&
       typeof mark.attrs?.href === "string" &&
@@ -372,10 +667,20 @@ function markedText(node: JSONContent) {
     ) {
       value = `[${value}](${mark.attrs.href})`;
     }
+    if (
+      mark.type === "highlight"
+      && typeof mark.attrs?.color === "string"
+      && /^#[0-9a-f]{6}$/iu.test(mark.attrs.color)
+    ) {
+      value = `[[linkcv-highlight:${mark.attrs.color}]]${value}[[/linkcv-highlight]]`;
+    }
   }
-  const fontSize = normalizeInlineFontSize(
-    node.marks?.find((mark) => mark.type === "textStyle")?.attrs?.fontSize,
-  );
+  const textStyle = node.marks?.find((mark) => mark.type === "textStyle")?.attrs;
+  const color = typeof textStyle?.color === "string" && /^#[0-9a-f]{6}$/iu.test(textStyle.color)
+    ? textStyle.color
+    : null;
+  if (color) value = `[[linkcv-color:${color}]]${value}[[/linkcv-color]]`;
+  const fontSize = normalizeInlineFontSize(textStyle?.fontSize);
   if (fontSize != null) {
     value = `${inlineFontSizeOpenMarker(fontSize)}${value}${INLINE_FONT_SIZE_CLOSE_MARKER}`;
   }
@@ -386,7 +691,8 @@ function nodeText(node: JSONContent): string {
   if (node.type === "text") return markedText(node);
   if (node.type === "hardBreak") return "\n";
   if (node.type === "resumeBlockAnchor" && typeof node.attrs?.blockId === "string") {
-    return `[[linkcv-block:${node.attrs.blockId}]]`;
+    const semanticKind = typeof node.attrs.semanticKind === "string" ? `:${node.attrs.semanticKind}` : "";
+    return `[[linkcv-block:${node.attrs.blockId}${semanticKind}]]`;
   }
   if (node.type === "inlineIcon" && isInlineIconName(node.attrs?.name)) return inlineIconMarkdown(node.attrs.name);
   if (node.type === "inlineImage") {
@@ -400,6 +706,43 @@ function nodeText(node: JSONContent): string {
 
 function childBlocksMarkdown(node: JSONContent) {
   return (node.content ?? []).map(nodeMarkdown).filter(Boolean).join("\n\n");
+}
+
+function listStart(node: JSONContent) {
+  const value = Number(node.attrs?.start);
+  return Number.isFinite(value) ? Math.max(1, Math.round(value)) : 1;
+}
+
+function indentMarkdown(value: string, count: number) {
+  const prefix = " ".repeat(count);
+  return value.split("\n").map((line) => `${prefix}${line}`).join("\n");
+}
+
+function listItemMarkdown(node: JSONContent, marker: string) {
+  const continuationIndent = marker.length + 1;
+  let value = "";
+  for (const child of node.content ?? []) {
+    const childValue = child.type === "paragraph" ? nodeText(child) : nodeMarkdown(child);
+    if (!childValue) continue;
+
+    if (!value) {
+      value = childValue;
+      continue;
+    }
+
+    const separator = child.type === "bulletList" ? "\n" : "\n\n";
+    value += `${separator}${indentMarkdown(childValue, continuationIndent)}`;
+  }
+  return value;
+}
+
+function listMarkdown(node: JSONContent, ordered: boolean) {
+  const start = ordered ? listStart(node) : 1;
+  return (node.content ?? []).map((item, index) => {
+    const marker = ordered ? `${start + index}.` : "-";
+    const value = listItemMarkdown(item, marker);
+    return value ? `${marker} ${value}` : marker;
+  }).join("\n");
 }
 
 function markdownImage(node: JSONContent, title: string) {
@@ -423,11 +766,19 @@ function nodeMarkdown(node: JSONContent): string {
     return alignedBlockMarkdown(node, `${"#".repeat(Number(node.attrs?.level ?? 2))} ${nodeText(node)}`);
   }
   if (node.type === "paragraph") return alignedBlockMarkdown(node, nodeText(node));
-  if (node.type === "listItem") {
-    return (node.content ?? []).map((child) => child.type === "paragraph" ? nodeText(child) : nodeMarkdown(child)).join("\n");
+  if (node.type === "listItem") return listItemMarkdown(node, "-");
+  if (node.type === "bulletList") return listMarkdown(node, false);
+  if (node.type === "orderedList") return listMarkdown(node, true);
+  if (node.type === "blockquote") return (node.content ?? []).map(nodeMarkdown)
+    .join("\n")
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+  if (node.type === "codeBlock") {
+    const language = typeof node.attrs?.language === "string" ? node.attrs.language : "";
+    return `\`\`\`${language}\n${nodeText(node)}\n\`\`\``;
   }
-  if (node.type === "bulletList") return (node.content ?? []).map((item) => `- ${nodeMarkdown(item)}`).join("\n");
-  if (node.type === "orderedList") return (node.content ?? []).map((item, index) => `${index + 1}. ${nodeMarkdown(item)}`).join("\n");
+  if (node.type === "horizontalRule") return "---";
   if (node.type === "resumeRow") {
     const [left, right] = node.content ?? [];
     const leftWidth = Math.min(80, Math.max(30, Number(node.attrs?.leftWidth) || 50));
@@ -450,6 +801,7 @@ function nodeMarkdown(node: JSONContent): string {
   if (node.type === "inlineIcon") return nodeText(node);
   if (node.type === "inlineImage") return nodeText(node);
   if (node.type === "avatarImage") {
+    if (node.attrs?.systemFallback === true) return "";
     const size = Math.min(220, Math.max(56, Number(node.attrs?.size) || 96));
     return markdownImage(node, `linkcv-avatar:${size}`);
   }

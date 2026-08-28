@@ -246,11 +246,72 @@ def build_import_object_name(
     safe_name = re.sub(r"[^\w.-]+", "-", normalized).strip("-.")[:120]
     if not safe_name:
         safe_name = "resume.bin"
-    return f"users/{user_id}/resume-imports/{operation_id}/{safe_name}"
+    return f"users/{user_id}/resume-imports/{operation_id}/source/{safe_name}"
 
 
 def build_converted_markdown_object_name(user_id: int, operation_id: str) -> str:
+    return f"users/{user_id}/resume-imports/{operation_id}/artifacts/converted.md"
+
+
+def build_legacy_converted_markdown_object_name(
+    user_id: int,
+    operation_id: str,
+) -> str:
+    """Return the pre-artifacts conversion path used by old import tasks."""
     return f"users/{user_id}/resume-imports/{operation_id}/converted.md"
+
+
+def import_operation_id_from_object_name(
+    user_id: int,
+    object_name: object,
+) -> str | None:
+    """Extract an operation id only from a task-owned import object key.
+
+    Older tasks stored the source file directly below the operation prefix,
+    while new tasks use ``source/``.  Restricting derivation to the exact user
+    prefix prevents a malformed database value from turning cleanup into a
+    broad or cross-user object lookup.
+    """
+    if not isinstance(object_name, str):
+        return None
+    prefix = f"users/{user_id}/resume-imports/"
+    if not object_name.startswith(prefix):
+        return None
+    remainder = object_name[len(prefix) :]
+    operation_id, separator, _ = remainder.partition("/")
+    if not separator or not operation_id or operation_id in {".", ".."}:
+        return None
+    if "/" in operation_id or "\\" in operation_id:
+        return None
+    return operation_id
+
+
+def build_import_cleanup_object_names(
+    user_id: int,
+    source_object_name: object,
+    converted_object_name: object | None = None,
+) -> tuple[str, ...]:
+    """List source and conversion candidates once for idempotent cleanup.
+
+    The stored conversion reference is authoritative when present.  The two
+    deterministic candidates cover new ``artifacts/`` objects and legacy
+    objects whose reference was lost before the path split.  In particular,
+    this also finds old orphaned conversion files when
+    ``converted_object_name`` is NULL.
+    """
+    candidates: list[str] = []
+    for value in (source_object_name, converted_object_name):
+        if isinstance(value, str) and value and value not in candidates:
+            candidates.append(value)
+    operation_id = import_operation_id_from_object_name(user_id, source_object_name)
+    if operation_id is not None:
+        for value in (
+            build_converted_markdown_object_name(user_id, operation_id),
+            build_legacy_converted_markdown_object_name(user_id, operation_id),
+        ):
+            if value not in candidates:
+                candidates.append(value)
+    return tuple(candidates)
 
 
 def build_dataset_object_name(user_id: int, file_name: str) -> str:

@@ -61,6 +61,14 @@
   --ui-space-6: 2rem;
   --ui-space-7: 3rem;
   --ui-space-8: 4rem;
+
+  /* Composite Settings Pattern tokens. */
+  --ui-settings-content-max: 60rem;
+  --ui-settings-section-inset: var(--ui-space-5);
+  --ui-settings-row-min-size: 3.5rem;
+  --ui-settings-action-track: 5rem;
+  --ui-settings-label-track: 10rem;
+
   --ui-radius-xs: 0.375rem;
   --ui-radius-sm: 0.5rem;
   --ui-radius-md: 0.5rem;

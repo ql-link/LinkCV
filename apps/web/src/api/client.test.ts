@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, ApiRequestError } from "./client";
+import { defaultSemanticDocument, defaultSemanticStyle } from "./resumeContract";
 
 function jsonResponse(status: number, body: unknown): Response {
   return {
@@ -149,6 +150,21 @@ describe("API session refresh", () => {
   });
 });
 
+describe("resume template API", () => {
+  it("兼容旧数据库响应时也不会向产品暴露已退役空白模板", async () => {
+    const retained = { id: "5", key: "classic-technical-cn", name: "经典单页技术简历" };
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, {
+      templates: [
+        { id: "1", key: "blank-cn", name: "空白简历" },
+        retained,
+      ],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.listResumeTemplates()).resolves.toEqual({ templates: [retained] });
+  });
+});
+
 describe("API observability", () => {
   it("adds a request id and reports API 5xx without exposing the response body", async () => {
     const fetchMock = vi
@@ -220,6 +236,48 @@ describe("Agent SSE client", () => {
       ),
     ).resolves.toBeUndefined();
     expect(onEvent).toHaveBeenCalledWith({ type: "run.completed", runId: "run-1" });
+  });
+});
+
+describe("Agent session list API", () => {
+  it("支持按简历筛选，也支持读取当前用户最近会话", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { sessions: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.listAgentSessions("resume/42");
+    await api.listAgentSessions();
+
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      "/api/agent/sessions?resume_id=resume%2F42",
+      "/api/agent/sessions",
+    ]);
+  });
+});
+
+describe("Agent readiness API", () => {
+  it("读取助手运行时就绪状态", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ready: false }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.getAgentReadiness()).resolves.toEqual({ ready: false });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/agent/readiness",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
+});
+
+describe("Agent context API", () => {
+  it("按类型、搜索词和上限读取轻量上下文列表", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { contexts: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.listAgentContexts({ type: "resume_version", search: "投递版", limit: 10 });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/agent/contexts?type=resume_version&q=%E6%8A%95%E9%80%92%E7%89%88&limit=10",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
   });
 });
 
@@ -512,8 +570,8 @@ describe("API resume share", () => {
       .mockResolvedValueOnce(jsonResponse(200, { deleted: true }))
       .mockResolvedValueOnce(
         jsonResponse(200, {
-          data: { schema_version: "1.0" },
-          style: { schema_version: "1.0" },
+          data: defaultSemanticDocument,
+          style: defaultSemanticStyle,
           sharer: { nickname: "于晏", avatar_url: null },
         }),
       );

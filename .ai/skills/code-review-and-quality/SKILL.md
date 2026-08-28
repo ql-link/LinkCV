@@ -24,7 +24,7 @@ description: 审查 LinkCV 代码差异的正确性、范围、契约、安全�
 1. `AGENTS.md`；
 2. 当前分支、`git status`、提交范围和完整差异；
 3. 新增或修改的测试；
-4. 持久设计任务的适用中心文档：后端和混合任务读取 `solution.md`，纯前端读取 `ui-design.md`，混合任务存在 UI 附件时两者都读；并读取实际存在的 Acceptance 和实施报告；
+4. 设计任务的适用依据：后端和混合任务读取 `solution.md`，前端读取真实路由中已确认的当前差异或已确认的原型/Figma，混合任务同时读取；并读取实际存在的 Acceptance 和实施报告；
 5. 适用的 `.specs/<KEY>/manual_acceptance.md`；
 6. 当前任务中实际执行的命令、退出结果和未覆盖区域；跨会话没有当前证据时重新运行必要检查；
 7. 与变更相关但未修改的调用方、公共类型和配置。
@@ -137,7 +137,7 @@ description: 审查 LinkCV 代码差异的正确性、范围、契约、安全�
 
 ## 6. 后续处理
 
-- 存在严重、必须修复或影响当前交付的一般问题：返回 `implementation-execution`；
+- 存在严重、必须修复或影响当前交付的一般问题：按领域返回 `frontend-delivery` 或 `backend-delivery`；前端由 Sol 判断直接修正或 Luna 工作包，后端和混合任务由 Sol 重新拆包并调度 Luna；
 - 发现规格与实现冲突：返回 `solution-generator` 或 `acceptance-generator`；
 - 没有阻断问题时直接报告审查结论、证据和残余风险，不写入工作流状态。代码随后变化时由 AI 根据影响重新验证和复审；无法可靠缩小影响时扩大审查。
 - 用户要求发布时转 `branch-pr-workflow`，由它检查提交范围并执行 PR 前完整 `npm run check`；

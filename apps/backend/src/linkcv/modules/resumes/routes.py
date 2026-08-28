@@ -1,5 +1,8 @@
+import hashlib
+import json
 import logging
 
+import redis as redis_lib
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, load_only
 
@@ -8,8 +11,10 @@ from fastapi import APIRouter, Depends, Request
 from linkcv.application.resumes.service import (
     InvalidResumeTitle,
     ResumeLimitExceeded,
+    ResumeTemplateCompositionInvalid,
     ResumeTemplateUnavailable,
     ResumeTitleConflict,
+    apply_resume_template,
     create_resume_from_template,
     find_owned_resume,
     lock_owned_resume,
@@ -18,11 +23,19 @@ from linkcv.application.resumes.service import (
 )
 from linkcv.core.database import get_db
 from linkcv.core.errors import ApiError
-from linkcv.core.storage import AssetStorage, get_storage
+from linkcv.core.redis import get_redis
+from linkcv.core.storage import (
+    AssetStorage,
+    build_import_cleanup_object_names,
+    get_storage,
+)
 from linkcv.domain.resume_snapshot import parse_resume_snapshot
+from linkcv.integrations.resume_semantic_classification import classify_resume_sections
 from linkcv.modules.agent.service import delete_resume_agent_data
 from linkcv.modules.identity.dependencies import get_current_user
 from linkcv.modules.identity.models import User
+from linkcv.modules.llm.dependencies import get_llm_service
+from linkcv.modules.llm.service import LLMError, LLMService
 from linkcv.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
     DocumentParseTask,
@@ -36,8 +49,11 @@ from linkcv.modules.resumes.schemas import (
     ResumePreview,
     ResumeRecord,
     ResumeResponse,
+    ResumeApplyTemplateRequest,
     ResumeSummary,
     ResumeUpdateRequest,
+    SemanticClassificationRequest,
+    SemanticClassificationResponse,
 )
 from linkcv.modules.observability.audit import bind_audit_target
 router = APIRouter(prefix="/resumes", tags=["resumes"])
@@ -80,6 +96,11 @@ def resume_record(resume: Resume) -> ResumeRecord:
         data=snapshot.data,
         style=snapshot.style,
     )
+
+
+def resume_content_hash(data: object) -> str:
+    serialized = json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(serialized.encode()).hexdigest()
 
 
 @router.get("", response_model=ResumeListResponse)
@@ -148,6 +169,90 @@ def get_resume(
     return ResumeResponse(resume=resume_record(require_owned_resume(db, resume_id, user.id)))
 
 
+@router.post(
+    "/{resume_id}/semantic-classification",
+    response_model=SemanticClassificationResponse,
+)
+async def classify_resume_semantics(
+    resume_id: str,
+    payload: SemanticClassificationRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    llm_service: LLMService = Depends(get_llm_service),
+    redis_client: "redis_lib.Redis" = Depends(get_redis),
+) -> SemanticClassificationResponse:
+    user_id = user.id
+    resume = require_owned_resume(db, resume_id, user_id)
+    try:
+        snapshot = parse_resume_snapshot(resume.data_json, resume.style_json)
+    except ValueError as error:
+        raise ApiError(500, "RESUME_SCHEMA_INVALID") from error
+    current_hash = resume_content_hash(snapshot.data.model_dump(mode="json"))
+    if payload.content_hash != current_hash:
+        raise ApiError(409, "RESUME_SEMANTIC_CLASSIFICATION_STALE")
+
+    selected_ids = set(payload.section_ids) if payload.section_ids is not None else None
+    eligible_ids = {
+        section.id
+        for section in snapshot.data.semantic_sections
+        if section.content_key == "custom_sections"
+        and section.custom_section_id != "custom_section_editor"
+        and section.semantic_kind == "custom"
+        and section.semantic_source != "user"
+    }
+    if selected_ids is not None and not selected_ids.issubset(eligible_ids):
+        raise ApiError(400, "INVALID_RESUME_SEMANTIC_CLASSIFICATION")
+    selection_key = ",".join(sorted(selected_ids)) if selected_ids is not None else "all"
+    cache_key = (
+        f"resume-semantic-classification:{user_id}:{resume.id}:"
+        f"{current_hash.removeprefix('sha256:')}:{selection_key}"
+    )
+    cached = redis_client.get(cache_key)
+    if cached is not None:
+        try:
+            cached_text = cached.decode() if isinstance(cached, bytes) else str(cached)
+            cached_result = SemanticClassificationResponse.model_validate_json(cached_text)
+            if cached_result.content_hash == current_hash:
+                return cached_result
+        except ValueError:
+            redis_client.delete(cache_key)
+    resume_db_id = resume.id
+    # Do not hold a repeatable-read snapshot open while waiting for the model.
+    # A fresh transaction below must observe edits committed during the call.
+    db.rollback()
+    try:
+        result = await classify_resume_sections(
+            llm_service,
+            user_id=user_id,
+            document=snapshot.data,
+            selected_section_ids=selected_ids,
+        )
+    except (LLMError, ValueError) as error:
+        raise ApiError(503, "RESUME_SEMANTIC_CLASSIFICATION_UNAVAILABLE") from error
+    refreshed = find_owned_resume(db, str(resume_db_id), user_id)
+    if refreshed is None:
+        raise ApiError(404, "RESUME_NOT_FOUND")
+    try:
+        refreshed_snapshot = parse_resume_snapshot(
+            refreshed.data_json,
+            refreshed.style_json,
+        )
+    except ValueError as error:
+        raise ApiError(500, "RESUME_SCHEMA_INVALID") from error
+    if resume_content_hash(refreshed_snapshot.data.model_dump(mode="json")) != current_hash:
+        raise ApiError(409, "RESUME_SEMANTIC_CLASSIFICATION_STALE")
+    response = SemanticClassificationResponse(
+        content_hash=current_hash,
+        suggestions=result.suggestions,
+    )
+    redis_client.set(
+        cache_key,
+        response.model_dump_json(),
+        ex=3600,
+    )
+    return response
+
+
 @router.put("/{resume_id}", response_model=ResumeResponse)
 def update_resume(
     resume_id: str,
@@ -172,6 +277,40 @@ def update_resume(
         raise ApiError(409, "RESUME_TITLE_CONFLICT") from error
     except ValueError as error:
         raise ApiError(500, "RESUME_SCHEMA_INVALID") from error
+    if updated is None:
+        raise ApiError(409, "RESUME_EDIT_CONFLICT")
+    return ResumeResponse(resume=resume_record(updated))
+
+
+@router.post("/{resume_id}/apply-template", response_model=ResumeResponse)
+def apply_template(
+    resume_id: str,
+    payload: ResumeApplyTemplateRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ResumeResponse:
+    template_id = parse_decimal_id(payload.template_id)
+    if template_id is None:
+        raise ApiError(422, "TEMPLATE_INACTIVE")
+    resume = require_owned_resume(db, resume_id, user.id)
+    try:
+        updated = apply_resume_template(
+            db=db,
+            resume=resume,
+            user_id=user.id,
+            template_id=template_id,
+            base_lock_version=payload.base_lock_version,
+            title=payload.title,
+            data=payload.data,
+        )
+    except InvalidResumeTitle as error:
+        raise ApiError(400, "INVALID_RESUME_TITLE") from error
+    except ResumeTitleConflict as error:
+        raise ApiError(409, "RESUME_TITLE_CONFLICT") from error
+    except ResumeTemplateUnavailable as error:
+        raise ApiError(422, "TEMPLATE_INACTIVE") from error
+    except ResumeTemplateCompositionInvalid as error:
+        raise ApiError(422, "TEMPLATE_COMPOSITION_INVALID") from error
     if updated is None:
         raise ApiError(409, "RESUME_EDIT_CONFLICT")
     return ResumeResponse(resume=resume_record(updated))
@@ -210,9 +349,12 @@ def delete_resume(
                     },
                 )
         if parse_task is not None:
-            storage.delete(parse_task.object_name)
-            if parse_task.converted_object_name:
-                storage.delete(parse_task.converted_object_name)
+            for object_name in build_import_cleanup_object_names(
+                user.id,
+                parse_task.object_name,
+                parse_task.converted_object_name,
+            ):
+                storage.delete(object_name)
         storage.delete_prefix(f"users/{user.id}/resumes/{resume.id}/")
     except Exception as error:
         db.rollback()

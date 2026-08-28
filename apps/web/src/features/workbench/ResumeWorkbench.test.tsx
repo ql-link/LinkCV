@@ -1,12 +1,14 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { ApiRequestError } from "../../api/client";
+import { api, ApiRequestError, type ResumeTemplate } from "../../api/client";
+import { defaultSemanticDocument, defaultSemanticStyle } from "../../api/resumeContract";
 import {
   ImportWarningBanner,
   AgentFloatingEntry,
   clampAgentDrawerWidth,
   clampAgentFloatingPosition,
+  defaultWorkbenchDrawerMode,
   ExportPdfAction,
   FontPreviewSelect,
   normalizeVersionName,
@@ -14,19 +16,76 @@ import {
   SettingsStepper,
   SaveResumeAction,
   SaveVersionAction,
+  ResumeTemplateSwitcher,
+  semanticSectionDisplayTitle,
   VersionRenameAction,
-  VersionHistoryAction,
   WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM,
   versionRenameErrorMessage,
   setRestoredEditorContent,
   setWorkbenchEditorEditable,
   versionNameValidationMessage,
+  truncateWorkbenchTitle,
   ZoomFeedback,
   WorkbenchSaveStatus,
+  WorkbenchDesignAction,
+  WorkbenchPanelSwitcher,
+  WorkbenchTitleInput,
   workbenchCanvasClassName,
   versionOperationErrorMessage,
+  resumeWorkbenchStyle,
 } from "./ResumeWorkbench";
 import { resumePdfExportErrorMessage } from "../preview/pdfExport";
+
+describe("ResumeWorkbench 标题", () => {
+  it("把持久化强调色注入可编辑简历根节点", () => {
+    const style = resumeWorkbenchStyle({
+      fontFamily: "sans-serif",
+      fontSize: 9.5,
+      lineHeight: 1.25,
+      pageMargin: 11,
+      verticalPageMargin: 9,
+    }, "#202632");
+
+    expect(style).toMatchObject({
+      "--preview-accent": "#202632",
+      "--resume-font-size": "9.5pt",
+      "--resume-line-height": 1.25,
+    });
+  });
+
+  it("在章节类型面板隐藏内部图标标记", () => {
+    expect(semanticSectionDisplayTitle(":icon[GraduationCap]: 教育经历")).toBe("教育经历");
+    expect(semanticSectionDisplayTitle(":icon[Star]: 自我评价")).toBe("自我评价");
+    expect(semanticSectionDisplayTitle(":icon[Star]:")).toBe("未命名章节");
+  });
+
+  it("只在标题超过 30 个字符时省略", () => {
+    const thirtyCharacters = "简".repeat(30);
+    const thirtyOneCharacters = `${thirtyCharacters}历`;
+
+    expect(truncateWorkbenchTitle(thirtyCharacters)).toBe(thirtyCharacters);
+    expect(truncateWorkbenchTitle(thirtyOneCharacters)).toBe(`${thirtyCharacters}…`);
+    expect(truncateWorkbenchTitle("😀".repeat(31))).toBe(`${"😀".repeat(30)}…`);
+  });
+
+  it("聚焦编辑时恢复完整标题，失焦后重新省略", async () => {
+    const user = userEvent.setup();
+    const fullTitle = `${"开发演示简历".repeat(5)}完整标题`;
+    const onChange = vi.fn();
+    render(<WorkbenchTitleInput value={fullTitle} disabled={false} onChange={onChange} />);
+
+    const input = screen.getByRole("textbox", { name: "简历标题" });
+    expect(input).toHaveValue(truncateWorkbenchTitle(fullTitle));
+    expect(input).toHaveAttribute("title", fullTitle);
+
+    await user.click(input);
+    expect(input).toHaveValue(fullTitle);
+    expect(input).not.toHaveAttribute("title");
+
+    await user.tab();
+    expect(input).toHaveValue(truncateWorkbenchTitle(fullTitle));
+  });
+});
 
 describe("ResumeWorkbench AI 悬浮入口", () => {
   it("用同一个低打扰入口打开和收起智能助手", async () => {
@@ -103,17 +162,137 @@ describe("ResumeWorkbench 抽屉布局", () => {
     expect(clampAgentDrawerWidth(600, 500)).toBe(476);
     expect(clampAgentDrawerWidth(390, 300)).toBe(320);
   });
+
+  it("桌面默认展开设置，小屏默认保留完整编辑画布", () => {
+    expect(defaultWorkbenchDrawerMode(1440)).toBe("settings");
+    expect(defaultWorkbenchDrawerMode(1024)).toBe("settings");
+    expect(defaultWorkbenchDrawerMode(980)).toBeNull();
+    expect(defaultWorkbenchDrawerMode(390)).toBeNull();
+  });
 });
 
-describe("ResumeWorkbench 版本记录入口", () => {
-  it("在页面设置中显示版本数量并打开版本记录", async () => {
+describe("ResumeWorkbench 编辑面板入口", () => {
+  it("从顶部设计按钮打开或收起编辑面板", async () => {
     const user = userEvent.setup();
-    const onOpen = vi.fn();
-    render(<VersionHistoryAction count={3} onOpen={onOpen} />);
+    const onToggle = vi.fn();
+    const { rerender } = render(<WorkbenchDesignAction panelOpen={false} onToggle={onToggle} />);
 
-    expect(screen.getByText("查看、恢复和管理 3 个已保存版本。")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "查看版本记录" }));
-    expect(onOpen).toHaveBeenCalledOnce();
+    const design = screen.getByRole("button", { name: "设计" });
+    expect(design).toHaveAttribute("aria-expanded", "false");
+    await user.click(design);
+    expect(onToggle).toHaveBeenCalledOnce();
+
+    rerender(<WorkbenchDesignAction panelOpen onToggle={onToggle} />);
+    expect(screen.getByRole("button", { name: "设计" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "设计" })).toHaveClass("is-active");
+  });
+
+  it("在右侧面板内切换页面设置和版本记录", async () => {
+    const user = userEvent.setup();
+    const onSettings = vi.fn();
+    const onHistory = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <WorkbenchPanelSwitcher
+        activePanel="settings"
+        onSettings={onSettings}
+        onHistory={onHistory}
+        onClose={onClose}
+      />,
+    );
+
+    expect(screen.getByRole("tab", { name: "页面设置" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "版本记录" })).toHaveAttribute("aria-selected", "false");
+    await user.click(screen.getByRole("tab", { name: "页面设置" }));
+    await user.click(screen.getByRole("tab", { name: "版本记录" }));
+    await user.keyboard("{ArrowLeft}");
+    expect(screen.getByRole("tab", { name: "页面设置" })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "关闭编辑面板" }));
+    expect(onSettings).toHaveBeenCalledTimes(2);
+    expect(onHistory).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+});
+
+describe("ResumeWorkbench 简历模板", () => {
+  it("展示现有模板并在切换时保留当前模板状态", async () => {
+    const user = userEvent.setup();
+    const templates: ResumeTemplate[] = [
+      {
+        id: "1",
+        key: "classic-cn",
+        name: "经典模板",
+        description: "清晰稳妥的单栏结构",
+        data: defaultSemanticDocument,
+        style: defaultSemanticStyle,
+        switchable: true,
+        incompatibility_reason: null,
+      },
+      {
+        id: "2",
+        key: "creative-orange-cn",
+        name: "创意橙色",
+        description: "强调视觉层级的创意版式",
+        data: defaultSemanticDocument,
+        style: { ...defaultSemanticStyle, template_key: "creative-orange-cn" },
+        switchable: true,
+        incompatibility_reason: null,
+      },
+    ];
+    vi.spyOn(api, "listResumeTemplates").mockResolvedValue({ templates });
+    const onApply = vi.fn();
+
+    render(
+      <ResumeTemplateSwitcher
+        currentTemplateKey="classic-cn"
+        onApply={onApply}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "简历模板" }));
+    const previewDialog = await screen.findByRole("dialog", { name: "经典模板" });
+    expect(previewDialog).toHaveClass("template-preview-dialog");
+    expect(screen.getByRole("button", { name: "当前模板" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "下一个模板：创意橙色" }));
+    expect(await screen.findByRole("dialog", { name: "创意橙色" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "应用模板" }));
+    expect(onApply).toHaveBeenCalledWith(templates[1]);
+    expect(screen.queryByRole("dialog", { name: "创意橙色" })).not.toBeInTheDocument();
+  });
+
+  it("模板加载失败时保留弹窗并允许重新加载", async () => {
+    const user = userEvent.setup();
+    const listTemplates = vi
+      .spyOn(api, "listResumeTemplates")
+      .mockRejectedValueOnce(new Error("HTTP_503"))
+      .mockResolvedValueOnce({
+        templates: [{
+          id: "1",
+          key: "classic-cn",
+          name: "经典模板",
+          description: null,
+          data: defaultSemanticDocument,
+          style: defaultSemanticStyle,
+          switchable: true,
+          incompatibility_reason: null,
+        }],
+      });
+
+    render(
+      <ResumeTemplateSwitcher
+        currentTemplateKey="creative-orange-cn"
+        onApply={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "简历模板" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("模板暂时无法加载");
+    await user.click(screen.getByRole("button", { name: "重新加载" }));
+
+    expect(await screen.findByRole("dialog", { name: "经典模板" })).toHaveClass("template-preview-dialog");
+    expect(screen.getByRole("button", { name: "应用模板" })).toBeEnabled();
+    expect(listTemplates).toHaveBeenCalledTimes(2);
   });
 });
 

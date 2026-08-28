@@ -10,13 +10,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from linkcv.core.errors import ApiError
+from linkcv.domain.resume_document import rich_text_to_markdown
 from linkcv.modules.datasets.models import UserDataset
 from linkcv.modules.datasets.routes import read_dataset_markdown
 from linkcv.modules.job_descriptions.models import JobDescription
 from linkcv.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask, Resume
 
 
-BLOCK_MARKER_PATTERN = re.compile(r"\[\[linkcv-block:(blk_[a-z0-9]{16,64})\]\]")
+BLOCK_MARKER_PATTERN = re.compile(
+    r"\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::(?:basics|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\]"
+)
+SECTION_HEADING_PATTERN = re.compile(
+    r"^##\s+\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::(?:basics|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\](.*)$",
+    re.MULTILINE,
+)
 NUMBER_PATTERN = re.compile(
     r"(?<![A-Za-z0-9])\d+(?:\.\d+)?\s*(?:%|％|倍|万|亿|ms|s|秒|分钟|小时|天|人|次|个|元|美元)?",
     re.IGNORECASE,
@@ -70,8 +77,30 @@ def editor_markdown(data: Any) -> str | None:
             continue
         for item in section.items:
             if item.id == "custom_item_editor":
-                return item.content.content
-    return None
+                return rich_text_to_markdown(item.content)
+    custom = {section.id: section for section in data.sections.custom_sections}
+    parts: list[str] = []
+    for semantic in data.semantic_sections:
+        if semantic.content_key != "custom_sections" or not semantic.custom_section_id:
+            continue
+        section = custom.get(semantic.custom_section_id)
+        if section is None:
+            continue
+        body = "\n\n".join(
+            part
+            for item in section.items
+            if (part := rich_text_to_markdown(item.content))
+        )
+        if section.items and all(item.content.format == "tiptap-json" for item in section.items):
+            parts.append(body)
+        elif semantic.semantic_kind == "basics":
+            parts.append(body)
+        else:
+            parts.append(
+                f"## [[linkcv-block:{section.id}:{semantic.semantic_kind}]]{semantic.display_title}"
+                + (f"\n\n{body}" if body else "")
+            )
+    return "\n\n".join(part for part in parts if part).strip() or None
 
 
 def replace_editor_markdown(data: Any, markdown: str) -> dict[str, Any]:
@@ -83,7 +112,73 @@ def replace_editor_markdown(data: Any, markdown: str) -> dict[str, Any]:
             if item["id"] == "custom_item_editor":
                 item["content"]["content"] = markdown
                 return payload
-    raise ApiError(422, "TARGET_INVALID")
+    matches = list(SECTION_HEADING_PATTERN.finditer(markdown))
+    custom = {
+        section["id"]: section for section in payload["sections"]["custom_sections"]
+    }
+    semantic = {
+        section["custom_section_id"]: section
+        for section in payload["semantic_sections"]
+        if section["content_key"] == "custom_sections"
+    }
+    basics = next(
+        (
+            section
+            for section in payload["semantic_sections"]
+            if section["semantic_kind"] == "basics"
+            and section["content_key"] == "custom_sections"
+        ),
+        None,
+    )
+
+    def replace_content(section: dict[str, Any], value: str, *, heading: str | None) -> None:
+        if not section["items"]:
+            raise ApiError(422, "TARGET_INVALID")
+        content = section["items"][0]["content"]
+        current = ""
+        if content.get("format") == "markdown" and isinstance(content.get("content"), str):
+            current = content["content"]
+        elif content.get("format") == "tiptap-json" and isinstance(content.get("content"), dict):
+            from linkcv.domain.resume_document import RichText
+
+            current = rich_text_to_markdown(RichText.model_validate(content))
+            if heading is not None:
+                first_break = current.find("\n")
+                current_heading = current[:first_break if first_break >= 0 else len(current)]
+                expected_prefix = f"## [[linkcv-block:{section['id']}"
+                if (
+                    not current_heading.startswith(expected_prefix)
+                    or not current_heading.endswith(heading)
+                ):
+                    current = ""
+                else:
+                    current = current[first_break + 1 :].strip() if first_break >= 0 else ""
+        if current == value:
+            return
+        section["items"][0]["content"] = {"format": "markdown", "content": value}
+
+    if basics and basics["custom_section_id"] in custom:
+        intro_end = matches[0].start() if matches else len(markdown)
+        replace_content(
+            custom[basics["custom_section_id"]],
+            markdown[:intro_end].strip(),
+            heading=None,
+        )
+    for index, match in enumerate(matches):
+        section_id = match.group(1)
+        section = custom.get(section_id)
+        section_semantic = semantic.get(section_id)
+        if section is None or section_semantic is None or not section["items"]:
+            raise ApiError(422, "TARGET_INVALID")
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(markdown)
+        section_semantic["display_title"] = match.group(2).strip() or "未命名章节"
+        section["title"] = section_semantic["display_title"]
+        replace_content(
+            section,
+            markdown[match.end() : end].strip(),
+            heading=section_semantic["display_title"],
+        )
+    return payload
 
 
 def parse_editor_blocks(markdown: str) -> list[EditorBlock]:
@@ -648,6 +743,13 @@ def apply_operations(
             or expected not in block.text
         ):
             raise ApiError(409, "TARGET_STALE")
+        # A whole-block locator deliberately carries no user selection.  Once
+        # the block and its expected hash have been verified against the
+        # current markdown, persist the exact protected text for the proposal
+        # card.  This does not alter diagnosis data or the patch scope; it only
+        # makes the server-derived before value observable to clients.
+        if not target.selected_text:
+            target.selected_text = expected
         if operation.op == "replace_target_text":
             segment = updated[block.start : block.end]
             if segment.count(expected) != 1:

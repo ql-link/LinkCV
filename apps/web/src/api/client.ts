@@ -1,4 +1,4 @@
-import type { ResumeDocumentV1, ResumeStyleV1 } from "./resumeContract";
+import type { ResumeDocument, ResumePresentation } from "./resumeContract";
 
 export type User = {
   id: string;
@@ -39,6 +39,74 @@ export type AccountProfile = {
   user: UserProfile;
   resume_count: number;
   recent_resumes: RecentResumeSummary[];
+  profile: UserProfileData | null;
+};
+
+export type EmploymentType =
+  | "full_time"
+  | "part_time"
+  | "internship"
+  | "contract"
+  | "temporary";
+
+export type WorkMode = "onsite" | "hybrid" | "remote";
+
+export type SalaryPeriod = "hour" | "day" | "month" | "year";
+
+export type Availability =
+  | "immediately"
+  | "one_week"
+  | "two_weeks"
+  | "one_month"
+  | "custom";
+
+export type EducationLevel =
+  | "high_school"
+  | "junior_college"
+  | "bachelor"
+  | "master"
+  | "doctor";
+
+export type SchoolTier = "project_985" | "project_211" | "double_first_class";
+
+export type UserProfileData = {
+  work_city: string | null;
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_currency: string | null;
+  salary_period: SalaryPeriod | null;
+  employment_type: EmploymentType | null;
+  work_mode: WorkMode | null;
+  target_positions: string[];
+  exclusions: string[];
+  target_companies: string[];
+  availability: Availability | null;
+  available_from: string | null;
+  school: string | null;
+  school_tier: SchoolTier[];
+  major: string | null;
+  education_level: EducationLevel | null;
+  years_experience: number | null;
+  birth_date: string | null;
+  languages: string[];
+  skills: string[];
+  certifications: string[];
+  honors: string[];
+  campus_experiences: string[];
+  lock_version: number;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type UserProfileUpdate = Omit<
+  UserProfileData,
+  "lock_version" | "created_at" | "updated_at"
+> & {
+  base_lock_version: number;
+};
+
+export type UserProfileConflict = {
+  profile: UserProfileData;
 };
 
 export type AdminUserSummary = User & {
@@ -81,7 +149,7 @@ export type ResumeSummary = {
   lock_version: number;
   created_at: string;
   updated_at: string;
-  preview?: { data: ResumeDocumentV1; style: ResumeStyleV1 } | null;
+  preview?: { data: ResumeDocument; style: ResumePresentation } | null;
 };
 
 export type ResumeTemplate = {
@@ -89,26 +157,54 @@ export type ResumeTemplate = {
   key: string;
   name: string;
   description: string | null;
-  data: ResumeDocumentV1;
-  style: ResumeStyleV1;
+  data: ResumeDocument;
+  style: ResumePresentation;
+  switchable: true;
+  incompatibility_reason: null;
 };
+
+const RETIRED_RESUME_TEMPLATE_KEYS = new Set(["blank-cn"]);
+
+function selectableResumeTemplates(templates: ResumeTemplate[]): ResumeTemplate[] {
+  return templates.filter((template) => !RETIRED_RESUME_TEMPLATE_KEYS.has(template.key));
+}
 
 export type AdminResumeTemplate = {
   id: string;
   key: string;
   name: string;
   description: string | null;
-  data: ResumeDocumentV1 | null;
-  style: ResumeStyleV1 | null;
+  data: ResumeDocument | null;
+  style: ResumePresentation | null;
   active: boolean;
   valid: boolean;
   validation_error: string | null;
+  switchable: boolean;
+  incompatibility_reason: string | null;
 };
 
 export type ResumeRecord = ResumeSummary & {
   template_id: string | null;
-  data: ResumeDocumentV1;
-  style: ResumeStyleV1;
+  data: ResumeDocument;
+  style: ResumePresentation;
+};
+
+export type SemanticClassificationSuggestion = {
+  section_id: string;
+  semantic_kind:
+    | "profile"
+    | "work"
+    | "education"
+    | "project"
+    | "skills"
+    | "activity"
+    | "interests"
+    | "certificates"
+    | "awards"
+    | "languages"
+    | "custom";
+  confidence: number;
+  reason: string;
 };
 
 export type ResumeVersion = {
@@ -117,8 +213,8 @@ export type ResumeVersion = {
   name: string;
   reason: "initial" | "manual" | "before_restore" | "restore" | "agent";
   created_at: string;
-  data?: ResumeDocumentV1;
-  style?: ResumeStyleV1;
+  data?: ResumeDocument;
+  style?: ResumePresentation;
 };
 
 export type AgentMessage = {
@@ -127,17 +223,27 @@ export type AgentMessage = {
   message_type?: "text" | "clarification";
   content: string;
   clarification?: AgentClarification | null;
+  /**
+   * References are intentionally lightweight snapshots.  The API keeps this
+   * field optional so messages created by the editor before the assistant
+   * workspace was introduced remain readable.
+   */
+  contexts?: AgentContextSnapshot[] | null;
   created_at: string;
+};
+
+export type AgentClarificationQuestion = {
+  id: string;
+  header: string;
+  question: string;
+  allow_custom?: boolean;
+  options: Array<{ id: string; label: string; description?: string | null }>;
 };
 
 export type AgentClarification = {
   version: 1;
-  questions: Array<{
-    id: string;
-    header: string;
-    question: string;
-    options: Array<{ id: string; label: string; description?: string | null }>;
-  }>;
+  allow_custom?: boolean;
+  questions: AgentClarificationQuestion[];
 };
 
 export type AgentSelectionContext = {
@@ -146,6 +252,32 @@ export type AgentSelectionContext = {
   to: number;
   selected_text: string;
   selected_text_hash: string;
+};
+
+export type AgentContextType =
+  | "resume"
+  | "resume_version"
+  | "job"
+  | "application"
+  | "interview";
+
+export type AgentContextRef = {
+  type: AgentContextType;
+  id: string;
+  version_id?: string | null;
+  version?: string | null;
+};
+
+export type AgentContextSnapshot = AgentContextRef & {
+  resume_id?: string | null;
+  label: string;
+  description?: string | null;
+  updated_at?: string | null;
+};
+
+export type AgentContextListResponse = {
+  contexts?: AgentContextSnapshot[];
+  groups?: Array<{ type: AgentContextType; items: AgentContextSnapshot[] }>;
 };
 
 export type AgentSession = {
@@ -164,8 +296,8 @@ export type AgentProposal = {
   run_id: string;
   resume_id: string;
   base_lock_version: number;
-  data: ResumeDocumentV1;
-  style: ResumeStyleV1;
+  data: ResumeDocument;
+  style: ResumePresentation;
   summary: string;
   proposal_mode?: "legacy_snapshot" | "polish_local" | "rewrite_entry_star" | "generate_from_materials";
   target?: Record<string, unknown> | null;
@@ -186,6 +318,13 @@ export type AgentProposal = {
 
 export type AgentStreamEvent =
   | { type: "run.started"; runId: string }
+  | {
+      type: "run.phase";
+      runId: string;
+      phase?: string;
+      label?: string;
+      referencedContextCount?: number;
+    }
   | { type: "assistant.delta"; runId: string; delta: string }
   | { type: "clarification.requested"; runId: string; clarification: AgentClarification }
   | { type: "tool.started" | "tool.completed"; runId: string; tool: string; callKey: string }
@@ -211,8 +350,8 @@ export type PublicShareSharer = {
 };
 
 export type PublicSharePayload = {
-  data: ResumeDocumentV1;
-  style: ResumeStyleV1;
+  data: ResumeDocument;
+  style: ResumePresentation;
   sharer: PublicShareSharer;
 };
 
@@ -933,7 +1072,13 @@ async function requestResumePdf(
 
 async function streamAgentMessage(
   sessionId: string,
-  payload: { content: string; idempotency_key: string; selection_context?: AgentSelectionContext; reply_to_sequence_no?: number },
+  payload: {
+    content: string;
+    idempotency_key: string;
+    selection_context?: AgentSelectionContext;
+    contexts?: AgentContextRef[];
+    reply_to_sequence_no?: number;
+  },
   signal: AbortSignal,
   onEvent: (event: AgentStreamEvent) => void,
   retryAuth = true,
@@ -967,7 +1112,7 @@ async function streamAgentMessage(
   let terminalReceived = false;
   const terminalEvents = new Set(["run.completed", "run.failed", "run.cancelled"]);
   const allowedEvents = new Set([
-    "run.started", "assistant.delta", "clarification.requested", "tool.started", "tool.completed",
+    "run.started", "run.phase", "assistant.delta", "clarification.requested", "tool.started", "tool.completed",
     "proposal.created", ...terminalEvents,
   ]);
   while (true) {
@@ -1039,6 +1184,12 @@ export const api = {
       method: "PATCH",
       body: { nickname },
     }),
+  getUserProfile: () => request<UserProfileData>("/api/account/user-profile"),
+  putUserProfile: (payload: UserProfileUpdate) =>
+    request<UserProfileData>("/api/account/user-profile", {
+      method: "PUT",
+      body: payload,
+    }),
   uploadAccountAvatar: (payload: { fileName: string; dataUrl: string }) =>
     request<{ url: string }>("/api/account/avatar", {
       method: "PUT",
@@ -1049,7 +1200,8 @@ export const api = {
   listResumes: () => request<{ resumes: ResumeSummary[] }>("/api/resumes"),
   getResumeOverview: () => request<ResumeOverview>("/api/resume-overview"),
   listResumeTemplates: () =>
-    request<{ templates: ResumeTemplate[] }>("/api/resume-templates"),
+    request<{ templates: ResumeTemplate[] }>("/api/resume-templates")
+      .then(({ templates }) => ({ templates: selectableResumeTemplates(templates) })),
   getResumeTemplate: (id: string) =>
     request<{ template: ResumeTemplate }>(`/api/resume-templates/${id}`),
   createResume: (payload: { title: string; template_id: string }) =>
@@ -1059,15 +1211,35 @@ export const api = {
     }),
   getResume: (id: string) =>
     request<{ resume: ResumeRecord }>(`/api/resumes/${id}`),
+  classifyResumeSemantics: (
+    id: string,
+    payload: { content_hash: string; section_ids?: string[] },
+  ) => request<{ content_hash: string; suggestions: SemanticClassificationSuggestion[] }>(
+    `/api/resumes/${id}/semantic-classification`,
+    { method: "POST", body: payload },
+  ),
   downloadResumePdf: (id: string, lockVersion: number, signal?: AbortSignal) =>
     requestResumePdf(
       `/api/resumes/${encodeURIComponent(id)}/pdf?lock_version=${encodeURIComponent(lockVersion)}`,
       signal,
     ),
-  listAgentSessions: (resumeId: string) =>
+  listAgentSessions: (resumeId?: string) =>
     request<{ sessions: AgentSession[] }>(
-      `/api/agent/sessions?resume_id=${encodeURIComponent(resumeId)}`,
+      `/api/agent/sessions${resumeId ? `?resume_id=${encodeURIComponent(resumeId)}` : ""}`,
     ),
+  getAgentReadiness: () => request<{ ready: boolean }>("/api/agent/readiness"),
+  listAgentContexts: (options: {
+    type?: AgentContextType;
+    search?: string;
+    limit?: number;
+  } = {}) => {
+    const params = new URLSearchParams();
+    if (options.type) params.set("type", options.type);
+    if (options.search?.trim()) params.set("q", options.search.trim());
+    if (options.limit !== undefined) params.set("limit", String(options.limit));
+    const query = params.toString();
+    return request<AgentContextListResponse>(`/api/agent/contexts${query ? `?${query}` : ""}`);
+  },
   listAgentProposals: (resumeId: string, sessionId?: string) =>
     request<{ proposals: AgentProposal[] }>(
       `/api/agent/proposals?resume_id=${encodeURIComponent(resumeId)}${sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : ""}`,
@@ -1076,10 +1248,13 @@ export const api = {
     request<{ session: AgentSession }>(
       `/api/agent/sessions/${encodeURIComponent(sessionId)}`,
     ),
-  createAgentSession: (resumeId: string) =>
+  createAgentSession: (resumeId?: string | null, title?: string) =>
     request<{ session: AgentSession }>("/api/agent/sessions", {
       method: "POST",
-      body: { resume_id: resumeId },
+      body: {
+        ...(resumeId ? { resume_id: resumeId } : {}),
+        ...(title ? { title } : {}),
+      },
     }),
   streamAgentMessage,
   cancelAgentRun: (runId: string) =>
@@ -1101,8 +1276,8 @@ export const api = {
     id: string,
     payload: {
       title?: string;
-      data?: ResumeDocumentV1;
-      style?: ResumeStyleV1;
+      data?: ResumeDocument;
+      style?: ResumePresentation;
       base_lock_version: number;
     },
   ) =>
@@ -1110,6 +1285,18 @@ export const api = {
       method: "PUT",
       body: payload,
     }),
+  applyResumeTemplate: (
+    id: string,
+    payload: {
+      template_id: string;
+      base_lock_version: number;
+      title?: string;
+      data?: ResumeDocument;
+    },
+  ) => request<{ resume: ResumeRecord }>(`/api/resumes/${id}/apply-template`, {
+    method: "POST",
+    body: payload,
+  }),
   deleteResume: (id: string) =>
     request<{ deleted: boolean }>(`/api/resumes/${id}`, { method: "DELETE" }),
   listVersions: (id: string) =>
@@ -1706,4 +1893,4 @@ function withLogQuery(path: string, params: Record<string, unknown>): string {
   return `${path}${suffix ? `?${suffix}` : ""}`;
 }
 
-export type { ResumeDocumentV1, ResumeStyleV1 } from "./resumeContract";
+export type { ResumeDocument, ResumePresentation } from "./resumeContract";
