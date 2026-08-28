@@ -1,80 +1,87 @@
-<view class="page" style="padding-top: {{statusBarHeight}}px">
-  <view class="brand-row">
-    <view class="ui-brand">
-      <image class="ui-brand-wordmark" src="/assets/linkresume-wordmark.png" mode="aspectFit" aria-label="LinkResume"></image>
-    </view>
-  </view>
-
-  <view class="loading-grid" wx:if="{{loading}}">
-    <view class="skeleton-grid-card" wx:for="{{[1, 2, 3, 4]}}" wx:key="*this">
-      <view class="skeleton-thumb"></view>
-      <view class="skeleton-info">
-        <view class="skeleton-line strong"></view>
-        <view class="skeleton-line"></view>
-      </view>
-    </view>
-  </view>
-  <view class="state-card" wx:elif="{{guest}}">
-    <text class="state-title">开启你的第一份创意简历</text>
-    <text class="state-copy">随时随地查阅你的职业档案，让每一次展示都专业出彩。</text>
-    <button class="state-action" hover-class="state-action-pressed" bindtap="goLogin">微信一键登录</button>
-  </view>
-  <view class="state-card" wx:elif="{{error}}">
-    <text class="state-title">简历暂时没有加载出来</text>
-    <text class="state-copy">{{error}}，请检查网络后重试。</text>
-    <button class="state-ghost" hover-class="state-ghost-pressed" bindtap="loadPage">重新加载</button>
-  </view>
-  <view class="state-card" wx:elif="{{items.length === 0}}">
-    <text class="state-title">这里还没有简历</text>
-    <text class="state-copy">前往 LinkResume 网页端自由编辑与排版，多端实时同步查阅。</text>
-  </view>
-  <view class="resume-grid" wx:else>
-    <navigator
-      class="resume-gallery-card"
-      hover-class="resume-gallery-card-pressed"
-      hover-stay-time="70"
-      wx:for="{{items}}"
-      wx:key="id"
-      url="/pages/resumes/detail?id={{item.id}}"
-    >
-      <!-- 上部画廊 A4 封面拟物视口 -->
-      <view class="gallery-thumb-box" aria-hidden="true">
-        <!-- 真实渲染的简历封面图片（顶部顶格对齐） -->
-        <image
-          wx:if="{{item.previewUrl}}"
-          class="gallery-real-preview"
-          src="{{item.previewUrl}}"
-          mode="widthFix"
-        ></image>
-        <!-- 资源准备中的优雅 A4 占位纸张 -->
-        <view wx:else class="mini-paper">
-          <!-- 头部微缩头像与标题 -->
-          <view class="paper-header">
-            <view class="paper-avatar"></view>
-            <view class="paper-title-lines">
-              <view class="paper-line h1"></view>
-              <view class="paper-line h2"></view>
-            </view>
-          </view>
-          <!-- 分割装饰线 -->
-          <view class="paper-divider"></view>
-          <!-- 段落线条 -->
-          <view class="paper-body">
-            <view class="paper-line p1"></view>
-            <view class="paper-line p2"></view>
-            <view class="paper-line p3"></view>
-            <view class="paper-line p4"></view>
-          </view>
-          <!-- 底部微印章 -->
-          <view class="paper-seal">CV</view>
+<view class="page">
+  <scroll-view
+    class="page-scroll"
+    scroll-y
+    enable-back-to-top
+    refresher-enabled="{{true}}"
+    refresher-triggered="{{refresherTriggered}}"
+    bindrefresherrefresh="handleRefresherRefresh"
+  >
+    <view class="page-content" style="padding-top: {{statusBarHeight}}px">
+      <view class="brand-row">
+        <view class="ui-brand">
+          <image class="ui-brand-wordmark" src="/assets/linkresume-wordmark.png" mode="aspectFit" aria-label="LinkResume"></image>
         </view>
       </view>
 
-      <!-- 下部卡片信息区 -->
-      <view class="gallery-info">
-        <text class="gallery-title">{{item.title}}</text>
-        <text class="gallery-time">{{item.updatedAtLabel}}</text>
+      <view class="loading-grid" wx:if="{{loading}}">
+        <view class="skeleton-grid-card" wx:for="{{[1, 2, 3, 4]}}" wx:key="*this">
+          <view class="skeleton-thumb"></view>
+          <view class="skeleton-info">
+            <view class="skeleton-line strong"></view>
+            <view class="skeleton-line"></view>
+          </view>
+        </view>
       </view>
-    </navigator>
-  </view>
+      <view class="state-card" wx:elif="{{error}}">
+        <text class="state-title">简历暂时没有加载出来</text>
+        <text class="state-copy">{{error}}，请检查网络后重试。</text>
+        <button class="state-ghost" hover-class="state-ghost-pressed" bindtap="loadPage">重新加载</button>
+      </view>
+      <view class="state-card" wx:elif="{{!guest && items.length === 0}}">
+        <text class="state-title">这里还没有简历</text>
+        <text class="state-copy">前往 LinkResume 网页端自由编辑与排版，多端实时同步查阅。</text>
+      </view>
+      <view class="resume-grid" wx:elif="{{items.length > 0}}">
+        <navigator
+          class="resume-gallery-card"
+          hover-class="resume-gallery-card-pressed"
+          hover-stay-time="70"
+          wx:for="{{items}}"
+          wx:key="id"
+          url="/pages/resumes/detail?id={{item.id}}"
+        >
+          <!-- 上部画廊 A4 封面拟物视口 -->
+          <view class="gallery-thumb-box" aria-hidden="true">
+            <!-- 真实渲染的简历封面图片（顶部顶格对齐） -->
+            <image
+              wx:if="{{item.previewUrl}}"
+              class="gallery-real-preview"
+              src="{{item.previewUrl}}"
+              mode="widthFix"
+            ></image>
+            <!-- 资源准备中的优雅 A4 占位纸张 -->
+            <view wx:else class="mini-paper">
+              <!-- 头部微缩头像与标题 -->
+              <view class="paper-header">
+                <view class="paper-avatar"></view>
+                <view class="paper-title-lines">
+                  <view class="paper-line h1"></view>
+                  <view class="paper-line h2"></view>
+                </view>
+              </view>
+              <!-- 分割装饰线 -->
+              <view class="paper-divider"></view>
+              <!-- 段落线条 -->
+              <view class="paper-body">
+                <view class="paper-line p1"></view>
+                <view class="paper-line p2"></view>
+                <view class="paper-line p3"></view>
+                <view class="paper-line p4"></view>
+              </view>
+              <!-- 底部微印章 -->
+              <view class="paper-seal">CV</view>
+            </view>
+          </view>
+
+          <!-- 下部卡片信息区 -->
+          <view class="gallery-info">
+            <text wx:if="{{item.isDemo}}" class="gallery-demo-label">示例简历 · 内容为虚构信息</text>
+            <text class="gallery-title">{{item.title}}</text>
+            <text class="gallery-time">{{item.updatedAtLabel}}</text>
+          </view>
+        </navigator>
+      </view>
+    </view>
+  </scroll-view>
 </view>

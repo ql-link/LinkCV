@@ -1,6 +1,13 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const appConfig = require("../app.json");
+const resumesPageConfig = require("../pages/resumes/index.json");
+
+const profileTemplate = fs.readFileSync(path.join(__dirname, "../pages/profile/index.wxml"), "utf8");
+const demoDetailScript = fs.readFileSync(path.join(__dirname, "../pages/resumes/detail.js"), "utf8");
+const demoDetailTemplate = fs.readFileSync(path.join(__dirname, "../pages/resumes/detail.wxml"), "utf8");
 
 async function withPage(pageRelativePath, mockedModules, wxMock, run) {
   const moduleCaches = Object.entries(mockedModules).map(([modulePath, exports]) => {
@@ -45,6 +52,8 @@ const privacySetting = async () => ({
 
 test("app starts on resumes and exposes only resumes and profile tabs", () => {
   assert.equal(appConfig.pages[0], "pages/resumes/index");
+  assert.equal(resumesPageConfig.disableScroll, true);
+  assert.equal(resumesPageConfig.enablePullDownRefresh, false);
   assert.deepEqual(appConfig.tabBar.list, [
     { pagePath: "pages/resumes/index", text: "简历" },
     { pagePath: "pages/profile/index", text: "我的" },
@@ -323,38 +332,98 @@ test("confirm page without a scene falls back to the resumes tab", async () => {
   assert.deepEqual(switches, ["/pages/resumes/index"]);
 });
 
-test("resumes page shows a dismissible login guide instead of forcing login", async () => {
-  const navigations = [];
-  let guestState = null;
-  let loadingState = null;
+test("resumes page shows one static demo card without authentication or resume requests", async () => {
+  let authenticationRequests = 0;
+  let resumeRequests = 0;
   await withPage("../pages/resumes", {
     "../services/auth": {
       hasSession: () => false,
       ensureSession: async () => {
+        authenticationRequests += 1;
         throw new Error("no session request expected in guest mode");
       },
     },
     "../services/resumes": {
       listResumes: async () => {
+        resumeRequests += 1;
         throw new Error("no resume request expected in guest mode");
       },
     },
-  }, {
-    navigateTo: ({ url }) => navigations.push(url),
-  }, async (page) => {
+  }, {}, async (page) => {
     page.onLoad();
-    guestState = page.data.guest;
-    loadingState = page.data.loading;
+    page.onShow();
+    await page.handleRefresherRefresh();
 
-    page.goLogin();
+    assert.equal(page.data.guest, true);
+    assert.equal(page.data.loading, false);
+    assert.equal(page.data.refresherTriggered, false);
+    assert.equal(page.data.items.length, 1);
+    assert.equal(page.data.items[0].id, "__linkresume_demo_resume__");
+    assert.equal(page.data.items[0].title, "林知遥的简历");
+    assert.equal(page.data.items[0].demoLabel, "示例简历 · 内容为虚构信息");
+    assert.equal(page.data.items[0].isDemo, true);
   });
 
-  assert.equal(guestState, true);
-  assert.equal(loadingState, false);
-  assert.deepEqual(navigations, ["/pages/login/index?returnTo=%2Fpages%2Fresumes%2Findex"]);
+  assert.equal(authenticationRequests, 0);
+  assert.equal(resumeRequests, 0);
 });
 
-test("resumes page returns to the login guide when recovery fails without a session", async () => {
+test("demo resume detail is fully local and does not call auth, cache or resume APIs", async () => {
+  let authCalls = 0;
+  let cacheCalls = 0;
+  let resumeApiCalls = 0;
+  const navigationTitles = [];
+  await withPage("../pages/resumes/detail", {
+    "../services/auth": {
+      getCurrentUser: () => {
+        authCalls += 1;
+        throw new Error("demo detail must not inspect the session");
+      },
+    },
+    "../services/resumes": {
+      getResume: async () => {
+        resumeApiCalls += 1;
+        throw new Error("demo detail must not request resume metadata");
+      },
+      downloadResumePreview: async () => {
+        resumeApiCalls += 1;
+        throw new Error("demo detail must not download a preview");
+      },
+    },
+    "../services/resumePreviewCache": {
+      getCachedResumePreview: async () => {
+        cacheCalls += 1;
+        return null;
+      },
+      invalidateResumePreview: async () => { cacheCalls += 1; },
+      resumePreviewPath: () => { cacheCalls += 1; return "/tmp/demo.png"; },
+    },
+  }, {
+    setNavigationBarTitle: ({ title }) => navigationTitles.push(title),
+    previewImage() { throw new Error("demo detail has no image preview"); },
+  }, async (page) => {
+    page.onLoad({ id: "__linkresume_demo_resume__" });
+    await page.retryLoad();
+    await page.handlePreviewError();
+
+    assert.equal(page.data.loading, false);
+    assert.equal(page.data.error, "");
+    assert.equal(page.data.isDemo, true);
+    assert.equal(page.data.previewPath, "");
+    assert.equal(page.data.demoResume.name, "林知遥");
+    assert.equal(page.data.demoResume.email, "lin.xxx@example.com");
+    assert.equal(page.data.demoResume.phone, "138 XXXX XXXX");
+    assert.equal(page.data.demoResume.experience.length, 2);
+    assert.equal(page.data.demoResume.projects.length, 2);
+  });
+
+  assert.equal(authCalls, 0);
+  assert.equal(cacheCalls, 0);
+  assert.equal(resumeApiCalls, 0);
+  assert.deepEqual(navigationTitles, ["示例简历", "示例简历"]);
+});
+
+test("resumes page returns to the static demo when recovery fails without a session", async () => {
   let finalState = null;
   await withPage("../pages/resumes", {
     "../services/auth": {
@@ -367,12 +436,19 @@ test("resumes page returns to the login guide when recovery fails without a sess
   }, { navigateTo() {} }, async (page) => {
     page.data.guest = false;
     await page.loadPage();
-    finalState = { guest: page.data.guest, loading: page.data.loading, error: page.data.error };
+    finalState = {
+      guest: page.data.guest,
+      loading: page.data.loading,
+      error: page.data.error,
+      items: page.data.items,
+    };
   });
 
   assert.equal(finalState.guest, true);
   assert.equal(finalState.loading, false);
   assert.equal(finalState.error, "");
+  assert.equal(finalState.items.length, 1);
+  assert.equal(finalState.items[0].isDemo, true);
 });
 
 test("resumes page keeps the error state for network failures while logged in", async () => {
@@ -404,6 +480,7 @@ test("resumes page lists resumes and populates preview thumbnail from cache", as
     "../services/resumes": {
       listResumes: async () => [
         { id: "r1", title: "前端工程师", updated_at: "2026-08-26T10:00:00Z", pdf_version_id: "v1" },
+        { id: "__linkresume_demo_resume__", title: "示例简历 · 内容为虚构信息", isDemo: true, pdf_version_id: "demo" },
       ],
     },
     "../services/resumePreviewCache": {
@@ -426,38 +503,40 @@ test("resumes page lists resumes and populates preview thumbnail from cache", as
   assert.equal(finalItems[0].previewUrl, "/tmp/cached-preview.png");
 });
 
-test("resumes page handles onPullDownRefresh silently and stops pull down refresh", async () => {
-  let stopped = false;
-  let loadingHistory = [];
+test("resumes page handles inner refresher silently and resets refresher state", async () => {
+  let resolveRefresh;
+  let finalRefresherTriggered;
+  let finalLoading;
+  const refreshResult = new Promise((resolve) => { resolveRefresh = resolve; });
   await withPage("../pages/resumes", {
     "../services/auth": {
       hasSession: () => true,
       ensureSession: async () => ({ id: "u1", nickname: "张三" }),
     },
     "../services/resumes": {
-      listResumes: async () => [
-        { id: "r1", title: "前端工程师", updated_at: "2026-08-26T10:00:00Z", pdf_version_id: "v1" },
-      ],
+      listResumes: async () => refreshResult,
     },
     "../services/resumePreviewCache": {
       getCachedResumePreview: async () => null,
       resumePreviewPath: () => "/tmp/fallback.png",
     },
-  }, {
-    stopPullDownRefresh: () => { stopped = true; },
-  }, async (page) => {
-    // first regular load
-    await page.loadPage();
-    page.data.items[0].previewUrl = "/tmp/cached-preview.png";
+  }, {}, async (page) => {
+    page.data.loading = false;
+    page.data.items = [{ id: "r1", title: "前端工程师", updatedAtLabel: "刚刚" }];
 
-    // trigger pull down refresh
-    const promise = page.onPullDownRefresh();
-    loadingHistory.push(page.data.loading);
+    const promise = page.handleRefresherRefresh();
+    assert.equal(page.data.refresherTriggered, true);
+    assert.equal(page.data.loading, false, "inner refresher must remain silent without full-page loading flip");
+    resolveRefresh([
+      { id: "r1", title: "前端工程师", updated_at: "2026-08-26T10:00:00Z" },
+    ]);
     await promise;
+    finalRefresherTriggered = page.data.refresherTriggered;
+    finalLoading = page.data.loading;
   });
 
-  assert.equal(stopped, true);
-  assert.equal(loadingHistory[0], false, "pull down refresh must remain silent without full-page loading flip");
+  assert.equal(finalRefresherTriggered, false);
+  assert.equal(finalLoading, false);
 });
 
 test("profile tab shows a guest state without requesting account data", async () => {
@@ -481,4 +560,21 @@ test("profile tab shows a guest state without requesting account data", async ()
   });
 
   assert.deepEqual(navigations, ["/pages/login/index?returnTo=%2Fpages%2Fprofile%2Findex"]);
+});
+
+test("profile template keeps the avatar as the only guest login trigger", () => {
+  assert.match(profileTemplate, /class="avatar-round guest-avatar"[^>]*bindtap="goLogin"/);
+  assert.doesNotMatch(profileTemplate, /微信登录 \/ 注册/);
+  assert.doesNotMatch(profileTemplate, /class="profile-info" bindtap="goLogin"/);
+  assert.doesNotMatch(profileTemplate, /class="setting-row" bindtap=/);
+  assert.doesNotMatch(profileTemplate, /class="arrow-icon" wx:if="\{\{guest\}\}"/);
+  assert.match(profileTemplate, /class="btn-group" wx:if="\{\{!guest &&/);
+  assert.match(profileTemplate, /bindtap="handleSave"/);
+});
+
+test("demo resume contact details stay visibly fictional and the disclaimer remains", () => {
+  assert.match(demoDetailScript, /email: "lin\.xxx@example\.com"/);
+  assert.match(demoDetailScript, /phone: "138 XXXX XXXX"/);
+  assert.match(demoDetailTemplate, /示例简历 · 内容为虚构信息/);
+  assert.match(demoDetailTemplate, /以上姓名、联系方式与经历均为虚构，仅用于示例浏览。/);
 });

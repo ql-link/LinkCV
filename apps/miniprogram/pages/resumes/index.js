@@ -4,6 +4,17 @@ const resumes = require("../../services/resumes");
 const { formatUpdatedAt } = require("../../utils/resume");
 const { getStatusBarHeight } = require("../../utils/system");
 
+const DEMO_RESUME_ID = "__linkresume_demo_resume__";
+const DEMO_RESUME_LABEL = "示例简历 · 内容为虚构信息";
+const DEMO_RESUME_ITEM = {
+  id: DEMO_RESUME_ID,
+  title: "林知遥的简历",
+  demoLabel: DEMO_RESUME_LABEL,
+  updatedAtLabel: "仅供体验 · 不代表真实用户",
+  previewUrl: "",
+  isDemo: true,
+};
+
 Page({
   data: {
     loading: true,
@@ -12,6 +23,7 @@ Page({
     items: [],
     user: null,
     statusBarHeight: getStatusBarHeight(),
+    refresherTriggered: false,
   },
 
   onLoad() {
@@ -33,23 +45,24 @@ Page({
     if (this.data.guest) this.loadPage();
   },
 
-  onPullDownRefresh() {
-    if (!auth.hasSession()) {
-      wx.stopPullDownRefresh();
-      return;
+  handleRefresherRefresh() {
+    this.setData({ refresherTriggered: true });
+    if (this.data.guest || !auth.hasSession()) {
+      this.setData({ refresherTriggered: false });
+      return Promise.resolve();
     }
     return this.loadPage({ silent: true }).finally(() => {
-      wx.stopPullDownRefresh();
+      this.setData({ refresherTriggered: false });
     });
   },
 
   enterGuestMode() {
-    this.setData({ guest: true, loading: false, error: "", items: [], user: null });
-  },
-
-  goLogin() {
-    wx.navigateTo({
-      url: `/pages/login/index?returnTo=${encodeURIComponent("/pages/resumes/index")}`,
+    this.setData({
+      guest: true,
+      loading: false,
+      error: "",
+      items: [{ ...DEMO_RESUME_ITEM }],
+      user: null,
     });
   },
 
@@ -109,17 +122,19 @@ Page({
       const user = await auth.ensureSession();
       const records = await resumes.listResumes();
       const currentItems = this.data.items || [];
-      const items = records.map((item) => {
-        const existing = currentItems.find((it) => it.id === item.id);
-        const previewUrl = existing && existing.pdf_version_id === item.pdf_version_id
-          ? (existing.previewUrl || "")
-          : "";
-        return {
-          ...item,
-          updatedAtLabel: formatUpdatedAt(item.updated_at),
-          previewUrl,
-        };
-      });
+      const items = (Array.isArray(records) ? records : [])
+        .filter((item) => item && String(item.id) !== DEMO_RESUME_ID && !item.isDemo)
+        .map((item) => {
+          const existing = currentItems.find((it) => it.id === item.id);
+          const previewUrl = existing && existing.pdf_version_id === item.pdf_version_id
+            ? (existing.previewUrl || "")
+            : "";
+          return {
+            ...item,
+            updatedAtLabel: formatUpdatedAt(item.updated_at),
+            previewUrl,
+          };
+        });
       this.setData({ user, items, loading: false });
       void this.prefetchPreviews(user, items);
     } catch (error) {
