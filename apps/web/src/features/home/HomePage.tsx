@@ -397,27 +397,26 @@ export function HomeScreen({
               </section>
             </>
           ) : (
-            <section className="dashboard-empty-state">
-            <span className="empty-state-icon" aria-hidden="true"><Plus size={28} strokeWidth={1.6} /></span>
-            <h2>{query ? "没有匹配的简历" : "还没有正式简历"}</h2>
-            <p>
-              {query
-                ? "换个关键词试试。"
-                : "从一套完整模板创建，或导入一份已有文件作为起点。之后可以复制出不同岗位版本，分别维护和分享。"}
-            </p>
-            {!query && (
-              <div className="empty-state-actions">
-                <Button icon={<Plus size={15} />} onClick={() => setCreateDialogOpen(true)}>创建第一份简历</Button>
-                <Button
-                  variant="outline"
-                  icon={<FileUp size={15} />}
-                  onClick={() => setImportDialogOpen(true)}
-                >
-                  导入简历
-                </Button>
-              </div>
-            )}
-            {!query && <small className="empty-state-hint">建议：先完成一份基础版，再为不同岗位复制出定向版本。</small>}
+            <section className="home-resume-empty-state">
+              <FileText aria-hidden="true" />
+              <h2>{query ? "没有匹配的简历" : "还没有正式简历"}</h2>
+              <p>
+                {query
+                  ? "换个关键词试试。"
+                  : "创建一份新简历，或导入已有文件，开始整理你的求职资料。"}
+              </p>
+              {!query && (
+                <div className="empty-state-actions">
+                  <Button icon={<Plus size={15} />} onClick={() => setCreateDialogOpen(true)}>创建第一份简历</Button>
+                  <Button
+                    variant="outline"
+                    icon={<FileUp size={15} />}
+                    onClick={() => setImportDialogOpen(true)}
+                  >
+                    导入简历
+                  </Button>
+                </div>
+              )}
             </section>
           )}
         </div>
