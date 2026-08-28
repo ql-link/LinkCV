@@ -12,7 +12,7 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker和独立 Pi 服务。当前 Alembic head `0042`；`0002`–`0022` 建立并演进既有业务结构，`0023` 为历史简历版本新增非空名称，`0024`–`0027` 增加并刷新官方模板，`0028`–`0029` 扩展并收敛多能力模型配置，`0030` 新增 Agent 会话、运行、消息、工具审计与简历修改提案，并允许历史版本使用 `reason=agent`；`0031` 为提案增加稳定定位、诊断、类型化操作、修改依据与资料引用；`0032` 为 Agent 消息增加结构化澄清类型和版本化元数据；`0033` 增加面试求职进程、排期复盘和素材元数据；`0034` 删除存量已归档 JD 并移除 JD 归档字段和索引；`0035` 收敛可见性索引，`0036` 把全部简历快照转换为唯一规范结构，`0037`–`0040` 收敛官方编辑章节、区块 ID 与双栏插槽，`0041` 清除模板、当前简历和历史版本正文中的页级模板投影并恢复独立侧栏语义，`0042` 恢复经典技术模板的生产页边距并删除空白模板，历史简历只清空可空来源引用。
+新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker和独立 Pi 服务。当前 Alembic head `0043`；`0002`–`0022` 建立并演进既有业务结构，`0023` 为历史简历版本新增非空名称，`0024`–`0027` 增加并刷新官方模板，`0028`–`0029` 扩展并收敛多能力模型配置，`0030`–`0035` 建立 Agent、面试与 JD 契约，`0036`–`0040` 收敛简历快照和官方模板结构，`0041` 清除页级模板投影，`0042` 恢复经典技术模板页边距并删除空白模板，`0043` 增加资料上传幂等、排队、尝试次数和重新分发字段。
 
 本地开发把 Git 主工作目录中的 `.env.local` 与 `.env.development.local` 作为所有 worktree 的共享私密覆盖层。`npm run dev`/`npm run dev:local` 优先使用当前 worktree 的 `.env`，否则回退主工作目录 `.env`；两处基础文件都不存在时，完整的主目录 `.env.local` 仍可单独作为 Local 配置。`npm run dev:development` 使用当前 worktree 已跟踪的 `.env.development`，再加载主工作目录 `.env.development.local`，并把同一结果注入 Web、FastAPI、Worker 与 Pi Service。新建 worktree 后不需要复制密钥文件。需要临时隔离时可显式设置 `LINKCV_SECRET_ENV_FILE=/absolute/path/to/override.local`。
 
@@ -38,7 +38,7 @@ local/test 未配置密钥环时，原有非 LLM 接口仍可启动，但保存�
 LINKCV_ENV_FILE=.env.development npm run db:init
 ```
 
-命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0042`。图片、导入源文件、面试素材和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。面试素材默认最多 500 MiB，由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 在 Local、Development 和 Production 分别配置；上传直接进入 FastAPI 和 MinIO，不经过 RabbitMQ，RabbitMQ 仍只服务异步文档解析等既有 Worker 流程。
+命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0043`。图片、导入源文件、面试素材和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。面试素材默认最多 500 MiB，由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 在 Local、Development 和 Production 分别配置；上传直接进入 FastAPI 和 MinIO，不经过 RabbitMQ，RabbitMQ 仍只服务异步文档解析等既有 Worker 流程。
 
 微信自动建号、小程序登录和网页扫码确认要求同时配置 `WECHAT_APPID` 与 `WECHAT_SECRET`；密钥只放 `.env.local`、环境对应 `.local` 或进程环境。`WECHAT_LOGIN_PAGE` 默认 `pages/login/index`，`WECHAT_SCENE_TTL_SECONDS` 默认 300 秒，`WECHAT_QRCODE_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 10 次，`WECHAT_LOGIN_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 30 次，`WECHAT_API_TIMEOUT_SECONDS` 控制微信上游超时。未配置时应用仍可启动，但微信登录接口返回 `503 WECHAT_SERVICE_UNAVAILABLE`。
 
@@ -95,6 +95,17 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 | --- | --- | --- |
 | `RESUME_VERSION_LIMIT` | `10` | 单份简历可保存的版本上限，达到后拒绝新增并由用户手动删除旧版本；最小为 2 |
 | `DATASET_UPLOAD_MAX_BYTES` | `10485760` | 知识库资料单文件上传大小上限 |
+| `DATASET_MAX_FILES_PER_BATCH` | `10` | Web 单批选择的文件数上限，由列表接口返回给前端 |
+| `DATASET_UPLOAD_REQUESTS_PER_MINUTE` | `20` | 单用户每分钟上传受理请求上限 |
+| `DATASET_UPLOAD_USER_CONCURRENCY` | `3` | 单进程内单用户上传并发上限 |
+| `DATASET_UPLOAD_GLOBAL_CONCURRENCY` | `12` | 单个 FastAPI 进程的资料上传全局并发上限 |
+| `DATASET_MAX_COUNT_PER_USER` | `200` | 单用户上传成功或活动资料的数量上限 |
+| `DATASET_MAX_TOTAL_BYTES_PER_USER` | `1073741824` | 单用户上传成功或活动资料的源文件总容量上限 |
+| `DATASET_DISPATCH_SCAN_SECONDS` | `5` | Worker 扫描待分发任务的周期 |
+| `DATASET_REDISPATCH_AFTER_SECONDS` | `30` | 已发布但仍未被抢占的任务重新发布等待时间 |
+| `DATASET_PARSE_STALE_SECONDS` | `240` | 解析中任务判定陈旧并恢复的时限 |
+| `DATASET_PARSE_MAX_ATTEMPTS` | `3` | 资料解析最大尝试次数，超过后收口失败 |
+| `DATASET_UPLOAD_RESERVATION_TTL_SECONDS` | `86400` | 上传失败或长期停留在 uploading 的预留清理时限 |
 | `RESUME_IMPORT_MAX_BYTES` | `10485760` | 上传原文件大小上限 |
 | `RESUME_MARKDOWN_MAX_BYTES` | `2097152` | 转换后 Markdown 大小上限 |
 | `RESUME_STRUCTURING_MAX_BYTES` | `131072` | 允许发送到结构化模型的 Markdown 大小上限 |

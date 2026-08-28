@@ -219,7 +219,7 @@ class DocumentParseTask(Base):
         ),
         CheckConstraint(
             "parse_status IS NULL OR "
-            "parse_status IN ('processing', 'succeeded', 'failed')",
+            "parse_status IN ('queued', 'processing', 'succeeded', 'failed')",
             name="ck_document_parse_tasks_parse_status",
         ),
         CheckConstraint(
@@ -230,6 +230,10 @@ class DocumentParseTask(Base):
             "(upload_status = 'failed' "
             "AND upload_duration_ms IS NOT NULL "
             "AND parse_status IS NULL "
+            "AND parse_duration_ms IS NULL) OR "
+            "(upload_status = 'succeeded' "
+            "AND upload_duration_ms IS NOT NULL "
+            "AND parse_status = 'queued' "
             "AND parse_duration_ms IS NULL) OR "
             "(upload_status = 'succeeded' "
             "AND upload_duration_ms IS NOT NULL "
@@ -289,10 +293,22 @@ class DocumentParseTask(Base):
     parse_status: Mapped[str | None] = mapped_column(
         String(16),
         nullable=True,
-        comment="解析状态：processing、succeeded、failed",
+        comment="解析状态：queued、processing、succeeded、failed",
     )
     parse_duration_ms: Mapped[int | None] = mapped_column(
         unsigned_int_type(), nullable=True, comment="解析进入终态时的实际耗时毫秒"
+    )
+    parse_attempt_count: Mapped[int] = mapped_column(
+        unsigned_int_type(),
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="实际开始解析的累计次数，同时作为尝试版本",
+    )
+    last_dispatched_at: Mapped[datetime | None] = mapped_column(
+        timestamp_type(),
+        nullable=True,
+        comment="最近一次确认消息发布的时间（UTC）",
     )
     failure_reason: Mapped[str | None] = mapped_column(
         String(32), nullable=True, comment="解析失败分类原因"
@@ -323,6 +339,13 @@ Index(
     DocumentParseTask.user_id,
     DocumentParseTask.upload_status,
     DocumentParseTask.parse_status,
+)
+Index(
+    "idx_document_parse_tasks_dispatch",
+    DocumentParseTask.source_type,
+    DocumentParseTask.parse_status,
+    DocumentParseTask.last_dispatched_at,
+    DocumentParseTask.id,
 )
 
 

@@ -1,9 +1,12 @@
 import asyncio
+from datetime import timedelta
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import select
 
 from linkcv.core.config import Settings
+from linkcv.core.database import utc_now
 from linkcv.domain.document_conversion import (
     DocumentConversionFailure,
     DocumentMarkdownResult,
@@ -12,10 +15,7 @@ from linkcv.main import create_app
 from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
 from linkcv.workers.dataset_parse_worker import DatasetParseProcessor
-from linkcv.workers.resume_import_worker import (
-    WorkerDependencyUnavailable,
-    WorkerTaskRetryable,
-)
+from linkcv.workers.resume_import_worker import WorkerTaskRetryable
 from tests.fakes import FakeRedis
 
 
@@ -24,6 +24,7 @@ class FakeStorage:
         self.objects: dict[str, bytes] = {}
         self.fail_read = False
         self.fail_upload = False
+        self.fail_delete = False
 
     def ensure_bucket(self) -> None:
         pass
@@ -37,6 +38,11 @@ class FakeStorage:
         if self.fail_upload and object_name.endswith(".md"):
             raise OSError("storage unavailable")
         self.objects[object_name] = data
+
+    def delete(self, object_name: str) -> None:
+        if self.fail_delete:
+            raise OSError("storage unavailable")
+        self.objects.pop(object_name, None)
 
 
 class FakeConverter:
@@ -59,7 +65,7 @@ class FailingConverter:
         raise DocumentConversionFailure(self.status_code, self.code)
 
 
-def build_processor(*, converter=None, queued: bool = False):
+def build_processor(*, converter=None):
     settings = Settings(
         database_url="sqlite+pysqlite:///:memory:",
         jwt_secret="dataset-worker-test-secret-with-32-bytes",
@@ -94,9 +100,9 @@ def build_processor(*, converter=None, queued: bool = False):
             file_name="资料.txt",
             file_format="txt",
             object_name=f"users/{user.id}/datasets/source.txt",
-            upload_status="uploading" if queued else "succeeded",
-            upload_duration_ms=None if queued else 5,
-            parse_status=None if queued else "processing",
+            upload_status="succeeded",
+            upload_duration_ms=5,
+            parse_status="queued",
         )
         db.add(task)
         db.commit()
@@ -116,13 +122,13 @@ def test_dataset_worker_persists_markdown_and_is_idempotent() -> None:
         assert task.parse_status == "succeeded"
         assert task.failure_reason is None
         assert task.converted_object_name == (
-            f"users/{task.user_id}/datasets/converted/{task.id}.md"
+            f"users/{task.user_id}/datasets/converted/{task.id}-1.md"
         )
         assert storage.objects[task.converted_object_name] == "# 张三".encode()
 
 
-def test_dataset_worker_advances_queued_task_before_conversion() -> None:
-    app, _storage, processor, task_id = build_processor(queued=True)
+def test_dataset_worker_claims_queued_task_before_conversion() -> None:
+    app, _storage, processor, task_id = build_processor()
 
     asyncio.run(processor.process(parse_task_id=task_id))
 
@@ -132,6 +138,7 @@ def test_dataset_worker_advances_queued_task_before_conversion() -> None:
         assert task.upload_status == "succeeded"
         assert task.upload_duration_ms is not None
         assert task.parse_status == "succeeded"
+        assert task.parse_attempt_count == 1
 
 
 @pytest.mark.parametrize(
@@ -154,11 +161,15 @@ def test_dataset_worker_maps_conversion_failures(code: str, reason: str) -> None
     with app.state.session_factory() as db:
         task = db.get(DocumentParseTask, task_id)
         assert task is not None
-        assert task.parse_status == "failed"
-        assert task.failure_reason == reason
+        if reason in {"service_unavailable", "timeout"}:
+            assert task.parse_status == "queued"
+            assert task.failure_reason is None
+        else:
+            assert task.parse_status == "failed"
+            assert task.failure_reason == reason
 
 
-def test_converted_storage_failure_is_best_effort() -> None:
+def test_converted_storage_failure_is_retryable_parse_failure() -> None:
     app, storage, processor, task_id = build_processor()
     storage.fail_upload = True
 
@@ -167,7 +178,8 @@ def test_converted_storage_failure_is_best_effort() -> None:
     with app.state.session_factory() as db:
         task = db.get(DocumentParseTask, task_id)
         assert task is not None
-        assert task.parse_status == "succeeded"
+        assert task.parse_status == "queued"
+        assert task.failure_reason is None
         assert task.converted_object_name is None
 
 
@@ -181,20 +193,20 @@ def test_source_storage_failure_remains_retryable() -> None:
     with app.state.session_factory() as db:
         task = db.get(DocumentParseTask, task_id)
         assert task is not None
-        assert task.parse_status == "processing"
+        assert task.parse_status == "queued"
+        assert task.parse_attempt_count == 1
 
 
-def test_existing_lock_keeps_message_pending() -> None:
+def test_duplicate_message_after_claim_is_idempotent() -> None:
     app, _storage, processor, task_id = build_processor()
-    app.state.redis.set(
-        processor._lock_key(task_id),
-        "another-worker",
-        nx=True,
-        ex=240,
-    )
+    asyncio.run(processor.process(parse_task_id=task_id))
+    asyncio.run(processor.process(parse_task_id=task_id))
 
-    with pytest.raises(WorkerDependencyUnavailable, match="already held"):
-        asyncio.run(processor.process(parse_task_id=task_id))
+    with app.state.session_factory() as db:
+        task = db.get(DocumentParseTask, task_id)
+        assert task is not None
+        assert task.parse_status == "succeeded"
+        assert task.parse_attempt_count == 1
 
 
 def test_retry_exhaustion_records_internal_error() -> None:
@@ -205,5 +217,190 @@ def test_retry_exhaustion_records_internal_error() -> None:
     with app.state.session_factory() as db:
         task = db.scalar(select(DocumentParseTask))
         assert task is not None
+        assert task.parse_status == "queued"
+        assert task.failure_reason is None
+
+
+def test_stale_processing_is_requeued_with_same_attempt_version() -> None:
+    app, _storage, processor, task_id = build_processor()
+    claim = processor._claim_queued_task(task_id)
+    assert claim is not None
+    assert claim.attempt == 1
+
+    with app.state.session_factory() as db:
+        task = db.get(DocumentParseTask, task_id)
+        assert task is not None
+        task.updated_at = utc_now() - timedelta(
+            seconds=processor._settings.dataset_parse_stale_seconds + 1
+        )
+        db.commit()
+
+    assert processor.recover_stale_processing() == 1
+
+    with app.state.session_factory() as db:
+        task = db.get(DocumentParseTask, task_id)
+        assert task is not None
+        assert task.parse_status == "queued"
+        assert task.parse_attempt_count == 1
+        assert task.failure_reason is None
+
+
+def test_stale_processing_at_max_attempts_is_terminal_failure() -> None:
+    app, _storage, processor, task_id = build_processor()
+
+    with app.state.session_factory() as db:
+        task = db.get(DocumentParseTask, task_id)
+        assert task is not None
+        task.parse_status = "processing"
+        task.parse_attempt_count = processor._settings.dataset_parse_max_attempts
+        task.updated_at = utc_now() - timedelta(
+            seconds=processor._settings.dataset_parse_stale_seconds + 1
+        )
+        db.commit()
+
+    assert processor.recover_stale_processing() == 1
+
+    with app.state.session_factory() as db:
+        task = db.get(DocumentParseTask, task_id)
+        assert task is not None
         assert task.parse_status == "failed"
-        assert task.failure_reason == "internal_error"
+        assert task.failure_reason == "timeout"
+        assert task.parse_duration_ms is not None
+
+
+def test_queued_dispatch_records_timestamp_only_after_confirmation() -> None:
+    _app, _storage, processor, task_id = build_processor()
+    publish = AsyncMock(return_value=True)
+
+    assert asyncio.run(processor.recover_once(publish=publish)) == 1
+    publish.assert_awaited_once_with(task_id)
+
+    # A recently confirmed task is not repeatedly published in the next cycle.
+    assert asyncio.run(processor.recover_once(publish=publish)) == 0
+    publish.assert_awaited_once_with(task_id)
+
+
+def test_queued_dispatch_failure_keeps_task_eligible() -> None:
+    app, _storage, processor, task_id = build_processor()
+    publish = AsyncMock(return_value=False)
+
+    assert asyncio.run(processor.recover_once(publish=publish)) == 0
+    publish.assert_awaited_once_with(task_id)
+
+    with app.state.session_factory() as db:
+        task = db.get(DocumentParseTask, task_id)
+        assert task is not None
+        assert task.parse_status == "queued"
+        assert task.last_dispatched_at is None
+
+
+def test_old_attempt_cannot_complete_after_recovery_claims_new_attempt() -> None:
+    app, storage, processor, task_id = build_processor()
+    first_claim = processor._claim_queued_task(task_id)
+    assert first_claim is not None
+    assert first_claim.attempt == 1
+
+    with app.state.session_factory() as db:
+        task = db.get(DocumentParseTask, task_id)
+        assert task is not None
+        task.updated_at = utc_now() - timedelta(
+            seconds=processor._settings.dataset_parse_stale_seconds + 1
+        )
+        db.commit()
+    assert processor.recover_stale_processing() == 1
+
+    second_claim = processor._claim_queued_task(task_id)
+    assert second_claim is not None
+    assert second_claim.attempt == 2
+
+    assert (
+        processor._persist_success(
+            parse_task_id=task_id,
+            user_id=second_claim.task.user_id,
+            markdown="# old attempt",
+            started=0,
+            attempt=first_claim.attempt,
+        )
+        is False
+    )
+
+    with app.state.session_factory() as db:
+        task = db.get(DocumentParseTask, task_id)
+        assert task is not None
+        assert task.parse_status == "processing"
+        assert task.parse_attempt_count == second_claim.attempt
+        assert task.converted_object_name is None
+    # The stale attempt used an attempt-scoped key and cleaned it after losing
+    # the conditional completion race, so it cannot overwrite the next result.
+    stale_object = (
+        f"users/{second_claim.task.user_id}/datasets/converted/"
+        f"{task_id}-{first_claim.attempt}.md"
+    )
+    assert stale_object not in storage.objects
+
+
+def test_stale_upload_reservation_is_failed_and_source_object_removed() -> None:
+    app, storage, processor, task_id = build_processor()
+    source_name = "users/1/datasets/source.txt"
+    storage.objects[source_name] = b"orphan"
+    with app.state.session_factory() as db:
+        task = db.get(DocumentParseTask, task_id)
+        assert task is not None
+        task.object_name = source_name
+        task.upload_status = "uploading"
+        task.upload_duration_ms = None
+        task.parse_status = None
+        task.parse_duration_ms = None
+        task.updated_at = utc_now() - timedelta(
+            seconds=processor._settings.dataset_upload_reservation_ttl_seconds + 1
+        )
+        db.commit()
+
+    assert asyncio.run(processor.cleanup_upload_reservations()) == 1
+    assert source_name not in storage.objects
+    with app.state.session_factory() as db:
+        task = db.get(DocumentParseTask, task_id)
+        assert task is not None
+        assert task.upload_status == "failed"
+        assert task.parse_status is None
+        assert task.upload_duration_ms is not None
+
+
+def test_failed_upload_reservation_is_removed_after_retention_window() -> None:
+    app, storage, processor, task_id = build_processor()
+    with app.state.session_factory() as db:
+        task = db.get(DocumentParseTask, task_id)
+        assert task is not None
+        task.upload_status = "failed"
+        task.upload_duration_ms = 1
+        task.parse_status = None
+        task.parse_duration_ms = None
+        task.updated_at = utc_now() - timedelta(
+            seconds=processor._settings.dataset_upload_reservation_ttl_seconds + 1
+        )
+        db.commit()
+
+    assert processor.cleanup_failed_reservations() == 1
+    assert not storage.objects
+    with app.state.session_factory() as db:
+        assert db.get(DocumentParseTask, task_id) is None
+
+
+def test_failed_upload_reservation_is_retained_when_object_cleanup_fails() -> None:
+    app, storage, processor, task_id = build_processor()
+    with app.state.session_factory() as db:
+        task = db.get(DocumentParseTask, task_id)
+        assert task is not None
+        task.upload_status = "failed"
+        task.upload_duration_ms = 1
+        task.parse_status = None
+        task.parse_duration_ms = None
+        task.updated_at = utc_now() - timedelta(
+            seconds=processor._settings.dataset_upload_reservation_ttl_seconds + 1
+        )
+        db.commit()
+    storage.fail_delete = True
+
+    assert processor.cleanup_failed_reservations() == 0
+    with app.state.session_factory() as db:
+        assert db.get(DocumentParseTask, task_id) is not None

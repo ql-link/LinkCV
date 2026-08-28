@@ -44,6 +44,7 @@
     "diff": "^9.0.0",
     "lucide-react": "^1.21.0",
     "markdown-it": "^14.2.0",
+    "mermaid": "^11.17.2",
     "motion": "^12.23.24",
     "playwright-core": "1.62.1",
     "react": "19.2.0",

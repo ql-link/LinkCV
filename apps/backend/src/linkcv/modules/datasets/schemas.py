@@ -1,6 +1,16 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class UserDatasetRenameRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(strict=True)
+
+
+class UserDatasetDeleteResponse(BaseModel):
+    deleted: bool
 
 
 class UserDatasetRecord(BaseModel):
@@ -21,8 +31,15 @@ class UserDatasetRecord(BaseModel):
         return str(value)
 
 
+class UserDatasetLimits(BaseModel):
+    max_file_bytes: int
+    max_files_per_batch: int
+    allowed_extensions: list[str]
+
+
 class UserDatasetListResponse(BaseModel):
     datasets: list[UserDatasetRecord]
+    limits: UserDatasetLimits
 
 
 class UserDatasetContentResponse(BaseModel):

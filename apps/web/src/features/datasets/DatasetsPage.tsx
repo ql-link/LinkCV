@@ -1,185 +1,410 @@
-import { useEffect, useRef, useState } from "react";
-import { Database, FileSearch, FileText, Plus, Search, X } from "lucide-react";
-import { api, ApiRequestError, type DatasetRecord } from "../../api/client";
-import { Button, FeedbackNotice, FileUpload, PageLoading } from "@/components/ui";
-import { WorkspacePageHero } from "../../components/WorkspaceLayout";
-import { DatasetPreviewDialog } from "./DatasetPreviewDialog";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { CheckSquare, Database, MoreHorizontal, Pencil, Plus, RotateCcw, Trash2, X } from "lucide-react";
 
-const MAX_DATASET_BYTES = 10 * 1024 * 1024;
-const SUPPORTED_DATASET_EXTENSIONS = ["docx", "pdf", "md", "txt"];
+import { api, ApiRequestError, type DatasetLimits, type DatasetRecord } from "../../api/client";
+import { WorkspacePageHero } from "../../components/WorkspaceLayout";
+import {
+  Button,
+  ConfirmDialog,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  ExpandableSearch,
+  FeedbackNotice,
+  FileUpload,
+  PageLoading,
+} from "@/components/ui";
+import { DatasetPreviewDialog } from "./DatasetPreviewDialog";
+import {
+  datasetFormatError,
+  datasetUploadErrorMessage,
+  DEFAULT_DATASET_LIMITS,
+  formatDatasetFileSize,
+  normalizeDatasetLimits,
+} from "./datasetUploadValidation";
+import { useDatasetUploads, type DatasetUploadFailure } from "./useDatasetUploads";
+
+export const MAX_DATASET_BYTES = DEFAULT_DATASET_LIMITS.max_file_bytes;
+export const MAX_DATASET_BATCH_FILES = DEFAULT_DATASET_LIMITS.max_files_per_batch;
+export const DATASET_UPLOAD_CONCURRENCY = 3;
 
 type Notice = { kind: "success" | "error"; message: string } | null;
-type TypeFilter = "all" | "pdf" | "docx" | "text";
+type DatasetVisualStatus = "queued" | "processing" | "succeeded" | "failed";
+type DatasetAction = { kind: "rename" | "retry" | "delete" | "bulk-delete"; id: string } | null;
+
+function formatUploadFailureNotice(failures: DatasetUploadFailure[], limitMessage?: string | null) {
+  const trimTerminalPunctuation = (value: string) => value.replace(/[。；，、\s]+$/u, "");
+  const details = failures
+    .map(({ fileName, reason }) => `${fileName}：${trimTerminalPunctuation(reason)}`)
+    .join("；");
+  const prefix = failures.length === 1 ? "文件上传失败：" : "部分文件上传失败：";
+  const limitSuffix = limitMessage ? `；${trimTerminalPunctuation(limitMessage)}` : "";
+  return `${prefix}${details}${limitSuffix}`;
+}
 
 const FAILURE_REASON_LABELS: Record<NonNullable<DatasetRecord["failure_reason"]>, string> = {
   format_unsupported: "文件格式不受支持，请重新选择文件。",
   content_invalid: "文件内容无效，请检查后重新上传。",
   size_exceeded: "文件内容超出解析限制，请缩小文件后重试。",
-  service_unavailable: "解析服务暂不可用，请稍后重新上传。",
-  timeout: "解析超时，请稍后重新上传。",
+  service_unavailable: "解析服务暂不可用，请稍后重试。",
+  timeout: "解析超时，请稍后重试。",
   quota_exceeded: "当前资料数量已达上限。",
-  internal_error: "解析失败，请重新上传。",
+  internal_error: "解析失败，请稍后重试。",
 };
 
-function datasetFormatError(file: File): string | null {
-  if (file.size === 0) return "文件为空，请重新选择。";
-  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-  if (!SUPPORTED_DATASET_EXTENSIONS.includes(extension)) {
-    return "仅支持 DOCX、PDF、Markdown 和 TXT 文件。";
-  }
-  if (file.size > MAX_DATASET_BYTES) {
-    return "文件过大，最大支持 10 MB。";
-  }
-  return null;
-}
+export { datasetFormatError, datasetUploadErrorMessage } from "./datasetUploadValidation";
 
-export function datasetUploadErrorMessage(error: unknown, fallback: string) {
+function datasetActionErrorMessage(error: unknown, fallback: string) {
   if (!(error instanceof ApiRequestError)) return fallback;
-
   switch (error.message) {
-    case "INVALID_DATASET_FILENAME":
-      return "文件名无效，请重命名后再上传。";
-    case "UNSUPPORTED_DATASET_FORMAT":
-      return "仅支持 DOCX、PDF、Markdown 和 TXT 文件。";
-    case "EMPTY_DATASET_FILE":
-      return "文件为空，请重新选择。";
-    case "DATASET_TOO_LARGE":
-      return "文件过大，最大支持 10 MB。";
-    case "DATASET_UPLOAD_FAILED":
-      return "上传失败，请稍后重试。";
-    case "DATASET_RECORD_FAILED":
-      return "资料保存失败，请稍后重试。";
+    case "INVALID_DATASET_NAME":
+      return "资料名称不能为空，不能包含路径符号或控制字符。";
+    case "DATASET_NOT_FOUND":
+      return "这份资料不存在或你无权操作。";
+    case "DATASET_IN_PROGRESS":
+    case "DATASET_BUSY":
+      return "资料正在解析，处理完成后再删除。";
+    case "DATASET_NOT_RETRYABLE":
+      return "只有解析失败的资料可以重新解析。";
+    case "DATASET_SOURCE_UNAVAILABLE":
+      return "原始文件已不可用，请重新上传资料。";
     case "DATASET_QUEUE_UNAVAILABLE":
-      return "资料已保存，但解析服务暂不可用，请重新上传。";
+      return "解析服务暂不可用，资料已保留为解析失败。";
+    case "ASSET_DELETE_FAILED":
+      return "资料清理失败，请稍后重试。";
     default:
       if (error.status === 401) return "登录状态已失效，请重新登录。";
       return error.status >= 500 ? "服务暂时不可用，请稍后重试。" : fallback;
   }
 }
 
+type DatasetDeleteFailure = { dataset: DatasetRecord; reason: string };
+
+function formatBulkDeleteNotice(
+  successCount: number,
+  failures: DatasetDeleteFailure[],
+  totalCount: number,
+) {
+  const trimTerminalPunctuation = (value: string) => value.replace(/[。；，、\s]+$/u, "");
+  const details = failures
+    .map(({ dataset, reason }) => `${datasetDisplayName(dataset)}：${trimTerminalPunctuation(reason)}`)
+    .join("；");
+  if (failures.length === 0) return `已删除 ${successCount} 份资料。`;
+  if (successCount === 0) return `所选 ${totalCount} 份资料删除失败：${details}`;
+  return `已删除 ${successCount} 份资料，${failures.length} 份删除失败：${details}`;
+}
+
 function formatFileSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return formatDatasetFileSize(bytes);
 }
 
-function relativeTime(value: string) {
+function formatDateTime(value: string) {
   const date = new Date(value);
-  const now = new Date();
-  const time = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit" }).format(date);
-  const startOfDay = (target: Date) => new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
-  const diffDays = Math.round((startOfDay(now) - startOfDay(date)) / 86400000);
-  if (diffDays === 0) return `今天 ${time}`;
-  if (diffDays === 1) return `昨天 ${time}`;
-  return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date).replace(/\//g, "-");
 }
 
-function matchesType(dataset: DatasetRecord, filter: TypeFilter) {
-  if (filter === "all") return true;
-  if (filter === "text") return dataset.file_format === "md" || dataset.file_format === "txt";
-  return dataset.file_format === filter;
+export function datasetDisplayName(dataset: Pick<DatasetRecord, "file_name" | "file_format">) {
+  const suffix = `.${dataset.file_format}`;
+  return dataset.file_name.toLowerCase().endsWith(suffix.toLowerCase())
+    ? dataset.file_name.slice(0, -suffix.length)
+    : dataset.file_name;
 }
 
-function DatasetBadge({ format }: { format: string }) {
-  return <span className={`dataset-badge is-${format}`}>{format.toUpperCase()}</span>;
+function datasetVisualStatus(dataset: DatasetRecord): DatasetVisualStatus {
+  if (dataset.parse_status === "succeeded") return "succeeded";
+  if (dataset.parse_status === "failed" || dataset.upload_status === "failed") return "failed";
+  if (dataset.parse_status === "processing") return "processing";
+  return "queued";
 }
 
-function DatasetName({
-  dataset,
-  onPreview,
-}: {
-  dataset: DatasetRecord;
-  onPreview: (dataset: DatasetRecord, trigger: HTMLButtonElement) => void;
-}) {
-  if (dataset.parse_status !== "succeeded") {
-    return <strong className="dataset-name">{dataset.file_name}</strong>;
-  }
-  return (
-    <button
-      type="button"
-      className="dataset-name dataset-name-button"
-      aria-label={`查看「${dataset.file_name}」的解析结果`}
-      onClick={(event) => onPreview(dataset, event.currentTarget)}
-    >
-      <span>{dataset.file_name}</span>
-      <span className="dataset-name-action"><FileSearch size={14} aria-hidden="true" />查看结果</span>
-    </button>
-  );
+function datasetStatusLabel(status: DatasetVisualStatus) {
+  if (status === "queued") return "等待解析";
+  if (status === "succeeded") return "可用";
+  if (status === "failed") return "解析失败";
+  return "正在解析";
+}
+
+function datasetStatusReason(dataset: DatasetRecord) {
+  if (!dataset.failure_reason) return null;
+  return FAILURE_REASON_LABELS[dataset.failure_reason] ?? FAILURE_REASON_LABELS.internal_error;
 }
 
 function DatasetStatus({ dataset }: { dataset: DatasetRecord }) {
-  if (dataset.upload_status === "uploading") {
-    return <span className="dataset-status is-pending">排队中</span>;
-  }
-  if (dataset.upload_status === "failed") {
-    return <span className="dataset-status is-failed">上传失败</span>;
-  }
-  if (dataset.parse_status === "processing") {
-    return <span className="dataset-status is-processing">解析中</span>;
-  }
-  if (dataset.parse_status === "succeeded") {
-    return <span className="dataset-status is-succeeded">解析完成</span>;
-  }
-  const reason = dataset.failure_reason
-    ? FAILURE_REASON_LABELS[dataset.failure_reason]
-    : FAILURE_REASON_LABELS.internal_error;
+  const status = datasetVisualStatus(dataset);
+  const reason = status === "failed" ? datasetStatusReason(dataset) : null;
+  const styleStatus = status === "queued" ? "processing" : status;
   return (
-    <span className="dataset-status-block">
-      <span className="dataset-status is-failed">解析失败</span>
-      <small>{reason}</small>
+    <span
+      className={`dataset-status is-${styleStatus}`}
+      data-status={status}
+      title={reason ?? undefined}
+    >
+      <span className="dataset-status-mark" aria-hidden="true" />
+      {datasetStatusLabel(status)}
     </span>
   );
 }
 
-function DatasetDropzone({
-  disabled = false,
-  file = null,
-  onDropFile,
+function DatasetSelectionCheckbox({
+  checked,
+  disabled,
+  indeterminate = false,
+  label,
+  onChange,
 }: {
-  disabled?: boolean;
-  file?: File | null;
-  onDropFile: (file: File | undefined) => void;
+  checked: boolean;
+  disabled: boolean;
+  indeterminate?: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
 }) {
+  const checkboxRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (checkboxRef.current) checkboxRef.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+
   return (
-    <FileUpload
-      accept=".docx,.pdf,.md,.txt,application/pdf,text/markdown,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-      inputLabel="选择资料文件"
-      supportingText="支持 DOCX、PDF、Markdown 和 TXT，单个文件不超过 10 MB"
+    <input
+      ref={checkboxRef}
+      className="dataset-selection-checkbox"
+      type="checkbox"
+      aria-label={label}
+      checked={checked}
       disabled={disabled}
-      file={file}
-      onFileSelect={onDropFile}
+      onChange={(event) => onChange(event.currentTarget.checked)}
     />
   );
 }
 
+function DatasetRow({
+  dataset,
+  batchMode,
+  selected,
+  selectionDisabled,
+  menuOpen,
+  busy,
+  onPreview,
+  onToggleSelection,
+  onToggleMenu,
+  onRename,
+  onRetry,
+  onDelete,
+}: {
+  dataset: DatasetRecord;
+  batchMode: boolean;
+  selected: boolean;
+  selectionDisabled: boolean;
+  menuOpen: boolean;
+  busy: boolean;
+  onPreview: (dataset: DatasetRecord, trigger: HTMLElement) => void;
+  onToggleSelection: (id: string, checked: boolean) => void;
+  onToggleMenu: (id: string) => void;
+  onRename: (dataset: DatasetRecord) => void;
+  onRetry: (dataset: DatasetRecord) => void;
+  onDelete: (dataset: DatasetRecord) => void;
+}) {
+  const displayName = datasetDisplayName(dataset);
+  const canPreview = datasetVisualStatus(dataset) === "succeeded";
+  const isInteractive = canPreview && !batchMode;
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (!isInteractive || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    onPreview(dataset, event.currentTarget);
+  };
+
+  return (
+    <article
+      className={`dataset-row${isInteractive ? " is-clickable" : ""}`}
+      role={isInteractive ? "button" : undefined}
+      tabIndex={isInteractive ? 0 : undefined}
+      aria-label={isInteractive ? `打开「${displayName}」解析预览` : undefined}
+      onClick={isInteractive ? (event) => onPreview(dataset, event.currentTarget) : undefined}
+      onKeyDown={handleKeyDown}
+    >
+      <div className="dataset-cell dataset-cell-name">
+        <strong className="dataset-name" title={displayName}>{displayName}</strong>
+      </div>
+      <div className="dataset-cell dataset-cell-time">{formatDateTime(dataset.created_at)}</div>
+      <div className="dataset-cell dataset-cell-size">{formatFileSize(dataset.file_size)}</div>
+      <div className="dataset-cell dataset-cell-status"><DatasetStatus dataset={dataset} /></div>
+      <div
+        className="dataset-row-actions"
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
+        {batchMode ? (
+          <div className="dataset-selection-cell dataset-row-selection">
+            <DatasetSelectionCheckbox
+              checked={selected}
+              disabled={selectionDisabled}
+              label={`选择「${displayName}」`}
+              onChange={(checked) => onToggleSelection(dataset.id, checked)}
+            />
+          </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="dataset-menu-trigger"
+              aria-label={`打开「${displayName}」操作菜单`}
+              aria-expanded={menuOpen}
+              disabled={busy}
+              onClick={() => onToggleMenu(dataset.id)}
+            >
+              <MoreHorizontal size={18} aria-hidden="true" />
+            </button>
+            {menuOpen && (
+              <div
+                className="dataset-action-menu"
+                role="menu"
+                aria-label={`${displayName} 操作`}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button type="button" role="menuitem" onClick={() => onRename(dataset)}>
+                  <Pencil size={15} aria-hidden="true" />重命名
+                </button>
+                {datasetVisualStatus(dataset) === "failed" && (
+                  <button type="button" role="menuitem" onClick={() => onRetry(dataset)}>
+                    <RotateCcw size={15} aria-hidden="true" />重新解析
+                  </button>
+                )}
+                <button type="button" role="menuitem" className="is-danger" onClick={() => onDelete(dataset)}>
+                  <Trash2 size={15} aria-hidden="true" />删除
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function DatasetDropzone({
+  disabled,
+  uploading,
+  limits,
+  onFilesSelect,
+}: {
+  disabled: boolean;
+  uploading: boolean;
+  limits: DatasetLimits;
+  onFilesSelect: (files: File[]) => void;
+}) {
+  const accept = limits.allowed_extensions.join(",");
+  return (
+    <FileUpload
+      className="dataset-file-upload"
+      accept={`${accept},application/pdf,text/markdown,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document`}
+      inputLabel="选择资料文件"
+      supportingText={uploading
+        ? "正在上传…"
+        : `支持 PDF、DOCX、Markdown、TXT · 单个不超过 ${formatFileSize(limits.max_file_bytes)}`}
+      disabled={disabled}
+      multiple
+      onFilesSelect={onFilesSelect}
+    />
+  );
+}
+
+const ACCEPTED_SYNC_FAILURE = "资料已接受，但列表同步失败";
+
+function upsertDataset(items: DatasetRecord[], dataset: DatasetRecord): DatasetRecord[] {
+  const index = items.findIndex((item) => item.id === dataset.id);
+  if (index < 0) return [dataset, ...items];
+  return items.map((item) => item.id === dataset.id ? dataset : item);
+}
+
+function mergeDatasetResponse(
+  datasets: DatasetRecord[],
+  locallyAccepted: Map<string, DatasetRecord>,
+): DatasetRecord[] {
+  const serverIds = new Set(datasets.map((dataset) => dataset.id));
+  for (const id of serverIds) locallyAccepted.delete(id);
+  const missingAccepted = Array.from(locallyAccepted.values());
+  return missingAccepted.length > 0 ? [...missingAccepted, ...datasets] : datasets;
+}
+
 export function DatasetsPage() {
-  const previewTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const previewTriggerRef = useRef<HTMLElement | null>(null);
+  const locallyAccepted = useRef(new Map<string, DatasetRecord>());
+  const pageMounted = useRef(true);
   const [datasets, setDatasets] = useState<DatasetRecord[]>([]);
+  const [limits, setLimits] = useState<DatasetLimits>(DEFAULT_DATASET_LIMITS);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [notice, setNotice] = useState<Notice>(null);
+  const [syncFailure, setSyncFailure] = useState<string | null>(null);
   const [fading, setFading] = useState(false);
   const [previewDataset, setPreviewDataset] = useState<DatasetRecord | null>(null);
+  const [menuDatasetId, setMenuDatasetId] = useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<DatasetRecord | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DatasetRecord | null>(null);
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedDatasetIds, setSelectedDatasetIds] = useState<Set<string>>(() => new Set());
+  const [bulkDeleteTarget, setBulkDeleteTarget] = useState<DatasetRecord[] | null>(null);
+  const [busyAction, setBusyAction] = useState<DatasetAction>(null);
 
-  const openPreview = (dataset: DatasetRecord, trigger: HTMLButtonElement) => {
-    previewTriggerRef.current = trigger;
-    setPreviewDataset(dataset);
-  };
+  const refreshDatasets = useCallback(async (options: { initial?: boolean; accepted?: boolean } = {}) => {
+    const { initial = false, accepted = false } = options;
+    try {
+      const data = await api.listDatasets();
+      if (!pageMounted.current) return false;
+      const nextLimits = normalizeDatasetLimits(data.limits);
+      setLimits(nextLimits);
+      setDatasets(mergeDatasetResponse(data.datasets, locallyAccepted.current));
+      setLoadFailed(false);
+      setSyncFailure(null);
+      return true;
+    } catch {
+      if (!pageMounted.current) return false;
+      if (initial) setLoadFailed(true);
+      else setSyncFailure(accepted ? ACCEPTED_SYNC_FAILURE : "资料列表同步失败，请稍后重试。");
+      return false;
+    } finally {
+      if (initial && pageMounted.current) setLoading(false);
+    }
+  }, []);
 
-  const closePreview = () => {
-    setPreviewDataset(null);
-  };
+  const {
+    uploading,
+    uploadFiles,
+  } = useDatasetUploads({
+    limits,
+    concurrency: DATASET_UPLOAD_CONCURRENCY,
+    onAccepted: (dataset) => {
+      if (!pageMounted.current) return;
+      locallyAccepted.current.set(dataset.id, dataset);
+      setDatasets((current) => upsertDataset(current, dataset));
+      setLoadFailed(false);
+    },
+    onLimitExceeded: (message) => {
+      setNotice(message ? { kind: "error", message } : null);
+    },
+  });
 
   useEffect(() => {
     if (!notice) return;
     setFading(false);
-    const fadeTimer = window.setTimeout(() => setFading(true), 3000);
-    const removeTimer = window.setTimeout(() => setNotice(null), 3300);
+    const visibleDuration = notice.kind === "error" ? 5000 : 3000;
+    const fadeTimer = window.setTimeout(() => setFading(true), visibleDuration);
+    const removeTimer = window.setTimeout(() => setNotice(null), visibleDuration + 300);
     return () => {
       window.clearTimeout(fadeTimer);
       window.clearTimeout(removeTimer);
@@ -187,101 +412,306 @@ export function DatasetsPage() {
   }, [notice]);
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const data = await api.listDatasets();
-        if (!cancelled) setDatasets(data.datasets);
-      } catch {
-        if (!cancelled) setLoadFailed(true);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
+    if (menuDatasetId === null) return;
+    const closeMenu = () => setMenuDatasetId(null);
+    document.addEventListener("click", closeMenu);
+    return () => document.removeEventListener("click", closeMenu);
+  }, [menuDatasetId]);
+
+  useEffect(() => {
+    pageMounted.current = true;
+    void refreshDatasets({ initial: true });
     return () => {
-      cancelled = true;
+      pageMounted.current = false;
     };
   }, []);
 
-  const hasActiveParsing = datasets.some(
-    (dataset) => dataset.upload_status === "uploading" || dataset.parse_status === "processing",
-  );
+  useEffect(() => {
+    const existingIds = new Set(datasets.map((dataset) => dataset.id));
+    setSelectedDatasetIds((current) => {
+      const next = new Set(Array.from(current).filter((id) => existingIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [datasets]);
+
+  const hasActiveParsing = datasets.some((dataset) => {
+    const status = datasetVisualStatus(dataset);
+    return status === "queued" || status === "processing";
+  });
 
   useEffect(() => {
     if (!hasActiveParsing) return;
     let cancelled = false;
-    const timer = window.setInterval(() => {
-      void api.listDatasets().then((data) => {
-        if (!cancelled) setDatasets(data.datasets);
-      }).catch(() => undefined);
-    }, 2000);
+    let timer: number | undefined;
+    let delay = 2000;
+    let requestInFlight = false;
+
+    const clearTimer = () => {
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+        timer = undefined;
+      }
+    };
+    const schedule = (wait: number) => {
+      if (cancelled || document.visibilityState === "hidden") return;
+      clearTimer();
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        void poll();
+      }, wait);
+    };
+    const poll = async () => {
+      if (cancelled || requestInFlight || document.visibilityState === "hidden") return;
+      requestInFlight = true;
+      const refreshed = await refreshDatasets();
+      requestInFlight = false;
+      if (cancelled) return;
+      if (refreshed) delay = 2000;
+      else delay = Math.min(delay * 2, 30000);
+      schedule(delay);
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        clearTimer();
+      } else if (!requestInFlight) {
+        schedule(0);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    schedule(delay);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      clearTimer();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [hasActiveParsing]);
 
-  const refresh = async () => {
-    const data = await api.listDatasets();
-    setDatasets(data.datasets);
-  };
-
-  const pickFile = (file: File | undefined) => {
-    if (!file) return;
-    const error = datasetFormatError(file);
-    if (error) {
-      setNotice({ kind: "error", message: error });
-      return;
-    }
-    setPendingFile(file);
+  const openUploadDialog = () => {
     setDialogOpen(true);
     setNotice(null);
   };
 
-  const closeDialog = () => {
+  const closeUploadDialog = () => {
     if (uploading) return;
     setDialogOpen(false);
-    setPendingFile(null);
   };
 
-  const confirmUpload = async () => {
-    if (!pendingFile || uploading) return;
-    const file = pendingFile;
-    setUploading(true);
+  const appendFiles = (files: File[]) => {
+    if (files.length === 0 || uploading) return;
     setNotice(null);
-    try {
-      await api.uploadDataset(file);
-      await refresh();
-      setNotice({ kind: "success", message: `已上传「${file.name}」` });
-      setPendingFile(null);
+    void (async () => {
+      const result = await uploadFiles(files);
+      if (!pageMounted.current) return;
+
+      if (result.attemptedCount > 0) {
+        await refreshDatasets({ accepted: result.acceptedCount > 0 });
+      }
+
       setDialogOpen(false);
+      if (result.failures.length > 0) {
+        setNotice({
+          kind: "error",
+          message: formatUploadFailureNotice(result.failures, result.limitMessage),
+        });
+      } else if (result.deferredCount > 0) {
+        setNotice({
+          kind: "error",
+          message: `资料已保存，但解析提交失败（${result.deferredCount} 份），请在列表中重新解析。`,
+        });
+      } else if (result.acceptedCount > 0) {
+        setNotice({
+          kind: "success",
+          message: result.limitMessage
+            ? `已上传 ${result.acceptedCount} 份资料，${result.limitMessage}`
+            : `已上传 ${result.acceptedCount} 份资料，正在后台解析。`,
+        });
+      } else if (result.limitMessage) {
+        setNotice({ kind: "error", message: result.limitMessage });
+      }
+    })();
+  };
+
+  const openPreview = (dataset: DatasetRecord, trigger: HTMLElement) => {
+    if (menuDatasetId !== null) {
+      setMenuDatasetId(null);
+      return;
+    }
+    previewTriggerRef.current = trigger;
+    setPreviewDataset(dataset);
+  };
+
+  const closePreview = () => setPreviewDataset(null);
+
+  const startRename = (dataset: DatasetRecord) => {
+    setMenuDatasetId(null);
+    setRenameTarget(dataset);
+    setRenameValue(datasetDisplayName(dataset));
+    setRenameError(null);
+  };
+
+  const submitRename = async () => {
+    if (!renameTarget || busyAction) return;
+    const value = renameValue.trim();
+    if (!value) {
+      setRenameError("请输入资料名称。");
+      return;
+    }
+    setBusyAction({ kind: "rename", id: renameTarget.id });
+    setRenameError(null);
+    try {
+      const updated = await api.renameDataset(renameTarget.id, value);
+      if (locallyAccepted.current.has(updated.id)) locallyAccepted.current.set(updated.id, updated);
+      setDatasets((items) => items.map((item) => item.id === updated.id ? updated : item));
+      setRenameTarget(null);
+      setNotice({ kind: "success", message: "资料名称已更新。" });
     } catch (error) {
-      setNotice({ kind: "error", message: datasetUploadErrorMessage(error, "上传失败，请稍后重试。") });
+      setRenameError(datasetActionErrorMessage(error, "重命名失败，请稍后重试。"));
     } finally {
-      setUploading(false);
+      setBusyAction(null);
     }
   };
 
-  const keyword = query.trim().toLowerCase();
-  const filtered = datasets.filter((dataset) =>
-    matchesType(dataset, typeFilter) && (!keyword || dataset.file_name.toLowerCase().includes(keyword)),
-  );
-  const isDefaultView = !keyword && typeFilter === "all";
-  const latest = isDefaultView && filtered.length > 0 ? filtered[0] : null;
-  const listItems = latest ? filtered.slice(1) : filtered;
-
-  const counts: Record<TypeFilter, number> = {
-    all: datasets.length,
-    pdf: datasets.filter((dataset) => matchesType(dataset, "pdf")).length,
-    docx: datasets.filter((dataset) => matchesType(dataset, "docx")).length,
-    text: datasets.filter((dataset) => matchesType(dataset, "text")).length,
+  const startRetry = async (dataset: DatasetRecord) => {
+    setMenuDatasetId(null);
+    setBusyAction({ kind: "retry", id: dataset.id });
+    setNotice(null);
+    try {
+      const updated = await api.retryDataset(dataset.id);
+      if (locallyAccepted.current.has(updated.id)) locallyAccepted.current.set(updated.id, updated);
+      setDatasets((items) => items.map((item) => item.id === updated.id ? updated : item));
+      setNotice({ kind: "success", message: "已重新提交解析。" });
+    } catch (error) {
+      await refreshDatasets();
+      setNotice({ kind: "error", message: datasetActionErrorMessage(error, "重新解析失败，请稍后重试。") });
+    } finally {
+      setBusyAction(null);
+    }
   };
-  const typePills: Array<{ key: TypeFilter; label: string; tint?: string }> = [
-    { key: "all", label: "全部" },
-    { key: "pdf", label: "PDF", tint: "is-pdf" },
-    { key: "docx", label: "DOCX", tint: "is-docx" },
-    { key: "text", label: "MD / TXT" },
-  ];
+
+  const startDelete = (dataset: DatasetRecord) => {
+    setMenuDatasetId(null);
+    setDeleteTarget(dataset);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget || busyAction) return;
+    setBusyAction({ kind: "delete", id: deleteTarget.id });
+    try {
+      await api.deleteDataset(deleteTarget.id);
+      locallyAccepted.current.delete(deleteTarget.id);
+      setDatasets((items) => items.filter((item) => item.id !== deleteTarget.id));
+      setSelectedDatasetIds((ids) => {
+        if (!ids.has(deleteTarget.id)) return ids;
+        const next = new Set(ids);
+        next.delete(deleteTarget.id);
+        return next;
+      });
+      setDeleteTarget(null);
+      setNotice({ kind: "success", message: `已删除「${datasetDisplayName(deleteTarget)}」。` });
+    } catch (error) {
+      setDeleteTarget(null);
+      setNotice({ kind: "error", message: datasetActionErrorMessage(error, "删除失败，请稍后重试。") });
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const keyword = query.trim().toLocaleLowerCase();
+  const filteredDatasets = useMemo(() => {
+    if (!keyword) return datasets;
+    return datasets.filter((dataset) => datasetDisplayName(dataset).toLocaleLowerCase().includes(keyword));
+  }, [datasets, keyword]);
+
+  const selectedDatasetCount = selectedDatasetIds.size;
+  const filteredDatasetIds = filteredDatasets.map((dataset) => dataset.id);
+  const allFilteredSelected = filteredDatasetIds.length > 0
+    && filteredDatasetIds.every((id) => selectedDatasetIds.has(id));
+  const someFilteredSelected = filteredDatasetIds.some((id) => selectedDatasetIds.has(id));
+  const batchDeleteBusy = busyAction?.kind === "bulk-delete";
+
+  const toggleBatchMode = () => {
+    if (batchDeleteBusy) return;
+    setMenuDatasetId(null);
+    if (batchMode) {
+      setBatchMode(false);
+      setSelectedDatasetIds(new Set());
+      return;
+    }
+    setSelectedDatasetIds(new Set());
+    setBatchMode(true);
+  };
+
+  const toggleDatasetSelection = (id: string, checked: boolean) => {
+    if (batchDeleteBusy) return;
+    setSelectedDatasetIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleAllFilteredDatasets = (checked: boolean) => {
+    if (batchDeleteBusy) return;
+    setSelectedDatasetIds((current) => {
+      const next = new Set(current);
+      for (const id of filteredDatasetIds) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const startBulkDelete = () => {
+    if (!batchMode || batchDeleteBusy || selectedDatasetCount === 0) return;
+    const targets = datasets.filter((dataset) => selectedDatasetIds.has(dataset.id));
+    if (targets.length === 0) {
+      setSelectedDatasetIds(new Set());
+      return;
+    }
+    setMenuDatasetId(null);
+    setBulkDeleteTarget(targets);
+  };
+
+  const confirmBulkDelete = async () => {
+    if (!bulkDeleteTarget || bulkDeleteTarget.length === 0 || busyAction) return;
+    const targets = bulkDeleteTarget;
+    const succeededIds = new Set<string>();
+    const failures: DatasetDeleteFailure[] = [];
+    setBusyAction({ kind: "bulk-delete", id: "bulk" });
+
+    for (const target of targets) {
+      try {
+        await api.deleteDataset(target.id);
+        succeededIds.add(target.id);
+        locallyAccepted.current.delete(target.id);
+      } catch (error) {
+        failures.push({
+          dataset: target,
+          reason: datasetActionErrorMessage(error, "删除失败，请稍后重试。"),
+        });
+      }
+    }
+
+    if (succeededIds.size > 0) {
+      setDatasets((items) => items.filter((item) => !succeededIds.has(item.id)));
+      setSelectedDatasetIds((current) => {
+        const next = new Set(current);
+        for (const id of succeededIds) next.delete(id);
+        return next;
+      });
+    }
+    setBulkDeleteTarget(null);
+    setBatchMode(false);
+    setSelectedDatasetIds(new Set());
+    setNotice({
+      kind: failures.length > 0 ? "error" : "success",
+      message: formatBulkDeleteNotice(succeededIds.size, failures, targets.length),
+    });
+    setBusyAction(null);
+  };
 
   return (
     <main className="dashboard-content datasets-page">
@@ -291,7 +721,48 @@ export function DatasetsPage() {
         title="资料库"
         description={datasets.length > 0 ? `${datasets.length} 份资料 · 按最近上传排列` : "把履历、项目记录和参考资料集中在这里，写简历时随时调用。"}
         actions={(
-          <Button variant="outline" icon={<Plus size={15} />} onClick={() => setDialogOpen(true)}>上传资料</Button>
+          <>
+            <ExpandableSearch
+              label="搜索资料"
+              name="dataset-search"
+              value={query}
+              onValueChange={setQuery}
+              placeholder="搜索资料…"
+              className="datasets-hero-search"
+            />
+            {batchMode ? (
+              <Button
+                className="datasets-hero-primary-action datasets-hero-delete-action"
+                variant="outline"
+                icon={<Trash2 size={15} />}
+                aria-label={`删除资料（已选择 ${selectedDatasetCount} 份）`}
+                title={selectedDatasetCount > 0 ? `已选择 ${selectedDatasetCount} 份资料` : "请先选择资料"}
+                disabled={selectedDatasetCount === 0 || batchDeleteBusy}
+                onClick={startBulkDelete}
+              >
+                删除资料
+              </Button>
+            ) : (
+              <Button
+                className="datasets-hero-primary-action"
+                variant="outline"
+                icon={<Plus size={15} />}
+                onClick={openUploadDialog}
+              >
+                上传资料
+              </Button>
+            )}
+            <Button
+              className="datasets-hero-batch-action"
+              variant="outline"
+              icon={batchMode ? <X size={15} /> : <CheckSquare size={15} />}
+              aria-label={batchMode ? "取消批量操作" : undefined}
+              disabled={batchDeleteBusy}
+              onClick={toggleBatchMode}
+            >
+              {batchMode ? "取消" : "批量操作"}
+            </Button>
+          </>
         )}
       />
 
@@ -304,135 +775,166 @@ export function DatasetsPage() {
               <Database size={48} strokeWidth={1.2} />
               <h2>资料加载失败</h2>
               <p>请稍后重试。</p>
-              <Button variant="secondary" onClick={() => window.location.reload()}>重新加载</Button>
+              <Button variant="secondary" onClick={() => void refreshDatasets({ initial: true })}>重新加载</Button>
             </section>
           )}
 
-        {!loadFailed && datasets.length === 0 && (
-          <section className="datasets-empty">
-            <span className="datasets-empty-icon" aria-hidden="true"><FileText size={44} strokeWidth={1.2} /></span>
-            <h2>还没有资料</h2>
-            <p>建议先上传一份与你当前求职方向相关的资料，<br />后续写简历时可以快速检索和引用。</p>
-            <Button icon={<Plus size={15} />} onClick={() => setDialogOpen(true)}>上传第一份资料</Button>
-          </section>
-        )}
-
-        {!loadFailed && datasets.length > 0 && (
-          <>
-            <div className="datasets-toolbar">
-              <label className="datasets-search-field">
-                <span>搜索资料</span>
-                <span className="datasets-search">
-                  <Search size={15} />
-                  <input aria-label="搜索资料" value={query} placeholder="资料名称" onChange={(event) => setQuery(event.target.value)} />
-                </span>
-              </label>
-              <div className="datasets-type-pills" aria-label="文件类型筛选">
-                {typePills.map((pill) => (
-                  <button
-                    key={pill.key}
-                    type="button"
-                    className={`${typeFilter === pill.key ? "is-active" : ""}${typeFilter !== pill.key && pill.tint ? ` ${pill.tint}` : ""}`}
-                    onClick={() => setTypeFilter(pill.key)}
-                  >
-                    {pill.label} {counts[pill.key]}
-                  </button>
-                ))}
-              </div>
+          {syncFailure && (
+            <div className="datasets-toast dataset-sync-toast">
+              <FeedbackNotice kind="error">
+                <span>{syncFailure}</span>
+                <Button
+                  variant="link"
+                  size="sm"
+                  onClick={() => void refreshDatasets({ accepted: syncFailure === ACCEPTED_SYNC_FAILURE })}
+                >
+                  重新刷新
+                </Button>
+              </FeedbackNotice>
             </div>
+          )}
 
-            {latest && (
-              <section className="datasets-section">
-                <h2>最近上传</h2>
-                <article className="dataset-feature">
-                  <DatasetBadge format={latest.file_format} />
-                  <span className="dataset-meta">
-                    <DatasetName dataset={latest} onPreview={openPreview} />
-                    <small className="dataset-sub">
-                      <span>{formatFileSize(latest.file_size)}</span>
-                      <span>上传于 {relativeTime(latest.created_at)}</span>
-                    </small>
-                  </span>
-                  <DatasetStatus dataset={latest} />
-                  <span className="dataset-feature-tag">最近上传</span>
-                </article>
-              </section>
-            )}
-
-            <section className="datasets-section">
-              <header className="datasets-section-head">
-                <h2>全部资料</h2>
-                <span>按最近上传</span>
-              </header>
-              <div className="dataset-list-card">
-                {listItems.length === 0 ? (
-                  <p className="dataset-list-empty">{isDefaultView ? "没有更多资料。" : "没有匹配的资料。"}</p>
-                ) : (
-                  listItems.map((dataset) => (
-                    <article key={dataset.id} className="dataset-row">
-                      <DatasetBadge format={dataset.file_format} />
-                      <span className="dataset-meta">
-                        <DatasetName dataset={dataset} onPreview={openPreview} />
-                        <small className="dataset-sub">
-                          <span>{dataset.file_format.toUpperCase()}</span>
-                          <span>{formatFileSize(dataset.file_size)}</span>
-                          <span>上传于 {relativeTime(dataset.created_at)}</span>
-                        </small>
-                      </span>
-                      <DatasetStatus dataset={dataset} />
-                    </article>
-                  ))
-                )}
-              </div>
+          {!loadFailed && datasets.length === 0 && (
+            <section className="datasets-empty">
+              <h2>还没有资料</h2>
+              <p>建议先上传一份与你当前求职方向相关的资料，<br />后续写简历时可以快速检索和引用。</p>
+              <Button icon={<Plus size={15} />} onClick={openUploadDialog}>上传第一份资料</Button>
             </section>
-          </>
-        )}
+          )}
+
+          {!loadFailed && datasets.length > 0 && (
+            <section className="dataset-list-card" aria-label="资料列表">
+              <div className="dataset-list-header">
+                <span>资料名称</span>
+                <span>上传时间</span>
+                <span>大小</span>
+                <span>解析状态</span>
+                {batchMode ? (
+                  <div className="dataset-selection-cell dataset-header-selection">
+                    <DatasetSelectionCheckbox
+                      checked={allFilteredSelected}
+                      disabled={filteredDatasets.length === 0 || batchDeleteBusy}
+                      indeterminate={someFilteredSelected && !allFilteredSelected}
+                      label="全选当前筛选结果"
+                      onChange={toggleAllFilteredDatasets}
+                    />
+                  </div>
+                ) : <span />}
+              </div>
+              {filteredDatasets.length === 0 ? (
+                <p className="dataset-list-empty">没有匹配的资料。</p>
+              ) : (
+                filteredDatasets.map((dataset) => (
+                  <DatasetRow
+                    key={dataset.id}
+                    dataset={dataset}
+                    batchMode={batchMode}
+                    selected={selectedDatasetIds.has(dataset.id)}
+                    selectionDisabled={batchDeleteBusy}
+                    menuOpen={menuDatasetId === dataset.id}
+                    busy={busyAction?.id === dataset.id}
+                    onPreview={openPreview}
+                    onToggleSelection={toggleDatasetSelection}
+                    onToggleMenu={(id) => setMenuDatasetId((current) => current === id ? null : id)}
+                    onRename={startRename}
+                    onRetry={(item) => void startRetry(item)}
+                    onDelete={startDelete}
+                  />
+                ))
+              )}
+            </section>
+          )}
         </div>
       )}
 
       {dialogOpen && (
         <div className="dataset-dialog-backdrop" onMouseDown={(event) => {
-          if (event.target === event.currentTarget) closeDialog();
+          if (event.target === event.currentTarget) closeUploadDialog();
         }}>
           <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="dataset-upload-title">
-            <button className="dataset-dialog-close" type="button" aria-label="关闭上传窗口" onClick={closeDialog}><X size={18} /></button>
+            <button className="dataset-dialog-close" type="button" aria-label="关闭上传窗口" disabled={uploading} onClick={closeUploadDialog}><X size={18} /></button>
             <h2 id="dataset-upload-title">上传资料</h2>
-            <p>把文件加入资料库，后续写简历时可以随时引用。</p>
+            <p>选择文件后会立即上传并进入资料列表。</p>
 
-            <DatasetDropzone disabled={uploading} file={pendingFile} onDropFile={pickFile} />
-
-            {pendingFile && (
-              <div className="dataset-pending-block" aria-label="待上传的文件">
-                <p className="dataset-pending-label">待上传文件</p>
-                <div className="dataset-pending-row">
-                  <DatasetBadge format={(pendingFile.name.split(".").pop() ?? "").toLowerCase()} />
-                  <span className="dataset-meta">
-                    <strong className="dataset-name">{pendingFile.name}</strong>
-                    <small className="dataset-sub">
-                      <span>{formatFileSize(pendingFile.size)}</span>
-                      <span>将保存到资料库</span>
-                    </small>
-                  </span>
-                  <button type="button" className="dataset-text-btn" disabled={uploading} onClick={() => setPendingFile(null)}>移除文件</button>
-                </div>
-              </div>
-            )}
-
-            <p className="dataset-dialog-hint">上传后，资料会按文件类型和上传时间排列。<br />写简历时可以随时检索和引用。</p>
-
-            <footer className="dataset-dialog-actions">
-              <Button variant="ghost" disabled={uploading} onClick={closeDialog}>取消</Button>
-              <Button disabled={!pendingFile || uploading} onClick={() => void confirmUpload()}>
-                {uploading ? "正在上传…" : "上传资料"}
-              </Button>
-            </footer>
+            <DatasetDropzone disabled={uploading} uploading={uploading} limits={limits} onFilesSelect={appendFiles} />
           </section>
         </div>
       )}
 
+      {renameTarget && (
+        <Dialog open onOpenChange={(open) => {
+          if (!open && !busyAction) setRenameTarget(null);
+        }}>
+          <DialogContent className="dataset-action-dialog">
+            <DialogHeader>
+              <DialogTitle>重命名资料</DialogTitle>
+              <DialogDescription>只修改资料显示名称，不改变文件格式或已保存的内容。</DialogDescription>
+            </DialogHeader>
+            <label className="dataset-rename-field">
+              <span>资料名称</span>
+              <input
+                autoFocus
+                value={renameValue}
+                maxLength={255}
+                aria-label="资料名称"
+                onChange={(event) => {
+                  setRenameValue(event.target.value);
+                  setRenameError(null);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void submitRename();
+                  }
+                }}
+              />
+              {renameError && <small role="alert">{renameError}</small>}
+            </label>
+            <DialogFooter>
+              <Button variant="secondary" disabled={busyAction?.kind === "rename"} onClick={() => setRenameTarget(null)}>取消</Button>
+              <Button disabled={busyAction?.kind === "rename"} onClick={() => void submitRename()}>
+                {busyAction?.kind === "rename" ? "正在保存…" : "保存名称"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {deleteTarget && (
+        <ConfirmDialog
+          kind="delete"
+          title={`永久删除「${datasetDisplayName(deleteTarget)}」？`}
+          description="删除后将移除源文件、解析结果和资料记录，且无法恢复。"
+          confirmLabel="永久删除"
+          busyLabel="正在删除…"
+          busy={busyAction?.kind === "delete"}
+          onCancel={() => {
+            if (!busyAction) setDeleteTarget(null);
+          }}
+          onConfirm={() => void confirmDelete()}
+        />
+      )}
+
+      {bulkDeleteTarget && (
+        <ConfirmDialog
+          kind="delete"
+          title={`永久删除所选资料（${bulkDeleteTarget.length} 份）？`}
+          description={`将删除所选 ${bulkDeleteTarget.length} 份资料，移除源文件、解析结果和资料记录，且无法恢复。`}
+          confirmLabel="永久删除所选"
+          busyLabel="正在删除…"
+          busy={batchDeleteBusy}
+          onCancel={() => {
+            if (!batchDeleteBusy) setBulkDeleteTarget(null);
+          }}
+          onConfirm={() => void confirmBulkDelete()}
+        />
+      )}
+
       {notice && (
         <div className={`datasets-toast${fading ? " is-fading" : ""}`}>
-          <FeedbackNotice kind={notice.kind}>{notice.message}</FeedbackNotice>
+          <FeedbackNotice kind={notice.kind}>
+            <span className="dataset-notice-message" title={notice.message}>{notice.message}</span>
+          </FeedbackNotice>
         </div>
       )}
 
