@@ -1,0 +1,68 @@
+# 简历与工作台功能
+
+## 功能范围
+
+简历功能覆盖模板创建、文件导入、编辑与自动保存、正式版本、模板切换、资源、分享和 PDF 输出。浏览器维护编辑中的交互状态，服务端当前简历和正式版本是持久化权威数据。
+
+具体 schema、稳定错误和并发冲突见 [HTTP 接口契约](../api/http-contracts.md)，编辑器视觉与交互基线见 [Web 架构](../internals/web.md)。
+
+## 用户入口
+
+- `/resumes`：简历列表、创建、导入、重命名、删除和分享。
+- `/resumes/new`：从启用模板创建简历。
+- `/resumes/:resumeId/edit`：正文编辑、页面设置、模板切换、版本记录、AI 侧栏和 PDF 导出。
+- `/templates`：模板浏览与预览。
+- `/share/:token`：受可见性与过期时间约束的只读分享页。
+- 管理端 `/admin/templates`：严格模板包导入、预览和启停。
+
+## 代码地图
+
+| 层级 | 入口 | 职责 |
+| --- | --- | --- |
+| 领域契约 | `src/linkcv/domain/` | `ResumeDocument`、`ResumePresentation`、`TemplateManifest` 与规范化 |
+| 应用服务 | `application/resumes/` | 创建、保存、版本、模板切换和分享事务 |
+| HTTP/ORM | `modules/resumes/` | 简历、版本、模板、导入、资源、分享和 PDF 路由与模型 |
+| 导入 | `workers/resume_import_worker.py`、`services/resume_import_service.py` | 异步解析、结构化、规范化和结果事务 |
+| Web 状态 | `store/resumeStore.ts`、`api/resumeContract.ts` | 编辑状态与 TypeScript 领域契约 |
+| Web 功能 | `features/home/`、`workbench/`、`preview/`、`templates/`、`share/` | 列表、编辑、打印、模板与分享界面 |
+
+## 核心对象与规则
+
+- `resumes` 保存当前内容、呈现、模板、分享状态和 `lock_version`；保存和模板切换必须通过乐观锁。
+- `resume_versions` 保存用户明确创建的正式版本；恢复会替换当前简历，但不自动创建新正式版本。
+- `resume_templates` 保存模板 manifest 与默认快照；普通用户只消费启用且结构有效的模板。
+- `document_parse_tasks` 保存异步导入状态；PDF/DOCX 进入 LinkParse 与结构化链，Markdown 在 Worker 本地转换。
+- 分享实时读取最新正式版本，不另存内容快照；PDF 使用当前已保存快照生成且不持久化成品。
+
+## 依赖边界
+
+该功能依赖身份、MySQL、MinIO、Redis、消息队列、LinkParse 和统一 LLM。求职进程可引用正式版本；AI 助手只能先创建提案，用户确认后才写入简历。删除简历时同步清理其 Agent 数据，但不能越过其他领域的引用约束。
+
+## 关键流程
+
+### 创建与编辑
+
+1. 创建时校验用户额度、名称和启用模板，在同一事务写入当前简历和 initial 版本。
+2. 编辑器把领域快照转换为可编辑视图；自动保存串行发送 `base_lock_version`，成功后接续服务端新锁版本。
+3. 模板切换先保存草稿，再在同一乐观锁边界内保留 `data_json`、替换模板呈现并递增一次锁。
+
+### 导入与版本
+
+1. 上传原件后写入导入任务与幂等键，再发布消息；队列失败不会伪装成已受理。
+2. Worker 根据格式选择本地 Markdown 转换或 LinkParse，随后通过统一 LLM 结构化并原子创建简历。
+3. 正式版本由用户明确创建；重命名只改版本名，恢复以版本快照替换当前简历，删除受版本数量和外部引用约束。
+
+### 分享与输出
+
+分享 token 只定位当前最新正式版本并执行可见性、过期和所有者判断。PDF 先完成当前保存，再由后端读取受控图片、调用一次性 Node/Chromium 渲染器返回文件；打印 DOM 与浏览器只读预览消费同一快照和样式事实源。
+
+## 权限、并发与失败边界
+
+- 所有简历、版本和资源操作同时校验 `resume_id + user_id`，不能仅凭资源路径授权。
+- 乐观锁冲突、保存失败、模板无效、渲染失败或 Agent 提案冲突都保留客户端当前内容，不触发后续下载或部分写入。
+- 私有图片只允许受控对象键和格式；PDF 渲染不联网读取正文资源，也不持久化输出。
+- 删除简历、版本、模板或资源时必须先核对求职进程、分享、Agent 和对象存储影响。
+
+## 修改联动与验证
+
+修改快照结构时需同步 Python/TypeScript 契约、迁移、模板包、编辑器、预览、分享、PDF 和小程序预览；修改导入需同步 Worker、MQ、LinkParse、LLM 和开发/部署说明。主要测试入口包括后端 `test_resume_lifecycle.py`、`test_resume_imports.py`、`test_resume_share.py`、`test_resume_pdf.py`、模板管理与迁移测试，前端 `ResumeWorkbench`、`resumeStore`、`resumeContract`、打印、模板和分享测试，以及 Worker/导入服务单元测试。
