@@ -26,7 +26,6 @@ const profile: AccountProfile = {
   recent_resumes: [
     { id: "11", title: "产品经理简历", updated_at: "2026-07-30T08:00:00Z" },
   ],
-  profile: null,
 };
 
 const sessions: AgentSession[] = [
@@ -60,6 +59,29 @@ beforeEach(() => {
   vi.spyOn(api, "getAccountProfile").mockResolvedValue({
     ...profile,
     user: { ...user },
+  });
+  vi.spyOn(api, "getUserProfile").mockResolvedValue({
+    candidate_cities: ["北京"],
+    salary_min: 20000,
+    salary_max: 30000,
+    salary_currency: "CNY",
+    salary_period: "month",
+    employment_types: ["full_time"],
+    school: "清华大学",
+    school_tier: ["project_985"],
+    major: "计算机",
+    education_level: "bachelor",
+    candidate_status: "experienced",
+    graduation_year: null,
+    years_experience: 3,
+    languages: ["英语 CET-6"],
+    skills: ["React", "TypeScript"],
+    certifications: [],
+    honors: [],
+    campus_experiences: [],
+    lock_version: 1,
+    created_at: "2026-08-20T00:00:00Z",
+    updated_at: "2026-08-20T00:00:00Z",
   });
   vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions });
 });
@@ -119,18 +141,19 @@ function pickAvatarFile() {
 }
 
 describe("AccountPage", () => {
-  it("加载并展示资料、统计与最近内容", async () => {
+  it("加载并展示资料、统计与个人画像", async () => {
     render(<AccountPage />);
 
-    expect(await screen.findByRole("region", { name: "个人信息" })).toBeInTheDocument();
+    expect(await screen.findByLabelText("个人资料摘要")).toBeInTheDocument();
+    expect(await screen.findByLabelText("个人画像")).toBeInTheDocument();
+    expect(api.getUserProfile).toHaveBeenCalledOnce();
     expect(screen.getByText("3")).toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
-    expect(screen.getByText("产品经理简历")).toBeInTheDocument();
-    expect(screen.getByText("优化项目经历")).toBeInTheDocument();
     expect(screen.queryByText("user@example.test")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "修改头像" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "头像预览不可用" })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "保存所有修改" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "修改昵称" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "编辑" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "当前会话" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /修改密码/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /绑定微信/ })).not.toBeInTheDocument();
@@ -168,7 +191,7 @@ describe("AccountPage", () => {
     fireEvent.keyDown(input, { key: "Escape" });
 
     expect(screen.queryByRole("textbox", { name: "昵称" })).not.toBeInTheDocument();
-    expect(screen.getAllByText("测试用户")).toHaveLength(2);
+    expect(screen.getByText("测试用户")).toBeInTheDocument();
   });
 
   it("头像查看与头像修改入口彼此独立", async () => {
@@ -196,7 +219,7 @@ describe("AccountPage", () => {
     vi.spyOn(api, "listAgentSessions").mockRejectedValue(new ApiRequestError(503, "SERVICE_UNAVAILABLE"));
     render(<AccountPage />);
 
-    expect(await screen.findByText("最近对话暂不可用")).toBeInTheDocument();
+    await screen.findByLabelText("个人资料摘要");
     expect(screen.getByText("—")).toBeInTheDocument();
   });
 
@@ -205,27 +228,6 @@ describe("AccountPage", () => {
     expect(accountErrorMessage(error, "默认文案")).toContain("不能为空");
   });
 
-  it("删除头像后同步清除本地头像", async () => {
-    const withAvatar = {
-      ...profile,
-      user: { ...user, avatar_url: "/api/assets/avatar.png" },
-    };
-    vi.spyOn(api, "getAccountProfile").mockResolvedValue(withAvatar);
-    const remove = vi
-      .spyOn(api, "deleteAccountAvatar")
-      .mockResolvedValue({ ok: true });
-    stubAvatarRendering();
-    render(<AccountPage />);
-    await screen.findAllByText("测试用户");
-
-    pickAvatarFile();
-    await screen.findByRole("dialog", { name: "调整头像" });
-    fireEvent.click(screen.getByRole("button", { name: "删除当前头像" }));
-
-    await waitFor(() => expect(remove).toHaveBeenCalledOnce());
-    expect(await screen.findByText("头像已删除。")).toBeInTheDocument();
-    expect(useResumeStore.getState().user?.avatar_url).toBeNull();
-  });
 
   it("选择头像后先调整，确认后才上传并更新", async () => {
     const upload = vi

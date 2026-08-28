@@ -1,20 +1,17 @@
 import re
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from linkcv.modules.job_descriptions.schemas import (
-    EmploymentType,
     SalaryPeriod,
-    WorkMode,
 )
 
 
-Availability = Literal[
-    "immediately", "one_week", "two_weeks", "one_month", "custom"
-]
+EmploymentType = Literal["internship", "full_time"]
+CandidateStatus = Literal["fresh_graduate", "experienced"]
 EducationLevel = Literal[
     "high_school", "junior_college", "bachelor", "master", "doctor"
 ]
@@ -27,19 +24,7 @@ _SCHOOL_TIER_VALUES = {
     "project_211",
     "double_first_class",
 }
-_STRING_ARRAY_FIELDS = (
-    "target_positions",
-    "exclusions",
-    "target_companies",
-    "school_tier",
-    "languages",
-    "skills",
-    "certifications",
-    "honors",
-    "campus_experiences",
-)
 _OPTIONAL_TEXT_FIELDS = (
-    "work_city",
     "school",
     "major",
 )
@@ -67,6 +52,17 @@ def _normalize_school_tier(values: list[str]) -> list[str]:
             "school_tier must be one of: project_985, project_211, double_first_class"
         )
     return normalized
+
+
+def _normalize_employment_types(values: list[EmploymentType]) -> list[EmploymentType]:
+    result: list[EmploymentType] = []
+    seen: set[EmploymentType] = set()
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
 
 
 def _validate_profile_salary(
@@ -184,7 +180,9 @@ class UserProfileBase(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    work_city: str | None = Field(default=None, max_length=100)
+    candidate_cities: list[ProfileStringItem] = Field(
+        default_factory=list, max_length=20
+    )
     salary_min: Decimal | None = Field(
         default=None, ge=0, max_digits=12, decimal_places=2
     )
@@ -193,23 +191,16 @@ class UserProfileBase(BaseModel):
     )
     salary_currency: str | None = Field(default=None, max_length=3)
     salary_period: SalaryPeriod | None = None
-    employment_type: EmploymentType | None = None
-    work_mode: WorkMode | None = None
-    target_positions: list[ProfileStringItem] = Field(
-        default_factory=list, max_length=100
+    employment_types: list[EmploymentType] = Field(
+        default_factory=list, max_length=2
     )
-    exclusions: list[ProfileStringItem] = Field(default_factory=list, max_length=100)
-    target_companies: list[ProfileStringItem] = Field(
-        default_factory=list, max_length=100
-    )
-    availability: Availability | None = None
-    available_from: date | None = None
     school: str | None = Field(default=None, max_length=255)
     school_tier: list[ProfileStringItem] = Field(default_factory=list, max_length=10)
     major: str | None = Field(default=None, max_length=100)
     education_level: EducationLevel | None = None
     years_experience: int | None = Field(default=None, ge=0, le=4_294_967_295)
-    birth_date: date | None = None
+    candidate_status: CandidateStatus | None = None
+    graduation_year: int | None = Field(default=None, ge=1900, le=9999)
     languages: list[ProfileStringItem] = Field(default_factory=list, max_length=100)
     skills: list[ProfileStringItem] = Field(default_factory=list, max_length=100)
     certifications: list[ProfileStringItem] = Field(
@@ -228,9 +219,7 @@ class UserProfileBase(BaseModel):
         return value.strip() or None
 
     @field_validator(
-        "target_positions",
-        "exclusions",
-        "target_companies",
+        "candidate_cities",
         "languages",
         "skills",
         "certifications",
@@ -240,6 +229,13 @@ class UserProfileBase(BaseModel):
     @classmethod
     def normalize_string_arrays(cls, values: list[str]) -> list[str]:
         return _normalize_string_array(values)
+
+    @field_validator("employment_types")
+    @classmethod
+    def normalize_employment_types(
+        cls, values: list[EmploymentType]
+    ) -> list[EmploymentType]:
+        return _normalize_employment_types(values)
 
     @field_validator("school_tier")
     @classmethod
@@ -264,8 +260,24 @@ class UserProfileBase(BaseModel):
             self.salary_currency,
             self.salary_period,
         )
-        if self.available_from is not None and self.availability != "custom":
-            raise ValueError("available_from requires availability = 'custom'")
+        if self.candidate_status is None:
+            if self.graduation_year is not None:
+                raise ValueError(
+                    "graduation_year requires candidate_status to be selected"
+                )
+        elif self.candidate_status == "fresh_graduate":
+            if self.graduation_year is None:
+                raise ValueError(
+                    "fresh_graduate requires graduation_year"
+                )
+            if self.years_experience != 0:
+                raise ValueError(
+                    "fresh_graduate requires years_experience = 0"
+                )
+        elif self.graduation_year is not None:
+            raise ValueError(
+                "experienced candidates cannot provide graduation_year"
+            )
         return self
 
 
@@ -294,7 +306,6 @@ class AccountProfileResponse(BaseModel):
     user: UserProfileResponse
     resume_count: int
     recent_resumes: list[RecentResumeSummary]
-    profile: UserProfileData | None = None
 
 
 class AvatarUploadRequest(BaseModel):

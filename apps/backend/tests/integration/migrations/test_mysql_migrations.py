@@ -34,7 +34,7 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0045"
+EXPECTED_HEAD = "0047"
 
 
 def canonical_editor_markdown(data: dict[str, Any]) -> str:
@@ -139,6 +139,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "job_applications",
         "interview_sessions",
         "interview_assets",
+        "user_profiles",
     } <= set(inspector.get_table_names())
     assert "admin_operation_logs" not in inspector.get_table_names()
     for agent_table in {
@@ -1646,6 +1647,323 @@ def test_0045_adds_dataset_idempotency_and_dispatch_recovery_fields() -> None:
     finally:
         engine.dispose()
         reset_test_database_to_base(database_url)
+
+
+def test_0046_restructures_user_profiles_and_removes_obsolete_columns() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0045")
+    engine = create_engine(database_url)
+
+    with engine.begin() as connection:
+        user_id = connection.execute(
+            text(
+                "INSERT INTO users (email, password_hash, nickname) "
+                "VALUES ('profile-migration@example.invalid', '$2b$12$fictional', '张三')"
+            )
+        ).lastrowid
+        profile_id = connection.execute(
+            text(
+                "INSERT INTO user_profiles ("
+                "user_id, lock_version, work_city, salary_min, salary_max, "
+                "salary_currency, salary_period, employment_type, work_mode, "
+                "target_positions, exclusions, target_companies, availability, "
+                "available_from, school, school_tier, major, education_level, "
+                "years_experience, birth_date, languages, skills, certifications, "
+                "honors, campus_experiences, created_at, updated_at"
+                ") VALUES ("
+                ":user_id, 3, '上海', 12000, 18000, 'CNY', 'month', 'full_time', "
+                "'hybrid', :target_positions, :exclusions, :target_companies, "
+                "'custom', '2026-10-01', '南方虚构大学', :school_tier, '计算机科学', "
+                "'master', 4, '1994-02-03', :languages, :skills, :certifications, "
+                ":honors, :campus_experiences, '2026-08-01 12:00:00.000000', "
+                "'2026-08-02 12:00:00.000000')"
+            ),
+            {
+                "user_id": user_id,
+                "target_positions": json.dumps(
+                    ["前端工程师", "平台工程师"], ensure_ascii=False
+                ),
+                "exclusions": json.dumps(["无长期出差"], ensure_ascii=False),
+                "target_companies": json.dumps(["虚构科技"], ensure_ascii=False),
+                "school_tier": json.dumps(["project_211"], ensure_ascii=False),
+                "languages": json.dumps(["英语 CET-6"], ensure_ascii=False),
+                "skills": json.dumps(["React", "Python"], ensure_ascii=False),
+                "certifications": json.dumps(["AWS SAA"], ensure_ascii=False),
+                "honors": json.dumps(["校级奖学金"], ensure_ascii=False),
+                "campus_experiences": json.dumps(
+                    ["虚构校园项目"], ensure_ascii=False
+                ),
+            },
+        ).lastrowid
+        assert profile_id is not None
+        before = dict(
+            connection.execute(
+                text(
+                    "SELECT user_id, lock_version, salary_min, salary_max, "
+                    "salary_currency, salary_period, school, school_tier, major, "
+                    "education_level, years_experience, languages, skills, "
+                    "certifications, honors, campus_experiences, created_at, updated_at "
+                    "FROM user_profiles WHERE id = :profile_id"
+                ),
+                {"profile_id": profile_id},
+            ).mappings().one()
+        )
+
+    run_alembic(database_url, "upgrade", "0046")
+    inspector = inspect(engine)
+    columns = {column["name"]: column for column in inspector.get_columns("user_profiles")}
+    assert set(columns) == {
+        "id",
+        "user_id",
+        "lock_version",
+        "candidate_cities",
+        "salary_min",
+        "salary_max",
+        "salary_currency",
+        "salary_period",
+        "employment_types",
+        "professional_directions",
+        "school",
+        "school_tier",
+        "major",
+        "education_level",
+        "years_experience",
+        "candidate_status",
+        "graduation_year",
+        "languages",
+        "skills",
+        "certifications",
+        "honors",
+        "campus_experiences",
+        "created_at",
+        "updated_at",
+    }
+    assert columns["candidate_cities"]["nullable"] is False
+    assert columns["employment_types"]["nullable"] is False
+    assert columns["professional_directions"]["nullable"] is False
+    assert columns["candidate_status"]["nullable"] is True
+    assert columns["graduation_year"]["nullable"] is True
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("user_profiles")
+    } == {
+        "ck_user_profiles_lock_version",
+        "ck_user_profiles_salary_period",
+        "ck_user_profiles_salary_range",
+        "ck_user_profiles_salary_context",
+        "ck_user_profiles_salary_currency",
+        "ck_user_profiles_education_level",
+        "ck_user_profiles_years_experience",
+        "ck_user_profiles_languages_array",
+        "ck_user_profiles_skills_array",
+        "ck_user_profiles_certifications_array",
+        "ck_user_profiles_honors_array",
+        "ck_user_profiles_campus_experiences_array",
+        "ck_user_profiles_school_tier_array",
+        "ck_user_profiles_candidate_cities_array",
+        "ck_user_profiles_employment_types_array",
+        "ck_user_profiles_professional_directions_array",
+        "ck_user_profiles_candidate_status",
+        "ck_user_profiles_graduation_year",
+        "ck_user_profiles_candidate_experience_context",
+    }
+    assert not {
+        "work_city",
+        "employment_type",
+        "work_mode",
+        "target_positions",
+        "exclusions",
+        "target_companies",
+        "availability",
+        "available_from",
+        "birth_date",
+    } & set(columns)
+
+    def json_array(value: object) -> list[Any]:
+        decoded = json.loads(value) if isinstance(value, (str, bytes)) else value
+        assert isinstance(decoded, list)
+        return decoded
+
+    with engine.connect() as connection:
+        row = dict(
+            connection.execute(
+                text(
+                    "SELECT user_id, lock_version, candidate_cities, "
+                    "employment_types, professional_directions, candidate_status, "
+                    "graduation_year, salary_min, salary_max, salary_currency, "
+                    "salary_period, school, school_tier, major, education_level, "
+                    "years_experience, languages, skills, certifications, honors, "
+                    "campus_experiences, created_at, updated_at "
+                    "FROM user_profiles WHERE id = :profile_id"
+                ),
+                {"profile_id": profile_id},
+            ).mappings().one()
+        )
+        assert row["user_id"] == before["user_id"]
+        assert row["lock_version"] == before["lock_version"]
+        assert json_array(row["candidate_cities"]) == ["上海"]
+        assert json_array(row["employment_types"]) == ["full_time"]
+        assert json_array(row["professional_directions"]) == [
+            "前端工程师",
+            "平台工程师",
+        ]
+        assert row["candidate_status"] is None
+        assert row["graduation_year"] is None
+        for field in (
+            "salary_min",
+            "salary_max",
+            "salary_currency",
+            "salary_period",
+            "school",
+            "major",
+            "education_level",
+            "years_experience",
+            "created_at",
+            "updated_at",
+        ):
+            assert row[field] == before[field]
+        for field in (
+            "school_tier",
+            "languages",
+            "skills",
+            "certifications",
+            "honors",
+            "campus_experiences",
+        ):
+            assert json_array(row[field]) == json_array(before[field])
+        assert connection.scalar(text("SELECT COUNT(*) FROM user_profiles")) == 1
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0046"
+
+    with pytest.raises(DBAPIError):
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE user_profiles SET candidate_status = 'fresh_graduate', "
+                    "graduation_year = 2026, years_experience = 1 WHERE id = :profile_id"
+                ),
+                {"profile_id": profile_id},
+            )
+    with pytest.raises(DBAPIError):
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE user_profiles SET candidate_status = NULL, "
+                    "graduation_year = 2026 WHERE id = :profile_id"
+                ),
+                {"profile_id": profile_id},
+            )
+    engine.dispose()
+
+
+def test_0047_simplifies_profile_preferences_and_removes_professional_directions() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0046")
+    engine = create_engine(database_url)
+
+    with engine.begin() as connection:
+        user_id = connection.execute(
+            text(
+                "INSERT INTO users (email, password_hash, nickname) "
+                "VALUES ('profile-0047@example.invalid', '$2b$12$fictional', '张三')"
+            )
+        ).lastrowid
+        profile_id = connection.execute(
+            text(
+                "INSERT INTO user_profiles ("
+                "user_id, lock_version, candidate_cities, salary_min, salary_max, "
+                "salary_currency, salary_period, employment_types, "
+                "professional_directions, school, school_tier, major, "
+                "education_level, years_experience, candidate_status, "
+                "graduation_year, languages, skills, certifications, honors, "
+                "campus_experiences"
+                ") VALUES ("
+                ":user_id, 7, :candidate_cities, NULL, NULL, NULL, NULL, "
+                ":employment_types, :professional_directions, NULL, :school_tier, "
+                "NULL, NULL, NULL, NULL, NULL, :languages, :skills, "
+                ":certifications, :honors, :campus_experiences"
+                ")"
+            ),
+            {
+                "user_id": user_id,
+                "candidate_cities": json.dumps(["上海"], ensure_ascii=False),
+                "employment_types": json.dumps(
+                    [
+                        "contract",
+                        "full_time",
+                        "internship",
+                        "full_time",
+                        "temporary",
+                        "internship",
+                    ],
+                    ensure_ascii=False,
+                ),
+                "professional_directions": json.dumps(
+                    ["旧职业方向"], ensure_ascii=False
+                ),
+                "school_tier": json.dumps([], ensure_ascii=False),
+                "languages": json.dumps([], ensure_ascii=False),
+                "skills": json.dumps([], ensure_ascii=False),
+                "certifications": json.dumps([], ensure_ascii=False),
+                "honors": json.dumps([], ensure_ascii=False),
+                "campus_experiences": json.dumps([], ensure_ascii=False),
+            },
+        ).lastrowid
+        assert profile_id is not None
+        before_count = connection.scalar(text("SELECT COUNT(*) FROM user_profiles"))
+
+    run_alembic(database_url, "upgrade", "0047")
+    inspector = inspect(engine)
+    columns = {
+        column["name"] for column in inspector.get_columns("user_profiles")
+    }
+    assert "professional_directions" not in columns
+    assert columns == {
+        "id",
+        "user_id",
+        "lock_version",
+        "candidate_cities",
+        "salary_min",
+        "salary_max",
+        "salary_currency",
+        "salary_period",
+        "employment_types",
+        "school",
+        "school_tier",
+        "major",
+        "education_level",
+        "years_experience",
+        "candidate_status",
+        "graduation_year",
+        "languages",
+        "skills",
+        "certifications",
+        "honors",
+        "campus_experiences",
+        "created_at",
+        "updated_at",
+    }
+    checks = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("user_profiles")
+    }
+    assert "ck_user_profiles_professional_directions_array" not in checks
+    assert "ck_user_profiles_employment_types_array" in checks
+
+    with engine.connect() as connection:
+        value = connection.scalar(
+            text(
+                "SELECT employment_types FROM user_profiles WHERE id = :profile_id"
+            ),
+            {"profile_id": profile_id},
+        )
+        decoded = json.loads(value) if isinstance(value, (str, bytes)) else value
+        assert decoded == ["full_time", "internship"]
+        assert connection.scalar(text("SELECT COUNT(*) FROM user_profiles")) == before_count
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0047"
+
+    engine.dispose()
 
 
 def test_agent_clarification_message_forward_migration() -> None:

@@ -39,26 +39,15 @@ export type AccountProfile = {
   user: UserProfile;
   resume_count: number;
   recent_resumes: RecentResumeSummary[];
-  profile: UserProfileData | null;
 };
 
 export type EmploymentType =
-  | "full_time"
-  | "part_time"
   | "internship"
-  | "contract"
-  | "temporary";
-
-export type WorkMode = "onsite" | "hybrid" | "remote";
+  | "full_time";
 
 export type SalaryPeriod = "hour" | "day" | "month" | "year";
 
-export type Availability =
-  | "immediately"
-  | "one_week"
-  | "two_weeks"
-  | "one_month"
-  | "custom";
+export type CandidateStatus = "fresh_graduate" | "experienced";
 
 export type EducationLevel =
   | "high_school"
@@ -70,24 +59,19 @@ export type EducationLevel =
 export type SchoolTier = "project_985" | "project_211" | "double_first_class";
 
 export type UserProfileData = {
-  work_city: string | null;
+  candidate_cities: string[];
   salary_min: number | null;
   salary_max: number | null;
   salary_currency: string | null;
   salary_period: SalaryPeriod | null;
-  employment_type: EmploymentType | null;
-  work_mode: WorkMode | null;
-  target_positions: string[];
-  exclusions: string[];
-  target_companies: string[];
-  availability: Availability | null;
-  available_from: string | null;
+  employment_types: EmploymentType[];
   school: string | null;
   school_tier: SchoolTier[];
   major: string | null;
   education_level: EducationLevel | null;
+  candidate_status: CandidateStatus | null;
+  graduation_year: number | null;
   years_experience: number | null;
-  birth_date: string | null;
   languages: string[];
   skills: string[];
   certifications: string[];
