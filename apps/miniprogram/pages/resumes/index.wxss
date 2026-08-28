@@ -1,10 +1,21 @@
 .page {
-  min-height: 100vh;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  background: #f6f8fa;
+}
+
+.page-scroll {
+  width: 100%;
+  height: 100%;
+}
+
+.page-content {
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   padding: 0 32rpx calc(130rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
-  background: #f6f8fa;
 }
 
 .brand-row {
@@ -168,6 +179,13 @@
   gap: 8rpx;
   padding: 18rpx 20rpx 22rpx;
   background: #ffffff;
+}
+
+.gallery-demo-label {
+  color: var(--ui-accent);
+  font-size: 20rpx;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 .gallery-title {
