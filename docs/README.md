@@ -31,7 +31,7 @@
 | --- | --- | --- |
 | 账号与身份 | [features/identity-account.md](features/identity-account.md) | 登录、注册、微信、用户中心、管理员用户管理 |
 | 简历与工作台 | [features/resume-workbench.md](features/resume-workbench.md) | 简历、编辑器、模板、版本、分享、PDF |
-| 求职中心 | [features/career-center.md](features/career-center.md) | 岗位、求职进程、排期、复盘 |
+| 求职中心 | [features/career-center.md](features/career-center.md) | 求职记录、岗位导入、排期、记录内复盘 |
 | AI 求职助手 | [features/ai-assistant.md](features/ai-assistant.md) | 独立助手、编辑器侧栏、提案确认 |
 | 用户资料集 | [features/datasets.md](features/datasets.md) | 资料上传、解析状态、预览、助手引用 |
 

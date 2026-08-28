@@ -73,13 +73,18 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
   if (normalizedPath === "/assistant") return { kind: "assistant" };
   if (normalizedPath === "/templates") return { kind: "templates" };
   if (normalizedPath === "/resumes/new") return { kind: "resumeCreate" };
-  if (normalizedPath === "/career" || normalizedPath === "/career/jobs" || normalizedPath === "/jobs") return { kind: "jobs" };
+  if (normalizedPath === "/career") return { kind: "interviews", view: "applications" };
+  if (normalizedPath === "/career/jobs" || normalizedPath === "/jobs") return { kind: "jobs" };
   if (normalizedPath === "/interviews") {
     const requestedView = new URLSearchParams(search).get("view");
-    if (requestedView === "applications" || requestedView === "schedule" || requestedView === "records") {
-      return { kind: "interviews", view: requestedView };
-    }
-    return { kind: "jobs" };
+    return {
+      kind: "interviews",
+      view: requestedView === "schedule"
+        ? "schedule"
+        : requestedView === "records"
+          ? "records"
+          : "applications",
+    };
   }
   if (normalizedPath === "/career/applications") {
     const params = new URLSearchParams(search);
@@ -188,16 +193,17 @@ export function startCareerApplicationPath(jobId: string) {
 
 export function legacyCareerRedirect(pathname: string, search = ""): string | null {
   const normalizedPath = normalizePathname(pathname);
-  if (normalizedPath === "/career") return "/career/jobs";
+  if (normalizedPath === "/career") return "/career/applications";
   if (normalizedPath === "/jobs" || normalizedPath.startsWith("/jobs/")) {
     return `/career${normalizedPath}${search}`;
   }
   if (normalizedPath === "/interviews") {
     const requestedView = new URLSearchParams(search).get("view");
-    if (requestedView === "applications" || requestedView === "schedule" || requestedView === "records") {
-      return careerViewPath(requestedView);
-    }
-    return "/career/jobs";
+    return requestedView === "schedule"
+      ? "/career/schedule"
+      : requestedView === "records"
+        ? "/career/reviews"
+        : "/career/applications";
   }
   return null;
 }

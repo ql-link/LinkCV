@@ -692,7 +692,6 @@ final result: passed
 ## Final result
 
 final result: passed
-
 ---
 
 # 登录页左侧微信扫码样式 — 2026-08-24
@@ -880,5 +879,64 @@ The focused comparison covers subnavigation, summary icons/numbers/dividers, the
 ## Follow-up polish
 
 No P3 follow-up is required for this pass.
+
+final result: passed
+
+## 求职中心列表对齐 — 2026-08-28
+
+- source visual truth: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-b3d104be-9aca-4c7b-9afe-5733a7515a5e.png`
+- normalized source: `/private/tmp/linkcv-career-reference-1440.png`
+- implementation screenshot: `/private/tmp/linkcv-career-alignment-after.png`
+- route: `http://127.0.0.1:5174/career/applications`
+- viewport: `1440 x 1024` CSS px, browser density 1
+- source pixels: `937 x 714`; cropped application frame normalized to `1440 x 1024`
+- implementation pixels: `1440 x 1024`
+- state: source is populated list; implementation uses the authenticated Dev account's empty list. This pass compares the shared page frame, header controls, navigation, record toolbar and list/empty-state container boundaries.
+
+## Full-view comparison evidence
+
+The normalized reference and implementation were opened together at the same 1440 x 1024 size. The corrected implementation uses the same full-width page composition instead of the previous centered 1200px content column.
+
+Measured implementation boundaries:
+
+- hero content left: `24px`
+- first career tab left: `24px`
+- record toolbar: `left 24px`, `right 1416px`
+- list/empty-state surface: `left 24px`, `right 1416px`, `top 281px`
+- search field width: `260px`
+- record view controls height: `32px`
+
+## Focused region comparison evidence
+
+The focused comparison covered the vertical line formed by the module title, career subnavigation, “全部记录” heading and record surface. These regions now share the same left boundary. The implementation was also checked at 390 x 844: hero, toolbar and record surface all use a `16px` left boundary and `body.scrollWidth` remains `390px`.
+
+## Findings and comparison history
+
+### Iteration 1
+
+- P1: the record area used a centered `max-width: 1200px` container, while the reference uses page-level fixed insets. At 1440px this moved the record toolbar and surface away from the module title and subnavigation.
+- P2: the 300px search field started too far left compared with the reference.
+- P2: 38px record view controls pushed the record surface 14px lower than the reference.
+
+Fixes:
+
+- removed the centered/max-width record container and applied a 24px desktop page inset;
+- aligned the career subnavigation to the same 24px boundary;
+- set the module search field to 260px;
+- set record view controls to 32px, placing the record surface at 281px.
+
+### Iteration 2
+
+The revised same-size comparison showed no remaining P0, P1 or P2 difference in the requested alignment scope. The Dev account has no application records, so populated-row typography and row content density were not visually revalidated in this pass; their structure remains covered by component tests.
+
+## Required fidelity surfaces
+
+- Fonts and typography: existing LinkCV type roles and weights were preserved; no new typography was introduced.
+- Spacing and layout rhythm: corrected to the reference's 24px desktop boundary, 32px view controls and 281px record-surface top.
+- Colors and visual tokens: unchanged; existing LinkCV background, border, warning and primary tokens remain in use.
+- Image quality and asset fidelity: no new raster assets or substitute artwork were introduced.
+- Copy and content: unchanged from the approved Figma-driven implementation.
+
+## Final result
 
 final result: passed

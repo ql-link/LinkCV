@@ -28,8 +28,8 @@ describe("LinkCV routes", () => {
     expect(parseAppRoute("/jobs/new")).toEqual({ kind: "jobCreate" });
     expect(parseAppRoute("/jobs/job_123")).toEqual({ kind: "jobDetail", jobId: "job_123" });
     expect(parseAppRoute("/jobs/job_123/edit")).toEqual({ kind: "jobEdit", jobId: "job_123" });
-    expect(parseAppRoute("/interviews")).toEqual({ kind: "jobs" });
-    expect(parseAppRoute("/career")).toEqual({ kind: "jobs" });
+    expect(parseAppRoute("/interviews")).toEqual({ kind: "interviews", view: "applications" });
+    expect(parseAppRoute("/career")).toEqual({ kind: "interviews", view: "applications" });
     expect(parseAppRoute("/career/jobs")).toEqual({ kind: "jobs" });
     expect(parseAppRoute("/career/jobs/new")).toEqual({ kind: "jobCreate" });
     expect(parseAppRoute("/career/applications")).toEqual({ kind: "interviews", view: "applications", jobId: undefined, createApplication: undefined });
@@ -40,7 +40,7 @@ describe("LinkCV routes", () => {
     expect(parseAppRoute("/career/reviews")).toEqual({ kind: "interviews", view: "records", sessionId: undefined });
     expect(parseAppRoute("/interviews", "?view=schedule")).toEqual({ kind: "interviews", view: "schedule" });
     expect(parseAppRoute("/interviews", "?view=records")).toEqual({ kind: "interviews", view: "records" });
-    expect(parseAppRoute("/interviews", "?view=unknown")).toEqual({ kind: "jobs" });
+    expect(parseAppRoute("/interviews", "?view=unknown")).toEqual({ kind: "interviews", view: "applications" });
     expect(parseAppRoute("/datasets")).toEqual({ kind: "datasets" });
     expect(parseAppRoute("/account")).toEqual({ kind: "account" });
     expect(parseAppRoute("/account/password")).toEqual({ kind: "notFound" });
@@ -49,10 +49,10 @@ describe("LinkCV routes", () => {
     expect(parseAppRoute("/missing")).toEqual({ kind: "notFound" });
   });
 
-  it("redirects removed career overview routes to the job library", () => {
-    expect(legacyCareerRedirect("/career")).toBe("/career/jobs");
-    expect(legacyCareerRedirect("/interviews")).toBe("/career/jobs");
-    expect(legacyCareerRedirect("/interviews", "?view=overview")).toBe("/career/jobs");
+  it("redirects legacy career entry points to job application records", () => {
+    expect(legacyCareerRedirect("/career")).toBe("/career/applications");
+    expect(legacyCareerRedirect("/interviews")).toBe("/career/applications");
+    expect(legacyCareerRedirect("/interviews", "?view=overview")).toBe("/career/applications");
     expect(legacyCareerRedirect("/interviews", "?view=applications")).toBe("/career/applications");
   });
 

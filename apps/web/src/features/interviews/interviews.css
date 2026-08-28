@@ -581,6 +581,328 @@
 .career-application-detail dt { color: var(--ui-text-muted); font-size: 10px; }
 .career-application-detail dd { overflow-wrap: anywhere; margin: 0; font-size: 12px; font-weight: 600; }
 .career-application-notes { margin: 12px 0 0; border-left: 2px solid var(--ui-warning); padding: 8px 12px; color: var(--ui-text-secondary); font-size: 11px; line-height: 1.6; }
+
+/* Application record detail */
+.is-application-detail-route {
+  min-width: 0;
+  overflow-x: hidden;
+  background: var(--ui-background);
+  padding-bottom: 48px;
+}
+
+.career-record-hero {
+  min-height: 156px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-background);
+}
+
+.career-record-hero-inner {
+  display: flex;
+  width: min(1200px, calc(100% - 48px));
+  min-height: 156px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  margin: 0 auto;
+  padding: 24px 0;
+}
+
+.career-record-hero-copy { min-width: 0; }
+.career-record-back {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 6px;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  text-decoration: none;
+}
+.career-record-back:hover { color: var(--ui-foreground); }
+.career-record-back:focus-visible { border-radius: var(--ui-radius-sm); outline: 2px solid var(--ui-ring); outline-offset: 2px; }
+.career-record-back svg { width: 15px; height: 15px; }
+
+.career-record-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+.career-record-title-row h1 {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0;
+  color: var(--ui-foreground);
+  font-size: clamp(22px, 2.1vw, 28px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+.career-record-title-row h1 > span:not(.career-record-title-divider) { overflow-wrap: anywhere; }
+.career-record-title-divider { color: var(--ui-text-subtle); font-weight: 400; }
+.career-record-status {
+  display: inline-flex;
+  min-height: 26px;
+  box-sizing: border-box;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius-full);
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.career-record-status.is-active { border-color: color-mix(in srgb, var(--ui-warning) 35%, var(--ui-border)); background: var(--ui-warning-subtle); color: var(--ui-warning); }
+.career-record-status.is-archived,
+.career-record-status.is-withdrawn,
+.career-record-status.is-closed,
+.career-record-status.is-rejected { border-color: var(--ui-border); background: var(--ui-surface-muted); color: var(--ui-text-muted); }
+
+.career-record-meta {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  margin: 16px 0 0;
+}
+.career-record-meta > div { display: inline-flex; min-width: 0; align-items: baseline; gap: 7px; }
+.career-record-meta dt { color: var(--ui-text-muted); font-size: 11px; white-space: nowrap; }
+.career-record-meta dd { overflow-wrap: anywhere; margin: 0; color: var(--ui-text-secondary); font-size: 12px; font-weight: 550; }
+
+.career-record-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.career-record-actions .ui-button { min-height: 40px; }
+
+.career-application-detail-layout {
+  display: grid;
+  width: min(1200px, calc(100% - 48px));
+  grid-template-columns: minmax(0, 768px) minmax(0, 416px);
+  align-items: start;
+  gap: 16px;
+  margin: 0 auto;
+  padding: 16px 0 0;
+  box-sizing: border-box;
+}
+.career-application-detail-main,
+.career-application-detail-aside { display: grid; min-width: 0; align-content: start; gap: 16px; }
+.application-progress-card,
+.application-interviews-card,
+.application-job-card,
+.application-info-card { min-width: 0; overflow: hidden; }
+
+.application-detail-section-heading {
+  display: flex;
+  min-height: 54px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--ui-border);
+  padding: 12px 20px;
+}
+.application-detail-section-heading h2 { margin: 0; color: var(--ui-foreground); font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+.application-detail-section-heading > span { color: var(--ui-text-muted); font-size: 12px; white-space: nowrap; }
+.application-detail-section-heading > a { color: var(--ui-accent); font-size: 11px; font-weight: 650; text-decoration: none; }
+
+.application-progress-rail { overflow-x: auto; padding: 24px 24px 26px; scrollbar-width: thin; }
+.application-progress-rail ol {
+  position: relative;
+  display: flex;
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.application-progress-rail ol::before {
+  position: absolute;
+  top: 16px;
+  right: 56px;
+  left: 56px;
+  height: 2px;
+  background: var(--ui-border);
+  content: "";
+}
+.application-progress-rail li {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: 112px;
+  min-width: 112px;
+  align-items: center;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--ui-text-muted);
+  text-align: center;
+}
+.application-progress-marker {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  box-sizing: border-box;
+  place-items: center;
+  border: 2px solid var(--ui-border-strong);
+  border-radius: var(--ui-radius-full);
+  background: var(--ui-surface);
+  color: var(--ui-text-muted);
+}
+.application-progress-marker svg { width: 14px; height: 14px; }
+.application-progress-rail li strong { max-width: 108px; overflow-wrap: anywhere; color: var(--ui-text-secondary); font-size: 12px; font-weight: 650; line-height: 1.3; }
+.application-progress-rail li small { max-width: 112px; overflow-wrap: anywhere; color: var(--ui-text-subtle); font-size: 10px; line-height: 1.35; }
+.application-progress-rail li.is-done .application-progress-marker { border-color: var(--ui-success); background: var(--ui-success-subtle); color: var(--ui-success); }
+.application-progress-rail li.is-done strong { color: var(--ui-success); }
+.application-progress-rail li.is-current .application-progress-marker { border: 7px solid var(--ui-warning); background: var(--ui-warning-subtle); }
+.application-progress-rail li.is-current strong,
+.application-progress-rail li.is-current small { color: var(--ui-warning); }
+.application-progress-rail li.is-waiting .application-progress-marker { border-color: var(--ui-warning); background: var(--ui-warning-subtle); color: var(--ui-warning); }
+.application-progress-rail li.is-waiting strong { color: var(--ui-warning); }
+.application-progress-rail li.is-cancelled .application-progress-marker { border-color: var(--ui-border-strong); background: var(--ui-surface-muted); color: var(--ui-text-muted); }
+.application-progress-rail li.is-ended .application-progress-marker { border-color: var(--ui-border-strong); background: var(--ui-surface-muted); color: var(--ui-text-muted); }
+
+.application-interviews-card { overflow: visible; border: 0; background: transparent; box-shadow: none; }
+.application-interviews-card > .application-detail-section-heading { min-height: 40px; border-bottom: 0; padding: 0; }
+.application-interviews-card > .application-detail-section-heading h2 { font-size: 20px; }
+.application-interview-list { display: grid; gap: 12px; padding: 0; }
+.application-interview-item { min-width: 0; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-lg); background: var(--ui-surface); }
+.application-interview-card {
+  display: block;
+  min-width: 0;
+  padding: 18px;
+  color: inherit;
+  text-decoration: none;
+}
+.application-interview-card:hover { background: var(--ui-surface); }
+.application-interview-card:focus-visible { border-radius: var(--ui-radius-lg); outline: 2px solid var(--ui-ring); outline-offset: -2px; }
+.application-interview-card-head { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.application-interview-card-head > div { min-width: 0; }
+.application-interview-stage { margin: 0 0 5px; color: var(--ui-accent); font-size: 12px; font-weight: 700; }
+.application-interview-card h3 { margin: 0; color: var(--ui-foreground); font-size: 16px; font-weight: 650; line-height: 1.35; }
+.application-interview-card .interview-status-badge { flex: 0 0 auto; padding: 5px 9px; font-size: 10px; }
+.application-interview-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; margin: 16px 0 0; }
+.application-interview-meta > div { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); gap: 8px; }
+.application-interview-meta dt { color: var(--ui-text-muted); font-size: 11px; white-space: nowrap; }
+.application-interview-meta dd { overflow-wrap: anywhere; margin: 0; color: var(--ui-text-secondary); font-size: 11px; }
+.application-interview-summary { display: grid; gap: 6px; margin-top: 16px; border-top: 1px solid var(--ui-border); padding-top: 12px; }
+.application-interview-summary p { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 9px; margin: 0; color: var(--ui-text-secondary); font-size: 11px; line-height: 1.55; }
+.application-interview-summary strong { color: var(--ui-text-muted); font-weight: 600; white-space: nowrap; }
+.application-interview-summary span { overflow-wrap: anywhere; display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.application-interview-summary p.is-empty { display: block; color: var(--ui-text-muted); }
+.application-interview-link { display: inline-flex; align-items: center; gap: 4px; margin-top: 17px; color: var(--ui-accent); font-size: 11px; font-weight: 650; }
+.application-interview-link svg { width: 14px; height: 14px; }
+
+.application-interviews-empty {
+  display: grid;
+  min-height: 244px;
+  box-sizing: border-box;
+  place-items: center;
+  align-content: center;
+  gap: 9px;
+  padding: 28px 24px 32px;
+  text-align: center;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface);
+}
+.application-interviews-empty > svg { width: 34px; height: 34px; color: var(--ui-text-subtle); stroke-width: 1.35; }
+.application-interviews-empty h3 { margin: 4px 0 0; color: var(--ui-foreground); font-size: 16px; }
+.application-interviews-empty p { max-width: 420px; margin: 0 0 8px; color: var(--ui-text-muted); font-size: 12px; line-height: 1.6; }
+.application-interviews-empty .ui-button { min-height: 40px; }
+
+.application-job-identity { display: grid; gap: 3px; padding: 14px 20px 0; }
+.application-job-identity span { color: var(--ui-text-muted); font-size: 12px; }
+.application-job-identity strong { overflow-wrap: anywhere; color: var(--ui-foreground); font-size: 16px; line-height: 1.4; }
+.application-job-highlights { display: grid; min-width: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 12px 20px 0; }
+.application-job-highlights > div { display: grid; min-width: 0; gap: 4px; border-radius: var(--ui-radius-md); background: var(--ui-surface-subtle); padding: 9px 10px; }
+.application-job-highlights dt { color: var(--ui-text-muted); font-size: 10px; }
+.application-job-highlights dd { overflow-wrap: anywhere; margin: 0; color: var(--ui-text-secondary); font-size: 12px; font-weight: 650; line-height: 1.4; }
+.application-job-description,
+.application-job-skills,
+.application-job-requirements { padding: 16px 20px 0; }
+.application-job-description h3,
+.application-job-skills h3,
+.application-job-requirements h3 { margin: 0; color: var(--ui-text-muted); font-size: 11px; font-weight: 650; }
+.application-job-description p { margin: 8px 0 0; color: var(--ui-text-secondary); font-size: 12px; line-height: 1.7; white-space: pre-line; overflow-wrap: anywhere; }
+.application-job-skills ul { display: flex; flex-wrap: wrap; gap: 7px; margin: 10px 0 0; padding: 0; list-style: none; }
+.application-job-skills li { border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); background: var(--ui-surface-subtle); padding: 5px 9px; color: var(--ui-text-secondary); font-size: 11px; }
+.application-job-skills p { margin: 9px 0 0; color: var(--ui-text-muted); font-size: 12px; }
+.application-job-requirements { padding-bottom: 20px; }
+.application-job-requirements p { margin: 8px 0 0; color: var(--ui-text-secondary); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+.application-info-fields { display: grid; min-width: 0; margin: 0; padding: 4px 20px 14px; }
+.application-info-fields > div { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 18px; border-bottom: 1px solid var(--ui-border); padding: 11px 0; }
+.application-info-fields > div:last-child { border-bottom: 0; }
+.application-info-fields dt { color: var(--ui-text-muted); font-size: 11px; white-space: nowrap; }
+.application-info-fields dd { overflow-wrap: anywhere; margin: 0; color: var(--ui-text-secondary); font-size: 12px; font-weight: 550; line-height: 1.5; text-align: right; }
+.application-info-fields .is-wide dd { font-weight: 500; white-space: pre-line; }
+
+.career-application-detail-not-found {
+  display: grid;
+  width: min(560px, calc(100% - 48px));
+  min-height: 300px;
+  box-sizing: border-box;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  margin: 24px auto 0;
+  padding: 32px 24px;
+  color: var(--ui-text-muted);
+  text-align: center;
+}
+.career-application-detail-not-found > svg { width: 38px; height: 38px; }
+.career-application-detail-not-found h1 { margin: 3px 0 0; color: var(--ui-foreground); font-size: 20px; }
+.career-application-detail-not-found p { margin: 0 0 8px; font-size: 12px; }
+
+@media (max-width: 1120px) {
+  .career-application-detail-layout { grid-template-columns: minmax(0, 1fr); }
+  .career-application-detail-aside { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+}
+
+@media (max-width: 640px) {
+  .is-application-detail-route { padding-bottom: 32px; }
+  .career-record-hero-inner { width: calc(100% - 32px); min-height: 0; align-items: stretch; flex-direction: column; gap: 18px; padding: 20px 0 22px; }
+  .career-record-title-row { align-items: flex-start; gap: 9px; }
+  .career-record-title-row h1 { gap: 4px; font-size: 22px; line-height: 1.3; }
+  .career-record-status { min-height: 28px; }
+  .career-record-meta { display: grid; gap: 7px; margin-top: 14px; }
+  .career-record-meta > div { align-items: flex-start; }
+  .career-record-actions { justify-content: stretch; }
+  .career-record-actions .ui-button { flex: 1 1 150px; }
+  .career-application-detail-layout { width: calc(100% - 32px); gap: 12px; padding-top: 16px; }
+  .career-application-detail-main,
+  .career-application-detail-aside { gap: 12px; }
+  .career-application-detail-aside { grid-template-columns: minmax(0, 1fr); }
+  .application-detail-section-heading { min-height: 54px; padding: 12px 16px; }
+  .application-detail-section-heading h2 { font-size: 17px; }
+  .application-progress-rail { padding: 20px 16px 22px; }
+  .application-progress-rail li { width: 104px; min-width: 104px; }
+  .application-progress-rail ol::before { right: 52px; left: 52px; }
+  .application-interview-card { padding: 16px; }
+  .application-interview-card-head { gap: 10px; }
+  .application-interview-card h3 { font-size: 14px; }
+  .application-interview-meta { grid-template-columns: minmax(0, 1fr); }
+  .application-interview-summary p { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .application-interviews-empty { min-height: 220px; padding-inline: 16px; }
+  .application-job-highlights { grid-template-columns: minmax(0, 1fr); padding-inline: 16px; }
+  .application-job-identity,
+  .application-info-fields { padding-inline: 16px; }
+  .application-job-description,
+  .application-job-skills,
+  .application-job-requirements { padding-inline: 16px; }
+  .career-application-detail-not-found { width: calc(100% - 32px); }
+}
+
 .interview-dialog-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--ui-foreground) 24%, transparent); padding: 24px; }
 .interview-dialog { width: min(680px, 100%); max-height: calc(100vh - 48px); overflow-y: auto; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-xl); background: var(--ui-surface); box-shadow: var(--ui-shadow-lg); }
 .interview-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--ui-border); padding: 18px 20px; }
@@ -766,4 +1088,316 @@
 @media (max-width: 640px) {
   .interview-context-sidebar { display: grid; grid-column: auto; grid-template-columns: minmax(0, 1fr); }
   .interview-context-sidebar .context-job-archive-card { grid-column: auto; }
+}
+
+/* Career applications: list-first module and read-only stage board */
+.page-hero.is-module.career-module-header {
+  padding-inline: 24px;
+}
+
+.career-module-header .career-process-search { width: 260px; }
+
+.career-applications-layout {
+  gap: 16px;
+  padding: 24px 24px 48px;
+}
+
+.career-applications-controls {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.career-process-search input,
+.career-control-button {
+  min-height: 40px;
+}
+
+.career-view-switch button {
+  min-height: 40px;
+  height: 40px;
+}
+
+.career-applications-list-surface,
+.career-applications-empty-surface {
+  overflow: hidden;
+}
+
+.career-record-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 32px;
+}
+
+.career-record-toolbar .career-view-switch button,
+.career-record-toolbar .career-control-button {
+  min-height: 32px;
+  height: 32px;
+}
+
+.career-record-toolbar .career-view-switch { padding: 0; }
+
+.career-record-toolbar h2 {
+  margin: 0;
+  color: var(--ui-foreground);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.career-record-toolbar h2 span {
+  margin-left: 5px;
+  color: var(--ui-text-muted);
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.career-record-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.career-application-filter-count {
+  margin: 0;
+  border-bottom: 1px solid var(--ui-border);
+  padding: 12px 20px;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+}
+
+.career-application-list {
+  min-width: 960px;
+  overflow-x: auto;
+}
+
+.career-application-list > div {
+  grid-template-columns: minmax(120px, 1.1fr) minmax(150px, 1.25fr) minmax(120px, 1fr) minmax(90px, .8fr) minmax(110px, .9fr) minmax(100px, .85fr) auto;
+  gap: 16px;
+  padding-inline: 20px;
+}
+
+.career-application-list > div:first-child {
+  min-height: 44px;
+  background: var(--ui-surface-subtle);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.career-application-list [role="cell"] {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.career-application-list [role="cell"] > strong,
+.career-application-list [role="cell"] > small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.career-application-list [role="cell"] > strong {
+  color: var(--ui-foreground);
+  font-size: 12px;
+}
+
+.career-application-list [role="cell"] > small {
+  margin-top: 3px;
+  color: var(--ui-text-muted);
+  font-size: 10px;
+}
+
+.career-application-list [role="cell"]:last-child {
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.career-application-list .ui-button {
+  min-height: 40px;
+}
+
+.progress-board-scroll {
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+
+.progress-board-grid {
+  display: grid;
+  width: max-content;
+  min-width: 100%;
+  grid-template-columns: repeat(6, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.progress-column {
+  min-height: 470px;
+  border-radius: var(--ui-radius-lg);
+  padding: 12px;
+  transition: none;
+}
+
+.progress-column-heading {
+  min-height: 38px;
+  padding: 0 2px 10px;
+}
+
+.progress-column-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ui-foreground);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.progress-column-heading h2 span {
+  display: grid;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: var(--ui-radius-full);
+  background: var(--ui-surface-muted);
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-column-cards {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.progress-card {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  grid-template-areas:
+    "logo copy arrow"
+    "stage stage stage"
+    "status time time";
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface);
+  padding: 12px;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color var(--ui-duration-fast) var(--ui-ease-press), box-shadow var(--ui-duration-fast) var(--ui-ease-press);
+}
+
+.progress-card:hover {
+  border-color: var(--ui-border-strong);
+  box-shadow: var(--ui-shadow-xs);
+}
+
+.progress-card:focus-visible {
+  border-radius: var(--ui-radius-md);
+  outline: 2px solid var(--ui-ring);
+  outline-offset: 2px;
+}
+
+.progress-card > .company-logo {
+  grid-area: logo;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.progress-card-copy {
+  grid-area: copy;
+  min-width: 0;
+}
+
+.progress-card-copy strong,
+.progress-card-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-card-copy strong { font-size: 12px; font-weight: 650; }
+.progress-card-copy small { margin-top: 3px; color: var(--ui-text-secondary); font-size: 10px; }
+
+.progress-card .stage-badge {
+  grid-area: stage;
+  justify-self: start;
+  min-height: 22px;
+  padding-inline: 8px;
+  font-size: 10px;
+}
+
+.progress-card-status {
+  grid-area: status;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-card-time {
+  grid-area: time;
+  justify-self: end;
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.progress-card-arrow {
+  grid-area: arrow;
+  align-self: start;
+  color: var(--ui-text-subtle);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.stage-badge-pending { background: var(--ui-surface-muted); color: var(--ui-text-muted); }
+.stage-badge-screening { background: var(--ui-accent-subtle); color: var(--ui-accent); }
+.stage-badge-assessment { background: color-mix(in srgb, var(--ui-template-accent) 12%, var(--ui-surface)); color: var(--ui-template-accent); }
+.stage-badge-interview { background: var(--ui-warning-subtle); color: var(--ui-warning); }
+.stage-badge-waiting { background: color-mix(in srgb, var(--ui-warning) 12%, var(--ui-surface)); color: var(--ui-warning); }
+.stage-badge-ended { background: var(--ui-surface-muted); color: var(--ui-text-muted); }
+
+.career-applications-empty-surface .career-applications-empty {
+  min-height: 360px;
+}
+
+@media (max-width: 1120px) {
+  .page-hero.is-module.career-module-header { padding-inline: 24px; }
+}
+
+@media (max-width: 640px) {
+  .page-hero.is-module.career-module-header { padding-inline: 16px; }
+  .career-module-header .career-process-search { width: 100%; }
+  .career-applications-layout { padding: 16px 16px 30px; }
+  .career-applications-controls { width: 100%; justify-content: stretch; gap: 6px; }
+  .career-process-search { width: 100%; flex: 1 1 100%; }
+  .career-process-search input { height: 40px; }
+  .career-control-button { flex: 1 1 auto; }
+  .career-view-switch { flex: 1 1 auto; }
+  .career-view-switch button { flex: 1 1 50%; padding-inline: 8px; }
+  .career-applications-controls > .ui-button { flex: 1 1 100%; }
+  .career-record-toolbar { align-items: flex-start; flex-direction: column; }
+  .career-record-toolbar-actions { width: 100%; flex-wrap: wrap; }
+  .career-record-toolbar-actions .career-view-switch { flex: 1 1 auto; }
+  .career-record-toolbar-actions .career-sort-button { flex: 0 0 auto; }
+  .career-application-list { min-width: 920px; }
+  .career-application-list > div { gap: 12px; padding-inline: 16px; }
+  .progress-board-grid { grid-template-columns: repeat(6, minmax(168px, 1fr)); }
+  .progress-column { min-height: 420px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-card { transition: none; }
 }

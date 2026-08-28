@@ -210,7 +210,7 @@ function AppContent() {
         <WorkspacePageBoundary>
           <InterviewCenterPage
             view={route.view}
-            navigation={<CareerNavigation active={route.view === "records" ? "reviews" : route.view} />}
+            navigation={<CareerNavigation active={route.view === "schedule" ? "schedule" : "applications"} />}
           />
         </WorkspacePageBoundary>
       </WorkspaceLayout>
@@ -285,9 +285,9 @@ function AppContent() {
       || route.kind === "jobCreate"
       || route.kind === "jobDetail"
       || route.kind === "jobEdit"
-      ? "jobs"
+      ? "applications"
       : route.kind === "interviews"
-        ? route.view === "records" ? "reviews" : route.view
+        ? route.view === "schedule" ? "schedule" : "applications"
         : null;
 
     return (
@@ -299,7 +299,7 @@ function AppContent() {
           {(route.kind === "jobs" || route.kind === "jobCreate") && (
             <JobCenterPage
               createDialogOpen={route.kind === "jobCreate"}
-              navigation={<CareerNavigation active="jobs" />}
+              navigation={<CareerNavigation active="applications" />}
             />
           )}
           {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}

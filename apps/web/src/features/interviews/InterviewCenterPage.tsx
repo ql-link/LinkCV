@@ -26,7 +26,6 @@ import {
   Download,
   ExternalLink,
   FileText,
-  Filter,
   FolderOpen,
   Import,
   LayoutGrid,
@@ -249,6 +248,7 @@ async function listAllJobApplications(
 async function listAllInterviewSessions(
   options: {
     includeArchived: boolean;
+    applicationId?: string;
     startAt?: string;
     endAt?: string;
   },
@@ -259,6 +259,7 @@ async function listAllInterviewSessions(
   do {
     const page = await api.listInterviewSessions({
       include_archived: options.includeArchived,
+      ...(options.applicationId ? { application_id: options.applicationId } : {}),
       ...(options.startAt ? { start_at: options.startAt } : {}),
       ...(options.endAt ? { end_at: options.endAt } : {}),
       cursor,
@@ -272,6 +273,219 @@ async function listAllInterviewSessions(
     cursor = page.next_cursor;
   } while (cursor);
   return items;
+}
+
+const EMPTY_APPLICATION_VALUE = "暂未记录";
+
+const EMPLOYMENT_TYPE_LABELS: Record<string, string> = {
+  full_time: "全职",
+  part_time: "兼职",
+  internship: "实习",
+  contract: "合同",
+  temporary: "临时",
+};
+
+const SALARY_PERIOD_LABELS: Record<string, string> = {
+  hour: "小时",
+  day: "天",
+  month: "月",
+  year: "年",
+};
+
+type ApplicationProgressState =
+  | "done"
+  | "current"
+  | "pending"
+  | "waiting"
+  | "cancelled"
+  | "ended";
+
+type ApplicationProgressNode = {
+  key: string;
+  label: string;
+  state: ApplicationProgressState;
+  caption: string;
+};
+
+type ApplicationJobSnapshotView = {
+  salary: string | null;
+  workCity: string | null;
+  employmentType: string | null;
+  description: string | null;
+  skills: string[];
+  educationRequirement: string | null;
+  experienceRequirement: string | null;
+  workSchedule: string | null;
+};
+
+function snapshotRecord(application: JobApplicationSummary): Record<string, unknown> {
+  const value = application.job_snapshot;
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function snapshotScalar(
+  snapshot: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = snapshot[key];
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return null;
+}
+
+function snapshotStringArray(
+  snapshot: Record<string, unknown>,
+  key: string,
+): string[] {
+  const value = snapshot[key];
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const strings = value.filter((item): item is string => typeof item === "string");
+  if (strings.length !== value.length) return [];
+  return strings.map((item) => item.trim()).filter(Boolean);
+}
+
+function applicationJobSnapshot(
+  application: JobApplicationSummary,
+): ApplicationJobSnapshotView {
+  const snapshot = snapshotRecord(application);
+  const salaryText = snapshotScalar(snapshot, "salary_text");
+  const salaryMin = snapshotScalar(snapshot, "salary_min");
+  const salaryMax = snapshotScalar(snapshot, "salary_max");
+  const salaryCurrency = snapshotScalar(snapshot, "salary_currency");
+  const salaryPeriod = snapshotScalar(snapshot, "salary_period");
+  const salaryMonths = snapshotScalar(snapshot, "salary_months_per_year");
+  const salaryRange = salaryMin && salaryMax
+    ? `${salaryMin}–${salaryMax}`
+    : salaryMin ?? salaryMax;
+  const salaryFallback = salaryRange
+    ? [
+        `${salaryRange}${salaryCurrency ? ` ${salaryCurrency}` : ""}`,
+        salaryPeriod && SALARY_PERIOD_LABELS[salaryPeriod]
+          ? `/${SALARY_PERIOD_LABELS[salaryPeriod]}`
+          : "",
+        salaryMonths ? `${salaryMonths}薪` : "",
+      ].filter(Boolean).join(" ")
+    : null;
+  const employmentType = snapshotScalar(snapshot, "employment_type");
+  return {
+    salary: salaryText ?? salaryFallback,
+    workCity: snapshotScalar(snapshot, "work_city"),
+    employmentType: employmentType ? EMPLOYMENT_TYPE_LABELS[employmentType] ?? null : null,
+    description: snapshotScalar(snapshot, "description"),
+    skills: snapshotStringArray(snapshot, "skills"),
+    educationRequirement: snapshotScalar(snapshot, "education_requirement"),
+    experienceRequirement: snapshotScalar(snapshot, "experience_requirement"),
+    workSchedule: snapshotScalar(snapshot, "work_schedule"),
+  };
+}
+
+function applicationStageMatchesSession(
+  application: JobApplicationSummary,
+  session: InterviewSessionSummary,
+): boolean {
+  return session.stage_label === application.current_stage_label
+    || (
+      session.stage_type === application.current_stage_type
+      && session.round_no === application.current_round_no
+    );
+}
+
+function applicationCurrentProgressState(
+  application: JobApplicationSummary,
+): ApplicationProgressState {
+  if (application.archived_at || application.status !== "active") return "ended";
+  if (application.stage_state === "awaiting_result") return "waiting";
+  if (application.stage_state === "negotiating") return "current";
+  return "pending";
+}
+
+function sessionProgressState(session: InterviewSessionSummary): ApplicationProgressState {
+  if (session.status === "completed") return "done";
+  if (session.status === "cancelled") return "cancelled";
+  return displayStatus(session) === "active" ? "current" : "pending";
+}
+
+function progressStateCaption(state: ApplicationProgressState): string {
+  return {
+    done: "已完成",
+    current: "当前进行中",
+    pending: "待安排",
+    waiting: "待确认结果",
+    cancelled: "已取消",
+    ended: "已结束",
+  }[state];
+}
+
+function buildApplicationProgress(
+  application: JobApplicationSummary,
+  sessions: InterviewSessionSummary[],
+): ApplicationProgressNode[] {
+  const sortedSessions = [...sessions].sort((left, right) => {
+    const startDifference = new Date(left.start_at).getTime() - new Date(right.start_at).getTime();
+    return startDifference || left.id.localeCompare(right.id);
+  });
+  const nodes: ApplicationProgressNode[] = [{
+    key: "applied",
+    label: "已投递",
+    state: application.applied_at ? "done" : "pending",
+    caption: application.applied_at
+      ? formatApplicationDate(application.applied_at)
+      : "投递时间暂未记录",
+  }];
+  let hasCurrentStageNode = false;
+  sortedSessions.forEach((session) => {
+    const isCurrentStage = applicationStageMatchesSession(application, session);
+    if (
+      isCurrentStage
+      && (session.status !== "cancelled" || application.status !== "active" || application.archived_at)
+    ) {
+      hasCurrentStageNode = true;
+    }
+    const state = isCurrentStage
+      ? session.status === "cancelled"
+        ? "cancelled"
+        : application.stage_state === "awaiting_result"
+          ? "waiting"
+          : application.stage_state === "negotiating"
+            ? "current"
+            : sessionProgressState(session)
+      : sessionProgressState(session);
+    nodes.push({
+      key: `session:${session.id}`,
+      label: session.stage_label.trim() || (session.round_no ? interviewRoundLabel(session.round_no) : "面试"),
+      state,
+      caption: isCurrentStage
+        ? progressStateCaption(state)
+        : `${formatApplicationDateTime(session.start_at)} · ${progressStateCaption(state)}`,
+    });
+  });
+  if (!hasCurrentStageNode) {
+    const state = applicationCurrentProgressState(application);
+    nodes.push({
+      key: `current:${application.current_stage_type}:${application.current_round_no ?? "none"}`,
+      label: application.current_stage_label,
+      state,
+      caption: applicationStatusLabel(application),
+    });
+  }
+  return nodes;
+}
+
+function applicationDate(value: string | null): string {
+  return value ? formatApplicationDate(value) : EMPTY_APPLICATION_VALUE;
+}
+
+function applicationValue(value: string | null): string {
+  return value?.trim() || EMPTY_APPLICATION_VALUE;
+}
+
+function formatApplicationSessionRange(session: InterviewSessionSummary): string {
+  return `${formatApplicationDateTime(session.start_at)} – ${formatTime(new Date(session.end_at))}`;
 }
 
 export function InterviewCenterPage({
@@ -291,14 +505,13 @@ export function InterviewCenterPage({
 }) {
   const weekStart = useMemo(() => startOfWeek(), []);
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";
+  const isApplicationDetail = view === "applications" && Boolean(initialApplicationId);
   const [sessions, setSessions] = useState<InterviewSessionSummary[]>([]);
   const [applications, setApplications] = useState<JobApplicationSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(initialSessionId ?? null);
   const [detail, setDetail] = useState<InterviewSessionDetail | null>(null);
   const [query, setQuery] = useState("");
-  const [applicationDisplayMode, setApplicationDisplayMode] = useState<"board" | "list">("board");
-  const [applicationScope, setApplicationScope] = useState<"all" | "active" | "ended" | "archived">("all");
-  const [showApplicationFilters, setShowApplicationFilters] = useState(false);
+  const [applicationDisplayMode, setApplicationDisplayMode] = useState<"board" | "list">("list");
   const [sortApplicationsNewestFirst, setSortApplicationsNewestFirst] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -341,7 +554,7 @@ export function InterviewCenterPage({
     setDetail(null);
     setDetailLoading(true);
     try {
-      const includeArchivedSessions = view === "records";
+      const includeArchivedSessions = view === "records" || isApplicationDetail;
       const applicationScope = view === "records" || view === "applications" ? "all" : "active";
       const sessionRange = includeArchivedSessions
         ? {}
@@ -350,7 +563,13 @@ export function InterviewCenterPage({
             endAt: addDays(weekStart, 7).toISOString(),
           };
       const [nextSessions, nextApplications] = await Promise.all([
-        listAllInterviewSessions({ includeArchived: includeArchivedSessions, ...sessionRange }),
+        listAllInterviewSessions({
+          includeArchived: includeArchivedSessions,
+          ...(isApplicationDetail && initialApplicationId
+            ? { applicationId: initialApplicationId }
+            : {}),
+          ...sessionRange,
+        }),
         listAllJobApplications(applicationScope),
       ]);
       if (requestId !== loadRequestRef.current) return;
@@ -363,7 +582,11 @@ export function InterviewCenterPage({
           : nextSessions[0]?.id ?? null;
       selectedIdRef.current = nextSelected;
       setSelectedId(nextSelected);
-      if (nextSelected) await loadDetail(nextSelected);
+      if (isApplicationDetail) {
+        ++detailRequestRef.current;
+        setDetail(null);
+        setDetailLoading(false);
+      } else if (nextSelected) await loadDetail(nextSelected);
       else {
         ++detailRequestRef.current;
         setDetail(null);
@@ -378,7 +601,7 @@ export function InterviewCenterPage({
     } finally {
       if (requestId === loadRequestRef.current) setLoading(false);
     }
-  }, [loadDetail, timezone, view, weekStart]);
+  }, [initialApplicationId, isApplicationDetail, loadDetail, timezone, view, weekStart]);
 
   useEffect(() => {
     setSessions([]);
@@ -475,52 +698,59 @@ export function InterviewCenterPage({
 
   return (
     <>
-      <WorkspacePageHero
-        className="career-module-header"
-        icon={<BriefcaseBusiness />}
-        tone="warning"
-        title="求职中心"
-        description="集中管理岗位机会、求职进程、面试排期与复盘记录。"
-        actions={(
-          <>
-            {view === "applications" ? (
-              <ApplicationHeaderControls
-                displayMode={applicationDisplayMode}
-                query={query}
-                scope={applicationScope}
-                showFilters={showApplicationFilters}
-                sortNewestFirst={sortApplicationsNewestFirst}
-                onCreate={() => setShowCreateApplication(true)}
-                onDisplayModeChange={setApplicationDisplayMode}
-                onQueryChange={setQuery}
-                onScopeChange={setApplicationScope}
-                onShowFiltersChange={setShowApplicationFilters}
-                onSortChange={setSortApplicationsNewestFirst}
-              />
-            ) : view === "schedule" ? (
-              <ScheduleHeaderControls
-                query={query}
-                weekStart={weekStart}
-                onCreate={() => setShowCreate(true)}
-                onQueryChange={setQuery}
-              />
-            ) : (
-              <>
-                <ExpandableSearch
-                  label="搜索面试"
-                  name="interview-search"
-                  value={query}
-                  onValueChange={setQuery}
-                  placeholder="搜索公司、职位或阶段…"
+      {!isApplicationDetail && (
+        <WorkspacePageHero
+          className="career-module-header"
+          icon={<BriefcaseBusiness />}
+          tone="warning"
+          title="求职中心"
+          description="导入岗位，记录每一轮面试，并完成复盘。"
+          actions={(
+            <>
+              {view === "applications" ? (
+                <ApplicationHeaderControls
+                  query={query}
+                  onImport={() => navigateTo("/career/jobs/new")}
+                  onQueryChange={setQuery}
                 />
-                <Button icon={<Plus />} onClick={() => setShowCreate(true)}>新建面试</Button>
-              </>
-            )}
-          </>
-        )}
-      />
-      {navigation}
-      <main className="dashboard-content interview-center-content">
+              ) : view === "schedule" ? (
+                <ScheduleHeaderControls
+                  query={query}
+                  weekStart={weekStart}
+                  onCreate={() => setShowCreate(true)}
+                  onQueryChange={setQuery}
+                />
+              ) : (
+                <>
+                  <ExpandableSearch
+                    label="搜索面试"
+                    name="interview-search"
+                    value={query}
+                    onValueChange={setQuery}
+                    placeholder="搜索公司、职位或阶段…"
+                  />
+                  <Button icon={<Plus />} onClick={() => setShowCreate(true)}>新建面试</Button>
+                </>
+              )}
+            </>
+          )}
+        />
+      )}
+      {!isApplicationDetail && navigation}
+      {isApplicationDetail && initialApplicationId && (() => {
+        const application = applications.find((item) => item.id === initialApplicationId);
+        return application ? (
+          <ApplicationRecordHero
+            application={application}
+            sessions={sessions}
+            onCreateInterview={(applicationId) => {
+              setCreateInterviewApplicationId(applicationId);
+              setShowCreate(true);
+            }}
+          />
+        ) : null;
+      })()}
+      <main className={`dashboard-content interview-center-content${isApplicationDetail ? " is-application-detail-route" : ""}`}>
       {notice && (
         <div className="interview-error-notice" role="alert" aria-live="assertive">
           <CircleAlert aria-hidden="true" />
@@ -568,13 +798,13 @@ export function InterviewCenterPage({
         <ApplicationsView
           applications={applications}
           selectedApplicationId={initialApplicationId}
+          applicationSessions={isApplicationDetail ? sessions : undefined}
           query={query}
           displayMode={applicationDisplayMode}
-          scope={applicationScope}
           sortNewestFirst={sortApplicationsNewestFirst}
-          onCreate={() => setShowCreateApplication(true)}
-          onChanged={() => loadData(initialSessionId)}
-          onNotice={setNotice}
+          onDisplayModeChange={setApplicationDisplayMode}
+          onImport={() => navigateTo("/career/jobs/new")}
+          onSortChange={setSortApplicationsNewestFirst}
           onCreateInterview={(applicationId) => {
             setCreateInterviewApplicationId(applicationId);
             setShowCreate(true);
@@ -653,49 +883,22 @@ function OverviewLink({ href, className, children }: { href: string; className?:
 }
 
 function ApplicationHeaderControls({
-  displayMode,
   query,
-  scope,
-  showFilters,
-  sortNewestFirst,
-  onCreate,
-  onDisplayModeChange,
+  onImport,
   onQueryChange,
-  onScopeChange,
-  onShowFiltersChange,
-  onSortChange,
 }: {
-  displayMode: "board" | "list";
   query: string;
-  scope: "all" | "active" | "ended" | "archived";
-  showFilters: boolean;
-  sortNewestFirst: boolean;
-  onCreate: () => void;
-  onDisplayModeChange: (value: "board" | "list") => void;
+  onImport: () => void;
   onQueryChange: (value: string) => void;
-  onScopeChange: (value: "all" | "active" | "ended" | "archived") => void;
-  onShowFiltersChange: (value: boolean) => void;
-  onSortChange: (value: boolean) => void;
 }) {
   return (
     <div className="career-applications-controls">
       <label className="career-process-search">
-        <span className="sr-only">搜索求职进程</span>
-        <input type="search" name="career-application-search" autoComplete="off" spellCheck={false} value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="搜索公司、职位或关键词…" />
+        <span className="sr-only">搜索公司、岗位</span>
+        <input type="search" name="career-application-search" autoComplete="off" spellCheck={false} value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="搜索公司、岗位…" />
         <Search aria-hidden="true" />
       </label>
-      <div className="career-filter-control">
-        <button type="button" className="career-control-button" aria-expanded={showFilters} onClick={() => onShowFiltersChange(!showFilters)}><Filter />筛选</button>
-        {showFilters && <div className="career-filter-popover" role="group" aria-label="求职进程状态范围">
-          {(["all", "active", "ended", "archived"] as const).map((value) => <button type="button" key={value} aria-pressed={scope === value} onClick={() => { onScopeChange(value); onShowFiltersChange(false); }}>{{ all: "全部进程", active: "进行中", ended: "已结束", archived: "已归档" }[value]}</button>)}
-        </div>}
-      </div>
-      <button type="button" className="career-control-button" aria-label={sortNewestFirst ? "当前按最近更新排序，点击切换为最早更新" : "当前按最早更新排序，点击切换为最近更新"} onClick={() => onSortChange(!sortNewestFirst)}><ArrowUpDown />排序</button>
-      <div className="career-view-switch" role="group" aria-label="求职进程展示方式">
-        <button type="button" aria-pressed={displayMode === "board"} onClick={() => onDisplayModeChange("board")}><LayoutGrid />看板</button>
-        <button type="button" aria-pressed={displayMode === "list"} onClick={() => onDisplayModeChange("list")}><ListChecks />列表</button>
-      </div>
-      <Button icon={<Plus />} onClick={onCreate}>新建求职进程</Button>
+      <Button icon={<Import />} onClick={onImport}>导入岗位</Button>
     </div>
   );
 }
@@ -711,129 +914,368 @@ function ScheduleHeaderControls({ query, weekStart, onCreate, onQueryChange }: {
   );
 }
 
+function applicationNextStageLabel(application: JobApplicationSummary): string {
+  if (!application.applied_at || application.stage_state === "awaiting_schedule") return "待安排";
+  if (application.stage_state === "awaiting_result") return "待通知";
+  if (application.stage_state === "negotiating") return "Offer 沟通";
+  return "—";
+}
+
+function applicationRecentInterviewLabel(application: JobApplicationSummary): string {
+  return application.next_session_start_at
+    ? formatApplicationDateTime(application.next_session_start_at)
+    : "待安排";
+}
+
 function ApplicationsView({
   applications,
   selectedApplicationId,
+  applicationSessions,
   query,
   displayMode,
-  scope,
   sortNewestFirst,
-  onCreate,
-  onChanged,
-  onNotice,
+  onDisplayModeChange,
+  onImport,
+  onSortChange,
   onCreateInterview,
 }: {
   applications: JobApplicationSummary[];
   selectedApplicationId?: string;
+  applicationSessions?: InterviewSessionSummary[];
   query: string;
   displayMode: "board" | "list";
-  scope: "all" | "active" | "ended" | "archived";
   sortNewestFirst: boolean;
-  onCreate: () => void;
-  onChanged: () => Promise<void>;
-  onNotice: (notice: string) => void;
+  onDisplayModeChange: (value: "board" | "list") => void;
+  onImport: () => void;
+  onSortChange: (value: boolean) => void;
   onCreateInterview: (applicationId: string) => void;
 }) {
   const normalizedQuery = query.trim().toLowerCase();
-  const visibleApplications = applications.filter((item) => {
-    const matchesScope = scope === "all"
-      || (scope === "active" && item.status === "active" && !item.archived_at)
-      || (scope === "ended" && item.status !== "active" && !item.archived_at)
-      || (scope === "archived" && Boolean(item.archived_at));
-    const matchesQuery = !normalizedQuery
+  const visibleApplications = applications.filter((item) =>
+    !normalizedQuery
       || `${item.company_name_snapshot}${item.job_title_snapshot}${item.current_stage_label}`
         .toLowerCase()
-        .includes(normalizedQuery);
-    return matchesScope && matchesQuery;
-  }).sort((left, right) => {
+        .includes(normalizedQuery),
+  ).sort((left, right) => {
     const difference = new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime();
     return sortNewestFirst ? difference : -difference;
   });
   const selectedApplication = selectedApplicationId
     ? applications.find((item) => item.id === selectedApplicationId) ?? null
     : null;
-  const applicationWeekStart = startOfWeek().getTime();
-  const applicationWeekEnd = addDays(new Date(applicationWeekStart), 7).getTime();
-  const dashboardMetrics = {
-    active: applications.filter((item) => item.status === "active" && !item.archived_at).length,
-    weekly: applications.filter((item) => {
-      if (!item.next_session_start_at) return false;
-      const startAt = new Date(item.next_session_start_at).getTime();
-      return startAt >= applicationWeekStart && startAt < applicationWeekEnd;
-    }).length,
-    followUp: applications.filter((item) => item.status === "active" && item.stage_state === "awaiting_result").length,
-    offers: applications.filter((item) => item.offer_status === "written_offer_received" || item.offer_status === "accepted").length,
-  };
-
+  if (selectedApplicationId) {
+    return selectedApplication ? (
+      <ApplicationDetailView
+        application={selectedApplication}
+        sessions={applicationSessions ?? []}
+        onCreateInterview={onCreateInterview}
+      />
+    ) : (
+      <section className="career-application-detail-not-found">
+        <BriefcaseBusiness aria-hidden="true" />
+        <h1>无法打开这条求职进程</h1>
+        <p>记录不存在、已被删除，或当前账号没有访问权限。</p>
+        <Button variant="outline" onClick={() => navigateTo(careerViewPath("applications"))}>返回求职记录</Button>
+      </section>
+    );
+  }
   return (
     <div className="career-applications-layout">
+      <header className="career-record-toolbar">
+        <h2>全部记录 <span>{applications.length}</span></h2>
+        <div className="career-record-toolbar-actions">
+          <div className="career-view-switch" role="group" aria-label="求职记录展示方式">
+            <button type="button" aria-pressed={displayMode === "list"} onClick={() => onDisplayModeChange("list")}><ListChecks />列表</button>
+            <button type="button" aria-pressed={displayMode === "board"} onClick={() => onDisplayModeChange("board")}><LayoutGrid />阶段看板</button>
+          </div>
+          <button type="button" className="career-control-button career-sort-button" aria-label={sortNewestFirst ? "当前按最近更新排序，点击切换为最早更新" : "当前按最早更新排序，点击切换为最近更新"} onClick={() => onSortChange(!sortNewestFirst)}><ArrowUpDown />最近更新</button>
+        </div>
+      </header>
       <ApplicationsBoard
         visibleApplications={visibleApplications}
         displayMode={displayMode}
-        metrics={dashboardMetrics}
-        onCreate={onCreate}
-        onChanged={onChanged}
-        onNotice={onNotice}
       />
       {displayMode === "list" && visibleApplications.length ? (
-        <section className="interview-surface career-applications-board">
-          <div className="career-application-list" role="table" aria-label="求职进程列表">
-            <div role="row"><span role="columnheader">公司与岗位</span><span role="columnheader">当前阶段</span><span role="columnheader">状态</span><span role="columnheader">下一场面试</span><span role="columnheader">操作</span></div>
+        <section className="interview-surface career-applications-list-surface">
+          {normalizedQuery && <p className="career-application-filter-count">当前显示 {visibleApplications.length} 条匹配记录</p>}
+          <div className="career-application-list" role="table" aria-label="求职记录列表">
+            <div role="row">
+              <span role="columnheader">公司</span>
+              <span role="columnheader">岗位</span>
+              <span role="columnheader">当前进度</span>
+              <span role="columnheader">下一阶段</span>
+              <span role="columnheader">最近面试</span>
+              <span role="columnheader">更新时间</span>
+              <span role="columnheader">操作</span>
+            </div>
             {visibleApplications.map((item) => (
               <div role="row" key={item.id}>
-                <span role="cell"><strong>{item.company_name_snapshot}</strong><small>{item.job_title_snapshot}</small></span>
-                <span role="cell">{item.current_stage_label}</span>
-                <span role="cell">{applicationStatusLabel(item)}</span>
-                <span role="cell">{item.next_session_start_at ? formatApplicationDateTime(item.next_session_start_at) : "暂未安排"}</span>
-                <span role="cell"><Button size="sm" variant="outline" onClick={() => navigateTo(careerApplicationPath(item.id))}>查看进程</Button></span>
+                <span role="cell">{item.company_name_snapshot.trim() || "—"}</span>
+                <span role="cell">{item.job_title_snapshot.trim() || "—"}</span>
+                <span role="cell"><strong>{item.current_stage_label.trim() || "—"}</strong><small>{applicationStatusLabel(item)}</small></span>
+                <span role="cell">{applicationNextStageLabel(item)}</span>
+                <span role="cell">{applicationRecentInterviewLabel(item)}</span>
+                <span role="cell">{item.updated_at ? formatApplicationDate(item.updated_at) : "—"}</span>
+                <span role="cell"><Button size="sm" variant="outline" onClick={() => navigateTo(careerApplicationPath(item.id))}>查看记录</Button></span>
               </div>
             ))}
           </div>
         </section>
-      ) : !visibleApplications.length ? (
-        <section className="interview-surface career-applications-board">
+      ) : displayMode === "list" && !visibleApplications.length ? (
+        <section className="career-applications-empty-surface">
           <div className="career-applications-empty">
             <BriefcaseBusiness />
-            <h2>{normalizedQuery ? "没有匹配的求职进程" : scope === "archived" ? "还没有已归档进程" : scope === "ended" ? "还没有已结束进程" : "还没有求职进程"}</h2>
-            <p>{normalizedQuery ? "换个公司、职位或阶段关键词试试。" : scope === "archived" ? "归档后的进程会集中显示在这里。" : scope === "ended" ? "已结束或未通过的进程会显示在这里。" : "先从岗位库选择目标岗位，再开始记录投递进度。"}</p>
-            {!normalizedQuery && scope !== "archived" && scope !== "ended" && <Button onClick={onCreate}>创建第一条求职进程</Button>}
+            <h2>{normalizedQuery ? "没有匹配的求职记录" : "还没有求职记录"}</h2>
+            <p>{normalizedQuery ? "换个公司、岗位或阶段关键词试试。" : "导入岗位后，就可以在这里记录投递进度和面试复盘。"}</p>
+            {!normalizedQuery && <Button onClick={onImport}>导入第一个岗位</Button>}
           </div>
         </section>
       ) : null}
-      {selectedApplicationId && (
-        selectedApplication ? (
-          <section className="interview-surface career-application-detail" aria-labelledby="career-application-detail-title">
-            <header>
-              <div>
-                <button type="button" onClick={() => navigateTo(careerViewPath("applications"))}><ChevronLeft />返回求职进程</button>
-                <h2 id="career-application-detail-title">{selectedApplication.company_name_snapshot} · {selectedApplication.job_title_snapshot}</h2>
-                <p>创建于 {formatApplicationDate(selectedApplication.created_at)} · 当前阶段 {selectedApplication.current_stage_label}</p>
-              </div>
-              <div>
-                <Button variant="outline" onClick={() => navigateTo(jobDetailPathFromApplication(selectedApplication))}>查看岗位</Button>
-                {selectedApplication.status === "active" && selectedApplication.stage_state === "awaiting_schedule" && (
-                  <Button onClick={() => onCreateInterview(selectedApplication.id)}>安排面试</Button>
-                )}
-              </div>
-            </header>
-            <StageProgress application={selectedApplication} />
-            <dl>
-              <div><dt>当前状态</dt><dd>{applicationStatusLabel(selectedApplication)}</dd></div>
-              <div><dt>投递时间</dt><dd>{selectedApplication.applied_at ? formatApplicationDate(selectedApplication.applied_at) : "暂未记录"}</dd></div>
-              <div><dt>关联简历</dt><dd>{selectedApplication.resume_title_snapshot ?? "暂未选择简历版本"}</dd></div>
-              <div><dt>下一场面试</dt><dd>{selectedApplication.next_session_start_at ? formatApplicationDateTime(selectedApplication.next_session_start_at) : "暂未安排"}</dd></div>
-            </dl>
-            {selectedApplication.notes && <p className="career-application-notes">{selectedApplication.notes}</p>}
-          </section>
-        ) : (
-          <section className="interview-surface career-application-detail career-applications-empty">
-            <h2>无法打开这条求职进程</h2>
-            <p>记录不存在、已被删除，或当前账号没有访问权限。</p>
-            <Button variant="outline" onClick={() => navigateTo(careerViewPath("applications"))}>返回求职进程</Button>
-          </section>
-        )
-      )}
     </div>
+  );
+}
+
+function ApplicationRecordHero({
+  application,
+  sessions,
+  onCreateInterview,
+}: {
+  application: JobApplicationSummary;
+  sessions: InterviewSessionSummary[];
+  onCreateInterview: (applicationId: string) => void;
+}) {
+  const hasScheduledInterview = Boolean(
+    application.next_session_id
+      || sessions.some((session) => session.status === "scheduled"),
+  );
+  const canScheduleInterview = application.status === "active"
+    && application.stage_state === "awaiting_schedule";
+  return (
+    <header className="career-record-hero">
+      <div className="career-record-hero-inner">
+        <div className="career-record-hero-copy">
+          <OverviewLink className="career-record-back" href={careerViewPath("applications")}>
+            <ChevronLeft aria-hidden="true" />返回求职记录
+          </OverviewLink>
+          <div className="career-record-title-row">
+            <h1>
+              <span>{application.company_name_snapshot}</span>
+              <span className="career-record-title-divider" aria-hidden="true">｜</span>
+              <span>{application.job_title_snapshot}</span>
+            </h1>
+            <span className={`career-record-status is-${application.archived_at ? "archived" : application.status}`}>
+              {applicationStatusLabel(application)}
+            </span>
+          </div>
+          <dl className="career-record-meta">
+            <div><dt>投递时间</dt><dd>{applicationDate(application.applied_at)}</dd></div>
+            <div><dt>关联简历</dt><dd>{applicationValue(application.resume_title_snapshot)}</dd></div>
+            <div><dt>更新时间</dt><dd>{applicationDate(application.updated_at)}</dd></div>
+          </dl>
+        </div>
+        <div className="career-record-actions" aria-label="求职记录操作">
+          <Button variant="outline" onClick={() => navigateTo(jobDetailPathFromApplication(application))}>查看岗位详情</Button>
+          {hasScheduledInterview ? (
+            <Button onClick={() => navigateTo(careerViewPath("schedule"))}>修改面试安排</Button>
+          ) : canScheduleInterview ? (
+            <Button onClick={() => onCreateInterview(application.id)}>安排面试</Button>
+          ) : null}
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function ApplicationDetailView({
+  application,
+  sessions,
+  onCreateInterview,
+}: {
+  application: JobApplicationSummary;
+  sessions: InterviewSessionSummary[];
+  onCreateInterview: (applicationId: string) => void;
+}) {
+  const sortedSessions = useMemo(() => [...sessions].sort((left, right) => {
+    const startDifference = new Date(left.start_at).getTime() - new Date(right.start_at).getTime();
+    return startDifference || left.id.localeCompare(right.id);
+  }), [sessions]);
+  const progress = useMemo(
+    () => buildApplicationProgress(application, sortedSessions),
+    [application, sortedSessions],
+  );
+  const job = useMemo(() => applicationJobSnapshot(application), [application]);
+  const canScheduleInterview = application.status === "active"
+    && application.stage_state === "awaiting_schedule";
+  return (
+    <div className="career-application-detail-layout">
+      <div className="career-application-detail-main">
+        <ApplicationProgressCard application={application} nodes={progress} />
+        <section className="interview-surface application-interviews-card" aria-labelledby="application-interviews-title">
+          <header className="application-detail-section-heading">
+            <h2 id="application-interviews-title">面试记录</h2>
+            <span>名称按公司实际流程填写</span>
+          </header>
+          {sortedSessions.length ? (
+            <div className="application-interview-list" role="list" aria-label="面试记录列表">
+              {sortedSessions.map((session) => (
+                <ApplicationInterviewCard
+                  key={session.id}
+                  application={application}
+                  session={session}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="application-interviews-empty">
+              <NotebookTabs aria-hidden="true" />
+              <h3>暂无面试记录</h3>
+              <p>
+                {canScheduleInterview
+                  ? "当前阶段还没有安排面试，完成安排后会显示在这里。"
+                  : "当这条求职记录产生面试后，面试时间、方式和复盘摘要会显示在这里。"}
+              </p>
+            </div>
+          )}
+        </section>
+      </div>
+      <aside className="career-application-detail-aside">
+        <ApplicationJobCard application={application} job={job} />
+        <ApplicationInfoCard application={application} />
+      </aside>
+    </div>
+  );
+}
+
+function ApplicationProgressCard({
+  application,
+  nodes,
+}: {
+  application: JobApplicationSummary;
+  nodes: ApplicationProgressNode[];
+}) {
+  return (
+    <section className="interview-surface application-progress-card" aria-labelledby="application-progress-title">
+      <header className="application-detail-section-heading">
+        <h2 id="application-progress-title">求职进度</h2>
+        <span>{application.current_stage_label}</span>
+      </header>
+      <div className="application-progress-rail" role="group" aria-label={`当前求职进度：${application.current_stage_label}`}>
+        <ol>
+          {nodes.map((node) => (
+            <li
+              key={node.key}
+              className={`is-${node.state}`}
+              aria-current={node.state === "current" || node.state === "waiting" ? "step" : undefined}
+            >
+              <span className="application-progress-marker" aria-hidden="true">
+                {node.state === "done" ? <Check /> : node.state === "cancelled" ? <X /> : null}
+              </span>
+              <strong>{node.label}</strong>
+              <small>{node.caption}</small>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
+function ApplicationInterviewCard({
+  application,
+  session,
+}: {
+  application: JobApplicationSummary;
+  session: InterviewSessionSummary;
+}) {
+  const status = displayStatus(session);
+  const summaries = [
+    { label: "题目记录", value: session.questions_markdown },
+    { label: "复盘总结", value: session.review_summary },
+    { label: "需要改进", value: session.improvement_markdown },
+  ].filter((item): item is { label: string; value: string } => Boolean(item.value?.trim()));
+  return (
+    <article className={`application-interview-item is-${status}`} role="listitem">
+      <OverviewLink
+        className="application-interview-card"
+        href={careerApplicationPath(application.id, session.id)}
+      >
+        <div className="application-interview-card-head">
+          <div>
+            <p className="application-interview-stage">{session.stage_label}</p>
+            <h3>{formatApplicationSessionRange(session)}</h3>
+          </div>
+          <StatusBadge status={status} />
+        </div>
+        <dl className="application-interview-meta">
+          <div><dt>面试方式</dt><dd>{modeLabel(session.mode)}</dd></div>
+          <div><dt>面试官</dt><dd>{applicationValue([session.interviewer_name, session.interviewer_title].filter(Boolean).join("（") + (session.interviewer_name && session.interviewer_title ? "）" : ""))}</dd></div>
+        </dl>
+        <div className="application-interview-summary">
+          {summaries.length ? summaries.map(({ label, value }) => (
+            <p key={label}><strong>{label}</strong><span>{value}</span></p>
+          )) : <p className="is-empty">{status === "completed" ? "已完成，暂未填写复盘摘要。" : "面试完成后可在记录中补充复盘摘要。"}</p>}
+        </div>
+        <span className="application-interview-link">进入记录查看录音与素材 <ChevronRight aria-hidden="true" /></span>
+      </OverviewLink>
+    </article>
+  );
+}
+
+function ApplicationJobCard({
+  application,
+  job,
+}: {
+  application: JobApplicationSummary;
+  job: ApplicationJobSnapshotView;
+}) {
+  const requirements = [job.educationRequirement, job.experienceRequirement, job.workSchedule]
+    .filter((item): item is string => Boolean(item?.trim()));
+  return (
+    <section className="interview-surface application-job-card" aria-labelledby="application-job-title">
+      <header className="application-detail-section-heading">
+        <h2 id="application-job-title">岗位详情</h2>
+        <OverviewLink href={jobDetailPathFromApplication(application)}>查看完整岗位 →</OverviewLink>
+      </header>
+      <div className="application-job-identity">
+        <span>{application.company_name_snapshot}</span>
+        <strong>{application.job_title_snapshot}</strong>
+      </div>
+      <dl className="application-job-highlights">
+        <div><dt>薪资范围</dt><dd>{applicationValue(job.salary)}</dd></div>
+        <div><dt>工作城市</dt><dd>{applicationValue(job.workCity)}</dd></div>
+        <div><dt>用工类型</dt><dd>{applicationValue(job.employmentType)}</dd></div>
+      </dl>
+      <div className="application-job-description">
+        <h3>岗位描述</h3>
+        <p>{applicationValue(job.description)}</p>
+      </div>
+      <div className="application-job-skills">
+        <h3>核心技能</h3>
+        {job.skills.length ? (
+          <ul>{job.skills.map((skill) => <li key={skill}>{skill}</li>)}</ul>
+        ) : <p>{EMPTY_APPLICATION_VALUE}</p>}
+      </div>
+      <div className="application-job-requirements">
+        <h3>岗位要求</h3>
+        <p>{requirements.length ? requirements.join(" · ") : EMPTY_APPLICATION_VALUE}</p>
+      </div>
+    </section>
+  );
+}
+
+function ApplicationInfoCard({ application }: { application: JobApplicationSummary }) {
+  return (
+    <section className="interview-surface application-info-card" aria-labelledby="application-info-title">
+      <header className="application-detail-section-heading">
+        <h2 id="application-info-title">求职信息</h2>
+      </header>
+      <dl className="application-info-fields">
+        <div><dt>当前阶段</dt><dd>{applicationValue(application.current_stage_label)}</dd></div>
+        <div><dt>投递时间</dt><dd>{applicationDate(application.applied_at)}</dd></div>
+        <div><dt>关联简历</dt><dd>{applicationValue(application.resume_title_snapshot)}</dd></div>
+        <div className="is-wide"><dt>备注</dt><dd>{applicationValue(application.notes)}</dd></div>
+      </dl>
+    </section>
   );
 }
 
