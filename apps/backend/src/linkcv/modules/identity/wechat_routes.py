@@ -302,7 +302,7 @@ def login_status(
         redis_client.delete(key)
         return WeChatStatusResponse(status="expired")
     user = db.scalar(select(User).where(User.id == int(uid)))
-    if user is None or user.status != 1 or user.is_admin:
+    if user is None or user.status != 1:
         redis_client.delete(key)
         return WeChatStatusResponse(status="expired")
 
@@ -387,7 +387,7 @@ def confirm_login(
             settings.wechat_scene_ttl_seconds,
         )
         raise
-    if user.status != 1 or user.is_admin:
+    if user.status != 1:
         redis_client.eval(
             FINALIZE_SCENE_SCRIPT,
             1,
@@ -397,12 +397,7 @@ def confirm_login(
             str(user.id),
             settings.wechat_scene_ttl_seconds,
         )
-        error_code = (
-            "ACCOUNT_DISABLED"
-            if user.status != 1
-            else "ADMIN_WECHAT_LOGIN_FORBIDDEN"
-        )
-        raise ApiError(401, error_code)
+        raise ApiError(401, "ACCOUNT_DISABLED")
     try:
         user.last_login_at = utc_now()
         db.commit()
@@ -475,8 +470,6 @@ def miniprogram_login(
     )
     if user.status != 1:
         raise ApiError(401, "ACCOUNT_DISABLED")
-    if user.is_admin:
-        raise ApiError(403, "ADMIN_WECHAT_LOGIN_FORBIDDEN")
     user.last_login_at = utc_now()
     db.commit()
     db.refresh(user)

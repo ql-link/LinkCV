@@ -90,11 +90,7 @@ def rotate_session(
         revoke_session(redis_client, sid)
         return None
     user = db.scalar(select(User).where(User.id == int(uid)))
-    if (
-        user is None
-        or user.status != 1
-        or (expected_channel == MINIPROGRAM_CHANNEL and user.is_admin)
-    ):
+    if user is None or user.status != 1:
         revoke_session(redis_client, sid, int(uid))
         return None
 
