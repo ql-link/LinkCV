@@ -1,8 +1,9 @@
 import asyncio
+from copy import deepcopy
 import logging
 import secrets
 from datetime import timezone
-from pathlib import PurePath, PurePosixPath
+from pathlib import PurePath
 from time import monotonic
 
 from sqlalchemy import select
@@ -20,8 +21,9 @@ from linkcv.core.database import utc_now
 from linkcv.core.storage import (
     AssetStorage,
     build_converted_markdown_object_name,
+    import_operation_id_from_object_name,
 )
-from linkcv.domain.resume_snapshot import parse_resume_snapshot
+from linkcv.domain.resume_snapshot import ResumeSnapshot, parse_resume_snapshot
 from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
@@ -42,6 +44,8 @@ CONTENT_TYPES = {
 FAILURE_REASON_BY_CODE = {
     "UNSUPPORTED_IMPORT_FORMAT": "format_unsupported",
     "IMPORT_CONTENT_INVALID": "content_invalid",
+    "RESUME_STRUCTURE_INVALID": "content_invalid",
+    "RESUME_LAYOUT_UNSUPPORTED": "content_invalid",
     "IMPORT_FILE_TOO_LARGE": "size_exceeded",
     "STRUCTURING_INPUT_TOO_LARGE": "size_exceeded",
     "DOCUMENT_CONVERSION_UNAVAILABLE": "service_unavailable",
@@ -148,7 +152,7 @@ class ResumeImportProcessor:
         self,
         import_id: int,
         template_id: int,
-    ) -> tuple[DocumentParseTask, ResumeTemplate] | None:
+    ) -> tuple[DocumentParseTask, ResumeSnapshot] | None:
         try:
             with self._session_factory() as db:
                 record = db.scalar(
@@ -175,7 +179,9 @@ class ResumeImportProcessor:
                         422, "TEMPLATE_INACTIVE", stage="task_load"
                     )
                 try:
-                    parse_resume_snapshot(template.data_json, template.style_json)
+                    snapshot = parse_resume_snapshot(
+                        template.data_json, template.style_json
+                    )
                 except ValueError as error:
                     raise ResumeImportFailure(
                         422,
@@ -184,8 +190,10 @@ class ResumeImportProcessor:
                         exception_type=type(error).__name__,
                     ) from error
                 db.expunge(record)
-                db.expunge(template)
-                return record, template
+                # Keep a detached value snapshot for the entire parse.  The
+                # ORM template is deliberately not allowed to leak past this
+                # session boundary or be re-read as the source of style.
+                return record, deepcopy(snapshot)
         except ResumeImportFailure:
             raise
         except SQLAlchemyError as error:
@@ -235,14 +243,8 @@ class ResumeImportProcessor:
         operation_id: str,
         markdown: str,
     ) -> None:
-        object_name = build_converted_markdown_object_name(user_id, operation_id)
+        object_name: str | None = None
         try:
-            await asyncio.to_thread(
-                self._storage.upload,
-                object_name,
-                markdown.encode("utf-8"),
-                "text/markdown",
-            )
             with self._session_factory() as db:
                 record = db.scalar(
                     select(DocumentParseTask)
@@ -250,14 +252,100 @@ class ResumeImportProcessor:
                         DocumentParseTask.id == import_id,
                         DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
                         DocumentParseTask.user_id == user_id,
+                        DocumentParseTask.parse_status == "processing",
                     )
                     .with_for_update()
                 )
                 if record is None:
-                    raise LookupError("document parse task is missing")
-                record.converted_object_name = object_name
-                db.commit()
+                    return
+                object_name = build_converted_markdown_object_name(
+                    user_id, operation_id
+                )
+                try:
+                    # The task row lock is intentionally held through both
+                    # object upload and the reference commit.  Delete and
+                    # confirmation paths therefore cannot race this pair.
+                    await asyncio.to_thread(
+                        self._storage.upload,
+                        object_name,
+                        markdown.encode("utf-8"),
+                        "text/markdown",
+                    )
+                    record.converted_object_name = object_name
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                    raise
         except Exception as error:
+            # A missing, foreign, or already-terminal task returns before an
+            # object name is allocated, so no orphan object can be created or
+            # compensated for that status race.
+            if object_name is None:
+                logger.warning(
+                    "resume import converted markdown persistence failed",
+                    extra={
+                        "import_id": import_id,
+                        "error_type": type(error).__name__,
+                    },
+                    exc_info=True,
+                )
+                return
+            try:
+                # COMMIT failures have an indeterminate outcome: MySQL may
+                # have applied the reference before the acknowledgement or
+                # connection was lost.  Reconcile with a fresh locked read and
+                # never delete an object that the durable task already owns.
+                with self._session_factory() as verification_db:
+                    verified_record = verification_db.scalar(
+                        select(DocumentParseTask)
+                        .where(
+                            DocumentParseTask.id == import_id,
+                            DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+                            DocumentParseTask.user_id == user_id,
+                        )
+                        .with_for_update()
+                    )
+                    if (
+                        verified_record is not None
+                        and verified_record.converted_object_name == object_name
+                    ):
+                        logger.warning(
+                            "resume import converted markdown commit reconciled",
+                            extra={"import_id": import_id},
+                        )
+                        return
+                    try:
+                        await asyncio.to_thread(self._storage.delete, object_name)
+                    except Exception as compensation_error:
+                        logger.warning(
+                            "resume import converted markdown compensation failed",
+                            extra={
+                                "import_id": import_id,
+                                "error_type": type(compensation_error).__name__,
+                            },
+                            exc_info=True,
+                        )
+                        raise WorkerTaskRetryable(
+                            "converted markdown persistence compensation failed",
+                            stage="converted_markdown_persistence",
+                            exception_type=type(compensation_error).__name__,
+                        ) from compensation_error
+            except WorkerTaskRetryable:
+                raise
+            except Exception as verification_error:
+                logger.warning(
+                    "resume import converted markdown commit verification failed",
+                    extra={
+                        "import_id": import_id,
+                        "error_type": type(verification_error).__name__,
+                    },
+                    exc_info=True,
+                )
+                raise WorkerTaskRetryable(
+                    "converted markdown persistence outcome unavailable",
+                    stage="converted_markdown_persistence",
+                    exception_type=type(verification_error).__name__,
+                ) from verification_error
             logger.warning(
                 "resume import converted markdown persistence failed",
                 extra={
@@ -274,6 +362,7 @@ class ResumeImportProcessor:
         template_id: int,
         title: str,
         parsed,
+        snapshot: ResumeSnapshot,
         started: float,
     ) -> None:
         try:
@@ -310,25 +399,50 @@ class ResumeImportProcessor:
                     )
                 template = db.scalar(
                     select(ResumeTemplate)
-                    .where(
-                        ResumeTemplate.id == template_id,
-                        ResumeTemplate.is_active == 1,
-                    )
+                    .where(ResumeTemplate.id == template_id)
                     .with_for_update()
                 )
-                if template is None:
+                if template is None or template.is_active != 1:
                     raise ResumeImportFailure(
                         422, "TEMPLATE_INACTIVE", stage="resume_persistence"
                     )
-                snapshot = parse_resume_snapshot(
-                    template.data_json, template.style_json
-                )
+                try:
+                    current_snapshot = parse_resume_snapshot(
+                        template.data_json, template.style_json
+                    )
+                except ValueError as error:
+                    raise ResumeImportFailure(
+                        422,
+                        "TEMPLATE_INACTIVE",
+                        stage="resume_persistence",
+                        exception_type=type(error).__name__,
+                    ) from error
+                if current_snapshot != snapshot:
+                    raise ResumeImportFailure(
+                        422, "TEMPLATE_INACTIVE", stage="resume_persistence"
+                    )
+                try:
+                    # Validate the model output against the same template
+                    # style captured at task load.  A defensive style copy is
+                    # necessary because ResumeSnapshot normalizes section
+                    # order during validation.
+                    final_snapshot = ResumeSnapshot(
+                        data=parsed.document,
+                        style=snapshot.style.model_copy(deep=True),
+                    )
+                except ValueError as error:
+                    raise ResumeImportFailure(
+                        422,
+                        "RESUME_STRUCTURE_INVALID",
+                        stage="resume_persistence",
+                        exception_type=type(error).__name__,
+                    ) from error
                 resume = persist_resume_with_initial_version(
                     CreateResumeCommand(
                         user_id=record.user_id,
                         title=title,
-                        data=parsed.document,
-                        style=snapshot.style,
+                        data=final_snapshot.data,
+                        style=final_snapshot.style,
                         source_type="import",
                         template_id=template.id,
                     ),
@@ -372,7 +486,7 @@ class ResumeImportProcessor:
                 loaded = self._load_inputs(import_id, template_id)
                 if loaded is None:
                     return
-                record, _template = loaded
+                record, snapshot = loaded
                 logger.info(
                     "resume import stage completed",
                     extra={
@@ -412,6 +526,9 @@ class ResumeImportProcessor:
                     content_type=CONTENT_TYPES[record.file_format],
                     content=content,
                     operation_id=str(record.id),
+                    template_key=snapshot.style.template_key,
+                    renderer=snapshot.style.manifest.renderer_key,
+                    require_pdf_layout=True,
                     deadline_monotonic=(
                         monotonic()
                         + self._settings.resume_import_parse_deadline_seconds
@@ -420,7 +537,13 @@ class ResumeImportProcessor:
                         self._persist_converted_markdown(
                             import_id=record.id,
                             user_id=record.user_id,
-                            operation_id=PurePosixPath(record.object_name).parent.name,
+                            operation_id=(
+                                import_operation_id_from_object_name(
+                                    record.user_id,
+                                    record.object_name,
+                                )
+                                or str(record.id)
+                            ),
                             markdown=markdown,
                         )
                     ),
@@ -432,6 +555,7 @@ class ResumeImportProcessor:
                     template_id=template_id,
                     title=title,
                     parsed=parsed,
+                    snapshot=snapshot,
                     started=started,
                 )
                 logger.info(

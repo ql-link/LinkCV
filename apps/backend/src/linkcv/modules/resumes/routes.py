@@ -24,7 +24,11 @@ from linkcv.application.resumes.service import (
 from linkcv.core.database import get_db
 from linkcv.core.errors import ApiError
 from linkcv.core.redis import get_redis
-from linkcv.core.storage import AssetStorage, get_storage
+from linkcv.core.storage import (
+    AssetStorage,
+    build_import_cleanup_object_names,
+    get_storage,
+)
 from linkcv.domain.resume_snapshot import parse_resume_snapshot
 from linkcv.integrations.resume_semantic_classification import classify_resume_sections
 from linkcv.modules.agent.service import delete_resume_agent_data
@@ -345,9 +349,12 @@ def delete_resume(
                     },
                 )
         if parse_task is not None:
-            storage.delete(parse_task.object_name)
-            if parse_task.converted_object_name:
-                storage.delete(parse_task.converted_object_name)
+            for object_name in build_import_cleanup_object_names(
+                user.id,
+                parse_task.object_name,
+                parse_task.converted_object_name,
+            ):
+                storage.delete(object_name)
         storage.delete_prefix(f"users/{user.id}/resumes/{resume.id}/")
     except Exception as error:
         db.rollback()

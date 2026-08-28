@@ -77,7 +77,7 @@ describe("ResumeImportDialog", () => {
     render(<ResumeImportDialog onClose={vi.fn()} onAccepted={vi.fn()} />);
 
     const file = new File(["# 张三"], "拖放简历.pdf", { type: "application/pdf" });
-    fireEvent.drop(screen.getByRole("button", { name: /点击上传或拖放文件/ }), {
+    fireEvent.drop(screen.getByLabelText("选择 Markdown、DOCX 或 PDF 文件"), {
       dataTransfer: { files: [file] },
     });
 

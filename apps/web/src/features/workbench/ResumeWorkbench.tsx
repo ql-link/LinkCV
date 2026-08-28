@@ -43,7 +43,7 @@ import {
   SelectItem,
   SelectTrigger,
 } from "@/components/ui";
-import { resumeSerifFontStack, useResumeStore } from "../../store/resumeStore";
+import { resumeSerifFontStack, useResumeStore, type ResumeSettings } from "../../store/resumeStore";
 import { resumeEditorExtensions } from "./editorExtensions";
 import { SelectionFormattingToolbar } from "./WorkbenchToolbar";
 import {
@@ -73,7 +73,10 @@ import {
   type PageArrangement,
   type PageViewportMetrics,
 } from "./pageArrangementTransition";
-import { resumeDocumentContentHash } from "../../api/resumeContract";
+import {
+  normalizeResumeAccentColor,
+  resumeDocumentContentHash,
+} from "../../api/resumeContract";
 
 type DrawerMode = "settings" | "history" | "agent" | null;
 
@@ -152,6 +155,20 @@ export function workbenchCanvasClassName(drawerMode: DrawerMode) {
 
 export function defaultWorkbenchDrawerMode(viewportWidth: number) {
   return viewportWidth > 980 ? "settings" as const : null;
+}
+
+export function resumeWorkbenchStyle(
+  settings: Pick<ResumeSettings, "fontFamily" | "fontSize" | "lineHeight" | "pageMargin" | "verticalPageMargin">,
+  accentColor: unknown,
+) {
+  return {
+    "--resume-font-family": settings.fontFamily,
+    "--resume-font-size": `${settings.fontSize}pt`,
+    "--resume-line-height": settings.lineHeight,
+    "--resume-page-margin-x": `${settings.pageMargin}mm`,
+    "--resume-page-margin-y": `${settings.verticalPageMargin}mm`,
+    "--preview-accent": normalizeResumeAccentColor(accentColor),
+  } as React.CSSProperties;
 }
 
 export function WorkbenchDesignAction({
@@ -1364,13 +1381,10 @@ export function ResumeWorkbench() {
     };
   }, [dirty]);
 
-  const resumeStyle = useMemo(() => ({
-    "--resume-font-family": settings.fontFamily,
-    "--resume-font-size": `${settings.fontSize}pt`,
-    "--resume-line-height": settings.lineHeight,
-    "--resume-page-margin-x": `${settings.pageMargin}mm`,
-    "--resume-page-margin-y": `${settings.verticalPageMargin}mm`,
-  }) as React.CSSProperties, [settings]);
+  const resumeStyle = useMemo(
+    () => resumeWorkbenchStyle(settings, style.accent_color),
+    [settings, style.accent_color],
+  );
 
   const openVersionNameDialog = () => {
     setVersionName("");
