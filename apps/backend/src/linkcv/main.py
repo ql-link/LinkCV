@@ -257,6 +257,11 @@ def create_app(
         global_concurrency=runtime_settings.resume_import_global_concurrency,
         user_concurrency=runtime_settings.resume_import_user_concurrency,
     )
+    app.state.dataset_admission = ImportAdmissionController(
+        requests_per_minute=runtime_settings.dataset_upload_requests_per_minute,
+        global_concurrency=runtime_settings.dataset_upload_global_concurrency,
+        user_concurrency=runtime_settings.dataset_upload_user_concurrency,
+    )
     app.state.event_emitter = runtime_emitter
     app.state.loki_client = runtime_loki_client
     install_error_handlers(app)

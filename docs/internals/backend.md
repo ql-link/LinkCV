@@ -27,7 +27,7 @@
 | `src/linkcv/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkcv/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0044` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0045` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -58,6 +58,8 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 `0043` 是 Development 已有稳定基线，新增 `user_profiles` 用户个人画像表：与 `users` 一对一（唯一 `user_id`、`RESTRICT` 外键），独立于简历内容保存求职偏好、基础信息与技能荣誉。关键偏好用独立列并以 CHECK 约束拦截非法枚举（期望工作性质、工作方式、计薪周期、可到岗时间、学历层次）与联动非法（薪资成组、`available_from` 要求 `availability=custom`、`salary_max >= salary_min`）；多变列表（职位方向、排除条件、目标公司、语言、技能、证书、荣誉、校园经历、学校层级）用 JSON 数组列并校验 `json_type`。`lock_version` 乐观锁初始为 1。稳定 revision ID 已在共享环境应用，后续迁移不得复用或改写；revision 为 forward-only。
 
 `0044` 只锁定并更新稳定 key 唯一的 `classic-technical-cn` 官方模板行，把后续创建或导入快照使用的字号、行距和主题色恢复为受审的 `9.5 / 1.25 / #202632`；A4 页边距、模板正文、manifest、模板 ID 与启用状态保持不变。既有 `resumes` 和不可变 `resume_versions` 不在写集内，继续保留各自完整快照。迁移在更新前要求目标严格匹配受保护的 `0042` 样式，写后重新解析并比较完整目标快照；任何现场漂移都会在写入前失败。revision 仍为 forward-only，恢复依赖升级前备份或新的向前修正。
+
+`0045` 为资料上传增加数据库幂等和可靠调度字段：`user_dataset` 保存 `idempotency_key/request_fingerprint` 并以 `(user_id, idempotency_key)` 唯一约束收敛并发请求；`document_parse_tasks` 支持 `queued`，并保存解析尝试次数和最近分发时间。历史资料获得确定性兼容键与指纹；原有解析状态和对象引用保持不变，历史 `processing` 任务随后按陈旧租约规则恢复。revision 是 forward-only；部署必须先升级 schema，再同时替换 FastAPI、Worker 和 Web。
 
 普通创建必须提供名称和启用模板，在用户行锁内完成容量、名称规范键和模板快照校验，再以 `source_type=template` 原子创建当前简历和 initial 版本。正式简历与活动导入任务共享每用户 10 个名额。异步导入同样必须提供启用模板，其标题来自安全化源文件名并允许与已有简历同名；Web 默认选择 `classic-technical-cn`，不可用时只回退到其他非空白启用模板，解析内容作为 data，所选模板提供 style。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。模板切换使用同一乐观锁边界的独立原子服务：当前 `data_json` 保持不变，目标启用模板提供 `style_json` 与 `template_id`，成功后只递增一次锁；目标无效或版本冲突不会写入部分结果。手动正式版本在创建和重命名时保存 1–80 字符的名称；旧调用方缺省时按版本号生成“版本 N”。手动版本、重命名、删除版本与恢复都先锁定所属简历；重命名只更新名称，恢复直接替换当前简历且不创建新版本；每份简历最多保存 10 个版本。`0023` 为 `resume_versions.name` 回填历史名称，历史初始版本、恢复前备份和 restore 记录使用系统名称。
 
@@ -154,6 +156,8 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 - 账号头像：`users/{user_id}/assets/avatar/...`，对象键记录在 `users.avatar_object_key`；旧路径中的已有头像保持兼容。
 - 导入原文件：`users/{user_id}/resume-imports/{operation_id}/source/{safe_name}`。
 - 导入转换存档：`users/{user_id}/resume-imports/{operation_id}/artifacts/converted.md`；删除时同时兼容旧的 `.../{operation_id}/converted.md`。
+- 知识库原文件：`users/{user_id}/datasets/...`。
+- 知识库转换存档：`users/{user_id}/datasets/converted/{parse_task_id}-{attempt}.md`；读取和删除兼容旧的 `{parse_task_id}.md`。
 - 简历资源：`users/{user_id}/resumes/{resume_id}/assets/...`。
 - 面试素材：`users/{user_id}/interviews/{application_id}/{session_id}/...`。
 
@@ -173,7 +177,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0044`、模板初始化和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0045`、模板初始化和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 

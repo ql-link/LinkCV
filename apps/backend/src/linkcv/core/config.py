@@ -194,6 +194,61 @@ class Settings(BaseSettings):
         alias="DATASET_UPLOAD_MAX_BYTES",
         ge=1,
     )
+    dataset_max_files_per_batch: int = Field(
+        default=10,
+        alias="DATASET_MAX_FILES_PER_BATCH",
+        ge=1,
+    )
+    dataset_upload_requests_per_minute: int = Field(
+        default=20,
+        alias="DATASET_UPLOAD_REQUESTS_PER_MINUTE",
+        ge=1,
+    )
+    dataset_upload_user_concurrency: int = Field(
+        default=3,
+        alias="DATASET_UPLOAD_USER_CONCURRENCY",
+        ge=1,
+    )
+    dataset_upload_global_concurrency: int = Field(
+        default=12,
+        alias="DATASET_UPLOAD_GLOBAL_CONCURRENCY",
+        ge=1,
+    )
+    dataset_max_count_per_user: int = Field(
+        default=200,
+        alias="DATASET_MAX_COUNT_PER_USER",
+        ge=1,
+    )
+    dataset_max_total_bytes_per_user: int = Field(
+        default=1024 * 1024 * 1024,
+        alias="DATASET_MAX_TOTAL_BYTES_PER_USER",
+        ge=1,
+    )
+    dataset_dispatch_scan_seconds: int = Field(
+        default=5,
+        alias="DATASET_DISPATCH_SCAN_SECONDS",
+        ge=1,
+    )
+    dataset_redispatch_after_seconds: int = Field(
+        default=30,
+        alias="DATASET_REDISPATCH_AFTER_SECONDS",
+        ge=1,
+    )
+    dataset_parse_stale_seconds: int = Field(
+        default=240,
+        alias="DATASET_PARSE_STALE_SECONDS",
+        ge=1,
+    )
+    dataset_parse_max_attempts: int = Field(
+        default=3,
+        alias="DATASET_PARSE_MAX_ATTEMPTS",
+        ge=1,
+    )
+    dataset_upload_reservation_ttl_seconds: int = Field(
+        default=86400,
+        alias="DATASET_UPLOAD_RESERVATION_TTL_SECONDS",
+        ge=1,
+    )
     interview_asset_upload_max_bytes: int = Field(
         default=500 * 1024 * 1024,
         alias="INTERVIEW_ASSET_UPLOAD_MAX_BYTES",
@@ -445,6 +500,19 @@ class Settings(BaseSettings):
         if self.resume_structuring_max_bytes > self.resume_markdown_max_bytes:
             raise ValueError(
                 "RESUME_STRUCTURING_MAX_BYTES cannot exceed RESUME_MARKDOWN_MAX_BYTES"
+            )
+        if (
+            self.dataset_upload_user_concurrency
+            > self.dataset_upload_global_concurrency
+        ):
+            raise ValueError(
+                "DATASET_UPLOAD_USER_CONCURRENCY cannot exceed "
+                "DATASET_UPLOAD_GLOBAL_CONCURRENCY"
+            )
+        if self.dataset_max_total_bytes_per_user < self.dataset_upload_max_bytes:
+            raise ValueError(
+                "DATASET_MAX_TOTAL_BYTES_PER_USER cannot be less than "
+                "DATASET_UPLOAD_MAX_BYTES"
             )
         if (
             self.resume_import_parse_stale_seconds

@@ -10,11 +10,13 @@ class ApiError(Exception):
         status_code: int,
         code: str,
         details: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         super().__init__(code)
         self.status_code = status_code
         self.code = code
         self.details = details
+        self.headers = headers
 
 
 def install_error_handlers(app: FastAPI) -> None:
@@ -25,7 +27,9 @@ def install_error_handlers(app: FastAPI) -> None:
         if error.details:
             content.update(error.details)
         return JSONResponse(
-            status_code=error.status_code, content=content
+            status_code=error.status_code,
+            content=content,
+            headers=error.headers,
         )
 
     @app.exception_handler(RequestValidationError)
