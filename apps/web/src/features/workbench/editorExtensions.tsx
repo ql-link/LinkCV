@@ -59,13 +59,15 @@ export const inlineIconComponents = {
 export type { InlineIconName } from "../../lib/resumeInlineIcon";
 export const inlineIconNames = resumeInlineIconOptions.map((option) => option.name);
 
-const BLOCK_ID_PATTERN = /^blk_[a-z0-9]{16,64}$/;
+// Canonical node ids are the stable editor anchors. Legacy blk_ values are
+// accepted only when the explicit maintenance adapter projects an old row.
+const BLOCK_ID_PATTERN = /^(?:blk|node)_[a-z0-9]{16,64}$/;
 const blockIdentityPluginKey = new PluginKey("resume-block-identity");
 
 export function createResumeBlockId() {
   const random = globalThis.crypto?.randomUUID?.().replace(/-/g, "")
     ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
-  return `blk_${random.toLowerCase()}`.slice(0, 68);
+  return `node_${random.toLowerCase()}`.slice(0, 69);
 }
 
 export function normalizeResumeBlockId(value: unknown) {

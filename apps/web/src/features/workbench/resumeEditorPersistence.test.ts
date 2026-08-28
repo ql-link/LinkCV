@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { Editor, type JSONContent } from "@tiptap/core";
-import type { ResumeDocument, TemplateManifest } from "../../api/resumeContract";
+import type { CanonicalResumeDocument, ResumeDocument, TemplateManifest } from "../../api/resumeContract";
 import { resumeEditorExtensions } from "./editorExtensions";
 import {
+  canonicalResumeDocumentFromEditorDocument,
+  canonicalResumeDocumentToEditorDocument,
   hasCanonicalTiptapSections,
   resumeDocumentFromEditorDocument,
   resumeDocumentToEditorDocument,
@@ -378,5 +380,113 @@ describe("resume editor persistence", () => {
     }
 
     expect(pairs).toBe(64);
+  });
+});
+
+const canonicalFixture: CanonicalResumeDocument = {
+  schema_version: "canonical-resume.v1",
+  document_id: "node_aaaaaaaaaaaaaaaa",
+  identity: {
+    node_id: "node_bbbbbbbbbbbbbbbb",
+    name: {
+      node_id: "node_cccccccccccccccc",
+      value: "张三",
+      source_refs: [],
+    },
+    headline: {
+      node_id: "node_dddddddddddddddd",
+      value: "后端工程师",
+      source_refs: [],
+    },
+    contacts: [],
+    avatar: null,
+  },
+  sections: [{
+    node_id: "node_eeeeeeeeeeeeeeee",
+    semantic_kind: "work",
+    title: {
+      node_id: "node_ffffffffffffffff",
+      value: "工作经历",
+      source_refs: [],
+    },
+    entries: [],
+    blocks: [{
+      node_id: "node_1111111111111111",
+      block_type: "paragraph",
+      runs: [{
+        inline_type: "text",
+        text: "负责服务治理",
+        marks: [],
+        href: null,
+        style: { color: null, font_size_pt: null, highlight_color: null },
+      }],
+      source_refs: [],
+    }],
+    source_refs: [],
+  }],
+  source_dispositions: [],
+};
+
+describe("canonical resume editing projection", () => {
+  it("keeps canonical ids while using TipTap only as an editing projection", () => {
+    const editor = canonicalResumeDocumentToEditorDocument(canonicalFixture);
+    const serialized = JSON.stringify(editor);
+    expect(serialized).toContain("node_bbbbbbbbbbbbbbbb");
+    expect(serialized).toContain("node_eeeeeeeeeeeeeeee");
+    expect(serialized).toContain("node_1111111111111111");
+    expect(serialized).not.toContain("semantic_sections");
+
+    const edited = JSON.parse(serialized) as JSONContent;
+    const paragraph = edited.content?.find((node) => node.type === "paragraph" && node.content?.some((child) => child.type === "resumeBlockAnchor" && child.attrs?.blockId === "node_1111111111111111"));
+    const text = paragraph?.content?.find((child) => child.type === "text");
+    if (text) text.text = "负责平台治理";
+    const persisted = canonicalResumeDocumentFromEditorDocument(edited, canonicalFixture);
+    expect(persisted.sections[0].blocks[0]).toMatchObject({ node_id: "node_1111111111111111" });
+    expect(persisted.sections[0].blocks[0].block_type).toBe("paragraph");
+    expect((persisted.sections[0].blocks[0] as { runs: Array<{ text: string }> }).runs[0].text).toBe("负责平台治理");
+  });
+
+  it.each([
+    ["pair", 2, 64],
+    ["meta", 4, null],
+    ["trio", 3, null],
+  ] as const)("round-trips canonical %s rows through TipTap", (rowKind, count, width) => {
+    const row = {
+      node_id: `node_row${rowKind}0000000000000001`,
+      source_refs: ["src_aaaaaaaaaaaaaaaa"],
+      block_type: "row" as const,
+      row_kind: rowKind,
+      left_width_percent: width,
+      cells: Array.from({ length: count }, (_, index) => ({
+        node_id: `node_cell${rowKind}${index.toString().padStart(12, "0")}`,
+        source_refs: ["src_bbbbbbbbbbbbbbbb"],
+        blocks: [{
+          node_id: `node_block${rowKind}${index.toString().padStart(12, "0")}`,
+          source_refs: ["src_cccccccccccccccc"],
+          block_type: "paragraph" as const,
+          runs: [{
+            inline_type: "text" as const,
+            text: `${rowKind}-${index}`,
+            marks: [],
+            href: null,
+            style: { color: null, font_size_pt: null, highlight_color: null },
+          }],
+        }],
+      })),
+    };
+    const document = {
+      ...canonicalFixture,
+      sections: [{ ...canonicalFixture.sections[0], blocks: [row] }],
+    };
+    const editor = canonicalResumeDocumentToEditorDocument(document);
+    const projectedRow = editor.content?.find((node) => node.type === (
+      rowKind === "pair" ? "resumeRow" : rowKind === "meta" ? "resumeMetaRow" : "resumeTrioRow"
+    ));
+    expect(projectedRow?.content).toHaveLength(count);
+    expect(JSON.stringify(projectedRow)).toContain(`node_row${rowKind}0000000000000001`);
+    expect(JSON.stringify(projectedRow)).not.toContain(":::");
+
+    const restored = canonicalResumeDocumentFromEditorDocument(editor, document);
+    expect(restored.sections[0].blocks[0]).toEqual(row);
   });
 });

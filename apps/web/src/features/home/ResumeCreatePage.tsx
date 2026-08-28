@@ -186,7 +186,7 @@ export function ResumeCreatePage() {
                         }}
                       >
                         <span className="create-template-thumb" aria-hidden="true">
-                          <ResumePreview data={template.data} style={template.style} />
+                          <ResumePreview data={template.data} style={template.style} layoutPlan={template.layout_plan} />
                         </span>
                         <span className="create-template-meta">
                           <strong>{template.name}</strong>

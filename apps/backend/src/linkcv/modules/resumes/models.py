@@ -130,15 +130,15 @@ class Resume(Base):
         nullable=False,
         comment="简历所有者",
     )
-    template_id: Mapped[int | None] = mapped_column(
+    template_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
         ForeignKey(
             "resume_templates.id",
             name="fk_resumes_template",
-            ondelete="SET NULL",
+            ondelete="RESTRICT",
         ),
-        nullable=True,
-        comment="创建来源模板",
+        nullable=False,
+        comment="当前绑定模板",
     )
     parse_task_id: Mapped[int | None] = mapped_column(
         unsigned_bigint_type(),
@@ -279,6 +279,21 @@ class DocumentParseTask(Base):
     object_name: Mapped[str] = mapped_column(
         String(512), nullable=False, comment="私有对象存储中的源文件对象键"
     )
+    selected_template_id: Mapped[int | None] = mapped_column(
+        unsigned_bigint_type(),
+        ForeignKey(
+            "resume_templates.id",
+            name="fk_document_parse_tasks_selected_template",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+        comment="简历导入冻结模板；Dataset 任务为空",
+    )
+    source_graph_object_name: Mapped[str | None] = mapped_column(
+        String(512),
+        nullable=True,
+        comment="私有 SourceGraph 对象键",
+    )
     converted_object_name: Mapped[str | None] = mapped_column(
         String(512),
         nullable=True,
@@ -347,6 +362,10 @@ Index(
     DocumentParseTask.last_dispatched_at,
     DocumentParseTask.id,
 )
+Index(
+    "idx_document_parse_tasks_selected_template",
+    DocumentParseTask.selected_template_id,
+)
 
 
 class ResumeVersion(Base):
@@ -375,6 +394,16 @@ class ResumeVersion(Base):
         nullable=False,
         comment="所属简历",
     )
+    template_id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(),
+        ForeignKey(
+            "resume_templates.id",
+            name="fk_resume_versions_template",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        comment="版本使用的模板身份",
+    )
     version_no: Mapped[int] = mapped_column(
         unsigned_int_type(), nullable=False, comment="简历内单调递增版本号"
     )
@@ -400,3 +429,6 @@ class ResumeVersion(Base):
         server_default=func.now(),
         comment="快照创建时间（UTC）",
     )
+
+
+Index("idx_resume_versions_template_id", ResumeVersion.template_id)

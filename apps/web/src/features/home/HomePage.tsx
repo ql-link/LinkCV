@@ -178,7 +178,7 @@ function ResumeThumbnailCard({
       <button className="home-card-open" type="button" onClick={onOpen}>
         <span className="home-card-preview" aria-hidden="true">
           {resume.preview ? (
-            <ResumePreview data={resume.preview.data} style={resume.preview.style} />
+            <ResumePreview data={resume.preview.data} style={resume.preview.style} layoutPlan={resume.preview.layout_plan} />
           ) : (
             <span className="home-preview-unavailable">预览不可用</span>
           )}

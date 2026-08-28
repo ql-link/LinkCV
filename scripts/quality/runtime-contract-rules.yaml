@@ -13,6 +13,9 @@ contracts:
       - path: scripts/dev/start-development.sh
         pattern: 'BACKEND_PORT="\$\{backend_port\}"[\s\S]*PI_SERVICE_BASE_URL="http://127\.0\.0\.1:\$\{pi_port\}"[\s\S]*LINKCV_BASE_URL="http://127\.0\.0\.1:\$\{backend_port\}"[\s\S]*--env-file=\$\{base_env\}'
         message: 启动脚本必须加载 Development 配置并统一本地跨服务地址
+      - path: scripts/dev/start-development.sh
+        pattern: 'worktree_queue_id=.*cksum[\s\S]*LINKCV_LOCAL_RABBITMQ_QUEUE[\s\S]*linkcv\.resume_import\.worker\.local\.\$\{worktree_queue_id\}\.v2[\s\S]*LINKCV_LOCAL_RABBITMQ_ROUTING_KEY[\s\S]*resume\.import\.local\.\$\{worktree_queue_id\}\.v2'
+        message: 本地 Development 必须自动隔离 worktree 的 queue 与 routing key，避免共享 Worker 竞争消费
       - path: scripts/dev/run-development.mjs
         pattern: 'RABBITMQ_URL[\s\S]*LINKCV_LOCAL_RABBITMQ_HOST[\s\S]*MYSQL_HOST[\s\S]*LINKCV_LOCAL_RABBITMQ_PORT'
         message: 本机 Worker 必须把 Development 容器 DNS 转换为可达的 AMQP 地址
@@ -315,17 +318,29 @@ contracts:
     description: FastAPI、Worker、环境模板与 Compose 使用同一套异步导入 Broker 契约
     assertions:
       - path: apps/backend/src/linkcv/core/config.py
-        pattern: 'default="rabbitmq", alias="MQ_VENDOR"[\s\S]*default="tolink\.cv\.resume_import"[\s\S]*alias="RABBITMQ_EXCHANGE_NAME"[\s\S]*default="resume\.import"[\s\S]*alias="RABBITMQ_ROUTING_KEY"'
-        message: 后端必须默认使用 RabbitMQ 固定 exchange 和 routing key
+        pattern: 'default="rabbitmq", alias="MQ_VENDOR"[\s\S]*default="tolink\.cv\.resume_import\.v2"[\s\S]*alias="RABBITMQ_EXCHANGE_NAME"[\s\S]*default="linkcv\.resume_import\.worker\.v2"[\s\S]*alias="RABBITMQ_QUEUE"[\s\S]*default="resume\.import\.v2"[\s\S]*alias="RABBITMQ_ROUTING_KEY"'
+        message: 后端必须默认使用 RabbitMQ V2 exchange、queue 和 routing key
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default="tolink\.cv\.resume_import\.v2"[\s\S]*alias="KAFKA_TOPIC"[\s\S]*default="linkcv\.resume_import\.worker\.v2"[\s\S]*alias="KAFKA_CONSUMER_GROUP"'
+        message: 后端必须默认使用 Kafka V2 topic 和 consumer group
+      - path: apps/backend/src/linkcv/core/mq/message.py
+        pattern: 'ConfigDict\(extra="forbid"\)[\s\S]*pipeline_version: Literal\["v2"\][\s\S]*mq_name: Literal\["tolink\.cv\.resume_import\.v2"\]'
+        message: 文档解析消息必须使用严格的 V2 envelope 和必填 pipeline version
+      - path: apps/backend/src/linkcv/core/mq/rabbitmq.py
+        pattern: 'headers=\{\"x-linkcv-pipeline-version\": message\.pipeline_version\}'
+        message: RabbitMQ 发布必须以 header 观测 V2 pipeline version
+      - path: apps/backend/src/linkcv/modules/observability/logging.py
+        pattern: 'ALLOWED_FIELDS = \{[\s\S]*"message_id"[\s\S]*"pipeline_version"[\s\S]*"vendor"[\s\S]*"route"'
+        message: 结构化日志必须保留受控的 V2 消息诊断字段
       - path: .env.example
-        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=amqp://linkcv:linkcv-rabbit-local-change-me@127\.0\.0\.1:5672/$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import$'
-        message: 本地模板必须连接本地 RabbitMQ 并声明固定路由
+        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=amqp://linkcv:linkcv-rabbit-local-change-me@127\.0\.0\.1:5672/$[\s\S]*^RABBITMQ_EXCHANGE_NAME=tolink\.cv\.resume_import\.v2$[\s\S]*^RABBITMQ_QUEUE=linkcv\.resume_import\.worker\.v2$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import\.v2$[\s\S]*^KAFKA_TOPIC=tolink\.cv\.resume_import\.v2$[\s\S]*^KAFKA_CONSUMER_GROUP=linkcv\.resume_import\.worker\.v2$'
+        message: 本地模板必须连接本地 RabbitMQ 并声明 V2 路由和 Kafka 标识
       - path: .env.development
-        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import$'
-        message: Dev 必须由私密覆盖提供平台 RabbitMQ 地址
+        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=$[\s\S]*^RABBITMQ_EXCHANGE_NAME=tolink\.cv\.resume_import\.v2$[\s\S]*^RABBITMQ_QUEUE=linkcv\.resume_import\.worker\.v2$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import\.v2$[\s\S]*^KAFKA_TOPIC=tolink\.cv\.resume_import\.v2$[\s\S]*^KAFKA_CONSUMER_GROUP=linkcv\.resume_import\.worker\.v2$'
+        message: Dev 必须由私密覆盖提供平台 RabbitMQ 地址并使用 V2 标识
       - path: .env.production
-        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import$'
-        message: Production 必须由私密覆盖提供平台 RabbitMQ 地址
+        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=$[\s\S]*^RABBITMQ_EXCHANGE_NAME=tolink\.cv\.resume_import\.v2$[\s\S]*^RABBITMQ_QUEUE=linkcv\.resume_import\.worker\.v2$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import\.v2$[\s\S]*^KAFKA_TOPIC=tolink\.cv\.resume_import\.v2$[\s\S]*^KAFKA_CONSUMER_GROUP=linkcv\.resume_import\.worker\.v2$'
+        message: Production 必须由私密覆盖提供平台 RabbitMQ 地址并使用 V2 标识
       - path: deploy/docker-compose.yml
         pattern: '(?m)^  rabbitmq:$[\s\S]*rabbitmq:4-management-alpine'
         message: 本地 Compose 必须提供 RabbitMQ

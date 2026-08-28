@@ -210,9 +210,11 @@ describe("ResumeTemplatesPage", () => {
 
   it("没有启用模板时展示空状态并允许返回简历列表", async () => {
     vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates: [] });
-    render(<ResumeTemplatesPage />);
+    const { container } = render(<ResumeTemplatesPage />);
 
     expect(await screen.findByRole("heading", { name: "当前没有可用模板" })).toBeInTheDocument();
+    expect(container.querySelector(".template-library-state.is-empty")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "返回全部简历" })).toHaveClass("template-library-state-link");
     fireEvent.click(screen.getByRole("link", { name: "返回全部简历" }));
     expect(window.location.pathname).toBe("/resumes");
   });

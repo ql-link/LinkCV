@@ -2,8 +2,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../api/client";
 import {
-  defaultSemanticDocument,
-  defaultSemanticStyle,
+  defaultCanonicalDocument,
+  defaultCanonicalPresentation,
 } from "../../api/resumeContract";
 import { SharePage } from "./SharePage";
 
@@ -33,10 +33,23 @@ describe("SharePage", () => {
 
   it("成功时展示 linkresume 品牌、分享者与脱敏简历内容", async () => {
     mockedFetch.mockResolvedValue({
-      data: defaultSemanticDocument,
+      data: {
+        ...defaultCanonicalDocument,
+        identity: {
+          ...defaultCanonicalDocument.identity,
+          name: { node_id: "node_name000000000001", value: "张三", source_refs: [] },
+        },
+      },
       style: {
-        ...defaultSemanticStyle,
-        template_key: "classic-technical-cn",
+        ...defaultCanonicalPresentation,
+        template_snapshot: {
+          ...defaultCanonicalPresentation.template_snapshot,
+          template_key: "classic-technical-cn",
+          tokens: {
+            ...defaultCanonicalPresentation.template_snapshot.tokens,
+            accent_color: "#202632",
+          },
+        },
       },
       sharer: { nickname: "于晏", avatar_url: null },
     });
@@ -49,6 +62,10 @@ describe("SharePage", () => {
     expect(screen.getByText("张三")).toBeInTheDocument();
     expect(screen.getByLabelText("分享简历内容")).toHaveClass(
       "theme-classic-technical",
+    );
+    expect(screen.getByLabelText("分享简历内容")).toHaveAttribute(
+      "style",
+      expect.stringContaining("--preview-accent:#202632"),
     );
   });
 

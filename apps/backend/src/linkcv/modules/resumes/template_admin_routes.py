@@ -4,10 +4,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from linkcv.application.resumes.service import parse_decimal_id
+from linkcv.application.resumes.service import (
+    parse_decimal_id,
+    parse_persisted_template_snapshot,
+)
 from linkcv.core.database import get_db
 from linkcv.core.errors import ApiError
-from linkcv.domain.resume_snapshot import parse_resume_snapshot
+from linkcv.domain.resume import compile_layout_plan
 from linkcv.modules.identity.dependencies import get_current_admin
 from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import ResumeTemplate
@@ -28,6 +31,7 @@ class AdminTemplateRecord(BaseModel):
     description: str | None
     data: dict | None
     style: dict | None
+    layout_plan: dict | None
     active: bool
     valid: bool
     validation_error: str | None
@@ -51,8 +55,11 @@ class AdminTemplateStatusRequest(BaseModel):
 
 def admin_template_record(template: ResumeTemplate) -> AdminTemplateRecord:
     try:
-        snapshot = parse_resume_snapshot(template.data_json, template.style_json)
-    except ValueError:
+        snapshot = parse_persisted_template_snapshot(
+            template.data_json,
+            template.style_json,
+        )
+    except (TypeError, ValueError):
         return AdminTemplateRecord(
             id=str(template.id),
             key=template.key,
@@ -60,6 +67,7 @@ def admin_template_record(template: ResumeTemplate) -> AdminTemplateRecord:
             description=template.description,
             data=None,
             style=None,
+            layout_plan=None,
             active=bool(template.is_active),
             valid=False,
             validation_error="TEMPLATE_SCHEMA_INVALID",
@@ -73,6 +81,9 @@ def admin_template_record(template: ResumeTemplate) -> AdminTemplateRecord:
         description=template.description,
         data=snapshot.data.model_dump(mode="json"),
         style=snapshot.style.model_dump(mode="json"),
+        layout_plan=compile_layout_plan(snapshot.data, snapshot.style).model_dump(
+            mode="json"
+        ),
         active=bool(template.is_active),
         valid=True,
         validation_error=None,
@@ -145,8 +156,11 @@ def update_admin_template_status(
         raise ApiError(404, "TEMPLATE_NOT_FOUND")
     if payload.active:
         try:
-            parse_resume_snapshot(template.data_json, template.style_json)
-        except ValueError as error:
+            parse_persisted_template_snapshot(
+                template.data_json,
+                template.style_json,
+            )
+        except (TypeError, ValueError) as error:
             db.rollback()
             raise ApiError(400, "TEMPLATE_CONTENT_INVALID") from error
     template.is_active = 1 if payload.active else 0

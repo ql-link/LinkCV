@@ -1,10 +1,16 @@
-import type { ResumeDocument, ResumePresentation } from "../../../api/resumeContract";
-import { styleToEditorSettings } from "../../../api/resumeContract";
-import { renderResumeMarkdown } from "../../../parser/resumeMarkdown";
+import type {
+  LayoutPlan,
+  CanonicalResumeDocument,
+  CanonicalResumePresentation,
+} from "../../../api/resumeContract";
 import {
-  composeEditorDocumentForTemplate,
-  composeResumeMarkdownForTemplate,
-} from "../../workbench/templateLayout";
+  resumePresentationAccentColor,
+  resumePresentationPageMargins,
+  resumePresentationTemplateDefinition,
+  styleToEditorSettings,
+} from "../../../api/resumeContract";
+import { renderResumeMarkdown } from "../../../parser/resumeMarkdown";
+import { composeEditorDocumentForLayoutPlan } from "../../workbench/templateLayout";
 import { resumeDocumentToEditorDocument } from "../../workbench/resumeEditorPersistence";
 import { renderResumeEditorDocument } from "./resumeEditorRenderer";
 
@@ -13,8 +19,9 @@ export const RESUME_RENDER_PROTOCOL_VERSION = 1 as const;
 export type ResumeRenderRequestV1 = {
   protocol_version?: typeof RESUME_RENDER_PROTOCOL_VERSION;
   title: string;
-  data: ResumeDocument;
-  style: ResumePresentation;
+  data: CanonicalResumeDocument;
+  style: CanonicalResumePresentation;
+  layout_plan?: LayoutPlan | null;
   assets?: Record<string, string>;
 };
 
@@ -33,8 +40,8 @@ function escapeHtml(value: string) {
 }
 
 function safeCssValue(value: string, fallback: string) {
-  // Font family and accent are persisted values, but still need to be treated as
-  // untrusted input when the document is rendered outside React.
+  // Font family is persisted user input, so it needs to be treated as untrusted
+  // when the document is rendered outside React.
   if (!value || /[{};<>]/u.test(value)) return fallback;
   return value;
 }
@@ -51,22 +58,25 @@ function replaceEmbeddedAssets(html: string, assets: Record<string, string>) {
   });
 }
 
-function printCssVariables(style: ResumePresentation) {
+function printCssVariables(style: CanonicalResumePresentation) {
   const settings = styleToEditorSettings(style);
-  const marginX = Number.isFinite(style.page.margin_left_mm) ? style.page.margin_left_mm : settings.pageMargin;
-  const marginY = Number.isFinite(style.page.margin_top_mm) ? style.page.margin_top_mm : settings.verticalPageMargin;
+  const margins = resumePresentationPageMargins(style);
   return [
     `--resume-font-family:${safeCssValue(settings.fontFamily, "sans-serif")}`,
     `--resume-font-size:${settings.fontSize}pt`,
     `--resume-line-height:${settings.lineHeight}`,
-    `--resume-page-margin-x:${marginX}mm`,
-    `--resume-page-margin-y:${marginY}mm`,
+    `--resume-page-margin-x:${margins.left}mm`,
+    `--resume-page-margin-y:${margins.top}mm`,
+    `--resume-page-margin-top:${margins.top}mm`,
+    `--resume-page-margin-right:${margins.right}mm`,
+    `--resume-page-margin-bottom:${margins.bottom}mm`,
+    `--resume-page-margin-left:${margins.left}mm`,
     `--preview-font-family:${safeCssValue(settings.fontFamily, "sans-serif")}`,
     `--preview-font-size:${settings.fontSize}pt`,
     `--preview-line-height:${settings.lineHeight}`,
-    `--preview-margin-x:${marginX}mm`,
-    `--preview-margin-y:${marginY}mm`,
-    `--preview-accent:${safeCssValue(style.accent_color, "#3478f6")}`,
+    `--preview-margin-x:${margins.left}mm`,
+    `--preview-margin-y:${margins.top}mm`,
+    `--preview-accent:${resumePresentationAccentColor(style)}`,
   ].join(";");
 }
 
@@ -80,14 +90,13 @@ export function renderResumePrintDocument(
 ) {
   const settings = styleToEditorSettings(request.style);
   const editorDocument = resumeDocumentToEditorDocument(request.data);
-  const rendered = editorDocument
-    ? renderResumeEditorDocument(composeEditorDocumentForTemplate(
-      editorDocument,
-      request.style.manifest,
-      request.data.basics.photo,
-      request.data,
-    ))
-    : renderResumeMarkdown(composeResumeMarkdownForTemplate(request.data, request.style.manifest));
+  const definition = resumePresentationTemplateDefinition(request.style);
+  const projected = editorDocument && request.layout_plan && definition
+    ? composeEditorDocumentForLayoutPlan(editorDocument, request.data, request.layout_plan, definition)
+    : editorDocument;
+  const rendered = projected
+    ? renderResumeEditorDocument(projected)
+    : renderResumeMarkdown("简历内容暂不可用");
   const content = replaceEmbeddedAssets(rendered, request.assets ?? {});
   const paperClasses = [
     "resume-paper",
@@ -108,15 +117,17 @@ export function renderResumePrintDocument(
 
 export function createResumeRenderRequest(
   title: string,
-  data: ResumeDocument,
-  style: ResumePresentation,
+  data: CanonicalResumeDocument,
+  style: CanonicalResumePresentation,
   assets?: Record<string, string>,
+  layoutPlan?: LayoutPlan | null,
 ): ResumeRenderRequestV1 {
   return {
     protocol_version: RESUME_RENDER_PROTOCOL_VERSION,
     title,
     data,
     style,
+    ...(layoutPlan ? { layout_plan: layoutPlan } : {}),
     ...(assets ? { assets } : {}),
   };
 }

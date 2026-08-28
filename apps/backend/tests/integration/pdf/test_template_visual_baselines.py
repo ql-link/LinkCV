@@ -11,7 +11,6 @@ useful in CI without adding large screenshots to the repository.
 
 from __future__ import annotations
 
-import io
 import json
 import os
 import subprocess
@@ -20,6 +19,19 @@ from pathlib import Path
 import pypdfium2 as pdfium
 import pytest
 from PIL import Image, ImageChops
+
+from linkcv.domain.resume import (
+    CanonicalResumeDocument,
+    ResumePresentation as CanonicalResumePresentation,
+    compile_layout_plan,
+)
+from linkcv.domain.resume.legacy_cutover import (
+    convert_legacy_document,
+    convert_legacy_template,
+    presentation_for_legacy,
+)
+from linkcv.domain.resume_document import ResumeDocument
+from linkcv.domain.resume_style import ResumePresentation as LegacyResumePresentation
 
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
@@ -35,7 +47,7 @@ TEMPLATE_CASES = (
     ("classic-cn", "classic", 14, 1.55, "#2F4858", False, 14, 16, 14, 16),
     ("modern-two-column-cn", "modern", 13.5, 1.5, "#315C6B", False, 12, 14, 12, 14),
     ("compact-tech-cn", "compact", 12.5, 1.38, "#263238", True, 10, 12, 10, 12),
-    ("classic-technical-cn", "classic-technical", 11.5, 1.42, "#2F4858", True, 9, 11, 9, 11),
+    ("classic-technical-cn", "classic-technical", 9.5, 1.25, "#202632", True, 9, 11, 9, 11),
     ("administrative-sidebar-cn", "administrative-sidebar", 10, 1.42, "#294F73", True, 0, 0, 0, 0),
     ("campus-professional-cn", "campus-professional", 9.4, 1.38, "#4F8DF7", True, 8, 9, 8, 9),
     ("civic-service-cn", "civic-service", 9.7, 1.45, "#3476D2", True, 0, 10, 8, 10),
@@ -55,7 +67,7 @@ def render_request(
     *,
     avatar_override: str | None = None,
 ) -> dict[str, object]:
-    key, _, font_size, line_height, accent, smart, top, right, bottom, left = template
+    key, _, font_size, line_height, accent, smart, top, _, _, left = template
     avatar = avatar_override or (
         "/templates/avatar-cat.jpg"
         if key in {
@@ -67,23 +79,12 @@ def render_request(
         else None
     )
     content = (
-        "::: left 55\n"
-        "星河云科技有限公司\n"
-        ":::\n\n"
-        "::: right\n"
-        "Java 开发实习生\n"
-        ":::\n\n"
+        "**星河云科技有限公司 · Java 开发实习生**\n\n"
         "- 负责简历编辑器与 PDF 导出链路的测试与实现。\n"
         "- 使用 TypeScript、FastAPI 和 Chromium 完成稳定渲染。\n\n"
-        ":::: meta\n"
-        "杭州\n2024.06 - 2025.06\n远程\n全职\n"
-        "::::\n\n"
-        ":::: trio\n"
-        "TypeScript\nFastAPI\nChromium\n"
-        "::::"
+        "杭州 · 2024.06 - 2025.06 · 远程 · 全职\n\n"
+        "技术栈：TypeScript / FastAPI / Chromium"
     )
-    if avatar:
-        content = f'![头像]({avatar} "linkcv-avatar:72")\n\n{content}'
     data = {
         "basics": {
             "name": "张三",
@@ -136,46 +137,77 @@ def render_request(
             },
         ],
     }
-    return {
-        "protocol_version": 1,
-        "title": f"模板质量门禁 - {key}",
-        "data": data,
-        "style": {
-            "template_key": key,
-            "font_family": "source-han-serif",
-            "font_size": font_size,
-            "line_height": line_height,
-            "accent_color": accent,
-            "smart_one_page": smart,
-            "page": {
-                "size": "A4",
-                "margin_top_mm": top,
-                "margin_right_mm": right,
-                "margin_bottom_mm": bottom,
-                "margin_left_mm": left,
-            },
-            "section_order": ["basics", "custom_sections"],
-            "manifest": {
-                "renderer_key": "flow",
-                "regions": [{"id": "main", "kind": "main", "order": 1}],
-                "slots": [
-                    {
-                        "id": "main-content",
-                        "region_id": "main",
-                        "accepts": ["basics", "custom"],
-                        "required": False,
-                        "fallback": True,
-                        "order": 0,
-                    }
-                ],
-                "avatar": {
-                    "visibility": "show" if avatar else "hide",
-                    "fallback_asset": "none",
-                    "size": 72,
-                },
+    style = {
+        "template_key": key,
+        "font_family": "source-han-serif",
+        "font_size": font_size,
+        "line_height": line_height,
+        "accent_color": accent,
+        "smart_one_page": smart,
+        "page": {
+            "size": "A4",
+            "margin_top_mm": top,
+            "margin_right_mm": left,
+            "margin_bottom_mm": top,
+            "margin_left_mm": left,
+        },
+        "section_order": ["basics", "custom_sections"],
+        "manifest": {
+            "renderer_key": "flow",
+            "regions": [{"id": "main", "kind": "main", "order": 1}],
+            "slots": [{
+                "id": "main-content",
+                "region_id": "main",
+                "accepts": ["basics", "custom", *(["avatar"] if avatar else [])],
+                "required": False,
+                "fallback": True,
+                "order": 0,
+            }],
+            "avatar": {
+                "visibility": "show" if avatar else "hide",
+                "fallback_asset": "none",
+                "size": 72,
             },
         },
     }
+    legacy_data = ResumeDocument.model_validate(data)
+    legacy_style = LegacyResumePresentation.model_validate(style)
+    definition = convert_legacy_template(legacy_style, template_key=str(key))
+    canonical_data = convert_legacy_document(legacy_data)
+    if avatar:
+        canonical_payload = canonical_data.model_dump(mode="json")
+        identity = canonical_payload["identity"]
+        assert isinstance(identity, dict)
+        identity["avatar"] = {
+            "node_id": "node_templateavatar0001",
+            "source_refs": [],
+            "media_kind": "avatar",
+            "src": avatar,
+            "alt": "模板头像",
+            "width": 72,
+            "width_unit": "px",
+            "height_px": 72,
+            "align": None,
+            "system_fallback": False,
+        }
+        canonical_data = CanonicalResumeDocument.model_validate(canonical_payload)
+    canonical_style = presentation_for_legacy(legacy_style, definition)
+    layout_plan = compile_layout_plan(canonical_data, definition, canonical_style)
+    return {
+        "protocol_version": 1,
+        "title": f"模板质量门禁 - {key}",
+        "data": canonical_data.model_dump(mode="json"),
+        "style": canonical_style.model_dump(mode="json"),
+        "layout_plan": layout_plan.model_dump(mode="json"),
+    }
+
+
+def _refresh_layout(payload: dict[str, object]) -> None:
+    data = CanonicalResumeDocument.model_validate(payload["data"])
+    style = CanonicalResumePresentation.model_validate(payload["style"])
+    payload["layout_plan"] = compile_layout_plan(
+        data, style.template_snapshot, style
+    ).model_dump(mode="json")
 
 
 def _ensure_cli() -> None:
@@ -253,7 +285,7 @@ def test_all_enabled_templates_have_stable_pdf_structure_and_visual_baselines() 
         _assert_visual_baseline(name, _render_thumbnail(pdf_bytes))
 
 
-def test_legacy_professional_template_avatars_remain_renderable() -> None:
+def test_canonical_avatar_assets_remain_renderable() -> None:
     _ensure_cli()
     templates_by_key = {str(template[0]): template for template in TEMPLATE_CASES}
     for template_key, avatar in LEGACY_TEMPLATE_AVATARS:
@@ -271,26 +303,36 @@ def test_short_smart_resume_with_small_vertical_margin_stays_on_one_page() -> No
     payload = render_request(campus_template)
     style = payload["style"]
     assert isinstance(style, dict)
-    page_style = style["page"]
-    assert isinstance(page_style, dict)
-    page_style["margin_top_mm"] = 6
-    page_style["margin_bottom_mm"] = 6
+    portable = style["portable"]
+    assert isinstance(portable, dict)
+    portable["vertical_page_margin_mm"] = 6
 
     data = payload["data"]
     assert isinstance(data, dict)
-    sections = data["sections"]
-    assert isinstance(sections, dict)
-    sections["custom_sections"] = [{
-        "id": "short-resume",
-        "title": "简介",
-        "items": [{
-            "id": "short-item",
-            "title": None,
-            "subtitle": None,
-            "content": {"format": "markdown", "content": "专注于可靠的软件交付。"},
+    data["sections"] = [{
+        "node_id": "node_shortsection0001",
+        "source_refs": [],
+        "semantic_kind": "profile",
+        "title": {
+            "node_id": "node_shorttitle000001",
             "source_refs": [],
+            "value": "简介",
+        },
+        "entries": [],
+        "blocks": [{
+            "node_id": "node_shortparagraph001",
+            "source_refs": [],
+            "block_type": "paragraph",
+            "runs": [{
+                "inline_type": "text",
+                "text": "专注于可靠的软件交付。",
+                "marks": [],
+                "href": None,
+                "style": {"color": None, "font_size_pt": None, "highlight_color": None},
+            }],
         }],
     }]
+    _refresh_layout(payload)
 
     document = pdfium.PdfDocument(_render_pdf(payload))
     assert len(document) == 1
@@ -305,25 +347,34 @@ def test_standard_resume_still_fragments_long_content_across_a4_pages() -> None:
     payload = render_request(TEMPLATE_CASES[0])
     data = payload["data"]
     assert isinstance(data, dict)
-    sections = data["sections"]
-    assert isinstance(sections, dict)
-    sections["custom_sections"] = [{
-        "id": "long-resume",
-        "title": "项目经历",
-        "items": [{
-            "id": "long-item",
-            "title": None,
-            "subtitle": None,
-            "content": {
-                "format": "markdown",
-                "content": "\n".join(
-                    f"- 第 {index:03d} 项：负责稳定的简历编辑与 PDF 导出。"
-                    for index in range(1, 121)
-                ),
-            },
+    data["sections"] = [{
+        "node_id": "node_longsection00001",
+        "source_refs": [],
+        "semantic_kind": "project",
+        "title": {
+            "node_id": "node_longtitle0000001",
             "source_refs": [],
+            "value": "项目经历",
+        },
+        "entries": [],
+        "blocks": [{
+            "node_id": "node_longlist00000001",
+            "block_type": "bullet_list",
+            "start": None,
+            "items": [{
+                "node_id": f"node_longitem{index:08d}",
+                "source_refs": [],
+                "runs": [{
+                    "inline_type": "text",
+                    "text": f"第 {index:03d} 项：负责稳定的简历编辑与 PDF 导出。",
+                    "marks": [],
+                    "href": None,
+                    "style": {"color": None, "font_size_pt": None, "highlight_color": None},
+                }],
+            } for index in range(1, 121)],
         }],
     }]
+    _refresh_layout(payload)
 
     document = pdfium.PdfDocument(_render_pdf(payload))
     assert len(document) >= 2

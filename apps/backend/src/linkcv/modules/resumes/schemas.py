@@ -1,10 +1,18 @@
 from datetime import datetime
-from typing import Literal
+from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from linkcv.domain.resume_document import ResumeDocument
-from linkcv.domain.resume_style import ResumePresentation
+from linkcv.domain.resume import (
+    CanonicalResumeDocument,
+    LayoutPlan,
+    ResumePresentation as CanonicalResumePresentation,
+    TemplateDefinition,
+)
+ResumeData: TypeAlias = CanonicalResumeDocument
+ResumePresentationData: TypeAlias = CanonicalResumePresentation
+TemplateData: TypeAlias = CanonicalResumeDocument
+TemplateStyle: TypeAlias = TemplateDefinition
 
 
 class ResumeCreateRequest(BaseModel):
@@ -18,8 +26,8 @@ class ResumeUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str | None = Field(default=None, strict=True, max_length=20_000)
-    data: ResumeDocument | None = None
-    style: ResumePresentation | None = None
+    data: ResumeData | None = None
+    style: ResumePresentationData | None = None
     base_lock_version: int = Field(ge=1)
 
 
@@ -29,7 +37,7 @@ class ResumeApplyTemplateRequest(BaseModel):
     template_id: str = Field(strict=True)
     base_lock_version: int = Field(ge=1)
     title: str | None = Field(default=None, strict=True, max_length=20_000)
-    data: ResumeDocument | None = None
+    data: ResumeData | None = None
 
 
 SemanticClassificationKind = Literal[
@@ -77,8 +85,9 @@ class SemanticClassificationResponse(BaseModel):
 
 
 class ResumePreview(BaseModel):
-    data: ResumeDocument
-    style: ResumePresentation
+    data: ResumeData
+    style: ResumePresentationData
+    layout_plan: LayoutPlan
 
 
 class ResumeSummary(BaseModel):
@@ -99,9 +108,10 @@ class ResumeSummary(BaseModel):
 
 
 class ResumeRecord(ResumeSummary):
-    template_id: str | None
-    data: ResumeDocument
-    style: ResumePresentation
+    template_id: str
+    data: ResumeData
+    style: ResumePresentationData
+    layout_plan: LayoutPlan
 
 
 class ResumeResponse(BaseModel):
@@ -136,6 +146,7 @@ class ResumeImportSummary(BaseModel):
     upload_duration_ms: int | None
     parse_status: Literal["processing", "succeeded", "failed"] | None
     parse_duration_ms: int | None
+    selected_template_id: str | None
     result_resume_id: str | None
     created_at: datetime
     updated_at: datetime
@@ -162,8 +173,9 @@ class ResumeTemplateRecord(BaseModel):
     key: str
     name: str
     description: str | None
-    data: ResumeDocument
-    style: ResumePresentation
+    data: TemplateData
+    style: TemplateStyle
+    layout_plan: LayoutPlan
     switchable: Literal[True] = True
     incompatibility_reason: None = None
 
@@ -181,12 +193,14 @@ class ResumeVersionSummary(BaseModel):
     version_no: int
     name: str
     reason: Literal["initial", "manual", "before_restore", "restore", "agent"]
+    template_id: str
     created_at: datetime
 
 
 class ResumeVersionRecord(ResumeVersionSummary):
-    data: ResumeDocument
-    style: ResumePresentation
+    data: ResumeData
+    style: ResumePresentationData
+    layout_plan: LayoutPlan
 
 
 class ResumeVersionListResponse(BaseModel):
@@ -258,6 +272,7 @@ class PublicShareSharer(BaseModel):
 class PublicSharePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    data: ResumeDocument
-    style: ResumePresentation
+    data: ResumeData
+    style: ResumePresentationData
+    layout_plan: LayoutPlan
     sharer: PublicShareSharer
