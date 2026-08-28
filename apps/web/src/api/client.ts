@@ -41,6 +41,58 @@ export type AccountProfile = {
   recent_resumes: RecentResumeSummary[];
 };
 
+export type EmploymentType =
+  | "internship"
+  | "full_time";
+
+export type SalaryPeriod = "hour" | "day" | "month" | "year";
+
+export type CandidateStatus = "fresh_graduate" | "experienced";
+
+export type EducationLevel =
+  | "high_school"
+  | "junior_college"
+  | "bachelor"
+  | "master"
+  | "doctor";
+
+export type SchoolTier = "project_985" | "project_211" | "double_first_class";
+
+export type UserProfileData = {
+  candidate_cities: string[];
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_currency: string | null;
+  salary_period: SalaryPeriod | null;
+  employment_types: EmploymentType[];
+  school: string | null;
+  school_tier: SchoolTier[];
+  major: string | null;
+  education_level: EducationLevel | null;
+  candidate_status: CandidateStatus | null;
+  graduation_year: number | null;
+  years_experience: number | null;
+  languages: string[];
+  skills: string[];
+  certifications: string[];
+  honors: string[];
+  campus_experiences: string[];
+  lock_version: number;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type UserProfileUpdate = Omit<
+  UserProfileData,
+  "lock_version" | "created_at" | "updated_at"
+> & {
+  base_lock_version: number;
+};
+
+export type UserProfileConflict = {
+  profile: UserProfileData;
+};
+
 export type AdminUserSummary = User & {
   status: number;
   resume_count: number;
@@ -1127,6 +1179,12 @@ export const api = {
     request<UserProfile>("/api/account/profile", {
       method: "PATCH",
       body: { nickname },
+    }),
+  getUserProfile: () => request<UserProfileData>("/api/account/user-profile"),
+  putUserProfile: (payload: UserProfileUpdate) =>
+    request<UserProfileData>("/api/account/user-profile", {
+      method: "PUT",
+      body: payload,
     }),
   uploadAccountAvatar: (payload: { fileName: string; dataUrl: string }) =>
     request<{ url: string }>("/api/account/avatar", {

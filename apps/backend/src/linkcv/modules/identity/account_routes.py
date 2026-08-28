@@ -3,7 +3,7 @@ import logging
 
 import redis
 from fastapi import APIRouter, Depends, Request, Response
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -26,7 +26,7 @@ from linkcv.core.storage import (
 )
 from linkcv.integrations.wechat_client import WechatApiError, WechatClient
 from linkcv.modules.identity.dependencies import get_current_user, get_settings
-from linkcv.modules.identity.models import User
+from linkcv.modules.identity.models import User, UserProfile
 from linkcv.modules.identity.schemas import (
     AccountProfileResponse,
     AvatarResponse,
@@ -36,7 +36,9 @@ from linkcv.modules.identity.schemas import (
     PasswordChangedResponse,
     ProfileUpdateRequest,
     RecentResumeSummary,
+    UserProfileData,
     UserProfileResponse,
+    UserProfileUpdateRequest,
     WechatBindConfirmRequest,
     WechatBindRequestResponse,
     WechatBindStatusResponse,
@@ -95,6 +97,41 @@ def _profile(user: User, settings: Settings) -> UserProfileResponse:
     )
 
 
+def _user_profile_data(profile: UserProfile | None) -> UserProfileData:
+    """未创建画像时返回 lock_version=1 的空画像约定，不写库。"""
+    if profile is None:
+        return UserProfileData(lock_version=1)
+    return UserProfileData.model_validate(profile)
+
+
+def _select_user_profile(db: Session, user_id: int) -> UserProfile | None:
+    return db.scalar(select(UserProfile).where(UserProfile.user_id == user_id))
+
+
+def _apply_profile_fields(
+    profile: UserProfile, payload: UserProfileUpdateRequest
+) -> None:
+    """整体替换画像可编辑字段，缺省字段以 None/[] 覆盖旧值。"""
+    profile.candidate_cities = list(payload.candidate_cities)
+    profile.salary_min = payload.salary_min
+    profile.salary_max = payload.salary_max
+    profile.salary_currency = payload.salary_currency
+    profile.salary_period = payload.salary_period
+    profile.employment_types = list(payload.employment_types)
+    profile.school = payload.school
+    profile.school_tier = list(payload.school_tier)
+    profile.major = payload.major
+    profile.education_level = payload.education_level
+    profile.years_experience = payload.years_experience
+    profile.candidate_status = payload.candidate_status
+    profile.graduation_year = payload.graduation_year
+    profile.languages = list(payload.languages)
+    profile.skills = list(payload.skills)
+    profile.certifications = list(payload.certifications)
+    profile.honors = list(payload.honors)
+    profile.campus_experiences = list(payload.campus_experiences)
+
+
 @router.get("/profile", response_model=AccountProfileResponse)
 def get_profile(
     user: User = Depends(get_current_user),
@@ -123,6 +160,105 @@ def get_profile(
             for resume in recent
         ],
     )
+
+
+@router.get("/user-profile", response_model=UserProfileData)
+def get_user_profile(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UserProfileData:
+    """未创建画像时返回空画像（lock_version=1 约定），不写库。"""
+    return _user_profile_data(_select_user_profile(db, user.id))
+
+
+@router.put("/user-profile", response_model=UserProfileData)
+def put_user_profile(
+    payload: UserProfileUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UserProfileData:
+    current = _select_user_profile(db, user.id)
+
+    # 首次写入：尝试 INSERT，并发时 UNIQUE 冲突回退到 409。
+    if current is None:
+        if payload.base_lock_version != 1:
+            raise ApiError(
+                409,
+                "USER_PROFILE_VERSION_CONFLICT",
+                details={"profile": _user_profile_data(None).model_dump(mode="json")},
+            )
+        profile = UserProfile(user_id=user.id, lock_version=1)
+        _apply_profile_fields(profile, payload)
+        db.add(profile)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            existing = _select_user_profile(db, user.id)
+            raise ApiError(
+                409,
+                "USER_PROFILE_VERSION_CONFLICT",
+                details={"profile": _user_profile_data(existing).model_dump(mode="json")},
+            ) from None
+        except Exception:
+            db.rollback()
+            logger.exception("failed to create user profile for user %s", user.id)
+            raise
+        db.refresh(profile)
+        return _user_profile_data(profile)
+
+    # 已有画像：原子比较 lock_version，影响 0 行即并发冲突。
+    if payload.base_lock_version != current.lock_version:
+        raise ApiError(
+            409,
+            "USER_PROFILE_VERSION_CONFLICT",
+            details={"profile": _user_profile_data(current).model_dump(mode="json")},
+        )
+    updated = db.execute(
+        update(UserProfile)
+        .where(
+            UserProfile.user_id == user.id,
+            UserProfile.lock_version == payload.base_lock_version,
+        )
+        .values(
+            lock_version=current.lock_version + 1,
+            candidate_cities=list(payload.candidate_cities),
+            salary_min=payload.salary_min,
+            salary_max=payload.salary_max,
+            salary_currency=payload.salary_currency,
+            salary_period=payload.salary_period,
+            employment_types=list(payload.employment_types),
+            school=payload.school,
+            school_tier=list(payload.school_tier),
+            major=payload.major,
+            education_level=payload.education_level,
+            years_experience=payload.years_experience,
+            candidate_status=payload.candidate_status,
+            graduation_year=payload.graduation_year,
+            languages=list(payload.languages),
+            skills=list(payload.skills),
+            certifications=list(payload.certifications),
+            honors=list(payload.honors),
+            campus_experiences=list(payload.campus_experiences),
+        )
+    )
+    if updated.rowcount == 0:
+        # 并发写入已抢先更新；返回最新画像供前端刷新后重试。
+        db.rollback()
+        existing = _select_user_profile(db, user.id)
+        raise ApiError(
+            409,
+            "USER_PROFILE_VERSION_CONFLICT",
+            details={"profile": _user_profile_data(existing).model_dump(mode="json")},
+        ) from None
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("failed to update user profile for user %s", user.id)
+        raise
+    db.refresh(current)
+    return _user_profile_data(current)
 
 
 @router.patch("/profile", response_model=UserProfileResponse)

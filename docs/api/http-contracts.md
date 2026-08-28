@@ -55,11 +55,18 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 
 `/api/account/*` 通过当前用户身份确定资源归属，不接受 `user_id`。当前公开接口为 profile、昵称和头像读写；Web 账号页不再显示密码或微信绑定入口。`user.email` 对微信用户为 `null`。最近简历仍按更新时间倒序返回最多 5 条。
 
+`GET/PUT /api/account/user-profile` 维护跨简历共享的个人画像，聚合可比较的求职条件、教育背景与技能成果，独立保存于 `user_profiles` 表，不修改任何简历内容；这是唯一画像资源入口。未创建时 `GET` 返回 `lock_version=1` 的约定空画像且不写库；`PUT` 整体替换全部可编辑字段，缺省字段以 `null`/空数组覆盖旧值。`PUT` 必须携带 `base_lock_version`（首次创建固定为 1），服务端原子比较版本号，并发基准过期返回 `409 USER_PROFILE_VERSION_CONFLICT`，响应 `{profile}` 携带最新画像供调用方刷新后重试。可编辑字段包括 `candidate_cities`（最多 20 项）、`employment_types`（最多 2 项且只接受 `internship`/`full_time`）、薪资四字段、`candidate_status`、`graduation_year`、`years_experience`、教育字段和语言/技能/证书/荣誉/校园经历列表。城市及普通字符串列表会去除空串、去重并保留首次顺序；单项最长 100 字符，普通列表最多 100 项，`school_tier` 只接受 `project_985`/`project_211`/`double_first_class` 且最多 10 项。薪资必须成组填写：`salary_min`/`salary_max` 任一非空时要求 `salary_currency`（大写三字母 ISO 4217）与 `salary_period` 同时非空，最高值不得低于最低值。`candidate_status=fresh_graduate` 时 `graduation_year` 必须为 1900–9999 的四位年份且 `years_experience` 固定为 0；`experienced` 时毕业年份必须为空；未选择类型时毕业年份也必须为空。非法枚举、超长列表或违反联动约束返回 `400 INVALID_USER_PROFILE`。`GET /api/account/profile` 只返回账号资料、简历数量和最近简历，不内嵌 `profile`。
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `GET` | `/api/account/user-profile` | 新画像完整对象；未创建返回 `lock_version=1` 空对象 |
+| `PUT` | `/api/account/user-profile` | 保存后的新画像完整对象；请求含 `base_lock_version` 及可编辑字段，并发过期返回 `409 USER_PROFILE_VERSION_CONFLICT` 并携带最新画像 |
+
 ## 语义简历契约
 
 简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`。数据库 ID 在 HTTP 中使用十进制字符串。运行期只接受字段完整的 `ResumeDocument data` 与 `ResumePresentation style`，不再携带或协商 `schema_version`；缺少 `semantic_sections` 或 `manifest` 的请求不会被静默补齐。`data.semantic_sections` 把用户可见标题、稳定语义类型、来源、置信度和真实内容引用分离保存，每份实际内容必须被恰好引用一次；编辑器章节使用独立 `blk_*` ID，标题改名不改变章节身份。已进入编辑器的章节正文以受控 `{format: "tiptap-json", content: JSONContent}` 保存，保留段落、列表、双列、信息行、图片、对齐和富文本 marks；历史 `{format: "markdown", content: string}` 只作为兼容输入继续可读，首次正文保存后转成规范 Tiptap JSON。页级 `sidebar/main` 属于 `style.manifest` 投影，禁止作为正文持久化；`profile`、`interests` 等侧栏内容仍是独立语义章节。`style.manifest` 只允许受控 renderer、区域、插槽、唯一自定义兜底区和头像策略。简历正文以用户内容为准：错别字、非标准邮箱或电话、无法识别或先后矛盾的日期、缺少单位或职位等内容质量问题不阻断保存、导入或版本恢复；可识别日期仍会规范化，无法识别的日期原样保留。字段类型、总量和长度上限、URL 协议、Markdown 主动内容、Tiptap 节点/marks/属性白名单及内部 ID 完整性仍严格校验。`style.smart_one_page` 控制连续单页或标准 A4 导出模式，并随版本快照保存。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不再是简历写契约。
 
-Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，把旧 `"1.0"` JSON 一次性转换为上述唯一契约；`0037`–`0040` 依次拆分官方编辑 Markdown、移除 typed 副本、规范区块 ID 并修正双栏插槽。`0041` 再对模板、当前简历和历史版本全量预检，把旧整篇编辑正文及跨章节残留的 `sidebar/main` 页级包装转换为无投影语义块，保留可见文字与私有用户头像，并为双栏 manifest 补齐 `profile/interests` 路由；写后重复完整校验。`0042` 恢复经典技术模板及既有快照的生产页边距并删除 `blank-cn`，历史简历依靠 `ON DELETE SET NULL` 只清空来源引用。发布顺序仍为停止旧写入、备份、执行迁移、验证后启动新应用；失败时依赖备份恢复，不执行 downgrade。
+Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，把旧 `"1.0"` JSON 一次性转换为上述唯一契约；`0037`–`0040` 依次拆分官方编辑 Markdown、移除 typed 副本、规范区块 ID 并修正双栏插槽。`0041` 再对模板、当前简历和历史版本全量预检，把旧整篇编辑正文及跨章节残留的 `sidebar/main` 页级包装转换为无投影语义块，保留可见文字与私有用户头像，并为双栏 manifest 补齐 `profile/interests` 路由；写后重复完整校验。`0042` 恢复经典技术模板及既有快照的生产页边距并删除 `blank-cn`，历史简历依靠 `ON DELETE SET NULL` 只清空来源引用；`0043` 增加资料上传幂等和可靠调度字段；`0044` 新增 `user_profiles`；`0045` 把旧画像城市、工作性质和目标职位转换为数组，新增候选人类型与毕业年份并删除废弃字段；`0046` 过滤旧工作性质值并删除职业方向。所有 revision 均为 forward-only，发布顺序仍为停止旧写入、备份、执行迁移、验证后启动新应用；失败时依赖备份恢复，不执行 downgrade。
 
 | Method   | Path                        | 鉴权 | 成功结果                                                         |
 | -------- | --------------------------- | ---- | ---------------------------------------------------------------- |

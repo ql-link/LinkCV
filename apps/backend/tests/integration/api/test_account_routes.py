@@ -106,6 +106,7 @@ def test_profile_query_returns_stats_and_recent_resumes() -> None:
         assert body["user"]["avatar_url"] is None
         assert "avatar_object_key" not in body["user"]
         assert body["resume_count"] == 2
+        assert "profile" not in body
         titles = [item["title"] for item in body["recent_resumes"]]
         assert titles == ["简历二", "简历一"]
         assert all("updated_at" in item for item in body["recent_resumes"])
@@ -451,6 +452,231 @@ def test_wechat_bind_conflicts_with_another_user() -> None:
             first = session.scalar(select(User).where(User.email == "first@example.com"))
             assert first is not None
             assert first.wechat_openid == "openid-shared"
+
+
+def _register_account(client: TestClient, email: str = "profile@example.com") -> None:
+    client.post(
+        "/api/auth/register",
+        json={"email": email, "password": "password-123"},
+    )
+
+
+def _valid_profile_payload(base_lock_version: int = 1) -> dict:
+    return {
+        "base_lock_version": base_lock_version,
+        "candidate_cities": ["北京", "上海"],
+        "salary_min": 20000,
+        "salary_max": 30000,
+        "salary_currency": "CNY",
+        "salary_period": "month",
+        "employment_types": ["full_time"],
+        "school": "某大学",
+        "school_tier": ["project_985"],
+        "major": "计算机",
+        "education_level": "bachelor",
+        "years_experience": 3,
+        "candidate_status": "experienced",
+        "graduation_year": None,
+        "languages": ["英语 CET-6"],
+        "skills": ["React", "Python"],
+        "certifications": [],
+        "honors": [],
+        "campus_experiences": [],
+    }
+
+
+def test_user_profile_get_returns_empty_when_not_created() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        _register_account(client)
+        response = client.get("/api/account/user-profile")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["lock_version"] == 1
+        assert body["candidate_cities"] == []
+        assert body["employment_types"] == []
+        assert body["candidate_status"] is None
+        assert body["graduation_year"] is None
+        assert body["skills"] == []
+        assert body["created_at"] is None
+        assert body["updated_at"] is None
+
+        # Unauthenticated requests are rejected.
+        with TestClient(app) as stranger:
+            assert stranger.get("/api/account/user-profile").status_code == 401
+
+
+def test_user_profile_put_and_get_roundtrip() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        _register_account(client)
+        put_response = client.put(
+            "/api/account/user-profile", json=_valid_profile_payload()
+        )
+        assert put_response.status_code == 200
+        saved = put_response.json()
+        assert saved["lock_version"] == 1
+        assert saved["candidate_cities"] == ["北京", "上海"]
+        assert saved["employment_types"] == ["full_time"]
+        assert "professional_directions" not in saved
+        assert saved["skills"] == ["React", "Python"]
+        assert saved["school_tier"] == ["project_985"]
+        assert saved["created_at"] is not None
+        assert saved["updated_at"] is not None
+
+        get_response = client.get("/api/account/user-profile")
+        assert get_response.status_code == 200
+        assert get_response.json() == saved
+
+
+def test_account_profile_does_not_include_profile_field() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        _register_account(client)
+        empty = client.get("/api/account/profile").json()
+        assert "profile" not in empty
+
+        client.put("/api/account/user-profile", json=_valid_profile_payload())
+        loaded = client.get("/api/account/profile").json()
+        assert "profile" not in loaded
+        # Existing account fields are unchanged.
+        assert loaded["user"]["email"] == "profile@example.com"
+        assert loaded["resume_count"] == 0
+
+
+def test_user_profile_rejects_invalid_enums() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        _register_account(client)
+
+        for field, value in [
+            ("employment_types", ["invalid"]),
+            ("employment_types", ["part_time"]),
+            ("employment_types", ["contract"]),
+            ("employment_types", ["temporary"]),
+            ("salary_period", "century"),
+            ("candidate_status", "student"),
+            ("education_level", "phd"),
+        ]:
+            payload = _valid_profile_payload()
+            payload[field] = value
+            response = client.put("/api/account/user-profile", json=payload)
+            assert response.status_code == 400
+            assert response.json() == {"error": "INVALID_USER_PROFILE"}
+
+
+def test_user_profile_rejects_invalid_salary_and_context() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        _register_account(client)
+
+        # salary_max < salary_min
+        payload = _valid_profile_payload()
+        payload["salary_max"] = 10000
+        response = client.put("/api/account/user-profile", json=payload)
+        assert response.status_code == 400
+        assert response.json() == {"error": "INVALID_USER_PROFILE"}
+
+        # numeric salary requires currency and period
+        payload = _valid_profile_payload()
+        payload["salary_currency"] = None
+        payload["salary_period"] = None
+        response = client.put("/api/account/user-profile", json=payload)
+        assert response.status_code == 400
+        assert response.json() == {"error": "INVALID_USER_PROFILE"}
+
+
+def test_user_profile_rejects_invalid_candidate_experience_context() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        _register_account(client)
+        cases = [
+            {"candidate_status": "fresh_graduate", "graduation_year": None},
+            {"candidate_status": "fresh_graduate", "graduation_year": 2026, "years_experience": 1},
+            {"candidate_status": "experienced", "graduation_year": 2026},
+            {"candidate_status": None, "graduation_year": 2026},
+        ]
+        for changes in cases:
+            payload = _valid_profile_payload()
+            payload.update(changes)
+            response = client.put("/api/account/user-profile", json=payload)
+            assert response.status_code == 400
+            assert response.json() == {"error": "INVALID_USER_PROFILE"}
+
+        fresh = _valid_profile_payload()
+        fresh.update(
+            {
+                "candidate_status": "fresh_graduate",
+                "graduation_year": 2026,
+                "years_experience": 0,
+            }
+        )
+        response = client.put("/api/account/user-profile", json=fresh)
+        assert response.status_code == 200
+        assert response.json()["candidate_status"] == "fresh_graduate"
+        assert response.json()["graduation_year"] == 2026
+
+
+def test_user_profile_rejects_negative_years_and_oversized_items() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        _register_account(client)
+
+        payload = _valid_profile_payload()
+        payload["years_experience"] = -1
+        response = client.put("/api/account/user-profile", json=payload)
+        assert response.status_code == 400
+        assert response.json() == {"error": "INVALID_USER_PROFILE"}
+
+        payload = _valid_profile_payload()
+        payload["skills"] = ["x" * 101]
+        response = client.put("/api/account/user-profile", json=payload)
+        assert response.status_code == 400
+        assert response.json() == {"error": "INVALID_USER_PROFILE"}
+
+
+def test_user_profile_rejects_removed_fields() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        _register_account(client)
+        for field, value in (
+            ("work_mode", "remote"),
+            ("professional_directions", ["前端工程师"]),
+        ):
+            payload = _valid_profile_payload()
+            payload[field] = value
+            response = client.put("/api/account/user-profile", json=payload)
+            assert response.status_code == 400
+            assert response.json() == {"error": "INVALID_USER_PROFILE"}
+
+
+def test_user_profile_rejects_stale_lock_version() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        _register_account(client)
+        first = client.put(
+            "/api/account/user-profile", json=_valid_profile_payload()
+        )
+        assert first.status_code == 200
+        assert first.json()["lock_version"] == 1
+
+        # Reuse the same base_lock_version after a successful update: the row
+        # has advanced to lock_version 2, so the stale request must 409 and
+        # return the latest profile for the client to refresh.
+        second = client.put(
+            "/api/account/user-profile",
+            json=_valid_profile_payload(base_lock_version=1),
+        )
+        assert second.status_code == 200
+        assert second.json()["lock_version"] == 2
+
+        stale = client.put(
+            "/api/account/user-profile",
+            json=_valid_profile_payload(base_lock_version=1),
+        )
+        assert stale.status_code == 409
+        assert stale.json()["error"] == "USER_PROFILE_VERSION_CONFLICT"
+        assert stale.json()["profile"]["lock_version"] == 2
 
 
 def test_wechat_bind_unavailable_without_config() -> None:
