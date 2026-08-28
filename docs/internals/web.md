@@ -31,6 +31,22 @@ React 根入口用 Error Boundary 和 `error` / `unhandledrejection` 监听器�
 3. FastAPI 的真实路由；
 4. [HTTP 契约](../api/http-contracts.md)。
 
+账号页的个人画像由 `features/account/UserProfilePanel.tsx` 独立读取
+`GET /api/account/user-profile`，`AccountPage` 的账号概览只读取账号、简历统计和最近简历，
+不再把画像副本作为 props 传入。画像卡片继续沿用账号页现有的头部、空态、底部和三组只读布局，
+三组分别展示求职与经验、教育背景、技能与成果；只读字段对应可接受工作城市、
+薪资四字段、工作性质、工作经验、学校、专业/学历、语言、技能、证书、荣誉
+和校园经历。
+
+编辑弹窗继续使用求职意向、教育与背景、技能与亮点三页签，以及既有的 `TagInput`、
+`TogglePill` 和 `ProfileSelectField`。城市由用户手动输入并以标签形式维护，工作性质只提供
+“实习”和“全职”两项受控多选；薪资仍以最低值、最高值、币种和计薪周期四字段组合保存。工作经验
+初始未选择时不显示“未选择”按钮，也不显示毕业年份或工作年限输入；选择应届生时只显示毕业年份并在
+保存时固定发送 `years_experience=0`，选择非应届生时只显示工作年限并发送 `graduation_year=null`，
+已选项再次点击不会取消选择。迁移保留但尚未标注类型的历史工作年限不在编辑表单中显示，保存不会构造非法组合。
+保存成功更新卡片，`409 USER_PROFILE_VERSION_CONFLICT` 保留编辑窗口并以响应中的最新画像刷新表单。
+账号页画像相关组件测试位于 `features/account/UserProfilePanel.test.tsx` 和 `AccountPage.test.tsx`。
+
 简历 API 已统一使用 `snake_case`、唯一 `ResumeDocument data` 和 `ResumePresentation style`，运行期不再保留版本联合类型。`data.semantic_sections` 保存显示标题、稳定语义和真实内容引用，`style.manifest` 保存受控区域、插槽、兜底区和头像策略。编辑器以 Tiptap JSON 作为已编辑正文的唯一持久化真值，保存时先移除模板列和系统头像，再按二级标题及其 `blk_*` 锚点拆成独立 `custom_sections`；具有业务语义的节点、marks、对齐、信息行和图片属性原样进入 `{format: "tiptap-json"}`，不经过 Markdown 降级。持久化边界会移除受支持 Tiptap 版本产生的已知无语义默认属性，当前包括 `orderedList.attrs.type: null`；前端保存转换和后端 `RichText` 校验都会执行同一规范化，滚动发布期间的旧前端请求也不会因此失败，非空或未知属性仍由后端严格拒绝。历史 Markdown 和导入 typed sections 继续可读，并在首次正文保存时转成同一规范结构，不再额外保存整篇 `custom_section_editor` 副本。标题重命名只更新 `display_title`，语义类型继续由稳定章节 ID 关联；新增章节获得新 ID 并进入待分类链路。
 
 简历主页卡片使用后端摘要中的真实 `data/style` 只读预览；编辑工作台只在内存中把规范编辑树投射到当前 `style.manifest`，模板切换先反投影回全局语义顺序，再生成目标区域、插槽、双栏和头像，空插槽提示不写入正文。预览纸张、分享页和 PDF 对规范 Tiptap 内容直接使用同一棵投影树和只读渲染器；只有历史 Markdown 走兼容渲染。`:::: meta/trio` 是章节内部的信息行结构，和用户主动创建的 `::: left/right`、`::: text-align` 一样随内容保存并在切换时保留，模板级 `sidebar/main` 不作为用户正文跨模板继承。切换请求把当前标题、规范内容、目标模板和锁版本一次提交，避免预保存与切换之间出现并发半状态；`:icon[Name]:` 仍只接受编辑器图标白名单。历史结构无效时显示“预览不可用”，不阻断列表。正式简历卡片可打开、重命名、分享或删除；重命名只更新列表识别用的标题，不会写入简历正文。主页只展示简历和导入任务；工作区导航中的“简历模板”进入独立 `/templates`，读取当前启用模板并提供只读预览；用户从模板卡片点击“创建简历”后在弹窗内填写名称，确认后直接创建并进入编辑器，不再经过 `/resumes/new`。旧的 `/resumes?view=templates` 仍按普通简历列表处理。独立 `/resumes/new` 仍承载从简历主页进入的创建与导入流程：创建模式要求选择启用模板并输入名称，导入模式要求选择 Markdown、DOCX 或 PDF 文件并使用生产保留的 `classic-technical-cn` 默认版式；如果该模板不可用则回退到第一套非 `blank-cn` 的启用模板。`blank-cn` 已退出产品和数据库，导入消费方不会再把它作为回退项。注册成功后只进入空主页，不自动创建第一份简历。
