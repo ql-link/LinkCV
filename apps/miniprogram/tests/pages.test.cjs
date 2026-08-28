@@ -270,6 +270,49 @@ test("confirm page confirms the web login and enters resumes without an extra ac
   assert.deepEqual(switches, ["/pages/resumes/index"]);
 });
 
+test("confirm page keeps non-admin mini-program errors in the error state", async () => {
+  for (const variant of [
+    { code: "ACCOUNT_DISABLED", message: "ACCOUNT_DISABLED" },
+    { code: "NETWORK_ERROR", message: "网络异常" },
+  ]) {
+    const switches = [];
+    let finalState = null;
+
+    await withPage("../pages/confirm", {
+      "../services/auth": {
+        acceptPrivacyAgreement() {},
+        apiUrl: (path) => `http://127.0.0.1:8000${path}`,
+        loginExistingAccount: async () => {
+          throw Object.assign(new Error(variant.message), { code: variant.code });
+        },
+        wxLoginCode: async () => "wx-code",
+      },
+    }, {
+      switchTab: ({ url }) => switches.push(url),
+      request(options) {
+        queueMicrotask(() => options.success({ statusCode: 200, data: { ok: true } }));
+      },
+    }, async (page) => {
+      page.data.scene = "login:fixture-scene";
+      page.data.phase = "pending";
+      page.data.agreementAccepted = true;
+      await page.handleConfirm();
+      finalState = {
+        submitting: page.data.submitting,
+        phase: page.data.phase,
+        message: page.data.message,
+      };
+    });
+
+    assert.deepEqual(switches, []);
+    assert.deepEqual(finalState, {
+      submitting: false,
+      phase: "error",
+      message: variant.message,
+    });
+  }
+});
+
 test("confirm page cancels the web login and reports the result", async () => {
   const requests = [];
   let cancelledPhase = "";

@@ -39,8 +39,6 @@ def _load_user(
     user = db.scalar(select(User).where(User.id == user_id))
     if user is None or user.status != 1:
         return None
-    if expected_channel == MINIPROGRAM_CHANNEL and user.is_admin:
-        return None
     bind_audit_actor(request, user.id, is_admin=bool(user.is_admin))
     return user
 
