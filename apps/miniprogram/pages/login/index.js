@@ -1,6 +1,28 @@
 const auth = require("../../services/auth");
 const { getStatusBarHeight } = require("../../utils/system");
 
+const DEFAULT_RETURN_TARGET = "/pages/resumes/index";
+const RETURN_TARGETS = new Set([
+  "/pages/resumes/index",
+  "/pages/profile/index",
+]);
+
+function decodeOption(value) {
+  if (!value) return "";
+  try {
+    return decodeURIComponent(value);
+  } catch (error) {
+    return "";
+  }
+}
+
+function resolveReturnTarget(options) {
+  const candidate = decodeOption(
+    options && (options.returnTo || options.returnUrl || options.redirect),
+  );
+  return RETURN_TARGETS.has(candidate) ? candidate : DEFAULT_RETURN_TARGET;
+}
+
 Page({
   data: {
     loading: true,
@@ -11,31 +33,33 @@ Page({
     privacyReady: false,
     privacySupported: false,
     privacyAuthorizationRequired: false,
-    privacyContractName: "《LinkCV 小程序隐私保护指引》",
-    accountStatusReady: false,
-    accountRegistered: false,
-    accountStatusError: "",
-    message: "正在识别当前微信账号…",
+    privacyContractName: "《LinkResume 小程序隐私保护指引》",
+    returnTo: DEFAULT_RETURN_TARGET,
+    message: "让每一次投递更有底气 · 随时随地同步查阅",
   },
 
   onLoad(options) {
-    const scene = decodeURIComponent((options && options.scene) || "");
+    const scene = decodeOption(options && options.scene);
     if (scene) {
       wx.reLaunch({ url: `/pages/confirm/index?scene=${encodeURIComponent(scene)}` });
       return;
     }
+
+    this.setData({ returnTo: resolveReturnTarget(options) });
     if (auth.hasSession()) {
-      wx.switchTab({ url: "/pages/resumes/index" });
+      wx.switchTab({
+        url: RETURN_TARGETS.has(this.data.returnTo) ? this.data.returnTo : DEFAULT_RETURN_TARGET,
+      });
       return;
     }
     this.setData({ agreementAccepted: auth.hasAcceptedPrivacyAgreement() });
     this.loadPrivacySetting();
-    this.loadAccountStatus();
   },
 
   async loadPrivacySetting() {
     const setting = await auth.getPrivacySetting();
     this.setData({
+      loading: false,
       privacyReady: true,
       privacySupported: setting.supported,
       privacyAuthorizationRequired: setting.needAuthorization,
@@ -62,33 +86,6 @@ Page({
     return this.handlePrimaryAction();
   },
 
-  async loadAccountStatus() {
-    this.setData({
-      loading: true,
-      accountStatusReady: false,
-      accountStatusError: "",
-      message: "正在识别当前微信账号…",
-    });
-    try {
-      const registered = await auth.getAccountStatus();
-      this.setData({
-        loading: false,
-        accountStatusReady: true,
-        accountRegistered: registered,
-        message: registered
-          ? "已找到你的 LinkCV 账号，确认后即可登录。"
-          : "当前微信尚未注册，确认后将创建 LinkCV 账号。",
-      });
-    } catch (error) {
-      this.setData({
-        loading: false,
-        accountStatusReady: false,
-        accountStatusError: error.message || "账号识别失败，请稍后重试。",
-        message: error.message || "账号识别失败，请稍后重试。",
-      });
-    }
-  },
-
   handlePrimaryAction() {
     if (!this.data.agreementAccepted) {
       this.setData({ agreementActionHint: "请先勾选隐私保护指引后再继续" });
@@ -98,46 +95,34 @@ Page({
       !this.data.privacyReady
       || !this.data.privacySupported
       || this.data.submitting
-      || !this.data.accountStatusReady
     ) return;
     auth.acceptPrivacyAgreement();
     return this.handleAccountAction();
   },
 
   async handleAccountAction() {
-    const registered = this.data.accountRegistered;
-    this.setData({
-      submitting: true,
-      message: registered ? "正在登录…" : "正在注册…",
-    });
+    this.setData({ submitting: true, message: "正在登录…" });
     try {
-      if (registered) await auth.loginExistingAccount();
-      else await auth.registerOrLogin();
-      await this.enterResumes();
+      // The server reuses an existing account or creates one when allowed;
+      // the client intentionally does not identify the account first.
+      await auth.registerOrLogin();
+      await this.enterReturnTarget();
     } catch (error) {
-      if (registered && error.code === "PRIVACY_AGREEMENT_REQUIRED") {
-        this.setData({
-          submitting: false,
-          accountRegistered: false,
-          message: "未找到原账号，确认后将为当前微信创建 LinkCV 账号。",
-        });
-        return;
-      }
       this.setData({
         submitting: false,
-        message: error.message || (registered ? "登录失败，请稍后重试。" : "注册失败，请稍后重试。"),
+        message: error.message || "登录失败，请稍后重试。",
       });
     }
   },
 
-  async enterResumes() {
+  async enterReturnTarget() {
     this.setData({ submitting: false, message: "登录成功，正在进入…" });
     await new Promise((resolve) => setTimeout(resolve, 120));
-    wx.switchTab({ url: "/pages/resumes/index" });
+    wx.switchTab({ url: RETURN_TARGETS.has(this.data.returnTo) ? this.data.returnTo : DEFAULT_RETURN_TARGET });
   },
 
   handleDismiss() {
     if (this.data.submitting) return;
-    wx.switchTab({ url: "/pages/home/index" });
+    wx.switchTab({ url: RETURN_TARGETS.has(this.data.returnTo) ? this.data.returnTo : DEFAULT_RETURN_TARGET });
   },
 });

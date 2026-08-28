@@ -65,7 +65,9 @@ Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小�
 
 本期没有管理员开通接口。发布方还需在受控流程中确保至少一个既有用户被标记为 `users.is_admin=true`；公开注册始终是普通用户。没有管理员只会使 `/api/admin/llm/**` 无法使用，不会放宽权限。
 
-生产容器通过 `tolink-app-net` 使用 Docker DNS 连接 MySQL、Redis、MinIO 和平台 RabbitMQ，并须能访问仓库配置的 LinkParse。MySQL、Redis、MinIO、RabbitMQ 与 LinkParse 都不由 Production Compose 创建。Worker 使用 RabbitMQ durable queue、固定 `resume.import` 路由和 DLX/DLT；业务解析失败落 MySQL 终态且不自动重试，Redis、数据库或对象存储等公共依赖不可用时保留消息等待恢复。
+生产容器通过 `tolink-app-net` 使用 Docker DNS 连接 MySQL、Redis、MinIO 和平台 RabbitMQ，并须能访问仓库配置的 LinkParse。MySQL、Redis、MinIO、RabbitMQ 与 LinkParse 都不由 Production Compose 创建。Worker 使用 V2 RabbitMQ durable queue、固定 `resume.import.v2` 路由和独立 DLX/DLT；业务解析失败落 MySQL 终态且不自动重试，Redis、数据库或对象存储等公共依赖不可用时保留消息等待恢复。
+
+PDF layout 与消息 V2 必须按兼容窗口发布：先发布支持 `include_layout=true` 的 LinkParse 并验证旧默认请求仍兼容，再启动连接 V2 topology 的新 LinkCV Worker，确认 V2 queue 只有新消费者后才替换 FastAPI 生产者。V1 exchange、queue 和 DLT 在确认旧队列无在途/重试消息且观察窗口结束前保留，不自动删除；若新 FastAPI 误连旧 LinkParse，PDF 导入会安全失败为 `RESUME_LAYOUT_UNSUPPORTED`，不得回退到旧 Markdown 成功路径。
 
 模板创建与异步导入是同一版本的跨端契约，Web、FastAPI、Worker 和迁移必须一起发布。执行 `0017` 前先运行 `uv run --directory apps/backend python scripts/release/cleanup_legacy_resume_imports.py` 获取 dry-run 清单，人工确认后再加 `--execute`；旧导入未归零时迁移会拒绝继续。
 
@@ -88,7 +90,7 @@ CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并�
 - 应用回滚必须把 `TAG` 与 `PI_TAG` 一起切回同一环境、同一版本的两个不可变镜像标签并重新执行 Compose；不得把 Dev 标签部署到 Production。
 - 数据库迁移是 forward-only：当前与历史 revision 都不提供 down SQL，禁止执行 Alembic downgrade，也不做升级降级往返测试。
 - 发布前按迁移风险准备并验证数据库及相关对象存储备份。需要恢复旧数据库状态时使用备份；普通 schema 或数据缺陷通过新的向前 revision 修正。
-- 当前 head `0033`；`0032` 为 Agent 消息增加结构化澄清字段，`0033` 新增面试求职进程、单场面试和素材元数据。面试迁移是加法 DDL，不回填样例数据。
+- 当前 head `0044`；`0032` 为 Agent 消息增加结构化澄清字段，`0033` 新增面试求职进程、单场面试和素材元数据，`0034` 删除存量已归档 JD 并移除对应字段和索引，`0035`–`0043` 继续收敛简历快照、模板、可见性与用户个人画像 schema，`0044` 只恢复后续 `classic-technical-cn` 模板快照的紧凑字号、行距与主题色，既有简历和版本不变。
 - 如果使用执行 `0033` 前的数据库备份恢复，必须同时处理备份之后写入 MinIO 的面试对象；只恢复数据库会产生失去元数据索引的对象。
 - 只有旧应用兼容当前新 schema 时才允许回退应用镜像。若不兼容，必须继续向前修复或按完整恢复方案同时恢复数据库与应用，不能只回切镜像。
 - MySQL DDL 可能隐式提交；迁移失败后停止自动重试，核对实际 current 和 schema，再决定新 revision 或备份恢复。

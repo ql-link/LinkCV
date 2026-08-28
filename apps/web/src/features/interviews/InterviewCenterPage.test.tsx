@@ -293,32 +293,18 @@ describe("InterviewCenterPage API projections", () => {
     })));
   });
 
-  it("renders the seven independent base stage columns when the development database has no applications", async () => {
+  it("renders the real empty state and zero metrics when there are no applications", async () => {
     mocks.listJobApplications.mockResolvedValue({ items: [], next_cursor: null });
 
     render(<InterviewCenterPage view="applications" />);
 
-    expect(await screen.findByText("进行中")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "还没有求职进程" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "求职进程" })).not.toBeInTheDocument();
-    expect(screen.getByText("进行中").closest("article")).toHaveTextContent("18");
-    expect(screen.getByText("本周待面试").closest("article")).toHaveTextContent("6");
-    expect(screen.getByText("待跟进").closest("article")).toHaveTextContent("7");
-    expect(screen.getByText("已拿 Offer").closest("article")).toHaveTextContent("2");
-    for (const stage of ["筛选中", "等待沟通", "一面", "二面", "HR 面", "Offer", "已结束"]) {
-      expect(screen.getByRole("heading", { name: new RegExp(stage) })).toBeInTheDocument();
+    for (const label of ["进行中的进程", "本周待面试", "待跟进", "已拿 Offer"]) {
+      expect(screen.getByText(label).closest("article")).toHaveTextContent("0");
     }
-    expect(screen.getAllByRole("article", { name: /算法工程师|产品经理|开发工程师|数据分析师/ }).length).toBeGreaterThan(0);
-    const tencentCard = screen.getByRole("article", { name: "腾讯 前端开发工程师" });
-    expect(within(tencentCard).getByText("一面")).toBeInTheDocument();
-    expect(within(tencentCard).queryByText(/简历 v/)).not.toBeInTheDocument();
-    expect(tencentCard.querySelector("time.progress-card-time")).toHaveTextContent(/\d{2}[\/]\d{2}/);
-    expect(screen.queryByRole("group", { name: "面试轮次筛选" })).not.toBeInTheDocument();
-    expect(document.querySelector('[data-column-key="interview:1:一面"]')).toContainElement(tencentCard);
-    expect(document.querySelector('[data-column-key="interview:2:二面"]')).toHaveTextContent("阿里云");
-    fireEvent.click(screen.getByRole("button", { name: "列表" }));
-    expect(screen.getByRole("table", { name: "求职进程列表" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "筛选" }));
-    expect(screen.getByRole("group", { name: "求职进程状态范围" })).toBeInTheDocument();
+    expect(screen.queryByText("展示数据")).not.toBeInTheDocument();
+    expect(screen.queryByRole("article", { name: /算法工程师|产品经理|开发工程师|数据分析师/ })).not.toBeInTheDocument();
   });
 
   it("adds each real extra stage as an independent column in pipeline order", () => {
@@ -581,23 +567,40 @@ describe("InterviewCenterPage API projections", () => {
     await waitFor(() => expect(mocks.advanceJobApplication).not.toHaveBeenCalled());
   });
 
-  it("keeps mock drag feedback read-only", async () => {
-    mocks.listJobApplications.mockResolvedValue({ items: [], next_cursor: null });
+  it("shows an error, refreshes real data, and restores the card after a drag conflict", async () => {
+    const conflictApplication = {
+      ...application,
+      stage_state: "awaiting_result" as const,
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications
+      .mockResolvedValueOnce({ items: [conflictApplication], next_cursor: null })
+      .mockResolvedValueOnce({ items: [conflictApplication], next_cursor: null });
+    mocks.advanceJobApplication.mockRejectedValueOnce(
+      new ApiRequestError(409, "INTERVIEW_EDIT_CONFLICT"),
+    );
 
     render(<InterviewCenterPage view="applications" />);
 
-    const card = await screen.findByRole("article", { name: "腾讯 前端开发工程师" });
-    const offerColumn = document.querySelector('[data-column-key="offer:Offer"]');
+    const card = await screen.findByRole("article", { name: "腾讯 后端开发工程师" });
+    const hrColumn = document.querySelector('[data-column-key="hr:HR 面"]');
     const dataTransfer = {
       effectAllowed: "",
+      dropEffect: "",
       setData: vi.fn(),
-      getData: vi.fn().mockReturnValue("mock-application-9"),
+      getData: vi.fn().mockReturnValue("21"),
     } as unknown as DataTransfer;
     fireEvent.dragStart(card, { dataTransfer });
-    fireEvent.drop(offerColumn as HTMLElement, { dataTransfer });
+    fireEvent.dragOver(hrColumn as HTMLElement, { dataTransfer });
+    fireEvent.drop(hrColumn as HTMLElement, { dataTransfer });
 
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("拖动不会写入"));
-    expect(mocks.advanceJobApplication).not.toHaveBeenCalled();
+    expect(await screen.findByRole("alert")).toHaveTextContent("请刷新后再试");
+    await waitFor(() => expect(mocks.listJobApplications).toHaveBeenCalledTimes(2));
+    await waitFor(() => {
+      const restoredCard = screen.getByRole("article", { name: "腾讯 后端开发工程师" });
+      expect(restoredCard).not.toHaveClass("is-advancing");
+      expect(restoredCard).toHaveAttribute("draggable", "true");
+    });
   });
 
   it("moves a scheduled interview by half an hour without adding half-hour grid lines", async () => {

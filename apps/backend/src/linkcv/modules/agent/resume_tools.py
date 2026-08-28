@@ -743,6 +743,13 @@ def apply_operations(
             or expected not in block.text
         ):
             raise ApiError(409, "TARGET_STALE")
+        # A whole-block locator deliberately carries no user selection.  Once
+        # the block and its expected hash have been verified against the
+        # current markdown, persist the exact protected text for the proposal
+        # card.  This does not alter diagnosis data or the patch scope; it only
+        # makes the server-derived before value observable to clients.
+        if not target.selected_text:
+            target.selected_text = expected
         if operation.op == "replace_target_text":
             segment = updated[block.start : block.end]
             if segment.count(expected) != 1:

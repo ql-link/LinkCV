@@ -497,10 +497,8 @@
   height: 30px;
   place-items: center;
   background: transparent;
-  color: var(--ui-foreground);
+  color: var(--tone, var(--ui-foreground));
 }
-.career-summary-icon.tone-career { color: var(--ui-career-accent); }
-.career-summary-icon.tone-neutral { color: var(--ui-foreground); }
 .career-summary-icon svg { width: 24px; height: 24px; stroke-width: 1.7; }
 .career-application-summary-bar article > div {
   display: grid;
@@ -538,15 +536,20 @@
   background: color-mix(in srgb, var(--ui-warning-subtle) 46%, var(--ui-surface));
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-warning) 12%, transparent);
 }
+.progress-column.is-valid-drop-target:not(.is-drop-target) {
+  border-color: color-mix(in srgb, var(--ui-warning) 34%, var(--ui-border));
+}
 .progress-column-heading { display: flex; min-height: 45px; box-sizing: border-box; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 8px 2px 7px; }
 .progress-column-heading h3 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 13px; font-weight: 650; line-height: 20px; }
 .progress-column-heading h3 span { display: grid; min-width: 17px; height: 17px; place-items: center; border-radius: var(--ui-radius-full); background: var(--ui-surface-muted); color: var(--ui-text-muted); font-size: 9px; font-variant-numeric: tabular-nums; }
 .progress-column-heading > svg { width: 15px; height: 15px; margin: 2px 1px 0 0; color: var(--ui-text-muted); }
 .progress-column-cards { display: grid; min-height: 0; flex: 1; align-content: start; gap: 8px; }
-.progress-card { position: relative; display: grid; min-width: 0; min-height: 80px; box-sizing: border-box; margin: 0; border: 1px solid var(--ui-border); border-radius: 10px; background: var(--ui-surface); padding: 10px; cursor: grab; transition: border-color 180ms var(--ui-ease-press), box-shadow 180ms var(--ui-ease-press), transform 180ms var(--ui-ease-press), opacity 180ms var(--ui-ease-press); }
-.progress-card:active { cursor: grabbing; }
+.progress-card { position: relative; display: grid; min-width: 0; min-height: 80px; box-sizing: border-box; margin: 0; border: 1px solid var(--ui-border); border-radius: 10px; background: var(--ui-surface); padding: 10px; transition: border-color 180ms var(--ui-ease-press), box-shadow 180ms var(--ui-ease-press), transform 180ms var(--ui-ease-press), opacity 180ms var(--ui-ease-press); }
+.progress-card.is-draggable { cursor: grab; }
+.progress-card.is-draggable:active { cursor: grabbing; }
 .progress-card:hover { border-color: var(--ui-border-strong); box-shadow: var(--ui-shadow-xs); }
 .progress-card.is-dragging { opacity: .72; transform: translateY(-3px) scale(1.01); box-shadow: var(--ui-shadow-sm); }
+.progress-card.is-advancing { opacity: .6; }
 .progress-card-main-row { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px; }
 .progress-card-open { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px; border: 0; background: transparent; padding: 0; color: inherit; text-align: left; cursor: pointer; }
 .progress-card-open.is-static { cursor: grab; }

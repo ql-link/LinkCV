@@ -219,6 +219,78 @@ def test_blank_create_update_versions_and_restore() -> None:
         ]
 
 
+def test_update_normalizes_tiptap_ordered_list_noop_type() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        resume = create_resume(client, app).json()["resume"]
+        data = resume["data"]
+        data["sections"]["custom_sections"] = [
+            {
+                "id": "blk_1111111111111111",
+                "title": "工作经历",
+                "items": [
+                    {
+                        "id": "item_1111111111111111",
+                        "title": None,
+                        "subtitle": None,
+                        "content": {
+                            "format": "tiptap-json",
+                            "content": {
+                                "type": "doc",
+                                "content": [
+                                    {
+                                        "type": "orderedList",
+                                        "attrs": {"start": 1, "type": None},
+                                        "content": [
+                                            {
+                                                "type": "listItem",
+                                                "content": [
+                                                    {
+                                                        "type": "paragraph",
+                                                        "content": [
+                                                            {
+                                                                "type": "text",
+                                                                "text": "第一项",
+                                                            }
+                                                        ],
+                                                    }
+                                                ],
+                                            }
+                                        ],
+                                    }
+                                ],
+                            },
+                        },
+                        "source_refs": [],
+                    }
+                ],
+            }
+        ]
+        data["semantic_sections"].append(
+            {
+                "id": "sem_1111111111111111",
+                "semantic_kind": "work",
+                "display_title": "工作经历",
+                "semantic_source": "user",
+                "semantic_confidence": None,
+                "content_key": "custom_sections",
+                "custom_section_id": "blk_1111111111111111",
+            }
+        )
+
+        response = client.put(
+            f"/api/resumes/{resume['id']}",
+            json={"data": data, "base_lock_version": resume["lock_version"]},
+        )
+
+        assert response.status_code == 200
+        saved_content = response.json()["resume"]["data"]["sections"][
+            "custom_sections"
+        ][0]["items"][0]["content"]["content"]
+        assert saved_content["content"][0]["attrs"] == {"start": 1}
+
+
 def test_semantic_classification_returns_scoped_suggestion_without_writing_resume() -> None:
     app = build_app()
     service = FakeSemanticClassificationService()

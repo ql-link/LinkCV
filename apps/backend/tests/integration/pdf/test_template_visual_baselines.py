@@ -35,7 +35,7 @@ TEMPLATE_CASES = (
     ("classic-cn", "classic", 14, 1.55, "#2F4858", False, 14, 16, 14, 16),
     ("modern-two-column-cn", "modern", 13.5, 1.5, "#315C6B", False, 12, 14, 12, 14),
     ("compact-tech-cn", "compact", 12.5, 1.38, "#263238", True, 10, 12, 10, 12),
-    ("classic-technical-cn", "classic-technical", 11.5, 1.42, "#2F4858", True, 9, 11, 9, 11),
+    ("classic-technical-cn", "classic-technical", 9.5, 1.25, "#202632", True, 9, 11, 9, 11),
     ("administrative-sidebar-cn", "administrative-sidebar", 10, 1.42, "#294F73", True, 0, 0, 0, 0),
     ("campus-professional-cn", "campus-professional", 9.4, 1.38, "#4F8DF7", True, 8, 9, 8, 9),
     ("civic-service-cn", "civic-service", 9.7, 1.45, "#3476D2", True, 0, 10, 8, 10),

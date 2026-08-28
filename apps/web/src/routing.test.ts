@@ -21,6 +21,7 @@ describe("LinkCV routes", () => {
     expect(parseAppRoute("/login", "?mode=register")).toEqual({ kind: "auth", mode: "register", next: null });
     expect(parseAppRoute("/admin/llm/models")).toEqual({ kind: "admin" });
     expect(parseAppRoute("/resumes/")).toEqual({ kind: "resumes" });
+    expect(parseAppRoute("/assistant/")).toEqual({ kind: "assistant" });
     expect(parseAppRoute("/templates/")).toEqual({ kind: "templates" });
     expect(parseAppRoute("/resumes/resume_123/edit")).toEqual({ kind: "editor", resumeId: "resume_123" });
     expect(parseAppRoute("/jobs")).toEqual({ kind: "jobs" });
@@ -72,6 +73,7 @@ describe("LinkCV routes", () => {
     expect(jobDetailPath("job/a b")).toBe("/career/jobs/job%2Fa%20b");
     expect(jobEditPath("job/a b")).toBe("/career/jobs/job%2Fa%20b/edit");
     expect(isSafeAppPath("/resumes/resume_123/edit")).toBe(true);
+    expect(isSafeAppPath("/assistant")).toBe(true);
     expect(isSafeAppPath("/templates")).toBe(true);
     expect(isSafeAppPath("/jobs/job_123/edit")).toBe(true);
     expect(isSafeAppPath("/interviews?view=records")).toBe(true);

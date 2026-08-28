@@ -52,6 +52,22 @@ function tiptapContent(value: RichText): JSONContent | null {
     : null;
 }
 
+function normalizePersistedTiptapNode(node: JSONContent): JSONContent {
+  const normalizedAttrs = node.type === "orderedList"
+    && node.attrs
+    && Object.prototype.hasOwnProperty.call(node.attrs, "type")
+    && node.attrs.type === null
+    ? Object.fromEntries(Object.entries(node.attrs).filter(([key]) => key !== "type"))
+    : node.attrs;
+  return {
+    ...node,
+    ...(node.attrs === undefined ? {} : { attrs: normalizedAttrs }),
+    ...(node.content === undefined
+      ? {}
+      : { content: node.content.map(normalizePersistedTiptapNode) }),
+  };
+}
+
 export function hasCanonicalTiptapSections(document: ResumeDocument) {
   if (!document.semantic_sections.length) return false;
   const custom = new Map(document.sections.custom_sections.map((section) => [section.id, section]));
@@ -153,7 +169,9 @@ export function resumeDocumentFromEditorDocument(
   previous: ResumeDocument,
 ): ResumeDocument {
   const avatar = findUserAvatar(editorDocument);
-  const canonical = stripTemplateProjectionFromEditorDocument(editorDocument, previous);
+  const canonical = normalizePersistedTiptapNode(
+    stripTemplateProjectionFromEditorDocument(editorDocument, previous),
+  );
   const blocks = editorBlocks(canonical, previous);
   const previousCustom = new Map(previous.sections.custom_sections.map((section) => [section.id, section]));
   const previousSemantic = new Map(previous.semantic_sections

@@ -18,6 +18,7 @@ import {
   BriefcaseBusiness,
   CalendarDays,
   Check,
+  CircleAlert,
   ChevronLeft,
   ChevronRight,
   CircleCheck,
@@ -31,7 +32,6 @@ import {
   LayoutGrid,
   Link2,
   ListChecks,
-  Lightbulb,
   Mic,
   NotebookTabs,
   Pencil,
@@ -63,7 +63,6 @@ import { careerApplicationPath, careerViewPath, navigateTo, type InterviewView }
 import {
   ApplicationsBoard,
   applicationStatusLabel,
-  createCareerApplicationsMock,
   formatApplicationDate,
   formatApplicationDateTime,
   interviewRoundLabel,
@@ -523,8 +522,8 @@ export function InterviewCenterPage({
       {navigation}
       <main className="dashboard-content interview-center-content">
       {notice && (
-        <div className="interview-demo-notice" role="status">
-          <Lightbulb />
+        <div className="interview-error-notice" role="alert" aria-live="assertive">
+          <CircleAlert aria-hidden="true" />
           {notice}
           {pendingConflict && (
             <button
@@ -574,7 +573,7 @@ export function InterviewCenterPage({
           scope={applicationScope}
           sortNewestFirst={sortApplicationsNewestFirst}
           onCreate={() => setShowCreateApplication(true)}
-          onChanged={() => void loadData(initialSessionId)}
+          onChanged={() => loadData(initialSessionId)}
           onNotice={setNotice}
           onCreateInterview={(applicationId) => {
             setCreateInterviewApplicationId(applicationId);
@@ -731,15 +730,12 @@ function ApplicationsView({
   scope: "all" | "active" | "ended" | "archived";
   sortNewestFirst: boolean;
   onCreate: () => void;
-  onChanged: () => void;
+  onChanged: () => Promise<void>;
   onNotice: (notice: string) => void;
   onCreateInterview: (applicationId: string) => void;
 }) {
-  const mockApplications = useMemo(createCareerApplicationsMock, []);
-  const isUsingMock = applications.length === 0;
-  const sourceApplications = isUsingMock ? mockApplications : applications;
   const normalizedQuery = query.trim().toLowerCase();
-  const visibleApplications = sourceApplications.filter((item) => {
+  const visibleApplications = applications.filter((item) => {
     const matchesScope = scope === "all"
       || (scope === "active" && item.status === "active" && !item.archived_at)
       || (scope === "ended" && item.status !== "active" && !item.archived_at)
@@ -758,25 +754,22 @@ function ApplicationsView({
     : null;
   const applicationWeekStart = startOfWeek().getTime();
   const applicationWeekEnd = addDays(new Date(applicationWeekStart), 7).getTime();
-  const dashboardMetrics = isUsingMock
-    ? { active: 18, weekly: 6, followUp: 7, offers: 2 }
-    : {
-        active: sourceApplications.filter((item) => item.status === "active" && !item.archived_at).length,
-        weekly: sourceApplications.filter((item) => {
-          if (!item.next_session_start_at) return false;
-          const startAt = new Date(item.next_session_start_at).getTime();
-          return startAt >= applicationWeekStart && startAt < applicationWeekEnd;
-        }).length,
-        followUp: sourceApplications.filter((item) => item.status === "active" && item.stage_state === "awaiting_result").length,
-        offers: sourceApplications.filter((item) => item.offer_status === "written_offer_received" || item.offer_status === "accepted").length,
-      };
+  const dashboardMetrics = {
+    active: applications.filter((item) => item.status === "active" && !item.archived_at).length,
+    weekly: applications.filter((item) => {
+      if (!item.next_session_start_at) return false;
+      const startAt = new Date(item.next_session_start_at).getTime();
+      return startAt >= applicationWeekStart && startAt < applicationWeekEnd;
+    }).length,
+    followUp: applications.filter((item) => item.status === "active" && item.stage_state === "awaiting_result").length,
+    offers: applications.filter((item) => item.offer_status === "written_offer_received" || item.offer_status === "accepted").length,
+  };
 
   return (
     <div className="career-applications-layout">
       <ApplicationsBoard
         visibleApplications={visibleApplications}
         displayMode={displayMode}
-        isUsingMock={isUsingMock}
         metrics={dashboardMetrics}
         onCreate={onCreate}
         onChanged={onChanged}
@@ -792,7 +785,7 @@ function ApplicationsView({
                 <span role="cell">{item.current_stage_label}</span>
                 <span role="cell">{applicationStatusLabel(item)}</span>
                 <span role="cell">{item.next_session_start_at ? formatApplicationDateTime(item.next_session_start_at) : "暂未安排"}</span>
-                <span role="cell">{isUsingMock ? <span className="career-demo-label">展示数据</span> : <Button size="sm" variant="outline" onClick={() => navigateTo(careerApplicationPath(item.id))}>查看进程</Button>}</span>
+                <span role="cell"><Button size="sm" variant="outline" onClick={() => navigateTo(careerApplicationPath(item.id))}>查看进程</Button></span>
               </div>
             ))}
           </div>

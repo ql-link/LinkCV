@@ -9,10 +9,10 @@ import {
   type WheelEvent as ReactWheelEvent,
 } from "react";
 import {
+  BriefcaseBusiness,
   CalendarDays,
   GripVertical,
   Plus,
-  RefreshCw,
   Trophy,
   Bell,
 } from "lucide-react";
@@ -107,6 +107,25 @@ export const PROGRESS_COLUMNS: ProgressColumnDescriptor[] = [
 
 export function progressColumnKey(application: JobApplicationSummary): ProgressColumnKey {
   return stageDescriptorForApplication(application).key;
+}
+
+function isApplicationDraggable(application: JobApplicationSummary): boolean {
+  return application.status === "active"
+    && application.archived_at === null
+    && application.current_stage_type !== "offer";
+}
+
+function canDropApplication(
+  application: JobApplicationSummary,
+  target: ProgressColumnDescriptor,
+): boolean {
+  if (!isApplicationDraggable(application) || application.stage_state !== "awaiting_result") return false;
+  const source = stageDescriptorForApplication(application);
+  return !source.isEnded
+    && !target.isEnded
+    && target.stageType !== null
+    && target.key !== source.key
+    && target.order > source.order;
 }
 
 export function interviewRoundLabel(roundNo: number): string {
@@ -257,78 +276,9 @@ export function formatApplicationDateTime(value: string): string {
   }).format(new Date(value));
 }
 
-export function createCareerApplicationsMock(): JobApplicationSummary[] {
-  const now = new Date();
-  const dateAt = (days: number, hour = 10) => {
-    const value = new Date(now);
-    value.setDate(value.getDate() + days);
-    value.setHours(hour, 0, 0, 0);
-    return value.toISOString();
-  };
-  const build = (
-    id: string,
-    company: string,
-    role: string,
-    stageType: ApplicationStageType,
-    stageLabel: string,
-    color: InterviewCalendarColor,
-    overrides: Partial<JobApplicationSummary> = {},
-  ): JobApplicationSummary => ({
-    id: `mock-application-${id}`,
-    job_description_id: null,
-    resume_version_id: null,
-    company_name_snapshot: company,
-    job_title_snapshot: role,
-    job_snapshot: {},
-    resume_title_snapshot: `简历 v2.${Number(id) % 3}`,
-    calendar_color: color,
-    current_stage_type: stageType,
-    current_round_no: stageType === "interview" ? 1 : null,
-    current_stage_label: stageLabel,
-    stage_state: "awaiting_result",
-    status: "active",
-    offer_status: "none",
-    is_favorite: false,
-    applied_at: dateAt(-Number(id), 9),
-    notes: null,
-    archived_at: null,
-    lock_version: 1,
-    created_at: dateAt(-Number(id) - 2, 9),
-    updated_at: dateAt(-Math.ceil(Number(id) / 4), 12),
-    next_session_id: null,
-    next_session_start_at: null,
-    next_session_end_at: null,
-    next_session_mode: null,
-    ...overrides,
-  });
-
-  return [
-    build("1", "百度", "算法工程师（NLP）", "screening", "筛选中", "blue"),
-    build("2", "小米", "后端开发工程师", "screening", "筛选中", "orange"),
-    build("3", "美团", "数据分析师", "screening", "筛选中", "yellow"),
-    build("4", "小红书", "产品运营（社区）", "screening", "筛选中", "red"),
-    build("5", "BOSS直聘", "商业产品经理", "screening", "筛选中", "green"),
-    build("6", "腾讯", "产品经理（PCG）", "screening", "等待沟通", "blue", { stage_state: "awaiting_schedule" }),
-    build("7", "字节跳动", "数据科学家", "screening", "等待沟通", "blue", { stage_state: "awaiting_schedule" }),
-    build("8", "阿里云", "云计算研发工程师", "screening", "等待沟通", "orange", { stage_state: "awaiting_schedule" }),
-    build("9", "腾讯", "前端开发工程师", "interview", "一面", "blue", { current_round_no: 1, stage_state: "scheduled", next_session_id: "mock-session-9", next_session_start_at: dateAt(1, 10), next_session_end_at: dateAt(1, 11), next_session_mode: "video" }),
-    build("10", "字节跳动", "算法工程师", "interview", "一面", "blue", { current_round_no: 1, stage_state: "scheduled", next_session_id: "mock-session-10", next_session_start_at: dateAt(2, 14), next_session_end_at: dateAt(2, 15), next_session_mode: "video" }),
-    build("11", "美团", "用户研究员", "interview", "一面", "yellow", { current_round_no: 1, stage_state: "scheduled", next_session_id: "mock-session-11", next_session_start_at: dateAt(3, 10), next_session_end_at: dateAt(3, 11), next_session_mode: "video" }),
-    build("12", "小红书", "产品经理", "interview", "一面", "red", { current_round_no: 1, stage_state: "scheduled", next_session_id: "mock-session-12", next_session_start_at: dateAt(4, 15), next_session_end_at: dateAt(4, 16), next_session_mode: "onsite" }),
-    build("13", "阿里云", "后端开发工程师", "interview", "二面", "orange", { current_round_no: 2, stage_state: "scheduled", next_session_id: "mock-session-13", next_session_start_at: dateAt(5, 14), next_session_end_at: dateAt(5, 15), next_session_mode: "video" }),
-    build("14", "腾讯", "测试开发工程师", "interview", "二面", "blue", { current_round_no: 2, stage_state: "scheduled", next_session_id: "mock-session-14", next_session_start_at: dateAt(6, 10), next_session_end_at: dateAt(6, 11), next_session_mode: "video" }),
-    build("15", "字节跳动", "运营经理（商业化）", "hr", "HR 面", "blue", { stage_state: "scheduled", next_session_id: "mock-session-15", next_session_start_at: dateAt(7, 16), next_session_end_at: dateAt(7, 17), next_session_mode: "video" }),
-    build("16", "美团", "数据分析师", "offer", "Offer", "yellow", { stage_state: "negotiating", offer_status: "written_offer_received" }),
-    build("17", "阿里云", "云计算研发工程师", "offer", "Offer", "orange", { stage_state: "negotiating", offer_status: "written_offer_received" }),
-    build("18", "小米", "算法工程师", "interview", "已结束", "orange", { status: "withdrawn", current_round_no: 1, stage_state: "awaiting_result" }),
-    build("19", "百度", "后端开发工程师", "interview", "已结束", "blue", { status: "rejected", current_round_no: 2, stage_state: "awaiting_result", resume_title_snapshot: "简历 v1.9" }),
-  ];
-}
-
 export function ApplicationsBoard({
   visibleApplications,
   displayMode,
-  isUsingMock,
   metrics,
   onCreate,
   onChanged,
@@ -336,19 +286,17 @@ export function ApplicationsBoard({
 }: {
   visibleApplications: JobApplicationSummary[];
   displayMode: "board" | "list";
-  isUsingMock: boolean;
   metrics: ProgressSummaryMetrics;
   onCreate: () => void;
-  onChanged: () => void;
+  onChanged: () => Promise<void>;
   onNotice: (notice: string) => void;
 }) {
   return (
     <>
-      <ProgressSummaryBar metrics={metrics} isUsingMock={isUsingMock} />
+      <ProgressSummaryBar metrics={metrics} />
       {displayMode === "board" && visibleApplications.length > 0 && (
         <ProgressBoard
           applications={visibleApplications}
-          isUsingMock={isUsingMock}
           onCreate={onCreate}
           onChanged={onChanged}
           onNotice={onNotice}
@@ -360,42 +308,37 @@ export function ApplicationsBoard({
 
 export function ProgressSummaryBar({
   metrics,
-  isUsingMock,
 }: {
   metrics: ProgressSummaryMetrics;
-  isUsingMock: boolean;
 }) {
   const entries = [
     {
-      icon: <RefreshCw />,
-      tone: "career",
-      label: "进行中",
+      icon: <BriefcaseBusiness />,
+      tone: "blue",
+      label: "进行中的进程",
       value: metrics.active,
-      change: isUsingMock ? "+2" : undefined,
-      hint: isUsingMock ? undefined : "当前全部进程",
+      hint: "当前全部进程",
     },
     {
       icon: <CalendarDays />,
-      tone: "neutral",
+      tone: "orange",
       label: "本周待面试",
       value: metrics.weekly,
-      change: isUsingMock ? "+1" : undefined,
-      hint: isUsingMock ? undefined : "已安排场次",
+      hint: "已安排场次",
     },
     {
       icon: <Bell />,
-      tone: "neutral",
+      tone: "purple",
       label: "待跟进",
       value: metrics.followUp,
       hint: "需要及时跟进",
     },
     {
       icon: <Trophy />,
-      tone: "neutral",
+      tone: "green",
       label: "已拿 Offer",
       value: metrics.offers,
-      change: isUsingMock ? "+1" : undefined,
-      hint: isUsingMock ? undefined : "书面 Offer",
+      hint: "书面 Offer",
     },
   ];
   return (
@@ -406,7 +349,7 @@ export function ProgressSummaryBar({
           <div>
             <small>{entry.label}</small>
             <strong>{entry.value}</strong>
-            <p>{entry.change && <>较上周 <b>{entry.change}</b></>}{entry.hint}</p>
+            <p>{entry.hint}</p>
           </div>
         </article>
       ))}
@@ -416,22 +359,22 @@ export function ProgressSummaryBar({
 
 export function ProgressBoard({
   applications,
-  isUsingMock,
   onCreate,
   onChanged,
   onNotice,
 }: {
   applications: JobApplicationSummary[];
-  isUsingMock: boolean;
   onCreate: () => void;
-  onChanged: () => void;
+  onChanged: () => Promise<void>;
   onNotice: (notice: string) => void;
 }) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<ProgressColumnKey | null>(null);
+  const [advancingId, setAdvancingId] = useState<string | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const boardRef = useRef<HTMLElement | null>(null);
   const dragRef = useRef<{ id: string; source: ProgressColumnKey } | null>(null);
+  const suppressCardClickRef = useRef(false);
   const panRef = useRef<{ startX: number; startScrollLeft: number; moved: boolean } | null>(null);
   const autoScrollRef = useRef<{ direction: -1 | 1; timer: number } | null>(null);
   const columns = useMemo(() => buildProgressColumns(applications), [applications]);
@@ -550,8 +493,13 @@ export function ProgressBoard({
   };
 
   const handleDragStart = (item: JobApplicationSummary, event: ReactDragEvent<HTMLElement>) => {
+    if (!isApplicationDraggable(item) || advancingId !== null) {
+      event.preventDefault();
+      return;
+    }
     const source = progressColumnKey(item);
     dragRef.current = { id: item.id, source };
+    suppressCardClickRef.current = true;
     setDraggingId(item.id);
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = "move";
@@ -567,10 +515,6 @@ export function ProgressBoard({
     if (!draggedId || !drag) return;
     const application = applications.find((item) => item.id === draggedId);
     if (!application) return;
-    if (isUsingMock) {
-      onNotice("展示数据仅用于演示，拖动不会写入求职进程。");
-      return;
-    }
     const source = columns.find((column) => column.key === drag.source)
       ?? stageDescriptorForApplication(application);
     if (target.key === source.key) return;
@@ -599,16 +543,24 @@ export function ProgressBoard({
       target_round_no: target.roundNo,
       target_stage_label: target.stageLabel,
     };
+    setAdvancingId(application.id);
     try {
       await api.advanceJobApplication(application.id, {
         ...transition,
         base_lock_version: application.lock_version,
       });
-      onChanged();
+      await onChanged();
     } catch (error) {
       onNotice(applicationTransitionError(error));
+      await onChanged();
+    } finally {
+      setAdvancingId(null);
     }
   };
+
+  const draggingApplication = draggingId
+    ? applications.find((item) => item.id === draggingId) ?? null
+    : null;
 
   const handleBoardWheel = (event: ReactWheelEvent<HTMLElement>) => {
     if (!event.shiftKey) return;
@@ -661,19 +613,30 @@ export function ProgressBoard({
             column={column}
             draggingId={draggingId}
             dropTarget={dropTarget}
+            advancingId={advancingId}
+            canAcceptDrop={Boolean(draggingApplication && canDropApplication(draggingApplication, column))}
             onCreate={onCreate}
             onDragStart={handleDragStart}
-            onDragEnd={clearDrag}
+            onDragEnd={() => {
+              clearDrag();
+              window.setTimeout(() => {
+                suppressCardClickRef.current = false;
+              }, 0);
+            }}
             onDragOver={(event) => {
+              if (!draggingApplication || !canDropApplication(draggingApplication, column)) return;
               event.preventDefault();
-              if (draggingId) setDropTarget(column.key);
+              event.dataTransfer.dropEffect = "move";
+              setDropTarget(column.key);
               updateAutoScroll(event.clientX);
             }}
             onDragLeave={(event) => {
               if (event.currentTarget === event.target) setDropTarget(null);
             }}
             onDrop={(event) => void handleDrop(column, event)}
-            isUsingMock={isUsingMock}
+            onOpen={(item) => {
+              if (!suppressCardClickRef.current) navigateTo(careerApplicationPath(item.id));
+            }}
           />
         ))}
       </div>
@@ -685,28 +648,32 @@ export function ProgressColumn({
   column,
   draggingId,
   dropTarget,
+  advancingId,
+  canAcceptDrop,
   onCreate,
   onDragStart,
   onDragEnd,
   onDragOver,
   onDragLeave,
   onDrop,
-  isUsingMock,
+  onOpen,
 }: {
   column: ProgressColumn;
   draggingId: string | null;
   dropTarget: ProgressColumnKey | null;
+  advancingId: string | null;
+  canAcceptDrop: boolean;
   onCreate: () => void;
   onDragStart: (item: JobApplicationSummary, event: ReactDragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
   onDragOver: (event: ReactDragEvent<HTMLDivElement>) => void;
   onDragLeave: (event: ReactDragEvent<HTMLDivElement>) => void;
   onDrop: (event: ReactDragEvent<HTMLDivElement>) => void;
-  isUsingMock: boolean;
+  onOpen: (item: JobApplicationSummary) => void;
 }) {
   return (
     <div
-      className={`progress-column ${dropTarget === column.key ? "is-drop-target" : ""}`}
+      className={`progress-column${canAcceptDrop ? " is-valid-drop-target" : ""}${dropTarget === column.key ? " is-drop-target" : ""}`}
       data-column-key={column.key}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
@@ -723,9 +690,11 @@ export function ProgressColumn({
             item={item}
             column={column}
             isDragging={draggingId === item.id}
-            isUsingMock={isUsingMock}
+            isAdvancing={advancingId === item.id}
+            draggable={isApplicationDraggable(item) && advancingId !== item.id}
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
+            onOpen={() => onOpen(item)}
           />
         ))}
         {!column.items.length && <p className="pipeline-empty">暂无进程</p>}
@@ -739,20 +708,23 @@ export function ProgressCard({
   item,
   column,
   isDragging,
-  isUsingMock,
+  isAdvancing,
+  draggable,
   onDragStart,
   onDragEnd,
+  onOpen,
 }: {
   item: JobApplicationSummary;
   column: ProgressColumnDescriptor;
   isDragging: boolean;
-  isUsingMock: boolean;
+  isAdvancing: boolean;
+  draggable: boolean;
   onDragStart: (item: JobApplicationSummary, event: ReactDragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
+  onOpen: () => void;
 }) {
   const timeLabel = applicationCardTimeLabel(item, column);
   const isScreeningColumn = column.stageType === "screening";
-  const open = !isUsingMock ? () => navigateTo(careerApplicationPath(item.id)) : undefined;
   const content = (
     <>
       <CompanyLogo item={{ company: item.company_name_snapshot, logo: item.company_name_snapshot.slice(0, 1), color: item.calendar_color }} />
@@ -764,14 +736,16 @@ export function ProgressCard({
   );
   return (
     <article
-      className={`progress-card ${isDragging ? "is-dragging" : ""}`}
+      className={`progress-card${draggable ? " is-draggable" : ""}${isDragging ? " is-dragging" : ""}${isAdvancing ? " is-advancing" : ""}`}
       aria-label={`${item.company_name_snapshot} ${item.job_title_snapshot}`}
-      draggable
+      aria-grabbed={draggable ? isDragging : undefined}
+      aria-busy={isAdvancing || undefined}
+      draggable={draggable}
       onDragStart={(event) => onDragStart(item, event)}
       onDragEnd={onDragEnd}
     >
       <div className="progress-card-main-row">
-        {open ? <button type="button" className="progress-card-open" aria-label={`查看 ${item.company_name_snapshot} ${item.job_title_snapshot} 求职进程`} onClick={open}>{content}</button> : <div className="progress-card-open is-static">{content}</div>}
+        <button type="button" className="progress-card-open" aria-label={`查看 ${item.company_name_snapshot} ${item.job_title_snapshot} 求职进程`} onClick={onOpen}>{content}</button>
         {isScreeningColumn
           ? <span className="progress-card-actions" aria-hidden="true"><GripVertical /></span>
           : <StageBadge item={item} column={column} />}

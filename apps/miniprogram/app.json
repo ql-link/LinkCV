@@ -1,32 +1,32 @@
 {
   "pages": [
-    "pages/home/index",
+    "pages/resumes/index",
     "pages/login/index",
     "pages/confirm/index",
     "pages/profile/index",
-    "pages/resumes/index",
     "pages/resumes/detail"
   ],
   "window": {
-    "navigationBarTitleText": "LinkCV",
+    "navigationBarTitleText": "LinkResume",
     "navigationBarBackgroundColor": "#f4f6f8",
     "navigationBarTextStyle": "black",
     "backgroundColor": "#f4f6f8",
     "backgroundTextStyle": "dark"
   },
   "tabBar": {
-    "color": "#8791a1",
-    "selectedColor": "#17191c",
+    "custom": true,
+    "color": "#64748b",
+    "selectedColor": "#0f172a",
     "backgroundColor": "#ffffff",
     "borderStyle": "black",
     "list": [
       {
-        "pagePath": "pages/home/index",
-        "text": "首页"
+        "pagePath": "pages/resumes/index",
+        "text": "简历"
       },
       {
-        "pagePath": "pages/resumes/index",
-        "text": "我的简历"
+        "pagePath": "pages/profile/index",
+        "text": "我的"
       }
     ]
   },

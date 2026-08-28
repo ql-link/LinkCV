@@ -40,7 +40,17 @@ class FakeStorage:
 
 
 class FakeConverter:
-    async def convert(self, *, filename: str, **_kwargs) -> DocumentMarkdownResult:
+    def __init__(self) -> None:
+        self.require_pdf_layout_calls: list[bool] = []
+
+    async def convert(
+        self,
+        *,
+        filename: str,
+        require_pdf_layout: bool = True,
+        **_kwargs,
+    ) -> DocumentMarkdownResult:
+        self.require_pdf_layout_calls.append(require_pdf_layout)
         return DocumentMarkdownResult(
             markdown="# 张三",
             source_file_name=filename,
@@ -66,18 +76,19 @@ def build_processor(*, converter=None, queued: bool = False):
     )
     storage = FakeStorage()
     redis = FakeRedis()
+    document_converter = converter or FakeConverter()
     app = create_app(
         settings,
         storage=storage,
         redis=redis,
-        document_converter=converter or FakeConverter(),
+        document_converter=document_converter,
         create_schema=True,
     )
     processor = DatasetParseProcessor(
         session_factory=app.state.session_factory,
         storage=storage,
         redis=redis,
-        document_converter=converter or FakeConverter(),
+        document_converter=document_converter,
         settings=settings,
     )
     with app.state.session_factory() as db:
@@ -105,7 +116,8 @@ def build_processor(*, converter=None, queued: bool = False):
 
 
 def test_dataset_worker_persists_markdown_and_is_idempotent() -> None:
-    app, storage, processor, task_id = build_processor()
+    converter = FakeConverter()
+    app, storage, processor, task_id = build_processor(converter=converter)
 
     asyncio.run(processor.process(parse_task_id=task_id))
     asyncio.run(processor.process(parse_task_id=task_id))
@@ -119,6 +131,7 @@ def test_dataset_worker_persists_markdown_and_is_idempotent() -> None:
             f"users/{task.user_id}/datasets/converted/{task.id}.md"
         )
         assert storage.objects[task.converted_object_name] == "# 张三".encode()
+    assert converter.require_pdf_layout_calls == [False]
 
 
 def test_dataset_worker_advances_queued_task_before_conversion() -> None:
