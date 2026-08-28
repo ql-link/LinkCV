@@ -171,7 +171,12 @@ describe("SharePanel", () => {
       expect(screen.getByDisplayValue(/\/share\/toke\*\*\*\*\*_abc/)).toBeInTheDocument(),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "仅自己可见" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("链接当前可用"),
+    );
+    const privateVisibilityButton = screen.getByRole("button", { name: "仅自己可见" });
+    fireEvent.click(privateVisibilityButton);
+    await waitFor(() => expect(privateVisibilityButton).toHaveClass("active"));
     fireEvent.click(screen.getByRole("button", { name: "保存链接配置" }));
     const dialog = await screen.findByRole("dialog", { name: "保存链接配置？" });
     fireEvent.click(screen.getByRole("button", { name: "确认保存" }));
