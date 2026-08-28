@@ -1,5 +1,9 @@
 # FastAPI 后端
 
+## 功能与架构导航
+
+本页维护 FastAPI/Worker 运行结构、事务、迁移、外部集成和后端通用约定。用户能力与业务规则分别见[账号](../features/identity-account.md)、[简历](../features/resume-workbench.md)、[求职中心](../features/career-center.md)、[AI 助手](../features/ai-assistant.md)和[资料集](../features/datasets.md)；独立运行子系统见[小程序适配](miniprogram.md)、[Agent/LLM](agent-runtime.md)、[可观测性](observability.md)和[插件制品](plugin-delivery.md)。具体 URL、schema 和稳定错误仍以 [HTTP 接口契约](../api/http-contracts.md) 为准。
+
 ## 当前职责与结构
 
 `apps/backend` 承接健康检查、Web/小程序双通道 Redis 会话鉴权、微信自动建号、网页扫码确认、小程序只读简历、语义简历生命周期、历史版本、简历分享链接、智能助手会话与修改提案、异步文件导入、私有对象资源、无状态结构化 JD 资料、面试求职进程与排期复盘、用户中心、统一 LLM 调用和管理员模型治理 API、管理台用户管理、知识库资料异步解析，以及统一系统日志、业务审计和管理员日志查询。
