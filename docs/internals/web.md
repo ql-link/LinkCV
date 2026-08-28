@@ -1,5 +1,9 @@
 # Web 模块
 
+## 功能与架构导航
+
+本页维护 Web 运行入口、路由、共享 UI、视觉交互和前端测试边界。跨端业务规则分别见[账号](../features/identity-account.md)、[简历工作台](../features/resume-workbench.md)、[求职中心](../features/career-center.md)、[AI 助手](../features/ai-assistant.md)和[资料集](../features/datasets.md)；系统日志与插件制品属于独立[可观测性](observability.md)和[插件制品](plugin-delivery.md)架构。
+
 ## 职责与入口
 
 - `apps/web/src/main.tsx`：React 启动入口。
