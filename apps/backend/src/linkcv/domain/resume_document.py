@@ -297,6 +297,26 @@ def validate_tiptap_document(value: object) -> None:
         raise ValueError("tiptap rich text requires a doc root")
 
 
+def normalize_tiptap_document(value: dict[str, Any]) -> dict[str, Any]:
+    """Remove known no-op defaults emitted by supported Tiptap clients."""
+    normalized = dict(value)
+    attrs = value.get("attrs")
+    if (
+        value.get("type") == "orderedList"
+        and isinstance(attrs, dict)
+        and "type" in attrs
+        and attrs["type"] is None
+    ):
+        normalized["attrs"] = {key: item for key, item in attrs.items() if key != "type"}
+    content = value.get("content")
+    if isinstance(content, list):
+        normalized["content"] = [
+            normalize_tiptap_document(child) if isinstance(child, dict) else child
+            for child in content
+        ]
+    return normalized
+
+
 def _tiptap_marked_text(node: dict[str, Any]) -> str:
     value = str(node.get("text") or "")
     for mark in node.get("marks", []):
@@ -455,6 +475,7 @@ class RichText(DomainModel):
         else:
             if not isinstance(self.content, dict):
                 raise ValueError("tiptap rich text requires object content")
+            self.content = normalize_tiptap_document(self.content)
             validate_tiptap_document(self.content)
         return self
 
