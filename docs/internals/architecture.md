@@ -28,8 +28,8 @@ FastAPI 在 `apps/backend/src/linkcv/main.py` 以 `/api` 前缀挂载浏览器�
 ## 数据与鉴权
 
 - MySQL 是用户、简历、Agent 会话/提案、结构化 JD 和治理数据的权威存储，表结构只通过 Alembic 迁移演进。各业务对象归属见对应[功能文档](../README.md#功能文档)。
-- Web 登录态使用短 JWT access Cookie 与不透明 refresh Cookie；小程序使用 Bearer access 与 JSON refresh，Redis session channel 阻止两端凭据混用并支持统一撤销。小程序游客示例、主动登录、只读简历、预览缓存和本地调试安全回退见 [小程序架构](miniprogram.md)。
-- 普通 Web 登录页由 `/api/auth/capabilities` 控制：Development 可使用邮箱密码或微信扫码，Production 只显示微信小程序码；管理员密码表单只存在于 `/admin/login`。
+- Web 登录态使用短 JWT access Cookie 与不透明 refresh Cookie；小程序使用 Bearer access 与 JSON refresh，Redis session channel 阻止两端凭据混用并支持统一撤销。启用管理员可使用小程序本人资料、只读简历和扫码确认能力，停用账号仍会被拒绝。小程序游客示例、隐私确认、主动登录、预览缓存、交互视口和本地调试安全回退见 [小程序架构](miniprogram.md)。
+- 普通 Web 登录页由 `/api/auth/capabilities` 控制：Development 可使用邮箱密码或微信扫码，Production 只显示微信小程序码；管理员密码表单只存在于 `/admin/login`，管理员也可通过微信双端登录。
 - 图片存储在私有 MinIO bucket 中；现有兼容资源位于 `users/<user-id>/assets/`，简历编辑器新增资源位于 `users/<user-id>/resumes/<resume-id>/assets/`，两者都由服务端生成对象键并在读取时校验所有权。
 - 原型 Express/SQLite 数据不迁移到 MySQL。
 

@@ -60,6 +60,17 @@ describe("HomeScreen", () => {
     expect(container.querySelector(".dashboard-main")).not.toBeInTheDocument();
   });
 
+  it("无简历时直接在工作区背景展示空状态", () => {
+    const { container } = renderHome({ resumes: [] });
+    const emptyState = container.querySelector(".home-resume-empty-state") as HTMLElement;
+
+    expect(screen.getByRole("heading", { name: "还没有正式简历" })).toBeInTheDocument();
+    expect(emptyState).toBeInTheDocument();
+    expect(container.querySelector(".dashboard-empty-state")).not.toBeInTheDocument();
+    expect(within(emptyState).getByRole("button", { name: "创建第一份简历" })).toBeInTheDocument();
+    expect(within(emptyState).getByRole("button", { name: "导入简历" })).toBeInTheDocument();
+  });
+
   it("按名称筛选简历并从新建按钮在当前页打开创建弹窗", async () => {
     vi.spyOn(api, "listResumeTemplates").mockResolvedValue({ templates: [] });
     renderHome();
