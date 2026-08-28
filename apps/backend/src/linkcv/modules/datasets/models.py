@@ -36,6 +36,11 @@ class UserDataset(Base):
         PrimaryKeyConstraint("id", name="pk_user_dataset"),
         UniqueConstraint("object_name", name="uk_user_dataset_object_name"),
         UniqueConstraint("parse_task_id", name="uk_user_dataset_parse_task_id"),
+        UniqueConstraint(
+            "user_id",
+            "idempotency_key",
+            name="uk_user_dataset_user_idempotency",
+        ),
         CheckConstraint(
             "file_format IN ('docx', 'pdf', 'md', 'txt')",
             name="ck_user_dataset_file_format",
@@ -52,6 +57,14 @@ class UserDataset(Base):
         nullable=False,
         comment="所属用户 ID",
     )
+    idempotency_key: Mapped[str] = mapped_column(
+        String(64), nullable=False, comment="用户范围内上传幂等键"
+    )
+    request_fingerprint: Mapped[str] = mapped_column(
+        String(64).with_variant(mysql.CHAR(64), "mysql"),
+        nullable=False,
+        comment="规范化文件名、检测格式、大小和 SHA-256 的请求指纹",
+    )
     parse_task_id: Mapped[int | None] = mapped_column(
         unsigned_bigint_type(),
         nullable=True,
@@ -66,7 +79,7 @@ class UserDataset(Base):
         comment="文件格式：docx/pdf/md/txt",
     )
     content_type: Mapped[str] = mapped_column(
-        String(128), nullable=False, comment="上传声明的 MIME 类型"
+        String(128), nullable=False, comment="服务端规范化内容类型"
     )
     file_size: Mapped[int] = mapped_column(
         unsigned_bigint_type(), nullable=False, comment="文件大小（字节）"

@@ -235,6 +235,22 @@ contracts:
         pattern: '(?m)^INTERVIEW_ASSET_UPLOAD_MAX_BYTES=524288000$'
         message: Production 必须声明面试素材上传上限
 
+  - id: dataset-upload-admission-contract
+    description: FastAPI 与三套环境使用一致的资料上传、配额和解析恢复默认值
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default=10 \* 1024 \* 1024,[\s\S]*alias="DATASET_UPLOAD_MAX_BYTES"[\s\S]*default=10,[\s\S]*alias="DATASET_MAX_FILES_PER_BATCH"[\s\S]*default=20,[\s\S]*alias="DATASET_UPLOAD_REQUESTS_PER_MINUTE"[\s\S]*default=3,[\s\S]*alias="DATASET_UPLOAD_USER_CONCURRENCY"[\s\S]*default=12,[\s\S]*alias="DATASET_UPLOAD_GLOBAL_CONCURRENCY"[\s\S]*default=200,[\s\S]*alias="DATASET_MAX_COUNT_PER_USER"[\s\S]*default=1024 \* 1024 \* 1024,[\s\S]*alias="DATASET_MAX_TOTAL_BYTES_PER_USER"[\s\S]*default=5,[\s\S]*alias="DATASET_DISPATCH_SCAN_SECONDS"[\s\S]*default=30,[\s\S]*alias="DATASET_REDISPATCH_AFTER_SECONDS"[\s\S]*default=240,[\s\S]*alias="DATASET_PARSE_STALE_SECONDS"[\s\S]*default=3,[\s\S]*alias="DATASET_PARSE_MAX_ATTEMPTS"[\s\S]*default=86400,[\s\S]*alias="DATASET_UPLOAD_RESERVATION_TTL_SECONDS"'
+        message: FastAPI 必须使用方案确认的资料上传、配额和解析恢复默认值
+      - path: .env.example
+        pattern: '(?m)^DATASET_UPLOAD_MAX_BYTES=10485760$[\s\S]*^DATASET_MAX_FILES_PER_BATCH=10$[\s\S]*^DATASET_UPLOAD_REQUESTS_PER_MINUTE=20$[\s\S]*^DATASET_UPLOAD_USER_CONCURRENCY=3$[\s\S]*^DATASET_UPLOAD_GLOBAL_CONCURRENCY=12$[\s\S]*^DATASET_MAX_COUNT_PER_USER=200$[\s\S]*^DATASET_MAX_TOTAL_BYTES_PER_USER=1073741824$[\s\S]*^DATASET_DISPATCH_SCAN_SECONDS=5$[\s\S]*^DATASET_REDISPATCH_AFTER_SECONDS=30$[\s\S]*^DATASET_PARSE_STALE_SECONDS=240$[\s\S]*^DATASET_PARSE_MAX_ATTEMPTS=3$[\s\S]*^DATASET_UPLOAD_RESERVATION_TTL_SECONDS=86400$'
+        message: 本地模板必须声明资料上传、配额和解析恢复默认值
+      - path: .env.development
+        pattern: '(?m)^DATASET_UPLOAD_MAX_BYTES=10485760$[\s\S]*^DATASET_MAX_FILES_PER_BATCH=10$[\s\S]*^DATASET_UPLOAD_REQUESTS_PER_MINUTE=20$[\s\S]*^DATASET_UPLOAD_USER_CONCURRENCY=3$[\s\S]*^DATASET_UPLOAD_GLOBAL_CONCURRENCY=12$[\s\S]*^DATASET_MAX_COUNT_PER_USER=200$[\s\S]*^DATASET_MAX_TOTAL_BYTES_PER_USER=1073741824$[\s\S]*^DATASET_DISPATCH_SCAN_SECONDS=5$[\s\S]*^DATASET_REDISPATCH_AFTER_SECONDS=30$[\s\S]*^DATASET_PARSE_STALE_SECONDS=240$[\s\S]*^DATASET_PARSE_MAX_ATTEMPTS=3$[\s\S]*^DATASET_UPLOAD_RESERVATION_TTL_SECONDS=86400$'
+        message: Development 必须声明资料上传、配额和解析恢复默认值
+      - path: .env.production
+        pattern: '(?m)^DATASET_UPLOAD_MAX_BYTES=10485760$[\s\S]*^DATASET_MAX_FILES_PER_BATCH=10$[\s\S]*^DATASET_UPLOAD_REQUESTS_PER_MINUTE=20$[\s\S]*^DATASET_UPLOAD_USER_CONCURRENCY=3$[\s\S]*^DATASET_UPLOAD_GLOBAL_CONCURRENCY=12$[\s\S]*^DATASET_MAX_COUNT_PER_USER=200$[\s\S]*^DATASET_MAX_TOTAL_BYTES_PER_USER=1073741824$[\s\S]*^DATASET_DISPATCH_SCAN_SECONDS=5$[\s\S]*^DATASET_REDISPATCH_AFTER_SECONDS=30$[\s\S]*^DATASET_PARSE_STALE_SECONDS=240$[\s\S]*^DATASET_PARSE_MAX_ATTEMPTS=3$[\s\S]*^DATASET_UPLOAD_RESERVATION_TTL_SECONDS=86400$'
+        message: Production 必须声明资料上传、配额和解析恢复默认值
+
   - id: redis-local-port
     description: 本地配置与 Compose 使用同一个 Redis 默认端口
     assertions:
@@ -299,17 +315,29 @@ contracts:
     description: FastAPI、Worker、环境模板与 Compose 使用同一套异步导入 Broker 契约
     assertions:
       - path: apps/backend/src/linkcv/core/config.py
-        pattern: 'default="rabbitmq", alias="MQ_VENDOR"[\s\S]*default="tolink\.cv\.resume_import"[\s\S]*alias="RABBITMQ_EXCHANGE_NAME"[\s\S]*default="resume\.import"[\s\S]*alias="RABBITMQ_ROUTING_KEY"'
-        message: 后端必须默认使用 RabbitMQ 固定 exchange 和 routing key
+        pattern: 'default="rabbitmq", alias="MQ_VENDOR"[\s\S]*default="tolink\.cv\.resume_import\.v2"[\s\S]*alias="RABBITMQ_EXCHANGE_NAME"[\s\S]*default="linkcv\.resume_import\.worker\.v2"[\s\S]*alias="RABBITMQ_QUEUE"[\s\S]*default="resume\.import\.v2"[\s\S]*alias="RABBITMQ_ROUTING_KEY"'
+        message: 后端必须默认使用 RabbitMQ V2 exchange、queue 和 routing key
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default="tolink\.cv\.resume_import\.v2"[\s\S]*alias="KAFKA_TOPIC"[\s\S]*default="linkcv\.resume_import\.worker\.v2"[\s\S]*alias="KAFKA_CONSUMER_GROUP"'
+        message: 后端必须默认使用 Kafka V2 topic 和 consumer group
+      - path: apps/backend/src/linkcv/core/mq/message.py
+        pattern: 'ConfigDict\(extra="forbid"\)[\s\S]*pipeline_version: Literal\["v2"\][\s\S]*mq_name: Literal\["tolink\.cv\.resume_import\.v2"\]'
+        message: 文档解析消息必须使用严格的 V2 envelope 和必填 pipeline version
+      - path: apps/backend/src/linkcv/core/mq/rabbitmq.py
+        pattern: 'headers=\{\"x-linkcv-pipeline-version\": message\.pipeline_version\}'
+        message: RabbitMQ 发布必须以 header 观测 V2 pipeline version
+      - path: apps/backend/src/linkcv/modules/observability/logging.py
+        pattern: 'ALLOWED_FIELDS = \{[\s\S]*"message_id"[\s\S]*"pipeline_version"[\s\S]*"vendor"[\s\S]*"route"'
+        message: 结构化日志必须保留受控的 V2 消息诊断字段
       - path: .env.example
-        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=amqp://linkcv:linkcv-rabbit-local-change-me@127\.0\.0\.1:5672/$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import$'
-        message: 本地模板必须连接本地 RabbitMQ 并声明固定路由
+        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=amqp://linkcv:linkcv-rabbit-local-change-me@127\.0\.0\.1:5672/$[\s\S]*^RABBITMQ_EXCHANGE_NAME=tolink\.cv\.resume_import\.v2$[\s\S]*^RABBITMQ_QUEUE=linkcv\.resume_import\.worker\.v2$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import\.v2$[\s\S]*^KAFKA_TOPIC=tolink\.cv\.resume_import\.v2$[\s\S]*^KAFKA_CONSUMER_GROUP=linkcv\.resume_import\.worker\.v2$'
+        message: 本地模板必须连接本地 RabbitMQ 并声明 V2 路由和 Kafka 标识
       - path: .env.development
-        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import$'
-        message: Dev 必须由私密覆盖提供平台 RabbitMQ 地址
+        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=$[\s\S]*^RABBITMQ_EXCHANGE_NAME=tolink\.cv\.resume_import\.v2$[\s\S]*^RABBITMQ_QUEUE=linkcv\.resume_import\.worker\.v2$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import\.v2$[\s\S]*^KAFKA_TOPIC=tolink\.cv\.resume_import\.v2$[\s\S]*^KAFKA_CONSUMER_GROUP=linkcv\.resume_import\.worker\.v2$'
+        message: Dev 必须由私密覆盖提供平台 RabbitMQ 地址并使用 V2 标识
       - path: .env.production
-        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import$'
-        message: Production 必须由私密覆盖提供平台 RabbitMQ 地址
+        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=$[\s\S]*^RABBITMQ_EXCHANGE_NAME=tolink\.cv\.resume_import\.v2$[\s\S]*^RABBITMQ_QUEUE=linkcv\.resume_import\.worker\.v2$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import\.v2$[\s\S]*^KAFKA_TOPIC=tolink\.cv\.resume_import\.v2$[\s\S]*^KAFKA_CONSUMER_GROUP=linkcv\.resume_import\.worker\.v2$'
+        message: Production 必须由私密覆盖提供平台 RabbitMQ 地址并使用 V2 标识
       - path: deploy/docker-compose.yml
         pattern: '(?m)^  rabbitmq:$[\s\S]*rabbitmq:4-management-alpine'
         message: 本地 Compose 必须提供 RabbitMQ

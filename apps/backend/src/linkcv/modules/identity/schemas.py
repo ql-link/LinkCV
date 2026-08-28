@@ -1,6 +1,94 @@
-from datetime import datetime
+import re
+from datetime import date, datetime, timezone
+from decimal import Decimal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from linkcv.modules.job_descriptions.schemas import (
+    EmploymentType,
+    SalaryPeriod,
+    WorkMode,
+)
+
+
+Availability = Literal[
+    "immediately", "one_week", "two_weeks", "one_month", "custom"
+]
+EducationLevel = Literal[
+    "high_school", "junior_college", "bachelor", "master", "doctor"
+]
+SchoolTier = Literal["project_985", "project_211", "double_first_class"]
+ProfileStringItem = Annotated[str, Field(max_length=100)]
+
+
+_SCHOOL_TIER_VALUES = {
+    "project_985",
+    "project_211",
+    "double_first_class",
+}
+_STRING_ARRAY_FIELDS = (
+    "target_positions",
+    "exclusions",
+    "target_companies",
+    "school_tier",
+    "languages",
+    "skills",
+    "certifications",
+    "honors",
+    "campus_experiences",
+)
+_OPTIONAL_TEXT_FIELDS = (
+    "work_city",
+    "school",
+    "major",
+)
+
+
+def _normalize_string_array(values: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = value.strip()
+        if not normalized or normalized in seen:
+            continue
+        if len(normalized) > 100:
+            raise ValueError("list item is too long")
+        seen.add(normalized)
+        result.append(normalized)
+    return result
+
+
+def _normalize_school_tier(values: list[str]) -> list[str]:
+    normalized = _normalize_string_array(values)
+    invalid = [value for value in normalized if value not in _SCHOOL_TIER_VALUES]
+    if invalid:
+        raise ValueError(
+            "school_tier must be one of: project_985, project_211, double_first_class"
+        )
+    return normalized
+
+
+def _validate_profile_salary(
+    salary_min: Decimal | None,
+    salary_max: Decimal | None,
+    currency: str | None,
+    period: SalaryPeriod | None,
+) -> None:
+    if salary_min is not None and salary_max is not None and salary_max < salary_min:
+        raise ValueError("salary_max must not be less than salary_min")
+    if (salary_min is not None or salary_max is not None) and (
+        currency is None or period is None
+    ):
+        raise ValueError("numeric salary requires currency and period")
+
+
+def _as_utc(value: object) -> object:
+    if not isinstance(value, datetime):
+        return value
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 class Credentials(BaseModel):
@@ -91,10 +179,122 @@ class RecentResumeSummary(BaseModel):
     updated_at: datetime
 
 
+class UserProfileBase(BaseModel):
+    """用户画像可编辑字段集合，请求体与响应共用。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    work_city: str | None = Field(default=None, max_length=100)
+    salary_min: Decimal | None = Field(
+        default=None, ge=0, max_digits=12, decimal_places=2
+    )
+    salary_max: Decimal | None = Field(
+        default=None, ge=0, max_digits=12, decimal_places=2
+    )
+    salary_currency: str | None = Field(default=None, max_length=3)
+    salary_period: SalaryPeriod | None = None
+    employment_type: EmploymentType | None = None
+    work_mode: WorkMode | None = None
+    target_positions: list[ProfileStringItem] = Field(
+        default_factory=list, max_length=100
+    )
+    exclusions: list[ProfileStringItem] = Field(default_factory=list, max_length=100)
+    target_companies: list[ProfileStringItem] = Field(
+        default_factory=list, max_length=100
+    )
+    availability: Availability | None = None
+    available_from: date | None = None
+    school: str | None = Field(default=None, max_length=255)
+    school_tier: list[ProfileStringItem] = Field(default_factory=list, max_length=10)
+    major: str | None = Field(default=None, max_length=100)
+    education_level: EducationLevel | None = None
+    years_experience: int | None = Field(default=None, ge=0, le=4_294_967_295)
+    birth_date: date | None = None
+    languages: list[ProfileStringItem] = Field(default_factory=list, max_length=100)
+    skills: list[ProfileStringItem] = Field(default_factory=list, max_length=100)
+    certifications: list[ProfileStringItem] = Field(
+        default_factory=list, max_length=100
+    )
+    honors: list[ProfileStringItem] = Field(default_factory=list, max_length=100)
+    campus_experiences: list[ProfileStringItem] = Field(
+        default_factory=list, max_length=100
+    )
+
+    @field_validator(*_OPTIONAL_TEXT_FIELDS)
+    @classmethod
+    def trim_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+    @field_validator(
+        "target_positions",
+        "exclusions",
+        "target_companies",
+        "languages",
+        "skills",
+        "certifications",
+        "honors",
+        "campus_experiences",
+    )
+    @classmethod
+    def normalize_string_arrays(cls, values: list[str]) -> list[str]:
+        return _normalize_string_array(values)
+
+    @field_validator("school_tier")
+    @classmethod
+    def normalize_school_tier(cls, values: list[str]) -> list[str]:
+        return _normalize_school_tier(values)
+
+    @field_validator("salary_currency")
+    @classmethod
+    def normalize_currency(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().upper()
+        if not re.fullmatch(r"[A-Z]{3}", normalized):
+            raise ValueError("salary currency must be a three-letter ASCII code")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_user_profile(self) -> "UserProfileBase":
+        _validate_profile_salary(
+            self.salary_min,
+            self.salary_max,
+            self.salary_currency,
+            self.salary_period,
+        )
+        if self.available_from is not None and self.availability != "custom":
+            raise ValueError("available_from requires availability = 'custom'")
+        return self
+
+
+class UserProfileData(UserProfileBase):
+    """画像响应，附带乐观锁版本与时间戳。"""
+
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    lock_version: int
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    @field_validator("created_at", "updated_at", mode="before")
+    @classmethod
+    def normalize_timestamps(cls, value: object) -> object:
+        return _as_utc(value)
+
+
+class UserProfileUpdateRequest(UserProfileBase):
+    """画像整体替换写入请求，携带基版本号用于乐观锁。"""
+
+    base_lock_version: int = Field(ge=1)
+
+
 class AccountProfileResponse(BaseModel):
     user: UserProfileResponse
     resume_count: int
     recent_resumes: list[RecentResumeSummary]
+    profile: UserProfileData | None = None
 
 
 class AvatarUploadRequest(BaseModel):

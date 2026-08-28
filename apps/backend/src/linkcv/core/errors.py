@@ -10,11 +10,13 @@ class ApiError(Exception):
         status_code: int,
         code: str,
         details: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         super().__init__(code)
         self.status_code = status_code
         self.code = code
         self.details = details
+        self.headers = headers
 
 
 def install_error_handlers(app: FastAPI) -> None:
@@ -25,7 +27,9 @@ def install_error_handlers(app: FastAPI) -> None:
         if error.details:
             content.update(error.details)
         return JSONResponse(
-            status_code=error.status_code, content=content
+            status_code=error.status_code,
+            content=content,
+            headers=error.headers,
         )
 
     @app.exception_handler(RequestValidationError)
@@ -50,6 +54,14 @@ def install_error_handlers(app: FastAPI) -> None:
                 code = "INVALID_JOB_DESCRIPTION"
             request.state.error_code = code
             return JSONResponse(status_code=400, content={"error": code})
+        if (
+            request.method == "PUT"
+            and request.url.path.rstrip("/") == "/api/account/user-profile"
+        ):
+            request.state.error_code = "INVALID_USER_PROFILE"
+            return JSONResponse(
+                status_code=400, content={"error": "INVALID_USER_PROFILE"}
+            )
         if (
             request.url.path.startswith(
                 (

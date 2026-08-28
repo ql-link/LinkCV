@@ -5,6 +5,7 @@ class ImportWarning(StrEnum):
     PDF_OCR_APPLIED = "pdf_ocr_applied"
     PDF_LOW_TEXT_QUALITY = "pdf_low_text_quality"
     DOCX_EMBEDDED_IMAGES_OMITTED = "docx_embedded_images_omitted"
+    DOCX_TABLE_CONTENT_PRESENT = "docx_table_content_present"
     DOCX_TEXTBOX_ORDER_MAY_CHANGE = "docx_textbox_order_may_change"
     DOCUMENT_HEADING_STRUCTURE_MISSING = "document_heading_structure_missing"
     SOURCE_QUOTE_NOT_FOUND = "source_quote_not_found"
