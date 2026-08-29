@@ -62,6 +62,18 @@ export function applicationStatusLabel(application: JobApplicationSummary): stri
         : "进行中";
 }
 
+export function applicationProgressToneClass(application: JobApplicationSummary): string {
+  if (application.archived_at || application.status === "withdrawn") return "is-muted";
+  if (application.status === "rejected") return "is-danger";
+  if (application.status === "closed") {
+    return application.offer_status === "accepted" ? "is-success" : "is-muted";
+  }
+  if (application.stage_state === "negotiating") return "is-offer";
+  if (application.stage_state === "awaiting_result") return "is-waiting";
+  if (application.stage_state === "awaiting_schedule") return "is-scheduled";
+  return "is-active";
+}
+
 export function formatApplicationDate(value: string): string {
   return new Intl.DateTimeFormat("zh-CN", {
     year: "numeric",
@@ -339,6 +351,7 @@ export function ProgressCard({
 }) {
   const employmentTypeLabel = applicationEmploymentTypeLabel(item);
   const stageLabel = applicationCardStageLabel(item, columnKey);
+  const stageToneClass = applicationProgressToneClass(item);
   return (
     <article
       className={`progress-card${draggable ? " is-draggable" : ""}${isDragging ? " is-dragging" : ""}${isAdvancing ? " is-advancing" : ""}`}
@@ -355,8 +368,10 @@ export function ProgressCard({
           {employmentTypeLabel && <span className="progress-card-employment-type">{employmentTypeLabel}</span>}
         </span>
         <strong className="progress-card-job-title" title={item.job_title_snapshot}>{item.job_title_snapshot}</strong>
-        <span className={`progress-card-stage${columnKey === "ended" ? " is-ended" : ""}`}>{stageLabel}</span>
-        <time className="progress-card-updated-at" dateTime={item.updated_at}>{formatApplicationUpdatedAt(item.updated_at)}</time>
+        <span className="progress-card-footer">
+          <span className={`progress-card-stage ${stageToneClass}`}>{stageLabel}</span>
+          <time className="progress-card-updated-at" dateTime={item.updated_at}>{formatApplicationUpdatedAt(item.updated_at)}</time>
+        </span>
       </button>
     </article>
   );

@@ -499,22 +499,29 @@
 .progress-column-heading h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; font-weight: 650; }
 .progress-column-heading h3 span { display: grid; min-width: 24px; height: 22px; place-items: center; border-radius: var(--ui-radius-full); background: var(--ui-surface); color: var(--ui-text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .progress-column-cards { display: grid; min-height: 0; flex: 1; align-content: start; gap: 8px; }
-.progress-card { position: relative; display: grid; width: 100%; height: 132px; min-width: 0; margin: 0; overflow: hidden; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--ui-surface); padding: 12px; box-shadow: var(--ui-shadow-xs); transition: border-color 180ms var(--ui-ease-press), box-shadow 180ms var(--ui-ease-press), transform 180ms var(--ui-ease-press), opacity 180ms var(--ui-ease-press); }
+.progress-card { position: relative; display: grid; width: 100%; height: 118px; min-width: 0; margin: 0; overflow: hidden; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--ui-surface); padding: 12px; box-shadow: var(--ui-shadow-xs); transition: border-color 180ms var(--ui-ease-press), box-shadow 180ms var(--ui-ease-press), transform 180ms var(--ui-ease-press), opacity 180ms var(--ui-ease-press); }
 .progress-card:hover { border-color: var(--ui-border-strong); box-shadow: var(--ui-shadow-xs); }
 .progress-card.is-draggable { cursor: grab; }
 .progress-card.is-draggable:active { cursor: grabbing; }
 .progress-card.is-dragging { opacity: .72; transform: translateY(-3px) scale(1.01); box-shadow: var(--ui-shadow-sm); }
 .progress-card.is-advancing { opacity: .6; }
-.progress-card-open { display: grid; width: 100%; height: 100%; min-width: 0; align-content: start; gap: 8px; border: 0; background: transparent; padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.progress-card-open { display: grid; width: 100%; height: 100%; min-width: 0; grid-template-rows: auto auto 1fr; align-content: start; gap: 6px; border: 0; background: transparent; padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .progress-card-open:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 3px; border-radius: var(--ui-radius-sm); }
 .progress-card-company-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; }
+.progress-card-footer { display: flex; min-width: 0; align-self: end; align-items: center; justify-content: space-between; gap: 8px; }
 .progress-card-company, .progress-card-job-title, .progress-card-stage, .progress-card-updated-at { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .progress-card-company { color: var(--ui-text-secondary); font-size: 12px; font-weight: 550; }
 .progress-card-employment-type { flex: 0 0 auto; border-radius: var(--ui-radius-full); background: var(--ui-warning-subtle); padding: 3px 7px; color: var(--ui-warning); font-size: 10px; line-height: 1; }
 .progress-card-job-title { color: var(--ui-foreground); font-size: 15px; font-weight: 650; line-height: 1.2; }
-.progress-card-stage { color: var(--ui-warning); font-size: 12px; font-weight: 600; line-height: 1.2; }
-.progress-card-stage.is-ended { color: var(--ui-text-secondary); }
-.progress-card-updated-at { color: var(--ui-text-muted); font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.progress-card-stage { flex: 1 1 auto; color: var(--ui-text-secondary); font-size: 12px; font-weight: 600; line-height: 1.2; }
+.progress-card-stage.is-active { color: var(--ui-accent); }
+.progress-card-stage.is-scheduled { color: var(--ui-career-accent); }
+.progress-card-stage.is-waiting { color: var(--ui-warning); }
+.progress-card-stage.is-offer { color: var(--ui-template-accent); }
+.progress-card-stage.is-success { color: var(--ui-success); }
+.progress-card-stage.is-danger { color: var(--ui-destructive); }
+.progress-card-stage.is-muted { color: var(--ui-text-muted); }
+.progress-card-updated-at { flex: 0 0 auto; color: var(--ui-text-muted); font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.2; }
 .progress-column .pipeline-empty { flex: 1; margin: 28px 0 0; }
 .career-application-table-surface { overflow-x: auto; overflow-y: hidden; border-radius: var(--ui-radius-lg); }
 .career-application-table { width: 100%; min-width: 1180px; table-layout: fixed; border-collapse: collapse; }

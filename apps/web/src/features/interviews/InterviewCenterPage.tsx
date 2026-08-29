@@ -66,6 +66,7 @@ import { JobSmartImportDialog } from "../jobs/JobSmartImportDialog";
 import { PluginInstallDialog } from "../jobs/PluginInstallDialog";
 import {
   ApplicationsBoard,
+  applicationProgressToneClass,
   applicationStatusLabel,
   formatApplicationListDateTime,
   formatApplicationUpdatedAt,
@@ -334,18 +335,6 @@ function nextApplicationStageLabel(application: JobApplicationSummary): string {
   if (application.stage_state === "awaiting_result") return "等待结果";
   if (application.stage_state === "negotiating") return "Offer沟通";
   return "尚未确认";
-}
-
-function applicationProgressToneClass(application: JobApplicationSummary): string {
-  if (application.archived_at || application.status === "withdrawn") return "is-muted";
-  if (application.status === "rejected") return "is-danger";
-  if (application.status === "closed") {
-    return application.offer_status === "accepted" ? "is-success" : "is-muted";
-  }
-  if (application.stage_state === "negotiating") return "is-offer";
-  if (application.stage_state === "awaiting_result") return "is-waiting";
-  if (application.stage_state === "awaiting_schedule") return "is-scheduled";
-  return "is-active";
 }
 
 function recentInterviewLabel(session: InterviewSessionSummary): string {
