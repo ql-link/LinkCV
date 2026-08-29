@@ -30,6 +30,7 @@ Page({
     loggingOut: false,
     nickname: "",
     serverNickname: "",
+    editingNickname: false,
     hasChanges: false,
     localAvatarPath: "",
     resumeCount: 0,
@@ -68,6 +69,7 @@ Page({
       loggingOut: false,
       nickname: "",
       serverNickname: "",
+      editingNickname: false,
       hasChanges: false,
       localAvatarPath: "",
       resumeCount: 0,
@@ -87,7 +89,7 @@ Page({
       this.enterGuestMode();
       return;
     }
-    this.setData({ loading: true, guest: false, message: "" });
+    this.setData({ loading: true, guest: false, editingNickname: false, message: "" });
     try {
       let resumeCount = 0;
       try {
@@ -104,6 +106,7 @@ Page({
         loading: false,
         nickname: profile.nickname,
         serverNickname: profile.nickname,
+        editingNickname: false,
         hasChanges: false,
         resumeCount,
         chatCount: 0,
@@ -162,25 +165,58 @@ Page({
     });
   },
 
-  handleNicknameBlur(event) {
-    const nextNickname = (event.detail && event.detail.value != null ? event.detail.value : this.data.nickname);
-    this.setData({
-      nickname: nextNickname,
-      hasChanges: nextNickname.trim() !== this.data.serverNickname,
-    });
-  },
-
-  async handleSave() {
+  handleNicknameTap() {
+    if (this.data.loading || this.data.saving || this.data.guest) return;
     if (!auth.hasSession()) {
       this.enterGuestMode();
       return;
     }
-    const nickname = this.data.nickname.trim();
-    if (!nickname) {
-      this.setData({ message: "昵称不能为空" });
+    this.setData({ editingNickname: true, message: "" });
+  },
+
+  async handleNicknameBlur(event) {
+    const nextNickname = (event.detail && event.detail.value != null ? event.detail.value : this.data.nickname);
+    this.setData({
+      nickname: nextNickname,
+      editingNickname: false,
+      hasChanges: nextNickname.trim() !== this.data.serverNickname,
+    });
+    await this.handleSave();
+  },
+
+  async handleNicknameConfirm(event) {
+    const nextNickname = (event.detail && event.detail.value != null ? event.detail.value : this.data.nickname);
+    this.setData({
+      nickname: nextNickname,
+      editingNickname: false,
+      hasChanges: nextNickname.trim() !== this.data.serverNickname,
+    });
+    await this.handleSave();
+  },
+
+  rollbackNickname(message) {
+    this.setData({
+      saving: false,
+      nickname: this.data.serverNickname,
+      editingNickname: false,
+      hasChanges: false,
+      message,
+    });
+  },
+
+  async handleSave() {
+    if (this.data.saving) return;
+    if (!auth.hasSession()) {
+      this.enterGuestMode();
       return;
     }
-    if (this.data.saving || nickname === this.data.serverNickname) {
+    this.setData({ editingNickname: false });
+    const nickname = this.data.nickname.trim();
+    if (!nickname) {
+      this.rollbackNickname("昵称不能为空");
+      return;
+    }
+    if (nickname === this.data.serverNickname) {
       this.setData({ message: "", hasChanges: false });
       return;
     }
@@ -192,6 +228,7 @@ Page({
         saving: false,
         nickname: profile.nickname,
         serverNickname: profile.nickname,
+        editingNickname: false,
         hasChanges: false,
       });
       if (typeof wx.showToast === "function") {
@@ -202,10 +239,7 @@ Page({
         this.enterGuestMode();
         return;
       }
-      this.setData({
-        saving: false,
-        message: error.message || "昵称保存失败，请重试",
-      });
+      this.rollbackNickname(error.message || "昵称保存失败，请重试");
     }
   },
 
