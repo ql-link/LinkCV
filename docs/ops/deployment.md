@@ -79,7 +79,7 @@ Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小�
 
 执行 `0049` 前必须确认数据库已有可恢复备份，并先在维护窗口运行迁移预检。该 revision 只为活动 `resume_import` 任务回填受理时的完整 `TemplateDefinition` 快照；缺少模板 ID、模板行不存在或定义无效会在 DDL 前终止，资料集和终态历史任务保持空值。迁移成功后必须同时替换 FastAPI 与 Worker，确认 Worker 使用任务快照而不是当前模板行；数据库迁移为 forward-only，失败或应用回退依赖备份，不执行 downgrade。
 
-`0049` 的维护窗口必须先停止简历导入受理入口和 Worker 消费，并等待正在执行的受理事务、上传确认和 Worker 终态写入结束；从预检开始到 postverify 完成期间禁止创建新的活动 `resume_import` 任务。RabbitMQ 中的待消费消息保留不删除，待迁移完成且数据库 current 已核对为 `0049` 后，再按“Worker、FastAPI、Web”顺序恢复。不能依赖新增的可空列来容忍迁移中途受理，否则新任务可能绕过本次预检而形成未完成快照。
+`0049` 的维护窗口必须先停止简历导入受理入口和 Worker 消费，并等待正在执行的受理事务、上传确认和 Worker 终态写入结束；从预检开始到 `0050` postverify 完成期间禁止创建新的活动 `resume_import` 任务。`0050` 会在首笔写入前校验 `resume_templates`、`resumes` 与 `resume_versions` 的全部 canonical 快照，只把白名单内完整的历史 `:icon[Name]:` 标记转换为结构化图标；未知或不完整标记保留原文，结构化图标与旧标记并存等语义冲突会中止迁移。RabbitMQ 中的待消费消息保留不删除，待迁移完成且数据库 current 已核对为 `0050` 后，再按“Worker、FastAPI、Web”顺序恢复。不能依赖新增的可空列来容忍迁移中途受理，否则新任务可能绕过本次预检而形成未完成快照。
 
 两条 Pipeline 都提供 `RUN_TESTS` 参数；开启后会在镜像构建前运行 `npm run setup && npm run check`。常规 PR/push 质量检查仍由 GitHub Actions 执行。
 
@@ -94,7 +94,7 @@ CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并�
 - 应用回滚必须把 `TAG` 与 `PI_TAG` 一起切回同一环境、同一版本的两个不可变镜像标签并重新执行 Compose；不得把 Dev 标签部署到 Production。
 - 数据库迁移是 forward-only：当前与历史 revision 都不提供 down SQL，禁止执行 Alembic downgrade，也不做升级降级往返测试。
 - 发布前按迁移风险准备并验证数据库及相关对象存储备份。需要恢复旧数据库状态时使用备份；普通 schema 或数据缺陷通过新的向前 revision 修正。
-- 当前仓库 head `0049`；`0043` 为资料上传增加幂等、可靠排队与解析尝试字段，`0049` 为活动简历导入任务回填受理时冻结的模板定义快照。
+- 当前仓库 head `0050`；`0043` 为资料上传增加幂等、可靠排队与解析尝试字段，`0049` 为活动简历导入任务回填受理时冻结的模板定义快照，`0050` 将白名单内完整的历史 Markdown 图标标记规范化为 canonical 结构化图标。
 - 如果使用执行 `0033` 前的数据库备份恢复，必须同时处理备份之后写入 MinIO 的面试对象；只恢复数据库会产生失去元数据索引的对象。
 - 只有旧应用兼容当前新 schema 时才允许回退应用镜像。若不兼容，必须继续向前修复或按完整恢复方案同时恢复数据库与应用，不能只回切镜像。
 - MySQL DDL 可能隐式提交；迁移失败后停止自动重试，核对实际 current 和 schema，再决定新 revision 或备份恢复。
