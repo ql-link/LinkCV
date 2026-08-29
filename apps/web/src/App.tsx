@@ -11,7 +11,6 @@ import {
   loadDatasetsPage,
   loadHomePage,
   loadInterviewCenterPage,
-  loadJobCenterPage,
   loadResumeTemplatesPage,
 } from "./workspacePageLoaders";
 
@@ -24,9 +23,7 @@ const DatasetsPage = lazy(() => loadDatasetsPage().then((module) => ({ default: 
 const HomePage = lazy(() => loadHomePage().then((module) => ({ default: module.HomePage })));
 const ResumeCreatePage = lazy(() => import("./features/home/ResumeCreatePage").then((module) => ({ default: module.ResumeCreatePage })));
 const ResumeTemplatesPage = lazy(() => loadResumeTemplatesPage().then((module) => ({ default: module.ResumeTemplatesPage })));
-const JobCenterPage = lazy(() => loadJobCenterPage().then((module) => ({ default: module.JobCenterPage })));
 const JobDetailPage = lazy(() => import("./features/jobs/JobDetailPage").then((module) => ({ default: module.JobDetailPage })));
-const JobFormPage = lazy(() => import("./features/jobs/JobFormPage").then((module) => ({ default: module.JobFormPage })));
 const InterviewCenterPage = lazy(() => loadInterviewCenterPage().then((module) => ({ default: module.InterviewCenterPage })));
 const LandingPage = lazy(() => import("./features/landing/LandingPage").then((module) => ({ default: module.LandingPage })));
 const NotFoundPage = lazy(() => import("./features/not-found/NotFoundPage").then((module) => ({ default: module.NotFoundPage })));
@@ -49,10 +46,7 @@ export function AppRouteLoadingFallback() {
     || route.kind === "templates"
     || route.kind === "resumeCreate"
     || route.kind === "editor"
-    || route.kind === "jobs"
-    || route.kind === "jobCreate"
     || route.kind === "jobDetail"
-    || route.kind === "jobEdit"
     || route.kind === "interviews"
     || route.kind === "datasets"
     || route.kind === "account";
@@ -123,10 +117,7 @@ function AppContent() {
         || route.kind === "templates"
         || route.kind === "resumeCreate"
         || route.kind === "editor"
-        || route.kind === "jobs"
-        || route.kind === "jobCreate"
         || route.kind === "jobDetail"
-        || route.kind === "jobEdit"
         || route.kind === "interviews"
         || route.kind === "datasets"
         || route.kind === "account"
@@ -263,10 +254,7 @@ function AppContent() {
   if (
     route.kind === "resumes"
     || route.kind === "templates"
-    || route.kind === "jobs"
-    || route.kind === "jobCreate"
     || route.kind === "jobDetail"
-    || route.kind === "jobEdit"
     || route.kind === "interviews"
     || route.kind === "datasets"
     || route.kind === "account"
@@ -281,11 +269,8 @@ function AppContent() {
           ? "datasets"
           : "career";
 
-    const careerSection: CareerSection | null = route.kind === "jobs"
-      || route.kind === "jobCreate"
-      || route.kind === "jobDetail"
-      || route.kind === "jobEdit"
-      ? "jobs"
+    const careerSection: CareerSection | null = route.kind === "jobDetail"
+      ? "applications"
       : route.kind === "interviews"
         ? route.view === "records" ? "reviews" : route.view
         : null;
@@ -293,17 +278,9 @@ function AppContent() {
     return (
       <WorkspaceLayout active={activeSection}>
         <WorkspacePageBoundary>
-          {careerSection && route.kind !== "interviews" && route.kind !== "jobs" && route.kind !== "jobCreate" && <CareerNavigation active={careerSection} />}
           {route.kind === "resumes" && <HomePage />}
           {route.kind === "templates" && <ResumeTemplatesPage />}
-          {(route.kind === "jobs" || route.kind === "jobCreate") && (
-            <JobCenterPage
-              createDialogOpen={route.kind === "jobCreate"}
-              navigation={<CareerNavigation active="jobs" />}
-            />
-          )}
           {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}
-          {route.kind === "jobEdit" && <JobFormPage mode="edit" jobId={route.jobId} />}
           {route.kind === "interviews" && (
             <InterviewCenterPage
               view={route.view}
@@ -311,6 +288,7 @@ function AppContent() {
               initialSessionId={route.sessionId}
               initialJobId={route.jobId}
               initialCreateApplication={route.createApplication}
+              initialJobImport={route.importJob}
               navigation={<CareerNavigation active={careerSection ?? "applications"} />}
             />
           )}

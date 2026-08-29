@@ -6,7 +6,6 @@ import {
   isSafeAdminPath,
   isSafeAppPath,
   jobDetailPath,
-  jobEditPath,
   legacyCareerRedirect,
   navigateTo,
   parseAppRoute,
@@ -24,16 +23,16 @@ describe("LinkCV routes", () => {
     expect(parseAppRoute("/assistant/")).toEqual({ kind: "assistant" });
     expect(parseAppRoute("/templates/")).toEqual({ kind: "templates" });
     expect(parseAppRoute("/resumes/resume_123/edit")).toEqual({ kind: "editor", resumeId: "resume_123" });
-    expect(parseAppRoute("/jobs")).toEqual({ kind: "jobs" });
-    expect(parseAppRoute("/jobs/new")).toEqual({ kind: "jobCreate" });
+    expect(parseAppRoute("/jobs")).toEqual({ kind: "interviews", view: "applications" });
+    expect(parseAppRoute("/jobs/new")).toEqual({ kind: "interviews", view: "applications", importJob: true });
     expect(parseAppRoute("/jobs/job_123")).toEqual({ kind: "jobDetail", jobId: "job_123" });
-    expect(parseAppRoute("/jobs/job_123/edit")).toEqual({ kind: "jobEdit", jobId: "job_123" });
+    expect(parseAppRoute("/jobs/job_123/edit")).toEqual({ kind: "jobDetail", jobId: "job_123" });
     expect(parseAppRoute("/interviews")).toEqual({ kind: "interviews", view: "applications" });
     expect(parseAppRoute("/career")).toEqual({ kind: "interviews", view: "applications" });
-    expect(parseAppRoute("/career/jobs")).toEqual({ kind: "jobs" });
-    expect(parseAppRoute("/career/jobs/new")).toEqual({ kind: "jobCreate" });
-    expect(parseAppRoute("/career/applications")).toEqual({ kind: "interviews", view: "applications", jobId: undefined, createApplication: undefined });
-    expect(parseAppRoute("/career/applications", "?job=job_123&create=1")).toEqual({ kind: "interviews", view: "applications", jobId: "job_123", createApplication: true });
+    expect(parseAppRoute("/career/jobs")).toEqual({ kind: "interviews", view: "applications" });
+    expect(parseAppRoute("/career/jobs/new")).toEqual({ kind: "interviews", view: "applications", importJob: true });
+    expect(parseAppRoute("/career/applications")).toEqual({ kind: "interviews", view: "applications", jobId: undefined, createApplication: undefined, importJob: undefined });
+    expect(parseAppRoute("/career/applications", "?job=job_123&create=1&import=1")).toEqual({ kind: "interviews", view: "applications", jobId: "job_123", createApplication: true, importJob: true });
     expect(parseAppRoute("/career/applications/application_1")).toEqual({ kind: "interviews", view: "applications", applicationId: "application_1", sessionId: undefined });
     expect(parseAppRoute("/career/applications/application_1", "?session=session_1")).toEqual({ kind: "interviews", view: "records", applicationId: "application_1", sessionId: "session_1" });
     expect(parseAppRoute("/career/schedule")).toEqual({ kind: "interviews", view: "schedule" });
@@ -52,6 +51,11 @@ describe("LinkCV routes", () => {
 
   it("redirects career entry routes to the two current career center entries", () => {
     expect(legacyCareerRedirect("/career")).toBe("/career/applications");
+    expect(legacyCareerRedirect("/career/jobs")).toBe("/career/applications");
+    expect(legacyCareerRedirect("/jobs")).toBe("/career/applications");
+    expect(legacyCareerRedirect("/career/jobs/new")).toBe("/career/applications?import=1");
+    expect(legacyCareerRedirect("/jobs/new")).toBe("/career/applications?import=1");
+    expect(legacyCareerRedirect("/jobs/job_123/edit")).toBe("/career/jobs/job_123");
     expect(legacyCareerRedirect("/interviews")).toBe("/career/applications");
     expect(legacyCareerRedirect("/interviews", "?view=overview")).toBe("/career/applications");
     expect(legacyCareerRedirect("/interviews", "?view=unknown")).toBe("/career/applications");
@@ -73,7 +77,7 @@ describe("LinkCV routes", () => {
   it("encodes resume identifiers and only accepts internal resume return paths", () => {
     expect(editorPath("resume/a b")).toBe("/resumes/resume%2Fa%20b/edit");
     expect(jobDetailPath("job/a b")).toBe("/career/jobs/job%2Fa%20b");
-    expect(jobEditPath("job/a b")).toBe("/career/jobs/job%2Fa%20b/edit");
+    expect(jobDetailPath("job/a b", "application/1")).toBe("/career/jobs/job%2Fa%20b?fromApplication=application%2F1");
     expect(isSafeAppPath("/resumes/resume_123/edit")).toBe(true);
     expect(isSafeAppPath("/assistant")).toBe(true);
     expect(isSafeAppPath("/templates")).toBe(true);

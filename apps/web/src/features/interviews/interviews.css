@@ -1,7 +1,30 @@
 .interview-center-content {
   --interview-warm: var(--ui-warning);
   --interview-warm-soft: var(--ui-warning-subtle);
+  --career-state-info: var(--ui-accent);
+  --career-state-info-subtle: var(--ui-accent-subtle);
+  --career-state-waiting: var(--ui-warning);
+  --career-state-waiting-subtle: var(--ui-warning-subtle);
+  --career-state-success: var(--ui-success);
+  --career-state-success-subtle: var(--ui-success-subtle);
+  --career-state-danger: var(--ui-destructive);
+  --career-state-danger-subtle: var(--ui-destructive-subtle);
+  --career-state-neutral: var(--ui-text-muted);
+  --career-state-neutral-subtle: var(--ui-surface-muted);
+  --career-state-offer: #9a6a00;
+  --career-state-offer-node: #d5a514;
+  --career-state-offer-subtle: #fff7d6;
+  --career-state-offer-foreground: #342700;
   padding-bottom: 40px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .interview-center-content {
+    --career-state-offer: #f0c64d;
+    --career-state-offer-node: #d9ad2b;
+    --career-state-offer-subtle: #3b3218;
+    --career-state-offer-foreground: #211a08;
+  }
 }
 
 .interview-view-tabs {
@@ -376,8 +399,8 @@
 .stage-progress > div > span svg { width: 8px; height: 8px; }
 .stage-progress > div > strong { font-size: 8px; font-weight: 500; }
 .stage-progress > div.is-done > span { border-color: var(--ui-success); background: var(--ui-success-subtle); color: var(--ui-success); }
-.stage-progress > div.is-current > span { width: 17px; height: 17px; border: 4px solid var(--ui-warning); }
-.stage-progress > div.is-current > strong { color: var(--ui-warning); }
+.stage-progress > div.is-current > span { width: 17px; height: 17px; border: 4px solid var(--career-state-info); }
+.stage-progress > div.is-current > strong { color: var(--career-state-info); }
 
 .record-section { margin-top: 8px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-lg); padding: 13px; }
 .record-section h3 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 11px; }
@@ -470,8 +493,8 @@
 .progress-board-grid {
   display: grid;
   width: max-content;
-  min-width: 1348px;
-  grid-template-columns: repeat(5, 260px);
+  min-width: 1620px;
+  grid-template-columns: repeat(6, 260px);
   gap: 12px;
   align-items: stretch;
 }
@@ -514,13 +537,13 @@
 .progress-card-employment-type { flex: 0 0 auto; border-radius: var(--ui-radius-full); background: var(--ui-warning-subtle); padding: 3px 7px; color: var(--ui-warning); font-size: 10px; line-height: 1; }
 .progress-card-job-title { color: var(--ui-foreground); font-size: 15px; font-weight: 650; line-height: 1.2; }
 .progress-card-stage { flex: 1 1 auto; color: var(--ui-text-secondary); font-size: 12px; font-weight: 600; line-height: 1.2; }
-.progress-card-stage.is-active { color: var(--ui-accent); }
-.progress-card-stage.is-scheduled { color: var(--ui-career-accent); }
-.progress-card-stage.is-waiting { color: var(--ui-warning); }
-.progress-card-stage.is-offer { color: var(--ui-template-accent); }
-.progress-card-stage.is-success { color: var(--ui-success); }
-.progress-card-stage.is-danger { color: var(--ui-destructive); }
-.progress-card-stage.is-muted { color: var(--ui-text-muted); }
+.progress-card-stage.is-active,
+.progress-card-stage.is-scheduled { color: var(--career-state-info); }
+.progress-card-stage.is-waiting { color: var(--career-state-waiting); }
+.progress-card-stage.is-offer { color: var(--career-state-offer); }
+.progress-card-stage.is-success { color: var(--career-state-success); }
+.progress-card-stage.is-danger { color: var(--career-state-danger); }
+.progress-card-stage.is-muted { color: var(--career-state-neutral); }
 .progress-card-updated-at { flex: 0 0 auto; color: var(--ui-text-muted); font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.2; }
 .progress-column .pipeline-empty { flex: 1; margin: 28px 0 0; }
 .career-application-table-surface { overflow-x: auto; overflow-y: hidden; border-radius: var(--ui-radius-lg); }
@@ -544,13 +567,13 @@
 .career-application-cell-text { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .career-application-job-title { color: var(--ui-foreground); font-weight: 650; }
 .career-application-progress { display: block; min-width: 0; overflow: hidden; color: var(--ui-text-secondary); font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-.career-application-progress.is-active { color: var(--ui-accent); }
-.career-application-progress.is-scheduled { color: var(--ui-career-accent); }
-.career-application-progress.is-waiting { color: var(--ui-warning); }
-.career-application-progress.is-offer { color: var(--ui-template-accent); }
-.career-application-progress.is-success { color: var(--ui-success); }
-.career-application-progress.is-danger { color: var(--ui-destructive); }
-.career-application-progress.is-muted { color: var(--ui-text-muted); }
+.career-application-progress.is-active,
+.career-application-progress.is-scheduled { color: var(--career-state-info); }
+.career-application-progress.is-waiting { color: var(--career-state-waiting); }
+.career-application-progress.is-offer { color: var(--career-state-offer); }
+.career-application-progress.is-success { color: var(--career-state-success); }
+.career-application-progress.is-danger { color: var(--career-state-danger); }
+.career-application-progress.is-muted { color: var(--career-state-neutral); }
 .career-application-updated-at { color: var(--ui-text-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .career-applications-empty { display: grid; min-height: 300px; place-items: center; align-content: center; gap: 8px; padding: 40px 20px; text-align: center; }
 .career-applications-empty > svg { width: 34px; height: 34px; color: var(--ui-text-muted); stroke-width: 1.4; }
@@ -844,13 +867,16 @@
   white-space: nowrap;
 }
 
-.career-application-status.is-warning,
-.career-session-status.is-scheduled { background: var(--ui-warning-subtle); color: var(--ui-warning); }
-.career-application-status.is-active { background: var(--ui-success-subtle); color: var(--ui-success); }
-.career-application-status.is-offer { background: var(--ui-accent-subtle); color: var(--ui-accent); }
+.career-application-status.is-active,
+.career-session-status.is-active { background: var(--career-state-info); color: var(--ui-primary-foreground); }
+.career-session-status.is-scheduled { background: var(--career-state-info-subtle); color: var(--career-state-info); }
+.career-application-status.is-warning { background: var(--career-state-waiting-subtle); color: var(--career-state-waiting); }
+.career-application-status.is-offer { background: var(--career-state-offer-subtle); color: var(--career-state-offer); }
+.career-application-status.is-muted,
 .career-application-status.is-ended,
-.career-session-status.is-cancelled { background: var(--ui-surface-muted); color: var(--ui-text-secondary); }
-.career-session-status.is-completed { background: var(--ui-success-subtle); color: var(--ui-success); }
+.career-session-status.is-cancelled { background: var(--career-state-neutral-subtle); color: var(--career-state-neutral); }
+.career-application-status.is-danger { background: var(--career-state-danger-subtle); color: var(--career-state-danger); }
+.career-session-status.is-completed { background: var(--career-state-success-subtle); color: var(--career-state-success); }
 
 .career-record-actions {
   display: flex;
@@ -937,14 +963,25 @@
 .career-journey-connector { position: absolute; z-index: -1; top: 11px; right: 50%; width: 100%; height: 2px; background: var(--ui-border-strong); }
 .career-journey-node { display: grid; width: 24px; height: 24px; box-sizing: border-box; place-items: center; border: 2px solid var(--ui-border-strong); border-radius: 50%; background: var(--ui-surface); color: var(--ui-surface); font-size: 12px; font-weight: 750; }
 .career-journey-node svg { width: 14px; height: 14px; }
+.career-journey-crown { color: #fff; stroke-width: 2.2; }
 .career-journey-progress strong { max-width: 132px; overflow: hidden; color: var(--ui-text-secondary); font-size: 12px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
 .career-journey-progress small { max-width: 132px; overflow: hidden; color: var(--ui-text-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.career-journey-progress li.is-done .career-journey-node { border-color: var(--ui-success); background: var(--ui-success); }
-.career-journey-progress li.is-done .career-journey-connector { background: var(--ui-success); }
-.career-journey-progress li.is-current .career-journey-node { border: 5px solid var(--ui-warning); background: var(--ui-surface); }
-.career-journey-progress li.is-current strong { color: var(--ui-foreground); }
-.career-journey-progress li.is-cancelled .career-journey-node { border-color: var(--ui-destructive); background: var(--ui-destructive); }
-.career-journey-progress li.is-cancelled strong { color: var(--ui-destructive); }
+.career-journey-progress li.is-done .career-journey-node { border-color: var(--career-state-success); background: var(--career-state-success); }
+.career-journey-progress li.is-done .career-journey-connector { background: var(--ui-border-strong); }
+.career-journey-progress li.is-current .career-journey-node,
+.career-journey-progress li.is-pending .career-journey-node { border: 5px solid var(--career-state-info); background: var(--ui-surface); }
+.career-journey-progress li.is-current strong,
+.career-journey-progress li.is-pending strong { color: var(--career-state-info); }
+.career-journey-progress li.is-waiting .career-journey-node { border: 5px solid var(--career-state-waiting); background: var(--ui-surface); }
+.career-journey-progress li.is-waiting strong { color: var(--career-state-waiting); }
+.career-journey-progress li.is-cancelled .career-journey-node { border-color: var(--ui-border-strong); background: var(--career-state-neutral-subtle); color: var(--career-state-neutral); }
+.career-journey-progress li.is-cancelled strong { color: var(--career-state-neutral); }
+.career-journey-progress li.is-ended .career-journey-node { border-color: var(--career-state-danger); background: var(--career-state-danger); color: var(--ui-destructive-foreground); }
+.career-journey-progress li.is-ended .career-journey-connector { background: var(--ui-border-strong); }
+.career-journey-progress li.is-ended strong { color: var(--career-state-danger); }
+.career-journey-progress li.is-offer .career-journey-node { border-color: var(--career-state-offer-node); background: var(--career-state-offer-node); color: #fff; }
+.career-journey-progress li.is-offer .career-journey-connector { background: var(--ui-border-strong); }
+.career-journey-progress li.is-offer strong { color: var(--career-state-offer); }
 .career-progress-helper { margin: 4px 0 0; color: var(--ui-text-muted); font-size: 12px; line-height: 18px; }
 
 .career-interview-rounds { display: grid; min-width: 0; gap: 12px; }
@@ -1178,4 +1215,666 @@
   .career-content-dialog,
   .career-stage-dialog,
   .career-complete-dialog { width: calc(100vw - 24px); }
+}
+
+/* Figma option 1: compact application detail page. Keep these rules scoped so
+   the standalone interview record detail can continue using its existing layout. */
+.career-application-detail-page {
+  background: var(--ui-background);
+}
+
+.career-application-detail-page .career-application-record-hero {
+  min-height: 112px;
+  box-sizing: border-box;
+  background: var(--ui-background);
+  padding: 16px 0;
+}
+
+.career-application-record-hero-inner {
+  display: flex;
+  width: min(1280px, calc(100% - 48px));
+  min-height: 80px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  margin: 0 auto;
+}
+
+.career-application-detail-page .career-record-identity {
+  gap: 0;
+}
+
+.career-record-breadcrumb {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 32px;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.career-record-breadcrumb > span:last-child {
+  overflow: hidden;
+  color: var(--ui-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.career-application-detail-page .career-record-title-row {
+  gap: 10px;
+}
+
+.career-application-detail-page .career-record-title-row h1 {
+  display: flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 12px;
+  font-size: 24px;
+  line-height: 30px;
+}
+
+.career-application-detail-page .career-record-company-name,
+.career-application-detail-page .career-record-position-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.career-application-detail-page .career-record-company-name {
+  flex: 0 1 auto;
+}
+
+.career-application-detail-page .career-record-position-name {
+  flex: 1 1 auto;
+}
+
+.career-application-detail-page .career-application-status {
+  padding: 4px 10px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.career-application-detail-page .career-record-actions {
+  align-self: flex-end;
+  gap: 8px;
+  transform: translateY(5px);
+}
+
+.career-application-detail-page .career-record-actions .ui-button {
+  min-height: 36px;
+  font-size: 13px;
+}
+
+.career-application-detail-page .career-application-detail-body {
+  width: min(1280px, calc(100% - 48px));
+  max-width: 1280px;
+  grid-template-columns: minmax(0, 2.204fr) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 24px;
+  margin: 0 auto;
+  background: var(--ui-background);
+  padding: 12px 0 40px;
+}
+
+.career-application-detail-page .career-application-detail-body.has-interview-records {
+  align-items: stretch;
+  grid-auto-rows: 800px;
+}
+
+.career-application-detail-page .career-detail-main-column,
+.career-application-detail-page .career-detail-side-column {
+  gap: 24px;
+}
+
+.career-application-detail-page .career-application-detail-body.has-interview-records .career-detail-main-column {
+  min-height: 0;
+  grid-template-rows: 258px minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.career-application-detail-page .career-progress-card {
+  display: grid;
+  min-height: 258px;
+  grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
+  padding: 22px 24px;
+}
+
+.career-application-detail-page .career-progress-card > h2 {
+  align-self: start;
+  font-size: 18px;
+  line-height: 24px;
+}
+
+.career-application-detail-page .career-journey-progress {
+  width: 100%;
+  min-width: 0;
+  align-self: center;
+  margin-top: 0;
+  padding-top: 21px;
+  padding-bottom: 8px;
+}
+
+.career-application-detail-page .career-journey-progress li {
+  min-width: 96px;
+  flex: 1 1 96px;
+  gap: 6px;
+}
+
+.career-application-detail-page .career-journey-progress li:first-child {
+  min-width: 96px;
+}
+
+.career-application-detail-page .career-journey-connector {
+  z-index: 0;
+  top: 14px;
+  right: calc(50% + 15px);
+  width: calc(100% - 30px);
+}
+
+.career-application-detail-page .career-journey-node {
+  position: relative;
+  z-index: 1;
+  width: 30px;
+  height: 30px;
+  background: var(--ui-surface);
+}
+
+.career-application-detail-page .career-journey-progress strong,
+.career-application-detail-page .career-journey-progress small {
+  max-width: 144px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.career-application-detail-page .career-journey-progress strong {
+  color: var(--ui-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.career-application-detail-page .career-journey-progress small {
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.career-application-detail-page .career-journey-progress li.is-current .career-journey-node,
+.career-application-detail-page .career-journey-progress li.is-pending .career-journey-node {
+  border: 4px solid var(--ui-accent);
+}
+
+.career-application-detail-page .career-journey-progress li.is-current strong,
+.career-application-detail-page .career-journey-progress li.is-pending strong {
+  color: var(--ui-accent);
+}
+
+.career-application-detail-page .career-progress-helper {
+  max-width: 100%;
+  align-self: end;
+  justify-self: end;
+  margin-top: 0;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: right;
+}
+
+.career-application-detail-page .career-interview-section-card {
+  gap: 18px;
+  padding: 22px 24px 24px;
+}
+
+.career-application-detail-page .has-interview-records .career-interview-section-card {
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.career-application-detail-page .has-interview-records .career-interview-round-list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: auto;
+  padding-right: 6px;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.career-application-detail-page .career-interview-rounds > header {
+  min-height: 24px;
+}
+
+.career-application-detail-page .career-interview-rounds > header h2 {
+  font-size: 18px;
+  line-height: 24px;
+}
+
+.career-application-detail-page .career-interview-rounds > header span {
+  font-size: 13px;
+}
+
+.career-application-detail-page .career-interview-round-card {
+  padding: 12px 16px 10px;
+}
+
+.career-application-detail-page .career-interview-round-card header p {
+  margin-top: 1px;
+}
+
+.career-application-detail-page .career-interview-round-card > dl {
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.career-application-detail-page .career-interview-round-card > dl > div {
+  gap: 1px;
+}
+
+.career-application-detail-page .career-round-open {
+  margin-top: 7px;
+}
+
+.career-application-detail-page .career-interview-empty {
+  min-height: 236px;
+  align-items: center;
+  justify-items: center;
+  border: 0;
+  background: transparent;
+  padding: 24px 0 4px;
+  text-align: center;
+}
+
+.career-application-detail-page .career-interview-empty > svg {
+  width: 32px;
+  height: 32px;
+  color: var(--ui-career-accent);
+  stroke-width: 1.6;
+}
+
+.career-application-detail-page .career-interview-empty strong {
+  font-size: 17px;
+  line-height: 24px;
+}
+
+.career-application-detail-page .career-interview-empty p {
+  max-width: 360px;
+  margin: 0;
+}
+
+.career-application-detail-page .career-interview-empty .ui-button {
+  margin-top: 4px;
+}
+
+.career-application-detail-page .career-job-summary-card {
+  gap: 20px;
+  padding: 22px 24px 24px;
+}
+
+.career-application-detail-page .career-detail-card-header h2 {
+  font-size: 18px;
+  line-height: 24px;
+}
+
+.career-application-detail-page .career-job-identity {
+  gap: 4px;
+}
+
+.career-application-detail-page .career-job-identity span {
+  color: var(--ui-foreground);
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 24px;
+}
+
+.career-application-detail-page .career-job-identity strong {
+  font-size: 17px;
+  line-height: 24px;
+}
+
+.career-application-detail-page .career-job-facts {
+  gap: 10px;
+}
+
+.career-application-detail-page .career-job-facts > div {
+  min-height: 64px;
+  padding: 9px 10px;
+}
+
+.career-application-detail-page .career-job-fact-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.career-application-detail-page .career-job-fact-label svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  stroke-width: 1.7;
+}
+
+.career-application-detail-page .career-job-facts strong {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.career-application-detail-page .career-job-copy {
+  gap: 7px;
+}
+
+.career-application-detail-page .career-job-copy h3,
+.career-application-detail-page .career-application-info-section h3 {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.career-application-detail-page .career-job-copy p {
+  max-height: 72px;
+  font-size: 13px;
+  line-height: 20px;
+  -webkit-line-clamp: 3;
+}
+
+.career-application-detail-page .career-job-tags {
+  gap: 7px;
+}
+
+.career-application-detail-page .career-job-tags span {
+  padding: 4px 9px;
+  font-size: 12px;
+}
+
+.career-application-info-section {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--ui-border);
+  padding-top: 18px;
+}
+
+.career-application-info-section h3 {
+  margin: 0;
+  color: var(--ui-foreground);
+  font-weight: 650;
+}
+
+.career-application-info-section dl {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+}
+
+.career-application-info-section dl > div {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.career-application-info-section dt {
+  flex: 0 0 auto;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.career-application-info-section dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--ui-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: right;
+}
+
+@media (min-width: 901px) {
+  .career-application-detail-page .has-interview-records .career-interview-round-list {
+    align-content: start;
+    grid-auto-rows: 134px;
+  }
+
+  .career-application-detail-page .has-interview-records .career-interview-round-card {
+    height: 134px;
+    overflow: hidden;
+  }
+
+  .career-application-detail-page .has-interview-records .career-job-summary-card {
+    align-content: start;
+    gap: 24px;
+    grid-auto-rows: max-content;
+    padding: 28px 28px 30px;
+  }
+
+  .career-application-detail-page .has-interview-records .career-detail-card-header h2 {
+    font-size: 19px;
+    line-height: 26px;
+  }
+
+  .career-application-detail-page .has-interview-records .career-job-identity {
+    gap: 6px;
+  }
+
+  .career-application-detail-page .has-interview-records .career-job-identity span {
+    font-size: 18px;
+    line-height: 26px;
+  }
+
+  .career-application-detail-page .has-interview-records .career-job-identity strong {
+    font-size: 18px;
+    line-height: 26px;
+  }
+
+  .career-application-detail-page .has-interview-records .career-job-facts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .career-application-detail-page .has-interview-records .career-job-facts > div {
+    height: 72px;
+    min-height: 72px;
+    align-content: center;
+    gap: 5px;
+    padding: 12px 8px;
+  }
+
+  .career-application-detail-page .has-interview-records .career-job-fact-label {
+    font-size: 12px;
+    line-height: 20px;
+    white-space: nowrap;
+  }
+
+  .career-application-detail-page .has-interview-records .career-job-fact-label svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .career-application-detail-page .has-interview-records .career-job-facts strong {
+    font-size: 13px;
+    line-height: 20px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .career-application-detail-page .has-interview-records .career-job-copy {
+    gap: 9px;
+  }
+
+  .career-application-detail-page .has-interview-records .career-job-copy h3,
+  .career-application-detail-page .has-interview-records .career-application-info-section h3 {
+    font-size: 15px;
+    line-height: 22px;
+  }
+
+  .career-application-detail-page .has-interview-records .career-job-copy p {
+    max-height: 84px;
+    font-size: 13px;
+    line-height: 21px;
+    -webkit-line-clamp: 4;
+  }
+
+  .career-application-detail-page .has-interview-records .career-job-tags span {
+    padding: 5px 10px;
+    font-size: 13px;
+  }
+
+  .career-application-detail-page .has-interview-records .career-application-info-section {
+    align-content: start;
+    gap: 12px;
+    grid-auto-rows: max-content;
+    padding-top: 22px;
+  }
+
+  .career-application-detail-page .has-interview-records .career-application-info-section dl {
+    align-content: start;
+    gap: 11px;
+    grid-auto-rows: max-content;
+  }
+
+  .career-application-detail-page .has-interview-records .career-application-info-section dt,
+  .career-application-detail-page .has-interview-records .career-application-info-section dd {
+    font-size: 13px;
+    line-height: 20px;
+  }
+}
+
+@media (max-width: 1250px) {
+  .career-application-detail-page .career-application-record-hero {
+    padding-inline: 0;
+  }
+
+  .career-application-record-hero-inner {
+    width: calc(100% - 48px);
+  }
+
+  .career-application-detail-page .career-application-detail-body {
+    width: calc(100% - 48px);
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 392px);
+    padding-inline: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .career-application-detail-page .career-application-record-hero {
+    min-height: 0;
+    padding-block: 20px;
+  }
+
+  .career-application-record-hero-inner {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .career-application-detail-page .career-record-actions {
+    width: 100%;
+    align-self: auto;
+    justify-content: flex-start;
+    transform: none;
+  }
+
+  .career-application-detail-page .career-application-detail-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .career-application-detail-page .career-application-detail-body.has-interview-records {
+    grid-auto-rows: auto;
+  }
+
+  .career-application-detail-page .career-application-detail-body.has-interview-records .career-detail-main-column {
+    grid-template-rows: auto auto;
+    overflow: visible;
+  }
+
+  .career-application-detail-page .has-interview-records .career-interview-section-card {
+    overflow: visible;
+  }
+
+  .career-application-detail-page .has-interview-records .career-interview-round-list {
+    overflow-y: visible;
+    padding-right: 0;
+  }
+
+  .career-application-detail-page .career-detail-side-column {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .career-application-detail-page .career-application-record-hero {
+    padding-block: 16px 18px;
+  }
+
+  .career-application-record-hero-inner {
+    width: calc(100% - 32px);
+  }
+
+  .career-application-detail-page .career-record-title-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 7px 10px;
+  }
+
+  .career-application-detail-page .career-record-title-row h1 {
+    display: grid;
+    width: 100%;
+    gap: 2px;
+    max-width: 100%;
+    font-size: 22px;
+    line-height: 28px;
+    white-space: normal;
+  }
+
+  .career-application-detail-page .career-record-title-row h1 .career-record-divider {
+    display: none;
+  }
+
+  .career-application-detail-page .career-record-company-name,
+  .career-application-detail-page .career-record-position-name {
+    white-space: normal;
+  }
+
+  .career-application-detail-page .career-record-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .career-application-detail-page .career-record-actions > * {
+    width: 100%;
+  }
+
+  .career-application-detail-page .career-application-detail-body {
+    width: calc(100% - 32px);
+    padding: 12px 0 28px;
+  }
+
+  .career-application-detail-page .career-progress-card {
+    overflow-x: auto;
+    padding: 18px 16px;
+  }
+
+  .career-application-detail-page .career-journey-progress {
+    width: 640px;
+    min-width: 640px;
+  }
+
+  .career-application-detail-page .career-job-summary-card {
+    padding-inline: 16px;
+  }
+
+  .career-application-detail-page .career-job-facts {
+    gap: 7px;
+  }
+
+  .career-application-detail-page .career-job-facts > div {
+    padding-inline: 8px;
+  }
+
+  .career-application-detail-page .career-application-info-section dl > div {
+    align-items: flex-start;
+  }
+
+  .career-application-detail-page .career-application-info-section dd {
+    text-align: right;
+  }
 }

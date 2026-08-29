@@ -2,10 +2,11 @@ import { useMemo, useRef, useState, type DragEvent as ReactDragEvent } from "rea
 import { ApiRequestError, api, type JobApplicationSummary } from "@/api/client";
 import { careerApplicationPath, navigateTo } from "../../routing";
 
-export type ProgressColumnKey = "pending" | "interview" | "hr" | "offer" | "ended";
+export type ProgressColumnKey = "pending" | "screening" | "interview" | "hr" | "offer" | "ended";
 
 export const PROGRESS_COLUMNS: Array<{ key: ProgressColumnKey; label: string }> = [
-  { key: "pending", label: "待推进" },
+  { key: "pending", label: "待投递" },
+  { key: "screening", label: "已投递" },
   { key: "interview", label: "面试中" },
   { key: "hr", label: "HR 面" },
   { key: "offer", label: "Offer" },
@@ -13,8 +14,12 @@ export const PROGRESS_COLUMNS: Array<{ key: ProgressColumnKey; label: string }> 
 ];
 
 export function progressColumnKey(application: JobApplicationSummary): ProgressColumnKey {
-  if (application.archived_at || application.status !== "active") return "ended";
-  if (application.current_stage_type === "screening") return "pending";
+  if (application.archived_at) return "ended";
+  if (application.status === "closed" && application.offer_status === "accepted") return "offer";
+  if (application.status !== "active") return "ended";
+  if (application.current_stage_type === "screening") {
+    return application.applied_at ? "screening" : "pending";
+  }
   if (application.current_stage_type === "interview") return "interview";
   if (application.current_stage_type === "hr") return "hr";
   return "offer";
@@ -32,9 +37,10 @@ function canDropApplication(
 ): boolean {
   if (!isApplicationDraggable(application)) return false;
   const source = progressColumnKey(application);
-  if (source === target || target === "pending" || target === "ended") return false;
+  if (source === target || target === "pending" || target === "screening" || target === "ended") return false;
   const stageOrder: Record<Exclude<ProgressColumnKey, "ended">, number> = {
     pending: 0,
+    screening: 0,
     interview: 1,
     hr: 2,
     offer: 3,
@@ -66,7 +72,8 @@ export function applicationProgressToneClass(application: JobApplicationSummary)
   if (application.archived_at || application.status === "withdrawn") return "is-muted";
   if (application.status === "rejected") return "is-danger";
   if (application.status === "closed") {
-    return application.offer_status === "accepted" ? "is-success" : "is-muted";
+    if (application.offer_status === "accepted") return "is-offer";
+    return application.offer_status === "declined" ? "is-muted" : "is-danger";
   }
   if (application.stage_state === "negotiating") return "is-offer";
   if (application.stage_state === "awaiting_result") return "is-waiting";

@@ -97,7 +97,7 @@ describe("WorkspaceNavigation", () => {
     expect(screen.getByRole("link", { name: "求职记录" })).toHaveAttribute("href", "/career/applications");
     expect(screen.getByRole("link", { name: "面试排期" })).toHaveAttribute("href", "/career/schedule");
 
-    for (const active of ["applications", "jobs", "reviews"] as const) {
+    for (const active of ["applications", "reviews"] as const) {
       rerender(<CareerNavigation active={active} />);
       expect(screen.getByRole("link", { name: "求职记录" })).toHaveAttribute("aria-current", "page");
       expect(screen.getByRole("link", { name: "面试排期" })).not.toHaveAttribute("aria-current");

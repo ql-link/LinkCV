@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiRequestError, type JobApplicationSummary } from "@/api/client";
+import { ApiRequestError, type JobApplicationSummary, type ResumeSummary, type ResumeVersion } from "@/api/client";
+import { useResumeStore } from "@/store/resumeStore";
 import { InterviewCenterPage } from "./InterviewCenterPage";
 
 const mocks = vi.hoisted(() => ({
@@ -10,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   updateJobApplication: vi.fn(),
   rescheduleInterviewSession: vi.fn(),
   listJobDescriptions: vi.fn(),
+  listVersions: vi.fn(),
   parseJobDescriptionDraft: vi.fn(),
   createJobDescription: vi.fn(),
   createJobApplication: vi.fn(),
@@ -58,6 +60,42 @@ const application = {
   created_at: "2026-08-17T01:00:00Z",
   updated_at: "2026-08-18T01:00:00Z",
 };
+
+const resumeFixtures: ResumeSummary[] = [
+  {
+    id: "resume-1",
+    title: "后端工程师简历",
+    source_type: "template",
+    lock_version: 3,
+    created_at: "2026-08-01T01:00:00Z",
+    updated_at: "2026-08-20T01:00:00Z",
+  },
+  {
+    id: "resume-2",
+    title: "后端工程师简历（无正式版本）",
+    source_type: "import",
+    lock_version: 1,
+    created_at: "2026-08-02T01:00:00Z",
+    updated_at: "2026-08-21T01:00:00Z",
+  },
+];
+
+const formalResumeVersions: ResumeVersion[] = [
+  {
+    id: "resume-version-1",
+    version_no: 1,
+    name: "技术方向初版",
+    reason: "initial",
+    created_at: "2026-08-01T02:00:00Z",
+  },
+  {
+    id: "resume-version-2",
+    version_no: 2,
+    name: "后端投递终版",
+    reason: "manual",
+    created_at: "2026-08-20T02:00:00Z",
+  },
+];
 
 const fixtureWeekStart = new Date();
 fixtureWeekStart.setHours(0, 0, 0, 0);
@@ -146,6 +184,8 @@ beforeEach(() => {
     ],
   });
   mocks.listJobDescriptions.mockResolvedValue({ items: [], next_cursor: null });
+  mocks.listVersions.mockResolvedValue({ versions: [] });
+  useResumeStore.setState({ resumes: resumeFixtures });
   mocks.cancelInterviewSession.mockResolvedValue({ session, application, assets: [] });
   mocks.deleteInterviewSession.mockResolvedValue({ deleted: true, application });
   mocks.archiveJobApplication.mockResolvedValue({
@@ -452,7 +492,7 @@ describe("InterviewCenterPage API projections", () => {
     expect(screen.getByLabelText("二面 · 等待安排")).toHaveClass("is-scheduled");
     expect(screen.getByLabelText("终面 · 等待结果")).toHaveClass("is-waiting");
     expect(screen.getByLabelText("Offer 沟通 · Offer 沟通中")).toHaveClass("is-offer");
-    expect(screen.getByLabelText("Offer · 已接受 Offer")).toHaveClass("is-success");
+    expect(screen.getByLabelText("Offer · 已接受 Offer")).toHaveClass("is-offer");
     expect(screen.getByLabelText("筛选中 · 未通过")).toHaveClass("is-danger");
   });
 
@@ -564,7 +604,8 @@ describe("InterviewCenterPage API projections", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "求职进度" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "岗位详情" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "腾讯，后端开发工程师" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "岗位与求职信息" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "求职信息" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "查看面试记录" })).toBeInTheDocument();
     expect(screen.queryByRole("table", { name: "求职记录列表" })).not.toBeInTheDocument();
@@ -697,7 +738,7 @@ describe("InterviewCenterPage API projections", () => {
     expect(await screen.findByRole("dialog", { name: "新建求职进程" })).toBeInTheDocument();
   });
 
-  it("renders five real aggregate columns and the board card data", async () => {
+  it("renders six real aggregate columns and the board card data", async () => {
     const today = new Date();
     today.setHours(10, 20, 0, 0);
     const yesterday = new Date(today);
@@ -710,8 +751,18 @@ describe("InterviewCenterPage API projections", () => {
       next_session_mode: null,
       ...overrides,
     });
-    const screening = makeApplication({
+    const pending = makeApplication({
       id: "41",
+      company_name_snapshot: "待投公司",
+      job_title_snapshot: "待投岗位",
+      current_stage_type: "screening",
+      current_round_no: null,
+      current_stage_label: "待投递",
+      stage_state: "awaiting_schedule",
+      applied_at: null,
+    });
+    const screening = makeApplication({
+      id: "46",
       company_name_snapshot: "筛选公司",
       job_title_snapshot: "筛选岗位",
       job_snapshot: { schema_version: 1, employment_type: "internship" },
@@ -719,6 +770,7 @@ describe("InterviewCenterPage API projections", () => {
       current_round_no: null,
       current_stage_label: "筛选中",
       stage_state: "awaiting_result",
+      applied_at: "2026-08-22T04:00:00Z",
       updated_at: today.toISOString(),
     });
     const interview = makeApplication({
@@ -763,7 +815,7 @@ describe("InterviewCenterPage API projections", () => {
     });
     mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
     mocks.listJobApplications.mockResolvedValue({
-      items: [screening, interview, hr, offer, ended],
+      items: [pending, screening, interview, hr, offer, ended],
       next_cursor: null,
     });
 
@@ -773,13 +825,15 @@ describe("InterviewCenterPage API projections", () => {
     const columns = Array.from(document.querySelectorAll<HTMLElement>("[data-column-key]"));
     expect(columns.map((column) => column.dataset.columnKey)).toEqual([
       "pending",
+      "screening",
       "interview",
       "hr",
       "offer",
       "ended",
     ]);
     expect(columns.map((column) => within(column).getByRole("heading").textContent)).toEqual([
-      "待推进1",
+      "待投递1",
+      "已投递1",
       "面试中1",
       "HR 面1",
       "Offer1",
@@ -805,10 +859,10 @@ describe("InterviewCenterPage API projections", () => {
     expect(endedCard).toHaveAttribute("draggable", "false");
 
     fireEvent.click(within(screeningCard).getByRole("button", { name: "查看 筛选公司 筛选岗位 求职进程" }));
-    expect(window.location.pathname).toBe("/career/applications/41");
+    expect(window.location.pathname).toBe("/career/applications/46");
   });
 
-  it("creates a screening process from the existing job library dialog", async () => {
+  it("creates an unsubmitted screening process from the existing job library dialog", async () => {
     mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
     mocks.listJobApplications.mockResolvedValue({ items: [], next_cursor: null });
     mocks.listJobDescriptions.mockResolvedValue({
@@ -841,7 +895,179 @@ describe("InterviewCenterPage API projections", () => {
       current_round_no: null,
       current_stage_label: "筛选中",
       stage_state: "awaiting_result",
+      applied_at: null,
+      resume_version_id: null,
     })));
+  });
+
+  it("confirms the applied date and submits the selected resume version together", async () => {
+    const screeningApplication = {
+      ...application,
+      id: "58",
+      current_stage_type: "screening" as const,
+      current_round_no: null,
+      current_stage_label: "筛选中",
+      stage_state: "awaiting_result" as const,
+      applied_at: null,
+      lock_version: 9,
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications.mockResolvedValue({ items: [screeningApplication], next_cursor: null });
+    mocks.listVersions.mockImplementation((resumeId: string) => Promise.resolve({
+      versions: resumeId === "resume-1" ? formalResumeVersions : [],
+    }));
+    mocks.updateJobApplication.mockResolvedValue({
+      application: {
+        ...screeningApplication,
+        applied_at: "2026-08-22T04:00:00Z",
+        resume_version_id: "resume-version-2",
+        resume_title_snapshot: "后端工程师简历 · 后端投递终版",
+      },
+    });
+
+    render(<InterviewCenterPage view="applications" initialApplicationId="58" />);
+
+    const markAppliedButton = await screen.findByRole("button", { name: "标记已投递" });
+    expect(screen.getAllByText("待投递")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "添加下一阶段" })).not.toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "当前阶段：筛选中" })).not.toHaveTextContent("筛选中");
+    fireEvent.click(markAppliedButton);
+    const dialog = await screen.findByRole("dialog", { name: "确认已投递" });
+    fireEvent.change(within(dialog).getByLabelText("投递日期"), { target: { value: "2026-08-22" } });
+    fireEvent.change(within(dialog).getByLabelText("使用的简历"), { target: { value: "resume-1" } });
+    const versionSelect = within(dialog).getByLabelText("投递简历版本");
+    await waitFor(() => expect(versionSelect).not.toBeDisabled());
+    fireEvent.change(versionSelect, { target: { value: "resume-version-2" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认标记" }));
+
+    await waitFor(() => expect(mocks.updateJobApplication).toHaveBeenCalledWith("58", {
+      applied_at: "2026-08-22T04:00:00.000Z",
+      resume_version_id: "resume-version-2",
+      base_lock_version: 9,
+    }));
+  });
+
+  it("allows marking as applied without associating a resume when it has no formal version", async () => {
+    const screeningApplication = {
+      ...application,
+      id: "59",
+      current_stage_type: "screening" as const,
+      current_round_no: null,
+      current_stage_label: "筛选中",
+      stage_state: "awaiting_result" as const,
+      applied_at: null,
+      lock_version: 10,
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications.mockResolvedValue({ items: [screeningApplication], next_cursor: null });
+    mocks.listVersions.mockResolvedValue({ versions: [] });
+
+    render(<InterviewCenterPage view="applications" initialApplicationId="59" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "标记已投递" }));
+    const dialog = await screen.findByRole("dialog", { name: "确认已投递" });
+    fireEvent.change(within(dialog).getByLabelText("使用的简历"), { target: { value: "resume-2" } });
+    expect(await within(dialog).findByText("该简历暂无正式版本，可直接标记已投递，不关联简历版本。"))
+      .toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认标记" }));
+
+    await waitFor(() => expect(mocks.updateJobApplication).toHaveBeenCalledWith("59", expect.objectContaining({
+      applied_at: expect.any(String),
+      resume_version_id: null,
+      base_lock_version: 10,
+    })));
+  });
+
+  it("allows marking as applied without a resume when the resume list is empty", async () => {
+    useResumeStore.setState({ resumes: [] });
+    const screeningApplication = {
+      ...application,
+      id: "60",
+      current_stage_type: "screening" as const,
+      current_round_no: null,
+      current_stage_label: "筛选中",
+      stage_state: "awaiting_result" as const,
+      applied_at: null,
+      lock_version: 11,
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications.mockResolvedValue({ items: [screeningApplication], next_cursor: null });
+
+    render(<InterviewCenterPage view="applications" initialApplicationId="60" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "标记已投递" }));
+    const dialog = await screen.findByRole("dialog", { name: "确认已投递" });
+    expect(within(dialog).getByText("暂无可用简历，可直接标记已投递，不关联简历。"))
+      .toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认标记" }));
+
+    await waitFor(() => expect(mocks.updateJobApplication).toHaveBeenCalledWith("60", expect.objectContaining({
+      applied_at: expect.any(String),
+      resume_version_id: null,
+      base_lock_version: 11,
+    })));
+  });
+
+  it("renders a received Offer with a crown above its dedicated journey node", async () => {
+    const offerApplication = {
+      ...application,
+      id: "61",
+      current_stage_type: "offer" as const,
+      current_round_no: null,
+      current_stage_label: "Offer 沟通",
+      stage_state: "negotiating" as const,
+      offer_status: "written_offer_received" as const,
+      applied_at: "2026-08-22T04:00:00Z",
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications.mockResolvedValue({ items: [offerApplication], next_cursor: null });
+
+    render(<InterviewCenterPage view="applications" initialApplicationId="61" />);
+
+    await screen.findByRole("list", { name: "当前阶段：Offer 沟通" });
+    expect(document.querySelector(".career-journey-progress li.is-offer > .career-journey-crown")).not.toBeInTheDocument();
+    expect(document.querySelector(".career-journey-progress li.is-offer .career-journey-node .lucide-crown")).toBeInTheDocument();
+  });
+
+  it("uses the terminal journey state only after the application ends", async () => {
+    const endedApplication = {
+      ...application,
+      id: "62",
+      current_stage_type: "screening" as const,
+      current_round_no: null,
+      current_stage_label: "筛选中",
+      stage_state: "awaiting_result" as const,
+      status: "rejected" as const,
+      applied_at: "2026-08-22T04:00:00Z",
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications.mockResolvedValue({ items: [endedApplication], next_cursor: null });
+
+    render(<InterviewCenterPage view="applications" initialApplicationId="62" />);
+
+    await screen.findByRole("list", { name: "当前阶段：筛选中" });
+    expect(document.querySelector(".career-journey-progress li.is-ended .career-journey-node")).toHaveTextContent("!");
+  });
+
+  it("distinguishes waiting for a result from active and completed journey states", async () => {
+    const waitingApplication = {
+      ...application,
+      id: "63",
+      current_stage_type: "screening" as const,
+      current_round_no: null,
+      current_stage_label: "筛选中",
+      stage_state: "awaiting_result" as const,
+      status: "active" as const,
+      applied_at: "2026-08-22T04:00:00Z",
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications.mockResolvedValue({ items: [waitingApplication], next_cursor: null });
+
+    render(<InterviewCenterPage view="applications" initialApplicationId="63" />);
+
+    await screen.findByRole("list", { name: "当前阶段：筛选中" });
+    expect(document.querySelector(".career-application-status")).toHaveClass("is-warning");
+    expect(document.querySelector(".career-journey-progress li.is-waiting strong")).toHaveTextContent("筛选中");
   });
 
   it("advances a real screening card to the interview aggregate column", async () => {

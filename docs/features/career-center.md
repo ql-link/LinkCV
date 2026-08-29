@@ -2,17 +2,18 @@
 
 ## 功能范围
 
-求职中心覆盖岗位库、一次求职尝试、阶段推进、面试排期、面试复盘和素材。岗位资料可被多次求职尝试复用；一次 `JobApplication` 才是完整求职生命周期的聚合根。
+求职中心覆盖岗位导入、一次求职尝试、阶段推进、面试排期、面试复盘和素材。岗位资料可被多次求职尝试复用；一次 `JobApplication` 才是完整求职生命周期的聚合根。
 
 字段、状态动作和错误语义见 [HTTP 接口契约](../api/http-contracts.md)，浏览器采集能力见 [浏览器插件架构](../internals/extension.md)。
 
 ## 用户入口
 
-- `/career/jobs`：岗位列表、搜索、创建、智能导入、详情、编辑、删除和插件入口。
-- `/career/applications`：求职进程看板、列表、创建和详情。
+- `/career/applications`：求职记录列表、阶段看板、岗位导入、采集插件入口、求职进程创建和详情。
 - `/career/schedule`：面试排期。
-- `/career/reviews`：面试记录、复盘和素材。
-- 旧 `/jobs/*` 与 `/interviews` 只承担兼容跳转，规范路由统一位于 `/career/*`。
+- `/career/applications/:id`：一次求职进程的阶段、面试记录和岗位快照；从这里可下钻到完整岗位。
+- `/career/jobs/:jobId`：复用原 JD 详情页展示并就地编辑完整岗位，不提供独立岗位列表入口。
+- `/career/reviews`：面试记录、复盘和素材的内部入口。
+- `/career/jobs`、`/jobs` 与旧 `/interviews` 只承担兼容跳转并回到求职记录；旧岗位新建入口打开求职记录内的岗位导入弹窗，旧岗位详情链接继续兼容。
 
 ## 代码地图
 
@@ -22,7 +23,7 @@
 | 岗位应用服务 | `application/job_descriptions/` | 创建、重复解决、来源清洗和文字/图片草稿 |
 | 求职 HTTP/ORM | `modules/interviews/` | 进程、排期、复盘、素材模型与路由 |
 | 求职状态机 | `application/interviews/state.py`、`service.py` | 阶段动作、冲突校验和事务 |
-| Web | `features/jobs/`、`features/interviews/` | 岗位库、进程、排期和复盘界面 |
+| Web | `features/jobs/`、`features/interviews/` | 完整岗位详情、岗位导入、求职记录、排期和复盘界面 |
 | 插件 | `apps/extension` | BOSS 页面采集、用户确认和岗位导入调用 |
 
 ## 核心对象与规则
@@ -47,7 +48,7 @@
 
 ### 求职与面试
 
-1. 用户从已有岗位创建一次求职尝试，可选某个正式简历版本，初始进入筛选阶段。
+1. 用户在求职记录中导入或填写岗位并创建一次待投递的求职尝试；确认“已投递”时记录实际日期，并可绑定本次使用的正式简历版本，随后进入筛选阶段。
 2. 阶段动作由后端状态机更新当前阶段、轮次、状态和结果；客户端不能直接写任意组合。
 3. 面试排期绑定求职进程并校验时间范围和冲突；完成、取消与复盘共享同一场 `InterviewSession`。
 4. 素材先校验进程所有权，再保存对象与元数据；读取和删除继续通过 session→application→user 链路授权。
@@ -61,4 +62,4 @@
 
 ## 修改联动与验证
 
-岗位来源契约变化还需同步插件 `contracts.ts`、Manifest 权限和导入测试；求职状态变化需同步看板、列表、排期、复盘和 Agent 上下文。主要验证入口为后端 `test_job_descriptions.py`、`test_interviews.py`、`test_job_description_import.py`、`test_interview_state.py`，以及 Web `JobCenterPage`、`JobDetailPage`、`JobFormPage`、`JobSmartImportDialog` 和 `InterviewCenterPage` 测试。
+岗位来源契约变化还需同步插件 `contracts.ts`、Manifest 权限和导入测试；求职状态变化需同步看板、列表、排期、复盘和 Agent 上下文。主要验证入口为后端 `test_job_descriptions.py`、`test_interviews.py`、`test_job_description_import.py`、`test_interview_state.py`，以及 Web `JobDetailPage`、`JobSmartImportDialog` 和 `InterviewCenterPage` 测试。

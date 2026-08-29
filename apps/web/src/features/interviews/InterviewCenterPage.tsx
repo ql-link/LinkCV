@@ -49,7 +49,6 @@ import {
 } from "lucide-react";
 import { Button, ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, ExpandableSearch, PageLoading } from "@/components/ui";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
-import { useResumeStore } from "@/store/resumeStore";
 import {
   ApiRequestError,
   api,
@@ -368,6 +367,7 @@ export function InterviewCenterPage({
   initialSessionId,
   initialJobId,
   initialCreateApplication,
+  initialJobImport,
   navigation,
 }: {
   view: InterviewView;
@@ -375,6 +375,7 @@ export function InterviewCenterPage({
   initialSessionId?: string;
   initialJobId?: string;
   initialCreateApplication?: boolean;
+  initialJobImport?: boolean;
   navigation?: ReactNode;
 }) {
   const weekStart = useMemo(() => startOfWeek(), []);
@@ -460,6 +461,10 @@ export function InterviewCenterPage({
   useEffect(() => {
     if (initialCreateApplication) setShowCreateApplication(true);
   }, [initialCreateApplication]);
+
+  useEffect(() => {
+    if (initialJobImport) setJobImportOpen(true);
+  }, [initialJobImport]);
 
   const loadDetail = useCallback(async (id: string) => {
     const requestId = ++detailRequestRef.current;
@@ -2204,12 +2209,7 @@ function CreateApplicationDialog({
 }) {
   const [jobs, setJobs] = useState<JobDescriptionSummary[]>([]);
   const [jobId, setJobId] = useState("");
-  const [appliedAt, setAppliedAt] = useState(() => isoDate(new Date()));
   const [notes, setNotes] = useState("");
-  const resumes = useResumeStore((state) => state.resumes);
-  const [resumeId, setResumeId] = useState("");
-  const [versions, setVersions] = useState<Array<{ id: string; name: string; version_no: number }>>([]);
-  const [resumeVersionId, setResumeVersionId] = useState("");
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -2234,25 +2234,6 @@ function CreateApplicationDialog({
     return () => { cancelled = true; };
   }, [initialJobId, onNotice]);
 
-  useEffect(() => {
-    let cancelled = false;
-    if (!resumeId) {
-      setVersions([]);
-      setResumeVersionId("");
-      return;
-    }
-    void api.listVersions(resumeId)
-      .then(({ versions: nextVersions }) => {
-        if (cancelled) return;
-        setVersions(nextVersions);
-        setResumeVersionId(nextVersions[0]?.id ?? "");
-      })
-      .catch((error) => {
-        if (!cancelled) onNotice(errorMessage(error));
-      });
-    return () => { cancelled = true; };
-  }, [onNotice, resumeId]);
-
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!jobId) return;
@@ -2260,12 +2241,12 @@ function CreateApplicationDialog({
     try {
       const result = await api.createJobApplication({
         job_description_id: jobId,
-        resume_version_id: resumeVersionId || null,
+        resume_version_id: null,
         current_stage_type: "screening",
         current_round_no: null,
         current_stage_label: "筛选中",
         stage_state: "awaiting_result",
-        applied_at: appliedAt ? new Date(`${appliedAt}T12:00:00`).toISOString() : null,
+        applied_at: null,
         notes: notes.trim() || null,
       });
       onCreated(result.application.id);
@@ -2301,26 +2282,8 @@ function CreateApplicationDialog({
               </label>
               <div className="interview-dialog-grid">
                 <label>
-                  投递日期
-                  <input type="date" value={appliedAt} onChange={(event) => setAppliedAt(event.target.value)} />
-                </label>
-                <label>
                   初始阶段
                   <input value="筛选中" disabled />
-                </label>
-                <label>
-                  使用的简历
-                  <select value={resumeId} onChange={(event) => setResumeId(event.target.value)}>
-                    <option value="">暂不关联简历版本</option>
-                    {resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.title}</option>)}
-                  </select>
-                </label>
-                <label>
-                  简历版本
-                  <select disabled={!resumeId || versions.length === 0} value={resumeVersionId} onChange={(event) => setResumeVersionId(event.target.value)}>
-                    <option value="">{resumeId ? "选择版本" : "请先选择简历"}</option>
-                    {versions.map((version) => <option key={version.id} value={version.id}>v{version.version_no} · {version.name}</option>)}
-                  </select>
                 </label>
                 <label className="is-wide">
                   备注
@@ -2333,7 +2296,7 @@ function CreateApplicationDialog({
               <BriefcaseBusiness />
               <strong>岗位库中还没有可用岗位</strong>
               <span>请先创建岗位，再返回这里开始求职进程。</span>
-              <Button type="button" variant="outline" onClick={() => navigateTo("/career/jobs/new")}>前往新建岗位</Button>
+              <Button type="button" variant="outline" onClick={() => navigateTo("/career/applications?import=1")}>导入岗位</Button>
             </div>
           )}
           <footer>
@@ -2545,7 +2508,7 @@ function CalendarColorPicker({ company, value, onChange }: { company: string; va
 }
 
 function InterviewContextSidebar({ className, interview }: { className: string; interview: Interview }) {
-  return <aside className={`${className} interview-context-sidebar`} aria-label={`${interview.company}面试上下文`}><section className="interview-surface context-primary-card"><header className="context-company-header"><span className={`context-company-mark calendar-${interview.color}`}>{interview.logo}</span><strong>{interview.company}</strong><StatusBadge status={interview.status} /></header><h2>{interview.stage}（面试）</h2><p className="context-role">{interview.role}</p><dl className="context-detail-list"><DetailRow icon={<Clock3 />} label="时间" value={`${interview.date}（${interview.weekday}） ${interview.time} – ${interview.endTime}`} /><DetailRow icon={<Link2 />} label="面试方式" value={interview.mode} /><DetailRow icon={<UserRound />} label="面试官" value={interview.interviewer} /><DetailRow icon={<CircleCheck />} label="状态" value={interview.status === "completed" ? "已完成面试" : interview.status === "cancelled" ? "已取消" : "待面试"} /><DetailRow icon={<Bell />} label="备注" value={interview.note} /></dl></section><button type="button" className="interview-surface context-job-archive-card" onClick={() => navigateTo("/career/jobs")}><span>查看对应岗位档案</span><div><FolderOpen /><p><strong>{interview.company} · {interview.role}</strong><small>岗位档案与本次快照</small></p><ChevronRight /></div></button></aside>;
+  return <aside className={`${className} interview-context-sidebar`} aria-label={`${interview.company}面试上下文`}><section className="interview-surface context-primary-card"><header className="context-company-header"><span className={`context-company-mark calendar-${interview.color}`}>{interview.logo}</span><strong>{interview.company}</strong><StatusBadge status={interview.status} /></header><h2>{interview.stage}（面试）</h2><p className="context-role">{interview.role}</p><dl className="context-detail-list"><DetailRow icon={<Clock3 />} label="时间" value={`${interview.date}（${interview.weekday}） ${interview.time} – ${interview.endTime}`} /><DetailRow icon={<Link2 />} label="面试方式" value={interview.mode} /><DetailRow icon={<UserRound />} label="面试官" value={interview.interviewer} /><DetailRow icon={<CircleCheck />} label="状态" value={interview.status === "completed" ? "已完成面试" : interview.status === "cancelled" ? "已取消" : "待面试"} /><DetailRow icon={<Bell />} label="备注" value={interview.note} /></dl></section><button type="button" className="interview-surface context-job-archive-card" onClick={() => navigateTo(careerApplicationPath(interview.applicationId))}><span>查看对应求职记录</span><div><FolderOpen /><p><strong>{interview.company} · {interview.role}</strong><small>岗位信息与本次求职进程</small></p><ChevronRight /></div></button></aside>;
 }
 
 function DetailRow({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {

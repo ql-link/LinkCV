@@ -7,15 +7,19 @@ import {
 } from "react";
 import {
   Archive,
+  Banknote,
   BriefcaseBusiness,
+  CalendarDays,
   Check,
   ChevronLeft,
   ChevronRight,
   CircleCheck,
+  Crown,
   Download,
   ExternalLink,
   FileText,
   Import,
+  MapPin,
   Mic,
   Trash2,
   Video,
@@ -31,6 +35,7 @@ import {
   type JobApplicationRecord,
   type JobApplicationSummary,
 } from "@/api/client";
+import { useResumeStore } from "@/store/resumeStore";
 import {
   Button,
   ConfirmDialog,
@@ -42,7 +47,7 @@ import {
   DialogTitle,
   PageLoading,
 } from "@/components/ui";
-import { careerApplicationPath, navigateTo } from "../../routing";
+import { careerApplicationPath, jobDetailPath, navigateTo } from "../../routing";
 import {
   applicationStatusLabel,
   formatApplicationListDateTime,
@@ -59,6 +64,7 @@ type ApplicationStageSource = Pick<
   | "status"
   | "offer_status"
   | "archived_at"
+  | "applied_at"
   | "lock_version"
 >;
 
@@ -66,7 +72,7 @@ type JourneyStage = {
   key: string;
   label: string;
   meta: string;
-  state: "done" | "current" | "pending" | "cancelled";
+  state: "done" | "current" | "pending" | "waiting" | "cancelled" | "ended" | "offer";
 };
 
 function requestErrorMessage(error: unknown): string {
@@ -165,6 +171,7 @@ function applicationStageStatusLabel(application: ApplicationStageSource): strin
   if (application.status === "closed") {
     return application.offer_status === "accepted" ? "已接受 Offer" : "已结束";
   }
+  if (application.current_stage_type === "screening" && !application.applied_at) return "待投递";
   return application.stage_state === "awaiting_schedule"
     ? "等待安排"
     : application.stage_state === "awaiting_result"
@@ -175,7 +182,12 @@ function applicationStageStatusLabel(application: ApplicationStageSource): strin
 }
 
 function applicationStatusTone(application: ApplicationStageSource): string {
-  if (application.archived_at || application.status !== "active") return "is-ended";
+  if (application.archived_at || application.status === "withdrawn") return "is-muted";
+  if (application.status === "rejected") return "is-danger";
+  if (application.status === "closed") {
+    if (application.offer_status === "accepted") return "is-offer";
+    return application.offer_status === "declined" ? "is-muted" : "is-danger";
+  }
   if (application.stage_state === "awaiting_result") return "is-warning";
   if (application.stage_state === "negotiating") return "is-offer";
   return "is-active";
@@ -190,11 +202,12 @@ function sessionStatusLabel(session: Pick<InterviewSessionRecord, "status" | "st
 }
 
 function sessionStatusTone(session: Pick<InterviewSessionRecord, "status" | "start_at" | "end_at">): string {
-  return session.status === "completed"
-    ? "is-completed"
-    : session.status === "cancelled"
-      ? "is-cancelled"
-      : "is-scheduled";
+  if (session.status === "completed") return "is-completed";
+  if (session.status === "cancelled") return "is-cancelled";
+  const now = Date.now();
+  return new Date(session.start_at).getTime() <= now && new Date(session.end_at).getTime() > now
+    ? "is-active"
+    : "is-scheduled";
 }
 
 function sessionModeLabel(mode: InterviewSessionRecord["mode"]): string {
@@ -227,7 +240,7 @@ function buildJourneyStages(
       key: "imported",
       label: "岗位已导入",
       meta: formatFullDate(application.created_at),
-      state: "done",
+      state: application.applied_at ? "done" : "current",
     },
   ];
   if (application.applied_at) {
@@ -247,7 +260,7 @@ function buildJourneyStages(
     stages.push({
       key: `session:${session.id}`,
       label: session.stage_label,
-      meta: sessionStatusLabel(session),
+      meta: formatFullDate(session.start_at),
       state: session.status === "cancelled" ? "cancelled" : isCurrent ? "current" : session.status === "completed" ? "done" : "pending",
     });
   });
@@ -259,23 +272,33 @@ function buildJourneyStages(
     stages.push({
       key: `stage:${application.current_stage_type}:${application.current_round_no ?? "none"}`,
       label: application.current_stage_label,
-      meta: applicationStageStatusLabel(application),
-      state: "current",
+      meta: formatFullDate(application.updated_at),
+      state: application.stage_state === "awaiting_result" ? "waiting" : "current",
     });
   } else if (
     application.current_stage_type === "screening"
+    && application.applied_at
     && !stages.some((stage) => stage.label === application.current_stage_label)
   ) {
     stages.push({
       key: "screening",
       label: application.current_stage_label,
-      meta: applicationStageStatusLabel(application),
-      state: "current",
+      meta: formatFullDate(application.updated_at),
+      state: application.stage_state === "awaiting_result" ? "waiting" : "current",
     });
   }
-  if (application.status !== "active") {
-    const current = stages.find((stage) => stage.state === "current");
-    if (current) current.state = "cancelled";
+  const receivedOffer = application.current_stage_type === "offer"
+    && application.offer_status !== "none"
+    && application.offer_status !== "declined";
+  if (receivedOffer) {
+    const current = stages.find((stage) => stage.state === "current" || stage.state === "waiting");
+    if (current) current.state = "offer";
+  }
+  if (application.status !== "active" && application.offer_status !== "accepted") {
+    const current = stages.find((stage) => stage.state === "current" || stage.state === "waiting");
+    const offer = stages.find((stage) => stage.state === "offer");
+    if (current) current.state = "ended";
+    if (offer) offer.state = "ended";
   }
   return stages;
 }
@@ -285,9 +308,17 @@ function JourneyProgress({ application, sessions }: { application: JobApplicatio
   return (
     <ol className="career-journey-progress" aria-label={`当前阶段：${application.current_stage_label}`}>
       {stages.map((stage, index) => (
-        <li key={stage.key} className={stage.state === "current" ? "is-current" : stage.state === "done" ? "is-done" : stage.state === "cancelled" ? "is-cancelled" : "is-pending"}>
+        <li key={stage.key} className={`is-${stage.state}`}>
           {index > 0 && <span className="career-journey-connector" aria-hidden="true" />}
-          <span className="career-journey-node" aria-hidden="true">{stage.state === "done" ? <Check /> : stage.state === "cancelled" ? "!" : ""}</span>
+          <span className="career-journey-node" aria-hidden="true">
+            {stage.state === "done"
+              ? <Check />
+              : stage.state === "ended"
+                ? "!"
+                : stage.state === "offer"
+                  ? <Crown className="career-journey-crown" />
+                  : ""}
+          </span>
           <strong>{stage.label}</strong>
           <small>{stage.meta}</small>
         </li>
@@ -320,14 +351,13 @@ function JobSummaryCard({ application }: { application: JobApplicationSummary })
   const employment = employmentTypeLabel(snapshot.employment_type) ?? "—";
   const workMode = workModeLabel(snapshot.work_mode);
   const description = snapshotText(snapshot, "description", "job_description") ?? "岗位描述暂未记录。";
-  const requirements = snapshotText(snapshot, "requirements", "education_requirement", "experience_requirement");
   const sourceHref = application.job_description_id
-    ? `/career/jobs/${encodeURIComponent(application.job_description_id)}`
+    ? jobDetailPath(application.job_description_id, application.id)
     : null;
   return (
     <section className="career-detail-card career-job-summary-card">
       <header className="career-detail-card-header">
-        <h2>岗位详情</h2>
+        <h2>岗位与求职信息</h2>
         {sourceHref && <OverviewLink href={sourceHref}>查看完整岗位 <ChevronRight aria-hidden="true" /></OverviewLink>}
       </header>
       <div className="career-job-identity">
@@ -335,44 +365,34 @@ function JobSummaryCard({ application }: { application: JobApplicationSummary })
         <strong>{application.job_title_snapshot}</strong>
       </div>
       <div className="career-job-facts">
-        <Fact label="薪资" value={salary} />
-        <Fact label="工作地点" value={city} />
-        <Fact label="岗位性质" value={[employment, workMode].filter(Boolean).join(" · ") || "—"} />
+        <Fact icon={<Banknote aria-hidden="true" />} label="薪资" value={salary} />
+        <Fact icon={<MapPin aria-hidden="true" />} label="工作地点" value={city} />
+        <Fact icon={<BriefcaseBusiness aria-hidden="true" />} label="岗位性质" value={[employment, workMode].filter(Boolean).join(" · ") || "—"} />
       </div>
       <div className="career-job-copy">
-        <h3>职位描述</h3>
+        <h3>岗位概览</h3>
         <p>{description}</p>
       </div>
       <div className="career-job-copy">
         <h3>核心技能</h3>
         {skills.length ? <div className="career-job-tags">{skills.map((skill) => <span key={skill}>{skill}</span>)}</div> : <p>暂未记录</p>}
       </div>
-      <div className="career-job-copy">
-        <h3>岗位要求</h3>
-        <p>{requirements ?? "暂未记录"}</p>
+      <div className="career-application-info-section">
+        <h3>求职信息</h3>
+        <dl>
+          <div><dt>当前阶段</dt><dd>{application.current_stage_label}</dd></div>
+          <div><dt>当前状态</dt><dd>{applicationStageStatusLabel(application)}</dd></div>
+          <div><dt>{application.applied_at ? "投递时间" : "导入时间"}</dt><dd>{formatFullDate(application.applied_at ?? application.created_at)}</dd></div>
+          <div><dt>投递简历版本</dt><dd>{application.resume_title_snapshot ?? "未关联"}</dd></div>
+          <div><dt>最近更新</dt><dd>{formatUpdatedDateTime(application.updated_at)}</dd></div>
+        </dl>
       </div>
     </section>
   );
 }
 
-function Fact({ label, value }: { label: string; value: string }) {
-  return <div><span>{label}</span><strong title={value}>{value}</strong></div>;
-}
-
-function ApplicationInfoCard({ application }: { application: JobApplicationSummary }) {
-  return (
-    <section className="career-detail-card career-application-info-card">
-      <h2>求职信息</h2>
-      <dl>
-        <div><dt>当前阶段</dt><dd>{application.current_stage_label}</dd></div>
-        <div><dt>当前状态</dt><dd>{applicationStageStatusLabel(application)}</dd></div>
-        <div><dt>{application.applied_at ? "投递时间" : "导入时间"}</dt><dd>{formatFullDate(application.applied_at ?? application.created_at)}</dd></div>
-        <div><dt>关联简历</dt><dd>{application.resume_title_snapshot ?? "暂未选择简历版本"}</dd></div>
-        <div><dt>最近更新</dt><dd>{formatUpdatedDateTime(application.updated_at)}</dd></div>
-        <div><dt>个人备注</dt><dd>{application.notes ?? "暂未填写"}</dd></div>
-      </dl>
-    </section>
-  );
+function Fact({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+  return <div><span className="career-job-fact-label">{icon}{label}</span><strong title={value}>{value}</strong></div>;
 }
 
 function InterviewRoundCard({ session, onOpen }: { session: InterviewSessionSummary; onOpen: () => void }) {
@@ -491,6 +511,134 @@ function AddNextStageDialog({
   );
 }
 
+type ResumeVersionOption = {
+  id: string;
+  name: string;
+  version_no: number;
+};
+
+function dateInputToIso(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(`${value}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function MarkApplicationAppliedDialog({
+  application,
+  onClose,
+  onChanged,
+  onNotice,
+}: {
+  application: JobApplicationSummary;
+  onClose: () => void;
+  onChanged: () => void;
+  onNotice: (notice: string) => void;
+}) {
+  const resumes = useResumeStore((state) => state.resumes);
+  const [appliedAt, setAppliedAt] = useState(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  });
+  const [resumeId, setResumeId] = useState("");
+  const [versions, setVersions] = useState<ResumeVersionOption[]>([]);
+  const [resumeVersionId, setResumeVersionId] = useState("");
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setVersions([]);
+    setResumeVersionId("");
+    if (!resumeId) {
+      setVersionsLoading(false);
+      return;
+    }
+    setVersionsLoading(true);
+    void api.listVersions(resumeId)
+      .then(({ versions: nextVersions }) => {
+        if (cancelled) return;
+        setVersions(nextVersions);
+      })
+      .catch((error) => {
+        if (!cancelled) onNotice(requestErrorMessage(error));
+      })
+      .finally(() => {
+        if (!cancelled) setVersionsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [onNotice, resumeId]);
+
+  const submit = async () => {
+    const appliedAtIso = dateInputToIso(appliedAt);
+    if (!appliedAtIso) return;
+    setBusy(true);
+    try {
+      await api.updateJobApplication(application.id, {
+        applied_at: appliedAtIso,
+        resume_version_id: resumeVersionId || null,
+        base_lock_version: application.lock_version,
+      });
+      onClose();
+      onChanged();
+    } catch (error) {
+      onNotice(requestErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="career-stage-dialog">
+        <DialogHeader>
+          <DialogTitle>确认已投递</DialogTitle>
+          <DialogDescription>确认实际投递日期；如本次没有使用可追溯的正式简历版本，也可以暂不关联。</DialogDescription>
+        </DialogHeader>
+        <div className="career-stage-dialog-form">
+          <label>
+            投递日期
+            <input
+              required
+              type="date"
+              value={appliedAt}
+              onChange={(event) => setAppliedAt(event.target.value)}
+            />
+          </label>
+          <label>
+            使用的简历
+            <select value={resumeId} onChange={(event) => setResumeId(event.target.value)}>
+              <option value="">不关联简历</option>
+              {resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.title}</option>)}
+            </select>
+          </label>
+          <label>
+            投递简历版本
+            <select
+              disabled={!resumeId || versionsLoading || versions.length === 0}
+              value={resumeVersionId}
+              onChange={(event) => setResumeVersionId(event.target.value)}
+            >
+              <option value="">
+                {versionsLoading ? "正在加载正式版本…" : resumeId && versions.length === 0 ? "暂无正式版本" : resumeId ? "不关联版本" : "请先选择简历"}
+              </option>
+              {versions.map((version) => <option key={version.id} value={version.id}>v{version.version_no} · {version.name}</option>)}
+            </select>
+          </label>
+          {!resumes.length ? (
+            <p className="career-stage-dialog-empty">暂无可用简历，可直接标记已投递，不关联简历。</p>
+          ) : resumeId && !versionsLoading && versions.length === 0 ? (
+            <p className="career-stage-dialog-empty">该简历暂无正式版本，可直接标记已投递，不关联简历版本。</p>
+          ) : null}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>取消</Button>
+          <Button disabled={!dateInputToIso(appliedAt) || busy} onClick={() => void submit()}>{busy ? "保存中…" : "确认标记"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function ApplicationDetailView({
   application,
   sessions,
@@ -507,7 +655,7 @@ export function ApplicationDetailView({
   onNotice: (notice: string) => void;
 }) {
   const [stageDialogOpen, setStageDialogOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [appliedDialogOpen, setAppliedDialogOpen] = useState(false);
   if (!application) {
     return (
       <section className="career-detail-not-found">
@@ -523,24 +671,13 @@ export function ApplicationDetailView({
     .sort((left, right) => new Date(right.start_at).getTime() - new Date(left.start_at).getTime());
   const active = application.status === "active" && application.archived_at === null;
   const canSchedule = active && application.stage_state === "awaiting_schedule" && application.current_stage_type !== "offer";
-  const canAdvance = active && application.stage_state === "awaiting_result";
+  const canAdvance = active
+    && application.stage_state === "awaiting_result"
+    && (application.current_stage_type !== "screening" || Boolean(application.applied_at));
   const canMarkApplied = active && !application.applied_at && application.current_stage_type === "screening";
-  const markApplied = async () => {
-    setBusy(true);
-    try {
-      await api.updateJobApplication(application.id, {
-        applied_at: new Date().toISOString(),
-        base_lock_version: application.lock_version,
-      });
-      onChanged();
-    } catch (error) {
-      onNotice(requestErrorMessage(error));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const scheduleActionLabel = `安排${application.current_stage_label}时间`;
   const stageAction = canSchedule
-    ? <Button onClick={() => onCreateInterview(application.id)}>安排当前阶段</Button>
+    ? <Button onClick={() => onCreateInterview(application.id)}>{scheduleActionLabel}</Button>
     : canAdvance
       ? <Button onClick={() => setStageDialogOpen(true)}>添加下一阶段</Button>
       : null;
@@ -554,48 +691,59 @@ export function ApplicationDetailView({
   ) : null;
   return (
     <div className="career-application-detail-page">
-      <header className="career-record-hero">
-        <div className="career-record-identity">
-          <button type="button" className="career-record-back" onClick={onBack}><ChevronLeft aria-hidden="true" />返回求职记录</button>
-          <div className="career-record-title-row">
-            <h1>{application.company_name_snapshot}</h1>
-            <span className="career-record-divider" aria-hidden="true" />
-            <h1>{application.job_title_snapshot}</h1>
-            <span className={`career-application-status ${applicationStatusTone(application)}`}>{applicationStageStatusLabel(application)}</span>
+      <header className="career-record-hero career-application-record-hero">
+        <div className="career-application-record-hero-inner">
+          <div className="career-record-identity">
+            <div className="career-record-breadcrumb">
+              <button type="button" className="career-record-back" onClick={onBack}><ChevronLeft aria-hidden="true" />返回求职记录</button>
+              <span aria-hidden="true">/</span>
+              <span>{application.company_name_snapshot}</span>
+            </div>
+            <div className="career-record-title-row">
+              <h1 aria-label={`${application.company_name_snapshot}，${application.job_title_snapshot}`}>
+                <span className="career-record-company-name">{application.company_name_snapshot}</span>
+                <span className="career-record-divider" aria-hidden="true" />
+                <span className="career-record-position-name">{application.job_title_snapshot}</span>
+              </h1>
+              <span className={`career-application-status ${applicationStatusTone(application)}`}>{applicationStageStatusLabel(application)}</span>
+            </div>
           </div>
-          <p>导入于 {formatFullDate(application.created_at)} · {application.applied_at ? `已投递于 ${formatFullDate(application.applied_at)}` : "尚未关联投递简历"} · 最近更新 {formatUpdatedDateTime(application.updated_at)}</p>
-        </div>
-        <div className="career-record-actions">
-          {application.job_description_id && <OverviewLink className="career-record-secondary-action" href={`/career/jobs/${encodeURIComponent(application.job_description_id)}`}>查看岗位详情</OverviewLink>}
-          {canMarkApplied && <Button disabled={busy} onClick={() => void markApplied()}>标记已投递</Button>}
-          {stageAction}
+          <div className="career-record-actions">
+            {canMarkApplied && <Button onClick={() => setAppliedDialogOpen(true)}>标记已投递</Button>}
+            {stageAction}
+          </div>
         </div>
       </header>
-      <div className="career-detail-body">
+      <div className={`career-detail-body career-application-detail-body${applicationSessions.length ? " has-interview-records" : ""}`}>
         <div className="career-detail-main-column">
           <section className="career-detail-card career-progress-card">
             <h2>求职进度</h2>
             <JourneyProgress application={application} sessions={applicationSessions} />
-            <p className="career-progress-helper">阶段名称和结果只显示当前求职进程与已加载的面试记录。</p>
+            <p className="career-progress-helper">只展示当前求职路径中的关键节点；面试轮次在下方记录区呈现。</p>
           </section>
-          <section className="career-interview-rounds">
-            <header><h2>面试记录</h2>{applicationSessions.length > 0 && <span>名称按公司实际流程填写</span>}</header>
+          <section className="career-detail-card career-interview-rounds career-interview-section-card">
+            <header><h2>面试记录</h2><span>{applicationSessions.length} 条记录</span></header>
             {applicationSessions.length ? (
               <div className="career-interview-round-list">
                 {applicationSessions.map((session) => <InterviewRoundCard key={session.id} session={session} onOpen={() => navigateTo(careerApplicationPath(application.id, session.id))} />)}
               </div>
             ) : (
-              <div className="career-interview-empty"><strong>暂无面试记录</strong><p>{canSchedule ? "安排面试后，记录每一轮面试与复盘内容。" : "公司确认面试后，再添加面试阶段并安排时间。"}</p></div>
+              <div className="career-interview-empty">
+                <CalendarDays aria-hidden="true" />
+                <strong>暂无面试记录</strong>
+                <p>{canSchedule ? "安排面试后，记录每一轮面试与复盘内容。" : "公司确认面试后，再添加面试阶段并安排时间。"}</p>
+                {canSchedule && <Button onClick={() => onCreateInterview(application.id)}>{scheduleActionLabel}</Button>}
+              </div>
             )}
           </section>
           {offerAction}
         </div>
         <aside className="career-detail-side-column">
           <JobSummaryCard application={application} />
-          <ApplicationInfoCard application={application} />
         </aside>
       </div>
       {stageDialogOpen && <AddNextStageDialog application={application} onClose={() => setStageDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
+      {appliedDialogOpen && <MarkApplicationAppliedDialog application={application} onClose={() => setAppliedDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
     </div>
   );
 }

@@ -16,266 +16,7 @@
   font-weight: 600;
 }
 
-/* ---------- 岗位库表格 ---------- */
-
-.job-list-surface {
-  width: 100%;
-  overflow: hidden;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-lg);
-  background: var(--ui-surface);
-}
-
-.job-center-header .page-hero-actions {
-  display: flex;
-  min-width: 0;
-  flex-shrink: 1;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.job-sort-button.ui-button {
-  height: 40px;
-  border-color: var(--ui-border);
-  background: var(--ui-surface);
-  color: var(--ui-text-secondary);
-}
-
-.job-sort-button.ui-button:hover {
-  border-color: var(--ui-border-strong);
-  background: var(--ui-surface-subtle);
-}
-
-.job-sort-button.ui-button { flex: none; }
-.job-sort-button.ui-button:disabled { color: var(--ui-text-subtle); }
-
-.job-table-scroll { width: 100%; overflow-x: auto; }
-
-.job-table {
-  width: 100%;
-  min-width: 1120px;
-  border-collapse: collapse;
-  table-layout: fixed;
-}
-
-.job-table-col-title { width: 17%; }
-.job-table-col-company { width: 9%; }
-.job-table-col-location { width: 7%; }
-.job-table-col-salary { width: 9%; }
-.job-table-col-skills { width: 16%; }
-.job-table-col-source { width: 8%; }
-.job-table-col-updated { width: 9%; }
-.job-table-col-status { width: 10%; }
-.job-table-col-actions { width: 10%; }
-.job-table-col-delete { width: 5%; }
-
-.job-table th,
-.job-table td {
-  min-width: 0;
-  border-bottom: 1px solid var(--ui-border);
-  padding: 11px 12px;
-  text-align: center;
-  vertical-align: middle;
-}
-
-.job-table th {
-  height: 42px;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-text-xs);
-  font-weight: 600;
-  letter-spacing: .01em;
-  white-space: nowrap;
-}
-
-.job-table tbody tr:last-child td { border-bottom: 0; }
-
-.job-table-row {
-  min-height: 76px;
-  cursor: pointer;
-  transition: background-color var(--ui-duration-fast) var(--ui-ease-press);
-}
-
-.job-table-row:hover,
-.job-table-row:focus-within,
-.job-table-row:focus-visible { background: var(--ui-surface-subtle); }
-
-.job-table-row:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: -2px; }
-
-.job-table-job-link {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: var(--ui-foreground);
-  text-decoration: none;
-}
-
-.job-company-mark {
-  display: grid;
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--ui-career-accent) 24%, var(--ui-border));
-  border-radius: var(--ui-radius-md);
-  background: var(--ui-surface-subtle);
-  color: var(--ui-career-accent);
-}
-
-.job-table-job-copy {
-  display: grid;
-  min-width: 0;
-  gap: 4px;
-}
-
-.job-table-job-copy strong {
-  overflow: hidden;
-  color: var(--ui-foreground);
-  font-size: var(--ui-text-sm);
-  font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.job-table-job-copy > span,
-.job-table-muted {
-  overflow: hidden;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-text-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.job-table-text,
-.job-table-source,
-.job-table-updated {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 5px;
-  overflow: hidden;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-text-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.job-table-location svg,
-.job-table-salary svg { flex: none; color: var(--ui-text-muted); }
-.job-table-source,
-.job-table-updated { color: var(--ui-text-muted); font-size: var(--ui-text-xs); }
-
-.job-skill-row {
-  display: flex;
-  min-width: 0;
-  flex-wrap: nowrap;
-  justify-content: center;
-  gap: 5px;
-  overflow: hidden;
-}
-
-.job-skill-pill {
-  display: inline-flex;
-  min-width: 0;
-  flex: 0 1 auto;
-  max-width: 100%;
-  align-items: center;
-  overflow: hidden;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-sm);
-  background: var(--ui-surface);
-  padding: 4px 7px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-text-xs);
-  line-height: 1.1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.job-skill-pill.is-count { flex: none; color: var(--ui-text-muted); }
-
-.job-table-actions {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-}
-
-.job-table-delete-cell { text-align: center; }
-
-.job-table-process-state {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ui-career-accent);
-  font-size: var(--ui-text-xs);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.job-table-process-state.is-empty,
-.job-table-process-state.is-unavailable { color: var(--ui-text-muted); font-weight: 500; }
-
-.job-status-badge {
-  display: inline-flex;
-  min-height: 24px;
-  align-items: center;
-  border-radius: var(--ui-radius-full);
-  background: var(--ui-warning-subtle);
-  padding: 4px 9px;
-  color: var(--ui-warning);
-  font-size: 11px;
-  font-weight: 650;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.job-status-badge.is-archived {
-  background: var(--ui-surface-muted);
-  color: var(--ui-text-muted);
-}
-
-.job-table-delete.ui-icon-button {
-  flex: none;
-  background: transparent;
-  color: var(--ui-text-muted);
-}
-
-.job-table-delete.ui-icon-button:hover { background: var(--ui-destructive-subtle); color: var(--ui-destructive); }
-
-.job-infinite-scroll-sentinel {
-  display: grid;
-  min-height: 32px;
-  place-items: center;
-  padding: 8px 20px;
-  color: var(--ui-muted);
-  font-size: 12px;
-}
-
-.job-infinite-scroll-error {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-}
-
-.job-infinite-scroll-error .ui-button { height: 32px; padding-inline: 14px; }
-
-.job-empty-state {
-  display: grid;
-  min-height: 360px;
-  place-content: center;
-  justify-items: center;
-  gap: 12px;
-  color: var(--ui-muted);
-  text-align: center;
-}
-
-.job-empty-state h2 { margin: 0; color: var(--ink); font-size: 24px; }
-.job-empty-state p { margin: 0; color: var(--ui-muted); line-height: 1.55; }
+/* ---------- 岗位详情共享状态 ---------- */
 
 .job-error {
   margin: 14px 0;
@@ -311,37 +52,40 @@
 /* ---------- JD 详情与页内编辑 ---------- */
 
 .job-detail {
-  width: min(960px, calc(100% - 32px));
-  margin: 0 auto;
-  padding: 44px 0 88px;
+  width: 100%;
+  margin: 0;
+  padding: 36px 0 88px;
 }
 
 .job-detail-topbar {
-  width: 100%;
-  min-height: 38px;
+  width: min(1120px, calc(100% - 40px));
   justify-content: space-between;
   gap: 20px;
-  margin: 0 0 20px;
+  margin: 0 auto 20px;
   padding: 0;
 }
 
-.job-detail > .job-error { width: 100%; margin-right: auto; margin-left: auto; }
+.job-detail > .job-error,
+.job-document {
+  width: min(1120px, calc(100% - 40px));
+  margin-right: auto;
+  margin-left: auto;
+}
 
 .job-detail-heading {
   display: flex;
   min-width: 0;
-  align-items: center;
-  gap: 0;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .job-detail-page-title {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
+  margin: 0;
+  color: var(--ink);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
 }
 
 .job-back-link {
@@ -353,9 +97,8 @@
   border: 0;
   background: transparent;
   padding: 0;
-  color: var(--ui-text-secondary);
+  color: var(--muted);
   font-size: 14px;
-  line-height: 20px;
   text-decoration: none;
 }
 
@@ -364,141 +107,109 @@
 .job-detail-actions { flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 
 .job-document {
-  width: 100%;
-  overflow: visible;
-  border: 0;
-  background: transparent;
+  overflow: hidden;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-xl);
+  background: var(--surface-card);
 }
 
 .job-document-hero {
-  display: block;
-  padding: 0 40px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 36px;
+  align-items: end;
+  padding: 30px 32px 28px;
 }
 
-.job-document-company-line .job-quick-edit .job-quick-edit-value {
+.job-document-title > .job-quick-edit .job-quick-edit-value {
   display: block;
   margin: 0;
-  color: var(--ui-foreground);
-  font-size: 15px;
+  color: var(--ui-accent);
+  font-size: 14px;
   font-weight: 600;
-  line-height: 24px;
 }
 
-.job-document-company-line .job-quick-edit .job-quick-edit-display,
-.job-document-company-line .job-quick-edit input {
-  width: auto;
-  min-height: 24px;
-  margin-inline: -9px;
-  padding-block: 0;
+.job-document-title > .job-quick-edit .job-quick-edit-display,
+.job-document-title > .job-quick-edit input {
+  min-height: 30px;
+  padding-block: 4px;
 }
 
-.job-document-company-line { display: flex; min-width: 0; align-items: center; gap: 8px; }
-.job-document-company-line > .job-quick-edit { width: auto; }
-.job-document-company-separator { color: var(--ui-text-muted); font-size: 14px; }
-.job-document-company-industry { color: var(--ui-text-secondary); font-size: 15px; line-height: 24px; }
-
-.job-document-title-main { margin-top: 18px; }
 .job-document-title-main .job-quick-edit-value {
   margin: 0;
-  color: var(--ui-foreground);
-  font-size: clamp(32px, 4vw, 42px);
-  font-weight: 650;
+  font-size: clamp(26px, 3.2vw, 36px);
+  font-weight: 680;
   letter-spacing: -0.02em;
-  line-height: 54px;
+  line-height: 1.2;
   text-wrap: balance;
 }
 
-.job-document-title-main .job-quick-edit-display {
-  width: auto;
-  min-height: 54px;
-  margin-inline: -9px;
-  padding-block: 0;
-}
-
-.job-document-title-main .job-quick-edit input {
-  width: min(100%, 620px);
-  max-width: calc(100% + 18px);
-  min-height: 54px;
-  margin-inline: -9px;
-  font-size: clamp(32px, 4vw, 42px);
-  font-weight: 650;
-  line-height: 54px;
-}
-
-.job-document-salary { margin-top: 24px; }
-.job-document-salary .job-quick-edit-display { width: auto; min-height: 32px; margin-inline: -9px; padding-block: 0; }
-.job-document-salary .job-quick-edit-value { color: var(--ui-career-accent); font-size: 24px; font-weight: 650; line-height: 32px; }
-.job-document-salary .job-quick-edit input { width: min(100%, 360px); max-width: calc(100% + 18px); min-height: 38px; margin-inline: -9px; font-size: 18px; }
-
-.job-document-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 28px;
-  margin-top: 18px;
-  color: var(--ui-text-secondary);
-  font-size: 16px;
-  line-height: 26px;
-}
-
-.job-document-meta-item {
-  display: inline-flex;
-  align-items: center;
+.job-document-highlights {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
-  gap: 6px;
+  gap: clamp(20px, 3vw, 44px);
 }
 
-.job-document-meta-label { color: var(--ui-text-muted); font-size: 14px; }
-.job-document-meta-item .job-quick-edit { width: auto; }
-.job-document-meta-item .job-quick-edit-display { width: auto; min-height: 26px; margin: 0; padding: 0; cursor: text; }
-.job-document-meta-item .job-quick-edit-value { white-space: nowrap; }
-.job-document-meta-item .job-quick-edit input,
-.job-document-meta-item .job-quick-edit-select-trigger { width: 140px; max-width: 180px; min-height: 36px; margin: 0; }
-.job-document-source-meta { margin: 18px 0 0; color: var(--ui-text-muted); font-size: 13px; line-height: 20px; }
-.job-document-hero-divider { height: 1px; margin-top: 32px; background: var(--ui-border); }
+.job-document-fact {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.job-document-fact > div { flex: 1; min-width: 0; }
+.job-document-fact > span { display: grid; color: var(--ui-muted); place-items: center; }
+.job-document-fact > span svg { width: 27px; height: 27px; stroke-width: 1.75; }
+.job-document-fact small { display: block; margin-bottom: 4px; color: var(--ui-muted); font-size: 11px; line-height: 1; }
+.job-document-fact .job-quick-edit { height: calc(28px * 1.1 + 16px); }
+.job-document-fact .job-quick-edit-value { display: block; overflow: visible; font-size: 22px; font-weight: 680; letter-spacing: -0.02em; line-height: 1.1; text-overflow: clip; white-space: nowrap; }
+.job-document-fact.is-emphasis > span { color: var(--ink); }
+.job-document-fact.is-emphasis .job-quick-edit-value { color: var(--ui-accent); letter-spacing: -0.03em; }
+
+.job-document-intro {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 36px;
+  padding-top: 8px;
+}
+
+.job-document-intro-section {
+  min-width: 0;
+}
+
+.job-document-intro h3 {
+  margin: 0 0 10px;
+  font-size: 17px;
+  font-weight: 650;
+}
 
 .job-document-body {
-  margin-top: 20px;
-  border-radius: 24px;
-  background: var(--ui-surface-subtle);
-  padding: 36px 32px 48px;
+  padding: 0 32px 16px;
+}
+
+.job-document-body::before {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 1px;
+  background: var(--card-border);
 }
 
 .job-document-section {
-  padding: 62px 0 0;
-  border-top: 1px solid var(--ui-border);
+  padding: 26px 0;
+  border-top: 1px solid var(--card-border);
 }
 
-.job-document-section:first-child { border-top: 0; padding-top: 0; }
+.job-document-section:first-child { border-top: 0; }
 .job-document-section h3 {
-  margin: 0 0 24px;
-  color: var(--ui-foreground);
-  font-size: 24px;
+  margin: 0 0 16px;
+  font-size: 17px;
   font-weight: 650;
-  line-height: 32px;
-}
-
-.job-document-body > .job-document-section:first-child .job-quick-edit-display,
-.job-document-body > .job-document-section:first-child .job-quick-edit-multiline-mirror,
-.job-document-body > .job-document-section:first-child textarea {
-  width: 100%;
-  max-width: 100%;
-  min-height: 30px;
-  margin-inline: 0;
-  padding: 0;
-  font-size: 16px;
-  line-height: 30px;
-}
-
-.job-document-definition.is-wide .job-quick-edit-display,
-.job-document-definition.is-wide .job-quick-edit-multiline-mirror,
-.job-document-definition.is-wide textarea {
-  width: 100%;
-  max-width: 100%;
-  margin-inline: 0;
-  padding-inline: 0;
-  font-size: 16px;
-  line-height: 30px;
 }
 
 .job-career-section { margin-top: 20px; }
@@ -513,27 +224,22 @@
 .job-career-empty p { margin: 0; }
 
 .job-markdown,
-.job-long-copy { margin: 0; white-space: pre-wrap; color: var(--ui-text-secondary); font-size: 16px; line-height: 1.9; }
+.job-long-copy { margin: 0; white-space: pre-wrap; color: var(--body-muted); font-size: 14px; line-height: 1.75; }
 .job-long-copy { margin-top: 14px; }
 
 .job-document-grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px 28px;
   margin: 0;
 }
 
 .job-document-list { display: grid; gap: 12px; margin: 18px 0 0; }
 .job-document-definition { min-width: 0; }
 .job-document-definition.is-wide { grid-column: 1 / -1; }
-.job-document-definition dt { flex: 0 0 84px; margin: 0; color: var(--ui-text-muted); font-size: 14px; line-height: 38px; }
-.job-document-definition dd { display: flex; min-width: 0; min-height: 38px; align-items: center; margin: 0; color: var(--ui-foreground); font-size: 16px; font-weight: 500; line-height: 1.65; overflow-wrap: anywhere; }
-.job-document-definition { display: flex; align-items: flex-start; min-height: 38px; }
+.job-document-definition dt { margin-bottom: 4px; color: var(--ui-muted); font-size: 12px; }
+.job-document-definition dd { display: flex; min-height: 38px; align-items: center; margin: 0; color: var(--ink); font-size: 14px; font-weight: 550; line-height: 1.55; overflow-wrap: anywhere; }
 .job-document-definition dd > .job-quick-edit { width: 100%; }
-.job-document-skills { margin-top: 18px; }
-.job-document-subtitle { margin: 0 0 4px; color: var(--ui-text-muted); font-size: 15px; line-height: 24px; }
-.job-document-skills .job-quick-edit-display { width: auto; min-height: 28px; margin: 0 -9px; padding-block: 0; color: var(--ui-career-accent); }
-.job-document-skills .job-quick-edit-value { color: var(--ui-career-accent); font-size: 17px; font-weight: 600; line-height: 28px; }
 
 .job-structured-salary { position: relative; }
 .job-structured-salary.is-editing { z-index: 4; }
@@ -794,184 +500,28 @@
   resize: none;
   overflow: hidden;
 }
-.job-document-title-main .job-quick-edit input { font-size: clamp(32px, 4vw, 42px); font-weight: 650; letter-spacing: -0.02em; line-height: 54px; }
-
-/* ---------- 表单页（15E） ---------- */
-
-.job-form {
-  width: min(1120px, calc(100% - 40px));
-  margin: 0 auto;
-  padding: 12px 0 88px;
+.job-document-title-main .job-quick-edit input { font-size: clamp(26px, 3.2vw, 36px); font-weight: 680; letter-spacing: -0.02em; line-height: 1.2; }
+.job-document-fact .job-quick-edit-display {
+  height: calc(28px * 1.1 + 16px);
+  min-height: 0;
 }
 
-.job-form-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 20px;
-  align-items: start;
-}
-
-.job-form-rail {
-  display: grid;
-  gap: 16px;
-}
-
-.job-form-card {
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius-xl);
-  background: var(--surface-card);
-  padding: clamp(20px, 3.5vw, 28px);
-}
-
-.job-form-section-head { margin-bottom: 18px; }
-.job-form-section-head + .job-form-grid { margin-bottom: 30px; }
-.job-form-section-head:last-of-type + .job-form-grid { margin-bottom: 0; }
-
-.job-form-kicker {
-  margin: 0 0 6px;
-  color: var(--ui-accent);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.job-form-section-head h2,
-.job-form-rail-title {
-  margin: 0;
-  font-size: 17px;
-}
-
-.job-form-rail-note {
-  margin: 8px 0 18px;
-  color: var(--ui-muted);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.job-form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.job-form-grid.is-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-
-.job-field {
-  display: grid;
-  min-width: 0;
-  gap: 7px;
-  color: var(--body-muted);
-  font-size: 13px;
-}
-
-.job-field-label {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-}
-
-.job-field-label em {
-  color: var(--error);
-  font-style: normal;
-  font-weight: 600;
-}
-
-.job-field-wide { grid-column: 1 / -1; }
-.job-field input,
-.job-field select,
-.job-field textarea {
+.job-document-fact .job-quick-edit input,
+.job-document-fact .job-quick-edit-select-trigger {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
   width: 100%;
-  border: 1px solid var(--ui-input);
-  border-radius: var(--radius-xs);
-  background: var(--canvas);
-  padding: 11px 12px;
-  color: var(--ink);
-  outline: 0;
-}
-
-.job-field input,
-.job-field select { height: 43px; }
-.job-field textarea { min-height: 120px; resize: vertical; line-height: 1.55; }
-.job-field input:focus,
-.job-field select:focus,
-.job-field textarea:focus {
-  border-color: var(--ui-foreground);
-  outline: 0;
-  box-shadow: none;
-}
-.job-field small { color: var(--ui-muted); }
-
-.job-rail-section {
-  border-top: 1px solid var(--card-border);
-}
-
-.job-rail-section summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 14px 0;
-  cursor: pointer;
-  list-style: none;
-}
-
-.job-rail-section summary::-webkit-details-marker { display: none; }
-
-.job-rail-section summary::after {
-  content: "›";
-  color: var(--ui-muted);
-  font-size: 15px;
-  transition: transform var(--duration-base) var(--ease-standard);
-}
-
-.job-rail-section[open] summary::after { transform: rotate(90deg); }
-
-.job-rail-section summary strong { display: block; font-size: 14px; }
-.job-rail-section summary small { color: var(--ui-muted); font-size: 12px; }
-
-.job-rail-body {
-  display: grid;
-  gap: 14px;
-  padding: 0 0 18px;
-}
-
-.job-readonly-source {
-  display: grid;
-  gap: 8px;
-  border-radius: var(--radius-md);
-  background: var(--gray-100);
-  padding: 14px;
-  color: var(--ui-muted);
-  font-size: 13px;
-}
-
-.job-readonly-source strong { color: var(--ink); }
-.job-readonly-source a { color: var(--ink); word-break: break-all; }
-
-.job-check-card {
-  border: 1px solid var(--success-border, #bbe7cd);
-  border-radius: var(--radius-lg);
-  background: var(--success-bg, #e6f7ee);
-  padding: 16px 18px;
-}
-
-.job-check-card .job-form-kicker { color: var(--success, #15803d); }
-
-.job-check-body {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--success, #15803d);
-}
-
-.job-check-body strong { display: block; font-size: 14px; }
-.job-check-body span { font-size: 12px; }
-
-.job-layer-note p:last-child {
-  margin: 6px 0 0;
-  color: var(--ui-muted);
-  font-size: 12px;
-  line-height: 1.8;
+  max-width: 100%;
+  height: 38px;
+  min-height: 38px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.55;
+  transform: translateY(-50%);
 }
 
 /* ---------- 弹窗（15D + 通用） ---------- */

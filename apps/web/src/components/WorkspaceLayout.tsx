@@ -16,7 +16,7 @@ import { preloadWorkspacePage } from "../workspacePageLoaders";
 import "./career-navigation.css";
 
 export type WorkspaceSection = "resumes" | "assistant" | "templates" | "career" | "datasets" | "account";
-export type CareerSection = "jobs" | "applications" | "schedule" | "reviews";
+export type CareerSection = "applications" | "schedule" | "reviews";
 
 type WorkspaceNavigationProps = {
   active: WorkspaceSection;
