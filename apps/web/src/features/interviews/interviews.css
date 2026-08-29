@@ -1502,10 +1502,6 @@
   margin: 0;
 }
 
-.career-application-detail-page .career-interview-empty .ui-button {
-  margin-top: 4px;
-}
-
 .career-application-detail-page .career-job-summary-card {
   gap: 20px;
   padding: 22px 24px 24px;
@@ -1517,7 +1513,10 @@
 }
 
 .career-application-detail-page .career-job-identity {
-  gap: 4px;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
 }
 
 .career-application-detail-page .career-job-identity span {
@@ -1530,6 +1529,22 @@
 .career-application-detail-page .career-job-identity strong {
   font-size: 17px;
   line-height: 24px;
+}
+
+.career-application-detail-page .career-job-company-name,
+.career-application-detail-page .career-job-position-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.career-application-detail-page .career-job-company-name {
+  flex: 0 1 auto;
+}
+
+.career-application-detail-page .career-job-position-name {
+  flex: 1 1 auto;
 }
 
 .career-application-detail-page .career-job-facts {
@@ -1563,10 +1578,14 @@
   gap: 7px;
 }
 
-.career-application-detail-page .career-job-copy h3,
-.career-application-detail-page .career-application-info-section h3 {
+.career-application-detail-page .career-job-copy h3 {
   font-size: 14px;
   line-height: 20px;
+}
+
+.career-application-detail-page .career-application-info-section h3 {
+  font-size: 17px;
+  line-height: 24px;
 }
 
 .career-application-detail-page .career-job-copy p {
@@ -1653,7 +1672,7 @@
   }
 
   .career-application-detail-page .has-interview-records .career-job-identity {
-    gap: 6px;
+    gap: 12px;
   }
 
   .career-application-detail-page .has-interview-records .career-job-identity span {
@@ -1700,10 +1719,14 @@
     gap: 9px;
   }
 
-  .career-application-detail-page .has-interview-records .career-job-copy h3,
-  .career-application-detail-page .has-interview-records .career-application-info-section h3 {
+  .career-application-detail-page .has-interview-records .career-job-copy h3 {
     font-size: 15px;
     line-height: 22px;
+  }
+
+  .career-application-detail-page .has-interview-records .career-application-info-section h3 {
+    font-size: 18px;
+    line-height: 26px;
   }
 
   .career-application-detail-page .has-interview-records .career-job-copy p {

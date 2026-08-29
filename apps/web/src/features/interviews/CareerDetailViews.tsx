@@ -13,6 +13,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Clock3,
   CircleCheck,
   Crown,
   Download,
@@ -21,6 +22,7 @@ import {
   Import,
   MapPin,
   Mic,
+  MoreHorizontal,
   Trash2,
   Video,
 } from "lucide-react";
@@ -361,8 +363,9 @@ function JobSummaryCard({ application }: { application: JobApplicationSummary })
         {sourceHref && <OverviewLink href={sourceHref}>查看完整岗位 <ChevronRight aria-hidden="true" /></OverviewLink>}
       </header>
       <div className="career-job-identity">
-        <span>{application.company_name_snapshot}</span>
-        <strong>{application.job_title_snapshot}</strong>
+        <span className="career-job-company-name">{application.company_name_snapshot}</span>
+        <span className="career-record-divider" aria-hidden="true" />
+        <strong className="career-job-position-name">{application.job_title_snapshot}</strong>
       </div>
       <div className="career-job-facts">
         <Fact icon={<Banknote aria-hidden="true" />} label="薪资" value={salary} />
@@ -493,8 +496,8 @@ function AddNextStageDialog({
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="career-stage-dialog">
         <DialogHeader>
-          <DialogTitle>添加下一阶段</DialogTitle>
-          <DialogDescription>只添加已经发生或已经确认的阶段；名称按公司实际通知填写。</DialogDescription>
+          <DialogTitle>推进求职流程</DialogTitle>
+          <DialogDescription>当前阶段：{application.current_stage_label}。记录本阶段结果，并选择已经发生或已经确认的下一阶段。</DialogDescription>
         </DialogHeader>
         {options.length ? (
           <div className="career-stage-dialog-form">
@@ -591,8 +594,8 @@ function MarkApplicationAppliedDialog({
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="career-stage-dialog">
         <DialogHeader>
-          <DialogTitle>确认已投递</DialogTitle>
-          <DialogDescription>确认实际投递日期；如本次没有使用可追溯的正式简历版本，也可以暂不关联。</DialogDescription>
+          <DialogTitle>推进求职流程</DialogTitle>
+          <DialogDescription>当前阶段：{application.current_stage_label}。确认实际投递日期，并可关联本次使用的正式简历版本。</DialogDescription>
         </DialogHeader>
         <div className="career-stage-dialog-form">
           <label>
@@ -639,6 +642,92 @@ function MarkApplicationAppliedDialog({
   );
 }
 
+type OfferAction = "oc_received" | "written_offer_received" | "accepted" | "declined";
+
+function offerStatusLabel(status: JobApplicationSummary["offer_status"]): string {
+  return status === "none"
+    ? "尚未收到 Offer"
+    : status === "oc_received"
+      ? "已收到 OC"
+      : status === "written_offer_received"
+        ? "已收到书面 Offer"
+        : status === "accepted"
+          ? "已接受 Offer"
+          : "已婉拒 Offer";
+}
+
+function OfferApplicationDialog({
+  application,
+  onClose,
+  onChanged,
+  onNotice,
+}: {
+  application: JobApplicationSummary;
+  onClose: () => void;
+  onChanged: () => void;
+  onNotice: (notice: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const description = application.offer_status === "none"
+    ? "记录收到 OC 或书面 Offer。"
+    : application.offer_status === "oc_received"
+      ? "记录收到书面 Offer。"
+      : application.offer_status === "written_offer_received"
+        ? "选择接受或婉拒 Offer。"
+        : "当前 Offer 已有最终状态。";
+
+  const submit = async (action: OfferAction) => {
+    setBusy(true);
+    try {
+      if (action === "oc_received" || action === "written_offer_received") {
+        await api.recordJobApplicationOffer(application.id, action, application.lock_version);
+      } else {
+        await api.closeJobApplication(application.id, {
+          status: "closed",
+          offer_status: action,
+          base_lock_version: application.lock_version,
+        });
+      }
+      onClose();
+      onChanged();
+    } catch (error) {
+      onNotice(requestErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="career-stage-dialog">
+        <DialogHeader>
+          <DialogTitle>推进求职流程</DialogTitle>
+          <DialogDescription>当前阶段：{application.current_stage_label}。{description}</DialogDescription>
+        </DialogHeader>
+        <p className="career-stage-dialog-empty">当前 Offer 状态：{offerStatusLabel(application.offer_status)}</p>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>取消</Button>
+          {application.offer_status === "none" && (
+            <>
+              <Button disabled={busy} onClick={() => void submit("oc_received")}>收到 OC</Button>
+              <Button variant="outline" disabled={busy} onClick={() => void submit("written_offer_received")}>收到书面 Offer</Button>
+            </>
+          )}
+          {application.offer_status === "oc_received" && (
+            <Button disabled={busy} onClick={() => void submit("written_offer_received")}>收到书面 Offer</Button>
+          )}
+          {application.offer_status === "written_offer_received" && (
+            <>
+              <Button disabled={busy} onClick={() => void submit("accepted")}>接受 Offer</Button>
+              <Button variant="outline" disabled={busy} onClick={() => void submit("declined")}>婉拒 Offer</Button>
+            </>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function ApplicationDetailView({
   application,
   sessions,
@@ -656,6 +745,7 @@ export function ApplicationDetailView({
 }) {
   const [stageDialogOpen, setStageDialogOpen] = useState(false);
   const [appliedDialogOpen, setAppliedDialogOpen] = useState(false);
+  const [offerDialogOpen, setOfferDialogOpen] = useState(false);
   if (!application) {
     return (
       <section className="career-detail-not-found">
@@ -673,22 +763,23 @@ export function ApplicationDetailView({
   const canSchedule = active && application.stage_state === "awaiting_schedule" && application.current_stage_type !== "offer";
   const canAdvance = active
     && application.stage_state === "awaiting_result"
+    && application.current_stage_type !== "offer"
     && (application.current_stage_type !== "screening" || Boolean(application.applied_at));
   const canMarkApplied = active && !application.applied_at && application.current_stage_type === "screening";
+  const canUpdateOffer = active && application.current_stage_type === "offer";
   const scheduleActionLabel = `安排${application.current_stage_label}时间`;
-  const stageAction = canSchedule
-    ? <Button onClick={() => onCreateInterview(application.id)}>{scheduleActionLabel}</Button>
-    : canAdvance
-      ? <Button onClick={() => setStageDialogOpen(true)}>添加下一阶段</Button>
-      : null;
-  const offerAction = active && application.current_stage_type === "offer" ? (
-    <section className="career-offer-actions" aria-label="Offer 结果处理">
-      <div><strong>Offer 进度</strong><span>当前：{application.offer_status === "none" ? "尚未收到 Offer" : application.offer_status === "oc_received" ? "已收到 OC" : "已收到书面 Offer"}</span></div>
-      {application.offer_status === "none" && <Button size="sm" onClick={() => void recordOffer(application, "oc_received", onChanged, onNotice)}>收到 OC</Button>}
-      {application.offer_status !== "written_offer_received" && <Button size="sm" variant="outline" onClick={() => void recordOffer(application, "written_offer_received", onChanged, onNotice)}>收到书面 Offer</Button>}
-      {application.offer_status === "written_offer_received" && <><Button size="sm" onClick={() => void closeOffer(application, "accepted", onChanged, onNotice)}>接受 Offer</Button><Button size="sm" variant="outline" onClick={() => void closeOffer(application, "declined", onChanged, onNotice)}>婉拒 Offer</Button></>}
-    </section>
-  ) : null;
+  const resultActionLabel = application.current_stage_type === "screening"
+    ? "更新筛选结果"
+    : `记录${application.current_stage_label}结果`;
+  const primaryAction = canMarkApplied
+    ? "mark-applied"
+    : canSchedule
+      ? "schedule"
+      : canUpdateOffer
+        ? "offer"
+        : canAdvance
+          ? "record-result"
+          : null;
   return (
     <div className="career-application-detail-page">
       <header className="career-record-hero career-application-record-hero">
@@ -709,8 +800,10 @@ export function ApplicationDetailView({
             </div>
           </div>
           <div className="career-record-actions">
-            {canMarkApplied && <Button onClick={() => setAppliedDialogOpen(true)}>标记已投递</Button>}
-            {stageAction}
+            {primaryAction === "mark-applied" && <Button onClick={() => setAppliedDialogOpen(true)}>标记已投递</Button>}
+            {primaryAction === "schedule" && <Button onClick={() => onCreateInterview(application.id)}>{scheduleActionLabel}</Button>}
+            {primaryAction === "record-result" && <Button onClick={() => setStageDialogOpen(true)}>{resultActionLabel}</Button>}
+            {primaryAction === "offer" && <Button onClick={() => setOfferDialogOpen(true)}>更新 Offer 状态</Button>}
           </div>
         </div>
       </header>
@@ -732,11 +825,9 @@ export function ApplicationDetailView({
                 <CalendarDays aria-hidden="true" />
                 <strong>暂无面试记录</strong>
                 <p>{canSchedule ? "安排面试后，记录每一轮面试与复盘内容。" : "公司确认面试后，再添加面试阶段并安排时间。"}</p>
-                {canSchedule && <Button onClick={() => onCreateInterview(application.id)}>{scheduleActionLabel}</Button>}
               </div>
             )}
           </section>
-          {offerAction}
         </div>
         <aside className="career-detail-side-column">
           <JobSummaryCard application={application} />
@@ -744,16 +835,9 @@ export function ApplicationDetailView({
       </div>
       {stageDialogOpen && <AddNextStageDialog application={application} onClose={() => setStageDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
       {appliedDialogOpen && <MarkApplicationAppliedDialog application={application} onClose={() => setAppliedDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
+      {offerDialogOpen && <OfferApplicationDialog application={application} onClose={() => setOfferDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
     </div>
   );
-}
-
-function recordOffer(application: JobApplicationSummary, action: "oc_received" | "written_offer_received", onChanged: () => void, onNotice: (notice: string) => void) {
-  return api.recordJobApplicationOffer(application.id, action, application.lock_version).then(onChanged).catch((error) => onNotice(requestErrorMessage(error)));
-}
-
-function closeOffer(application: JobApplicationSummary, action: "accepted" | "declined", onChanged: () => void, onNotice: (notice: string) => void) {
-  return api.closeJobApplication(application.id, { status: "closed", offer_status: action, base_lock_version: application.lock_version }).then(onChanged).catch((error) => onNotice(requestErrorMessage(error)));
 }
 
 function formatBytes(bytes: number): string {

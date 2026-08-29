@@ -635,8 +635,8 @@ describe("InterviewCenterPage API projections", () => {
 
     render(<InterviewCenterPage view="applications" initialApplicationId="21" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "添加下一阶段" }));
-    const dialog = await screen.findByRole("dialog", { name: "添加下一阶段" });
+    fireEvent.click(await screen.findByRole("button", { name: "记录二面结果" }));
+    const dialog = await screen.findByRole("dialog", { name: "推进求职流程" });
     expect(within(dialog).getByLabelText("阶段类型")).toHaveValue("interview:3");
     expect(within(dialog).queryByText(/笔试/)).not.toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "保存阶段" }));
@@ -929,10 +929,10 @@ describe("InterviewCenterPage API projections", () => {
 
     const markAppliedButton = await screen.findByRole("button", { name: "标记已投递" });
     expect(screen.getAllByText("待投递")).toHaveLength(2);
-    expect(screen.queryByRole("button", { name: "添加下一阶段" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "更新筛选结果" })).not.toBeInTheDocument();
     expect(screen.getByRole("list", { name: "当前阶段：筛选中" })).not.toHaveTextContent("筛选中");
     fireEvent.click(markAppliedButton);
-    const dialog = await screen.findByRole("dialog", { name: "确认已投递" });
+    const dialog = await screen.findByRole("dialog", { name: "推进求职流程" });
     fireEvent.change(within(dialog).getByLabelText("投递日期"), { target: { value: "2026-08-22" } });
     fireEvent.change(within(dialog).getByLabelText("使用的简历"), { target: { value: "resume-1" } });
     const versionSelect = within(dialog).getByLabelText("投递简历版本");
@@ -965,7 +965,7 @@ describe("InterviewCenterPage API projections", () => {
     render(<InterviewCenterPage view="applications" initialApplicationId="59" />);
 
     fireEvent.click(await screen.findByRole("button", { name: "标记已投递" }));
-    const dialog = await screen.findByRole("dialog", { name: "确认已投递" });
+    const dialog = await screen.findByRole("dialog", { name: "推进求职流程" });
     fireEvent.change(within(dialog).getByLabelText("使用的简历"), { target: { value: "resume-2" } });
     expect(await within(dialog).findByText("该简历暂无正式版本，可直接标记已投递，不关联简历版本。"))
       .toBeInTheDocument();
@@ -996,7 +996,7 @@ describe("InterviewCenterPage API projections", () => {
     render(<InterviewCenterPage view="applications" initialApplicationId="60" />);
 
     fireEvent.click(await screen.findByRole("button", { name: "标记已投递" }));
-    const dialog = await screen.findByRole("dialog", { name: "确认已投递" });
+    const dialog = await screen.findByRole("dialog", { name: "推进求职流程" });
     expect(within(dialog).getByText("暂无可用简历，可直接标记已投递，不关联简历。"))
       .toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "确认标记" }));
@@ -1006,6 +1006,83 @@ describe("InterviewCenterPage API projections", () => {
       resume_version_id: null,
       base_lock_version: 11,
     })));
+  });
+
+  it("uses the current stage in the single header scheduling action", async () => {
+    const awaitingScheduleApplication = {
+      ...application,
+      id: "64",
+      current_stage_type: "interview" as const,
+      current_round_no: 2,
+      current_stage_label: "二面",
+      stage_state: "awaiting_schedule" as const,
+      applied_at: "2026-08-22T04:00:00Z",
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications.mockResolvedValue({ items: [awaitingScheduleApplication], next_cursor: null });
+
+    render(<InterviewCenterPage view="applications" initialApplicationId="64" />);
+
+    const headerAction = await screen.findByRole("button", { name: "安排二面时间" });
+    expect(screen.getAllByRole("button", { name: "安排二面时间" })).toHaveLength(1);
+    expect(within(document.querySelector(".career-interview-empty") as HTMLElement).queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "记录二面结果" })).not.toBeInTheDocument();
+    expect(headerAction).toBeInTheDocument();
+  });
+
+  it("keeps Offer actions in the header progression dialog and preserves the offer API payload", async () => {
+    const offerApplication = {
+      ...application,
+      id: "65",
+      current_stage_type: "offer" as const,
+      current_round_no: null,
+      current_stage_label: "Offer",
+      stage_state: "negotiating" as const,
+      offer_status: "none" as const,
+      applied_at: "2026-08-22T04:00:00Z",
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications.mockResolvedValue({ items: [offerApplication], next_cursor: null });
+    mocks.recordJobApplicationOffer.mockResolvedValue({ application: offerApplication });
+
+    render(<InterviewCenterPage view="applications" initialApplicationId="65" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "更新 Offer 状态" }));
+    const dialog = await screen.findByRole("dialog", { name: "推进求职流程" });
+    expect(dialog).toHaveTextContent("当前阶段：Offer");
+    fireEvent.click(within(dialog).getByRole("button", { name: "收到 OC" }));
+
+    await waitFor(() => expect(mocks.recordJobApplicationOffer).toHaveBeenCalledWith("65", "oc_received", 3));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "推进求职流程" })).not.toBeInTheDocument());
+    expect(document.querySelector(".career-offer-actions")).not.toBeInTheDocument();
+  });
+
+  it("preserves Offer accept and decline actions in the header dialog", async () => {
+    const offerApplication = {
+      ...application,
+      id: "66",
+      current_stage_type: "offer" as const,
+      current_round_no: null,
+      current_stage_label: "Offer",
+      stage_state: "negotiating" as const,
+      offer_status: "written_offer_received" as const,
+      applied_at: "2026-08-22T04:00:00Z",
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications.mockResolvedValue({ items: [offerApplication], next_cursor: null });
+    mocks.closeJobApplication.mockResolvedValue({ application: offerApplication });
+
+    render(<InterviewCenterPage view="applications" initialApplicationId="66" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "更新 Offer 状态" }));
+    const dialog = await screen.findByRole("dialog", { name: "推进求职流程" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "婉拒 Offer" }));
+
+    await waitFor(() => expect(mocks.closeJobApplication).toHaveBeenCalledWith("66", {
+      status: "closed",
+      offer_status: "declined",
+      base_lock_version: 3,
+    }));
   });
 
   it("renders a received Offer with a crown above its dedicated journey node", async () => {
