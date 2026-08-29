@@ -67,6 +67,8 @@ import {
   formatApplicationDateTime,
   interviewRoundLabel,
 } from "./ApplicationsBoard";
+import { JobApplicationRow } from "../jobs/components/JobApplicationRow";
+import { InterviewRoundCard } from "./components/InterviewRoundCard";
 import "./interviews.css";
 
 type InterviewStatus = "upcoming" | "active" | "completed" | "cancelled";
@@ -567,6 +569,7 @@ export function InterviewCenterPage({
       ) : view === "applications" ? (
         <ApplicationsView
           applications={applications}
+          sessions={sessions}
           selectedApplicationId={initialApplicationId}
           query={query}
           displayMode={applicationDisplayMode}
@@ -713,6 +716,7 @@ function ScheduleHeaderControls({ query, weekStart, onCreate, onQueryChange }: {
 
 function ApplicationsView({
   applications,
+  sessions,
   selectedApplicationId,
   query,
   displayMode,
@@ -724,6 +728,7 @@ function ApplicationsView({
   onCreateInterview,
 }: {
   applications: JobApplicationSummary[];
+  sessions: InterviewSessionSummary[];
   selectedApplicationId?: string;
   query: string;
   displayMode: "board" | "list";
@@ -765,6 +770,44 @@ function ApplicationsView({
     offers: applications.filter((item) => item.offer_status === "written_offer_received" || item.offer_status === "accepted").length,
   };
 
+  const [busy, setBusy] = useState(false);
+  const applicationSessions = selectedApplicationId
+    ? sessions.filter((s) => s.application_id === selectedApplicationId).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    : [];
+  const latestSession = applicationSessions[0];
+
+  const handleAddScreening = async () => {
+    if (!selectedApplication) return;
+    setBusy(true);
+    try {
+      await api.advanceJobApplication(selectedApplication.id, {
+        target_stage_type: "screening",
+        target_stage_label: "筛选/笔试",
+        base_lock_version: selectedApplication.lock_version
+      });
+      await onChanged();
+    } catch (e: any) {
+      onNotice(e.message || "操作失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCompleteSession = async () => {
+    if (!latestSession) return;
+    setBusy(true);
+    try {
+      await api.completeInterviewSession(latestSession.id, {
+        base_lock_version: latestSession.lock_version
+      });
+      await onChanged();
+    } catch (e: any) {
+      onNotice(e.message || "操作失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="career-applications-layout">
       <ApplicationsBoard
@@ -777,16 +820,13 @@ function ApplicationsView({
       />
       {displayMode === "list" && visibleApplications.length ? (
         <section className="interview-surface career-applications-board">
-          <div className="career-application-list" role="table" aria-label="求职进程列表">
-            <div role="row"><span role="columnheader">公司与岗位</span><span role="columnheader">当前阶段</span><span role="columnheader">状态</span><span role="columnheader">下一场面试</span><span role="columnheader">操作</span></div>
+          <div className="career-application-list" role="list" aria-label="求职进程列表">
+            <div className="career-application-list-header" style={{ color: "var(--ui-text-secondary)" }}>
+              <span>公司与岗位</span>
+              <span>状态与排期</span>
+            </div>
             {visibleApplications.map((item) => (
-              <div role="row" key={item.id}>
-                <span role="cell"><strong>{item.company_name_snapshot}</strong><small>{item.job_title_snapshot}</small></span>
-                <span role="cell">{item.current_stage_label}</span>
-                <span role="cell">{applicationStatusLabel(item)}</span>
-                <span role="cell">{item.next_session_start_at ? formatApplicationDateTime(item.next_session_start_at) : "暂未安排"}</span>
-                <span role="cell"><Button size="sm" variant="outline" onClick={() => navigateTo(careerApplicationPath(item.id))}>查看进程</Button></span>
-              </div>
+              <JobApplicationRow key={item.id} application={item} />
             ))}
           </div>
         </section>
@@ -811,13 +851,38 @@ function ApplicationsView({
               </div>
               <div>
                 <Button variant="outline" onClick={() => navigateTo(jobDetailPathFromApplication(selectedApplication))}>查看岗位</Button>
-                {selectedApplication.status === "active" && selectedApplication.stage_state === "awaiting_schedule" && (
-                  <Button onClick={() => onCreateInterview(selectedApplication.id)}>安排面试</Button>
+                {selectedApplication.status === "active" && (
+                  <>
+                    {selectedApplication.stage_state === "awaiting_schedule" && (
+                      <Button disabled={busy} onClick={() => onCreateInterview(selectedApplication.id)}>安排面试</Button>
+                    )}
+                    {selectedApplication.stage_state === "scheduled" && latestSession?.status !== "completed" && (
+                      <Button disabled={busy} onClick={() => handleCompleteSession()}>完成本轮面试</Button>
+                    )}
+                    {selectedApplication.current_stage_type === "screening" && selectedApplication.stage_state !== "scheduled" && (
+                      <Button disabled={busy} variant="outline" onClick={() => handleAddScreening()}>添加筛选</Button>
+                    )}
+                    {selectedApplication.stage_state === "awaiting_result" && latestSession?.status === "completed" && (
+                      <>
+                        <Button disabled={busy} variant="outline" onClick={() => onCreateInterview(selectedApplication.id)}>安排下一轮</Button>
+                        <span className="waiting-for-notice text-sm text-[var(--ui-text-muted)] ml-2">等待后续通知...</span>
+                      </>
+                    )}
+                  </>
                 )}
               </div>
             </header>
             <StageProgress application={selectedApplication} />
-            <dl>
+            
+            {applicationSessions.length > 0 && (
+              <div className="career-application-interviews mt-4 space-y-4">
+                {applicationSessions.map((session) => (
+                  <InterviewRoundCard key={session.id} session={session} />
+                ))}
+              </div>
+            )}
+
+            <dl className="mt-6">
               <div><dt>当前状态</dt><dd>{applicationStatusLabel(selectedApplication)}</dd></div>
               <div><dt>投递时间</dt><dd>{selectedApplication.applied_at ? formatApplicationDate(selectedApplication.applied_at) : "暂未记录"}</dd></div>
               <div><dt>关联简历</dt><dd>{selectedApplication.resume_title_snapshot ?? "暂未选择简历版本"}</dd></div>
@@ -2327,7 +2392,9 @@ function StageProgress({ application }: { application: InterviewSessionDetail["a
       : 2,
   );
   const stages = [
-    { key: "screening", label: "筛选中" },
+    { key: "imported", label: "已导入" },
+    { key: "applied", label: "已投递待通知" },
+    { key: "assessment", label: "笔试进行中" },
     ...Array.from({ length: highestRound }, (_, index) => ({
       key: `interview:${index + 1}`,
       label: interviewRoundLabel(index + 1),
@@ -2335,10 +2402,16 @@ function StageProgress({ application }: { application: InterviewSessionDetail["a
     { key: "hr", label: "HR 面" },
     { key: "offer", label: "Offer" },
   ];
-  const currentKey =
-    application.current_stage_type === "interview"
-      ? `interview:${application.current_round_no ?? 1}`
-      : application.current_stage_type;
+  let currentKey = "imported";
+  if (application.current_stage_type === "screening") {
+    if (application.stage_state === "awaiting_schedule") currentKey = "imported";
+    else if (application.stage_state === "scheduled") currentKey = "applied";
+    else currentKey = "assessment";
+  } else if (application.current_stage_type === "interview") {
+    currentKey = `interview:${application.current_round_no ?? 1}`;
+  } else {
+    currentKey = application.current_stage_type;
+  }
   const currentIndex = Math.max(0, stages.findIndex((stage) => stage.key === currentKey));
   return <div className="stage-progress" style={{ "--stage-count": stages.length } as CSSProperties} aria-label={`当前阶段：${application.current_stage_label}`}><div className="stage-progress-line" />{stages.map((stage, index) => <div key={stage.key} className={index < currentIndex ? "is-done" : index === currentIndex ? "is-current" : ""}><span>{index < currentIndex ? <Check /> : null}</span><strong>{stage.label}</strong></div>)}</div>;
 }

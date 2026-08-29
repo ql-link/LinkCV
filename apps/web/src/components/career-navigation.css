@@ -30,8 +30,9 @@
 }
 
 .career-subnav a svg { width: 15px; height: 15px; }
-.career-subnav a:hover, .career-subnav a.is-active { color: var(--ui-warning); }
-.career-subnav a.is-active::after { position: absolute; right: 9px; bottom: -1px; left: 9px; height: 2px; border-radius: 2px 2px 0 0; background: var(--ui-warning); content: ""; }
+.career-subnav a:hover, .career-subnav a.is-active { color: var(--ui-career-accent); }
+.career-subnav a.is-active { background: color-mix(in srgb, var(--ui-career-accent) 10%, transparent); border-radius: var(--ui-radius-sm); }
+.career-subnav a.is-active::after { display: none; }
 .career-subnav a:focus-visible { border-radius: var(--ui-radius-sm); outline: 2px solid var(--ui-ring); outline-offset: -2px; }
 
 @media (max-width: 1250px) {

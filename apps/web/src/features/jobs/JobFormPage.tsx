@@ -106,7 +106,7 @@ export function JobFormPage({
         const payload = jobPayloadFromForm(form);
         setPendingPayload(payload);
         const { job_description } = await api.createJobDescription(payload);
-        navigateTo(jobDetailPath(job_description.id), { replace: true });
+        if (onClose) onClose(); else navigateTo(jobDetailPath(job_description.id), { replace: true });
       } else if (jobId && record) {
         const {
           source_url: _sourceUrl,
@@ -121,7 +121,7 @@ export function JobFormPage({
           ...fields,
           base_lock_version: record.lock_version,
         });
-        navigateTo(jobDetailPath(job_description.id), { replace: true });
+        if (onClose) onClose(); else navigateTo(jobDetailPath(job_description.id), { replace: true });
       }
     } catch (submitError) {
       const duplicateDetails = duplicateFromError(submitError);
@@ -299,7 +299,7 @@ export function JobFormPage({
           description="先录入岗位核心信息，保存后再补充公司与来源。"
           actions={(
             <>
-              <Button variant="ghost" onClick={() => navigateTo(cancelTarget)}>取消</Button>
+              <Button variant="ghost" onClick={() => onClose ? onClose() : navigateTo(cancelTarget)}>取消</Button>
               <Button type="submit" disabled={saving}>{saving ? "正在保存…" : mode === "create" ? "创建岗位" : "保存岗位"}</Button>
             </>
           )}

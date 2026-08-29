@@ -1003,10 +1003,9 @@
 .job-method-dialog > [data-slot="dialog-close"] { top: 20px; right: 20px; }
 
 .job-method-options {
-  overflow: hidden;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-lg);
-  background: var(--ui-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .job-method-option {
@@ -1015,22 +1014,25 @@
   align-items: center;
   gap: 16px;
   width: 100%;
-  border: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-lg);
   background: var(--ui-surface);
   padding: 19px 20px;
-  color: var(--ui-foreground);
+  color: var(--ui-text-primary);
   text-align: left;
   touch-action: manipulation;
-  transition: background-color var(--ui-duration-fast) var(--ui-ease-press);
+  transition: background-color var(--ui-duration-fast) var(--ui-ease-press), border-color var(--ui-duration-fast);
 }
 
-.job-method-option + .job-method-option { border-top: 1px solid var(--ui-border); }
-.job-method-option:hover { background: var(--ui-surface-subtle); }
-.job-method-option:focus-visible { position: relative; z-index: 1; outline: 2px solid var(--ui-ring); outline-offset: -2px; }
-.job-method-icon { display: grid; width: 44px; height: 44px; place-items: center; border-radius: var(--ui-radius-md); background: var(--ui-surface-muted); color: var(--ui-text-secondary); }
+.job-method-option:hover {
+  background: var(--ui-surface-hover);
+  border-color: var(--ui-border-active);
+}
+.job-method-option:focus-visible { position: relative; z-index: 1; outline: 2px solid var(--ui-ring); outline-offset: 2px; }
+.job-method-icon { display: grid; width: 44px; height: 44px; place-items: center; border-radius: var(--ui-radius-md); background: var(--ui-surface-muted); color: var(--ui-text-primary); }
 .job-method-icon svg { width: 20px; height: 20px; }
 .job-method-copy { min-width: 0; }
-.job-method-option strong { display: block; margin-bottom: 3px; font-size: var(--ui-text-md); }
+.job-method-option strong { display: block; margin-bottom: 3px; font-size: var(--text-base); color: var(--ui-text-primary); }
 .job-method-option small { display: block; color: var(--ui-text-muted); font-size: var(--ui-text-sm); line-height: 1.55; }
 .job-method-action { display: inline-flex; align-items: center; gap: 7px; color: var(--ui-accent); font-size: var(--ui-text-sm); font-weight: 600; white-space: nowrap; }
 .job-method-action > svg { width: 17px; height: 17px; }
@@ -1505,4 +1507,100 @@
   .job-create-field textarea { transition: none; }
   .job-quick-edit-display { transition: none; }
   .job-method-option { transition: none; }
+}
+
+.job-application-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--ui-space-4);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface);
+  cursor: pointer;
+  transition: border-color var(--ui-duration-fast) var(--ui-ease-standard), box-shadow var(--ui-duration-fast) var(--ui-ease-standard);
+  text-decoration: none;
+  color: var(--ui-foreground);
+}
+
+.job-application-row:hover, .job-application-row:focus-visible {
+  border-color: var(--ui-ring);
+  box-shadow: var(--ui-shadow-sm);
+}
+.job-application-row:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: -2px; }
+
+.job-application-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-2);
+}
+
+.job-application-row-title {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  margin: 0;
+  font-size: var(--ui-text-md);
+  font-weight: 600;
+  color: var(--ui-foreground);
+}
+
+.job-application-row-separator {
+  color: var(--ui-text-muted);
+}
+
+.job-application-row-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-3);
+  font-size: var(--ui-text-sm);
+}
+
+.job-application-row-stage {
+  padding: 2px 8px;
+  border-radius: var(--ui-radius-full);
+  background: var(--ui-surface-muted);
+  color: var(--ui-text-secondary);
+  font-weight: 500;
+}
+
+.job-application-row-time {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ui-text-muted);
+}
+
+.job-application-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-4);
+}
+
+.job-application-row-status {
+  font-size: var(--ui-text-sm);
+  color: var(--ui-text-secondary);
+}
+.job-application-row-status[data-status="active"] { color: var(--ui-success); }
+.job-application-row-status[data-status="rejected"] { color: var(--ui-destructive); }
+
+.job-application-row-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--ui-text-muted);
+  border-radius: var(--ui-radius-md);
+  cursor: pointer;
+}
+.job-application-row-more:hover {
+  background: var(--ui-surface-muted);
+  color: var(--ui-foreground);
+}
+
+.job-application-row-chevron {
+  color: var(--ui-text-muted);
 }

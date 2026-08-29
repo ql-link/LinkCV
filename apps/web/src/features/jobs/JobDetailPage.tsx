@@ -8,25 +8,34 @@ import { jobFormFromRecord, jobPayloadFromForm, type JobFormState } from "./jobF
 import { activeApplicationForJob, applicationOutcome, applicationsForJob, listAllJobApplications } from "./jobApplications";
 import "./jobs.css";
 
+import { JobFormPage } from "./JobFormPage";
+import { FilePenLine, Pencil } from "lucide-react";
+
 export function JobDetailPage({ jobId }: { jobId: string }) {
   const [job, setJob] = useState<JobDescriptionRecord | null>(null);
   const [applications, setApplications] = useState<JobApplicationSummary[]>([]);
   const [applicationsLoaded, setApplicationsLoaded] = useState(false);
-  const [editingField, setEditingField] = useState<EditableTarget | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const fetchJob = async () => {
+    try {
+      const { job_description } = await api.getJobDescription(jobId);
+      setJob(job_description);
+    } catch (loadError) {
+      setError(detailErrorMessage(loadError));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
-    void api.getJobDescription(jobId).then(({ job_description }) => {
+    void fetchJob().then(() => {
       if (cancelled) return;
-      setJob(job_description);
-    }).catch((loadError: unknown) => {
-      if (!cancelled) setError(detailErrorMessage(loadError));
-    }).finally(() => {
-      if (!cancelled) setLoading(false);
     });
     return () => { cancelled = true; };
   }, [jobId]);
@@ -49,30 +58,6 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
     return () => { cancelled = true; };
   }, []);
 
-  const saveFields = async (changes: Partial<JobFormState>) => {
-    if (!job || busy) return;
-    const nextForm = { ...jobFormFromRecord(job), ...changes } as JobFormState;
-    if (!nextForm.job_title.trim() || !nextForm.company_name.trim() || !nextForm.description.trim()) {
-      setError("该字段为必填项，不能保存空内容。");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const { source_url: _sourceUrl, source_type: _sourceType, duplicate_resolution: _duplicateResolution, ...fields } = jobPayloadFromForm(nextForm);
-      void _sourceUrl; void _sourceType; void _duplicateResolution;
-      const { job_description } = await api.updateJobDescription(job.id, { ...fields, base_lock_version: job.lock_version });
-      setJob(job_description);
-      setEditingField(null);
-    } catch (actionError) {
-      setError(detailErrorMessage(actionError, "保存岗位失败，请稍后重试。"));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const saveField = (field: keyof JobFormState, value: string) => saveFields({ [field]: value });
-
   const deleteJob = async () => {
     if (!job || busy) return;
     setBusy(true);
@@ -86,6 +71,14 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
       setBusy(false);
     }
   };
+
+  if (isEditing) {
+    return <JobFormPage mode="edit" jobId={jobId} onClose={() => {
+      setIsEditing(false);
+      setLoading(true);
+      void fetchJob();
+    }} />;
+  }
 
   if (loading) return <main className="dashboard-content job-page-shell"><PageLoading label="正在加载岗位详情…" /></main>;
   if (!job) return <main className="dashboard-content job-page-shell"><section className="job-workspace-state"><h1>无法打开这个岗位</h1><p>{error}</p><Button onClick={() => navigateTo("/career/jobs", { replace: true })}>返回岗位库</Button></section></main>;
@@ -102,19 +95,28 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
             <a className="job-back-link" href="/career/jobs" onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); navigateTo("/career/jobs"); }}><ArrowLeft size={14} />返回岗位库</a>
           </div>
           <div className="job-detail-actions">
-            {applicationsLoaded && (activeApplication ? (
-              <Button onClick={() => navigateTo(careerApplicationPath(activeApplication.id))}>查看求职进程</Button>
-            ) : (
-              <Button onClick={() => navigateTo(startCareerApplicationPath(job.id))}>{jobApplications.length ? "再次开始求职" : "开始求职"}</Button>
-            ))}
+            <Button variant="outline" icon={<Pencil size={15} />} disabled={busy} onClick={() => setIsEditing(true)}>编辑</Button>
             <Button variant="ghost" icon={<Trash2 size={15} />} disabled={busy} onClick={() => setDeleteOpen(true)}>删除</Button>
           </div>
         </div>
         {error && <div className="job-error job-detail-error" role="alert">{error}</div>}
-        <JobDocument job={job} editingField={editingField} busy={busy} onEdit={setEditingField} onSave={saveField} onSaveFields={saveFields} />
+        
+        {!activeApplication && applicationsLoaded && (
+          <div className="job-start-cta">
+            <Button size="lg" onClick={() => navigateTo(startCareerApplicationPath(job.id))}>
+              {jobApplications.length ? "再次开始求职" : "开始求职"}
+            </Button>
+          </div>
+        )}
+
+        <JobDocumentReadonly job={job} />
+
         <section className="job-document-section job-career-section">
           <header>
             <div><p className="job-eyebrow">求职进程</p><h2>这个岗位的求职记录</h2></div>
+            {activeApplication && (
+              <Button onClick={() => navigateTo(careerApplicationPath(activeApplication.id))}>查看当前求职进程</Button>
+            )}
           </header>
           {!applicationsLoaded ? (
             <div className="job-career-empty"><p>暂时无法读取求职进程。为避免重复创建，请稍后刷新再试。</p></div>
@@ -138,41 +140,73 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
   );
 }
 
-type EditableTarget = keyof JobFormState | "structured_salary";
-
-type StructuredSalaryDraft = Pick<JobFormState, "salary_min" | "salary_max" | "salary_currency" | "salary_period" | "salary_months_per_year">;
-
-function JobDocument({ job, editingField, busy, onEdit, onSave, onSaveFields }: { job: JobDescriptionRecord; editingField: EditableTarget | null; busy: boolean; onEdit: (field: EditableTarget | null) => void; onSave: (field: keyof JobFormState, value: string) => Promise<void>; onSaveFields: (changes: Partial<JobFormState>) => Promise<void> }) {
-  const editable = (field: keyof JobFormState, label: string, value: string | null | undefined, options?: Array<[string, string]>) => (
-    <InlineEditableField field={field} label={label} value={value ?? ""} options={options} active={editingField === field} disabled={busy} onEdit={onEdit} onSave={onSave} />
-  );
+function JobDocumentReadonly({ job }: { job: JobDescriptionRecord }) {
   return (
-    <section className="job-document">
+    <section className="job-document-readonly">
       <header className="job-document-hero">
         <div className="job-document-title">
-          {editable("company_name", "公司名称", job.company_name)}
-          <div className="job-document-title-main"><InlineEditableField field="job_title" label="职位名称" value={job.job_title} heading active={editingField === "job_title"} disabled={busy} onEdit={onEdit} onSave={onSave} /></div>
-        </div>
-        <div className="job-document-highlights" aria-label="岗位摘要">
-          <Fact icon={<WalletCards size={17} />} label="薪资" emphasis>{editable("salary_text", "薪资", job.salary_text, undefined)}</Fact>
-          <Fact icon={<MapPin size={17} />} label="工作地点">{editable("work_city", "工作地点", job.work_city)}</Fact>
-          <Fact icon={<BriefcaseBusiness size={17} />} label="用工类型">{editable("employment_type", "用工类型", job.employment_type, employmentOptions)}</Fact>
-        </div>
-        <div className="job-document-intro">
-          <section className="job-document-intro-section">
-            <h3>职位描述</h3>
-            <InlineEditableField field="description" label="职位描述" value={job.description} multiline active={editingField === "description"} disabled={busy} onEdit={onEdit} onSave={onSave} />
-          </section>
-          <section className="job-document-intro-section">
-            <h3>核心技能</h3>
-            {editable("skills", "核心技能", job.skills.join(", "))}
-          </section>
+          <h2 style={{ fontSize: "var(--text-xl)", fontWeight: "bold", color: "var(--ui-text-primary)" }}>{job.company_name}</h2>
+          <h1 style={{ fontSize: "var(--text-xl)", fontWeight: "bold", color: "var(--ui-text-primary)", marginTop: "4px" }}>{job.job_title}</h1>
         </div>
       </header>
-      <div className="job-document-body">
-        <DocumentSection title="岗位要求"><dl className="job-document-grid"><EditableDefinition label="学历要求">{editable("education_requirement", "学历要求", job.education_requirement)}</EditableDefinition><EditableDefinition label="经验要求">{editable("experience_requirement", "经验要求", job.experience_requirement)}</EditableDefinition><EditableDefinition label="工作方式">{editable("work_mode", "工作方式", job.work_mode, workModeOptions)}</EditableDefinition><EditableDefinition label="工作安排">{editable("work_schedule", "工作安排", job.work_schedule)}</EditableDefinition><EditableDefinition label="详细地址">{editable("work_address", "详细地址", job.work_address)}</EditableDefinition><StructuredSalaryEditor job={job} active={editingField === "structured_salary"} disabled={busy} onEdit={onEdit} onSave={onSaveFields} /></dl></DocumentSection>
-        <DocumentSection title="公司与招聘者"><dl className="job-document-grid"><EditableDefinition label="公司全称">{editable("company_legal_name", "公司全称", job.company_legal_name)}</EditableDefinition><EditableDefinition label="行业">{editable("company_industry", "行业", job.company_industry)}</EditableDefinition><EditableDefinition label="公司规模">{editable("company_size", "公司规模", job.company_size)}</EditableDefinition><EditableDefinition label="融资阶段">{editable("company_financing_stage", "融资阶段", job.company_financing_stage)}</EditableDefinition><EditableDefinition label="招聘者姓名">{editable("recruiter_name", "招聘者姓名", job.recruiter_name)}</EditableDefinition><EditableDefinition label="招聘者职位">{editable("recruiter_title", "招聘者职位", job.recruiter_title)}</EditableDefinition><EditableDefinition label="公司简介" wide>{<InlineEditableField field="company_description" label="公司简介" value={job.company_description ?? ""} multiline active={editingField === "company_description"} disabled={busy} onEdit={onEdit} onSave={onSave} />}</EditableDefinition></dl></DocumentSection>
-        <DocumentSection title="来源与备注"><dl className="job-document-grid"><Definition label="来源" value={job.source_site ?? "手工创建"} /><Definition label="来源类型" value={job.source_type} /><Definition label="更新时间" value={formatTime(job.updated_at)} />{job.imported_at && <Definition label="导入时间" value={formatTime(job.imported_at)} />}<EditableDefinition label="个人备注" wide>{<InlineEditableField field="notes" label="个人备注" value={job.notes ?? ""} multiline active={editingField === "notes"} disabled={busy} onEdit={onEdit} onSave={onSave} />}</EditableDefinition></dl>{job.source_url && <a className="job-source-link" href={job.source_url} target="_blank" rel="noreferrer">打开来源岗位 <ExternalLink size={13} /></a>}</DocumentSection>
+      <div className="job-document-layout">
+        <div className="job-document-main">
+          <DocumentSection title="职位描述">
+            <div className="job-document-text" style={{ whiteSpace: "pre-wrap", color: "var(--ui-text-primary)" }}>{job.description}</div>
+          </DocumentSection>
+          {job.skills && job.skills.length > 0 && (
+            <DocumentSection title="核心技能">
+              <div style={{ color: "var(--ui-text-primary)" }}>{job.skills.join(", ")}</div>
+            </DocumentSection>
+          )}
+          {job.company_description && (
+            <DocumentSection title="公司简介">
+              <div className="job-document-text" style={{ whiteSpace: "pre-wrap", color: "var(--ui-text-primary)" }}>{job.company_description}</div>
+            </DocumentSection>
+          )}
+        </div>
+        <aside className="job-document-rail">
+          <DocumentSection title="岗位要求">
+            <dl className="job-document-grid">
+              <Definition label="薪资" value={structuredSalarySummary(job)} />
+              <Definition label="工作地点" value={job.work_city} />
+              <Definition label="详细地址" value={job.work_address} />
+              <Definition label="用工类型" value={employmentOptions.find(o => o[0] === job.employment_type)?.[1]} />
+              <Definition label="学历要求" value={job.education_requirement} />
+              <Definition label="经验要求" value={job.experience_requirement} />
+              <Definition label="工作方式" value={workModeOptions.find(o => o[0] === job.work_mode)?.[1]} />
+              <Definition label="工作安排" value={job.work_schedule} />
+            </dl>
+          </DocumentSection>
+          <DocumentSection title="公司与招聘者">
+            <dl className="job-document-grid">
+              <Definition label="公司全称" value={job.company_legal_name} />
+              <Definition label="行业" value={job.company_industry} />
+              <Definition label="公司规模" value={job.company_size} />
+              <Definition label="融资阶段" value={job.company_financing_stage} />
+              <Definition label="招聘者姓名" value={job.recruiter_name} />
+              <Definition label="招聘者职位" value={job.recruiter_title} />
+            </dl>
+          </DocumentSection>
+          <DocumentSection title="来源与备注">
+            <dl className="job-document-grid">
+              <Definition label="来源" value={job.source_site ?? "手工创建"} />
+              <Definition label="更新时间" value={formatTime(job.updated_at)} />
+              {job.imported_at && <Definition label="导入时间" value={formatTime(job.imported_at)} />}
+            </dl>
+            {job.notes && (
+              <div style={{ marginTop: "12px" }}>
+                <div style={{ color: "var(--ui-text-tertiary)", fontSize: "12px", marginBottom: "4px" }}>个人备注</div>
+                <div style={{ whiteSpace: "pre-wrap", color: "var(--ui-text-primary)" }}>{job.notes}</div>
+              </div>
+            )}
+            {job.source_url && (
+              <a className="job-source-link" href={job.source_url} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", gap: "4px", marginTop: "12px" }}>
+                打开来源岗位 <ExternalLink size={13} />
+              </a>
+            )}
+          </DocumentSection>
+        </aside>
       </div>
     </section>
   );
@@ -181,243 +215,11 @@ function JobDocument({ job, editingField, busy, onEdit, onSave, onSaveFields }: 
 const employmentOptions: Array<[string, string]> = [["full_time", "全职"], ["part_time", "兼职"], ["internship", "实习"], ["contract", "合同"], ["temporary", "临时"]];
 const workModeOptions: Array<[string, string]> = [["onsite", "现场"], ["hybrid", "混合"], ["remote", "远程"]];
 const salaryPeriodOptions: Array<[string, string]> = [["hour", "小时"], ["day", "天"], ["month", "月"], ["year", "年"]];
-const emptyInlineSelectValue = "__empty_inline_select__";
 
-function InlineEditableField({ field, label, value, options, multiline = false, heading = false, active, disabled, onEdit, onSave }: { field: keyof JobFormState; label: string; value: string; options?: Array<[string, string]>; multiline?: boolean; heading?: boolean; active: boolean; disabled: boolean; onEdit: (field: keyof JobFormState | null) => void; onSave: (field: keyof JobFormState, value: string) => Promise<void> }) {
-  const [draft, setDraft] = useState(value);
-  const [selectOpen, setSelectOpen] = useState(false);
-  const controlRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
-  const blurTimerRef = useRef<number | null>(null);
-  const displayValue = (options?.find(([optionValue]) => optionValue === value)?.[1] ?? value) || "未填写";
-
-  useEffect(() => () => {
-    if (blurTimerRef.current !== null) window.clearTimeout(blurTimerRef.current);
-  }, []);
-
-  useEffect(() => {
-    if (!active) {
-      setDraft(value);
-      setSelectOpen(false);
-      return;
-    }
-    const control = controlRef.current;
-    control?.focus({ preventScroll: true });
-    if (control && "setSelectionRange" in control) control.setSelectionRange(control.value.length, control.value.length);
-  }, [active, value]);
-
-  const finish = () => void onSave(field, draft);
-  const beginEditing = () => {
-    setDraft(value);
-    onEdit(field);
-  };
-  const dismissOnBlur = () => {
-    setDraft(value);
-    onEdit(null);
-  };
-  const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    if (event.nativeEvent.isComposing) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      setDraft(value);
-      onEdit(null);
-      return;
-    }
-    if (event.key === "Enter" && !(multiline && event.shiftKey)) {
-      event.preventDefault();
-      finish();
-    }
-  };
-
-  return (
-    <div
-      className={`job-quick-edit${multiline ? " is-multiline" : ""}${active ? " is-editing" : ""}`}
-      onBlurCapture={options && active ? (event) => {
-        const container = event.currentTarget;
-        const nextTarget = event.relatedTarget as Node | null;
-        if (nextTarget && container.contains(nextTarget)) return;
-        if (nextTarget instanceof Element && nextTarget.closest("[data-job-inline-select-content]")) return;
-        if (blurTimerRef.current !== null) window.clearTimeout(blurTimerRef.current);
-        blurTimerRef.current = window.setTimeout(() => {
-          blurTimerRef.current = null;
-          const focusedElement = document.activeElement;
-          const menuOpen = document.querySelector('[data-job-inline-select-content][data-state="open"]');
-          if ((focusedElement && container.contains(focusedElement)) || menuOpen) return;
-          dismissOnBlur();
-        }, 0);
-      } : undefined}
-    >
-      {active ? (
-        options ? (
-          <Select
-            name={String(field)}
-            value={draft || emptyInlineSelectValue}
-            open={selectOpen}
-            disabled={disabled}
-            onOpenChange={setSelectOpen}
-            onValueChange={(nextValue) => {
-              const nextDraft = nextValue === emptyInlineSelectValue ? "" : nextValue;
-              setDraft(nextDraft);
-              void onSave(field, nextDraft);
-            }}
-          >
-            <SelectTrigger aria-label={label} className="job-quick-edit-select-trigger">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="job-quick-edit-select-content" data-job-inline-select-content>
-              <SelectItem value={emptyInlineSelectValue}>未填写</SelectItem>
-              {options.map(([optionValue, optionLabel]) => <SelectItem key={optionValue} value={optionValue}>{optionLabel}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        ) : multiline ? (
-          <>
-            <span className="job-quick-edit-multiline-mirror" aria-hidden="true">{draft || "未填写"}</span>
-            <textarea ref={controlRef as React.RefObject<HTMLTextAreaElement>} rows={1} name={String(field)} autoComplete="off" aria-label={label} value={draft} disabled={disabled} onChange={(event) => setDraft(event.target.value)} onKeyDown={onKeyDown} onBlur={dismissOnBlur} />
-          </>
-        ) : (
-          <input ref={controlRef as React.RefObject<HTMLInputElement>} name={String(field)} autoComplete="off" aria-label={label} value={draft} disabled={disabled} onChange={(event) => setDraft(event.target.value)} onKeyDown={onKeyDown} onBlur={dismissOnBlur} />
-        )
-      ) : (
-        heading ? (
-          <h2 className="job-quick-edit-heading">
-            <button type="button" className="job-quick-edit-display" aria-label={`编辑${label}`} disabled={disabled} onClick={beginEditing}>
-              <span className="job-quick-edit-value">{displayValue}</span>
-            </button>
-          </h2>
-        ) : (
-          <button type="button" className="job-quick-edit-display" aria-label={`编辑${label}`} disabled={disabled} onClick={beginEditing}>
-            <span className="job-quick-edit-value">{displayValue}</span>
-          </button>
-        )
-      )}
-    </div>
-  );
-}
-
-function StructuredSalaryEditor({ job, active, disabled, onEdit, onSave }: { job: JobDescriptionRecord; active: boolean; disabled: boolean; onEdit: (field: EditableTarget | null) => void; onSave: (changes: Partial<JobFormState>) => Promise<void> }) {
-  const current = structuredSalaryDraft(job);
-  const [draft, setDraft] = useState<StructuredSalaryDraft>(current);
-  const [periodOpen, setPeriodOpen] = useState(false);
-  const firstInputRef = useRef<HTMLInputElement>(null);
-  const blurTimerRef = useRef<number | null>(null);
-
-  useEffect(() => () => {
-    if (blurTimerRef.current !== null) window.clearTimeout(blurTimerRef.current);
-  }, []);
-
-  useEffect(() => {
-    if (!active) {
-      setDraft(current);
-      return;
-    }
-    setDraft(current);
-    firstInputRef.current?.focus({ preventScroll: true });
-    firstInputRef.current?.setSelectionRange(current.salary_min.length, current.salary_min.length);
-  }, [active, job.salary_min, job.salary_max, job.salary_currency, job.salary_period, job.salary_months_per_year]);
-
-  const setField = (field: keyof StructuredSalaryDraft, value: string) => {
-    setDraft((previous) => ({ ...previous, [field]: value }) as StructuredSalaryDraft);
-  };
-  const dismiss = () => {
-    setPeriodOpen(false);
-    setDraft(current);
-    onEdit(null);
-  };
-  const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement>) => {
-    if (event.nativeEvent.isComposing) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      dismiss();
-      return;
-    }
-    if (event.key === "Enter") {
-      event.preventDefault();
-      void onSave(draft);
-    }
-  };
-
-  return (
-    <div
-      className={`job-document-definition job-structured-salary${active ? " is-editing" : ""}`}
-      onBlurCapture={(event) => {
-        const container = event.currentTarget;
-        const nextTarget = event.relatedTarget as Node | null;
-        if (nextTarget && event.currentTarget.contains(nextTarget)) return;
-        if (nextTarget instanceof Element && nextTarget.closest("[data-job-salary-period-content]")) return;
-        if (blurTimerRef.current !== null) window.clearTimeout(blurTimerRef.current);
-        blurTimerRef.current = window.setTimeout(() => {
-          blurTimerRef.current = null;
-          const focusedElement = document.activeElement;
-          const menuOpen = document.querySelector('[data-job-salary-period-content][data-state="open"]');
-          if ((focusedElement && container.contains(focusedElement)) || menuOpen) return;
-          if (active) dismiss();
-        }, 0);
-      }}
-    >
-      <dt>结构化薪资</dt>
-      <dd>
-        <button
-          type="button"
-          className="job-quick-edit-display job-structured-salary-trigger"
-          aria-label="编辑结构化薪资"
-          aria-expanded={active}
-          aria-haspopup="dialog"
-          disabled={disabled}
-          onClick={() => {
-            if (active) {
-              dismiss();
-              return;
-            }
-            setDraft(current);
-            onEdit("structured_salary");
-          }}
-        >
-          <span className="job-quick-edit-value">{structuredSalarySummary(job)}</span>
-        </button>
-        {active && (
-          <div
-            className="job-structured-salary-controls"
-            role="dialog"
-            aria-label="编辑结构化薪资"
-          >
-            <SalaryControl label="最低薪资"><input ref={firstInputRef} name="salary_min" autoComplete="off" aria-label="最低薪资" inputMode="decimal" value={draft.salary_min} disabled={disabled} onChange={(event) => setField("salary_min", event.target.value)} onKeyDown={onKeyDown} /></SalaryControl>
-            <SalaryControl label="最高薪资"><input name="salary_max" autoComplete="off" aria-label="最高薪资" inputMode="decimal" value={draft.salary_max} disabled={disabled} onChange={(event) => setField("salary_max", event.target.value)} onKeyDown={onKeyDown} /></SalaryControl>
-            <SalaryControl label="币种"><input name="salary_currency" autoComplete="off" aria-label="币种" maxLength={3} value={draft.salary_currency} disabled={disabled} onChange={(event) => setField("salary_currency", event.target.value.toUpperCase())} onKeyDown={onKeyDown} /></SalaryControl>
-            <SalaryControl label="计薪周期">
-              <Select
-                name="salary_period"
-                value={draft.salary_period || emptySalaryPeriodValue}
-                open={periodOpen}
-                disabled={disabled}
-                onOpenChange={setPeriodOpen}
-                onValueChange={(value) => setField("salary_period", value === emptySalaryPeriodValue ? "" : value)}
-              >
-                <SelectTrigger aria-label="计薪周期" className="job-structured-salary-period-trigger">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="job-structured-salary-period-content" data-job-salary-period-content>
-                  <SelectItem value={emptySalaryPeriodValue}>未填写</SelectItem>
-                  {salaryPeriodOptions.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </SalaryControl>
-            <SalaryControl label="年薪月数"><input name="salary_months_per_year" autoComplete="off" aria-label="年薪月数" type="number" min={1} max={65535} value={draft.salary_months_per_year} disabled={disabled} onChange={(event) => setField("salary_months_per_year", event.target.value)} onKeyDown={onKeyDown} /></SalaryControl>
-          </div>
-        )}
-      </dd>
-    </div>
-  );
-}
-
-const emptySalaryPeriodValue = "__empty_salary_period__";
-
-function SalaryControl({ label, children }: { label: string; children: React.ReactNode }) { return <div className="job-structured-salary-control"><span>{label}</span>{children}</div>; }
-function structuredSalaryDraft(job: JobDescriptionRecord): StructuredSalaryDraft { return { salary_min: job.salary_min ?? "", salary_max: job.salary_max ?? "", salary_currency: job.salary_currency ?? "", salary_period: job.salary_period ?? "", salary_months_per_year: job.salary_months_per_year?.toString() ?? "" }; }
 function salaryPeriodLabel(period: JobFormState["salary_period"] | null | undefined): string { return salaryPeriodOptions.find(([value]) => value === period)?.[1] ?? ""; }
-function structuredSalarySummary(job: JobDescriptionRecord): string { const range = [job.salary_min, job.salary_max].filter(Boolean).join(" – "); const context = [job.salary_currency, salaryPeriodLabel(job.salary_period)].filter(Boolean).join("/"); const months = job.salary_months_per_year ? `${job.salary_months_per_year} 薪` : ""; return [range, context, months].filter(Boolean).join(" · ") || "未填写"; }
+function structuredSalarySummary(job: JobDescriptionRecord): string { const range = [job.salary_min, job.salary_max].filter(Boolean).join(" – "); const context = [job.salary_currency, salaryPeriodLabel(job.salary_period)].filter(Boolean).join("/"); const months = job.salary_months_per_year ? `${job.salary_months_per_year} 薪` : ""; return [range, context, months].filter(Boolean).join(" · ") || job.salary_text || "未填写"; }
 
-function Fact({ icon, label, emphasis = false, children }: { icon: React.ReactNode; label: string; emphasis?: boolean; children: React.ReactNode }) { return <div className={`job-document-fact${emphasis ? " is-emphasis" : ""}`}><span>{icon}</span><div><small>{label}</small>{children}</div></div>; }
 function DocumentSection({ title, children }: { title: string; children: React.ReactNode }) { return <section className="job-document-section"><h3>{title}</h3>{children}</section>; }
-function Definition({ label, value }: { label: string; value: string | null | undefined }) { return <div className="job-document-definition"><dt>{label}</dt><dd>{value || "未填写"}</dd></div>; }
-function EditableDefinition({ label, wide = false, children }: { label: string; wide?: boolean; children: React.ReactNode }) { return <div className={`job-document-definition${wide ? " is-wide" : ""}`}><dt>{label}</dt><dd>{children}</dd></div>; }
+function Definition({ label, value }: { label: string; value: string | null | undefined }) { return <div className="job-document-definition"><dt style={{ color: "var(--ui-text-tertiary)" }}>{label}</dt><dd style={{ color: "var(--ui-text-primary)" }}>{value || "未填写"}</dd></div>; }
 function formatTime(value: string): string { return new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)); }
 function detailErrorMessage(error: unknown, fallback = "岗位服务暂时不可用，请稍后重试。"): string { if (error instanceof ApiRequestError) { if (error.message === "JD_NOT_FOUND") return "岗位不存在，或当前账号没有访问权限。"; if (error.message === "JD_EDIT_CONFLICT") return "岗位内容已经变化，请重新打开后再保存。"; if (error.message === "INVALID_JOB_DESCRIPTION") return "请检查必填字段、薪资组合和字段长度。"; if (error.status === 401) return "登录状态已失效，请重新登录。"; } return fallback; }
