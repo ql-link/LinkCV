@@ -184,10 +184,8 @@ export function WorkspacePageHero({
 }
 
 const CAREER_ITEMS: Array<{ key: CareerSection; label: string; href: string; icon: typeof BriefcaseBusiness }> = [
-  { key: "jobs", label: "岗位库", href: "/career/jobs", icon: BriefcaseBusiness },
-  { key: "applications", label: "求职进程", href: "/career/applications", icon: ListChecks },
+  { key: "applications", label: "求职记录", href: "/career/applications", icon: ListChecks },
   { key: "schedule", label: "面试排期", href: "/career/schedule", icon: CalendarDays },
-  { key: "reviews", label: "记录复盘", href: "/career/reviews", icon: NotebookTabs },
 ];
 
 export function CareerNavigation({ active }: { active: CareerSection }) {

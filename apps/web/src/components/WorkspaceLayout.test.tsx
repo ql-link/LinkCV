@@ -82,19 +82,19 @@ describe("WorkspaceNavigation", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
 
     fireEvent.click(accountLink);
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/account");
+    expect(screen.queryByRole("link", { name: "求职记录" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "面试排期" })).not.toBeInTheDocument();
   });
 
-  it("求职中心移除总览并使用四个按流程排序的子导航", () => {
+  it("求职中心移除总览并使用两个导航", () => {
     render(<CareerNavigation active="applications" />);
 
     const navigation = screen.getByRole("navigation", { name: "求职中心导航" });
     const links = Array.from(navigation.querySelectorAll("a"));
-    expect(links.map((link) => link.textContent)).toEqual(["岗位库", "求职进程", "面试排期", "记录复盘"]);
+    expect(links.map((link) => link.textContent)).toEqual(["求职记录", "面试排期"]);
     expect(screen.queryByRole("link", { name: "总览" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "求职进程" })).toHaveAttribute("href", "/career/applications");
-    expect(screen.getByRole("link", { name: "求职进程" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "求职记录" })).toHaveAttribute("href", "/career/applications");
+    expect(screen.getByRole("link", { name: "求职记录" })).toHaveAttribute("aria-current", "page");
   });
 
   it("模块页头把图标、标题和描述放在同一信息行", () => {
