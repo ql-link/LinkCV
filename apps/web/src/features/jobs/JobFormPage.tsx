@@ -2,7 +2,6 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { Check, FilePenLine } from "lucide-react";
 import {
   api,
-  ApiRequestError,
   type JobDescriptionCreatePayload,
   type JobDescriptionRecord,
   type JobDuplicateDetails,
@@ -26,7 +25,15 @@ import { SelectValue } from "@/components/ui/select";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import { jobDetailPath, navigateTo } from "../../routing";
 import { JobDuplicateDialog } from "./JobDuplicateDialog";
-import { emptyJobForm, jobFormFromRecord, jobPayloadFromForm, type JobFormState } from "./jobFormModel";
+import {
+  duplicateFromJobError,
+  emptyJobForm,
+  jobFormErrorMessage,
+  jobFormFromRecord,
+  jobFormMissingFields,
+  jobPayloadFromForm,
+  type JobFormState,
+} from "./jobFormModel";
 import "./jobs.css";
 
 export function JobFormPage({
@@ -69,7 +76,7 @@ export function JobFormPage({
         setForm(jobFormFromRecord(job_description));
       })
       .catch((loadError: unknown) => {
-        if (!cancelled) setError(jobErrorMessage(loadError, "无法加载岗位，请稍后重试。"));
+        if (!cancelled) setError(jobFormErrorMessage(loadError, "无法加载岗位，请稍后重试。"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -87,11 +94,7 @@ export function JobFormPage({
     event.preventDefault();
     if (saving) return;
     if (mode === "create") {
-      const missing = [
-        !form.job_title.trim() && "职位名称",
-        !form.company_name.trim() && "公司名称",
-        !form.description.trim() && "职位描述",
-      ].filter(Boolean) as string[];
+      const missing = jobFormMissingFields(form);
       if (missing.length > 0) {
         setRequiredToast(`请先填写${missing.join("、")}`);
         if (requiredToastTimerRef.current !== null) window.clearTimeout(requiredToastTimerRef.current);
@@ -124,11 +127,11 @@ export function JobFormPage({
         navigateTo(jobDetailPath(job_description.id), { replace: true });
       }
     } catch (submitError) {
-      const duplicateDetails = duplicateFromError(submitError);
+      const duplicateDetails = duplicateFromJobError(submitError);
       if (duplicateDetails && mode === "create") {
         setDuplicate(duplicateDetails);
       } else {
-        setError(jobErrorMessage(submitError, "保存岗位失败，请稍后重试。"));
+        setError(jobFormErrorMessage(submitError, "保存岗位失败，请稍后重试。"));
       }
     } finally {
       setSaving(false);
@@ -155,7 +158,7 @@ export function JobFormPage({
       navigateTo(jobDetailPath(job_description.id), { replace: true });
     } catch (resolveError) {
       setDuplicate(null);
-      setError(jobErrorMessage(resolveError, "重复岗位内容已经变化，请刷新后重试。"));
+      setError(jobFormErrorMessage(resolveError, "重复岗位内容已经变化，请刷新后重试。"));
     } finally {
       setSaving(false);
     }
@@ -485,22 +488,4 @@ function DialogOptionalSection({ title, children }: { title: string; children: R
       <div className="job-create-optional-body">{children}</div>
     </section>
   );
-}
-
-
-function duplicateFromError(error: unknown): JobDuplicateDetails["duplicate"] | null {
-  if (!(error instanceof ApiRequestError) || error.message !== "JD_SOURCE_DUPLICATE") return null;
-  const duplicate = error.payload?.duplicate;
-  if (!duplicate || typeof duplicate !== "object") return null;
-  return duplicate as JobDuplicateDetails["duplicate"];
-}
-
-function jobErrorMessage(error: unknown, fallback: string): string {
-  if (!(error instanceof ApiRequestError)) return fallback;
-  if (error.message === "INVALID_JOB_DESCRIPTION") return "请检查必填字段、薪资组合和字段长度。";
-  if (error.message === "INVALID_JOB_SOURCE") return "来源链接无法识别，请检查后重试。";
-  if (error.message === "JD_EDIT_CONFLICT") return "岗位已经被修改，请重新打开后再保存。";
-  if (error.message === "JD_NOT_FOUND") return "岗位不存在，或当前账号没有访问权限。";
-  if (error.status === 401) return "登录状态已失效，请重新登录。";
-  return fallback;
 }

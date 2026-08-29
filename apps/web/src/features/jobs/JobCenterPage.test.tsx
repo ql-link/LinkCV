@@ -262,12 +262,14 @@ describe("JobCenterPage", () => {
     const { container } = render(<JobCenterPage createDialogOpen />);
 
     await waitFor(() => expect(container.querySelector(".page-hero h1")).toHaveTextContent("岗位库"));
-    expect(screen.getByRole("dialog", { name: "新建岗位" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /填写/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /智能导入/ })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "导入岗位" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /手工填写/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /文本导入/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /图片导入/ })).toBeInTheDocument();
+    expect([...screen.getAllByRole("button", { name: /填写|导入/ })].map((button) => button.querySelector("strong")?.textContent)).toEqual(["手工填写", "文本导入", "图片导入"]);
     expect(screen.queryByLabelText("职位名称")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /填写/ }));
+    fireEvent.click(screen.getByRole("button", { name: /手工填写/ }));
     expect(screen.getByRole("dialog", { name: "手动填写岗位信息" })).toBeInTheDocument();
     expect(screen.getByLabelText("职位名称")).toHaveFocus();
 
@@ -291,7 +293,7 @@ describe("JobCenterPage", () => {
     const create = vi.spyOn(api, "createJobDescription");
 
     render(<JobCenterPage createDialogOpen />);
-    fireEvent.click(screen.getByRole("button", { name: /智能导入/ }));
+    fireEvent.click(screen.getByRole("button", { name: /文本导入/ }));
     expect(screen.getByRole("dialog", { name: "智能填写岗位信息" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("岗位文字"), {
       target: { value: "示例科技招聘平台工程师，负责内部平台建设" },

@@ -6,7 +6,6 @@ import {
   FileText,
   LayoutTemplate,
   ListChecks,
-  NotebookTabs,
   Sparkles,
 } from "lucide-react";
 import { navigateTo } from "../routing";
@@ -60,11 +59,11 @@ const NAV_ITEMS: Array<{
     icon: LayoutTemplate,
   },
   {
-    activeColor: "var(--ui-career-accent)",
-    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-career-accent) 28%, transparent) 0%, color-mix(in srgb, var(--ui-career-accent) 13%, transparent) 48%, transparent 76%)",
+    activeColor: "var(--ui-warning)",
+    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-warning) 24%, transparent) 0%, color-mix(in srgb, var(--ui-warning) 10%, transparent) 48%, transparent 76%)",
     key: "career",
     label: "求职中心",
-    href: "/career/jobs",
+    href: "/career/applications",
     icon: BriefcaseBusiness,
   },
   {
@@ -184,20 +183,20 @@ export function WorkspacePageHero({
 }
 
 const CAREER_ITEMS: Array<{ key: CareerSection; label: string; href: string; icon: typeof BriefcaseBusiness }> = [
-  { key: "jobs", label: "岗位库", href: "/career/jobs", icon: BriefcaseBusiness },
-  { key: "applications", label: "求职进程", href: "/career/applications", icon: ListChecks },
+  { key: "applications", label: "求职记录", href: "/career/applications", icon: ListChecks },
   { key: "schedule", label: "面试排期", href: "/career/schedule", icon: CalendarDays },
-  { key: "reviews", label: "记录复盘", href: "/career/reviews", icon: NotebookTabs },
 ];
 
 export function CareerNavigation({ active }: { active: CareerSection }) {
+  const activeEntry = active === "schedule" ? "schedule" : "applications";
+
   return (
     <nav className="career-subnav" aria-label="求职中心导航">
       {CAREER_ITEMS.map(({ key, label, href, icon: Icon }) => (
         <a
           key={key}
-          className={active === key ? "is-active" : ""}
-          aria-current={active === key ? "page" : undefined}
+          className={activeEntry === key ? "is-active" : ""}
+          aria-current={activeEntry === key ? "page" : undefined}
           href={href}
           onClick={(event) => {
             if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;

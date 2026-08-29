@@ -1,4 +1,4 @@
-import { AppWindow, Download, X } from "lucide-react";
+import { AppWindow, Download, PackageOpen, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { api, ApiRequestError, type PluginReleaseCurrentResponse } from "../../api/client";
@@ -63,7 +63,13 @@ export function PluginInstallDialog({ onClose }: { onClose: () => void }) {
                 {!result && !failed && <PageLoading label="正在检查安装包…" scope="panel" />}
                 {failed && <div className="plugin-release-state is-error" role="alert">暂时无法获取插件安装包，请稍后重试。</div>}
                 {result?.status === "unpublished" && <div className="plugin-release-state">暂未提供插件安装包。</div>}
-                {release && <Button className="plugin-download-link" icon={<Download size={15} />} disabled={downloading} onClick={() => void download()}>{downloading ? "正在下载…" : "下载插件 ZIP"}</Button>}
+                {release && (
+                  <div className="plugin-release-row">
+                    <span className="plugin-release-icon" aria-hidden="true"><PackageOpen size={20} /></span>
+                    <strong className="plugin-release-name">LinkResume 岗位采集插件</strong>
+                    <Button className="plugin-download-link" variant="outline" size="sm" icon={<Download size={15} />} disabled={downloading} onClick={() => void download()}>{downloading ? "正在下载…" : "下载 ZIP"}</Button>
+                  </div>
+                )}
                 {downloadError && <p className="plugin-release-state is-error" role="alert">{downloadError}</p>}
               </div>
             </div>

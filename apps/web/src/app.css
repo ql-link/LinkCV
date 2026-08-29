@@ -1762,14 +1762,15 @@ select:not([data-slot]):focus-visible,
   position: relative;
   z-index: 20;
   display: grid;
-  min-height: 76px;
+  height: 72px;
+  min-height: 72px;
   flex: 0 0 auto;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 20px;
   border-bottom: 0;
   background: color-mix(in srgb, var(--ui-background) 76%, transparent);
-  padding: 10px 24px;
+  padding: 0 24px;
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
 }
@@ -1806,7 +1807,7 @@ select:not([data-slot]):focus-visible,
 .dashboard-nav-scroll {
   min-width: 0;
   overflow-x: auto;
-  padding: 8px 18px;
+  padding: 0 18px;
   scrollbar-width: none;
 }
 
@@ -1815,17 +1816,23 @@ select:not([data-slot]):focus-visible,
 .dashboard-nav-scroll nav { width: max-content; margin: 0 auto; }
 
 .dashboard-tabs {
-  border-color: color-mix(in srgb, var(--ui-border) 70%, transparent);
-  background: color-mix(in srgb, var(--ui-surface) 82%, transparent);
-  box-shadow: none;
+  min-height: 44px;
+  box-sizing: border-box;
+  gap: 0;
+  border-color: var(--ui-border);
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-xs);
 }
 
 .dashboard-tabs > a {
-  min-height: 40px;
-  padding-inline: 14px;
+  min-height: 32px;
+  gap: 6px;
+  padding-inline: 6px;
+  font-size: 12px;
   color: var(--ui-text-muted);
 }
 
+.dashboard-tabs > a svg { width: 14px; height: 14px; }
 .dashboard-tabs > a:hover { color: var(--ui-foreground); }
 
 .dashboard-tabs > a:active { transform: scale(0.98); }

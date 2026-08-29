@@ -68,6 +68,28 @@ describe("JobDetailPage", () => {
     expect(screen.queryByText("活动岗位")).not.toBeInTheDocument();
   });
 
+  it("编辑岗位入口保持同一详情结构并可保存标题修改", async () => {
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
+    const updatedJob = { ...activeJob, job_title: "高级 Java 开发工程师", lock_version: 3 };
+    const update = vi.spyOn(api, "updateJobDescription").mockResolvedValue({ job_description: updatedJob });
+
+    render(<JobDetailPage jobId={activeJob.id} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑岗位" }));
+    expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存修改" })).toBeInTheDocument();
+    const titleInput = screen.getByLabelText("职位名称");
+    fireEvent.change(titleInput, { target: { value: updatedJob.job_title } });
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+
+    await waitFor(() => expect(update).toHaveBeenCalledWith(activeJob.id, expect.objectContaining({
+      job_title: updatedJob.job_title,
+      base_lock_version: activeJob.lock_version,
+    })));
+    expect(await screen.findByRole("heading", { name: updatedJob.job_title, level: 2 })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "编辑岗位" })).toBeInTheDocument();
+  });
+
   it("用工类型使用固定尺寸的自定义选择框并在选择后保存", async () => {
     vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
     const updatedJob = { ...activeJob, employment_type: "full_time" as const, lock_version: 3 };

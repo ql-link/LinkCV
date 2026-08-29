@@ -1,24 +1,8 @@
 import { useMemo, useRef, useState, type DragEvent as ReactDragEvent } from "react";
-import {
-  BriefcaseBusiness,
-  CalendarDays,
-  GripVertical,
-  MoreHorizontal,
-  Plus,
-  Trophy,
-  Bell,
-} from "lucide-react";
-import { ApiRequestError, api, type InterviewCalendarColor, type JobApplicationSummary } from "@/api/client";
+import { ApiRequestError, api, type JobApplicationSummary } from "@/api/client";
 import { careerApplicationPath, navigateTo } from "../../routing";
 
 export type ProgressColumnKey = "pending" | "interview" | "hr" | "offer" | "ended";
-
-export type ProgressSummaryMetrics = {
-  active: number;
-  weekly: number;
-  followUp: number;
-  offers: number;
-};
 
 export const PROGRESS_COLUMNS: Array<{ key: ProgressColumnKey; label: string }> = [
   { key: "pending", label: "待推进" },
@@ -96,95 +80,81 @@ export function formatApplicationDateTime(value: string): string {
   }).format(new Date(value));
 }
 
+export function formatApplicationUpdatedAt(value: string, now = new Date()): string {
+  const date = new Date(value);
+  const isSameDay = (left: Date, right: Date) =>
+    left.getFullYear() === right.getFullYear()
+    && left.getMonth() === right.getMonth()
+    && left.getDate() === right.getDate();
+  const time = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  if (isSameDay(date, now)) return `今天 ${time}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (isSameDay(date, yesterday)) return `昨天 ${time}`;
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+const EMPLOYMENT_TYPE_LABELS: Record<string, string> = {
+  full_time: "全职",
+  part_time: "兼职",
+  internship: "实习",
+  contract: "合同",
+  temporary: "临时",
+};
+
+export function applicationEmploymentTypeLabel(application: JobApplicationSummary): string | null {
+  const employmentType = application.job_snapshot.employment_type;
+  if (typeof employmentType !== "string") return null;
+  const label = EMPLOYMENT_TYPE_LABELS[employmentType];
+  return typeof label === "string" ? label : null;
+}
+
+export function applicationCardStageLabel(
+  application: JobApplicationSummary,
+  columnKey: ProgressColumnKey,
+): string {
+  if (columnKey === "ended") return applicationStatusLabel(application);
+  const currentStageLabel = application.current_stage_label.trim();
+  const stageLabel = currentStageLabel || applicationStatusLabel(application);
+  const detail = application.next_session_start_at
+    ? formatApplicationListDateTime(application.next_session_start_at)
+    : applicationStatusLabel(application);
+  return `${stageLabel} · ${detail}`;
+}
+
+export function formatApplicationListDateTime(value: string): string {
+  const date = new Date(value);
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
 export function ApplicationsBoard({
   visibleApplications,
   displayMode,
-  metrics,
-  onCreate,
   onChanged,
   onNotice,
 }: {
   visibleApplications: JobApplicationSummary[];
   displayMode: "board" | "list";
-  metrics: ProgressSummaryMetrics;
-  onCreate: () => void;
   onChanged: () => Promise<void>;
   onNotice: (notice: string) => void;
 }) {
   return (
-    <>
-      <ProgressSummaryBar metrics={metrics} />
-      {displayMode === "board" && visibleApplications.length > 0 && (
-        <ProgressBoard
-          applications={visibleApplications}
-          onCreate={onCreate}
-          onChanged={onChanged}
-          onNotice={onNotice}
-        />
-      )}
-    </>
-  );
-}
-
-export function ProgressSummaryBar({
-  metrics,
-}: {
-  metrics: ProgressSummaryMetrics;
-}) {
-  const entries = [
-    {
-      icon: <BriefcaseBusiness />,
-      tone: "blue",
-      label: "进行中的进程",
-      value: metrics.active,
-      hint: "当前全部进程",
-    },
-    {
-      icon: <CalendarDays />,
-      tone: "orange",
-      label: "本周待面试",
-      value: metrics.weekly,
-      hint: "已安排场次",
-    },
-    {
-      icon: <Bell />,
-      tone: "purple",
-      label: "待跟进",
-      value: metrics.followUp,
-      hint: "需要及时跟进",
-    },
-    {
-      icon: <Trophy />,
-      tone: "green",
-      label: "已拿 Offer",
-      value: metrics.offers,
-      hint: "书面 Offer",
-    },
-  ];
-  return (
-    <section className="career-application-summary-bar" aria-label="求职进程数据概览">
-      {entries.map((entry, index) => (
-        <article key={entry.label} className={index > 0 ? "has-divider" : undefined}>
-          <span className={`career-summary-icon tone-${entry.tone}`} aria-hidden="true">{entry.icon}</span>
-          <div>
-            <small>{entry.label}</small>
-            <strong>{entry.value}</strong>
-            <p>{entry.hint}</p>
-          </div>
-        </article>
-      ))}
-    </section>
+    displayMode === "board" && visibleApplications.length > 0 ? (
+      <ProgressBoard
+        applications={visibleApplications}
+        onChanged={onChanged}
+        onNotice={onNotice}
+      />
+    ) : null
   );
 }
 
 export function ProgressBoard({
   applications,
-  onCreate,
   onChanged,
   onNotice,
 }: {
   applications: JobApplicationSummary[];
-  onCreate: () => void;
   onChanged: () => Promise<void>;
   onNotice: (notice: string) => void;
 }) {
@@ -265,7 +235,6 @@ export function ProgressBoard({
             dropTarget={dropTarget}
             advancingId={advancingId}
             canAcceptDrop={Boolean(draggingApplication && canDropApplication(draggingApplication, column.key))}
-            onCreate={onCreate}
             onDragStart={handleDragStart}
             onDragEnd={() => {
               clearDrag();
@@ -299,7 +268,6 @@ export function ProgressColumn({
   dropTarget,
   advancingId,
   canAcceptDrop,
-  onCreate,
   onDragStart,
   onDragEnd,
   onDragOver,
@@ -312,7 +280,6 @@ export function ProgressColumn({
   dropTarget: ProgressColumnKey | null;
   advancingId: string | null;
   canAcceptDrop: boolean;
-  onCreate: () => void;
   onDragStart: (item: JobApplicationSummary, event: ReactDragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
   onDragOver: (event: ReactDragEvent<HTMLDivElement>) => void;
@@ -330,10 +297,6 @@ export function ProgressColumn({
     >
       <header className="progress-column-heading">
         <h3>{column.label}<span>{column.items.length}</span></h3>
-        <div>
-          <button type="button" aria-label={`在${column.label}中新建求职进程`} onClick={onCreate}><Plus /></button>
-          <MoreHorizontal aria-hidden="true" />
-        </div>
       </header>
       <div className="progress-column-cards">
         {column.items.map((item) => (
@@ -351,7 +314,6 @@ export function ProgressColumn({
         ))}
         {!column.items.length && <p className="pipeline-empty">暂无进程</p>}
       </div>
-      <AddProgressAction onClick={onCreate} />
     </div>
   );
 }
@@ -375,20 +337,8 @@ export function ProgressCard({
   onDragEnd: () => void;
   onOpen: () => void;
 }) {
-  const timeLabel = item.next_session_start_at
-    ? `下次：${formatApplicationDateTime(item.next_session_start_at)}`
-    : item.applied_at
-      ? `投递 ${formatApplicationDate(item.applied_at)}`
-      : "暂未排期";
-  const content = (
-    <>
-      <CompanyLogo item={{ company: item.company_name_snapshot, logo: item.company_name_snapshot.slice(0, 1), color: item.calendar_color }} />
-      <span className="progress-card-copy">
-        <strong title={item.company_name_snapshot}>{item.company_name_snapshot}</strong>
-        <small title={item.job_title_snapshot}>{item.job_title_snapshot}</small>
-      </span>
-    </>
-  );
+  const employmentTypeLabel = applicationEmploymentTypeLabel(item);
+  const stageLabel = applicationCardStageLabel(item, columnKey);
   return (
     <article
       className={`progress-card${draggable ? " is-draggable" : ""}${isDragging ? " is-dragging" : ""}${isAdvancing ? " is-advancing" : ""}`}
@@ -399,46 +349,17 @@ export function ProgressCard({
       onDragStart={(event) => onDragStart(item, event)}
       onDragEnd={onDragEnd}
     >
-      <div className="progress-card-main-row">
-        <button type="button" className="progress-card-open" aria-label={`查看 ${item.company_name_snapshot} ${item.job_title_snapshot} 求职进程`} onClick={onOpen}>{content}</button>
-        <StageBadge item={item} columnKey={columnKey} />
-        <span className="progress-card-actions" aria-hidden="true"><GripVertical /><MoreHorizontal /></span>
-      </div>
-      <div className="progress-card-meta">
-        <time className="progress-card-time">{timeLabel}</time>
-        <span className="progress-card-status">{applicationStatusLabel(item)}</span>
-      </div>
+      <button type="button" className="progress-card-open" aria-label={`查看 ${item.company_name_snapshot} ${item.job_title_snapshot} 求职进程`} onClick={onOpen}>
+        <span className="progress-card-company-row">
+          <strong className="progress-card-company" title={item.company_name_snapshot}>{item.company_name_snapshot}</strong>
+          {employmentTypeLabel && <span className="progress-card-employment-type">{employmentTypeLabel}</span>}
+        </span>
+        <strong className="progress-card-job-title" title={item.job_title_snapshot}>{item.job_title_snapshot}</strong>
+        <span className={`progress-card-stage${columnKey === "ended" ? " is-ended" : ""}`}>{stageLabel}</span>
+        <time className="progress-card-updated-at" dateTime={item.updated_at}>{formatApplicationUpdatedAt(item.updated_at)}</time>
+      </button>
     </article>
   );
-}
-
-export function StageBadge({ item, columnKey }: { item: JobApplicationSummary; columnKey: ProgressColumnKey }) {
-  const interviewLabel = item.current_stage_label && item.current_stage_label !== "已结束"
-    ? item.current_stage_label
-    : interviewRoundLabel(item.current_round_no ?? 1);
-  const label = columnKey === "pending"
-    ? "待推进"
-    : columnKey === "interview"
-      ? interviewLabel
-      : columnKey === "hr"
-        ? "HR 面"
-        : columnKey === "offer"
-          ? "Offer"
-          : "已结束";
-  const tone = columnKey === "pending" || columnKey === "ended"
-    ? "muted"
-    : columnKey === "interview"
-      ? (item.current_round_no ?? 1) <= 1 ? "blue" : "purple"
-      : columnKey === "hr" ? "hr" : "offer";
-  return <span className={`stage-badge stage-badge-${tone}`}>{label}</span>;
-}
-
-export function AddProgressAction({ onClick }: { onClick: () => void }) {
-  return <button type="button" className="career-pipeline-add" onClick={onClick}><Plus />添加进程</button>;
-}
-
-function CompanyLogo({ item }: { item: { company: string; logo: string; color: InterviewCalendarColor } }) {
-  return <span className={`company-logo calendar-${item.color}`} aria-hidden="true">{item.logo}</span>;
 }
 
 function applicationTransitionError(error: unknown): string {
