@@ -1,3 +1,4 @@
+from copy import deepcopy
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -840,3 +841,238 @@ def test_smart_one_page_is_persisted_and_restored_with_versions() -> None:
 
         assert restored.status_code == 200
         assert restored.json()["resume"]["style"]["portable"]["smart_one_page"] is True
+
+
+def test_update_uses_server_template_snapshot_and_retains_known_scoped_settings() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        original = create_resume(client, app).json()["resume"]
+        forged_style = deepcopy(original["style"])
+        forged_style["portable"]["smart_one_page"] = True
+        forged_style["template_snapshot"]["template_key"] = "forged-template-cn"
+        forged_style["template_snapshot"]["tokens"]["accent_color"] = "#123456"
+
+        updated = client.put(
+            f"/api/resumes/{original['id']}",
+            json={"style": forged_style, "base_lock_version": 1},
+        )
+
+        assert updated.status_code == 200
+        saved = updated.json()["resume"]
+        assert saved["style"]["template_snapshot"] == original["style"]["template_snapshot"]
+        assert set(saved["style"]["template_scoped"]) == set(
+            original["style"]["template_scoped"]
+        )
+        assert saved["style"]["portable"]["smart_one_page"] is True
+
+
+def test_update_rejects_new_template_scoped_key_without_writing() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        original = create_resume(client, app).json()["resume"]
+        forged_style = deepcopy(original["style"])
+        forged_style["template_scoped"]["forged-template-cn"] = {}
+
+        rejected = client.put(
+            f"/api/resumes/{original['id']}",
+            json={"style": forged_style, "base_lock_version": 1},
+        )
+
+        assert rejected.status_code == 400
+        assert rejected.json() == {"error": "INVALID_RESUME_STYLE"}
+        current = client.get(f"/api/resumes/{original['id']}").json()["resume"]
+        assert current["style"] == original["style"]
+        assert current["lock_version"] == original["lock_version"]
+
+
+def test_update_layout_failure_keeps_current_snapshot(monkeypatch) -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        original = create_resume(client, app).json()["resume"]
+
+        def reject_layout(*_args, **_kwargs):
+            raise ValueError("layout cannot render")
+
+        monkeypatch.setattr(
+            resume_service,
+            "validate_resume_template_composition",
+            reject_layout,
+        )
+        rejected = client.put(
+            f"/api/resumes/{original['id']}",
+            json={"title": "不会保存", "base_lock_version": 1},
+        )
+
+        assert rejected.status_code == 422
+        assert rejected.json() == {"error": "TEMPLATE_COMPOSITION_INVALID"}
+        current = client.get(f"/api/resumes/{original['id']}").json()["resume"]
+        assert current["title"] == original["title"]
+        assert current["data"] == original["data"]
+        assert current["style"] == original["style"]
+        assert current["lock_version"] == original["lock_version"]
+
+
+def test_apply_template_round_trip_preserves_content_hash() -> None:
+    app = build_app()
+    target_style = default_resume_style().model_copy(
+        update={"template_key": "round-trip-template-cn"}
+    )
+    with app.state.session_factory() as session:
+        target_data, target_definition = canonical_template_payload(
+            key="round-trip-template-cn", style=target_style
+        )
+        target = ResumeTemplate(
+            key="round-trip-template-cn",
+            name="往返模板",
+            description="内容哈希测试模板",
+            data_json=target_data,
+            style_json=target_definition,
+            is_active=1,
+        )
+        session.add(target)
+        session.commit()
+        target_id = str(target.id)
+
+    with TestClient(app) as client:
+        register(client)
+        original = create_resume(client, app).json()["resume"]
+        edited_data = set_headline(deepcopy(original["data"]), "往返内容守恒")
+        saved = client.put(
+            f"/api/resumes/{original['id']}",
+            json={"data": edited_data, "base_lock_version": 1},
+        ).json()["resume"]
+        content_hash = resume_service.parse_persisted_resume_snapshot(
+            saved["data"], saved["style"]
+        ).content_sha256
+
+        switched = client.post(
+            f"/api/resumes/{original['id']}/apply-template",
+            json={"template_id": target_id, "base_lock_version": 2},
+        )
+        assert switched.status_code == 200
+        switched_resume = switched.json()["resume"]
+        switched_hash = resume_service.parse_persisted_resume_snapshot(
+            switched_resume["data"], switched_resume["style"]
+        ).content_sha256
+
+        switched_back = client.post(
+            f"/api/resumes/{original['id']}/apply-template",
+            json={
+                "template_id": app.state.test_template_id,
+                "base_lock_version": 3,
+            },
+        )
+        assert switched_back.status_code == 200
+        restored_resume = switched_back.json()["resume"]
+        restored_hash = resume_service.parse_persisted_resume_snapshot(
+            restored_resume["data"], restored_resume["style"]
+        ).content_sha256
+
+        assert switched_hash == content_hash
+        assert restored_hash == content_hash
+        assert restored_resume["data"] == edited_data
+
+
+def test_apply_template_rejects_template_row_key_mismatch_without_writing() -> None:
+    app = build_app()
+    with app.state.session_factory() as session:
+        target_data, target_definition = canonical_template_payload(
+            key="definition-template-cn"
+        )
+        target = ResumeTemplate(
+            key="row-template-cn",
+            name="身份不一致模板",
+            description=None,
+            data_json=target_data,
+            style_json=target_definition,
+            is_active=1,
+        )
+        session.add(target)
+        session.commit()
+        target_id = str(target.id)
+
+    with TestClient(app) as client:
+        register(client)
+        original = create_resume(client, app).json()["resume"]
+        rejected = client.post(
+            f"/api/resumes/{original['id']}/apply-template",
+            json={"template_id": target_id, "base_lock_version": 1},
+        )
+
+        assert rejected.status_code == 422
+        assert rejected.json() == {"error": "TEMPLATE_INACTIVE"}
+        current = client.get(f"/api/resumes/{original['id']}").json()["resume"]
+        assert current["template_id"] == original["template_id"]
+        assert current["data"] == original["data"]
+        assert current["style"] == original["style"]
+        assert current["lock_version"] == original["lock_version"]
+
+
+def test_restore_uses_version_template_snapshot_after_template_row_changes() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        original = create_resume(client, app).json()["resume"]
+        version = client.post(f"/api/resumes/{original['id']}/versions").json()[
+            "version"
+        ]
+        version_style = deepcopy(version["style"])
+
+        with app.state.session_factory() as session:
+            template = session.get(ResumeTemplate, int(app.state.test_template_id))
+            assert template is not None
+            changed_style = deepcopy(template.style_json)
+            changed_style["tokens"]["accent_color"] = "#123456"
+            template.style_json = changed_style
+            session.commit()
+
+        changed = client.put(
+            f"/api/resumes/{original['id']}",
+            json={
+                "title": "当前草稿",
+                "base_lock_version": original["lock_version"],
+            },
+        )
+        assert changed.status_code == 200
+
+        restored = client.post(f"/api/resumes/{original['id']}/versions/2/restore")
+
+        assert restored.status_code == 200
+        assert (
+            restored.json()["resume"]["style"]["template_snapshot"]
+            == version_style["template_snapshot"]
+        )
+
+
+def test_restore_rejects_version_template_key_mismatch_without_writing() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        original = create_resume(client, app).json()["resume"]
+        created_version = client.post(
+            f"/api/resumes/{original['id']}/versions"
+        ).json()["version"]
+        with app.state.session_factory() as session:
+            version = session.scalar(
+                select(ResumeVersion).where(
+                    ResumeVersion.id == int(created_version["id"])
+                )
+            )
+            assert version is not None
+            changed_style = deepcopy(version.style_json)
+            changed_style["template_snapshot"]["template_key"] = "other-template-cn"
+            version.style_json = changed_style
+            session.commit()
+
+        rejected = client.post(f"/api/resumes/{original['id']}/versions/2/restore")
+
+        assert rejected.status_code == 422
+        assert rejected.json() == {"error": "RESUME_VERSION_DATA_INVALID"}
+        current = client.get(f"/api/resumes/{original['id']}").json()["resume"]
+        assert current["template_id"] == original["template_id"]
+        assert current["data"] == original["data"]
+        assert current["style"] == original["style"]
+        assert current["lock_version"] == original["lock_version"]

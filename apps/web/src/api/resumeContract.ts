@@ -1,5 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import { inlineIconMarkdown, isInlineIconName } from "../lib/resumeInlineIcon";
+import type { InlineIconName } from "../lib/resumeInlineIcon";
 import { isResumeEmailLink } from "../lib/resumeLink";
 import { inlineFontSizeOpenMarker, INLINE_FONT_SIZE_CLOSE_MARKER, normalizeInlineFontSize } from "../lib/resumeInlineStyle";
 
@@ -194,6 +195,11 @@ export type CanonicalTextRun = {
   style: CanonicalInlineStyle;
 };
 
+export type CanonicalInlineIcon = {
+  inline_type: "icon";
+  name: InlineIconName;
+};
+
 export type CanonicalMediaReference = CanonicalSourceReferenced & {
   media_kind: "avatar" | "resume_image" | "inline_image";
   src: string;
@@ -212,11 +218,11 @@ export type CanonicalInlineMedia = CanonicalMediaReference & {
 
 export type CanonicalParagraphBlock = CanonicalSourceReferenced & {
   block_type: "paragraph";
-  runs: Array<CanonicalTextRun | CanonicalInlineMedia>;
+  runs: Array<CanonicalTextRun | CanonicalInlineIcon | CanonicalInlineMedia>;
 };
 
 export type CanonicalListItem = CanonicalSourceReferenced & {
-  runs: Array<CanonicalTextRun | CanonicalInlineMedia>;
+  runs: Array<CanonicalTextRun | CanonicalInlineIcon | CanonicalInlineMedia>;
 };
 
 export type CanonicalListBlock = {
@@ -234,7 +240,10 @@ export type CanonicalMediaBlock = CanonicalMediaReference & {
 };
 
 export type CanonicalRowCell = CanonicalSourceReferenced & {
-  blocks: Array<CanonicalParagraphBlock | CanonicalListBlock | CanonicalMediaBlock>;
+  // v1 row cells are projected to one direct TipTap paragraph.  Keep the
+  // runtime type as an array for ergonomic JSON construction; the shared
+  // schema and backend enforce minItems=maxItems=1 and paragraph-only items.
+  blocks: CanonicalParagraphBlock[];
 };
 
 export type CanonicalRowBlock = CanonicalSourceReferenced & {
@@ -263,6 +272,8 @@ export type CanonicalResumeEntry = CanonicalSourceReferenced & {
 export type CanonicalResumeSection = CanonicalSourceReferenced & {
   semantic_kind: "profile" | "work" | "education" | "project" | "skills" | "activity" | "interests" | "certificates" | "awards" | "languages" | "custom";
   title: CanonicalTextValue | null;
+  /** Optional for canonical rows written before structured title icons. */
+  title_icon?: CanonicalInlineIcon | null;
   entries: CanonicalResumeEntry[];
   blocks: CanonicalContentBlock[];
 };
@@ -778,7 +789,10 @@ function semanticTitle(
   )?.display_title ?? fallback;
 }
 
-function canonicalRunToMarkdown(run: CanonicalTextRun | CanonicalInlineMedia) {
+function canonicalRunToMarkdown(
+  run: CanonicalTextRun | CanonicalInlineIcon | CanonicalInlineMedia,
+) {
+  if (run.inline_type === "icon") return inlineIconMarkdown(run.name);
   if (run.inline_type === "media") {
     if (!run.src || run.src.startsWith("data:") || run.src.startsWith("blob:")) return "";
     return `![${run.alt ?? "行内图片"}](${run.src})`;
@@ -823,7 +837,13 @@ function canonicalDocumentToMarkdown(document: CanonicalResumeDocument) {
     lines.push("", `![${identity.avatar.alt ?? "简历头像"}](${identity.avatar.src} "linkcv-avatar:${identity.avatar.width ?? 96}")`);
   }
   for (const section of document.sections) {
-    if (section.title?.value) lines.push("", `## ${section.title.value}`);
+    const title = section.title?.value ?? "";
+    const titleIcon = section.title_icon && isInlineIconName(section.title_icon.name)
+      ? inlineIconMarkdown(section.title_icon.name)
+      : "";
+    if (title || titleIcon) {
+      lines.push("", `## ${[titleIcon, title].filter(Boolean).join(" ")}`);
+    }
     for (const entry of section.entries) {
       const heading = entry.fields.name?.value ?? entry.fields.organization?.value ?? entry.fields.role?.value;
       if (heading) lines.push("", `### ${heading}`);
@@ -1008,8 +1028,10 @@ export function resumeDocumentFromMarkdown(
     const suffix = (hash >>> 0).toString(16).padStart(8, "0");
     return `blk_${suffix}${suffix}`;
   };
+  // Keep marker-looking title text in the legacy adapter.  The canonical
+  // cutover owns the structured ``title_icon`` field; until then removing a
+  // marker here would make a legal heading icon impossible to round-trip.
   const cleanTitle = (value: string) => value
-    .replace(/:icon\[[^\]]+\]:/gu, "")
     .replace(/^\s+|\s+$/gu, "") || "未命名章节";
   const previousById = new Map(previous.semantic_sections.map((section) => [section.custom_section_id, section]));
   const titleCounts = new Map<string, number>();

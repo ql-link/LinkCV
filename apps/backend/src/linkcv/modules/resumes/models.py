@@ -289,6 +289,11 @@ class DocumentParseTask(Base):
         nullable=True,
         comment="简历导入冻结模板；Dataset 任务为空",
     )
+    selected_template_style_json: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON(),
+        nullable=True,
+        comment="简历导入受理时冻结的 TemplateDefinition；Dataset 任务为空",
+    )
     source_graph_object_name: Mapped[str | None] = mapped_column(
         String(512),
         nullable=True,

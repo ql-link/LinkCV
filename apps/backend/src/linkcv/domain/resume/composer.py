@@ -135,6 +135,85 @@ _PHONE_RE = re.compile(r"(?<!\d)(?:\+?\d[\d ()-]{6,}\d)(?!\d)")
 _EMAIL_RE = re.compile(r"(?i)(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+(?![\w.-])")
 _URL_RE = re.compile(r"(?i)(?<![\w])(?:https?://|www\.)[^\s|｜<>]+")
 _CONTACT_SPLIT_RE = re.compile(r"\s*(?:\|+|｜+|·{1,3}|•{1,3})\s*")
+_CONTACT_LABEL_RE = re.compile(
+    r"^(?:电话|手机|tel|mobile|邮箱|email|网址|website|个人网站|个人主页|"
+    r"地址|所在地|location)"
+    r"\s*[:：]\s*",
+    re.IGNORECASE,
+)
+_CONTACT_TRAILING_PUNCTUATION = ".,;；，。)]}》）"
+
+# A paragraph is only a name fallback when it has the compact shape of a
+# person's name.  The lexical exclusions are intentionally conservative: a
+# heading-like or prose-like preamble must remain visible content instead of
+# being promoted to the identity header.
+_DOCUMENT_TITLE_ALIASES = frozenset(
+    {
+        "简历",
+        "个人简历",
+        "求职简历",
+        "个人履历",
+        "个人资料",
+        "个人信息",
+        "基本信息",
+        "联系方式",
+        "resume",
+        "cv",
+        "curriculum vitae",
+        "about me",
+        "personal profile",
+    }
+)
+_IDENTITY_NAME_REJECT_TERMS = frozenset(
+    {
+        "个人",
+        "信息",
+        "联系方式",
+        "简历",
+        "履历",
+        "简介",
+        "总结",
+        "经历",
+        "教育",
+        "工作",
+        "项目",
+        "技能",
+        "活动",
+        "证书",
+        "奖项",
+        "语言",
+        "正文",
+        "内容",
+        "示例",
+        "文本",
+        "说明",
+        "介绍",
+        "求职",
+        "应聘",
+        "工程师",
+        "开发",
+        "设计",
+        "经理",
+        "负责人",
+        "student",
+        "teacher",
+        "engineer",
+        "developer",
+        "designer",
+        "manager",
+        "experience",
+        "education",
+        "project",
+        "skill",
+        "profile",
+        "summary",
+        "objective",
+    }
+)
+_CJK_NAME_RE = re.compile(r"^[\u3400-\u4dbf\u4e00-\u9fff]{2,4}$")
+_LATIN_NAME_RE = re.compile(
+    r"^[A-Za-z][A-Za-z.'-]{0,31}(?:\s+[A-Za-z][A-Za-z.'-]{0,31}){1,3}$"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -313,15 +392,148 @@ def _contact_candidates(text: str) -> list[tuple[str, str]]:
         else:
             continue
         # Labels are useful to a renderer but are not part of the value.
-        value = re.sub(
-            r"^(?:电话|手机|tel|mobile|邮箱|email|网址|website|地址|所在地|location)\s*[:：]\s*",
-            "",
-            value,
-            flags=re.I,
-        )
+        value = _CONTACT_LABEL_RE.sub("", value, count=1)
         if value:
             candidates.append((kind, value))
     return candidates
+
+
+def _is_compact_contact_line(
+    text: str, candidates: list[tuple[str, str]]
+) -> bool:
+    """Tell a paragraph contact line from prose containing a contact token."""
+
+    pieces = [piece.strip() for piece in _CONTACT_SPLIT_RE.split(text) if piece.strip()]
+    if len(pieces) != len(candidates):
+        return False
+    for piece, (kind, _value) in zip(pieces, candidates, strict=True):
+        has_label = bool(_CONTACT_LABEL_RE.match(piece))
+        value = _CONTACT_LABEL_RE.sub("", piece, count=1).strip()
+        value = value.strip("，,;；")
+        token = value.rstrip(_CONTACT_TRAILING_PUNCTUATION)
+        if kind == "email":
+            if not _EMAIL_RE.fullmatch(token):
+                return False
+        elif kind in {"website", "github", "linkedin"}:
+            if not _URL_RE.fullmatch(token):
+                return False
+        elif kind == "phone":
+            if not _PHONE_RE.fullmatch(token):
+                return False
+        elif kind == "location":
+            # Locations are inherently free-form, so require the explicit
+            # contact label that made the deterministic extraction possible.
+            if not has_label:
+                return False
+        else:
+            return False
+    return True
+
+
+def _automatic_contact_candidates(view: _SourceView) -> list[tuple[str, str]]:
+    """Return contacts only when the source kind or line shape is trusted."""
+
+    candidates = _contact_candidates(view.text)
+    if view.leaf.leaf_kind == "contact":
+        return candidates
+    if view.leaf.leaf_kind != "paragraph" or not candidates:
+        return []
+    # Keep paragraph auto-detection deterministic and avoid treating prose
+    # such as "项目主页见 https://..." as a contact value.
+    if not any(
+        pattern.search(view.text) for pattern in (_EMAIL_RE, _URL_RE, _PHONE_RE)
+    ):
+        return []
+    return candidates if _is_compact_contact_line(view.text, candidates) else []
+
+
+def _is_identity_name_candidate(view: _SourceView) -> bool:
+    """Return whether a leading paragraph has a conservative name shape."""
+
+    if view.leaf.leaf_kind != "paragraph":
+        return False
+    value = view.text
+    if not value or "\n" in value or len(value) > 40:
+        return False
+    if any(pattern.search(value) for pattern in (_EMAIL_RE, _URL_RE, _PHONE_RE)):
+        return False
+    normalized = _normalise_title(value)
+    if normalized in _DOCUMENT_TITLE_ALIASES or _inferred_kind(value) is not None:
+        return False
+    if any(term in normalized for term in _IDENTITY_NAME_REJECT_TERMS):
+        return False
+    return bool(_CJK_NAME_RE.fullmatch(value) or _LATIN_NAME_RE.fullmatch(value))
+
+
+def _is_recognized_section_title(
+    view: _SourceView,
+    by_source: dict[str, tuple[SparseAnnotation, ...]],
+) -> bool:
+    """Return whether a source starts a semantically known section."""
+
+    if any(
+        annotation.role == "section_title"
+        and annotation.semantic_kind is not None
+        for annotation in by_source.get(view.source_id, ())
+    ):
+        return True
+    return view.leaf.leaf_kind == "heading" and _inferred_kind(view.text) is not None
+
+
+def _identity_preamble(
+    views: list[_SourceView],
+    by_source: dict[str, tuple[SparseAnnotation, ...]],
+    *,
+    identity_source_id: str | None,
+) -> tuple[set[str], str | None]:
+    """Return the leading identity/contact sources and fallback name source.
+
+    The first recognized section title bounds the preamble.  Within that
+    bound, only blank leaves, the existing first-heading identity, compact
+    contacts, and compact name-shaped paragraphs are considered preamble.  A
+    paragraph fallback is accepted only when that same run has contact
+    evidence.  A prose paragraph or unrelated heading closes the region,
+    preventing later body links from being promoted to identity contacts.
+    """
+
+    first_section_ordinal = next(
+        (
+            view.ordinal
+            for view in views
+            if _is_recognized_section_title(view, by_source)
+        ),
+        len(views),
+    )
+    preamble_source_ids: set[str] = set()
+    fallback_name_source_id: str | None = None
+    has_compact_contact = False
+    for view in views:
+        if view.ordinal >= first_section_ordinal:
+            break
+        if view.source_id == identity_source_id:
+            preamble_source_ids.add(view.source_id)
+            continue
+        if not view.text:
+            preamble_source_ids.add(view.source_id)
+            continue
+        if _automatic_contact_candidates(view):
+            preamble_source_ids.add(view.source_id)
+            has_compact_contact = True
+            continue
+        if _is_identity_name_candidate(view):
+            preamble_source_ids.add(view.source_id)
+            if fallback_name_source_id is None:
+                fallback_name_source_id = view.source_id
+            continue
+        # A non-contact paragraph/list or a second heading is body/document
+        # content.  Do not scan beyond it for a later identity or contact.
+        break
+    # A short paragraph can look like a name by shape alone (for example a
+    # two-character Chinese phrase).  Require independent contact evidence in
+    # the same continuous preamble before promoting it to identity.
+    if not has_compact_contact:
+        fallback_name_source_id = None
+    return preamble_source_ids, fallback_name_source_id
 
 
 def _contact_kind(
@@ -436,6 +648,13 @@ def compose_canonical_resume_document(
         first = views[0]
         if first.leaf.leaf_kind == "heading" and _inferred_kind(first.text) is None:
             identity_source_id = first.source_id
+    identity_preamble_sources, fallback_name_source_id = _identity_preamble(
+        views,
+        by_source,
+        identity_source_id=identity_source_id,
+    )
+    if identity_source_id is None:
+        identity_source_id = fallback_name_source_id
 
     consumed: set[str] = set()
     disposition_targets: dict[str, list[str]] = defaultdict(list)
@@ -471,20 +690,11 @@ def compose_canonical_resume_document(
             value = raw.strip() if raw is not None and raw.strip() else view.text
             if value:
                 candidates.append((annotation.field_key, value, None))
-        if not explicit and view.leaf.leaf_kind == "contact":
+        if not explicit and view.source_id in identity_preamble_sources:
             candidates = [
-                (kind, value, None) for kind, value in _contact_candidates(view.text)
+                (kind, value, None)
+                for kind, value in _automatic_contact_candidates(view)
             ]
-        if not explicit and not candidates and view.leaf.leaf_kind == "paragraph":
-            auto = _contact_candidates(view.text)
-            # Do not steal ordinary body text merely because it contains a
-            # digit; a line must have a recognizable contact token.
-            if auto and (
-                _EMAIL_RE.search(view.text)
-                or _URL_RE.search(view.text)
-                or _PHONE_RE.search(view.text)
-            ):
-                candidates = [(kind, value, None) for kind, value in auto]
         if not candidates:
             continue
         for field_key, value, label in candidates:
@@ -612,8 +822,13 @@ def compose_canonical_resume_document(
             item.role == "section_title" for item in source_annotations
         )
         kind = _annotation_kind(view, by_source)
+        # Parser heading metadata is not sufficient to establish a section
+        # boundary: entry-internal fields can be emitted as headings too.  Once
+        # a section exists, only an explicit sparse section title or a heading
+        # with a known semantic kind starts another section.  Keep the
+        # current-is-none fallback for a genuine custom first section.
         if view.leaf.leaf_kind == "heading" and (
-            explicit_title or view.heading_level in {None, 1, 2} or current is None
+            current is None or _is_recognized_section_title(view, by_source)
         ):
             title = view.text or None
             current = new_section(

@@ -1,13 +1,20 @@
 import asyncio
+from copy import deepcopy
 from unittest.mock import Mock
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
+from linkcv.application.resumes.commands import CreateResumeCommand
+from linkcv.application.resumes.service import (
+    persist_resume_with_initial_version,
+    resume_slot_count,
+)
 from linkcv.core.config import Settings
 from linkcv.domain.resume import (
     CanonicalResumeDocument,
+    ResumePresentation,
     SourceGraph,
     SparseResumeAnnotations,
 )
@@ -160,9 +167,11 @@ class RecordingImportService:
             with self._session_factory() as db:
                 template = db.get(ResumeTemplate, self._template_id)
                 assert template is not None
-                style = dict(template.style_json)
-                style["accent_color"] = "#123456"
+                style = deepcopy(template.style_json)
+                assert isinstance(style["tokens"], dict)
+                style["tokens"]["accent_color"] = "#123456"
                 template.style_json = style
+                template.is_active = 0
                 db.commit()
         data, _ = canonical_resume_payload()
         return ParsedImportResult(
@@ -226,7 +235,7 @@ def build_processor(
             style=legacy_style,
         )
         template = ResumeTemplate(
-            key="worker-template",
+            key=template_key,
             name="Worker 模板",
             data_json=template_data,
             style_json=template_style,
@@ -241,6 +250,7 @@ def build_processor(
             file_format="md",
             object_name=f"users/{user.id}/resume-imports/task/resume.md",
             selected_template_id=template.id,
+            selected_template_style_json=template_style,
             upload_status="succeeded",
             upload_duration_ms=5,
             parse_status="processing",
@@ -274,6 +284,108 @@ def test_worker_creates_one_resume_and_repeated_delivery_is_idempotent() -> None
             resumes[0].style_json["template_snapshot"]["tokens"]["accent_color"]
             == "#315C6B"
         )
+
+
+@pytest.mark.parametrize(
+    ("existing_count", "expected_status", "expected_resume_count"),
+    [(9, "succeeded", 10), (10, "failed", 10)],
+)
+def test_worker_keeps_final_resume_count_with_active_task_placeholder(
+    existing_count: int,
+    expected_status: str,
+    expected_resume_count: int,
+) -> None:
+    app, _storage, processor, import_id, template_id = build_processor()
+
+    with app.state.session_factory() as db:
+        task = db.get(DocumentParseTask, import_id)
+        template = db.get(ResumeTemplate, template_id)
+        assert task is not None
+        assert template is not None
+        data, style = canonical_resume_payload(key=template.key)
+        for number in range(existing_count):
+            persist_resume_with_initial_version(
+                CreateResumeCommand(
+                    user_id=task.user_id,
+                    title=f"existing-{number}",
+                    data=CanonicalResumeDocument.model_validate(data),
+                    style=ResumePresentation.model_validate(style),
+                    source_type="template",
+                    template_id=template.id,
+                ),
+                db,
+            )
+        db.commit()
+
+    asyncio.run(processor.process(import_id=import_id, template_id=template_id))
+
+    with app.state.session_factory() as db:
+        task = db.get(DocumentParseTask, import_id)
+        assert task is not None
+        assert task.parse_status == expected_status
+        assert db.scalar(select(Resume.id).order_by(Resume.id.desc()).limit(1)) is not None
+        assert len(db.scalars(select(Resume)).all()) == expected_resume_count
+
+
+def test_worker_serializes_concurrent_finalization_at_capacity() -> None:
+    app, storage, processor, import_id, template_id = build_processor()
+
+    with app.state.session_factory() as db:
+        task = db.get(DocumentParseTask, import_id)
+        template = db.get(ResumeTemplate, template_id)
+        assert task is not None
+        assert template is not None
+        data, style = canonical_resume_payload(key=template.key)
+        for number in range(9):
+            persist_resume_with_initial_version(
+                CreateResumeCommand(
+                    user_id=task.user_id,
+                    title=f"concurrent-existing-{number}",
+                    data=CanonicalResumeDocument.model_validate(data),
+                    style=ResumePresentation.model_validate(style),
+                    source_type="template",
+                    template_id=template.id,
+                ),
+                db,
+            )
+        second_task = DocumentParseTask(
+            source_type=RESUME_IMPORT_SOURCE_TYPE,
+            user_id=task.user_id,
+            file_name="second.md",
+            file_format="md",
+            object_name=(
+                f"users/{task.user_id}/resume-imports/second/source/second.md"
+            ),
+            selected_template_id=template.id,
+            selected_template_style_json=deepcopy(template.style_json),
+            upload_status="succeeded",
+            upload_duration_ms=5,
+            parse_status="processing",
+        )
+        db.add(second_task)
+        db.commit()
+        second_import_id = second_task.id
+        storage.objects[second_task.object_name] = b"# Second"
+
+    async def process_both() -> None:
+        await asyncio.gather(
+            processor.process(import_id=import_id, template_id=template_id),
+            processor.process(import_id=second_import_id, template_id=template_id),
+        )
+
+    asyncio.run(process_both())
+
+    with app.state.session_factory() as db:
+        tasks = db.scalars(
+            select(DocumentParseTask)
+            .where(DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE)
+            .order_by(DocumentParseTask.id)
+        ).all()
+        assert [task.parse_status for task in tasks] == ["failed", "succeeded"]
+        assert tasks[0].failure_reason == "quota_exceeded"
+        assert tasks[1].failure_reason is None
+        assert len(db.scalars(select(Resume)).all()) == 10
+        assert resume_slot_count(db, tasks[0].user_id) == 10
 
 
 def test_worker_logs_safe_stage_chain(caplog) -> None:
@@ -537,7 +649,7 @@ def test_worker_keeps_template_projection_out_of_canonical_parser(
         assert record.parse_status == "succeeded"
 
 
-def test_template_change_during_parse_fails_closed_without_creating_resume() -> None:
+def test_template_change_during_parse_uses_frozen_snapshot() -> None:
     app, _storage, processor, import_id, template_id = build_processor()
     service = RecordingImportService(
         session_factory=app.state.session_factory,
@@ -551,9 +663,13 @@ def test_template_change_during_parse_fails_closed_without_creating_resume() -> 
     with app.state.session_factory() as db:
         record = db.get(DocumentParseTask, import_id)
         assert record is not None
-        assert record.parse_status == "failed"
-        assert record.failure_reason == "internal_error"
-        assert db.scalar(select(Resume.id)) is None
+        assert record.parse_status == "succeeded"
+        resume = db.scalar(select(Resume))
+        assert resume is not None
+        assert (
+            resume.style_json["template_snapshot"]["tokens"]["accent_color"]
+            == "#315C6B"
+        )
 
 
 def test_invalid_final_document_maps_to_content_invalid_without_resume() -> None:

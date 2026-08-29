@@ -108,6 +108,58 @@ def paragraph(node_id: str, value: str) -> dict[str, object]:
     }
 
 
+def marked_collapsed_paragraph(
+    node_id: str,
+    *,
+    opener: str,
+    body: str,
+    closer: str,
+    mark: str,
+    source_ref: str,
+) -> dict[str, object]:
+    payload = paragraph(node_id, "placeholder")
+    payload["source_refs"] = [source_ref]
+    style = {"color": None, "font_size_pt": None, "highlight_color": None}
+    payload["runs"] = [
+        {
+            "inline_type": "text",
+            "text": opener,
+            "marks": [],
+            "href": None,
+            "style": style,
+        },
+        {
+            "inline_type": "text",
+            "text": "\n",
+            "marks": [],
+            "href": None,
+            "style": style,
+        },
+        {
+            "inline_type": "text",
+            "text": body,
+            "marks": [mark],
+            "href": None,
+            "style": style,
+        },
+        {
+            "inline_type": "text",
+            "text": "\n",
+            "marks": [],
+            "href": None,
+            "style": style,
+        },
+        {
+            "inline_type": "text",
+            "text": closer,
+            "marks": [],
+            "href": None,
+            "style": style,
+        },
+    ]
+    return payload
+
+
 class Rows:
     def __init__(self, rows: list[dict[str, object]]) -> None:
         self.rows = rows
@@ -184,9 +236,33 @@ def test_0048_recomposes_flattened_pair_before_any_write() -> None:
     document["sections"] = [section]
     style = template_style("administrative-sidebar-cn")
     connection = Connection(
-        templates=[{"id": 1, "key": style["template_key"], "data_json": blank_canonical_document(seed="template").model_dump(mode="json"), "style_json": style}],
-        resumes=[{"id": 2, "template_id": 1, "data_json": document, "style_json": presentation(style)}],
-        versions=[{"id": 3, "resume_id": 2, "template_id": 1, "data_json": document, "style_json": presentation(style)}],
+        templates=[
+            {
+                "id": 1,
+                "key": style["template_key"],
+                "data_json": blank_canonical_document(seed="template").model_dump(
+                    mode="json"
+                ),
+                "style_json": style,
+            }
+        ],
+        resumes=[
+            {
+                "id": 2,
+                "template_id": 1,
+                "data_json": document,
+                "style_json": presentation(style),
+            }
+        ],
+        versions=[
+            {
+                "id": 3,
+                "resume_id": 2,
+                "template_id": 1,
+                "data_json": document,
+                "style_json": presentation(style),
+            }
+        ],
     )
     payloads = revision._preflight(connection)
 
@@ -195,9 +271,122 @@ def test_0048_recomposes_flattened_pair_before_any_write() -> None:
     assert row["block_type"] == "row"
     assert row["row_kind"] == "pair"
     assert row["left_width_percent"] == 64
-    assert [cell["blocks"][0]["runs"][0]["text"] for cell in row["cells"]] == ["左侧", "右侧"]
+    assert [cell["blocks"][0]["runs"][0]["text"] for cell in row["cells"]] == [
+        "左侧",
+        "右侧",
+    ]
     assert ":::" not in str(converted)
     assert not any("UPDATE" in statement for statement in connection.statements)
+
+
+def test_0048_recomposes_pair_collapsed_into_two_marked_paragraphs() -> None:
+    revision = load_revision()
+    left_id = "node_llllllllllllllll"
+    right_id = "node_rrrrrrrrrrrrrrrr"
+    left_payload = marked_collapsed_paragraph(
+        left_id,
+        opener="::: left 64",
+        body="左侧",
+        closer=":::",
+        mark="bold",
+        source_ref="src_aaaaaaaaaaaaaaaa",
+    )
+    left_payload["runs"][2]["href"] = "https://example.com"
+    left_payload["runs"][2]["style"]["color"] = "#123456"
+    result = revision.recompose_flattened_rows(
+        [
+            ParagraphBlock.model_validate(left_payload),
+            ParagraphBlock.model_validate(
+                marked_collapsed_paragraph(
+                    right_id,
+                    opener="::: right",
+                    body="右侧",
+                    closer=":::",
+                    mark="italic",
+                    source_ref="src_bbbbbbbbbbbbbbbb",
+                )
+            ),
+        ],
+        seed="collapsed-pair",
+    )
+
+    assert len(result) == 1
+    row = result[0]
+    assert row.block_type == "row"
+    assert row.row_kind == "pair"
+    assert row.node_id == left_id
+    assert row.left_width_percent == 64
+    assert row.source_refs == ["src_aaaaaaaaaaaaaaaa", "src_bbbbbbbbbbbbbbbb"]
+    assert row.cells[1].node_id == right_id
+    assert row.cells[0].blocks[0].runs[0].text == "左侧"
+    assert row.cells[0].blocks[0].runs[0].marks == ["bold"]
+    assert row.cells[0].blocks[0].runs[0].href == "https://example.com"
+    assert row.cells[0].blocks[0].runs[0].style.color == "#123456"
+    assert row.cells[1].blocks[0].runs[0].text == "右侧"
+    assert row.cells[1].blocks[0].runs[0].marks == ["italic"]
+
+
+@pytest.mark.parametrize(
+    ("kind", "values", "closer"),
+    [
+        ("meta", ["日期", "组织", "项目", "角色"], "\n::::"),
+        ("trio", ["技能", "时长", "程度"], ""),
+    ],
+)
+def test_0048_recomposes_collapsed_fixed_rows(
+    kind: str,
+    values: list[str],
+    closer: str,
+) -> None:
+    revision = load_revision()
+    node_id = "node_ffffffffffffffff"
+    block = ParagraphBlock.model_validate(
+        paragraph(node_id, ":::: " + kind + "\n" + "\n".join(values) + closer)
+    )
+
+    result = revision.recompose_flattened_rows([block], seed=f"collapsed-{kind}")
+
+    assert len(result) == 1
+    row = result[0]
+    assert row.block_type == "row"
+    assert row.row_kind == kind
+    assert row.node_id == node_id
+    assert [cell.blocks[0].runs[0].text for cell in row.cells] == values
+    assert "::::" not in str(row.model_dump(mode="json"))
+
+
+def test_0048_rejects_ambiguous_collapsed_rows() -> None:
+    revision = load_revision()
+    with pytest.raises(LegacyCutoverError, match="ambiguous cell count"):
+        revision.recompose_flattened_rows(
+            [
+                ParagraphBlock.model_validate(
+                    paragraph(
+                        "node_fffffffffffffff1",
+                        ":::: trio\n技能\n时长\n::::",
+                    )
+                )
+            ],
+            seed="collapsed-short-trio",
+        )
+    with pytest.raises(LegacyCutoverError, match="nested collapsed pair"):
+        revision.recompose_flattened_rows(
+            [
+                ParagraphBlock.model_validate(
+                    paragraph(
+                        "node_fffffffffffffff2",
+                        "::: left 64\n左侧\n:::: trio\n:::",
+                    )
+                ),
+                ParagraphBlock.model_validate(
+                    paragraph(
+                        "node_fffffffffffffff3",
+                        "::: right\n右侧\n:::",
+                    )
+                ),
+            ],
+            seed="collapsed-nested",
+        )
 
 
 def test_0048_blocks_ambiguous_reconstruction_and_is_forward_only() -> None:
@@ -205,13 +394,18 @@ def test_0048_blocks_ambiguous_reconstruction_and_is_forward_only() -> None:
     with pytest.raises(LegacyCutoverError):
         revision.recompose_flattened_rows(
             [
-                ParagraphBlock.model_validate(paragraph("node_ooooooooooooooo1", "::: left 64")),
+                ParagraphBlock.model_validate(
+                    paragraph("node_ooooooooooooooo1", "::: left 64")
+                ),
             ],
             seed="bad",
         )
-    assert "CREATE TABLE" not in (
-        BACKEND_ROOT / "migrations" / "sql" / "0048.up.sql"
-    ).read_text(encoding="utf-8").upper()
+    assert (
+        "CREATE TABLE"
+        not in (BACKEND_ROOT / "migrations" / "sql" / "0048.up.sql")
+        .read_text(encoding="utf-8")
+        .upper()
+    )
     with pytest.raises(RuntimeError, match="forward-only"):
         revision.downgrade()
 
@@ -219,28 +413,36 @@ def test_0048_blocks_ambiguous_reconstruction_and_is_forward_only() -> None:
 def test_0048_preflight_rejects_incomplete_marker_before_any_write() -> None:
     revision = load_revision()
     document = blank_canonical_document(seed="incomplete").model_dump(mode="json")
-    document["sections"] = [{
-        "node_id": "node_ssssssssssssssss",
-        "source_refs": [],
-        "semantic_kind": "custom",
-        "title": None,
-        "entries": [],
-        "blocks": [paragraph("node_ooooooooooooooo1", "::: left 64")],
-    }]
+    document["sections"] = [
+        {
+            "node_id": "node_ssssssssssssssss",
+            "source_refs": [],
+            "semantic_kind": "custom",
+            "title": None,
+            "entries": [],
+            "blocks": [paragraph("node_ooooooooooooooo1", "::: left 64")],
+        }
+    ]
     style = template_style("administrative-sidebar-cn")
     connection = Connection(
-        templates=[{
-            "id": 1,
-            "key": style["template_key"],
-            "data_json": blank_canonical_document(seed="template").model_dump(mode="json"),
-            "style_json": style,
-        }],
-        resumes=[{
-            "id": 2,
-            "template_id": 1,
-            "data_json": document,
-            "style_json": presentation(style),
-        }],
+        templates=[
+            {
+                "id": 1,
+                "key": style["template_key"],
+                "data_json": blank_canonical_document(seed="template").model_dump(
+                    mode="json"
+                ),
+                "style_json": style,
+            }
+        ],
+        resumes=[
+            {
+                "id": 2,
+                "template_id": 1,
+                "data_json": document,
+                "style_json": presentation(style),
+            }
+        ],
         versions=[],
     )
 

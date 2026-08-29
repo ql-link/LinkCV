@@ -12,7 +12,7 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker和独立 Pi 服务。当前 Alembic head `0048`；`0002`–`0022` 建立并演进既有业务结构，`0023` 为历史简历版本新增非空名称，`0024`–`0027` 增加并刷新官方模板，`0028`–`0029` 扩展并收敛多能力模型配置，`0030`–`0035` 建立 Agent、面试与 JD 契约，`0036`–`0040` 收敛简历快照和官方模板结构，`0041` 清除页级模板投影，`0042` 恢复经典技术模板页边距并删除空白模板，`0043` 增加资料上传幂等、排队、尝试次数和重新分发字段，`0044`–`0046` 建立并收敛用户个人画像，`0047` 完成简历 canonical 一次性切流，`0048` 修复 canonical 行结构与头像策略。
+新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker和独立 Pi 服务。当前 Alembic head `0049`；`0002`–`0022` 建立并演进既有业务结构，`0023` 为历史简历版本新增非空名称，`0024`–`0027` 增加并刷新官方模板，`0028`–`0029` 扩展并收敛多能力模型配置，`0030`–`0035` 建立 Agent、面试与 JD 契约，`0036`–`0040` 收敛简历快照和官方模板结构，`0041` 清除页级模板投影，`0042` 恢复经典技术模板页边距并从可选目录退役空白模板，`0043` 增加资料上传幂等、排队、尝试次数和重新分发字段，`0044`–`0046` 建立并收敛用户个人画像，`0047` 完成简历 canonical 一次性切流并为仍被历史快照引用的 `blank-cn` 建立 inactive tombstone，`0048` 修复 canonical 行结构与头像策略，`0049` 冻结导入受理时的模板定义。
 
 本地开发把 Git 主工作目录中的 `.env.local` 与 `.env.development.local` 作为所有 worktree 的共享私密覆盖层。`npm run dev`/`npm run dev:local` 优先使用当前 worktree 的 `.env`，否则回退主工作目录 `.env`；两处基础文件都不存在时，完整的主目录 `.env.local` 仍可单独作为 Local 配置。`npm run dev:development` 使用当前 worktree 已跟踪的 `.env.development`，再加载主工作目录 `.env.development.local`，并把同一结果注入 Web、FastAPI、Worker 与 Pi Service。新建 worktree 后不需要复制密钥文件。需要临时隔离时可显式设置 `LINKCV_SECRET_ENV_FILE=/absolute/path/to/override.local`。
 
@@ -151,9 +151,11 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 
 简历导入使用数据库驱动的统一 LLM 服务和当前 `resume_structuring` binding。模型只返回稳定源块的语义/布局映射，不能生成正文或决定丢弃；程序负责完整闭包、来源顺序、联系信息同排、有序/嵌套 CommonMark 与模板布局配方。模型地址、模型调用名与 API Key 通过管理员 API 管理，凭据由 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 加解密；调用不自动重试，也不回退其他候选。环境只保留密钥环与统一的 `LLM_TIMEOUT_SECONDS`，不再配置导入专用 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL` 或重试参数。
 
-共享 Development 验证必须使用 `npm run dev:development`，不得先启动本地 MySQL、Redis、MinIO 或 RabbitMQ。当前 Dev 升级前先只读确认 `alembic_version=0046`，并确认 0043 Dataset 可靠性标记列 `user_dataset.idempotency_key`、`user_dataset.request_fingerprint`、`document_parse_tasks.parse_attempt_count` 和 `document_parse_tasks.last_dispatched_at` 均已存在；同时确认无在途简历导入，完成四张简历相关表与对象存储备份并记录既有简历/版本快照摘要。仅在维护窗口连续执行 `0047`（简历 canonical 切流）与 `0048`（行结构和头像策略修复），再复核 head 为 `0048`、模板与既有简历/版本快照符合迁移契约，最后启动 Web、FastAPI、Worker 与 Pi。若 0046 基线、在途任务或备份核对不通过，先停止升级，不得复用编号、重跑或改写既有 revision。
+共享 Development 验证必须使用 `npm run dev:development`，不得先启动本地 MySQL、Redis、MinIO 或 RabbitMQ。升级前先只读确认真实 `alembic_version`；若仍为 `0046`，确认 0043 Dataset 可靠性标记列存在、无在途简历导入，完成四张简历相关表与对象存储备份，并记录模板、简历和版本快照摘要。维护窗口连续执行 `0047`–`0049`，复核 head 为 `0049`、历史 `blank-cn` 绑定仅为 inactive、全部简历/版本模板外键非空、活动导入任务已有冻结模板定义，再启动 Web、FastAPI、Worker 与 Pi。基线、在途任务、退役模板预检或备份核对不通过时停止升级，不猜测模板、不重跑或改写已执行 revision。
 
 共享 Development 中不得让当前 worktree 与已部署旧 Worker 竞争同一队列。`npm run dev:development` 会根据当前 worktree 的绝对路径自动生成独立的 queue 与 routing key，并同时传给本地 FastAPI 与 Worker；需要固定名称时可成对设置 `LINKCV_LOCAL_RABBITMQ_QUEUE` 与 `LINKCV_LOCAL_RABBITMQ_ROUTING_KEY`。共享 Dev 容器继续使用上表 V2 topology。V2 消息正文要求 `pipeline_version="v2"`，RabbitMQ 同时携带 `x-linkcv-pipeline-version=v2` 诊断 header；缺版本、V1、未知版本或未知字段都进入当前 V2 DLT，不调用业务 Processor。
+
+`.env.example`、`.env.development` 与 `.env.production` 的固定 MQ 名称均与上表 V2 topology 一致；本地 worktree 隔离覆盖只改变 queue 与 routing key，不改变消息版本契约。
 
 本地 PDF/DOCX 联调时，把 `LINKPARSE_API_KEY=<受控凭据>` 写入被 Git 忽略的 `.env.local` 或 `.env.development.local`，不要写入三份仓库环境文件、命令行历史、日志或测试 fixture。Key 缺失时 Development 仍可启动，Markdown 可测，PDF/DOCX 明确返回 `DOCUMENT_CONVERSION_UNAVAILABLE`。
 

@@ -1,4 +1,5 @@
 import asyncio
+from copy import deepcopy
 import logging
 from time import monotonic
 from uuid import UUID, uuid4
@@ -127,6 +128,26 @@ def _template_is_usable(template: ResumeTemplate) -> bool:
     return snapshot.style.template_key == template.key
 
 
+def _freeze_template_definition(template: ResumeTemplate) -> dict[str, object]:
+    """Return an independent, normalized definition for an accepted import.
+
+    The template row is the source of truth only while the request accepts the
+    task.  The worker must consume this value from the task row afterwards, so
+    never persist the ORM JSON object itself or the un-normalized input.
+    """
+
+    try:
+        snapshot = parse_persisted_template_snapshot(
+            template.data_json,
+            template.style_json,
+        )
+    except (TypeError, ValueError) as error:
+        raise ResumeImportFailure(422, "TEMPLATE_INACTIVE") from error
+    if snapshot.style.template_key != template.key:
+        raise ResumeImportFailure(422, "TEMPLATE_INACTIVE")
+    return deepcopy(snapshot.style.model_dump(mode="json"))
+
+
 def _select_import_template(
     db: Session,
     *,
@@ -141,7 +162,9 @@ def _select_import_template(
                 ResumeTemplate.is_active == 1,
             )
         )
-        return template if template is not None and _template_is_usable(template) else None
+        return (
+            template if template is not None and _template_is_usable(template) else None
+        )
 
     preferred = db.scalar(
         select(ResumeTemplate).where(
@@ -162,7 +185,34 @@ def _select_import_template(
         )
         .order_by(ResumeTemplate.id)
     ).all()
-    return next((template for template in candidates if _template_is_usable(template)), None)
+    return next(
+        (template for template in candidates if _template_is_usable(template)), None
+    )
+
+
+def _lock_selected_import_template(
+    db: Session,
+    template_id: int,
+) -> ResumeTemplate:
+    """Lock and revalidate the selected template after locking its owner.
+
+    Import admission and resume creation both lock the user row before a
+    template row.  Keeping that order avoids a deadlock with the worker's
+    finalization transaction while still making the ID/style snapshot atomic
+    with the acceptance decision.
+    """
+
+    template = db.scalar(
+        select(ResumeTemplate)
+        .where(
+            ResumeTemplate.id == template_id,
+            ResumeTemplate.is_active == 1,
+        )
+        .with_for_update()
+    )
+    if template is None or not _template_is_usable(template):
+        raise ResumeImportFailure(422, "TEMPLATE_INACTIVE")
+    return template
 
 
 def import_details(db: Session, record: DocumentParseTask) -> dict[str, object]:
@@ -372,6 +422,7 @@ async def import_resume(
                 raise ApiError(401, "UNAUTHORIZED")
             if not has_resume_capacity(db, user.id):
                 raise ApiError(409, "RESUME_LIMIT_REACHED")
+            template = _lock_selected_import_template(db, template.id)
             record = DocumentParseTask(
                 source_type=RESUME_IMPORT_SOURCE_TYPE,
                 user_id=user.id,
@@ -379,6 +430,7 @@ async def import_resume(
                 file_format=extension,
                 object_name=object_key,
                 selected_template_id=template.id,
+                selected_template_style_json=_freeze_template_definition(template),
                 upload_status="uploading",
             )
             db.add(record)

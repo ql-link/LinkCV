@@ -249,7 +249,11 @@ function summaryFromRecord(resume: ResumeRecord): ResumeSummary {
     lock_version: resume.lock_version,
     created_at: resume.created_at,
     updated_at: resume.updated_at,
-    preview: { data: resume.data, style: resume.style },
+    preview: {
+      data: resume.data,
+      style: resume.style,
+      layout_plan: resume.layout_plan,
+    },
   };
 }
 
@@ -748,29 +752,25 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
         const latestData = typeof state.editorContent === "string"
           ? state.data
           : resumeDocumentFromEditorDocument(state.editorContent, state.data);
-        const canonical = typeof state.editorContent === "string"
-          ? resumeDocumentToEditorDocument(latestData)
-          : stripTemplateProjectionFromEditorDocument(state.editorContent, latestData);
-        const latestRecord = {
-          ...resume,
-          title: state.title,
-          data: latestData,
-        };
-        const latestEditor = canonical && resume.layout_plan && resumePresentationTemplateDefinition(resume.style)
-            ? composeEditorDocumentForLayoutPlan(
-              canonical,
-              latestData,
-              resume.layout_plan,
-              resumePresentationTemplateDefinition(resume.style) as NonNullable<ReturnType<typeof resumePresentationTemplateDefinition>>,
-            )
-            : canonical ?? state.editorContent;
+
+        // The response plan belongs to the data submitted by this request. If
+        // the editor changed while the request was in flight, applying that
+        // plan to the newer local tree would make a stale server decision look
+        // current (and can silently place newly added sections incorrectly).
+        // Keep the user's current projection untouched, retain dirty state,
+        // and let the normal autosave submit the newer data so the next
+        // response carries a plan for the same snapshot.
         set({
-          resumes: mergeResumeSummary(state.resumes, latestRecord),
+          // The card is the last persisted server snapshot; its plan still
+          // matches resume.data and must not be paired with latestData.
+          resumes: mergeResumeSummary(state.resumes, resume),
           lockVersion: resume.lock_version,
           data: latestData,
           style: resume.style,
-          editorContent: latestEditor,
-          settings: normalizeSettings(styleToEditorSettings(resume.style)),
+          editorContent: state.editorContent,
+          // Preserve local presentation edits as well. The follow-up save
+          // merges these settings into the switched template snapshot.
+          settings: state.settings,
           dirty: true,
           saveStatus: "idle",
           versionOperationPending: false,

@@ -67,6 +67,14 @@
         "style": {"$ref": "#/$defs/inlineStyle"}
       }
     },
+    "inlineIcon": {
+      "type": "object", "additionalProperties": false,
+      "required": ["inline_type", "name"],
+      "properties": {
+        "inline_type": {"const": "icon"},
+        "name": {"enum": ["Mail", "Phone", "MapPin", "Globe", "Github", "Linkedin", "GraduationCap", "Briefcase", "Award", "Star", "Calendar", "Code2"]}
+      }
+    },
     "mediaReference": {
       "type": "object", "additionalProperties": false,
       "required": ["node_id", "source_refs", "media_kind", "src", "alt", "width", "width_unit", "height_px", "align", "system_fallback"],
@@ -125,7 +133,7 @@
         "system_fallback": {"const": false}
       }
     },
-    "inlineContent": {"oneOf": [{"$ref": "#/$defs/textRun"}, {"$ref": "#/$defs/inlineMedia"}]},
+    "inlineContent": {"oneOf": [{"$ref": "#/$defs/textRun"}, {"$ref": "#/$defs/inlineIcon"}, {"$ref": "#/$defs/inlineMedia"}]},
     "mediaRules": {
       "allOf": [
         {
@@ -177,7 +185,7 @@
       "properties": {
         "node_id": {"$ref": "#/$defs/nodeId"},
         "source_refs": {"$ref": "#/$defs/sourceRefs"},
-        "blocks": {"type": "array", "maxItems": 500, "items": {"oneOf": [{"$ref": "#/$defs/paragraph"}, {"$ref": "#/$defs/list"}, {"$ref": "#/$defs/mediaBlock"}]}}
+        "blocks": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"$ref": "#/$defs/paragraph"}}
       }
     },
     "row": {
@@ -239,6 +247,7 @@
         "node_id": {"$ref": "#/$defs/nodeId"},
         "semantic_kind": {"enum": ["profile", "work", "education", "project", "skills", "activity", "interests", "certificates", "awards", "languages", "custom"]},
         "title": {"anyOf": [{"$ref": "#/$defs/textValue"}, {"type": "null"}]},
+        "title_icon": {"anyOf": [{"$ref": "#/$defs/inlineIcon"}, {"type": "null"}]},
         "entries": {"type": "array", "maxItems": 200, "items": {"$ref": "#/$defs/entry"}},
         "blocks": {"type": "array", "maxItems": 500, "items": {"$ref": "#/$defs/block"}},
         "source_refs": {"$ref": "#/$defs/sourceRefs"}

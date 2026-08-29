@@ -251,6 +251,9 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "file_name",
         "file_format",
         "object_name",
+        "selected_template_id",
+        "selected_template_style_json",
+        "source_graph_object_name",
         "converted_object_name",
         "upload_status",
         "upload_duration_ms",
@@ -262,6 +265,15 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "created_at",
         "updated_at",
     }
+    task_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("document_parse_tasks")
+    }
+    assert task_columns["selected_template_style_json"]["nullable"] is True
+    assert (
+        task_columns["selected_template_style_json"]["type"].__class__.__name__
+        == "JSON"
+    )
     assert {
         constraint["name"]
         for constraint in inspector.get_check_constraints("document_parse_tasks")
@@ -493,7 +505,12 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
                 assert "校青年志愿者协会" in editor_markdown
             if row["key"] == "creative-orange-cn":
                 assert ":::: trio" in editor_markdown
-                assert ":icon[GraduationCap]:" in editor_markdown
+                serialized_data = json.dumps(data_json, ensure_ascii=False)
+                assert (
+                    '"title_icon": {"inline_type": "icon", "name": "GraduationCap"}'
+                    in serialized_data
+                )
+                assert ":icon[GraduationCap]:" not in serialized_data
                 assert "拾光城市文化活动小程序" in editor_markdown
             if row["key"] in {
                 "administrative-sidebar-cn",
@@ -1338,6 +1355,173 @@ def test_0042_deletes_blank_template_without_deleting_resumes_and_restores_layou
         ]
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0042"
     engine.dispose()
+
+
+def test_0047_binds_retired_blank_history_to_inactive_tombstone() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0041")
+    engine = create_engine(database_url)
+    try:
+        def json_object(value: object) -> dict[str, Any]:
+            decoded = json.loads(value) if isinstance(value, str) else value
+            assert isinstance(decoded, dict)
+            return decoded
+
+        with engine.begin() as connection:
+            user_id = connection.execute(
+                text(
+                    "INSERT INTO users (email, password_hash, nickname) "
+                    "VALUES ('retired-history@example.invalid', '$2b$12$fictional', '张三')"
+                )
+            ).lastrowid
+            blank = connection.execute(
+                text(
+                    "SELECT id, data_json, style_json FROM resume_templates "
+                    "WHERE `key` = 'blank-cn'"
+                )
+            ).one()
+            blank_data = json_object(blank.data_json)
+            blank_style = json_object(blank.style_json)
+            resume_style = json.loads(json.dumps(blank_style, ensure_ascii=False))
+            resume_style["accent_color"] = "#123456"
+            resume_style["font_size"] = 12
+            version_style = json.loads(json.dumps(blank_style, ensure_ascii=False))
+            version_style["accent_color"] = "#654321"
+            version_style["font_size"] = 15
+            version_style["page"] = {
+                "size": "A4",
+                "margin_top_mm": 4.0,
+                "margin_right_mm": 7.0,
+                "margin_bottom_mm": 5.0,
+                "margin_left_mm": 8.0,
+            }
+            resume_data = json.loads(json.dumps(blank_data, ensure_ascii=False))
+            resume_data["basics"]["name"] = "历史当前简历"
+            version_data = json.loads(json.dumps(blank_data, ensure_ascii=False))
+            version_data["basics"]["name"] = "历史版本快照"
+            resume_id = connection.execute(
+                text(
+                    "INSERT INTO resumes "
+                    "(user_id, template_id, title, data_json, style_json, source_type) "
+                    "VALUES (:user_id, :template_id, '历史空白简历', :data_json, :style_json, 'template')"
+                ),
+                {
+                    "user_id": user_id,
+                    "template_id": blank.id,
+                    "data_json": json.dumps(resume_data, ensure_ascii=False),
+                    "style_json": json.dumps(resume_style, ensure_ascii=False),
+                },
+            ).lastrowid
+            version_id = connection.execute(
+                text(
+                    "INSERT INTO resume_versions "
+                    "(resume_id, version_no, data_json, style_json, reason, name) "
+                    "VALUES (:resume_id, 1, :data_json, :style_json, 'initial', '初始版本')"
+                ),
+                {
+                    "resume_id": resume_id,
+                    "data_json": json.dumps(version_data, ensure_ascii=False),
+                    "style_json": json.dumps(version_style, ensure_ascii=False),
+                },
+            ).lastrowid
+
+        run_alembic(database_url, "upgrade", "0042")
+        with engine.connect() as connection:
+            assert connection.scalar(
+                text("SELECT COUNT(*) FROM resume_templates WHERE `key` = 'blank-cn'")
+            ) == 0
+            assert connection.scalar(
+                text("SELECT template_id FROM resumes WHERE id = :id"),
+                {"id": resume_id},
+            ) is None
+
+        run_alembic(database_url, "upgrade", "0047")
+        with engine.connect() as connection:
+            tombstone = connection.execute(
+                text(
+                    "SELECT id, is_active, data_json, style_json FROM resume_templates "
+                    "WHERE `key` = 'blank-cn'"
+                )
+            ).one()
+            assert tombstone.is_active == 0
+            tombstone_data = json_object(tombstone.data_json)
+            assert tombstone_data["identity"]["name"] is None
+            retired_resume = connection.execute(
+                text(
+                    "SELECT template_id, data_json, style_json FROM resumes WHERE id = :id"
+                ),
+                {"id": resume_id},
+            ).one()
+            retired_version = connection.execute(
+                text(
+                    "SELECT template_id, data_json, style_json "
+                    "FROM resume_versions WHERE id = :id"
+                ),
+                {"id": version_id},
+            ).one()
+            for row, expected_name in (
+                (retired_resume, "历史当前简历"),
+                (retired_version, "历史版本快照"),
+            ):
+                assert row.template_id == tombstone.id
+                data = json_object(row.data_json)
+                style = json_object(row.style_json)
+                assert data["schema_version"] == "canonical-resume.v1"
+                assert data["identity"]["name"]["value"] == expected_name
+                assert style["schema_version"] == "resume-presentation.v1"
+                assert style["template_snapshot"]["template_key"] == "blank-cn"
+            assert retired_resume.style_json is not None
+            assert json_object(retired_resume.style_json)["template_snapshot"]["tokens"][
+                "font_size_pt"
+            ] == 12
+            assert json_object(retired_version.style_json)["template_snapshot"]["tokens"][
+                "font_size_pt"
+            ] == 15
+            assert json_object(retired_resume.style_json)["portable"]["accent_color"] == "#123456"
+            assert json_object(retired_version.style_json)["portable"]["accent_color"] == "#654321"
+            assert connection.scalar(
+                text(
+                    "SELECT COUNT(*) FROM resume_templates "
+                    "WHERE `key` = 'blank-cn' AND is_active = 1"
+                )
+            ) == 0
+
+        resume_columns = {
+            column["name"]: column for column in inspect(engine).get_columns("resumes")
+        }
+        version_columns = {
+            column["name"]: column
+            for column in inspect(engine).get_columns("resume_versions")
+        }
+        assert resume_columns["template_id"]["nullable"] is False
+        assert version_columns["template_id"]["nullable"] is False
+
+        run_alembic(database_url, "upgrade", "head")
+        with engine.connect() as connection:
+            assert set(
+                connection.scalars(
+                    text(
+                        "SELECT `key` FROM resume_templates "
+                        "WHERE is_active = 1 ORDER BY `key`"
+                    )
+                )
+            ) == {
+                "administrative-sidebar-cn",
+                "campus-professional-cn",
+                "classic-cn",
+                "classic-technical-cn",
+                "civic-service-cn",
+                "creative-orange-cn",
+                "modern-two-column-cn",
+                "compact-tech-cn",
+            }
+            assert connection.scalar(
+                text("SELECT template_id FROM resumes WHERE id = :id"),
+                {"id": resume_id},
+            ) == tombstone.id
+    finally:
+        engine.dispose()
 
 
 def test_0043_adds_dataset_idempotency_and_dispatch_recovery_fields() -> None:

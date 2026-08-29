@@ -1,6 +1,8 @@
 from linkcv.domain.resume.canonical_json import canonical_json_bytes, canonical_sha256
 from linkcv.domain.resume.models import (
     CanonicalResumeDocument,
+    InlineIcon,
+    InlineIconName,
     LayoutPlan,
     RowBlock,
     RowCell,
@@ -40,6 +42,8 @@ from linkcv.domain.resume.layout import (
 
 __all__ = [
     "CanonicalResumeDocument",
+    "InlineIcon",
+    "InlineIconName",
     "CanonicalCompositionError",
     "CanonicalCompositionResult",
     "LayoutPlan",

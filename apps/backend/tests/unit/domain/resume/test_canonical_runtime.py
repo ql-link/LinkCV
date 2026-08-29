@@ -89,6 +89,391 @@ def test_sparse_annotations_are_optional_and_program_closes_every_source():
     assert "未分类内容" not in result.document.model_dump_json()
 
 
+def test_unknown_heading_inside_section_stays_a_body_paragraph():
+    graph_value = build_source_graph(
+        source_document_sha256="7" * 64,
+        blocks=[
+            ParsedSourceBlock(
+                block_id="work-heading",
+                page=1,
+                leaf_kind="heading",
+                text="工作经历",
+            ),
+            ParsedSourceBlock(
+                block_id="company",
+                page=1,
+                leaf_kind="paragraph",
+                text="示例科技",
+            ),
+            ParsedSourceBlock(
+                block_id="technology-heading",
+                page=1,
+                leaf_kind="heading",
+                text="技术架构:Java、Redis",
+            ),
+            ParsedSourceBlock(
+                block_id="work-summary",
+                page=1,
+                leaf_kind="paragraph",
+                text="负责服务稳定性",
+            ),
+            ParsedSourceBlock(
+                block_id="work-item",
+                page=1,
+                leaf_kind="list_item",
+                text="搭建自动化发布流程",
+                list_kind="bullet",
+            ),
+            ParsedSourceBlock(
+                block_id="achievement-heading",
+                page=1,
+                leaf_kind="heading",
+                text="核心成果",
+            ),
+            ParsedSourceBlock(
+                block_id="achievement-body",
+                page=1,
+                leaf_kind="paragraph",
+                text="发布耗时缩短",
+            ),
+            ParsedSourceBlock(
+                block_id="project-heading",
+                page=1,
+                leaf_kind="heading",
+                text="项目经历",
+            ),
+            ParsedSourceBlock(
+                block_id="project-body",
+                page=1,
+                leaf_kind="paragraph",
+                text="示例项目",
+            ),
+        ],
+    )
+
+    result = compose_canonical_resume_document(graph_value)
+
+    assert [section.semantic_kind for section in result.document.sections] == [
+        "work",
+        "project",
+    ]
+    work = result.document.sections[0]
+    assert [block.block_type for block in work.blocks] == [
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "bullet_list",
+        "paragraph",
+        "paragraph",
+    ]
+    assert [
+        block.runs[0].text
+        for block in work.blocks
+        if block.block_type == "paragraph"
+    ] == [
+        "示例科技",
+        "技术架构:Java、Redis",
+        "负责服务稳定性",
+        "核心成果",
+        "发布耗时缩短",
+    ]
+    assert work.blocks[3].items[0].runs[0].text == "搭建自动化发布流程"
+    assert len(result.document.source_dispositions) == len(graph_value.leaves)
+    assert all(
+        disposition.outcome != "dropped"
+        for disposition in result.document.source_dispositions
+    )
+
+
+def test_explicit_section_title_annotation_starts_new_custom_section():
+    graph_value = build_source_graph(
+        source_document_sha256="8" * 64,
+        blocks=[
+            ParsedSourceBlock(
+                block_id="work-heading",
+                page=1,
+                leaf_kind="heading",
+                text="工作经历",
+            ),
+            ParsedSourceBlock(
+                block_id="custom-heading",
+                page=1,
+                leaf_kind="heading",
+                text="技术架构",
+            ),
+            ParsedSourceBlock(
+                block_id="custom-body",
+                page=1,
+                leaf_kind="paragraph",
+                text="Java、Redis",
+            ),
+        ],
+    )
+    custom_heading_id = graph_value.leaves[1].source_id
+    annotations = sparse(
+        graph_value,
+        [
+            {
+                "source_id": custom_heading_id,
+                "role": "section_title",
+                "semantic_kind": "custom",
+                "entry_anchor_source_id": None,
+                "field_key": None,
+                "normalized_value": None,
+                "confidence": 1.0,
+            }
+        ],
+    )
+
+    result = compose_canonical_resume_document(graph_value, annotations)
+
+    assert [section.semantic_kind for section in result.document.sections] == [
+        "work",
+        "custom",
+    ]
+    assert result.document.sections[1].title is not None
+    assert result.document.sections[1].title.value == "技术架构"
+    assert result.document.sections[1].blocks[0].runs[0].text == "Java、Redis"
+    assert len(result.document.source_dispositions) == len(graph_value.leaves)
+
+
+def test_unknown_heading_starts_custom_section_when_no_section_exists():
+    graph_value = build_source_graph(
+        source_document_sha256="9" * 64,
+        blocks=[
+            ParsedSourceBlock(
+                block_id="name-heading",
+                page=1,
+                leaf_kind="heading",
+                text="张三",
+            ),
+            ParsedSourceBlock(
+                block_id="custom-heading",
+                page=1,
+                leaf_kind="heading",
+                text="自定义栏目",
+            ),
+            ParsedSourceBlock(
+                block_id="custom-body",
+                page=1,
+                leaf_kind="paragraph",
+                text="示例内容",
+            ),
+        ],
+    )
+
+    result = compose_canonical_resume_document(graph_value)
+
+    assert result.document.identity.name is not None
+    assert result.document.identity.name.value == "张三"
+    assert [section.semantic_kind for section in result.document.sections] == [
+        "custom"
+    ]
+    assert result.document.sections[0].title is not None
+    assert result.document.sections[0].title.value == "自定义栏目"
+    assert result.document.sections[0].blocks[0].runs[0].text == "示例内容"
+    assert len(result.document.source_dispositions) == len(graph_value.leaves)
+
+
+def test_preamble_paragraph_name_and_contact_line_become_identity_before_section():
+    graph_value = build_source_graph(
+        source_document_sha256="b" * 64,
+        blocks=[
+            ParsedSourceBlock(
+                block_id="name-paragraph",
+                page=1,
+                leaf_kind="paragraph",
+                text="张三",
+            ),
+            ParsedSourceBlock(
+                block_id="contact-paragraph",
+                page=1,
+                leaf_kind="paragraph",
+                text="10000000000｜demo@example.test",
+            ),
+            ParsedSourceBlock(
+                block_id="education-heading",
+                page=1,
+                leaf_kind="heading",
+                text="教育经历",
+            ),
+            ParsedSourceBlock(
+                block_id="education-body",
+                page=1,
+                leaf_kind="paragraph",
+                text="示例大学",
+            ),
+        ],
+    )
+
+    result = compose_canonical_resume_document(graph_value)
+
+    assert result.document.identity.name is not None
+    assert result.document.identity.name.value == "张三"
+    assert [contact.contact_kind for contact in result.document.identity.contacts] == [
+        "phone",
+        "email",
+    ]
+    assert [section.semantic_kind for section in result.document.sections] == [
+        "education"
+    ]
+    assert len(result.document.source_dispositions) == len(graph_value.leaves)
+    assert all(
+        disposition.outcome != "dropped"
+        for disposition in result.document.source_dispositions
+    )
+
+
+def test_labeled_personal_websites_count_as_preamble_contacts():
+    graph_value = build_source_graph(
+        source_document_sha256="f" * 64,
+        blocks=[
+            ParsedSourceBlock(
+                block_id="name-paragraph",
+                page=1,
+                leaf_kind="paragraph",
+                text="张三",
+            ),
+            ParsedSourceBlock(
+                block_id="contact-paragraph",
+                page=1,
+                leaf_kind="paragraph",
+                text=(
+                    "10000000000 | demo@example.test | "
+                    "个人网站:www.example.test | https://portfolio.example.test"
+                ),
+            ),
+            ParsedSourceBlock(
+                block_id="education-heading",
+                page=1,
+                leaf_kind="heading",
+                text="教育经历",
+            ),
+            ParsedSourceBlock(
+                block_id="education-body",
+                page=1,
+                leaf_kind="paragraph",
+                text="示例大学",
+            ),
+        ],
+    )
+
+    result = compose_canonical_resume_document(graph_value)
+
+    assert result.document.identity.name is not None
+    assert result.document.identity.name.value == "张三"
+    assert [contact.contact_kind for contact in result.document.identity.contacts] == [
+        "phone",
+        "email",
+        "website",
+        "website",
+    ]
+    assert [contact.value for contact in result.document.identity.contacts] == [
+        "10000000000",
+        "demo@example.test",
+        "www.example.test",
+        "https://portfolio.example.test",
+    ]
+    assert [section.semantic_kind for section in result.document.sections] == [
+        "education"
+    ]
+    assert len(result.document.source_dispositions) == len(graph_value.leaves)
+    assert all(
+        disposition.outcome != "dropped"
+        for disposition in result.document.source_dispositions
+    )
+
+
+def test_body_url_after_section_remains_a_paragraph_not_identity_contact():
+    graph_value = build_source_graph(
+        source_document_sha256="c" * 64,
+        blocks=[
+            ParsedSourceBlock(
+                block_id="projects-heading",
+                page=1,
+                leaf_kind="heading",
+                text="项目经历",
+            ),
+            ParsedSourceBlock(
+                block_id="project-url",
+                page=1,
+                leaf_kind="paragraph",
+                text="项目主页见 https://example.test/demo",
+            ),
+        ],
+    )
+
+    result = compose_canonical_resume_document(graph_value)
+
+    assert result.document.identity.contacts == []
+    assert result.document.sections[0].blocks[0].runs[0].text == (
+        "项目主页见 https://example.test/demo"
+    )
+
+
+def test_document_title_paragraph_is_not_inferred_as_identity_name():
+    graph_value = build_source_graph(
+        source_document_sha256="d" * 64,
+        blocks=[
+            ParsedSourceBlock(
+                block_id="document-title",
+                page=1,
+                leaf_kind="paragraph",
+                text="个人简历",
+            ),
+            ParsedSourceBlock(
+                block_id="body",
+                page=1,
+                leaf_kind="paragraph",
+                text="负责服务稳定性",
+            ),
+            ParsedSourceBlock(
+                block_id="education-heading",
+                page=1,
+                leaf_kind="heading",
+                text="教育经历",
+            ),
+        ],
+    )
+
+    result = compose_canonical_resume_document(graph_value)
+
+    assert result.document.identity.name is None
+    assert result.document.sections[0].semantic_kind == "custom"
+    assert result.document.sections[0].blocks[0].runs[0].text == "个人简历"
+
+
+def test_short_name_shaped_preamble_without_contact_stays_visible_body():
+    graph_value = build_source_graph(
+        source_document_sha256="e" * 64,
+        blocks=[
+            ParsedSourceBlock(
+                block_id="short-preamble",
+                page=1,
+                leaf_kind="paragraph",
+                text="春风",
+            ),
+            ParsedSourceBlock(
+                block_id="education-heading",
+                page=1,
+                leaf_kind="heading",
+                text="教育经历",
+            ),
+        ],
+    )
+
+    result = compose_canonical_resume_document(graph_value)
+
+    assert result.document.identity.name is None
+    assert result.document.sections[0].semantic_kind == "custom"
+    assert result.document.sections[0].blocks[0].runs[0].text == "春风"
+    assert len(result.document.source_dispositions) == len(graph_value.leaves)
+    assert all(
+        disposition.outcome != "dropped"
+        for disposition in result.document.source_dispositions
+    )
+
+
 def test_one_source_can_enhance_multiple_fields_on_one_entry():
     graph_value = graph()
     entry_source_id = graph_value.leaves[3].source_id

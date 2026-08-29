@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Request
 from linkcv.application.resumes.service import (
     InvalidResumeTitle,
     ResumeLimitExceeded,
+    ResumePresentationInvalid,
     ResumeTemplateCompositionInvalid,
     ResumeTemplateUnavailable,
     ResumeTitleConflict,
@@ -244,6 +245,10 @@ def update_resume(
         raise ApiError(400, "INVALID_RESUME_TITLE") from error
     except ResumeTitleConflict as error:
         raise ApiError(409, "RESUME_TITLE_CONFLICT") from error
+    except ResumePresentationInvalid as error:
+        raise ApiError(400, "INVALID_RESUME_STYLE") from error
+    except ResumeTemplateCompositionInvalid as error:
+        raise ApiError(422, "TEMPLATE_COMPOSITION_INVALID") from error
     except ValueError as error:
         raise ApiError(500, "RESUME_SCHEMA_INVALID") from error
     if updated is None:

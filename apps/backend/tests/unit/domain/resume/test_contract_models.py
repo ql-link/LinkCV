@@ -192,13 +192,79 @@ def test_canonical_rows_are_strict_fixed_cardinality_content_blocks() -> None:
             "row_kind": "pair",
             "left_width_percent": 64,
             "cells": [
-                {"node_id": "node_eeeeeeeeeeeeeeee", "source_refs": [], "blocks": []},
-                {"node_id": "node_ffffffffffffffff", "source_refs": [], "blocks": []},
+                {
+                    "node_id": "node_eeeeeeeeeeeeeeee",
+                    "source_refs": [],
+                    "blocks": [
+                        {
+                            "node_id": "node_1111111111111111",
+                            "source_refs": [],
+                            "block_type": "paragraph",
+                            "runs": [],
+                        }
+                    ],
+                },
+                {
+                    "node_id": "node_ffffffffffffffff",
+                    "source_refs": [],
+                    "blocks": [
+                        {
+                            "node_id": "node_2222222222222222",
+                            "source_refs": [],
+                            "block_type": "paragraph",
+                            "runs": [],
+                        }
+                    ],
+                },
             ],
         }
     ]
     document = CanonicalResumeDocument.model_validate(payload)
     assert document.sections[0].blocks[0].block_type == "row"
+
+    for invalid_blocks in ([], [
+        {
+            "node_id": "node_1111111111111111",
+            "source_refs": [],
+            "block_type": "paragraph",
+            "runs": [],
+        },
+        {
+            "node_id": "node_3333333333333333",
+            "source_refs": [],
+            "block_type": "paragraph",
+            "runs": [],
+        },
+    ], [{
+        "node_id": "node_1111111111111111",
+        "source_refs": [],
+        "block_type": "bullet_list",
+        "start": None,
+        "items": [],
+    }]):
+        invalid_cell = document_payload()
+        invalid_cell["sections"][0]["blocks"] = [{
+            "node_id": "node_dddddddddddddddd",
+            "source_refs": [],
+            "block_type": "row",
+            "row_kind": "pair",
+            "left_width_percent": 64,
+            "cells": [
+                {"node_id": "node_eeeeeeeeeeeeeeee", "source_refs": [], "blocks": invalid_blocks},
+                {
+                    "node_id": "node_ffffffffffffffff",
+                    "source_refs": [],
+                    "blocks": [{
+                        "node_id": "node_2222222222222222",
+                        "source_refs": [],
+                        "block_type": "paragraph",
+                        "runs": [],
+                    }],
+                },
+            ],
+        }]
+        with pytest.raises(ValidationError):
+            CanonicalResumeDocument.model_validate(invalid_cell)
 
     for kind, count in (("meta", 3), ("trio", 4)):
         invalid = document_payload()
@@ -209,7 +275,16 @@ def test_canonical_rows_are_strict_fixed_cardinality_content_blocks() -> None:
             "row_kind": kind,
             "left_width_percent": None,
             "cells": [
-                {"node_id": f"node_{index:016x}", "source_refs": [], "blocks": []}
+                {
+                    "node_id": f"node_{index:016x}",
+                    "source_refs": [],
+                    "blocks": [{
+                        "node_id": f"node_{index + 100:016x}",
+                        "source_refs": [],
+                        "block_type": "paragraph",
+                        "runs": [],
+                    }],
+                }
                 for index in range(10, 10 + count)
             ],
         }]

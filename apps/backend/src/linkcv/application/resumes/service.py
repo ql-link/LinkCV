@@ -53,6 +53,10 @@ class ResumeTemplateCompositionInvalid(RuntimeError):
     pass
 
 
+class ResumePresentationInvalid(ValueError):
+    pass
+
+
 class ResumeVersionLimitExceeded(RuntimeError):
     pass
 
@@ -172,6 +176,83 @@ def presentation_from_template(
         template_scoped={template_style.template_key: PresentationSettings()},
         template_snapshot=template_style,
     )
+
+
+def _merge_presentation_settings(
+    current: PresentationSettings,
+    submitted: PresentationSettings,
+) -> PresentationSettings:
+    """Merge only explicitly supplied user presentation settings.
+
+    ``PresentationSettings`` has defaults for every field, so replacing the
+    model directly would make a sparse client payload reset settings that the
+    server already persisted.  ``model_fields_set`` keeps omitted fields
+    untouched while still allowing an explicit ``null`` to clear an optional
+    override.
+    """
+
+    values = current.model_dump(mode="json")
+    submitted_values = submitted.model_dump(mode="json")
+    for field_name in submitted.model_fields_set:
+        values[field_name] = submitted_values[field_name]
+    return PresentationSettings.model_validate(values)
+
+
+def merge_resume_presentation(
+    current: ResumePresentationValue,
+    submitted: ResumePresentationValue | None,
+) -> ResumePresentationValue:
+    """Keep the persisted template definition and merge allowed user settings.
+
+    A normal resume save is not a template mutation endpoint.  The current
+    server snapshot remains authoritative; a client may update portable
+    settings and settings for template keys already known by this resume.  A
+    new scoped key is rejected so a regular save cannot manufacture template
+    provenance.  Existing historical keys are deliberately retained even when
+    a client sends only the currently visible template settings.
+    """
+
+    if submitted is None:
+        return current
+
+    template_key = current.template_snapshot.template_key
+    scoped: dict[str, PresentationSettings] = {
+        key: settings.model_copy(deep=True)
+        for key, settings in current.template_scoped.items()
+    }
+    # A valid presentation normally contains its active key.  Keep the
+    # persisted map intact, but permit repairing that omission from a client
+    # payload without accepting arbitrary new template keys.
+    if template_key not in scoped:
+        scoped[template_key] = PresentationSettings()
+
+    known_keys = set(scoped)
+    unknown_keys = set(submitted.template_scoped) - known_keys
+    if unknown_keys:
+        raise ResumePresentationInvalid(
+            "template-scoped key is not owned by resume"
+        )
+    for key, settings in submitted.template_scoped.items():
+        scoped[key] = _merge_presentation_settings(scoped[key], settings)
+
+    return CanonicalResumePresentation(
+        schema_version="resume-presentation.v1",
+        portable=_merge_presentation_settings(current.portable, submitted.portable),
+        template_scoped=scoped,
+        # Never take this value from ``submitted``.  This is the resume's
+        # immutable template-definition provenance until apply-template runs.
+        template_snapshot=current.template_snapshot,
+    )
+
+
+def _assert_template_key_matches_row(
+    template: ResumeTemplate,
+    snapshot: StoredTemplateSnapshot,
+) -> None:
+    """Reject a template row whose identity disagrees with its definition."""
+
+    if template.key != snapshot.style.template_key:
+        raise ValueError("template row key does not match template definition")
 
 
 def validate_resume_template_composition(
@@ -410,6 +491,7 @@ def create_resume_from_template(
                 template.data_json,
                 template.style_json,
             )
+            _assert_template_key_matches_row(template, template_snapshot)
             resume_style = presentation_from_template(template_snapshot.style)
             resume_snapshot = parse_persisted_resume_snapshot(
                 template_snapshot.data_json,
@@ -448,7 +530,7 @@ def update_resume_snapshot(
 ) -> Resume | None:
     current = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
     next_data = data if data is not None else current.data
-    next_style = style if style is not None else current.style
+    next_style = merge_resume_presentation(current.style, style)
     try:
         snapshot = parse_persisted_resume_snapshot(
             _model_json(next_data),
@@ -456,6 +538,21 @@ def update_resume_snapshot(
         )
     except (TypeError, ValueError, ValidationError):
         raise
+    try:
+        # Compile against the persisted template snapshot, never against a
+        # client-provided definition.  This is done before the conditional
+        # update so a non-renderable document cannot partially save.
+        validate_resume_template_composition(
+            snapshot,
+            StoredTemplateSnapshot(
+                data=snapshot.data,
+                style=snapshot.style.template_snapshot,
+                data_json=snapshot.data_json,
+                style_json=_model_json(snapshot.style.template_snapshot),
+            ),
+        )
+    except (LayoutCompilationError, TypeError, ValueError, ValidationError) as error:
+        raise ResumeTemplateCompositionInvalid from error
     next_title = resume.title
     if title is not None:
         next_title = normalize_resume_title(title)
@@ -515,6 +612,7 @@ def apply_resume_template(
             template.data_json,
             template.style_json,
         )
+        _assert_template_key_matches_row(template, target)
         current = parse_persisted_resume_snapshot(
             resume.data_json,
             resume.style_json,
@@ -599,6 +697,25 @@ def _append_version(
     if resume.template_id is None:
         raise ResumeVersionDataInvalid("resume has no template identity")
     snapshot = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
+    template = db.scalar(
+        select(ResumeTemplate).where(ResumeTemplate.id == resume.template_id)
+    )
+    if template is None:
+        raise ResumeVersionDataInvalid("resume template no longer exists")
+    if template.key != snapshot.style.template_snapshot.template_key:
+        raise ResumeVersionDataInvalid("resume template key does not match snapshot")
+    try:
+        validate_resume_template_composition(
+            snapshot,
+            StoredTemplateSnapshot(
+                data=snapshot.data,
+                style=snapshot.style.template_snapshot,
+                data_json=snapshot.data_json,
+                style_json=_model_json(snapshot.style.template_snapshot),
+            ),
+        )
+    except (LayoutCompilationError, TypeError, ValueError, ValidationError) as error:
+        raise ResumeVersionDataInvalid("resume snapshot is not renderable") from error
     version_no = _next_version_number(db, resume.id)
     version = ResumeVersion(
         resume_id=resume.id,
@@ -721,11 +838,22 @@ def restore_resume_version(
             target.data_json,
             target.style_json,
         )
-        template_snapshot = parse_persisted_template_snapshot(
-            template.data_json,
-            template.style_json,
+        if template.key != target_snapshot.style.template_snapshot.template_key:
+            raise ResumeVersionDataInvalid(
+                "version template key does not match template identity"
+            )
+        # A version owns both its content and presentation snapshot.  The
+        # current template row is used only to verify identity; its mutable
+        # definition must never overwrite or recompile the historical style.
+        validate_resume_template_composition(
+            target_snapshot,
+            StoredTemplateSnapshot(
+                data=target_snapshot.data,
+                style=target_snapshot.style.template_snapshot,
+                data_json=target_snapshot.data_json,
+                style_json=_model_json(target_snapshot.style.template_snapshot),
+            ),
         )
-        validate_resume_template_composition(target_snapshot, template_snapshot)
     except (TypeError, ValueError, ValidationError) as error:
         if isinstance(error, ResumeVersionDataInvalid):
             raise

@@ -80,19 +80,35 @@ export const ResumeBlockAnchor = Node.create({
   inline: true,
   atom: true,
   selectable: false,
-  addAttributes: () => ({ blockId: { default: null }, semanticKind: { default: null } }),
+  addAttributes: () => ({
+    blockId: { default: null },
+    semanticKind: { default: null },
+    role: { default: null },
+    sourceRefs: { default: [] },
+    fieldKey: { default: null },
+    contactKind: { default: null },
+    label: { default: null },
+  }),
   parseHTML: () => [{
     tag: "span[data-resume-block-id]",
     getAttrs: (element) => element instanceof HTMLElement
       ? {
         blockId: normalizeResumeBlockId(element.dataset.resumeBlockId),
         semanticKind: element.dataset.resumeSemanticKind ?? null,
+        role: element.dataset.resumeBlockRole ?? null,
+        fieldKey: element.dataset.resumeFieldKey ?? null,
+        contactKind: element.dataset.resumeContactKind ?? null,
+        label: element.dataset.resumeLabel ?? null,
       }
       : false,
   }],
   renderHTML: ({ node }) => ["span", {
     "data-resume-block-id": normalizeResumeBlockId(node.attrs.blockId) ?? createResumeBlockId(),
     ...(typeof node.attrs.semanticKind === "string" ? { "data-resume-semantic-kind": node.attrs.semanticKind } : {}),
+    ...(typeof node.attrs.role === "string" ? { "data-resume-block-role": node.attrs.role } : {}),
+    ...(typeof node.attrs.fieldKey === "string" ? { "data-resume-field-key": node.attrs.fieldKey } : {}),
+    ...(typeof node.attrs.contactKind === "string" ? { "data-resume-contact-kind": node.attrs.contactKind } : {}),
+    ...(typeof node.attrs.label === "string" ? { "data-resume-label": node.attrs.label } : {}),
     "aria-hidden": "true",
     class: "resume-block-anchor",
   }],
@@ -387,6 +403,8 @@ export const AvatarImage = Node.create({
     size: { default: 96 },
     alt: { default: "简历头像" },
     systemFallback: { default: false },
+    nodeId: { default: null },
+    sourceRefs: { default: [] },
   }),
   parseHTML: () => [{
     tag: "figure[data-type='avatar-image']",
@@ -395,6 +413,7 @@ export const AvatarImage = Node.create({
       size: Number(element.dataset.size) || 96,
       alt: element.dataset.alt ?? "简历头像",
       systemFallback: element.dataset.systemFallback === "true",
+      nodeId: normalizeResumeBlockId(element.dataset.nodeId),
     } : false,
   }],
   renderHTML: ({ HTMLAttributes }) => ["figure", mergeAttributes(HTMLAttributes, { "data-type": "avatar-image" })],
@@ -414,6 +433,8 @@ export const ResumeImage = Node.create({
     widthUnit: { default: "%" },
     align: { default: "center" },
     alt: { default: "简历图片" },
+    nodeId: { default: null },
+    sourceRefs: { default: [] },
   }),
   parseHTML: () => [
     {
@@ -424,6 +445,7 @@ export const ResumeImage = Node.create({
         widthUnit: element.dataset.widthUnit === "px" ? "px" : "%",
         align: element.dataset.align ?? "center",
         alt: element.dataset.alt ?? "简历图片",
+        nodeId: normalizeResumeBlockId(element.dataset.nodeId),
       } : false,
     },
     {
@@ -750,6 +772,8 @@ export const InlineImage = Node.create({
     height: { default: null },
     aspectRatio: { default: 3 },
     alt: { default: "行内图片" },
+    nodeId: { default: null },
+    sourceRefs: { default: [] },
   }),
   parseHTML: () => [{
     tag: "img[data-inline-image]",
@@ -759,6 +783,7 @@ export const InlineImage = Node.create({
       height: Number(element.dataset.height) || null,
       aspectRatio: Number(element.dataset.aspectRatio) || 3,
       alt: element.dataset.alt ?? element.getAttribute("alt") ?? "行内图片",
+      nodeId: normalizeResumeBlockId(element.dataset.nodeId),
     } : false,
   }],
   renderHTML: ({ node, HTMLAttributes }) => [

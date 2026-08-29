@@ -5,6 +5,7 @@ import {
   type ResumeImportSummary,
   type ResumeSummary,
 } from "../../api/client";
+import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
 import { defaultSettings, useResumeStore } from "../../store/resumeStore";
 import { HomePage, HomeScreen } from "./HomePage";
 
@@ -149,6 +150,21 @@ describe("HomeScreen", () => {
     expect(within(menu).getByRole("menuitem", { name: "重命名" })).toBeInTheDocument();
     expect(within(menu).getByRole("menuitem", { name: "分享链接" })).toBeInTheDocument();
     expect(within(menu).getByRole("menuitem", { name: "删除" })).toBeInTheDocument();
+  });
+
+  it("摘要缺少服务端布局计划时显示受控不可用状态", () => {
+    renderHome({
+      resumes: [{
+        ...resumes[0],
+        preview: {
+          data: defaultCanonicalDocument,
+          style: defaultCanonicalPresentation,
+          layout_plan: null,
+        },
+      }],
+    });
+
+    expect(screen.getByText("预览不可用")).toBeInTheDocument();
   });
 
   it("按 Escape 关闭操作菜单并将焦点还给三个点按钮", () => {

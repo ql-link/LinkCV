@@ -177,6 +177,22 @@ def test_import_accepts_upload_without_running_parser_or_creating_resume() -> No
     assert publisher.messages[0].payload.import_id == summary["id"]
     with app.state.session_factory() as db:
         assert db.scalar(select(Resume.id)) is None
+        record = db.get(DocumentParseTask, int(summary["id"]))
+        template = db.get(ResumeTemplate, int(summary["selected_template_id"]))
+        assert record is not None
+        assert template is not None
+        assert record.selected_template_style_json == template.style_json
+        frozen = record.selected_template_style_json
+        changed_style = dict(template.style_json)
+        assert isinstance(changed_style["tokens"], dict)
+        changed_style["tokens"] = {
+            **changed_style["tokens"],
+            "accent_color": "#123456",
+        }
+        template.style_json = changed_style
+        db.commit()
+        db.refresh(record)
+        assert record.selected_template_style_json == frozen
 
 
 def test_active_import_shares_the_ten_slot_limit_with_normal_creation() -> None:

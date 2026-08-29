@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   defaultSemanticDocument,
   defaultSemanticStyle,
+  defaultCanonicalDocument,
   normalizeResumeAccentColor,
   editorSettingsToStyle,
   editorDocumentToMarkdown,
@@ -12,6 +13,7 @@ import {
   resumePresentationPageMargins,
   styleToEditorSettings,
   withResumePresentationAvatarSize,
+  type CanonicalResumeDocument,
   type CanonicalResumePresentation,
   type TemplateDefinition,
 } from "./resumeContract";
@@ -35,6 +37,58 @@ describe("resume semantic contract adapter", () => {
 
     expect(resumeDocumentToMarkdown(document)).toContain("# 张三");
     expect(resumeDocumentToMarkdown(document)).toContain("- Python：FastAPI");
+  });
+
+  it("exports canonical title and inline icons to their Markdown markers", () => {
+    const document: CanonicalResumeDocument = {
+      ...defaultCanonicalDocument,
+      identity: {
+        ...defaultCanonicalDocument.identity,
+        name: {
+          node_id: "node_name000000000001",
+          source_refs: [],
+          value: "张三",
+        },
+      },
+      sections: [{
+        node_id: "node_section00000001",
+        source_refs: [],
+        semantic_kind: "work",
+        title: {
+          node_id: "node_title00000000001",
+          source_refs: [],
+          value: "工作经历",
+        },
+        title_icon: { inline_type: "icon", name: "Briefcase" },
+        entries: [],
+        blocks: [{
+          node_id: "node_block00000000001",
+          source_refs: [],
+          block_type: "paragraph",
+          runs: [
+            {
+              inline_type: "text",
+              text: "前",
+              marks: ["bold"],
+              href: null,
+              style: { color: null, font_size_pt: null, highlight_color: null },
+            },
+            { inline_type: "icon", name: "Mail" },
+            {
+              inline_type: "text",
+              text: " 后",
+              marks: [],
+              href: null,
+              style: { color: null, font_size_pt: null, highlight_color: null },
+            },
+          ],
+        }],
+      }],
+    };
+
+    expect(resumeDocumentToMarkdown(document)).toBe(
+      "# 张三\n\n## :icon[Briefcase]: 工作经历\n\n**前**:icon[Mail]: 后",
+    );
   });
 
   it("keeps historical contact links in the same paragraph as typed contact fields", () => {

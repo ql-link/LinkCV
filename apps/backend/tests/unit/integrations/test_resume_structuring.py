@@ -4,10 +4,13 @@ import json
 import pytest
 
 from linkcv.domain.document_conversion import PdfLayoutBlock
-from linkcv.domain.resume import ParsedSourceBlock, build_source_graph
+from linkcv.domain.resume import (
+    ParsedSourceBlock,
+    build_source_graph,
+    validate_sparse_annotations,
+)
 from linkcv.integrations.resume_structuring import (
     LLMResumeStructuringClient,
-    ResumeStructureInvalidError,
     structuring_payload,
 )
 from linkcv.modules.llm.catalog import RESUME_STRUCTURING_CAPABILITY
@@ -42,10 +45,15 @@ def graph_fixture():
     )
 
 
-def sparse_payload(graph, annotations=None) -> str:
+def sparse_payload(
+    graph,
+    annotations=None,
+    *,
+    source_graph_sha256: str | None = None,
+) -> str:
     return json.dumps({
         "schema_version": "sparse-resume-annotations.v1",
-        "source_graph_sha256": graph.graph_sha256(),
+        "source_graph_sha256": source_graph_sha256 or graph.graph_sha256(),
         "annotations": annotations or [],
     }, ensure_ascii=False)
 
@@ -62,6 +70,50 @@ def layout_hints():
         confidence=0.97,
         role_source="visual_inference",
     )]
+
+
+def valid_identity_annotation(graph):
+    return {
+        "source_id": graph.leaves[0].source_id,
+        "role": "identity_name",
+        "semantic_kind": None,
+        "entry_anchor_source_id": None,
+        "field_key": None,
+        "normalized_value": None,
+        "confidence": 0.9,
+    }
+
+
+def assert_empty_annotations(result, graph) -> None:
+    assert result.schema_version == "sparse-resume-annotations.v1"
+    assert result.source_graph_sha256 == graph.graph_sha256()
+    assert result.annotations == []
+    validate_sparse_annotations(graph, result)
+
+
+class TimeoutLLMService:
+    def __init__(self) -> None:
+        self.calls = []
+
+    async def structured_chat(self, user_id, messages, *, source, response_model, capability):
+        self.calls.append((user_id, messages, source, response_model, capability))
+        raise TimeoutError("provider timeout")
+
+
+class SequenceLLMService:
+    def __init__(self, outcomes) -> None:
+        self.outcomes = outcomes
+        self.calls = []
+
+    async def structured_chat(self, user_id, messages, *, source, response_model, capability):
+        self.calls.append((user_id, messages, source, response_model, capability))
+        outcome = self.outcomes[min(len(self.calls) - 1, len(self.outcomes) - 1)]
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return StructuredChatResult(
+            value=response_model.model_validate_json(outcome),
+            call_id="llmcall_fixture",
+        )
 
 
 def test_sparse_structuring_uses_source_graph_as_the_only_llm_contract() -> None:
@@ -83,6 +135,24 @@ def test_sparse_structuring_uses_source_graph_as_the_only_llm_contract() -> None
     assert source == "resume_import"
     assert response_model.__name__ == "SparseResumeAnnotations"
     assert capability == RESUME_STRUCTURING_CAPABILITY
+
+
+def test_sparse_structuring_keeps_valid_annotations() -> None:
+    graph = graph_fixture()
+    annotation = valid_identity_annotation(graph)
+    result = asyncio.run(
+        LLMResumeStructuringClient(
+            FakeLLMService([sparse_payload(graph, [annotation])])
+        ).extract_sparse(
+            user_id=42,
+            source_graph=graph,
+            timeout_seconds=5,
+        )
+    )
+
+    assert [item.model_dump(mode="json") for item in result.annotations] == [
+        annotation
+    ]
 
 
 def test_structuring_payload_adds_only_bounded_advisory_layout_fields() -> None:
@@ -108,47 +178,160 @@ def test_sparse_structuring_retries_without_invalid_layout_influence() -> None:
         "normalized_value": None,
         "confidence": 0.9,
     }])
-    service = FakeLLMService([unknown, sparse_payload(graph)])
+    service = FakeLLMService(
+        [unknown, sparse_payload(graph, [valid_identity_annotation(graph)])]
+    )
     result = asyncio.run(LLMResumeStructuringClient(service).extract_sparse(
         user_id=42,
         source_graph=graph,
         timeout_seconds=5,
         layout_hints=layout_hints(),
     ))
-    assert result.annotations == []
+    assert [annotation.role for annotation in result.annotations] == [
+        "identity_name"
+    ]
     assert len(service.calls) == 2
     assert "layout" in json.loads(service.calls[0][1][1].content)
     assert "layout" not in json.loads(service.calls[1][1][1].content)
 
 
-def test_sparse_structuring_rejects_unknown_and_duplicate_annotations() -> None:
+@pytest.mark.parametrize(
+    ("second_outcome", "reason"),
+    [
+        (
+            LLMError("LLM_PROVIDER_ERROR", "llmcall_fallback"),
+            "model_call_failed",
+        ),
+        (
+            LLMError("LLM_RESPONSE_INVALID", "llmcall_fallback"),
+            "llm_response_invalid",
+        ),
+        (TimeoutError("provider timeout"), "timeout"),
+        ("invalid", "invalid_annotations"),
+    ],
+)
+def test_sparse_structuring_falls_back_when_layout_retry_fails(
+    second_outcome,
+    reason,
+    caplog,
+) -> None:
     graph = graph_fixture()
-    source_id = graph.leaves[0].source_id
-    annotation = {
-        "source_id": source_id,
-        "role": "body",
-        "semantic_kind": "custom",
-        "entry_anchor_source_id": None,
-        "field_key": None,
-        "normalized_value": None,
-        "confidence": 0.9,
-    }
-    for content in (
-        sparse_payload(graph, [{**annotation, "source_id": "src_ffffffffffffffff"}]),
-        sparse_payload(graph, [annotation, annotation]),
-    ):
-        with pytest.raises(ResumeStructureInvalidError):
-            asyncio.run(LLMResumeStructuringClient(FakeLLMService([content])).extract_sparse(
-                user_id=42, source_graph=graph, timeout_seconds=5,
-            ))
+    invalid = sparse_payload(graph, [
+        {**valid_identity_annotation(graph), "source_id": "src_ffffffffffffffff"}
+    ])
+    if second_outcome == "invalid":
+        second_outcome = invalid
+    service = SequenceLLMService([invalid, second_outcome])
+
+    with caplog.at_level("WARNING"):
+        result = asyncio.run(LLMResumeStructuringClient(service).extract_sparse(
+            user_id=42,
+            source_graph=graph,
+            timeout_seconds=5,
+            layout_hints=layout_hints(),
+        ))
+
+    assert_empty_annotations(result, graph)
+    assert len(service.calls) == 2
+    assert "layout" not in json.loads(service.calls[1][1][1].content)
+    assert len(caplog.records) == 1
+    assert caplog.records[0].reason == reason
 
 
-def test_sparse_structuring_maps_invalid_model_response_to_stable_error() -> None:
+@pytest.mark.parametrize(
+    ("annotations", "source_graph_sha256"),
+    [
+        (
+            [{
+                **valid_identity_annotation(graph_fixture()),
+                "source_id": "src_ffffffffffffffff",
+            }],
+            None,
+        ),
+        (
+            [{
+                **valid_identity_annotation(graph_fixture()),
+                "entry_anchor_source_id": "src_eeeeeeeeeeeeeeee",
+            }],
+            None,
+        ),
+        (
+            [
+                valid_identity_annotation(graph_fixture()),
+                valid_identity_annotation(graph_fixture()),
+            ],
+            None,
+        ),
+        ([], "b" * 64),
+    ],
+)
+def test_sparse_structuring_falls_back_for_invalid_annotation_contract(
+    annotations,
+    source_graph_sha256,
+    caplog,
+) -> None:
+    graph = graph_fixture()
+    with caplog.at_level("WARNING"):
+        result = asyncio.run(
+            LLMResumeStructuringClient(
+                FakeLLMService([
+                    sparse_payload(
+                        graph,
+                        annotations,
+                        source_graph_sha256=source_graph_sha256,
+                    )
+                ])
+            ).extract_sparse(
+                user_id=42,
+                source_graph=graph,
+                timeout_seconds=5,
+            )
+        )
+
+    assert_empty_annotations(result, graph)
+    assert len(caplog.records) == 1
+    assert caplog.records[0].reason == "invalid_annotations"
+
+
+@pytest.mark.parametrize(
+    "error_code",
+    [
+        "LLM_CHAT_NOT_CONFIGURED",
+        "LLM_MODEL_NOT_CONFIGURED",
+        "LLM_CREDENTIALS_UNAVAILABLE",
+        "LLM_RESPONSE_INVALID",
+        "LLM_PROVIDER_ERROR",
+    ],
+)
+def test_sparse_structuring_falls_back_for_llm_errors(error_code, caplog) -> None:
     graph = graph_fixture()
     client = LLMResumeStructuringClient(
-        FakeLLMService([], error_code="LLM_RESPONSE_INVALID")
+        FakeLLMService([], error_code=error_code)
     )
-    with pytest.raises(ResumeStructureInvalidError):
-        asyncio.run(client.extract_sparse(
+    with caplog.at_level("WARNING"):
+        result = asyncio.run(client.extract_sparse(
             user_id=42, source_graph=graph, timeout_seconds=5,
         ))
+
+    assert_empty_annotations(result, graph)
+    assert len(caplog.records) == 1
+    assert caplog.records[0].exception_type == "LLMError"
+    assert "张三" not in caplog.text
+    assert "42" not in caplog.text
+
+
+def test_sparse_structuring_falls_back_for_timeout(caplog) -> None:
+    graph = graph_fixture()
+    service = TimeoutLLMService()
+
+    with caplog.at_level("WARNING"):
+        result = asyncio.run(LLMResumeStructuringClient(service).extract_sparse(
+            user_id=42, source_graph=graph, timeout_seconds=5,
+        ))
+
+    assert_empty_annotations(result, graph)
+    assert len(service.calls) == 1
+    assert len(caplog.records) == 1
+    assert caplog.records[0].reason == "timeout"
+    assert caplog.records[0].exception_type == "TimeoutError"
+    assert "provider timeout" not in caplog.text

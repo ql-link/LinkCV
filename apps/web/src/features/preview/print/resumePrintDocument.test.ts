@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   defaultCanonicalDocument,
   defaultCanonicalPresentation,
+  type LayoutPlan,
   type CanonicalResumeDocument,
 } from "../../../api/resumeContract";
 import {
@@ -39,10 +40,34 @@ function canonicalFixture(): CanonicalResumeDocument {
   };
 }
 
+function canonicalLayoutPlan(data = canonicalFixture(), templateKey = "classic-cn"): LayoutPlan {
+  return {
+    schema_version: "layout-plan.v1",
+    content_sha256: "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    template_key: templateKey,
+    regions: [{
+      region_id: "main",
+      order: 0,
+      nodes: [
+        {
+          node_id: data.identity.node_id,
+          semantic_kind: "identity",
+          slot_id: "main_content",
+        },
+        ...data.sections.map((section) => ({
+          node_id: section.node_id,
+          semantic_kind: section.semantic_kind,
+          slot_id: "main_content",
+        })),
+      ],
+    }],
+  };
+}
+
 describe("统一简历打印文档", () => {
   it("从 canonical 快照生成稳定的只读打印 DOM", () => {
     const html = renderResumePrintDocument(createResumeRenderRequest(
-      "打印测试", canonicalFixture(), defaultCanonicalPresentation,
+      "打印测试", canonicalFixture(), defaultCanonicalPresentation, undefined, canonicalLayoutPlan(),
     ));
     expect(html).toContain("data-resume-print-document");
     expect(html).toContain('data-render-protocol="1"');
@@ -66,7 +91,9 @@ describe("统一简历打印文档", () => {
         },
       },
     };
-    const html = renderResumePrintDocument(createResumeRenderRequest("四边边距", canonicalFixture(), style));
+    const html = renderResumePrintDocument(createResumeRenderRequest(
+      "四边边距", canonicalFixture(), style, undefined, canonicalLayoutPlan(),
+    ));
     expect(html).toContain("--resume-page-margin-top:0mm");
     expect(html).toContain("--resume-page-margin-right:10mm");
     expect(html).toContain("--resume-page-margin-bottom:8mm");
@@ -75,7 +102,7 @@ describe("统一简历打印文档", () => {
 
   it("保留 canonical 富文本标记和稳定 node_id", () => {
     const html = renderResumePrintDocument(createResumeRenderRequest(
-      "富文本打印", canonicalFixture(), defaultCanonicalPresentation,
+      "富文本打印", canonicalFixture(), defaultCanonicalPresentation, undefined, canonicalLayoutPlan(),
     ));
     expect(html).toContain("<u><strong>");
     expect(html).toContain("color:#3478f6");
@@ -106,6 +133,7 @@ describe("统一简历打印文档", () => {
       title: "图片",
       data,
       style: defaultCanonicalPresentation,
+      layout_plan: canonicalLayoutPlan(data),
       assets: { "/api/resumes/1/assets/logo.png": "data:image/png;base64,ZmFrZQ==" },
     });
     expect(html).toContain('src="data:image/png;base64,ZmFrZQ=="');
@@ -117,6 +145,7 @@ describe("统一简历打印文档", () => {
       title: "安全",
       data: canonicalFixture(),
       style: defaultCanonicalPresentation,
+      layout_plan: canonicalLayoutPlan(),
       assets: { "/private/other.png": "javascript:alert(1)" },
     });
     expect(html).not.toContain("javascript:");
@@ -135,8 +164,20 @@ describe("统一简历打印文档", () => {
       },
     };
     const html = renderResumePrintDocument(createResumeRenderRequest(
-      "强调色", canonicalFixture(), style,
+      "强调色", canonicalFixture(), style, undefined, canonicalLayoutPlan(),
     ));
     expect(html).toContain("--preview-accent:#202632");
+  });
+
+  it("缺少服务端布局计划时不直接线性渲染 canonical 正文", () => {
+    const html = renderResumePrintDocument(createResumeRenderRequest(
+      "缺少布局计划", canonicalFixture(), defaultCanonicalPresentation,
+    ));
+
+    expect(html).toContain('data-render-state="unavailable"');
+    expect(html).toContain('class="resume-render-unavailable"');
+    expect(html).toContain("预览不可用");
+    expect(html).not.toContain("项目经历");
+    expect(html).not.toContain("正文");
   });
 });

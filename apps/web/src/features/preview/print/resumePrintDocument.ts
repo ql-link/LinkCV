@@ -9,7 +9,6 @@ import {
   resumePresentationTemplateDefinition,
   styleToEditorSettings,
 } from "../../../api/resumeContract";
-import { renderResumeMarkdown } from "../../../parser/resumeMarkdown";
 import { composeEditorDocumentForLayoutPlan } from "../../workbench/templateLayout";
 import { resumeDocumentToEditorDocument } from "../../workbench/resumeEditorPersistence";
 import { renderResumeEditorDocument } from "./resumeEditorRenderer";
@@ -30,6 +29,8 @@ export type ResumePrintDocumentOptions = {
   className?: string;
   ariaLabel?: string;
 };
+
+const UNAVAILABLE_PRINT_CONTENT = '<p class="resume-render-unavailable" role="status">预览不可用</p>';
 
 function escapeHtml(value: string) {
   return value
@@ -91,12 +92,24 @@ export function renderResumePrintDocument(
   const settings = styleToEditorSettings(request.style);
   const editorDocument = resumeDocumentToEditorDocument(request.data);
   const definition = resumePresentationTemplateDefinition(request.style);
-  const projected = editorDocument && request.layout_plan && definition
-    ? composeEditorDocumentForLayoutPlan(editorDocument, request.data, request.layout_plan, definition)
-    : editorDocument;
-  const rendered = projected
-    ? renderResumeEditorDocument(projected)
-    : renderResumeMarkdown("简历内容暂不可用");
+  let rendered = UNAVAILABLE_PRINT_CONTENT;
+  let renderState = "unavailable";
+  if (editorDocument && request.layout_plan && definition) {
+    try {
+      const projected = composeEditorDocumentForLayoutPlan(
+        editorDocument,
+        request.data,
+        request.layout_plan,
+        definition,
+      );
+      rendered = renderResumeEditorDocument(projected);
+      renderState = "pending";
+    } catch {
+      // A missing, stale, or malformed plan must fail closed. Rendering the
+      // canonical tree directly would silently discard the server's layout
+      // decision and produce a different template.
+    }
+  }
   const content = replaceEmbeddedAssets(rendered, request.assets ?? {});
   const paperClasses = [
     "resume-paper",
@@ -112,7 +125,7 @@ export function renderResumePrintDocument(
   const title = escapeHtml(request.title.trim() || "LinkCV Resume");
   const css = options.includeStyles ? "<style data-resume-print-styles>/* injected by the renderer */</style>" : "";
 
-  return `<article class="${paperClasses}${extraClass}" data-resume-print-document data-render-state="pending" data-render-protocol="${RESUME_RENDER_PROTOCOL_VERSION}" data-resume-title="${title}"${ariaLabel} style="${escapeHtml(style)}">${css}<div class="${contentClasses}">${content}</div></article>`;
+  return `<article class="${paperClasses}${extraClass}" data-resume-print-document data-render-state="${renderState}" data-render-protocol="${RESUME_RENDER_PROTOCOL_VERSION}" data-resume-title="${title}"${ariaLabel} style="${escapeHtml(style)}">${css}<div class="${contentClasses}">${content}</div></article>`;
 }
 
 export function createResumeRenderRequest(

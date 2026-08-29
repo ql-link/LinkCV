@@ -4,6 +4,7 @@ import { api } from "../../api/client";
 import {
   defaultCanonicalDocument,
   defaultCanonicalPresentation,
+  type LayoutPlan,
 } from "../../api/resumeContract";
 import { SharePage } from "./SharePage";
 
@@ -19,6 +20,21 @@ vi.mock("../../api/client", async (importOriginal) => {
 });
 
 const mockedFetch = vi.mocked(api.fetchPublicShare);
+
+const layoutPlan: LayoutPlan = {
+  schema_version: "layout-plan.v1",
+  content_sha256: "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  template_key: "classic-technical-cn",
+  regions: [{
+    region_id: "main",
+    order: 0,
+    nodes: [{
+      node_id: defaultCanonicalDocument.identity.node_id,
+      semantic_kind: "identity",
+      slot_id: "main_content",
+    }],
+  }],
+};
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -51,6 +67,7 @@ describe("SharePage", () => {
           },
         },
       },
+      layout_plan: layoutPlan,
       sharer: { nickname: "于晏", avatar_url: null },
     });
     render(<SharePage token="token_123" />);

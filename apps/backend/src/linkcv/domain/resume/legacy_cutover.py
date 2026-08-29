@@ -19,6 +19,7 @@ from linkcv.domain.resume.models import (
     Contact,
     EntryFields,
     Identity,
+    InlineIcon,
     InlineMedia,
     InlineStyle,
     ListBlock,
@@ -97,8 +98,97 @@ def _inline_media(attrs: dict[str, Any]) -> InlineMedia:
     )
 
 
-def _tiptap_inline(nodes: list[dict[str, Any]]) -> list[TextRun | InlineMedia]:
-    result: list[TextRun | InlineMedia] = []
+_INLINE_ICON_NAMES: frozenset[str] = frozenset(
+    {
+        "Mail",
+        "Phone",
+        "MapPin",
+        "Globe",
+        "Github",
+        "Linkedin",
+        "GraduationCap",
+        "Briefcase",
+        "Award",
+        "Star",
+        "Calendar",
+        "Code2",
+    }
+)
+_INLINE_ICON_MARKER = re.compile(r":icon\[(?P<name>[A-Za-z0-9]+)\]:")
+
+
+def _icon(name: str) -> InlineIcon:
+    return InlineIcon(inline_type="icon", name=name)  # type: ignore[arg-type]
+
+
+def _icon_marker(name: object) -> str:
+    return f":icon[{name}]:"
+
+
+_SECTION_ICON_MARKER = re.compile(
+    r"\A[ \t]*:icon\[(?P<name>[A-Za-z0-9]+)\]:[ \t]*(?P<title>.*)\Z",
+)
+
+
+def _section_title(
+    display_title: str | None,
+    *parts: object,
+) -> tuple[TextValue | None, InlineIcon | None]:
+    """Project a legacy section title marker into canonical title fields.
+
+    Only a line-leading, allow-listed marker has section-heading semantics.
+    Other marker-looking text remains the title verbatim and is handled by the
+    regular inline Markdown conversion when it occurs in body content.
+    """
+
+    if not display_title:
+        return None, None
+    match = _SECTION_ICON_MARKER.fullmatch(display_title)
+    if match is None or match.group("name") not in _INLINE_ICON_NAMES:
+        return _text_value("title", display_title, *parts), None
+    title = match.group("title").strip()
+    return (
+        _text_value("title", title, *parts) if title else None,
+        _icon(match.group("name")),
+    )
+
+
+def _append_marked_text(
+    result: list[TextRun | InlineIcon | InlineMedia],
+    value: str,
+    *,
+    marks: Iterable[str] = (),
+    href: str | None = None,
+    style: InlineStyle | None = None,
+) -> None:
+    """Split legal Markdown icon markers while retaining surrounding metadata."""
+
+    cursor = 0
+    for match in _INLINE_ICON_MARKER.finditer(value):
+        name = match.group("name")
+        if name not in _INLINE_ICON_NAMES:
+            continue
+        if match.start() > cursor:
+            result.append(
+                _text_run(
+                    value[cursor : match.start()],
+                    marks=marks,
+                    href=href,
+                    style=style,
+                )
+            )
+        result.append(_icon(name))
+        cursor = match.end()
+    if cursor < len(value):
+        result.append(
+            _text_run(value[cursor:], marks=marks, href=href, style=style)
+        )
+
+
+def _tiptap_inline(
+    nodes: list[dict[str, Any]],
+) -> list[TextRun | InlineIcon | InlineMedia]:
+    result: list[TextRun | InlineIcon | InlineMedia] = []
     for node in nodes:
         node_type = node.get("type")
         if node_type == "text":
@@ -122,20 +212,27 @@ def _tiptap_inline(nodes: list[dict[str, Any]]) -> list[TextRun | InlineMedia]:
                     )
                 elif mark_type == "highlight":
                     highlight = attrs.get("color")
-            result.append(
-                _text_run(
-                    str(node["text"]),
-                    marks=marks,
-                    href=href,
-                    style=_style(color=color, size=size, highlight=highlight),
-                )
+            _append_marked_text(
+                result,
+                str(node["text"]),
+                marks=marks,
+                href=href,
+                style=_style(color=color, size=size, highlight=highlight),
             )
         elif node_type == "inlineImage":
             result.append(_inline_media(node.get("attrs") or {}))
         elif node_type in {"hardBreak"}:
             result.append(_text_run("\n"))
-        elif node_type in {"inlineIcon", "resumeBlockAnchor"}:
-            # These are decorative/layout metadata; they have no user text.
+        elif node_type == "inlineIcon":
+            name = (node.get("attrs") or {}).get("name")
+            if isinstance(name, str) and name in _INLINE_ICON_NAMES:
+                result.append(_icon(name))
+            else:
+                # Unknown or incomplete historical nodes are ordinary text,
+                # never silently discarded.
+                result.append(_text_run(_icon_marker(name or "")))
+        elif node_type == "resumeBlockAnchor":
+            # Anchors are layout metadata and have no user-visible text.
             continue
         else:
             raise LegacyCutoverError(f"unsupported inline TipTap node: {node_type}")
@@ -170,7 +267,9 @@ def _tiptap_blocks(
                 raise LegacyCutoverError("resumeRow leftWidth must be numeric")
             width = float(raw_width)
             if not 30 <= width <= 80:
-                raise LegacyCutoverError("resumeRow leftWidth must be between 30 and 80")
+                raise LegacyCutoverError(
+                    "resumeRow leftWidth must be between 30 and 80"
+                )
 
         cells: list[RowCell] = []
         for index, child in enumerate(content):
@@ -238,7 +337,7 @@ def _tiptap_blocks(
             for index, item in enumerate(content):
                 if item.get("type") != "listItem":
                     raise LegacyCutoverError("list contains a non-listItem node")
-                runs: list[TextRun | InlineMedia] = []
+                runs: list[TextRun | InlineIcon | InlineMedia] = []
                 for child in item.get("content") or []:
                     if child.get("type") in {"bulletList", "orderedList"}:
                         raise LegacyCutoverError(
@@ -301,8 +400,8 @@ def _markdown_simple_blocks(
     tokens = MarkdownIt("commonmark").parse(markdown)
     blocks: list[ParagraphBlock | ListBlock | MediaBlock] = []
 
-    def inline_runs(token) -> list[TextRun | InlineMedia]:
-        result: list[TextRun | InlineMedia] = []
+    def inline_runs(token) -> list[TextRun | InlineIcon | InlineMedia]:
+        result: list[TextRun | InlineIcon | InlineMedia] = []
         marks: list[str] = []
         href: str | None = None
         for child in token.children or []:
@@ -326,7 +425,12 @@ def _markdown_simple_blocks(
                 href = None
             elif child.type in {"text", "code_inline"} and child.content:
                 active = [*marks, *(["code"] if child.type == "code_inline" else [])]
-                result.append(_text_run(child.content, marks=active, href=href))
+                _append_marked_text(
+                    result,
+                    child.content,
+                    marks=active,
+                    href=href,
+                )
             elif child.type in {"softbreak", "hardbreak"}:
                 result.append(_text_run("\n", marks=marks, href=href))
             elif child.type == "image":
@@ -663,13 +767,13 @@ def rich_text_blocks(
 
 def _block_plain_text(block: SimpleContentBlock | RowBlock) -> str:
     if isinstance(block, ParagraphBlock):
-        return "".join(
-            run.text for run in block.runs if isinstance(run, TextRun)
-        )
+        return "".join(run.text for run in block.runs if isinstance(run, TextRun))
     return ""
 
 
-def _block_marker(block: SimpleContentBlock | RowBlock) -> tuple[str, str | float | None] | None:
+def _block_marker(
+    block: SimpleContentBlock | RowBlock,
+) -> tuple[str, str | float | None] | None:
     if not isinstance(block, ParagraphBlock):
         return None
     return _markdown_marker(_block_plain_text(block).strip())
@@ -708,7 +812,9 @@ def _recomposed_row(
     row_id = opener.node_id
     return RowBlock(
         node_id=row_id,
-        source_refs=_unique_source_refs([opener, *closers, *[item for cell in cells for item in cell]]),
+        source_refs=_unique_source_refs(
+            [opener, *closers, *[item for cell in cells for item in cell]]
+        ),
         block_type="row",
         row_kind=row_kind,  # type: ignore[arg-type]
         cells=[
@@ -720,6 +826,220 @@ def _recomposed_row(
             for index, cell in enumerate(cells)
         ],
         left_width_percent=width,
+    )
+
+
+_COLLAPSED_PAIR = re.compile(
+    r"\A[ \t]*::: left(?:[ \t]+(?P<width>\d+(?:\.\d+)?))?[ \t]*\n"
+    r"(?P<left>.*?)\n[ \t]*:::[ \t]*\n(?:[ \t]*\n)*"
+    r"(?P<right_open>[ \t]*::: right[ \t]*)\n"
+    r"(?P<right>.*?)\n[ \t]*:::[ \t]*\Z",
+    re.DOTALL,
+)
+_COLLAPSED_FIXED = re.compile(
+    r"\A[ \t]*::::[ \t]+(?P<kind>meta|trio)[ \t]*\n"
+    r"(?P<body>.*?)\n[ \t]*::::[ \t]*\Z",
+    re.DOTALL,
+)
+_COLLAPSED_FIXED_IMPLICIT_CLOSE = re.compile(
+    r"\A[ \t]*::::[ \t]+(?P<kind>meta|trio)[ \t]*\n"
+    r"(?P<body>.*)\Z",
+    re.DOTALL,
+)
+
+
+def _combined_paragraph_runs(
+    blocks: list[ParagraphBlock],
+) -> tuple[
+    str,
+    list[tuple[int, int, TextRun]],
+    list[tuple[int, int, ParagraphBlock]],
+]:
+    """Join persisted collapsed paragraphs without flattening inline marks.
+
+    0047 inherited a historical Markdown adapter that sometimes placed an
+    opener, cell text, and closer in one ParagraphBlock.  Some pair rows were
+    split across two or three such paragraphs.  The synthetic newline between
+    source paragraphs is visible structure, so keep it as an ordinary neutral
+    TextRun while retaining every original run's marks, link and style.
+    """
+
+    text_parts: list[str] = []
+    run_spans: list[tuple[int, int, TextRun]] = []
+    block_spans: list[tuple[int, int, ParagraphBlock]] = []
+    cursor = 0
+    for index, block in enumerate(blocks):
+        if index:
+            separator = _text_run("\n")
+            text_parts.append(separator.text)
+            run_spans.append((cursor, cursor + 1, separator))
+            cursor += 1
+        block_start = cursor
+        for run in block.runs:
+            if not isinstance(run, TextRun):
+                raise LegacyCutoverError("collapsed legacy row contains inline media")
+            start = cursor
+            cursor += len(run.text)
+            text_parts.append(run.text)
+            run_spans.append((start, cursor, run))
+        block_spans.append((block_start, cursor, block))
+    return "".join(text_parts), run_spans, block_spans
+
+
+def _slice_combined_runs(
+    run_spans: list[tuple[int, int, TextRun]],
+    *,
+    start: int,
+    end: int,
+) -> list[TextRun]:
+    runs: list[TextRun] = []
+    for run_start, run_end, run in run_spans:
+        overlap_start = max(start, run_start)
+        overlap_end = min(end, run_end)
+        if overlap_start >= overlap_end:
+            continue
+        value = run.text[overlap_start - run_start : overlap_end - run_start]
+        if value:
+            runs.append(run.model_copy(update={"text": value}))
+    return runs
+
+
+def _blocks_for_span(
+    block_spans: list[tuple[int, int, ParagraphBlock]],
+    *,
+    start: int,
+    end: int,
+) -> list[ParagraphBlock]:
+    return [
+        block
+        for block_start, block_end, block in block_spans
+        if block_start < end and block_end > start
+    ]
+
+
+def _collapsed_row(blocks: list[ParagraphBlock], *, seed: str) -> RowBlock | None:
+    """Recover one exact row collapsed into one or more paragraphs.
+
+    Returning ``None`` means the prefix is not a complete supported row yet;
+    callers may append another adjacent paragraph.  Once a regex matches, any
+    nested marker, invalid width or ambiguous fixed-cell count fails closed.
+    """
+
+    text, run_spans, block_spans = _combined_paragraph_runs(blocks)
+    pair = _COLLAPSED_PAIR.fullmatch(text)
+    if pair is not None:
+        left_text = pair.group("left")
+        right_text = pair.group("right")
+        if _contains_raw_marker(left_text) or _contains_raw_marker(right_text):
+            raise LegacyCutoverError("nested collapsed pair row container")
+        width = float(pair.group("width") or 70)
+        if not 30 <= width <= 80:
+            raise LegacyCutoverError("collapsed pair row width is not recoverable")
+        spans = [pair.span("left"), pair.span("right")]
+        cells: list[RowCell] = []
+        for cell_index, (start, end) in enumerate(spans):
+            source_blocks = _blocks_for_span(
+                block_spans,
+                start=start,
+                end=end,
+            )
+            paragraph = ParagraphBlock(
+                node_id=_id(
+                    "paragraph",
+                    seed,
+                    blocks[0].node_id,
+                    "collapsed",
+                    cell_index,
+                ),
+                source_refs=_unique_source_refs(source_blocks),
+                block_type="paragraph",
+                runs=_slice_combined_runs(
+                    run_spans,
+                    start=start,
+                    end=end,
+                ),
+            )
+            if cell_index == 1:
+                right_open = pair.start("right_open")
+                right_sources = [
+                    block
+                    for block_start, block_end, block in block_spans
+                    if block_start <= right_open < block_end
+                ]
+                cell_id = (
+                    right_sources[0].node_id
+                    if len(right_sources) == 1
+                    else _id("cell", seed, blocks[0].node_id, cell_index)
+                )
+            else:
+                cell_id = _id("cell", seed, blocks[0].node_id, cell_index)
+            cells.append(
+                RowCell(
+                    node_id=cell_id,
+                    source_refs=_unique_source_refs(source_blocks),
+                    blocks=[paragraph],
+                )
+            )
+        return RowBlock(
+            node_id=blocks[0].node_id,
+            source_refs=_unique_source_refs(blocks),
+            block_type="row",
+            row_kind="pair",
+            cells=cells,
+            left_width_percent=width,
+        )
+
+    fixed = _COLLAPSED_FIXED.fullmatch(text)
+    if fixed is None:
+        # One historical editor path collapsed a fixed row into a paragraph
+        # but discarded only its final ``::::`` line.  The paragraph boundary
+        # is a safe implicit close solely because meta/trio have fixed cell
+        # counts; pair rows never receive this recovery.
+        fixed = _COLLAPSED_FIXED_IMPLICIT_CLOSE.fullmatch(text)
+    if fixed is None:
+        return None
+    body = fixed.group("body")
+    if _contains_raw_marker(body):
+        raise LegacyCutoverError("nested collapsed fixed row container")
+    kind = fixed.group("kind")
+    expected = {"meta": 4, "trio": 3}[kind]
+    lines = body.split("\n")
+    if len(lines) != expected or any(not line for line in lines):
+        raise LegacyCutoverError(f"collapsed {kind} row has ambiguous cell count")
+    body_start = fixed.start("body")
+    offset = 0
+    cells = []
+    for cell_index, line in enumerate(lines):
+        start = body_start + offset
+        end = start + len(line)
+        source_blocks = _blocks_for_span(block_spans, start=start, end=end)
+        paragraph = ParagraphBlock(
+            node_id=_id(
+                "paragraph",
+                seed,
+                blocks[0].node_id,
+                "collapsed",
+                cell_index,
+            ),
+            source_refs=_unique_source_refs(source_blocks),
+            block_type="paragraph",
+            runs=_slice_combined_runs(run_spans, start=start, end=end),
+        )
+        cells.append(
+            RowCell(
+                node_id=_id("cell", seed, blocks[0].node_id, cell_index),
+                source_refs=_unique_source_refs(source_blocks),
+                blocks=[paragraph],
+            )
+        )
+        offset += len(line) + 1
+    return RowBlock(
+        node_id=blocks[0].node_id,
+        source_refs=_unique_source_refs(blocks),
+        block_type="row",
+        row_kind=kind,  # type: ignore[arg-type]
+        cells=cells,
+        left_width_percent=None,
     )
 
 
@@ -743,16 +1063,35 @@ def recompose_flattened_rows(
             block = sequence[index]
             marker = _block_marker(block)
             text = _block_plain_text(block)
+            if isinstance(block, ParagraphBlock) and _contains_raw_marker(text):
+                collapsed_blocks: list[ParagraphBlock] = []
+                collapsed: RowBlock | None = None
+                for candidate in sequence[index:]:
+                    if not isinstance(candidate, ParagraphBlock):
+                        break
+                    collapsed_blocks.append(candidate)
+                    collapsed = _collapsed_row(
+                        collapsed_blocks,
+                        seed=f"{seed}:{path}:{index}",
+                    )
+                    if collapsed is not None:
+                        break
+                if collapsed is not None:
+                    result.append(collapsed)
+                    index += len(collapsed_blocks)
+                    continue
             if marker is None:
                 if _contains_raw_marker(text):
                     parsed = rich_text_blocks(
                         RichText(format="markdown", content=text),
                         seed=f"{seed}:{path}:{index}",
                     )
-                    if _contains_raw_marker("\n".join(
-                        _block_plain_text(item) for item in parsed
-                    )):
-                        raise LegacyCutoverError("raw legacy row marker survived recomposition")
+                    if _contains_raw_marker(
+                        "\n".join(_block_plain_text(item) for item in parsed)
+                    ):
+                        raise LegacyCutoverError(
+                            "raw legacy row marker survived recomposition"
+                        )
                     result.extend(parsed)
                 else:
                     result.append(block)
@@ -765,7 +1104,9 @@ def recompose_flattened_rows(
                 if not isinstance(block, ParagraphBlock):
                     raise LegacyCutoverError("pair opener is not a paragraph")
                 left_end = index + 1
-                while left_end < len(sequence) and _block_marker(sequence[left_end]) != (
+                while left_end < len(sequence) and _block_marker(
+                    sequence[left_end]
+                ) != (
                     "triple-close",
                     None,
                 ):
@@ -777,17 +1118,22 @@ def recompose_flattened_rows(
                 if left_end >= len(sequence):
                     raise LegacyCutoverError("flattened pair row is incomplete")
                 right_open = left_end + 1
-                while right_open < len(sequence) and not _block_plain_text(
-                    sequence[right_open]
-                ).strip():
+                while (
+                    right_open < len(sequence)
+                    and not _block_plain_text(sequence[right_open]).strip()
+                ):
                     right_open += 1
-                if right_open >= len(sequence) or _block_marker(sequence[right_open]) != (
+                if right_open >= len(sequence) or _block_marker(
+                    sequence[right_open]
+                ) != (
                     "triple-right",
                     None,
                 ):
                     raise LegacyCutoverError("flattened pair row has no right opener")
                 right_end = right_open + 1
-                while right_end < len(sequence) and _block_marker(sequence[right_end]) != (
+                while right_end < len(sequence) and _block_marker(
+                    sequence[right_end]
+                ) != (
                     "triple-close",
                     None,
                 ):
@@ -800,8 +1146,13 @@ def recompose_flattened_rows(
                     raise LegacyCutoverError("flattened pair row is incomplete")
                 left_body = sequence[index + 1 : left_end]
                 right_body = sequence[right_open + 1 : right_end]
-                if any(not isinstance(item, (ParagraphBlock, ListBlock, MediaBlock)) for item in [*left_body, *right_body]):
-                    raise LegacyCutoverError("flattened pair row contains an unsupported block")
+                if any(
+                    not isinstance(item, (ParagraphBlock, ListBlock, MediaBlock))
+                    for item in [*left_body, *right_body]
+                ):
+                    raise LegacyCutoverError(
+                        "flattened pair row contains an unsupported block"
+                    )
                 left_close = sequence[left_end]
                 right_close = sequence[right_end]
                 assert isinstance(left_close, ParagraphBlock)
@@ -847,8 +1198,13 @@ def recompose_flattened_rows(
                         raise LegacyCutoverError(
                             f"flattened {quad_kind} row has ambiguous cell count"
                         )
-                    if any(not isinstance(item, (ParagraphBlock, ListBlock, MediaBlock)) for item in body):
-                        raise LegacyCutoverError("flattened fixed row contains an unsupported block")
+                    if any(
+                        not isinstance(item, (ParagraphBlock, ListBlock, MediaBlock))
+                        for item in body
+                    ):
+                        raise LegacyCutoverError(
+                            "flattened fixed row contains an unsupported block"
+                        )
                     result.append(
                         _recomposed_row(
                             row_kind=quad_kind,
@@ -900,15 +1256,11 @@ def convert_legacy_template(
                 order=item.order,
             )
         )
-    avatar_slots = [
-        item for item in style.manifest.slots if "avatar" in item.accepts
-    ]
+    avatar_slots = [item for item in style.manifest.slots if "avatar" in item.accepts]
     if len(avatar_slots) > 1:
         avatar_regions = {item.region_id for item in avatar_slots}
         if len(avatar_regions) != 1:
-            raise LegacyCutoverError(
-                "legacy template has ambiguous avatar regions"
-            )
+            raise LegacyCutoverError("legacy template has ambiguous avatar regions")
     if avatar_slots:
         avatar_region_id = avatar_slots[0].region_id
     else:
@@ -1066,12 +1418,17 @@ def convert_legacy_document(document: ResumeDocument) -> CanonicalResumeDocument
     for section_index, semantic in enumerate(document.semantic_sections):
         if semantic.semantic_kind == "basics":
             if basics.summary is not None:
+                title, title_icon = _section_title(
+                    semantic.display_title,
+                    semantic.id,
+                )
                 sections.append(
                     ResumeSection(
                         node_id=_id("section", semantic.id),
                         source_refs=[],
                         semantic_kind="profile",
-                        title=_text_value("title", semantic.display_title, semantic.id),
+                        title=title,
+                        title_icon=title_icon,
                         entries=[],
                         blocks=rich_text_blocks(basics.summary, seed=semantic.id),
                     )
@@ -1158,12 +1515,17 @@ def convert_legacy_document(document: ResumeDocument) -> CanonicalResumeDocument
                     blocks=blocks,
                 )
             )
+        title, title_icon = _section_title(
+            semantic.display_title,
+            semantic.id,
+        )
         sections.append(
             ResumeSection(
                 node_id=_id("section", semantic.id, section_index),
                 source_refs=[],
                 semantic_kind=kind_map.get(semantic.semantic_kind, "custom"),
-                title=_text_value("title", semantic.display_title, semantic.id),
+                title=title,
+                title_icon=title_icon,
                 entries=entries,
                 blocks=section_blocks,
             )

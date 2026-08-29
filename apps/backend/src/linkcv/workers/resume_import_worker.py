@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import secrets
 from datetime import timezone
@@ -12,7 +13,6 @@ from sqlalchemy.orm import Session, sessionmaker
 from linkcv.application.resumes.commands import CreateResumeCommand
 from linkcv.application.resumes.service import (
     MAX_RESUMES_PER_USER,
-    parse_persisted_template_snapshot,
     presentation_from_template,
     persist_resume_with_initial_version,
     resume_slot_count,
@@ -47,6 +47,19 @@ CONTENT_TYPES = {
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "pdf": "application/pdf",
 }
+
+
+def _parse_frozen_template_definition(value: object) -> TemplateDefinition:
+    """Parse the immutable TemplateDefinition stored on an import task."""
+
+    if isinstance(value, (bytes, bytearray)):
+        value = value.decode("utf-8")
+    if isinstance(value, str):
+        value = json.loads(value)
+    definition = TemplateDefinition.model_validate(value)
+    return definition.model_copy(deep=True)
+
+
 FAILURE_REASON_BY_CODE = {
     "UNSUPPORTED_IMPORT_FORMAT": "format_unsupported",
     "IMPORT_CONTENT_INVALID": "content_invalid",
@@ -183,37 +196,28 @@ class ResumeImportProcessor:
                     raise ResumeImportFailure(
                         409, "IMPORT_TEMPLATE_MISMATCH", stage="task_load"
                     )
-                template = db.scalar(
-                    select(ResumeTemplate).where(
-                        ResumeTemplate.id == selected_template_id,
-                        ResumeTemplate.is_active == 1,
-                    )
-                )
-                if template is None:
-                    raise ResumeImportFailure(
-                        422, "TEMPLATE_INACTIVE", stage="task_load"
-                    )
                 try:
-                    template_snapshot = parse_persisted_template_snapshot(
-                        template.data_json, template.style_json
+                    template_definition = _parse_frozen_template_definition(
+                        record.selected_template_style_json
                     )
-                    presentation = presentation_from_template(template_snapshot.style)
+                    presentation = presentation_from_template(template_definition)
                     if not isinstance(presentation, ResumePresentation):
                         raise ValueError("resume import presentation is not canonical")
                 except ValueError as error:
                     raise ResumeImportFailure(
                         422,
-                        "TEMPLATE_INACTIVE",
+                        "IMPORT_TEMPLATE_NOT_FROZEN",
                         stage="task_load",
                         exception_type=type(error).__name__,
                     ) from error
                 db.expunge(record)
-                # Keep a detached value snapshot for the entire parse.  The
-                # ORM template is deliberately not allowed to leak past this
-                # session boundary or be re-read as the source of style.
+                # Keep detached value snapshots for the entire parse.  The
+                # ORM template is deliberately not read here: template edits
+                # or deactivation after task acceptance must not affect this
+                # import's layout.
                 return (
                     record,
-                    template_snapshot.style.model_copy(deep=True),
+                    template_definition,
                     presentation.model_copy(deep=True),
                 )
         except ResumeImportFailure:
@@ -504,26 +508,20 @@ class ResumeImportProcessor:
                     .where(ResumeTemplate.id == selected_template_id)
                     .with_for_update()
                 )
-                if template is None or template.is_active != 1:
+                # The row is required by the resume foreign key, but its
+                # current style and active flag are not part of this task's
+                # render contract.  The accepted task snapshot is the only
+                # source of the imported presentation.
+                if template is None:
                     raise ResumeImportFailure(
                         422, "TEMPLATE_INACTIVE", stage="resume_persistence"
                     )
-                try:
-                    current_snapshot = parse_persisted_template_snapshot(
-                        template.data_json, template.style_json
-                    )
-                except ValueError as error:
+                if template.key != template_definition.template_key:
                     raise ResumeImportFailure(
                         422,
                         "TEMPLATE_INACTIVE",
                         stage="resume_persistence",
-                        exception_type=type(error).__name__,
-                    ) from error
-                if (
-                    current_snapshot.style != template_definition
-                ):
-                    raise ResumeImportFailure(
-                        422, "TEMPLATE_INACTIVE", stage="resume_persistence"
+                        exception_type="TemplateIdentityMismatch",
                     )
                 if not isinstance(parsed.document, CanonicalResumeDocument):
                     raise ResumeImportFailure(

@@ -12,6 +12,122 @@ from linkcv.domain.resume_document import RichText, default_resume_document
 from linkcv.domain.resume_style import PageStyle, default_resume_style
 
 
+def test_cutover_converts_legacy_markdown_icons_and_preserves_marks_links_and_unknown_text() -> None:
+    previous = default_resume_document()
+    summary = RichText(
+        format="markdown",
+        content=(
+            "**前 :icon[Mail]: 后** "
+            "[站点 :icon[Globe]:](https://example.invalid) "
+            ":icon[NotAllowed]: :icon[Mail]"
+        ),
+    )
+    previous = previous.model_copy(
+        update={
+            "basics": previous.basics.model_copy(update={"summary": summary}),
+            "semantic_sections": [
+                previous.semantic_sections[0].model_copy(
+                    update={"display_title": ":icon[Briefcase]: 个人简介"}
+                )
+            ],
+        }
+    )
+
+    document = convert_legacy_document(previous)
+
+    section = document.sections[0]
+    assert section.title is not None
+    assert section.title.value == "个人简介"
+    assert section.title_icon is not None
+    assert section.title_icon.name == "Briefcase"
+    paragraph = section.blocks[0]
+    assert isinstance(paragraph, ParagraphBlock)
+    assert [(run.inline_type, getattr(run, "text", None), getattr(run, "name", None)) for run in paragraph.runs] == [
+        ("text", "前 ", None),
+        ("icon", None, "Mail"),
+        ("text", " 后", None),
+        ("text", " ", None),
+        ("text", "站点 ", None),
+        ("icon", None, "Globe"),
+        ("text", " :icon[NotAllowed]: :icon[Mail]", None),
+    ]
+    assert paragraph.runs[0].marks == ["bold"]
+    assert paragraph.runs[2].marks == ["bold"]
+    assert paragraph.runs[4].href == "https://example.invalid"
+    assert paragraph.runs[5].inline_type == "icon"
+    assert paragraph.runs[6].href is None
+
+
+def test_cutover_converts_legacy_tiptap_inline_icons_and_preserves_run_metadata() -> None:
+    previous = default_resume_document()
+    metadata = [
+        {"type": "bold"},
+        {"type": "link", "attrs": {"href": "https://example.invalid"}},
+        {
+            "type": "textStyle",
+            "attrs": {"color": "#123456", "fontSize": "12pt"},
+        },
+        {"type": "highlight", "attrs": {"color": "#FFEEDD"}},
+    ]
+    summary = RichText(
+        format="tiptap-json",
+        content={
+            "type": "doc",
+            "content": [
+                {
+                    "type": "paragraph",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "前 :icon[Phone]: 后",
+                            "marks": metadata,
+                        },
+                        {"type": "inlineIcon", "attrs": {"name": "Briefcase"}},
+                        {
+                            "type": "text",
+                            "text": " 尾 :icon[NotAllowed]: :icon[Phone]",
+                            "marks": metadata,
+                        },
+                    ],
+                }
+            ],
+        },
+    )
+    previous = previous.model_copy(
+        update={
+            "basics": previous.basics.model_copy(update={"summary": summary}),
+            "semantic_sections": [
+                previous.semantic_sections[0].model_copy(
+                    update={"display_title": ":icon[GraduationCap]: 教育经历"}
+                )
+            ],
+        }
+    )
+
+    document = convert_legacy_document(previous)
+
+    section = document.sections[0]
+    assert section.title_icon is not None
+    assert section.title_icon.name == "GraduationCap"
+    paragraph = section.blocks[0]
+    assert isinstance(paragraph, ParagraphBlock)
+    assert [(run.inline_type, getattr(run, "text", None), getattr(run, "name", None)) for run in paragraph.runs] == [
+        ("text", "前 ", None),
+        ("icon", None, "Phone"),
+        ("text", " 后", None),
+        ("icon", None, "Briefcase"),
+        ("text", " 尾 :icon[NotAllowed]: :icon[Phone]", None),
+    ]
+    for index in (0, 2, 4):
+        run = paragraph.runs[index]
+        assert run.inline_type == "text"
+        assert run.marks == ["bold"]
+        assert run.href == "https://example.invalid"
+        assert run.style.color == "#123456"
+        assert run.style.font_size_pt == 12
+        assert run.style.highlight_color == "#FFEEDD"
+
+
 def test_cutover_preserves_markdown_list_start_links_and_marks() -> None:
     blocks = rich_text_blocks(
         RichText(

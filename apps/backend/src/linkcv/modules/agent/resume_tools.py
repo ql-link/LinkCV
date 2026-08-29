@@ -72,10 +72,16 @@ class EditorBlock:
 
 
 def _inline_text(runs: list[Any]) -> str:
-    return "".join(
-        run.text if getattr(run, "inline_type", None) == "text" else (run.alt or "")
-        for run in runs
-    )
+    values: list[str] = []
+    for run in runs:
+        inline_type = getattr(run, "inline_type", None)
+        if inline_type == "text":
+            values.append(run.text)
+        elif inline_type == "icon":
+            values.append(f":icon[{run.name}]:")
+        else:
+            values.append(run.alt or "")
+    return "".join(values)
 
 
 def editor_markdown(data: CanonicalResumeDocument) -> str | None:
@@ -92,6 +98,9 @@ def editor_markdown(data: CanonicalResumeDocument) -> str | None:
         parts.append(f"[[linkcv-block:{contact.node_id}]]{contact.value}")
     for section in data.sections:
         title = section.title.value if section.title is not None else section.semantic_kind
+        if section.title_icon is not None:
+            marker = f":icon[{section.title_icon.name}]:"
+            title = f"{marker} {title}" if title else marker
         parts.append(
             f"## [[linkcv-block:{section.node_id}:{section.semantic_kind}]]{title}"
         )

@@ -28,7 +28,7 @@ AI 助手提供独立对话工作区和简历编辑器侧栏，允许用户组�
 - 浏览器只提交服务端签发的上下文引用和版本标记，不把受控对象全文拼入用户消息。
 - 带编辑器选区的请求先保存当前草稿，确保后端能按块 ID、范围和内容摘要定位同一版本。
 - Agent 运行可以定位、读取、诊断和生成提案；所有简历写入先形成 `resume_change_proposals`。
-- 简历上下文和提案统一读取 strict canonical 快照；模板投影由 `LayoutPlan` 提供，Agent 不能把 region、slot 或分页信息写进正文。旧快照只能经受控迁移/导入适配器进入系统。
+- 简历上下文和提案统一读取 strict canonical 快照；模板投影由 `LayoutPlan` 提供，Agent 不能把 region、slot 或分页信息写进正文。Agent 的 Markdown 上下文只在序列化边界把 canonical `InlineIcon/title_icon` 输出为白名单 `:icon[Name]:` 标记，不能把图标降级成普通正文后回写。旧快照只能经受控迁移/导入适配器进入系统。
 - 用户确认提案时再次校验所有权、`base_lock_version`、目标定位和内容前置条件；冲突或目标失效时保留当前简历。
 - 停止、失败和异常 EOF 都有明确终态，不能把半条响应当作成功。
 

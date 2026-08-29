@@ -126,6 +126,34 @@ class TextRun(ClosedModel):
         return self
 
 
+InlineIconName = Literal[
+    "Mail",
+    "Phone",
+    "MapPin",
+    "Globe",
+    "Github",
+    "Linkedin",
+    "GraduationCap",
+    "Briefcase",
+    "Award",
+    "Star",
+    "Calendar",
+    "Code2",
+]
+
+
+class InlineIcon(ClosedModel):
+    """A semantic, allow-listed inline icon.
+
+    Icons deliberately carry no visible text, marks, or template metadata.  A
+    section title uses the same value shape through ``title_icon`` so a legacy
+    Markdown marker cannot leak into the title text on a later projection.
+    """
+
+    inline_type: Literal["icon"]
+    name: InlineIconName
+
+
 class ParagraphBlock(SourceReferenced):
     block_type: Literal["paragraph"]
     runs: list[InlineContent] = Field(max_length=2000)
@@ -192,7 +220,10 @@ class InlineMedia(MediaReference):
         return self
 
 
-InlineContent = Annotated[TextRun | InlineMedia, Field(discriminator="inline_type")]
+InlineContent = Annotated[
+    TextRun | InlineIcon | InlineMedia,
+    Field(discriminator="inline_type"),
+]
 
 ParagraphBlock.model_rebuild()
 
@@ -231,11 +262,12 @@ class RowCell(SourceReferenced):
     """One cell in a section-internal row.
 
     Rows are content structure, not page layout.  A cell deliberately accepts
-    only the simple content blocks so a page/column container cannot be hidden
-    inside a canonical row and later acquire template-specific meaning.
+    exactly one paragraph so the TipTap row projection is reversible.  Lists,
+    media and multiple blocks must remain ordinary sibling blocks instead of
+    being silently flattened into a cell.
     """
 
-    blocks: list[SimpleContentBlock] = Field(max_length=500)
+    blocks: list[ParagraphBlock] = Field(min_length=1, max_length=1)
 
 
 class RowBlock(SourceReferenced):
@@ -315,6 +347,9 @@ class ResumeEntry(SourceReferenced):
 class ResumeSection(SourceReferenced):
     semantic_kind: SectionSemanticKind
     title: TextValue | None
+    # Optional for compatibility with canonical rows written before the icon
+    # extension.  New serializations emit null when no title icon exists.
+    title_icon: InlineIcon | None = None
     entries: list[ResumeEntry] = Field(max_length=200)
     blocks: list[ContentBlock] = Field(max_length=500)
 

@@ -6,7 +6,9 @@ import {
   defaultCanonicalPresentation,
   type CanonicalResumeDocument,
   type CanonicalResumePresentation,
+  type LayoutPlan,
 } from "../api/resumeContract";
+import { resumeDocumentToEditorDocument } from "../features/workbench/resumeEditorPersistence";
 import { defaultSettings, useResumeStore } from "./resumeStore";
 
 function editorDocument(title: string): JSONContent {
@@ -53,6 +55,33 @@ function canonicalStyle(
         line_height: options.lineHeight ?? defaultCanonicalPresentation.template_snapshot.tokens.line_height,
       },
     },
+  };
+}
+
+function canonicalLayoutPlan(
+  data: CanonicalResumeDocument,
+  templateKey = "classic-cn",
+): LayoutPlan {
+  return {
+    schema_version: "layout-plan.v1",
+    content_sha256: "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    template_key: templateKey,
+    regions: [{
+      region_id: "main",
+      order: 0,
+      nodes: [
+        {
+          node_id: data.identity.node_id,
+          semantic_kind: "identity",
+          slot_id: "main_content",
+        },
+        ...data.sections.map((section) => ({
+          node_id: section.node_id,
+          semantic_kind: section.semantic_kind,
+          slot_id: "main_content",
+        })),
+      ],
+    }],
   };
 }
 
@@ -125,8 +154,76 @@ beforeEach(() => {
 });
 
 describe("resume save serialization", () => {
+  it("从 ResumeRecord 更新本地摘要时保留服务端布局计划", async () => {
+    const data = canonicalDocument("# 带布局计划的简历");
+    const layoutPlan = canonicalLayoutPlan(data);
+    const renamed = {
+      ...record(2, "# 带布局计划的简历"),
+      title: "已更新名称",
+      data,
+      layout_plan: layoutPlan,
+    };
+    useResumeStore.setState({
+      resumes: [{
+        id: "1",
+        title: "旧名称",
+        source_type: "blank",
+        lock_version: 1,
+        created_at: renamed.created_at,
+        updated_at: "2026-07-27T00:00:01Z",
+      }],
+    });
+    vi.spyOn(api, "updateResume").mockResolvedValue({ resume: renamed });
+
+    await useResumeStore.getState().renameResume("1", "已更新名称");
+
+    expect(useResumeStore.getState().resumes[0].preview).toMatchObject({
+      data,
+      style: renamed.style,
+      layout_plan: layoutPlan,
+    });
+  });
+
+  it("没有本地并发编辑时用响应中与数据匹配的布局计划重组编辑树", async () => {
+    const data = canonicalDocument("# 有效布局计划");
+    const style = canonicalStyle("creative-orange-cn", {
+      accentColor: "#F97316",
+      fontSize: 11,
+      lineHeight: 1.4,
+    });
+    const layoutPlan = canonicalLayoutPlan(data, style.template_snapshot.template_key);
+    const editor = resumeDocumentToEditorDocument(data);
+    if (!editor) throw new Error("TEST_FIXTURE_INVALID");
+    const switched = {
+      ...record(2, "# 有效布局计划"),
+      data,
+      style,
+      template_id: "9",
+      layout_plan: layoutPlan,
+    };
+    useResumeStore.setState({
+      data,
+      editorContent: editor,
+      markdown: "# 有效布局计划",
+      dirty: false,
+    });
+    vi.spyOn(api, "applyResumeTemplate").mockResolvedValue({ resume: switched });
+
+    await useResumeStore.getState().applyTemplate("9", editor);
+
+    expect(useResumeStore.getState()).toMatchObject({
+      style,
+      editorContent: expect.objectContaining({ type: "doc" }),
+      dirty: false,
+    });
+    expect(JSON.stringify(useResumeStore.getState().editorContent)).toContain("有效布局计划");
+    expect(useResumeStore.getState().resumes[0].preview?.layout_plan).toEqual(layoutPlan);
+  });
+
   it("通过原子接口切换模板并保留服务端返回的规范内容", async () => {
     const currentData = canonicalDocument("# 保留的正文");
+    const currentEditor = resumeDocumentToEditorDocument(currentData);
+    if (!currentEditor) throw new Error("TEST_FIXTURE_INVALID");
     const templateStyle = canonicalStyle("creative-orange-cn", {
       accentColor: "#F97316",
       fontSize: 11,
@@ -135,7 +232,7 @@ describe("resume save serialization", () => {
     useResumeStore.setState({
       data: currentData,
       markdown: "# 保留的正文",
-      editorContent: "# 保留的正文",
+      editorContent: currentEditor,
       dirty: false,
       editVersion: 4,
       saveStatus: "saved",
@@ -150,7 +247,7 @@ describe("resume save serialization", () => {
       .spyOn(api, "applyResumeTemplate")
       .mockResolvedValue({ resume: switched });
 
-    await useResumeStore.getState().applyTemplate("9", editorDocument("保留的正文"));
+    await useResumeStore.getState().applyTemplate("9", currentEditor);
 
     expect(apply).toHaveBeenCalledWith("1", expect.objectContaining({
       template_id: "9",
@@ -239,6 +336,72 @@ describe("resume save serialization", () => {
       saveStatus: "idle",
       versionOperationPending: false,
       error: null,
+    });
+  });
+
+  it("并发编辑时不把旧响应的布局计划套到最新编辑树，并保留可继续保存的 dirty 状态", async () => {
+    const applyResponse = deferred<{ resume: ResumeRecord }>();
+    const persistedData = canonicalDocument("# 请求开始时的正文");
+    const newerData: CanonicalResumeDocument = {
+      ...persistedData,
+      sections: [
+        ...persistedData.sections,
+        {
+          node_id: "node_section000000002",
+          semantic_kind: "custom",
+          title: { node_id: "node_title0000000002", value: "并发新增章节", source_refs: [] },
+          entries: [],
+          blocks: [],
+          source_refs: [],
+        },
+      ],
+    };
+    const targetStyle = canonicalStyle("creative-orange-cn", { accentColor: "#F97316" });
+    const responsePlan = canonicalLayoutPlan(persistedData, targetStyle.template_snapshot.template_key);
+    vi.spyOn(api, "applyResumeTemplate").mockImplementationOnce(() => applyResponse.promise);
+
+    useResumeStore.setState({
+      data: persistedData,
+      editorContent: "# 请求开始时的正文",
+      markdown: "# 请求开始时的正文",
+      dirty: false,
+      editVersion: 10,
+    });
+    const switching = useResumeStore.getState().applyTemplate("9", editorDocument("请求开始时的正文"));
+    await vi.waitFor(() => expect(useResumeStore.getState().versionOperationPending).toBe(true));
+
+    useResumeStore.setState({
+      data: newerData,
+      editorContent: "# 并发编辑后的正文",
+      markdown: "# 并发编辑后的正文",
+      dirty: true,
+      editVersion: 11,
+    });
+    applyResponse.resolve({
+      resume: {
+        ...record(2, "# 请求开始时的正文"),
+        data: persistedData,
+        style: targetStyle,
+        template_id: "9",
+        layout_plan: responsePlan,
+      },
+    });
+
+    await expect(switching).resolves.toBeUndefined();
+
+    expect(useResumeStore.getState()).toMatchObject({
+      data: newerData,
+      editorContent: "# 并发编辑后的正文",
+      style: targetStyle,
+      dirty: true,
+      saveStatus: "idle",
+      versionOperationPending: false,
+    });
+    // The card remains the last persisted snapshot, so its plan is not paired
+    // with the newer unsaved data.
+    expect(useResumeStore.getState().resumes[0].preview).toMatchObject({
+      data: persistedData,
+      layout_plan: responsePlan,
     });
   });
 
