@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from linkcv.core.database import get_db
 from linkcv.core.errors import ApiError
-from linkcv.domain.resume_snapshot import parse_resume_snapshot
+from linkcv.application.resumes.service import parse_persisted_resume_snapshot
 from linkcv.modules.agent.schemas import (
     AgentReadinessResponse,
     ContextReadRequest,
@@ -73,7 +73,7 @@ def _run_resume(db: Session, run_id: str) -> tuple[object, object, Resume, objec
     )
     if resume is None:
         raise ApiError(404, "RESUME_NOT_FOUND")
-    snapshot = parse_resume_snapshot(resume.data_json, resume.style_json)
+    snapshot = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
     return run, session, resume, snapshot
 
 
@@ -138,7 +138,7 @@ def get_run_context(
     )
     if resume is None:
         raise ApiError(404, "RESUME_NOT_FOUND")
-    snapshot = parse_resume_snapshot(resume.data_json, resume.style_json)
+    snapshot = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
     return ResumeContextResponse(
         run_id=run_id,
         resume_id=str(resume.id),

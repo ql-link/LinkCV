@@ -92,6 +92,7 @@ def get_resume_overview(
                 Resume.id,
                 Resume.title,
                 Resume.source_type,
+                Resume.template_id,
                 Resume.lock_version,
                 Resume.created_at,
                 Resume.updated_at,
@@ -218,11 +219,14 @@ def delete_resume_import(
     if record.parse_status == "succeeded":
         raise ApiError(409, "RESUME_IMPORT_HAS_RESULT")
     try:
-        for object_name in build_import_cleanup_object_names(
+        cleanup_names = build_import_cleanup_object_names(
             user.id,
             record.object_name,
             record.converted_object_name,
-        ):
+        )
+        if record.source_graph_object_name:
+            cleanup_names = (*cleanup_names, record.source_graph_object_name)
+        for object_name in cleanup_names:
             storage.delete(object_name)
     except Exception as error:
         db.rollback()

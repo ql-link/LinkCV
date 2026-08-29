@@ -8,8 +8,8 @@ import pytest
 from linkcv.core.migration_sql import sql_statements
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
-REVISION_PATH = BACKEND_ROOT / "migrations" / "versions" / "0043_add_user_profiles.py"
-SQL_PATH = BACKEND_ROOT / "migrations" / "sql" / "0043.up.sql"
+REVISION_PATH = BACKEND_ROOT / "migrations" / "versions" / "0044_add_user_profiles.py"
+SQL_PATH = BACKEND_ROOT / "migrations" / "sql" / "0044.up.sql"
 
 _PROFILE_COLUMNS = (
     "work_city",
@@ -39,17 +39,17 @@ _PROFILE_COLUMNS = (
 
 
 def load_revision():
-    spec = importlib.util.spec_from_file_location("linkcv_revision_0043", REVISION_PATH)
+    spec = importlib.util.spec_from_file_location("linkcv_revision_0044", REVISION_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def test_revision_chains_after_0042() -> None:
+def test_revision_chains_after_0043() -> None:
     revision = load_revision()
-    assert revision.revision == "0043"
-    assert revision.down_revision == "0042"
+    assert revision.revision == "0044"
+    assert revision.down_revision == "0043"
 
 
 def test_downgrade_is_forward_only() -> None:

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link2Off, Printer } from "lucide-react";
 import { Brand, Button, PageLoading } from "@/components/ui";
 import { api, type PublicSharePayload } from "../../api/client";
+import { resumeDocumentTitle } from "../../api/resumeContract";
 import "../preview/print/resume-print.css";
 import { renderResumePrintDocument } from "../preview/print/resumePrintDocument";
 
@@ -55,9 +56,10 @@ export function SharePage({ token }: { token: string }) {
   const documentHtml = useMemo(
     () => payload
       ? renderResumePrintDocument({
-        title: payload.data.basics.name || "LinkCV Resume",
+        title: resumeDocumentTitle(payload.data) || "LinkCV Resume",
         data: payload.data,
         style: payload.style,
+        layout_plan: payload.layout_plan,
       }, { className: "share-page-paper", ariaLabel: "分享简历内容" })
       : "",
     [payload],

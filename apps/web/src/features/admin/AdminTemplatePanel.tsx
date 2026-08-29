@@ -120,7 +120,7 @@ export function AdminTemplatePanel({ notify }: { notify: (message: string) => vo
         <div className="template-preview-backdrop" role="dialog" aria-modal="true" aria-label={`预览 ${preview.name}`}>
           <div className="template-preview-dialog">
             <button type="button" aria-label="关闭预览" onClick={() => setPreview(null)}><X size={18} /></button>
-            <ResumePreview data={preview.data} style={preview.style} mode="full" />
+            <ResumePreview data={preview.data} style={preview.style} layoutPlan={preview.layout_plan} mode="full" />
           </div>
         </div>
       )}

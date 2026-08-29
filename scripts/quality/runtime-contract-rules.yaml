@@ -13,6 +13,9 @@ contracts:
       - path: scripts/dev/start-development.sh
         pattern: 'BACKEND_PORT="\$\{backend_port\}"[\s\S]*PI_SERVICE_BASE_URL="http://127\.0\.0\.1:\$\{pi_port\}"[\s\S]*LINKCV_BASE_URL="http://127\.0\.0\.1:\$\{backend_port\}"[\s\S]*--env-file=\$\{base_env\}'
         message: 启动脚本必须加载 Development 配置并统一本地跨服务地址
+      - path: scripts/dev/start-development.sh
+        pattern: 'worktree_queue_id=.*cksum[\s\S]*LINKCV_LOCAL_RABBITMQ_QUEUE[\s\S]*linkcv\.resume_import\.worker\.local\.\$\{worktree_queue_id\}\.v2[\s\S]*LINKCV_LOCAL_RABBITMQ_ROUTING_KEY[\s\S]*resume\.import\.local\.\$\{worktree_queue_id\}\.v2'
+        message: 本地 Development 必须自动隔离 worktree 的 queue 与 routing key，避免共享 Worker 竞争消费
       - path: scripts/dev/run-development.mjs
         pattern: 'RABBITMQ_URL[\s\S]*LINKCV_LOCAL_RABBITMQ_HOST[\s\S]*MYSQL_HOST[\s\S]*LINKCV_LOCAL_RABBITMQ_PORT'
         message: 本机 Worker 必须把 Development 容器 DNS 转换为可达的 AMQP 地址

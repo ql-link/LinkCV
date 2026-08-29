@@ -112,24 +112,19 @@ def _apply_profile_fields(
     profile: UserProfile, payload: UserProfileUpdateRequest
 ) -> None:
     """整体替换画像可编辑字段，缺省字段以 None/[] 覆盖旧值。"""
-    profile.work_city = payload.work_city
+    profile.candidate_cities = list(payload.candidate_cities)
     profile.salary_min = payload.salary_min
     profile.salary_max = payload.salary_max
     profile.salary_currency = payload.salary_currency
     profile.salary_period = payload.salary_period
-    profile.employment_type = payload.employment_type
-    profile.work_mode = payload.work_mode
-    profile.target_positions = list(payload.target_positions)
-    profile.exclusions = list(payload.exclusions)
-    profile.target_companies = list(payload.target_companies)
-    profile.availability = payload.availability
-    profile.available_from = payload.available_from
+    profile.employment_types = list(payload.employment_types)
     profile.school = payload.school
     profile.school_tier = list(payload.school_tier)
     profile.major = payload.major
     profile.education_level = payload.education_level
     profile.years_experience = payload.years_experience
-    profile.birth_date = payload.birth_date
+    profile.candidate_status = payload.candidate_status
+    profile.graduation_year = payload.graduation_year
     profile.languages = list(payload.languages)
     profile.skills = list(payload.skills)
     profile.certifications = list(payload.certifications)
@@ -155,7 +150,6 @@ def get_profile(
         .order_by(Resume.updated_at.desc(), Resume.id.desc())
         .limit(RECENT_RESUMES_LIMIT)
     ).all()
-    profile_row = _select_user_profile(db, user.id)
     return AccountProfileResponse(
         user=_profile(user, settings),
         resume_count=resume_count,
@@ -165,9 +159,6 @@ def get_profile(
             )
             for resume in recent
         ],
-        profile=(
-            _user_profile_data(profile_row) if profile_row is not None else None
-        ),
     )
 
 
@@ -231,24 +222,19 @@ def put_user_profile(
         )
         .values(
             lock_version=current.lock_version + 1,
-            work_city=payload.work_city,
+            candidate_cities=list(payload.candidate_cities),
             salary_min=payload.salary_min,
             salary_max=payload.salary_max,
             salary_currency=payload.salary_currency,
             salary_period=payload.salary_period,
-            employment_type=payload.employment_type,
-            work_mode=payload.work_mode,
-            target_positions=list(payload.target_positions),
-            exclusions=list(payload.exclusions),
-            target_companies=list(payload.target_companies),
-            availability=payload.availability,
-            available_from=payload.available_from,
+            employment_types=list(payload.employment_types),
             school=payload.school,
             school_tier=list(payload.school_tier),
             major=payload.major,
             education_level=payload.education_level,
             years_experience=payload.years_experience,
-            birth_date=payload.birth_date,
+            candidate_status=payload.candidate_status,
+            graduation_year=payload.graduation_year,
             languages=list(payload.languages),
             skills=list(payload.skills),
             certifications=list(payload.certifications),

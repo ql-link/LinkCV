@@ -47,16 +47,16 @@ class FakeStorage:
 
 class FakeConverter:
     def __init__(self) -> None:
-        self.require_pdf_layout_calls: list[bool] = []
+        self.request_pdf_layout_calls: list[bool] = []
 
     async def convert(
         self,
         *,
         filename: str,
-        require_pdf_layout: bool = True,
+        request_pdf_layout: bool = True,
         **_kwargs,
     ) -> DocumentMarkdownResult:
-        self.require_pdf_layout_calls.append(require_pdf_layout)
+        self.request_pdf_layout_calls.append(request_pdf_layout)
         return DocumentMarkdownResult(
             markdown="# 张三",
             source_file_name=filename,
@@ -137,7 +137,7 @@ def test_dataset_worker_persists_markdown_and_is_idempotent() -> None:
             f"users/{task.user_id}/datasets/converted/{task.id}-1.md"
         )
         assert storage.objects[task.converted_object_name] == "# 张三".encode()
-    assert converter.require_pdf_layout_calls == [False]
+    assert converter.request_pdf_layout_calls == [False]
 
 
 def test_dataset_worker_claims_queued_task_before_conversion() -> None:

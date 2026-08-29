@@ -14,9 +14,8 @@ from linkcv.application.resumes.service import (
 from linkcv.core.config import Settings
 from linkcv.core.mq import MQPublishError
 from linkcv.domain.document_conversion import DocumentMarkdownResult
-from linkcv.domain.resume_document import default_resume_document
-from linkcv.domain.resume_extraction import ResumeExtractionDraft, StructureDecision
-from linkcv.domain.resume_style import default_resume_style
+from linkcv.domain.resume import CanonicalResumeDocument, ResumePresentation
+from linkcv.domain.resume import SparseResumeAnnotations
 from linkcv.main import create_app
 from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import (
@@ -26,6 +25,10 @@ from linkcv.modules.resumes.models import (
     ResumeTemplate,
 )
 from tests.fakes import FakeRedis
+from tests.canonical_resume_fixtures import (
+    canonical_resume_payload,
+    canonical_template_payload,
+)
 
 
 class FakeStorage:
@@ -83,16 +86,11 @@ class FakeDocumentConverter:
 
 
 class FakeStructuringClient:
-    async def extract(self, *, section_ir, **_kwargs):
-        return ResumeExtractionDraft(
-            decisions=[
-                StructureDecision(
-                    source_id=block.source_id,
-                    semantic_kind="basics" if index == 0 else "custom",
-                    layout_role="name" if index == 0 else "body",
-                )
-                for index, block in enumerate(section_ir.blocks)
-            ]
+    async def extract_sparse(self, *, source_graph, **_kwargs):
+        return SparseResumeAnnotations(
+            schema_version="sparse-resume-annotations.v1",
+            source_graph_sha256=source_graph.graph_sha256(),
+            annotations=[],
         )
 
 
@@ -114,11 +112,12 @@ def build_app():
         create_schema=True,
     )
     with app.state.session_factory() as db:
+        template_data, template_style = canonical_template_payload(key="modern-two-column-cn")
         template = ResumeTemplate(
             key="modern-two-column-cn",
             name="现代双栏",
-            data_json=default_resume_document().model_dump(mode="json"),
-            style_json=default_resume_style().model_dump(mode="json"),
+            data_json=template_data,
+            style_json=template_style,
             is_active=1,
         )
         db.add(template)
@@ -178,6 +177,22 @@ def test_import_accepts_upload_without_running_parser_or_creating_resume() -> No
     assert publisher.messages[0].payload.import_id == summary["id"]
     with app.state.session_factory() as db:
         assert db.scalar(select(Resume.id)) is None
+        record = db.get(DocumentParseTask, int(summary["id"]))
+        template = db.get(ResumeTemplate, int(summary["selected_template_id"]))
+        assert record is not None
+        assert template is not None
+        assert record.selected_template_style_json == template.style_json
+        frozen = record.selected_template_style_json
+        changed_style = dict(template.style_json)
+        assert isinstance(changed_style["tokens"], dict)
+        changed_style["tokens"] = {
+            **changed_style["tokens"],
+            "accent_color": "#123456",
+        }
+        template.style_json = changed_style
+        db.commit()
+        db.refresh(record)
+        assert record.selected_template_style_json == frozen
 
 
 def test_active_import_shares_the_ten_slot_limit_with_normal_creation() -> None:
@@ -327,12 +342,13 @@ def test_publisher_initialization_failure_does_not_overwrite_worker_success(
             template = db.get(ResumeTemplate, int(app.state.test_template_id))
             assert record is not None
             assert template is not None
+            data, style = canonical_resume_payload(key=template.key)
             resume = persist_resume_with_initial_version(
                 CreateResumeCommand(
                     user_id=record.user_id,
                     title="delivered-during-init",
-                    data=default_resume_document(),
-                    style=default_resume_style(),
+                    data=CanonicalResumeDocument.model_validate(data),
+                    style=ResumePresentation.model_validate(style),
                     source_type="import",
                     template_id=template.id,
                 ),
@@ -373,12 +389,13 @@ def test_publish_confirm_failure_does_not_overwrite_worker_success() -> None:
                 template = db.get(ResumeTemplate, int(message.payload.template_id))
                 assert record is not None
                 assert template is not None
+                data, style = canonical_resume_payload(key=template.key)
                 resume = persist_resume_with_initial_version(
                     CreateResumeCommand(
                         user_id=record.user_id,
                         title="delivered-resume",
-                        data=default_resume_document(),
-                        style=default_resume_style(),
+                        data=CanonicalResumeDocument.model_validate(data),
+                        style=ResumePresentation.model_validate(style),
                         source_type="import",
                         template_id=template.id,
                     ),

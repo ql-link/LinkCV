@@ -1,13 +1,15 @@
-import type { ResumeDocument, ResumePresentation } from "../../../api/resumeContract";
+import type {
+  LayoutPlan,
+  CanonicalResumeDocument,
+  CanonicalResumePresentation,
+} from "../../../api/resumeContract";
 import {
-  normalizeResumeAccentColor,
+  resumePresentationAccentColor,
+  resumePresentationPageMargins,
+  resumePresentationTemplateDefinition,
   styleToEditorSettings,
 } from "../../../api/resumeContract";
-import { renderResumeMarkdown } from "../../../parser/resumeMarkdown";
-import {
-  composeEditorDocumentForTemplate,
-  composeResumeMarkdownForTemplate,
-} from "../../workbench/templateLayout";
+import { composeEditorDocumentForLayoutPlan } from "../../workbench/templateLayout";
 import { resumeDocumentToEditorDocument } from "../../workbench/resumeEditorPersistence";
 import { renderResumeEditorDocument } from "./resumeEditorRenderer";
 
@@ -16,8 +18,9 @@ export const RESUME_RENDER_PROTOCOL_VERSION = 1 as const;
 export type ResumeRenderRequestV1 = {
   protocol_version?: typeof RESUME_RENDER_PROTOCOL_VERSION;
   title: string;
-  data: ResumeDocument;
-  style: ResumePresentation;
+  data: CanonicalResumeDocument;
+  style: CanonicalResumePresentation;
+  layout_plan?: LayoutPlan | null;
   assets?: Record<string, string>;
 };
 
@@ -26,6 +29,8 @@ export type ResumePrintDocumentOptions = {
   className?: string;
   ariaLabel?: string;
 };
+
+const UNAVAILABLE_PRINT_CONTENT = '<p class="resume-render-unavailable" role="status">预览不可用</p>';
 
 function escapeHtml(value: string) {
   return value
@@ -54,22 +59,25 @@ function replaceEmbeddedAssets(html: string, assets: Record<string, string>) {
   });
 }
 
-function printCssVariables(style: ResumePresentation) {
+function printCssVariables(style: CanonicalResumePresentation) {
   const settings = styleToEditorSettings(style);
-  const marginX = Number.isFinite(style.page.margin_left_mm) ? style.page.margin_left_mm : settings.pageMargin;
-  const marginY = Number.isFinite(style.page.margin_top_mm) ? style.page.margin_top_mm : settings.verticalPageMargin;
+  const margins = resumePresentationPageMargins(style);
   return [
     `--resume-font-family:${safeCssValue(settings.fontFamily, "sans-serif")}`,
     `--resume-font-size:${settings.fontSize}pt`,
     `--resume-line-height:${settings.lineHeight}`,
-    `--resume-page-margin-x:${marginX}mm`,
-    `--resume-page-margin-y:${marginY}mm`,
+    `--resume-page-margin-x:${margins.left}mm`,
+    `--resume-page-margin-y:${margins.top}mm`,
+    `--resume-page-margin-top:${margins.top}mm`,
+    `--resume-page-margin-right:${margins.right}mm`,
+    `--resume-page-margin-bottom:${margins.bottom}mm`,
+    `--resume-page-margin-left:${margins.left}mm`,
     `--preview-font-family:${safeCssValue(settings.fontFamily, "sans-serif")}`,
     `--preview-font-size:${settings.fontSize}pt`,
     `--preview-line-height:${settings.lineHeight}`,
-    `--preview-margin-x:${marginX}mm`,
-    `--preview-margin-y:${marginY}mm`,
-    `--preview-accent:${normalizeResumeAccentColor(style.accent_color)}`,
+    `--preview-margin-x:${margins.left}mm`,
+    `--preview-margin-y:${margins.top}mm`,
+    `--preview-accent:${resumePresentationAccentColor(style)}`,
   ].join(";");
 }
 
@@ -83,14 +91,25 @@ export function renderResumePrintDocument(
 ) {
   const settings = styleToEditorSettings(request.style);
   const editorDocument = resumeDocumentToEditorDocument(request.data);
-  const rendered = editorDocument
-    ? renderResumeEditorDocument(composeEditorDocumentForTemplate(
-      editorDocument,
-      request.style.manifest,
-      request.data.basics.photo,
-      request.data,
-    ))
-    : renderResumeMarkdown(composeResumeMarkdownForTemplate(request.data, request.style.manifest));
+  const definition = resumePresentationTemplateDefinition(request.style);
+  let rendered = UNAVAILABLE_PRINT_CONTENT;
+  let renderState = "unavailable";
+  if (editorDocument && request.layout_plan && definition) {
+    try {
+      const projected = composeEditorDocumentForLayoutPlan(
+        editorDocument,
+        request.data,
+        request.layout_plan,
+        definition,
+      );
+      rendered = renderResumeEditorDocument(projected);
+      renderState = "pending";
+    } catch {
+      // A missing, stale, or malformed plan must fail closed. Rendering the
+      // canonical tree directly would silently discard the server's layout
+      // decision and produce a different template.
+    }
+  }
   const content = replaceEmbeddedAssets(rendered, request.assets ?? {});
   const paperClasses = [
     "resume-paper",
@@ -106,20 +125,22 @@ export function renderResumePrintDocument(
   const title = escapeHtml(request.title.trim() || "LinkCV Resume");
   const css = options.includeStyles ? "<style data-resume-print-styles>/* injected by the renderer */</style>" : "";
 
-  return `<article class="${paperClasses}${extraClass}" data-resume-print-document data-render-state="pending" data-render-protocol="${RESUME_RENDER_PROTOCOL_VERSION}" data-resume-title="${title}"${ariaLabel} style="${escapeHtml(style)}">${css}<div class="${contentClasses}">${content}</div></article>`;
+  return `<article class="${paperClasses}${extraClass}" data-resume-print-document data-render-state="${renderState}" data-render-protocol="${RESUME_RENDER_PROTOCOL_VERSION}" data-resume-title="${title}"${ariaLabel} style="${escapeHtml(style)}">${css}<div class="${contentClasses}">${content}</div></article>`;
 }
 
 export function createResumeRenderRequest(
   title: string,
-  data: ResumeDocument,
-  style: ResumePresentation,
+  data: CanonicalResumeDocument,
+  style: CanonicalResumePresentation,
   assets?: Record<string, string>,
+  layoutPlan?: LayoutPlan | null,
 ): ResumeRenderRequestV1 {
   return {
     protocol_version: RESUME_RENDER_PROTOCOL_VERSION,
     title,
     data,
     style,
+    ...(layoutPlan ? { layout_plan: layoutPlan } : {}),
     ...(assets ? { assets } : {}),
   };
 }

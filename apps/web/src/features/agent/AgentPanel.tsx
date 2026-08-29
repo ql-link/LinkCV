@@ -10,16 +10,17 @@ import {
   AgentSelectionContext,
   AgentStreamEvent,
   ApiRequestError,
-  ResumeDocument,
-  ResumePresentation,
+  CanonicalResumeDocument,
+  CanonicalResumePresentation,
   api,
 } from "../../api/client";
+import { resumePresentationTemplateKey } from "../../api/resumeContract";
 import { Avatar, AvatarFallback, AvatarImage, Button, PageLoading } from "@/components/ui";
 
 type AgentPanelProps = {
   resumeId: string;
-  currentData?: ResumeDocument;
-  currentStyle?: ResumePresentation;
+  currentData?: CanonicalResumeDocument;
+  currentStyle?: CanonicalResumePresentation;
   userAvatarUrl?: string | null;
   userDisplayName?: string;
   onBeforeRun?: () => Promise<boolean>;
@@ -41,21 +42,10 @@ const agentQuickPrompts = [
   { label: "提炼亮点", prompt: "提炼这份简历的技术亮点", icon: Sparkles },
 ];
 
-const sectionLabels: Record<keyof ResumeDocument["sections"], string> = {
-  work_experiences: "工作经历",
-  educations: "教育经历",
-  projects: "项目经历",
-  skills: "技能",
-  certificates: "证书",
-  awards: "奖项",
-  languages: "语言",
-  custom_sections: "自定义内容",
-};
-
 function proposalChanges(
   proposal: AgentProposal,
-  currentData?: ResumeDocument,
-  currentStyle?: ResumePresentation,
+  currentData?: CanonicalResumeDocument,
+  currentStyle?: CanonicalResumePresentation,
 ) {
   if (proposal.operations?.length) {
     return proposal.operations.map((operation, index) => ({
@@ -68,18 +58,11 @@ function proposalChanges(
   }
   if (!currentData || !currentStyle) return [];
   const changes: Array<{ label: string; before: string; after: string }> = [];
-  if (JSON.stringify(currentData.basics) !== JSON.stringify(proposal.data.basics)) {
-    changes.push({ label: "基本信息", before: "当前内容", after: "有修改" });
-  }
-  for (const key of Object.keys(sectionLabels) as Array<keyof ResumeDocument["sections"]>) {
-    const before = currentData.sections[key];
-    const after = proposal.data.sections[key];
-    if (JSON.stringify(before) !== JSON.stringify(after)) {
-      changes.push({ label: sectionLabels[key], before: `${before.length} 项`, after: `${after.length} 项` });
-    }
+  if (JSON.stringify(currentData) !== JSON.stringify(proposal.data)) {
+    changes.push({ label: "简历正文", before: "当前内容", after: "有修改" });
   }
   if (JSON.stringify(currentStyle) !== JSON.stringify(proposal.style)) {
-    changes.push({ label: "排版样式", before: currentStyle.template_key, after: proposal.style.template_key });
+    changes.push({ label: "排版样式", before: resumePresentationTemplateKey(currentStyle), after: resumePresentationTemplateKey(proposal.style) });
   }
   return changes;
 }

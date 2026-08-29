@@ -1,4 +1,9 @@
-import type { ResumeDocument, ResumePresentation } from "./resumeContract";
+import type {
+  CanonicalResumeDocument,
+  CanonicalResumePresentation,
+  LayoutPlan,
+  TemplateDefinition,
+} from "./resumeContract";
 
 export type User = {
   id: string;
@@ -39,26 +44,15 @@ export type AccountProfile = {
   user: UserProfile;
   resume_count: number;
   recent_resumes: RecentResumeSummary[];
-  profile: UserProfileData | null;
 };
 
 export type EmploymentType =
-  | "full_time"
-  | "part_time"
   | "internship"
-  | "contract"
-  | "temporary";
-
-export type WorkMode = "onsite" | "hybrid" | "remote";
+  | "full_time";
 
 export type SalaryPeriod = "hour" | "day" | "month" | "year";
 
-export type Availability =
-  | "immediately"
-  | "one_week"
-  | "two_weeks"
-  | "one_month"
-  | "custom";
+export type CandidateStatus = "fresh_graduate" | "experienced";
 
 export type EducationLevel =
   | "high_school"
@@ -70,24 +64,19 @@ export type EducationLevel =
 export type SchoolTier = "project_985" | "project_211" | "double_first_class";
 
 export type UserProfileData = {
-  work_city: string | null;
+  candidate_cities: string[];
   salary_min: number | null;
   salary_max: number | null;
   salary_currency: string | null;
   salary_period: SalaryPeriod | null;
-  employment_type: EmploymentType | null;
-  work_mode: WorkMode | null;
-  target_positions: string[];
-  exclusions: string[];
-  target_companies: string[];
-  availability: Availability | null;
-  available_from: string | null;
+  employment_types: EmploymentType[];
   school: string | null;
   school_tier: SchoolTier[];
   major: string | null;
   education_level: EducationLevel | null;
+  candidate_status: CandidateStatus | null;
+  graduation_year: number | null;
   years_experience: number | null;
-  birth_date: string | null;
   languages: string[];
   skills: string[];
   certifications: string[];
@@ -149,7 +138,7 @@ export type ResumeSummary = {
   lock_version: number;
   created_at: string;
   updated_at: string;
-  preview?: { data: ResumeDocument; style: ResumePresentation } | null;
+  preview?: { data: CanonicalResumeDocument; style: CanonicalResumePresentation; layout_plan?: LayoutPlan | null } | null;
 };
 
 export type ResumeTemplate = {
@@ -157,16 +146,36 @@ export type ResumeTemplate = {
   key: string;
   name: string;
   description: string | null;
-  data: ResumeDocument;
-  style: ResumePresentation;
+  data: CanonicalResumeDocument;
+  style: CanonicalResumePresentation;
+  layout_plan?: LayoutPlan | null;
   switchable: true;
   incompatibility_reason: null;
 };
 
+type ResumeTemplateWire = Omit<ResumeTemplate, "style"> & {
+  style: TemplateDefinition;
+};
+
 const RETIRED_RESUME_TEMPLATE_KEYS = new Set(["blank-cn"]);
 
-function selectableResumeTemplates(templates: ResumeTemplate[]): ResumeTemplate[] {
-  return templates.filter((template) => !RETIRED_RESUME_TEMPLATE_KEYS.has(template.key));
+function presentationForTemplate(style: TemplateDefinition): CanonicalResumePresentation {
+  return {
+    schema_version: "resume-presentation.v1",
+    portable: { smart_one_page: false },
+    template_scoped: { [style.template_key]: {} },
+    template_snapshot: style,
+  };
+}
+
+function resumeTemplateFromWire(template: ResumeTemplateWire): ResumeTemplate {
+  return { ...template, style: presentationForTemplate(template.style) };
+}
+
+function selectableResumeTemplates(templates: ResumeTemplateWire[]): ResumeTemplate[] {
+  return templates
+    .filter((template) => !RETIRED_RESUME_TEMPLATE_KEYS.has(template.key))
+    .map(resumeTemplateFromWire);
 }
 
 export type AdminResumeTemplate = {
@@ -174,8 +183,9 @@ export type AdminResumeTemplate = {
   key: string;
   name: string;
   description: string | null;
-  data: ResumeDocument | null;
-  style: ResumePresentation | null;
+  data: CanonicalResumeDocument | null;
+  style: CanonicalResumePresentation | null;
+  layout_plan?: LayoutPlan | null;
   active: boolean;
   valid: boolean;
   validation_error: string | null;
@@ -183,10 +193,37 @@ export type AdminResumeTemplate = {
   incompatibility_reason: string | null;
 };
 
+type AdminResumeTemplateWire = Omit<AdminResumeTemplate, "style"> & {
+  style: TemplateDefinition | null;
+};
+
+function adminResumeTemplateFromWire(template: AdminResumeTemplateWire): AdminResumeTemplate {
+  return {
+    ...template,
+    style: template.style ? presentationForTemplate(template.style) : null,
+  };
+}
+
 export type ResumeRecord = ResumeSummary & {
   template_id: string | null;
-  data: ResumeDocument;
-  style: ResumePresentation;
+  data: CanonicalResumeDocument;
+  style: CanonicalResumePresentation;
+  layout_plan?: LayoutPlan | null;
+};
+
+/** Canonical-only write contract for the normal editor save path. */
+export type ResumeCanonicalWritePayload = {
+  title?: string;
+  data?: CanonicalResumeDocument;
+  style?: CanonicalResumePresentation;
+  base_lock_version: number;
+};
+
+export type ResumeCanonicalTemplateApplyPayload = {
+  template_id: string;
+  base_lock_version: number;
+  title?: string;
+  data?: CanonicalResumeDocument;
 };
 
 export type SemanticClassificationSuggestion = {
@@ -213,8 +250,8 @@ export type ResumeVersion = {
   name: string;
   reason: "initial" | "manual" | "before_restore" | "restore" | "agent";
   created_at: string;
-  data?: ResumeDocument;
-  style?: ResumePresentation;
+  data?: CanonicalResumeDocument;
+  style?: CanonicalResumePresentation;
 };
 
 export type AgentMessage = {
@@ -296,8 +333,9 @@ export type AgentProposal = {
   run_id: string;
   resume_id: string;
   base_lock_version: number;
-  data: ResumeDocument;
-  style: ResumePresentation;
+  data: CanonicalResumeDocument;
+  style: CanonicalResumePresentation;
+  layout_plan?: LayoutPlan | null;
   summary: string;
   proposal_mode?: "legacy_snapshot" | "polish_local" | "rewrite_entry_star" | "generate_from_materials";
   target?: Record<string, unknown> | null;
@@ -350,8 +388,9 @@ export type PublicShareSharer = {
 };
 
 export type PublicSharePayload = {
-  data: ResumeDocument;
-  style: ResumePresentation;
+  data: CanonicalResumeDocument;
+  style: CanonicalResumePresentation;
+  layout_plan?: LayoutPlan | null;
   sharer: PublicShareSharer;
 };
 
@@ -1212,10 +1251,11 @@ export const api = {
   listResumes: () => request<{ resumes: ResumeSummary[] }>("/api/resumes"),
   getResumeOverview: () => request<ResumeOverview>("/api/resume-overview"),
   listResumeTemplates: () =>
-    request<{ templates: ResumeTemplate[] }>("/api/resume-templates")
+    request<{ templates: ResumeTemplateWire[] }>("/api/resume-templates")
       .then(({ templates }) => ({ templates: selectableResumeTemplates(templates) })),
   getResumeTemplate: (id: string) =>
-    request<{ template: ResumeTemplate }>(`/api/resume-templates/${id}`),
+    request<{ template: ResumeTemplateWire }>(`/api/resume-templates/${id}`)
+      .then(({ template }) => ({ template: resumeTemplateFromWire(template) })),
   createResume: (payload: { title: string; template_id: string }) =>
     request<{ resume: ResumeRecord }>("/api/resumes", {
       method: "POST",
@@ -1286,12 +1326,7 @@ export const api = {
     ),
   updateResume: (
     id: string,
-    payload: {
-      title?: string;
-      data?: ResumeDocument;
-      style?: ResumePresentation;
-      base_lock_version: number;
-    },
+    payload: ResumeCanonicalWritePayload,
   ) =>
     request<{ resume: ResumeRecord }>(`/api/resumes/${id}`, {
       method: "PUT",
@@ -1299,12 +1334,7 @@ export const api = {
     }),
   applyResumeTemplate: (
     id: string,
-    payload: {
-      template_id: string;
-      base_lock_version: number;
-      title?: string;
-      data?: ResumeDocument;
-    },
+    payload: ResumeCanonicalTemplateApplyPayload,
   ) => request<{ resume: ResumeRecord }>(`/api/resumes/${id}/apply-template`, {
     method: "POST",
     body: payload,
@@ -1377,20 +1407,21 @@ export const api = {
       method: "DELETE",
     }),
   listAdminResumeTemplates: () =>
-    request<{ templates: AdminResumeTemplate[] }>("/api/admin/resume-templates"),
+    request<{ templates: AdminResumeTemplateWire[] }>("/api/admin/resume-templates")
+      .then(({ templates }) => ({ templates: templates.map(adminResumeTemplateFromWire) })),
   importAdminResumeTemplate: (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
-    return request<{ template: AdminResumeTemplate }>(
+    return request<{ template: AdminResumeTemplateWire }>(
       "/api/admin/resume-templates/import",
       { method: "POST", formData },
-    );
+    ).then(({ template }) => ({ template: adminResumeTemplateFromWire(template) }));
   },
   updateAdminResumeTemplateStatus: (id: string, active: boolean) =>
-    request<{ template: AdminResumeTemplate }>(
+    request<{ template: AdminResumeTemplateWire }>(
       `/api/admin/resume-templates/${id}/status`,
       { method: "PUT", body: { active } },
-    ),
+    ).then(({ template }) => ({ template: adminResumeTemplateFromWire(template) })),
   uploadResumeAsset: (
     resumeId: string,
     payload: { file_name: string; data_url: string },
@@ -1919,4 +1950,8 @@ function withLogQuery(path: string, params: Record<string, unknown>): string {
   return `${path}${suffix ? `?${suffix}` : ""}`;
 }
 
-export type { ResumeDocument, ResumePresentation } from "./resumeContract";
+export type {
+  CanonicalResumeDocument,
+  CanonicalResumePresentation,
+  LayoutPlan,
+} from "./resumeContract";

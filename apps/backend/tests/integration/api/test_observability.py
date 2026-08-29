@@ -5,13 +5,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from linkcv.core.config import Settings
-from linkcv.domain.resume_document import default_resume_document
-from linkcv.domain.resume_style import default_resume_style
 from linkcv.main import create_app
 from linkcv.modules.identity.models import User
 from linkcv.modules.observability.loki import LokiUnavailableError
 from linkcv.modules.resumes.models import ResumeTemplate
 from tests.fakes import FakeRedis
+from tests.canonical_resume_fixtures import canonical_template_payload
 
 
 class FakeStorage:
@@ -108,11 +107,12 @@ def build_app():
         create_schema=True,
     )
     with app.state.session_factory() as db:
+        template_data, template_style = canonical_template_payload(key="observability-blank")
         template = ResumeTemplate(
             key="observability-blank",
             name="观测测试模板",
-            data_json=default_resume_document().model_dump(mode="json"),
-            style_json=default_resume_style().model_dump(mode="json"),
+            data_json=template_data,
+            style_json=template_style,
             is_active=1,
         )
         db.add(template)

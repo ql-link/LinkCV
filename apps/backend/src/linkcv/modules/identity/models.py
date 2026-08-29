@@ -1,10 +1,9 @@
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
-    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -131,15 +130,6 @@ class UserProfile(Base):
         UniqueConstraint("user_id", name="uk_user_profiles_user_id"),
         CheckConstraint("lock_version >= 1", name="ck_user_profiles_lock_version"),
         CheckConstraint(
-            "employment_type IS NULL OR employment_type IN "
-            "('full_time', 'part_time', 'internship', 'contract', 'temporary')",
-            name="ck_user_profiles_employment_type",
-        ),
-        CheckConstraint(
-            "work_mode IS NULL OR work_mode IN ('onsite', 'hybrid', 'remote')",
-            name="ck_user_profiles_work_mode",
-        ),
-        CheckConstraint(
             "salary_period IS NULL OR salary_period IN ('hour', 'day', 'month', 'year')",
             name="ck_user_profiles_salary_period",
         ),
@@ -157,15 +147,6 @@ class UserProfile(Base):
             name="ck_user_profiles_salary_currency",
         ),
         CheckConstraint(
-            "availability IS NULL OR availability IN "
-            "('immediately', 'one_week', 'two_weeks', 'one_month', 'custom')",
-            name="ck_user_profiles_availability",
-        ),
-        CheckConstraint(
-            "available_from IS NULL OR availability = 'custom'",
-            name="ck_user_profiles_available_from_context",
-        ),
-        CheckConstraint(
             "education_level IS NULL OR education_level IN "
             "('high_school', 'junior_college', 'bachelor', 'master', 'doctor')",
             name="ck_user_profiles_education_level",
@@ -175,16 +156,12 @@ class UserProfile(Base):
             name="ck_user_profiles_years_experience",
         ),
         CheckConstraint(
-            "LOWER(JSON_TYPE(target_positions)) = 'array'",
-            name="ck_user_profiles_target_positions_array",
+            "LOWER(JSON_TYPE(candidate_cities)) = 'array'",
+            name="ck_user_profiles_candidate_cities_array",
         ),
         CheckConstraint(
-            "LOWER(JSON_TYPE(exclusions)) = 'array'",
-            name="ck_user_profiles_exclusions_array",
-        ),
-        CheckConstraint(
-            "LOWER(JSON_TYPE(target_companies)) = 'array'",
-            name="ck_user_profiles_target_companies_array",
+            "LOWER(JSON_TYPE(employment_types)) = 'array'",
+            name="ck_user_profiles_employment_types_array",
         ),
         CheckConstraint(
             "LOWER(JSON_TYPE(languages)) = 'array'",
@@ -210,6 +187,24 @@ class UserProfile(Base):
             "LOWER(JSON_TYPE(school_tier)) = 'array'",
             name="ck_user_profiles_school_tier_array",
         ),
+        CheckConstraint(
+            "candidate_status IS NULL OR candidate_status IN "
+            "('fresh_graduate', 'experienced')",
+            name="ck_user_profiles_candidate_status",
+        ),
+        CheckConstraint(
+            "graduation_year IS NULL OR graduation_year BETWEEN 1900 AND 9999",
+            name="ck_user_profiles_graduation_year",
+        ),
+        CheckConstraint(
+            "(candidate_status IS NULL AND graduation_year IS NULL) OR "
+            "(candidate_status IS NOT NULL AND candidate_status = 'fresh_graduate' "
+            "AND graduation_year IS NOT NULL AND years_experience IS NOT NULL "
+            "AND years_experience = 0) OR "
+            "(candidate_status IS NOT NULL AND candidate_status = 'experienced' "
+            "AND graduation_year IS NULL)",
+            name="ck_user_profiles_candidate_experience_context",
+        ),
         {"comment": "用户个人画像"},
     )
 
@@ -225,8 +220,8 @@ class UserProfile(Base):
     lock_version: Mapped[int] = mapped_column(
         unsigned_int_type(), nullable=False, default=1, comment="乐观锁版本"
     )
-    work_city: Mapped[str | None] = mapped_column(
-        String(100), nullable=True, comment="期望工作地点"
+    candidate_cities: Mapped[list[str]] = mapped_column(
+        JSON(), nullable=False, default=list, comment="可接受工作城市字符串数组"
     )
     salary_min: Mapped[Decimal | None] = mapped_column(
         Numeric(12, 2), nullable=True, comment="期望薪资下限"
@@ -240,26 +235,11 @@ class UserProfile(Base):
     salary_period: Mapped[str | None] = mapped_column(
         String(16), nullable=True, comment="计薪周期"
     )
-    employment_type: Mapped[str | None] = mapped_column(
-        String(24), nullable=True, comment="期望工作性质"
-    )
-    work_mode: Mapped[str | None] = mapped_column(
-        String(16), nullable=True, comment="期望工作方式"
-    )
-    target_positions: Mapped[list[str]] = mapped_column(
-        JSON(), nullable=False, default=list, comment="职位方向字符串数组"
-    )
-    exclusions: Mapped[list[str]] = mapped_column(
-        JSON(), nullable=False, default=list, comment="排除条件字符串数组"
-    )
-    target_companies: Mapped[list[str]] = mapped_column(
-        JSON(), nullable=False, default=list, comment="目标公司字符串数组"
-    )
-    availability: Mapped[str | None] = mapped_column(
-        String(16), nullable=True, comment="可到岗时间"
-    )
-    available_from: Mapped[date | None] = mapped_column(
-        Date(), nullable=True, comment="自定义到岗日期，availability=custom 时填写"
+    employment_types: Mapped[list[str]] = mapped_column(
+        JSON(),
+        nullable=False,
+        default=list,
+        comment="可接受工作性质数组：internship/full_time",
     )
     school: Mapped[str | None] = mapped_column(
         String(255), nullable=True, comment="学校名称"
@@ -276,8 +256,13 @@ class UserProfile(Base):
     years_experience: Mapped[int | None] = mapped_column(
         unsigned_int_type(), nullable=True, comment="工作年限（应届生填 0）"
     )
-    birth_date: Mapped[date | None] = mapped_column(
-        Date(), nullable=True, comment="出生日期（UTC 日期）"
+    candidate_status: Mapped[str | None] = mapped_column(
+        String(24), nullable=True, comment="候选人类型：fresh_graduate/experienced"
+    )
+    graduation_year: Mapped[int | None] = mapped_column(
+        SmallInteger().with_variant(mysql.SMALLINT(unsigned=True), "mysql"),
+        nullable=True,
+        comment="应届生毕业年份，candidate_status=fresh_graduate 时必填",
     )
     languages: Mapped[list[str]] = mapped_column(
         JSON(), nullable=False, default=list, comment="语言能力字符串数组"

@@ -1,20 +1,23 @@
 import "./print/resume-print.css";
 import { useMemo } from "react";
-import type { ResumeDocument, ResumePresentation } from "../../api/client";
+import type { CanonicalResumeDocument, CanonicalResumePresentation, LayoutPlan } from "../../api/client";
+import { resumeDocumentTitle } from "../../api/resumeContract";
 import { renderResumePrintDocument } from "./print/resumePrintDocument";
 
 export function ResumePreview({
   data,
   style,
+  layoutPlan,
   mode = "card",
 }: {
-  data: ResumeDocument;
-  style: ResumePresentation;
+  data: CanonicalResumeDocument;
+  style: CanonicalResumePresentation;
+  layoutPlan?: LayoutPlan | null;
   mode?: "card" | "full";
 }) {
   const documentHtml = useMemo(
-    () => renderResumePrintDocument({ title: data.basics.name || "LinkCV Resume", data, style }),
-    [data, style],
+    () => renderResumePrintDocument({ title: resumeDocumentTitle(data) || "LinkCV Resume", data, style, layout_plan: layoutPlan }),
+    [data, layoutPlan, style],
   );
 
   return (

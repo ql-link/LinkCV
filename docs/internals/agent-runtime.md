@@ -18,7 +18,7 @@ Agent 系统由 FastAPI `agent` 模块、独立 `apps/pi-service` 和 FastAPI `l
 1. FastAPI 创建 Agent session/run/message，并以服务 token 调用 Pi。
 2. Pi 通过另一枚 token 调用 `/internal/agent`，读取当前用户被授权的简历、岗位、进程、面试或资料集上下文。
 3. 模型调用按 `llm_capability_bindings` 选择候选，解密运行凭据并写入 `llm_call_logs`。
-4. 简历改动只保存为提案；确认后回到 FastAPI 简历应用服务执行乐观锁写入。
+4. 简历上下文通过统一的 persisted canonical 解析边界读取；结构化 `InlineIcon/title_icon` 只在 Agent Markdown 边界序列化为白名单 `:icon[Name]:`，不降级为可编辑普通文本。简历改动只保存为 canonical 提案，确认后回到 FastAPI 简历应用服务执行乐观锁写入并重新编译模板 `LayoutPlan`。
 
 ## 进程与信任边界
 
@@ -42,7 +42,7 @@ Agent 系统由 FastAPI `agent` 模块、独立 `apps/pi-service` 和 FastAPI `l
 
 ## 扩展边界
 
-新增 Agent 工具必须限制资源类型、动作和用户归属，并保持提案确认边界。新增模型能力需同步能力目录、数据库约束、探针、管理端、调用来源和 HTTP 契约。
+新增 Agent 工具必须限制资源类型、动作和用户归属，并保持提案确认边界。简历工具只能操作 canonical 内容节点，不得直接持久化模板 region、slot、CSS 或分页投影；读取和保存必须复用简历应用服务的严格解析与校验入口。新增模型能力需同步能力目录、数据库约束、探针、管理端、调用来源和 HTTP 契约。
 
 ## 故障与降级
 

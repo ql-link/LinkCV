@@ -1,15 +1,15 @@
 from dataclasses import dataclass
 from typing import Literal
 
-from linkcv.domain.resume_document import ResumeDocument
-from linkcv.domain.resume_style import ResumePresentation
-
-
+from linkcv.domain.resume import (
+    CanonicalResumeDocument,
+    ResumePresentation as CanonicalResumePresentation,
+)
 @dataclass(frozen=True)
 class CreateResumeCommand:
     user_id: int
     title: str
-    data: ResumeDocument
+    data: CanonicalResumeDocument
     source_type: Literal["blank", "template", "import"]
-    style: ResumePresentation | None = None
-    template_id: int | None = None
+    style: CanonicalResumePresentation
+    template_id: int

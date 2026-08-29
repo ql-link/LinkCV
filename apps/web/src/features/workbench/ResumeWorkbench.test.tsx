@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { api, ApiRequestError, type ResumeTemplate } from "../../api/client";
-import { defaultSemanticDocument, defaultSemanticStyle } from "../../api/resumeContract";
+import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
 import {
   ImportWarningBanner,
   AgentFloatingEntry,
@@ -223,8 +223,8 @@ describe("ResumeWorkbench 简历模板", () => {
         key: "classic-cn",
         name: "经典模板",
         description: "清晰稳妥的单栏结构",
-        data: defaultSemanticDocument,
-        style: defaultSemanticStyle,
+        data: defaultCanonicalDocument,
+        style: defaultCanonicalPresentation,
         switchable: true,
         incompatibility_reason: null,
       },
@@ -233,8 +233,14 @@ describe("ResumeWorkbench 简历模板", () => {
         key: "creative-orange-cn",
         name: "创意橙色",
         description: "强调视觉层级的创意版式",
-        data: defaultSemanticDocument,
-        style: { ...defaultSemanticStyle, template_key: "creative-orange-cn" },
+        data: defaultCanonicalDocument,
+        style: {
+          ...defaultCanonicalPresentation,
+          template_snapshot: {
+            ...defaultCanonicalPresentation.template_snapshot,
+            template_key: "creative-orange-cn",
+          },
+        },
         switchable: true,
         incompatibility_reason: null,
       },
@@ -272,8 +278,8 @@ describe("ResumeWorkbench 简历模板", () => {
           key: "classic-cn",
           name: "经典模板",
           description: null,
-          data: defaultSemanticDocument,
-          style: defaultSemanticStyle,
+          data: defaultCanonicalDocument,
+          style: defaultCanonicalPresentation,
           switchable: true,
           incompatibility_reason: null,
         }],
