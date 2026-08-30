@@ -31,6 +31,7 @@
 - `resumes` 保存当前 canonical 内容、呈现、模板、分享状态和 `lock_version`；保存和模板切换必须通过乐观锁。正文只保存模板无关的 identity、语义章节、块、章节内 row 和来源引用，不能保存 sidebar/main、CSS 或分页投影。
 - `resume_versions` 保存用户明确创建的正式版本；恢复会替换当前简历，但不自动创建新正式版本。
 - `resume_templates` 保存 `TemplateDefinition` 与默认 canonical 内容；普通用户只消费启用且结构有效的模板。模板拥有区域、插槽、列宽和头像显示策略，`LayoutPlan` 是后端编译的只读投影结果。
+- Web 默认简历中的图片占位标签使用随应用发布的霞鹜文楷；它只负责示例占位图呈现，不覆盖用户保存的简历字体设置。
 - canonical 正文把白名单内的简历图标保存为结构化 `InlineIcon`，章节标题使用独立 `title_icon`；`:icon[Name]:` 只作为 Markdown、Agent 和旧数据兼容边界的序列化形式，不能作为预览中可见的普通正文。未知或不完整标记继续按原文字保留，避免静默改写用户内容。
 - `document_parse_tasks` 保存简历导入和资料集共用的上传/解析状态。简历导入在受理时同时冻结 `selected_template_id` 与规范化的 `selected_template_style_json`（完整 `TemplateDefinition`），并把确定性的 `SourceGraph` 保存到私有对象；Worker 只使用任务快照，因此模板之后更新或停用不会改变已受理任务的版式。资料集任务额外使用 `queued`、派发时间和尝试版本完成 MQ 恢复。PDF/DOCX 由 LinkParse 转换文字并可附带有界布局提示，Markdown 在 Worker 本地转换。
 - 分享实时读取最新正式版本，不另存内容快照；PDF 使用当前已保存快照生成且不持久化成品。
