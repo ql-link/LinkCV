@@ -6,6 +6,8 @@ Web 构建会把统一打印文档、页面现有主题 CSS、固定字体文件
 
 根级 `Dockerfile` 构建 Vite 静态产物和 FastAPI Python 环境，并把 Node 22、锁定的 `playwright-core` 运行库和 Debian Chromium 复制/安装到运行镜像。PDF 子进程以专用非登录用户 `linkcv-pdf` 运行，保留 Chromium 沙箱；固定路径为 `/usr/bin/chromium`，智能一页默认上限为 2000mm。独立的 `deploy/Dockerfile.pi` 构建无头 Pi Service 镜像。Web 构建阶段会把 `postcss.config.cjs`、`tailwind.config.cjs`、PDF CLI 与应用源码一起复制到 `/app/apps/web`；Pi 构建阶段安装 vendored workspace 的锁定依赖并校验仓库中版本化的模型目录快照。常规 Docker 构建不访问 `models.dev`、OpenRouter、NVIDIA NIM 或 Vercel AI Gateway，只有维护者主动执行 `npm run refresh:pi-model-data` 时才联网刷新模型快照。Node 依赖查询默认使用 npmmirror，但 `npm ci` 禁止替换 `package-lock.json` 已锁定的 tarball 主机。固定版本的 `uv` 与 Python 依赖默认使用阿里云 PyPI；构建过程从 `uv.lock` 导出带哈希的 requirements。镜像构建不连接数据库。FastAPI 容器启动时 runner 先核对 `APP_ENV`、MySQL host、port 和 database，再只读比对 Alembic 当前版本与 `0030` Agent 表、`0031` 范围化提案字段、`0032` 结构化澄清消息字段、`0033` 面试中心三张表等已知 schema 标记；任一对象提前存在、缺失或部分应用都会在执行 DDL 前终止部署。目标和 schema 对齐后才升级到 Alembic head，并由 Uvicorn 在 `8000` 端口提供 `/api` 与 Web 静态文件。
 
+其中 `0051` 的发布门禁还核对 `user_profiles` 的画像目标列和已删除旧列。未应用但已经是完整目标结构时允许 migration 自身做 no-op；已应用后若目标列缺失或旧列残留，runner 会在任何后续 DDL 前停止。
+
 仓库提供相互独立的 Dev 与 Production Jenkins Pipeline。两者都以同一 commit/build 标识生成不可变 `linkcv` 与 `linkcv-pi` 镜像，先用 `linkcv` 镜像以显式目标参数运行迁移 runner，再更新 Compose，最后等待 FastAPI `/api/health`、Pi `/health`、本环境 Promtail 和 FastAPI `/api/agent/readiness` 进入正常状态；构建镜像阶段不连接数据库。Agent readiness 会穿透 FastAPI→Pi→FastAPI 内部回调并验证当前 `pi_agent` 模型配置与 provider 映射，但不发起供应商模型调用；任一服务令牌、回调网络或模型配置无效都会阻止发布被标记为成功。
 
 Dev 与 Production Compose 各自部署一个 `grafana/promtail:2.9.8`，读取 LinkCV 应用挂载的环境独立日志命名卷，并把 positions 保存到另一个独立命名卷。Promtail 只提升 `service`、`environment`、`log_type`、`level` 四个低基数字段为 Loki labels；request/user/target/operation 等高基数字段保留在 JSON body。Dev 推送并查询 `http://tolink-dev-loki:3100`，Production 使用 `http://tolink-loki:3100`；两者都是 LinkRag 已有、保留七天的共享实例，本仓库不创建或修改 Loki。应用写本地 JSONL，Promtail 异步采集，因此 Loki 暂时不可用不会阻断业务请求。
@@ -81,6 +83,8 @@ Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小�
 
 `0049` 的维护窗口必须先停止简历导入受理入口和 Worker 消费，并等待正在执行的受理事务、上传确认和 Worker 终态写入结束；从预检开始到 postverify 完成期间禁止创建新的活动 `resume_import` 任务。RabbitMQ 中的待消费消息保留不删除，待迁移完成且数据库 current 已核对为 `0049` 后，再按“Worker、FastAPI、Web”顺序恢复。不能依赖新增的可空列来容忍迁移中途受理，否则新任务可能绕过本次预检而形成未完成快照。
 
+执行 `0051` 前必须确认目标数据库已有可恢复备份并停止画像写入。runner 和 revision 只接受完整的旧画像结构或完整的当前画像结构；旧结构会在本 revision 内完成 0045/0046 规则的前向转换，当前结构只验证后推进版本。已应用 `0051` 的数据库还必须通过目标画像列存在、旧列（包括中间 `professional_directions`）消失的门禁。未知或部分结构在任何 DDL 前停止；MySQL DDL 失败只能依赖备份整体恢复或新的 forward revision，不能执行 downgrade。
+
 两条 Pipeline 都提供 `RUN_TESTS` 参数；开启后会在镜像构建前运行 `npm run setup && npm run check`。常规 PR/push 质量检查仍由 GitHub Actions 执行。
 
 ## CI
@@ -94,7 +98,7 @@ CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并�
 - 应用回滚必须把 `TAG` 与 `PI_TAG` 一起切回同一环境、同一版本的两个不可变镜像标签并重新执行 Compose；不得把 Dev 标签部署到 Production。
 - 数据库迁移是 forward-only：当前与历史 revision 都不提供 down SQL，禁止执行 Alembic downgrade，也不做升级降级往返测试。
 - 发布前按迁移风险准备并验证数据库及相关对象存储备份。需要恢复旧数据库状态时使用备份；普通 schema 或数据缺陷通过新的向前 revision 修正。
-- 当前仓库 head `0049`；`0043` 为资料上传增加幂等、可靠排队与解析尝试字段，`0049` 为活动简历导入任务回填受理时冻结的模板定义快照。
+- 当前仓库 head `0051`；`0043` 为资料上传增加幂等、可靠排队与解析尝试字段，`0049` 为活动简历导入任务回填受理时冻结的模板定义快照，`0051` 为已登记画像结构漂移提供 forward-only 修复和发布门禁。
 - 如果使用执行 `0033` 前的数据库备份恢复，必须同时处理备份之后写入 MinIO 的面试对象；只恢复数据库会产生失去元数据索引的对象。
 - 只有旧应用兼容当前新 schema 时才允许回退应用镜像。若不兼容，必须继续向前修复或按完整恢复方案同时恢复数据库与应用，不能只回切镜像。
 - MySQL DDL 可能隐式提交；迁移失败后停止自动重试，核对实际 current 和 schema，再决定新 revision 或备份恢复。

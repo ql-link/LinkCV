@@ -531,3 +531,113 @@ def test_release_runner_rejects_job_archive_column_removed_before_0034() -> None
             connection, migration_script_directory(module)
         )
     engine.dispose()
+
+
+def test_release_runner_rejects_missing_profile_target_column_after_0051() -> None:
+    module = load_module(
+        "linkcv_run_alembic_profile_missing_target_test",
+        REPO_ROOT / "scripts/release/run_alembic.py",
+    )
+    module.REVISION_TABLE_MARKERS = {}
+    module.REVISION_COLUMN_MARKERS = {}
+    module.REVISION_REMOVED_COLUMN_MARKERS = {}
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0051')"))
+        connection.execute(
+            text(
+                "CREATE TABLE user_profiles ("
+                "candidate_cities TEXT, employment_types TEXT, "
+                "candidate_status TEXT)"
+            )
+        )
+
+    with engine.connect() as connection, pytest.raises(
+        RuntimeError, match="0051 missing columns on user_profiles"
+    ):
+        module.validate_schema_revision_alignment(
+            connection, migration_script_directory(module)
+        )
+    engine.dispose()
+
+
+def test_release_runner_rejects_legacy_profile_column_after_0051() -> None:
+    module = load_module(
+        "linkcv_run_alembic_profile_legacy_column_test",
+        REPO_ROOT / "scripts/release/run_alembic.py",
+    )
+    module.REVISION_TABLE_MARKERS = {}
+    module.REVISION_COLUMN_MARKERS = {}
+    module.REVISION_REMOVED_COLUMN_MARKERS = {}
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0051')"))
+        connection.execute(
+            text(
+                "CREATE TABLE user_profiles ("
+                "candidate_cities TEXT, employment_types TEXT, "
+                "candidate_status TEXT, graduation_year TEXT, work_city TEXT)"
+            )
+        )
+
+    with engine.connect() as connection, pytest.raises(
+        RuntimeError, match="0051 removed columns still exist on user_profiles"
+    ):
+        module.validate_schema_revision_alignment(
+            connection, migration_script_directory(module)
+        )
+    engine.dispose()
+
+
+def test_release_runner_allows_complete_target_profile_before_0051() -> None:
+    module = load_module(
+        "linkcv_run_alembic_profile_target_noop_test",
+        REPO_ROOT / "scripts/release/run_alembic.py",
+    )
+    module.REVISION_TABLE_MARKERS = {}
+    module.REVISION_COLUMN_MARKERS = {}
+    module.REVISION_REMOVED_COLUMN_MARKERS = {}
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0050')"))
+        connection.execute(
+            text(
+                "CREATE TABLE user_profiles ("
+                "candidate_cities TEXT, employment_types TEXT, "
+                "candidate_status TEXT, graduation_year TEXT)"
+            )
+        )
+
+    with engine.connect() as connection:
+        assert module.validate_schema_revision_alignment(
+            connection, migration_script_directory(module)
+        ) == ("0050",)
+    engine.dispose()
+
+
+def test_release_runner_rejects_partial_profile_before_0051() -> None:
+    module = load_module(
+        "linkcv_run_alembic_profile_partial_test",
+        REPO_ROOT / "scripts/release/run_alembic.py",
+    )
+    module.REVISION_TABLE_MARKERS = {}
+    module.REVISION_COLUMN_MARKERS = {}
+    module.REVISION_REMOVED_COLUMN_MARKERS = {}
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0050')"))
+        connection.execute(
+            text("CREATE TABLE user_profiles (candidate_cities TEXT)")
+        )
+
+    with engine.connect() as connection, pytest.raises(
+        RuntimeError, match="0051 user_profiles schema is partial or mixed"
+    ):
+        module.validate_schema_revision_alignment(
+            connection, migration_script_directory(module)
+        )
+    engine.dispose()
