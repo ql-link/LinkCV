@@ -37,6 +37,10 @@
 
 游客冷启动不请求身份或个人数据。用户从“我的”主动进入登录页并确认微信隐私保护指引后，后端才复用已有 openid 账号或在明确同意时创建普通账号；重试路径不能静默完成首次建号，`privacy_accepted` 也不等同于服务端持久化的同意审计记录。只有环境明确为 `develop` 且设备本地 `linkcv_local_debug_enabled === true` 时，客户端才读取生成的 `local.js`；显式 `linkcv_api_base_url` 覆盖优先于 `local.js`，且同样只在 `develop` 生效。环境异常、未 opt-in、地址缺失或读取失败都回退 `https://linkresume.cn`；`trial/release` 忽略开发 storage 与 `local.js`，第三方平台覆盖也必须使用 HTTPS。新增小程序写能力必须先在所属业务功能建立权限与契约，再由该客户端做渠道适配。
 
+## 个人资料交互
+
+“我的”页游客态不请求账号资料，头像和“登录 / 注册 LinkResume”昵称文案分别作为明确的登录入口。登录态点击昵称后才挂载可见的原生 `input type="nickname"`，静态昵称在编辑期间隐藏，避免透明原生输入框与展示文字叠加；键盘“完成”或失焦都会直接调用 `PATCH /api/miniprogram/account/profile`，无需额外保存按钮。confirm 与 blur 连续触发时由保存状态阻止重复请求；空昵称或接口失败会恢复最近一次服务端昵称并显示错误信息。昵称旁保留编辑提示图标，不再展示与编辑提示竞争空间的“微信已绑定”状态。
+
 ## 状态、降级与安全
 
 - access 失效时请求层只允许一次受控 refresh；refresh 失败会清理凭据并回到游客态，不能循环重试。

@@ -59,7 +59,7 @@ function inlineContent(node: JSONContent): string {
   if (node.type === "text") return markedText(node);
   if (node.type === "hardBreak") return "<br>";
   if (node.type === "resumeBlockAnchor") {
-    const blockId = typeof node.attrs?.blockId === "string" && /^blk_[a-z0-9]{16,64}$/u.test(node.attrs.blockId)
+    const blockId = typeof node.attrs?.blockId === "string" && /^(?:node|blk)_[a-z0-9]{16,64}$/u.test(node.attrs.blockId)
       ? node.attrs.blockId
       : "";
     if (!blockId) return "";

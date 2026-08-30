@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from contextlib import suppress
+from typing import Any
 
 import aio_pika
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
@@ -20,6 +21,50 @@ from linkcv.workers.resume_import_worker import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _message_log_context(
+    body: bytes,
+    *,
+    vendor: str,
+    route: str,
+    attempt: int | None = None,
+    broker_message_id: object | None = None,
+) -> dict[str, Any]:
+    """Build bounded message metadata for logs without ever logging the body."""
+
+    context: dict[str, Any] = {
+        "message_id": (
+            str(broker_message_id)[:128] if broker_message_id is not None else None
+        ),
+        "pipeline_version": "invalid",
+        "source": "unknown",
+        "task_id": None,
+        "attempt": attempt,
+        "vendor": vendor,
+        "route": route,
+    }
+    try:
+        message = document_parse_task_message_adapter.validate_json(body)
+    except ValidationError:
+        return context
+
+    task = _task_from_message(message)
+    context.update(
+        {
+            "message_id": str(message.payload.message_id),
+            "pipeline_version": message.pipeline_version,
+            "source": task[0],
+            "task_id": task[1],
+        }
+    )
+    return context
+
+
+def _task_from_message(message) -> tuple[str, int]:
+    if isinstance(message, ResumeImportMessage):
+        return "resume", int(message.payload.import_id)
+    return "dataset", int(message.payload.parse_task_id)
 
 
 async def _process_message(
@@ -44,19 +89,30 @@ def _task_from_body(body: bytes) -> tuple[str, int] | None:
         message = document_parse_task_message_adapter.validate_json(body)
     except ValidationError:
         return None
-    if isinstance(message, ResumeImportMessage):
-        return "resume", int(message.payload.import_id)
-    return "dataset", int(message.payload.parse_task_id)
+    return _task_from_message(message)
+
+
+def _rabbit_retry_count(incoming) -> int:
+    try:
+        return max(0, int((incoming.headers or {}).get("x-linkcv-retry", 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _rabbit_attempt(incoming) -> int:
+    return _rabbit_retry_count(incoming) + 1
 
 
 def _mark_retry_exhausted(
     resume_processor: ResumeImportProcessor,
     dataset_processor: DatasetParseProcessor,
     body: bytes,
-) -> None:
+    *,
+    log_context: dict[str, Any] | None = None,
+) -> bool:
     task = _task_from_body(body)
     if task is None:
-        return
+        return True
     task_type, task_id = task
     # Dataset messages do not carry the attempt version.  Letting this
     # delivery-level hook mark a task failed could race with a newer attempt
@@ -67,11 +123,14 @@ def _mark_retry_exhausted(
     try:
         resume_processor.mark_retry_exhausted(task_id)
     except WorkerDependencyUnavailable:
+        context = dict(log_context or {})
         logger.warning(
             "document parse retry exhausted but failure state could not be saved",
-            extra={"parse_task_id": task_id, "source_type": task_type},
+            extra=context,
             exc_info=True,
         )
+        return False
+    return True
 
 
 async def _publish_dataset_task(
@@ -107,7 +166,7 @@ async def _publish_rabbit_dlt(
     confirmed = await dead_letter_exchange.publish(
         aio_pika.Message(
             body=incoming.body,
-            headers=dict(incoming.headers),
+            headers=dict(incoming.headers or {}),
             content_type=incoming.content_type or "application/json",
             delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
             message_id=incoming.message_id,
@@ -130,6 +189,13 @@ async def _dead_letter_rabbit(
     settings: Settings,
     mark_failed: bool,
 ) -> None:
+    context = _message_log_context(
+        incoming.body,
+        vendor="rabbitmq",
+        route=settings.rabbitmq_routing_key,
+        attempt=_rabbit_attempt(incoming),
+        broker_message_id=getattr(incoming, "message_id", None),
+    )
     try:
         await _publish_rabbit_dlt(
             dead_letter_exchange=dead_letter_exchange,
@@ -137,16 +203,28 @@ async def _dead_letter_rabbit(
             settings=settings,
         )
     except Exception:
-        logger.exception("document parse DLT publish failed; original retained")
+        logger.exception(
+            "document parse DLT publish failed; original retained",
+            extra=context,
+        )
         await asyncio.sleep(settings.mq_consume_retry_backoff_seconds)
         await incoming.nack(requeue=True)
         return
     if mark_failed:
-        _mark_retry_exhausted(
+        terminal_state_saved = _mark_retry_exhausted(
             resume_processor,
             dataset_processor,
             incoming.body,
+            log_context=context,
         )
+        if not terminal_state_saved:
+            logger.warning(
+                "document parse original retained after terminal state write failure",
+                extra=context,
+            )
+            await asyncio.sleep(settings.mq_consume_retry_backoff_seconds)
+            await incoming.nack(requeue=True)
+            return
     await incoming.ack()
 
 
@@ -165,7 +243,16 @@ async def _handle_rabbit_message(
         await asyncio.sleep(settings.mq_consume_retry_backoff_seconds)
         await incoming.nack(requeue=True)
     except ValidationError:
-        logger.warning("invalid document parse message sent to DLT")
+        logger.warning(
+            "invalid document parse message sent to DLT",
+            extra=_message_log_context(
+                incoming.body,
+                vendor="rabbitmq",
+                route=settings.rabbitmq_routing_key,
+                attempt=_rabbit_attempt(incoming),
+                broker_message_id=getattr(incoming, "message_id", None),
+            ),
+        )
         await _dead_letter_rabbit(
             resume_processor=resume_processor,
             dataset_processor=dataset_processor,
@@ -175,9 +262,18 @@ async def _handle_rabbit_message(
             mark_failed=False,
         )
     except Exception as error:
-        retries = int(incoming.headers.get("x-linkcv-retry", 0))
+        retries = _rabbit_retry_count(incoming)
         if retries >= settings.mq_consume_max_retries:
-            logger.exception("document parse message sent to DLT")
+            logger.exception(
+                "document parse message sent to DLT",
+                extra=_message_log_context(
+                    incoming.body,
+                    vendor="rabbitmq",
+                    route=settings.rabbitmq_routing_key,
+                    attempt=retries + 1,
+                    broker_message_id=getattr(incoming, "message_id", None),
+                ),
+            )
             await _dead_letter_rabbit(
                 resume_processor=resume_processor,
                 dataset_processor=dataset_processor,
@@ -187,7 +283,7 @@ async def _handle_rabbit_message(
                 mark_failed=True,
             )
             return
-        headers = dict(incoming.headers)
+        headers = dict(incoming.headers or {})
         headers["x-linkcv-retry"] = retries + 1
         try:
             confirmed = await exchange.publish(
@@ -211,19 +307,26 @@ async def _handle_rabbit_message(
                 await asyncio.sleep(settings.mq_consume_retry_backoff_seconds)
                 await incoming.nack(requeue=True)
             else:
-                task = _task_from_body(incoming.body)
-                logger.warning(
-                    "document parse retry scheduled",
-                    extra={
-                        "task_id": task[1] if task is not None else None,
-                        "source": task[0] if task is not None else None,
-                        "attempt": retries + 2,
-                        "failure_stage": getattr(error, "stage", None) or "unknown",
+                context = _message_log_context(
+                    incoming.body,
+                    vendor="rabbitmq",
+                    route=settings.rabbitmq_routing_key,
+                    attempt=retries + 2,
+                    broker_message_id=getattr(incoming, "message_id", None),
+                )
+                context.update(
+                    {
+                        "failure_stage": getattr(error, "stage", None)
+                        or "unknown",
                         "exception_type": (
                             getattr(error, "exception_type", None)
                             or type(error).__name__
                         ),
-                    },
+                    }
+                )
+                logger.warning(
+                    "document parse retry scheduled",
+                    extra=context,
                 )
                 await incoming.ack()
     else:
@@ -333,7 +436,16 @@ async def _handle_kafka_message(
             consumer.resume(partition)
             continue
         except ValidationError:
-            logger.warning("invalid document parse Kafka message sent to DLT")
+            logger.warning(
+                "invalid document parse Kafka message sent to DLT",
+                extra=_message_log_context(
+                    incoming.value,
+                    vendor="kafka",
+                    route=settings.kafka_topic,
+                    attempt=attempts + 1,
+                    broker_message_id=getattr(incoming, "message_id", None),
+                ),
+            )
             await producer.send_and_wait(
                 f"{settings.kafka_topic}.DLT",
                 value=incoming.value,
@@ -342,22 +454,61 @@ async def _handle_kafka_message(
         except Exception as error:
             attempts += 1
             if attempts <= settings.mq_consume_max_retries:
+                context = _message_log_context(
+                    incoming.value,
+                    vendor="kafka",
+                    route=settings.kafka_topic,
+                    attempt=attempts + 1,
+                    broker_message_id=getattr(incoming, "message_id", None),
+                )
+                context.update(
+                    {
+                        "failure_stage": getattr(error, "stage", None)
+                        or "unknown",
+                        "exception_type": (
+                            getattr(error, "exception_type", None)
+                            or type(error).__name__
+                        ),
+                    }
+                )
+                logger.warning(
+                    "document parse Kafka retry scheduled",
+                    extra=context,
+                )
                 await asyncio.sleep(settings.mq_consume_retry_backoff_seconds)
                 continue
+            context = _message_log_context(
+                incoming.value,
+                vendor="kafka",
+                route=settings.kafka_topic,
+                attempt=attempts,
+                broker_message_id=getattr(incoming, "message_id", None),
+            )
             logger.error(
                 "document parse Kafka message sent to DLT",
                 exc_info=error,
+                extra=context,
             )
             await producer.send_and_wait(
                 f"{settings.kafka_topic}.DLT",
                 value=incoming.value,
                 key=incoming.key,
             )
-            _mark_retry_exhausted(
+            terminal_state_saved = _mark_retry_exhausted(
                 resume_processor,
                 dataset_processor,
                 incoming.value,
+                log_context=context,
             )
+            if not terminal_state_saved:
+                logger.warning(
+                    "document parse Kafka offset retained after terminal state "
+                    "write failure",
+                    extra=context,
+                )
+                consumer.seek(partition, incoming.offset)
+                await asyncio.sleep(settings.mq_consume_retry_backoff_seconds)
+                return
         await consumer.commit({partition: OffsetAndMetadata(incoming.offset + 1, "")})
         return
 

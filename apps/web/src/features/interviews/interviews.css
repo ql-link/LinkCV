@@ -52,22 +52,22 @@
 }
 .interview-view-tabs a:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 1px; }
 
-.interview-error-notice {
+.interview-demo-notice {
   display: flex;
   width: min(720px, calc(100% - 60px));
   align-items: center;
   gap: 9px;
   margin: 0 30px 12px;
-  border: 1px solid color-mix(in srgb, var(--ui-destructive) 34%, var(--ui-border));
+  border: 1px solid color-mix(in srgb, var(--ui-accent) 22%, var(--ui-border));
   border-radius: var(--ui-radius-md);
-  background: var(--ui-destructive-subtle);
+  background: var(--ui-accent-subtle);
   padding: 10px 12px;
   color: var(--ui-text-secondary);
   font-size: 12px;
 }
 
-.interview-error-notice svg { width: 15px; flex: 0 0 auto; color: var(--ui-destructive); }
-.interview-error-notice button { margin-left: auto; border: 0; background: transparent; color: var(--ui-destructive); cursor: pointer; }
+.interview-demo-notice svg { width: 15px; color: var(--ui-accent); }
+.interview-demo-notice button { margin-left: auto; border: 0; background: transparent; color: var(--ui-accent); cursor: pointer; }
 
 .interview-surface {
   min-width: 0;
@@ -414,7 +414,7 @@
 .career-applications-layout {
   display: grid;
   gap: 14px;
-  padding: 14px 30px 30px;
+  padding: 14px 20px 30px;
 }
 
 .career-applications-controls { display: flex; min-width: 0; align-items: center; justify-content: flex-end; gap: 8px; }
@@ -436,13 +436,34 @@
 .career-view-switch button svg { width: 13px; height: 13px; }
 .career-view-switch button[aria-pressed="true"] { background: var(--ui-surface); box-shadow: var(--ui-shadow-xs); color: var(--ui-foreground); font-weight: 650; }
 .career-view-switch button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 1px; }
-.career-applications-board { overflow-x: auto; border: 0; background: transparent; }
-.career-pipeline-add { display: flex; width: 100%; min-height: 40px; align-items: center; justify-content: center; gap: 5px; margin-top: 7px; border: 0; border-radius: var(--ui-radius-md); background: transparent; color: var(--ui-text-muted); font-size: 9px; cursor: pointer; }
+.career-applications-board { border: 0; background: transparent; }
+.career-applications-board.progress-board-surface {
+  /* Match the former five-column desktop footprint; extra stages extend the track. */
+  --progress-column-width: clamp(252px, calc((100vw - 88px) / 5), 292px);
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-color: var(--ui-border-strong) transparent;
+  scrollbar-width: thin;
+  touch-action: pan-x pan-y;
+  cursor: grab;
+}
+.career-applications-board.progress-board-surface.is-panning {
+  cursor: grabbing;
+  user-select: none;
+}
+.career-applications-board.progress-board-surface::-webkit-scrollbar { height: 8px; }
+.career-applications-board.progress-board-surface::-webkit-scrollbar-track { background: transparent; }
+.career-applications-board.progress-board-surface::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: var(--ui-border-strong); background-clip: padding-box; }
+.career-applications-board.progress-board-surface::-webkit-scrollbar-thumb:hover { background: var(--ui-text-muted); background-clip: padding-box; }
+.career-pipeline-add { display: flex; width: 100%; min-height: 42px; align-items: center; justify-content: center; gap: 6px; margin-top: 8px; border: 0; border-radius: var(--ui-radius-md); background: transparent; color: var(--ui-text-muted); font-size: 11px; cursor: pointer; }
 .career-pipeline-add:hover { background: var(--ui-surface-muted); color: var(--ui-foreground); }
 .career-pipeline-add:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: -2px; }
 .career-pipeline-add svg { width: 12px; height: 12px; }
 
-/* Five-column career progress board */
+/* Independent-stage career progress board */
 .career-application-summary-bar {
   display: grid;
   min-height: 84px;
@@ -458,8 +479,8 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
-  padding: 12px 22px;
+  gap: 18px;
+  padding: 12px 20px;
 }
 .career-application-summary-bar article.has-divider::before {
   position: absolute;
@@ -472,14 +493,13 @@
 }
 .career-summary-icon {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   place-items: center;
-  border-radius: var(--ui-radius-md);
-  background: var(--tone-soft);
-  color: var(--tone);
+  background: transparent;
+  color: var(--tone, var(--ui-foreground));
 }
-.career-summary-icon svg { width: 18px; height: 18px; }
+.career-summary-icon svg { width: 24px; height: 24px; stroke-width: 1.7; }
 .career-application-summary-bar article > div {
   display: grid;
   min-width: 0;
@@ -487,26 +507,28 @@
   align-items: baseline;
   gap: 2px 7px;
 }
-.career-application-summary-bar small { grid-column: 1 / -1; color: var(--ui-text-muted); font-size: 10px; }
-.career-application-summary-bar strong { font-size: 23px; line-height: 1; font-variant-numeric: tabular-nums; }
-.career-application-summary-bar p { margin: 0; overflow: hidden; color: var(--ui-text-muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.career-application-summary-bar small { grid-column: 1 / -1; color: var(--ui-text-muted); font-size: 11px; }
+.career-application-summary-bar strong { font-size: 24px; line-height: 1; font-variant-numeric: tabular-nums; font-weight: 650; }
+.career-application-summary-bar p { margin: 0; overflow: hidden; color: var(--ui-text-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .career-application-summary-bar p b { color: var(--ui-success); font-weight: 650; }
 .progress-board-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--progress-column-count), var(--progress-column-width));
   gap: 12px;
-  min-width: 0;
+  width: max-content;
+  min-width: 100%;
   align-items: stretch;
 }
 .progress-column {
   display: flex;
-  min-width: 0;
-  min-height: 532px;
+  width: var(--progress-column-width);
+  min-width: var(--progress-column-width);
+  min-height: 544px;
   flex-direction: column;
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-lg);
-  background: color-mix(in srgb, var(--ui-surface-subtle) 64%, var(--ui-surface));
-  padding: 10px;
+  background: color-mix(in srgb, var(--ui-surface-subtle) 82%, var(--ui-surface));
+  padding: 7px;
   transition: border-color 180ms var(--ui-ease-press), background 180ms var(--ui-ease-press), box-shadow 180ms var(--ui-ease-press);
 }
 .progress-column.is-drop-target {
@@ -517,43 +539,40 @@
 .progress-column.is-valid-drop-target:not(.is-drop-target) {
   border-color: color-mix(in srgb, var(--ui-warning) 34%, var(--ui-border));
 }
-.progress-column-heading { display: flex; min-height: 29px; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px 6px; }
-.progress-column-heading h3 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 12px; font-weight: 650; }
+.progress-column-heading { display: flex; min-height: 45px; box-sizing: border-box; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 8px 2px 7px; }
+.progress-column-heading h3 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 13px; font-weight: 650; line-height: 20px; }
 .progress-column-heading h3 span { display: grid; min-width: 17px; height: 17px; place-items: center; border-radius: var(--ui-radius-full); background: var(--ui-surface-muted); color: var(--ui-text-muted); font-size: 9px; font-variant-numeric: tabular-nums; }
-.progress-column-heading > div { display: flex; align-items: center; gap: 3px; color: var(--ui-text-muted); }
-.progress-column-heading button { display: grid; width: 24px; height: 24px; place-items: center; border: 0; border-radius: var(--ui-radius-full); background: transparent; color: inherit; cursor: pointer; }
-.progress-column-heading button:hover { background: var(--ui-surface-muted); color: var(--ui-foreground); }
-.progress-column-heading button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 1px; }
-.progress-column-heading svg { width: 14px; height: 14px; }
+.progress-column-heading > svg { width: 15px; height: 15px; margin: 2px 1px 0 0; color: var(--ui-text-muted); }
 .progress-column-cards { display: grid; min-height: 0; flex: 1; align-content: start; gap: 8px; }
-.progress-card { position: relative; display: grid; min-width: 0; margin: 0; border: 1px solid var(--ui-border); border-radius: 10px; background: var(--ui-surface); padding: 11px; transition: border-color 180ms var(--ui-ease-press), box-shadow 180ms var(--ui-ease-press), transform 180ms var(--ui-ease-press), opacity 180ms var(--ui-ease-press); }
-.progress-card:hover { border-color: var(--ui-border-strong); box-shadow: var(--ui-shadow-xs); }
+.progress-card { position: relative; display: grid; min-width: 0; min-height: 80px; box-sizing: border-box; margin: 0; border: 1px solid var(--ui-border); border-radius: 10px; background: var(--ui-surface); padding: 10px; transition: border-color 180ms var(--ui-ease-press), box-shadow 180ms var(--ui-ease-press), transform 180ms var(--ui-ease-press), opacity 180ms var(--ui-ease-press); }
 .progress-card.is-draggable { cursor: grab; }
 .progress-card.is-draggable:active { cursor: grabbing; }
+.progress-card:hover { border-color: var(--ui-border-strong); box-shadow: var(--ui-shadow-xs); }
 .progress-card.is-dragging { opacity: .72; transform: translateY(-3px) scale(1.01); box-shadow: var(--ui-shadow-sm); }
 .progress-card.is-advancing { opacity: .6; }
-.progress-card-main-row { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto auto; align-items: start; gap: 6px; }
+.progress-card-main-row { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px; }
 .progress-card-open { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px; border: 0; background: transparent; padding: 0; color: inherit; text-align: left; cursor: pointer; }
 .progress-card-open.is-static { cursor: grab; }
 .progress-card-open:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 3px; border-radius: var(--ui-radius-sm); }
-.progress-card-copy { display: grid; min-width: 0; gap: 3px; }
+.progress-card-copy { display: grid; min-width: 0; gap: 4px; }
 .progress-card-copy strong, .progress-card-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.progress-card-copy strong { font-size: 11px; font-weight: 650; }
-.progress-card-copy small { color: var(--ui-text-secondary); font-size: 9px; }
-.progress-card .company-logo { width: 30px; height: 30px; border-radius: 8px; font-size: 11px; }
-.progress-card-actions { display: inline-flex; align-items: center; gap: 1px; padding-top: 2px; color: var(--ui-text-muted); }
-.progress-card-actions svg { width: 12px; height: 12px; }
-.progress-card-actions svg:first-child { cursor: grab; }
-.progress-card-meta { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 7px; margin-top: 10px; color: var(--ui-text-muted); font-size: 9px; }
+.progress-card-copy strong { font-size: 12px; font-weight: 650; line-height: 14px; }
+.progress-card-copy small { color: var(--ui-text-secondary); font-size: 10px; line-height: 12px; }
+.progress-card .company-logo { width: 28px; height: 28px; border-radius: 7px; background: var(--calendar-color); color: var(--ui-surface); font-size: 10px; }
+.progress-card .company-logo.calendar-yellow { color: var(--ui-foreground); }
+.progress-card-actions { display: inline-flex; align-items: center; padding-top: 1px; color: var(--ui-text-muted); }
+.progress-card-actions svg { width: 14px; height: 14px; cursor: grab; }
+.progress-card-meta { display: flex; min-width: 0; min-height: 20px; align-items: flex-end; justify-content: space-between; gap: 7px; margin-top: 8px; color: var(--ui-text-muted); font-size: 10px; line-height: 12px; }
 .progress-card-time { overflow: hidden; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
 .progress-card-status { overflow: hidden; color: var(--ui-text-muted); text-overflow: ellipsis; white-space: nowrap; }
-.stage-badge { display: inline-flex; min-height: 20px; align-items: center; border-radius: 5px; padding: 0 6px; font-size: 9px; line-height: 1; white-space: nowrap; }
+.stage-badge { display: inline-flex; min-height: 22px; align-items: center; border-radius: 5px; padding: 0 7px; font-size: 10px; line-height: 1; white-space: nowrap; }
 .stage-badge-blue { background: color-mix(in srgb, var(--ui-accent) 10%, var(--ui-surface)); color: var(--ui-accent); }
 .stage-badge-purple { background: color-mix(in srgb, var(--ui-template-accent) 11%, var(--ui-surface)); color: var(--ui-template-accent); }
 .stage-badge-hr { background: color-mix(in srgb, #c35b8c 12%, var(--ui-surface)); color: #a44976; }
 .stage-badge-offer { background: var(--ui-success-subtle); color: var(--ui-success); }
 .stage-badge-muted { background: var(--ui-surface-muted); color: var(--ui-text-muted); }
 .progress-column .pipeline-empty { flex: 1; margin: 28px 0 0; }
+.career-demo-label { color: var(--ui-text-muted); font-size: 9px; }
 .career-application-list { min-width: 760px; overflow-x: auto; }
 .career-application-list > div { display: grid; min-height: 52px; grid-template-columns: 1.5fr .75fr .8fr 1fr auto; align-items: center; gap: 12px; border-top: 1px solid var(--ui-border); padding: 8px 14px; color: var(--ui-text-secondary); font-size: 11px; }
 .career-application-list > div:first-child { min-height: 38px; border-top: 0; background: var(--ui-surface-subtle); color: var(--ui-text-muted); font-size: 10px; }
@@ -630,20 +649,20 @@
   .record-assets-column > :nth-child(n + 4) { grid-column: auto; }
 }
 
-@media (max-width: 1439px) and (min-width: 901px) {
+@media (max-width: 1250px) and (min-width: 901px) {
   .career-applications-layout { gap: 12px; padding-inline: 20px; }
   .career-application-summary-bar article { gap: 9px; padding-inline: 15px; }
   .progress-board-grid { gap: 10px; }
-  .progress-column { padding: 8px; }
+  .progress-column { padding: 7px; }
   .progress-card { padding: 10px; }
 }
 
 @media (max-width: 900px) {
+  .career-applications-board.progress-board-surface { --progress-column-width: 292px; }
   .career-application-summary-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .career-application-summary-bar article { min-height: 70px; padding: 10px 14px; }
   .career-application-summary-bar article:nth-child(odd)::before { display: none; }
-  .progress-board-grid { grid-template-columns: repeat(5, minmax(196px, 1fr)); overflow-x: auto; padding-bottom: 4px; }
-  .progress-column { min-width: 196px; }
+  .progress-board-grid { gap: 10px; padding-bottom: 4px; }
   .schedule-page-actions { flex-wrap: nowrap; }
   .schedule-week-range { flex: 1 1 auto; justify-content: center; }
   .record-assets-column { grid-template-columns: 1fr 1fr; }
@@ -653,7 +672,7 @@
 @media (max-width: 640px) {
   .interview-view-tabs { padding: 0; }
   .interview-view-tabs a { min-height: 40px; padding-inline: 11px; }
-  .interview-error-notice { width: calc(100% - 32px); margin: 0 16px 12px; }
+  .interview-demo-notice { width: calc(100% - 32px); margin: 0 16px 12px; }
   .interview-records-layout { padding: 0 16px; }
   .career-card-action { min-height: 40px; }
   .career-applications-layout { padding: 14px 16px 30px; }

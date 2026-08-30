@@ -1,7 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { JSONContent } from "@tiptap/core";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
-import { useResumeStore } from "../../store/resumeStore";
+import { useResumeStore, type ResumeSettings } from "../../store/resumeStore";
+import {
+  normalizeResumeAccentColor,
+  resumePresentationAccentColor,
+  resumePresentationPageMargins,
+  type ResumePresentationRead,
+} from "../../api/resumeContract";
 import { PreviewToolbar } from "./PreviewToolbar";
 import { SourceModal } from "./SourceModal";
 import { renderResumeEditorDocument } from "./print/resumeEditorRenderer";
@@ -12,6 +18,33 @@ type PageFragment = {
 
 export function renderPreviewEditorContent(content: JSONContent | string) {
   return typeof content === "string" ? content : renderResumeEditorDocument(content);
+}
+
+export function resumePreviewStyle(
+  settings: Pick<ResumeSettings, "fontFamily" | "fontSize" | "lineHeight" | "pageMargin" | "verticalPageMargin">,
+  accentColor: string,
+  style?: ResumePresentationRead,
+) {
+  const margins = style
+    ? resumePresentationPageMargins(style)
+    : {
+        top: settings.verticalPageMargin,
+        right: settings.pageMargin,
+        bottom: settings.verticalPageMargin,
+        left: settings.pageMargin,
+      };
+  return {
+    "--resume-font-family": settings.fontFamily,
+    "--resume-font-size": `${settings.fontSize}pt`,
+    "--resume-line-height": settings.lineHeight,
+    "--resume-page-margin-x": `${settings.pageMargin}mm`,
+    "--resume-page-margin-y": `${settings.verticalPageMargin}mm`,
+    "--resume-page-margin-top": `${margins.top}mm`,
+    "--resume-page-margin-right": `${margins.right}mm`,
+    "--resume-page-margin-bottom": `${margins.bottom}mm`,
+    "--resume-page-margin-left": `${margins.left}mm`,
+    "--preview-accent": normalizeResumeAccentColor(accentColor),
+  } as React.CSSProperties;
 }
 
 function serializeAttributes(element: Element, excludedNames: string[] = []) {
@@ -48,6 +81,8 @@ function buildPageFragments(children: Element[]): PageFragment[] {
 export function PreviewPanel() {
   const editorContent = useResumeStore((state) => state.editorContent);
   const settings = useResumeStore((state) => state.settings);
+  const style = useResumeStore((state) => state.style);
+  const accentColor = useResumeStore((state) => resumePresentationAccentColor(state.style));
   const previewScale = useResumeStore((state) => state.previewScale);
   const setPreviewScale = useResumeStore((state) => state.setPreviewScale);
   const debouncedEditorContent = useDebouncedValue(editorContent, 80);
@@ -62,13 +97,7 @@ export function PreviewPanel() {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const zoomPercent = Math.round(previewScale * 100);
 
-  const resumeStyle = {
-    "--resume-font-family": settings.fontFamily,
-    "--resume-font-size": `${settings.fontSize}pt`,
-    "--resume-line-height": settings.lineHeight,
-    "--resume-page-margin-x": `${settings.pageMargin}mm`,
-    "--resume-page-margin-y": `${settings.verticalPageMargin}mm`,
-  } as React.CSSProperties;
+  const resumeStyle = resumePreviewStyle(settings, accentColor, style);
 
   useLayoutEffect(() => {
     if (settings.smartOnePage) {

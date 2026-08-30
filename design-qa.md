@@ -882,3 +882,81 @@ The focused comparison covers subnavigation, summary icons/numbers/dividers, the
 No P3 follow-up is required for this pass.
 
 final result: passed
+
+---
+
+# 求职进程卡片像素对照 — 2026-08-26
+
+## Evidence
+
+- Reference: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-02afc6db-3ce5-4f4a-a158-8350dc63f911.png`
+- Route: `http://127.0.0.1:5174/career/applications`
+- Comparison viewport: `1355 × 649`
+- Comparison artifact: `/private/tmp/linkcv-career-design-comparison.png`
+
+## Visual checks
+
+- Summary bar remains one low-weight horizontal surface with four evenly divided metrics.
+- The board uses five equal columns with compact headers and no top add button.
+- Cards match the reference structure: 28px avatar, company and role copy, trailing stage badge or drag handle, and a single metadata row.
+- Card height, padding, border, radius, spacing, muted text, and low-saturation stage badges match the reference composition.
+- The interview column includes the reference-style `全部 / 一面 / 二面` tab row and orange active underline.
+- Existing data counts and company abbreviations remain data-driven; they are not replaced to mimic screenshot values or logos.
+
+## Interaction checks
+
+- Switching the interview filter to `二面` shows two matching cards and marks the tab pressed.
+- Switching back to `全部` restores all six interview cards.
+- Existing drag, create, edit, search, status update, sort, and board/list handlers remain wired to the original application logic.
+
+## Automated checks
+
+- `npm exec vitest run src/features/interviews/InterviewCenterPage.test.tsx`: 20 passed.
+- `npm run typecheck`: passed.
+- `git diff --check`: passed.
+
+final result: passed
+
+---
+
+# 求职进程独立阶段与横向看板修正 — 2026-08-26
+
+## Scope and source
+
+- Reference card design: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-02afc6db-3ce5-4f4a-a158-8350dc63f911.png`
+- Route opened in Chrome: `http://127.0.0.1:5174/career/applications`
+- This pass changes only the board projection, horizontal browsing behavior, related styles, and component tests. It does not change API contracts, backend state values, or persistence models.
+
+## Layout and visual checks
+
+- The seven required base stages are separate columns: `筛选中 / 等待沟通 / 一面 / 二面 / HR 面 / Offer / 已结束`.
+- Real additional labels such as `笔试` and `三面` produce additional independent columns instead of being folded into a generic interview column.
+- At normal desktop widths, each column reuses the former five-column footprint (`calc((100vw - 88px) / 5)`, clamped to `252–292px`) with a `12px` gap. The first five stages therefore fill the initial board viewport, while stage count only extends the horizontal track and never participates in width calculation. At `900px` and below, columns remain `292px` and scroll horizontally instead of compressing.
+- Horizontal overflow is owned by the board surface. Its content grid uses `width: max-content`, while the surface remains constrained by `max-width: 100%` and `min-width: 0`.
+- Cards retain the previously accepted compact reference styling: white surface, fine border, 10px radius, 28px company avatar, stable 80px minimum height, restrained hover elevation, clear company/role/time hierarchy, and low-saturation stage badges.
+- The summary remains one low-weight horizontal surface. No gradient, glass effect, heavy shadow, page-level carousel button, or per-column vertical scroller was introduced.
+
+## Interaction checks
+
+- Trackpad horizontal scrolling remains native through `overflow-x: auto`.
+- `Shift + wheel` translates vertical wheel delta into board horizontal movement.
+- Primary-button dragging on non-interactive blank board space pans horizontally; card buttons and draggable cards are excluded from panning capture.
+- Dragging a card near either board edge starts low-speed horizontal auto-scroll and stops on drag end or drop.
+- Board scroll position is persisted in `sessionStorage` and restored when the board mounts again.
+- Drop transitions use the target column's real `stage_type`, `round_no`, and `stage_label`; same-column, reverse, ended, and not-ready transitions remain protected. Empty real datasets continue to show the product empty state instead of mock cards.
+
+## Automated evidence
+
+- `npm run test:web`: 57 files and 485 tests passed.
+- `npm run typecheck` in `apps/web`: passed.
+- `npm run build:web`: passed; only the repository's existing Vite large-chunk advisory was emitted.
+- `UV_CACHE_DIR=/private/tmp/linkcv-uv-cache npm run check:design`: passed.
+- `git diff --check`: passed.
+- Component coverage includes independent base columns, dynamic `笔试/三面` columns, real first-/second-round transition payloads, scroll restoration, Shift+wheel, blank-space panning, and drag-edge auto-scroll.
+
+## Browser QA limitation
+
+- The local route loaded successfully in Chrome. Programmatic DOM measurement was unavailable because Chrome has `Allow JavaScript from Apple Events` disabled.
+- A full-screen capture was intentionally not taken because it could include unrelated windows or sensitive screen content. The card visual remains covered by the preceding reference/implementation comparison; this pass's new layout and interaction contracts are covered by source inspection, focused component tests, full Web regression, typecheck, and production build.
+
+final result: passed
