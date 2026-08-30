@@ -30,38 +30,38 @@ colors:
   scrim: "rgba(15, 18, 22, 0.46)"
 typography:
   page-title:
-    fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Inter, LXGW WenKai, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 1.75rem
     fontWeight: 600
     lineHeight: 1.25
     letterSpacing: -0.02em
   section-title:
-    fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Inter, LXGW WenKai, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 1.25rem
     fontWeight: 600
     lineHeight: 1.25
   subsection-title:
-    fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Inter, LXGW WenKai, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 1rem
     fontWeight: 600
     lineHeight: 1.25
   body-md:
-    fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Inter, LXGW WenKai, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 1rem
     fontWeight: 400
     lineHeight: 1.55
   body-sm:
-    fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Inter, LXGW WenKai, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 0.875rem
     fontWeight: 400
     lineHeight: 1.55
   label-sm:
-    fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Inter, LXGW WenKai, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 0.875rem
     fontWeight: 600
     lineHeight: 1.25
   metadata:
-    fontFamily: "JetBrains Mono, SFMono-Regular, Consolas, Liberation Mono, monospace"
+    fontFamily: "JetBrains Mono, SFMono-Regular, Consolas, Liberation Mono, LXGW WenKai, monospace"
     fontSize: 0.75rem
     fontWeight: 500
     lineHeight: 1.25
@@ -283,9 +283,9 @@ LinkCV 的登录后功能区采用 Apple 式克制与 OpenAI 式任务效率：�
 
 排版强调快速扫描。页面通常只使用页面标题、区域标题、正文和辅助信息四级，不通过连续增加字号或字重制造层级。
 
-- 功能区页面标题与正文使用同一套系统字体/Inter 字族，通过字号、字重和紧凑字距建立层级；Space Grotesk 只保留给营销和品牌表达。
-- 正文和控件使用无衬线字体；正文默认 16px，密集控件和说明使用 14px。
-- 技术标识、时间、版本和短元数据可以使用等宽字体，但正文不使用。
+- 全项目中文统一使用随应用发布的霞鹜文楷；英文正文保留 Inter，营销与品牌英文标题保留 Space Grotesk，通过字号、字重和紧凑字距建立层级。
+- 正文默认 16px，密集控件和说明使用 14px。
+- 技术标识、时间、版本和短元数据的拉丁字符可以使用等宽字体，其中的中文仍回退到霞鹜文楷；正文不使用等宽字体。
 - 删除“欢迎使用”“轻松完成”“一站式管理”等不能帮助用户决策的文案；说明文字只解释限制、后果或下一步动作。
 
 设置页使用 `subsection-title`（16px/600）作为区域标题；核心正文、字段标签和控件使用 14–16px，只有时间、短状态和其他元信息使用 12px `metadata`。不把账户页个案字号直接推广为全局规则。
