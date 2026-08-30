@@ -405,6 +405,7 @@ def test_project_skill_directories_match_registry() -> None:
         "frontend-design",
         "frontend-delivery",
         "frontend-implementation",
+        "module-planning",
         "prototype-acceptance",
         "solution-delegated-delivery",
         "ui-layout-design",
@@ -526,6 +527,38 @@ def test_skill_check_rejects_obsolete_frontend_workflow_rule(tmp_path: Path) -> 
     assert result.returncode == 1
     assert "仍含已退出当前工作流的规则" in result.stderr
     assert "前端标准或完整" in result.stderr
+
+
+def test_skill_check_rejects_project_external_planning_rules(tmp_path: Path) -> None:
+    legacy_markers = (
+        ("项目工作流读取飞书规划文档。", "飞书"),
+        ("目标不清楚时转 module-planning。", "module-planning"),
+    )
+
+    for index, (legacy_rule, legacy_marker) in enumerate(legacy_markers):
+        case_root = tmp_path / f"case-{index}"
+        (case_root / ".ai" / "prompts").mkdir(parents=True)
+        (case_root / ".ai" / "skills").mkdir(parents=True)
+        (case_root / ".specs").mkdir()
+        (case_root / "package.json").write_text("{}", encoding="utf-8")
+        (case_root / ".ai" / "prompts" / "project.md").write_text(
+            legacy_rule, encoding="utf-8"
+        )
+        (case_root / ".ai" / "skills" / "README.md").write_text(
+            "# Skills\n", encoding="utf-8"
+        )
+        (case_root / ".specs" / "README.md").write_text(
+            "specs", encoding="utf-8"
+        )
+
+        result = run_script(
+            SKILL_CHECK,
+            env={"LINKCV_REPO_ROOT": str(case_root)},
+        )
+
+        assert result.returncode == 1
+        assert "仍含已退出当前工作流的规则" in result.stderr
+        assert legacy_marker in result.stderr
 
 
 def test_skill_check_accepts_linkcv_backend_test_paths(tmp_path: Path) -> None:
@@ -935,16 +968,6 @@ def test_skill_check_rejects_fixed_single_luna_dispatch(tmp_path: Path) -> None:
 def test_skill_check_protects_five_reduction_contracts(tmp_path: Path) -> None:
     protected_cases = (
         (
-            "module-planning",
-            "SKILL.md",
-            "没有 Issue 不阻塞模块规划",
-        ),
-        (
-            "module-planning",
-            "SKILL.md",
-            "复用该授权，不再索要一遍相同指令",
-        ),
-        (
             "implementation-execution",
             "implementation_report.template.md",
             "## 2. 已接受限制",
@@ -1024,7 +1047,7 @@ def test_skill_check_protects_flow_router_delivery_downstream_contract(
         ),
         (
             "implementation-execution",
-            "不因选择影响大就自动升级为模块规划",
+            "不因选择影响大就自动升级为另一个规划阶段",
             "实现入口或实施报告契约缺少必要内容",
         ),
         (
@@ -1091,9 +1114,9 @@ def test_skill_check_protects_source_authority_and_one_way_delivery(
     tmp_path: Path,
 ) -> None:
     cases = (
-            (
-                Path(".ai/skills/README.md"),
-                "飞书文档只作为方案形成前的初始输入",
+        (
+            Path(".ai/skills/README.md"),
+            "用户指定的外部材料只作为方案形成前的初始输入",
         ),
         (
             Path(".ai/skills/solution-generator/SKILL.md"),
@@ -1101,11 +1124,11 @@ def test_skill_check_protects_source_authority_and_one_way_delivery(
         ),
         (
             Path(".ai/skills/implementation-execution/SKILL.md"),
-            "飞书冲突本身不触发 `module-planning`",
+            "外部初始材料与当前方案不同本身不触发新的规划阶段",
         ),
-            (
-                Path(".specs/README.md"),
-                "飞书只提供方案或视觉设计形成前的初始输入",
+        (
+            Path(".specs/README.md"),
+            "用户指定的外部材料只提供方案或视觉设计形成前的初始输入",
         ),
         (
             Path(".ai/prompts/project.md"),

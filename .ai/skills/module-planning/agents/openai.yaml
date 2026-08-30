@@ -1,4 +1,0 @@
-interface:
-  display_name: "LinkCV 模块规划"
-  short_description: "收敛模块初步设计，按用户要求写入飞书并完成后续交接"
-  default_prompt: "使用 $module-planning 从当前请求、可用 Issue 和飞书材料讨论模块初步设计，确认完整草稿后按用户要求写入并读回飞书；若原请求已授权后续开发，纯前端由当前 Codex 直接继续，涉及后端时进入唯一后端入口 flow-router。进入 solution-generator 后以 solution.md 为准，后续变化不回写飞书。"
