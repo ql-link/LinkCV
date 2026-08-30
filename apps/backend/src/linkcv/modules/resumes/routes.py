@@ -2,7 +2,6 @@ import hashlib
 import json
 import logging
 
-import redis as redis_lib
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, load_only
 
@@ -11,6 +10,7 @@ from fastapi import APIRouter, Depends, Request
 from linkcv.application.resumes.service import (
     InvalidResumeTitle,
     ResumeLimitExceeded,
+    ResumePresentationInvalid,
     ResumeTemplateCompositionInvalid,
     ResumeTemplateUnavailable,
     ResumeTitleConflict,
@@ -19,19 +19,20 @@ from linkcv.application.resumes.service import (
     find_owned_resume,
     lock_owned_resume,
     parse_decimal_id,
+    parse_persisted_resume_snapshot,
     update_resume_snapshot,
 )
 from linkcv.core.database import get_db
 from linkcv.core.errors import ApiError
-from linkcv.core.redis import get_redis
-from linkcv.core.storage import AssetStorage, get_storage
-from linkcv.domain.resume_snapshot import parse_resume_snapshot
-from linkcv.integrations.resume_semantic_classification import classify_resume_sections
+from linkcv.core.storage import (
+    AssetStorage,
+    build_import_cleanup_object_names,
+    get_storage,
+)
+from linkcv.domain.resume import compile_layout_plan
 from linkcv.modules.agent.service import delete_resume_agent_data
 from linkcv.modules.identity.dependencies import get_current_user
 from linkcv.modules.identity.models import User
-from linkcv.modules.llm.dependencies import get_llm_service
-from linkcv.modules.llm.service import LLMError, LLMService
 from linkcv.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
     DocumentParseTask,
@@ -56,6 +57,17 @@ router = APIRouter(prefix="/resumes", tags=["resumes"])
 logger = logging.getLogger(__name__)
 
 
+def resume_content_hash(data: object) -> str:
+    """Stable wire hash helper retained for client staleness checks."""
+    serialized = json.dumps(
+        data,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return "sha256:" + hashlib.sha256(serialized.encode()).hexdigest()
+
+
 def require_owned_resume(db: Session, resume_id: str, user_id: int) -> Resume:
     resume = find_owned_resume(db, resume_id, user_id)
     if resume is None:
@@ -66,8 +78,19 @@ def require_owned_resume(db: Session, resume_id: str, user_id: int) -> Resume:
 def resume_summary(resume: Resume) -> ResumeSummary:
     preview: ResumePreview | None = None
     try:
-        snapshot = parse_resume_snapshot(resume.data_json, resume.style_json)
-        preview = ResumePreview(data=snapshot.data, style=snapshot.style)
+        snapshot = parse_persisted_resume_snapshot(
+            resume.data_json,
+            resume.style_json,
+        )
+        preview = ResumePreview(
+            data=snapshot.data,
+            style=snapshot.style,
+            layout_plan=compile_layout_plan(
+                snapshot.data,
+                snapshot.style.template_snapshot,
+                snapshot.style,
+            ),
+        )
     except (TypeError, ValueError):
         pass
     return ResumeSummary(
@@ -83,20 +106,23 @@ def resume_summary(resume: Resume) -> ResumeSummary:
 
 def resume_record(resume: Resume) -> ResumeRecord:
     try:
-        snapshot = parse_resume_snapshot(resume.data_json, resume.style_json)
-    except ValueError as error:
+        snapshot = parse_persisted_resume_snapshot(
+            resume.data_json,
+            resume.style_json,
+        )
+    except (TypeError, ValueError) as error:
         raise ApiError(500, "RESUME_SCHEMA_INVALID") from error
     return ResumeRecord(
         **resume_summary(resume).model_dump(),
-        template_id=str(resume.template_id) if resume.template_id is not None else None,
+        template_id=str(resume.template_id),
         data=snapshot.data,
         style=snapshot.style,
+        layout_plan=compile_layout_plan(
+            snapshot.data,
+            snapshot.style.template_snapshot,
+            snapshot.style,
+        ),
     )
-
-
-def resume_content_hash(data: object) -> str:
-    serialized = json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return "sha256:" + hashlib.sha256(serialized.encode()).hexdigest()
 
 
 @router.get("", response_model=ResumeListResponse)
@@ -111,6 +137,7 @@ def list_resumes(
                 Resume.id,
                 Resume.title,
                 Resume.source_type,
+                Resume.template_id,
                 Resume.lock_version,
                 Resume.created_at,
                 Resume.updated_at,
@@ -174,79 +201,26 @@ async def classify_resume_semantics(
     payload: SemanticClassificationRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-    llm_service: LLMService = Depends(get_llm_service),
-    redis_client: "redis_lib.Redis" = Depends(get_redis),
 ) -> SemanticClassificationResponse:
-    user_id = user.id
-    resume = require_owned_resume(db, resume_id, user_id)
+    resume = require_owned_resume(db, resume_id, user.id)
     try:
-        snapshot = parse_resume_snapshot(resume.data_json, resume.style_json)
+        snapshot = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
     except ValueError as error:
         raise ApiError(500, "RESUME_SCHEMA_INVALID") from error
-    current_hash = resume_content_hash(snapshot.data.model_dump(mode="json"))
+    current_hash = f"sha256:{snapshot.content_sha256}"
     if payload.content_hash != current_hash:
         raise ApiError(409, "RESUME_SEMANTIC_CLASSIFICATION_STALE")
-
-    selected_ids = set(payload.section_ids) if payload.section_ids is not None else None
+    selected_ids = set(payload.section_ids or [])
     eligible_ids = {
-        section.id
-        for section in snapshot.data.semantic_sections
-        if section.content_key == "custom_sections"
-        and section.custom_section_id != "custom_section_editor"
-        and section.semantic_kind == "custom"
-        and section.semantic_source != "user"
+        section.node_id
+        for section in snapshot.data.sections
+        if section.semantic_kind == "custom"
     }
-    if selected_ids is not None and not selected_ids.issubset(eligible_ids):
+    if selected_ids and not selected_ids.issubset(eligible_ids):
         raise ApiError(400, "INVALID_RESUME_SEMANTIC_CLASSIFICATION")
-    selection_key = ",".join(sorted(selected_ids)) if selected_ids is not None else "all"
-    cache_key = (
-        f"resume-semantic-classification:{user_id}:{resume.id}:"
-        f"{current_hash.removeprefix('sha256:')}:{selection_key}"
-    )
-    cached = redis_client.get(cache_key)
-    if cached is not None:
-        try:
-            cached_text = cached.decode() if isinstance(cached, bytes) else str(cached)
-            cached_result = SemanticClassificationResponse.model_validate_json(cached_text)
-            if cached_result.content_hash == current_hash:
-                return cached_result
-        except ValueError:
-            redis_client.delete(cache_key)
-    resume_db_id = resume.id
-    # Do not hold a repeatable-read snapshot open while waiting for the model.
-    # A fresh transaction below must observe edits committed during the call.
-    db.rollback()
-    try:
-        result = await classify_resume_sections(
-            llm_service,
-            user_id=user_id,
-            document=snapshot.data,
-            selected_section_ids=selected_ids,
-        )
-    except (LLMError, ValueError) as error:
-        raise ApiError(503, "RESUME_SEMANTIC_CLASSIFICATION_UNAVAILABLE") from error
-    refreshed = find_owned_resume(db, str(resume_db_id), user_id)
-    if refreshed is None:
-        raise ApiError(404, "RESUME_NOT_FOUND")
-    try:
-        refreshed_snapshot = parse_resume_snapshot(
-            refreshed.data_json,
-            refreshed.style_json,
-        )
-    except ValueError as error:
-        raise ApiError(500, "RESUME_SCHEMA_INVALID") from error
-    if resume_content_hash(refreshed_snapshot.data.model_dump(mode="json")) != current_hash:
-        raise ApiError(409, "RESUME_SEMANTIC_CLASSIFICATION_STALE")
-    response = SemanticClassificationResponse(
-        content_hash=current_hash,
-        suggestions=result.suggestions,
-    )
-    redis_client.set(
-        cache_key,
-        response.model_dump_json(),
-        ex=3600,
-    )
-    return response
+    # Canonical sections already persist their semantic kind.  There is no
+    # post-save sparse classifier and therefore no second source of truth.
+    return SemanticClassificationResponse(content_hash=current_hash, suggestions=[])
 
 
 @router.put("/{resume_id}", response_model=ResumeResponse)
@@ -271,6 +245,10 @@ def update_resume(
         raise ApiError(400, "INVALID_RESUME_TITLE") from error
     except ResumeTitleConflict as error:
         raise ApiError(409, "RESUME_TITLE_CONFLICT") from error
+    except ResumePresentationInvalid as error:
+        raise ApiError(400, "INVALID_RESUME_STYLE") from error
+    except ResumeTemplateCompositionInvalid as error:
+        raise ApiError(422, "TEMPLATE_COMPOSITION_INVALID") from error
     except ValueError as error:
         raise ApiError(500, "RESUME_SCHEMA_INVALID") from error
     if updated is None:
@@ -345,9 +323,15 @@ def delete_resume(
                     },
                 )
         if parse_task is not None:
-            storage.delete(parse_task.object_name)
-            if parse_task.converted_object_name:
-                storage.delete(parse_task.converted_object_name)
+            cleanup_names = build_import_cleanup_object_names(
+                user.id,
+                parse_task.object_name,
+                parse_task.converted_object_name,
+            )
+            if parse_task.source_graph_object_name:
+                cleanup_names = (*cleanup_names, parse_task.source_graph_object_name)
+            for object_name in cleanup_names:
+                storage.delete(object_name)
         storage.delete_prefix(f"users/{user.id}/resumes/{resume.id}/")
     except Exception as error:
         db.rollback()

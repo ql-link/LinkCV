@@ -15,8 +15,8 @@
 | 求职中心 | `modules/job_descriptions/`、`modules/interviews/` | Web 岗位/面试页、浏览器插件、Agent 上下文 | `docs/features/career-center.md`、`docs/api/http-contracts.md` |
 | 用户资料集 | `modules/datasets/`、`modules/resumes/models.py`、`services/dataset_upload_service.py`、`core/mq/`、`workers/`、迁移 `0043` | Web 资料集页、Agent 工具、MySQL、MinIO、RabbitMQ、LinkParse | `docs/features/datasets.md`、`docs/api/http-contracts.md`、`docs/internals/backend.md`、`docs/internals/web.md`、`docs/ops/development.md`、`docs/ops/deployment.md` |
 | 小程序渠道 | `apps/miniprogram/`、`modules/miniprogram/` | 账号、简历、PDF/PNG 渲染 | `docs/internals/miniprogram.md`、`docs/api/http-contracts.md`、`docs/ops/development.md` |
-| 系统日志与业务审计 | `modules/observability/`、Web API client、Promtail Compose | 管理端日志中心、共享 Loki | `docs/internals/observability.md`、`docs/api/http-contracts.md`、`docs/ops/deployment.md` |
-| 插件发布与下载 | `modules/plugin_releases/`、`core/storage.py` | 岗位库安装入口、管理台、MinIO、浏览器插件构建 | `docs/internals/plugin-delivery.md`、`docs/api/http-contracts.md`、`docs/internals/extension.md` |
+| 系统日志与业务审计 | `modules/observability/`、Web API client、Promtail Compose | 管理端日志中心、共享 Loki | `docs/internals/observability.md`、`docs/api/http-contracts.md`、`docs/internals/backend.md`、`docs/internals/web.md`、`docs/ops/deployment.md` |
+| 插件发布与下载 | `modules/plugin_releases/`、`core/storage.py` | 岗位库安装入口、管理台、MinIO、浏览器插件构建 | `docs/internals/plugin-delivery.md`、`docs/api/http-contracts.md`、`docs/internals/backend.md`、`docs/internals/extension.md` |
 | 本地环境变量 | `.env.example`、根级 `package.json`、Vite、Compose | 开发者与本地进程 | `docs/ops/development.md` |
 | 构建与部署 | `Jenkinsfile`、`Dockerfile`、`deploy/`、GitHub Actions | CI、部署主机 | `docs/ops/deployment.md` |
 | AI 交付流程 | `.ai/skills/`、`.specs/`、`scripts/quality/` | 开发 Agent、CI | `.ai/skills/README.md`、`.specs/README.md` |

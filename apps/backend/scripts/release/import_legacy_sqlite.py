@@ -23,8 +23,14 @@ from linkcv.core.database import build_engine
 from linkcv.domain.resume_document import ResumeDocument, with_default_semantics
 from linkcv.domain.resume_snapshot import ResumeSnapshot
 from linkcv.domain.resume_style import ResumePresentation, default_template_manifest
+from linkcv.domain.resume.legacy_cutover import (
+    blank_canonical_document,
+    convert_legacy_document,
+    convert_legacy_template,
+    presentation_for_legacy,
+)
 from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.models import Resume, ResumeVersion
+from linkcv.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
 
 LEGACY_SETTING_KEYS = {
     "fontFamily",
@@ -308,13 +314,22 @@ def build_import_plan(source: Path) -> ImportPlan:
                 split_ratio=row["split_ratio"],
                 preview_scale=row["preview_scale"],
             )
-            ResumeSnapshot.model_validate({"data": data, "style": style})
+            legacy_snapshot = ResumeSnapshot.model_validate({"data": data, "style": style})
+            definition = convert_legacy_template(
+                legacy_snapshot.style,
+                template_key=legacy_snapshot.style.template_key,
+            )
+            canonical_data = convert_legacy_document(legacy_snapshot.data)
+            canonical_style = presentation_for_legacy(
+                legacy_snapshot.style,
+                definition,
+            )
             resumes.append(
                 LegacyResume(
                     legacy_user_id=legacy_user_id,
                     title=title.strip(),
-                    data=data,
-                    style=style,
+                    data=canonical_data.model_dump(mode="json"),
+                    style=canonical_style.model_dump(mode="json"),
                     created_at=_parse_datetime(
                         row["created_at"], field="legacy resume created_at"
                     ),
@@ -346,6 +361,10 @@ def _require_empty_target(session: Session) -> None:
             select(func.count()).select_from(ResumeVersion)
         )
         or 0,
+        "resume_templates": session.scalar(
+            select(func.count()).select_from(ResumeTemplate)
+        )
+        or 0,
     }
     if any(counts.values()):
         raise RuntimeError("legacy import requires empty target business tables")
@@ -374,10 +393,40 @@ def import_plan(engine: Engine, plan: ImportPlan, *, execute: bool) -> None:
                 session.flush()
                 user_ids[legacy_user.legacy_id] = user.id
 
+            template_ids: dict[str, int] = {}
+            for template_key in sorted(
+                {
+                    str(item.style["template_snapshot"]["template_key"])
+                    for item in plan.resumes
+                }
+            ):
+                definition = next(
+                    item.style["template_snapshot"]
+                    for item in plan.resumes
+                    if item.style["template_snapshot"]["template_key"] == template_key
+                )
+                template = ResumeTemplate(
+                    key=template_key,
+                    name=f"历史导入模板 · {template_key}",
+                    description="由历史 SQLite 数据导入生成",
+                    data_json=blank_canonical_document(seed=template_key).model_dump(
+                        mode="json"
+                    ),
+                    style_json=definition,
+                    is_active=1,
+                )
+                session.add(template)
+                session.flush()
+                template_ids[template_key] = template.id
+
             for legacy_resume in plan.resumes:
+                template_key = str(
+                    legacy_resume.style["template_snapshot"]["template_key"]
+                )
+                template_id = template_ids[template_key]
                 resume = Resume(
                     user_id=user_ids[legacy_resume.legacy_user_id],
-                    template_id=None,
+                    template_id=template_id,
                     parse_task_id=None,
                     title=legacy_resume.title,
                     data_json=legacy_resume.data,
@@ -392,6 +441,7 @@ def import_plan(engine: Engine, plan: ImportPlan, *, execute: bool) -> None:
                 session.add(
                     ResumeVersion(
                         resume_id=resume.id,
+                        template_id=template_id,
                         version_no=1,
                         data_json=legacy_resume.data,
                         style_json=legacy_resume.style,

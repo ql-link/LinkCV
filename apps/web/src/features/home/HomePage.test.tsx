@@ -5,6 +5,7 @@ import {
   type ResumeImportSummary,
   type ResumeSummary,
 } from "../../api/client";
+import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
 import { defaultSettings, useResumeStore } from "../../store/resumeStore";
 import { HomePage, HomeScreen } from "./HomePage";
 
@@ -58,6 +59,17 @@ describe("HomeScreen", () => {
     expect(screen.getByRole("status", { name: "正在加载我的简历…" })).toBeInTheDocument();
     expect(container.querySelector(".home-dashboard-content > .page-loading")).toBeInTheDocument();
     expect(container.querySelector(".dashboard-main")).not.toBeInTheDocument();
+  });
+
+  it("无简历时直接在工作区背景展示空状态", () => {
+    const { container } = renderHome({ resumes: [] });
+    const emptyState = container.querySelector(".home-resume-empty-state") as HTMLElement;
+
+    expect(screen.getByRole("heading", { name: "还没有正式简历" })).toBeInTheDocument();
+    expect(emptyState).toBeInTheDocument();
+    expect(container.querySelector(".dashboard-empty-state")).not.toBeInTheDocument();
+    expect(within(emptyState).getByRole("button", { name: "创建第一份简历" })).toBeInTheDocument();
+    expect(within(emptyState).getByRole("button", { name: "导入简历" })).toBeInTheDocument();
   });
 
   it("按名称筛选简历并从新建按钮在当前页打开创建弹窗", async () => {
@@ -149,6 +161,21 @@ describe("HomeScreen", () => {
     expect(within(menu).getByRole("menuitem", { name: "重命名" })).toBeInTheDocument();
     expect(within(menu).getByRole("menuitem", { name: "分享链接" })).toBeInTheDocument();
     expect(within(menu).getByRole("menuitem", { name: "删除" })).toBeInTheDocument();
+  });
+
+  it("摘要缺少服务端布局计划时显示受控不可用状态", () => {
+    renderHome({
+      resumes: [{
+        ...resumes[0],
+        preview: {
+          data: defaultCanonicalDocument,
+          style: defaultCanonicalPresentation,
+          layout_plan: null,
+        },
+      }],
+    });
+
+    expect(screen.getByText("预览不可用")).toBeInTheDocument();
   });
 
   it("按 Escape 关闭操作菜单并将焦点还给三个点按钮", () => {

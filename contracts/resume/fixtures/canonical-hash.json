@@ -1,0 +1,18 @@
+{
+  "valid": [
+    {
+      "value": {"b": [2, 1], "a": "张三"},
+      "canonical_utf8": "{\"a\":\"张三\",\"b\":[2,1]}",
+      "sha256": "bad782a92e6a2f40dd9d5c8059ad878b6400e71c6c7de89bf7370370b1cd444c"
+    },
+    {
+      "value": {"version": 1, "nested": {"accent": "é"}},
+      "canonical_utf8": "{\"nested\":{\"accent\":\"é\"},\"version\":1}",
+      "sha256": "6f63f03d6f88de11d3a56b6fd5a5c78b00e38fbbc4f8ac3a9b66c539f62b22a7"
+    }
+  ],
+  "invalid": [
+    {"value": "é", "reason": "non_nfc"},
+    {"value": "\u0001", "reason": "control_character"}
+  ]
+}

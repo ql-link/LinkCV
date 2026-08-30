@@ -89,6 +89,12 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
     setError(null);
     const result = await api.getShareState(resumeId);
     setShare(result.share);
+    if (result.share) {
+      // 与 share 在同一批次初始化，避免界面已可交互时，后续 effect
+      // 又把用户刚选择的有效期覆盖回服务端旧值。
+      setDraftVisibility(result.share.share_visibility);
+      setDraftExpiry(matchExpiry(result.share.share_expires_at));
+    }
   }, [resumeId]);
 
   useEffect(() => {

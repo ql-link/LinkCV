@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | Web | `apps/web` | React 19、TypeScript、Vite 单页应用，承载用户工作区、公共分享和管理端界面 |
 | Browser extension | `apps/extension` | WXT、React、TypeScript Chrome MV3 插件；读取当前 BOSS 详情页并提交确认后的采集字段 |
-| WeChat miniprogram | `apps/miniprogram` | 原生小程序渠道，提供游客示例、主动登录、扫码确认、本人资料和简历只读浏览；详见 [小程序架构](miniprogram.md) |
+| WeChat miniprogram | `apps/miniprogram` | 原生小程序渠道，提供游客示例、主动登录、扫码确认、本人头像与昵称维护和简历只读浏览；详见 [小程序架构](miniprogram.md) |
 | Backend | `apps/backend` | FastAPI 业务 API、内部 Agent 工具、Worker、SQLAlchemy 模型与 SQL-first Alembic 迁移 |
 | Pi Agent service | `apps/pi-service` | 独立无头 Node 服务；运行 Pi Agent loop，并仅通过受控 HTTP 工具调用 FastAPI |
 | Infrastructure | `deploy` | MySQL、Redis、MinIO、消息队列、可观测性依赖和 Dev/Production Jenkins、Compose 拓扑 |

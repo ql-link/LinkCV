@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 import linkcv.models  # noqa: F401
 from linkcv.core.database import Base
 from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.models import Resume, ResumeVersion
+from linkcv.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 
@@ -123,6 +123,7 @@ def test_dry_run_then_execute_imports_users_resumes_and_initial_versions(
     with Session(engine) as session:
         user = session.scalar(select(User))
         resume = session.scalar(select(Resume))
+        template = session.scalar(select(ResumeTemplate))
         version = session.scalar(select(ResumeVersion))
         assert user is not None
         assert user.email == "example@example.com"
@@ -131,9 +132,12 @@ def test_dry_run_then_execute_imports_users_resumes_and_initial_versions(
         assert resume is not None
         assert resume.user_id == user.id
         assert resume.source_type == "blank"
-        assert resume.data_json["semantic_sections"]
+        assert resume.data_json["schema_version"] == "canonical-resume.v1"
+        assert template is not None
+        assert resume.template_id == template.id
         assert version is not None
         assert version.resume_id == resume.id
+        assert version.template_id == template.id
         assert version.name == "初始版本"
         assert plan.skipped_sessions == 1
 

@@ -12,13 +12,13 @@
 | --- | --- |
 | `src/linkcv/main.py` | 装配数据库、Redis、MinIO、统一 LLM、导入幂等和 MQ publisher；托管 SPA 静态产物并为哈希资源设置 gzip 与长期 immutable 缓存；测试可注入 Fake |
 | `src/linkcv/core/` | 配置、数据库、错误、安全、Redis 和 MinIO 基础设施 |
-| `src/linkcv/domain/` | 唯一运行时 `ResumeDocument`、`ResumePresentation`、`TemplateManifest`、联合快照、SectionIR、Draft 和确定性标准化 |
+| `src/linkcv/domain/resume/` | 唯一运行时 `CanonicalResumeDocument`、`ResumePresentation`、`TemplateDefinition`、`LayoutPlan`、`SourceGraph`、稀疏模型标注与确定性导入组合；旧快照解析器只供 `0046` 和离线导入脚本使用 |
 | `src/linkcv/domain/job_source.py` | JD 来源 URL 校验、规范化、站点识别和 SHA-256 身份计算 |
 | `src/linkcv/application/resumes/` | 统一创建、乐观锁保存、版本创建/重命名/恢复、分享链接创建/覆盖/更新与事务规则 |
 | `src/linkcv/application/job_descriptions/` | JD 创建、AI 草稿提取、重复解决、搜索分页、乐观锁更新和直接永久删除 |
 | `src/linkcv/application/interviews/` | 求职进程状态机、面试排期冲突、完成/推进/关闭和素材元数据事务 |
 | `src/linkcv/integrations/` | LinkParse PDF/DOCX Adapter、转换分发、微信小程序上游封装、统一 LLM 简历结构化与未分类章节语义建议 Adapter |
-| `src/linkcv/services/resume_import_service.py` | Worker 使用的 Markdown 转换、结构化与规范化原语，不提交业务事务 |
+| `src/linkcv/services/resume_import_service.py` | Worker 使用的 Markdown 转换、严格布局损失检查、决策式结构化与规范组合原语，不提交业务事务 |
 | `src/linkcv/services/resume_import_idempotency.py` | Redis Lua 请求指纹到导入 ID 的短期绑定与冲突保护 |
 | `src/linkcv/core/mq/` | RabbitMQ/Kafka publisher、统一导入消息和 confirm 异常边界 |
 | `src/linkcv/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
@@ -31,7 +31,7 @@
 | `src/linkcv/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkcv/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0046` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0050` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -67,9 +67,17 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0046` 在 `0045` 基础上锁定 `user_profiles` 结构，预检职业方向列及数组 CHECK 和画像行数后，用临时表按原顺序去重并过滤 `employment_types`，只保留 `internship` 与 `full_time`，再删除职业方向列及其 CHECK。迁移后核验画像行数、工作性质数组和最终结构；该 revision 同样无兼容窗口且为 forward-only，删除的数据只能依赖升级前备份或新的向前 revision。
 
+`0047` 在维护窗口完成简历 canonical 一次性切流，新增表为 0。迁移先只读预检全部 `resume_templates/resumes/resume_versions`；对于 `0042` 已从目录删除但仍被历史快照引用的 `blank-cn`，预检通过后、非空外键 DDL 前写入确定性的 inactive tombstone，并把历史简历与版本绑定该身份。tombstone 的示例正文为空且不含用户数据，每份历史简历/版本仍从自己的旧 data/style 生成自己的 canonical 内容和冻结模板快照，不互相覆盖。迁移同时为历史版本补齐非空 `template_id`，把当前简历模板外键改为 `RESTRICT`，并为既有 `document_parse_tasks` 增加导入时冻结的 `selected_template_id` 与私有 `source_graph_object_name`。未知模板、关系身份冲突、无法无损表示、成功任务缺少结果简历或仍在处理的导入都会在首次写入前阻断；inactive tombstone 不进入普通模板列表、新建、导入默认选择或模板切换。升级后普通运行时不再双读双写；旧解析模块只保留给该迁移和离线 SQLite 导入器。
+
+`0048` 不新增列、表或其他 schema 对象。它在首笔 JSON 更新前全量预检三张既有表：把 `0047` 已扁平化的 `::: left/right`、`:::: meta/trio` 容器确定性重组为 canonical `row`（pair 两格且保留 30–80 的 `left_width_percent`、meta 四格、trio 三格）。历史适配器可能把完整容器压入一个或多个 paragraph；转换按 run 切片保留 marks、链接、样式和来源引用，并由最终 canonical 校验阻断悬空节点引用。pair 仍要求左右容器显式闭合；meta/trio 仅在 opener、paragraph 边界和精确四格/三格共同给出唯一边界时允许恢复被旧适配器丢失的 closing 标记，其他嵌套、不完整或歧义结构继续 fail-closed。`TemplateDefinition.avatar` 通过现有 identity/avatar slot 唯一恢复 region；官方模板采用受保护的显示和尺寸事实（administrative 108px、campus 82px、civic 94px、creative 112px，classic technical 隐藏），未知模板缺少可证明策略时 fail-closed 为隐藏且无系统 fallback。写后再次严格校验全部 JSON、确认原始 `:::` 标记为零；revision 为 forward-only，第二次预检不产生语义变化。
+
+`0049` 为 `document_parse_tasks` 增加可空的 `selected_template_style_json`。升级前只读取并校验活动 `resume_import` 任务，要求模板 ID 存在且关联行的 `TemplateDefinition` 合法、关系 key 一致，然后在新增列后回填完整规范化定义；资料集任务和终态历史导入保留空值。导入受理时同时写入模板 ID 与深拷贝快照，Worker 仅消费任务快照，模板后续更新或停用不会使已受理任务改变版式或失败；revision 为 forward-only，回退依赖备份。
+
+`0050` 不新增物理 schema 对象，在首笔写入前全量预检 `resume_templates`、`resumes` 和 `resume_versions` 的 canonical 正文，把白名单内完整的历史 `:icon[Name]:` 标记转换为结构化 `InlineIcon`，章节标题的前导图标转换为 `title_icon`。拆分行内文字时保留 marks、链接、样式和来源引用；未知或不完整标记保持原文字。若同一位置同时存在结构化图标与旧标记，迁移会因语义冲突中止；写后再次校验全部快照并确认转换幂等。revision 为 forward-only，恢复依赖升级前备份。
+
 普通创建必须提供名称和启用模板，在用户行锁内完成容量、名称规范键和模板快照校验，再以 `source_type=template` 原子创建当前简历和 initial 版本。正式简历与活动导入任务共享每用户 10 个名额。异步导入同样必须提供启用模板，其标题来自安全化源文件名并允许与已有简历同名；Web 默认选择 `classic-technical-cn`，不可用时只回退到其他非空白启用模板，解析内容作为 data，所选模板提供 style。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。模板切换使用同一乐观锁边界的独立原子服务：当前 `data_json` 保持不变，目标启用模板提供 `style_json` 与 `template_id`，成功后只递增一次锁；目标无效或版本冲突不会写入部分结果。手动正式版本在创建和重命名时保存 1–80 字符的名称；旧调用方缺省时按版本号生成“版本 N”。手动版本、重命名、删除版本与恢复都先锁定所属简历；重命名只更新名称，恢复直接替换当前简历且不创建新版本；每份简历最多保存 10 个版本。`0023` 为 `resume_versions.name` 回填历史名称，历史初始版本、恢复前备份和 restore 记录使用系统名称。
 
-`0003` 将模板外键改为 `ON DELETE SET NULL`，同时允许历史模板来源在模板删除后保留 `source_type=template/template_id=NULL`。MySQL 8.4 禁止 `SET NULL` 外键列参与 CHECK，因此 `ck_resumes_source_fields` 只约束来源证据字段，`template_id/source_type` 组合由统一创建服务保证，外键继续保证非空引用有效。`0004` 曾新增对象存储清理任务表；`0010` 在删除链路改为同步后移除该表，upgrade 会先锁表并在存在待处理任务时拒绝删表。部署流水线先迁移再替换应用，因此迁移到 `0010` 前须确认任务表为空；迁移和容器替换之间的旧应用删除请求可能短暂失败。`0005` 在批量转换前核对旧节点和样式字段，只接受可完整表达的上一版结构；遇到未知字段、危险 Markdown 或无法保留的内嵌图片会中止。`0012` 删除 `resumes` 和 `resume_versions` 的旧版内容与样式备份列；恢复旧 JSON 必须使用迁移前的外部数据库备份。已进入共享环境的 revision 不原地修改，修正通过新的向前 revision 完成。
+`0003` 曾把模板外键改为 `ON DELETE SET NULL`，允许目录项删除后暂时保留历史 `source_type=template/template_id=NULL`；`0047` canonical cutover 后，`resumes.template_id` 与 `resume_versions.template_id` 均为非空并使用 `ON DELETE RESTRICT`，退役目录项通过 inactive tombstone 保留关系身份。MySQL 8.4 禁止 `SET NULL` 外键列参与 CHECK，因此早期 `ck_resumes_source_fields` 只约束来源证据字段；当前模板身份由非空外键和统一创建/切换服务共同保证。`0004` 曾新增对象存储清理任务表；`0010` 在删除链路改为同步后移除该表，upgrade 会先锁表并在存在待处理任务时拒绝删表。部署流水线先迁移再替换应用，因此迁移到 `0010` 前须确认任务表为空；迁移和容器替换之间的旧应用删除请求可能短暂失败。`0005` 在批量转换前核对旧节点和样式字段，只接受可完整表达的上一版结构；遇到未知字段、危险 Markdown 或无法保留的内嵌图片会中止。`0012` 删除 `resumes` 和 `resume_versions` 的旧版内容与样式备份列；恢复旧 JSON 必须使用迁移前的外部数据库备份。已进入共享环境的 revision 不原地修改，修正通过新的向前 revision 完成。
 
 `0006` 新增 `llm_model_configs` 和 `llm_call_logs`。模型配置保留启停、优先级、可选价格和版本化凭据密文；调用日志按唯一 `call_id` 保存用户、实际模型快照、最终状态、计量完整性、Token、价格快照和估算成本，不保存消息或模型正文。配置和调用日志不提供级联删除，历史关联使用 `RESTRICT`。两张表及其全部字段都在 SQL-first DDL 和 SQLAlchemy 模型中维护一致的中文注释；状态字段的英文值是持久化契约，不因注释语言改变。
 
@@ -95,7 +103,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `modules/resumes/pdf_service.py` 是 Web 与小程序共用的 PDF 边界：从快照提取 LinkCV 私有图片引用，按用户/简历对象键读取 PNG/JPEG 并转为内存 data URL，再以有界 stdin/stdout 协议启动一次性 Node/Chromium 进程。渲染器不监听端口、不读取任意对象键、不联网抓取正文资源，也不把快照或输出写入持久临时文件；并发、输入、单图、图片总量、输出、超时和智能页高都有上限。Web `GET /api/resumes/{id}/pdf` 校验当前 Cookie 用户和 `lock_version`，直接渲染 `resumes` 当前快照。
 
-小程序简历接口仍从 `resume_versions` 选择最新 `reason=manual` 快照，没有手动版本时选择 `reason=initial`，因此不会暴露自动保存草稿。PDF/PNG 请求再次核对小程序会话、本人归属和当前版本标识，并在请求副本中强制 `smart_one_page=true`，保持现有单长页预览契约而不修改持久版本。PNG 路由继续用 `pypdfium2`/PDFium 把唯一页面渲染为最大宽度 1440 像素的 RGB 图片；页面尺寸、总像素和输出字节都有上限，并发栅格化槽位固定。异常以稳定 4xx/503 错误收口。
+小程序简历接口仍从 `resume_versions` 选择最新 `reason=manual` 快照，没有手动版本时选择 `reason=initial`，因此不会暴露自动保存草稿。PDF/PNG 请求再次核对小程序会话、本人归属和当前版本标识，在请求副本中设置 `style.portable.smart_one_page=true`，并用同一 canonical 正文、模板快照和后端 `LayoutPlan` 渲染，不修改持久版本。PNG 路由继续用 `pypdfium2`/PDFium 把唯一页面渲染为最大宽度 1440 像素的 RGB 图片；页面尺寸、总像素和输出字节都有上限，并发栅格化槽位固定。异常以稳定 4xx/503 错误收口。
 
 `0021` 将 `resume_imports` 一次性迁移为通用 `document_parse_tasks`：任务表保存 `source_type=resume_import`、源文件和上传/解析状态，不再持有最终简历指针；`resumes.parse_task_id` 以无外键的可空唯一列记录来源任务，由 Worker 在创建简历和完成任务的同一事务中维护。迁移沿用原任务主键并回填来源指针，随后删除旧表；需要恢复旧表与数据时使用迁移前备份。转换后的 Markdown 尽力存入 `converted_object_name`，历史迁移记录保持为空，生命周期检查不依赖该字段。
 
@@ -130,7 +138,7 @@ LiteLLM 只位于 `modules/llm/gateway.py` 和只读目录边界。白名单 ada
 
 模型凭据使用 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 提供的 Fernet 密钥环加密，数据库只保存 `v1:<keyId>:<token>`。列表首项负责新写入，旧 key 用于兼容解密；读取旧密文时会惰性重包到首项。普通日志、HTTP 响应和调用记录均不包含明文凭据、messages、模型完整响应或供应商原始错误。
 
-简历导入 Worker 通过 `integrations/resume_structuring.py` 以 `source=resume_import` 调用 `LLMService.structured_chat()`，使用数据库中的 `resume_structuring` 当前绑定、加密凭据、调用日志和计量。模型输入只包含 SectionIR 的标题、类别和 Markdown，不包含原文件、对象键、LinkParse 元数据、warnings 或用户 ID；结构化调用使用 DeepSeek 时显式发送 `thinking.type=disabled`，其他供应商和普通 Chat 不附加该专属参数；模型返回内容仍须通过 `ResumeExtractionDraft` 严格校验。
+简历导入 Worker 通过 `integrations/resume_structuring.py` 以 `source=resume_import` 调用 `LLMService.structured_chat()`，使用数据库中的 `resume_structuring` 当前绑定、加密凭据、调用日志和计量。程序先把转换结果解析为保留全局顺序、来源跨度、列表类型、起始序号、项目序号与嵌套深度的 `SourceLayoutIR`；模型只接收稳定源块及必要布局元数据，只能返回每个源块的语义/布局角色和受限分组，不能返回、改写或丢弃可见文字。原文件、对象键、LinkParse 外层元数据、warnings 和用户 ID 不进入模型输入；PDF 仅在 layout 证据通过独立有界校验时附带物理块提示，提示中的 `block_id` 不能替代 `source_id`。结构化调用使用 DeepSeek 时显式发送 `thinking.type=disabled`，其他供应商和普通 Chat 不附加该专属参数；模型结果须通过 `SparseResumeAnnotations` 及当前 `SourceGraph` 的 graph hash、source_id、anchor 和复合键校验。带 layout hints 的领域校验失败时最多再尝试一次不带 hints；未配置、超时、供应商失败、`LLM_RESPONSE_INVALID` 或最终校验失败均记录只含稳定 `reason`/`exception_type` 的脱敏 warning，并返回匹配当前来源图的空标注，由确定性组合器继续导入。
 
 模型候选在 `0029` 后不再携带能力列；`llm_capability_bindings` 为 `chat`、`resume_structuring`、`pi_agent`、`job_image_structuring` 各保存一行当前候选、绑定版本和最近验证证据。`llm_model_validations` 按候选配置版本、能力、探针版本和调用 ID 保存验证结果；`llm_call_logs.model_config_version` 保存实际调用时的候选版本快照。管理员使用 `/api/admin/llm/capabilities` 查看能力矩阵，并通过 `/api/admin/llm/capabilities/{capability}/binding` 以真实探针成功后切换绑定；JD 图片解析探针向候选发送内置红色 PNG，只有返回约定的结构化颜色结果才更新绑定。
 
@@ -138,15 +146,19 @@ LiteLLM 只位于 `modules/llm/gateway.py` 和只读目录边界。白名单 ada
 
 ## 导入与外部边界
 
-Markdown 文件在进程内做 UTF-8 与确定性换行清理；PDF 和 DOCX 以固定的 `output_formats=markdown/include_bbox=false/include_images=false` 调用 LinkParse `POST /v1/parse`，由 LinkParse 识别文件类型并决定解析引擎、OCR 选页和渲染 DPI。LinkParse 响应在 JSON decode 前限制为 3 MiB，随后校验 request ID、schema、页数、Markdown 质量、预期文件类型和空 assets；客户端不下载或保存外部 assets，也不自动重试同步解析请求。DOCX 响应只有 `meta.word.omitted_image_count > 0` 会形成用户告警，其余 Word 元数据只写入脱敏调用日志。
+Markdown 文件在进程内做 UTF-8 与确定性换行清理；DOCX 以固定的 `output_formats=markdown/include_bbox=false/include_images=false` 调用 LinkParse `POST /v1/parse`，PDF 在此基础上额外发送 `include_layout=true`。LinkParse 识别文件类型并决定 OpenDataLoader、OCR 选页和渲染 DPI；layout 模式内部即使公开 `include_bbox=false` 也应保留 OCR 坐标，并在 `meta.pdf.layout` 返回版本化物理行、归一化 bbox、来源顺序、语义角色、同行、续行和质量计数。LinkParse 响应在 JSON decode 前限制为 3 MiB，先校验 request ID、外层兼容 envelope、预期文件类型和空 assets，再独立尝试解析可选 layout；可安全解析的页码、bbox、源顺序和有界块作为精简模型提示，严格关系、计数、warning 和 Markdown 一致性检查只决定是否采用重建 Markdown。显式请求 layout 时若 LinkParse 返回 `413 LAYOUT_RESOURCE_LIMIT`，客户端在同一 deadline 内仅补发一次不含 `include_layout` 的 Markdown 请求，随后按原错误映射收口，不递归重试。layout 缺失、降级、畸形或不一致时保留原始 LinkParse Markdown，不产生 `RESUME_LAYOUT_UNSUPPORTED`；安全提示若仍可用可以继续传入模型，缺少 layout 的旧 LinkParse 版本保持兼容。含嵌入图片的文本 PDF、含图片/表格/文本框的 DOCX，以及转换 Markdown 中仍存在图片、表格、嵌入或主动 HTML 时仍按既有不可承载内容边界失败。LinkParse 的 Word omitted-image/table 信号参与该严格检查，其余 Word 元数据只写入脱敏调用日志。
 
-超过结构化输入上限的内容不会发送给模型，合规输入的 AST 被压缩为 H1–H3 `SectionIR` 后才发送给结构化模型，最终稳定 ID 和来源行号由程序生成。可识别日期会标准化为 `YYYY` 或 `YYYY-MM`，无法识别的日期按原文保留；日期矛盾、非标准联系方式、错别字、空缺单位或职位等内容质量问题不作为导入失败条件。字段类型、数量和长度上限、危险链接、Markdown 主动内容及内部 ID 完整性仍严格校验。HTTP 导入入口先校验所选模板与文件，再使用 canonical UUID `Idempotency-Key`；Redis key 按用户和 Header 哈希隔离，先以 30 秒租约占有请求，再绑定持久化导入 ID 并保留 15 分钟。`document_parse_tasks` 中 `source_type=resume_import` 的记录是上传和解析状态真值；API 只上传、更新为解析中并等待 MQ confirm，Worker 才执行转换和结果事务。单任务状态接口按当前用户和 `source_type` 查询，非法 ID、不存在和越权统一隐藏为 `RESUME_IMPORT_NOT_FOUND`，并在读取前沿用现有陈旧任务收口。转换成功后 Worker 尽力把 Markdown 存到源文件同目录的 `converted.md`，存档失败只记录告警，不改变解析结果。上传失败补偿对象；业务解析失败保留源文件、可能存在的转换存档与失败记录供用户删除，不自动重试。
+超过结构化输入上限的内容不会发送给模型。合规输入经 `SourceLayoutIR → 模型映射决策 → 规范组合器` 处理：组合器只复制已校验源块文字，并按任务受理时冻结的完整 `TemplateDefinition` 选择受控联系信息行、左右条目和 CommonMark 列表配方；Worker 不重新读取当前模板行的样式或启用状态。同块经历头只有显式 `entry_header` 决策及原文确定性分隔符同时存在时才生成左右行，普通 `body` 中的 `｜`/`|` 原样保留。与父章节语义相同的嵌套 heading 作为父章节可见标题保留，只有根标题或语义切换才建立新章节。有序列表的起始值、项目编号和嵌套深度由程序输出，超过单 item 50 个源引用时在安全边界确定性分片并延续实际序号。所有源块必须保持来源顺序且恰好进入一个规范 custom 章节，不存在“未分类内容”运行时兜底。结构化模型引用未知/重复源块、非法锚点/复合键或 graph hash 不匹配时仅使可选增强降级为空标注；确定性组合器或模板布局无法完整承载时分别以 `RESUME_STRUCTURE_INVALID` 或 `RESUME_LAYOUT_UNSUPPORTED` 失败，不创建半成品。日期、联系方式、错别字和空缺字段作为可见源文字原样保留；字段类型、数量和长度上限、危险链接、Markdown 主动内容及内部 ID 完整性仍严格校验。
+
+HTTP 导入入口先校验所选模板与文件，再使用 canonical UUID `Idempotency-Key`；Redis key 按用户和 Header 哈希隔离，先以 30 秒租约占有请求，再绑定持久化导入 ID 并保留 15 分钟。`document_parse_tasks` 中 `source_type=resume_import` 的记录是上传和解析状态真值；API 只上传、更新为解析中并等待 MQ confirm，Worker 才执行转换和结果事务。单任务状态接口按当前用户和 `source_type` 查询，非法 ID、不存在和越权统一隐藏为 `RESUME_IMPORT_NOT_FOUND`，并在读取前沿用现有陈旧任务收口。Worker 只有在仍持有本人 `processing` 任务行锁时才上传转换存档并写回引用；删除或终态并发胜出时不会产生新的转换对象。上传失败补偿对象；业务解析失败保留源文件、可能存在的转换存档与失败记录供用户删除，不自动重试。
 
 Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可用，PDF/DOCX 返回 `DOCUMENT_CONVERSION_UNAVAILABLE`；Production 缺 Key 会安全拒绝启动。默认测试全部使用确定性 Fake 和 `httpx.MockTransport`，不访问真实网络或读取密钥。PDF/DOCX 解析日志只记录 LinkCV 调用 LinkParse 的开始、结果、耗时、解析器/页数/OCR 摘要、DOCX Word 元数据和稳定错误码；不读取 LinkParse 内部日志，也不记录正文、Prompt、Cookie、密钥或完整供应商响应。Markdown 本地转换只记录格式、结果和耗时。
 
 ## 可观测性与业务审计
 
-`ObservabilityMiddleware` 为每次 HTTP 尝试接受格式合法的 `X-Request-ID` 或生成新值，并在响应中回传；它写入一条包含路由模板、状态码、耗时、可信用户和稳定错误码的 access 事件。未处理异常额外保留异常类型和脱敏后的栈。MinIO、Redis、MySQL、LinkParse 和 LLM 调用使用 `dependency` 分类，简历导入使用 `operation_id` 关联上传、转换、结构化和 HTTP 结果。导入 Worker 另以 `task_load → source_read → document_conversion → resume_structuring → resume_normalization → resume_persistence` 记录阶段结果与耗时；失败事件只增加稳定错误码、失败阶段、异常类型，以及不含字段值的 Pydantic 验证模型、路径和错误类型，不写文件名、简历正文或模型响应。Uvicorn 自带 access log 已关闭，避免同一请求重复记录。
+`ObservabilityMiddleware` 为每次 HTTP 尝试接受格式合法的 `X-Request-ID` 或生成新值，并在响应中回传；它写入一条包含路由模板、状态码、耗时、可信用户和稳定错误码的 access 事件。未处理异常额外保留异常类型和脱敏后的栈。MinIO、Redis、MySQL、LinkParse 和 LLM 调用使用 `dependency` 分类，简历导入使用 `operation_id` 关联上传、转换、结构化和 HTTP 结果。导入 Worker 另以 `task_load → source_read → document_conversion → resume_structuring → resume_composition → resume_persistence` 记录阶段结果与耗时；失败事件只增加稳定错误码、失败阶段、异常类型，以及不含字段值的 Pydantic 验证模型、路径和错误类型，不写文件名、简历正文或模型响应。Uvicorn 自带 access log 已关闭，避免同一请求重复记录。
+
+文档解析 MQ 使用强制身份的 V2 envelope：Resume 与 Dataset 消息都要求 `pipeline_version="v2"`、`mq_name="tolink.cv.resume_import.v2"` 且拒绝未知字段。RabbitMQ 使用 `tolink.cv.resume_import.v2` exchange、`linkcv.resume_import.worker.v2` queue、`resume.import.v2` routing key，并添加同版本 header；Kafka 使用同名 V2 topic 和 `linkcv.resume_import.worker.v2` group。重试和 DLT 保留原正文与诊断 headers，Worker 日志只记录受控的 message ID、版本、来源、任务 ID、尝试次数、vendor 和 route，不记录消息正文。
 
 状态变更和安全动作通过 `modules/observability/audit.py` 的固定映射写入审计事件，包括鉴权/会话、账号资料与密码、简历/版本/资源、PDF 导出、JD、管理员用户状态和模型配置。actor 只从已验证会话或登录结果绑定，target 从路由参数、归属校验后的实体或创建结果绑定；成功与受控失败都记录，响应以 `X-Audit-Recorded` 表示本地 sink 是否接受。浏览器单独上报 `resume.pdf_export` 的旧接口继续兼容；新的 Web PDF 路由自动记录该动作。审计不新增 MySQL 表，也不替代既有 `llm_call_logs`。
 
@@ -156,8 +168,8 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - 用户级兼容图片：`users/{user_id}/assets/...`。
 - 账号头像：`users/{user_id}/assets/avatar/...`，对象键记录在 `users.avatar_object_key`；旧路径中的已有头像保持兼容。
-- 导入原文件：`users/{user_id}/resume-imports/{operation_id}/...`。
-- 导入转换存档：`users/{user_id}/resume-imports/{operation_id}/converted.md`。
+- 导入原文件：`users/{user_id}/resume-imports/{operation_id}/source/{safe_name}`。
+- 导入转换存档：`users/{user_id}/resume-imports/{operation_id}/artifacts/converted.md`；删除时同时兼容旧的 `.../{operation_id}/converted.md`。
 - 知识库原文件：`users/{user_id}/datasets/...`。
 - 知识库转换存档：`users/{user_id}/datasets/converted/{parse_task_id}.md`。
 - 简历资源：`users/{user_id}/resumes/{resume_id}/assets/...`。
