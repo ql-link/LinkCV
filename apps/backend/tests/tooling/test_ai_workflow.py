@@ -402,10 +402,52 @@ def test_project_skill_directories_match_registry() -> None:
     assert not {
         "apple-design",
         "frontend-design",
+        "frontend-delivery",
+        "frontend-implementation",
+        "prototype-acceptance",
         "solution-delegated-delivery",
         "ui-layout-design",
     } & actual
-    assert not (skills_root / "frontend-delivery" / "ui_design.template.md").exists()
+    assert {
+        "frontend-browser-check",
+        "frontend-prototype",
+        "frontend-visual-check",
+    } <= actual
+
+
+def test_frontend_capabilities_are_independent(tmp_path: Path) -> None:
+    (tmp_path / ".ai" / "prompts").mkdir(parents=True)
+    skills_root = tmp_path / ".ai" / "skills"
+    skills_root.mkdir(parents=True)
+    (tmp_path / "apps" / "web").mkdir(parents=True)
+    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+    (tmp_path / ".ai" / "prompts" / "project.md").write_text(
+        "rules", encoding="utf-8"
+    )
+    (skills_root / "README.md").write_text("skills", encoding="utf-8")
+    for skill_name in (
+        "frontend-browser-check",
+        "frontend-prototype",
+        "frontend-visual-check",
+    ):
+        shutil.copytree(
+            REPO_ROOT / ".ai" / "skills" / skill_name,
+            skills_root / skill_name,
+        )
+
+    baseline = run_script(SKILL_CHECK, env={"LINKCV_REPO_ROOT": str(tmp_path)})
+    assert baseline.returncode == 0, baseline.stderr
+
+    prototype = skills_root / "frontend-prototype" / "SKILL.md"
+    prototype.write_text(
+        prototype.read_text(encoding="utf-8")
+        + "\n下一站：frontend-browser-check\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(SKILL_CHECK, env={"LINKCV_REPO_ROOT": str(tmp_path)})
+    assert result.returncode == 1
+    assert "前端能力必须保持独立" in result.stderr
 
 
 def test_skill_check_rejects_unregistered_or_missing_skill_directory(
@@ -668,7 +710,7 @@ def test_skill_check_rejects_fixed_solution_section_in_downstream_skill(
     assert "方案文档 9.3" in result.stderr
 
 
-def test_skill_check_rejects_incomplete_flow_router_contract(tmp_path: Path) -> None:
+def test_skill_check_requires_flow_router_to_exclude_pure_frontend(tmp_path: Path) -> None:
     (tmp_path / ".ai" / "prompts").mkdir(parents=True)
     (tmp_path / ".ai" / "prompts" / "project.md").write_text(
         "rules", encoding="utf-8"
@@ -682,8 +724,8 @@ def test_skill_check_rejects_incomplete_flow_router_contract(tmp_path: Path) -> 
     skill_file = target_skill / "SKILL.md"
     skill_file.write_text(
         skill_file.read_text(encoding="utf-8").replace(
-            "用户明确给出的控制项必须原样传给下游",
-            "用户控制项可以由入口重新选择",
+            "明确的纯 Web 前端修改不使用本技能。",
+            "明确的纯 Web 前端修改也使用本技能。",
         ),
         encoding="utf-8",
     )
@@ -694,8 +736,7 @@ def test_skill_check_rejects_incomplete_flow_router_contract(tmp_path: Path) -> 
     )
 
     assert result.returncode == 1
-    assert "薄领域入口契约缺少必要内容" in result.stderr
-    assert "用户明确给出的控制项必须原样传给下游" in result.stderr
+    assert "description 必须把自动发现范围限制为后端或混合任务" in result.stderr
 
 
 def test_skill_check_rejects_flow_router_model_orchestration(tmp_path: Path) -> None:
@@ -724,176 +765,6 @@ def test_skill_check_rejects_flow_router_model_orchestration(tmp_path: Path) -> 
     assert result.returncode == 1
     assert "仍含应由领域交付 Skill 拥有的路径或模型判断" in result.stderr
     assert "下游跳过交付文档和模型编排" in result.stderr
-
-
-def test_skill_check_protects_prototype_frontend_delivery_contract(
-    tmp_path: Path,
-) -> None:
-    protected_markers = (
-        "本技能处理 `apps/web` 的页面、组件、交互、状态和样式交付",
-        "非视觉直接修改",
-        "原型驱动实现",
-        "不再按轻量、标准、完整分档",
-        "AI 不创作替代原型",
-        "当前对话的 Sol 是流程所有者",
-        "会话级原型映射",
-        "原型来源、目标路由和本轮可观察结果",
-        "原型区域 → 现有组件或最接近实现的映射",
-        "`DESIGN.md`、`tokens.css`",
-        "不创建 `ui-design.md`、`layout.md`",
-        "低风险局部修改由当前对话的 Sol 直接实施",
-        "Luna 调度收益必须高于交接、重复读代码和等待产生的开销",
-        "一次真实浏览器反馈产生的局部样式修正默认由 Sol 直接完成",
-        "新增或改变交互状态、组件结构、主要区域或响应式布局",
-        "一个或多个 Luna Max",
-        "可独立、边界清楚且文件所有权不重叠的工作包可以并行",
-        "`model`: `gpt-5.6-luna`",
-        "`reasoning_effort`: `max`",
-        "不得为了匹配某个 Sol reasoning 档位再创建同级 Sol",
-        "使用 `prototype-acceptance`",
-        "未获得交付授权前不提交、推送或创建 PR",
-    )
-
-    for index, marker in enumerate(protected_markers):
-        case_root = tmp_path / f"case-{index}"
-        (case_root / ".ai" / "prompts").mkdir(parents=True)
-        (case_root / ".ai" / "prompts" / "project.md").write_text(
-            "rules", encoding="utf-8"
-        )
-        skills_root = case_root / ".ai" / "skills"
-        skills_root.mkdir(parents=True)
-        (skills_root / "README.md").write_text("skills", encoding="utf-8")
-        source_skill = REPO_ROOT / ".ai" / "skills" / "frontend-delivery"
-        target_skill = skills_root / "frontend-delivery"
-        shutil.copytree(source_skill, target_skill)
-        skill_file = target_skill / "SKILL.md"
-        skill_file.write_text(
-            skill_file.read_text(encoding="utf-8").replace(marker, "核心语义已删除"),
-            encoding="utf-8",
-        )
-
-        result = run_script(
-            SKILL_CHECK,
-            env={"LINKCV_REPO_ROOT": str(case_root)},
-        )
-
-        assert result.returncode == 1
-        assert "原型驱动交付契约缺少必要内容" in result.stderr
-        assert marker in result.stderr
-
-
-def test_skill_check_rejects_ai_created_prototype_gate(tmp_path: Path) -> None:
-    (tmp_path / ".ai" / "prompts").mkdir(parents=True)
-    (tmp_path / ".ai" / "prompts" / "project.md").write_text(
-        "rules", encoding="utf-8"
-    )
-    skills_root = tmp_path / ".ai" / "skills"
-    skills_root.mkdir(parents=True)
-    (skills_root / "README.md").write_text("skills", encoding="utf-8")
-    source_skill = REPO_ROOT / ".ai" / "skills" / "frontend-delivery"
-    target_skill = skills_root / "frontend-delivery"
-    shutil.copytree(source_skill, target_skill)
-    skill_file = target_skill / "SKILL.md"
-    skill_file.write_text(
-        skill_file.read_text(encoding="utf-8")
-        + "\nAI 可以自行绘制页面原型。\n",
-        encoding="utf-8",
-    )
-
-    result = run_script(
-        SKILL_CHECK,
-        env={"LINKCV_REPO_ROOT": str(tmp_path)},
-    )
-
-    assert result.returncode == 1
-    assert "仍存在一次性冻结设计的过期契约" in result.stderr
-
-
-def test_skill_check_protects_frontend_implementation_contract(
-    tmp_path: Path,
-) -> None:
-    protected_markers = (
-        "本技能是 `frontend-delivery` 交给 Luna Max 的实施入口",
-        "Sol 已核对用户原型、真实路由、现有组件和项目事实",
-        "低风险局部修改由 Sol 留在当前对话直接完成",
-        "自行绘制、修改或补造原型/Figma",
-        "猜测原型未覆盖且会改变结构、交互结果或用户行为的内容",
-        "代替当前对话的 Sol 操作真实浏览器或给出原型验收结论",
-        "Sol 工作包是唯一交接",
-        "用户原型是可见结构和视觉尺度的来源",
-        "原型中的像素值映射到项目已有字体、间距、颜色、圆角和尺寸 Token",
-        "没有明确行为、存在多个合理答案或需要改变结构时停止并返回 Sol",
-        "使用 `apply_patch`",
-        "组件测试不能替代当前 Sol 的真实浏览器原型核对",
-        "创建同级 Sol、分支、提交、推送、PR 或外部记录",
-    )
-
-    for index, marker in enumerate(protected_markers):
-        case_root = tmp_path / f"case-{index}"
-        (case_root / ".ai" / "prompts").mkdir(parents=True)
-        (case_root / ".ai" / "prompts" / "project.md").write_text(
-            "rules", encoding="utf-8"
-        )
-        skills_root = case_root / ".ai" / "skills"
-        skills_root.mkdir(parents=True)
-        (skills_root / "README.md").write_text("skills", encoding="utf-8")
-        source_skill = REPO_ROOT / ".ai" / "skills" / "frontend-implementation"
-        target_skill = skills_root / "frontend-implementation"
-        shutil.copytree(source_skill, target_skill)
-        skill_file = target_skill / "SKILL.md"
-        skill_file.write_text(
-            skill_file.read_text(encoding="utf-8").replace(marker, "实施契约已删除"),
-            encoding="utf-8",
-        )
-
-        result = run_script(
-            SKILL_CHECK,
-            env={"LINKCV_REPO_ROOT": str(case_root)},
-        )
-
-        assert result.returncode == 1
-        assert "frontend-implementation: Luna 前端实施边界或 Pattern 契约缺少必要内容" in result.stderr
-        assert marker in result.stderr
-
-
-def test_skill_check_protects_prototype_acceptance_contract(tmp_path: Path) -> None:
-    protected_markers = (
-        "用户提供的 PNG、JPG、截图或 Figma",
-        "当前对话的 Sol 亲自打开真实消费路由",
-        "不是美观评审，也不是新的布局设计环节",
-        "窄、中、宽视口",
-        "不建立 Playwright 截图基线",
-        "原型没有覆盖",
-        "不得让 Luna 猜测审美、布局或产品行为",
-        "组件测试、类型检查和构建只能证明代码质量",
-    )
-
-    for index, marker in enumerate(protected_markers):
-        case_root = tmp_path / f"case-{index}"
-        (case_root / ".ai" / "prompts").mkdir(parents=True)
-        (case_root / ".ai" / "prompts" / "project.md").write_text(
-            "rules", encoding="utf-8"
-        )
-        skills_root = case_root / ".ai" / "skills"
-        skills_root.mkdir(parents=True)
-        (skills_root / "README.md").write_text("skills", encoding="utf-8")
-        source_skill = REPO_ROOT / ".ai" / "skills" / "prototype-acceptance"
-        target_skill = skills_root / "prototype-acceptance"
-        shutil.copytree(source_skill, target_skill)
-        skill_file = target_skill / "SKILL.md"
-        skill_file.write_text(
-            skill_file.read_text(encoding="utf-8").replace(marker, "验收契约已删除"),
-            encoding="utf-8",
-        )
-
-        result = run_script(
-            SKILL_CHECK,
-            env={"LINKCV_REPO_ROOT": str(case_root)},
-        )
-
-        assert result.returncode == 1
-        assert "prototype-acceptance: Sol 原型浏览器核对契约缺少必要内容" in result.stderr
-        assert marker in result.stderr
 
 
 def test_skill_check_protects_backend_delivery_core_semantics(tmp_path: Path) -> None:
@@ -977,46 +848,11 @@ def test_skill_check_rejects_mandatory_backend_peer_sol(tmp_path: Path) -> None:
     assert "仍存在强制独立 Sol 的过期契约" in result.stderr
 
 
-def test_skill_check_rejects_mandatory_frontend_peer_sol(tmp_path: Path) -> None:
-    (tmp_path / ".ai" / "prompts").mkdir(parents=True)
-    (tmp_path / ".ai" / "prompts" / "project.md").write_text(
-        "rules", encoding="utf-8"
-    )
-    skills_root = tmp_path / ".ai" / "skills"
-    skills_root.mkdir(parents=True)
-    (skills_root / "README.md").write_text("skills", encoding="utf-8")
-    source_skill = REPO_ROOT / ".ai" / "skills" / "frontend-delivery"
-    target_skill = skills_root / "frontend-delivery"
-    shutil.copytree(source_skill, target_skill)
-    skill_file = target_skill / "SKILL.md"
-    skill_file.write_text(
-        skill_file.read_text(encoding="utf-8")
-        + "\n标准或完整档由独立 Sol Agent 判断当前轮次。\n",
-        encoding="utf-8",
-    )
-
-    result = run_script(
-        SKILL_CHECK,
-        env={"LINKCV_REPO_ROOT": str(tmp_path)},
-    )
-
-    assert result.returncode == 1
-    assert "仍存在一次性冻结设计的过期契约" in result.stderr
-
-
 def test_skill_check_rejects_fixed_single_luna_dispatch(tmp_path: Path) -> None:
     legacy_cases = (
         (
             "backend-delivery",
             "所有代码、配置、迁移和测试实施统一交给一个 Luna Max",
-        ),
-        (
-            "frontend-delivery",
-            "任何需要修改代码、样式、测试或原型文件的轮次，都交给一个 Luna Max",
-        ),
-        (
-            "frontend-delivery",
-            "任何需要修改 React、样式、测试或配置的实施，都通过 `frontend-implementation`",
         ),
         (
             "implementation-execution",
@@ -1081,7 +917,7 @@ def test_skill_check_protects_five_reduction_contracts(tmp_path: Path) -> None:
         (
             "run-all-tests",
             "SKILL.md",
-            "准备创建 PR 时始终运行完整 `npm run check`",
+            "准备创建纯前端 PR 时，在当前可提交内容上重新运行 `npm run check:web`",
         ),
         (
             "branch-pr-workflow",

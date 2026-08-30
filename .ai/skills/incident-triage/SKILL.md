@@ -110,4 +110,4 @@ description: 沿 LinkCV 的浏览器、Vite 代理、FastAPI、SQLAlchemy、MySQ
 6. **恢复验证**：原始复现步骤、相关测试和完整质量入口；
 7. **残余未知**：仍缺的用户信息或外部证据。
 
-用户授权修复后，代码和配置变更先回 `flow-router` 判断领域：纯前端进入 `frontend-delivery`，纯后端或混合任务进入 `backend-delivery` 完成七维判断；数据库迁移转 `alembic-migration`；外部网络策略、凭据和数据操作需要单独明确授权。
+用户授权修复后，明确的纯前端改动由当前 Codex 直接处理；涉及或可能涉及后端、公共契约、权限、数据、共享配置或部署时才使用 `flow-router`，再进入 `backend-delivery`。数据库迁移转 `alembic-migration`；外部网络策略、凭据和数据操作需要单独明确授权。

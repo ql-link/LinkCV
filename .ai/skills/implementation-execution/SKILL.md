@@ -1,6 +1,6 @@
 ---
 name: implementation-execution
-description: 在 LinkCV 中按已确认范围执行纯后端任务和混合任务的后端、契约、配置工作包。适用于 Sol 在 backend-delivery 七维判断或 solution.md 方案后拆分并调度的一个或多个 Luna 工作包；纯前端页面与组件实施转 frontend-delivery，不在本技能重复领域分流、UI 设计或模型编排。
+description: 在 LinkCV 中按已确认范围执行纯后端任务和混合任务的后端、契约、配置工作包。适用于 Sol 在 backend-delivery 七维判断或 solution.md 方案后拆分并调度的一个或多个 Luna 工作包；明确的纯前端页面与组件实施不使用本技能，也不在此重复 UI 设计或模型编排。
 ---
 
 # 实施执行
@@ -18,7 +18,7 @@ description: 在 LinkCV 中按已确认范围执行纯后端任务和混合任�
 
 本技能不负责创建分支、提交、推送、PR，除非用户另外明确要求进入 `branch-pr-workflow`。
 
-纯前端页面、组件、交互、布局或视觉任务使用 `frontend-delivery`。前后端混合任务中，本技能只执行当前 `solution.md` 约束的后端、API、共享契约、配置与必要消费方同步；页面设计与前端实现由 `frontend-delivery` 消费同一契约。
+纯前端页面、组件、交互、布局或视觉任务由当前 Codex 直接处理。前后端混合任务中，本技能只执行当前 `solution.md` 约束的后端、API、共享契约、配置与必要消费方同步；页面设计与前端实现由当前 Codex 消费同一契约并按需取用前端能力。
 
 ## 2. 进入条件
 

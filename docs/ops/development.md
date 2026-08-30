@@ -160,6 +160,7 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run db:revision -- -m <message>` | 创建 forward-only 的 SQL revision，以及同 ID 的 `.up.sql` 文件       |
 | `npm run dev:development`             | 使用共享 Development 中间件，一键启动 Web、FastAPI、Worker 与 Pi    |
 | `npm run test:web`                    | 前端 Vitest 单元和组件测试                                           |
+| `npm run check:web`                   | Web 设计规则、测试、类型检查和生产构建                               |
 | `npm run dev:pi`                      | 单独启动无头 Pi Agent 服务                                           |
 | `npm run test:pi`                     | 运行 Pi 服务单元测试                                                  |
 | `npm run check:pi`                    | 校验静态模型目录、离线构建 Pi 并测试服务                              |
