@@ -401,6 +401,7 @@ def test_project_skill_directories_match_registry() -> None:
     assert actual == registered
     assert not {
         "apple-design",
+        "backend-delivery",
         "frontend-design",
         "frontend-delivery",
         "frontend-implementation",
@@ -724,8 +725,8 @@ def test_skill_check_requires_flow_router_to_exclude_pure_frontend(tmp_path: Pat
     skill_file = target_skill / "SKILL.md"
     skill_file.write_text(
         skill_file.read_text(encoding="utf-8").replace(
-            "明确的纯 Web 前端修改不使用本技能。",
-            "明确的纯 Web 前端修改也使用本技能。",
+            "明确的纯 Web 前端修改不使用本技能；",
+            "明确的纯 Web 前端修改也使用本技能；",
         ),
         encoding="utf-8",
     )
@@ -736,10 +737,10 @@ def test_skill_check_requires_flow_router_to_exclude_pure_frontend(tmp_path: Pat
     )
 
     assert result.returncode == 1
-    assert "description 必须把自动发现范围限制为后端或混合任务" in result.stderr
+    assert "description 必须说明它是唯一后端开发入口" in result.stderr
 
 
-def test_skill_check_rejects_flow_router_model_orchestration(tmp_path: Path) -> None:
+def test_skill_check_rejects_legacy_flow_router_handoff(tmp_path: Path) -> None:
     (tmp_path / ".ai" / "prompts").mkdir(parents=True)
     (tmp_path / ".ai" / "prompts" / "project.md").write_text(
         "rules", encoding="utf-8"
@@ -763,12 +764,14 @@ def test_skill_check_rejects_flow_router_model_orchestration(tmp_path: Path) -> 
     )
 
     assert result.returncode == 1
-    assert "仍含应由领域交付 Skill 拥有的路径或模型判断" in result.stderr
+    assert "仍存在过期的入口或模型编排契约" in result.stderr
     assert "下游跳过交付文档和模型编排" in result.stderr
 
 
-def test_skill_check_protects_backend_delivery_core_semantics(tmp_path: Path) -> None:
+def test_skill_check_protects_flow_router_delivery_core_semantics(tmp_path: Path) -> None:
     protected_markers = (
+        "它先用最小代码证据确认当前请求是否存在后端范围，再在同一上下文中继续七维判断和交付，不产生中间路由结果",
+        "本技能可以识别前端消费方并约束后端必须提供的可观察契约，但不负责决定、实施或验收前端页面，也不调用前端能力",
         "Sol（主 Agent）始终拥有用户沟通、授权边界、七维判断、方案、工作包拆分、Luna 调度、工作区协调、实施整合复核",
         "不要为了满足工作流形式启动同级 Sol",
         "确认后的实施可以交给一个或多个 Luna",
@@ -802,8 +805,8 @@ def test_skill_check_protects_backend_delivery_core_semantics(tmp_path: Path) ->
         skills_root = case_root / ".ai" / "skills"
         skills_root.mkdir(parents=True)
         (skills_root / "README.md").write_text("skills", encoding="utf-8")
-        source_skill = REPO_ROOT / ".ai" / "skills" / "backend-delivery"
-        target_skill = skills_root / "backend-delivery"
+        source_skill = REPO_ROOT / ".ai" / "skills" / "flow-router"
+        target_skill = skills_root / "flow-router"
         shutil.copytree(source_skill, target_skill)
         skill_file = target_skill / "SKILL.md"
         skill_file.write_text(
@@ -829,8 +832,8 @@ def test_skill_check_rejects_mandatory_backend_peer_sol(tmp_path: Path) -> None:
     skills_root = tmp_path / ".ai" / "skills"
     skills_root.mkdir(parents=True)
     (skills_root / "README.md").write_text("skills", encoding="utf-8")
-    source_skill = REPO_ROOT / ".ai" / "skills" / "backend-delivery"
-    target_skill = skills_root / "backend-delivery"
+    source_skill = REPO_ROOT / ".ai" / "skills" / "flow-router"
+    target_skill = skills_root / "flow-router"
     shutil.copytree(source_skill, target_skill)
     skill_file = target_skill / "SKILL.md"
     skill_file.write_text(
@@ -845,13 +848,55 @@ def test_skill_check_rejects_mandatory_backend_peer_sol(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 1
-    assert "仍存在强制独立 Sol 的过期契约" in result.stderr
+    assert "仍存在过期的入口或模型编排契约" in result.stderr
+
+
+def test_skill_check_rejects_frontend_orchestration_in_backend_workflow(
+    tmp_path: Path,
+) -> None:
+    cases = (
+        (
+            "flow-router",
+            "混合任务完成后使用 `frontend-prototype` 继续设计页面。",
+            "后端交付入口仍在编排前端工作",
+        ),
+        (
+            "implementation-execution",
+            "页面设计与前端实现由当前 Codex 继续完成。",
+            "后端实施入口仍在编排前端工作",
+        ),
+    )
+
+    for index, (skill_name, stale_rule, expected_error) in enumerate(cases):
+        case_root = tmp_path / f"case-{index}"
+        (case_root / ".ai" / "prompts").mkdir(parents=True)
+        (case_root / ".ai" / "prompts" / "project.md").write_text(
+            "rules", encoding="utf-8"
+        )
+        skills_root = case_root / ".ai" / "skills"
+        skills_root.mkdir(parents=True)
+        (skills_root / "README.md").write_text("skills", encoding="utf-8")
+        target_skill = skills_root / skill_name
+        shutil.copytree(REPO_ROOT / ".ai" / "skills" / skill_name, target_skill)
+        skill_file = target_skill / "SKILL.md"
+        skill_file.write_text(
+            skill_file.read_text(encoding="utf-8") + f"\n{stale_rule}\n",
+            encoding="utf-8",
+        )
+
+        result = run_script(
+            SKILL_CHECK,
+            env={"LINKCV_REPO_ROOT": str(case_root)},
+        )
+
+        assert result.returncode == 1
+        assert expected_error in result.stderr
 
 
 def test_skill_check_rejects_fixed_single_luna_dispatch(tmp_path: Path) -> None:
     legacy_cases = (
         (
-            "backend-delivery",
+            "flow-router",
             "所有代码、配置、迁移和测试实施统一交给一个 Luna Max",
         ),
         (
@@ -962,14 +1007,19 @@ def test_skill_check_protects_five_reduction_contracts(tmp_path: Path) -> None:
         assert marker in result.stderr
 
 
-def test_skill_check_protects_backend_delivery_downstream_contract(
+def test_skill_check_protects_flow_router_delivery_downstream_contract(
     tmp_path: Path,
 ) -> None:
     protected_markers = (
         (
             "implementation-execution",
+            "本技能可以核对前端 API Client 或共享类型是否与后端契约一致，但不负责决定、实施或验收前端页面，也不调用前端能力",
+            "实现入口或实施报告契约缺少必要内容",
+        ),
+        (
+            "implementation-execution",
             "方案先行任务以当前 `solution.md` 为准；"
-            "直接实现以来源材料、当前确认结论和 `backend-delivery` 七维简报列出的严格检查项为准",
+            "直接实现以来源材料、当前确认结论和 `flow-router` 七维简报列出的严格检查项为准",
             "实现入口或实施报告契约缺少必要内容",
         ),
         (
@@ -1000,6 +1050,11 @@ def test_skill_check_protects_backend_delivery_downstream_contract(
         (
             "contract-guard",
             "已经明确属于方案先行的单需求分歧直接交 `solution-generator` 修订当前方案",
+            "领域或七维回流契约缺少必要内容",
+        ),
+        (
+            "contract-guard",
+            "只有七维判断、后端路径或后端范围可能变化时才返回 `flow-router`",
             "领域或七维回流契约缺少必要内容",
         ),
     )
@@ -1188,4 +1243,4 @@ def test_skill_check_rejects_legacy_flow_router_rule(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 1
-    assert "仍含应由领域交付 Skill 拥有的路径或模型判断" in result.stderr
+    assert "仍存在过期的入口或模型编排契约" in result.stderr

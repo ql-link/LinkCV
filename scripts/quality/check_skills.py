@@ -28,6 +28,7 @@ STALE_REFERENCES = (
 ALLOWED_AI_ENTRIES = {"prompts", "skills"}
 OBSOLETE_SKILL_DIRS = {
     "apple-design",
+    "backend-delivery",
     "frontend-design",
     "frontend-delivery",
     "frontend-implementation",
@@ -59,6 +60,7 @@ OBSOLETE_WORKFLOW_MARKERS = (
     "`frontend-delivery`",
     "原型图 → Figma 确认 → 代码复现",
     "页面完成后统一运行 `npm run check:web`",
+    "`backend-delivery`",
 )
 FRONTEND_CAPABILITY_SKILLS = {
     "frontend-browser-check",
@@ -148,15 +150,9 @@ SOLUTION_TEMPLATE_FORBIDDEN_MARKERS = (
 SOLUTION_FIXED_SECTION_RE = re.compile(
     r"(?:方案文档|`?solution\.md`?)(?:的)?(?:第 ?\d+ ?节| ?\d+\.\d+)"
 )
-FLOW_ROUTER_FORBIDDEN_MARKERS = (
-    "七个维度仍必须在内部完整判断",
-    "只使用 4.2 至 4.5 四个维度",
-    "默认只向用户展示三行",
-    "任意一条不满足即判方案先行",
-    "只有五条全部满足才判直接实现",
-    "下游跳过交付文档和模型编排",
-)
-BACKEND_DELIVERY_REQUIRED_MARKERS = (
+FLOW_ROUTER_DELIVERY_REQUIRED_MARKERS = (
+    "它先用最小代码证据确认当前请求是否存在后端范围，再在同一上下文中继续七维判断和交付，不产生中间路由结果",
+    "本技能可以识别前端消费方并约束后端必须提供的可观察契约，但不负责决定、实施或验收前端页面，也不调用前端能力",
     "Sol（主 Agent）始终拥有用户沟通、授权边界、七维判断、方案、工作包拆分、Luna 调度、工作区协调、实施整合复核",
     "不要为了满足工作流形式启动同级 Sol",
     "确认后的实施可以交给一个或多个 Luna",
@@ -191,10 +187,22 @@ BACKEND_DELIVERY_REQUIRED_MARKERS = (
     "`reasoning_effort`: `max`",
     "准备、复杂度、风险、记录或后端路径变化：留在本技能",
 )
-BACKEND_DELIVERY_FORBIDDEN_MARKERS = (
+FLOW_ROUTER_DELIVERY_FORBIDDEN_MARKERS = (
     "自动或开启工作流时创建一个独立评估 Agent",
     "以下情况直接使用独立 Sol Medium 实施 Agent",
     "由 GPT-5.6 Sol Medium 基于真实代码完成七维判断",
+    "任意一条不满足即判方案先行",
+    "只有五条全部满足才判直接实现",
+    "下游跳过交付文档和模型编排",
+    "下一站：flow-router",
+    "`flow-router` 已判为纯后端或前后端混合任务",
+)
+FLOW_ROUTER_DELIVERY_FRONTEND_ORCHESTRATION_MARKERS = (
+    "`frontend-prototype`",
+    "`frontend-browser-check`",
+    "`frontend-visual-check`",
+    "直接完成混合任务的 UI",
+    "前端由当前 Codex 直接实现",
 )
 LUNA_DISPATCH_FORBIDDEN_MARKERS = (
     "所有代码、配置、迁移和测试实施统一交给一个 Luna Max",
@@ -209,8 +217,9 @@ DESIGN_SYSTEM_REQUIRED_MARKERS = {
     ),
 }
 IMPLEMENTATION_EXECUTION_REQUIRED_MARKERS = (
+    "本技能可以核对前端 API Client 或共享类型是否与后端契约一致，但不负责决定、实施或验收前端页面，也不调用前端能力",
     "方案先行任务以当前 `solution.md` 为准；"
-    "直接实现以来源材料、当前确认结论和 `backend-delivery` 七维简报列出的严格检查项为准",
+    "直接实现以来源材料、当前确认结论和 `flow-router` 七维简报列出的严格检查项为准",
     "不因选择影响大就自动升级为模块规划",
     "没有 Issue 不阻止直接实现",
     "数据库迁移、跨端契约",
@@ -225,9 +234,16 @@ IMPLEMENTATION_EXECUTION_REQUIRED_MARKERS = (
     "不得为了并行而拆分或扩展工作包",
     "由 Sol 决定继续原 Luna 或重新分派给另一个 Luna，不引入同级 Sol",
 )
+IMPLEMENTATION_EXECUTION_FORBIDDEN_MARKERS = (
+    "`frontend-prototype`",
+    "`frontend-browser-check`",
+    "`frontend-visual-check`",
+    "页面设计与前端实现由当前 Codex",
+    "原型或 Figma",
+)
 CONTRACT_GUARD_REQUIRED_MARKERS = (
     "已经明确属于方案先行的单需求分歧直接交 `solution-generator` 修订当前方案",
-    "只有七维判断或后端路径可能变化时才返回 `backend-delivery`，领域可能变化时才返回 `flow-router`",
+    "只有七维判断、后端路径或后端范围可能变化时才返回 `flow-router`",
 )
 DELIVERY_FLOW_REQUIRED_MARKERS = {
     Path(".ai/prompts/project.md"): (
@@ -239,7 +255,7 @@ DELIVERY_FLOW_REQUIRED_MARKERS = {
     ),
     Path(".ai/skills/README.md"): (
         "飞书文档只作为方案形成前的初始输入",
-        "确认后的 `solution.md` 是后端和混合方案的实施依据",
+        "确认后的 `solution.md` 是后端和混合方案中后端范围的实施依据",
         "## 后端 Sol 调度与 Luna 工作包",
         "可独立、边界清楚且文件所有权不重叠的工作包可以并行交给多个 Luna",
         "共享契约、迁移链、同一核心文件或存在前后依赖的工作包必须串行",
@@ -389,7 +405,6 @@ STATELESS_SPEC_CORE_ROOTS = (
     Path(".ai/prompts/project.md"),
     Path(".ai/skills/README.md"),
     Path(".ai/skills/flow-router"),
-    Path(".ai/skills/backend-delivery"),
     Path(".ai/skills/frontend-browser-check"),
     Path(".ai/skills/frontend-prototype"),
     Path(".ai/skills/frontend-visual-check"),
@@ -648,19 +663,14 @@ def validate_flow_router_contract() -> list[str]:
     text = skill_file.read_text(encoding="utf-8")
     metadata, _ = parse_frontmatter(text)
     description = metadata.get("description") if metadata else None
-    stale = [marker for marker in FLOW_ROUTER_FORBIDDEN_MARKERS if marker in text]
     errors: list[str] = []
     if not isinstance(description, str) or not all(
-        marker in description for marker in ("backend-delivery", "纯 Web 前端", "不使用")
+        marker in description
+        for marker in ("唯一的后端开发入口", "纯 Web 前端", "不使用")
     ):
         errors.append(
-            "flow-router: description 必须把自动发现范围限制为后端或混合任务，"
+            "flow-router: description 必须说明它是唯一后端开发入口，"
             "并明确排除纯 Web 前端"
-        )
-    if stale:
-        errors.append(
-            "flow-router: 仍含应由领域交付 Skill 拥有的路径或模型判断 "
-            + ", ".join(repr(marker) for marker in stale)
         )
     return errors
 
@@ -698,17 +708,22 @@ def validate_frontend_capability_contract() -> list[str]:
     return errors
 
 
-def validate_backend_delivery_contract() -> list[str]:
-    skill_file = SKILLS_ROOT / "backend-delivery" / "SKILL.md"
+def validate_flow_router_delivery_contract() -> list[str]:
+    skill_file = SKILLS_ROOT / "flow-router" / "SKILL.md"
     if not skill_file.is_file():
         return []
 
     text = skill_file.read_text(encoding="utf-8")
     missing = [
-        marker for marker in BACKEND_DELIVERY_REQUIRED_MARKERS if marker not in text
+        marker for marker in FLOW_ROUTER_DELIVERY_REQUIRED_MARKERS if marker not in text
     ]
     stale = [
-        marker for marker in BACKEND_DELIVERY_FORBIDDEN_MARKERS if marker in text
+        marker for marker in FLOW_ROUTER_DELIVERY_FORBIDDEN_MARKERS if marker in text
+    ]
+    frontend_orchestration = [
+        marker
+        for marker in FLOW_ROUTER_DELIVERY_FRONTEND_ORCHESTRATION_MARKERS
+        if marker in text
     ]
     fixed_luna = [
         marker for marker in LUNA_DISPATCH_FORBIDDEN_MARKERS if marker in text
@@ -716,17 +731,22 @@ def validate_backend_delivery_contract() -> list[str]:
     errors: list[str] = []
     if missing:
         errors.append(
-            "backend-delivery: 七维判断、Luna 实施或回流契约缺少必要内容 "
+            "flow-router: 七维判断、Luna 实施或回流契约缺少必要内容 "
             + ", ".join(repr(marker) for marker in missing)
         )
     if stale:
         errors.append(
-            "backend-delivery: 仍存在强制独立 Sol 的过期契约 "
+            "flow-router: 仍存在过期的入口或模型编排契约 "
             + ", ".join(repr(marker) for marker in stale)
+        )
+    if frontend_orchestration:
+        errors.append(
+            "flow-router: 后端交付入口仍在编排前端工作 "
+            + ", ".join(repr(marker) for marker in frontend_orchestration)
         )
     if fixed_luna:
         errors.append(
-            "backend-delivery: 仍存在固定单一 Luna 的过期契约 "
+            "flow-router: 仍存在固定单一 Luna 的过期契约 "
             + ", ".join(repr(marker) for marker in fixed_luna)
         )
     return errors
@@ -762,6 +782,11 @@ def validate_implementation_execution_contract() -> list[str]:
     fixed_luna = [
         marker for marker in LUNA_DISPATCH_FORBIDDEN_MARKERS if marker in text
     ]
+    frontend_orchestration = [
+        marker
+        for marker in IMPLEMENTATION_EXECUTION_FORBIDDEN_MARKERS
+        if marker in text
+    ]
     errors: list[str] = []
     if missing:
         errors.append(
@@ -772,6 +797,11 @@ def validate_implementation_execution_contract() -> list[str]:
         errors.append(
             "implementation-execution: 仍存在固定单一 Luna 的过期契约 "
             + ", ".join(repr(marker) for marker in fixed_luna)
+        )
+    if frontend_orchestration:
+        errors.append(
+            "implementation-execution: 后端实施入口仍在编排前端工作 "
+            + ", ".join(repr(marker) for marker in frontend_orchestration)
         )
     return errors
 
@@ -963,7 +993,7 @@ def main() -> int:
     errors.extend(validate_solution_template())
     errors.extend(validate_flow_router_contract())
     errors.extend(validate_frontend_capability_contract())
-    errors.extend(validate_backend_delivery_contract())
+    errors.extend(validate_flow_router_delivery_contract())
     errors.extend(validate_design_system_contract())
     errors.extend(validate_implementation_execution_contract())
     errors.extend(validate_contract_guard_routing())
