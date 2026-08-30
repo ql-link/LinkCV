@@ -65,12 +65,16 @@ import { JobSmartImportDialog } from "../jobs/JobSmartImportDialog";
 import { PluginInstallDialog } from "../jobs/PluginInstallDialog";
 import {
   ApplicationsBoard,
-  applicationProgressToneClass,
-  applicationStatusLabel,
   formatApplicationListDateTime,
   formatApplicationUpdatedAt,
   interviewRoundLabel,
 } from "./ApplicationsBoard";
+import {
+  applicationProgressLabel,
+  applicationProgressToneClass,
+  applicationStatusLabel,
+  projectApplicationProgress,
+} from "./applicationProgress";
 import {
   ApplicationDetailView,
   InterviewSessionDetailView,
@@ -326,11 +330,13 @@ async function listAllInterviewSessions(
 }
 
 function nextApplicationStageLabel(application: JobApplicationSummary): string {
+  const projection = projectApplicationProgress(application);
   if (application.status !== "active" || application.archived_at) return "—";
   if (application.next_session_start_at) {
-    return `${formatApplicationListDateTime(application.next_session_start_at)} · ${application.current_stage_label}`;
+    return `${formatApplicationListDateTime(application.next_session_start_at)} · ${projection.stageLabel}`;
   }
   if (application.stage_state === "awaiting_schedule") return "等待安排";
+  if (projection.isWaiting) return projection.supportingLabel ?? projection.statusLabel;
   if (application.stage_state === "awaiting_result") return "等待结果";
   if (application.stage_state === "negotiating") return "Offer沟通";
   return "尚未确认";
@@ -925,7 +931,7 @@ function ApplicationsView({
   const normalizedQuery = query.trim().toLowerCase();
   const visibleApplications = applications
     .filter((item) => !normalizedQuery
-      || `${item.company_name_snapshot}${item.job_title_snapshot}${item.current_stage_label}${applicationStatusLabel(item)}`
+      || `${item.company_name_snapshot}${item.job_title_snapshot}${applicationProgressLabel(item)}${applicationStatusLabel(item)}`
         .toLowerCase()
         .includes(normalizedQuery))
     .sort((left, right) => {
@@ -982,7 +988,7 @@ function ApplicationsView({
             <tbody>
               {visibleApplications.map((item) => {
                 const latestInterview = latestInterviewForApplication(item.id, sessions);
-                const statusLabel = applicationStatusLabel(item);
+                const progressLabel = applicationProgressLabel(item);
                 const detailHref = careerApplicationPath(item.id);
                 return (
                   <tr
@@ -1006,8 +1012,8 @@ function ApplicationsView({
                     <td><span className="career-application-cell-text" title={item.company_name_snapshot}>{item.company_name_snapshot}</span></td>
                     <td><span className="career-application-cell-text career-application-job-title" title={item.job_title_snapshot}>{item.job_title_snapshot}</span></td>
                     <td>
-                      <span className={`career-application-progress ${applicationProgressToneClass(item)}`} aria-label={`${item.current_stage_label} · ${statusLabel}`}>
-                        {item.current_stage_label} · {statusLabel}
+                      <span className={`career-application-progress ${applicationProgressToneClass(item)}`} aria-label={progressLabel}>
+                        {progressLabel}
                       </span>
                     </td>
                     <td><span className="career-application-cell-text">{nextApplicationStageLabel(item)}</span></td>
@@ -1383,7 +1389,7 @@ function ApplicationHistoryList({
       <div>
         {applications.map((application) => (
           <article key={application.id}>
-            <span><strong>{application.company_name_snapshot}</strong><small>{application.job_title_snapshot} · {application.current_stage_label}</small></span>
+            <span><strong>{application.company_name_snapshot}</strong><small>{application.job_title_snapshot} · {projectApplicationProgress(application).stageLabel}</small></span>
             <button
               type="button"
               disabled={busyId !== null}
@@ -1403,7 +1409,8 @@ function ApplicationHistoryList({
             {application.archived_at === null &&
               application.status === "active" &&
               application.current_stage_type === "screening" &&
-              application.stage_state === "awaiting_result" && (
+              application.stage_state === "awaiting_result" &&
+              !projectApplicationProgress(application).isWaiting && (
                 <div className="application-screening-actions">
                   <span>筛选结果</span>
                   <button type="button" disabled={busyId !== null} onClick={() => void advanceScreening(application)}>通过并进入一面</button>
@@ -2244,8 +2251,8 @@ function CreateApplicationDialog({
         resume_version_id: null,
         current_stage_type: "screening",
         current_round_no: null,
-        current_stage_label: "筛选中",
-        stage_state: "awaiting_result",
+        current_stage_label: "待投递",
+        stage_state: "awaiting_schedule",
         applied_at: null,
         notes: notes.trim() || null,
       });
@@ -2283,7 +2290,7 @@ function CreateApplicationDialog({
               <div className="interview-dialog-grid">
                 <label>
                   初始阶段
-                  <input value="筛选中" disabled />
+                  <input value="待投递" disabled />
                 </label>
                 <label className="is-wide">
                   备注
@@ -2371,7 +2378,7 @@ function CreateInterviewDialog({
       setPendingCreateConflict(null);
       onCreated(response.session.id, {
         company: targetApplication.company_name_snapshot,
-        stage: targetApplication.current_stage_label,
+        stage: projectApplicationProgress(targetApplication).stageLabel,
         startAt: response.session.start_at,
       });
       return true;
@@ -2446,7 +2453,7 @@ function CreateInterviewDialog({
       <section className="interview-dialog" role="dialog" aria-modal="true" aria-labelledby="create-interview-title">
         <header><div><h2 id="create-interview-title">新建面试</h2><p>岗位信息、求职进程和本场排期在这里一次完成。</p></div><button type="button" aria-label="关闭" onClick={onClose}><X /></button></header>
         <form onSubmit={(event) => void submit(event)}>
-          {applications.length > 0 && <label>求职进程<select disabled={creationLocked || submitting} value={applicationId} onChange={(event) => setApplicationId(event.target.value)}><option value="new">新建求职进程</option>{applications.map((item) => <option key={item.id} value={item.id}>{item.company_name_snapshot} · {item.job_title_snapshot} · {item.current_stage_label}</option>)}</select></label>}
+          {applications.length > 0 && <label>求职进程<select disabled={creationLocked || submitting} value={applicationId} onChange={(event) => setApplicationId(event.target.value)}><option value="new">新建求职进程</option>{applications.map((item) => <option key={item.id} value={item.id}>{item.company_name_snapshot} · {item.job_title_snapshot} · {projectApplicationProgress(item).stageLabel}</option>)}</select></label>}
           {applicationId === "new" && <>
             <label>已有岗位档案<select disabled={creationLocked || submitting} value={jobId} onChange={(event) => setJobId(event.target.value)}><option value="">在求职中心直接填写岗位</option>{jobs.map((job) => <option key={job.id} value={job.id}>{job.company_name} · {job.job_title}</option>)}</select></label>
             {!jobId && <div className="interview-dialog-grid"><label>公司<input disabled={creationLocked} required value={company} onChange={(event) => setCompany(event.target.value)} /></label><label>岗位<input disabled={creationLocked} required value={role} onChange={(event) => setRole(event.target.value)} /></label><label className="is-wide">岗位信息<textarea disabled={creationLocked} value={jobDescription} onChange={(event) => setJobDescription(event.target.value)} placeholder="可粘贴 JD，后续会作为本次求职的岗位快照" /></label></div>}
@@ -2521,6 +2528,14 @@ function StatusBadge({ status }: { status: InterviewStatus }) {
 }
 
 function StageProgress({ application }: { application: InterviewSessionDetail["application"] }) {
+  const projection = projectApplicationProgress(application);
+  const journeyLabel = projection.isPending || projection.isWaiting
+    ? projection.primaryLabel
+    : projection.stageLabel;
+  if (projection.isPending) {
+    const pendingOrWaiting = [{ key: "pending", label: projection.stageLabel }];
+    return <div className="stage-progress" style={{ "--stage-count": pendingOrWaiting.length } as CSSProperties} aria-label={`当前阶段：${journeyLabel}`}><div className="stage-progress-line" />{pendingOrWaiting.map((stage) => <div key={stage.key} className="is-current"><span /><strong>{stage.label}</strong></div>)}</div>;
+  }
   const highestRound = Math.max(
     2,
     application.current_stage_type === "interview"
@@ -2528,20 +2543,23 @@ function StageProgress({ application }: { application: InterviewSessionDetail["a
       : 2,
   );
   const stages = [
-    { key: "screening", label: "筛选中" },
+    { key: "screening", label: application.current_stage_type === "screening" ? projection.stageLabel : "筛选中" },
     ...Array.from({ length: highestRound }, (_, index) => ({
       key: `interview:${index + 1}`,
       label: interviewRoundLabel(index + 1),
     })),
     { key: "hr", label: "HR 面" },
     { key: "offer", label: "Offer" },
+    ...(projection.isWaiting ? [{ key: "waiting", label: projection.statusLabel }] : []),
   ];
   const currentKey =
-    application.current_stage_type === "interview"
+    projection.isWaiting
+      ? "waiting"
+      : application.current_stage_type === "interview"
       ? `interview:${application.current_round_no ?? 1}`
       : application.current_stage_type;
   const currentIndex = Math.max(0, stages.findIndex((stage) => stage.key === currentKey));
-  return <div className="stage-progress" style={{ "--stage-count": stages.length } as CSSProperties} aria-label={`当前阶段：${application.current_stage_label}`}><div className="stage-progress-line" />{stages.map((stage, index) => <div key={stage.key} className={index < currentIndex ? "is-done" : index === currentIndex ? "is-current" : ""}><span>{index < currentIndex ? <Check /> : null}</span><strong>{stage.label}</strong></div>)}</div>;
+  return <div className="stage-progress" style={{ "--stage-count": stages.length } as CSSProperties} aria-label={`当前阶段：${journeyLabel}`}><div className="stage-progress-line" />{stages.map((stage, index) => <div key={stage.key} className={index < currentIndex ? "is-done" : index === currentIndex ? "is-current" : ""}><span>{index < currentIndex ? <Check /> : null}</span><strong>{stage.label}</strong></div>)}</div>;
 }
 
 function formatBytes(bytes: number): string {

@@ -1,51 +1,30 @@
 import { useMemo, useRef, useState, type DragEvent as ReactDragEvent } from "react";
 import { ApiRequestError, api, type JobApplicationSummary } from "@/api/client";
 import { careerApplicationPath, navigateTo } from "../../routing";
+import {
+  APPLICATION_PROGRESS_COLUMNS,
+  applicationProgressToneClass as projectApplicationProgressToneClass,
+  applicationStatusLabel as projectApplicationStatusLabel,
+  isApplicationDraggable,
+  projectApplicationProgress,
+  type ApplicationProgressColumnKey,
+} from "./applicationProgress";
 
-export type ProgressColumnKey = "pending" | "screening" | "interview" | "hr" | "offer" | "ended";
+export type ProgressColumnKey = ApplicationProgressColumnKey;
 
-export const PROGRESS_COLUMNS: Array<{ key: ProgressColumnKey; label: string }> = [
-  { key: "pending", label: "待投递" },
-  { key: "screening", label: "已投递" },
-  { key: "interview", label: "面试中" },
-  { key: "hr", label: "HR 面" },
-  { key: "offer", label: "Offer" },
-  { key: "ended", label: "已结束" },
-];
+export const PROGRESS_COLUMNS = APPLICATION_PROGRESS_COLUMNS;
 
 export function progressColumnKey(application: JobApplicationSummary): ProgressColumnKey {
-  if (application.archived_at) return "ended";
-  if (application.status === "closed" && application.offer_status === "accepted") return "offer";
-  if (application.status !== "active") return "ended";
-  if (application.current_stage_type === "screening") {
-    return application.applied_at ? "screening" : "pending";
-  }
-  if (application.current_stage_type === "interview") return "interview";
-  if (application.current_stage_type === "hr") return "hr";
-  return "offer";
-}
-
-function isApplicationDraggable(application: JobApplicationSummary): boolean {
-  return application.status === "active"
-    && application.archived_at === null
-    && application.current_stage_type !== "offer";
+  return projectApplicationProgress(application).columnKey;
 }
 
 function canDropApplication(
   application: JobApplicationSummary,
   target: ProgressColumnKey,
 ): boolean {
-  if (!isApplicationDraggable(application)) return false;
-  const source = progressColumnKey(application);
-  if (source === target || target === "pending" || target === "screening" || target === "ended") return false;
-  const stageOrder: Record<Exclude<ProgressColumnKey, "ended">, number> = {
-    pending: 0,
-    screening: 0,
-    interview: 1,
-    hr: 2,
-    offer: 3,
-  };
-  return stageOrder[target] > stageOrder[source as Exclude<ProgressColumnKey, "ended">];
+  return isApplicationDraggable(application)
+    && progressColumnKey(application) !== target
+    && target === "interview";
 }
 
 export function interviewRoundLabel(roundNo: number): string {
@@ -55,30 +34,11 @@ export function interviewRoundLabel(roundNo: number): string {
 }
 
 export function applicationStatusLabel(application: JobApplicationSummary): string {
-  if (application.archived_at) return "已归档";
-  if (application.status === "rejected") return "未通过";
-  if (application.status === "withdrawn") return "已主动结束";
-  if (application.status === "closed") return application.offer_status === "accepted" ? "已接受 Offer" : "已结束";
-  return application.stage_state === "awaiting_schedule"
-    ? "等待安排"
-    : application.stage_state === "awaiting_result"
-      ? "等待结果"
-      : application.stage_state === "negotiating"
-        ? "Offer 沟通中"
-        : "进行中";
+  return projectApplicationStatusLabel(application);
 }
 
 export function applicationProgressToneClass(application: JobApplicationSummary): string {
-  if (application.archived_at || application.status === "withdrawn") return "is-muted";
-  if (application.status === "rejected") return "is-danger";
-  if (application.status === "closed") {
-    if (application.offer_status === "accepted") return "is-offer";
-    return application.offer_status === "declined" ? "is-muted" : "is-danger";
-  }
-  if (application.stage_state === "negotiating") return "is-offer";
-  if (application.stage_state === "awaiting_result") return "is-waiting";
-  if (application.stage_state === "awaiting_schedule") return "is-scheduled";
-  return "is-active";
+  return projectApplicationProgressToneClass(application);
 }
 
 export function formatApplicationDate(value: string): string {
@@ -132,13 +92,16 @@ export function applicationCardStageLabel(
   application: JobApplicationSummary,
   columnKey: ProgressColumnKey,
 ): string {
-  if (columnKey === "ended") return applicationStatusLabel(application);
-  const currentStageLabel = application.current_stage_label.trim();
-  const stageLabel = currentStageLabel || applicationStatusLabel(application);
+  const projection = projectApplicationProgress(application);
+  if (columnKey === "ended") return projection.statusLabel;
+  if (columnKey === "waiting") return `${projection.stageLabel} · ${projection.statusLabel}`;
+  if (projection.supportingLabel) {
+    return `${projection.stageLabel} · ${projection.supportingLabel}`;
+  }
   const detail = application.next_session_start_at
     ? formatApplicationListDateTime(application.next_session_start_at)
-    : applicationStatusLabel(application);
-  return `${stageLabel} · ${detail}`;
+    : projection.statusLabel;
+  return `${projection.stageLabel} · ${detail}`;
 }
 
 export function formatApplicationListDateTime(value: string): string {
@@ -219,11 +182,11 @@ export function ProgressBoard({
     if (!draggedId || !drag) return;
     const application = applications.find((item) => item.id === draggedId);
     if (!application || !canDropApplication(application, target)) return;
-    const transition = target === "interview"
-      ? { target_stage_type: "interview" as const, target_round_no: 1, target_stage_label: "一面" }
-      : target === "hr"
-        ? { target_stage_type: "hr" as const, target_round_no: null, target_stage_label: "HR 面" }
-        : { target_stage_type: "offer" as const, target_round_no: null, target_stage_label: "Offer" };
+    const transition = {
+      target_stage_type: "interview" as const,
+      target_round_no: 1,
+      target_stage_label: "一面",
+    };
     setAdvancingId(application.id);
     try {
       await api.advanceJobApplication(application.id, {
@@ -315,7 +278,7 @@ export function ProgressColumn({
       onDrop={onDrop}
     >
       <header className="progress-column-heading">
-        <h3>{column.label}<span>{column.items.length}</span></h3>
+        <h3><span className="progress-column-label">{column.label}</span><span className="progress-column-count">{column.items.length}</span></h3>
       </header>
       <div className="progress-column-cards">
         {column.items.map((item) => (

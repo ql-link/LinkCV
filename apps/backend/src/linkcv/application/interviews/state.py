@@ -11,6 +11,21 @@ OfferStatus = Literal[
     "none", "oc_received", "written_offer_received", "accepted", "declined"
 ]
 
+POST_APPLICATION_PLACEHOLDER_LABEL = "等待后续通知"
+
+
+def is_assessment_stage_label(stage_label: str) -> bool:
+    """Return whether a screening label represents an assessment.
+
+    Assessments intentionally remain represented by the existing ``screening``
+    stage type.  Keep this compatibility rule narrow and label-based so that
+    ordinary screening labels (for example, ``初筛`` or ``复筛``) continue to
+    enter the result-waiting state.
+    """
+
+    normalized = stage_label.strip().casefold()
+    return "笔试" in normalized or "测评" in normalized or "assessment" in normalized
+
 
 class InvalidTransition(ValueError):
     pass
@@ -85,9 +100,14 @@ def advance_application(
             or target_round_no <= state.round_no
         ):
             raise InvalidTransition("the next interview round must move forward")
-    target_state: StageState = (
-        "negotiating" if target_stage_type == "offer" else "awaiting_schedule"
-    )
+    if target_stage_type == "offer":
+        target_state: StageState = "negotiating"
+    elif target_stage_type == "screening" and not is_assessment_stage_label(
+        target_stage_label
+    ):
+        target_state = "awaiting_result"
+    else:
+        target_state = "awaiting_schedule"
     return ApplicationStateValue(
         stage_type=target_stage_type,
         round_no=target_round_no,

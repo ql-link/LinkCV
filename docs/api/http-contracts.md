@@ -235,7 +235,9 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 
 求职中心以 `job_descriptions` 保存岗位资料，以 `job_applications` 表达一家公司和岗位的一次完整求职尝试，以 `interview_sessions` 表达其中一场可排期、可完成、可复盘的面试。所有接口都要求当前登录用户，后端只从会话取得所有者；不存在和越权资源统一返回 `404 INTERVIEW_NOT_FOUND`。创建求职进程必须引用本人 JD，并保存公司、岗位和完整 JD 快照；后续修改原 JD 不会改写历史求职进程。公司颜色第一次创建时从 Mac 日历语义色中随机选择，之后同一求职进程的所有面试共用该颜色，也可通过进程更新接口修改。
 
-求职进程的初始状态必须可达：`screening` 从 `awaiting_result` 开始，`interview/hr` 从 `awaiting_schedule` 开始，`offer` 从 `negotiating` 开始；其他阶段与等待状态组合返回 `400 INVALID_INTERVIEW_REQUEST`。筛选结果可在没有面试场次时直接推进；面试或 HR 阶段推进只消费当前阶段、当前轮次且仍待确认的已完成场次，不会把旧轮次或其他阶段误标为通过。归档进程从默认求职进程列表、总览和排期中隐藏，只有显式 `scope=all|archived` 或 `include_archived=true` 才返回历史；归档进程不能创建、调整、完成或取消排期，恢复后才能继续排期生命周期。
+求职进程的初始状态必须可达：待投递占位使用 `screening / 待投递 / awaiting_schedule` 且 `applied_at` 为空；兼容调用仍可直接创建 `screening / awaiting_result`、`interview|hr / awaiting_schedule` 或 `offer / negotiating`。其他阶段与等待状态组合返回 `400 INVALID_INTERVIEW_REQUEST`。首次为待投递占位或旧的 `screening / 筛选中 / awaiting_result` 占位写入 `applied_at` 时，服务端在同一次乐观锁更新中将当前阶段规范化为 `screening / 等待后续通知 / awaiting_result`；已进入明确筛选、面试或 HR 阶段的记录只补投递日期，不会被重置。
+
+处于“等待后续通知”的进程由用户通过 `advance` 添加已经发生或已经确认的下一阶段。目标为普通筛选时直接进入 `awaiting_result`，含“笔试”“测评”或 `assessment` 语义的筛选目标以及 `interview/hr` 进入 `awaiting_schedule`，`offer` 进入 `negotiating`。筛选结果可在没有面试场次时直接推进；面试或 HR 阶段推进只消费当前阶段、当前轮次且仍待确认的已完成场次，不会把旧轮次或其他阶段误标为通过。归档进程从默认求职进程列表、总览和排期中隐藏，只有显式 `scope=all|archived` 或 `include_archived=true` 才返回历史；归档进程不能创建、调整、完成或取消排期，恢复后才能继续排期生命周期。
 
 | Method | Path | 行为 |
 | --- | --- | --- |

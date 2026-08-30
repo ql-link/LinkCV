@@ -81,6 +81,15 @@ class JobApplicationCreateRequest(StrictModel):
         validate_stage_context(
             self.current_stage_type, self.current_round_no, self.current_stage_label
         )
+        if (
+            self.current_stage_type == "screening"
+            and self.current_stage_label == "待投递"
+        ):
+            if self.applied_at is not None:
+                raise ValueError("待投递阶段不能包含 applied_at")
+            if self.stage_state != "awaiting_schedule":
+                raise ValueError("待投递阶段必须等待投递")
+            return self
         expected_state: ApplicationStageState
         if self.current_stage_type == "screening":
             expected_state = "awaiting_result"

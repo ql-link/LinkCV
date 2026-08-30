@@ -29,7 +29,6 @@ import {
 import {
   ApiRequestError,
   api,
-  type ApplicationStageType,
   type InterviewAssetRecord,
   type InterviewSessionDetail,
   type InterviewSessionRecord,
@@ -47,14 +46,24 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  Label,
   PageLoading,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
 } from "@/components/ui";
+import { SelectValue } from "@/components/ui/select";
 import { careerApplicationPath, jobDetailPath, navigateTo } from "../../routing";
 import {
-  applicationStatusLabel,
   formatApplicationListDateTime,
   interviewRoundLabel,
 } from "./ApplicationsBoard";
+import {
+  applicationDetailStatusToneClass,
+  normalizeApplicationStageLabel,
+  projectApplicationProgress,
+} from "./applicationProgress";
 
 type ApplicationStageSource = Pick<
   JobApplicationRecord,
@@ -166,35 +175,6 @@ function workModeLabel(value: unknown): string | null {
   return typeof value === "string" ? labels[value] ?? value : null;
 }
 
-function applicationStageStatusLabel(application: ApplicationStageSource): string {
-  if (application.archived_at) return "已归档";
-  if (application.status === "rejected") return "未通过";
-  if (application.status === "withdrawn") return "已主动结束";
-  if (application.status === "closed") {
-    return application.offer_status === "accepted" ? "已接受 Offer" : "已结束";
-  }
-  if (application.current_stage_type === "screening" && !application.applied_at) return "待投递";
-  return application.stage_state === "awaiting_schedule"
-    ? "等待安排"
-    : application.stage_state === "awaiting_result"
-      ? "等待结果"
-      : application.stage_state === "negotiating"
-        ? "Offer 沟通中"
-        : "进行中";
-}
-
-function applicationStatusTone(application: ApplicationStageSource): string {
-  if (application.archived_at || application.status === "withdrawn") return "is-muted";
-  if (application.status === "rejected") return "is-danger";
-  if (application.status === "closed") {
-    if (application.offer_status === "accepted") return "is-offer";
-    return application.offer_status === "declined" ? "is-muted" : "is-danger";
-  }
-  if (application.stage_state === "awaiting_result") return "is-warning";
-  if (application.stage_state === "negotiating") return "is-offer";
-  return "is-active";
-}
-
 function sessionStatusLabel(session: Pick<InterviewSessionRecord, "status" | "start_at" | "end_at">): string {
   if (session.status === "completed") return "已完成";
   if (session.status === "cancelled") return "已取消";
@@ -237,12 +217,53 @@ function buildJourneyStages(
   application: JobApplicationSummary,
   sessions: InterviewSessionSummary[],
 ): JourneyStage[] {
+  const projection = projectApplicationProgress(application);
+  if (projection.isPending) {
+    return [
+      {
+        key: "imported",
+        label: "岗位已导入",
+        meta: formatFullDate(application.created_at),
+        state: "done",
+      },
+      {
+        key: "pending",
+        label: projection.stageLabel,
+        meta: projection.supportingLabel ?? "等待确认投递",
+        state: "current",
+      },
+    ];
+  }
+  const isPostApplicationWaiting = projection.isWaiting
+    && application.current_stage_type === "screening";
+  if (isPostApplicationWaiting) {
+    return [
+      {
+        key: "imported",
+        label: "岗位已导入",
+        meta: formatFullDate(application.created_at),
+        state: "done",
+      },
+      {
+        key: "applied",
+        label: "已投递",
+        meta: formatFullDate(application.applied_at),
+        state: "done",
+      },
+      {
+        key: "waiting",
+        label: "等待后续通知",
+        meta: projection.supportingLabel ?? "下一阶段尚未确认",
+        state: "waiting",
+      },
+    ];
+  }
   const stages: JourneyStage[] = [
     {
       key: "imported",
       label: "岗位已导入",
       meta: formatFullDate(application.created_at),
-      state: application.applied_at ? "done" : "current",
+      state: "done",
     },
   ];
   if (application.applied_at) {
@@ -259,34 +280,40 @@ function buildJourneyStages(
   sortedSessions.forEach((session) => {
     const isCurrent = applicationStageMatchesSession(application, session);
     if (isCurrent) currentSessionIds.add(session.id);
+    const sessionLabel = session.stage_type === "other" && application.current_stage_type === "screening"
+      ? normalizeApplicationStageLabel(application)
+      : session.stage_label;
     stages.push({
       key: `session:${session.id}`,
-      label: session.stage_label,
+      label: sessionLabel,
       meta: formatFullDate(session.start_at),
-      state: session.status === "cancelled" ? "cancelled" : isCurrent ? "current" : session.status === "completed" ? "done" : "pending",
+      state: session.status === "cancelled"
+        ? "cancelled"
+        : isCurrent && projection.isWaiting
+          ? "done"
+          : isCurrent
+            ? "current"
+            : session.status === "completed"
+              ? "done"
+              : "pending",
     });
   });
-  if (
-    !currentSessionIds.size
-    && application.current_stage_type !== "screening"
-    && application.current_stage_label.trim()
-  ) {
+
+  if (!currentSessionIds.size && projection.stageLabel) {
     stages.push({
       key: `stage:${application.current_stage_type}:${application.current_round_no ?? "none"}`,
-      label: application.current_stage_label,
+      label: projection.stageLabel,
       meta: formatFullDate(application.updated_at),
-      state: application.stage_state === "awaiting_result" ? "waiting" : "current",
+      state: projection.isWaiting ? "done" : "current",
     });
-  } else if (
-    application.current_stage_type === "screening"
-    && application.applied_at
-    && !stages.some((stage) => stage.label === application.current_stage_label)
-  ) {
+  }
+
+  if (projection.isWaiting) {
     stages.push({
-      key: "screening",
-      label: application.current_stage_label,
-      meta: formatFullDate(application.updated_at),
-      state: application.stage_state === "awaiting_result" ? "waiting" : "current",
+      key: "waiting",
+      label: "等待后续通知",
+      meta: projection.supportingLabel ?? "本阶段已完成",
+      state: "waiting",
     });
   }
   const receivedOffer = application.current_stage_type === "offer"
@@ -307,8 +334,12 @@ function buildJourneyStages(
 
 function JourneyProgress({ application, sessions }: { application: JobApplicationSummary; sessions: InterviewSessionSummary[] }) {
   const stages = buildJourneyStages(application, sessions);
+  const projection = projectApplicationProgress(application);
+  const journeyLabel = projection.isPending || projection.isWaiting
+    ? projection.primaryLabel
+    : projection.stageLabel;
   return (
-    <ol className="career-journey-progress" aria-label={`当前阶段：${application.current_stage_label}`}>
+    <ol className="career-journey-progress" aria-label={`当前阶段：${journeyLabel}`}>
       {stages.map((stage, index) => (
         <li key={stage.key} className={`is-${stage.state}`}>
           {index > 0 && <span className="career-journey-connector" aria-hidden="true" />}
@@ -346,6 +377,7 @@ function OverviewLink({ href, className, children }: { href: string; className?:
 }
 
 function JobSummaryCard({ application }: { application: JobApplicationSummary }) {
+  const progress = projectApplicationProgress(application);
   const snapshot = application.job_snapshot ?? {};
   const skills = snapshotList(snapshot, "skills", "core_skills");
   const salary = snapshotText(snapshot, "salary_text", "salary") ?? "—";
@@ -383,8 +415,8 @@ function JobSummaryCard({ application }: { application: JobApplicationSummary })
       <div className="career-application-info-section">
         <h3>求职信息</h3>
         <dl>
-          <div><dt>当前阶段</dt><dd>{application.current_stage_label}</dd></div>
-          <div><dt>当前状态</dt><dd>{applicationStageStatusLabel(application)}</dd></div>
+          <div><dt>当前阶段</dt><dd>{progress.stageLabel}</dd></div>
+          <div><dt>当前状态</dt><dd>{progress.statusLabel}{progress.supportingLabel && <small>{progress.supportingLabel}</small>}</dd></div>
           <div><dt>{application.applied_at ? "投递时间" : "导入时间"}</dt><dd>{formatFullDate(application.applied_at ?? application.created_at)}</dd></div>
           <div><dt>投递简历版本</dt><dd>{application.resume_title_snapshot ?? "未关联"}</dd></div>
           <div><dt>最近更新</dt><dd>{formatUpdatedDateTime(application.updated_at)}</dd></div>
@@ -422,34 +454,19 @@ function InterviewRoundCard({ session, onOpen }: { session: InterviewSessionSumm
   );
 }
 
-function stageTargetsForApplication(application: ApplicationStageSource): Array<{
-  value: string;
-  label: string;
-  stageType: ApplicationStageType;
-  roundNo: number | null;
-  stageLabel: string;
-}> {
-  if (application.status !== "active" || application.archived_at || application.stage_state !== "awaiting_result") return [];
-  const options: Array<{
-    value: string;
-    label: string;
-    stageType: ApplicationStageType;
-    roundNo: number | null;
-    stageLabel: string;
-  }> = [];
-  if (application.current_stage_type === "screening") {
-    options.push({ value: "interview:1", label: "进入一面", stageType: "interview", roundNo: 1, stageLabel: "一面" });
-  }
-  if (application.current_stage_type === "interview") {
-    const nextRound = (application.current_round_no ?? 0) + 1;
-    options.push({ value: `interview:${nextRound}`, label: `进入${interviewRoundLabel(nextRound)}`, stageType: "interview", roundNo: nextRound, stageLabel: interviewRoundLabel(nextRound) });
-    options.push({ value: "hr", label: "进入 HR 面", stageType: "hr", roundNo: null, stageLabel: "HR 面" });
-  }
-  if (application.current_stage_type === "hr") {
-    options.push({ value: "offer", label: "进入 Offer 沟通", stageType: "offer", roundNo: null, stageLabel: "Offer" });
-  }
-  return options;
+const SCREENING_STAGE_OPTIONS = [
+  { label: "不区分轮次", stageLabel: "筛选", description: "公司未说明具体筛选轮次" },
+  { label: "初筛", stageLabel: "初筛", description: "第一轮筛选 · 添加为进行中" },
+  { label: "复筛", stageLabel: "复筛", description: "第二轮筛选 · 添加为进行中" },
+] as const;
+
+function ensureAssessmentStageLabel(value: string): string {
+  const label = value.trim();
+  if (!label) return "";
+  return /笔试|测评|assessment/i.test(label) ? label : `笔试 · ${label}`;
 }
+
+type AddNextStageTab = "screening" | "assessment" | "interview";
 
 function AddNextStageDialog({
   application,
@@ -462,26 +479,20 @@ function AddNextStageDialog({
   onChanged: () => void;
   onNotice: (notice: string) => void;
 }) {
-  const options = useMemo(() => stageTargetsForApplication(application), [application]);
-  const [targetValue, setTargetValue] = useState(options[0]?.value ?? "");
-  const selected = options.find((option) => option.value === targetValue) ?? options[0];
-  const [stageLabel, setStageLabel] = useState(selected?.stageLabel ?? "");
+  const [activeTab, setActiveTab] = useState<AddNextStageTab>("screening");
+  const [assessmentLabel, setAssessmentLabel] = useState("笔试");
+  const [interviewLabel, setInterviewLabel] = useState("一面");
+  const [interviewRoundNo, setInterviewRoundNo] = useState(1);
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    setTargetValue(options[0]?.value ?? "");
-    setStageLabel(options[0]?.stageLabel ?? "");
-  }, [options]);
-  useEffect(() => {
-    if (selected) setStageLabel(selected.stageLabel);
-  }, [selected?.value]);
-  const save = async () => {
-    if (!selected || !stageLabel.trim()) return;
+  const save = async (targetStageType: "screening" | "interview", targetRoundNo: number | null, targetStageLabel: string) => {
+    const stageLabel = targetStageLabel.trim();
+    if (!stageLabel || busy) return;
     setBusy(true);
     try {
       await api.advanceJobApplication(application.id, {
-        target_stage_type: selected.stageType,
-        target_round_no: selected.roundNo,
-        target_stage_label: stageLabel.trim(),
+        target_stage_type: targetStageType,
+        target_round_no: targetRoundNo,
+        target_stage_label: stageLabel,
         base_lock_version: application.lock_version,
       });
       onClose();
@@ -492,22 +503,112 @@ function AddNextStageDialog({
       setBusy(false);
     }
   };
+  const saveAssessment = () => save("screening", null, ensureAssessmentStageLabel(assessmentLabel));
+  const saveInterview = () => save("interview", interviewRoundNo, interviewLabel);
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="career-stage-dialog">
+      <DialogContent className="career-stage-dialog career-next-stage-dialog">
         <DialogHeader>
-          <DialogTitle>推进求职流程</DialogTitle>
-          <DialogDescription>当前阶段：{application.current_stage_label}。记录本阶段结果，并选择已经发生或已经确认的下一阶段。</DialogDescription>
+          <DialogTitle>添加求职阶段</DialogTitle>
+          <DialogDescription>只添加已经发生或已经确认的阶段；筛选可直接选择，无需填写表单。</DialogDescription>
         </DialogHeader>
-        {options.length ? (
-          <div className="career-stage-dialog-form">
-            <label>阶段类型<select value={targetValue} onChange={(event) => { setTargetValue(event.target.value); const next = options.find((item) => item.value === event.target.value); if (next) setStageLabel(next.stageLabel); }}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-            <label>展示名称<input value={stageLabel} maxLength={100} onChange={(event) => setStageLabel(event.target.value)} /></label>
+        <div className="career-next-stage-category">
+          <strong>阶段分类</strong>
+          <div className="career-next-stage-tabs" role="tablist" aria-label="求职阶段分类">
+            <button
+              type="button"
+              role="tab"
+              id="career-next-stage-tab-screening"
+              aria-selected={activeTab === "screening"}
+              aria-controls="career-next-stage-panel-screening"
+              className={activeTab === "screening" ? "is-active" : undefined}
+              onClick={() => setActiveTab("screening")}
+            >筛选</button>
+            <button
+              type="button"
+              role="tab"
+              id="career-next-stage-tab-assessment"
+              aria-selected={activeTab === "assessment"}
+              aria-controls="career-next-stage-panel-assessment"
+              className={activeTab === "assessment" ? "is-active" : undefined}
+              onClick={() => setActiveTab("assessment")}
+            >笔试 / 测评</button>
+            <button
+              type="button"
+              role="tab"
+              id="career-next-stage-tab-interview"
+              aria-selected={activeTab === "interview"}
+              aria-controls="career-next-stage-panel-interview"
+              className={activeTab === "interview" ? "is-active" : undefined}
+              onClick={() => setActiveTab("interview")}
+            >面试</button>
           </div>
-        ) : <p className="career-stage-dialog-empty">当前阶段还不能推进，请先完成或补充本阶段结果。</p>}
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button disabled={!selected || !stageLabel.trim() || busy} onClick={() => void save()}>{busy ? "保存中…" : "保存阶段"}</Button>
+        </div>
+        {activeTab === "screening" ? (
+          <div id="career-next-stage-panel-screening" className="career-next-stage-panel" role="tabpanel" aria-labelledby="career-next-stage-tab-screening">
+            <div className="career-next-stage-panel-heading">
+              <strong>选择筛选阶段</strong>
+              <span>点击后立即添加</span>
+            </div>
+            <div className="career-screening-stage-options">
+              {SCREENING_STAGE_OPTIONS.map((option) => (
+                <article key={option.label} className="career-screening-stage-option" aria-label={option.label}>
+                  <div>
+                    <strong>{option.label}</strong>
+                    <button type="button" disabled={busy} onClick={() => void save("screening", null, option.stageLabel)}>{busy ? "添加中…" : "添加"}</button>
+                  </div>
+                  <p>{option.description}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        ) : activeTab === "assessment" ? (
+          <div id="career-next-stage-panel-assessment" className="career-next-stage-panel" role="tabpanel" aria-labelledby="career-next-stage-tab-assessment">
+            <div className="career-next-stage-panel-heading">
+              <strong>填写阶段信息</strong>
+              <span>确认后保存</span>
+            </div>
+            <div className="career-next-stage-form">
+              <div className="career-next-stage-form-fields">
+                <label htmlFor="career-next-stage-assessment-label">
+                  <span>展示名称</span>
+                  <input id="career-next-stage-assessment-label" value={assessmentLabel} maxLength={100} onChange={(event) => setAssessmentLabel(event.target.value)} />
+                </label>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div id="career-next-stage-panel-interview" className="career-next-stage-panel" role="tabpanel" aria-labelledby="career-next-stage-tab-interview">
+            <div className="career-next-stage-panel-heading">
+              <strong>填写阶段信息</strong>
+              <span>确认后保存</span>
+            </div>
+            <div className="career-next-stage-form">
+              <div className="career-next-stage-form-fields">
+                <label htmlFor="career-next-stage-interview-label">
+                  <span>展示名称</span>
+                  <input id="career-next-stage-interview-label" value={interviewLabel} maxLength={100} onChange={(event) => setInterviewLabel(event.target.value)} />
+                </label>
+                <label htmlFor="career-next-stage-interview-round">
+                  <span>轮次</span>
+                  <input id="career-next-stage-interview-round" type="number" min={1} step={1} value={interviewRoundNo} onChange={(event) => setInterviewRoundNo(Number(event.target.value))} />
+                </label>
+              </div>
+            </div>
+          </div>
+        )}
+        <DialogFooter className="career-next-stage-dialog-footer">
+          <p>{activeTab === "screening"
+            ? "点击后将以“进行中”添加，可在阶段详情中更新结果。"
+            : "保存后进入等待安排，具体排期可在下一步添加。"}</p>
+          <div className="career-next-stage-dialog-footer-actions">
+            <Button variant="outline" onClick={onClose}>取消</Button>
+            {activeTab === "assessment" ? (
+              <Button className="career-next-stage-save-button" disabled={!assessmentLabel.trim() || busy} onClick={() => void saveAssessment()}>{busy ? "保存中…" : "保存"}</Button>
+            ) : activeTab === "interview" ? (
+              <Button className="career-next-stage-save-button" disabled={!interviewLabel.trim() || !Number.isInteger(interviewRoundNo) || interviewRoundNo < 1 || busy} onClick={() => void saveInterview()}>{busy ? "保存中…" : "保存"}</Button>
+            ) : null}
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -520,10 +621,220 @@ type ResumeVersionOption = {
   version_no: number;
 };
 
+const EMPTY_SELECT_VALUE = "__none__";
+
 function dateInputToIso(value: string): string | null {
   if (!value) return null;
   const date = new Date(`${value}T12:00:00`);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+const DATE_PICKER_WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
+
+function parseDatePickerValue(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return date.getFullYear() === Number(match[1])
+    && date.getMonth() === Number(match[2]) - 1
+    && date.getDate() === Number(match[3])
+    ? date
+    : null;
+}
+
+function formatDatePickerValue(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function formatDatePickerMonth(date: Date): string {
+  return `${date.getFullYear()}年${date.getMonth() + 1}月`;
+}
+
+function formatDatePickerDay(date: Date): string {
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+function startOfDatePickerMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function addDatePickerMonths(date: Date, months: number): Date {
+  return new Date(date.getFullYear(), date.getMonth() + months, 1);
+}
+
+function buildDatePickerDays(month: Date): Date[] {
+  const firstDay = startOfDatePickerMonth(month);
+  const gridStart = new Date(firstDay);
+  gridStart.setDate(firstDay.getDate() - firstDay.getDay());
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(gridStart);
+    date.setDate(gridStart.getDate() + index);
+    return date;
+  });
+}
+
+function AppliedAtDatePicker({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [displayMonth, setDisplayMonth] = useState(() => startOfDatePickerMonth(parseDatePickerValue(value) ?? new Date()));
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const selectedDate = parseDatePickerValue(value);
+  const selectedValue = selectedDate ? formatDatePickerValue(selectedDate) : null;
+  const calendarDays = useMemo(() => buildDatePickerDays(displayMonth), [displayMonth]);
+  const monthLabel = formatDatePickerMonth(displayMonth);
+
+  const closePicker = () => {
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: Event) => {
+      if (!pickerRef.current?.contains(event.target as Node)) closePicker();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      closePicker();
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("click", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("click", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [open]);
+
+  const openPicker = () => {
+    setDisplayMonth(startOfDatePickerMonth(selectedDate ?? new Date()));
+    setOpen(true);
+  };
+
+  const selectDate = (date: Date) => {
+    onChange(formatDatePickerValue(date));
+    closePicker();
+  };
+
+  const today = () => {
+    selectDate(new Date());
+  };
+
+  return (
+    <div ref={pickerRef} className="career-date-picker">
+      <button
+        ref={triggerRef}
+        id={id}
+        type="button"
+        className="career-date-picker-trigger"
+        aria-label="投递日期"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={`${id}-calendar`}
+        aria-required="true"
+        onClick={() => (open ? closePicker() : openPicker())}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && open) {
+            event.preventDefault();
+            event.stopPropagation();
+            closePicker();
+          }
+        }}
+      >
+        <span>{selectedValue ?? "选择日期"}</span>
+        <CalendarDays aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          id={`${id}-calendar`}
+          className="career-date-picker-popover"
+          role="dialog"
+          aria-label="选择投递日期"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.stopPropagation();
+              closePicker();
+            }
+          }}
+        >
+          <header className="career-date-picker-header">
+            <strong aria-live="polite">{monthLabel}</strong>
+            <div>
+              <button
+                type="button"
+                aria-label="上一月"
+                title="上一月"
+                onClick={() => setDisplayMonth((current) => addDatePickerMonths(current, -1))}
+              >
+                <ChevronLeft aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                aria-label="下一月"
+                title="下一月"
+                onClick={() => setDisplayMonth((current) => addDatePickerMonths(current, 1))}
+              >
+                <ChevronRight aria-hidden="true" />
+              </button>
+            </div>
+          </header>
+          <div className="career-date-picker-calendar" role="grid" aria-label={`${monthLabel}日期`}>
+            <div className="career-date-picker-weekdays" role="row">
+              {DATE_PICKER_WEEKDAYS.map((weekday) => (
+                <span key={weekday} role="columnheader">{weekday}</span>
+              ))}
+            </div>
+            <div className="career-date-picker-days">
+              {Array.from({ length: 6 }, (_, weekIndex) => (
+                <div key={weekIndex} className="career-date-picker-week" role="row">
+                  {calendarDays.slice(weekIndex * 7, weekIndex * 7 + 7).map((date) => {
+                    const dateValue = formatDatePickerValue(date);
+                    const isSelected = dateValue === selectedValue;
+                    const isCurrentMonth = date.getMonth() === displayMonth.getMonth()
+                      && date.getFullYear() === displayMonth.getFullYear();
+                    return (
+                      <div
+                        key={dateValue}
+                        role="gridcell"
+                        aria-label={formatDatePickerDay(date)}
+                        aria-selected={isSelected}
+                        className={!isCurrentMonth ? "is-adjacent-month" : undefined}
+                      >
+                        <button
+                          type="button"
+                          aria-label={formatDatePickerDay(date)}
+                          className={isSelected ? "is-selected" : undefined}
+                          onClick={() => selectDate(date)}
+                        >
+                          {date.getDate()}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+          <footer className="career-date-picker-footer">
+            <button type="button" disabled={!value} onClick={() => { onChange(""); closePicker(); }}>清除</button>
+            <button type="button" onClick={today}>今天</button>
+          </footer>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function MarkApplicationAppliedDialog({
@@ -537,6 +848,7 @@ function MarkApplicationAppliedDialog({
   onChanged: () => void;
   onNotice: (notice: string) => void;
 }) {
+  const progress = projectApplicationProgress(application);
   const resumes = useResumeStore((state) => state.resumes);
   const [appliedAt, setAppliedAt] = useState(() => {
     const today = new Date();
@@ -592,41 +904,49 @@ function MarkApplicationAppliedDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="career-stage-dialog">
+      <DialogContent className="career-stage-dialog career-applied-dialog">
         <DialogHeader>
-          <DialogTitle>推进求职流程</DialogTitle>
-          <DialogDescription>当前阶段：{application.current_stage_label}。确认实际投递日期，并可关联本次使用的正式简历版本。</DialogDescription>
+          <DialogTitle className="career-applied-dialog-title">推进求职流程</DialogTitle>
+          <DialogDescription className="career-applied-dialog-description">当前阶段：{progress.stageLabel}。确认实际投递日期，并可关联本次使用的正式简历版本。</DialogDescription>
         </DialogHeader>
         <div className="career-stage-dialog-form">
-          <label>
-            投递日期
-            <input
-              required
-              type="date"
-              value={appliedAt}
-              onChange={(event) => setAppliedAt(event.target.value)}
-            />
-          </label>
-          <label>
-            使用的简历
-            <select value={resumeId} onChange={(event) => setResumeId(event.target.value)}>
-              <option value="">不关联简历</option>
-              {resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.title}</option>)}
-            </select>
-          </label>
-          <label>
-            投递简历版本
-            <select
-              disabled={!resumeId || versionsLoading || versions.length === 0}
-              value={resumeVersionId}
-              onChange={(event) => setResumeVersionId(event.target.value)}
+          <div className="career-stage-dialog-field">
+            <Label htmlFor="career-applied-at">投递日期</Label>
+            <AppliedAtDatePicker id="career-applied-at" value={appliedAt} onChange={setAppliedAt} />
+          </div>
+          <div className="career-stage-dialog-field">
+            <Label htmlFor="career-applied-resume">使用的简历</Label>
+            <Select
+              value={resumeId || EMPTY_SELECT_VALUE}
+              onValueChange={(value) => setResumeId(value === EMPTY_SELECT_VALUE ? "" : value)}
             >
-              <option value="">
+              <SelectTrigger id="career-applied-resume" aria-label="使用的简历" className="career-stage-select-trigger">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="career-stage-select-content">
+                <SelectItem value={EMPTY_SELECT_VALUE}>不关联简历</SelectItem>
+                {resumes.map((resume) => <SelectItem key={resume.id} value={resume.id}>{resume.title}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="career-stage-dialog-field">
+            <Label htmlFor="career-applied-resume-version">投递简历版本</Label>
+            <Select
+              disabled={!resumeId || versionsLoading || versions.length === 0}
+              value={resumeVersionId || EMPTY_SELECT_VALUE}
+              onValueChange={(value) => setResumeVersionId(value === EMPTY_SELECT_VALUE ? "" : value)}
+            >
+              <SelectTrigger id="career-applied-resume-version" aria-label="投递简历版本" className="career-stage-select-trigger">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="career-stage-select-content">
+                <SelectItem value={EMPTY_SELECT_VALUE}>
                 {versionsLoading ? "正在加载正式版本…" : resumeId && versions.length === 0 ? "暂无正式版本" : resumeId ? "不关联版本" : "请先选择简历"}
-              </option>
-              {versions.map((version) => <option key={version.id} value={version.id}>v{version.version_no} · {version.name}</option>)}
-            </select>
-          </label>
+                </SelectItem>
+                {versions.map((version) => <SelectItem key={version.id} value={version.id}>v{version.version_no} · {version.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
           {!resumes.length ? (
             <p className="career-stage-dialog-empty">暂无可用简历，可直接标记已投递，不关联简历。</p>
           ) : resumeId && !versionsLoading && versions.length === 0 ? (
@@ -667,6 +987,7 @@ function OfferApplicationDialog({
   onChanged: () => void;
   onNotice: (notice: string) => void;
 }) {
+  const progress = projectApplicationProgress(application);
   const [busy, setBusy] = useState(false);
   const description = application.offer_status === "none"
     ? "记录收到 OC 或书面 Offer。"
@@ -702,7 +1023,7 @@ function OfferApplicationDialog({
       <DialogContent className="career-stage-dialog">
         <DialogHeader>
           <DialogTitle>推进求职流程</DialogTitle>
-          <DialogDescription>当前阶段：{application.current_stage_label}。{description}</DialogDescription>
+          <DialogDescription>当前阶段：{progress.stageLabel}。{description}</DialogDescription>
         </DialogHeader>
         <p className="career-stage-dialog-empty">当前 Offer 状态：{offerStatusLabel(application.offer_status)}</p>
         <DialogFooter>
@@ -759,18 +1080,28 @@ export function ApplicationDetailView({
   const applicationSessions = sessions
     .filter((session) => session.application_id === application.id)
     .sort((left, right) => new Date(right.start_at).getTime() - new Date(left.start_at).getTime());
+  const progress = projectApplicationProgress(application);
+  const isPostApplicationWaiting = progress.isWaiting
+    && application.current_stage_type === "screening";
+  const heroStatusLabel = progress.isPending || progress.isWaiting || progress.columnKey === "ended"
+    ? progress.statusLabel
+    : progress.stageLabel;
   const active = application.status === "active" && application.archived_at === null;
   const canSchedule = active && application.stage_state === "awaiting_schedule" && application.current_stage_type !== "offer";
   const canAdvance = active
     && application.stage_state === "awaiting_result"
     && application.current_stage_type !== "offer"
     && (application.current_stage_type !== "screening" || Boolean(application.applied_at));
-  const canMarkApplied = active && !application.applied_at && application.current_stage_type === "screening";
+  const canMarkApplied = active && progress.isPending;
   const canUpdateOffer = active && application.current_stage_type === "offer";
-  const scheduleActionLabel = `安排${application.current_stage_label}时间`;
-  const resultActionLabel = application.current_stage_type === "screening"
-    ? "更新筛选结果"
-    : `记录${application.current_stage_label}结果`;
+  const scheduleActionLabel = `安排${progress.stageLabel}时间`;
+  const resultActionLabel = progress.isWaiting
+    ? "添加下一阶段"
+    : progress.isAssessment
+      ? "记录笔试结果"
+      : application.current_stage_type === "screening"
+        ? "更新筛选结果"
+        : `记录${progress.stageLabel}结果`;
   const primaryAction = canMarkApplied
     ? "mark-applied"
     : canSchedule
@@ -796,7 +1127,13 @@ export function ApplicationDetailView({
                 <span className="career-record-divider" aria-hidden="true" />
                 <span className="career-record-position-name">{application.job_title_snapshot}</span>
               </h1>
-              <span className={`career-application-status ${applicationStatusTone(application)}`}>{applicationStageStatusLabel(application)}</span>
+              <span
+                className={`career-application-status ${applicationDetailStatusToneClass(application)}`}
+                aria-label={`${heroStatusLabel}${progress.supportingLabel ? `，${progress.supportingLabel}` : ""}`}
+              >
+                {heroStatusLabel}
+                {progress.supportingLabel && <small>{progress.supportingLabel}</small>}
+              </span>
             </div>
           </div>
           <div className="career-record-actions">
@@ -812,7 +1149,11 @@ export function ApplicationDetailView({
           <section className="career-detail-card career-progress-card">
             <h2>求职进度</h2>
             <JourneyProgress application={application} sessions={applicationSessions} />
-            <p className="career-progress-helper">只展示当前求职路径中的关键节点；面试轮次在下方记录区呈现。</p>
+            <p className="career-progress-helper">
+              {isPostApplicationWaiting
+                ? "已完成投递；收到公司通知后，再记录实际发生的下一阶段。"
+                : "只展示当前求职路径中的关键节点；面试轮次在下方记录区呈现。"}
+            </p>
           </section>
           <section className="career-detail-card career-interview-rounds career-interview-section-card">
             <header><h2>面试记录</h2><span>{applicationSessions.length} 条记录</span></header>

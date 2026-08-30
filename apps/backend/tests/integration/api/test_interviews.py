@@ -337,6 +337,23 @@ def test_application_creation_enforces_reachable_initial_states_and_screening_ca
         assert invalid_interview.status_code == 400
         assert invalid_interview.json() == {"error": "INVALID_INTERVIEW_REQUEST"}
 
+        pending = client.post(
+            "/api/job-applications",
+            json={
+                "job_description_id": job_id,
+                "current_stage_type": "screening",
+                "current_stage_label": "待投递",
+                "stage_state": "awaiting_schedule",
+            },
+        )
+        assert pending.status_code == 201, pending.text
+        pending_application = pending.json()["application"]
+        assert pending_application["current_stage_type"] == "screening"
+        assert pending_application["current_round_no"] is None
+        assert pending_application["current_stage_label"] == "待投递"
+        assert pending_application["stage_state"] == "awaiting_schedule"
+        assert pending_application["applied_at"] is None
+
         invalid_screening = client.post(
             "/api/job-applications",
             json={
@@ -367,6 +384,303 @@ def test_application_creation_enforces_reachable_initial_states_and_screening_ca
         )
         assert advanced.status_code == 200, advanced.text
         assert advanced.json()["application"]["stage_state"] == "awaiting_schedule"
+
+
+def test_application_creation_rejects_a_pending_placeholder_with_applied_at() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "application-create-boundary@example.test")
+        job_id = create_job(client, "创建边界公司")
+
+        with_applied_at = client.post(
+            "/api/job-applications",
+            json={
+                "job_description_id": job_id,
+                "current_stage_type": "screening",
+                "current_stage_label": "待投递",
+                "stage_state": "awaiting_schedule",
+                "applied_at": "2026-08-22T04:00:00Z",
+            },
+        )
+        assert with_applied_at.status_code == 400
+        assert with_applied_at.json() == {"error": "INVALID_INTERVIEW_REQUEST"}
+
+        wrong_state = client.post(
+            "/api/job-applications",
+            json={
+                "job_description_id": job_id,
+                "current_stage_type": "screening",
+                "current_stage_label": "待投递",
+                "stage_state": "awaiting_result",
+            },
+        )
+        assert wrong_state.status_code == 400
+        assert wrong_state.json() == {"error": "INVALID_INTERVIEW_REQUEST"}
+
+        legacy_applied = client.post(
+            "/api/job-applications",
+            json={
+                "job_description_id": job_id,
+                "current_stage_type": "screening",
+                "current_stage_label": "筛选中",
+                "stage_state": "awaiting_result",
+                "applied_at": "2026-08-22T04:00:00Z",
+            },
+        )
+        assert legacy_applied.status_code == 201, legacy_applied.text
+        assert legacy_applied.json()["application"]["current_stage_label"] == "筛选中"
+
+
+def test_marking_an_application_applied_normalizes_to_the_post_application_placeholder() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "application-placeholder@example.test")
+        created = client.post(
+            "/api/job-applications",
+            json={
+                "job_description_id": create_job(client, "投递占位公司"),
+                "current_stage_type": "screening",
+                "current_stage_label": "待投递",
+                "stage_state": "awaiting_schedule",
+            },
+        )
+        assert created.status_code == 201, created.text
+        application = created.json()["application"]
+
+        marked = client.put(
+            f"/api/job-applications/{application['id']}",
+            json={
+                "applied_at": "2026-08-22T12:00:00+08:00",
+                "base_lock_version": application["lock_version"],
+            },
+        )
+        assert marked.status_code == 200, marked.text
+        marked_application = marked.json()["application"]
+        assert marked_application["applied_at"].endswith("Z")
+        assert marked_application["current_stage_type"] == "screening"
+        assert marked_application["current_round_no"] is None
+        assert marked_application["current_stage_label"] == "等待后续通知"
+        assert marked_application["stage_state"] == "awaiting_result"
+        assert marked_application["lock_version"] == application["lock_version"] + 1
+
+        changed_date = client.put(
+            f"/api/job-applications/{application['id']}",
+            json={
+                "applied_at": "2026-08-23T12:00:00+08:00",
+                "base_lock_version": marked_application["lock_version"],
+            },
+        )
+        assert changed_date.status_code == 200, changed_date.text
+        assert changed_date.json()["application"]["current_stage_label"] == "等待后续通知"
+
+        legacy = client.post(
+            "/api/job-applications",
+            json={
+                "job_description_id": create_job(client, "旧筛选占位公司"),
+                "current_stage_type": "screening",
+                "current_stage_label": "筛选中",
+                "stage_state": "awaiting_result",
+            },
+        )
+        assert legacy.status_code == 201, legacy.text
+        legacy_application = legacy.json()["application"]
+        legacy_marked = client.put(
+            f"/api/job-applications/{legacy_application['id']}",
+            json={
+                "applied_at": "2026-08-22T04:00:00Z",
+                "base_lock_version": legacy_application["lock_version"],
+            },
+        )
+        assert legacy_marked.status_code == 200, legacy_marked.text
+        assert legacy_marked.json()["application"]["current_stage_label"] == "等待后续通知"
+
+
+def test_marking_an_application_does_not_rewind_explicit_current_stages() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "application-stage-preservation@example.test")
+        interview = client.post(
+            "/api/job-applications",
+            json={
+                "job_description_id": create_job(client, "面试阶段公司"),
+                "current_stage_type": "interview",
+                "current_round_no": 2,
+                "current_stage_label": "二面",
+                "stage_state": "awaiting_schedule",
+            },
+        )
+        assert interview.status_code == 201, interview.text
+        interview_application = interview.json()["application"]
+
+        marked_interview = client.put(
+            f"/api/job-applications/{interview_application['id']}",
+            json={
+                "applied_at": "2026-08-22T04:00:00Z",
+                "base_lock_version": interview_application["lock_version"],
+            },
+        )
+        assert marked_interview.status_code == 200, marked_interview.text
+        preserved_interview = marked_interview.json()["application"]
+        assert preserved_interview["current_stage_type"] == "interview"
+        assert preserved_interview["current_round_no"] == 2
+        assert preserved_interview["current_stage_label"] == "二面"
+        assert preserved_interview["stage_state"] == "awaiting_schedule"
+
+        screening = client.post(
+            "/api/job-applications",
+            json={
+                "job_description_id": create_job(client, "明确筛选公司"),
+                "current_stage_type": "screening",
+                "current_stage_label": "初筛",
+                "stage_state": "awaiting_result",
+            },
+        )
+        assert screening.status_code == 201, screening.text
+        screening_application = screening.json()["application"]
+
+        marked_screening = client.put(
+            f"/api/job-applications/{screening_application['id']}",
+            json={
+                "applied_at": "2026-08-22T04:00:00Z",
+                "base_lock_version": screening_application["lock_version"],
+            },
+        )
+        assert marked_screening.status_code == 200, marked_screening.text
+        preserved_screening = marked_screening.json()["application"]
+        assert preserved_screening["current_stage_type"] == "screening"
+        assert preserved_screening["current_round_no"] is None
+        assert preserved_screening["current_stage_label"] == "初筛"
+        assert preserved_screening["stage_state"] == "awaiting_result"
+
+
+def test_screening_quick_add_waits_for_result_and_can_be_rejected() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "screening-quick-add@example.test")
+        created = client.post(
+            "/api/job-applications",
+            json={
+                "job_description_id": create_job(client, "快速筛选公司"),
+                "current_stage_type": "screening",
+                "current_stage_label": "等待后续通知",
+                "stage_state": "awaiting_result",
+                "applied_at": "2026-08-22T04:00:00Z",
+            },
+        )
+        assert created.status_code == 201, created.text
+        application = created.json()["application"]
+
+        added = client.post(
+            f"/api/job-applications/{application['id']}/advance",
+            json={
+                "target_stage_type": "screening",
+                "target_round_no": None,
+                "target_stage_label": "初筛",
+                "base_lock_version": application["lock_version"],
+            },
+        )
+        assert added.status_code == 200, added.text
+        added_application = added.json()["application"]
+        assert added_application["current_stage_label"] == "初筛"
+        assert added_application["stage_state"] == "awaiting_result"
+
+        rejected = client.post(
+            f"/api/job-applications/{application['id']}/close",
+            json={
+                "status": "rejected",
+                "base_lock_version": added_application["lock_version"],
+            },
+        )
+        assert rejected.status_code == 200, rejected.text
+        assert rejected.json()["application"]["status"] == "rejected"
+
+
+def test_assessment_quick_add_remains_waiting_to_be_scheduled() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "assessment-quick-add@example.test")
+        created = client.post(
+            "/api/job-applications",
+            json={
+                "job_description_id": create_job(client, "测评公司"),
+                "current_stage_type": "screening",
+                "current_stage_label": "等待后续通知",
+                "stage_state": "awaiting_result",
+                "applied_at": "2026-08-22T04:00:00Z",
+            },
+        )
+        assert created.status_code == 201, created.text
+        application = created.json()["application"]
+
+        added = client.post(
+            f"/api/job-applications/{application['id']}/advance",
+            json={
+                "target_stage_type": "screening",
+                "target_round_no": None,
+                "target_stage_label": "测评",
+                "base_lock_version": application["lock_version"],
+            },
+        )
+        assert added.status_code == 200, added.text
+        assert added.json()["application"]["current_stage_type"] == "screening"
+        assert added.json()["application"]["current_stage_label"] == "测评"
+        assert added.json()["application"]["stage_state"] == "awaiting_schedule"
+
+
+def test_stale_application_write_cannot_rewind_a_normalized_or_advanced_stage() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "application-stage-lock@example.test")
+        created = client.post(
+            "/api/job-applications",
+            json={
+                "job_description_id": create_job(client, "阶段并发公司"),
+                "current_stage_type": "screening",
+                "current_stage_label": "筛选中",
+                "stage_state": "awaiting_result",
+            },
+        )
+        assert created.status_code == 201, created.text
+        application = created.json()["application"]
+
+        marked = client.put(
+            f"/api/job-applications/{application['id']}",
+            json={
+                "applied_at": "2026-08-22T04:00:00Z",
+                "base_lock_version": application["lock_version"],
+            },
+        )
+        assert marked.status_code == 200, marked.text
+        marked_application = marked.json()["application"]
+
+        advanced = client.post(
+            f"/api/job-applications/{application['id']}/advance",
+            json={
+                "target_stage_type": "screening",
+                "target_round_no": None,
+                "target_stage_label": "复筛",
+                "base_lock_version": marked_application["lock_version"],
+            },
+        )
+        assert advanced.status_code == 200, advanced.text
+        advanced_application = advanced.json()["application"]
+
+        stale = client.put(
+            f"/api/job-applications/{application['id']}",
+            json={
+                "applied_at": None,
+                "base_lock_version": marked_application["lock_version"],
+            },
+        )
+        assert stale.status_code == 409
+        assert stale.json() == {"error": "INTERVIEW_EDIT_CONFLICT"}
+        current = client.get(f"/api/job-applications/{application['id']}")
+        assert current.status_code == 200
+        assert current.json()["application"]["current_stage_label"] == "复筛"
+        assert current.json()["application"]["stage_state"] == "awaiting_result"
+        assert current.json()["application"]["lock_version"] == advanced_application[
+            "lock_version"
+        ]
 
 
 def test_archived_applications_are_hidden_and_cannot_receive_new_schedules() -> None:
