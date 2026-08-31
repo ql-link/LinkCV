@@ -523,7 +523,7 @@ select:not([data-slot]):focus-visible,
   box-sizing: border-box;
   width: 210mm;
   min-height: 297mm;
-  padding: var(--preview-margin-y) var(--preview-margin-x);
+  padding: var(--resume-page-margin-top, var(--preview-margin-y)) var(--resume-page-margin-right, var(--preview-margin-x)) var(--resume-page-margin-bottom, var(--preview-margin-y)) var(--resume-page-margin-left, var(--preview-margin-x));
   background: #fff;
   font-size: var(--preview-font-size);
   line-height: var(--preview-line-height);
@@ -2466,6 +2466,22 @@ select:not([data-slot]):focus-visible,
   background: var(--ui-surface-subtle);
   padding: 40px 24px;
   text-align: center;
+}
+
+.template-library-state.is-empty {
+  width: 100%;
+  max-width: none;
+  min-height: min(520px, calc(100vh - 220px));
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.template-library-state-link,
+.template-library-state-link:hover,
+.template-library-state-link:active,
+.template-library-state-link:visited {
+  text-decoration: none;
 }
 
 .template-library-state-icon {

@@ -9,8 +9,8 @@ from linkcv.core.errors import ApiError
 from linkcv.application.resumes.service import (
     ResumeVersionLimitExceeded,
     append_resume_version,
+    parse_persisted_resume_snapshot,
 )
-from linkcv.domain.resume_snapshot import parse_resume_snapshot
 from linkcv.modules.agent.models import (
     AgentMessage,
     AgentRun,
@@ -85,7 +85,7 @@ def session_record(
 def proposal_record(
     proposal: ResumeChangeProposal, run_public_id: str
 ) -> ProposalRecord:
-    snapshot = parse_resume_snapshot(
+    snapshot = parse_persisted_resume_snapshot(
         proposal.proposed_data_json, proposal.proposed_style_json
     )
     return ProposalRecord(
@@ -347,7 +347,7 @@ def create_proposal(
     )
     if existing is not None:
         return existing
-    snapshot = parse_resume_snapshot(data, style)
+    snapshot = parse_persisted_resume_snapshot(data, style)
     proposal = ResumeChangeProposal(
         public_id=str(uuid4()),
         run_id=run.id,
@@ -423,7 +423,7 @@ def create_scoped_proposal(
         raise ApiError(422, "DIAGNOSIS_REQUIRED")
     if payload.mode == "generate_from_materials" and not source_refs:
         raise ApiError(422, "SOURCE_REQUIRED")
-    snapshot = parse_resume_snapshot(resume.data_json, resume.style_json)
+    snapshot = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
     target_content(resume, snapshot.data, payload.target, "target")
     markdown = editor_markdown(snapshot.data)
     if markdown is None:
@@ -434,7 +434,7 @@ def create_scoped_proposal(
         main_target=payload.target,
         operations=payload.operations,
     )
-    updated_snapshot = parse_resume_snapshot(
+    updated_snapshot = parse_persisted_resume_snapshot(
         replace_editor_markdown(snapshot.data, updated_markdown), snapshot.style
     )
     proposal = ResumeChangeProposal(
@@ -500,14 +500,14 @@ def confirm_proposal(
         raise ApiError(409, "RESUME_EDIT_CONFLICT")
     if proposal.target_locator_json is not None:
         try:
-            current = parse_resume_snapshot(resume.data_json, resume.style_json)
+            current = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
             target = ResumeTargetLocator.model_validate(proposal.target_locator_json)
             target_content(resume, current.data, target, "target")
         except (ApiError, ValueError):
             proposal.status = "conflicted"
             db.commit()
             raise ApiError(409, "TARGET_STALE")
-    snapshot = parse_resume_snapshot(
+    snapshot = parse_persisted_resume_snapshot(
         proposal.proposed_data_json, proposal.proposed_style_json
     )
     resume.data_json = snapshot.data.model_dump(mode="json")

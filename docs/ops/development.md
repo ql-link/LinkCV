@@ -12,9 +12,9 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker和独立 Pi 服务。当前 Alembic head `0047`；`0002`–`0022` 建立并演进既有业务结构，`0023` 为历史简历版本新增非空名称，`0024`–`0027` 增加并刷新官方模板，`0028`–`0029` 扩展并收敛多能力模型配置，`0030` 新增 Agent 会话、运行、消息、工具审计与简历修改提案，并允许历史版本使用 `reason=agent`；`0031` 为提案增加稳定定位、诊断、类型化操作、修改依据与资料引用；`0032` 为 Agent 消息增加结构化澄清类型和版本化元数据；`0033` 增加面试求职进程、排期复盘和素材元数据；`0034` 删除存量已归档 JD 并移除 JD 归档字段和索引；`0035` 收敛可见性索引，`0036` 把全部简历快照转换为唯一规范结构，`0037`–`0040` 收敛官方编辑章节、区块 ID 与双栏插槽，`0041` 清除模板、当前简历和历史版本正文中的页级模板投影并恢复独立侧栏语义，`0042` 恢复经典技术模板的生产页边距并删除空白模板，历史简历只清空可空来源引用，`0043` 新增用户个人画像表，`0044` 恢复后续经典技术模板快照的紧凑样式，`0045` 增加资料上传幂等、排队、尝试次数和重新分发字段，`0046` 重构画像字段并转换存量数据，`0047` 清理旧工作性质值并删除职业方向列。
+新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker和独立 Pi 服务。当前 Alembic head `0049`；`0002`–`0022` 建立并演进既有业务结构，`0023` 为历史简历版本新增非空名称，`0024`–`0027` 增加并刷新官方模板，`0028`–`0029` 扩展并收敛多能力模型配置，`0030`–`0035` 建立 Agent、面试与 JD 契约，`0036`–`0040` 收敛简历快照和官方模板结构，`0041` 清除页级模板投影，`0042` 恢复经典技术模板页边距并从可选目录退役空白模板，`0043` 增加资料上传幂等、排队、尝试次数和重新分发字段，`0044`–`0046` 建立并收敛用户个人画像，`0047` 完成简历 canonical 一次性切流并为仍被历史快照引用的 `blank-cn` 建立 inactive tombstone，`0048` 修复 canonical 行结构与头像策略，`0049` 冻结导入受理时的模板定义。
 
-本地开发把 Git 主工作目录中的 `.env.local` 与 `.env.development.local` 作为所有 worktree 的共享私密覆盖层。`npm run dev`/`npm run dev:local` 优先使用当前 worktree 的 `.env`，否则回退主工作目录 `.env`；两处基础文件都不存在时，完整的主目录 `.env.local` 仍可单独作为 Local 配置。`npm run dev:development` 使用当前 worktree 已跟踪的 `.env.development`，再加载主工作目录 `.env.development.local`，并把同一结果注入 Web、FastAPI、Worker 与 Pi Service。新建 worktree 后不需要复制密钥文件。需要临时隔离时可显式设置 `LINKCV_SECRET_ENV_FILE=/absolute/path/to/override.local`。
+本地开发把 Git 主工作目录中的 `.env.local` 与 `.env.development.local` 作为所有 worktree 的共享私密覆盖层。Codex 管理的新建 worktree 会按 `.worktreeinclude` 自动带入主目录的 `.env`、`.env.local` 与 `.env.development.local`；这些文件仍被 Git 忽略，不能提交。`npm run dev`/`npm run dev:local` 优先使用当前 worktree 的 `.env`，否则回退主工作目录 `.env`；两处基础文件都不存在时，完整的主目录 `.env.local` 仍可单独作为 Local 配置。`npm run dev:development` 使用当前 worktree 已跟踪的 `.env.development`，再加载主工作目录 `.env.development.local`，并把同一结果注入 Web、FastAPI、Worker 与 Pi Service。新建 worktree 后不需要手动复制这些本地运行配置。需要临时隔离时可显式设置 `LINKCV_SECRET_ENV_FILE=/absolute/path/to/override.local`。
 
 FastAPI 和 Worker 单独启动时也支持 `LINKCV_ENV_FILE` + `LINKCV_SECRET_ENV_FILE`；未显式指定私密文件且当前目录是 linked worktree 时，会自动寻找主工作目录中的同名 `.local`。Production 仍使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，启动日志只显示配置文件路径，不输出变量值。
 
@@ -38,7 +38,7 @@ local/test 未配置密钥环时，原有非 LLM 接口仍可启动，但保存�
 LINKCV_ENV_FILE=.env.development npm run db:init
 ```
 
-命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0047`。图片、导入源文件、面试素材和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。面试素材默认最多 500 MiB，由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 在 Local、Development 和 Production 分别配置；上传直接进入 FastAPI 和 MinIO，不经过 RabbitMQ，RabbitMQ 仍只服务异步文档解析等既有 Worker 流程。
+命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0048`。图片、导入源文件、面试素材和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。面试素材默认最多 500 MiB，由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 在 Local、Development 和 Production 分别配置；上传直接进入 FastAPI 和 MinIO，不经过 RabbitMQ，RabbitMQ 仍只服务异步文档解析等既有 Worker 流程。
 
 微信自动建号、小程序登录和网页扫码确认要求同时配置 `WECHAT_APPID` 与 `WECHAT_SECRET`；密钥只放 `.env.local`、环境对应 `.local` 或进程环境。`WECHAT_LOGIN_PAGE` 默认 `pages/login/index`，`WECHAT_SCENE_TTL_SECONDS` 默认 300 秒，`WECHAT_QRCODE_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 10 次，`WECHAT_LOGIN_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 30 次，`WECHAT_API_TIMEOUT_SECONDS` 控制微信上游超时。未配置时应用仍可启动，但微信登录接口返回 `503 WECHAT_SERVICE_UNAVAILABLE`。
 
@@ -95,6 +95,17 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 | --- | --- | --- |
 | `RESUME_VERSION_LIMIT` | `10` | 单份简历可保存的版本上限，达到后拒绝新增并由用户手动删除旧版本；最小为 2 |
 | `DATASET_UPLOAD_MAX_BYTES` | `10485760` | 知识库资料单文件上传大小上限 |
+| `DATASET_MAX_FILES_PER_BATCH` | `10` | Web 单批选择的文件数上限，由列表接口返回给前端 |
+| `DATASET_UPLOAD_REQUESTS_PER_MINUTE` | `20` | 单用户每分钟上传受理请求上限 |
+| `DATASET_UPLOAD_USER_CONCURRENCY` | `3` | 单进程内单用户上传并发上限 |
+| `DATASET_UPLOAD_GLOBAL_CONCURRENCY` | `12` | 单个 FastAPI 进程的资料上传全局并发上限 |
+| `DATASET_MAX_COUNT_PER_USER` | `200` | 单用户上传成功或活动资料的数量上限 |
+| `DATASET_MAX_TOTAL_BYTES_PER_USER` | `1073741824` | 单用户上传成功或活动资料的源文件总容量上限 |
+| `DATASET_DISPATCH_SCAN_SECONDS` | `5` | Worker 扫描待分发任务的周期 |
+| `DATASET_REDISPATCH_AFTER_SECONDS` | `30` | 已发布但仍未被抢占的任务重新发布等待时间 |
+| `DATASET_PARSE_STALE_SECONDS` | `240` | 解析中任务判定陈旧并恢复的时限 |
+| `DATASET_PARSE_MAX_ATTEMPTS` | `3` | 资料解析最大尝试次数，超过后收口失败 |
+| `DATASET_UPLOAD_RESERVATION_TTL_SECONDS` | `86400` | 上传失败或长期停留在 uploading 的预留清理时限 |
 | `RESUME_IMPORT_MAX_BYTES` | `10485760` | 上传原文件大小上限 |
 | `RESUME_MARKDOWN_MAX_BYTES` | `2097152` | 转换后 Markdown 大小上限 |
 | `RESUME_STRUCTURING_MAX_BYTES` | `131072` | 允许发送到结构化模型的 Markdown 大小上限 |
@@ -136,13 +147,15 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 
 PDF 模板视觉门禁位于 `apps/backend/tests/integration/pdf/test_template_visual_baselines.py`。测试会先重新构建当前 PDF CLI，再让全部内置启用模板经真实 Chromium 生成 PDF、由 PDFium 栅格化，并与仓库中的低分辨率 PNG 基线比较。日常运行不得更新基线；只有维护者人工检查全部差异后，才可显式执行 `UPDATE_TEMPLATE_BASELINES=1 uv run --directory apps/backend pytest tests/integration/pdf/test_template_visual_baselines.py -q` 更新并重新审查基线。
 
-Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置当前 `resume_structuring` binding。PDF 和 DOCX 会把原始二进制和安全文件名发送到 LinkParse；浏览器不读取地址或 Key。PDF 请求额外发送 `include_layout=true`，LinkParse 必须返回通过质量门禁的 `meta.pdf.layout`，LinkCV 再从严格校验的物理行、来源顺序、列表、同行和续行关系确定性重建 Markdown；扫描、混合和 OCR PDF 只有在这份 V1 layout 完整闭包时才可继续。缺失、降级、字段不合法或与 `outputs.markdown` 不一致的 layout，以及含嵌入图片的文本 PDF，会以 `RESUME_LAYOUT_UNSUPPORTED` 失败。DOCX 含图片、表格或文本框时仍失败，不能用缺失内容的模板结果冒充保真导入。API 的频率与受理并发限制保存在 FastAPI 进程内，请求幂等和 Worker 防重保存在 Redis，任务终态保存在 MySQL。默认自动化测试注入 Fake，不访问真实地址或读取 Key。
+Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置当前 `resume_structuring` binding。PDF 和 DOCX 会把原始二进制和安全文件名发送到 LinkParse；浏览器不读取地址或 Key。PDF 请求额外发送 `include_layout=true`；LinkCV 先以 LinkParse Markdown 作为可编辑文字基线，再独立尝试消费有界的 V1 layout。可安全解析的页码、bbox、源顺序和物理块会作为精简结构化模型提示；严格关系、计数、warning allowlist 和 Markdown 一致性检查只决定是否采用确定性重建 Markdown。显式 layout 请求遇到 `413 LAYOUT_RESOURCE_LIMIT` 时，只在同一 deadline 内补发一次不含 `include_layout` 的 Markdown 请求，之后按原映射结束，不会无限重试。layout 缺失、降级、字段不合法或不一致时保留原始 Markdown，不产生 `RESUME_LAYOUT_UNSUPPORTED`；仍安全的提示可以继续传入模型，旧版 LinkParse 只返回 Markdown 时保持兼容。含嵌入图片的文本 PDF、含图片/表格/文本框的 DOCX，以及转换 Markdown 中仍存在图片、表格、嵌入或主动 HTML 时仍按既有不可承载内容边界失败。API 的频率与受理并发限制保存在 FastAPI 进程内，请求幂等和 Worker 防重保存在 Redis，任务终态保存在 MySQL。默认自动化测试注入 Fake，不访问真实地址或读取 Key。
 
 简历导入使用数据库驱动的统一 LLM 服务和当前 `resume_structuring` binding。模型只返回稳定源块的语义/布局映射，不能生成正文或决定丢弃；程序负责完整闭包、来源顺序、联系信息同排、有序/嵌套 CommonMark 与模板布局配方。模型地址、模型调用名与 API Key 通过管理员 API 管理，凭据由 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 加解密；调用不自动重试，也不回退其他候选。环境只保留密钥环与统一的 `LLM_TIMEOUT_SECONDS`，不再配置导入专用 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL` 或重试参数。
 
-共享 Development 验证必须使用 `npm run dev:development`，不得先启动本地 MySQL、Redis、MinIO 或 RabbitMQ。升级 Development 前先只读确认 `alembic_version=0043`、无在途导入且 `classic-technical-cn` 仍匹配受保护的 `0042` 样式，保存该模板行备份并记录既有简历/版本快照摘要；执行 `0044` 后复核 head、模板仅三个呈现 token 改变且既有简历/版本摘要完全一致，再启动 Web、FastAPI、Worker 与 Pi。若版本已是 `0043` 但模板仍为旧 token，这是预期的升级前状态，不得复用编号、重跑或改写 `0043`。
+共享 Development 验证必须使用 `npm run dev:development`，不得先启动本地 MySQL、Redis、MinIO 或 RabbitMQ。升级前先只读确认真实 `alembic_version`；若仍为 `0046`，确认 0043 Dataset 可靠性标记列存在、无在途简历导入，完成四张简历相关表与对象存储备份，并记录模板、简历和版本快照摘要。维护窗口连续执行 `0047`–`0049`，复核 head 为 `0049`、历史 `blank-cn` 绑定仅为 inactive、全部简历/版本模板外键非空、活动导入任务已有冻结模板定义，再启动 Web、FastAPI、Worker 与 Pi。基线、在途任务、退役模板预检或备份核对不通过时停止升级，不猜测模板、不重跑或改写已执行 revision。
 
-共享 Development 中不得让当前 worktree 与已部署旧 Worker 竞争同一队列。常规配置使用上表 V2 topology；并行调试多个未部署 worktree 时，还应给 exchange、queue 和 routing key 增加同一个短期 worktree 后缀并同时传给本地 FastAPI 与 Worker。V2 消息正文要求 `pipeline_version="v2"`，RabbitMQ 同时携带 `x-linkcv-pipeline-version=v2` 诊断 header；缺版本、V1、未知版本或未知字段都进入当前 V2 DLT，不调用业务 Processor。
+共享 Development 中不得让当前 worktree 与已部署旧 Worker 竞争同一队列。`npm run dev:development` 会根据当前 worktree 的绝对路径自动生成独立的 queue 与 routing key，并同时传给本地 FastAPI 与 Worker；需要固定名称时可成对设置 `LINKCV_LOCAL_RABBITMQ_QUEUE` 与 `LINKCV_LOCAL_RABBITMQ_ROUTING_KEY`。共享 Dev 容器继续使用上表 V2 topology。V2 消息正文要求 `pipeline_version="v2"`，RabbitMQ 同时携带 `x-linkcv-pipeline-version=v2` 诊断 header；缺版本、V1、未知版本或未知字段都进入当前 V2 DLT，不调用业务 Processor。
+
+`.env.example`、`.env.development` 与 `.env.production` 的固定 MQ 名称均与上表 V2 topology 一致；本地 worktree 隔离覆盖只改变 queue 与 routing key，不改变消息版本契约。
 
 本地 PDF/DOCX 联调时，把 `LINKPARSE_API_KEY=<受控凭据>` 写入被 Git 忽略的 `.env.local` 或 `.env.development.local`，不要写入三份仓库环境文件、命令行历史、日志或测试 fixture。Key 缺失时 Development 仍可启动，Markdown 可测，PDF/DOCX 明确返回 `DOCUMENT_CONVERSION_UNAVAILABLE`。
 
@@ -155,6 +168,7 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run db:revision -- -m <message>` | 创建 forward-only 的 SQL revision，以及同 ID 的 `.up.sql` 文件       |
 | `npm run dev:development`             | 使用共享 Development 中间件，一键启动 Web、FastAPI、Worker 与 Pi    |
 | `npm run test:web`                    | 前端 Vitest 单元和组件测试                                           |
+| `npm run check:web`                   | Web 设计规则、测试、类型检查和生产构建                               |
 | `npm run dev:pi`                      | 单独启动无头 Pi Agent 服务                                           |
 | `npm run test:pi`                     | 运行 Pi 服务单元测试                                                  |
 | `npm run check:pi`                    | 校验静态模型目录、离线构建 Pi 并测试服务                              |

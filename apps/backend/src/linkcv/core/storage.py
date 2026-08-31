@@ -16,6 +16,8 @@ from urllib3 import PoolManager, Retry, Timeout
 
 from linkcv.core.config import Settings
 
+MINIO_CONNECT_SEND_TIMEOUT_SECONDS = 15
+MINIO_READ_TIMEOUT_SECONDS = 60
 SUPPORTED_IMAGE_TYPES = {
     "image/apng": ".apng",
     "image/avif": ".avif",
@@ -78,7 +80,11 @@ class AssetStorage:
             secret_key=settings.minio_secret_key,
             secure=endpoint.scheme == "https",
             http_client=PoolManager(
-                timeout=Timeout(connect=5, read=60),
+                # urllib3 also uses the connect timeout while sending a request body.
+                timeout=Timeout(
+                    connect=MINIO_CONNECT_SEND_TIMEOUT_SECONDS,
+                    read=MINIO_READ_TIMEOUT_SECONDS,
+                ),
                 retries=Retry(total=False),
             ),
         )
@@ -253,6 +259,10 @@ def build_converted_markdown_object_name(user_id: int, operation_id: str) -> str
     return f"users/{user_id}/resume-imports/{operation_id}/artifacts/converted.md"
 
 
+def build_source_graph_object_name(user_id: int, operation_id: str) -> str:
+    return f"users/{user_id}/resume-imports/{operation_id}/artifacts/source-graph.json"
+
+
 def build_legacy_converted_markdown_object_name(
     user_id: int,
     operation_id: str,
@@ -307,6 +317,7 @@ def build_import_cleanup_object_names(
     if operation_id is not None:
         for value in (
             build_converted_markdown_object_name(user_id, operation_id),
+            build_source_graph_object_name(user_id, operation_id),
             build_legacy_converted_markdown_object_name(user_id, operation_id),
         ):
             if value not in candidates:

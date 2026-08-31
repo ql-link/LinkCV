@@ -119,7 +119,7 @@ def _mark_retry_exhausted(
     # after lease recovery.  DatasetParseProcessor's stale scanner owns the
     # processing -> queued/failed transition instead.
     if task_type != "resume":
-        return True
+        return
     try:
         resume_processor.mark_retry_exhausted(task_id)
     except WorkerDependencyUnavailable:

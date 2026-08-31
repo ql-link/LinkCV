@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import re
 from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -13,8 +14,6 @@ from sqlalchemy import select, update
 from linkcv.core.config import Settings
 from linkcv.core.database import utc_now
 from linkcv.core.errors import ApiError
-from linkcv.domain.resume_document import default_resume_document
-from linkcv.domain.resume_style import default_resume_style
 from linkcv.main import create_app
 from linkcv.modules.agent.models import (
     AgentMessage,
@@ -28,6 +27,7 @@ from linkcv.modules.agent.service import create_run
 from linkcv.modules.job_descriptions.models import JobDescription
 from linkcv.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
 from tests.fakes import FakeRedis
+from tests.canonical_resume_fixtures import canonical_template_payload
 
 
 INTERNAL_TOKEN = "internal-agent-token-for-tests-000000000001"
@@ -56,11 +56,12 @@ def build_app():
         create_schema=True,
     )
     with app.state.session_factory() as db:
+        template_data, template_style = canonical_template_payload(key="agent-test")
         template = ResumeTemplate(
             key="agent-test",
             name="Agent 测试模板",
-            data_json=default_resume_document().model_dump(mode="json"),
-            style_json=default_resume_style().model_dump(mode="json"),
+            data_json=template_data,
+            style_json=template_style,
             is_active=1,
         )
         db.add(template)
@@ -109,75 +110,55 @@ def internal_headers(token: str = INTERNAL_TOKEN) -> dict[str, str]:
 
 
 def editor_data(base: dict, markdown: str) -> dict:
-    data = base.copy()
-    data["basics"] = {
-        **base["basics"],
-        "headline": None,
-        "email": None,
-        "phone": None,
-        "location": None,
-        "summary": None,
-        "links": [],
-    }
-    data["sections"] = {
-        "work_experiences": [],
-        "educations": [],
-        "projects": [],
-        "skills": [],
-        "certificates": [],
-        "awards": [],
-        "languages": [],
-    }
-    first_line, _, body = markdown.partition("\n")
-    section_id = "blk_section000000001"
-    data["sections"]["custom_sections"] = [
-        {
-            "id": "blk_basics0000000001",
-            "title": "基本信息",
-            "items": [
-                {
-                    "id": "item_basics000000001",
-                    "title": None,
-                    "subtitle": None,
-                    "content": {"format": "markdown", "content": "# 测试用户"},
-                    "source_refs": [],
-                }
-            ],
-        },
-        {
-            "id": section_id,
-            "title": first_line.split("]]", 1)[-1],
-            "items": [
-                {
-                    "id": "item_section00000001",
-                    "title": None,
-                    "subtitle": None,
-                    "content": {"format": "markdown", "content": body.strip()},
-                    "source_refs": [],
-                }
-            ],
-        },
-    ]
-    data["semantic_sections"] = [
-        {
-            "id": "sem_basics00000000001",
-            "semantic_kind": "basics",
-            "display_title": "基本信息",
-            "semantic_source": "system",
-            "semantic_confidence": None,
-            "content_key": "custom_sections",
-            "custom_section_id": "blk_basics0000000001",
-        },
-        {
-            "id": "sem_section0000000001",
-            "semantic_kind": "work",
-            "display_title": first_line.split("]]", 1)[-1],
-            "semantic_source": "user",
-            "semantic_confidence": None,
-            "content_key": "custom_sections",
-            "custom_section_id": section_id,
-        },
-    ]
+    data = {**base, "sections": []}
+    heading = re.search(r"^## \[\[linkcv-block:(node_[a-z0-9]+)\]\](.+)$", markdown, re.MULTILINE)
+    entry = re.search(r"^### \[\[linkcv-block:(node_[a-z0-9]+)\]\](.+)$", markdown, re.MULTILINE)
+    bullets = re.findall(r"^- \[\[linkcv-block:(node_[a-z0-9]+)\]\](.+)$", markdown, re.MULTILINE)
+    assert heading is not None and entry is not None and bullets
+
+    def value(node_id: str, text: str) -> dict:
+        return {"node_id": node_id, "source_refs": [], "value": text}
+
+    def runs(text: str) -> list[dict]:
+        return [{
+            "inline_type": "text",
+            "text": text,
+            "marks": [],
+            "href": None,
+            "style": {"color": None, "font_size_pt": None, "highlight_color": None},
+        }]
+
+    data["sections"] = [{
+        "node_id": heading.group(1),
+        "source_refs": [],
+        "semantic_kind": "work",
+        "title": value("node_sectiontitle00000001", heading.group(2)),
+        "entries": [{
+            "node_id": entry.group(1),
+            "source_refs": [],
+            "fields": {
+                "name": None,
+                "organization": None,
+                "role": value("node_entryrole000000001", entry.group(2)),
+                "location": None,
+                "start_date": None,
+                "end_date": None,
+                "url": None,
+                "degree": None,
+                "major": None,
+            },
+            "blocks": [{
+                "node_id": "node_listblock000000001",
+                "block_type": "bullet_list",
+                "start": None,
+                "items": [
+                    {"node_id": node_id, "source_refs": [], "runs": runs(text)}
+                    for node_id, text in bullets
+                ],
+            }],
+        }],
+        "blocks": [],
+    }]
     return data
 
 
@@ -424,7 +405,11 @@ def test_proposal_is_idempotent_and_confirmed_once() -> None:
         ).json()["session"]["id"]
         run_id = create_active_run(app, session_id)
         proposed_data = resume["data"]
-        proposed_data["basics"]["headline"] = "由智能助手生成的虚构标题"
+        proposed_data["identity"]["headline"] = {
+            "node_id": "node_headline00000001",
+            "source_refs": [],
+            "value": "由智能助手生成的虚构标题",
+        }
         payload = {
             "call_key": "proposal-call-1",
             "data": proposed_data,
@@ -452,7 +437,7 @@ def test_proposal_is_idempotent_and_confirmed_once() -> None:
         assert confirmed.json()["resume"]["lock_version"] == 2
         assert confirmed_again.json()["resume"]["lock_version"] == 2
         assert (
-            confirmed.json()["resume"]["data"]["basics"]["headline"]
+            confirmed.json()["resume"]["data"]["identity"]["headline"]["value"]
             == "由智能助手生成的虚构标题"
         )
         with app.state.session_factory() as db:
@@ -475,10 +460,10 @@ def test_scoped_edit_requires_resolved_target_and_diagnosis_before_confirmation(
         resume = create_resume(client, app)
         markdown = "\n\n".join(
             [
-                "## [[linkcv-block:blk_section000000001]]工作经历",
-                "### [[linkcv-block:blk_entry00000000001]]示例公司 · 后端工程师",
-                "- [[linkcv-block:blk_bullet0000000001]]负责平台性能优化",
-                "- [[linkcv-block:blk_bullet0000000002]]负责平台性能优化",
+                "## [[linkcv-block:node_section000000001]]工作经历",
+                "### [[linkcv-block:node_entry00000000001]]示例公司 · 后端工程师",
+                "- [[linkcv-block:node_bullet0000000001]]负责平台性能优化",
+                "- [[linkcv-block:node_bullet0000000002]]负责平台性能优化",
             ]
         )
         saved = client.put(
@@ -510,9 +495,9 @@ def test_scoped_edit_requires_resolved_target_and_diagnosis_before_confirmation(
             json={
                 "selection_context": {
                     "block_ids": [
-                        "blk_entry00000000001",
-                        "blk_bullet0000000001",
-                        "blk_bullet0000000002",
+                        "node_entry00000000001",
+                        "node_bullet0000000001",
+                        "node_bullet0000000002",
                     ],
                     "from": 2,
                     "to": 30,
@@ -524,7 +509,7 @@ def test_scoped_edit_requires_resolved_target_and_diagnosis_before_confirmation(
         )
         assert entry_resolved.status_code == 200
         assert entry_resolved.json()["status"] == "resolved"
-        assert entry_resolved.json()["target"]["block_id"] == "blk_entry00000000001"
+        assert entry_resolved.json()["target"]["block_id"] == "node_entry00000000001"
 
         selected_text = "负责平台性能优化"
         resolved = client.post(
@@ -532,7 +517,7 @@ def test_scoped_edit_requires_resolved_target_and_diagnosis_before_confirmation(
             headers=internal_headers(),
             json={
                 "selection_context": {
-                    "block_ids": ["blk_bullet0000000002"],
+                    "block_ids": ["node_bullet0000000002"],
                     "from": 10,
                     "to": 18,
                     "selected_text": selected_text,
@@ -544,7 +529,7 @@ def test_scoped_edit_requires_resolved_target_and_diagnosis_before_confirmation(
         assert resolved.status_code == 200
         target = resolved.json()["target"]
         assert resolved.json()["status"] == "resolved"
-        assert target["block_id"] == "blk_bullet0000000002"
+        assert target["block_id"] == "node_bullet0000000002"
         context = client.post(
             f"/internal/agent/runs/{run_id}/context:read",
             headers=internal_headers(),
@@ -552,9 +537,9 @@ def test_scoped_edit_requires_resolved_target_and_diagnosis_before_confirmation(
         )
         assert context.status_code == 200
         assert [item["target"]["block_id"] for item in context.json()["blocks"]] == [
-            "blk_entry00000000001",
-            "blk_bullet0000000001",
-            "blk_bullet0000000002",
+            "node_entry00000000001",
+            "node_bullet0000000001",
+            "node_bullet0000000002",
         ]
         diagnosed = client.post(
             f"/internal/agent/runs/{run_id}/diagnoses",
@@ -604,7 +589,7 @@ def test_scoped_edit_requires_resolved_target_and_diagnosis_before_confirmation(
 
         wrong_target = {
             **target,
-            "block_id": "blk_bullet0000000001",
+            "block_id": "node_bullet0000000001",
         }
         out_of_scope = client.post(
             f"/internal/agent/runs/{run_id}/proposals:v2",
@@ -636,15 +621,18 @@ def test_scoped_edit_requires_resolved_target_and_diagnosis_before_confirmation(
         confirmed = client.post(f"/api/agent/proposals/{proposal['id']}/confirm")
         assert confirmed.status_code == 200
         content = "\n".join(
-            item["content"]["content"]
-            for section in confirmed.json()["resume"]["data"]["sections"][
-                "custom_sections"
-            ]
-            for item in section["items"]
+            run["text"]
+            for section in confirmed.json()["resume"]["data"]["sections"]
+            for entry in section["entries"]
+            for block in entry["blocks"]
+            for item in block.get("items", [])
+            for run in item["runs"]
+            if run["inline_type"] == "text"
         )
         assert "优化平台性能，具体结果待补充" in content
         assert content.count("负责平台性能优化") == 1
-        assert "[[linkcv-block:blk_bullet0000000001]]负责平台性能优化" in content
+        first_item = confirmed.json()["resume"]["data"]["sections"][0]["entries"][0]["blocks"][0]["items"][0]
+        assert first_item["node_id"] == "node_bullet0000000001"
 
 
 def test_whole_block_proposal_materializes_before_text_and_confirms() -> None:
@@ -654,9 +642,9 @@ def test_whole_block_proposal_materializes_before_text_and_confirms() -> None:
         resume = create_resume(client, app)
         markdown = "\n\n".join(
             [
-                "## [[linkcv-block:blk_section000000001]]工作经历",
-                "### [[linkcv-block:blk_entry00000000001]]示例公司 · 后端工程师",
-                "- [[linkcv-block:blk_bullet0000000001]]负责平台性能优化",
+                "## [[linkcv-block:node_section000000001]]工作经历",
+                "### [[linkcv-block:node_entry00000000001]]示例公司 · 后端工程师",
+                "- [[linkcv-block:node_bullet0000000001]]负责平台性能优化",
             ]
         )
         saved = client.put(
@@ -679,8 +667,8 @@ def test_whole_block_proposal_materializes_before_text_and_confirms() -> None:
             json={
                 "selection_context": {
                     "block_ids": [
-                        "blk_entry00000000001",
-                        "blk_bullet0000000001",
+                        "node_entry00000000001",
+                        "node_bullet0000000001",
                     ],
                     "from": 1,
                     "to": 24,
@@ -731,14 +719,8 @@ def test_whole_block_proposal_materializes_before_text_and_confirms() -> None:
 
         confirmed = client.post(f"/api/agent/proposals/{proposal['id']}/confirm")
         assert confirmed.status_code == 200
-        content = "\n".join(
-            item["content"]["content"]
-            for section in confirmed.json()["resume"]["data"]["sections"][
-                "custom_sections"
-            ]
-            for item in section["items"]
-        )
-        assert "示例公司 · 高级后端工程师" in content
+        role = confirmed.json()["resume"]["data"]["sections"][0]["entries"][0]["fields"]["role"]
+        assert role["value"] == "示例公司 · 高级后端工程师"
 
 
 def test_proposal_confirmation_never_overwrites_concurrent_resume_edit() -> None:
@@ -763,7 +745,11 @@ def test_proposal_confirmation_never_overwrites_concurrent_resume_edit() -> None
         assert proposal.status_code == 201
 
         edited_data = resume["data"]
-        edited_data["basics"]["headline"] = "用户刚刚手动修改"
+        edited_data["identity"]["headline"] = {
+            "node_id": "node_headline00000001",
+            "source_refs": [],
+            "value": "用户刚刚手动修改",
+        }
         edited = client.put(
             f"/api/resumes/{resume['id']}",
             json={"data": edited_data, "base_lock_version": 1},
@@ -777,7 +763,7 @@ def test_proposal_confirmation_never_overwrites_concurrent_resume_edit() -> None
         assert conflict.json() == {"error": "RESUME_EDIT_CONFLICT"}
         current = client.get(f"/api/resumes/{resume['id']}").json()["resume"]
         assert current["lock_version"] == 2
-        assert current["data"]["basics"]["headline"] == "用户刚刚手动修改"
+        assert current["data"]["identity"]["headline"]["value"] == "用户刚刚手动修改"
 
 
 def test_proposal_confirmation_respects_resume_version_limit() -> None:
@@ -796,7 +782,11 @@ def test_proposal_confirmation_respects_resume_version_limit() -> None:
         ).json()["session"]["id"]
         run_id = create_active_run(app, session_id)
         proposed_data = resume["data"]
-        proposed_data["basics"]["headline"] = "不应应用的智能助手标题"
+        proposed_data["identity"]["headline"] = {
+            "node_id": "node_headline00000001",
+            "source_refs": [],
+            "value": "不应应用的智能助手标题",
+        }
         proposal = client.post(
             f"/internal/agent/runs/{run_id}/proposals",
             headers=internal_headers(),
@@ -816,7 +806,7 @@ def test_proposal_confirmation_respects_resume_version_limit() -> None:
         assert result.json() == {"error": "RESUME_VERSION_LIMIT_REACHED"}
         current = client.get(f"/api/resumes/{resume['id']}").json()["resume"]
         assert current["lock_version"] == 1
-        assert current["data"]["basics"]["headline"] != "不应应用的智能助手标题"
+        assert current["data"]["identity"]["headline"] is None
 
 
 def test_run_concurrency_is_limited_across_user_sessions() -> None:

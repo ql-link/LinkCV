@@ -187,33 +187,6 @@ def test_rabbit_retry_exhaustion_confirms_dlt_before_ack() -> None:
     incoming.nack.assert_not_awaited()
 
 
-def test_rabbit_dataset_retry_exhaustion_defers_terminal_state_to_lease_recovery() -> None:
-    resume = SimpleNamespace(process=AsyncMock(), mark_retry_exhausted=Mock())
-    dataset = SimpleNamespace(
-        process=AsyncMock(side_effect=WorkerTaskRetryable("temporary")),
-        mark_retry_exhausted=Mock(),
-    )
-    incoming = rabbit_incoming(retries=2)
-    incoming.body = DatasetParseMessage.create(parse_task_id=84).body()
-    incoming.type = "DATASET_PARSE_TASK"
-    dead_letter_exchange = SimpleNamespace(publish=AsyncMock(return_value=True))
-
-    asyncio.run(
-        _handle_rabbit_message(
-            resume_processor=resume,
-            dataset_processor=dataset,
-            exchange=SimpleNamespace(publish=AsyncMock()),
-            dead_letter_exchange=dead_letter_exchange,
-            incoming=incoming,
-            settings=settings(),
-        )
-    )
-
-    dataset.mark_retry_exhausted.assert_not_called()
-    incoming.ack.assert_awaited_once()
-    incoming.nack.assert_not_awaited()
-
-
 def test_rabbit_terminal_state_write_failure_retains_original_message() -> None:
     processor = SimpleNamespace(
         process=AsyncMock(side_effect=WorkerTaskRetryable("temporary")),

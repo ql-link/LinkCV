@@ -7,10 +7,9 @@ from linkcv.core.config import Settings
 from linkcv.core.security import verify_password
 from linkcv.integrations.wechat_client import WechatApiError
 from linkcv.main import create_app
-from linkcv.domain.resume_document import default_resume_document
-from linkcv.domain.resume_style import default_resume_style
 from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import ResumeTemplate
+from tests.canonical_resume_fixtures import canonical_template_payload
 from tests.fakes import FakeRedis
 from tests.integration.api.test_identity_resumes_assets import FakeStorage
 
@@ -29,11 +28,12 @@ def build_test_app():
         create_schema=True,
     )
     with app.state.session_factory() as session:
+        template_data, template_style = canonical_template_payload(key="blank-cn")
         template = ResumeTemplate(
             key="blank-cn",
             name="空白简历",
-            data_json=default_resume_document().model_dump(mode="json"),
-            style_json=default_resume_style().model_dump(mode="json"),
+            data_json=template_data,
+            style_json=template_style,
             is_active=1,
         )
         session.add(template)

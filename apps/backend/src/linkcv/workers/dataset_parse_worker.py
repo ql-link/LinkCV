@@ -523,7 +523,7 @@ class DatasetParseProcessor:
                     content_type=CONTENT_TYPES[task.file_format],
                     content=content,
                     operation_id=str(task.id),
-                    require_pdf_layout=False,
+                    request_pdf_layout=False,
                     deadline_monotonic=(
                         monotonic()
                         + self._settings.resume_import_parse_deadline_seconds

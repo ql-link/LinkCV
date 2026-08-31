@@ -1,6 +1,6 @@
 """Restructure user profile fields and remove obsolete data.
 
-The 0046 migration has no compatibility window.  It converts the three
+The 0045 migration has no compatibility window.  It converts the three
 reusable 0044 fields before physically removing the old columns, and leaves
 candidate status and graduation year unset for existing rows because those
 values cannot be inferred reliably from the old profile.
@@ -11,8 +11,8 @@ complete retained row boundary and final schema.  A failed postflight after
 DDL must be recovered from the pre-migration backup or repaired by a new
 forward revision; this migration cannot be downgraded.
 
-Revision ID: 0046
-Revises: 0045
+Revision ID: 0045
+Revises: 0044
 Create Date: 2026-08-28
 """
 
@@ -27,8 +27,8 @@ from alembic import op
 
 from linkcv.core.migration_sql import execute_sql_file
 
-revision: str = "0046"
-down_revision: str | None = "0045"
+revision: str = "0045"
+down_revision: str | None = "0044"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -194,7 +194,7 @@ def _canonical(value: object, *, field: str) -> object:
 def _assert_legacy_schema(connection: sa.engine.Connection) -> None:
     inspector = sa.inspect(connection)
     if "user_profiles" not in inspector.get_table_names():
-        raise RuntimeError("0046 requires the 0043 user_profiles table")
+        raise RuntimeError("0045 requires the 0044 user_profiles table")
     columns = {str(column["name"]): column for column in inspector.get_columns("user_profiles")}
     if set(columns) != _LEGACY_COLUMNS:
         missing = sorted(_LEGACY_COLUMNS - set(columns))
@@ -265,7 +265,7 @@ def _preflight_rows(connection: sa.engine.Connection) -> list[ProfileSnapshot]:
             not isinstance(value, str) or len(value) > 100 for value in positions
         ):
             raise RuntimeError(
-                f"user_profiles[{row_id}].target_positions cannot fit the 0046 contract"
+                f"user_profiles[{row_id}].target_positions cannot fit the 0045 contract"
             )
         for field in (
             "exclusions",
@@ -314,7 +314,7 @@ def _assert_target_schema(connection: sa.engine.Connection) -> None:
         missing = sorted(_TARGET_COLUMNS - set(columns))
         extra = sorted(set(columns) - _TARGET_COLUMNS)
         raise RuntimeError(
-            "user_profiles schema does not match 0046: "
+            "user_profiles schema does not match 0045: "
             f"missing={missing}, extra={extra}"
         )
     checks = {
@@ -326,7 +326,7 @@ def _assert_target_schema(connection: sa.engine.Connection) -> None:
         missing = sorted(_TARGET_CHECKS - checks)
         extra = sorted(checks - _TARGET_CHECKS)
         raise RuntimeError(
-            "user_profiles checks do not match 0046: "
+            "user_profiles checks do not match 0045: "
             f"missing={missing}, extra={extra}"
         )
     required_shapes = {
@@ -367,7 +367,7 @@ def _verify_rows(
     ).mappings().all()
     if len(rows) != len(snapshots):
         raise RuntimeError(
-            "0046 changed user_profiles row count: "
+            "0045 changed user_profiles row count: "
             f"before={len(snapshots)} after={len(rows)}"
         )
 
@@ -375,24 +375,24 @@ def _verify_rows(
         actual = dict(actual_mapping)
         row_id = source.row["id"]
         if actual["id"] != row_id:
-            raise RuntimeError("0046 changed a user_profiles primary key")
+            raise RuntimeError("0045 changed a user_profiles primary key")
         if _canonical(actual["candidate_cities"], field="candidate_cities") != source.candidate_cities:
-            raise RuntimeError(f"0046 converted candidate_cities incorrectly for {row_id}")
+            raise RuntimeError(f"0045 converted candidate_cities incorrectly for {row_id}")
         if _canonical(actual["employment_types"], field="employment_types") != source.employment_types:
-            raise RuntimeError(f"0046 converted employment_types incorrectly for {row_id}")
+            raise RuntimeError(f"0045 converted employment_types incorrectly for {row_id}")
         if _canonical(actual["professional_directions"], field="professional_directions") != source.professional_directions:
             raise RuntimeError(
-                f"0046 converted professional_directions incorrectly for {row_id}"
+                f"0045 converted professional_directions incorrectly for {row_id}"
             )
         if actual["candidate_status"] is not None or actual["graduation_year"] is not None:
             raise RuntimeError(
-                f"0046 inferred candidate status for existing profile {row_id}"
+                f"0045 inferred candidate status for existing profile {row_id}"
             )
         for field in _RETAINED_COLUMNS:
             expected = source.row[field]
             if _canonical(actual[field], field=field) != _canonical(expected, field=field):
                 raise RuntimeError(
-                    f"0046 changed retained user_profiles field {field} for {row_id}"
+                    f"0045 changed retained user_profiles field {field} for {row_id}"
                 )
 
 
@@ -406,7 +406,7 @@ def _verify(
 def upgrade() -> None:
     connection = op.get_bind()
     snapshots = _preflight(connection)
-    execute_sql_file(connection, SQL_DIR / "0046.up.sql")
+    execute_sql_file(connection, SQL_DIR / "0045.up.sql")
     _verify(connection, snapshots)
 
 

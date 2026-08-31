@@ -12,13 +12,13 @@ REVISION_PATH = (
     BACKEND_ROOT
     / "migrations"
     / "versions"
-    / "0046_restructure_user_profiles.py"
+    / "0045_restructure_user_profiles.py"
 )
-SQL_PATH = BACKEND_ROOT / "migrations" / "sql" / "0046.up.sql"
+SQL_PATH = BACKEND_ROOT / "migrations" / "sql" / "0045.up.sql"
 
 
 def load_revision():
-    spec = importlib.util.spec_from_file_location("linkcv_revision_0046", REVISION_PATH)
+    spec = importlib.util.spec_from_file_location("linkcv_revision_0045", REVISION_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -27,8 +27,8 @@ def load_revision():
 
 def test_revision_chains_after_0044() -> None:
     revision = load_revision()
-    assert revision.revision == "0046"
-    assert revision.down_revision == "0045"
+    assert revision.revision == "0045"
+    assert revision.down_revision == "0044"
 
 
 def test_downgrade_is_forward_only() -> None:
@@ -94,4 +94,4 @@ def test_up_sql_uses_statement_only_forward_migration_format() -> None:
     assert statements[1].startswith("UPDATE user_profiles")
     assert statements[2].startswith("ALTER TABLE user_profiles")
     assert statements[3].startswith("ALTER TABLE user_profiles")
-    assert not (SQL_PATH.with_name("0046.down.sql")).exists()
+    assert not (SQL_PATH.with_name("0045.down.sql")).exists()

@@ -4,13 +4,18 @@ import { describe, expect, it } from "vitest";
 import {
   defaultSemanticDocument,
   defaultSemanticStyle,
+  defaultCanonicalDocument,
   normalizeResumeAccentColor,
   editorSettingsToStyle,
   editorDocumentToMarkdown,
   resumeDocumentFromMarkdown,
-  resumeDocumentContentHash,
   resumeDocumentToMarkdown,
+  resumePresentationPageMargins,
   styleToEditorSettings,
+  withResumePresentationAvatarSize,
+  type CanonicalResumeDocument,
+  type CanonicalResumePresentation,
+  type TemplateDefinition,
 } from "./resumeContract";
 import { renderResumeMarkdown } from "../parser/resumeMarkdown";
 
@@ -19,12 +24,6 @@ describe("resume semantic contract adapter", () => {
     expect(normalizeResumeAccentColor("#202632")).toBe("#202632");
     expect(normalizeResumeAccentColor("rgb(1, 2, 3)")).toBe("#3478f6");
     expect(normalizeResumeAccentColor("#202632; color: red")).toBe("#3478f6");
-  });
-
-  it("uses the same sorted UTF-8 content hash contract as the backend", async () => {
-    await expect(resumeDocumentContentHash({ b: "中", a: 1 } as never)).resolves.toBe(
-      "sha256:2831299868169bc527f55f88ebbdcd8b785d78d9e7dc64e6887dfbd2825dd247",
-    );
   });
 
   it("renders semantic fields as editable markdown", () => {
@@ -38,6 +37,58 @@ describe("resume semantic contract adapter", () => {
 
     expect(resumeDocumentToMarkdown(document)).toContain("# 张三");
     expect(resumeDocumentToMarkdown(document)).toContain("- Python：FastAPI");
+  });
+
+  it("exports canonical title and inline icons to their Markdown markers", () => {
+    const document: CanonicalResumeDocument = {
+      ...defaultCanonicalDocument,
+      identity: {
+        ...defaultCanonicalDocument.identity,
+        name: {
+          node_id: "node_name000000000001",
+          source_refs: [],
+          value: "张三",
+        },
+      },
+      sections: [{
+        node_id: "node_section00000001",
+        source_refs: [],
+        semantic_kind: "work",
+        title: {
+          node_id: "node_title00000000001",
+          source_refs: [],
+          value: "工作经历",
+        },
+        title_icon: { inline_type: "icon", name: "Briefcase" },
+        entries: [],
+        blocks: [{
+          node_id: "node_block00000000001",
+          source_refs: [],
+          block_type: "paragraph",
+          runs: [
+            {
+              inline_type: "text",
+              text: "前",
+              marks: ["bold"],
+              href: null,
+              style: { color: null, font_size_pt: null, highlight_color: null },
+            },
+            { inline_type: "icon", name: "Mail" },
+            {
+              inline_type: "text",
+              text: " 后",
+              marks: [],
+              href: null,
+              style: { color: null, font_size_pt: null, highlight_color: null },
+            },
+          ],
+        }],
+      }],
+    };
+
+    expect(resumeDocumentToMarkdown(document)).toBe(
+      "# 张三\n\n## :icon[Briefcase]: 工作经历\n\n**前**:icon[Mail]: 后",
+    );
   });
 
   it("keeps historical contact links in the same paragraph as typed contact fields", () => {
@@ -235,6 +286,77 @@ describe("resume semantic contract adapter", () => {
     expect(editorSettingsToStyle(settings, original).template_key).toBe(
       "classic-technical-cn",
     );
+  });
+
+  it("keeps presentation settings in the active template namespace", () => {
+    const template: TemplateDefinition = {
+      schema_version: "template-definition.v1" as const,
+      template_key: "classic-cn",
+      semantic_labels: {
+        profile: "个人简介", work: "工作经历", education: "教育经历", project: "项目经历", skills: "专业技能",
+        activity: "活动经历", interests: "兴趣爱好", certificates: "证书", awards: "奖项", languages: "语言能力",
+      },
+      regions: [{ region_id: "main", region_kind: "main" as const, order: 0 }],
+      slots: [{
+        slot_id: "all-content", region_id: "main", accepts: ["identity", "profile", "work", "education", "project", "skills", "activity", "interests", "certificates", "awards", "languages", "custom"],
+        universal_fallback: true, order: 0,
+      }],
+      tokens: { font_family: "Source Han Serif SC", font_size_pt: 10, line_height: 1.5, accent_color: "#2F4858", page_margin_mm: 14 },
+      avatar: { visibility: "show", fallback_asset: "system-default", size_px: 96, region_id: "main" },
+    };
+    const style: CanonicalResumePresentation = {
+      schema_version: "resume-presentation.v1" as const,
+      portable: {},
+      template_scoped: {
+        "classic-cn": { font_scale: 1.2, avatar_size_px: 120 },
+        "modern-cn": { font_scale: 0.9, avatar_size_px: 80 },
+      },
+      template_snapshot: template,
+    };
+    const settings = styleToEditorSettings(style);
+    expect(settings.fontSize).toBe(12);
+    expect(withResumePresentationAvatarSize(style, 136).template_scoped["classic-cn"]?.avatar_size_px).toBe(136);
+    const switchedBack = {
+      ...style,
+      template_snapshot: { ...template, template_key: "modern-cn" },
+    };
+    expect(styleToEditorSettings(switchedBack).fontSize).toBe(9);
+    expect(styleToEditorSettings({ ...switchedBack, template_snapshot: template }).fontSize).toBe(12);
+  });
+
+  it("preserves four-edge canonical margins until the matching editor control changes", () => {
+    const template: TemplateDefinition = {
+      schema_version: "template-definition.v1",
+      template_key: "civic-service-cn",
+      semantic_labels: {
+        profile: "个人简介", work: "工作经历", education: "教育经历", project: "项目经历", skills: "专业技能",
+        activity: "活动经历", interests: "兴趣爱好", certificates: "证书", awards: "奖项", languages: "语言能力",
+      },
+      regions: [{ region_id: "main", region_kind: "main", order: 0 }],
+      slots: [{
+        slot_id: "all-content", region_id: "main", accepts: ["identity", "profile", "work", "education", "project", "skills", "activity", "interests", "certificates", "awards", "languages", "custom"],
+        universal_fallback: true, order: 0,
+      }],
+      tokens: {
+        font_family: "Source Han Serif SC", font_size_pt: 10, line_height: 1.5, accent_color: "#2F4858",
+        page_margin_mm: 10, vertical_page_margin_mm: 0,
+        page_margin_top_mm: 0, page_margin_right_mm: 10, page_margin_bottom_mm: 8, page_margin_left_mm: 10,
+      },
+      avatar: { visibility: "show", fallback_asset: "system-default", size_px: 94, region_id: "main" },
+    };
+    const style: CanonicalResumePresentation = {
+      schema_version: "resume-presentation.v1",
+      portable: {},
+      template_scoped: { "civic-service-cn": {} },
+      template_snapshot: template,
+    };
+
+    expect(resumePresentationPageMargins(style)).toEqual({ top: 0, right: 10, bottom: 8, left: 10 });
+    const unchanged = editorSettingsToStyle(styleToEditorSettings(style), style);
+    expect(resumePresentationPageMargins(unchanged)).toEqual({ top: 0, right: 10, bottom: 8, left: 10 });
+
+    const changed = editorSettingsToStyle({ ...styleToEditorSettings(style), verticalPageMargin: 6 }, style);
+    expect(resumePresentationPageMargins(changed)).toEqual({ top: 6, right: 10, bottom: 6, left: 10 });
   });
 
   it.each([

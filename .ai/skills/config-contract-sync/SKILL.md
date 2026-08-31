@@ -21,7 +21,7 @@ description: 核对 LinkCV 中同一个具体契约值在代码、环境变量�
 
 只有同一个值确实分布在两个以上位置，或者 `check_runtime_contracts.py` 已报告漂移时才使用。单文件局部配置、不涉及消费方的实现常量和纯文档修改不触发。
 
-默认只诊断。用户要求修复时，把确认后的统一方案交回 `backend-delivery`，由当前 Sol 划定工作包并调度 Luna 使用 `implementation-execution`；不要在诊断请求中扩大修改授权。
+默认只诊断。用户要求修复时，把确认后的统一方案交回 `flow-router`，由当前 Sol 划定工作包并调度 Luna 使用 `implementation-execution`；不要在诊断请求中扩大修改授权。
 
 ## 3. 必读材料
 

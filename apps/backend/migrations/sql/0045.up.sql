@@ -1,77 +1,65 @@
--- Upgrade migration for 0045: make dataset uploads idempotent and recoverable.
--- New columns are added nullable so existing rows can be filled before the
--- NOT NULL and user-scoped uniqueness constraints are enforced.
+-- Up migration for 0045: restructure user profile fields.
+-- The paired Python revision performs the strict 0044 schema/data preflight
+-- and verifies the converted rows and final schema after these statements.
+ALTER TABLE user_profiles
+  ADD COLUMN candidate_cities JSON NULL COMMENT '可接受工作城市字符串数组',
+  ADD COLUMN employment_types JSON NULL COMMENT '可接受工作性质数组：full_time/part_time/internship/contract/temporary',
+  ADD COLUMN professional_directions JSON NULL COMMENT '职业方向字符串数组',
+  ADD COLUMN candidate_status VARCHAR(24) NULL COMMENT '候选人类型：fresh_graduate/experienced',
+  ADD COLUMN graduation_year SMALLINT UNSIGNED NULL COMMENT '应届生毕业年份，candidate_status=fresh_graduate 时必填';
 
-ALTER TABLE user_dataset
-  ADD COLUMN idempotency_key VARCHAR(64) NULL DEFAULT NULL
-    COMMENT '用户范围内上传幂等键' AFTER user_id,
-  ADD COLUMN request_fingerprint CHAR(64) NULL DEFAULT NULL
-    COMMENT '规范化文件名、检测格式、大小和 SHA-256 的请求指纹' AFTER idempotency_key;
+UPDATE user_profiles
+SET candidate_cities = CASE
+      WHEN work_city IS NULL OR TRIM(work_city) = '' THEN JSON_ARRAY()
+      ELSE JSON_ARRAY(TRIM(work_city))
+    END,
+    employment_types = CASE
+      WHEN employment_type IS NULL OR TRIM(employment_type) = '' THEN JSON_ARRAY()
+      ELSE JSON_ARRAY(TRIM(employment_type))
+    END,
+    professional_directions = COALESCE(target_positions, JSON_ARRAY()),
+    candidate_status = NULL,
+    graduation_year = NULL,
+    updated_at = updated_at;
 
-UPDATE user_dataset
-SET idempotency_key = COALESCE(idempotency_key, CONCAT('legacy-', id)),
-    request_fingerprint = COALESCE(request_fingerprint, sha256)
-WHERE idempotency_key IS NULL OR request_fingerprint IS NULL;
+ALTER TABLE user_profiles
+  MODIFY COLUMN candidate_cities JSON NOT NULL COMMENT '可接受工作城市字符串数组',
+  MODIFY COLUMN employment_types JSON NOT NULL COMMENT '可接受工作性质数组：full_time/part_time/internship/contract/temporary',
+  MODIFY COLUMN professional_directions JSON NOT NULL COMMENT '职业方向字符串数组';
 
-ALTER TABLE user_dataset
-  MODIFY COLUMN content_type VARCHAR(128) NOT NULL
-    COMMENT '服务端规范化内容类型',
-  MODIFY COLUMN idempotency_key VARCHAR(64) NOT NULL
-    COMMENT '用户范围内上传幂等键',
-  MODIFY COLUMN request_fingerprint CHAR(64) NOT NULL
-    COMMENT '规范化文件名、检测格式、大小和 SHA-256 的请求指纹',
-  ADD CONSTRAINT uk_user_dataset_user_idempotency
-    UNIQUE (user_id, idempotency_key);
-
-ALTER TABLE document_parse_tasks
-  DROP CHECK ck_document_parse_tasks_parse_status,
-  DROP CHECK ck_document_parse_tasks_lifecycle,
-  ADD COLUMN parse_attempt_count INT UNSIGNED NULL DEFAULT NULL
-    COMMENT '实际开始解析的累计次数，同时作为尝试版本' AFTER parse_duration_ms,
-  ADD COLUMN last_dispatched_at DATETIME(6) NULL DEFAULT NULL
-    COMMENT '最近一次确认消息发布的时间（UTC）' AFTER parse_attempt_count;
-
-UPDATE document_parse_tasks
-SET parse_attempt_count = 0
-WHERE parse_attempt_count IS NULL;
-
-ALTER TABLE document_parse_tasks
-  MODIFY COLUMN parse_attempt_count INT UNSIGNED NOT NULL DEFAULT 0
-    COMMENT '实际开始解析的累计次数，同时作为尝试版本',
-  MODIFY COLUMN parse_status VARCHAR(16) NULL DEFAULT NULL
-    COMMENT '解析状态：queued、processing、succeeded、failed',
-  ADD CONSTRAINT ck_document_parse_tasks_parse_status
-    CHECK (parse_status IS NULL OR parse_status IN ('queued', 'processing', 'succeeded', 'failed')),
-  ADD CONSTRAINT ck_document_parse_tasks_lifecycle CHECK (
-    (upload_status = 'uploading'
-      AND upload_duration_ms IS NULL
-      AND parse_status IS NULL
-      AND parse_duration_ms IS NULL)
-    OR
-    (upload_status = 'failed'
-      AND upload_duration_ms IS NOT NULL
-      AND parse_status IS NULL
-      AND parse_duration_ms IS NULL)
-    OR
-    (upload_status = 'succeeded'
-      AND upload_duration_ms IS NOT NULL
-      AND parse_status = 'queued'
-      AND parse_duration_ms IS NULL)
-    OR
-    (upload_status = 'succeeded'
-      AND upload_duration_ms IS NOT NULL
-      AND parse_status = 'processing'
-      AND parse_duration_ms IS NULL)
-    OR
-    (upload_status = 'succeeded'
-      AND upload_duration_ms IS NOT NULL
-      AND parse_status = 'failed'
-      AND parse_duration_ms IS NOT NULL)
-    OR
-    (upload_status = 'succeeded'
-      AND upload_duration_ms IS NOT NULL
-      AND parse_status = 'succeeded'
-      AND parse_duration_ms IS NOT NULL)
-  ),
-  ADD INDEX idx_document_parse_tasks_dispatch
-    (source_type, parse_status, last_dispatched_at, id);
+ALTER TABLE user_profiles
+  DROP CHECK ck_user_profiles_employment_type,
+  DROP CHECK ck_user_profiles_work_mode,
+  DROP CHECK ck_user_profiles_availability,
+  DROP CHECK ck_user_profiles_available_from_context,
+  DROP CHECK ck_user_profiles_target_positions_array,
+  DROP CHECK ck_user_profiles_exclusions_array,
+  DROP CHECK ck_user_profiles_target_companies_array,
+  DROP COLUMN work_city,
+  DROP COLUMN employment_type,
+  DROP COLUMN work_mode,
+  DROP COLUMN target_positions,
+  DROP COLUMN exclusions,
+  DROP COLUMN target_companies,
+  DROP COLUMN availability,
+  DROP COLUMN available_from,
+  DROP COLUMN birth_date,
+  ADD CONSTRAINT ck_user_profiles_candidate_cities_array
+    CHECK (LOWER(JSON_TYPE(candidate_cities)) = 'array'),
+  ADD CONSTRAINT ck_user_profiles_employment_types_array
+    CHECK (LOWER(JSON_TYPE(employment_types)) = 'array'),
+  ADD CONSTRAINT ck_user_profiles_professional_directions_array
+    CHECK (LOWER(JSON_TYPE(professional_directions)) = 'array'),
+  ADD CONSTRAINT ck_user_profiles_candidate_status
+    CHECK (candidate_status IS NULL OR candidate_status IN ('fresh_graduate', 'experienced')),
+  ADD CONSTRAINT ck_user_profiles_graduation_year
+    CHECK (graduation_year IS NULL OR graduation_year BETWEEN 1900 AND 9999),
+  ADD CONSTRAINT ck_user_profiles_candidate_experience_context
+    CHECK (
+      (candidate_status IS NULL AND graduation_year IS NULL)
+      OR (candidate_status IS NOT NULL AND candidate_status = 'fresh_graduate'
+          AND graduation_year IS NOT NULL AND years_experience IS NOT NULL
+          AND years_experience = 0)
+      OR (candidate_status IS NOT NULL AND candidate_status = 'experienced'
+          AND graduation_year IS NULL)
+    );

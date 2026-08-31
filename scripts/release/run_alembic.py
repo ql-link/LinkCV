@@ -60,6 +60,34 @@ REVISION_REMOVED_COLUMN_MARKERS = {
     },
 }
 
+# 0051 repairs a profile table that may have been stamped past the actual
+# 0045/0046 DDL.  Unlike ordinary removed-column markers, a complete target
+# profile schema is a valid pre-0051 state: the migration itself will validate
+# it and safely advance the revision without running DDL.
+USER_PROFILE_REVISION = "0051"
+USER_PROFILE_TARGET_COLUMNS = frozenset(
+    {
+        "candidate_cities",
+        "employment_types",
+        "candidate_status",
+        "graduation_year",
+    }
+)
+USER_PROFILE_LEGACY_COLUMNS = frozenset(
+    {
+        "work_city",
+        "employment_type",
+        "work_mode",
+        "target_positions",
+        "exclusions",
+        "target_companies",
+        "availability",
+        "available_from",
+        "birth_date",
+    }
+)
+USER_PROFILE_INTERMEDIATE_COLUMNS = frozenset({"professional_directions"})
+
 
 @dataclass(frozen=True)
 class ExpectedTarget:
@@ -117,6 +145,59 @@ def validate_schema_revision_alignment(
     inspector = inspect(connection)
     existing_tables = set(inspector.get_table_names())
     drift: list[str] = []
+
+    if (
+        USER_PROFILE_REVISION in applied
+        and "user_profiles" not in existing_tables
+    ):
+        drift.append("0051 missing table: user_profiles")
+    elif "0050" in applied and "user_profiles" not in existing_tables:
+        drift.append("0051 missing table before revision: user_profiles")
+    elif "user_profiles" in existing_tables:
+        profile_columns = {
+            str(column["name"])
+            for column in inspector.get_columns("user_profiles")
+        }
+        target_present = USER_PROFILE_TARGET_COLUMNS & profile_columns
+        legacy_present = USER_PROFILE_LEGACY_COLUMNS & profile_columns
+        intermediate_present = USER_PROFILE_INTERMEDIATE_COLUMNS & profile_columns
+        if USER_PROFILE_REVISION in applied:
+            missing_target = USER_PROFILE_TARGET_COLUMNS - profile_columns
+            legacy_remaining = USER_PROFILE_LEGACY_COLUMNS & profile_columns
+            if missing_target:
+                drift.append(
+                    "0051 missing columns on user_profiles: "
+                    + ", ".join(sorted(missing_target))
+                )
+            if legacy_remaining:
+                drift.append(
+                    "0051 removed columns still exist on user_profiles: "
+                    + ", ".join(sorted(legacy_remaining))
+                )
+            if intermediate_present:
+                drift.append(
+                    "0051 intermediate columns still exist on user_profiles: "
+                    + ", ".join(sorted(intermediate_present))
+                )
+        elif "0050" in applied and profile_columns:
+            # Before 0051, only a complete legacy schema or a complete final
+            # schema is a supported input.  The revision performs the deeper
+            # check (types and constraints); this guard only rejects an
+            # unmistakably partial/mixed marker before any later DDL.
+            has_complete_target_marker = (
+                target_present == USER_PROFILE_TARGET_COLUMNS
+                and not legacy_present
+                and not intermediate_present
+            )
+            has_complete_legacy_marker = (
+                legacy_present == USER_PROFILE_LEGACY_COLUMNS
+                and not target_present
+                and not intermediate_present
+            )
+            if not has_complete_target_marker and not has_complete_legacy_marker:
+                drift.append(
+                    "0051 user_profiles schema is partial or mixed before revision"
+                )
 
     for revision, marker_tables in REVISION_TABLE_MARKERS.items():
         present = marker_tables & existing_tables

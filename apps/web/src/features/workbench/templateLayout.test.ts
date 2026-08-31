@@ -5,12 +5,17 @@ import {
   editorDocumentToMarkdown,
   resumeDocumentFromMarkdown,
   resumeDocumentToMarkdown,
+  type CanonicalResumeDocument,
+  type LayoutPlan,
+  type TemplateDefinition,
 } from "../../api/resumeContract";
 import {
+  composeEditorDocumentForLayoutPlan,
   composeEditorDocumentForTemplate,
   composeResumeMarkdownForTemplate,
   stripTemplateProjectionFromEditorDocument,
 } from "./templateLayout";
+import { canonicalResumeDocumentToEditorDocument } from "./resumeEditorPersistence";
 
 const flowManifest = defaultSemanticStyle.manifest;
 const columnsManifest = {
@@ -306,3 +311,178 @@ describe("template manifest composer", () => {
     expect(stripTemplateProjectionFromEditorDocument(projected, resumeDocument)).toEqual(document);
   });
 });
+
+const canonicalLayoutDocument: CanonicalResumeDocument = {
+  schema_version: "canonical-resume.v1",
+  document_id: "node_aaaaaaaaaaaaaaaa",
+  identity: {
+    node_id: "node_bbbbbbbbbbbbbbbb",
+    name: { node_id: "node_cccccccccccccccc", value: "张三", source_refs: [] },
+    headline: null,
+    contacts: [],
+    avatar: null,
+  },
+  sections: [{
+    node_id: "node_dddddddddddddddd",
+    semantic_kind: "work",
+    title: { node_id: "node_eeeeeeeeeeeeeeee", value: "工作", source_refs: [] },
+    entries: [],
+    blocks: [{
+      node_id: "node_ffffffffffffffff",
+      block_type: "paragraph",
+      runs: [{
+        inline_type: "text",
+        text: "正文",
+        marks: [],
+        href: null,
+        style: { color: null, font_size_pt: null, highlight_color: null },
+      }],
+      source_refs: [],
+    }],
+    source_refs: [],
+  }],
+  source_dispositions: [],
+};
+
+const canonicalTemplate: TemplateDefinition = {
+  schema_version: "template-definition.v1",
+  template_key: "canonical-columns",
+  semantic_labels: {
+    profile: "个人简介",
+    work: "工作",
+    education: "教育",
+    project: "项目",
+    skills: "技能",
+    activity: "活动",
+    interests: "兴趣",
+    certificates: "证书",
+    awards: "奖项",
+    languages: "语言",
+  },
+  regions: [
+    { region_id: "sidebar", region_kind: "sidebar", order: 0 },
+    { region_id: "main", region_kind: "main", order: 1 },
+  ],
+  // accepts deliberately does not describe the mapping below. LayoutPlan is
+  // the only source of placement for the canonical path.
+  slots: [
+    { slot_id: "sidebar-only", region_id: "sidebar", accepts: ["work"], universal_fallback: false, order: 0 },
+    { slot_id: "main-fallback", region_id: "main", accepts: ["identity", "profile", "work", "education", "project", "skills", "activity", "interests", "certificates", "awards", "languages", "custom"], universal_fallback: true, order: 0 },
+  ],
+  tokens: { font_family: "Source Han Serif SC", font_size_pt: 10, line_height: 1.5, accent_color: "#2F4858", page_margin_mm: 14 },
+  avatar: { visibility: "show", fallback_asset: "system-default", size_px: 96, region_id: "sidebar" },
+};
+
+const canonicalLayoutPlan: LayoutPlan = {
+  schema_version: "layout-plan.v1",
+  content_sha256: "2222222222222222222222222222222222222222222222222222222222222222",
+  template_key: "canonical-columns",
+  regions: [
+    { region_id: "sidebar", order: 0, nodes: [{ node_id: "node_bbbbbbbbbbbbbbbb", semantic_kind: "identity", slot_id: "sidebar-only" }] },
+    { region_id: "main", order: 1, nodes: [{ node_id: "node_dddddddddddddddd", semantic_kind: "work", slot_id: "main-fallback" }] },
+  ],
+};
+
+describe("canonical LayoutPlan consumer", () => {
+  it("places canonical roots exactly as the backend plan says and ignores slot accepts", () => {
+    const source = canonicalLayoutDocumentToEditor();
+    const projected = composeEditorDocumentForLayoutPlan(source, canonicalLayoutDocument, canonicalLayoutPlan, canonicalTemplate);
+    const columns = projected.content?.find((node) => node.type === "resumeColumns");
+    expect(columns?.content?.[0].content?.map((node) => node.type)).toContain("heading");
+    expect(columns?.content?.[1].content?.map((node) => node.type)).toContain("heading");
+    expect(JSON.stringify(columns?.content?.[0])).toContain("张三");
+    expect(JSON.stringify(columns?.content?.[1])).toContain("正文");
+  });
+
+  it("accepts a layout-owned identity root when the template example has no visible identity content", () => {
+    const emptyIdentityDocument: CanonicalResumeDocument = {
+      ...canonicalLayoutDocument,
+      identity: {
+        ...canonicalLayoutDocument.identity,
+        name: null,
+        headline: null,
+        contacts: [],
+        avatar: null,
+      },
+    };
+    const source = canonicalLayoutDocumentToEditor();
+    source.content = source.content?.filter((node) => Number(node.attrs?.level) !== 1);
+
+    expect(() => composeEditorDocumentForLayoutPlan(
+      source,
+      emptyIdentityDocument,
+      canonicalLayoutPlan,
+      canonicalTemplate,
+    )).not.toThrow();
+  });
+
+  it("renders canonical system avatar fallback without persisting it or raw row markers", () => {
+    const source = canonicalResumeDocumentToEditorDocument(canonicalLayoutDocument);
+    const projected = composeEditorDocumentForLayoutPlan(
+      source,
+      canonicalLayoutDocument,
+      canonicalLayoutPlan,
+      canonicalTemplate,
+    );
+
+    expect(JSON.stringify(projected)).toContain("/templates/avatar-cat.jpg");
+    expect(JSON.stringify(projected)).toContain('"systemFallback":true');
+    expect(editorDocumentToMarkdown(projected)).not.toContain("avatar-cat.jpg");
+    expect(editorDocumentToMarkdown(source)).not.toContain(":::");
+  });
+
+  it("shows user avatar at the template size and preserves it when the template hides avatars", () => {
+    const userAvatarDocument: CanonicalResumeDocument = {
+      ...canonicalLayoutDocument,
+      identity: {
+        ...canonicalLayoutDocument.identity,
+        avatar: {
+          node_id: "node_avatar1111111111",
+          source_refs: ["src_avatar1111111111"],
+          media_kind: "avatar",
+          src: "/api/resumes/1/assets/avatar.png",
+          alt: "头像",
+          width: 80,
+          width_unit: "px",
+          height_px: 80,
+          align: "center",
+          system_fallback: false,
+        },
+      },
+    };
+    const source = canonicalResumeDocumentToEditorDocument(userAvatarDocument);
+    const shown = composeEditorDocumentForLayoutPlan(
+      source,
+      userAvatarDocument,
+      canonicalLayoutPlan,
+      canonicalTemplate,
+    );
+    const hiddenTemplate: TemplateDefinition = {
+      ...canonicalTemplate,
+      avatar: { visibility: "hide", fallback_asset: "none", size_px: 96, region_id: "sidebar" },
+    };
+    const hidden = composeEditorDocumentForLayoutPlan(
+      source,
+      userAvatarDocument,
+      canonicalLayoutPlan,
+      hiddenTemplate,
+    );
+
+    expect(JSON.stringify(shown)).toContain("/api/resumes/1/assets/avatar.png");
+    expect(JSON.stringify(shown)).toContain('"size":96');
+    expect(JSON.stringify(shown)).toContain('"systemFallback":false');
+    expect(JSON.stringify(hidden)).not.toContain("/api/resumes/1/assets/avatar.png");
+    expect(userAvatarDocument.identity.avatar?.src).toBe("/api/resumes/1/assets/avatar.png");
+  });
+});
+
+function canonicalLayoutDocumentToEditor() {
+  return {
+    type: "doc" as const,
+    content: [
+      { type: "heading" as const, attrs: { level: 1 }, content: [{ type: "resumeBlockAnchor" as const, attrs: { blockId: "node_bbbbbbbbbbbbbbbb" } }, { type: "text" as const, text: "张三" }] },
+      { type: "heading" as const, attrs: { level: 2 }, content: [{ type: "resumeBlockAnchor" as const, attrs: { blockId: "node_dddddddddddddddd", semanticKind: "work" } }, { type: "text" as const, text: "工作" }] },
+      { type: "paragraph" as const, content: [{ type: "resumeBlockAnchor" as const, attrs: { blockId: "node_ffffffffffffffff" } }, { type: "text" as const, text: "正文" }] },
+    ],
+  };
+}

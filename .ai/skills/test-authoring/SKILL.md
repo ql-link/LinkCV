@@ -13,7 +13,7 @@ description: 为 LinkCV 的 React/TypeScript 前端和 FastAPI/Python 后端设�
 
 - 仅运行现有测试或汇报仓库是否通过，此类请求转 `run-all-tests`；
 - 为让错误实现通过而降低断言或删除测试；
-- 在纯测试请求中顺带修改生产行为，发现生产缺陷时转 `flow-router`，再进入对应领域交付 Skill；
+- 在纯测试请求中顺带修改生产行为，发现后端生产缺陷时转唯一后端入口 `flow-router`；纯前端缺陷返回当前前端任务；
 - 编写或宣称已经具备自动化端到端测试。LinkCV 的跨端业务流程当前由人工验证。
 
 实现任务中的简单邻近测试可由 `implementation-execution` 直接补充；需要独立测试设计、复杂 Mock、分层调整或用户明确要求补测试时使用本技能。

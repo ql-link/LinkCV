@@ -1,62 +1,64 @@
--- Up migration for 0047: simplify user profile preferences.
--- The temporary table gives JSON_ARRAYAGG a deterministic order through its
--- window frame while retaining only the first occurrence of each accepted
--- employment type. Unsupported values are intentionally discarded.
-CREATE TEMPORARY TABLE user_profile_employment_types_0047 (
-  profile_id BIGINT UNSIGNED NOT NULL,
-  employment_types JSON NOT NULL,
-  PRIMARY KEY (profile_id)
-) ENGINE=InnoDB;
+-- Upgrade migration for 0047: bind current and historical resume snapshots to existing templates.
+-- The revision preflight resolves all rows before these DDL statements run.
 
-INSERT INTO user_profile_employment_types_0047 (profile_id, employment_types)
-SELECT profile_id, normalized_employment_types
-FROM (
-  SELECT
-    profile_id,
-    JSON_ARRAYAGG(employment_type_value) OVER (
-      PARTITION BY profile_id
-      ORDER BY first_position
-      ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-    ) AS normalized_employment_types,
-    ROW_NUMBER() OVER (
-      PARTITION BY profile_id
-      ORDER BY first_position DESC
-    ) AS row_number_in_profile
-  FROM (
-    SELECT
-      profiles.id AS profile_id,
-      parsed.employment_type_value,
-      MIN(parsed.element_position) AS first_position
-    FROM user_profiles AS profiles
-    CROSS JOIN JSON_TABLE(
-      profiles.employment_types,
-      '$[*]' COLUMNS (
-        element_position FOR ORDINALITY,
-        employment_type_value VARCHAR(24) PATH '$'
-      )
-    ) AS parsed
-    WHERE parsed.employment_type_value IN ('internship', 'full_time')
-    GROUP BY profiles.id, parsed.employment_type_value
-  ) AS deduplicated
-) AS ordered
-WHERE row_number_in_profile = 1;
+ALTER TABLE resume_versions
+  ADD COLUMN template_id BIGINT UNSIGNED NULL
+    COMMENT '版本使用的模板身份' AFTER resume_id;
 
-INSERT IGNORE INTO user_profile_employment_types_0047 (
-  profile_id,
-  employment_types
-)
-SELECT id, JSON_ARRAY()
-FROM user_profiles;
+ALTER TABLE document_parse_tasks
+  ADD COLUMN selected_template_id BIGINT UNSIGNED NULL
+    COMMENT '简历导入冻结模板；Dataset 任务为空' AFTER object_name,
+  ADD COLUMN source_graph_object_name VARCHAR(512) NULL
+    COMMENT '私有 SourceGraph 对象键' AFTER selected_template_id;
 
-UPDATE user_profiles AS profiles
-JOIN user_profile_employment_types_0047 AS normalized
-  ON normalized.profile_id = profiles.id
-SET profiles.employment_types = normalized.employment_types;
+UPDATE resumes AS r
+INNER JOIN resume_templates AS t
+  ON t.`key` = COALESCE(
+    JSON_UNQUOTE(JSON_EXTRACT(r.style_json, '$.template_snapshot.template_key')),
+    JSON_UNQUOTE(JSON_EXTRACT(r.style_json, '$.template_key'))
+  )
+SET r.template_id = t.id
+WHERE r.template_id IS NULL;
 
-ALTER TABLE user_profiles
-  MODIFY COLUMN employment_types JSON NOT NULL
-    COMMENT '可接受工作性质数组：internship/full_time',
-  DROP CHECK ck_user_profiles_professional_directions_array,
-  DROP COLUMN professional_directions;
+UPDATE resume_versions AS v
+INNER JOIN resume_templates AS t
+  ON t.`key` = COALESCE(
+    JSON_UNQUOTE(JSON_EXTRACT(v.style_json, '$.template_snapshot.template_key')),
+    JSON_UNQUOTE(JSON_EXTRACT(v.style_json, '$.template_key'))
+  )
+SET v.template_id = t.id
+WHERE v.template_id IS NULL;
 
-DROP TEMPORARY TABLE user_profile_employment_types_0047;
+UPDATE document_parse_tasks AS d
+INNER JOIN resumes AS r ON r.parse_task_id = d.id
+SET d.selected_template_id = r.template_id
+WHERE d.source_type = 'resume_import'
+  AND d.parse_status = 'succeeded'
+  AND d.selected_template_id IS NULL;
+
+ALTER TABLE resumes
+  DROP FOREIGN KEY fk_resumes_template;
+
+ALTER TABLE resumes
+  MODIFY COLUMN template_id BIGINT UNSIGNED NOT NULL
+    COMMENT '当前绑定模板';
+
+-- MySQL resolves foreign-key names before applying a compound ALTER.  Reusing
+-- the old name in the same statement as DROP therefore raises error 1826.
+-- Keep the reviewed name, but recreate it in a separate statement.
+ALTER TABLE resumes
+  ADD CONSTRAINT fk_resumes_template FOREIGN KEY (template_id)
+    REFERENCES resume_templates (id) ON DELETE RESTRICT;
+
+ALTER TABLE resume_versions
+  MODIFY COLUMN template_id BIGINT UNSIGNED NOT NULL
+    COMMENT '版本使用的模板身份',
+  ADD CONSTRAINT fk_resume_versions_template FOREIGN KEY (template_id)
+    REFERENCES resume_templates (id) ON DELETE RESTRICT,
+  ADD KEY idx_resume_versions_template_id (template_id);
+
+ALTER TABLE document_parse_tasks
+  ADD CONSTRAINT fk_document_parse_tasks_selected_template
+    FOREIGN KEY (selected_template_id)
+    REFERENCES resume_templates (id) ON DELETE RESTRICT,
+  ADD KEY idx_document_parse_tasks_selected_template (selected_template_id);

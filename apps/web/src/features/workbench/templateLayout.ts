@@ -1,9 +1,17 @@
 import type { JSONContent } from "@tiptap/core";
 import type {
+  CanonicalContentBlock,
+  CanonicalResumeDocument,
+  LayoutPlan,
   ResumeDocument,
+  ResumeDocumentRead,
+  TemplateDefinition,
   TemplateManifest,
 } from "../../api/resumeContract";
 import {
+  editorDocumentToMarkdown,
+  isCanonicalLayoutPlan,
+  isCanonicalResumeDocument,
   resumeDocumentToMarkdown,
   stripTemplatePageRegions,
 } from "../../api/resumeContract";
@@ -11,7 +19,14 @@ import {
 type SemanticKind = ResumeDocument["semantic_sections"][number]["semantic_kind"];
 type TemplateSlot = TemplateManifest["slots"][number];
 
-const SYSTEM_DEFAULT_AVATAR = "/templates/avatar-cat.jpg";
+type CanonicalProjectionNode = {
+  node: JSONContent;
+  nodeId: string | null;
+  parentId: string;
+  order: number;
+};
+
+export const SYSTEM_DEFAULT_AVATAR = "/templates/avatar-cat.jpg";
 
 function blockAnchorIds(node: JSONContent): string[] {
   const own = node.type === "resumeBlockAnchor" && typeof node.attrs?.blockId === "string"
@@ -83,6 +98,11 @@ function nodeText(node: JSONContent): string {
   return (node.content ?? []).map(nodeText).join("");
 }
 
+function containsUserAvatar(node: JSONContent): boolean {
+  if (node.type === "avatarImage" && node.attrs?.systemFallback !== true) return true;
+  return (node.content ?? []).some(containsUserAvatar);
+}
+
 type ContentBlock = {
   kind: SemanticKind | "basics";
   semanticOrder: number;
@@ -99,7 +119,7 @@ function headingSemanticKind(node: JSONContent): SemanticKind | null {
   return typeof value === "string" ? value as SemanticKind : null;
 }
 
-function semanticMetadata(document: ResumeDocument) {
+function legacySemanticMetadata(document: ResumeDocument) {
   const byId = new Map<string, { kind: SemanticKind; order: number }>();
   const byTitle = new Map<string, { kind: SemanticKind; order: number }>();
   document.semantic_sections.forEach((section, index) => {
@@ -116,7 +136,7 @@ function editorBlocks(
   document: ResumeDocument,
   restoreSemanticOrder: boolean,
 ): ContentBlock[] {
-  const metadata = semanticMetadata(document);
+  const metadata = legacySemanticMetadata(document);
   const blocks: ContentBlock[] = [];
   const basicsOrder = document.semantic_sections.findIndex(
     (section) => section.semantic_kind === "basics",
@@ -162,7 +182,7 @@ function editorBlocks(
     : blocks;
 }
 
-function targetSlot(block: ContentBlock, slots: TemplateSlot[]) {
+function legacyTargetSlot(block: ContentBlock, slots: TemplateSlot[]) {
   const explicit = slots.find((slot) => !slot.fallback && slot.accepts.includes(block.kind));
   return explicit ?? slots.find((slot) => slot.fallback);
 }
@@ -173,7 +193,7 @@ type MarkdownBlock = {
 };
 
 function markdownBlocks(markdown: string, document: ResumeDocument): MarkdownBlock[] {
-  const metadata = semanticMetadata(document);
+  const metadata = legacySemanticMetadata(document);
   const lines = markdown.split("\n");
   const blocks: MarkdownBlock[] = [];
   let start = 0;
@@ -203,6 +223,254 @@ function markdownBlocks(markdown: string, document: ResumeDocument): MarkdownBlo
   return blocks;
 }
 
+function flattenCanonicalProjection(nodes: JSONContent[]): JSONContent[] {
+  return nodes.flatMap((node) => {
+    if (node.type === "resumeColumns" || node.type === "resumeColumn") {
+      return flattenCanonicalProjection(node.content ?? []);
+    }
+    return [node];
+  });
+}
+
+function canonicalNodeId(node: JSONContent): string | null {
+  const blockId = blockAnchorIds(node)[0];
+  if (typeof blockId === "string") return blockId;
+  const mediaId = node.attrs?.nodeId;
+  return typeof mediaId === "string" ? mediaId : null;
+}
+
+function canonicalNodeOrder(document: CanonicalResumeDocument) {
+  const order = new Map<string, number>();
+  let cursor = 0;
+  const visitBlock = (block: CanonicalContentBlock) => {
+    order.set(block.node_id, cursor++);
+    if (block.block_type === "ordered_list" || block.block_type === "bullet_list") {
+      for (const item of block.items) order.set(item.node_id, cursor++);
+    }
+    if (block.block_type === "row") {
+      for (const cell of block.cells) {
+        order.set(cell.node_id, cursor++);
+        for (const cellBlock of cell.blocks) visitBlock(cellBlock);
+      }
+    }
+  };
+  order.set(document.identity.node_id, cursor++);
+  if (document.identity.name) order.set(document.identity.name.node_id, cursor++);
+  if (document.identity.headline) order.set(document.identity.headline.node_id, cursor++);
+  for (const contact of document.identity.contacts) order.set(contact.node_id, cursor++);
+  if (document.identity.avatar) order.set(document.identity.avatar.node_id, cursor++);
+  for (const section of document.sections) {
+    order.set(section.node_id, cursor++);
+    if (section.title) order.set(section.title.node_id, cursor++);
+    for (const entry of section.entries) {
+      order.set(entry.node_id, cursor++);
+      for (const value of Object.values(entry.fields)) if (value) order.set(value.node_id, cursor++);
+      for (const block of entry.blocks) visitBlock(block);
+    }
+    for (const block of section.blocks) visitBlock(block);
+  }
+  return order;
+}
+
+function canonicalProjectionGroups(
+  content: JSONContent[],
+  document: CanonicalResumeDocument,
+): CanonicalProjectionNode[] {
+  const parentById = new Map<string, string>();
+  const order = canonicalNodeOrder(document);
+  const sectionIds = new Set(document.sections.map((section) => section.node_id));
+  const mapBlockToParent = (block: CanonicalContentBlock, parentId: string) => {
+    parentById.set(block.node_id, parentId);
+    if (block.block_type === "ordered_list" || block.block_type === "bullet_list") {
+      for (const item of block.items) parentById.set(item.node_id, parentId);
+    }
+    if (block.block_type === "row") {
+      for (const cell of block.cells) {
+        parentById.set(cell.node_id, parentId);
+        for (const cellBlock of cell.blocks) mapBlockToParent(cellBlock, parentId);
+      }
+    }
+  };
+  for (const section of document.sections) {
+    for (const entry of section.entries) {
+      parentById.set(entry.node_id, section.node_id);
+      for (const block of entry.blocks) {
+        mapBlockToParent(block, section.node_id);
+      }
+    }
+    for (const block of section.blocks) {
+      mapBlockToParent(block, section.node_id);
+    }
+  }
+  let currentParent = document.identity.node_id;
+  return flattenCanonicalProjection(content).map((node, index) => {
+    const nodeId = canonicalNodeId(node);
+    if (node.type === "heading" && Number(node.attrs?.level) === 2 && nodeId && sectionIds.has(nodeId)) {
+      currentParent = nodeId;
+    }
+    const parentId = nodeId && sectionIds.has(nodeId)
+      ? nodeId
+      : nodeId && parentById.get(nodeId)
+        ? parentById.get(nodeId) as string
+        : currentParent;
+    return { node, nodeId, parentId, order: order.get(nodeId ?? "") ?? Number.MAX_SAFE_INTEGER - content.length + index };
+  });
+}
+
+function assertCanonicalPlanCoverage(
+  plan: LayoutPlan,
+  document: CanonicalResumeDocument,
+  groups: CanonicalProjectionNode[],
+) {
+  const expected = [document.identity.node_id, ...document.sections.map((section) => section.node_id)];
+  const assigned = plan.regions.flatMap((region) => region.nodes.map((node) => node.node_id));
+  if (assigned.length !== new Set(assigned).size || expected.some((id) => assigned.filter((candidate) => candidate === id).length !== 1)) {
+    throw new Error("LAYOUT_PLAN_COVERAGE_INVALID");
+  }
+  const identityHasVisibleContent = Boolean(
+    document.identity.name
+    || document.identity.headline
+    || document.identity.contacts.length
+    || (document.identity.avatar && !document.identity.avatar.system_fallback),
+  );
+  const visibleRoots = identityHasVisibleContent
+    ? expected
+    : document.sections.map((section) => section.node_id);
+  for (const id of visibleRoots) {
+    if (!groups.some((group) => group.parentId === id)) throw new Error("RESUME_CONTENT_COMPOSITION_INVALID");
+  }
+}
+
+function canonicalRegionContent(
+  editorDocument: JSONContent,
+  document: CanonicalResumeDocument,
+  plan: LayoutPlan,
+  template: TemplateDefinition,
+) {
+  const groups = canonicalProjectionGroups(editorDocument.content ?? [], document);
+  assertCanonicalPlanCoverage(plan, document, groups);
+  const regionContent = new Map(plan.regions.map((region) => [region.region_id, [] as JSONContent[]]));
+  const nodeToRegion = new Map<string, string>();
+  for (const region of plan.regions) {
+    for (const node of region.nodes) nodeToRegion.set(node.node_id, region.region_id);
+  }
+  for (const group of groups) {
+    if (group.node.type === "avatarImage") {
+      if (template.avatar.visibility === "hide" || group.node.attrs?.systemFallback === true) continue;
+      const avatarRegion = regionContent.get(template.avatar.region_id);
+      if (!avatarRegion) throw new Error("TEMPLATE_AVATAR_REGION_INVALID");
+      avatarRegion.push({
+        ...group.node,
+        attrs: { ...group.node.attrs, size: template.avatar.size_px, systemFallback: false },
+      });
+      continue;
+    }
+    const regionId = nodeToRegion.get(group.parentId);
+    if (!regionId) throw new Error("LAYOUT_PLAN_COVERAGE_INVALID");
+    regionContent.get(regionId)?.push(group.node);
+  }
+  for (const [regionId, nodes] of regionContent) {
+    const sorted = nodes.map((node, index) => ({ node, index, order: canonicalNodeOrder(document).get(canonicalNodeId(node) ?? "") ?? Number.MAX_SAFE_INTEGER }))
+      .sort((left, right) => left.order - right.order || left.index - right.index)
+      .map(({ node }) => node);
+    regionContent.set(regionId, sorted);
+  }
+  return regionContent;
+}
+
+/**
+ * Consume the backend LayoutPlan.  The Web client only maps an already chosen
+ * canonical node to its region; it never evaluates slot `accepts` or chooses a
+ * fallback slot.
+ */
+export function composeEditorDocumentForLayoutPlan(
+  editorDocument: JSONContent,
+  document: CanonicalResumeDocument,
+  plan: LayoutPlan,
+  template: TemplateDefinition,
+): JSONContent {
+  if (!isCanonicalLayoutPlan(plan) || plan.template_key !== template.template_key) {
+    throw new Error("LAYOUT_PLAN_TEMPLATE_MISMATCH");
+  }
+  const regions = [...template.regions].sort((left, right) => left.order - right.order);
+  const regionContent = canonicalRegionContent(editorDocument, document, plan, template);
+  const hasUserAvatar = (editorDocument.content ?? []).some(containsUserAvatar);
+  if (
+    template.avatar.visibility === "show"
+    && !hasUserAvatar
+    && template.avatar.fallback_asset === "system-default"
+  ) {
+    const avatarRegion = regionContent.get(template.avatar.region_id);
+    if (!avatarRegion) throw new Error("TEMPLATE_AVATAR_REGION_INVALID");
+    avatarRegion.unshift(avatarNode(SYSTEM_DEFAULT_AVATAR, template.avatar.size_px, true));
+  }
+  const sourceIds = blockAnchorIds(editorDocument);
+  if (template.regions.some((region) => region.region_kind === "sidebar")) {
+    const sidebar = regions.filter((region) => region.region_kind === "sidebar");
+    const main = regions.filter((region) => region.region_kind === "main");
+    if (sidebar.length !== 1 || main.length !== 1) throw new Error("LAYOUT_PLAN_COLUMNS_INVALID");
+    const header = regions.filter((region) => region.region_kind === "header").flatMap((region) => regionContent.get(region.region_id) ?? []);
+    const footer = regions.filter((region) => region.region_kind === "footer").flatMap((region) => regionContent.get(region.region_id) ?? []);
+    const result = {
+      type: "doc",
+      content: [
+        ...header,
+        {
+          type: "resumeColumns",
+          content: [
+            resumeColumn("sidebar", regionContent.get(sidebar[0].region_id) ?? []),
+            resumeColumn("main", regionContent.get(main[0].region_id) ?? []),
+          ],
+        },
+        ...footer,
+      ],
+    } satisfies JSONContent;
+    assertExactlyOnceContentIds(sourceIds, result);
+    return result;
+  }
+  const result = {
+    type: "doc",
+    content: regions.flatMap((region) => regionContent.get(region.region_id) ?? []),
+  } satisfies JSONContent;
+  assertExactlyOnceContentIds(sourceIds, result);
+  return result;
+}
+
+export function composeResumeMarkdownForLayoutPlan(
+  editorDocument: JSONContent,
+  document: CanonicalResumeDocument,
+  plan: LayoutPlan,
+  template: TemplateDefinition,
+) {
+  return editorDocumentToMarkdown(composeEditorDocumentForLayoutPlan(editorDocument, document, plan, template));
+}
+
+function stripCanonicalProjectionFromEditorDocument(
+  editorDocument: JSONContent,
+  document: CanonicalResumeDocument,
+) {
+  const sourceIds = blockAnchorIds(editorDocument);
+  const flattened = flattenCanonicalProjection(editorDocument.content ?? [])
+    .filter((node) => !(node.type === "avatarImage" && node.attrs?.systemFallback === true));
+  const groups = canonicalProjectionGroups(flattened, document);
+  const sectionOrder = new Map<string, number>([
+    [document.identity.node_id, -1],
+    ...document.sections.map((section, index) => [section.node_id, index] as const),
+  ]);
+  const result = {
+    ...editorDocument,
+    content: groups
+      .map((group, index) => ({ group, index }))
+      .sort((left, right) => (sectionOrder.get(left.group.parentId) ?? Number.MAX_SAFE_INTEGER)
+        - (sectionOrder.get(right.group.parentId) ?? Number.MAX_SAFE_INTEGER)
+        || left.group.order - right.group.order
+        || left.index - right.index)
+      .map(({ group }) => group.node),
+  };
+  assertExactlyOnceContentIds(sourceIds, result);
+  return result;
+}
+
 /**
  * Removes presentation-owned page regions from an editor tree. The returned
  * document is safe to persist: semantic blocks are restored to their content
@@ -211,9 +479,12 @@ function markdownBlocks(markdown: string, document: ResumeDocument): MarkdownBlo
  */
 export function stripTemplateProjectionFromEditorDocument(
   editorDocument: JSONContent,
-  resumeDocument: ResumeDocument,
+  resumeDocument: ResumeDocumentRead,
 ): JSONContent {
   if (editorDocument.type !== "doc") return editorDocument;
+  if (isCanonicalResumeDocument(resumeDocument)) {
+    return stripCanonicalProjectionFromEditorDocument(editorDocument, resumeDocument);
+  }
   const sourceIds = blockAnchorIds(editorDocument);
   const sourceContent = editorDocument.content ?? [];
   const columnGroups = sourceContent.filter((node) => node.type === "resumeColumns");
@@ -248,7 +519,11 @@ export function stripTemplateProjectionFromEditorDocument(
   return result;
 }
 
-/** Shared manifest projection for preview, share and PDF rendering. */
+/**
+ * Legacy read-only adapter for snapshots produced before canonical cutover.
+ * Canonical renderers must call compose*ForLayoutPlan below; this path is not
+ * a write dependency and is intentionally kept isolated during migration.
+ */
 export function composeResumeMarkdownForTemplate(
   document: ResumeDocument,
   manifest: TemplateManifest,
@@ -269,7 +544,7 @@ export function composeResumeMarkdownForTemplate(
     );
   }
   for (const block of markdownBlocks(source, document)) {
-    const slot = targetSlot({ kind: block.kind, semanticOrder: 0, nodes: [] }, slots);
+    const slot = legacyTargetSlot({ kind: block.kind, semanticOrder: 0, nodes: [] }, slots);
     if (!slot) throw new Error("TEMPLATE_MANIFEST_FALLBACK_MISSING");
     projected.get(slot.region_id)?.push(block.markdown);
   }
@@ -321,7 +596,7 @@ function visibleAvatar(
     : null;
 }
 
-/** Projects editor content into a manifest without consulting template keys. */
+/** Legacy read-only manifest adapter; canonical content never enters this path. */
 export function composeEditorDocumentForTemplate(
   editorDocument: JSONContent,
   manifest: TemplateManifest,
@@ -356,7 +631,7 @@ export function composeEditorDocumentForTemplate(
     throw new Error("RESUME_CONTENT_ID_DUPLICATED");
   }
   for (const block of blocks) {
-    const slot = targetSlot(block, slots);
+    const slot = legacyTargetSlot(block, slots);
     if (!slot) throw new Error("TEMPLATE_MANIFEST_FALLBACK_MISSING");
     regionContent.get(slot.region_id)?.push(...block.nodes);
   }

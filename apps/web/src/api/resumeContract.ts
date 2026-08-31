@@ -1,5 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import { inlineIconMarkdown, isInlineIconName } from "../lib/resumeInlineIcon";
+import type { InlineIconName } from "../lib/resumeInlineIcon";
 import { isResumeEmailLink } from "../lib/resumeLink";
 import { inlineFontSizeOpenMarker, INLINE_FONT_SIZE_CLOSE_MARKER, normalizeInlineFontSize } from "../lib/resumeInlineStyle";
 
@@ -26,7 +27,12 @@ export type ResumeBasics = {
   links: Array<{ id: string; label: string; url: string }>;
 };
 
-export type ResumeDocument = {
+/**
+ * The pre-canonical snapshot shape is kept as a read adapter for data that can
+ * still be returned while the maintenance-window cutover is in progress. It
+ * must never be sent for a new write.
+ */
+export type LegacyResumeDocument = {
   basics: ResumeBasics;
   sections: {
     work_experiences: Array<Record<string, unknown> & { id: string }>;
@@ -103,25 +109,6 @@ export function stripTemplatePageRegions(markdown: string) {
   }).join("\n");
 }
 
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (value !== null && typeof value === "object") {
-    return `{${Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
-export async function resumeDocumentContentHash(document: ResumeDocument) {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(stableJson(document)),
-  );
-  return `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
-}
-
 export type TemplateManifest = {
   renderer_key: "flow" | "columns";
   regions: Array<{
@@ -158,7 +145,7 @@ export type TemplateManifest = {
   };
 };
 
-export type ResumePresentation = {
+export type LegacyResumePresentation = {
   template_key: string;
   font_family: string;
   font_size: number;
@@ -176,6 +163,403 @@ export type ResumePresentation = {
   manifest: TemplateManifest;
 };
 
+export type CanonicalNodeId = string;
+export type CanonicalSourceId = string;
+
+export type CanonicalSourceReferenced = {
+  node_id: CanonicalNodeId;
+  source_refs: CanonicalSourceId[];
+};
+
+export type CanonicalTextValue = CanonicalSourceReferenced & {
+  value: string;
+};
+
+export type CanonicalContact = CanonicalSourceReferenced & {
+  contact_kind: "phone" | "email" | "website" | "location" | "github" | "linkedin" | "other";
+  value: string;
+  label?: string | null;
+};
+
+export type CanonicalInlineStyle = {
+  color: string | null;
+  font_size_pt: number | null;
+  highlight_color: string | null;
+};
+
+export type CanonicalTextRun = {
+  inline_type: "text";
+  text: string;
+  marks: Array<"bold" | "italic" | "underline" | "strike" | "code">;
+  href: string | null;
+  style: CanonicalInlineStyle;
+};
+
+export type CanonicalInlineIcon = {
+  inline_type: "icon";
+  name: InlineIconName;
+};
+
+export type CanonicalMediaReference = CanonicalSourceReferenced & {
+  media_kind: "avatar" | "resume_image" | "inline_image";
+  src: string;
+  alt: string | null;
+  width: number | null;
+  width_unit: "px" | "%" | null;
+  height_px: number | null;
+  align: "left" | "center" | "right" | "full" | null;
+  system_fallback: boolean;
+};
+
+export type CanonicalInlineMedia = CanonicalMediaReference & {
+  inline_type: "media";
+  media_kind: "inline_image";
+};
+
+export type CanonicalParagraphBlock = CanonicalSourceReferenced & {
+  block_type: "paragraph";
+  runs: Array<CanonicalTextRun | CanonicalInlineIcon | CanonicalInlineMedia>;
+};
+
+export type CanonicalListItem = CanonicalSourceReferenced & {
+  runs: Array<CanonicalTextRun | CanonicalInlineIcon | CanonicalInlineMedia>;
+};
+
+export type CanonicalListBlock = {
+  node_id: CanonicalNodeId;
+  block_type: "ordered_list" | "bullet_list";
+  start: number | null;
+  items: CanonicalListItem[];
+};
+
+export type CanonicalMediaBlock = CanonicalMediaReference & {
+  block_type: "media";
+  media_kind: "resume_image";
+  height_px: null;
+  system_fallback: false;
+};
+
+export type CanonicalRowCell = CanonicalSourceReferenced & {
+  // v1 row cells are projected to one direct TipTap paragraph.  Keep the
+  // runtime type as an array for ergonomic JSON construction; the shared
+  // schema and backend enforce minItems=maxItems=1 and paragraph-only items.
+  blocks: CanonicalParagraphBlock[];
+};
+
+export type CanonicalRowBlock = CanonicalSourceReferenced & {
+  block_type: "row";
+  row_kind: "pair" | "meta" | "trio";
+  cells: CanonicalRowCell[];
+  left_width_percent: number | null;
+};
+
+export type CanonicalContentBlock =
+  | CanonicalParagraphBlock
+  | CanonicalListBlock
+  | CanonicalMediaBlock
+  | CanonicalRowBlock;
+
+export type CanonicalEntryFields = Partial<Record<
+  "name" | "organization" | "role" | "location" | "start_date" | "end_date" | "url" | "degree" | "major",
+  CanonicalTextValue | null
+>>;
+
+export type CanonicalResumeEntry = CanonicalSourceReferenced & {
+  fields: CanonicalEntryFields;
+  blocks: CanonicalContentBlock[];
+};
+
+export type CanonicalResumeSection = CanonicalSourceReferenced & {
+  semantic_kind: "profile" | "work" | "education" | "project" | "skills" | "activity" | "interests" | "certificates" | "awards" | "languages" | "custom";
+  title: CanonicalTextValue | null;
+  /** Optional for canonical rows written before structured title icons. */
+  title_icon?: CanonicalInlineIcon | null;
+  entries: CanonicalResumeEntry[];
+  blocks: CanonicalContentBlock[];
+};
+
+export type CanonicalSourceDisposition = {
+  source_id: CanonicalSourceId;
+  outcome: "mapped" | "transformed" | "dropped";
+  target_node_ids: CanonicalNodeId[];
+  reason_code: string | null;
+};
+
+export type CanonicalResumeIdentity = {
+  node_id: CanonicalNodeId;
+  name: CanonicalTextValue | null;
+  headline: CanonicalTextValue | null;
+  contacts: CanonicalContact[];
+  avatar: (CanonicalMediaReference & { media_kind: "avatar" }) | null;
+};
+
+/** CanonicalResumeDocument v1 from contracts/resume/canonical-resume.schema.json. */
+export type CanonicalResumeDocument = {
+  schema_version: "canonical-resume.v1";
+  document_id: CanonicalNodeId;
+  identity: CanonicalResumeIdentity;
+  sections: CanonicalResumeSection[];
+  source_dispositions: CanonicalSourceDisposition[];
+};
+
+export type TemplateDefinition = {
+  schema_version: "template-definition.v1";
+  template_key: string;
+  semantic_labels: {
+    profile: string;
+    work: string;
+    education: string;
+    project: string;
+    skills: string;
+    activity: string;
+    interests: string;
+    certificates: string;
+    awards: string;
+    languages: string;
+  };
+  regions: Array<{
+    region_id: string;
+    region_kind: "header" | "sidebar" | "main" | "footer";
+    order: number;
+  }>;
+  slots: Array<{
+    slot_id: string;
+    region_id: string;
+    accepts: Array<"identity" | "profile" | "work" | "education" | "project" | "skills" | "activity" | "interests" | "certificates" | "awards" | "languages" | "custom">;
+    universal_fallback: boolean;
+    order: number;
+  }>;
+  tokens: {
+    font_family: string;
+    font_size_pt: number;
+    line_height: number;
+    accent_color: string;
+    page_margin_mm: number;
+    vertical_page_margin_mm?: number | null;
+    page_margin_top_mm?: number | null;
+    page_margin_right_mm?: number | null;
+    page_margin_bottom_mm?: number | null;
+    page_margin_left_mm?: number | null;
+  };
+  avatar: {
+    visibility: "show" | "hide";
+    fallback_asset: "system-default" | "none";
+    size_px: number;
+    region_id: string;
+  };
+};
+
+export type PresentationSettings = {
+  smart_one_page?: boolean;
+  font_scale?: number | null;
+  line_height?: number | null;
+  accent_color?: string | null;
+  page_margin_mm?: number | null;
+  vertical_page_margin_mm?: number | null;
+  page_margin_top_mm?: number | null;
+  page_margin_right_mm?: number | null;
+  page_margin_bottom_mm?: number | null;
+  page_margin_left_mm?: number | null;
+  avatar_size_px?: number | null;
+  sidebar_width_percent?: number | null;
+};
+
+/** ResumePresentation v1. Values are intentionally opaque to the editor. */
+export type CanonicalResumePresentation = {
+  schema_version: "resume-presentation.v1";
+  portable: PresentationSettings;
+  template_scoped: Record<string, PresentationSettings>;
+  template_snapshot: TemplateDefinition;
+};
+
+export type LayoutPlan = {
+  schema_version: "layout-plan.v1";
+  /** Backend-owned canonical digest. The Web client must not reproduce it. */
+  content_sha256: string;
+  template_key: string;
+  regions: Array<{
+    region_id: string;
+    order: number;
+    nodes: Array<{
+      node_id: CanonicalNodeId;
+      semantic_kind: "identity" | "profile" | "work" | "education" | "project" | "skills" | "activity" | "interests" | "certificates" | "awards" | "languages" | "custom";
+      slot_id: string;
+    }>;
+  }>;
+};
+
+/**
+ * Keep the historical aliases source-compatible for the migration window.
+ * API/store boundaries use the payload unions below so canonical responses can
+ * flow through the Web without making every legacy editor helper unsafe.
+ */
+export type ResumeDocument = LegacyResumeDocument;
+/** Internal conversion helper input; runtime API DTOs are canonical-only. */
+export type ResumeDocumentRead = CanonicalResumeDocument | LegacyResumeDocument;
+export type ResumePresentation = LegacyResumePresentation;
+/** Internal conversion helper input; runtime API DTOs are canonical-only. */
+export type ResumePresentationRead = CanonicalResumePresentation | LegacyResumePresentation;
+
+export function isCanonicalResumeDocument(value: unknown): value is CanonicalResumeDocument {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && (value as { schema_version?: unknown }).schema_version === "canonical-resume.v1"
+    && (value as { identity?: unknown }).identity
+    && Array.isArray((value as { sections?: unknown }).sections),
+  );
+}
+
+export function isCanonicalResumePresentation(value: unknown): value is CanonicalResumePresentation {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && (value as { schema_version?: unknown }).schema_version === "resume-presentation.v1"
+    && (value as { template_snapshot?: unknown }).template_snapshot,
+  );
+}
+
+export function isCanonicalLayoutPlan(value: unknown): value is LayoutPlan {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && (value as { schema_version?: unknown }).schema_version === "layout-plan.v1"
+    && Array.isArray((value as { regions?: unknown }).regions),
+  );
+}
+
+export function resumeDocumentTitle(document: ResumeDocumentRead): string {
+  if (isCanonicalResumeDocument(document)) return document.identity.name?.value ?? "";
+  return document.basics.name;
+}
+
+export function resumePresentationTemplateKey(style: ResumePresentationRead): string {
+  return isCanonicalResumePresentation(style)
+    ? style.template_snapshot.template_key
+    : style.template_key;
+}
+
+export function resumePresentationTemplateDefinition(style: ResumePresentationRead): TemplateDefinition | null {
+  return isCanonicalResumePresentation(style) ? style.template_snapshot : null;
+}
+
+export function resumePresentationAccentColor(style: ResumePresentationRead): string {
+  if (!isCanonicalResumePresentation(style)) return normalizeResumeAccentColor(style.accent_color);
+  const key = style.template_snapshot.template_key;
+  const scoped = style.template_scoped[key] ?? {};
+  return normalizeResumeAccentColor(
+    scoped.accent_color ?? style.portable.accent_color ?? style.template_snapshot.tokens.accent_color,
+  );
+}
+
+export function resumePresentationPageMargin(style: ResumePresentationRead): number {
+  return resumePresentationPageMargins(style).left;
+}
+
+export function resumePresentationVerticalPageMargin(style: ResumePresentationRead): number {
+  return resumePresentationPageMargins(style).top;
+}
+
+export type ResumePageMargins = {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+};
+
+function finiteMargin(value: unknown, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+export function resumePresentationPageMargins(style: ResumePresentationRead): ResumePageMargins {
+  if (!isCanonicalResumePresentation(style)) {
+    return {
+      top: style.page.margin_top_mm,
+      right: style.page.margin_right_mm,
+      bottom: style.page.margin_bottom_mm,
+      left: style.page.margin_left_mm,
+    };
+  }
+  const key = style.template_snapshot.template_key;
+  const scoped = style.template_scoped[key] ?? {};
+  const tokens = style.template_snapshot.tokens;
+  const horizontal = scoped.page_margin_mm
+    ?? style.portable.page_margin_mm
+    ?? tokens.page_margin_mm;
+  const vertical = scoped.vertical_page_margin_mm
+    ?? style.portable.vertical_page_margin_mm
+    ?? tokens.vertical_page_margin_mm
+    ?? tokens.page_margin_mm;
+  return {
+    top: finiteMargin(
+      scoped.page_margin_top_mm
+        ?? style.portable.page_margin_top_mm
+        ?? tokens.page_margin_top_mm,
+      finiteMargin(vertical, tokens.page_margin_mm),
+    ),
+    right: finiteMargin(
+      scoped.page_margin_right_mm
+        ?? style.portable.page_margin_right_mm
+        ?? tokens.page_margin_right_mm,
+      finiteMargin(horizontal, tokens.page_margin_mm),
+    ),
+    bottom: finiteMargin(
+      scoped.page_margin_bottom_mm
+        ?? style.portable.page_margin_bottom_mm
+        ?? tokens.page_margin_bottom_mm,
+      finiteMargin(vertical, tokens.page_margin_mm),
+    ),
+    left: finiteMargin(
+      scoped.page_margin_left_mm
+        ?? style.portable.page_margin_left_mm
+        ?? tokens.page_margin_left_mm,
+      finiteMargin(horizontal, tokens.page_margin_mm),
+    ),
+  };
+}
+
+export function resumePresentationAvatarSize(style: ResumePresentationRead): number {
+  if (!isCanonicalResumePresentation(style)) return style.manifest.avatar.size;
+  const key = style.template_snapshot.template_key;
+  const scoped = style.template_scoped[key] ?? {};
+  const value = scoped.avatar_size_px ?? style.portable.avatar_size_px;
+  return typeof value === "number" && Number.isFinite(value) ? value : 96;
+}
+
+export function withResumePresentationAvatarSize(
+  style: LegacyResumePresentation,
+  size: number,
+): LegacyResumePresentation;
+export function withResumePresentationAvatarSize(
+  style: CanonicalResumePresentation,
+  size: number,
+): CanonicalResumePresentation;
+export function withResumePresentationAvatarSize(
+  style: ResumePresentationRead,
+  size: number,
+): ResumePresentationRead {
+  if (!isCanonicalResumePresentation(style)) {
+    return {
+      ...style,
+      manifest: {
+        ...style.manifest,
+        avatar: { ...style.manifest.avatar, size },
+      },
+    };
+  }
+  const key = style.template_snapshot.template_key;
+  return {
+    ...style,
+    template_scoped: {
+      ...style.template_scoped,
+      [key]: {
+        ...style.template_scoped[key],
+        avatar_size_px: size,
+      },
+    },
+  };
+}
+
 export const DEFAULT_RESUME_ACCENT_COLOR = "#3478f6";
 
 export function normalizeResumeAccentColor(value: unknown) {
@@ -184,7 +568,7 @@ export function normalizeResumeAccentColor(value: unknown) {
     : DEFAULT_RESUME_ACCENT_COLOR;
 }
 
-export const defaultSemanticDocument: ResumeDocument = {
+export const defaultSemanticDocument: LegacyResumeDocument = {
   basics: {
     name: "张三",
     headline: "后端开发工程师",
@@ -218,7 +602,7 @@ export const defaultSemanticDocument: ResumeDocument = {
   ],
 };
 
-export const defaultSemanticStyle: ResumePresentation = {
+export const defaultSemanticStyle: LegacyResumePresentation = {
   template_key: "classic-cn",
   font_family: "source-han-serif",
   font_size: 14,
@@ -249,6 +633,66 @@ export const defaultSemanticStyle: ResumePresentation = {
     ],
     avatar: { visibility: "hide", fallback_asset: "none", size: 96 },
   },
+};
+
+export const defaultCanonicalDocument: CanonicalResumeDocument = {
+  schema_version: "canonical-resume.v1",
+  document_id: "node_document0000000001",
+  identity: {
+    node_id: "node_identity0000000001",
+    name: null,
+    headline: null,
+    contacts: [],
+    avatar: null,
+  },
+  sections: [],
+  source_dispositions: [],
+};
+
+export const defaultCanonicalTemplateDefinition: TemplateDefinition = {
+  schema_version: "template-definition.v1",
+  template_key: "classic-cn",
+  semantic_labels: {
+    profile: "个人简介",
+    work: "工作经历",
+    education: "教育经历",
+    project: "项目经历",
+    skills: "专业技能",
+    activity: "实践经历",
+    interests: "兴趣爱好",
+    certificates: "证书",
+    awards: "荣誉奖项",
+    languages: "语言能力",
+  },
+  regions: [{ region_id: "main", region_kind: "main", order: 0 }],
+  slots: [{
+    slot_id: "main_content",
+    region_id: "main",
+    accepts: ["identity", "profile", "work", "education", "project", "skills", "activity", "interests", "certificates", "awards", "languages", "custom"],
+    universal_fallback: true,
+    order: 0,
+  }],
+  tokens: {
+    font_family: "source-han-serif",
+    font_size_pt: 14,
+    line_height: 1.55,
+    accent_color: "#2F4858",
+    page_margin_mm: 16,
+    vertical_page_margin_mm: 14,
+  },
+  avatar: {
+    visibility: "hide",
+    fallback_asset: "none",
+    size_px: 96,
+    region_id: "main",
+  },
+};
+
+export const defaultCanonicalPresentation: CanonicalResumePresentation = {
+  schema_version: "resume-presentation.v1",
+  portable: { smart_one_page: false },
+  template_scoped: { "classic-cn": {} },
+  template_snapshot: defaultCanonicalTemplateDefinition,
 };
 
 type EditorSettings = {
@@ -334,7 +778,7 @@ function markdownContactPart(value: { label: string; url: string }) {
 }
 
 function semanticTitle(
-  document: ResumeDocument,
+  document: LegacyResumeDocument,
   contentKey: ResumeDocument["semantic_sections"][number]["content_key"],
   fallback: string,
   customSectionId: string | null = null,
@@ -345,13 +789,89 @@ function semanticTitle(
   )?.display_title ?? fallback;
 }
 
-export function hasCanonicalEditorSections(document: ResumeDocument) {
+function canonicalRunToMarkdown(
+  run: CanonicalTextRun | CanonicalInlineIcon | CanonicalInlineMedia,
+) {
+  if (run.inline_type === "icon") return inlineIconMarkdown(run.name);
+  if (run.inline_type === "media") {
+    if (!run.src || run.src.startsWith("data:") || run.src.startsWith("blob:")) return "";
+    return `![${run.alt ?? "行内图片"}](${run.src})`;
+  }
+  let value = run.text;
+  for (const mark of run.marks) {
+    if (mark === "bold") value = `**${value}**`;
+    if (mark === "italic") value = `*${value}*`;
+    if (mark === "underline") value = `[[linkcv-underline]]${value}[[/linkcv-underline]]`;
+    if (mark === "strike") value = `~~${value}~~`;
+    if (mark === "code") value = `\`${value}\``;
+  }
+  if (run.href && !isResumeEmailLink(run.href)) value = `[${value}](${run.href})`;
+  if (run.style.highlight_color) value = `[[linkcv-highlight:${run.style.highlight_color}]]${value}[[/linkcv-highlight]]`;
+  if (run.style.color) value = `[[linkcv-color:${run.style.color}]]${value}[[/linkcv-color]]`;
+  if (run.style.font_size_pt != null) value = `${inlineFontSizeOpenMarker(run.style.font_size_pt)}${value}${INLINE_FONT_SIZE_CLOSE_MARKER}`;
+  return value;
+}
+
+function canonicalBlockToMarkdown(block: CanonicalContentBlock): string {
+  if (block.block_type === "media") {
+    if (!block.src || block.src.startsWith("data:") || block.src.startsWith("blob:")) return "";
+    return `![${block.alt ?? "简历图片"}](${block.src})`;
+  }
+  if (block.block_type === "paragraph") return block.runs.map(canonicalRunToMarkdown).join("");
+  if (block.block_type === "row") {
+    return block.cells.map((cell) => cell.blocks.map(canonicalBlockToMarkdown).filter(Boolean).join("\n")).join(" ｜ ");
+  }
+  return block.items.map((item, index) => {
+    const marker = block.block_type === "ordered_list" ? `${(block.start ?? 1) + index}.` : "-";
+    return `${marker} ${item.runs.map(canonicalRunToMarkdown).join("")}`;
+  }).join("\n");
+}
+
+function canonicalDocumentToMarkdown(document: CanonicalResumeDocument) {
+  const lines: string[] = [];
+  const identity = document.identity;
+  if (identity.name?.value) lines.push(`# ${identity.name.value}`);
+  if (identity.headline?.value) lines.push("", identity.headline.value);
+  if (identity.contacts.length) lines.push("", identity.contacts.map((contact) => contact.label ? `${contact.label}：${contact.value}` : contact.value).join(" ｜ "));
+  if (identity.avatar && !identity.avatar.system_fallback && identity.avatar.src) {
+    lines.push("", `![${identity.avatar.alt ?? "简历头像"}](${identity.avatar.src} "linkcv-avatar:${identity.avatar.width ?? 96}")`);
+  }
+  for (const section of document.sections) {
+    const title = section.title?.value ?? "";
+    const titleIcon = section.title_icon && isInlineIconName(section.title_icon.name)
+      ? inlineIconMarkdown(section.title_icon.name)
+      : "";
+    if (title || titleIcon) {
+      lines.push("", `## ${[titleIcon, title].filter(Boolean).join(" ")}`);
+    }
+    for (const entry of section.entries) {
+      const heading = entry.fields.name?.value ?? entry.fields.organization?.value ?? entry.fields.role?.value;
+      if (heading) lines.push("", `### ${heading}`);
+      for (const key of ["organization", "role", "location", "start_date", "end_date", "degree", "major", "url"] as const) {
+        const field = entry.fields[key];
+        if (field?.value && field.value !== heading) lines.push(`${field.value}`);
+      }
+      for (const block of entry.blocks) {
+        const value = canonicalBlockToMarkdown(block);
+        if (value) lines.push("", value);
+      }
+    }
+    for (const block of section.blocks) {
+      const value = canonicalBlockToMarkdown(block);
+      if (value) lines.push("", value);
+    }
+  }
+  return lines.join("\n").replace(/\n{3,}/gu, "\n\n").trim();
+}
+
+export function hasCanonicalEditorSections(document: LegacyResumeDocument) {
   return document.semantic_sections.length > 0
     && document.semantic_sections.every((section) => section.content_key === "custom_sections")
     && document.semantic_sections.every((section) => section.custom_section_id);
 }
 
-export function resumeDocumentToMarkdown(document: ResumeDocument) {
+export function resumeDocumentToMarkdown(document: ResumeDocumentRead) {
+  if (isCanonicalResumeDocument(document)) return canonicalDocumentToMarkdown(document);
   if (hasCanonicalEditorSections(document)) {
     const sections = new Map(document.sections.custom_sections.map((section) => [section.id, section]));
     return document.semantic_sections.map((semantic) => {
@@ -489,8 +1009,8 @@ export function resumeDocumentToMarkdown(document: ResumeDocument) {
 
 export function resumeDocumentFromMarkdown(
   markdown: string,
-  previous: ResumeDocument,
-): ResumeDocument {
+  previous: LegacyResumeDocument,
+): LegacyResumeDocument {
   const normalized = stripTemplatePageRegions(markdown)
     .split("\n")
     .filter((line) => !/!\[[^\]]*\]\([^)]*\s+"linkcv-avatar:[^"]+"\)/u.test(line))
@@ -508,8 +1028,10 @@ export function resumeDocumentFromMarkdown(
     const suffix = (hash >>> 0).toString(16).padStart(8, "0");
     return `blk_${suffix}${suffix}`;
   };
+  // Keep marker-looking title text in the legacy adapter.  The canonical
+  // cutover owns the structured ``title_icon`` field; until then removing a
+  // marker here would make a legal heading icon impossible to round-trip.
   const cleanTitle = (value: string) => value
-    .replace(/:icon\[[^\]]+\]:/gu, "")
     .replace(/^\s+|\s+$/gu, "") || "未命名章节";
   const previousById = new Map(previous.semantic_sections.map((section) => [section.custom_section_id, section]));
   const titleCounts = new Map<string, number>();
@@ -603,7 +1125,48 @@ export function resumeDocumentFromMarkdown(
   };
 }
 
-export function styleToEditorSettings(style: ResumePresentation): EditorSettings {
+export function styleToEditorSettings(style: LegacyResumePresentation): EditorSettings;
+export function styleToEditorSettings(style: CanonicalResumePresentation): EditorSettings;
+export function styleToEditorSettings(style: ResumePresentationRead): EditorSettings;
+export function styleToEditorSettings(style: ResumePresentationRead): EditorSettings {
+  if (isCanonicalResumePresentation(style)) {
+    const scoped = style.template_scoped[style.template_snapshot.template_key] ?? {};
+    const tokens = style.template_snapshot.tokens;
+    const fontScale = scoped.font_scale ?? style.portable.font_scale ?? 1;
+    const fontSize = tokens.font_size_pt * (typeof fontScale === "number" && Number.isFinite(fontScale) ? fontScale : 1);
+    const lineHeight = scoped.line_height ?? style.portable.line_height ?? tokens.line_height;
+    const margins = resumePresentationPageMargins(style);
+    const pageMargin = margins.left;
+    const verticalPageMargin = margins.top;
+    const accentColor = scoped.accent_color ?? style.portable.accent_color ?? tokens.accent_color;
+    const supportedThemes = [
+      "classic-technical",
+      "administrative-sidebar",
+      "campus-professional",
+      "civic-service",
+      "creative-orange",
+      "modern",
+      "compact",
+    ] as const;
+    const theme = supportedThemes.find((candidate) => style.template_snapshot.template_key.startsWith(candidate)) ?? "classic";
+    const persistedFontFamily = tokens.font_family === "source-han-serif"
+      ? '"Source Han Serif SC", "Songti SC", STSong, SimSun, serif'
+      : tokens.font_family;
+    const fontFamily = /PingFang SC|Microsoft YaHei|system-ui/u.test(persistedFontFamily)
+      ? '"LinkCV Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif'
+      : persistedFontFamily;
+    void accentColor;
+    return {
+      fontFamily,
+      fontSize,
+      lineHeight,
+      pageMargin,
+      verticalPageMargin,
+      theme,
+      smartOnePage: style.portable.smart_one_page ?? false,
+      showSource: false,
+    };
+  }
   const supportedThemes = [
     "classic-technical",
     "administrative-sidebar",
@@ -634,8 +1197,67 @@ export function styleToEditorSettings(style: ResumePresentation): EditorSettings
 
 export function editorSettingsToStyle(
   settings: EditorSettings,
-  previous: ResumePresentation,
-): ResumePresentation {
+  previous: LegacyResumePresentation,
+): LegacyResumePresentation;
+export function editorSettingsToStyle(
+  settings: EditorSettings,
+  previous: CanonicalResumePresentation,
+): CanonicalResumePresentation;
+export function editorSettingsToStyle(
+  settings: EditorSettings,
+  previous: ResumePresentationRead,
+): ResumePresentationRead;
+export function editorSettingsToStyle(
+  settings: EditorSettings,
+  previous: ResumePresentationRead,
+): ResumePresentationRead {
+  if (isCanonicalResumePresentation(previous)) {
+    const key = previous.template_snapshot.template_key;
+    const tokens = previous.template_snapshot.tokens;
+    const previousScoped = previous.template_scoped[key] ?? {};
+    const fontScale = tokens.font_size_pt > 0
+      ? settings.fontSize / tokens.font_size_pt
+      : previousScoped.font_scale ?? previous.portable.font_scale ?? 1;
+    const previousSettings = styleToEditorSettings(previous);
+    const horizontalMarginChanged = settings.pageMargin !== previousSettings.pageMargin;
+    const verticalMarginChanged = settings.verticalPageMargin !== previousSettings.verticalPageMargin;
+    const edgeOverrides: PresentationSettings = {
+      ...(horizontalMarginChanged
+        ? {
+            page_margin_left_mm: settings.pageMargin,
+            page_margin_right_mm: settings.pageMargin,
+          }
+        : {}),
+      ...(verticalMarginChanged
+        ? {
+            page_margin_top_mm: settings.verticalPageMargin,
+            page_margin_bottom_mm: settings.verticalPageMargin,
+          }
+        : {}),
+    };
+    return {
+      ...previous,
+      portable: {
+        ...previous.portable,
+        smart_one_page: settings.smartOnePage,
+        line_height: settings.lineHeight,
+        page_margin_mm: settings.pageMargin,
+        vertical_page_margin_mm: settings.verticalPageMargin,
+        accent_color: previous.portable.accent_color ?? null,
+      },
+      template_scoped: {
+        ...previous.template_scoped,
+        [key]: {
+          ...previousScoped,
+          ...edgeOverrides,
+          font_scale: Number.isFinite(fontScale) ? fontScale : 1,
+          line_height: settings.lineHeight,
+          page_margin_mm: settings.pageMargin,
+          vertical_page_margin_mm: settings.verticalPageMargin,
+        },
+      },
+    };
+  }
   return {
     ...previous,
     font_family: settings.fontFamily.includes("Source Han Serif") ? "source-han-serif" : settings.fontFamily,
