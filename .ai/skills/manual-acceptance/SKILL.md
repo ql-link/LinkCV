@@ -45,7 +45,7 @@ description: 为 LinkCV 任务生成、修订和记录人工端到端验收清�
 3. 与流程相关的 Web、FastAPI、配置和部署事实；
 4. 本技能所属模板。
 
-不要根据聊天印象重新发明验收规则。发现清单需要新的业务或契约结果时，返回 `solution-generator` 或 `acceptance-generator`；前端需要原型未覆盖的新 UI 结果时返回用户补充或更新视觉依据，确认后再由 `frontend-delivery` 继续实施。
+不要根据聊天印象重新发明验收规则。发现清单需要新的业务或契约结果时，返回 `solution-generator` 或 `acceptance-generator`；前端需要原型未覆盖的新 UI 结果时，由当前 Codex 按需使用 `frontend-prototype` 或请用户补充视觉依据。
 
 ## 4. 生成清单
 

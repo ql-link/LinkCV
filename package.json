@@ -45,6 +45,7 @@
     "test:pi": "npm --prefix apps/pi-service test",
     "test:backend:unit": "uv run --directory apps/backend pytest tests/unit",
     "test:backend:integration": "uv run --directory apps/backend pytest tests/integration",
+    "check:web": "npm run check:design && npm run test:web && npm run build:web",
     "check:pi": "npm --prefix third_party/pi run check:model-data && npm --prefix third_party/pi run build:offline && npm --prefix apps/pi-service run check && npm run test:pi",
     "check:app": "npm run check:design && npm run typecheck && npm run build && npm test && npm run check:pi",
     "check": "npm run check:ai && npm run check:app",
