@@ -15,6 +15,12 @@ import {
   loadResumeTemplatesPage,
 } from "./workspacePageLoaders";
 
+export const RESUME_AUTOSAVE_INTERVAL_MS = 10_000;
+
+export function startResumeAutosave(save: () => void) {
+  return window.setInterval(save, RESUME_AUTOSAVE_INTERVAL_MS);
+}
+
 const AccountPage = lazy(() => loadAccountPage().then((module) => ({ default: module.AccountPage })));
 const AssistantPage = lazy(() => loadAssistantPage().then((module) => ({ default: module.AssistantPage })));
 const AdminApp = lazy(() => import("./features/admin/AdminApp").then((module) => ({ default: module.AdminApp })));
@@ -86,8 +92,6 @@ function AppContent() {
   const loadResume = useResumeStore((state) => state.loadResume);
   const goHome = useResumeStore((state) => state.goHome);
   const dirty = useResumeStore((state) => state.dirty);
-  const versionOperationPending = useResumeStore((state) => state.versionOperationPending);
-  const editVersion = useResumeStore((state) => state.editVersion);
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
 
   useEffect(() => {
@@ -103,14 +107,14 @@ function AppContent() {
 
   useEffect(() => {
     if (isAdminArea || isInterviewMockPreview) return;
-    if (!dirty || !activeResumeId || versionOperationPending) return;
+    const timer = startResumeAutosave(() => {
+      const state = useResumeStore.getState();
+      if (!state.dirty || !state.activeResumeId || state.versionOperationPending) return;
+      void state.saveCurrentResume();
+    });
 
-    const timer = window.setTimeout(() => {
-      void saveCurrentResume();
-    }, 1200);
-
-    return () => window.clearTimeout(timer);
-  }, [activeResumeId, dirty, editVersion, isAdminArea, isInterviewMockPreview, saveCurrentResume, versionOperationPending]);
+    return () => window.clearInterval(timer);
+  }, [isAdminArea, isInterviewMockPreview]);
 
   useEffect(() => {
     if (isAdminArea || isInterviewMockPreview) return;
