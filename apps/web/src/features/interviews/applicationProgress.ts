@@ -10,6 +10,7 @@ export type ApplicationProgressColumnKey =
   | "assessment"
   | "interview"
   | "waiting"
+  | "offer"
   | "ended";
 
 export type ApplicationProgressSource = Pick<
@@ -47,6 +48,7 @@ export const APPLICATION_PROGRESS_COLUMNS: Array<{
   { key: "assessment", label: "笔试中" },
   { key: "interview", label: "面试中" },
   { key: "waiting", label: "等待通知" },
+  { key: "offer", label: "Offer" },
   { key: "ended", label: "已结束" },
 ];
 
@@ -144,6 +146,20 @@ export function projectApplicationProgress(
       supportingLabel: PENDING_SUPPORTING_LABEL,
       primaryLabel: PENDING_LABEL,
       isPending: true,
+      isWaiting: false,
+      isAssessment: false,
+    };
+  }
+
+  if (active && application.current_stage_type === "offer") {
+    const statusLabel = application.stage_state === "negotiating" ? "Offer 沟通中" : "进行中";
+    return {
+      columnKey: "offer",
+      stageLabel: normalizedStageLabel,
+      statusLabel,
+      supportingLabel: null,
+      primaryLabel: statusLabel,
+      isPending: false,
       isWaiting: false,
       isAssessment: false,
     };

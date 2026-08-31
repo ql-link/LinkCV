@@ -19,6 +19,8 @@ from linkcv.application.interviews.service import (
     InterviewEditConflict,
     InterviewInvalidTransition,
     InterviewNotFound,
+    InterviewResumeRequired,
+    InterviewResumeVersionRequired,
     InterviewSessionNotEmpty,
     InterviewTimeConflict,
     InvalidInterviewCursor,
@@ -181,6 +183,10 @@ def _asset_record(asset: InterviewAsset) -> InterviewAssetRecord:
 def _raise_service_error(error: Exception) -> None:
     if isinstance(error, InterviewNotFound):
         raise ApiError(404, "INTERVIEW_NOT_FOUND") from error
+    if isinstance(error, InterviewResumeRequired):
+        raise ApiError(400, "INTERVIEW_RESUME_REQUIRED") from error
+    if isinstance(error, InterviewResumeVersionRequired):
+        raise ApiError(409, "INTERVIEW_RESUME_VERSION_REQUIRED") from error
     if isinstance(error, InterviewEditConflict):
         raise ApiError(409, "INTERVIEW_EDIT_CONFLICT") from error
     if isinstance(error, InterviewInvalidTransition):

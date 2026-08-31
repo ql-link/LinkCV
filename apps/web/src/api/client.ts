@@ -1509,6 +1509,7 @@ export const api = {
       is_favorite: boolean;
       notes: string | null;
       applied_at: string | null;
+      resume_id: string | null;
       resume_version_id: string | null;
     }> & { base_lock_version: number },
   ) =>

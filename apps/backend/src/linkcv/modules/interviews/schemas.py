@@ -109,6 +109,7 @@ class JobApplicationUpdateRequest(StrictModel):
     is_favorite: bool | None = None
     applied_at: datetime | None = None
     notes: str | None = Field(default=None, max_length=16_000)
+    resume_id: DatabaseId | None = None
     resume_version_id: DatabaseId | None = None
     base_lock_version: int = Field(ge=1)
 
@@ -128,6 +129,10 @@ class JobApplicationUpdateRequest(StrictModel):
     def require_change(self) -> JobApplicationUpdateRequest:
         if self.model_fields_set == {"base_lock_version"}:
             raise ValueError("at least one application field is required")
+        if {"resume_id", "resume_version_id"} <= self.model_fields_set:
+            raise ValueError(
+                "resume_id and resume_version_id cannot be provided together"
+            )
         for field_name in ("calendar_color", "is_favorite"):
             if field_name in self.model_fields_set and getattr(self, field_name) is None:
                 raise ValueError(f"{field_name} cannot be null")

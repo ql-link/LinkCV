@@ -91,6 +91,8 @@ function requestErrorMessage(error: unknown): string {
     const messages: Record<string, string> = {
       INTERVIEW_EDIT_CONFLICT: "这条面试已在其他页面更新，请刷新后再试。",
       INTERVIEW_INVALID_TRANSITION: "当前求职进度不允许执行这个操作。",
+      INTERVIEW_RESUME_REQUIRED: "请选择一份简历后再标记已投递。",
+      INTERVIEW_RESUME_VERSION_REQUIRED: "所选简历暂无正式版本，请先保存正式版本。",
       INVALID_INTERVIEW_TIME: "面试开始时间需要落在整点或半点。",
       INTERVIEW_ASSET_TOO_LARGE: "素材超过 500 MiB，请压缩后重试。",
       UNSUPPORTED_INTERVIEW_ASSET: "暂不支持这种素材格式。",
@@ -455,10 +457,12 @@ function InterviewRoundCard({ session, onOpen }: { session: InterviewSessionSumm
 }
 
 const SCREENING_STAGE_OPTIONS = [
-  { label: "不区分轮次", stageLabel: "筛选", description: "公司未说明具体筛选轮次" },
-  { label: "初筛", stageLabel: "初筛", description: "第一轮筛选 · 添加为进行中" },
-  { label: "复筛", stageLabel: "复筛", description: "第二轮筛选 · 添加为进行中" },
+  { value: "none", label: "不区分轮次", stageLabel: "筛选" },
+  { value: "first", label: "初筛", stageLabel: "初筛" },
+  { value: "second", label: "复筛", stageLabel: "复筛" },
 ] as const;
+
+type ScreeningStageOptionValue = (typeof SCREENING_STAGE_OPTIONS)[number]["value"];
 
 function ensureAssessmentStageLabel(value: string): string {
   const label = value.trim();
@@ -480,6 +484,8 @@ function AddNextStageDialog({
   onNotice: (notice: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<AddNextStageTab>("screening");
+  const [screeningRound, setScreeningRound] = useState<ScreeningStageOptionValue>("none");
+  const [screeningLabel, setScreeningLabel] = useState("筛选");
   const [assessmentLabel, setAssessmentLabel] = useState("笔试");
   const [interviewLabel, setInterviewLabel] = useState("一面");
   const [interviewRoundNo, setInterviewRoundNo] = useState(1);
@@ -503,18 +509,24 @@ function AddNextStageDialog({
       setBusy(false);
     }
   };
+  const saveScreening = () => save("screening", null, screeningLabel);
   const saveAssessment = () => save("screening", null, ensureAssessmentStageLabel(assessmentLabel));
   const saveInterview = () => save("interview", interviewRoundNo, interviewLabel);
+  const handleScreeningRoundChange = (value: ScreeningStageOptionValue) => {
+    const option = SCREENING_STAGE_OPTIONS.find((item) => item.value === value);
+    if (!option) return;
+    setScreeningRound(value);
+    setScreeningLabel(option.stageLabel);
+  };
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="career-stage-dialog career-next-stage-dialog">
         <DialogHeader>
           <DialogTitle>添加求职阶段</DialogTitle>
-          <DialogDescription>只添加已经发生或已经确认的阶段；筛选可直接选择，无需填写表单。</DialogDescription>
+          <DialogDescription>选择阶段分类并补充本阶段信息，保存后会进入对应的求职流程。</DialogDescription>
         </DialogHeader>
         <div className="career-next-stage-category">
-          <strong>阶段分类</strong>
-          <div className="career-next-stage-tabs" role="tablist" aria-label="求职阶段分类">
+          <div className="career-next-stage-tabs" role="tablist" aria-label="阶段分类">
             <button
               type="button"
               role="tab"
@@ -544,82 +556,108 @@ function AddNextStageDialog({
             >面试</button>
           </div>
         </div>
-        {activeTab === "screening" ? (
-          <div id="career-next-stage-panel-screening" className="career-next-stage-panel" role="tabpanel" aria-labelledby="career-next-stage-tab-screening">
-            <div className="career-next-stage-panel-heading">
-              <strong>选择筛选阶段</strong>
-              <span>点击后立即添加</span>
-            </div>
-            <div className="career-screening-stage-options">
-              {SCREENING_STAGE_OPTIONS.map((option) => (
-                <article key={option.label} className="career-screening-stage-option" aria-label={option.label}>
-                  <div>
-                    <strong>{option.label}</strong>
-                    <button type="button" disabled={busy} onClick={() => void save("screening", null, option.stageLabel)}>{busy ? "添加中…" : "添加"}</button>
-                  </div>
-                  <p>{option.description}</p>
-                </article>
-              ))}
-            </div>
+        <div className="career-next-stage-divider" aria-hidden="true" />
+        <div
+          id={`career-next-stage-panel-${activeTab}`}
+          className="career-next-stage-panel"
+          role="tabpanel"
+          aria-labelledby={`career-next-stage-tab-${activeTab}`}
+        >
+          <div className="career-next-stage-form">
+            {activeTab === "screening" ? (
+              <>
+                <div className="career-next-stage-field">
+                  <Label htmlFor="career-next-stage-screening-label">展示名称</Label>
+                  <input
+                    id="career-next-stage-screening-label"
+                    value={screeningLabel}
+                    maxLength={100}
+                    onChange={(event) => setScreeningLabel(event.target.value)}
+                  />
+                </div>
+                <div className="career-next-stage-field">
+                  <Label htmlFor="career-next-stage-screening-status">当前状态</Label>
+                  <input id="career-next-stage-screening-status" value="进行中" readOnly aria-readonly="true" />
+                </div>
+                <div className="career-next-stage-field">
+                  <Label htmlFor="career-next-stage-screening-round">筛选轮次</Label>
+                  <select
+                    id="career-next-stage-screening-round"
+                    value={screeningRound}
+                    disabled={busy}
+                    onChange={(event) => handleScreeningRoundChange(event.target.value as ScreeningStageOptionValue)}
+                  >
+                    {SCREENING_STAGE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            ) : activeTab === "assessment" ? (
+              <>
+                <div className="career-next-stage-field">
+                  <Label htmlFor="career-next-stage-assessment-label">展示名称</Label>
+                  <input
+                    id="career-next-stage-assessment-label"
+                    value={assessmentLabel}
+                    maxLength={100}
+                    onChange={(event) => setAssessmentLabel(event.target.value)}
+                  />
+                </div>
+                <div className="career-next-stage-field">
+                  <Label htmlFor="career-next-stage-assessment-status">当前状态</Label>
+                  <input id="career-next-stage-assessment-status" value="等待安排" readOnly aria-readonly="true" />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="career-next-stage-field">
+                  <Label htmlFor="career-next-stage-interview-label">展示名称</Label>
+                  <input
+                    id="career-next-stage-interview-label"
+                    value={interviewLabel}
+                    maxLength={100}
+                    onChange={(event) => setInterviewLabel(event.target.value)}
+                  />
+                </div>
+                <div className="career-next-stage-field">
+                  <Label htmlFor="career-next-stage-interview-round">面试轮次</Label>
+                  <input
+                    id="career-next-stage-interview-round"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={interviewRoundNo}
+                    onChange={(event) => setInterviewRoundNo(Number(event.target.value))}
+                  />
+                </div>
+                <div className="career-next-stage-field">
+                  <Label htmlFor="career-next-stage-interview-status">当前状态</Label>
+                  <input id="career-next-stage-interview-status" value="等待安排" readOnly aria-readonly="true" />
+                </div>
+              </>
+            )}
           </div>
-        ) : activeTab === "assessment" ? (
-          <div id="career-next-stage-panel-assessment" className="career-next-stage-panel" role="tabpanel" aria-labelledby="career-next-stage-tab-assessment">
-            <div className="career-next-stage-panel-heading">
-              <strong>填写阶段信息</strong>
-              <span>确认后保存</span>
-            </div>
-            <div className="career-next-stage-form">
-              <div className="career-next-stage-form-fields">
-                <label htmlFor="career-next-stage-assessment-label">
-                  <span>展示名称</span>
-                  <input id="career-next-stage-assessment-label" value={assessmentLabel} maxLength={100} onChange={(event) => setAssessmentLabel(event.target.value)} />
-                </label>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div id="career-next-stage-panel-interview" className="career-next-stage-panel" role="tabpanel" aria-labelledby="career-next-stage-tab-interview">
-            <div className="career-next-stage-panel-heading">
-              <strong>填写阶段信息</strong>
-              <span>确认后保存</span>
-            </div>
-            <div className="career-next-stage-form">
-              <div className="career-next-stage-form-fields">
-                <label htmlFor="career-next-stage-interview-label">
-                  <span>展示名称</span>
-                  <input id="career-next-stage-interview-label" value={interviewLabel} maxLength={100} onChange={(event) => setInterviewLabel(event.target.value)} />
-                </label>
-                <label htmlFor="career-next-stage-interview-round">
-                  <span>轮次</span>
-                  <input id="career-next-stage-interview-round" type="number" min={1} step={1} value={interviewRoundNo} onChange={(event) => setInterviewRoundNo(Number(event.target.value))} />
-                </label>
-              </div>
-            </div>
-          </div>
-        )}
+        </div>
         <DialogFooter className="career-next-stage-dialog-footer">
           <p>{activeTab === "screening"
-            ? "点击后将以“进行中”添加，可在阶段详情中更新结果。"
+            ? "保存后以进行中添加，可在阶段详情中更新结果。"
             : "保存后进入等待安排，具体排期可在下一步添加。"}</p>
           <div className="career-next-stage-dialog-footer-actions">
             <Button variant="outline" onClick={onClose}>取消</Button>
             {activeTab === "assessment" ? (
-              <Button className="career-next-stage-save-button" disabled={!assessmentLabel.trim() || busy} onClick={() => void saveAssessment()}>{busy ? "保存中…" : "保存"}</Button>
+              <Button className="career-next-stage-save-button" disabled={!assessmentLabel.trim() || busy} onClick={() => void saveAssessment()}>{busy ? "保存中…" : "添加并保存"}</Button>
             ) : activeTab === "interview" ? (
-              <Button className="career-next-stage-save-button" disabled={!interviewLabel.trim() || !Number.isInteger(interviewRoundNo) || interviewRoundNo < 1 || busy} onClick={() => void saveInterview()}>{busy ? "保存中…" : "保存"}</Button>
-            ) : null}
+              <Button className="career-next-stage-save-button" disabled={!interviewLabel.trim() || !Number.isInteger(interviewRoundNo) || interviewRoundNo < 1 || busy} onClick={() => void saveInterview()}>{busy ? "保存中…" : "添加并保存"}</Button>
+            ) : (
+              <Button className="career-next-stage-save-button" disabled={!screeningLabel.trim() || busy} onClick={() => void saveScreening()}>{busy ? "保存中…" : "添加并保存"}</Button>
+            )}
           </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
-
-type ResumeVersionOption = {
-  id: string;
-  name: string;
-  version_no: number;
-};
 
 const EMPTY_SELECT_VALUE = "__none__";
 
@@ -855,42 +893,16 @@ function MarkApplicationAppliedDialog({
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
   });
   const [resumeId, setResumeId] = useState("");
-  const [versions, setVersions] = useState<ResumeVersionOption[]>([]);
-  const [resumeVersionId, setResumeVersionId] = useState("");
-  const [versionsLoading, setVersionsLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    setVersions([]);
-    setResumeVersionId("");
-    if (!resumeId) {
-      setVersionsLoading(false);
-      return;
-    }
-    setVersionsLoading(true);
-    void api.listVersions(resumeId)
-      .then(({ versions: nextVersions }) => {
-        if (cancelled) return;
-        setVersions(nextVersions);
-      })
-      .catch((error) => {
-        if (!cancelled) onNotice(requestErrorMessage(error));
-      })
-      .finally(() => {
-        if (!cancelled) setVersionsLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [onNotice, resumeId]);
 
   const submit = async () => {
     const appliedAtIso = dateInputToIso(appliedAt);
-    if (!appliedAtIso) return;
+    if (!appliedAtIso || !resumeId) return;
     setBusy(true);
     try {
       await api.updateJobApplication(application.id, {
         applied_at: appliedAtIso,
-        resume_version_id: resumeVersionId || null,
+        resume_id: resumeId,
         base_lock_version: application.lock_version,
       });
       onClose();
@@ -907,7 +919,7 @@ function MarkApplicationAppliedDialog({
       <DialogContent className="career-stage-dialog career-applied-dialog">
         <DialogHeader>
           <DialogTitle className="career-applied-dialog-title">推进求职流程</DialogTitle>
-          <DialogDescription className="career-applied-dialog-description">当前阶段：{progress.stageLabel}。确认实际投递日期，并可关联本次使用的正式简历版本。</DialogDescription>
+          <DialogDescription className="career-applied-dialog-description">当前阶段：{progress.stageLabel}。选择本次使用的简历，系统会自动绑定该简历最新的正式版本。</DialogDescription>
         </DialogHeader>
         <div className="career-stage-dialog-form">
           <div className="career-stage-dialog-field">
@@ -924,38 +936,20 @@ function MarkApplicationAppliedDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="career-stage-select-content">
-                <SelectItem value={EMPTY_SELECT_VALUE}>不关联简历</SelectItem>
+                <SelectItem value={EMPTY_SELECT_VALUE}>请选择简历</SelectItem>
                 {resumes.map((resume) => <SelectItem key={resume.id} value={resume.id}>{resume.title}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
-          <div className="career-stage-dialog-field">
-            <Label htmlFor="career-applied-resume-version">投递简历版本</Label>
-            <Select
-              disabled={!resumeId || versionsLoading || versions.length === 0}
-              value={resumeVersionId || EMPTY_SELECT_VALUE}
-              onValueChange={(value) => setResumeVersionId(value === EMPTY_SELECT_VALUE ? "" : value)}
-            >
-              <SelectTrigger id="career-applied-resume-version" aria-label="投递简历版本" className="career-stage-select-trigger">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="career-stage-select-content">
-                <SelectItem value={EMPTY_SELECT_VALUE}>
-                {versionsLoading ? "正在加载正式版本…" : resumeId && versions.length === 0 ? "暂无正式版本" : resumeId ? "不关联版本" : "请先选择简历"}
-                </SelectItem>
-                {versions.map((version) => <SelectItem key={version.id} value={version.id}>v{version.version_no} · {version.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
           {!resumes.length ? (
-            <p className="career-stage-dialog-empty">暂无可用简历，可直接标记已投递，不关联简历。</p>
-          ) : resumeId && !versionsLoading && versions.length === 0 ? (
-            <p className="career-stage-dialog-empty">该简历暂无正式版本，可直接标记已投递，不关联简历版本。</p>
-          ) : null}
+            <p className="career-stage-dialog-empty">暂无可用简历，请先创建简历并保存正式版本后再标记已投递。</p>
+          ) : (
+            <p className="career-stage-dialog-empty">系统会自动绑定所选简历最新的正式版本。</p>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button disabled={!dateInputToIso(appliedAt) || busy} onClick={() => void submit()}>{busy ? "保存中…" : "确认标记"}</Button>
+          <Button disabled={!dateInputToIso(appliedAt) || !resumeId || busy} onClick={() => void submit()}>{busy ? "保存中…" : "确认标记"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

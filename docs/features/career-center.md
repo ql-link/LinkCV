@@ -48,7 +48,7 @@
 
 ### 求职与面试
 
-1. 用户在求职记录中导入或填写岗位并创建一次待投递的求职尝试；确认“已投递”时记录实际日期，并可绑定本次使用的正式简历版本，随后进入“等待后续通知”。
+1. 用户在求职记录中导入或填写岗位并创建一次待投递的求职尝试；确认“已投递”时记录实际日期并选择本次使用的简历，服务端校验归属后自动绑定该简历 `version_no` 最大的最新正式版本，随后进入“等待后续通知”。首次投递没有可绑定的正式版本时拒绝更新；旧调用方仍可显式提交 `resume_version_id`，但不能与 `resume_id` 同时提交。
 2. 收到公司通知后，用户再添加已经发生或已经确认的筛选、笔试/测评或面试阶段；普通筛选直接进入等待结果，笔试/测评和面试先进入等待安排。阶段动作由后端状态机更新当前阶段、轮次、状态和结果，客户端不能直接写任意组合。
 3. 面试排期绑定求职进程并校验时间范围和冲突；完成、取消与复盘共享同一场 `InterviewSession`。
 4. 素材先校验进程所有权，再保存对象与元数据；读取和删除继续通过 session→application→user 链路授权。
@@ -62,4 +62,4 @@
 
 ## 修改联动与验证
 
-岗位来源契约变化还需同步插件 `contracts.ts`、Manifest 权限和导入测试；求职状态变化需同步看板、列表、排期、复盘和 Agent 上下文。主要验证入口为后端 `test_job_descriptions.py`、`test_interviews.py`、`test_job_description_import.py`、`test_interview_state.py`，以及 Web `JobDetailPage`、`JobSmartImportDialog` 和 `InterviewCenterPage` 测试。
+岗位来源契约变化还需同步插件 `contracts.ts`、Manifest 权限和导入测试；求职状态变化需同步看板、列表、排期、复盘和 Agent 上下文。阶段看板当前按待投递、筛选中、笔试中、面试中、等待通知、Offer 和已结束七列投射真实进程状态。主要验证入口为后端 `test_job_descriptions.py`、`test_interviews.py`、`test_job_description_import.py`、`test_interview_state.py`，以及 Web `JobDetailPage`、`JobSmartImportDialog` 和 `InterviewCenterPage` 测试。

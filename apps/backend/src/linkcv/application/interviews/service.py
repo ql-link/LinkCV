@@ -52,6 +52,14 @@ class InterviewNotFound(LookupError):
     pass
 
 
+class InterviewResumeRequired(RuntimeError):
+    pass
+
+
+class InterviewResumeVersionRequired(RuntimeError):
+    pass
+
+
 class InterviewEditConflict(RuntimeError):
     pass
 
@@ -221,6 +229,21 @@ def _owned_resume_version(
         select(ResumeVersion)
         .join(Resume, Resume.id == ResumeVersion.resume_id)
         .where(ResumeVersion.id == version_id, Resume.user_id == user_id)
+    )
+
+
+def _owned_resume(db: Session, user_id: int, resume_id: int) -> Resume | None:
+    return db.scalar(
+        select(Resume).where(Resume.id == resume_id, Resume.user_id == user_id)
+    )
+
+
+def _latest_resume_version(db: Session, resume_id: int) -> ResumeVersion | None:
+    return db.scalar(
+        select(ResumeVersion)
+        .where(ResumeVersion.resume_id == resume_id)
+        .order_by(ResumeVersion.version_no.desc(), ResumeVersion.id.desc())
+        .limit(1)
     )
 
 
@@ -439,6 +462,24 @@ def update_application(
                     "stage_state": "awaiting_result",
                 }
             )
+    if "resume_id" in provided:
+        requested_resume_id = provided.pop("resume_id")
+        if requested_resume_id is not None:
+            parsed_resume_id = (
+                parse_decimal_id(requested_resume_id)
+                if isinstance(requested_resume_id, str)
+                else None
+            )
+            if parsed_resume_id is None:
+                raise InterviewNotFound
+            resume = _owned_resume(db, user_id, parsed_resume_id)
+            if resume is None:
+                raise InterviewNotFound
+            resume_version = _latest_resume_version(db, resume.id)
+            if resume_version is None:
+                raise InterviewResumeVersionRequired
+            provided["resume_version_id"] = str(resume_version.id)
+            provided["resume_title_snapshot"] = resume_version.name
     if "resume_version_id" in provided:
         requested_resume_version_id = provided["resume_version_id"]
         parsed_resume_version_id = (
@@ -457,6 +498,12 @@ def update_application(
         provided["resume_title_snapshot"] = (
             resume_version.name if resume_version else None
         )
+    if (
+        application.applied_at is None
+        and provided.get("applied_at") is not None
+        and provided.get("resume_version_id", application.resume_version_id) is None
+    ):
+        raise InterviewResumeRequired
     return _commit_application_update(
         db, application, payload.base_lock_version, provided
     )

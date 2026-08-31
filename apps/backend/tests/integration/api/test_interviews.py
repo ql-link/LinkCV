@@ -6,10 +6,14 @@ from io import BytesIO
 from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
+from sqlalchemy import delete
 
 from linkcv.core.config import Settings
 from linkcv.core.storage import StreamUploadResult
+from linkcv.domain.resume_document import default_resume_document
+from linkcv.domain.resume_style import default_resume_style
 from linkcv.main import create_app
+from linkcv.modules.resumes.models import ResumeTemplate, ResumeVersion
 from tests.fakes import FakeRedis
 
 
@@ -66,7 +70,7 @@ class FailingUploadStorage(FakeStorage):
 
 
 def build_app(storage: FakeStorage | None = None):
-    return create_app(
+    app = create_app(
         Settings(
             database_url="sqlite+pysqlite:///:memory:",
             jwt_secret="integration-test-secret-with-32-bytes",
@@ -75,6 +79,19 @@ def build_app(storage: FakeStorage | None = None):
         redis=FakeRedis(),
         create_schema=True,
     )
+    with app.state.session_factory() as session:
+        template = ResumeTemplate(
+            key="interview-test",
+            name="求职测试模板",
+            description="求职进程集成测试使用的模板",
+            data_json=default_resume_document().model_dump(mode="json"),
+            style_json=default_resume_style().model_dump(mode="json"),
+            is_active=1,
+        )
+        session.add(template)
+        session.commit()
+        app.state.test_template_id = str(template.id)
+    return app
 
 
 def register(client: TestClient, email: str) -> None:
@@ -97,6 +114,33 @@ def create_job(client: TestClient, company: str) -> str:
     )
     assert response.status_code == 201, response.text
     return response.json()["job_description"]["id"]
+
+
+def create_resume(
+    client: TestClient, app, title: str = "求职测试简历"
+) -> dict[str, object]:
+    response = client.post(
+        "/api/resumes",
+        json={"title": title, "template_id": app.state.test_template_id},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["resume"]
+
+
+def list_resume_versions(client: TestClient, resume_id: str) -> list[dict[str, object]]:
+    response = client.get(f"/api/resumes/{resume_id}/versions")
+    assert response.status_code == 200, response.text
+    return response.json()["versions"]
+
+
+def create_resume_version(
+    client: TestClient, resume_id: str, name: str
+) -> dict[str, object]:
+    response = client.post(
+        f"/api/resumes/{resume_id}/versions", json={"name": name}
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["version"]
 
 
 def create_application(client: TestClient, job_id: str) -> dict[str, object]:
@@ -446,11 +490,23 @@ def test_marking_an_application_applied_normalizes_to_the_post_application_place
         )
         assert created.status_code == 201, created.text
         application = created.json()["application"]
+        missing_resume = client.put(
+            f"/api/job-applications/{application['id']}",
+            json={
+                "applied_at": "2026-08-22T12:00:00+08:00",
+                "base_lock_version": application["lock_version"],
+            },
+        )
+        assert missing_resume.status_code == 400
+        assert missing_resume.json() == {"error": "INTERVIEW_RESUME_REQUIRED"}
+
+        resume = create_resume(client, app)
 
         marked = client.put(
             f"/api/job-applications/{application['id']}",
             json={
                 "applied_at": "2026-08-22T12:00:00+08:00",
+                "resume_id": resume["id"],
                 "base_lock_version": application["lock_version"],
             },
         )
@@ -484,10 +540,12 @@ def test_marking_an_application_applied_normalizes_to_the_post_application_place
         )
         assert legacy.status_code == 201, legacy.text
         legacy_application = legacy.json()["application"]
+        legacy_resume = create_resume(client, app, "旧筛选占位简历")
         legacy_marked = client.put(
             f"/api/job-applications/{legacy_application['id']}",
             json={
                 "applied_at": "2026-08-22T04:00:00Z",
+                "resume_id": legacy_resume["id"],
                 "base_lock_version": legacy_application["lock_version"],
             },
         )
@@ -495,10 +553,203 @@ def test_marking_an_application_applied_normalizes_to_the_post_application_place
         assert legacy_marked.json()["application"]["current_stage_label"] == "等待后续通知"
 
 
+def test_marking_an_application_with_resume_id_binds_the_latest_formal_version() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "application-latest-resume@example.test")
+        resume = create_resume(client, app, "后端岗位简历")
+        resume_id = str(resume["id"])
+        create_resume_version(client, resume_id, "后端岗位初版")
+        latest = create_resume_version(client, resume_id, "后端岗位终版")
+        versions = list_resume_versions(client, resume_id)
+        assert versions[0]["id"] == latest["id"]
+        assert versions[0]["version_no"] > versions[1]["version_no"]
+
+        created = client.post(
+            "/api/job-applications",
+            json={
+                "job_description_id": create_job(client, "最新版本绑定公司"),
+                "current_stage_type": "screening",
+                "current_stage_label": "待投递",
+                "stage_state": "awaiting_schedule",
+            },
+        )
+        assert created.status_code == 201, created.text
+        application = created.json()["application"]
+
+        marked = client.put(
+            f"/api/job-applications/{application['id']}",
+            json={
+                "applied_at": "2026-08-22T04:00:00Z",
+                "resume_id": resume_id,
+                "base_lock_version": application["lock_version"],
+            },
+        )
+        assert marked.status_code == 200, marked.text
+        bound = marked.json()["application"]
+        assert bound["resume_version_id"] == latest["id"]
+        assert bound["resume_title_snapshot"] == "后端岗位终版"
+
+
+def test_marking_an_application_without_a_resume_fails_before_writing() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "application-resume-required@example.test")
+        created = client.post(
+            "/api/job-applications",
+            json={
+                "job_description_id": create_job(client, "必须绑定简历公司"),
+                "current_stage_type": "screening",
+                "current_stage_label": "待投递",
+                "stage_state": "awaiting_schedule",
+            },
+        )
+        assert created.status_code == 201, created.text
+        application = created.json()["application"]
+
+        rejected = client.put(
+            f"/api/job-applications/{application['id']}",
+            json={
+                "applied_at": "2026-08-22T04:00:00Z",
+                "base_lock_version": application["lock_version"],
+            },
+        )
+        assert rejected.status_code == 400
+        assert rejected.json() == {"error": "INTERVIEW_RESUME_REQUIRED"}
+
+        unchanged = client.get(f"/api/job-applications/{application['id']}")
+        assert unchanged.status_code == 200
+        assert unchanged.json()["application"]["applied_at"] is None
+        assert unchanged.json()["application"]["lock_version"] == application[
+            "lock_version"
+        ]
+
+
+def test_marking_an_application_rejects_a_resume_without_a_formal_version() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "application-no-resume-version@example.test")
+        resume = create_resume(client, app, "没有版本的简历")
+        resume_id = str(resume["id"])
+        with app.state.session_factory() as db:
+            db.execute(
+                delete(ResumeVersion).where(ResumeVersion.resume_id == int(resume_id))
+            )
+            db.commit()
+
+        created = client.post(
+            "/api/job-applications",
+            json={
+                "job_description_id": create_job(client, "无版本简历公司"),
+                "current_stage_type": "screening",
+                "current_stage_label": "待投递",
+                "stage_state": "awaiting_schedule",
+            },
+        )
+        assert created.status_code == 201, created.text
+        application = created.json()["application"]
+
+        rejected = client.put(
+            f"/api/job-applications/{application['id']}",
+            json={
+                "applied_at": "2026-08-22T04:00:00Z",
+                "resume_id": resume_id,
+                "base_lock_version": application["lock_version"],
+            },
+        )
+        assert rejected.status_code == 409
+        assert rejected.json() == {"error": "INTERVIEW_RESUME_VERSION_REQUIRED"}
+
+
+def test_marking_an_application_cannot_bind_another_users_resume() -> None:
+    app = build_app()
+    with TestClient(app) as owner, TestClient(app) as other:
+        register(owner, "application-resume-owner@example.test")
+        register(other, "application-resume-other@example.test")
+        other_resume = create_resume(other, app, "他人简历")
+
+        created = owner.post(
+            "/api/job-applications",
+            json={
+                "job_description_id": create_job(owner, "他人简历隔离公司"),
+                "current_stage_type": "screening",
+                "current_stage_label": "待投递",
+                "stage_state": "awaiting_schedule",
+            },
+        )
+        assert created.status_code == 201, created.text
+        application = created.json()["application"]
+
+        rejected = owner.put(
+            f"/api/job-applications/{application['id']}",
+            json={
+                "applied_at": "2026-08-22T04:00:00Z",
+                "resume_id": other_resume["id"],
+                "base_lock_version": application["lock_version"],
+            },
+        )
+        assert rejected.status_code == 404
+        assert rejected.json() == {"error": "INTERVIEW_NOT_FOUND"}
+
+
+def test_marking_an_application_keeps_explicit_resume_version_id_compatibility() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "application-version-compatibility@example.test")
+        resume = create_resume(client, app, "兼容版本简历")
+        version = list_resume_versions(client, str(resume["id"]))[0]
+        created = client.post(
+            "/api/job-applications",
+            json={
+                "job_description_id": create_job(client, "兼容版本公司"),
+                "current_stage_type": "screening",
+                "current_stage_label": "待投递",
+                "stage_state": "awaiting_schedule",
+            },
+        )
+        assert created.status_code == 201, created.text
+        application = created.json()["application"]
+
+        marked = client.put(
+            f"/api/job-applications/{application['id']}",
+            json={
+                "applied_at": "2026-08-22T04:00:00Z",
+                "resume_version_id": version["id"],
+                "base_lock_version": application["lock_version"],
+            },
+        )
+        assert marked.status_code == 200, marked.text
+        bound = marked.json()["application"]
+        assert bound["resume_version_id"] == version["id"]
+        assert bound["resume_title_snapshot"] == version["name"]
+
+
+def test_application_update_rejects_resume_id_and_resume_version_id_together() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "application-resume-fields-exclusive@example.test")
+        resume = create_resume(client, app, "互斥字段简历")
+        version = list_resume_versions(client, str(resume["id"]))[0]
+        application = create_application(client, create_job(client, "互斥字段公司"))
+
+        rejected = client.put(
+            f"/api/job-applications/{application['id']}",
+            json={
+                "resume_id": resume["id"],
+                "resume_version_id": version["id"],
+                "calendar_color": "green",
+                "base_lock_version": application["lock_version"],
+            },
+        )
+        assert rejected.status_code == 400
+        assert rejected.json() == {"error": "INVALID_INTERVIEW_REQUEST"}
+
+
 def test_marking_an_application_does_not_rewind_explicit_current_stages() -> None:
     app = build_app()
     with TestClient(app) as client:
         register(client, "application-stage-preservation@example.test")
+        resume = create_resume(client, app)
         interview = client.post(
             "/api/job-applications",
             json={
@@ -516,6 +767,7 @@ def test_marking_an_application_does_not_rewind_explicit_current_stages() -> Non
             f"/api/job-applications/{interview_application['id']}",
             json={
                 "applied_at": "2026-08-22T04:00:00Z",
+                "resume_id": resume["id"],
                 "base_lock_version": interview_application["lock_version"],
             },
         )
@@ -542,6 +794,7 @@ def test_marking_an_application_does_not_rewind_explicit_current_stages() -> Non
             f"/api/job-applications/{screening_application['id']}",
             json={
                 "applied_at": "2026-08-22T04:00:00Z",
+                "resume_id": resume["id"],
                 "base_lock_version": screening_application["lock_version"],
             },
         )
@@ -631,6 +884,7 @@ def test_stale_application_write_cannot_rewind_a_normalized_or_advanced_stage() 
     app = build_app()
     with TestClient(app) as client:
         register(client, "application-stage-lock@example.test")
+        resume = create_resume(client, app)
         created = client.post(
             "/api/job-applications",
             json={
@@ -647,6 +901,7 @@ def test_stale_application_write_cannot_rewind_a_normalized_or_advanced_stage() 
             f"/api/job-applications/{application['id']}",
             json={
                 "applied_at": "2026-08-22T04:00:00Z",
+                "resume_id": resume["id"],
                 "base_lock_version": application["lock_version"],
             },
         )

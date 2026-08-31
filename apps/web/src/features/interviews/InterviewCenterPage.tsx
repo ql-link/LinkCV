@@ -683,7 +683,19 @@ export function InterviewCenterPage({
           )}
         />
       )}
-      {!isStandaloneDetailRoute && navigation}
+      {!isStandaloneDetailRoute && view === "applications" ? (
+        <div className="career-applications-navigation-row">
+          {navigation}
+          <ApplicationViewControls
+            displayMode={applicationDisplayMode}
+            sortNewestFirst={sortApplicationsNewestFirst}
+            onDisplayModeChange={setApplicationDisplayMode}
+            onSortChange={setSortApplicationsNewestFirst}
+          />
+        </div>
+      ) : (
+        !isStandaloneDetailRoute && navigation
+      )}
       <main className={`dashboard-content interview-center-content${isStandaloneDetailRoute ? " career-standalone-detail-content" : ""}`}>
       {notice && (
         <div className="interview-error-notice" role="alert" aria-live="assertive">
@@ -756,8 +768,6 @@ export function InterviewCenterPage({
           query={query}
           displayMode={applicationDisplayMode}
           sortNewestFirst={sortApplicationsNewestFirst}
-          onDisplayModeChange={setApplicationDisplayMode}
-          onSortChange={setSortApplicationsNewestFirst}
           onCreate={() => setShowCreateApplication(true)}
           onChanged={() => loadData(initialSessionId)}
           onNotice={setNotice}
@@ -814,6 +824,7 @@ export function InterviewCenterPage({
               item.current_stage_type !== "offer",
           )}
           initialApplicationId={createInterviewApplicationId}
+          detailMode={isApplicationDetailRoute}
           timezone={timezone}
           onClose={() => {
             setShowCreate(false);
@@ -894,6 +905,43 @@ function ApplicationHeaderControls({
   );
 }
 
+function ApplicationViewControls({
+  displayMode,
+  sortNewestFirst,
+  onDisplayModeChange,
+  onSortChange,
+}: {
+  displayMode: "board" | "list";
+  sortNewestFirst: boolean;
+  onDisplayModeChange: (value: "board" | "list") => void;
+  onSortChange: (value: boolean) => void;
+}) {
+  return (
+    <div className="career-applications-view-controls" role="group" aria-label="求职记录显示设置">
+      <button
+        type="button"
+        className="career-view-switch"
+        aria-label={displayMode === "list" ? "切换到阶段看板" : "切换到列表"}
+        title={displayMode === "list" ? "切换到阶段看板" : "切换到列表"}
+        onClick={() => onDisplayModeChange(displayMode === "list" ? "board" : "list")}
+      >
+        {displayMode === "list" ? <List aria-hidden="true" /> : <Kanban aria-hidden="true" />}
+        <span>{displayMode === "list" ? "列表" : "阶段看板"}</span>
+      </button>
+      <button
+        type="button"
+        className="career-sort-button"
+        aria-label={sortNewestFirst ? "切换为最早更新" : "切换为最近更新"}
+        title={sortNewestFirst ? "切换为最早更新" : "切换为最近更新"}
+        onClick={() => onSortChange(!sortNewestFirst)}
+      >
+        {sortNewestFirst ? <ArrowDownWideNarrow aria-hidden="true" /> : <ArrowUpNarrowWide aria-hidden="true" />}
+        <span>{sortNewestFirst ? "最近更新" : "最早更新"}</span>
+      </button>
+    </div>
+  );
+}
+
 function ScheduleHeaderControls({ query, onCreate, onQueryChange }: { query: string; onCreate: () => void; onQueryChange: (value: string) => void }) {
   return (
     <div className="schedule-page-actions">
@@ -909,8 +957,6 @@ function ApplicationsView({
   query,
   displayMode,
   sortNewestFirst,
-  onDisplayModeChange,
-  onSortChange,
   onCreate,
   onChanged,
   onNotice,
@@ -921,8 +967,6 @@ function ApplicationsView({
   query: string;
   displayMode: "board" | "list";
   sortNewestFirst: boolean;
-  onDisplayModeChange: (value: "board" | "list") => void;
-  onSortChange: (value: boolean) => void;
   onCreate: () => void;
   onChanged: () => Promise<void>;
   onNotice: (notice: string) => void;
@@ -940,32 +984,6 @@ function ApplicationsView({
     });
   return (
     <div className="career-applications-layout">
-      <div className="career-applications-toolbar">
-        <p className="career-applications-count">全部记录 <strong>{visibleApplications.length}</strong></p>
-        <div className="career-applications-toolbar-actions">
-          {displayMode === "board" && <span className="career-board-scroll-hint">横向滑动查看更多阶段</span>}
-          <button
-            type="button"
-            className="career-view-switch"
-            aria-label={displayMode === "list" ? "切换到阶段看板" : "切换到列表"}
-            title={displayMode === "list" ? "切换到阶段看板" : "切换到列表"}
-            onClick={() => onDisplayModeChange(displayMode === "list" ? "board" : "list")}
-          >
-            {displayMode === "list" ? <List aria-hidden="true" /> : <Kanban aria-hidden="true" />}
-            <span>{displayMode === "list" ? "列表" : "阶段看板"}</span>
-          </button>
-          <button
-            type="button"
-            className="career-sort-button"
-            aria-label={sortNewestFirst ? "切换为最早更新" : "切换为最近更新"}
-            title={sortNewestFirst ? "切换为最早更新" : "切换为最近更新"}
-            onClick={() => onSortChange(!sortNewestFirst)}
-          >
-            {sortNewestFirst ? <ArrowDownWideNarrow aria-hidden="true" /> : <ArrowUpNarrowWide aria-hidden="true" />}
-            <span>{sortNewestFirst ? "最近更新" : "最早更新"}</span>
-          </button>
-        </div>
-      </div>
       <ApplicationsBoard
         visibleApplications={visibleApplications}
         displayMode={displayMode}
@@ -2319,6 +2337,7 @@ function CreateApplicationDialog({
 function CreateInterviewDialog({
   applications,
   initialApplicationId,
+  detailMode,
   timezone,
   initialStartAt,
   onClose,
@@ -2327,12 +2346,26 @@ function CreateInterviewDialog({
 }: {
   applications: JobApplicationSummary[];
   initialApplicationId?: string | null;
+  detailMode: boolean;
   timezone: string;
   initialStartAt?: string | null;
   onClose: () => void;
   onCreated: (sessionId: string, info?: ScheduleCreatedInfo) => void;
   onNotice: (notice: string) => void;
 }) {
+  const detailApplication = detailMode
+    ? applications.find((item) => item.id === initialApplicationId) ?? null
+    : null;
+  const detailStageLabel = detailApplication?.current_stage_label ?? "一面";
+  const detailProgress = detailApplication ? projectApplicationProgress(detailApplication) : null;
+  const detailStageCategory = detailApplication?.current_stage_type === "screening"
+    ? detailProgress?.isAssessment ? "assessment" : "screening"
+    : "interview";
+  const detailTimeLabel = detailStageCategory === "assessment"
+    ? "测评时间"
+    : detailStageCategory === "interview"
+      ? "面试时间"
+      : "记录时间";
   const [jobs, setJobs] = useState<JobDescriptionSummary[]>([]);
   const [applicationId, setApplicationId] = useState<string | "new">(
     initialApplicationId && applications.some((item) => item.id === initialApplicationId)
@@ -2343,7 +2376,7 @@ function CreateInterviewDialog({
   const [company, setCompany] = useState("");
   const [role, setRole] = useState("");
   const [jobDescription, setJobDescription] = useState("");
-  const [stage, setStage] = useState("一面");
+  const [stage, setStage] = useState(detailStageLabel);
   const [roundNo, setRoundNo] = useState(1);
   const [startAt, setStartAt] = useState(() => {
     if (initialStartAt) return initialStartAt;
@@ -2354,6 +2387,7 @@ function CreateInterviewDialog({
   });
   const [duration, setDuration] = useState(60);
   const [mode, setMode] = useState<"video" | "onsite" | "phone" | "other">("video");
+  const [meetingOrLocation, setMeetingOrLocation] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [createdJobId, setCreatedJobId] = useState<string | null>(null);
   const [createdApplication, setCreatedApplication] = useState<JobApplicationSummary | null>(null);
@@ -2363,8 +2397,12 @@ function CreateInterviewDialog({
   } | null>(null);
   const requestIdRef = useRef(crypto.randomUUID());
   useEffect(() => {
+    if (detailMode) return;
     void api.listJobDescriptions({ limit: 100 }).then((response) => setJobs(response.items)).catch(() => undefined);
-  }, []);
+  }, [detailMode]);
+  useEffect(() => {
+    if (detailMode && detailApplication) setStage(detailApplication.current_stage_label);
+  }, [detailApplication?.current_stage_label, detailMode]);
   const createSession = async (
     targetApplication: JobApplicationSummary,
     payload: InterviewSessionCreatePayload,
@@ -2400,6 +2438,10 @@ function CreateInterviewDialog({
     try {
       let targetApplication =
         createdApplication ?? applications.find((item) => item.id === applicationId);
+      if (detailMode && !targetApplication) {
+        onNotice("当前求职进程已不可用，请刷新后重试。");
+        return;
+      }
       if (!targetApplication) {
         let targetJobId = createdJobId ?? jobId;
         if (!targetJobId) {
@@ -2439,6 +2481,16 @@ function CreateInterviewDialog({
         end_at: end.toISOString(),
         timezone,
         mode,
+        ...(detailMode
+          ? {
+              meeting_url: mode === "video" || mode === "phone"
+                ? meetingOrLocation.trim() || null
+                : null,
+              location: mode === "onsite" || mode === "other"
+                ? meetingOrLocation.trim() || null
+                : null,
+            }
+          : {}),
       };
       await createSession(targetApplication, payload, false);
     } catch (error) {
@@ -2448,19 +2500,53 @@ function CreateInterviewDialog({
     }
   };
   const creationLocked = createdJobId !== null || createdApplication !== null;
+  const meetingOrLocationPlaceholder = mode === "video" || mode === "phone"
+    ? "粘贴会议链接（可选）"
+    : "填写会议室、地址或其他地点（可选）";
   return (
     <div className="interview-dialog-backdrop" role="presentation">
-      <section className="interview-dialog" role="dialog" aria-modal="true" aria-labelledby="create-interview-title">
-        <header><div><h2 id="create-interview-title">新建面试</h2><p>岗位信息、求职进程和本场排期在这里一次完成。</p></div><button type="button" aria-label="关闭" onClick={onClose}><X /></button></header>
+      <section className={`interview-dialog${detailMode ? " interview-dialog--detail-schedule" : ""}`} role="dialog" aria-modal="true" aria-labelledby="create-interview-title">
+        <header><div><h2 id="create-interview-title">{detailMode ? "添加求职阶段" : "新建面试"}</h2><p>{detailMode ? "选择阶段分类并补充本阶段信息，保存后会进入对应的求职流程。" : "岗位信息、求职进程和本场排期在这里一次完成。"}</p></div><button type="button" aria-label="关闭" onClick={onClose}><X /></button></header>
         <form onSubmit={(event) => void submit(event)}>
-          {applications.length > 0 && <label>求职进程<select disabled={creationLocked || submitting} value={applicationId} onChange={(event) => setApplicationId(event.target.value)}><option value="new">新建求职进程</option>{applications.map((item) => <option key={item.id} value={item.id}>{item.company_name_snapshot} · {item.job_title_snapshot} · {projectApplicationProgress(item).stageLabel}</option>)}</select></label>}
-          {applicationId === "new" && <>
-            <label>已有岗位档案<select disabled={creationLocked || submitting} value={jobId} onChange={(event) => setJobId(event.target.value)}><option value="">在求职中心直接填写岗位</option>{jobs.map((job) => <option key={job.id} value={job.id}>{job.company_name} · {job.job_title}</option>)}</select></label>
-            {!jobId && <div className="interview-dialog-grid"><label>公司<input disabled={creationLocked} required value={company} onChange={(event) => setCompany(event.target.value)} /></label><label>岗位<input disabled={creationLocked} required value={role} onChange={(event) => setRole(event.target.value)} /></label><label className="is-wide">岗位信息<textarea disabled={creationLocked} value={jobDescription} onChange={(event) => setJobDescription(event.target.value)} placeholder="可粘贴 JD，后续会作为本次求职的岗位快照" /></label></div>}
-            <div className="interview-dialog-grid"><label>阶段<input disabled={creationLocked} required value={stage} onChange={(event) => setStage(event.target.value)} /></label><label>轮次<input disabled={creationLocked} type="number" min={1} value={roundNo} onChange={(event) => setRoundNo(Number(event.target.value))} /></label></div>
-          </>}
+          {detailMode ? (
+            <>
+              <div className="interview-detail-stage-section">
+                <strong>阶段分类</strong>
+                <div className="interview-detail-stage-categories" aria-label="阶段分类">
+                  {[
+                    ["screening", "筛选"],
+                    ["assessment", "笔试 / 测评"],
+                    ["interview", "面试"],
+                  ].map(([key, label]) => (
+                    <span key={key} className={key === detailStageCategory ? "is-active" : ""} aria-current={key === detailStageCategory ? "step" : undefined}>{label}</span>
+                  ))}
+                </div>
+              </div>
+              <div className="interview-detail-divider" aria-hidden="true" />
+              <div className="interview-dialog-grid interview-detail-form-grid">
+                <label>展示名称<input required value={stage} readOnly aria-readonly="true" /></label>
+                {detailStageCategory === "interview" && <label>面试轮次<input type="number" value={detailApplication?.current_round_no ?? ""} readOnly aria-readonly="true" /></label>}
+                <label>当前状态<input value="已安排" readOnly aria-readonly="true" /></label>
+                <label>{detailTimeLabel}<input required type="datetime-local" step={1800} value={startAt} onChange={(event) => setStartAt(event.target.value)} /></label>
+                {detailStageCategory !== "screening" && <>
+                  <label>时长<select value={duration} onChange={(event) => setDuration(Number(event.target.value))}><option value={30}>30 分钟</option><option value={60}>1 小时</option><option value={90}>1.5 小时</option><option value={120}>2 小时</option></select></label>
+                  <label>方式<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="video">视频面试</option><option value="onsite">现场面试</option><option value="phone">电话面试</option><option value="other">其他</option></select></label>
+                  <label className="is-wide">链接或地点<input value={meetingOrLocation} onChange={(event) => setMeetingOrLocation(event.target.value)} placeholder={meetingOrLocationPlaceholder} /></label>
+                </>}
+              </div>
+            </>
+          ) : (
+            <>
+              {applications.length > 0 && <label>求职进程<select disabled={creationLocked || submitting} value={applicationId} onChange={(event) => setApplicationId(event.target.value)}><option value="new">新建求职进程</option>{applications.map((item) => <option key={item.id} value={item.id}>{item.company_name_snapshot} · {item.job_title_snapshot} · {projectApplicationProgress(item).stageLabel}</option>)}</select></label>}
+              {applicationId === "new" && <>
+                <label>已有岗位档案<select disabled={creationLocked || submitting} value={jobId} onChange={(event) => setJobId(event.target.value)}><option value="">在求职中心直接填写岗位</option>{jobs.map((job) => <option key={job.id} value={job.id}>{job.company_name} · {job.job_title}</option>)}</select></label>
+                {!jobId && <div className="interview-dialog-grid"><label>公司<input disabled={creationLocked} required value={company} onChange={(event) => setCompany(event.target.value)} /></label><label>岗位<input disabled={creationLocked} required value={role} onChange={(event) => setRole(event.target.value)} /></label><label className="is-wide">岗位信息<textarea disabled={creationLocked} value={jobDescription} onChange={(event) => setJobDescription(event.target.value)} placeholder="可粘贴 JD，后续会作为本次求职的岗位快照" /></label></div>}
+                <div className="interview-dialog-grid"><label>阶段<input disabled={creationLocked} required value={stage} onChange={(event) => setStage(event.target.value)} /></label><label>轮次<input disabled={creationLocked} type="number" min={1} value={roundNo} onChange={(event) => setRoundNo(Number(event.target.value))} /></label></div>
+              </>}
+            </>
+          )}
           {creationLocked && <p className="interview-create-progress" role="status">岗位或求职进程已创建；再次提交只会重试当前面试排期，不会重复创建前置数据。</p>}
-          <div className="interview-dialog-grid"><label>开始时间<input required type="datetime-local" step={1800} value={startAt} onChange={(event) => setStartAt(event.target.value)} /></label><label>时长<select value={duration} onChange={(event) => setDuration(Number(event.target.value))}><option value={30}>30 分钟</option><option value={60}>1 小时</option><option value={90}>1.5 小时</option><option value={120}>2 小时</option></select></label><label>面试方式<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="video">视频面试</option><option value="onsite">现场面试</option><option value="phone">电话面试</option><option value="other">其他</option></select></label></div>
+          {!detailMode && <div className="interview-dialog-grid"><label>开始时间<input required type="datetime-local" step={1800} value={startAt} onChange={(event) => setStartAt(event.target.value)} /></label><label>时长<select value={duration} onChange={(event) => setDuration(Number(event.target.value))}><option value={30}>30 分钟</option><option value={60}>1 小时</option><option value={90}>1.5 小时</option><option value={120}>2 小时</option></select></label><label>面试方式<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="video">视频面试</option><option value="onsite">现场面试</option><option value="phone">电话面试</option><option value="other">其他</option></select></label></div>}
           {pendingCreateConflict && (
             <div className="interview-create-conflict" role="alert">
               <div><strong>这个时间段与其他面试重叠</strong><span>前置的岗位和求职进程已经保留。你可以返回修改时间，或明确允许重叠保存本场排期。</span></div>
@@ -2479,7 +2565,17 @@ function CreateInterviewDialog({
               >{submitting ? "正在保存…" : "仍然保存"}</button>
             </div>
           )}
-          <footer><Button type="button" variant="outline" onClick={onClose}>取消</Button><Button type="submit" disabled={submitting || pendingCreateConflict !== null}>{submitting ? "正在创建…" : "创建面试"}</Button></footer>
+          {detailMode ? (
+            <footer className="interview-detail-footer">
+              <p>保存后可继续补充安排或更新结果。</p>
+              <div className="interview-detail-footer-actions">
+                <Button type="button" variant="outline" onClick={onClose}>取消</Button>
+                <Button type="submit" disabled={submitting || pendingCreateConflict !== null}>{submitting ? "正在保存…" : "添加并保存"}</Button>
+              </div>
+            </footer>
+          ) : (
+            <footer><Button type="button" variant="outline" onClick={onClose}>取消</Button><Button type="submit" disabled={submitting || pendingCreateConflict !== null}>{submitting ? "正在创建…" : "创建面试"}</Button></footer>
+          )}
         </form>
       </section>
     </div>
