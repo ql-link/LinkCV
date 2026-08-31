@@ -2439,7 +2439,7 @@ select:not([data-slot]):focus-visible {
 .workbench-setting-item-icon { display: grid; width: 30px; height: 30px; flex: 0 0 30px; place-items: center; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); background: var(--ui-surface-subtle); color: var(--ui-text-secondary); }
 
 .workbench-value-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; color: var(--ui-text-secondary); font-size: 0.75rem; }
-.workbench-value-row > span { min-width: 0; font-weight: 550; }
+.workbench-value-row > span { min-width: max-content; flex: 0 0 auto; font-weight: 550; white-space: nowrap; }
 .workbench-value-control { display: grid; flex: 0 0 auto; grid-template-columns: 28px minmax(54px, auto) 28px; align-items: center; gap: 3px; }
 .workbench-value-control button { display: grid; width: 28px; height: 28px; place-items: center; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); background: var(--ui-surface); padding: 0; color: var(--ui-text-muted); cursor: pointer; }
 .workbench-value-control button:hover:not(:disabled) { border-color: var(--ui-border-strong); color: var(--ui-accent); }
