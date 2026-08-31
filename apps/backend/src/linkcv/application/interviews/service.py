@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from linkcv.application.interviews.state import (
     ApplicationStateValue,
     InvalidTransition,
-    POST_APPLICATION_PLACEHOLDER_LABEL,
+    POST_APPLICATION_SCREENING_LABEL,
     advance_application as transition_advance,
     cancel_current_session,
     close_application as transition_close,
@@ -439,7 +439,7 @@ def update_application(
         provided["is_favorite"] = int(bool(provided["is_favorite"]))
     if "applied_at" in provided and provided["applied_at"] is not None:
         provided["applied_at"] = provided["applied_at"].astimezone(UTC)
-        is_unsubmitted_placeholder = (
+        is_unsubmitted_application = (
             application.applied_at is None
             and application.current_stage_type == "screening"
             and (
@@ -448,17 +448,18 @@ def update_application(
                     and application.stage_state == "awaiting_schedule"
                 )
                 or (
-                    application.current_stage_label.strip() == "筛选中"
+                    application.current_stage_label.strip()
+                    == POST_APPLICATION_SCREENING_LABEL
                     and application.stage_state == "awaiting_result"
                 )
             )
         )
-        if is_unsubmitted_placeholder:
+        if is_unsubmitted_application:
             provided.update(
                 {
                     "current_stage_type": "screening",
                     "current_round_no": None,
-                    "current_stage_label": POST_APPLICATION_PLACEHOLDER_LABEL,
+                    "current_stage_label": POST_APPLICATION_SCREENING_LABEL,
                     "stage_state": "awaiting_result",
                 }
             )

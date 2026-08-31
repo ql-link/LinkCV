@@ -336,7 +336,6 @@ function nextApplicationStageLabel(application: JobApplicationSummary): string {
     return `${formatApplicationListDateTime(application.next_session_start_at)} · ${projection.stageLabel}`;
   }
   if (application.stage_state === "awaiting_schedule") return "等待安排";
-  if (projection.isWaiting) return projection.supportingLabel ?? projection.statusLabel;
   if (application.stage_state === "awaiting_result") return "等待结果";
   if (application.stage_state === "negotiating") return "Offer沟通";
   return "尚未确认";
@@ -745,6 +744,7 @@ export function InterviewCenterPage({
         <ApplicationDetailView
           application={applications.find((item) => item.id === initialApplicationId) ?? null}
           sessions={sessions}
+          timezone={timezone}
           onBack={() => navigateTo(careerViewPath("applications"))}
           onCreateInterview={(applicationId) => {
             setCreateInterviewApplicationId(applicationId);
@@ -757,6 +757,7 @@ export function InterviewCenterPage({
         <InterviewSessionDetailView
           detail={detail?.session.id === initialSessionId ? detail : null}
           detailLoading={detailLoading}
+          timezone={timezone}
           onBack={() => navigateTo(careerApplicationPath(initialApplicationId as string))}
           onChanged={(preferredId) => loadData(preferredId)}
           onNotice={setNotice}
@@ -1427,8 +1428,7 @@ function ApplicationHistoryList({
             {application.archived_at === null &&
               application.status === "active" &&
               application.current_stage_type === "screening" &&
-              application.stage_state === "awaiting_result" &&
-              !projectApplicationProgress(application).isWaiting && (
+              application.stage_state === "awaiting_result" && (
                 <div className="application-screening-actions">
                   <span>筛选结果</span>
                   <button type="button" disabled={busyId !== null} onClick={() => void advanceScreening(application)}>通过并进入一面</button>
@@ -2646,12 +2646,9 @@ function StageProgress({ application }: { application: InterviewSessionDetail["a
     })),
     { key: "hr", label: "HR 面" },
     { key: "offer", label: "Offer" },
-    ...(projection.isWaiting ? [{ key: "waiting", label: projection.statusLabel }] : []),
   ];
   const currentKey =
-    projection.isWaiting
-      ? "waiting"
-      : application.current_stage_type === "interview"
+    application.current_stage_type === "interview"
       ? `interview:${application.current_round_no ?? 1}`
       : application.current_stage_type;
   const currentIndex = Math.max(0, stages.findIndex((stage) => stage.key === currentKey));

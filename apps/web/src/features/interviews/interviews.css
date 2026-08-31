@@ -489,10 +489,11 @@
 }
 .progress-board-grid {
   display: grid;
-  width: 1892px;
-  min-width: 1892px;
+  width: max-content;
+  min-width: 100%;
   height: auto;
-  grid-template-columns: repeat(7, 260px);
+  grid-auto-flow: column;
+  grid-auto-columns: 260px;
   gap: 12px;
   align-items: start;
 }
@@ -2268,7 +2269,22 @@
   grid-template-rows: auto auto 1px minmax(0, 1fr) auto;
   gap: 18px;
   overflow: hidden;
-  padding: 26px 28px 24px;
+  padding: 26px 24px 24px;
+  border-radius: var(--ui-radius-xl);
+  box-shadow: 0 16px 20px rgb(0 0 0 / 16%);
+}
+
+.career-next-stage-dialog-header {
+  gap: 14px;
+}
+
+.career-next-stage-dialog-header > * + * {
+  margin-top: 0;
+}
+
+.career-next-stage-dialog [data-slot="dialog-description"] {
+  max-width: none;
+  font-size: var(--ui-text-sm);
 }
 
 .career-next-stage-tabs {
@@ -2301,32 +2317,55 @@
 .career-next-stage-panel {
   display: block;
   min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .career-next-stage-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: none;
+  grid-template-rows: unset;
+  grid-auto-rows: 66px;
   align-content: start;
   gap: 16px;
 }
 
+.career-next-stage-error {
+  margin: 16px 0 0;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-destructive-subtle);
+  padding: 10px 12px;
+  color: var(--ui-destructive);
+  font-size: var(--ui-text-xs);
+  line-height: var(--ui-leading-normal);
+}
+
 .career-next-stage-field {
   display: grid;
+  grid-template-rows: 16px 44px;
+  align-content: start;
   min-width: 0;
   gap: 6px;
+}
+
+.career-next-stage-field--full {
+  grid-column: 1 / -1;
 }
 
 .career-next-stage-field > label {
   color: var(--ui-text-secondary);
   font-size: var(--ui-text-sm);
   font-weight: 600;
+  line-height: 16px;
 }
 
 .career-next-stage-field input,
-.career-next-stage-field select {
+.career-next-stage-field select,
+.career-next-stage-select-trigger,
+.career-next-stage-field .career-schedule-picker-trigger {
   width: 100%;
   min-height: 44px;
+  height: 44px;
   box-sizing: border-box;
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-sm);
@@ -2337,20 +2376,193 @@
   font-size: var(--ui-text-sm);
 }
 
+.career-next-stage-select-trigger {
+  padding: 0 12px;
+}
+
+.career-next-stage-select-trigger > svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  color: var(--ui-text-muted);
+}
+
+.career-next-stage-select-trigger[data-placeholder] {
+  color: var(--ui-text-muted);
+}
+
+.career-next-stage-select-content {
+  border-radius: var(--ui-radius-sm);
+  box-shadow: var(--ui-shadow-sm);
+}
+
 .career-next-stage-field input[readonly] {
-  background: var(--ui-surface-subtle);
-  color: var(--ui-text-secondary);
+  background: var(--ui-surface);
+  color: var(--ui-foreground);
 }
 
 .career-next-stage-field input:focus-visible,
-.career-next-stage-field select:focus-visible {
+.career-next-stage-field select:focus-visible,
+.career-next-stage-select-trigger:focus-visible,
+.career-next-stage-field .career-schedule-picker-trigger:focus-visible {
   border-color: var(--ui-ring);
   outline: none;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-ring) 22%, transparent);
 }
 
+.career-next-stage-field .career-schedule-picker-trigger {
+  flex: 0 0 auto;
+}
+
+.career-next-stage-field .career-schedule-picker-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.career-schedule-picker-popover {
+  right: 0;
+  left: auto;
+  width: min(344px, calc(100vw - 64px));
+  max-height: min(420px, calc(100vh - 80px));
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.career-schedule-picker-popover .career-date-picker-header {
+  min-height: 28px;
+  margin-bottom: 6px;
+}
+
+.career-schedule-picker-popover .career-date-picker-header button {
+  width: 28px;
+  height: 28px;
+}
+
+.career-schedule-picker-popover .career-date-picker-weekdays,
+.career-schedule-picker-popover .career-date-picker-week {
+  gap: 2px;
+}
+
+.career-schedule-picker-popover .career-date-picker-weekdays {
+  margin-bottom: 2px;
+}
+
+.career-schedule-picker-popover .career-date-picker-weekdays span {
+  height: 20px;
+}
+
+.career-schedule-picker-popover .career-date-picker-days {
+  gap: 2px;
+}
+
+.career-schedule-picker-popover .career-date-picker-week [role="gridcell"] > button {
+  height: 28px;
+}
+
+.career-schedule-picker-time {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  border-top: 1px solid var(--ui-border);
+  padding-top: 8px;
+}
+
+.career-schedule-picker-time > label {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-text-xs);
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.career-schedule-picker-time > input {
+  width: 100%;
+  height: 40px;
+  min-height: 40px;
+  box-sizing: border-box;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface);
+  padding: 0 12px;
+  color: var(--ui-foreground);
+  font: inherit;
+  font-size: var(--ui-text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.career-schedule-picker-time > input:focus-visible {
+  border-color: var(--ui-ring);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-ring) 22%, transparent);
+}
+
+.career-schedule-picker-time > input[aria-invalid="true"] {
+  border-color: var(--ui-destructive);
+}
+
+.career-schedule-picker-time > span,
+.career-schedule-picker-time > p {
+  margin: 0;
+  font-size: var(--ui-text-xs);
+  line-height: 16px;
+}
+
+.career-schedule-picker-time > span {
+  color: var(--ui-text-muted);
+}
+
+.career-schedule-picker-time > p {
+  color: var(--ui-destructive);
+}
+
+.career-schedule-picker-footer-secondary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.career-schedule-picker-confirm {
+  min-height: 32px;
+  border: 0;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-primary);
+  padding: 0 12px;
+  color: var(--ui-primary-foreground);
+  font: inherit;
+  font-size: var(--ui-text-sm);
+  cursor: pointer;
+}
+
+.career-schedule-picker-confirm:hover {
+  background: var(--ui-primary-hover);
+}
+
+.career-schedule-picker-confirm:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.career-schedule-picker-confirm:focus-visible {
+  outline: 2px solid var(--ui-ring);
+  outline-offset: 2px;
+}
+
+.career-schedule-picker-popover .career-date-picker-footer {
+  border-top: 0;
+  margin-top: 6px;
+  padding-top: 6px;
+}
+
 .career-next-stage-dialog-footer {
   align-self: end;
+}
+
+.career-next-stage-dialog .career-next-stage-save-button {
+  background: var(--ui-primary);
+  color: var(--ui-primary-foreground);
+}
+
+.career-next-stage-dialog .career-next-stage-save-button:hover {
+  background: var(--ui-foreground);
 }
 
 @media (max-width: 640px) {
@@ -2374,10 +2586,25 @@
 
   .career-next-stage-form {
     grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: auto;
+  }
+
+  .career-schedule-picker-popover {
+    position: static;
+    width: 100%;
+    max-height: min(360px, calc(100vh - 96px));
+    margin-top: 8px;
   }
 
   .career-next-stage-dialog-footer-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (min-width: 641px) {
+  .career-next-stage-dialog,
+  .career-next-stage-panel {
+    overflow: visible;
   }
 }

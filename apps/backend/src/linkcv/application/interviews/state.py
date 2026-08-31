@@ -11,7 +11,7 @@ OfferStatus = Literal[
     "none", "oc_received", "written_offer_received", "accepted", "declined"
 ]
 
-POST_APPLICATION_PLACEHOLDER_LABEL = "等待后续通知"
+POST_APPLICATION_SCREENING_LABEL = "筛选中"
 
 
 def is_assessment_stage_label(stage_label: str) -> bool:

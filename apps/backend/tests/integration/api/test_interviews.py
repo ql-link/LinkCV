@@ -475,10 +475,10 @@ def test_application_creation_rejects_a_pending_placeholder_with_applied_at() ->
         assert legacy_applied.json()["application"]["current_stage_label"] == "筛选中"
 
 
-def test_marking_an_application_applied_normalizes_to_the_post_application_placeholder() -> None:
+def test_marking_an_application_applied_normalizes_to_screening() -> None:
     app = build_app()
     with TestClient(app) as client:
-        register(client, "application-placeholder@example.test")
+        register(client, "application-screening@example.test")
         created = client.post(
             "/api/job-applications",
             json={
@@ -515,7 +515,7 @@ def test_marking_an_application_applied_normalizes_to_the_post_application_place
         assert marked_application["applied_at"].endswith("Z")
         assert marked_application["current_stage_type"] == "screening"
         assert marked_application["current_round_no"] is None
-        assert marked_application["current_stage_label"] == "等待后续通知"
+        assert marked_application["current_stage_label"] == "筛选中"
         assert marked_application["stage_state"] == "awaiting_result"
         assert marked_application["lock_version"] == application["lock_version"] + 1
 
@@ -527,7 +527,7 @@ def test_marking_an_application_applied_normalizes_to_the_post_application_place
             },
         )
         assert changed_date.status_code == 200, changed_date.text
-        assert changed_date.json()["application"]["current_stage_label"] == "等待后续通知"
+        assert changed_date.json()["application"]["current_stage_label"] == "筛选中"
 
         legacy = client.post(
             "/api/job-applications",
@@ -550,7 +550,7 @@ def test_marking_an_application_applied_normalizes_to_the_post_application_place
             },
         )
         assert legacy_marked.status_code == 200, legacy_marked.text
-        assert legacy_marked.json()["application"]["current_stage_label"] == "等待后续通知"
+        assert legacy_marked.json()["application"]["current_stage_label"] == "筛选中"
 
 
 def test_marking_an_application_with_resume_id_binds_the_latest_formal_version() -> None:

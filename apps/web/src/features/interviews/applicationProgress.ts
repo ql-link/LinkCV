@@ -9,7 +9,6 @@ export type ApplicationProgressColumnKey =
   | "screening"
   | "assessment"
   | "interview"
-  | "waiting"
   | "offer"
   | "ended";
 
@@ -30,7 +29,7 @@ export type ApplicationProgressProjection = {
   stageLabel: string;
   /** Primary status copy used in the detail header and status fields. */
   statusLabel: string;
-  /** Optional supporting copy for an unsubmitted or default waiting record. */
+  /** Optional supporting copy for an unsubmitted record. */
   supportingLabel: string | null;
   /** Accessible/product copy for the current progress indicator. */
   primaryLabel: string;
@@ -47,7 +46,6 @@ export const APPLICATION_PROGRESS_COLUMNS: Array<{
   { key: "screening", label: "筛选中" },
   { key: "assessment", label: "笔试中" },
   { key: "interview", label: "面试中" },
-  { key: "waiting", label: "等待通知" },
   { key: "offer", label: "Offer" },
   { key: "ended", label: "已结束" },
 ];
@@ -55,8 +53,6 @@ export const APPLICATION_PROGRESS_COLUMNS: Array<{
 const PENDING_LABEL = "待投递";
 const PENDING_SUPPORTING_LABEL = "等待确认投递";
 const DEFAULT_SCREENING_LABEL = "筛选中";
-const WAITING_LABEL = "等待后续通知";
-const WAITING_SUPPORTING_LABEL = "下一阶段尚未确认";
 
 function isActive(application: ApplicationProgressSource): boolean {
   return application.status === "active" && application.archived_at === null;
@@ -67,22 +63,10 @@ function isAssessmentLabel(label: string): boolean {
 }
 
 /**
- * Before the post-application placeholder got its own label, existing rows
- * were stored as `筛选中 + awaiting_result`.  Keep that row in the waiting
- * column, while labels explicitly added from the stage dialog (`筛选`、`初筛`、
- * `复筛`) remain real screening stages.
- */
-function isPostApplicationWaitingPlaceholder(application: ApplicationProgressSource): boolean {
-  if (!isActive(application) || application.applied_at === null) return false;
-  if (application.current_stage_type !== "screening" || application.stage_state !== "awaiting_result") return false;
-  const label = application.current_stage_label.trim();
-  return label === WAITING_LABEL || label === DEFAULT_SCREENING_LABEL;
-}
-
-/**
- * Screening is the only API stage whose user-facing label has two product
- * names.  Keep the mapping deliberately narrow so custom interview labels
- * remain unchanged.
+ * Screening has one canonical product-facing label.  Assessment labels remain
+ * descriptive (apart from the historical `测评中`/`笔试中` aggregate labels),
+ * while all ordinary screening labels—including legacy waiting and screening
+ * rounds—project to the single screening column.
  */
 export function normalizeApplicationStageLabel(
   application: Pick<ApplicationProgressSource, "current_stage_type" | "current_stage_label">,
@@ -90,7 +74,8 @@ export function normalizeApplicationStageLabel(
   const label = application.current_stage_label.trim();
   if (application.current_stage_type !== "screening") return label || "当前阶段";
   if (label === "测评中" || label === "笔试中") return "笔试中";
-  return label || DEFAULT_SCREENING_LABEL;
+  if (isAssessmentLabel(label)) return label || "当前阶段";
+  return DEFAULT_SCREENING_LABEL;
 }
 
 function terminalStatusLabel(application: ApplicationProgressSource): string | null {
@@ -108,18 +93,12 @@ export function projectApplicationProgress(
 ): ApplicationProgressProjection {
   const active = isActive(application);
   const normalizedStageLabel = normalizeApplicationStageLabel(application);
-  const isPostApplicationWaiting = isPostApplicationWaitingPlaceholder(application);
   const isPending = active
     && application.current_stage_type === "screening"
     && application.applied_at === null;
   const isWaiting = active
-    && (
-      isPostApplicationWaiting
-      || (
-        application.stage_state === "awaiting_result"
-        && (application.current_stage_type === "interview" || application.current_stage_type === "hr")
-      )
-    );
+    && application.stage_state === "awaiting_result"
+    && (application.current_stage_type === "interview" || application.current_stage_type === "hr");
   const isAssessment = active
     && application.current_stage_type === "screening"
     && isAssessmentLabel(application.current_stage_label.trim());
@@ -165,22 +144,6 @@ export function projectApplicationProgress(
     };
   }
 
-  if (isWaiting) {
-    return {
-      columnKey: "waiting",
-      // The old `筛选中 + awaiting_result` row is the pre-label version of
-      // `等待后续通知`; expose the canonical copy everywhere in the waiting
-      // column so it cannot be mistaken for an ordinary screening stage.
-      stageLabel: isPostApplicationWaiting ? WAITING_LABEL : normalizedStageLabel,
-      statusLabel: WAITING_LABEL,
-      supportingLabel: WAITING_SUPPORTING_LABEL,
-      primaryLabel: WAITING_LABEL,
-      isPending: false,
-      isWaiting: true,
-      isAssessment,
-    };
-  }
-
   const columnKey: ApplicationProgressColumnKey = application.current_stage_type === "screening"
     ? isAssessment ? "assessment" : "screening"
     : "interview";
@@ -188,9 +151,9 @@ export function projectApplicationProgress(
     ? "等待安排"
     : application.stage_state === "awaiting_result"
       ? "等待结果"
-    : application.stage_state === "negotiating"
-      ? "Offer 沟通中"
-      : "进行中";
+      : application.stage_state === "negotiating"
+        ? "Offer 沟通中"
+        : "进行中";
   return {
     columnKey,
     stageLabel: normalizedStageLabel,
@@ -198,7 +161,7 @@ export function projectApplicationProgress(
     supportingLabel: null,
     primaryLabel: statusLabel,
     isPending: false,
-    isWaiting: false,
+    isWaiting,
     isAssessment,
   };
 }
@@ -206,11 +169,6 @@ export function projectApplicationProgress(
 export function applicationProgressLabel(application: ApplicationProgressSource): string {
   const projection = projectApplicationProgress(application);
   if (projection.columnKey === "ended") return `${projection.stageLabel} · ${projection.statusLabel}`;
-  if (projection.isWaiting) {
-    return projection.stageLabel === WAITING_LABEL
-      ? projection.statusLabel
-      : `${projection.stageLabel} · ${projection.statusLabel}`;
-  }
   if (projection.supportingLabel) {
     return `${projection.stageLabel} · ${projection.supportingLabel}`;
   }
@@ -245,6 +203,5 @@ export function isApplicationDraggable(application: ApplicationProgressSource): 
     && application.archived_at === null
     && application.applied_at !== null
     && application.current_stage_type === "screening"
-    && application.stage_state === "awaiting_result"
-    && !isPostApplicationWaitingPlaceholder(application);
+    && application.stage_state === "awaiting_result";
 }

@@ -59,7 +59,7 @@ def test_screening_targets_distinguish_result_waiting_from_assessment_scheduling
     waiting = state(
         stage_type="screening",
         round_no=None,
-        stage_label="等待后续通知",
+        stage_label="筛选中",
         stage_state="awaiting_result",
     )
 
