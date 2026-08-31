@@ -14,7 +14,7 @@
 - `apps/web/src/api/resumeContract.ts`：语义简历 TypeScript 契约，以及领域 JSON、Markdown 和现有 Tiptap 编辑器之间的过渡适配。
 - `apps/web/vite.config.mjs`：开发服务器、FastAPI 代理和本地图片预览插件。
 
-生产构建按页面路由拆分 React 功能包，公共 HTML 不依赖 Google Fonts 等境外样式服务；入口只加载应用壳和当前页面所需代码。简历字体随应用发布，霞鹜文楷、思源宋体和 Noto Sans SC 均使用固定版本的本地字体文件；PDF CLI 复用这些完全相同的字体文件，并等待 `document.fonts.ready` 后才测量分页。
+生产构建按页面路由拆分 React 功能包，公共 HTML 不依赖 Google Fonts 等境外样式服务；入口只加载应用壳和当前页面所需代码。简历字体随应用发布，霞鹜文楷使用 Medium 字重，思源宋体和 Noto Sans SC 使用 Regular 字重，三者均来自固定版本的本地字体文件；PDF CLI 复用这些完全相同的字体文件，并等待 `document.fonts.ready` 后才测量分页。
 
 ## API 调用
 

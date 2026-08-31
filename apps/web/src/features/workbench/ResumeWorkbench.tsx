@@ -470,7 +470,7 @@ function pageViewportMetrics(
 
 const fontOptions = [
   { label: "简历宋体", value: resumeSerifFontStack },
-  { label: "霞鹜文楷", value: '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif' },
+  { label: "霞鹜文楷 Medium", value: '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif' },
   { label: "系统黑体", value: '"LinkCV Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif' },
 ];
 
