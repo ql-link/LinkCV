@@ -1006,7 +1006,7 @@ select:not([data-slot]):focus-visible {
 .resume-content {
   height: 100%;
   overflow: hidden;
-  padding: var(--resume-page-margin-y) var(--resume-page-margin-x);
+  padding: var(--resume-page-margin-top, var(--resume-page-margin-y)) var(--resume-page-margin-right, var(--resume-page-margin-x)) var(--resume-page-margin-bottom, var(--resume-page-margin-y)) var(--resume-page-margin-left, var(--resume-page-margin-x));
   font-size: var(--resume-font-size);
   line-height: var(--resume-line-height);
 }
@@ -1771,7 +1771,7 @@ select:not([data-slot]):focus-visible {
     #fff 0 297mm,
     transparent 297mm calc(297mm + 24px)
   );
-  padding: var(--resume-page-margin-y) var(--resume-page-margin-x);
+  padding: var(--resume-page-margin-top, var(--resume-page-margin-y)) var(--resume-page-margin-right, var(--resume-page-margin-x)) var(--resume-page-margin-bottom, var(--resume-page-margin-y)) var(--resume-page-margin-left, var(--resume-page-margin-x));
   color: #111827;
   box-shadow: none;
   filter: drop-shadow(0 0 0.75px rgba(15, 18, 22, 0.18)) drop-shadow(0 18px 32px rgba(15, 18, 22, 0.14));
@@ -1792,14 +1792,14 @@ select:not([data-slot]):focus-visible {
 }
 
 .resume-workbench .resume-content {
-  min-height: calc(297mm - (2 * var(--resume-page-margin-y)));
+  min-height: calc(297mm - var(--resume-page-margin-top, var(--resume-page-margin-y)) - var(--resume-page-margin-bottom, var(--resume-page-margin-y)));
   height: auto;
   overflow: visible;
   padding: 0;
 }
 
 .resume-workbench .resume-paper.smart-one-page .resume-content {
-  min-height: calc(297mm - (2 * var(--resume-page-margin-y)));
+  min-height: calc(297mm - var(--resume-page-margin-top, var(--resume-page-margin-y)) - var(--resume-page-margin-bottom, var(--resume-page-margin-y)));
 }
 
 .resume-workbench .resume-content.ProseMirror {

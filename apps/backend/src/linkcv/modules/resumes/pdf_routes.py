@@ -7,10 +7,14 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from linkcv.application.resumes.service import find_owned_resume
+from linkcv.application.resumes.service import (
+    find_owned_resume,
+    parse_persisted_resume_snapshot,
+)
 from linkcv.core.database import get_db
 from linkcv.core.errors import ApiError
 from linkcv.core.storage import AssetStorage, get_storage
+from linkcv.domain.resume import compile_layout_plan
 from linkcv.modules.identity.dependencies import get_current_user
 from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.pdf_service import (
@@ -41,6 +45,12 @@ def _render_resume_pdf(
     storage: AssetStorage,
     renderer: ResumePdfRenderer,
 ) -> bytes:
+    snapshot = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
+    layout_plan = compile_layout_plan(
+        snapshot.data,
+        snapshot.style.template_snapshot,
+        snapshot.style,
+    )
     assets = build_render_assets(
         storage,
         resume.data_json,
@@ -51,8 +61,9 @@ def _render_resume_pdf(
         {
             "protocol_version": RENDER_PROTOCOL_VERSION,
             "title": resume.title,
-            "data": resume.data_json,
-            "style": resume.style_json,
+            "data": snapshot.data_json,
+            "style": snapshot.style_json,
+            "layout_plan": layout_plan.model_dump(mode="json"),
             "assets": assets,
         }
     )

@@ -3,26 +3,27 @@ import type { JSONContent } from "@tiptap/core";
 import {
   api,
   ImportWarning,
-  ResumeDocument,
   ResumeRecord,
   ResumeImportSummary,
-  ResumePresentation,
   ResumeSummary,
   ResumeVersion,
   User,
   UserProfile,
 } from "../api/client";
 import {
-  defaultSemanticDocument,
-  defaultSemanticStyle,
+  defaultCanonicalDocument,
+  defaultCanonicalPresentation,
   editorDocumentToMarkdown,
   editorSettingsToStyle,
   resumeDocumentToMarkdown,
+  resumePresentationTemplateDefinition,
   styleToEditorSettings,
+  withResumePresentationAvatarSize,
 } from "../api/resumeContract";
 import { defaultResumeDocument } from "../features/workbench/defaultDocument";
 import {
   composeEditorDocumentForTemplate,
+  composeEditorDocumentForLayoutPlan,
   composeResumeMarkdownForTemplate,
   stripTemplateProjectionFromEditorDocument,
 } from "../features/workbench/templateLayout";
@@ -76,8 +77,8 @@ type ResumeState = {
   importWarningsByResumeId: Record<string, ImportWarning[]>;
   activeResumeId: string | null;
   lockVersion: number;
-  data: ResumeDocument;
-  style: ResumePresentation;
+  data: import("../api/resumeContract").CanonicalResumeDocument;
+  style: import("../api/resumeContract").CanonicalResumePresentation;
   title: string;
   markdown: string;
   editorContent: JSONContent | string;
@@ -119,7 +120,7 @@ type ResumeState = {
   applyTemplate: (templateId: string, editorDocument: JSONContent) => Promise<void>;
   setSectionSemanticKind: (
     sectionId: string,
-    semanticKind: ResumeDocument["semantic_sections"][number]["semantic_kind"],
+    semanticKind: import("../api/resumeContract").CanonicalResumeSection["semantic_kind"],
     source?: "model" | "user",
     confidence?: number | null,
   ) => void;
@@ -128,8 +129,8 @@ type ResumeState = {
 type SaveSnapshot = {
   activeResumeId: string;
   lockVersion: number;
-  data: ResumeDocument;
-  style: ResumePresentation;
+  data: import("../api/resumeContract").CanonicalResumeDocument;
+  style: import("../api/resumeContract").CanonicalResumePresentation;
   title: string;
   markdown: string;
   editorContent: JSONContent | string;
@@ -351,14 +352,11 @@ function normalizeSettings(settings: Partial<ResumeSettings> = {}) {
 function applyResume(resume: ResumeRecord, localState?: ResumeState) {
   const markdown = resumeDocumentToMarkdown(resume.data);
   const canonicalEditor = resumeDocumentToEditorDocument(resume.data);
-  const editorContent = canonicalEditor
-    ? composeEditorDocumentForTemplate(
-      canonicalEditor,
-      resume.style.manifest,
-      resume.data.basics.photo,
-      resume.data,
-    )
-    : renderResumeMarkdown(composeResumeMarkdownForTemplate(resume.data, resume.style.manifest));
+  let editorContent: JSONContent | string;
+  const definition = resumePresentationTemplateDefinition(resume.style);
+  editorContent = canonicalEditor && resume.layout_plan && definition
+    ? composeEditorDocumentForLayoutPlan(canonicalEditor, resume.data, resume.layout_plan, definition)
+    : canonicalEditor ?? renderResumeMarkdown(markdown);
   const semanticSettings = normalizeSettings(styleToEditorSettings(resume.style));
   return {
     activeResumeId: resume.id,
@@ -413,7 +411,11 @@ function summaryFromRecord(resume: ResumeRecord): ResumeSummary {
     lock_version: resume.lock_version,
     created_at: resume.created_at,
     updated_at: resume.updated_at,
-    preview: { data: resume.data, style: resume.style },
+    preview: {
+      data: resume.data,
+      style: resume.style,
+      layout_plan: resume.layout_plan,
+    },
   };
 }
 
@@ -438,8 +440,8 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   importWarningsByResumeId: {},
   activeResumeId: null,
   lockVersion: 0,
-  data: defaultSemanticDocument,
-  style: defaultSemanticStyle,
+  data: defaultCanonicalDocument,
+  style: defaultCanonicalPresentation,
   title: "张三-后端开发实习生",
   markdown: defaultResumeMarkdown,
   editorContent: defaultResumeDocument,
@@ -690,22 +692,17 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
         let nextStyle = editorSettingsToStyle(snapshot.settings, snapshot.style);
         if (typeof snapshot.editorContent !== "string") {
           const avatar = editorDocumentUserAvatar(snapshot.editorContent);
-          if (avatar && nextStyle.manifest.avatar.visibility === "show") {
-            nextStyle = {
-              ...nextStyle,
-              manifest: {
-                ...nextStyle.manifest,
-                avatar: { ...nextStyle.manifest.avatar, size: avatar.size },
-              },
-            };
+          if (avatar) {
+            nextStyle = withResumePresentationAvatarSize(nextStyle, avatar.size);
           }
         }
-        const { resume } = await api.updateResume(snapshot.activeResumeId, {
+        const response = await api.updateResume(snapshot.activeResumeId, {
           title: snapshot.title,
           base_lock_version: snapshot.lockVersion,
           data: nextData,
           style: nextStyle,
         });
+        const { resume } = response;
         set((current) => {
           const resumes = mergeResumeSummary(current.resumes, resume);
           if (current.activeResumeId !== snapshot.activeResumeId) return { resumes };
@@ -902,12 +899,13 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     const nextData = resumeDocumentFromEditorDocument(editorDocument, state.data);
     set({ saveStatus: "saving", versionOperationPending: true, error: null });
     try {
-      const { resume } = await api.applyResumeTemplate(resumeId, {
+      const response = await api.applyResumeTemplate(resumeId, {
         template_id: templateId,
         base_lock_version: state.lockVersion,
         title: state.title,
         data: nextData,
       });
+      const { resume } = response;
       state = get();
       if (operationId !== templateOperationSequence) return;
       if (state.activeResumeId !== resumeId) {
@@ -918,28 +916,25 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
         const latestData = typeof state.editorContent === "string"
           ? state.data
           : resumeDocumentFromEditorDocument(state.editorContent, state.data);
-        const canonical = typeof state.editorContent === "string"
-          ? resumeDocumentToEditorDocument(latestData)
-          : stripTemplateProjectionFromEditorDocument(state.editorContent, latestData);
-        const latestRecord = {
-          ...resume,
-          title: state.title,
-          data: latestData,
-        };
+
+        // The response plan belongs to the data submitted by this request. If
+        // the editor changed while the request was in flight, applying that
+        // plan to the newer local tree would make a stale server decision look
+        // current (and can silently place newly added sections incorrectly).
+        // Keep the user's current projection untouched, retain dirty state,
+        // and let the normal autosave submit the newer data so the next
+        // response carries a plan for the same snapshot.
         set({
-          resumes: mergeResumeSummary(state.resumes, latestRecord),
+          // The card is the last persisted server snapshot; its plan still
+          // matches resume.data and must not be paired with latestData.
+          resumes: mergeResumeSummary(state.resumes, resume),
           lockVersion: resume.lock_version,
           data: latestData,
           style: resume.style,
-          editorContent: canonical
-            ? composeEditorDocumentForTemplate(
-              canonical,
-              resume.style.manifest,
-              latestData.basics.photo,
-              latestData,
-            )
-            : state.editorContent,
-          settings: normalizeSettings(styleToEditorSettings(resume.style)),
+          editorContent: state.editorContent,
+          // Preserve local presentation edits as well. The follow-up save
+          // merges these settings into the switched template snapshot.
+          settings: state.settings,
           dirty: true,
           saveStatus: "idle",
           versionOperationPending: false,
@@ -964,24 +959,24 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     }
   },
   setSectionSemanticKind: (sectionId, semanticKind, source = "user", confidence = null) =>
-    set((state) => ({
-      data: {
-        ...state.data,
-        semantic_sections: state.data.semantic_sections.map((section) => (
-          section.id === sectionId
-            ? {
-              ...section,
-              semantic_kind: semanticKind,
-              semantic_source: source,
-              semantic_confidence: confidence,
-            }
-            : section
-        )),
-      },
-      dirty: true,
-      editVersion: state.editVersion + 1,
-      saveStatus: "idle",
-    })),
+    set((state) => {
+      return {
+        data: {
+          ...state.data,
+          sections: state.data.sections.map((section) => (
+            section.node_id === sectionId
+              ? {
+                ...section,
+                semantic_kind: semanticKind,
+              }
+              : section
+          )),
+        },
+        dirty: true,
+        editVersion: state.editVersion + 1,
+        saveStatus: "idle" as SaveStatus,
+      };
+    }),
 }));
 
 useResumeStore.subscribe((state, previous) => {

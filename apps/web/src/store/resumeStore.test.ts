@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { JSONContent } from "@tiptap/core";
 import { api, type ResumeImportSummary, type ResumeRecord } from "../api/client";
 import {
-  defaultSemanticDocument,
-  defaultSemanticStyle,
-  editorSettingsToStyle,
-  resumeDocumentFromMarkdown,
+  defaultCanonicalDocument,
+  defaultCanonicalPresentation,
+  type CanonicalResumeDocument,
+  type CanonicalResumePresentation,
+  type LayoutPlan,
 } from "../api/resumeContract";
+import { resumeDocumentToEditorDocument } from "../features/workbench/resumeEditorPersistence";
 import {
   defaultSettings,
   flushPendingLocalResumeDraft,
@@ -25,6 +27,69 @@ function editorDocument(title: string): JSONContent {
   };
 }
 
+function canonicalDocument(markdown: string): CanonicalResumeDocument {
+  const title = markdown.replace(/^#+\s*/, "");
+  return {
+    ...defaultCanonicalDocument,
+    sections: title ? [{
+      node_id: "node_section000000001",
+      semantic_kind: "custom",
+      title: { node_id: "node_title0000000001", value: title, source_refs: [] },
+      entries: [],
+      blocks: [],
+      source_refs: [],
+    }] : [],
+  };
+}
+
+function canonicalStyle(
+  templateKey = "classic-cn",
+  options: { accentColor?: string; fontSize?: number; lineHeight?: number; smartOnePage?: boolean } = {},
+): CanonicalResumePresentation {
+  return {
+    ...defaultCanonicalPresentation,
+    portable: { smart_one_page: options.smartOnePage ?? false },
+    template_scoped: { [templateKey]: {} },
+    template_snapshot: {
+      ...defaultCanonicalPresentation.template_snapshot,
+      template_key: templateKey,
+      tokens: {
+        ...defaultCanonicalPresentation.template_snapshot.tokens,
+        accent_color: options.accentColor ?? defaultCanonicalPresentation.template_snapshot.tokens.accent_color,
+        font_size_pt: options.fontSize ?? defaultCanonicalPresentation.template_snapshot.tokens.font_size_pt,
+        line_height: options.lineHeight ?? defaultCanonicalPresentation.template_snapshot.tokens.line_height,
+      },
+    },
+  };
+}
+
+function canonicalLayoutPlan(
+  data: CanonicalResumeDocument,
+  templateKey = "classic-cn",
+): LayoutPlan {
+  return {
+    schema_version: "layout-plan.v1",
+    content_sha256: "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    template_key: templateKey,
+    regions: [{
+      region_id: "main",
+      order: 0,
+      nodes: [
+        {
+          node_id: data.identity.node_id,
+          semantic_kind: "identity",
+          slot_id: "main_content",
+        },
+        ...data.sections.map((section) => ({
+          node_id: section.node_id,
+          semantic_kind: section.semantic_kind,
+          slot_id: "main_content",
+        })),
+      ],
+    }],
+  };
+}
+
 function record(lockVersion: number, markdown: string, smartOnePage = false): ResumeRecord {
   return {
     id: "1",
@@ -32,8 +97,8 @@ function record(lockVersion: number, markdown: string, smartOnePage = false): Re
     source_type: "blank",
     template_id: null,
     lock_version: lockVersion,
-    data: resumeDocumentFromMarkdown(markdown, defaultSemanticDocument),
-    style: { ...defaultSemanticStyle, smart_one_page: smartOnePage },
+    data: canonicalDocument(markdown),
+    style: canonicalStyle("classic-cn", { smartOnePage }),
     created_at: "2026-07-27T00:00:00Z",
     updated_at: `2026-07-27T00:00:0${lockVersion}Z`,
   };
@@ -81,8 +146,8 @@ beforeEach(() => {
     importWarningsByResumeId: {},
     activeResumeId: "1",
     lockVersion: 1,
-    data: defaultSemanticDocument,
-    style: defaultSemanticStyle,
+    data: defaultCanonicalDocument,
+    style: defaultCanonicalPresentation,
     title: "测试简历",
     markdown: "# 第一次编辑",
     editorContent: "# 第一次编辑",
@@ -153,10 +218,7 @@ describe("resume local draft persistence", () => {
     globalThis.localStorage.setItem(localResumeDraftStorageKey(user.id, "1"), JSON.stringify(localDraft));
     useResumeStore.setState({ user, activeResumeId: null, dirty: false, editVersion: 0 });
     globalThis.localStorage.setItem(localResumeDraftStorageKey(user.id, "1"), JSON.stringify(localDraft));
-    const serverResume = {
-      ...record(1, "# 服务端内容"),
-      style: editorSettingsToStyle(defaultSettings, defaultSemanticStyle),
-    };
+    const serverResume = record(1, "# 服务端内容");
     vi.spyOn(api, "getResume").mockResolvedValue({ resume: serverResume });
 
     await useResumeStore.getState().loadResume("1");
@@ -173,19 +235,85 @@ describe("resume local draft persistence", () => {
 });
 
 describe("resume save serialization", () => {
-  it("通过原子接口切换模板并保留服务端返回的规范内容", async () => {
-    const currentData = resumeDocumentFromMarkdown("# 保留的正文", defaultSemanticDocument);
-    const templateStyle = {
-      ...defaultSemanticStyle,
-      template_key: "creative-orange-cn",
-      accent_color: "#F97316",
-      font_size: 11,
-      line_height: 1.4,
+  it("从 ResumeRecord 更新本地摘要时保留服务端布局计划", async () => {
+    const data = canonicalDocument("# 带布局计划的简历");
+    const layoutPlan = canonicalLayoutPlan(data);
+    const renamed = {
+      ...record(2, "# 带布局计划的简历"),
+      title: "已更新名称",
+      data,
+      layout_plan: layoutPlan,
     };
+    useResumeStore.setState({
+      resumes: [{
+        id: "1",
+        title: "旧名称",
+        source_type: "blank",
+        lock_version: 1,
+        created_at: renamed.created_at,
+        updated_at: "2026-07-27T00:00:01Z",
+      }],
+    });
+    vi.spyOn(api, "updateResume").mockResolvedValue({ resume: renamed });
+
+    await useResumeStore.getState().renameResume("1", "已更新名称");
+
+    expect(useResumeStore.getState().resumes[0].preview).toMatchObject({
+      data,
+      style: renamed.style,
+      layout_plan: layoutPlan,
+    });
+  });
+
+  it("没有本地并发编辑时用响应中与数据匹配的布局计划重组编辑树", async () => {
+    const data = canonicalDocument("# 有效布局计划");
+    const style = canonicalStyle("creative-orange-cn", {
+      accentColor: "#F97316",
+      fontSize: 11,
+      lineHeight: 1.4,
+    });
+    const layoutPlan = canonicalLayoutPlan(data, style.template_snapshot.template_key);
+    const editor = resumeDocumentToEditorDocument(data);
+    if (!editor) throw new Error("TEST_FIXTURE_INVALID");
+    const switched = {
+      ...record(2, "# 有效布局计划"),
+      data,
+      style,
+      template_id: "9",
+      layout_plan: layoutPlan,
+    };
+    useResumeStore.setState({
+      data,
+      editorContent: editor,
+      markdown: "# 有效布局计划",
+      dirty: false,
+    });
+    vi.spyOn(api, "applyResumeTemplate").mockResolvedValue({ resume: switched });
+
+    await useResumeStore.getState().applyTemplate("9", editor);
+
+    expect(useResumeStore.getState()).toMatchObject({
+      style,
+      editorContent: expect.objectContaining({ type: "doc" }),
+      dirty: false,
+    });
+    expect(JSON.stringify(useResumeStore.getState().editorContent)).toContain("有效布局计划");
+    expect(useResumeStore.getState().resumes[0].preview?.layout_plan).toEqual(layoutPlan);
+  });
+
+  it("通过原子接口切换模板并保留服务端返回的规范内容", async () => {
+    const currentData = canonicalDocument("# 保留的正文");
+    const currentEditor = resumeDocumentToEditorDocument(currentData);
+    if (!currentEditor) throw new Error("TEST_FIXTURE_INVALID");
+    const templateStyle = canonicalStyle("creative-orange-cn", {
+      accentColor: "#F97316",
+      fontSize: 11,
+      lineHeight: 1.4,
+    });
     useResumeStore.setState({
       data: currentData,
       markdown: "# 保留的正文",
-      editorContent: "# 保留的正文",
+      editorContent: currentEditor,
       dirty: false,
       editVersion: 4,
       saveStatus: "saved",
@@ -196,26 +324,20 @@ describe("resume save serialization", () => {
       data: currentData,
       style: templateStyle,
     };
-    const apply = vi.spyOn(api, "applyResumeTemplate").mockResolvedValue({ resume: switched });
+    const apply = vi
+      .spyOn(api, "applyResumeTemplate")
+      .mockResolvedValue({ resume: switched });
 
-    await useResumeStore.getState().applyTemplate("9", editorDocument("保留的正文"));
+    await useResumeStore.getState().applyTemplate("9", currentEditor);
 
     expect(apply).toHaveBeenCalledWith("1", expect.objectContaining({
       template_id: "9",
       base_lock_version: 1,
       title: "测试简历",
       data: expect.objectContaining({
-        sections: expect.objectContaining({
-          custom_sections: expect.arrayContaining([
-            expect.objectContaining({
-              items: expect.arrayContaining([
-                expect.objectContaining({
-                  content: expect.objectContaining({ format: "tiptap-json" }),
-                }),
-              ]),
-            }),
-          ]),
-        }),
+        sections: expect.arrayContaining([
+          expect.objectContaining({ semantic_kind: "custom" }),
+        ]),
       }),
     }));
     expect(useResumeStore.getState()).toMatchObject({
@@ -245,24 +367,16 @@ describe("resume save serialization", () => {
       template_id: "9",
       base_lock_version: 1,
       data: expect.objectContaining({
-        sections: expect.objectContaining({
-          custom_sections: expect.arrayContaining([
-            expect.objectContaining({
-              items: expect.arrayContaining([
-                expect.objectContaining({
-                  content: expect.objectContaining({ format: "tiptap-json" }),
-                }),
-              ]),
-            }),
-          ]),
-        }),
+        schema_version: "canonical-resume.v1",
       }),
     });
   });
 
   it("切换请求返回前离开当前简历时释放全局操作锁", async () => {
     const applyResponse = deferred<{ resume: ResumeRecord }>();
-    vi.spyOn(api, "applyResumeTemplate").mockImplementationOnce(() => applyResponse.promise);
+    vi
+      .spyOn(api, "applyResumeTemplate")
+      .mockImplementationOnce(() => applyResponse.promise);
     useResumeStore.setState({ dirty: false, saveStatus: "saved" });
 
     const switching = useResumeStore.getState().applyTemplate("9", editorDocument("第一次编辑"));
@@ -281,12 +395,10 @@ describe("resume save serialization", () => {
 
   it("切换请求期间出现的新编辑不会被成功响应覆盖", async () => {
     const applyResponse = deferred<{ resume: ResumeRecord }>();
-    const targetStyle = {
-      ...defaultSemanticStyle,
-      template_key: "creative-orange-cn",
-      accent_color: "#F97316",
-    };
-    vi.spyOn(api, "applyResumeTemplate").mockImplementationOnce(() => applyResponse.promise);
+    const targetStyle = canonicalStyle("creative-orange-cn", { accentColor: "#F97316" });
+    vi
+      .spyOn(api, "applyResumeTemplate")
+      .mockImplementationOnce(() => applyResponse.promise);
 
     const switching = useResumeStore.getState().applyTemplate("9", editorDocument("第一次编辑"));
     await vi.waitFor(() => expect(useResumeStore.getState().versionOperationPending).toBe(true));
@@ -305,6 +417,72 @@ describe("resume save serialization", () => {
       saveStatus: "idle",
       versionOperationPending: false,
       error: null,
+    });
+  });
+
+  it("并发编辑时不把旧响应的布局计划套到最新编辑树，并保留可继续保存的 dirty 状态", async () => {
+    const applyResponse = deferred<{ resume: ResumeRecord }>();
+    const persistedData = canonicalDocument("# 请求开始时的正文");
+    const newerData: CanonicalResumeDocument = {
+      ...persistedData,
+      sections: [
+        ...persistedData.sections,
+        {
+          node_id: "node_section000000002",
+          semantic_kind: "custom",
+          title: { node_id: "node_title0000000002", value: "并发新增章节", source_refs: [] },
+          entries: [],
+          blocks: [],
+          source_refs: [],
+        },
+      ],
+    };
+    const targetStyle = canonicalStyle("creative-orange-cn", { accentColor: "#F97316" });
+    const responsePlan = canonicalLayoutPlan(persistedData, targetStyle.template_snapshot.template_key);
+    vi.spyOn(api, "applyResumeTemplate").mockImplementationOnce(() => applyResponse.promise);
+
+    useResumeStore.setState({
+      data: persistedData,
+      editorContent: "# 请求开始时的正文",
+      markdown: "# 请求开始时的正文",
+      dirty: false,
+      editVersion: 10,
+    });
+    const switching = useResumeStore.getState().applyTemplate("9", editorDocument("请求开始时的正文"));
+    await vi.waitFor(() => expect(useResumeStore.getState().versionOperationPending).toBe(true));
+
+    useResumeStore.setState({
+      data: newerData,
+      editorContent: "# 并发编辑后的正文",
+      markdown: "# 并发编辑后的正文",
+      dirty: true,
+      editVersion: 11,
+    });
+    applyResponse.resolve({
+      resume: {
+        ...record(2, "# 请求开始时的正文"),
+        data: persistedData,
+        style: targetStyle,
+        template_id: "9",
+        layout_plan: responsePlan,
+      },
+    });
+
+    await expect(switching).resolves.toBeUndefined();
+
+    expect(useResumeStore.getState()).toMatchObject({
+      data: newerData,
+      editorContent: "# 并发编辑后的正文",
+      style: targetStyle,
+      dirty: true,
+      saveStatus: "idle",
+      versionOperationPending: false,
+    });
+    // The card remains the last persisted snapshot, so its plan is not paired
+    // with the newer unsaved data.
+    expect(useResumeStore.getState().resumes[0].preview).toMatchObject({
+      data: persistedData,
+      layout_plan: responsePlan,
     });
   });
 
@@ -361,7 +539,7 @@ describe("resume save serialization", () => {
     expect(update.mock.calls[1][1].base_lock_version).toBe(2);
     expect(useResumeStore.getState()).toMatchObject({
       lockVersion: 3,
-      markdown: "# 第二次编辑",
+      markdown: "## 第二次编辑",
       dirty: false,
       saveStatus: "saved",
       error: null,
@@ -385,7 +563,7 @@ describe("resume save serialization", () => {
     expect(create).not.toHaveBeenCalled();
     expect(useResumeStore.getState()).toMatchObject({
       lockVersion: 3,
-      markdown: "# 历史版本",
+      markdown: "## 历史版本",
       dirty: false,
       versionOperationPending: false,
       settings: { smartOnePage: true },

@@ -1,6 +1,8 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+import hashlib
 import logging
+import re
 from pathlib import PurePath, PurePosixPath
 from time import monotonic
 from zipfile import BadZipFile, ZipFile
@@ -8,11 +10,18 @@ from zipfile import BadZipFile, ZipFile
 from pydantic import ValidationError
 from linkcv.domain.document_conversion import (
     DocumentConversionFailure,
+    DocumentMarkdownResult,
     DocumentMarkdownConverter,
 )
 from linkcv.domain.import_warnings import merge_import_warnings
-from linkcv.domain.resume_normalization import finalize_resume_document
-from linkcv.domain.resume_document import ResumeDocument
+from linkcv.domain.resume import (
+    CanonicalCompositionError,
+    CanonicalResumeDocument,
+    SourceGraph,
+    SparseResumeAnnotations,
+    build_source_graph_from_layout_ir,
+    compose_canonical_resume_document,
+)
 from linkcv.domain.section_ir import build_section_ir
 from linkcv.integrations.resume_structuring import (
     ResumeStructureInvalidError,
@@ -25,9 +34,7 @@ logger = logging.getLogger(__name__)
 
 SUPPORTED_IMPORT_MIME = {
     "md": {"text/markdown", "text/plain", "text/x-markdown"},
-    "docx": {
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    },
+    "docx": {"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
     "pdf": {"application/pdf"},
 }
 DOCX_MAX_ENTRIES = 5000
@@ -37,6 +44,183 @@ OLE_COMPOUND_SIGNATURE = bytes.fromhex("D0CF11E0A1B11AE1")
 ENCRYPTED_DOCX_MARKERS = tuple(
     value.encode("utf-16le") for value in ("EncryptedPackage", "EncryptionInfo")
 )
+
+STRICT_LAYOUT_WARNINGS = {
+    "docx_embedded_images_omitted",
+    "docx_table_content_present",
+    "docx_textbox_order_may_change",
+}
+_MARKDOWN_HTML_RE = re.compile(
+    r"<\s*/?\s*[A-Za-z][A-Za-z0-9-]*(?:\s+[^>]*|/?)\s*>"
+    r"|<!DOCTYPE\b|<!--[\s\S]*?-->",
+    re.IGNORECASE,
+)
+_MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*\](?:\([^)]*\)|\[[^\]]*\])")
+_MARKDOWN_TABLE_RE = re.compile(
+    r"^\s*\|?.+\|.+\|?\s*$\n\s*\|?\s*:?-{3,}:?\s*\|",
+    re.MULTILINE,
+)
+_MARKDOWN_EMBED_RE = re.compile(
+    r"\[\[\s*(?:embed|object|iframe)\b",
+    re.IGNORECASE,
+)
+_DOCX_LOSS_TAGS = (
+    b"w:drawing",
+    b"w:pict",
+    b"w:tbl",
+    b"w:txbxContent",
+)
+_DOCX_LOSS_TAG_RE = re.compile(
+    rb"</?(?:[A-Za-z_][A-Za-z0-9_.-]*:)?(?:drawing|pict|tbl|txbxContent)(?:\s|/?>)"
+)
+
+_LINKPARSE_MARKER_RE = re.compile(
+    r"^\s*(?:"
+    r"<!--\s*(?:linkparse\s*[:_-]?\s*)?(?:"
+    r"page\s*(?:break|separator)?|page[-_ ]?\d+)[^>]*-->"
+    r"|\[\[\s*(?:linkparse\s*[:_-]?\s*)?page[-_ ]?(?:break|separator|\d+)[^\]]*\]\]"
+    r"|---\s*(?:page\s+\d+|第\s*\d+\s*页)\s*---"
+    r"|<!--\s*linkparse\s*[:_-][^>]*-->"
+    r"|\[//\]:\s*#\s*\(\s*linkparse\b[^\n]*"
+    r")\s*$",
+    re.IGNORECASE,
+)
+
+
+def _markdown_has_unsupported_layout(markdown: str) -> bool:
+    """Detect Markdown constructs that cannot be represented losslessly."""
+
+    # LinkParse may annotate page boundaries/provenance using HTML comments.
+    # Those exact, deterministic markers are represented as IR discards and
+    # are not user HTML.  Unknown HTML remains unsupported.
+    sanitized = "\n".join(
+        line
+        for line in markdown.splitlines()
+        if not _LINKPARSE_MARKER_RE.fullmatch(line)
+    )
+    return bool(
+        _MARKDOWN_HTML_RE.search(sanitized)
+        or _MARKDOWN_IMAGE_RE.search(sanitized)
+        or _MARKDOWN_TABLE_RE.search(sanitized)
+        or _MARKDOWN_EMBED_RE.search(sanitized)
+    )
+
+
+def _docx_has_unsupported_layout(content: bytes) -> bool:
+    """Inspect already-validated WordprocessingML parts.
+
+    This is deliberately a byte-level tag check: it neither executes XML nor
+    trusts arbitrary package relationships or external resources.  Headers,
+    footers and text boxes can carry the same loss-prone layout as the main
+    document, so all ``word/*.xml`` parts are checked.
+    """
+
+    try:
+        from io import BytesIO
+
+        with ZipFile(BytesIO(content)) as archive:
+            for item in archive.infolist():
+                if not item.filename.startswith("word/") or not item.filename.endswith(
+                    ".xml"
+                ):
+                    continue
+                document_xml = archive.read(item)
+                if _DOCX_LOSS_TAG_RE.search(document_xml):
+                    return True
+    except (BadZipFile, KeyError, OSError):
+        return False
+    return False
+
+
+def _pdf_has_embedded_images(content: bytes) -> bool | None:
+    """Best-effort detection for PDF image objects omitted by text conversion.
+
+    LinkParse reports OCR use for scanned and mixed PDFs, but a text PDF can
+    still contain a photo or raster logo.  Those objects are visible source
+    content and cannot be silently dropped from an editable import.
+    """
+
+    try:
+        import pypdfium2 as pdfium
+        import pypdfium2.raw as pdfium_c
+
+        document = pdfium.PdfDocument(content)
+    except Exception:
+        # A text-PDF image check is a strict loss boundary. Returning unknown
+        # lets the caller fail closed instead of treating inspection failure
+        # as proof that no visible image exists.
+        return None
+    inspection: bool | None = False
+    try:
+        for page_index in range(len(document)):
+            page = document[page_index]
+            try:
+                if (
+                    next(
+                        page.get_objects(filter=[pdfium_c.FPDF_PAGEOBJ_IMAGE]),
+                        None,
+                    )
+                    is not None
+                ):
+                    inspection = True
+                    break
+            finally:
+                page.close()
+    except Exception:
+        inspection = None
+    finally:
+        try:
+            document.close()
+        except Exception:
+            inspection = None
+    return inspection
+
+
+def _raise_layout_unsupported(*, stage: str = "document_conversion") -> None:
+    raise ResumeImportFailure(
+        422,
+        "RESUME_LAYOUT_UNSUPPORTED",
+        stage=stage,
+        exception_type="UnsupportedLayout",
+    )
+
+
+def validate_conversion_layout(
+    conversion: DocumentMarkdownResult,
+    *,
+    source_content: bytes = b"",
+) -> None:
+    """Apply strict, deterministic format-loss checks available to service.
+
+    LinkParse's warning envelope is the primary signal.  The service also
+    checks the original DOCX package and the Markdown representation so a
+    stale/mocked converter cannot silently turn unsupported input into a
+    successful import.  PDF layout metadata is deliberately advisory: its
+    absence, degraded quality or inconsistency is handled by the converter's
+    Markdown fallback and is never an import gate.
+    """
+
+    warnings = {getattr(warning, "value", warning) for warning in conversion.warnings}
+    if warnings.intersection(STRICT_LAYOUT_WARNINGS):
+        _raise_layout_unsupported()
+    source_format = conversion.source_format
+    if source_format != "pdf" and conversion.layout_applied:
+        _raise_layout_unsupported()
+    if (
+        source_format == "pdf"
+        and conversion.detected_type == "text_pdf"
+        and source_content
+        and _pdf_has_embedded_images(source_content) is not False
+    ):
+        _raise_layout_unsupported()
+    if source_format == "docx" and _docx_has_unsupported_layout(source_content):
+        _raise_layout_unsupported()
+    # The converter's Markdown is the only representation available to the
+    # composer, so table/image/embed constructs are rejected for every input
+    # format, including stale DOCX/PDF converter results that omitted a
+    # warning.  Known LinkParse comments are removed by the helper above.
+    if _markdown_has_unsupported_layout(conversion.markdown):
+        _raise_layout_unsupported()
 
 
 class ResumeImportFailure(Exception):
@@ -85,10 +269,11 @@ def _validation_metadata(error: ValidationError) -> dict[str, str]:
 
 @dataclass(frozen=True)
 class ParsedImportResult:
-    document: ResumeDocument
+    document: CanonicalResumeDocument
     extracted_markdown: str
     source_file_format: str
     warnings: list[str]
+    source_graph: SourceGraph | None = None
 
 
 def safe_import_filename(filename: str) -> str:
@@ -161,14 +346,18 @@ def validate_import_file(
         if b"\x00" in content:
             raise ResumeImportFailure(422, "IMPORT_CONTENT_INVALID")
         try:
-            content.decode("utf-8")
+            decoded = content.decode("utf-8")
         except UnicodeDecodeError as error:
             raise ResumeImportFailure(422, "IMPORT_CONTENT_INVALID") from error
+        if _markdown_has_unsupported_layout(decoded):
+            _raise_layout_unsupported()
     elif extension == "pdf":
         if not content.startswith(b"%PDF-"):
             raise ResumeImportFailure(415, "UNSUPPORTED_IMPORT_FORMAT")
     else:
         _validate_docx(content)
+        if _docx_has_unsupported_layout(content):
+            _raise_layout_unsupported()
     return extension
 
 
@@ -186,6 +375,27 @@ class ResumeImportService:
         self._max_structuring_bytes = max_structuring_bytes
         self._structuring_timeout_seconds = structuring_timeout_seconds
 
+    async def _extract_structuring_result(
+        self,
+        *,
+        user_id: int,
+        section_ir,
+        source_graph,
+        timeout_seconds: float,
+        layout_hints,
+    ):
+        """Call the only runtime LLM contract: sparse SourceGraph annotations."""
+
+        result = await self._structuring_client.extract_sparse(
+            user_id=user_id,
+            source_graph=source_graph,
+            timeout_seconds=timeout_seconds,
+            layout_hints=layout_hints,
+        )
+        if not isinstance(result, SparseResumeAnnotations):
+            raise ResumeStructureInvalidError("structuring client returned a non-sparse result")
+        return result
+
     async def parse_resume(
         self,
         *,
@@ -196,6 +406,10 @@ class ResumeImportService:
         operation_id: str,
         deadline_monotonic: float,
         on_markdown_extracted: Callable[[str], Awaitable[None]] | None = None,
+        # This flag controls whether the PDF request asks LinkParse for its
+        # optional layout evidence.  It is not a requirement for import
+        # success; malformed/missing evidence falls back to Markdown.
+        request_pdf_layout: bool = True,
     ) -> ParsedImportResult:
         conversion_started = monotonic()
         logger.info(
@@ -212,6 +426,7 @@ class ResumeImportService:
                 content=content,
                 operation_id=operation_id,
                 deadline_monotonic=deadline_monotonic,
+                request_pdf_layout=request_pdf_layout,
             )
         except DocumentConversionFailure as error:
             raise ResumeImportFailure(
@@ -230,12 +445,20 @@ class ResumeImportService:
                 "warning_count": len(conversion.warnings),
             },
         )
+        validate_conversion_layout(conversion, source_content=content)
         if on_markdown_extracted is not None:
             await on_markdown_extracted(conversion.markdown)
         if len(conversion.markdown.encode("utf-8")) > self._max_structuring_bytes:
             raise ResumeImportFailure(413, "STRUCTURING_INPUT_TOO_LARGE")
 
-        section_ir = build_section_ir(conversion.markdown)
+        section_ir = build_section_ir(
+            conversion.markdown,
+            source_format=(
+                conversion.source_format
+                if conversion.source_format in {"md", "docx", "pdf"}
+                else "md"
+            ),
+        )
         remaining = deadline_monotonic - monotonic()
         if remaining <= 15:
             raise ResumeImportFailure(
@@ -252,13 +475,28 @@ class ResumeImportService:
             },
         )
         try:
-            draft = await self._structuring_client.extract(
-                user_id=user_id,
-                section_ir=section_ir,
-                timeout_seconds=min(
+            layout_hints = getattr(conversion, "layout_hints", None)
+            if layout_hints is None:
+                # Accept the wire-oriented name from an older converter
+                # object as well; the domain result exposes both views.
+                layout_hints = getattr(conversion, "layout_blocks", None)
+            source_graph = build_source_graph_from_layout_ir(
+                section_ir,
+                source_document_sha256=hashlib.sha256(content).hexdigest(),
+                layout_hints=layout_hints,
+            )
+            structuring_kwargs = {
+                "user_id": user_id,
+                "section_ir": section_ir,
+                "source_graph": source_graph,
+                "timeout_seconds": min(
                     self._structuring_timeout_seconds,
                     remaining - 15,
                 ),
+            }
+            draft = await self._extract_structuring_result(
+                **structuring_kwargs,
+                layout_hints=layout_hints,
             )
         except StructuringModelNotConfiguredError as error:
             raise ResumeImportFailure(
@@ -290,54 +528,70 @@ class ResumeImportService:
             },
         )
 
-        normalization_started = monotonic()
+        composition_started = monotonic()
+        composition_stage = "resume_composition"
         logger.info(
             "resume import stage started",
             extra={
                 "operation_id": operation_id,
-                "stage": "resume_normalization",
+                "stage": composition_stage,
             },
         )
         try:
-            normalized = finalize_resume_document(draft, conversion.markdown)
+            composed = compose_canonical_resume_document(
+                source_graph,
+                draft,
+                source_ir=section_ir,
+                warnings=section_ir.warnings,
+            )
+            document = composed.document
+            normalization_warnings = list(composed.warnings)
         except ValidationError as error:
             metadata = _validation_metadata(error)
             raise ResumeImportFailure(
                 422,
                 "RESUME_STRUCTURE_INVALID",
-                stage="resume_normalization",
+                stage=composition_stage,
                 exception_type=type(error).__name__,
                 **metadata,
+            ) from error
+        except CanonicalCompositionError as error:
+            raise ResumeImportFailure(
+                422,
+                error.code,
+                stage=composition_stage,
+                exception_type=type(error).__name__,
             ) from error
         except ValueError as error:
             raise ResumeImportFailure(
                 422,
                 "RESUME_STRUCTURE_INVALID",
-                stage="resume_normalization",
+                stage=composition_stage,
                 exception_type=type(error).__name__,
             ) from error
         logger.info(
             "resume import stage completed",
             extra={
                 "operation_id": operation_id,
-                "stage": "resume_normalization",
-                "duration_ms": round((monotonic() - normalization_started) * 1000),
-                "warning_count": len(normalized.warnings),
+                "stage": composition_stage,
+                "duration_ms": round((monotonic() - composition_started) * 1000),
+                "warning_count": len(normalization_warnings),
             },
         )
         if deadline_monotonic - monotonic() <= 0:
             raise ResumeImportFailure(
                 504,
                 "IMPORT_DEADLINE_EXCEEDED",
-                stage="resume_normalization",
+                stage=composition_stage,
             )
         return ParsedImportResult(
-            document=normalized.document,
+            document=document,
             extracted_markdown=conversion.markdown,
             source_file_format=conversion.source_format,
             warnings=merge_import_warnings(
                 conversion.warnings,
                 section_ir.warnings,
-                normalized.warnings,
+                normalization_warnings,
             ),
+            source_graph=source_graph,
         )

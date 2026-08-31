@@ -13,7 +13,7 @@
     "check:ai": "uv run --directory apps/backend python ../../scripts/quality/check_ai_links.py && uv run --directory apps/backend python ../../scripts/quality/check_skills.py && npm run check:docs && npm run check:contracts",
     "check:design": "uv run --directory apps/backend python ../../scripts/quality/check_design_system.py",
     "check:docs": "uv run --directory apps/backend python ../../scripts/quality/check_docs_sync.py",
-    "check:contracts": "uv run --directory apps/backend python ../../scripts/quality/check_runtime_contracts.py",
+    "check:contracts": "uv run --directory apps/backend python ../../scripts/quality/check_runtime_contracts.py && uv run --directory apps/backend python ../../scripts/quality/check_resume_contracts.py",
     "dev": "node scripts/dev/run_with_env_profile.mjs .env",
     "dev:local": "node scripts/dev/run_with_env_profile.mjs .env",
     "dev:development": "node scripts/dev/run_with_env_profile.mjs .env.development",

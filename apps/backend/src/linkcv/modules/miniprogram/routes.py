@@ -6,10 +6,14 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session, load_only
 
-from linkcv.application.resumes.service import find_owned_resume
+from linkcv.application.resumes.service import (
+    find_owned_resume,
+    parse_persisted_resume_snapshot,
+)
 from linkcv.core.database import get_db
 from linkcv.core.errors import ApiError
 from linkcv.core.storage import AssetStorage, get_storage
+from linkcv.domain.resume import compile_layout_plan
 from linkcv.modules.identity.dependencies import get_current_miniprogram_user
 from linkcv.modules.identity.models import User
 from linkcv.modules.miniprogram.pdf_service import (
@@ -54,15 +58,23 @@ def _render_pdf(
         user_id=user.id,
         resume_id=resume.id,
     )
-    style = deepcopy(version.style_json)
+    snapshot = parse_persisted_resume_snapshot(version.data_json, version.style_json)
+    style = deepcopy(snapshot.style_json)
     # The mini-program contract is a single long page even when the Web
     # editing preference is fixed A4, because preview.png rasterizes one page.
-    style["smart_one_page"] = True
+    style["portable"]["smart_one_page"] = True
+    one_page_snapshot = parse_persisted_resume_snapshot(snapshot.data_json, style)
+    layout_plan = compile_layout_plan(
+        one_page_snapshot.data,
+        one_page_snapshot.style.template_snapshot,
+        one_page_snapshot.style,
+    )
     return renderer.render(
         {
             "title": resume.title,
-            "data": version.data_json,
+            "data": snapshot.data_json,
             "style": style,
+            "layout_plan": layout_plan.model_dump(mode="json"),
             "assets": assets,
         }
     )
@@ -70,7 +82,17 @@ def _render_pdf(
 
 def _summary(resume: Resume, version: ResumeVersion) -> MiniprogramResumeSummary:
     payload: dict[str, Any] = resume_summary(resume).model_dump()
-    payload["preview"] = {"data": version.data_json, "style": version.style_json}
+    snapshot = parse_persisted_resume_snapshot(version.data_json, version.style_json)
+    layout_plan = compile_layout_plan(
+        snapshot.data,
+        snapshot.style.template_snapshot,
+        snapshot.style,
+    )
+    payload["preview"] = {
+        "data": snapshot.data_json,
+        "style": snapshot.style_json,
+        "layout_plan": layout_plan.model_dump(mode="json"),
+    }
     return MiniprogramResumeSummary(
         **payload,
         pdf_version_id=str(version.id),
@@ -123,9 +145,20 @@ def get_resume(
     if version is None:
         raise ApiError(409, "RESUME_VERSION_UNAVAILABLE")
     payload: dict[str, Any] = resume_record(resume).model_dump()
-    payload["data"] = version.data_json
-    payload["style"] = version.style_json
-    payload["preview"] = {"data": version.data_json, "style": version.style_json}
+    snapshot = parse_persisted_resume_snapshot(version.data_json, version.style_json)
+    layout_plan = compile_layout_plan(
+        snapshot.data,
+        snapshot.style.template_snapshot,
+        snapshot.style,
+    )
+    payload["data"] = snapshot.data_json
+    payload["style"] = snapshot.style_json
+    payload["layout_plan"] = layout_plan.model_dump(mode="json")
+    payload["preview"] = {
+        "data": snapshot.data_json,
+        "style": snapshot.style_json,
+        "layout_plan": layout_plan.model_dump(mode="json"),
+    }
     return MiniprogramResumeResponse(
         resume=MiniprogramResumeRecord(
             **payload,
