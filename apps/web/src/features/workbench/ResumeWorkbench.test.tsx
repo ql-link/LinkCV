@@ -136,6 +136,7 @@ describe("ResumeWorkbench 抽屉布局", () => {
     expect(workbenchCanvasClassName(null)).toBe("workbench-canvas");
     expect(workbenchCanvasClassName("settings")).toBe("workbench-canvas has-drawer");
     expect(workbenchCanvasClassName("history")).toBe("workbench-canvas has-drawer");
+    expect(workbenchCanvasClassName("quality")).toBe("workbench-canvas has-drawer");
     expect(workbenchCanvasClassName("agent")).toBe("workbench-canvas has-drawer has-agent-drawer");
   });
 
