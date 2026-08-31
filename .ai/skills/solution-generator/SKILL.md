@@ -1,6 +1,6 @@
 ---
 name: solution-generator
-description: 为 LinkCV 经 backend-delivery 七维判断后选定方案先行的纯后端或前后端混合任务创建和修订可直接指导代码生成的 solution.md；保留完整章节库并按需求选择实际章节，重点收敛需求描述、状态机、数据模型、主要流程、真实代码影响、编号实施步骤和验证映射。纯前端转 frontend-delivery；本技能不重新分流或执行七维判断。
+description: 为 LinkCV 经 flow-router 七维判断后选定方案先行的纯后端或前后端混合任务创建和修订可直接指导代码生成的 solution.md；保留完整章节库并按需求选择实际章节，重点收敛需求描述、状态机、数据模型、主要流程、真实代码影响、编号实施步骤和验证映射。明确的纯前端任务不使用本技能。
 ---
 
 # 方案文档生成与收敛
@@ -29,15 +29,15 @@ description: 为 LinkCV 经 backend-delivery 七维判断后选定方案先行�
 
 使用前必须满足：
 
-- `backend-delivery` 已通过七维判断选定方案先行，或用户明确指定方案先行；
-- 任务属于纯后端或前后端混合领域；纯前端任务转 `frontend-delivery`；
+- `flow-router` 已通过七维判断选定方案先行，或用户明确指定方案先行；
+- 任务属于纯后端或前后端混合领域；纯前端任务由当前 Codex 直接处理；
 - 有稳定的任务标识；有 Issue 时优先使用其 key，例如 `LCV-21`，没有 Issue 时使用 `LOCAL-YYYYMMDD-<SHORT-SLUG>`，同日重名时追加 `-2`、`-3`；
 - 用户当前请求、可读取的 Issue、飞书文档或用户明确指定的其他材料中，至少有一项能识别核心目标。
 
 以下情况停止或转交：
 
-- 后端交付路径尚未确定：转 `backend-delivery`；领域尚未确定时才转 `flow-router`；
-- 任务经核实是纯前端：转 `frontend-delivery`，由当前 Sol 判断非视觉直接修改或用户原型驱动实现；
+- 后端交付路径或后端范围尚未确定：转 `flow-router` 在同一入口中重评；
+- 任务经核实是纯前端：停止本技能，由当前 Codex 直接开发并按实际问题选择前端能力；
 - 整个模块的目标、边界或商业前提尚未成形，不是若干具体选择可以补齐：转 `module-planning`；
 - 已有用户确认的方案，用户要求生成验收场景：转 `acceptance-generator`；
 - 用户要求直接写代码，但方案仍有会改变实现的未确认内容：指出具体缺口，不用阶段名称阻塞；
@@ -305,7 +305,7 @@ description: 为 LinkCV 经 backend-delivery 七维判断后选定方案先行�
 9. 编写文件结构与实现方案，建立 `R/BR → 实施步骤 → 验证项` 映射，补齐按需发布和回退。
 10. 按第 10 节自检，不通过就回到对应内容。
 11. 短方案整份展示并确认一次；长方案按第 6 步确定的自然边界完成必要确认。若路径尚未选择，把推荐路径并入最后一次确认；若已经选择，直接复用。
-12. 方案和后续路径获得确认后，契约验收路径转 `acceptance-generator`；直接施工路径返回 `backend-delivery`，由当前 Sol 拆分工作包并调度一个或多个 Luna 使用 `implementation-execution`。用户先前的明确选择属于有效确认，不需要再问一次。
+12. 方案和后续路径获得确认后，契约验收路径转 `acceptance-generator`；直接施工路径返回 `flow-router`，由当前 Sol 拆分工作包并调度一个或多个 Luna 使用 `implementation-execution`。用户先前的明确选择属于有效确认，不需要再问一次。
 
 ## 13. 方案确认质量标准
 
@@ -322,4 +322,4 @@ description: 为 LinkCV 经 backend-delivery 七维判断后选定方案先行�
 - 没有未确认的行为、权限、数据、兼容、成本或不可逆选择；
 - 用户已经确认方案；后续路径已经在当前请求或本阶段选定并被正确复用。
 
-确认后，契约验收路径转 `acceptance-generator`；直接施工路径返回 `backend-delivery`，由当前 Sol 按“代码实施计划”和“验证与验收”拆包并调度一个或多个 Luna，不依赖固定章节编号。
+确认后，契约验收路径转 `acceptance-generator`；直接施工路径返回 `flow-router`，由当前 Sol 按“代码实施计划”和“验证与验收”拆包并调度一个或多个 Luna，不依赖固定章节编号。
