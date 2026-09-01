@@ -42,6 +42,57 @@
 
 final result: passed
 
+## 求职详情记录卡片 — 2026-09-01
+
+### Visual truth and evidence
+
+- Source visual truth: `/Users/fang/.codex/generated_images/01a0586a-25e6-7c21-b13a-8f0eb8f55d24/exec-9e20a740-0523-4238-8eb1-a3702c8d6b28.png`，即用户确认的第 3 版原型。
+- Implementation: `http://127.0.0.1:5173/career/applications/34`，真实状态为 1 条已完成笔试和 1 条文字记录。
+- Implementation screenshot: `/var/folders/q0/866dc7b55j3c61s7h1hfx1r40000gn/T/linkcv-record-card-final.png`；原型与实现聚焦对照：`/var/folders/q0/866dc7b55j3c61s7h1hfx1r40000gn/T/linkcv-record-card-comparison.png`。
+- Desktop viewport: `1470 × 837` CSS px；窄屏 viewport: `390 × 844` CSS px。原型像素尺寸为 `1450 × 1085`。
+- Full-view comparison: 核对求职进度、记录区与右侧岗位信息之间的宽度、层级和留白；聚焦比较按记录区裁切并归一化宽度。
+
+### Required fidelity surfaces
+
+- Typography: 卡片标题保持 16px/650，时间、记录摘要、状态与操作使用项目既有 12px 层级；文字层级与确认稿一致。
+- Spacing and layout: 桌面端使用图标、名称时间、记录摘要、状态、操作五段单行布局；卡片最小高度 76px，详情页实际密度为 92px，避免此前内容堆叠和过宽空白。
+- Colors and tokens: 白色表面、细灰边框、蓝色操作、绿色完成态全部复用 `--ui-*` Token；没有新增独立色板或阴影。
+- Icons and assets: 笔试使用 Lucide `FileText`，面试使用 Lucide `Video`；完成态只由状态标签表达，不在图标右下重复叠加勾号。录音附件使用 `FileAudio`，没有使用字符、emoji 或 CSS 伪造图标。
+- Copy and content: 笔试卡片显示“查看笔试记录”，面试卡片显示“查看面试记录”；状态只显示“已完成/待进行”，不再重复记录类型。
+
+### Interaction and responsive evidence
+
+- 真实浏览器核对 `/career/applications/34`：卡片显示“笔试 / 9月8日 14:44 · 线上 / 已添加文字记录 / 已完成 / 查看笔试记录”。
+- 390px 窄屏下卡片切换为两列四行的紧凑信息栅格，文字、状态和查看入口均保留；页面 DOM 中操作按钮仍可访问。
+- 浏览器日志只有 Vite 连接与 React DevTools 信息，无 error 或 warning。
+- 组件测试补充笔试与面试 `data-record-kind` 分支断言，防止两种记录回退为同一图标。
+- 详情页使用 585 字虚构记录和虚构 MP3 验证真实长内容：默认显示 5 行摘要，可展开/收起全文；录音加载后播放器留在对应附件卡片内，名称、来源、播放、下载和删除保持在同一信息组。
+- 390px 窄屏复核中，录音操作自动换到附件信息下方，文字卡片标题与编辑/删除操作纵向排列，无页面级横向溢出。
+
+### Comparison history
+
+1. 第一轮实现与原型并列比较发现状态胶囊重复显示“笔试 · 已完成”，并且已完成笔试图标缺少绿色完成标记。
+2. 修复：状态胶囊只保留状态文字，并保持笔试/面试主图标独立。用户复核后移除右下完成勾号，避免装饰与状态标签重复。
+3. 详情页真实长内容暴露 P1：文字被压成单行省略，录音附件成为过薄且拥挤的文件行。修复为多行可展开文字卡片和带内嵌播放器的独立音频卡片。
+4. 修复后再次核对桌面、展开全文、播放录音与 390px 窄屏状态；未发现剩余 P0/P1/P2 问题。
+
+### Implementation checklist
+
+- [x] 桌面端单行紧凑布局。
+- [x] 笔试与面试使用不同图标。
+- [x] 完成态只使用状态胶囊表达，不叠加装饰勾号。
+- [x] 查看入口按记录类型切换文案并保留原导航行为。
+- [x] 长文字提供多行摘要和展开/收起全文。
+- [x] 录音附件使用独立卡片并在卡片内展示播放器。
+- [x] 390px 窄屏无信息丢失。
+- [x] 浏览器日志、组件测试与 TypeScript 检查完成。
+
+### Follow-up polish
+
+- P3: 当前真实页面只有笔试数据，因此面试图标分支由组件测试覆盖；后续有真实面试记录时可再做一次同路由视觉复核。
+
+final result: passed
+
 ## 全部简历折叠搜索框 — 2026-08-21
 
 ### Visual truth and evidence

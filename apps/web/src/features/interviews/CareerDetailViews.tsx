@@ -14,14 +14,13 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
-  CircleCheck,
   Crown,
   Download,
   ExternalLink,
+  FileAudio,
   FileText,
   Import,
   MapPin,
-  Mic,
   MoreHorizontal,
   Trash2,
   Video,
@@ -90,7 +89,7 @@ function requestErrorMessage(error: unknown): string {
       INTERVIEW_INVALID_TRANSITION: "当前求职进度不允许执行这个操作。",
       INTERVIEW_RESUME_REQUIRED: "请选择一份简历后再标记已投递。",
       INTERVIEW_RESUME_VERSION_REQUIRED: "所选简历暂无正式版本，请先保存正式版本。",
-      INVALID_INTERVIEW_TIME: "面试开始时间需要落在整点或半点。",
+      INVALID_INTERVIEW_TIME: "面试开始时间需要是有效的 24 小时制 HH:mm（分钟 00–59）。",
       INTERVIEW_ASSET_TOO_LARGE: "素材超过 500 MiB，请压缩后重试。",
       UNSUPPORTED_INTERVIEW_ASSET: "暂不支持这种素材格式。",
       INTERVIEW_APPLICATION_NOT_EMPTY: "请先清理该求职进程下的面试记录。",
@@ -201,10 +200,19 @@ function sessionModeLabel(mode: InterviewSessionRecord["mode"]): string {
         : "其他方式";
 }
 
+function sessionRecordKind(
+  session: Pick<InterviewSessionRecord, "stage_type">,
+): "笔试" | "面试" {
+  return session.stage_type === "other" ? "笔试" : "面试";
+}
+
 function applicationStageMatchesSession(
   application: ApplicationStageSource,
   session: Pick<InterviewSessionRecord, "stage_type" | "round_no" | "stage_label">,
 ): boolean {
+  if (application.current_stage_type === "screening" && session.stage_type === "other") {
+    return application.current_stage_label.trim() === session.stage_label.trim();
+  }
   if (application.current_stage_type !== session.stage_type) return false;
   if (application.current_stage_type === "interview") {
     return application.current_round_no === session.round_no;
@@ -255,7 +263,7 @@ function buildJourneyStages(
   sortedSessions.forEach((session) => {
     const isCurrent = applicationStageMatchesSession(application, session);
     if (isCurrent) currentSessionIds.add(session.id);
-    const sessionLabel = session.stage_type === "other" && application.current_stage_type === "screening"
+    const sessionLabel = isCurrent && session.stage_type === "other" && application.current_stage_type === "screening"
       ? normalizeApplicationStageLabel(application)
       : session.stage_label;
     stages.push({
@@ -399,24 +407,29 @@ function Fact({ icon, label, value }: { icon: ReactNode; label: string; value: s
 
 function InterviewRoundCard({ session, onOpen }: { session: InterviewSessionSummary; onOpen: () => void }) {
   const hasQuestions = Boolean(session.questions_markdown?.trim());
-  const hasReview = Boolean(session.review_summary?.trim());
-  const hasImprovement = Boolean(session.improvement_markdown?.trim());
   const status = sessionStatusLabel(session);
+  const recordKind = sessionRecordKind(session);
+  const RecordIcon = recordKind === "笔试" ? FileText : Video;
   return (
     <article className="career-interview-round-card">
-      <header>
+      <span className="career-interview-round-icon" data-record-kind={recordKind} aria-hidden="true">
+        <RecordIcon />
+      </span>
+      <header className="career-interview-round-heading">
         <div>
           <h3>{session.stage_label}</h3>
           <p>{formatApplicationListDateTime(session.start_at)} · {sessionModeLabel(session.mode)}</p>
         </div>
-        <span className={`career-session-status ${sessionStatusTone(session)}`}>面试 · {status}</span>
       </header>
-      <dl>
-        <div><dt>面试内容</dt><dd>{hasQuestions ? "已补充文字记录" : session.status === "completed" ? "尚未添加内容" : "面试结束后可上传录音"}</dd></div>
-        <div><dt>面试评价</dt><dd>{hasReview ? "已填写评价" : session.status === "completed" ? "尚未填写评价" : "面试结束后填写评价"}</dd></div>
-        <div><dt>面试复盘</dt><dd>{hasImprovement || hasReview ? "已补充复盘" : session.status === "completed" ? "尚未开始复盘" : "面试结束后开始复盘"}</dd></div>
-      </dl>
-      <button type="button" className="career-round-open" onClick={onOpen}>查看面试记录 <ChevronRight aria-hidden="true" /></button>
+      <div className="career-interview-round-record">
+        <FileText aria-hidden="true" />
+        <span>{hasQuestions ? "已添加文字记录" : "可上传音频或填写文字记录"}</span>
+      </div>
+      <span className={`career-session-status ${sessionStatusTone(session)}`}>{status}</span>
+      <button type="button" className="career-round-open" onClick={onOpen}>
+        <span>查看{recordKind}记录</span>
+        <ChevronRight aria-hidden="true" />
+      </button>
     </article>
   );
 }
@@ -432,7 +445,6 @@ function parseScheduleStart(value: string): Date | null {
   const date = new Date(value);
   if (
     Number.isNaN(date.getTime())
-    || ![0, 30].includes(date.getMinutes())
     || date.getSeconds() !== 0
     || date.getMilliseconds() !== 0
   ) return null;
@@ -444,12 +456,20 @@ type ScheduleDateTimeValue = {
   time: string;
 };
 
-function parseScheduleTime(value: string): { hour: number; minute: 0 | 30 } | null {
-  const match = /^(\d{2}):(00|30)$/.exec(value);
+function parseScheduleTime(value: string): { hour: number; minute: number } | null {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
   if (!match) return null;
   const hour = Number(match[1]);
-  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return null;
-  return { hour, minute: Number(match[2]) as 0 | 30 };
+  const minute = Number(match[2]);
+  if (
+    !Number.isInteger(hour)
+    || hour < 0
+    || hour > 23
+    || !Number.isInteger(minute)
+    || minute < 0
+    || minute > 59
+  ) return null;
+  return { hour, minute };
 }
 
 function parseScheduleDateTimeValue(value: string): ScheduleDateTimeValue | null {
@@ -504,7 +524,7 @@ function ScheduleDateTimePicker({
       : "选择日期和时间";
   const parsedDraftTime = parseScheduleTime(draftTime);
   const timeInputError = draftTime.length === 5 && !parsedDraftTime
-    ? "请输入 HH:mm，分钟仅支持 00 或 30。"
+    ? "请输入有效的 HH:mm 时间（小时 00–23，分钟 00–59）。"
     : null;
 
   const closePicker = () => {
@@ -679,7 +699,7 @@ function ScheduleDateTimePicker({
               aria-describedby={timeInputError ? `${id}-time-error` : `${id}-time-help`}
               onChange={(event) => handleTimeChange(event.target.value)}
             />
-            <span id={`${id}-time-help`}>请输入 24 小时制时间，分钟仅支持 00 或 30。</span>
+            <span id={`${id}-time-help`}>请输入 24 小时制时间，分钟范围为 00–59。</span>
             {timeInputError && <p id={`${id}-time-error`} role="alert">{timeInputError}</p>}
           </section>
           <footer className="career-date-picker-footer">
@@ -758,7 +778,7 @@ function AddNextStageDialog({
     if (!stageLabel || !startAt || !meetingOrLocation) return;
     const start = parseScheduleStart(startAt);
     if (!start) {
-      setErrorMessage("请选择整点或半点的有效日期和时间。");
+      setErrorMessage("请选择有效的 24 小时制日期和时间（HH:mm，分钟 00–59）。");
       return;
     }
     const end = new Date(start.getTime() + duration * 60_000);
@@ -1458,6 +1478,9 @@ export function ApplicationDetailView({
   const applicationSessions = sessions
     .filter((session) => session.application_id === application.id)
     .sort((left, right) => new Date(right.start_at).getTime() - new Date(left.start_at).getTime());
+  const currentSession = applicationSessions.find((session) => (
+    session.status !== "cancelled" && applicationStageMatchesSession(application, session)
+  ));
   const progress = projectApplicationProgress(application);
   const isSubmittedScreening = progress.columnKey === "screening"
     && application.current_stage_type === "screening"
@@ -1474,13 +1497,23 @@ export function ApplicationDetailView({
   const canMarkApplied = active && progress.isPending;
   const canUpdateOffer = active && application.current_stage_type === "offer";
   const scheduleActionLabel = `安排${progress.stageLabel}时间`;
-  const resultActionLabel = isSubmittedScreening || progress.isWaiting
+  const resultActionLabel = currentSession?.status === "completed"
+    || isSubmittedScreening
+    || progress.isWaiting
     ? "添加下一阶段"
     : progress.isAssessment
       ? "记录笔试结果"
       : application.current_stage_type === "screening"
         ? "更新筛选结果"
         : `记录${progress.stageLabel}结果`;
+  const currentRecordKind = currentSession
+    ? sessionRecordKind(currentSession)
+    : progress.isAssessment ? "笔试" : "面试";
+  const sessionRecordActionLabel = `填写${currentRecordKind}记录`;
+  const sessionRecordKinds = new Set(applicationSessions.map(sessionRecordKind));
+  const sessionSectionTitle = sessionRecordKinds.size > 1
+    ? "笔试与面试记录"
+    : `${applicationSessions.length ? sessionRecordKind(applicationSessions[0]) : currentRecordKind}记录`;
   const primaryAction = canMarkApplied
     ? "mark-applied"
     : canSchedule
@@ -1489,7 +1522,9 @@ export function ApplicationDetailView({
         ? "offer"
         : canAdvance
           ? "record-result"
-          : null;
+          : currentSession
+            ? "session-record"
+            : null;
   return (
     <div className="career-application-detail-page">
       <header className="career-record-hero career-application-record-hero">
@@ -1519,6 +1554,7 @@ export function ApplicationDetailView({
             {primaryAction === "mark-applied" && <Button onClick={() => setAppliedDialogOpen(true)}>标记已投递</Button>}
             {primaryAction === "schedule" && <Button onClick={() => onCreateInterview(application.id)}>{scheduleActionLabel}</Button>}
             {primaryAction === "record-result" && <Button onClick={() => setStageDialogOpen(true)}>{resultActionLabel}</Button>}
+            {primaryAction === "session-record" && currentSession && <Button onClick={() => navigateTo(careerApplicationPath(application.id, currentSession.id))}>{sessionRecordActionLabel}</Button>}
             {primaryAction === "offer" && <Button onClick={() => setOfferDialogOpen(true)}>更新 Offer 状态</Button>}
           </div>
         </div>
@@ -1531,11 +1567,11 @@ export function ApplicationDetailView({
             <p className="career-progress-helper">
               {isSubmittedScreening
                 ? "当前处于筛选中，收到明确通知后添加实际下一阶段。"
-                : "只展示当前求职路径中的关键节点；面试轮次在下方记录区呈现。"}
+                : "只展示当前求职路径中的关键节点；笔试和面试场次在下方记录区呈现。"}
             </p>
           </section>
           <section className="career-detail-card career-interview-rounds career-interview-section-card">
-            <header><h2>面试记录</h2><span>{applicationSessions.length} 条记录</span></header>
+            <header><h2>{sessionSectionTitle}</h2><span>{applicationSessions.length} 条记录</span></header>
             {applicationSessions.length ? (
               <div className="career-interview-round-list">
                 {applicationSessions.map((session) => <InterviewRoundCard key={session.id} session={session} onOpen={() => navigateTo(careerApplicationPath(application.id, session.id))} />)}
@@ -1543,8 +1579,10 @@ export function ApplicationDetailView({
             ) : (
               <div className="career-interview-empty">
                 <CalendarDays aria-hidden="true" />
-                <strong>暂无面试记录</strong>
-                <p>{canSchedule ? "安排面试后，记录每一轮面试与复盘内容。" : "公司确认面试后，再添加面试阶段并安排时间。"}</p>
+                <strong>暂无{currentRecordKind}记录</strong>
+                <p>{canSchedule
+                  ? `安排${currentRecordKind}后，记录${currentRecordKind}内容与复盘。`
+                  : `公司确认${currentRecordKind}后，再添加${currentRecordKind}阶段并安排时间。`}</p>
               </div>
             )}
           </section>
@@ -1574,14 +1612,19 @@ function formatDuration(durationMs: number | null): string | null {
 
 function SessionAssetList({
   assets,
+  recordKind,
+  hasTextRecord,
   onChanged,
   onNotice,
 }: {
   assets: InterviewAssetRecord[];
+  recordKind: "笔试" | "面试";
+  hasTextRecord: boolean;
   onChanged: () => void;
   onNotice: (notice: string) => void;
 }) {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [activeAssetId, setActiveAssetId] = useState<string | null>(null);
   const [busyAssetId, setBusyAssetId] = useState<string | null>(null);
   useEffect(() => () => { if (audioUrl) URL.revokeObjectURL(audioUrl); }, [audioUrl]);
   const play = async (asset: InterviewAssetRecord) => {
@@ -1590,6 +1633,7 @@ function SessionAssetList({
       const blob = await api.downloadInterviewAsset(asset.id);
       const url = URL.createObjectURL(blob);
       setAudioUrl((previous) => { if (previous) URL.revokeObjectURL(previous); return url; });
+      setActiveAssetId(asset.id);
     } catch (error) {
       onNotice(requestErrorMessage(error));
     } finally {
@@ -1626,98 +1670,76 @@ function SessionAssetList({
   return (
     <>
       {assets.length ? <div className="career-session-assets">{assets.map((asset) => <article key={asset.id}>
-        <span className="career-session-asset-icon"><FileText aria-hidden="true" /></span>
+        <span className="career-session-asset-icon"><FileAudio aria-hidden="true" /></span>
         <div><strong title={asset.original_file_name}>{asset.original_file_name}</strong><small>{formatDuration(asset.duration_ms) ?? formatBytes(asset.file_size)} · {asset.source_type === "recorded" ? "现场录制" : "文件上传"}</small></div>
-        {asset.asset_type === "audio" && <Button size="sm" variant="outline" disabled={busyAssetId === asset.id} onClick={() => void play(asset)}>{busyAssetId === asset.id ? "加载中…" : "播放录音"}</Button>}
-        <button type="button" aria-label={`下载 ${asset.original_file_name}`} disabled={busyAssetId === asset.id} onClick={() => void download(asset)}><Download aria-hidden="true" /></button>
-        <button type="button" aria-label={`删除 ${asset.original_file_name}`} disabled={busyAssetId === asset.id} onClick={() => void remove(asset)}><Trash2 aria-hidden="true" /></button>
-      </article>)}</div> : <div className="career-session-empty-content"><strong>尚未添加面试内容</strong><p>可上传音频文件，或粘贴面试文字记录。</p></div>}
-      {audioUrl && <audio className="career-session-audio-player" controls autoPlay src={audioUrl} aria-label="面试录音播放器" />}
+        <div className="career-session-asset-actions">
+          {asset.asset_type === "audio" && <Button size="sm" variant="outline" disabled={busyAssetId === asset.id} onClick={() => void play(asset)}>{busyAssetId === asset.id ? "加载中…" : activeAssetId === asset.id ? "重新播放" : "播放录音"}</Button>}
+          <button type="button" aria-label={`下载 ${asset.original_file_name}`} disabled={busyAssetId === asset.id} onClick={() => void download(asset)}><Download aria-hidden="true" /></button>
+          <button type="button" aria-label={`删除 ${asset.original_file_name}`} disabled={busyAssetId === asset.id} onClick={() => void remove(asset)}><Trash2 aria-hidden="true" /></button>
+        </div>
+        {audioUrl && activeAssetId === asset.id && <audio className="career-session-audio-player" controls autoPlay src={audioUrl} aria-label={`${recordKind}录音播放器`} />}
+      </article>)}</div> : !hasTextRecord && <div className="career-session-empty-content"><FileText aria-hidden="true" /><strong>尚未添加{recordKind}内容</strong><p>上传音频文件，或粘贴文字记录。</p></div>}
     </>
   );
 }
 
-function LiveSessionRecorder({ sessionId, onChanged, onNotice }: { sessionId: string; onChanged: () => void; onNotice: (notice: string) => void }) {
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const startedAtRef = useRef(0);
-  const [recording, setRecording] = useState(false);
-  useEffect(() => () => {
-    const recorder = recorderRef.current;
-    if (recorder) {
-      recorder.ondataavailable = null;
-      recorder.onstop = null;
-      if (recorder.state !== "inactive") recorder.stop();
-    }
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-  }, []);
-  const upload = async (file: File, duration: number) => {
-    try {
-      await api.uploadInterviewAsset(sessionId, file, "recorded", duration);
-      onChanged();
-    } catch (error) {
-      onNotice(requestErrorMessage(error));
-    }
-  };
-  const toggle = async () => {
-    if (recording) {
-      recorderRef.current?.stop();
-      return;
-    }
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      onNotice("当前浏览器不支持现场录音，请使用文件上传。 ");
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const preferredType = typeof MediaRecorder.isTypeSupported === "function"
-        ? ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/ogg", "audio/mp4"].find((candidate) => MediaRecorder.isTypeSupported(candidate))
-        : undefined;
-      const recorder = preferredType ? new MediaRecorder(stream, { mimeType: preferredType }) : new MediaRecorder(stream);
-      chunksRef.current = [];
-      streamRef.current = stream;
-      recorderRef.current = recorder;
-      startedAtRef.current = Date.now();
-      recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data); };
-      recorder.onstop = () => {
-        const type = recorder.mimeType || "audio/webm";
-        const extension = type.includes("mp4") ? "m4a" : type.includes("ogg") ? "ogg" : "webm";
-        const file = new File(chunksRef.current, `interview-${Date.now()}.${extension}`, { type });
-        streamRef.current?.getTracks().forEach((track) => track.stop());
-        setRecording(false);
-        void upload(file, Date.now() - startedAtRef.current);
-      };
-      recorder.start(1_000);
-      setRecording(true);
-    } catch {
-      onNotice("无法访问麦克风，请检查浏览器权限或改用文件上传。 ");
-    }
-  };
-  return <button type="button" className={`career-session-recorder${recording ? " is-recording" : ""}`} onClick={() => void toggle()}><Mic aria-hidden="true" /><span>{recording ? "停止并上传" : "开始录音"}<small>{recording ? "正在采集麦克风音频" : "需要授予麦克风权限"}</small></span></button>;
+const AUDIO_FILE_ACCEPT = "audio/*,.aac,.aiff,.amr,.flac,.m4a,.mp3,.oga,.ogg,.opus,.wav,.webm,.wma";
+const AUDIO_FILE_EXTENSIONS = new Set(
+  AUDIO_FILE_ACCEPT
+    .split(",")
+    .filter((value) => value.startsWith(".")),
+);
+
+function isAudioFile(file: File): boolean {
+  if (file.type.toLowerCase().startsWith("audio/")) return true;
+  const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+  return AUDIO_FILE_EXTENSIONS.has(extension);
 }
 
 function AddInterviewContentDialog({
   session,
+  recordKind,
+  mode = "add",
+  initialText = "",
   onClose,
   onChanged,
   onNotice,
 }: {
   session: InterviewSessionRecord;
+  recordKind: "笔试" | "面试";
+  mode?: "add" | "edit";
+  initialText?: string;
   onClose: () => void;
   onChanged: () => void;
   onNotice: (notice: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
   const [file, setFile] = useState<File | null>(null);
+  const [dragActive, setDragActive] = useState(false);
   const [busy, setBusy] = useState(false);
+  const isEditing = mode === "edit";
+  const selectAudioFile = (candidate: File | undefined) => {
+    if (!candidate) return;
+    if (!isAudioFile(candidate)) {
+      if (inputRef.current) inputRef.current.value = "";
+      onNotice("仅支持音频文件，请选择音频格式。");
+      return;
+    }
+    setFile(candidate);
+    setText("");
+  };
   const save = async () => {
     if (!file && !text.trim()) return;
     setBusy(true);
     try {
-      if (file) await api.uploadInterviewAsset(session.id, file, "uploaded");
-      if (text.trim()) await api.updateInterviewSession(session.id, { questions_markdown: text.trim(), base_lock_version: session.lock_version });
+      if (isEditing) {
+        await api.updateInterviewSession(session.id, { questions_markdown: text.trim(), base_lock_version: session.lock_version });
+      } else if (file) {
+        await api.uploadInterviewAsset(session.id, file, "uploaded");
+      } else if (text.trim()) {
+        await api.updateInterviewSession(session.id, { questions_markdown: text.trim(), base_lock_version: session.lock_version });
+      }
       onClose();
       onChanged();
     } catch (error) {
@@ -1729,25 +1751,80 @@ function AddInterviewContentDialog({
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="career-content-dialog">
-        <DialogHeader><DialogTitle>添加面试内容</DialogTitle><DialogDescription>可上传音频文件，或粘贴文字记录，任选一种即可。</DialogDescription></DialogHeader>
-        <section className="career-content-upload-method">
-          <h3>上传音频文件</h3>
-          <div className="career-content-dropzone" onClick={() => inputRef.current?.click()} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") inputRef.current?.click(); }}>
-            <Import aria-hidden="true" />
-            <strong>{file ? file.name : "拖放音频文件到此处"}</strong>
-            <span>{file ? `${formatBytes(file.size)} · 已选择` : "或从电脑中选择文件"}</span>
-            <Button type="button" variant="outline" onClick={(event) => { event.stopPropagation(); inputRef.current?.click(); }}>选择文件</Button>
-          </div>
-          <input ref={inputRef} className="visually-hidden" type="file" accept="audio/*,video/*,.pdf,.docx,.txt,.md" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
-        </section>
-        <div className="career-content-or"><span>或</span></div>
+        <DialogHeader><DialogTitle>{isEditing ? `编辑${recordKind}文字记录` : `添加${recordKind}内容`}</DialogTitle><DialogDescription>{isEditing ? `修改已保存的${recordKind}文字记录。` : `可上传音频文件，或粘贴文字记录，任选一种即可。`}</DialogDescription></DialogHeader>
+        {!isEditing && <>
+          <section className="career-content-upload-method">
+            <h3>上传音频文件</h3>
+            <div
+              className={`career-content-dropzone${dragActive ? " is-dragging" : ""}`}
+              onClick={() => inputRef.current?.click()}
+              onDragOver={(event) => { event.preventDefault(); setDragActive(true); }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={(event) => { event.preventDefault(); setDragActive(false); selectAudioFile(event.dataTransfer.files?.[0]); }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") inputRef.current?.click(); }}
+            >
+              <Import aria-hidden="true" />
+              <strong>{file ? file.name : "拖放音频文件到此处"}</strong>
+              <span>{file ? `${formatBytes(file.size)} · 已选择` : "或从电脑中选择文件"}</span>
+              <Button type="button" variant="outline" onClick={(event) => { event.stopPropagation(); inputRef.current?.click(); }}>选择文件</Button>
+            </div>
+            <input ref={inputRef} className="visually-hidden" type="file" accept={AUDIO_FILE_ACCEPT} aria-label="音频文件" onChange={(event) => selectAudioFile(event.target.files?.[0])} />
+          </section>
+          <div className="career-content-or"><span>或</span></div>
+        </>}
         <section className="career-content-text-method">
-          <h3>粘贴文字记录</h3>
-          <textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="粘贴面试过程、逐字稿或整理后的文字记录…" />
+          <h3>{isEditing ? `${recordKind}文字记录` : "粘贴文字记录"}</h3>
+          <textarea value={text} onChange={(event) => { setText(event.target.value); setFile(null); if (inputRef.current) inputRef.current.value = ""; }} placeholder="粘贴面试过程、逐字稿或整理后的文字记录…" />
         </section>
-        <DialogFooter><Button variant="outline" onClick={onClose}>取消</Button><Button disabled={busy || (!file && !text.trim())} onClick={() => void save()}>{busy ? "保存中…" : "保存内容"}</Button></DialogFooter>
+        <DialogFooter><Button variant="outline" onClick={onClose}>取消</Button><Button disabled={busy || (!file && !text.trim())} onClick={() => void save()}>{busy ? "保存中…" : isEditing ? "保存修改" : "保存内容"}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function DeleteInterviewTextConfirmDialog({
+  session,
+  recordKind,
+  onClose,
+  onDeleted,
+  onNotice,
+}: {
+  session: InterviewSessionRecord;
+  recordKind: "笔试" | "面试";
+  onClose: () => void;
+  onDeleted: () => void;
+  onNotice: (notice: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const remove = async () => {
+    setBusy(true);
+    try {
+      await api.updateInterviewSession(session.id, {
+        questions_markdown: null,
+        base_lock_version: session.lock_version,
+      });
+      onClose();
+      onDeleted();
+    } catch (error) {
+      onNotice(requestErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <ConfirmDialog
+      kind="delete"
+      overlayClassName="bg-[var(--scrim)]"
+      title={`删除${recordKind}文字记录？`}
+      description={`删除后将无法恢复这条${recordKind}文字记录。`}
+      confirmLabel="删除记录"
+      busyLabel="删除中…"
+      busy={busy}
+      onCancel={onClose}
+      onConfirm={remove}
+    />
   );
 }
 
@@ -1769,6 +1846,7 @@ function CompleteInterviewDialog({
   onNotice: (notice: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const completeLabel = session.stage_type === "other" ? "完成笔试" : "完成本轮面试";
   const complete = async () => {
     setBusy(true);
     try {
@@ -1789,9 +1867,9 @@ function CompleteInterviewDialog({
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="career-complete-dialog">
-        <DialogHeader><DialogTitle>完成{session.stage_label}</DialogTitle><DialogDescription>完成后可以继续添加录音、面试评价和复盘。</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>完成{session.stage_label}</DialogTitle><DialogDescription>完成后可以继续补充音频或文字记录。</DialogDescription></DialogHeader>
         <div className="career-complete-summary"><strong>{session.stage_label}</strong><span>{formatFullDateTime(session.start_at)} · {sessionModeLabel(session.mode)}</span></div>
-        <DialogFooter><Button variant="outline" onClick={onClose}>取消</Button><Button disabled={busy} onClick={() => void complete()}>{busy ? "处理中…" : "完成本轮面试"}</Button></DialogFooter>
+        <DialogFooter><Button variant="outline" onClick={onClose}>取消</Button><Button disabled={busy} onClick={() => void complete()}>{busy ? "处理中…" : completeLabel}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -1800,136 +1878,96 @@ function CompleteInterviewDialog({
 export function InterviewSessionDetailView({
   detail,
   detailLoading,
-  timezone,
   onBack,
   onChanged,
   onNotice,
 }: {
   detail: InterviewSessionDetail | null;
   detailLoading: boolean;
-  timezone: string;
   onBack: () => void;
   onChanged: (preferredId?: string | null) => void | Promise<void>;
   onNotice: (notice: string) => void;
 }) {
-  const [editing, setEditing] = useState(false);
   const [questions, setQuestions] = useState("");
   const [review, setReview] = useState("");
   const [improvement, setImprovement] = useState("");
   const [showContentDialog, setShowContentDialog] = useState(false);
+  const [showEditTextDialog, setShowEditTextDialog] = useState(false);
+  const [showDeleteTextDialog, setShowDeleteTextDialog] = useState(false);
   const [showCompleteDialog, setShowCompleteDialog] = useState(false);
-  const [pendingLifecycle, setPendingLifecycle] = useState<"cancel" | "archive" | "restore" | "delete-session" | null>(null);
-  const [lifecycleBusy, setLifecycleBusy] = useState(false);
-  const [stageDialogOpen, setStageDialogOpen] = useState(false);
+  const [textExpanded, setTextExpanded] = useState(false);
   useEffect(() => {
     if (!detail) return;
     setQuestions(detail.session.questions_markdown ?? "");
     setReview(detail.session.review_summary ?? "");
     setImprovement(detail.session.improvement_markdown ?? "");
-    setEditing(false);
   }, [detail?.session.id, detail?.session.lock_version]);
-  if (!detail) return <section className="career-session-detail-loading">{detailLoading ? <PageLoading label="正在加载面试记录…" scope="panel" /> : <p>暂时无法读取这条面试记录。</p>}</section>;
+  if (!detail) return <section className="career-session-detail-loading">{detailLoading ? <PageLoading label="正在加载记录…" scope="panel" /> : <p>暂时无法读取这条记录。</p>}</section>;
   const { session, application, assets } = detail;
   const isArchived = application.archived_at !== null;
-  const saveEdits = async () => {
-    try {
-      await api.updateInterviewSession(session.id, {
-        questions_markdown: questions.trim() || null,
-        review_summary: review.trim() || null,
-        improvement_markdown: improvement.trim() || null,
-        base_lock_version: session.lock_version,
-      });
-      setEditing(false);
-      onChanged(session.id);
-    } catch (error) {
-      onNotice(requestErrorMessage(error));
-    }
-  };
-  const runLifecycle = async () => {
-    if (!pendingLifecycle) return;
-    setLifecycleBusy(true);
-    try {
-      if (pendingLifecycle === "cancel") {
-        await api.cancelInterviewSession(session.id, { base_lock_version: session.lock_version });
-        setPendingLifecycle(null);
-        onChanged(session.id);
-      } else if (pendingLifecycle === "archive") {
-        await api.archiveJobApplication(application.id, application.lock_version);
-        setPendingLifecycle(null);
-        onChanged(session.id);
-      } else if (pendingLifecycle === "restore") {
-        await api.restoreJobApplication(application.id, application.lock_version);
-        setPendingLifecycle(null);
-        onChanged(session.id);
-      } else {
-        await api.deleteInterviewSession(session.id);
-        setPendingLifecycle(null);
-        onChanged(null);
-        onBack();
-      }
-    } catch (error) {
-      onNotice(requestErrorMessage(error));
-    } finally {
-      setLifecycleBusy(false);
-    }
-  };
-  const lifecycleDialog = pendingLifecycle ? {
-    kind: pendingLifecycle === "delete-session" ? "delete" as const : "warning" as const,
-    title: pendingLifecycle === "cancel" ? "取消这场面试？" : pendingLifecycle === "archive" ? "归档这条求职进程？" : pendingLifecycle === "restore" ? "恢复这条求职进程？" : "永久删除这场面试记录？",
-    description: pendingLifecycle === "cancel" ? "该场次会保留在记录复盘中，并从当前排期退出；求职进程回到待安排状态。" : pendingLifecycle === "archive" ? "归档后会从默认求职进程和排期中隐藏，历史面试与复盘仍会保留。" : pendingLifecycle === "restore" ? "恢复后，这条仍在进行的求职进程会重新进入默认求职进程列表。" : "删除后不可恢复。若存在关联素材，系统会拒绝删除并保留原记录。",
-    confirmLabel: pendingLifecycle === "cancel" ? "确认取消" : pendingLifecycle === "archive" ? "确认归档" : pendingLifecycle === "restore" ? "确认恢复" : "永久删除",
-  } : null;
+  const isAssessment = session.stage_type === "other";
+  const recordTitle = isAssessment ? "笔试记录" : "面试记录";
+  const recordKind = isAssessment ? "笔试" : "面试";
+  const overviewTitle = `${recordKind}概况`;
+  const overviewNameLabel = isAssessment ? "笔试名称" : "面试轮次";
+  const addContentLabel = isAssessment ? "添加笔试内容" : "添加面试内容";
+  const completeLabel = isAssessment ? "完成笔试" : "完成本轮面试";
   return (
     <div className="career-session-detail-page">
       <header className="career-record-hero career-session-record-hero">
-        <div className="career-record-identity">
-          <button type="button" className="career-record-back" onClick={onBack}><ChevronLeft aria-hidden="true" />返回求职记录</button>
-          <div className="career-record-title-row">
-            <h1>{session.stage_label}</h1>
-            <span className="career-record-divider" aria-hidden="true" />
-            <h1>面试记录</h1>
-            <span className={`career-session-status career-session-hero-status ${sessionStatusTone(session)}`}>{sessionStatusLabel(session)}</span>
+        <div className="career-session-record-hero-inner">
+          <div className="career-record-identity">
+            <div className="career-record-breadcrumb">
+              <button type="button" className="career-record-back" onClick={onBack}><ChevronLeft aria-hidden="true" />返回求职记录</button>
+              <span aria-hidden="true">/</span>
+              <span>{application.company_name_snapshot}</span>
+            </div>
+            <div className="career-record-title-row">
+              <h1>{application.company_name_snapshot}</h1>
+              <span className="career-record-divider" aria-hidden="true" />
+              <h1>{recordTitle}</h1>
+              <span className={`career-session-status career-session-hero-status ${sessionStatusTone(session)}`}>{sessionStatusLabel(session)}</span>
+            </div>
           </div>
-          <p>{application.company_name_snapshot} · {application.job_title_snapshot} · {formatFullDateTime(session.start_at)} · {sessionModeLabel(session.mode)}</p>
-        </div>
-        <div className="career-record-actions">
-          {!isArchived && <Button variant="outline" onClick={() => setEditing((value) => !value)}>{editing ? "取消编辑" : "编辑记录"}</Button>}
-          {!isArchived && session.status === "scheduled" && <Button onClick={() => setShowCompleteDialog(true)}>完成本轮面试</Button>}
-          {!isArchived && session.status === "scheduled" && <Button variant="outline" onClick={() => setPendingLifecycle("cancel")}>取消面试</Button>}
-          <Button variant="outline" onClick={() => setPendingLifecycle(isArchived ? "restore" : "archive")}>{isArchived ? "恢复进程" : "归档进程"}</Button>
-          <Button variant="ghost" onClick={() => setPendingLifecycle("delete-session")}>删除记录</Button>
+          <div className="career-record-actions">
+            <Button onClick={() => setShowContentDialog(true)}>{addContentLabel}</Button>
+            {!isArchived && session.status === "scheduled" && <Button variant="outline" onClick={() => setShowCompleteDialog(true)}>{completeLabel}</Button>}
+          </div>
         </div>
       </header>
       <div className="career-session-detail-body">
         <section className="career-session-record-content">
-          <header className="career-session-content-header"><h2>面试概况</h2><span>最后更新：{formatUpdatedDateTime(session.updated_at)}</span></header>
+          <header className="career-session-content-header"><h2>{overviewTitle}</h2><span>最后更新：{formatUpdatedDateTime(session.updated_at)}</span></header>
           <div className="career-session-overview">
-            <div><span>面试轮次</span><strong>{session.stage_label}</strong></div>
-            <div><span>面试时间</span><strong>{formatFullDateTime(session.start_at)}</strong></div>
-            <div><span>面试方式</span><strong>{sessionModeLabel(session.mode)}{session.location ? ` · ${session.location}` : ""}</strong></div>
+            <div><FileText aria-hidden="true" /><span><small>{overviewNameLabel}</small><strong>{session.stage_label}</strong></span></div>
+            <div><CalendarDays aria-hidden="true" /><span><small>{recordKind}时间</small><strong>{formatFullDateTime(session.start_at)}</strong></span></div>
+            <div><Video aria-hidden="true" /><span><small>{recordKind}方式</small><strong>{sessionModeLabel(session.mode)}{session.location ? ` · ${session.location}` : ""}</strong></span></div>
           </div>
-          {session.meeting_url && <a className="career-session-meeting-link" href={session.meeting_url} target="_blank" rel="noreferrer"><Video aria-hidden="true" />打开会议链接 <ExternalLink aria-hidden="true" /></a>}
+          {session.meeting_url && <a className="career-session-meeting-link" href={session.meeting_url} target="_blank" rel="noreferrer"><Video aria-hidden="true" />打开{isAssessment ? "笔试" : "会议"}链接 <ExternalLink aria-hidden="true" /></a>}
           <section className="career-session-content-section">
-            <header><h2>面试内容</h2><Button size="sm" onClick={() => setShowContentDialog(true)}>添加面试内容</Button></header>
-            <SessionAssetList assets={assets} onChanged={() => onChanged(session.id)} onNotice={onNotice} />
-            {questions.trim() && <div className="career-session-transcript"><h3>文字记录</h3><p>{questions}</p></div>}
-            <LiveSessionRecorder sessionId={session.id} onChanged={() => onChanged(session.id)} onNotice={onNotice} />
+            <header><h2>{recordTitle}</h2><span>支持上传音频或粘贴文字</span></header>
+            <SessionAssetList assets={assets} recordKind={recordKind} hasTextRecord={Boolean(questions.trim())} onChanged={() => onChanged(session.id)} onNotice={onNotice} />
+            {questions.trim() && <article className={`career-session-transcript${textExpanded ? " is-expanded" : ""}`}>
+              <header>
+                <div className="career-session-transcript-title">
+                  <span><FileText aria-hidden="true" /></span>
+                  <div><h3>文字记录</h3><small>{questions.trim().length} 字</small></div>
+                </div>
+                <div className="career-session-transcript-actions">
+                  <Button variant="outline" onClick={() => setShowEditTextDialog(true)}>编辑记录</Button>
+                  <Button variant="outline" onClick={() => setShowDeleteTextDialog(true)}>删除记录</Button>
+                </div>
+              </header>
+              <p id="career-session-transcript-content">{questions}</p>
+              {questions.trim().length > 180 && <button type="button" className="career-session-transcript-toggle" aria-expanded={textExpanded} aria-controls="career-session-transcript-content" onClick={() => setTextExpanded((expanded) => !expanded)}>{textExpanded ? "收起内容" : "展开全文"}</button>}
+            </article>}
           </section>
-          <section className="career-session-review-section">
-            <header><h2><CircleCheck aria-hidden="true" />面试评价与复盘</h2></header>
-            {editing ? <div className="career-session-edit-fields"><label>题目记录<textarea value={questions} onChange={(event) => setQuestions(event.target.value)} /></label><label>复盘总结<textarea value={review} onChange={(event) => setReview(event.target.value)} /></label><label>需要改进<textarea value={improvement} onChange={(event) => setImprovement(event.target.value)} /></label><Button onClick={() => void saveEdits()}>保存记录</Button></div> : <div className="career-session-review-grid"><div><span>面试评价</span><p>{review || "尚未填写评价"}</p></div><div><span>面试复盘</span><p>{improvement || "尚未开始复盘"}</p></div></div>}
-          </section>
-          {!isArchived && application.status === "active" && application.stage_state === "awaiting_result" && <section className="career-session-stage-action"><div><strong>本轮面试已完成</strong><span>确认结果后再进入下一阶段，求职进度会随之更新。</span></div><Button onClick={() => setStageDialogOpen(true)}>添加下一阶段</Button><Button variant="outline" onClick={() => void closeApplicationAsRejected(application, onChanged, onNotice)}>未通过</Button></section>}
         </section>
       </div>
-      {showContentDialog && <AddInterviewContentDialog session={session} onClose={() => setShowContentDialog(false)} onChanged={() => onChanged(session.id)} onNotice={onNotice} />}
-      {showCompleteDialog && <CompleteInterviewDialog session={session} questions={questions} review={review} improvement={improvement} onClose={() => setShowCompleteDialog(false)} onCompleted={() => onChanged(session.id)} onNotice={onNotice} />}
-      {stageDialogOpen && <AddNextStageDialog application={application} timezone={timezone} onClose={() => setStageDialogOpen(false)} onChanged={() => onChanged(session.id)} onNotice={onNotice} />}
-      {lifecycleDialog && <ConfirmDialog kind={lifecycleDialog.kind} title={lifecycleDialog.title} description={lifecycleDialog.description} confirmLabel={lifecycleDialog.confirmLabel} busyLabel="正在处理…" busy={lifecycleBusy} onCancel={() => setPendingLifecycle(null)} onConfirm={() => void runLifecycle()} />}
+      {showContentDialog && <AddInterviewContentDialog session={session} recordKind={recordKind} onClose={() => setShowContentDialog(false)} onChanged={() => onChanged(session.id)} onNotice={onNotice} />}
+      {showEditTextDialog && <AddInterviewContentDialog session={session} recordKind={recordKind} mode="edit" initialText={questions} onClose={() => setShowEditTextDialog(false)} onChanged={() => onChanged(session.id)} onNotice={onNotice} />}
+      {showDeleteTextDialog && <DeleteInterviewTextConfirmDialog session={session} recordKind={recordKind} onClose={() => setShowDeleteTextDialog(false)} onDeleted={() => onChanged(session.id)} onNotice={onNotice} />}
+      {showCompleteDialog && <CompleteInterviewDialog session={session} questions={questions} review={review} improvement={improvement} onClose={() => setShowCompleteDialog(false)} onCompleted={() => navigateTo(careerApplicationPath(application.id))} onNotice={onNotice} />}
     </div>
   );
-}
-
-function closeApplicationAsRejected(application: JobApplicationRecord, onChanged: () => void, onNotice: (notice: string) => void) {
-  return api.closeJobApplication(application.id, { status: "rejected", base_lock_version: application.lock_version }).then(onChanged).catch((error) => onNotice(requestErrorMessage(error)));
 }

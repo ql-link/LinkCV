@@ -251,13 +251,13 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 | `GET` | `/api/interview-sessions` | 按时间、状态、`application_id`、归档范围和游标列出当前用户的面试记录 |
 | `POST` | `/api/job-applications/:id/interview-sessions` | 在指定求职进程的当前阶段创建排期 |
 | `GET/PUT/DELETE` | `/api/interview-sessions/:id` | 读取、乐观锁更新或删除无素材的单场记录 |
-| `POST` | `/api/interview-sessions/:id/reschedule` | 调整排期，开始时间只接受整点或半点 |
+| `POST` | `/api/interview-sessions/:id/reschedule` | 调整排期，开始时间接受有效 24 小时制 `HH:mm`（小时 `00–23`、分钟 `00–59`） |
 | `POST` | `/api/interview-sessions/:id/complete\|cancel` | 明确完成或取消一场面试 |
 | `GET/POST` | `/api/interview-sessions/:id/assets` | 列出或上传录音、视频和文档素材 |
 | `GET` | `/api/interview-assets/:id/content` | 所有权校验后流式读取素材 |
 | `DELETE` | `/api/interview-assets/:id` | 所有权校验后删除素材记录和对象存储文件 |
 
-排期使用带时区的 `start_at/end_at`，服务端转成 UTC 保存；不画半点辅助线不影响 30 分钟吸附契约。与本人其他未取消面试重叠时返回 `409 INTERVIEW_TIME_CONFLICT` 和冲突摘要，只有请求再次携带 `allow_conflict=true` 才保存。完成面试会保存自由文本题目、复盘和改进点，并把求职进程置为 `awaiting_result`；它不会自动推断通过或把卡片移动到下一阶段。`advance` 负责把最近一场待确认结果标为通过并移动进程，`close` 负责标记未通过或其他终态。过期 `base_lock_version` 返回 `409 INTERVIEW_EDIT_CONFLICT`，不合法状态跳转返回 `409 INTERVIEW_INVALID_TRANSITION`。
+排期使用带时区的 `start_at/end_at`，开始时间必须是有效 24 小时制 `HH:mm`（秒和微秒为 0），服务端转成 UTC 保存；不画半点辅助线不影响 30 分钟吸附契约。与本人其他未取消面试重叠时返回 `409 INTERVIEW_TIME_CONFLICT` 和冲突摘要，只有请求再次携带 `allow_conflict=true` 才保存。完成面试会保存自由文本题目、复盘和改进点，并把求职进程置为 `awaiting_result`；它不会自动推断通过或把卡片移动到下一阶段。`advance` 负责把最近一场待确认结果标为通过并移动进程，`close` 负责标记未通过或其他终态。过期 `base_lock_version` 返回 `409 INTERVIEW_EDIT_CONFLICT`，不合法状态跳转返回 `409 INTERVIEW_INVALID_TRANSITION`。
 
 `GET /api/job-applications` 按 `updated_at DESC, id DESC` 分页，`GET /api/interview-sessions` 按 `start_at ASC, id ASC` 分页；两者的 `next_cursor` 都是不透明且与当前筛选条件绑定的游标。调用方必须把游标与原筛选一起回传；游标损坏、跨筛选复用或超长都返回 `400 INVALID_INTERVIEW_QUERY`。创建面试的 `(application_id, client_request_id)` 唯一：相同请求重放返回原场次，相同标识绑定到不同时间或内容时返回 `409 INTERVIEW_EDIT_CONFLICT`。
 

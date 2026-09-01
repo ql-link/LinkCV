@@ -662,11 +662,7 @@ def _validate_schedule(
         local_start = start_at.astimezone(ZoneInfo(timezone_name))
     except (ZoneInfoNotFoundError, ValueError) as error:
         raise InvalidInterviewTime from error
-    if (
-        local_start.minute not in {0, 30}
-        or local_start.second
-        or local_start.microsecond
-    ):
+    if local_start.second or local_start.microsecond:
         raise InvalidInterviewTime
     return start_at.astimezone(UTC), end_at.astimezone(UTC)
 

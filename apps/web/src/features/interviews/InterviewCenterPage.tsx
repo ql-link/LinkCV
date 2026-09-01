@@ -35,7 +35,6 @@ import {
   List,
   ListChecks,
   Kanban,
-  Mic,
   NotebookTabs,
   Pencil,
   Plus,
@@ -270,7 +269,7 @@ function errorMessage(error: unknown): string {
     const messages: Record<string, string> = {
       INTERVIEW_EDIT_CONFLICT: "这条面试已在其他页面更新，请刷新后再试。",
       INTERVIEW_INVALID_TRANSITION: "当前求职进度不允许执行这个操作。",
-      INVALID_INTERVIEW_TIME: "面试开始时间需要落在整点或半点。",
+      INVALID_INTERVIEW_TIME: "面试开始时间需要是有效的 24 小时制 HH:mm（分钟 00–59）。",
       INTERVIEW_ASSET_TOO_LARGE: "素材超过 500 MiB，请压缩后重试。",
       UNSUPPORTED_INTERVIEW_ASSET: "暂不支持这种素材格式。",
       INTERVIEW_APPLICATION_NOT_EMPTY: "请先清理该求职进程下的面试记录。",
@@ -344,7 +343,7 @@ function nextApplicationStageLabel(application: JobApplicationSummary): string {
 function recentInterviewLabel(session: InterviewSessionSummary): string {
   const status = session.status === "completed"
     ? session.review_summary?.trim()
-      ? "已完成复盘"
+      ? "已完成"
       : "已完成"
     : session.status === "cancelled"
       ? "已取消"
@@ -650,7 +649,7 @@ export function InterviewCenterPage({
           icon={<BriefcaseBusiness />}
           tone="warning"
           title="求职中心"
-          description={view === "applications" ? "导入岗位，记录每一轮面试，并完成复盘。" : "集中管理岗位机会、求职进程、面试排期与复盘记录。"}
+          description={view === "applications" ? "导入岗位，跟踪每一轮求职进展。" : "集中管理岗位机会、求职进程、面试排期与面试记录。"}
           actions={(
             <>
               {view === "applications" ? (
@@ -757,7 +756,6 @@ export function InterviewCenterPage({
         <InterviewSessionDetailView
           detail={detail?.session.id === initialSessionId ? detail : null}
           detailLoading={detailLoading}
-          timezone={timezone}
           onBack={() => navigateTo(careerApplicationPath(initialApplicationId as string))}
           onChanged={(preferredId) => loadData(preferredId)}
           onNotice={setNotice}
@@ -1234,7 +1232,7 @@ function RecordsView({
         <div className="records-empty-state">
           <NotebookTabs aria-hidden="true" />
           <h2>还没有面试记录</h2>
-          <p>安排并完成面试后，可以在这里整理题目、复盘和相关素材。</p>
+          <p>安排面试后，可以在这里上传音频或填写文字记录。</p>
         </div>
         <ApplicationHistoryList
           applications={applicationsWithoutSessions}
@@ -1663,9 +1661,9 @@ function RecordDetail({
                 : "永久删除这场面试记录？",
         description:
           pendingLifecycle === "cancel"
-            ? "该场次会保留在记录复盘中，并从当前排期退出；求职进程回到待安排状态。"
+            ? "该场次会保留在面试记录中，并从当前排期退出；求职进程回到待安排状态。"
             : pendingLifecycle === "archive"
-              ? "归档后会从默认求职进程和排期中隐藏，历史面试与复盘仍会保留。"
+              ? "归档后会从默认求职进程和排期中隐藏，历史面试记录仍会保留。"
               : pendingLifecycle === "restore"
                 ? "恢复后，这条仍在进行的求职进程会重新进入默认求职进程列表。"
                 : "删除后不可恢复。若存在关联素材，系统会拒绝删除并保留原记录。",
@@ -1698,7 +1696,7 @@ function RecordDetail({
             icon={<Pencil />}
             onClick={() => setEditing((value) => !value)}
           >
-            {editing ? "取消" : "编辑"}
+            {editing ? "取消" : "填写文字记录"}
           </Button>
           {detail.session.status === "scheduled" && (
             <>
@@ -1793,27 +1791,13 @@ function RecordDetail({
         </dl>
       </section>
       <EditableRecordSection
-        title="题目记录"
+        title="文字记录"
         value={questions}
         editing={editing}
-        placeholder="按原始顺序记录面试中遇到的问题，不需要先结构化分类。"
+        placeholder="粘贴面试过程、逐字稿或整理后的文字记录…"
         onChange={setQuestions}
       />
-      <EditableRecordSection
-        title="复盘总结"
-        value={review}
-        editing={editing}
-        placeholder="记录整体发挥、关键判断和待确认信息。"
-        onChange={setReview}
-      />
-      <EditableRecordSection
-        title="需要改进"
-        value={improvement}
-        editing={editing}
-        placeholder="记录下一次要针对性改进的内容。"
-        onChange={setImprovement}
-      />
-      {editing && <div className="record-save-row"><Button onClick={() => void save(false)}>保存复盘</Button></div>}
+      {editing && <div className="record-save-row"><Button onClick={() => void save(false)}>保存文字记录</Button></div>}
       {lifecycleDialog && (
         <ConfirmDialog
           kind={lifecycleDialog.kind}
@@ -1867,79 +1851,12 @@ function AssetSidebar({
   onNotice: (notice: string) => void;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const startedAtRef = useRef(0);
-  const [recording, setRecording] = useState(false);
-  useEffect(
-    () => () => {
-      const recorder = recorderRef.current;
-      if (recorder) {
-        recorder.ondataavailable = null;
-        recorder.onstop = null;
-        if (recorder.state !== "inactive") recorder.stop();
-      }
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-    },
-    [],
-  );
-  const upload = async (file: File, source: "recorded" | "uploaded", duration?: number) => {
+  const upload = async (file: File) => {
     try {
-      await api.uploadInterviewAsset(detail.session.id, file, source, duration);
+      await api.uploadInterviewAsset(detail.session.id, file, "uploaded");
       onChanged();
     } catch (error) {
       onNotice(errorMessage(error));
-    }
-  };
-  const toggleRecording = async () => {
-    if (recording) {
-      recorderRef.current?.stop();
-      return;
-    }
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      onNotice("当前浏览器不支持现场录音，请使用文件上传。 ");
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const preferredType =
-        typeof MediaRecorder.isTypeSupported === "function"
-          ? [
-              "audio/webm;codecs=opus",
-              "audio/webm",
-              "audio/ogg;codecs=opus",
-              "audio/ogg",
-              "audio/mp4",
-            ].find((candidate) => MediaRecorder.isTypeSupported(candidate))
-          : undefined;
-      const recorder = preferredType
-        ? new MediaRecorder(stream, { mimeType: preferredType })
-        : new MediaRecorder(stream);
-      chunksRef.current = [];
-      streamRef.current = stream;
-      recorderRef.current = recorder;
-      startedAtRef.current = Date.now();
-      recorder.ondataavailable = (event) => {
-        if (event.data.size) chunksRef.current.push(event.data);
-      };
-      recorder.onstop = () => {
-        const duration = Date.now() - startedAtRef.current;
-        const type = recorder.mimeType || "audio/webm";
-        const extension = type.includes("mp4")
-          ? "m4a"
-          : type.includes("ogg")
-            ? "ogg"
-            : "webm";
-        const file = new File(chunksRef.current, `interview-${Date.now()}.${extension}`, { type });
-        streamRef.current?.getTracks().forEach((track) => track.stop());
-        setRecording(false);
-        void upload(file, "recorded", duration);
-      };
-      recorder.start(1_000);
-      setRecording(true);
-    } catch {
-      onNotice("无法访问麦克风，请检查浏览器权限或改用文件上传。 ");
     }
   };
   const download = async (asset: InterviewAssetRecord) => {
@@ -1981,21 +1898,18 @@ function AssetSidebar({
           ref={fileInput}
           className="visually-hidden"
           type="file"
-          accept="audio/*,video/*,.pdf,.docx,.txt,.md"
+          aria-label="面试音频文件"
+          accept="audio/*,.aac,.aiff,.amr,.flac,.m4a,.mp3,.oga,.ogg,.opus,.wav,.webm,.wma"
           onChange={(event) => {
             const file = event.target.files?.[0];
-            if (file) void upload(file, "uploaded");
+            const extension = file?.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+            const audioExtensions = new Set([".aac", ".aiff", ".amr", ".flac", ".m4a", ".mp3", ".oga", ".ogg", ".opus", ".wav", ".webm", ".wma"]);
+            if (file && (file.type.toLowerCase().startsWith("audio/") || audioExtensions.has(extension ?? ""))) void upload(file);
+            else if (file) onNotice("仅支持音频文件，请选择音频格式。");
             event.target.value = "";
           }}
         />
-        <Button variant="outline" icon={<Import />} onClick={() => fileInput.current?.click()}>上传文件</Button>
-      </section>
-      <section className="interview-surface live-record-card">
-        <h3>现场录制</h3>
-        <p>浏览器录音会直接关联到当前这场面试。</p>
-        <button type="button" className={recording ? "is-recording" : ""} onClick={() => void toggleRecording()}>
-          <Mic /><span>{recording ? "停止并上传" : "开始录音"}<small>{recording ? "正在采集麦克风音频" : "需要授予麦克风权限"}</small></span>
-        </button>
+        <Button variant="outline" icon={<Import />} onClick={() => fileInput.current?.click()}>上传音频</Button>
       </section>
       <InterviewContextSidebar className="record-context-card" interview={selected} />
     </aside>
@@ -2288,7 +2202,7 @@ function CreateApplicationDialog({
         <header>
           <div>
             <h2 id="create-application-title">新建求职进程</h2>
-            <p>从岗位库选择目标岗位，后续面试和复盘都会关联到这条进程。</p>
+            <p>从岗位库选择目标岗位，后续面试和记录都会关联到这条进程。</p>
           </div>
           <button type="button" aria-label="关闭" onClick={onClose}><X /></button>
         </header>
@@ -2527,7 +2441,7 @@ function CreateInterviewDialog({
                 <label>展示名称<input required value={stage} readOnly aria-readonly="true" /></label>
                 {detailStageCategory === "interview" && <label>面试轮次<input type="number" value={detailApplication?.current_round_no ?? ""} readOnly aria-readonly="true" /></label>}
                 <label>当前状态<input value="已安排" readOnly aria-readonly="true" /></label>
-                <label>{detailTimeLabel}<input required type="datetime-local" step={1800} value={startAt} onChange={(event) => setStartAt(event.target.value)} /></label>
+                <label>{detailTimeLabel}<input required type="datetime-local" step={60} value={startAt} onChange={(event) => setStartAt(event.target.value)} /></label>
                 {detailStageCategory !== "screening" && <>
                   <label>时长<select value={duration} onChange={(event) => setDuration(Number(event.target.value))}><option value={30}>30 分钟</option><option value={60}>1 小时</option><option value={90}>1.5 小时</option><option value={120}>2 小时</option></select></label>
                   <label>方式<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="video">视频面试</option><option value="onsite">现场面试</option><option value="phone">电话面试</option><option value="other">其他</option></select></label>
@@ -2546,7 +2460,7 @@ function CreateInterviewDialog({
             </>
           )}
           {creationLocked && <p className="interview-create-progress" role="status">岗位或求职进程已创建；再次提交只会重试当前面试排期，不会重复创建前置数据。</p>}
-          {!detailMode && <div className="interview-dialog-grid"><label>开始时间<input required type="datetime-local" step={1800} value={startAt} onChange={(event) => setStartAt(event.target.value)} /></label><label>时长<select value={duration} onChange={(event) => setDuration(Number(event.target.value))}><option value={30}>30 分钟</option><option value={60}>1 小时</option><option value={90}>1.5 小时</option><option value={120}>2 小时</option></select></label><label>面试方式<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="video">视频面试</option><option value="onsite">现场面试</option><option value="phone">电话面试</option><option value="other">其他</option></select></label></div>}
+          {!detailMode && <div className="interview-dialog-grid"><label>开始时间<input required type="datetime-local" step={60} value={startAt} onChange={(event) => setStartAt(event.target.value)} /></label><label>时长<select value={duration} onChange={(event) => setDuration(Number(event.target.value))}><option value={30}>30 分钟</option><option value={60}>1 小时</option><option value={90}>1.5 小时</option><option value={120}>2 小时</option></select></label><label>面试方式<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="video">视频面试</option><option value="onsite">现场面试</option><option value="phone">电话面试</option><option value="other">其他</option></select></label></div>}
           {pendingCreateConflict && (
             <div className="interview-create-conflict" role="alert">
               <div><strong>这个时间段与其他面试重叠</strong><span>前置的岗位和求职进程已经保留。你可以返回修改时间，或明确允许重叠保存本场排期。</span></div>

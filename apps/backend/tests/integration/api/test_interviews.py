@@ -290,6 +290,76 @@ def test_interview_lifecycle_conflict_overview_and_assets_share_one_record() -> 
         assert blocked_delete.json() == {"error": "INTERVIEW_SESSION_NOT_EMPTY"}
 
 
+def test_schedule_accepts_arbitrary_minutes_for_create_and_reschedule() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "arbitrary-minute-interview@example.test")
+        application = create_application(client, create_job(client, "任意分钟公司"))
+        payload = session_payload("17171717-1717-4171-8171-171717171717")
+        payload.update(
+            {
+                "start_at": fixture_datetime(0, 9, 17).isoformat(),
+                "end_at": fixture_datetime(0, 10, 17).isoformat(),
+            }
+        )
+
+        created = client.post(
+            f"/api/job-applications/{application['id']}/interview-sessions",
+            json=payload,
+        )
+        assert created.status_code == 201, created.text
+        created_session = created.json()["session"]
+        assert datetime.fromisoformat(created_session["start_at"]).minute == 17
+
+        invalid_clock = client.post(
+            f"/api/interview-sessions/{created_session['id']}/reschedule",
+            json={
+                "start_at": "2026-09-01T09:60:00+08:00",
+                "end_at": "2026-09-01T10:17:00+08:00",
+                "timezone": "Asia/Shanghai",
+                "base_lock_version": created_session["lock_version"],
+            },
+        )
+        assert invalid_clock.status_code == 400
+        assert invalid_clock.json() == {"error": "INVALID_INTERVIEW_REQUEST"}
+
+        invalid_precision = client.post(
+            f"/api/interview-sessions/{created_session['id']}/reschedule",
+            json={
+                "start_at": fixture_datetime(0, 9, 17).replace(second=1).isoformat(),
+                "end_at": fixture_datetime(0, 10, 17).isoformat(),
+                "timezone": "Asia/Shanghai",
+                "base_lock_version": created_session["lock_version"],
+            },
+        )
+        assert invalid_precision.status_code == 400
+        assert invalid_precision.json() == {"error": "INVALID_INTERVIEW_TIME"}
+
+        reversed_range = client.post(
+            f"/api/interview-sessions/{created_session['id']}/reschedule",
+            json={
+                "start_at": fixture_datetime(1, 12, 17).isoformat(),
+                "end_at": fixture_datetime(1, 11, 17).isoformat(),
+                "timezone": "Asia/Shanghai",
+                "base_lock_version": created_session["lock_version"],
+            },
+        )
+        assert reversed_range.status_code == 400
+        assert reversed_range.json() == {"error": "INVALID_INTERVIEW_REQUEST"}
+
+        rescheduled = client.post(
+            f"/api/interview-sessions/{created_session['id']}/reschedule",
+            json={
+                "start_at": fixture_datetime(1, 12, 17).isoformat(),
+                "end_at": fixture_datetime(1, 13, 17).isoformat(),
+                "timezone": "Asia/Shanghai",
+                "base_lock_version": created_session["lock_version"],
+            },
+        )
+        assert rescheduled.status_code == 200, rescheduled.text
+        assert datetime.fromisoformat(rescheduled.json()["session"]["start_at"]).minute == 17
+
+
 def test_other_users_cannot_discover_interview_resources() -> None:
     app = build_app()
     with TestClient(app) as owner:
