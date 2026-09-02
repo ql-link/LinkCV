@@ -34,7 +34,7 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0048"
+EXPECTED_HEAD = "0051"
 
 
 def canonical_editor_markdown(data: dict[str, Any]) -> str:
@@ -1938,6 +1938,162 @@ def test_0046_simplifies_profile_preferences_and_removes_professional_directions
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0046"
 
     engine.dispose()
+
+
+def test_0051_repairs_a_stamped_legacy_profile_schema() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0044")
+    engine = create_engine(database_url)
+
+    try:
+        with engine.begin() as connection:
+            user_id = connection.execute(
+                text(
+                    "INSERT INTO users (email, password_hash, nickname) "
+                    "VALUES ('profile-0051-legacy@example.invalid', '$2b$12$fictional', '张三')"
+                )
+            ).lastrowid
+            profile_id = connection.execute(
+                text(
+                    "INSERT INTO user_profiles ("
+                    "user_id, lock_version, work_city, salary_min, salary_max, "
+                    "salary_currency, salary_period, employment_type, work_mode, "
+                    "target_positions, exclusions, target_companies, availability, "
+                    "available_from, school, school_tier, major, education_level, "
+                    "years_experience, birth_date, languages, skills, certifications, "
+                    "honors, campus_experiences, created_at, updated_at"
+                    ") VALUES ("
+                    ":user_id, 9, ' 上海 ', 12000, 18000, 'CNY', 'month', 'full_time', "
+                    "'hybrid', :target_positions, JSON_ARRAY('不出差'), "
+                    "JSON_ARRAY('虚构科技'), 'custom', '2026-10-01', '南方虚构大学', "
+                    "JSON_ARRAY('project_211'), '计算机科学', 'master', 4, "
+                    "'1994-02-03', JSON_ARRAY('英语'), JSON_ARRAY('Python'), "
+                    "JSON_ARRAY('AWS SAA'), JSON_ARRAY('校级奖学金'), "
+                    "JSON_ARRAY('虚构校园项目'), '2026-08-01 12:00:00.000000', "
+                    "'2026-08-02 12:00:00.000000')"
+                ),
+                {
+                    "user_id": user_id,
+                    "target_positions": json.dumps(
+                        ["平台工程师", "前端工程师"], ensure_ascii=False
+                    ),
+                },
+            ).lastrowid
+            assert user_id is not None
+            assert profile_id is not None
+            connection.execute(
+                text("UPDATE alembic_version SET version_num = '0050'")
+            )
+
+        run_alembic(database_url, "upgrade", "head")
+
+        inspector = inspect(engine)
+        columns = {
+            column["name"] for column in inspector.get_columns("user_profiles")
+        }
+        assert "work_city" not in columns
+        assert "professional_directions" not in columns
+        assert {"candidate_cities", "employment_types", "candidate_status", "graduation_year"} <= columns
+
+        with engine.connect() as connection:
+            row = connection.execute(
+                text(
+                    "SELECT id, user_id, lock_version, candidate_cities, "
+                    "employment_types, candidate_status, graduation_year, "
+                    "salary_min, salary_max, created_at, updated_at "
+                    "FROM user_profiles WHERE id = :profile_id"
+                ),
+                {"profile_id": profile_id},
+            ).mappings().one()
+            decoded_cities = (
+                json.loads(row["candidate_cities"])
+                if isinstance(row["candidate_cities"], (str, bytes))
+                else row["candidate_cities"]
+            )
+            decoded_employment = (
+                json.loads(row["employment_types"])
+                if isinstance(row["employment_types"], (str, bytes))
+                else row["employment_types"]
+            )
+            assert row["id"] == profile_id
+            assert row["user_id"] == user_id
+            assert row["lock_version"] == 9
+            assert decoded_cities == ["上海"]
+            assert decoded_employment == ["full_time"]
+            assert row["candidate_status"] is None
+            assert row["graduation_year"] is None
+            assert row["salary_min"] == 12000
+            assert row["salary_max"] == 18000
+            assert str(row["created_at"]) == "2026-08-01 12:00:00"
+            assert str(row["updated_at"]) == "2026-08-02 12:00:00"
+            assert connection.scalar(text("SELECT COUNT(*) FROM user_profiles")) == 1
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0051"
+    finally:
+        engine.dispose()
+        reset_test_database_to_base(database_url)
+
+
+def test_0051_advances_an_already_final_profile_schema_without_data_changes() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0050")
+    engine = create_engine(database_url)
+
+    try:
+        with engine.begin() as connection:
+            user_id = connection.execute(
+                text(
+                    "INSERT INTO users (email, password_hash, nickname) "
+                    "VALUES ('profile-0051-target@example.invalid', '$2b$12$fictional', '张三')"
+                )
+            ).lastrowid
+            profile_id = connection.execute(
+                text(
+                    "INSERT INTO user_profiles ("
+                    "user_id, lock_version, candidate_cities, salary_min, salary_max, "
+                    "salary_currency, salary_period, employment_types, school, "
+                    "school_tier, major, education_level, years_experience, "
+                    "candidate_status, graduation_year, languages, skills, "
+                    "certifications, honors, campus_experiences, created_at, updated_at"
+                    ") VALUES ("
+                    ":user_id, 4, JSON_ARRAY('上海'), 10000, 15000, 'CNY', 'month', "
+                    "JSON_ARRAY('full_time', 'internship'), '南方虚构大学', "
+                    "JSON_ARRAY('project_211'), '计算机科学', 'master', 2, NULL, NULL, "
+                    "JSON_ARRAY('英语'), JSON_ARRAY('Python'), JSON_ARRAY(), JSON_ARRAY(), "
+                    "JSON_ARRAY(), '2026-08-03 12:00:00.000000', '2026-08-04 12:00:00.000000')"
+                ),
+                {"user_id": user_id},
+            ).lastrowid
+            assert user_id is not None
+            assert profile_id is not None
+
+        with engine.connect() as connection:
+            before = connection.execute(
+                text(
+                    "SELECT id, user_id, lock_version, candidate_cities, "
+                    "employment_types, created_at, updated_at "
+                    "FROM user_profiles WHERE id = :profile_id"
+                ),
+                {"profile_id": profile_id},
+            ).one()
+
+        run_alembic(database_url, "upgrade", "head")
+
+        with engine.connect() as connection:
+            after = connection.execute(
+                text(
+                    "SELECT id, user_id, lock_version, candidate_cities, "
+                    "employment_types, created_at, updated_at "
+                    "FROM user_profiles WHERE id = :profile_id"
+                ),
+                {"profile_id": profile_id},
+            ).one()
+            assert after == before
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0051"
+    finally:
+        engine.dispose()
+        reset_test_database_to_base(database_url)
 
 
 def test_agent_clarification_message_forward_migration() -> None:

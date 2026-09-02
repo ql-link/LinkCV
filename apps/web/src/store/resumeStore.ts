@@ -139,7 +139,169 @@ type SaveSnapshot = {
   previewScale: number;
 };
 
+type LocalResumeDraft = {
+  version: 1;
+  userId: string;
+  resumeId: string;
+  baseLockVersion: number;
+  title: string;
+  markdown: string;
+  editorContent: JSONContent | string;
+  settings: ResumeSettings;
+  editVersion: number;
+  updatedAt: string;
+};
+
 let saveQueue: Promise<void> = Promise.resolve();
+let pendingLocalDraft: LocalResumeDraft | null = null;
+let pendingLocalDraftTimer: ReturnType<typeof setTimeout> | null = null;
+
+export const LOCAL_RESUME_DRAFT_WRITE_DELAY_MS = 250;
+
+function localResumeDraftStoragePrefix(userId: string) {
+  return `linkcv:resume-draft:v1:${encodeURIComponent(userId)}:`;
+}
+
+export function localResumeDraftStorageKey(userId: string, resumeId: string) {
+  return `${localResumeDraftStoragePrefix(userId)}${encodeURIComponent(resumeId)}`;
+}
+
+function localDraftFromState(state: ResumeState): LocalResumeDraft | null {
+  if (!state.user || !state.activeResumeId || !state.dirty) return null;
+  return {
+    version: 1,
+    userId: state.user.id,
+    resumeId: state.activeResumeId,
+    baseLockVersion: state.lockVersion,
+    title: state.title,
+    markdown: state.markdown,
+    editorContent: state.editorContent,
+    settings: { ...state.settings, showSource: false },
+    editVersion: state.editVersion,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export function flushPendingLocalResumeDraft() {
+  if (pendingLocalDraftTimer) clearTimeout(pendingLocalDraftTimer);
+  pendingLocalDraftTimer = null;
+  const draft = pendingLocalDraft;
+  pendingLocalDraft = null;
+  if (!draft) return;
+  try {
+    globalThis.localStorage?.setItem(
+      localResumeDraftStorageKey(draft.userId, draft.resumeId),
+      JSON.stringify(draft),
+    );
+  } catch {
+    // Browser storage can be unavailable or full; database autosave remains active.
+  }
+}
+
+function scheduleLocalResumeDraft(state: ResumeState) {
+  const draft = localDraftFromState(state);
+  if (!draft) return;
+  if (pendingLocalDraft
+    && (pendingLocalDraft.userId !== draft.userId || pendingLocalDraft.resumeId !== draft.resumeId)) {
+    flushPendingLocalResumeDraft();
+  }
+  pendingLocalDraft = draft;
+  if (pendingLocalDraftTimer) clearTimeout(pendingLocalDraftTimer);
+  pendingLocalDraftTimer = setTimeout(flushPendingLocalResumeDraft, LOCAL_RESUME_DRAFT_WRITE_DELAY_MS);
+}
+
+function clearLocalResumeDraft(userId: string, resumeId: string) {
+  if (pendingLocalDraft?.userId === userId && pendingLocalDraft.resumeId === resumeId) {
+    pendingLocalDraft = null;
+    if (pendingLocalDraftTimer) clearTimeout(pendingLocalDraftTimer);
+    pendingLocalDraftTimer = null;
+  }
+  try {
+    globalThis.localStorage?.removeItem(localResumeDraftStorageKey(userId, resumeId));
+  } catch {
+    // Storage cleanup is best-effort.
+  }
+}
+
+function clearLocalResumeDraftsForUser(userId: string) {
+  flushPendingLocalResumeDraft();
+  try {
+    const prefix = localResumeDraftStoragePrefix(userId);
+    const keys = Array.from({ length: globalThis.localStorage?.length ?? 0 }, (_, index) => (
+      globalThis.localStorage?.key(index) ?? ""
+    ));
+    keys.filter((key) => key.startsWith(prefix)).forEach((key) => globalThis.localStorage?.removeItem(key));
+  } catch {
+    // Storage cleanup is best-effort.
+  }
+}
+
+function isStoredResumeSettings(value: unknown): value is ResumeSettings {
+  if (!value || typeof value !== "object") return false;
+  const settings = value as Partial<ResumeSettings>;
+  return typeof settings.fontFamily === "string"
+    && typeof settings.fontSize === "number" && Number.isFinite(settings.fontSize)
+    && typeof settings.lineHeight === "number" && Number.isFinite(settings.lineHeight)
+    && typeof settings.pageMargin === "number" && Number.isFinite(settings.pageMargin)
+    && typeof settings.verticalPageMargin === "number" && Number.isFinite(settings.verticalPageMargin)
+    && typeof settings.theme === "string"
+    && typeof settings.smartOnePage === "boolean"
+    && typeof settings.showSource === "boolean";
+}
+
+function isStoredEditorContent(value: unknown): value is JSONContent | string {
+  if (typeof value === "string") return true;
+  if (!value || typeof value !== "object") return false;
+  const content = value as Partial<JSONContent>;
+  return content.type === "doc" && (content.content === undefined || Array.isArray(content.content));
+}
+
+function readLocalResumeDraft(userId: string | undefined, resume: ResumeRecord): LocalResumeDraft | null {
+  if (!userId) return null;
+  const key = localResumeDraftStorageKey(userId, resume.id);
+  try {
+    const raw = globalThis.localStorage?.getItem(key);
+    if (!raw) return null;
+    const draft = JSON.parse(raw) as Partial<LocalResumeDraft>;
+    const valid = draft.version === 1
+      && draft.userId === userId
+      && draft.resumeId === resume.id
+      && draft.baseLockVersion === resume.lock_version
+      && typeof draft.title === "string"
+      && typeof draft.markdown === "string"
+      && isStoredEditorContent(draft.editorContent)
+      && isStoredResumeSettings(draft.settings)
+      && typeof draft.editVersion === "number" && Number.isFinite(draft.editVersion);
+    if (!valid) {
+      globalThis.localStorage?.removeItem(key);
+      return null;
+    }
+    return draft as LocalResumeDraft;
+  } catch {
+    try {
+      globalThis.localStorage?.removeItem(key);
+    } catch {
+      // Ignore cleanup failures for malformed local data.
+    }
+    return null;
+  }
+}
+
+function applyResumeWithLocalDraft(resume: ResumeRecord, userId?: string, localState?: ResumeState) {
+  const persisted = applyResume(resume, localState);
+  const draft = readLocalResumeDraft(userId, resume);
+  if (!draft) return persisted;
+  return {
+    ...persisted,
+    title: draft.title,
+    markdown: draft.markdown,
+    editorContent: draft.editorContent,
+    settings: normalizeSettings(draft.settings),
+    dirty: true,
+    editVersion: Math.max(localState?.editVersion ?? 0, draft.editVersion),
+    saveStatus: "idle" as SaveStatus,
+  };
+}
 
 function createImportIdempotencyKey(): string {
   const nativeUuid = globalThis.crypto?.randomUUID?.();
@@ -334,6 +496,8 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   },
 
   logout: async () => {
+    const currentUserId = get().user?.id;
+    if (currentUserId) clearLocalResumeDraftsForUser(currentUserId);
     await api.logout();
     set({
       authStatus: "guest",
@@ -450,7 +614,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
 
   loadResume: async (id) => {
     const { resume } = await api.getResume(id);
-    set({ versions: [], ...applyResume(resume) });
+    set({ versions: [], ...applyResumeWithLocalDraft(resume, get().user?.id, get()) });
   },
 
   renameResume: async (id, title) => {
@@ -814,3 +978,28 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       };
     }),
 }));
+
+useResumeStore.subscribe((state, previous) => {
+  const draftChanged = state.user?.id !== previous.user?.id
+    || state.activeResumeId !== previous.activeResumeId
+    || state.lockVersion !== previous.lockVersion
+    || state.title !== previous.title
+    || state.markdown !== previous.markdown
+    || state.editorContent !== previous.editorContent
+    || state.settings !== previous.settings
+    || state.editVersion !== previous.editVersion
+    || state.dirty !== previous.dirty;
+  if (!draftChanged) return;
+
+  if (state.dirty) scheduleLocalResumeDraft(state);
+  if (previous.user && previous.activeResumeId
+    && (!state.dirty
+      || state.user?.id !== previous.user.id
+      || state.activeResumeId !== previous.activeResumeId)) {
+    clearLocalResumeDraft(previous.user.id, previous.activeResumeId);
+  }
+});
+
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", flushPendingLocalResumeDraft);
+}

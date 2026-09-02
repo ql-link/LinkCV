@@ -31,7 +31,7 @@
 | `src/linkcv/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkcv/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0050` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0051` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -74,6 +74,10 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 `0049` 为 `document_parse_tasks` 增加可空的 `selected_template_style_json`。升级前只读取并校验活动 `resume_import` 任务，要求模板 ID 存在且关联行的 `TemplateDefinition` 合法、关系 key 一致，然后在新增列后回填完整规范化定义；资料集任务和终态历史导入保留空值。导入受理时同时写入模板 ID 与深拷贝快照，Worker 仅消费任务快照，模板后续更新或停用不会使已受理任务改变版式或失败；revision 为 forward-only，回退依赖备份。
 
 `0050` 不新增物理 schema 对象，在首笔写入前全量预检 `resume_templates`、`resumes` 和 `resume_versions` 的 canonical 正文，把白名单内完整的历史 `:icon[Name]:` 标记转换为结构化 `InlineIcon`，章节标题的前导图标转换为 `title_icon`。拆分行内文字时保留 marks、链接、样式和来源引用；未知或不完整标记保持原文字。若同一位置同时存在结构化图标与旧标记，迁移会因语义冲突中止；写后再次校验全部快照并确认转换幂等。revision 为 forward-only，恢复依赖升级前备份。
+
+`0051` 修复可能已被错误标记到较新 revision 的 `user_profiles` 结构漂移。它只接受完整的 0044-era 旧画像结构或完整的 0046-era 当前结构：旧结构在执行本 revision 自带的 SQL 前转换城市、工作性质和职业方向，并按 0045/0046 规则只保留 `internship`、`full_time` 后删除废弃列；当前结构只做完整 schema 与存量数组校验并安全推进版本。任一部分或未知结构在 DDL 前拒绝，迁移后核对画像行数、主键、归属、锁版本、保留字段和时间；revision 为 forward-only，失败恢复依赖备份。
+
+发布 runner 对 `0051` 已应用状态额外要求 `user_profiles` 的目标画像列存在且旧列（含中间 `professional_directions`）消失；若 `0051` 尚未应用但目标画像结构已经完整，则允许 revision 自身执行安全 no-op，部分或混合结构仍在 DDL 前拒绝。
 
 普通创建必须提供名称和启用模板，在用户行锁内完成容量、名称规范键和模板快照校验，再以 `source_type=template` 原子创建当前简历和 initial 版本。正式简历与活动导入任务共享每用户 10 个名额。异步导入同样必须提供启用模板，其标题来自安全化源文件名并允许与已有简历同名；Web 默认选择 `classic-technical-cn`，不可用时只回退到其他非空白启用模板，解析内容作为 data，所选模板提供 style。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。模板切换使用同一乐观锁边界的独立原子服务：当前 `data_json` 保持不变，目标启用模板提供 `style_json` 与 `template_id`，成功后只递增一次锁；目标无效或版本冲突不会写入部分结果。手动正式版本在创建和重命名时保存 1–80 字符的名称；旧调用方缺省时按版本号生成“版本 N”。手动版本、重命名、删除版本与恢复都先锁定所属简历；重命名只更新名称，恢复直接替换当前简历且不创建新版本；每份简历最多保存 10 个版本。`0023` 为 `resume_versions.name` 回填历史名称，历史初始版本、恢复前备份和 restore 记录使用系统名称。
 
@@ -181,7 +185,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 公开的 `/api/account/*` 通过 `get_current_user` 获取当前用户，不接受客户端 `user_id`。`GET /api/account/profile` 返回资料并附带简历数量与最近 5 份简历；`PATCH /api/account/profile` 只允许修改昵称（去空白后 1–50 字符）。头像上传复用 `decode_image_data_url`、`build_avatar_object_name` 和 `asset_url`：新对象写入 `users/{user_id}/assets/avatar/...`，再更新 `users.avatar_object_key`，提交失败补偿删除新对象，成功后才清理旧对象；响应只含相对 URL。普通改密和微信绑定不是运行时公开契约；用户停用或管理员操作仍通过 `revoke_user_sessions` 撤销该用户的 Web 与小程序 session。
 
-`UserProfile` 模型承载每个用户至多一份的个人画像（`user_profiles` 表，迁移 `0043`），`GET/PUT /api/account/user-profile` 负责读写。`GET` 未创建时返回 `lock_version=1` 的约定空对象且不写库；`PUT` 整体替换全部可编辑字段（缺省以 `null`/空数组覆盖），首次创建要求 `base_lock_version=1`。更新使用 `user_id + lock_version` 条件写并递增版本，影响 0 行即并发冲突，`USER_PROFILE_VERSION_CONFLICT` 附最新画像供前端刷新重试；创建时 `IntegrityError` 冲突同样转成该错误。薪资币种统一转大写三字母，数组字段去除空串与重复并保留提交顺序；schema 侧 `UserProfileData` 追加 `lock_version` 与 UTC 时间戳，`GET /api/account/profile` 的 `profile` 字段未创建时为 `null`。
+`UserProfile` 模型承载每个用户至多一份的个人画像（`user_profiles` 表，迁移 `0044`，由 `0045`、`0046` 和漂移修复 `0051` 收敛为当前结构），`GET/PUT /api/account/user-profile` 负责读写。`GET` 未创建时返回 `lock_version=1` 的约定空对象且不写库；`PUT` 整体替换全部可编辑字段（缺省以 `null`/空数组覆盖），首次创建要求 `base_lock_version=1`。更新使用 `user_id + lock_version` 条件写并递增版本，影响 0 行即并发冲突，`USER_PROFILE_VERSION_CONFLICT` 附最新画像供前端刷新重试；创建时 `IntegrityError` 冲突同样转成该错误。薪资币种统一转大写三字母，数组字段去除空串与重复并保留提交顺序；schema 侧 `UserProfileData` 追加 `lock_version` 与 UTC 时间戳，`GET /api/account/profile` 的 `profile` 字段未创建时为 `null`。
 
 ## 简历分享
 
@@ -191,7 +195,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0046`、模板初始化和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0051`、模板初始化和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 
