@@ -32,6 +32,7 @@ OBSOLETE_SKILL_DIRS = {
     "frontend-design",
     "frontend-delivery",
     "frontend-implementation",
+    "module-planning",
     "prototype-acceptance",
     "solution-delegated-delivery",
     "ui-layout-design",
@@ -61,6 +62,11 @@ OBSOLETE_WORKFLOW_MARKERS = (
     "原型图 → Figma 确认 → 代码复现",
     "页面完成后统一运行 `npm run check:web`",
     "`backend-delivery`",
+    "`lark-doc`",
+    "`lark-drive`",
+    "module-planning",
+    "模块规划",
+    "飞书",
 )
 FRONTEND_CAPABILITY_SKILLS = {
     "frontend-browser-check",
@@ -153,10 +159,10 @@ SOLUTION_FIXED_SECTION_RE = re.compile(
 FLOW_ROUTER_DELIVERY_REQUIRED_MARKERS = (
     "它先用最小代码证据确认当前请求是否存在后端范围，再在同一上下文中继续七维判断和交付，不产生中间路由结果",
     "本技能可以识别前端消费方并约束后端必须提供的可观察契约，但不负责决定、实施或验收前端页面，也不调用前端能力",
-    "Sol（主 Agent）始终拥有用户沟通、授权边界、七维判断、方案、工作包拆分、Luna 调度、工作区协调、实施整合复核",
-    "不要为了满足工作流形式启动同级 Sol",
-    "确认后的实施可以交给一个或多个 Luna",
-    "不得仅因为需要七维判断、方案先行、严格风险或任务复杂而创建同级 Sol Agent",
+    "当前 Codex 始终拥有用户沟通、授权边界、七维判断、方案、实施、工作区协调、验证、复核和最终结论",
+    "不要为了满足工作流形式创建实施子 Agent、重复读取上下文或等待另一模型执行命令",
+    "只有用户明确要求独立审查或并行 Agent 工作时，才按该次授权使用子 Agent",
+    "不得仅因为需要七维判断、方案先行、严格风险或任务复杂而创建额外 Agent",
     "准备程度、复杂度、风险和记录需要必须分开表达",
     "七个维度仍必须在内部完整判断",
     "没有 Issue 不阻止七维判断或交付",
@@ -169,28 +175,25 @@ FLOW_ROUTER_DELIVERY_REQUIRED_MARKERS = (
     "复杂度：简单 | 中等 | 复杂 | 暂不判定",
     "风险：常规 | 严格",
     "记录：会话内 | 持久记录",
-    "路径：直接实现 | 方案先行 | 模块规划 | 暂不进入开发路径",
+    "路径：直接实现 | 方案先行 | 暂不进入开发路径",
     "默认只向用户展示三行",
     "原因：<只写一个决定当前路径的主导事实>",
     "额外检查：无 |",
     "只有准备不足、风险严格、需要持久记录或用户主动要求查看判断依据时",
-    "Sol 调度 Luna 实施与复核",
-    "Sol 先把实现拆成边界清楚的工作包，再决定由多少个 Luna 承担",
-    "不固定 Luna 数量",
-    "可独立、边界清楚、文件所有权不重叠且没有未满足前置依赖的工作包可以并行交给多个 Luna",
-    "共享契约、迁移链、同一核心文件或存在前后依赖的工作包必须串行",
-    "不为了并行而拆分本来紧密耦合的任务",
-    "Sol 根据 `solution.md`、依赖、写冲突和工作包边界调度",
-    "失败后由 Sol 判断继续原 Luna，还是把未完成工作重新分派给另一个 Luna",
-    "严格风险由 Sol 完成判断和方案约束，再由 Luna",
-    "`model`: `gpt-5.6-luna`",
-    "`reasoning_effort`: `max`",
+    "当前 Codex 直接实施与复核",
+    "在同一上下文中完整使用 `implementation-execution`",
+    "不创建默认实施子 Agent，也不为实施指定其他模型或推理强度",
+    "共享契约、迁移链、同一核心文件或存在前后依赖的改动按依赖顺序完成",
+    "不为了并行拆成 Agent 工作包",
+    "实现问题在确认范围内直接修正",
+    "只执行一次与任务范围匹配的自动化验证",
+    "只进入一次任务级 `run-all-tests`",
     "准备、复杂度、风险、记录或后端路径变化：留在本技能",
 )
 FLOW_ROUTER_DELIVERY_FORBIDDEN_MARKERS = (
     "自动或开启工作流时创建一个独立评估 Agent",
-    "以下情况直接使用独立 Sol Medium 实施 Agent",
-    "由 GPT-5.6 Sol Medium 基于真实代码完成七维判断",
+    "以下情况直接使用独立实施 Agent",
+    "由另一模型基于真实代码完成七维判断",
     "任意一条不满足即判方案先行",
     "只有五条全部满足才判直接实现",
     "下游跳过交付文档和模型编排",
@@ -204,11 +207,13 @@ FLOW_ROUTER_DELIVERY_FRONTEND_ORCHESTRATION_MARKERS = (
     "直接完成混合任务的 UI",
     "前端由当前 Codex 直接实现",
 )
-LUNA_DISPATCH_FORBIDDEN_MARKERS = (
-    "所有代码、配置、迁移和测试实施统一交给一个 Luna Max",
-    "同一连续任务优先复用一个 Agent",
-    "同一 Luna 具体证据继续修正",
-    "写操作默认串行，不并行派发多个实施 Agent",
+IMPLEMENTATION_DELEGATION_FORBIDDEN_MARKERS = (
+    "每个工作包的实施 Agent 使用",
+    "按工作包调度一个或多个",
+    "交给实施 Agent 施工",
+    "`model`:",
+    "`reasoning_effort`:",
+    "`fork_turns`:",
 )
 DESIGN_SYSTEM_REQUIRED_MARKERS = {
     Path("run-all-tests/SKILL.md"): (
@@ -220,19 +225,22 @@ IMPLEMENTATION_EXECUTION_REQUIRED_MARKERS = (
     "本技能可以核对前端 API Client 或共享类型是否与后端契约一致，但不负责决定、实施或验收前端页面，也不调用前端能力",
     "方案先行任务以当前 `solution.md` 为准；"
     "直接实现以来源材料、当前确认结论和 `flow-router` 七维简报列出的严格检查项为准",
-    "不因选择影响大就自动升级为模块规划",
+    "不因选择影响大就自动升级为另一个规划阶段",
     "没有 Issue 不阻止直接实现",
     "数据库迁移、跨端契约",
     "严格风险本身都不触发报告",
     "与方案的实际偏差",
     "已接受限制",
     "跨会话遗留风险与接手点",
-    "只执行 Sol 已明确的工作包，不自行重新规划、拆分或调度其他工作包",
-    "### Sol 提供的工作包",
-    "可独立、边界清楚且文件所有权不重叠时，Sol 可以并行调度多个 Luna",
-    "共享契约、迁移链、同一核心文件或存在前后依赖时，必须按依赖串行",
-    "不得为了并行而拆分或扩展工作包",
-    "由 Sol 决定继续原 Luna 或重新分派给另一个 Luna，不引入同级 Sol",
+    "只执行当前已确认的范围，不自行扩展目标或创建实施子 Agent",
+    "### 当前实施边界",
+    "当前 Codex 在同一上下文中按依赖顺序直接完成实现",
+    "不创建默认实施子 Agent，也不为实施切换模型",
+    "共享契约、迁移链、同一核心文件或存在前后依赖时，必须按依赖顺序处理",
+    "不要通过拆分或重新派发 Agent 绕过确认",
+    "不按文件或步骤机械重跑",
+    "基于完整差异运行或复用一次与任务范围匹配的 `run-all-tests` 验证",
+    "不把二者设为所有任务的固定收尾步骤",
 )
 IMPLEMENTATION_EXECUTION_FORBIDDEN_MARKERS = (
     "`frontend-prototype`",
@@ -249,19 +257,21 @@ DELIVERY_FLOW_REQUIRED_MARKERS = {
     Path(".ai/prompts/project.md"): (
         "需求和交付信息按单向链路流转",
         "在 PR 创建后只补一条交付评论",
+        "后端实现由当前 Codex 在同一上下文中直接完成",
+        "默认不创建实施子 Agent、不切换模型，也不等待另一模型执行命令",
         "新的业务需求分支必须从最新 `origin/master` 创建",
         "由业务分支向 `dev` 提 PR",
         "npm run check:web",
     ),
     Path(".ai/skills/README.md"): (
-        "飞书文档只作为方案形成前的初始输入",
+        "用户指定的外部材料只作为方案形成前的初始输入",
         "确认后的 `solution.md` 是后端和混合方案中后端范围的实施依据",
-        "## 后端 Sol 调度与 Luna 工作包",
-        "可独立、边界清楚且文件所有权不重叠的工作包可以并行交给多个 Luna",
-        "共享契约、迁移链、同一核心文件或存在前后依赖的工作包必须串行",
-        "实施失败后由 Sol 根据具体证据判断继续原 Luna",
+        "## 后端直接实施",
+        "当前 Codex 在同一上下文中负责规划、实施、验证和复核",
+        "默认不创建实施子 Agent、不切换模型，也不为了并行拆分任务",
+        "新的产品、权限、数据、兼容、迁移或发布决定按归属回流",
         "## 单向交付层次",
-        "| 初始设计层 | 飞书文档 |",
+        "| 外部输入层 | 用户明确指定的外部材料 |",
         "| 任务入口与跟踪层 | Issue 正文 |",
         "| 实施真相层 | 代码、配置、迁移和测试 |",
         "| 交付审阅层 | PR |",
@@ -269,14 +279,14 @@ DELIVERY_FLOW_REQUIRED_MARKERS = {
         "主链只向右推进",
     ),
     Path(".ai/skills/solution-generator/SKILL.md"): (
-        "飞书文档只作为初步设计输入",
+        "用户指定的外部材料只作为初始输入",
         "把已确认的取舍和被替代的来源结论写入当前 `solution.md`",
-        "不更新飞书",
+        "也不创建或回写其他外部材料",
     ),
     Path(".ai/skills/implementation-execution/SKILL.md"): (
-        "飞书冲突本身不触发 `module-planning`",
+        "外部初始材料与当前方案不同本身不触发新的规划阶段",
         "交付说明统一留到 PR 收口",
-        "本阶段不回写飞书或 Issue",
+        "本阶段不回写外部初始材料或 Issue",
     ),
     Path(".ai/skills/branch-pr-workflow/SKILL.md"): (
         "默认同时授权发布上述一条交付评论",
@@ -300,8 +310,8 @@ DELIVERY_FLOW_REQUIRED_MARKERS = {
         "未完成与后续：",
     ),
     Path(".specs/README.md"): (
-        "飞书只提供方案或视觉设计形成前的初始输入",
-        "不反向同步飞书或 Issue 正文",
+        "用户指定的外部材料只提供方案或视觉设计形成前的初始输入",
+        "项目工作流不主动创建或回写这些材料",
         "普通文件组织、命名、测试落点",
         "PR 创建后只追加一条交付评论",
     ),
@@ -321,10 +331,6 @@ DELIVERY_FLOW_FORBIDDEN_MARKERS = {
     ),
 }
 REDUCTION_CONTRACTS = {
-    Path("module-planning/SKILL.md"): (
-        "没有 Issue 不阻塞模块规划",
-        "复用该授权，不再索要一遍相同指令",
-    ),
     Path("implementation-execution/implementation_report.template.md"): (
         "## 1. 与方案的实际偏差",
         "## 2. 已接受限制",
@@ -339,12 +345,14 @@ REDUCTION_CONTRACTS = {
     Path("run-all-tests/SKILL.md"): (
         "**任务范围验证**",
         "**PR 范围验证**",
-        "准备创建纯前端 PR 时，在当前可提交内容上重新运行 `npm run check:web`",
+        "只有差异实际覆盖全仓、无法可靠缩小范围或用户明确要求时运行 `npm run check`",
+        "同一会话中，如果任务范围验证后",
         "任务范围验证不因为“最终验证”自动变成全仓检查",
     ),
     Path("branch-pr-workflow/SKILL.md"): (
         "来源 Issue 是可选的追踪信息",
-        "纯 Web 前端 PR 必须针对当前可提交内容运行 `npm run check:web`",
+        "同一会话中，任务范围验证后",
+        "只有差异实际覆盖全仓、无法可靠缩小范围或用户明确要求时运行 `npm run check`",
         "共享 CI 仍运行其配置的检查",
     ),
     Path("code-review-and-quality/SKILL.md"): (
@@ -498,7 +506,7 @@ def validate_ai_layout() -> list[str]:
     if obsolete:
         errors.append(
             "仍含已退出当前工作流的 Skill "
-            f"{obsolete}；纯前端使用独立能力积木，后端方案任务仍由当前 Sol 编排"
+            f"{obsolete}；项目只保留代码交付与按需能力，外部规划不作为项目 Skill"
         )
     obsolete_files = [
         path.as_posix()
@@ -725,13 +733,15 @@ def validate_flow_router_delivery_contract() -> list[str]:
         for marker in FLOW_ROUTER_DELIVERY_FRONTEND_ORCHESTRATION_MARKERS
         if marker in text
     ]
-    fixed_luna = [
-        marker for marker in LUNA_DISPATCH_FORBIDDEN_MARKERS if marker in text
+    delegated_implementation = [
+        marker
+        for marker in IMPLEMENTATION_DELEGATION_FORBIDDEN_MARKERS
+        if marker in text
     ]
     errors: list[str] = []
     if missing:
         errors.append(
-            "flow-router: 七维判断、Luna 实施或回流契约缺少必要内容 "
+            "flow-router: 七维判断、直接实施或回流契约缺少必要内容 "
             + ", ".join(repr(marker) for marker in missing)
         )
     if stale:
@@ -744,10 +754,10 @@ def validate_flow_router_delivery_contract() -> list[str]:
             "flow-router: 后端交付入口仍在编排前端工作 "
             + ", ".join(repr(marker) for marker in frontend_orchestration)
         )
-    if fixed_luna:
+    if delegated_implementation:
         errors.append(
-            "flow-router: 仍存在固定单一 Luna 的过期契约 "
-            + ", ".join(repr(marker) for marker in fixed_luna)
+            "flow-router: 仍存在默认实施 Agent 或模型切换契约 "
+            + ", ".join(repr(marker) for marker in delegated_implementation)
         )
     return errors
 
@@ -779,8 +789,10 @@ def validate_implementation_execution_contract() -> list[str]:
         for marker in IMPLEMENTATION_EXECUTION_REQUIRED_MARKERS
         if marker not in text
     ]
-    fixed_luna = [
-        marker for marker in LUNA_DISPATCH_FORBIDDEN_MARKERS if marker in text
+    delegated_implementation = [
+        marker
+        for marker in IMPLEMENTATION_DELEGATION_FORBIDDEN_MARKERS
+        if marker in text
     ]
     frontend_orchestration = [
         marker
@@ -793,10 +805,10 @@ def validate_implementation_execution_contract() -> list[str]:
             "implementation-execution: 实现入口或实施报告契约缺少必要内容 "
             + ", ".join(repr(marker) for marker in missing)
         )
-    if fixed_luna:
+    if delegated_implementation:
         errors.append(
-            "implementation-execution: 仍存在固定单一 Luna 的过期契约 "
-            + ", ".join(repr(marker) for marker in fixed_luna)
+            "implementation-execution: 仍存在默认实施 Agent 或模型切换契约 "
+            + ", ".join(repr(marker) for marker in delegated_implementation)
         )
     if frontend_orchestration:
         errors.append(
@@ -873,7 +885,7 @@ def validate_reduction_contracts() -> list[str]:
         missing = [marker for marker in markers if marker not in text]
         if missing:
             errors.append(
-                f"{relative_path.as_posix()}: 五项减法契约缺少必要内容 "
+                f"{relative_path.as_posix()}: 减法契约缺少必要内容 "
                 + ", ".join(repr(marker) for marker in missing)
             )
     return errors
