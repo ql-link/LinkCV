@@ -12,8 +12,8 @@ from pydantic import (
     model_validator,
 )
 
-from linkcv.domain.resume_document import ResumeDocument
-from linkcv.domain.resume_style import ResumePresentation
+from linkcv.domain.resume import CanonicalResumeDocument as ResumeDocument
+from linkcv.domain.resume import ResumePresentation
 
 
 class SessionCreateRequest(BaseModel):
@@ -37,7 +37,7 @@ class AgentSelectionContext(BaseModel):
         if self.to <= self.from_:
             raise ValueError("selection range is empty")
         if len(self.block_ids) != len(set(self.block_ids)) or any(
-            re.fullmatch(r"blk_[a-z0-9]{16,64}", block_id) is None
+            re.fullmatch(r"node_[a-z0-9]{16,64}", block_id) is None
             for block_id in self.block_ids
         ):
             raise ValueError("invalid selection block ids")
@@ -345,7 +345,7 @@ class ResumeTargetLocator(BaseModel):
     entry_id: str | None = Field(default=None, max_length=128)
     field: str | None = Field(default=None, max_length=64)
     item_id: str | None = Field(default=None, max_length=128)
-    block_id: str | None = Field(default=None, pattern=r"^blk_[a-z0-9]{16,64}$")
+    block_id: str | None = Field(default=None, pattern=r"^node_[a-z0-9]{16,64}$")
     selected_text: str | None = Field(default=None, max_length=20_000)
     expected_text_hash: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
 

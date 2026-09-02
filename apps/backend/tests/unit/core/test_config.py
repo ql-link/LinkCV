@@ -205,6 +205,16 @@ def test_kafka_vendor_requires_bootstrap_servers() -> None:
         Settings(mq_vendor="kafka", kafka_bootstrap_servers="")
 
 
+def test_document_parse_broker_defaults_use_v2_topology() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.rabbitmq_exchange_name == "tolink.cv.resume_import.v2"
+    assert settings.rabbitmq_queue == "linkcv.resume_import.worker.v2"
+    assert settings.rabbitmq_routing_key == "resume.import.v2"
+    assert settings.kafka_topic == "tolink.cv.resume_import.v2"
+    assert settings.kafka_consumer_group == "linkcv.resume_import.worker.v2"
+
+
 def test_structuring_input_limit_cannot_exceed_markdown_limit() -> None:
     with pytest.raises(ValidationError, match="RESUME_STRUCTURING_MAX_BYTES"):
         Settings(

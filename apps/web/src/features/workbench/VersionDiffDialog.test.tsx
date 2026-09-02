@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../api/client";
-import { defaultSemanticDocument, defaultSemanticStyle, editorSettingsToStyle, resumeDocumentFromMarkdown } from "../../api/resumeContract";
+import { defaultCanonicalDocument, defaultCanonicalPresentation, editorSettingsToStyle } from "../../api/resumeContract";
 import { defaultSettings } from "../../store/resumeStore";
 import { compareVersionStyles, VersionDiffDialog } from "./VersionDiffDialog";
 
@@ -34,7 +34,7 @@ describe("版本页面设置差异", () => {
   it("只返回发生变化的设置", () => {
     const differences = compareVersionStyles(
       { ...defaultSettings, fontSize: 12, smartOnePage: true },
-      { ...defaultSemanticStyle, font_size: 10.5, smart_one_page: false },
+      defaultCanonicalPresentation,
     );
     expect(differences.map((item) => item.label)).toContain("字号");
     expect(differences.map((item) => item.label)).toContain("智能一页");
@@ -49,8 +49,18 @@ describe("版本页面设置差异", () => {
         name: "历史投递版",
         reason: "manual",
         created_at: "2026-08-21T08:00:00Z",
-        data: resumeDocumentFromMarkdown("# 历史内容", defaultSemanticDocument),
-        style: editorSettingsToStyle(defaultSettings, defaultSemanticStyle),
+        data: {
+          ...defaultCanonicalDocument,
+          sections: [{
+            node_id: "node_section000000001",
+            semantic_kind: "custom",
+            title: { node_id: "node_title0000000001", value: "历史内容", source_refs: [] },
+            entries: [],
+            blocks: [],
+            source_refs: [],
+          }],
+        },
+        style: defaultCanonicalPresentation,
       },
     });
     const onConfirm = vi.fn();
@@ -79,7 +89,7 @@ describe("版本页面设置差异", () => {
   });
 
   it("内容与设置均相同时禁用确认恢复", async () => {
-    const markdown = "# 相同内容";
+    const markdown = "## 相同内容";
     vi.spyOn(api, "getResumeVersion").mockResolvedValue({
       version: {
         id: "10",
@@ -87,8 +97,18 @@ describe("版本页面设置差异", () => {
         name: "相同版",
         reason: "manual",
         created_at: "2026-08-21T09:00:00Z",
-        data: resumeDocumentFromMarkdown(markdown, defaultSemanticDocument),
-        style: editorSettingsToStyle(defaultSettings, defaultSemanticStyle),
+        data: {
+          ...defaultCanonicalDocument,
+          sections: [{
+            node_id: "node_section000000002",
+            semantic_kind: "custom",
+            title: { node_id: "node_title0000000002", value: "相同内容", source_refs: [] },
+            entries: [],
+            blocks: [],
+            source_refs: [],
+          }],
+        },
+        style: editorSettingsToStyle(defaultSettings, defaultCanonicalPresentation),
       },
     });
     render(

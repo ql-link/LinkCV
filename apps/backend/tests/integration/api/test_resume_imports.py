@@ -14,9 +14,8 @@ from linkcv.application.resumes.service import (
 from linkcv.core.config import Settings
 from linkcv.core.mq import MQPublishError
 from linkcv.domain.document_conversion import DocumentMarkdownResult
-from linkcv.domain.resume_document import default_resume_document
-from linkcv.domain.resume_extraction import DraftBasics, ResumeExtractionDraft
-from linkcv.domain.resume_style import default_resume_style
+from linkcv.domain.resume import CanonicalResumeDocument, ResumePresentation
+from linkcv.domain.resume import SparseResumeAnnotations
 from linkcv.main import create_app
 from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import (
@@ -26,6 +25,10 @@ from linkcv.modules.resumes.models import (
     ResumeTemplate,
 )
 from tests.fakes import FakeRedis
+from tests.canonical_resume_fixtures import (
+    canonical_resume_payload,
+    canonical_template_payload,
+)
 
 
 class FakeStorage:
@@ -83,8 +86,12 @@ class FakeDocumentConverter:
 
 
 class FakeStructuringClient:
-    async def extract(self, **_kwargs):
-        return ResumeExtractionDraft(basics=DraftBasics(name="张三"))
+    async def extract_sparse(self, *, source_graph, **_kwargs):
+        return SparseResumeAnnotations(
+            schema_version="sparse-resume-annotations.v1",
+            source_graph_sha256=source_graph.graph_sha256(),
+            annotations=[],
+        )
 
 
 def build_app():
@@ -105,11 +112,12 @@ def build_app():
         create_schema=True,
     )
     with app.state.session_factory() as db:
+        template_data, template_style = canonical_template_payload(key="modern-two-column-cn")
         template = ResumeTemplate(
             key="modern-two-column-cn",
             name="现代双栏",
-            data_json=default_resume_document().model_dump(mode="json"),
-            style_json=default_resume_style().model_dump(mode="json"),
+            data_json=template_data,
+            style_json=template_style,
             is_active=1,
         )
         db.add(template)
@@ -162,10 +170,29 @@ def test_import_accepts_upload_without_running_parser_or_creating_resume() -> No
     assert summary["result_resume_id"] is None
     assert converter.calls == 0
     assert len(storage.objects) == 1
+    object_name = next(iter(storage.objects))
+    assert object_name.startswith("users/1/resume-imports/")
+    assert object_name.endswith("/source/resume.md")
     assert len(publisher.messages) == 1
     assert publisher.messages[0].payload.import_id == summary["id"]
     with app.state.session_factory() as db:
         assert db.scalar(select(Resume.id)) is None
+        record = db.get(DocumentParseTask, int(summary["id"]))
+        template = db.get(ResumeTemplate, int(summary["selected_template_id"]))
+        assert record is not None
+        assert template is not None
+        assert record.selected_template_style_json == template.style_json
+        frozen = record.selected_template_style_json
+        changed_style = dict(template.style_json)
+        assert isinstance(changed_style["tokens"], dict)
+        changed_style["tokens"] = {
+            **changed_style["tokens"],
+            "accent_color": "#123456",
+        }
+        template.style_json = changed_style
+        db.commit()
+        db.refresh(record)
+        assert record.selected_template_style_json == frozen
 
 
 def test_active_import_shares_the_ten_slot_limit_with_normal_creation() -> None:
@@ -285,6 +312,73 @@ def test_broker_failure_marks_parse_failed_and_exposes_task_summary() -> None:
     assert len(storage.objects) == 1
 
 
+def test_publisher_initialization_failure_marks_task_service_unavailable() -> None:
+    app, storage, _converter, _publisher = build_app()
+    app.state.mq_publisher = None
+
+    with TestClient(app) as client:
+        register(client)
+        response = import_file(client, app)
+
+    assert response.status_code == 503
+    assert response.json()["error"] == "RESUME_IMPORT_QUEUE_UNAVAILABLE"
+    assert response.json()["import"]["upload_status"] == "succeeded"
+    assert response.json()["import"]["parse_status"] == "failed"
+    assert len(storage.objects) == 1
+    with app.state.session_factory() as db:
+        record = db.scalar(select(DocumentParseTask))
+        assert record is not None
+        assert record.failure_reason == "service_unavailable"
+
+
+def test_publisher_initialization_failure_does_not_overwrite_worker_success(
+    monkeypatch,
+) -> None:
+    app, _storage, _converter, _publisher = build_app()
+
+    def deliver_before_initialization(_settings) -> None:
+        with app.state.session_factory() as db:
+            record = db.scalar(select(DocumentParseTask))
+            template = db.get(ResumeTemplate, int(app.state.test_template_id))
+            assert record is not None
+            assert template is not None
+            data, style = canonical_resume_payload(key=template.key)
+            resume = persist_resume_with_initial_version(
+                CreateResumeCommand(
+                    user_id=record.user_id,
+                    title="delivered-during-init",
+                    data=CanonicalResumeDocument.model_validate(data),
+                    style=ResumePresentation.model_validate(style),
+                    source_type="import",
+                    template_id=template.id,
+                ),
+                db,
+            )
+            resume.parse_task_id = record.id
+            record.parse_status = "succeeded"
+            record.parse_duration_ms = 1
+            db.commit()
+        raise RuntimeError("publisher initialization failed after delivery")
+
+    monkeypatch.setattr(
+        "linkcv.modules.resumes.import_routes.build_mq_publisher",
+        deliver_before_initialization,
+    )
+    app.state.mq_publisher = None
+
+    with TestClient(app) as client:
+        register(client)
+        response = import_file(client, app)
+
+    assert response.status_code == 200
+    assert response.json()["import"]["parse_status"] == "succeeded"
+    assert response.json()["import"]["result_resume_id"] is not None
+    with app.state.session_factory() as db:
+        record = db.scalar(select(DocumentParseTask))
+        assert record is not None
+        assert record.parse_status == "succeeded"
+
+
 def test_publish_confirm_failure_does_not_overwrite_worker_success() -> None:
     app, _storage, _converter, _publisher = build_app()
 
@@ -295,12 +389,13 @@ def test_publish_confirm_failure_does_not_overwrite_worker_success() -> None:
                 template = db.get(ResumeTemplate, int(message.payload.template_id))
                 assert record is not None
                 assert template is not None
+                data, style = canonical_resume_payload(key=template.key)
                 resume = persist_resume_with_initial_version(
                     CreateResumeCommand(
                         user_id=record.user_id,
                         title="delivered-resume",
-                        data=default_resume_document(),
-                        style=default_resume_style(),
+                        data=CanonicalResumeDocument.model_validate(data),
+                        style=ResumePresentation.model_validate(style),
                         source_type="import",
                         template_id=template.id,
                     ),
@@ -360,6 +455,33 @@ def test_overview_lists_active_import_and_failed_import_can_be_deleted() -> None
     assert deleted.json() == {"deleted": True}
     assert converted_object_name in storage.deleted
     assert len(storage.objects) == 1
+
+
+def test_failed_import_delete_derives_legacy_orphan_without_reference() -> None:
+    app, storage, _converter, publisher = build_app()
+    publisher.fail = True
+
+    with TestClient(app) as client:
+        register(client)
+        failed = import_file(client, app)
+        assert failed.status_code == 503
+        failed_id = int(failed.json()["import"]["id"])
+        with app.state.session_factory() as db:
+            record = db.get(DocumentParseTask, failed_id)
+            assert record is not None
+            operation_id = record.object_name.split("/")[3]
+            record.converted_object_name = None
+            db.commit()
+        legacy_converted = (
+            f"users/1/resume-imports/{operation_id}/converted.md"
+        )
+        storage.objects[legacy_converted] = b"# converted"
+
+        deleted = client.delete(f"/api/resume-imports/{failed_id}")
+
+    assert deleted.status_code == 200
+    assert deleted.json() == {"deleted": True}
+    assert storage.objects == {}
 
 
 def test_get_resume_import_returns_only_the_owned_task_summary() -> None:

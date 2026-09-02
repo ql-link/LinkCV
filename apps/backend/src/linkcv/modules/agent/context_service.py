@@ -16,7 +16,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from linkcv.core.errors import ApiError
-from linkcv.domain.resume_snapshot import parse_resume_snapshot
+from linkcv.application.resumes.service import parse_persisted_resume_snapshot
 from linkcv.modules.agent.schemas import (
     AgentContextListItem,
     AgentContextMaterial,
@@ -354,7 +354,7 @@ def _material_content(
         source = resume if type == "resume" else version
         if source is None:
             return {}
-        snapshot = parse_resume_snapshot(source.data_json, source.style_json)
+        snapshot = parse_persisted_resume_snapshot(source.data_json, source.style_json)
         markdown = editor_markdown(snapshot.data) or ""
         return {"resume_markdown": _clip(markdown, MAX_ITEM_CHARS)}
     if type == "job" and job is not None:

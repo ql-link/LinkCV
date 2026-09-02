@@ -1,0 +1,257 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "canonical-resume.schema.json",
+  "title": "CanonicalResumeDocumentV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "document_id", "identity", "sections", "source_dispositions"],
+  "properties": {
+    "schema_version": {"const": "canonical-resume.v1"},
+    "document_id": {"$ref": "#/$defs/nodeId"},
+    "identity": {"$ref": "#/$defs/identity"},
+    "sections": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/section"}},
+    "source_dispositions": {"type": "array", "maxItems": 5000, "items": {"$ref": "#/$defs/sourceDisposition"}}
+  },
+  "$defs": {
+    "nodeId": {"type": "string", "pattern": "^node_[a-z0-9]{16,64}$"},
+    "sourceId": {"type": "string", "pattern": "^src_[a-z0-9]{16,64}$"},
+    "sourceRefs": {"type": "array", "uniqueItems": true, "maxItems": 64, "items": {"$ref": "#/$defs/sourceId"}},
+    "textValue": {
+      "type": "object", "additionalProperties": false,
+      "required": ["node_id", "value", "source_refs"],
+      "properties": {
+        "node_id": {"$ref": "#/$defs/nodeId"},
+        "value": {"type": "string", "maxLength": 20000},
+        "source_refs": {"$ref": "#/$defs/sourceRefs"}
+      }
+    },
+    "contact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["node_id", "contact_kind", "value", "source_refs"],
+      "properties": {
+        "node_id": {"$ref": "#/$defs/nodeId"},
+        "contact_kind": {"enum": ["phone", "email", "website", "location", "github", "linkedin", "other"]},
+        "value": {"type": "string", "minLength": 1, "maxLength": 2048},
+        "label": {"type": ["string", "null"], "maxLength": 100},
+        "source_refs": {"$ref": "#/$defs/sourceRefs"}
+      }
+    },
+    "identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["node_id", "name", "headline", "contacts", "avatar"],
+      "properties": {
+        "node_id": {"$ref": "#/$defs/nodeId"},
+        "name": {"anyOf": [{"$ref": "#/$defs/textValue"}, {"type": "null"}]},
+        "headline": {"anyOf": [{"$ref": "#/$defs/textValue"}, {"type": "null"}]},
+        "contacts": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/contact"}},
+        "avatar": {"anyOf": [{"$ref": "#/$defs/avatarMedia"}, {"type": "null"}]}
+      }
+    },
+    "inlineStyle": {
+      "type": "object", "additionalProperties": false,
+      "required": ["color", "font_size_pt", "highlight_color"],
+      "properties": {
+        "color": {"type": ["string", "null"], "pattern": "^#[0-9A-Fa-f]{6}$"},
+        "font_size_pt": {"type": ["number", "null"], "minimum": 6, "maximum": 48},
+        "highlight_color": {"type": ["string", "null"], "pattern": "^#[0-9A-Fa-f]{6}$"}
+      }
+    },
+    "textRun": {
+      "type": "object", "additionalProperties": false,
+      "required": ["inline_type", "text", "marks", "href", "style"],
+      "properties": {
+        "inline_type": {"const": "text"},
+        "text": {"type": "string", "minLength": 1, "maxLength": 20000},
+        "marks": {"type": "array", "uniqueItems": true, "maxItems": 5, "items": {"enum": ["bold", "italic", "underline", "strike", "code"]}},
+        "href": {"type": ["string", "null"], "pattern": "^https?://[^\\s]{1,2040}$"},
+        "style": {"$ref": "#/$defs/inlineStyle"}
+      }
+    },
+    "inlineIcon": {
+      "type": "object", "additionalProperties": false,
+      "required": ["inline_type", "name"],
+      "properties": {
+        "inline_type": {"const": "icon"},
+        "name": {"enum": ["Mail", "Phone", "MapPin", "Globe", "Github", "Linkedin", "GraduationCap", "Briefcase", "Award", "Star", "Calendar", "Code2"]}
+      }
+    },
+    "mediaReference": {
+      "type": "object", "additionalProperties": false,
+      "required": ["node_id", "source_refs", "media_kind", "src", "alt", "width", "width_unit", "height_px", "align", "system_fallback"],
+      "properties": {
+        "node_id": {"$ref": "#/$defs/nodeId"},
+        "source_refs": {"$ref": "#/$defs/sourceRefs"},
+        "media_kind": {"enum": ["avatar", "resume_image", "inline_image"]},
+        "src": {"type": "string", "pattern": "^(?:https?://[^\\s]{1,2040}|/(?:api/assets|api/resumes|templates)/[^\\s]{1,2020})$"},
+        "alt": {"type": ["string", "null"], "maxLength": 300},
+        "width": {"type": ["number", "null"], "exclusiveMinimum": 0, "maximum": 794},
+        "width_unit": {"enum": ["px", "%", null]},
+        "height_px": {"type": ["number", "null"], "minimum": 16, "maximum": 240},
+        "align": {"enum": ["left", "center", "right", "full", null]},
+        "system_fallback": {"type": "boolean"}
+      },
+      "allOf": [{"$ref": "#/$defs/mediaRules"}]
+    },
+    "avatarMedia": {
+      "allOf": [
+        {"$ref": "#/$defs/mediaReference"},
+        {"properties": {"media_kind": {"const": "avatar"}}}
+      ]
+    },
+    "mediaBlock": {
+      "type": "object", "additionalProperties": false,
+      "required": ["node_id", "source_refs", "block_type", "media_kind", "src", "alt", "width", "width_unit", "height_px", "align", "system_fallback"],
+      "properties": {
+        "node_id": {"$ref": "#/$defs/nodeId"},
+        "source_refs": {"$ref": "#/$defs/sourceRefs"},
+        "block_type": {"const": "media"},
+        "media_kind": {"const": "resume_image"},
+        "src": {"type": "string", "pattern": "^(?:https?://[^\\s]{1,2040}|/(?:api/assets|api/resumes|templates)/[^\\s]{1,2020})$"},
+        "alt": {"type": ["string", "null"], "maxLength": 300},
+        "width": {"type": ["number", "null"], "exclusiveMinimum": 0, "maximum": 794},
+        "width_unit": {"enum": ["px", "%", null]},
+        "height_px": {"type": ["number", "null"], "minimum": 16, "maximum": 240},
+        "align": {"enum": ["left", "center", "right", "full", null]},
+        "system_fallback": {"type": "boolean"}
+      },
+      "allOf": [{"$ref": "#/$defs/mediaRules"}]
+    },
+    "inlineMedia": {
+      "type": "object", "additionalProperties": false,
+      "required": ["node_id", "source_refs", "inline_type", "media_kind", "src", "alt", "width", "width_unit", "height_px", "align", "system_fallback"],
+      "properties": {
+        "node_id": {"$ref": "#/$defs/nodeId"},
+        "source_refs": {"$ref": "#/$defs/sourceRefs"},
+        "inline_type": {"const": "media"},
+        "media_kind": {"const": "inline_image"},
+        "src": {"type": "string", "pattern": "^(?:https?://[^\\s]{1,2040}|/(?:api/assets|api/resumes|templates)/[^\\s]{1,2020})$"},
+        "alt": {"type": ["string", "null"], "maxLength": 300},
+        "width": {"type": ["number", "null"], "minimum": 16, "maximum": 240},
+        "width_unit": {"enum": ["px", null]},
+        "height_px": {"type": ["number", "null"], "minimum": 16, "maximum": 240},
+        "align": {"type": "null"},
+        "system_fallback": {"const": false}
+      }
+    },
+    "inlineContent": {"oneOf": [{"$ref": "#/$defs/textRun"}, {"$ref": "#/$defs/inlineIcon"}, {"$ref": "#/$defs/inlineMedia"}]},
+    "mediaRules": {
+      "allOf": [
+        {
+          "if": {"properties": {"media_kind": {"const": "avatar"}}},
+          "then": {"properties": {"width": {"type": ["number", "null"], "minimum": 56, "maximum": 220}, "width_unit": {"enum": ["px", null]}, "align": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"media_kind": {"const": "inline_image"}}},
+          "then": {"properties": {"width": {"type": ["number", "null"], "minimum": 16, "maximum": 240}, "width_unit": {"enum": ["px", null]}, "align": {"type": "null"}, "system_fallback": {"const": false}}}
+        },
+        {
+          "if": {"properties": {"media_kind": {"const": "resume_image"}}},
+          "then": {"properties": {"width": {"type": "number", "exclusiveMinimum": 0, "maximum": 794}, "width_unit": {"enum": ["px", "%"]}, "height_px": {"type": "null"}, "align": {"enum": ["left", "center", "right", "full"]}, "system_fallback": {"const": false}}, "allOf": [{"if": {"properties": {"width_unit": {"const": "%"}}}, "then": {"properties": {"width": {"maximum": 100}}}}]}
+        }
+      ]
+    },
+    "paragraph": {
+      "type": "object", "additionalProperties": false,
+      "required": ["node_id", "block_type", "runs", "source_refs"],
+      "properties": {
+        "node_id": {"$ref": "#/$defs/nodeId"},
+        "block_type": {"const": "paragraph"},
+        "runs": {"type": "array", "maxItems": 2000, "items": {"$ref": "#/$defs/inlineContent"}},
+        "source_refs": {"$ref": "#/$defs/sourceRefs"}
+      }
+    },
+    "listItem": {
+      "type": "object", "additionalProperties": false,
+      "required": ["node_id", "runs", "source_refs"],
+      "properties": {
+        "node_id": {"$ref": "#/$defs/nodeId"},
+        "runs": {"type": "array", "minItems": 1, "maxItems": 2000, "items": {"$ref": "#/$defs/inlineContent"}},
+        "source_refs": {"$ref": "#/$defs/sourceRefs"}
+      }
+    },
+    "list": {
+      "type": "object", "additionalProperties": false,
+      "required": ["node_id", "block_type", "start", "items"],
+      "properties": {
+        "node_id": {"$ref": "#/$defs/nodeId"},
+        "block_type": {"enum": ["ordered_list", "bullet_list"]},
+        "start": {"type": ["integer", "null"], "minimum": 1, "maximum": 10000},
+        "items": {"type": "array", "minItems": 1, "maxItems": 500, "items": {"$ref": "#/$defs/listItem"}}
+      }
+    },
+    "rowCell": {
+      "type": "object", "additionalProperties": false,
+      "required": ["node_id", "source_refs", "blocks"],
+      "properties": {
+        "node_id": {"$ref": "#/$defs/nodeId"},
+        "source_refs": {"$ref": "#/$defs/sourceRefs"},
+        "blocks": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"$ref": "#/$defs/paragraph"}}
+      }
+    },
+    "row": {
+      "type": "object", "additionalProperties": false,
+      "required": ["node_id", "source_refs", "block_type", "row_kind", "cells", "left_width_percent"],
+      "properties": {
+        "node_id": {"$ref": "#/$defs/nodeId"},
+        "source_refs": {"$ref": "#/$defs/sourceRefs"},
+        "block_type": {"const": "row"},
+        "row_kind": {"enum": ["pair", "meta", "trio"]},
+        "cells": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"$ref": "#/$defs/rowCell"}},
+        "left_width_percent": {"type": ["number", "null"], "minimum": 30, "maximum": 80}
+      },
+      "allOf": [
+        {"if": {"properties": {"row_kind": {"const": "pair"}}}, "then": {"properties": {"cells": {"minItems": 2, "maxItems": 2}, "left_width_percent": {"type": "number", "minimum": 30, "maximum": 80}}}},
+        {"if": {"properties": {"row_kind": {"const": "meta"}}}, "then": {"properties": {"cells": {"minItems": 4, "maxItems": 4}, "left_width_percent": {"type": "null"}}}},
+        {"if": {"properties": {"row_kind": {"const": "trio"}}}, "then": {"properties": {"cells": {"minItems": 3, "maxItems": 3}, "left_width_percent": {"type": "null"}}}}
+      ]
+    },
+    "block": {"oneOf": [{"$ref": "#/$defs/paragraph"}, {"$ref": "#/$defs/list"}, {"$ref": "#/$defs/mediaBlock"}, {"$ref": "#/$defs/row"}]},
+    "sourceDisposition": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_id", "outcome", "target_node_ids", "reason_code"],
+      "properties": {
+        "source_id": {"$ref": "#/$defs/sourceId"},
+        "outcome": {"enum": ["mapped", "transformed", "dropped"]},
+        "target_node_ids": {"type": "array", "uniqueItems": true, "maxItems": 64, "items": {"$ref": "#/$defs/nodeId"}},
+        "reason_code": {"type": ["string", "null"], "pattern": "^[a-z][a-z0-9_]{1,63}$"}
+      },
+      "allOf": [
+        {"if": {"properties": {"outcome": {"const": "mapped"}}}, "then": {"properties": {"target_node_ids": {"minItems": 1}, "reason_code": {"type": "null"}}}},
+        {"if": {"properties": {"outcome": {"const": "transformed"}}}, "then": {"properties": {"target_node_ids": {"minItems": 1}, "reason_code": {"type": "string"}}}},
+        {"if": {"properties": {"outcome": {"const": "dropped"}}}, "then": {"properties": {"target_node_ids": {"maxItems": 0}, "reason_code": {"type": "string"}}}}
+      ]
+    },
+    "entry": {
+      "type": "object", "additionalProperties": false,
+      "required": ["node_id", "fields", "blocks", "source_refs"],
+      "properties": {
+        "node_id": {"$ref": "#/$defs/nodeId"},
+        "fields": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "name": {"$ref": "#/$defs/textValue"}, "organization": {"$ref": "#/$defs/textValue"},
+            "role": {"$ref": "#/$defs/textValue"}, "location": {"$ref": "#/$defs/textValue"},
+            "start_date": {"$ref": "#/$defs/textValue"}, "end_date": {"$ref": "#/$defs/textValue"},
+            "url": {"$ref": "#/$defs/textValue"}, "degree": {"$ref": "#/$defs/textValue"},
+            "major": {"$ref": "#/$defs/textValue"}
+          }
+        },
+        "blocks": {"type": "array", "maxItems": 500, "items": {"$ref": "#/$defs/block"}},
+        "source_refs": {"$ref": "#/$defs/sourceRefs"}
+      }
+    },
+    "section": {
+      "type": "object", "additionalProperties": false,
+      "required": ["node_id", "semantic_kind", "title", "entries", "blocks", "source_refs"],
+      "properties": {
+        "node_id": {"$ref": "#/$defs/nodeId"},
+        "semantic_kind": {"enum": ["profile", "work", "education", "project", "skills", "activity", "interests", "certificates", "awards", "languages", "custom"]},
+        "title": {"anyOf": [{"$ref": "#/$defs/textValue"}, {"type": "null"}]},
+        "title_icon": {"anyOf": [{"$ref": "#/$defs/inlineIcon"}, {"type": "null"}]},
+        "entries": {"type": "array", "maxItems": 200, "items": {"$ref": "#/$defs/entry"}},
+        "blocks": {"type": "array", "maxItems": 500, "items": {"$ref": "#/$defs/block"}},
+        "source_refs": {"$ref": "#/$defs/sourceRefs"}
+      }
+    }
+  }
+}

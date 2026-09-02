@@ -1,11 +1,10 @@
 from fastapi.testclient import TestClient
 
 from linkcv.core.config import Settings
-from linkcv.domain.resume_document import default_resume_document
-from linkcv.domain.resume_style import default_resume_style
 from linkcv.main import create_app
 from linkcv.modules.resumes.models import ResumeTemplate
 from tests.fakes import FakeRedis
+from tests.canonical_resume_fixtures import canonical_template_payload
 
 
 class FakeStorage:
@@ -34,11 +33,12 @@ def build_app():
     )
     app.state.resume_pdf_renderer = FakeRenderer()
     with app.state.session_factory() as session:
+        template_data, template_style = canonical_template_payload(key="blank-cn")
         template = ResumeTemplate(
             key="blank-cn",
             name="空白简历",
-            data_json=default_resume_document().model_dump(mode="json"),
-            style_json=default_resume_style().model_dump(mode="json"),
+            data_json=template_data,
+            style_json=template_style,
             is_active=1,
         )
         session.add(template)

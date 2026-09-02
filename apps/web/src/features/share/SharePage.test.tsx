@@ -2,8 +2,9 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../api/client";
 import {
-  defaultSemanticDocument,
-  defaultSemanticStyle,
+  defaultCanonicalDocument,
+  defaultCanonicalPresentation,
+  type LayoutPlan,
 } from "../../api/resumeContract";
 import { SharePage } from "./SharePage";
 
@@ -20,6 +21,21 @@ vi.mock("../../api/client", async (importOriginal) => {
 
 const mockedFetch = vi.mocked(api.fetchPublicShare);
 
+const layoutPlan: LayoutPlan = {
+  schema_version: "layout-plan.v1",
+  content_sha256: "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  template_key: "classic-technical-cn",
+  regions: [{
+    region_id: "main",
+    order: 0,
+    nodes: [{
+      node_id: defaultCanonicalDocument.identity.node_id,
+      semantic_kind: "identity",
+      slot_id: "main_content",
+    }],
+  }],
+};
+
 afterEach(() => {
   vi.clearAllMocks();
 });
@@ -33,11 +49,25 @@ describe("SharePage", () => {
 
   it("成功时展示 linkresume 品牌、分享者与脱敏简历内容", async () => {
     mockedFetch.mockResolvedValue({
-      data: defaultSemanticDocument,
-      style: {
-        ...defaultSemanticStyle,
-        template_key: "classic-technical-cn",
+      data: {
+        ...defaultCanonicalDocument,
+        identity: {
+          ...defaultCanonicalDocument.identity,
+          name: { node_id: "node_name000000000001", value: "张三", source_refs: [] },
+        },
       },
+      style: {
+        ...defaultCanonicalPresentation,
+        template_snapshot: {
+          ...defaultCanonicalPresentation.template_snapshot,
+          template_key: "classic-technical-cn",
+          tokens: {
+            ...defaultCanonicalPresentation.template_snapshot.tokens,
+            accent_color: "#202632",
+          },
+        },
+      },
+      layout_plan: layoutPlan,
       sharer: { nickname: "于晏", avatar_url: null },
     });
     render(<SharePage token="token_123" />);
@@ -49,6 +79,10 @@ describe("SharePage", () => {
     expect(screen.getByText("张三")).toBeInTheDocument();
     expect(screen.getByLabelText("分享简历内容")).toHaveClass(
       "theme-classic-technical",
+    );
+    expect(screen.getByLabelText("分享简历内容")).toHaveAttribute(
+      "style",
+      expect.stringContaining("--preview-accent:#202632"),
     );
   });
 
