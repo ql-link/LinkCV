@@ -10,6 +10,7 @@ const session: AgentSession = {
   id: "session-1",
   resume_id: "resume-1",
   title: "简历助手",
+  pinned: false,
   status: "active",
   last_message_at: null,
   created_at: "2026-08-20T08:00:00Z",

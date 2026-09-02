@@ -1,8 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api, type AgentProposal, type AgentSession } from "../../api/client";
+import { api, ApiRequestError, type AgentProposal, type AgentSession } from "../../api/client";
 import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
 import { AssistantPage } from "./AssistantPage";
 
@@ -10,6 +10,7 @@ const session: AgentSession = {
   id: "session-1",
   resume_id: "1",
   title: "新对话",
+  pinned: false,
   status: "active",
   last_message_at: null,
   created_at: "2026-08-26T05:00:00Z",
@@ -17,12 +18,74 @@ const session: AgentSession = {
   messages: [],
 };
 
+beforeEach(() => {
+  window.history.replaceState(null, "", "/assistant");
+  vi.spyOn(api, "getAgentModel").mockResolvedValue({
+    model: { adapter: "openai", name: "deepseek/deepseek-v4-flash" },
+  });
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
 describe("AssistantPage", () => {
-  it("空状态展示五个快捷任务，并在需要资料的任务中打开选择器", async () => {
+  it("为每条历史对话提供置顶、重命名和删除菜单", async () => {
+    const user = userEvent.setup();
+    const listedSession = { ...session, title: "待整理对话", pinned: false };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [listedSession] });
+    const updateSession = vi.spyOn(api, "updateAgentSession")
+      .mockResolvedValueOnce({ session: { ...listedSession, pinned: true } })
+      .mockResolvedValueOnce({ session: { ...listedSession, pinned: true, title: "新的对话名称" } });
+    const deleteSession = vi.spyOn(api, "deleteAgentSession").mockResolvedValue(undefined);
+
+    render(<AssistantPage />);
+
+    await user.click(await screen.findByRole("button", { name: "待整理对话 的更多操作" }));
+    const firstMenu = screen.getByRole("menu", { name: "待整理对话 的操作菜单" });
+    expect(within(firstMenu).getByRole("menuitem", { name: "Pin" })).toBeInTheDocument();
+    expect(within(firstMenu).getByRole("menuitem", { name: "Rename" })).toBeInTheDocument();
+    expect(within(firstMenu).getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
+
+    await user.click(within(firstMenu).getByRole("menuitem", { name: "Pin" }));
+    expect(updateSession).toHaveBeenNthCalledWith(1, "session-1", { pinned: true });
+
+    await user.click(screen.getByRole("button", { name: "待整理对话 的更多操作" }));
+    await user.click(screen.getByRole("menuitem", { name: "Rename" }));
+    const renameInput = screen.getByRole("textbox", { name: "重命名对话 待整理对话" });
+    await user.clear(renameInput);
+    await user.type(renameInput, "新的对话名称{Enter}");
+    await waitFor(() => expect(updateSession).toHaveBeenNthCalledWith(2, "session-1", { title: "新的对话名称" }));
+
+    await user.click(await screen.findByRole("button", { name: "新的对话名称 的更多操作" }));
+    await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("删除这条对话？");
+    await user.click(screen.getByRole("button", { name: "删除" }));
+    await waitFor(() => expect(deleteSession).toHaveBeenCalledWith("session-1"));
+    expect(screen.queryByText("新的对话名称")).not.toBeInTheDocument();
+  });
+
+  it("通过独立会话路由直接恢复对应对话", async () => {
+    const routedSession: AgentSession = {
+      ...session,
+      title: "可深链会话",
+      messages: [
+        { sequence_no: 1, role: "user", content: "请分析岗位", created_at: session.created_at },
+        { sequence_no: 2, role: "assistant", content: "这是已恢复的回答", created_at: session.created_at },
+      ],
+    };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [routedSession] });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session: routedSession });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+
+    render(<AssistantPage sessionId="session-1" />);
+
+    expect(await screen.findByText("这是已恢复的回答")).toBeInTheDocument();
+    expect(api.getAgentSession).toHaveBeenCalledWith("session-1");
+    expect(window.location.pathname).toBe("/assistant/session-1");
+  });
+
+  it("按设计稿展示空状态，并通过批量资料弹窗添加上下文", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
     vi.spyOn(api, "listAgentContexts").mockResolvedValue({
@@ -38,20 +101,71 @@ describe("AssistantPage", () => {
 
     render(<AssistantPage />);
 
-    expect(await screen.findByText("你好，我是你的 AI 求职助手")).toBeInTheDocument();
+    expect(await screen.findByText("你好，今天想完成什么？")).toBeInTheDocument();
     const workspace = screen.getByRole("region", { name: "AI 求职助手工作区" });
     expect(within(workspace).queryByRole("heading", { name: /^AI 求职助手$/ })).not.toBeInTheDocument();
-    expect(within(workspace).queryByText("仅参考你主动添加的资料")).not.toBeInTheDocument();
-    expect(within(workspace).queryByRole("button", { name: "新建对话" })).not.toBeInTheDocument();
-    for (const label of ["优化当前简历", "分析岗位匹配度", "提炼项目亮点", "准备面试问题", "复盘最近面试"]) {
-      expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
-    }
+    expect(screen.getByText("仅使用你主动选择的简历与资料")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新建对话" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "分析岗位匹配度" })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "分析岗位匹配度" }));
-    expect(await screen.findByRole("dialog", { name: "选择上下文" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "添加资料" }));
+    expect(await screen.findByRole("dialog", { name: "选择资料" })).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "岗位" }));
     await user.click(screen.getByRole("button", { name: /示例科技 · 后端工程师/ }));
+    expect(screen.getByRole("button", { name: "添加 1 项" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "添加 1 项" }));
     expect(screen.getByLabelText("已选上下文")).toHaveTextContent("示例科技 · 后端工程师");
+  });
+
+  it("模型菜单展示当前绑定的真实模型，不伪造可切换项", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+
+    render(<AssistantPage />);
+
+    await user.click(await screen.findByRole("button", { name: "deepseek/deepseek-v4-flash" }));
+    const menu = screen.getByRole("menu");
+    expect(within(menu).getByRole("menuitemradio", { name: /deepseek\/deepseek-v4-flash/ })).toHaveAttribute("aria-checked", "true");
+    expect(within(menu).getByText("openai · 当前模型")).toBeInTheDocument();
+    expect(within(menu).getAllByRole("menuitemradio")).toHaveLength(1);
+  });
+
+  it("点击模型选择器外部时收起模型菜单", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+
+    render(<AssistantPage />);
+
+    await user.click(await screen.findByRole("button", { name: "deepseek/deepseek-v4-flash" }));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+
+    await user.click(screen.getByText("你好，今天想完成什么？"));
+
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("输入内容前禁用发送，输入内容后启用发送", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+
+    render(<AssistantPage />);
+
+    const sendButton = await screen.findByRole("button", { name: "发送" });
+    expect(sendButton).toBeDisabled();
+
+    await user.type(screen.getByRole("textbox", { name: "告诉助手你想完成什么" }), "你好");
+
+    expect(sendButton).toBeEnabled();
+  });
+
+  it("当前模型查询失败时明确显示不可用，不回退为虚构模型", async () => {
+    vi.mocked(api.getAgentModel).mockRejectedValueOnce(new Error("unavailable"));
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+
+    render(<AssistantPage />);
+
+    expect(await screen.findByRole("button", { name: "模型不可用" })).toBeInTheDocument();
+    expect(screen.queryByText("LinkCV AI")).not.toBeInTheDocument();
   });
 
   it("展示结构化澄清并按 AgentPanel 格式携带回答序号提交", async () => {
@@ -104,11 +218,22 @@ describe("AssistantPage", () => {
 
     const clarificationRegion = await screen.findByRole("region", { name: "需要你确认" });
     expect(clarificationRegion).toHaveTextContent("你希望修改哪段经历？");
-    expect(clarificationRegion).toHaveTextContent("问题 1 / 2 · 修改范围");
-    expect(clarificationRegion).toHaveTextContent("问题 2 / 2 · 目标岗位");
+    expect(clarificationRegion).toHaveTextContent("1 / 2");
+    await user.click(screen.getByRole("button", { name: "收起主动询问" }));
+    expect(screen.getByRole("button", { name: "展开主动询问" })).toHaveAttribute("aria-expanded", "false");
+    expect(clarificationRegion).not.toHaveTextContent("你希望修改哪段经历？");
+    expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "展开主动询问" }));
+    expect(screen.getByRole("button", { name: "收起主动询问" })).toHaveAttribute("aria-expanded", "true");
+    expect(clarificationRegion).toHaveTextContent("你希望修改哪段经历？");
     await user.click(screen.getByRole("radio", { name: /项目经历/ }));
-    await user.click(screen.getByRole("radio", { name: /其他/ }));
-    await user.type(screen.getByRole("textbox", { name: "目标岗位的其他回答" }), "自定义岗位");
+    await user.click(screen.getByRole("button", { name: /下一题/ }));
+    expect(clarificationRegion).toHaveTextContent("2 / 2");
+    expect(clarificationRegion).toHaveTextContent("你准备投递什么岗位？");
+    const customAnswer = screen.getByRole("textbox", { name: "目标岗位的其他回答" });
+    expect(customAnswer).toBeVisible();
+    await user.type(customAnswer, "自定义岗位");
+    expect(screen.getByRole("radio", { name: /其他/ })).toBeChecked();
     await user.click(screen.getByRole("button", { name: "提交回答" }));
 
     await waitFor(() => expect(stream).toHaveBeenCalledTimes(2));
@@ -149,8 +274,9 @@ describe("AssistantPage", () => {
     });
 
     render(<AssistantPage />);
-    await user.click(screen.getByRole("button", { name: "添加上下文" }));
+    await user.click(screen.getByRole("button", { name: "添加资料" }));
     await user.click(await screen.findByRole("button", { name: /我的简历/ }));
+    await user.click(screen.getByRole("button", { name: "添加 1 项" }));
     const input = screen.getByRole("textbox", { name: "告诉助手你想完成什么" });
     await user.type(input, "请优化我的简历");
     await user.click(screen.getByRole("button", { name: "发送" }));
@@ -160,6 +286,9 @@ describe("AssistantPage", () => {
       contexts: [{ type: "resume", id: "1", version: "3" }],
     }));
     expect(await screen.findByText("我会先分析经历和目标。")).toBeInTheDocument();
+    expect(screen.getByText("我会先分析经历和目标。").closest(".assistant-message")?.querySelector(".assistant-message-feather")).toBeNull();
+    expect(screen.queryByText("对话已完成")).not.toBeInTheDocument();
+    expect(screen.queryByText("你可以继续追问，或确认待处理的简历修改提案。")).not.toBeInTheDocument();
   });
 
   it("提案展示目标简历名称和全部真实前后差异", async () => {
@@ -213,8 +342,9 @@ describe("AssistantPage", () => {
     vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [proposal] });
 
     render(<AssistantPage />);
-    await user.click(await screen.findByRole("button", { name: /简历优化提案/ }));
+    await user.click(await screen.findByRole("button", { name: "简历优化提案" }));
 
+    expect(window.location.pathname).toBe("/assistant/session-1");
     expect(await screen.findAllByText("张三的后端简历")).toHaveLength(2);
     expect(screen.getByText("负责接口性能优化")).toBeInTheDocument();
     expect(screen.getByText("将接口 P95 延迟降低 32%")).toBeInTheDocument();
@@ -241,6 +371,41 @@ describe("AssistantPage", () => {
     expect(screen.getAllByRole("button", { name: "停止生成" })).toHaveLength(1);
     await user.click(screen.getByRole("button", { name: "停止生成" }));
     expect(await screen.findByText("已停止生成")).toBeInTheDocument();
+  });
+
+  it("暂停后等待取消完成，重试不会重复用户消息或展示运行中提示", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+    vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
+    vi.spyOn(api, "streamAgentMessage")
+      .mockImplementationOnce(async (_id, _payload, signal, onEvent) => {
+        onEvent({ type: "run.started", runId: "run-1" });
+        await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+      })
+      .mockRejectedValueOnce(new ApiRequestError(409, "AGENT_RUN_IN_PROGRESS"));
+    let finishCancellation: () => void = () => {};
+    vi.spyOn(api, "cancelAgentRun").mockImplementation(() => new Promise((resolve) => {
+      finishCancellation = () => resolve({ run_id: "run-1", status: "cancelled" });
+    }));
+
+    render(<AssistantPage />);
+    const input = await screen.findByRole("textbox", { name: "告诉助手你想完成什么" });
+    await user.type(input, "润色项目经历");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await user.click(await screen.findByRole("button", { name: "停止生成" }));
+
+    expect(input).toHaveValue("润色项目经历");
+    expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
+    expect(screen.getAllByText("润色项目经历")).toHaveLength(2);
+
+    finishCancellation();
+    await waitFor(() => expect(screen.getByRole("button", { name: "发送" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => expect(api.streamAgentMessage).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getAllByText("润色项目经历")).toHaveLength(2);
+    expect(input).toHaveValue("润色项目经历");
   });
 
   it("流失败时保留已显示回复与可重试草稿", async () => {

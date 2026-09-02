@@ -53,6 +53,9 @@ REVISION_COLUMN_MARKERS = {
     "0032": {
         "agent_messages": frozenset({"message_type", "metadata_json"}),
     },
+    "0052": {
+        "agent_sessions": frozenset({"pinned"}),
+    },
 }
 REVISION_REMOVED_COLUMN_MARKERS = {
     "0034": {

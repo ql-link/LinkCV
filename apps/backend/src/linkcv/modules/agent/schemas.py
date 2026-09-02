@@ -8,6 +8,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    StrictBool,
     field_validator,
     model_validator,
 )
@@ -21,6 +22,33 @@ class SessionCreateRequest(BaseModel):
 
     resume_id: str | None = None
     title: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class SessionUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, max_length=128)
+    pinned: StrictBool | None = None
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def normalize_title(cls, value: object) -> str:
+        if not isinstance(value, str):
+            raise ValueError("session title must be a string")
+        normalized = " ".join(value.split())
+        if not normalized or len(normalized) > 128:
+            raise ValueError("session title must be 1..128 characters after trim")
+        return normalized
+
+    @model_validator(mode="after")
+    def require_update_field(self) -> "SessionUpdateRequest":
+        if not self.model_fields_set:
+            raise ValueError("at least one session field is required")
+        if "title" in self.model_fields_set and self.title is None:
+            raise ValueError("session title cannot be null")
+        if "pinned" in self.model_fields_set and self.pinned is None:
+            raise ValueError("session pinned cannot be null")
+        return self
 
 
 class AgentSelectionContext(BaseModel):
@@ -237,6 +265,7 @@ class AgentSessionRecord(BaseModel):
     id: str
     resume_id: str | None
     title: str
+    pinned: bool
     status: Literal["active", "archived"]
     last_message_at: datetime | None
     created_at: datetime
@@ -259,6 +288,19 @@ class RunResponse(BaseModel):
 
 class AgentReadinessResponse(BaseModel):
     ready: bool
+
+
+class AgentModelSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    adapter: str
+    name: str
+
+
+class AgentModelResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model: AgentModelSummary
 
 
 class ProposalCreateRequest(BaseModel):

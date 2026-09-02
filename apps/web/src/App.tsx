@@ -254,7 +254,7 @@ function AppContent() {
     return (
       <WorkspaceLayout active="assistant" className="assistant-workspace-shell">
         <WorkspacePageBoundary>
-          <AssistantPage />
+          <AssistantPage sessionId={route.sessionId} />
         </WorkspacePageBoundary>
       </WorkspaceLayout>
     );
