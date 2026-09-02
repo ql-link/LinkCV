@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   adminLoginPath,
+  assistantPath,
   authPath,
   editorPath,
   isSafeAdminPath,
@@ -22,6 +23,8 @@ describe("LinkCV routes", () => {
     expect(parseAppRoute("/admin/llm/models")).toEqual({ kind: "admin" });
     expect(parseAppRoute("/resumes/")).toEqual({ kind: "resumes" });
     expect(parseAppRoute("/assistant/")).toEqual({ kind: "assistant" });
+    expect(parseAppRoute("/assistant/session_123")).toEqual({ kind: "assistant", sessionId: "session_123" });
+    expect(parseAppRoute("/assistant/a%20b")).toEqual({ kind: "assistant", sessionId: "a b" });
     expect(parseAppRoute("/templates/")).toEqual({ kind: "templates" });
     expect(parseAppRoute("/resumes/resume_123/edit")).toEqual({ kind: "editor", resumeId: "resume_123" });
     expect(parseAppRoute("/jobs")).toEqual({ kind: "jobs" });
@@ -59,6 +62,11 @@ describe("LinkCV routes", () => {
   it("encodes share tokens when building share paths", () => {
     expect(sharePath("abc123")).toBe("/share/abc123");
     expect(sharePath("a/b c")).toBe("/share/a%2Fb%20c");
+  });
+
+  it("builds assistant conversation paths with encoded session identifiers", () => {
+    expect(assistantPath()).toBe("/assistant");
+    expect(assistantPath("session/a b")).toBe("/assistant/session%2Fa%20b");
   });
 
   it("parses the admin login route and its safe next target", () => {

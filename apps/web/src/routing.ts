@@ -6,7 +6,7 @@ export type AppRoute =
   | { kind: "admin" }
   | { kind: "adminLogin"; next: string | null }
   | { kind: "resumes" }
-  | { kind: "assistant" }
+  | { kind: "assistant"; sessionId?: string }
   | { kind: "templates" }
   | { kind: "resumeCreate" }
   | { kind: "editor"; resumeId: string }
@@ -27,6 +27,7 @@ type NavigateOptions = {
 };
 
 const editorPathPattern = /^\/resumes\/([^/]+)\/edit$/;
+const assistantSessionPathPattern = /^\/assistant\/([^/]+)$/;
 const jobDetailPathPattern = /^\/(?:career\/jobs|jobs)\/([^/]+)$/;
 const jobEditPathPattern = /^\/(?:career\/jobs|jobs)\/([^/]+)\/edit$/;
 const applicationDetailPathPattern = /^\/career\/applications\/([^/]+)$/;
@@ -98,6 +99,15 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
   if (normalizedPath === "/datasets") return { kind: "datasets" };
   if (normalizedPath === "/account") return { kind: "account" };
 
+  const assistantSessionMatch = normalizedPath.match(assistantSessionPathPattern);
+  if (assistantSessionMatch) {
+    try {
+      return { kind: "assistant", sessionId: decodeURIComponent(assistantSessionMatch[1]) };
+    } catch {
+      return { kind: "notFound" };
+    }
+  }
+
   const editorMatch = normalizedPath.match(editorPathPattern);
   if (editorMatch) {
     try {
@@ -158,6 +168,10 @@ export function sharePath(token: string) {
 
 export function editorPath(resumeId: string) {
   return `/resumes/${encodeURIComponent(resumeId)}/edit`;
+}
+
+export function assistantPath(sessionId?: string | null) {
+  return sessionId ? `/assistant/${encodeURIComponent(sessionId)}` : "/assistant";
 }
 
 export function jobDetailPath(jobId: string) {

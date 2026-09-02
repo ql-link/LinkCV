@@ -200,6 +200,14 @@ class AgentRuntimeModel:
 
 
 @dataclass(frozen=True)
+class AgentModelSummary:
+    """The non-sensitive model identity exposed to an authenticated user."""
+
+    adapter: str
+    name: str
+
+
+@dataclass(frozen=True)
 class Metering:
     status: str
     input_tokens: int | None
@@ -313,6 +321,13 @@ class LLMService:
 
     def encrypt_credential(self, plaintext: str) -> str:
         return self._cipher.encrypt(plaintext)
+
+    async def agent_model_summary(self) -> AgentModelSummary:
+        """Resolve the bound Pi Agent model without reading its credentials."""
+        config = await self._db(self._current_config_sync, PI_AGENT_CAPABILITY)
+        if config is None:
+            raise LLMError("LLM_MODEL_NOT_CONFIGURED", "agent-model-summary")
+        return AgentModelSummary(adapter=config.adapter, name=config.model_call_name)
 
     async def agent_runtime_model(self) -> AgentRuntimeModel:
         """Resolve and decrypt the model bound to the Pi Agent capability."""
