@@ -34,7 +34,7 @@ describe("LinkCV routes", () => {
     expect(parseAppRoute("/career/applications")).toEqual({ kind: "interviews", view: "applications", jobId: undefined, createApplication: undefined, importJob: undefined });
     expect(parseAppRoute("/career/applications", "?job=job_123&create=1&import=1")).toEqual({ kind: "interviews", view: "applications", jobId: "job_123", createApplication: true, importJob: true });
     expect(parseAppRoute("/career/applications/application_1")).toEqual({ kind: "interviews", view: "applications", applicationId: "application_1", sessionId: undefined });
-    expect(parseAppRoute("/career/applications/application_1", "?session=session_1")).toEqual({ kind: "interviews", view: "records", applicationId: "application_1", sessionId: "session_1" });
+    expect(parseAppRoute("/career/applications/application_1", "?session=session_1")).toEqual({ kind: "interviews", view: "applications", applicationId: "application_1", sessionId: "session_1" });
     expect(parseAppRoute("/career/schedule")).toEqual({ kind: "interviews", view: "schedule" });
     expect(parseAppRoute("/career/reviews")).toEqual({ kind: "interviews", view: "records", sessionId: undefined });
     expect(parseAppRoute("/interviews", "?view=schedule")).toEqual({ kind: "interviews", view: "schedule" });

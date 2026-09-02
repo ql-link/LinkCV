@@ -114,7 +114,7 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
       const sessionId = new URLSearchParams(search).get("session") ?? undefined;
       return {
         kind: "interviews",
-        view: sessionId ? "records" : "applications",
+        view: "applications",
         applicationId: decodeURIComponent(applicationDetailMatch[1]),
         sessionId,
       };

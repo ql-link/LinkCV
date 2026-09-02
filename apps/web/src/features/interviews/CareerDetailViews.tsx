@@ -8,6 +8,7 @@ import {
 import {
   Archive,
   Banknote,
+  Ban,
   BriefcaseBusiness,
   CalendarDays,
   Check,
@@ -18,7 +19,9 @@ import {
   Download,
   ExternalLink,
   FileAudio,
+  FileCheck2,
   FileText,
+  Handshake,
   Import,
   MapPin,
   MoreHorizontal,
@@ -54,10 +57,13 @@ import {
 } from "@/components/ui";
 import { SelectValue } from "@/components/ui/select";
 import { careerApplicationPath, jobDetailPath, navigateTo } from "../../routing";
-import { formatApplicationListDateTime } from "./ApplicationsBoard";
+import { formatApplicationListDateTime, type NextStageDialogTab } from "./ApplicationsBoard";
+export type { NextStageDialogTab } from "./ApplicationsBoard";
 import {
+  applicationStageMatchesSession,
   applicationDetailStatusToneClass,
   normalizeApplicationStageLabel,
+  offerStatusLabel,
   projectApplicationProgress,
 } from "./applicationProgress";
 
@@ -206,25 +212,14 @@ function sessionRecordKind(
   return session.stage_type === "other" ? "笔试" : "面试";
 }
 
-function applicationStageMatchesSession(
-  application: ApplicationStageSource,
-  session: Pick<InterviewSessionRecord, "stage_type" | "round_no" | "stage_label">,
-): boolean {
-  if (application.current_stage_type === "screening" && session.stage_type === "other") {
-    return application.current_stage_label.trim() === session.stage_label.trim();
-  }
-  if (application.current_stage_type !== session.stage_type) return false;
-  if (application.current_stage_type === "interview") {
-    return application.current_round_no === session.round_no;
-  }
-  return application.current_stage_label === session.stage_label;
-}
-
 function buildJourneyStages(
   application: JobApplicationSummary,
   sessions: InterviewSessionSummary[],
 ): JourneyStage[] {
   const projection = projectApplicationProgress(application);
+  const currentStageLabel = application.current_stage_type === "offer"
+    ? offerStatusLabel(application.offer_status)
+    : projection.stageLabel;
   if (projection.isPending) {
     return [
       {
@@ -263,29 +258,31 @@ function buildJourneyStages(
   sortedSessions.forEach((session) => {
     const isCurrent = applicationStageMatchesSession(application, session);
     if (isCurrent) currentSessionIds.add(session.id);
-    const sessionLabel = isCurrent && session.stage_type === "other" && application.current_stage_type === "screening"
-      ? normalizeApplicationStageLabel(application)
-      : session.stage_label;
+    const sessionLabel = isCurrent && application.current_stage_type === "offer"
+      ? offerStatusLabel(application.offer_status)
+      : isCurrent && session.stage_type === "other" && application.current_stage_type === "screening"
+        ? normalizeApplicationStageLabel(application)
+        : session.stage_label;
     stages.push({
       key: `session:${session.id}`,
       label: sessionLabel,
       meta: formatFullDate(session.start_at),
       state: session.status === "cancelled"
         ? "cancelled"
-        : isCurrent && projection.isWaiting
+        : session.status === "completed"
           ? "done"
-          : isCurrent
-            ? "current"
-            : session.status === "completed"
+          : isCurrent && projection.isWaiting
               ? "done"
-              : "pending",
+              : isCurrent
+                ? "current"
+                : "pending",
     });
   });
 
   if (!currentSessionIds.size && projection.stageLabel) {
     stages.push({
       key: `stage:${application.current_stage_type}:${application.current_round_no ?? "none"}`,
-      label: projection.stageLabel,
+      label: currentStageLabel,
       meta: formatFullDate(application.updated_at),
       state: projection.isWaiting ? "done" : "current",
     });
@@ -312,7 +309,9 @@ function JourneyProgress({ application, sessions }: { application: JobApplicatio
   const projection = projectApplicationProgress(application);
   const journeyLabel = projection.isPending || projection.isWaiting
     ? projection.primaryLabel
-    : projection.stageLabel;
+    : application.current_stage_type === "offer"
+      ? offerStatusLabel(application.offer_status)
+      : projection.stageLabel;
   return (
     <ol className="career-journey-progress" aria-label={`当前阶段：${journeyLabel}`}>
       {stages.map((stage, index) => (
@@ -729,17 +728,21 @@ function ScheduleDateTimePicker({
   );
 }
 
-type AddNextStageTab = "assessment" | "interview";
+type OfferSelection = "oc_received" | "written_offer_received";
 
-function AddNextStageDialog({
+export function AddNextStageDialog({
   application,
   timezone,
+  initialTab = "assessment",
+  initialInterviewLabel = "",
   onClose,
   onChanged,
   onNotice,
 }: {
   application: ApplicationStageSource;
   timezone: string;
+  initialTab?: NextStageDialogTab;
+  initialInterviewLabel?: string;
   onClose: () => void;
   onChanged: () => void | Promise<void>;
   onNotice: (notice: string) => void;
@@ -747,23 +750,68 @@ function AddNextStageDialog({
   const interviewRoundNo = application.current_stage_type === "interview"
     ? (application.current_round_no ?? 0) + 1
     : 1;
-  const [activeTab, setActiveTab] = useState<AddNextStageTab>("assessment");
+  const [activeTab, setActiveTab] = useState<NextStageDialogTab>(initialTab);
   const [assessmentLabel, setAssessmentLabel] = useState("笔试");
   const [assessmentStartAt, setAssessmentStartAt] = useState("");
   const [assessmentDuration, setAssessmentDuration] = useState(90);
   const [assessmentMode, setAssessmentMode] = useState<InterviewSessionRecord["mode"]>("video");
   const [assessmentMeetingOrLocation, setAssessmentMeetingOrLocation] = useState("");
-  const [interviewLabel, setInterviewLabel] = useState("");
+  const [interviewLabel, setInterviewLabel] = useState(initialInterviewLabel);
   const [interviewStartAt, setInterviewStartAt] = useState("");
   const [interviewDuration, setInterviewDuration] = useState(60);
   const [interviewMode, setInterviewMode] = useState<InterviewSessionRecord["mode"]>("video");
   const [interviewMeetingOrLocation, setInterviewMeetingOrLocation] = useState("");
+  const [offerSelection, setOfferSelection] = useState<OfferSelection>("oc_received");
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [clientRequestId] = useState(() => crypto.randomUUID());
 
   const save = async () => {
     if (busy) return;
+    if (activeTab === "offer") {
+      setErrorMessage(null);
+      setBusy(true);
+      try {
+        let advancedApplication: JobApplicationRecord;
+        try {
+          const response = await api.advanceJobApplication(application.id, {
+            target_stage_type: "offer",
+            target_round_no: null,
+            target_stage_label: "Offer",
+            base_lock_version: application.lock_version,
+          });
+          advancedApplication = response.application;
+        } catch (error) {
+          setErrorMessage(requestErrorMessage(error));
+          return;
+        }
+
+        try {
+          await api.recordJobApplicationOffer(
+            application.id,
+            offerSelection,
+            advancedApplication.lock_version,
+          );
+        } catch {
+          onClose();
+          try {
+            await onChanged();
+          } catch {
+            // The refresh callback owns its own error notice; preserve the
+            // partial-success message below if it rejects unexpectedly.
+          }
+          onNotice("已进入 Offer 阶段，但 Offer 状态保存失败，可从更新 Offer 状态入口重试");
+          return;
+        }
+
+        onClose();
+        await onChanged();
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     const isAssessment = activeTab === "assessment";
     const stageLabel = isAssessment
       ? ensureAssessmentStageLabel(assessmentLabel)
@@ -830,26 +878,32 @@ function AddNextStageDialog({
     }
   };
 
-  const activeStageLabel = activeTab === "assessment"
-    ? ensureAssessmentStageLabel(assessmentLabel)
-    : interviewLabel.trim();
-  const activeStartAt = activeTab === "assessment" ? assessmentStartAt : interviewStartAt;
+  const activeStageLabel = activeTab === "offer"
+    ? "Offer"
+    : activeTab === "assessment"
+      ? ensureAssessmentStageLabel(assessmentLabel)
+      : interviewLabel.trim();
+  const activeStartAt = activeTab === "assessment" ? assessmentStartAt : activeTab === "interview" ? interviewStartAt : "";
   const activeMeetingOrLocation = activeTab === "assessment"
     ? assessmentMeetingOrLocation
-    : interviewMeetingOrLocation;
-  const canSubmit = Boolean(activeStageLabel && parseScheduleStart(activeStartAt) && activeMeetingOrLocation.trim())
-    && !busy;
+    : activeTab === "interview" ? interviewMeetingOrLocation : "";
+  const canSubmit = activeTab === "offer"
+    ? Boolean(offerSelection) && !busy
+    : Boolean(activeStageLabel && parseScheduleStart(activeStartAt) && activeMeetingOrLocation.trim()) && !busy;
   const modePlaceholder = (mode: InterviewSessionRecord["mode"]) => mode === "video" || mode === "phone"
     ? activeTab === "assessment" ? "粘贴测评链接" : "粘贴会议链接"
     : activeTab === "assessment" ? "填写测评地点或其他地点" : "填写会议室、地址或其他地点";
   const modeSubjectLabel = activeTab === "assessment" ? "测评" : "面试";
+  const dialogDescription = activeTab === "offer"
+    ? "确认收到 Offer 后，选择 Offer 类型；保存后会进入 Offer 阶段。"
+    : "收到明确通知后，填写已经确认的下一阶段与排期；保存后会进入对应的求职流程。";
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="career-stage-dialog career-next-stage-dialog">
         <DialogHeader className="career-next-stage-dialog-header">
           <DialogTitle>添加求职阶段</DialogTitle>
-          <DialogDescription>收到明确通知后，填写已经确认的下一阶段与排期；保存后会进入对应的求职流程。</DialogDescription>
+          <DialogDescription>{dialogDescription}</DialogDescription>
         </DialogHeader>
         <div className="career-next-stage-category">
           <div className="career-next-stage-tabs" role="tablist" aria-label="阶段分类">
@@ -871,6 +925,15 @@ function AddNextStageDialog({
               className={activeTab === "interview" ? "is-active" : undefined}
               onClick={() => setActiveTab("interview")}
             >面试</button>
+            <button
+              type="button"
+              role="tab"
+              id="career-next-stage-tab-offer"
+              aria-selected={activeTab === "offer"}
+              aria-controls="career-next-stage-panel-offer"
+              className={activeTab === "offer" ? "is-active" : undefined}
+              onClick={() => setActiveTab("offer")}
+            >Offer</button>
           </div>
         </div>
         <div className="career-next-stage-divider" aria-hidden="true" />
@@ -880,7 +943,7 @@ function AddNextStageDialog({
           role="tabpanel"
           aria-labelledby={`career-next-stage-tab-${activeTab}`}
         >
-          <div className="career-next-stage-form">
+          <div className={`career-next-stage-form${activeTab === "offer" ? " is-offer" : ""}`}>
             {activeTab === "assessment" ? (
               <>
                 <div className="career-next-stage-field">
@@ -962,7 +1025,7 @@ function AddNextStageDialog({
                   />
                 </div>
               </>
-            ) : (
+            ) : activeTab === "interview" ? (
               <>
                 <div className="career-next-stage-field">
                   <Label htmlFor="career-next-stage-interview-label">展示名称</Label>
@@ -1045,12 +1108,65 @@ function AddNextStageDialog({
                   />
                 </div>
               </>
+            ) : (
+              <section className="career-next-stage-offer-panel" aria-labelledby="career-next-stage-offer-heading">
+                <div className="career-next-stage-panel-heading">
+                  <strong id="career-next-stage-offer-heading">选择 Offer 类型</strong>
+                </div>
+                <p id="career-next-stage-offer-help">选择当前已收到的 Offer 类型，后续可继续更新状态。</p>
+                <div
+                  className="career-next-stage-offer-options"
+                  role="radiogroup"
+                  aria-label="Offer 类型"
+                  aria-describedby="career-next-stage-offer-help"
+                >
+                  <label className="career-next-stage-offer-option">
+                    <input
+                      className="visually-hidden"
+                      type="radio"
+                      name="career-next-stage-offer-status"
+                      value="oc_received"
+                      aria-labelledby="career-next-stage-offer-oc-title"
+                      aria-describedby="career-next-stage-offer-oc-description"
+                      checked={offerSelection === "oc_received"}
+                      disabled={busy}
+                      onChange={() => setOfferSelection("oc_received")}
+                    />
+                    <span className="career-next-stage-offer-option-icon" aria-hidden="true"><Handshake /></span>
+                    <span className="career-next-stage-offer-option-copy">
+                      <strong id="career-next-stage-offer-oc-title">收到 OC</strong>
+                      <small id="career-next-stage-offer-oc-description">公司已给出口头或意向确认</small>
+                    </span>
+                  </label>
+                  <label className="career-next-stage-offer-option">
+                    <input
+                      className="visually-hidden"
+                      type="radio"
+                      name="career-next-stage-offer-status"
+                      value="written_offer_received"
+                      aria-labelledby="career-next-stage-offer-written-title"
+                      aria-describedby="career-next-stage-offer-written-description"
+                      checked={offerSelection === "written_offer_received"}
+                      disabled={busy}
+                      onChange={() => setOfferSelection("written_offer_received")}
+                    />
+                    <span className="career-next-stage-offer-option-icon" aria-hidden="true"><FileCheck2 /></span>
+                    <span className="career-next-stage-offer-option-copy">
+                      <strong id="career-next-stage-offer-written-title">收到书面 Offer</strong>
+                      <small id="career-next-stage-offer-written-description">已收到正式书面录用通知</small>
+                    </span>
+                  </label>
+                </div>
+                <p className="career-next-stage-offer-info">薪资、入职日期与附件可在后续继续补充。</p>
+              </section>
             )}
           </div>
           {errorMessage && <p className="career-next-stage-error" role="alert">{errorMessage}</p>}
         </div>
         <DialogFooter className="career-next-stage-dialog-footer">
-          <p>添加后会立即保存排期；如需调整，可从安排时间入口继续修改。</p>
+          <p>{activeTab === "offer"
+            ? "保存后会进入 Offer 阶段"
+            : "添加后会立即保存排期；如需调整，可从安排时间入口继续修改。"}</p>
           <div className="career-next-stage-dialog-footer-actions">
             <Button variant="outline" onClick={onClose}>取消</Button>
             <Button className="career-next-stage-save-button" disabled={!canSubmit} onClick={() => void save()}>{busy ? "保存中…" : "添加并保存"}</Button>
@@ -1277,7 +1393,7 @@ function AppliedAtDatePicker({
   );
 }
 
-function MarkApplicationAppliedDialog({
+export function MarkApplicationAppliedDialog({
   application,
   onClose,
   onChanged,
@@ -1358,19 +1474,51 @@ function MarkApplicationAppliedDialog({
   );
 }
 
-type OfferAction = "oc_received" | "written_offer_received" | "accepted" | "declined";
+export function TerminateApplicationConfirmDialog({
+  application,
+  onClose,
+  onChanged,
+  onNotice,
+}: {
+  application: JobApplicationSummary;
+  onClose: () => void;
+  onChanged: () => void | Promise<void>;
+  onNotice: (notice: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
 
-function offerStatusLabel(status: JobApplicationSummary["offer_status"]): string {
-  return status === "none"
-    ? "尚未收到 Offer"
-    : status === "oc_received"
-      ? "已收到 OC"
-      : status === "written_offer_received"
-        ? "已收到书面 Offer"
-        : status === "accepted"
-          ? "已接受 Offer"
-          : "已婉拒 Offer";
+  const terminate = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api.closeJobApplication(application.id, {
+        status: "withdrawn",
+        base_lock_version: application.lock_version,
+      });
+      onClose();
+      onChanged();
+    } catch (error) {
+      onNotice(requestErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ConfirmDialog
+      kind="warning"
+      title="终止这条求职记录？"
+      description="状态会变为“已主动结束”，笔试、面试和 Offer 历史仍保留。"
+      confirmLabel="确认终止"
+      busyLabel="正在终止…"
+      busy={busy}
+      onCancel={onClose}
+      onConfirm={terminate}
+    />
+  );
 }
+
+type OfferAction = "oc_received" | "written_offer_received";
 
 function OfferApplicationDialog({
   application,
@@ -1380,7 +1528,7 @@ function OfferApplicationDialog({
 }: {
   application: JobApplicationSummary;
   onClose: () => void;
-  onChanged: () => void;
+  onChanged: () => void | Promise<void>;
   onNotice: (notice: string) => void;
 }) {
   const progress = projectApplicationProgress(application);
@@ -1388,23 +1536,14 @@ function OfferApplicationDialog({
   const description = application.offer_status === "none"
     ? "记录收到 OC 或书面 Offer。"
     : application.offer_status === "oc_received"
-      ? "记录收到书面 Offer。"
-      : application.offer_status === "written_offer_received"
-        ? "选择接受或婉拒 Offer。"
-        : "当前 Offer 已有最终状态。";
+      ? "确认收到书面 Offer。"
+      : "当前 Offer 已有最终状态。";
 
   const submit = async (action: OfferAction) => {
+    if (busy) return;
     setBusy(true);
     try {
-      if (action === "oc_received" || action === "written_offer_received") {
-        await api.recordJobApplicationOffer(application.id, action, application.lock_version);
-      } else {
-        await api.closeJobApplication(application.id, {
-          status: "closed",
-          offer_status: action,
-          base_lock_version: application.lock_version,
-        });
-      }
+      await api.recordJobApplicationOffer(application.id, action, application.lock_version);
       onClose();
       onChanged();
     } catch (error) {
@@ -1423,7 +1562,6 @@ function OfferApplicationDialog({
         </DialogHeader>
         <p className="career-stage-dialog-empty">当前 Offer 状态：{offerStatusLabel(application.offer_status)}</p>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>取消</Button>
           {application.offer_status === "none" && (
             <>
               <Button disabled={busy} onClick={() => void submit("oc_received")}>收到 OC</Button>
@@ -1432,12 +1570,6 @@ function OfferApplicationDialog({
           )}
           {application.offer_status === "oc_received" && (
             <Button disabled={busy} onClick={() => void submit("written_offer_received")}>收到书面 Offer</Button>
-          )}
-          {application.offer_status === "written_offer_received" && (
-            <>
-              <Button disabled={busy} onClick={() => void submit("accepted")}>接受 Offer</Button>
-              <Button variant="outline" disabled={busy} onClick={() => void submit("declined")}>婉拒 Offer</Button>
-            </>
           )}
         </DialogFooter>
       </DialogContent>
@@ -1465,6 +1597,7 @@ export function ApplicationDetailView({
   const [stageDialogOpen, setStageDialogOpen] = useState(false);
   const [appliedDialogOpen, setAppliedDialogOpen] = useState(false);
   const [offerDialogOpen, setOfferDialogOpen] = useState(false);
+  const [terminateDialogOpen, setTerminateDialogOpen] = useState(false);
   if (!application) {
     return (
       <section className="career-detail-not-found">
@@ -1485,7 +1618,7 @@ export function ApplicationDetailView({
   const isSubmittedScreening = progress.columnKey === "screening"
     && application.current_stage_type === "screening"
     && Boolean(application.applied_at);
-  const heroStatusLabel = progress.isPending || progress.isWaiting || progress.columnKey === "ended"
+  const heroStatusLabel = progress.isPending || progress.isWaiting || progress.columnKey === "ended" || progress.columnKey === "offer"
     ? progress.statusLabel
     : progress.stageLabel;
   const active = application.status === "active" && application.archived_at === null;
@@ -1495,7 +1628,10 @@ export function ApplicationDetailView({
     && application.current_stage_type !== "offer"
     && (application.current_stage_type !== "screening" || Boolean(application.applied_at));
   const canMarkApplied = active && progress.isPending;
-  const canUpdateOffer = active && application.current_stage_type === "offer";
+  const canUpdateOffer = active
+    && application.current_stage_type === "offer"
+    && (application.offer_status === "none" || application.offer_status === "oc_received");
+  const canTerminate = active && application.offer_status === "none";
   const scheduleActionLabel = `安排${progress.stageLabel}时间`;
   const resultActionLabel = currentSession?.status === "completed"
     || isSubmittedScreening
@@ -1522,7 +1658,7 @@ export function ApplicationDetailView({
         ? "offer"
         : canAdvance
           ? "record-result"
-          : currentSession
+          : currentSession && application.current_stage_type !== "offer"
             ? "session-record"
             : null;
   return (
@@ -1556,6 +1692,7 @@ export function ApplicationDetailView({
             {primaryAction === "record-result" && <Button onClick={() => setStageDialogOpen(true)}>{resultActionLabel}</Button>}
             {primaryAction === "session-record" && currentSession && <Button onClick={() => navigateTo(careerApplicationPath(application.id, currentSession.id))}>{sessionRecordActionLabel}</Button>}
             {primaryAction === "offer" && <Button onClick={() => setOfferDialogOpen(true)}>更新 Offer 状态</Button>}
+            {canTerminate && <Button variant="outline" icon={<Ban aria-hidden="true" />} onClick={() => setTerminateDialogOpen(true)}>终止求职</Button>}
           </div>
         </div>
       </header>
@@ -1594,6 +1731,7 @@ export function ApplicationDetailView({
       {stageDialogOpen && <AddNextStageDialog application={application} timezone={timezone} onClose={() => setStageDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
       {appliedDialogOpen && <MarkApplicationAppliedDialog application={application} onClose={() => setAppliedDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
       {offerDialogOpen && <OfferApplicationDialog application={application} onClose={() => setOfferDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
+      {terminateDialogOpen && <TerminateApplicationConfirmDialog application={application} onClose={() => setTerminateDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
     </div>
   );
 }
@@ -1875,19 +2013,23 @@ function CompleteInterviewDialog({
   );
 }
 
+type InterviewSessionDetailViewProps = {
+  detail: InterviewSessionDetail | null;
+  detailLoading: boolean;
+  onBack: () => void;
+  onChanged: (preferredId?: string | null) => void | Promise<void>;
+  onNotice: (notice: string) => void;
+  displayMode?: "page" | "dialog";
+};
+
 export function InterviewSessionDetailView({
   detail,
   detailLoading,
   onBack,
   onChanged,
   onNotice,
-}: {
-  detail: InterviewSessionDetail | null;
-  detailLoading: boolean;
-  onBack: () => void;
-  onChanged: (preferredId?: string | null) => void | Promise<void>;
-  onNotice: (notice: string) => void;
-}) {
+  displayMode = "page",
+}: InterviewSessionDetailViewProps) {
   const [questions, setQuestions] = useState("");
   const [review, setReview] = useState("");
   const [improvement, setImprovement] = useState("");
@@ -1902,7 +2044,22 @@ export function InterviewSessionDetailView({
     setReview(detail.session.review_summary ?? "");
     setImprovement(detail.session.improvement_markdown ?? "");
   }, [detail?.session.id, detail?.session.lock_version]);
-  if (!detail) return <section className="career-session-detail-loading">{detailLoading ? <PageLoading label="正在加载记录…" scope="panel" /> : <p>暂时无法读取这条记录。</p>}</section>;
+  const isDialog = displayMode === "dialog";
+  const emptyContent = <section className="career-session-detail-loading">{detailLoading ? <PageLoading label="正在加载记录…" scope="panel" /> : <p>暂时无法读取这条记录。</p>}</section>;
+  if (!detail) {
+    if (!isDialog) return emptyContent;
+    return (
+      <Dialog open onOpenChange={(open) => { if (!open) onBack(); }}>
+        <DialogContent className="career-session-record-dialog">
+          <DialogHeader className="sr-only">
+            <DialogTitle>记录详情</DialogTitle>
+            <DialogDescription>查看、编辑和补充这场记录的内容。</DialogDescription>
+          </DialogHeader>
+          {emptyContent}
+        </DialogContent>
+      </Dialog>
+    );
+  }
   const { session, application, assets } = detail;
   const isArchived = application.archived_at !== null;
   const isAssessment = session.stage_type === "other";
@@ -1912,16 +2069,18 @@ export function InterviewSessionDetailView({
   const overviewNameLabel = isAssessment ? "笔试名称" : "面试轮次";
   const addContentLabel = isAssessment ? "添加笔试内容" : "添加面试内容";
   const completeLabel = isAssessment ? "完成笔试" : "完成本轮面试";
-  return (
-    <div className="career-session-detail-page">
+  const pageContent = (
+    <div className={`career-session-detail-page${isDialog ? " career-session-detail-page--dialog" : ""}`}>
       <header className="career-record-hero career-session-record-hero">
         <div className="career-session-record-hero-inner">
           <div className="career-record-identity">
-            <div className="career-record-breadcrumb">
-              <button type="button" className="career-record-back" onClick={onBack}><ChevronLeft aria-hidden="true" />返回求职记录</button>
-              <span aria-hidden="true">/</span>
-              <span>{application.company_name_snapshot}</span>
-            </div>
+            {!isDialog && (
+              <div className="career-record-breadcrumb">
+                <button type="button" className="career-record-back" onClick={onBack}><ChevronLeft aria-hidden="true" />返回求职记录</button>
+                <span aria-hidden="true">/</span>
+                <span>{application.company_name_snapshot}</span>
+              </div>
+            )}
             <div className="career-record-title-row">
               <h1>{application.company_name_snapshot}</h1>
               <span className="career-record-divider" aria-hidden="true" />
@@ -1969,5 +2128,18 @@ export function InterviewSessionDetailView({
       {showDeleteTextDialog && <DeleteInterviewTextConfirmDialog session={session} recordKind={recordKind} onClose={() => setShowDeleteTextDialog(false)} onDeleted={() => onChanged(session.id)} onNotice={onNotice} />}
       {showCompleteDialog && <CompleteInterviewDialog session={session} questions={questions} review={review} improvement={improvement} onClose={() => setShowCompleteDialog(false)} onCompleted={() => navigateTo(careerApplicationPath(application.id))} onNotice={onNotice} />}
     </div>
+  );
+
+  if (!isDialog) return pageContent;
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onBack(); }}>
+      <DialogContent className="career-session-record-dialog">
+        <DialogHeader className="sr-only">
+          <DialogTitle>{`${application.company_name_snapshot}｜${recordTitle}`}</DialogTitle>
+          <DialogDescription>查看、编辑和补充这场{recordKind}的内容。</DialogDescription>
+        </DialogHeader>
+        {pageContent}
+      </DialogContent>
+    </Dialog>
   );
 }

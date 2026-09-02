@@ -1,4 +1,5 @@
 import { api, type JobApplicationSummary } from "@/api/client";
+import { offerStatusLabel } from "../interviews/applicationProgress";
 
 export async function listAllJobApplications(): Promise<JobApplicationSummary[]> {
   const items: JobApplicationSummary[] = [];
@@ -28,9 +29,10 @@ export function activeApplicationForJob(applications: JobApplicationSummary[], j
 }
 
 export function applicationOutcome(application: JobApplicationSummary): string {
+  if (application.current_stage_type === "offer") return offerStatusLabel(application.offer_status);
   if (application.status === "active") return application.current_stage_label;
-  if (application.offer_status === "accepted") return "已接受 Offer";
-  if (application.offer_status === "declined") return "已婉拒 Offer";
+  if (application.offer_status === "accepted") return offerStatusLabel(application.offer_status);
+  if (application.offer_status === "declined") return offerStatusLabel(application.offer_status);
   if (application.status === "rejected") return "未通过";
   if (application.status === "withdrawn") return "已主动结束";
   return "已结束";
