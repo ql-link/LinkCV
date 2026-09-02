@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from linkcv.core.errors import ApiError
-from linkcv.domain.resume_document import rich_text_to_markdown
+from linkcv.domain.resume import CanonicalResumeDocument
 from linkcv.modules.datasets.models import UserDataset
 from linkcv.modules.datasets.routes import read_dataset_markdown
 from linkcv.modules.job_descriptions.models import JobDescription
@@ -18,10 +18,10 @@ from linkcv.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
 
 
 BLOCK_MARKER_PATTERN = re.compile(
-    r"\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::(?:basics|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\]"
+    r"\[\[linkcv-block:(node_[a-z0-9]{16,64})(?::(?:identity|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\]"
 )
 SECTION_HEADING_PATTERN = re.compile(
-    r"^##\s+\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::(?:basics|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\](.*)$",
+    r"^##\s+\[\[linkcv-block:(node_[a-z0-9]{16,64})(?::(?:profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\](.*)$",
     re.MULTILINE,
 )
 NUMBER_PATTERN = re.compile(
@@ -71,113 +71,167 @@ class EditorBlock:
     entry_label: str | None
 
 
-def editor_markdown(data: Any) -> str | None:
-    for section in data.sections.custom_sections:
-        if section.id != "custom_section_editor":
-            continue
-        for item in section.items:
-            if item.id == "custom_item_editor":
-                return rich_text_to_markdown(item.content)
-    custom = {section.id: section for section in data.sections.custom_sections}
-    parts: list[str] = []
-    for semantic in data.semantic_sections:
-        if semantic.content_key != "custom_sections" or not semantic.custom_section_id:
-            continue
-        section = custom.get(semantic.custom_section_id)
-        if section is None:
-            continue
-        body = "\n\n".join(
-            part
-            for item in section.items
-            if (part := rich_text_to_markdown(item.content))
-        )
-        if section.items and all(item.content.format == "tiptap-json" for item in section.items):
-            parts.append(body)
-        elif semantic.semantic_kind == "basics":
-            parts.append(body)
+def _inline_text(runs: list[Any]) -> str:
+    values: list[str] = []
+    for run in runs:
+        inline_type = getattr(run, "inline_type", None)
+        if inline_type == "text":
+            values.append(run.text)
+        elif inline_type == "icon":
+            values.append(f":icon[{run.name}]:")
         else:
-            parts.append(
-                f"## [[linkcv-block:{section.id}:{semantic.semantic_kind}]]{semantic.display_title}"
-                + (f"\n\n{body}" if body else "")
+            values.append(run.alt or "")
+    return "".join(values)
+
+
+def editor_markdown(data: CanonicalResumeDocument) -> str | None:
+    """Project canonical nodes into the Agent's marker-based text surface."""
+
+    parts: list[str] = []
+    identity_label = data.identity.name.value if data.identity.name is not None else "基本信息"
+    parts.append(f"# [[linkcv-block:{data.identity.node_id}:identity]]{identity_label}")
+    if data.identity.headline is not None:
+        parts.append(
+            f"[[linkcv-block:{data.identity.headline.node_id}]]{data.identity.headline.value}"
+        )
+    for contact in data.identity.contacts:
+        parts.append(f"[[linkcv-block:{contact.node_id}]]{contact.value}")
+    for section in data.sections:
+        title = section.title.value if section.title is not None else section.semantic_kind
+        if section.title_icon is not None:
+            marker = f":icon[{section.title_icon.name}]:"
+            title = f"{marker} {title}" if title else marker
+        parts.append(
+            f"## [[linkcv-block:{section.node_id}:{section.semantic_kind}]]{title}"
+        )
+        for entry in section.entries:
+            entry_label = next(
+                (
+                    value.value
+                    for value in (
+                        entry.fields.name,
+                        entry.fields.organization,
+                        entry.fields.role,
+                        entry.fields.degree,
+                    )
+                    if value is not None
+                ),
+                "经历",
             )
+            parts.append(f"### [[linkcv-block:{entry.node_id}]]{entry_label}")
+            parts.extend(_canonical_blocks_markdown(entry.blocks))
+        parts.extend(_canonical_blocks_markdown(section.blocks))
     return "\n\n".join(part for part in parts if part).strip() or None
 
 
-def replace_editor_markdown(data: Any, markdown: str) -> dict[str, Any]:
+def _canonical_blocks_markdown(blocks: list[Any]) -> list[str]:
+    parts: list[str] = []
+    for block in blocks:
+        if block.block_type == "paragraph":
+            parts.append(f"[[linkcv-block:{block.node_id}]]{_inline_text(block.runs)}")
+        elif block.block_type in {"ordered_list", "bullet_list"}:
+            for index, item in enumerate(block.items):
+                prefix = f"{(block.start or 1) + index}. " if block.block_type == "ordered_list" else "- "
+                parts.append(f"{prefix}[[linkcv-block:{item.node_id}]]{_inline_text(item.runs)}")
+        elif block.block_type == "media":
+            parts.append(f"[[linkcv-block:{block.node_id}]]{block.alt or block.src}")
+    return parts
+
+
+def replace_editor_markdown(
+    data: CanonicalResumeDocument, markdown: str
+) -> dict[str, Any]:
+    """Apply marker-scoped edits without round-tripping the canonical tree."""
+
     payload = data.model_dump(mode="json")
-    for section in payload["sections"]["custom_sections"]:
-        if section["id"] != "custom_section_editor":
+    before = {block.block_id: block for block in parse_editor_blocks(editor_markdown(data) or "")}
+    after = {block.block_id: block for block in parse_editor_blocks(markdown)}
+
+    def plain_run(text: str) -> list[dict[str, Any]]:
+        return [{
+            "inline_type": "text",
+            "text": text,
+            "marks": [],
+            "href": None,
+            "style": {"color": None, "font_size_pt": None, "highlight_color": None},
+        }]
+
+    containers: list[list[dict[str, Any]]] = []
+    for section in payload["sections"]:
+        section_after = after.get(section["node_id"])
+        section_before = before.get(section["node_id"])
+        if (
+            section_after is not None
+            and section_before is not None
+            and section_after.text != section_before.text
+            and section["title"] is not None
+        ):
+            section["title"]["value"] = section_after.text
+        for entry in section["entries"]:
+            entry_after = after.get(entry["node_id"])
+            entry_before = before.get(entry["node_id"])
+            if (
+                entry_after is not None
+                and entry_before is not None
+                and entry_after.text != entry_before.text
+            ):
+                target_field = next(
+                    (field for field in entry["fields"].values() if field is not None),
+                    None,
+                )
+                if target_field is None:
+                    raise ApiError(422, "TARGET_INVALID")
+                target_field["value"] = entry_after.text
+        containers.append(section["blocks"])
+        containers.extend(entry["blocks"] for entry in section["entries"])
+    for blocks in containers:
+        for block in blocks:
+            if block["block_type"] == "paragraph" and block["node_id"] in after:
+                current = before.get(block["node_id"])
+                replacement = after[block["node_id"]].text
+                if current is not None and replacement != current.text:
+                    block["runs"] = plain_run(replacement)
+            elif block["block_type"] in {"ordered_list", "bullet_list"}:
+                for item in block["items"]:
+                    current = before.get(item["node_id"])
+                    replacement = after.get(item["node_id"])
+                    if current is not None and replacement is not None and replacement.text != current.text:
+                        item["runs"] = plain_run(replacement.text)
+
+    # Inserted nodes are attached after their immediately preceding canonical
+    # block in the same section/entry container. They never rewrite unrelated
+    # blocks, source refs, marks or media.
+    ordered = parse_editor_blocks(markdown)
+    known_ids = set(before)
+    for index, block in enumerate(ordered):
+        if block.block_id in known_ids:
             continue
-        for item in section["items"]:
-            if item["id"] == "custom_item_editor":
-                item["content"]["content"] = markdown
-                return payload
-    matches = list(SECTION_HEADING_PATTERN.finditer(markdown))
-    custom = {
-        section["id"]: section for section in payload["sections"]["custom_sections"]
-    }
-    semantic = {
-        section["custom_section_id"]: section
-        for section in payload["semantic_sections"]
-        if section["content_key"] == "custom_sections"
-    }
-    basics = next(
-        (
-            section
-            for section in payload["semantic_sections"]
-            if section["semantic_kind"] == "basics"
-            and section["content_key"] == "custom_sections"
-        ),
-        None,
-    )
-
-    def replace_content(section: dict[str, Any], value: str, *, heading: str | None) -> None:
-        if not section["items"]:
-            raise ApiError(422, "TARGET_INVALID")
-        content = section["items"][0]["content"]
-        current = ""
-        if content.get("format") == "markdown" and isinstance(content.get("content"), str):
-            current = content["content"]
-        elif content.get("format") == "tiptap-json" and isinstance(content.get("content"), dict):
-            from linkcv.domain.resume_document import RichText
-
-            current = rich_text_to_markdown(RichText.model_validate(content))
-            if heading is not None:
-                first_break = current.find("\n")
-                current_heading = current[:first_break if first_break >= 0 else len(current)]
-                expected_prefix = f"## [[linkcv-block:{section['id']}"
-                if (
-                    not current_heading.startswith(expected_prefix)
-                    or not current_heading.endswith(heading)
-                ):
-                    current = ""
-                else:
-                    current = current[first_break + 1 :].strip() if first_break >= 0 else ""
-        if current == value:
-            return
-        section["items"][0]["content"] = {"format": "markdown", "content": value}
-
-    if basics and basics["custom_section_id"] in custom:
-        intro_end = matches[0].start() if matches else len(markdown)
-        replace_content(
-            custom[basics["custom_section_id"]],
-            markdown[:intro_end].strip(),
-            heading=None,
+        previous_id = next(
+            (candidate.block_id for candidate in reversed(ordered[:index]) if candidate.block_id in known_ids),
+            None,
         )
-    for index, match in enumerate(matches):
-        section_id = match.group(1)
-        section = custom.get(section_id)
-        section_semantic = semantic.get(section_id)
-        if section is None or section_semantic is None or not section["items"]:
-            raise ApiError(422, "TARGET_INVALID")
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(markdown)
-        section_semantic["display_title"] = match.group(2).strip() or "未命名章节"
-        section["title"] = section_semantic["display_title"]
-        replace_content(
-            section,
-            markdown[match.end() : end].strip(),
-            heading=section_semantic["display_title"],
-        )
+        if previous_id is None:
+            raise ApiError(422, "PATCH_OUT_OF_SCOPE")
+        inserted = False
+        for blocks in containers:
+            for position, existing in enumerate(blocks):
+                existing_ids = {existing["node_id"]}
+                existing_ids.update(item["node_id"] for item in existing.get("items", []))
+                if previous_id not in existing_ids:
+                    continue
+                blocks.insert(position + 1, {
+                    "node_id": block.block_id,
+                    "source_refs": [],
+                    "block_type": "paragraph",
+                    "runs": plain_run(block.text),
+                })
+                inserted = True
+                known_ids.add(block.block_id)
+                break
+            if inserted:
+                break
+        if not inserted:
+            raise ApiError(422, "PATCH_OUT_OF_SCOPE")
     return payload
 
 
@@ -757,7 +811,7 @@ def apply_operations(
             replacement = segment.replace(expected, operation.new_text, 1)
             updated = updated[: block.start] + replacement + updated[block.end :]
         else:
-            generated_id = f"blk_{uuid4().hex}"
+            generated_id = f"node_{uuid4().hex}"
             new_text = operation.new_text.strip()
             heading_or_list = re.match(r"^(#{1,3}\s+|-\s+|\d+\.\s+)", new_text)
             annotated = (

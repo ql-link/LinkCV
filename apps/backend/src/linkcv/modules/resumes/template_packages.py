@@ -4,9 +4,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from linkcv.domain.resume_document import ResumeDocument
-from linkcv.domain.resume_snapshot import parse_resume_snapshot
-from linkcv.domain.resume_style import ResumePresentation
+from linkcv.domain.resume import (
+    CanonicalResumeDocument,
+    TemplateDefinition,
+    compile_layout_plan,
+)
 
 TEMPLATE_PACKAGE_MAX_BYTES = 512 * 1024
 TEMPLATE_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
@@ -23,8 +25,8 @@ class TemplatePackage(BaseModel):
     key: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=1000)
-    data: ResumeDocument
-    style: ResumePresentation
+    data: CanonicalResumeDocument
+    style: TemplateDefinition
 
     @model_validator(mode="before")
     @classmethod
@@ -33,10 +35,10 @@ class TemplatePackage(BaseModel):
             raise ValueError("template package must be an object")
         data = value.get("data")
         style = value.get("style")
-        if not isinstance(data, dict) or "semantic_sections" not in data:
-            raise ValueError("template package requires semantic sections")
-        if not isinstance(style, dict) or "manifest" not in style:
-            raise ValueError("template package requires a manifest")
+        if not isinstance(data, dict) or data.get("schema_version") != "canonical-resume.v1":
+            raise ValueError("template package requires canonical resume data")
+        if not isinstance(style, dict) or style.get("schema_version") != "template-definition.v1":
+            raise ValueError("template package requires a template definition")
         return value
 
     @model_validator(mode="after")
@@ -46,7 +48,9 @@ class TemplatePackage(BaseModel):
         if self.style.template_key != self.key:
             raise ValueError("style template key does not match package key")
         _reject_unsafe_values(self.model_dump(mode="json"))
-        parse_resume_snapshot(self.data, self.style)
+        if self.data.identity.name is not None or self.data.sections:
+            raise ValueError("template package data must be blank")
+        compile_layout_plan(self.data, self.style)
         return self
 
 

@@ -1,8 +1,13 @@
 import json
+import logging
 import os
 import time
 
-from linkcv.modules.observability.logging import JsonlFileWriter, StructuredLogEmitter
+from linkcv.modules.observability.logging import (
+    JsonlFileWriter,
+    StructuredLogEmitter,
+    StructuredLoggingHandler,
+)
 
 
 def test_structured_emitter_redacts_secrets_and_preserves_query_fields(capsys) -> None:
@@ -79,6 +84,38 @@ def test_audit_event_uses_failure_level_and_returns_event_id(capsys) -> None:
     assert event["level"] == "WARNING"
     assert event["actor_user_id"] == "42"
     assert event["result"] == "failed"
+
+
+def test_structured_handler_preserves_bounded_v2_message_context(capsys) -> None:
+    emitter = StructuredLogEmitter(environment="test")
+    handler = StructuredLoggingHandler(emitter)
+    record = logging.LogRecord(
+        name="linkcv.workers.document_parse_consumer",
+        level=logging.WARNING,
+        pathname=__file__,
+        lineno=1,
+        msg="document parse retry scheduled",
+        args=(),
+        exc_info=None,
+    )
+    record.message_id = "00000000-0000-4000-8000-000000000042"
+    record.pipeline_version = "v2"
+    record.source = "resume"
+    record.task_id = 42
+    record.attempt = 2
+    record.vendor = "rabbitmq"
+    record.route = "resume.import.v2"
+
+    handler.emit(record)
+
+    event = json.loads(capsys.readouterr().err)
+    assert event["message_id"] == "00000000-0000-4000-8000-000000000042"
+    assert event["pipeline_version"] == "v2"
+    assert event["source"] == "resume"
+    assert event["task_id"] == "42"
+    assert event["attempt"] == 2
+    assert event["vendor"] == "rabbitmq"
+    assert event["route"] == "resume.import.v2"
 
 
 def test_file_writer_removes_rotated_files_older_than_seven_days(tmp_path) -> None:

@@ -34,7 +34,7 @@
       <!-- 用户昵称与状态 -->
       <view class="profile-info" wx:if="{{guest}}">
         <view class="name-line">
-          <text class="user-name">点击左侧头像登录 / 注册</text>
+          <text class="user-name" hover-class="guest-login-hover" role="button" aria-label="登录或注册 LinkResume" bindtap="goLogin">登录 / 注册 LinkResume</text>
           <view class="status-pill is-guest">
             <text class="status-dot"></text>
             <text>未登录</text>
@@ -48,24 +48,30 @@
       <view class="profile-info" wx:else>
         <view class="name-line">
           <view class="name-edit-box">
-            <view class="name-display-layer" aria-hidden="true">
+            <view
+              class="name-display-layer {{editingNickname ? 'is-hidden' : ''}}"
+              role="button"
+              aria-label="修改昵称"
+              aria-hidden="{{editingNickname}}"
+              bindtap="handleNicknameTap"
+            >
               <text class="user-name-text {{nickname ? '' : 'is-placeholder'}}">{{nickname || '点击输入昵称'}}</text>
               <text class="name-edit-icon">✎</text>
             </view>
             <input
-              class="user-name-input-overlay"
+              wx:if="{{editingNickname}}"
+              class="user-name-input"
               type="nickname"
               value="{{nickname}}"
               placeholder="点击输入微信昵称"
               placeholder-class="name-input-placeholder"
+              confirm-type="done"
+              focus="{{editingNickname}}"
               bindinput="handleNicknameInput"
+              bindconfirm="handleNicknameConfirm"
               bindblur="handleNicknameBlur"
               disabled="{{saving}}"
             />
-          </view>
-          <view class="status-pill is-active">
-            <text class="status-dot"></text>
-            <text>微信已绑定</text>
           </view>
         </view>
         <view class="hint-line">
@@ -164,12 +170,6 @@
       <!-- 提示信息 -->
       <text class="form-message" wx:if="{{message && !guest}}">{{message}}</text>
 
-      <!-- 底部操作主按钮：登录态有修改时展示“保存修改” -->
-      <view class="btn-group" wx:if="{{!guest && (hasChanges || (nickname && serverNickname && nickname !== serverNickname))}}">
-        <button class="btn-primary" hover-class="btn-primary-hover" bindtap="handleSave" disabled="{{saving || loading}}">
-          <text>{{saving ? '正在保存…' : '保存修改'}}</text>
-        </button>
-      </view>
     </view>
   </view>
 </view>

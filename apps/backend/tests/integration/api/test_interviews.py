@@ -10,10 +10,9 @@ from sqlalchemy import delete
 
 from linkcv.core.config import Settings
 from linkcv.core.storage import StreamUploadResult
-from linkcv.domain.resume_document import default_resume_document
-from linkcv.domain.resume_style import default_resume_style
 from linkcv.main import create_app
 from linkcv.modules.resumes.models import ResumeTemplate, ResumeVersion
+from tests.canonical_resume_fixtures import canonical_template_payload
 from tests.fakes import FakeRedis
 
 
@@ -80,12 +79,15 @@ def build_app(storage: FakeStorage | None = None):
         create_schema=True,
     )
     with app.state.session_factory() as session:
+        template_data, template_style = canonical_template_payload(
+            key="interview-test"
+        )
         template = ResumeTemplate(
             key="interview-test",
             name="求职测试模板",
             description="求职进程集成测试使用的模板",
-            data_json=default_resume_document().model_dump(mode="json"),
-            style_json=default_resume_style().model_dump(mode="json"),
+            data_json=template_data,
+            style_json=template_style,
             is_active=1,
         )
         session.add(template)

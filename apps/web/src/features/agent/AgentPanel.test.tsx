@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { api, type AgentProposal, type AgentSession } from "../../api/client";
-import { defaultSemanticDocument, defaultSemanticStyle } from "../../api/resumeContract";
+import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
 import { AgentPanel, AgentUserAvatar } from "./AgentPanel";
 
 const session: AgentSession = {
@@ -22,8 +22,8 @@ const proposal: AgentProposal = {
   run_id: "run-1",
   resume_id: "resume-1",
   base_lock_version: 2,
-  data: defaultSemanticDocument,
-  style: defaultSemanticStyle,
+  data: defaultCanonicalDocument,
+  style: defaultCanonicalPresentation,
   summary: "突出项目中的量化成果",
   status: "pending",
   applied_lock_version: null,

@@ -32,6 +32,8 @@ LLM 调用日志保存在 MySQL，由 [Agent/LLM 运行时](agent-runtime.md) �
 
 request ID 是跨日志关联键，不是用户身份；actor 只能来自已验证会话或成功登录结果，target 只能来自路由参数与通过归属校验的业务实体。
 
+异步简历导入在同一白名单事件模型中使用 `message_id`、`pipeline_version`、`vendor` 和 `route` 关联 MQ 消息、确定性管线版本与外部转换/模型路由。字段只保存稳定标识和受控枚举，不记录文件名、简历正文、Prompt、模型响应、对象内容或凭据；`operation_id` 与 `task_id` 继续承担跨 FastAPI、Worker、LinkParse 和 LLM 阶段关联。
+
 ## 故障与降级
 
 - 本地日志 sink 失败会通过响应审计状态暴露，但不能改变已成功业务事务的 HTTP 结果。

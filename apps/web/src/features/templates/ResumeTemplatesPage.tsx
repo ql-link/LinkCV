@@ -130,12 +130,12 @@ export function ResumeTemplatesPage() {
           )}
 
         {!failed && templates.length === 0 && (
-          <div className="template-library-state">
+          <div className="template-library-state is-empty">
             <span className="template-library-state-icon" aria-hidden="true"><LayoutTemplate size={20} /></span>
             <h2>当前没有可用模板</h2>
             <p>模板启用后会显示在这里，你仍可以从已有简历继续编辑。</p>
             <a
-              className={buttonVariants({ variant: "outline" })}
+              className={`${buttonVariants({ variant: "outline" })} template-library-state-link`}
               href="/resumes"
               onClick={(event) => followAppLink(event, "/resumes")}
             >
@@ -156,7 +156,7 @@ export function ResumeTemplatesPage() {
                   onClick={() => openPreviewDialog(template)}
                 />
                 <div className="template-library-preview" aria-hidden="true">
-                  <ResumePreview data={template.data} style={template.style} />
+                  <ResumePreview data={template.data} style={template.style} layoutPlan={template.layout_plan} />
                   <span className="template-library-preview-affordance">
                     <span className="template-library-preview-label">
                       <Eye size={16} aria-hidden="true" />

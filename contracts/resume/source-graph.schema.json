@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "source-graph.schema.json",
+  "title": "SourceGraphV1", "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "source_document_sha256", "leaves"],
+  "properties": {
+    "schema_version": {"const": "source-graph.v1"},
+    "source_document_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "leaves": {"type": "array", "maxItems": 5000, "items": {"$ref": "#/$defs/leaf"}}
+  },
+  "$defs": {
+    "bbox": {"type": "object", "additionalProperties": false, "description": "Page-normalized coordinates in the closed interval 0..1.", "required": ["x", "y", "width", "height"], "properties": {"x": {"type": "number", "minimum": 0, "maximum": 1}, "y": {"type": "number", "minimum": 0, "maximum": 1}, "width": {"type": "number", "exclusiveMinimum": 0, "maximum": 1}, "height": {"type": "number", "exclusiveMinimum": 0, "maximum": 1}}},
+    "leaf": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_id", "ordinal", "page", "block_id", "leaf_kind", "text", "bbox", "list_kind", "list_ordinal"],
+      "properties": {
+        "source_id": {"type": "string", "pattern": "^src_[a-z0-9]{16,64}$"},
+        "ordinal": {"type": "integer", "minimum": 0}, "page": {"type": "integer", "minimum": 1},
+        "block_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "leaf_kind": {"enum": ["heading", "paragraph", "list_item", "contact", "media"]},
+        "text": {"type": "string", "maxLength": 20000},
+        "bbox": {"anyOf": [{"$ref": "#/$defs/bbox"}, {"type": "null"}]},
+        "list_kind": {"enum": ["ordered", "bullet", null]},
+        "list_ordinal": {"type": ["integer", "null"], "minimum": 1}
+      }
+    }
+  }
+}

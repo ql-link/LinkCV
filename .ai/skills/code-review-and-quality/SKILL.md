@@ -7,7 +7,7 @@ description: 审查 LinkCV 代码差异的正确性、范围、契约、安全�
 
 ## 1. 职责与授权边界
 
-以缺陷和交付风险为中心审查当前改动，判断质量审查是否通过、是否可以进入提交或 PR 准备。它不把任务范围验证冒充 PR 全量检查；真正创建 PR 前仍由 `branch-pr-workflow` 运行完整 `npm run check`。
+以缺陷和交付风险为中心审查当前改动，判断质量审查是否通过、是否可以进入提交或 PR 准备。真正创建 PR 前由 `branch-pr-workflow` 在当前可提交内容上运行与领域匹配的范围检查。
 
 审查请求默认是只读操作：
 
@@ -137,9 +137,9 @@ description: 审查 LinkCV 代码差异的正确性、范围、契约、安全�
 
 ## 6. 后续处理
 
-- 存在严重、必须修复或影响当前交付的一般问题：按领域返回 `frontend-delivery` 或 `backend-delivery`；前端由 Sol 判断直接修正或 Luna 工作包，后端和混合任务由 Sol 重新拆包并调度 Luna；
+- 存在严重、必须修复或影响当前交付的一般问题：纯前端由当前 Codex 在原任务范围内修正，后端和混合任务返回 `flow-router`，由当前 Codex 在原确认范围内继续修正；
 - 发现规格与实现冲突：返回 `solution-generator` 或 `acceptance-generator`；
 - 没有阻断问题时直接报告审查结论、证据和残余风险，不写入工作流状态。代码随后变化时由 AI 根据影响重新验证和复审；无法可靠缩小影响时扩大审查。
-- 用户要求发布时转 `branch-pr-workflow`，由它检查提交范围并执行 PR 前完整 `npm run check`；
+- 用户要求发布时转 `branch-pr-workflow`，由它检查提交范围并执行适用的 PR 前范围检查；
 - 用户没有要求提交或 PR：审查结束后停止，不推断发布授权。
 - 用户要求判断功能完成度：转 `feature-completion-audit`，以原始需求重新取证。
