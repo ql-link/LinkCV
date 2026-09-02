@@ -10,9 +10,9 @@ description: 根据 LinkCV 的实际改动范围选择并运行验证命令，�
 用真实执行结果判断改动是否通过验证。明确区分两种模式：
 
 - **任务范围验证**：任务完成时运行与改动范围和风险匹配的检查，并直接报告当前执行结果。
-- **PR 范围验证**：准备创建 PR 时，对当前可提交内容运行与实际领域匹配的检查；纯前端使用 `npm run check:web`，跨端或无法可靠缩小范围时使用 `npm run check`。
+- **PR 范围验证**：准备创建 PR 时，对当前可提交内容组合受影响领域的检查。单一领域使用对应范围命令；只有差异实际覆盖全仓、无法可靠缩小范围或用户明确要求时使用 `npm run check`。
 
-修复阶段先运行最窄且有区分度的检查，再扩大到本任务需要的范围。任务范围验证不因为“最终验证”自动变成全仓检查；PR 范围验证针对当前可提交内容重新执行。
+修复阶段先运行最窄且有区分度的检查，再扩大到本任务需要的范围。任务范围验证不因为“最终验证”自动变成全仓检查。PR 范围验证要求当前代码快照有足够证据，不要求对未变化的同一快照机械重跑相同命令。
 
 本技能不创建本地测试报告文件。结果直接回复用户；如果用户只要求运行测试，不因失败自动修改代码。
 
@@ -30,10 +30,14 @@ description: 根据 LinkCV 的实际改动范围选择并运行验证命令，�
 | Web 前端类型 | `npm run typecheck:web` |
 | 前端生产构建 | `npm run build:web` |
 | 完整 Web 前端 | `npm run check:web` |
+| 完整 Extension | `npm run test:extension && npm run typecheck:extension && npm run build:extension` |
+| Miniprogram | `npm run test:miniprogram` |
 | 后端单元测试 | `npm run test:backend:unit` |
 | 后端集成测试 | `npm run test:backend:integration` |
 | 后端测试 | `npm run test:backend` |
 | 后端构建 | `npm run build:backend` |
+| 完整后端 | `npm run test:backend && npm run build:backend` |
+| PI Service | `npm run check:pi` |
 | SQLAlchemy/Alembic 迁移 | 按 `alembic-migration` 核实的真实入口执行 heads、空库升级和受支持历史版本向 head 升级，再运行后端集成测试；不执行 downgrade 或往返测试 |
 | 前后端自动化测试 | `npm test` |
 | 完整仓库 | `npm run check` |
@@ -48,12 +52,13 @@ Python 命令统一通过项目脚本或 `uv run --directory apps/backend` 执�
 4. 修改路由、端口、环境变量、代理或部署契约时运行 `npm run check:contracts`。
 5. 修改 `DESIGN.md`、`tokens.css`、设计 Skill 或受 Pattern 约束的页面 CSS 时运行 `npm run check:design`；若同时修改 AI Skill，再运行 `npm run check:ai`。
 6. Web 页面实现完成时统一运行 `npm run check:web`；中间轮次只在定位问题需要时运行最窄测试，不机械重复全套检查。
-7. 修改 FastAPI、Python 依赖、后端配置或门禁脚本时运行对应后端测试和构建。
-8. 同时涉及前后端，或只需要统一执行已有自动化测试时运行 `npm test`。
+7. 修改 FastAPI 时先运行受影响的后端单元或集成测试；只有后端影响较广、无法可靠选择测试时才运行完整后端测试。修改 Python 依赖、打包或构建配置时再增加 `npm run build:backend`。`scripts/quality/` 下的门禁脚本按其治理领域选择 `check:ai`、`check:docs`、`check:contracts` 或 `check:design`，不因使用 Python 自动触发后端应用测试和构建。
+8. 同时涉及前后端时组合运行受影响的前端与后端命令；只有需要统一覆盖多个应用现有测试时才运行 `npm test`。
 9. 修改共享契约、跨前后端行为、依赖或部署时，组合运行受影响应用的测试、类型检查、构建和契约检查；只有影响实际覆盖全仓、无法可靠缩小范围或用户明确要求时，任务范围验证才提前运行 `npm run check`。
-10. 准备创建纯前端 PR 时，在当前可提交内容上重新运行 `npm run check:web`；涉及后端、共享契约、部署或无法可靠缩小范围时运行完整 `npm run check`。较早结果和远端 CI 不能替代本次执行。
-11. 只运行范围检查时，准确说明覆盖领域，不得把 `npm run check:web` 宣称为全仓通过。
-12. 数据库变更不能只跑 pytest；必须包含与目标 MySQL 8.4 一致的 SQL-first migration 链验证。仓库根 revision `0001` 已存在，但不能把仓库 head、入口存在或 SQLite 测试通过当作目标环境 schema 验证。
+10. 准备创建 PR 时按当前差异选择领域检查：纯 Web 使用 `npm run check:web`；纯后端使用后端测试和构建；Extension、Miniprogram、PI、AI 规则、文档和契约分别使用表中对应命令；跨领域改动组合相关命令。只有差异实际覆盖全仓、无法可靠缩小范围或用户明确要求时运行 `npm run check`。
+11. 同一会话中，如果任务范围验证后代码、配置、依赖、生成物输入和测试替身均未变化，且实际命令完整覆盖当前 PR 差异，可以直接复用结果；提交本身不改变文件内容，不使结果失效。跨会话、证据不完整、环境已变化或无法确认快照一致时重新运行。
+12. 只运行范围检查时，准确说明覆盖领域，不得把领域检查宣称为全仓通过。
+13. 数据库变更不能只跑 pytest；必须包含与目标 MySQL 8.4 一致的 SQL-first migration 链验证。仓库根 revision `0001` 已存在，但不能把仓库 head、入口存在或 SQLite 测试通过当作目标环境 schema 验证。
 
 前端已有 Vitest + React Testing Library 单元和组件测试基础，但没有自动化端到端测试。跨 Web 与 FastAPI 的完整浏览器流程仍需人工验证；组件测试、类型检查和生产构建不能替代该结果。
 
@@ -73,7 +78,7 @@ Python 命令统一通过项目脚本或 `uv run --directory apps/backend` 执�
 
 持久设计和直接实现使用同一套真实命令。后端与混合方案任务执行前读取 `solution.md` 的“验证与验收”；前端读取当前请求、已确认原型或 Figma、确认后的短交接与真实实现，混合任务同时服从上游契约；直接实现读取当前请求、来源材料和已确认结果。所有路径都结合当前差异和实际风险选择必要命令，不创建验证状态文件，也不继承较早会话的“已通过”。
 
-代码或配置在验证后发生变化时，由 AI 根据真实影响重跑受影响检查；无法可靠缩小影响时扩大验证。创建 PR 时无论之前跑过哪些命令，都在当前可提交内容上重新运行适用的 `npm run check:web` 或 `npm run check`。
+代码、配置、依赖、生成物输入或测试替身在验证后发生变化时，由 AI 根据真实影响重跑受影响检查；无法可靠缩小影响时扩大验证。创建 PR 时先核对当前差异与同一会话中的任务验证快照：覆盖完整且内容未变化就复用，否则只补跑缺失或失效的领域检查。跨会话不继承以前会话的测试结论。
 
 如果存在跨端、浏览器、上传下载、PDF 或视觉行为需要人工验收，本技能先报告所需自动化命令和未覆盖区域，转 `manual-acceptance`。人工验收结果由对应文件或当前交接保存，自动化命令仍由本技能直接执行；二者都不能冒充对方的证据。
 
@@ -102,5 +107,5 @@ PR 检查：<实际命令与结果；或尚未执行且当前不创建 PR>
 - 失败与环境阻塞分类准确；
 - 没有把 Gherkin 场景、组件测试、类型检查或构建结果夸大为自动化端到端测试；
 - 任务交付时，范围与风险匹配的全部必要检查已经通过，未覆盖区域已说明；
-- 准备创建 PR 时，适用的 `npm run check:web` 或 `npm run check` 已在当前可提交内容上通过；未通过或环境阻塞时不创建 PR；
+- 准备创建 PR 时，当前代码快照已有覆盖全部 PR 差异的领域检查证据；只有全仓范围真实适用时才要求 `npm run check`，未通过或环境阻塞时不创建 PR；
 - 共享 CI 继续运行完整质量入口，不能用来补写本地未执行的结果。
