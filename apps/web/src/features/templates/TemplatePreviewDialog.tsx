@@ -169,13 +169,13 @@ export function TemplatePreviewDialog({
                   onClick={() => changePreviewTemplate(-1)}
                 >
                   <span aria-hidden="true">
-                    <ResumePreview data={previousTemplate.data} style={previousTemplate.style} />
+                    <ResumePreview data={previousTemplate.data} style={previousTemplate.style} layoutPlan={previousTemplate.layout_plan} />
                   </span>
                 </button>
               )}
 
               <div className="template-preview-current" key={template?.id}>
-                {template && <ResumePreview data={template.data} style={template.style} mode="full" />}
+                {template && <ResumePreview data={template.data} style={template.style} layoutPlan={template.layout_plan} mode="full" />}
               </div>
 
               {nextTemplate && (
@@ -186,7 +186,7 @@ export function TemplatePreviewDialog({
                   onClick={() => changePreviewTemplate(1)}
                 >
                   <span aria-hidden="true">
-                    <ResumePreview data={nextTemplate.data} style={nextTemplate.style} />
+                    <ResumePreview data={nextTemplate.data} style={nextTemplate.style} layoutPlan={nextTemplate.layout_plan} />
                   </span>
                 </button>
               )}

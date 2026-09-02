@@ -10,11 +10,15 @@ body { margin: 0; padding: 0; background: #fff; }
 [data-resume-print-document] {
   --resume-page-margin-x: 20mm;
   --resume-page-margin-y: 16mm;
+  --resume-page-margin-top: var(--resume-page-margin-y);
+  --resume-page-margin-right: var(--resume-page-margin-x);
+  --resume-page-margin-bottom: var(--resume-page-margin-y);
+  --resume-page-margin-left: var(--resume-page-margin-x);
   box-sizing: border-box;
   width: 210mm;
   min-height: 297mm;
   overflow: hidden;
-  padding: var(--resume-page-margin-y) var(--resume-page-margin-x);
+  padding: var(--resume-page-margin-top) var(--resume-page-margin-right) var(--resume-page-margin-bottom) var(--resume-page-margin-left);
   background: #fff;
   box-shadow: none;
   color: #111827;
@@ -31,7 +35,7 @@ body { margin: 0; padding: 0; background: #fff; }
 
 [data-resume-print-document] .resume-print-content {
   height: auto;
-  min-height: calc(297mm - (2 * var(--resume-page-margin-y)));
+  min-height: calc(297mm - var(--resume-page-margin-top) - var(--resume-page-margin-bottom));
   overflow: visible;
   padding: 0;
   font-size: var(--resume-font-size, 11pt);

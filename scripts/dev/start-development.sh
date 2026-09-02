@@ -14,6 +14,7 @@ fi
 
 backend_port="${LINKCV_LOCAL_BACKEND_PORT:-18000}"
 pi_port="${LINKCV_LOCAL_PI_PORT:-8010}"
+worktree_queue_id="$(printf '%s' "${repo_root}" | cksum | awk '{print $1}')"
 
 export LINKCV_ENV_FILE="${base_env}"
 export BACKEND_HOST="127.0.0.1"
@@ -24,8 +25,13 @@ export PI_SERVICE_PORT="${pi_port}"
 export PI_SERVICE_BASE_URL="http://127.0.0.1:${pi_port}"
 export LINKCV_BASE_URL="http://127.0.0.1:${backend_port}"
 export LOG_DIRECTORY="${LINKCV_LOCAL_LOG_DIRECTORY:-${repo_root}/.runtime/logs}"
+export RABBITMQ_QUEUE="${LINKCV_LOCAL_RABBITMQ_QUEUE:-linkcv.resume_import.worker.local.${worktree_queue_id}.v2}"
+export RABBITMQ_ROUTING_KEY="${LINKCV_LOCAL_RABBITMQ_ROUTING_KEY:-resume.import.local.${worktree_queue_id}.v2}"
 
 mkdir -p "${LOG_DIRECTORY}"
+
+echo "本地 Dev MQ 队列：${RABBITMQ_QUEUE}"
+echo "本地 Dev MQ 路由：${RABBITMQ_ROUTING_KEY}"
 
 node_env_args=("--env-file=${base_env}")
 if [[ -f "${local_env}" ]]; then

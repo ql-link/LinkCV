@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "sparse-resume-annotations.schema.json",
+  "title": "SparseResumeAnnotationsV1", "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "source_graph_sha256", "annotations"],
+  "properties": {
+    "schema_version": {"const": "sparse-resume-annotations.v1"},
+    "source_graph_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "annotations": {"type": "array", "maxItems": 5000, "items": {"$ref": "#/$defs/annotation"}}
+  },
+  "$defs": {
+    "annotation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_id", "role", "semantic_kind", "entry_anchor_source_id", "field_key", "normalized_value", "confidence"],
+      "properties": {
+        "source_id": {"type": "string", "pattern": "^src_[a-z0-9]{16,64}$"},
+        "role": {"enum": ["section_title", "identity_name", "contact", "entry_field", "body", "list_item"]},
+        "semantic_kind": {"enum": ["profile", "work", "education", "project", "skills", "activity", "interests", "certificates", "awards", "languages", "custom", null]},
+        "entry_anchor_source_id": {"anyOf": [{"type": "string", "pattern": "^src_[a-z0-9]{16,64}$"}, {"type": "null"}]},
+        "field_key": {"type": ["string", "null"], "maxLength": 64},
+        "normalized_value": {"type": ["string", "null"], "maxLength": 20000},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+      },
+      "allOf": [
+        {"if": {"properties": {"role": {"const": "entry_field"}}}, "then": {"properties": {"entry_anchor_source_id": {"type": "string"}, "field_key": {"type": "string", "minLength": 1}}}},
+        {"if": {"properties": {"role": {"const": "contact"}}}, "then": {"properties": {"field_key": {"type": "string", "minLength": 1}}}},
+        {"if": {"not": {"properties": {"role": {"enum": ["entry_field", "contact"]}}}}, "then": {"properties": {"field_key": {"type": "null"}}}}
+      ]
+    }
+  }
+}

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { api, type AgentProposal, type AgentSession } from "../../api/client";
-import { defaultSemanticDocument, defaultSemanticStyle } from "../../api/resumeContract";
+import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
 import { AssistantPage } from "./AssistantPage";
 
 const session: AgentSession = {
@@ -169,8 +169,8 @@ describe("AssistantPage", () => {
       run_id: "run-1",
       resume_id: "1",
       base_lock_version: 3,
-      data: defaultSemanticDocument,
-      style: defaultSemanticStyle,
+      data: defaultCanonicalDocument,
+      style: defaultCanonicalPresentation,
       summary: "突出量化成果",
       operations: [
         {

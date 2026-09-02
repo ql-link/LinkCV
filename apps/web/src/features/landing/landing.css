@@ -6,6 +6,7 @@
   --ring: 240 5.9% 10%;
   --muted-foreground: 240 3.8% 46.1%;
   --radius: 0.625rem;
+  --body-font: var(--ui-font-sans);
   width: 100%;
   height: 100vh;
   position: relative;
@@ -13,7 +14,7 @@
   overflow-y: auto;
   background: var(--page-bg);
   color: #18181b;
-  font-family: "Space Grotesk", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  font-family: var(--ui-font-sans);
   line-height: 1.5;
   font-feature-settings: "ss01" on;
   scroll-behavior: smooth;

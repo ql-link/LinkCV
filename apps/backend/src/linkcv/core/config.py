@@ -322,19 +322,19 @@ class Settings(BaseSettings):
     )
     rabbitmq_url: SecretStr | None = Field(default=None, alias="RABBITMQ_URL")
     rabbitmq_exchange_name: str = Field(
-        default="tolink.cv.resume_import",
+        default="tolink.cv.resume_import.v2",
         alias="RABBITMQ_EXCHANGE_NAME",
         min_length=1,
         max_length=255,
     )
     rabbitmq_queue: str = Field(
-        default="linkcv.resume_import.worker",
+        default="linkcv.resume_import.worker.v2",
         alias="RABBITMQ_QUEUE",
         min_length=1,
         max_length=255,
     )
     rabbitmq_routing_key: str = Field(
-        default="resume.import",
+        default="resume.import.v2",
         alias="RABBITMQ_ROUTING_KEY",
         min_length=1,
         max_length=255,
@@ -343,13 +343,13 @@ class Settings(BaseSettings):
         default=None, alias="KAFKA_BOOTSTRAP_SERVERS"
     )
     kafka_topic: str = Field(
-        default="tolink.cv.resume_import",
+        default="tolink.cv.resume_import.v2",
         alias="KAFKA_TOPIC",
         min_length=1,
         max_length=249,
     )
     kafka_consumer_group: str = Field(
-        default="linkcv.resume_import.worker",
+        default="linkcv.resume_import.worker.v2",
         alias="KAFKA_CONSUMER_GROUP",
         min_length=1,
         max_length=255,

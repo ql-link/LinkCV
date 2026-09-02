@@ -46,13 +46,13 @@ description: 分析 LinkCV 改动对公共契约结构、语义、兼容性和�
 3. 沿真实调用关系检查生产者、消费者、持久化、配置、部署和旧链路。
 4. 区分机器能验证的确定性关系与必须人工判断的语义关系。
 5. 列出最小同步清单；不在本技能中执行修改。
-6. 存在会改变范围、兼容或回滚方式的分歧时不得自行决定。整个模块前提需要重建时才返回 `module-planning`；已经明确属于方案先行的单需求分歧直接交 `solution-generator` 修订当前方案；只有七维判断、后端路径或后端范围可能变化时才返回 `flow-router`。初始飞书材料与新结论冲突不触发上游写回。
+6. 存在会改变范围、兼容或回滚方式的分歧时不得自行决定。整个模块前提需要重建时停止并在当前对话重新确认；已经明确属于方案先行的单需求分歧直接交 `solution-generator` 修订当前方案；只有七维判断、后端路径或后端范围可能变化时才返回 `flow-router`。初始外部材料与新结论冲突不触发来源写回。
 
 ## 5. 单向转交
 
 - 同一物理值需要跨文件核对：转 `config-contract-sync`。
 - 当前实现已经确定且需要更新长期知识：转 `doc-maintenance-sync`。
-- 需要落实代码、配置或迁移：返回 `flow-router`，由当前 Sol 拆包并调度 Luna 使用 `implementation-execution`。
+- 需要落实代码、配置或迁移：返回 `flow-router`，由当前 Codex 使用 `implementation-execution` 继续完成。
 - 需要设计 MySQL 字段、约束或索引：转 `mysql-ddl-conventions`；需要编写或校验 Alembic revision：转 `alembic-migration`。
 - 只需运行确定性检查：转 `run-all-tests`。
 

@@ -2,13 +2,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from linkcv.core.config import Settings
-from linkcv.domain.resume_document import default_resume_document
-from linkcv.domain.resume_style import default_resume_style
 from linkcv.main import create_app
 from linkcv.modules.identity.models import User
 from linkcv.modules.identity.session_service import MINIPROGRAM_CHANNEL, issue_session
 from linkcv.modules.resumes.models import ResumeTemplate
 from tests.fakes import FakeRedis
+from tests.canonical_resume_fixtures import canonical_template_payload
 
 
 class FakeStorage:
@@ -47,11 +46,12 @@ def build_app():
     app.state.resume_pdf_renderer = FakeRenderer()
     app.state.resume_preview_renderer = FakePreviewRenderer()
     with app.state.session_factory() as session:
+        template_data, template_style = canonical_template_payload(key="blank-cn")
         template = ResumeTemplate(
             key="blank-cn",
             name="空白简历",
-            data_json=default_resume_document().model_dump(mode="json"),
-            style_json=default_resume_style().model_dump(mode="json"),
+            data_json=template_data,
+            style_json=template_style,
             is_active=1,
         )
         session.add(template)
@@ -85,13 +85,17 @@ def test_pdf_uses_latest_manual_version_and_rejects_stale_version_id() -> None:
             json={"title": "张三的简历", "template_id": app.state.test_template_id},
         ).json()["resume"]
         resume_id = created["id"]
-        initial_name = created["data"]["basics"]["name"]
+        initial_name = "初始版本"
 
         listed_initial = web_client.get(f"/api/resumes/{resume_id}/versions").json()["versions"]
         initial_version_id = listed_initial[0]["id"]
 
         data = created["data"]
-        data["basics"]["name"] = "手动保存版本"
+        data["identity"]["name"] = {
+            "node_id": "node_name0000000000001",
+            "source_refs": [],
+            "value": "手动保存版本",
+        }
         updated = web_client.put(
             f"/api/resumes/{resume_id}",
             json={"data": data, "base_lock_version": created["lock_version"]},
@@ -99,7 +103,7 @@ def test_pdf_uses_latest_manual_version_and_rejects_stale_version_id() -> None:
         manual = web_client.post(f"/api/resumes/{resume_id}/versions", json={}).json()["version"]
 
         data = updated["data"]
-        data["basics"]["name"] = "尚未手动保存的草稿"
+        data["identity"]["name"]["value"] = "尚未手动保存的草稿"
         assert web_client.put(
             f"/api/resumes/{resume_id}",
             json={"data": data, "base_lock_version": updated["lock_version"]},
@@ -111,13 +115,13 @@ def test_pdf_uses_latest_manual_version_and_rejects_stale_version_id() -> None:
         assert listed.status_code == 200
         item = listed.json()["resumes"][0]
         assert item["pdf_version_id"] == manual["id"]
-        assert item["preview"]["data"]["basics"]["name"] == "手动保存版本"
-        assert item["preview"]["data"]["basics"]["name"] != initial_name
+        assert item["preview"]["data"]["identity"]["name"]["value"] == "手动保存版本"
+        assert item["preview"]["data"]["identity"]["name"]["value"] != initial_name
 
         metadata = mini_client.get(
             f"/api/miniprogram/resumes/{resume_id}", headers=headers
         ).json()["resume"]
-        assert metadata["data"]["basics"]["name"] == "手动保存版本"
+        assert metadata["data"]["identity"]["name"]["value"] == "手动保存版本"
 
         downloaded = mini_client.get(
             f"/api/miniprogram/resumes/{resume_id}/pdf",
@@ -128,8 +132,8 @@ def test_pdf_uses_latest_manual_version_and_rejects_stale_version_id() -> None:
         assert downloaded.content.startswith(b"%PDF-")
         assert downloaded.headers["x-linkcv-pdf-version-id"] == manual["id"]
         assert downloaded.headers["cache-control"] == "private, no-store"
-        assert app.state.resume_pdf_renderer.payloads[-1]["data"]["basics"]["name"] == "手动保存版本"
-        assert app.state.resume_pdf_renderer.payloads[-1]["style"]["smart_one_page"] is True
+        assert app.state.resume_pdf_renderer.payloads[-1]["data"]["identity"]["name"]["value"] == "手动保存版本"
+        assert app.state.resume_pdf_renderer.payloads[-1]["style"]["portable"]["smart_one_page"] is True
 
         preview = mini_client.get(
             f"/api/miniprogram/resumes/{resume_id}/preview.png",

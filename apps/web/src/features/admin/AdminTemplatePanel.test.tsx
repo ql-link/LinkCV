@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, type AdminResumeTemplate } from "../../api/client";
-import { defaultSemanticDocument, defaultSemanticStyle } from "../../api/resumeContract";
+import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
 import { AdminTemplatePanel } from "./AdminTemplatePanel";
 
 vi.mock("../preview/ResumePreview", () => ({
@@ -13,8 +13,8 @@ const inactiveTemplate: AdminResumeTemplate = {
   key: "modern-cn",
   name: "现代双栏",
   description: "虚构模板",
-  data: defaultSemanticDocument,
-  style: defaultSemanticStyle,
+  data: defaultCanonicalDocument,
+  style: defaultCanonicalPresentation,
   active: false,
   valid: true,
   validation_error: null,

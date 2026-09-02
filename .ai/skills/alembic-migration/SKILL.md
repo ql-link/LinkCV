@@ -1,6 +1,6 @@
 ---
 name: alembic-migration
-description: 为 LinkCV 编写、校验和排查 forward-only 的 SQLAlchemy 与 SQL-first Alembic schema 迁移，覆盖 revision 链、up SQL、数据回填、向前升级、兼容发布和文档同步。适用于新增业务 revision，新增或修改表、字段、关系、约束、索引，处理多 head、模型与数据库漂移或迁移失败；单纯设计字段与索引先使用 mysql-ddl-conventions，自动分流时数据库 schema 或数据迁移默认走方案先行。
+description: 为 LinkCV 编写、校验和排查 forward-only 的 SQLAlchemy 与 SQL-first Alembic schema 迁移，覆盖 revision 链、up SQL、数据回填、向前升级、兼容发布和文档同步。适用于新增业务 revision，新增或修改表、字段、关系、约束、索引，处理多 head、模型与数据库漂移或迁移失败；单纯设计字段与索引先使用 mysql-ddl-conventions，是否方案先行由 flow-router 的关键取舍、发布协调和可回退性门槛决定。
 ---
 
 # Alembic 迁移
@@ -9,7 +9,7 @@ description: 为 LinkCV 编写、校验和排查 forward-only 的 SQLAlchemy 与
 
 把“物理 schema 已确认 → 修改 ORM → 编写 migration → 向前验证 → 同步长期文档”固化为可执行流程。schema 演进建立后，权威源必须是 SQLAlchemy 模型与 Alembic 迁移链，不能通过手工 `ALTER TABLE` 绕开版本管理。
 
-本技能负责迁移本身；字段与索引设计转 `mysql-ddl-conventions`，完整业务实现返回 `flow-router`，由当前 Sol 拆分工作包并调度 Luna 使用 `implementation-execution`，长期文档维护转 `doc-maintenance-sync`。
+本技能负责迁移本身；字段与索引设计转 `mysql-ddl-conventions`，完整业务实现返回 `flow-router`，由当前 Codex 使用 `implementation-execution` 继续完成，长期文档维护转 `doc-maintenance-sync`。
 
 ## 2. LinkCV 基线
 
