@@ -289,6 +289,49 @@ describe("Agent readiness API", () => {
   });
 });
 
+describe("Agent model API", () => {
+  it("读取当前 Pi Agent 的安全模型摘要", async () => {
+    const body = { model: { adapter: "deepseek", name: "fictional-agent-model" } };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, body));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.getAgentModel()).resolves.toEqual(body);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/agent/model",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
+});
+
+describe("Agent session management API", () => {
+  it("更新会话标题与置顶状态并编码会话 ID", async () => {
+    const body = { session: { id: "session/a b", title: "新标题", pinned: true } };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, body));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.updateAgentSession("session/a b", { title: "新标题", pinned: true })).resolves.toEqual(body);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/agent/sessions/session%2Fa%20b",
+      expect.objectContaining({
+        method: "PATCH",
+        credentials: "include",
+        body: JSON.stringify({ title: "新标题", pinned: true }),
+      }),
+    );
+  });
+
+  it("删除会话并编码会话 ID", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.deleteAgentSession("session/a b");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/agent/sessions/session%2Fa%20b",
+      expect.objectContaining({ method: "DELETE", credentials: "include" }),
+    );
+  });
+});
+
 describe("Agent context API", () => {
   it("按类型、搜索词和上限读取轻量上下文列表", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { contexts: [] }));

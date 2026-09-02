@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     Index,
@@ -36,8 +37,20 @@ class AgentSession(Base):
         CheckConstraint(
             "status IN ('active', 'archived')", name="ck_agent_sessions_status"
         ),
-        Index("idx_agent_sessions_user_updated", "user_id", "updated_at", "id"),
-        Index("idx_agent_sessions_resume_updated", "resume_id", "updated_at", "id"),
+        Index(
+            "idx_agent_sessions_user_pinned_updated",
+            "user_id",
+            "pinned",
+            "updated_at",
+            "id",
+        ),
+        Index(
+            "idx_agent_sessions_resume_pinned_updated",
+            "resume_id",
+            "pinned",
+            "updated_at",
+            "id",
+        ),
         {"comment": "用户智能助手会话"},
     )
 
@@ -49,6 +62,13 @@ class AgentSession(Base):
     resume_id: Mapped[int | None] = mapped_column(UNSIGNED_BIGINT, nullable=True)
     pi_session_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     title: Mapped[str] = mapped_column(String(128), nullable=False)
+    pinned: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+        comment="是否置顶",
+    )
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
     last_message_at: Mapped[datetime | None] = mapped_column(TIMESTAMP, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

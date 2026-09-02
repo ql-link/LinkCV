@@ -8,7 +8,7 @@ AI 助手提供独立对话工作区和简历编辑器侧栏，允许用户组�
 
 ## 用户入口
 
-- `/assistant`：会话列表、快捷任务、上下文选择、对话、停止和提案确认。
+- `/assistant`：新建对话入口；`/assistant/:sessionId`：可刷新、可直接访问的独立会话地址。页面同时提供会话列表、快捷任务、上下文选择、对话、停止和提案确认。
 - `/resumes/:resumeId/edit` 的 `AgentPanel`：围绕当前简历或选中文本发起助手请求。
 - `/admin/llm/models`：管理员维护模型候选和四项能力绑定；这是治理入口，不属于普通用户助手操作。
 
@@ -16,7 +16,7 @@ AI 助手提供独立对话工作区和简历编辑器侧栏，允许用户组�
 
 | 层级 | 入口 | 职责 |
 | --- | --- | --- |
-| 用户 HTTP | `modules/agent/routes.py` | readiness、上下文、会话、消息 SSE、取消和提案动作 |
+| 用户 HTTP | `modules/agent/routes.py` | readiness、当前模型摘要、上下文、会话、消息 SSE、取消和提案动作 |
 | 上下文 | `modules/agent/context_service.py` | 引用解析、所有权和版本检查 |
 | 提案服务 | `modules/agent/service.py`、`resume_tools.py` | 工具结果、目标定位、提案创建与确认 |
 | Pi 客户端 | `modules/agent/pi_client.py` | FastAPI 到 Pi 的请求、SSE 代理和终态映射 |
@@ -34,7 +34,7 @@ AI 助手提供独立对话工作区和简历编辑器侧栏，允许用户组�
 
 ## 数据归属
 
-会话、运行、消息、工具调用和提案分别由 `agent_sessions`、`agent_runs`、`agent_messages`、`agent_tool_calls` 与 `resume_change_proposals` 保存。模型候选、绑定、验证和计量属于技术治理数据，不是用户对话内容，详见运行时架构文档。
+会话、运行、消息、工具调用和提案分别由 `agent_sessions`、`agent_runs`、`agent_messages`、`agent_tool_calls` 与 `resume_change_proposals` 保存。会话的 `pinned` 置顶状态与标题是持久化的用户展示状态；列表先展示置顶会话，再按 `updated_at` 和内部 ID 倒序。模型候选、绑定、验证和计量属于技术治理数据，不是用户对话内容，详见运行时架构文档。
 
 ## 关键流程
 
@@ -47,8 +47,11 @@ AI 助手提供独立对话工作区和简历编辑器侧栏，允许用户组�
 ## 权限与失败边界
 
 - session、run、proposal、上下文引用和目标简历都必须同时校验当前用户，公开 ID 不能代替归属条件。
+- 会话支持独立的标题和置顶更新；更新只改变展示状态，不创建消息或触发模型调用。删除会话前必须确认没有运行中任务，并在事务中清理其提案、工具调用、消息和运行记录。
+- 会话删除只作用于当前用户拥有的目标会话；其他用户的公开会话 ID 统一按 `AGENT_SESSION_NOT_FOUND` 处理。
 - 取消请求、Pi 不可用、模型失败、异常 EOF、提案过期、内容摘要不一致和锁冲突都有独立终态；失败不会把提案标为已应用。
 - 对话正文不会写入 LLM 调用日志，模型凭据不会返回浏览器，内部工具不能接受任意 URL 或对象键。
+- 登录用户可通过 `GET /api/agent/model` 读取当前 `pi_agent` 绑定的 `adapter` 和调用名 `name`；该摘要不返回配置 ID、地址、凭据、价格或验证记录，也不会为展示而解密凭据。
 - 助手对岗位、求职和资料集只有受控读取能力；业务写入仍回到对应领域服务。
 
 ## 修改联动与验证

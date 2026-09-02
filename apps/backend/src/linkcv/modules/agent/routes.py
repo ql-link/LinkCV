@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,7 @@ from linkcv.modules.agent.pi_client import (
 )
 from linkcv.modules.agent.schemas import (
     AgentContextListResponse,
+    AgentModelResponse,
     AgentReadinessResponse,
     MessageCreateRequest,
     ProposalListResponse,
@@ -27,19 +28,23 @@ from linkcv.modules.agent.schemas import (
     SessionCreateRequest,
     SessionListResponse,
     SessionResponse,
+    SessionUpdateRequest,
 )
 from linkcv.modules.agent.context_service import list_contexts, resolve_contexts
 from linkcv.modules.agent.service import (
     confirm_proposal,
     create_run,
     create_session,
+    delete_session,
     get_owned_session,
     proposal_record,
     reject_proposal,
     session_record,
+    update_session,
 )
 from linkcv.modules.identity.dependencies import get_current_user
 from linkcv.modules.identity.models import User
+from linkcv.modules.llm.service import LLMError
 from linkcv.modules.resumes.routes import resume_record
 from linkcv.modules.resumes.schemas import ResumeResponse
 
@@ -50,6 +55,19 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 async def get_agent_readiness(request: Request) -> AgentReadinessResponse:
     await check_pi_readiness(request.app)
     return AgentReadinessResponse(ready=True)
+
+
+@router.get("/model", response_model=AgentModelResponse)
+async def get_agent_model(
+    request: Request,
+    _user: User = Depends(get_current_user),
+) -> AgentModelResponse:
+    llm_service = request.app.state.llm_service
+    try:
+        model = await llm_service.agent_model_summary()
+    except LLMError as error:
+        raise ApiError(503, error.code) from error
+    return AgentModelResponse(model={"adapter": model.adapter, "name": model.name})
 
 
 @router.get("/contexts", response_model=AgentContextListResponse)
@@ -133,9 +151,44 @@ def list_agent_sessions(
             raise ApiError(404, "RESUME_NOT_FOUND")
         query = query.where(AgentSession.resume_id == int(resume_id))
     records = db.scalars(
-        query.order_by(AgentSession.updated_at.desc(), AgentSession.id.desc()).limit(50)
+        query.order_by(
+            AgentSession.pinned.desc(),
+            AgentSession.updated_at.desc(),
+            AgentSession.id.desc(),
+        ).limit(50)
     ).all()
     return SessionListResponse(sessions=[session_record(item) for item in records])
+
+
+@router.patch("/sessions/{session_id}", response_model=SessionResponse)
+def update_agent_session(
+    session_id: str,
+    payload: SessionUpdateRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> SessionResponse:
+    return SessionResponse(
+        session=session_record(
+            update_session(
+                db,
+                public_id=session_id,
+                user_id=user.id,
+                fields=payload.model_fields_set,
+                title=payload.title,
+                pinned=payload.pinned,
+            )
+        )
+    )
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+def delete_agent_session(
+    session_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    delete_session(db, public_id=session_id, user_id=user.id)
+    return Response(status_code=204)
 
 
 @router.get("/sessions/{session_id}", response_model=SessionResponse)
