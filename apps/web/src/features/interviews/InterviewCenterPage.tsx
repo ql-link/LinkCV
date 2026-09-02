@@ -439,7 +439,7 @@ export function InterviewCenterPage({
   const [selectedId, setSelectedId] = useState<string | null>(initialSessionId ?? null);
   const [detail, setDetail] = useState<InterviewSessionDetail | null>(null);
   const [query, setQuery] = useState("");
-  const [applicationDisplayMode, setApplicationDisplayMode] = useState<"board" | "list">("list");
+  const [applicationDisplayMode, setApplicationDisplayMode] = useState<"board" | "list">("board");
   const [applicationSortMode, setApplicationSortMode] = useState<ApplicationSortMode>("recent_schedule");
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

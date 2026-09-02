@@ -93,7 +93,6 @@ function requestErrorMessage(error: unknown): string {
     const messages: Record<string, string> = {
       INTERVIEW_EDIT_CONFLICT: "这条面试已在其他页面更新，请刷新后再试。",
       INTERVIEW_INVALID_TRANSITION: "当前求职进度不允许执行这个操作。",
-      INTERVIEW_RESUME_REQUIRED: "请选择一份简历后再标记已投递。",
       INTERVIEW_RESUME_VERSION_REQUIRED: "所选简历暂无正式版本，请先保存正式版本。",
       INVALID_INTERVIEW_TIME: "面试开始时间需要是有效的 24 小时制 HH:mm（分钟 00–59）。",
       INTERVIEW_ASSET_TOO_LARGE: "素材超过 500 MiB，请压缩后重试。",
@@ -1415,12 +1414,12 @@ export function MarkApplicationAppliedDialog({
 
   const submit = async () => {
     const appliedAtIso = dateInputToIso(appliedAt);
-    if (!appliedAtIso || !resumeId) return;
+    if (!appliedAtIso) return;
     setBusy(true);
     try {
       await api.updateJobApplication(application.id, {
         applied_at: appliedAtIso,
-        resume_id: resumeId,
+        ...(resumeId ? { resume_id: resumeId } : { resume_version_id: null }),
         base_lock_version: application.lock_version,
       });
       onClose();
@@ -1437,7 +1436,7 @@ export function MarkApplicationAppliedDialog({
       <DialogContent className="career-stage-dialog career-applied-dialog">
         <DialogHeader>
           <DialogTitle className="career-applied-dialog-title">推进求职流程</DialogTitle>
-          <DialogDescription className="career-applied-dialog-description">当前阶段：{progress.stageLabel}。选择本次使用的简历，系统会自动绑定该简历最新的正式版本。</DialogDescription>
+          <DialogDescription className="career-applied-dialog-description">当前阶段：{progress.stageLabel}。简历为选填；选择后，系统会自动绑定该简历最新的正式版本。</DialogDescription>
         </DialogHeader>
         <div className="career-stage-dialog-form">
           <div className="career-stage-dialog-field">
@@ -1454,20 +1453,20 @@ export function MarkApplicationAppliedDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="career-stage-select-content">
-                <SelectItem value={EMPTY_SELECT_VALUE}>请选择简历</SelectItem>
+                <SelectItem value={EMPTY_SELECT_VALUE}>不使用简历</SelectItem>
                 {resumes.map((resume) => <SelectItem key={resume.id} value={resume.id}>{resume.title}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
-          {!resumes.length ? (
-            <p className="career-stage-dialog-empty">暂无可用简历，请先创建简历并保存正式版本后再标记已投递。</p>
-          ) : (
-            <p className="career-stage-dialog-empty">系统会自动绑定所选简历最新的正式版本。</p>
-          )}
+          <p className="career-stage-dialog-empty">
+            {resumes.length
+              ? "不选择简历也可以继续；选择后会自动绑定最新正式版本。"
+              : "暂无可用简历，仍可直接标记已投递。"}
+          </p>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button disabled={!dateInputToIso(appliedAt) || !resumeId || busy} onClick={() => void submit()}>{busy ? "保存中…" : "确认标记"}</Button>
+          <Button disabled={!dateInputToIso(appliedAt) || busy} onClick={() => void submit()}>{busy ? "保存中…" : "确认标记"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

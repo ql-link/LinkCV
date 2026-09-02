@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { JSONContent } from "@tiptap/core";
 import {
   api,
+  ApiRequestError,
   ImportWarning,
   ResumeRecord,
   ResumeImportSummary,
@@ -292,27 +293,38 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   error: null,
 
   hydrate: async () => {
+    let user: User | null;
     try {
-      const { user } = await api.me();
-      if (!user) {
-        set({
-          authStatus: "guest",
-          user: null,
-          resumes: [],
-          activeImports: [],
-          failedImports: [],
-          versions: [],
-          importWarningsByResumeId: {},
-          activeResumeId: null,
-          lockVersion: 0,
-        });
-        return;
-      }
-
-      set({ authStatus: "authenticated", user });
-      await get().listResumes();
+      ({ user } = await api.me());
     } catch (error) {
       set({ authStatus: "guest", user: null, error: (error as Error).message });
+      return;
+    }
+
+    if (!user) {
+      set({
+        authStatus: "guest",
+        user: null,
+        resumes: [],
+        activeImports: [],
+        failedImports: [],
+        versions: [],
+        importWarningsByResumeId: {},
+        activeResumeId: null,
+        lockVersion: 0,
+      });
+      return;
+    }
+
+    set({ authStatus: "authenticated", user, error: null });
+    try {
+      await get().listResumes();
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 401) {
+        set({ authStatus: "guest", user: null, error: error.message });
+        return;
+      }
+      set({ error: (error as Error).message });
     }
   },
 

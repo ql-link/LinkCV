@@ -541,15 +541,17 @@
 .progress-column-count { flex: 0 0 auto; color: var(--ui-text-muted); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
 .progress-column-cards { position: relative; display: grid; height: auto; min-height: 0; flex: 1 1 auto; align-content: start; gap: 8px; overflow-x: hidden; overflow-y: auto; padding-right: 4px; overscroll-behavior-y: contain; scrollbar-width: none; }
 .progress-column-cards::-webkit-scrollbar { display: none; }
+.progress-card-layout { display: grid; width: 100%; height: 118px; min-width: 0; translate: 0; transition: translate var(--ui-duration-base) var(--ui-ease-standard); }
+.progress-card-layout.is-after-dragging { translate: 0 -126px; }
+.progress-card-layout:focus-within { z-index: 10; }
 .progress-card { position: relative; display: grid; width: 100%; height: 118px; min-width: 0; margin: 0; overflow: visible; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--ui-surface); padding: 12px; box-shadow: var(--ui-shadow-xs); transition: border-color 180ms var(--ui-ease-press), box-shadow 180ms var(--ui-ease-press), transform 180ms var(--ui-ease-press), opacity 180ms var(--ui-ease-press); }
 .progress-card:hover { border-color: var(--ui-border-strong); box-shadow: var(--ui-shadow-xs); }
 .progress-card.is-draggable { cursor: grab; }
 .progress-card.is-draggable:active { cursor: grabbing; }
 /* Keep the native drag source in its original grid track. Moving or removing
-   that node during dragstart cancels dragging in some browsers. Following
-   cards close the visible gap with a transform instead. */
-.progress-card.is-dragging { opacity: 0; pointer-events: none; transform: scale(.98); }
-.progress-card.is-dragging ~ .progress-card { transform: translateY(-126px); }
+   that node during dragstart cancels dragging in some browsers. It must also
+   remain hit-testable for the native drag session to continue. */
+.progress-card.is-dragging { opacity: 0; transform: scale(.98); }
 .progress-card.is-advancing { opacity: .6; }
 .progress-card-open { display: grid; width: 100%; height: 100%; min-width: 0; grid-template-rows: auto auto 1fr; align-content: start; gap: 6px; border: 0; background: transparent; padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .progress-card-open:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 3px; border-radius: var(--ui-radius-sm); }
@@ -590,6 +592,7 @@
   to { opacity: 1; transform: translateY(0); }
 }
 @media (prefers-reduced-motion: reduce) {
+  .progress-card-layout,
   .progress-card,
   .progress-card-drop-placeholder { transition: none; }
 }

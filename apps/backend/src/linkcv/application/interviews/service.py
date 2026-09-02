@@ -52,10 +52,6 @@ class InterviewNotFound(LookupError):
     pass
 
 
-class InterviewResumeRequired(RuntimeError):
-    pass
-
-
 class InterviewResumeVersionRequired(RuntimeError):
     pass
 
@@ -499,12 +495,6 @@ def update_application(
         provided["resume_title_snapshot"] = (
             resume_version.name if resume_version else None
         )
-    if (
-        application.applied_at is None
-        and provided.get("applied_at") is not None
-        and provided.get("resume_version_id", application.resume_version_id) is None
-    ):
-        raise InterviewResumeRequired
     return _commit_application_update(
         db, application, payload.base_lock_version, provided
     )

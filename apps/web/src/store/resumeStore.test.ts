@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { JSONContent } from "@tiptap/core";
-import { api, type ResumeImportSummary, type ResumeRecord } from "../api/client";
+import { ApiRequestError, api, type ResumeImportSummary, type ResumeRecord } from "../api/client";
 import {
   defaultCanonicalDocument,
   defaultCanonicalPresentation,
@@ -744,6 +744,47 @@ describe("resume import", () => {
       resumes: [resume],
       activeImports: [],
       failedImports: [],
+    });
+  });
+});
+
+describe("authentication hydration", () => {
+  const user = {
+    id: "1",
+    email: "user@example.test",
+    nickname: "测试用户",
+    is_admin: false,
+  };
+
+  it("keeps an authenticated session when the resume overview fails", async () => {
+    useResumeStore.setState({ authStatus: "checking", user: null, error: null });
+    vi.spyOn(api, "me").mockResolvedValue({ user });
+    vi.spyOn(api, "getResumeOverview").mockRejectedValue(
+      new ApiRequestError(500, "HTTP_500"),
+    );
+
+    await useResumeStore.getState().hydrate();
+
+    expect(useResumeStore.getState()).toMatchObject({
+      authStatus: "authenticated",
+      user,
+      error: "HTTP_500",
+    });
+  });
+
+  it("returns to guest when loading the overview explicitly reports 401", async () => {
+    useResumeStore.setState({ authStatus: "checking", user: null, error: null });
+    vi.spyOn(api, "me").mockResolvedValue({ user });
+    vi.spyOn(api, "getResumeOverview").mockRejectedValue(
+      new ApiRequestError(401, "UNAUTHORIZED"),
+    );
+
+    await useResumeStore.getState().hydrate();
+
+    expect(useResumeStore.getState()).toMatchObject({
+      authStatus: "guest",
+      user: null,
+      error: "UNAUTHORIZED",
     });
   });
 });

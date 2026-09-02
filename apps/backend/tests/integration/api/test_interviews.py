@@ -562,29 +562,18 @@ def test_marking_an_application_applied_normalizes_to_screening() -> None:
         )
         assert created.status_code == 201, created.text
         application = created.json()["application"]
-        missing_resume = client.put(
-            f"/api/job-applications/{application['id']}",
-            json={
-                "applied_at": "2026-08-22T12:00:00+08:00",
-                "base_lock_version": application["lock_version"],
-            },
-        )
-        assert missing_resume.status_code == 400
-        assert missing_resume.json() == {"error": "INTERVIEW_RESUME_REQUIRED"}
-
-        resume = create_resume(client, app)
-
         marked = client.put(
             f"/api/job-applications/{application['id']}",
             json={
                 "applied_at": "2026-08-22T12:00:00+08:00",
-                "resume_id": resume["id"],
                 "base_lock_version": application["lock_version"],
             },
         )
         assert marked.status_code == 200, marked.text
         marked_application = marked.json()["application"]
         assert marked_application["applied_at"].endswith("Z")
+        assert marked_application["resume_version_id"] is None
+        assert marked_application["resume_title_snapshot"] is None
         assert marked_application["current_stage_type"] == "screening"
         assert marked_application["current_round_no"] is None
         assert marked_application["current_stage_label"] == "筛选中"
@@ -663,14 +652,14 @@ def test_marking_an_application_with_resume_id_binds_the_latest_formal_version()
         assert bound["resume_title_snapshot"] == "后端岗位终版"
 
 
-def test_marking_an_application_without_a_resume_fails_before_writing() -> None:
+def test_marking_an_application_without_a_resume_succeeds() -> None:
     app = build_app()
     with TestClient(app) as client:
         register(client, "application-resume-required@example.test")
         created = client.post(
             "/api/job-applications",
             json={
-                "job_description_id": create_job(client, "必须绑定简历公司"),
+                "job_description_id": create_job(client, "可选绑定简历公司"),
                 "current_stage_type": "screening",
                 "current_stage_label": "待投递",
                 "stage_state": "awaiting_schedule",
@@ -679,22 +668,19 @@ def test_marking_an_application_without_a_resume_fails_before_writing() -> None:
         assert created.status_code == 201, created.text
         application = created.json()["application"]
 
-        rejected = client.put(
+        marked = client.put(
             f"/api/job-applications/{application['id']}",
             json={
                 "applied_at": "2026-08-22T04:00:00Z",
                 "base_lock_version": application["lock_version"],
             },
         )
-        assert rejected.status_code == 400
-        assert rejected.json() == {"error": "INTERVIEW_RESUME_REQUIRED"}
-
-        unchanged = client.get(f"/api/job-applications/{application['id']}")
-        assert unchanged.status_code == 200
-        assert unchanged.json()["application"]["applied_at"] is None
-        assert unchanged.json()["application"]["lock_version"] == application[
-            "lock_version"
-        ]
+        assert marked.status_code == 200, marked.text
+        updated = marked.json()["application"]
+        assert updated["applied_at"] == "2026-08-22T04:00:00Z"
+        assert updated["resume_version_id"] is None
+        assert updated["resume_title_snapshot"] is None
+        assert updated["lock_version"] == application["lock_version"] + 1
 
 
 def test_marking_an_application_rejects_a_resume_without_a_formal_version() -> None:
