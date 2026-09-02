@@ -52,7 +52,7 @@ description: 分析 LinkCV 改动对公共契约结构、语义、兼容性和�
 
 - 同一物理值需要跨文件核对：转 `config-contract-sync`。
 - 当前实现已经确定且需要更新长期知识：转 `doc-maintenance-sync`。
-- 需要落实代码、配置或迁移：返回 `flow-router`，由当前 Sol 拆包并调度 Luna 使用 `implementation-execution`。
+- 需要落实代码、配置或迁移：返回 `flow-router`，由当前 Codex 使用 `implementation-execution` 继续完成。
 - 需要设计 MySQL 字段、约束或索引：转 `mysql-ddl-conventions`；需要编写或校验 Alembic revision：转 `alembic-migration`。
 - 只需运行确定性检查：转 `run-all-tests`。
 

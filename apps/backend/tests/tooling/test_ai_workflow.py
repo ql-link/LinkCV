@@ -805,10 +805,10 @@ def test_skill_check_protects_flow_router_delivery_core_semantics(tmp_path: Path
     protected_markers = (
         "它先用最小代码证据确认当前请求是否存在后端范围，再在同一上下文中继续七维判断和交付，不产生中间路由结果",
         "本技能可以识别前端消费方并约束后端必须提供的可观察契约，但不负责决定、实施或验收前端页面，也不调用前端能力",
-        "Sol（主 Agent）始终拥有用户沟通、授权边界、七维判断、方案、工作包拆分、Luna 调度、工作区协调、实施整合复核",
-        "不要为了满足工作流形式启动同级 Sol",
-        "确认后的实施可以交给一个或多个 Luna",
-        "不得仅因为需要七维判断、方案先行、严格风险或任务复杂而创建同级 Sol Agent",
+        "当前 Codex 始终拥有用户沟通、授权边界、七维判断、方案、实施、工作区协调、验证、复核和最终结论",
+        "不要为了满足工作流形式创建实施子 Agent、重复读取上下文或等待另一模型执行命令",
+        "只有用户明确要求独立审查或并行 Agent 工作时，才按该次授权使用子 Agent",
+        "不得仅因为需要七维判断、方案先行、严格风险或任务复杂而创建额外 Agent",
         "七个维度仍必须在内部完整判断",
         "没有 Issue 不阻止七维判断或交付",
         "严格风险本身不自动升级为方案先行",
@@ -816,17 +816,13 @@ def test_skill_check_protects_flow_router_delivery_core_semantics(tmp_path: Path
         "记录为持久记录也不自动升级方案",
         "准备为`需澄清`或`需调查`",
         "只有准备不足、风险严格、需要持久记录或用户主动要求查看判断依据时",
-        "Sol 调度 Luna 实施与复核",
-        "Sol 先把实现拆成边界清楚的工作包，再决定由多少个 Luna 承担",
-        "不固定 Luna 数量",
-        "可独立、边界清楚、文件所有权不重叠且没有未满足前置依赖的工作包可以并行交给多个 Luna",
-        "共享契约、迁移链、同一核心文件或存在前后依赖的工作包必须串行",
-        "不为了并行而拆分本来紧密耦合的任务",
-        "Sol 根据 `solution.md`、依赖、写冲突和工作包边界调度",
-        "失败后由 Sol 判断继续原 Luna，还是把未完成工作重新分派给另一个 Luna",
-        "严格风险由 Sol 完成判断和方案约束，再由 Luna",
-        "`model`: `gpt-5.6-luna`",
-        "`reasoning_effort`: `max`",
+        "当前 Codex 直接实施与复核",
+        "在同一上下文中完整使用 `implementation-execution`",
+        "不创建默认实施子 Agent，也不为实施指定其他模型或推理强度",
+        "共享契约、迁移链、同一核心文件或存在前后依赖的改动按依赖顺序完成",
+        "不为了并行拆成 Agent 工作包",
+        "实现问题在确认范围内直接修正",
+        "只执行一次与任务范围匹配的自动化验证",
     )
 
     for index, marker in enumerate(protected_markers):
@@ -853,11 +849,11 @@ def test_skill_check_protects_flow_router_delivery_core_semantics(tmp_path: Path
         )
 
         assert result.returncode == 1
-        assert "七维判断、Luna 实施或回流契约缺少必要内容" in result.stderr
+        assert "七维判断、直接实施或回流契约缺少必要内容" in result.stderr
         assert marker in result.stderr
 
 
-def test_skill_check_rejects_mandatory_backend_peer_sol(tmp_path: Path) -> None:
+def test_skill_check_rejects_mandatory_backend_extra_agent(tmp_path: Path) -> None:
     (tmp_path / ".ai" / "prompts").mkdir(parents=True)
     (tmp_path / ".ai" / "prompts" / "project.md").write_text(
         "rules", encoding="utf-8"
@@ -926,19 +922,23 @@ def test_skill_check_rejects_frontend_orchestration_in_backend_workflow(
         assert expected_error in result.stderr
 
 
-def test_skill_check_rejects_fixed_single_luna_dispatch(tmp_path: Path) -> None:
-    legacy_cases = (
+def test_skill_check_rejects_default_implementation_delegation(tmp_path: Path) -> None:
+    delegated_cases = (
         (
             "flow-router",
-            "所有代码、配置、迁移和测试实施统一交给一个 Luna Max",
+            "每个工作包的实施 Agent 使用指定模型。",
+            "每个工作包的实施 Agent 使用",
         ),
         (
             "implementation-execution",
-            "写操作默认串行，不并行派发多个实施 Agent",
+            "`model`: `example-model`",
+            "`model`:",
         ),
     )
 
-    for index, (skill_name, legacy_marker) in enumerate(legacy_cases):
+    for index, (skill_name, delegated_rule, expected_marker) in enumerate(
+        delegated_cases
+    ):
         case_root = tmp_path / f"case-{index}"
         (case_root / ".ai" / "prompts").mkdir(parents=True)
         (case_root / ".ai" / "prompts" / "project.md").write_text(
@@ -951,7 +951,7 @@ def test_skill_check_rejects_fixed_single_luna_dispatch(tmp_path: Path) -> None:
         shutil.copytree(REPO_ROOT / ".ai" / "skills" / skill_name, target_skill)
         skill_file = target_skill / "SKILL.md"
         skill_file.write_text(
-            skill_file.read_text(encoding="utf-8") + f"\n{legacy_marker}\n",
+            skill_file.read_text(encoding="utf-8") + f"\n{delegated_rule}\n",
             encoding="utf-8",
         )
 
@@ -961,11 +961,11 @@ def test_skill_check_rejects_fixed_single_luna_dispatch(tmp_path: Path) -> None:
         )
 
         assert result.returncode == 1
-        assert "仍存在固定单一 Luna 的过期契约" in result.stderr
-        assert legacy_marker in result.stderr
+        assert "仍存在默认实施 Agent 或模型切换契约" in result.stderr
+        assert expected_marker in result.stderr
 
 
-def test_skill_check_protects_five_reduction_contracts(tmp_path: Path) -> None:
+def test_skill_check_protects_reduction_contracts(tmp_path: Path) -> None:
     protected_cases = (
         (
             "implementation-execution",
@@ -985,7 +985,7 @@ def test_skill_check_protects_five_reduction_contracts(tmp_path: Path) -> None:
         (
             "run-all-tests",
             "SKILL.md",
-            "准备创建纯前端 PR 时，在当前可提交内容上重新运行 `npm run check:web`",
+            "同一会话中，如果任务范围验证后",
         ),
         (
             "branch-pr-workflow",
@@ -1026,7 +1026,7 @@ def test_skill_check_protects_five_reduction_contracts(tmp_path: Path) -> None:
         )
 
         assert result.returncode == 1
-        assert "五项减法契约缺少必要内容" in result.stderr
+        assert "减法契约缺少必要内容" in result.stderr
         assert marker in result.stderr
 
 
@@ -1052,23 +1052,33 @@ def test_skill_check_protects_flow_router_delivery_downstream_contract(
         ),
         (
             "implementation-execution",
-            "只执行 Sol 已明确的工作包，不自行重新规划、拆分或调度其他工作包",
+            "只执行当前已确认的范围，不自行扩展目标或创建实施子 Agent",
             "实现入口或实施报告契约缺少必要内容",
         ),
         (
             "implementation-execution",
-            "可独立、边界清楚且文件所有权不重叠时，Sol 可以并行调度多个 Luna",
+            "当前 Codex 在同一上下文中按依赖顺序直接完成实现",
             "实现入口或实施报告契约缺少必要内容",
         ),
         (
             "implementation-execution",
-            "共享契约、迁移链、同一核心文件或存在前后依赖时，必须按依赖串行",
+            "共享契约、迁移链、同一核心文件或存在前后依赖时，必须按依赖顺序处理",
             "实现入口或实施报告契约缺少必要内容",
         ),
         (
             "implementation-execution",
-            "由 Sol 决定继续原 Luna 或重新分派给另一个 Luna，不引入同级 Sol",
+            "不要通过拆分或重新派发 Agent 绕过确认",
             "实现入口或实施报告契约缺少必要内容",
+        ),
+        (
+            "implementation-execution",
+            "基于完整差异运行或复用一次与任务范围匹配的 `run-all-tests` 验证",
+            "实现入口或实施报告契约缺少必要内容",
+        ),
+        (
+            "flow-router",
+            "只进入一次任务级 `run-all-tests`",
+            "七维判断、直接实施或回流契约缺少必要内容",
         ),
         (
             "contract-guard",
