@@ -48,6 +48,22 @@ PDF_LAYOUT_WARNING_WHITELIST = frozenset(
     }
 )
 
+# Layout is an optional hint channel.  Keep the duplicate physical text sent
+# to the model bounded even when an upstream response is within the larger
+# LinkParse response limit.
+PDF_LAYOUT_HINT_MAX_BYTES = 64 * 1024
+PDF_LAYOUT_HINT_FIELDS = (
+    "block_id",
+    "source_order",
+    "source_page",
+    "text",
+    "bbox",
+    "confidence",
+    "role",
+    "row_id",
+    "continuation_of",
+)
+
 
 class PdfLayoutContractError(ValueError):
     """The upstream PDF layout cannot be consumed losslessly."""
@@ -499,20 +515,135 @@ def rebuild_pdf_layout_markdown(
 ) -> str:
     """Validate layout, rebuild visible Markdown, and verify producer output."""
 
+    rebuilt, _blocks = _rebuild_pdf_layout_with_blocks(
+        layout,
+        page_count=page_count,
+        output_markdown=output_markdown,
+    )
+    return rebuilt
+
+
+def _rebuild_pdf_layout_with_blocks(
+    layout: DocumentPdfLayout,
+    *,
+    page_count: int,
+    output_markdown: str,
+) -> tuple[str, list[PdfLayoutBlock]]:
+    """Return a rebuilt Markdown value and the blocks that proved it.
+
+    This is intentionally kept separate from the public string-only helper:
+    callers need the already-validated blocks as model hints, and validating
+    them a second time would make the acceptance path needlessly harder to
+    reason about.
+    """
+
     blocks = _validate_pdf_layout(layout, page_count=page_count)
     rebuilt = _render_layout_markdown(blocks)
     if _markdown_layout_key(rebuilt) != _markdown_layout_key(output_markdown):
         raise _layout_contract_error()
-    return rebuilt
+    return rebuilt, blocks
 
 
-def _validation_error_is_pdf_layout(error: ValidationError) -> bool:
-    """Identify nested layout errors without hiding unrelated envelope errors."""
+def _layout_hint_size(blocks: list[PdfLayoutBlock]) -> int:
+    """Measure only the fields that can cross into the structuring prompt."""
 
-    return any(
-        tuple(entry.get("loc", ()))[:3] == ("meta", "pdf", "layout")
-        for entry in error.errors(include_url=False, include_context=False)
+    fields = set(PDF_LAYOUT_HINT_FIELDS)
+    compact = [block.model_dump(mode="json", include=fields) for block in blocks]
+    return len(
+        json.dumps(compact, ensure_ascii=False, separators=(",", ":")).encode(
+            "utf-8"
+        )
     )
+
+
+def _safe_pdf_layout_hints(
+    layout: DocumentPdfLayout,
+    *,
+    page_count: int,
+) -> list[PdfLayoutBlock] | None:
+    """Keep per-block layout evidence independently of strict reconstruction.
+
+    The deterministic renderer has deliberately stronger cross-block checks
+    (quality counters, reading order, rows and continuations).  Those checks
+    decide only whether rebuilt Markdown may replace LinkParse Markdown.  The
+    model can still benefit from independently valid, bounded physical blocks
+    when one of those relationships is unavailable.  Do not pass evidence
+    with an ambiguous source identity/order or a page outside the parsed
+    document, since those fields would no longer be safe hints.
+    """
+
+    blocks = list(layout.blocks)
+    if not blocks or len(blocks) > 5_000:
+        return None
+    block_ids = [block.block_id for block in blocks]
+    source_orders = [block.source_order for block in blocks]
+    if len(block_ids) != len(set(block_ids)):
+        return None
+    if source_orders != list(range(len(blocks))):
+        return None
+    if any(block.source_page > page_count for block in blocks):
+        return None
+    if _layout_hint_size(blocks) > PDF_LAYOUT_HINT_MAX_BYTES:
+        return None
+    return blocks
+
+
+def _without_optional_pdf_layout(payload: object) -> tuple[object, object | None]:
+    """Remove untrusted optional layout before validating the outer envelope.
+
+    A malformed or newer ``meta.pdf.layout`` must not make an otherwise valid
+    Markdown response unusable.  The raw value is returned for a separate
+    strict parse; callers treat every parse/invariant failure as a hint
+    fallback rather than a conversion failure.
+    """
+
+    if not isinstance(payload, dict):
+        return payload, None
+    meta = payload.get("meta")
+    if not isinstance(meta, dict) or "pdf" not in meta:
+        return payload, None
+    pdf = meta.get("pdf")
+    if not isinstance(pdf, dict):
+        # ``pdf`` itself is optional producer metadata.  Ignore an invalid
+        # value as a whole while preserving the required outer envelope.
+        copied_payload = dict(payload)
+        copied_meta = dict(meta)
+        copied_meta.pop("pdf", None)
+        copied_payload["meta"] = copied_meta
+        return copied_payload, None
+    if "layout" not in pdf:
+        return payload, None
+    raw_layout = pdf.get("layout")
+    copied_payload = dict(payload)
+    copied_meta = dict(meta)
+    copied_pdf = dict(pdf)
+    copied_pdf.pop("layout", None)
+    copied_meta["pdf"] = copied_pdf
+    copied_payload["meta"] = copied_meta
+    return copied_payload, raw_layout
+
+
+def _parse_optional_pdf_layout(raw_layout: object | None) -> DocumentPdfLayout | None:
+    if raw_layout is None:
+        return None
+    try:
+        return DocumentPdfLayout.model_validate(raw_layout)
+    except ValidationError:
+        return None
+
+
+def _upstream_error_code(payload: object) -> str | None:
+    if isinstance(payload, (bytes, bytearray)):
+        try:
+            payload = json.loads(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None
+    if not isinstance(payload, dict):
+        return None
+    envelope = payload.get("error")
+    if isinstance(envelope, dict) and isinstance(envelope.get("code"), str):
+        return envelope["code"]
+    return None
 
 
 def mapped_failure(status_code: int, code: str | None) -> DocumentConversionFailure:
@@ -525,7 +656,10 @@ def mapped_failure(status_code: int, code: str | None) -> DocumentConversionFail
     if status_code == 413 and code in {"FILE_TOO_LARGE", "PDF_TOO_MANY_PAGES"}:
         return DocumentConversionFailure(413, "IMPORT_FILE_TOO_LARGE")
     if status_code == 413 and code == "LAYOUT_RESOURCE_LIMIT":
-        return DocumentConversionFailure(422, "RESUME_LAYOUT_UNSUPPORTED")
+        # The bounded fallback has already removed the optional layout flag;
+        # a repeated resource error is a converter failure, not a business
+        # layout rejection.
+        return DocumentConversionFailure(502, "DOCUMENT_CONVERSION_FAILED")
     if status_code == 415 and code == "UNSUPPORTED_FILE_TYPE":
         return DocumentConversionFailure(415, "UNSUPPORTED_IMPORT_FORMAT")
     if status_code == 422 and code in {
@@ -564,7 +698,7 @@ class LinkParseClient:
         content: bytes,
         operation_id: str,
         deadline_monotonic: float,
-        require_layout: bool = False,
+        request_layout: bool = False,
     ) -> DocumentMarkdownResult:
         return await self._parse_with_logging(
             filename=filename,
@@ -574,7 +708,7 @@ class LinkParseClient:
             content_type="application/pdf",
             source_format="pdf",
             expected_detected_types={"text_pdf", "scanned_pdf", "mixed_pdf"},
-            require_pdf_layout=require_layout,
+            request_pdf_layout=request_layout,
         )
 
     async def parse_docx(
@@ -596,7 +730,7 @@ class LinkParseClient:
             ),
             source_format="docx",
             expected_detected_types={"docx"},
-            require_pdf_layout=False,
+            request_pdf_layout=False,
         )
 
     async def _parse_with_logging(
@@ -609,7 +743,7 @@ class LinkParseClient:
         content_type: str,
         source_format: Literal["pdf", "docx"],
         expected_detected_types: set[str],
-        require_pdf_layout: bool,
+        request_pdf_layout: bool,
     ) -> DocumentMarkdownResult:
         started = monotonic()
         logger.info(
@@ -629,7 +763,7 @@ class LinkParseClient:
                 content_type=content_type,
                 source_format=source_format,
                 expected_detected_types=expected_detected_types,
-                require_pdf_layout=require_pdf_layout,
+                request_pdf_layout=request_pdf_layout,
             )
         except DocumentConversionFailure as error:
             logger.warning(
@@ -670,7 +804,7 @@ class LinkParseClient:
         content_type: str,
         source_format: Literal["pdf", "docx"],
         expected_detected_types: set[str],
-        require_pdf_layout: bool,
+        request_pdf_layout: bool,
     ) -> tuple[DocumentMarkdownResult, dict[str, int] | None]:
         if not self._base_url or not self._api_key:
             raise DocumentConversionFailure(503, "DOCUMENT_CONVERSION_UNAVAILABLE")
@@ -687,44 +821,71 @@ class LinkParseClient:
             "include_bbox": "false",
             "include_images": "false",
         }
-        if source_format == "pdf" and require_pdf_layout:
-            # Layout is a PDF-only opt-in. DOCX deliberately keeps the old
-            # Markdown contract, and non-resume PDF consumers must also stay
-            # on the legacy response path unless they explicitly require it.
+        if source_format == "pdf" and request_pdf_layout:
+            # Layout is a PDF-only request opt-in. DOCX deliberately keeps the
+            # old Markdown contract, and non-resume PDF consumers stay on the
+            # legacy response path unless they explicitly request hints.
             form["include_layout"] = "true"
-        try:
-            async with httpx.AsyncClient(
-                base_url=self._base_url,
-                timeout=min(self._timeout_seconds, remaining),
-                transport=self._transport,
-            ) as client:
-                async with client.stream(
-                    "POST",
-                    self._parse_path,
-                    headers=headers,
-                    data=form,
-                    files={"file": (filename, content, content_type)},
-                ) as response:
-                    body = bytearray()
-                    async for chunk in response.aiter_bytes():
-                        body.extend(chunk)
-                        if len(body) > self._response_max_bytes:
-                            raise DocumentConversionFailure(
-                                502, "DOCUMENT_CONVERSION_FAILED"
-                            )
-        except httpx.TimeoutException as error:
-            raise DocumentConversionFailure(
-                504, "DOCUMENT_CONVERSION_TIMEOUT"
-            ) from error
-        except httpx.RequestError as error:
-            raise DocumentConversionFailure(
-                503, "DOCUMENT_CONVERSION_UNAVAILABLE"
-            ) from error
+
+        # LinkParse may reject the optional layout generation for a resource
+        # budget while still being able to return the ordinary Markdown.  A
+        # single fallback request is allowed, and each attempt recomputes the
+        # same caller deadline so this cannot become an unbounded retry loop.
+        body = bytearray()
+        response_status_code = 0
+        response_request_id: str | None = None
+        for attempt in range(2):
+            remaining = deadline_monotonic - monotonic()
+            if remaining <= 0:
+                raise DocumentConversionFailure(504, "IMPORT_DEADLINE_EXCEEDED")
+            request_form = dict(form)
+            if attempt == 1:
+                request_form.pop("include_layout", None)
+            try:
+                async with httpx.AsyncClient(
+                    base_url=self._base_url,
+                    timeout=min(self._timeout_seconds, remaining),
+                    transport=self._transport,
+                ) as client:
+                    async with client.stream(
+                        "POST",
+                        self._parse_path,
+                        headers=headers,
+                        data=request_form,
+                        files={"file": (filename, content, content_type)},
+                    ) as response:
+                        body = bytearray()
+                        async for chunk in response.aiter_bytes():
+                            body.extend(chunk)
+                            if len(body) > self._response_max_bytes:
+                                raise DocumentConversionFailure(
+                                    502, "DOCUMENT_CONVERSION_FAILED"
+                                )
+                        response_status_code = response.status_code
+                        response_request_id = response.headers.get("X-Request-ID")
+            except httpx.TimeoutException as error:
+                raise DocumentConversionFailure(
+                    504, "DOCUMENT_CONVERSION_TIMEOUT"
+                ) from error
+            except httpx.RequestError as error:
+                raise DocumentConversionFailure(
+                    503, "DOCUMENT_CONVERSION_UNAVAILABLE"
+                ) from error
+
+            if (
+                attempt == 0
+                and source_format == "pdf"
+                and request_pdf_layout
+                and response_status_code == 413
+                and _upstream_error_code(body) == "LAYOUT_RESOURCE_LIMIT"
+            ):
+                continue
+            break
 
         # Authentication is actionable even when an intermediary strips the
         # upstream JSON error envelope.
-        if response.status_code == 401:
-            raise mapped_failure(response.status_code, None)
+        if response_status_code == 401:
+            raise mapped_failure(response_status_code, None)
 
         try:
             payload = json.loads(body)
@@ -733,46 +894,30 @@ class LinkParseClient:
                 502, "DOCUMENT_CONVERSION_FAILED"
             ) from error
 
-        if response.status_code >= 400:
-            upstream_code = None
-            if isinstance(payload, dict):
-                envelope = payload.get("error")
-                if isinstance(envelope, dict) and isinstance(envelope.get("code"), str):
-                    upstream_code = envelope["code"]
-            raise mapped_failure(response.status_code, upstream_code)
+        if response_status_code >= 400:
+            raise mapped_failure(
+                response_status_code,
+                _upstream_error_code(payload),
+            )
 
         payload_for_validation = payload
-        if source_format == "pdf" and not require_pdf_layout:
-            # Layout is outside the legacy PDF contract. Ignore it even if a
-            # newer LinkParse producer happens to include it, so Dataset and
-            # other generic document consumers cannot inherit resume-only
-            # validation failures through a shared converter.
-            if isinstance(payload, dict) and isinstance(payload.get("meta"), dict):
-                meta = payload["meta"]
-                if isinstance(meta.get("pdf"), dict) and "layout" in meta["pdf"]:
-                    payload_for_validation = dict(payload)
-                    copied_meta = dict(meta)
-                    copied_pdf = dict(meta["pdf"])
-                    copied_pdf.pop("layout", None)
-                    copied_meta["pdf"] = copied_pdf
-                    payload_for_validation["meta"] = copied_meta
+        raw_layout: object | None = None
+        if source_format == "pdf":
+            # ``meta.pdf.layout`` is optional producer evidence.  Validate the
+            # required Markdown envelope independently so a missing, newer or
+            # malformed layout can never turn into a resume conversion error.
+            payload_for_validation, raw_layout = _without_optional_pdf_layout(
+                payload
+            )
         try:
             parsed = LinkParseResponse.model_validate(payload_for_validation)
         except ValidationError as error:
-            if (
-                source_format == "pdf"
-                and require_pdf_layout
-                and _validation_error_is_pdf_layout(error)
-            ):
-                raise DocumentConversionFailure(
-                    422, "RESUME_LAYOUT_UNSUPPORTED"
-                ) from error
             raise DocumentConversionFailure(
                 502, "DOCUMENT_CONVERSION_FAILED"
             ) from error
         if (
             parsed.request_id != request_id
-            or response.headers.get("X-Request-ID") != request_id
+            or response_request_id != request_id
             or parsed.assets
             or parsed.detected_type not in expected_detected_types
         ):
@@ -784,22 +929,45 @@ class LinkParseClient:
         quality = markdown_quality(markdown)
         if quality == "invalid":
             raise DocumentConversionFailure(422, "IMPORT_CONTENT_INVALID")
+        layout_applied = False
         layout_schema_version: int | None = None
-        if source_format == "pdf" and require_pdf_layout:
-            layout = parsed.meta.pdf.layout if parsed.meta.pdf is not None else None
-            if layout is None:
-                raise DocumentConversionFailure(422, "RESUME_LAYOUT_UNSUPPORTED")
-            try:
-                markdown = rebuild_pdf_layout_markdown(
+        layout_hints: list[PdfLayoutBlock] | None = None
+        if source_format == "pdf" and request_pdf_layout:
+            # Only a fully validated, Markdown-consistent layout is promoted
+            # to rebuilt Markdown.  Independently safe physical blocks remain
+            # available as advisory model hints when a relationship or
+            # quality check makes deterministic reconstruction unavailable.
+            layout = _parse_optional_pdf_layout(raw_layout)
+            if layout is not None:
+                layout_hints = _safe_pdf_layout_hints(
                     layout,
                     page_count=parsed.meta.page_count,
-                    output_markdown=markdown,
                 )
-            except PdfLayoutContractError as error:
-                raise DocumentConversionFailure(
-                    422, "RESUME_LAYOUT_UNSUPPORTED"
-                ) from error
-            layout_schema_version = layout.schema_version
+                try:
+                    rebuilt_markdown, _rebuilt_blocks = _rebuild_pdf_layout_with_blocks(
+                        layout,
+                        page_count=parsed.meta.page_count,
+                        output_markdown=markdown,
+                    )
+                    # Deterministic reconstruction and model hints have
+                    # separate bounds.  A valid reconstruction may still be
+                    # used when the duplicated hint payload is too large;
+                    # only the optional hints are dropped in that case.
+                    markdown = rebuilt_markdown
+                    layout_applied = True
+                    layout_schema_version = layout.schema_version
+                except (
+                    PdfLayoutContractError,
+                    IndexError,
+                    KeyError,
+                    TypeError,
+                    ValueError,
+                    ZeroDivisionError,
+                ):
+                    # Layout evidence is advisory.  Keep this branch silent
+                    # with respect to user content and failures; the normal
+                    # Markdown quality/content checks still apply below.
+                    pass
         warnings: list[str] = []
         if source_format == "pdf":
             if parsed.detected_type in {"scanned_pdf", "mixed_pdf"}:
@@ -833,8 +1001,9 @@ class LinkParseClient:
                     else False
                 ),
                 warnings=warnings,
-                layout_applied=source_format == "pdf" and require_pdf_layout,
+                layout_applied=layout_applied,
                 layout_schema_version=layout_schema_version,
+                layout_hints=layout_hints,
             ),
             (
                 parsed.meta.word.model_dump(exclude_none=True)

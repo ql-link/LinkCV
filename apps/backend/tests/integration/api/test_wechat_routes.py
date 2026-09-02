@@ -1,6 +1,7 @@
 import base64
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -9,7 +10,11 @@ from linkcv.core.security import hash_password
 from linkcv.integrations.wechat_client import WechatClient
 from linkcv.main import create_app
 from linkcv.modules.identity.models import User
-from linkcv.modules.identity.session_service import MINIPROGRAM_CHANNEL, issue_session
+from linkcv.modules.identity.session_service import (
+    MINIPROGRAM_CHANNEL,
+    WEB_CHANNEL,
+    issue_session,
+)
 from tests.fakes import FakeRedis
 from tests.integration.api.test_identity_resumes_assets import FakeStorage
 
@@ -468,7 +473,7 @@ def test_miniprogram_logout_revokes_session_with_expired_access_independent() ->
         ).status_code == 401
 
 
-def test_admin_account_cannot_use_wechat_login_channels() -> None:
+def test_admin_account_uses_both_wechat_channels() -> None:
     app = build_test_app(openid="admin-openid")
     with app.state.session_factory() as db:
         admin = User(
@@ -493,12 +498,89 @@ def test_admin_account_cannot_use_wechat_login_channels() -> None:
         mini = client.post(
             "/api/auth/wechat/miniprogram/login", json={"code": "js-code-1"}
         )
-        assert mini.status_code == 403
-        assert mini.json() == {"error": "ADMIN_WECHAT_LOGIN_FORBIDDEN"}
+        assert mini.status_code == 200, mini.text
+        mini_body = mini.json()
+        assert mini_body["user"]["is_admin"] is True
         assert client.get(
             "/api/auth/me",
-            headers={"Authorization": f"Bearer {historical_mini.access_token}"},
+            headers={"Authorization": f"Bearer {mini_body['access_token']}"},
         ).json() == {"user": None}
+        assert client.get(
+            "/api/miniprogram/resumes",
+            headers={"Authorization": f"Bearer {mini_body['access_token']}"},
+        ).json() == {"resumes": []}
+
+        historical_business = client.get(
+            "/api/miniprogram/resumes",
+            headers={"Authorization": f"Bearer {historical_mini.access_token}"},
+        )
+        assert historical_business.status_code == 200, historical_business.text
+        historical_refresh = client.post(
+            "/api/auth/wechat/miniprogram/refresh",
+            json={"refresh_token": historical_mini.refresh_token},
+        )
+        assert historical_refresh.status_code == 200, historical_refresh.text
+        assert historical_refresh.json()["user"]["is_admin"] is True
+        assert client.post(
+            "/api/auth/wechat/miniprogram/refresh",
+            json={"refresh_token": historical_mini.refresh_token},
+        ).status_code == 401
+
+        scene, poll_token, _ = create_qrcode(client)
+        confirm = client.post(
+            "/api/auth/wechat/confirm",
+            data={"scene": scene, "code": "js-code-1", "privacy_accepted": "true"},
+        )
+        assert confirm.status_code == 200, confirm.text
+        assert confirm.json() == {"ok": True}
+
+        status = client.get(
+            "/api/auth/wechat/status",
+            params={"scene": scene, "poll_token": poll_token},
+        )
+        assert status.status_code == 200, status.text
+        assert status.json()["status"] == "success"
+        assert status.json()["user"]["is_admin"] is True
+
+        web_sid = app.state.redis.hget(f"wechat:login:{scene}", "web_sid")
+        assert web_sid
+        assert app.state.redis.hget(f"auth:session:{web_sid}", "channel") == WEB_CHANNEL
+        assert client.get("/api/auth/me").json()["user"]["is_admin"] is True
+
+
+@pytest.mark.parametrize("is_admin", [0, 1])
+def test_disabled_existing_wechat_account_cannot_use_login_channels(is_admin: int) -> None:
+    app = build_test_app(openid="disabled-openid")
+    with app.state.session_factory() as db:
+        disabled = User(
+            email="disabled@example.test",
+            password_hash=hash_password("disabled-password-123"),
+            nickname="停用用户",
+            status=0,
+            is_admin=is_admin,
+            wechat_openid="disabled-openid",
+        )
+        db.add(disabled)
+        db.commit()
+        db.refresh(disabled)
+        disabled_id = disabled.id
+        historical_mini = issue_session(
+            disabled,
+            app.state.settings,
+            app.state.redis,
+            channel=MINIPROGRAM_CHANNEL,
+        )
+
+    with TestClient(app) as client:
+        mini = client.post(
+            "/api/auth/wechat/miniprogram/login", json={"code": "js-code-1"}
+        )
+        assert mini.status_code == 401
+        assert mini.json() == {"error": "ACCOUNT_DISABLED"}
+        assert client.get(
+            "/api/miniprogram/resumes",
+            headers={"Authorization": f"Bearer {historical_mini.access_token}"},
+        ).status_code == 401
         assert client.post(
             "/api/auth/wechat/miniprogram/refresh",
             json={"refresh_token": historical_mini.refresh_token},
@@ -510,10 +592,14 @@ def test_admin_account_cannot_use_wechat_login_channels() -> None:
             data={"scene": scene, "code": "js-code-1"},
         )
         assert confirm.status_code == 401
-        assert confirm.json() == {"error": "ADMIN_WECHAT_LOGIN_FORBIDDEN"}
+        assert confirm.json() == {"error": "ACCOUNT_DISABLED"}
         assert client.get(
             "/api/auth/wechat/status", params={"scene": scene}
         ).json()["status"] == "cancelled"
+        assert client.cookies.get(app.state.settings.access_cookie_name) is None
+        assert client.cookies.get(app.state.settings.refresh_cookie_name) is None
+        assert app.state.redis.hget(f"wechat:login:{scene}", "web_sid") is None
+        assert app.state.redis.smembers(f"auth:user_sessions:{disabled_id}") == set()
 
 
 def test_cookie_and_bearer_credentials_cannot_be_mixed() -> None:

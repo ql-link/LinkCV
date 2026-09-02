@@ -1,10 +1,10 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+import hashlib
 import logging
 import re
 from pathlib import PurePath, PurePosixPath
 from time import monotonic
-from typing import Literal
 from zipfile import BadZipFile, ZipFile
 
 from pydantic import ValidationError
@@ -14,13 +14,14 @@ from linkcv.domain.document_conversion import (
     DocumentMarkdownConverter,
 )
 from linkcv.domain.import_warnings import merge_import_warnings
-from linkcv.domain.resume_import_composition import (
-    ImportLayoutRecipe,
-    ResumeImportCompositionError,
-    compose_canonical_resume,
-    recipe_for_template,
+from linkcv.domain.resume import (
+    CanonicalCompositionError,
+    CanonicalResumeDocument,
+    SourceGraph,
+    SparseResumeAnnotations,
+    build_source_graph_from_layout_ir,
+    compose_canonical_resume_document,
 )
-from linkcv.domain.resume_document import ResumeDocument
 from linkcv.domain.section_ir import build_section_ir
 from linkcv.integrations.resume_structuring import (
     ResumeStructureInvalidError,
@@ -45,7 +46,6 @@ ENCRYPTED_DOCX_MARKERS = tuple(
 )
 
 STRICT_LAYOUT_WARNINGS = {
-    "pdf_low_text_quality",
     "docx_embedded_images_omitted",
     "docx_table_content_present",
     "docx_textbox_order_may_change",
@@ -195,31 +195,21 @@ def validate_conversion_layout(
     LinkParse's warning envelope is the primary signal.  The service also
     checks the original DOCX package and the Markdown representation so a
     stale/mocked converter cannot silently turn unsupported input into a
-    successful import.
+    successful import.  PDF layout metadata is deliberately advisory: its
+    absence, degraded quality or inconsistency is handled by the converter's
+    Markdown fallback and is never an import gate.
     """
 
     warnings = {getattr(warning, "value", warning) for warning in conversion.warnings}
     if warnings.intersection(STRICT_LAYOUT_WARNINGS):
         _raise_layout_unsupported()
     source_format = conversion.source_format
-    # PDF content is accepted only after LinkParse has validated and consumed
-    # its versioned layout blocks. This deliberately permits trusted OCR,
-    # scanned and mixed PDFs; OCR itself is not a loss signal once layout
-    # quality and source coverage have passed upstream validation.
-    if source_format == "pdf":
-        if not conversion.layout_applied or conversion.layout_schema_version != 1:
-            _raise_layout_unsupported()
-        if conversion.detected_type not in {
-            "text_pdf",
-            "scanned_pdf",
-            "mixed_pdf",
-        }:
-            _raise_layout_unsupported()
     if source_format != "pdf" and conversion.layout_applied:
         _raise_layout_unsupported()
     if (
         source_format == "pdf"
         and conversion.detected_type == "text_pdf"
+        and source_content
         and _pdf_has_embedded_images(source_content) is not False
     ):
         _raise_layout_unsupported()
@@ -279,10 +269,11 @@ def _validation_metadata(error: ValidationError) -> dict[str, str]:
 
 @dataclass(frozen=True)
 class ParsedImportResult:
-    document: ResumeDocument
+    document: CanonicalResumeDocument
     extracted_markdown: str
     source_file_format: str
     warnings: list[str]
+    source_graph: SourceGraph | None = None
 
 
 def safe_import_filename(filename: str) -> str:
@@ -384,6 +375,27 @@ class ResumeImportService:
         self._max_structuring_bytes = max_structuring_bytes
         self._structuring_timeout_seconds = structuring_timeout_seconds
 
+    async def _extract_structuring_result(
+        self,
+        *,
+        user_id: int,
+        section_ir,
+        source_graph,
+        timeout_seconds: float,
+        layout_hints,
+    ):
+        """Call the only runtime LLM contract: sparse SourceGraph annotations."""
+
+        result = await self._structuring_client.extract_sparse(
+            user_id=user_id,
+            source_graph=source_graph,
+            timeout_seconds=timeout_seconds,
+            layout_hints=layout_hints,
+        )
+        if not isinstance(result, SparseResumeAnnotations):
+            raise ResumeStructureInvalidError("structuring client returned a non-sparse result")
+        return result
+
     async def parse_resume(
         self,
         *,
@@ -394,10 +406,10 @@ class ResumeImportService:
         operation_id: str,
         deadline_monotonic: float,
         on_markdown_extracted: Callable[[str], Awaitable[None]] | None = None,
-        import_recipe: ImportLayoutRecipe | None = None,
-        template_key: str | None = None,
-        renderer: Literal["flow", "columns"] = "flow",
-        require_pdf_layout: bool = True,
+        # This flag controls whether the PDF request asks LinkParse for its
+        # optional layout evidence.  It is not a requirement for import
+        # success; malformed/missing evidence falls back to Markdown.
+        request_pdf_layout: bool = True,
     ) -> ParsedImportResult:
         conversion_started = monotonic()
         logger.info(
@@ -414,7 +426,7 @@ class ResumeImportService:
                 content=content,
                 operation_id=operation_id,
                 deadline_monotonic=deadline_monotonic,
-                require_pdf_layout=require_pdf_layout,
+                request_pdf_layout=request_pdf_layout,
             )
         except DocumentConversionFailure as error:
             raise ResumeImportFailure(
@@ -463,13 +475,28 @@ class ResumeImportService:
             },
         )
         try:
-            draft = await self._structuring_client.extract(
-                user_id=user_id,
-                section_ir=section_ir,
-                timeout_seconds=min(
+            layout_hints = getattr(conversion, "layout_hints", None)
+            if layout_hints is None:
+                # Accept the wire-oriented name from an older converter
+                # object as well; the domain result exposes both views.
+                layout_hints = getattr(conversion, "layout_blocks", None)
+            source_graph = build_source_graph_from_layout_ir(
+                section_ir,
+                source_document_sha256=hashlib.sha256(content).hexdigest(),
+                layout_hints=layout_hints,
+            )
+            structuring_kwargs = {
+                "user_id": user_id,
+                "section_ir": section_ir,
+                "source_graph": source_graph,
+                "timeout_seconds": min(
                     self._structuring_timeout_seconds,
                     remaining - 15,
                 ),
+            }
+            draft = await self._extract_structuring_result(
+                **structuring_kwargs,
+                layout_hints=layout_hints,
             )
         except StructuringModelNotConfiguredError as error:
             raise ResumeImportFailure(
@@ -511,13 +538,11 @@ class ResumeImportService:
             },
         )
         try:
-            # Model responses are source mappings only.  The canonical
-            # composer is the sole import path; no typed/unmapped fallback is
-            # allowed to turn an incomplete mapping into a successful resume.
-            composed = compose_canonical_resume(
-                section_ir,
+            composed = compose_canonical_resume_document(
+                source_graph,
                 draft,
-                import_recipe or recipe_for_template(template_key, renderer=renderer),
+                source_ir=section_ir,
+                warnings=section_ir.warnings,
             )
             document = composed.document
             normalization_warnings = list(composed.warnings)
@@ -530,7 +555,7 @@ class ResumeImportService:
                 exception_type=type(error).__name__,
                 **metadata,
             ) from error
-        except ResumeImportCompositionError as error:
+        except CanonicalCompositionError as error:
             raise ResumeImportFailure(
                 422,
                 error.code,
@@ -568,4 +593,5 @@ class ResumeImportService:
                 section_ir.warnings,
                 normalization_warnings,
             ),
+            source_graph=source_graph,
         )

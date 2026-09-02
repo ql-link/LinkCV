@@ -1006,7 +1006,7 @@ select:not([data-slot]):focus-visible {
 .resume-content {
   height: 100%;
   overflow: hidden;
-  padding: var(--resume-page-margin-y) var(--resume-page-margin-x);
+  padding: var(--resume-page-margin-top, var(--resume-page-margin-y)) var(--resume-page-margin-right, var(--resume-page-margin-x)) var(--resume-page-margin-bottom, var(--resume-page-margin-y)) var(--resume-page-margin-left, var(--resume-page-margin-x));
   font-size: var(--resume-font-size);
   line-height: var(--resume-line-height);
 }
@@ -1771,7 +1771,7 @@ select:not([data-slot]):focus-visible {
     #fff 0 297mm,
     transparent 297mm calc(297mm + 24px)
   );
-  padding: var(--resume-page-margin-y) var(--resume-page-margin-x);
+  padding: var(--resume-page-margin-top, var(--resume-page-margin-y)) var(--resume-page-margin-right, var(--resume-page-margin-x)) var(--resume-page-margin-bottom, var(--resume-page-margin-y)) var(--resume-page-margin-left, var(--resume-page-margin-x));
   color: #111827;
   box-shadow: none;
   filter: drop-shadow(0 0 0.75px rgba(15, 18, 22, 0.18)) drop-shadow(0 18px 32px rgba(15, 18, 22, 0.14));
@@ -1792,14 +1792,14 @@ select:not([data-slot]):focus-visible {
 }
 
 .resume-workbench .resume-content {
-  min-height: calc(297mm - (2 * var(--resume-page-margin-y)));
+  min-height: calc(297mm - var(--resume-page-margin-top, var(--resume-page-margin-y)) - var(--resume-page-margin-bottom, var(--resume-page-margin-y)));
   height: auto;
   overflow: visible;
   padding: 0;
 }
 
 .resume-workbench .resume-paper.smart-one-page .resume-content {
-  min-height: calc(297mm - (2 * var(--resume-page-margin-y)));
+  min-height: calc(297mm - var(--resume-page-margin-top, var(--resume-page-margin-y)) - var(--resume-page-margin-bottom, var(--resume-page-margin-y)));
 }
 
 .resume-workbench .resume-content.ProseMirror {
@@ -2439,7 +2439,7 @@ select:not([data-slot]):focus-visible {
 .workbench-setting-item-icon { display: grid; width: 30px; height: 30px; flex: 0 0 30px; place-items: center; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); background: var(--ui-surface-subtle); color: var(--ui-text-secondary); }
 
 .workbench-value-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; color: var(--ui-text-secondary); font-size: 0.75rem; }
-.workbench-value-row > span { min-width: 0; font-weight: 550; }
+.workbench-value-row > span { min-width: max-content; flex: 0 0 auto; font-weight: 550; white-space: nowrap; }
 .workbench-value-control { display: grid; flex: 0 0 auto; grid-template-columns: 28px minmax(54px, auto) 28px; align-items: center; gap: 3px; }
 .workbench-value-control button { display: grid; width: 28px; height: 28px; place-items: center; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); background: var(--ui-surface); padding: 0; color: var(--ui-text-muted); cursor: pointer; }
 .workbench-value-control button:hover:not(:disabled) { border-color: var(--ui-border-strong); color: var(--ui-accent); }

@@ -4,11 +4,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from linkcv.core.config import Settings
-from linkcv.domain.resume_document import default_resume_document
-from linkcv.domain.resume_style import default_resume_style
 from linkcv.main import create_app
 from linkcv.modules.resumes.models import Resume, ResumeTemplate
 from tests.fakes import FakeRedis
+from tests.canonical_resume_fixtures import canonical_template_payload
 
 
 class FakeStorage:
@@ -34,12 +33,13 @@ def build_app():
         create_schema=True,
     )
     with app.state.session_factory() as session:
+        template_data, template_style = canonical_template_payload(key="share-test")
         template = ResumeTemplate(
             key="share-test",
             name="分享测试模板",
             description="分享接口集成测试使用的模板",
-            data_json=default_resume_document().model_dump(mode="json"),
-            style_json=default_resume_style().model_dump(mode="json"),
+            data_json=template_data,
+            style_json=template_style,
             is_active=1,
         )
         session.add(template)
@@ -98,11 +98,11 @@ def test_create_share_public_read_and_overwrite() -> None:
         public = guest.get(f"/api/share/{first_token}")
         assert public.status_code == 200
         payload = public.json()
-        assert set(payload) == {"data", "style", "sharer"}
+        assert set(payload) == {"data", "style", "layout_plan", "sharer"}
         assert set(payload["sharer"]) == {"nickname", "avatar_url"}
         assert payload["sharer"]["nickname"]
-        assert payload["data"]["semantic_sections"]
-        assert payload["style"]["manifest"]["renderer_key"] == "flow"
+        assert payload["data"]["schema_version"] == "canonical-resume.v1"
+        assert payload["layout_plan"]["schema_version"] == "layout-plan.v1"
 
         # 覆盖：新 token 生效，旧 token 立即失效
         overwritten = owner.post(f"/api/resumes/{resume_id}/share")
@@ -274,21 +274,25 @@ def test_share_content_tracks_latest_formal_version() -> None:
 
         # 草稿修改（未保存正式版本）：分享内容不变
         draft_data = resume["data"]
-        draft_data["basics"]["headline"] = "草稿改动"
+        draft_data["identity"]["headline"] = {
+            "node_id": "node_headline00000001",
+            "source_refs": [],
+            "value": "草稿改动",
+        }
         owner.put(
             f"/api/resumes/{resume_id}",
             json={"data": draft_data, "base_lock_version": 1},
         )
         assert (
-            guest.get(f"/api/share/{token}").json()["data"]["basics"]["headline"]
-            != "草稿改动"
+            guest.get(f"/api/share/{token}").json()["data"]["identity"]["headline"]
+            is None
         )
 
         # 保存正式版本：分享内容更新为最新正式版本
         manual = owner.post(f"/api/resumes/{resume_id}/versions")
         assert manual.status_code == 201
         assert (
-            guest.get(f"/api/share/{token}").json()["data"]["basics"]["headline"]
+            guest.get(f"/api/share/{token}").json()["data"]["identity"]["headline"]["value"]
             == "草稿改动"
         )
 

@@ -4,7 +4,12 @@ import { chromium } from "playwright-core";
 import sansRegularAsset from "../node_modules/@embedpdf/fonts-sc/fonts/NotoSansHans-Regular.otf";
 import serifRegularAsset from "../node_modules/@fontpkg/source-han-serif-sc/SourceHanSerifSC-Regular.otf";
 import wenkaiRegularAsset from "../node_modules/@fontpkg/lxgw-wen-kai/LXGWWenKai-Regular.ttf";
-import type { ResumeDocument, ResumePresentation } from "../src/api/resumeContract";
+import {
+  resumePresentationPageMargins,
+  type LayoutPlan,
+  type CanonicalResumeDocument,
+  type CanonicalResumePresentation,
+} from "../src/api/resumeContract";
 import administrativeAvatar from "../public/templates/avatar-administrative.png";
 import campusAvatar from "../public/templates/avatar-campus.png";
 import templateAvatar from "../public/templates/avatar-cat.jpg";
@@ -59,8 +64,9 @@ function fontUrl(asset: string) {
 type RenderRequest = {
   protocol_version?: typeof RESUME_RENDER_PROTOCOL_VERSION;
   title: string;
-  data: ResumeDocument;
-  style: ResumePresentation;
+  data: CanonicalResumeDocument;
+  style: CanonicalResumePresentation;
+  layout_plan?: LayoutPlan | null;
   assets?: Record<string, string>;
 };
 
@@ -72,8 +78,10 @@ function isRenderRequest(value: unknown): value is RenderRequest {
       && item.title.length <= 255
       && !!item.data
       && typeof item.data === "object"
+      && (item.data as Record<string, unknown>).schema_version === "canonical-resume.v1"
       && !!item.style
       && typeof item.style === "object"
+      && (item.style as Record<string, unknown>).schema_version === "resume-presentation.v1"
       && (item.assets === undefined || (!!item.assets && typeof item.assets === "object"))
     : false;
 }
@@ -130,28 +138,36 @@ function maxSmartHeightMm() {
     : DEFAULT_MAX_SMART_HEIGHT_MM;
 }
 
-function printMargins(style: ResumePresentation) {
-  const x = Number.isFinite(style.page.margin_left_mm) ? style.page.margin_left_mm : 20;
-  const y = Number.isFinite(style.page.margin_top_mm) ? style.page.margin_top_mm : 16;
+function printMargins(style: CanonicalResumePresentation) {
+  const resolved = resumePresentationPageMargins(style);
+  // Keep the established PDF pagination contract: a zero template inset means
+  // that the theme owns its inner full-bleed decoration, while Chromium still
+  // receives the reviewed default page gutter.  The independent edge values
+  // remain available to the browser/editor renderer and are preserved in the
+  // canonical snapshot; changing this PDF fallback would move all three
+  // full-bleed official templates relative to their approved baselines.
+  const x = resolved.left || 20;
+  const y = resolved.top || 16;
+  const columns = style.template_snapshot.regions.some((region) => region.region_kind === "sidebar");
   // Column layouts and flow layouts with a zero top margin own the complete
   // A4 canvas (for example a full-bleed header). Their inner spacing is
   // already expressed by the resume CSS variables, so Chromium must not add
   // a second @page margin around the template.
-  return style.manifest.renderer_key === "columns" || y === 0
-    ? { x: 0, y: 0 }
-    : { x, y };
+  return columns
+    ? { top: 0, right: 0, bottom: 0, left: 0 }
+    : { top: y, right: x, bottom: y, left: x };
 }
 
-function pageMarginStyles(style: ResumePresentation) {
+function pageMarginStyles(style: CanonicalResumePresentation) {
   const margins = printMargins(style);
-  const printableWidth = A4_WIDTH_MM - (2 * margins.x);
+  const printableWidth = A4_WIDTH_MM - margins.left - margins.right;
   return [
-    `@page{size:A4;margin:${margins.y}mm ${margins.x}mm}`,
+    `@page{size:A4;margin:${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm}`,
     `html[data-resume-pdf-cli],html[data-resume-pdf-cli] body{width:${printableWidth}mm!important}`,
   ].join("");
 }
 
-function withPrintStyles(html: string, style: ResumePresentation) {
+function withPrintStyles(html: string, style: CanonicalResumePresentation) {
   return html.replace(
     '<style data-resume-print-styles>/* injected by the renderer */</style>',
     `<style data-resume-print-styles>${baseStyles}\n${applicationStyles}\n${printStyles}\n${EMBEDDED_FONT_STYLES}\n${pageMarginStyles(style)}</style>`,
@@ -219,15 +235,17 @@ async function main() {
       const content = root.querySelector<HTMLElement>(".resume-print-content");
       if (!content) throw new Error("PDF_RENDER_LAYOUT_MEASUREMENT_FAILED");
       const computed = getComputedStyle(root);
-      const configuredMargin = Number.parseFloat(computed.getPropertyValue("--resume-page-margin-y")) || 0;
-      const margin = root.classList.contains("theme-administrative-sidebar") ? 0 : configuredMargin;
+      const configuredMarginTop = Number.parseFloat(computed.getPropertyValue("--resume-page-margin-top")) || 0;
+      const configuredMarginBottom = Number.parseFloat(computed.getPropertyValue("--resume-page-margin-bottom")) || 0;
+      const marginTop = root.classList.contains("theme-administrative-sidebar") ? 0 : configuredMarginTop;
+      const marginBottom = root.classList.contains("theme-administrative-sidebar") ? 0 : configuredMarginBottom;
       const smart = root.classList.contains("smart-one-page");
       root.dataset.renderState = "ready";
-      return { contentHeightPx: content.getBoundingClientRect().height, margin, smart };
+      return { contentHeightPx: content.getBoundingClientRect().height, marginTop, marginBottom, smart };
     });
 
     const heightMm = measurement.smart
-      ? smartPageHeightMm(measurement.contentHeightPx, measurement.margin, measurement.margin, maxSmartHeightMm())
+      ? smartPageHeightMm(measurement.contentHeightPx, measurement.marginTop, measurement.marginBottom, maxSmartHeightMm())
       : A4_MIN_HEIGHT_MM;
     if (!measurement.smart) {
       // The browser preview keeps a paper clipped to one A4 sheet. The print
@@ -251,7 +269,7 @@ async function main() {
         }
       });
       await page.addStyleTag({
-        content: `@page { size: 210mm ${heightMm}mm !important; margin: ${margins.y}mm ${margins.x}mm !important; }`,
+        content: `@page { size: 210mm ${heightMm}mm !important; margin: ${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm !important; }`,
       });
     }
     const pdf = await page.pdf(measurement.smart

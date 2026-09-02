@@ -4,6 +4,7 @@ import math
 from typing import Literal, Protocol
 
 from pydantic import (
+    AliasChoices,
     BaseModel,
     ConfigDict,
     Field,
@@ -139,11 +140,21 @@ class DocumentMarkdownResult(BaseModel):
     detected_type: Literal["text_pdf", "scanned_pdf", "mixed_pdf", "docx"] | None = None
     ocr_applied: bool = False
     warnings: list[str] = Field(default_factory=list)
-    # A PDF result is trusted by the import service only when the adapter has
-    # validated and consumed the versioned layout contract. DOCX/Markdown
-    # keep the default false and therefore retain their existing behavior.
+    # ``layout_applied`` means that the optional PDF layout passed all of the
+    # adapter's strict checks and its deterministic Markdown reconstruction
+    # was used.  It is an optimization marker, not a PDF import prerequisite.
     layout_applied: bool = False
     layout_schema_version: Literal[1] | None = None
+    # Safe, bounded physical-line hints retained for the resume structuring
+    # stage.  They may survive a failed deterministic reconstruction: the
+    # hints are advisory evidence, while ``layout_applied`` only marks that
+    # the rebuilt Markdown was actually selected. ``layout_blocks`` is
+    # accepted as an input alias for older adapters.
+    layout_hints: list[PdfLayoutBlock] | None = Field(
+        default=None,
+        max_length=5_000,
+        validation_alias=AliasChoices("layout_hints", "layout_blocks"),
+    )
 
     @model_validator(mode="after")
     def validate_layout_marker(self) -> "DocumentMarkdownResult":
@@ -153,7 +164,16 @@ class DocumentMarkdownResult(BaseModel):
             raise ValueError("layout_applied requires layout schema version 1")
         if not self.layout_applied and self.layout_schema_version is not None:
             raise ValueError("layout schema version requires layout_applied")
+        if self.layout_hints is not None:
+            if self.source_format != "pdf":
+                raise ValueError("layout_hints are only valid for PDF results")
         return self
+
+    @property
+    def layout_blocks(self) -> list[PdfLayoutBlock] | None:
+        """Compatibility view for callers that use the wire field name."""
+
+        return self.layout_hints
 
 
 class DocumentMarkdownConverter(Protocol):
@@ -165,5 +185,5 @@ class DocumentMarkdownConverter(Protocol):
         content: bytes,
         operation_id: str,
         deadline_monotonic: float,
-        require_pdf_layout: bool = False,
+        request_pdf_layout: bool = False,
     ) -> DocumentMarkdownResult: ...

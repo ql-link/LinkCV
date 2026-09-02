@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from contextlib import suppress
 from typing import Any
 
 import aio_pika
@@ -9,6 +10,7 @@ from pydantic import ValidationError
 
 from linkcv.core.config import Settings
 from linkcv.core.mq.message import (
+    DatasetParseMessage,
     ResumeImportMessage,
     document_parse_task_message_adapter,
 )
@@ -112,11 +114,14 @@ def _mark_retry_exhausted(
     if task is None:
         return True
     task_type, task_id = task
+    # Dataset messages do not carry the attempt version.  Letting this
+    # delivery-level hook mark a task failed could race with a newer attempt
+    # after lease recovery.  DatasetParseProcessor's stale scanner owns the
+    # processing -> queued/failed transition instead.
+    if task_type != "resume":
+        return
     try:
-        if task_type == "resume":
-            resume_processor.mark_retry_exhausted(task_id)
-        else:
-            dataset_processor.mark_retry_exhausted(task_id)
+        resume_processor.mark_retry_exhausted(task_id)
     except WorkerDependencyUnavailable:
         context = dict(log_context or {})
         logger.warning(
@@ -126,6 +131,30 @@ def _mark_retry_exhausted(
         )
         return False
     return True
+
+
+async def _publish_dataset_task(
+    *,
+    exchange,
+    parse_task_id: int,
+    settings: Settings,
+) -> bool:
+    """Publish a persistent dataset message and return broker confirmation."""
+    message = DatasetParseMessage.create(parse_task_id=parse_task_id)
+    confirmed = await exchange.publish(
+        aio_pika.Message(
+            body=message.body(),
+            content_type="application/json",
+            delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+            message_id=str(message.payload.message_id),
+            timestamp=message.payload.timestamp,
+            type=message.mq_type,
+        ),
+        routing_key=settings.rabbitmq_routing_key,
+        mandatory=True,
+        timeout=settings.mq_publish_confirm_timeout_seconds,
+    )
+    return confirmed is not False
 
 
 async def _publish_rabbit_dlt(
@@ -347,18 +376,40 @@ async def run_rabbitmq_consumer(
             routing_key=f"{settings.rabbitmq_routing_key}.DLT",
         )
         async with queue.iterator() as iterator:
+            async def publish_dataset_task(parse_task_id: int) -> bool:
+                return await _publish_dataset_task(
+                    exchange=exchange,
+                    parse_task_id=parse_task_id,
+                    settings=settings,
+                )
+
+            recovery_loop = getattr(dataset_processor, "run_recovery_loop", None)
+            recovery_task = (
+                asyncio.create_task(recovery_loop(publish=publish_dataset_task))
+                if recovery_loop is not None
+                else None
+            )
             async with asyncio.TaskGroup() as task_group:
-                async for incoming in iterator:
-                    task_group.create_task(
-                        _handle_rabbit_message(
-                            resume_processor=resume_processor,
-                            dataset_processor=dataset_processor,
-                            exchange=exchange,
-                            dead_letter_exchange=dead_letter_exchange,
-                            incoming=incoming,
-                            settings=settings,
+                try:
+                    # The scanner shares the existing consumer connection/channel.
+                    # It reads and commits DB state in short transactions, then
+                    # waits for MQ confirmation outside those transactions.
+                    async for incoming in iterator:
+                        task_group.create_task(
+                            _handle_rabbit_message(
+                                resume_processor=resume_processor,
+                                dataset_processor=dataset_processor,
+                                exchange=exchange,
+                                dead_letter_exchange=dead_letter_exchange,
+                                incoming=incoming,
+                                settings=settings,
+                            )
                         )
-                    )
+                finally:
+                    if recovery_task is not None:
+                        recovery_task.cancel()
+                        with suppress(asyncio.CancelledError):
+                            await recovery_task
 
 
 async def _handle_kafka_message(

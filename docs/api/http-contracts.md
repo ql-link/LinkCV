@@ -23,18 +23,18 @@
 
 会话统一保存为 Redis `auth:session:{sid}` hash 和 `auth:user_sessions:{uid}` 集合。Hash 包含 `uid`、refresh secret 哈希、`channel=web|miniprogram` 和创建时间；access JWT 同样携带 channel。Web 只接受 HttpOnly Cookie 中的 `channel=web` 凭据，小程序只接受 `Authorization: Bearer` 中的 `channel=miniprogram` 凭据；同时携带两种载体、JWT 与 Redis 的 uid/channel 不一致、session 被撤销或用户停用时均视为未登录。为兼容本功能上线前已签发的 Web 会话，缺少 channel 的旧 JWT/Redis session 仅按 Web 凭据接受，并在 refresh 轮换时补写 `channel=web`；它不会被小程序接口接受。Refresh 每次轮换 secret，重放旧 refresh 会撤销整个 session。
 
-微信 code 只由后端提交微信平台换取 openid。`/api/auth/wechat/miniprogram/account-status` 仍可使用当前 `wx.login` code 返回该 openid 是否已有关联账号，只返回布尔值，不创建用户、不更新登录时间、不签发会话；随仓库发布的小程序不再把它用于登录前置探测。该接口与小程序登录共用来源 IP 默认每分钟 30 次的限流。openid 已存在时登录接口直接复用；不存在时，`/api/auth/wechat/confirm` 和 `/api/auth/wechat/miniprogram/login` 只有在收到 `privacy_accepted=true` 后才创建 `email/password_hash` 为空的普通账号，缺失或为 `false` 时返回 `400 PRIVACY_AGREEMENT_REQUIRED`，唯一约束负责并发建号收敛。该字段只表示本次注册请求已经通过客户端确认门禁，不是服务端持久化的同意审计记录。随仓库发布的小程序冷启动在“简历”页展示一张内置“示例简历 · 内容为虚构信息”卡片，点击详情也只渲染包内虚构内容；游客首页与示例详情不发起账号探测、登录、隐私授权或个人数据请求，可切换“我的”游客态。登录入口只保留在“我的”页；用户查看并勾选微信平台隐私保护指引并点击主操作后，客户端才调用建号或登录接口；未勾选时在协议区行内提示。普通登录成功后返回“我的”页；扫码确认先用一个 code 确认 Web scene，再用新的 code 建立独立小程序会话。登录后的简历页与请求重试路径只能以 `privacy_accepted=false` 尝试恢复已有账号，不能静默触发首次建号。停用账号不能登录或续期；管理员账号即使历史上已有 openid，也不能通过扫码或小程序登录，只能使用 `/api/auth/admin-login`。超出上述限流时返回 `429 WECHAT_RATE_LIMITED`。开发者工具和真机的 `develop` 运行时都默认使用 `https://linkresume.cn`；只有环境被明确识别为 `develop` 且设备本地执行 `wx.setStorageSync("linkcv_local_debug_enabled", true)` 时才读取每次 `npm run dev` 自动更新的 `local.js`，环境识别缺失或异常时不读取开发 storage/local.js；`linkcv_api_base_url` 显式 URL 覆盖优先于 `local.js`。关闭 opt-in 可执行 `wx.removeStorageSync("linkcv_local_debug_enabled")` 或写入 `false`；体验版和正式版忽略全部开发 storage/local.js，继续使用该 HTTPS 地址。
+微信 code 只由后端提交微信平台换取 openid。`/api/auth/wechat/miniprogram/account-status` 仍可使用当前 `wx.login` code 返回该 openid 是否已有关联账号，只返回布尔值，不创建用户、不更新登录时间、不签发会话；随仓库发布的小程序不再把它用于登录前置探测。该接口与小程序登录共用来源 IP 默认每分钟 30 次的限流。openid 已存在时登录接口直接复用；不存在时，`/api/auth/wechat/confirm` 和 `/api/auth/wechat/miniprogram/login` 只有在收到 `privacy_accepted=true` 后才创建 `email/password_hash` 为空的普通账号，缺失或为 `false` 时返回 `400 PRIVACY_AGREEMENT_REQUIRED`，唯一约束负责并发建号收敛。该字段只表示本次注册请求已经通过客户端确认门禁，不是服务端持久化的同意审计记录。随仓库发布的小程序冷启动在“简历”页展示一张内置“示例简历 · 内容为虚构信息”卡片，点击详情也只渲染包内虚构内容；游客首页与示例详情不发起账号探测、登录、隐私授权或个人数据请求，可切换“我的”游客态。登录入口只保留在“我的”页；用户查看并勾选微信平台隐私保护指引并点击主操作后，客户端才调用建号或登录接口；未勾选时在协议区行内提示。普通登录成功后返回“我的”页；扫码确认先用一个 code 确认 Web scene，再用新的 code 建立独立小程序会话。登录后的简历页与请求重试路径只能以 `privacy_accepted=false` 尝试恢复已有账号，不能静默触发首次建号。停用账号不能登录或续期；启用管理员账号即使历史上已有 openid，也与普通账号一样可以通过网页扫码确认并由匹配 `poll_token` 的 status 签发 Web Cookie，也可以通过小程序 login 建立、refresh 轮换小程序 Bearer 会话并访问小程序业务接口；管理员仍可使用 `/api/auth/admin-login`。超出上述限流时返回 `429 WECHAT_RATE_LIMITED`。开发者工具和真机的 `develop` 运行时都默认使用 `https://linkresume.cn`；只有环境被明确识别为 `develop` 且设备本地执行 `wx.setStorageSync("linkcv_local_debug_enabled", true)` 时才读取每次 `npm run dev` 自动更新的 `local.js`，环境识别缺失或异常时不读取开发 storage/local.js；`linkcv_api_base_url` 显式 URL 覆盖优先于 `local.js`。关闭 opt-in 可执行 `wx.removeStorageSync("linkcv_local_debug_enabled")` 或写入 `false`；体验版和正式版忽略全部开发 storage/local.js，继续使用该 HTTPS 地址。
 
 ### 网页扫码登录
 
 | Method | Path | 成功结果 |
 | --- | --- | --- |
 | `POST` | `/api/auth/wechat/qrcode` | `{scene, poll_token, qr_base64}`；匿名，按 IP 限流；`poll_token` 只保留在创建二维码的网页 |
-| `GET` | `/api/auth/wechat/status?scene=...&poll_token=...` | `{status, user?}`；`pending\|success\|cancelled\|expired`，success 且 poll token 匹配时设置 Web Cookie；不带 token 时只读状态 |
+| `GET` | `/api/auth/wechat/status?scene=...&poll_token=...` | `{status, user?}`；`pending\|success\|cancelled\|expired`，success 且 poll token 匹配时设置 Web Cookie（启用管理员也适用）；不带 token 时只读状态 |
 | `POST` | `/api/auth/wechat/confirm` | `{ok: true}`；小程序表单 `{scene, code, privacy_accepted?}`，未知 openid 建号时该值必须为 `true` |
 | `POST` | `/api/auth/wechat/cancel` | `{ok: true, status: "cancelled"}`；小程序表单 `{scene}` |
 
-scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → cancelled` 流转，默认 TTL 300 秒。确认使用原子 claim，只有一个请求执行微信换取；外部服务或无效 code 会由 claim 所有者恢复 `pending`，允许小程序取得新 code 后重试。processing 超过 30 秒视为遗留占用，可由新的确认请求原子接管；未超时的并发请求返回 `409 SCENE_IN_PROGRESS`。重复确认已确认场景幂等成功，终态保留到 TTL，不因重复请求删除。scene 供小程序确认并查询状态，独立 poll token 才允许 Web 领取会话，服务端只保存其哈希。Web 对已确认场景重复领取时会先发新 session、原子替换 scene 上的 `web_sid` 并撤销旧 sid，因此响应丢失可重试且同一 scene 最多保留一个有效 Web session；小程序无 poll token，不会误撤销网页会话。取消已确认场景返回冲突；未知或到期 scene 返回 `410 SCENE_EXPIRED`。
+scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → cancelled` 流转，默认 TTL 300 秒。确认使用原子 claim，只有一个请求执行微信换取；外部服务或无效 code 会由 claim 所有者恢复 `pending`，允许小程序取得新 code 后重试。processing 超过 30 秒视为遗留占用，可由新的确认请求原子接管；未超时的并发请求返回 `409 SCENE_IN_PROGRESS`。重复确认已确认场景幂等成功，终态保留到 TTL，不因重复请求删除。只要关联账号处于启用状态，普通账号和管理员都可以确认 scene，领取 Web Cookie，并继续完成小程序登录以取得 Bearer 会话；scene 供小程序确认并查询状态，独立 poll token 才允许 Web 领取会话，服务端只保存其哈希。Web 对已确认场景重复领取时会先发新 session、原子替换 scene 上的 `web_sid` 并撤销旧 sid，因此响应丢失可重试且同一 scene 最多保留一个有效 Web session；小程序无 poll token，不会误撤销网页会话。取消已确认场景返回冲突；未知或到期 scene 返回 `410 SCENE_EXPIRED`。
 
 ### 小程序只读简历
 
@@ -55,18 +55,18 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 
 `/api/account/*` 通过当前用户身份确定资源归属，不接受 `user_id`。当前公开接口为 profile、昵称和头像读写；Web 账号页不再显示密码或微信绑定入口。`user.email` 对微信用户为 `null`。最近简历仍按更新时间倒序返回最多 5 条。
 
-`GET/PUT /api/account/user-profile` 维护跨简历共享的个人画像，聚合求职偏好、基础信息与技能荣誉，独立保存于 `user_profiles` 表，不修改任何简历内容。未创建时 `GET` 返回 `lock_version=1` 的约定空对象且不写库；`PUT` 整体替换全部可编辑字段，缺省字段以 `null`/空数组覆盖旧值。`PUT` 必须携带 `base_lock_version`（首次创建固定为 1），服务端原子比较版本号，并发基准过期返回 `409 USER_PROFILE_VERSION_CONFLICT`，响应 `{profile}` 携带最新画像供调用方刷新后重试。薪资必须成组填写：`salary_min`/`salary_max` 任一非空时要求 `salary_currency`（大写三字母 ISO 4217）与 `salary_period` 同时非空；`available_from` 仅在 `availability=custom` 时允许填写。数组类字段（`target_positions`/`exclusions`/`target_companies`/`languages`/`skills`/`certifications`/`honors`/`campus_experiences`）空文本去重并保留提交顺序，单元素最长 100 字符、数组最长 100 项；`school_tier` 只接受 `project_985`/`project_211`/`double_first_class`，最长 10 项。非法枚举、超长列表或违反联动约束返回 `422` 字段校验；`GET /api/account/profile` 响应新增 `profile` 字段（未创建为 `null`）。
+`GET/PUT /api/account/user-profile` 维护跨简历共享的个人画像，聚合可比较的求职条件、教育背景与技能成果，独立保存于 `user_profiles` 表，不修改任何简历内容；这是唯一画像资源入口。未创建时 `GET` 返回 `lock_version=1` 的约定空画像且不写库；`PUT` 整体替换全部可编辑字段，缺省字段以 `null`/空数组覆盖旧值。`PUT` 必须携带 `base_lock_version`（首次创建固定为 1），服务端原子比较版本号，并发基准过期返回 `409 USER_PROFILE_VERSION_CONFLICT`，响应 `{profile}` 携带最新画像供调用方刷新后重试。可编辑字段包括 `candidate_cities`（最多 20 项）、`employment_types`（最多 2 项且只接受 `internship`/`full_time`）、薪资四字段、`candidate_status`、`graduation_year`、`years_experience`、教育字段和语言/技能/证书/荣誉/校园经历列表。城市及普通字符串列表会去除空串、去重并保留首次顺序；单项最长 100 字符，普通列表最多 100 项，`school_tier` 只接受 `project_985`/`project_211`/`double_first_class` 且最多 10 项。薪资必须成组填写：`salary_min`/`salary_max` 任一非空时要求 `salary_currency`（大写三字母 ISO 4217）与 `salary_period` 同时非空，最高值不得低于最低值。`candidate_status=fresh_graduate` 时 `graduation_year` 必须为 1900–9999 的四位年份且 `years_experience` 固定为 0；`experienced` 时毕业年份必须为空；未选择类型时毕业年份也必须为空。非法枚举、超长列表或违反联动约束返回 `400 INVALID_USER_PROFILE`。`GET /api/account/profile` 只返回账号资料、简历数量和最近简历，不内嵌 `profile`。
 
 | Method | Path | 成功结果 |
 | --- | --- | --- |
-| `GET` | `/api/account/user-profile` | `{profile}`；未创建返回 `lock_version=1` 空对象 |
-| `PUT` | `/api/account/user-profile` | `{profile}`；请求含 `base_lock_version` 及可编辑字段，并发过期返回 `409 USER_PROFILE_VERSION_CONFLICT` |
+| `GET` | `/api/account/user-profile` | 新画像完整对象；未创建返回 `lock_version=1` 空对象 |
+| `PUT` | `/api/account/user-profile` | 保存后的新画像完整对象；请求含 `base_lock_version` 及可编辑字段，并发过期返回 `409 USER_PROFILE_VERSION_CONFLICT` 并携带最新画像 |
 
 ## 语义简历契约
 
-简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`。数据库 ID 在 HTTP 中使用十进制字符串。运行期只接受字段完整的 `ResumeDocument data` 与 `ResumePresentation style`，不再携带或协商 `schema_version`；缺少 `semantic_sections` 或 `manifest` 的请求不会被静默补齐。`data.semantic_sections` 把用户可见标题、稳定语义类型、来源、置信度和真实内容引用分离保存，每份实际内容必须被恰好引用一次；编辑器章节使用独立 `blk_*` ID，标题改名不改变章节身份。已进入编辑器的章节正文以受控 `{format: "tiptap-json", content: JSONContent}` 保存，保留段落、列表、双列、信息行、图片、对齐和富文本 marks；历史 `{format: "markdown", content: string}` 只作为兼容输入继续可读，首次正文保存后转成规范 Tiptap JSON。页级 `sidebar/main` 属于 `style.manifest` 投影，禁止作为正文持久化；`profile`、`interests` 等侧栏内容仍是独立语义章节。`style.manifest` 只允许受控 renderer、区域、插槽、唯一自定义兜底区和头像策略。简历正文以用户内容为准：错别字、非标准邮箱或电话、无法识别或先后矛盾的日期、缺少单位或职位等内容质量问题不阻断保存、导入或版本恢复；可识别日期仍会规范化，无法识别的日期原样保留。字段类型、总量和长度上限、URL 协议、Markdown 主动内容、Tiptap 节点/marks/属性白名单及内部 ID 完整性仍严格校验。`style.smart_one_page` 控制连续单页或标准 A4 导出模式，并随版本快照保存。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不再是简历写契约。
+简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`，数据库 ID 在 HTTP 中使用十进制字符串。维护窗口升级到 `0047` 后，运行期只接受 `schema_version=canonical-resume.v1` 的 `data` 和 `schema_version=resume-presentation.v1` 的 `style`；旧 `basics/semantic_sections/custom_sections` 与旧 `manifest` 只允许进入一次性迁移转换器，不能通过普通保存、模板切换、版本、Agent、分享或 PDF API 写回。`CanonicalResumeDocument` 使用稳定 `node_*`、identity、按语义排序的 sections、段落/列表/媒体以及章节内 `row`（`pair` 两格、`meta` 四格、`trio` 三格）和 `source_refs/source_dispositions` 保存唯一内容真值；row/cell 是模板无关的正文结构，禁止保存模板级 region、slot、sidebar/main、column、CSS、分页和编辑器 selection。`TemplateDefinition` 的严格 `avatar` 包含 `visibility`、`fallback_asset`、`size_px` 和已声明的 `region_id`；系统默认头像只在渲染投影中出现，不写回 canonical 正文。`ResumePresentation` 使用 `portable/template_scoped/template_snapshot` 保存展示设置与当前模板快照；`portable.smart_one_page` 控制连续单页或标准 A4 导出。模板切换只更换模板身份、presentation 与后端编译的 `LayoutPlan`，正文规范摘要必须保持不变。字段闭集、数量和长度、URL、node/source 唯一性与来源闭包均严格校验；LLM 只返回稀疏语义标注，未标注源块由确定性组合器保留，不生成“未分类内容”。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不是简历写契约。
 
-Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，把旧 `"1.0"` JSON 一次性转换为上述唯一契约；`0037`–`0040` 依次拆分官方编辑 Markdown、移除 typed 副本、规范区块 ID 并修正双栏插槽。`0041` 再对模板、当前简历和历史版本全量预检，把旧整篇编辑正文及跨章节残留的 `sidebar/main` 页级包装转换为无投影语义块，保留可见文字与私有用户头像，并为双栏 manifest 补齐 `profile/interests` 路由；写后重复完整校验。`0042` 恢复经典技术模板及既有快照的生产页边距并删除 `blank-cn`，历史简历依靠 `ON DELETE SET NULL` 只清空来源引用；Development 已有 `0043` 新增 `user_profiles`，该共享 revision 不复用。`0044` 只把唯一 `classic-technical-cn` 官方模板的字号、行距和主题色恢复为 `9.5 / 1.25 / #202632`，保留页边距、内容、manifest、模板 ID 和启用状态，既有简历与版本不在写集内。发布顺序仍为停止旧写入、备份、执行迁移、验证后启动新应用；失败时依赖备份恢复，不执行 downgrade。
+Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，把旧 `"1.0"` JSON 一次性转换为上述唯一契约；`0037`–`0040` 依次拆分官方编辑 Markdown、移除 typed 副本、规范区块 ID 并修正双栏插槽。`0041` 再对模板、当前简历和历史版本全量预检，把旧整篇编辑正文及跨章节残留的 `sidebar/main` 页级包装转换为无投影语义块，保留可见文字与私有用户头像，并为双栏 manifest 补齐 `profile/interests` 路由；写后重复完整校验。`0042` 恢复经典技术模板及既有快照的生产页边距并从目录删除 `blank-cn`，历史简历依靠 `ON DELETE SET NULL` 暂时只清空来源引用。`0043` 增加资料上传幂等和可靠调度字段，`0044`–`0046` 建立并收敛 `user_profiles`。`0047` 全量只读预检后执行 canonical 切流；若历史简历或版本仍引用 `blank-cn`，先创建不含用户内容、`is_active=0` 的 tombstone 身份，再把各行绑定到该身份，各自正文和冻结样式仍从自己的旧快照转换。未知退役身份、关系冲突或非法 JSON 在首次写入前阻断。`0048` 确定性重组 canonical row 并恢复 avatar 策略；`0049` 为活动导入任务回填受理时模板定义，Worker 不再从可变模板目录重新取版式。发布顺序为停止旧写入、备份、从真实 current 按顺序升级到 `0049`、验证后启动新应用；失败时依赖备份恢复，不执行 downgrade。
 
 | Method   | Path                        | 鉴权 | 成功结果                                                         |
 | -------- | --------------------------- | ---- | ---------------------------------------------------------------- |
@@ -81,7 +81,7 @@ Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，�
 | `GET`    | `/api/resumes/:id/pdf?lock_version=...` | 是 | 当前 Web 快照的 PDF；版本不一致返回 `409 RESUME_PDF_SNAPSHOT_STALE` |
 | `DELETE` | `/api/resumes/:id`          | 是   | `{deleted}`                                                      |
 
-所有新简历都从当前启用的非空白模板创建；历史 `blank-cn` 已由 `0042` 退役并删除。普通创建先把名称去首尾空白、折叠连续空白，再按 Unicode `casefold` 比较同一用户已有名称；重复返回 `409 RESUME_TITLE_CONFLICT`，名称为空或超过 255 字符返回 `400 INVALID_RESUME_TITLE`，缺模板返回 `400 TEMPLATE_REQUIRED`，模板不存在、停用或结构无效返回 `422 TEMPLATE_INACTIVE`。历史无模板简历继续可读写，历史重名不回填也不阻止保持原名。
+所有新简历都从当前启用的非空白模板创建；历史 `blank-cn` 已由 `0042` 从产品目录退役，`0047` 仅在仍有历史引用时恢复为 `is_active=0` 的不可选身份。普通创建先把名称去首尾空白、折叠连续空白，再按 Unicode `casefold` 比较同一用户已有名称；重复返回 `409 RESUME_TITLE_CONFLICT`，名称为空或超过 255 字符返回 `400 INVALID_RESUME_TITLE`，缺模板返回 `400 TEMPLATE_REQUIRED`，模板不存在、停用或结构无效返回 `422 TEMPLATE_INACTIVE`。历史简历和版本在 `0047` 后模板外键非空，可继续读取、编辑或切换到启用模板，但不能用 tombstone 新建或切换；历史重名不回填也不阻止保持原名。
 
 模板切换使用独立原子接口，不通过普通 `PUT` 猜测模板身份。旧调用方可只发送模板 ID 和锁版本；Web 同时发送当前 `title/data`，服务端验证简历归属、目标模板启用状态、完整快照和内容 ID 到目标插槽的唯一组合计划后，在同一条件更新中保存最新标题与正文、替换目标模板 `style`、写入 `template_id` 并递增 `lock_version`。目标模板只提供呈现，不能用自己的示例正文覆盖用户数据。过期基准返回 `409 RESUME_EDIT_CONFLICT`，标题冲突返回 `409 RESUME_TITLE_CONFLICT`，模板不存在、停用或结构无效返回 `422 TEMPLATE_INACTIVE`，内容无法完整且唯一地映射到目标模板时返回 `422 TEMPLATE_COMPOSITION_INVALID`；任一失败都不产生“内容已保存但模板未切换”或相反的半状态。
 
@@ -164,13 +164,13 @@ SSE 事件包括 `run.started`、`run.phase`、`assistant.delta`、`clarificatio
 }
 ```
 
-RabbitMQ 是默认 Broker，V2 使用 `tolink.cv.resume_import.v2` exchange、`linkcv.resume_import.worker.v2` queue 和固定 `resume.import.v2` routing key；Kafka 兼容实现使用同名 V2 topic、独立 V2 consumer group，并以规范任务 ID 作为消息 key。Resume 与 Dataset 消息正文都强制 `pipeline_version="v2"`，旧版或未知消息不会进入业务 Processor。独立 Worker 从私有对象存储读取文件，Markdown 本地转换，DOCX/PDF 经 LinkParse，再走 `SourceLayoutIR → 模型映射决策 → 规范组合器`。`SourceLayoutIR` 保存源块全局顺序、跨度、列表类型、起始序号、项目序号和嵌套深度；模型只能为每个稳定源块选择语义/布局角色和受限分组，不能返回正文或决定丢弃。程序要求每个源块恰好使用一次，再按任务开始时锁定的模板 key/renderer 生成全 custom `ResumeDocument`：联系信息保持同一信息行；单块左右经历头必须有显式 `entry_header` 决策与原文分隔符，普通正文不猜测；同语义嵌套 heading 保留在父章节；有序与嵌套列表使用合法 CommonMark，超过 50 个源引用时分片并延续实际序号；章节保持来源顺序，不生成“未分类内容”。转换存档写到 `users/{user_id}/resume-imports/{operation_id}/artifacts/converted.md`；只有任务仍为本人 `processing` 时才允许上传并写回对象引用。解析成功时以安全化文件名的 stem 作为标题，允许与已有简历同名；解析内容作为 data，所选模板快照提供 style，Worker 持久化前再次锁定并核对模板 key、renderer 和启用状态未变化。正式简历、initial 版本、`resumes.parse_task_id` 结果关联和任务成功状态在一个数据库事务内提交；响应仍以 `result_resume_id` 返回关联结果。
+RabbitMQ 是默认 Broker，V2 使用 `tolink.cv.resume_import.v2` exchange、`linkcv.resume_import.worker.v2` queue 和固定 `resume.import.v2` routing key；Kafka 兼容实现使用同名 V2 topic、独立 V2 consumer group，并以规范任务 ID 作为消息 key。Resume 与 Dataset 消息正文都强制 `pipeline_version="v2"`，旧版或未知消息不会进入业务 Processor。独立 Worker 从私有对象存储读取文件，Markdown 本地转换，DOCX/PDF 经 LinkParse，再走 `SourceLayoutIR → 模型映射决策 → 规范组合器`。`SourceLayoutIR` 保存源块全局顺序、跨度、列表类型、起始序号、项目序号和嵌套深度；模型只能为每个稳定源块选择语义/布局角色和受限分组，不能返回正文或决定丢弃。程序要求每个源块恰好使用一次，再按任务受理时冻结的模板定义生成 canonical 简历：联系信息保持同一信息行；单块左右经历头必须有显式 `entry_header` 决策与原文分隔符，普通正文不猜测；同语义嵌套 heading 保留在父章节；有序与嵌套列表使用合法 CommonMark，超过 50 个源引用时分片并延续实际序号；章节保持来源顺序，不生成“未分类内容”。转换存档写到 `users/{user_id}/resume-imports/{operation_id}/artifacts/converted.md`；只有任务仍为本人 `processing` 时才允许上传并写回对象引用。解析成功时以安全化文件名的 stem 作为标题，允许与已有简历同名；解析内容作为 data，受理时冻结的模板 ID 与完整 `TemplateDefinition` 快照提供 style。Worker 持久化前只锁定模板行并核对关系 key 仍指向同一模板身份，不重读当前样式，也不要求模板继续启用，因此受理后的模板更新或停用不会改变任务结果。正式简历、initial 版本、`resumes.parse_task_id` 结果关联和任务成功状态在一个数据库事务内提交；响应仍以 `result_resume_id` 返回关联结果。
 
 缺少或使用非 canonical Header 返回 `400 INVALID_IDEMPOTENCY_KEY`。同一用户、Key 和请求指纹在 15 分钟映射窗口内重放同一导入记录：活动状态返回 `202`，成功终态返回 `200`，失败终态返回 `409 IMPORT_PREVIOUSLY_FAILED`；同 Key 异指纹返回 `409 IDEMPOTENCY_KEY_REUSED`。记录绑定前的短窗口返回 `409 IMPORT_ACCEPTANCE_IN_PROGRESS`，Redis 不可用返回 `503 IMPORT_IDEMPOTENCY_UNAVAILABLE`。记录创建后的错误响应在顶层 `import` 字段附带同一任务摘要。
 
 `GET /api/resume-overview` 返回 `{resumes, active_imports, failed_imports, next_failed_cursor}`；失败列表支持 `failed_limit=1..50` 和服务端生成的 `failed_cursor`。`GET /api/resume-imports/:id` 返回本人的单个 `{import}` 任务摘要，查询前沿用陈旧任务收口；不存在、非法 ID 或越权统一返回 `404 RESUME_IMPORT_NOT_FOUND`。Web 只对 `upload_status=succeeded` 且 `parse_status=processing` 的任务按 ID 每秒独立查询，多个任务分别轮询，终态后停止；成功终态再一次性刷新 overview，使正式简历替换活动任务。`DELETE /api/resume-imports/:id` 只允许本人删除上传或解析失败记录，并同时清理源文件、当前 `artifacts/converted.md` 和旧版 `converted.md` 候选；活动任务返回 `409 RESUME_IMPORT_IN_PROGRESS`，不存在、非法 ID 或越权同样返回 `404 RESUME_IMPORT_NOT_FOUND`，对象删除失败返回 `502 ASSET_DELETE_FAILED`。
 
-文件或模板无效时返回对应 `4xx` 且不创建正式简历。扫描、混合和 OCR PDF 必须携带 LinkParse V1 layout 并通过严格 schema、来源闭包、计数、关系引用和确定性 Markdown 一致性门禁；缺失、降级、畸形或不一致的 layout、含嵌入图片的文本 PDF、含图片/表格/文本框的 DOCX，以及转换后仍含表格、图片、嵌入或主动 HTML 的内容返回 `422 RESUME_LAYOUT_UNSUPPORTED`，避免把不可还原的布局静默导入。源块映射不完整、重复、越界或分组非法返回 `422 RESUME_STRUCTURE_INVALID`。MinIO 上传失败会补偿删除可能写入的对象，再返回 `502 RESUME_SOURCE_UPLOAD_FAILED` 并保留上传失败记录；MQ publisher 初始化或 confirm 失败返回 `503 RESUME_IMPORT_QUEUE_UNAVAILABLE`，记录保存为解析失败且不会覆盖 Worker 已成功写入的终态。转换、结构化或模板复核失败由 Worker保存解析失败终态，不创建半成品，也不自动重试业务失败。正式简历与活动导入共享每用户 10 个名额；成功导入只是把活动占位转换为正式简历。
+文件或模板无效时返回对应 `4xx` 且不创建正式简历。文字型、扫描和混合 PDF 都以 LinkParse Markdown 作为可编辑文字基线，并额外请求可选的 V1 layout；可安全解析且有界的页码、归一化 bbox、顺序、文字、置信度、角色、同行和续行作为精简模型提示，layout 的严格关系、计数、warning allowlist 和 Markdown 一致性只决定是否采用重建 Markdown。显式请求 layout 遇到 `413 LAYOUT_RESOURCE_LIMIT` 时，客户端在同一 deadline 内仅补发一次不含 layout 的 Markdown 请求，第二次失败按既有错误映射返回。layout 缺失、降级、畸形或不一致时保留 Markdown；若基础物理块仍安全，提示可以继续传给模型，不产生 `RESUME_LAYOUT_UNSUPPORTED`。含嵌入图片的文本 PDF、含图片/表格/文本框的 DOCX，以及转换后仍含表格、图片、嵌入或主动 HTML 的内容仍返回 `422 RESUME_LAYOUT_UNSUPPORTED`；源块映射不完整、重复、越界或分组非法返回 `422 RESUME_STRUCTURE_INVALID`。MinIO 上传失败会补偿删除可能写入的对象，再返回 `502 RESUME_SOURCE_UPLOAD_FAILED` 并保留上传失败记录；MQ publisher 初始化或 confirm 失败返回 `503 RESUME_IMPORT_QUEUE_UNAVAILABLE`，记录保存为解析失败且不会覆盖 Worker 已成功写入的终态。转换、结构化或模板复核失败由 Worker保存解析失败终态，不创建半成品，也不自动重试业务失败。正式简历与活动导入共享每用户 10 个名额；成功导入只是把活动占位转换为正式简历。
 
 ## 简历模板管理
 
@@ -178,7 +178,7 @@ RabbitMQ 是默认 Broker，V2 使用 `tolink.cv.resume_import.v2` exchange、`l
 
 ## 知识库资料
 
-`POST /api/datasets` 使用 `multipart/form-data`，字段为 `file`，支持 docx/pdf/md/txt 四种格式（按扩展名判定、大小写不敏感），单文件上限 `DATASET_UPLOAD_MAX_BYTES`（默认 10MB）。上传成功后文件保存到对象存储，元信息与解析任务在同一事务写入，再向共用文档解析队列发布消息并返回：
+`POST /api/datasets` 使用 `multipart/form-data`，字段为 `file`，并要求 canonical UUID `Idempotency-Key`。支持 docx/pdf/md/txt 四种格式（扩展名大小写不敏感），服务端还会检查 PDF 结构、DOCX ZIP 结构与解压边界、文本编码和 NUL 字节，不信任浏览器 MIME。单文件上限由 `DATASET_UPLOAD_MAX_BYTES` 控制（默认 10 MiB）。服务端先建立 `uploading` 容量预留，再写入 MinIO；成功后把任务提交为 `upload_status=succeeded/parse_status=queued`。首次 RabbitMQ 发布失败不使请求失败，数据库中的 `queued` 是持久待分发标记，Worker 扫描器会重新发布。受理返回 `202`：
 
 ```json
 {
@@ -186,18 +186,20 @@ RabbitMQ 是默认 Broker，V2 使用 `tolink.cv.resume_import.v2` exchange、`l
   "file_name": "notes.md",
   "file_format": "md",
   "file_size": 12,
-  "upload_status": "uploading",
-  "parse_status": null,
+  "upload_status": "succeeded",
+  "parse_status": "queued",
   "failure_reason": null,
   "created_at": "…"
 }
 ```
 
-`GET /api/datasets` 返回当前登录用户自己的资料记录，按上传时间倒序（`{datasets: [...]}`），并从关联任务返回 `upload_status`、`parse_status`、`failure_reason`。失败分类为 `format_unsupported/content_invalid/size_exceeded/service_unavailable/timeout/quota_exceeded/internal_error`。`GET /api/datasets/:id/content` 只允许资料所有者读取解析成功后保存的 Markdown，返回 `{id, file_name, file_format, markdown}`；资料不存在或越权统一返回 `404 DATASET_NOT_FOUND`，解析尚未成功或转换存档未保存返回 `409 DATASET_CONTENT_UNAVAILABLE`，对象读取、大小或 UTF-8 校验失败返回 `502 DATASET_CONTENT_READ_FAILED`。三个接口都要求登录（未登录返回 `401 UNAUTHORIZED`），响应不包含对象存储路径或 SHA-256。
+`GET /api/datasets` 只返回当前用户 `upload_status=succeeded` 的正式资料，按上传时间倒序；响应为 `{datasets, limits}`，`limits` 包含单文件字节数、单批文件数和允许扩展名，供前端提前反馈。列表从关联任务返回 `queued/processing/succeeded/failed` 解析状态。失败分类为 `format_unsupported/content_invalid/size_exceeded/service_unavailable/timeout/quota_exceeded/internal_error`。`GET /api/datasets/:id/content` 只允许资料所有者读取解析成功且已保存转换对象的 Markdown，返回 `{id, file_name, file_format, markdown}`；资料不存在或越权统一返回 `404 DATASET_NOT_FOUND`，解析尚未成功或转换存档未保存返回 `409 DATASET_CONTENT_UNAVAILABLE`，对象读取、大小或 UTF-8 校验失败返回 `502 DATASET_CONTENT_READ_FAILED`。六个接口都要求登录（未登录返回 `401 UNAUTHORIZED`），响应不包含对象存储路径或 SHA-256。
 
-资料源文件 SHA-256 仅作为后端完整性元数据，以固定 64 位十六进制字符串保存；它不进入公开请求或响应契约。
+资料源文件 SHA-256 仅作为后端完整性元数据，以固定 64 位十六进制字符串保存；它不进入公开请求或响应契约。服务端以用户、`Idempotency-Key` 和包含文件元数据及摘要的请求指纹收敛重放：同 Key 同指纹返回原记录，活动任务返回 `202`、成功任务返回 `200`；同 Key 异指纹返回 `409 IDEMPOTENCY_KEY_REUSED`，上一次上传已失败返回 `409 DATASET_UPLOAD_PREVIOUSLY_FAILED`，调用方随后应为明确的新尝试生成新 Key。
 
-文件名非法返回 `400 INVALID_DATASET_FILENAME`，空文件返回 `400 EMPTY_DATASET_FILE`，不支持格式返回 `400 UNSUPPORTED_DATASET_FORMAT`，超过大小上限返回 `413 DATASET_TOO_LARGE`。对象存储上传失败返回 `502 DATASET_UPLOAD_FAILED` 且不落库；对象已上传但元信息写入失败返回 `500 DATASET_RECORD_FAILED`，已上传对象会被尽力清理；消息发布失败返回 `502 DATASET_QUEUE_UNAVAILABLE`，任务记录收口为上传失败。同一文件允许重复上传并生成新记录（不做去重或幂等）。
+`PATCH /api/datasets/:id` 接受 JSON `{name: string}`，只更新资料显示名称并沿用原始扩展名；`document_parse_tasks.file_name`、源对象键和转换对象键不变。名称为空、过长、含控制字符或路径分隔符返回 `400 INVALID_DATASET_NAME`。`POST /api/datasets/:id/retry` 只允许 `parse_status=failed` 且源对象仍可读取的本人资料，成功把任务改为 `queued` 并返回 `202`；即时发布失败仍保留 `queued`，等待扫描器补发。任务进行中或其他终态返回 `409 DATASET_NOT_RETRYABLE`，源对象不可用返回 `502 DATASET_SOURCE_UNAVAILABLE`。`DELETE /api/datasets/:id` 只允许删除本人的终态资料，`uploading/queued/processing` 返回 `409 DATASET_BUSY`；删除前清理源文件和已保存的转换对象，任一对象清理失败返回 `502 ASSET_DELETE_FAILED` 并保留数据库记录，成功后在同一事务删除资料与解析任务。所有新增操作对不存在或越权资料统一返回 `404 DATASET_NOT_FOUND`。
+
+文件名非法返回 `400 INVALID_DATASET_FILENAME`，空文件返回 `400 EMPTY_DATASET_FILE`，格式或内容非法统一返回 `400 UNSUPPORTED_DATASET_FILE`，超过大小上限返回 `413 DATASET_FILE_TOO_LARGE`。请求频率或进程内并发超限返回带 `Retry-After` 的 `429 DATASET_UPLOAD_RATE_LIMITED`；数量或总容量超限分别返回 `409 DATASET_COUNT_LIMIT_REACHED`、`409 DATASET_STORAGE_LIMIT_REACHED`。对象存储上传失败返回 `502 DATASET_STORAGE_UNAVAILABLE`，预留记录标记为上传失败且不会出现在正式列表；后续清理器删除对象与预留记录。元信息状态提交失败返回 `500 DATASET_RECORD_FAILED` 并尽力清理对象。独立上传必须使用新 Key；网络失败等结果不明确的重试保持原 Key，避免重复记录。
 
 ## JD 数据模型与管理
 

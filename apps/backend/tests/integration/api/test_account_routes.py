@@ -7,10 +7,9 @@ from linkcv.core.config import Settings
 from linkcv.core.security import verify_password
 from linkcv.integrations.wechat_client import WechatApiError
 from linkcv.main import create_app
-from linkcv.domain.resume_document import default_resume_document
-from linkcv.domain.resume_style import default_resume_style
 from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import ResumeTemplate
+from tests.canonical_resume_fixtures import canonical_template_payload
 from tests.fakes import FakeRedis
 from tests.integration.api.test_identity_resumes_assets import FakeStorage
 
@@ -29,11 +28,12 @@ def build_test_app():
         create_schema=True,
     )
     with app.state.session_factory() as session:
+        template_data, template_style = canonical_template_payload(key="blank-cn")
         template = ResumeTemplate(
             key="blank-cn",
             name="空白简历",
-            data_json=default_resume_document().model_dump(mode="json"),
-            style_json=default_resume_style().model_dump(mode="json"),
+            data_json=template_data,
+            style_json=template_style,
             is_active=1,
         )
         session.add(template)
@@ -106,6 +106,7 @@ def test_profile_query_returns_stats_and_recent_resumes() -> None:
         assert body["user"]["avatar_url"] is None
         assert "avatar_object_key" not in body["user"]
         assert body["resume_count"] == 2
+        assert "profile" not in body
         titles = [item["title"] for item in body["recent_resumes"]]
         assert titles == ["简历二", "简历一"]
         assert all("updated_at" in item for item in body["recent_resumes"])
@@ -463,24 +464,19 @@ def _register_account(client: TestClient, email: str = "profile@example.com") ->
 def _valid_profile_payload(base_lock_version: int = 1) -> dict:
     return {
         "base_lock_version": base_lock_version,
-        "work_city": "北京",
+        "candidate_cities": ["北京", "上海"],
         "salary_min": 20000,
         "salary_max": 30000,
         "salary_currency": "CNY",
         "salary_period": "month",
-        "employment_type": "full_time",
-        "work_mode": "hybrid",
-        "target_positions": ["前端工程师"],
-        "exclusions": ["不接受大小周"],
-        "target_companies": ["字节跳动"],
-        "availability": "one_week",
-        "available_from": None,
+        "employment_types": ["full_time"],
         "school": "某大学",
         "school_tier": ["project_985"],
         "major": "计算机",
         "education_level": "bachelor",
         "years_experience": 3,
-        "birth_date": "1995-01-01",
+        "candidate_status": "experienced",
+        "graduation_year": None,
         "languages": ["英语 CET-6"],
         "skills": ["React", "Python"],
         "certifications": [],
@@ -497,8 +493,10 @@ def test_user_profile_get_returns_empty_when_not_created() -> None:
         assert response.status_code == 200
         body = response.json()
         assert body["lock_version"] == 1
-        assert body["work_city"] is None
-        assert body["target_positions"] == []
+        assert body["candidate_cities"] == []
+        assert body["employment_types"] == []
+        assert body["candidate_status"] is None
+        assert body["graduation_year"] is None
         assert body["skills"] == []
         assert body["created_at"] is None
         assert body["updated_at"] is None
@@ -518,8 +516,9 @@ def test_user_profile_put_and_get_roundtrip() -> None:
         assert put_response.status_code == 200
         saved = put_response.json()
         assert saved["lock_version"] == 1
-        assert saved["work_city"] == "北京"
-        assert saved["target_positions"] == ["前端工程师"]
+        assert saved["candidate_cities"] == ["北京", "上海"]
+        assert saved["employment_types"] == ["full_time"]
+        assert "professional_directions" not in saved
         assert saved["skills"] == ["React", "Python"]
         assert saved["school_tier"] == ["project_985"]
         assert saved["created_at"] is not None
@@ -530,17 +529,16 @@ def test_user_profile_put_and_get_roundtrip() -> None:
         assert get_response.json() == saved
 
 
-def test_account_profile_includes_profile_field() -> None:
+def test_account_profile_does_not_include_profile_field() -> None:
     app = build_test_app()
     with TestClient(app) as client:
         _register_account(client)
         empty = client.get("/api/account/profile").json()
-        assert empty["profile"] is None
+        assert "profile" not in empty
 
         client.put("/api/account/user-profile", json=_valid_profile_payload())
         loaded = client.get("/api/account/profile").json()
-        assert loaded["profile"] is not None
-        assert loaded["profile"]["work_city"] == "北京"
+        assert "profile" not in loaded
         # Existing account fields are unchanged.
         assert loaded["user"]["email"] == "profile@example.com"
         assert loaded["resume_count"] == 0
@@ -552,10 +550,12 @@ def test_user_profile_rejects_invalid_enums() -> None:
         _register_account(client)
 
         for field, value in [
-            ("employment_type", "invalid"),
-            ("work_mode", "telepath"),
+            ("employment_types", ["invalid"]),
+            ("employment_types", ["part_time"]),
+            ("employment_types", ["contract"]),
+            ("employment_types", ["temporary"]),
             ("salary_period", "century"),
-            ("availability", "someday"),
+            ("candidate_status", "student"),
             ("education_level", "phd"),
         ]:
             payload = _valid_profile_payload()
@@ -586,16 +586,35 @@ def test_user_profile_rejects_invalid_salary_and_context() -> None:
         assert response.json() == {"error": "INVALID_USER_PROFILE"}
 
 
-def test_user_profile_rejects_available_from_without_custom() -> None:
+def test_user_profile_rejects_invalid_candidate_experience_context() -> None:
     app = build_test_app()
     with TestClient(app) as client:
         _register_account(client)
-        payload = _valid_profile_payload()
-        payload["availability"] = "one_week"
-        payload["available_from"] = "2026-09-01"
-        response = client.put("/api/account/user-profile", json=payload)
-        assert response.status_code == 400
-        assert response.json() == {"error": "INVALID_USER_PROFILE"}
+        cases = [
+            {"candidate_status": "fresh_graduate", "graduation_year": None},
+            {"candidate_status": "fresh_graduate", "graduation_year": 2026, "years_experience": 1},
+            {"candidate_status": "experienced", "graduation_year": 2026},
+            {"candidate_status": None, "graduation_year": 2026},
+        ]
+        for changes in cases:
+            payload = _valid_profile_payload()
+            payload.update(changes)
+            response = client.put("/api/account/user-profile", json=payload)
+            assert response.status_code == 400
+            assert response.json() == {"error": "INVALID_USER_PROFILE"}
+
+        fresh = _valid_profile_payload()
+        fresh.update(
+            {
+                "candidate_status": "fresh_graduate",
+                "graduation_year": 2026,
+                "years_experience": 0,
+            }
+        )
+        response = client.put("/api/account/user-profile", json=fresh)
+        assert response.status_code == 200
+        assert response.json()["candidate_status"] == "fresh_graduate"
+        assert response.json()["graduation_year"] == 2026
 
 
 def test_user_profile_rejects_negative_years_and_oversized_items() -> None:
@@ -614,6 +633,21 @@ def test_user_profile_rejects_negative_years_and_oversized_items() -> None:
         response = client.put("/api/account/user-profile", json=payload)
         assert response.status_code == 400
         assert response.json() == {"error": "INVALID_USER_PROFILE"}
+
+
+def test_user_profile_rejects_removed_fields() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        _register_account(client)
+        for field, value in (
+            ("work_mode", "remote"),
+            ("professional_directions", ["前端工程师"]),
+        ):
+            payload = _valid_profile_payload()
+            payload[field] = value
+            response = client.put("/api/account/user-profile", json=payload)
+            assert response.status_code == 400
+            assert response.json() == {"error": "INVALID_USER_PROFILE"}
 
 
 def test_user_profile_rejects_stale_lock_version() -> None:

@@ -91,7 +91,7 @@ describe("SelectionFormattingToolbar", () => {
     await user.click(screen.getByRole("menuitem", { name: "优化表达" }));
 
     expect(onAgentAction).toHaveBeenCalledWith("优化表达", expect.objectContaining({
-      block_ids: [expect.stringMatching(/^blk_[a-z0-9]{16,64}$/)],
+      block_ids: [expect.stringMatching(/^node_[a-z0-9]{16,64}$/)],
       selected_text: "负责平台性能优化",
       selected_text_hash: "sha256:3d4d668a9062835f402347676f24927855bb46bc4f627768d160265c63d16c87",
     }));

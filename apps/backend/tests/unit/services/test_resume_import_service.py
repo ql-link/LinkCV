@@ -7,9 +7,9 @@ import pytest
 import pypdfium2 as pdfium
 from PIL import Image
 
-from linkcv.domain.document_conversion import DocumentMarkdownResult
-from linkcv.domain.resume_extraction import ResumeExtractionDraft, StructureDecision
-from linkcv.domain.resume_import_composition import ImportLayoutRecipe
+from linkcv.domain.document_conversion import DocumentMarkdownResult, PdfLayoutBlock
+from linkcv.domain.resume import SparseResumeAnnotations
+from linkcv.domain.resume_extraction import ResumeExtractionDraft
 from linkcv.services.resume_import_service import (
     ResumeImportFailure,
     ResumeImportService,
@@ -69,20 +69,26 @@ class FakeConverter:
         *,
         source_format: str = "md",
         warnings: list[str] | None = None,
+        layout_hints: list[PdfLayoutBlock] | None = None,
+        layout_applied: bool = False,
+        layout_schema_version: int | None = None,
     ) -> None:
         self.markdown = markdown
         self.source_format = source_format
         self.warnings = warnings or []
-        self.require_pdf_layout_calls: list[bool] = []
+        self.layout_hints = layout_hints
+        self.layout_applied = layout_applied
+        self.layout_schema_version = layout_schema_version
+        self.request_pdf_layout_calls: list[bool] = []
 
     async def convert(
         self,
         *,
         filename: str,
-        require_pdf_layout: bool = False,
+        request_pdf_layout: bool = False,
         **_kwargs,
     ) -> DocumentMarkdownResult:
-        self.require_pdf_layout_calls.append(require_pdf_layout)
+        self.request_pdf_layout_calls.append(request_pdf_layout)
         return DocumentMarkdownResult(
             markdown=self.markdown,
             source_file_name=filename,
@@ -90,35 +96,43 @@ class FakeConverter:
             parser="fake",
             parser_version="1",
             warnings=self.warnings,
+            layout_applied=self.layout_applied,
+            layout_schema_version=self.layout_schema_version,
+            layout_hints=self.layout_hints,
         )
 
 
 class MappingStructuringClient:
-    async def extract(self, *, section_ir, **_kwargs) -> ResumeExtractionDraft:
-        decisions = []
-        for index, block in enumerate(section_ir.blocks):
-            if index == 0:
-                semantic_kind, layout_role = "basics", "name"
-            elif block.block_type == "heading":
-                semantic_kind, layout_role = "skills", "section_heading"
-            else:
-                semantic_kind, layout_role = "skills", "body"
-            decisions.append(
-                StructureDecision(
-                    source_id=block.source_id,
-                    semantic_kind=semantic_kind,
-                    layout_role=layout_role,
-                )
-            )
-        return ResumeExtractionDraft(decisions=decisions)
+    def __init__(self) -> None:
+        self.received_layout_hints = None
+
+    async def extract_sparse(self, *, source_graph, **_kwargs) -> SparseResumeAnnotations:
+        self.received_layout_hints = _kwargs.get("layout_hints")
+        return SparseResumeAnnotations(
+            schema_version="sparse-resume-annotations.v1",
+            source_graph_sha256=source_graph.graph_sha256(),
+            annotations=[],
+        )
 
 
 class LegacyStructuringClient:
-    async def extract(self, **_kwargs) -> ResumeExtractionDraft:
-        # This trusted direct-constructor compatibility object must not be a
-        # production import fallback; the service should reject its empty
-        # source mapping during canonical composition.
+    async def extract_sparse(self, **_kwargs) -> ResumeExtractionDraft:
         return ResumeExtractionDraft(basics={"name": "测试者"})
+
+
+class SparseStructuringClient:
+    def __init__(self) -> None:
+        self.graph = None
+        self.layout_hints = None
+
+    async def extract_sparse(self, *, source_graph, timeout_seconds, layout_hints=None, **_kwargs):
+        self.graph = source_graph
+        self.layout_hints = layout_hints
+        return SparseResumeAnnotations(
+            schema_version="sparse-resume-annotations.v1",
+            source_graph_sha256=source_graph.graph_sha256(),
+            annotations=[],
+        )
 
 
 def test_file_validation_and_safe_filename_are_side_effect_free() -> None:
@@ -315,7 +329,7 @@ def test_pdf_text_conversion_fails_closed_when_page_enumeration_fails(
     assert error.value.code == "RESUME_LAYOUT_UNSUPPORTED"
 
 
-def test_pdf_import_requires_consumed_layout_contract() -> None:
+def test_pdf_import_without_layout_uses_markdown_fallback() -> None:
     conversion = DocumentMarkdownResult(
         markdown="# 张三\n\n项目经历",
         source_file_name="resume.pdf",
@@ -324,12 +338,10 @@ def test_pdf_import_requires_consumed_layout_contract() -> None:
         parser_version="1",
     )
 
-    with pytest.raises(ResumeImportFailure) as error:
-        validate_conversion_layout(conversion)
-    assert error.value.code == "RESUME_LAYOUT_UNSUPPORTED"
+    validate_conversion_layout(conversion)
 
 
-def test_scanned_pdf_with_consumed_layout_is_allowed_but_low_quality_is_not() -> None:
+def test_scanned_pdf_and_low_quality_warning_do_not_gate_markdown_import() -> None:
     conversion = DocumentMarkdownResult(
         markdown="# 张三\n\n" + "可验证的 OCR 正文" * 20,
         source_file_name="resume.pdf",
@@ -345,17 +357,13 @@ def test_scanned_pdf_with_consumed_layout_is_allowed_but_low_quality_is_not() ->
     validate_conversion_layout(conversion)
 
     missing_version = conversion.model_copy(update={"layout_schema_version": None})
-    with pytest.raises(ResumeImportFailure) as error:
-        validate_conversion_layout(missing_version)
-    assert error.value.code == "RESUME_LAYOUT_UNSUPPORTED"
+    validate_conversion_layout(missing_version)
 
     low_quality = conversion.model_copy(update={"warnings": ["pdf_low_text_quality"]})
-    with pytest.raises(ResumeImportFailure) as error:
-        validate_conversion_layout(low_quality)
-    assert error.value.code == "RESUME_LAYOUT_UNSUPPORTED"
+    validate_conversion_layout(low_quality)
 
 
-def test_pdf_layout_requires_a_known_detected_type() -> None:
+def test_pdf_layout_metadata_is_not_required_for_markdown_import() -> None:
     conversion = DocumentMarkdownResult(
         markdown="# 张三\n\n" + "可验证的 PDF 正文" * 20,
         source_file_name="resume.pdf",
@@ -366,9 +374,7 @@ def test_pdf_layout_requires_a_known_detected_type() -> None:
         layout_schema_version=1,
     )
 
-    with pytest.raises(ResumeImportFailure) as error:
-        validate_conversion_layout(conversion)
-    assert error.value.code == "RESUME_LAYOUT_UNSUPPORTED"
+    validate_conversion_layout(conversion)
 
 
 def test_docx_validation_rejects_encrypted_compound_document() -> None:
@@ -420,16 +426,12 @@ def test_conversion_layout_rejects_stale_converter_markdown_for_any_source_forma
 
 def test_parse_resume_composes_canonical_document_and_passes_recipe() -> None:
     converter = FakeConverter()
+    structuring = MappingStructuringClient()
     service = ResumeImportService(
         document_converter=converter,
-        structuring_client=MappingStructuringClient(),
+        structuring_client=structuring,
         max_structuring_bytes=10_000,
         structuring_timeout_seconds=30,
-    )
-    recipe = ImportLayoutRecipe(
-        key="fixture-template",
-        renderer="flow",
-        contact_mode="inline",
     )
     archived: list[str] = []
 
@@ -445,16 +447,71 @@ def test_parse_resume_composes_canonical_document_and_passes_recipe() -> None:
             operation_id="task-1",
             deadline_monotonic=monotonic() + 60,
             on_markdown_extracted=archive,
-            import_recipe=recipe,
         )
     )
 
     assert archived == [result.extracted_markdown]
-    assert converter.require_pdf_layout_calls == [True]
-    assert result.document.basics.name == "测试者"
-    assert result.document.sections.work_experiences == []
-    assert result.document.sections.custom_sections[0].title == "基本信息"
+    assert converter.request_pdf_layout_calls == [True]
+    assert result.document.identity.name is not None
+    assert result.document.identity.name.value == "测试者"
+    assert [section.title.value for section in result.document.sections if section.title] == [
+        "专业技能"
+    ]
     assert "未分类内容" not in str(result.document.model_dump())
+
+
+def test_parse_resume_passes_only_safe_pdf_layout_hints_to_structuring() -> None:
+    blocks = [
+        PdfLayoutBlock(
+            block_id="line-0",
+            source_order=0,
+            source_page=1,
+            role="heading",
+            heading_level=1,
+            text="测试者",
+            bbox=(0.1, 0.1, 0.4, 0.12),
+            confidence=0.99,
+            role_source="opendataloader",
+        ),
+        PdfLayoutBlock(
+            block_id="line-1",
+            source_order=1,
+            source_page=1,
+            role="paragraph",
+            text="## 专业技能",
+            bbox=(0.1, 0.2, 0.4, 0.22),
+            confidence=0.98,
+            role_source="opendataloader",
+        ),
+    ]
+    converter = FakeConverter(
+        source_format="pdf",
+        layout_hints=blocks,
+        # Hints can still be useful when the strict deterministic layout
+        # reconstruction was rejected; they are independent advisory input.
+        layout_applied=False,
+        layout_schema_version=None,
+    )
+    structuring = MappingStructuringClient()
+    service = ResumeImportService(
+        document_converter=converter,
+        structuring_client=structuring,
+        max_structuring_bytes=10_000,
+        structuring_timeout_seconds=30,
+    )
+
+    asyncio.run(
+        service.parse_resume(
+            user_id=1,
+            filename="resume.pdf",
+            content_type="application/pdf",
+            content=b"%PDF-fixture",
+            operation_id="task-layout-hints",
+            deadline_monotonic=monotonic() + 60,
+        )
+    )
+
+    assert structuring.received_layout_hints == blocks
 
 
 def test_parse_resume_rejects_legacy_typed_draft_in_composition_stage() -> None:
@@ -478,4 +535,35 @@ def test_parse_resume_rejects_legacy_typed_draft_in_composition_stage() -> None:
         )
 
     assert raised.value.code == "RESUME_STRUCTURE_INVALID"
-    assert raised.value.stage == "resume_composition"
+    assert raised.value.stage == "model_response_validation"
+
+
+def test_parse_resume_builds_full_source_graph_for_sparse_runtime() -> None:
+    converter = FakeConverter(markdown="# 张三\n\n## 教育经历\n\n示例大学")
+    structuring = SparseStructuringClient()
+    service = ResumeImportService(
+        document_converter=converter,
+        structuring_client=structuring,
+        max_structuring_bytes=10_000,
+        structuring_timeout_seconds=30,
+    )
+
+    result = asyncio.run(
+        service.parse_resume(
+            user_id=1,
+            filename="resume.md",
+            content_type="text/markdown",
+            content=b"source-bytes",
+            operation_id="task-sparse",
+            deadline_monotonic=monotonic() + 60,
+        )
+    )
+
+    assert result.source_graph is structuring.graph
+    assert result.source_graph is not None
+    assert [leaf.text for leaf in result.source_graph.leaves] == [
+        "张三", "教育经历", "示例大学"
+    ]
+    assert [section.title.value for section in result.document.sections if section.title] == [
+        "教育经历"
+    ]

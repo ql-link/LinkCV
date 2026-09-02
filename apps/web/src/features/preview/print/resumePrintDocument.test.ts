@@ -1,219 +1,183 @@
 import { describe, expect, it } from "vitest";
-import type { JSONContent } from "@tiptap/core";
 import {
-  defaultSemanticDocument,
-  defaultSemanticStyle,
+  defaultCanonicalDocument,
+  defaultCanonicalPresentation,
+  type LayoutPlan,
+  type CanonicalResumeDocument,
 } from "../../../api/resumeContract";
 import {
   createResumeRenderRequest,
   renderResumePrintDocument,
   RESUME_RENDER_PROTOCOL_VERSION,
 } from "./resumePrintDocument";
-import { resumeDocumentFromEditorDocument } from "../../workbench/resumeEditorPersistence";
+
+function canonicalFixture(): CanonicalResumeDocument {
+  return {
+    ...defaultCanonicalDocument,
+    identity: {
+      ...defaultCanonicalDocument.identity,
+      name: { node_id: "node_name000000000001", value: "打印测试", source_refs: [] },
+    },
+    sections: [{
+      node_id: "node_section000000001",
+      semantic_kind: "project",
+      title: { node_id: "node_title0000000001", value: "项目经历", source_refs: [] },
+      entries: [],
+      source_refs: [],
+      blocks: [{
+        node_id: "node_paragraph00000001",
+        block_type: "paragraph",
+        source_refs: [],
+        runs: [{
+          inline_type: "text",
+          text: "正文",
+          marks: ["bold", "underline"],
+          href: null,
+          style: { color: "#3478f6", font_size_pt: 11.5, highlight_color: "#fff3c4" },
+        }],
+      }],
+    }],
+  };
+}
+
+function canonicalLayoutPlan(data = canonicalFixture(), templateKey = "classic-cn"): LayoutPlan {
+  return {
+    schema_version: "layout-plan.v1",
+    content_sha256: "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    template_key: templateKey,
+    regions: [{
+      region_id: "main",
+      order: 0,
+      nodes: [
+        {
+          node_id: data.identity.node_id,
+          semantic_kind: "identity",
+          slot_id: "main_content",
+        },
+        ...data.sections.map((section) => ({
+          node_id: section.node_id,
+          semantic_kind: section.semantic_kind,
+          slot_id: "main_content",
+        })),
+      ],
+    }],
+  };
+}
 
 describe("统一简历打印文档", () => {
-  it("从同一份快照生成稳定的只读打印 DOM", () => {
-    const data = {
-      ...defaultSemanticDocument,
-      basics: { ...defaultSemanticDocument.basics, name: "打印测试" },
-      sections: {
-        ...defaultSemanticDocument.sections,
-        custom_sections: [{
-          id: "custom",
-          title: "项目",
-          items: [{
-            id: "item",
-            title: "统一渲染",
-            subtitle: null,
-            content: { format: "markdown" as const, content: "**正文**" },
-            source_refs: [],
-          }],
-        }],
-      },
-    };
-    const html = renderResumePrintDocument(createResumeRenderRequest("打印测试", data, defaultSemanticStyle));
-
-    expect(html).toContain('data-resume-print-document');
+  it("从 canonical 快照生成稳定的只读打印 DOM", () => {
+    const html = renderResumePrintDocument(createResumeRenderRequest(
+      "打印测试", canonicalFixture(), defaultCanonicalPresentation, undefined, canonicalLayoutPlan(),
+    ));
+    expect(html).toContain("data-resume-print-document");
     expect(html).toContain('data-render-protocol="1"');
     expect(html).toContain('class="resume-content resume-print-content"');
-    expect(html).toContain("统一渲染");
+    expect(html).toContain("项目经历");
     expect(html).toContain("<strong>正文</strong>");
     expect(html).not.toContain("ProseMirror");
   });
 
-  it("将经过服务端授权的图片内嵌，并保留图片节点的行内语义", () => {
-    const data = {
-      ...defaultSemanticDocument,
-      sections: {
-        ...defaultSemanticDocument.sections,
-        custom_sections: [{
-          id: "custom",
-          title: "图片",
-          items: [{
-            id: "item",
-            title: null,
-            subtitle: null,
-            content: { format: "markdown" as const, content: "![标志](/private/logo.png \"linkcv-inline-image-v2:48:24\")" },
-            source_refs: [],
-          }],
-        }],
+  it("把 canonical 四边页边距写入统一打印变量", () => {
+    const style = {
+      ...defaultCanonicalPresentation,
+      template_snapshot: {
+        ...defaultCanonicalPresentation.template_snapshot,
+        tokens: {
+          ...defaultCanonicalPresentation.template_snapshot.tokens,
+          page_margin_top_mm: 0,
+          page_margin_right_mm: 10,
+          page_margin_bottom_mm: 8,
+          page_margin_left_mm: 10,
+        },
       },
     };
+    const html = renderResumePrintDocument(createResumeRenderRequest(
+      "四边边距", canonicalFixture(), style, undefined, canonicalLayoutPlan(),
+    ));
+    expect(html).toContain("--resume-page-margin-top:0mm");
+    expect(html).toContain("--resume-page-margin-right:10mm");
+    expect(html).toContain("--resume-page-margin-bottom:8mm");
+    expect(html).toContain("--resume-page-margin-left:10mm");
+  });
+
+  it("保留 canonical 富文本标记和稳定 node_id", () => {
+    const html = renderResumePrintDocument(createResumeRenderRequest(
+      "富文本打印", canonicalFixture(), defaultCanonicalPresentation, undefined, canonicalLayoutPlan(),
+    ));
+    expect(html).toContain("<u><strong>");
+    expect(html).toContain("color:#3478f6");
+    expect(html).toContain("font-size:11.5pt");
+    expect(html).toContain("background-color:#fff3c4");
+    expect(html.match(/node_paragraph00000001/gu)).toHaveLength(1);
+  });
+
+  it("将经过服务端授权的 canonical 图片内嵌", () => {
+    const data = canonicalFixture();
+    const paragraph = data.sections[0].blocks[0];
+    if (paragraph.block_type !== "paragraph") throw new Error("TEST_FIXTURE_INVALID");
+    paragraph.runs.push({
+      node_id: "node_image000000000001",
+      inline_type: "media",
+      media_kind: "inline_image",
+      src: "/api/resumes/1/assets/logo.png",
+      alt: "标志",
+      width: 48,
+      width_unit: "px",
+      height_px: 24,
+      align: "center",
+      system_fallback: false,
+      source_refs: [],
+    });
     const html = renderResumePrintDocument({
       protocol_version: RESUME_RENDER_PROTOCOL_VERSION,
       title: "图片",
       data,
-      style: defaultSemanticStyle,
-      assets: { "/private/logo.png": "data:image/png;base64,ZmFrZQ==" },
+      style: defaultCanonicalPresentation,
+      layout_plan: canonicalLayoutPlan(data),
+      assets: { "/api/resumes/1/assets/logo.png": "data:image/png;base64,ZmFrZQ==" },
     });
-
     expect(html).toContain('src="data:image/png;base64,ZmFrZQ=="');
-    expect(html).toContain('data-inline-image');
-    expect(html).not.toContain("/private/logo.png");
+    expect(html).not.toContain("/api/resumes/1/assets/logo.png");
   });
 
-  it("不把未授权的外部资源替换成可执行内容", () => {
+  it("不把未授权资源替换成可执行内容", () => {
     const html = renderResumePrintDocument({
       title: "安全",
-      data: defaultSemanticDocument,
-      style: defaultSemanticStyle,
+      data: canonicalFixture(),
+      style: defaultCanonicalPresentation,
+      layout_plan: canonicalLayoutPlan(),
       assets: { "/private/other.png": "javascript:alert(1)" },
     });
     expect(html).not.toContain("javascript:");
     expect(html).not.toContain("<script");
   });
 
-  it("将历史邮箱链接渲染为普通文本", () => {
-    const data = {
-      ...defaultSemanticDocument,
-      sections: {
-        ...defaultSemanticDocument.sections,
-        custom_sections: [{
-          id: "contact",
-          title: "联系方式",
-          items: [{
-            id: "email",
-            title: null,
-            subtitle: null,
-            content: {
-              format: "markdown" as const,
-              content: "[zhangsan@example.com](mailto:zhangsan@example.com)",
-            },
-            source_refs: [],
-          }],
-        }],
+  it("把 canonical 模板强调色写入共用打印根节点", () => {
+    const style = {
+      ...defaultCanonicalPresentation,
+      template_snapshot: {
+        ...defaultCanonicalPresentation.template_snapshot,
+        tokens: {
+          ...defaultCanonicalPresentation.template_snapshot.tokens,
+          accent_color: "#202632",
+        },
       },
     };
-
-    const html = renderResumePrintDocument(
-      createResumeRenderRequest("邮箱纯文本", data, defaultSemanticStyle),
-    );
-
-    expect(html).toContain("zhangsan@example.com");
-    expect(html).not.toContain("mailto:");
-    expect(html).not.toContain('<a href="mailto:');
-  });
-
-  it("把持久化强调色写入分享与 PDF 共用的打印根节点", () => {
     const html = renderResumePrintDocument(createResumeRenderRequest(
-      "强调色",
-      defaultSemanticDocument,
-      { ...defaultSemanticStyle, accent_color: "#202632" },
+      "强调色", canonicalFixture(), style, undefined, canonicalLayoutPlan(),
     ));
-
     expect(html).toContain("--preview-accent:#202632");
   });
 
-  it("uses the manifest for columns and a non-persisted system avatar", () => {
-    const style = {
-      ...defaultSemanticStyle,
-      manifest: {
-        renderer_key: "columns" as const,
-        regions: [
-          { id: "sidebar", kind: "sidebar" as const, order: 0 },
-          { id: "main", kind: "main" as const, order: 1 },
-        ],
-        slots: [
-          { id: "sidebar", region_id: "sidebar", accepts: ["basics" as const, "avatar" as const], required: false, fallback: false, order: 0 },
-          { id: "main", region_id: "main", accepts: ["custom" as const], required: false, fallback: true, order: 1 },
-        ],
-        avatar: { visibility: "show" as const, fallback_asset: "system-default" as const, size: 88 },
-      },
-    };
-    const html = renderResumePrintDocument(createResumeRenderRequest("模板投射", defaultSemanticDocument, style));
+  it("缺少服务端布局计划时不直接线性渲染 canonical 正文", () => {
+    const html = renderResumePrintDocument(createResumeRenderRequest(
+      "缺少布局计划", canonicalFixture(), defaultCanonicalPresentation,
+    ));
 
-    expect(html).toContain('data-type="resume-columns"');
-    expect(html).toContain('data-column="sidebar"');
-    expect(html).toContain('/templates/avatar-cat.jpg');
-    expect(defaultSemanticDocument.basics.photo).toBeNull();
-  });
-
-  it("直接渲染规范 Tiptap 内容并保留全部富文本标记与布局节点", () => {
-    const editorDocument: JSONContent = {
-      type: "doc",
-      content: [
-        {
-          type: "heading",
-          attrs: { level: 1, textAlign: "center" },
-          content: [{ type: "text", text: "张三" }],
-        },
-        {
-          type: "heading",
-          attrs: { level: 2 },
-          content: [
-            { type: "resumeBlockAnchor", attrs: { blockId: "blk_2222222222222222", semanticKind: "work" } },
-            { type: "text", text: "工作经历" },
-          ],
-        },
-        {
-          type: "paragraph",
-          content: [{
-            type: "text",
-            text: "重点正文",
-            marks: [
-              { type: "bold" },
-              { type: "underline" },
-              { type: "textStyle", attrs: { color: "#3478f6", fontSize: "11.5pt" } },
-              { type: "highlight", attrs: { color: "#fff3c4" } },
-            ],
-          }],
-        },
-        {
-          type: "resumeRow",
-          attrs: { leftWidth: 62 },
-          content: [
-            { type: "paragraph", content: [{ type: "text", text: "虚构公司" }] },
-            { type: "paragraph", content: [{ type: "text", text: "2024 - 至今" }] },
-          ],
-        },
-        {
-          type: "paragraph",
-          content: [{
-            type: "inlineImage",
-            attrs: {
-              src: "/api/resumes/1/assets/company.png",
-              width: 48,
-              height: 24,
-              aspectRatio: 2,
-              alt: "公司标志",
-            },
-          }],
-        },
-      ],
-    };
-    const data = resumeDocumentFromEditorDocument(editorDocument, defaultSemanticDocument);
-    const html = renderResumePrintDocument(
-      createResumeRenderRequest("富文本打印", data, defaultSemanticStyle),
-    );
-
-    expect(html).toContain("<strong>重点正文</strong>");
-    expect(html).toContain("<u><strong>");
-    expect(html).toContain("color:#3478f6");
-    expect(html).toContain("font-size:11.5pt");
-    expect(html).toContain("background-color:#fff3c4");
-    expect(html).toContain('data-type="resume-row"');
-    expect(html).toContain('data-left-width="62"');
-    expect(html).toContain('data-inline-image');
-    expect(html.match(/blk_2222222222222222/gu)).toHaveLength(1);
+    expect(html).toContain('data-render-state="unavailable"');
+    expect(html).toContain('class="resume-render-unavailable"');
+    expect(html).toContain("预览不可用");
+    expect(html).not.toContain("项目经历");
+    expect(html).not.toContain("正文");
   });
 });

@@ -75,7 +75,11 @@ import {
 } from "./pageArrangementTransition";
 import {
   normalizeResumeAccentColor,
-  resumeDocumentContentHash,
+  resumePresentationPageMargins,
+  isCanonicalResumeDocument,
+  resumePresentationAccentColor,
+  resumePresentationTemplateKey,
+  type ResumePresentationRead,
 } from "../../api/resumeContract";
 
 type DrawerMode = "settings" | "history" | "agent" | null;
@@ -160,13 +164,26 @@ export function defaultWorkbenchDrawerMode(viewportWidth: number) {
 export function resumeWorkbenchStyle(
   settings: Pick<ResumeSettings, "fontFamily" | "fontSize" | "lineHeight" | "pageMargin" | "verticalPageMargin">,
   accentColor: unknown,
+  style?: ResumePresentationRead,
 ) {
+  const margins = style
+    ? resumePresentationPageMargins(style)
+    : {
+        top: settings.verticalPageMargin,
+        right: settings.pageMargin,
+        bottom: settings.verticalPageMargin,
+        left: settings.pageMargin,
+      };
   return {
     "--resume-font-family": settings.fontFamily,
     "--resume-font-size": `${settings.fontSize}pt`,
     "--resume-line-height": settings.lineHeight,
     "--resume-page-margin-x": `${settings.pageMargin}mm`,
     "--resume-page-margin-y": `${settings.verticalPageMargin}mm`,
+    "--resume-page-margin-top": `${margins.top}mm`,
+    "--resume-page-margin-right": `${margins.right}mm`,
+    "--resume-page-margin-bottom": `${margins.bottom}mm`,
+    "--resume-page-margin-left": `${margins.left}mm`,
     "--preview-accent": normalizeResumeAccentColor(accentColor),
   } as React.CSSProperties;
 }
@@ -487,7 +504,7 @@ function pageViewportMetrics(
 
 const fontOptions = [
   { label: "简历宋体", value: resumeSerifFontStack },
-  { label: "霞鹜文楷", value: '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif' },
+  { label: "霞鹜文楷 Medium", value: '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif' },
   { label: "系统黑体", value: '"LinkCV Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif' },
 ];
 
@@ -892,7 +909,7 @@ export function ResumeTemplateSwitcher({
       const result = await api.listResumeTemplates();
       setTemplates(result.templates);
       const initialTemplate = result.templates.find(
-        (template) => template.style.template_key === currentTemplateKey,
+        (template) => resumePresentationTemplateKey(template.style) === currentTemplateKey,
       ) ?? result.templates[0] ?? null;
       if (initialTemplate) {
         setStatusOpen(false);
@@ -907,7 +924,7 @@ export function ResumeTemplateSwitcher({
 
   const openTemplatePreview = () => {
     const initialTemplate = templates.find(
-      (template) => template.style.template_key === currentTemplateKey,
+      (template) => resumePresentationTemplateKey(template.style) === currentTemplateKey,
     ) ?? templates[0] ?? null;
     if (initialTemplate) {
       setPreviewTemplate(initialTemplate);
@@ -966,9 +983,9 @@ export function ResumeTemplateSwitcher({
         templates={templates}
         template={previewTemplate}
         primaryActionLabel={(template) => (
-          template.style.template_key === currentTemplateKey ? "当前模板" : "应用模板"
+          resumePresentationTemplateKey(template.style) === currentTemplateKey ? "当前模板" : "应用模板"
         )}
-        isPrimaryActionDisabled={(template) => applying || template.style.template_key === currentTemplateKey}
+        isPrimaryActionDisabled={(template) => applying || resumePresentationTemplateKey(template.style) === currentTemplateKey}
         onTemplateChange={setPreviewTemplate}
         onPrimaryAction={(template) => {
           setApplying(true);
@@ -1112,7 +1129,6 @@ export function ResumeWorkbench() {
   const [workspaceWidth, setWorkspaceWidth] = useState(() => window.innerWidth);
   const [horizontalScaleOverride, setHorizontalScaleOverride] = useState<number | null>(null);
   const [zoomFeedback, setZoomFeedback] = useState<{ scale: number; sequence: number } | null>(null);
-  const [semanticClassificationPending, setSemanticClassificationPending] = useState(false);
   const [pageArrangement, setPageArrangement] = useState<PageArrangement>(() => {
     try {
       return window.localStorage.getItem(PAGE_ARRANGEMENT_STORAGE_KEY) === "horizontal" ? "horizontal" : "vertical";
@@ -1382,8 +1398,8 @@ export function ResumeWorkbench() {
   }, [dirty]);
 
   const resumeStyle = useMemo(
-    () => resumeWorkbenchStyle(settings, style.accent_color),
-    [settings, style.accent_color],
+    () => resumeWorkbenchStyle(settings, resumePresentationAccentColor(style), style),
+    [data, settings, style],
   );
 
   const openVersionNameDialog = () => {
@@ -1458,55 +1474,12 @@ export function ResumeWorkbench() {
       });
   };
 
-  const editableSemanticSections = data.semantic_sections.filter(
-    (section) => section.content_key === "custom_sections"
-      && section.semantic_kind !== "basics"
-      && section.custom_section_id !== "custom_section_editor",
-  );
-  const classifiableSections = editableSemanticSections.filter(
-    (section) => section.semantic_kind === "custom" && section.semantic_source !== "user",
-  );
-
-  const classifySemanticSections = async () => {
-    if (!activeResumeId || semanticClassificationPending || classifiableSections.length === 0) return;
-    setSemanticClassificationPending(true);
-    try {
-      await saveCurrentResume();
-      const latestState = useResumeStore.getState();
-      if (latestState.saveStatus === "error") {
-        throw new Error("RESUME_SAVE_FAILED");
-      }
-      const contentHash = await resumeDocumentContentHash(latestState.data);
-      const result = await api.classifyResumeSemantics(activeResumeId, {
-        content_hash: contentHash,
-        section_ids: classifiableSections.map((section) => section.id),
-      });
-      let applied = 0;
-      for (const suggestion of result.suggestions) {
-        if (suggestion.confidence < 0.8) continue;
-        setSectionSemanticKind(
-          suggestion.section_id,
-          suggestion.semantic_kind,
-          "model",
-          suggestion.confidence,
-        );
-        applied += 1;
-      }
-      setToast({
-        label: applied > 0
-          ? `已识别 ${applied} 个章节，低置信度结果保留为自定义`
-          : "未发现可自动确认的章节，请手动选择类型",
-      });
-    } catch (error) {
-      const label = error instanceof ApiRequestError
-        && error.message === "RESUME_SEMANTIC_CLASSIFICATION_STALE"
-        ? "正文已变化，请保存或刷新后重试识别"
-        : "章节识别暂不可用，仍可手动选择类型";
-      setToast({ label });
-    } finally {
-      setSemanticClassificationPending(false);
-    }
-  };
+  const editableSemanticSections = data.sections.map((section) => ({
+    id: section.node_id,
+    display_title: section.title?.value ?? "未命名章节",
+    semantic_kind: section.semantic_kind,
+    semantic_source: "canonical" as const,
+  }));
 
   const saveNamedVersion = async () => {
     if (!editor || versionNameSubmitting) return;
@@ -1626,7 +1599,7 @@ export function ResumeWorkbench() {
                 onToggle={() => setDrawerMode((mode) => mode === "settings" ? null : "settings")}
               />
               <ResumeTemplateSwitcher
-                currentTemplateKey={style.template_key}
+                currentTemplateKey={resumePresentationTemplateKey(style)}
                 disabled={versionOperationPending || saveStatus === "saving"}
                 onApply={async (template) => {
                   if (!editor) return;
@@ -1782,7 +1755,7 @@ export function ResumeWorkbench() {
                                 <span title={displayTitle}>{displayTitle}</span>
                                 <Select
                                   value={section.semantic_kind}
-                                  disabled={versionOperationPending || semanticClassificationPending}
+                                  disabled={versionOperationPending}
                                   onValueChange={(semanticKind) => setSectionSemanticKind(
                                     section.id,
                                     semanticKind as keyof typeof SEMANTIC_KIND_LABELS,
@@ -1800,19 +1773,6 @@ export function ResumeWorkbench() {
                               </div>
                             );
                           })}
-                          {classifiableSections.length > 0 && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              disabled={versionOperationPending || semanticClassificationPending}
-                              onClick={() => void classifySemanticSections()}
-                            >
-                              {semanticClassificationPending
-                                ? <LoaderCircle aria-hidden="true" className="spin" size={15} />
-                                : <Sparkles aria-hidden="true" size={15} />}
-                              识别未分类章节
-                            </Button>
-                          )}
                         </div>
                       </WorkbenchSettingsSection>
                     )}
@@ -2046,7 +2006,7 @@ function importWarningMessage(warning: string) {
     source_quote_not_found: "部分结构化内容无法定位到原文短句",
     unparsed_work_start_date: "部分工作开始日期未能识别",
     unparsed_work_end_date: "部分工作结束日期未能识别",
-    unmapped_fragments_preserved: "部分未分类内容已保留，请人工整理",
+    unmapped_fragments_preserved: "部分原文已按自定义章节保留，请人工整理",
   };
   return messages[warning] ?? "部分内容需要人工核对";
 }

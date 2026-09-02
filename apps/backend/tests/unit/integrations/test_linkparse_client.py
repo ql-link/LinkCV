@@ -103,7 +103,7 @@ def run_parse(
     instance: LinkParseClient,
     *,
     source_format="pdf",
-    require_layout: bool = True,
+    request_layout: bool = True,
 ):
     parse = instance.parse_docx if source_format == "docx" else instance.parse_pdf
     arguments = {
@@ -113,7 +113,7 @@ def run_parse(
         "deadline_monotonic": monotonic() + 120,
     }
     if source_format == "pdf":
-        arguments["require_layout"] = require_layout
+        arguments["request_layout"] = request_layout
     return asyncio.run(parse(**arguments))
 
 
@@ -133,7 +133,7 @@ def test_linkparse_legacy_pdf_does_not_request_or_validate_resume_layout() -> No
             json=payload,
         )
 
-    result = run_parse(client(handler), require_layout=False)
+    result = run_parse(client(handler), request_layout=False)
 
     assert b'name="include_layout"' not in captured["body"]
     assert result.layout_applied is False
@@ -225,6 +225,27 @@ def test_linkparse_sends_fixed_minimal_contract_and_maps_ocr_warning() -> None:
     assert result.layout_applied is True
     assert result.layout_schema_version == 1
     assert result.warnings == ["pdf_ocr_applied"]
+
+
+def test_linkparse_drops_oversized_layout_hints_but_keeps_rebuilt_markdown() -> None:
+    markdown = "# 张三\n\n## 经历\n\n" + "\n\n".join(
+        f"正文{i}-{'x' * 18_000}" for i in range(4)
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        request_id = request.headers["X-Request-ID"]
+        return httpx.Response(
+            200,
+            headers={"X-Request-ID": request_id},
+            json=response_payload(request_id, outputs={"markdown": markdown}),
+        )
+
+    result = run_parse(client(handler))
+
+    assert result.layout_applied is True
+    assert result.layout_schema_version == 1
+    assert result.layout_hints is None
+    assert result.markdown == markdown
 
 
 def test_linkparse_parses_docx_with_shared_contract_and_image_warning() -> None:
@@ -368,7 +389,7 @@ def test_linkparse_docx_maps_known_error_envelopes(
         (503, "ENGINE_UNAVAILABLE", 503, "DOCUMENT_CONVERSION_UNAVAILABLE"),
         (429, "CONCURRENCY_LIMIT_REACHED", 503, "DOCUMENT_CONVERSION_UNAVAILABLE"),
         (413, "PDF_TOO_MANY_PAGES", 413, "IMPORT_FILE_TOO_LARGE"),
-        (413, "LAYOUT_RESOURCE_LIMIT", 422, "RESUME_LAYOUT_UNSUPPORTED"),
+        (413, "LAYOUT_RESOURCE_LIMIT", 502, "DOCUMENT_CONVERSION_FAILED"),
         (415, "UNSUPPORTED_FILE_TYPE", 415, "UNSUPPORTED_IMPORT_FORMAT"),
         (422, "PDF_RENDER_FAILED", 422, "IMPORT_CONTENT_INVALID"),
         (422, "WORD_PARSE_FAILED", 422, "IMPORT_CONTENT_INVALID"),
@@ -395,6 +416,57 @@ def test_linkparse_maps_known_error_envelopes(
     assert raised.value.status_code == expected_status
     assert raised.value.code == expected_code
     assert "sensitive detail" not in str(raised.value)
+
+
+def test_linkparse_layout_resource_limit_falls_back_to_markdown_once() -> None:
+    request_bodies: list[bytes] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        request_bodies.append(request.read())
+        request_id = request.headers["X-Request-ID"]
+        if len(request_bodies) == 1:
+            return httpx.Response(
+                413,
+                headers={"X-Request-ID": request_id},
+                json={"error": {"code": "LAYOUT_RESOURCE_LIMIT"}},
+            )
+        payload = response_payload(request_id)
+        del payload["meta"]["pdf"]["layout"]
+        return httpx.Response(
+            200,
+            headers={"X-Request-ID": request_id},
+            json=payload,
+        )
+
+    result = run_parse(client(handler))
+
+    assert len(request_bodies) == 2
+    assert b'name="include_layout"\r\n\r\ntrue' in request_bodies[0]
+    assert b'name="include_layout"' not in request_bodies[1]
+    assert result.markdown.startswith("# 张三")
+    assert result.layout_applied is False
+    assert result.layout_hints is None
+
+
+def test_linkparse_layout_resource_limit_retry_is_bounded() -> None:
+    request_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal request_count
+        request_count += 1
+        request_id = request.headers["X-Request-ID"]
+        return httpx.Response(
+            413,
+            headers={"X-Request-ID": request_id},
+            json={"error": {"code": "LAYOUT_RESOURCE_LIMIT"}},
+        )
+
+    with pytest.raises(DocumentConversionFailure) as raised:
+        run_parse(client(handler))
+
+    assert request_count == 2
+    assert raised.value.status_code == 502
+    assert raised.value.code == "DOCUMENT_CONVERSION_FAILED"
 
 
 @pytest.mark.parametrize("invalid_kind", ["request_id", "assets", "json", "size"])
@@ -634,7 +706,7 @@ def test_linkparse_accepts_strict_cross_page_list_continuation() -> None:
         (0.9, 0.05, 0.1),
     ],
 )
-def test_linkparse_rejects_weak_cross_page_continuation(
+def test_linkparse_drops_weak_cross_page_continuation_and_keeps_markdown(
     target_y: float,
     continuation_y: float,
     continuation_x: float,
@@ -672,40 +744,45 @@ def test_linkparse_rejects_weak_cross_page_continuation(
             json=payload,
         )
 
-    with pytest.raises(DocumentConversionFailure) as raised:
-        run_parse(client(handler))
+    result = run_parse(client(handler))
 
-    assert raised.value.code == "RESUME_LAYOUT_UNSUPPORTED"
+    assert result.markdown == markdown
+    assert result.layout_applied is False
+    assert result.layout_schema_version is None
+    assert result.layout_hints is not None
+    assert len(result.layout_hints) == len(blocks)
 
 
 @pytest.mark.parametrize(
-    "failure",
+    ("failure", "keeps_hints"),
     [
-        "missing",
-        "degraded",
-        "bbox",
-        "order",
-        "order_gap",
-        "page_out_of_range",
-        "page_rollback",
-        "reference",
-        "continuation_gap",
-        "continuation_role",
-        "heading_continuation",
-        "continuation_distance",
-        "visual_order",
-        "row_reverse",
-        "row_overlap",
-        "row_barely_vertical",
-        "layout_extra",
-        "block_extra",
-        "quality_extra",
-        "count",
-        "markdown",
-        "warning",
+        ("missing", False),
+        ("degraded", True),
+        ("bbox", False),
+        ("order", False),
+        ("order_gap", False),
+        ("page_out_of_range", False),
+        ("page_rollback", True),
+        ("reference", True),
+        ("continuation_gap", True),
+        ("continuation_role", True),
+        ("heading_continuation", True),
+        ("continuation_distance", True),
+        ("visual_order", True),
+        ("row_reverse", True),
+        ("row_overlap", True),
+        ("row_barely_vertical", True),
+        ("layout_extra", False),
+        ("block_extra", False),
+        ("quality_extra", False),
+        ("count", True),
+        ("markdown", True),
+        ("warning", True),
     ],
 )
-def test_linkparse_rejects_unclosed_pdf_layout_contracts(failure: str) -> None:
+def test_linkparse_drops_unclosed_pdf_layout_contracts_and_keeps_markdown(
+    failure: str, keeps_hints: bool
+) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         request_id = request.headers["X-Request-ID"]
         payload = response_payload(request_id)
@@ -801,7 +878,11 @@ def test_linkparse_rejects_unclosed_pdf_layout_contracts(failure: str) -> None:
             json=payload,
         )
 
-    with pytest.raises(DocumentConversionFailure) as raised:
-        run_parse(client(handler))
-    assert raised.value.status_code == 422
-    assert raised.value.code == "RESUME_LAYOUT_UNSUPPORTED"
+    result = run_parse(client(handler))
+    assert result.markdown.startswith("# 张三")
+    assert result.layout_applied is False
+    assert result.layout_schema_version is None
+    if keeps_hints:
+        assert result.layout_hints is not None
+    else:
+        assert result.layout_hints is None

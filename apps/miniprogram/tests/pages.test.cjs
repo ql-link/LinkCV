@@ -6,6 +6,7 @@ const appConfig = require("../app.json");
 const resumesPageConfig = require("../pages/resumes/index.json");
 
 const profileTemplate = fs.readFileSync(path.join(__dirname, "../pages/profile/index.wxml"), "utf8");
+const profileStyle = fs.readFileSync(path.join(__dirname, "../pages/profile/index.wxss"), "utf8");
 const demoDetailScript = fs.readFileSync(path.join(__dirname, "../pages/resumes/detail.js"), "utf8");
 const demoDetailTemplate = fs.readFileSync(path.join(__dirname, "../pages/resumes/detail.wxml"), "utf8");
 
@@ -268,6 +269,49 @@ test("confirm page confirms the web login and enters resumes without an extra ac
     privacy_accepted: true,
   });
   assert.deepEqual(switches, ["/pages/resumes/index"]);
+});
+
+test("confirm page keeps non-admin mini-program errors in the error state", async () => {
+  for (const variant of [
+    { code: "ACCOUNT_DISABLED", message: "ACCOUNT_DISABLED" },
+    { code: "NETWORK_ERROR", message: "网络异常" },
+  ]) {
+    const switches = [];
+    let finalState = null;
+
+    await withPage("../pages/confirm", {
+      "../services/auth": {
+        acceptPrivacyAgreement() {},
+        apiUrl: (path) => `http://127.0.0.1:8000${path}`,
+        loginExistingAccount: async () => {
+          throw Object.assign(new Error(variant.message), { code: variant.code });
+        },
+        wxLoginCode: async () => "wx-code",
+      },
+    }, {
+      switchTab: ({ url }) => switches.push(url),
+      request(options) {
+        queueMicrotask(() => options.success({ statusCode: 200, data: { ok: true } }));
+      },
+    }, async (page) => {
+      page.data.scene = "login:fixture-scene";
+      page.data.phase = "pending";
+      page.data.agreementAccepted = true;
+      await page.handleConfirm();
+      finalState = {
+        submitting: page.data.submitting,
+        phase: page.data.phase,
+        message: page.data.message,
+      };
+    });
+
+    assert.deepEqual(switches, []);
+    assert.deepEqual(finalState, {
+      submitting: false,
+      phase: "error",
+      message: variant.message,
+    });
+  }
 });
 
 test("confirm page cancels the web login and reports the result", async () => {
@@ -562,14 +606,35 @@ test("profile tab shows a guest state without requesting account data", async ()
   assert.deepEqual(navigations, ["/pages/login/index?returnTo=%2Fpages%2Fprofile%2Findex"]);
 });
 
-test("profile template keeps the avatar as the only guest login trigger", () => {
+test("profile template exposes the avatar and guest login text as separate triggers", () => {
   assert.match(profileTemplate, /class="avatar-round guest-avatar"[^>]*bindtap="goLogin"/);
+  assert.match(profileTemplate, /<text class="user-name" hover-class="guest-login-hover" role="button" aria-label="登录或注册 LinkResume" bindtap="goLogin">登录 \/ 注册 LinkResume<\/text>/);
+  assert.equal((profileTemplate.match(/bindtap="goLogin"/g) || []).length, 2);
+  assert.doesNotMatch(profileTemplate, /点击左侧头像登录 \/ 注册/);
   assert.doesNotMatch(profileTemplate, /微信登录 \/ 注册/);
   assert.doesNotMatch(profileTemplate, /class="profile-info" bindtap="goLogin"/);
+  assert.doesNotMatch(profileTemplate, /class="name-line"[^>]*bindtap="goLogin"/);
+  assert.doesNotMatch(profileTemplate, /class="status-pill[^>]*bindtap="goLogin"/);
+  assert.doesNotMatch(profileTemplate, /class="hint-line"[^>]*bindtap="goLogin"/);
+  assert.doesNotMatch(profileTemplate, /class="profile-body"[^>]*bindtap="goLogin"/);
   assert.doesNotMatch(profileTemplate, /class="setting-row" bindtap=/);
   assert.doesNotMatch(profileTemplate, /class="arrow-icon" wx:if="\{\{guest\}\}"/);
-  assert.match(profileTemplate, /class="btn-group" wx:if="\{\{!guest &&/);
-  assert.match(profileTemplate, /bindtap="handleSave"/);
+  assert.doesNotMatch(profileTemplate, /class="btn-group"/);
+  assert.doesNotMatch(profileTemplate, /bindtap="handleSave"/);
+  assert.doesNotMatch(profileTemplate, /保存修改/);
+});
+
+test("profile nickname editor never overlays a transparent native input on visible text", () => {
+  assert.match(profileTemplate, /class="name-display-layer \{\{editingNickname \? 'is-hidden' : ''\}\}"/);
+  assert.match(profileTemplate, /class="name-edit-icon">✎<\/text>/);
+  assert.doesNotMatch(profileTemplate, /微信已绑定/);
+  assert.match(profileTemplate, /<input\s+wx:if="\{\{editingNickname\}\}"\s+class="user-name-input"/);
+  assert.match(profileTemplate, /confirm-type="done"/);
+  assert.match(profileTemplate, /bindconfirm="handleNicknameConfirm"/);
+  assert.match(profileTemplate, /bindblur="handleNicknameBlur"/);
+  assert.match(profileStyle, /\.name-display-layer\.is-hidden\s*\{[^}]*visibility:\s*hidden;/s);
+  assert.doesNotMatch(profileTemplate, /user-name-input-overlay/);
+  assert.doesNotMatch(profileStyle, /\.user-name-input\s*\{[^}]*opacity:\s*0;/s);
 });
 
 test("demo resume contact details stay visibly fictional and the disclaimer remains", () => {

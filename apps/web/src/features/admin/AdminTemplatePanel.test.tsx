@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, type AdminResumeTemplate } from "../../api/client";
-import { defaultSemanticDocument, defaultSemanticStyle } from "../../api/resumeContract";
+import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
 import { AdminTemplatePanel } from "./AdminTemplatePanel";
 
 vi.mock("../preview/ResumePreview", () => ({
@@ -13,8 +13,8 @@ const inactiveTemplate: AdminResumeTemplate = {
   key: "modern-cn",
   name: "现代双栏",
   description: "虚构模板",
-  data: defaultSemanticDocument,
-  style: defaultSemanticStyle,
+  data: defaultCanonicalDocument,
+  style: defaultCanonicalPresentation,
   active: false,
   valid: true,
   validation_error: null,
@@ -45,7 +45,7 @@ describe("AdminTemplatePanel", () => {
     render(<AdminTemplatePanel notify={notify} />);
 
     await screen.findByText("简历模板");
-    expect(screen.getByRole("button", { name: /点击上传或拖放文件/ })).toBeInTheDocument();
+    expect(screen.getByText("点击上传或拖放文件")).toBeInTheDocument();
     const file = new File(["{}"], "template.json", { type: "application/json" });
     fireEvent.change(screen.getByLabelText("选择 JSON 模板包"), { target: { files: [file] } });
 
