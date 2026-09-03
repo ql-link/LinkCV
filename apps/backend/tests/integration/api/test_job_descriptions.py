@@ -12,9 +12,11 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy import func, select
 
+from linkcv.application.job_descriptions.ai_import_service import draft_warnings
 from linkcv.core.config import Settings
 from linkcv.main import create_app
 from linkcv.modules.job_descriptions.models import JobDescription
+from linkcv.modules.job_descriptions.schemas import JobDescriptionDraft
 from linkcv.modules.llm.gateway import GatewayResult, GatewayUsage
 from linkcv.modules.llm.models import LLMCapabilityBinding, LLMModelConfig
 from tests.fakes import FakeRedis
@@ -102,6 +104,14 @@ def png_bytes() -> bytes:
     output = BytesIO()
     Image.new("RGB", (8, 8), (255, 255, 255)).save(output, format="PNG")
     return output.getvalue()
+
+
+def test_draft_warnings_do_not_require_job_description() -> None:
+    warnings = draft_warnings(
+        JobDescriptionDraft(job_title="平台工程师", company_name="示例科技")
+    )
+
+    assert warnings == []
 
 
 def register(client: TestClient, email: str = "zhangsan@example.test") -> None:
@@ -230,6 +240,19 @@ def import_payload(**overrides: object) -> dict[str, object]:
     }
     result.update(overrides)
     return result
+
+
+def test_manual_create_allows_omitted_job_description() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        request_payload = payload(job_title="无描述岗位")
+        request_payload.pop("description")
+
+        response = client.post("/api/job-descriptions", json=request_payload)
+
+        assert response.status_code == 201
+        assert response.json()["job_description"]["description"] == ""
 
 
 def test_manual_crud_search_and_direct_delete_release_source() -> None:
@@ -435,7 +458,11 @@ def test_validation_is_atomic_and_source_fields_are_immutable() -> None:
         invalid_payloads = [
             payload(job_title="  "),
             payload(company_name=""),
-            payload(description=""),
+            payload(
+                description="",
+                source_type="external_import",
+                source_url="https://example.test/jobs/no-description",
+            ),
             payload(salary_min="10", salary_currency="CNY"),
             payload(salary_min="20", salary_max="10", salary_currency="CNY", salary_period="day"),
             payload(user_id="999"),
