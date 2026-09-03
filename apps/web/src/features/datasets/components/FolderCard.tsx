@@ -32,9 +32,9 @@ export function FolderCard({
         }
       }}
     >
-      {/* 文件夹图形区域（统一坐标体系：100x80） */}
+      {/* 文件夹图形区域（统一 100x80 画布坐标） */}
       <div className="macos-folder-graphic" aria-hidden="true">
-        {/* 后盖与折耳 Tab（浅蓝色系渐变） */}
+        {/* 后盖与折耳 Tab（经典 macOS 浅蓝渐变） */}
         <svg
           className="macos-folder-svg-back"
           viewBox="0 0 100 80"
@@ -42,18 +42,28 @@ export function FolderCard({
           xmlns="http://www.w3.org/2000/svg"
         >
           <defs>
-            <linearGradient id={`fb-${folder.id}`} x1="0" y1="4" x2="0" y2="78" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#6cb3f9" />
-              <stop offset="100%" stopColor="#3d97f2" />
+            <linearGradient id={`fb-${folder.id}`} x1="0" y1="8" x2="0" y2="77" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="#74b8f8" />
+              <stop offset="100%" stopColor="#3e95f2" />
+            </linearGradient>
+            <linearGradient id={`fi-${folder.id}`} x1="0" y1="17" x2="0" y2="28" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="rgba(15, 70, 150, 0.22)" />
+              <stop offset="100%" stopColor="rgba(15, 70, 150, 0)" />
             </linearGradient>
           </defs>
+          {/* 左侧无缝连续平滑曲线，X=6 垂直贯通无凹坑 */}
           <path
-            d="M8 16V12C8 7.5 11.5 4 16 4H38C41.5 4 44.7 6 46.5 9.2L50 15H88C92.5 15 96 18.5 96 23V70C96 74.5 92.5 78 88 78H12C7.5 78 4 74.5 4 70V23C4 19.5 6 16.5 8 16Z"
+            d="M6 16C6 11.5 9.5 8 14 8H36C39.5 8 42.5 9.8 44.5 12.8L47.5 17H86C90.5 17 94 20.5 94 25V69C94 73.5 90.5 77 86 77H14C9.5 77 6 73.5 6 69V16Z"
             fill={`url(#fb-${folder.id})`}
+          />
+          {/* 内里轻微阴影营造开口深度感 */}
+          <path
+            d="M6 25H94V32H6V25Z"
+            fill={`url(#fi-${folder.id})`}
           />
         </svg>
 
-        {/* 探出的立体纸张卡片装饰（有文件时出现） */}
+        {/* 探出的立体纸质卡片装饰（有文件时显示） */}
         {!isEmpty && (
           <div className="macos-folder-papers">
             {folder.dataset_count > 1 && <div className="macos-paper-sheet is-back" />}
@@ -65,7 +75,7 @@ export function FolderCard({
           </div>
         )}
 
-        {/* 前盖（浅蓝色立体高光渐变） */}
+        {/* 前盖（优雅浅天蓝渐变与细微顶边反光线） */}
         <svg
           className="macos-folder-svg-front"
           viewBox="0 0 100 80"
@@ -73,27 +83,23 @@ export function FolderCard({
           xmlns="http://www.w3.org/2000/svg"
         >
           <defs>
-            <linearGradient id={`ff-${folder.id}`} x1="0" y1="21" x2="0" y2="78" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#95ceff" />
-              <stop offset="42%" stopColor="#5eaef8" />
-              <stop offset="100%" stopColor="#348ee8" />
-            </linearGradient>
-            <linearGradient id={`fg-${folder.id}`} x1="4" y1="21" x2="96" y2="21" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="rgba(255,255,255,0.75)" />
-              <stop offset="50%" stopColor="rgba(255,255,255,0.3)" />
-              <stop offset="100%" stopColor="rgba(255,255,255,0.65)" />
+            <linearGradient id={`ff-${folder.id}`} x1="0" y1="19" x2="0" y2="77" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="#a0d5ff" />
+              <stop offset="38%" stopColor="#68b4f9" />
+              <stop offset="100%" stopColor="#3b94f3" />
             </linearGradient>
           </defs>
-          {/* 前盖主体 */}
+          {/* 前盖主体：左右严格对齐 X=6 与 X=94，底边对齐 Y=77 */}
           <path
-            d="M4 28C4 24 7.5 21 12 21H88C92.5 21 96 24 96 28L94 70C94 74.5 90.5 78 86 78H14C9.5 78 6 74.5 6 70L4 28Z"
+            d="M6 27C6 22.5 9.5 19 14 19H86C90.5 19 94 22.5 94 27V69C94 73.5 90.5 77 86 77H14C9.5 77 6 73.5 6 69V27Z"
             fill={`url(#ff-${folder.id})`}
           />
-          {/* 顶边微高光条 */}
+          {/* 顶边微高光细线，杜绝粗糙胶囊光斑 */}
           <path
-            d="M12 22H88C91 22 93.5 23.5 94.5 25.5H5.5C6.5 23.5 9 22 12 22Z"
-            fill={`url(#fg-${folder.id})`}
-            opacity="0.7"
+            d="M14 19.6H86"
+            stroke="rgba(255, 255, 255, 0.8)"
+            strokeWidth="1.2"
+            strokeLinecap="round"
           />
         </svg>
       </div>
