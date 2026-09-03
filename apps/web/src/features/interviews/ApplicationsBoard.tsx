@@ -1,131 +1,353 @@
 import {
-  useLayoutEffect,
+  useEffect,
   useMemo,
   useRef,
   useState,
   type DragEvent as ReactDragEvent,
-  type CSSProperties,
-  type MouseEvent as ReactMouseEvent,
-  type WheelEvent as ReactWheelEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import {
-  BriefcaseBusiness,
-  CalendarDays,
-  GripVertical,
-  Plus,
-  Trophy,
-  Bell,
-} from "lucide-react";
-import { ApiRequestError, api, type ApplicationStageType, type InterviewCalendarColor, type JobApplicationSummary } from "@/api/client";
+import { motion, useReducedMotion } from "motion/react";
+import { ArrowRight, Ban, Eye, MoreHorizontal } from "lucide-react";
+import type { JobApplicationSummary } from "@/api/client";
 import { careerApplicationPath, navigateTo } from "../../routing";
+import {
+  APPLICATION_PROGRESS_COLUMNS,
+  applicationProgressToneClass as projectApplicationProgressToneClass,
+  applicationScheduleStatusLabel,
+  applicationStatusLabel as projectApplicationStatusLabel,
+  formatApplicationScheduleDateTime,
+  projectApplicationProgress,
+  type ApplicationProgressLabelOptions,
+  type ApplicationProgressColumnKey,
+} from "./applicationProgress";
 
-export type ProgressColumnKey = string;
+export type ProgressColumnKey = ApplicationProgressColumnKey;
+export type ApplicationSortMode = "recent_schedule" | "earliest_added";
+export type NextStageDialogTab = "assessment" | "interview" | "offer";
+export type NextStagePrefill = {
+  initialTab: NextStageDialogTab;
+  initialInterviewLabel?: string;
+};
 
-export type ProgressColumnDescriptor = {
+export const PROGRESS_COLUMNS = APPLICATION_PROGRESS_COLUMNS;
+
+const INTERVIEW_FALLBACK_LABEL = "面试中";
+
+type BoardProgressColumn = {
+  id: string;
   key: ProgressColumnKey;
   label: string;
-  stageType: ApplicationStageType | null;
-  roundNo: number | null;
-  stageLabel: string;
-  order: number;
-  isEnded?: boolean;
-};
-
-type ProgressColumn = ProgressColumnDescriptor & {
   items: JobApplicationSummary[];
+  interviewRoundNo: number | null;
 };
 
-export const CAREER_APPLICATIONS_BOARD_SCROLL_STORAGE_KEY =
-  "linkcv:career-applications:board-scroll-left";
-
-export type ProgressSummaryMetrics = {
-  active: number;
-  weekly: number;
-  followUp: number;
-  offers: number;
+type DropPreview = {
+  columnId: string;
 };
 
-export const PROGRESS_COLUMNS: ProgressColumnDescriptor[] = [
-  {
-    key: "screening:筛选中",
-    label: "筛选中",
-    stageType: "screening",
-    roundNo: null,
-    stageLabel: "筛选中",
-    order: 0,
-  },
-  {
-    key: "screening:等待沟通",
-    label: "等待沟通",
-    stageType: "screening",
-    roundNo: null,
-    stageLabel: "等待沟通",
-    order: 1,
-  },
-  {
-    key: "interview:1:一面",
-    label: "一面",
-    stageType: "interview",
-    roundNo: 1,
-    stageLabel: "一面",
-    order: 2,
-  },
-  {
-    key: "interview:2:二面",
-    label: "二面",
-    stageType: "interview",
-    roundNo: 2,
-    stageLabel: "二面",
-    order: 3,
-  },
-  {
-    key: "hr:HR 面",
-    label: "HR 面",
-    stageType: "hr",
-    roundNo: null,
-    stageLabel: "HR 面",
-    order: 100,
-  },
-  {
-    key: "offer:Offer",
-    label: "Offer",
-    stageType: "offer",
-    roundNo: null,
-    stageLabel: "Offer",
-    order: 101,
-  },
-  {
-    key: "ended",
-    label: "已结束",
-    stageType: null,
-    roundNo: null,
-    stageLabel: "已结束",
-    order: 1000,
-    isEnded: true,
-  },
-];
+export type ApplicationFormDropPreview = {
+  applicationId: string;
+  targetColumnId: string;
+};
+
+type InterviewColumnGroup = {
+  label: string;
+  items: JobApplicationSummary[];
+  firstAppearance: number;
+  interviewRoundNo: number | null;
+};
+
+function validInterviewRound(roundNo: number | null): number | null {
+  return typeof roundNo === "number" && Number.isInteger(roundNo) && roundNo > 0
+    ? roundNo
+    : null;
+}
+
+function isBoardInterviewApplication(application: JobApplicationSummary): boolean {
+  return progressColumnKey(application) === "interview";
+}
+
+function interviewColumnLabel(application: JobApplicationSummary): string {
+  return application.current_stage_label.trim() || INTERVIEW_FALLBACK_LABEL;
+}
+
+function compareInterviewColumns(left: InterviewColumnGroup, right: InterviewColumnGroup): number {
+  const leftRound = left.interviewRoundNo;
+  const rightRound = right.interviewRoundNo;
+  if (leftRound === null && rightRound !== null) return 1;
+  if (leftRound !== null && rightRound === null) return -1;
+  if (leftRound !== null && rightRound !== null && leftRound !== rightRound) {
+    return leftRound - rightRound;
+  }
+  if (left.firstAppearance !== right.firstAppearance) {
+    return left.firstAppearance - right.firstAppearance;
+  }
+  return left.label.localeCompare(right.label, "zh-CN", { sensitivity: "base" });
+}
+
+function buildBoardColumns(applications: JobApplicationSummary[]): BoardProgressColumn[] {
+  const interviewGroups = new Map<string, InterviewColumnGroup>();
+  applications.forEach((application, index) => {
+    if (!isBoardInterviewApplication(application)) return;
+    const label = interviewColumnLabel(application);
+    const roundNo = validInterviewRound(application.current_round_no);
+    const existing = interviewGroups.get(label);
+    if (existing) {
+      existing.items.push(application);
+      if (roundNo !== null && (existing.interviewRoundNo === null || roundNo < existing.interviewRoundNo)) {
+        existing.interviewRoundNo = roundNo;
+      }
+      return;
+    }
+    interviewGroups.set(label, {
+      label,
+      items: [application],
+      firstAppearance: index,
+      interviewRoundNo: roundNo,
+    });
+  });
+
+  const dynamicInterviewColumns = Array.from(interviewGroups.values())
+    .sort(compareInterviewColumns)
+    .map((group) => ({
+      id: `interview:${group.label}`,
+      key: "interview" as const,
+      label: group.label,
+      items: group.items,
+      interviewRoundNo: group.interviewRoundNo,
+    }));
+  const interviewColumns = dynamicInterviewColumns.length
+    ? dynamicInterviewColumns
+    : [{
+      id: `interview:${INTERVIEW_FALLBACK_LABEL}`,
+      key: "interview" as const,
+      label: INTERVIEW_FALLBACK_LABEL,
+      items: [],
+      interviewRoundNo: null,
+    }];
+
+  return PROGRESS_COLUMNS.flatMap<BoardProgressColumn>((column) => {
+    if (column.key === "interview") return interviewColumns;
+    return [{
+      id: column.key,
+      key: column.key,
+      label: column.label,
+      items: applications.filter((item) => progressColumnKey(item) === column.key),
+      interviewRoundNo: null,
+    }];
+  });
+}
+
+function chineseNumeralToNumber(value: string): number | null {
+  const digits: Record<string, number> = {
+    零: 0,
+    〇: 0,
+    一: 1,
+    二: 2,
+    两: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
+    八: 8,
+    九: 9,
+  };
+  if (!value || [...value].some((character) => digits[character] === undefined)) return null;
+  const numeral = [...value].map((character) => digits[character]).join("");
+  const parsed = Number(numeral);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function inferInterviewRoundNo(label: string): number | null {
+  const normalized = label.trim();
+  const digitMatch = normalized.match(/(?:第\s*)?(\d+)\s*(?:轮|面)/);
+  if (digitMatch) return validInterviewRound(Number(digitMatch[1]));
+  const chineseMatch = normalized.match(/^([零〇一二两三四五六七八九]+)\s*面/);
+  return chineseMatch ? chineseNumeralToNumber(chineseMatch[1]) : null;
+}
+
+function interviewColumnPrefill(column: BoardProgressColumn): NextStagePrefill {
+  // An empty fallback column has no user-provided stage to inherit. Keep the
+  // existing first-round convention when opening the stage dialog.
+  return {
+    initialTab: "interview",
+    initialInterviewLabel: column.items.length ? column.label : "一面",
+  };
+}
 
 export function progressColumnKey(application: JobApplicationSummary): ProgressColumnKey {
-  return stageDescriptorForApplication(application).key;
+  return projectApplicationProgress(application).columnKey;
 }
 
-function isApplicationDraggable(application: JobApplicationSummary): boolean {
-  return application.status === "active"
-    && application.archived_at === null
-    && application.current_stage_type !== "offer";
+function validApplicationTimestamp(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
-function canDropApplication(
+function compareApplicationId(left: string, right: string): number {
+  if (left === right) return 0;
+  const leftDecimal = left.match(/^\d+$/)?.[0].replace(/^0+(?=\d)/, "");
+  const rightDecimal = right.match(/^\d+$/)?.[0].replace(/^0+(?=\d)/, "");
+  if (leftDecimal && rightDecimal) {
+    if (leftDecimal.length !== rightDecimal.length) return leftDecimal.length - rightDecimal.length;
+    if (leftDecimal !== rightDecimal) return leftDecimal < rightDecimal ? -1 : 1;
+    return 0;
+  }
+  return left < right ? -1 : 1;
+}
+
+function compareApplicationsByCreatedAt(left: JobApplicationSummary, right: JobApplicationSummary): number {
+  const leftCreatedAt = validApplicationTimestamp(left.created_at);
+  const rightCreatedAt = validApplicationTimestamp(right.created_at);
+  if (leftCreatedAt !== null && rightCreatedAt !== null && leftCreatedAt !== rightCreatedAt) {
+    return leftCreatedAt - rightCreatedAt;
+  }
+  if (leftCreatedAt === null && rightCreatedAt !== null) return 1;
+  if (leftCreatedAt !== null && rightCreatedAt === null) return -1;
+  return compareApplicationId(left.id, right.id);
+}
+
+function isScheduleColumn(columnKey: ProgressColumnKey): boolean {
+  return columnKey === "assessment" || columnKey === "interview";
+}
+
+/** Whether an application participates in recent-schedule ordering. */
+export function hasValidApplicationSchedule(application: JobApplicationSummary): boolean {
+  return isScheduleColumn(progressColumnKey(application))
+    && validApplicationTimestamp(application.next_session_start_at) !== null;
+}
+
+/** Stable application ordering shared by the board and list presentations. */
+export function compareApplicationsBySortMode(
+  left: JobApplicationSummary,
+  right: JobApplicationSummary,
+  sortMode: ApplicationSortMode,
+): number {
+  if (sortMode === "earliest_added") return compareApplicationsByCreatedAt(left, right);
+
+  const leftScheduleAt = hasValidApplicationSchedule(left)
+    ? validApplicationTimestamp(left.next_session_start_at)
+    : null;
+  const rightScheduleAt = hasValidApplicationSchedule(right)
+    ? validApplicationTimestamp(right.next_session_start_at)
+    : null;
+  if (leftScheduleAt !== null && rightScheduleAt !== null && leftScheduleAt !== rightScheduleAt) {
+    return leftScheduleAt - rightScheduleAt;
+  }
+  if (leftScheduleAt !== null && rightScheduleAt === null) return -1;
+  if (leftScheduleAt === null && rightScheduleAt !== null) return 1;
+  return compareApplicationsByCreatedAt(left, right);
+}
+
+export function sortApplications(
+  applications: readonly JobApplicationSummary[],
+  sortMode: ApplicationSortMode,
+): JobApplicationSummary[] {
+  return [...applications].sort((left, right) => compareApplicationsBySortMode(left, right, sortMode));
+}
+
+function applicationDropBlockReason(
   application: JobApplicationSummary,
-  target: ProgressColumnDescriptor,
-): boolean {
-  if (!isApplicationDraggable(application) || application.stage_state !== "awaiting_result") return false;
-  const source = stageDescriptorForApplication(application);
-  return !source.isEnded
-    && !target.isEnded
-    && target.stageType !== null
-    && target.key !== source.key
-    && target.order > source.order;
+  completedCurrentStageApplicationIds: ReadonlySet<string>,
+): string | null {
+  const source = progressColumnKey(application);
+  if (application.archived_at !== null) {
+    return "该求职流程已归档，不能拖入其他状态栏。";
+  }
+  if (application.status !== "active") {
+    return "该求职流程已经结束，不能拖入其他状态栏。";
+  }
+  if (source === "offer") {
+    return "该求职流程已经进入 Offer 阶段，不能再拖入其他状态栏。";
+  }
+  if (source === "pending") {
+    return application.applied_at === null
+      ? null
+      : "该记录已经投递，不能继续从待投递栏拖动。";
+  }
+  if (application.applied_at === null) {
+    return "请先确认投递信息，再拖动到其他状态栏。";
+  }
+  if (source === "screening") {
+    return application.stage_state === "awaiting_result"
+      ? null
+      : "当前筛选流程尚未进入等待结果状态，不能推进到其他状态栏。";
+  }
+  if ((source === "assessment" || source === "interview")
+    && !completedCurrentStageApplicationIds.has(application.id)) {
+    return source === "assessment"
+      ? "请先在详情页完成当前笔试或测评，再拖动到下一阶段。"
+      : "请先在详情页完成当前面试，再拖动到下一阶段。";
+  }
+  return null;
+}
+
+function applicationBoardColumnId(application: JobApplicationSummary): string {
+  const columnKey = progressColumnKey(application);
+  return columnKey === "interview"
+    ? `interview:${interviewColumnLabel(application)}`
+    : columnKey;
+}
+
+type DropValidation =
+  | { valid: true; prefill: NextStagePrefill }
+  | { valid: false; message: string };
+
+function validateApplicationDrop(
+  application: JobApplicationSummary,
+  target: BoardProgressColumn,
+  columns: BoardProgressColumn[],
+  completedCurrentStageApplicationIds: ReadonlySet<string>,
+): DropValidation {
+  const blockReason = applicationDropBlockReason(
+    application,
+    completedCurrentStageApplicationIds,
+  );
+  if (blockReason) {
+    return { valid: false, message: blockReason };
+  }
+  const source = progressColumnKey(application);
+  if (source === "pending") {
+    return target.key === "screening"
+      ? { valid: true, prefill: { initialTab: "assessment" } }
+      : { valid: false, message: "待投递记录只能拖到筛选中，确认投递日期后再继续。" };
+  }
+  if (target.key === "assessment") {
+    return source === "screening"
+      ? { valid: true, prefill: { initialTab: "assessment" } }
+      : { valid: false, message: "笔试阶段只能从筛选中进入。" };
+  }
+  if (target.key === "offer") {
+    return { valid: true, prefill: { initialTab: "offer" } };
+  }
+  if (target.key !== "interview") {
+    return { valid: false, message: "只能拖动到后续的笔试、面试或 Offer 阶段。" };
+  }
+
+  if (source === "interview") {
+    const sourceColumnId = `interview:${interviewColumnLabel(application)}`;
+    const sourceColumnIndex = columns.findIndex((column) => column.id === sourceColumnId);
+    const targetColumnIndex = columns.findIndex((column) => column.id === target.id);
+    const currentRound = validInterviewRound(application.current_round_no)
+      ?? inferInterviewRoundNo(interviewColumnLabel(application));
+    const targetRound = target.interviewRoundNo ?? inferInterviewRoundNo(target.label);
+    const isLater = currentRound !== null && targetRound !== null
+      ? targetRound > currentRound
+      : currentRound !== null && targetRound === null
+        ? targetColumnIndex > sourceColumnIndex
+        : currentRound === null && targetRound !== null
+          ? false
+          : targetColumnIndex > sourceColumnIndex;
+    if (target.id === sourceColumnId || !isLater) {
+      return { valid: false, message: "不能拖回当前或更早的面试阶段。" };
+    }
+  }
+  return {
+    valid: true,
+    prefill: interviewColumnPrefill(target),
+  };
 }
 
 export function interviewRoundLabel(roundNo: number): string {
@@ -134,128 +356,15 @@ export function interviewRoundLabel(roundNo: number): string {
   return `第 ${roundNo} 轮`;
 }
 
-function stageLabelFor(
-  stageType: ApplicationStageType,
-  roundNo: number | null,
-  stageLabel: string,
-): string {
-  const normalizedLabel = stageLabel.trim();
-  if (normalizedLabel) return normalizedLabel;
-  if (stageType === "screening") return "筛选中";
-  if (stageType === "interview") return interviewRoundLabel(roundNo ?? 1);
-  return stageType === "hr" ? "HR 面" : "Offer";
-}
-
-function stageColumnKey(
-  stageType: ApplicationStageType,
-  roundNo: number | null,
-  stageLabel: string,
-): ProgressColumnKey {
-  const label = stageLabelFor(stageType, roundNo, stageLabel);
-  if (stageType === "screening") return `screening:${label}`;
-  if (stageType === "interview") return `interview:${roundNo ?? 0}:${label}`;
-  return `${stageType}:${label}`;
-}
-
-function stageOrder(
-  stageType: ApplicationStageType,
-  roundNo: number | null,
-  stageLabel: string,
-): number {
-  const label = stageLabelFor(stageType, roundNo, stageLabel);
-  if (stageType === "screening") {
-    if (label === "筛选中") return 0;
-    if (label === "等待沟通") return 1;
-    return 1.5;
-  }
-  if (stageType === "interview") {
-    return 2 + Math.max(0, (roundNo ?? 1) - 1);
-  }
-  return stageType === "hr" ? 100 : 101;
-}
-
-function stageDescriptor(
-  stageType: ApplicationStageType,
-  roundNo: number | null,
-  stageLabel: string,
-): ProgressColumnDescriptor {
-  const label = stageLabelFor(stageType, roundNo, stageLabel);
-  const key = stageColumnKey(stageType, roundNo, label);
-  const base = PROGRESS_COLUMNS.find((column) => column.key === key);
-  if (base) return base;
-  return {
-    key,
-    label,
-    stageType,
-    roundNo: stageType === "interview" ? roundNo : null,
-    stageLabel: label,
-    order: stageOrder(stageType, roundNo, label),
-  };
-}
-
-function stageDescriptorForApplication(
-  application: JobApplicationSummary,
-): ProgressColumnDescriptor {
-  if (application.archived_at || application.status !== "active") {
-    return PROGRESS_COLUMNS[PROGRESS_COLUMNS.length - 1];
-  }
-  return stageDescriptor(
-    application.current_stage_type,
-    application.current_round_no,
-    application.current_stage_label,
-  );
-}
-
-function compareProgressColumns(
-  left: ProgressColumnDescriptor,
-  right: ProgressColumnDescriptor,
-): number {
-  const orderDifference = left.order - right.order;
-  if (orderDifference !== 0) return orderDifference;
-  const leftBaseIndex = PROGRESS_COLUMNS.findIndex((column) => column.key === left.key);
-  const rightBaseIndex = PROGRESS_COLUMNS.findIndex((column) => column.key === right.key);
-  if (leftBaseIndex !== -1 || rightBaseIndex !== -1) {
-    if (leftBaseIndex === -1) return 1;
-    if (rightBaseIndex === -1) return -1;
-    return leftBaseIndex - rightBaseIndex;
-  }
-  return left.label.localeCompare(right.label, "zh-CN");
-}
-
-export function buildProgressColumns(
-  applications: JobApplicationSummary[],
-): ProgressColumn[] {
-  const itemsByColumn = new Map<ProgressColumnKey, JobApplicationSummary[]>();
-  const descriptors = new Map<ProgressColumnKey, ProgressColumnDescriptor>(
-    PROGRESS_COLUMNS.map((column) => [column.key, column]),
-  );
-  for (const application of applications) {
-    const descriptor = stageDescriptorForApplication(application);
-    if (!descriptors.has(descriptor.key)) descriptors.set(descriptor.key, descriptor);
-    const items = itemsByColumn.get(descriptor.key) ?? [];
-    items.push(application);
-    itemsByColumn.set(descriptor.key, items);
-  }
-  return [...descriptors.values()]
-    .sort(compareProgressColumns)
-    .map((column) => ({
-      ...column,
-      items: itemsByColumn.get(column.key) ?? [],
-    }));
-}
-
 export function applicationStatusLabel(application: JobApplicationSummary): string {
-  if (application.archived_at) return "已归档";
-  if (application.status === "rejected") return "未通过";
-  if (application.status === "withdrawn") return "已主动结束";
-  if (application.status === "closed") return application.offer_status === "accepted" ? "已接受 Offer" : "已结束";
-  return application.stage_state === "awaiting_schedule"
-    ? "等待安排"
-    : application.stage_state === "awaiting_result"
-      ? "等待结果"
-      : application.stage_state === "negotiating"
-        ? "Offer 沟通中"
-        : "进行中";
+  return projectApplicationStatusLabel(application);
+}
+
+export function applicationProgressToneClass(
+  application: JobApplicationSummary,
+  options: ApplicationProgressLabelOptions = {},
+): string {
+  return projectApplicationProgressToneClass(application, options);
 }
 
 export function formatApplicationDate(value: string): string {
@@ -276,364 +385,355 @@ export function formatApplicationDateTime(value: string): string {
   }).format(new Date(value));
 }
 
-export function ApplicationsBoard({
-  visibleApplications,
-  displayMode,
-  metrics,
-  onCreate,
-  onChanged,
-  onNotice,
-}: {
-  visibleApplications: JobApplicationSummary[];
-  displayMode: "board" | "list";
-  metrics: ProgressSummaryMetrics;
-  onCreate: () => void;
-  onChanged: () => Promise<void>;
-  onNotice: (notice: string) => void;
-}) {
-  return (
-    <>
-      <ProgressSummaryBar metrics={metrics} />
-      {displayMode === "board" && visibleApplications.length > 0 && (
-        <ProgressBoard
-          applications={visibleApplications}
-          onCreate={onCreate}
-          onChanged={onChanged}
-          onNotice={onNotice}
-        />
-      )}
-    </>
-  );
+export function formatApplicationUpdatedAt(value: string, now = new Date()): string {
+  const date = new Date(value);
+  const isSameDay = (left: Date, right: Date) =>
+    left.getFullYear() === right.getFullYear()
+    && left.getMonth() === right.getMonth()
+    && left.getDate() === right.getDate();
+  const time = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  if (isSameDay(date, now)) return `今天 ${time}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (isSameDay(date, yesterday)) return `昨天 ${time}`;
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
-export function ProgressSummaryBar({
-  metrics,
+export function applicationCardStatusLabel(
+  application: JobApplicationSummary,
+  currentStageCompleted = false,
+  now = new Date(),
+): string {
+  const projection = projectApplicationProgress(application);
+  const scheduleLabel = applicationScheduleStatusLabel(application, { currentStageCompleted, now });
+  return scheduleLabel ?? projection.supportingLabel ?? projection.statusLabel;
+}
+
+type ApplicationAdvanceAction = {
+  enabled: boolean;
+  prefill: NextStagePrefill | null;
+};
+
+/**
+ * Resolve the same safe next-stage boundary used by board dragging for the
+ * explicit card action.  A menu action can open the existing dialog, but it
+ * must not bypass the completion requirement for a current assessment or
+ * interview session.
+ */
+function applicationAdvanceAction(
+  application: JobApplicationSummary,
+  completedCurrentStageApplicationIds: ReadonlySet<string>,
+): ApplicationAdvanceAction {
+  const columnKey = progressColumnKey(application);
+  const active = application.status === "active" && application.archived_at === null;
+  if (!active || columnKey === "offer" || columnKey === "ended") {
+    return { enabled: false, prefill: null };
+  }
+  if (columnKey === "pending") {
+    return application.applied_at === null
+      ? { enabled: true, prefill: null }
+      : { enabled: false, prefill: null };
+  }
+  if (columnKey === "screening") {
+    return application.current_stage_type === "screening"
+      && application.applied_at !== null
+      && application.stage_state === "awaiting_result"
+      ? { enabled: true, prefill: { initialTab: "assessment" } }
+      : { enabled: false, prefill: null };
+  }
+  if (columnKey === "assessment") {
+    return completedCurrentStageApplicationIds.has(application.id)
+      ? {
+        enabled: true,
+        prefill: { initialTab: "interview", initialInterviewLabel: "一面" },
+      }
+      : { enabled: false, prefill: null };
+  }
+  if (columnKey === "interview") {
+    return completedCurrentStageApplicationIds.has(application.id)
+      ? { enabled: true, prefill: { initialTab: "interview", initialInterviewLabel: "" } }
+      : { enabled: false, prefill: null };
+  }
+  return { enabled: false, prefill: null };
+}
+
+export function formatApplicationListDateTime(value: string): string {
+  return formatApplicationScheduleDateTime(value);
+}
+
+export function ApplicationsBoard({
+  visibleApplications,
+  completedCurrentStageApplicationIds,
+  now,
+  sortMode = "recent_schedule",
+  displayMode,
+  formDropPreview,
+  onNotice,
+  onRequestMarkApplied,
+  onRequestNextStage,
+  onRequestTerminate,
 }: {
-  metrics: ProgressSummaryMetrics;
+  visibleApplications: JobApplicationSummary[];
+  completedCurrentStageApplicationIds: ReadonlySet<string>;
+  now?: Date;
+  sortMode?: ApplicationSortMode;
+  displayMode: "board" | "list";
+  formDropPreview: ApplicationFormDropPreview | null;
+  onNotice: (notice: string) => void;
+  onRequestMarkApplied: (application: JobApplicationSummary, targetColumnId?: string) => void;
+  onRequestNextStage: (application: JobApplicationSummary, prefill: NextStagePrefill, targetColumnId?: string) => void;
+  onRequestTerminate: (application: JobApplicationSummary) => void;
 }) {
-  const entries = [
-    {
-      icon: <BriefcaseBusiness />,
-      tone: "blue",
-      label: "进行中的进程",
-      value: metrics.active,
-      hint: "当前全部进程",
-    },
-    {
-      icon: <CalendarDays />,
-      tone: "orange",
-      label: "本周待面试",
-      value: metrics.weekly,
-      hint: "已安排场次",
-    },
-    {
-      icon: <Bell />,
-      tone: "purple",
-      label: "待跟进",
-      value: metrics.followUp,
-      hint: "需要及时跟进",
-    },
-    {
-      icon: <Trophy />,
-      tone: "green",
-      label: "已拿 Offer",
-      value: metrics.offers,
-      hint: "书面 Offer",
-    },
-  ];
   return (
-    <section className="career-application-summary-bar" aria-label="求职进程数据概览">
-      {entries.map((entry, index) => (
-        <article key={entry.label} className={index > 0 ? "has-divider" : undefined}>
-          <span className={`career-summary-icon tone-${entry.tone}`} aria-hidden="true">{entry.icon}</span>
-          <div>
-            <small>{entry.label}</small>
-            <strong>{entry.value}</strong>
-            <p>{entry.hint}</p>
-          </div>
-        </article>
-      ))}
-    </section>
+    displayMode === "board" && visibleApplications.length > 0 ? (
+      <ProgressBoard
+        applications={visibleApplications}
+        completedCurrentStageApplicationIds={completedCurrentStageApplicationIds}
+        now={now}
+        sortMode={sortMode}
+        formDropPreview={formDropPreview}
+        onNotice={onNotice}
+        onRequestMarkApplied={onRequestMarkApplied}
+        onRequestNextStage={onRequestNextStage}
+        onRequestTerminate={onRequestTerminate}
+      />
+    ) : null
   );
 }
 
 export function ProgressBoard({
   applications,
-  onCreate,
-  onChanged,
+  completedCurrentStageApplicationIds,
+  now,
+  sortMode = "recent_schedule",
+  formDropPreview,
   onNotice,
+  onRequestMarkApplied,
+  onRequestNextStage,
+  onRequestTerminate,
 }: {
   applications: JobApplicationSummary[];
-  onCreate: () => void;
-  onChanged: () => Promise<void>;
+  completedCurrentStageApplicationIds: ReadonlySet<string>;
+  now?: Date;
+  sortMode?: ApplicationSortMode;
+  formDropPreview: ApplicationFormDropPreview | null;
   onNotice: (notice: string) => void;
+  onRequestMarkApplied: (application: JobApplicationSummary, targetColumnId?: string) => void;
+  onRequestNextStage: (application: JobApplicationSummary, prefill: NextStagePrefill, targetColumnId?: string) => void;
+  onRequestTerminate: (application: JobApplicationSummary) => void;
 }) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<ProgressColumnKey | null>(null);
-  const [advancingId, setAdvancingId] = useState<string | null>(null);
-  const [isPanning, setIsPanning] = useState(false);
-  const boardRef = useRef<HTMLElement | null>(null);
-  const dragRef = useRef<{ id: string; source: ProgressColumnKey } | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [invalidDropTarget, setInvalidDropTarget] = useState<string | null>(null);
+  const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
+  const [settlingReturnId, setSettlingReturnId] = useState<string | null>(null);
+  const [openMenuApplicationId, setOpenMenuApplicationId] = useState<string | null>(null);
+  const advancingId: string | null = null;
+  const dragRef = useRef<{ id: string } | null>(null);
+  const returnSettleTimerRef = useRef<number | null>(null);
+  const isSettlingReturnRef = useRef(false);
   const suppressCardClickRef = useRef(false);
-  const panRef = useRef<{ startX: number; startScrollLeft: number; moved: boolean } | null>(null);
-  const autoScrollRef = useRef<{ direction: -1 | 1; timer: number } | null>(null);
-  const columns = useMemo(() => buildProgressColumns(applications), [applications]);
+  const dismissMenuClickApplicationIdRef = useRef<string | null>(null);
+  const shouldReduceMotion = useReducedMotion();
+  const columns = useMemo(
+    () => buildBoardColumns(sortApplications(applications, sortMode)),
+    [applications, sortMode],
+  );
+  const calculationNow = now ?? new Date();
 
-  const persistBoardScroll = (board: HTMLElement | null = boardRef.current) => {
-    if (!board) return;
-    try {
-      window.sessionStorage.setItem(
-        CAREER_APPLICATIONS_BOARD_SCROLL_STORAGE_KEY,
-        String(Math.max(0, board.scrollLeft)),
-      );
-    } catch {
-      // sessionStorage can be disabled or unavailable in privacy modes.
-    }
-  };
-
-  useLayoutEffect(() => {
-    const board = boardRef.current;
-    if (!board) return;
-    try {
-      const stored = window.sessionStorage.getItem(
-        CAREER_APPLICATIONS_BOARD_SCROLL_STORAGE_KEY,
-      );
-      const scrollLeft = stored === null ? NaN : Number(stored);
-      if (Number.isFinite(scrollLeft) && scrollLeft >= 0) board.scrollLeft = scrollLeft;
-    } catch {
-      // A failed restore should not prevent the board from rendering.
-    }
-    return () => {
-      persistBoardScroll(board);
-      const activeAutoScroll = autoScrollRef.current;
-      if (activeAutoScroll) window.clearInterval(activeAutoScroll.timer);
-      autoScrollRef.current = null;
-    };
+  useEffect(() => () => {
+    if (returnSettleTimerRef.current !== null) window.clearTimeout(returnSettleTimerRef.current);
   }, []);
 
-  useLayoutEffect(() => {
-    if (!isPanning) return;
-    const move = (event: MouseEvent) => {
-      const board = boardRef.current;
-      const pan = panRef.current;
-      if (!board || !pan) return;
-      const delta = event.clientX - pan.startX;
-      if (Math.abs(delta) > 2) pan.moved = true;
-      board.scrollLeft = pan.startScrollLeft - delta;
-      if (pan.moved) event.preventDefault();
-    };
-    const end = () => {
-      panRef.current = null;
-      setIsPanning(false);
-    };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", end);
-    window.addEventListener("blur", end);
-    return () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", end);
-      window.removeEventListener("blur", end);
-    };
-  }, [isPanning]);
-
-  const stopAutoScroll = () => {
-    const current = autoScrollRef.current;
-    if (current) window.clearInterval(current.timer);
-    autoScrollRef.current = null;
-  };
-
-  const scrollAtEdge = (direction: -1 | 1) => {
-    const board = boardRef.current;
-    if (!board) return;
-    const current = board.scrollLeft;
-    const maxScrollLeft = Math.max(0, board.scrollWidth - board.clientWidth);
-    const next = Math.max(0, Math.min(maxScrollLeft, current + direction * 12));
-    board.scrollLeft = next;
-    if (next === current) stopAutoScroll();
-  };
-
-  const updateAutoScroll = (clientX: number) => {
-    const board = boardRef.current;
-    if (!board || !Number.isFinite(clientX)) return;
-    const rect = board.getBoundingClientRect();
-    const left = rect.left;
-    const right = rect.right || left + board.clientWidth;
-    if (right <= left) {
-      stopAutoScroll();
-      return;
-    }
-    const edgeSize = Math.min(56, Math.max(32, (right - left) * 0.12));
-    const direction: -1 | 1 | 0 = clientX <= left + edgeSize
-      ? -1
-      : clientX >= right - edgeSize
-        ? 1
-        : 0;
-    if (!direction) {
-      stopAutoScroll();
-      return;
-    }
-    const current = autoScrollRef.current;
-    if (current?.direction === direction) return;
-    stopAutoScroll();
-    scrollAtEdge(direction);
-    if (board.scrollLeft === 0 && direction === -1) return;
-    const maxScrollLeft = Math.max(0, board.scrollWidth - board.clientWidth);
-    if (board.scrollLeft >= maxScrollLeft && direction === 1) return;
-    autoScrollRef.current = {
-      direction,
-      timer: window.setInterval(() => scrollAtEdge(direction), 16),
-    };
-  };
-
   const clearDrag = () => {
-    stopAutoScroll();
     dragRef.current = null;
     setDraggingId(null);
     setDropTarget(null);
+    setInvalidDropTarget(null);
+    setDropPreview(null);
+    setSettlingReturnId(null);
   };
 
   const handleDragStart = (item: JobApplicationSummary, event: ReactDragEvent<HTMLElement>) => {
-    if (!isApplicationDraggable(item) || advancingId !== null) {
-      event.preventDefault();
-      return;
-    }
-    const source = progressColumnKey(item);
-    dragRef.current = { id: item.id, source };
+    if (returnSettleTimerRef.current !== null) window.clearTimeout(returnSettleTimerRef.current);
+    returnSettleTimerRef.current = null;
+    isSettlingReturnRef.current = false;
+    setSettlingReturnId(null);
+    dragRef.current = { id: item.id };
     suppressCardClickRef.current = true;
     setDraggingId(item.id);
+    setDropPreview(null);
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData("text/plain", item.id);
     }
   };
 
-  const handleDrop = async (target: ProgressColumnDescriptor, event: ReactDragEvent<HTMLElement>) => {
+  const settleBackToSource = (application: JobApplicationSummary) => {
+    if (shouldReduceMotion) {
+      clearDrag();
+      return;
+    }
+    isSettlingReturnRef.current = true;
+    setSettlingReturnId(application.id);
+    setDropTarget(null);
+    setInvalidDropTarget(null);
+    setDropPreview({ columnId: applicationBoardColumnId(application) });
+    returnSettleTimerRef.current = window.setTimeout(() => {
+      isSettlingReturnRef.current = false;
+      returnSettleTimerRef.current = null;
+      clearDrag();
+    }, 150);
+  };
+
+  const handleDrop = (target: BoardProgressColumn, event: ReactDragEvent<HTMLElement>) => {
     event.preventDefault();
-    const draggedId = event.dataTransfer?.getData("text/plain") || dragRef.current?.id;
     const drag = dragRef.current;
-    clearDrag();
-    if (!draggedId || !drag) return;
+    const draggedId = drag?.id || event.dataTransfer?.getData("text/plain");
+    if (!draggedId || !drag) {
+      clearDrag();
+      return;
+    }
     const application = applications.find((item) => item.id === draggedId);
-    if (!application) return;
-    const source = columns.find((column) => column.key === drag.source)
-      ?? stageDescriptorForApplication(application);
-    if (target.key === source.key) return;
-    if (target.isEnded) {
-      onNotice("结束结果需要进入求职进程详情选择，拖动不会替你决定未通过或主动结束。");
+    if (!application) {
+      clearDrag();
       return;
     }
-    if (source.isEnded) {
-      onNotice("已结束的求职进程不能拖回活动阶段，请在详情中查看历史记录。");
+    if (applicationBoardColumnId(application) === target.id) {
+      clearDrag();
       return;
     }
-    if (target.order <= source.order) {
-      onNotice("后端仅支持向前推进，同一阶段或逆向拖动不会写入。");
+    const validation = validateApplicationDrop(application, target, columns, completedCurrentStageApplicationIds);
+    if (!validation.valid) {
+      event.dataTransfer.dropEffect = "move";
+      settleBackToSource(application);
+      onNotice(validation.message);
       return;
     }
-    if (application.stage_state !== "awaiting_result") {
-      onNotice("只有当前阶段已完成并等待结果时才能拖动推进，请先在详情中处理。");
+    clearDrag();
+    if (progressColumnKey(application) === "pending") {
+      onRequestMarkApplied(application, target.id);
       return;
     }
-    if (!target.stageType) {
-      onNotice("目标阶段不可用，请在求职进程详情中处理。");
-      return;
-    }
-    const transition = {
-      target_stage_type: target.stageType,
-      target_round_no: target.roundNo,
-      target_stage_label: target.stageLabel,
-    };
-    setAdvancingId(application.id);
-    try {
-      await api.advanceJobApplication(application.id, {
-        ...transition,
-        base_lock_version: application.lock_version,
-      });
-      await onChanged();
-    } catch (error) {
-      onNotice(applicationTransitionError(error));
-      await onChanged();
-    } finally {
-      setAdvancingId(null);
-    }
+    onRequestNextStage(application, validation.prefill, target.id);
   };
 
   const draggingApplication = draggingId
     ? applications.find((item) => item.id === draggingId) ?? null
     : null;
-
-  const handleBoardWheel = (event: ReactWheelEvent<HTMLElement>) => {
-    if (!event.shiftKey) return;
-    const board = boardRef.current;
-    if (!board) return;
-    const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX)
-      ? event.deltaY
-      : event.deltaX;
-    if (!delta) return;
-    event.preventDefault();
-    board.scrollLeft += delta;
-  };
-
-  const isInteractiveTarget = (target: EventTarget | null): boolean => {
-    return target instanceof Element
-      && Boolean(target.closest("button, a, input, select, textarea, [draggable='true'], [role='button']"));
-  };
-
-  const handleBoardMouseDown = (event: ReactMouseEvent<HTMLElement>) => {
-    if (event.button !== 0 || isInteractiveTarget(event.target)) return;
-    const board = boardRef.current;
-    if (!board) return;
-    panRef.current = {
-      startX: event.clientX,
-      startScrollLeft: board.scrollLeft,
-      moved: false,
-    };
-    setIsPanning(true);
-    event.preventDefault();
-  };
+  const displayedDraggingId = draggingId ?? formDropPreview?.applicationId ?? null;
+  const displayedDraggingApplication = displayedDraggingId
+    ? applications.find((item) => item.id === displayedDraggingId) ?? null
+    : null;
+  const displayedDropPreview = formDropPreview
+    ? { columnId: formDropPreview.targetColumnId }
+    : dropPreview;
 
   return (
     <section
-      ref={boardRef}
-      className={`interview-surface career-applications-board progress-board-surface${isPanning ? " is-panning" : ""}`}
+      className="interview-surface career-applications-board"
       aria-label="求职进程看板"
-      onWheel={handleBoardWheel}
-      onScroll={() => persistBoardScroll()}
-      onMouseDown={handleBoardMouseDown}
-      onDragOver={(event) => updateAutoScroll(event.clientX)}
-      onDrop={stopAutoScroll}
+      onPointerDownCapture={(event) => {
+        if (!openMenuApplicationId) {
+          dismissMenuClickApplicationIdRef.current = null;
+          return;
+        }
+        const clickedCard = (event.target as Element).closest<HTMLElement>("[data-application-id]");
+        if (!clickedCard || clickedCard.dataset.applicationId === openMenuApplicationId) return;
+        dismissMenuClickApplicationIdRef.current = clickedCard.dataset.applicationId ?? null;
+        event.preventDefault();
+        event.stopPropagation();
+        setOpenMenuApplicationId(null);
+      }}
+      onClickCapture={(event) => {
+        const clickedCard = (event.target as Element).closest<HTMLElement>("[data-application-id]");
+        const clickedApplicationId = clickedCard?.dataset.applicationId ?? null;
+        const shouldDismissOpenMenu = Boolean(
+          openMenuApplicationId
+          && clickedApplicationId
+          && clickedApplicationId !== openMenuApplicationId,
+        );
+        const shouldConsumePointerClick = Boolean(
+          clickedApplicationId
+          && dismissMenuClickApplicationIdRef.current === clickedApplicationId,
+        );
+        if (!shouldDismissOpenMenu && !shouldConsumePointerClick) return;
+        dismissMenuClickApplicationIdRef.current = null;
+        event.preventDefault();
+        event.stopPropagation();
+        setOpenMenuApplicationId(null);
+      }}
     >
-      <div
-        className="progress-board-grid"
-        style={{ "--progress-column-count": columns.length } as CSSProperties}
-      >
+      <div className="progress-board-grid">
         {columns.map((column) => (
           <ProgressColumn
-            key={column.key}
+            key={column.id}
             column={column}
-            draggingId={draggingId}
+            draggingId={displayedDraggingId}
+            draggingSourceColumnId={displayedDraggingApplication ? applicationBoardColumnId(displayedDraggingApplication) : null}
+            dropPreview={displayedDropPreview}
+            settlingReturnId={settlingReturnId}
             dropTarget={dropTarget}
             advancingId={advancingId}
-            canAcceptDrop={Boolean(draggingApplication && canDropApplication(draggingApplication, column))}
-            onCreate={onCreate}
+            completedCurrentStageApplicationIds={completedCurrentStageApplicationIds}
+            now={calculationNow}
+            canAcceptDrop={Boolean(draggingApplication && validateApplicationDrop(
+              draggingApplication,
+              column,
+              columns,
+              completedCurrentStageApplicationIds,
+            ).valid)}
+            isInvalidDropTarget={invalidDropTarget === column.id}
+            openMenuApplicationId={openMenuApplicationId}
+            onMenuOpenChange={setOpenMenuApplicationId}
             onDragStart={handleDragStart}
             onDragEnd={() => {
-              clearDrag();
+              if (!isSettlingReturnRef.current) clearDrag();
               window.setTimeout(() => {
                 suppressCardClickRef.current = false;
               }, 0);
             }}
             onDragOver={(event) => {
-              if (!draggingApplication || !canDropApplication(draggingApplication, column)) return;
+              if (!draggingApplication) return;
               event.preventDefault();
+              if (applicationBoardColumnId(draggingApplication) === column.id) {
+                event.dataTransfer.dropEffect = "move";
+                setDropTarget(null);
+                setInvalidDropTarget(null);
+                setDropPreview({ columnId: column.id });
+                return;
+              }
+              const validation = validateApplicationDrop(
+                draggingApplication,
+                column,
+                columns,
+                completedCurrentStageApplicationIds,
+              );
+              // The board handles rejected drops itself so the browser must still
+              // treat the native drag as consumed. `none` triggers an additional
+              // browser-controlled snap-back animation on top of our source-card
+              // return transition, which makes blocked stage moves feel sluggish.
               event.dataTransfer.dropEffect = "move";
-              setDropTarget(column.key);
-              updateAutoScroll(event.clientX);
+              setDropTarget(validation.valid ? column.id : null);
+              setInvalidDropTarget(validation.valid ? null : column.id);
+              if (!validation.valid) {
+                setDropPreview(null);
+                return;
+              }
+              setDropPreview({ columnId: column.id });
             }}
             onDragLeave={(event) => {
-              if (event.currentTarget === event.target) setDropTarget(null);
+              const relatedTarget = event.relatedTarget as Node | null;
+              if (!relatedTarget || !event.currentTarget.contains(relatedTarget)) {
+                setDropTarget(null);
+                setInvalidDropTarget(null);
+                setDropPreview(null);
+              }
             }}
-            onDrop={(event) => void handleDrop(column, event)}
+            onDrop={(event) => handleDrop(column, event)}
+            onRequestMarkApplied={onRequestMarkApplied}
+            onRequestNextStage={onRequestNextStage}
+            onRequestTerminate={onRequestTerminate}
             onOpen={(item) => {
               if (!suppressCardClickRef.current) navigateTo(careerApplicationPath(item.id));
             }}
@@ -647,159 +747,352 @@ export function ProgressBoard({
 export function ProgressColumn({
   column,
   draggingId,
+  draggingSourceColumnId,
+  dropPreview,
+  settlingReturnId,
   dropTarget,
   advancingId,
+  completedCurrentStageApplicationIds,
+  now,
   canAcceptDrop,
-  onCreate,
+  isInvalidDropTarget,
+  openMenuApplicationId,
+  onMenuOpenChange,
   onDragStart,
   onDragEnd,
   onDragOver,
   onDragLeave,
   onDrop,
+  onRequestMarkApplied,
+  onRequestNextStage,
+  onRequestTerminate,
   onOpen,
 }: {
-  column: ProgressColumn;
+  column: BoardProgressColumn;
   draggingId: string | null;
-  dropTarget: ProgressColumnKey | null;
+  draggingSourceColumnId: string | null;
+  dropPreview: DropPreview | null;
+  settlingReturnId: string | null;
+  dropTarget: string | null;
   advancingId: string | null;
+  completedCurrentStageApplicationIds: ReadonlySet<string>;
+  now?: Date;
   canAcceptDrop: boolean;
-  onCreate: () => void;
+  isInvalidDropTarget: boolean;
+  openMenuApplicationId: string | null;
+  onMenuOpenChange: (applicationId: string | null) => void;
   onDragStart: (item: JobApplicationSummary, event: ReactDragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
   onDragOver: (event: ReactDragEvent<HTMLDivElement>) => void;
   onDragLeave: (event: ReactDragEvent<HTMLDivElement>) => void;
   onDrop: (event: ReactDragEvent<HTMLDivElement>) => void;
+  onRequestMarkApplied: (application: JobApplicationSummary) => void;
+  onRequestNextStage: (application: JobApplicationSummary, prefill: NextStagePrefill) => void;
+  onRequestTerminate: (application: JobApplicationSummary) => void;
   onOpen: (item: JobApplicationSummary) => void;
 }) {
+  const shouldReduceMotion = useReducedMotion();
+  const isSourceColumn = Boolean(draggingSourceColumnId && draggingSourceColumnId === column.id);
+  const isReturningToSource = Boolean(
+    draggingId && isSourceColumn && dropPreview?.columnId === column.id,
+  );
+  const showDropPreview = Boolean(
+    draggingId && dropPreview?.columnId === column.id && !isSourceColumn,
+  );
+  // Keep the source node mounted while it is visually collapsed. Native
+  // dragend is dispatched on that node, and retaining the listener also lets
+  // keyboard/test cancellations cleanly reset the board state.
+  const renderedItems = column.items;
+  const draggingSourceIndex = isSourceColumn && draggingId
+    ? renderedItems.findIndex((item) => item.id === draggingId)
+    : -1;
+  const previewIndex = showDropPreview ? 0 : -1;
+  const cardNodes = renderedItems.flatMap((item, index) => {
+    const isDraggingCard = draggingId === item.id;
+    const isSettlingReturnCard = settlingReturnId === item.id;
+    const isAfterDraggingCard = draggingSourceIndex >= 0
+      && index > draggingSourceIndex
+      && !isReturningToSource;
+    const placeholder = showDropPreview && index === previewIndex
+      ? [
+        <motion.div
+          key={`drop-placeholder-${column.id}`}
+          className="progress-card-drop-placeholder"
+          data-drop-placeholder="true"
+          data-placeholder-index={previewIndex}
+          aria-hidden="true"
+          layout={shouldReduceMotion ? false : "position"}
+          initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 0.82, scale: 1 }}
+          transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+        />,
+      ]
+      : [];
+    return [
+      ...placeholder,
+      <motion.div
+        key={item.id}
+        className={`progress-card-layout${isAfterDraggingCard ? " is-after-dragging" : ""}`}
+        layout={shouldReduceMotion ? false : "position"}
+        transition={{ layout: { duration: 0.18, ease: [0.16, 1, 0.3, 1] } }}
+      >
+        <ProgressCard
+          item={item}
+          columnKey={column.key}
+          isDragging={isDraggingCard && !isSettlingReturnCard}
+          isReturning={isSettlingReturnCard}
+          menuOpen={openMenuApplicationId === item.id}
+          isAdvancing={advancingId === item.id}
+          currentStageCompleted={completedCurrentStageApplicationIds.has(item.id)}
+          completedCurrentStageApplicationIds={completedCurrentStageApplicationIds}
+          now={now}
+          draggable={advancingId !== item.id}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          onMenuOpenChange={(open) => onMenuOpenChange(open ? item.id : null)}
+          onRequestMarkApplied={onRequestMarkApplied}
+          onRequestNextStage={onRequestNextStage}
+          onRequestTerminate={onRequestTerminate}
+          onOpen={() => onOpen(item)}
+        />
+        {isDraggingCard && isReturningToSource && (
+          <motion.div
+            className="progress-card-drop-placeholder is-source-return"
+            data-drop-placeholder="true"
+            aria-hidden="true"
+            initial={shouldReduceMotion ? false : isSettlingReturnCard ? { opacity: 0.82, scale: 1 } : { opacity: 0, scale: 0.98 }}
+            animate={isSettlingReturnCard ? { opacity: 0, scale: 1 } : { opacity: 0.82, scale: 1 }}
+            transition={{ duration: isSettlingReturnCard ? 0.15 : 0.18, ease: [0.16, 1, 0.3, 1] }}
+          />
+        )}
+      </motion.div>,
+    ];
+  });
+  if (showDropPreview && previewIndex >= renderedItems.length) {
+    cardNodes.push(
+      <motion.div
+        key={`drop-placeholder-${column.id}`}
+        className="progress-card-drop-placeholder"
+        data-drop-placeholder="true"
+        data-placeholder-index={previewIndex}
+        aria-hidden="true"
+        layout={shouldReduceMotion ? false : "position"}
+        initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 0.82, scale: 1 }}
+        transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+      />,
+    );
+  }
   return (
     <div
-      className={`progress-column${canAcceptDrop ? " is-valid-drop-target" : ""}${dropTarget === column.key ? " is-drop-target" : ""}`}
+      className={`progress-column${canAcceptDrop ? " is-valid-drop-target" : ""}${dropTarget === column.id ? " is-drop-target" : ""}${isInvalidDropTarget ? " is-invalid-drop-target" : ""}`}
       data-column-key={column.key}
+      data-column-id={column.id}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
       <header className="progress-column-heading">
-        <h3>{column.label}<span>{column.items.length}</span></h3>
-        <GripVertical aria-hidden="true" />
+        <h3><span className="progress-column-label">{column.label}</span><span className="progress-column-count">{column.items.length}</span></h3>
       </header>
       <div className="progress-column-cards">
-        {column.items.map((item) => (
-          <ProgressCard
-            key={item.id}
-            item={item}
-            column={column}
-            isDragging={draggingId === item.id}
-            isAdvancing={advancingId === item.id}
-            draggable={isApplicationDraggable(item) && advancingId !== item.id}
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
-            onOpen={() => onOpen(item)}
-          />
-        ))}
-        {!column.items.length && <p className="pipeline-empty">暂无进程</p>}
+        {cardNodes}
+        {!renderedItems.length && !showDropPreview && <p className="pipeline-empty">暂无进程</p>}
       </div>
-      <AddProgressAction onClick={onCreate} />
     </div>
   );
 }
 
 export function ProgressCard({
   item,
-  column,
+  columnKey,
   isDragging,
+  isReturning,
+  menuOpen,
   isAdvancing,
+  currentStageCompleted,
+  completedCurrentStageApplicationIds,
+  now,
   draggable,
   onDragStart,
   onDragEnd,
+  onMenuOpenChange,
+  onRequestMarkApplied,
+  onRequestNextStage,
+  onRequestTerminate,
   onOpen,
 }: {
   item: JobApplicationSummary;
-  column: ProgressColumnDescriptor;
+  columnKey: ProgressColumnKey;
   isDragging: boolean;
+  isReturning: boolean;
+  menuOpen: boolean;
   isAdvancing: boolean;
+  currentStageCompleted: boolean;
+  completedCurrentStageApplicationIds: ReadonlySet<string>;
+  now?: Date;
   draggable: boolean;
   onDragStart: (item: JobApplicationSummary, event: ReactDragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
+  onMenuOpenChange: (open: boolean) => void;
+  onRequestMarkApplied?: (application: JobApplicationSummary) => void;
+  onRequestNextStage?: (application: JobApplicationSummary, prefill: NextStagePrefill) => void;
+  onRequestTerminate?: (application: JobApplicationSummary) => void;
   onOpen: () => void;
 }) {
-  const timeLabel = applicationCardTimeLabel(item, column);
-  const isScreeningColumn = column.stageType === "screening";
-  const content = (
-    <>
-      <CompanyLogo item={{ company: item.company_name_snapshot, logo: item.company_name_snapshot.slice(0, 1), color: item.calendar_color }} />
-      <span className="progress-card-copy">
-        <strong title={item.company_name_snapshot}>{item.company_name_snapshot}</strong>
-        <small title={item.job_title_snapshot}>{item.job_title_snapshot}</small>
-      </span>
-    </>
-  );
+  const statusLabel = applicationCardStatusLabel(item, currentStageCompleted, now);
+  const stageToneClass = projectApplicationProgressToneClass(item, {
+    currentStageCompleted,
+    now,
+  } satisfies ApplicationProgressLabelOptions);
+  const advanceAction = applicationAdvanceAction(item, completedCurrentStageApplicationIds);
+  const cardRef = useRef<HTMLElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (menuRef.current?.contains(target) || cardRef.current?.contains(target)) return;
+      onMenuOpenChange(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      onMenuOpenChange(false);
+      menuTriggerRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePress);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePress);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [menuOpen, onMenuOpenChange]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    menuRef.current?.querySelector<HTMLButtonElement>("[role='menuitem']:not(:disabled)")?.focus();
+  }, [menuOpen]);
+
+  const handleMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const items = Array.from(
+      menuRef.current?.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not(:disabled)") ?? [],
+    );
+    if (!items.length) return;
+    if (event.key === "Home") return items[0].focus();
+    if (event.key === "End") return items[items.length - 1].focus();
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+    const direction = event.key === "ArrowDown" ? 1 : -1;
+    const nextIndex = currentIndex < 0
+      ? direction > 0 ? 0 : items.length - 1
+      : (currentIndex + direction + items.length) % items.length;
+    items[nextIndex].focus();
+  };
+
+  const runMenuAction = (action?: () => void) => {
+    onMenuOpenChange(false);
+    action?.();
+  };
+
+  const handleCardOpen = () => {
+    if (menuOpen) {
+      onMenuOpenChange(false);
+      return;
+    }
+    onOpen();
+  };
+
   return (
     <article
-      className={`progress-card${draggable ? " is-draggable" : ""}${isDragging ? " is-dragging" : ""}${isAdvancing ? " is-advancing" : ""}`}
+      ref={cardRef}
+      className={`progress-card${draggable ? " is-draggable" : ""}${isDragging ? " is-dragging" : ""}${isReturning ? " is-returning" : ""}${isAdvancing ? " is-advancing" : ""}`}
       aria-label={`${item.company_name_snapshot} ${item.job_title_snapshot}`}
+      data-application-id={item.id}
+      aria-hidden={isDragging ? "true" : undefined}
       aria-grabbed={draggable ? isDragging : undefined}
       aria-busy={isAdvancing || undefined}
       draggable={draggable}
       onDragStart={(event) => onDragStart(item, event)}
       onDragEnd={onDragEnd}
     >
-      <div className="progress-card-main-row">
-        <button type="button" className="progress-card-open" aria-label={`查看 ${item.company_name_snapshot} ${item.job_title_snapshot} 求职进程`} onClick={onOpen}>{content}</button>
-        {isScreeningColumn
-          ? <span className="progress-card-actions" aria-hidden="true"><GripVertical /></span>
-          : <StageBadge item={item} column={column} />}
-      </div>
-      <div className="progress-card-meta">
-        <time className="progress-card-time">{timeLabel}</time>
-        {isScreeningColumn && <StageBadge item={item} column={column} />}
+      <button type="button" className="progress-card-open" aria-label={`查看 ${item.company_name_snapshot} ${item.job_title_snapshot} 求职进程`} onClick={handleCardOpen}>
+        <span className="progress-card-company-row">
+          <strong className="progress-card-company" title={item.company_name_snapshot}>{item.company_name_snapshot}</strong>
+        </span>
+        <strong className="progress-card-job-title" title={item.job_title_snapshot}>{item.job_title_snapshot}</strong>
+        <span className="progress-card-footer">
+          <span className={`progress-card-stage ${stageToneClass}`}>{statusLabel}</span>
+        </span>
+      </button>
+      <div
+        ref={menuRef}
+        className="progress-card-menu"
+        onDragStart={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+      >
+        <button
+          ref={menuTriggerRef}
+          className="progress-card-menu-trigger"
+          type="button"
+          aria-label={`更多求职操作 ${item.company_name_snapshot} ${item.job_title_snapshot}`}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          aria-controls={`progress-card-menu-${item.id}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onMenuOpenChange(!menuOpen);
+          }}
+        >
+          <MoreHorizontal size={17} aria-hidden="true" />
+        </button>
+        {menuOpen && (
+          <div
+            id={`progress-card-menu-${item.id}`}
+            className="progress-card-menu-panel"
+            role="menu"
+            aria-label={`${item.company_name_snapshot} ${item.job_title_snapshot} 操作菜单`}
+            onKeyDown={handleMenuKeyDown}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => runMenuAction(onOpen)}
+            >
+              <Eye size={15} aria-hidden="true" />查看详情
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!advanceAction.enabled || isAdvancing}
+              onClick={() => runMenuAction(() => {
+                if (!advanceAction.enabled || !advanceAction.prefill) {
+                  if (progressColumnKey(item) === "pending") onRequestMarkApplied?.(item);
+                  return;
+                }
+                onRequestNextStage?.(item, advanceAction.prefill);
+              })}
+            >
+              <ArrowRight size={15} aria-hidden="true" />推进流程
+            </button>
+            {item.status === "active" && item.archived_at === null && item.offer_status === "none" && (
+              <button
+                type="button"
+                role="menuitem"
+                className="is-danger"
+                disabled={isAdvancing}
+                onClick={() => runMenuAction(() => onRequestTerminate?.(item))}
+              >
+                <Ban size={15} aria-hidden="true" />终止求职
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </article>
   );
-}
-
-function applicationCardTimeLabel(item: JobApplicationSummary, column: ProgressColumnDescriptor): string {
-  if (item.next_session_start_at) {
-    const nextStep = column.stageType === "interview"
-      ? item.current_stage_label
-      : column.stageType === "hr"
-        ? "HR 面"
-        : item.current_stage_label;
-    return `下次：${nextStep} ${formatApplicationDate(item.next_session_start_at)}`;
-  }
-  if (column.stageType === "offer") {
-    return item.applied_at ? `Offer ${formatApplicationDate(item.applied_at)}` : "Offer";
-  }
-  return item.applied_at ? `投递 ${formatApplicationDate(item.applied_at)}` : "暂未排期";
-}
-
-export function StageBadge({ item, column }: { item: JobApplicationSummary; column: ProgressColumnDescriptor }) {
-  const label = column.label;
-  const tone = column.isEnded
-    ? "muted"
-    : column.stageType === "screening"
-      ? "muted"
-      : column.stageType === "interview"
-      ? (item.current_round_no ?? 1) <= 1 ? "blue" : "purple"
-      : column.stageType === "hr" ? "hr" : "offer";
-  return <span className={`stage-badge stage-badge-${tone}`}>{label}</span>;
-}
-
-export function AddProgressAction({ onClick }: { onClick: () => void }) {
-  return <button type="button" className="career-pipeline-add" onClick={onClick}><Plus />添加进程</button>;
-}
-
-function CompanyLogo({ item }: { item: { company: string; logo: string; color: InterviewCalendarColor } }) {
-  return <span className={`company-logo calendar-${item.color}`} aria-hidden="true">{item.logo}</span>;
-}
-
-function applicationTransitionError(error: unknown): string {
-  if (error instanceof ApiRequestError) {
-    const messages: Record<string, string> = {
-      INTERVIEW_INVALID_TRANSITION: "当前求职进度不允许执行这个操作。",
-      INTERVIEW_EDIT_CONFLICT: "这条求职进程已在其他页面更新，请刷新后再试。",
-    };
-    return messages[error.message] ?? `操作失败：${error.message}`;
-  }
-  return "操作失败，请稍后重试。";
 }

@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 
 type ConfirmDialogProps = {
   kind: "delete" | "template" | "warning" | "create" | "save";
+  overlayClassName?: string;
   title: string;
   description: ReactNode;
   confirmLabel: string;
@@ -25,6 +26,7 @@ type ConfirmDialogProps = {
 
 export function ConfirmDialog({
   kind,
+  overlayClassName,
   title,
   description,
   confirmLabel,
@@ -42,6 +44,7 @@ export function ConfirmDialog({
     >
       <AlertDialogContent
         className="home-confirm-dialog"
+        overlayClassName={overlayClassName}
         data-slot="confirm-dialog"
         role={kind === "delete" ? "alertdialog" : "dialog"}
       >

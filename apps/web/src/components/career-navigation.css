@@ -29,6 +29,8 @@
   transition: color var(--ui-duration-fast) var(--ui-ease-press), background var(--ui-duration-fast) var(--ui-ease-press);
 }
 
+.career-subnav a:first-child { padding-left: 0; }
+
 .career-subnav a svg { width: 15px; height: 15px; }
 .career-subnav a:hover, .career-subnav a.is-active { color: var(--ui-warning); }
 .career-subnav a.is-active::after { position: absolute; right: 9px; bottom: -1px; left: 9px; height: 2px; border-radius: 2px 2px 0 0; background: var(--ui-warning); content: ""; }
@@ -40,6 +42,7 @@
 
 @media (max-width: 640px) {
   .career-module-header { min-height: 0; }
-  .career-subnav { padding-inline: 8px; }
+  .career-subnav { padding-inline: 16px; }
   .career-subnav a { min-height: 44px; padding-inline: 10px; }
+  .career-subnav a:first-child { padding-left: 0; }
 }
