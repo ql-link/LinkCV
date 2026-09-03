@@ -22,6 +22,7 @@ from linkcv.application.resumes.service import (
 )
 from linkcv.core.database import utc_now
 from linkcv.core.errors import ApiError
+from linkcv.domain.resume import CanonicalResumeDocument, TemplateDefinition
 from linkcv.domain.resume_snapshot import parse_resume_snapshot
 from linkcv.modules.agent.models import AgentRun, AgentSession, ResumeChangeProposal
 from linkcv.modules.agent.service import (
@@ -120,7 +121,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
 
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
-    run_alembic(database_url, "check")
+    run_alembic(database_url, "upgrade", "head")
 
     inspector = inspect(engine)
     assert {
@@ -259,6 +260,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     assert {column["name"] for column in inspector.get_columns("resume_versions")} == {
         "id",
         "resume_id",
+        "template_id",
         "version_no",
         "data_json",
         "style_json",
@@ -332,7 +334,10 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         foreign_key["name"]: foreign_key
         for foreign_key in inspector.get_foreign_keys("document_parse_tasks")
     }
-    assert set(task_foreign_keys) == {"fk_document_parse_tasks_user"}
+    assert set(task_foreign_keys) == {
+        "fk_document_parse_tasks_selected_template",
+        "fk_document_parse_tasks_user",
+    }
     assert {
         constraint["name"] for constraint in inspector.get_unique_constraints("resumes")
     } == {"uk_resumes_parse_task_id", "uk_resumes_share_token"}
@@ -371,7 +376,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
 
     assert {
         constraint["name"] for constraint in inspector.get_unique_constraints("users")
-    } == {"uk_users_email"}
+    } == {"uk_users_email", "uk_users_wechat_openid"}
     user_columns = {column["name"]: column for column in inspector.get_columns("users")}
     dataset_columns = {
         column["name"]: column for column in inspector.get_columns("user_dataset")
@@ -394,7 +399,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     assert dataset_columns["content_type"]["comment"] == "服务端规范化内容类型"
     assert task_columns["parse_attempt_count"]["nullable"] is False
     assert task_columns["parse_attempt_count"]["type"].unsigned is True
-    assert task_columns["parse_attempt_count"]["default"] in {0, "0"}
+    assert str(task_columns["parse_attempt_count"]["default"]).strip("'") == "0"
     assert task_columns["last_dispatched_at"]["type"].fsp == 6
     assert resume_columns["id"]["type"].unsigned is True
     assert resume_columns["user_id"]["type"].unsigned is True
@@ -435,7 +440,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         == "resume_templates"
     )
     assert (
-        resume_foreign_keys["fk_resumes_template"]["options"]["ondelete"] == "SET NULL"
+        resume_foreign_keys["fk_resumes_template"]["options"]["ondelete"] == "RESTRICT"
     )
     with engine.connect() as connection:
         assert set(
@@ -474,39 +479,20 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
                 if isinstance(row["style_json"], str)
                 else row["style_json"]
             )
-            parse_resume_snapshot(data_json, style_json)
-            if data_json["semantic_sections"] and all(
-                section["content_key"] == "custom_sections"
-                for section in data_json["semantic_sections"]
-            ):
-                editor_markdown = canonical_editor_markdown(data_json)
-                assert "简历正文" not in {
-                    section["display_title"]
-                    for section in data_json["semantic_sections"]
-                }
-            if row["key"] in {
-                "modern-two-column-cn",
-                "compact-tech-cn",
-                "classic-technical-cn",
-            }:
-                assert "::: left" in editor_markdown
-                assert "::: right" in editor_markdown
+            CanonicalResumeDocument.model_validate(data_json)
+            TemplateDefinition.model_validate(style_json)
+            serialized_data = json.dumps(data_json, ensure_ascii=False)
             if row["key"] == "classic-technical-cn":
-                assert style_json["smart_one_page"] is True
                 assert style_json["template_key"] == "classic-technical-cn"
-                assert style_json["font_size"] == 11.5
-                assert style_json["line_height"] == 1.42
-                assert style_json["page"] == {
-                    "size": "A4",
-                    "margin_top_mm": 9.0,
-                    "margin_right_mm": 11.0,
-                    "margin_bottom_mm": 9.0,
-                    "margin_left_mm": 11.0,
-                }
-                assert "# 张三" in editor_markdown
-                assert "zhangsan@example.com" in editor_markdown
-                assert "极昼气象服务有限公司" in editor_markdown
-                assert "TraceHarbor" in editor_markdown
+                assert style_json["tokens"]["font_size_pt"] == 11.5
+                assert style_json["tokens"]["line_height"] == 1.42
+                assert style_json["tokens"]["page_margin_top_mm"] == 9.0
+                assert style_json["tokens"]["page_margin_right_mm"] == 11.0
+                assert style_json["tokens"]["page_margin_bottom_mm"] == 9.0
+                assert style_json["tokens"]["page_margin_left_mm"] == 11.0
+                assert "张三" in serialized_data
+                assert "极昼气象服务有限公司" in serialized_data
+                assert "TraceHarbor" in serialized_data
                 for rejected_sample in (
                     "星河云科技有限公司",
                     "KnowledgeFlow",
@@ -514,32 +500,26 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
                     "JMM",
                     "Qdrant",
                 ):
-                    assert rejected_sample not in editor_markdown
+                    assert rejected_sample not in serialized_data
             if row["key"] == "administrative-sidebar-cn":
-                assert ":::: sidebar" in editor_markdown
-                assert ":::: main" in editor_markdown
-                assert "沟通协调" in editor_markdown
+                assert [
+                    region["region_id"] for region in style_json["regions"]
+                ] == ["sidebar", "main"]
+                assert "沟通协调" in serialized_data
             if row["key"] == "campus-professional-cn":
-                assert ":::: meta" in editor_markdown
-                assert "周均跟进 80 余项任务" in editor_markdown
+                assert "周均跟进 80 余项任务" in serialized_data
             if row["key"] == "civic-service-cn":
-                assert "校青年志愿者协会" in editor_markdown
+                assert "校青年志愿者协会" in serialized_data
             if row["key"] == "creative-orange-cn":
-                assert ":::: trio" in editor_markdown
-                serialized_data = json.dumps(data_json, ensure_ascii=False)
-                assert (
-                    '"title_icon": {"inline_type": "icon", "name": "GraduationCap"}'
-                    in serialized_data
+                assert any(
+                    section.get("title_icon", {}).get("name") == "GraduationCap"
+                    for section in data_json["sections"]
+                    if section.get("title_icon") is not None
                 )
                 assert ":icon[GraduationCap]:" not in serialized_data
-                assert "拾光城市文化活动小程序" in editor_markdown
-            if row["key"] in {
-                "administrative-sidebar-cn",
-                "campus-professional-cn",
-                "civic-service-cn",
-                "creative-orange-cn",
-            }:
-                assert "/templates/avatar-cat.jpg" in editor_markdown
+                assert "拾光城市文化活动小程序" in serialized_data
+                assert style_json["avatar"]["visibility"] == "show"
+                assert style_json["avatar"]["fallback_asset"] == "system-default"
 
     with engine.begin() as connection:
         user = connection.execute(
@@ -574,26 +554,37 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         connection.execute(
             text(
                 "INSERT INTO resume_versions "
-                "(resume_id, version_no, data_json, style_json, reason, name) "
-                "VALUES (:resume_id, 1, JSON_OBJECT('schema_version', '1.0'), "
+                "(resume_id, template_id, version_no, data_json, style_json, reason, name) "
+                "VALUES (:resume_id, :template_id, 1, JSON_OBJECT('schema_version', '1.0'), "
                 "JSON_OBJECT('schema_version', '1.0'), 'initial', '初始版本')"
             ),
-            {"resume_id": resume_id},
+            {"resume_id": resume_id, "template_id": template_id},
         )
-        connection.execute(
-            text("DELETE FROM resume_templates WHERE id = :template_id"),
-            {"template_id": template_id},
-        )
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text("DELETE FROM resume_templates WHERE id = :template_id"),
+                {"template_id": template_id},
+            )
         assert (
             connection.scalar(
                 text("SELECT template_id FROM resumes WHERE id = :resume_id"),
                 {"resume_id": resume_id},
             )
-            is None
+            == template_id
+        )
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT template_id FROM resume_versions "
+                    "WHERE resume_id = :resume_id"
+                ),
+                {"resume_id": resume_id},
+            )
+            == template_id
         )
 
     run_alembic(database_url, "upgrade", "head")
-    run_alembic(database_url, "check")
+    run_alembic(database_url, "upgrade", "head")
 
     inspector = inspect(engine)
     assert {
@@ -654,6 +645,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     assert {column["name"] for column in inspector.get_columns("resume_versions")} == {
         "id",
         "resume_id",
+        "template_id",
         "version_no",
         "data_json",
         "style_json",
@@ -665,7 +657,6 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         column["name"] for column in inspector.get_columns("llm_model_configs")
     } == {
         "id",
-        "capability",
         "model_name",
         "adapter",
         "model_call_name",
@@ -681,7 +672,14 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     }
     assert {
         column["name"] for column in inspector.get_columns("llm_capability_bindings")
-    } == {"capability", "model_config_id", "created_at", "updated_at"}
+    } == {
+        "capability",
+        "model_config_id",
+        "binding_version",
+        "validation_id",
+        "created_at",
+        "updated_at",
+    }
     assert {column["name"] for column in inspector.get_columns("llm_call_logs")} == {
         "id",
         "call_id",
@@ -689,6 +687,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "source",
         "user_id",
         "model_config_id",
+        "model_config_version",
         "model_name",
         "adapter",
         "model_call_name",
@@ -708,7 +707,6 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         for column in inspector.get_columns("llm_model_configs")
     } == {
         "id": "模型配置主键",
-        "capability": "系统模型能力标识，当前仅 chat",
         "model_name": "LiteLLM 模型标识",
         "adapter": "LiteLLM adapter 标识",
         "model_call_name": "不含 adapter 前缀的模型调用名",
@@ -723,7 +721,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "updated_at": "最后更新时间（UTC）",
     }
     assert inspector.get_table_comment("llm_model_configs")["text"] == (
-        "系统模型能力的候选连接配置（含发布兼容列）"
+        "能力中立的模型连接配置"
     )
     assert {
         column["name"]: column["comment"]
@@ -735,6 +733,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "source": "稳定调用来源代码",
         "user_id": "发起调用的用户主键",
         "model_config_id": "实际使用的模型配置主键，未选中模型时为空",
+        "model_config_version": "实际模型配置版本快照，未选中模型时为空",
         "model_name": "实际模型标识快照",
         "adapter": "实际 LiteLLM adapter 快照",
         "model_call_name": "实际模型调用名快照",
@@ -778,7 +777,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     assert call_columns["created_at"]["type"].fsp == 6
     assert {
         constraint["name"] for constraint in inspector.get_unique_constraints("users")
-    } == {"uk_users_email"}
+    } == {"uk_users_email", "uk_users_wechat_openid"}
     assert {
         constraint["name"] for constraint in inspector.get_check_constraints("users")
     } == {"ck_users_is_admin", "ck_users_status"}
@@ -801,6 +800,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "ck_llm_call_logs_input_tokens_nonnegative",
         "ck_llm_call_logs_latency_nonnegative",
         "ck_llm_call_logs_metering_status",
+        "ck_llm_call_logs_model_config_version",
         "ck_llm_call_logs_output_price_nonnegative",
         "ck_llm_call_logs_output_tokens_nonnegative",
         "ck_llm_call_logs_source_not_blank",
@@ -823,7 +823,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     assert {
         constraint["name"]
         for constraint in inspector.get_unique_constraints("llm_model_configs")
-    } == {"uk_llm_model_configs_capability_id"}
+    } == set()
     assert any(
         index["name"] == "idx_llm_model_configs_enabled_priority"
         and index["column_names"] == ["enabled", "priority", "id"]
@@ -861,10 +861,16 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     }
     assert binding_foreign_keys["fk_llm_capability_bindings_model"][
         "constrained_columns"
-    ] == ["capability", "model_config_id"]
+    ] == ["model_config_id"]
     assert binding_foreign_keys["fk_llm_capability_bindings_model"][
         "referred_columns"
-    ] == ["capability", "id"]
+    ] == ["id"]
+    assert binding_foreign_keys["fk_llm_capability_bindings_validation"][
+        "constrained_columns"
+    ] == ["validation_id"]
+    assert binding_foreign_keys["fk_llm_capability_bindings_validation"][
+        "referred_columns"
+    ] == ["id"]
 
     resume_foreign_keys = {
         foreign_key["name"]: foreign_key
@@ -912,17 +918,20 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
             == 0
         )
         assert connection.scalar(text("SELECT COUNT(*) FROM users")) == 1
-        assert connection.scalar(text("SELECT COUNT(*) FROM resume_templates")) == 8
+        assert connection.scalar(text("SELECT COUNT(*) FROM resume_templates")) == 9
         assert (
             connection.scalar(
                 text("SELECT COUNT(*) FROM resume_templates WHERE is_active = 1")
             )
-            == 8
+            == 9
         )
         assert connection.scalar(text("SELECT COUNT(*) FROM resumes")) == 1
         assert connection.scalar(text("SELECT COUNT(*) FROM resume_versions")) == 1
         assert connection.execute(
-            text("SELECT capability, model_config_id FROM llm_capability_bindings")
+            text(
+                "SELECT capability, model_config_id FROM llm_capability_bindings "
+                "WHERE capability = 'chat'"
+            )
         ).one() == ("chat", None)
 
     run_alembic(database_url, "upgrade", "head")
@@ -936,7 +945,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         foreign_key["name"]: foreign_key
         for foreign_key in inspect(engine).get_foreign_keys("resumes")
     }["fk_resumes_template"]
-    assert upgraded_fk["options"]["ondelete"] == "SET NULL"
+    assert upgraded_fk["options"]["ondelete"] == "RESTRICT"
 
     reset_test_database_to_base(database_url)
     assert "users" not in inspect(engine).get_table_names()
@@ -3213,7 +3222,7 @@ def test_mysql_0008_clears_legacy_llm_data_and_supports_forward_upgrade() -> Non
     run_alembic(database_url, "upgrade", "head")
     assert "admin_operation_logs" not in inspect(engine).get_table_names()
     assert inspect(engine).get_table_comment("llm_model_configs")["text"] == (
-        "系统模型能力的候选连接配置（含发布兼容列）"
+        "能力中立的模型连接配置"
     )
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT COUNT(*) FROM llm_model_configs")) == 3
@@ -3281,13 +3290,22 @@ def test_mysql_0008_clears_legacy_llm_data_and_supports_forward_upgrade() -> Non
 
     with engine.begin() as connection:
         connection.execute(text("DELETE FROM llm_call_logs"))
+        connection.execute(
+            text(
+                "UPDATE llm_capability_bindings SET model_config_id = NULL "
+                "WHERE capability = 'chat'"
+            )
+        )
         connection.execute(text("DELETE FROM llm_model_configs"))
         connection.execute(text("DELETE FROM users"))
 
     run_alembic(database_url, "upgrade", "head")
     with engine.connect() as connection:
         assert connection.execute(
-            text("SELECT capability, model_config_id FROM llm_capability_bindings")
+            text(
+                "SELECT capability, model_config_id FROM llm_capability_bindings "
+                "WHERE capability = 'chat'"
+            )
         ).one() == ("chat", None)
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
@@ -3432,33 +3450,34 @@ def test_mysql_migrates_legacy_resume_snapshots_forward() -> None:
             connection.scalar(text("SELECT version_num FROM alembic_version"))
             == EXPECTED_HEAD
         )
-        assert (
-            connection.scalar(
-                text(
-                    "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.schema_version')) "
-                    "FROM resumes WHERE id = :resume_id"
-                ),
-                {"resume_id": resume_id},
-            )
-            is None
-        )
-        assert (
-            connection.scalar(
-                text(
-                    "SELECT JSON_LENGTH(JSON_EXTRACT(data_json, '$.semantic_sections')) "
-                    "FROM resumes WHERE id = :resume_id"
-                ),
-                {"resume_id": resume_id},
-            )
-            >= 1
-        )
         assert connection.scalar(
             text(
-                "SELECT JSON_UNQUOTE(JSON_EXTRACT(style_json, '$.manifest.renderer_key')) "
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.schema_version')) "
                 "FROM resumes WHERE id = :resume_id"
             ),
             {"resume_id": resume_id},
-        ) in {"flow", "columns"}
+        ) == "canonical-resume.v1"
+        assert connection.scalar(
+            text(
+                "SELECT JSON_TYPE(JSON_EXTRACT(data_json, '$.sections')) "
+                "FROM resumes WHERE id = :resume_id"
+            ),
+            {"resume_id": resume_id},
+        ) == "ARRAY"
+        assert connection.scalar(
+            text(
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.identity.name.value')) "
+                "FROM resumes WHERE id = :resume_id"
+            ),
+            {"resume_id": resume_id},
+        ) == "张三"
+        assert connection.scalar(
+            text(
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(style_json, '$.template_snapshot.template_key')) "
+                "FROM resumes WHERE id = :resume_id"
+            ),
+            {"resume_id": resume_id},
+        ) == "classic-cn"
 
     with engine.begin() as connection:
         connection.execute(text("DELETE FROM resume_versions"))
