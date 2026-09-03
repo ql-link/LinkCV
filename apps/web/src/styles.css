@@ -2313,12 +2313,31 @@ select:not([data-slot]):focus-visible {
 .agent-message-content { display: grid; gap: 7px; min-width: 0; margin: 0; color: var(--ui-text-secondary); font-size: 0.8125rem; line-height: 1.62; overflow-wrap: anywhere; }
 .agent-message-content p,
 .agent-message-content ul,
+.agent-message-content ol,
+.agent-message-content blockquote,
+.agent-message-content table,
+.agent-message-content hr,
 .agent-message-content pre { margin: 0; }
 .agent-message-content p { white-space: pre-wrap; }
-.agent-message-content ul { display: grid; gap: 4px; padding-left: 18px; }
+.agent-message-content ul,
+.agent-message-content ol { display: grid; gap: 4px; padding-left: 20px; }
+.agent-message-content blockquote { border-left: 3px solid var(--ui-border-strong); padding-left: 10px; color: var(--ui-text-muted); }
+.agent-message-content hr { width: 100%; border: 0; border-top: 1px solid var(--ui-border); }
+.agent-message-content table { display: block; width: max-content; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 0.75rem; }
+.agent-message-content th,
+.agent-message-content td { border: 1px solid var(--ui-border); padding: 6px 8px; text-align: left; vertical-align: top; }
+.agent-message-content th { background: var(--ui-surface-muted); color: var(--ui-foreground); font-weight: 700; }
 .agent-message-content pre { overflow-x: auto; border-radius: var(--ui-radius-sm); background: var(--ui-surface-muted); padding: 8px; font: 0.71875rem/1.5 var(--ui-font-mono); }
 .agent-message-content code:not(pre code) { border-radius: 4px; background: var(--ui-surface-muted); padding: 1px 4px; font: 0.71875rem/1 var(--ui-font-mono); }
-.agent-markdown-heading { color: var(--ui-foreground); font-size: 0.8125rem; }
+.agent-message-content a { color: var(--ui-accent); text-decoration: underline; text-underline-offset: 2px; }
+.agent-markdown-image { color: var(--ui-text-muted); font-style: italic; }
+.agent-markdown-heading { margin: 0; color: var(--ui-foreground); line-height: 1.4; }
+.agent-markdown-heading.is-level-1 { font-size: 1rem; }
+.agent-markdown-heading.is-level-2 { font-size: 0.9375rem; }
+.agent-markdown-heading.is-level-3 { font-size: 0.875rem; }
+.agent-markdown-heading.is-level-4,
+.agent-markdown-heading.is-level-5,
+.agent-markdown-heading.is-level-6 { font-size: 0.84375rem; }
 .agent-message-mark { display: grid; width: 28px; height: 28px; place-items: center; border-radius: var(--ui-radius-sm); background: color-mix(in srgb, var(--ui-accent) 9%, var(--ui-surface)); color: var(--ui-accent); }
 .agent-user-avatar { display: grid; width: 32px; height: 32px; flex: 0 0 32px; place-items: center; border-radius: 50%; background: var(--ui-accent-subtle); color: var(--ui-accent); }
 .agent-user-avatar [data-slot="avatar-image"] { width: 100%; height: 100%; object-fit: cover; }
