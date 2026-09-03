@@ -245,7 +245,7 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 | `GET/POST` | `/api/job-applications` | 列出或创建求职进程 |
 | `GET/PUT/DELETE` | `/api/job-applications/:id` | 读取、乐观锁更新，或永久删除已归档且无面试记录的进程 |
 | `POST` | `/api/job-applications/:id/advance` | 将已完成且等待结果的当前阶段确认通过并推进 |
-| `POST` | `/api/job-applications/:id/offer` | 记录 OC 或书面 Offer |
+| `POST` | `/api/job-applications/:id/offer` | 统一记录已收到 Offer，并选填 Base、结构化薪资与福利 |
 | `POST` | `/api/job-applications/:id/close` | 记录未通过、主动结束、接受或婉拒 Offer |
 | `POST` | `/api/job-applications/:id/archive\|restore` | 乐观锁归档或恢复进程 |
 | `GET` | `/api/interview-sessions` | 按时间、状态、`application_id`、归档范围和游标列出当前用户的面试记录 |
@@ -258,6 +258,8 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 | `DELETE` | `/api/interview-assets/:id` | 所有权校验后删除素材记录和对象存储文件 |
 
 排期使用带时区的 `start_at/end_at`，开始时间必须是有效 24 小时制 `HH:mm`（秒和微秒为 0），服务端转成 UTC 保存；不画半点辅助线不影响 30 分钟吸附契约。与本人其他未取消面试重叠时返回 `409 INTERVIEW_TIME_CONFLICT` 和冲突摘要，只有请求再次携带 `allow_conflict=true` 才保存。完成面试会保存自由文本题目、复盘和改进点，并把求职进程置为 `awaiting_result`；它不会自动推断通过或把卡片移动到下一阶段。`advance` 负责把最近一场待确认结果标为通过并移动进程，`close` 负责标记未通过或其他终态。过期 `base_lock_version` 返回 `409 INTERVIEW_EDIT_CONFLICT`，不合法状态跳转返回 `409 INTERVIEW_INVALID_TRANSITION`。
+
+Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `received`；迁移 `0052` 将历史 `oc_received` 与 `written_offer_received` 合并为 `received`。`POST /api/job-applications/:id/offer` 只要求 `base_lock_version`，并接受全部可空的 `base_location`、`salary`、`salary_currency`、`salary_period`、`benefits_description`；空请求仍会记录为已收到 Offer。填写数值薪资时必须同时提供大写三字母币种与 `hour/day/month/year` 计薪周期。求职进程响应以 `offer_` 前缀返回这五个详情字段。迁移 `0053` 将原薪资下限重命名为单值 `offer_salary` 并删除薪资上限；旧记录缺少下限但存在上限时保留原上限值。总览指标使用 `offers_received`，统计 `received/accepted/declined`，不再返回 `written_offers`。
 
 `GET /api/job-applications` 按 `updated_at DESC, id DESC` 分页，`GET /api/interview-sessions` 按 `start_at ASC, id ASC` 分页；两者的 `next_cursor` 都是不透明且与当前筛选条件绑定的游标。调用方必须把游标与原筛选一起回传；游标损坏、跨筛选复用或超长都返回 `400 INVALID_INTERVIEW_QUERY`。创建面试的 `(application_id, client_request_id)` 唯一：相同请求重放返回原场次，相同标识绑定到不同时间或内容时返回 `409 INTERVIEW_EDIT_CONFLICT`。
 

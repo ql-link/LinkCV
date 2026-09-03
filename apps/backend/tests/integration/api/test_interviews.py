@@ -284,12 +284,107 @@ def test_interview_lifecycle_conflict_overview_and_assets_share_one_record() -> 
             "weekly_interviews": 2,
             "upcoming_interviews": 1,
             "completed_interviews": 1,
-            "written_offers": 0,
+            "offers_received": 0,
         }
 
         blocked_delete = client.delete(f"/api/interview-sessions/{first_session['id']}")
         assert blocked_delete.status_code == 409
         assert blocked_delete.json() == {"error": "INTERVIEW_SESSION_NOT_EMPTY"}
+
+
+def test_offer_details_are_optional_and_use_single_salary() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "optional-offer@example.test")
+        created = client.post(
+            "/api/job-applications",
+            json={
+                "job_description_id": create_job(client, "薪资示例公司"),
+                "current_stage_type": "offer",
+                "current_stage_label": "Offer",
+                "stage_state": "negotiating",
+            },
+        )
+        assert created.status_code == 201, created.text
+        application = created.json()["application"]
+        assert application["offer_status"] == "none"
+        assert application["offer_base_location"] is None
+        assert application["offer_salary"] is None
+        assert application["offer_benefits_description"] is None
+
+        empty_offer = client.post(
+            f"/api/job-applications/{application['id']}/offer",
+            json={"base_lock_version": application["lock_version"]},
+        )
+        assert empty_offer.status_code == 200, empty_offer.text
+        empty_application = empty_offer.json()["application"]
+        assert empty_application["offer_status"] == "received"
+        assert empty_application["offer_salary_currency"] is None
+        assert empty_application["offer_salary_period"] is None
+
+        detailed_offer = client.post(
+            f"/api/job-applications/{application['id']}/offer",
+            json={
+                "base_location": " 上海 ",
+                "salary": "20000.00",
+                "salary_currency": "cny",
+                "salary_period": "month",
+                "benefits_description": " 补充医疗、餐补 ",
+                "base_lock_version": empty_application["lock_version"],
+            },
+        )
+        assert detailed_offer.status_code == 200, detailed_offer.text
+        detailed_application = detailed_offer.json()["application"]
+        assert detailed_application["offer_status"] == "received"
+        assert detailed_application["offer_base_location"] == "上海"
+        assert detailed_application["offer_salary"] == "20000.00"
+        assert detailed_application["offer_salary_currency"] == "CNY"
+        assert detailed_application["offer_salary_period"] == "month"
+        assert detailed_application["offer_benefits_description"] == "补充医疗、餐补"
+
+        invalid_salary = client.post(
+            f"/api/job-applications/{application['id']}/offer",
+            json={
+                "salary": -1,
+                "salary_currency": "CNY",
+                "salary_period": "month",
+                "base_lock_version": detailed_application["lock_version"],
+            },
+        )
+        assert invalid_salary.status_code == 400
+        assert invalid_salary.json() == {"error": "INVALID_INTERVIEW_REQUEST"}
+
+        missing_context = client.post(
+            f"/api/job-applications/{application['id']}/offer",
+            json={
+                "salary": 20000,
+                "base_lock_version": detailed_application["lock_version"],
+            },
+        )
+        assert missing_context.status_code == 400
+        assert missing_context.json() == {"error": "INVALID_INTERVIEW_REQUEST"}
+
+        old_salary_contract = client.post(
+            f"/api/job-applications/{application['id']}/offer",
+            json={
+                "salary_min": 20000,
+                "salary_currency": "CNY",
+                "salary_period": "month",
+                "base_lock_version": detailed_application["lock_version"],
+            },
+        )
+        assert old_salary_contract.status_code == 400
+        assert old_salary_contract.json() == {"error": "INVALID_INTERVIEW_REQUEST"}
+
+        old_contract = client.post(
+            f"/api/job-applications/{application['id']}/offer",
+            json={
+                "offer_status": "written_offer_received",
+                "base_lock_version": detailed_application["lock_version"],
+            },
+        )
+        assert old_contract.status_code == 400
+        assert old_contract.json() == {"error": "INVALID_INTERVIEW_REQUEST"}
 
 
 def test_schedule_accepts_arbitrary_minutes_for_create_and_reschedule() -> None:
@@ -1033,7 +1128,6 @@ def test_archived_applications_are_hidden_and_cannot_receive_new_schedules() -> 
         offered = client.post(
             f"/api/job-applications/{offer_application.json()['application']['id']}/offer",
             json={
-                "offer_status": "written_offer_received",
                 "base_lock_version": offer_application.json()["application"][
                     "lock_version"
                 ],
@@ -1060,7 +1154,7 @@ def test_archived_applications_are_hidden_and_cannot_receive_new_schedules() -> 
             "weekly_interviews": 0,
             "upcoming_interviews": 0,
             "completed_interviews": 0,
-            "written_offers": 0,
+            "offers_received": 0,
         }
 
         default_sessions = client.get("/api/interview-sessions")

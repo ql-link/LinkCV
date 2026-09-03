@@ -13,7 +13,7 @@ import { careerApplicationPath, navigateTo } from "../../routing";
 import {
   APPLICATION_PROGRESS_COLUMNS,
   applicationProgressToneClass as projectApplicationProgressToneClass,
-  applicationProgressLabel as projectApplicationProgressLabel,
+  applicationScheduleStatusLabel,
   applicationStatusLabel as projectApplicationStatusLabel,
   formatApplicationScheduleDateTime,
   projectApplicationProgress,
@@ -43,6 +43,11 @@ type BoardProgressColumn = {
 
 type DropPreview = {
   columnId: string;
+};
+
+export type ApplicationFormDropPreview = {
+  applicationId: string;
+  targetColumnId: string;
 };
 
 type InterviewColumnGroup = {
@@ -394,15 +399,14 @@ export function formatApplicationUpdatedAt(value: string, now = new Date()): str
   return `${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
-export function applicationCardStageLabel(
+export function applicationCardStatusLabel(
   application: JobApplicationSummary,
-  columnKey: ProgressColumnKey,
   currentStageCompleted = false,
   now = new Date(),
 ): string {
   const projection = projectApplicationProgress(application);
-  if (columnKey === "ended") return projection.statusLabel;
-  return projectApplicationProgressLabel(application, { currentStageCompleted, now });
+  const scheduleLabel = applicationScheduleStatusLabel(application, { currentStageCompleted, now });
+  return scheduleLabel ?? projection.supportingLabel ?? projection.statusLabel;
 }
 
 type ApplicationAdvanceAction = {
@@ -463,6 +467,7 @@ export function ApplicationsBoard({
   now,
   sortMode = "recent_schedule",
   displayMode,
+  formDropPreview,
   onNotice,
   onRequestMarkApplied,
   onRequestNextStage,
@@ -473,9 +478,10 @@ export function ApplicationsBoard({
   now?: Date;
   sortMode?: ApplicationSortMode;
   displayMode: "board" | "list";
+  formDropPreview: ApplicationFormDropPreview | null;
   onNotice: (notice: string) => void;
-  onRequestMarkApplied: (application: JobApplicationSummary) => void;
-  onRequestNextStage: (application: JobApplicationSummary, prefill: NextStagePrefill) => void;
+  onRequestMarkApplied: (application: JobApplicationSummary, targetColumnId?: string) => void;
+  onRequestNextStage: (application: JobApplicationSummary, prefill: NextStagePrefill, targetColumnId?: string) => void;
   onRequestTerminate: (application: JobApplicationSummary) => void;
 }) {
   return (
@@ -485,6 +491,7 @@ export function ApplicationsBoard({
         completedCurrentStageApplicationIds={completedCurrentStageApplicationIds}
         now={now}
         sortMode={sortMode}
+        formDropPreview={formDropPreview}
         onNotice={onNotice}
         onRequestMarkApplied={onRequestMarkApplied}
         onRequestNextStage={onRequestNextStage}
@@ -499,6 +506,7 @@ export function ProgressBoard({
   completedCurrentStageApplicationIds,
   now,
   sortMode = "recent_schedule",
+  formDropPreview,
   onNotice,
   onRequestMarkApplied,
   onRequestNextStage,
@@ -508,23 +516,33 @@ export function ProgressBoard({
   completedCurrentStageApplicationIds: ReadonlySet<string>;
   now?: Date;
   sortMode?: ApplicationSortMode;
+  formDropPreview: ApplicationFormDropPreview | null;
   onNotice: (notice: string) => void;
-  onRequestMarkApplied: (application: JobApplicationSummary) => void;
-  onRequestNextStage: (application: JobApplicationSummary, prefill: NextStagePrefill) => void;
+  onRequestMarkApplied: (application: JobApplicationSummary, targetColumnId?: string) => void;
+  onRequestNextStage: (application: JobApplicationSummary, prefill: NextStagePrefill, targetColumnId?: string) => void;
   onRequestTerminate: (application: JobApplicationSummary) => void;
 }) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [invalidDropTarget, setInvalidDropTarget] = useState<string | null>(null);
   const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
+  const [openMenuApplicationId, setOpenMenuApplicationId] = useState<string | null>(null);
   const advancingId: string | null = null;
   const dragRef = useRef<{ id: string } | null>(null);
+  const returnSettleTimerRef = useRef<number | null>(null);
+  const isSettlingReturnRef = useRef(false);
   const suppressCardClickRef = useRef(false);
+  const dismissMenuClickApplicationIdRef = useRef<string | null>(null);
+  const shouldReduceMotion = useReducedMotion();
   const columns = useMemo(
     () => buildBoardColumns(sortApplications(applications, sortMode)),
     [applications, sortMode],
   );
   const calculationNow = now ?? new Date();
+
+  useEffect(() => () => {
+    if (returnSettleTimerRef.current !== null) window.clearTimeout(returnSettleTimerRef.current);
+  }, []);
 
   const clearDrag = () => {
     dragRef.current = null;
@@ -535,6 +553,9 @@ export function ProgressBoard({
   };
 
   const handleDragStart = (item: JobApplicationSummary, event: ReactDragEvent<HTMLElement>) => {
+    if (returnSettleTimerRef.current !== null) window.clearTimeout(returnSettleTimerRef.current);
+    returnSettleTimerRef.current = null;
+    isSettlingReturnRef.current = false;
     dragRef.current = { id: item.id };
     suppressCardClickRef.current = true;
     setDraggingId(item.id);
@@ -545,41 +566,108 @@ export function ProgressBoard({
     }
   };
 
+  const settleBackToSource = (application: JobApplicationSummary) => {
+    if (shouldReduceMotion) {
+      clearDrag();
+      return;
+    }
+    isSettlingReturnRef.current = true;
+    setDropTarget(null);
+    setInvalidDropTarget(null);
+    setDropPreview({ columnId: applicationBoardColumnId(application) });
+    returnSettleTimerRef.current = window.setTimeout(() => {
+      isSettlingReturnRef.current = false;
+      returnSettleTimerRef.current = null;
+      clearDrag();
+    }, 220);
+  };
+
   const handleDrop = (target: BoardProgressColumn, event: ReactDragEvent<HTMLElement>) => {
     event.preventDefault();
     const drag = dragRef.current;
     const draggedId = drag?.id || event.dataTransfer?.getData("text/plain");
-    clearDrag();
-    if (!draggedId || !drag) return;
+    if (!draggedId || !drag) {
+      clearDrag();
+      return;
+    }
     const application = applications.find((item) => item.id === draggedId);
-    if (!application) return;
-    if (applicationBoardColumnId(application) === target.id) return;
+    if (!application) {
+      clearDrag();
+      return;
+    }
+    if (applicationBoardColumnId(application) === target.id) {
+      clearDrag();
+      return;
+    }
     const validation = validateApplicationDrop(application, target, columns, completedCurrentStageApplicationIds);
     if (!validation.valid) {
+      event.dataTransfer.dropEffect = "move";
+      settleBackToSource(application);
       onNotice(validation.message);
       return;
     }
+    clearDrag();
     if (progressColumnKey(application) === "pending") {
-      onRequestMarkApplied(application);
+      onRequestMarkApplied(application, target.id);
       return;
     }
-    onRequestNextStage(application, validation.prefill);
+    onRequestNextStage(application, validation.prefill, target.id);
   };
 
   const draggingApplication = draggingId
     ? applications.find((item) => item.id === draggingId) ?? null
     : null;
+  const displayedDraggingId = draggingId ?? formDropPreview?.applicationId ?? null;
+  const displayedDraggingApplication = displayedDraggingId
+    ? applications.find((item) => item.id === displayedDraggingId) ?? null
+    : null;
+  const displayedDropPreview = formDropPreview
+    ? { columnId: formDropPreview.targetColumnId }
+    : dropPreview;
 
   return (
-    <section className="interview-surface career-applications-board" aria-label="求职进程看板">
+    <section
+      className="interview-surface career-applications-board"
+      aria-label="求职进程看板"
+      onPointerDownCapture={(event) => {
+        if (!openMenuApplicationId) {
+          dismissMenuClickApplicationIdRef.current = null;
+          return;
+        }
+        const clickedCard = (event.target as Element).closest<HTMLElement>("[data-application-id]");
+        if (!clickedCard || clickedCard.dataset.applicationId === openMenuApplicationId) return;
+        dismissMenuClickApplicationIdRef.current = clickedCard.dataset.applicationId ?? null;
+        event.preventDefault();
+        event.stopPropagation();
+        setOpenMenuApplicationId(null);
+      }}
+      onClickCapture={(event) => {
+        const clickedCard = (event.target as Element).closest<HTMLElement>("[data-application-id]");
+        const clickedApplicationId = clickedCard?.dataset.applicationId ?? null;
+        const shouldDismissOpenMenu = Boolean(
+          openMenuApplicationId
+          && clickedApplicationId
+          && clickedApplicationId !== openMenuApplicationId,
+        );
+        const shouldConsumePointerClick = Boolean(
+          clickedApplicationId
+          && dismissMenuClickApplicationIdRef.current === clickedApplicationId,
+        );
+        if (!shouldDismissOpenMenu && !shouldConsumePointerClick) return;
+        dismissMenuClickApplicationIdRef.current = null;
+        event.preventDefault();
+        event.stopPropagation();
+        setOpenMenuApplicationId(null);
+      }}
+    >
       <div className="progress-board-grid">
         {columns.map((column) => (
           <ProgressColumn
             key={column.id}
             column={column}
-            draggingId={draggingId}
-            draggingSourceColumnId={draggingApplication ? applicationBoardColumnId(draggingApplication) : null}
-            dropPreview={dropPreview}
+            draggingId={displayedDraggingId}
+            draggingSourceColumnId={displayedDraggingApplication ? applicationBoardColumnId(displayedDraggingApplication) : null}
+            dropPreview={displayedDropPreview}
             dropTarget={dropTarget}
             advancingId={advancingId}
             completedCurrentStageApplicationIds={completedCurrentStageApplicationIds}
@@ -591,9 +679,11 @@ export function ProgressBoard({
               completedCurrentStageApplicationIds,
             ).valid)}
             isInvalidDropTarget={invalidDropTarget === column.id}
+            openMenuApplicationId={openMenuApplicationId}
+            onMenuOpenChange={setOpenMenuApplicationId}
             onDragStart={handleDragStart}
             onDragEnd={() => {
-              clearDrag();
+              if (!isSettlingReturnRef.current) clearDrag();
               window.setTimeout(() => {
                 suppressCardClickRef.current = false;
               }, 0);
@@ -656,6 +746,8 @@ export function ProgressColumn({
   now,
   canAcceptDrop,
   isInvalidDropTarget,
+  openMenuApplicationId,
+  onMenuOpenChange,
   onDragStart,
   onDragEnd,
   onDragOver,
@@ -676,6 +768,8 @@ export function ProgressColumn({
   now?: Date;
   canAcceptDrop: boolean;
   isInvalidDropTarget: boolean;
+  openMenuApplicationId: string | null;
+  onMenuOpenChange: (applicationId: string | null) => void;
   onDragStart: (item: JobApplicationSummary, event: ReactDragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
   onDragOver: (event: ReactDragEvent<HTMLDivElement>) => void;
@@ -703,7 +797,7 @@ export function ProgressColumn({
     : -1;
   const previewIndex = showDropPreview ? 0 : -1;
   const cardNodes = renderedItems.flatMap((item, index) => {
-    const isDraggingCard = draggingId === item.id && !isReturningToSource;
+    const isDraggingCard = draggingId === item.id;
     const isAfterDraggingCard = draggingSourceIndex >= 0
       && index > draggingSourceIndex
       && !isReturningToSource;
@@ -734,6 +828,7 @@ export function ProgressColumn({
           item={item}
           columnKey={column.key}
           isDragging={isDraggingCard}
+          menuOpen={openMenuApplicationId === item.id}
           isAdvancing={advancingId === item.id}
           currentStageCompleted={completedCurrentStageApplicationIds.has(item.id)}
           completedCurrentStageApplicationIds={completedCurrentStageApplicationIds}
@@ -741,11 +836,22 @@ export function ProgressColumn({
           draggable={advancingId !== item.id}
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
+          onMenuOpenChange={(open) => onMenuOpenChange(open ? item.id : null)}
           onRequestMarkApplied={onRequestMarkApplied}
           onRequestNextStage={onRequestNextStage}
           onRequestTerminate={onRequestTerminate}
           onOpen={() => onOpen(item)}
         />
+        {isDraggingCard && isReturningToSource && (
+          <motion.div
+            className="progress-card-drop-placeholder is-source-return"
+            data-drop-placeholder="true"
+            aria-hidden="true"
+            initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 0.82, scale: 1 }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+          />
+        )}
       </motion.div>,
     ];
   });
@@ -788,6 +894,7 @@ export function ProgressCard({
   item,
   columnKey,
   isDragging,
+  menuOpen,
   isAdvancing,
   currentStageCompleted,
   completedCurrentStageApplicationIds,
@@ -795,6 +902,7 @@ export function ProgressCard({
   draggable,
   onDragStart,
   onDragEnd,
+  onMenuOpenChange,
   onRequestMarkApplied,
   onRequestNextStage,
   onRequestTerminate,
@@ -803,6 +911,7 @@ export function ProgressCard({
   item: JobApplicationSummary;
   columnKey: ProgressColumnKey;
   isDragging: boolean;
+  menuOpen: boolean;
   isAdvancing: boolean;
   currentStageCompleted: boolean;
   completedCurrentStageApplicationIds: ReadonlySet<string>;
@@ -810,18 +919,18 @@ export function ProgressCard({
   draggable: boolean;
   onDragStart: (item: JobApplicationSummary, event: ReactDragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
+  onMenuOpenChange: (open: boolean) => void;
   onRequestMarkApplied?: (application: JobApplicationSummary) => void;
   onRequestNextStage?: (application: JobApplicationSummary, prefill: NextStagePrefill) => void;
   onRequestTerminate?: (application: JobApplicationSummary) => void;
   onOpen: () => void;
 }) {
-  const stageLabel = applicationCardStageLabel(item, columnKey, currentStageCompleted, now);
+  const statusLabel = applicationCardStatusLabel(item, currentStageCompleted, now);
   const stageToneClass = projectApplicationProgressToneClass(item, {
     currentStageCompleted,
     now,
   } satisfies ApplicationProgressLabelOptions);
   const advanceAction = applicationAdvanceAction(item, completedCurrentStageApplicationIds);
-  const [menuOpen, setMenuOpen] = useState(false);
   const cardRef = useRef<HTMLElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
@@ -831,11 +940,11 @@ export function ProgressCard({
     const closeOnOutsidePress = (event: PointerEvent) => {
       const target = event.target as Node;
       if (menuRef.current?.contains(target) || cardRef.current?.contains(target)) return;
-      setMenuOpen(false);
+      onMenuOpenChange(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      setMenuOpen(false);
+      onMenuOpenChange(false);
       menuTriggerRef.current?.focus();
     };
     document.addEventListener("pointerdown", closeOnOutsidePress);
@@ -844,7 +953,7 @@ export function ProgressCard({
       document.removeEventListener("pointerdown", closeOnOutsidePress);
       window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [menuOpen]);
+  }, [menuOpen, onMenuOpenChange]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -869,13 +978,13 @@ export function ProgressCard({
   };
 
   const runMenuAction = (action?: () => void) => {
-    setMenuOpen(false);
+    onMenuOpenChange(false);
     action?.();
   };
 
   const handleCardOpen = () => {
     if (menuOpen) {
-      setMenuOpen(false);
+      onMenuOpenChange(false);
       return;
     }
     onOpen();
@@ -900,7 +1009,7 @@ export function ProgressCard({
         </span>
         <strong className="progress-card-job-title" title={item.job_title_snapshot}>{item.job_title_snapshot}</strong>
         <span className="progress-card-footer">
-          <span className={`progress-card-stage ${stageToneClass}`}>{stageLabel}</span>
+          <span className={`progress-card-stage ${stageToneClass}`}>{statusLabel}</span>
         </span>
       </button>
       <div
@@ -921,7 +1030,7 @@ export function ProgressCard({
           aria-controls={`progress-card-menu-${item.id}`}
           onClick={(event) => {
             event.stopPropagation();
-            setMenuOpen((open) => !open);
+            onMenuOpenChange(!menuOpen);
           }}
         >
           <MoreHorizontal size={17} aria-hidden="true" />

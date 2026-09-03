@@ -32,13 +32,9 @@ export type ApplicationProgressSource = Pick<
 export function offerStatusLabel(status: JobApplicationRecord["offer_status"]): string {
   return status === "none"
     ? "Offer 状态待确认"
-    : status === "oc_received"
-      ? "已收到 OC"
-      : status === "written_offer_received"
-        ? "已收到书面 Offer"
-        : status === "accepted"
-          ? "已收到书面 Offer"
-          : "已主动结束";
+    : status === "declined"
+      ? "已主动结束"
+      : "已收到 Offer";
 }
 
 /**
@@ -167,9 +163,9 @@ export function projectApplicationProgress(
     return {
       columnKey: "offer",
       stageLabel: normalizedStageLabel,
-      statusLabel: "已收到书面 Offer",
+      statusLabel: "已收到 Offer",
       supportingLabel: null,
-      primaryLabel: "已收到书面 Offer",
+      primaryLabel: "已收到 Offer",
       isPending: false,
       isWaiting: false,
       isAssessment: false,

@@ -564,11 +564,19 @@ def record_offer(
 ) -> JobApplication:
     application = require_owned_application(db, user_id, application_id)
     try:
-        state = transition_offer(_application_state(application), payload.offer_status)
+        state = transition_offer(_application_state(application))
     except InvalidTransition as error:
         raise InterviewInvalidTransition from error
+    values = {
+        **_state_values(state),
+        "offer_base_location": payload.base_location,
+        "offer_salary": payload.salary,
+        "offer_salary_currency": payload.salary_currency,
+        "offer_salary_period": payload.salary_period,
+        "offer_benefits_description": payload.benefits_description,
+    }
     return _commit_application_update(
-        db, application, payload.base_lock_version, _state_values(state)
+        db, application, payload.base_lock_version, values
     )
 
 
@@ -1207,13 +1215,13 @@ def overview(
             )
             or 0
         ),
-        "written_offers": int(
+        "offers_received": int(
             db.scalar(
                 select(func.count(JobApplication.id)).where(
                     JobApplication.user_id == user_id,
                     JobApplication.archived_at.is_(None),
                     JobApplication.offer_status.in_(
-                        ("written_offer_received", "accepted", "declined")
+                        ("received", "accepted", "declined")
                     ),
                 )
             )

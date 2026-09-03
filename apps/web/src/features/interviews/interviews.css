@@ -182,29 +182,44 @@
 .company-logo[class*="calendar-"] { background: var(--calendar-soft); color: var(--calendar-color); }
 
 .schedule-calendar-panel { min-width: 0; overflow-x: auto; overflow-y: hidden; border-radius: var(--ui-radius-lg); }
-.schedule-calendar-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 760px; padding: 18px 20px; border-bottom: 1px solid var(--ui-border); }
-.schedule-calendar-navigation, .schedule-granularity-switch { display: flex; align-items: center; gap: 8px; }
-.schedule-calendar-navigation button, .schedule-granularity-switch button { min-width: 34px; height: 34px; padding: 0 11px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--ui-surface); color: var(--ui-text-secondary); }
-.schedule-calendar-navigation button svg { width: 16px; }
-.schedule-calendar-navigation strong { margin-left: 6px; font-size: 15px; color: var(--ui-foreground); }
-.schedule-granularity-switch { padding: 3px; border-radius: 9px; background: var(--ui-surface-muted); }
-.schedule-granularity-switch button { border: 0; background: transparent; }
-.schedule-granularity-switch button[aria-pressed="true"] { background: var(--ui-surface); color: var(--ui-foreground); box-shadow: 0 1px 3px rgb(15 23 42 / 12%); }
+.schedule-view-controls { display: inline-flex; height: 36px; box-sizing: border-box; flex: 0 0 auto; align-items: center; gap: 3px; margin-right: clamp(16px, 2.8vw, 30px); margin-left: auto; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-full); background: var(--ui-surface-subtle); padding: 2px; box-shadow: var(--ui-shadow-xs); }
+.schedule-period-navigation, .schedule-granularity-switch { display: flex; align-items: center; gap: 3px; }
+.schedule-period-navigation { min-width: 0; }
+.schedule-period-navigation button, .schedule-granularity-switch button { display: inline-grid; height: 30px; place-items: center; border: 1px solid transparent; border-radius: var(--ui-radius-full); background: transparent; padding: 0 9px; color: var(--ui-text-secondary); font-size: 11px; font-weight: 600; cursor: pointer; transition: border-color var(--ui-duration-fast) var(--ui-ease-press), background var(--ui-duration-fast) var(--ui-ease-press), color var(--ui-duration-fast) var(--ui-ease-press), transform var(--ui-duration-fast) var(--ui-ease-press); }
+.schedule-period-navigation button:not(.schedule-today-button) { width: 30px; padding: 0; }
+.schedule-period-navigation button:hover, .schedule-granularity-switch button:hover { border-color: var(--ui-border); background: var(--ui-surface); color: var(--ui-foreground); }
+.schedule-period-navigation button:active, .schedule-granularity-switch button:active { transform: translateY(1px); }
+.schedule-period-navigation button:focus-visible, .schedule-granularity-switch button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 2px; }
+.schedule-period-navigation button svg { width: 15px; height: 15px; }
+.schedule-granularity-switch { margin-left: 2px; padding-left: 7px; border-left: 1px solid var(--ui-border); }
+.schedule-granularity-switch button { position: relative; min-width: 34px; border-radius: 0; padding-inline: 8px; }
+.schedule-granularity-switch button:hover { border-color: transparent; background: transparent; color: var(--ui-foreground); }
+.schedule-granularity-switch button[aria-pressed="true"] { background: transparent; color: var(--ui-career-accent); box-shadow: none; }
+.schedule-granularity-switch button[aria-pressed="true"]::after { position: absolute; right: 8px; bottom: 2px; left: 8px; height: 2px; border-radius: var(--ui-radius-full); background: currentColor; content: ""; }
 .month-calendar { min-width: 880px; }
 .month-calendar-weekdays, .month-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
-.month-calendar-weekdays { border-bottom: 1px solid var(--ui-border); }
-.month-calendar-weekdays span { padding: 10px 12px; text-align: center; color: var(--ui-text-subtle); font-size: 12px; font-weight: 600; }
-.month-calendar-grid > div { min-height: 126px; padding: 9px; border-right: 1px solid var(--ui-border); border-bottom: 1px solid var(--ui-border); background: var(--ui-surface); }
+.month-calendar-weekdays { border-bottom: 1px solid color-mix(in srgb, var(--ui-border) 62%, transparent); }
+.month-calendar-weekdays span { padding: 7px 10px; text-align: center; color: var(--ui-text-subtle); font-size: 11px; font-weight: 600; }
+.month-calendar-grid > div { position: relative; height: 92px; box-sizing: border-box; overflow: hidden; padding: 5px 6px; border-right: 1px solid color-mix(in srgb, var(--ui-border) 62%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--ui-border) 62%, transparent); background: var(--ui-surface); }
 .month-calendar-grid > div:nth-child(7n) { border-right: 0; }
 .month-calendar-grid > div.is-outside { background: var(--ui-surface-muted); color: var(--ui-text-subtle); }
-.month-calendar-date { display: grid; place-items: center; width: 25px; height: 25px; margin-left: auto; border-radius: 50%; font-size: 12px; }
+.month-calendar-date { position: absolute; top: 5px; right: 6px; z-index: 1; display: grid; width: 20px; height: 20px; place-items: center; border-radius: 50%; color: var(--ui-text-subtle); font-size: 10px; pointer-events: none; }
 .month-calendar-grid > div.is-today .month-calendar-date { background: var(--ui-primary); color: white; }
-.month-calendar-events { display: grid; gap: 4px; margin-top: 6px; }
-.month-calendar-events button { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 5px; width: 100%; padding: 5px 6px; overflow: hidden; border: 0; border-left: 3px solid currentColor; border-radius: 5px; text-align: left; font-size: 11px; }
-.month-calendar-events button time, .month-calendar-events button em { font-style: normal; opacity: .72; }
-.month-calendar-events button strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.month-calendar-events { display: grid; gap: 2px; }
+.month-calendar-events > :first-child { width: calc(100% - 26px); }
+.month-calendar-events button,
+.month-event-draft { display: grid; min-height: 24px; grid-template-columns: 6px auto minmax(0, 1fr); align-items: center; gap: 5px; width: 100%; box-sizing: border-box; padding: 4px 6px; overflow: hidden; border: 0; border-radius: 5px; text-align: left; font-size: 11px; line-height: 16px; }
+.month-calendar-events button::before,
+.month-event-draft::before { width: 6px; height: 6px; border-radius: 50%; background: var(--calendar-color); content: ""; }
+.month-calendar-events button { background: color-mix(in srgb, var(--calendar-color) 4%, var(--ui-surface)); color: var(--calendar-color); cursor: pointer; }
+.month-calendar-events button:hover { background: color-mix(in srgb, var(--calendar-color) 8%, var(--ui-surface)); }
+.month-calendar-events button time,
+.month-event-draft time { color: color-mix(in srgb, var(--calendar-color) 72%, var(--ui-foreground)); font-style: normal; font-variant-numeric: tabular-nums; }
+.month-calendar-events button strong,
+.month-event-draft strong { overflow: hidden; color: var(--ui-foreground); text-overflow: ellipsis; white-space: nowrap; }
+.month-event-draft { background: color-mix(in srgb, var(--calendar-color) 4%, var(--ui-surface)); color: var(--calendar-color); }
 .month-calendar-events button.is-selected { outline: 2px solid var(--ui-ring); outline-offset: 1px; }
-.month-calendar-events small { color: var(--ui-text-subtle); font-size: 11px; }
+.month-calendar-events small { color: var(--ui-text-subtle); font-size: 9px; line-height: 11px; }
 .schedule-success-toast { position: fixed; right: 24px; bottom: 24px; z-index: 60; display: flex; align-items: center; gap: 9px; max-width: min(420px, calc(100vw - 32px)); padding: 13px 16px; border: 1px solid color-mix(in srgb, var(--ui-success) 30%, var(--ui-border)); border-radius: 10px; background: var(--ui-success-subtle); color: var(--ui-success); box-shadow: 0 12px 30px rgb(15 23 42 / 16%); font-size: 13px; font-weight: 600; }
 .schedule-success-toast svg { width: 18px; height: 18px; }
 .week-calendar { min-width: 1050px; }
@@ -219,8 +234,11 @@
 .week-today-column { z-index: 0; grid-row: 1 / -1; background: color-mix(in srgb, var(--ui-warning-subtle) 40%, transparent); pointer-events: none; }
 .week-grid-lines { position: absolute; z-index: 1; inset: 0 0 0 58px; background: repeating-linear-gradient(to bottom, transparent 0 59px, var(--ui-border) 60px), repeating-linear-gradient(to right, transparent 0 calc(14.285% - 1px), var(--ui-border) calc(14.285% - 1px) 14.285%); opacity: 0.72; pointer-events: none; }
 .week-event {
+  display: grid;
   z-index: 2;
   align-self: stretch;
+  align-content: start;
+  gap: 2px;
   overflow: hidden;
   margin: 4px 8px;
   border: 1.5px solid color-mix(in srgb, var(--calendar-color) 58%, var(--ui-border));
@@ -229,7 +247,7 @@
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--calendar-color) 9%, transparent),
     0 1px 2px color-mix(in srgb, var(--calendar-color) 10%, transparent);
-  padding: 7px 9px;
+  padding: 5px 9px;
   color: color-mix(in srgb, var(--calendar-color) 78%, var(--ui-foreground));
   text-align: left;
   cursor: grab;
@@ -242,20 +260,20 @@
     inset 0 0 0 1px color-mix(in srgb, var(--calendar-color) 30%, transparent),
     0 0 0 2px color-mix(in srgb, var(--calendar-color) 20%, transparent);
 }
-.week-event.is-dragging { opacity: 0.45; }
+.week-event.is-dragging { opacity: 0; }
+.week-event-draft { border-style: dashed; color: var(--calendar-color); cursor: default; pointer-events: none; }
 .week-drop-preview { z-index: 1; align-self: stretch; margin: 2px; border: 1px dashed var(--calendar-color); border-radius: 3px; background: var(--calendar-soft); color: var(--calendar-color); pointer-events: none; }
 .week-drop-preview span { display: block; padding: 5px 7px; font-family: var(--ui-font-mono); font-size: 8px; font-variant-numeric: tabular-nums; }
-.week-event strong, .week-event span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.week-event strong, .week-event span, .week-event em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.week-event-company { min-width: 0; color: var(--ui-foreground); font-size: 10px; font-weight: 700; line-height: 1.25; }
 .week-event .week-event-time { display: flex; align-items: center; gap: 5px; color: var(--ui-text-secondary); font-size: 9px; font-variant-numeric: tabular-nums; }
 .week-event-time i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--calendar-color); }
-.week-event-company { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 7px; }
-.week-event-company strong { min-width: 0; color: var(--ui-foreground); font-size: 10px; }
-.week-event-company em {
-  flex: 0 0 auto;
+.week-event-stage {
   color: var(--ui-foreground);
-  font-size: 10px;
+  font-size: 9px;
   font-style: normal;
-  font-weight: 700;
+  font-weight: 600;
+  line-height: 1.2;
 }
 .current-time-line { position: absolute; z-index: 3; top: 51.2%; left: 0; right: 43%; height: 1px; background: var(--ui-destructive); }
 .current-time-line::after { position: absolute; right: -3px; top: -3px; width: 7px; height: 7px; border-radius: 50%; background: var(--ui-destructive); content: ""; }
@@ -290,42 +308,41 @@
 .schedule-recent-card h4 { margin: 8px 0 3px; font-size: 9px; }
 .schedule-recent-card ol { margin: 0; padding-left: 18px; }
 
-.interview-schedule-dialog { width: min(560px, calc(100vw - 32px)); max-width: 560px; max-height: calc(100vh - 40px); gap: 16px; overflow-y: auto; padding: 22px 24px 24px; overscroll-behavior: contain; }
-.interview-schedule-dialog [data-slot="dialog-title"] { font-size: 18px; }
-.schedule-dialog-card { overflow: hidden; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-lg); padding: 0 18px 18px; }
-.schedule-dialog-card > header { display: flex; min-height: 66px; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--ui-border); }
-.schedule-dialog-card > header h3 { margin: 0; font-size: 18px; }
+.interview-schedule-dialog { width: min(680px, calc(100vw - 32px)); max-width: 680px; max-height: calc(100vh - 40px); gap: 18px; overflow-y: auto; padding: 26px 28px 28px; overscroll-behavior: contain; }
+.interview-schedule-dialog [data-slot="dialog-title"] { font-size: 21px; }
+.schedule-dialog-card { overflow: hidden; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-lg); padding: 0 24px 24px; }
+.schedule-dialog-card > header { display: flex; min-height: 76px; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--ui-border); }
+.schedule-dialog-card > header h3 { margin: 0; font-size: 21px; }
 .schedule-dialog-card > header > div { display: flex; align-items: center; gap: 7px; }
-.schedule-stage-badge { display: inline-flex; align-items: center; border-radius: var(--ui-radius-xs); background: var(--calendar-soft); padding: 4px 8px; color: var(--calendar-color); font-size: 9px; font-weight: 650; }
-.schedule-dialog-loading { margin: 12px 0 0; border-radius: var(--ui-radius-sm); background: var(--ui-surface-muted); padding: 8px 10px; color: var(--ui-text-muted); font-size: 9px; }
-.schedule-dialog-details { display: grid; gap: 13px; margin: 16px 0; }
-.schedule-dialog-details > div { display: grid; grid-template-columns: 126px minmax(0, 1fr); align-items: start; gap: 10px; font-size: 10px; line-height: 1.5; }
+.schedule-stage-badge { display: inline-flex; align-items: center; background: var(--calendar-soft); color: var(--calendar-color); }
+.schedule-dialog-card > header .schedule-stage-badge,
+.schedule-dialog-card > header .interview-status-badge { min-height: 26px; border-radius: var(--ui-radius-full); padding: 0 10px; font-size: 11px; font-weight: 650; line-height: 1; }
+.schedule-dialog-loading { margin: 14px 0 0; border-radius: var(--ui-radius-sm); background: var(--ui-surface-muted); padding: 10px 12px; color: var(--ui-text-muted); font-size: 12px; }
+.schedule-dialog-details { display: grid; gap: 15px; margin: 20px 0; }
+.schedule-dialog-details > div { display: grid; grid-template-columns: 140px minmax(0, 1fr); align-items: start; gap: 12px; font-size: 13px; line-height: 1.55; }
 .schedule-dialog-details dt { display: flex; align-items: center; gap: 8px; color: var(--ui-text-muted); }
-.schedule-dialog-details dt svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.schedule-dialog-details dt svg { width: 16px; height: 16px; flex: 0 0 auto; }
 .schedule-dialog-details dd { min-width: 0; margin: 0; color: var(--ui-text-secondary); overflow-wrap: anywhere; }
 .schedule-dialog-details a { color: var(--ui-accent); text-decoration: none; }
 .schedule-dialog-details a:hover { text-decoration: underline; }
 .schedule-dialog-details a:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 2px; }
-.schedule-dialog-application { display: grid; min-height: 54px; grid-template-columns: auto 112px minmax(0, 1fr) auto; align-items: center; gap: 10px; border-top: 1px solid var(--ui-border); border-bottom: 1px solid var(--ui-border); color: var(--ui-foreground); font-size: 10px; text-decoration: none; }
-.schedule-dialog-application > svg { width: 14px; height: 14px; color: var(--ui-text-muted); }
+.schedule-dialog-application { display: grid; min-height: 62px; grid-template-columns: auto 120px minmax(0, 1fr) auto; align-items: center; gap: 12px; border-top: 1px solid var(--ui-border); border-bottom: 1px solid var(--ui-border); color: var(--ui-foreground); font-size: 12px; text-decoration: none; }
+.schedule-dialog-application > svg { width: 16px; height: 16px; color: var(--ui-text-muted); }
 .schedule-dialog-application strong { overflow: hidden; color: var(--ui-accent); text-overflow: ellipsis; white-space: nowrap; }
 .schedule-dialog-application:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: -2px; }
-.schedule-dialog-materials, .schedule-dialog-tasks { padding-top: 15px; }
-.schedule-dialog-materials h4, .schedule-dialog-tasks h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; color: var(--ui-text-secondary); font-size: 10px; font-weight: 550; }
-.schedule-dialog-materials h4 svg, .schedule-dialog-tasks h4 svg { width: 14px; height: 14px; color: var(--ui-text-muted); }
+.schedule-dialog-materials, .schedule-dialog-preparation-note { padding-top: 18px; }
+.schedule-dialog-materials h4, .schedule-dialog-preparation-note h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; color: var(--ui-text-secondary); font-size: 12px; font-weight: 600; }
+.schedule-dialog-materials h4 svg, .schedule-dialog-preparation-note h4 svg { width: 16px; height: 16px; color: var(--ui-text-muted); }
 .schedule-dialog-materials > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; padding-left: 24px; }
-.schedule-dialog-materials span { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); gap: 2px 8px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); padding: 9px; }
-.schedule-dialog-materials span > svg { width: 17px; height: 17px; grid-row: 1 / 3; color: var(--ui-destructive); }
+.schedule-dialog-materials span { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); gap: 3px 9px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); padding: 11px; }
+.schedule-dialog-materials span > svg { width: 19px; height: 19px; grid-row: 1 / 3; color: var(--ui-destructive); }
 .schedule-dialog-materials b, .schedule-dialog-materials small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.schedule-dialog-materials b { font-size: 9px; font-weight: 550; }
-.schedule-dialog-materials small { color: var(--ui-text-muted); font-size: 8px; }
-.schedule-dialog-tasks ul { display: grid; gap: 10px; margin: 0; padding: 0 0 0 24px; list-style: none; }
-.schedule-dialog-tasks li { display: flex; align-items: center; gap: 9px; color: var(--ui-text-secondary); font-size: 9px; }
-.schedule-dialog-tasks li svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--ui-text-muted); }
-.schedule-dialog-tasks li:nth-child(-n+2) svg { color: var(--ui-success); }
+.schedule-dialog-materials b { font-size: 11px; font-weight: 600; }
+.schedule-dialog-materials small { color: var(--ui-text-muted); font-size: 10px; }
+.schedule-dialog-preparation-note p { margin: 0; border-radius: var(--ui-radius-sm); background: var(--ui-surface-subtle); padding: 12px 14px; color: var(--ui-text-secondary); font-size: 12px; line-height: 1.6; }
 .schedule-dialog-footer { gap: 9px; }
-.schedule-dialog-footer .ui-button { min-width: 96px; }
-.schedule-dialog-join { display: inline-flex; min-width: 96px; min-height: 40px; align-items: center; justify-content: center; border-radius: var(--ui-radius-md); background: var(--ui-primary); padding: 0 16px; color: var(--ui-primary-foreground); font-size: 12px; font-weight: 650; text-decoration: none; }
+.schedule-dialog-footer .ui-button { min-width: 104px; min-height: 44px; }
+.schedule-dialog-join { display: inline-flex; min-width: 104px; min-height: 44px; align-items: center; justify-content: center; border-radius: var(--ui-radius-md); background: var(--ui-primary); padding: 0 18px; color: var(--ui-primary-foreground); font-size: 13px; font-weight: 650; text-decoration: none; }
 .schedule-dialog-join:hover { background: var(--ui-primary-hover); }
 .schedule-dialog-join:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 2px; }
 
@@ -476,8 +493,8 @@
 
 .career-applications-controls { display: flex; min-width: 0; align-items: center; justify-content: flex-end; gap: 8px; }
 .career-applications-controls > .ui-button { height: 38px; min-width: 112px; }
-.career-applications-navigation-row { display: flex; min-width: 0; align-items: center; border-bottom: 1px solid var(--ui-border); }
-.career-applications-navigation-row > .career-subnav { min-width: 0; flex: 1 1 auto; border-bottom: 0; }
+.career-view-navigation-row { display: flex; min-width: 0; align-items: center; border-bottom: 1px solid var(--ui-border); }
+.career-view-navigation-row > .career-subnav { min-width: 0; flex: 1 1 auto; border-bottom: 0; }
 .career-applications-view-controls { display: inline-flex; height: 36px; box-sizing: border-box; flex: 0 0 auto; align-items: center; gap: 3px; margin-right: clamp(16px, 2.8vw, 30px); margin-left: auto; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-full); background: var(--ui-surface-subtle); padding: 2px; box-shadow: var(--ui-shadow-xs); }
 .career-view-switch, .career-sort-button { display: inline-flex; width: auto; min-width: 98px; height: 30px; flex: 0 0 auto; align-items: center; justify-content: center; gap: 6px; border: 1px solid transparent; border-radius: var(--ui-radius-full); background: transparent; padding: 0 11px; color: var(--ui-text-secondary); font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: border-color var(--ui-duration-fast) var(--ui-ease-press), background var(--ui-duration-fast) var(--ui-ease-press), color var(--ui-duration-fast) var(--ui-ease-press), transform var(--ui-duration-fast) var(--ui-ease-press); }
 .career-view-switch:hover, .career-sort-button:hover { border-color: var(--ui-border); background: var(--ui-surface); color: var(--ui-foreground); }
@@ -521,19 +538,8 @@
   border-radius: 12px;
   background: color-mix(in srgb, var(--ui-surface-subtle) 64%, var(--ui-surface));
   padding: 12px;
-  transition: border-color 180ms var(--ui-ease-press), background 180ms var(--ui-ease-press), box-shadow 180ms var(--ui-ease-press);
-}
-.progress-column.is-drop-target {
-  border-color: color-mix(in srgb, var(--ui-warning) 58%, var(--ui-border));
-  background: color-mix(in srgb, var(--ui-warning-subtle) 46%, var(--ui-surface));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-warning) 12%, transparent);
-}
-.progress-column.is-valid-drop-target:not(.is-drop-target) {
-  border-color: color-mix(in srgb, var(--ui-warning) 34%, var(--ui-border));
 }
 .progress-column.is-invalid-drop-target {
-  border-color: color-mix(in srgb, var(--ui-destructive) 52%, var(--ui-border));
-  background: color-mix(in srgb, var(--ui-destructive-subtle) 24%, var(--ui-surface));
   cursor: not-allowed;
 }
 .progress-column-heading { display: flex; height: 30px; min-height: 30px; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 0 0; }
@@ -562,6 +568,9 @@
 .progress-card-job-title { color: var(--ui-foreground); font-size: 15px; font-weight: 650; line-height: 1.2; }
 .progress-card-stage { flex: 1 1 auto; color: var(--ui-text-secondary); font-size: 12px; font-weight: 600; line-height: 1.2; }
 .progress-card-drop-placeholder { box-sizing: border-box; width: 100%; height: 118px; min-height: 118px; border: 1px dashed color-mix(in srgb, var(--ui-warning) 58%, var(--ui-border)); border-radius: 8px; background: color-mix(in srgb, var(--ui-warning-subtle) 42%, transparent); opacity: .82; pointer-events: none; transition: opacity var(--ui-duration-fast) var(--ui-ease-press), transform var(--ui-duration-fast) var(--ui-ease-press); }
+.progress-card-layout > .progress-card,
+.progress-card-layout > .progress-card-drop-placeholder.is-source-return { grid-area: 1 / 1; }
+.progress-card-drop-placeholder.is-source-return { z-index: 1; }
 .progress-card-stage.is-active,
 .progress-card-stage.is-scheduled { color: var(--career-state-info); }
 .progress-card-stage.is-waiting { color: var(--career-state-waiting); }
@@ -738,6 +747,7 @@
   .career-applications-controls { flex-wrap: wrap; }
   .career-applications-controls > .ui-button { width: auto; min-width: 0; height: 44px; flex: 1 1 112px; }
   .career-applications-view-controls { margin-right: 16px; margin-left: auto; padding-right: 2px; }
+  .schedule-view-controls { margin-right: 16px; margin-left: auto; }
   .career-view-switch, .career-sort-button { min-width: 92px; height: 30px; padding-inline: 9px; }
   .career-application-table-surface { margin-inline: 0; }
   .career-application-record-link { height: 40px; min-height: 40px; }
@@ -765,7 +775,6 @@
   .schedule-dialog-application { grid-template-columns: auto minmax(0, 1fr) auto; }
   .schedule-dialog-application > span { display: none; }
   .schedule-dialog-materials > div { grid-template-columns: 1fr; padding-left: 0; }
-  .schedule-dialog-tasks ul { padding-left: 0; }
   .schedule-dialog-footer { display: grid; grid-template-columns: 1fr 1fr; }
   .schedule-dialog-footer .ui-button, .schedule-dialog-join { width: 100%; }
   .schedule-calendar-panel { overflow-x: auto; }
@@ -864,23 +873,67 @@
 }
 
 .career-session-record-dialog {
-  display: block;
-  width: min(900px, calc(100vw - 32px));
-  max-width: min(900px, calc(100vw - 32px));
+  display: grid;
+  width: min(720px, calc(100vw - 32px));
+  height: auto;
+  max-width: min(720px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
   box-sizing: border-box;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 18px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0;
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-surface);
+  padding: 26px 24px 24px;
+  box-shadow: 0 16px 20px rgb(0 0 0 / 16%);
+}
+
+.career-session-record-dialog-header {
+  gap: 8px;
+  padding-right: 40px;
+}
+
+.career-session-record-dialog-header > * + * {
+  margin-top: 0;
+}
+
+.career-session-record-dialog-header p {
+  color: var(--ui-text-secondary);
 }
 
 .career-session-record-dialog .career-session-detail-body {
-  padding-inline: 24px;
+  background: transparent;
+  padding: 0;
 }
 
 .career-session-record-dialog .career-session-record-content {
   width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   margin-inline: 0;
+  padding: 0;
+}
+
+.career-session-record-dialog .career-session-overview > div {
+  justify-content: center;
+  gap: 10px;
+  padding-inline: 8px;
+}
+
+.career-session-record-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+
+.career-session-record-footer .ui-button {
+  min-height: 40px;
+  font-size: 14px;
 }
 
 .career-record-hero {
@@ -1395,8 +1448,18 @@
   }
 
   .career-session-record-dialog .career-session-detail-body {
-    padding-inline: 16px;
+    padding: 0;
   }
+
+  .career-session-record-footer {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .career-session-record-footer .ui-button {
+    width: 100%;
+  }
+
 }
 
 /* Figma option 1: compact application detail page. Keep these rules scoped so
@@ -1495,6 +1558,7 @@
   width: min(1280px, calc(100% - 48px));
   max-width: 1280px;
   grid-template-columns: minmax(0, 2.204fr) minmax(0, 1fr);
+  grid-auto-rows: 700px;
   align-items: stretch;
   gap: 24px;
   margin: 0 auto;
@@ -1502,17 +1566,12 @@
   padding: 12px 0 40px;
 }
 
-.career-application-detail-page .career-application-detail-body.has-interview-records {
-  align-items: stretch;
-  grid-auto-rows: 800px;
-}
-
 .career-application-detail-page .career-detail-main-column,
 .career-application-detail-page .career-detail-side-column {
   gap: 24px;
 }
 
-.career-application-detail-page .career-application-detail-body.has-interview-records .career-detail-main-column {
+.career-application-detail-page .career-application-detail-body .career-detail-main-column {
   min-height: 0;
   grid-template-rows: 258px minmax(0, 1fr);
   overflow: hidden;
@@ -1608,7 +1667,7 @@
   padding: 22px 24px 24px;
 }
 
-.career-application-detail-page .has-interview-records .career-interview-section-card {
+.career-application-detail-page .career-interview-section-card {
   min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
@@ -1967,18 +2026,15 @@
 
   .career-application-detail-page .career-application-detail-body {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .career-application-detail-page .career-application-detail-body.has-interview-records {
     grid-auto-rows: auto;
   }
 
-  .career-application-detail-page .career-application-detail-body.has-interview-records .career-detail-main-column {
+  .career-application-detail-page .career-application-detail-body .career-detail-main-column {
     grid-template-rows: auto auto;
     overflow: visible;
   }
 
-  .career-application-detail-page .has-interview-records .career-interview-section-card {
+  .career-application-detail-page .career-interview-section-card {
     overflow: visible;
   }
 
@@ -2450,6 +2506,10 @@
   padding: 3px;
 }
 
+.career-next-stage-tabs.has-two-tabs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .career-next-stage-tabs button {
   min-width: 0;
   min-height: 0;
@@ -2497,98 +2557,103 @@
   display: grid;
   grid-column: 1 / -1;
   align-content: start;
-  gap: 12px;
 }
 
-.career-next-stage-offer-panel > p {
-  margin: 0;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-text-sm);
-  line-height: var(--ui-leading-normal);
-}
-
-.career-next-stage-offer-options {
+.career-next-stage-offer-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  column-gap: 14px;
+  row-gap: 12px;
 }
 
-.career-next-stage-offer-option {
+.career-next-stage-offer-number-field {
   position: relative;
+}
+
+.career-next-stage-offer-number-input {
+  padding-right: 40px !important;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.career-next-stage-offer-number-input::-webkit-inner-spin-button,
+.career-next-stage-offer-number-input::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.career-next-stage-offer-number-controls {
+  position: absolute;
+  right: 5px;
+  bottom: 1px;
   display: grid;
-  min-width: 0;
-  min-height: 112px;
-  box-sizing: border-box;
-  align-content: start;
-  gap: 10px;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-lg);
-  background: var(--ui-surface);
-  padding: 18px;
-  color: var(--ui-foreground);
-  text-align: left;
+  width: 28px;
+  height: 42px;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  place-items: center;
+}
+
+.career-next-stage-offer-number-controls button {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--ui-text-muted);
   cursor: pointer;
 }
 
-.career-next-stage-form .career-next-stage-offer-option {
-  grid-template-rows: 24px auto;
-  gap: 10px;
-}
-
-.career-next-stage-offer-option:hover {
-  border-color: var(--ui-border-strong);
-}
-
-.career-next-stage-offer-option:has(input:checked) {
-  border-color: var(--ui-primary);
-  background: var(--ui-surface);
-}
-
-.career-next-stage-offer-option:has(input:focus-visible) {
-  outline: 2px solid var(--ui-ring);
-  outline-offset: 2px;
-}
-
-.career-next-stage-offer-option:has(input:disabled) {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.career-next-stage-offer-option-icon {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  color: var(--ui-primary);
-}
-
-.career-next-stage-offer-option-icon svg {
-  width: 20px;
-  height: 20px;
-}
-
-.career-next-stage-offer-option-copy {
-  display: grid;
-  min-width: 0;
-  gap: 6px;
-}
-
-.career-next-stage-offer-option-copy strong {
+.career-next-stage-offer-number-controls button:hover:not(:disabled),
+.career-next-stage-offer-number-controls button:focus-visible {
   color: var(--ui-foreground);
-  font-size: var(--ui-text-md);
-  line-height: var(--ui-leading-normal);
 }
 
-.career-next-stage-offer-option-copy small {
-  color: var(--ui-text-secondary);
+.career-next-stage-offer-number-controls button:focus-visible {
+  border-radius: var(--ui-radius-xs);
+  box-shadow: 0 0 0 1px var(--ui-ring);
+}
+
+.career-next-stage-offer-number-controls button:disabled {
+  color: var(--ui-text-subtle);
+  cursor: default;
+  opacity: .45;
+}
+
+.career-next-stage-offer-benefits {
+  grid-template-rows: 16px 104px;
+}
+
+.career-next-stage-offer-benefits textarea {
+  width: 100%;
+  height: 104px;
+  min-height: 104px;
+  max-height: 104px;
+  box-sizing: border-box;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface);
+  padding: 10px 12px;
+  color: var(--ui-foreground);
+  font: inherit;
   font-size: var(--ui-text-sm);
   line-height: var(--ui-leading-normal);
+  resize: none;
 }
 
-.career-next-stage-offer-info {
-  margin-top: 2px !important;
-  color: var(--ui-text-muted) !important;
-  font-size: var(--ui-text-xs) !important;
+.career-next-stage-offer-benefits textarea:focus-visible {
+  border-color: var(--ui-ring);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-ring) 22%, transparent);
+}
+
+.career-offer-dialog {
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
 }
 
 .career-next-stage-error {
@@ -2655,6 +2720,34 @@
 .career-next-stage-select-content {
   border-radius: var(--ui-radius-sm);
   box-shadow: var(--ui-shadow-sm);
+}
+
+.career-next-stage-process .career-next-stage-select-trigger {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.career-next-stage-process .career-next-stage-select-trigger > span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.career-next-stage-process-content {
+  width: var(--radix-select-trigger-width);
+  min-width: var(--radix-select-trigger-width);
+  max-width: var(--radix-select-trigger-width);
+}
+
+.career-next-stage-process-content [role="option"] > span:last-child {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .career-next-stage-field input[readonly] {
@@ -2834,6 +2927,19 @@
   background: var(--ui-foreground);
 }
 
+.career-schedule-empty-dialog {
+  height: min(360px, calc(100vh - 32px));
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.career-schedule-empty-dialog .career-dialog-empty {
+  align-self: center;
+}
+
+.career-schedule-empty-dialog [data-slot="dialog-footer"] {
+  align-self: end;
+}
+
 @media (max-width: 640px) {
   .career-next-stage-dialog {
     width: calc(100vw - 24px);
@@ -2858,13 +2964,8 @@
     grid-auto-rows: auto;
   }
 
-  .career-next-stage-offer-options {
+  .career-next-stage-offer-form {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .career-next-stage-offer-option {
-    min-height: 108px;
-    padding: 16px;
   }
 
   .career-schedule-picker-popover {
@@ -2884,5 +2985,10 @@
   .career-next-stage-dialog,
   .career-next-stage-panel {
     overflow: visible;
+  }
+
+  .career-next-stage-panel.is-offer {
+    overflow-y: auto;
+    padding-right: 4px;
   }
 }

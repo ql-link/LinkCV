@@ -40,7 +40,6 @@ import {
   Plus,
   RotateCcw,
   Search,
-  Square,
   Trash2,
   UserRound,
   Video,
@@ -264,7 +263,12 @@ function toInterview(session: InterviewSessionSummary, weekStart: Date): Intervi
       1,
       Math.round((end.getTime() - start.getTime()) / 1_800_000),
     ),
-    color: session.calendar_color,
+    color:
+      session.stage_type === "interview"
+      && session.round_no === 3
+      && session.calendar_color === "gray"
+        ? "purple"
+        : session.calendar_color,
     startAt: session.start_at,
     endAt: session.end_at,
     questions: session.questions_markdown ?? "",
@@ -398,6 +402,14 @@ function currentApplicationStageCompleted(
   return currentSession?.status === "completed";
 }
 
+function canAddScheduledStage(application: JobApplicationSummary): boolean {
+  return application.status === "active"
+    && application.archived_at === null
+    && application.applied_at !== null
+    && application.stage_state === "awaiting_result"
+    && application.current_stage_type !== "offer";
+}
+
 export function InterviewCenterPage({
   view,
   initialApplicationId,
@@ -463,6 +475,14 @@ export function InterviewCenterPage({
   const scheduleToastTimeoutRef = useRef<number | null>(null);
   const isApplicationDetailRoute = view === "applications" && Boolean(initialApplicationId);
   const isApplicationSessionDialogRoute = isApplicationDetailRoute && Boolean(initialSessionId);
+  const closeApplicationSessionDialog = () => {
+    const historyState = window.history.state as { careerSessionDialog?: boolean } | null;
+    if (historyState?.careerSessionDialog) {
+      window.history.back();
+      return;
+    }
+    navigateTo(careerApplicationPath(initialApplicationId as string), { replace: true });
+  };
   const isInterviewDetailRoute = view === "records" && Boolean(initialApplicationId && initialSessionId);
   const isStandaloneDetailRoute = isApplicationDetailRoute || isInterviewDetailRoute;
 
@@ -720,15 +740,31 @@ export function InterviewCenterPage({
           )}
         />
       )}
-      {!isStandaloneDetailRoute && view === "applications" ? (
-        <div className="career-applications-navigation-row">
+      {!isStandaloneDetailRoute && (view === "applications" || view === "schedule") ? (
+        <div className="career-view-navigation-row">
           {navigation}
-          <ApplicationViewControls
-            displayMode={applicationDisplayMode}
-            sortMode={applicationSortMode}
-            onDisplayModeChange={setApplicationDisplayMode}
-            onSortChange={setApplicationSortMode}
-          />
+          {view === "applications" ? (
+            <ApplicationViewControls
+              displayMode={applicationDisplayMode}
+              sortMode={applicationSortMode}
+              onDisplayModeChange={setApplicationDisplayMode}
+              onSortChange={setApplicationSortMode}
+            />
+          ) : (
+            <ScheduleViewControls
+              granularity={scheduleGranularity}
+              onGranularityChange={(value) => {
+                setScheduleGranularity(value);
+                setScheduleAnchor(value === "month" ? scheduleMonthStart : scheduleWeekStart);
+              }}
+              onNavigate={(direction) => {
+                setScheduleAnchor((current) => scheduleGranularity === "month"
+                  ? addMonths(current, direction === "next" ? 1 : -1)
+                  : addDays(current, direction === "next" ? 7 : -7));
+              }}
+              onToday={() => setScheduleAnchor(scheduleGranularity === "month" ? startOfMonth() : startOfWeek())}
+            />
+          )}
         </div>
       ) : (
         !isStandaloneDetailRoute && navigation
@@ -797,10 +833,10 @@ export function InterviewCenterPage({
               displayMode="dialog"
               detail={detail?.session.id === initialSessionId ? detail : null}
               detailLoading={detailLoading}
-              onBack={() => navigateTo(careerApplicationPath(initialApplicationId as string))}
+              onBack={closeApplicationSessionDialog}
               onChanged={(preferredId) => {
                 if (preferredId === null) {
-                  navigateTo(careerApplicationPath(initialApplicationId as string));
+                  closeApplicationSessionDialog();
                   return;
                 }
                 void loadData(initialSessionId ?? preferredId);
@@ -839,16 +875,7 @@ export function InterviewCenterPage({
           weekStart={scheduleWeekStart}
           monthStart={scheduleMonthStart}
           monthGridStart={scheduleGridStart}
-          onGranularityChange={(value) => {
-            setScheduleGranularity(value);
-            setScheduleAnchor(value === "month" ? scheduleMonthStart : scheduleWeekStart);
-          }}
-          onNavigate={(direction) => {
-            setScheduleAnchor((current) => scheduleGranularity === "month"
-              ? addMonths(current, direction === "next" ? 1 : -1)
-              : addDays(current, direction === "next" ? 7 : -7));
-          }}
-          onToday={() => setScheduleAnchor(scheduleGranularity === "month" ? startOfMonth() : startOfWeek())}
+          draftStartAt={showCreate ? createInterviewStartAt : null}
           onCreate={openCreateInterview}
           onSelect={(id) => void selectInterview(id)}
           onMove={(id, day, slot) => void reschedule(id, day, slot)}
@@ -867,7 +894,7 @@ export function InterviewCenterPage({
           onNotice={setNotice}
         />
       )}
-      {showCreate && (
+      {showCreate && (isApplicationDetailRoute || Boolean(createInterviewApplicationId) ? (
         <CreateInterviewDialog
           applications={applications.filter(
             (item) =>
@@ -877,7 +904,7 @@ export function InterviewCenterPage({
               item.current_stage_type !== "offer",
           )}
           initialApplicationId={createInterviewApplicationId}
-          detailMode={isApplicationDetailRoute || Boolean(createInterviewApplicationId)}
+          detailMode
           timezone={timezone}
           onClose={() => {
             setShowCreate(false);
@@ -897,7 +924,19 @@ export function InterviewCenterPage({
           }}
           onNotice={setNotice}
         />
-      )}
+      ) : (
+        <ScheduleStageDialog
+          applications={applications.filter(canAddScheduledStage)}
+          timezone={timezone}
+          initialStartAt={createInterviewStartAt ?? ""}
+          onClose={() => {
+            setShowCreate(false);
+            setCreateInterviewStartAt(null);
+          }}
+          onChanged={() => loadData()}
+          onNotice={setNotice}
+        />
+      ))}
       {showCreateApplication && (
         <CreateApplicationDialog
           initialJobId={initialJobId}
@@ -1004,6 +1043,82 @@ function ScheduleHeaderControls({ query, onCreate, onQueryChange }: { query: str
   );
 }
 
+function ScheduleStageDialog({
+  applications,
+  timezone,
+  initialStartAt,
+  onClose,
+  onChanged,
+  onNotice,
+}: {
+  applications: JobApplicationSummary[];
+  timezone: string;
+  initialStartAt: string;
+  onClose: () => void;
+  onChanged: () => void | Promise<void>;
+  onNotice: (notice: string) => void;
+}) {
+  const firstApplication = applications[0];
+  if (!firstApplication) {
+    return (
+      <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+        <DialogContent className="career-stage-dialog career-next-stage-dialog career-schedule-empty-dialog">
+          <DialogHeader>
+            <DialogTitle>新建面试</DialogTitle>
+            <DialogDescription>只能为已经完成上一阶段的求职流程添加笔试、测评或面试排期。</DialogDescription>
+          </DialogHeader>
+          <div className="career-dialog-empty">
+            <BriefcaseBusiness aria-hidden="true" />
+            <strong>暂无可以推进的求职流程</strong>
+            <span>待投递、上一阶段尚未完成或已经进入 Offer 的流程不会出现在这里。</span>
+          </div>
+          <DialogFooter><Button onClick={onClose}>我知道了</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+  return (
+    <AddNextStageDialog
+      application={firstApplication}
+      applicationOptions={applications}
+      timezone={timezone}
+      initialStartAt={initialStartAt}
+      includeOffer={false}
+      title="新建面试"
+      description="选择已经完成上一阶段的求职流程，再填写下一阶段及排期信息。"
+      onClose={onClose}
+      onChanged={onChanged}
+      onNotice={onNotice}
+    />
+  );
+}
+
+function ScheduleViewControls({
+  granularity,
+  onGranularityChange,
+  onNavigate,
+  onToday,
+}: {
+  granularity: ScheduleGranularity;
+  onGranularityChange: (value: ScheduleGranularity) => void;
+  onNavigate: (direction: "previous" | "next") => void;
+  onToday: () => void;
+}) {
+  return (
+    <div className="schedule-view-controls">
+      <div className="schedule-period-navigation" role="group" aria-label="排期日期选择">
+        <button type="button" onClick={() => onNavigate("previous")} aria-label="上一周期" title="上一周期"><ChevronLeft /></button>
+        <button type="button" className="schedule-today-button" onClick={onToday}>今天</button>
+        <button type="button" onClick={() => onNavigate("next")} aria-label="下一周期" title="下一周期"><ChevronRight /></button>
+      </div>
+      <div className="schedule-granularity-switch" role="group" aria-label="排期视图">
+        <button type="button" aria-pressed={granularity === "week"} onClick={() => onGranularityChange("week")}>周</button>
+        <button type="button" aria-pressed={granularity === "month"} onClick={() => onGranularityChange("month")}>月</button>
+      </div>
+    </div>
+  );
+}
+
 function ApplicationsView({
   applications,
   sessions,
@@ -1029,8 +1144,12 @@ function ApplicationsView({
   const [draggedNextStage, setDraggedNextStage] = useState<{
     application: JobApplicationSummary;
     prefill: NextStagePrefill;
+    targetColumnId: string | null;
   } | null>(null);
-  const [draggedPendingApplication, setDraggedPendingApplication] = useState<JobApplicationSummary | null>(null);
+  const [draggedPendingApplication, setDraggedPendingApplication] = useState<{
+    application: JobApplicationSummary;
+    targetColumnId: string | null;
+  } | null>(null);
   const [pendingTermination, setPendingTermination] = useState<JobApplicationSummary | null>(null);
   useEffect(() => {
     const clock = window.setInterval(() => setNow(new Date()), 60_000);
@@ -1057,14 +1176,29 @@ function ApplicationsView({
         now={now}
         sortMode={sortMode}
         displayMode={displayMode}
+        formDropPreview={draggedNextStage?.targetColumnId
+          ? {
+            applicationId: draggedNextStage.application.id,
+            targetColumnId: draggedNextStage.targetColumnId,
+          }
+          : draggedPendingApplication?.targetColumnId
+            ? {
+              applicationId: draggedPendingApplication.application.id,
+              targetColumnId: draggedPendingApplication.targetColumnId,
+            }
+            : null}
         onNotice={onNotice}
-        onRequestMarkApplied={setDraggedPendingApplication}
-        onRequestNextStage={(application, prefill) => setDraggedNextStage({ application, prefill })}
+        onRequestMarkApplied={(application, targetColumnId) => {
+          setDraggedPendingApplication({ application, targetColumnId: targetColumnId ?? null });
+        }}
+        onRequestNextStage={(application, prefill, targetColumnId) => {
+          setDraggedNextStage({ application, prefill, targetColumnId: targetColumnId ?? null });
+        }}
         onRequestTerminate={setPendingTermination}
       />
       {draggedPendingApplication && (
         <MarkApplicationAppliedDialog
-          application={draggedPendingApplication}
+          application={draggedPendingApplication.application}
           onClose={() => setDraggedPendingApplication(null)}
           onChanged={onChanged}
           onNotice={onNotice}
@@ -1166,9 +1300,7 @@ function ScheduleView({
   weekStart,
   monthStart,
   monthGridStart,
-  onGranularityChange,
-  onNavigate,
-  onToday,
+  draftStartAt,
   onCreate,
   onSelect,
   onMove,
@@ -1181,9 +1313,7 @@ function ScheduleView({
   weekStart: Date;
   monthStart: Date;
   monthGridStart: Date;
-  onGranularityChange: (value: ScheduleGranularity) => void;
-  onNavigate: (direction: "previous" | "next") => void;
-  onToday: () => void;
+  draftStartAt: string | null;
   onCreate: (startAt?: string) => void;
   onSelect: (id: string) => void;
   onMove: (id: string, calendarDay: number, calendarStart: number) => void;
@@ -1202,24 +1332,9 @@ function ScheduleView({
   const handleMove = (id: string, calendarDay: number, calendarStart: number) => {
     onMove(id, calendarDay, calendarStart);
   };
-  const title = granularity === "month"
-    ? `${monthStart.getFullYear()}年${monthStart.getMonth() + 1}月`
-    : `${weekStart.getFullYear()}年${formatDate(weekStart)} – ${formatDate(addDays(weekStart, 6))}`;
   return (
     <div className="interview-schedule-layout">
       <section className="interview-surface schedule-calendar-panel">
-        <div className="schedule-calendar-toolbar">
-          <div className="schedule-calendar-navigation">
-            <button type="button" onClick={() => onNavigate("previous")} aria-label="上一周期"><ChevronLeft /></button>
-            <button type="button" onClick={onToday}>今天</button>
-            <button type="button" onClick={() => onNavigate("next")} aria-label="下一周期"><ChevronRight /></button>
-            <strong>{title}</strong>
-          </div>
-          <div className="schedule-granularity-switch" role="group" aria-label="排期视图">
-            <button type="button" aria-pressed={granularity === "week"} onClick={() => onGranularityChange("week")}>周</button>
-            <button type="button" aria-pressed={granularity === "month"} onClick={() => onGranularityChange("month")}>月</button>
-          </div>
-        </div>
         <p id="schedule-drag-instructions" className="visually-hidden">
           拖动面试可以调整排期，时间按 30 分钟对齐。日历背景只显示整点线。
         </p>
@@ -1228,6 +1343,7 @@ function ScheduleView({
             weekStart={weekStart}
             interviews={visibleInterviews}
             selectedId={openInterviewId}
+            draftStartAt={draftStartAt}
             onSelect={handleSelect}
             onMove={handleMove}
             onCreate={onCreate}
@@ -1238,6 +1354,7 @@ function ScheduleView({
             gridStart={monthGridStart}
             interviews={visibleInterviews}
             selectedId={openInterviewId}
+            draftStartAt={draftStartAt}
             onSelect={handleSelect}
             onCreate={onCreate}
           />
@@ -1248,7 +1365,6 @@ function ScheduleView({
           interview={dialogInterview}
           detail={detail}
           detailLoading={detailLoading}
-          isMock={false}
           onClose={() => setOpenInterviewId(null)}
         />
       )}
@@ -1256,23 +1372,18 @@ function ScheduleView({
   );
 }
 
-function InterviewScheduleDialog({ interview, detail, detailLoading, isMock, onClose }: { interview: Interview; detail: InterviewSessionDetail | null; detailLoading: boolean; isMock: boolean; onClose: () => void }) {
+function InterviewScheduleDialog({ interview, detail, detailLoading, onClose }: { interview: Interview; detail: InterviewSessionDetail | null; detailLoading: boolean; onClose: () => void }) {
   const matchingDetail = detail?.session.id === interview.id ? detail : null;
-  const meetingUrl = matchingDetail?.session.meeting_url ?? (isMock ? "https://meeting.dingtalk.com/j/123456789" : null);
-  const assets = matchingDetail?.assets ?? (isMock ? [
-    { id: "mock-asset-1", original_file_name: "项目经验整理.pdf", file_size: 2_400_000 },
-    { id: "mock-asset-2", original_file_name: "系统设计复习要点.docx", file_size: 1_100_000 },
-  ] : []);
-  const preparationItems = isMock
-    ? ["复习项目：高并发系统设计与优化", "阅读：阿里技术面试题（P6+）", "准备提问：团队技术栈与挑战"]
-    : [matchingDetail?.session.preparation_note ?? "确认岗位要求与面试重点", "确认会议设备、网络和面试时间"];
+  const meetingUrl = matchingDetail?.session.meeting_url ?? null;
+  const assets = matchingDetail?.assets ?? [];
+  const preparationNote = matchingDetail?.session.preparation_note?.trim() ?? "";
   const applicationHref = matchingDetail
     ? careerApplicationPath(matchingDetail.application.id, interview.id)
     : careerViewPath("applications");
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="interview-schedule-dialog">
-        <DialogHeader><DialogTitle>面试详情</DialogTitle><DialogDescription className="sr-only">查看本场面试的时间、方式、关联投递和准备资料。</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>面试详情</DialogTitle><DialogDescription className="sr-only">查看本场面试的时间、方式、关联投递和已有资料。</DialogDescription></DialogHeader>
         <section className="schedule-dialog-card">
           <header><h3>{interview.company}</h3><div><span className={`schedule-stage-badge calendar-${interview.color}`}>{interview.stage}</span><StatusBadge status={interview.status} /></div></header>
           {detailLoading && <p className="schedule-dialog-loading" role="status">正在加载完整面试详情…</p>}
@@ -1284,8 +1395,8 @@ function InterviewScheduleDialog({ interview, detail, detailLoading, isMock, onC
             {meetingUrl && <div><dt><Link2 />会议链接</dt><dd><a href={meetingUrl} target="_blank" rel="noreferrer">{meetingUrl}</a></dd></div>}
           </dl>
           <OverviewLink className="schedule-dialog-application" href={applicationHref}><BriefcaseBusiness /><span>相关投递</span><strong>{interview.company} / {interview.role}</strong><ChevronRight /></OverviewLink>
-          <div className="schedule-dialog-materials"><h4><FileText />准备资料</h4><div>{assets.slice(0, 2).map((asset) => <span key={asset.id}><FileText /><b>{asset.original_file_name}</b><small>{formatBytes(asset.file_size)}</small></span>)}</div></div>
-          <div className="schedule-dialog-tasks"><h4><ListChecks />待准备事项</h4><ul>{preparationItems.map((item, index) => <li key={item}>{index < 2 ? <Check /> : <Square />}<span>{item}</span></li>)}</ul></div>
+          {assets.length > 0 && <div className="schedule-dialog-materials"><h4><FileText />准备资料</h4><div>{assets.slice(0, 2).map((asset) => <span key={asset.id}><FileText /><b>{asset.original_file_name}</b><small>{formatBytes(asset.file_size)}</small></span>)}</div></div>}
+          {preparationNote && <div className="schedule-dialog-preparation-note"><h4><ListChecks />准备备注</h4><p>{preparationNote}</p></div>}
         </section>
         <DialogFooter className="schedule-dialog-footer">
           <Button variant="outline" onClick={onClose}>关闭</Button>
@@ -1693,14 +1804,11 @@ function RecordDetail({
       onNotice(errorMessage(error));
     }
   };
-  const updateOffer = async (
-    action: "oc_received" | "written_offer_received",
-  ) => {
+  const recordOfferReceived = async () => {
     try {
       await api.recordJobApplicationOffer(
         detail.application.id,
-        action,
-        detail.application.lock_version,
+        { base_lock_version: detail.application.lock_version },
       );
       onChanged();
     } catch (error) {
@@ -1850,12 +1958,7 @@ function RecordDetail({
               <span>当前：{offerStatusLabel(detail.application.offer_status)}</span>
             </div>
             {detail.application.offer_status === "none" && (
-              <Button size="sm" onClick={() => void updateOffer("oc_received")}>收到 OC</Button>
-            )}
-            {(detail.application.offer_status === "none" || detail.application.offer_status === "oc_received") && (
-              <Button size="sm" variant="outline" onClick={() => void updateOffer("written_offer_received")}>
-                收到书面 Offer
-              </Button>
+              <Button size="sm" onClick={() => void recordOfferReceived()}>确认收到 Offer</Button>
             )}
           </section>
         )}
@@ -2008,6 +2111,7 @@ function WeekCalendar({
   weekStart,
   interviews,
   selectedId,
+  draftStartAt,
   onSelect,
   onMove,
   onCreate,
@@ -2015,6 +2119,7 @@ function WeekCalendar({
   weekStart: Date;
   interviews: Interview[];
   selectedId: string | null;
+  draftStartAt: string | null;
   onSelect: (id: string) => void;
   onMove: (id: string, calendarDay: number, calendarStart: number) => void;
   onCreate: (startAt?: string) => void;
@@ -2027,6 +2132,16 @@ function WeekCalendar({
   } | null>(null);
   const dragGrabOffset = useRef(0);
   const draggingInterview = interviews.find((item) => item.id === draggingId);
+  const draftStart = draftStartAt ? new Date(draftStartAt) : null;
+  const validDraftStart = draftStart && Number.isFinite(draftStart.getTime()) ? draftStart : null;
+  const draftDayStart = validDraftStart ? new Date(validDraftStart) : null;
+  draftDayStart?.setHours(0, 0, 0, 0);
+  const draftCalendarDay = draftDayStart
+    ? Math.round((draftDayStart.getTime() - weekStart.getTime()) / 86_400_000)
+    : -1;
+  const draftCalendarStart = validDraftStart
+    ? validDraftStart.getHours() * 2 + Math.floor(validDraftStart.getMinutes() / 30)
+    : -1;
   useLayoutEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 9 * 60;
   }, []);
@@ -2141,6 +2256,20 @@ function WeekCalendar({
               </span>
             </div>
           )}
+          {validDraftStart && draftCalendarDay >= 0 && draftCalendarDay < 7 && (
+            <div
+              className="week-event week-event-draft calendar-gray"
+              aria-hidden="true"
+              style={{
+                gridColumn: draftCalendarDay + 2,
+                gridRow: `${draftCalendarStart + 1} / span 2`,
+              }}
+            >
+              <strong className="week-event-company">待创建面试</strong>
+              <span className="week-event-time"><i aria-hidden="true" />{formatScheduleTime(draftCalendarStart)} – {formatScheduleTime(draftCalendarStart + 2)}</span>
+              <em className="week-event-stage">未保存</em>
+            </div>
+          )}
           {interviews.filter((item) => item.calendarDay >= 0 && item.calendarDay < 7).map((item) => (
             <button
               type="button"
@@ -2167,8 +2296,9 @@ function WeekCalendar({
                 setDropTarget(null);
               }}
             >
+              <strong className="week-event-company">{item.company}</strong>
               <span className="week-event-time"><i aria-hidden="true" />{item.time} – {item.endTime}</span>
-              <span className="week-event-company"><strong>{item.company}</strong><em>{item.stage}</em></span>
+              <em className="week-event-stage">{item.stage}</em>
             </button>
           ))}
         </div>
@@ -2177,15 +2307,25 @@ function WeekCalendar({
   );
 }
 
-function MonthCalendar({ monthStart, gridStart, interviews, selectedId, onSelect, onCreate }: {
+function MonthCalendar({ monthStart, gridStart, interviews, selectedId, draftStartAt, onSelect, onCreate }: {
   monthStart: Date;
   gridStart: Date;
   interviews: Interview[];
   selectedId: string | null;
+  draftStartAt: string | null;
   onSelect: (id: string) => void;
   onCreate: (startAt?: string) => void;
 }) {
+  const monthFallbackColors: InterviewCalendarColor[] = ["red", "orange", "green", "blue", "purple"];
+  const eventColor = (item: Interview): InterviewCalendarColor => {
+    if (item.color !== "gray") return item.color;
+    const hash = Array.from(item.id).reduce((total, character) => total + character.charCodeAt(0), 0);
+    return monthFallbackColors[hash % monthFallbackColors.length];
+  };
   const today = isoDate(new Date());
+  const draftStart = draftStartAt ? new Date(draftStartAt) : null;
+  const validDraftStart = draftStart && Number.isFinite(draftStart.getTime()) ? draftStart : null;
+  const draftDateKey = validDraftStart ? isoDate(validDraftStart) : null;
   const days = Array.from({ length: 42 }, (_, index) => addDays(gridStart, index));
   return (
     <div className="month-calendar" role="grid" aria-label={`${monthStart.getFullYear()}年${monthStart.getMonth() + 1}月面试排期`}>
@@ -2194,6 +2334,8 @@ function MonthCalendar({ monthStart, gridStart, interviews, selectedId, onSelect
         {days.map((day) => {
           const dateKey = isoDate(day);
           const dayInterviews = interviews.filter((item) => isoDate(new Date(item.startAt)) === dateKey);
+          const hasDraft = dateKey === draftDateKey;
+          const visibleInterviewLimit = hasDraft ? 1 : 2;
           return (
             <div
               key={dateKey}
@@ -2208,12 +2350,17 @@ function MonthCalendar({ monthStart, gridStart, interviews, selectedId, onSelect
             >
               <span className="month-calendar-date">{day.getDate()}</span>
               <div className="month-calendar-events">
-                {dayInterviews.slice(0, 3).map((item) => (
-                  <button key={item.id} type="button" className={`calendar-${item.color}${selectedId === item.id ? " is-selected" : ""}`} onClick={() => onSelect(item.id)}>
-                    <time>{item.time}</time><strong>{item.company}</strong><em>{item.stage}</em>
+                {hasDraft && validDraftStart && (
+                  <div className="month-event-draft calendar-gray" aria-hidden="true">
+                    <time>{formatTime(validDraftStart)}</time><strong>待创建面试</strong><em className="visually-hidden">未保存</em>
+                  </div>
+                )}
+                {dayInterviews.slice(0, visibleInterviewLimit).map((item) => (
+                  <button key={item.id} type="button" className={`calendar-${eventColor(item)}${selectedId === item.id ? " is-selected" : ""}`} onClick={() => onSelect(item.id)}>
+                    <time>{item.time}</time><strong>{item.company}</strong><em className="visually-hidden">{item.stage}</em>
                   </button>
                 ))}
-                {dayInterviews.length > 3 && <small>还有 {dayInterviews.length - 3} 场</small>}
+                {dayInterviews.length > visibleInterviewLimit && <small>还有 {dayInterviews.length - visibleInterviewLimit} 场</small>}
               </div>
             </div>
           );

@@ -21,6 +21,7 @@ export type InterviewView = "applications" | "schedule" | "records";
 
 type NavigateOptions = {
   replace?: boolean;
+  state?: unknown;
 };
 
 const editorPathPattern = /^\/resumes\/([^/]+)\/edit$/;
@@ -228,8 +229,8 @@ export function adminLoginPath(next?: string | null) {
 export function navigateTo(path: string, options: NavigateOptions = {}) {
   const current = `${window.location.pathname}${window.location.search}`;
   if (current === path) return;
-  if (options.replace) window.history.replaceState(null, "", path);
-  else window.history.pushState(null, "", path);
+  if (options.replace) window.history.replaceState(options.state ?? null, "", path);
+  else window.history.pushState(options.state ?? null, "", path);
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
 

@@ -7,9 +7,7 @@ from typing import Literal
 ApplicationStatus = Literal["active", "rejected", "withdrawn", "closed"]
 StageType = Literal["screening", "interview", "hr", "offer"]
 StageState = Literal["awaiting_schedule", "scheduled", "awaiting_result", "negotiating"]
-OfferStatus = Literal[
-    "none", "oc_received", "written_offer_received", "accepted", "declined"
-]
+OfferStatus = Literal["none", "received", "accepted", "declined"]
 
 POST_APPLICATION_SCREENING_LABEL = "筛选中"
 
@@ -118,17 +116,12 @@ def advance_application(
     )
 
 
-def record_offer(
-    state: ApplicationStateValue,
-    offer_status: Literal["oc_received", "written_offer_received"],
-) -> ApplicationStateValue:
+def record_offer(state: ApplicationStateValue) -> ApplicationStateValue:
     if state.status != "active" or state.stage_type != "offer":
         raise InvalidTransition("the application is not in offer negotiation")
-    if state.offer_status == "written_offer_received" and offer_status == "oc_received":
-        raise InvalidTransition("a written offer cannot move back to an offer call")
     if state.offer_status in {"accepted", "declined"}:
         raise InvalidTransition("the offer has already reached a final result")
-    return replace(state, stage_state="negotiating", offer_status=offer_status)
+    return replace(state, stage_state="negotiating", offer_status="received")
 
 
 def close_application(
@@ -146,8 +139,8 @@ def close_application(
             return state
         raise InvalidTransition("the application is already closed")
     if offer_status is not None:
-        if state.offer_status not in {"written_offer_received", offer_status}:
-            raise InvalidTransition("a final offer result requires a written offer")
+        if state.offer_status not in {"received", offer_status}:
+            raise InvalidTransition("a final offer result requires a received offer")
         if status != "closed":
             raise InvalidTransition("offer results close the application")
         return replace(state, status="closed", offer_status=offer_status)

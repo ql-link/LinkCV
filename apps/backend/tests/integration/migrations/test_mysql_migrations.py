@@ -34,7 +34,7 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0051"
+EXPECTED_HEAD = "0053"
 
 
 def canonical_editor_markdown(data: dict[str, Any]) -> str:
@@ -2028,7 +2028,10 @@ def test_0051_repairs_a_stamped_legacy_profile_schema() -> None:
             assert str(row["created_at"]) == "2026-08-01 12:00:00"
             assert str(row["updated_at"]) == "2026-08-02 12:00:00"
             assert connection.scalar(text("SELECT COUNT(*) FROM user_profiles")) == 1
-            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0051"
+            assert (
+                connection.scalar(text("SELECT version_num FROM alembic_version"))
+                == EXPECTED_HEAD
+            )
     finally:
         engine.dispose()
         reset_test_database_to_base(database_url)
@@ -2090,7 +2093,108 @@ def test_0051_advances_an_already_final_profile_schema_without_data_changes() ->
                 {"profile_id": profile_id},
             ).one()
             assert after == before
-            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0051"
+            assert (
+                connection.scalar(text("SELECT version_num FROM alembic_version"))
+                == EXPECTED_HEAD
+            )
+    finally:
+        engine.dispose()
+        reset_test_database_to_base(database_url)
+
+
+def test_0052_and_0053_merge_offer_statuses_and_use_single_salary() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0051")
+    engine = create_engine(database_url)
+
+    try:
+        with engine.begin() as connection:
+            user_id = connection.execute(
+                text(
+                    "INSERT INTO users (email, password_hash, nickname) "
+                    "VALUES ('offer-0052@example.invalid', '$2b$12$fictional', '张三')"
+                )
+            ).lastrowid
+            for row_id, legacy_status in enumerate(
+                ("oc_received", "written_offer_received"), start=1
+            ):
+                connection.execute(
+                    text(
+                        "INSERT INTO job_applications ("
+                        "id, user_id, company_name_snapshot, job_title_snapshot, "
+                        "job_snapshot, calendar_color, current_stage_type, "
+                        "current_stage_label, stage_state, offer_status"
+                        ") VALUES ("
+                        ":id, :user_id, 'Offer 示例公司', '后端开发工程师', "
+                        "JSON_OBJECT('schema_version', 1), 'blue', 'offer', "
+                        "'Offer', 'negotiating', :offer_status)"
+                    ),
+                    {
+                        "id": row_id,
+                        "user_id": user_id,
+                        "offer_status": legacy_status,
+                    },
+                )
+
+        run_alembic(database_url, "upgrade", "0052")
+
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE job_applications SET offer_salary_min = 20000, "
+                    "offer_salary_max = 30000, offer_salary_currency = 'CNY', "
+                    "offer_salary_period = 'month' WHERE id = 1"
+                )
+            )
+            connection.execute(
+                text(
+                    "UPDATE job_applications SET offer_salary_max = 18000, "
+                    "offer_salary_currency = 'CNY', offer_salary_period = 'month' "
+                    "WHERE id = 2"
+                )
+            )
+
+        run_alembic(database_url, "upgrade", "head")
+
+        columns = {
+            column["name"]: column
+            for column in inspect(engine).get_columns("job_applications")
+        }
+        assert {
+            "offer_base_location",
+            "offer_salary",
+            "offer_salary_currency",
+            "offer_salary_period",
+            "offer_benefits_description",
+        } <= set(columns)
+        assert {"offer_salary_min", "offer_salary_max"}.isdisjoint(columns)
+        assert columns["offer_salary"]["type"].precision == 12
+        assert columns["offer_salary"]["type"].scale == 2
+        assert columns["offer_salary_currency"]["type"].length == 3
+        assert columns["offer_salary_currency"]["type"].collation == "ascii_bin"
+
+        with engine.connect() as connection:
+            statuses = connection.execute(
+                text("SELECT offer_status FROM job_applications ORDER BY id")
+            ).scalars().all()
+            assert statuses == ["received", "received"]
+            salaries = connection.execute(
+                text("SELECT offer_salary FROM job_applications ORDER BY id")
+            ).scalars().all()
+            assert salaries == [20000, 18000]
+            assert connection.scalar(
+                text("SELECT version_num FROM alembic_version")
+            ) == EXPECTED_HEAD
+
+        with pytest.raises(DBAPIError):
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "UPDATE job_applications SET offer_salary = 30000, "
+                        "offer_salary_currency = NULL WHERE id = 1"
+                    )
+                )
     finally:
         engine.dispose()
         reset_test_database_to_base(database_url)
