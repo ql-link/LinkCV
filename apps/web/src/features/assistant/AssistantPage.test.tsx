@@ -41,6 +41,8 @@ describe("AssistantPage", () => {
 
     render(<AssistantPage />);
 
+    expect(await screen.findByRole("region", { name: "最近对话" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Pinned" })).not.toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "待整理对话 的更多操作" }));
     const firstMenu = screen.getByRole("menu", { name: "待整理对话 的操作菜单" });
     expect(within(firstMenu).getByRole("menuitem", { name: "Pin" })).toBeInTheDocument();
@@ -49,6 +51,9 @@ describe("AssistantPage", () => {
 
     await user.click(within(firstMenu).getByRole("menuitem", { name: "Pin" }));
     expect(updateSession).toHaveBeenNthCalledWith(1, "session-1", { pinned: true });
+    const pinnedGroup = await screen.findByRole("region", { name: "Pinned" });
+    expect(within(pinnedGroup).getByRole("button", { name: "待整理对话" })).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "最近对话" })).queryByRole("button", { name: "待整理对话" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "待整理对话 的更多操作" }));
     await user.click(screen.getByRole("menuitem", { name: "Rename" }));
@@ -63,6 +68,30 @@ describe("AssistantPage", () => {
     await user.click(screen.getByRole("button", { name: "删除" }));
     await waitFor(() => expect(deleteSession).toHaveBeenCalledWith("session-1"));
     expect(screen.queryByText("新的对话名称")).not.toBeInTheDocument();
+  });
+
+  it("仅在存在置顶会话时显示 Pinned 分组", async () => {
+    const user = userEvent.setup();
+    const pinnedSession = { ...session, id: "session-pinned", title: "置顶对话", pinned: true };
+    const recentSession = { ...session, id: "session-recent", title: "普通对话", pinned: false };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [pinnedSession, recentSession] });
+    vi.spyOn(api, "updateAgentSession").mockResolvedValue({
+      session: { ...pinnedSession, pinned: false },
+    });
+
+    render(<AssistantPage />);
+
+    const pinnedGroup = await screen.findByRole("region", { name: "Pinned" });
+    expect(within(pinnedGroup).getByRole("button", { name: "置顶对话" })).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "最近对话" })).getByRole("button", { name: "普通对话" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "置顶对话 的更多操作" }));
+    await user.click(screen.getByRole("menuitem", { name: "Unpin" }));
+
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Pinned" })).not.toBeInTheDocument());
+    const recentGroup = screen.getByRole("region", { name: "最近对话" });
+    expect(within(recentGroup).getByRole("button", { name: "置顶对话" })).toBeInTheDocument();
+    expect(within(recentGroup).getByRole("button", { name: "普通对话" })).toBeInTheDocument();
   });
 
   it("通过独立会话路由直接恢复对应对话", async () => {
@@ -80,7 +109,7 @@ describe("AssistantPage", () => {
 
     render(<AssistantPage sessionId="session-1" />);
 
-    expect(await screen.findByText("这是已恢复的回答")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("这是已恢复的回答")).toBeInTheDocument());
     expect(api.getAgentSession).toHaveBeenCalledWith("session-1");
     expect(window.location.pathname).toBe("/assistant/session-1");
   });

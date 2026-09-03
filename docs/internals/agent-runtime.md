@@ -48,7 +48,7 @@ Agent 系统由 FastAPI `agent` 模块、独立 `apps/pi-service` 和 FastAPI `l
 ## 故障与降级
 
 - Pi readiness 失败时 FastAPI 仍可提供非 Agent 业务，但助手入口显示不可用且不能创建假成功运行。
-- 会话标题和置顶状态由 FastAPI 在用户归属校验后直接持久化；这些 PATCH 操作不进入消息/模型调用链。删除会话会锁住目标会话及其运行，运行中时返回 `AGENT_RUN_IN_PROGRESS`，否则按 proposal、tool call、message、run、session 顺序事务清理。
+- 会话标题和置顶状态由 FastAPI 在用户归属校验后直接持久化；这些 PATCH 操作不进入消息/模型调用链。Web 根据返回的 `pinned` 状态把置顶会话投影到独立 `Pinned` 分组，其分组显隐、三点菜单展开方向和滚动空间只属于客户端呈现，不改变这些 PATCH 或 DELETE 契约。删除会话会锁住目标会话及其运行，运行中时返回 `AGENT_RUN_IN_PROGRESS`，否则按 proposal、tool call、message、run、session 顺序事务清理。
 - `/api/agent/model` 未绑定模型时返回 `503 LLM_MODEL_NOT_CONFIGURED`；成功时只返回当前绑定的 `adapter` 和 `name`，不触发凭据解密。
 - 模型未绑定、凭据不可解密、探针失败、供应商超时和计量缺失分别保留稳定状态；调用日志只记录非敏感错误码。
 - SSE 在正常终态前断开时标记连接中断；取消和失败不会生成可确认提案。
