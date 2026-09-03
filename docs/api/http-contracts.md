@@ -66,7 +66,7 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 
 简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`，数据库 ID 在 HTTP 中使用十进制字符串。维护窗口升级到 `0047` 后，运行期只接受 `schema_version=canonical-resume.v1` 的 `data` 和 `schema_version=resume-presentation.v1` 的 `style`；旧 `basics/semantic_sections/custom_sections` 与旧 `manifest` 只允许进入一次性迁移转换器，不能通过普通保存、模板切换、版本、Agent、分享或 PDF API 写回。`CanonicalResumeDocument` 使用稳定 `node_*`、identity、按语义排序的 sections、段落/列表/媒体以及章节内 `row`（`pair` 两格、`meta` 四格、`trio` 三格）和 `source_refs/source_dispositions` 保存唯一内容真值；row/cell 是模板无关的正文结构，禁止保存模板级 region、slot、sidebar/main、column、CSS、分页和编辑器 selection。`TemplateDefinition` 的严格 `avatar` 包含 `visibility`、`fallback_asset`、`size_px` 和已声明的 `region_id`；系统默认头像只在渲染投影中出现，不写回 canonical 正文。`ResumePresentation` 使用 `portable/template_scoped/template_snapshot` 保存展示设置与当前模板快照；`portable.smart_one_page` 控制连续单页或标准 A4 导出。模板切换只更换模板身份、presentation 与后端编译的 `LayoutPlan`，正文规范摘要必须保持不变。字段闭集、数量和长度、URL、node/source 唯一性与来源闭包均严格校验；LLM 只返回稀疏语义标注，未标注源块由确定性组合器保留，不生成“未分类内容”。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不是简历写契约。
 
-Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，把旧 `"1.0"` JSON 一次性转换为上述唯一契约；`0037`–`0040` 依次拆分官方编辑 Markdown、移除 typed 副本、规范区块 ID 并修正双栏插槽。`0041` 再对模板、当前简历和历史版本全量预检，把旧整篇编辑正文及跨章节残留的 `sidebar/main` 页级包装转换为无投影语义块，保留可见文字与私有用户头像，并为双栏 manifest 补齐 `profile/interests` 路由；写后重复完整校验。`0042` 恢复经典技术模板及既有快照的生产页边距并从目录删除 `blank-cn`，历史简历依靠 `ON DELETE SET NULL` 暂时只清空来源引用。`0043` 增加资料上传幂等和可靠调度字段，`0044`–`0046` 建立并收敛 `user_profiles`。`0047` 全量只读预检后执行 canonical 切流；若历史简历或版本仍引用 `blank-cn`，先创建不含用户内容、`is_active=0` 的 tombstone 身份，再把各行绑定到该身份，各自正文和冻结样式仍从自己的旧快照转换。未知退役身份、关系冲突或非法 JSON 在首次写入前阻断。`0048` 确定性重组 canonical row 并恢复 avatar 策略；`0049` 为活动导入任务回填受理时模板定义，Worker 不再从可变模板目录重新取版式。发布顺序为停止旧写入、备份、从真实 current 按顺序升级到 `0049`、验证后启动新应用；失败时依赖备份恢复，不执行 downgrade。
+Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，把旧 `"1.0"` JSON 一次性转换为上述唯一契约；`0037`–`0040` 依次拆分官方编辑 Markdown、移除 typed 副本、规范区块 ID 并修正双栏插槽。`0041` 再对模板、当前简历和历史版本全量预检，把旧整篇编辑正文及跨章节残留的 `sidebar/main` 页级包装转换为无投影语义块，保留可见文字与私有用户头像，并为双栏 manifest 补齐 `profile/interests` 路由；写后重复完整校验。`0042` 恢复经典技术模板及既有快照的生产页边距并从目录删除 `blank-cn`，历史简历依靠 `ON DELETE SET NULL` 暂时只清空来源引用。`0043` 增加资料上传幂等和可靠调度字段，`0044`–`0046` 建立并收敛 `user_profiles`。`0047` 全量只读预检后执行 canonical 切流；若历史简历或版本仍引用 `blank-cn`，先创建不含用户内容、`is_active=0` 的 tombstone 身份，再把各行绑定到该身份，各自正文和冻结样式仍从自己的旧快照转换。未知退役身份、关系冲突或非法 JSON 在首次写入前阻断。`0048` 确定性重组 canonical row 并恢复 avatar 策略；`0049` 为活动导入任务回填受理时模板定义；`0050` 规范官方模板图标；`0051` 修复已标记迁移环境中的画像结构漂移；`0052` 为 Agent 会话增加持久化置顶状态及对应列表索引；`0053` 简化 Offer 状态并增加可选详情；`0054` 将 Offer 薪资收敛为单值字段。所有 revision 均为 forward-only，发布顺序仍为停止旧写入、备份、从真实 current 按顺序升级到 `0054`、验证后启动新应用；失败时依赖备份恢复，不执行 downgrade。
 
 | Method   | Path                        | 鉴权 | 成功结果                                                         |
 | -------- | --------------------------- | ---- | ---------------------------------------------------------------- |
@@ -106,15 +106,18 @@ Web PDF 请求必须携带当前保存成功后的 `lock_version`。服务端再
 
 ## 简历智能助手
 
-除部署探针 `GET /api/agent/readiness` 外，智能助手接口全部要求登录，且会话、运行与提案都按当前用户重新校验归属；不存在或越权资源返回对应 `AGENT_*_NOT_FOUND`，不暴露其他用户数据。消息发送使用 POST SSE，不使用浏览器原生 `EventSource`。
+除部署探针 `GET /api/agent/readiness` 外，智能助手接口全部要求登录，且会话、运行、模型摘要与提案都按当前用户重新校验归属；不存在或越权资源返回对应 `AGENT_*_NOT_FOUND`，不暴露其他用户数据。消息发送使用 POST SSE，不使用浏览器原生 `EventSource`。
 
 | Method | Path | 成功结果 |
 | --- | --- | --- |
 | `GET` | `/api/agent/readiness` | `200 {ready: true}`；只读校验完整 Agent 服务链，不返回模型或凭据 |
+| `GET` | `/api/agent/model` | `200 {model: {adapter, name}}`；登录后读取当前 `pi_agent` 绑定的非敏感模型摘要，不返回配置 ID、地址、凭据、价格或验证记录 |
 | `GET` | `/api/agent/contexts[?type=:type&q=:query&limit=:limit]` | `{contexts}`；返回当前用户可选的轻量资料引用，类型为 `resume`、`resume_version`、`job`、`application` 或 `interview`；不返回正文 |
 | `GET` | `/api/agent/sessions[?resume_id=:id]` | `{sessions}`，`resume_id` 可选；传入时按本人简历过滤，省略时返回当前用户跨简历最近更新的至多 50 个会话 |
 | `POST` | `/api/agent/sessions` | `201 {session}`；请求为 `{resume_id?, title?}`，独立助手页可先创建未绑定简历的会话 |
 | `GET` | `/api/agent/sessions/:sessionId` | `{session}`，包含最近 100 条消息 |
+| `PATCH` | `/api/agent/sessions/:sessionId` | `200 {session}`；请求至少包含一个字段，可更新 `title`（trim 后 1–128 字符）或 `pinned`（布尔值） |
+| `DELETE` | `/api/agent/sessions/:sessionId` | `204`；无运行中任务时永久删除该会话及其 Agent 依赖数据 |
 | `POST` | `/api/agent/sessions/:sessionId/messages` | SSE；请求为 `{content, idempotency_key, selection_context?, contexts?, reply_to_sequence_no?}`；`contexts` 最多 10 项且同类型只能选择一项，每项携带服务端返回的 `type`、`id` 和版本标记；选区包含稳定块 ID、编辑器范围、原文和 SHA-256；回答结构化澄清问题时必须携带对应助手消息序号 |
 | `POST` | `/api/agent/runs/:runId/cancel` | `{run_id, status}`；重复取消幂等 |
 | `GET` | `/api/agent/proposals?resume_id=:id&session_id=:sessionId` | `{proposals}`，只返回当前待确认提案；`session_id` 可选，传入时同时校验会话归属和简历绑定并按会话过滤 |
@@ -122,6 +125,9 @@ Web PDF 请求必须携带当前保存成功后的 `lock_version`。服务端再
 | `POST` | `/api/agent/proposals/:proposalId/reject` | `{proposal}`；放弃待确认提案 |
 
 SSE 事件包括 `run.started`、`run.phase`、`assistant.delta`、`clarification.requested`、`tool.started`、`tool.completed`、`proposal.created`、`run.completed`、`run.cancelled` 和 `run.failed`。`run.phase` 只允许服务端定义的稳定阶段和安全化文案，并可携带实际引用资料数量，不暴露工具参数或推理内容。`clarification.requested` 携带版本化的 `clarification`：1–3 个问题，每题 2–3 个 `{id,label,description?}` 选项；客户端额外提供自由输入的“其他”。该成功运行把助手消息以 `message_type=clarification` 持久化，普通文本消息为 `message_type=text`。回答只有在 `reply_to_sequence_no` 仍指向当前会话最后一条澄清消息时才创建新运行，否则返回 `409 AGENT_CLARIFICATION_STALE`，客户端应刷新当前会话。每个成功建立的 SSE 响应必须以后三种 `run.*` 终态之一结束；Pi 在 HTTP 200 后提前 EOF 时 FastAPI 补发 `run.failed/AGENT_UPSTREAM_FAILED`，浏览器也会把无终态 EOF 识别为 `AGENT_STREAM_INCOMPLETE`。只有 `run.completed` 才把完整助手文本或结构化澄清消息和可用的 Token/估算成本写入数据库；失败、取消或缺失终态不会把已经流出的部分文本保存成历史消息。同一用户只允许一个 running 运行；相同 `idempotency_key` 重放现有运行状态。取消与流式完成并发时采用第一个成功写入的终态，后到操作不得覆盖。
+`/api/agent/model` 成功响应严格只有 `{model: {adapter, name}}`，其中 `adapter` 和 `name` 来自当前 `pi_agent` binding 与配置的 `model_call_name`；查询只解析绑定配置，不为展示目的解密凭据。未绑定或绑定配置不存在时返回 `503 LLM_MODEL_NOT_CONFIGURED`；其他受控 `LLMError` 也只映射为 `503` 错误码，不向浏览器暴露 `call_id`。
+
+`AgentSessionRecord` 始终包含布尔 `pinned`；会话列表先按 `pinned DESC`，再按 `updated_at DESC, id DESC`。PATCH 只更新会话标题或置顶状态，不创建消息、不启动模型调用；标题会先去除并归一化空白，空标题、超长标题、空请求或显式 `null` 返回请求校验错误。PATCH/DELETE 都按当前用户校验归属，其他用户统一返回 `404 AGENT_SESSION_NOT_FOUND`。DELETE 会锁定会话和运行；存在 `status=running` 的运行返回 `409 AGENT_RUN_IN_PROGRESS` 且不修改数据，否则在一个事务内按 proposal、tool call、message、run、session 顺序清理，不影响其他会话或用户。
 
 独立助手页选择的资料不是可信正文：FastAPI 按当前用户重新查询每项资源、核对版本标记、拒绝不存在、越权或已过期的引用，并仅把受控字段和有界正文作为本轮只读 `contextMaterials` 交给 Pi。用户消息只持久化轻量引用快照，后续读取不会把历史正文重新注入。会话首次成功发送带简历归属的资料时绑定该简历；已经绑定的会话不能改绑其他简历。Agent 只能修改会话绑定的简历，并且不能直接写简历：修改先解析稳定 locator，再读取最小范围、生成结构化诊断并创建类型化 operation 提案；服务端在快照副本上应用 operation 后仍保存完整候选 data/style。旧的完整快照内部提案接口保留一个兼容期，存量 pending 提案仍可确认。确认时同时校验 `base_lock_version`、locator 和目标内容哈希；整份简历发生并发变化返回 `409 RESUME_EDIT_CONFLICT`，目标块失效返回 `409 TARGET_STALE` 并把提案标记为 conflicted。过期提案返回 `410 AGENT_PROPOSAL_EXPIRED`，正式版本已达上限时返回 `409 RESUME_VERSION_LIMIT_REACHED` 且不应用提案。上下文不存在或过期分别返回 `AGENT_CONTEXT_NOT_FOUND`、`AGENT_CONTEXT_STALE`；会话改绑返回 `AGENT_SESSION_RESUME_MISMATCH`。服务或模型不可用返回安全化的 `AGENT_UNAVAILABLE`、`AGENT_MODEL_UNAVAILABLE`、`AGENT_MODEL_UNSUPPORTED`、`AGENT_MODEL_TIMEOUT` 或 `AGENT_MODEL_REQUEST_FAILED`，供应商原始错误和 API Key 不进入浏览器响应。
 
@@ -259,7 +265,7 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 
 排期使用带时区的 `start_at/end_at`，开始时间必须是有效 24 小时制 `HH:mm`（秒和微秒为 0），服务端转成 UTC 保存；不画半点辅助线不影响 30 分钟吸附契约。与本人其他未取消面试重叠时返回 `409 INTERVIEW_TIME_CONFLICT` 和冲突摘要，只有请求再次携带 `allow_conflict=true` 才保存。完成面试会保存自由文本题目、复盘和改进点，并把求职进程置为 `awaiting_result`；它不会自动推断通过或把卡片移动到下一阶段。`advance` 负责把最近一场待确认结果标为通过并移动进程，`close` 负责标记未通过或其他终态。过期 `base_lock_version` 返回 `409 INTERVIEW_EDIT_CONFLICT`，不合法状态跳转返回 `409 INTERVIEW_INVALID_TRANSITION`。
 
-Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `received`；迁移 `0052` 将历史 `oc_received` 与 `written_offer_received` 合并为 `received`。`POST /api/job-applications/:id/offer` 只要求 `base_lock_version`，并接受全部可空的 `base_location`、`salary`、`salary_currency`、`salary_period`、`benefits_description`；空请求仍会记录为已收到 Offer。填写数值薪资时必须同时提供大写三字母币种与 `hour/day/month/year` 计薪周期。求职进程响应以 `offer_` 前缀返回这五个详情字段。迁移 `0053` 将原薪资下限重命名为单值 `offer_salary` 并删除薪资上限；旧记录缺少下限但存在上限时保留原上限值。总览指标使用 `offers_received`，统计 `received/accepted/declined`，不再返回 `written_offers`。
+Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `received`；迁移 `0053` 将历史 `oc_received` 与 `written_offer_received` 合并为 `received`。`POST /api/job-applications/:id/offer` 只要求 `base_lock_version`，并接受全部可空的 `base_location`、`salary`、`salary_currency`、`salary_period`、`benefits_description`；空请求仍会记录为已收到 Offer。填写数值薪资时必须同时提供大写三字母币种与 `hour/day/month/year` 计薪周期。求职进程响应以 `offer_` 前缀返回这五个详情字段。迁移 `0054` 将原薪资下限重命名为单值 `offer_salary` 并删除薪资上限；旧记录缺少下限但存在上限时保留原上限值。总览指标使用 `offers_received`，统计 `received/accepted/declined`，不再返回 `written_offers`。
 
 `GET /api/job-applications` 按 `updated_at DESC, id DESC` 分页，`GET /api/interview-sessions` 按 `start_at ASC, id ASC` 分页；两者的 `next_cursor` 都是不透明且与当前筛选条件绑定的游标。调用方必须把游标与原筛选一起回传；游标损坏、跨筛选复用或超长都返回 `400 INVALID_INTERVIEW_QUERY`。创建面试的 `(application_id, client_request_id)` 唯一：相同请求重放返回原场次，相同标识绑定到不同时间或内容时返回 `409 INTERVIEW_EDIT_CONFLICT`。
 

@@ -321,6 +321,7 @@ export type AgentSession = {
   id: string;
   resume_id: string | null;
   title: string;
+  pinned: boolean;
   status: "active" | "archived";
   last_message_at: string | null;
   created_at: string;
@@ -728,6 +729,11 @@ export type ChatAdapter =
   | "mistral"
   | "cohere_chat"
   | "perplexity";
+
+export type AgentModelSummary = {
+  adapter: ChatAdapter;
+  name: string;
+};
 
 export type LlmModelLastTest = {
   status: "succeeded" | "failed" | "cancelled";
@@ -1284,6 +1290,7 @@ export const api = {
       `/api/agent/sessions${resumeId ? `?resume_id=${encodeURIComponent(resumeId)}` : ""}`,
     ),
   getAgentReadiness: () => request<{ ready: boolean }>("/api/agent/readiness"),
+  getAgentModel: () => request<{ model: AgentModelSummary }>("/api/agent/model"),
   listAgentContexts: (options: {
     type?: AgentContextType;
     search?: string;
@@ -1312,6 +1319,13 @@ export const api = {
         ...(title ? { title } : {}),
       },
     }),
+  updateAgentSession: (sessionId: string, payload: { title?: string; pinned?: boolean }) =>
+    request<{ session: AgentSession }>(
+      `/api/agent/sessions/${encodeURIComponent(sessionId)}`,
+      { method: "PATCH", body: payload },
+    ),
+  deleteAgentSession: (sessionId: string) =>
+    request<void>(`/api/agent/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" }),
   streamAgentMessage,
   cancelAgentRun: (runId: string) =>
     request<{ run_id: string; status: string }>(

@@ -317,7 +317,7 @@ describe("ResumeWorkbench 字体选择", () => {
     await user.click(trigger);
     expect(screen.getByRole("listbox")).toHaveAttribute("data-ui-theme", "light");
     const wenkaiOption = screen.getByRole("option", { name: /霞鹜文楷/ });
-    expect(wenkaiOption).toHaveTextContent("霞鹜文楷");
+    expect(wenkaiOption).toHaveTextContent("霞鹜文楷 Medium");
     expect(wenkaiOption).not.toHaveTextContent("张三的简历 Resume");
     expect(wenkaiOption.querySelector(".workbench-font-option-copy")).toHaveStyle({
       fontFamily: '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif',

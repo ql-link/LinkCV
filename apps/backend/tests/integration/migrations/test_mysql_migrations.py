@@ -34,7 +34,7 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0053"
+EXPECTED_HEAD = "0054"
 
 
 def canonical_editor_markdown(data: dict[str, Any]) -> str:
@@ -150,6 +150,30 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "resume_change_proposals",
     }:
         assert inspector.get_foreign_keys(agent_table) == []
+    session_columns = {
+        column["name"]: column for column in inspector.get_columns("agent_sessions")
+    }
+    assert session_columns["pinned"]["nullable"] is False
+    assert str(session_columns["pinned"]["default"]).strip("'").lower() in {
+        "0",
+        "false",
+    }
+    session_indexes = {
+        index["name"]: index["column_names"]
+        for index in inspector.get_indexes("agent_sessions")
+    }
+    assert session_indexes["idx_agent_sessions_user_pinned_updated"] == [
+        "user_id",
+        "pinned",
+        "updated_at",
+        "id",
+    ]
+    assert session_indexes["idx_agent_sessions_resume_pinned_updated"] == [
+        "resume_id",
+        "pinned",
+        "updated_at",
+        "id",
+    ]
     proposal_columns = {
         column["name"]: column
         for column in inspector.get_columns("resume_change_proposals")
@@ -316,9 +340,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "parse_task_id" not in foreign_key["constrained_columns"]
         for foreign_key in inspector.get_foreign_keys("resumes")
     )
-    assert {
-        column["name"] for column in inspector.get_columns("user_dataset")
-    } == {
+    assert {column["name"] for column in inspector.get_columns("user_dataset")} == {
         "id",
         "user_id",
         "idempotency_key",
@@ -352,8 +374,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     } == {"uk_users_email"}
     user_columns = {column["name"]: column for column in inspector.get_columns("users")}
     dataset_columns = {
-        column["name"]: column
-        for column in inspector.get_columns("user_dataset")
+        column["name"]: column for column in inspector.get_columns("user_dataset")
     }
     task_columns = {
         column["name"]: column
@@ -1175,11 +1196,15 @@ def test_0040_repairs_existing_official_column_template_manifest() -> None:
             if slot["region_id"] == "sidebar"
         )
         assert "basics" not in sidebar["accepts"]
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0040"
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0040"
+        )
     engine.dispose()
 
 
-def test_0041_removes_official_template_page_projection_without_losing_content() -> None:
+def test_0041_removes_official_template_page_projection_without_losing_content() -> (
+    None
+):
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "0040")
@@ -1191,7 +1216,9 @@ def test_0041_removes_official_template_page_projection_without_losing_content()
                 "WHERE `key` = 'administrative-sidebar-cn'"
             )
         )
-        before = json.loads(before_value) if isinstance(before_value, str) else before_value
+        before = (
+            json.loads(before_value) if isinstance(before_value, str) else before_value
+        )
         assert ":::: sidebar" in canonical_editor_markdown(before)
 
     run_alembic(database_url, "upgrade", "0041")
@@ -1202,8 +1229,16 @@ def test_0041_removes_official_template_page_projection_without_losing_content()
                 "WHERE `key` = 'administrative-sidebar-cn'"
             )
         ).one()
-        data = json.loads(row.data_json) if isinstance(row.data_json, str) else row.data_json
-        style = json.loads(row.style_json) if isinstance(row.style_json, str) else row.style_json
+        data = (
+            json.loads(row.data_json)
+            if isinstance(row.data_json, str)
+            else row.data_json
+        )
+        style = (
+            json.loads(row.style_json)
+            if isinstance(row.style_json, str)
+            else row.style_json
+        )
         snapshot = parse_resume_snapshot(data, style)
         markdown = canonical_editor_markdown(data)
         sidebar = next(
@@ -1219,11 +1254,15 @@ def test_0041_removes_official_template_page_projection_without_losing_content()
         }
         assert {"profile", "interests"} <= set(sidebar.accepts)
         assert "维护会议、采购、合同与固定资产台账" in markdown
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0041"
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0041"
+        )
     engine.dispose()
 
 
-def test_0042_deletes_blank_template_without_deleting_resumes_and_restores_layout() -> None:
+def test_0042_deletes_blank_template_without_deleting_resumes_and_restores_layout() -> (
+    None
+):
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "0041")
@@ -1309,9 +1348,12 @@ def test_0042_deletes_blank_template_without_deleting_resumes_and_restores_layou
 
     run_alembic(database_url, "upgrade", "0042")
     with engine.connect() as connection:
-        assert connection.scalar(
-            text("SELECT COUNT(*) FROM resume_templates WHERE `key` = 'blank-cn'")
-        ) == 0
+        assert (
+            connection.scalar(
+                text("SELECT COUNT(*) FROM resume_templates WHERE `key` = 'blank-cn'")
+            )
+            == 0
+        )
         retired_resume = connection.execute(
             text(
                 "SELECT template_id, data_json, style_json FROM resumes WHERE id = :id"
@@ -1353,7 +1395,9 @@ def test_0042_deletes_blank_template_without_deleting_resumes_and_restores_layou
             expected_page,
             expected_page,
         ]
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0042"
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0042"
+        )
     engine.dispose()
 
 
@@ -1566,12 +1610,12 @@ def test_0043_adds_dataset_idempotency_and_dispatch_recovery_fields() -> None:
 
         run_alembic(database_url, "upgrade", "0043")
         inspector = inspect(engine)
+        assert {column["name"] for column in inspector.get_columns("user_dataset")} >= {
+            "idempotency_key",
+            "request_fingerprint",
+        }
         assert {
-            column["name"] for column in inspector.get_columns("user_dataset")
-        } >= {"idempotency_key", "request_fingerprint"}
-        assert {
-            column["name"]
-            for column in inspector.get_columns("document_parse_tasks")
+            column["name"] for column in inspector.get_columns("document_parse_tasks")
         } >= {"parse_attempt_count", "last_dispatched_at"}
         assert {
             constraint["name"]
@@ -1610,14 +1654,20 @@ def test_0043_adds_dataset_idempotency_and_dispatch_recovery_fields() -> None:
                 {"user_id": user_id},
             ).lastrowid
             assert queued_task_id is not None
-            assert connection.scalar(
-                text(
-                    "SELECT parse_attempt_count FROM document_parse_tasks "
-                    "WHERE id = :id"
-                ),
-                {"id": queued_task_id},
-            ) == 0
-            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0043"
+            assert (
+                connection.scalar(
+                    text(
+                        "SELECT parse_attempt_count FROM document_parse_tasks "
+                        "WHERE id = :id"
+                    ),
+                    {"id": queued_task_id},
+                )
+                == 0
+            )
+            assert (
+                connection.scalar(text("SELECT version_num FROM alembic_version"))
+                == "0043"
+            )
     finally:
         engine.dispose()
         reset_test_database_to_base(database_url)
@@ -1665,9 +1715,7 @@ def test_0045_restructures_user_profiles_and_removes_obsolete_columns() -> None:
                 "skills": json.dumps(["React", "Python"], ensure_ascii=False),
                 "certifications": json.dumps(["AWS SAA"], ensure_ascii=False),
                 "honors": json.dumps(["校级奖学金"], ensure_ascii=False),
-                "campus_experiences": json.dumps(
-                    ["虚构校园项目"], ensure_ascii=False
-                ),
+                "campus_experiences": json.dumps(["虚构校园项目"], ensure_ascii=False),
             },
         ).lastrowid
         assert profile_id is not None
@@ -1681,12 +1729,16 @@ def test_0045_restructures_user_profiles_and_removes_obsolete_columns() -> None:
                     "FROM user_profiles WHERE id = :profile_id"
                 ),
                 {"profile_id": profile_id},
-            ).mappings().one()
+            )
+            .mappings()
+            .one()
         )
 
     run_alembic(database_url, "upgrade", "0045")
     inspector = inspect(engine)
-    columns = {column["name"]: column for column in inspector.get_columns("user_profiles")}
+    columns = {
+        column["name"]: column for column in inspector.get_columns("user_profiles")
+    }
     assert set(columns) == {
         "id",
         "user_id",
@@ -1772,7 +1824,9 @@ def test_0045_restructures_user_profiles_and_removes_obsolete_columns() -> None:
                     "FROM user_profiles WHERE id = :profile_id"
                 ),
                 {"profile_id": profile_id},
-            ).mappings().one()
+            )
+            .mappings()
+            .one()
         )
         assert row["user_id"] == before["user_id"]
         assert row["lock_version"] == before["lock_version"]
@@ -1807,7 +1861,9 @@ def test_0045_restructures_user_profiles_and_removes_obsolete_columns() -> None:
         ):
             assert json_array(row[field]) == json_array(before[field])
         assert connection.scalar(text("SELECT COUNT(*) FROM user_profiles")) == 1
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0045"
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0045"
+        )
 
     with pytest.raises(DBAPIError):
         with engine.begin() as connection:
@@ -1830,7 +1886,9 @@ def test_0045_restructures_user_profiles_and_removes_obsolete_columns() -> None:
     engine.dispose()
 
 
-def test_0046_simplifies_profile_preferences_and_removes_professional_directions() -> None:
+def test_0046_simplifies_profile_preferences_and_removes_professional_directions() -> (
+    None
+):
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "0045")
@@ -1889,9 +1947,7 @@ def test_0046_simplifies_profile_preferences_and_removes_professional_directions
 
     run_alembic(database_url, "upgrade", "0046")
     inspector = inspect(engine)
-    columns = {
-        column["name"] for column in inspector.get_columns("user_profiles")
-    }
+    columns = {column["name"] for column in inspector.get_columns("user_profiles")}
     assert "professional_directions" not in columns
     assert columns == {
         "id",
@@ -1927,15 +1983,18 @@ def test_0046_simplifies_profile_preferences_and_removes_professional_directions
 
     with engine.connect() as connection:
         value = connection.scalar(
-            text(
-                "SELECT employment_types FROM user_profiles WHERE id = :profile_id"
-            ),
+            text("SELECT employment_types FROM user_profiles WHERE id = :profile_id"),
             {"profile_id": profile_id},
         )
         decoded = json.loads(value) if isinstance(value, (str, bytes)) else value
         assert decoded == ["full_time", "internship"]
-        assert connection.scalar(text("SELECT COUNT(*) FROM user_profiles")) == before_count
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0046"
+        assert (
+            connection.scalar(text("SELECT COUNT(*) FROM user_profiles"))
+            == before_count
+        )
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0046"
+        )
 
     engine.dispose()
 
@@ -2102,7 +2161,7 @@ def test_0051_advances_an_already_final_profile_schema_without_data_changes() ->
         reset_test_database_to_base(database_url)
 
 
-def test_0052_and_0053_merge_offer_statuses_and_use_single_salary() -> None:
+def test_0053_and_0054_merge_offer_statuses_and_use_single_salary() -> None:
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "0051")
@@ -2113,7 +2172,7 @@ def test_0052_and_0053_merge_offer_statuses_and_use_single_salary() -> None:
             user_id = connection.execute(
                 text(
                     "INSERT INTO users (email, password_hash, nickname) "
-                    "VALUES ('offer-0052@example.invalid', '$2b$12$fictional', '张三')"
+                    "VALUES ('offer-0053@example.invalid', '$2b$12$fictional', '张三')"
                 )
             ).lastrowid
             for row_id, legacy_status in enumerate(
@@ -2137,7 +2196,7 @@ def test_0052_and_0053_merge_offer_statuses_and_use_single_salary() -> None:
                     },
                 )
 
-        run_alembic(database_url, "upgrade", "0052")
+        run_alembic(database_url, "upgrade", "0053")
 
         with engine.begin() as connection:
             connection.execute(

@@ -9,7 +9,12 @@ import {
   type LayoutPlan,
 } from "../api/resumeContract";
 import { resumeDocumentToEditorDocument } from "../features/workbench/resumeEditorPersistence";
-import { defaultSettings, useResumeStore } from "./resumeStore";
+import {
+  defaultSettings,
+  flushPendingLocalResumeDraft,
+  localResumeDraftStorageKey,
+  useResumeStore,
+} from "./resumeStore";
 
 function editorDocument(title: string): JSONContent {
   return {
@@ -128,7 +133,10 @@ function importTask(
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  globalThis.localStorage.clear();
   useResumeStore.setState({
+    authStatus: "authenticated",
+    user: null,
     resumes: [],
     activeImports: [],
     failedImports: [],
@@ -150,6 +158,79 @@ beforeEach(() => {
     editVersion: 1,
     saveStatus: "idle",
     error: null,
+  });
+});
+
+describe("resume local draft persistence", () => {
+  it("页面设置先立即更新前端状态，再由浏览器草稿兜底而不直接请求数据库", () => {
+    const update = vi.spyOn(api, "updateResume");
+    useResumeStore.setState({
+      user: {
+        id: "user-1",
+        email: "user@example.test",
+        nickname: "测试用户",
+        is_admin: false,
+      },
+    });
+
+    useResumeStore.getState().updateSettings({
+      fontSize: 12,
+      pageMargin: 22,
+      verticalPageMargin: 14,
+    });
+
+    expect(useResumeStore.getState().settings).toMatchObject({
+      fontSize: 12,
+      pageMargin: 22,
+      verticalPageMargin: 14,
+    });
+    expect(update).not.toHaveBeenCalled();
+
+    flushPendingLocalResumeDraft();
+    expect(JSON.parse(globalThis.localStorage.getItem(localResumeDraftStorageKey("user-1", "1")) ?? "{}"))
+      .toMatchObject({
+        baseLockVersion: 1,
+        settings: { fontSize: 12, pageMargin: 22, verticalPageMargin: 14 },
+      });
+  });
+
+  it("重新载入相同服务端版本时恢复未满十秒的本地草稿", async () => {
+    const user = {
+      id: "user-1",
+      email: "user@example.test",
+      nickname: "测试用户",
+      is_admin: false,
+    };
+    const draftSettings = { ...defaultSettings, fontSize: 12, pageMargin: 22, verticalPageMargin: 14 };
+    const draftContent = editorDocument("尚未自动保存的内容");
+    const localDraft = {
+      version: 1,
+      userId: user.id,
+      resumeId: "1",
+      baseLockVersion: 1,
+      title: "本地草稿标题",
+      markdown: "# 尚未自动保存的内容",
+      editorContent: draftContent,
+      settings: draftSettings,
+      editVersion: 8,
+      updatedAt: "2026-08-31T00:00:00Z",
+    };
+    globalThis.localStorage.setItem(localResumeDraftStorageKey(user.id, "1"), JSON.stringify(localDraft));
+    useResumeStore.setState({ user, activeResumeId: null, dirty: false, editVersion: 0 });
+    globalThis.localStorage.setItem(localResumeDraftStorageKey(user.id, "1"), JSON.stringify(localDraft));
+    const serverResume = record(1, "# 服务端内容");
+    vi.spyOn(api, "getResume").mockResolvedValue({ resume: serverResume });
+
+    await useResumeStore.getState().loadResume("1");
+
+    expect(useResumeStore.getState()).toMatchObject({
+      title: "本地草稿标题",
+      editorContent: draftContent,
+      settings: { fontSize: 12, pageMargin: 22, verticalPageMargin: 14 },
+      dirty: true,
+      editVersion: 8,
+      saveStatus: "idle",
+    });
   });
 });
 
