@@ -4640,6 +4640,216 @@ select:not([data-slot]):focus-visible,
   color: var(--ui-text-muted);
 }
 
+/* 统一网格布局（文件夹与文件同级） */
+.dataset-unified-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+/* macOS 文件图片卡片 */
+.macos-file-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 10px 10px;
+  border-radius: var(--ui-radius-lg);
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color var(--ui-duration-fast) var(--ui-ease-standard),
+              border-color var(--ui-duration-fast) var(--ui-ease-standard),
+              transform var(--ui-duration-fast) var(--ui-ease-standard);
+}
+
+.macos-file-item:hover {
+  background: var(--ui-surface);
+  border-color: var(--ui-border);
+  transform: translateY(-2px);
+  box-shadow: var(--ui-shadow-xs);
+}
+
+/* 文件图片/图标视觉区域 */
+.macos-file-graphic {
+  position: relative;
+  width: 108px;
+  height: 94px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+/* 拟物化纸张卡片 */
+.macos-document-sheet {
+  position: relative;
+  width: 68px;
+  height: 86px;
+  background: #ffffff;
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 6px 6px;
+  transition: transform var(--ui-duration-fast) var(--ui-ease-standard),
+              box-shadow var(--ui-duration-fast) var(--ui-ease-standard);
+}
+
+.macos-file-item:hover .macos-document-sheet {
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
+  transform: translateY(-2px);
+}
+
+/* 经典折角 Dog-ear */
+.macos-document-dogear {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 16px;
+  height: 16px;
+  background: linear-gradient(135deg, transparent 50%, var(--ui-surface-muted) 50%);
+  border-bottom-left-radius: 4px;
+  border-left: 1px solid var(--ui-border);
+  border-bottom: 1px solid var(--ui-border);
+}
+
+/* 格式标识 Badge */
+.macos-document-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 1.5px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+.macos-document-badge.is-pdf {
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+.macos-document-badge.is-docx {
+  background: #dbeafe;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+}
+
+.macos-document-badge.is-md {
+  background: #f3e8ff;
+  color: #7c3aed;
+  border: 1px solid #e9d5ff;
+}
+
+.macos-document-badge.is-txt {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+/* 排版线 */
+.macos-document-lines {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 4px;
+}
+
+.macos-document-line {
+  height: 2px;
+  border-radius: 1px;
+  background: #e2e8f0;
+}
+
+.macos-document-line.is-long { width: 80%; }
+.macos-document-line.is-medium { width: 60%; }
+.macos-document-line.is-short { width: 40%; }
+
+/* 状态标签 */
+.macos-document-status-tag {
+  margin-top: 2px;
+}
+
+/* 底部操作与信息框 */
+.macos-file-caption {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+}
+
+.macos-file-name {
+  font-size: var(--ui-text-sm);
+  font-weight: 600;
+  color: var(--ui-foreground);
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.macos-file-subrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 22px;
+}
+
+.macos-file-size {
+  font-size: var(--ui-text-xs);
+  color: var(--ui-text-muted);
+}
+
+.macos-file-actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.macos-file-menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--ui-radius-full);
+  border: none;
+  background: transparent;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--ui-duration-fast), background-color var(--ui-duration-fast);
+}
+
+.macos-file-item:hover .macos-file-menu-btn,
+.macos-file-actions:focus-within .macos-file-menu-btn {
+  opacity: 1;
+}
+
+.macos-file-menu-btn:hover {
+  background: var(--ui-surface-muted);
+  color: var(--ui-foreground);
+}
+
+.macos-file-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+}
+
 /* 列表板块标题 */
 .dataset-list-section-header {
   display: flex;

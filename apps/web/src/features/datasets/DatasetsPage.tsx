@@ -41,6 +41,7 @@ import {
 } from "@/components/ui";
 import { DatasetPreviewDialog } from "./DatasetPreviewDialog";
 import { CreateFolderCard, FolderCard } from "./components/FolderCard";
+import { FileCard } from "./components/FileCard";
 import { MoveToFolderDialog } from "./components/MoveToFolderDialog";
 import {
   datasetFormatError,
@@ -180,7 +181,7 @@ function DatasetStatus({ dataset }: { dataset: DatasetRecord }) {
   );
 }
 
-function DatasetSelectionCheckbox({
+export function DatasetSelectionCheckbox({
   checked,
   disabled,
   indeterminate = false,
@@ -1022,116 +1023,106 @@ export function DatasetsPage() {
             <>
               {selectedFolderId === "all" ? (
                 <>
-                  {/* 主体部分: 分类文件夹网格 */}
-                  <section className="dataset-folders-section" aria-label="文件夹分类">
-                    <div className="dataset-folders-header">
-                      <div className="dataset-folders-header-title">
-                        <h2>分类文件夹</h2>
-                        <span className="dataset-folders-header-count">
-                          {folders.length} 个
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="dataset-folders-grid">
-                      {folders.map((folder) => (
-                        <FolderCard
-                          key={folder.id}
-                          folder={folder}
-                          onClick={() => setSelectedFolderId(folder.id)}
-                          onRename={(f) => {
-                            setRenameFolderTarget(f);
-                            setRenameFolderName(f.name);
-                            setRenameFolderError(null);
-                          }}
-                          onDelete={(f) => setDeleteFolderTarget(f)}
-                        />
-                      ))}
-                      <CreateFolderCard
-                        onClick={() => {
-                          setNewFolderName("");
-                          setCreateFolderError(null);
-                          setCreateFolderDialogOpen(true);
-                        }}
-                      />
-                    </div>
-                  </section>
-
-                  {/* 资料列表全宽表格 */}
-                  <div className="dataset-list-section">
-                    <div className="dataset-list-section-header">
-                      <div className="flex items-center gap-2">
-                        <TogglePill
-                          active={listFilter === "all"}
-                          onClick={() => setListFilter("all")}
-                        >
-                          全部资料 ({totalCount || datasets.length})
-                        </TogglePill>
-                        <TogglePill
-                          active={listFilter === "uncategorized"}
-                          onClick={() => setListFilter("uncategorized")}
-                        >
-                          未分类 ({uncategorizedCount})
-                        </TogglePill>
-                      </div>
-                    </div>
-
-                    {datasets.length === 0 && folders.length === 0 ? (
-                      <section className="datasets-empty">
-                        <h2>还没有资料</h2>
-                        <p>建议先上传一份与你当前求职方向相关的资料，<br />后续写简历时可以快速检索和引用。</p>
+                  {/* 统一网格：分类文件夹与资料同级展示 */}
+                  {datasets.length === 0 && folders.length === 0 ? (
+                    <section className="datasets-empty">
+                      <h2>还没有资料</h2>
+                      <p>建议先上传一份与你当前求职方向相关的资料，<br />后续写简历时可以快速检索和引用。</p>
+                      <div className="flex items-center gap-3">
                         <Button icon={<Plus size={15} />} onClick={openUploadDialog}>上传第一份资料</Button>
-                      </section>
-                    ) : (
-                      <section className="dataset-list-card" aria-label="资料列表">
-                        <div className="dataset-list-header">
-                          <span>资料名称</span>
-                          <span>上传时间</span>
-                          <span>大小</span>
-                          <span>解析状态</span>
-                          {batchMode ? (
-                            <div className="dataset-selection-cell dataset-header-selection">
-                              <DatasetSelectionCheckbox
-                                checked={allFilteredSelected}
-                                disabled={filteredDatasets.length === 0 || batchDeleteBusy}
-                                indeterminate={someFilteredSelected && !allFilteredSelected}
-                                label="全选当前筛选结果"
-                                onChange={toggleAllFilteredDatasets}
-                              />
-                            </div>
-                          ) : <span />}
+                        <Button
+                          variant="outline"
+                          icon={<FolderPlus size={15} />}
+                          onClick={() => {
+                            setNewFolderName("");
+                            setCreateFolderError(null);
+                            setCreateFolderDialogOpen(true);
+                          }}
+                        >
+                          新建文件夹
+                        </Button>
+                      </div>
+                    </section>
+                  ) : (
+                    <>
+                      {/* 筛选与批量控制条 */}
+                      <div className="dataset-list-header dataset-list-section-header">
+                        <div className="flex items-center gap-2">
+                          <TogglePill
+                            active={listFilter === "all"}
+                            onClick={() => setListFilter("all")}
+                          >
+                            全部资料 ({totalCount || datasets.length})
+                          </TogglePill>
+                          <TogglePill
+                            active={listFilter === "uncategorized"}
+                            onClick={() => setListFilter("uncategorized")}
+                          >
+                            未分类 ({uncategorizedCount})
+                          </TogglePill>
                         </div>
-                        {filteredDatasets.length === 0 ? (
-                          <p className="dataset-list-empty">
-                            {query
-                              ? "没有匹配的资料。"
-                              : listFilter === "uncategorized"
-                              ? "暂无未分类资料。"
-                              : "没有匹配的资料。"}
-                          </p>
-                        ) : (
-                          filteredDatasets.map((dataset) => (
-                            <DatasetRow
-                              key={dataset.id}
-                              dataset={dataset}
-                              batchMode={batchMode}
-                              selected={selectedDatasetIds.has(dataset.id)}
-                              selectionDisabled={batchDeleteBusy}
-                              menuOpen={menuDatasetId === dataset.id}
-                              busy={busyAction?.id === dataset.id}
-                              onPreview={openPreview}
-                              onToggleSelection={toggleDatasetSelection}
-                              onToggleMenu={(id) => setMenuDatasetId((current) => current === id ? null : id)}
-                              onRename={startRename}
-                              onMove={(item) => setMoveTarget(item)}
-                              onRetry={(item) => void startRetry(item)}
-                              onDelete={startDelete}
+
+                        {batchMode && (
+                          <div className="dataset-selection-cell dataset-header-selection">
+                            <DatasetSelectionCheckbox
+                              checked={allFilteredSelected}
+                              disabled={filteredDatasets.length === 0 || batchDeleteBusy}
+                              indeterminate={someFilteredSelected && !allFilteredSelected}
+                              label="全选当前筛选结果"
+                              onChange={toggleAllFilteredDatasets}
                             />
-                          ))
+                          </div>
                         )}
-                      </section>
-                    )}
-                  </div>
+                      </div>
+
+                      <div className="dataset-unified-grid" aria-label="资料与文件夹列表">
+                        {folders.map((folder) => (
+                          <FolderCard
+                            key={folder.id}
+                            folder={folder}
+                            onClick={() => setSelectedFolderId(folder.id)}
+                            onRename={(f) => {
+                              setRenameFolderTarget(f);
+                              setRenameFolderName(f.name);
+                              setRenameFolderError(null);
+                            }}
+                            onDelete={(f) => setDeleteFolderTarget(f)}
+                          />
+                        ))}
+                        <CreateFolderCard
+                          onClick={() => {
+                            setNewFolderName("");
+                            setCreateFolderError(null);
+                            setCreateFolderDialogOpen(true);
+                          }}
+                        />
+                        {filteredDatasets.map((dataset) => (
+                          <FileCard
+                            key={dataset.id}
+                            dataset={dataset}
+                            batchMode={batchMode}
+                            selected={selectedDatasetIds.has(dataset.id)}
+                            selectionDisabled={batchDeleteBusy}
+                            menuOpen={menuDatasetId === dataset.id}
+                            busy={busyAction?.id === dataset.id}
+                            displayName={datasetDisplayName(dataset)}
+                            isInteractive={datasetVisualStatus(dataset) === "succeeded" && !batchMode}
+                            statusLabel={datasetStatusLabel(datasetVisualStatus(dataset))}
+                            statusKind={datasetVisualStatus(dataset)}
+                            statusReason={datasetStatusReason(dataset)}
+                            formattedSize={formatFileSize(dataset.file_size)}
+                            onPreview={openPreview}
+                            onToggleSelection={toggleDatasetSelection}
+                            onToggleMenu={(id) => setMenuDatasetId((current) => current === id ? null : id)}
+                            onRename={startRename}
+                            onMove={(item) => setMoveTarget(item)}
+                            onRetry={(item) => void startRetry(item)}
+                            onDelete={startDelete}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </>
               ) : (
                 /* 文件夹内页视图 */
@@ -1185,33 +1176,29 @@ export function DatasetsPage() {
                     </div>
                   </div>
 
-                  <section className="dataset-list-card" aria-label="资料列表">
-                    <div className="dataset-list-header">
-                      <span>资料名称</span>
-                      <span>上传时间</span>
-                      <span>大小</span>
-                      <span>解析状态</span>
-                      {batchMode ? (
-                        <div className="dataset-selection-cell dataset-header-selection">
-                          <DatasetSelectionCheckbox
-                            checked={allFilteredSelected}
-                            disabled={filteredDatasets.length === 0 || batchDeleteBusy}
-                            indeterminate={someFilteredSelected && !allFilteredSelected}
-                            label="全选当前筛选结果"
-                            onChange={toggleAllFilteredDatasets}
-                          />
-                        </div>
-                      ) : <span />}
+                  {batchMode && (
+                    <div className="flex items-center justify-between border-b pb-3 mb-4">
+                      <span className="text-xs text-muted-foreground">已选择 {selectedDatasetCount} 项资料</span>
+                      <div className="dataset-selection-cell dataset-header-selection">
+                        <DatasetSelectionCheckbox
+                          checked={allFilteredSelected}
+                          disabled={filteredDatasets.length === 0 || batchDeleteBusy}
+                          indeterminate={someFilteredSelected && !allFilteredSelected}
+                          label="全选当前筛选结果"
+                          onChange={toggleAllFilteredDatasets}
+                        />
+                      </div>
                     </div>
-                    {filteredDatasets.length === 0 ? (
-                      <p className="dataset-list-empty">
-                        {query
-                          ? "没有匹配的资料。"
-                          : "该文件夹下暂无资料，可点击上方上传按钮添加或从其他分类移动至此。"}
-                      </p>
-                    ) : (
-                      filteredDatasets.map((dataset) => (
-                        <DatasetRow
+                  )}
+
+                  {filteredDatasets.length === 0 ? (
+                    <p className="dataset-list-empty py-12 text-center text-muted-foreground text-sm">
+                      {query ? "没有匹配的资料。" : "该文件夹为空，点击上方「上传资料」添加文件。"}
+                    </p>
+                  ) : (
+                    <div className="dataset-unified-grid" aria-label="文件夹内部资料列表">
+                      {filteredDatasets.map((dataset) => (
+                        <FileCard
                           key={dataset.id}
                           dataset={dataset}
                           batchMode={batchMode}
@@ -1219,6 +1206,12 @@ export function DatasetsPage() {
                           selectionDisabled={batchDeleteBusy}
                           menuOpen={menuDatasetId === dataset.id}
                           busy={busyAction?.id === dataset.id}
+                          displayName={datasetDisplayName(dataset)}
+                          isInteractive={datasetVisualStatus(dataset) === "succeeded" && !batchMode}
+                          statusLabel={datasetStatusLabel(datasetVisualStatus(dataset))}
+                          statusKind={datasetVisualStatus(dataset)}
+                          statusReason={datasetStatusReason(dataset)}
+                          formattedSize={formatFileSize(dataset.file_size)}
                           onPreview={openPreview}
                           onToggleSelection={toggleDatasetSelection}
                           onToggleMenu={(id) => setMenuDatasetId((current) => current === id ? null : id)}
@@ -1227,9 +1220,9 @@ export function DatasetsPage() {
                           onRetry={(item) => void startRetry(item)}
                           onDelete={startDelete}
                         />
-                      ))
-                    )}
-                  </section>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </>
