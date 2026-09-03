@@ -43,7 +43,12 @@ describe("PluginInstallDialog", () => {
     expect(screen.getByText(/更新时覆盖原解压目录/)).toBeInTheDocument();
     expect(container.querySelectorAll(".plugin-step")).toHaveLength(5);
     expect(container.querySelector(".plugin-step.is-open")).toHaveTextContent("下载并解压安装包");
-    expect(screen.getByRole("button", { name: "下载插件 ZIP" })).toBeEnabled();
+    const releaseRow = container.querySelector(".plugin-release-row");
+    expect(releaseRow).toHaveTextContent("LinkResume 岗位采集插件");
+    expect(releaseRow).not.toHaveTextContent("ZIP 安装包 · 下载后解压");
+    expect(container.querySelector(".plugin-release-icon svg")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "下载 ZIP" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "下载插件 ZIP" })).not.toBeInTheDocument();
     expect(screen.queryByText("v0.2.0")).not.toBeInTheDocument();
     expect(screen.queryByText(new RegExp(release.sha256))).not.toBeInTheDocument();
     expect(screen.queryByText(/Manifest V3/)).not.toBeInTheDocument();
@@ -55,13 +60,13 @@ describe("PluginInstallDialog", () => {
     vi.spyOn(api, "getPluginRelease").mockResolvedValue({ status: "unpublished", release: null });
     const { unmount } = render(<PluginInstallDialog onClose={vi.fn()} />);
     expect(await screen.findByText("暂未提供插件安装包。")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "下载插件 ZIP" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "下载 ZIP" })).not.toBeInTheDocument();
     unmount();
 
     vi.mocked(api.getPluginRelease).mockRejectedValue(new Error("storage unavailable"));
     render(<PluginInstallDialog onClose={vi.fn()} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("暂时无法获取");
-    expect(screen.queryByRole("button", { name: "下载插件 ZIP" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "下载 ZIP" })).not.toBeInTheDocument();
   });
 
   it("关闭按钮交还给调用方", () => {
@@ -78,7 +83,7 @@ describe("PluginInstallDialog", () => {
       new ApiRequestError(409, "PLUGIN_RELEASE_VERSION_CHANGED"),
     );
     render(<PluginInstallDialog onClose={vi.fn()} />);
-    fireEvent.click(await screen.findByRole("button", { name: "下载插件 ZIP" }));
+    fireEvent.click(await screen.findByRole("button", { name: "下载 ZIP" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("版本已经更新");
   });

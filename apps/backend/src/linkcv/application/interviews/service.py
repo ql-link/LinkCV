@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from linkcv.application.interviews.state import (
     ApplicationStateValue,
     InvalidTransition,
+    POST_APPLICATION_SCREENING_LABEL,
     advance_application as transition_advance,
     cancel_current_session,
     close_application as transition_close,
@@ -48,6 +49,10 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 
 class InterviewNotFound(LookupError):
+    pass
+
+
+class InterviewResumeVersionRequired(RuntimeError):
     pass
 
 
@@ -220,6 +225,21 @@ def _owned_resume_version(
         select(ResumeVersion)
         .join(Resume, Resume.id == ResumeVersion.resume_id)
         .where(ResumeVersion.id == version_id, Resume.user_id == user_id)
+    )
+
+
+def _owned_resume(db: Session, user_id: int, resume_id: int) -> Resume | None:
+    return db.scalar(
+        select(Resume).where(Resume.id == resume_id, Resume.user_id == user_id)
+    )
+
+
+def _latest_resume_version(db: Session, resume_id: int) -> ResumeVersion | None:
+    return db.scalar(
+        select(ResumeVersion)
+        .where(ResumeVersion.resume_id == resume_id)
+        .order_by(ResumeVersion.version_no.desc(), ResumeVersion.id.desc())
+        .limit(1)
     )
 
 
@@ -415,6 +435,48 @@ def update_application(
         provided["is_favorite"] = int(bool(provided["is_favorite"]))
     if "applied_at" in provided and provided["applied_at"] is not None:
         provided["applied_at"] = provided["applied_at"].astimezone(UTC)
+        is_unsubmitted_application = (
+            application.applied_at is None
+            and application.current_stage_type == "screening"
+            and (
+                (
+                    application.current_stage_label.strip() == "待投递"
+                    and application.stage_state == "awaiting_schedule"
+                )
+                or (
+                    application.current_stage_label.strip()
+                    == POST_APPLICATION_SCREENING_LABEL
+                    and application.stage_state == "awaiting_result"
+                )
+            )
+        )
+        if is_unsubmitted_application:
+            provided.update(
+                {
+                    "current_stage_type": "screening",
+                    "current_round_no": None,
+                    "current_stage_label": POST_APPLICATION_SCREENING_LABEL,
+                    "stage_state": "awaiting_result",
+                }
+            )
+    if "resume_id" in provided:
+        requested_resume_id = provided.pop("resume_id")
+        if requested_resume_id is not None:
+            parsed_resume_id = (
+                parse_decimal_id(requested_resume_id)
+                if isinstance(requested_resume_id, str)
+                else None
+            )
+            if parsed_resume_id is None:
+                raise InterviewNotFound
+            resume = _owned_resume(db, user_id, parsed_resume_id)
+            if resume is None:
+                raise InterviewNotFound
+            resume_version = _latest_resume_version(db, resume.id)
+            if resume_version is None:
+                raise InterviewResumeVersionRequired
+            provided["resume_version_id"] = str(resume_version.id)
+            provided["resume_title_snapshot"] = resume_version.name
     if "resume_version_id" in provided:
         requested_resume_version_id = provided["resume_version_id"]
         parsed_resume_version_id = (
@@ -502,11 +564,19 @@ def record_offer(
 ) -> JobApplication:
     application = require_owned_application(db, user_id, application_id)
     try:
-        state = transition_offer(_application_state(application), payload.offer_status)
+        state = transition_offer(_application_state(application))
     except InvalidTransition as error:
         raise InterviewInvalidTransition from error
+    values = {
+        **_state_values(state),
+        "offer_base_location": payload.base_location,
+        "offer_salary": payload.salary,
+        "offer_salary_currency": payload.salary_currency,
+        "offer_salary_period": payload.salary_period,
+        "offer_benefits_description": payload.benefits_description,
+    }
     return _commit_application_update(
-        db, application, payload.base_lock_version, _state_values(state)
+        db, application, payload.base_lock_version, values
     )
 
 
@@ -590,11 +660,7 @@ def _validate_schedule(
         local_start = start_at.astimezone(ZoneInfo(timezone_name))
     except (ZoneInfoNotFoundError, ValueError) as error:
         raise InvalidInterviewTime from error
-    if (
-        local_start.minute not in {0, 30}
-        or local_start.second
-        or local_start.microsecond
-    ):
+    if local_start.second or local_start.microsecond:
         raise InvalidInterviewTime
     return start_at.astimezone(UTC), end_at.astimezone(UTC)
 
@@ -1149,13 +1215,13 @@ def overview(
             )
             or 0
         ),
-        "written_offers": int(
+        "offers_received": int(
             db.scalar(
                 select(func.count(JobApplication.id)).where(
                     JobApplication.user_id == user_id,
                     JobApplication.archived_at.is_(None),
                     JobApplication.offer_status.in_(
-                        ("written_offer_received", "accepted", "declined")
+                        ("received", "accepted", "declined")
                     ),
                 )
             )
