@@ -294,6 +294,7 @@ export type AgentSelectionContext = {
 export type AgentContextType =
   | "resume"
   | "resume_version"
+  | "dataset"
   | "job"
   | "application"
   | "interview";
@@ -1290,11 +1291,13 @@ export const api = {
   listAgentContexts: (options: {
     type?: AgentContextType;
     search?: string;
+    prefix?: boolean;
     limit?: number;
   } = {}) => {
     const params = new URLSearchParams();
     if (options.type) params.set("type", options.type);
     if (options.search?.trim()) params.set("q", options.search.trim());
+    if (options.prefix) params.set("prefix", "true");
     if (options.limit !== undefined) params.set("limit", String(options.limit));
     const query = params.toString();
     return request<AgentContextListResponse>(`/api/agent/contexts${query ? `?${query}` : ""}`);
