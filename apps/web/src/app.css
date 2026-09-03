@@ -2123,7 +2123,7 @@ select:not([data-slot]):focus-visible,
   justify-content: center;
   gap: 8px;
   border-radius: var(--ui-radius-full);
-  background: var(--ui-template-accent);
+  background: var(--ui-accent);
   padding: 9px 18px;
   color: var(--ui-primary-foreground);
   font-size: var(--ui-text-sm);
