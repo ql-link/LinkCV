@@ -9,6 +9,8 @@ import { activeApplicationForJob, applicationOutcome, applicationsForJob, listAl
 import "./jobs.css";
 
 export function JobDetailPage({ jobId }: { jobId: string }) {
+  const fromApplicationId = new URLSearchParams(window.location.search).get("fromApplication");
+  const backPath = fromApplicationId ? careerApplicationPath(fromApplicationId) : "/career/applications";
   const [job, setJob] = useState<JobDescriptionRecord | null>(null);
   const [applications, setApplications] = useState<JobApplicationSummary[]>([]);
   const [applicationsLoaded, setApplicationsLoaded] = useState(false);
@@ -79,7 +81,7 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
     setError(null);
     try {
       await api.deleteJobDescription(job.id);
-      navigateTo("/career/jobs", { replace: true });
+      navigateTo("/career/applications", { replace: true });
     } catch (actionError) {
       setError(detailErrorMessage(actionError));
       setDeleteOpen(false);
@@ -88,7 +90,7 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
   };
 
   if (loading) return <main className="dashboard-content job-page-shell"><PageLoading label="正在加载岗位详情…" /></main>;
-  if (!job) return <main className="dashboard-content job-page-shell"><section className="job-workspace-state"><h1>无法打开这个岗位</h1><p>{error}</p><Button onClick={() => navigateTo("/career/jobs", { replace: true })}>返回岗位库</Button></section></main>;
+  if (!job) return <main className="dashboard-content job-page-shell"><section className="job-workspace-state"><h1>无法打开这个岗位</h1><p>{error}</p><Button onClick={() => navigateTo(backPath, { replace: true })}>返回求职记录</Button></section></main>;
 
   const jobApplications = applicationsForJob(applications, job.id);
   const activeApplication = activeApplicationForJob(applications, job.id);
@@ -99,7 +101,7 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
         <div className="job-detail-topbar">
           <div className="job-detail-heading">
             <h1 className="job-detail-page-title">岗位详情</h1>
-            <a className="job-back-link" href="/career/jobs" onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); navigateTo("/career/jobs"); }}><ArrowLeft size={14} />返回岗位库</a>
+            <a className="job-back-link" href={backPath} onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); navigateTo(backPath); }}><ArrowLeft size={14} />返回求职记录</a>
           </div>
           <div className="job-detail-actions">
             {applicationsLoaded && (activeApplication ? (

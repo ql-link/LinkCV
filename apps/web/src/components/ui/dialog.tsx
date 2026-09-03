@@ -40,7 +40,7 @@ const DialogContent = React.forwardRef<
       data-slot="dialog-content"
       data-ui-theme="light"
       className={cn(
-        "fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border bg-surface p-6 shadow-md outline-none transition-[opacity,transform] duration-base motion-reduce:transition-opacity motion-reduce:duration-fast data-[state=closed]:scale-[0.98] data-[state=closed]:opacity-0 data-[state=open]:scale-100 data-[state=open]:opacity-100 motion-reduce:data-[state=closed]:scale-100",
+        "fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border bg-surface p-6 text-foreground shadow-md outline-none transition-[opacity,transform] duration-base motion-reduce:transition-opacity motion-reduce:duration-fast data-[state=closed]:scale-[0.98] data-[state=closed]:opacity-0 data-[state=open]:scale-100 data-[state=open]:opacity-100 motion-reduce:data-[state=closed]:scale-100",
         className
       )}
       {...props}

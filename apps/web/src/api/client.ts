@@ -294,6 +294,7 @@ export type AgentSelectionContext = {
 export type AgentContextType =
   | "resume"
   | "resume_version"
+  | "dataset"
   | "job"
   | "application"
   | "interview";
@@ -594,10 +595,14 @@ export type JobApplicationRecord = {
   status: "active" | "rejected" | "withdrawn" | "closed";
   offer_status:
     | "none"
-    | "oc_received"
-    | "written_offer_received"
+    | "received"
     | "accepted"
     | "declined";
+  offer_base_location: string | null;
+  offer_salary: string | null;
+  offer_salary_currency: string | null;
+  offer_salary_period: SalaryPeriod | null;
+  offer_benefits_description: string | null;
   is_favorite: boolean;
   applied_at: string | null;
   notes: string | null;
@@ -675,7 +680,7 @@ export type InterviewOverview = {
     weekly_interviews: number;
     upcoming_interviews: number;
     completed_interviews: number;
-    written_offers: number;
+    offers_received: number;
   };
   pipeline: JobApplicationSummary[];
   week_sessions: InterviewSessionSummary[];
@@ -1290,11 +1295,13 @@ export const api = {
   listAgentContexts: (options: {
     type?: AgentContextType;
     search?: string;
+    prefix?: boolean;
     limit?: number;
   } = {}) => {
     const params = new URLSearchParams();
     if (options.type) params.set("type", options.type);
     if (options.search?.trim()) params.set("q", options.search.trim());
+    if (options.prefix) params.set("prefix", "true");
     if (options.limit !== undefined) params.set("limit", String(options.limit));
     const query = params.toString();
     return request<AgentContextListResponse>(`/api/agent/contexts${query ? `?${query}` : ""}`);
@@ -1570,6 +1577,7 @@ export const api = {
       is_favorite: boolean;
       notes: string | null;
       applied_at: string | null;
+      resume_id: string | null;
       resume_version_id: string | null;
     }> & { base_lock_version: number },
   ) =>
@@ -1592,17 +1600,20 @@ export const api = {
     ),
   recordJobApplicationOffer: (
     id: string,
-    offerStatus: "oc_received" | "written_offer_received",
-    baseLockVersion: number,
+    payload: {
+      base_lock_version: number;
+      base_location?: string | null;
+      salary?: number | null;
+      salary_currency?: string | null;
+      salary_period?: SalaryPeriod | null;
+      benefits_description?: string | null;
+    },
   ) =>
     request<{ application: JobApplicationRecord }>(
       `/api/job-applications/${id}/offer`,
       {
         method: "POST",
-        body: {
-          offer_status: offerStatus,
-          base_lock_version: baseLockVersion,
-        },
+        body: payload,
       },
     ),
   closeJobApplication: (

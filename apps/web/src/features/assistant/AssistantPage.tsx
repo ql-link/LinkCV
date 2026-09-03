@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ChevronUp,
   CircleAlert,
+  Database,
   FileText,
   Menu,
   MessageCircleQuestion,
@@ -24,6 +25,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent,
@@ -59,6 +61,7 @@ const NEW_CONVERSATION_KEY = "__assistant_new__";
 const CONTEXT_TYPES: Array<{ type: AgentContextType; label: string; icon: typeof FileText }> = [
   { type: "resume", label: "当前简历", icon: FileText },
   { type: "resume_version", label: "简历版本", icon: FileText },
+  { type: "dataset", label: "资料", icon: Database },
   { type: "job", label: "岗位", icon: BriefcaseBusiness },
   { type: "application", label: "求职进程", icon: Target },
   { type: "interview", label: "面试记录", icon: CalendarDays },
@@ -76,6 +79,126 @@ type LocalMessage = AgentMessage & {
   temporary?: boolean;
   status?: "streaming" | "stopped" | "failed";
 };
+
+type MentionContextType = Extract<AgentContextType, "dataset" | "resume">;
+
+type ContextMention = {
+  start: number;
+  end: number;
+  query: string;
+  token: string;
+  types: MentionContextType[];
+};
+
+function contextMentionAt(value: string, caret: number): ContextMention | null {
+  const beforeCaret = value.slice(0, caret);
+  const match = /(^|[\s，。！？；：,.!?;:（(])@([^\s@]*)$/.exec(beforeCaret);
+  if (!match) return null;
+  const token = match[2] ?? "";
+  const start = match.index + (match[1]?.length ?? 0);
+  return { start, end: caret, query: token, token, types: ["resume", "dataset"] };
+}
+
+type ComposerSegment =
+  | { kind: "text"; text: string; key: string }
+  | { kind: "context"; context: AgentContextSnapshot; key: string };
+
+function composerSegments(draft: string, contexts: AgentContextSnapshot[]): ComposerSegment[] {
+  const segments: ComposerSegment[] = [];
+  const missing = contexts.filter((context) => !draft.includes(`@${context.label}`));
+  missing.forEach((context) => segments.push({ kind: "context", context, key: `orphan:${contextKey(context)}` }));
+  if (missing.length > 0 && draft) segments.push({ kind: "text", text: " ", key: "orphan-space" });
+
+  let cursor = 0;
+  let segmentIndex = 0;
+  while (cursor < draft.length) {
+    const next = contexts
+      .map((context) => ({ context, index: draft.indexOf(`@${context.label}`, cursor) }))
+      .filter(({ index }) => index >= 0)
+      .sort((left, right) => left.index - right.index)[0];
+    if (!next) {
+      segments.push({ kind: "text", text: draft.slice(cursor), key: `text:${segmentIndex}` });
+      break;
+    }
+    if (next.index > cursor) {
+      segments.push({ kind: "text", text: draft.slice(cursor, next.index), key: `text:${segmentIndex}` });
+    }
+    segments.push({ kind: "context", context: next.context, key: `context:${segmentIndex}:${contextKey(next.context)}` });
+    cursor = next.index + next.context.label.length + 1;
+    segmentIndex += 1;
+  }
+  return segments;
+}
+
+function composerNodeText(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
+  if (!(node instanceof HTMLElement)) return "";
+  if (node.dataset.contextValue) return node.dataset.contextValue;
+  if (node.tagName === "BR") return "\n";
+  const content = Array.from(node.childNodes).map(composerNodeText).join("");
+  return ["DIV", "P"].includes(node.tagName) ? `\n${content}` : content;
+}
+
+function composerValue(element: HTMLElement) {
+  return Array.from(element.childNodes).map(composerNodeText).join("").replace(/^\n/, "");
+}
+
+function composerCaretOffset(element: HTMLElement) {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount || !selection.anchorNode || !element.contains(selection.anchorNode)) {
+    return composerValue(element).length;
+  }
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  range.setEnd(selection.anchorNode, selection.anchorOffset);
+  const holder = document.createElement("div");
+  holder.append(range.cloneContents());
+  return composerValue(holder).length;
+}
+
+function placeComposerCaret(element: HTMLElement, targetOffset: number) {
+  const selection = window.getSelection();
+  if (!selection) return;
+  let consumed = 0;
+  let placed = false;
+  const range = document.createRange();
+  const visit = (parent: Node) => {
+    for (const child of Array.from(parent.childNodes)) {
+      if (placed) return;
+      if (child.nodeType === Node.TEXT_NODE) {
+        const length = child.textContent?.length ?? 0;
+        if (targetOffset <= consumed + length) {
+          range.setStart(child, Math.max(0, targetOffset - consumed));
+          placed = true;
+          return;
+        }
+        consumed += length;
+        continue;
+      }
+      if (!(child instanceof HTMLElement)) continue;
+      if (child.dataset.contextValue) {
+        const length = child.dataset.contextValue.length;
+        if (targetOffset <= consumed + length) {
+          range.setStartAfter(child);
+          placed = true;
+          return;
+        }
+        consumed += length;
+        continue;
+      }
+      if (child.tagName === "BR") {
+        consumed += 1;
+        continue;
+      }
+      visit(child);
+    }
+  };
+  visit(element);
+  if (!placed) range.selectNodeContents(element), range.collapse(false);
+  else range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
 
 type ConversationState = {
   session: AgentSession;
@@ -150,8 +273,22 @@ function contextKey(context: Pick<AgentContextRef, "type" | "id">) {
   return `${context.type}:${context.id}`;
 }
 
+function withoutContextToken(draft: string, context: AgentContextSnapshot) {
+  const token = `@${context.label}`;
+  const index = draft.indexOf(token);
+  if (index < 0) return draft;
+  const end = index + token.length;
+  const removeEnd = draft[end] === " " ? end + 1 : end;
+  return `${draft.slice(0, index)}${draft.slice(removeEnd)}`;
+}
+
 function contextLabel(type: AgentContextType) {
   return CONTEXT_TYPES.find((item) => item.type === type)?.label ?? "资料";
+}
+
+function ContextSourceIcon({ type, size }: { type: AgentContextType; size: number }) {
+  const Icon = type === "dataset" ? Database : FileText;
+  return <Icon size={size} aria-hidden="true" />;
 }
 
 function proposalResumeLabel(state: ConversationState, resumeId: string) {
@@ -249,6 +386,7 @@ function safeAgentError(error: unknown) {
   const messages: Record<string, string> = {
     AGENT_CONTEXT_NOT_FOUND: "所选资料已不可用，请重新选择。",
     AGENT_CONTEXT_STALE: "所选资料已发生变化，请刷新选择后重试。",
+    AGENT_CONTEXT_READ_FAILED: "所选资料暂时无法读取，请稍后重试。",
     AGENT_SESSION_RESUME_MISMATCH: "这个会话已经绑定另一份简历，请新建对话后继续。",
     AGENT_SESSION_NOT_FOUND: "对话不存在或已无法访问。",
     AGENT_UNAVAILABLE: "智能助手暂时不可用，草稿和已选资料不会丢失。",
@@ -331,14 +469,31 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   const [renameDraft, setRenameDraft] = useState("");
   const [pendingDeleteSession, setPendingDeleteSession] = useState<AgentSession | null>(null);
   const [sessionActionBusyId, setSessionActionBusyId] = useState<string | null>(null);
+  const [recallDrawerOpen, setRecallDrawerOpen] = useState(false);
+  const [recallReferencesOpen, setRecallReferencesOpen] = useState(false);
+  const [recallModificationsOpen, setRecallModificationsOpen] = useState(false);
+  const [contextMention, setContextMention] = useState<ContextMention | null>(null);
+  const [mentionOptions, setMentionOptions] = useState<AgentContextSnapshot[]>([]);
+  const [mentionLoading, setMentionLoading] = useState(false);
+  const [mentionError, setMentionError] = useState<string | null>(null);
+  const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
+  const [composerView, setComposerView] = useState(() => ({
+    revision: 0,
+    draft: "",
+    contexts: [] as AgentContextSnapshot[],
+    invalidContextIds: [] as string[],
+  }));
   const streamRequestRef = useRef(0);
+  const mentionRequestRef = useRef(0);
   const activeKeyRef = useRef(activeKey);
   const conversationStatesRef = useRef(conversationStates);
   const abortRef = useRef<AbortController | null>(null);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const contextCloseButtonRef = useRef<HTMLButtonElement>(null);
   const modelSelectorRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLDivElement>(null);
+  const pendingComposerCaretRef = useRef<number | null>(null);
+  const mentionMenuRef = useRef<HTMLDivElement>(null);
   const messageViewportRef = useRef<HTMLDivElement>(null);
   const followMessagesRef = useRef(true);
   const isComposingRef = useRef(false);
@@ -351,6 +506,37 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   const conversationStateHeading = conversationHeading(current, Boolean(pendingClarification));
   const clarificationQuestions = pendingClarification?.clarification?.questions ?? [];
   const clarificationQuestion = clarificationQuestions[Math.min(clarificationPage, Math.max(0, clarificationQuestions.length - 1))];
+  const latestUserMessage = [...current.messages].reverse().find((message) => message.role === "user");
+  const latestTurnContexts = latestUserMessage?.contexts ?? (current.running ? current.contexts : []);
+  const latestUserCreatedAt = latestUserMessage ? new Date(latestUserMessage.created_at).getTime() : Number.NaN;
+  const latestTurnProposal = [...current.proposals]
+    .filter((proposal) => {
+      if (!latestUserMessage || Number.isNaN(latestUserCreatedAt)) return true;
+      const proposalCreatedAt = new Date(proposal.created_at).getTime();
+      return Number.isNaN(proposalCreatedAt) || proposalCreatedAt >= latestUserCreatedAt;
+    })
+    .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())[0] ?? null;
+
+  const refreshComposerView = useCallback((draft: string, contexts: AgentContextSnapshot[], invalidContextIds: string[]) => {
+    setComposerView((view) => ({
+      revision: view.revision + 1,
+      draft,
+      contexts,
+      invalidContextIds,
+    }));
+  }, []);
+
+  useEffect(() => {
+    refreshComposerView(current.draft, current.contexts, current.invalidContextIds);
+  }, [activeKey, current.running, current.cancelling]);
+
+  useLayoutEffect(() => {
+    const caret = pendingComposerCaretRef.current;
+    if (caret === null || !inputRef.current) return;
+    pendingComposerCaretRef.current = null;
+    placeComposerCaret(inputRef.current, caret);
+    inputRef.current.focus();
+  }, [activeKey, current.contexts, current.draft]);
 
   const updateConversation = useCallback((key: string, update: Partial<ConversationState> | ((state: ConversationState) => Partial<ConversationState>)) => {
     setConversationStates((states) => {
@@ -465,6 +651,63 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   useEffect(() => {
     setClarificationPage(0);
   }, [pendingClarification?.created_at, pendingClarification?.sequence_no]);
+
+  useEffect(() => {
+    setContextMention(null);
+  }, [activeKey]);
+
+  useEffect(() => {
+    const requestNumber = mentionRequestRef.current + 1;
+    mentionRequestRef.current = requestNumber;
+    if (!contextMention) {
+      setMentionOptions([]);
+      setMentionLoading(false);
+      setMentionError(null);
+      return undefined;
+    }
+    setMentionLoading(true);
+    setMentionError(null);
+    const timeout = window.setTimeout(() => {
+      void Promise.all(contextMention.types.map(async (type) => {
+        const result = await api.listAgentContexts({
+          type,
+          search: contextMention.query,
+          prefix: true,
+          limit: 4,
+        });
+        return normalizeContextItems(result, type);
+      })).then((groups) => {
+        if (mentionRequestRef.current !== requestNumber) return;
+        setMentionOptions(groups.flat());
+        setMentionActiveIndex(0);
+      }).catch((error) => {
+        if (mentionRequestRef.current !== requestNumber) return;
+        setMentionOptions([]);
+        setMentionError(safeAgentError(error));
+      }).finally(() => {
+        if (mentionRequestRef.current === requestNumber) setMentionLoading(false);
+      });
+    }, 120);
+    return () => window.clearTimeout(timeout);
+  }, [contextMention]);
+
+  useEffect(() => {
+    if (!contextMention) return undefined;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (inputRef.current?.contains(target) || mentionMenuRef.current?.contains(target)) return;
+      setContextMention(null);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [contextMention]);
+
+  useEffect(() => {
+    if (!contextMention || mentionOptions.length === 0) return;
+    const activeOption = mentionMenuRef.current
+      ?.querySelector(`#assistant-context-mention-option-${mentionActiveIndex}`);
+    activeOption?.scrollIntoView?.({ block: "nearest" });
+  }, [contextMention, mentionActiveIndex, mentionOptions.length]);
 
   useEffect(() => {
     if (!contextPickerOpen && !modelMenuOpen) return undefined;
@@ -639,6 +882,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   };
 
   const confirmContextDrafts = () => {
+    refreshComposerView(current.draft, contextDrafts.slice(0, 10), current.invalidContextIds);
     updateConversation(activeKey, (state) => ({
       contexts: contextDrafts.slice(0, 10),
       invalidContextIds: state.invalidContextIds.filter((id) => contextDrafts.some((context) => contextKey(context) === id)),
@@ -648,10 +892,37 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   };
 
   const removeContext = (context: AgentContextRef) => {
-    updateConversation(activeKey, (state) => ({
-      contexts: state.contexts.filter((item) => contextKey(item) !== contextKey(context)),
-      invalidContextIds: state.invalidContextIds.filter((id) => id !== contextKey(context)),
-    }));
+    const contexts = current.contexts.filter((item) => contextKey(item) !== contextKey(context));
+    const invalidContextIds = current.invalidContextIds.filter((id) => id !== contextKey(context));
+    const draft = withoutContextToken(current.draft, context as AgentContextSnapshot);
+    refreshComposerView(draft, contexts, invalidContextIds);
+    updateConversation(activeKey, { contexts, invalidContextIds, draft });
+  };
+
+  const selectMentionContext = (context: AgentContextSnapshot) => {
+    if (!contextMention) return;
+    const boundResumeId = current.session.resume_id;
+    const contextResumeId = resumeIdForContext(context);
+    if (boundResumeId && contextResumeId && boundResumeId !== contextResumeId) {
+      setResumeMismatch(context);
+      setContextMention(null);
+      updateConversation(activeKey, { error: "这个会话已经绑定另一份简历，请新建对话后继续。" });
+      return;
+    }
+    const nextCaret = contextMention.start + context.label.length + 2;
+    const contexts = [...current.contexts.filter((item) => item.type !== context.type), context].slice(0, 10);
+    const invalidContextIds = current.invalidContextIds.filter((id) => contexts.some((item) => contextKey(item) === id));
+    const draft = `${current.draft.slice(0, contextMention.start)}@${context.label} ${current.draft.slice(contextMention.end)}`;
+    pendingComposerCaretRef.current = nextCaret;
+    refreshComposerView(draft, contexts, invalidContextIds);
+    updateConversation(activeKey, { contexts, invalidContextIds, draft, error: null });
+    setResumeMismatch(null);
+    setContextMention(null);
+    window.setTimeout(() => {
+      if (!inputRef.current) return;
+      placeComposerCaret(inputRef.current, nextCaret);
+      inputRef.current.focus();
+    }, 0);
   };
 
   const handleEvent = (key: string, requestNumber: number, event: AgentStreamEvent) => {
@@ -892,6 +1163,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
 
   const submitMessage = () => {
     if (current.running || current.cancelling || !current.draft.trim()) return;
+    setContextMention(null);
     void runMessage(current.draft);
   };
 
@@ -919,8 +1191,36 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     );
   };
 
-  const handleInputKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing || isComposingRef.current) return;
+  const handleInputKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.nativeEvent.isComposing || isComposingRef.current) return;
+    if (contextMention) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setContextMention(null);
+        return;
+      }
+      if (!mentionLoading && !mentionError && mentionOptions.length > 0 && event.key === "ArrowDown") {
+        event.preventDefault();
+        setMentionActiveIndex((index) => (index + 1) % mentionOptions.length);
+        return;
+      }
+      if (!mentionLoading && !mentionError && mentionOptions.length > 0 && event.key === "ArrowUp") {
+        event.preventDefault();
+        setMentionActiveIndex((index) => (index - 1 + mentionOptions.length) % mentionOptions.length);
+        return;
+      }
+      if (!mentionLoading && !mentionError && mentionOptions.length > 0 && event.key === "Tab") {
+        event.preventDefault();
+        selectMentionContext(mentionOptions[0]);
+        return;
+      }
+      if (!mentionLoading && !mentionError && mentionOptions.length > 0 && event.key === "Enter") {
+        event.preventDefault();
+        selectMentionContext(mentionOptions[mentionActiveIndex] ?? mentionOptions[0]);
+        return;
+      }
+    }
+    if (event.key !== "Enter" || event.shiftKey) return;
     event.preventDefault();
     submitMessage();
   };
@@ -930,10 +1230,13 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   };
 
   const continueProposal = () => {
+    pendingComposerCaretRef.current = "继续调整：".length;
+    refreshComposerView("继续调整：", current.contexts, current.invalidContextIds);
     updateConversation(activeKey, { draft: "继续调整：", error: null });
     window.setTimeout(() => {
-      inputRef.current?.focus();
-      inputRef.current?.setSelectionRange(inputRef.current.value.length, inputRef.current.value.length);
+      if (!inputRef.current) return;
+      placeComposerCaret(inputRef.current, "继续调整：".length);
+      inputRef.current.focus();
     }, 0);
   };
 
@@ -1169,7 +1472,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
           })}
         </div>
       )}
-      <p className="assistant-sidebar-privacy">仅使用你主动选择的简历与资料</p>
     </aside>
   );
 
@@ -1190,6 +1492,17 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
               <Menu size={20} />
             </button>
           </header>
+
+          <button
+            type="button"
+            className="assistant-recall-drawer-toggle"
+            aria-label={recallDrawerOpen ? "收起对话资料" : "展开对话资料"}
+            aria-expanded={recallDrawerOpen}
+            aria-controls="assistant-recall-drawer"
+            onClick={() => setRecallDrawerOpen((open) => !open)}
+          >
+            {recallDrawerOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+          </button>
 
           <div
             className="assistant-message-viewport"
@@ -1269,18 +1582,52 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
             )}
           </div>
 
-          {!isEmptyConversation && (current.running || current.contexts.length > 0 || current.proposals.length > 0) && (
-            <aside className="assistant-context-panel" aria-label="引用资料与修改内容">
-              <header><strong>引用资料</strong><span>{current.referencedContextCount || current.contexts.length} 项</span></header>
-              <p>本轮对话使用的相关文件</p>
-              <div className="assistant-context-panel-list">
-                {current.contexts.length === 0 && <span className="is-muted">正在检索相关资料…</span>}
-                {current.contexts.map((context) => (
-                  <div key={contextKey(context)}><small>{contextLabel(context.type)}</small><span>{context.label}</span></div>
-                ))}
-              </div>
-              <hr />
-              <header><strong>修改内容</strong><span>{current.proposals.length > 0 ? `${current.proposals.length} 项` : "暂无修改"}</span></header>
+          {recallDrawerOpen && (
+            <aside id="assistant-recall-drawer" className="assistant-context-panel" aria-label="最新一轮对话的引用资料与修改内容">
+              <section className="assistant-context-panel-section">
+                <button
+                  type="button"
+                  className="assistant-context-panel-trigger"
+                  aria-label={recallReferencesOpen ? "收起引用资料" : "展开引用资料"}
+                  aria-expanded={recallReferencesOpen}
+                  aria-controls="assistant-recall-references"
+                  onClick={() => setRecallReferencesOpen((open) => !open)}
+                >
+                  <strong>引用资料</strong>
+                  <span>{latestTurnContexts.length === 0 ? "0 个文件" : `${latestTurnContexts.length} 项`}<ChevronRight size={15} aria-hidden="true" /></span>
+                </button>
+                <div id="assistant-recall-references" className="assistant-context-panel-content" hidden={!recallReferencesOpen}>
+                  <div className="assistant-context-panel-list">
+                    {latestTurnContexts.length === 0 && <span className="is-muted">本轮没有引用资料</span>}
+                    {latestTurnContexts.map((context) => (
+                      <div key={contextKey(context)}><span>{context.label}</span></div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+              <section className="assistant-context-panel-section">
+                <button
+                  type="button"
+                  className="assistant-context-panel-trigger"
+                  aria-label={recallModificationsOpen ? "收起修改内容" : "展开修改内容"}
+                  aria-expanded={recallModificationsOpen}
+                  aria-controls="assistant-recall-modifications"
+                  onClick={() => setRecallModificationsOpen((open) => !open)}
+                >
+                  <strong>修改内容</strong>
+                  <span>{latestTurnProposal ? "1 个文件" : "0 个文件"}<ChevronRight size={15} aria-hidden="true" /></span>
+                </button>
+                <div id="assistant-recall-modifications" className="assistant-context-panel-content" hidden={!recallModificationsOpen}>
+                  <div className="assistant-context-panel-modification">
+                    {latestTurnProposal ? (
+                      <div>
+                        <span>{proposalResumeLabel(current, latestTurnProposal.resume_id)}</span>
+                        <ChevronRight size={16} aria-hidden="true" />
+                      </div>
+                    ) : <span className="is-muted">本轮没有修改内容</span>}
+                  </div>
+                </div>
+              </section>
             </aside>
           )}
 
@@ -1453,21 +1800,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
                 )}
               </section>
             )}
-            {current.contexts.length > 0 && (
-              <div className="assistant-context-chip-list" aria-label="已选上下文">
-                {current.contexts.map((context) => {
-                  const invalid = current.invalidContextIds.includes(contextKey(context));
-                  return (
-                    <span key={contextKey(context)} className={invalid ? "is-invalid" : undefined}>
-                      <FileText size={14} aria-hidden="true" />
-                      <span>{context.label}</span>
-                      {invalid && <em>需要重新选择</em>}
-                      <button type="button" aria-label={`移除上下文 ${context.label}`} onClick={() => removeContext(context)}><X size={13} /></button>
-                    </span>
-                  );
-                })}
-              </div>
-            )}
             <div className="assistant-composer-context-row">
               <button type="button" className="assistant-add-context" onClick={openContextPicker}>
                 <Plus size={15} aria-hidden="true" />添加资料
@@ -1485,18 +1817,103 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
             </div>
             <div className="assistant-input-shell">
               {!isEmptyConversation && <button type="button" className="assistant-input-add" aria-label="添加资料" onClick={openContextPicker}><Plus size={20} /></button>}
-              <textarea
+              {contextMention && (
+                <div ref={mentionMenuRef} id="assistant-context-mention-list" className="assistant-context-mention-menu" role="listbox" aria-label="可引用的资料和简历">
+                  <header>
+                    <strong>{contextMention.token ? `@${contextMention.token}` : "选择资料或简历"}</strong>
+                    <span>Tab 选择第一项</span>
+                  </header>
+                  {mentionLoading && <p>正在搜索…</p>}
+                  {mentionError && <p role="alert">{mentionError}</p>}
+                  {!mentionLoading && !mentionError && mentionOptions.length === 0 && <p>没有匹配的文件</p>}
+                  {!mentionLoading && !mentionError && (["resume", "dataset"] as const).map((type) => {
+                    const groupedOptions = mentionOptions
+                      .map((context, index) => ({ context, index }))
+                      .filter(({ context }) => context.type === type);
+                    if (groupedOptions.length === 0) return null;
+                    return (
+                      <div key={type} className="assistant-context-mention-group" role="group" aria-label={type === "resume" ? "简历" : "资料"}>
+                        <div className="assistant-context-mention-group-label">{type === "resume" ? "简历" : "资料"}</div>
+                        {groupedOptions.map(({ context, index }) => (
+                          <button
+                            type="button"
+                            id={`assistant-context-mention-option-${index}`}
+                            role="option"
+                            aria-selected={mentionActiveIndex === index}
+                            className={mentionActiveIndex === index ? "is-active" : undefined}
+                            key={contextKey(context)}
+                            onMouseEnter={() => setMentionActiveIndex(index)}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => selectMentionContext(context)}
+                          >
+                            <ContextSourceIcon type={context.type} size={16} />
+                            <span><strong>{context.label}</strong></span>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <div
+                key={`${activeKey}:${composerView.revision}`}
                 ref={inputRef}
+                className="assistant-composer-editor"
+                role="textbox"
+                aria-multiline="true"
                 aria-label="告诉助手你想完成什么"
-                placeholder={current.messages.length > 0 ? "继续提问或说明调整要求…" : "告诉我你想完成什么…"}
-                value={current.draft}
-                disabled={current.running || current.cancelling || Boolean(pendingClarification)}
-                rows={isEmptyConversation ? 4 : 1}
-                onChange={(event) => updateConversation(activeKey, { draft: event.target.value })}
+                data-placeholder={current.messages.length > 0 ? "继续提问或说明调整要求…" : "告诉我你想完成什么…"}
+                aria-autocomplete="list"
+                aria-controls={contextMention ? "assistant-context-mention-list" : undefined}
+                aria-expanded={Boolean(contextMention)}
+                aria-activedescendant={contextMention && mentionOptions.length > 0 ? `assistant-context-mention-option-${mentionActiveIndex}` : undefined}
+                aria-disabled={current.running || current.cancelling || Boolean(pendingClarification)}
+                contentEditable={!(current.running || current.cancelling || Boolean(pendingClarification))}
+                suppressContentEditableWarning
+                onInput={(event) => {
+                  const editor = event.currentTarget;
+                  const nextDraft = composerValue(editor);
+                  const caret = composerCaretOffset(editor);
+                  const retainedContextKeys = new Set(
+                    Array.from(editor.querySelectorAll<HTMLElement>("[data-context-key]"))
+                      .map((element) => element.dataset.contextKey)
+                      .filter((key): key is string => Boolean(key)),
+                  );
+                  pendingComposerCaretRef.current = caret;
+                  updateConversation(activeKey, (state) => ({
+                    draft: nextDraft,
+                    contexts: state.contexts.filter((context) => retainedContextKeys.has(contextKey(context))),
+                    invalidContextIds: state.invalidContextIds.filter((id) => retainedContextKeys.has(id)),
+                  }));
+                  setContextMention(contextMentionAt(nextDraft, caret));
+                }}
                 onKeyDown={handleInputKeyDown}
                 onCompositionStart={() => { isComposingRef.current = true; }}
                 onCompositionEnd={() => { isComposingRef.current = false; }}
-              />
+              >
+                {composerSegments(composerView.draft, composerView.contexts).map((segment) => segment.kind === "text" ? segment.text : (
+                  <span
+                    key={segment.key}
+                    className={`assistant-composer-context-token${composerView.invalidContextIds.includes(contextKey(segment.context)) ? " is-invalid" : ""}`}
+                    contentEditable={false}
+                    data-context-key={contextKey(segment.context)}
+                    data-context-value={`@${segment.context.label}`}
+                    aria-label={`引用文件 ${segment.context.label}`}
+                  >
+                    <ContextSourceIcon type={segment.context.type} size={14} />
+                    <span>{segment.context.label}</span>
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      aria-label={`移除上下文 ${segment.context.label}`}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => removeContext(segment.context)}
+                    >
+                      <X size={12} aria-hidden="true" />
+                    </button>
+                  </span>
+                ))}
+              </div>
               {current.running ? (
                 <button type="button" className="assistant-send-button is-stop" aria-label="停止生成" onClick={stopGeneration}>
                   <Square size={16} fill="currentColor" />

@@ -1,10 +1,12 @@
-import type {
-  JobDescriptionCreatePayload,
-  JobDescriptionDraft,
-  JobDescriptionRecord,
-  JobEmploymentType,
-  JobSalaryPeriod,
-  JobWorkMode,
+import {
+  ApiRequestError,
+  type JobDescriptionCreatePayload,
+  type JobDescriptionDraft,
+  type JobDescriptionRecord,
+  type JobDuplicateDetails,
+  type JobEmploymentType,
+  type JobSalaryPeriod,
+  type JobWorkMode,
 } from "../../api/client";
 
 export type JobFormState = {
@@ -136,6 +138,31 @@ export function jobFormFromDraft(draft: JobDescriptionDraft): JobFormState {
     recruiter_title: draft.recruiter_title ?? "",
     notes: draft.notes ?? "",
   };
+}
+
+export function jobFormMissingFields(form: JobFormState): string[] {
+  return [
+    !form.job_title.trim() && "职位名称",
+    !form.company_name.trim() && "公司名称",
+    !form.description.trim() && "职位描述",
+  ].filter(Boolean) as string[];
+}
+
+export function duplicateFromJobError(error: unknown): JobDuplicateDetails["duplicate"] | null {
+  if (!(error instanceof ApiRequestError) || error.message !== "JD_SOURCE_DUPLICATE") return null;
+  const duplicate = error.payload?.duplicate;
+  if (!duplicate || typeof duplicate !== "object") return null;
+  return duplicate as JobDuplicateDetails["duplicate"];
+}
+
+export function jobFormErrorMessage(error: unknown, fallback: string): string {
+  if (!(error instanceof ApiRequestError)) return fallback;
+  if (error.message === "INVALID_JOB_DESCRIPTION") return "请检查必填字段、薪资组合和字段长度。";
+  if (error.message === "INVALID_JOB_SOURCE") return "来源链接无法识别，请检查后重试。";
+  if (error.message === "JD_EDIT_CONFLICT") return "岗位已经被修改，请重新打开后再保存。";
+  if (error.message === "JD_NOT_FOUND") return "岗位不存在，或当前账号没有访问权限。";
+  if (error.status === 401) return "登录状态已失效，请重新登录。";
+  return fallback;
 }
 
 function nullable(value: string): string | null {
