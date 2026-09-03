@@ -8,7 +8,7 @@
 
 ## 用户入口
 
-Web `/datasets` 提供左侧分类导航（全部资料、未分类及用户自建文件夹），支持创建、重命名和安全删除文件夹。用户可把单份或多份资料移动到目标文件夹，在指定文件夹下上传时文件自动归类。列表展示上传时间与 `queued`、`processing`、`succeeded`、`failed` 四种解析状态，支持重命名、失败重试、移动分类、单个删除和批量删除。未完成或失败的资料不开放内容读取；读取失败保留重试入口。成功内容使用 Markdown 预览，按需渲染 Mermaid，并过滤解析服务写入的分页、表格控制标记。AI 助手只使用用户在当轮显式选择的已完成资料。
+Web `/datasets` 在主体首页提供分类文件夹与全宽资料列表两大板块：上部为 macOS 原生访达风格的分类文件夹网格（空文件夹显示纯净 macOS 蓝折耳图标，有文件时从文件夹中探出立体纸质卡片装饰，下方展示名称与操作框），下部为全宽资料列表与未分类快速筛选。用户点击文件夹可下钻查看该分类专有资料并在该分类下上传，支持创建、重命名、安全删除文件夹与单项/批量移动归类。列表展示上传时间与 `queued`、`processing`、`succeeded`、`failed` 四种解析状态，支持重命名、失败重试、移动分类、单个删除和批量删除。未完成或失败的资料不开放内容读取；读取失败保留重试入口。成功内容使用 Markdown 预览，按需渲染 Mermaid，并过滤解析服务写入的分页、表格控制标记。AI 助手只使用用户在当轮显式选择的已完成资料。
 
 ## 代码地图
 
@@ -19,7 +19,7 @@ Web `/datasets` 提供左侧分类导航（全部资料、未分类及用户自�
 | 共用任务 | `modules/resumes/models.py::DocumentParseTask` | 上传和解析状态真值 |
 | Worker | `workers/dataset_parse_worker.py`、`document_parse_consumer.py` | 格式分派、转换、MQ 补发、租约恢复和结果收口 |
 | 外部适配 | `integrations/document_converter.py`、`linkparse_client.py` | 本地转换与 LinkParse 调用 |
-| Web | `features/datasets/` | 分类侧边栏、移动弹窗、自动上传队列、状态列表、批量管理和 Markdown/Mermaid 预览 |
+| Web | `features/datasets/` | macOS 风格文件夹卡片、移动弹窗、自动上传队列、状态列表、批量管理和 Markdown/Mermaid 预览 |
 | Agent | `modules/agent/resume_tools.py` | 读取当前用户显式选择的已完成资料 |
 
 ## 核心对象与规则

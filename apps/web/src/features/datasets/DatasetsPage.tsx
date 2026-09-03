@@ -1022,12 +1022,44 @@ export function DatasetsPage() {
             <>
               {selectedFolderId === "all" ? (
                 <>
-                  {/* 主体上部: 资料列表全宽表格 */}
+                  {/* 主体部分: 分类文件夹网格 */}
+                  <section className="dataset-folders-section" aria-label="文件夹分类">
+                    <div className="dataset-folders-header">
+                      <div className="dataset-folders-header-title">
+                        <h2>分类文件夹</h2>
+                        <span className="dataset-folders-header-count">
+                          {folders.length} 个
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="dataset-folders-grid">
+                      {folders.map((folder) => (
+                        <FolderCard
+                          key={folder.id}
+                          folder={folder}
+                          onClick={() => setSelectedFolderId(folder.id)}
+                          onRename={(f) => {
+                            setRenameFolderTarget(f);
+                            setRenameFolderName(f.name);
+                            setRenameFolderError(null);
+                          }}
+                          onDelete={(f) => setDeleteFolderTarget(f)}
+                        />
+                      ))}
+                      <CreateFolderCard
+                        onClick={() => {
+                          setNewFolderName("");
+                          setCreateFolderError(null);
+                          setCreateFolderDialogOpen(true);
+                        }}
+                      />
+                    </div>
+                  </section>
+
+                  {/* 资料列表全宽表格 */}
                   <div className="dataset-list-section">
                     <div className="dataset-list-section-header">
-                      <div className="dataset-list-section-title">
-                        <h2>资料列表</h2>
-                      </div>
                       <div className="flex items-center gap-2">
                         <TogglePill
                           active={listFilter === "all"}
@@ -1044,7 +1076,7 @@ export function DatasetsPage() {
                       </div>
                     </div>
 
-                    {datasets.length === 0 ? (
+                    {datasets.length === 0 && folders.length === 0 ? (
                       <section className="datasets-empty">
                         <h2>还没有资料</h2>
                         <p>建议先上传一份与你当前求职方向相关的资料，<br />后续写简历时可以快速检索和引用。</p>
@@ -1100,53 +1132,6 @@ export function DatasetsPage() {
                       </section>
                     )}
                   </div>
-
-                  {/* 主体下部: 分类文件夹网格 */}
-                  <section className="dataset-folders-section" aria-label="文件夹分类">
-                    <div className="dataset-folders-header">
-                      <div className="dataset-folders-header-title">
-                        <h2>分类文件夹</h2>
-                        <span className="dataset-folders-header-count">
-                          {folders.length} 个文件夹
-                        </span>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        icon={<Plus size={15} />}
-                        onClick={() => {
-                          setNewFolderName("");
-                          setCreateFolderError(null);
-                          setCreateFolderDialogOpen(true);
-                        }}
-                      >
-                        新建文件夹
-                      </Button>
-                    </div>
-
-                    <div className="dataset-folders-grid">
-                      <CreateFolderCard
-                        onClick={() => {
-                          setNewFolderName("");
-                          setCreateFolderError(null);
-                          setCreateFolderDialogOpen(true);
-                        }}
-                      />
-                      {folders.map((folder) => (
-                        <FolderCard
-                          key={folder.id}
-                          folder={folder}
-                          onClick={() => setSelectedFolderId(folder.id)}
-                          onRename={(f) => {
-                            setRenameFolderTarget(f);
-                            setRenameFolderName(f.name);
-                            setRenameFolderError(null);
-                          }}
-                          onDelete={(f) => setDeleteFolderTarget(f)}
-                        />
-                      ))}
-                    </div>
-                  </section>
                 </>
               ) : (
                 /* 文件夹内页视图 */

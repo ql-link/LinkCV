@@ -20,7 +20,7 @@ export function FolderCard({
 
   return (
     <div
-      className={`macos-folder-card${isEmpty ? " is-empty" : " has-files"}`}
+      className={`macos-folder-item${isEmpty ? " is-empty" : " has-files"}`}
       role="button"
       tabIndex={0}
       aria-label={`打开文件夹「${folder.name}」`}
@@ -32,28 +32,29 @@ export function FolderCard({
         }
       }}
     >
-      {/* 文件夹图形区域 */}
-      <div className="macos-folder-visual" aria-hidden="true">
-        {/* 后盖 */}
+      {/* 顶部：macOS 原生矢量风格文件夹图标 */}
+      <div className="macos-folder-graphic" aria-hidden="true">
+        {/* 后盖与折耳 */}
         <svg
           className="macos-folder-svg-back"
-          viewBox="0 0 120 90"
+          viewBox="0 0 108 84"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
         >
           <defs>
-            <linearGradient id={`fbGrad-${folder.id}`} x1="0" y1="0" x2="0" y2="90" gradientUnits="userSpaceOnUse">
+            <linearGradient id={`fb-${folder.id}`} x1="0" y1="0" x2="0" y2="84" gradientUnits="userSpaceOnUse">
               <stop offset="0%" stopColor="#5ea7f8" />
-              <stop offset="100%" stopColor="#2c80ef" />
+              <stop offset="100%" stopColor="#257ef5" />
             </linearGradient>
           </defs>
+          {/* 左上圆润折耳 Tab + 主背板 */}
           <path
-            d="M8 12C8 6.477 12.477 2 18 2H42C46.5 2 50.2 4.6 52.8 8.4L57 14H104C109.523 14 114 18.477 114 24V78C114 83.523 109.523 88 104 88H8C2.477 88 -2 83.523 -2 78V18C-2 14.686 0.686 12 4 12H8Z"
-            fill={`url(#fbGrad-${folder.id})`}
+            d="M6 10C6 5.58 9.58 2 14 2H38C42 2 45.5 4.2 47.8 7.5L52 13H96C100.42 13 104 16.58 104 21V72C104 76.42 100.42 80 96 80H12C7.58 80 4 76.42 4 72V12C4 10.9 4.9 10 6 10Z"
+            fill={`url(#fb-${folder.id})`}
           />
         </svg>
 
-        {/* 探出的纸质卡片装饰（仅有文件时显示，悬停上浮） */}
+        {/* 探出的立体纸张卡片装饰（有文件时显示，悬停上浮） */}
         {!isEmpty && (
           <div className="macos-folder-papers">
             {folder.dataset_count > 1 && <div className="macos-paper-sheet is-back" />}
@@ -68,91 +69,94 @@ export function FolderCard({
         {/* 前盖 */}
         <svg
           className="macos-folder-svg-front"
-          viewBox="0 0 120 74"
+          viewBox="0 0 108 66"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
         >
           <defs>
-            <linearGradient id={`ffGrad-${folder.id}`} x1="0" y1="0" x2="0" y2="74" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#76bcff" />
-              <stop offset="45%" stopColor="#3b92f7" />
-              <stop offset="100%" stopColor="#1f7df2" />
+            <linearGradient id={`ff-${folder.id}`} x1="0" y1="0" x2="0" y2="66" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="#7ec5ff" />
+              <stop offset="40%" stopColor="#3d97f8" />
+              <stop offset="100%" stopColor="#1a7cf2" />
             </linearGradient>
-            <linearGradient id={`fgGrad-${folder.id}`} x1="0" y1="0" x2="120" y2="0" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="rgba(255,255,255,0.6)" />
-              <stop offset="50%" stopColor="rgba(255,255,255,0.2)" />
-              <stop offset="100%" stopColor="rgba(255,255,255,0.5)" />
+            <linearGradient id={`fg-${folder.id}`} x1="0" y1="0" x2="108" y2="0" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="rgba(255,255,255,0.7)" />
+              <stop offset="50%" stopColor="rgba(255,255,255,0.25)" />
+              <stop offset="100%" stopColor="rgba(255,255,255,0.6)" />
             </linearGradient>
           </defs>
+          {/* 前盖梯形立体面板 */}
           <path
-            d="M2 10C2 4.477 6.477 0 12 0H108C113.523 0 118 4.477 118 10L116 64C116 69.523 111.523 74 106 74H14C8.477 74 4 69.523 4 64L2 10Z"
-            fill={`url(#ffGrad-${folder.id})`}
+            d="M3 8C3 3.58 6.58 0 11 0H97C101.42 0 105 3.58 105 8L103 56C103 60.42 99.42 64 95 64H13C8.58 64 5 60.42 5 56L3 8Z"
+            fill={`url(#ff-${folder.id})`}
           />
+          {/* 顶边微高光线 */}
           <path
-            d="M12 1.5H108C112.694 1.5 116.5 5.306 116.5 10L116.3 16H3.7L3.5 10C3.5 5.306 7.306 1.5 12 1.5Z"
-            fill={`url(#fgGrad-${folder.id})`}
-            opacity="0.5"
+            d="M11 1H97C100.8 1 103.9 4 104 7.8L103.8 12H4.2L4 7.8C4.1 4 7.2 1 11 1Z"
+            fill={`url(#fg-${folder.id})`}
+            opacity="0.6"
           />
         </svg>
       </div>
 
-      {/* 文件夹下方：名称与操作框 */}
-      <div className="macos-folder-footer">
-        <div className="macos-folder-info">
-          <span className="macos-folder-name" title={folder.name}>
-            {folder.name}
-          </span>
-          <span className="macos-folder-count">
-            {isEmpty ? "空文件夹" : `${folder.dataset_count} 份资料`}
-          </span>
-        </div>
+      {/* 底部：操作框（文件夹名称、数量与菜单） */}
+      <div className="macos-folder-caption">
+        <span className="macos-folder-name" title={folder.name}>
+          {folder.name}
+        </span>
 
-        <div
-          className="macos-folder-actions"
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-        >
-          <button
-            type="button"
-            className="macos-folder-menu-btn"
-            aria-label={`文件夹「${folder.name}」操作菜单`}
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((val) => !val)}
+        <div className="macos-folder-subrow">
+          <span className="macos-folder-badge">
+            {isEmpty ? "空" : `${folder.dataset_count} 项`}
+          </span>
+
+          <div
+            className="macos-folder-actions"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
           >
-            <MoreHorizontal size={14} aria-hidden="true" />
-          </button>
-
-          {menuOpen && (
-            <div
-              className="dataset-action-menu macos-folder-menu"
-              role="menu"
-              aria-label={`${folder.name} 操作`}
+            <button
+              type="button"
+              className="macos-folder-menu-btn"
+              aria-label={`文件夹「${folder.name}」操作菜单`}
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((val) => !val)}
             >
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMenuOpen(false);
-                  onRename(folder);
-                }}
+              <MoreHorizontal size={13} aria-hidden="true" />
+            </button>
+
+            {menuOpen && (
+              <div
+                className="dataset-action-menu macos-folder-menu"
+                role="menu"
+                aria-label={`${folder.name} 操作`}
               >
-                <Pencil size={14} aria-hidden="true" />
-                重命名
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="is-danger"
-                onClick={() => {
-                  setMenuOpen(false);
-                  onDelete(folder);
-                }}
-              >
-                <Trash2 size={14} aria-hidden="true" />
-                删除文件夹
-              </button>
-            </div>
-          )}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onRename(folder);
+                  }}
+                >
+                  <Pencil size={14} aria-hidden="true" />
+                  重命名
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="is-danger"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onDelete(folder);
+                  }}
+                >
+                  <Trash2 size={14} aria-hidden="true" />
+                  删除文件夹
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -163,17 +167,14 @@ export function CreateFolderCard({ onClick }: { onClick: () => void }) {
   return (
     <button
       type="button"
-      className="macos-create-folder-card"
+      className="macos-create-folder-item"
       aria-label="新建文件夹"
       onClick={onClick}
     >
-      <div className="macos-create-folder-icon-box">
-        <FolderPlus size={32} className="macos-create-folder-icon" aria-hidden="true" />
+      <div className="macos-create-folder-icon-wrap" aria-hidden="true">
+        <FolderPlus size={28} strokeWidth={1.5} className="macos-create-icon" />
       </div>
-      <div className="macos-create-folder-footer">
-        <span className="macos-create-folder-label">新建文件夹</span>
-        <span className="macos-create-folder-sub">点击创建</span>
-      </div>
+      <span className="macos-create-label">新建文件夹</span>
     </button>
   );
 }

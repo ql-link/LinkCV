@@ -4371,18 +4371,16 @@ select:not([data-slot]):focus-visible,
   padding: 20px clamp(24px, 4vw, 48px) 48px;
 }
 
-/* 资料库文件夹板块（位于下方） */
+/* 资料库主体文件夹板块（位于主体核心位置） */
 .dataset-folders-section {
-  margin-top: 36px;
-  padding-top: 24px;
-  border-top: 1px solid var(--ui-border);
+  margin-bottom: 32px;
 }
 
 .dataset-folders-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .dataset-folders-header-title {
@@ -4405,42 +4403,42 @@ select:not([data-slot]):focus-visible,
 
 .dataset-folders-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 14px;
 }
 
-/* macOS 原生风格文件夹卡片 */
-.macos-folder-card {
+/* macOS 原生访达风格文件夹卡片 */
+.macos-folder-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 16px 14px 14px;
+  padding: 14px 10px 10px;
   border-radius: var(--ui-radius-lg);
-  border: 1px solid var(--ui-border);
-  background: var(--ui-surface);
+  border: 1px solid transparent;
+  background: transparent;
   cursor: pointer;
   user-select: none;
-  transition: transform var(--ui-duration-base) var(--ui-ease-standard),
-              box-shadow var(--ui-duration-base) var(--ui-ease-standard),
-              border-color var(--ui-duration-base) var(--ui-ease-standard);
+  transition: background-color var(--ui-duration-fast) var(--ui-ease-standard),
+              border-color var(--ui-duration-fast) var(--ui-ease-standard),
+              transform var(--ui-duration-fast) var(--ui-ease-standard);
+}
+
+.macos-folder-item:hover {
+  background: var(--ui-surface);
+  border-color: var(--ui-border);
+  transform: translateY(-2px);
   box-shadow: var(--ui-shadow-xs);
 }
 
-.macos-folder-card:hover {
-  transform: translateY(-3px);
-  box-shadow: var(--ui-shadow-md);
-  border-color: var(--ui-border-strong);
-}
-
 /* 文件夹图标区域 */
-.macos-folder-visual {
+.macos-folder-graphic {
   position: relative;
-  width: 116px;
+  width: 108px;
   height: 84px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .macos-folder-svg-back {
@@ -4514,60 +4512,60 @@ select:not([data-slot]):focus-visible,
 .macos-paper-line.is-medium { width: 55%; }
 .macos-paper-line.is-short { width: 35%; }
 
-/* 下方操作与信息框 */
-.macos-folder-footer {
+/* 下方操作框：名称与操作 */
+.macos-folder-caption {
   width: 100%;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-top: 6px;
-  border-top: 1px solid var(--ui-surface-muted);
-}
-
-.macos-folder-info {
-  display: flex;
   flex-direction: column;
-  min-width: 0;
-  flex: 1;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
 }
 
 .macos-folder-name {
   font-size: var(--ui-text-sm);
   font-weight: 600;
   color: var(--ui-foreground);
+  max-width: 130px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.macos-folder-count {
+.macos-folder-subrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 22px;
+}
+
+.macos-folder-badge {
   font-size: var(--ui-text-xs);
   color: var(--ui-text-muted);
-  margin-top: 1px;
 }
 
 .macos-folder-actions {
   position: relative;
-  flex-shrink: 0;
-  margin-left: 6px;
+  display: flex;
+  align-items: center;
 }
-
 .macos-folder-menu-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-radius: var(--ui-radius-full);
   border: none;
   background: transparent;
   color: var(--ui-text-muted);
   cursor: pointer;
-  opacity: 0.6;
+  opacity: 0;
   transition: opacity var(--ui-duration-fast), background-color var(--ui-duration-fast);
 }
 
-.macos-folder-card:hover .macos-folder-menu-btn,
+.macos-folder-item:hover .macos-folder-menu-btn,
 .macos-folder-actions:focus-within .macos-folder-menu-btn {
   opacity: 1;
 }
@@ -4579,38 +4577,36 @@ select:not([data-slot]):focus-visible,
 
 .macos-folder-menu {
   position: absolute;
-  bottom: calc(100% + 4px);
-  right: 0;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 20;
 }
 
 /* 新建文件夹卡片 */
-.macos-create-folder-card {
+.macos-create-folder-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  padding: 16px 14px 14px;
-  min-height: 154px;
+  padding: 14px 10px 10px;
   border-radius: var(--ui-radius-lg);
-  border: 1.5px dashed var(--ui-border-strong);
+  border: 1.5px dashed var(--ui-border);
   background: transparent;
   cursor: pointer;
   user-select: none;
   color: var(--ui-text-muted);
-  transition: all var(--ui-duration-base) var(--ui-ease-standard);
+  transition: all var(--ui-duration-fast) var(--ui-ease-standard);
 }
 
-.macos-create-folder-card:hover {
+.macos-create-folder-item:hover {
   border-color: var(--ui-accent);
   background: var(--ui-surface-subtle);
   color: var(--ui-accent);
-  transform: translateY(-3px);
-  box-shadow: var(--ui-shadow-sm);
+  transform: translateY(-2px);
 }
 
-.macos-create-folder-icon-box {
-  width: 116px;
+.macos-create-folder-icon-wrap {
+  width: 108px;
   height: 84px;
   display: flex;
   align-items: center;
@@ -4618,32 +4614,30 @@ select:not([data-slot]):focus-visible,
   border-radius: var(--ui-radius-md);
   background: var(--ui-surface-muted);
   color: inherit;
+  margin-bottom: 8px;
   transition: background-color var(--ui-duration-fast);
 }
 
-.macos-create-folder-card:hover .macos-create-folder-icon-box {
+.macos-create-folder-item:hover .macos-create-folder-icon-wrap {
   background: var(--ui-accent-subtle);
 }
 
-.macos-create-folder-footer {
-  width: 100%;
+.macos-create-folder-caption {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 6px;
-  border-top: 1px dashed transparent;
+  gap: 2px;
 }
 
-.macos-create-folder-label {
+.macos-create-label {
   font-size: var(--ui-text-sm);
   font-weight: 600;
   color: inherit;
 }
 
-.macos-create-folder-sub {
+.macos-create-sub {
   font-size: var(--ui-text-xs);
   color: var(--ui-text-muted);
-  margin-top: 1px;
 }
 
 /* 列表板块标题 */
