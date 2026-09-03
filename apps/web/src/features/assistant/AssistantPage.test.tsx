@@ -85,6 +85,32 @@ describe("AssistantPage", () => {
     expect(window.location.pathname).toBe("/assistant/session-1");
   });
 
+  it("把历史用户消息中的文件引用渲染为正文内联单元", async () => {
+    const routedSession: AgentSession = {
+      ...session,
+      title: "带资料的会话",
+      messages: [{
+        sequence_no: 1,
+        role: "user",
+        content: "你好 @资料1.md 这是什么",
+        contexts: [{ type: "dataset", id: "21", version: "hash-1", label: "资料1.md" }],
+        created_at: session.created_at,
+      }],
+    };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [routedSession] });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session: routedSession });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+
+    render(<AssistantPage sessionId="session-1" />);
+
+    const reference = await screen.findByLabelText("引用文件 资料1.md");
+    const message = reference.closest(".assistant-message");
+    expect(message).toHaveTextContent("你好 资料1.md 这是什么");
+    expect(message).not.toHaveTextContent("@资料1.md");
+    expect(reference.querySelector(".lucide-database")).toBeInTheDocument();
+    expect(within(message as HTMLElement).queryByLabelText("本轮引用资料")).not.toBeInTheDocument();
+  });
+
   it("按设计稿展示空状态，并通过批量资料弹窗添加上下文", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });

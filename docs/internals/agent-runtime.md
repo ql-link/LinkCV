@@ -15,7 +15,7 @@ Agent 系统由 FastAPI `agent` 模块、独立 `apps/pi-service` 和 FastAPI `l
 
 ## 调用链
 
-1. FastAPI 创建 Agent session/run/message；发送前重新解析浏览器选择的简历、资料库文件等轻量引用，再以服务 token 调用 Pi。
+1. FastAPI 创建 Agent session/run/message；发送前重新解析浏览器选择的简历、资料库文件等轻量引用，再以服务 token 调用 Pi。Web 持久化并回读消息时仍以结构化 `contexts` 识别引用，在用户气泡正文的原位置渲染内联文件单元，不依赖或重复展示文件名标签。
 2. 登录后的 Web 可通过 `/api/agent/model` 读取当前 `pi_agent` 绑定的非敏感 `adapter/name` 摘要；此查询只解析绑定配置，不解密凭据。
 3. Pi 通过另一枚 token 调用 `/internal/agent`，读取当前用户被授权的简历、岗位、进程、面试或资料集上下文；公开选择的 `dataset` 仅限解析成功且转换对象键属于当前用户前缀的资料。
 4. 模型调用按 `llm_capability_bindings` 选择候选，解密运行凭据并写入 `llm_call_logs`。

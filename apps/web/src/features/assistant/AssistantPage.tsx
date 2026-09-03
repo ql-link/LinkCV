@@ -291,6 +291,23 @@ function ContextSourceIcon({ type, size }: { type: AgentContextType; size: numbe
   return <Icon size={size} aria-hidden="true" />;
 }
 
+function UserMessageContent({ content, contexts }: { content: string; contexts: AgentContextSnapshot[] }) {
+  return (
+    <div className="assistant-user-message-content">
+      {composerSegments(content, contexts).map((segment) => segment.kind === "text" ? segment.text : (
+        <span
+          className="assistant-message-context-token"
+          key={segment.key}
+          aria-label={`引用文件 ${segment.context.label}`}
+        >
+          <ContextSourceIcon type={segment.context.type} size={14} />
+          <span>{segment.context.label}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function proposalResumeLabel(state: ConversationState, resumeId: string) {
   const referenced = [
     ...state.contexts,
@@ -1535,13 +1552,10 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
                 )}
                 <div className="assistant-message-body">
                   <div className="assistant-message-content">
-                    <AgentMarkdown content={messageText(message)} />
+                    {message.role === "user" && message.contexts && message.contexts.length > 0
+                      ? <UserMessageContent content={messageText(message)} contexts={message.contexts} />
+                      : <AgentMarkdown content={messageText(message)} />}
                   </div>
-                  {message.contexts && message.contexts.length > 0 && (
-                    <div className="assistant-message-contexts" aria-label="本轮引用资料">
-                      {message.contexts.map((context) => <span key={contextKey(context)}>{context.label}</span>)}
-                    </div>
-                  )}
                   {message.status === "stopped" && <small className="assistant-stopped-label">已停止生成</small>}
                   {message.status === "failed" && <small className="assistant-stopped-label">生成未完成</small>}
                   <time className="visually-hidden" dateTime={message.created_at}>{formatTime(message.created_at)}</time>
