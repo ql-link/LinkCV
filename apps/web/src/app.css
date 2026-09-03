@@ -5093,12 +5093,20 @@ select:not([data-slot]):focus-visible,
   padding: 0 10px 0 6px;
   font-size: var(--ui-text-sm);
   font-weight: 500;
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
   transition: color var(--ui-duration-fast), background-color var(--ui-duration-fast);
+}
+
+.dataset-back-btn::before,
+.dataset-back-btn::after {
+  display: none !important;
 }
 
 .dataset-back-btn:hover {
   color: var(--ui-foreground);
-  background: var(--ui-surface-muted);
+  background: transparent !important;
 }
 
 .dataset-move-options {
@@ -5369,7 +5377,42 @@ select:not([data-slot]):focus-visible,
 .dataset-action-menu button.is-danger { color: var(--ui-destructive); }
 
 .dataset-action-dialog {
-  width: min(440px, calc(100vw - 32px));
+  width: min(460px, calc(100vw - 32px)) !important;
+  max-width: none !important;
+  padding: 24px !important;
+  border: 1px solid var(--ui-border) !important;
+  border-radius: var(--ui-radius-xl) !important;
+  background: var(--ui-surface) !important;
+  color: var(--ui-foreground) !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.16) !important;
+}
+
+.dataset-action-dialog [data-slot="dialog-title"] {
+  color: var(--ui-foreground) !important;
+  font-size: var(--ui-text-lg) !important;
+  font-weight: 600 !important;
+}
+
+.dataset-action-dialog [data-slot="dialog-description"] {
+  color: var(--ui-text-muted) !important;
+  font-size: var(--ui-text-sm) !important;
+}
+
+.dataset-action-dialog label {
+  color: var(--ui-text-secondary) !important;
+  font-size: var(--ui-text-xs) !important;
+  font-weight: 600 !important;
+}
+
+.dataset-action-dialog input {
+  background: var(--ui-surface) !important;
+  border-color: var(--ui-border) !important;
+  color: var(--ui-foreground) !important;
+}
+
+.dataset-action-dialog input::placeholder {
+  color: var(--ui-text-muted) !important;
+  opacity: 1 !important;
 }
 
 .dataset-rename-field {

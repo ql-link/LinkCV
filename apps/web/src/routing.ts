@@ -15,7 +15,7 @@ export type AppRoute =
   | { kind: "jobCreate" }
   | { kind: "jobDetail"; jobId: string }
   | { kind: "jobEdit"; jobId: string }
-  | { kind: "datasets" }
+  | { kind: "datasets"; folderId?: string }
   | { kind: "account" }
   | { kind: "share"; token: string }
   | { kind: "notFound" };
@@ -96,7 +96,10 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
     return { kind: "interviews", view: "records", sessionId: new URLSearchParams(search).get("session") ?? undefined };
   }
   if (normalizedPath === "/career/jobs/new" || normalizedPath === "/jobs/new") return { kind: "jobCreate" };
-  if (normalizedPath === "/datasets") return { kind: "datasets" };
+  if (normalizedPath === "/datasets") {
+    const folderId = new URLSearchParams(search).get("folder") ?? undefined;
+    return { kind: "datasets", folderId };
+  }
   if (normalizedPath === "/account") return { kind: "account" };
 
   const assistantSessionMatch = normalizedPath.match(assistantSessionPathPattern);
@@ -214,6 +217,12 @@ export function legacyCareerRedirect(pathname: string, search = ""): string | nu
     return "/career/jobs";
   }
   return null;
+}
+
+export function datasetsPath(folderId?: string | null) {
+  return folderId && folderId !== "all"
+    ? `/datasets?folder=${encodeURIComponent(folderId)}`
+    : "/datasets";
 }
 
 export function authPath(mode: "login" | "register", next?: string | null) {

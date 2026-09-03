@@ -3,6 +3,7 @@ import {
   adminLoginPath,
   assistantPath,
   authPath,
+  datasetsPath,
   editorPath,
   isSafeAdminPath,
   isSafeAppPath,
@@ -44,7 +45,8 @@ describe("LinkCV routes", () => {
     expect(parseAppRoute("/interviews", "?view=schedule")).toEqual({ kind: "interviews", view: "schedule" });
     expect(parseAppRoute("/interviews", "?view=records")).toEqual({ kind: "interviews", view: "records" });
     expect(parseAppRoute("/interviews", "?view=unknown")).toEqual({ kind: "jobs" });
-    expect(parseAppRoute("/datasets")).toEqual({ kind: "datasets" });
+    expect(parseAppRoute("/datasets")).toEqual({ kind: "datasets", folderId: undefined });
+    expect(parseAppRoute("/datasets", "?folder=f-123")).toEqual({ kind: "datasets", folderId: "f-123" });
     expect(parseAppRoute("/account")).toEqual({ kind: "account" });
     expect(parseAppRoute("/account/password")).toEqual({ kind: "notFound" });
     expect(parseAppRoute("/share/abc123")).toEqual({ kind: "share", token: "abc123" });
@@ -87,11 +89,15 @@ describe("LinkCV routes", () => {
     expect(isSafeAppPath("/interviews?view=records")).toBe(true);
     expect(isSafeAppPath("/career?view=applications")).toBe(true);
     expect(isSafeAppPath("/datasets")).toBe(true);
+    expect(isSafeAppPath("/datasets?folder=f1")).toBe(true);
     expect(isSafeAppPath("/account")).toBe(true);
     expect(isSafeAppPath("/account/password")).toBe(true);
     expect(isSafeAppPath("//example.com/resumes")).toBe(false);
     expect(isSafeAppPath("https://example.com/resumes")).toBe(false);
     expect(authPath("login", "/resumes/resume_123/edit")).toBe("/login?next=%2Fresumes%2Fresume_123%2Fedit");
+    expect(datasetsPath()).toBe("/datasets");
+    expect(datasetsPath("all")).toBe("/datasets");
+    expect(datasetsPath("folder-1")).toBe("/datasets?folder=folder-1");
   });
 
   it("only accepts internal admin paths as login return targets", () => {

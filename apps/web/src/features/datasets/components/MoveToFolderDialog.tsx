@@ -63,14 +63,14 @@ export function MoveToFolderDialog({
     <Dialog open={open} onOpenChange={(val) => !moving && onOpenChange(val)}>
       <DialogContent className="dataset-action-dialog sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="text-foreground text-lg font-semibold">{title}</DialogTitle>
+          <DialogDescription className="text-muted-foreground text-sm">
             选择目标分类文件夹，将所选资料整理到相应分类中。
           </DialogDescription>
         </DialogHeader>
 
         <div className="py-2 space-y-2">
-          <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          <Label className="text-xs font-semibold text-secondary uppercase tracking-wider">
             选择目标分类
           </Label>
           <div

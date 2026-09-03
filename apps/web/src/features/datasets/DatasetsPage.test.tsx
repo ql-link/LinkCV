@@ -759,14 +759,24 @@ describe("DatasetsPage", () => {
     expect(screen.getByText("项目经历")).toBeInTheDocument();
     expect(screen.getByText("杂项笔记")).toBeInTheDocument();
 
-    // 点击进入“核心项目”文件夹卡片
+    // 点击进入“核心项目”文件夹卡片，URL 携带 folder 参数并记录历史
     fireEvent.click(screen.getByRole("button", { name: "打开文件夹「核心项目」" }));
+    expect(window.location.search).toContain("folder=f1");
     expect(screen.getByText("项目经历")).toBeInTheDocument();
     expect(screen.queryByText("杂项笔记")).not.toBeInTheDocument();
 
-    // 点击返回全部资料
-    fireEvent.click(screen.getByRole("button", { name: "返回全部资料" }));
+    // 模拟浏览器后退（popstate）返回全部资料
+    window.history.pushState(null, "", "/datasets");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+
+    await waitFor(() => expect(screen.getByText("杂项笔记")).toBeInTheDocument());
     expect(screen.getByText("项目经历")).toBeInTheDocument();
+
+    // 再次点击进入文件夹，然后通过返回按钮退出
+    fireEvent.click(screen.getByRole("button", { name: "打开文件夹「核心项目」" }));
+    expect(screen.queryByText("杂项笔记")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "返回全部资料" }));
+    expect(window.location.search).toBe("");
     expect(screen.getByText("杂项笔记")).toBeInTheDocument();
   });
 

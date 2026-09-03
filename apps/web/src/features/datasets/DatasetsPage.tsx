@@ -50,6 +50,7 @@ import { DatasetPreviewDialog } from "./DatasetPreviewDialog";
 import { CreateFolderCard, FolderCard } from "./components/FolderCard";
 import { FileCard } from "./components/FileCard";
 import { MoveToFolderDialog } from "./components/MoveToFolderDialog";
+import { datasetsPath, navigateTo } from "../../routing";
 import {
   datasetFormatError,
   datasetUploadErrorMessage,
@@ -374,7 +375,7 @@ function mergeDatasetResponse(
   return missingAccepted.length > 0 ? [...missingAccepted, ...datasets] : datasets;
 }
 
-export function DatasetsPage() {
+export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } = {}) {
   const previewTriggerRef = useRef<HTMLElement | null>(null);
   const locallyAccepted = useRef(new Map<string, DatasetRecord>());
   const pageMounted = useRef(true);
@@ -399,7 +400,7 @@ export function DatasetsPage() {
   const [busyAction, setBusyAction] = useState<DatasetAction>(null);
 
   const [folders, setFolders] = useState<DatasetFolder[]>([]);
-  const [selectedFolderId, setSelectedFolderId] = useState<string>("all");
+  const [selectedFolderId, setSelectedFolderId] = useState<string>(() => initialFolderId || "all");
   const [totalCount, setTotalCount] = useState(0);
   const [uncategorizedCount, setUncategorizedCount] = useState(0);
   const [moveTarget, setMoveTarget] = useState<DatasetRecord | null>(null);
@@ -505,6 +506,7 @@ export function DatasetsPage() {
       await api.deleteDatasetFolder(deleteFolderTarget.id);
       if (selectedFolderId === deleteFolderTarget.id) {
         setSelectedFolderId("all");
+        navigateTo(datasetsPath("all"), { replace: true });
       }
       await refreshFolders();
       await refreshDatasets();
@@ -629,6 +631,35 @@ export function DatasetsPage() {
       pageMounted.current = false;
     };
   }, [refreshDatasets, refreshFolders]);
+
+  useEffect(() => {
+    const nextFolderId = initialFolderId || "all";
+    setSelectedFolderId((current) => (current === nextFolderId ? current : nextFolderId));
+  }, [initialFolderId]);
+
+  useEffect(() => {
+    const syncRouteFromState = () => {
+      const url = new URL(window.location.href);
+      if (url.pathname === "/datasets") {
+        const queryFolderId = url.searchParams.get("folder") || "all";
+        setSelectedFolderId((current) => (current === queryFolderId ? current : queryFolderId));
+      }
+    };
+    window.addEventListener("popstate", syncRouteFromState);
+    return () => window.removeEventListener("popstate", syncRouteFromState);
+  }, []);
+
+  const handleSelectFolder = (folderId: string) => {
+    setSelectedFolderId(folderId);
+    navigateTo(datasetsPath(folderId));
+  };
+
+  const handleBackToAll = () => {
+    setBatchMode(false);
+    setSelectedDatasetIds(new Set());
+    setSelectedFolderId("all");
+    navigateTo(datasetsPath("all"));
+  };
 
   useEffect(() => {
     const existingIds = new Set(datasets.map((dataset) => dataset.id));
@@ -1139,7 +1170,7 @@ export function DatasetsPage() {
                           <FolderCard
                             key={folder.id}
                             folder={folder}
-                            onClick={() => setSelectedFolderId(folder.id)}
+                            onClick={() => handleSelectFolder(folder.id)}
                             onRename={(f) => {
                               setRenameFolderTarget(f);
                               setRenameFolderName(f.name);
@@ -1192,11 +1223,7 @@ export function DatasetsPage() {
                       size="sm"
                       className="dataset-back-btn"
                       icon={<ChevronLeft size={16} />}
-                      onClick={() => {
-                        setBatchMode(false);
-                        setSelectedDatasetIds(new Set());
-                        setSelectedFolderId("all");
-                      }}
+                      onClick={handleBackToAll}
                     >
                       返回全部资料
                     </Button>
@@ -1331,8 +1358,8 @@ export function DatasetsPage() {
         }}>
           <DialogContent className="dataset-action-dialog">
             <DialogHeader>
-              <DialogTitle>重命名资料</DialogTitle>
-              <DialogDescription>只修改资料显示名称，不改变文件格式或已保存的内容。</DialogDescription>
+              <DialogTitle className="text-foreground text-lg font-semibold">重命名资料</DialogTitle>
+              <DialogDescription className="text-muted-foreground text-sm">只修改资料显示名称，不改变文件格式或已保存的内容。</DialogDescription>
             </DialogHeader>
             <label className="dataset-rename-field">
               <span>资料名称</span>
@@ -1402,11 +1429,11 @@ export function DatasetsPage() {
         >
           <DialogContent className="dataset-action-dialog sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>新建文件夹</DialogTitle>
-              <DialogDescription>创建分类文件夹，整理和归类求职资料。</DialogDescription>
+              <DialogTitle className="text-foreground text-lg font-semibold">新建文件夹</DialogTitle>
+              <DialogDescription className="text-muted-foreground text-sm">创建分类文件夹，整理和归类求职资料。</DialogDescription>
             </DialogHeader>
             <div className="grid gap-2 py-3">
-              <Label htmlFor="create-folder-input">文件夹名称</Label>
+              <Label htmlFor="create-folder-input" className="text-foreground text-xs font-semibold">文件夹名称</Label>
               <Input
                 id="create-folder-input"
                 autoFocus
@@ -1414,6 +1441,7 @@ export function DatasetsPage() {
                 maxLength={64}
                 placeholder="例如：核心项目、工作复盘、资格证书"
                 aria-label="文件夹名称"
+                className="text-foreground bg-surface placeholder:text-muted-foreground"
                 onChange={(e) => {
                   setNewFolderName(e.target.value);
                   setCreateFolderError(null);
@@ -1455,17 +1483,18 @@ export function DatasetsPage() {
         >
           <DialogContent className="dataset-action-dialog sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>重命名文件夹</DialogTitle>
-              <DialogDescription>修改文件夹名称，内部资料归属将自动同步。</DialogDescription>
+              <DialogTitle className="text-foreground text-lg font-semibold">重命名文件夹</DialogTitle>
+              <DialogDescription className="text-muted-foreground text-sm">修改文件夹名称，内部资料归属将自动同步。</DialogDescription>
             </DialogHeader>
             <div className="grid gap-2 py-3">
-              <Label htmlFor="rename-folder-input">文件夹名称</Label>
+              <Label htmlFor="rename-folder-input" className="text-foreground text-xs font-semibold">文件夹名称</Label>
               <Input
                 id="rename-folder-input"
                 autoFocus
                 value={renameFolderName}
                 maxLength={64}
                 aria-label="文件夹名称"
+                className="text-foreground bg-surface placeholder:text-muted-foreground"
                 onChange={(e) => {
                   setRenameFolderName(e.target.value);
                   setRenameFolderError(null);
