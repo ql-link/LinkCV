@@ -1030,6 +1030,19 @@ export function DatasetsPage() {
             <Button
               className="datasets-hero-primary-action"
               variant="outline"
+              icon={<FolderPlus size={15} />}
+              disabled={batchMode}
+              onClick={() => {
+                setNewFolderName("");
+                setCreateFolderError(null);
+                setCreateFolderDialogOpen(true);
+              }}
+            >
+              新建文件夹
+            </Button>
+            <Button
+              className="datasets-hero-primary-action"
+              variant="outline"
               icon={<Plus size={15} />}
               disabled={batchMode}
               onClick={openUploadDialog}

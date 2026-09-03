@@ -4668,17 +4668,15 @@ select:not([data-slot]):focus-visible,
   align-items: center;
   padding: 16px 12px 14px;
   border-radius: var(--ui-radius-lg);
-  border: 1.5px dashed var(--ui-border);
+  border: 0;
   background: transparent;
   cursor: pointer;
   user-select: none;
   color: var(--ui-text-muted);
-  transition: border-color var(--ui-duration-fast) var(--ui-ease-standard),
-              color var(--ui-duration-fast) var(--ui-ease-standard);
+  transition: color var(--ui-duration-fast) var(--ui-ease-standard);
 }
 
 .macos-create-folder-item:hover {
-  border-color: var(--ui-accent);
   color: var(--ui-accent);
 }
 
@@ -4695,8 +4693,36 @@ select:not([data-slot]):focus-visible,
   transition: transform var(--ui-duration-fast) var(--ui-ease-standard);
 }
 
+.macos-create-folder-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.macos-create-folder-bg {
+  fill: color-mix(in srgb, var(--ui-accent) 7%, transparent);
+  stroke: color-mix(in srgb, var(--ui-accent) 26%, transparent);
+  stroke-width: 1.5px;
+  stroke-dasharray: 4 3.5;
+  transition: fill var(--ui-duration-fast) var(--ui-ease-standard),
+              stroke var(--ui-duration-fast) var(--ui-ease-standard);
+}
+
+.macos-create-folder-plus {
+  stroke: color-mix(in srgb, var(--ui-accent) 72%, var(--ui-text-muted));
+  transition: stroke var(--ui-duration-fast) var(--ui-ease-standard);
+}
+
+.macos-create-folder-item:hover .macos-create-folder-bg {
+  fill: color-mix(in srgb, var(--ui-accent) 14%, transparent);
+  stroke: var(--ui-accent);
+}
+
+.macos-create-folder-item:hover .macos-create-folder-plus {
+  stroke: var(--ui-accent);
+}
+
 .macos-create-folder-item:hover .macos-create-folder-icon-wrap {
-  background: transparent;
   transform: scale(1.06);
 }
 
@@ -4704,7 +4730,8 @@ select:not([data-slot]):focus-visible,
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
+  text-align: center;
   transform-origin: center top;
   transition: transform var(--ui-duration-fast) var(--ui-ease-standard);
 }
@@ -4717,11 +4744,6 @@ select:not([data-slot]):focus-visible,
   font-size: var(--ui-text-sm);
   font-weight: 600;
   color: inherit;
-}
-
-.macos-create-sub {
-  font-size: var(--ui-text-xs);
-  color: var(--ui-text-muted);
 }
 
 /* 统一网格布局（文件夹与文件同级） */

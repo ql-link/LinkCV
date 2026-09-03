@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FolderPlus, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import type { DatasetFolder } from "../../../api/client";
 
 export type FolderCardProps = {
@@ -182,9 +182,29 @@ export function CreateFolderCard({ onClick }: { onClick: () => void }) {
       onClick={onClick}
     >
       <div className="macos-create-folder-icon-wrap" aria-hidden="true">
-        <FolderPlus size={36} strokeWidth={1.6} className="macos-create-icon" />
+        <svg
+          className="macos-create-folder-svg"
+          viewBox="0 0 100 80"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          {/* 纯净柔和浅天蓝底色与微实线边缘 */}
+          <path
+            d="M14 10H36C39.5 10 42.5 12 44.5 15L47.5 19H86C90.5 19 94 22.5 94 27V69C94 73.5 90.5 77 86 77H14C9.5 77 6 73.5 6 69V18C6 13.5 9.5 10 14 10Z"
+            className="macos-create-folder-bg"
+          />
+          {/* 居中细线条极简「+」号 */}
+          <path
+            d="M50 40V56M42 48H58"
+            className="macos-create-folder-plus"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </svg>
       </div>
-      <span className="macos-create-label">新建文件夹</span>
+      <div className="macos-create-folder-caption">
+        <span className="macos-create-label">新建文件夹</span>
+      </div>
     </button>
   );
 }
