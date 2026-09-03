@@ -1,6 +1,7 @@
 import { ChevronLeft, CircleCheck, History, LoaderCircle, Pencil, Plus, RotateCcw, Send, Sparkles, Square, X } from "lucide-react";
+import MarkdownIt from "markdown-it";
 import { useEffect, useRef, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent } from "react";
 
 import {
   AgentMessage,
@@ -166,48 +167,45 @@ export function AgentUserAvatar({ avatarUrl, displayName = "用户" }: { avatarU
   );
 }
 
-function inlineMarkdown(text: string): ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean).map((part, index) => {
-    if (part.startsWith("**") && part.endsWith("**")) return <strong key={index}>{part.slice(2, -2)}</strong>;
-    if (part.startsWith("`") && part.endsWith("`")) return <code key={index}>{part.slice(1, -1)}</code>;
-    return part;
-  });
+const agentMarkdown = new MarkdownIt({
+  html: false,
+  linkify: true,
+  breaks: false,
+  typographer: false,
+});
+
+function agentHeadingTag(tag: string) {
+  const sourceLevel = Number.parseInt(tag.slice(1), 10) || 1;
+  return { sourceLevel, tag: `h${Math.min(sourceLevel + 1, 6)}` };
 }
 
+agentMarkdown.renderer.rules.heading_open = (tokens, index, options, _env, self) => {
+  const token = tokens[index];
+  const heading = agentHeadingTag(token.tag);
+  token.tag = heading.tag;
+  token.attrJoin("class", `agent-markdown-heading is-level-${heading.sourceLevel}`);
+  return self.renderToken(tokens, index, options);
+};
+
+agentMarkdown.renderer.rules.heading_close = (tokens, index, options, _env, self) => {
+  tokens[index].tag = agentHeadingTag(tokens[index].tag).tag;
+  return self.renderToken(tokens, index, options);
+};
+
+agentMarkdown.renderer.rules.link_open = (tokens, index, options, _env, self) => {
+  const token = tokens[index];
+  token.attrSet("target", "_blank");
+  token.attrSet("rel", "noopener noreferrer");
+  return self.renderToken(tokens, index, options);
+};
+
+agentMarkdown.renderer.rules.image = (tokens, index) => {
+  const alt = agentMarkdown.utils.escapeHtml(tokens[index].content || "图片");
+  return `<span class="agent-markdown-image" role="img" aria-label="${alt}">[图片：${alt}]</span>`;
+};
+
 export function AgentMarkdown({ content }: { content: string }) {
-  const lines = content.split("\n");
-  const blocks: ReactNode[] = [];
-  for (let index = 0; index < lines.length;) {
-    const line = lines[index]?.trimEnd() ?? "";
-    if (!line.trim()) {
-      index += 1;
-      continue;
-    }
-    if (line.startsWith("```") ) {
-      const code: string[] = [];
-      index += 1;
-      while (index < lines.length && !lines[index]?.startsWith("```")) code.push(lines[index++] ?? "");
-      index += 1;
-      blocks.push(<pre key={`code-${index}`}><code>{code.join("\n")}</code></pre>);
-      continue;
-    }
-    if (/^[-*]\s+/.test(line)) {
-      const items: string[] = [];
-      while (index < lines.length && /^[-*]\s+/.test(lines[index] ?? "")) items.push((lines[index++] ?? "").replace(/^[-*]\s+/, ""));
-      blocks.push(<ul key={`list-${index}`}>{items.map((item, itemIndex) => <li key={itemIndex}>{inlineMarkdown(item)}</li>)}</ul>);
-      continue;
-    }
-    const heading = line.match(/^(#{1,3})\s+(.+)$/);
-    if (heading) {
-      blocks.push(<strong className="agent-markdown-heading" key={`heading-${index}`}>{inlineMarkdown(heading[2] ?? "")}</strong>);
-      index += 1;
-      continue;
-    }
-    const paragraph: string[] = [];
-    while (index < lines.length && lines[index]?.trim() && !/^(```|[-*]\s+|#{1,3}\s+)/.test(lines[index] ?? "")) paragraph.push(lines[index++] ?? "");
-    blocks.push(<p key={`paragraph-${index}`}>{inlineMarkdown(paragraph.join("\n"))}</p>);
-  }
-  return <div className="agent-message-content">{blocks}</div>;
+  return <div className="agent-message-content" dangerouslySetInnerHTML={{ __html: agentMarkdown.render(content) }} />;
 }
 
 export function AgentPanel({

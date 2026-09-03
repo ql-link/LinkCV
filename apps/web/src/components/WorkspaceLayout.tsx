@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 import {
   BriefcaseBusiness,
   CalendarDays,
@@ -6,8 +6,8 @@ import {
   FileText,
   LayoutTemplate,
   ListChecks,
-  Sparkles,
 } from "lucide-react";
+import assistantFeatherOutline from "../assets/assistant-feather-outline.png";
 import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
 import { Brand, PageHeader } from "@/components/ui";
@@ -32,7 +32,7 @@ const NAV_ITEMS: Array<{
   key: WorkspaceSection;
   label: string;
   href: string;
-  icon: typeof FileText;
+  icon: ComponentType<{ "aria-hidden"?: boolean; className?: string; strokeWidth?: number }>;
 }> = [
   {
     activeColor: "var(--ui-accent)",
@@ -43,20 +43,20 @@ const NAV_ITEMS: Array<{
     icon: FileText,
   },
   {
-    activeColor: "var(--ui-accent)",
-    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-accent) 24%, transparent) 0%, color-mix(in srgb, var(--ui-accent) 10%, transparent) 48%, transparent 76%)",
-    key: "assistant",
-    label: "AI 助手",
-    href: "/assistant",
-    icon: Sparkles,
-  },
-  {
     activeColor: "var(--ui-template-accent)",
     gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-template-accent) 24%, transparent) 0%, color-mix(in srgb, var(--ui-template-accent) 10%, transparent) 48%, transparent 76%)",
     key: "templates",
     label: "简历模板",
     href: "/templates",
     icon: LayoutTemplate,
+  },
+  {
+    activeColor: "var(--ui-assistant-accent)",
+    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-assistant-accent) 28%, transparent) 0%, color-mix(in srgb, var(--ui-assistant-accent) 12%, transparent) 48%, transparent 76%)",
+    key: "assistant",
+    label: "AI 助手",
+    href: "/assistant",
+    icon: AssistantFeatherIcon,
   },
   {
     activeColor: "var(--ui-warning)",
@@ -75,6 +75,17 @@ const NAV_ITEMS: Array<{
     icon: Database,
   },
 ];
+
+function AssistantFeatherIcon({
+  className,
+  "aria-hidden": ariaHidden,
+}: {
+  "aria-hidden"?: boolean;
+  className?: string;
+  strokeWidth?: number;
+}) {
+  return <img aria-hidden={ariaHidden} className={`${className ?? ""} dark:invert`} src={assistantFeatherOutline} alt="" />;
+}
 
 export function WorkspaceNavigation({
   active,

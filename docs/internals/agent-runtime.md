@@ -15,9 +15,9 @@ Agent 系统由 FastAPI `agent` 模块、独立 `apps/pi-service` 和 FastAPI `l
 
 ## 调用链
 
-1. FastAPI 创建 Agent session/run/message，并以服务 token 调用 Pi。
+1. FastAPI 创建 Agent session/run/message；发送前重新解析浏览器选择的简历、资料库文件等轻量引用，再以服务 token 调用 Pi。Web 持久化并回读消息时仍以结构化 `contexts` 识别引用，在用户气泡正文的原位置渲染内联文件单元，不依赖或重复展示文件名标签；成功终态清空下一轮输入草稿与引用，失败或停止终态保留。助手 Markdown 在共享渲染边界处理标题、分隔线、表格、列表、引用、链接和代码等常见语法，禁用原始 HTML，并把远程图片降级为文字占位。
 2. 登录后的 Web 可通过 `/api/agent/model` 读取当前 `pi_agent` 绑定的非敏感 `adapter/name` 摘要；此查询只解析绑定配置，不解密凭据。
-3. Pi 通过另一枚 token 调用 `/internal/agent`，读取当前用户被授权的简历、岗位、进程、面试或资料集上下文。
+3. Pi 通过另一枚 token 调用 `/internal/agent`，读取当前用户被授权的简历、岗位、进程、面试或资料集上下文；公开选择的 `dataset` 仅限解析成功且转换对象键属于当前用户前缀的资料。
 4. 模型调用按 `llm_capability_bindings` 选择候选，解密运行凭据并写入 `llm_call_logs`。
 5. 简历上下文通过统一的 persisted canonical 解析边界读取；结构化 `InlineIcon/title_icon` 只在 Agent Markdown 边界序列化为白名单 `:icon[Name]:`，不降级为可编辑普通文本。简历改动只保存为 canonical 提案，确认后回到 FastAPI 简历应用服务执行乐观锁写入并重新编译模板 `LayoutPlan`。
 
@@ -48,7 +48,7 @@ Agent 系统由 FastAPI `agent` 模块、独立 `apps/pi-service` 和 FastAPI `l
 ## 故障与降级
 
 - Pi readiness 失败时 FastAPI 仍可提供非 Agent 业务，但助手入口显示不可用且不能创建假成功运行。
-- 会话标题和置顶状态由 FastAPI 在用户归属校验后直接持久化；这些 PATCH 操作不进入消息/模型调用链。删除会话会锁住目标会话及其运行，运行中时返回 `AGENT_RUN_IN_PROGRESS`，否则按 proposal、tool call、message、run、session 顺序事务清理。
+- 会话标题和置顶状态由 FastAPI 在用户归属校验后直接持久化；这些 PATCH 操作不进入消息/模型调用链。Web 侧三点菜单的展开方向和滚动空间只属于客户端呈现，不改变这些 PATCH 或 DELETE 契约。删除会话会锁住目标会话及其运行，运行中时返回 `AGENT_RUN_IN_PROGRESS`，否则按 proposal、tool call、message、run、session 顺序事务清理。
 - `/api/agent/model` 未绑定模型时返回 `503 LLM_MODEL_NOT_CONFIGURED`；成功时只返回当前绑定的 `adapter` 和 `name`，不触发凭据解密。
 - 模型未绑定、凭据不可解密、探针失败、供应商超时和计量缺失分别保留稳定状态；调用日志只记录非敏感错误码。
 - SSE 在正常终态前断开时标记连接中断；取消和失败不会生成可确认提案。

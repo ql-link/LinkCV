@@ -42,6 +42,105 @@
 
 final result: passed
 
+---
+
+# AI 助手名称前缀检索与内联文件引用 — 2026-09-03
+
+## Evidence
+
+- Source visual truth: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-08784b34-174e-4d69-92ce-c3106fbc335c.png`、`/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-cd50507f-cb0e-4b3d-9ad4-f9bbb09343fe.png`、`/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-7701bfe9-9f1e-4a6a-a003-78ce2eb9d16e.png` 与 `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-82544ac8-2299-4835-b365-baa0e54aa995.png`。前三张分别规定内联原子引用与资料库图标，第四张规定搜索结果使用不可选择的分类标题。
+- Implementation route: `http://127.0.0.1:5173/assistant`，Chrome 已登录桌面状态。
+- Implementation screenshots: `/private/tmp/linkcv-assistant-inline-reference.png`、`/private/tmp/linkcv-assistant-dataset-icon.png` 与 `/private/tmp/linkcv-assistant-grouped-mentions.png`，均为 `1920 × 1887` px，桌面 CSS 视口与 device density 均为 `1`。
+- Combined comparison: `/private/tmp/linkcv-assistant-inline-comparison.png`，`1298 × 1068` px；上方保留两张原始参考，下方为实现截图的输入区等比聚焦裁切。
+- Source pixels: `1298 × 399` 与 `329 × 64`；参考是局部功能示意而非完整同视口页面，因此只比较编辑器内部结构、引用位置和视觉层级，不对页面留白做像素级判断。
+- State: 输入真实资料名前缀 `@mock-dev-20260823-a1-2`，Tab 选择首项，再分别在引用后输入“这是什么”、按 Home 在引用前输入“你好 ”。
+
+## Findings
+
+没有剩余 P0/P1/P2 问题。
+
+- 字体与排版：普通正文沿用助手输入区的文楷字体；文件单元使用现有无衬线 UI 字体与较小字号，和参考中正文、引用的层级差异一致。长名称使用单行截断，不撑破编辑器。
+- 间距与布局：文件引用已从编辑器上方移除，并与“你好”“这是什么”处在同一文本行。引用左右保留小间距，光标可停在单元前后，输入框高度、圆角、发送按钮和底部控制区保持原布局。
+- 色彩与 Token：引用采用浅灰蓝背景、细边框和蓝色文件图标，层级接近参考的轻量内联引用，不引入额外强调色或阴影。
+- 图片与图标：资料库结果与内联资料引用使用和工作区导航一致的 Lucide `Database` 圆柱图标，简历继续使用 `FileText`；移除操作仍使用项目现有图标，不使用字符、CSS 绘图或占位资源。
+- 文案与内容：搜索词解释为 `@` 后完整名称前缀；`@资料` 在真实账户中没有同名前缀文件时明确显示“没有匹配的文件”，不会再错误展示全部资料。
+- 分组层级：空搜索词下按“简历”在前、“资料”在后的顺序展示两个弱化标题，标题不可选；每组最多返回四项，使两个分类和资料首项在默认弹层高度内同时可见。
+
+## Interaction Evidence
+
+- `@资料` 返回空结果，证明“资料”不再被解释为分类指令。
+- `@mock-dev-20260823-a1-2` 只返回名称以该字符串开头的资料；Tab 选择可见首项。
+- 选中后引用作为不可编辑原子单元进入正文；实测可在其后输入“这是什么”，按 Home 后可在其前输入“你好 ”。
+- 发送后的用户消息继续按原位置显示同款内联文件单元，不再显示 `@文件名` 占位文本或在气泡下方重复追加文件标签；真实历史会话复核内联单元后直接衔接消息正文，控制台 error 为 0。
+- 成功完成发送后，下一轮输入框不再残留刚发送的文件单元；失败或停止仍保留草稿和引用供重试。
+- Markdown 一级至三级标题改为 28px、24px、21px 的语义标题层级，均大于 20px 正文；组件测试覆盖 `h2`、`h3`、`h4` 映射，避免标题再次退化为小号粗体。
+- Agent Markdown 组件测试覆盖水平分隔线、表格、有序列表、引用、链接、删除线、代码块与安全图片占位，并验证原始 HTML 不执行。
+- 真实历史会话复核得到 2 个语义表格、6 条水平分隔线、0 个残留 `---` 文本段落；输入框引用单元为 0，标题为 24px/21px、正文为 20px，控制台 error 为 0。
+- 独立助手表格正文使用 18px 字号和 9px × 11px 单元格留白，在保持与 20px 正文层级区分的同时提高长表可读性。
+- 删除按钮可移除引用；验收结束后已清空未发送草稿，没有写入对话或共享数据。
+- Chrome 控制台 error：0。
+
+## Automated Evidence
+
+- `npm run check:web`：61 个测试文件、560 个测试通过，设计规则、TypeScript 与生产构建通过。
+- Agent 后端定向测试：33 个通过，覆盖普通包含搜索与 `prefix=true` 前缀搜索的差异。
+
+## Comparison History
+
+1. 初始实现把 `@资料`、`@简历` 当作来源分类，并把已选文件显示在编辑器上方，与用户更正后的语义不一致。
+2. 修复后统一按 `@` 后名称前缀同时检索资料和简历；引用移入 contenteditable 正文并作为不可拆分单元渲染。
+3. 聚焦对照确认引用位置、图标、名称层级、前后文字和移除控件均符合两张参考图表达的目标，无需继续处理 P0/P1/P2。
+4. 用户补充资料库图标参考后，将 `dataset` 在 @ 结果、内联引用和资料选择器中的图标统一为导航栏同款 `Database`；浏览器复核弹层与选中态均生效。
+5. 用户补充分组参考后，新增“简历 / 资料”两个不可选择的分类标题，并把每组初始结果收敛为四项；相同桌面状态下复核两个标题及资料首项均无需滚动即可看到，方向键与 Tab 仍沿用连续结果顺序。
+
+## Follow-up Polish
+
+- P3：如果后续提供精确 Figma Token，可进一步微调引用单元的蓝灰色与圆角；当前实现已复用项目既有视觉语言，不影响验收。
+
+final result: passed
+
+---
+
+# 工作区导航顺序与 AI 羽毛图标 — 2026-09-03
+
+## Evidence
+
+- Source visual truth: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-998d0f84-cb0c-47e4-ad4c-a8f8447b8464.png` 提供对话页蓝色羽毛的轮廓参考；用户文字要求导航顺序改为“我的简历、简历模板、AI 助手、求职中心、资料库”，并要求重新生成黑白线性版本，不直接复用原图。
+- Generated asset: `apps/web/src/assets/assistant-feather-outline.png`，`128 × 128` RGBA 透明底；使用内置图片生成生成新线稿后，按实际 16px 导航槽位裁切缩放。
+- Implementation route: `http://127.0.0.1:5173/assistant`，Chrome 已登录桌面状态，AI 助手为激活项。
+- Implementation screenshots: `/private/tmp/linkcv-navigation-feather-active-full.png` 与聚焦导航区域 `/private/tmp/linkcv-navigation-feather-active.png`。
+- Combined comparison: `/private/tmp/linkcv-navigation-feather-comparison.png`，左侧是来源羽毛，右侧是实际导航激活态。
+
+## Findings
+
+没有剩余 P0/P1/P2 问题。
+
+- 顺序：五个一级导航按用户指定顺序排列，模板已移到 AI 助手之前；路由、预加载和当前页标记保持不变。
+- 激活色：AI 助手使用独立的亮青色 Token，和“我的简历”的蓝色、模板紫色、求职中心橙色、资料库绿色形成清晰区分。
+- 图标：AI 助手不再使用 `Sparkles`，改为新生成的透明底黑色羽毛线稿；保留来源羽毛的倾斜方向和细长轮廓，但没有复用蓝色像素或填充样式。
+- 尺寸与清晰度：资产按 16px 槽位重新裁切，羽毛主体接近占满高度，和相邻 Lucide 图标的视觉重量一致；深色模式通过反色保持可见。
+- 可访问性：图标保持装饰语义，链接仍以“AI 助手”作为可访问名称。
+
+## Interaction Evidence
+
+- 登录态浏览器中点击 AI 助手后进入 `/assistant`，该项正确获得当前页状态。
+- 浏览器结构确认五个链接的 DOM 顺序与指定顺序一致。
+- 组件测试覆盖导航 href 顺序以及 AI 助手使用新羽毛图片资产。
+
+## Comparison History
+
+1. 初次生成得到透明底黑色羽毛线稿；按 alpha 内容边界裁切并缩放到 `128 × 128` 项目资产。
+2. 首次导航截图显示羽毛主体留白略多；再次按真实 alpha 边界收紧，使 16px 下的主体高度从约 13px 提升到约 15px。
+3. 合并参考与最终实现复核后，方向、轮廓、黑白线性表达、导航顺序和相邻间距均符合目标。
+
+## Follow-up Polish
+
+- P3：位图在极高缩放倍率下不如 SVG 锐利，但当前 16px 产品尺寸清晰；本轮遵循用户“重新生成”要求保留生成资产，不另做手绘 SVG 替代。
+
+final result: passed
+
+---
+
 ## 求职详情记录卡片 — 2026-09-01
 
 ### Visual truth and evidence
