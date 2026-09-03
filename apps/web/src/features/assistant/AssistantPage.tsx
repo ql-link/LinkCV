@@ -1456,7 +1456,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
                   </button>
                   {sessionMenuId === session.id && (
                     <div
-                      className={`assistant-session-menu${index >= sessions.length - 2 ? " is-above" : ""}`}
+                      className={`assistant-session-menu${index >= 4 ? " is-above" : ""}`}
                       role="menu"
                       aria-label={`${session.title} 的操作菜单`}
                     >

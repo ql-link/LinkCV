@@ -43,6 +43,7 @@ describe("AssistantPage", () => {
 
     await user.click(await screen.findByRole("button", { name: "待整理对话 的更多操作" }));
     const firstMenu = screen.getByRole("menu", { name: "待整理对话 的操作菜单" });
+    expect(firstMenu).not.toHaveClass("is-above");
     expect(within(firstMenu).getByRole("menuitem", { name: "Pin" })).toBeInTheDocument();
     expect(within(firstMenu).getByRole("menuitem", { name: "Rename" })).toBeInTheDocument();
     expect(within(firstMenu).getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
