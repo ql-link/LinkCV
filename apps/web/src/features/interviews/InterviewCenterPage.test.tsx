@@ -104,6 +104,7 @@ const fixtureSessionStart = new Date(fixtureWeekStart);
 fixtureSessionStart.setDate(fixtureSessionStart.getDate() + 3);
 fixtureSessionStart.setHours(10, 0, 0, 0);
 const fixtureSessionEnd = new Date(fixtureSessionStart.getTime() + 60 * 60 * 1000);
+const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";
 
 const session = {
   id: "31",
@@ -1427,7 +1428,7 @@ describe("InterviewCenterPage API projections", () => {
       stage_label: "三面",
       start_at: new Date("2026-09-10T09:30").toISOString(),
       end_at: new Date("2026-09-10T11:00").toISOString(),
-      timezone: "Asia/Shanghai",
+      timezone: localTimezone,
       mode: "onsite",
       meeting_url: null,
       location: "深圳科技园 3 号楼",
@@ -1495,7 +1496,7 @@ describe("InterviewCenterPage API projections", () => {
       stage_label: "笔试 · 在线作业",
       start_at: new Date("2026-09-12T09:17").toISOString(),
       end_at: new Date("2026-09-12T10:47").toISOString(),
-      timezone: "Asia/Shanghai",
+      timezone: localTimezone,
       mode: "video",
       meeting_url: "https://assessment.example/68",
       location: null,
@@ -2467,7 +2468,7 @@ describe("InterviewCenterPage API projections", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "确认标记" }));
 
     await waitFor(() => expect(mocks.updateJobApplication).toHaveBeenCalledWith("58", {
-      applied_at: "2026-08-22T04:00:00.000Z",
+      applied_at: new Date("2026-08-22T12:00:00").toISOString(),
       resume_id: "resume-1",
       base_lock_version: 9,
     }));
