@@ -184,11 +184,12 @@ RabbitMQ 是默认 Broker，V2 使用 `tolink.cv.resume_import.v2` exchange、`l
 
 ## 知识库资料
 
-`POST /api/datasets` 使用 `multipart/form-data`，字段为 `file`，并要求 canonical UUID `Idempotency-Key`。支持 docx/pdf/md/txt 四种格式（扩展名大小写不敏感），服务端还会检查 PDF 结构、DOCX ZIP 结构与解压边界、文本编码和 NUL 字节，不信任浏览器 MIME。单文件上限由 `DATASET_UPLOAD_MAX_BYTES` 控制（默认 10 MiB）。服务端先建立 `uploading` 容量预留，再写入 MinIO；成功后把任务提交为 `upload_status=succeeded/parse_status=queued`。首次 RabbitMQ 发布失败不使请求失败，数据库中的 `queued` 是持久待分发标记，Worker 扫描器会重新发布。受理返回 `202`：
+`POST /api/datasets` 使用 `multipart/form-data`，必填字段为 `file`，可选字段为 `folder_id`（指定归属文件夹），并要求 canonical UUID `Idempotency-Key`。支持 docx/pdf/md/txt 四种格式（扩展名大小写不敏感），服务端还会检查 PDF 结构、DOCX ZIP 结构与解压边界、文本编码和 NUL 字节，不信任浏览器 MIME。单文件上限由 `DATASET_UPLOAD_MAX_BYTES` 控制（默认 10 MiB）。服务端先建立 `uploading` 容量预留，再写入 MinIO；成功后把任务提交为 `upload_status=succeeded/parse_status=queued`。首次 RabbitMQ 发布失败不使请求失败，数据库中的 `queued` 是持久待分发标记，Worker 扫描器会重新发布。受理返回 `202`：
 
 ```json
 {
   "id": "1",
+  "folder_id": null,
   "file_name": "notes.md",
   "file_format": "md",
   "file_size": 12,
@@ -199,7 +200,11 @@ RabbitMQ 是默认 Broker，V2 使用 `tolink.cv.resume_import.v2` exchange、`l
 }
 ```
 
-`GET /api/datasets` 只返回当前用户 `upload_status=succeeded` 的正式资料，按上传时间倒序；响应为 `{datasets, limits}`，`limits` 包含单文件字节数、单批文件数和允许扩展名，供前端提前反馈。列表从关联任务返回 `queued/processing/succeeded/failed` 解析状态。失败分类为 `format_unsupported/content_invalid/size_exceeded/service_unavailable/timeout/quota_exceeded/internal_error`。`GET /api/datasets/:id/content` 只允许资料所有者读取解析成功且已保存转换对象的 Markdown，返回 `{id, file_name, file_format, markdown}`；资料不存在或越权统一返回 `404 DATASET_NOT_FOUND`，解析尚未成功或转换存档未保存返回 `409 DATASET_CONTENT_UNAVAILABLE`，对象读取、大小或 UTF-8 校验失败返回 `502 DATASET_CONTENT_READ_FAILED`。六个接口都要求登录（未登录返回 `401 UNAUTHORIZED`），响应不包含对象存储路径或 SHA-256。
+`GET /api/datasets` 只返回当前用户 `upload_status=succeeded` 的正式资料，支持可选 Query 参数 `folder_id`（传数值 ID 过滤具体文件夹，传 `uncategorized` 过滤未分类资料，不传则返回全部）；按上传时间倒序。响应为 `{datasets, limits}`，每项数据包含 `folder_id`。`limits` 包含单文件字节数、单批文件数和允许扩展名，供前端提前反馈。列表从关联任务返回 `queued/processing/succeeded/failed` 解析状态。失败分类为 `format_unsupported/content_invalid/size_exceeded/service_unavailable/timeout/quota_exceeded/internal_error`。`GET /api/datasets/:id/content` 只允许资料所有者读取解析成功且已保存转换对象的 Markdown，返回 `{id, file_name, file_format, markdown}`；资料不存在或越权统一返回 `404 DATASET_NOT_FOUND`，解析尚未成功或转换存档未保存返回 `409 DATASET_CONTENT_UNAVAILABLE`，对象读取、大小或 UTF-8 校验失败返回 `502 DATASET_CONTENT_READ_FAILED`。
+
+`GET /api/datasets/folders` 列出当前用户自建的全部文件夹及其所含资料数，响应为 `{folders: [{id, name, dataset_count, created_at, updated_at}], total_count, uncategorized_count}`。`POST /api/datasets/folders` 接受 `{name: string}` 创建新文件夹（1~64 字符，去首尾空格，禁止斜杠与控制字符，用户内唯一，每用户上限 50 个；超限 `429 FOLDER_LIMIT_EXCEEDED`，重名 `409 FOLDER_NAME_DUPLICATE`，非法名称 `400 INVALID_FOLDER_NAME`）。`PATCH /api/datasets/folders/:id` 接受 `{name: string}` 重命名文件夹。`DELETE /api/datasets/folders/:id` 删除文件夹并将内部资料安全退回未分类（`folder_id` 置 NULL，返回 `{deleted: true, affected_dataset_count}`）。
+
+`PATCH /api/datasets/:id/folder` 接受 `{folder_id: string | null}` 移动单份资料。`POST /api/datasets/move-batch` 接受 `{dataset_ids: string[], folder_id: string | null}` 批量移动资料，返回 `{moved_count: number}`。以上接口均要求登录（未登录返回 `401 UNAUTHORIZED`），响应不包含对象存储路径或 SHA-256。
 
 资料源文件 SHA-256 仅作为后端完整性元数据，以固定 64 位十六进制字符串保存；它不进入公开请求或响应契约。服务端以用户、`Idempotency-Key` 和包含文件元数据及摘要的请求指纹收敛重放：同 Key 同指纹返回原记录，活动任务返回 `202`、成功任务返回 `200`；同 Key 异指纹返回 `409 IDEMPOTENCY_KEY_REUSED`，上一次上传已失败返回 `409 DATASET_UPLOAD_PREVIOUSLY_FAILED`，调用方随后应为明确的新尝试生成新 Key。
 

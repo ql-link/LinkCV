@@ -1,7 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { CheckSquare, Database, MoreHorizontal, Pencil, Plus, RotateCcw, Trash2, X } from "lucide-react";
+import {
+  CheckSquare,
+  ChevronLeft,
+  Database,
+  FolderInput,
+  FolderOpen,
+  FolderPlus,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Trash2,
+  X,
+} from "lucide-react";
 
-import { api, ApiRequestError, type DatasetLimits, type DatasetRecord } from "../../api/client";
+import {
+  api,
+  ApiRequestError,
+  type DatasetFolder,
+  type DatasetLimits,
+  type DatasetRecord,
+} from "../../api/client";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import {
   Button,
@@ -15,9 +34,14 @@ import {
   ExpandableSearch,
   FeedbackNotice,
   FileUpload,
+  Input,
+  Label,
   PageLoading,
+  TogglePill,
 } from "@/components/ui";
 import { DatasetPreviewDialog } from "./DatasetPreviewDialog";
+import { CreateFolderCard, FolderCard } from "./components/FolderCard";
+import { MoveToFolderDialog } from "./components/MoveToFolderDialog";
 import {
   datasetFormatError,
   datasetUploadErrorMessage,
@@ -199,6 +223,7 @@ function DatasetRow({
   onToggleSelection,
   onToggleMenu,
   onRename,
+  onMove,
   onRetry,
   onDelete,
 }: {
@@ -212,6 +237,7 @@ function DatasetRow({
   onToggleSelection: (id: string, checked: boolean) => void;
   onToggleMenu: (id: string) => void;
   onRename: (dataset: DatasetRecord) => void;
+  onMove: (dataset: DatasetRecord) => void;
   onRetry: (dataset: DatasetRecord) => void;
   onDelete: (dataset: DatasetRecord) => void;
 }) {
@@ -274,6 +300,9 @@ function DatasetRow({
               >
                 <button type="button" role="menuitem" onClick={() => onRename(dataset)}>
                   <Pencil size={15} aria-hidden="true" />重命名
+                </button>
+                <button type="button" role="menuitem" onClick={() => onMove(dataset)}>
+                  <FolderInput size={15} aria-hidden="true" />移动到文件夹
                 </button>
                 {datasetVisualStatus(dataset) === "failed" && (
                   <button type="button" role="menuitem" onClick={() => onRetry(dataset)}>
@@ -361,6 +390,156 @@ export function DatasetsPage() {
   const [bulkDeleteTarget, setBulkDeleteTarget] = useState<DatasetRecord[] | null>(null);
   const [busyAction, setBusyAction] = useState<DatasetAction>(null);
 
+  const [folders, setFolders] = useState<DatasetFolder[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string>("all");
+  const [listFilter, setListFilter] = useState<"all" | "uncategorized">("all");
+  const [totalCount, setTotalCount] = useState(0);
+  const [uncategorizedCount, setUncategorizedCount] = useState(0);
+  const [moveTarget, setMoveTarget] = useState<DatasetRecord | null>(null);
+  const [batchMoveOpen, setBatchMoveOpen] = useState(false);
+
+  // 文件夹弹窗状态
+  const [createFolderDialogOpen, setCreateFolderDialogOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [createFolderError, setCreateFolderError] = useState<string | null>(null);
+  const [creatingFolder, setCreatingFolder] = useState(false);
+
+  const [renameFolderTarget, setRenameFolderTarget] = useState<DatasetFolder | null>(null);
+  const [renameFolderName, setRenameFolderName] = useState("");
+  const [renameFolderError, setRenameFolderError] = useState<string | null>(null);
+  const [renamingFolder, setRenamingFolder] = useState(false);
+
+  const [deleteFolderTarget, setDeleteFolderTarget] = useState<DatasetFolder | null>(null);
+  const [deletingFolder, setDeletingFolder] = useState(false);
+
+  const refreshFolders = useCallback(async () => {
+    try {
+      const data = await api.listDatasetFolders();
+      if (!pageMounted.current) return;
+      setFolders(data.folders);
+      setTotalCount(data.total_count);
+      setUncategorizedCount(data.uncategorized_count);
+    } catch {
+      // non-blocking
+    }
+  }, []);
+
+  const validateFolderName = (name: string): string | null => {
+    const trimmed = name.trim();
+    if (!trimmed) return "文件夹名称不能为空";
+    if (trimmed.includes("/") || trimmed.includes("\\")) return "文件夹名称不能包含斜杠符号";
+    if (trimmed.length > 64) return "文件夹名称不能超过 64 个字符";
+    return null;
+  };
+
+  const handleCreateFolder = async () => {
+    const error = validateFolderName(newFolderName);
+    if (error) {
+      setCreateFolderError(error);
+      return;
+    }
+    setCreatingFolder(true);
+    setCreateFolderError(null);
+    try {
+      await api.createDatasetFolder(newFolderName.trim());
+      await refreshFolders();
+      setCreateFolderDialogOpen(false);
+      setNewFolderName("");
+      setNotice({ kind: "success", message: `文件夹「${newFolderName.trim()}」已创建。` });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg === "FOLDER_NAME_DUPLICATE") {
+        setCreateFolderError("已存在同名文件夹，请使用其他名称");
+      } else if (msg === "FOLDER_LIMIT_EXCEEDED") {
+        setCreateFolderError("最多创建 50 个文件夹");
+      } else {
+        setCreateFolderError("创建失败，请检查名称后重试");
+      }
+    } finally {
+      setCreatingFolder(false);
+    }
+  };
+
+  const handleRenameFolder = async () => {
+    if (!renameFolderTarget) return;
+    const error = validateFolderName(renameFolderName);
+    if (error) {
+      setRenameFolderError(error);
+      return;
+    }
+    setRenamingFolder(true);
+    setRenameFolderError(null);
+    try {
+      await api.renameDatasetFolder(renameFolderTarget.id, renameFolderName.trim());
+      await refreshFolders();
+      setRenameFolderTarget(null);
+      setNotice({ kind: "success", message: "文件夹名称已更新。" });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg === "FOLDER_NAME_DUPLICATE") {
+        setRenameFolderError("已存在同名文件夹，请使用其他名称");
+      } else {
+        setRenameFolderError("重命名失败，请重试");
+      }
+    } finally {
+      setRenamingFolder(false);
+    }
+  };
+
+  const handleDeleteFolder = async () => {
+    if (!deleteFolderTarget) return;
+    setDeletingFolder(true);
+    try {
+      await api.deleteDatasetFolder(deleteFolderTarget.id);
+      if (selectedFolderId === deleteFolderTarget.id) {
+        setSelectedFolderId("all");
+      }
+      await refreshFolders();
+      await refreshDatasets();
+      setDeleteFolderTarget(null);
+      setNotice({ kind: "success", message: "文件夹已删除，内部资料已移至未分类。" });
+    } catch (error) {
+      setNotice({ kind: "error", message: datasetActionErrorMessage(error, "删除失败，请稍后重试。") });
+    } finally {
+      setDeletingFolder(false);
+    }
+  };
+
+  const confirmSingleMove = async (targetFolderId: string | null) => {
+    if (!moveTarget) return;
+    try {
+      const updated = await api.moveDataset(moveTarget.id, targetFolderId);
+      setDatasets((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+      await refreshFolders();
+      setNotice({ kind: "success", message: "资料分类已更新。" });
+    } catch (error) {
+      setNotice({ kind: "error", message: datasetActionErrorMessage(error, "移动分类失败，请稍后重试。") });
+    } finally {
+      setMoveTarget(null);
+    }
+  };
+
+  const confirmBatchMove = async (targetFolderId: string | null) => {
+    if (selectedDatasetIds.size === 0) return;
+    const ids = Array.from(selectedDatasetIds);
+    try {
+      await api.batchMoveDatasets(ids, targetFolderId);
+      setDatasets((items) =>
+        items.map((item) =>
+          selectedDatasetIds.has(item.id) ? { ...item, folder_id: targetFolderId } : item,
+        ),
+      );
+      await refreshFolders();
+      setSelectedDatasetIds(new Set());
+      setBatchMode(false);
+      setNotice({ kind: "success", message: `已成功移动 ${ids.length} 份资料。` });
+    } catch (error) {
+      setNotice({ kind: "error", message: datasetActionErrorMessage(error, "批量移动失败，请稍后重试。") });
+    } finally {
+      setBatchMoveOpen(false);
+    }
+  };
+
   const refreshDatasets = useCallback(async (options: { initial?: boolean; accepted?: boolean } = {}) => {
     const { initial = false, accepted = false } = options;
     try {
@@ -382,12 +561,18 @@ export function DatasetsPage() {
     }
   }, []);
 
+  const currentUploadFolderId =
+    selectedFolderId !== "all" && selectedFolderId !== "uncategorized"
+      ? selectedFolderId
+      : null;
+
   const {
     uploading,
     uploadFiles,
   } = useDatasetUploads({
     limits,
     concurrency: DATASET_UPLOAD_CONCURRENCY,
+    folderId: currentUploadFolderId,
     onAccepted: (dataset) => {
       if (!pageMounted.current) return;
       locallyAccepted.current.set(dataset.id, dataset);
@@ -420,11 +605,14 @@ export function DatasetsPage() {
 
   useEffect(() => {
     pageMounted.current = true;
-    void refreshDatasets({ initial: true });
+    void Promise.all([
+      refreshDatasets({ initial: true }),
+      refreshFolders(),
+    ]);
     return () => {
       pageMounted.current = false;
     };
-  }, []);
+  }, [refreshDatasets, refreshFolders]);
 
   useEffect(() => {
     const existingIds = new Set(datasets.map((dataset) => dataset.id));
@@ -464,6 +652,7 @@ export function DatasetsPage() {
       if (cancelled || requestInFlight || document.visibilityState === "hidden") return;
       requestInFlight = true;
       const refreshed = await refreshDatasets();
+      if (refreshed) await refreshFolders();
       requestInFlight = false;
       if (cancelled) return;
       if (refreshed) delay = 2000;
@@ -505,7 +694,10 @@ export function DatasetsPage() {
       if (!pageMounted.current) return;
 
       if (result.attemptedCount > 0) {
-        await refreshDatasets({ accepted: result.acceptedCount > 0 });
+        await Promise.all([
+          refreshDatasets({ accepted: result.acceptedCount > 0 }),
+          refreshFolders(),
+        ]);
       }
 
       setDialogOpen(false);
@@ -601,6 +793,7 @@ export function DatasetsPage() {
       await api.deleteDataset(deleteTarget.id);
       locallyAccepted.current.delete(deleteTarget.id);
       setDatasets((items) => items.filter((item) => item.id !== deleteTarget.id));
+      void refreshFolders();
       setSelectedDatasetIds((ids) => {
         if (!ids.has(deleteTarget.id)) return ids;
         const next = new Set(ids);
@@ -619,9 +812,16 @@ export function DatasetsPage() {
 
   const keyword = query.trim().toLocaleLowerCase();
   const filteredDatasets = useMemo(() => {
-    if (!keyword) return datasets;
-    return datasets.filter((dataset) => datasetDisplayName(dataset).toLocaleLowerCase().includes(keyword));
-  }, [datasets, keyword]);
+    return datasets.filter((dataset) => {
+      if (selectedFolderId !== "all") {
+        if (dataset.folder_id !== selectedFolderId) return false;
+      } else if (listFilter === "uncategorized") {
+        if (dataset.folder_id !== null && dataset.folder_id !== undefined) return false;
+      }
+      if (!keyword) return true;
+      return datasetDisplayName(dataset).toLocaleLowerCase().includes(keyword);
+    });
+  }, [datasets, keyword, selectedFolderId, listFilter]);
 
   const selectedDatasetCount = selectedDatasetIds.size;
   const filteredDatasetIds = filteredDatasets.map((dataset) => dataset.id);
@@ -697,6 +897,7 @@ export function DatasetsPage() {
 
     if (succeededIds.size > 0) {
       setDatasets((items) => items.filter((item) => !succeededIds.has(item.id)));
+      void refreshFolders();
       setSelectedDatasetIds((current) => {
         const next = new Set(current);
         for (const id of succeededIds) next.delete(id);
@@ -719,7 +920,17 @@ export function DatasetsPage() {
         icon={<Database />}
         tone="success"
         title="资料库"
-        description={datasets.length > 0 ? `${datasets.length} 份资料 · 按最近上传排列` : "把履历、项目记录和参考资料集中在这里，写简历时随时调用。"}
+        description={
+          selectedFolderId === "uncategorized"
+            ? `未分类资料 · 共 ${uncategorizedCount} 份`
+            : selectedFolderId !== "all"
+            ? `「${folders.find((f) => f.id === selectedFolderId)?.name ?? "分类"}」· 共 ${
+                folders.find((f) => f.id === selectedFolderId)?.dataset_count ?? 0
+              } 份资料`
+            : datasets.length > 0
+            ? `${datasets.length} 份资料 · 按最近上传排列`
+            : "把履历、项目记录和参考资料集中在这里，写简历时随时调用。"
+        }
         actions={(
           <>
             <ExpandableSearch
@@ -731,17 +942,30 @@ export function DatasetsPage() {
               className="datasets-hero-search"
             />
             {batchMode ? (
-              <Button
-                className="datasets-hero-primary-action datasets-hero-delete-action"
-                variant="outline"
-                icon={<Trash2 size={15} />}
-                aria-label={`删除资料（已选择 ${selectedDatasetCount} 份）`}
-                title={selectedDatasetCount > 0 ? `已选择 ${selectedDatasetCount} 份资料` : "请先选择资料"}
-                disabled={selectedDatasetCount === 0 || batchDeleteBusy}
-                onClick={startBulkDelete}
-              >
-                删除资料
-              </Button>
+              <>
+                <Button
+                  className="datasets-hero-batch-move-action"
+                  variant="outline"
+                  icon={<FolderInput size={15} />}
+                  aria-label={`移动到文件夹（已选择 ${selectedDatasetCount} 份）`}
+                  title={selectedDatasetCount > 0 ? `已选择 ${selectedDatasetCount} 份资料` : "请先选择资料"}
+                  disabled={selectedDatasetCount === 0 || batchDeleteBusy}
+                  onClick={() => setBatchMoveOpen(true)}
+                >
+                  移动到文件夹
+                </Button>
+                <Button
+                  className="datasets-hero-primary-action datasets-hero-delete-action"
+                  variant="outline"
+                  icon={<Trash2 size={15} />}
+                  aria-label={`删除资料（已选择 ${selectedDatasetCount} 份）`}
+                  title={selectedDatasetCount > 0 ? `已选择 ${selectedDatasetCount} 份资料` : "请先选择资料"}
+                  disabled={selectedDatasetCount === 0 || batchDeleteBusy}
+                  onClick={startBulkDelete}
+                >
+                  删除资料
+                </Button>
+              </>
             ) : (
               <Button
                 className="datasets-hero-primary-action"
@@ -794,55 +1018,236 @@ export function DatasetsPage() {
             </div>
           )}
 
-          {!loadFailed && datasets.length === 0 && (
-            <section className="datasets-empty">
-              <h2>还没有资料</h2>
-              <p>建议先上传一份与你当前求职方向相关的资料，<br />后续写简历时可以快速检索和引用。</p>
-              <Button icon={<Plus size={15} />} onClick={openUploadDialog}>上传第一份资料</Button>
-            </section>
-          )}
+          {!loadFailed && (
+            <>
+              {selectedFolderId === "all" ? (
+                <>
+                  {/* 主体上部: 资料列表全宽表格 */}
+                  <div className="dataset-list-section">
+                    <div className="dataset-list-section-header">
+                      <div className="dataset-list-section-title">
+                        <h2>资料列表</h2>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <TogglePill
+                          active={listFilter === "all"}
+                          onClick={() => setListFilter("all")}
+                        >
+                          全部资料 ({totalCount || datasets.length})
+                        </TogglePill>
+                        <TogglePill
+                          active={listFilter === "uncategorized"}
+                          onClick={() => setListFilter("uncategorized")}
+                        >
+                          未分类 ({uncategorizedCount})
+                        </TogglePill>
+                      </div>
+                    </div>
 
-          {!loadFailed && datasets.length > 0 && (
-            <section className="dataset-list-card" aria-label="资料列表">
-              <div className="dataset-list-header">
-                <span>资料名称</span>
-                <span>上传时间</span>
-                <span>大小</span>
-                <span>解析状态</span>
-                {batchMode ? (
-                  <div className="dataset-selection-cell dataset-header-selection">
-                    <DatasetSelectionCheckbox
-                      checked={allFilteredSelected}
-                      disabled={filteredDatasets.length === 0 || batchDeleteBusy}
-                      indeterminate={someFilteredSelected && !allFilteredSelected}
-                      label="全选当前筛选结果"
-                      onChange={toggleAllFilteredDatasets}
-                    />
+                    {datasets.length === 0 ? (
+                      <section className="datasets-empty">
+                        <h2>还没有资料</h2>
+                        <p>建议先上传一份与你当前求职方向相关的资料，<br />后续写简历时可以快速检索和引用。</p>
+                        <Button icon={<Plus size={15} />} onClick={openUploadDialog}>上传第一份资料</Button>
+                      </section>
+                    ) : (
+                      <section className="dataset-list-card" aria-label="资料列表">
+                        <div className="dataset-list-header">
+                          <span>资料名称</span>
+                          <span>上传时间</span>
+                          <span>大小</span>
+                          <span>解析状态</span>
+                          {batchMode ? (
+                            <div className="dataset-selection-cell dataset-header-selection">
+                              <DatasetSelectionCheckbox
+                                checked={allFilteredSelected}
+                                disabled={filteredDatasets.length === 0 || batchDeleteBusy}
+                                indeterminate={someFilteredSelected && !allFilteredSelected}
+                                label="全选当前筛选结果"
+                                onChange={toggleAllFilteredDatasets}
+                              />
+                            </div>
+                          ) : <span />}
+                        </div>
+                        {filteredDatasets.length === 0 ? (
+                          <p className="dataset-list-empty">
+                            {query
+                              ? "没有匹配的资料。"
+                              : listFilter === "uncategorized"
+                              ? "暂无未分类资料。"
+                              : "没有匹配的资料。"}
+                          </p>
+                        ) : (
+                          filteredDatasets.map((dataset) => (
+                            <DatasetRow
+                              key={dataset.id}
+                              dataset={dataset}
+                              batchMode={batchMode}
+                              selected={selectedDatasetIds.has(dataset.id)}
+                              selectionDisabled={batchDeleteBusy}
+                              menuOpen={menuDatasetId === dataset.id}
+                              busy={busyAction?.id === dataset.id}
+                              onPreview={openPreview}
+                              onToggleSelection={toggleDatasetSelection}
+                              onToggleMenu={(id) => setMenuDatasetId((current) => current === id ? null : id)}
+                              onRename={startRename}
+                              onMove={(item) => setMoveTarget(item)}
+                              onRetry={(item) => void startRetry(item)}
+                              onDelete={startDelete}
+                            />
+                          ))
+                        )}
+                      </section>
+                    )}
                   </div>
-                ) : <span />}
-              </div>
-              {filteredDatasets.length === 0 ? (
-                <p className="dataset-list-empty">没有匹配的资料。</p>
+
+                  {/* 主体下部: 分类文件夹网格 */}
+                  <section className="dataset-folders-section" aria-label="文件夹分类">
+                    <div className="dataset-folders-header">
+                      <div className="dataset-folders-header-title">
+                        <h2>分类文件夹</h2>
+                        <span className="dataset-folders-header-count">
+                          {folders.length} 个文件夹
+                        </span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={<Plus size={15} />}
+                        onClick={() => {
+                          setNewFolderName("");
+                          setCreateFolderError(null);
+                          setCreateFolderDialogOpen(true);
+                        }}
+                      >
+                        新建文件夹
+                      </Button>
+                    </div>
+
+                    <div className="dataset-folders-grid">
+                      <CreateFolderCard
+                        onClick={() => {
+                          setNewFolderName("");
+                          setCreateFolderError(null);
+                          setCreateFolderDialogOpen(true);
+                        }}
+                      />
+                      {folders.map((folder) => (
+                        <FolderCard
+                          key={folder.id}
+                          folder={folder}
+                          onClick={() => setSelectedFolderId(folder.id)}
+                          onRename={(f) => {
+                            setRenameFolderTarget(f);
+                            setRenameFolderName(f.name);
+                            setRenameFolderError(null);
+                          }}
+                          onDelete={(f) => setDeleteFolderTarget(f)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                </>
               ) : (
-                filteredDatasets.map((dataset) => (
-                  <DatasetRow
-                    key={dataset.id}
-                    dataset={dataset}
-                    batchMode={batchMode}
-                    selected={selectedDatasetIds.has(dataset.id)}
-                    selectionDisabled={batchDeleteBusy}
-                    menuOpen={menuDatasetId === dataset.id}
-                    busy={busyAction?.id === dataset.id}
-                    onPreview={openPreview}
-                    onToggleSelection={toggleDatasetSelection}
-                    onToggleMenu={(id) => setMenuDatasetId((current) => current === id ? null : id)}
-                    onRename={startRename}
-                    onRetry={(item) => void startRetry(item)}
-                    onDelete={startDelete}
-                  />
-                ))
+                /* 文件夹内页视图 */
+                <div className="dataset-folder-view">
+                  <div className="dataset-folder-detail-header">
+                    <div className="dataset-folder-detail-left">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        icon={<ChevronLeft size={16} />}
+                        onClick={() => setSelectedFolderId("all")}
+                      >
+                        返回全部资料
+                      </Button>
+                      <div className="dataset-folder-detail-title">
+                        <FolderOpen size={20} className="text-muted-foreground" aria-hidden="true" />
+                        <h1>{folders.find((f) => f.id === selectedFolderId)?.name ?? "文件夹"}</h1>
+                        <span className="dataset-folder-detail-count">
+                          {filteredDatasets.length} 份资料
+                        </span>
+                      </div>
+                    </div>
+                    <div className="dataset-folder-detail-actions">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={<Pencil size={14} />}
+                        onClick={() => {
+                          const target = folders.find((f) => f.id === selectedFolderId);
+                          if (target) {
+                            setRenameFolderTarget(target);
+                            setRenameFolderName(target.name);
+                            setRenameFolderError(null);
+                          }
+                        }}
+                      >
+                        重命名
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        icon={<Trash2 size={14} />}
+                        onClick={() => {
+                          const target = folders.find((f) => f.id === selectedFolderId);
+                          if (target) setDeleteFolderTarget(target);
+                        }}
+                      >
+                        删除文件夹
+                      </Button>
+                    </div>
+                  </div>
+
+                  <section className="dataset-list-card" aria-label="资料列表">
+                    <div className="dataset-list-header">
+                      <span>资料名称</span>
+                      <span>上传时间</span>
+                      <span>大小</span>
+                      <span>解析状态</span>
+                      {batchMode ? (
+                        <div className="dataset-selection-cell dataset-header-selection">
+                          <DatasetSelectionCheckbox
+                            checked={allFilteredSelected}
+                            disabled={filteredDatasets.length === 0 || batchDeleteBusy}
+                            indeterminate={someFilteredSelected && !allFilteredSelected}
+                            label="全选当前筛选结果"
+                            onChange={toggleAllFilteredDatasets}
+                          />
+                        </div>
+                      ) : <span />}
+                    </div>
+                    {filteredDatasets.length === 0 ? (
+                      <p className="dataset-list-empty">
+                        {query
+                          ? "没有匹配的资料。"
+                          : "该文件夹下暂无资料，可点击上方上传按钮添加或从其他分类移动至此。"}
+                      </p>
+                    ) : (
+                      filteredDatasets.map((dataset) => (
+                        <DatasetRow
+                          key={dataset.id}
+                          dataset={dataset}
+                          batchMode={batchMode}
+                          selected={selectedDatasetIds.has(dataset.id)}
+                          selectionDisabled={batchDeleteBusy}
+                          menuOpen={menuDatasetId === dataset.id}
+                          busy={busyAction?.id === dataset.id}
+                          onPreview={openPreview}
+                          onToggleSelection={toggleDatasetSelection}
+                          onToggleMenu={(id) => setMenuDatasetId((current) => current === id ? null : id)}
+                          onRename={startRename}
+                          onMove={(item) => setMoveTarget(item)}
+                          onRetry={(item) => void startRetry(item)}
+                          onDelete={startDelete}
+                        />
+                      ))
+                    )}
+                  </section>
+                </div>
               )}
-            </section>
+            </>
           )}
         </div>
       )}
@@ -927,6 +1332,156 @@ export function DatasetsPage() {
             if (!batchDeleteBusy) setBulkDeleteTarget(null);
           }}
           onConfirm={() => void confirmBulkDelete()}
+        />
+      )}
+
+      {/* 新建文件夹对话框 */}
+      {createFolderDialogOpen && (
+        <Dialog
+          open
+          onOpenChange={(open) => !open && !creatingFolder && setCreateFolderDialogOpen(false)}
+        >
+          <DialogContent className="dataset-action-dialog sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>新建文件夹</DialogTitle>
+              <DialogDescription>创建分类文件夹，整理和归类求职资料。</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-2 py-3">
+              <Label htmlFor="create-folder-input">文件夹名称</Label>
+              <Input
+                id="create-folder-input"
+                autoFocus
+                value={newFolderName}
+                maxLength={64}
+                placeholder="例如：核心项目、工作复盘、资格证书"
+                aria-label="文件夹名称"
+                onChange={(e) => {
+                  setNewFolderName(e.target.value);
+                  setCreateFolderError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void handleCreateFolder();
+                  }
+                }}
+              />
+              {createFolderError && (
+                <small className="text-xs text-destructive" role="alert">
+                  {createFolderError}
+                </small>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                variant="secondary"
+                disabled={creatingFolder}
+                onClick={() => setCreateFolderDialogOpen(false)}
+              >
+                取消
+              </Button>
+              <Button disabled={creatingFolder} onClick={() => void handleCreateFolder()}>
+                {creatingFolder ? "正在创建…" : "创建文件夹"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* 重命名文件夹对话框 */}
+      {renameFolderTarget && (
+        <Dialog
+          open
+          onOpenChange={(open) => !open && !renamingFolder && setRenameFolderTarget(null)}
+        >
+          <DialogContent className="dataset-action-dialog sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>重命名文件夹</DialogTitle>
+              <DialogDescription>修改文件夹名称，内部资料归属将自动同步。</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-2 py-3">
+              <Label htmlFor="rename-folder-input">文件夹名称</Label>
+              <Input
+                id="rename-folder-input"
+                autoFocus
+                value={renameFolderName}
+                maxLength={64}
+                aria-label="文件夹名称"
+                onChange={(e) => {
+                  setRenameFolderName(e.target.value);
+                  setRenameFolderError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void handleRenameFolder();
+                  }
+                }}
+              />
+              {renameFolderError && (
+                <small className="text-xs text-destructive" role="alert">
+                  {renameFolderError}
+                </small>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                variant="secondary"
+                disabled={renamingFolder}
+                onClick={() => setRenameFolderTarget(null)}
+              >
+                取消
+              </Button>
+              <Button disabled={renamingFolder} onClick={() => void handleRenameFolder()}>
+                {renamingFolder ? "正在保存…" : "保存"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* 删除文件夹确认对话框 */}
+      {deleteFolderTarget && (
+        <ConfirmDialog
+          kind="delete"
+          title={`确认删除文件夹「${deleteFolderTarget.name}」？`}
+          description={`删除文件夹不会删除其中的资料。该文件夹内的 ${deleteFolderTarget.dataset_count} 份资料将自动移至「未分类」。`}
+          confirmLabel="确认删除"
+          busyLabel="正在删除…"
+          busy={deletingFolder}
+          onConfirm={() => void handleDeleteFolder()}
+          onCancel={() => {
+            if (!deletingFolder) setDeleteFolderTarget(null);
+          }}
+        />
+      )}
+
+      {moveTarget && (
+        <MoveToFolderDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setMoveTarget(null);
+          }}
+          folders={folders}
+          currentFolderId={moveTarget.folder_id ?? null}
+          itemCount={1}
+          singleItemName={datasetDisplayName(moveTarget)}
+          onMove={confirmSingleMove}
+        />
+      )}
+
+      {batchMoveOpen && (
+        <MoveToFolderDialog
+          open
+          onOpenChange={setBatchMoveOpen}
+          folders={folders}
+          currentFolderId={
+            selectedFolderId !== "all" && selectedFolderId !== "uncategorized"
+              ? selectedFolderId
+              : null
+          }
+          itemCount={selectedDatasetCount}
+          onMove={confirmBatchMove}
         />
       )}
 

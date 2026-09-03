@@ -9,6 +9,61 @@ class UserDatasetRenameRequest(BaseModel):
     name: str = Field(strict=True)
 
 
+class DatasetFolderCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(strict=True)
+
+
+class DatasetFolderRenameRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(strict=True)
+
+
+class DatasetFolderRecord(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    dataset_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def stringify_id(cls, value: object) -> str:
+        return str(value)
+
+
+class DatasetFolderListResponse(BaseModel):
+    folders: list[DatasetFolderRecord]
+    total_count: int
+    uncategorized_count: int
+
+
+class DatasetFolderDeleteResponse(BaseModel):
+    deleted: bool
+    affected_dataset_count: int
+
+
+class DatasetMoveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    folder_id: str | None = None
+
+
+class DatasetBatchMoveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dataset_ids: list[str]
+    folder_id: str | None = None
+
+
+class DatasetBatchMoveResponse(BaseModel):
+    moved_count: int
+
+
 class UserDatasetDeleteResponse(BaseModel):
     deleted: bool
 
@@ -17,6 +72,7 @@ class UserDatasetRecord(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    folder_id: str | None = None
     file_name: str
     file_format: str
     file_size: int
@@ -28,6 +84,13 @@ class UserDatasetRecord(BaseModel):
     @field_validator("id", mode="before")
     @classmethod
     def stringify_id(cls, value: object) -> str:
+        return str(value)
+
+    @field_validator("folder_id", mode="before")
+    @classmethod
+    def stringify_folder_id(cls, value: object) -> str | None:
+        if value is None:
+            return None
         return str(value)
 
 

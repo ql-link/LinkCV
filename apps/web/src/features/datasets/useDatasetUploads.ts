@@ -81,6 +81,7 @@ function datasetUploadFileIdentity(file: File): string {
 type UseDatasetUploadsOptions = {
   limits?: DatasetLimits;
   concurrency?: number;
+  folderId?: string | null;
   onAccepted?: (dataset: DatasetRecord) => void;
   onLimitExceeded?: (message: string) => void;
 };
@@ -175,6 +176,7 @@ function formatBatchLimitMessage(limit: number, retained = false): string {
 export function useDatasetUploads({
   limits = DEFAULT_DATASET_LIMITS,
   concurrency = 3,
+  folderId,
   onAccepted,
   onLimitExceeded,
 }: UseDatasetUploadsOptions = {}) {
@@ -184,6 +186,7 @@ export function useDatasetUploads({
   const itemsRef = useRef<DatasetUploadItem[]>([]);
   const limitsRef = useRef<DatasetLimits>(normalizeDatasetLimits(limits));
   const concurrencyRef = useRef(3);
+  const folderIdRef = useRef(folderId);
   const onAcceptedRef = useRef(onAccepted);
   const onLimitExceededRef = useRef(onLimitExceeded);
   const uploadingRef = useRef(false);
@@ -194,6 +197,7 @@ export function useDatasetUploads({
   concurrencyRef.current = Number.isFinite(concurrency) && concurrency > 0
     ? Math.floor(concurrency)
     : 3;
+  folderIdRef.current = folderId;
   onAcceptedRef.current = onAccepted;
   onLimitExceededRef.current = onLimitExceeded;
 
@@ -376,7 +380,9 @@ export function useDatasetUploads({
       }));
 
       try {
-        const dataset = await api.uploadDataset(item.file, item.idempotencyKey);
+        const dataset = folderIdRef.current
+          ? await api.uploadDataset(item.file, item.idempotencyKey, folderIdRef.current)
+          : await api.uploadDataset(item.file, item.idempotencyKey);
         if (dataset.upload_status !== "succeeded") {
           failedCount += 1;
           ambiguousRetryKeysRef.current.set(datasetUploadFileIdentity(item.file), item.idempotencyKey);

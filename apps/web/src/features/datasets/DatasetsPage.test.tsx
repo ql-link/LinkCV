@@ -50,6 +50,7 @@ beforeEach(() => {
     },
   });
   vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [] });
+  vi.spyOn(api, "listDatasetFolders").mockResolvedValue({ folders: [], total_count: 0, uncategorized_count: 0 });
 });
 
 afterEach(() => {
@@ -639,5 +640,157 @@ describe("DatasetsPage", () => {
   it("将资料上传与操作错误映射为稳定文案", () => {
     expect(datasetUploadErrorMessage(new ApiRequestError(413, "DATASET_TOO_LARGE"), "默认文案")).toContain("10 MB");
     expect(datasetUploadErrorMessage(new ApiRequestError(400, "UNSUPPORTED_DATASET_FORMAT"), "默认文案")).toContain("DOCX");
+  });
+
+  it("渲染文件夹卡片并支持点击文件夹进入分类视图", async () => {
+    const d1 = { ...record, id: "1", file_name: "项目经历.md", file_format: "md", folder_id: "f1", parse_status: "succeeded" as const };
+    const d2 = { ...record, id: "2", file_name: "杂项笔记.txt", file_format: "txt", folder_id: null, parse_status: "succeeded" as const };
+
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [d1, d2] });
+    vi.spyOn(api, "listDatasetFolders").mockResolvedValue({
+      folders: [
+        { id: "f1", name: "核心项目", dataset_count: 1, created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" },
+      ],
+      total_count: 2,
+      uncategorized_count: 1,
+    });
+
+    render(<DatasetsPage />);
+
+    // 首页渲染全部、未分类和核心项目文件夹卡片
+    expect(await screen.findByRole("button", { name: /全部资料/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /未分类/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开文件夹「核心项目」" })).toBeInTheDocument();
+
+    // 默认展示全部资料 (d1, d2)
+    expect(screen.getByText("项目经历")).toBeInTheDocument();
+    expect(screen.getByText("杂项笔记")).toBeInTheDocument();
+
+    // 点击进入“核心项目”文件夹卡片
+    fireEvent.click(screen.getByRole("button", { name: "打开文件夹「核心项目」" }));
+    expect(screen.getByText("项目经历")).toBeInTheDocument();
+    expect(screen.queryByText("杂项笔记")).not.toBeInTheDocument();
+
+    // 点击返回全部资料
+    fireEvent.click(screen.getByRole("button", { name: "返回全部资料" }));
+    expect(screen.getByText("项目经历")).toBeInTheDocument();
+    expect(screen.getByText("杂项笔记")).toBeInTheDocument();
+
+    // 点击切换到“未分类”
+    fireEvent.click(screen.getByRole("button", { name: /未分类/ }));
+    expect(screen.queryByText("项目经历")).not.toBeInTheDocument();
+    expect(screen.getByText("杂项笔记")).toBeInTheDocument();
+  });
+
+  it("支持新建文件夹并展示在首页文件夹网格中", async () => {
+    vi.spyOn(api, "listDatasetFolders").mockResolvedValue({
+      folders: [],
+      total_count: 0,
+      uncategorized_count: 0,
+    });
+    const createSpy = vi.spyOn(api, "createDatasetFolder").mockResolvedValue({
+      id: "f-new",
+      name: "新分类",
+      dataset_count: 0,
+      created_at: "2026-09-03T00:00:00Z",
+      updated_at: "2026-09-03T00:00:00Z",
+    });
+
+    render(<DatasetsPage />);
+
+    const addBtns = await screen.findAllByRole("button", { name: "新建文件夹" });
+    fireEvent.click(addBtns[0]);
+
+    const input = screen.getByLabelText("文件夹名称");
+    fireEvent.change(input, { target: { value: "新分类" } });
+
+    const submitBtn = screen.getByRole("button", { name: "创建文件夹" });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => expect(createSpy).toHaveBeenCalledWith("新分类"));
+  });
+
+  it("支持单条资料移动到目标文件夹", async () => {
+    const d1 = { ...record, id: "101", file_name: "个人履历.docx", file_format: "docx", folder_id: null, parse_status: "succeeded" as const };
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [d1] });
+    vi.spyOn(api, "listDatasetFolders").mockResolvedValue({
+      folders: [
+        { id: "f1", name: "工作经历", dataset_count: 0, created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" },
+      ],
+      total_count: 1,
+      uncategorized_count: 1,
+    });
+
+    const moveSpy = vi.spyOn(api, "moveDataset").mockResolvedValue({
+      ...d1,
+      folder_id: "f1",
+    });
+
+    render(<DatasetsPage />);
+
+    expect(await screen.findByText("个人履历")).toBeInTheDocument();
+
+    // 打开行操作菜单
+    const menuBtn = screen.getByRole("button", { name: /打开「个人履历」操作菜单/ });
+    fireEvent.click(menuBtn);
+
+    // 点击移动到文件夹
+    const moveItemBtn = screen.getByRole("menuitem", { name: /移动到文件夹/ });
+    fireEvent.click(moveItemBtn);
+
+    // 移动弹窗展示
+    expect(screen.getByRole("dialog", { name: /移动「个人履历」到文件夹/ })).toBeInTheDocument();
+
+    // 选择“工作经历”分类
+    const folderOption = screen.getByRole("radio", { name: /工作经历/ });
+    fireEvent.click(folderOption);
+
+    // 确认移动
+    const confirmBtn = screen.getByRole("button", { name: "确定移动" });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => expect(moveSpy).toHaveBeenCalledWith("101", "f1"));
+  });
+
+  it("支持批量选择资料并移动到目标文件夹", async () => {
+    const d1 = { ...record, id: "201", file_name: "文件1.pdf", file_format: "pdf", parse_status: "succeeded" as const };
+    const d2 = { ...record, id: "202", file_name: "文件2.pdf", file_format: "pdf", parse_status: "succeeded" as const };
+
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [d1, d2] });
+    vi.spyOn(api, "listDatasetFolders").mockResolvedValue({
+      folders: [
+        { id: "f2", name: "归档分类", dataset_count: 0, created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" },
+      ],
+      total_count: 2,
+      uncategorized_count: 2,
+    });
+
+    const batchMoveSpy = vi.spyOn(api, "batchMoveDatasets").mockResolvedValue({ moved_count: 2 });
+
+    render(<DatasetsPage />);
+
+    expect(await screen.findByText("文件1")).toBeInTheDocument();
+
+    // 开启批量操作模式
+    const batchBtn = screen.getByRole("button", { name: "批量操作" });
+    fireEvent.click(batchBtn);
+
+    // 全选当前列表
+    const selectAllCheckbox = screen.getByRole("checkbox", { name: "全选当前筛选结果" });
+    fireEvent.click(selectAllCheckbox);
+
+    // 点击页头批量移动按钮
+    const batchMoveBtn = screen.getByRole("button", { name: /移动到文件夹（已选择 2 份）/ });
+    fireEvent.click(batchMoveBtn);
+
+    // 弹窗中选择“归档分类”
+    const option = screen.getByRole("radio", { name: /归档分类/ });
+    fireEvent.click(option);
+
+    // 点击确定移动
+    const submitBtn = screen.getByRole("button", { name: "确定移动" });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => expect(batchMoveSpy).toHaveBeenCalledWith(["201", "202"], "f2"));
   });
 });

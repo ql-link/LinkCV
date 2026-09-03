@@ -30,6 +30,45 @@ def timestamp_type():
     return DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql")
 
 
+class UserDatasetFolder(Base):
+    __tablename__ = "user_dataset_folders"
+    __table_args__ = (
+        PrimaryKeyConstraint("id", name="pk_user_dataset_folders"),
+        UniqueConstraint(
+            "user_id",
+            "name",
+            name="uk_user_dataset_folders_user_name",
+        ),
+        {"comment": "用户资料分类文件夹"},
+    )
+
+    id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(), autoincrement=True, comment="文件夹自增主键"
+    )
+    user_id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(),
+        ForeignKey("users.id", name="fk_user_dataset_folders_user", ondelete="RESTRICT"),
+        nullable=False,
+        comment="所属用户 ID",
+    )
+    name: Mapped[str] = mapped_column(
+        String(64), nullable=False, comment="文件夹名称"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        timestamp_type(),
+        nullable=False,
+        server_default=func.now(),
+        comment="创建时间（UTC）",
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        timestamp_type(),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+        comment="更新时间（UTC）",
+    )
+
+
 class UserDataset(Base):
     __tablename__ = "user_dataset"
     __table_args__ = (
@@ -56,6 +95,16 @@ class UserDataset(Base):
         ForeignKey("users.id", name="fk_user_dataset_user", ondelete="RESTRICT"),
         nullable=False,
         comment="所属用户 ID",
+    )
+    folder_id: Mapped[int | None] = mapped_column(
+        unsigned_bigint_type(),
+        ForeignKey(
+            "user_dataset_folders.id",
+            name="fk_user_dataset_folder",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+        comment="所属文件夹 ID，为 NULL 表示未分类",
     )
     idempotency_key: Mapped[str] = mapped_column(
         String(64), nullable=False, comment="用户范围内上传幂等键"
@@ -101,7 +150,21 @@ class UserDataset(Base):
 
 
 Index(
+    "idx_user_dataset_folders_user_created",
+    UserDatasetFolder.user_id,
+    UserDatasetFolder.created_at.desc(),
+)
+
+
+Index(
     "idx_user_dataset_user_created",
     UserDataset.user_id,
+    UserDataset.created_at.desc(),
+)
+
+Index(
+    "idx_user_dataset_user_folder",
+    UserDataset.user_id,
+    UserDataset.folder_id,
     UserDataset.created_at.desc(),
 )

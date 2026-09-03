@@ -419,6 +419,7 @@ export type ResumeImportResult = {
 
 export type DatasetRecord = {
   id: string;
+  folder_id?: string | null;
   file_name: string;
   file_format: string;
   file_size: number;
@@ -434,6 +435,20 @@ export type DatasetRecord = {
     | "internal_error"
     | null;
   created_at: string;
+};
+
+export type DatasetFolder = {
+  id: string;
+  name: string;
+  dataset_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DatasetFolderListResponse = {
+  folders: DatasetFolder[];
+  total_count: number;
+  uncategorized_count: number;
 };
 
 export type DatasetLimits = {
@@ -1444,16 +1459,26 @@ export const api = {
       method: "POST",
       body: payload,
     }),
-  uploadDataset: (file: File, idempotencyKey: string) => {
+  uploadDataset: (file: File, idempotencyKey: string, folderId?: string | null) => {
     const formData = new FormData();
     formData.append("file", file);
+    if (folderId) {
+      formData.append("folder_id", folderId);
+    }
     return request<DatasetRecord>("/api/datasets", {
       method: "POST",
       formData,
       headers: { "Idempotency-Key": idempotencyKey },
     });
   },
-  listDatasets: () => request<DatasetListResponse>("/api/datasets"),
+  listDatasets: (folderId?: string | null) => {
+    const search = new URLSearchParams();
+    if (folderId !== undefined && folderId !== null) {
+      search.set("folder_id", folderId);
+    }
+    const query = search.toString();
+    return request<DatasetListResponse>(query ? `/api/datasets?${query}` : "/api/datasets");
+  },
   renameDataset: (id: string, name: string) =>
     request<DatasetRecord>(`/api/datasets/${id}`, {
       method: "PATCH",
@@ -1466,6 +1491,32 @@ export const api = {
   deleteDataset: (id: string) =>
     request<{ deleted: boolean }>(`/api/datasets/${id}`, {
       method: "DELETE",
+    }),
+  listDatasetFolders: () => request<DatasetFolderListResponse>("/api/datasets/folders"),
+  createDatasetFolder: (name: string) =>
+    request<DatasetFolder>("/api/datasets/folders", {
+      method: "POST",
+      body: { name },
+    }),
+  renameDatasetFolder: (folderId: string, name: string) =>
+    request<DatasetFolder>(`/api/datasets/folders/${folderId}`, {
+      method: "PATCH",
+      body: { name },
+    }),
+  deleteDatasetFolder: (folderId: string) =>
+    request<{ deleted: boolean; affected_dataset_count: number }>(
+      `/api/datasets/folders/${folderId}`,
+      { method: "DELETE" },
+    ),
+  moveDataset: (datasetId: string, folderId: string | null) =>
+    request<DatasetRecord>(`/api/datasets/${datasetId}/folder`, {
+      method: "PATCH",
+      body: { folder_id: folderId },
+    }),
+  batchMoveDatasets: (datasetIds: string[], folderId: string | null) =>
+    request<{ moved_count: number }>("/api/datasets/move-batch", {
+      method: "POST",
+      body: { dataset_ids: datasetIds, folder_id: folderId },
     }),
   getDatasetContent: (id: string) =>
     request<DatasetContent>(`/api/datasets/${id}/content`),

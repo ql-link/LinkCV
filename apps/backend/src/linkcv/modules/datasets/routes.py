@@ -6,8 +6,8 @@ from pathlib import PurePath
 from time import monotonic
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Header, Request, Response, UploadFile
-from sqlalchemy import delete, func, select
+from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, Response, UploadFile
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -21,8 +21,16 @@ from linkcv.core.storage import (
     build_dataset_object_name,
     get_storage,
 )
-from linkcv.modules.datasets.models import UserDataset
+from linkcv.modules.datasets.models import UserDataset, UserDatasetFolder
 from linkcv.modules.datasets.schemas import (
+    DatasetBatchMoveRequest,
+    DatasetBatchMoveResponse,
+    DatasetFolderCreateRequest,
+    DatasetFolderDeleteResponse,
+    DatasetFolderListResponse,
+    DatasetFolderRecord,
+    DatasetFolderRenameRequest,
+    DatasetMoveRequest,
     UserDatasetContentResponse,
     UserDatasetDeleteResponse,
     UserDatasetLimits,
@@ -267,6 +275,7 @@ def dataset_record(
 ) -> UserDatasetRecord:
     return UserDatasetRecord(
         id=str(dataset.id),
+        folder_id=str(dataset.folder_id) if dataset.folder_id is not None else None,
         file_name=dataset.file_name,
         file_format=dataset.file_format,
         file_size=dataset.file_size,
@@ -282,6 +291,7 @@ async def upload_dataset(
     request: Request,
     response: Response,
     file: UploadFile = File(...),
+    folder_id: str | None = Form(default=None),
     idempotency_key_header: str | None = Header(
         default=None,
         alias="Idempotency-Key",
@@ -345,8 +355,24 @@ async def upload_dataset(
             upload_duration_ms=None,
             parse_status=None,
         )
+        assigned_folder_id = None
+        if folder_id is not None and folder_id.strip():
+            try:
+                fid = int(folder_id.strip())
+                folder_exists = db.execute(
+                    select(UserDatasetFolder.id).where(
+                        UserDatasetFolder.id == fid,
+                        UserDatasetFolder.user_id == user.id,
+                    )
+                ).scalar_one_or_none()
+                if folder_exists is not None:
+                    assigned_folder_id = fid
+            except (ValueError, TypeError):
+                assigned_folder_id = None
+
         dataset = UserDataset(
             user_id=user.id,
+            folder_id=assigned_folder_id,
             file_name=validated.file_name,
             file_format=validated.file_format,
             content_type=validated.content_type,
@@ -463,11 +489,12 @@ async def upload_dataset(
 
 @router.get("", response_model=UserDatasetListResponse)
 def list_datasets(
+    folder_id: str | None = Query(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
 ) -> UserDatasetListResponse:
-    rows = db.execute(
+    query = (
         select(UserDataset, DocumentParseTask)
         .join(
             DocumentParseTask,
@@ -479,7 +506,19 @@ def list_datasets(
             DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
             DocumentParseTask.upload_status == "succeeded",
         )
-        .order_by(UserDataset.created_at.desc(), UserDataset.id.desc())
+    )
+    if folder_id is not None:
+        trimmed = folder_id.strip().lower()
+        if trimmed in ("uncategorized", "null", "none", ""):
+            query = query.where(UserDataset.folder_id.is_(None))
+        else:
+            try:
+                fid = int(folder_id.strip())
+                query = query.where(UserDataset.folder_id == fid)
+            except ValueError:
+                raise ApiError(400, "INVALID_FOLDER_ID")
+    rows = db.execute(
+        query.order_by(UserDataset.created_at.desc(), UserDataset.id.desc())
     ).all()
     return UserDatasetListResponse(
         datasets=[dataset_record(dataset, task) for dataset, task in rows],
@@ -489,6 +528,287 @@ def list_datasets(
             allowed_extensions=ALLOWED_DATASET_EXTENSIONS,
         ),
     )
+
+
+MAX_USER_DATASET_FOLDERS = 50
+
+
+def validate_folder_name(name: str) -> str:
+    cleaned = name.strip()
+    if (
+        not cleaned
+        or "/" in cleaned
+        or "\\" in cleaned
+        or any(ord(character) < 32 or ord(character) == 127 for character in cleaned)
+        or len(cleaned) > 64
+    ):
+        raise ApiError(400, "INVALID_FOLDER_NAME")
+    return cleaned
+
+
+@router.get("/folders", response_model=DatasetFolderListResponse)
+def list_folders(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DatasetFolderListResponse:
+    folders = db.execute(
+        select(UserDatasetFolder)
+        .where(UserDatasetFolder.user_id == user.id)
+        .order_by(UserDatasetFolder.created_at.asc(), UserDatasetFolder.id.asc())
+    ).scalars().all()
+
+    counts_query = db.execute(
+        select(UserDataset.folder_id, func.count(UserDataset.id))
+        .join(
+            DocumentParseTask,
+            DocumentParseTask.id == UserDataset.parse_task_id,
+        )
+        .where(
+            UserDataset.user_id == user.id,
+            DocumentParseTask.user_id == user.id,
+            DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
+            DocumentParseTask.upload_status == "succeeded",
+        )
+        .group_by(UserDataset.folder_id)
+    ).all()
+
+    counts_map = {row[0]: row[1] for row in counts_query}
+    total_count = sum(counts_map.values())
+    uncategorized_count = counts_map.get(None, 0)
+
+    folder_records = [
+        DatasetFolderRecord(
+            id=str(f.id),
+            name=f.name,
+            dataset_count=counts_map.get(f.id, 0),
+            created_at=f.created_at,
+            updated_at=f.updated_at,
+        )
+        for f in folders
+    ]
+    return DatasetFolderListResponse(
+        folders=folder_records,
+        total_count=total_count,
+        uncategorized_count=uncategorized_count,
+    )
+
+
+@router.post("/folders", response_model=DatasetFolderRecord, status_code=201)
+def create_folder(
+    payload: DatasetFolderCreateRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DatasetFolderRecord:
+    cleaned_name = validate_folder_name(payload.name)
+    current_count = db.execute(
+        select(func.count(UserDatasetFolder.id)).where(UserDatasetFolder.user_id == user.id)
+    ).scalar() or 0
+    if current_count >= MAX_USER_DATASET_FOLDERS:
+        raise ApiError(429, "FOLDER_LIMIT_EXCEEDED")
+
+    existing = db.execute(
+        select(UserDatasetFolder).where(
+            UserDatasetFolder.user_id == user.id,
+            UserDatasetFolder.name == cleaned_name,
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise ApiError(409, "FOLDER_NAME_DUPLICATE")
+
+    folder = UserDatasetFolder(
+        user_id=user.id,
+        name=cleaned_name,
+    )
+    db.add(folder)
+    try:
+        db.commit()
+        db.refresh(folder)
+    except IntegrityError:
+        db.rollback()
+        raise ApiError(409, "FOLDER_NAME_DUPLICATE")
+
+    return DatasetFolderRecord(
+        id=str(folder.id),
+        name=folder.name,
+        dataset_count=0,
+        created_at=folder.created_at,
+        updated_at=folder.updated_at,
+    )
+
+
+@router.patch("/folders/{folder_id}", response_model=DatasetFolderRecord)
+def rename_folder(
+    folder_id: int,
+    payload: DatasetFolderRenameRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DatasetFolderRecord:
+    cleaned_name = validate_folder_name(payload.name)
+    folder = db.execute(
+        select(UserDatasetFolder).where(
+            UserDatasetFolder.id == folder_id,
+            UserDatasetFolder.user_id == user.id,
+        )
+    ).scalar_one_or_none()
+    if folder is None:
+        raise ApiError(404, "FOLDER_NOT_FOUND")
+
+    if folder.name != cleaned_name:
+        existing = db.execute(
+            select(UserDatasetFolder).where(
+                UserDatasetFolder.user_id == user.id,
+                UserDatasetFolder.name == cleaned_name,
+                UserDatasetFolder.id != folder_id,
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            raise ApiError(409, "FOLDER_NAME_DUPLICATE")
+        folder.name = cleaned_name
+        try:
+            db.commit()
+            db.refresh(folder)
+        except IntegrityError:
+            db.rollback()
+            raise ApiError(409, "FOLDER_NAME_DUPLICATE")
+
+    count = db.execute(
+        select(func.count(UserDataset.id))
+        .join(DocumentParseTask, DocumentParseTask.id == UserDataset.parse_task_id)
+        .where(
+            UserDataset.user_id == user.id,
+            UserDataset.folder_id == folder.id,
+            DocumentParseTask.upload_status == "succeeded",
+        )
+    ).scalar() or 0
+
+    return DatasetFolderRecord(
+        id=str(folder.id),
+        name=folder.name,
+        dataset_count=count,
+        created_at=folder.created_at,
+        updated_at=folder.updated_at,
+    )
+
+
+@router.delete("/folders/{folder_id}", response_model=DatasetFolderDeleteResponse)
+def delete_folder(
+    folder_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DatasetFolderDeleteResponse:
+    folder = db.execute(
+        select(UserDatasetFolder).where(
+            UserDatasetFolder.id == folder_id,
+            UserDatasetFolder.user_id == user.id,
+        )
+    ).scalar_one_or_none()
+    if folder is None:
+        raise ApiError(404, "FOLDER_NOT_FOUND")
+
+    affected_count = db.execute(
+        select(func.count(UserDataset.id)).where(
+            UserDataset.user_id == user.id,
+            UserDataset.folder_id == folder.id,
+        )
+    ).scalar() or 0
+
+    db.execute(
+        update(UserDataset)
+        .where(
+            UserDataset.user_id == user.id,
+            UserDataset.folder_id == folder.id,
+        )
+        .values(folder_id=None)
+    )
+    db.delete(folder)
+    db.commit()
+
+    return DatasetFolderDeleteResponse(
+        deleted=True,
+        affected_dataset_count=affected_count,
+    )
+
+
+@router.patch("/{dataset_id}/folder", response_model=UserDatasetRecord)
+def move_dataset(
+    dataset_id: int,
+    payload: DatasetMoveRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> UserDatasetRecord:
+    row = load_owned_dataset(db, dataset_id, user.id)
+    if row is None:
+        raise ApiError(404, "DATASET_NOT_FOUND")
+    dataset, task = row
+
+    target_folder_id = None
+    if payload.folder_id is not None:
+        try:
+            fid = int(payload.folder_id)
+        except (ValueError, TypeError):
+            raise ApiError(400, "INVALID_FOLDER_ID")
+        target_folder = db.execute(
+            select(UserDatasetFolder).where(
+                UserDatasetFolder.id == fid,
+                UserDatasetFolder.user_id == user.id,
+            )
+        ).scalar_one_or_none()
+        if target_folder is None:
+            raise ApiError(404, "FOLDER_NOT_FOUND")
+        target_folder_id = target_folder.id
+
+    dataset.folder_id = target_folder_id
+    db.commit()
+    db.refresh(dataset)
+    db.refresh(task)
+    return dataset_record(dataset, task)
+
+
+@router.post("/move-batch", response_model=DatasetBatchMoveResponse)
+def move_datasets_batch(
+    payload: DatasetBatchMoveRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DatasetBatchMoveResponse:
+    if not payload.dataset_ids:
+        raise ApiError(400, "DATASET_IDS_EMPTY")
+
+    target_folder_id = None
+    if payload.folder_id is not None:
+        try:
+            fid = int(payload.folder_id)
+        except (ValueError, TypeError):
+            raise ApiError(400, "INVALID_FOLDER_ID")
+        target_folder = db.execute(
+            select(UserDatasetFolder).where(
+                UserDatasetFolder.id == fid,
+                UserDatasetFolder.user_id == user.id,
+            )
+        ).scalar_one_or_none()
+        if target_folder is None:
+            raise ApiError(404, "FOLDER_NOT_FOUND")
+        target_folder_id = target_folder.id
+
+    parsed_ids: list[int] = []
+    for sid in payload.dataset_ids:
+        try:
+            parsed_ids.append(int(sid))
+        except (ValueError, TypeError):
+            continue
+
+    if not parsed_ids:
+        raise ApiError(400, "DATASET_IDS_EMPTY")
+
+    result = db.execute(
+        update(UserDataset)
+        .where(
+            UserDataset.user_id == user.id,
+            UserDataset.id.in_(parsed_ids),
+        )
+        .values(folder_id=target_folder_id)
+    )
+    db.commit()
+    return DatasetBatchMoveResponse(moved_count=result.rowcount)
 
 
 @router.patch("/{dataset_id}", response_model=UserDatasetRecord)
