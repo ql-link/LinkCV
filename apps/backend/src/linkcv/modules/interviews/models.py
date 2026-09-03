@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
@@ -10,6 +11,7 @@ from sqlalchemy import (
     Index,
     Integer,
     JSON,
+    Numeric,
     PrimaryKeyConstraint,
     SmallInteger,
     String,
@@ -84,8 +86,22 @@ class JobApplication(Base):
             name="ck_job_applications_status",
         ),
         CheckConstraint(
-            "offer_status IN ('none', 'oc_received', 'written_offer_received', 'accepted', 'declined')",
+            "offer_status IN ('none', 'received', 'accepted', 'declined')",
             name="ck_job_applications_offer_status",
+        ),
+        CheckConstraint(
+            "offer_salary_period IS NULL OR "
+            "offer_salary_period IN ('hour', 'day', 'month', 'year')",
+            name="ck_job_applications_offer_salary_period",
+        ),
+        CheckConstraint(
+            "offer_salary IS NULL OR "
+            "(offer_salary_currency IS NOT NULL AND offer_salary_period IS NOT NULL)",
+            name="ck_job_applications_offer_salary_context",
+        ),
+        CheckConstraint(
+            "offer_salary_currency IS NULL OR LENGTH(offer_salary_currency) = 3",
+            name="ck_job_applications_offer_salary_currency",
         ),
         CheckConstraint(
             "is_favorite IN (0, 1)", name="ck_job_applications_is_favorite"
@@ -159,6 +175,21 @@ class JobApplication(Base):
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="active")
     offer_status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="none"
+    )
+    offer_base_location: Mapped[str | None] = mapped_column(
+        String(100), nullable=True
+    )
+    offer_salary: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2), nullable=True
+    )
+    offer_salary_currency: Mapped[str | None] = mapped_column(
+        ascii_char(3), nullable=True
+    )
+    offer_salary_period: Mapped[str | None] = mapped_column(
+        String(16), nullable=True
+    )
+    offer_benefits_description: Mapped[str | None] = mapped_column(
+        String(500), nullable=True
     )
     is_favorite: Mapped[int] = mapped_column(
         unsigned_tinyint_type(), nullable=False, default=0

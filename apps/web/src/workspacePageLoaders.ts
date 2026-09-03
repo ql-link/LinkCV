@@ -3,20 +3,19 @@ export const loadAssistantPage = () => import("./features/assistant/AssistantPag
 export const loadDatasetsPage = () => import("./features/datasets/DatasetsPage");
 export const loadHomePage = () => import("./features/home/HomePage");
 export const loadInterviewCenterPage = () => import("./features/interviews/InterviewCenterPage");
-export const loadJobCenterPage = () => import("./features/jobs/JobCenterPage");
 export const loadResumeTemplatesPage = () => import("./features/templates/ResumeTemplatesPage");
 
 const workspacePageLoaders: Record<string, () => Promise<unknown>> = {
   "/account": loadAccountPage,
   "/assistant": loadAssistantPage,
-  "/career": loadJobCenterPage,
+  "/career": loadInterviewCenterPage,
   "/career/applications": loadInterviewCenterPage,
-  "/career/jobs": loadJobCenterPage,
+  "/career/jobs": loadInterviewCenterPage,
   "/career/reviews": loadInterviewCenterPage,
   "/career/schedule": loadInterviewCenterPage,
   "/datasets": loadDatasetsPage,
   "/interviews": loadInterviewCenterPage,
-  "/jobs": loadJobCenterPage,
+  "/jobs": loadInterviewCenterPage,
   "/resumes": loadHomePage,
   "/templates": loadResumeTemplatesPage,
 };

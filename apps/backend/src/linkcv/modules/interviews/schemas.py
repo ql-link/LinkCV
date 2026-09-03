@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from linkcv.application.interviews.state import validate_stage_context
+from linkcv.modules.job_descriptions.schemas import SalaryPeriod
 
 
 CalendarColor = Literal["red", "orange", "yellow", "green", "blue", "purple", "gray"]
@@ -16,9 +19,7 @@ ApplicationStageState = Literal[
     "awaiting_schedule", "scheduled", "awaiting_result", "negotiating"
 ]
 ApplicationStatus = Literal["active", "rejected", "withdrawn", "closed"]
-OfferStatus = Literal[
-    "none", "oc_received", "written_offer_received", "accepted", "declined"
-]
+OfferStatus = Literal["none", "received", "accepted", "declined"]
 SessionStatus = Literal["scheduled", "completed", "cancelled"]
 RoundResult = Literal["pending", "passed", "rejected"]
 InterviewMode = Literal["video", "onsite", "phone", "other"]
@@ -81,6 +82,15 @@ class JobApplicationCreateRequest(StrictModel):
         validate_stage_context(
             self.current_stage_type, self.current_round_no, self.current_stage_label
         )
+        if (
+            self.current_stage_type == "screening"
+            and self.current_stage_label == "待投递"
+        ):
+            if self.applied_at is not None:
+                raise ValueError("待投递阶段不能包含 applied_at")
+            if self.stage_state != "awaiting_schedule":
+                raise ValueError("待投递阶段必须等待投递")
+            return self
         expected_state: ApplicationStageState
         if self.current_stage_type == "screening":
             expected_state = "awaiting_result"
@@ -100,6 +110,7 @@ class JobApplicationUpdateRequest(StrictModel):
     is_favorite: bool | None = None
     applied_at: datetime | None = None
     notes: str | None = Field(default=None, max_length=16_000)
+    resume_id: DatabaseId | None = None
     resume_version_id: DatabaseId | None = None
     base_lock_version: int = Field(ge=1)
 
@@ -119,6 +130,10 @@ class JobApplicationUpdateRequest(StrictModel):
     def require_change(self) -> JobApplicationUpdateRequest:
         if self.model_fields_set == {"base_lock_version"}:
             raise ValueError("at least one application field is required")
+        if {"resume_id", "resume_version_id"} <= self.model_fields_set:
+            raise ValueError(
+                "resume_id and resume_version_id cannot be provided together"
+            )
         for field_name in ("calendar_color", "is_favorite"):
             if field_name in self.model_fields_set and getattr(self, field_name) is None:
                 raise ValueError(f"{field_name} cannot be null")
@@ -146,7 +161,36 @@ class AdvanceApplicationRequest(LifecycleRequest):
 
 
 class OfferApplicationRequest(LifecycleRequest):
-    offer_status: Literal["oc_received", "written_offer_received"]
+    base_location: str | None = Field(default=None, max_length=100)
+    salary: Decimal | None = Field(
+        default=None, ge=0, max_digits=12, decimal_places=2
+    )
+    salary_currency: str | None = Field(default=None, max_length=3)
+    salary_period: SalaryPeriod | None = None
+    benefits_description: str | None = Field(default=None, max_length=500)
+
+    @field_validator("base_location", "benefits_description")
+    @classmethod
+    def trim_optional_text(cls, value: str | None) -> str | None:
+        return _trim_optional(value)
+
+    @field_validator("salary_currency")
+    @classmethod
+    def normalize_currency(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().upper()
+        if not re.fullmatch(r"[A-Z]{3}", normalized):
+            raise ValueError("salary currency must be a three-letter ASCII code")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_salary(self) -> OfferApplicationRequest:
+        if self.salary is not None and (
+            self.salary_currency is None or self.salary_period is None
+        ):
+            raise ValueError("numeric salary requires currency and period")
+        return self
 
 
 class CloseApplicationRequest(LifecycleRequest):
@@ -291,6 +335,11 @@ class JobApplicationRecord(BaseModel):
     stage_state: ApplicationStageState
     status: ApplicationStatus
     offer_status: OfferStatus
+    offer_base_location: str | None
+    offer_salary: Decimal | None
+    offer_salary_currency: str | None
+    offer_salary_period: SalaryPeriod | None
+    offer_benefits_description: str | None
     is_favorite: bool
     applied_at: datetime | None
     notes: str | None
@@ -450,7 +499,7 @@ class OverviewMetrics(StrictModel):
     weekly_interviews: int
     upcoming_interviews: int
     completed_interviews: int
-    written_offers: int
+    offers_received: int
 
 
 class InterviewOverviewResponse(StrictModel):
