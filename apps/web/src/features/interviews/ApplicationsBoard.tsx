@@ -526,6 +526,7 @@ export function ProgressBoard({
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [invalidDropTarget, setInvalidDropTarget] = useState<string | null>(null);
   const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
+  const [settlingReturnId, setSettlingReturnId] = useState<string | null>(null);
   const [openMenuApplicationId, setOpenMenuApplicationId] = useState<string | null>(null);
   const advancingId: string | null = null;
   const dragRef = useRef<{ id: string } | null>(null);
@@ -550,12 +551,14 @@ export function ProgressBoard({
     setDropTarget(null);
     setInvalidDropTarget(null);
     setDropPreview(null);
+    setSettlingReturnId(null);
   };
 
   const handleDragStart = (item: JobApplicationSummary, event: ReactDragEvent<HTMLElement>) => {
     if (returnSettleTimerRef.current !== null) window.clearTimeout(returnSettleTimerRef.current);
     returnSettleTimerRef.current = null;
     isSettlingReturnRef.current = false;
+    setSettlingReturnId(null);
     dragRef.current = { id: item.id };
     suppressCardClickRef.current = true;
     setDraggingId(item.id);
@@ -572,6 +575,7 @@ export function ProgressBoard({
       return;
     }
     isSettlingReturnRef.current = true;
+    setSettlingReturnId(application.id);
     setDropTarget(null);
     setInvalidDropTarget(null);
     setDropPreview({ columnId: applicationBoardColumnId(application) });
@@ -579,7 +583,7 @@ export function ProgressBoard({
       isSettlingReturnRef.current = false;
       returnSettleTimerRef.current = null;
       clearDrag();
-    }, 220);
+    }, 150);
   };
 
   const handleDrop = (target: BoardProgressColumn, event: ReactDragEvent<HTMLElement>) => {
@@ -668,6 +672,7 @@ export function ProgressBoard({
             draggingId={displayedDraggingId}
             draggingSourceColumnId={displayedDraggingApplication ? applicationBoardColumnId(displayedDraggingApplication) : null}
             dropPreview={displayedDropPreview}
+            settlingReturnId={settlingReturnId}
             dropTarget={dropTarget}
             advancingId={advancingId}
             completedCurrentStageApplicationIds={completedCurrentStageApplicationIds}
@@ -704,7 +709,11 @@ export function ProgressBoard({
                 columns,
                 completedCurrentStageApplicationIds,
               );
-              event.dataTransfer.dropEffect = validation.valid ? "move" : "none";
+              // The board handles rejected drops itself so the browser must still
+              // treat the native drag as consumed. `none` triggers an additional
+              // browser-controlled snap-back animation on top of our source-card
+              // return transition, which makes blocked stage moves feel sluggish.
+              event.dataTransfer.dropEffect = "move";
               setDropTarget(validation.valid ? column.id : null);
               setInvalidDropTarget(validation.valid ? null : column.id);
               if (!validation.valid) {
@@ -740,6 +749,7 @@ export function ProgressColumn({
   draggingId,
   draggingSourceColumnId,
   dropPreview,
+  settlingReturnId,
   dropTarget,
   advancingId,
   completedCurrentStageApplicationIds,
@@ -762,6 +772,7 @@ export function ProgressColumn({
   draggingId: string | null;
   draggingSourceColumnId: string | null;
   dropPreview: DropPreview | null;
+  settlingReturnId: string | null;
   dropTarget: string | null;
   advancingId: string | null;
   completedCurrentStageApplicationIds: ReadonlySet<string>;
@@ -798,6 +809,7 @@ export function ProgressColumn({
   const previewIndex = showDropPreview ? 0 : -1;
   const cardNodes = renderedItems.flatMap((item, index) => {
     const isDraggingCard = draggingId === item.id;
+    const isSettlingReturnCard = settlingReturnId === item.id;
     const isAfterDraggingCard = draggingSourceIndex >= 0
       && index > draggingSourceIndex
       && !isReturningToSource;
@@ -827,7 +839,8 @@ export function ProgressColumn({
         <ProgressCard
           item={item}
           columnKey={column.key}
-          isDragging={isDraggingCard}
+          isDragging={isDraggingCard && !isSettlingReturnCard}
+          isReturning={isSettlingReturnCard}
           menuOpen={openMenuApplicationId === item.id}
           isAdvancing={advancingId === item.id}
           currentStageCompleted={completedCurrentStageApplicationIds.has(item.id)}
@@ -847,9 +860,9 @@ export function ProgressColumn({
             className="progress-card-drop-placeholder is-source-return"
             data-drop-placeholder="true"
             aria-hidden="true"
-            initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 0.82, scale: 1 }}
-            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            initial={shouldReduceMotion ? false : isSettlingReturnCard ? { opacity: 0.82, scale: 1 } : { opacity: 0, scale: 0.98 }}
+            animate={isSettlingReturnCard ? { opacity: 0, scale: 1 } : { opacity: 0.82, scale: 1 }}
+            transition={{ duration: isSettlingReturnCard ? 0.15 : 0.18, ease: [0.16, 1, 0.3, 1] }}
           />
         )}
       </motion.div>,
@@ -894,6 +907,7 @@ export function ProgressCard({
   item,
   columnKey,
   isDragging,
+  isReturning,
   menuOpen,
   isAdvancing,
   currentStageCompleted,
@@ -911,6 +925,7 @@ export function ProgressCard({
   item: JobApplicationSummary;
   columnKey: ProgressColumnKey;
   isDragging: boolean;
+  isReturning: boolean;
   menuOpen: boolean;
   isAdvancing: boolean;
   currentStageCompleted: boolean;
@@ -993,7 +1008,7 @@ export function ProgressCard({
   return (
     <article
       ref={cardRef}
-      className={`progress-card${draggable ? " is-draggable" : ""}${isDragging ? " is-dragging" : ""}${isAdvancing ? " is-advancing" : ""}`}
+      className={`progress-card${draggable ? " is-draggable" : ""}${isDragging ? " is-dragging" : ""}${isReturning ? " is-returning" : ""}${isAdvancing ? " is-advancing" : ""}`}
       aria-label={`${item.company_name_snapshot} ${item.job_title_snapshot}`}
       data-application-id={item.id}
       aria-hidden={isDragging ? "true" : undefined}

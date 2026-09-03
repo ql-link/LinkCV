@@ -378,11 +378,11 @@ function JobSummaryCard({ application }: { application: JobApplicationSummary })
         <Fact icon={<MapPin aria-hidden="true" />} label="工作地点" value={city} />
         <Fact icon={<BriefcaseBusiness aria-hidden="true" />} label="岗位性质" value={[employment, workMode].filter(Boolean).join(" · ") || "—"} />
       </div>
-      <div className="career-job-copy">
+      <div className="career-job-copy career-job-overview">
         <h3>岗位概览</h3>
         <p>{description}</p>
       </div>
-      <div className="career-job-copy">
+      <div className="career-job-copy career-job-skills">
         <h3>核心技能</h3>
         {skills.length ? <div className="career-job-tags">{skills.map((skill) => <span key={skill}>{skill}</span>)}</div> : <p>暂未记录</p>}
       </div>
@@ -2022,6 +2022,7 @@ function AddInterviewContentDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState(initialText);
   const [file, setFile] = useState<File | null>(null);
+  const [contentMode, setContentMode] = useState<"audio" | "text">("audio");
   const [dragActive, setDragActive] = useState(false);
   const [busy, setBusy] = useState(false);
   const isEditing = mode === "edit";
@@ -2032,16 +2033,26 @@ function AddInterviewContentDialog({
       onNotice("仅支持音频文件，请选择音频格式。");
       return;
     }
+    setContentMode("audio");
     setFile(candidate);
     setText("");
   };
+  const switchContentMode = (nextMode: "audio" | "text") => {
+    setContentMode(nextMode);
+    if (nextMode === "audio") {
+      setText("");
+      return;
+    }
+    setFile(null);
+    if (inputRef.current) inputRef.current.value = "";
+  };
   const save = async () => {
-    if (!file && !text.trim()) return;
+    if ((!isEditing && contentMode === "audio" && !file) || ((isEditing || contentMode === "text") && !text.trim())) return;
     setBusy(true);
     try {
       if (isEditing) {
         await api.updateInterviewSession(session.id, { questions_markdown: text.trim(), base_lock_version: session.lock_version });
-      } else if (file) {
+      } else if (contentMode === "audio" && file) {
         await api.uploadInterviewAsset(session.id, file, "uploaded");
       } else if (text.trim()) {
         await api.updateInterviewSession(session.id, { questions_markdown: text.trim(), base_lock_version: session.lock_version });
@@ -2057,10 +2068,13 @@ function AddInterviewContentDialog({
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="career-content-dialog">
-        <DialogHeader><DialogTitle>{isEditing ? `编辑${recordKind}文字记录` : `添加${recordKind}内容`}</DialogTitle><DialogDescription>{isEditing ? `修改已保存的${recordKind}文字记录。` : `可上传音频文件，或粘贴文字记录，任选一种即可。`}</DialogDescription></DialogHeader>
-        {!isEditing && <>
+        <DialogHeader className="career-content-dialog-header"><DialogTitle>{isEditing ? `编辑${recordKind}文字记录` : `添加${recordKind}内容`}</DialogTitle><DialogDescription>{isEditing ? `修改已保存的${recordKind}文字记录。` : `选择一种方式保存本场${recordKind}记录。`}</DialogDescription></DialogHeader>
+        {!isEditing && <div className="career-content-method-switch" role="tablist" aria-label={`${recordKind}记录添加方式`}>
+          <button type="button" role="tab" aria-selected={contentMode === "audio"} className={contentMode === "audio" ? "is-active" : undefined} onClick={() => switchContentMode("audio")}><Import aria-hidden="true" />上传音频</button>
+          <button type="button" role="tab" aria-selected={contentMode === "text"} className={contentMode === "text" ? "is-active" : undefined} onClick={() => switchContentMode("text")}><FileText aria-hidden="true" />粘贴文字</button>
+        </div>}
+        {!isEditing && contentMode === "audio" &&
           <section className="career-content-upload-method">
-            <h3>上传音频文件</h3>
             <div
               className={`career-content-dropzone${dragActive ? " is-dragging" : ""}`}
               onClick={() => inputRef.current?.click()}
@@ -2072,19 +2086,17 @@ function AddInterviewContentDialog({
               onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") inputRef.current?.click(); }}
             >
               <Import aria-hidden="true" />
-              <strong>{file ? file.name : "拖放音频文件到此处"}</strong>
-              <span>{file ? `${formatBytes(file.size)} · 已选择` : "或从电脑中选择文件"}</span>
-              <Button type="button" variant="outline" onClick={(event) => { event.stopPropagation(); inputRef.current?.click(); }}>选择文件</Button>
+              <strong>{file ? file.name : "点击选择或拖放音频文件"}</strong>
+              <span>{file ? `${formatBytes(file.size)} · 已选择` : "支持 MP3、M4A、WAV 等常见音频格式"}</span>
             </div>
             <input ref={inputRef} className="visually-hidden" type="file" accept={AUDIO_FILE_ACCEPT} aria-label="音频文件" onChange={(event) => selectAudioFile(event.target.files?.[0])} />
           </section>
-          <div className="career-content-or"><span>或</span></div>
-        </>}
-        <section className="career-content-text-method">
-          <h3>{isEditing ? `${recordKind}文字记录` : "粘贴文字记录"}</h3>
-          <textarea value={text} onChange={(event) => { setText(event.target.value); setFile(null); if (inputRef.current) inputRef.current.value = ""; }} placeholder="粘贴面试过程、逐字稿或整理后的文字记录…" />
-        </section>
-        <DialogFooter><Button variant="outline" onClick={onClose}>取消</Button><Button disabled={busy || (!file && !text.trim())} onClick={() => void save()}>{busy ? "保存中…" : isEditing ? "保存修改" : "保存内容"}</Button></DialogFooter>
+        }
+        {(isEditing || contentMode === "text") && <section className="career-content-text-method">
+          {isEditing && <h3>{recordKind}文字记录</h3>}
+          <textarea aria-label={`${recordKind}文字记录`} value={text} onChange={(event) => setText(event.target.value)} placeholder={`粘贴${recordKind}过程、逐字稿或整理后的文字记录…`} />
+        </section>}
+        <DialogFooter className="career-content-dialog-footer"><Button variant="outline" onClick={onClose}>取消</Button><Button disabled={busy || (isEditing || contentMode === "text" ? !text.trim() : !file)} onClick={() => void save()}>{busy ? "保存中…" : isEditing ? "保存修改" : "保存内容"}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );

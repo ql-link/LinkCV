@@ -1778,6 +1778,7 @@ describe("InterviewCenterPage API projections", () => {
     const fileInput = within(dialog).getByLabelText("音频文件");
     expect(fileInput).toHaveAttribute("accept", expect.stringContaining("audio/*"));
     expect(fileInput).not.toHaveAttribute("accept", expect.stringContaining(".pdf"));
+    fireEvent.click(within(dialog).getByRole("tab", { name: "粘贴文字" }));
     fireEvent.change(within(dialog).getByPlaceholderText("粘贴面试过程、逐字稿或整理后的文字记录…"), {
       target: { value: "新的面试文字记录" },
     });
@@ -1934,7 +1935,7 @@ describe("InterviewCenterPage API projections", () => {
     expect(mocks.updateInterviewSession).not.toHaveBeenCalled();
   });
 
-  it("rejects non-audio files and clears the audio source when text is entered", async () => {
+  it("rejects non-audio files and clears the audio source when switching to text", async () => {
     mocks.getInterviewSession.mockResolvedValue({ session, application, assets: [] });
     mocks.updateInterviewSession.mockResolvedValue({ session, application, assets: [] });
 
@@ -1950,15 +1951,15 @@ describe("InterviewCenterPage API projections", () => {
 
     fireEvent.change(fileInput, { target: { files: [invalidFile] } });
     await waitFor(() => expect(document.querySelector(".interview-error-notice")).toHaveTextContent("仅支持音频文件"));
-    expect(dropzone).toHaveTextContent("拖放音频文件到此处");
+    expect(dropzone).toHaveTextContent("点击选择或拖放音频文件");
 
     fireEvent.change(fileInput, { target: { files: [audioFile] } });
     expect(dropzone).toHaveTextContent("interview.m4a");
+    fireEvent.click(within(dialog).getByRole("tab", { name: "粘贴文字" }));
     const textInput = within(dialog).getByPlaceholderText("粘贴面试过程、逐字稿或整理后的文字记录…");
     fireEvent.change(textInput, { target: { value: "新的面试文字记录" } });
 
-    expect(dropzone).toHaveTextContent("拖放音频文件到此处");
-    expect(fileInput).toHaveValue("");
+    expect(within(dialog).queryByLabelText("音频文件")).not.toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "保存内容" }));
 
     await waitFor(() => expect(mocks.updateInterviewSession).toHaveBeenCalledWith("31", {
@@ -3006,16 +3007,22 @@ describe("InterviewCenterPage API projections", () => {
     const dataTransfer = { effectAllowed: "", dropEffect: "", setData: vi.fn(), getData: vi.fn().mockReturnValue("91") } as unknown as DataTransfer;
     fireEvent.dragStart(card, { dataTransfer, clientX: 150, clientY: 150 });
     fireEvent.dragOver(target, { dataTransfer, clientX: 500, clientY: 300 });
+    expect(dataTransfer.dropEffect).toBe("move");
     fireEvent.drop(target, { dataTransfer, clientX: 500, clientY: 300 });
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    const rejectionNotice = await screen.findByRole("alert");
+    expect(rejectionNotice).toHaveClass("application-drag-rejection-notice");
+    expect(rejectionNotice).not.toHaveTextContent("无法移动到该状态");
+    expect(rejectionNotice).toHaveTextContent(
       "请先在详情页完成当前笔试或测评，再拖动到下一阶段。",
     );
+    expect(document.querySelector(".interview-error-notice")).not.toBeInTheDocument();
     expect(dataTransfer.dropEffect).toBe("move");
-    expect(card).toHaveClass("is-dragging");
+    expect(card).toHaveClass("is-returning");
+    expect(card).not.toHaveClass("is-dragging");
     expect(card.closest("[data-column-key]")?.querySelector(".is-source-return"))
       .toHaveAttribute("data-drop-placeholder", "true");
-    await waitFor(() => expect(card).not.toHaveClass("is-dragging"));
+    await waitFor(() => expect(card).not.toHaveClass("is-returning"));
     expect(document.querySelector(".is-source-return")).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "记录并完成笔试" })).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "添加求职阶段" })).not.toBeInTheDocument();
@@ -3273,6 +3280,53 @@ describe("InterviewCenterPage API projections", () => {
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mocks.advanceJobApplication).not.toHaveBeenCalled();
+  });
+
+  it("uses the board return animation when an unfinished interview is dropped on a later round", async () => {
+    const unfinishedSecondRound = {
+      ...application,
+      id: "57",
+      current_stage_type: "interview" as const,
+      current_round_no: 2,
+      current_stage_label: "二面",
+      stage_state: "scheduled" as const,
+      applied_at: "2026-08-22T04:00:00Z",
+    };
+    const thirdRoundApplication = {
+      ...application,
+      id: "58",
+      company_name_snapshot: "三面公司",
+      current_stage_type: "interview" as const,
+      current_round_no: 3,
+      current_stage_label: "三面",
+    };
+    mocks.listInterviewSessions.mockResolvedValue({
+      items: [{ ...session, id: "93", application_id: "57", round_no: 2, stage_label: "二面", status: "scheduled" }],
+      next_cursor: null,
+    });
+    mocks.listJobApplications.mockResolvedValue({ items: [unfinishedSecondRound, thirdRoundApplication], next_cursor: null });
+
+    render(<InterviewCenterPage view="applications" />);
+    switchToApplicationBoard();
+    const card = await screen.findByRole("article", { name: "腾讯 后端开发工程师" });
+    const target = document.querySelector('[data-column-id="interview:三面"]') as HTMLElement;
+    const dataTransfer = {
+      effectAllowed: "",
+      dropEffect: "",
+      setData: vi.fn(),
+      getData: vi.fn().mockReturnValue("57"),
+    } as unknown as DataTransfer;
+
+    fireEvent.dragStart(card, { dataTransfer });
+    fireEvent.dragOver(target, { dataTransfer });
+    expect(target).toHaveClass("is-invalid-drop-target");
+    expect(dataTransfer.dropEffect).toBe("move");
+    fireEvent.drop(target, { dataTransfer });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("请先在详情页完成当前面试，再拖动到下一阶段。");
+    expect(card).toHaveClass("is-returning");
+    await waitFor(() => expect(card).not.toHaveClass("is-returning"));
     expect(mocks.advanceJobApplication).not.toHaveBeenCalled();
   });
 
