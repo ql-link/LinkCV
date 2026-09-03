@@ -13,6 +13,7 @@ describe("Dialog", () => {
     );
 
     expect(screen.getByRole("dialog", { name: "测试弹窗" })).toHaveAttribute("data-ui-theme", "light");
+    expect(screen.getByRole("dialog", { name: "测试弹窗" })).toHaveClass("text-foreground");
     expect(document.querySelector('[data-slot="dialog-overlay"]')).toHaveAttribute("data-ui-theme", "light");
     expect(screen.getByRole("button", { name: "关闭" })).toHaveAttribute("data-slot", "dialog-close");
     expect(screen.getByRole("button", { name: "关闭" })).toHaveClass("bg-transparent", "hover:bg-transparent");

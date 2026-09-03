@@ -10,11 +10,8 @@ export type AppRoute =
   | { kind: "templates" }
   | { kind: "resumeCreate" }
   | { kind: "editor"; resumeId: string }
-  | { kind: "jobs" }
-  | { kind: "interviews"; view: InterviewView; applicationId?: string; sessionId?: string; jobId?: string; createApplication?: boolean }
-  | { kind: "jobCreate" }
+  | { kind: "interviews"; view: InterviewView; applicationId?: string; sessionId?: string; jobId?: string; createApplication?: boolean; importJob?: boolean }
   | { kind: "jobDetail"; jobId: string }
-  | { kind: "jobEdit"; jobId: string }
   | { kind: "datasets" }
   | { kind: "account" }
   | { kind: "share"; token: string }
@@ -24,6 +21,7 @@ export type InterviewView = "applications" | "schedule" | "records";
 
 type NavigateOptions = {
   replace?: boolean;
+  state?: unknown;
 };
 
 const editorPathPattern = /^\/resumes\/([^/]+)\/edit$/;
@@ -74,13 +72,14 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
   if (normalizedPath === "/assistant") return { kind: "assistant" };
   if (normalizedPath === "/templates") return { kind: "templates" };
   if (normalizedPath === "/resumes/new") return { kind: "resumeCreate" };
-  if (normalizedPath === "/career" || normalizedPath === "/career/jobs" || normalizedPath === "/jobs") return { kind: "jobs" };
+  if (normalizedPath === "/career/jobs" || normalizedPath === "/jobs") return { kind: "interviews", view: "applications" };
+  if (normalizedPath === "/career") return { kind: "interviews", view: "applications" };
   if (normalizedPath === "/interviews") {
     const requestedView = new URLSearchParams(search).get("view");
     if (requestedView === "applications" || requestedView === "schedule" || requestedView === "records") {
       return { kind: "interviews", view: requestedView };
     }
-    return { kind: "jobs" };
+    return { kind: "interviews", view: "applications" };
   }
   if (normalizedPath === "/career/applications") {
     const params = new URLSearchParams(search);
@@ -89,13 +88,16 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
       view: "applications",
       jobId: params.get("job") ?? undefined,
       createApplication: params.get("create") === "1" || undefined,
+      importJob: params.get("import") === "1" || undefined,
     };
   }
   if (normalizedPath === "/career/schedule") return { kind: "interviews", view: "schedule" };
   if (normalizedPath === "/career/reviews") {
     return { kind: "interviews", view: "records", sessionId: new URLSearchParams(search).get("session") ?? undefined };
   }
-  if (normalizedPath === "/career/jobs/new" || normalizedPath === "/jobs/new") return { kind: "jobCreate" };
+  if (normalizedPath === "/career/jobs/new" || normalizedPath === "/jobs/new") {
+    return { kind: "interviews", view: "applications", importJob: true };
+  }
   if (normalizedPath === "/datasets") return { kind: "datasets" };
   if (normalizedPath === "/account") return { kind: "account" };
 
@@ -123,7 +125,7 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
       const sessionId = new URLSearchParams(search).get("session") ?? undefined;
       return {
         kind: "interviews",
-        view: sessionId ? "records" : "applications",
+        view: "applications",
         applicationId: decodeURIComponent(applicationDetailMatch[1]),
         sessionId,
       };
@@ -135,7 +137,7 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
   const jobEditMatch = normalizedPath.match(jobEditPathPattern);
   if (jobEditMatch) {
     try {
-      return { kind: "jobEdit", jobId: decodeURIComponent(jobEditMatch[1]) };
+      return { kind: "jobDetail", jobId: decodeURIComponent(jobEditMatch[1]) };
     } catch {
       return { kind: "notFound" };
     }
@@ -174,8 +176,11 @@ export function assistantPath(sessionId?: string | null) {
   return sessionId ? `/assistant/${encodeURIComponent(sessionId)}` : "/assistant";
 }
 
-export function jobDetailPath(jobId: string) {
-  return `/career/jobs/${encodeURIComponent(jobId)}`;
+export function jobDetailPath(jobId: string, fromApplicationId?: string) {
+  const path = `/career/jobs/${encodeURIComponent(jobId)}`;
+  return fromApplicationId
+    ? `${path}?fromApplication=${encodeURIComponent(fromApplicationId)}`
+    : path;
 }
 
 export function jobEditPath(jobId: string) {
@@ -202,16 +207,24 @@ export function startCareerApplicationPath(jobId: string) {
 
 export function legacyCareerRedirect(pathname: string, search = ""): string | null {
   const normalizedPath = normalizePathname(pathname);
-  if (normalizedPath === "/career") return "/career/jobs";
-  if (normalizedPath === "/jobs" || normalizedPath.startsWith("/jobs/")) {
-    return `/career${normalizedPath}${search}`;
+  if (normalizedPath === "/career" || normalizedPath === "/career/jobs" || normalizedPath === "/jobs") {
+    return "/career/applications";
+  }
+  if (normalizedPath === "/career/jobs/new" || normalizedPath === "/jobs/new") {
+    return "/career/applications?import=1";
+  }
+  if (normalizedPath.startsWith("/jobs/")) {
+    return `/career${normalizedPath.replace(/\/edit$/, "")}${search}`;
+  }
+  if (normalizedPath.startsWith("/career/jobs/") && normalizedPath.endsWith("/edit")) {
+    return `${normalizedPath.replace(/\/edit$/, "")}${search}`;
   }
   if (normalizedPath === "/interviews") {
     const requestedView = new URLSearchParams(search).get("view");
     if (requestedView === "applications" || requestedView === "schedule" || requestedView === "records") {
       return careerViewPath(requestedView);
     }
-    return "/career/jobs";
+    return "/career/applications";
   }
   return null;
 }
@@ -234,8 +247,8 @@ export function adminLoginPath(next?: string | null) {
 export function navigateTo(path: string, options: NavigateOptions = {}) {
   const current = `${window.location.pathname}${window.location.search}`;
   if (current === path) return;
-  if (options.replace) window.history.replaceState(null, "", path);
-  else window.history.pushState(null, "", path);
+  if (options.replace) window.history.replaceState(options.state ?? null, "", path);
+  else window.history.pushState(options.state ?? null, "", path);
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
