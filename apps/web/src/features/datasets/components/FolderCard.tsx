@@ -34,7 +34,7 @@ export function FolderCard({
     >
       {/* 文件夹图形区域（统一坐标体系：100x80） */}
       <div className="macos-folder-graphic" aria-hidden="true">
-        {/* 后盖与折耳 Tab */}
+        {/* 后盖与折耳 Tab（浅蓝色系渐变） */}
         <svg
           className="macos-folder-svg-back"
           viewBox="0 0 100 80"
@@ -42,13 +42,13 @@ export function FolderCard({
           xmlns="http://www.w3.org/2000/svg"
         >
           <defs>
-            <linearGradient id={`fb-${folder.id}`} x1="0" y1="5" x2="0" y2="78" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#3d82f6" />
-              <stop offset="100%" stopColor="#145ed6" />
+            <linearGradient id={`fb-${folder.id}`} x1="0" y1="4" x2="0" y2="78" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="#6cb3f9" />
+              <stop offset="100%" stopColor="#3d97f2" />
             </linearGradient>
           </defs>
           <path
-            d="M8 12C8 8.5 11 5.5 15 5.5H36C39 5.5 42 7.5 44 10.5L48 15.5H88C92 15.5 95 18.5 95 22.5V71C95 75 92 78 88 78H12C8 78 5 75 5 71V19C5 16 7 14 10 14H8Z"
+            d="M8 16V12C8 7.5 11.5 4 16 4H38C41.5 4 44.7 6 46.5 9.2L50 15H88C92.5 15 96 18.5 96 23V70C96 74.5 92.5 78 88 78H12C7.5 78 4 74.5 4 70V23C4 19.5 6 16.5 8 16Z"
             fill={`url(#fb-${folder.id})`}
           />
         </svg>
@@ -65,7 +65,7 @@ export function FolderCard({
           </div>
         )}
 
-        {/* 前盖（坐标完全与后盖对齐） */}
+        {/* 前盖（浅蓝色立体高光渐变） */}
         <svg
           className="macos-folder-svg-front"
           viewBox="0 0 100 80"
@@ -74,26 +74,26 @@ export function FolderCard({
         >
           <defs>
             <linearGradient id={`ff-${folder.id}`} x1="0" y1="21" x2="0" y2="78" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#5499fa" />
-              <stop offset="45%" stopColor="#2573e8" />
-              <stop offset="100%" stopColor="#145ed6" />
+              <stop offset="0%" stopColor="#95ceff" />
+              <stop offset="42%" stopColor="#5eaef8" />
+              <stop offset="100%" stopColor="#348ee8" />
             </linearGradient>
-            <linearGradient id={`fg-${folder.id}`} x1="5" y1="21" x2="95" y2="21" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="rgba(255,255,255,0.65)" />
-              <stop offset="50%" stopColor="rgba(255,255,255,0.25)" />
-              <stop offset="100%" stopColor="rgba(255,255,255,0.55)" />
+            <linearGradient id={`fg-${folder.id}`} x1="4" y1="21" x2="96" y2="21" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="rgba(255,255,255,0.75)" />
+              <stop offset="50%" stopColor="rgba(255,255,255,0.3)" />
+              <stop offset="100%" stopColor="rgba(255,255,255,0.65)" />
             </linearGradient>
           </defs>
           {/* 前盖主体 */}
           <path
-            d="M5 28C5 24 8 21 12 21H88C92 21 95 24 95 28L93 71C93 75 90 78 86 78H14C10 78 7 75 7 71L5 28Z"
+            d="M4 28C4 24 7.5 21 12 21H88C92.5 21 96 24 96 28L94 70C94 74.5 90.5 78 86 78H14C9.5 78 6 74.5 6 70L4 28Z"
             fill={`url(#ff-${folder.id})`}
           />
-          {/* 顶边高光条 */}
+          {/* 顶边微高光条 */}
           <path
-            d="M12 22H88C90.5 22 92.5 23.5 93 25.5H7C7.5 23.5 9.5 22 12 22Z"
+            d="M12 22H88C91 22 93.5 23.5 94.5 25.5H5.5C6.5 23.5 9 22 12 22Z"
             fill={`url(#fg-${folder.id})`}
-            opacity="0.65"
+            opacity="0.7"
           />
         </svg>
       </div>
