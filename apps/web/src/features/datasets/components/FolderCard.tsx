@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FolderPlus, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import type { DatasetFolder } from "../../../api/client";
 
@@ -18,6 +18,13 @@ export function FolderCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const isEmpty = folder.dataset_count === 0;
 
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleOutsideClick = () => setMenuOpen(false);
+    window.addEventListener("click", handleOutsideClick);
+    return () => window.removeEventListener("click", handleOutsideClick);
+  }, [menuOpen]);
+
   return (
     <div
       className={`macos-folder-item${isEmpty ? " is-empty" : " has-files"}`}
@@ -32,6 +39,55 @@ export function FolderCard({
         }
       }}
     >
+      {/* 右上角操作菜单栏：悬停或菜单打开时显示 */}
+      <div
+        className={`macos-folder-actions${menuOpen ? " is-active" : ""}`}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          className="macos-folder-menu-btn"
+          aria-label={`文件夹「${folder.name}」操作菜单`}
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((val) => !val)}
+        >
+          <MoreHorizontal size={16} aria-hidden="true" />
+        </button>
+
+        {menuOpen && (
+          <div
+            className="dataset-action-menu macos-folder-menu"
+            role="menu"
+            aria-label={`${folder.name} 操作`}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                onRename(folder);
+              }}
+            >
+              <Pencil size={14} aria-hidden="true" />
+              重命名
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="is-danger"
+              onClick={() => {
+                setMenuOpen(false);
+                onDelete(folder);
+              }}
+            >
+              <Trash2 size={14} aria-hidden="true" />
+              删除文件夹
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* 文件夹图形区域（统一 100x80 画布坐标） */}
       <div className="macos-folder-graphic" aria-hidden="true">
         {/* 后盖与折耳 Tab（经典 macOS 浅蓝渐变） */}
@@ -104,65 +160,14 @@ export function FolderCard({
         </svg>
       </div>
 
-      {/* 底部信息与操作框 */}
+      {/* 底部信息：名称与资料数量 */}
       <div className="macos-folder-caption">
         <span className="macos-folder-name" title={folder.name}>
           {folder.name}
         </span>
-
-        <div className="macos-folder-subrow">
-          <span className="macos-folder-badge">
-            {isEmpty ? "空" : `${folder.dataset_count} 项`}
-          </span>
-
-          <div
-            className="macos-folder-actions"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              className="macos-folder-menu-btn"
-              aria-label={`文件夹「${folder.name}」操作菜单`}
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((val) => !val)}
-            >
-              <MoreHorizontal size={13} aria-hidden="true" />
-            </button>
-
-            {menuOpen && (
-              <div
-                className="dataset-action-menu macos-folder-menu"
-                role="menu"
-                aria-label={`${folder.name} 操作`}
-              >
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onRename(folder);
-                  }}
-                >
-                  <Pencil size={14} aria-hidden="true" />
-                  重命名
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="is-danger"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onDelete(folder);
-                  }}
-                >
-                  <Trash2 size={14} aria-hidden="true" />
-                  删除文件夹
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+        <span className="macos-folder-badge">
+          {`${folder.dataset_count} 份资料`}
+        </span>
       </div>
     </div>
   );
@@ -177,7 +182,7 @@ export function CreateFolderCard({ onClick }: { onClick: () => void }) {
       onClick={onClick}
     >
       <div className="macos-create-folder-icon-wrap" aria-hidden="true">
-        <FolderPlus size={28} strokeWidth={1.5} className="macos-create-icon" />
+        <FolderPlus size={36} strokeWidth={1.6} className="macos-create-icon" />
       </div>
       <span className="macos-create-label">新建文件夹</span>
     </button>

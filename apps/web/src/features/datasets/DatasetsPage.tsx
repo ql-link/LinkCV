@@ -45,7 +45,6 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  TogglePill,
 } from "@/components/ui";
 import { DatasetPreviewDialog } from "./DatasetPreviewDialog";
 import { CreateFolderCard, FolderCard } from "./components/FolderCard";
@@ -401,7 +400,6 @@ export function DatasetsPage() {
 
   const [folders, setFolders] = useState<DatasetFolder[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string>("all");
-  const [listFilter, setListFilter] = useState<"all" | "uncategorized">("all");
   const [totalCount, setTotalCount] = useState(0);
   const [uncategorizedCount, setUncategorizedCount] = useState(0);
   const [moveTarget, setMoveTarget] = useState<DatasetRecord | null>(null);
@@ -614,7 +612,9 @@ export function DatasetsPage() {
 
   useEffect(() => {
     if (menuDatasetId === null) return;
-    const closeMenu = () => setMenuDatasetId(null);
+    const closeMenu = () => {
+      setMenuDatasetId(null);
+    };
     document.addEventListener("click", closeMenu);
     return () => document.removeEventListener("click", closeMenu);
   }, [menuDatasetId]);
@@ -867,13 +867,11 @@ export function DatasetsPage() {
     return datasets.filter((dataset) => {
       if (selectedFolderId !== "all") {
         if (dataset.folder_id !== selectedFolderId) return false;
-      } else if (listFilter === "uncategorized") {
-        if (dataset.folder_id !== null && dataset.folder_id !== undefined) return false;
       }
       if (!keyword) return true;
       return datasetDisplayName(dataset).toLocaleLowerCase().includes(keyword);
     });
-  }, [datasets, keyword, selectedFolderId, listFilter]);
+  }, [datasets, keyword, selectedFolderId]);
 
   const selectedDatasetCount = selectedDatasetIds.size;
   const filteredDatasetIds = filteredDatasets.map((dataset) => dataset.id);
@@ -1005,19 +1003,19 @@ export function DatasetsPage() {
         </div>
       )}
       <WorkspacePageHero
-        icon={<Database />}
+        icon={selectedFolderId === "all" ? <Database /> : <FolderOpen />}
         tone="success"
-        title="资料库"
+        title={
+          selectedFolderId === "all"
+            ? "资料库"
+            : folders.find((f) => f.id === selectedFolderId)?.name ?? "文件夹"
+        }
         description={
-          selectedFolderId === "uncategorized"
-            ? `未分类资料 · 共 ${uncategorizedCount} 份`
-            : selectedFolderId !== "all"
-            ? `「${folders.find((f) => f.id === selectedFolderId)?.name ?? "分类"}」· 共 ${
-                folders.find((f) => f.id === selectedFolderId)?.dataset_count ?? 0
-              } 份资料`
-            : datasets.length > 0
-            ? `${datasets.length} 份资料 · 按最近上传排列`
-            : "把履历、项目记录和参考资料集中在这里，写简历时随时调用。"
+          selectedFolderId === "all"
+            ? datasets.length > 0
+              ? `${datasets.length} 份资料 · 按最近上传排列`
+              : "把履历、项目记录和参考资料集中在这里，写简历时随时调用。"
+            : `当前文件夹 · 共 ${filteredDatasets.length} 份资料`
         }
         actions={(
           <>
@@ -1029,51 +1027,26 @@ export function DatasetsPage() {
               placeholder="搜索资料…"
               className="datasets-hero-search"
             />
-            {batchMode ? (
-              <>
-                <Button
-                  className="datasets-hero-batch-move-action"
-                  variant="outline"
-                  icon={<FolderInput size={15} />}
-                  aria-label={`移动到文件夹（已选择 ${selectedDatasetCount} 份）`}
-                  title={selectedDatasetCount > 0 ? `已选择 ${selectedDatasetCount} 份资料` : "请先选择资料"}
-                  disabled={selectedDatasetCount === 0 || batchDeleteBusy}
-                  onClick={() => setBatchMoveOpen(true)}
-                >
-                  移动到文件夹
-                </Button>
-                <Button
-                  className="datasets-hero-primary-action datasets-hero-delete-action"
-                  variant="outline"
-                  icon={<Trash2 size={15} />}
-                  aria-label={`删除资料（已选择 ${selectedDatasetCount} 份）`}
-                  title={selectedDatasetCount > 0 ? `已选择 ${selectedDatasetCount} 份资料` : "请先选择资料"}
-                  disabled={selectedDatasetCount === 0 || batchDeleteBusy}
-                  onClick={startBulkDelete}
-                >
-                  删除资料
-                </Button>
-              </>
-            ) : (
+            <Button
+              className="datasets-hero-primary-action"
+              variant="outline"
+              icon={<Plus size={15} />}
+              disabled={batchMode}
+              onClick={openUploadDialog}
+            >
+              上传资料
+            </Button>
+            {selectedFolderId !== "all" && (
               <Button
-                className="datasets-hero-primary-action"
+                className="datasets-hero-batch-action"
                 variant="outline"
-                icon={<Plus size={15} />}
-                onClick={openUploadDialog}
+                icon={batchMode ? <X size={15} /> : <CheckSquare size={15} />}
+                disabled={batchDeleteBusy}
+                onClick={toggleBatchMode}
               >
-                上传资料
+                {batchMode ? "取消操作" : "批量操作"}
               </Button>
             )}
-            <Button
-              className="datasets-hero-batch-action"
-              variant="outline"
-              icon={batchMode ? <X size={15} /> : <CheckSquare size={15} />}
-              aria-label={batchMode ? "取消批量操作" : undefined}
-              disabled={batchDeleteBusy}
-              onClick={toggleBatchMode}
-            >
-              {batchMode ? "取消" : "批量操作"}
-            </Button>
           </>
         )}
       />
@@ -1132,24 +1105,10 @@ export function DatasetsPage() {
                     </section>
                   ) : (
                     <>
-                      {/* 筛选与批量控制条 */}
-                      <div className="dataset-list-header dataset-list-section-header">
-                        <div className="flex items-center gap-2">
-                          <TogglePill
-                            active={listFilter === "all"}
-                            onClick={() => setListFilter("all")}
-                          >
-                            全部资料 ({totalCount || datasets.length})
-                          </TogglePill>
-                          <TogglePill
-                            active={listFilter === "uncategorized"}
-                            onClick={() => setListFilter("uncategorized")}
-                          >
-                            未分类 ({uncategorizedCount})
-                          </TogglePill>
-                        </div>
-
-                        {batchMode && (
+                      {/* 批量操作控制条（仅在批量模式下显示） */}
+                      {batchMode && (
+                        <div className="dataset-list-header dataset-batch-bar">
+                          <span className="dataset-batch-count">已选择 {selectedDatasetCount} 项资料</span>
                           <div className="dataset-selection-cell dataset-header-selection">
                             <DatasetSelectionCheckbox
                               checked={allFilteredSelected}
@@ -1159,8 +1118,8 @@ export function DatasetsPage() {
                               onChange={toggleAllFilteredDatasets}
                             />
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
 
                       <div className="dataset-unified-grid" aria-label="资料与文件夹列表">
                         {folders.map((folder) => (
@@ -1214,58 +1173,25 @@ export function DatasetsPage() {
               ) : (
                 /* 文件夹内页视图 */
                 <div className="dataset-folder-view">
-                  <div className="dataset-folder-detail-header">
-                    <div className="dataset-folder-detail-left">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        icon={<ChevronLeft size={16} />}
-                        onClick={() => setSelectedFolderId("all")}
-                      >
-                        返回全部资料
-                      </Button>
-                      <div className="dataset-folder-detail-title">
-                        <FolderOpen size={20} className="text-muted-foreground" aria-hidden="true" />
-                        <h1>{folders.find((f) => f.id === selectedFolderId)?.name ?? "文件夹"}</h1>
-                        <span className="dataset-folder-detail-count">
-                          {filteredDatasets.length} 份资料
-                        </span>
-                      </div>
-                    </div>
-                    <div className="dataset-folder-detail-actions">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        icon={<Pencil size={14} />}
-                        onClick={() => {
-                          const target = folders.find((f) => f.id === selectedFolderId);
-                          if (target) {
-                            setRenameFolderTarget(target);
-                            setRenameFolderName(target.name);
-                            setRenameFolderError(null);
-                          }
-                        }}
-                      >
-                        重命名
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive hover:text-destructive"
-                        icon={<Trash2 size={14} />}
-                        onClick={() => {
-                          const target = folders.find((f) => f.id === selectedFolderId);
-                          if (target) setDeleteFolderTarget(target);
-                        }}
-                      >
-                        删除文件夹
-                      </Button>
-                    </div>
+                  <div className="dataset-folder-nav">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="dataset-back-btn"
+                      icon={<ChevronLeft size={16} />}
+                      onClick={() => {
+                        setBatchMode(false);
+                        setSelectedDatasetIds(new Set());
+                        setSelectedFolderId("all");
+                      }}
+                    >
+                      返回全部资料
+                    </Button>
                   </div>
 
                   {batchMode && (
-                    <div className="flex items-center justify-between border-b pb-3 mb-4">
-                      <span className="text-xs text-muted-foreground">已选择 {selectedDatasetCount} 项资料</span>
+                    <div className="dataset-list-header dataset-batch-bar">
+                      <span className="dataset-batch-count">已选择 {selectedDatasetCount} 项资料</span>
                       <div className="dataset-selection-cell dataset-header-selection">
                         <DatasetSelectionCheckbox
                           checked={allFilteredSelected}
@@ -1279,9 +1205,22 @@ export function DatasetsPage() {
                   )}
 
                   {filteredDatasets.length === 0 ? (
-                    <p className="dataset-list-empty py-12 text-center text-muted-foreground text-sm">
-                      {query ? "没有匹配的资料。" : "该文件夹为空，点击上方「上传资料」添加文件。"}
-                    </p>
+                    query ? (
+                      <p className="dataset-list-empty py-12 text-center text-muted-foreground text-sm">
+                        没有匹配的资料。
+                      </p>
+                    ) : (
+                      <section className="datasets-empty">
+                        <h2>还没有资料</h2>
+                        <p>
+                          建议先上传一份与当前分类相关的资料，<br />
+                          后续写简历时可以快速检索和引用。
+                        </p>
+                        <Button icon={<Plus size={15} />} onClick={openUploadDialog}>
+                          上传第一份资料
+                        </Button>
+                      </section>
+                    )
                   ) : (
                     <div className="dataset-unified-grid" aria-label="文件夹内部资料列表">
                       {filteredDatasets.map((dataset) => (
@@ -1318,26 +1257,38 @@ export function DatasetsPage() {
       )}
 
       {dialogOpen && (
-        <div className="dataset-dialog-backdrop" onMouseDown={(event) => {
-          if (event.target === event.currentTarget) closeUploadDialog();
+        <Dialog open onOpenChange={(open) => {
+          if (!open && !uploading) setDialogOpen(false);
         }}>
-          <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="dataset-upload-title">
-            <button className="dataset-dialog-close" type="button" aria-label="关闭上传窗口" disabled={uploading} onClick={closeUploadDialog}><X size={18} /></button>
-            <h2 id="dataset-upload-title">上传资料</h2>
-            <p>选择文件后会立即上传并进入资料列表。</p>
+          <DialogContent className="dataset-upload-dialog [&>[data-slot=dialog-close]]:hidden">
+            <DialogHeader className="dataset-upload-dialog-header">
+              <DialogTitle className="dataset-upload-dialog-title">上传资料</DialogTitle>
+              <DialogDescription className="dataset-upload-dialog-desc">选择文件后会立即上传并进入资料列表。</DialogDescription>
+              <button
+                type="button"
+                className="dataset-dialog-close"
+                aria-label="关闭上传窗口"
+                disabled={uploading}
+                onClick={() => {
+                  if (!uploading) setDialogOpen(false);
+                }}
+              >
+                <X size={18} aria-hidden="true" />
+              </button>
+            </DialogHeader>
 
             <div className="dataset-upload-target-select">
-              <Label htmlFor="upload-target-folder" className="text-xs text-muted-foreground font-semibold">
+              <Label htmlFor="upload-target-folder" className="dataset-upload-target-label">
                 上传到目录
               </Label>
               <Select
                 value={uploadTargetFolderId ?? "uncategorized"}
                 onValueChange={(val) => setUploadTargetFolderId(val === "uncategorized" ? null : val)}
               >
-                <SelectTrigger id="upload-target-folder" className="w-full mt-1.5">
+                <SelectTrigger id="upload-target-folder" className="dataset-upload-select-trigger">
                   <SelectValue placeholder="选择目标目录" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="z-[100]">
                   <SelectItem value="uncategorized">
                     <span className="flex items-center gap-2">
                       <Inbox size={14} className="opacity-70" />
@@ -1357,8 +1308,8 @@ export function DatasetsPage() {
             </div>
 
             <DatasetDropzone disabled={uploading} uploading={uploading} limits={limits} onFilesSelect={appendFiles} />
-          </section>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
 
       {renameTarget && (
@@ -1594,6 +1545,55 @@ export function DatasetsPage() {
           returnFocusTo={previewTriggerRef.current}
           onClose={closePreview}
         />
+      )}
+
+      {batchMode && (
+        <div
+          className={`datasets-floating-bar${selectedDatasetCount > 0 ? " is-active" : ""}`}
+          role="region"
+          aria-label="批量操作栏"
+        >
+          <div className="datasets-floating-bar-inner">
+            <span className="datasets-floating-bar-count">
+              已选 <strong>{selectedDatasetCount}</strong> 项
+            </span>
+            <span className="datasets-floating-bar-divider" aria-hidden="true" />
+            <div className="datasets-floating-bar-actions">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="datasets-floating-action-btn"
+                icon={<FolderInput size={14} />}
+                disabled={selectedDatasetCount === 0 || batchDeleteBusy}
+                aria-label={`移动到文件夹（已选择 ${selectedDatasetCount} 份）`}
+                onClick={() => setBatchMoveOpen(true)}
+              >
+                移动到文件夹
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="datasets-floating-action-btn is-danger"
+                icon={<Trash2 size={14} />}
+                disabled={selectedDatasetCount === 0 || batchDeleteBusy}
+                aria-label={`删除资料（已选择 ${selectedDatasetCount} 份）`}
+                onClick={startBulkDelete}
+              >
+                删除
+              </Button>
+            </div>
+            <span className="datasets-floating-bar-divider" aria-hidden="true" />
+            <button
+              type="button"
+              className="datasets-floating-bar-close"
+              aria-label="取消选择"
+              title="取消选择并退出批量"
+              onClick={toggleBatchMode}
+            >
+              <X size={15} aria-hidden="true" />
+            </button>
+          </div>
+        </div>
       )}
     </main>
   );

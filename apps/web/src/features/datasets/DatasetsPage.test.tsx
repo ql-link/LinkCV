@@ -38,6 +38,24 @@ const failedRecord: DatasetRecord = {
   failure_reason: "service_unavailable",
 };
 
+const batchFolder = {
+  id: "f-batch",
+  name: "批量文件夹",
+  dataset_count: 3,
+  created_at: "2026-08-08T08:00:00Z",
+  updated_at: "2026-08-08T08:00:00Z",
+};
+
+const batchRecord: DatasetRecord = { ...record, folder_id: "f-batch" };
+const batchProcessingRecord: DatasetRecord = { ...processingRecord, folder_id: "f-batch" };
+const batchFailedRecord: DatasetRecord = { ...failedRecord, folder_id: "f-batch" };
+
+async function enterBatchFolder() {
+  expect(screen.queryByRole("button", { name: "批量操作" })).not.toBeInTheDocument();
+  fireEvent.click(await screen.findByRole("button", { name: "打开文件夹「批量文件夹」" }));
+  return await screen.findByRole("button", { name: "批量操作" });
+}
+
 beforeEach(() => {
   useResumeStore.setState({
     authStatus: "authenticated",
@@ -110,28 +128,32 @@ describe("DatasetsPage", () => {
   });
 
   it("进入和退出批量模式，并在未选择资料时禁用删除", async () => {
-    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [record] });
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [batchRecord] });
+    vi.spyOn(api, "listDatasetFolders").mockResolvedValue({ folders: [batchFolder], total_count: 1, uncategorized_count: 0 });
     render(<DatasetsPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "批量操作" }));
+    const batchBtn = await enterBatchFolder();
+    fireEvent.click(batchBtn);
 
-    expect(screen.getByRole("button", { name: "取消批量操作" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "取消操作" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "全选当前筛选结果" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "选择「岗位要求」" })).not.toBeChecked();
     expect(screen.getByRole("button", { name: "删除资料（已选择 0 份）" })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "上传资料" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "上传资料" })).toBeDisabled();
 
-    fireEvent.click(screen.getByRole("button", { name: "取消批量操作" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消操作" }));
     expect(screen.getByRole("button", { name: "批量操作" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "上传资料" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "上传资料" })).not.toBeDisabled();
     expect(screen.queryByRole("checkbox", { name: "全选当前筛选结果" })).not.toBeInTheDocument();
   });
 
   it("支持逐项选择，并且表头全选只添加当前筛选结果", async () => {
-    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [record, processingRecord, failedRecord] });
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [batchRecord, batchProcessingRecord, batchFailedRecord] });
+    vi.spyOn(api, "listDatasetFolders").mockResolvedValue({ folders: [batchFolder], total_count: 3, uncategorized_count: 0 });
     render(<DatasetsPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "批量操作" }));
+    const batchBtn = await enterBatchFolder();
+    fireEvent.click(batchBtn);
     fireEvent.click(screen.getByRole("checkbox", { name: "选择「岗位要求」" }));
     expect(screen.getByRole("button", { name: "删除资料（已选择 1 份）" })).not.toBeDisabled();
 
@@ -149,16 +171,18 @@ describe("DatasetsPage", () => {
   });
 
   it("批量模式下选择控件和资料行不会打开预览，且隐藏行尾菜单", async () => {
-    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [record] });
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [batchRecord] });
+    vi.spyOn(api, "listDatasetFolders").mockResolvedValue({ folders: [batchFolder], total_count: 1, uncategorized_count: 0 });
     const getContent = vi.spyOn(api, "getDatasetContent").mockResolvedValue({
-      id: record.id,
-      file_name: record.file_name,
-      file_format: record.file_format,
+      id: batchRecord.id,
+      file_name: batchRecord.file_name,
+      file_format: batchRecord.file_format,
       markdown: "内容",
     });
     render(<DatasetsPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "批量操作" }));
+    const batchBtn = await enterBatchFolder();
+    fireEvent.click(batchBtn);
     const row = screen.getByText("岗位要求").closest("article");
     const rowCheckbox = screen.getByRole("checkbox", { name: "选择「岗位要求」" });
     const headerCheckbox = screen.getByRole("checkbox", { name: "全选当前筛选结果" });
@@ -167,7 +191,7 @@ describe("DatasetsPage", () => {
     expect(rowCheckbox.closest(".dataset-row-actions")).not.toBeNull();
     expect(rowCheckbox.closest(".dataset-row-selection")).not.toBeNull();
     expect(headerCheckbox.closest(".dataset-list-header")?.lastElementChild).toBe(headerCheckbox.closest(".dataset-header-selection"));
-    expect(screen.queryByRole("button", { name: /操作菜单/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /打开「岗位要求」操作菜单/ })).not.toBeInTheDocument();
     fireEvent.click(rowCheckbox);
     fireEvent.click(row!);
 
@@ -175,11 +199,13 @@ describe("DatasetsPage", () => {
   });
 
   it("确认后逐条删除选中资料并移除成功项", async () => {
-    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [record, failedRecord] });
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [batchRecord, batchFailedRecord] });
+    vi.spyOn(api, "listDatasetFolders").mockResolvedValue({ folders: [batchFolder], total_count: 2, uncategorized_count: 0 });
     const remove = vi.spyOn(api, "deleteDataset").mockResolvedValue({ deleted: true });
     render(<DatasetsPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "批量操作" }));
+    const batchBtn = await enterBatchFolder();
+    fireEvent.click(batchBtn);
     fireEvent.click(screen.getByRole("checkbox", { name: "全选当前筛选结果" }));
     fireEvent.click(screen.getByRole("button", { name: "删除资料（已选择 2 份）" }));
 
@@ -199,13 +225,15 @@ describe("DatasetsPage", () => {
   });
 
   it("批量删除部分失败时保留失败项并展示失败反馈", async () => {
-    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [record, processingRecord] });
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [batchRecord, batchProcessingRecord] });
+    vi.spyOn(api, "listDatasetFolders").mockResolvedValue({ folders: [batchFolder], total_count: 2, uncategorized_count: 0 });
     const remove = vi.spyOn(api, "deleteDataset")
       .mockResolvedValueOnce({ deleted: true })
       .mockRejectedValueOnce(new ApiRequestError(409, "DATASET_IN_PROGRESS"));
     render(<DatasetsPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "批量操作" }));
+    const batchBtn = await enterBatchFolder();
+    fireEvent.click(batchBtn);
     fireEvent.click(screen.getByRole("checkbox", { name: "全选当前筛选结果" }));
     fireEvent.click(screen.getByRole("button", { name: "删除资料（已选择 2 份）" }));
     fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "永久删除所选" }));
@@ -217,6 +245,25 @@ describe("DatasetsPage", () => {
       .toBeInTheDocument();
     expect(screen.getByRole("button", { name: "批量操作" })).toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: "选择「进行中的资料」" })).not.toBeInTheDocument();
+  });
+
+  it("外部首页不展示批量操作按钮，进入文件夹后才展示", async () => {
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [batchRecord] });
+    vi.spyOn(api, "listDatasetFolders").mockResolvedValue({
+      folders: [batchFolder],
+      total_count: 1,
+      uncategorized_count: 0,
+    });
+    render(<DatasetsPage />);
+
+    expect(await screen.findByText("岗位要求")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "批量操作" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "打开文件夹「批量文件夹」" }));
+    expect(screen.getByRole("button", { name: "批量操作" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "返回全部资料" }));
+    expect(screen.queryByRole("button", { name: "批量操作" })).not.toBeInTheDocument();
   });
 
   it("点击解析完成的整行直接打开安全 Markdown 预览", async () => {
@@ -516,6 +563,52 @@ describe("DatasetsPage", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "上传资料" })).not.toBeInTheDocument());
   });
 
+  it("在具体文件夹内打开上传弹窗，默认预选该文件夹且可以手动切换到其他文件夹", async () => {
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [] });
+    vi.spyOn(api, "listDatasetFolders").mockResolvedValue({
+      folders: [
+        { id: "folder-1", name: "前端岗位", dataset_count: 0, created_at: "2026-03-01T00:00:00Z", updated_at: "2026-03-01T00:00:00Z" },
+        { id: "folder-2", name: "后端岗位", dataset_count: 0, created_at: "2026-03-01T00:00:00Z", updated_at: "2026-03-01T00:00:00Z" },
+      ],
+      total_count: 0,
+      uncategorized_count: 0,
+    });
+    const upload = vi.spyOn(api, "uploadDataset").mockResolvedValue({
+      ...record,
+      id: "folder-upload",
+      file_name: "简历.pdf",
+      folder_id: "folder-2",
+      parse_status: "queued",
+    });
+
+    render(<DatasetsPage />);
+
+    // 进入「前端岗位」文件夹页面
+    fireEvent.click(await screen.findByRole("button", { name: "打开文件夹「前端岗位」" }));
+    expect(screen.getByRole("heading", { name: "前端岗位" })).toBeInTheDocument();
+
+    // 点击上传资料
+    const dialog = openUploadDialog();
+    const selectTrigger = within(dialog).getByRole("combobox", { name: "上传到目录" });
+    expect(selectTrigger).toHaveTextContent("前端岗位");
+
+    // 切换到「后端岗位」
+    fireEvent.click(selectTrigger);
+    const targetOption = await screen.findByRole("option", { name: "后端岗位" });
+    fireEvent.click(targetOption);
+    expect(selectTrigger).toHaveTextContent("后端岗位");
+
+    // 上传文件并验证 folder_id 传递
+    const file = new File(["pdf content"], "简历.pdf", { type: "application/pdf" });
+    selectFiles([file]);
+
+    await waitFor(() => expect(upload).toHaveBeenCalledWith(
+      file,
+      expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
+      "folder-2",
+    ));
+  });
+
   it("服务端接受后立即 upsert 正式列表并从上传框移除", async () => {
     let resolveRefresh: ((value: { datasets: DatasetRecord[] }) => void) | undefined;
     const accepted = { ...record, id: "accepted", file_name: "刚上传.md", parse_status: "queued" as const };
@@ -657,10 +750,10 @@ describe("DatasetsPage", () => {
 
     render(<DatasetsPage />);
 
-    // 首页渲染全部、未分类和核心项目文件夹卡片
-    expect(await screen.findByRole("button", { name: /全部资料/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /未分类/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "打开文件夹「核心项目」" })).toBeInTheDocument();
+    // 首页渲染核心项目文件夹卡片，不再显示冗余的过滤按钮
+    expect(await screen.findByRole("button", { name: "打开文件夹「核心项目」" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^全部资料/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^未分类/ })).not.toBeInTheDocument();
 
     // 默认展示全部资料 (d1, d2)
     expect(screen.getByText("项目经历")).toBeInTheDocument();
@@ -674,11 +767,6 @@ describe("DatasetsPage", () => {
     // 点击返回全部资料
     fireEvent.click(screen.getByRole("button", { name: "返回全部资料" }));
     expect(screen.getByText("项目经历")).toBeInTheDocument();
-    expect(screen.getByText("杂项笔记")).toBeInTheDocument();
-
-    // 点击切换到“未分类”
-    fireEvent.click(screen.getByRole("button", { name: /未分类/ }));
-    expect(screen.queryByText("项目经历")).not.toBeInTheDocument();
     expect(screen.getByText("杂项笔记")).toBeInTheDocument();
   });
 
@@ -753,16 +841,17 @@ describe("DatasetsPage", () => {
   });
 
   it("支持批量选择资料并移动到目标文件夹", async () => {
-    const d1 = { ...record, id: "201", file_name: "文件1.pdf", file_format: "pdf", parse_status: "succeeded" as const };
-    const d2 = { ...record, id: "202", file_name: "文件2.pdf", file_format: "pdf", parse_status: "succeeded" as const };
+    const d1 = { ...record, id: "201", file_name: "文件1.pdf", file_format: "pdf", parse_status: "succeeded" as const, folder_id: "f1" };
+    const d2 = { ...record, id: "202", file_name: "文件2.pdf", file_format: "pdf", parse_status: "succeeded" as const, folder_id: "f1" };
 
     vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [d1, d2] });
     vi.spyOn(api, "listDatasetFolders").mockResolvedValue({
       folders: [
+        { id: "f1", name: "源文件夹", dataset_count: 2, created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" },
         { id: "f2", name: "归档分类", dataset_count: 0, created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" },
       ],
       total_count: 2,
-      uncategorized_count: 2,
+      uncategorized_count: 0,
     });
 
     const batchMoveSpy = vi.spyOn(api, "batchMoveDatasets").mockResolvedValue({ moved_count: 2 });
@@ -770,6 +859,10 @@ describe("DatasetsPage", () => {
     render(<DatasetsPage />);
 
     expect(await screen.findByText("文件1")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "批量操作" })).not.toBeInTheDocument();
+
+    // 进入“源文件夹”后展示批量操作
+    fireEvent.click(screen.getByRole("button", { name: "打开文件夹「源文件夹」" }));
 
     // 开启批量操作模式
     const batchBtn = screen.getByRole("button", { name: "批量操作" });
@@ -779,7 +872,7 @@ describe("DatasetsPage", () => {
     const selectAllCheckbox = screen.getByRole("checkbox", { name: "全选当前筛选结果" });
     fireEvent.click(selectAllCheckbox);
 
-    // 点击页头批量移动按钮
+    // 点击底部悬浮栏批量移动按钮
     const batchMoveBtn = screen.getByRole("button", { name: /移动到文件夹（已选择 2 份）/ });
     fireEvent.click(batchMoveBtn);
 
