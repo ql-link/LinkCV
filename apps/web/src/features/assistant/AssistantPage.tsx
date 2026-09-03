@@ -1375,6 +1375,97 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     }
   };
 
+  const pinnedSessions = sessions.filter((session) => Boolean(session.pinned));
+  const recentSessions = sessions.filter((session) => !session.pinned);
+  const renderSessionItem = (session: AgentSession, index: number) => {
+    const isActive = session.id === activeKey;
+    const isRenaming = renamingSessionId === session.id;
+    const isBusy = sessionActionBusyId === session.id;
+    const isRunning = Boolean(conversationStates[session.id]?.running);
+    return (
+      <div className={`assistant-session-item${isActive ? " is-active" : ""}`} key={session.id}>
+        {isRenaming ? (
+          <form
+            className="assistant-session-rename"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveSessionRename(session);
+            }}
+          >
+            <input
+              autoFocus
+              aria-label={`重命名对话 ${session.title}`}
+              disabled={isBusy}
+              maxLength={120}
+              value={renameDraft}
+              onBlur={() => void saveSessionRename(session)}
+              onChange={(event) => setRenameDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setRenamingSessionId(null);
+                }
+              }}
+            />
+          </form>
+        ) : (
+          <button
+            type="button"
+            className="assistant-session-open"
+            onClick={() => void selectSession(session.id)}
+            title={session.title}
+          >
+            <span>{session.title}</span>
+          </button>
+        )}
+        <div className="assistant-session-actions">
+          <button
+            type="button"
+            className="assistant-session-more"
+            aria-label={`${session.title} 的更多操作`}
+            aria-haspopup="menu"
+            aria-expanded={sessionMenuId === session.id}
+            disabled={isBusy || isRenaming}
+            onClick={() => setSessionMenuId((openId) => openId === session.id ? null : session.id)}
+          >
+            <MoreHorizontal size={17} aria-hidden="true" />
+          </button>
+          {sessionMenuId === session.id && (
+            <div
+              className={`assistant-session-menu${index >= 4 ? " is-above" : ""}`}
+              role="menu"
+              aria-label={`${session.title} 的操作菜单`}
+            >
+              <button type="button" role="menuitem" onClick={() => void toggleSessionPin(session)}>
+                <Pin size={16} aria-hidden="true" />
+                <span>{session.pinned ? "Unpin" : "Pin"}</span>
+              </button>
+              <button type="button" role="menuitem" onClick={() => beginSessionRename(session)}>
+                <Pencil size={16} aria-hidden="true" />
+                <span>Rename</span>
+              </button>
+              <div className="assistant-session-menu-separator" role="separator" />
+              <button
+                type="button"
+                role="menuitem"
+                className="is-danger"
+                disabled={isRunning}
+                title={isRunning ? "请先停止正在生成的回答" : undefined}
+                onClick={() => {
+                  setSessionMenuId(null);
+                  setPendingDeleteSession(session);
+                }}
+              >
+                <Trash2 size={16} aria-hidden="true" />
+                <span>Delete</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const sidebar = (
     <aside className="assistant-sidebar" aria-label="对话列表">
       <div className="assistant-sidebar-title-row">
@@ -1385,7 +1476,9 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       <Button variant="outline" className="assistant-new-button" onClick={() => void createNewConversation()}>
         <Plus size={16} aria-hidden="true" />新建对话
       </Button>
-      <div className="assistant-sidebar-section-title">最近对话</div>
+      {(sessionsLoading || sessionsError || sessions.length === 0) && (
+        <div className="assistant-sidebar-section-title">最近对话</div>
+      )}
       {sessionsLoading && <p className="assistant-sidebar-muted">正在读取对话…</p>}
       {sessionsError && (
         <div className="assistant-sidebar-error" role="alert">
@@ -1401,94 +1494,16 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       )}
       {!sessionsLoading && sessions.length > 0 && (
         <div className="assistant-session-list">
-          {sessions.map((session, index) => {
-            const isActive = session.id === activeKey;
-            const isRenaming = renamingSessionId === session.id;
-            const isBusy = sessionActionBusyId === session.id;
-            const isRunning = Boolean(conversationStates[session.id]?.running);
-            return (
-              <div className={`assistant-session-item${isActive ? " is-active" : ""}`} key={session.id}>
-                {isRenaming ? (
-                  <form
-                    className="assistant-session-rename"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      void saveSessionRename(session);
-                    }}
-                  >
-                    <input
-                      autoFocus
-                      aria-label={`重命名对话 ${session.title}`}
-                      disabled={isBusy}
-                      maxLength={120}
-                      value={renameDraft}
-                      onBlur={() => void saveSessionRename(session)}
-                      onChange={(event) => setRenameDraft(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Escape") {
-                          event.preventDefault();
-                          setRenamingSessionId(null);
-                        }
-                      }}
-                    />
-                  </form>
-                ) : (
-                  <button
-                    type="button"
-                    className="assistant-session-open"
-                    onClick={() => void selectSession(session.id)}
-                    title={session.title}
-                  >
-                    <span>{session.title}</span>
-                  </button>
-                )}
-                <div className="assistant-session-actions">
-                  <button
-                    type="button"
-                    className="assistant-session-more"
-                    aria-label={`${session.title} 的更多操作`}
-                    aria-haspopup="menu"
-                    aria-expanded={sessionMenuId === session.id}
-                    disabled={isBusy || isRenaming}
-                    onClick={() => setSessionMenuId((openId) => openId === session.id ? null : session.id)}
-                  >
-                    <MoreHorizontal size={17} aria-hidden="true" />
-                  </button>
-                  {sessionMenuId === session.id && (
-                    <div
-                      className={`assistant-session-menu${index >= 4 ? " is-above" : ""}`}
-                      role="menu"
-                      aria-label={`${session.title} 的操作菜单`}
-                    >
-                      <button type="button" role="menuitem" onClick={() => void toggleSessionPin(session)}>
-                        <Pin size={16} aria-hidden="true" />
-                        <span>{session.pinned ? "Unpin" : "Pin"}</span>
-                      </button>
-                      <button type="button" role="menuitem" onClick={() => beginSessionRename(session)}>
-                        <Pencil size={16} aria-hidden="true" />
-                        <span>Rename</span>
-                      </button>
-                      <div className="assistant-session-menu-separator" role="separator" />
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className="is-danger"
-                        disabled={isRunning}
-                        title={isRunning ? "请先停止正在生成的回答" : undefined}
-                        onClick={() => {
-                          setSessionMenuId(null);
-                          setPendingDeleteSession(session);
-                        }}
-                      >
-                        <Trash2 size={16} aria-hidden="true" />
-                        <span>Delete</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          {pinnedSessions.length > 0 && (
+            <section className="assistant-session-group" aria-label="Pinned">
+              <div className="assistant-sidebar-section-title">Pinned</div>
+              {pinnedSessions.map((session, index) => renderSessionItem(session, index))}
+            </section>
+          )}
+          <section className="assistant-session-group" aria-label="最近对话">
+            <div className="assistant-sidebar-section-title">最近对话</div>
+            {recentSessions.map((session, index) => renderSessionItem(session, pinnedSessions.length + index))}
+          </section>
         </div>
       )}
     </aside>
