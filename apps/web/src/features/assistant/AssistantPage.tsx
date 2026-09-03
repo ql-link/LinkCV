@@ -1140,6 +1140,8 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
         return {
           ...(runCompleted ? {
             stage: "idle" as const,
+            contexts: [],
+            invalidContextIds: [],
           } : {
             stage: latest.stage,
             draft: latest.draft || trimmed,

@@ -390,6 +390,8 @@ describe("AssistantPage", () => {
     }));
     expect(await screen.findByText("我会先分析经历和目标。")).toBeInTheDocument();
     expect(screen.getByText("我会先分析经历和目标。").closest(".assistant-message")?.querySelector(".assistant-message-feather")).toBeNull();
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toBeEmptyDOMElement());
+    expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" }).querySelector("[data-context-key]")).not.toBeInTheDocument();
     expect(screen.queryByText("对话已完成")).not.toBeInTheDocument();
     expect(screen.queryByText("你可以继续追问，或确认待处理的简历修改提案。")).not.toBeInTheDocument();
   });
@@ -524,6 +526,7 @@ describe("AssistantPage", () => {
     const input = await screen.findByRole("textbox", { name: "告诉助手你想完成什么" });
     await user.type(input, "请分析");
     await user.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(api.streamAgentMessage).toHaveBeenCalledOnce());
     expect(await screen.findByText("已显示的部分回复")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "停止生成" })).toHaveLength(1);
     await user.click(screen.getByRole("button", { name: "停止生成" }));
@@ -580,6 +583,7 @@ describe("AssistantPage", () => {
     await user.type(input, "请分析");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
+    await waitFor(() => expect(api.streamAgentMessage).toHaveBeenCalledOnce());
     expect(await screen.findByText("未完成的回复")).toBeInTheDocument();
     expect(await screen.findByRole("alert")).toHaveTextContent("请稍后重试");
     expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toHaveTextContent("请分析");
@@ -606,6 +610,7 @@ describe("AssistantPage", () => {
     await user.type(input, "请分析");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
+    await waitFor(() => expect(api.streamAgentMessage).toHaveBeenCalledOnce());
     expect(await screen.findByText("已生成部分")).toBeInTheDocument();
     expect(await screen.findByText("已停止生成")).toBeInTheDocument();
   });
@@ -640,6 +645,7 @@ describe("AssistantPage", () => {
     await user.type(input, "请分析");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
+    await waitFor(() => expect(api.streamAgentMessage).toHaveBeenCalledOnce());
     expect(await screen.findByText("新的回复")).toBeInTheDocument();
     expect(scrollTo).not.toHaveBeenCalled();
   });
