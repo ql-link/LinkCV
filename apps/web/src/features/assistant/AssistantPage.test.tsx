@@ -111,6 +111,29 @@ describe("AssistantPage", () => {
     expect(within(message as HTMLElement).queryByLabelText("本轮引用资料")).not.toBeInTheDocument();
   });
 
+  it("按 Markdown 层级渲染语义标题", async () => {
+    const routedSession: AgentSession = {
+      ...session,
+      title: "Markdown 标题会话",
+      messages: [{
+        sequence_no: 1,
+        role: "assistant",
+        content: "# 一级标题\n正文内容\n## 二级标题\n### 三级标题",
+        created_at: session.created_at,
+      }],
+    };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [routedSession] });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session: routedSession });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+
+    render(<AssistantPage sessionId="session-1" />);
+
+    expect(await screen.findByRole("heading", { level: 2, name: "一级标题" })).toHaveClass("is-level-1");
+    expect(screen.getByRole("heading", { level: 3, name: "二级标题" })).toHaveClass("is-level-2");
+    expect(screen.getByRole("heading", { level: 4, name: "三级标题" })).toHaveClass("is-level-3");
+    expect(screen.getByText("正文内容").tagName).toBe("P");
+  });
+
   it("按设计稿展示空状态，并通过批量资料弹窗添加上下文", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });

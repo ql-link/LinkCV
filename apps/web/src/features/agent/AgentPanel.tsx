@@ -199,7 +199,11 @@ export function AgentMarkdown({ content }: { content: string }) {
     }
     const heading = line.match(/^(#{1,3})\s+(.+)$/);
     if (heading) {
-      blocks.push(<strong className="agent-markdown-heading" key={`heading-${index}`}>{inlineMarkdown(heading[2] ?? "")}</strong>);
+      const level = heading[1]?.length ?? 1;
+      const content = inlineMarkdown(heading[2] ?? "");
+      if (level === 1) blocks.push(<h2 className="agent-markdown-heading is-level-1" key={`heading-${index}`}>{content}</h2>);
+      else if (level === 2) blocks.push(<h3 className="agent-markdown-heading is-level-2" key={`heading-${index}`}>{content}</h3>);
+      else blocks.push(<h4 className="agent-markdown-heading is-level-3" key={`heading-${index}`}>{content}</h4>);
       index += 1;
       continue;
     }

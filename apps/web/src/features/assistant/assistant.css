@@ -125,6 +125,10 @@
 .assistant-message-content p { margin: 0; }
 .assistant-message-content ul { margin: 0; padding-left: 1.25em; }
 .assistant-message-content pre { overflow: auto; border-radius: 8px; background: #edf1f5; padding: 12px; }
+.assistant-message-content .agent-markdown-heading { line-height: 1.35; }
+.assistant-message-content .agent-markdown-heading.is-level-1 { font-size: 28px; }
+.assistant-message-content .agent-markdown-heading.is-level-2 { font-size: 24px; }
+.assistant-message-content .agent-markdown-heading.is-level-3 { font-size: 21px; }
 .assistant-user-message-content { white-space: pre-wrap; overflow-wrap: anywhere; }
 .assistant-message-context-token { display: inline-flex; max-width: min(330px, 75%); min-height: 26px; align-items: center; gap: 5px; margin: 0 3px; border: 1px solid #d9e2f2; border-radius: 7px; background: #f5f8fd; padding: 1px 7px; color: #315a9b; font: 500 12px/1.4 var(--ui-font-sans); vertical-align: 1px; white-space: nowrap; }
 .assistant-message-context-token > svg { flex: 0 0 auto; color: #0d52eb; }
