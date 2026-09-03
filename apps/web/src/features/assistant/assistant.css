@@ -21,7 +21,7 @@
 .assistant-sidebar-empty p { margin: 0; }
 .assistant-sidebar-error { display: grid; gap: 8px; color: var(--ui-destructive); }
 .assistant-sidebar-error button { justify-self: start; background: transparent; color: currentColor; cursor: pointer; text-decoration: underline; }
-.assistant-session-list { display: grid; gap: 2px; overflow: auto; padding-bottom: 64px; }
+.assistant-session-list { display: grid; gap: 2px; overflow: auto; padding-bottom: 128px; }
 .assistant-session-item { position: relative; display: grid; min-width: 0; min-height: 34px; grid-template-columns: minmax(0, 1fr) 30px; align-items: center; border-radius: 9px; color: #1f242e; }
 .assistant-session-item:hover { background: #f5f7fa; }
 .assistant-session-item.is-active { background: #ecf2ff; color: #084de5; }
