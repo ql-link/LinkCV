@@ -3,14 +3,17 @@ import {
   CheckSquare,
   ChevronLeft,
   Database,
+  Folder,
   FolderInput,
   FolderOpen,
   FolderPlus,
+  Inbox,
   MoreHorizontal,
   Pencil,
   Plus,
   RotateCcw,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 
@@ -37,6 +40,11 @@ import {
   Input,
   Label,
   PageLoading,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   TogglePill,
 } from "@/components/ui";
 import { DatasetPreviewDialog } from "./DatasetPreviewDialog";
@@ -399,6 +407,11 @@ export function DatasetsPage() {
   const [moveTarget, setMoveTarget] = useState<DatasetRecord | null>(null);
   const [batchMoveOpen, setBatchMoveOpen] = useState(false);
 
+  // 上传与页面拖拽状态
+  const [uploadTargetFolderId, setUploadTargetFolderId] = useState<string | null>(null);
+  const [pageDragOver, setPageDragOver] = useState(false);
+  const dragCounterRef = useRef(0);
+
   // 文件夹弹窗状态
   const [createFolderDialogOpen, setCreateFolderDialogOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -562,8 +575,10 @@ export function DatasetsPage() {
     }
   }, []);
 
-  const currentUploadFolderId =
-    selectedFolderId !== "all" && selectedFolderId !== "uncategorized"
+  const effectiveUploadFolderId =
+    uploadTargetFolderId !== undefined && uploadTargetFolderId !== null
+      ? uploadTargetFolderId
+      : selectedFolderId !== "all" && selectedFolderId !== "uncategorized"
       ? selectedFolderId
       : null;
 
@@ -573,7 +588,7 @@ export function DatasetsPage() {
   } = useDatasetUploads({
     limits,
     concurrency: DATASET_UPLOAD_CONCURRENCY,
-    folderId: currentUploadFolderId,
+    folderId: effectiveUploadFolderId,
     onAccepted: (dataset) => {
       if (!pageMounted.current) return;
       locallyAccepted.current.set(dataset.id, dataset);
@@ -678,6 +693,11 @@ export function DatasetsPage() {
   }, [hasActiveParsing]);
 
   const openUploadDialog = () => {
+    setUploadTargetFolderId(
+      selectedFolderId !== "all" && selectedFolderId !== "uncategorized"
+        ? selectedFolderId
+        : null,
+    );
     setDialogOpen(true);
     setNotice(null);
   };
@@ -685,6 +705,37 @@ export function DatasetsPage() {
   const closeUploadDialog = () => {
     if (uploading) return;
     setDialogOpen(false);
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current += 1;
+    if (e.dataTransfer?.types?.includes("Files")) {
+      setPageDragOver(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0;
+      setPageDragOver(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setPageDragOver(false);
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    if (files.length > 0) {
+      appendFiles(files);
+    }
   };
 
   const appendFiles = (files: File[]) => {
@@ -916,7 +967,43 @@ export function DatasetsPage() {
   };
 
   return (
-    <main className="dashboard-content datasets-page">
+    <main
+      className="dashboard-content datasets-page"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {pageDragOver && (
+        <div className="dataset-page-drag-overlay" aria-hidden="true">
+          <div className="dataset-page-drag-content">
+            <div className="dataset-page-drag-icon">
+              <Upload size={32} />
+            </div>
+            <h3>释放鼠标立即上传</h3>
+            <p>
+              将直接上传至「
+              {selectedFolderId !== "all" && selectedFolderId !== "uncategorized"
+                ? folders.find((f) => f.id === selectedFolderId)?.name ?? "当前分类"
+                : "未分类"}
+              」
+            </p>
+          </div>
+        </div>
+      )}
+
+      {uploading && (
+        <div className="dataset-uploading-banner" role="status" aria-live="polite">
+          <div className="dataset-uploading-spinner" aria-hidden="true" />
+          <span>
+            正在上传资料至「
+            {effectiveUploadFolderId
+              ? folders.find((f) => f.id === effectiveUploadFolderId)?.name ?? "当前分类"
+              : "未分类"}
+            」…
+          </span>
+        </div>
+      )}
       <WorkspacePageHero
         icon={<Database />}
         tone="success"
@@ -1238,6 +1325,36 @@ export function DatasetsPage() {
             <button className="dataset-dialog-close" type="button" aria-label="关闭上传窗口" disabled={uploading} onClick={closeUploadDialog}><X size={18} /></button>
             <h2 id="dataset-upload-title">上传资料</h2>
             <p>选择文件后会立即上传并进入资料列表。</p>
+
+            <div className="dataset-upload-target-select">
+              <Label htmlFor="upload-target-folder" className="text-xs text-muted-foreground font-semibold">
+                上传到目录
+              </Label>
+              <Select
+                value={uploadTargetFolderId ?? "uncategorized"}
+                onValueChange={(val) => setUploadTargetFolderId(val === "uncategorized" ? null : val)}
+              >
+                <SelectTrigger id="upload-target-folder" className="w-full mt-1.5">
+                  <SelectValue placeholder="选择目标目录" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="uncategorized">
+                    <span className="flex items-center gap-2">
+                      <Inbox size={14} className="opacity-70" />
+                      <span>未分类（根目录）</span>
+                    </span>
+                  </SelectItem>
+                  {folders.map((f) => (
+                    <SelectItem key={f.id} value={f.id}>
+                      <span className="flex items-center gap-2">
+                        <Folder size={14} className="opacity-70" />
+                        <span>{f.name}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
             <DatasetDropzone disabled={uploading} uploading={uploading} limits={limits} onFilesSelect={appendFiles} />
           </section>
