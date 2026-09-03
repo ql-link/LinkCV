@@ -32,29 +32,28 @@ export function FolderCard({
         }
       }}
     >
-      {/* 顶部：macOS 原生矢量风格文件夹图标 */}
+      {/* 文件夹图形区域（统一坐标体系：100x80） */}
       <div className="macos-folder-graphic" aria-hidden="true">
-        {/* 后盖与折耳 */}
+        {/* 后盖与折耳 Tab */}
         <svg
           className="macos-folder-svg-back"
-          viewBox="0 0 108 84"
+          viewBox="0 0 100 80"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
         >
           <defs>
-            <linearGradient id={`fb-${folder.id}`} x1="0" y1="0" x2="0" y2="84" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#5ea7f8" />
-              <stop offset="100%" stopColor="#257ef5" />
+            <linearGradient id={`fb-${folder.id}`} x1="0" y1="5" x2="0" y2="78" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="#3d82f6" />
+              <stop offset="100%" stopColor="#145ed6" />
             </linearGradient>
           </defs>
-          {/* 左上圆润折耳 Tab + 主背板 */}
           <path
-            d="M6 10C6 5.58 9.58 2 14 2H38C42 2 45.5 4.2 47.8 7.5L52 13H96C100.42 13 104 16.58 104 21V72C104 76.42 100.42 80 96 80H12C7.58 80 4 76.42 4 72V12C4 10.9 4.9 10 6 10Z"
+            d="M8 12C8 8.5 11 5.5 15 5.5H36C39 5.5 42 7.5 44 10.5L48 15.5H88C92 15.5 95 18.5 95 22.5V71C95 75 92 78 88 78H12C8 78 5 75 5 71V19C5 16 7 14 10 14H8Z"
             fill={`url(#fb-${folder.id})`}
           />
         </svg>
 
-        {/* 探出的立体纸张卡片装饰（有文件时显示，悬停上浮） */}
+        {/* 探出的立体纸张卡片装饰（有文件时出现） */}
         {!isEmpty && (
           <div className="macos-folder-papers">
             {folder.dataset_count > 1 && <div className="macos-paper-sheet is-back" />}
@@ -66,40 +65,40 @@ export function FolderCard({
           </div>
         )}
 
-        {/* 前盖 */}
+        {/* 前盖（坐标完全与后盖对齐） */}
         <svg
           className="macos-folder-svg-front"
-          viewBox="0 0 108 66"
+          viewBox="0 0 100 80"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
         >
           <defs>
-            <linearGradient id={`ff-${folder.id}`} x1="0" y1="0" x2="0" y2="66" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#7ec5ff" />
-              <stop offset="40%" stopColor="#3d97f8" />
-              <stop offset="100%" stopColor="#1a7cf2" />
+            <linearGradient id={`ff-${folder.id}`} x1="0" y1="21" x2="0" y2="78" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="#5499fa" />
+              <stop offset="45%" stopColor="#2573e8" />
+              <stop offset="100%" stopColor="#145ed6" />
             </linearGradient>
-            <linearGradient id={`fg-${folder.id}`} x1="0" y1="0" x2="108" y2="0" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="rgba(255,255,255,0.7)" />
+            <linearGradient id={`fg-${folder.id}`} x1="5" y1="21" x2="95" y2="21" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="rgba(255,255,255,0.65)" />
               <stop offset="50%" stopColor="rgba(255,255,255,0.25)" />
-              <stop offset="100%" stopColor="rgba(255,255,255,0.6)" />
+              <stop offset="100%" stopColor="rgba(255,255,255,0.55)" />
             </linearGradient>
           </defs>
-          {/* 前盖梯形立体面板 */}
+          {/* 前盖主体 */}
           <path
-            d="M3 8C3 3.58 6.58 0 11 0H97C101.42 0 105 3.58 105 8L103 56C103 60.42 99.42 64 95 64H13C8.58 64 5 60.42 5 56L3 8Z"
+            d="M5 28C5 24 8 21 12 21H88C92 21 95 24 95 28L93 71C93 75 90 78 86 78H14C10 78 7 75 7 71L5 28Z"
             fill={`url(#ff-${folder.id})`}
           />
-          {/* 顶边微高光线 */}
+          {/* 顶边高光条 */}
           <path
-            d="M11 1H97C100.8 1 103.9 4 104 7.8L103.8 12H4.2L4 7.8C4.1 4 7.2 1 11 1Z"
+            d="M12 22H88C90.5 22 92.5 23.5 93 25.5H7C7.5 23.5 9.5 22 12 22Z"
             fill={`url(#fg-${folder.id})`}
-            opacity="0.6"
+            opacity="0.65"
           />
         </svg>
       </div>
 
-      {/* 底部：操作框（文件夹名称、数量与菜单） */}
+      {/* 底部信息与操作框 */}
       <div className="macos-folder-caption">
         <span className="macos-folder-name" title={folder.name}>
           {folder.name}
