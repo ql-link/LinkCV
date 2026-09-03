@@ -9,7 +9,7 @@ afterEach(() => {
 });
 
 describe("WorkspaceNavigation", () => {
-  it("使用顶部胶囊导航切换简历、AI 助手、模板、求职中心和资料库，并标记当前模块", () => {
+  it("按简历、模板、AI 助手、求职中心和资料库的顺序渲染顶部导航，并标记当前模块", () => {
     const onItemIntent = vi.fn();
     render(<WorkspaceNavigation active="career" email="user@example.test" onItemIntent={onItemIntent} />);
 
@@ -23,11 +23,21 @@ describe("WorkspaceNavigation", () => {
     const templatesLink = screen.getByRole("link", { name: "简历模板" });
     const interviewsLink = screen.getByRole("link", { name: "求职中心" });
     expect(interviewsLink).toHaveAttribute("aria-current", "page");
+    expect(Array.from(screen.getByRole("navigation", { name: "工作区导航" }).querySelectorAll("a")).map((link) => link.getAttribute("href"))).toEqual([
+      "/resumes",
+      "/templates",
+      "/assistant",
+      "/career/applications",
+      "/datasets",
+    ]);
+    expect(assistantLink.querySelector('img[src*="assistant-feather-outline"]')).toBeInTheDocument();
     expect(templatesLink).toHaveAttribute("href", "/templates");
     expect(assistantLink).toHaveAttribute("href", "/assistant");
     expect(interviewsLink).toHaveAttribute("href", "/career/applications");
     expect(resumesLink.style.getPropertyValue("--nav-item-color")).toBe("var(--ui-accent)");
     expect(templatesLink.style.getPropertyValue("--nav-item-color")).toBe("var(--ui-template-accent)");
+    expect(assistantLink.style.getPropertyValue("--nav-item-color")).toBe("var(--ui-assistant-accent)");
+    expect(assistantLink.style.getPropertyValue("--nav-item-glow")).toContain("var(--ui-assistant-accent)");
     expect(interviewsLink.style.getPropertyValue("--nav-item-color")).toBe("var(--ui-warning)");
     expect(interviewsLink.style.getPropertyValue("--nav-item-glow")).toContain("radial-gradient");
     expect(interviewsLink.style.getPropertyValue("--nav-item-glow")).toContain("var(--ui-warning)");
