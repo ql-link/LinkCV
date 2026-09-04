@@ -5080,11 +5080,15 @@ select:not([data-slot]):focus-visible,
 }
 
 /* 文件夹内页顶部极简导航栏 */
+.dataset-folder-view {
+  margin-top: -6px;
+}
+
 .dataset-folder-nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .dataset-back-btn {

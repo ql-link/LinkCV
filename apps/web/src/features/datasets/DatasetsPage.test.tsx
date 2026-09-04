@@ -464,7 +464,7 @@ describe("DatasetsPage", () => {
       throw new Error("random unavailable");
     });
     render(<DatasetsPage />);
-    await screen.findByText("还没有资料");
+    await screen.findByText("还没有文件夹");
     openUploadDialog();
     selectFiles([new File(["# 失败"], "无法生成.md")]);
 
@@ -705,7 +705,7 @@ describe("DatasetsPage", () => {
       parse_status: "queued",
     });
     render(<DatasetsPage />);
-    await screen.findByText("还没有资料");
+    await screen.findByText("还没有文件夹");
     openUploadDialog();
     selectFiles([
       new File(["x"], "小文件.md"),

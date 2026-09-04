@@ -1130,22 +1130,18 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
                   {/* 统一网格：分类文件夹与资料同级展示 */}
                   {datasets.length === 0 && folders.length === 0 ? (
                     <section className="datasets-empty">
-                      <h2>还没有资料</h2>
-                      <p>建议先上传一份与你当前求职方向相关的资料，<br />后续写简历时可以快速检索和引用。</p>
-                      <div className="flex items-center gap-3">
-                        <Button icon={<Plus size={15} />} onClick={openUploadDialog}>上传第一份资料</Button>
-                        <Button
-                          variant="outline"
-                          icon={<FolderPlus size={15} />}
-                          onClick={() => {
-                            setNewFolderName("");
-                            setCreateFolderError(null);
-                            setCreateFolderDialogOpen(true);
-                          }}
-                        >
-                          新建文件夹
-                        </Button>
-                      </div>
+                      <h2>还没有文件夹</h2>
+                      <p>建议先新建文件夹分类整理，<br />后续写简历时可以快速检索和引用相关资料。</p>
+                      <Button
+                        icon={<FolderPlus size={15} />}
+                        onClick={() => {
+                          setNewFolderName("");
+                          setCreateFolderError(null);
+                          setCreateFolderDialogOpen(true);
+                        }}
+                      >
+                        新建文件夹
+                      </Button>
                     </section>
                   ) : (
                     <>
