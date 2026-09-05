@@ -516,6 +516,7 @@
   height: 100%;
   min-height: 0;
   grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   padding-bottom: 12px;
 }
 
@@ -3178,7 +3179,7 @@
 .career-category-board .progress-board-grid { height: auto; }
 .career-category-board .progress-column { min-height: 160px; }
 .career-category-board .progress-column-cards { overflow: visible; }
-.career-ungrouped-board, .career-ungrouped-board-content, .career-ungrouped-board-content > section { height: 100%; min-height: 0; }
+.career-ungrouped-board, .career-ungrouped-board-content, .career-ungrouped-board-content > section { width: 100%; min-width: 0; height: 100%; min-height: 0; }
 
 .week-event { position: relative; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }
 .week-event-resize-edge { position: absolute; inset-inline: 0; height: 8px; cursor: ns-resize; }
@@ -3198,4 +3199,10 @@
 .career-application-identity > :first-child { color: var(--ui-foreground); font-weight: 600; }
 .career-application-identity .career-application-job-title { color: var(--ui-text-muted); font-size: 11px; font-weight: 400; }
 .career-application-category-tag { display: inline-flex; padding: 3px 8px; border-radius: var(--ui-radius-sm); background: var(--ui-surface-subtle); color: var(--ui-text-secondary); font-size: 11px; }
-.career-application-table .career-application-group-row th { height: 36px; border-top: 1px solid var(--ui-border); color: var(--ui-text-secondary); }
+.career-application-list-groups { display: grid; min-width: 0; gap: 24px; }
+.career-application-list-group { min-width: 0; }
+.career-application-list-group-title { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; padding-inline: 4px; color: var(--ui-foreground); font-size: 18px; font-weight: 600; }
+.career-application-list-group-title > span { color: var(--ui-text-muted); font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+.career-application-list-groups.is-grouped { overflow-x: auto; }
+.career-application-list-groups.is-grouped > * { min-width: 820px; }

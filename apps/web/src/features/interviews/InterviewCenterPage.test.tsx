@@ -3915,6 +3915,7 @@ it("列表固定显示更新时间与分类分组", async () => {
   expect(within(openViewSettings()).queryByRole("checkbox", { name: "显示更新时间" })).not.toBeInTheDocument();
   expect(within(table).getByRole("columnheader", { name: "更新时间" })).toBeInTheDocument();
   chooseSelectOption(openViewSettings(), "分类分组", "求职分类");
-  expect(within(table).queryByRole("columnheader", { name: "求职分类" })).not.toBeInTheDocument();
-  expect(within(table).getByRole("rowheader", { name: "实习 · 1" })).toBeInTheDocument();
+  const groupedTable = screen.getByRole("table", { name: "实习求职记录列表" });
+  expect(within(groupedTable).queryByRole("columnheader", { name: "求职分类" })).not.toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "实习 1" })).toBeInTheDocument();
 });

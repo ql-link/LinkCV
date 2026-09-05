@@ -1,5 +1,4 @@
 import {
-  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -1269,8 +1268,11 @@ function ApplicationsView({
         />
       )}
       {displayMode === "list" && visibleApplications.length ? (
-        <section className="interview-surface career-application-table-surface">
-          <table className="career-application-table" aria-label="求职记录列表">
+        <div className={groupByCategory ? "career-application-list-groups is-grouped" : "career-application-list-groups"}>
+        {listGroups.map((group) => <section key={group.key} className="career-application-list-group">
+          {groupByCategory && <h2 className="career-application-list-group-title">{group.label}{" "}<span>{group.items.length}</span></h2>}
+          <div className="interview-surface career-application-table-surface">
+          <table className="career-application-table" aria-label={groupByCategory ? `${group.label}求职记录列表` : "求职记录列表"}>
             <thead>
               <tr>
                 <th scope="col">公司 / 岗位</th>
@@ -1282,8 +1284,6 @@ function ApplicationsView({
               </tr>
             </thead>
             <tbody>
-              {listGroups.map((group) => <Fragment key={group.key}>
-                {groupByCategory && <tr className="career-application-group-row"><th scope="rowgroup" colSpan={groupByCategory ? 5 : 6}>{group.label} · {group.items.length}</th></tr>}
                 {group.items.map((item) => {
                 const nextInterview = item.status === "active" && !item.archived_at ? sessions
                   .filter((session) => session.application_id === item.id && session.status === "scheduled" && new Date(session.end_at).getTime() > now.getTime())
@@ -1322,10 +1322,12 @@ function ApplicationsView({
                     <td><time className="career-application-updated-at" dateTime={item.updated_at}>{formatApplicationUpdatedAt(item.updated_at)}</time></td>
                   </tr>
                 );
-              })}</Fragment>)}
+              })}
             </tbody>
           </table>
-        </section>
+          </div>
+        </section>)}
+        </div>
       ) : !visibleApplications.length ? (
         <section className="interview-surface career-applications-board">
           <div className="career-applications-empty">
