@@ -3,7 +3,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiRequestError, type JobDescriptionCreatePayload, type JobDescriptionDraft, type JobDuplicateDetails } from "../../api/client";
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, FileUpload, Input, Label, Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui";
 import { SelectValue } from "@/components/ui/select";
-import { jobDetailPath, navigateTo } from "../../routing";
+import { careerApplicationPath, jobDetailPath, navigateTo } from "../../routing";
 import { JobDuplicateDialog } from "./JobDuplicateDialog";
 import { duplicateFromJobError, emptyJobForm, jobFormErrorMessage, jobFormFromDraft, jobFormMissingFields, jobPayloadFromForm, type JobFormState } from "./jobFormModel";
 import "./jobs.css";
@@ -105,8 +105,14 @@ export function JobSmartImportDialog({ onClose, onParsed, unified = false }: {
     const payload = jobPayloadFromForm(form);
     setPendingPayload(payload);
     try {
-      const { job_description } = await api.createJobDescription(payload);
-      navigateTo(jobDetailPath(job_description.id), { replace: true });
+      const { job_description, application } = await api.createJobDescription(payload);
+      onClose();
+      navigateTo(
+        application
+          ? careerApplicationPath(application.id)
+          : jobDetailPath(job_description.id),
+        { replace: true },
+      );
     } catch (caught) {
       const duplicateDetails = duplicateFromJobError(caught);
       if (duplicateDetails) setDuplicate(duplicateDetails);
@@ -122,11 +128,17 @@ export function JobSmartImportDialog({ onClose, onParsed, unified = false }: {
     setBusy(true);
     setError("");
     try {
-      const { job_description } = await api.createJobDescription({
+      const { job_description, application } = await api.createJobDescription({
         ...pendingPayload,
         duplicate_resolution: { action, job_description_id: duplicate.existing.id, base_lock_version: duplicate.existing.lock_version },
       });
-      navigateTo(jobDetailPath(job_description.id), { replace: true });
+      onClose();
+      navigateTo(
+        application
+          ? careerApplicationPath(application.id)
+          : jobDetailPath(job_description.id),
+        { replace: true },
+      );
     } catch (caught) {
       setDuplicate(null);
       setError(jobFormErrorMessage(caught, "重复岗位内容已经变化，请刷新后重试。"));

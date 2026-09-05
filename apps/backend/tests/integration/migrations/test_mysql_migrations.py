@@ -35,7 +35,7 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0056"
+EXPECTED_HEAD = "0057"
 
 
 def canonical_editor_markdown(data: dict[str, Any]) -> str:
@@ -138,6 +138,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "agent_tool_calls",
         "resume_change_proposals",
         "job_applications",
+        "job_application_stages",
         "interview_sessions",
         "interview_assets",
         "user_profiles",
@@ -175,6 +176,95 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "updated_at",
         "id",
     ]
+    application_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("job_applications")
+    }
+    assert {"lifecycle_status", "terminated_at", "termination_reason"} <= set(
+        application_columns
+    )
+    assert application_columns["lifecycle_status"]["nullable"] is False
+    assert {
+        "ck_job_applications_lifecycle_status",
+        "ck_job_applications_termination_context",
+    } <= {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("job_applications")
+    }
+    application_indexes = {
+        index["name"]: index["column_names"]
+        for index in inspector.get_indexes("job_applications")
+    }
+    assert application_indexes["idx_job_applications_user_lifecycle_updated"] == [
+        "user_id",
+        "archived_at",
+        "lifecycle_status",
+        "applied_at",
+        "updated_at",
+        "id",
+    ]
+    stage_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("job_application_stages")
+    }
+    assert {
+        "application_id",
+        "client_request_id",
+        "stage_type",
+        "stage_label",
+        "interview_round_no",
+        "sequence_no",
+        "stage_status",
+        "stage_result",
+        "current_marker",
+        "entered_at",
+        "completed_at",
+    } <= set(stage_columns)
+    assert stage_columns["client_request_id"]["type"].length == 36
+    assert stage_columns["client_request_id"]["type"].collation == "ascii_bin"
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints(
+            "job_application_stages"
+        )
+    } == {
+        "uk_job_application_stages_current",
+        "uk_job_application_stages_request",
+        "uk_job_application_stages_sequence",
+    }
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints(
+            "job_application_stages"
+        )
+    } == {
+        "ck_job_application_stages_completed_context",
+        "ck_job_application_stages_current_context",
+        "ck_job_application_stages_result",
+        "ck_job_application_stages_round_context",
+        "ck_job_application_stages_status",
+        "ck_job_application_stages_type",
+    }
+    stage_foreign_keys = {
+        foreign_key["name"]: foreign_key
+        for foreign_key in inspector.get_foreign_keys("job_application_stages")
+    }
+    assert set(stage_foreign_keys) == {"fk_job_application_stages_application"}
+    assert stage_foreign_keys["fk_job_application_stages_application"][
+        "referred_table"
+    ] == "job_applications"
+    interview_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("interview_sessions")
+    }
+    assert interview_columns["application_stage_id"]["nullable"] is True
+    interview_foreign_keys = {
+        foreign_key["name"]: foreign_key
+        for foreign_key in inspector.get_foreign_keys("interview_sessions")
+    }
+    assert interview_foreign_keys["fk_interview_sessions_application_stage"][
+        "referred_table"
+    ] == "job_application_stages"
     proposal_columns = {
         column["name"]: column
         for column in inspector.get_columns("resume_change_proposals")
@@ -2263,6 +2353,165 @@ def test_0053_and_0054_merge_offer_statuses_and_use_single_salary() -> None:
                         "offer_salary_currency = NULL WHERE id = 1"
                     )
                 )
+    finally:
+        engine.dispose()
+        reset_test_database_to_base(database_url)
+
+
+def test_0057_backfills_lifecycle_stage_history_and_session_links() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0054")
+    engine = create_engine(database_url)
+
+    applications = (
+        (1, "screening", None, "待投递", "awaiting_schedule", "active", "none"),
+        (2, "screening", None, "筛选中", "awaiting_result", "active", "none"),
+        (3, "screening", None, "笔试", "scheduled", "active", "none"),
+        (4, "screening", None, "测评", "awaiting_schedule", "active", "none"),
+        (5, "screening", None, "AI面试", "awaiting_schedule", "active", "none"),
+        (6, "interview", 2, "二面", "scheduled", "active", "none"),
+        (7, "hr", None, "HR 面", "scheduled", "active", "none"),
+        (8, "offer", None, "Offer", "negotiating", "active", "received"),
+        (9, "screening", None, "筛选中", "awaiting_result", "rejected", "none"),
+        (10, "interview", 1, "一面", "awaiting_result", "withdrawn", "none"),
+        (11, "offer", None, "Offer", "negotiating", "closed", "declined"),
+        (12, "offer", None, "Offer", "negotiating", "closed", "accepted"),
+    )
+    try:
+        with engine.begin() as connection:
+            user_id = connection.execute(
+                text(
+                    "INSERT INTO users (email, password_hash, nickname) "
+                    "VALUES ('stage-0056@example.invalid', '$2b$12$fictional', '张三')"
+                )
+            ).lastrowid
+            for (
+                application_id,
+                stage_type,
+                round_no,
+                stage_label,
+                stage_state,
+                status,
+                offer_status,
+            ) in applications:
+                connection.execute(
+                    text(
+                        "INSERT INTO job_applications ("
+                        "id, user_id, company_name_snapshot, job_title_snapshot, "
+                        "job_snapshot, calendar_color, current_stage_type, "
+                        "current_round_no, current_stage_label, stage_state, status, "
+                        "offer_status, created_at, updated_at) VALUES ("
+                        ":id, :user_id, '迁移示例公司', '后端开发工程师', "
+                        "JSON_OBJECT('schema_version', 1), 'blue', :stage_type, "
+                        ":round_no, :stage_label, :stage_state, :status, :offer_status, "
+                        "'2026-08-01 01:00:00.000000', '2026-08-02 01:00:00.000000')"
+                    ),
+                    {
+                        "id": application_id,
+                        "user_id": user_id,
+                        "stage_type": stage_type,
+                        "round_no": round_no,
+                        "stage_label": stage_label,
+                        "stage_state": stage_state,
+                        "status": status,
+                        "offer_status": offer_status,
+                    },
+                )
+            for application_id, stage_type, round_no, stage_label in (
+                (3, "other", None, "笔试"),
+                (6, "interview", 2, "二面"),
+                (7, "hr", None, "HR 面"),
+            ):
+                connection.execute(
+                    text(
+                        "INSERT INTO interview_sessions ("
+                        "application_id, client_request_id, stage_type, round_no, "
+                        "stage_label, start_at, end_at, timezone, mode) VALUES ("
+                        ":application_id, UUID(), :stage_type, :round_no, :stage_label, "
+                        "'2026-08-03 01:00:00.000000', '2026-08-03 02:00:00.000000', "
+                        "'Asia/Shanghai', 'video')"
+                    ),
+                    {
+                        "application_id": application_id,
+                        "stage_type": stage_type,
+                        "round_no": round_no,
+                        "stage_label": stage_label,
+                    },
+                )
+
+        run_alembic(database_url, "upgrade", "0057")
+
+        with engine.connect() as connection:
+            application_rows = {
+                row["id"]: row
+                for row in connection.execute(
+                    text(
+                        "SELECT id, applied_at, lifecycle_status, termination_reason "
+                        "FROM job_applications ORDER BY id"
+                    )
+                ).mappings()
+            }
+            assert application_rows[1]["applied_at"] is None
+            assert application_rows[1]["lifecycle_status"] == "active"
+            for application_id in range(2, 13):
+                assert application_rows[application_id]["applied_at"] is not None
+            assert application_rows[9]["termination_reason"] == "company_rejected"
+            assert application_rows[10]["termination_reason"] == "user_withdrew"
+            assert application_rows[11]["termination_reason"] == "offer_declined"
+            assert application_rows[12]["lifecycle_status"] == "active"
+
+            current_types = dict(
+                connection.execute(
+                    text(
+                        "SELECT application_id, stage_type "
+                        "FROM job_application_stages WHERE current_marker = 1"
+                    )
+                ).all()
+            )
+            assert current_types == {
+                2: "screening",
+                3: "written_test",
+                4: "assessment",
+                5: "ai_interview",
+                6: "interview",
+                7: "interview",
+                8: "offer",
+                12: "offer",
+            }
+            assert connection.scalar(
+                text(
+                    "SELECT COUNT(*) FROM job_application_stages "
+                    "WHERE application_id = 1"
+                )
+            ) == 0
+            assert connection.scalar(
+                text(
+                    "SELECT COUNT(*) FROM interview_sessions "
+                    "WHERE application_stage_id IS NULL"
+                )
+            ) == 0
+            assert connection.scalar(
+                text(
+                    "SELECT COUNT(*) FROM interview_sessions AS session "
+                    "JOIN job_application_stages AS stage "
+                    "ON stage.id = session.application_stage_id "
+                    "WHERE stage.application_id <> session.application_id"
+                )
+            ) == 0
+            assert connection.scalar(
+                text(
+                    "SELECT stage_result FROM job_application_stages "
+                    "WHERE application_id = 9"
+                )
+            ) == "rejected"
+            assert connection.scalar(
+                text(
+                    "SELECT stage_result FROM job_application_stages "
+                    "WHERE application_id = 10"
+                )
+            ) == "skipped"
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0057"
     finally:
         engine.dispose()
         reset_test_database_to_base(database_url)

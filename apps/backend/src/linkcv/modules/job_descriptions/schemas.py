@@ -401,8 +401,23 @@ class JobDescriptionRecord(JobDescriptionSummary):
         return _as_utc(value)
 
 
+class JobImportApplicationRecord(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    phase: Literal["pending", "applied"]
+    lifecycle_status: Literal["active", "terminated"]
+    current_stage_label: str
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def stringify_id(cls, value: object) -> str:
+        return str(value)
+
+
 class JobDescriptionResponse(BaseModel):
     job_description: JobDescriptionRecord
+    application: JobImportApplicationRecord | None = None
 
 
 class JobDescriptionListResponse(BaseModel):
