@@ -9,7 +9,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from linkcv.application.interviews.state import validate_stage_context
-from linkcv.modules.job_descriptions.schemas import SalaryPeriod
+from linkcv.modules.job_descriptions.schemas import EmploymentType, SalaryPeriod
 
 
 CalendarColor = Literal["red", "orange", "yellow", "green", "blue", "purple", "gray"]
@@ -106,6 +106,7 @@ class JobApplicationCreateRequest(StrictModel):
 
 
 class JobApplicationUpdateRequest(StrictModel):
+    employment_type: EmploymentType | None = None
     calendar_color: CalendarColor | None = None
     is_favorite: bool | None = None
     applied_at: datetime | None = None

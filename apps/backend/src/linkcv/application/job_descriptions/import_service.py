@@ -196,10 +196,11 @@ def _employment_type(value: str | None) -> EmploymentType | None:
         return None
     for marker, result in (
         ("实习", "internship"),
-        ("兼职", "part_time"),
-        ("合同", "contract"),
-        ("劳务", "contract"),
-        ("临时", "temporary"),
+        ("校招", "campus"),
+        ("校园招聘", "campus"),
+        ("应届", "campus"),
+        ("正式", "full_time"),
+        ("社招", "full_time"),
         ("全职", "full_time"),
     ):
         if marker in normalized:

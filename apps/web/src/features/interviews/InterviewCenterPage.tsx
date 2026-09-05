@@ -41,12 +41,14 @@ import {
   Plus,
   RotateCcw,
   Search,
+  SlidersHorizontal,
   Trash2,
   UserRound,
   Video,
   X,
 } from "lucide-react";
 import { Button, ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, ExpandableSearch, PageLoading } from "@/components/ui";
+import { SelectField } from "@/components/ui/select-field";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import {
   ApiRequestError,
@@ -58,6 +60,7 @@ import {
   type ApplicationStageType,
   type JobApplicationSummary,
   type JobDescriptionSummary,
+  type JobEmploymentType,
 } from "@/api/client";
 import { careerApplicationPath, careerViewPath, navigateTo, type InterviewView } from "../../routing";
 import { JobSmartImportDialog } from "../jobs/JobSmartImportDialog";
@@ -453,6 +456,7 @@ export function InterviewCenterPage({
   const [detail, setDetail] = useState<InterviewSessionDetail | null>(null);
   const [query, setQuery] = useState("");
   const [applicationDisplayMode, setApplicationDisplayMode] = useState<"board" | "list">("board");
+  const [groupByCategory, setGroupByCategory] = useState(false);
   const [applicationSortMode, setApplicationSortMode] = useState<ApplicationSortMode>("recent_schedule");
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -748,6 +752,8 @@ export function InterviewCenterPage({
             <ApplicationViewControls
               displayMode={applicationDisplayMode}
               sortMode={applicationSortMode}
+              groupByCategory={groupByCategory}
+              onGroupingChange={setGroupByCategory}
               onDisplayModeChange={setApplicationDisplayMode}
               onSortChange={setApplicationSortMode}
             />
@@ -861,6 +867,7 @@ export function InterviewCenterPage({
           query={query}
           displayMode={applicationDisplayMode}
           sortMode={applicationSortMode}
+          groupByCategory={groupByCategory}
           timezone={timezone}
           onCreate={() => setShowCreateApplication(true)}
           onChanged={() => loadData(initialSessionId)}
@@ -1001,38 +1008,63 @@ function ApplicationHeaderControls({
 function ApplicationViewControls({
   displayMode,
   sortMode,
+  groupByCategory,
   onDisplayModeChange,
   onSortChange,
+  onGroupingChange,
 }: {
   displayMode: "board" | "list";
   sortMode: ApplicationSortMode;
+  groupByCategory: boolean;
   onDisplayModeChange: (value: "board" | "list") => void;
   onSortChange: (value: ApplicationSortMode) => void;
+  onGroupingChange: (value: boolean) => void;
 }) {
-  return (
-    <div className="career-applications-view-controls" role="group" aria-label="求职记录显示设置">
-      <button
-        type="button"
-        className="career-view-switch"
-        aria-label={displayMode === "list" ? "切换到阶段看板" : "切换到列表"}
-        title={displayMode === "list" ? "切换到阶段看板" : "切换到列表"}
-        onClick={() => onDisplayModeChange(displayMode === "list" ? "board" : "list")}
-      >
-        {displayMode === "list" ? <List aria-hidden="true" /> : <Kanban aria-hidden="true" />}
-        <span>{displayMode === "list" ? "列表" : "阶段看板"}</span>
-      </button>
-      <button
-        type="button"
-        className="career-sort-button"
-        aria-label={sortMode === "recent_schedule" ? "切换为最先添加" : "切换为最近排期"}
-        title={sortMode === "recent_schedule" ? "切换为最先添加" : "切换为最近排期"}
-        onClick={() => onSortChange(sortMode === "recent_schedule" ? "earliest_added" : "recent_schedule")}
-      >
-        {sortMode === "recent_schedule" ? <ArrowDownWideNarrow aria-hidden="true" /> : <ArrowUpNarrowWide aria-hidden="true" />}
-        <span>{sortMode === "recent_schedule" ? "最近排期" : "最先添加"}</span>
-      </button>
-    </div>
-  );
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const close = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      // Select options render in a portal outside the settings panel.
+      if (!target.closest("[data-slot=select-content]") && !ref.current?.contains(target)) {
+        ref.current?.removeAttribute("open");
+      }
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, []);
+  return <div className="career-applications-view-controls" role="group" aria-label="求职记录显示设置">
+    <details className="career-view-settings" ref={ref} onKeyDown={(event) => {
+      if (event.key === "Escape") {
+        ref.current?.removeAttribute("open");
+        ref.current?.querySelector("summary")?.focus();
+      }
+    }}>
+      <summary aria-label="视图设置" title="视图设置"><SlidersHorizontal size={16} aria-hidden="true" /></summary>
+      <div className="career-view-settings-panel">
+        <div className="career-view-mode-options" data-view={displayMode} role="group" aria-label="显示方式">
+          <button type="button" aria-pressed={displayMode === "list"} onClick={() => onDisplayModeChange("list")}>
+            <List size={16} aria-hidden="true" />列表
+          </button>
+          <button type="button" aria-pressed={displayMode === "board"} onClick={() => onDisplayModeChange("board")}>
+            <Kanban size={16} aria-hidden="true" />阶段看板
+          </button>
+        </div>
+        <div className="career-view-settings-fields">
+          <div className="career-view-settings-row"><span>分组</span>
+            <SelectField label="分类分组" value={groupByCategory ? "category" : "none"} disabled={displayMode !== "board"}
+              options={[{ value: "none", label: "不分组" }, { value: "category", label: "求职分类" }]}
+              onChange={(event) => onGroupingChange(event.target.value === "category")} />
+          </div>
+          <div className="career-view-settings-row"><span>排序</span>
+            <SelectField label="排序方式" value={sortMode}
+              options={[{ value: "recent_schedule", label: "最近排期" }, { value: "earliest_added", label: "最先添加" }]}
+              onChange={(event) => onSortChange(event.target.value as ApplicationSortMode)} />
+          </div>
+        </div>
+      </div>
+    </details>
+  </div>;
 }
 
 function ScheduleHeaderControls({ query, onCreate, onQueryChange }: { query: string; onCreate: () => void; onQueryChange: (value: string) => void }) {
@@ -1122,6 +1154,7 @@ function ScheduleViewControls({
 
 function ApplicationsView({
   applications,
+  groupByCategory,
   sessions,
   query,
   displayMode,
@@ -1132,6 +1165,7 @@ function ApplicationsView({
   onNotice,
 }: {
   applications: JobApplicationSummary[];
+  groupByCategory: boolean;
   sessions: InterviewSessionSummary[];
   query: string;
   displayMode: "board" | "list";
@@ -1141,6 +1175,7 @@ function ApplicationsView({
   onChanged: () => Promise<void>;
   onNotice: (notice: string) => void;
 }) {
+  const [categoryApplication, setCategoryApplication] = useState<JobApplicationSummary | null>(null);
   const [now, setNow] = useState(() => new Date());
   const [draggedNextStage, setDraggedNextStage] = useState<{
     application: JobApplicationSummary;
@@ -1207,7 +1242,10 @@ function ApplicationsView({
           </motion.div>
         )}
       </AnimatePresence>
+      {categoryApplication && <ApplicationCategoryDialog application={categoryApplication} onClose={() => setCategoryApplication(null)} onChanged={onChanged} />}
       <ApplicationsBoard
+        groupByCategory={groupByCategory}
+        onRequestCategory={setCategoryApplication}
         visibleApplications={visibleApplications}
         completedCurrentStageApplicationIds={completedCurrentStageApplicationIds}
         now={now}
@@ -2856,4 +2894,44 @@ function formatBytes(bytes: number): string {
 
 function interviewViewPath(view: InterviewView): string {
   return careerViewPath(view);
+}
+
+function ApplicationCategoryDialog({ application, onClose, onChanged }: {
+  application: JobApplicationSummary;
+  onClose: () => void;
+  onChanged: () => Promise<void>;
+}) {
+  const [category, setCategory] = useState(String(application.job_snapshot.employment_type ?? "unclassified"));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await api.updateJobApplication(application.id, {
+        employment_type: category === "unclassified" ? null : category as JobEmploymentType,
+        base_lock_version: application.lock_version,
+      });
+      await onChanged();
+      onClose();
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.message === "INTERVIEW_EDIT_CONFLICT") {
+        setError("求职记录已在其他页面更新，请关闭后重新修改分类。");
+        await onChanged();
+      } else {
+        setError(errorMessage(error));
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+  return <Dialog open onOpenChange={(open) => { if (!open && !saving) onClose(); }}>
+    <DialogContent>
+      <DialogHeader><DialogTitle>修改求职分类</DialogTitle><DialogDescription>{application.company_name_snapshot} · {application.job_title_snapshot}</DialogDescription></DialogHeader>
+      <SelectField label="求职分类" value={category} disabled={saving} options={[{value: "internship", label: "实习"}, {value: "campus", label: "校招"}, {value: "full_time", label: "正式"}, {value: "unclassified", label: "未分类"}]} onChange={(event) => setCategory(event.target.value)} />
+      {error && <p role="alert">{error}</p>}
+      <DialogFooter><Button variant="outline" disabled={saving} onClick={onClose}>取消</Button><Button disabled={saving} onClick={() => void save()}>{saving ? "保存中…" : "保存"}</Button></DialogFooter>
+    </DialogContent>
+  </Dialog>;
 }

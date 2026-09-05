@@ -31,11 +31,13 @@
 | `src/linkcv/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkcv/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0054` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0055` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
 ## 数据与事务
+
+迁移 `0055` 将岗位 `employment_type` 检查约束收敛为 `internship/campus/full_time` 或空值。不包含自动删除或旧值回填；存在不支持的旧值时约束变更失败，须先按目标环境授权完成数据处理。发布时先升级约束，再部署新的岗位/求职接口和 Web、采集插件。迁移 forward-only，恢复旧约束使用新的向前 revision，数据恢复依赖备份。
 
 MySQL 包含用户、简历、LLM 治理和 `job_descriptions` 等业务表。当前可编辑简历状态保存在 `resumes.data_json/style_json`，历史版本同时快照两份 JSON。HTTP 中的 ID 是十进制字符串，ORM 和数据库使用整数。
 

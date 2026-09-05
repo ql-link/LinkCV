@@ -183,8 +183,8 @@ export function JobSmartImportDialog({ onClose, onParsed, unified = false }: {
                   </div>
                   <div className="job-smart-manual-grid">
                     <CompactInput label="技能" hint="使用逗号或换行分隔，例如：Java、SQL" value={form.skills} onChange={(value) => setField("skills", value)} />
-                    <CompactSelect label="用工类型" value={form.employment_type} onChange={(value) => setField("employment_type", value as JobFormState["employment_type"])} options={[
-                      ["full_time", "全职"], ["part_time", "兼职"], ["internship", "实习"], ["contract", "合同"], ["temporary", "临时"],
+                    <CompactSelect label="求职分类" value={form.employment_type} onChange={(value) => setField("employment_type", value as JobFormState["employment_type"])} options={[
+                      ["internship", "实习"], ["campus", "校招"], ["full_time", "正式"],
                     ]} />
                     <CompactInput label="学历要求" hint="例如：本科及以上" value={form.education_requirement} onChange={(value) => setField("education_requirement", value)} />
                     <CompactInput label="经验要求" hint="例如：3-5年" value={form.experience_requirement} onChange={(value) => setField("experience_requirement", value)} />

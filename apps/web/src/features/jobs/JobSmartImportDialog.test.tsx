@@ -35,7 +35,7 @@ describe("JobSmartImportDialog", () => {
       expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
     }
     for (const label of [
-      "技能", "用工类型", "学历要求", "经验要求", "工作城市", "详细地址", "工作方式",
+      "技能", "求职分类", "学历要求", "经验要求", "工作城市", "详细地址", "工作方式",
       "工作安排", "薪资范围", "行业", "公司规模", "融资阶段", "招聘者姓名", "招聘者职位",
       "来源链接（可选）", "个人备注",
     ]) {

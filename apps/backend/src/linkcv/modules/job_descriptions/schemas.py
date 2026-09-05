@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 EmploymentType = Literal[
-    "full_time", "part_time", "internship", "contract", "temporary"
+    "internship", "campus", "full_time"
 ]
 WorkMode = Literal["onsite", "hybrid", "remote"]
 SalaryPeriod = Literal["hour", "day", "month", "year"]

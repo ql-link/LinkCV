@@ -91,7 +91,7 @@ class JobDescription(Base):
         ),
         CheckConstraint(
             "employment_type IS NULL OR employment_type IN "
-            "('full_time', 'part_time', 'internship', 'contract', 'temporary')",
+            "('internship', 'campus', 'full_time')",
             name="ck_job_descriptions_employment_type",
         ),
         CheckConstraint(

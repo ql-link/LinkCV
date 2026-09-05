@@ -172,7 +172,7 @@ function interviewColumnPrefill(column: BoardProgressColumn): NextStagePrefill {
   // existing first-round convention when opening the stage dialog.
   return {
     initialTab: "interview",
-    initialInterviewLabel: column.items.length ? column.label : "一面",
+    initialInterviewLabel: column.label === INTERVIEW_FALLBACK_LABEL && !column.items.length ? "一面" : column.label,
   };
 }
 
@@ -463,6 +463,7 @@ export function formatApplicationListDateTime(value: string): string {
 
 export function ApplicationsBoard({
   visibleApplications,
+  groupByCategory = false,
   completedCurrentStageApplicationIds,
   now,
   sortMode = "recent_schedule",
@@ -472,8 +473,10 @@ export function ApplicationsBoard({
   onRequestMarkApplied,
   onRequestNextStage,
   onRequestTerminate,
+  onRequestCategory,
 }: {
   visibleApplications: JobApplicationSummary[];
+  groupByCategory?: boolean;
   completedCurrentStageApplicationIds: ReadonlySet<string>;
   now?: Date;
   sortMode?: ApplicationSortMode;
@@ -483,26 +486,41 @@ export function ApplicationsBoard({
   onRequestMarkApplied: (application: JobApplicationSummary, targetColumnId?: string) => void;
   onRequestNextStage: (application: JobApplicationSummary, prefill: NextStagePrefill, targetColumnId?: string) => void;
   onRequestTerminate: (application: JobApplicationSummary) => void;
+  onRequestCategory: (application: JobApplicationSummary) => void;
 }) {
-  return (
-    displayMode === "board" && visibleApplications.length > 0 ? (
-      <ProgressBoard
-        applications={visibleApplications}
-        completedCurrentStageApplicationIds={completedCurrentStageApplicationIds}
-        now={now}
-        sortMode={sortMode}
-        formDropPreview={formDropPreview}
-        onNotice={onNotice}
-        onRequestMarkApplied={onRequestMarkApplied}
-        onRequestNextStage={onRequestNextStage}
-        onRequestTerminate={onRequestTerminate}
-      />
-    ) : null
-  );
+  if (displayMode !== "board" || !visibleApplications.length) return null;
+  const groups = groupByCategory
+    ? [["internship", "实习"], ["campus", "校招"], ["full_time", "正式"], ["", "未分类"]]
+    : [["all", "全部"]];
+  return <div className={groupByCategory ? "career-category-board" : "career-ungrouped-board"}>
+    <div className={groupByCategory ? "career-category-board-content" : "career-ungrouped-board-content"}>
+    {groups.map(([key, label]) => {
+      const items = key === "all" ? visibleApplications : visibleApplications.filter((item) =>
+        (item.job_snapshot.employment_type ?? "") === key);
+      return <section key={key} aria-label={groupByCategory ? `${label}分类` : undefined}>
+        {groupByCategory && <h2 className="career-category-heading"><span className="career-category-heading-label">{label}<span>{items.length}</span></span></h2>}
+        <ProgressBoard
+          applications={items}
+          layoutApplications={visibleApplications}
+          completedCurrentStageApplicationIds={completedCurrentStageApplicationIds}
+          now={now}
+          sortMode={sortMode}
+          formDropPreview={items.some((item) => item.id === formDropPreview?.applicationId) ? formDropPreview : null}
+          onNotice={onNotice}
+          onRequestMarkApplied={onRequestMarkApplied}
+          onRequestNextStage={onRequestNextStage}
+          onRequestTerminate={onRequestTerminate}
+          onRequestCategory={onRequestCategory}
+        />
+      </section>;
+    })}
+    </div>
+  </div>;
 }
 
 export function ProgressBoard({
   applications,
+  layoutApplications = applications,
   completedCurrentStageApplicationIds,
   now,
   sortMode = "recent_schedule",
@@ -511,8 +529,10 @@ export function ProgressBoard({
   onRequestMarkApplied,
   onRequestNextStage,
   onRequestTerminate,
+  onRequestCategory,
 }: {
   applications: JobApplicationSummary[];
+  layoutApplications?: JobApplicationSummary[];
   completedCurrentStageApplicationIds: ReadonlySet<string>;
   now?: Date;
   sortMode?: ApplicationSortMode;
@@ -521,6 +541,7 @@ export function ProgressBoard({
   onRequestMarkApplied: (application: JobApplicationSummary, targetColumnId?: string) => void;
   onRequestNextStage: (application: JobApplicationSummary, prefill: NextStagePrefill, targetColumnId?: string) => void;
   onRequestTerminate: (application: JobApplicationSummary) => void;
+  onRequestCategory: (application: JobApplicationSummary) => void;
 }) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -536,8 +557,13 @@ export function ProgressBoard({
   const dismissMenuClickApplicationIdRef = useRef<string | null>(null);
   const shouldReduceMotion = useReducedMotion();
   const columns = useMemo(
-    () => buildBoardColumns(sortApplications(applications, sortMode)),
-    [applications, sortMode],
+    () => {
+      const memberIds = new Set(applications.map((item) => item.id));
+      return buildBoardColumns(sortApplications(layoutApplications, sortMode)).map((column) => ({
+        ...column, items: column.items.filter((item) => memberIds.has(item.id)),
+      }));
+    },
+    [applications, layoutApplications, sortMode],
   );
   const calculationNow = now ?? new Date();
 
@@ -734,6 +760,7 @@ export function ProgressBoard({
             onRequestMarkApplied={onRequestMarkApplied}
             onRequestNextStage={onRequestNextStage}
             onRequestTerminate={onRequestTerminate}
+            onRequestCategory={onRequestCategory}
             onOpen={(item) => {
               if (!suppressCardClickRef.current) navigateTo(careerApplicationPath(item.id));
             }}
@@ -766,6 +793,7 @@ export function ProgressColumn({
   onRequestMarkApplied,
   onRequestNextStage,
   onRequestTerminate,
+  onRequestCategory,
   onOpen,
 }: {
   column: BoardProgressColumn;
@@ -789,6 +817,7 @@ export function ProgressColumn({
   onRequestMarkApplied: (application: JobApplicationSummary) => void;
   onRequestNextStage: (application: JobApplicationSummary, prefill: NextStagePrefill) => void;
   onRequestTerminate: (application: JobApplicationSummary) => void;
+  onRequestCategory: (application: JobApplicationSummary) => void;
   onOpen: (item: JobApplicationSummary) => void;
 }) {
   const shouldReduceMotion = useReducedMotion();
@@ -853,6 +882,7 @@ export function ProgressColumn({
           onRequestMarkApplied={onRequestMarkApplied}
           onRequestNextStage={onRequestNextStage}
           onRequestTerminate={onRequestTerminate}
+          onRequestCategory={onRequestCategory}
           onOpen={() => onOpen(item)}
         />
         {isDraggingCard && isReturningToSource && (
@@ -920,6 +950,7 @@ export function ProgressCard({
   onRequestMarkApplied,
   onRequestNextStage,
   onRequestTerminate,
+  onRequestCategory,
   onOpen,
 }: {
   item: JobApplicationSummary;
@@ -938,6 +969,7 @@ export function ProgressCard({
   onRequestMarkApplied?: (application: JobApplicationSummary) => void;
   onRequestNextStage?: (application: JobApplicationSummary, prefill: NextStagePrefill) => void;
   onRequestTerminate?: (application: JobApplicationSummary) => void;
+  onRequestCategory?: (application: JobApplicationSummary) => void;
   onOpen: () => void;
 }) {
   const statusLabel = applicationCardStatusLabel(item, currentStageCompleted, now);
@@ -1064,6 +1096,9 @@ export function ProgressCard({
               onClick={() => runMenuAction(onOpen)}
             >
               <Eye size={15} aria-hidden="true" />查看详情
+            </button>
+            <button type="button" role="menuitem" onClick={() => runMenuAction(() => onRequestCategory?.(item))}>
+              修改分类
             </button>
             <button
               type="button"
