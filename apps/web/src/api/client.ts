@@ -569,7 +569,14 @@ export type InterviewCalendarColor =
   | "blue"
   | "purple"
   | "gray";
-export type ApplicationStageType = "screening" | "interview" | "hr" | "offer";
+export type ApplicationStageType =
+  | "screening"
+  | "assessment"
+  | "written_test"
+  | "ai_interview"
+  | "interview"
+  | "offer";
+export type LegacyApplicationStageType = "screening" | "interview" | "hr" | "offer";
 export type ApplicationStageState =
   | "awaiting_schedule"
   | "scheduled"
@@ -577,6 +584,23 @@ export type ApplicationStageState =
   | "negotiating";
 export type InterviewMode = "video" | "onsite" | "phone" | "other";
 export type InterviewSessionStatus = "scheduled" | "completed" | "cancelled";
+
+export type ApplicationStageRecord = {
+  id: string;
+  application_id: string;
+  client_request_id: string;
+  stage_type: ApplicationStageType;
+  stage_label: string;
+  interview_round_no: number | null;
+  sequence_no: number;
+  stage_status: "active" | "completed" | "cancelled";
+  stage_result: "pending" | "passed" | "rejected" | "skipped";
+  current_marker: number | null;
+  entered_at: string;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 export type JobApplicationRecord = {
   id: string;
@@ -587,11 +611,21 @@ export type JobApplicationRecord = {
   job_snapshot: Record<string, unknown>;
   resume_title_snapshot: string | null;
   calendar_color: InterviewCalendarColor;
-  current_stage_type: ApplicationStageType;
+  current_stage_type: LegacyApplicationStageType;
   current_round_no: number | null;
   current_stage_label: string;
   stage_state: ApplicationStageState;
   status: "active" | "rejected" | "withdrawn" | "closed";
+  phase?: "pending" | "applied";
+  lifecycle_status?: "active" | "terminated";
+  terminated_at?: string | null;
+  termination_reason?:
+    | "company_rejected"
+    | "user_withdrew"
+    | "offer_declined"
+    | "completed"
+    | "other"
+    | null;
   offer_status:
     | "none"
     | "received"
@@ -609,6 +643,8 @@ export type JobApplicationRecord = {
   lock_version: number;
   created_at: string;
   updated_at: string;
+  current_stage?: ApplicationStageRecord | null;
+  stages?: ApplicationStageRecord[];
 };
 
 export type JobApplicationSummary = JobApplicationRecord & {
@@ -621,6 +657,7 @@ export type JobApplicationSummary = JobApplicationRecord & {
 export type InterviewSessionRecord = {
   id: string;
   application_id: string;
+  application_stage_id?: string | null;
   client_request_id: string;
   stage_type: "interview" | "hr" | "offer" | "other";
   round_no: number | null;
@@ -1491,7 +1528,13 @@ export const api = {
     }>(`/api/job-descriptions${suffix ? `?${suffix}` : ""}`);
   },
   createJobDescription: (payload: JobDescriptionCreatePayload) =>
-    request<{ job_description: JobDescriptionRecord }>(
+    request<{
+      job_description: JobDescriptionRecord;
+      application: Pick<
+        JobApplicationRecord,
+        "id" | "phase" | "lifecycle_status" | "current_stage_label"
+      > | null;
+    }>(
       "/api/job-descriptions",
       { method: "POST", body: payload },
     ),
@@ -1538,6 +1581,8 @@ export const api = {
       keyword?: string;
       status?: JobApplicationRecord["status"];
       stage_type?: ApplicationStageType;
+      phase?: "pending" | "applied";
+      lifecycle_status?: "active" | "terminated";
       cursor?: string;
       limit?: number;
     } = {},
@@ -1547,6 +1592,8 @@ export const api = {
     if (params.keyword) search.set("keyword", params.keyword);
     if (params.status) search.set("status", params.status);
     if (params.stage_type) search.set("stage_type", params.stage_type);
+    if (params.phase) search.set("phase", params.phase);
+    if (params.lifecycle_status) search.set("lifecycle_status", params.lifecycle_status);
     if (params.cursor) search.set("cursor", params.cursor);
     search.set("limit", String(params.limit ?? 200));
     return request<{ items: JobApplicationSummary[]; next_cursor: string | null }>(
@@ -1556,10 +1603,10 @@ export const api = {
   createJobApplication: (payload: {
     job_description_id: string;
     resume_version_id?: string | null;
-    current_stage_type: ApplicationStageType;
+    current_stage_type?: LegacyApplicationStageType;
     current_round_no?: number | null;
-    current_stage_label: string;
-    stage_state: ApplicationStageState;
+    current_stage_label?: string;
+    stage_state?: ApplicationStageState;
     applied_at?: string | null;
     notes?: string | null;
   }) =>
@@ -1567,6 +1614,8 @@ export const api = {
       method: "POST",
       body: payload,
     }),
+  getJobApplication: (id: string) =>
+    request<{ application: JobApplicationRecord }>(`/api/job-applications/${id}`),
   updateJobApplication: (
     id: string,
     payload: Partial<{
@@ -1585,7 +1634,7 @@ export const api = {
   advanceJobApplication: (
     id: string,
     payload: {
-      target_stage_type: ApplicationStageType;
+      target_stage_type: LegacyApplicationStageType;
       target_round_no?: number | null;
       target_stage_label: string;
       base_lock_version: number;
@@ -1593,6 +1642,41 @@ export const api = {
   ) =>
     request<{ application: JobApplicationRecord }>(
       `/api/job-applications/${id}/advance`,
+      { method: "POST", body: payload },
+    ),
+  addJobApplicationStage: (
+    id: string,
+    payload: {
+      client_request_id: string;
+      stage_type: ApplicationStageType;
+      stage_label?: string | null;
+      interview_round_no?: number | null;
+      applied_at?: string | null;
+      resume_id?: string | null;
+      resume_version_id?: string | null;
+      base_lock_version: number;
+    },
+  ) =>
+    request<{ application: JobApplicationRecord }>(
+      `/api/job-applications/${id}/stages`,
+      { method: "POST", body: payload },
+    ),
+  terminateJobApplication: (
+    id: string,
+    payload: {
+      client_request_id: string;
+      reason:
+        | "company_rejected"
+        | "user_withdrew"
+        | "offer_declined"
+        | "completed"
+        | "other";
+      applied_at?: string | null;
+      base_lock_version: number;
+    },
+  ) =>
+    request<{ application: JobApplicationRecord }>(
+      `/api/job-applications/${id}/terminate`,
       { method: "POST", body: payload },
     ),
   recordJobApplicationOffer: (
@@ -1670,6 +1754,7 @@ export const api = {
     applicationId: string,
     payload: {
       client_request_id: string;
+      application_stage_id?: string | null;
       stage_type: "interview" | "hr" | "offer" | "other";
       round_no?: number | null;
       stage_label: string;

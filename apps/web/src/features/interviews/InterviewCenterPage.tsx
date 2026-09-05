@@ -51,11 +51,12 @@ import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import {
   ApiRequestError,
   api,
+  type ApplicationStageType,
   type InterviewAssetRecord,
   type InterviewCalendarColor,
   type InterviewSessionDetail,
   type InterviewSessionSummary,
-  type ApplicationStageType,
+  type JobApplicationRecord,
   type JobApplicationSummary,
   type JobDescriptionSummary,
 } from "@/api/client";
@@ -457,6 +458,7 @@ export function InterviewCenterPage({
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasLoadedData, setHasLoadedData] = useState(false);
+  const [resolvedApplicationDetailId, setResolvedApplicationDetailId] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [showCreateApplication, setShowCreateApplication] = useState(false);
@@ -572,6 +574,7 @@ export function InterviewCenterPage({
       setApplications(nextApplications);
       setHasLoadedData(true);
       if (applicationDetail) {
+        setResolvedApplicationDetailId(initialApplicationId as string);
         selectedIdRef.current = initialSessionId ?? null;
         setSelectedId(initialSessionId ?? null);
         if (initialSessionId) {
@@ -632,6 +635,12 @@ export function InterviewCenterPage({
   }, [interviews, query]);
   const selected =
     interviews.find((item) => item.id === selectedId) ?? interviews[0] ?? null;
+  const selectedApplication = isApplicationDetailRoute
+    ? applications.find((item) => item.id === initialApplicationId) ?? null
+    : null;
+  const applicationDetailPending = isApplicationDetailRoute
+    && selectedApplication === null
+    && resolvedApplicationDetailId !== initialApplicationId;
 
   const selectInterview = async (id: string) => {
     selectedIdRef.current = id;
@@ -813,12 +822,12 @@ export function InterviewCenterPage({
         </div>
       )}
       {scheduleToast && <div className="schedule-success-toast" role="status" aria-live="polite"><CircleCheck />{scheduleToast}</div>}
-      {loading && !hasLoadedData ? (
+      {(loading && !hasLoadedData) || applicationDetailPending ? (
         <PageLoading label="正在加载求职数据…" />
       ) : isApplicationDetailRoute ? (
         <>
           <ApplicationDetailView
-            application={applications.find((item) => item.id === initialApplicationId) ?? null}
+            application={selectedApplication}
             sessions={sessions}
             timezone={timezone}
             onBack={() => navigateTo(careerViewPath("applications"))}
@@ -1236,6 +1245,8 @@ function ApplicationsView({
       {draggedPendingApplication && (
         <MarkApplicationAppliedDialog
           application={draggedPendingApplication.application}
+          initialTargetColumnId={draggedPendingApplication.targetColumnId}
+          timezone={timezone}
           onClose={() => setDraggedPendingApplication(null)}
           onChanged={onChanged}
           onNotice={onNotice}
@@ -1619,10 +1630,11 @@ function ApplicationHistoryList({
   const advanceScreening = async (application: JobApplicationSummary) => {
     setBusyId(application.id);
     try {
-      await api.advanceJobApplication(application.id, {
-        target_stage_type: "interview",
-        target_round_no: 1,
-        target_stage_label: "一面",
+      await api.addJobApplicationStage(application.id, {
+        client_request_id: crypto.randomUUID(),
+        stage_type: "interview",
+        interview_round_no: 1,
+        stage_label: "一面",
         base_lock_version: application.lock_version,
       });
       onChanged();
@@ -1636,8 +1648,9 @@ function ApplicationHistoryList({
     if (!pendingReject) return;
     setBusyId(pendingReject.id);
     try {
-      await api.closeJobApplication(pendingReject.id, {
-        status: "rejected",
+      await api.terminateJobApplication(pendingReject.id, {
+        client_request_id: crypto.randomUUID(),
+        reason: "company_rejected",
         base_lock_version: pendingReject.lock_version,
       });
       setPendingReject(null);
@@ -1771,7 +1784,7 @@ function RecordDetail({
       options.push({
         value: "hr",
         label: "进入 HR 面",
-        stageType: "hr",
+        stageType: "interview",
         roundNo: null,
         stageLabel: "HR 面",
       });
@@ -1819,10 +1832,11 @@ function RecordDetail({
     const target = stageOptions.find((item) => item.value === nextStage);
     if (!target) return;
     try {
-      await api.advanceJobApplication(detail.application.id, {
-        target_stage_type: target.stageType,
-        target_round_no: target.roundNo,
-        target_stage_label: target.stageLabel,
+      await api.addJobApplicationStage(detail.application.id, {
+        client_request_id: crypto.randomUUID(),
+        stage_type: target.stageType,
+        interview_round_no: target.roundNo,
+        stage_label: target.stageLabel,
         base_lock_version: detail.application.lock_version,
       });
       onChanged();
@@ -1832,8 +1846,9 @@ function RecordDetail({
   };
   const closeAsRejected = async () => {
     try {
-      await api.closeJobApplication(detail.application.id, {
-        status: "rejected",
+      await api.terminateJobApplication(detail.application.id, {
+        client_request_id: crypto.randomUUID(),
+        reason: "company_rejected",
         base_lock_version: detail.application.lock_version,
       });
       onChanged();
@@ -2630,6 +2645,7 @@ function CreateInterviewDialog({
       }
       if (!targetApplication) {
         let targetJobId = createdJobId ?? jobId;
+        let pendingApplicationId: string | null = null;
         if (!targetJobId) {
           const createdJob = await api.createJobDescription({
             company_name: company,
@@ -2638,22 +2654,30 @@ function CreateInterviewDialog({
             source_type: "manual",
           });
           targetJobId = createdJob.job_description.id;
+          pendingApplicationId = createdJob.application?.id ?? null;
           setCreatedJobId(targetJobId);
         }
-        const createdApplication = await api.createJobApplication({
-          job_description_id: targetJobId,
-          current_stage_type: "interview",
-          current_round_no: roundNo,
-          current_stage_label: stage,
-          stage_state: "awaiting_schedule",
-        });
-        targetApplication = { ...createdApplication.application, next_session_id: null, next_session_start_at: null, next_session_end_at: null, next_session_mode: null };
+        const pendingApplication = pendingApplicationId
+          ? await api.getJobApplication(pendingApplicationId)
+          : await api.createJobApplication({ job_description_id: targetJobId });
+        const stagedApplication = await api.addJobApplicationStage(
+          pendingApplication.application.id,
+          {
+            client_request_id: requestIdRef.current,
+            stage_type: "interview",
+            stage_label: stage,
+            interview_round_no: roundNo,
+            base_lock_version: pendingApplication.application.lock_version,
+          },
+        );
+        targetApplication = { ...stagedApplication.application, next_session_id: null, next_session_start_at: null, next_session_end_at: null, next_session_mode: null };
         setCreatedApplication(targetApplication);
       }
       const start = new Date(startAt);
       const end = new Date(start.getTime() + duration * 60_000);
       const payload: InterviewSessionCreatePayload = {
         client_request_id: requestIdRef.current,
+        application_stage_id: targetApplication.current_stage?.id,
         stage_type:
           targetApplication.current_stage_type === "screening"
             ? "other"

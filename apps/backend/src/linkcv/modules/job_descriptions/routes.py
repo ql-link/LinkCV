@@ -17,6 +17,7 @@ from linkcv.application.job_descriptions.service import (
     list_owned_jobs,
     update_owned_job,
 )
+from linkcv.application.interviews.service import ensure_pending_application_for_job
 from linkcv.application.job_descriptions.import_service import (
     InvalidJobImport,
     build_job_description_from_capture,
@@ -31,11 +32,13 @@ from linkcv.core.errors import ApiError
 from linkcv.domain.job_source import InvalidJobSource
 from linkcv.modules.identity.dependencies import get_current_user
 from linkcv.modules.identity.models import User
+from linkcv.modules.interviews.models import JobApplication
 from linkcv.modules.job_descriptions.models import JobDescription
 from linkcv.modules.job_descriptions.schemas import (
     DeleteJobDescriptionResponse,
     JobDescriptionCreateRequest,
     JobDescriptionImportRequest,
+    JobImportApplicationRecord,
     JobDescriptionListResponse,
     JobDescriptionRecord,
     JobDescriptionResponse,
@@ -124,6 +127,33 @@ def duplicate_details(error: DuplicateJobDescription) -> dict[str, object]:
     }
 
 
+def create_job_and_pending_application(
+    db: Session,
+    user_id: int,
+    payload: JobDescriptionCreateRequest,
+) -> tuple[JobDescription, JobApplication, bool]:
+    try:
+        result = create_or_resolve_job(
+            db=db, user_id=user_id, payload=payload, commit=False
+        )
+        job = result.job
+        created = result.created
+    except DuplicateJobDescription as error:
+        job = error.existing
+        created = False
+    try:
+        application, _ = ensure_pending_application_for_job(
+            db, user_id, job
+        )
+        db.commit()
+        db.refresh(job)
+        db.refresh(application)
+    except Exception:
+        db.rollback()
+        raise
+    return job, application, created
+
+
 @router.get("", response_model=JobDescriptionListResponse)
 def list_job_descriptions(
     keyword: str | None = Query(default=None, max_length=200),
@@ -201,18 +231,21 @@ def create_job_description(
     user: User = Depends(get_current_user),
 ) -> JobDescriptionResponse:
     try:
-        result = create_or_resolve_job(db=db, user_id=user.id, payload=payload)
+        job, application, created = create_job_and_pending_application(
+            db, user.id, payload
+        )
     except InvalidJobSource as error:
         raise ApiError(400, "INVALID_JOB_SOURCE") from error
-    except DuplicateJobDescription as error:
-        raise ApiError(409, "JD_SOURCE_DUPLICATE", duplicate_details(error)) from error
     except JobEditConflict as error:
         raise ApiError(409, "JD_EDIT_CONFLICT") from error
     except JobWriteFailed as error:
         raise ApiError(500, "JD_WRITE_FAILED") from error
-    response.status_code = 201 if result.created else 200
-    bind_audit_target(request, result.job.id)
-    return JobDescriptionResponse(job_description=job_record(result.job))
+    response.status_code = 201 if created else 200
+    bind_audit_target(request, job.id)
+    return JobDescriptionResponse(
+        job_description=job_record(job),
+        application=JobImportApplicationRecord.model_validate(application),
+    )
 
 
 @router.post("/import", response_model=JobDescriptionResponse, status_code=201)
@@ -225,20 +258,23 @@ def import_job_description(
 ) -> JobDescriptionResponse:
     try:
         structured = build_job_description_from_capture(payload)
-        result = create_or_resolve_job(db=db, user_id=user.id, payload=structured)
+        job, application, created = create_job_and_pending_application(
+            db, user.id, structured
+        )
     except InvalidJobImport as error:
         raise ApiError(400, "INVALID_JOB_IMPORT") from error
     except InvalidJobSource as error:
         raise ApiError(400, "INVALID_JOB_SOURCE") from error
-    except DuplicateJobDescription as error:
-        raise ApiError(409, "JD_SOURCE_DUPLICATE", duplicate_details(error)) from error
     except JobEditConflict as error:
         raise ApiError(409, "JD_EDIT_CONFLICT") from error
     except JobWriteFailed as error:
         raise ApiError(500, "JD_WRITE_FAILED") from error
-    response.status_code = 201 if result.created else 200
-    bind_audit_target(request, result.job.id)
-    return JobDescriptionResponse(job_description=job_record(result.job))
+    response.status_code = 201 if created else 200
+    bind_audit_target(request, job.id)
+    return JobDescriptionResponse(
+        job_description=job_record(job),
+        application=JobImportApplicationRecord.model_validate(application),
+    )
 
 
 @router.get("/{job_id}", response_model=JobDescriptionResponse)

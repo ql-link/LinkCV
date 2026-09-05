@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, ApiRequestError } from "../../api/client";
 import { JobSmartImportDialog } from "./JobSmartImportDialog";
@@ -6,6 +7,51 @@ import { JobSmartImportDialog } from "./JobSmartImportDialog";
 afterEach(() => vi.restoreAllMocks());
 
 describe("JobSmartImportDialog", () => {
+  it("创建岗位后直接打开后端返回的待投递记录", async () => {
+    window.history.replaceState(null, "", "/career/applications");
+    vi.spyOn(api, "createJobDescription").mockResolvedValue({
+      job_description: { id: "job-8" } as never,
+      application: {
+        id: "21",
+        phase: "pending",
+        lifecycle_status: "active",
+        current_stage_label: "待投递",
+      },
+    });
+    const onClose = vi.fn();
+    function ImportHarness() {
+      const [open, setOpen] = useState(true);
+      return open ? (
+        <JobSmartImportDialog
+          unified
+          onClose={() => {
+            onClose();
+            setOpen(false);
+          }}
+        />
+      ) : null;
+    }
+    render(<ImportHarness />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "手工填写" }));
+    fireEvent.change(screen.getByLabelText("职位名称"), {
+      target: { value: "后端开发工程师" },
+    });
+    fireEvent.change(screen.getByLabelText("公司名称"), {
+      target: { value: "示例科技" },
+    });
+    fireEvent.change(screen.getByLabelText("职位描述"), {
+      target: { value: "负责虚构业务平台开发" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "创建岗位" }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/career/applications/21");
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog", { name: "导入岗位" })).not.toBeInTheDocument();
+  });
+
   it("默认打开岗位文字并提供可访问的三栏切换", () => {
     render(<JobSmartImportDialog unified onClose={vi.fn()} />);
 

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
+from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import and_, delete, exists, func, or_, select, update
@@ -18,7 +19,6 @@ from linkcv.application.interviews.state import (
     ApplicationStateValue,
     InvalidTransition,
     POST_APPLICATION_SCREENING_LABEL,
-    advance_application as transition_advance,
     cancel_current_session,
     close_application as transition_close,
     complete_session as transition_complete,
@@ -31,8 +31,10 @@ from linkcv.modules.interviews.models import (
     InterviewAsset,
     InterviewSession,
     JobApplication,
+    JobApplicationStage,
 )
 from linkcv.modules.interviews.schemas import (
+    AddApplicationStageRequest,
     AdvanceApplicationRequest,
     CancelInterviewRequest,
     CloseApplicationRequest,
@@ -43,6 +45,7 @@ from linkcv.modules.interviews.schemas import (
     JobApplicationUpdateRequest,
     OfferApplicationRequest,
     RescheduleInterviewRequest,
+    TerminateApplicationRequest,
 )
 from linkcv.modules.job_descriptions.models import JobDescription
 from linkcv.modules.resumes.models import Resume, ResumeVersion
@@ -64,8 +67,17 @@ class InterviewInvalidTransition(RuntimeError):
     pass
 
 
+class InvalidInterviewRequest(RuntimeError):
+    pass
+
+
 class InterviewApplicationNotEmpty(RuntimeError):
     pass
+
+
+@dataclass(slots=True)
+class InterviewApplicationAlreadyActive(RuntimeError):
+    application_id: int
 
 
 class InterviewSessionNotEmpty(RuntimeError):
@@ -101,7 +113,28 @@ class SessionWithApplication:
     application: JobApplication
 
 
+@dataclass(frozen=True, slots=True)
+class StageChangeResult:
+    application: JobApplication
+    stage: JobApplicationStage | None
+
+
 CALENDAR_COLORS = ("red", "orange", "yellow", "green", "blue", "purple", "gray")
+
+DEFAULT_STAGE_LABELS = {
+    "screening": "筛选中",
+    "assessment": "测评",
+    "written_test": "笔试",
+    "ai_interview": "AI 面试",
+    "offer": "Offer",
+}
+
+SCHEDULABLE_STAGE_TYPES = {
+    "assessment",
+    "written_test",
+    "ai_interview",
+    "interview",
+}
 
 
 def _cursor_filter_digest(values: dict[str, object]) -> str:
@@ -243,6 +276,72 @@ def _latest_resume_version(db: Session, resume_id: int) -> ResumeVersion | None:
     )
 
 
+def find_unfinished_application_for_job(
+    db: Session, user_id: int, job_description_id: int
+) -> JobApplication | None:
+    return db.scalar(
+        select(JobApplication)
+        .where(
+            JobApplication.user_id == user_id,
+            JobApplication.job_description_id == job_description_id,
+            JobApplication.lifecycle_status == "active",
+        )
+        .order_by(JobApplication.created_at.desc(), JobApplication.id.desc())
+        .limit(1)
+    )
+
+
+def ensure_pending_application_for_job(
+    db: Session,
+    user_id: int,
+    job: JobDescription,
+    *,
+    resume_version: ResumeVersion | None = None,
+    notes: str | None = None,
+) -> tuple[JobApplication, bool]:
+    locked_job = db.scalar(
+        select(JobDescription)
+        .where(
+            JobDescription.id == job.id,
+            JobDescription.user_id == user_id,
+        )
+        .with_for_update()
+    )
+    if locked_job is None:
+        raise InterviewNotFound
+    existing = find_unfinished_application_for_job(db, user_id, job.id)
+    if existing is not None:
+        return existing, False
+    now = utc_now()
+    application = JobApplication(
+        user_id=user_id,
+        job_description_id=job.id,
+        resume_version_id=resume_version.id if resume_version else None,
+        company_name_snapshot=locked_job.company_name,
+        job_title_snapshot=locked_job.job_title,
+        job_snapshot=_job_snapshot(locked_job),
+        resume_title_snapshot=resume_version.name if resume_version else None,
+        calendar_color=secrets.choice(CALENDAR_COLORS),
+        current_stage_type="screening",
+        current_round_no=None,
+        current_stage_label="待投递",
+        stage_state="awaiting_schedule",
+        status="active",
+        lifecycle_status="active",
+        offer_status="none",
+        is_favorite=0,
+        applied_at=None,
+        notes=notes,
+        lock_version=1,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(application)
+    db.flush()
+    db.refresh(application)
+    return application, True
+
+
 def create_application(
     db: Session, user_id: int, payload: JobApplicationCreateRequest
 ) -> JobApplication:
@@ -267,37 +366,66 @@ def create_application(
     resume_version = _owned_resume_version(db, user_id, resume_version_id)
     if resume_version_id is not None and resume_version is None:
         raise InterviewNotFound
-    now = utc_now()
-    application = JobApplication(
-        user_id=user_id,
-        job_description_id=job.id,
-        resume_version_id=resume_version.id if resume_version else None,
-        company_name_snapshot=job.company_name,
-        job_title_snapshot=job.job_title,
-        job_snapshot=_job_snapshot(job),
-        resume_title_snapshot=resume_version.name if resume_version else None,
-        calendar_color=secrets.choice(CALENDAR_COLORS),
-        current_stage_type=payload.current_stage_type,
-        current_round_no=payload.current_round_no,
-        current_stage_label=payload.current_stage_label,
-        stage_state=payload.stage_state,
-        status="active",
-        offer_status="none",
-        is_favorite=0,
-        applied_at=payload.applied_at.astimezone(UTC) if payload.applied_at else None,
-        notes=payload.notes,
-        lock_version=1,
-        created_at=now,
-        updated_at=now,
-    )
     try:
-        db.add(application)
+        application, _created = ensure_pending_application_for_job(
+            db,
+            user_id,
+            job,
+            resume_version=resume_version,
+            notes=payload.notes,
+        )
+        if application.applied_at is not None or current_application_stage(
+            db, application.id
+        ) is not None:
+            raise InterviewApplicationAlreadyActive(application.id)
+        if resume_version is not None:
+            application.resume_version_id = resume_version.id
+            application.resume_title_snapshot = resume_version.name
+        if payload.notes is not None:
+            application.notes = payload.notes
         db.commit()
         db.refresh(application)
     except Exception:
         db.rollback()
         raise
-    return application
+    if (
+        payload.current_stage_type == "screening"
+        and payload.current_stage_label == "待投递"
+    ):
+        return application
+
+    legacy_stage_type = payload.current_stage_type
+    if legacy_stage_type == "offer":
+        stage_type = "offer"
+    elif legacy_stage_type in {"interview", "hr"}:
+        stage_type = "interview"
+    elif payload.current_stage_label == "测评":
+        stage_type = "assessment"
+    elif payload.current_stage_label == "笔试":
+        stage_type = "written_test"
+    elif payload.current_stage_label == "AI 面试":
+        stage_type = "ai_interview"
+    else:
+        stage_type = "screening"
+    result = add_application_stage(
+        db,
+        user_id,
+        application.id,
+        AddApplicationStageRequest(
+            client_request_id=uuid4(),
+            stage_type=stage_type,
+            stage_label=(
+                payload.current_stage_label if stage_type == "interview" else None
+            ),
+            interview_round_no=(
+                payload.current_round_no if stage_type == "interview" else None
+            ),
+            applied_at=payload.applied_at,
+            resume_version_id=payload.resume_version_id,
+            base_lock_version=application.lock_version,
+        ),
+    )
+    return result.application
 
 
 def find_owned_application(
@@ -328,6 +456,8 @@ def list_applications(
     keyword: str | None = None,
     status: str | None = None,
     stage_type: str | None = None,
+    phase: str | None = None,
+    lifecycle_status: str | None = None,
     cursor: str | None = None,
     limit: int = 100,
 ) -> tuple[list[JobApplication], str | None]:
@@ -338,6 +468,8 @@ def list_applications(
             "keyword": normalized_keyword,
             "status": status or "",
             "stage_type": stage_type or "",
+            "phase": phase or "",
+            "lifecycle_status": lifecycle_status or "",
         }
     )
     query = select(JobApplication).where(JobApplication.user_id == user_id)
@@ -352,12 +484,32 @@ def list_applications(
                 JobApplication.company_name_snapshot.like(pattern),
                 JobApplication.job_title_snapshot.like(pattern),
                 JobApplication.current_stage_label.like(pattern),
+                exists(
+                    select(JobApplicationStage.id).where(
+                        JobApplicationStage.application_id == JobApplication.id,
+                        JobApplicationStage.stage_label.like(pattern),
+                    )
+                ),
             )
         )
     if status:
         query = query.where(JobApplication.status == status)
     if stage_type:
-        query = query.where(JobApplication.current_stage_type == stage_type)
+        query = query.where(
+            exists(
+                select(JobApplicationStage.id).where(
+                    JobApplicationStage.application_id == JobApplication.id,
+                    JobApplicationStage.current_marker == 1,
+                    JobApplicationStage.stage_type == stage_type,
+                )
+            )
+        )
+    if phase == "pending":
+        query = query.where(JobApplication.applied_at.is_(None))
+    elif phase == "applied":
+        query = query.where(JobApplication.applied_at.is_not(None))
+    if lifecycle_status:
+        query = query.where(JobApplication.lifecycle_status == lifecycle_status)
     if cursor:
         cursor_time, cursor_id = _decode_cursor(
             cursor,
@@ -393,6 +545,272 @@ def list_applications(
         else None
     )
     return items, next_cursor
+
+
+def list_application_stages(
+    db: Session, application_id: int
+) -> list[JobApplicationStage]:
+    return list(
+        db.scalars(
+            select(JobApplicationStage)
+            .where(JobApplicationStage.application_id == application_id)
+            .order_by(JobApplicationStage.sequence_no, JobApplicationStage.id)
+        )
+    )
+
+
+def current_application_stage(
+    db: Session, application_id: int
+) -> JobApplicationStage | None:
+    return db.scalar(
+        select(JobApplicationStage).where(
+            JobApplicationStage.application_id == application_id,
+            JobApplicationStage.current_marker == 1,
+        )
+    )
+
+
+def _stage_label(stage_type: str, requested_label: str | None) -> str:
+    if stage_type == "interview":
+        if not requested_label:
+            raise InterviewInvalidTransition
+        return requested_label.strip()
+    return requested_label or DEFAULT_STAGE_LABELS[stage_type]
+
+
+def _legacy_stage_projection(
+    stage_type: str, stage_label: str, round_no: int | None
+) -> dict[str, object]:
+    if stage_type in {"assessment", "written_test", "ai_interview"}:
+        legacy_type = "screening"
+        legacy_round = None
+        stage_state = "awaiting_schedule"
+    elif stage_type == "interview":
+        legacy_type = "interview"
+        legacy_round = round_no or 1
+        stage_state = "awaiting_schedule"
+    elif stage_type == "offer":
+        legacy_type = "offer"
+        legacy_round = None
+        stage_state = "negotiating"
+    else:
+        legacy_type = "screening"
+        legacy_round = None
+        stage_state = "awaiting_result"
+    return {
+        "current_stage_type": legacy_type,
+        "current_round_no": legacy_round,
+        "current_stage_label": stage_label,
+        "stage_state": stage_state,
+    }
+
+
+def _stage_matches_request(
+    stage: JobApplicationStage, payload: AddApplicationStageRequest
+) -> bool:
+    return (
+        stage.stage_type == payload.stage_type
+        and stage.stage_label == _stage_label(payload.stage_type, payload.stage_label)
+        and stage.interview_round_no == payload.interview_round_no
+    )
+
+
+def _resolve_stage_resume(
+    db: Session,
+    user_id: int,
+    payload: AddApplicationStageRequest,
+) -> ResumeVersion | None:
+    if payload.resume_id is not None:
+        resume_id = parse_decimal_id(payload.resume_id)
+        if resume_id is None:
+            raise InterviewNotFound
+        resume = _owned_resume(db, user_id, resume_id)
+        if resume is None:
+            raise InterviewNotFound
+        version = _latest_resume_version(db, resume.id)
+        if version is None:
+            raise InterviewResumeVersionRequired
+        return version
+    if payload.resume_version_id is not None:
+        version_id = parse_decimal_id(payload.resume_version_id)
+        if version_id is None:
+            raise InterviewNotFound
+        version = _owned_resume_version(db, user_id, version_id)
+        if version is None:
+            raise InterviewNotFound
+        return version
+    return None
+
+
+def add_application_stage(
+    db: Session,
+    user_id: int,
+    application_id: int,
+    payload: AddApplicationStageRequest,
+) -> StageChangeResult:
+    application = db.scalar(
+        select(JobApplication)
+        .where(
+            JobApplication.id == application_id,
+            JobApplication.user_id == user_id,
+        )
+        .with_for_update()
+    )
+    if application is None:
+        raise InterviewNotFound
+    existing = db.scalar(
+        select(JobApplicationStage).where(
+            JobApplicationStage.application_id == application.id,
+            JobApplicationStage.client_request_id == str(payload.client_request_id),
+        )
+    )
+    if existing is not None:
+        if not _stage_matches_request(existing, payload):
+            raise InterviewEditConflict
+        return StageChangeResult(application=application, stage=existing)
+    if (
+        application.archived_at is not None
+        or application.lifecycle_status != "active"
+        or application.status != "active"
+    ):
+        raise InterviewInvalidTransition
+    if application.lock_version != payload.base_lock_version:
+        raise InterviewEditConflict
+
+    stage_label = _stage_label(payload.stage_type, payload.stage_label)
+    resume_version = _resolve_stage_resume(db, user_id, payload)
+    now = utc_now()
+    previous = current_application_stage(db, application.id)
+    if previous is not None:
+        previous.current_marker = None
+        previous.stage_status = "completed"
+        previous.stage_result = "passed"
+        previous.completed_at = now
+        previous.updated_at = now
+        db.execute(
+            update(InterviewSession)
+            .where(
+                InterviewSession.application_stage_id == previous.id,
+                InterviewSession.status == "completed",
+                InterviewSession.round_result == "pending",
+            )
+            .values(round_result="passed", updated_at=now)
+        )
+    last_sequence_no = db.scalar(
+        select(func.max(JobApplicationStage.sequence_no)).where(
+            JobApplicationStage.application_id == application.id
+        )
+    )
+    next_sequence = (last_sequence_no or 0) + 1
+    stage = JobApplicationStage(
+        application_id=application.id,
+        client_request_id=str(payload.client_request_id),
+        stage_type=payload.stage_type,
+        stage_label=stage_label,
+        interview_round_no=payload.interview_round_no,
+        sequence_no=next_sequence,
+        stage_status="active",
+        stage_result="pending",
+        current_marker=1,
+        entered_at=now,
+        completed_at=None,
+        created_at=now,
+        updated_at=now,
+    )
+    application.applied_at = (
+        payload.applied_at.astimezone(UTC)
+        if payload.applied_at is not None
+        else application.applied_at or now
+    )
+    if resume_version is not None:
+        application.resume_version_id = resume_version.id
+        application.resume_title_snapshot = resume_version.name
+    for key, value in _legacy_stage_projection(
+        payload.stage_type, stage_label, payload.interview_round_no
+    ).items():
+        setattr(application, key, value)
+    application.lifecycle_status = "active"
+    application.terminated_at = None
+    application.termination_reason = None
+    application.lock_version += 1
+    application.updated_at = now
+    try:
+        db.add(stage)
+        db.commit()
+        db.refresh(stage)
+        db.refresh(application)
+    except IntegrityError as error:
+        db.rollback()
+        existing = db.scalar(
+            select(JobApplicationStage).where(
+                JobApplicationStage.application_id == application_id,
+                JobApplicationStage.client_request_id
+                == str(payload.client_request_id),
+            )
+        )
+        if existing is not None and _stage_matches_request(existing, payload):
+            current = require_owned_application(db, user_id, application_id)
+            return StageChangeResult(application=current, stage=existing)
+        raise InterviewEditConflict from error
+    return StageChangeResult(application=application, stage=stage)
+
+
+def terminate_application(
+    db: Session,
+    user_id: int,
+    application_id: int,
+    payload: TerminateApplicationRequest,
+) -> StageChangeResult:
+    application = db.scalar(
+        select(JobApplication)
+        .where(
+            JobApplication.id == application_id,
+            JobApplication.user_id == user_id,
+        )
+        .with_for_update()
+    )
+    if application is None:
+        raise InterviewNotFound
+    if application.lifecycle_status == "terminated":
+        if application.termination_reason == payload.reason:
+            return StageChangeResult(application=application, stage=None)
+        raise InterviewEditConflict
+    if application.archived_at is not None or application.status != "active":
+        raise InterviewInvalidTransition
+    if application.lock_version != payload.base_lock_version:
+        raise InterviewEditConflict
+    now = utc_now()
+    current = current_application_stage(db, application.id)
+    if current is not None:
+        current.current_marker = None
+        current.stage_status = "completed"
+        current.stage_result = (
+            "rejected" if payload.reason == "company_rejected" else "skipped"
+        )
+        current.completed_at = now
+        current.updated_at = now
+    application.applied_at = (
+        payload.applied_at.astimezone(UTC)
+        if payload.applied_at is not None
+        else application.applied_at or now
+    )
+    application.lifecycle_status = "terminated"
+    application.terminated_at = now
+    application.termination_reason = payload.reason
+    application.status = {
+        "company_rejected": "rejected",
+        "user_withdrew": "withdrawn",
+        "offer_declined": "closed",
+        "completed": "closed",
+        "other": "closed",
+    }[payload.reason]
+    if payload.reason == "offer_declined":
+        application.offer_status = "declined"
+    application.lock_version += 1
+    application.updated_at = now
+    db.commit()
+    db.refresh(application)
+    return StageChangeResult(application=application, stage=None)
 
 
 def _commit_application_update(
@@ -431,6 +849,30 @@ def update_application(
     application = require_owned_application(db, user_id, application_id)
     provided = payload.model_dump(exclude_unset=True)
     provided.pop("base_lock_version", None)
+    is_pending = application.applied_at is None
+    if (
+        is_pending
+        and provided.get("applied_at") is not None
+        and set(provided) <= {"applied_at", "resume_id", "resume_version_id"}
+    ):
+        stage_payload: dict[str, object] = {
+            "client_request_id": uuid4(),
+            "stage_type": "screening",
+            "stage_label": POST_APPLICATION_SCREENING_LABEL,
+            "applied_at": provided.get("applied_at"),
+            "base_lock_version": payload.base_lock_version,
+        }
+        if "resume_id" in provided:
+            stage_payload["resume_id"] = provided["resume_id"]
+        if "resume_version_id" in provided:
+            stage_payload["resume_version_id"] = provided["resume_version_id"]
+        result = add_application_stage(
+            db,
+            user_id,
+            application_id,
+            AddApplicationStageRequest.model_validate(stage_payload),
+        )
+        return result.application
     if "is_favorite" in provided:
         provided["is_favorite"] = int(bool(provided["is_favorite"]))
     if "applied_at" in provided and provided["applied_at"] is not None:
@@ -517,43 +959,38 @@ def advance_application(
     application_id: int,
     payload: AdvanceApplicationRequest,
 ) -> JobApplication:
-    application = require_owned_application(db, user_id, application_id)
-    if application.archived_at is not None:
-        raise InterviewInvalidTransition
-    try:
-        next_state = transition_advance(
-            _application_state(application),
-            target_stage_type=payload.target_stage_type,
-            target_round_no=payload.target_round_no,
-            target_stage_label=payload.target_stage_label,
-        )
-    except InvalidTransition as error:
-        raise InterviewInvalidTransition from error
-    latest: InterviewSession | None = None
-    if application.current_stage_type != "screening":
-        current_session_type = application.current_stage_type
-        session_query = select(InterviewSession).where(
-            InterviewSession.application_id == application.id,
-            InterviewSession.stage_type == current_session_type,
-            InterviewSession.status == "completed",
-            InterviewSession.round_result == "pending",
-        )
-        if current_session_type == "interview":
-            session_query = session_query.where(
-                InterviewSession.round_no == application.current_round_no
-            )
-        latest = db.scalar(
-            session_query.order_by(
-                InterviewSession.completed_at.desc(), InterviewSession.id.desc()
-            )
-        )
-        if latest is None:
-            raise InterviewInvalidTransition
-        latest.round_result = "passed"
-    updated = _commit_application_update(
-        db, application, payload.base_lock_version, _state_values(next_state)
+    screening_label = payload.target_stage_label.strip().casefold()
+    stable_type = {
+        "screening": (
+            "ai_interview"
+            if "ai" in screening_label and "面试" in screening_label
+            else "written_test"
+            if "笔试" in screening_label
+            else "assessment"
+            if "测评" in screening_label or "assessment" in screening_label
+            else "screening"
+        ),
+        "interview": "interview",
+        "hr": "interview",
+        "offer": "offer",
+    }[payload.target_stage_type]
+    result = add_application_stage(
+        db,
+        user_id,
+        application_id,
+        AddApplicationStageRequest(
+            client_request_id=uuid4(),
+            stage_type=stable_type,
+            stage_label=payload.target_stage_label,
+            interview_round_no=(
+                payload.target_round_no
+                if payload.target_stage_type == "interview"
+                else None
+            ),
+            base_lock_version=payload.base_lock_version,
+        ),
     )
-    return updated
+    return result.application
 
 
 def record_offer(
@@ -587,6 +1024,26 @@ def close_application(
     payload: CloseApplicationRequest,
 ) -> JobApplication:
     application = require_owned_application(db, user_id, application_id)
+    if payload.offer_status != "accepted":
+        reason = (
+            "offer_declined"
+            if payload.offer_status == "declined"
+            else "company_rejected"
+            if payload.status == "rejected"
+            else "user_withdrew"
+            if payload.status == "withdrawn"
+            else "completed"
+        )
+        return terminate_application(
+            db,
+            user_id,
+            application_id,
+            TerminateApplicationRequest(
+                client_request_id=uuid4(),
+                reason=reason,
+                base_lock_version=payload.base_lock_version,
+            ),
+        ).application
     try:
         state = transition_close(
             _application_state(application),
@@ -595,18 +1052,6 @@ def close_application(
         )
     except InvalidTransition as error:
         raise InterviewInvalidTransition from error
-    if payload.status == "rejected":
-        latest = db.scalar(
-            select(InterviewSession)
-            .where(
-                InterviewSession.application_id == application.id,
-                InterviewSession.status == "completed",
-                InterviewSession.round_result == "pending",
-            )
-            .order_by(InterviewSession.completed_at.desc(), InterviewSession.id.desc())
-        )
-        if latest is not None:
-            latest.round_result = "rejected"
     return _commit_application_update(
         db, application, payload.base_lock_version, _state_values(state)
     )
@@ -718,7 +1163,12 @@ def _session_matches_create_request(
     end_at: datetime,
 ) -> bool:
     return (
-        session.stage_type == payload.stage_type
+        (
+            payload.application_stage_id is None
+            or session.application_stage_id
+            == parse_decimal_id(payload.application_stage_id)
+        )
+        and session.stage_type == payload.stage_type
         and session.round_no == payload.round_no
         and session.stage_label == payload.stage_label
         and _normalize_cursor_time(session.start_at) == start_at
@@ -741,7 +1191,21 @@ def create_session(
     payload: InterviewSessionCreateRequest,
 ) -> InterviewSession:
     application = require_owned_application(db, user_id, application_id)
-    if application.status != "active" or application.archived_at is not None:
+    if (
+        application.status != "active"
+        or application.lifecycle_status != "active"
+        or application.archived_at is not None
+    ):
+        raise InterviewInvalidTransition
+    current_stage = current_application_stage(db, application.id)
+    if current_stage is None or current_stage.stage_type not in SCHEDULABLE_STAGE_TYPES:
+        raise InvalidInterviewRequest
+    requested_stage_id = (
+        parse_decimal_id(payload.application_stage_id)
+        if payload.application_stage_id is not None
+        else current_stage.id
+    )
+    if requested_stage_id != current_stage.id:
         raise InterviewInvalidTransition
     existing = db.scalar(
         select(InterviewSession).where(
@@ -765,15 +1229,17 @@ def create_session(
         state = schedule_current_stage(_application_state(application))
     except InvalidTransition as error:
         raise InterviewInvalidTransition from error
-    if payload.stage_type != application.current_stage_type:
-        if not (
-            payload.stage_type == "other"
-            and application.current_stage_type == "screening"
-        ):
-            raise InterviewInvalidTransition
-    if (
-        payload.stage_type == "interview"
-        and payload.round_no != application.current_round_no
+    expected_legacy_types = (
+        {"interview", "hr"}
+        if current_stage.stage_type == "interview"
+        else {"other"}
+    )
+    if payload.stage_type not in expected_legacy_types:
+        raise InterviewInvalidTransition
+    if payload.stage_label.strip() != current_stage.stage_label:
+        raise InterviewInvalidTransition
+    if current_stage.stage_type == "interview" and (
+        payload.round_no != (current_stage.interview_round_no or 1)
     ):
         raise InterviewInvalidTransition
     conflicts = find_time_conflicts(db, user_id, start_at, end_at)
@@ -782,6 +1248,7 @@ def create_session(
     now = utc_now()
     session = InterviewSession(
         application_id=application.id,
+        application_stage_id=current_stage.id,
         client_request_id=str(payload.client_request_id),
         stage_type=payload.stage_type,
         round_no=payload.round_no,

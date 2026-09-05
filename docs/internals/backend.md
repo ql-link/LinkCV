@@ -31,7 +31,7 @@
 | `src/linkcv/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkcv/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0054` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0056` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -39,7 +39,7 @@
 
 MySQL 包含用户、简历、LLM 治理和 `job_descriptions` 等业务表。当前可编辑简历状态保存在 `resumes.data_json/style_json`，历史版本同时快照两份 JSON。HTTP 中的 ID 是十进制字符串，ORM 和数据库使用整数。
 
-`job_applications` 保存每次投递自己的 Offer 状态与可选详情，Base、单值薪资和福利不写入共享 JD。迁移 `0053` 增加可空详情并将历史 OC/书面 Offer 状态不可逆地合并为 `received`；迁移 `0054` 把薪资区间收敛为单个 `offer_salary`，旧记录优先保留下限、仅缺少下限时取上限，并继续要求数值薪资与币种、计薪周期同时存在。
+`job_applications` 保存一次求职尝试的岗位快照、投递事实、生命周期、Offer 详情和乐观锁；`applied_at` 为空表示待投递，`lifecycle_status=terminated` 保存终止时间与原因。迁移 `0056` 新增追加式 `job_application_stages` 作为当前阶段和阶段历史真值，并为 `interview_sessions` 增加可空阶段外键；旧扁平阶段字段和旧动作接口保留一个兼容期。迁移 `0053` 增加可空 Offer 详情并将历史 OC/书面 Offer 状态不可逆地合并为 `received`；迁移 `0054` 把薪资区间收敛为单个 `offer_salary`，旧记录优先保留下限、仅缺少下限时取上限，并继续要求数值薪资与币种、计薪周期同时存在；迁移 `0055` 允许手工创建的岗位描述为空。
 
 `user_dataset.sha256` 在 MySQL 使用固定长度 `CHAR(64)` 保存源文件 SHA-256 十六进制摘要；SQLite 测试仍使用通用字符串替身。该字段只用于后端完整性元数据，不向浏览器返回。
 
@@ -117,7 +117,9 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0028`–`0029` 扩展并收敛多能力模型配置；`0030` 新增 `agent_sessions`、`agent_runs`、`agent_messages`、`agent_tool_calls` 和 `resume_change_proposals`；`0031` 为提案增加兼容模式、稳定 locator、目标哈希、结构化诊断、类型化 operation、修改依据和资料引用；`0032` 为消息增加 `message_type` 和可空 `metadata_json`，存储版本化的结构化澄清问题，存量消息回填并保持为 `text`；`0052` 为会话增加非空 `pinned` 状态并将用户/简历列表索引扩展为置顶优先排序。五张 Agent 表不建立数据库外键，关联 ID、所有权、引用完整性和删除清理由 FastAPI 在事务中显式维护；查询仍使用对应关联列索引。`0031` 对旧记录使用 `legacy_snapshot` 且新增 JSON 字段可空，因此旧 pending 提案仍可确认。MySQL 保存产品会话和审计真值；Pi 容器不持有业务数据库连接。范围化提案由 FastAPI 在当前快照副本上应用经过模式和作用域校验的 operation 后保存完整候选简历与样式；确认事务使用行锁、乐观锁和目标哈希更新 `resumes`，并创建 `resume_versions.reason=agent` 的不可变版本。数据库迁移统一 forward-only，恢复旧数据库状态依赖备份，问题修正通过新的向前 revision 完成。
 
-`0033` 新增 `job_applications`、`interview_sessions` 和 `interview_assets`。一次求职进程保存建立时的 JD/可选简历快照、公司统一日历颜色和当前阶段；排期与复盘共用同一条 `interview_sessions` 记录，通过 `scheduled/completed/cancelled` 区分生命周期。创建 DTO 只接受可达的阶段与等待状态组合；新建待投递记录使用 `screening / 待投递 / awaiting_schedule`。更新 DTO 接受命令字段 `resume_id`：服务端校验简历属于当前用户，选择其 `version_no` 最大的正式版本写入 `resume_version_id` 和标题快照，`resume_id` 本身不落库；显式 `resume_version_id` 继续兼容，两个字段严格互斥。首次把 `applied_at` 从空值写为非空时可以不绑定简历，两个简历快照字段保持为空；主动选择的简历没有正式版本时返回 `INTERVIEW_RESUME_VERSION_REQUIRED`，不存在或越权简历继续隐藏为 `INTERVIEW_NOT_FOUND`。同一次更新会把待投递或旧筛选占位规范化为 `screening / 等待后续通知 / awaiting_result`，等待用户添加实际发生或确认的下一阶段；普通筛选直接等待结果，笔试/测评、面试和 HR 先等待安排。筛选可以无场次推进，面试和 HR 推进只消费当前阶段的待确认完成场次。完成一场面试只把进程置为等待结果，必须再由用户明确确认通过并推进到下一轮、HR 面或 Offer，或确认未通过后关闭。排期开始时间使用 IANA 时区校验，接受分钟精度的任意有效时间（秒和微秒必须为 0），时间重叠默认返回冲突，用户显式确认后才允许保存；归档进程不能再执行排期生命周期，也不会进入总览统计。求职进程和场次列表使用与筛选摘要绑定的时间加 ID 游标稳定分页，全部 BIGINT 资源 ID 在 HTTP 与 TypeScript 中保持规范十进制字符串。三类写操作均校验当前用户归属；进程和单场记录使用 `lock_version` 拒绝过期修改，场次创建的请求标识重放还会核对原业务内容。进程、排期和素材的创建、更新、状态动作与删除沿用统一审计链，创建型接口显式绑定新记录 ID，普通读取不写审计。
+`0033` 新增 `job_applications`、`interview_sessions` 和 `interview_assets`；`0056` 再把求职生命周期、阶段历史和排期拆开。岗位 JD 创建或导入时在同一事务内创建或复用待投递 `job_applications`，因此正常入口不会只产生 JD。待投递记录可通过一次阶段命令直接进入 `screening/assessment/written_test/ai_interview/interview/offer`，不需要单独写“已投递”；命令可补填带时区的 `applied_at`，省略时以后端有效操作时间为准。每次推进追加一条 `job_application_stages`，旧当前阶段完成并保留，普通面试名称由用户填写且轮次可空。终止命令独立保存生命周期、时间和原因，并关闭当前阶段。
+
+排期与复盘继续共用 `interview_sessions`，通过 `scheduled/completed/cancelled` 区分生命周期；新排期必须关联当前且可排期的 `assessment/written_test/ai_interview/interview` 阶段，筛选、Offer、待投递和已终止记录不能排期。排期开始时间使用 IANA 时区校验，接受分钟精度的任意有效时间（秒和微秒必须为 0），时间重叠默认返回冲突，用户显式确认后才允许保存；归档进程不能再执行排期生命周期，也不会进入总览统计。求职进程和场次列表使用与筛选摘要绑定的时间加 ID 游标稳定分页，全部 BIGINT 资源 ID 在 HTTP 与 TypeScript 中保持规范十进制字符串。写操作校验当前用户归属；阶段和进程动作使用 `lock_version` 与请求 UUID 拒绝过期或内容不一致的重复修改，场次创建也会核对原业务内容。旧扁平状态字段和 `/advance`、`/offer`、`/close` 仍由兼容投影维护，新消费方只读取稳定阶段与生命周期字段。进程、排期和素材的创建、更新、状态动作与删除沿用统一审计链，创建型接口显式绑定新记录 ID，普通读取不写审计。
 
 绑定由 Web 已登录用户发起，走 `/api/account/wechat/bind-request|bind-confirm|bind-status`（ticket 票据）。绑定票据是临时凭证，只存 Redis（`wechat:bind_ticket:<ticket>` 存用户、`wechat:bind_status:<ticket>` 存 `pending/bound`、`wechat:bind_user_ticket:<uid>` 指向当前票据），TTL 默认 300 秒，同用户重新发起时覆盖旧票据。`bind-confirm` 提交小程序 `wx.login()` 的临时 code，服务端换 openid 后关联到发起用户；openid 已被其他用户绑定时返回 `409 WECHAT_ALREADY_BOUND`，原绑定关系不被覆盖。
 
@@ -197,7 +199,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0054`、模板初始化和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0056`、模板初始化和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 

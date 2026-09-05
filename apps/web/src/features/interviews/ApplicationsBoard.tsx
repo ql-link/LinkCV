@@ -250,7 +250,7 @@ export function sortApplications(
 
 function applicationDropBlockReason(
   application: JobApplicationSummary,
-  completedCurrentStageApplicationIds: ReadonlySet<string>,
+  _completedCurrentStageApplicationIds: ReadonlySet<string>,
 ): string | null {
   const source = progressColumnKey(application);
   if (application.archived_at !== null) {
@@ -263,23 +263,7 @@ function applicationDropBlockReason(
     return "该求职流程已经进入 Offer 阶段，不能再拖入其他状态栏。";
   }
   if (source === "pending") {
-    return application.applied_at === null
-      ? null
-      : "该记录已经投递，不能继续从待投递栏拖动。";
-  }
-  if (application.applied_at === null) {
-    return "请先确认投递信息，再拖动到其他状态栏。";
-  }
-  if (source === "screening") {
-    return application.stage_state === "awaiting_result"
-      ? null
-      : "当前筛选流程尚未进入等待结果状态，不能推进到其他状态栏。";
-  }
-  if ((source === "assessment" || source === "interview")
-    && !completedCurrentStageApplicationIds.has(application.id)) {
-    return source === "assessment"
-      ? "请先在详情页完成当前笔试或测评，再拖动到下一阶段。"
-      : "请先在详情页完成当前面试，再拖动到下一阶段。";
+    return null;
   }
   return null;
 }
@@ -309,10 +293,20 @@ function validateApplicationDrop(
     return { valid: false, message: blockReason };
   }
   const source = progressColumnKey(application);
+  if (target.key === "ended") {
+    return { valid: true, prefill: { initialTab: "assessment" } };
+  }
   if (source === "pending") {
-    return target.key === "screening"
-      ? { valid: true, prefill: { initialTab: "assessment" } }
-      : { valid: false, message: "待投递记录只能拖到筛选中，确认投递日期后再继续。" };
+    if (target.key === "pending") {
+      return { valid: false, message: "该记录已经位于待投递。" };
+    }
+    if (target.key === "offer") {
+      return { valid: true, prefill: { initialTab: "offer" } };
+    }
+    if (target.key === "interview") {
+      return { valid: true, prefill: interviewColumnPrefill(target) };
+    }
+    return { valid: true, prefill: { initialTab: "assessment" } };
   }
   if (target.key === "assessment") {
     return source === "screening"
@@ -422,39 +416,24 @@ type ApplicationAdvanceAction = {
  */
 function applicationAdvanceAction(
   application: JobApplicationSummary,
-  completedCurrentStageApplicationIds: ReadonlySet<string>,
+  _completedCurrentStageApplicationIds: ReadonlySet<string>,
 ): ApplicationAdvanceAction {
   const columnKey = progressColumnKey(application);
-  const active = application.status === "active" && application.archived_at === null;
+  const active = application.lifecycle_status !== "terminated"
+    && application.status === "active"
+    && application.archived_at === null;
   if (!active || columnKey === "offer" || columnKey === "ended") {
     return { enabled: false, prefill: null };
   }
   if (columnKey === "pending") {
-    return application.applied_at === null
-      ? { enabled: true, prefill: null }
-      : { enabled: false, prefill: null };
+    return { enabled: true, prefill: null };
   }
-  if (columnKey === "screening") {
-    return application.current_stage_type === "screening"
-      && application.applied_at !== null
-      && application.stage_state === "awaiting_result"
-      ? { enabled: true, prefill: { initialTab: "assessment" } }
-      : { enabled: false, prefill: null };
-  }
-  if (columnKey === "assessment") {
-    return completedCurrentStageApplicationIds.has(application.id)
-      ? {
-        enabled: true,
-        prefill: { initialTab: "interview", initialInterviewLabel: "一面" },
-      }
-      : { enabled: false, prefill: null };
-  }
-  if (columnKey === "interview") {
-    return completedCurrentStageApplicationIds.has(application.id)
-      ? { enabled: true, prefill: { initialTab: "interview", initialInterviewLabel: "" } }
-      : { enabled: false, prefill: null };
-  }
-  return { enabled: false, prefill: null };
+  return {
+    enabled: true,
+    prefill: columnKey === "screening"
+      ? { initialTab: "assessment" }
+      : { initialTab: "interview", initialInterviewLabel: columnKey === "assessment" ? "一面" : "" },
+  };
 }
 
 export function formatApplicationListDateTime(value: string): string {
@@ -611,6 +590,10 @@ export function ProgressBoard({
       return;
     }
     clearDrag();
+    if (target.key === "ended") {
+      onRequestTerminate(application);
+      return;
+    }
     if (progressColumnKey(application) === "pending") {
       onRequestMarkApplied(application, target.id);
       return;

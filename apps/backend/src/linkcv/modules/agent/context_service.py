@@ -25,7 +25,11 @@ from linkcv.modules.agent.schemas import (
     AgentContextType,
 )
 from linkcv.modules.agent.resume_tools import editor_markdown
-from linkcv.modules.interviews.models import InterviewSession, JobApplication
+from linkcv.modules.interviews.models import (
+    InterviewSession,
+    JobApplication,
+    JobApplicationStage,
+)
 from linkcv.modules.job_descriptions.models import JobDescription
 from linkcv.modules.resumes.models import Resume, ResumeVersion
 
@@ -170,7 +174,9 @@ def _job_item(job: JobDescription) -> AgentContextListItem:
 
 
 def _application_item(
-    application: JobApplication, resume_id: int | None = None
+    application: JobApplication,
+    resume_id: int | None = None,
+    stage: JobApplicationStage | None = None,
 ) -> AgentContextListItem:
     return _list_item(
         _snapshot(
@@ -183,7 +189,7 @@ def _application_item(
                 f"{application.company_name_snapshot} · "
                 f"{application.job_title_snapshot}"
             ),
-            description=application.current_stage_label,
+            description=stage.stage_label if stage else "待投递",
             resume_id=str(resume_id) if resume_id is not None else None,
         )
     )
@@ -286,9 +292,14 @@ def list_contexts(
             result.extend(_job_item(record) for record in records)
         elif item_type == "application":
             statement = (
-                select(JobApplication, ResumeVersion.resume_id)
+                select(JobApplication, ResumeVersion.resume_id, JobApplicationStage)
                 .outerjoin(
                     ResumeVersion, ResumeVersion.id == JobApplication.resume_version_id
+                )
+                .outerjoin(
+                    JobApplicationStage,
+                    (JobApplicationStage.application_id == JobApplication.id)
+                    & (JobApplicationStage.current_marker == 1),
                 )
                 .where(JobApplication.user_id == user_id)
             )
@@ -298,6 +309,7 @@ def list_contexts(
                         JobApplication.company_name_snapshot.ilike(search_pattern),
                         JobApplication.job_title_snapshot.ilike(search_pattern),
                         JobApplication.current_stage_label.ilike(search_pattern),
+                        JobApplicationStage.stage_label.ilike(search_pattern),
                     )
                 )
             rows = db.execute(
@@ -306,8 +318,8 @@ def list_contexts(
                 ).limit(limit)
             ).all()
             result.extend(
-                _application_item(application, resume_id)
-                for application, resume_id in rows
+                _application_item(application, resume_id, stage)
+                for application, resume_id, stage in rows
             )
         else:
             statement = (
@@ -348,6 +360,7 @@ def _material_content(
     version: ResumeVersion | None = None,
     job: JobDescription | None = None,
     application: JobApplication | None = None,
+    application_stage: JobApplicationStage | None = None,
     interview: InterviewSession | None = None,
 ) -> dict[str, object]:
     if type in {"resume", "resume_version"}:
@@ -372,9 +385,13 @@ def _material_content(
         return {
             "company_name": _clip(application.company_name_snapshot, 200),
             "job_title": _clip(application.job_title_snapshot, 200),
-            "stage": _clip(application.current_stage_label, 100),
-            "stage_type": _clip(application.current_stage_type, 50),
-            "status": _clip(application.status, 50),
+            "stage": _clip(
+                application_stage.stage_label if application_stage else "待投递", 100
+            ),
+            "stage_type": _clip(
+                application_stage.stage_type if application_stage else "pending", 50
+            ),
+            "status": _clip(application.lifecycle_status, 50),
             "offer_status": _clip(application.offer_status, 50),
             "notes": _clip(application.notes, 8_000),
         }
@@ -535,13 +552,19 @@ def _resolve_job(
 def _resolve_application(
     db: Session, *, user_id: int, ref: AgentContextRef
 ) -> tuple[JobApplication, AgentContextSnapshot, AgentContextMaterial]:
-    application = db.scalar(
-        select(JobApplication)
+    row = db.execute(
+        select(JobApplication, JobApplicationStage)
+        .outerjoin(
+            JobApplicationStage,
+            (JobApplicationStage.application_id == JobApplication.id)
+            & (JobApplicationStage.current_marker == 1),
+        )
         .where(JobApplication.id == int(ref.id), JobApplication.user_id == user_id)
         .with_for_update()
-    )
-    if application is None:
+    ).one_or_none()
+    if row is None:
         raise ApiError(404, "AGENT_CONTEXT_NOT_FOUND")
+    application, stage = row
     linked_resume_id = None
     if application.resume_version_id is not None:
         linked_resume_id = db.scalar(
@@ -563,7 +586,7 @@ def _resolve_application(
         label=(
             f"{application.company_name_snapshot} · {application.job_title_snapshot}"
         ),
-        description=application.current_stage_label,
+        description=stage.stage_label if stage else "待投递",
         updated_at=application.updated_at,
         resume_id=str(linked_resume_id) if linked_resume_id is not None else None,
     )
@@ -571,7 +594,12 @@ def _resolve_application(
         application,
         snapshot,
         _make_material(
-            snapshot, _material_content(type="application", application=application)
+            snapshot,
+            _material_content(
+                type="application",
+                application=application,
+                application_stage=stage,
+            ),
         ),
     )
 

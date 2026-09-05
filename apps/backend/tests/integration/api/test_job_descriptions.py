@@ -14,6 +14,8 @@ from sqlalchemy import func, select
 
 from linkcv.core.config import Settings
 from linkcv.main import create_app
+from linkcv.modules.interviews.models import JobApplication
+from linkcv.modules.job_descriptions import routes as job_description_routes
 from linkcv.modules.job_descriptions.models import JobDescription
 from linkcv.modules.llm.gateway import GatewayResult, GatewayUsage
 from linkcv.modules.llm.models import LLMCapabilityBinding, LLMModelConfig
@@ -332,12 +334,11 @@ def test_external_boss_duplicate_update_preserves_source_identity_and_notes() ->
             source_url="http://m.zhipin.com/job_detail/abc123.html#from-mobile",
             notes="上游不应覆盖此备注",
         )
-        conflict = client.post("/api/job-descriptions", json=duplicate_payload)
-        assert conflict.status_code == 409
-        body = conflict.json()
-        assert body["error"] == "JD_SOURCE_DUPLICATE"
-        assert body["duplicate"]["existing"]["id"] == original["id"]
-        assert body["duplicate"]["allowed_actions"] == ["update", "cancel"]
+        reused = client.post("/api/job-descriptions", json=duplicate_payload)
+        assert reused.status_code == 200
+        body = reused.json()
+        assert body["job_description"]["id"] == original["id"]
+        assert body["application"]["phase"] == "pending"
         assert client.get(f"/api/job-descriptions/{original['id']}").json()[
             "job_description"
         ]["job_title"] == "Java 开发实习生"
@@ -357,6 +358,84 @@ def test_external_boss_duplicate_update_preserves_source_identity_and_notes() ->
         assert updated["imported_at"] == original["imported_at"]
         assert updated["lock_version"] == 2
         assert len(client.get("/api/job-descriptions").json()["items"]) == 1
+
+
+def test_duplicate_job_reuses_unfinished_application_and_restarts_after_termination() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "duplicate-application@example.test")
+        request_body = payload(
+            source_type="external_import",
+            source_url="https://www.zhipin.com/job_detail/application-flow.html",
+        )
+        created = client.post("/api/job-descriptions", json=request_body)
+        assert created.status_code == 201, created.text
+        application = created.json()["application"]
+
+        staged = client.post(
+            f"/api/job-applications/{application['id']}/stages",
+            json={
+                "client_request_id": "41000000-0000-4000-8000-000000000001",
+                "stage_type": "written_test",
+                "base_lock_version": 1,
+            },
+        )
+        assert staged.status_code == 200, staged.text
+        staged_application = staged.json()["application"]
+
+        reused = client.post("/api/job-descriptions", json=request_body)
+        assert reused.status_code == 200, reused.text
+        assert reused.json()["application"]["id"] == application["id"]
+        assert reused.json()["application"]["phase"] == "applied"
+        unchanged = client.get(
+            f"/api/job-applications/{application['id']}"
+        ).json()["application"]
+        assert unchanged["current_stage"]["stage_type"] == "written_test"
+        assert len(unchanged["stages"]) == 1
+
+        terminated = client.post(
+            f"/api/job-applications/{application['id']}/terminate",
+            json={
+                "client_request_id": "41000000-0000-4000-8000-000000000002",
+                "reason": "user_withdrew",
+                "base_lock_version": staged_application["lock_version"],
+            },
+        )
+        assert terminated.status_code == 200, terminated.text
+
+        restarted = client.post("/api/job-descriptions", json=request_body)
+        assert restarted.status_code == 200, restarted.text
+        replacement = restarted.json()["application"]
+        assert replacement["id"] != application["id"]
+        assert replacement["phase"] == "pending"
+        replacement_detail = client.get(
+            f"/api/job-applications/{replacement['id']}"
+        ).json()["application"]
+        assert replacement_detail["current_stage"] is None
+        assert replacement_detail["stages"] == []
+
+
+def test_job_creation_rolls_back_when_pending_application_creation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = build_app()
+
+    def fail_pending_application(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("fictional pending application failure")
+
+    monkeypatch.setattr(
+        job_description_routes,
+        "ensure_pending_application_for_job",
+        fail_pending_application,
+    )
+    with TestClient(app, raise_server_exceptions=False) as client:
+        register(client, "atomic-job-application@example.test")
+        response = client.post("/api/job-descriptions", json=payload())
+        assert response.status_code == 500
+
+    with app.state.session_factory() as db:
+        assert db.scalar(select(func.count()).select_from(JobDescription)) == 0
+        assert db.scalar(select(func.count()).select_from(JobApplication)) == 0
 
 
 def test_browser_capture_import_is_cleaned_stored_and_uses_existing_duplicate_flow() -> None:
@@ -386,14 +465,13 @@ def test_browser_capture_import_is_cleaned_stored_and_uses_existing_duplicate_fl
             "https://www.zhipin.com/job_detail/import42.html"
         )
 
-        conflict = client.post(
+        reused = client.post(
             "/api/job-descriptions/import",
             json=import_payload(capture={"job_title": "更新后的岗位"}),
         )
-        assert conflict.status_code == 409
-        duplicate = conflict.json()["duplicate"]
-        assert duplicate["existing"]["id"] == created["id"]
-        assert duplicate["allowed_actions"] == ["update", "cancel"]
+        assert reused.status_code == 200
+        assert reused.json()["job_description"]["id"] == created["id"]
+        assert reused.json()["application"]["phase"] == "pending"
 
         resolved_payload = import_payload(capture={"job_title": "更新后的岗位"})
         resolved_payload["duplicate_resolution"] = {
