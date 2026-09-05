@@ -1060,6 +1060,17 @@ describe("InterviewCenterPage API projections", () => {
   it("opens an application session deep link as a record dialog over the application detail", async () => {
     window.history.replaceState(null, "", "/career/applications/21?session=31");
     const replaceStateSpy = vi.spyOn(window.history, "replaceState");
+    const upcomingStart = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const upcomingSession = {
+      ...session,
+      start_at: upcomingStart.toISOString(),
+      end_at: new Date(upcomingStart.getTime() + 60 * 60 * 1000).toISOString(),
+    };
+    mocks.getInterviewSession.mockResolvedValue({
+      session: upcomingSession,
+      application,
+      assets: [],
+    });
 
     const { rerender } = render(
       <InterviewCenterPage
@@ -1201,11 +1212,14 @@ describe("InterviewCenterPage API projections", () => {
   });
 
   it("uses assessment wording throughout an assessment record card", async () => {
+    const upcomingStart = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const assessmentSession = {
       ...session,
       stage_type: "other" as const,
       round_no: null,
       stage_label: "笔试",
+      start_at: upcomingStart.toISOString(),
+      end_at: new Date(upcomingStart.getTime() + 60 * 60 * 1000).toISOString(),
     };
     const assessmentApplication = {
       ...application,

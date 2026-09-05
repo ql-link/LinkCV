@@ -171,7 +171,7 @@ export function JobSmartImportDialog({ onClose, onParsed, unified = false }: {
                   <div className="job-smart-manual-grid">
                     <CompactInput label="职位名称" hint="使用招聘信息中的正式岗位名称" required value={form.job_title} maxLength={200} onChange={(value) => setField("job_title", value)} />
                     <CompactInput label="公司名称" hint="填写公司或组织名称" required value={form.company_name} maxLength={200} onChange={(value) => setField("company_name", value)} />
-                    <CompactTextarea className="is-wide" label="职位描述" hint="填写岗位职责、工作内容和任职要求" required value={form.description} onChange={(value) => setField("description", value)} />
+                    <CompactTextarea className="is-wide" label="职位描述" hint="填写岗位职责、工作内容和任职要求（可选）" value={form.description} onChange={(value) => setField("description", value)} />
                   </div>
                 </section>
 

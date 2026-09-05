@@ -75,6 +75,7 @@ def list_agent_contexts(
     type: str | None = Query(default=None),
     q: str | None = Query(default=None, max_length=200),
     search: str | None = Query(default=None, max_length=200),
+    prefix: bool = Query(default=False),
     limit: int = Query(default=50, ge=1, le=100),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -85,6 +86,7 @@ def list_agent_contexts(
             user_id=user.id,
             context_type=type,
             query=q or search,
+            prefix_match=prefix,
             limit=limit,
         )
     )
@@ -229,7 +231,13 @@ def send_agent_message(
         )
     )
     resolved_contexts = (
-        resolve_contexts(db, user_id=user.id, refs=payload.contexts)
+        resolve_contexts(
+            db,
+            user_id=user.id,
+            refs=payload.contexts,
+            storage=request.app.state.storage,
+            settings=request.app.state.settings,
+        )
         if existing_run is None
         else None
     )

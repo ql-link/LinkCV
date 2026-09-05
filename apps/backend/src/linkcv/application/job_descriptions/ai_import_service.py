@@ -73,7 +73,6 @@ def draft_warnings(draft: JobDescriptionDraft) -> list[str]:
         for value, label in (
             (draft.job_title, "职位名称"),
             (draft.company_name, "公司名称"),
-            (draft.description, "职位描述"),
         )
         if not value
     ]

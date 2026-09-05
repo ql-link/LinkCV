@@ -15,7 +15,9 @@ from datetime import UTC, datetime
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from linkcv.core.config import Settings
 from linkcv.core.errors import ApiError
+from linkcv.core.storage import AssetStorage
 from linkcv.application.resumes.service import parse_persisted_resume_snapshot
 from linkcv.modules.agent.schemas import (
     AgentContextListItem,
@@ -25,14 +27,22 @@ from linkcv.modules.agent.schemas import (
     AgentContextType,
 )
 from linkcv.modules.agent.resume_tools import editor_markdown
+from linkcv.modules.datasets.models import UserDataset
+from linkcv.modules.datasets.routes import read_dataset_markdown
 from linkcv.modules.interviews.models import InterviewSession, JobApplication
 from linkcv.modules.job_descriptions.models import JobDescription
-from linkcv.modules.resumes.models import Resume, ResumeVersion
+from linkcv.modules.resumes.models import (
+    DATASET_SOURCE_TYPE,
+    DocumentParseTask,
+    Resume,
+    ResumeVersion,
+)
 
 
 CONTEXT_TYPES: tuple[AgentContextType, ...] = (
     "resume",
     "resume_version",
+    "dataset",
     "job",
     "application",
     "interview",
@@ -155,6 +165,21 @@ def _resume_version_item(
     )
 
 
+def _dataset_item(
+    dataset: UserDataset, task: DocumentParseTask
+) -> AgentContextListItem:
+    return _list_item(
+        _snapshot(
+            type="dataset",
+            id=str(dataset.id),
+            version=dataset.sha256,
+            updated_at=task.updated_at,
+            label=dataset.file_name,
+            description="资料库文件",
+        )
+    )
+
+
 def _job_item(job: JobDescription) -> AgentContextListItem:
     return _list_item(
         _snapshot(
@@ -217,6 +242,7 @@ def list_contexts(
     user_id: int,
     context_type: str | None = None,
     query: str | None = None,
+    prefix_match: bool = False,
     limit: int = 50,
 ) -> list[AgentContextListItem]:
     """List only light-weight records owned by ``user_id``.
@@ -232,7 +258,9 @@ def list_contexts(
         raise ApiError(400, "INVALID_AGENT_CONTEXT_QUERY")
 
     normalized_query = query.strip() if query and query.strip() else None
-    search_pattern = f"%{normalized_query}%" if normalized_query else None
+    search_pattern = (
+        f"{normalized_query}%" if prefix_match else f"%{normalized_query}%"
+    ) if normalized_query else None
     types = (context_type,) if context_type is not None else CONTEXT_TYPES
     result: list[AgentContextListItem] = []
     for item_type in types:
@@ -267,6 +295,32 @@ def list_contexts(
             result.extend(
                 _resume_version_item(version, resume) for version, resume in rows
             )
+        elif item_type == "dataset":
+            statement = (
+                select(UserDataset, DocumentParseTask)
+                .join(
+                    DocumentParseTask,
+                    DocumentParseTask.id == UserDataset.parse_task_id,
+                )
+                .where(
+                    UserDataset.user_id == user_id,
+                    DocumentParseTask.user_id == user_id,
+                    DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
+                    DocumentParseTask.upload_status == "succeeded",
+                    DocumentParseTask.parse_status == "succeeded",
+                    DocumentParseTask.converted_object_name.is_not(None),
+                )
+            )
+            if search_pattern is not None:
+                statement = statement.where(
+                    UserDataset.file_name.ilike(search_pattern)
+                )
+            rows = db.execute(
+                statement.order_by(
+                    DocumentParseTask.updated_at.desc(), UserDataset.id.desc()
+                ).limit(limit)
+            ).all()
+            result.extend(_dataset_item(dataset, task) for dataset, task in rows)
         elif item_type == "job":
             statement = select(JobDescription).where(JobDescription.user_id == user_id)
             if search_pattern is not None:
@@ -346,6 +400,7 @@ def _material_content(
     type: AgentContextType,
     resume: Resume | None = None,
     version: ResumeVersion | None = None,
+    dataset_markdown: str | None = None,
     job: JobDescription | None = None,
     application: JobApplication | None = None,
     interview: InterviewSession | None = None,
@@ -357,6 +412,8 @@ def _material_content(
         snapshot = parse_persisted_resume_snapshot(source.data_json, source.style_json)
         markdown = editor_markdown(snapshot.data) or ""
         return {"resume_markdown": _clip(markdown, MAX_ITEM_CHARS)}
+    if type == "dataset" and dataset_markdown is not None:
+        return {"dataset_markdown": _clip(dataset_markdown, MAX_ITEM_CHARS)}
     if type == "job" and job is not None:
         return {
             "job_title": _clip(job.job_title, 200),
@@ -532,6 +589,64 @@ def _resolve_job(
     return snapshot, _make_material(snapshot, _material_content(type="job", job=job))
 
 
+def _resolve_dataset(
+    db: Session,
+    *,
+    user_id: int,
+    ref: AgentContextRef,
+    storage: AssetStorage,
+    settings: Settings,
+) -> tuple[AgentContextSnapshot, AgentContextMaterial]:
+    row = db.execute(
+        select(UserDataset, DocumentParseTask)
+        .join(
+            DocumentParseTask,
+            DocumentParseTask.id == UserDataset.parse_task_id,
+        )
+        .where(
+            UserDataset.id == int(ref.id),
+            UserDataset.user_id == user_id,
+            DocumentParseTask.user_id == user_id,
+            DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
+            DocumentParseTask.upload_status == "succeeded",
+            DocumentParseTask.parse_status == "succeeded",
+            DocumentParseTask.converted_object_name.is_not(None),
+        )
+        .with_for_update()
+    ).one_or_none()
+    if row is None:
+        raise ApiError(404, "AGENT_CONTEXT_NOT_FOUND")
+    dataset, task = row
+    _ensure_fresh(
+        ref,
+        _version_markers(version=dataset.sha256, updated_at=task.updated_at),
+    )
+    object_name = task.converted_object_name
+    expected_prefix = f"users/{user_id}/datasets/converted/"
+    if object_name is None or not object_name.startswith(expected_prefix):
+        raise ApiError(404, "AGENT_CONTEXT_NOT_FOUND")
+    try:
+        markdown = read_dataset_markdown(
+            storage,
+            object_name,
+            settings.resume_markdown_max_bytes,
+        )
+    except Exception as error:
+        raise ApiError(502, "AGENT_CONTEXT_READ_FAILED") from error
+    snapshot = _snapshot(
+        type="dataset",
+        id=str(dataset.id),
+        version=dataset.sha256,
+        updated_at=task.updated_at,
+        label=dataset.file_name,
+        description="资料库文件",
+    )
+    return snapshot, _make_material(
+        snapshot,
+        _material_content(type="dataset", dataset_markdown=markdown),
+    )
+
+
 def _resolve_application(
     db: Session, *, user_id: int, ref: AgentContextRef
 ) -> tuple[JobApplication, AgentContextSnapshot, AgentContextMaterial]:
@@ -630,7 +745,12 @@ def _resolve_interview(
 
 
 def resolve_contexts(
-    db: Session, *, user_id: int, refs: list[AgentContextRef] | None
+    db: Session,
+    *,
+    user_id: int,
+    refs: list[AgentContextRef] | None,
+    storage: AssetStorage,
+    settings: Settings,
 ) -> ResolvedContexts:
     """Resolve and validate all references before a run/message is created."""
 
@@ -649,6 +769,14 @@ def resolve_contexts(
         elif ref.type == "resume_version":
             _, _, snapshot, material = _resolve_resume_version(
                 db, user_id=user_id, ref=ref
+            )
+        elif ref.type == "dataset":
+            snapshot, material = _resolve_dataset(
+                db,
+                user_id=user_id,
+                ref=ref,
+                storage=storage,
+                settings=settings,
             )
         elif ref.type == "job":
             snapshot, material = _resolve_job(db, user_id=user_id, ref=ref)
