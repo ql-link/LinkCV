@@ -5081,14 +5081,14 @@ select:not([data-slot]):focus-visible,
 
 /* 文件夹内页顶部极简导航栏 */
 .dataset-folder-view {
-  margin-top: -6px;
+  margin-top: -16px;
 }
 
 .dataset-folder-nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .dataset-back-btn {
