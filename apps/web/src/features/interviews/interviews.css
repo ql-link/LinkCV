@@ -219,20 +219,21 @@
 .company-logo[class*="calendar-"] { background: var(--calendar-soft); color: var(--calendar-color); }
 
 .schedule-calendar-panel { min-width: 0; overflow-x: auto; overflow-y: hidden; border-radius: var(--ui-radius-lg); }
-.schedule-view-controls { display: inline-flex; height: 36px; box-sizing: border-box; flex: 0 0 auto; align-items: center; gap: 3px; margin-right: clamp(16px, 2.8vw, 30px); margin-left: auto; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-full); background: var(--ui-surface-subtle); padding: 2px; box-shadow: var(--ui-shadow-xs); }
-.schedule-period-navigation, .schedule-granularity-switch { display: flex; align-items: center; gap: 3px; }
-.schedule-period-navigation { min-width: 0; }
-.schedule-period-navigation button, .schedule-granularity-switch button { display: inline-grid; height: 30px; place-items: center; border: 1px solid transparent; border-radius: var(--ui-radius-full); background: transparent; padding: 0 9px; color: var(--ui-text-secondary); font-size: 11px; font-weight: 600; cursor: pointer; transition: border-color var(--ui-duration-fast) var(--ui-ease-press), background var(--ui-duration-fast) var(--ui-ease-press), color var(--ui-duration-fast) var(--ui-ease-press), transform var(--ui-duration-fast) var(--ui-ease-press); }
-.schedule-period-navigation button:not(.schedule-today-button) { width: 30px; padding: 0; }
-.schedule-period-navigation button:hover, .schedule-granularity-switch button:hover { border-color: var(--ui-border); background: var(--ui-surface); color: var(--ui-foreground); }
-.schedule-period-navigation button:active, .schedule-granularity-switch button:active { transform: translateY(1px); }
+/* Date navigation and view selection remain separate control groups. */
+.schedule-view-controls { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 12px; margin-right: clamp(16px, 2.8vw, 30px); margin-left: auto; }
+.schedule-period-navigation, .schedule-granularity-switch { display: flex; align-items: center; height: 34px; box-sizing: border-box; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-full); background: var(--ui-surface-subtle); }
+.schedule-period-navigation button, .schedule-granularity-switch button { display: inline-grid; height: 32px; place-items: center; border: 0; border-radius: var(--ui-radius-full); background: transparent; padding: 0 12px; color: var(--ui-text-secondary); font-size: 12px; font-weight: 500; cursor: pointer; transition: background 150ms ease, color 180ms ease; }
+.schedule-period-navigation button:not(.schedule-today-button) { width: 32px; padding: 0; }
+.schedule-period-navigation button:hover { background: var(--ui-surface-muted); color: var(--ui-foreground); }
 .schedule-period-navigation button:focus-visible, .schedule-granularity-switch button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 2px; }
-.schedule-period-navigation button svg { width: 15px; height: 15px; }
-.schedule-granularity-switch { margin-left: 2px; padding-left: 7px; border-left: 1px solid var(--ui-border); }
-.schedule-granularity-switch button { position: relative; min-width: 34px; border-radius: 0; padding-inline: 8px; }
-.schedule-granularity-switch button:hover { border-color: transparent; background: transparent; color: var(--ui-foreground); }
-.schedule-granularity-switch button[aria-pressed="true"] { background: transparent; color: var(--ui-career-accent); box-shadow: none; }
-.schedule-granularity-switch button[aria-pressed="true"]::after { position: absolute; right: 8px; bottom: 2px; left: 8px; height: 2px; border-radius: var(--ui-radius-full); background: currentColor; content: ""; }
+.schedule-period-navigation button svg { width: 16px; height: 16px; stroke-width: 1.5; }
+.schedule-granularity-switch { position: relative; isolation: isolate; display: grid; grid-template-columns: 1fr 1fr; width: 88px; background: var(--ui-surface-muted); }
+.schedule-granularity-switch::before { content: ""; position: absolute; z-index: -1; inset: 0 auto 0 0; width: 50%; box-sizing: border-box; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-full); background: var(--ui-surface); box-shadow: var(--ui-shadow-sm); transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1); }
+.schedule-granularity-switch[data-view="month"]::before { transform: translateX(100%); }
+.schedule-granularity-switch button[aria-pressed="true"] { color: var(--ui-foreground); }
+@media (prefers-reduced-motion: reduce) {
+  .schedule-granularity-switch::before, .schedule-granularity-switch button, .schedule-period-navigation button { transition: none; }
+}
 .month-calendar { min-width: 880px; }
 .month-calendar-weekdays, .month-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .month-calendar-weekdays { border-bottom: 1px solid color-mix(in srgb, var(--ui-border) 62%, transparent); }
@@ -257,13 +258,13 @@
 .month-event-draft { background: color-mix(in srgb, var(--calendar-color) 4%, var(--ui-surface)); color: var(--calendar-color); }
 .month-calendar-events button.is-selected { outline: 2px solid var(--ui-ring); outline-offset: 1px; }
 .month-calendar-events small { color: var(--ui-text-subtle); font-size: 9px; line-height: 11px; }
-.schedule-success-toast { position: fixed; right: 24px; bottom: 24px; z-index: 60; display: flex; align-items: center; gap: 9px; max-width: min(420px, calc(100vw - 32px)); padding: 13px 16px; border: 1px solid color-mix(in srgb, var(--ui-success) 30%, var(--ui-border)); border-radius: 10px; background: var(--ui-success-subtle); color: var(--ui-success); box-shadow: 0 12px 30px rgb(15 23 42 / 16%); font-size: 13px; font-weight: 600; }
+.schedule-success-toast { position: fixed; top: 96px; right: 16px; left: 16px; width: max-content; box-sizing: border-box; margin-inline: auto; pointer-events: none; z-index: 80; display: flex; align-items: center; gap: 9px; max-width: min(420px, calc(100vw - 32px)); padding: 13px 16px; border: 1px solid color-mix(in srgb, var(--ui-success) 30%, var(--ui-border)); border-radius: 10px; background: var(--ui-success-subtle); color: var(--ui-success); font-size: 13px; font-weight: 600; }
 .schedule-success-toast svg { width: 18px; height: 18px; }
 .week-calendar { min-width: 1050px; }
 .week-calendar-head { display: grid; height: 54px; grid-template-columns: 58px repeat(7, 1fr); align-items: center; border-bottom: 1px solid var(--ui-border); color: var(--ui-text-secondary); font-size: 10px; text-align: center; }
 .week-calendar-head span.is-today { color: var(--ui-foreground); font-weight: 650; }
 .week-calendar-head span.is-today::after { content: ""; display: block; width: 25px; height: 2px; margin: 8px auto -10px; border-radius: 2px; background: var(--ui-primary); }
-.week-calendar-scroll { height: clamp(540px, calc(100vh - 320px), 640px); overflow-y: auto; overscroll-behavior: contain; scrollbar-color: var(--ui-border-strong) transparent; scrollbar-width: thin; }
+.week-calendar-scroll { height: clamp(540px, calc(100vh - 320px), 640px); overflow-y: auto; overscroll-behavior: contain; scrollbar-color: var(--ui-border-strong) transparent; scrollbar-width: none; }
 .week-calendar-body { position: relative; display: grid; height: 1440px; grid-template-columns: 58px repeat(7, 1fr); grid-template-rows: repeat(48, 1fr); }
 .week-calendar-body.is-dragging { user-select: none; }
 .week-hour-labels { display: grid; grid-row: 1 / -1; grid-template-rows: repeat(24, 1fr); color: var(--ui-text-muted); font-family: var(--ui-font-mono); font-size: 9px; text-align: center; }
@@ -367,16 +368,6 @@
 .schedule-dialog-application > svg { width: 16px; height: 16px; color: var(--ui-text-muted); }
 .schedule-dialog-application strong { overflow: hidden; color: var(--ui-accent); text-overflow: ellipsis; white-space: nowrap; }
 .schedule-dialog-application:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: -2px; }
-.schedule-dialog-materials, .schedule-dialog-preparation-note { padding-top: 18px; }
-.schedule-dialog-materials h4, .schedule-dialog-preparation-note h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; color: var(--ui-text-secondary); font-size: 12px; font-weight: 600; }
-.schedule-dialog-materials h4 svg, .schedule-dialog-preparation-note h4 svg { width: 16px; height: 16px; color: var(--ui-text-muted); }
-.schedule-dialog-materials > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; padding-left: 24px; }
-.schedule-dialog-materials span { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); gap: 3px 9px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); padding: 11px; }
-.schedule-dialog-materials span > svg { width: 19px; height: 19px; grid-row: 1 / 3; color: var(--ui-destructive); }
-.schedule-dialog-materials b, .schedule-dialog-materials small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.schedule-dialog-materials b { font-size: 11px; font-weight: 600; }
-.schedule-dialog-materials small { color: var(--ui-text-muted); font-size: 10px; }
-.schedule-dialog-preparation-note p { margin: 0; border-radius: var(--ui-radius-sm); background: var(--ui-surface-subtle); padding: 12px 14px; color: var(--ui-text-secondary); font-size: 12px; line-height: 1.6; }
 .schedule-dialog-footer { gap: 9px; }
 .schedule-dialog-footer .ui-button { min-width: 104px; min-height: 44px; }
 .schedule-dialog-join { display: inline-flex; min-width: 104px; min-height: 44px; align-items: center; justify-content: center; border-radius: var(--ui-radius-md); background: var(--ui-primary); padding: 0 18px; color: var(--ui-primary-foreground); font-size: 13px; font-weight: 650; text-decoration: none; }
@@ -443,9 +434,9 @@
 .application-screening-actions > button:disabled { cursor: not-allowed; opacity: .5; }
 .record-stage-actions { display: flex; align-items: center; gap: 8px; margin: 12px 14px 0; padding: 11px 12px; border: 1px solid var(--ui-border); border-radius: 12px; background: var(--ui-surface-subtle); }
 .record-stage-actions > div { display: grid; gap: 2px; margin-right: auto; }
-.record-stage-actions strong { font-size: 13px; color: var(--ui-text); }
+.record-stage-actions strong { font-size: 13px; color: var(--ui-foreground); }
 .record-stage-actions span { font-size: 11px; color: var(--ui-text-muted); }
-.record-stage-actions select { min-width: 150px; height: 32px; padding: 0 28px 0 10px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--ui-surface); color: var(--ui-text); font: inherit; }
+.record-stage-actions select { min-width: 150px; height: 32px; padding: 0 28px 0 10px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--ui-surface); color: var(--ui-foreground); font: inherit; }
 .stage-progress { position: relative; display: grid; grid-template-columns: repeat(var(--stage-count, 5), 1fr); margin-bottom: 9px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-lg); padding: 13px 24px 11px; }
 .stage-progress-line { position: absolute; top: 31px; left: 10%; right: 10%; height: 1px; background: var(--ui-border-strong); }
 .stage-progress > div:not(.stage-progress-line) { position: relative; z-index: 1; display: flex; align-items: center; flex-direction: column-reverse; gap: 8px; }
@@ -525,6 +516,7 @@
   height: 100%;
   min-height: 0;
   grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   padding-bottom: 12px;
 }
 
@@ -532,7 +524,7 @@
 .career-applications-controls > .ui-button { height: 38px; min-width: 112px; }
 .career-view-navigation-row { display: flex; min-width: 0; align-items: center; border-bottom: 1px solid var(--ui-border); }
 .career-view-navigation-row > .career-subnav { min-width: 0; flex: 1 1 auto; border-bottom: 0; }
-.career-applications-view-controls { display: inline-flex; height: 36px; box-sizing: border-box; flex: 0 0 auto; align-items: center; gap: 3px; margin-right: clamp(16px, 2.8vw, 30px); margin-left: auto; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-full); background: var(--ui-surface-subtle); padding: 2px; box-shadow: var(--ui-shadow-xs); }
+.career-applications-view-controls { display: inline-flex; height: 36px; box-sizing: border-box; flex: 0 0 auto; align-items: center; margin-right: clamp(16px, 2.8vw, 30px); margin-left: auto; }
 .career-view-switch, .career-sort-button { display: inline-flex; width: auto; min-width: 98px; height: 30px; flex: 0 0 auto; align-items: center; justify-content: center; gap: 6px; border: 1px solid transparent; border-radius: var(--ui-radius-full); background: transparent; padding: 0 11px; color: var(--ui-text-secondary); font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: border-color var(--ui-duration-fast) var(--ui-ease-press), background var(--ui-duration-fast) var(--ui-ease-press), color var(--ui-duration-fast) var(--ui-ease-press), transform var(--ui-duration-fast) var(--ui-ease-press); }
 .career-view-switch:hover, .career-sort-button:hover { border-color: var(--ui-border); background: var(--ui-surface); color: var(--ui-foreground); }
 .career-view-switch:active, .career-sort-button:active { transform: translateY(1px); }
@@ -645,17 +637,11 @@
 }
 .progress-column .pipeline-empty { flex: 1; margin: 28px 0 0; }
 .career-application-table-surface { overflow-x: auto; overflow-y: hidden; border-radius: var(--ui-radius-lg); }
-.career-application-table { width: 100%; min-width: 1180px; table-layout: fixed; border-collapse: collapse; }
+.career-application-table { width: 100%; min-width: 820px; table-layout: fixed; border-collapse: collapse; }
 .career-application-table th, .career-application-table td { min-width: 0; padding: 0 16px; text-align: left; }
 .career-application-table th { height: 46px; background: var(--ui-surface-subtle); color: var(--ui-text-muted); font-size: 11px; font-weight: 550; white-space: nowrap; }
 .career-application-table th:first-child { border-top-left-radius: var(--ui-radius-lg); }
 .career-application-table th:last-child { border-top-right-radius: var(--ui-radius-lg); }
-.career-application-table th:nth-child(1) { width: 15%; }
-.career-application-table th:nth-child(2) { width: 20%; }
-.career-application-table th:nth-child(3) { width: 16%; }
-.career-application-table th:nth-child(4) { width: 17%; }
-.career-application-table th:nth-child(5) { width: 17%; }
-.career-application-table th:nth-child(6) { width: 15%; }
 .career-application-table td { height: 76px; border-top: 1px solid var(--ui-border); color: var(--ui-text-secondary); font-size: 12px; vertical-align: middle; }
 .career-application-table-row { cursor: pointer; transition: background-color var(--ui-duration-fast) var(--ui-ease-press); }
 .career-application-table-row:hover,
@@ -784,7 +770,7 @@
   .career-applications-layout { padding: 8px 16px 30px; }
   .career-applications-controls { flex-wrap: wrap; }
   .career-applications-controls > .ui-button { width: auto; min-width: 0; height: 44px; flex: 1 1 112px; }
-  .career-applications-view-controls { margin-right: 16px; margin-left: auto; padding-right: 2px; }
+  .career-applications-view-controls { margin-right: 16px; margin-left: auto; }
   .schedule-view-controls { margin-right: 16px; margin-left: auto; }
   .career-view-switch, .career-sort-button { min-width: 92px; height: 30px; padding-inline: 9px; }
   .career-application-table-surface { margin-inline: 0; }
@@ -812,7 +798,6 @@
   .schedule-dialog-details > div { grid-template-columns: 1fr; gap: 4px; }
   .schedule-dialog-application { grid-template-columns: auto minmax(0, 1fr) auto; }
   .schedule-dialog-application > span { display: none; }
-  .schedule-dialog-materials > div { grid-template-columns: 1fr; padding-left: 0; }
   .schedule-dialog-footer { display: grid; grid-template-columns: 1fr 1fr; }
   .schedule-dialog-footer .ui-button, .schedule-dialog-join { width: 100%; }
   .schedule-calendar-panel { overflow-x: auto; }
@@ -1132,7 +1117,7 @@
   overflow-x: auto;
   padding: 0 0 4px;
   list-style: none;
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
 
 .career-journey-progress li {
@@ -1759,8 +1744,8 @@
   overflow-y: auto;
   overscroll-behavior-y: auto;
   padding-right: 6px;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
+  scrollbar-gutter: auto;
+  scrollbar-width: none;
 }
 
 .career-application-detail-page .career-interview-rounds > header {
@@ -1913,8 +1898,8 @@
   overflow-y: auto;
   padding-right: 5px;
   overscroll-behavior-y: contain;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
+  scrollbar-gutter: auto;
+  scrollbar-width: none;
   -webkit-line-clamp: unset;
 }
 
@@ -3096,3 +3081,128 @@
     padding-right: 4px;
   }
 }
+
+.career-view-settings { position: relative; }
+.career-view-settings > summary {
+  display: flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  list-style: none;
+  cursor: pointer;
+  border: 1px solid var(--ui-border);
+  border-radius: 50%;
+  color: var(--ui-text-secondary);
+  background: var(--ui-surface);
+  transition: background 150ms ease, border-color 150ms ease;
+}
+.career-view-settings > summary::-webkit-details-marker { display: none; }
+.career-view-settings > summary:hover,
+.career-view-settings[open] > summary { background: var(--ui-surface-muted); }
+.career-view-settings > summary:focus-visible,
+.career-view-mode-options > button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 3px; }
+.career-view-settings-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  z-index: 40;
+  width: min(300px, calc(100vw - 32px));
+  padding: 16px;
+  border: 1px solid var(--ui-border);
+  border-radius: 14px;
+  background: var(--ui-surface-elevated);
+  box-shadow: var(--ui-shadow-md);
+}
+.career-view-mode-options {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  padding: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: 999px;
+  background: var(--ui-surface-muted);
+}
+.career-view-mode-options::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 50%;
+  box-sizing: border-box;
+  border: 1px solid var(--ui-border);
+  border-radius: 999px;
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-sm);
+  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.career-view-mode-options[data-view="list"]::before {
+  transform: translateX(100%);
+}
+.career-view-mode-options > button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ui-text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 180ms ease;
+}
+.career-view-mode-options > button[aria-pressed="true"] {
+  color: var(--ui-foreground);
+}
+@media (prefers-reduced-motion: reduce) {
+  .career-view-mode-options::before,
+  .career-view-mode-options > button { transition: none; }
+}
+.career-view-settings-fields { display: grid; gap: 12px; margin-top: 20px; }
+.career-view-settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 13px; color: var(--ui-text-secondary); }
+.career-view-settings-row [data-slot="select-field"] { width: 148px; min-width: 0; height: 34px; border-radius: 8px; background: var(--ui-surface-subtle); }
+.career-category-board { overflow: auto; height: 100%; min-width: 0; }
+.career-category-board-content { width: max-content; min-width: 100%; }
+.career-category-heading { margin: 0; padding: 14px 8px; color: var(--ui-foreground); font-size: 14px; font-weight: 600; }
+.career-category-heading-label { position: sticky; left: 8px; display: inline-flex; align-items: center; gap: 12px; }
+.career-category-heading-label > span { color: var(--ui-text-muted); font-variant-numeric: tabular-nums; }
+.career-category-board .career-applications-board { height: auto; min-height: 160px; overflow: visible; }
+.career-category-board .progress-board-grid { height: auto; }
+.career-category-board .progress-column { min-height: 160px; }
+.career-category-board .progress-column-cards { overflow: visible; }
+.career-ungrouped-board, .career-ungrouped-board-content, .career-ungrouped-board-content > section { width: 100%; min-width: 0; height: 100%; min-height: 0; }
+
+.week-event { position: relative; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }
+.week-event-resize-edge { position: absolute; inset-inline: 0; height: 8px; cursor: ns-resize; }
+.week-event-resize-edge.is-start { top: 0; }
+.week-event-resize-edge.is-end { bottom: 0; }
+.week-event-resize-edge::after { content: ""; position: absolute; left: calc(50% - 10px); top: 3px; width: 20px; height: 2px; border-radius: 2px; background: currentColor; opacity: 0; }
+.week-event:hover .week-event-resize-edge::after { opacity: .45; }
+
+.week-event[data-reschedulable="false"], .week-event[data-reschedulable="false"]:active { cursor: pointer; }
+
+/* Clip the card without creating a scroll container that traps sticky content. */
+.week-event:not(.week-event-draft) { display: block; overflow: clip; padding-block: 8px; }
+.week-event > .week-event-content { position: sticky; top: 8px; display: grid; gap: 2px; min-width: 0; max-height: 100%; overflow: clip; white-space: normal; }
+.week-event-resize-edge { z-index: 1; }
+
+.career-application-identity { display: grid; gap: 5px; min-width: 0; }
+.career-application-identity > :first-child { color: var(--ui-foreground); font-weight: 600; }
+.career-application-identity .career-application-job-title { color: var(--ui-text-muted); font-size: 11px; font-weight: 400; }
+.career-application-category-tag { display: inline-flex; padding: 3px 8px; border-radius: var(--ui-radius-sm); background: var(--ui-surface-subtle); color: var(--ui-text-secondary); font-size: 11px; }
+.career-application-list-groups { display: grid; min-width: 0; gap: 24px; }
+.career-application-list-group { min-width: 0; }
+.career-application-list-group-title { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; padding-inline: 4px; color: var(--ui-foreground); font-size: 18px; font-weight: 600; }
+.career-application-list-group-title > span { color: var(--ui-text-muted); font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+.career-application-list-groups.is-grouped { overflow-x: auto; }
+.career-application-list-groups.is-grouped > * { min-width: 820px; }

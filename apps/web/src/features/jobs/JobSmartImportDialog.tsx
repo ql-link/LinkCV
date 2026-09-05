@@ -1,4 +1,4 @@
-import { Image as ImageIcon } from "lucide-react";
+import { ClipboardPaste, Image as ImageIcon, SquarePen } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiRequestError, type JobDescriptionCreatePayload, type JobDescriptionDraft, type JobDuplicateDetails } from "../../api/client";
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, FileUpload, Input, Label, Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui";
@@ -166,7 +166,6 @@ export function JobSmartImportDialog({ onClose, onParsed, unified = false }: {
               <div className="job-smart-manual-sections">
                 <section className="job-smart-manual-section">
                   <div className="job-smart-manual-section-heading">
-                    <p>必填 2 项</p>
                     <h3 id="job-smart-manual-basic-title">基本信息</h3>
                   </div>
                   <div className="job-smart-manual-grid">
@@ -178,13 +177,12 @@ export function JobSmartImportDialog({ onClose, onParsed, unified = false }: {
 
                 <section className="job-smart-manual-section">
                   <div className="job-smart-manual-section-heading">
-                    <p>用于后续匹配与分析</p>
                     <h3 id="job-smart-manual-requirements-title">任职要求</h3>
                   </div>
                   <div className="job-smart-manual-grid">
                     <CompactInput label="技能" hint="使用逗号或换行分隔，例如：Java、SQL" value={form.skills} onChange={(value) => setField("skills", value)} />
-                    <CompactSelect label="用工类型" value={form.employment_type} onChange={(value) => setField("employment_type", value as JobFormState["employment_type"])} options={[
-                      ["full_time", "全职"], ["part_time", "兼职"], ["internship", "实习"], ["contract", "合同"], ["temporary", "临时"],
+                    <CompactSelect label="求职分类" value={form.employment_type} onChange={(value) => setField("employment_type", value as JobFormState["employment_type"])} options={[
+                      ["internship", "实习"], ["campus", "校招"], ["full_time", "正式"],
                     ]} />
                     <CompactInput label="学历要求" hint="例如：本科及以上" value={form.education_requirement} onChange={(value) => setField("education_requirement", value)} />
                     <CompactInput label="经验要求" hint="例如：3-5年" value={form.experience_requirement} onChange={(value) => setField("experience_requirement", value)} />
@@ -230,19 +228,21 @@ export function JobSmartImportDialog({ onClose, onParsed, unified = false }: {
                 </section>
               </div>
             </div>}
-            {activeTab === "text" && <div id="job-smart-panel-text" className="job-smart-panel" role="tabpanel" aria-labelledby="job-smart-tab-text">
+            {activeTab === "text" && <div id="job-smart-panel-text" className="job-smart-panel job-smart-source-panel" role="tabpanel" aria-labelledby="job-smart-tab-text">
               <label className="job-smart-text-field" htmlFor="job-smart-job-info">
                 <textarea id="job-smart-job-info" aria-label="岗位文字" name="job-source-text" autoComplete="off" value={text} disabled={busy} maxLength={60_001} placeholder="粘贴职位名称、岗位职责、任职要求、薪资和公司信息…" onChange={(event) => { setText(event.target.value); setError(""); }} />
                 <small>{text.length.toLocaleString("zh-CN")} / 60,000</small>
               </label>
               <p className="job-smart-hint">系统只提取岗位核心信息，创建后仍可在求职记录中修改。</p>
             </div>}
-            {activeTab === "image" && <div id="job-smart-panel-image" className="job-smart-panel" role="tabpanel" aria-labelledby="job-smart-tab-image">
+            {activeTab === "image" && <div id="job-smart-panel-image" className="job-smart-panel job-smart-source-panel" role="tabpanel" aria-labelledby="job-smart-tab-image">
               {image ? <div className="job-smart-image-preview">
                 <img src={previewUrl} alt="待识别岗位截图预览" width="116" height="96" />
                 <div><ImageIcon aria-hidden="true" /><span><strong>{image.name}</strong><small>{formatBytes(image.size)}</small></span></div>
                 <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => { setImage(null); setError(""); }}>移除图片</Button>
-              </div> : <FileUpload className="job-smart-image-upload" accept="image/png,image/jpeg,image/webp" inputLabel="选择岗位截图" supportingText="点击此区域上传岗位截图；支持 PNG、JPEG 或 WebP，最大 10 MiB；也支持拖放、直接粘贴截图。" browseLabel="" disabled={busy} onFileSelect={chooseImage} />}
+              </div> : <FileUpload icon={<ImageIcon />} className="job-smart-image-upload" accept="image/png,image/jpeg,image/webp" inputLabel="选择岗位截图" supportingText="点击此区域上传岗位截图，也可拖放或直接粘贴截图。" browseLabel="" disabled={busy} onFileSelect={chooseImage} />}
+              <small className="job-smart-image-meta">PNG、JPEG 或 WebP · 最大 10 MiB</small>
+              <p className="job-smart-hint">系统只提取岗位核心信息，创建后仍可在求职记录中修改。</p>
             </div>}
             {error && <p className="job-smart-error" role="alert">{error}</p>}
           </div>
@@ -258,7 +258,8 @@ export function JobSmartImportDialog({ onClose, onParsed, unified = false }: {
 }
 
 function ImportTabButton({ tab, activeTab, busy, onSelect, children }: { tab: ImportTab; activeTab: ImportTab; busy: boolean; onSelect: (tab: ImportTab) => void; children: React.ReactNode }) {
-  return <button id={`job-smart-tab-${tab}`} type="button" role="tab" aria-selected={activeTab === tab} aria-controls={`job-smart-panel-${tab}`} className="job-smart-tab" disabled={busy} onClick={() => onSelect(tab)}>{children}</button>;
+  const Icon = tab === "manual" ? SquarePen : tab === "text" ? ClipboardPaste : ImageIcon;
+  return <button id={`job-smart-tab-${tab}`} type="button" role="tab" aria-selected={activeTab === tab} aria-controls={`job-smart-panel-${tab}`} className="job-smart-tab" disabled={busy} onClick={() => onSelect(tab)}><Icon size={16} strokeWidth={1.5} aria-hidden="true" />{children}</button>;
 }
 
 function CompactInput({ label, hint, className = "", required, onChange, ...props }: Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange"> & { label: string; hint?: string; className?: string; onChange: (value: string) => void }) {

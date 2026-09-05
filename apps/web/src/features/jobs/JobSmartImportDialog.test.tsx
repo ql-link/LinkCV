@@ -31,12 +31,12 @@ describe("JobSmartImportDialog", () => {
     expect(screen.getByLabelText("职位名称")).toBeInTheDocument();
     expect(screen.getByLabelText("公司名称")).toBeInTheDocument();
     expect(screen.getByLabelText("职位描述")).not.toBeRequired();
-    expect(screen.getByText("必填 2 项")).toBeInTheDocument();
+    expect(screen.queryByText("必填 2 项")).not.toBeInTheDocument();
     for (const heading of ["基本信息", "任职要求", "工作与薪酬", "公司与联系人", "来源与备注"]) {
       expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
     }
     for (const label of [
-      "技能", "用工类型", "学历要求", "经验要求", "工作城市", "详细地址", "工作方式",
+      "技能", "求职分类", "学历要求", "经验要求", "工作城市", "详细地址", "工作方式",
       "工作安排", "薪资范围", "行业", "公司规模", "融资阶段", "招聘者姓名", "招聘者职位",
       "来源链接（可选）", "个人备注",
     ]) {

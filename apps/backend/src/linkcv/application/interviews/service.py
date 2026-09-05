@@ -431,6 +431,11 @@ def update_application(
     application = require_owned_application(db, user_id, application_id)
     provided = payload.model_dump(exclude_unset=True)
     provided.pop("base_lock_version", None)
+    if "employment_type" in provided:
+        provided["job_snapshot"] = {
+            **application.job_snapshot,
+            "employment_type": provided.pop("employment_type"),
+        }
     if "is_favorite" in provided:
         provided["is_favorite"] = int(bool(provided["is_favorite"]))
     if "applied_at" in provided and provided["applied_at"] is not None:
