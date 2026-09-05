@@ -576,6 +576,35 @@ def _row_from_markdown_cells(
         raise LegacyCutoverError("pair row width must be between 30 and 80")
     if row_kind != "pair" and left_width_percent is not None:
         raise LegacyCutoverError("fixed-cardinality rows cannot declare a width")
+
+    normalized_cells: list[list[ParagraphBlock]] = []
+    for index, cell in enumerate(cells):
+        if not cell or any(not isinstance(block, ParagraphBlock) for block in cell):
+            raise LegacyCutoverError(
+                f"{row_kind} markdown row cell {index} must contain only text paragraphs"
+            )
+        paragraphs = [block for block in cell if isinstance(block, ParagraphBlock)]
+        if len(paragraphs) == 1:
+            normalized_cells.append(paragraphs)
+            continue
+        runs: list[TextRun | InlineIcon | InlineMedia] = []
+        for paragraph_index, paragraph in enumerate(paragraphs):
+            if paragraph_index:
+                runs.append(_text_run("\n"))
+            runs.extend(paragraph.runs)
+        normalized_cells.append([
+            ParagraphBlock(
+                node_id=paragraphs[0].node_id,
+                source_refs=list(dict.fromkeys(
+                    source_ref
+                    for paragraph in paragraphs
+                    for source_ref in paragraph.source_refs
+                )),
+                block_type="paragraph",
+                runs=runs,
+            )
+        ])
+
     return RowBlock(
         node_id=_id("row", seed, path),
         source_refs=[],
@@ -587,7 +616,7 @@ def _row_from_markdown_cells(
                 source_refs=[],
                 blocks=cell,
             )
-            for index, cell in enumerate(cells)
+            for index, cell in enumerate(normalized_cells)
         ],
         left_width_percent=left_width_percent,
     )
@@ -605,6 +634,12 @@ def _markdown_blocks(
     """
 
     lines = markdown.splitlines()
+    row_path_occurrences: dict[str, int] = {}
+
+    def next_row_path(base: str) -> str:
+        occurrence = row_path_occurrences.get(base, 0)
+        row_path_occurrences[base] = occurrence + 1
+        return base if occurrence == 0 else f"{base}.{occurrence}"
 
     def parse_range(
         start: int,
@@ -648,10 +683,11 @@ def _markdown_blocks(
 
             flush_plain()
             if marker_kind == "triple-left":
+                row_path = next_row_path(f"{path}.pair")
                 left, after_left = parse_range(
                     index + 1,
                     closing="triple-close",
-                    path=f"{path}.left",
+                    path=f"{row_path}.left",
                     allow_containers=False,
                 )
                 right_open = after_left
@@ -669,7 +705,7 @@ def _markdown_blocks(
                 right, after_right = parse_range(
                     right_open + 1,
                     closing="triple-close",
-                    path=f"{path}.right",
+                    path=f"{row_path}.right",
                     allow_containers=False,
                 )
                 result.append(
@@ -677,7 +713,7 @@ def _markdown_blocks(
                         row_kind="pair",
                         cells=[left, right],
                         seed=seed,
-                        path=f"{path}.pair",
+                        path=row_path,
                         left_width_percent=float(marker_value),
                     )
                 )
@@ -713,6 +749,7 @@ def _markdown_blocks(
                     )
                     result.extend(inner)
                 else:
+                    row_path = next_row_path(f"{path}.{quad_kind}")
                     expected = {"meta": 4, "trio": 3}[quad_kind]
                     while body_lines and not body_lines[0].strip():
                         body_lines.pop(0)
@@ -727,7 +764,7 @@ def _markdown_blocks(
                         cells.append(
                             _markdown_simple_blocks(
                                 cell_line,
-                                seed=f"{seed}:{path}.{quad_kind}:cell:{cell_index}",
+                                seed=f"{seed}:{row_path}:cell:{cell_index}",
                             )
                         )
                     result.append(
@@ -735,7 +772,7 @@ def _markdown_blocks(
                             row_kind=quad_kind,
                             cells=cells,
                             seed=seed,
-                            path=f"{path}.{quad_kind}",
+                            path=row_path,
                         )
                     )
                 index = close + 1

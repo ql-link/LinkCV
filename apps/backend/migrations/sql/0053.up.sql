@@ -1,22 +1,48 @@
--- Up migration for 0053: add user dataset folders
-CREATE TABLE user_dataset_folders (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '文件夹自增主键',
-  user_id BIGINT UNSIGNED NOT NULL COMMENT '所属用户 ID',
-  name VARCHAR(64) NOT NULL COMMENT '文件夹名称',
-  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
-  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间（UTC）',
-  CONSTRAINT pk_user_dataset_folders PRIMARY KEY (id),
-  CONSTRAINT fk_user_dataset_folders_user FOREIGN KEY (user_id)
-    REFERENCES users (id) ON DELETE RESTRICT,
-  CONSTRAINT uk_user_dataset_folders_user_name UNIQUE (user_id, name),
-  KEY idx_user_dataset_folders_user_created (user_id, created_at DESC)
-) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
-  COMMENT='用户资料分类文件夹';
+-- Upgrade migration for 0053: simplify Offer status and details.
+-- All detail columns are nullable so entering the Offer stage never requires
+-- compensation or benefits disclosure. Legacy OC and written Offer values are
+-- intentionally merged into the single received state.
+ALTER TABLE job_applications
+  ADD COLUMN offer_base_location VARCHAR(100) NULL
+    COMMENT 'Offer 工作地点' AFTER offer_status,
+  ADD COLUMN offer_salary_min DECIMAL(12, 2) NULL
+    COMMENT 'Offer 薪资下限' AFTER offer_base_location,
+  ADD COLUMN offer_salary_max DECIMAL(12, 2) NULL
+    COMMENT 'Offer 薪资上限' AFTER offer_salary_min,
+  ADD COLUMN offer_salary_currency CHAR(3) CHARACTER SET ascii COLLATE ascii_bin NULL
+    COMMENT 'Offer 薪资币种 ISO 4217' AFTER offer_salary_max,
+  ADD COLUMN offer_salary_period VARCHAR(16) NULL
+    COMMENT 'Offer 计薪周期' AFTER offer_salary_currency,
+  ADD COLUMN offer_benefits_description VARCHAR(500) NULL
+    COMMENT 'Offer 福利待遇' AFTER offer_salary_period,
+  DROP CHECK ck_job_applications_offer_status,
+  ADD CONSTRAINT ck_job_applications_offer_salary_period
+    CHECK (
+      offer_salary_period IS NULL
+      OR offer_salary_period IN ('hour', 'day', 'month', 'year')
+    ),
+  ADD CONSTRAINT ck_job_applications_offer_salary_range
+    CHECK (
+      offer_salary_min IS NULL
+      OR offer_salary_max IS NULL
+      OR offer_salary_max >= offer_salary_min
+    ),
+  ADD CONSTRAINT ck_job_applications_offer_salary_context
+    CHECK (
+      (offer_salary_min IS NULL AND offer_salary_max IS NULL)
+      OR (offer_salary_currency IS NOT NULL AND offer_salary_period IS NOT NULL)
+    ),
+  ADD CONSTRAINT ck_job_applications_offer_salary_currency
+    CHECK (
+      offer_salary_currency IS NULL
+      OR LENGTH(offer_salary_currency) = 3
+    );
 
-ALTER TABLE user_dataset
-  ADD COLUMN folder_id BIGINT UNSIGNED NULL
-    COMMENT '所属文件夹 ID，为 NULL 表示未分类' AFTER user_id,
-  ADD CONSTRAINT fk_user_dataset_folder
-    FOREIGN KEY (folder_id) REFERENCES user_dataset_folders (id) ON DELETE SET NULL,
-  ADD KEY idx_user_dataset_user_folder
-    (user_id, folder_id, created_at DESC);
+UPDATE job_applications
+SET offer_status = 'received',
+    updated_at = updated_at
+WHERE offer_status IN ('oc_received', 'written_offer_received');
+
+ALTER TABLE job_applications
+  ADD CONSTRAINT ck_job_applications_offer_status
+    CHECK (offer_status IN ('none', 'received', 'accepted', 'declined'));

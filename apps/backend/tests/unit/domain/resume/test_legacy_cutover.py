@@ -279,6 +279,53 @@ def test_cutover_maps_all_legacy_markdown_row_shapes(
     assert all(":::" not in " ".join(run.text for run in cell.blocks[0].runs) for cell in canonical.cells)
 
 
+@pytest.mark.parametrize(
+    "content",
+    [
+        ":::: meta\n甲\n乙\n丙\n丁\n::::\n\n:::: meta\n戊\n己\n庚\n辛\n::::",
+        "::: left 50\n甲\n:::\n::: right\n乙\n:::\n\n::: left 50\n丙\n:::\n::: right\n丁\n:::",
+    ],
+)
+def test_cutover_assigns_stable_unique_ids_to_repeated_markdown_rows(content: str) -> None:
+    first = rich_text_blocks(RichText(format="markdown", content=content), seed="repeated-meta")
+    second = rich_text_blocks(RichText(format="markdown", content=content), seed="repeated-meta")
+
+    assert [block.model_dump(mode="json") for block in first] == [
+        block.model_dump(mode="json") for block in second
+    ]
+    node_ids = [
+        node_id
+        for row in first
+        for node_id in [
+            row.node_id,
+            *(cell.node_id for cell in row.cells),
+            *(block.node_id for cell in row.cells for block in cell.blocks),
+        ]
+    ]
+    assert len(node_ids) == len(set(node_ids))
+
+
+def test_cutover_preserves_multiple_text_lines_inside_a_markdown_row_cell() -> None:
+    blocks = rich_text_blocks(
+        RichText(
+            format="markdown",
+            content="::: left\n**南岭财经大学**\n\n工商管理 / 本科\n:::\n::: right\n2020 - 2024\n:::",
+        ),
+        seed="multi-paragraph-cell",
+    )
+
+    assert len(blocks) == 1
+    row = blocks[0]
+    assert isinstance(row, RowBlock)
+    assert len(row.cells[0].blocks) == 1
+    assert [run.text for run in row.cells[0].blocks[0].runs] == [
+        "南岭财经大学",
+        "\n",
+        "工商管理 / 本科",
+    ]
+    assert row.cells[0].blocks[0].runs[0].marks == ["bold"]
+
+
 def test_cutover_rejects_incomplete_or_nested_legacy_row_containers() -> None:
     with pytest.raises(LegacyCutoverError, match="incomplete"):
         rich_text_blocks(

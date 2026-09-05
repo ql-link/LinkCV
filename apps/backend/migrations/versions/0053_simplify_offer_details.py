@@ -1,9 +1,11 @@
-"""add user dataset folders.
+"""Simplify Offer status and store optional Offer details.
 
 Revision ID: 0053
 Revises: 0052
-Create Date: 2026-09-03 10:30:00.000000
+Create Date: 2026-09-03 08:58:04.988502
 """
+from __future__ import annotations
+
 from collections.abc import Sequence
 from pathlib import Path
 

@@ -12,7 +12,7 @@
 - `service.py`：私有对象、当前发布指针和生命周期操作。
 - `routes.py`：登录用户读取当前版本和受保护下载。
 - `admin_routes.py`：管理员上传、下架、上架和永久删除。
-- Web `PluginReleasePanel.tsx`：管理入口；`PluginInstallDialog.tsx`：用户安装说明与当前版本下载。
+- Web `PluginReleasePanel.tsx`：管理入口；求职记录页通过 `PluginInstallDialog.tsx` 提供用户安装说明与当前版本下载，导入成功后从求职记录下钻到完整岗位。
 
 ## 存储与生命周期
 
