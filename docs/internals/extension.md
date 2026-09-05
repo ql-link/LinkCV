@@ -38,3 +38,5 @@ uv run --directory apps/backend python ../../scripts/release/build_extension_rel
 ```
 
 脚本以 `apps/extension/package.json.version` 为版本真值，分别注入渠道和精确 Origin，运行 WXT ZIP 构建，并检查 Manifest V3、三段数字版本、环境名称、精确 `host_permissions`、压缩包路径与大小。输出包含两个确定命名的 ZIP 和 `SHA256SUMS`；管理员只把与当前环境匹配的 ZIP 上传到管理台。上传接口不根据 Origin 或端口判断环境，环境包的选择由发布者负责。
+
+BOSS 采集将实习、校招/校园招聘/应届、正式/社招/全职的标签和岗位名线索一并传入 `employment_type_text`，后端统一映射为实习、校招、正式三类；兼职、合同、临时仍不当作技能采集，无法分类时保存空值。

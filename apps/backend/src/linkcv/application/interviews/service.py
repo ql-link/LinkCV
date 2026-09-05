@@ -873,6 +873,11 @@ def update_application(
             AddApplicationStageRequest.model_validate(stage_payload),
         )
         return result.application
+    if "employment_type" in provided:
+        provided["job_snapshot"] = {
+            **application.job_snapshot,
+            "employment_type": provided.pop("employment_type"),
+        }
     if "is_favorite" in provided:
         provided["is_favorite"] = int(bool(provided["is_favorite"]))
     if "applied_at" in provided and provided["applied_at"] is not None:

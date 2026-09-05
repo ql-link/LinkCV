@@ -82,16 +82,12 @@ class JobDescription(Base):
             name="ck_job_descriptions_company_name_not_blank",
         ),
         CheckConstraint(
-            "LENGTH(TRIM(description)) > 0",
-            name="ck_job_descriptions_description_not_blank",
-        ),
-        CheckConstraint(
             "LOWER(JSON_TYPE(skills)) = 'array'",
             name="ck_job_descriptions_skills_array",
         ),
         CheckConstraint(
             "employment_type IS NULL OR employment_type IN "
-            "('full_time', 'part_time', 'internship', 'contract', 'temporary')",
+            "('internship', 'campus', 'full_time')",
             name="ck_job_descriptions_employment_type",
         ),
         CheckConstraint(

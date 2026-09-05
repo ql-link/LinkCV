@@ -35,7 +35,7 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0056"
+EXPECTED_HEAD = "0057"
 
 
 def canonical_editor_markdown(data: dict[str, Any]) -> str:
@@ -2358,7 +2358,7 @@ def test_0053_and_0054_merge_offer_statuses_and_use_single_salary() -> None:
         reset_test_database_to_base(database_url)
 
 
-def test_0056_backfills_lifecycle_stage_history_and_session_links() -> None:
+def test_0057_backfills_lifecycle_stage_history_and_session_links() -> None:
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "0054")
@@ -2440,7 +2440,7 @@ def test_0056_backfills_lifecycle_stage_history_and_session_links() -> None:
                     },
                 )
 
-        run_alembic(database_url, "upgrade", "0056")
+        run_alembic(database_url, "upgrade", "0057")
 
         with engine.connect() as connection:
             application_rows = {
@@ -2511,7 +2511,7 @@ def test_0056_backfills_lifecycle_stage_history_and_session_links() -> None:
                     "WHERE application_id = 10"
                 )
             ) == "skipped"
-            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0056"
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0057"
     finally:
         engine.dispose()
         reset_test_database_to_base(database_url)
@@ -3252,12 +3252,12 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
     assert {
         "ck_job_descriptions_job_title_not_blank",
         "ck_job_descriptions_company_name_not_blank",
-        "ck_job_descriptions_description_not_blank",
         "ck_job_descriptions_skills_array",
         "ck_job_descriptions_source_type",
         "ck_job_descriptions_source_fields",
         "ck_job_descriptions_lock_version",
     } <= check_names
+    assert "ck_job_descriptions_description_not_blank" not in check_names
     indexes = {
         index["name"]: index["column_names"]
         for index in inspector.get_indexes("job_descriptions")
@@ -3287,6 +3287,14 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
                 "VALUES ('jd-two@example.invalid', '$2b$12$fictional', '李四')"
             )
         ).lastrowid
+        connection.execute(
+            text(
+                "INSERT INTO job_descriptions "
+                "(user_id, job_title, company_name, description, skills, source_type) "
+                "VALUES (:user_id, '无描述岗位', '示例科技', '', JSON_ARRAY(), 'manual')"
+            ),
+            {"user_id": first_user},
+        )
         source_hash = bytes.fromhex("11" * 32)
         values = {
             "user_id": first_user,

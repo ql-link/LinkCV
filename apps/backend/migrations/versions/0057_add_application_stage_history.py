@@ -1,7 +1,7 @@
 """Add application stage history and lifecycle.
 
-Revision ID: 0056
-Revises: 0055
+Revision ID: 0057
+Revises: 0056
 Create Date: 2026-09-05
 """
 from __future__ import annotations
@@ -13,8 +13,8 @@ from alembic import op
 from linkcv.core.migration_sql import execute_sql_file
 from sqlalchemy import text
 
-revision: str = "0056"
-down_revision: str | None = "0055"
+revision: str = "0057"
+down_revision: str | None = "0056"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -23,7 +23,7 @@ SQL_DIR = Path(__file__).parent.parent / "sql"
 
 def upgrade() -> None:
     bind = op.get_bind()
-    execute_sql_file(bind, SQL_DIR / "0056.up.sql")
+    execute_sql_file(bind, SQL_DIR / "0057.up.sql")
     orphaned_sessions = bind.execute(
         text(
             "SELECT COUNT(*) FROM interview_sessions "
@@ -43,7 +43,7 @@ def upgrade() -> None:
     ).scalar_one()
     if orphaned_sessions or invalid_current_stages:
         raise RuntimeError(
-            "0056 stage backfill validation failed: "
+            "0057 stage backfill validation failed: "
             f"orphaned_sessions={orphaned_sessions}, "
             f"invalid_current_stages={invalid_current_stages}"
         )

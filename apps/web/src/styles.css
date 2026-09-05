@@ -8,6 +8,14 @@
 
 * {
   box-sizing: border-box;
+  scrollbar-width: none;
+}
+
+/* Hide native scrollbars while keeping every scroll container scrollable. */
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 /* preflight 关闭后 Tailwind 工具类依赖的默认样式 */
@@ -726,7 +734,7 @@ select:not([data-slot]):focus-visible {
   overflow-x: auto;
   border-bottom: 1px solid var(--hairline);
   padding: 0 12px;
-  scrollbar-width: thin;
+  scrollbar-width: none;
   background: var(--canvas);
 }
 
@@ -2302,7 +2310,7 @@ select:not([data-slot]):focus-visible {
 .agent-conversation-list > button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: -2px; }
 .agent-conversation-list span { overflow: hidden; font-size: 0.8125rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .agent-conversation-list small { color: var(--ui-text-muted); font: 500 0.65625rem/1.3 var(--ui-font-mono); }
-.agent-message-list { display: flex; min-height: 120px; flex: 1; flex-direction: column; gap: 22px; overflow-y: auto; overscroll-behavior: contain; padding: 22px 20px 18px; scrollbar-width: thin; }
+.agent-message-list { display: flex; min-height: 120px; flex: 1; flex-direction: column; gap: 22px; overflow-y: auto; overscroll-behavior: contain; padding: 22px 20px 18px; scrollbar-width: none; }
 .agent-empty { display: flex; align-items: center; justify-content: center; gap: 8px; margin: auto; color: var(--ui-text-muted); font-size: 0.8125rem; }
 .agent-welcome-message { display: grid; width: min(270px, 82%); gap: 5px; align-self: flex-start; border-radius: var(--ui-radius-lg); background: var(--ui-accent-subtle); padding: 14px 16px; color: var(--ui-text-secondary); }
 .agent-welcome-message strong { color: var(--ui-foreground); font-size: 0.8125rem; line-height: 1.45; }
@@ -2313,12 +2321,31 @@ select:not([data-slot]):focus-visible {
 .agent-message-content { display: grid; gap: 7px; min-width: 0; margin: 0; color: var(--ui-text-secondary); font-size: 0.8125rem; line-height: 1.62; overflow-wrap: anywhere; }
 .agent-message-content p,
 .agent-message-content ul,
+.agent-message-content ol,
+.agent-message-content blockquote,
+.agent-message-content table,
+.agent-message-content hr,
 .agent-message-content pre { margin: 0; }
 .agent-message-content p { white-space: pre-wrap; }
-.agent-message-content ul { display: grid; gap: 4px; padding-left: 18px; }
+.agent-message-content ul,
+.agent-message-content ol { display: grid; gap: 4px; padding-left: 20px; }
+.agent-message-content blockquote { border-left: 3px solid var(--ui-border-strong); padding-left: 10px; color: var(--ui-text-muted); }
+.agent-message-content hr { width: 100%; border: 0; border-top: 1px solid var(--ui-border); }
+.agent-message-content table { display: block; width: max-content; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 0.75rem; }
+.agent-message-content th,
+.agent-message-content td { border: 1px solid var(--ui-border); padding: 6px 8px; text-align: left; vertical-align: top; }
+.agent-message-content th { background: var(--ui-surface-muted); color: var(--ui-foreground); font-weight: 700; }
 .agent-message-content pre { overflow-x: auto; border-radius: var(--ui-radius-sm); background: var(--ui-surface-muted); padding: 8px; font: 0.71875rem/1.5 var(--ui-font-mono); }
 .agent-message-content code:not(pre code) { border-radius: 4px; background: var(--ui-surface-muted); padding: 1px 4px; font: 0.71875rem/1 var(--ui-font-mono); }
-.agent-markdown-heading { color: var(--ui-foreground); font-size: 0.8125rem; }
+.agent-message-content a { color: var(--ui-accent); text-decoration: underline; text-underline-offset: 2px; }
+.agent-markdown-image { color: var(--ui-text-muted); font-style: italic; }
+.agent-markdown-heading { margin: 0; color: var(--ui-foreground); line-height: 1.4; }
+.agent-markdown-heading.is-level-1 { font-size: 1rem; }
+.agent-markdown-heading.is-level-2 { font-size: 0.9375rem; }
+.agent-markdown-heading.is-level-3 { font-size: 0.875rem; }
+.agent-markdown-heading.is-level-4,
+.agent-markdown-heading.is-level-5,
+.agent-markdown-heading.is-level-6 { font-size: 0.84375rem; }
 .agent-message-mark { display: grid; width: 28px; height: 28px; place-items: center; border-radius: var(--ui-radius-sm); background: color-mix(in srgb, var(--ui-accent) 9%, var(--ui-surface)); color: var(--ui-accent); }
 .agent-user-avatar { display: grid; width: 32px; height: 32px; flex: 0 0 32px; place-items: center; border-radius: 50%; background: var(--ui-accent-subtle); color: var(--ui-accent); }
 .agent-user-avatar [data-slot="avatar-image"] { width: 100%; height: 100%; object-fit: cover; }

@@ -294,6 +294,7 @@ export type AgentSelectionContext = {
 export type AgentContextType =
   | "resume"
   | "resume_version"
+  | "dataset"
   | "job"
   | "application"
   | "interview";
@@ -477,7 +478,7 @@ export type ResumeOverview = {
 
 export type JobSourceType = "manual" | "external_import";
 export type JobEmploymentType =
-  "full_time" | "part_time" | "internship" | "contract" | "temporary";
+  "internship" | "campus" | "full_time";
 export type JobWorkMode = "onsite" | "hybrid" | "remote";
 export type JobSalaryPeriod = "hour" | "day" | "month" | "year";
 
@@ -1331,11 +1332,13 @@ export const api = {
   listAgentContexts: (options: {
     type?: AgentContextType;
     search?: string;
+    prefix?: boolean;
     limit?: number;
   } = {}) => {
     const params = new URLSearchParams();
     if (options.type) params.set("type", options.type);
     if (options.search?.trim()) params.set("q", options.search.trim());
+    if (options.prefix) params.set("prefix", "true");
     if (options.limit !== undefined) params.set("limit", String(options.limit));
     const query = params.toString();
     return request<AgentContextListResponse>(`/api/agent/contexts${query ? `?${query}` : ""}`);
@@ -1619,6 +1622,7 @@ export const api = {
   updateJobApplication: (
     id: string,
     payload: Partial<{
+      employment_type: JobEmploymentType | null;
       calendar_color: InterviewCalendarColor;
       is_favorite: boolean;
       notes: string | null;

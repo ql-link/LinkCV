@@ -1695,3 +1695,34 @@ def test_media_recorder_ogg_audio_uses_the_shared_asset_store() -> None:
         assert uploaded.status_code == 201, uploaded.text
         assert uploaded.json()["asset"]["asset_type"] == "audio"
         assert len(storage.objects) == 1
+
+
+def test_application_employment_category_is_owned_versioned_and_snapshot_only() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "category@example.com")
+        job_id = create_job(client, "分类测试公司")
+        application = create_application(client, job_id)
+        other = create_application(client, create_job(client, "分类对照公司"))
+        path = f"/api/job-applications/{application['id']}"
+        for category in ("internship", "campus", "full_time", None):
+            version = application["lock_version"]
+            response = client.put(path, json={"employment_type": category, "base_lock_version": version})
+            assert response.status_code == 200, response.text
+            updated = response.json()["application"]
+            assert updated["job_snapshot"] == {**application["job_snapshot"], "employment_type": category}
+            assert updated["current_stage_type"] == application["current_stage_type"]
+            assert updated["lock_version"] == version + 1
+            stale = client.put(path, json={"employment_type": "campus", "base_lock_version": version})
+            assert stale.status_code == 409
+            application = updated
+        for invalid in ("part_time", "contract", "temporary", "invalid"):
+            response = client.put(path, json={"employment_type": invalid, "base_lock_version": application["lock_version"]})
+            assert response.status_code == 400
+        job = client.get(f"/api/job-descriptions/{job_id}").json()["job_description"]
+        assert job["employment_type"] is None
+        items = client.get("/api/job-applications").json()["items"]
+        assert next(item for item in items if item["id"] == other["id"])["job_snapshot"] == other["job_snapshot"]
+        client.post("/api/auth/logout")
+        register(client, "category-other@example.com")
+        assert client.put(path, json={"employment_type": "campus", "base_lock_version": application["lock_version"]}).status_code == 404

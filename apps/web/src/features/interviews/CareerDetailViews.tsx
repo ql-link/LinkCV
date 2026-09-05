@@ -170,11 +170,9 @@ function snapshotList(snapshot: Record<string, unknown>, ...keys: string[]): str
 
 function employmentTypeLabel(value: unknown): string | null {
   const labels: Record<string, string> = {
-    full_time: "全职",
-    part_time: "兼职",
+    full_time: "正式",
+    campus: "校招",
     internship: "实习",
-    contract: "合同",
-    temporary: "临时",
   };
   return typeof value === "string" ? labels[value] ?? value : null;
 }
