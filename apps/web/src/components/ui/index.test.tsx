@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { Brand, Button, IconButton, NumberStepper, TextField, TogglePill } from ".";
+import { Brand, Button, FeedbackNotice, IconButton, NumberStepper, TextField, TogglePill } from ".";
 
 describe("LinkCV UI components", () => {
   it("按钮默认不会提交所在表单", () => {
@@ -43,6 +43,20 @@ describe("LinkCV UI components", () => {
   it("文本输入框保留可访问标签", () => {
     render(<TextField label="邮箱" type="email" />);
     expect(screen.getByRole("textbox", { name: "邮箱" })).toHaveAttribute("type", "email");
+  });
+
+  it("异常提醒使用统一的顶部居中卡片和明确的告警语义", () => {
+    render(
+      <FeedbackNotice kind="error" placement="floating">
+        请求暂时无法完成，请稍后重试。
+      </FeedbackNotice>,
+    );
+
+    const notice = screen.getByRole("alert");
+    expect(notice).toHaveClass("ui-feedback-notice", "is-error", "is-floating");
+    expect(notice).toHaveAttribute("aria-live", "assertive");
+    expect(notice).toHaveTextContent("操作失败");
+    expect(notice).toHaveTextContent("请求暂时无法完成，请稍后重试。");
   });
 
   it("紧凑品牌只保留图形标识", () => {
