@@ -1835,14 +1835,18 @@ select:not([data-slot]):focus-visible,
 }
 
 .dashboard-tabs > a {
-  min-height: 32px;
-  gap: 6px;
-  padding-inline: 6px;
-  font-size: 12px;
+  min-height: 44px;
+  gap: 10px;
+  padding-inline: 16px;
   color: var(--ui-text-muted);
+  font-size: var(--ui-text-sm);
 }
 
-.dashboard-tabs > a svg { width: 14px; height: 14px; }
+.dashboard-tabs > a svg {
+  width: 18px;
+  height: 18px;
+}
+
 .dashboard-tabs > a:hover { color: var(--ui-foreground); }
 
 .dashboard-tabs > a:active { transform: scale(0.98); }
@@ -3068,7 +3072,8 @@ select:not([data-slot]):focus-visible,
     padding: 7px 12px 10px;
   }
   .dashboard-nav-scroll nav { margin-inline: auto; }
-  .dashboard-tabs > a { min-height: 38px; padding-inline: 12px; }
+  .dashboard-tabs > a { min-height: 38px; gap: 8px; padding-inline: 12px; font-size: 13px; }
+  .dashboard-tabs > a svg { width: 16px; height: 16px; }
   .dashboard-content { min-height: 0; }
   .home-action-toast { left: 50%; }
 }
