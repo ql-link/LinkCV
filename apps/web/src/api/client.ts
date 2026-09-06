@@ -1804,7 +1804,7 @@ export const api = {
       start_at: string;
       end_at: string;
       timezone: string;
-      allow_conflict: boolean;
+      allow_conflict?: boolean;
       base_lock_version: number;
     },
   ) =>
