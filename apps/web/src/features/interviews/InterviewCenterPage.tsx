@@ -47,7 +47,7 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { Button, ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, ExpandableSearch, PageLoading } from "@/components/ui";
+import { Button, ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, ExpandableSearch, FeedbackNotice, PageLoading } from "@/components/ui";
 import { SelectField } from "@/components/ui/select-field";
 import {
   EventCalendar,
@@ -807,21 +807,21 @@ export function InterviewCenterPage({
       )}
       <main className={`dashboard-content interview-center-content${isStandaloneDetailRoute ? " career-standalone-detail-content" : ""}${!isStandaloneDetailRoute && view === "applications" && applicationDisplayMode === "board" ? " career-applications-board-content" : ""}`}>
       {notice && (
-        <div className="interview-error-notice" role="alert" aria-live="assertive">
-          <CircleAlert aria-hidden="true" />
+        <FeedbackNotice className="interview-error-notice" kind="error" placement="floating">
           {notice}
-          <button
-            type="button"
+          <Button
+            variant="link"
+            size="sm"
             onClick={() => {
               setNotice(null);
               void loadData(selectedId ?? undefined);
             }}
           >
             关闭
-          </button>
-        </div>
+          </Button>
+        </FeedbackNotice>
       )}
-      {scheduleToast && <div className="schedule-success-toast" role="status" aria-live="polite"><CircleCheck />{scheduleToast}</div>}
+      {scheduleToast && <FeedbackNotice kind="success" placement="floating">{scheduleToast}</FeedbackNotice>}
       {(loading && !hasLoadedData) || applicationDetailPending ? (
         <PageLoading label="正在加载求职数据…" />
       ) : isApplicationDetailRoute ? (
@@ -1232,19 +1232,15 @@ function ApplicationsView({
     <div className="career-applications-layout">
       <AnimatePresence>
         {dragRejectionNotice && (
-          <motion.div
+          <FeedbackNotice
             key={dragRejectionNotice.id}
             className="application-drag-rejection-notice"
-            role="alert"
-            aria-live="assertive"
-            initial={{ opacity: 0, y: -16, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -10, scale: 0.99 }}
-            transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+            kind="error"
+            placement="floating"
+            title="无法更新求职阶段"
           >
-            <CircleAlert aria-hidden="true" />
-            <span>{dragRejectionNotice.message}</span>
-          </motion.div>
+            {dragRejectionNotice.message}
+          </FeedbackNotice>
         )}
       </AnimatePresence>
       {categoryApplication && <ApplicationCategoryDialog application={categoryApplication} onClose={() => setCategoryApplication(null)} onChanged={onChanged} />}
@@ -1292,6 +1288,7 @@ function ApplicationsView({
           timezone={timezone}
           initialTab={draggedNextStage.prefill.initialTab}
           initialInterviewLabel={draggedNextStage.prefill.initialInterviewLabel}
+          lockStageSelection={draggedNextStage.targetColumnId != null}
           onClose={() => setDraggedNextStage(null)}
           onChanged={onChanged}
           onNotice={onNotice}

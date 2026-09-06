@@ -605,7 +605,7 @@ export function AccountPage() {
         </div>
       )}
 
-      {notice && <FeedbackNotice kind={notice.kind}>{notice.message}</FeedbackNotice>}
+      {notice && <FeedbackNotice kind={notice.kind} placement="floating">{notice.message}</FeedbackNotice>}
     </main>
   );
 }
