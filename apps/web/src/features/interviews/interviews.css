@@ -3256,10 +3256,20 @@
 .career-schedule-picker-popover {
   right: 0;
   left: auto;
-  width: min(304px, calc(100vw - 64px));
-  max-height: min(376px, calc(100vh - 80px));
-  padding: 8px;
-  overflow-y: auto;
+  width: min(548px, calc(100vw - 64px));
+  max-height: min(408px, calc(100vh - 80px));
+  overflow: visible;
+  padding: 0;
+}
+
+.career-schedule-picker-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(210px, .88fr);
+}
+
+.career-schedule-picker-calendar-pane {
+  min-width: 0;
+  padding: 12px;
 }
 
 .career-schedule-picker-popover .career-date-picker-header {
@@ -3295,11 +3305,11 @@
 
 .career-schedule-picker-time {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 4px;
-  margin-top: 8px;
-  border-top: 1px solid var(--ui-border);
-  padding-top: 6px;
+  min-width: 0;
+  align-content: start;
+  gap: 10px;
+  border-left: 1px solid var(--ui-border);
+  padding: 14px;
 }
 
 .career-schedule-picker-time-label {
@@ -3313,44 +3323,71 @@
 
 .career-schedule-picker-time-fields {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: end;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
-.career-schedule-picker-time-separator {
-  padding-bottom: 45px;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-text-base);
-  font-weight: 600;
-}
-
-.career-schedule-picker-time-column {
-  display: grid;
+.career-schedule-picker-time-select {
+  position: relative;
   min-width: 0;
-  gap: 4px;
 }
 
-.career-schedule-picker-time-column > span {
+.career-schedule-picker-time-select > button {
+  display: flex;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface);
+  padding: 0 10px;
+  color: var(--ui-foreground);
+  font: inherit;
+  font-size: var(--ui-text-sm);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.career-schedule-picker-time-select > button:hover {
+  border-color: var(--ui-border-strong);
+}
+
+.career-schedule-picker-time-select > button:focus-visible,
+.career-schedule-picker-time-menu > button:focus-visible,
+.career-schedule-picker-quick-times > button:focus-visible {
+  outline: 2px solid var(--ui-ring);
+  outline-offset: 2px;
+}
+
+.career-schedule-picker-time-select > button > svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
   color: var(--ui-text-muted);
-  font-size: var(--ui-text-xs);
-  line-height: 16px;
 }
 
-.career-schedule-picker-time-options {
-  height: 96px;
+.career-schedule-picker-time-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  z-index: 4;
+  max-height: 176px;
   overflow-y: auto;
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-sm);
-  background: var(--ui-surface-subtle);
+  background: var(--ui-surface-elevated);
   padding: 4px;
   scrollbar-width: thin;
+  box-shadow: var(--ui-shadow-sm);
 }
 
-.career-schedule-picker-time-options > button {
+.career-schedule-picker-time-menu > button {
   display: block;
   width: 100%;
-  min-height: 28px;
+  min-height: 32px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -3362,34 +3399,80 @@
   cursor: pointer;
 }
 
-.career-schedule-picker-time-options > button:hover {
-  background: var(--ui-surface);
+.career-schedule-picker-time-menu > button:hover {
+  background: var(--ui-surface-muted);
   color: var(--ui-foreground);
 }
 
-.career-schedule-picker-time-options > button.is-selected {
+.career-schedule-picker-time-menu > button.is-selected {
   background: var(--ui-accent-subtle);
   color: var(--ui-accent);
   font-weight: 600;
 }
 
-.career-schedule-picker-time-options > button:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 2px var(--ui-ring);
+.career-schedule-picker-quick-label {
+  margin-top: 2px;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-text-xs);
+  font-weight: 600;
+  line-height: 16px;
 }
 
-.career-schedule-picker-time > span,
-.career-schedule-picker-time > p {
-  grid-column: 1 / -1;
-  margin: 0;
+.career-schedule-picker-quick-times {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.career-schedule-picker-quick-times > button {
+  min-height: 38px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface);
+  color: var(--ui-text-secondary);
+  font: inherit;
+  font-size: var(--ui-text-xs);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.career-schedule-picker-quick-times > button:hover {
+  border-color: var(--ui-border-strong);
+  color: var(--ui-foreground);
+}
+
+.career-schedule-picker-quick-times > button.is-selected {
+  border-color: var(--ui-accent);
+  background: var(--ui-accent-subtle);
+  color: var(--ui-accent);
+  font-weight: 600;
+}
+
+.career-schedule-picker-summary {
+  display: grid;
+  gap: 4px;
+  margin-top: 2px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface-subtle);
+  padding: 10px 12px;
+}
+
+.career-schedule-picker-summary span {
+  color: var(--ui-text-muted);
   font-size: var(--ui-text-xs);
   line-height: 16px;
 }
 
-.career-schedule-picker-time > span {
-  color: var(--ui-text-muted);
+.career-schedule-picker-summary strong {
+  overflow: hidden;
+  color: var(--ui-accent);
+  font-size: var(--ui-text-sm);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-
 
 .career-schedule-picker-footer-secondary {
   display: flex;
@@ -3397,8 +3480,9 @@
   gap: 4px;
 }
 
-.career-schedule-picker-confirm {
-  min-height: 32px;
+.career-schedule-picker-popover .career-date-picker-footer .career-schedule-picker-confirm {
+  min-width: 120px;
+  min-height: 40px;
   border: 0;
   border-radius: var(--ui-radius-sm);
   background: var(--ui-primary);
@@ -3409,24 +3493,24 @@
   cursor: pointer;
 }
 
-.career-schedule-picker-confirm:hover {
+.career-schedule-picker-popover .career-date-picker-footer .career-schedule-picker-confirm:hover {
   background: var(--ui-primary-hover);
 }
 
-.career-schedule-picker-confirm:disabled {
+.career-schedule-picker-popover .career-date-picker-footer .career-schedule-picker-confirm:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
 
-.career-schedule-picker-confirm:focus-visible {
+.career-schedule-picker-popover .career-date-picker-footer .career-schedule-picker-confirm:focus-visible {
   outline: 2px solid var(--ui-ring);
   outline-offset: 2px;
 }
 
 .career-schedule-picker-popover .career-date-picker-footer {
-  border-top: 0;
-  margin-top: 4px;
-  padding-top: 4px;
+  border-top: 1px solid var(--ui-border);
+  margin-top: 0;
+  padding: 10px 12px;
 }
 
 .career-schedule-picker-popover .career-date-picker-footer button {
@@ -3481,8 +3565,18 @@
   .career-schedule-picker-popover {
     position: static;
     width: 100%;
-    max-height: min(320px, calc(100vh - 96px));
+    max-height: none;
     margin-top: 8px;
+    overflow: hidden;
+  }
+
+  .career-schedule-picker-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .career-schedule-picker-time {
+    border-top: 1px solid var(--ui-border);
+    border-left: 0;
   }
 
   .career-next-stage-dialog-footer-actions {

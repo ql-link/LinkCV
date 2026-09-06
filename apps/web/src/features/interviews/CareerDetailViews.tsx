@@ -516,6 +516,7 @@ function ScheduleDateTimePicker({
   const [draftDate, setDraftDate] = useState<Date | null>(null);
   const [draftHour, setDraftHour] = useState("");
   const [draftMinute, setDraftMinute] = useState("");
+  const [openTimeMenu, setOpenTimeMenu] = useState<"hour" | "minute" | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const selectedValue = parseScheduleDateTimeValue(value);
@@ -533,11 +534,16 @@ function ScheduleDateTimePicker({
 
   const closePicker = () => {
     setOpen(false);
+    setOpenTimeMenu(null);
     triggerRef.current?.focus();
   };
 
   useEffect(() => {
     if (!open) return;
+    const panel = pickerRef.current?.closest<HTMLElement>(".career-next-stage-panel");
+    if (panel && panel.scrollHeight > panel.clientHeight) {
+      panel.scrollTop = panel.scrollHeight - panel.clientHeight;
+    }
     const handlePointerDown = (event: Event) => {
       if (!pickerRef.current?.contains(event.target as Node)) closePicker();
     };
@@ -548,11 +554,9 @@ function ScheduleDateTimePicker({
       closePicker();
     };
     document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("click", handlePointerDown);
     window.addEventListener("keydown", handleKeyDown, true);
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("click", handlePointerDown);
       window.removeEventListener("keydown", handleKeyDown, true);
     };
   }, [open]);
@@ -565,6 +569,7 @@ function ScheduleDateTimePicker({
     setDraftHour(currentTime ? String(currentTime.hour).padStart(2, "0") : "");
     setDraftMinute(currentTime ? String(currentTime.minute).padStart(2, "0") : "");
     setDisplayMonth(startOfDatePickerMonth(initialDate));
+    setOpenTimeMenu(null);
     setOpen(true);
   };
 
@@ -573,6 +578,13 @@ function ScheduleDateTimePicker({
     const today = new Date();
     setDisplayMonth(startOfDatePickerMonth(today));
     selectDate(today);
+  };
+  const selectQuickTime = (time: string) => {
+    const parsedTime = parseScheduleTime(time);
+    if (!parsedTime) return;
+    setDraftHour(String(parsedTime.hour).padStart(2, "0"));
+    setDraftMinute(String(parsedTime.minute).padStart(2, "0"));
+    setOpenTimeMenu(null);
   };
   const confirm = () => {
     if (!draftDate || !parsedDraftTime) return;
@@ -619,117 +631,147 @@ function ScheduleDateTimePicker({
             }
           }}
         >
-          <header className="career-date-picker-header">
-            <strong aria-live="polite">{monthLabel}</strong>
-            <div>
-              <button
-                type="button"
-                aria-label="上一月"
-                title="上一月"
-                onClick={() => setDisplayMonth((current) => addDatePickerMonths(current, -1))}
-              >
-                <ChevronLeft aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                aria-label="下一月"
-                title="下一月"
-                onClick={() => setDisplayMonth((current) => addDatePickerMonths(current, 1))}
-              >
-                <ChevronRight aria-hidden="true" />
-              </button>
+          <div className="career-schedule-picker-layout">
+            <div className="career-schedule-picker-calendar-pane">
+              <header className="career-date-picker-header">
+                <strong aria-live="polite">{monthLabel}</strong>
+                <div>
+                  <button
+                    type="button"
+                    aria-label="上一月"
+                    title="上一月"
+                    onClick={() => setDisplayMonth((current) => addDatePickerMonths(current, -1))}
+                  >
+                    <ChevronLeft aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="下一月"
+                    title="下一月"
+                    onClick={() => setDisplayMonth((current) => addDatePickerMonths(current, 1))}
+                  >
+                    <ChevronRight aria-hidden="true" />
+                  </button>
+                </div>
+              </header>
+              <div className="career-date-picker-calendar" role="grid" aria-label={`${monthLabel}日期`}>
+                <div className="career-date-picker-weekdays" role="row">
+                  {DATE_PICKER_WEEKDAYS.map((weekday) => (
+                    <span key={weekday} role="columnheader">{weekday}</span>
+                  ))}
+                </div>
+                <div className="career-date-picker-days">
+                  {Array.from({ length: 6 }, (_, weekIndex) => (
+                    <div key={weekIndex} className="career-date-picker-week" role="row">
+                      {calendarDays.slice(weekIndex * 7, weekIndex * 7 + 7).map((date) => {
+                        const dateValue = formatDatePickerValue(date);
+                        const isSelected = dateValue === (draftDate ? formatDatePickerValue(draftDate) : null);
+                        const isCurrentMonth = date.getMonth() === displayMonth.getMonth()
+                          && date.getFullYear() === displayMonth.getFullYear();
+                        return (
+                          <div
+                            key={dateValue}
+                            role="gridcell"
+                            aria-label={formatDatePickerDay(date)}
+                            aria-selected={isSelected}
+                            className={!isCurrentMonth ? "is-adjacent-month" : undefined}
+                          >
+                            <button
+                              type="button"
+                              aria-label={formatDatePickerDay(date)}
+                              className={isSelected ? "is-selected" : undefined}
+                              onClick={() => selectDate(date)}
+                            >
+                              {date.getDate()}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
-          </header>
-          <div className="career-date-picker-calendar" role="grid" aria-label={`${monthLabel}日期`}>
-            <div className="career-date-picker-weekdays" role="row">
-              {DATE_PICKER_WEEKDAYS.map((weekday) => (
-                <span key={weekday} role="columnheader">{weekday}</span>
-              ))}
-            </div>
-            <div className="career-date-picker-days">
-              {Array.from({ length: 6 }, (_, weekIndex) => (
-                <div key={weekIndex} className="career-date-picker-week" role="row">
-                  {calendarDays.slice(weekIndex * 7, weekIndex * 7 + 7).map((date) => {
-                    const dateValue = formatDatePickerValue(date);
-                    const isSelected = dateValue === (draftDate ? formatDatePickerValue(draftDate) : null);
-                    const isCurrentMonth = date.getMonth() === displayMonth.getMonth()
-                      && date.getFullYear() === displayMonth.getFullYear();
-                    return (
-                      <div
-                        key={dateValue}
-                        role="gridcell"
-                        aria-label={formatDatePickerDay(date)}
-                        aria-selected={isSelected}
-                        className={!isCurrentMonth ? "is-adjacent-month" : undefined}
+            <section className="career-schedule-picker-time" aria-label="选择时间">
+              <span className="career-schedule-picker-time-label">时间</span>
+              <div className="career-schedule-picker-time-fields">
+                {(["hour", "minute"] as const).map((kind) => {
+                  const isHour = kind === "hour";
+                  const currentValue = isHour ? draftHour : draftMinute;
+                  const values = Array.from(
+                    { length: isHour ? 24 : 60 },
+                    (_, value) => String(value).padStart(2, "0"),
+                  );
+                  const unit = isHour ? "时" : "分";
+                  const menuOpen = openTimeMenu === kind;
+                  return (
+                    <div className="career-schedule-picker-time-select" key={kind}>
+                      <button
+                        type="button"
+                        role="combobox"
+                        aria-label={isHour ? "小时" : "分钟"}
+                        aria-controls={`${id}-${kind}-options`}
+                        aria-expanded={menuOpen}
+                        aria-haspopup="listbox"
+                        aria-required={required ? "true" : undefined}
+                        disabled={disabled}
+                        onClick={() => setOpenTimeMenu(menuOpen ? null : kind)}
                       >
-                        <button
-                          type="button"
-                          aria-label={formatDatePickerDay(date)}
-                          className={isSelected ? "is-selected" : undefined}
-                          onClick={() => selectDate(date)}
+                        <span>{currentValue ? `${currentValue} ${unit}` : `选择${unit}`}</span>
+                        <ChevronDown aria-hidden="true" />
+                      </button>
+                      {menuOpen && (
+                        <div
+                          id={`${id}-${kind}-options`}
+                          className="career-schedule-picker-time-menu"
+                          role="listbox"
+                          aria-label={isHour ? "小时" : "分钟"}
+                          aria-required={required ? "true" : undefined}
                         >
-                          {date.getDate()}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
+                          {values.map((option) => (
+                            <button
+                              key={option}
+                              type="button"
+                              role="option"
+                              aria-selected={currentValue === option}
+                              className={currentValue === option ? "is-selected" : undefined}
+                              disabled={disabled}
+                              onClick={() => {
+                                if (isHour) setDraftHour(option);
+                                else setDraftMinute(option);
+                                setOpenTimeMenu(null);
+                              }}
+                            >
+                              {option} {unit}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <span className="career-schedule-picker-quick-label">快捷选择</span>
+              <div className="career-schedule-picker-quick-times" role="group" aria-label="快捷时间">
+                {["09:00", "14:00", "18:00"].map((time) => (
+                  <button
+                    key={time}
+                    type="button"
+                    className={draftTime === time ? "is-selected" : undefined}
+                    aria-pressed={draftTime === time}
+                    disabled={disabled}
+                    onClick={() => selectQuickTime(time)}
+                  >{time}</button>
+                ))}
+              </div>
+              <div className="career-schedule-picker-summary" aria-live="polite">
+                <span>已选择</span>
+                <strong>{draftDate && draftTime
+                  ? `${formatDatePickerValue(draftDate)} ${draftTime}`
+                  : "请选择日期和时间"}</strong>
+              </div>
+            </section>
           </div>
-          <section className="career-schedule-picker-time" aria-label="选择时间">
-            <span className="career-schedule-picker-time-label">时间</span>
-            <div className="career-schedule-picker-time-fields">
-              <div className="career-schedule-picker-time-column">
-                <span>小时</span>
-                <div
-                  className="career-schedule-picker-time-options"
-                  role="listbox"
-                  aria-label="小时"
-                  aria-required={required ? "true" : undefined}
-                >
-                  {Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, "0")).map((hour) => (
-                    <button
-                      key={hour}
-                      type="button"
-                      role="option"
-                      aria-selected={draftHour === hour}
-                      className={draftHour === hour ? "is-selected" : undefined}
-                      disabled={disabled}
-                      onClick={() => setDraftHour(hour)}
-                    >
-                      {hour} 时
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <span className="career-schedule-picker-time-separator" aria-hidden="true">:</span>
-              <div className="career-schedule-picker-time-column">
-                <span>分钟</span>
-                <div
-                  className="career-schedule-picker-time-options"
-                  role="listbox"
-                  aria-label="分钟"
-                  aria-required={required ? "true" : undefined}
-                >
-                  {Array.from({ length: 60 }, (_, minute) => String(minute).padStart(2, "0")).map((minute) => (
-                    <button
-                      key={minute}
-                      type="button"
-                      role="option"
-                      aria-selected={draftMinute === minute}
-                      className={draftMinute === minute ? "is-selected" : undefined}
-                      disabled={disabled}
-                      onClick={() => setDraftMinute(minute)}
-                    >
-                      {minute} 分
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <span>点击选择小时和分钟。</span>
-          </section>
           <footer className="career-date-picker-footer">
             <div className="career-schedule-picker-footer-secondary">
               <button
