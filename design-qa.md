@@ -1110,3 +1110,54 @@ final result: passed
 - A full-screen capture was intentionally not taken because it could include unrelated windows or sensitive screen content. The card visual remains covered by the preceding reference/implementation comparison; this pass's new layout and interaction contracts are covered by source inspection, focused component tests, full Web regression, typecheck, and production build.
 
 final result: passed
+
+---
+
+# 日期时间选择器设计 QA
+
+- source visual truth path: `/Users/jixu/.codex/generated_images/01a074c0-01f0-7381-84af-765f32909409/exec-eb1a7719-8023-47ea-a65b-487424bfb8a3.png`
+- implementation screenshot path: `/Users/jixu/.codex/visualizations/2026/09/06/01a074c0-01f0-7381-84af-765f32909409/date-time-picker-implementation.jpg`
+- full-view comparison: `/Users/jixu/.codex/visualizations/2026/09/06/01a074c0-01f0-7381-84af-765f32909409/date-time-picker-comparison.jpg`
+- focused comparison: `/Users/jixu/.codex/visualizations/2026/09/06/01a074c0-01f0-7381-84af-765f32909409/date-time-picker-focused-comparison.jpg`
+- source pixels: `1586 x 992`
+- implementation pixels: `948 x 1018`
+- implementation CSS viewport: `948 x 1018`, `devicePixelRatio: 1`
+- final dialog size: `900 x 860` CSS px
+- final picker size: `548 x 304` CSS px
+- normalization: full view按各自完整画面等比缩放后并排；聚焦对照裁切同一日期时间选择器区域，再分别等比缩放到统一对照面板。来源图没有可恢复的 CSS viewport 或 devicePixelRatio，因此不做伪精确的像素级断言。
+- state: 求职阶段弹窗选择“笔试”，结束时间选择器展开，日期为 `2026-09-06`，时间为 `14:30`。
+
+## Findings
+
+- 当前没有可执行的 P0/P1/P2 差异。
+- 字体与排版：沿用 LinkCV 现有字体栈与字号 Token；标题、星期、日期、字段标签和结果摘要的层级与参考一致，没有截断或异常换行。
+- 间距与布局：实现采用左日历、右时间的双栏结构，底部次要操作与主操作分组；弹层不再与外层操作栏重叠。真实表单保留产品已有的“投递日期”字段，所以外层内容密度高于参考图，这是业务结构约束，不属于选择器漂移。
+- 颜色与 Token：边框、弱背景、蓝色选中态和黑色主按钮均复用项目 Token，视觉语义与参考一致。
+- 图片与资产：选择器没有图片资产；图标继续使用项目既有 `lucide-react` 图标，没有 CSS 图形或自制 SVG 替代。
+- 文案与内容：保留“时间 / 快捷选择 / 已选择 / 清除 / 今天 / 确定”。参考图在 `14:30` 结果下仍高亮 `14:00` 快捷项，状态彼此矛盾；实现只在时间精确匹配快捷值时高亮，避免误导。
+- 交互与可访问性：小时和分钟使用有标签的 combobox/listbox；快捷时间使用可感知选中状态；确认按钮在日期和时间完整前禁用；Escape 和外部 pointer down 可关闭弹层。
+
+## Comparison history
+
+1. 首次真实页面对照发现 P2：业务表单比参考多一行“投递日期”，弹层底部进入外层弹窗操作栏区域。修复为打开选择器时把内部可滚动面板调整到刚好容纳完整弹层。修复后证据：选择器底边 `861.6875`，外层操作栏顶边 `862`，无重叠。
+2. 第二次聚焦对照发现 P2：“确定”按钮被旧的 footer 通用选择器覆盖，显示为透明文字按钮。提高主按钮样式作用域并恢复 `120 x 40` 的深色主操作。最终聚焦对照显示按钮、双栏、摘要和 footer 与参考结构一致。
+
+## Open Questions
+
+- 无阻塞问题。来源图与浏览器窗口尺寸不同，因此最终判断基于同状态的完整画面和归一化聚焦区域，而不是未经证实的 1:1 像素匹配。
+
+## Implementation Checklist
+
+- [x] 双栏日期与时间布局
+- [x] 小时、分钟下拉选择
+- [x] `09:00 / 14:00 / 18:00` 快捷时间
+- [x] 已选结果摘要
+- [x] 清除、今天、确定操作
+- [x] 真实业务弹窗内无重叠
+- [x] 组件测试、类型检查和生产构建
+
+## Follow-up Polish
+
+- 移动端使用单列堆叠布局；本次来源只提供桌面视觉，未把移动端与未提供的移动稿做视觉像素对照。
+
+final result: passed

@@ -185,10 +185,10 @@ function chooseScheduleDateTime(
   minute: string,
 ) {
   const picker = openScheduleDateTimePicker(dialog, label, dateValue);
-  const hourPicker = within(picker).getByRole("listbox", { name: "小时" });
-  const minutePicker = within(picker).getByRole("listbox", { name: "分钟" });
-  fireEvent.click(within(hourPicker).getByRole("option", { name: `${hour} 时` }));
-  fireEvent.click(within(minutePicker).getByRole("option", { name: `${minute} 分` }));
+  fireEvent.click(within(picker).getByRole("combobox", { name: "小时" }));
+  fireEvent.click(within(picker).getByRole("option", { name: `${hour} 时` }));
+  fireEvent.click(within(picker).getByRole("combobox", { name: "分钟" }));
+  fireEvent.click(within(picker).getByRole("option", { name: `${minute} 分` }));
   fireEvent.click(within(picker).getByRole("button", { name: "确定" }));
 }
 
@@ -1527,13 +1527,15 @@ describe("InterviewCenterPage API projections", () => {
     const schedulePicker = openScheduleDateTimePicker(dialog, "测评开始时间", "2026-09-12");
     expect(schedulePicker).toBeInTheDocument();
     expect(within(schedulePicker).queryByRole("textbox", { name: "时间" })).not.toBeInTheDocument();
-    const hourPicker = within(schedulePicker).getByRole("listbox", { name: "小时" });
-    const minutePicker = within(schedulePicker).getByRole("listbox", { name: "分钟" });
+    const hourPicker = within(schedulePicker).getByRole("combobox", { name: "小时" });
+    const minutePicker = within(schedulePicker).getByRole("combobox", { name: "分钟" });
     expect(hourPicker).toHaveAttribute("aria-required", "true");
     expect(minutePicker).toHaveAttribute("aria-required", "true");
     expect(within(schedulePicker).getByRole("button", { name: "确定" })).toBeDisabled();
-    fireEvent.click(within(hourPicker).getByRole("option", { name: "09 时" }));
-    fireEvent.click(within(minutePicker).getByRole("option", { name: "17 分" }));
+    fireEvent.click(hourPicker);
+    fireEvent.click(within(schedulePicker).getByRole("option", { name: "09 时" }));
+    fireEvent.click(minutePicker);
+    fireEvent.click(within(schedulePicker).getByRole("option", { name: "17 分" }));
     expect(within(schedulePicker).getByRole("button", { name: "确定" })).toBeEnabled();
     fireEvent.click(within(schedulePicker).getByRole("button", { name: "确定" }));
     expect(within(dialog).getByRole("button", { name: "添加并保存" })).toBeEnabled();
@@ -1630,6 +1632,34 @@ describe("InterviewCenterPage API projections", () => {
       base_lock_version: 11,
     }));
     expect(mocks.createInterviewSession).not.toHaveBeenCalled();
+  });
+
+  it("selects a schedule time from the redesigned quick-time panel", async () => {
+    const waitingApplication = {
+      ...application,
+      current_stage_type: "screening" as const,
+      current_round_no: null,
+      current_stage_label: "筛选中",
+      stage_state: "awaiting_result" as const,
+      applied_at: "2026-08-22T04:00:00Z",
+      lock_version: 11,
+    };
+    mocks.listJobApplications.mockResolvedValue({ items: [waitingApplication], next_cursor: null });
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+
+    render(<InterviewCenterPage view="applications" initialApplicationId="21" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "添加下一阶段" }));
+    const dialog = await screen.findByRole("dialog", { name: "添加下一阶段" });
+    const picker = openScheduleDateTimePicker(dialog, "开始时间", "2026-09-10");
+
+    expect(within(picker).getByRole("combobox", { name: "小时" })).toBeInTheDocument();
+    expect(within(picker).getByRole("combobox", { name: "分钟" })).toBeInTheDocument();
+    fireEvent.click(within(picker).getByRole("button", { name: "14:00" }));
+
+    expect(within(picker).getByText("2026-09-10 14:00")).toBeInTheDocument();
+    fireEvent.click(within(picker).getByRole("button", { name: "确定" }));
+    expect(within(dialog).getByRole("button", { name: "开始时间" })).toHaveTextContent("2026-09-10 14:00");
   });
 
   it("refreshes after the stage advances when saving its schedule fails", async () => {
