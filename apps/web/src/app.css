@@ -1772,8 +1772,8 @@ select:not([data-slot]):focus-visible,
   position: relative;
   z-index: 20;
   display: grid;
-  height: 72px;
-  min-height: 72px;
+  height: 64px;
+  min-height: 64px;
   flex: 0 0 auto;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
@@ -1789,9 +1789,15 @@ select:not([data-slot]):focus-visible,
   padding: 0;
 }
 
+.dashboard-brand .ui-brand-wordmark {
+  width: 132px;
+  height: 28px;
+}
+
 .dashboard-brand-link {
   display: inline-flex;
   width: max-content;
+  height: 40px;
   align-items: center;
   border: 0;
   background: transparent;
@@ -1826,7 +1832,7 @@ select:not([data-slot]):focus-visible,
 .dashboard-nav-scroll nav { width: max-content; margin: 0 auto; }
 
 .dashboard-tabs {
-  min-height: 44px;
+  min-height: 40px;
   box-sizing: border-box;
   gap: 0;
   border-color: var(--ui-border);
@@ -1835,16 +1841,16 @@ select:not([data-slot]):focus-visible,
 }
 
 .dashboard-tabs > a {
-  min-height: 44px;
-  gap: 10px;
-  padding-inline: 16px;
+  min-height: 40px;
+  gap: 8px;
+  padding-inline: 14px;
   color: var(--ui-text-muted);
   font-size: var(--ui-text-sm);
 }
 
 .dashboard-tabs > a svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 .dashboard-tabs > a:hover { color: var(--ui-foreground); }
