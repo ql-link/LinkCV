@@ -2931,27 +2931,6 @@ select:not([data-slot]):focus-visible,
   line-height: 1.55;
 }
 
-.home-action-toast {
-  position: fixed;
-  bottom: 28px;
-  left: calc(50% + 110px);
-  z-index: 30;
-  transform: translateX(-50%);
-  animation: home-toast-in 260ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
-}
-
-.home-action-toast .ui-feedback-notice {
-  position: static;
-  height: 48px;
-  min-width: 0;
-  transform: none;
-  border-color: var(--hairline);
-  animation: none;
-  box-shadow: var(--shadow-toast);
-}
-
-.home-action-toast .ui-button { color: var(--ink); font-weight: 600; }
-
 .home-confirm-dialog {
   display: grid;
   width: min(420px, calc(100vw - 32px));
@@ -3022,11 +3001,6 @@ select:not([data-slot]):focus-visible,
 
 .home-rename-actions { margin-top: 8px; }
 
-@keyframes home-toast-in {
-  from { opacity: 0; transform: translateX(-50%) scale(0.9); }
-  to { opacity: 1; transform: translateX(-50%) scale(1); }
-}
-
 /* Account layout and media styles live in features/account/account.css. */
 @media (max-width: 900px) {
   .template-preview-dialog {
@@ -3081,7 +3055,6 @@ select:not([data-slot]):focus-visible,
   .dashboard-tabs > a { min-height: 38px; gap: 8px; padding-inline: 12px; font-size: 13px; }
   .dashboard-tabs > a svg { width: 16px; height: 16px; }
   .dashboard-content { min-height: 0; }
-  .home-action-toast { left: 50%; }
 }
 
 @media (max-width: 640px) {
@@ -3182,7 +3155,6 @@ select:not([data-slot]):focus-visible,
   .landing-paper-card,
   .landing-reveal,
   .home-resume-card,
-  .home-action-toast,
   .home-confirm-dialog {
     transition: none;
     animation: none;
@@ -4630,24 +4602,6 @@ select:not([data-slot]):focus-visible,
   font-weight: 400;
 }
 
-.datasets-toast .ui-feedback-notice {
-  top: 96px;
-  width: max-content;
-  max-width: min(840px, calc(100vw - 32px));
-  padding: 14px 16px;
-  font-size: 14px;
-  line-height: 20px;
-  opacity: 1;
-  translate: 0 0;
-  animation: dataset-toast-enter 220ms var(--ui-ease-standard) both;
-  transition: opacity 220ms var(--ui-ease-standard), translate 220ms var(--ui-ease-standard);
-}
-
-.datasets-toast.is-fading .ui-feedback-notice {
-  opacity: 0;
-  translate: 0 -6px;
-}
-
 .dataset-notice-message {
   min-width: 0;
   overflow: hidden;
@@ -4655,13 +4609,7 @@ select:not([data-slot]):focus-visible,
   white-space: nowrap;
 }
 
-@keyframes dataset-toast-enter {
-  from { opacity: 0; translate: 0 -8px; }
-  to { opacity: 1; translate: 0 0; }
-}
-
 @media (max-width: 760px) {
-  .datasets-toast .ui-feedback-notice { top: 136px; }
   .datasets-page .page-hero-actions {
     width: 100%;
     justify-content: flex-end;
@@ -4711,5 +4659,4 @@ select:not([data-slot]):focus-visible,
 
 @media (prefers-reduced-motion: reduce) {
   .datasets-page .dataset-status.is-processing .dataset-status-mark { animation: none; }
-  .datasets-toast .ui-feedback-notice { animation: none; transition: none; }
 }

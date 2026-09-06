@@ -75,60 +75,6 @@
 }
 .interview-view-tabs a:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 1px; }
 
-.interview-error-notice {
-  display: flex;
-  width: min(720px, calc(100% - 60px));
-  align-items: center;
-  gap: 9px;
-  margin: 0 30px 12px;
-  border: 1px solid color-mix(in srgb, var(--ui-destructive) 34%, var(--ui-border));
-  border-radius: var(--ui-radius-md);
-  background: var(--ui-destructive-subtle);
-  padding: 10px 12px;
-  color: var(--ui-text-secondary);
-  font-size: 12px;
-}
-
-.interview-error-notice svg { width: 15px; flex: 0 0 auto; color: var(--ui-destructive); }
-.interview-error-notice button { margin-left: auto; border: 0; background: transparent; color: var(--ui-destructive); cursor: pointer; }
-
-.application-drag-rejection-notice {
-  position: fixed;
-  top: 96px;
-  right: 16px;
-  left: 16px;
-  z-index: 80;
-  display: flex;
-  width: max-content;
-  max-width: min(520px, calc(100vw - 32px));
-  box-sizing: border-box;
-  align-items: center;
-  gap: 9px;
-  border: 1px solid color-mix(in srgb, var(--ui-destructive) 34%, var(--ui-border));
-  border-radius: var(--ui-radius-lg);
-  background: var(--ui-destructive-subtle);
-  padding: 11px 15px;
-  color: var(--ui-destructive);
-  box-shadow: var(--ui-shadow-md);
-  margin-inline: auto;
-  pointer-events: none;
-}
-
-.application-drag-rejection-notice > svg {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 auto;
-  color: var(--ui-destructive);
-}
-
-.application-drag-rejection-notice span {
-  min-width: 0;
-  color: var(--ui-destructive);
-  font-size: var(--ui-text-sm);
-  font-weight: 550;
-  line-height: 20px;
-}
-
 .interview-surface {
   min-width: 0;
   border: 1px solid var(--ui-border);
@@ -258,8 +204,6 @@
 .month-event-draft { background: color-mix(in srgb, var(--calendar-color) 4%, var(--ui-surface)); color: var(--calendar-color); }
 .month-calendar-events button.is-selected { outline: 2px solid var(--ui-ring); outline-offset: 1px; }
 .month-calendar-events small { color: var(--ui-text-subtle); font-size: 9px; line-height: 11px; }
-.schedule-success-toast { position: fixed; top: 96px; right: 16px; left: 16px; width: max-content; box-sizing: border-box; margin-inline: auto; pointer-events: none; z-index: 80; display: flex; align-items: center; gap: 9px; max-width: min(420px, calc(100vw - 32px)); padding: 13px 16px; border: 1px solid color-mix(in srgb, var(--ui-success) 30%, var(--ui-border)); border-radius: 10px; background: var(--ui-success-subtle); color: var(--ui-success); font-size: 13px; font-weight: 600; }
-.schedule-success-toast svg { width: 18px; height: 18px; }
 .week-calendar { min-width: 1050px; }
 .week-calendar-head { display: grid; height: 54px; grid-template-columns: 58px repeat(7, 1fr); align-items: center; border-bottom: 1px solid var(--ui-border); color: var(--ui-text-secondary); font-size: 10px; text-align: center; }
 .week-calendar-head span.is-today { color: var(--ui-foreground); font-weight: 650; }
@@ -764,7 +708,6 @@
   .interview-view-tabs { padding: 0; }
   .interview-view-tabs a { min-height: 40px; padding-inline: 11px; }
   .career-applications-header .page-hero-actions, .career-applications-controls { width: 100%; }
-  .interview-error-notice { width: calc(100% - 32px); margin: 0 16px 12px; }
   .interview-records-layout { padding: 0 16px; }
   .career-card-action { min-height: 40px; }
   .career-applications-layout { padding: 8px 16px 30px; }
@@ -3622,6 +3565,21 @@
   height: min(620px, calc(100vh - 40px));
 }
 
+.career-edit-schedule-dialog {
+  width: min(720px, calc(100vw - 48px));
+  height: auto;
+  min-height: 430px;
+  padding-bottom: 24px;
+}
+
+.career-edit-schedule-dialog .career-next-stage-panel {
+  padding-top: 28px;
+}
+
+.career-edit-schedule-notice {
+  margin-top: 20px;
+}
+
 .career-next-stage-panel {
   min-height: 0;
   overflow-y: auto;
@@ -3662,6 +3620,14 @@
 
   .career-next-stage-dialog.is-screening {
     height: min(620px, calc(100vh - 24px));
+  }
+
+  .career-edit-schedule-dialog {
+    width: calc(100vw - 24px);
+    height: auto;
+    min-height: 0;
+    max-height: calc(100vh - 24px);
+    padding-bottom: 16px;
   }
 }
 .career-view-settings { position: relative; }
@@ -3788,3 +3754,169 @@
 
 .career-application-list-groups.is-grouped { overflow-x: auto; }
 .career-application-list-groups.is-grouped > * { min-width: 820px; }
+
+/* Drag-to-stage dialog: compact shared shell based on the confirmed reference. */
+.career-next-stage-dialog.is-stage-locked {
+  position: fixed;
+  width: min(700px, calc(100vw - 48px));
+  height: auto;
+  max-width: 700px;
+  max-height: calc(100vh - 72px);
+  overflow: visible;
+  padding: 24px 24px 0;
+  border-radius: 14px;
+  box-shadow: 0 18px 48px rgb(15 23 42 / 20%);
+}
+
+.career-next-stage-dialog.is-stage-locked::before {
+  position: absolute;
+  top: 0;
+  bottom: 64px;
+  left: 8px;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(
+    180deg,
+    #1a63f6 0%,
+    #1a63f6 18%,
+    rgb(26 99 246 / 68%) 38%,
+    rgb(26 99 246 / 28%) 66%,
+    rgb(26 99 246 / 0%) 100%
+  );
+  content: "";
+}
+
+.career-next-stage-floating-badge {
+  position: absolute;
+  z-index: 1;
+  top: -18px;
+  left: 10px;
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgb(191 215 255 / 72%);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgb(250 252 255 / 98%) 0%, rgb(237 245 255 / 94%) 100%);
+  padding: 0 14px;
+  color: var(--ui-accent);
+  box-shadow: 0 5px 14px rgb(20 94 214 / 15%), 0 1px 2px rgb(15 23 42 / 6%);
+  backdrop-filter: blur(8px);
+  font-size: var(--ui-text-sm);
+  font-weight: 650;
+  line-height: 1;
+}
+
+.career-next-stage-floating-badge svg {
+  width: 17px;
+  height: 17px;
+}
+
+.career-next-stage-dialog.is-stage-locked .career-next-stage-panel {
+  flex: 0 1 auto;
+  max-height: calc(100vh - 190px);
+  padding: 2px 4px 20px;
+}
+
+.career-next-stage-dialog.is-stage-locked .career-next-stage-form-header {
+  margin-bottom: 14px;
+}
+
+.career-next-stage-dialog.is-stage-locked .career-next-stage-form-header h3 {
+  font-size: 19px;
+  line-height: 26px;
+}
+
+.career-next-stage-dialog.is-stage-locked .career-next-stage-form-header span,
+.career-next-stage-dialog.is-stage-locked .career-next-stage-derived {
+  display: none;
+}
+
+.career-next-stage-dialog.is-stage-locked .career-next-stage-form-header p {
+  margin-top: 2px;
+  font-size: var(--ui-text-xs);
+  line-height: 18px;
+}
+
+.career-next-stage-dialog.is-stage-locked .career-next-stage-form {
+  column-gap: 12px;
+  row-gap: 12px;
+}
+
+.career-next-stage-dialog.is-stage-locked .career-next-stage-field {
+  grid-template-rows: 16px 40px;
+  gap: 4px;
+}
+
+.career-next-stage-dialog.is-stage-locked .career-next-stage-field input,
+.career-next-stage-dialog.is-stage-locked .career-next-stage-field select,
+.career-next-stage-dialog.is-stage-locked .career-next-stage-select-trigger,
+.career-next-stage-dialog.is-stage-locked .career-next-stage-field .career-schedule-picker-trigger {
+  min-height: 40px;
+  height: 40px;
+}
+
+.career-next-stage-dialog.is-stage-locked .career-next-stage-applied-at-field {
+  grid-template-rows: 16px 40px auto;
+}
+
+.career-next-stage-dialog.is-stage-locked .career-next-stage-note-field,
+.career-next-stage-dialog.is-stage-locked .career-next-stage-offer-benefits {
+  grid-template-rows: 16px 64px;
+}
+
+.career-next-stage-dialog.is-stage-locked .career-next-stage-note-field textarea,
+.career-next-stage-dialog.is-stage-locked .career-next-stage-offer-benefits textarea {
+  min-height: 64px;
+  height: 64px;
+  max-height: 64px;
+}
+
+.career-next-stage-dialog.is-stage-locked .career-next-stage-dialog-footer {
+  width: calc(100% + 48px);
+  min-height: 64px;
+  margin: 0 -24px;
+  padding: 0 24px;
+}
+
+.career-next-stage-dialog.is-stage-locked .career-next-stage-dialog-footer-actions {
+  gap: 8px;
+}
+
+.career-next-stage-dialog.is-stage-locked .career-next-stage-dialog-footer-actions .ui-button {
+  min-width: 88px;
+}
+
+@media (max-width: 820px) {
+  .career-next-stage-dialog.is-stage-locked {
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    max-height: calc(100vh - 48px);
+    padding: 24px 16px 0;
+  }
+
+  .career-next-stage-dialog.is-stage-locked::before {
+    bottom: 72px;
+    left: 6px;
+  }
+
+  .career-next-stage-dialog.is-stage-locked .career-next-stage-panel {
+    max-height: calc(100vh - 172px);
+    padding-inline: 2px;
+  }
+
+  .career-next-stage-dialog.is-stage-locked .career-next-stage-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .career-next-stage-dialog.is-stage-locked .career-next-stage-field--full {
+    grid-column: 1;
+  }
+
+  .career-next-stage-dialog.is-stage-locked .career-next-stage-dialog-footer {
+    width: calc(100% + 32px);
+    min-height: 72px;
+    margin: 0 -16px;
+    padding: 12px 16px;
+  }
+}
