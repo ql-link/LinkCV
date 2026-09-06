@@ -1772,8 +1772,8 @@ select:not([data-slot]):focus-visible,
   position: relative;
   z-index: 20;
   display: grid;
-  height: 72px;
-  min-height: 72px;
+  height: 64px;
+  min-height: 64px;
   flex: 0 0 auto;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
@@ -1789,9 +1789,15 @@ select:not([data-slot]):focus-visible,
   padding: 0;
 }
 
+.dashboard-brand .ui-brand-wordmark {
+  width: 132px;
+  height: 28px;
+}
+
 .dashboard-brand-link {
   display: inline-flex;
   width: max-content;
+  height: 40px;
   align-items: center;
   border: 0;
   background: transparent;
@@ -1826,7 +1832,7 @@ select:not([data-slot]):focus-visible,
 .dashboard-nav-scroll nav { width: max-content; margin: 0 auto; }
 
 .dashboard-tabs {
-  min-height: 44px;
+  min-height: 40px;
   box-sizing: border-box;
   gap: 0;
   border-color: var(--ui-border);
@@ -1835,14 +1841,18 @@ select:not([data-slot]):focus-visible,
 }
 
 .dashboard-tabs > a {
-  min-height: 32px;
-  gap: 6px;
-  padding-inline: 6px;
-  font-size: 12px;
+  min-height: 40px;
+  gap: 8px;
+  padding-inline: 14px;
   color: var(--ui-text-muted);
+  font-size: var(--ui-text-sm);
 }
 
-.dashboard-tabs > a svg { width: 14px; height: 14px; }
+.dashboard-tabs > a svg {
+  width: 16px;
+  height: 16px;
+}
+
 .dashboard-tabs > a:hover { color: var(--ui-foreground); }
 
 .dashboard-tabs > a:active { transform: scale(0.98); }
@@ -2130,7 +2140,7 @@ select:not([data-slot]):focus-visible,
   justify-content: center;
   gap: 8px;
   border-radius: var(--ui-radius-full);
-  background: var(--ui-template-accent);
+  background: var(--ui-accent);
   padding: 9px 18px;
   color: var(--ui-primary-foreground);
   font-size: var(--ui-text-sm);
@@ -3068,7 +3078,8 @@ select:not([data-slot]):focus-visible,
     padding: 7px 12px 10px;
   }
   .dashboard-nav-scroll nav { margin-inline: auto; }
-  .dashboard-tabs > a { min-height: 38px; padding-inline: 12px; }
+  .dashboard-tabs > a { min-height: 38px; gap: 8px; padding-inline: 12px; font-size: 13px; }
+  .dashboard-tabs > a svg { width: 16px; height: 16px; }
   .dashboard-content { min-height: 0; }
   .home-action-toast { left: 50%; }
 }

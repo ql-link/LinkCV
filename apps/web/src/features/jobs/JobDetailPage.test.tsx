@@ -80,17 +80,17 @@ describe("JobDetailPage", () => {
     expect(window.location.pathname).toBe("/career/applications/application-7");
   });
 
-  it("用工类型使用固定尺寸的自定义选择框并在选择后保存", async () => {
+  it("求职分类使用固定尺寸的自定义选择框并在选择后保存", async () => {
     vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
     const updatedJob = { ...activeJob, employment_type: "full_time" as const, lock_version: 3 };
     const update = vi.spyOn(api, "updateJobDescription").mockResolvedValue({ job_description: updatedJob });
 
     render(<JobDetailPage jobId={activeJob.id} />);
-    fireEvent.click(await screen.findByRole("button", { name: "编辑用工类型" }));
-    const trigger = screen.getByLabelText("用工类型");
+    fireEvent.click(await screen.findByRole("button", { name: "编辑求职分类" }));
+    const trigger = screen.getByLabelText("求职分类");
     expect(trigger).toHaveClass("job-quick-edit-select-trigger");
     fireEvent.click(trigger);
-    fireEvent.click(await screen.findByRole("option", { name: "全职" }));
+    fireEvent.click(await screen.findByRole("option", { name: "正式" }));
 
     await waitFor(() => expect(update).toHaveBeenCalledWith(activeJob.id, expect.objectContaining({
       employment_type: "full_time",

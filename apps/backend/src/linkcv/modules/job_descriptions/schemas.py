@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 EmploymentType = Literal[
-    "full_time", "part_time", "internship", "contract", "temporary"
+    "internship", "campus", "full_time"
 ]
 WorkMode = Literal["onsite", "hybrid", "remote"]
 SalaryPeriod = Literal["hour", "day", "month", "year"]
@@ -134,7 +134,7 @@ class JobDescriptionCreateRequest(BaseModel):
     job_title: str = Field(max_length=200)
     company_name: str = Field(max_length=200)
     employment_type: EmploymentType | None = None
-    description: str = Field(max_length=200_000)
+    description: str = Field(default="", max_length=200_000)
     skills: list[Skill] = Field(default_factory=list, max_length=100)
     education_requirement: str | None = Field(default=None, max_length=100)
     experience_requirement: str | None = Field(default=None, max_length=100)
@@ -160,13 +160,18 @@ class JobDescriptionCreateRequest(BaseModel):
     notes: str | None = Field(default=None, max_length=16_000)
     duplicate_resolution: DuplicateResolution | None = None
 
-    @field_validator("job_title", "company_name", "description")
+    @field_validator("job_title", "company_name")
     @classmethod
     def trim_required_text(cls, value: str) -> str:
         normalized = value.strip()
         if not normalized:
             raise ValueError("required text cannot be blank")
         return normalized
+
+    @field_validator("description")
+    @classmethod
+    def trim_description(cls, value: str) -> str:
+        return value.strip()
 
     @field_validator(
         "education_requirement",
@@ -218,6 +223,8 @@ class JobDescriptionCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_salary(self) -> JobDescriptionCreateRequest:
+        if self.source_type == "external_import" and not self.description:
+            raise ValueError("external imports require a job description")
         _validate_salary_values(
             self.salary_min,
             self.salary_max,
@@ -394,8 +401,23 @@ class JobDescriptionRecord(JobDescriptionSummary):
         return _as_utc(value)
 
 
+class JobImportApplicationRecord(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    phase: Literal["pending", "applied"]
+    lifecycle_status: Literal["active", "terminated"]
+    current_stage_label: str
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def stringify_id(cls, value: object) -> str:
+        return str(value)
+
+
 class JobDescriptionResponse(BaseModel):
     job_description: JobDescriptionRecord
+    application: JobImportApplicationRecord | None = None
 
 
 class JobDescriptionListResponse(BaseModel):
