@@ -106,6 +106,9 @@ describe("WorkspaceNavigation", () => {
     expect(screen.queryByRole("link", { name: "总览" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "求职记录" })).toHaveAttribute("href", "/career/applications");
     expect(screen.getByRole("link", { name: "面试排期" })).toHaveAttribute("href", "/career/schedule");
+    expect(links.map((link) => link.querySelector(".career-subnav-label")?.textContent)).toEqual(["求职记录", "面试排期"]);
+    expect(screen.getByRole("link", { name: "求职记录" }).querySelector(".lucide-list-checks")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "面试排期" }).querySelector(".lucide-calendar-days")).toBeInTheDocument();
 
     for (const active of ["applications", "reviews"] as const) {
       rerender(<CareerNavigation active={active} />);
@@ -118,13 +121,14 @@ describe("WorkspaceNavigation", () => {
     expect(screen.getByRole("link", { name: "面试排期" })).toHaveAttribute("aria-current", "page");
   });
 
-  it("模块页头把图标、标题和描述放在同一信息行", () => {
+  it("模块页头支持把图标、标题说明和二级导航放在同一行", () => {
     const { container } = render(
       <WorkspacePageHero
         icon={<span>图标</span>}
         tone="template"
         title="简历模板"
         description="浏览当前可用版式。"
+        navigation={<nav aria-label="模块二级导航"><a href="/one">入口一</a></nav>}
       />,
     );
 
@@ -132,6 +136,9 @@ describe("WorkspaceNavigation", () => {
     expect(summary).toContainElement(screen.getByRole("heading", { name: "简历模板" }));
     expect(summary).toHaveTextContent("浏览当前可用版式。");
     expect(container.querySelector(".page-hero-module-mark.is-template")).toBeInTheDocument();
+    expect(container.querySelector(".page-hero-module-navigation")).toContainElement(
+      screen.getByRole("navigation", { name: "模块二级导航" }),
+    );
     expect(container.querySelector(".page-hero-eyebrow")).not.toBeInTheDocument();
   });
 

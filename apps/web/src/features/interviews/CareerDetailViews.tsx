@@ -1052,6 +1052,7 @@ export function AddNextStageDialog({
   initialTab = "assessment",
   initialInterviewLabel = "",
   initialStartAt = "",
+  initialEndAt = "",
   initialStage,
   initialAppliedAt = "",
   includeOffer = true,
@@ -1061,6 +1062,7 @@ export function AddNextStageDialog({
   onClose,
   onChanged,
   onNotice,
+  onApplicationChange,
   onTerminate,
 }: {
   application: ApplicationStageSource;
@@ -1069,6 +1071,7 @@ export function AddNextStageDialog({
   initialTab?: NextStageDialogTab;
   initialInterviewLabel?: string;
   initialStartAt?: string;
+  initialEndAt?: string;
   initialStage?: ApplicationStageType;
   initialAppliedAt?: string;
   includeOffer?: boolean;
@@ -1078,10 +1081,12 @@ export function AddNextStageDialog({
   onClose: () => void;
   onChanged: () => void | Promise<void>;
   onNotice: (notice: string) => void;
+  onApplicationChange?: (application: JobApplicationSummary) => void;
   onTerminate?: () => void;
 }) {
   const [selectedApplicationId, setSelectedApplicationId] = useState(application.id);
-  const selectedApplication = applicationOptions?.find((item) => item.id === selectedApplicationId) ?? application;
+  const selectedApplicationOption = applicationOptions?.find((item) => item.id === selectedApplicationId);
+  const selectedApplication = selectedApplicationOption ?? application;
   const suggestedInterviewRoundNo = selectedApplication.current_stage_type === "interview"
     ? (selectedApplication.current_round_no ?? 0) + 1
     : 1;
@@ -1096,7 +1101,7 @@ export function AddNextStageDialog({
   const [aiInterviewEndAt, setAiInterviewEndAt] = useState("");
   const [aiInterviewLink, setAiInterviewLink] = useState("");
   const [writtenStartAt, setWrittenStartAt] = useState(initialStartAt);
-  const [writtenEndAt, setWrittenEndAt] = useState("");
+  const [writtenEndAt, setWrittenEndAt] = useState(initialEndAt);
   const [writtenMode, setWrittenMode] = useState<InterviewSessionRecord["mode"]>("video");
   const [writtenMeetingOrLocation, setWrittenMeetingOrLocation] = useState("");
   const [interviewLabel, setInterviewLabel] = useState(initialInterviewLabel);
@@ -1104,7 +1109,12 @@ export function AddNextStageDialog({
     String(suggestedInterviewRoundNo),
   );
   const [interviewStartAt, setInterviewStartAt] = useState(initialStartAt);
-  const [interviewDuration, setInterviewDuration] = useState(60);
+  const [interviewDuration, setInterviewDuration] = useState(() => {
+    const start = parseScheduleStart(initialStartAt);
+    const end = parseScheduleStart(initialEndAt);
+    const minutes = start && end ? Math.round((end.getTime() - start.getTime()) / 60_000) : 60;
+    return Number.isFinite(minutes) && minutes > 0 ? minutes : 60;
+  });
   const [interviewMode, setInterviewMode] = useState<InterviewSessionRecord["mode"]>("video");
   const [interviewMeetingOrLocation, setInterviewMeetingOrLocation] = useState("");
   const [offerValues, setOfferValues] = useState<OfferFormValues>({
@@ -1122,6 +1132,10 @@ export function AddNextStageDialog({
   useEffect(() => {
     setInterviewRoundNo(String(suggestedInterviewRoundNo));
   }, [selectedApplication.id, suggestedInterviewRoundNo]);
+
+  useEffect(() => {
+    if (selectedApplicationOption) onApplicationChange?.(selectedApplicationOption);
+  }, [onApplicationChange, selectedApplicationOption]);
 
   const activeAsyncStartAt = activeStage === "ai_interview" ? aiInterviewStartAt : assessmentStartAt;
   const activeAsyncLink = activeStage === "ai_interview" ? aiInterviewLink : assessmentLink;
@@ -1278,7 +1292,6 @@ export function AddNextStageDialog({
           meeting_url: mode === "video" || mode === "phone" ? meetingOrLocation || null : null,
           location: mode === "onsite" || mode === "other" ? meetingOrLocation || null : null,
           preparation_note: preparationNote.trim() || null,
-          allow_conflict: false,
         });
       } catch {
         onClose();
@@ -1565,10 +1578,9 @@ export function AddNextStageDialog({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="career-next-stage-select-content">
-                      <SelectItem value="30">30 分钟</SelectItem>
-                      <SelectItem value="60">60 分钟</SelectItem>
-                      <SelectItem value="90">90 分钟</SelectItem>
-                      <SelectItem value="120">120 分钟</SelectItem>
+                      {Array.from({ length: 16 }, (_, index) => (index + 1) * 15).map((minutes) => (
+                        <SelectItem key={minutes} value={String(minutes)}>{minutes} 分钟</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
