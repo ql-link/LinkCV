@@ -291,7 +291,7 @@ export function applicationScheduleStatusLabel(
   const projection = projectApplicationProgress(application);
   if (!scheduledProgressColumn(projection)) return null;
 
-  if (currentStageCompleted) return "等待结果";
+  if (currentStageCompleted) return "已完成";
 
   const startAt = application.next_session_start_at;
   const start = validTimestamp(startAt);
@@ -357,8 +357,11 @@ export function applicationProgressToneClass(
 }
 
 /** The detail hero predates the board/list token name for the waiting tone. */
-export function applicationDetailStatusToneClass(application: ApplicationProgressSource): string {
-  const tone = applicationProgressToneClass(application);
+export function applicationDetailStatusToneClass(
+  application: ApplicationProgressSource,
+  options: ApplicationProgressLabelOptions = {},
+): string {
+  const tone = applicationProgressToneClass(application, options);
   return tone === "is-waiting" ? "is-warning" : tone;
 }
 

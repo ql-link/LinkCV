@@ -353,7 +353,12 @@ describe("InterviewCenterPage API projections", () => {
       ...makeScheduled("2026-09-10T00:00:00Z"),
       next_session_start_at: null,
       next_session_end_at: null,
-    }, { now, currentStageCompleted: true })).toBe("等待结果");
+    }, { now, currentStageCompleted: true })).toBe("已完成");
+    expect(applicationProgressLabel({
+      ...makeScheduled("2026-09-10T00:00:00Z"),
+      next_session_start_at: null,
+      next_session_end_at: null,
+    }, { now, currentStageCompleted: true })).toBe("二面 · 已完成");
     expect(applicationProgressLabel({
       ...makeScheduled("2026-09-10T00:00:00Z"),
       next_session_start_at: null,
@@ -919,11 +924,11 @@ describe("InterviewCenterPage API projections", () => {
     expect(screen.getByLabelText("筛选中 · 未通过")).toHaveClass("is-danger");
     expect(screen.getByLabelText("assessment · 在线作业 · 等待安排")).toHaveClass("is-scheduled");
     expect(screen.getByLabelText("在线笔试 · 等待安排")).toHaveClass("is-scheduled");
-    expect(screen.getByLabelText("笔试 · 等待结果")).toHaveClass("is-success");
+    expect(screen.getByLabelText("笔试 · 已完成")).toHaveClass("is-success");
 
     switchToApplicationBoard();
     const completedAssessmentCard = screen.getByRole("article", { name: "已完成笔试公司 已完成笔试岗位" });
-    expect(within(completedAssessmentCard).getByText("等待结果")).toHaveClass("is-success");
+    expect(within(completedAssessmentCard).getByText("已完成")).toHaveClass("is-success");
     expect(completedAssessmentCard.querySelector(".progress-card-updated-at")).not.toBeInTheDocument();
   });
 
@@ -1309,6 +1314,12 @@ describe("InterviewCenterPage API projections", () => {
 
     expect(await screen.findByRole("button", { name: "添加下一阶段" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "记录笔试结果" })).not.toBeInTheDocument();
+    expect(document.querySelector(".career-application-status")).toHaveTextContent("已完成");
+    expect(document.querySelector(".career-application-status")).toHaveClass("is-success");
+    const jobSummary = screen.getByRole("heading", { name: "岗位与求职信息" }).closest("section");
+    expect(jobSummary).not.toBeNull();
+    expect(within(jobSummary as HTMLElement).getByText("当前状态").nextElementSibling).toHaveTextContent("已完成");
+    expect(within(jobSummary as HTMLElement).queryByText("等待结果")).not.toBeInTheDocument();
     const journey = screen.getByRole("list", { name: "当前阶段：笔试" });
     const assessmentStage = within(journey).getByText("笔试").closest("li");
     expect(assessmentStage).toHaveClass("is-done");
@@ -1561,6 +1572,52 @@ describe("InterviewCenterPage API projections", () => {
     expect(mocks.advanceJobApplication.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.createInterviewSession.mock.invocationCallOrder[0],
     );
+  });
+
+  it("adds and schedules an AI interview with explicit start and end times", async () => {
+    const awaitingResultApplication = {
+      ...application,
+      id: "69",
+      stage_state: "awaiting_result" as const,
+      applied_at: "2026-08-22T04:00:00Z",
+      lock_version: 7,
+    };
+    mocks.listJobApplications.mockResolvedValue({ items: [awaitingResultApplication], next_cursor: null });
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.advanceJobApplication.mockResolvedValue({ application: awaitingResultApplication });
+    mocks.createInterviewSession.mockResolvedValue({ session, application: awaitingResultApplication, assets: [] });
+
+    render(<InterviewCenterPage view="applications" initialApplicationId="69" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "添加下一阶段" }));
+    const dialog = await screen.findByRole("dialog", { name: "添加下一阶段" });
+    fireEvent.click(within(dialog).getByRole("radio", { name: "AI 面试" }));
+    expect(within(dialog).getByRole("button", { name: "开始时间" })).toHaveTextContent("选择日期和时间");
+    expect(within(dialog).getByRole("button", { name: "结束时间" })).toHaveTextContent("选择日期和时间");
+    expect(within(dialog).queryByRole("radiogroup", { name: "完成期限" })).not.toBeInTheDocument();
+
+    fireEvent.change(within(dialog).getByLabelText("面试链接（选填）"), { target: { value: "https://ai-interview.example/69" } });
+    chooseScheduleDateTime(dialog, "开始时间", "2026-09-12", "09", "17");
+    chooseScheduleDateTime(dialog, "结束时间", "2026-09-12", "10", "45");
+    fireEvent.click(within(dialog).getByRole("button", { name: "添加并保存" }));
+
+    await waitFor(() => expect(mocks.addJobApplicationStage).toHaveBeenCalledWith("69", {
+      client_request_id: expect.any(String),
+      stage_type: "ai_interview",
+      base_lock_version: 7,
+    }));
+    await waitFor(() => expect(mocks.createInterviewSession).toHaveBeenCalledWith("69", expect.objectContaining({
+      client_request_id: expect.any(String),
+      stage_type: "other",
+      round_no: null,
+      stage_label: "AI 面试",
+      start_at: new Date("2026-09-12T09:17").toISOString(),
+      end_at: new Date("2026-09-12T10:45").toISOString(),
+      timezone: localTimezone,
+      mode: "video",
+      meeting_url: "https://ai-interview.example/69",
+      location: null,
+    })));
   });
 
   it("switches directly between assessment and written-test forms", async () => {
