@@ -351,14 +351,39 @@
 }
 
 .career-applications-board-content {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
   overflow: hidden;
   padding-bottom: 0;
 }
 
-.career-applications-board-content .career-applications-layout {
-  box-sizing: border-box;
+.career-schedule-content {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.career-schedule-content .interview-schedule-layout {
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-rows: minmax(0, 1fr);
+  padding-bottom: 12px;
+}
+
+.career-schedule-content .schedule-calendar-panel {
+  display: flex;
   height: 100%;
   min-height: 0;
+  flex-direction: column;
+}
+
+.career-applications-board-content .career-applications-layout {
+  box-sizing: border-box;
+  min-height: 0;
+  flex: 1 1 auto;
   grid-template-rows: minmax(0, 1fr);
   grid-template-columns: minmax(0, 1fr);
   padding-bottom: 12px;
@@ -3627,6 +3652,13 @@
   --ec-grid-line-color: color-mix(in srgb, var(--ui-border) 82%, transparent);
   --ec-slot-line-color: var(--ec-grid-line-color);
   --ec-slot-line-width: 1px;
+}
+@media (min-width: 641px) {
+  .career-schedule-content .career-reui-calendar {
+    height: 100%;
+    min-height: 0;
+    flex: 1 1 auto;
+  }
 }
 .career-reui-calendar [data-slot="event-calendar-nav"] {
   min-height: 48px;

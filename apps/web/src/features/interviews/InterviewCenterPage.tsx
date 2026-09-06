@@ -805,7 +805,7 @@ export function InterviewCenterPage({
           )}
         />
       )}
-      <main className={`dashboard-content interview-center-content${isStandaloneDetailRoute ? " career-standalone-detail-content" : ""}${!isStandaloneDetailRoute && view === "applications" && applicationDisplayMode === "board" ? " career-applications-board-content" : ""}`}>
+      <main className={`dashboard-content interview-center-content${isStandaloneDetailRoute ? " career-standalone-detail-content" : ""}${!isStandaloneDetailRoute && view === "applications" && applicationDisplayMode === "board" ? " career-applications-board-content" : ""}${!isStandaloneDetailRoute && view === "schedule" ? " career-schedule-content" : ""}`}>
       {notice && (
         <FeedbackNotice className="interview-error-notice" kind="error" placement="floating">
           {notice}

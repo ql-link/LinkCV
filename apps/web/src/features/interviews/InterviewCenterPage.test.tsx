@@ -512,7 +512,7 @@ describe("InterviewCenterPage API projections", () => {
 
   it("renders the 24-hour draggable schedule from API data and initially scrolls to 09:00", async () => {
     vi.spyOn(Date, "now").mockReturnValue(fixtureSessionStart.getTime() - 60_000);
-    render(
+    const { container } = render(
       <InterviewCenterPage
         view="schedule"
         navigation={<nav className="career-subnav" aria-label="求职中心导航"><a href="/career/schedule">面试排期</a></nav>}
@@ -524,6 +524,7 @@ describe("InterviewCenterPage API projections", () => {
     });
     const moduleHeader = document.querySelector(".career-module-header") as HTMLElement;
     const calendarFrame = calendar.closest(".career-reui-calendar") as HTMLElement;
+    expect(container.querySelector("main")).toHaveClass("career-schedule-content");
     expect(screen.queryByRole("heading", { name: "面试排期" })).not.toBeInTheDocument();
     expect(within(moduleHeader).getByRole("button", { name: "搜索面试排期" })).toBeInTheDocument();
     expect(within(moduleHeader).queryByRole("button", { name: "安排面试" })).not.toBeInTheDocument();
