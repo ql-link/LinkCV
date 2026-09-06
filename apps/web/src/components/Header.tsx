@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, FileDown, Home, Save } from "lucide-react";
+import { FileDown, Home, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 import { exportResumePdf, resumePdfExportErrorMessage } from "../features/preview/pdfExport";
 import { useResumeStore } from "../store/resumeStore";
@@ -94,10 +94,7 @@ export function Header() {
         </Button>
       </div>
       {saveToast && (
-        <FeedbackNotice kind={saveToast.kind}>
-          {saveToast.kind === "success" ? <CircleCheck size={18} /> : <CircleAlert size={18} />}
-          {saveToast.message}
-        </FeedbackNotice>
+        <FeedbackNotice kind={saveToast.kind} placement="floating">{saveToast.message}</FeedbackNotice>
       )}
     </header>
   );

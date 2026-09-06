@@ -438,7 +438,7 @@ describe("DatasetsPage", () => {
 
       expect(screen.getByRole("alert")).toHaveTextContent("不支持.exe");
       act(() => vi.advanceTimersByTime(5000));
-      expect(screen.getByRole("alert").parentElement).toHaveClass("is-fading");
+      expect(screen.getByRole("alert")).toHaveClass("is-fading");
       act(() => vi.advanceTimersByTime(300));
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     } finally {
