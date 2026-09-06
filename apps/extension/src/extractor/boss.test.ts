@@ -303,3 +303,17 @@ describe("BOSS detail extraction", () => {
     expect(isBossJobUrl("https://example.test/job_detail/abc.html")).toBe(false);
   });
 });
+
+
+it("keeps campus title evidence alongside full-time tags and excludes legacy types from skills", () => {
+  const result = extractBossJob(page(`
+    <section class="job-banner"><div class="job-primary"><div class="name"><h1>校招 Java 工程师</h1></div></div></section>
+    <aside class="sider-company"><div class="company-info"><h3><a title="分类测试公司">分类测试公司</a></h3></div></aside>
+    <div class="job-detail"><div class="job-tags"><span>全职</span><span>兼职</span><span>Java</span></div>
+    <div class="job-sec-text">职位描述：负责虚构项目的服务端开发、接口维护、数据库设计，并参与团队协作和代码评审。</div></div>
+  `), "https://www.zhipin.com/job_detail/category-test.html");
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.capture.employment_type_text).toBe("全职 校招 Java 工程师");
+  expect(result.capture.skills).toEqual(["Java"]);
+});

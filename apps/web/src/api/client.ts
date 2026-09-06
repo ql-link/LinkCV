@@ -478,7 +478,7 @@ export type ResumeOverview = {
 
 export type JobSourceType = "manual" | "external_import";
 export type JobEmploymentType =
-  "full_time" | "part_time" | "internship" | "contract" | "temporary";
+  "internship" | "campus" | "full_time";
 export type JobWorkMode = "onsite" | "hybrid" | "remote";
 export type JobSalaryPeriod = "hour" | "day" | "month" | "year";
 
@@ -1573,6 +1573,7 @@ export const api = {
   updateJobApplication: (
     id: string,
     payload: Partial<{
+      employment_type: JobEmploymentType | null;
       calendar_color: InterviewCalendarColor;
       is_favorite: boolean;
       notes: string | null;

@@ -221,6 +221,8 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 | `PUT`    | `/api/job-descriptions/:id`         | `{job_description}`；请求含 `base_lock_version` 和至少一个可编辑字段     |
 | `DELETE` | `/api/job-descriptions/:id`         | `{deleted: true}`，直接永久删除并释放来源唯一标识                        |
 
+岗位 `employment_type` 只接受 `internship`（实习）、`campus`（校招）、`full_time`（正式）或 `null`（未分类）。文字/图片识别和插件导入使用同一分类语义：实习优先于校招，校招优先于全职；无法判断不猜测。旧的 `part_time/contract/temporary` 不再接受。个人画像的 `employment_types` 是独立契约，不随岗位分类变更。
+
 列表查询支持最长 200 字符的 `keyword`、不透明 `cursor` 和 `limit=1..100`。关键词忽略大小写，覆盖岗位名、公司名、城市、地址、正文和技能；分页按 `updated_at DESC, id DESC` 稳定排序。非法筛选或游标返回 `400 INVALID_JOB_QUERY`。JD 不维护活动、归档、投递或面试状态。
 
 智能导入使用 `multipart/form-data`，必须且只能提交一个非空 `text` 或一个 `image`。文字去除首尾空白后最长 60,000 字符，使用当前 `chat` 能力；图片只接受实际内容可解码的 PNG、JPEG 或 WebP，最大 10 MiB、最多 4,000 万像素，使用独立的 `job_image_structuring` 能力。响应中的 `draft` 与普通创建字段同构但全部可空，`warnings` 提示未识别的核心字段；调用方必须先让用户核对或补充，再另行调用创建接口。输入缺失或同时提供两种输入返回 `400 JD_IMPORT_INPUT_REQUIRED|JD_IMPORT_INPUT_AMBIGUOUS`，大小、格式或内容非法返回对应的 `JD_IMPORT_TEXT_TOO_LARGE`、`JD_IMPORT_IMAGE_TOO_LARGE`、`JD_IMPORT_IMAGE_UNSUPPORTED` 或 `JD_IMPORT_IMAGE_INVALID`。能力未绑定返回 `503 JD_IMPORT_MODEL_NOT_CONFIGURED`，超时返回 `504 JD_IMPORT_PARSE_TIMEOUT`，其他模型或结构化结果失败返回 `502 JD_IMPORT_PARSE_FAILED`；模型调用已建立记录时错误详情包含脱敏的 `callId` 和 `inputType`。
@@ -240,6 +242,8 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 ## 求职中心
 
 求职中心以 `job_descriptions` 保存岗位资料，以 `job_applications` 表达一家公司和岗位的一次完整求职尝试，以 `interview_sessions` 表达其中一场可排期、可完成、可复盘的面试。所有接口都要求当前登录用户，后端只从会话取得所有者；不存在和越权资源统一返回 `404 INTERVIEW_NOT_FOUND`。创建求职进程必须引用本人 JD，并保存公司、岗位和完整 JD 快照；后续修改原 JD 不会改写历史求职进程。公司颜色第一次创建时从 Mac 日历语义色中随机选择，之后同一求职进程的所有面试共用该颜色，也可通过进程更新接口修改。
+
+`PUT /api/job-applications/:id` 可提交 `employment_type`（上述三类或 `null`）及 `base_lock_version`，在同一次版本校验中更新当前记录的 `job_snapshot.employment_type`，保留其他快照属性和阶段。它不改原岗位或其他求职进程。非法分类返回 `400 INVALID_INTERVIEW_REQUEST`，非本人记录返回 `404 INTERVIEW_NOT_FOUND`，过期版本返回 `409 INTERVIEW_EDIT_CONFLICT`。
 
 求职进程的初始状态必须可达：待投递占位使用 `screening / 待投递 / awaiting_schedule` 且 `applied_at` 为空；兼容调用仍可直接创建 `screening / awaiting_result`、`interview|hr / awaiting_schedule` 或 `offer / negotiating`。其他阶段与等待状态组合返回 `400 INVALID_INTERVIEW_REQUEST`。`PUT /api/job-applications/:id` 首次把 `applied_at` 从空值写为非空时允许不绑定简历，此时 `resume_version_id` 和 `resume_title_snapshot` 保持为空；请求也可提交 `resume_id`，服务端只接受当前用户的简历，并自动绑定该简历 `version_no` 最大的最新正式版本，同时写入版本 ID 和标题快照。所选简历没有正式版本返回 `409 INTERVIEW_RESUME_VERSION_REQUIRED`，不存在或越权简历返回 `404 INTERVIEW_NOT_FOUND`。显式 `resume_version_id` 继续兼容，但不能与 `resume_id` 同时提交。首次为待投递占位或旧的 `screening / 筛选中 / awaiting_result` 占位写入 `applied_at` 时，服务端在同一次乐观锁更新中将当前阶段规范化为 `screening / 等待后续通知 / awaiting_result`；已进入明确筛选、面试或 HR 阶段的记录只补投递日期，不会被重置。
 

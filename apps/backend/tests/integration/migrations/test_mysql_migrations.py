@@ -35,7 +35,7 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0055"
+EXPECTED_HEAD = "0056"
 
 
 def canonical_editor_markdown(data: dict[str, Any]) -> str:
