@@ -29,6 +29,8 @@ import {
   MapPin,
   Mail,
   MoreHorizontal,
+  Pencil,
+  Send,
   Sparkles,
   Trash2,
   Users,
@@ -55,6 +57,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  FeedbackNotice,
   Label,
   PageLoading,
   Select,
@@ -994,7 +997,7 @@ const NEXT_STAGE_FORM_COPY: Record<NextStageChoice, { title: string; badge: stri
   },
   written_test: {
     title: "填写笔试信息",
-    badge: "固定时段",
+    badge: "笔试安排",
     description: "记录笔试要求的固定开始和结束时间。",
   },
   ai_interview: {
@@ -1012,6 +1015,15 @@ const NEXT_STAGE_FORM_COPY: Record<NextStageChoice, { title: string; badge: stri
     badge: "录用结果",
     description: "记录 Offer 结果及相关信息。",
   },
+};
+
+const NEXT_STAGE_BADGE_ICONS: Record<NextStageChoice, typeof ClipboardCheck> = {
+  screening: Send,
+  assessment: ClipboardCheck,
+  written_test: FilePenLine,
+  ai_interview: Sparkles,
+  interview: CalendarDays,
+  offer: BriefcaseBusiness,
 };
 
 const COMPLETION_WINDOW_OPTIONS = [
@@ -1043,6 +1055,7 @@ export function AddNextStageDialog({
   initialStage,
   initialAppliedAt = "",
   includeOffer = true,
+  lockStageSelection = false,
   title = "添加下一阶段",
   description,
   onClose,
@@ -1059,6 +1072,7 @@ export function AddNextStageDialog({
   initialStage?: ApplicationStageType;
   initialAppliedAt?: string;
   includeOffer?: boolean;
+  lockStageSelection?: boolean;
   title?: string;
   description?: string;
   onClose: () => void;
@@ -1298,6 +1312,7 @@ export function AddNextStageDialog({
     ? "选择当前实际进度，可直接补录已经发生的阶段。"
     : "选择下一阶段，也可以直接补录已发生的阶段。");
   const formCopy = NEXT_STAGE_FORM_COPY[activeStage];
+  const StageBadgeIcon = NEXT_STAGE_BADGE_ICONS[activeStage];
   const availableStages = NEXT_STAGE_CHOICES.filter((choice) => (
     (startsPending || choice.key !== "screening")
     && (includeOffer || choice.key !== "offer")
@@ -1305,11 +1320,19 @@ export function AddNextStageDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className={`career-stage-dialog career-next-stage-dialog${activeStage === "screening" ? " is-screening" : ""}`}>
-        <DialogHeader className="career-next-stage-dialog-header">
+      <DialogContent className={`career-stage-dialog career-next-stage-dialog${activeStage === "screening" ? " is-screening" : ""}${lockStageSelection ? " is-stage-locked" : ""}`}>
+        <DialogHeader className={lockStageSelection ? "sr-only" : "career-next-stage-dialog-header"}>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{dialogDescription}</DialogDescription>
+          <DialogDescription>
+            {lockStageSelection ? "填写拖拽目标阶段所需的信息。" : dialogDescription}
+          </DialogDescription>
         </DialogHeader>
+        {lockStageSelection && (
+          <div className="career-next-stage-floating-badge" aria-hidden="true">
+            <StageBadgeIcon />
+            <span>{formCopy.badge}</span>
+          </div>
+        )}
         {applicationOptions && (
           <div className="career-next-stage-process-picker">
               <div className="career-next-stage-field career-next-stage-process">
@@ -1340,35 +1363,39 @@ export function AddNextStageDialog({
               </div>
           </div>
         )}
-        <div className="career-next-stage-track" aria-label={`当前阶段：${projectApplicationProgress(selectedApplication).stageLabel}`}>
-          <div className="career-next-stage-current"><span>当前状态</span><strong>{projectApplicationProgress(selectedApplication).stageLabel}</strong></div>
-          <div className="career-next-stage-line" aria-hidden="true" />
-          <div className={`career-next-stage-options${startsPending ? " has-six-stages" : ""}`} role="radiogroup" aria-label="选择下一阶段">
-            {availableStages.map((choice) => {
-              const Icon = choice.icon;
-              const selected = choice.key === activeStage;
-              return (
-                <button
-                  key={choice.key}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  className={selected ? "is-active" : undefined}
-                  disabled={busy}
-                  onClick={() => {
-                    setActiveStage(choice.key);
-                    setErrorMessage(null);
-                  }}
-                >
-                  <span className="career-next-stage-node" aria-hidden="true" />
-                  <Icon aria-hidden="true" />
-                  <strong>{choice.label}</strong>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        <div className="career-next-stage-divider" aria-hidden="true" />
+        {!lockStageSelection && (
+          <>
+            <div className="career-next-stage-track" aria-label={`当前阶段：${projectApplicationProgress(selectedApplication).stageLabel}`}>
+              <div className="career-next-stage-current"><span>当前状态</span><strong>{projectApplicationProgress(selectedApplication).stageLabel}</strong></div>
+              <div className="career-next-stage-line" aria-hidden="true" />
+              <div className={`career-next-stage-options${startsPending ? " has-six-stages" : ""}`} role="radiogroup" aria-label="选择下一阶段">
+                {availableStages.map((choice) => {
+                  const Icon = choice.icon;
+                  const selected = choice.key === activeStage;
+                  return (
+                    <button
+                      key={choice.key}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      className={selected ? "is-active" : undefined}
+                      disabled={busy}
+                      onClick={() => {
+                        setActiveStage(choice.key);
+                        setErrorMessage(null);
+                      }}
+                    >
+                      <span className="career-next-stage-node" aria-hidden="true" />
+                      <Icon aria-hidden="true" />
+                      <strong>{choice.label}</strong>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="career-next-stage-divider" aria-hidden="true" />
+          </>
+        )}
         <div className="career-next-stage-panel">
           <header className="career-next-stage-form-header">
             <div><h3>{formCopy.title}</h3><span>{formCopy.badge}</span></div>
@@ -1594,7 +1621,7 @@ export function AddNextStageDialog({
           <div>{onTerminate && <Button variant="ghost" className="career-next-stage-terminate" disabled={busy} icon={<Trash2 aria-hidden="true" />} onClick={onTerminate}>终止求职</Button>}</div>
           <div className="career-next-stage-dialog-footer-actions">
             <Button variant="ghost" onClick={onClose}>取消</Button>
-            <Button variant="ghost" disabled={!canSubmit} onClick={() => void save()}>{busy ? "保存中…" : startsPending ? "保存求职进度" : "添加并保存"}</Button>
+            <Button variant={lockStageSelection ? "default" : "ghost"} disabled={!canSubmit} onClick={() => void save()}>{busy ? "保存中…" : startsPending ? "保存求职进度" : "添加并保存"}</Button>
           </div>
         </DialogFooter>
       </DialogContent>
@@ -1854,6 +1881,7 @@ export function MarkApplicationAppliedDialog({
       initialStage={initialStageType}
       initialInterviewLabel={initialInterviewLabel}
       initialAppliedAt={initialAppliedAt}
+      lockStageSelection={initialTargetColumnId != null}
       title="投递岗位"
       description="选择当前实际进度，可直接补录已经发生的阶段。"
       onClose={onClose}
@@ -2439,6 +2467,211 @@ function CompleteInterviewDialog({
   );
 }
 
+function schedulePickerValue(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return formatScheduleDateTimeValue(
+    date,
+    `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`,
+  );
+}
+
+function EditInterviewScheduleDialog({
+  session,
+  recordKind,
+  onClose,
+  onChanged,
+  onNotice,
+}: {
+  session: InterviewSessionRecord;
+  recordKind: "笔试" | "面试";
+  onClose: () => void;
+  onChanged: () => void | Promise<void>;
+  onNotice: (notice: string) => void;
+}) {
+  const initialDurationMinutes = Math.max(
+    1,
+    Math.round((new Date(session.end_at).getTime() - new Date(session.start_at).getTime()) / 60_000),
+  );
+  const initialMeetingOrLocation = session.mode === "onsite" || session.mode === "other"
+    ? session.location ?? ""
+    : session.meeting_url ?? "";
+  const [startAt, setStartAt] = useState(() => schedulePickerValue(session.start_at));
+  const [durationMinutes, setDurationMinutes] = useState(String(initialDurationMinutes));
+  const [mode, setMode] = useState<InterviewSessionRecord["mode"]>(session.mode);
+  const [meetingOrLocation, setMeetingOrLocation] = useState(initialMeetingOrLocation);
+  const [busy, setBusy] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [hasConflict, setHasConflict] = useState(false);
+
+  const parsedStart = parseScheduleStart(startAt);
+  const parsedDuration = Number(durationMinutes);
+  const parsedEnd = parsedStart && Number.isFinite(parsedDuration) && parsedDuration > 0
+    ? new Date(parsedStart.getTime() + parsedDuration * 60_000)
+    : null;
+  const scheduleChanged = Boolean(parsedStart && parsedEnd) && (
+    parsedStart!.getTime() !== new Date(session.start_at).getTime()
+    || parsedEnd!.getTime() !== new Date(session.end_at).getTime()
+  );
+  const normalizedMeetingOrLocation = meetingOrLocation.trim();
+  const detailsChanged = mode !== session.mode
+    || (mode === "onsite" || mode === "other"
+      ? normalizedMeetingOrLocation !== (session.location ?? "") || session.meeting_url !== null
+      : normalizedMeetingOrLocation !== (session.meeting_url ?? "") || session.location !== null);
+  const canSubmit = Boolean(parsedStart && parsedEnd)
+    && Number.isInteger(parsedDuration)
+    && parsedDuration > 0
+    && parsedDuration <= 525_600
+    && (scheduleChanged || detailsChanged)
+    && !busy;
+
+  const updateField = (update: () => void) => {
+    update();
+    setErrorMessage(null);
+    setHasConflict(false);
+  };
+
+  const save = async (allowConflict = false) => {
+    if (!parsedStart || !parsedEnd || !canSubmit) return;
+    setBusy(true);
+    setErrorMessage(null);
+    let currentLockVersion = session.lock_version;
+    let scheduleWasSaved = false;
+    try {
+      if (scheduleChanged) {
+        try {
+          const response = await api.rescheduleInterviewSession(session.id, {
+            start_at: parsedStart.toISOString(),
+            end_at: parsedEnd.toISOString(),
+            timezone: session.timezone,
+            allow_conflict: allowConflict,
+            base_lock_version: currentLockVersion,
+          });
+          currentLockVersion = response.session.lock_version;
+          scheduleWasSaved = true;
+          setHasConflict(false);
+        } catch (error) {
+          if (error instanceof ApiRequestError && error.message === "INTERVIEW_TIME_CONFLICT" && !allowConflict) {
+            setHasConflict(true);
+            return;
+          }
+          throw error;
+        }
+      }
+
+      if (detailsChanged) {
+        try {
+          await api.updateInterviewSession(session.id, {
+            mode,
+            meeting_url: mode === "video" || mode === "phone" ? normalizedMeetingOrLocation || null : null,
+            location: mode === "onsite" || mode === "other" ? normalizedMeetingOrLocation || null : null,
+            base_lock_version: currentLockVersion,
+          });
+        } catch (error) {
+          if (scheduleWasSaved) {
+            onClose();
+            await onChanged();
+            onNotice(`已更新${recordKind}时间，但方式或链接保存失败，请重新修改。`);
+            return;
+          }
+          throw error;
+        }
+      }
+
+      onClose();
+      await onChanged();
+    } catch (error) {
+      setErrorMessage(requestErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const meetingOrLocationLabel = mode === "onsite" || mode === "other" ? "地点" : "链接";
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="career-stage-dialog career-next-stage-dialog career-edit-schedule-dialog">
+        <DialogHeader className="career-next-stage-dialog-header">
+          <DialogTitle>修改{recordKind}安排</DialogTitle>
+          <DialogDescription>调整时间、方式以及{recordKind}链接或地点。</DialogDescription>
+        </DialogHeader>
+        <div className="career-next-stage-panel">
+          <div className="career-next-stage-form">
+            <div className="career-next-stage-field">
+              <Label htmlFor="career-edit-session-start">开始时间</Label>
+              <ScheduleDateTimePicker
+                id="career-edit-session-start"
+                label={`${recordKind}开始时间`}
+                value={startAt}
+                required
+                disabled={busy}
+                onChange={(value) => updateField(() => setStartAt(value))}
+              />
+            </div>
+            <div className="career-next-stage-field">
+              <Label htmlFor="career-edit-session-duration">时长（分钟）</Label>
+              <input
+                id="career-edit-session-duration"
+                type="number"
+                min="1"
+                max="525600"
+                step="1"
+                value={durationMinutes}
+                disabled={busy}
+                onChange={(event) => updateField(() => setDurationMinutes(event.target.value))}
+              />
+            </div>
+            <div className="career-next-stage-field">
+              <Label htmlFor="career-edit-session-mode">{recordKind}方式</Label>
+              <Select
+                value={mode}
+                onValueChange={(value) => updateField(() => setMode(value as InterviewSessionRecord["mode"]))}
+                disabled={busy}
+              >
+                <SelectTrigger id="career-edit-session-mode" aria-label={`${recordKind}方式`} className="career-next-stage-select-trigger">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="career-next-stage-select-content">
+                  <SelectItem value="video">线上</SelectItem>
+                  <SelectItem value="onsite">线下</SelectItem>
+                  <SelectItem value="phone">电话</SelectItem>
+                  <SelectItem value="other">其他</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="career-next-stage-field">
+              <Label htmlFor="career-edit-session-location">{meetingOrLocationLabel}（选填）</Label>
+              <input
+                id="career-edit-session-location"
+                value={meetingOrLocation}
+                maxLength={mode === "onsite" || mode === "other" ? 500 : 2048}
+                disabled={busy}
+                placeholder={mode === "onsite" || mode === "other" ? "填写地点" : "粘贴链接"}
+                onChange={(event) => updateField(() => setMeetingOrLocation(event.target.value))}
+              />
+            </div>
+          </div>
+          {hasConflict && (
+            <FeedbackNotice className="career-edit-schedule-notice" kind="warning" title="时间存在冲突">
+              这个时间段与其他安排重叠。你可以返回修改，或仍然保存。
+            </FeedbackNotice>
+          )}
+          {errorMessage && <FeedbackNotice className="career-edit-schedule-notice" kind="error">{errorMessage}</FeedbackNotice>}
+        </div>
+        <DialogFooter className="career-next-stage-dialog-footer">
+          <div />
+          <div className="career-next-stage-dialog-footer-actions">
+            <Button variant="outline" disabled={busy} onClick={onClose}>取消</Button>
+            <Button disabled={!canSubmit} onClick={() => void save(hasConflict)}>
+              {busy ? "正在保存…" : hasConflict ? "仍然保存" : "保存修改"}
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 type InterviewSessionDetailViewProps = {
   detail: InterviewSessionDetail | null;
   detailLoading: boolean;
@@ -2463,6 +2696,7 @@ export function InterviewSessionDetailView({
   const [showEditTextDialog, setShowEditTextDialog] = useState(false);
   const [showDeleteTextDialog, setShowDeleteTextDialog] = useState(false);
   const [showCompleteDialog, setShowCompleteDialog] = useState(false);
+  const [showEditScheduleDialog, setShowEditScheduleDialog] = useState(false);
   const [textExpanded, setTextExpanded] = useState(false);
   useEffect(() => {
     if (!detail) return;
@@ -2497,6 +2731,9 @@ export function InterviewSessionDetailView({
   const completeLabel = isAssessment ? "完成笔试" : "完成本轮面试";
   const recordActions = (
     <>
+      {!isArchived && application.status === "active" && session.status === "scheduled" && (
+        <Button variant="outline" icon={<Pencil />} onClick={() => setShowEditScheduleDialog(true)}>修改{recordKind}安排</Button>
+      )}
       <Button onClick={() => setShowContentDialog(true)}>{addContentLabel}</Button>
       {!isArchived && session.status === "scheduled" && <Button variant="outline" onClick={() => setShowCompleteDialog(true)}>{completeLabel}</Button>}
     </>
@@ -2538,6 +2775,7 @@ export function InterviewSessionDetailView({
       {showEditTextDialog && <AddInterviewContentDialog session={session} recordKind={recordKind} mode="edit" initialText={questions} onClose={() => setShowEditTextDialog(false)} onChanged={() => onChanged(session.id)} onNotice={onNotice} />}
       {showDeleteTextDialog && <DeleteInterviewTextConfirmDialog session={session} recordKind={recordKind} onClose={() => setShowDeleteTextDialog(false)} onDeleted={() => onChanged(session.id)} onNotice={onNotice} />}
       {showCompleteDialog && <CompleteInterviewDialog session={session} questions={questions} review={review} improvement={improvement} onClose={() => setShowCompleteDialog(false)} onCompleted={() => isDialog ? onChanged(null) : navigateTo(careerApplicationPath(application.id))} onNotice={onNotice} />}
+      {showEditScheduleDialog && <EditInterviewScheduleDialog session={session} recordKind={recordKind} onClose={() => setShowEditScheduleDialog(false)} onChanged={() => onChanged(session.id)} onNotice={onNotice} />}
     </>
   );
 

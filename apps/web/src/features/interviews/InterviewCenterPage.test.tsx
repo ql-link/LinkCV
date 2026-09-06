@@ -1148,6 +1148,97 @@ describe("InterviewCenterPage API projections", () => {
     expect(screen.getByRole("heading", { name: "求职进度", hidden: true })).toBeInTheDocument();
   });
 
+  it("edits a scheduled assessment from its record dialog", async () => {
+    const assessmentSession = {
+      ...session,
+      stage_type: "other" as const,
+      round_no: null,
+      stage_label: "笔试",
+      mode: "video" as const,
+      meeting_url: "https://assessment.example/31",
+      location: null,
+    };
+    const rescheduledSession = {
+      ...assessmentSession,
+      start_at: new Date("2026-09-18T14:30").toISOString(),
+      end_at: new Date("2026-09-18T16:00").toISOString(),
+      lock_version: assessmentSession.lock_version + 1,
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [assessmentSession], next_cursor: null });
+    mocks.getInterviewSession.mockResolvedValue({ session: assessmentSession, application, assets: [] });
+    mocks.rescheduleInterviewSession.mockResolvedValue({ session: rescheduledSession, application, assets: [] });
+    mocks.updateInterviewSession.mockResolvedValue({
+      session: {
+        ...rescheduledSession,
+        mode: "onsite",
+        meeting_url: null,
+        location: "科技园 2 号楼",
+        lock_version: rescheduledSession.lock_version + 1,
+      },
+      application,
+      assets: [],
+    });
+
+    render(<InterviewCenterPage view="applications" initialApplicationId="21" initialSessionId="31" />);
+
+    const recordDialog = await screen.findByRole("dialog", { name: "腾讯｜笔试记录" });
+    fireEvent.click(within(recordDialog).getByRole("button", { name: "修改笔试安排" }));
+    const editDialog = await screen.findByRole("dialog", { name: "修改笔试安排" });
+    chooseScheduleDateTime(editDialog, "笔试开始时间", "2026-09-18", "14", "30");
+    fireEvent.change(within(editDialog).getByLabelText("时长（分钟）"), { target: { value: "90" } });
+    chooseSelectOption(editDialog, "笔试方式", "线下");
+    fireEvent.change(within(editDialog).getByLabelText("地点（选填）"), { target: { value: "科技园 2 号楼" } });
+    fireEvent.click(within(editDialog).getByRole("button", { name: "保存修改" }));
+
+    await waitFor(() => expect(mocks.rescheduleInterviewSession).toHaveBeenCalledWith("31", {
+      start_at: new Date("2026-09-18T14:30").toISOString(),
+      end_at: new Date("2026-09-18T16:00").toISOString(),
+      timezone: "Asia/Shanghai",
+      allow_conflict: false,
+      base_lock_version: 2,
+    }));
+    expect(mocks.updateInterviewSession).toHaveBeenCalledWith("31", {
+      mode: "onsite",
+      meeting_url: null,
+      location: "科技园 2 号楼",
+      base_lock_version: 3,
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "修改笔试安排" })).not.toBeInTheDocument());
+  });
+
+  it("keeps the edit dialog open until a schedule conflict is explicitly accepted", async () => {
+    const rescheduledSession = {
+      ...session,
+      end_at: new Date(new Date(session.start_at).getTime() + 90 * 60_000).toISOString(),
+      lock_version: session.lock_version + 1,
+    };
+    mocks.getInterviewSession.mockResolvedValue({ session, application, assets: [] });
+    mocks.rescheduleInterviewSession
+      .mockRejectedValueOnce(new ApiRequestError(409, "INTERVIEW_TIME_CONFLICT"))
+      .mockResolvedValueOnce({ session: rescheduledSession, application, assets: [] });
+
+    render(<InterviewCenterPage view="applications" initialApplicationId="21" initialSessionId="31" />);
+
+    const recordDialog = await screen.findByRole("dialog", { name: "腾讯｜面试记录" });
+    fireEvent.click(within(recordDialog).getByRole("button", { name: "修改面试安排" }));
+    const editDialog = await screen.findByRole("dialog", { name: "修改面试安排" });
+    fireEvent.change(within(editDialog).getByLabelText("时长（分钟）"), { target: { value: "90" } });
+    fireEvent.click(within(editDialog).getByRole("button", { name: "保存修改" }));
+
+    expect(await within(editDialog).findByRole("status")).toHaveTextContent("这个时间段与其他安排重叠");
+    expect(mocks.rescheduleInterviewSession).toHaveBeenLastCalledWith("31", expect.objectContaining({
+      allow_conflict: false,
+      base_lock_version: 2,
+    }));
+
+    fireEvent.click(within(editDialog).getByRole("button", { name: "仍然保存" }));
+    await waitFor(() => expect(mocks.rescheduleInterviewSession).toHaveBeenLastCalledWith("31", expect.objectContaining({
+      allow_conflict: true,
+      base_lock_version: 2,
+    })));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "修改面试安排" })).not.toBeInTheDocument());
+  });
+
   it("pops an in-app record dialog entry so the next browser back returns to the list", async () => {
     window.history.replaceState(null, "", "/career/applications/21");
     window.history.pushState({ careerSessionDialog: true }, "", "/career/applications/21?session=31");
@@ -2062,6 +2153,7 @@ describe("InterviewCenterPage API projections", () => {
     expect(screen.queryByRole("button", { name: "添加下一阶段" })).not.toBeInTheDocument();
     expect(document.querySelector(".career-session-stage-action")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "完成笔试" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "修改笔试安排" })).not.toBeInTheDocument();
   });
 
   it("prefills and saves existing interview text from the edit action", async () => {
@@ -3105,7 +3197,12 @@ describe("InterviewCenterPage API projections", () => {
     fireEvent.drop(interviewColumn as HTMLElement, { dataTransfer });
 
     const dialog = await screen.findByRole("dialog", { name: "添加下一阶段" });
-    expect(within(dialog).getByRole("radio", { name: "面试" })).toHaveAttribute("aria-checked", "true");
+    expect(dialog).toHaveClass("is-stage-locked");
+    expect(within(dialog).getByRole("heading", { name: "添加下一阶段" }).parentElement).toHaveClass("sr-only");
+    expect(within(dialog).queryByText("目标阶段已由拖拽位置确定，请填写该阶段所需信息。")).not.toBeInTheDocument();
+    expect(dialog.querySelector(".career-next-stage-floating-badge")).toHaveTextContent("面试安排");
+    expect(within(dialog).queryByRole("radiogroup", { name: "选择下一阶段" })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("heading", { name: "填写面试信息" })).toBeInTheDocument();
     expect(within(dialog).getByLabelText("面试轮次")).toHaveValue("HR 面");
     expect(mocks.advanceJobApplication).not.toHaveBeenCalled();
   });
@@ -3133,6 +3230,8 @@ describe("InterviewCenterPage API projections", () => {
     fireEvent.drop(target, { dataTransfer });
 
     const dialog = await screen.findByRole("dialog", { name: "投递岗位" });
+    expect(within(dialog).queryByRole("radiogroup", { name: "选择下一阶段" })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("heading", { name: "确认投递信息" })).toBeInTheDocument();
     expect(card).toHaveClass("is-dragging");
     expect(target.querySelector("[data-drop-placeholder]"))
       .toHaveAttribute("data-placeholder-index", "0");
@@ -3192,7 +3291,8 @@ describe("InterviewCenterPage API projections", () => {
     fireEvent.drop(target, { dataTransfer, clientX: 500, clientY: 300 });
 
     const stageDialog = await screen.findByRole("dialog", { name: "添加下一阶段" });
-    expect(within(stageDialog).getByRole("radio", { name: "面试" })).toHaveAttribute("aria-checked", "true");
+    expect(within(stageDialog).queryByRole("radiogroup", { name: "选择下一阶段" })).not.toBeInTheDocument();
+    expect(within(stageDialog).getByRole("heading", { name: "填写面试信息" })).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(document.querySelector(".interview-error-notice")).not.toBeInTheDocument();
     expect(dataTransfer.dropEffect).toBe("move");
@@ -3269,9 +3369,9 @@ describe("InterviewCenterPage API projections", () => {
   });
 
   it.each([
-    ["assessment", "笔试"],
-    ["offer", "Offer"],
-  ] as const)("opens the %s form when a screening card is dropped there", async (columnKey, tabName) => {
+    ["assessment", "填写笔试信息", "笔试安排"],
+    ["offer", "填写 Offer 信息", "录用结果"],
+  ] as const)("opens the %s form when a screening card is dropped there", async (columnKey, formHeading, badgeCopy) => {
     const screeningApplication = {
       ...application,
       id: "57",
@@ -3301,7 +3401,9 @@ describe("InterviewCenterPage API projections", () => {
     fireEvent.drop(targetColumn as HTMLElement, { dataTransfer });
 
     const dialog = await screen.findByRole("dialog", { name: "添加下一阶段" });
-    expect(within(dialog).getByRole("radio", { name: tabName })).toHaveAttribute("aria-checked", "true");
+    expect(within(dialog).queryByRole("radiogroup", { name: "选择下一阶段" })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("heading", { name: formHeading })).toBeInTheDocument();
+    expect(dialog.querySelector(".career-next-stage-floating-badge")).toHaveTextContent(badgeCopy);
     expect(card).toHaveClass("is-dragging");
     expect(targetColumn?.querySelector("[data-drop-placeholder]"))
       .toHaveAttribute("data-placeholder-index", "0");
@@ -3496,6 +3598,8 @@ describe("InterviewCenterPage API projections", () => {
     fireEvent.drop(target, { dataTransfer });
 
     const stageDialog = await screen.findByRole("dialog", { name: "添加下一阶段" });
+    expect(within(stageDialog).queryByRole("radiogroup", { name: "选择下一阶段" })).not.toBeInTheDocument();
+    expect(within(stageDialog).getByRole("heading", { name: "填写面试信息" })).toBeInTheDocument();
     expect(within(stageDialog).getByLabelText("面试轮次")).toHaveValue("三面");
     expect(card).toHaveClass("is-dragging");
     expect(mocks.advanceJobApplication).not.toHaveBeenCalled();
