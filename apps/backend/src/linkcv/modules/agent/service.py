@@ -61,6 +61,7 @@ def session_record(
         id=session.public_id,
         resume_id=str(session.resume_id) if session.resume_id is not None else None,
         title=session.title,
+        pinned=bool(getattr(session, "pinned", False)),
         status=session.status,
         last_message_at=session.last_message_at,
         created_at=session.created_at,
@@ -118,6 +119,98 @@ def get_owned_session(db: Session, public_id: str, user_id: int) -> AgentSession
     if record is None:
         raise ApiError(404, "AGENT_SESSION_NOT_FOUND")
     return record
+
+
+def update_session(
+    db: Session,
+    *,
+    public_id: str,
+    user_id: int,
+    fields: set[str],
+    title: str | None = None,
+    pinned: bool | None = None,
+) -> AgentSession:
+    """Update only presentation state on an owner-scoped Agent session."""
+    if not fields:
+        raise ApiError(400, "INVALID_AGENT_SESSION")
+
+    record = db.scalar(
+        select(AgentSession)
+        .where(
+            AgentSession.public_id == public_id,
+            AgentSession.user_id == user_id,
+        )
+        .with_for_update()
+    )
+    if record is None:
+        raise ApiError(404, "AGENT_SESSION_NOT_FOUND")
+
+    if "title" in fields:
+        normalized_title = " ".join((title or "").split())
+        if not normalized_title or len(normalized_title) > 128:
+            raise ApiError(400, "INVALID_AGENT_SESSION")
+        record.title = normalized_title
+    if "pinned" in fields:
+        if pinned is None:
+            raise ApiError(400, "INVALID_AGENT_SESSION")
+        record.pinned = pinned
+    record.updated_at = utc_now()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    db.refresh(record)
+    return record
+
+
+def delete_session(db: Session, *, public_id: str, user_id: int) -> None:
+    """Delete one owned session and all of its Agent-owned dependent rows."""
+    session = db.scalar(
+        select(AgentSession)
+        .where(
+            AgentSession.public_id == public_id,
+            AgentSession.user_id == user_id,
+        )
+        .with_for_update()
+    )
+    if session is None:
+        raise ApiError(404, "AGENT_SESSION_NOT_FOUND")
+
+    runs = list(
+        db.scalars(
+            select(AgentRun).where(AgentRun.session_id == session.id).with_for_update()
+        ).all()
+    )
+    if any(run.status == "running" for run in runs):
+        db.rollback()
+        raise ApiError(409, "AGENT_RUN_IN_PROGRESS")
+
+    run_ids = [run.id for run in runs]
+    try:
+        # These tables are intentionally not linked by database foreign keys;
+        # keep the logical dependency order explicit for safe hard deletion.
+        if run_ids:
+            db.execute(
+                delete(ResumeChangeProposal).where(
+                    ResumeChangeProposal.run_id.in_(run_ids),
+                    ResumeChangeProposal.user_id == user_id,
+                )
+            )
+            db.execute(delete(AgentToolCall).where(AgentToolCall.run_id.in_(run_ids)))
+        db.execute(delete(AgentMessage).where(AgentMessage.session_id == session.id))
+        if run_ids:
+            db.execute(delete(AgentRun).where(AgentRun.id.in_(run_ids)))
+        db.execute(
+            delete(AgentSession).where(
+                AgentSession.id == session.id,
+                AgentSession.user_id == user_id,
+            )
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
 
 def create_session(

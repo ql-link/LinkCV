@@ -7,9 +7,22 @@ from typing import Literal
 ApplicationStatus = Literal["active", "rejected", "withdrawn", "closed"]
 StageType = Literal["screening", "interview", "hr", "offer"]
 StageState = Literal["awaiting_schedule", "scheduled", "awaiting_result", "negotiating"]
-OfferStatus = Literal[
-    "none", "oc_received", "written_offer_received", "accepted", "declined"
-]
+OfferStatus = Literal["none", "received", "accepted", "declined"]
+
+POST_APPLICATION_SCREENING_LABEL = "筛选中"
+
+
+def is_assessment_stage_label(stage_label: str) -> bool:
+    """Return whether a screening label represents an assessment.
+
+    Assessments intentionally remain represented by the existing ``screening``
+    stage type.  Keep this compatibility rule narrow and label-based so that
+    ordinary screening labels (for example, ``初筛`` or ``复筛``) continue to
+    enter the result-waiting state.
+    """
+
+    normalized = stage_label.strip().casefold()
+    return "笔试" in normalized or "测评" in normalized or "assessment" in normalized
 
 
 class InvalidTransition(ValueError):
@@ -85,9 +98,14 @@ def advance_application(
             or target_round_no <= state.round_no
         ):
             raise InvalidTransition("the next interview round must move forward")
-    target_state: StageState = (
-        "negotiating" if target_stage_type == "offer" else "awaiting_schedule"
-    )
+    if target_stage_type == "offer":
+        target_state: StageState = "negotiating"
+    elif target_stage_type == "screening" and not is_assessment_stage_label(
+        target_stage_label
+    ):
+        target_state = "awaiting_result"
+    else:
+        target_state = "awaiting_schedule"
     return ApplicationStateValue(
         stage_type=target_stage_type,
         round_no=target_round_no,
@@ -98,17 +116,12 @@ def advance_application(
     )
 
 
-def record_offer(
-    state: ApplicationStateValue,
-    offer_status: Literal["oc_received", "written_offer_received"],
-) -> ApplicationStateValue:
+def record_offer(state: ApplicationStateValue) -> ApplicationStateValue:
     if state.status != "active" or state.stage_type != "offer":
         raise InvalidTransition("the application is not in offer negotiation")
-    if state.offer_status == "written_offer_received" and offer_status == "oc_received":
-        raise InvalidTransition("a written offer cannot move back to an offer call")
     if state.offer_status in {"accepted", "declined"}:
         raise InvalidTransition("the offer has already reached a final result")
-    return replace(state, stage_state="negotiating", offer_status=offer_status)
+    return replace(state, stage_state="negotiating", offer_status="received")
 
 
 def close_application(
@@ -126,8 +139,8 @@ def close_application(
             return state
         raise InvalidTransition("the application is already closed")
     if offer_status is not None:
-        if state.offer_status not in {"written_offer_received", offer_status}:
-            raise InvalidTransition("a final offer result requires a written offer")
+        if state.offer_status not in {"received", offer_status}:
+            raise InvalidTransition("a final offer result requires a received offer")
         if status != "closed":
             raise InvalidTransition("offer results close the application")
         return replace(state, status="closed", offer_status=offer_status)

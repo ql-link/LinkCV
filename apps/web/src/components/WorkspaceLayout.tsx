@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 import {
   BriefcaseBusiness,
   CalendarDays,
@@ -6,9 +6,8 @@ import {
   FileText,
   LayoutTemplate,
   ListChecks,
-  NotebookTabs,
-  Sparkles,
 } from "lucide-react";
+import assistantFeatherOutline from "../assets/assistant-feather-outline.png";
 import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
 import { Brand, PageHeader } from "@/components/ui";
@@ -17,7 +16,7 @@ import { preloadWorkspacePage } from "../workspacePageLoaders";
 import "./career-navigation.css";
 
 export type WorkspaceSection = "resumes" | "assistant" | "templates" | "career" | "datasets" | "account";
-export type CareerSection = "jobs" | "applications" | "schedule" | "reviews";
+export type CareerSection = "applications" | "schedule" | "reviews";
 
 type WorkspaceNavigationProps = {
   active: WorkspaceSection;
@@ -33,7 +32,7 @@ const NAV_ITEMS: Array<{
   key: WorkspaceSection;
   label: string;
   href: string;
-  icon: typeof FileText;
+  icon: ComponentType<{ "aria-hidden"?: boolean; className?: string; strokeWidth?: number }>;
 }> = [
   {
     activeColor: "var(--ui-accent)",
@@ -44,14 +43,6 @@ const NAV_ITEMS: Array<{
     icon: FileText,
   },
   {
-    activeColor: "var(--ui-accent)",
-    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-accent) 24%, transparent) 0%, color-mix(in srgb, var(--ui-accent) 10%, transparent) 48%, transparent 76%)",
-    key: "assistant",
-    label: "AI 助手",
-    href: "/assistant",
-    icon: Sparkles,
-  },
-  {
     activeColor: "var(--ui-template-accent)",
     gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-template-accent) 24%, transparent) 0%, color-mix(in srgb, var(--ui-template-accent) 10%, transparent) 48%, transparent 76%)",
     key: "templates",
@@ -60,11 +51,19 @@ const NAV_ITEMS: Array<{
     icon: LayoutTemplate,
   },
   {
-    activeColor: "var(--ui-career-accent)",
-    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-career-accent) 28%, transparent) 0%, color-mix(in srgb, var(--ui-career-accent) 13%, transparent) 48%, transparent 76%)",
+    activeColor: "var(--ui-assistant-accent)",
+    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-assistant-accent) 28%, transparent) 0%, color-mix(in srgb, var(--ui-assistant-accent) 12%, transparent) 48%, transparent 76%)",
+    key: "assistant",
+    label: "AI 助手",
+    href: "/assistant",
+    icon: AssistantFeatherIcon,
+  },
+  {
+    activeColor: "var(--ui-warning)",
+    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-warning) 24%, transparent) 0%, color-mix(in srgb, var(--ui-warning) 10%, transparent) 48%, transparent 76%)",
     key: "career",
     label: "求职中心",
-    href: "/career/jobs",
+    href: "/career/applications",
     icon: BriefcaseBusiness,
   },
   {
@@ -76,6 +75,17 @@ const NAV_ITEMS: Array<{
     icon: Database,
   },
 ];
+
+function AssistantFeatherIcon({
+  className,
+  "aria-hidden": ariaHidden,
+}: {
+  "aria-hidden"?: boolean;
+  className?: string;
+  strokeWidth?: number;
+}) {
+  return <img aria-hidden={ariaHidden} className={`${className ?? ""} dark:invert`} src={assistantFeatherOutline} alt="" />;
+}
 
 export function WorkspaceNavigation({
   active,
@@ -184,20 +194,20 @@ export function WorkspacePageHero({
 }
 
 const CAREER_ITEMS: Array<{ key: CareerSection; label: string; href: string; icon: typeof BriefcaseBusiness }> = [
-  { key: "jobs", label: "岗位库", href: "/career/jobs", icon: BriefcaseBusiness },
-  { key: "applications", label: "求职进程", href: "/career/applications", icon: ListChecks },
+  { key: "applications", label: "求职记录", href: "/career/applications", icon: ListChecks },
   { key: "schedule", label: "面试排期", href: "/career/schedule", icon: CalendarDays },
-  { key: "reviews", label: "记录复盘", href: "/career/reviews", icon: NotebookTabs },
 ];
 
 export function CareerNavigation({ active }: { active: CareerSection }) {
+  const activeEntry = active === "schedule" ? "schedule" : "applications";
+
   return (
     <nav className="career-subnav" aria-label="求职中心导航">
       {CAREER_ITEMS.map(({ key, label, href, icon: Icon }) => (
         <a
           key={key}
-          className={active === key ? "is-active" : ""}
-          aria-current={active === key ? "page" : undefined}
+          className={activeEntry === key ? "is-active" : ""}
+          aria-current={activeEntry === key ? "page" : undefined}
           href={href}
           onClick={(event) => {
             if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;

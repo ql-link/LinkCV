@@ -9,7 +9,7 @@ afterEach(() => {
 });
 
 describe("WorkspaceNavigation", () => {
-  it("使用顶部胶囊导航切换简历、AI 助手、模板、求职中心和资料库，并标记当前模块", () => {
+  it("按简历、模板、AI 助手、求职中心和资料库的顺序渲染顶部导航，并标记当前模块", () => {
     const onItemIntent = vi.fn();
     render(<WorkspaceNavigation active="career" email="user@example.test" onItemIntent={onItemIntent} />);
 
@@ -23,19 +23,30 @@ describe("WorkspaceNavigation", () => {
     const templatesLink = screen.getByRole("link", { name: "简历模板" });
     const interviewsLink = screen.getByRole("link", { name: "求职中心" });
     expect(interviewsLink).toHaveAttribute("aria-current", "page");
+    expect(Array.from(screen.getByRole("navigation", { name: "工作区导航" }).querySelectorAll("a")).map((link) => link.getAttribute("href"))).toEqual([
+      "/resumes",
+      "/templates",
+      "/assistant",
+      "/career/applications",
+      "/datasets",
+    ]);
+    expect(assistantLink.querySelector('img[src*="assistant-feather-outline"]')).toBeInTheDocument();
     expect(templatesLink).toHaveAttribute("href", "/templates");
     expect(assistantLink).toHaveAttribute("href", "/assistant");
-    expect(interviewsLink).toHaveAttribute("href", "/career/jobs");
+    expect(interviewsLink).toHaveAttribute("href", "/career/applications");
     expect(resumesLink.style.getPropertyValue("--nav-item-color")).toBe("var(--ui-accent)");
     expect(templatesLink.style.getPropertyValue("--nav-item-color")).toBe("var(--ui-template-accent)");
-    expect(interviewsLink.style.getPropertyValue("--nav-item-color")).toBe("var(--ui-career-accent)");
-    expect(interviewsLink.style.getPropertyValue("--nav-item-glow")).toContain("var(--ui-career-accent)");
+    expect(assistantLink.style.getPropertyValue("--nav-item-color")).toBe("var(--ui-assistant-accent)");
+    expect(assistantLink.style.getPropertyValue("--nav-item-glow")).toContain("var(--ui-assistant-accent)");
+    expect(interviewsLink.style.getPropertyValue("--nav-item-color")).toBe("var(--ui-warning)");
+    expect(interviewsLink.style.getPropertyValue("--nav-item-glow")).toContain("radial-gradient");
+    expect(interviewsLink.style.getPropertyValue("--nav-item-glow")).toContain("var(--ui-warning)");
     expect(screen.queryByRole("link", { name: "个人资料" })).not.toBeInTheDocument();
 
     fireEvent.mouseEnter(templatesLink);
     fireEvent.focus(interviewsLink);
     expect(onItemIntent).toHaveBeenCalledWith("/templates");
-    expect(onItemIntent).toHaveBeenCalledWith("/career/jobs");
+    expect(onItemIntent).toHaveBeenCalledWith("/career/applications");
 
     fireEvent.click(screen.getByRole("link", { name: "我的简历" }));
     expect(`${window.location.pathname}${window.location.search}`).toBe("/resumes");
@@ -50,7 +61,7 @@ describe("WorkspaceNavigation", () => {
     expect(`${window.location.pathname}${window.location.search}`).toBe("/datasets");
 
     fireEvent.click(screen.getByRole("link", { name: "求职中心" }));
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/career/jobs");
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/career/applications");
 
     window.history.replaceState(null, "", "/jobs");
     const preventNativeNavigation = (event: MouseEvent) => event.preventDefault();
@@ -86,15 +97,25 @@ describe("WorkspaceNavigation", () => {
     expect(`${window.location.pathname}${window.location.search}`).toBe("/account");
   });
 
-  it("求职中心移除总览并使用四个按流程排序的子导航", () => {
-    render(<CareerNavigation active="applications" />);
+  it("求职中心只保留求职记录和面试排期两个按流程排序的主入口", () => {
+    const { rerender } = render(<CareerNavigation active="applications" />);
 
     const navigation = screen.getByRole("navigation", { name: "求职中心导航" });
     const links = Array.from(navigation.querySelectorAll("a"));
-    expect(links.map((link) => link.textContent)).toEqual(["岗位库", "求职进程", "面试排期", "记录复盘"]);
+    expect(links.map((link) => link.textContent)).toEqual(["求职记录", "面试排期"]);
     expect(screen.queryByRole("link", { name: "总览" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "求职进程" })).toHaveAttribute("href", "/career/applications");
-    expect(screen.getByRole("link", { name: "求职进程" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "求职记录" })).toHaveAttribute("href", "/career/applications");
+    expect(screen.getByRole("link", { name: "面试排期" })).toHaveAttribute("href", "/career/schedule");
+
+    for (const active of ["applications", "reviews"] as const) {
+      rerender(<CareerNavigation active={active} />);
+      expect(screen.getByRole("link", { name: "求职记录" })).toHaveAttribute("aria-current", "page");
+      expect(screen.getByRole("link", { name: "面试排期" })).not.toHaveAttribute("aria-current");
+    }
+
+    rerender(<CareerNavigation active="schedule" />);
+    expect(screen.getByRole("link", { name: "求职记录" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("link", { name: "面试排期" })).toHaveAttribute("aria-current", "page");
   });
 
   it("模块页头把图标、标题和描述放在同一信息行", () => {

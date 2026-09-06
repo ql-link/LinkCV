@@ -1,24 +1,44 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from linkcv.application.interviews.state import validate_stage_context
+from linkcv.modules.job_descriptions.schemas import EmploymentType, SalaryPeriod
 
 
 CalendarColor = Literal["red", "orange", "yellow", "green", "blue", "purple", "gray"]
-ApplicationStageType = Literal["screening", "interview", "hr", "offer"]
+ApplicationStageType = Literal[
+    "screening",
+    "assessment",
+    "written_test",
+    "ai_interview",
+    "interview",
+    "offer",
+]
+LegacyApplicationStageType = Literal["screening", "interview", "hr", "offer"]
+ApplicationPhase = Literal["pending", "applied"]
+ApplicationLifecycleStatus = Literal["active", "terminated"]
+ApplicationStageStatus = Literal["active", "completed", "cancelled"]
+ApplicationStageResult = Literal["pending", "passed", "rejected", "skipped"]
+TerminationReason = Literal[
+    "company_rejected",
+    "user_withdrew",
+    "offer_declined",
+    "completed",
+    "other",
+]
 SessionStageType = Literal["interview", "hr", "offer", "other"]
 ApplicationStageState = Literal[
     "awaiting_schedule", "scheduled", "awaiting_result", "negotiating"
 ]
 ApplicationStatus = Literal["active", "rejected", "withdrawn", "closed"]
-OfferStatus = Literal[
-    "none", "oc_received", "written_offer_received", "accepted", "declined"
-]
+OfferStatus = Literal["none", "received", "accepted", "declined"]
 SessionStatus = Literal["scheduled", "completed", "cancelled"]
 RoundResult = Literal["pending", "passed", "rejected"]
 InterviewMode = Literal["video", "onsite", "phone", "other"]
@@ -49,7 +69,7 @@ class StrictModel(BaseModel):
 class JobApplicationCreateRequest(StrictModel):
     job_description_id: DatabaseId
     resume_version_id: DatabaseId | None = None
-    current_stage_type: ApplicationStageType = "screening"
+    current_stage_type: LegacyApplicationStageType = "screening"
     current_round_no: int | None = Field(default=None, ge=1, le=65_535)
     current_stage_label: str = Field(default="筛选中", max_length=100)
     stage_state: ApplicationStageState = "awaiting_result"
@@ -81,6 +101,15 @@ class JobApplicationCreateRequest(StrictModel):
         validate_stage_context(
             self.current_stage_type, self.current_round_no, self.current_stage_label
         )
+        if (
+            self.current_stage_type == "screening"
+            and self.current_stage_label == "待投递"
+        ):
+            if self.applied_at is not None:
+                raise ValueError("待投递阶段不能包含 applied_at")
+            if self.stage_state != "awaiting_schedule":
+                raise ValueError("待投递阶段必须等待投递")
+            return self
         expected_state: ApplicationStageState
         if self.current_stage_type == "screening":
             expected_state = "awaiting_result"
@@ -96,10 +125,12 @@ class JobApplicationCreateRequest(StrictModel):
 
 
 class JobApplicationUpdateRequest(StrictModel):
+    employment_type: EmploymentType | None = None
     calendar_color: CalendarColor | None = None
     is_favorite: bool | None = None
     applied_at: datetime | None = None
     notes: str | None = Field(default=None, max_length=16_000)
+    resume_id: DatabaseId | None = None
     resume_version_id: DatabaseId | None = None
     base_lock_version: int = Field(ge=1)
 
@@ -119,6 +150,10 @@ class JobApplicationUpdateRequest(StrictModel):
     def require_change(self) -> JobApplicationUpdateRequest:
         if self.model_fields_set == {"base_lock_version"}:
             raise ValueError("at least one application field is required")
+        if {"resume_id", "resume_version_id"} <= self.model_fields_set:
+            raise ValueError(
+                "resume_id and resume_version_id cannot be provided together"
+            )
         for field_name in ("calendar_color", "is_favorite"):
             if field_name in self.model_fields_set and getattr(self, field_name) is None:
                 raise ValueError(f"{field_name} cannot be null")
@@ -130,7 +165,7 @@ class LifecycleRequest(StrictModel):
 
 
 class AdvanceApplicationRequest(LifecycleRequest):
-    target_stage_type: ApplicationStageType
+    target_stage_type: LegacyApplicationStageType
     target_round_no: int | None = Field(default=None, ge=1, le=65_535)
     target_stage_label: str = Field(max_length=100)
 
@@ -146,7 +181,36 @@ class AdvanceApplicationRequest(LifecycleRequest):
 
 
 class OfferApplicationRequest(LifecycleRequest):
-    offer_status: Literal["oc_received", "written_offer_received"]
+    base_location: str | None = Field(default=None, max_length=100)
+    salary: Decimal | None = Field(
+        default=None, ge=0, max_digits=12, decimal_places=2
+    )
+    salary_currency: str | None = Field(default=None, max_length=3)
+    salary_period: SalaryPeriod | None = None
+    benefits_description: str | None = Field(default=None, max_length=500)
+
+    @field_validator("base_location", "benefits_description")
+    @classmethod
+    def trim_optional_text(cls, value: str | None) -> str | None:
+        return _trim_optional(value)
+
+    @field_validator("salary_currency")
+    @classmethod
+    def normalize_currency(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().upper()
+        if not re.fullmatch(r"[A-Z]{3}", normalized):
+            raise ValueError("salary currency must be a three-letter ASCII code")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_salary(self) -> OfferApplicationRequest:
+        if self.salary is not None and (
+            self.salary_currency is None or self.salary_period is None
+        ):
+            raise ValueError("numeric salary requires currency and period")
+        return self
 
 
 class CloseApplicationRequest(LifecycleRequest):
@@ -154,8 +218,57 @@ class CloseApplicationRequest(LifecycleRequest):
     offer_status: Literal["accepted", "declined"] | None = None
 
 
+class AddApplicationStageRequest(LifecycleRequest):
+    client_request_id: UUID
+    stage_type: ApplicationStageType
+    stage_label: str | None = Field(default=None, max_length=100)
+    interview_round_no: int | None = Field(default=None, ge=1, le=65_535)
+    applied_at: datetime | None = None
+    resume_id: DatabaseId | None = None
+    resume_version_id: DatabaseId | None = None
+
+    @field_validator("stage_label")
+    @classmethod
+    def trim_stage_label(cls, value: str | None) -> str | None:
+        return _trim_optional(value)
+
+    @field_validator("applied_at")
+    @classmethod
+    def require_aware_applied_at(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            raise ValueError("applied_at must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_stage(self) -> AddApplicationStageRequest:
+        if self.stage_type == "interview":
+            if not self.stage_label:
+                raise ValueError("interview stage requires a label")
+        elif self.interview_round_no is not None:
+            raise ValueError("only interview stages can carry a round number")
+        if {"resume_id", "resume_version_id"} <= self.model_fields_set:
+            raise ValueError(
+                "resume_id and resume_version_id cannot be provided together"
+            )
+        return self
+
+
+class TerminateApplicationRequest(LifecycleRequest):
+    client_request_id: UUID
+    reason: TerminationReason
+    applied_at: datetime | None = None
+
+    @field_validator("applied_at")
+    @classmethod
+    def require_aware_applied_at(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            raise ValueError("applied_at must include a timezone")
+        return value
+
+
 class InterviewSessionCreateRequest(StrictModel):
     client_request_id: UUID
+    application_stage_id: DatabaseId | None = None
     stage_type: SessionStageType
     round_no: int | None = Field(default=None, ge=1, le=65_535)
     stage_label: str = Field(max_length=100)
@@ -274,6 +387,37 @@ class CancelInterviewRequest(LifecycleRequest):
         return _trim_optional(value)
 
 
+class ApplicationStageRecord(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: DatabaseId
+    application_id: DatabaseId
+    client_request_id: str
+    stage_type: ApplicationStageType
+    stage_label: str
+    interview_round_no: int | None
+    sequence_no: int
+    stage_status: ApplicationStageStatus
+    stage_result: ApplicationStageResult
+    current_marker: int | None
+    entered_at: datetime
+    completed_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+    @field_validator("id", "application_id", mode="before")
+    @classmethod
+    def stringify_ids(cls, value: object) -> str:
+        return str(value)
+
+    @field_validator(
+        "entered_at", "completed_at", "created_at", "updated_at", mode="before"
+    )
+    @classmethod
+    def serialize_utc_times(cls, value: datetime | None) -> datetime | None:
+        return _as_utc(value)
+
+
 class JobApplicationRecord(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -285,12 +429,21 @@ class JobApplicationRecord(BaseModel):
     job_snapshot: dict[str, object]
     resume_title_snapshot: str | None
     calendar_color: CalendarColor
-    current_stage_type: ApplicationStageType
+    current_stage_type: LegacyApplicationStageType
     current_round_no: int | None
     current_stage_label: str
     stage_state: ApplicationStageState
     status: ApplicationStatus
+    phase: ApplicationPhase
+    lifecycle_status: ApplicationLifecycleStatus
+    terminated_at: datetime | None
+    termination_reason: TerminationReason | None
     offer_status: OfferStatus
+    offer_base_location: str | None
+    offer_salary: Decimal | None
+    offer_salary_currency: str | None
+    offer_salary_period: SalaryPeriod | None
+    offer_benefits_description: str | None
     is_favorite: bool
     applied_at: datetime | None
     notes: str | None
@@ -298,6 +451,8 @@ class JobApplicationRecord(BaseModel):
     lock_version: int
     created_at: datetime
     updated_at: datetime
+    current_stage: ApplicationStageRecord | None = None
+    stages: list[ApplicationStageRecord] = Field(default_factory=list)
 
     @field_validator(
         "id",
@@ -310,7 +465,12 @@ class JobApplicationRecord(BaseModel):
         return None if value is None else str(value)
 
     @field_validator(
-        "applied_at", "archived_at", "created_at", "updated_at", mode="before"
+        "applied_at",
+        "terminated_at",
+        "archived_at",
+        "created_at",
+        "updated_at",
+        mode="before",
     )
     @classmethod
     def serialize_utc_times(cls, value: datetime | None) -> datetime | None:
@@ -339,6 +499,7 @@ class InterviewSessionRecord(BaseModel):
 
     id: DatabaseId
     application_id: DatabaseId
+    application_stage_id: DatabaseId | None
     client_request_id: str
     stage_type: SessionStageType
     round_no: int | None
@@ -366,11 +527,11 @@ class InterviewSessionRecord(BaseModel):
     updated_at: datetime
 
     @field_validator(
-        "id", "application_id", mode="before"
+        "id", "application_id", "application_stage_id", mode="before"
     )
     @classmethod
-    def stringify_ids(cls, value: object) -> str:
-        return str(value)
+    def stringify_ids(cls, value: object) -> str | None:
+        return None if value is None else str(value)
 
     @field_validator(
         "start_at",
@@ -450,7 +611,7 @@ class OverviewMetrics(StrictModel):
     weekly_interviews: int
     upcoming_interviews: int
     completed_interviews: int
-    written_offers: int
+    offers_received: int
 
 
 class InterviewOverviewResponse(StrictModel):

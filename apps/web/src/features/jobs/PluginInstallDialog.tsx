@@ -1,4 +1,4 @@
-import { AppWindow, Download, X } from "lucide-react";
+import { AppWindow, Download, PackageOpen, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { api, ApiRequestError, type PluginReleaseCurrentResponse } from "../../api/client";
@@ -63,7 +63,13 @@ export function PluginInstallDialog({ onClose }: { onClose: () => void }) {
                 {!result && !failed && <PageLoading label="正在检查安装包…" scope="panel" />}
                 {failed && <div className="plugin-release-state is-error" role="alert">暂时无法获取插件安装包，请稍后重试。</div>}
                 {result?.status === "unpublished" && <div className="plugin-release-state">暂未提供插件安装包。</div>}
-                {release && <Button className="plugin-download-link" icon={<Download size={15} />} disabled={downloading} onClick={() => void download()}>{downloading ? "正在下载…" : "下载插件 ZIP"}</Button>}
+                {release && (
+                  <div className="plugin-release-row">
+                    <span className="plugin-release-icon" aria-hidden="true"><PackageOpen size={20} /></span>
+                    <strong className="plugin-release-name">LinkResume 岗位采集插件</strong>
+                    <Button className="plugin-download-link" variant="outline" size="sm" icon={<Download size={15} />} disabled={downloading} onClick={() => void download()}>{downloading ? "正在下载…" : "下载 ZIP"}</Button>
+                  </div>
+                )}
                 {downloadError && <p className="plugin-release-state is-error" role="alert">{downloadError}</p>}
               </div>
             </div>
@@ -71,7 +77,7 @@ export function PluginInstallDialog({ onClose }: { onClose: () => void }) {
           <PluginStep index="2" title="打开扩展管理页">在浏览器地址栏输入 <code>chrome://extensions</code>；使用 Edge 时输入 <code>edge://extensions</code>。</PluginStep>
           <PluginStep index="3" title="加载插件并固定到工具栏">开启“开发者模式”，点击“加载已解压的扩展程序”，选择包含 <code>manifest.json</code> 的解压目录。然后打开扩展菜单，将“LinkResume 岗位采集”固定到工具栏。</PluginStep>
           <PluginStep index="4" title="打开岗位并核对导入">先登录 LinkResume，再进入 BOSS 直聘岗位详情页；列表页中可以先选中右侧岗位。点击插件图标，检查职位、公司和薪资等信息，然后点击“确认导入”。插件不会自动投递或批量采集。</PluginStep>
-          <PluginStep index="5" title="查看岗位与更新插件">导入成功后可在岗位库继续查看、编辑或删除。首次安装后请刷新已经打开的招聘页面；更新时覆盖原解压目录，并在扩展管理页点击“重新加载”。</PluginStep>
+          <PluginStep index="5" title="查看岗位与更新插件">导入成功后可在求职记录中打开完整岗位并继续编辑。首次安装后请刷新已经打开的招聘页面；更新时覆盖原解压目录，并在扩展管理页点击“重新加载”。</PluginStep>
         </ol>
       </section>
     </div>

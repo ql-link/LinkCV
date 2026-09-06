@@ -50,7 +50,7 @@ def test_sql_migration_executor_keeps_json_colons_literal(tmp_path: Path) -> Non
     sql_file = tmp_path / "json.up.sql"
     sql_file.write_text(
         "INSERT INTO example (payload) VALUES "
-        "('{\"font_size\":14,\"smart_one_page\":false}');",
+        '(\'{"font_size":14,"smart_one_page":false}\');',
         encoding="utf-8",
     )
 
@@ -72,7 +72,7 @@ def test_sql_migration_executor_keeps_json_colons_literal(tmp_path: Path) -> Non
 
     assert connection.statements == [
         "INSERT INTO example (payload) VALUES "
-        "('{\"font_size\":14,\"smart_one_page\":false}')"
+        '(\'{"font_size":14,"smart_one_page":false}\')'
     ]
 
 
@@ -139,9 +139,7 @@ def test_sql_migration_executor_strips_utf8_bom(tmp_path: Path) -> None:
     connection = Connection()
     module.execute_sql_file(connection, sql_file)
 
-    assert connection.statements == [
-        "ALTER TABLE example ADD COLUMN enabled BOOLEAN"
-    ]
+    assert connection.statements == ["ALTER TABLE example ADD COLUMN enabled BOOLEAN"]
 
 
 def test_sql_revision_creates_only_upgrade_file(tmp_path: Path) -> None:
@@ -214,8 +212,8 @@ def test_four_core_table_revision_is_sql_first_and_guarded() -> None:
         REPO_ROOT / f"apps/backend/migrations/sql/{FOUR_TABLE_REVISION}.up.sql"
     ).read_text(encoding="utf-8")
     assert "op.create_table" not in revision_text
-    assert 'revision: str = \'0002\'' in revision_text
-    assert 'down_revision: str | None = \'0001\'' in revision_text
+    assert "revision: str = '0002'" in revision_text
+    assert "down_revision: str | None = '0001'" in revision_text
     assert '"0002.up.sql"' in revision_text
     assert ".down.sql" not in revision_text
     assert "require_empty_business_tables(connection)" in revision_text
@@ -239,8 +237,7 @@ def test_template_delete_revision_is_sql_first_and_forward_only() -> None:
     )
     revision_text = revision.read_text(encoding="utf-8")
     up_sql = (
-        REPO_ROOT
-        / f"apps/backend/migrations/sql/{TEMPLATE_DELETE_REVISION}.up.sql"
+        REPO_ROOT / f"apps/backend/migrations/sql/{TEMPLATE_DELETE_REVISION}.up.sql"
     ).read_text(encoding="utf-8")
     assert "op.create_foreign_key" not in revision_text
     assert "0003.up.sql" in revision_text
@@ -345,9 +342,7 @@ def test_release_runner_fails_before_migration_on_target_mismatch() -> None:
 
 def migration_script_directory(module: ModuleType) -> ScriptDirectory:
     config = Config(str(module.BACKEND_ROOT / "alembic.ini"))
-    config.set_main_option(
-        "script_location", str(module.BACKEND_ROOT / "migrations")
-    )
+    config.set_main_option("script_location", str(module.BACKEND_ROOT / "migrations"))
     return ScriptDirectory.from_config(config)
 
 
@@ -358,12 +353,15 @@ def test_release_runner_rejects_agent_tables_ahead_of_alembic_revision() -> None
     )
     engine = create_engine("sqlite+pysqlite:///:memory:")
     with engine.begin() as connection:
-        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
+        connection.execute(
+            text("CREATE TABLE alembic_version (version_num VARCHAR(32))")
+        )
         connection.execute(text("INSERT INTO alembic_version VALUES ('0029')"))
         connection.execute(text("CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY)"))
 
-    with engine.connect() as connection, pytest.raises(
-        RuntimeError, match="0030 tables exist before revision"
+    with (
+        engine.connect() as connection,
+        pytest.raises(RuntimeError, match="0030 tables exist before revision"),
     ):
         module.validate_schema_revision_alignment(
             connection, migration_script_directory(module)
@@ -378,12 +376,15 @@ def test_release_runner_rejects_missing_tables_for_applied_revision() -> None:
     )
     engine = create_engine("sqlite+pysqlite:///:memory:")
     with engine.begin() as connection:
-        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
+        connection.execute(
+            text("CREATE TABLE alembic_version (version_num VARCHAR(32))")
+        )
         connection.execute(text("INSERT INTO alembic_version VALUES ('0030')"))
         connection.execute(text("CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY)"))
 
-    with engine.connect() as connection, pytest.raises(
-        RuntimeError, match="0030 missing tables"
+    with (
+        engine.connect() as connection,
+        pytest.raises(RuntimeError, match="0030 missing tables"),
     ):
         module.validate_schema_revision_alignment(
             connection, migration_script_directory(module)
@@ -398,16 +399,23 @@ def test_release_runner_rejects_scoped_columns_ahead_of_revision() -> None:
     )
     engine = create_engine("sqlite+pysqlite:///:memory:")
     with engine.begin() as connection:
-        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
+        connection.execute(
+            text("CREATE TABLE alembic_version (version_num VARCHAR(32))")
+        )
         connection.execute(text("INSERT INTO alembic_version VALUES ('0030')"))
         for table_name in module.REVISION_TABLE_MARKERS["0030"]:
-            connection.execute(text(f"CREATE TABLE {table_name} (id INTEGER PRIMARY KEY)"))
+            connection.execute(
+                text(f"CREATE TABLE {table_name} (id INTEGER PRIMARY KEY)")
+            )
         connection.execute(
-            text("ALTER TABLE resume_change_proposals ADD COLUMN proposal_mode VARCHAR(32)")
+            text(
+                "ALTER TABLE resume_change_proposals ADD COLUMN proposal_mode VARCHAR(32)"
+            )
         )
 
-    with engine.connect() as connection, pytest.raises(
-        RuntimeError, match="0031 columns exist before revision"
+    with (
+        engine.connect() as connection,
+        pytest.raises(RuntimeError, match="0031 columns exist before revision"),
     ):
         module.validate_schema_revision_alignment(
             connection, migration_script_directory(module)
@@ -422,13 +430,16 @@ def test_release_runner_accepts_aligned_agent_schema() -> None:
     )
     engine = create_engine("sqlite+pysqlite:///:memory:")
     with engine.begin() as connection:
-        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
+        connection.execute(
+            text("CREATE TABLE alembic_version (version_num VARCHAR(32))")
+        )
         connection.execute(text("INSERT INTO alembic_version VALUES ('0032')"))
         for table_name in module.REVISION_TABLE_MARKERS["0030"]:
             marker_columns = set().union(
                 *(
                     table_markers.get(table_name, frozenset())
-                    for table_markers in module.REVISION_COLUMN_MARKERS.values()
+                    for revision, table_markers in module.REVISION_COLUMN_MARKERS.items()
+                    if revision in {"0031", "0032"}
                 )
             )
             if marker_columns:
@@ -457,7 +468,9 @@ def test_release_runner_rejects_clarification_columns_ahead_of_revision() -> Non
     )
     engine = create_engine("sqlite+pysqlite:///:memory:")
     with engine.begin() as connection:
-        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
+        connection.execute(
+            text("CREATE TABLE alembic_version (version_num VARCHAR(32))")
+        )
         connection.execute(text("INSERT INTO alembic_version VALUES ('0031')"))
         for table_name in module.REVISION_TABLE_MARKERS["0030"]:
             if table_name == "resume_change_proposals":
@@ -466,17 +479,24 @@ def test_release_runner_rejects_clarification_columns_ahead_of_revision() -> Non
                     for column in module.REVISION_COLUMN_MARKERS["0031"][table_name]
                 )
                 connection.execute(
-                    text(f"CREATE TABLE {table_name} (id INTEGER PRIMARY KEY, {columns})")
+                    text(
+                        f"CREATE TABLE {table_name} (id INTEGER PRIMARY KEY, {columns})"
+                    )
                 )
             elif table_name == "agent_messages":
                 connection.execute(
-                    text("CREATE TABLE agent_messages (id INTEGER PRIMARY KEY, message_type TEXT)")
+                    text(
+                        "CREATE TABLE agent_messages (id INTEGER PRIMARY KEY, message_type TEXT)"
+                    )
                 )
             else:
-                connection.execute(text(f"CREATE TABLE {table_name} (id INTEGER PRIMARY KEY)"))
+                connection.execute(
+                    text(f"CREATE TABLE {table_name} (id INTEGER PRIMARY KEY)")
+                )
 
-    with engine.connect() as connection, pytest.raises(
-        RuntimeError, match="0032 columns exist before revision"
+    with (
+        engine.connect() as connection,
+        pytest.raises(RuntimeError, match="0032 columns exist before revision"),
     ):
         module.validate_schema_revision_alignment(
             connection, migration_script_directory(module)
@@ -493,7 +513,9 @@ def test_release_runner_rejects_job_archive_column_still_present_after_0034() ->
     module.REVISION_COLUMN_MARKERS = {}
     engine = create_engine("sqlite+pysqlite:///:memory:")
     with engine.begin() as connection:
-        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
+        connection.execute(
+            text("CREATE TABLE alembic_version (version_num VARCHAR(32))")
+        )
         connection.execute(text("INSERT INTO alembic_version VALUES ('0034')"))
         connection.execute(
             text(
@@ -502,8 +524,9 @@ def test_release_runner_rejects_job_archive_column_still_present_after_0034() ->
             )
         )
 
-    with engine.connect() as connection, pytest.raises(
-        RuntimeError, match="0034 removed columns still exist"
+    with (
+        engine.connect() as connection,
+        pytest.raises(RuntimeError, match="0034 removed columns still exist"),
     ):
         module.validate_schema_revision_alignment(
             connection, migration_script_directory(module)
@@ -520,12 +543,17 @@ def test_release_runner_rejects_job_archive_column_removed_before_0034() -> None
     module.REVISION_COLUMN_MARKERS = {}
     engine = create_engine("sqlite+pysqlite:///:memory:")
     with engine.begin() as connection:
-        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
+        connection.execute(
+            text("CREATE TABLE alembic_version (version_num VARCHAR(32))")
+        )
         connection.execute(text("INSERT INTO alembic_version VALUES ('0033')"))
-        connection.execute(text("CREATE TABLE job_descriptions (id INTEGER PRIMARY KEY)"))
+        connection.execute(
+            text("CREATE TABLE job_descriptions (id INTEGER PRIMARY KEY)")
+        )
 
-    with engine.connect() as connection, pytest.raises(
-        RuntimeError, match="0034 columns removed before revision"
+    with (
+        engine.connect() as connection,
+        pytest.raises(RuntimeError, match="0034 columns removed before revision"),
     ):
         module.validate_schema_revision_alignment(
             connection, migration_script_directory(module)

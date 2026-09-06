@@ -24,8 +24,18 @@ from linkcv.modules.agent.models import (
 )
 from linkcv.modules.agent.pi_client import stream_pi_run
 from linkcv.modules.agent.service import create_run
+from linkcv.modules.datasets.models import UserDataset
+from linkcv.modules.identity.models import User
 from linkcv.modules.job_descriptions.models import JobDescription
-from linkcv.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
+from linkcv.modules.llm.models import LLMCapabilityBinding, LLMModelConfig
+from linkcv.modules.llm.service import LLMError
+from linkcv.modules.resumes.models import (
+    DATASET_SOURCE_TYPE,
+    DocumentParseTask,
+    Resume,
+    ResumeTemplate,
+    ResumeVersion,
+)
 from tests.fakes import FakeRedis
 from tests.canonical_resume_fixtures import canonical_template_payload
 
@@ -34,8 +44,14 @@ INTERNAL_TOKEN = "internal-agent-token-for-tests-000000000001"
 
 
 class FakeStorage:
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+
     def ensure_bucket(self) -> None:
         pass
+
+    def get(self, object_name: str) -> bytes:
+        return self.objects[object_name]
 
     def delete(self, object_name: str) -> None:
         pass
@@ -85,6 +101,26 @@ def create_resume(client: TestClient, app) -> dict:
     )
     assert response.status_code == 201
     return response.json()["resume"]
+
+
+def bind_pi_agent_model(app) -> None:
+    with app.state.session_factory() as db:
+        config = LLMModelConfig(
+            adapter="deepseek",
+            model_call_name="fictional-agent-model",
+            model_name="deepseek/fictional-agent-model",
+            api_base="https://sensitive.example.invalid/v1",
+            encrypted_api_key="v1:fake:not-a-real-secret",
+            enabled=True,
+            priority=100,
+            config_version=2,
+        )
+        db.add(config)
+        db.flush()
+        binding = db.get(LLMCapabilityBinding, "pi_agent")
+        assert binding is not None
+        binding.model_config_id = config.id
+        db.commit()
 
 
 def create_active_run(app, session_public_id: str) -> str:
@@ -361,6 +397,11 @@ def test_context_search_is_applied_before_limit_for_resume_and_job() -> None:
         resumes = client.get("/api/agent/contexts?type=resume&q=目标&limit=1")
         assert resumes.status_code == 200
         assert [item["id"] for item in resumes.json()["contexts"]] == [old_resume["id"]]
+        prefix_resumes = client.get(
+            "/api/agent/contexts?type=resume&q=目标&prefix=true&limit=1"
+        )
+        assert prefix_resumes.status_code == 200
+        assert prefix_resumes.json()["contexts"] == []
 
         def create_job(title: str, company: str) -> dict:
             response = client.post(
@@ -393,6 +434,92 @@ def test_context_search_is_applied_before_limit_for_resume_and_job() -> None:
         jobs = client.get("/api/agent/contexts?type=job&q=目标&limit=1")
         assert jobs.status_code == 200
         assert [item["id"] for item in jobs.json()["contexts"]] == [old_job["id"]]
+
+
+def test_dataset_context_is_searchable_owner_scoped_and_resolved_for_message() -> None:
+    app = build_app()
+    with TestClient(app) as owner, TestClient(app) as stranger:
+        register(owner, "agent-dataset-owner@example.test")
+        with app.state.session_factory() as db:
+            owner_user_id = db.scalar(
+                select(User.id).where(User.email == "agent-dataset-owner@example.test")
+            )
+            assert owner_user_id is not None
+            task = DocumentParseTask(
+                source_type=DATASET_SOURCE_TYPE,
+                user_id=owner_user_id,
+                file_name="资料1.md",
+                file_format="md",
+                object_name=f"users/{owner_user_id}/datasets/source/资料1.md",
+                converted_object_name=(
+                    f"users/{owner_user_id}/datasets/converted/资料1.md"
+                ),
+                upload_status="succeeded",
+                upload_duration_ms=1,
+                parse_status="succeeded",
+                parse_duration_ms=1,
+            )
+            db.add(task)
+            db.flush()
+            dataset = UserDataset(
+                user_id=owner_user_id,
+                idempotency_key="agent-dataset-context-001",
+                request_fingerprint="1" * 64,
+                parse_task_id=task.id,
+                file_name="资料1.md",
+                file_format="md",
+                content_type="text/markdown",
+                file_size=16,
+                object_name=task.object_name,
+                sha256="2" * 64,
+            )
+            db.add(dataset)
+            db.commit()
+            dataset_id = str(dataset.id)
+            dataset_version = dataset.sha256
+            assert task.converted_object_name is not None
+            app.state.storage.objects[task.converted_object_name] = b"# Fictional material"
+
+        found = owner.get(
+            "/api/agent/contexts?type=dataset&q=资料&prefix=true&limit=8"
+        )
+        assert found.status_code == 200
+        contexts = found.json()["contexts"]
+        assert len(contexts) == 1
+        assert contexts[0]["type"] == "dataset"
+        assert contexts[0]["id"] == dataset_id
+        assert contexts[0]["version"] == dataset_version
+        assert contexts[0]["label"] == "资料1.md"
+        assert contexts[0]["description"] == "资料库文件"
+        assert "content" not in contexts[0]
+
+        register(stranger, "agent-dataset-stranger@example.test")
+        hidden = stranger.get("/api/agent/contexts?type=dataset&q=资料&limit=8")
+        assert hidden.status_code == 200
+        assert hidden.json()["contexts"] == []
+
+        session = owner.post("/api/agent/sessions", json={}).json()["session"]
+        sent = owner.post(
+            f"/api/agent/sessions/{session['id']}/messages",
+            json={
+                "content": "请参考 @资料1.md",
+                "idempotency_key": "dataset-context-message-001",
+                "contexts": [
+                    {
+                        "type": "dataset",
+                        "id": dataset_id,
+                        "version": dataset_version,
+                    }
+                ],
+            },
+        )
+        assert sent.status_code == 200
+        with app.state.session_factory() as db:
+            message = db.scalar(select(AgentMessage))
+            assert message is not None
+            assert message.metadata_json is not None
+            assert message.metadata_json["contexts"][0]["type"] == "dataset"
+            assert message.metadata_json["contexts"][0]["label"] == "资料1.md"
 
 
 def test_proposal_is_idempotent_and_confirmed_once() -> None:
@@ -1318,3 +1445,274 @@ def test_agent_readiness_checks_model_config_and_full_service_chain(
     assert public.status_code == 200
     assert public.json() == {"ready": True}
     check_chain.assert_awaited_once_with(app)
+
+
+def test_agent_model_requires_login_and_returns_only_safe_bound_summary() -> None:
+    app = build_app()
+    bind_pi_agent_model(app)
+    with TestClient(app) as client:
+        denied = client.get("/api/agent/model")
+        assert denied.status_code == 401
+        assert denied.json() == {"error": "UNAUTHORIZED"}
+
+        register(client, "agent-model-summary@example.test")
+        response = client.get("/api/agent/model")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "model": {"adapter": "deepseek", "name": "fictional-agent-model"}
+    }
+    assert "sensitive.example.invalid" not in response.text
+    assert "not-a-real-secret" not in response.text
+
+
+def test_agent_model_returns_stable_error_when_pi_binding_is_missing() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-model-unconfigured@example.test")
+        response = client.get("/api/agent/model")
+
+    assert response.status_code == 503
+    assert response.json() == {"error": "LLM_MODEL_NOT_CONFIGURED"}
+
+
+def test_agent_model_does_not_expose_llm_call_id_on_service_error() -> None:
+    app = build_app()
+    app.state.llm_service.agent_model_summary = AsyncMock(
+        side_effect=LLMError("LLM_MODEL_NOT_CONFIGURED", "sensitive-call-id")
+    )
+    with TestClient(app) as client:
+        register(client, "agent-model-error@example.test")
+        response = client.get("/api/agent/model")
+
+    assert response.status_code == 503
+    assert response.json() == {"error": "LLM_MODEL_NOT_CONFIGURED"}
+    assert "sensitive-call-id" not in response.text
+
+
+def test_agent_session_can_be_renamed_and_pinned_and_list_is_pin_first() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-session-management@example.test")
+        older = client.post("/api/agent/sessions", json={"title": "旧会话"}).json()[
+            "session"
+        ]
+        newer = client.post("/api/agent/sessions", json={"title": "新会话"}).json()[
+            "session"
+        ]
+
+        renamed = client.patch(
+            f"/api/agent/sessions/{older['id']}",
+            json={"title": "  重命名后的会话  "},
+        )
+        assert renamed.status_code == 200
+        assert renamed.json()["session"]["title"] == "重命名后的会话"
+        assert renamed.json()["session"]["pinned"] is False
+
+        pinned = client.patch(
+            f"/api/agent/sessions/{older['id']}", json={"pinned": True}
+        )
+        assert pinned.status_code == 200
+        assert pinned.json()["session"]["pinned"] is True
+        assert pinned.json()["session"]["title"] == "重命名后的会话"
+
+        with app.state.session_factory() as db:
+            old_record = db.scalar(
+                select(AgentSession).where(AgentSession.public_id == older["id"])
+            )
+            new_record = db.scalar(
+                select(AgentSession).where(AgentSession.public_id == newer["id"])
+            )
+            assert old_record is not None and new_record is not None
+            old_record.updated_at = utc_now() - timedelta(days=1)
+            new_record.updated_at = utc_now()
+            db.commit()
+
+        listed = client.get("/api/agent/sessions")
+        assert listed.status_code == 200
+        assert [item["id"] for item in listed.json()["sessions"]] == [
+            older["id"],
+            newer["id"],
+        ]
+        assert all("pinned" in item for item in listed.json()["sessions"])
+
+
+def test_agent_session_update_requires_a_non_null_supported_field() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-session-validation@example.test")
+        session = client.post("/api/agent/sessions", json={}).json()["session"]
+
+        empty = client.patch(f"/api/agent/sessions/{session['id']}", json={})
+        blank_title = client.patch(
+            f"/api/agent/sessions/{session['id']}", json={"title": "   "}
+        )
+        null_pin = client.patch(
+            f"/api/agent/sessions/{session['id']}", json={"pinned": None}
+        )
+
+    assert empty.status_code == 422
+    assert blank_title.status_code == 422
+    assert null_pin.status_code == 422
+
+
+def test_agent_session_management_is_owner_scoped() -> None:
+    app = build_app()
+    with TestClient(app) as owner, TestClient(app) as stranger:
+        register(owner, "agent-session-owner@example.test")
+        session = owner.post("/api/agent/sessions", json={}).json()["session"]
+        register(stranger, "agent-session-stranger@example.test")
+
+        renamed = stranger.patch(
+            f"/api/agent/sessions/{session['id']}", json={"title": "不应成功"}
+        )
+        deleted = stranger.delete(f"/api/agent/sessions/{session['id']}")
+
+    assert renamed.status_code == 404
+    assert renamed.json() == {"error": "AGENT_SESSION_NOT_FOUND"}
+    assert deleted.status_code == 404
+    assert deleted.json() == {"error": "AGENT_SESSION_NOT_FOUND"}
+    with app.state.session_factory() as db:
+        record = db.scalar(
+            select(AgentSession).where(AgentSession.public_id == session["id"])
+        )
+        assert record is not None
+        assert record.title == "新对话"
+
+
+def test_agent_session_delete_rejects_running_run_without_mutation() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-session-delete-running@example.test")
+        session = client.post("/api/agent/sessions", json={}).json()["session"]
+        run_id = create_active_run(app, session["id"])
+
+        response = client.delete(f"/api/agent/sessions/{session['id']}")
+
+    assert response.status_code == 409
+    assert response.json() == {"error": "AGENT_RUN_IN_PROGRESS"}
+    with app.state.session_factory() as db:
+        assert (
+            db.scalar(
+                select(AgentSession).where(AgentSession.public_id == session["id"])
+            )
+            is not None
+        )
+        run = db.scalar(select(AgentRun).where(AgentRun.public_id == run_id))
+        assert run is not None
+        assert run.status == "running"
+
+
+def test_agent_session_delete_cleans_only_target_dependencies_in_order() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-session-delete-cleanup@example.test")
+        target_resume = create_resume(client, app)
+        target = client.post(
+            "/api/agent/sessions", json={"resume_id": target_resume["id"]}
+        ).json()["session"]
+        other = client.post("/api/agent/sessions", json={}).json()["session"]
+        target_run_id = create_active_run(app, target["id"])
+        other_run_id = create_active_run(app, other["id"])
+
+        proposal = client.post(
+            f"/internal/agent/runs/{target_run_id}/proposals",
+            headers=internal_headers(),
+            json={
+                "call_key": "session-delete-proposal",
+                "data": target_resume["data"],
+                "style": target_resume["style"],
+                "summary": "会话删除测试提案",
+            },
+        )
+        assert proposal.status_code == 201
+
+        with app.state.session_factory() as db:
+            target_run = db.scalar(
+                select(AgentRun).where(AgentRun.public_id == target_run_id)
+            )
+            other_run = db.scalar(
+                select(AgentRun).where(AgentRun.public_id == other_run_id)
+            )
+            assert target_run is not None and other_run is not None
+            target_run.status = "succeeded"
+            other_run.status = "succeeded"
+            db.add(
+                AgentToolCall(
+                    run_id=target_run.id,
+                    call_key="session-delete-tool",
+                    tool_name="get_resume_context",
+                    status="succeeded",
+                )
+            )
+            db.add(
+                AgentMessage(
+                    session_id=target_run.session_id,
+                    run_id=target_run.id,
+                    sequence_no=1,
+                    role="user",
+                    content="会话删除测试消息",
+                )
+            )
+            db.add(
+                AgentMessage(
+                    session_id=other_run.session_id,
+                    run_id=other_run.id,
+                    sequence_no=1,
+                    role="user",
+                    content="其他会话保留消息",
+                )
+            )
+            db.commit()
+
+        response = client.delete(f"/api/agent/sessions/{target['id']}")
+        assert response.status_code == 204
+        assert response.content == b""
+
+    with app.state.session_factory() as db:
+        assert (
+            db.scalar(
+                select(AgentSession).where(AgentSession.public_id == target["id"])
+            )
+            is None
+        )
+        assert (
+            db.scalar(select(AgentRun).where(AgentRun.public_id == target_run_id))
+            is None
+        )
+        assert (
+            db.scalar(
+                select(ResumeChangeProposal).where(
+                    ResumeChangeProposal.public_id == proposal.json()["proposal"]["id"]
+                )
+            )
+            is None
+        )
+        assert (
+            db.scalar(
+                select(AgentToolCall).where(
+                    AgentToolCall.call_key == "session-delete-tool"
+                )
+            )
+            is None
+        )
+        assert (
+            db.scalar(
+                select(AgentMessage).where(AgentMessage.content == "会话删除测试消息")
+            )
+            is None
+        )
+        assert (
+            db.scalar(select(AgentSession).where(AgentSession.public_id == other["id"]))
+            is not None
+        )
+        assert (
+            db.scalar(select(AgentRun).where(AgentRun.public_id == other_run_id))
+            is not None
+        )
+        assert (
+            db.scalar(
+                select(AgentMessage).where(AgentMessage.content == "其他会话保留消息")
+            )
+            is not None
+        )

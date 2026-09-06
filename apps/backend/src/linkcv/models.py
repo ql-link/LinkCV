@@ -11,6 +11,7 @@ from linkcv.modules.interviews.models import (
     InterviewAsset,
     InterviewSession,
     JobApplication,
+    JobApplicationStage,
 )
 from linkcv.modules.job_descriptions.models import JobDescription
 from linkcv.modules.llm.models import (
@@ -39,6 +40,7 @@ __all__ = [
     "InterviewAsset",
     "InterviewSession",
     "JobApplication",
+    "JobApplicationStage",
     "JobDescription",
     "DocumentParseTask",
     "Resume",

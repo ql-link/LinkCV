@@ -58,7 +58,7 @@ describe("JobDetailPage", () => {
 
     expect(await screen.findByRole("heading", { name: "岗位详情", level: 1 })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: activeJob.job_title, level: 2 })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "返回岗位库" })).toHaveAttribute("href", "/career/jobs");
+    expect(screen.getByRole("link", { name: "返回求职记录" })).toHaveAttribute("href", "/career/applications");
     expect(await screen.findByRole("button", { name: "开始求职" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "编辑职位名称" })).toHaveClass("job-quick-edit-display");
@@ -68,17 +68,29 @@ describe("JobDetailPage", () => {
     expect(screen.queryByText("活动岗位")).not.toBeInTheDocument();
   });
 
-  it("用工类型使用固定尺寸的自定义选择框并在选择后保存", async () => {
+  it("从求职记录进入岗位详情时返回对应记录", async () => {
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
+    window.history.replaceState(null, "", `/career/jobs/${activeJob.id}?fromApplication=application-7`);
+
+    render(<JobDetailPage jobId={activeJob.id} />);
+
+    const backLink = await screen.findByRole("link", { name: "返回求职记录" });
+    expect(backLink).toHaveAttribute("href", "/career/applications/application-7");
+    fireEvent.click(backLink);
+    expect(window.location.pathname).toBe("/career/applications/application-7");
+  });
+
+  it("求职分类使用固定尺寸的自定义选择框并在选择后保存", async () => {
     vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
     const updatedJob = { ...activeJob, employment_type: "full_time" as const, lock_version: 3 };
     const update = vi.spyOn(api, "updateJobDescription").mockResolvedValue({ job_description: updatedJob });
 
     render(<JobDetailPage jobId={activeJob.id} />);
-    fireEvent.click(await screen.findByRole("button", { name: "编辑用工类型" }));
-    const trigger = screen.getByLabelText("用工类型");
+    fireEvent.click(await screen.findByRole("button", { name: "编辑求职分类" }));
+    const trigger = screen.getByLabelText("求职分类");
     expect(trigger).toHaveClass("job-quick-edit-select-trigger");
     fireEvent.click(trigger);
-    fireEvent.click(await screen.findByRole("option", { name: "全职" }));
+    fireEvent.click(await screen.findByRole("option", { name: "正式" }));
 
     await waitFor(() => expect(update).toHaveBeenCalledWith(activeJob.id, expect.objectContaining({
       employment_type: "full_time",

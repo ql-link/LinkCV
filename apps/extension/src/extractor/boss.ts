@@ -198,7 +198,7 @@ export function extractBossJob(document: Document, sourceUrl: string): BossCaptu
       company_name: companyName,
       description_text: descriptionText,
       skills: jobTags.filter(isLikelySkill),
-      employment_type_text: [...jobTags, jobTitle ?? ""].find((tag) => /全职|兼职|实习|合同|临时/.test(tag)),
+      employment_type_text: [...jobTags, jobTitle ?? ""].filter((tag) => /实习|校招|校园招聘|应届|正式|社招|全职/.test(tag)).join(" ") || undefined,
       education_text:
         firstTextAcross(fieldRoots, [".text-degree", ".job-degree", "[class*='degree']"]) ??
         meta.find((item) => EDUCATION_RE.test(item)),
@@ -752,7 +752,7 @@ function unique(values: string[]): string[] {
 }
 
 function isLikelySkill(value: string): boolean {
-  if (/全职|兼职|实习|合同|临时/.test(value)) return false;
+  if (/实习|校招|校园招聘|应届|正式|社招|全职|兼职|合同|临时/.test(value)) return false;
   if (EDUCATION_RE.test(value) || EXPERIENCE_RE.test(value) || WORK_SCHEDULE_RE.test(value)) return false;
   if (BENEFIT_RE.test(value)) return false;
   return !NON_SKILL_MARKERS.some((marker) => value.includes(marker));

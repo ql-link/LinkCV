@@ -811,6 +811,10 @@ def test_skill_check_protects_flow_router_delivery_core_semantics(tmp_path: Path
         "不得仅因为需要七维判断、方案先行、严格风险或任务复杂而创建额外 Agent",
         "七个维度仍必须在内部完整判断",
         "没有 Issue 不阻止七维判断或交付",
+        "复杂度只用于安排实施顺序、调查深度和验证范围，不决定是否创建 `solution.md`",
+        "目标已经稳定，并命中以下至少一个方案门槛",
+        "未命中方案门槛：`直接实现`",
+        "数据库或数据变更只有实际命中回填、兼容、发布协调或难回退门槛时才方案先行",
         "严格风险本身不自动升级为方案先行",
         "记录需要不改变交付路径",
         "记录为持久记录也不自动升级方案",
@@ -1052,6 +1056,16 @@ def test_skill_check_protects_flow_router_delivery_downstream_contract(
         ),
         (
             "implementation-execution",
+            "复杂度可以是简单、中等或复杂",
+            "实现入口或实施报告契约缺少必要内容",
+        ),
+        (
+            "implementation-execution",
+            "复杂度、风险或记录需要变化本身不自动等于方案先行",
+            "实现入口或实施报告契约缺少必要内容",
+        ),
+        (
+            "implementation-execution",
             "只执行当前已确认的范围，不自行扩展目标或创建实施子 Agent",
             "实现入口或实施报告契约缺少必要内容",
         ),
@@ -1266,7 +1280,9 @@ def test_skill_check_rejects_legacy_flow_router_rule(tmp_path: Path) -> None:
     skill_file = target_skill / "SKILL.md"
     skill_file.write_text(
         skill_file.read_text(encoding="utf-8")
-        + "\n任意一条不满足即判方案先行。\n",
+        + "\n任意一条不满足即判方案先行。\n"
+        + "复杂任务：`方案先行`\n"
+        + "数据库 schema 或数据迁移通常命中迁移顺序、存量数据、兼容和回退，因此默认方案先行。\n",
         encoding="utf-8",
     )
 
@@ -1277,3 +1293,5 @@ def test_skill_check_rejects_legacy_flow_router_rule(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "仍存在过期的入口或模型编排契约" in result.stderr
+    assert "复杂任务：`方案先行`" in result.stderr
+    assert "数据库 schema 或数据迁移通常命中迁移顺序、存量数据、兼容和回退，因此默认方案先行" in result.stderr

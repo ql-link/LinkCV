@@ -203,6 +203,52 @@ def test_agent_runtime_model_uses_pi_binding_not_chat_binding(service_context) -
     assert runtime.config_version == 3
 
 
+def test_agent_model_summary_reads_pi_binding_without_decrypting_credentials(
+    service_context,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _gateway, sessions = service_context
+    with sessions() as db:
+        config = LLMModelConfig(
+            adapter="deepseek",
+            model_call_name="fictional-agent-model",
+            model_name="deepseek/fictional-agent-model",
+            api_base="https://sensitive.example.invalid/v1",
+            encrypted_api_key="v1:fake:not-a-real-secret",
+            enabled=True,
+            priority=100,
+            config_version=4,
+        )
+        db.add(config)
+        db.flush()
+        db.add(
+            LLMCapabilityBinding(
+                capability="pi_agent",
+                model_config_id=config.id,
+            )
+        )
+        db.commit()
+
+    def fail_if_decrypted(_envelope: str):
+        raise AssertionError("model summary must not decrypt credentials")
+
+    monkeypatch.setattr(service._cipher, "decrypt", fail_if_decrypted)
+
+    summary = asyncio.run(service.agent_model_summary())
+
+    assert summary.adapter == "deepseek"
+    assert summary.name == "fictional-agent-model"
+
+
+def test_agent_model_summary_reports_missing_pi_binding(service_context) -> None:
+    service, _gateway, _sessions = service_context
+
+    with pytest.raises(LLMError) as captured:
+        asyncio.run(service.agent_model_summary())
+
+    assert captured.value.code == "LLM_MODEL_NOT_CONFIGURED"
+
+
 @pytest.mark.parametrize(
     "content",
     [

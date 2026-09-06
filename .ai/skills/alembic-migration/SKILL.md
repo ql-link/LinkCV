@@ -1,6 +1,6 @@
 ---
 name: alembic-migration
-description: 为 LinkCV 编写、校验和排查 forward-only 的 SQLAlchemy 与 SQL-first Alembic schema 迁移，覆盖 revision 链、up SQL、数据回填、向前升级、兼容发布和文档同步。适用于新增业务 revision，新增或修改表、字段、关系、约束、索引，处理多 head、模型与数据库漂移或迁移失败；单纯设计字段与索引先使用 mysql-ddl-conventions，自动分流时数据库 schema 或数据迁移默认走方案先行。
+description: 为 LinkCV 编写、校验和排查 forward-only 的 SQLAlchemy 与 SQL-first Alembic schema 迁移，覆盖 revision 链、up SQL、数据回填、向前升级、兼容发布和文档同步。适用于新增业务 revision，新增或修改表、字段、关系、约束、索引，处理多 head、模型与数据库漂移或迁移失败；单纯设计字段与索引先使用 mysql-ddl-conventions，是否方案先行由 flow-router 的关键取舍、发布协调和可回退性门槛决定。
 ---
 
 # Alembic 迁移
