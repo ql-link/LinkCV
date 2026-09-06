@@ -357,8 +357,15 @@ function OverviewLink({ href, className, children }: { href: string; className?:
   );
 }
 
-function JobSummaryCard({ application }: { application: JobApplicationSummary }) {
+function JobSummaryCard({
+  application,
+  currentStageCompleted = false,
+}: {
+  application: JobApplicationSummary;
+  currentStageCompleted?: boolean;
+}) {
   const progress = projectApplicationProgress(application);
+  const statusLabel = currentStageCompleted ? "已完成" : progress.statusLabel;
   const snapshot = application.job_snapshot ?? {};
   const skills = snapshotList(snapshot, "skills", "core_skills");
   const salary = snapshotText(snapshot, "salary_text", "salary") ?? "—";
@@ -397,7 +404,7 @@ function JobSummaryCard({ application }: { application: JobApplicationSummary })
         <h3>求职信息</h3>
         <dl>
           <div><dt>当前阶段</dt><dd>{progress.stageLabel}</dd></div>
-          <div><dt>当前状态</dt><dd>{progress.statusLabel}{progress.supportingLabel && <small>{progress.supportingLabel}</small>}</dd></div>
+          <div><dt>当前状态</dt><dd>{statusLabel}{!currentStageCompleted && progress.supportingLabel && <small>{progress.supportingLabel}</small>}</dd></div>
           <div><dt>{application.applied_at ? "投递时间" : "导入时间"}</dt><dd>{formatFullDate(application.applied_at ?? application.created_at)}</dd></div>
           <div><dt>投递简历版本</dt><dd>{application.resume_title_snapshot ?? "未关联"}</dd></div>
           <div><dt>最近更新</dt><dd>{formatUpdatedDateTime(application.updated_at)}</dd></div>
@@ -993,7 +1000,7 @@ const NEXT_STAGE_FORM_COPY: Record<NextStageChoice, { title: string; badge: stri
   ai_interview: {
     title: "填写 AI 面试信息",
     badge: "异步面试",
-    description: "记录 AI 面试链接、开始时间和完成期限。",
+    description: "记录 AI 面试链接、开始时间和结束时间。",
   },
   interview: {
     title: "填写面试信息",
@@ -1072,9 +1079,8 @@ export function AddNextStageDialog({
   const [completionWindow, setCompletionWindow] = useState<string>("4320");
   const [customCompletionDays, setCustomCompletionDays] = useState("3");
   const [aiInterviewStartAt, setAiInterviewStartAt] = useState(initialStartAt);
+  const [aiInterviewEndAt, setAiInterviewEndAt] = useState("");
   const [aiInterviewLink, setAiInterviewLink] = useState("");
-  const [aiCompletionWindow, setAiCompletionWindow] = useState<string>("4320");
-  const [aiCustomCompletionDays, setAiCustomCompletionDays] = useState("3");
   const [writtenStartAt, setWrittenStartAt] = useState(initialStartAt);
   const [writtenEndAt, setWrittenEndAt] = useState("");
   const [writtenMode, setWrittenMode] = useState<InterviewSessionRecord["mode"]>("video");
@@ -1105,12 +1111,10 @@ export function AddNextStageDialog({
 
   const activeAsyncStartAt = activeStage === "ai_interview" ? aiInterviewStartAt : assessmentStartAt;
   const activeAsyncLink = activeStage === "ai_interview" ? aiInterviewLink : assessmentLink;
-  const activeCompletionWindow = activeStage === "ai_interview" ? aiCompletionWindow : completionWindow;
-  const activeCustomCompletionDays = activeStage === "ai_interview" ? aiCustomCompletionDays : customCompletionDays;
-  const completionMinutes = activeCompletionWindow === "custom"
-    ? Number(activeCustomCompletionDays) * 24 * 60
-    : Number(activeCompletionWindow);
-  const deadlineDisplay = stageDeadlineDisplay(activeAsyncStartAt, completionMinutes);
+  const completionMinutes = completionWindow === "custom"
+    ? Number(customCompletionDays) * 24 * 60
+    : Number(completionWindow);
+  const deadlineDisplay = stageDeadlineDisplay(assessmentStartAt, completionMinutes);
 
   const saveStage = async () => {
     const fixedLabel = NEXT_STAGE_CHOICES.find((choice) => choice.key === activeStage)?.label ?? "";
@@ -1203,10 +1207,10 @@ export function AddNextStageDialog({
         setErrorMessage(isWrittenTest ? "请填写有效的笔试开始时间。" : `请填写有效的${fixedLabel}开始时间。`);
         return;
       }
-      if (isWrittenTest) {
-        end = parseScheduleStart(writtenEndAt);
+      if (isWrittenTest || activeStage === "ai_interview") {
+        end = parseScheduleStart(isWrittenTest ? writtenEndAt : aiInterviewEndAt);
         if (!end || end <= start) {
-          setErrorMessage("笔试结束时间必须晚于开始时间。");
+          setErrorMessage(`${isWrittenTest ? "笔试" : "AI 面试"}结束时间必须晚于开始时间。`);
           return;
         }
       } else if (isAsyncStage) {
@@ -1408,44 +1412,53 @@ export function AddNextStageDialog({
                     onChange={activeStage === "assessment" ? setAssessmentStartAt : setAiInterviewStartAt}
                   />
                 </div>
-                <div className="career-next-stage-field career-next-stage-deadline-field">
-                  <Label>完成期限</Label>
-                  <div className="career-next-stage-deadline-options" role="radiogroup" aria-label="完成期限">
-                    {COMPLETION_WINDOW_OPTIONS.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        role="radio"
-                        aria-checked={activeCompletionWindow === option.value}
-                        className={activeCompletionWindow === option.value ? "is-active" : undefined}
-                        disabled={busy}
-                        onClick={() => {
-                          if (activeStage === "assessment") setCompletionWindow(option.value);
-                          else setAiCompletionWindow(option.value);
-                        }}
-                      >{option.label}</button>
-                    ))}
+                {activeStage === "assessment" ? (
+                  <>
+                    <div className="career-next-stage-field career-next-stage-deadline-field">
+                      <Label>完成期限</Label>
+                      <div className="career-next-stage-deadline-options" role="radiogroup" aria-label="完成期限">
+                        {COMPLETION_WINDOW_OPTIONS.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={completionWindow === option.value}
+                            className={completionWindow === option.value ? "is-active" : undefined}
+                            disabled={busy}
+                            onClick={() => setCompletionWindow(option.value)}
+                          >{option.label}</button>
+                        ))}
+                      </div>
+                    </div>
+                    {completionWindow === "custom" && (
+                      <div className="career-next-stage-field career-next-stage-custom-days">
+                        <Label htmlFor="career-next-stage-custom-days">自定义天数</Label>
+                        <input
+                          id="career-next-stage-custom-days"
+                          type="number"
+                          min="1"
+                          max="365"
+                          value={customCompletionDays}
+                          disabled={busy}
+                          onChange={(event) => setCustomCompletionDays(event.target.value)}
+                        />
+                      </div>
+                    )}
+                    {deadlineDisplay && (
+                      <p className="career-next-stage-derived career-next-stage-field--full"><Clock3 aria-hidden="true" />预计最晚完成：{deadlineDisplay}</p>
+                    )}
+                  </>
+                ) : (
+                  <div className="career-next-stage-field">
+                    <Label htmlFor="career-next-stage-ai-interview-end">结束时间</Label>
+                    <ScheduleDateTimePicker
+                      id="career-next-stage-ai-interview-end"
+                      label="结束时间"
+                      value={aiInterviewEndAt}
+                      disabled={busy}
+                      onChange={setAiInterviewEndAt}
+                    />
                   </div>
-                </div>
-                {activeCompletionWindow === "custom" && (
-                  <div className="career-next-stage-field career-next-stage-custom-days">
-                    <Label htmlFor="career-next-stage-custom-days">自定义天数</Label>
-                  <input
-                      id="career-next-stage-custom-days"
-                      type="number"
-                      min="1"
-                      max="365"
-                      value={activeCustomCompletionDays}
-                    disabled={busy}
-                      onChange={(event) => {
-                        if (activeStage === "assessment") setCustomCompletionDays(event.target.value);
-                        else setAiCustomCompletionDays(event.target.value);
-                      }}
-                  />
-                </div>
-                )}
-                {deadlineDisplay && (
-                  <p className="career-next-stage-derived career-next-stage-field--full"><Clock3 aria-hidden="true" />预计最晚完成：{deadlineDisplay}</p>
                 )}
               </>
             ) : activeStage === "written_test" ? (
@@ -1999,12 +2012,16 @@ export function ApplicationDetailView({
     session.status !== "cancelled" && applicationStageMatchesSession(application, session)
   ));
   const progress = projectApplicationProgress(application);
+  const currentStageCompleted = currentSession?.status === "completed"
+    && (progress.columnKey === "assessment" || progress.columnKey === "interview");
   const isSubmittedScreening = progress.columnKey === "screening"
     && application.current_stage_type === "screening"
     && Boolean(application.applied_at);
-  const heroStatusLabel = progress.isPending || progress.isWaiting || progress.columnKey === "ended" || progress.columnKey === "offer"
-    ? progress.statusLabel
-    : progress.stageLabel;
+  const heroStatusLabel = currentStageCompleted
+    ? "已完成"
+    : progress.isPending || progress.isWaiting || progress.columnKey === "ended" || progress.columnKey === "offer"
+      ? progress.statusLabel
+      : progress.stageLabel;
   const active = application.lifecycle_status !== "terminated" && application.status === "active" && application.archived_at === null;
   const currentStableType = application.current_stage?.stage_type;
   const canSchedule = active && application.stage_state === "awaiting_schedule"
@@ -2064,7 +2081,7 @@ export function ApplicationDetailView({
                 <span className="career-record-position-name">{application.job_title_snapshot}</span>
               </h1>
               <span
-                className={`career-application-status ${applicationDetailStatusToneClass(application)}`}
+                className={`career-application-status ${applicationDetailStatusToneClass(application, { currentStageCompleted })}`}
                 aria-label={`${heroStatusLabel}${progress.supportingLabel ? `，${progress.supportingLabel}` : ""}`}
               >
                 {heroStatusLabel}
@@ -2111,7 +2128,7 @@ export function ApplicationDetailView({
           </section>
         </div>
         <aside className="career-detail-side-column">
-          <JobSummaryCard application={application} />
+          <JobSummaryCard application={application} currentStageCompleted={currentStageCompleted} />
         </aside>
       </div>
       {stageDialogOpen && (progress.isPending
