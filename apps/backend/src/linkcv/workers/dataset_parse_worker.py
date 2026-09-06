@@ -19,7 +19,10 @@ from linkcv.domain.document_conversion import (
     DocumentConversionFailure,
     DocumentMarkdownConverter,
 )
-from linkcv.modules.datasets.models import UserDataset
+from linkcv.modules.datasets.models import UserDataset, DatasetReplacement, DatasetObjectCleanup
+from linkcv.services import dataset_content_service as content_service
+from linkcv.services import dataset_replacement_service as replacement_service
+from hashlib import sha256
 from linkcv.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
 from linkcv.workers.resume_import_worker import (
     UNLOCK_SCRIPT,
@@ -393,6 +396,7 @@ class DatasetParseProcessor:
         started: float,
         attempt: int | None = None,
     ) -> bool:
+        markdown = content_service.strip_word_page_markers(markdown)
         converted_suffix = (
             f"{parse_task_id}-{attempt}.md"
             if self._uses_attempt_fields() and attempt is not None
@@ -401,6 +405,11 @@ class DatasetParseProcessor:
         converted_object_name = (
             f"users/{user_id}/datasets/converted/{converted_suffix}"
         )
+        # Register before uploading so a crash or unknown commit cannot orphan content.
+        with self._session_factory() as db:
+            content_service.lock_user(db, user_id)
+            content_service.enqueue_cleanup(db, user_id, converted_object_name, delay=3600)
+            db.commit()
         persistence_failed = False
         try:
             self._storage.upload(
@@ -435,6 +444,11 @@ class DatasetParseProcessor:
         owned_attempt = False
         try:
             with self._session_factory() as db:
+                content_service.lock_user(db, user_id)
+                ticket = db.scalar(select(DatasetObjectCleanup).where(DatasetObjectCleanup.object_name == converted_object_name).with_for_update())
+                if ticket is None or ticket.attempt_count:
+                    # A cleanup lease reclaimed this attempt; recovery retries parsing.
+                    return False
                 conditions = [
                     DocumentParseTask.id == parse_task_id,
                     DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
@@ -459,8 +473,23 @@ class DatasetParseProcessor:
                     )
                     .execution_options(synchronize_session=False)
                 )
-                db.commit()
                 owned_attempt = result.rowcount == 1
+                if owned_attempt:
+                    task = db.get(DocumentParseTask, parse_task_id)
+                    db.refresh(task)
+                    op = db.scalar(select(DatasetReplacement).where(DatasetReplacement.parse_task_id == parse_task_id))
+                    if op:
+                        dataset = db.get(UserDataset, op.dataset_id)
+                        if dataset and op.status == 'pending':
+                            replacement_service.apply_replacement(db, op, dataset, task, markdown)
+                    else:
+                        dataset = db.scalar(select(UserDataset).where(UserDataset.parse_task_id == parse_task_id))
+                        if dataset:
+                            dataset.content_object_name = converted_object_name
+                            dataset.content_sha256 = sha256(markdown.encode('utf-8')).hexdigest()
+                            dataset.content_revision += 1
+                            dataset.content_updated_at = utc_now()
+                db.commit()
         except SQLAlchemyError as error:
             raise WorkerDependencyUnavailable("database unavailable") from error
         if not owned_attempt:
@@ -821,6 +850,7 @@ class DatasetParseProcessor:
                     ).where(
                         DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
                         DocumentParseTask.upload_status == "failed",
+                        ~DocumentParseTask.id.in_(select(DatasetReplacement.parse_task_id).where(DatasetReplacement.parse_task_id.is_not(None))),
                         DocumentParseTask.parse_status.is_(None),
                         DocumentParseTask.updated_at < cutoff,
                     )
@@ -871,6 +901,8 @@ class DatasetParseProcessor:
 
     async def recover_once(self, *, publish: PublishDatasetTask) -> int:
         """Run one short recovery cycle without holding a DB transaction over MQ."""
+        await asyncio.to_thread(replacement_service.reconcile_replacements, self._session_factory)
+        await asyncio.to_thread(content_service.cleanup_objects, self._session_factory, self._storage)
         await self.cleanup_upload_reservations()
         await asyncio.to_thread(self.cleanup_failed_reservations)
         await asyncio.to_thread(self.recover_stale_processing)

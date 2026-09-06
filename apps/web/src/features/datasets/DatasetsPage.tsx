@@ -3,11 +3,9 @@ import {
   CheckSquare,
   ChevronLeft,
   Database,
-  Folder,
-  FolderInput,
   FolderOpen,
+  FolderInput,
   FolderPlus,
-  Inbox,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -40,13 +38,9 @@ import {
   Input,
   Label,
   PageLoading,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
 } from "@/components/ui";
 import { DatasetPreviewDialog } from "./DatasetPreviewDialog";
+import { DatasetUploadConflictDialog, type DatasetConflict } from "./DatasetUploadConflictDialog";
 import { CreateFolderCard, FolderCard } from "./components/FolderCard";
 import { FileCard } from "./components/FileCard";
 import { MoveToFolderDialog } from "./components/MoveToFolderDialog";
@@ -97,6 +91,10 @@ function datasetActionErrorMessage(error: unknown, fallback: string) {
       return "资料名称不能为空，不能包含路径符号或控制字符。";
     case "DATASET_NOT_FOUND":
       return "这份资料不存在或你无权操作。";
+    case "FOLDER_NOT_FOUND":
+      return "文件夹不存在或已被删除，请重新选择。";
+    case "FOLDER_DELETE_CONFIRMATION_REQUIRED":
+      return "文件夹内包含资料，请确认后再删除。";
     case "DATASET_IN_PROGRESS":
     case "DATASET_BUSY":
       return "资料正在解析，处理完成后再删除。";
@@ -377,6 +375,7 @@ function mergeDatasetResponse(
 
 export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } = {}) {
   const previewTriggerRef = useRef<HTMLElement | null>(null);
+  const [previewDataset, setPreviewDataset] = useState<DatasetRecord | null>(null);
   const locallyAccepted = useRef(new Map<string, DatasetRecord>());
   const pageMounted = useRef(true);
   const [datasets, setDatasets] = useState<DatasetRecord[]>([]);
@@ -388,7 +387,8 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
   const [notice, setNotice] = useState<Notice>(null);
   const [syncFailure, setSyncFailure] = useState<string | null>(null);
   const [fading, setFading] = useState(false);
-  const [previewDataset, setPreviewDataset] = useState<DatasetRecord | null>(null);
+  const [conflicts,setConflicts] = useState<DatasetConflict[]>([]);
+  const [pendingReplacementIds,setPendingReplacementIds] = useState<Set<string>>(new Set());
   const [menuDatasetId, setMenuDatasetId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<DatasetRecord | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -407,7 +407,6 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
   const [batchMoveOpen, setBatchMoveOpen] = useState(false);
 
   // 上传与页面拖拽状态
-  const [uploadTargetFolderId, setUploadTargetFolderId] = useState<string | null>(null);
   const [pageDragOver, setPageDragOver] = useState(false);
   const dragCounterRef = useRef(0);
 
@@ -511,15 +510,16 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
       await refreshFolders();
       await refreshDatasets();
       setDeleteFolderTarget(null);
-      setNotice({ kind: "success", message: "文件夹已删除，内部资料已移至未分类。" });
+      setNotice({ kind: "success", message: "文件夹及其中的资料已删除。" });
     } catch (error) {
+      setDeleteFolderTarget(null);
       setNotice({ kind: "error", message: datasetActionErrorMessage(error, "删除失败，请稍后重试。") });
     } finally {
       setDeletingFolder(false);
     }
   };
 
-  const confirmSingleMove = async (targetFolderId: string | null) => {
+  const confirmSingleMove = async (targetFolderId: string) => {
     if (!moveTarget) return;
     try {
       const updated = await api.moveDataset(moveTarget.id, targetFolderId);
@@ -533,7 +533,7 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
     }
   };
 
-  const confirmBatchMove = async (targetFolderId: string | null) => {
+  const confirmBatchMove = async (targetFolderId: string) => {
     if (selectedDatasetIds.size === 0) return;
     const ids = Array.from(selectedDatasetIds);
     try {
@@ -575,12 +575,18 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
     }
   }, []);
 
-  const effectiveUploadFolderId =
-    uploadTargetFolderId !== undefined && uploadTargetFolderId !== null
-      ? uploadTargetFolderId
-      : selectedFolderId !== "all" && selectedFolderId !== "uncategorized"
-      ? selectedFolderId
-      : null;
+  useEffect(()=>{
+    const start=(event:Event)=>setPendingReplacementIds(ids=>new Set([...ids,(event as CustomEvent<string>).detail]));
+    const refresh=()=>{void refreshDatasets().then(ok=>{if(ok)setPendingReplacementIds(new Set());});};
+    window.addEventListener("dataset-replacement-start",start);window.addEventListener("dataset-replacement-refresh",refresh);
+    return()=>{window.removeEventListener("dataset-replacement-start",start);window.removeEventListener("dataset-replacement-refresh",refresh);};
+  },[refreshDatasets]);
+  useEffect(()=>{if(!datasets.some(d=>d.replacement?.status==="pending"))return;const timer=setInterval(()=>void refreshDatasets(),2000);return()=>clearInterval(timer);},[datasets,refreshDatasets]);
+
+  const canUploadHere = selectedFolderId !== "all" && selectedFolderId !== "uncategorized";
+  const effectiveUploadFolderId = canUploadHere
+    ? selectedFolderId
+    : null;
 
   const {
     uploading,
@@ -589,8 +595,10 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
     limits,
     concurrency: DATASET_UPLOAD_CONCURRENCY,
     folderId: effectiveUploadFolderId,
+    onConflict: (file,error,folderId) => new Promise(resolve=>{setConflicts(current=>[...current,{id:crypto.randomUUID(),file,folderId,candidates:(error.payload?.candidates??[]) as DatasetConflict["candidates"],suggestedName:String(error.payload?.suggested_name??file.name),resolve}]);}),
     onAccepted: (dataset) => {
       if (!pageMounted.current) return;
+      setPendingReplacementIds(ids=>{const next=new Set(ids);next.delete(dataset.id);return next;});
       locallyAccepted.current.set(dataset.id, dataset);
       setDatasets((current) => upsertDataset(current, dataset));
       setLoadFailed(false);
@@ -724,11 +732,7 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
   }, [hasActiveParsing]);
 
   const openUploadDialog = () => {
-    setUploadTargetFolderId(
-      selectedFolderId !== "all" && selectedFolderId !== "uncategorized"
-        ? selectedFolderId
-        : null,
-    );
+    if (!canUploadHere) return;
     setDialogOpen(true);
     setNotice(null);
   };
@@ -741,7 +745,7 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
     dragCounterRef.current += 1;
-    if (e.dataTransfer?.types?.includes("Files")) {
+    if (canUploadHere && e.dataTransfer?.types?.includes("Files")) {
       setPageDragOver(true);
     }
   };
@@ -771,6 +775,10 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
 
   const appendFiles = (files: File[]) => {
     if (files.length === 0 || uploading) return;
+    if (!canUploadHere || !effectiveUploadFolderId) {
+      setNotice({ kind: "error", message: "请先进入文件夹再上传资料。" });
+      return;
+    }
     setNotice(null);
     void (async () => {
       const result = await uploadFiles(files);
@@ -816,7 +824,6 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
     setPreviewDataset(dataset);
   };
 
-  const closePreview = () => setPreviewDataset(null);
 
   const startRename = (dataset: DatasetRecord) => {
     setMenuDatasetId(null);
@@ -895,14 +902,16 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
 
   const keyword = query.trim().toLocaleLowerCase();
   const filteredDatasets = useMemo(() => {
-    return datasets.filter((dataset) => {
-      if (selectedFolderId !== "all") {
-        if (dataset.folder_id !== selectedFolderId) return false;
+    return datasets.map(dataset=>pendingReplacementIds.has(dataset.id)?{...dataset,replacement:{id:"",status:"pending" as const,upload_status:"uploading",parse_status:null,failure_code:null,retryable:false,current_revision:dataset.content_revision??"0"}}:dataset).filter((dataset) => {
+      if (selectedFolderId === "all" || selectedFolderId === "uncategorized") {
+        return false;
+      } else if (dataset.folder_id !== selectedFolderId) {
+        return false;
       }
       if (!keyword) return true;
       return datasetDisplayName(dataset).toLocaleLowerCase().includes(keyword);
     });
-  }, [datasets, keyword, selectedFolderId]);
+  }, [datasets, keyword, selectedFolderId, pendingReplacementIds]);
 
   const selectedDatasetCount = selectedDatasetIds.size;
   const filteredDatasetIds = filteredDatasets.map((dataset) => dataset.id);
@@ -1033,8 +1042,20 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
           </span>
         </div>
       )}
+      {selectedFolderId !== "all" && (
+        <nav className="dataset-folder-breadcrumb" aria-label="资料库路径">
+          <button type="button" className="dataset-folder-back" onClick={handleBackToAll}>
+            <ChevronLeft aria-hidden="true" />返回全部资料
+          </button>
+          <span aria-hidden="true">/</span>
+          <span aria-current="page">
+            {folders.find((folder) => folder.id === selectedFolderId)?.name ?? "文件夹"}
+          </span>
+        </nav>
+      )}
       <WorkspacePageHero
-        icon={selectedFolderId === "all" ? <Database /> : <FolderOpen />}
+        layout="module"
+        icon={selectedFolderId === "all" ? <FolderOpen /> : undefined}
         tone="success"
         title={
           selectedFolderId === "all"
@@ -1046,7 +1067,7 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
             ? datasets.length > 0
               ? `${datasets.length} 份资料 · 按最近上传排列`
               : "把履历、项目记录和参考资料集中在这里，写简历时随时调用。"
-            : `当前文件夹 · 共 ${filteredDatasets.length} 份资料`
+            : `共 ${filteredDatasets.length} 份资料`
         }
         actions={(
           <>
@@ -1058,7 +1079,7 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
               placeholder="搜索资料…"
               className="datasets-hero-search"
             />
-            <Button
+            {selectedFolderId === "all" && <Button
               className="datasets-hero-primary-action"
               variant="outline"
               icon={<FolderPlus size={15} />}
@@ -1070,8 +1091,8 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
               }}
             >
               新建文件夹
-            </Button>
-            <Button
+            </Button>}
+            {canUploadHere && <Button
               className="datasets-hero-primary-action"
               variant="outline"
               icon={<Plus size={15} />}
@@ -1079,7 +1100,7 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
               onClick={openUploadDialog}
             >
               上传资料
-            </Button>
+            </Button>}
             {selectedFolderId !== "all" && (
               <Button
                 className="datasets-hero-batch-action"
@@ -1146,20 +1167,7 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
                   ) : (
                     <>
                       {/* 批量操作控制条（仅在批量模式下显示） */}
-                      {batchMode && (
-                        <div className="dataset-list-header dataset-batch-bar">
-                          <span className="dataset-batch-count">已选择 {selectedDatasetCount} 项资料</span>
-                          <div className="dataset-selection-cell dataset-header-selection">
-                            <DatasetSelectionCheckbox
-                              checked={allFilteredSelected}
-                              disabled={filteredDatasets.length === 0 || batchDeleteBusy}
-                              indeterminate={someFilteredSelected && !allFilteredSelected}
-                              label="全选当前筛选结果"
-                              onChange={toggleAllFilteredDatasets}
-                            />
-                          </div>
-                        </div>
-                      )}
+
 
                       <div className="dataset-unified-grid" aria-label="资料与文件夹列表">
                         {folders.map((folder) => (
@@ -1196,7 +1204,6 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
                             statusLabel={datasetStatusLabel(datasetVisualStatus(dataset))}
                             statusKind={datasetVisualStatus(dataset)}
                             statusReason={datasetStatusReason(dataset)}
-                            formattedSize={formatFileSize(dataset.file_size)}
                             onPreview={openPreview}
                             onToggleSelection={toggleDatasetSelection}
                             onToggleMenu={(id) => setMenuDatasetId((current) => current === id ? null : id)}
@@ -1213,32 +1220,7 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
               ) : (
                 /* 文件夹内页视图 */
                 <div className="dataset-folder-view">
-                  <div className="dataset-folder-nav">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="dataset-back-btn"
-                      icon={<ChevronLeft size={16} />}
-                      onClick={handleBackToAll}
-                    >
-                      返回全部资料
-                    </Button>
-                  </div>
 
-                  {batchMode && (
-                    <div className="dataset-list-header dataset-batch-bar">
-                      <span className="dataset-batch-count">已选择 {selectedDatasetCount} 项资料</span>
-                      <div className="dataset-selection-cell dataset-header-selection">
-                        <DatasetSelectionCheckbox
-                          checked={allFilteredSelected}
-                          disabled={filteredDatasets.length === 0 || batchDeleteBusy}
-                          indeterminate={someFilteredSelected && !allFilteredSelected}
-                          label="全选当前筛选结果"
-                          onChange={toggleAllFilteredDatasets}
-                        />
-                      </div>
-                    </div>
-                  )}
 
                   {filteredDatasets.length === 0 ? (
                     query ? (
@@ -1273,7 +1255,6 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
                           statusLabel={datasetStatusLabel(datasetVisualStatus(dataset))}
                           statusKind={datasetVisualStatus(dataset)}
                           statusReason={datasetStatusReason(dataset)}
-                          formattedSize={formatFileSize(dataset.file_size)}
                           onPreview={openPreview}
                           onToggleSelection={toggleDatasetSelection}
                           onToggleMenu={(id) => setMenuDatasetId((current) => current === id ? null : id)}
@@ -1296,10 +1277,9 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
         <Dialog open onOpenChange={(open) => {
           if (!open && !uploading) setDialogOpen(false);
         }}>
-          <DialogContent className="dataset-upload-dialog [&>[data-slot=dialog-close]]:hidden">
+          <DialogContent className="dataset-upload-dialog [&>[data-slot=dialog-close]]:hidden" aria-describedby={undefined}>
             <DialogHeader className="dataset-upload-dialog-header">
               <DialogTitle className="dataset-upload-dialog-title">上传资料</DialogTitle>
-              <DialogDescription className="dataset-upload-dialog-desc">选择文件后会立即上传并进入资料列表。</DialogDescription>
               <button
                 type="button"
                 className="dataset-dialog-close"
@@ -1313,37 +1293,7 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
               </button>
             </DialogHeader>
 
-            <div className="dataset-upload-target-select">
-              <Label htmlFor="upload-target-folder" className="dataset-upload-target-label">
-                上传到目录
-              </Label>
-              <Select
-                value={uploadTargetFolderId ?? "uncategorized"}
-                onValueChange={(val) => setUploadTargetFolderId(val === "uncategorized" ? null : val)}
-              >
-                <SelectTrigger id="upload-target-folder" className="dataset-upload-select-trigger">
-                  <SelectValue placeholder="选择目标目录" />
-                </SelectTrigger>
-                <SelectContent className="z-[100]">
-                  <SelectItem value="uncategorized">
-                    <span className="flex items-center gap-2">
-                      <Inbox size={14} className="opacity-70" />
-                      <span>未分类（根目录）</span>
-                    </span>
-                  </SelectItem>
-                  {folders.map((f) => (
-                    <SelectItem key={f.id} value={f.id}>
-                      <span className="flex items-center gap-2">
-                        <Folder size={14} className="opacity-70" />
-                        <span>{f.name}</span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <DatasetDropzone disabled={uploading} uploading={uploading} limits={limits} onFilesSelect={appendFiles} />
+            <DatasetDropzone disabled={uploading || !effectiveUploadFolderId} uploading={uploading} limits={limits} onFilesSelect={appendFiles} />
           </DialogContent>
         </Dialog>
       )}
@@ -1529,7 +1479,7 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
         <ConfirmDialog
           kind="delete"
           title={`确认删除文件夹「${deleteFolderTarget.name}」？`}
-          description={`删除文件夹不会删除其中的资料。该文件夹内的 ${deleteFolderTarget.dataset_count} 份资料将自动移至「未分类」。`}
+          description={`将永久删除该文件夹及其中的 ${deleteFolderTarget.dataset_count} 份资料，包括源文件和解析结果，删除后无法恢复。`}
           confirmLabel="确认删除"
           busyLabel="正在删除…"
           busy={deletingFolder}
@@ -1577,21 +1527,26 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
         </div>
       )}
 
-      {previewDataset && (
-        <DatasetPreviewDialog
-          dataset={previewDataset}
-          returnFocusTo={previewTriggerRef.current}
-          onClose={closePreview}
-        />
-      )}
+      {conflicts[0] && <DatasetUploadConflictDialog key={conflicts[0].id} conflict={conflicts[0]} onDone={()=>setConflicts(current=>current.slice(1))}/>}
+
 
       {batchMode && (
         <div
-          className={`datasets-floating-bar${selectedDatasetCount > 0 ? " is-active" : ""}`}
+          className="datasets-floating-bar is-active"
           role="region"
           aria-label="批量操作栏"
         >
           <div className="datasets-floating-bar-inner">
+            <label className="dataset-floating-select-all">
+              <DatasetSelectionCheckbox
+                checked={allFilteredSelected}
+                disabled={filteredDatasets.length === 0 || batchDeleteBusy}
+                indeterminate={someFilteredSelected && !allFilteredSelected}
+                label="全选当前筛选结果"
+                onChange={toggleAllFilteredDatasets}
+              />
+              全选
+            </label>
             <span className="datasets-floating-bar-count">
               已选 <strong>{selectedDatasetCount}</strong> 项
             </span>
@@ -1633,6 +1588,7 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
           </div>
         </div>
       )}
+      {previewDataset && <DatasetPreviewDialog dataset={previewDataset} returnFocusTo={previewTriggerRef.current} onClose={() => setPreviewDataset(null)} />}
     </main>
   );
 }

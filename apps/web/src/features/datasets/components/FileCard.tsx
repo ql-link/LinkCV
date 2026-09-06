@@ -1,8 +1,10 @@
-import { type KeyboardEvent } from "react";
+import {api} from "../../../api/client";
+import { useId, useRef, useState, type KeyboardEvent } from "react";
 import { FolderInput, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
 
 import type { DatasetRecord } from "../../../api/client";
 import { DatasetSelectionCheckbox } from "../DatasetsPage";
+import { DocumentThumbnail } from "./DocumentThumbnail";
 
 type FileCardProps = {
   dataset: DatasetRecord;
@@ -16,7 +18,6 @@ type FileCardProps = {
   statusLabel: string;
   statusKind: "queued" | "processing" | "succeeded" | "failed";
   statusReason: string | null;
-  formattedSize: string;
   onPreview: (dataset: DatasetRecord, trigger: HTMLElement) => void;
   onToggleSelection: (id: string, checked: boolean) => void;
   onToggleMenu: (id: string) => void;
@@ -38,7 +39,6 @@ export function FileCard({
   statusLabel,
   statusKind,
   statusReason,
-  formattedSize,
   onPreview,
   onToggleSelection,
   onToggleMenu,
@@ -47,6 +47,27 @@ export function FileCard({
   onRetry,
   onDelete,
 }: FileCardProps) {
+  const graphicId = useId();
+  const [replacementError,setReplacementError]=useState("");
+  const [replacementBusy,setReplacementBusy]=useState(false);
+  const retryRequest=useRef<string|null>(null);
+  async function handleReplacement(retry:boolean){
+    const op=dataset.replacement;
+    if(!op||replacementBusy)return;
+    if(retry&&!window.confirm("重试替换将覆盖当前源文件和解析内容，是否继续？"))return;
+    setReplacementBusy(true);setReplacementError("");
+    try {
+      if(retry){
+        retryRequest.current??=crypto.randomUUID();
+        await api.retryDatasetReplacement(dataset.id,op.id,dataset.content_revision??"0",retryRequest.current);
+      }else await api.discardDatasetReplacement(dataset.id,op.id);
+      retryRequest.current=null;
+      window.dispatchEvent(new Event("dataset-replacement-refresh"));
+    }catch{setReplacementError("操作未完成，请刷新列表确认当前状态后重试。");window.dispatchEvent(new Event("dataset-replacement-refresh"));}
+    finally{setReplacementBusy(false);}
+  }
+  const replacing=dataset.replacement?.status==="pending";
+  if(replacing) { isInteractive=false; busy=true; selectionDisabled=true; }
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (!isInteractive || (event.key !== "Enter" && event.key !== " ")) return;
     event.preventDefault();
@@ -54,10 +75,14 @@ export function FileCard({
   };
 
   const format = (dataset.file_format || "file").toLowerCase();
+  const uploadedAt = new Date(dataset.created_at);
+  const uploadDate = Number.isNaN(uploadedAt.getTime()) ? "" : new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(uploadedAt).replace(/\//g, "-");
 
   return (
     <article
-      className={`dataset-row macos-file-item${isInteractive ? " is-clickable" : ""}`}
+      className={`macos-file-item${isInteractive ? " is-clickable" : ""}`}
       role={isInteractive ? "button" : undefined}
       tabIndex={isInteractive ? 0 : undefined}
       aria-label={isInteractive ? `打开「${displayName}」解析预览` : undefined}
@@ -65,41 +90,58 @@ export function FileCard({
       onKeyDown={handleKeyDown}
     >
       <div className="dataset-cell dataset-cell-name">
-        {/* 顶部：macOS 质感文档卡片图片 */}
         <div className="macos-file-graphic" aria-hidden="true">
-          <div className={`macos-document-sheet is-${format}`}>
-            {/* 折角 Dog-ear */}
-            <div className="macos-document-dogear" />
-
-            {/* 排版线条 */}
-            <div className="macos-document-lines">
-              <div className="macos-document-line is-long" />
-              <div className="macos-document-line is-medium" />
-              <div className="macos-document-line is-short" />
-            </div>
-
-            {/* 解析状态微标 */}
-            <div className="macos-document-status-tag" title={statusReason ?? undefined}>
-              <span
-                className={`dataset-status is-${statusKind}`}
-                data-status={statusKind}
-              >
-                <span className="dataset-status-mark" aria-hidden="true" />
-                {statusLabel}
-              </span>
-            </div>
-          </div>
+          <DocumentThumbnail dataset={replacing?{...dataset,parse_status:"processing"}:dataset} fallback={<>
+          <svg className="dataset-document-icon" viewBox="0 0 96 112" fill="none">
+            <defs>
+              <linearGradient id={`${graphicId}-paper`} x1="20" y1="4" x2="76" y2="108" gradientUnits="userSpaceOnUse">
+                <stop stopColor="#f8fcff" />
+                <stop offset="1" stopColor="#c9e7fb" />
+              </linearGradient>
+              <linearGradient id={`${graphicId}-fold`} x1="63" y1="5" x2="84" y2="30" gradientUnits="userSpaceOnUse">
+                <stop stopColor="#b7ddf6" />
+                <stop offset="1" stopColor="#e9f6ff" />
+              </linearGradient>
+            </defs>
+            <path d="M18 4h43l25 25v69a10 10 0 0 1-10 10H18A10 10 0 0 1 8 98V14A10 10 0 0 1 18 4Z" fill={`url(#${graphicId}-paper)`} stroke="#a6cde6" />
+            <path d="M61 5v17a8 8 0 0 0 8 8h16" fill={`url(#${graphicId}-fold)`} stroke="#a6cde6" strokeLinejoin="round" />
+            <path d="M18 6h41M10 17v78" stroke="white" strokeOpacity="0.85" strokeLinecap="round" />
+          </svg>
+          <span className="dataset-document-format">{format.toUpperCase()}</span>
+          </>} />
         </div>
 
         <strong className="dataset-name macos-file-name" title={displayName}>
           {displayName}
         </strong>
+        {uploadDate && <time className="dataset-file-date" dateTime={dataset.created_at}>上传于 {uploadDate}</time>}
       </div>
 
+      {replacing&&<p role="status">{dataset.replacement?.upload_status==="uploading"?"正在上传…":"正在解析…"}</p>}
+      {dataset.replacement && ["failed","conflict"].includes(dataset.replacement.status)&&<div className="dataset-replacement-feedback" role="status" onClick={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}>
+        <span>替换失败，已恢复原文件。</span>
+        {dataset.replacement.retryable&&<button type="button" disabled={replacementBusy} onClick={()=>void handleReplacement(true)}>重试替换</button>}
+        <button type="button" disabled={replacementBusy} onClick={()=>void handleReplacement(false)}>放弃替换</button>
+        {replacementError&&<span>{replacementError}</span>}
+      </div>}
       {/* 底部信息与操作框 */}
       <div className="macos-file-caption">
         <div className="macos-file-subrow">
-          <span className="macos-file-size">{formattedSize}</span>
+          {statusKind !== "succeeded" && statusKind !== "failed" && <span className={`dataset-status is-${statusKind}`} data-status={statusKind} title={statusReason ?? undefined}>
+            <span className="dataset-status-mark" aria-hidden="true" />
+            {statusLabel}
+          </span>}
+          {statusKind === "failed" && <button
+            type="button"
+            className="dataset-file-retry"
+            disabled={busy}
+            title={statusReason ?? undefined}
+            onClick={(event) => { event.stopPropagation(); onRetry(dataset); }}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            <RotateCcw size={12} aria-hidden="true" />
+            重试
+          </button>}
 
           <div
             className="dataset-row-actions macos-file-actions"

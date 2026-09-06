@@ -35,7 +35,7 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0055"
+EXPECTED_HEAD = "0056"
 
 
 def canonical_editor_markdown(data: dict[str, Any]) -> str:
@@ -346,6 +346,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         for foreign_key in inspector.get_foreign_keys("resumes")
     )
     assert {column["name"] for column in inspector.get_columns("user_dataset")} == {
+        "content_revision", "content_object_name", "content_sha256", "content_updated_at", "last_content_request_id",
         "folder_id",
         "id",
         "user_id",
@@ -3499,4 +3500,25 @@ def test_mysql_migrates_legacy_resume_snapshots_forward() -> None:
         connection.execute(text("DELETE FROM users"))
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
+    engine.dispose()
+
+
+def test_mysql_dataset_edit_upgrade_from_0055_preserves_existing_files() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0055")
+    engine = create_engine(database_url)
+    with engine.begin() as conn:
+        user_id = conn.execute(text("INSERT INTO users (email,password_hash,nickname) VALUES ('dataset-migration@example.invalid','fictional','张三')")).lastrowid
+        task_id = conn.execute(text("INSERT INTO document_parse_tasks (user_id,source_type,file_name,file_format,object_name,upload_status) VALUES (:uid,'dataset','fictional.md','md','users/fictional/datasets/source.md','uploading')"), {"uid":user_id}).lastrowid
+        conn.execute(text("INSERT INTO user_dataset (user_id,parse_task_id,file_name,file_format,content_type,file_size,sha256,object_name,idempotency_key,request_fingerprint) VALUES (:uid,:tid,'fictional.md','md','text/markdown',10,:digest,'users/fictional/datasets/source.md','fictional-key',:digest)"), {"uid":user_id,"tid":task_id,"digest":"a"*64})
+    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", "head")
+    with engine.connect() as conn:
+        row = conn.execute(text("SELECT file_name,content_revision,content_object_name FROM user_dataset")).one()
+        assert row == ("fictional.md",0,None)
+    inspector = inspect(engine)
+    assert {"dataset_replacements","dataset_object_cleanup"} <= set(inspector.get_table_names())
+    assert {"uk_dataset_replacements_active","uk_dataset_replacements_user_request","uk_dataset_replacements_task"} <= {item["name"] for item in inspector.get_unique_constraints("dataset_replacements")}
+    assert {"ck_dataset_replacements_active","ck_dataset_replacements_status"} <= {item["name"] for item in inspector.get_check_constraints("dataset_replacements")}
     engine.dispose()

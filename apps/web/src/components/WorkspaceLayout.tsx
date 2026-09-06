@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import {
   BriefcaseBusiness,
   CalendarDays,
-  Database,
+  FolderOpen,
   FileText,
   LayoutTemplate,
   ListChecks,
@@ -72,7 +72,7 @@ const NAV_ITEMS: Array<{
     key: "datasets",
     label: "资料库",
     href: "/datasets",
-    icon: Database,
+    icon: FolderOpen,
   },
 ];
 
@@ -138,6 +138,7 @@ export function WorkspaceNavigation({
 }
 
 export function WorkspacePageHero({
+  layout,
   eyebrow,
   title,
   description,
@@ -146,6 +147,7 @@ export function WorkspacePageHero({
   tone = "accent",
   className,
 }: {
+  layout?: "module";
   eyebrow?: string;
   title: string;
   description?: string;
@@ -154,13 +156,15 @@ export function WorkspacePageHero({
   tone?: "accent" | "template" | "success" | "warning";
   className?: string;
 }) {
-  if (icon) {
+  if (icon || layout === "module") {
     return (
       <header className={`page-hero is-module${className ? ` ${className}` : ""}`}>
         <div className="page-hero-module-summary">
-          <span className={`page-hero-module-mark is-${tone}`} aria-hidden="true">
-            {icon}
-          </span>
+          {icon && (
+            <span className={`page-hero-module-mark is-${tone}`} aria-hidden="true">
+              {icon}
+            </span>
+          )}
           <div className="page-hero-module-copy">
             <h1>{title}</h1>
             {description && <p className="page-hero-description">{description}</p>}

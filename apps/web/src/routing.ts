@@ -98,6 +98,8 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
   if (normalizedPath === "/career/jobs/new" || normalizedPath === "/jobs/new") {
     return { kind: "interviews", view: "applications", importJob: true };
   }
+  const datasetDetail = normalizedPath.match(/^\/datasets\/(\d+)$/);
+  if (datasetDetail) return {kind: "datasets"};
   if (normalizedPath === "/datasets") {
     const folderId = new URLSearchParams(search).get("folder") ?? undefined;
     return { kind: "datasets", folderId };

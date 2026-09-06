@@ -18,6 +18,7 @@ describe("LinkCV routes", () => {
   it("parses landing, auth, admin, resume, template, and editor routes", () => {
     expect(parseAppRoute("/")).toEqual({ kind: "landing" });
     expect(parseAppRoute("/home")).toEqual({ kind: "landing" });
+    expect(parseAppRoute("/datasets/99")).toEqual({ kind: "datasets" });
     expect(parseAppRoute("/home/")).toEqual({ kind: "landing" });
     expect(parseAppRoute("/login", "?mode=register")).toEqual({ kind: "auth", mode: "register", next: null });
     expect(parseAppRoute("/admin/llm/models")).toEqual({ kind: "admin" });

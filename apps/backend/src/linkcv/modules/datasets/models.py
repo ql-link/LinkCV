@@ -47,13 +47,13 @@ class UserDatasetFolder(Base):
     )
     user_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey("users.id", name="fk_user_dataset_folders_user", ondelete="RESTRICT"),
+        ForeignKey(
+            "users.id", name="fk_user_dataset_folders_user", ondelete="RESTRICT"
+        ),
         nullable=False,
         comment="所属用户 ID",
     )
-    name: Mapped[str] = mapped_column(
-        String(64), nullable=False, comment="文件夹名称"
-    )
+    name: Mapped[str] = mapped_column(String(64), nullable=False, comment="文件夹名称")
     created_at: Mapped[datetime] = mapped_column(
         timestamp_type(),
         nullable=False,
@@ -146,6 +146,111 @@ class UserDataset(Base):
         nullable=False,
         server_default=func.now(),
         comment="创建时间（UTC）",
+    )
+
+    content_revision: Mapped[int] = mapped_column(
+        unsigned_bigint_type(), nullable=False, default=0, server_default="0"
+    )
+    content_object_name: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    content_sha256: Mapped[str | None] = mapped_column(
+        String(64).with_variant(mysql.CHAR(64), "mysql"), nullable=True
+    )
+    content_updated_at: Mapped[datetime | None] = mapped_column(
+        timestamp_type(), nullable=True
+    )
+    last_content_request_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+
+
+class DatasetReplacement(Base):
+    __tablename__ = "dataset_replacements"
+    __table_args__ = (
+        PrimaryKeyConstraint("id", name="pk_dataset_replacements"),
+        UniqueConstraint(
+            "user_id", "idempotency_key", name="uk_dataset_replacements_user_request"
+        ),
+        UniqueConstraint("active_dataset_id", name="uk_dataset_replacements_active"),
+        UniqueConstraint("parse_task_id", name="uk_dataset_replacements_task"),
+        CheckConstraint(
+            "status IN ('pending','failed','conflict','applied','discarded')",
+            name="ck_dataset_replacements_status",
+        ),
+        CheckConstraint(
+            "(status IN ('pending','failed','conflict') AND active_dataset_id IS NOT NULL AND active_dataset_id = dataset_id) OR (status IN ('applied','discarded') AND active_dataset_id IS NULL)",
+            name="ck_dataset_replacements_active",
+        ),
+        Index("idx_dataset_replacements_target", "dataset_id", "created_at"),
+        Index("idx_dataset_replacements_cleanup", "status", "updated_at"),
+    )
+    id: Mapped[int] = mapped_column(unsigned_bigint_type(), autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(),
+        ForeignKey(
+            "users.id", name="fk_dataset_replacements_user", ondelete="RESTRICT"
+        ),
+        nullable=False,
+    )
+    dataset_id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(),
+        ForeignKey(
+            "user_dataset.id",
+            name="fk_dataset_replacements_dataset",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    parse_task_id: Mapped[int | None] = mapped_column(
+        unsigned_bigint_type(), nullable=True
+    )
+    source_content_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_file_size: Mapped[int] = mapped_column(
+        unsigned_bigint_type(), nullable=False
+    )
+    source_sha256: Mapped[str] = mapped_column(
+        String(64).with_variant(mysql.CHAR(64), "mysql"), nullable=False
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(
+        String(64).with_variant(mysql.CHAR(64), "mysql"), nullable=False
+    )
+    base_revision: Mapped[int] = mapped_column(unsigned_bigint_type(), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    active_dataset_id: Mapped[int | None] = mapped_column(
+        unsigned_bigint_type(), nullable=True
+    )
+    last_retry_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    failure_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        timestamp_type(), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class DatasetObjectCleanup(Base):
+    __tablename__ = "dataset_object_cleanup"
+    __table_args__ = (
+        PrimaryKeyConstraint("id", name="pk_dataset_object_cleanup"),
+        UniqueConstraint("object_name", name="uk_dataset_object_cleanup_object"),
+        Index("idx_dataset_object_cleanup_due", "not_before", "id"),
+    )
+    id: Mapped[int] = mapped_column(unsigned_bigint_type(), autoincrement=True)
+    user_id: Mapped[int] = mapped_column(unsigned_bigint_type(), nullable=False)
+    object_name: Mapped[str] = mapped_column(String(512), nullable=False)
+    parse_task_id: Mapped[int | None] = mapped_column(
+        unsigned_bigint_type(), nullable=True
+    )
+    not_before: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False)
+    attempt_count: Mapped[int] = mapped_column(
+        Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql"),
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        timestamp_type(), nullable=False, server_default=func.now()
     )
 
 

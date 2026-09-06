@@ -50,14 +50,14 @@ class DatasetFolderDeleteResponse(BaseModel):
 class DatasetMoveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    folder_id: str | None = None
+    folder_id: str = Field(min_length=1)
 
 
 class DatasetBatchMoveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     dataset_ids: list[str]
-    folder_id: str | None = None
+    folder_id: str = Field(min_length=1)
 
 
 class DatasetBatchMoveResponse(BaseModel):
@@ -80,6 +80,10 @@ class UserDatasetRecord(BaseModel):
     parse_status: str | None
     failure_reason: str | None
     created_at: datetime
+    content_revision: str = "0"
+    content_updated_at: datetime | None = None
+    replacement: dict | None = None
+    folder_name: str | None = None
 
     @field_validator("id", mode="before")
     @classmethod
@@ -110,8 +114,19 @@ class UserDatasetContentResponse(BaseModel):
     file_name: str
     file_format: str
     markdown: str
+    content_format: str = "markdown"
+    content_revision: str = "0"
+    content_updated_at: datetime | None = None
 
     @field_validator("id", mode="before")
     @classmethod
     def stringify_id(cls, value: object) -> str:
         return str(value)
+
+
+
+
+class DatasetReplacementRetryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    request_id: str = Field(min_length=1, max_length=64, strict=True)
+    confirm_replace: bool

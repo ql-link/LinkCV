@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 import pypdfium2 as pdfium
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from linkcv.core.config import Settings
@@ -132,6 +132,14 @@ def upload_file(
     idempotency_key: str | None = None,
     data: dict | None = None,
 ):
+    if data is None:
+        folders_response = client.get("/api/datasets/folders")
+        if folders_response.status_code == 200:
+            folders = folders_response.json()["folders"]
+            folder = folders[0] if folders else client.post(
+                "/api/datasets/folders", json={"name": "测试上传文件夹"}
+            ).json()
+            data = {"folder_id": folder["id"]}
     return client.post(
         "/api/datasets",
         files={"file": (filename, content, content_type)},
@@ -147,6 +155,31 @@ def valid_pdf() -> bytes:
     document.save(output)
     document.close()
     return output.getvalue()
+
+
+def test_upload_requires_an_owned_existing_folder_without_creating_files() -> None:
+    app = build_test_app()
+    with TestClient(app) as owner, TestClient(app) as other:
+        register(owner)
+        folder = owner.post("/api/datasets/folders", json={"name": "私有文件夹"}).json()
+        register(other, email="other-folder@example.invalid")
+        for data, status, error in [
+            ({}, 400, "DATASET_FOLDER_REQUIRED"),
+            ({"folder_id": "  "}, 400, "DATASET_FOLDER_REQUIRED"),
+            ({"folder_id": "invalid"}, 404, "FOLDER_NOT_FOUND"),
+            ({"folder_id": "99999"}, 404, "FOLDER_NOT_FOUND"),
+            ({"folder_id": folder["id"]}, 404, "FOLDER_NOT_FOUND"),
+        ]:
+            response = upload_file(other, data=data)
+            assert response.status_code == status
+            assert response.json() == {"error": error}
+        owner.delete(f"/api/datasets/folders/{folder['id']}")
+        response = upload_file(owner, data={"folder_id": folder["id"]})
+        assert response.status_code == 404
+        assert app.state.storage.objects == {}
+        with app.state.session_factory() as session:
+            assert session.scalar(select(UserDataset)) is None
+            assert session.scalar(select(DocumentParseTask)) is None
 
 
 def mark_dataset_succeeded(app, dataset_id: int, markdown: bytes = b"# Parsed") -> None:
@@ -435,6 +468,9 @@ def test_read_parsed_dataset_content() -> None:
         "file_name": "notes.md",
         "file_format": "md",
         "markdown": "# 解析结果\n\n张三",
+        "content_revision": "0",
+        "content_updated_at": None,
+        "content_format": "markdown",
     }
 
 
@@ -853,6 +889,8 @@ def test_record_failure_cleans_uploaded_object(monkeypatch) -> None:
     with TestClient(app) as client:
         register(client)
 
+        client.post("/api/datasets/folders", json={"name": "测试文件夹"})
+
         def failing_commit(_self) -> None:
             raise RuntimeError("database unavailable")
 
@@ -933,69 +971,21 @@ def test_folder_crud_and_validation() -> None:
         assert not_found_del.status_code == 404
 
 
-def test_folder_counts_and_deletion_safe_unlinking() -> None:
+def test_folder_delete_requires_confirmation_and_removes_contents() -> None:
     app = build_test_app()
     with TestClient(app) as client:
         register(client)
-
-        # Create folder
-        f_res = client.post("/api/datasets/folders", json={"name": "Certificates"})
-        assert f_res.status_code == 201
-        folder_id = f_res.json()["id"]
-
-        # Upload 1 file into folder, 1 file without folder
-        up1 = upload_file(client, filename="cert.pdf", content=valid_pdf(), content_type="application/pdf", data={"folder_id": folder_id})
-        assert up1.status_code == 202
-        file1_id = int(up1.json()["id"])
-        assert up1.json()["folder_id"] == folder_id
-
-        up2 = upload_file(client, filename="notes.md", content=b"# Notes")
-        assert up2.status_code == 202
-        file2_id = int(up2.json()["id"])
-        assert up2.json()["folder_id"] is None
-
-        # Mark both succeeded
-        mark_dataset_succeeded(app, file1_id)
-        mark_dataset_succeeded(app, file2_id)
-
-        # Check list folders & counts
-        list_f = client.get("/api/datasets/folders")
-        assert list_f.status_code == 200
-        data = list_f.json()
-        assert data["total_count"] == 2
-        assert data["uncategorized_count"] == 1
-        assert len(data["folders"]) == 1
-        assert data["folders"][0]["id"] == folder_id
-        assert data["folders"][0]["dataset_count"] == 1
-
-        # Check filtered lists
-        in_folder = client.get(f"/api/datasets?folder_id={folder_id}")
-        assert len(in_folder.json()["datasets"]) == 1
-        assert in_folder.json()["datasets"][0]["id"] == str(file1_id)
-
-        uncat = client.get("/api/datasets?folder_id=uncategorized")
-        assert len(uncat.json()["datasets"]) == 1
-        assert uncat.json()["datasets"][0]["id"] == str(file2_id)
-
-        all_ds = client.get("/api/datasets")
-        assert len(all_ds.json()["datasets"]) == 2
-
-        # Delete folder -> file1 should be unlinked, not deleted!
-        del_res = client.delete(f"/api/datasets/folders/{folder_id}")
-        assert del_res.status_code == 200
-        assert del_res.json()["affected_dataset_count"] == 1
-
-        # Now folders list is empty, both files are uncategorized
-        after_del = client.get("/api/datasets/folders")
-        assert after_del.json()["total_count"] == 2
-        assert after_del.json()["uncategorized_count"] == 2
-        assert len(after_del.json()["folders"]) == 0
-
-        # Verify dataset records still exist
-        all_ds_after = client.get("/api/datasets")
-        assert len(all_ds_after.json()["datasets"]) == 2
-        for ds in all_ds_after.json()["datasets"]:
-            assert ds["folder_id"] is None
+        folder = client.post("/api/datasets/folders", json={"name": "Delete test"}).json()["id"]
+        item = upload_file(client, filename="notes.md", content=b"# Notes", data={"folder_id": folder}).json()
+        url = f"/api/datasets/folders/{folder}"
+        assert client.delete(url).status_code == 409
+        assert client.delete(url + "?confirm_contents=true").json()["error"] == "DATASET_BUSY"
+        mark_dataset_succeeded(app, int(item["id"]))
+        result = client.delete(url + "?confirm_contents=true")
+        assert result.status_code == 200
+        assert result.json()["affected_dataset_count"] == 1
+        assert client.get("/api/datasets").json()["datasets"] == []
+        assert client.get("/api/datasets/folders").json()["folders"] == []
 
 
 def test_move_single_and_batch_datasets() -> None:
@@ -1018,8 +1008,7 @@ def test_move_single_and_batch_datasets() -> None:
 
         # Move single dataset to None (uncategorized)
         unmove_res = client.patch(f"/api/datasets/{d1_id}/folder", json={"folder_id": None})
-        assert unmove_res.status_code == 200
-        assert unmove_res.json()["folder_id"] is None
+        assert unmove_res.status_code == 422
 
         # Move with invalid folder ID -> 404 or 400
         invalid_f = client.patch(f"/api/datasets/{d1_id}/folder", json={"folder_id": "99999"})
@@ -1036,12 +1025,11 @@ def test_move_single_and_batch_datasets() -> None:
 
         # Batch move back to uncategorized
         batch_unmove = client.post("/api/datasets/move-batch", json={"dataset_ids": [d1_id, d2_id], "folder_id": None})
-        assert batch_unmove.status_code == 200
-        assert batch_unmove.json()["moved_count"] == 2
+        assert batch_unmove.status_code == 422
 
         # Check uncategorized
         uncat = client.get("/api/datasets?folder_id=uncategorized").json()
-        assert len(uncat["datasets"]) == 2
+        assert len(uncat["datasets"]) == 0
 
 
 def test_cross_user_folder_isolation() -> None:
@@ -1073,6 +1061,37 @@ def test_cross_user_folder_isolation() -> None:
         assert move_attempt.status_code == 404
 
         # User 2 cannot move User 1's dataset
-        user1_move_attempt = client2.patch(f"/api/datasets/{d1_id}/folder", json={"folder_id": None})
+        user1_move_attempt = client2.patch(f"/api/datasets/{d1_id}/folder", json={"folder_id": up2.json()["folder_id"]})
         assert user1_move_attempt.status_code == 404
 
+
+def test_folder_delete_storage_failure_preserves_records_for_retry() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        register(client)
+        item = upload_file(client).json()
+        mark_dataset_succeeded(app, int(item["id"]))
+        original = dict(app.state.storage.objects)
+        app.state.storage.fail_cleanup = True
+        url = f"/api/datasets/folders/{item['folder_id']}?confirm_contents=true"
+        assert client.delete(url).status_code == 502
+        assert app.state.storage.objects == original
+        assert len(client.get("/api/datasets").json()["datasets"]) == 1
+        assert len(client.get("/api/datasets/folders").json()["folders"]) == 1
+        app.state.storage.fail_cleanup = False
+        assert client.delete(url).status_code == 200
+        assert app.state.storage.objects == {}
+        with app.state.session_factory() as session:
+            assert session.scalar(select(func.count(UserDataset.id))) == 0
+            assert session.scalar(select(func.count(DocumentParseTask.id))) == 0
+
+
+def test_moves_require_folder_without_mutating_existing_membership() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        register(client)
+        item = upload_file(client).json()
+        for target in ({}, {"folder_id": None}, {"folder_id": ""}):
+            assert client.patch(f"/api/datasets/{item['id']}/folder", json=target).status_code == 422
+            assert client.post("/api/datasets/move-batch", json={"dataset_ids": [item["id"]], **target}).status_code == 422
+        assert client.get("/api/datasets").json()["datasets"][0]["folder_id"] == item["folder_id"]

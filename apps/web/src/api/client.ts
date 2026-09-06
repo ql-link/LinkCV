@@ -435,6 +435,10 @@ export type DatasetRecord = {
     | "internal_error"
     | null;
   created_at: string;
+  content_revision?: string;
+  content_updated_at?: string | null;
+  folder_name?: string | null;
+  replacement?: DatasetReplacement | null;
 };
 
 export type DatasetFolder = {
@@ -463,11 +467,16 @@ export type DatasetListResponse = {
   limits?: DatasetLimits;
 };
 
+export type DatasetReplacement = { id: string; status: "pending" | "failed" | "conflict" | "applied" | "discarded"; upload_status: string | null; parse_status: string | null; failure_code: string | null; retryable: boolean; current_revision: string };
+
 export type DatasetContent = {
   id: string;
   file_name: string;
   file_format: string;
   markdown: string;
+  content_revision?: string;
+  content_updated_at?: string | null;
+  content_format?: "markdown";
 };
 
 export type ResumeImportSummary = {
@@ -1463,7 +1472,7 @@ export const api = {
       method: "POST",
       body: payload,
     }),
-  uploadDataset: (file: File, idempotencyKey: string, folderId?: string | null) => {
+  uploadDataset: (file: File, idempotencyKey: string, folderId: string) => {
     const formData = new FormData();
     formData.append("file", file);
     if (folderId) {
@@ -1509,19 +1518,26 @@ export const api = {
     }),
   deleteDatasetFolder: (folderId: string) =>
     request<{ deleted: boolean; affected_dataset_count: number }>(
-      `/api/datasets/folders/${folderId}`,
+      `/api/datasets/folders/${folderId}?confirm_contents=true`,
       { method: "DELETE" },
     ),
-  moveDataset: (datasetId: string, folderId: string | null) =>
+  moveDataset: (datasetId: string, folderId: string) =>
     request<DatasetRecord>(`/api/datasets/${datasetId}/folder`, {
       method: "PATCH",
       body: { folder_id: folderId },
     }),
-  batchMoveDatasets: (datasetIds: string[], folderId: string | null) =>
+  batchMoveDatasets: (datasetIds: string[], folderId: string) =>
     request<{ moved_count: number }>("/api/datasets/move-batch", {
       method: "POST",
       body: { dataset_ids: datasetIds, folder_id: folderId },
     }),
+  getDataset: (id: string) => request<DatasetRecord>(`/api/datasets/${id}`),
+  replaceDataset: (id: string, file: File, revision: string, key: string) => {
+    const formData = new FormData(); formData.append("file",file); formData.append("confirm_replace","true");
+    return request<DatasetReplacement>(`/api/datasets/${id}/replacements`, {method:"POST",formData,headers:{"If-Match":`"dataset-${id}-${revision}"`,"Idempotency-Key":key}});
+  },
+  retryDatasetReplacement: (id:string, rid:string, revision:string, requestId:string) => request<DatasetReplacement>(`/api/datasets/${id}/replacements/${rid}/retry`,{method:"POST",body:{request_id:requestId,confirm_replace:true},headers:{"If-Match":`"dataset-${id}-${revision}"`}}),
+  discardDatasetReplacement: (id:string,rid:string) => request(`/api/datasets/${id}/replacements/${rid}`,{method:"DELETE"}),
   getDatasetContent: (id: string) =>
     request<DatasetContent>(`/api/datasets/${id}/content`),
   listJobDescriptions: (

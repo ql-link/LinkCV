@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, Folder, Inbox } from "lucide-react";
+import { Check, Folder } from "lucide-react";
 
 import type { DatasetFolder } from "../../../api/client";
 import {
@@ -20,7 +20,7 @@ export type MoveToFolderDialogProps = {
   currentFolderId?: string | null;
   itemCount: number;
   singleItemName?: string;
-  onMove: (targetFolderId: string | null) => Promise<void>;
+  onMove: (targetFolderId: string) => Promise<void>;
 };
 
 export function MoveToFolderDialog({
@@ -43,6 +43,7 @@ export function MoveToFolderDialog({
     : `批量移动 ${itemCount} 份资料到文件夹`;
 
   const handleSubmit = async () => {
+    if (!selectedTarget) return;
     if (selectedTarget === (currentFolderId ?? null)) {
       onOpenChange(false);
       return;
@@ -78,20 +79,6 @@ export function MoveToFolderDialog({
             role="radiogroup"
             aria-label="目标文件夹列表"
           >
-            <button
-              type="button"
-              role="radio"
-              aria-checked={selectedTarget === null}
-              className={`dataset-move-option${selectedTarget === null ? " is-selected" : ""}`}
-              onClick={() => setSelectedTarget(null)}
-            >
-              <Inbox size={16} className="dataset-move-option-icon" aria-hidden="true" />
-              <span className="dataset-move-option-name">未分类</span>
-              {selectedTarget === null && (
-                <Check size={15} className="dataset-move-check" aria-hidden="true" />
-              )}
-            </button>
-
             {folders.map((folder) => {
               const isSelected = selectedTarget === folder.id;
               return (
@@ -124,7 +111,7 @@ export function MoveToFolderDialog({
           <Button variant="secondary" disabled={moving} onClick={() => onOpenChange(false)}>
             取消
           </Button>
-          <Button disabled={moving} onClick={() => void handleSubmit()}>
+          <Button disabled={moving || !selectedTarget || selectedTarget === currentFolderId} onClick={() => void handleSubmit()}>
             {moving ? "正在移动…" : "确定移动"}
           </Button>
         </DialogFooter>
