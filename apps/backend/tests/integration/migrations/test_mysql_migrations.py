@@ -35,7 +35,7 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0054"
+EXPECTED_HEAD = "0055"
 
 
 def canonical_editor_markdown(data: dict[str, Any]) -> str:
@@ -3003,12 +3003,12 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
     assert {
         "ck_job_descriptions_job_title_not_blank",
         "ck_job_descriptions_company_name_not_blank",
-        "ck_job_descriptions_description_not_blank",
         "ck_job_descriptions_skills_array",
         "ck_job_descriptions_source_type",
         "ck_job_descriptions_source_fields",
         "ck_job_descriptions_lock_version",
     } <= check_names
+    assert "ck_job_descriptions_description_not_blank" not in check_names
     indexes = {
         index["name"]: index["column_names"]
         for index in inspector.get_indexes("job_descriptions")
@@ -3038,6 +3038,14 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
                 "VALUES ('jd-two@example.invalid', '$2b$12$fictional', '李四')"
             )
         ).lastrowid
+        connection.execute(
+            text(
+                "INSERT INTO job_descriptions "
+                "(user_id, job_title, company_name, description, skills, source_type) "
+                "VALUES (:user_id, '无描述岗位', '示例科技', '', JSON_ARRAY(), 'manual')"
+            ),
+            {"user_id": first_user},
+        )
         source_hash = bytes.fromhex("11" * 32)
         values = {
             "user_id": first_user,
