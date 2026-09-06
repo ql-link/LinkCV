@@ -22,7 +22,6 @@ from linkcv.application.interviews.service import (
     InterviewNotFound,
     InterviewResumeVersionRequired,
     InterviewSessionNotEmpty,
-    InterviewTimeConflict,
     InvalidInterviewRequest,
     InvalidInterviewCursor,
     InvalidInterviewTime,
@@ -227,24 +226,6 @@ def _raise_service_error(error: Exception) -> None:
         raise ApiError(409, "INTERVIEW_APPLICATION_NOT_EMPTY") from error
     if isinstance(error, InterviewSessionNotEmpty):
         raise ApiError(409, "INTERVIEW_SESSION_NOT_EMPTY") from error
-    if isinstance(error, InterviewTimeConflict):
-        raise ApiError(
-            409,
-            "INTERVIEW_TIME_CONFLICT",
-            {
-                "conflicts": [
-                    {
-                        "id": str(item.id),
-                        "application_id": str(item.application_id),
-                        "company_name": item.company_name,
-                        "stage_label": item.stage_label,
-                        "start_at": _utc_iso(item.start_at),
-                        "end_at": _utc_iso(item.end_at),
-                    }
-                    for item in error.conflicts
-                ]
-            },
-        ) from error
     raise error
 
 
