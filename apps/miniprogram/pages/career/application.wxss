@@ -1,0 +1,4 @@
+@import "./shared.wxss";
+.stage-flow { display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px;line-height:1.45;color:#3f4752; }
+.stage-step { display:flex;align-items:center;gap:8px; }.flow-arrow { color:#6f7a8c; }
+.session-entry { display:flex;flex-direction:column;gap:10px; }.session-entry + .session-entry { margin-top:0; }

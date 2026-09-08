@@ -1,0 +1,29 @@
+<view class="career-page"
+  ><view class="state hint" wx:if="{{loading}}"
+    >{{kind === 'resume' ? '正在准备投递时的简历版本…' : '正在加载岗位内容…'}}</view
+  ><view class="panel state" wx:elif="{{error}}"
+    ><text class="hint">{{error}}</text
+    ><button class="primary" bindtap="load">重新加载</button></view
+  ><block wx:elif="{{app}}"
+    ><view wx:if="{{kind === 'job'}}" class="panel"
+      ><view class="section"
+        ><text class="title">{{app.company_name_snapshot}}</text
+        ><text class="subtitle">{{app.job_title_snapshot}}</text
+        ><text class="hint">此处展示这次求职记录保存的岗位内容。</text></view
+      ><view class="section" wx:for="{{fields}}" wx:key="label"
+        ><text class="heading">{{item.label}}</text
+        ><text class="preserve" user-select>{{item.value}}</text></view
+      ><text class="empty" wx:if="{{!fields.length}}"
+        >暂无更多岗位内容。</text
+      ></view
+    ><block wx:else
+      ><text class="heading">{{app.resume_title_snapshot || '投递简历'}}</text
+      ><text class="hint"
+        >此处展示投递时保存的简历版本。点击图片可放大查看。</text
+      ><image
+        class="resume-preview"
+        src="{{previewPath}}"
+        mode="widthFix"
+        bindtap="preview"
+        binderror="imageError" /></block></block
+></view>

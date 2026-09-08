@@ -1,7 +1,1 @@
-{
-  "navigationStyle": "custom",
-  "enablePullDownRefresh": true,
-  "backgroundTextStyle": "dark",
-  "allowsBounceVertical": "NO",
-  "usingComponents": {}
-}
+{"navigationStyle":"custom","enablePullDownRefresh":true,"usingComponents":{"career-icon":"/components/career-icon/index","schedule-sheet":"/components/schedule-sheet/index"}}

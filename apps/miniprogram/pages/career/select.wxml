@@ -1,0 +1,25 @@
+<view class="career-page"
+  ><text class="title">为哪条求职记录添加安排？</text
+  ><text class="hint">选择待安排的求职阶段；已有安排请进入场次详情修改。</text
+  ><view class="state hint" wx:if="{{loading}}">正在加载…</view
+  ><view wx:elif="{{error}}" class="panel state"
+    ><text class="hint">{{error}}</text
+    ><button class="primary" bindtap="load">重新加载</button></view
+  ><block wx:else
+    ><view
+      class="panel"
+      wx:for="{{applications}}"
+      wx:key="id"
+      data-id="{{item.id}}"
+      bindtap="select"
+      ><text class="heading">{{item.company_name_snapshot}}</text
+      ><text class="subtitle">{{item.job_title_snapshot}}</text
+      ><view class="status tone-accent"
+        ><career-icon name="clock" tone="accent" />{{item.stageLabel}} ·
+        待安排<text class="chevron">›</text></view
+      ></view
+    ><view class="panel empty" wx:if="{{!applications.length}}"
+      >暂无待安排阶段。如需安排新一轮面试，请先在对应求职详情中添加下一阶段。</view
+    ></block
+  ></view
+>

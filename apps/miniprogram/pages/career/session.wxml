@@ -1,0 +1,36 @@
+<view class="career-page with-dock">
+  <view class="state hint" wx:if="{{loading}}">正在加载场次详情…</view>
+  <view class="panel state" wx:elif="{{error}}"><text class="hint">{{error}}</text><button class="primary" bindtap="load">重新加载</button></view>
+  <block wx:elif="{{session}}">
+    <view class="panel">
+      <view class="section">
+        <text class="title">{{session.stage_label}}</text>
+        <text class="subtitle">{{app.company_name_snapshot}} · {{app.job_title_snapshot}}</text>
+        <view class="status tone-{{session.tone}}"><career-icon name="{{session.icon}}" tone="{{session.tone}}" size="30" /><text>{{session.statusLabel}}</text></view>
+        <view class="status"><career-icon name="calendar" size="30" /><text>{{session.shortTimeLabel}}</text></view>
+        <button class="link tone-accent session-mode" wx:if="{{session.meeting_url}}" data-field="meeting_url" bindtap="copy"><career-icon name="{{session.stageIcon}}" tone="accent" size="30" />{{session.modeLabel}} · 复制会议链接</button>
+        <text class="hint" user-select wx:if="{{session.meeting_url}}">{{session.meeting_url}}</text>
+        <button class="link" wx:if="{{session.location}}" data-field="location" bindtap="copy"><career-icon name="briefcase" size="30" /><text class="grow">{{session.location}}</text><text>复制</text></button>
+        <text class="hint" wx:if="{{!session.meeting_url && !session.location}}">{{session.modeLabel}} · 北京时间</text>
+        <text class="hint" wx:if="{{session.interviewer_name}}">面试官：{{session.interviewer_name}} {{session.interviewer_title || ''}}</text>
+      </view>
+      <view class="section">
+        <text class="heading">面试准备</text>
+        <text class="preserve">{{session.preparation_note || '暂无准备内容'}}</text>
+        <button class="link tone-accent" data-mode="prepare" bindtap="openForm">编辑准备内容 ›</button>
+      </view>
+      <view class="section">
+        <text class="heading">面试记录</text>
+        <text class="preserve">{{session.questions_markdown || '面试后记下问题与感受。'}}</text>
+        <block wx:if="{{session.review_summary}}"><text class="label">复盘总结</text><text class="preserve">{{session.review_summary}}</text></block>
+        <block wx:if="{{session.improvement_markdown}}"><text class="label">改进计划</text><text class="preserve">{{session.improvement_markdown}}</text></block>
+        <button class="secondary complete-action" wx:if="{{editable}}" bindtap="complete" disabled="{{saving}}">标记本场面试完成</button>
+      </view>
+      <view class="section"><button class="link" bindtap="openApplication"><career-icon name="briefcase" size="30" />查看求职详情 ›</button></view>
+    </view>
+    <view class="dock">
+      <button class="secondary" wx:if="{{editable}}" bindtap="more" disabled="{{saving}}">更多操作</button>
+      <button class="primary" data-mode="record" bindtap="openForm">{{session.questions_markdown ? '编辑面试记录' : '填写面试记录'}}</button>
+    </view>
+  </block>
+</view>

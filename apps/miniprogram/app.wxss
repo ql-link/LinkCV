@@ -1,3 +1,4 @@
+@import "./assets/career-font.wxss";
 page {
   overscroll-behavior: none;
   overscroll-behavior-y: none;

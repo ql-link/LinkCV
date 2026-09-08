@@ -1,0 +1,50 @@
+<view class="career-page with-dock">
+  <view class="state hint" wx:if="{{loading}}">正在加载求职详情…</view>
+  <view class="panel state" wx:elif="{{error}}"><text class="hint">{{error}}</text><button class="primary" bindtap="load">重新加载</button></view>
+  <block wx:elif="{{app}}">
+    <view class="panel">
+      <view class="section">
+        <text class="title">{{app.company_name_snapshot}}</text>
+        <text class="subtitle">{{app.job_title_snapshot}} · {{app.employmentLabel}}</text>
+        <view class="status tone-{{app.tone}}"><career-icon name="{{app.icon}}" tone="{{app.tone}}" size="30" /><text>{{app.stageLabel}}{{app.stageLabel === app.statusLabel ? '' : ' · ' + app.statusLabel}}</text></view>
+        <text class="hint" wx:if="{{app.nextLabel}}">下一场：{{app.nextLabel}}</text>
+      </view>
+      <view class="section">
+        <text class="heading">求职进度</text>
+        <view class="stage-flow" wx:if="{{app.stages.length}}">
+          <block wx:for="{{app.stages}}" wx:key="id">
+            <text class="flow-arrow" wx:if="{{index}}">→</text>
+            <view class="stage-step"><career-icon wx:if="{{!index}}" name="screening" size="30" /><text>{{item.stage_label}}</text></view>
+          </block>
+        </view>
+        <text class="hint">{{app.phase === 'pending' ? '尚未记录投递信息' : app.appliedLabel + ' 已投递'}}</text>
+      </view>
+      <view class="section">
+        <text class="heading">笔试与面试记录</text>
+        <view class="session-entry" wx:for="{{history ? sessions : previewSessions}}" wx:key="id" data-id="{{item.id}}" bindtap="openSession">
+          <view class="status tone-{{item.tone}}"><career-icon name="{{item.status === 'completed' ? 'check' : item.stageIcon}}" tone="{{item.tone}}" size="30" /><text>{{item.stage_label}} · {{item.statusLabel}}</text><text>›</text></view>
+          <text class="hint" wx:if="{{!index || history}}">{{item.shortTimeLabel}} · {{item.modeLabel}}</text>
+        </view>
+        <text class="hint" wx:if="{{!sessions.length}}">当前阶段暂无安排。</text>
+        <button class="link" bindtap="toggleHistory" wx:if="{{sessions.length > 2}}">{{history ? '收起历史场次' : '查看全部历史场次'}} ›</button>
+        <button class="link tone-accent" wx:if="{{app.canSchedule}}" data-mode="schedule" bindtap="openForm">＋ 添加安排</button>
+      </view>
+      <view class="section" wx:if="{{app.tone === 'offer'}}">
+        <text class="heading">Offer 信息</text>
+        <text class="preserve">{{app.offer_base_location || '未填写工作地点'}}</text>
+        <text class="hint">{{app.offer_salary ? app.offer_salary + ' ' + app.offer_salary_currency + ' / ' + app.offerPeriodLabel : '未填写薪资'}}</text>
+        <text class="hint">{{app.offer_benefits_description || '未填写福利待遇'}}</text>
+      </view>
+      <view class="section">
+        <text class="heading">相关资料</text>
+        <button class="link" data-kind="job" bindtap="openMaterial"><career-icon name="briefcase" size="30" />岗位内容 <text>›</text></button>
+        <button class="link" data-kind="resume" bindtap="openMaterial" wx:if="{{app.resume_version_id}}"><career-icon name="file" size="30" />投递简历 <text>›</text></button>
+        <text class="hint" wx:else>未关联投递简历</text>
+      </view>
+    </view>
+    <view class="dock">
+      <button class="secondary" bindtap="more">更多操作</button>
+      <button class="primary" wx:if="{{primaryAction}}" bindtap="primary">{{primaryAction.label}}</button>
+    </view>
+  </block>
+</view>

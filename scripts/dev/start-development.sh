@@ -17,7 +17,7 @@ pi_port="${LINKCV_LOCAL_PI_PORT:-8010}"
 worktree_queue_id="$(printf '%s' "${repo_root}" | cksum | awk '{print $1}')"
 
 export LINKCV_ENV_FILE="${base_env}"
-export BACKEND_HOST="127.0.0.1"
+export BACKEND_HOST="${LINKCV_LOCAL_BACKEND_HOST:-127.0.0.1}"
 export BACKEND_PORT="${backend_port}"
 export BACKEND_PROXY_TARGET="http://127.0.0.1:${backend_port}"
 export PI_SERVICE_HOST="127.0.0.1"

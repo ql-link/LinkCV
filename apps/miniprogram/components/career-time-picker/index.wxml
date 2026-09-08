@@ -1,0 +1,19 @@
+<view class="overlay" catchtouchmove="noop">
+  <view class="mask mask-enter" bindtap="close" />
+  <view class="picker-sheet sheet-enter" role="dialog" aria-label="{{title}}">
+    <view class="header"><text class="title">{{title}}</text><button size="mini" class="picker-button close" bindtap="close" aria-label="取消选择时间"><text class="close-glyph">×</text></button></view>
+    <scroll-view class="content" scroll-y show-scrollbar="{{false}}">
+      <view class="stack"><text class="error" wx:if="{{error}}">{{error}}</text>
+        <view class="month"><view class="month-actions"><button size="mini" class="picker-button month-action" data-delta="-1" bindtap="navigate" aria-label="上一月">‹</button><text class="month-label">{{monthLabel}}</text><button size="mini" class="picker-button month-action" data-delta="1" bindtap="navigate" aria-label="下一月">›</button></view></view>
+        <view class="weekdays"><text class="weekday" wx:for="{{weekdays}}" wx:key="*this">{{item}}</text></view>
+        <view class="days"><view class="week" wx:for="{{weeks}}" wx:for-item="week" wx:key="key"><button size="mini" wx:for="{{week.days}}" wx:key="value" class="picker-button day {{item.adjacent ? 'adjacent' : ''}} {{item.selected ? 'selected' : ''}}" data-date="{{item.value}}" bindtap="selectDate" aria-label="{{item.value}}" aria-pressed="{{item.selected}}">{{item.day}}</button></view></view>
+        <text class="hint">滑动选择时间</text>
+        <view class="wheel-box"><picker-view class="wheel" value="{{wheel}}" bindchange="changeTime" bindpickstart="rollStart" bindpickend="rollEnd" indicator-style="height:28px;" indicator-class="wheel-indicator" mask-class="wheel-mask">
+          <picker-view-column><view class="wheel-value {{index === wheel[0] ? 'current' : ''}}" wx:for="{{hours}}" wx:key="*this">{{item}}{{index === wheel[0] ? ' 时' : ''}}</view></picker-view-column>
+          <picker-view-column><view class="wheel-value {{index === wheel[1] ? 'current' : ''}}" wx:for="{{minutes}}" wx:key="*this">{{item}}{{index === wheel[1] ? ' 分' : ''}}</view></picker-view-column>
+        </picker-view></view>
+      </view>
+    </scroll-view>
+    <view class="footer"><button size="mini" class="picker-button confirm" disabled="{{rolling}}" bindtap="confirm">确定时间</button></view>
+  </view>
+</view>

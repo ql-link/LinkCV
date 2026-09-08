@@ -1,0 +1,14 @@
+:host { display: block; width: 100%; font-family: "LinkCV Career UI", -apple-system, "PingFang SC", sans-serif; }
+.select { width: 100%; }
+.select .select-button { display: flex; align-items: center; justify-content: space-between; width: 100%; max-width: none; min-width: 0; min-height: 44px; height: auto; margin: 0; padding: 12px; box-sizing: border-box; border: 0; border-radius: 10px; background: #f9fafb; color: #17191c; font-family: inherit; font-size: 14px; font-weight: 400; line-height: 20px; text-align: left; }
+.select-button::after { border: 0; }
+.value { flex: 1; min-width: 0; }
+.chevron { width: 6px; height: 6px; flex-shrink: 0; margin: -3px 3px 0 12px; border-right: 1.5px solid #6f7a8c; border-bottom: 1.5px solid #6f7a8c; transform: rotate(45deg); }
+.chevron.up { transform: rotate(225deg); margin-top: 3px; }
+.select .expanded { box-shadow: inset 0 0 0 1px #dbe0e8; }
+/* Stay in the scroll flow so the sheet never clips the last option. */
+.options { margin-top: 6px; padding: 4px; border: 1px solid #dbe0e8; border-radius: 10px; background: #fff; }
+.select .option { background: #fff; border-radius: 6px; }
+.select .option.selected { background: #edf1f5; color: #145ed6; }
+.check { margin-left: 12px; }
+.select .trigger[disabled] { opacity: .45; }

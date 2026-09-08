@@ -1,63 +1,38 @@
-const { request } = require("../utils/request");
-
-async function getOverview(options = {}) {
-  const params = [];
-  if (options.weekStart) params.push(`week_start=${encodeURIComponent(options.weekStart)}`);
-  if (options.timezone) params.push(`timezone=${encodeURIComponent(options.timezone)}`);
-  const qs = params.length > 0 ? `?${params.join("&")}` : "";
-  return request(`/api/miniprogram/career/overview${qs}`);
+const { request, download } = require("../utils/request");
+const root = "/api/miniprogram/career";
+const id = encodeURIComponent;
+function query(options = {}) {
+  const names = {
+    applicationId: "application_id",
+    startAt: "start_at",
+    endAt: "end_at",
+    stageType: "stage_type",
+  };
+  const params = Object.keys(options)
+    .filter((key) => options[key] !== undefined && options[key] !== "")
+    .map((key) => `${names[key] || key}=${encodeURIComponent(options[key])}`);
+  return params.length ? `?${params.join("&")}` : "";
 }
-
-async function listSessions(options = {}) {
-  const params = [];
-  if (options.scope) params.push(`scope=${encodeURIComponent(options.scope)}`);
-  if (options.status) params.push(`status=${encodeURIComponent(options.status)}`);
-  if (options.stageType) params.push(`stage_type=${encodeURIComponent(options.stageType)}`);
-  if (typeof options.upcoming === "boolean") params.push(`upcoming=${options.upcoming ? "true" : "false"}`);
-  if (options.cursor) params.push(`cursor=${encodeURIComponent(options.cursor)}`);
-  if (options.limit) params.push(`limit=${options.limit}`);
-  const qs = params.length > 0 ? `?${params.join("&")}` : "";
-  return request(`/api/miniprogram/career/sessions${qs}`);
-}
-
-async function listApplications(options = {}) {
-  const params = [];
-  if (options.scope) params.push(`scope=${encodeURIComponent(options.scope)}`);
-  if (options.keyword) params.push(`keyword=${encodeURIComponent(options.keyword)}`);
-  if (options.status) params.push(`status=${encodeURIComponent(options.status)}`);
-  if (options.stageType) params.push(`stage_type=${encodeURIComponent(options.stageType)}`);
-  if (options.cursor) params.push(`cursor=${encodeURIComponent(options.cursor)}`);
-  if (options.limit) params.push(`limit=${options.limit}`);
-  const qs = params.length > 0 ? `?${params.join("&")}` : "";
-  return request(`/api/miniprogram/career/applications${qs}`);
-}
-
-async function advanceApplication(applicationId, payload) {
-  return request(`/api/miniprogram/career/applications/${encodeURIComponent(applicationId)}/advance`, {
-    method: "POST",
-    data: payload,
-  });
-}
-
-async function closeApplication(applicationId, payload) {
-  return request(`/api/miniprogram/career/applications/${encodeURIComponent(applicationId)}/close`, {
-    method: "POST",
-    data: payload,
-  });
-}
-
-async function completeSession(sessionId, payload) {
-  return request(`/api/miniprogram/career/sessions/${encodeURIComponent(sessionId)}/complete`, {
-    method: "POST",
-    data: payload,
-  });
-}
-
+const write = (path, data, method = "POST") =>
+  request(root + path, { method, data });
 module.exports = {
-  getOverview,
-  listSessions,
-  listApplications,
-  advanceApplication,
-  closeApplication,
-  completeSession,
+  listApplications: (options) =>
+    request(`${root}/applications${query(options)}`),
+  listSessions: (options) => request(`${root}/sessions${query(options)}`),
+  getApplication: (value) => request(`${root}/applications/${id(value)}`),
+  getSession: (value) => request(`${root}/sessions/${id(value)}`),
+  addStage: (value, data) => write(`/applications/${id(value)}/stages`, data),
+  saveOffer: (value, data) => write(`/applications/${id(value)}/offer`, data),
+  terminateApplication: (value, data) =>
+    write(`/applications/${id(value)}/terminate`, data),
+  createSession: (value, data) =>
+    write(`/applications/${id(value)}/sessions`, data),
+  updateSession: (value, data) => write(`/sessions/${id(value)}`, data, "PUT"),
+  rescheduleSession: (value, data) =>
+    write(`/sessions/${id(value)}/reschedule`, data),
+  completeSession: (value, data) =>
+    write(`/sessions/${id(value)}/complete`, data),
+  cancelSession: (value, data) => write(`/sessions/${id(value)}/cancel`, data),
+  downloadApplicationResume: (value) =>
+    download(`${root}/applications/${id(value)}/resume-preview.png`),
 };

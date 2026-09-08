@@ -1,0 +1,109 @@
+@import "../sheet-motion.wxss";
+/* Figma 89:95 / 89:203 / 89:311: 390 × 844, sheet top 145, side padding 20. */
+:host { font-family: "LinkCV Career UI", -apple-system, "PingFang SC", sans-serif; }
+.sheet-overlay { width: 100vw; height: 100vh; position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 1000000; color: #17191c; }
+.sheet-mask { position: absolute; top: 0; right: 0; bottom: 0; left: 0; background: rgba(0,0,0,.32); }
+.sheet { position: absolute; bottom: 0; left: 0; right: 0; top: 145px; height: auto; background: #fff; border-radius: 22px 22px 0 0; display: flex; flex-direction: column; box-sizing: border-box; padding: 20px 20px 28px; gap: 16px; }
+.sheet-overlay .sheet-button { width: auto; min-width: 0; max-width: none; min-height: 0; height: auto; flex-shrink: 0; font-size: 14px; font-family: inherit; font-weight: 400; background: transparent; box-sizing: border-box; margin: 0; padding: 0; border: 0; line-height: 1.45; border-radius: 10px; color: inherit; }
+.sheet-button::after { border: 0; }
+.sheet-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; height: 31px; flex-shrink: 0; }
+.sheet-title { font-size: 21px; line-height: 28px; font-weight: 400; }
+.sheet-overlay .sheet-header .close-button { width: 20px; height: 31px; min-height: 0; font-size: 24px; color: #6f7a8c; background: transparent; line-height: 31px; border-radius: 0; }
+.sheet-content { flex: 1; height: 0; min-height: 0; width: 100%; box-sizing: border-box; }
+.content-stack { display: flex; flex-direction: column; align-items: stretch; padding-bottom: 2px; }
+.chooser-stack { gap: 16px; }
+.schedule-stack { gap: 12px; }
+.stage-stack { gap: 10px; }
+.field-group { display: flex; flex-direction: column; gap: 5px; width: 100%; }
+.stage-stack .field-group { gap: 6px; }
+.field-label { display: block; font-size: 13px; color: #6f7a8c; line-height: 1.45; }
+.sheet-overlay .field-input { display: flex; align-items: center; box-sizing: border-box; background: #f9fafb; border-radius: 10px; width: 100%; min-height: 44px; height: 44px; padding: 12px; font-size: 14px; line-height: 20px; color: #17191c; margin: 0; }
+.placeholder { color: #6f7a8c; }
+.link-input { font-family: Inter, -apple-system, sans-serif; }
+.field-chevron { padding-left: 12px; font-family: sans-serif; }
+.time-trigger { text-align: left; justify-content: flex-start; }
+/* Figma 90:160: two aligned columns, 5px text gap and 18px vertical inset. */
+.sheet-overlay .process-option { display: flex; align-items: flex-start; gap: 16px; width: 100%; padding: 18px 16px; background: #fff; box-shadow: inset 0 0 0 1px #dbe0e8; text-align: left; white-space: normal; }
+.process-identity, .process-progress { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.process-identity { flex: 1; }
+.process-progress { flex: 0 0 112px; width: 112px; text-align: right; }
+.company, .process-stage { display: block; width: 100%; font-size: 16px; line-height: 23px; font-weight: 700; overflow-wrap: anywhere; }
+.process-stage { color: #145ed6; }
+.process-job, .process-stage-label { display: block; width: 100%; font-size: 13px; line-height: 20px; font-weight: 400; color: #6f7a8c; overflow-wrap: anywhere; }
+.tone-accent { color: #145ed6; }
+.tone-success { color: #267a4d; }
+.selected-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stage-hint { display: block; font-size: 13px; line-height: 20px; }
+.stage-stack .stage-hint { font-size: 12px; line-height: 19px; }
+.stage-types { display: flex; flex-wrap: wrap; gap: 10px 6px; }
+.sheet-overlay .stage-type { width: calc((100% - 48px)/3); min-width: 0; height: 51px; padding: 7px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px; border-radius: 8px; background: #f9fafb; color: #3f4752; font-size: 12px; line-height: 17px; border: 1px solid transparent; }
+.stage-icon { width: 16px; height: 16px; display: block; flex-shrink: 0; }
+.sheet-overlay .stage-type.chosen { background: #edf1f5; border-color: #dbe0e8; color: #17191c; }
+.sheet-overlay .more-options { text-align: left; background: transparent; width: 100%; font-size: 13px; line-height: 20px; color: #3f4752; }
+.sheet-hint { display: block; color: #6f7a8c; font-size: 12px; line-height: 19px; }
+.sheet-footer { display: flex; gap: 12px; background: #fff; flex-shrink: 0; }
+.sheet-overlay .sheet-footer .sheet-button { height: 42px; min-height: 42px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; }
+.sheet-overlay .cancel-button { flex: 0 0 88px; width: 88px; background: #f9fafb; color: #3f4752; }
+.sheet-overlay .submit-button { flex: 1; width: 0; min-width: 0; background: #17191c; color: #fff; }
+.sheet-overlay .submit-button.is-disabled { background: #dbe0e8; color: #fff; }
+.feedback { display: block; padding: 10px; border-radius: 8px; font-size: 12px; line-height: 1.5; background: #fff6e8; color: #9a5b13; }
+.feedback.error { background: #fff0f0; color: #c43b3b; }
+.sheet-overlay .retry { width: 100%; font-size: 14px; background: #f4f6f8; padding: 10px; }
+.time-editor-overlay { position: absolute; top: 0; right: 0; bottom: 0; left: 0; }
+.time-editor { position: absolute; bottom: 0; left: 0; right: 0; padding: 20px 20px max(28px, env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0; background: #fff; display: flex; flex-direction: column; gap: 16px; }
+.time-editor-title { font-size: 18px; }
+.time-row { display: flex; gap: 8px; }
+.date-picker { flex: 1.35; min-width: 0; }
+.clock-picker { flex: 1; min-width: 0; }
+.sheet-overlay .time-confirm { height: 42px; line-height: 42px; font-size: 14px; width: 100%; color: #fff; background: #17191c; }
+
+/* Keep short viewports usable without scaling the design controls. */
+@media (max-height: 650px) { .sheet { top: 80px; } }
+
+.process-search { position: relative; width: 100%; }
+.search-icon { position: absolute; left: 12px; top: 0; bottom: 0; display: flex; align-items: center; pointer-events: none; z-index: 1; }
+.search-glyph { display: block; width: 20px; height: 20px; }
+
+/* Native editors own their text line only; the surrounding view owns the box. */
+.sheet-overlay .input-shell { padding: 0 12px; }
+.sheet-overlay .native-input { display: block; flex: 1; width: 100%; min-width: 0; height: 20px; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; font-family: inherit; font-size: 14px; line-height: 20px; color: #17191c; box-sizing: content-box; }
+.sheet-overlay .native-input.link-input { font-family: Inter, -apple-system, sans-serif; }
+.sheet-overlay .search-shell { padding-left: 40px; padding-right: 40px; }
+.sheet-overlay .native-input.search-input { height: 22px; line-height: 22px; text-align: center; }
+.search-placeholder { width: 100%; text-align: center; color: #6f7a8c; line-height: 22px; }
+.sheet-overlay .textarea-shell { height: 120px; align-items: flex-start; padding: 12px; }
+.sheet-overlay .native-textarea { display: block; width: 100%; height: 96px; min-height: 0; padding: 0; margin: 0; border: 0; background: transparent; font-family: inherit; font-size: 14px; line-height: 20px; box-sizing: content-box; }
+/* Confirmed next-stage form: Figma 89:418. */
+.stage-stack { gap:16px; }
+.stage-stack .field-group { gap:6px; }
+.stage-types { flex-wrap:nowrap;gap:6px; }
+.sheet-overlay .stage-type { flex:1;width:0;height:56px;padding:7px; }
+.time-value { flex:1;min-width:0; }
+.time-action { font-size:12px;color:#145ed6;flex-shrink:0;margin-left:8px; }
+.duration-options { display:flex;gap:6px; }
+.sheet-overlay .duration-button,.duration-custom { flex:1;min-width:0;width:0;height:40px;display:flex;align-items:center;justify-content:center;border-radius:8px;background:#f9fafb;font-size:13px;line-height:20px;padding:0 6px;box-sizing:border-box; }
+.sheet-overlay .duration-button.active,.duration-custom.active { background:#17191c;color:#fff; }
+.duration-input { flex:1;min-width:0;width:0;height:20px;padding:0;margin:0;background:transparent;color:#fff;text-align:center;font:inherit; }
+.duration-custom text { font-size:11px;flex-shrink:0; }
+.sheet-overlay .more-options { font-size:12px; }
+
+/* Confirmed Figma 89:650: 77px flow summary with a centered change action. */
+.sheet-overlay .process-selected {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  height: 77px;
+  min-height: 77px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #f0f5fc;
+  box-shadow: inset 0 0 0 1px #d5e2f3;
+  text-align: left;
+}
+.selected-summary { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.selected-company, .selected-job { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.selected-company { color: #17191c; font-size: 16px; line-height: 23px; font-weight: 700; }
+.selected-job { color: #3f4752; font-size: 13px; line-height: 20px; font-weight: 400; }
+.change-label { display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 5px 12px; border-radius: 8px; background: #fff; box-shadow: inset 0 0 0 1px #b9cee9; color: #145ed6; font-size: 13px; line-height: 20px; font-weight: 400; white-space: nowrap; }

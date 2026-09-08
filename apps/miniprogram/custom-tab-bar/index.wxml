@@ -1,4 +1,4 @@
-<view class="tab-bar">
+<view class="tab-bar" wx:if="{{!hidden}}">
   <view
     wx:for="{{list}}"
     wx:key="pagePath"
@@ -8,34 +8,13 @@
     bindtap="switchTab"
     hover-class="tab-bar-item-hover"
     hover-stay-time="70"
+    role="tab"
+    aria-selected="{{selected === index}}"
+    aria-label="{{item.text}}"
   >
-    <!-- 图标区 -->
-    <view class="tab-icon-wrap {{selected === index ? 'is-active' : ''}}">
-      <!-- 简历图标 -->
-      <view class="tab-icon icon-resume" wx:if="{{item.icon === 'resume'}}">
-        <view class="doc-body {{selected === index ? 'is-active' : ''}}">
-          <view class="doc-line l1 {{selected === index ? 'is-active' : ''}}"></view>
-          <view class="doc-line l2 {{selected === index ? 'is-active' : ''}}"></view>
-          <view class="doc-line l3 {{selected === index ? 'is-active' : ''}}"></view>
-        </view>
-      </view>
-
-      <!-- 求职图标 -->
-      <view class="tab-icon icon-career" wx:elif="{{item.icon === 'career'}}">
-        <view class="case-handle {{selected === index ? 'is-active' : ''}}"></view>
-        <view class="case-body {{selected === index ? 'is-active' : ''}}">
-          <view class="case-lock {{selected === index ? 'is-active' : ''}}"></view>
-        </view>
-      </view>
-
-      <!-- 我的图标 -->
-      <view class="tab-icon icon-profile" wx:elif="{{item.icon === 'profile'}}">
-        <view class="user-avatar-head {{selected === index ? 'is-active' : ''}}"></view>
-        <view class="user-avatar-body {{selected === index ? 'is-active' : ''}}"></view>
-      </view>
+    <view class="tab-icon-wrap">
+      <image class="tab-icon" src="/assets/career/tab-{{item.icon}}.svg" />
     </view>
-
-    <!-- 文本标签：字号放大至 25rpx -->
     <text class="tab-label {{selected === index ? 'is-active' : ''}}">{{item.text}}</text>
   </view>
 </view>

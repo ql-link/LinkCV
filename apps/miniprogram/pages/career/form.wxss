@@ -1,0 +1,16 @@
+@import "./shared.wxss";
+.form-summary .heading { font-size:14px;font-weight:400; }
+.stage-types { display:flex;flex-wrap:wrap;gap:6px; }
+.career-page .stage-type { width:calc((100% - 12px)/3);min-height:51px;padding:7px;font-size:12px;line-height:17px;background:#f9fafb;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:1px solid transparent;border-radius:8px; }
+.career-page .stage-type.chosen { background:#edf1f5;border-color:#dbe0e8; }
+.stage-choice { margin-top:8px; }.stage-choice .hint { margin-top:8px; }
+.partial { font-size:13px;line-height:1.5;background:#fff6e8;color:#9a5b13;padding:12px;margin-bottom:12px;border-radius:8px; }
+.options-toggle { justify-content:space-between; }.editor-actions { display:flex;flex-direction:column;gap:10px; }
+.large-editor { height:300px;min-height:300px;margin:0; }
+.editor-page .form-summary .heading { font-size:18px;font-weight:700; }.editor-page .form-summary .hint { font-size:14px;color:#3f4752; }
+.form-page .time-trigger { background:#f9fafb;min-height:44px;border-radius:10px;display:flex;align-items:center;justify-content:space-between;padding:12px;text-align:left;font-weight:400; }
+.time-action { font-size:12px;color:#145ed6; }
+.salary-row { display:flex;align-items:center;gap:8px;background:#f9fafb;border-radius:10px;padding:0 12px;min-height:44px; }.salary-row .native-field { flex:1;width:0;padding:0; }.salary-row picker { flex-shrink:0; }.salary-row .picker-value { padding:0;font-size:12px; }
+
+.editor-actions { margin-top:18px; }
+.form-page .benefits-editor { min-height:44px; }

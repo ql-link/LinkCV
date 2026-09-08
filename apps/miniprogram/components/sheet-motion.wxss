@@ -1,0 +1,19 @@
+/* Separate names replay the entrance when a sheet changes from selection to form. */
+@keyframes career-sheet-enter {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes career-form-enter {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes career-mask-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.sheet-enter { animation: career-sheet-enter 280ms cubic-bezier(.22, 1, .36, 1) backwards; }
+.form-enter { animation: career-form-enter 280ms cubic-bezier(.22, 1, .36, 1) backwards; }
+.mask-enter { animation: career-mask-enter 200ms ease-out backwards; }
+@media (prefers-reduced-motion: reduce) {
+  .sheet-enter, .form-enter, .mask-enter { animation: none; }
+}
