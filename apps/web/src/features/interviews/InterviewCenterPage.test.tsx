@@ -106,6 +106,13 @@ fixtureWeekStart.setDate(
 );
 const fixtureWeekEnd = new Date(fixtureWeekStart);
 fixtureWeekEnd.setDate(fixtureWeekEnd.getDate() + 7);
+const fixtureWeekLastDay = new Date(fixtureWeekStart);
+fixtureWeekLastDay.setDate(fixtureWeekLastDay.getDate() + 6);
+const fixtureWeekTitle = fixtureWeekStart.getFullYear() === fixtureWeekLastDay.getFullYear()
+  ? fixtureWeekStart.getMonth() === fixtureWeekLastDay.getMonth()
+    ? `${fixtureWeekStart.getFullYear()}年${fixtureWeekStart.getMonth() + 1}月${fixtureWeekStart.getDate()}日 – ${fixtureWeekLastDay.getDate()}日`
+    : `${fixtureWeekStart.getFullYear()}年${fixtureWeekStart.getMonth() + 1}月${fixtureWeekStart.getDate()}日 – ${fixtureWeekLastDay.getMonth() + 1}月${fixtureWeekLastDay.getDate()}日`
+  : `${fixtureWeekStart.getFullYear()}年${fixtureWeekStart.getMonth() + 1}月${fixtureWeekStart.getDate()}日 – ${fixtureWeekLastDay.getFullYear()}年${fixtureWeekLastDay.getMonth() + 1}月${fixtureWeekLastDay.getDate()}日`;
 const fixtureSessionStart = new Date(fixtureWeekStart);
 fixtureSessionStart.setDate(fixtureSessionStart.getDate() + 3);
 fixtureSessionStart.setHours(10, 0, 0, 0);
@@ -215,6 +222,7 @@ async function switchToScheduleMonth() {
 }
 
 beforeEach(() => {
+  window.sessionStorage.removeItem("linkcv:career-applications:column-order:v1");
   mocks.addJobApplicationStage.mockResolvedValue({ application });
   mocks.terminateJobApplication.mockResolvedValue({ application });
   mocks.listInterviewSessions.mockResolvedValue({ items: [session], next_cursor: null });
@@ -427,7 +435,7 @@ describe("InterviewCenterPage API projections", () => {
   });
 
   it("renders the career subnavigation inside the module header", () => {
-    render(
+    const { container } = render(
       <InterviewCenterPage
         view="applications"
         navigation={<nav aria-label="测试求职子导航">岗位库 求职进程</nav>}
@@ -437,6 +445,7 @@ describe("InterviewCenterPage API projections", () => {
     const heading = screen.getByRole("heading", { name: "求职中心" });
     const navigation = screen.getByRole("navigation", { name: "测试求职子导航" });
     const header = heading.closest("header");
+    expect(container.querySelector(".career-workspace-frame")).toContainElement(header);
     expect(header).toHaveClass("page-hero", "is-module", "career-module-header");
     expect(document.querySelector(".interview-module-header")).not.toBeInTheDocument();
     expect(header).toContainElement(navigation);
@@ -536,7 +545,7 @@ describe("InterviewCenterPage API projections", () => {
     expect(within(calendarFrame).getByRole("button", { name: "今天" })).toBeInTheDocument();
     const viewSwitcher = within(calendarFrame).getByRole("button", { name: "选择视图" });
     expect(viewSwitcher).toHaveTextContent("周");
-    expect(within(calendarFrame).getByText("2026年8月31日 – 9月6日")).toBeInTheDocument();
+    expect(within(calendarFrame).getByText(fixtureWeekTitle)).toBeInTheDocument();
     fireEvent.pointerDown(viewSwitcher, { button: 0, ctrlKey: false });
     expect((await screen.findAllByRole("menuitem")).map((item) => item.textContent)).toEqual([
       "月M",
@@ -2491,7 +2500,7 @@ describe("InterviewCenterPage API projections", () => {
     expect(await screen.findByRole("dialog", { name: "新建求职进程" })).toBeInTheDocument();
   });
 
-  it("renders six real aggregate columns and projects legacy screening labels", async () => {
+  it("renders separate assessment and written-test columns and projects legacy screening labels", async () => {
     const today = new Date();
     today.setHours(10, 20, 0, 0);
     const yesterday = new Date(today);
@@ -2528,13 +2537,23 @@ describe("InterviewCenterPage API projections", () => {
     });
     const assessment = makeApplication({
       id: "47",
-      company_name_snapshot: "笔试公司",
-      job_title_snapshot: "笔试岗位",
+      company_name_snapshot: "测评公司",
+      job_title_snapshot: "测评岗位",
       current_stage_type: "screening",
       current_round_no: null,
       current_stage_label: "测评中",
       stage_state: "scheduled",
       applied_at: "2026-08-22T05:00:00Z",
+    });
+    const writtenTest = makeApplication({
+      id: "58",
+      company_name_snapshot: "笔试公司",
+      job_title_snapshot: "笔试岗位",
+      current_stage_type: "screening",
+      current_round_no: null,
+      current_stage_label: "笔试中",
+      stage_state: "scheduled",
+      applied_at: "2026-08-22T05:30:00Z",
     });
     const interview = makeApplication({
       id: "42",
@@ -2649,7 +2668,7 @@ describe("InterviewCenterPage API projections", () => {
     });
     mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
     mocks.listJobApplications.mockResolvedValue({
-      items: [pending, screening, assessment, interview, waiting, firstInterview, hrInterview, unnamedInterview, defaultWaiting, offer, ended, withdrawn, declinedOffer, acceptedOffer],
+      items: [pending, screening, assessment, writtenTest, interview, waiting, firstInterview, hrInterview, unnamedInterview, defaultWaiting, offer, ended, withdrawn, declinedOffer, acceptedOffer],
       next_cursor: null,
     });
 
@@ -2661,6 +2680,7 @@ describe("InterviewCenterPage API projections", () => {
       "pending",
       "screening",
       "assessment",
+      "written_test",
       "interview",
       "interview",
       "interview",
@@ -2671,7 +2691,8 @@ describe("InterviewCenterPage API projections", () => {
     expect(columns.map((column) => within(column).getByRole("heading").textContent)).toEqual([
       "待投递1",
       "筛选中2",
-      "笔试 / 测评1",
+      "测评1",
+      "笔试1",
       "一面1",
       "二面2",
       "HR 面1",
@@ -2691,7 +2712,12 @@ describe("InterviewCenterPage API projections", () => {
     expect(within(screeningCard).queryByText("实习")).not.toBeInTheDocument();
     expect(within(screeningCard).getByText("进行中")).toBeInTheDocument();
     expect(screeningCard.querySelector(".progress-card-updated-at")).not.toBeInTheDocument();
-    expect(screen.getByRole("article", { name: "笔试公司 笔试岗位" })).toHaveAttribute("draggable", "true");
+    const assessmentColumn = document.querySelector('[data-column-key="assessment"]') as HTMLElement;
+    const writtenTestColumn = document.querySelector('[data-column-key="written_test"]') as HTMLElement;
+    expect(within(assessmentColumn).getByRole("article", { name: "测评公司 测评岗位" })).toHaveAttribute("draggable", "true");
+    expect(within(assessmentColumn).queryByRole("article", { name: "笔试公司 笔试岗位" })).not.toBeInTheDocument();
+    expect(within(writtenTestColumn).getByRole("article", { name: "笔试公司 笔试岗位" })).toHaveAttribute("draggable", "true");
+    expect(within(writtenTestColumn).queryByRole("article", { name: "测评公司 测评岗位" })).not.toBeInTheDocument();
     expect(within(screen.getByRole("article", { name: "笔试公司 笔试岗位" })).getByText("进行中")).toBeInTheDocument();
 
     const interviewCard = screen.getByRole("article", { name: "腾讯 后端开发工程师" });
@@ -2731,6 +2757,69 @@ describe("InterviewCenterPage API projections", () => {
 
     fireEvent.click(within(screeningCard).getByRole("button", { name: "查看 筛选公司 筛选岗位 求职进程" }));
     expect(window.location.pathname).toBe("/career/applications/46");
+  });
+
+  it("reorders board columns by dragging a column heading and stores the order for the tab", async () => {
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications.mockResolvedValue({
+      items: [{
+        ...application,
+        current_stage_type: "screening",
+        current_round_no: null,
+        current_stage_label: "筛选中",
+        stage_state: "awaiting_result",
+        applied_at: "2026-08-22T04:00:00Z",
+        next_session_id: null,
+        next_session_start_at: null,
+        next_session_end_at: null,
+        next_session_mode: null,
+      }],
+      next_cursor: null,
+    });
+
+    render(<InterviewCenterPage view="applications" />);
+
+    await screen.findByRole("region", { name: "求职进程看板" });
+    const sourceHeading = screen.getByRole("button", { name: /拖动调整“筛选中”栏目位置/ });
+    const sourceColumn = sourceHeading.closest<HTMLElement>("[data-column-id]");
+    const targetColumn = document.querySelector<HTMLElement>('[data-column-id="assessment"]');
+    expect(sourceColumn).not.toBeNull();
+    expect(targetColumn).not.toBeNull();
+    vi.spyOn(targetColumn as HTMLElement, "getBoundingClientRect").mockReturnValue({
+      left: 300,
+      right: 560,
+      width: 260,
+      top: 0,
+      bottom: 600,
+      height: 600,
+      x: 300,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    const dataTransfer = {
+      effectAllowed: "",
+      dropEffect: "",
+      types: ["application/x-linkcv-board-column"],
+      setData: vi.fn(),
+      getData: vi.fn((type: string) => type === "application/x-linkcv-board-column" ? "screening" : ""),
+    } as unknown as DataTransfer;
+
+    fireEvent.dragStart(sourceHeading, { dataTransfer });
+    expect(sourceColumn).toHaveClass("is-dragging-column");
+    fireEvent.dragOver(targetColumn as HTMLElement, { dataTransfer, clientX: 550 });
+    expect(targetColumn).toHaveClass("is-column-drop-after");
+    fireEvent.drop(targetColumn as HTMLElement, { dataTransfer, clientX: 550 });
+
+    expect(Array.from(document.querySelectorAll<HTMLElement>("[data-column-id]"))
+      .map((column) => column.dataset.columnId)
+      .slice(0, 4)).toEqual(["pending", "assessment", "screening", "written_test"]);
+    expect(JSON.parse(window.sessionStorage.getItem("linkcv:career-applications:column-order:v1") ?? "[]")
+      .slice(0, 4)).toEqual(["pending", "assessment", "screening", "written_test"]);
+
+    fireEvent.keyDown(screen.getByRole("button", { name: /拖动调整“筛选中”栏目位置/ }), { key: "ArrowLeft" });
+    expect(Array.from(document.querySelectorAll<HTMLElement>("[data-column-id]"))
+      .map((column) => column.dataset.columnId)
+      .slice(0, 4)).toEqual(["pending", "screening", "assessment", "written_test"]);
   });
 
   it("opens the card action menu with focus navigation and keeps actions separate from the card", async () => {
@@ -3546,7 +3635,8 @@ describe("InterviewCenterPage API projections", () => {
   });
 
   it.each([
-    ["assessment", "填写笔试信息", "笔试安排"],
+    ["assessment", "填写测评信息", "异步任务"],
+    ["written_test", "填写笔试信息", "笔试安排"],
     ["offer", "填写 Offer 信息", "录用结果"],
   ] as const)("opens the %s form when a screening card is dropped there", async (columnKey, formHeading, badgeCopy) => {
     const screeningApplication = {
@@ -3649,7 +3739,7 @@ describe("InterviewCenterPage API projections", () => {
 
     const sourceCard = await screen.findByRole("article", { name: "拖拽公司 源岗位" });
     const sourceColumn = document.querySelector('[data-column-key="screening"]') as HTMLElement;
-    const targetColumn = document.querySelector('[data-column-key="assessment"]') as HTMLElement;
+    const targetColumn = document.querySelector('[data-column-key="written_test"]') as HTMLElement;
     const firstTargetCard = within(targetColumn).getByRole("article", { name: "目标公司 第一目标" });
     const dataTransfer = {
       effectAllowed: "",
