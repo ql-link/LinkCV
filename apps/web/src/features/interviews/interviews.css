@@ -18,6 +18,23 @@
   padding-bottom: 40px;
 }
 
+.career-workspace-frame {
+  display: contents;
+}
+
+@media (min-width: 641px) {
+  /* Match the desktop AI assistant frame's vertical insets and minimum height. */
+  .career-workspace-frame:not(.is-standalone-detail) {
+    display: flex;
+    min-width: 0;
+    min-height: 640px;
+    flex: 1;
+    flex-direction: column;
+    margin-block: 23px clamp(28px, 7vh, 71px);
+    overflow: hidden;
+  }
+}
+
 @media (prefers-color-scheme: dark) {
   .interview-center-content {
     --career-state-offer: #f0c64d;
@@ -370,7 +387,7 @@
   min-height: 0;
   flex: 1 1 auto;
   grid-template-rows: minmax(0, 1fr);
-  padding-bottom: 12px;
+  padding-bottom: 0;
 }
 
 .career-schedule-content .schedule-calendar-panel {
@@ -386,7 +403,7 @@
   flex: 1 1 auto;
   grid-template-rows: minmax(0, 1fr);
   grid-template-columns: minmax(0, 1fr);
-  padding-bottom: 12px;
+  padding-bottom: 0;
 }
 
 .career-applications-controls { display: flex; min-width: 0; align-items: center; justify-content: flex-end; gap: 8px; }
@@ -423,6 +440,7 @@
   align-items: stretch;
 }
 .progress-column {
+  position: relative;
   display: flex;
   width: 260px;
   min-width: 260px;
@@ -435,10 +453,31 @@
   background: color-mix(in srgb, var(--ui-surface-subtle) 64%, var(--ui-surface));
   padding: 12px;
 }
+.progress-column.is-dragging-column { opacity: .58; }
+.progress-column.is-column-drop-before::before,
+.progress-column.is-column-drop-after::after {
+  content: "";
+  position: absolute;
+  z-index: 20;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: var(--ui-radius-full);
+  background: var(--ui-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-accent) 14%, transparent);
+  pointer-events: none;
+}
+.progress-column.is-column-drop-before::before { left: -8px; }
+.progress-column.is-column-drop-after::after { right: -8px; }
 .progress-column.is-invalid-drop-target {
   cursor: not-allowed;
 }
-.progress-column-heading { display: flex; height: 30px; min-height: 30px; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 0 0; }
+.progress-column-heading { display: flex; height: 30px; min-height: 30px; align-items: center; justify-content: space-between; gap: 4px; padding: 0 4px 0 0; cursor: grab; user-select: none; }
+.progress-column-heading:active { cursor: grabbing; }
+.progress-column-heading:focus-visible { border-radius: var(--ui-radius-xs); outline: 2px solid var(--ui-ring); outline-offset: 2px; }
+.progress-column-drag-handle { width: 15px; height: 15px; flex: 0 0 auto; color: var(--ui-text-muted); opacity: .52; transition: opacity var(--ui-duration-fast) var(--ui-ease-standard), color var(--ui-duration-fast) var(--ui-ease-standard); }
+.progress-column-heading:hover .progress-column-drag-handle,
+.progress-column-heading:focus-visible .progress-column-drag-handle { color: var(--ui-text-secondary); opacity: 1; }
 .progress-column-heading h3 { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; margin: 0; font-size: 14px; font-weight: 650; }
 .progress-column-count { flex: 0 0 auto; color: var(--ui-text-muted); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
 .progress-column-cards { position: relative; display: grid; height: auto; min-height: 0; flex: 1 1 auto; align-content: start; gap: 8px; overflow-x: hidden; overflow-y: auto; padding-right: 4px; overscroll-behavior-y: contain; scrollbar-width: none; }
