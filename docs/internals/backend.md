@@ -215,4 +215,4 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 ## 小程序求职适配
 
-`modules/miniprogram/career_routes.py` 在专用 Bearer 渠道上复用 `application/interviews/service.py`，提供求职/场次详情、阶段追加、排期、文字记录、Offer 和终止操作。响应补齐阶段历史及当前场次完成状态；锁、幂等、时间冲突与归属检查沿用业务服务，不新建状态机或数据库表。投递简历预览仅从本人求职引用定位本人不可变简历版本，再复用小程序 PDF/PNG 渲染，不扩大简历中心的版本选择范围。
+`modules/miniprogram/career_routes.py` 在专用 Bearer 渠道上复用 `application/interviews/service.py`，提供求职/场次详情、阶段追加、排期、文字记录、Offer 和终止操作。响应补齐阶段历史及当前场次完成状态；锁、幂等与归属检查沿用业务服务；排期允许时间重叠，不新建状态机或数据库表。投递简历预览仅从本人求职引用定位本人不可变简历版本，再复用小程序 PDF/PNG 渲染，不扩大简历中心的版本选择范围。

@@ -411,4 +411,4 @@ Development 与 Production 使用独立 MinIO。各自 Bucket 内的当前指针
 | POST | `/sessions/:id/cancel` | 复用 CancelInterviewRequest，取消安排，保留记录 |
 | GET | `/applications/:id/resume-preview.png` | 仅渲染本次求职实际绑定的不可变简历版本，另校验简历仍归本人所有；不接受 version_id 覆盖，返回 PNG、private/no-store 和版本头；版本缺失返回 409 RESUME_VERSION_UNAVAILABLE |
 
-修改复用 base_lock_version；过期锁返回 `409 INTERVIEW_EDIT_CONFLICT`，非法阶段动作返回 `409 INTERVIEW_INVALID_TRANSITION`，时间冲突返回 `409 INTERVIEW_TIME_CONFLICT`，仅用户确认后重试可设置 allow_conflict。非法 ID、不存在或越权统一 `404 INTERVIEW_NOT_FOUND`。日期查询缺时区或范围倒置返回 `400 INVALID_INTERVIEW_QUERY`。阶段与安排分别提交，阶段成功后排期失败不会回滚阶段。原 overview、advance、close 兼容端点保留，新页面使用 stages/terminate。Web API、数据库 schema 和代理配置未改变。
+修改复用 base_lock_version；过期锁返回 `409 INTERVIEW_EDIT_CONFLICT`，非法阶段动作返回 `409 INTERVIEW_INVALID_TRANSITION`，排期允许时间重叠；兼容字段 `allow_conflict` 不再影响是否可保存。非法 ID、不存在或越权统一 `404 INTERVIEW_NOT_FOUND`。日期查询缺时区或范围倒置返回 `400 INVALID_INTERVIEW_QUERY`。阶段与安排分别提交，阶段成功后排期失败不会回滚阶段。原 overview、advance、close 兼容端点保留，新页面使用 stages/terminate。Web API、数据库 schema 和代理配置未改变。

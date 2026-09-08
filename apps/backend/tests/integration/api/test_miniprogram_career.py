@@ -416,7 +416,7 @@ def test_mini_career_owner_channel_and_version_boundaries():
         )
 
 
-def test_mini_time_conflict_cancel_and_offer():
+def test_mini_overlapping_schedules_cancel_and_offer():
     app = build_app()
     root = "/api/miniprogram/career"
     with TestClient(app) as client:
@@ -439,7 +439,7 @@ def test_mini_time_conflict_cancel_and_offer():
         client.cookies.clear()
         sessions = []
         now = datetime.now(UTC).replace(second=0, microsecond=0) + timedelta(days=3)
-        for index, application in enumerate([first, second]):
+        for application in [first, second]:
             aid = application["id"]
             staged = client.post(
                 f"{root}/applications/{aid}/stages",
@@ -463,22 +463,7 @@ def test_mini_time_conflict_cancel_and_offer():
             response = client.post(
                 f"{root}/applications/{aid}/sessions", headers=headers, json=payload
             )
-            if index:
-                assert response.status_code == 409
-                assert response.json()["error"] == "INTERVIEW_TIME_CONFLICT"
-                assert (
-                    len(
-                        client.get(
-                            f"{root}/applications/{aid}", headers=headers
-                        ).json()["application"]["stages"]
-                    )
-                    == 1
-                )
-                response = client.post(
-                    f"{root}/applications/{aid}/sessions",
-                    headers=headers,
-                    json={**payload, "allow_conflict": True},
-                )
+            # Match Web: overlapping sessions do not require an override.
             assert response.status_code == 201, response.text
             sessions.append(response.json()["session"])
         # Foreign users cannot read or mutate the sessions, even with valid locks.
