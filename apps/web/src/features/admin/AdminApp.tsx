@@ -10,7 +10,6 @@ import {
   ArrowRight,
   Bell,
   Bot,
-  Check,
   ChevronRight,
   CircleAlert,
   Clock3,
@@ -28,7 +27,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { Brand, PageLoading } from "@/components/ui";
+import { Brand, FeedbackNotice, PageLoading, type FeedbackNoticeKind } from "@/components/ui";
 import { ModelsPanel } from "./AdminLlmPanels";
 import { AdminLogsCenter } from "./AdminObservabilityPanels";
 import { AdminTemplatePanel } from "./AdminTemplatePanel";
@@ -77,6 +76,10 @@ const gentleSpring = {
   damping: 34,
   mass: 0.9,
 };
+
+function adminNoticeKind(message: string): FeedbackNoticeKind {
+  return /失败|异常|不可用|不能|错误/u.test(message) ? "error" : "success";
+}
 
 const usersData = [
   {
@@ -241,8 +244,13 @@ function AdminWorkspace({
 
   const notify = (message: string) => {
     setToast(message);
-    window.setTimeout(() => setToast(""), 2400);
   };
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(""), 4000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   const openUserDetail = (userId: string) => {
     setSelectedUserId(userId);
@@ -378,20 +386,11 @@ function AdminWorkspace({
           />
         )}
       </AnimatePresence>
-      <AnimatePresence>
-        {toast && (
-          <motion.div
-            className="admin-toast"
-            role="status"
-            initial={{ opacity: 0, y: 16, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.97 }}
-          >
-            <Check size={16} />
-            {toast}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {toast && (
+        <FeedbackNotice kind={adminNoticeKind(toast)} placement="floating">
+          {toast}
+        </FeedbackNotice>
+      )}
     </div>
   );
 }

@@ -422,7 +422,7 @@ export function HomeScreen({
         </div>
       )}
 
-      {notice && <div className="home-action-toast"><FeedbackNotice kind={notice.kind}>{notice.message}</FeedbackNotice></div>}
+      {notice && <FeedbackNotice kind={notice.kind} placement="floating">{notice.message}</FeedbackNotice>}
       {pendingDelete && (
         <ConfirmDialog
           kind="delete"

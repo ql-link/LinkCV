@@ -152,6 +152,7 @@ export function WorkspacePageHero({
   eyebrow,
   title,
   description,
+  navigation,
   actions,
   icon,
   tone = "accent",
@@ -160,6 +161,7 @@ export function WorkspacePageHero({
   eyebrow?: string;
   title: string;
   description?: string;
+  navigation?: ReactNode;
   actions?: ReactNode;
   icon?: ReactNode;
   tone?: "accent" | "template" | "success" | "warning";
@@ -177,6 +179,7 @@ export function WorkspacePageHero({
             {description && <p className="page-hero-description">{description}</p>}
           </div>
         </div>
+        {navigation && <div className="page-hero-module-navigation">{navigation}</div>}
         {actions && <div className="page-hero-actions">{actions}</div>}
       </header>
     );
@@ -215,8 +218,8 @@ export function CareerNavigation({ active }: { active: CareerSection }) {
             navigateTo(href);
           }}
         >
-          <Icon />
-          {label}
+          <Icon aria-hidden="true" />
+          <span className="career-subnav-label">{label}</span>
         </a>
       ))}
     </nav>

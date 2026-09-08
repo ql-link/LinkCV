@@ -209,6 +209,10 @@ function switchToApplicationBoard() {
 function switchToApplicationList() {
   fireEvent.click(within(openViewSettings()).getByRole("button", { name: "列表" }));
 }
+async function switchToScheduleMonth() {
+  fireEvent.pointerDown(screen.getByRole("button", { name: "选择视图" }), { button: 0, ctrlKey: false });
+  fireEvent.click(await screen.findByRole("menuitem", { name: /^月/ }));
+}
 
 beforeEach(() => {
   mocks.addJobApplicationStage.mockResolvedValue({ application });
@@ -422,7 +426,7 @@ describe("InterviewCenterPage API projections", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("renders the career module header before its subnavigation", () => {
+  it("renders the career subnavigation inside the module header", () => {
     render(
       <InterviewCenterPage
         view="applications"
@@ -432,11 +436,11 @@ describe("InterviewCenterPage API projections", () => {
 
     const heading = screen.getByRole("heading", { name: "求职中心" });
     const navigation = screen.getByRole("navigation", { name: "测试求职子导航" });
-    expect(heading.closest("header")).toHaveClass("page-hero", "is-module", "career-module-header");
+    const header = heading.closest("header");
+    expect(header).toHaveClass("page-hero", "is-module", "career-module-header");
     expect(document.querySelector(".interview-module-header")).not.toBeInTheDocument();
-    expect(heading.closest("header")?.compareDocumentPosition(navigation)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
+    expect(header).toContainElement(navigation);
+    expect(navigation.parentElement).toHaveClass("page-hero-module-navigation");
   });
 
   it("uses the shared loading component while career data is pending", () => {
@@ -490,7 +494,7 @@ describe("InterviewCenterPage API projections", () => {
     rerender(<InterviewCenterPage view="schedule" />);
 
     expect(screen.queryByRole("status", { name: "正在加载求职数据…" })).not.toBeInTheDocument();
-    expect(screen.getByRole("grid", { name: "面试周排期，可拖动并按 30 分钟调整" })).toBeInTheDocument();
+    expect(screen.getByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /腾讯.*二面/ })).toBeInTheDocument();
   });
 
@@ -506,7 +510,7 @@ describe("InterviewCenterPage API projections", () => {
     expect(container.querySelector(".records-empty-state.interview-surface")).not.toBeInTheDocument();
   });
 
-  it("renders the full-day draggable schedule from API data", async () => {
+  it("renders the 24-hour draggable schedule from API data and initially scrolls to 09:00", async () => {
     vi.spyOn(Date, "now").mockReturnValue(fixtureSessionStart.getTime() - 60_000);
     render(
       <InterviewCenterPage
@@ -516,30 +520,54 @@ describe("InterviewCenterPage API projections", () => {
     );
 
     const calendar = await screen.findByRole("grid", {
-      name: "面试周排期，可拖动并按 30 分钟调整",
+      name: "面试周排期，可拖动并按 15 分钟调整",
     });
     const moduleHeader = document.querySelector(".career-module-header") as HTMLElement;
+    const calendarFrame = calendar.closest(".career-reui-calendar") as HTMLElement;
     expect(screen.queryByRole("heading", { name: "面试排期" })).not.toBeInTheDocument();
     expect(within(moduleHeader).getByRole("button", { name: "搜索面试排期" })).toBeInTheDocument();
-    expect(within(moduleHeader).getByRole("button", { name: "安排面试" })).toBeInTheDocument();
+    expect(within(moduleHeader).queryByRole("button", { name: "安排面试" })).not.toBeInTheDocument();
+    expect(within(calendarFrame).queryByRole("button", { name: "安排面试" })).not.toBeInTheDocument();
+    expect(within(calendarFrame).queryByText("显示设置")).not.toBeInTheDocument();
     const navigation = screen.getByRole("navigation", { name: "求职中心导航" });
-    const dateControls = screen.getByRole("group", { name: "排期日期选择" });
-    const viewControls = screen.getByRole("group", { name: "排期视图" });
-    expect(navigation.parentElement).toHaveClass("career-view-navigation-row");
-    expect(dateControls.parentElement).toBe(viewControls.parentElement);
-    expect(dateControls.parentElement?.parentElement).toBe(navigation.parentElement);
-    expect(dateControls.querySelector("strong")).not.toBeInTheDocument();
-    expect(document.querySelector(".schedule-calendar-toolbar")).not.toBeInTheDocument();
-    expect(within(calendar).getByText("00:00")).toBeInTheDocument();
+    expect(navigation.parentElement).toHaveClass("page-hero-module-navigation");
+    expect(moduleHeader).toContainElement(navigation);
+    expect(within(calendarFrame).getByRole("button", { name: "今天" })).toBeInTheDocument();
+    const viewSwitcher = within(calendarFrame).getByRole("button", { name: "选择视图" });
+    expect(viewSwitcher).toHaveTextContent("周");
+    expect(within(calendarFrame).getByText("2026年8月31日 – 9月6日")).toBeInTheDocument();
+    fireEvent.pointerDown(viewSwitcher, { button: 0, ctrlKey: false });
+    expect((await screen.findAllByRole("menuitem")).map((item) => item.textContent)).toEqual([
+      "月M",
+      "周W",
+      "日D",
+      "5 天5",
+      "议程A",
+    ]);
+    expect(screen.queryByRole("menuitem", { name: /时间网格/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: /^周/ }));
+    expect(within(calendarFrame).queryByText("全天")).not.toBeInTheDocument();
+    const viewport = calendarFrame.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]');
+    expect(viewport).not.toBeNull();
+    expect(viewport?.scrollTop).toBeGreaterThanOrEqual(540);
+    expect(viewport?.scrollTop).toBeLessThan(600);
+    expect(within(calendar).getByText("01:00")).toBeInTheDocument();
     expect(within(calendar).getByText("23:00")).toBeInTheDocument();
     const event = within(calendar).getByRole("button", { name: /腾讯.*二面/ });
-    expect(event).toHaveClass("calendar-blue");
-    expect(Array.from(event.children).map((element) => element.className)).toEqual([
-      "week-event-resize-edge is-start",
-      "week-event-resize-edge is-end",
-      "week-event-content",
-    ]);
+    expect(event.style.getPropertyValue("--ec-event-color")).toBe("#007aff");
+    const startHandle = event.querySelector('[data-slot="event-calendar-resize-handle"][data-edge="start"]');
+    const endHandle = event.querySelector('[data-slot="event-calendar-resize-handle"][data-edge="end"]');
+    expect(startHandle).toBeInTheDocument();
+    expect(endHandle).toBeInTheDocument();
+    expect(startHandle).toHaveClass("cursor-ns-resize");
+    expect(endHandle).toHaveClass("cursor-ns-resize");
+    expect(startHandle?.querySelector('[data-slot="event-calendar-resize-grip"]')).toBeInTheDocument();
+    expect(endHandle?.querySelector('[data-slot="event-calendar-resize-grip"]')).toBeInTheDocument();
+    expect(event.querySelector(".interview-calendar-event-content")).toBeInTheDocument();
     fireEvent.click(event);
+    expect(event).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("dialog", { name: "面试详情" })).not.toBeInTheDocument();
+    fireEvent.doubleClick(event);
     const dialog = await screen.findByRole("dialog", { name: "面试详情" });
     expect(within(dialog).getByText("后端开发工程师")).toBeInTheDocument();
     expect(within(dialog).getByText("王老师（后端技术专家）")).toBeInTheDocument();
@@ -550,10 +578,92 @@ describe("InterviewCenterPage API projections", () => {
     expect(within(dialog).queryByText("准备缓存一致性与系统设计。")).not.toBeInTheDocument();
     expect(within(dialog).queryByText("确认岗位要求与面试重点")).not.toBeInTheDocument();
     expect(within(dialog).queryByText("确认会议设备、网络和面试时间")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("相关投递")).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("link", { name: "查看求职进程" })).not.toBeInTheDocument();
     fireEvent.click(within(dialog).getAllByRole("button", { name: "关闭" })[0]);
     expect(screen.queryByRole("dialog", { name: "面试详情" })).not.toBeInTheDocument();
 
-    expect(event).toHaveAttribute("draggable", "false");
+    expect(event).toHaveAttribute("data-draggable", "true");
+  });
+
+  it("nests a schedule that is fully contained by another schedule", async () => {
+    const outerStart = new Date(fixtureSessionStart);
+    outerStart.setHours(14, 30, 0, 0);
+    const outerEnd = new Date(outerStart);
+    outerEnd.setHours(16, 30, 0, 0);
+    const innerStart = new Date(outerStart);
+    innerStart.setHours(15, 0, 0, 0);
+    const innerEnd = new Date(innerStart);
+    innerEnd.setHours(15, 45, 0, 0);
+    mocks.listInterviewSessions.mockResolvedValue({
+      items: [
+        { ...session, id: "outer", company_name: "去哪儿", stage_label: "笔试", start_at: outerStart.toISOString(), end_at: outerEnd.toISOString(), calendar_color: "orange" as const },
+        { ...session, id: "inner", company_name: "嵌套事项", stage_label: "一面", start_at: innerStart.toISOString(), end_at: innerEnd.toISOString(), calendar_color: "orange" as const },
+      ],
+      next_cursor: null,
+    });
+
+    render(<InterviewCenterPage view="schedule" />);
+
+    const outer = await screen.findByRole("button", { name: /去哪儿.*笔试/ });
+    const inner = screen.getByRole("button", { name: /嵌套事项.*一面/ });
+    expect(outer.parentElement).toHaveAttribute("data-layout", "single");
+    expect(inner.parentElement).toHaveAttribute("data-layout", "nested");
+    expect(inner.parentElement).toHaveAttribute("data-layout-depth", "1");
+    expect(inner.parentElement).toHaveStyle({ left: "12px", width: "calc(100% - 12px)" });
+  });
+
+  it("splits crossing schedules into equal-width columns", async () => {
+    const firstStart = new Date(fixtureSessionStart);
+    firstStart.setHours(14, 30, 0, 0);
+    const firstEnd = new Date(firstStart);
+    firstEnd.setHours(16, 0, 0, 0);
+    const secondStart = new Date(firstStart);
+    secondStart.setHours(14, 15, 0, 0);
+    const secondEnd = new Date(secondStart);
+    secondEnd.setHours(15, 0, 0, 0);
+    mocks.listInterviewSessions.mockResolvedValue({
+      items: [
+        { ...session, id: "first-column", company_name: "去哪儿", stage_label: "笔试", start_at: firstStart.toISOString(), end_at: firstEnd.toISOString(), calendar_color: "orange" as const },
+        { ...session, id: "second-column", company_name: "New Event", stage_label: "一面", start_at: secondStart.toISOString(), end_at: secondEnd.toISOString(), calendar_color: "orange" as const },
+      ],
+      next_cursor: null,
+    });
+
+    render(<InterviewCenterPage view="schedule" />);
+
+    const first = await screen.findByRole("button", { name: /去哪儿.*笔试/ });
+    const second = screen.getByRole("button", { name: /New Event.*一面/ });
+    for (const event of [first, second]) {
+      expect(event.parentElement).toHaveAttribute("data-layout", "columns");
+      expect(event.parentElement).toHaveAttribute("data-layout-column-count", "2");
+      expect(event.parentElement).toHaveStyle({ width: "50%" });
+    }
+    expect(first.parentElement?.getAttribute("data-layout-column")).not.toBe(second.parentElement?.getAttribute("data-layout-column"));
+  });
+
+  it("extends crossing schedules to a third column", async () => {
+    const start = new Date(fixtureSessionStart);
+    start.setHours(10, 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(12, 0, 0, 0);
+    mocks.listInterviewSessions.mockResolvedValue({
+      items: ["甲", "乙", "丙"].map((company, index) => ({
+        ...session,
+        id: `three-column-${index}`,
+        company_name: company,
+        start_at: new Date(start.getTime() + index * 15 * 60_000).toISOString(),
+        end_at: new Date(end.getTime() + index * 15 * 60_000).toISOString(),
+      })),
+      next_cursor: null,
+    });
+
+    render(<InterviewCenterPage view="schedule" />);
+
+    const events = await screen.findAllByRole("button", { name: /甲|乙|丙/ });
+    expect(events).toHaveLength(3);
+    expect(events.map((event) => event.parentElement?.getAttribute("data-layout-column-count"))).toEqual(["3", "3", "3"]);
+    expect(new Set(events.map((event) => event.parentElement?.getAttribute("data-layout-column"))).size).toBe(3);
   });
 
   it("omits empty preparation sections from the schedule detail dialog", async () => {
@@ -566,9 +676,9 @@ describe("InterviewCenterPage API projections", () => {
     render(<InterviewCenterPage view="schedule" />);
 
     const calendar = await screen.findByRole("grid", {
-      name: "面试周排期，可拖动并按 30 分钟调整",
+      name: "面试周排期，可拖动并按 15 分钟调整",
     });
-    fireEvent.click(within(calendar).getByRole("button", { name: /腾讯.*二面/ }));
+    fireEvent.doubleClick(within(calendar).getByRole("button", { name: /腾讯.*二面/ }));
 
     const dialog = await screen.findByRole("dialog", { name: "面试详情" });
     await waitFor(() => expect(mocks.getInterviewSession).toHaveBeenCalledWith("31"));
@@ -578,31 +688,54 @@ describe("InterviewCenterPage API projections", () => {
     expect(within(dialog).queryByText("确认会议设备、网络和面试时间")).not.toBeInTheDocument();
   });
 
-  it("switches to the monthly schedule and opens creation from a blank day", async () => {
+  it("switches to the monthly schedule and opens creation only after double-clicking a blank day", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0.75);
     render(<InterviewCenterPage view="schedule" />);
 
-    await screen.findByRole("grid", { name: "面试周排期，可拖动并按 30 分钟调整" });
-    fireEvent.click(screen.getByRole("button", { name: "月" }));
+    await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
+    await switchToScheduleMonth();
 
     const month = await screen.findByRole("grid", { name: /月面试排期$/ });
     expect(month).toBeInTheDocument();
     const blankDay = within(month).getAllByRole("gridcell")[10];
+    fireEvent.click(blankDay);
+    expect(screen.queryByRole("dialog", { name: "新建面试" })).not.toBeInTheDocument();
     fireEvent.doubleClick(blankDay);
     const dialog = await screen.findByRole("dialog", { name: "新建面试" });
-    const draft = month.querySelector(".month-event-draft");
-    expect(draft).toHaveClass("month-event-draft", "calendar-gray");
-    expect(draft).toHaveTextContent("09:00待创建面试未保存");
+    const draft = Array.from(month.querySelectorAll<HTMLElement>('[data-slot="event-calendar-event"]'))
+      .find((item) => item.textContent?.includes("新面试"))!;
+    expect(draft.style.getPropertyValue("--ec-event-color")).toBe("#007aff");
     expect(within(dialog).getByText("暂无可以推进的求职流程")).toBeInTheDocument();
     expect(within(dialog).queryByRole("tab")).not.toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "我知道了" }));
-    expect(month.querySelector(".month-event-draft")).not.toBeInTheDocument();
+    expect(Array.from(month.querySelectorAll('[data-slot="event-calendar-event"]')).some((item) => item.textContent?.includes("新面试"))).toBe(false);
   });
 
-  it("places a gray draft card immediately when the weekly calendar is double-clicked", async () => {
+  it("周日历空白处仅双击时按最近 15 分钟创建 30 分钟彩色临时排期", async () => {
+    mocks.listJobApplications.mockResolvedValue({
+      items: [
+        {
+          ...application,
+          applied_at: "2026-08-17T01:00:00Z",
+          stage_state: "awaiting_result" as const,
+          calendar_color: "orange" as const,
+        },
+        {
+          ...application,
+          id: "22",
+          company_name_snapshot: "继承颜色公司",
+          applied_at: "2026-08-18T01:00:00Z",
+          stage_state: "awaiting_result" as const,
+          calendar_color: "purple" as const,
+        },
+      ],
+      next_cursor: null,
+    });
     render(<InterviewCenterPage view="schedule" />);
 
-    const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 30 分钟调整" });
-    vi.spyOn(calendar, "getBoundingClientRect").mockReturnValue({
+    const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
+    const column = calendar.querySelector<HTMLElement>('[data-ec-bounds-start="0"]')!;
+    vi.spyOn(column, "getBoundingClientRect").mockReturnValue({
       x: 0,
       y: 0,
       top: 0,
@@ -613,13 +746,56 @@ describe("InterviewCenterPage API projections", () => {
       height: 1440,
       toJSON: () => ({}),
     });
-    fireEvent.doubleClick(calendar, { clientX: 108, clientY: 600 });
+    fireEvent.click(column, { clientX: 108, clientY: 608 });
+    expect(screen.queryByRole("dialog", { name: "新建面试" })).not.toBeInTheDocument();
+    fireEvent.doubleClick(column, { clientX: 108, clientY: 608 });
 
     expect(await screen.findByRole("dialog", { name: "新建面试" })).toBeInTheDocument();
-    const draft = calendar.querySelector(".week-event-draft");
-    expect(draft).toHaveClass("week-event-draft", "calendar-gray");
-    expect(draft).toHaveTextContent("待创建面试10:00 – 11:00未保存");
-    expect(draft).toHaveStyle({ gridColumn: "2", gridRow: "21 / span 2" });
+    const draft = Array.from(calendar.querySelectorAll<HTMLElement>('[data-slot="event-calendar-event"]'))
+      .find((item) => item.textContent?.includes("新面试"))!;
+    await waitFor(() => expect(draft.style.getPropertyValue("--ec-event-color")).toBe("#ff9500"));
+    expect(draft).toHaveTextContent("10:15–10:45");
+    chooseSelectOption(screen.getByRole("dialog", { name: "新建面试" }), "选择流程", "继承颜色公司 · 后端开发工程师 · 二面");
+    await waitFor(() => expect(draft.style.getPropertyValue("--ec-event-color")).toBe("#af52de"));
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(Array.from(calendar.querySelectorAll('[data-slot="event-calendar-event"]')).some((item) => item.textContent?.includes("新面试"))).toBe(false);
+  });
+
+  it("按住空白时间向下拖动时保留 15 分钟吸附后的临时区间和默认颜色", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0.55);
+    render(<InterviewCenterPage view="schedule" />);
+
+    const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
+    const column = calendar.querySelector<HTMLElement>('[data-ec-bounds-start="0"]')!;
+    vi.spyOn(column, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      right: 758,
+      bottom: 1440,
+      left: 0,
+      width: 758,
+      height: 1440,
+      toJSON: () => ({}),
+    });
+    const send = (target: EventTarget, type: string, clientY: number) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: 108, clientY });
+      Object.defineProperties(event, {
+        pointerId: { value: 41 },
+        pointerType: { value: "mouse" },
+      });
+      target.dispatchEvent(event);
+    };
+
+    act(() => send(column, "pointerdown", 600));
+    act(() => send(window, "pointermove", 645));
+    act(() => send(window, "pointerup", 645));
+
+    expect(await screen.findByRole("dialog", { name: "新建面试" })).toBeInTheDocument();
+    const draft = Array.from(calendar.querySelectorAll<HTMLElement>('[data-slot="event-calendar-event"]'))
+      .find((item) => item.textContent?.includes("新面试"))!;
+    expect(draft).toHaveTextContent("10:00–10:45");
+    expect(draft.style.getPropertyValue("--ec-event-color")).toBe("#34c759");
   });
 
   it("uses purple instead of gray for a third-round interview", async () => {
@@ -636,8 +812,7 @@ describe("InterviewCenterPage API projections", () => {
     render(<InterviewCenterPage view="schedule" />);
 
     const thirdRound = await screen.findByRole("button", { name: /腾讯.*三面/ });
-    expect(thirdRound).toHaveClass("calendar-purple");
-    expect(thirdRound).not.toHaveClass("calendar-gray");
+    expect(thirdRound.style.getPropertyValue("--ec-event-color")).toBe("#af52de");
   });
 
   it("gives gray records a stable non-gray color in the monthly view", async () => {
@@ -647,12 +822,11 @@ describe("InterviewCenterPage API projections", () => {
     });
     render(<InterviewCenterPage view="schedule" />);
 
-    await screen.findByRole("grid", { name: "面试周排期，可拖动并按 30 分钟调整" });
-    fireEvent.click(screen.getByRole("button", { name: "月" }));
+    await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
+    await switchToScheduleMonth();
     const month = await screen.findByRole("grid", { name: /月面试排期$/ });
     const record = within(month).getByRole("button", { name: /腾讯.*二面/ });
-    expect(record).toHaveClass("calendar-red");
-    expect(record).not.toHaveClass("calendar-gray");
+    expect(record.style.getPropertyValue("--ec-event-color")).toBe("#ff3b30");
   });
 
   it("keeps an empty schedule honest when the database has no sessions", async () => {
@@ -660,7 +834,7 @@ describe("InterviewCenterPage API projections", () => {
 
     render(<InterviewCenterPage view="schedule" />);
 
-    const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 30 分钟调整" });
+    const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
     expect(within(calendar).queryByRole("button", { name: /阿里巴巴.*二面/ })).not.toBeInTheDocument();
   });
 
@@ -671,7 +845,7 @@ describe("InterviewCenterPage API projections", () => {
     const search = screen.getByRole("searchbox", { name: "搜索面试排期" });
     fireEvent.change(search, { target: { value: "不存在的公司" } });
 
-    const calendar = screen.getByRole("grid", { name: "面试周排期，可拖动并按 30 分钟调整" });
+    const calendar = screen.getByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
     expect(within(calendar).queryByRole("button", { name: /腾讯.*二面/ })).not.toBeInTheDocument();
     expect(within(calendar).queryByRole("button", { name: /阿里巴巴.*二面/ })).not.toBeInTheDocument();
   });
@@ -712,7 +886,7 @@ describe("InterviewCenterPage API projections", () => {
     expect(await screen.findByRole("region", { name: "求职进程看板" })).toBeInTheDocument();
     const moduleHeader = document.querySelector(".career-module-header") as HTMLElement;
     expect(screen.queryByRole("heading", { name: "求职进程" })).not.toBeInTheDocument();
-    expect(within(moduleHeader).getByText("导入岗位，跟踪每一轮求职进展。")).toBeInTheDocument();
+    expect(within(moduleHeader).queryByText("管理岗位与面试进程")).not.toBeInTheDocument();
     const searchButton = within(moduleHeader).getByRole("button", { name: "搜索求职进程" });
     expect(searchButton).toBeInTheDocument();
     expect(within(moduleHeader).getByRole("button", { name: "安装采集插件" })).toBeInTheDocument();
@@ -721,8 +895,10 @@ describe("InterviewCenterPage API projections", () => {
     expect(within(moduleHeader).queryByRole("button", { name: "新建求职进程" })).not.toBeInTheDocument();
     const navigation = screen.getByRole("navigation", { name: "求职中心导航" });
     const viewControls = screen.getByRole("group", { name: "求职记录显示设置" });
-    expect(navigation.parentElement).toHaveClass("career-view-navigation-row");
-    expect(viewControls.parentElement).toBe(navigation.parentElement);
+    expect(navigation.parentElement).toHaveClass("page-hero-module-navigation");
+    expect(moduleHeader).toContainElement(navigation);
+    expect(moduleHeader).toContainElement(viewControls);
+    expect(document.querySelector(".career-view-navigation-row")).not.toBeInTheDocument();
     expect(screen.queryByText("全部记录")).not.toBeInTheDocument();
     openViewSettings();
     const viewToggle = screen.getByRole("group", { name: "显示方式" });
@@ -1146,6 +1322,97 @@ describe("InterviewCenterPage API projections", () => {
     rerender(<InterviewCenterPage view="applications" initialApplicationId="21" />);
     expect(screen.queryByRole("dialog", { name: "腾讯｜面试记录" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "求职进度", hidden: true })).toBeInTheDocument();
+  });
+
+  it("edits a scheduled assessment from its record dialog", async () => {
+    const assessmentSession = {
+      ...session,
+      stage_type: "other" as const,
+      round_no: null,
+      stage_label: "笔试",
+      mode: "video" as const,
+      meeting_url: "https://assessment.example/31",
+      location: null,
+    };
+    const rescheduledSession = {
+      ...assessmentSession,
+      start_at: new Date("2026-09-18T14:30").toISOString(),
+      end_at: new Date("2026-09-18T16:00").toISOString(),
+      lock_version: assessmentSession.lock_version + 1,
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [assessmentSession], next_cursor: null });
+    mocks.getInterviewSession.mockResolvedValue({ session: assessmentSession, application, assets: [] });
+    mocks.rescheduleInterviewSession.mockResolvedValue({ session: rescheduledSession, application, assets: [] });
+    mocks.updateInterviewSession.mockResolvedValue({
+      session: {
+        ...rescheduledSession,
+        mode: "onsite",
+        meeting_url: null,
+        location: "科技园 2 号楼",
+        lock_version: rescheduledSession.lock_version + 1,
+      },
+      application,
+      assets: [],
+    });
+
+    render(<InterviewCenterPage view="applications" initialApplicationId="21" initialSessionId="31" />);
+
+    const recordDialog = await screen.findByRole("dialog", { name: "腾讯｜笔试记录" });
+    fireEvent.click(within(recordDialog).getByRole("button", { name: "修改笔试安排" }));
+    const editDialog = await screen.findByRole("dialog", { name: "修改笔试安排" });
+    chooseScheduleDateTime(editDialog, "笔试开始时间", "2026-09-18", "14", "30");
+    fireEvent.change(within(editDialog).getByLabelText("时长（分钟）"), { target: { value: "90" } });
+    chooseSelectOption(editDialog, "笔试方式", "线下");
+    fireEvent.change(within(editDialog).getByLabelText("地点（选填）"), { target: { value: "科技园 2 号楼" } });
+    fireEvent.click(within(editDialog).getByRole("button", { name: "保存修改" }));
+
+    await waitFor(() => expect(mocks.rescheduleInterviewSession).toHaveBeenCalledWith("31", {
+      start_at: new Date("2026-09-18T14:30").toISOString(),
+      end_at: new Date("2026-09-18T16:00").toISOString(),
+      timezone: "Asia/Shanghai",
+      allow_conflict: false,
+      base_lock_version: 2,
+    }));
+    expect(mocks.updateInterviewSession).toHaveBeenCalledWith("31", {
+      mode: "onsite",
+      meeting_url: null,
+      location: "科技园 2 号楼",
+      base_lock_version: 3,
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "修改笔试安排" })).not.toBeInTheDocument());
+  });
+
+  it("keeps the edit dialog open until a schedule conflict is explicitly accepted", async () => {
+    const rescheduledSession = {
+      ...session,
+      end_at: new Date(new Date(session.start_at).getTime() + 90 * 60_000).toISOString(),
+      lock_version: session.lock_version + 1,
+    };
+    mocks.getInterviewSession.mockResolvedValue({ session, application, assets: [] });
+    mocks.rescheduleInterviewSession
+      .mockRejectedValueOnce(new ApiRequestError(409, "INTERVIEW_TIME_CONFLICT"))
+      .mockResolvedValueOnce({ session: rescheduledSession, application, assets: [] });
+
+    render(<InterviewCenterPage view="applications" initialApplicationId="21" initialSessionId="31" />);
+
+    const recordDialog = await screen.findByRole("dialog", { name: "腾讯｜面试记录" });
+    fireEvent.click(within(recordDialog).getByRole("button", { name: "修改面试安排" }));
+    const editDialog = await screen.findByRole("dialog", { name: "修改面试安排" });
+    fireEvent.change(within(editDialog).getByLabelText("时长（分钟）"), { target: { value: "90" } });
+    fireEvent.click(within(editDialog).getByRole("button", { name: "保存修改" }));
+
+    expect(await within(editDialog).findByRole("status")).toHaveTextContent("这个时间段与其他安排重叠");
+    expect(mocks.rescheduleInterviewSession).toHaveBeenLastCalledWith("31", expect.objectContaining({
+      allow_conflict: false,
+      base_lock_version: 2,
+    }));
+
+    fireEvent.click(within(editDialog).getByRole("button", { name: "仍然保存" }));
+    await waitFor(() => expect(mocks.rescheduleInterviewSession).toHaveBeenLastCalledWith("31", expect.objectContaining({
+      allow_conflict: true,
+      base_lock_version: 2,
+    })));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "修改面试安排" })).not.toBeInTheDocument());
   });
 
   it("pops an in-app record dialog entry so the next browser back returns to the list", async () => {
@@ -2062,6 +2329,7 @@ describe("InterviewCenterPage API projections", () => {
     expect(screen.queryByRole("button", { name: "添加下一阶段" })).not.toBeInTheDocument();
     expect(document.querySelector(".career-session-stage-action")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "完成笔试" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "修改笔试安排" })).not.toBeInTheDocument();
   });
 
   it("prefills and saves existing interview text from the edit action", async () => {
@@ -3105,7 +3373,12 @@ describe("InterviewCenterPage API projections", () => {
     fireEvent.drop(interviewColumn as HTMLElement, { dataTransfer });
 
     const dialog = await screen.findByRole("dialog", { name: "添加下一阶段" });
-    expect(within(dialog).getByRole("radio", { name: "面试" })).toHaveAttribute("aria-checked", "true");
+    expect(dialog).toHaveClass("is-stage-locked");
+    expect(within(dialog).getByRole("heading", { name: "添加下一阶段" }).parentElement).toHaveClass("sr-only");
+    expect(within(dialog).queryByText("目标阶段已由拖拽位置确定，请填写该阶段所需信息。")).not.toBeInTheDocument();
+    expect(dialog.querySelector(".career-next-stage-floating-badge")).toHaveTextContent("面试安排");
+    expect(within(dialog).queryByRole("radiogroup", { name: "选择下一阶段" })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("heading", { name: "填写面试信息" })).toBeInTheDocument();
     expect(within(dialog).getByLabelText("面试轮次")).toHaveValue("HR 面");
     expect(mocks.advanceJobApplication).not.toHaveBeenCalled();
   });
@@ -3133,6 +3406,8 @@ describe("InterviewCenterPage API projections", () => {
     fireEvent.drop(target, { dataTransfer });
 
     const dialog = await screen.findByRole("dialog", { name: "投递岗位" });
+    expect(within(dialog).queryByRole("radiogroup", { name: "选择下一阶段" })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("heading", { name: "确认投递信息" })).toBeInTheDocument();
     expect(card).toHaveClass("is-dragging");
     expect(target.querySelector("[data-drop-placeholder]"))
       .toHaveAttribute("data-placeholder-index", "0");
@@ -3192,7 +3467,8 @@ describe("InterviewCenterPage API projections", () => {
     fireEvent.drop(target, { dataTransfer, clientX: 500, clientY: 300 });
 
     const stageDialog = await screen.findByRole("dialog", { name: "添加下一阶段" });
-    expect(within(stageDialog).getByRole("radio", { name: "面试" })).toHaveAttribute("aria-checked", "true");
+    expect(within(stageDialog).queryByRole("radiogroup", { name: "选择下一阶段" })).not.toBeInTheDocument();
+    expect(within(stageDialog).getByRole("heading", { name: "填写面试信息" })).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(document.querySelector(".interview-error-notice")).not.toBeInTheDocument();
     expect(dataTransfer.dropEffect).toBe("move");
@@ -3269,9 +3545,9 @@ describe("InterviewCenterPage API projections", () => {
   });
 
   it.each([
-    ["assessment", "笔试"],
-    ["offer", "Offer"],
-  ] as const)("opens the %s form when a screening card is dropped there", async (columnKey, tabName) => {
+    ["assessment", "填写笔试信息", "笔试安排"],
+    ["offer", "填写 Offer 信息", "录用结果"],
+  ] as const)("opens the %s form when a screening card is dropped there", async (columnKey, formHeading, badgeCopy) => {
     const screeningApplication = {
       ...application,
       id: "57",
@@ -3301,7 +3577,9 @@ describe("InterviewCenterPage API projections", () => {
     fireEvent.drop(targetColumn as HTMLElement, { dataTransfer });
 
     const dialog = await screen.findByRole("dialog", { name: "添加下一阶段" });
-    expect(within(dialog).getByRole("radio", { name: tabName })).toHaveAttribute("aria-checked", "true");
+    expect(within(dialog).queryByRole("radiogroup", { name: "选择下一阶段" })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("heading", { name: formHeading })).toBeInTheDocument();
+    expect(dialog.querySelector(".career-next-stage-floating-badge")).toHaveTextContent(badgeCopy);
     expect(card).toHaveClass("is-dragging");
     expect(targetColumn?.querySelector("[data-drop-placeholder]"))
       .toHaveAttribute("data-placeholder-index", "0");
@@ -3496,6 +3774,8 @@ describe("InterviewCenterPage API projections", () => {
     fireEvent.drop(target, { dataTransfer });
 
     const stageDialog = await screen.findByRole("dialog", { name: "添加下一阶段" });
+    expect(within(stageDialog).queryByRole("radiogroup", { name: "选择下一阶段" })).not.toBeInTheDocument();
+    expect(within(stageDialog).getByRole("heading", { name: "填写面试信息" })).toBeInTheDocument();
     expect(within(stageDialog).getByLabelText("面试轮次")).toHaveValue("三面");
     expect(card).toHaveClass("is-dragging");
     expect(mocks.advanceJobApplication).not.toHaveBeenCalled();
@@ -3557,31 +3837,14 @@ describe("InterviewCenterPage API projections", () => {
     expect(mocks.advanceJobApplication).not.toHaveBeenCalled();
   });
 
-  it("moves a scheduled interview by half an hour without adding half-hour grid lines", async () => {
-    const movedStart = new Date(new Date(session.start_at).getTime() + 30 * 60 * 1000);
-    const movedEnd = new Date(new Date(session.end_at).getTime() + 30 * 60 * 1000);
-    mocks.rescheduleInterviewSession.mockResolvedValue({
-      session: { ...session, start_at: movedStart.toISOString(), end_at: movedEnd.toISOString() },
-      application,
-      assets: [],
-    });
+  it("keeps hourly grid lines while exposing half-hour resize controls", async () => {
     render(<InterviewCenterPage view="schedule" />);
 
     const event = await screen.findByRole("button", { name: /腾讯.*二面/ });
-    fireEvent.keyDown(event, { key: "ArrowDown" });
-    await waitFor(() =>
-      expect(mocks.rescheduleInterviewSession).toHaveBeenCalledWith(
-        "31",
-        expect.objectContaining({
-          start_at: movedStart.toISOString(),
-          end_at: movedEnd.toISOString(),
-          allow_conflict: false,
-          base_lock_version: 2,
-        }),
-      ),
-    );
+    expect(event.querySelector('[data-edge="start"]')).toBeInTheDocument();
+    expect(event.querySelector('[data-edge="end"]')).toBeInTheDocument();
     expect(
-      Array.from(document.querySelectorAll(".week-hour-labels span")).some((label) =>
+      Array.from(document.querySelectorAll('[data-slot="event-calendar-time-gutter"] span')).some((label) =>
         label.textContent?.endsWith(":30"),
       ),
     ).toBe(false);
@@ -3805,7 +4068,20 @@ describe("InterviewCenterPage API projections", () => {
     });
 
     render(<InterviewCenterPage view="schedule" />);
-    fireEvent.click(await screen.findByRole("button", { name: "安排面试" }));
+    const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
+    const column = calendar.querySelector<HTMLElement>('[data-ec-bounds-start="0"]')!;
+    vi.spyOn(column, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      right: 758,
+      bottom: 1440,
+      left: 0,
+      width: 758,
+      height: 1440,
+      toJSON: () => ({}),
+    });
+    fireEvent.doubleClick(column, { clientX: 108, clientY: 608 });
     const dialog = await screen.findByRole("dialog", { name: "新建面试" });
     expect(within(dialog).getAllByRole("radio", { name: /测评|笔试|AI 面试|面试/ })).toHaveLength(4);
     expect(within(dialog).queryByRole("radio", { name: "Offer" })).not.toBeInTheDocument();
@@ -3992,75 +4268,150 @@ it("分组看板拖动仅推进本行阶段，不跨分类修改", async () => {
 });
 
 
-it.each([
-  [130, 60, 60, 60, "", 60],
-  [101, 30, 30, 0, ".is-start", 60],
-  [159, 30, 0, 30, ".is-end", 60],
-  [107, 30, 30, 0, ".is-start", 22],
-  [115, 30, 0, 30, ".is-end", 22],
-] as const)("周排期指针调整：起点 %s 位移 %s", async (y, delta, startDelta, endDelta, edgeSelector, height) => {
-  render(<InterviewCenterPage view="schedule" />);
-  const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 30 分钟调整" });
-  const card = within(calendar).getByRole("button", { name: /腾讯.*二面/ });
-  vi.spyOn(card, "getBoundingClientRect").mockReturnValue({ top: 100, bottom: 100 + height, height } as DOMRect);
-  const target = edgeSelector ? card.querySelector(edgeSelector)! : card;
-  const pointer = (name: string, clientY: number) => {
-    const event = new MouseEvent(name, { bubbles: true, button: 0, clientY });
-    Object.defineProperty(event, "pointerId", { value: 1 });
-    fireEvent(name === "pointerdown" ? target : card, event);
+function prepareCalendarPointerGesture(card: HTMLElement, pointerId = 1) {
+  const column = card.closest<HTMLElement>('[data-slot="event-calendar-day-column"]')!;
+  const rect = {
+    x: 0, y: 0, top: 0, right: 100, bottom: 1440, left: 0, width: 100, height: 1440,
+    toJSON: () => ({}),
+  } as DOMRect;
+  vi.spyOn(column, "getBoundingClientRect").mockReturnValue(rect);
+  vi.spyOn(card, "getBoundingClientRect").mockReturnValue({ ...rect, top: 600, bottom: 660, height: 60 } as DOMRect);
+  return (target: EventTarget, type: string, y: number) => {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: 50, clientY: y });
+    Object.defineProperties(event, {
+      pointerId: { value: pointerId },
+      pointerType: { value: "mouse" },
+    });
+    target.dispatchEvent(event);
   };
-  pointer("pointerdown", y);
-  pointer("pointermove", y + delta);
+}
+
+it.each([
+  ["move", 630, 645, 15, 15],
+  ["start", 600, 615, 15, 0],
+  ["end", 660, 675, 0, 15],
+] as const)("周排期按 15 分钟步长执行 %s 手势", async (kind, fromY, toY, startDelta, endDelta) => {
+  render(<InterviewCenterPage view="schedule" />);
+  const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
+  const card = within(calendar).getByRole("button", { name: /腾讯.*二面/ });
+  const target = kind === "move" ? card : card.querySelector(`[data-edge="${kind}"]`)!;
+  const send = prepareCalendarPointerGesture(card);
+  act(() => send(target, "pointerdown", fromY));
+  act(() => send(window, "pointermove", toY));
   expect(mocks.rescheduleInterviewSession).not.toHaveBeenCalled();
-  pointer("pointerup", y + delta);
+  act(() => send(window, "pointerup", toY));
+  await waitFor(() => expect(mocks.rescheduleInterviewSession).toHaveBeenCalledWith(session.id, expect.objectContaining({
+      start_at: new Date(new Date(session.start_at).getTime() + startDelta * 60_000).toISOString(),
+      end_at: new Date(new Date(session.end_at).getTime() + endDelta * 60_000).toISOString(),
+      base_lock_version: session.lock_version,
+    })));
+});
+
+it("拖动下边缘时只改变当前排期的结束位置", async () => {
+  const peerStart = new Date(fixtureSessionStart.getTime() + 2 * 60 * 60 * 1000);
+  const peerEnd = new Date(peerStart.getTime() + 60 * 60 * 1000);
+  mocks.listInterviewSessions.mockResolvedValue({
+    items: [
+      session,
+      {
+        ...session,
+        id: "peer-session",
+        company_name: "其他排期",
+        start_at: peerStart.toISOString(),
+        end_at: peerEnd.toISOString(),
+      },
+    ],
+    next_cursor: null,
+  });
+  render(<InterviewCenterPage view="schedule" />);
+  const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
+  const card = within(calendar).getByRole("button", { name: /腾讯.*二面/ });
+  const peer = within(calendar).getByRole("button", { name: /其他排期.*二面/ });
+  const endEdge = card.querySelector('[data-edge="end"]')!;
+  const send = prepareCalendarPointerGesture(card, 23);
+
+  act(() => send(endEdge, "pointerdown", 660));
+  act(() => send(window, "pointermove", 690));
+
+  expect(card).toHaveAttribute("data-dragging", "true");
+  expect(peer).not.toHaveAttribute("data-dragging");
+  const ghost = calendar.querySelector('[data-slot="event-calendar-drag-ghost"]');
+  expect(ghost).toBeInTheDocument();
+  expect(ghost).toHaveAttribute("data-kind", "resize-end");
+  expect(within(ghost as HTMLElement).getByText("10:00–11:30")).toBeInTheDocument();
+
+  act(() => send(window, "pointerup", 690));
+  await waitFor(() => expect(mocks.rescheduleInterviewSession).toHaveBeenCalledTimes(1));
   expect(mocks.rescheduleInterviewSession).toHaveBeenCalledWith(session.id, expect.objectContaining({
-    start_at: new Date(new Date(session.start_at).getTime() + startDelta * 60_000).toISOString(),
-    end_at: new Date(new Date(session.end_at).getTime() + endDelta * 60_000).toISOString(),
-    base_lock_version: session.lock_version,
+    start_at: session.start_at,
+    end_at: new Date(fixtureSessionEnd.getTime() + 30 * 60_000).toISOString(),
   }));
-  fireEvent.click(card);
-  expect(screen.queryByRole("dialog", { name: "面试详情" })).not.toBeInTheDocument();
+});
+
+it("已结束但未归档求职进程中的待进行排期仍显示拖动入口", async () => {
+  mocks.listJobApplications.mockResolvedValue({
+    items: [{ ...application, status: "closed", lifecycle_status: "terminated" }],
+    next_cursor: null,
+  });
+  render(<InterviewCenterPage view="schedule" />);
+  const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
+  const card = within(calendar).getByRole("button", { name: /腾讯.*二面/ });
+
+  expect(card).not.toHaveAttribute("data-read-only");
+  expect(card).toHaveAttribute("data-draggable", "true");
+  const endEdge = card.querySelector('[data-edge="end"]')!;
+  expect(endEdge).toHaveClass("cursor-ns-resize");
+
+  const send = prepareCalendarPointerGesture(card, 29);
+  act(() => send(endEdge, "pointerdown", 660));
+  act(() => send(window, "pointermove", 675));
+  act(() => send(window, "pointerup", 675));
+  await waitFor(() => expect(mocks.rescheduleInterviewSession).toHaveBeenCalledWith(session.id, expect.objectContaining({
+    start_at: session.start_at,
+    end_at: new Date(fixtureSessionEnd.getTime() + 15 * 60_000).toISOString(),
+  })));
 });
 
 it.each([false, true])("鼠标离开卡片后仍可拖动，Escape 取消=%s", async (cancel) => {
   render(<InterviewCenterPage view="schedule" />);
-  const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 30 分钟调整" });
+  const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
   const card = within(calendar).getByRole("button", { name: /腾讯.*二面/ });
-  vi.spyOn(card, "getBoundingClientRect").mockReturnValue({ top: 100, bottom: 160, height: 60 } as DOMRect);
-  const send = (target: EventTarget, type: string, y: number) => {
-    const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientY: y });
-    Object.defineProperty(event, "pointerId", { value: 17 });
-    target.dispatchEvent(event);
-  };
-  act(() => send(card, "pointerdown", 130));
-  const original = card.style.transform;
-  act(() => send(window, "pointermove", 137));
-  expect(card.style.transform).toBe("translateY(7px)");
+  const send = prepareCalendarPointerGesture(card, 17);
+  act(() => send(card, "pointerdown", 630));
+  act(() => send(window, "pointermove", 637));
+  expect(document.querySelector('[data-slot="event-calendar-drag-carry"]')).toBeInTheDocument();
   expect(mocks.rescheduleInterviewSession).not.toHaveBeenCalled();
-  act(() => send(window, "pointermove", 190));
-  expect(card.style.transform).not.toBe(original);
+  act(() => send(window, "pointermove", 690));
+  expect(card).toHaveAttribute("data-dragging", "true");
   expect(mocks.rescheduleInterviewSession).not.toHaveBeenCalled();
   if (cancel) fireEvent.keyDown(window, { key: "Escape" });
-  act(() => send(window, "pointerup", 190));
+  act(() => send(window, "pointerup", 690));
   if (cancel) {
     expect(mocks.rescheduleInterviewSession).not.toHaveBeenCalled();
-    expect(card.style.transform).toBe(original);
+    expect(document.querySelector('[data-slot="event-calendar-drag-carry"]')).not.toBeInTheDocument();
   } else {
     expect(mocks.rescheduleInterviewSession).toHaveBeenCalledTimes(1);
   }
 });
 
 
-it.each(["completed", "cancelled", "scheduled"] as const)("已结束场次 %s 从排期直接进入对应记录弹窗路由", async (status) => {
+it.each(["completed", "cancelled", "scheduled"] as const)("%s 场次单击只选中，双击直接打开单场面试详情", async (status) => {
   vi.spyOn(Date, "now").mockReturnValue(status === "scheduled" ? fixtureSessionEnd.getTime() + 1 : fixtureSessionStart.getTime() - 1);
   mocks.listInterviewSessions.mockResolvedValue({ items: [{ ...session, status }], next_cursor: null });
   render(<InterviewCenterPage view="schedule" />);
-  const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 30 分钟调整" });
-  fireEvent.click(within(calendar).getByRole("button", { name: /腾讯.*二面/ }));
-  expect(window.location.pathname).toBe("/career/applications/21");
-  expect(window.location.search).toBe("?session=31");
+  const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
+  const event = within(calendar).getByRole("button", { name: /腾讯.*二面/ });
+  const pathBefore = `${window.location.pathname}${window.location.search}`;
+  fireEvent.click(event);
+  expect(event).toHaveAttribute("aria-pressed", "true");
   expect(screen.queryByRole("dialog", { name: "面试详情" })).not.toBeInTheDocument();
-  expect(screen.queryByRole("link", { name: "进入会议" })).not.toBeInTheDocument();
+  expect(`${window.location.pathname}${window.location.search}`).toBe(pathBefore);
+
+  fireEvent.doubleClick(event);
+  const dialog = await screen.findByRole("dialog", { name: "面试详情" });
+  expect(within(dialog).getByText("后端开发工程师")).toBeInTheDocument();
+  expect(within(dialog).queryByText("相关投递")).not.toBeInTheDocument();
+  expect(`${window.location.pathname}${window.location.search}`).toBe(pathBefore);
 });
 
 

@@ -93,21 +93,6 @@ class InvalidInterviewCursor(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
-class TimeConflict:
-    id: int
-    application_id: int
-    company_name: str
-    stage_label: str
-    start_at: datetime
-    end_at: datetime
-
-
-@dataclass(slots=True)
-class InterviewTimeConflict(RuntimeError):
-    conflicts: list[TimeConflict]
-
-
-@dataclass(frozen=True, slots=True)
 class SessionWithApplication:
     session: InterviewSession
     application: JobApplication
@@ -1115,40 +1100,6 @@ def _validate_schedule(
     return start_at.astimezone(UTC), end_at.astimezone(UTC)
 
 
-def find_time_conflicts(
-    db: Session,
-    user_id: int,
-    start_at: datetime,
-    end_at: datetime,
-    *,
-    exclude_session_id: int | None = None,
-) -> list[TimeConflict]:
-    query = (
-        select(InterviewSession, JobApplication)
-        .join(JobApplication, JobApplication.id == InterviewSession.application_id)
-        .where(
-            JobApplication.user_id == user_id,
-            JobApplication.archived_at.is_(None),
-            InterviewSession.status != "cancelled",
-            InterviewSession.start_at < end_at,
-            InterviewSession.end_at > start_at,
-        )
-    )
-    if exclude_session_id is not None:
-        query = query.where(InterviewSession.id != exclude_session_id)
-    return [
-        TimeConflict(
-            id=session.id,
-            application_id=application.id,
-            company_name=application.company_name_snapshot,
-            stage_label=session.stage_label,
-            start_at=session.start_at,
-            end_at=session.end_at,
-        )
-        for session, application in db.execute(query).all()
-    ]
-
-
 def _session_matches_current_stage(
     session: InterviewSession, application: JobApplication
 ) -> bool:
@@ -1247,9 +1198,6 @@ def create_session(
         payload.round_no != (current_stage.interview_round_no or 1)
     ):
         raise InterviewInvalidTransition
-    conflicts = find_time_conflicts(db, user_id, start_at, end_at)
-    if conflicts and not payload.allow_conflict:
-        raise InterviewTimeConflict(conflicts)
     now = utc_now()
     session = InterviewSession(
         application_id=application.id,
@@ -1457,18 +1405,12 @@ def reschedule_session(
     result = require_owned_session(db, user_id, session_id)
     if (
         result.session.status != "scheduled"
-        or result.application.status != "active"
         or result.application.archived_at is not None
     ):
         raise InterviewInvalidTransition
     start_at, end_at = _validate_schedule(
         payload.start_at, payload.end_at, payload.timezone
     )
-    conflicts = find_time_conflicts(
-        db, user_id, start_at, end_at, exclude_session_id=result.session.id
-    )
-    if conflicts and not payload.allow_conflict:
-        raise InterviewTimeConflict(conflicts)
     return _commit_session_update(
         db,
         result.session,

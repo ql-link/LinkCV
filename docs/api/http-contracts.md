@@ -271,7 +271,7 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 | `GET` | `/api/interview-assets/:id/content` | 所有权校验后流式读取素材 |
 | `DELETE` | `/api/interview-assets/:id` | 所有权校验后删除素材记录和对象存储文件 |
 
-排期请求可携带 `application_stage_id`，服务端要求它是该求职记录当前且可排期的测评、笔试、AI 面试或普通面试阶段；筛选和 Offer 不能排期。开始时间必须是带时区的有效分钟时间，服务端转成 UTC 保存。与本人其他未取消面试重叠时返回 `409 INTERVIEW_TIME_CONFLICT` 和冲突摘要，只有请求再次携带 `allow_conflict=true` 才保存。完成场次会保存自由文本题目、复盘和改进点；添加下一阶段时，已完成但结果待确认的当前阶段场次会一并标为通过。过期 `base_lock_version` 返回 `409 INTERVIEW_EDIT_CONFLICT`，不合法状态跳转返回 `409 INTERVIEW_INVALID_TRANSITION`。
+排期请求可携带 `application_stage_id`，服务端要求它是该求职记录当前且可排期的测评、笔试、AI 面试或普通面试阶段；筛选和 Offer 不能排期。开始时间必须是带时区的有效分钟时间，服务端转成 UTC 保存。同一用户的多个排期允许时间重叠，服务端不以冲突为由拒绝创建或调整；兼容字段 `allow_conflict` 仍可提交，但不改变保存结果。调整排期只要求场次仍为 `scheduled` 且所属求职进程未归档，不受求职进程是否已经结束影响。完成场次会保存自由文本题目、复盘和改进点；添加下一阶段时，已完成但结果待确认的当前阶段场次会一并标为通过。过期 `base_lock_version` 返回 `409 INTERVIEW_EDIT_CONFLICT`，不合法状态跳转返回 `409 INTERVIEW_INVALID_TRANSITION`。
 
 Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `received`；迁移 `0053` 将历史 `oc_received` 与 `written_offer_received` 合并为 `received`。`POST /api/job-applications/:id/offer` 只要求 `base_lock_version`，并接受全部可空的 `base_location`、`salary`、`salary_currency`、`salary_period`、`benefits_description`；空请求仍会记录为已收到 Offer。填写数值薪资时必须同时提供大写三字母币种与 `hour/day/month/year` 计薪周期。求职进程响应以 `offer_` 前缀返回这五个详情字段。迁移 `0054` 将原薪资下限重命名为单值 `offer_salary` 并删除薪资上限；旧记录缺少下限但存在上限时保留原上限值。总览指标使用 `offers_received`，统计 `received/accepted/declined`，不再返回 `written_offers`。
 
