@@ -5,6 +5,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   Archive,
   Banknote,
@@ -503,6 +504,55 @@ function formatScheduleDateTimeDisplay(
   return `${dateValue} ${time}`;
 }
 
+const SCHEDULE_PICKER_MAX_WIDTH = 548;
+const SCHEDULE_PICKER_MAX_HEIGHT = 408;
+const SCHEDULE_PICKER_VIEWPORT_GUTTER = 32;
+const SCHEDULE_PICKER_GAP = 8;
+
+function schedulePickerPosition(
+  trigger: DOMRect,
+  host: DOMRect,
+  viewportWidth: number,
+  viewportHeight: number,
+  renderedHeight = SCHEDULE_PICKER_MAX_HEIGHT,
+): { left: number; top: number } {
+  const pickerWidth = Math.min(
+    SCHEDULE_PICKER_MAX_WIDTH,
+    Math.max(0, viewportWidth - SCHEDULE_PICKER_VIEWPORT_GUTTER * 2),
+  );
+  const maximumLeft = Math.max(
+    SCHEDULE_PICKER_VIEWPORT_GUTTER,
+    viewportWidth - pickerWidth - SCHEDULE_PICKER_VIEWPORT_GUTTER,
+  );
+  const boundedLeft = Math.min(
+    Math.max(trigger.left, SCHEDULE_PICKER_VIEWPORT_GUTTER),
+    maximumLeft,
+  );
+  const pickerHeight = Math.min(
+    renderedHeight || SCHEDULE_PICKER_MAX_HEIGHT,
+    Math.max(0, viewportHeight - SCHEDULE_PICKER_VIEWPORT_GUTTER * 2),
+  );
+  const belowTop = trigger.bottom + SCHEDULE_PICKER_GAP;
+  const aboveTop = trigger.top - SCHEDULE_PICKER_GAP - pickerHeight;
+  const boundedTop = belowTop + pickerHeight <= viewportHeight - SCHEDULE_PICKER_VIEWPORT_GUTTER
+    ? belowTop
+    : Math.max(SCHEDULE_PICKER_VIEWPORT_GUTTER, aboveTop);
+  return {
+    left: boundedLeft - host.left,
+    top: boundedTop - host.top,
+  };
+}
+
+function SchedulePickerPortal({
+  host,
+  children,
+}: {
+  host: HTMLElement | null;
+  children: ReactNode;
+}) {
+  return host ? createPortal(children, host) : children;
+}
+
 function ScheduleDateTimePicker({
   id,
   label,
@@ -527,8 +577,11 @@ function ScheduleDateTimePicker({
   const [draftHour, setDraftHour] = useState("");
   const [draftMinute, setDraftMinute] = useState("");
   const [openTimeMenu, setOpenTimeMenu] = useState<"hour" | "minute" | null>(null);
+  const [popoverHost, setPopoverHost] = useState<HTMLElement | null>(null);
+  const [popoverPosition, setPopoverPosition] = useState<{ left: number; top: number } | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const selectedValue = parseScheduleDateTimeValue(value);
   const calendarDays = useMemo(() => buildDatePickerDays(displayMonth), [displayMonth]);
   const monthLabel = formatDatePickerMonth(displayMonth);
@@ -550,12 +603,37 @@ function ScheduleDateTimePicker({
 
   useEffect(() => {
     if (!open) return;
-    const panel = pickerRef.current?.closest<HTMLElement>(".career-next-stage-panel");
-    if (panel && panel.scrollHeight > panel.clientHeight) {
-      panel.scrollTop = panel.scrollHeight - panel.clientHeight;
-    }
+    const positionPopover = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const nextHost = window.innerWidth > 640
+        ? pickerRef.current?.closest<HTMLElement>(".career-next-stage-dialog") ?? null
+        : null;
+      if (nextHost !== popoverHost) {
+        setPopoverHost(nextHost);
+        return;
+      }
+      if (!nextHost) {
+        setPopoverPosition(null);
+        return;
+      }
+      setPopoverPosition(schedulePickerPosition(
+        trigger.getBoundingClientRect(),
+        nextHost.getBoundingClientRect(),
+        window.innerWidth,
+        window.innerHeight,
+        popoverRef.current?.getBoundingClientRect().height,
+      ));
+    };
+    positionPopover();
+    window.addEventListener("resize", positionPopover);
+    window.addEventListener("scroll", positionPopover, true);
     const handlePointerDown = (event: Event) => {
-      if (!pickerRef.current?.contains(event.target as Node)) closePicker();
+      const target = event.target as Node;
+      if (
+        !pickerRef.current?.contains(target)
+        && !popoverRef.current?.contains(target)
+      ) closePicker();
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -566,10 +644,12 @@ function ScheduleDateTimePicker({
     document.addEventListener("pointerdown", handlePointerDown);
     window.addEventListener("keydown", handleKeyDown, true);
     return () => {
+      window.removeEventListener("resize", positionPopover);
+      window.removeEventListener("scroll", positionPopover, true);
       document.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("keydown", handleKeyDown, true);
     };
-  }, [open]);
+  }, [open, popoverHost]);
 
   const openPicker = () => {
     const current = parseScheduleDateTimeValue(value);
@@ -580,6 +660,20 @@ function ScheduleDateTimePicker({
     setDraftMinute(currentTime ? String(currentTime.minute).padStart(2, "0") : "");
     setDisplayMonth(startOfDatePickerMonth(initialDate));
     setOpenTimeMenu(null);
+    const nextHost = window.innerWidth > 640
+      ? pickerRef.current?.closest<HTMLElement>(".career-next-stage-dialog") ?? null
+      : null;
+    setPopoverHost(nextHost);
+    if (nextHost && triggerRef.current) {
+      setPopoverPosition(schedulePickerPosition(
+        triggerRef.current.getBoundingClientRect(),
+        nextHost.getBoundingClientRect(),
+        window.innerWidth,
+        window.innerHeight,
+      ));
+    } else {
+      setPopoverPosition(null);
+    }
     setOpen(true);
   };
 
@@ -628,19 +722,22 @@ function ScheduleDateTimePicker({
         <CalendarDays aria-hidden="true" />
       </button>
       {open && (
-        <div
-          id={`${id}-calendar`}
-          className="career-date-picker-popover career-schedule-picker-popover"
-          role="dialog"
-          aria-label={`选择${label}`}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              event.stopPropagation();
-              closePicker();
-            }
-          }}
-        >
+        <SchedulePickerPortal host={popoverHost}>
+          <div
+            ref={popoverRef}
+            id={`${id}-calendar`}
+            className="career-date-picker-popover career-schedule-picker-popover"
+            role="dialog"
+            aria-label={`选择${label}`}
+            style={popoverPosition ? { left: popoverPosition.left, right: "auto", top: popoverPosition.top } : undefined}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                closePicker();
+              }
+            }}
+          >
           <div className="career-schedule-picker-layout">
             <div className="career-schedule-picker-calendar-pane">
               <header className="career-date-picker-header">
@@ -804,7 +901,8 @@ function ScheduleDateTimePicker({
               onClick={confirm}
             >确定</button>
           </footer>
-        </div>
+          </div>
+        </SchedulePickerPortal>
       )}
     </div>
   );

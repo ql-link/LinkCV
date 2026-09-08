@@ -1996,6 +1996,67 @@ describe("InterviewCenterPage API projections", () => {
     expect(within(dialog).getByRole("button", { name: "开始时间" })).toHaveTextContent("2026-09-10 14:00");
   });
 
+  it("keeps the schedule picker inside a narrow viewport without scrolling the dialog", async () => {
+    const previousInnerWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 700 });
+    const waitingApplication = {
+      ...application,
+      current_stage_type: "screening" as const,
+      current_round_no: null,
+      current_stage_label: "筛选中",
+      stage_state: "awaiting_result" as const,
+      applied_at: "2026-08-22T04:00:00Z",
+      lock_version: 11,
+    };
+    mocks.listJobApplications.mockResolvedValue({ items: [waitingApplication], next_cursor: null });
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+
+    try {
+      render(<InterviewCenterPage view="applications" initialApplicationId="21" />);
+
+      fireEvent.click(await screen.findByRole("button", { name: "添加下一阶段" }));
+      const dialog = await screen.findByRole("dialog", { name: "添加下一阶段" });
+      vi.spyOn(dialog, "getBoundingClientRect").mockReturnValue({
+        x: 10,
+        y: 20,
+        top: 20,
+        right: 690,
+        bottom: 620,
+        left: 10,
+        width: 680,
+        height: 600,
+        toJSON: () => ({}),
+      });
+      const panel = dialog.querySelector(".career-next-stage-panel") as HTMLElement;
+      Object.defineProperties(panel, {
+        clientHeight: { configurable: true, value: 300 },
+        scrollHeight: { configurable: true, value: 900 },
+      });
+      panel.scrollTop = 96;
+      const trigger = within(dialog).getByRole("button", { name: "开始时间" });
+      vi.spyOn(trigger, "getBoundingClientRect").mockReturnValue({
+        x: 24,
+        y: 80,
+        top: 80,
+        right: 330,
+        bottom: 124,
+        left: 24,
+        width: 306,
+        height: 44,
+        toJSON: () => ({}),
+      });
+      fireEvent.click(trigger);
+
+      const picker = within(dialog).getByRole("dialog", { name: "选择开始时间" });
+      expect(picker.parentElement).toBe(dialog);
+      expect(panel.contains(picker)).toBe(false);
+      expect(picker).toHaveStyle({ left: "22px", right: "auto", top: "112px" });
+      expect(panel.scrollTop).toBe(96);
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: previousInnerWidth });
+    }
+  });
+
   it("refreshes after the stage advances when saving its schedule fails", async () => {
     const awaitingResultApplication = {
       ...application,

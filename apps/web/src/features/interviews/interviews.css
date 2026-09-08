@@ -3148,12 +3148,16 @@
 }
 
 .career-schedule-picker-popover {
-  right: 0;
-  left: auto;
+  right: auto;
+  left: 0;
   width: min(548px, calc(100vw - 64px));
   max-height: min(408px, calc(100vh - 80px));
   overflow: visible;
   padding: 0;
+}
+
+.career-next-stage-dialog:has(> .career-schedule-picker-popover) {
+  overflow: visible;
 }
 
 .career-schedule-picker-layout {
