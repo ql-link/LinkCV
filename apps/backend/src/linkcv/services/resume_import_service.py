@@ -1,3 +1,4 @@
+from linkcv.core.pdfium_lock import PDFIUM_LOCK
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 import hashlib
@@ -139,41 +140,42 @@ def _pdf_has_embedded_images(content: bytes) -> bool | None:
     still contain a photo or raster logo.  Those objects are visible source
     content and cannot be silently dropped from an editable import.
     """
+    with PDFIUM_LOCK:
 
-    try:
-        import pypdfium2 as pdfium
-        import pypdfium2.raw as pdfium_c
-
-        document = pdfium.PdfDocument(content)
-    except Exception:
-        # A text-PDF image check is a strict loss boundary. Returning unknown
-        # lets the caller fail closed instead of treating inspection failure
-        # as proof that no visible image exists.
-        return None
-    inspection: bool | None = False
-    try:
-        for page_index in range(len(document)):
-            page = document[page_index]
-            try:
-                if (
-                    next(
-                        page.get_objects(filter=[pdfium_c.FPDF_PAGEOBJ_IMAGE]),
-                        None,
-                    )
-                    is not None
-                ):
-                    inspection = True
-                    break
-            finally:
-                page.close()
-    except Exception:
-        inspection = None
-    finally:
         try:
-            document.close()
+            import pypdfium2 as pdfium
+            import pypdfium2.raw as pdfium_c
+
+            document = pdfium.PdfDocument(content)
+        except Exception:
+            # A text-PDF image check is a strict loss boundary. Returning unknown
+            # lets the caller fail closed instead of treating inspection failure
+            # as proof that no visible image exists.
+            return None
+        inspection: bool | None = False
+        try:
+            for page_index in range(len(document)):
+                page = document[page_index]
+                try:
+                    if (
+                        next(
+                            page.get_objects(filter=[pdfium_c.FPDF_PAGEOBJ_IMAGE]),
+                            None,
+                        )
+                        is not None
+                    ):
+                        inspection = True
+                        break
+                finally:
+                    page.close()
         except Exception:
             inspection = None
-    return inspection
+        finally:
+            try:
+                document.close()
+            except Exception:
+                inspection = None
+        return inspection
 
 
 def _raise_layout_unsupported(*, stage: str = "document_conversion") -> None:

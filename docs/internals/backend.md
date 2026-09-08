@@ -113,7 +113,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `modules/resumes/pdf_service.py` 是 Web 与小程序共用的 PDF 边界：从快照提取 LinkCV 私有图片引用，按用户/简历对象键读取 PNG/JPEG 并转为内存 data URL，再以有界 stdin/stdout 协议启动一次性 Node/Chromium 进程。渲染器不监听端口、不读取任意对象键、不联网抓取正文资源，也不把快照或输出写入持久临时文件；并发、输入、单图、图片总量、输出、超时和智能页高都有上限。Web `GET /api/resumes/{id}/pdf` 校验当前 Cookie 用户和 `lock_version`，直接渲染 `resumes` 当前快照。
 
-小程序简历接口仍从 `resume_versions` 选择最新 `reason=manual` 快照，没有手动版本时选择 `reason=initial`，因此不会暴露自动保存草稿。PDF/PNG 请求再次核对小程序会话、本人归属和当前版本标识，在请求副本中设置 `style.portable.smart_one_page=true`，并用同一 canonical 正文、模板快照和后端 `LayoutPlan` 渲染，不修改持久版本。PNG 路由继续用 `pypdfium2`/PDFium 把唯一页面渲染为最大宽度 1440 像素的 RGB 图片；页面尺寸、总像素和输出字节都有上限，并发栅格化槽位固定。异常以稳定 4xx/503 错误收口。
+小程序简历接口仍从 `resume_versions` 选择最新 `reason=manual` 快照，没有手动版本时选择 `reason=initial`，因此不会暴露自动保存草稿。PDF/PNG 请求再次核对小程序会话、本人归属和当前版本标识，在请求副本中设置 `style.portable.smart_one_page=true`，并用同一 canonical 正文、模板快照和后端 `LayoutPlan` 渲染，不修改持久版本。PNG 路由继续用 `pypdfium2`/PDFium 把唯一页面渲染为最大宽度 1440 像素的 RGB 图片；页面尺寸、总像素和输出字节都有上限，并发栅格化槽位固定。异常以稳定 4xx/503 错误收口。`core/pdfium_lock.py` 的进程级互斥锁覆盖 PNG 栅格化、岗位资料 PDF 校验和简历导入 PDF 检查的原生调用与资源释放；预览容量限制保留，避免并行调用 PDFium 导致进程崩溃。
 
 `0021` 将 `resume_imports` 一次性迁移为通用 `document_parse_tasks`：任务表保存 `source_type=resume_import`、源文件和上传/解析状态，不再持有最终简历指针；`resumes.parse_task_id` 以无外键的可空唯一列记录来源任务，由 Worker 在创建简历和完成任务的同一事务中维护。迁移沿用原任务主键并回填来源指针，随后删除旧表；需要恢复旧表与数据时使用迁移前备份。转换后的 Markdown 尽力存入 `converted_object_name`，历史迁移记录保持为空，生命周期检查不依赖该字段。
 

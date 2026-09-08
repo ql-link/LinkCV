@@ -8,6 +8,7 @@ import pypdfium2 as pdfium
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from linkcv.core.pdfium_lock import PDFIUM_LOCK
 from linkcv.core.errors import ApiError
 from linkcv.modules.resumes.pdf_service import (
     MAX_RENDER_INPUT_BYTES,
@@ -80,54 +81,59 @@ class ResumePreviewRenderer:
             raise ApiError(503, "RESUME_PREVIEW_RENDER_FAILED")
         if not PREVIEW_SLOTS.acquire(blocking=False):
             raise ApiError(503, "RESUME_PDF_BUSY")
-        document = None
-        page = None
-        bitmap = None
-        image = None
         try:
-            document = pdfium.PdfDocument(pdf)
-            if len(document) != 1:
-                raise ApiError(503, "RESUME_PREVIEW_RENDER_FAILED")
-            page = document[0]
-            width, height = page.get_size()
-            if (
-                width <= 0
-                or height <= 0
-                or not math.isfinite(width)
-                or not math.isfinite(height)
-            ):
-                raise ApiError(503, "RESUME_PREVIEW_RENDER_FAILED")
-            scale = min(
-                PREVIEW_TARGET_WIDTH / width,
-                MAX_PREVIEW_DIMENSION / max(width, height),
-                math.sqrt(MAX_PREVIEW_PIXELS / (width * height)),
-            )
-            if scale < 0.5:
-                raise ApiError(413, "RESUME_PREVIEW_TOO_LARGE")
-            bitmap = page.render(scale=scale)
-            image = bitmap.to_pil()
-            output = io.BytesIO()
-            image.save(output, format="PNG", optimize=True)
-            content = output.getvalue()
-            if (
-                not content.startswith(b"\x89PNG\r\n\x1a\n")
-                or len(content) > MAX_PREVIEW_OUTPUT_BYTES
-            ):
-                raise ApiError(413, "RESUME_PREVIEW_TOO_LARGE")
-            return content
-        except ApiError:
-            raise
-        except Exception as error:
-            raise ApiError(503, "RESUME_PREVIEW_RENDER_FAILED") from error
+            with PDFIUM_LOCK:
+                document = None
+                page = None
+                bitmap = None
+                image = None
+                try:
+                    document = pdfium.PdfDocument(pdf)
+                    if len(document) != 1:
+                        raise ApiError(503, "RESUME_PREVIEW_RENDER_FAILED")
+                    page = document[0]
+                    width, height = page.get_size()
+                    if (
+                        width <= 0
+                        or height <= 0
+                        or not math.isfinite(width)
+                        or not math.isfinite(height)
+                    ):
+                        raise ApiError(503, "RESUME_PREVIEW_RENDER_FAILED")
+                    scale = min(
+                        PREVIEW_TARGET_WIDTH / width,
+                        MAX_PREVIEW_DIMENSION / max(width, height),
+                        math.sqrt(MAX_PREVIEW_PIXELS / (width * height)),
+                    )
+                    if scale < 0.5:
+                        raise ApiError(413, "RESUME_PREVIEW_TOO_LARGE")
+                    bitmap = page.render(scale=scale)
+                    image = bitmap.to_pil()
+                    output = io.BytesIO()
+                    image.save(output, format="PNG", optimize=True)
+                    content = output.getvalue()
+                    if (
+                        not content.startswith(b"\x89PNG\r\n\x1a\n")
+                        or len(content) > MAX_PREVIEW_OUTPUT_BYTES
+                    ):
+                        raise ApiError(413, "RESUME_PREVIEW_TOO_LARGE")
+                    return content
+                except ApiError:
+                    raise
+                except Exception as error:
+                    raise ApiError(503, "RESUME_PREVIEW_RENDER_FAILED") from error
+                finally:
+                    if image is not None:
+                        image.close()
+                    if bitmap is not None:
+                        bitmap.close()
+                    if page is not None:
+                        page.close()
+                    if document is not None:
+                        document.close()
+
+
         finally:
-            if image is not None:
-                image.close()
-            if bitmap is not None:
-                bitmap.close()
-            if page is not None:
-                page.close()
-            if document is not None:
-                document.close()
             PREVIEW_SLOTS.release()
 
 
