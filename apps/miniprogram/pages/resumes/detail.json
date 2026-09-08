@@ -1,3 +1,4 @@
 {
-  "navigationBarTitleText": "简历详情"
+  "navigationBarTitleText": "简历详情",
+  "navigationStyle": "custom"
 }

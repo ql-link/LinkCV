@@ -1,0 +1,8 @@
+<view class="navigation-space" style="height:{{statusBarHeight + 50 + (back || title ? 72 : 0)}}px" />
+<view class="brand-fixed" style="padding-top:{{statusBarHeight}}px">
+  <view class="brand-row"><image class="wordmark" src="/assets/linkresume-wordmark.png" mode="aspectFit" aria-label="LinkResume" /></view>
+</view>
+<view wx:if="{{back || title}}" class="page-navigation" style="top:{{statusBarHeight + 50}}px">
+  <button wx:if="{{back}}" size="mini" class="back-button" style="padding:0;width:64px;height:32px;margin-left:0;margin-right:auto;align-self:flex-start" bindtap="goBack" disabled="{{disabled}}" aria-label="返回上一页"><text class="back-arrow">‹</text><text class="back-label">返回</text></button>
+  <text class="page-title">{{title}}</text>
+</view>

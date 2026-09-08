@@ -42,6 +42,10 @@ Page({
     this.refreshPage();
   },
 
+  onReady() {
+    require('../../services/tabResources').prepare();
+  },
+
   onShow() {
     if (typeof this.getTabBar === "function" && this.getTabBar()) {
       this.getTabBar().setData({ selected: 2 });
@@ -91,25 +95,33 @@ Page({
     }
     this.setData({ loading: true, guest: false, editingNickname: false, message: "" });
     try {
-      let resumeCount = 0;
-      try {
+      const counts = async () => {
+        try {
         const resumes = require("../../services/resumes");
         if (typeof resumes.listResumes === "function") {
           const items = await resumes.listResumes();
-          resumeCount = Array.isArray(items) ? items.length : 0;
+          return Array.isArray(items) ? items.length : 0;
         }
-      } catch (e) {
-        resumeCount = 0;
-      }
-      const profile = await account.getProfile();
+        } catch (e) { /* Counts must not block profile rendering. */ }
+        return 0;
+      };
+      const profileRequest = this._profileLoaded
+        ? account.getProfile()
+        : require('../../services/tabPrefetch').take('profile', () => account.getProfile());
+      this._profileLoaded = true;
+      const countRequest = counts();
+      const profile = await profileRequest;
       this.setData({
         loading: false,
         nickname: profile.nickname,
         serverNickname: profile.nickname,
         editingNickname: false,
         hasChanges: false,
-        resumeCount,
+        resumeCount: 0,
         chatCount: 0,
+      });
+      countRequest.then(resumeCount => {
+        if (auth.hasSession() && !this.data.guest) this.setData({ resumeCount });
       });
       if (profile.avatar_url) {
         try {

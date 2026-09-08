@@ -1,42 +1,230 @@
 @import "./shared.wxss";
 /* Figma 27:136: 20px page inset, 16px panel inset, 80 × 28px primary action. */
-.career-home { font-family: "LinkCV Career UI", -apple-system, "PingFang SC", sans-serif; padding-bottom: calc(54px + env(safe-area-inset-bottom)); }
-.home-header { position: sticky; top: 0; z-index: 20; background: #f4f6f8; }
-.brand { height: 96rpx; padding: 0 20px; display: flex; align-items: center; }
-.navigation { height: 64px; padding: 4px 24px 8px; display: flex; align-items: center; gap: 4px; box-sizing: border-box; }
-.nav-item { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; flex: 1; height: 44px; padding-bottom: 7px; box-sizing: border-box; color: #6f7a8c; font-size: 16px; white-space: nowrap; }
-.nav-item.active { color: #145ed6; font-size: 20px; font-weight: 600; }
-.underline { position: absolute; width: 24px; height: 3px; background: #145ed6; bottom: 0; border-radius: 1.5px; }
-.career-page { padding-top: 8px; }
-.schedule-body { display: flex; flex-direction: column; box-sizing: border-box; padding: 8px 20px 16px; }
-.schedule-panel { flex: 1; display: flex; flex-direction: column; margin: 0; padding: 16px; border-radius: 16px; }
-.schedule-toolbar { flex-shrink: 0; gap: 12px; height: 28px; }
-.date-control { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; color: #17191c; font-size: 17px; font-weight: 600; white-space: nowrap; border-radius: 6px; }
-.date-control-pressed { background: #edf1f5; }
-.schedule-toolbar .add-schedule { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 80px; width: 80px; max-width: 80px; min-width: 0; height: 28px; min-height: 28px; max-height: 28px; margin: 0 0 0 auto; padding: 0 8px; box-sizing: border-box; background: #17191c; color: #fff; font-size: 12px; font-weight: 600; line-height: 1.45; white-space: nowrap; border-radius: 6px; }
-.schedule-toolbar .add-schedule-pressed { background: #383c42; }
-.time-grid { position: relative; flex: 1; margin-top: 20px; margin-bottom: 7px; }
-.hour { font-family: Inter, -apple-system, sans-serif; position: absolute; display: flex; align-items: center; width: 100%; transform: translateY(-50%); font-size: 10px; line-height: 1.45; color: #6f7a8c; font-variant-numeric: tabular-nums; }
-.hour-label { width: 50px; flex-shrink: 0; }
-.hour-line { flex: 1; height: 1px; background: rgba(219,224,232,.5); }
-.events { position: absolute; left: 50px; right: 0; top: 0; bottom: 0; }
-.event { position: absolute; background: #e9f1fd; border: 0; border-radius: 8px; padding: 4px 8px; box-sizing: border-box; overflow: hidden; box-shadow: inset 0 -2px #fff, inset -2px 0 #fff; }
-.event.tone-success { background: #eaf7f0; }
-.event.tone-warning { background: #fff6e8; }
-.event-title { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
-.event-company { display: block; flex: 1; min-width: 0; font-size: 12px; font-weight: 600; line-height: 1.45; color: #17191c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.event-stage { max-width: 42%; font-size: 10px; line-height: 1.45; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.event-time { display: block; font-size: 11px; line-height: 1.45; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.schedule-empty { position: absolute; top: 42%; left: 50px; right: 0; text-align: center; color: #6f7a8c; font-size: 13px; background: rgba(255,255,255,.92); padding: 9px 0; }
-.search {
-  background: #fff;
-  border-radius: 16rpx;
-  padding-left: 24rpx;
+.career-home {
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  font-family:
+    "LinkCV Career UI",
+    -apple-system,
+    "PingFang SC",
+    sans-serif;
+  padding-bottom: calc(54px + env(safe-area-inset-bottom));
 }
-.search input {
+.career-scroll {
   flex: 1;
-  background: transparent;
+  height: 0;
+  min-height: 0;
+  width: 100%;
+}
+.home-header {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 20;
+  background: #f4f6f8;
+}
+.brand {
+  height: 96rpx;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+}
+.navigation {
+  height: 64px;
+  padding: 4px 24px 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+}
+.nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1;
+  height: 44px;
+  padding-bottom: 7px;
+  box-sizing: border-box;
+  color: #6f7a8c;
+  font-size: 16px;
+  white-space: nowrap;
+}
+.nav-item.active {
+  color: #145ed6;
+  font-size: 20px;
+  font-weight: 600;
+}
+.underline {
+  position: absolute;
+  width: 24px;
+  height: 3px;
+  background: #145ed6;
+  bottom: 0;
+  border-radius: 1.5px;
+}
+.career-page {
+  padding-top: 8px;
+}
+.schedule-body {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: 8px 20px 16px;
+}
+.schedule-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 16px;
+  border-radius: 16px;
+}
+.schedule-toolbar {
+  flex-shrink: 0;
+  gap: 12px;
+  height: 28px;
+}
+.date-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  color: #17191c;
+  font-size: 17px;
+  font-weight: 600;
+  white-space: nowrap;
+  border-radius: 6px;
+}
+.date-control-pressed {
+  background: #edf1f5;
+}
+.schedule-toolbar .add-schedule {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 80px;
+  width: 80px;
+  max-width: 80px;
   min-width: 0;
+  height: 28px;
+  min-height: 28px;
+  max-height: 28px;
+  margin: 0 0 0 auto;
+  padding: 0 8px;
+  box-sizing: border-box;
+  background: #17191c;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  white-space: nowrap;
+  border-radius: 6px;
+}
+.schedule-toolbar .add-schedule-pressed {
+  background: #383c42;
+}
+.time-grid {
+  position: relative;
+  flex: 1;
+  margin-top: 20px;
+  margin-bottom: 7px;
+}
+.hour {
+  font-family:
+    Inter,
+    -apple-system,
+    sans-serif;
+  position: absolute;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  line-height: 1.45;
+  color: #6f7a8c;
+  font-variant-numeric: tabular-nums;
+}
+.hour-label {
+  width: 50px;
+  flex-shrink: 0;
+}
+.hour-line {
+  flex: 1;
+  height: 1px;
+  background: rgba(219, 224, 232, 0.5);
+}
+.events {
+  position: absolute;
+  left: 50px;
+  right: 0;
+  top: 0;
+  bottom: 0;
+}
+.event {
+  position: absolute;
+  background: #e9f1fd;
+  border: 0;
+  border-radius: 8px;
+  padding: 4px 8px;
+  box-sizing: border-box;
+  overflow: hidden;
+  box-shadow:
+    inset 0 -2px #fff,
+    inset -2px 0 #fff;
+}
+.event.tone-success {
+  background: #eaf7f0;
+}
+.event.tone-warning {
+  background: #fff6e8;
+}
+.event-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.event-company {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: #17191c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.event-stage {
+  max-width: 42%;
+  font-size: 10px;
+  line-height: 1.45;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.event-time {
+  display: block;
+  font-size: 11px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.schedule-empty {
+  position: absolute;
+  top: 42%;
+  left: 50px;
+  right: 0;
+  text-align: center;
+  color: #6f7a8c;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 9px 0;
 }
 .filters {
   white-space: nowrap;
@@ -59,39 +247,271 @@
   font-size: 24rpx;
   color: #3f4752;
 }
-.search { padding-left: 0; border-radius: 19rpx; }
-.search career-icon { display: none; }
-.search input { height: 82rpx; min-height: 82rpx; padding: 20rpx 23rpx; font-size: 25rpx; }
-.filters { margin: 20rpx 0 24rpx; }
-.filter { padding: 4rpx 0; margin-right: 30rpx; font-size: 24rpx; border-radius: 0; }
-.filter.selected { background: transparent; color: var(--ui-foreground); font-weight: 600; }
-.filter-offer { color: #9a6a00; }
-.application-card { padding: 32rpx; border-radius: 31rpx; }
-.application-card .title { font-size: 35rpx; }
-.application-card .subtitle { margin-top: 16rpx; color: var(--ui-text-secondary); font-size: 27rpx; }
-.employment { color: var(--ui-text-muted); font-size: 23rpx; margin-left: 16rpx; flex-shrink: 0; }
-.card-stage { margin-top: 16rpx; gap: 12rpx; }
-.stage-name { font-size: 27rpx; }
-.status-badge { display: flex; align-items: center; gap: 8rpx; padding: 4rpx 12rpx; border-radius: 12rpx; font-size: 22rpx; white-space: nowrap; }
-.status-badge.tone-accent { background: #e9f1fd; }
-.status-badge.tone-success { background: var(--ui-success-subtle); }
-.status-badge.tone-warning { background: var(--ui-warning-subtle); }
-.status-badge.tone-offer { background: #fff6dd; }
-.status-badge.tone-neutral { background: var(--ui-surface-muted); }
-.application-card .hint { margin-top: 16rpx; font-size: 23rpx; }
-.card-bottom { margin-top: 16rpx; padding-top: 16rpx; border-color: rgba(219,224,232,.65); }
-.detail-link { font-size: 23rpx; }
+.search career-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.filters {
+  margin: 20rpx 0 24rpx;
+}
+.filter {
+  padding: 4rpx 0;
+  margin-right: 30rpx;
+  font-size: 24rpx;
+  border-radius: 0;
+}
+.filter.selected {
+  background: transparent;
+  color: var(--ui-foreground);
+  font-weight: 600;
+}
+.filter-offer {
+  color: #9a6a00;
+}
+.application-card {
+  padding: 32rpx;
+  border-radius: 31rpx;
+}
+.application-card .title {
+  font-size: 35rpx;
+}
+.application-card .subtitle {
+  margin-top: 16rpx;
+  color: var(--ui-text-secondary);
+  font-size: 27rpx;
+}
+.employment {
+  color: var(--ui-text-muted);
+  font-size: 23rpx;
+  margin-left: 16rpx;
+  flex-shrink: 0;
+}
+.card-stage {
+  margin-top: 16rpx;
+  gap: 12rpx;
+}
+.stage-name {
+  font-size: 27rpx;
+}
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 12rpx;
+  font-size: 22rpx;
+  white-space: nowrap;
+}
+.status-badge.tone-accent {
+  background: #e9f1fd;
+}
+.status-badge.tone-success {
+  background: var(--ui-success-subtle);
+}
+.status-badge.tone-warning {
+  background: var(--ui-warning-subtle);
+}
+.status-badge.tone-offer {
+  background: #fff6dd;
+}
+.status-badge.tone-neutral {
+  background: var(--ui-surface-muted);
+}
+.application-card .hint {
+  margin-top: 16rpx;
+  font-size: 23rpx;
+}
+.card-bottom {
+  margin-top: 16rpx;
+  padding-top: 16rpx;
+  border-color: rgba(219, 224, 232, 0.65);
+}
+.detail-link {
+  font-size: 23rpx;
+}
 
-.career-page .search { height: 82rpx; padding: 0 23rpx; box-sizing: border-box; align-items: center; }
-.career-page .search input { display: block; height: 40rpx; min-height: 0; padding: 0; margin: 0; line-height: 40rpx; box-sizing: content-box; }
 /* Figma 27:2 — real data uses the same record-card geometry. */
-.career-page .search { height:43px;padding:0 12px;border-radius:10px; }
-.career-page .search input { height:19px;min-height:0;line-height:19px;font-size:13px; }
-.filters { margin:12px 0;width:100%; }.filter { padding:0;margin-right:16px;font-size:13px;line-height:19px; }
-.application-card { padding:16px;border-radius:14px;margin-bottom:12px; }
-.application-card .title { font-size:19px;font-weight:700;line-height:1.45; }
-.application-card .subtitle { margin-top:8px;font-size:14px;line-height:1.45;color:#3f4752; }
-.employment { font-size:12px;color:#6f7a8c;margin-left:12px; }.card-stage { margin-top:8px;gap:8px; }
-.stage-name { font-size:14px;font-weight:700;line-height:1.45; }
-.status-badge { padding:3px 8px;gap:6px;border-radius:6px;font-size:12px;line-height:1.45; }
-.application-card .hint { margin-top:8px;font-size:12px;line-height:1.45; }.card-bottom { margin-top:8px;padding-top:8px;border-top:1px solid rgba(219,224,232,.6); }.detail-link { font-size:12px;line-height:1.45; }
+.filters {
+  margin: 12px 0;
+  width: 100%;
+}
+.filter {
+  padding: 0;
+  margin-right: 16px;
+  font-size: 13px;
+  line-height: 19px;
+}
+.application-card {
+  padding: 16px;
+  border-radius: 14px;
+  margin-bottom: 12px;
+}
+.application-card .title {
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+.application-card .subtitle {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #3f4752;
+}
+.employment {
+  font-size: 12px;
+  color: #6f7a8c;
+  margin-left: 12px;
+}
+.card-stage {
+  margin-top: 8px;
+  gap: 8px;
+}
+.stage-name {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+.status-badge {
+  padding: 3px 8px;
+  gap: 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.application-card .hint {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.card-bottom {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(219, 224, 232, 0.6);
+}
+.detail-link {
+  font-size: 12px;
+  line-height: 1.45;
+}
+/* Confirmed Figma list: transparent filters and compact company / role cards. */
+.filters {
+  display: flex;
+  gap: 6px;
+  margin: 12px 0;
+  white-space: normal;
+}
+.filter {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 13px;
+  line-height: 23px;
+  border-radius: 0;
+  background: transparent;
+}
+.filters .filter.selected {
+  font-size: 16px;
+  color: #145ed6;
+  background: transparent;
+  font-weight: 700;
+}
+.filter-line {
+  width: 20px;
+  height: 2px;
+  background: transparent;
+  border-radius: 2px;
+}
+.selected .filter-line {
+  background: #145ed6;
+}
+.career-page .application-card {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.card-identity {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 22px;
+}
+.company-name {
+  font-size: 15px;
+  font-weight: 700;
+}
+.job-name {
+  font-size: 13px;
+  font-weight: 400;
+}
+.application-card .employment {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #edf1f5;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.application-card .employment-internship {
+  background: #eaf7f0;
+  color: #267a4d;
+}
+.application-card .employment-campus {
+  background: #e9f1fd;
+  color: #145ed6;
+}
+.card-info {
+  padding: 10px;
+  border-radius: 9px;
+  background: #f9fafb;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.card-meta {
+  font-size: 12px;
+  line-height: 18px;
+  color: #3f4752;
+}
+.application-card .stage-name {
+  font-size: 14px;
+  line-height: 20px;
+}
+.application-card .status-badge {
+  font-size: 12px;
+  padding: 3px 8px;
+  line-height: 17px;
+}
+
+/* The native input needs the full field height so its caret is not clipped on devices. */
+.career-page .search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 43px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border-radius: 10px;
+  background: #fff;
+}
+.career-page .search input {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  height: 43px;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 13px;
+  line-height: normal;
+}

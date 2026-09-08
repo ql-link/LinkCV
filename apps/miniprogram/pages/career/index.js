@@ -2,12 +2,15 @@ const auth = require("../../services/auth");
 const api = require("../../services/career");
 const c = require("../../utils/career");
 const { getStatusBarHeight } = require("../../utils/system");
-async function collect(method, options) {
+async function collect(method, options, prefetchKey) {
   const items = [],
     seen = new Set();
   let cursor;
   do {
-    const body = await method({ ...options, limit: 100, cursor });
+    const load = () => method({ ...options, limit: 100, cursor });
+    const body = await (prefetchKey && !cursor
+      ? require('../../services/tabPrefetch').take(prefetchKey, load)
+      : load());
     items.push(...body.items);
     cursor = body.next_cursor;
     if (cursor && seen.has(cursor)) throw new Error("重复的分页游标");
@@ -20,12 +23,15 @@ Page({
     statusBarHeight: getStatusBarHeight(),
     activeTab: "schedule",
     scheduleSheetOpen: false,
+    sessionId: "",
     date: c.dateParts().date,
     dateLabel: c.dayLabel(c.dateParts().date),
     loading: false,
+    refresherTriggered: false,
     guest: true,
     error: "",
     keyword: "",
+    searchFocused: false,
     filter: "all",
     applications: [],
     visibleApplications: [],
@@ -40,14 +46,23 @@ Page({
     ],
   },
   onShow() {
+    this._openingApplication = false;
     if (this.getTabBar && this.getTabBar())
-      this.getTabBar().setData({ selected: 1, hidden: this.data.scheduleSheetOpen });
-    return this.loadPage();
+      this.getTabBar().setData({
+        selected: 1,
+        hidden: this.data.scheduleSheetOpen || !!this.data.sessionId,
+      });
+    const initial = !this._shown;
+    this._shown = true;
+    return this.loadPage({ initial });
   },
   onUnload() {
     this._request = (this._request || 0) + 1;
   },
-  async loadPage() {
+  onReady() {
+    require('../../services/tabResources').prepare();
+  },
+  async loadPage({ initial = false } = {}) {
     const token = (this._request = (this._request || 0) + 1);
     if (!auth.hasSession()) {
       this.setData({
@@ -61,7 +76,11 @@ Page({
       });
       return;
     }
-    this.setData({ loading: true, guest: false, error: "" });
+    this.setData({
+      loading: !this.data.applications.length && !this.data.sessions.length,
+      guest: false,
+      error: "",
+    });
     try {
       const day = this.data.date;
       this.setData({ dateLabel: c.dayLabel(day) });
@@ -70,8 +89,8 @@ Page({
         endAt: c.iso(c.shiftDate(day, 1), "00:00"),
       };
       const [applications, sessions] = await Promise.all([
-        collect(api.listApplications, { scope: "active" }),
-        collect(api.listSessions, options),
+        collect(api.listApplications, { scope: "active" }, initial ? 'applications' : ''),
+        collect(api.listSessions, options, initial ? 'sessions:' + day : ''),
       ]);
       if (token !== this._request) return;
       this.setData({
@@ -87,11 +106,13 @@ Page({
       if (token === this._request) this.setData({ loading: false });
     }
   },
-  async onPullDownRefresh() {
+  async handleRefresherRefresh() {
+    if (this.data.refresherTriggered) return;
+    this.setData({ refresherTriggered: true });
     try {
       await this.loadPage();
     } finally {
-      wx.stopPullDownRefresh();
+      this.setData({ refresherTriggered: false });
     }
   },
   retryLoad() {
@@ -103,6 +124,12 @@ Page({
   changeDate(e) {
     this.setData({ date: e.detail.value });
     return this.loadPage();
+  },
+  focusSearch() {
+    this.setData({ searchFocused: true });
+  },
+  blurSearch() {
+    this.setData({ searchFocused: false });
   },
   search(e) {
     this.setData({ keyword: e.detail.value });
@@ -130,27 +157,43 @@ Page({
     });
   },
   openApplication(e) {
+    if (this._openingApplication) return;
+    this._openingApplication = true;
+    wx.showLoading?.({ title: "正在打开…", mask: true });
     wx.navigateTo({
-      url: `/pages/career/application?id=${encodeURIComponent(e.currentTarget.dataset.id)}`,
+      url: "/pages/career/application?id=" + encodeURIComponent(e.currentTarget.dataset.id),
+      success: () => { this._openingApplication = false; wx.hideLoading?.(); },
+      fail: () => {
+        this._openingApplication = false;
+        wx.hideLoading?.();
+        wx.showToast({ title: "页面打开失败，请重试", icon: "none" });
+      },
     });
   },
   openSession(e) {
-    wx.navigateTo({
-      url: `/pages/career/session?id=${encodeURIComponent(e.currentTarget.dataset.id)}`,
-    });
+    this.setData({ sessionId: e.currentTarget.dataset.id });
+    if (this.getTabBar && this.getTabBar())
+      this.getTabBar().setData({ hidden: true });
+  },
+  closeSession() {
+    this.setData({ sessionId: "" });
+    if (this.getTabBar && this.getTabBar())
+      this.getTabBar().setData({ hidden: false });
   },
   addSchedule() {
-    this.setData({scheduleSheetOpen: true});
-    if (this.getTabBar && this.getTabBar()) this.getTabBar().setData({hidden: true});
+    this.setData({ scheduleSheetOpen: true });
+    if (this.getTabBar && this.getTabBar())
+      this.getTabBar().setData({ hidden: true });
   },
   closeSchedule(e) {
-    this.setData({scheduleSheetOpen: false});
-    if (this.getTabBar && this.getTabBar()) this.getTabBar().setData({hidden: false});
+    this.setData({ scheduleSheetOpen: false });
+    if (this.getTabBar && this.getTabBar())
+      this.getTabBar().setData({ hidden: false });
     if (e.detail && e.detail.refresh) return this.loadPage();
   },
   scheduleSaved(e) {
-    this.closeSchedule({detail: {}});
-    this.setData({date: e.detail.date || this.data.date});
+    this.closeSchedule({ detail: {} });
+    this.setData({ date: e.detail.date || this.data.date });
     return this.loadPage();
   },
   goLogin() {

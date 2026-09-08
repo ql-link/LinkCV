@@ -43,8 +43,8 @@
   },
   "style": "v2",
   "sitemapLocation": "sitemap.json",
-  "lazyCodeLoading": "requiredComponents",
   "usingComponents": {
-    "schedule-sheet": "/components/schedule-sheet/index"
+    "schedule-sheet": "/components/schedule-sheet/index",
+    "brand-navigation": "/components/brand-navigation/index"
   }
 }

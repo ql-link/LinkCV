@@ -1,1 +1,11 @@
-{"navigationStyle":"custom","enablePullDownRefresh":true,"usingComponents":{"career-icon":"/components/career-icon/index","schedule-sheet":"/components/schedule-sheet/index"}}
+{
+  "navigationStyle": "custom",
+  "disableScroll": true,
+  "enablePullDownRefresh": false,
+  "allowsBounceVertical": "NO",
+  "usingComponents": {
+    "career-icon": "/components/career-icon/index",
+    "schedule-sheet": "/components/schedule-sheet/index",
+    "session-sheet": "/components/session-sheet/index"
+  }
+}

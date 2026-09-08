@@ -1,3 +1,4 @@
+<brand-navigation title="面试详情" back fallback="/pages/career/index" />
 <view class="career-page with-dock">
   <view class="state hint" wx:if="{{loading}}">正在加载场次详情…</view>
   <view class="panel state" wx:elif="{{error}}"><text class="hint">{{error}}</text><button class="primary" bindtap="load">重新加载</button></view>

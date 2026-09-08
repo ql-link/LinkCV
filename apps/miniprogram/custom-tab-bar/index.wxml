@@ -7,13 +7,14 @@
     data-index="{{index}}"
     bindtap="switchTab"
     hover-class="tab-bar-item-hover"
-    hover-stay-time="70"
+    hover-start-time="0"
+    hover-stay-time="120"
     role="tab"
     aria-selected="{{selected === index}}"
     aria-label="{{item.text}}"
   >
     <view class="tab-icon-wrap">
-      <image class="tab-icon" src="/assets/career/tab-{{item.icon}}.svg" />
+      <image class="tab-icon" src="/assets/career/tab-{{item.icon}}{{selected === index ? '-active' : ''}}.svg" />
     </view>
     <text class="tab-label {{selected === index ? 'is-active' : ''}}">{{item.text}}</text>
   </view>

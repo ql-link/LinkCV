@@ -1,19 +1,29 @@
-<view class="overlay" catchtouchmove="noop">
-  <view class="mask mask-enter" bindtap="close" />
-  <view class="picker-sheet sheet-enter" role="dialog" aria-label="{{title}}">
-    <view class="header"><text class="title">{{title}}</text><button size="mini" class="picker-button close" bindtap="close" aria-label="取消选择时间"><text class="close-glyph">×</text></button></view>
+<view class="overlay" style="--brand-header-height:{{brandHeight}}px;top:{{brandHeight}}px;height:calc(100vh - {{brandHeight}}px)" catchtouchmove="noop">
+  <view class="mask mask-enter" style="{{maskExitStyle}}" bindtap="close" />
+  <view class="picker-sheet sheet-enter" style="{{sheetExitStyle}}" role="dialog" aria-label="{{title}}" aria-modal="true">
+    <view class="header"><text class="title">{{title}}</text><button class="picker-button close" bindtap="close" aria-label="关闭时间选择">×</button></view>
     <scroll-view class="content" scroll-y show-scrollbar="{{false}}">
-      <view class="stack"><text class="error" wx:if="{{error}}">{{error}}</text>
-        <view class="month"><view class="month-actions"><button size="mini" class="picker-button month-action" data-delta="-1" bindtap="navigate" aria-label="上一月">‹</button><text class="month-label">{{monthLabel}}</text><button size="mini" class="picker-button month-action" data-delta="1" bindtap="navigate" aria-label="下一月">›</button></view></view>
+      <view class="stack">
+        <text class="error" wx:if="{{error}}">{{error}}</text>
+        <view class="month"><text class="field-label">选择日期</text><view class="month-actions"><button class="picker-button month-action" data-delta="-1" bindtap="navigate" aria-label="上一月">‹</button><text class="month-label">{{monthLabel}}</text><button class="picker-button month-action" data-delta="1" bindtap="navigate" aria-label="下一月">›</button></view></view>
         <view class="weekdays"><text class="weekday" wx:for="{{weekdays}}" wx:key="*this">{{item}}</text></view>
-        <view class="days"><view class="week" wx:for="{{weeks}}" wx:for-item="week" wx:key="key"><button size="mini" wx:for="{{week.days}}" wx:key="value" class="picker-button day {{item.adjacent ? 'adjacent' : ''}} {{item.selected ? 'selected' : ''}}" data-date="{{item.value}}" bindtap="selectDate" aria-label="{{item.value}}" aria-pressed="{{item.selected}}">{{item.day}}</button></view></view>
-        <text class="hint">滑动选择时间</text>
-        <view class="wheel-box"><picker-view class="wheel" value="{{wheel}}" bindchange="changeTime" bindpickstart="rollStart" bindpickend="rollEnd" indicator-style="height:28px;" indicator-class="wheel-indicator" mask-class="wheel-mask">
-          <picker-view-column><view class="wheel-value {{index === wheel[0] ? 'current' : ''}}" wx:for="{{hours}}" wx:key="*this">{{item}}{{index === wheel[0] ? ' 时' : ''}}</view></picker-view-column>
-          <picker-view-column><view class="wheel-value {{index === wheel[1] ? 'current' : ''}}" wx:for="{{minutes}}" wx:key="*this">{{item}}{{index === wheel[1] ? ' 分' : ''}}</view></picker-view-column>
-        </picker-view></view>
+        <view class="days"><view class="week" wx:for="{{weeks}}" wx:for-item="week" wx:key="key"><button class="picker-button day {{item.adjacent ? 'adjacent' : ''}} {{item.selected ? 'selected' : ''}}" wx:for="{{week.days}}" wx:key="value" data-date="{{item.value}}" bindtap="selectDate" aria-label="{{item.value}}" aria-pressed="{{item.selected}}">{{item.day}}</button></view></view>
+        <view class="time-row"><text class="time-label field-label">{{showDuration ? '开始时间' : '时间'}}</text><view class="wheels">
+          <picker-view class="wheel" value="{{[wheel[0]]}}" data-part="hour" bindchange="changeTime" bindpickstart="rollStart" bindpickend="rollEnd" indicator-style="height:24px;" indicator-class="wheel-indicator" mask-class="wheel-mask" aria-label="小时"><picker-view-column><view class="wheel-value {{index === wheel[0] ? 'current' : ''}}" wx:for="{{hours}}" wx:key="*this">{{item}}{{index === wheel[0] ? ' 时' : ''}}</view></picker-view-column></picker-view>
+          <picker-view class="wheel" value="{{[wheel[1]]}}" data-part="minute" bindchange="changeTime" bindpickstart="rollStart" bindpickend="rollEnd" indicator-style="height:24px;" indicator-class="wheel-indicator" mask-class="wheel-mask" aria-label="分钟"><picker-view-column><view class="wheel-value {{index === wheel[1] ? 'current' : ''}}" wx:for="{{minutes}}" wx:key="*this">{{item}}{{index === wheel[1] ? ' 分' : ''}}</view></picker-view-column></picker-view>
+        </view></view>
+        <view class="field-group" wx:if="{{showDuration}}"><text class="field-label">持续时长</text><view class="duration-options"><button class="picker-button duration-button {{!customDuration && duration == item ? 'active' : ''}}" wx:for="{{durationOptions}}" wx:key="*this" data-minutes="{{item}}" bindtap="selectDuration">{{item}} 分钟</button><button class="picker-button duration-button {{customDuration ? 'active' : ''}}" data-minutes="custom" bindtap="selectDuration">{{customDuration ? duration + ' 分钟' : '自定义'}}</button></view></view>
+        <text class="summary">{{summary}}</text>
       </view>
     </scroll-view>
-    <view class="footer"><button size="mini" class="picker-button confirm" disabled="{{rolling}}" bindtap="confirm">确定时间</button></view>
+    <view class="footer"><button class="picker-button confirm" disabled="{{rolling || durationEditorOpen}}" bindtap="confirm">确定时间</button></view>
+  </view>
+  <view class="duration-overlay" style="--brand-header-height:{{brandHeight}}px;top:{{brandHeight}}px;height:calc(100vh - {{brandHeight}}px)" wx:if="{{durationEditorOpen}}" catchtouchmove="noop">
+    <view class="mask mask-enter" style="{{durationMaskExitStyle}}" bindtap="cancelDuration" />
+    <view class="picker-sheet duration-sheet sheet-enter" style="{{durationSheetExitStyle}}" role="dialog" aria-modal="true" aria-label="自定义时长">
+      <view class="header"><text class="title">自定义时长</text><button class="picker-button close" bindtap="cancelDuration" aria-label="关闭自定义时长">×</button></view>
+      <scroll-view class="content" scroll-y show-scrollbar="{{false}}"><view class="duration-editor"><view class="duration-display"><text class="duration-value">{{durationDraft || '0'}}</text><text>分钟</text></view><view class="duration-keypad"><button class="picker-button duration-key" wx:for="{{durationKeys}}" wx:key="*this" data-key="{{item}}" bindtap="pressDurationKey" hover-class="key-pressed" disabled="{{durationClosing}}">{{item}}</button></view><text class="error" wx:if="{{durationError}}">{{durationError}}</text></view></scroll-view>
+      <view class="footer"><button class="picker-button confirm" bindtap="confirmDuration" disabled="{{durationClosing}}">确认时长</button></view>
+    </view>
   </view>
 </view>

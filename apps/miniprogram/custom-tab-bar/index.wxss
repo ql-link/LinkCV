@@ -16,19 +16,23 @@
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  padding-top: 12px;
+  padding-top: 8px;
   text-align: center;
   touch-action: manipulation;
 }
-.tab-bar-item-hover { opacity: .85; }
-.tab-icon-wrap, .tab-icon { display: block; width: 18px; height: 18px; }
+.tab-icon-wrap { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; transition: transform 140ms ease-out; }
+.tab-icon { display: block; width: 21px; height: 21px; transform: scale(.79); transition: transform 160ms ease-out; }
+.tab-bar-item.is-active .tab-icon { transform: scale(1); }
+.tab-bar-item-hover .tab-icon-wrap { transform: scale(1.12); }
+.tab-bar-item-hover .tab-label { color: #17191c; }
 .tab-label {
-  margin-top: 3px;
+  margin-top: 1px;
   font-family: "LinkCV Career UI", -apple-system, sans-serif;
   font-size: 11px;
   line-height: 1.45;
   font-weight: 400;
   letter-spacing: 0;
-  color: #6f7a8c;
+  color: #8993a2;
+  transition: color 160ms ease-out;
 }
-.tab-label.is-active { color: #17191c; font-weight: 600; }
+.tab-label.is-active { color: #17191c; font-weight: 700; }

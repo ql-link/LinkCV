@@ -1,7 +1,9 @@
-<page-meta page-style="{{scheduleSheetOpen ? 'overflow:hidden' : ''}}" />
+<page-meta
+  page-style="overflow:hidden"
+/>
 <view class="career-home">
-  <view class="home-header" style="padding-top:{{statusBarHeight}}px"
-    ><view class="brand"><view class="ui-brand"><image class="ui-brand-wordmark" src="/assets/linkresume-wordmark.png" mode="aspectFit" aria-label="LinkResume" /></view></view>
+  <brand-navigation />
+  <view class="home-header">
     <view class="navigation">
       <view
         class="nav-item {{activeTab === 'schedule' ? 'active' : ''}}"
@@ -30,7 +32,21 @@
       /></view>
     </view>
   </view>
-  <view class="career-page {{activeTab === 'schedule' ? 'schedule-body' : ''}}" style="{{activeTab === 'schedule' ? 'min-height:calc(100vh - ' + statusBarHeight + 'px - 96rpx - 118px - env(safe-area-inset-bottom))' : ''}}">
+  <scroll-view
+    class="career-scroll"
+    scroll-y="{{!scheduleSheetOpen && !sessionId}}"
+    enhanced
+    bounces="{{false}}"
+    show-scrollbar="{{false}}"
+    enable-back-to-top
+    refresher-enabled="{{!scheduleSheetOpen && !sessionId}}"
+    refresher-triggered="{{refresherTriggered}}"
+    bindrefresherrefresh="handleRefresherRefresh"
+  >
+  <view
+    class="career-page {{activeTab === 'schedule' ? 'schedule-body' : ''}}"
+    style="{{activeTab === 'schedule' ? 'min-height:calc(100vh - ' + statusBarHeight + 'px - 168px - env(safe-area-inset-bottom))' : ''}}"
+  >
     <view wx:if="{{guest}}" class="panel state"
       ><text class="title">登录后查看求职进展</text
       ><text class="hint">在这里查看本账号的面试安排、求职记录与阶段历史。</text
@@ -44,56 +60,118 @@
     <block wx:elif="{{activeTab === 'schedule'}}">
       <view class="panel schedule-panel">
         <view class="schedule-toolbar row spread">
-          <picker mode="date" value="{{date}}" bindchange="changeDate" aria-label="选择日期">
-            <view class="date-control" hover-class="date-control-pressed" hover-stay-time="120" role="button"><career-icon name="calendar" size="28" /><text>{{dateLabel}}</text></view>
+          <picker
+            mode="date"
+            value="{{date}}"
+            bindchange="changeDate"
+            aria-label="选择日期"
+          >
+            <view
+              class="date-control"
+              hover-class="date-control-pressed"
+              hover-stay-time="120"
+              role="button"
+              ><career-icon name="calendar" size="28" /><text
+                >{{dateLabel}}</text
+              ></view
+            >
           </picker>
-          <button class="add-schedule" size="mini" hover-class="add-schedule-pressed" bindtap="addSchedule">添加安排</button>
+          <button
+            class="add-schedule"
+            size="mini"
+            hover-class="add-schedule-pressed"
+            bindtap="addSchedule"
+          >
+            添加安排
+          </button>
         </view>
-        <view class="time-grid" style="min-height:{{timeline.minimumHeight}}rpx">
-          <view class="hour" wx:for="{{timeline.hours}}" wx:key="*this" style="top:{{index / (timeline.hours.length - 1) * 100}}%">
+        <view
+          class="time-grid"
+          style="min-height:{{timeline.minimumHeight}}rpx"
+        >
+          <view
+            class="hour"
+            wx:for="{{timeline.hours}}"
+            wx:key="*this"
+            style="top:{{index / (timeline.hours.length - 1) * 100}}%"
+          >
             <text class="hour-label">{{item}}</text><view class="hour-line" />
           </view>
           <view class="events">
-            <view wx:for="{{timeline.items}}" wx:key="id" class="event tone-{{item.tone}}" style="{{item.fluidStyle}}" data-id="{{item.id}}" bindtap="openSession" role="button" aria-label="{{item.company_name}}，{{item.stage_label}}，{{item.compactTime}}，{{item.statusLabel}}">
-              <view class="event-title"><text class="event-company">{{item.company_name}}</text><text class="event-stage">{{item.stage_label}}</text></view>
+            <view
+              wx:for="{{timeline.items}}"
+              wx:key="id"
+              class="event tone-{{item.tone}}"
+              style="{{item.fluidStyle}}"
+              data-id="{{item.id}}"
+              bindtap="openSession"
+              role="button"
+              aria-label="{{item.company_name}}，{{item.stage_label}}，{{item.compactTime}}，{{item.statusLabel}}"
+            >
+              <view class="event-title"
+                ><text class="event-company">{{item.company_name}}</text
+                ><text class="event-stage">{{item.stage_label}}</text></view
+              >
               <text class="event-time">{{item.compactTime}}</text>
             </view>
           </view>
-          <text class="schedule-empty" wx:if="{{!timeline.items.length}}">当天暂无安排</text>
+          <text class="schedule-empty" wx:if="{{!timeline.items.length}}"
+            >当天暂无安排</text
+          >
         </view>
       </view>
     </block>
     <block wx:else>
       <view class="search row"
         ><career-icon name="search" tone="muted" size="32" /><input
-          placeholder="搜索公司或岗位"
+          placeholder="{{searchFocused ? '' : '搜索公司或岗位'}}"
+          aria-label="搜索公司或岗位"
           value="{{keyword}}"
+          bindfocus="focusSearch"
+          bindblur="blurSearch"
           bindinput="search"
           maxlength="200"
       /></view>
-      <scroll-view scroll-x class="filters"
+      <view class="filters"
         ><view
-          class="filter filter-{{item.value}} {{filter === item.value ? 'selected' : ''}}"
+          class="filter {{filter === item.value ? 'selected' : ''}}"
           wx:for="{{filters}}"
           wx:key="value"
           data-value="{{item.value}}"
           bindtap="filter"
-          >{{item.label}}</view
-        ></scroll-view
-      >
+          ><text>{{item.label}}</text><view class="filter-line" /></view
+      ></view>
       <view
         class="panel application-card"
         wx:for="{{visibleApplications}}"
         wx:key="id"
         data-id="{{item.id}}"
         bindtap="openApplication"
-        ><view class="row spread card-title"><text class="title grow">{{item.company_name_snapshot}}</text><text class="employment">{{item.employmentLabel}}</text></view>
-        <text class="subtitle">{{item.job_title_snapshot}}</text>
-        <view class="row spread card-stage"><text class="stage-name grow">{{item.stageLabel}}</text>
-          <view class="status-badge tone-{{item.tone}}"><career-icon name="{{item.icon}}" tone="{{item.tone}}" size="30" /><text>{{item.statusLabel}}</text></view>
-        </view>
-        <text class="hint">{{item.nextLabel ? '下次安排 · ' + item.nextLabel : item.phase === 'pending' ? '尚未记录投递信息' : '投递日期 · ' + item.appliedLabel}}</text>
-        <view class="card-bottom"><text class="detail-link">查看求职详情 ›</text></view>
+        role="button"
+      >
+        <view class="row spread card-title"
+          ><text class="card-identity"
+            ><text class="company-name">{{item.company_name_snapshot}}</text
+            ><text class="job-name"> · {{item.job_title_snapshot}}</text></text
+          ><text
+            class="employment employment-{{item.employmentLabel === '实习' ? 'internship' : item.employmentLabel === '校招' ? 'campus' : 'fulltime'}}"
+            >{{item.employmentLabel}}</text
+          ></view
+        >
+        <view class="card-info"
+          ><view class="row spread"
+            ><text class="stage-name grow">{{item.stageLabel}}</text
+            ><view class="status-badge tone-{{item.tone}}"
+              ><career-icon
+                name="{{item.icon}}"
+                tone="{{item.tone}}"
+                size="30"
+              /><text>{{item.statusLabel}}</text></view
+            ></view
+          ><text class="card-meta"
+            >{{item.nextLabel ? '下次安排 · ' + item.nextLabel : item.phase === 'pending' ? '尚未记录投递信息' : '投递日期 · ' + item.appliedLabel}}</text
+          ></view
+        >
       </view>
       <view class="panel state" wx:if="{{!visibleApplications.length}}"
         ><text class="title"
@@ -104,6 +182,19 @@
       >
     </block>
   </view>
+  </scroll-view>
 </view>
 
-<schedule-sheet wx:if="{{scheduleSheetOpen}}" date="{{date}}" bind:close="closeSchedule" bind:saved="scheduleSaved" />
+<schedule-sheet
+  wx:if="{{scheduleSheetOpen}}"
+  date="{{date}}"
+  bind:close="closeSchedule"
+  bind:saved="scheduleSaved"
+/>
+
+<session-sheet
+  wx:if="{{sessionId}}"
+  session-id="{{sessionId}}"
+  bind:close="closeSession"
+  bind:changed="loadPage"
+/>

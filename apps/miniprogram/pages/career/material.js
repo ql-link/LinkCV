@@ -1,6 +1,7 @@
 const auth = require("../../services/auth");
 const api = require("../../services/career");
 const c = require("../../utils/career");
+const detail = require("../../utils/careerDetail");
 Page({
   data: {
     applicationId: "",
@@ -8,7 +9,6 @@ Page({
     loading: true,
     error: "",
     app: null,
-    fields: [],
     previewPath: "",
   },
   onLoad(options) {
@@ -17,7 +17,7 @@ Page({
       kind: options.kind === "resume" ? "resume" : "job",
     });
     wx.setNavigationBarTitle({
-      title: this.data.kind === "resume" ? "投递简历" : "岗位内容",
+      title: this.data.kind === "resume" ? "查看关联简历" : "岗位内容",
     });
     return this.load();
   },
@@ -44,21 +44,9 @@ Page({
     this.setData({ loading: true, error: "" });
     try {
       const { application } = await api.getApplication(this.data.applicationId);
-      const job = application.job_snapshot || {};
       this.setData({
         app: application,
-        fields: [
-          { label: "工作地点", value: job.location },
-          { label: "薪资", value: job.salary_text },
-          { label: "岗位描述", value: job.description },
-          { label: "岗位要求", value: job.requirements },
-          {
-            label: "技能要求",
-            value: Array.isArray(job.skills)
-              ? job.skills.join("、")
-              : job.skills,
-          },
-        ].filter((item) => typeof item.value === "string" && item.value.trim()),
+        job: detail.jobContent(application),
       });
       if (this.data.kind === "resume") {
         const previewPath = await api.downloadApplicationResume(application.id);

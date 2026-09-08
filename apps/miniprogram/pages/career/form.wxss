@@ -1,16 +1,176 @@
 @import "./shared.wxss";
-.form-summary .heading { font-size:14px;font-weight:400; }
-.stage-types { display:flex;flex-wrap:wrap;gap:6px; }
-.career-page .stage-type { width:calc((100% - 12px)/3);min-height:51px;padding:7px;font-size:12px;line-height:17px;background:#f9fafb;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:1px solid transparent;border-radius:8px; }
-.career-page .stage-type.chosen { background:#edf1f5;border-color:#dbe0e8; }
-.stage-choice { margin-top:8px; }.stage-choice .hint { margin-top:8px; }
-.partial { font-size:13px;line-height:1.5;background:#fff6e8;color:#9a5b13;padding:12px;margin-bottom:12px;border-radius:8px; }
-.options-toggle { justify-content:space-between; }.editor-actions { display:flex;flex-direction:column;gap:10px; }
-.large-editor { height:300px;min-height:300px;margin:0; }
-.editor-page .form-summary .heading { font-size:18px;font-weight:700; }.editor-page .form-summary .hint { font-size:14px;color:#3f4752; }
-.form-page .time-trigger { background:#f9fafb;min-height:44px;border-radius:10px;display:flex;align-items:center;justify-content:space-between;padding:12px;text-align:left;font-weight:400; }
-.time-action { font-size:12px;color:#145ed6; }
-.salary-row { display:flex;align-items:center;gap:8px;background:#f9fafb;border-radius:10px;padding:0 12px;min-height:44px; }.salary-row .native-field { flex:1;width:0;padding:0; }.salary-row picker { flex-shrink:0; }.salary-row .picker-value { padding:0;font-size:12px; }
+.form-summary .heading {
+  font-size: 14px;
+  font-weight: 400;
+}
+.stage-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.career-page .stage-type {
+  width: calc((100% - 12px) / 3);
+  min-height: 51px;
+  padding: 7px;
+  font-size: 12px;
+  line-height: 17px;
+  background: #f9fafb;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+.career-page .stage-type.chosen {
+  background: #edf1f5;
+  border-color: #dbe0e8;
+}
+.stage-choice {
+  margin-top: 8px;
+}
+.stage-choice .hint {
+  margin-top: 8px;
+}
+.partial {
+  font-size: 13px;
+  line-height: 1.5;
+  background: #fff6e8;
+  color: #9a5b13;
+  padding: 12px;
+  margin-bottom: 12px;
+  border-radius: 8px;
+}
+.options-toggle {
+  justify-content: space-between;
+}
+.editor-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.large-editor {
+  height: 300px;
+  min-height: 300px;
+  margin: 0;
+}
+.editor-page .form-summary .heading {
+  font-size: 18px;
+  font-weight: 700;
+}
+.editor-page .form-summary .hint {
+  font-size: 14px;
+  color: #3f4752;
+}
+.form-page .time-trigger {
+  background: #f9fafb;
+  min-height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  text-align: left;
+  font-weight: 400;
+}
+.time-action {
+  font-size: 12px;
+  color: #145ed6;
+}
+.salary-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f9fafb;
+  border-radius: 10px;
+  padding: 0 12px;
+  min-height: 44px;
+}
+.salary-row .native-field {
+  flex: 1;
+  width: 0;
+  padding: 0;
+}
+.salary-row picker {
+  flex-shrink: 0;
+}
+.salary-row .picker-value {
+  padding: 0;
+  font-size: 12px;
+}
 
-.editor-actions { margin-top:18px; }
-.form-page .benefits-editor { min-height:44px; }
+.editor-actions {
+  margin-top: 18px;
+}
+.form-page .benefits-editor {
+  min-height: 44px;
+}
+
+.record-editor {
+  background: #fff;
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 12px 20px calc(108px + env(safe-area-inset-bottom));
+}
+.editor-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  background: #f9fafb;
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+.editor-identity .heading {
+  font-size: 20px;
+  line-height: 28px;
+}
+.editor-identity .subtitle {
+  font-size: 14px;
+  line-height: 20px;
+}
+.editor-identity .hint { font-size: 13px; line-height: 18px; }
+.record-editor .editor-fields {
+  padding: 0;
+  margin-bottom: 16px;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.editor-label {
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+}
+.record-editor .record-input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 84px;
+  min-height: 0;
+  background: #f9fafb;
+  border: 0;
+  border-radius: 10px;
+  padding: 12px;
+  margin: 0;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  color: #3f4752;
+}
+.record-editor .questions {
+  height: 180px;
+}
+.record-editor > .hint { line-height: 18px; }
+.record-editor .dock { padding: 16px 20px max(36px, env(safe-area-inset-bottom)); }
+.record-editor .dock .primary { height: 44px; font-size: 15px; }
+.record-editor .preparation-input {
+  height: 350px;
+}

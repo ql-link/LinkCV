@@ -1,3 +1,4 @@
+<brand-navigation title="添加安排" back fallback="/pages/career/index" />
 <view class="career-page"
   ><text class="title">为哪条求职记录添加安排？</text
   ><text class="hint">选择待安排的求职阶段；已有安排请进入场次详情修改。</text

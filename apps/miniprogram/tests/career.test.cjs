@@ -53,7 +53,7 @@ test("completed, pending, offer and terminated applications have distinct feedba
   assert.equal(
     c.applicationView({ ...app, current_session_status: "completed" })
       .statusLabel,
-    "已完成",
+    "本阶段已结束",
   );
   assert.equal(c.applicationView(app).canSchedule, true);
   assert.equal(
@@ -222,7 +222,7 @@ test("saving interview notes updates only notes and uses session optimistic lock
           start_at: "2026-09-10T14:00:00+08:00",
           end_at: "2026-09-10T15:00:00+08:00",
           mode: "video",
-          questions_markdown: "原记录",
+          questions_markdown: "原记录", review_summary:"原复盘", improvement_markdown:"原计划",
         },
       }),
       updateSession: async (id, payload) => {
@@ -238,7 +238,7 @@ test("saving interview notes updates only notes and uses session optimistic lock
   assert.deepEqual(writes, [
     {
       id: "5",
-      payload: { base_lock_version: 12, questions_markdown: "新记录" },
+      payload: { base_lock_version: 12, questions_markdown: "新记录", review_summary:"原复盘", improvement_markdown:"原计划" },
     },
   ]);
 });

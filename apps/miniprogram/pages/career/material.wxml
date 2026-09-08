@@ -1,29 +1,69 @@
-<view class="career-page"
-  ><view class="state hint" wx:if="{{loading}}"
-    >{{kind === 'resume' ? '正在准备投递时的简历版本…' : '正在加载岗位内容…'}}</view
-  ><view class="panel state" wx:elif="{{error}}"
-    ><text class="hint">{{error}}</text
-    ><button class="primary" bindtap="load">重新加载</button></view
-  ><block wx:elif="{{app}}"
-    ><view wx:if="{{kind === 'job'}}" class="panel"
-      ><view class="section"
-        ><text class="title">{{app.company_name_snapshot}}</text
-        ><text class="subtitle">{{app.job_title_snapshot}}</text
-        ><text class="hint">此处展示这次求职记录保存的岗位内容。</text></view
-      ><view class="section" wx:for="{{fields}}" wx:key="label"
-        ><text class="heading">{{item.label}}</text
-        ><text class="preserve" user-select>{{item.value}}</text></view
-      ><text class="empty" wx:if="{{!fields.length}}"
-        >暂无更多岗位内容。</text
-      ></view
+<brand-navigation title="{{kind === 'resume' ? '查看关联简历' : '岗位内容'}}" back fallback="/pages/career/index" />
+<view class="career-page material-page {{kind === 'job' ? 'with-tabs' : ''}}">
+  <view wx:if="{{loading}}" class="state hint">正在加载…</view
+  ><view wx:elif="{{error}}" class="error"
+    >{{error}}<button class="primary" bindtap="load">重新加载</button></view
+  >
+  <block wx:elif="{{app}}"
+    ><block wx:if="{{kind === 'job'}}">
+      <view class="panel job-hero"
+        ><text class="subtitle">{{app.company_name_snapshot}}</text
+        ><text class="title">{{app.job_title_snapshot}}</text
+        ><text class="salary" wx:if="{{job.salary}}">{{job.salary}}</text
+        ><text class="subtitle"
+          >{{job.city}}{{job.city ? ' · ' : ''}}{{job.employment}}</text
+        ><text class="hint">本次求职保存的岗位内容 · 仅供查看</text></view
+      >
+      <view class="panel" wx:if="{{job.description}}"
+        ><text class="heading">职位描述</text
+        ><text class="body-copy" user-select>{{job.description}}</text></view
+      >
+      <view class="panel" wx:if="{{job.skills.length}}"
+        ><text class="heading">核心技能</text
+        ><view class="skills"
+          ><text wx:for="{{job.skills}}" wx:key="*this"
+            >{{item}}{{index < job.skills.length - 1 ? ' · ' : ''}}</text
+          ></view
+        ></view
+      >
+      <view class="panel" wx:if="{{job.requirements.length}}"
+        ><text class="heading">岗位要求</text
+        ><view class="fact" wx:for="{{job.requirements}}" wx:key="label"
+          ><text class="fact-label">{{item.label}}</text
+          ><text class="fact-value" user-select>{{item.value}}</text></view
+        ></view
+      >
+      <view
+        class="panel"
+        wx:if="{{job.company.length || job.companyDescription}}"
+        ><text class="heading">公司与招聘者</text
+        ><view class="fact" wx:for="{{job.company}}" wx:key="label"
+          ><text class="fact-label">{{item.label}}</text
+          ><text class="fact-value" user-select>{{item.value}}</text></view
+        ><block wx:if="{{job.companyDescription}}"
+          ><text class="hint">公司简介</text
+          ><text class="body-copy" user-select
+            >{{job.companyDescription}}</text
+          ></block
+        ></view
+      >
+      <view class="panel" wx:if="{{job.source.length || job.sourceUrl}}"
+        ><text class="heading">来源信息</text
+        ><view class="fact" wx:for="{{job.source}}" wx:key="label"
+          ><text class="fact-label">{{item.label}}</text
+          ><text class="fact-value">{{item.value}}</text></view
+        ><block wx:if="{{job.sourceUrl}}"
+          ><text class="hint">来源链接</text
+          ><text class="body-copy" user-select>{{job.sourceUrl}}</text></block
+        ></view
+      > </block
     ><block wx:else
-      ><text class="heading">{{app.resume_title_snapshot || '投递简历'}}</text
-      ><text class="hint"
-        >此处展示投递时保存的简历版本。点击图片可放大查看。</text
+      ><text class="heading">{{app.resume_title_snapshot || '关联简历'}}</text
+      ><text class="hint">本次求职关联的简历版本，点击图片可放大查看。</text
       ><image
         class="resume-preview"
         src="{{previewPath}}"
         mode="widthFix"
         bindtap="preview"
-        binderror="imageError" /></block></block
-></view>
+        binderror="imageError" /></block></block></view
+><career-tabs wx:if="{{kind === 'job'}}" selected="{{1}}" />

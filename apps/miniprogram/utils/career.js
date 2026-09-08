@@ -24,12 +24,23 @@ function dateParts(value = new Date()) {
 function dayLabel(value) {
   const date = dateParts(value).date;
   if (!date) return "";
-  const weekday = ["日", "一", "二", "三", "四", "五", "六"][new Date(date + "T00:00:00Z").getUTCDay()];
-  return Number(date.slice(5, 7)) + "月" + Number(date.slice(8, 10)) + "日 · 周" + weekday;
+  const weekday = ["日", "一", "二", "三", "四", "五", "六"][
+    new Date(date + "T00:00:00Z").getUTCDay()
+  ];
+  return (
+    Number(date.slice(5, 7)) +
+    "月" +
+    Number(date.slice(8, 10)) +
+    "日 · 周" +
+    weekday
+  );
 }
 function shortDate(value) {
+  if (!value) return "";
   const p = dateParts(value);
-  return p.date ? Number(p.date.slice(5, 7)) + "月" + Number(p.date.slice(8, 10)) + "日" : "";
+  return p.date
+    ? Number(p.date.slice(5, 7)) + "月" + Number(p.date.slice(8, 10)) + "日"
+    : "";
 }
 function iso(date, time) {
   return date && time ? `${date}T${time}:00+08:00` : null;
@@ -47,21 +58,47 @@ function range(session) {
 function sessionView(session) {
   const status =
     session.status === "completed"
-      ? { label: "已完成", tone: "success", icon: "check" }
+      ? { label: "面试已结束", tone: "success", icon: "check" }
       : session.status === "cancelled"
         ? { label: "已取消", tone: "neutral", icon: "cancel" }
         : new Date(session.end_at).getTime() <= Date.now()
           ? { label: "等待结果", tone: "warning", icon: "clock" }
-          : { label: "待进行", tone: "accent", icon: "clock" };
+          : {
+              label: (session.stage_label || "").includes("测评")
+                ? "待测评"
+                : (session.stage_label || "").includes("笔试")
+                  ? "待笔试"
+                  : "待面试",
+              tone: "accent",
+              icon: "clock",
+            };
   return {
     ...session,
     statusLabel: status.label,
     tone: status.tone,
     icon: status.icon,
     timeLabel: range(session),
-    shortTimeLabel: shortDate(session.start_at) + " " + dateParts(session.start_at).time + "–" + (dateParts(session.start_at).date === dateParts(session.end_at).date ? "" : shortDate(session.end_at) + " ") + dateParts(session.end_at).time,
-    stageIcon: session.stage_type === "interview" || session.stage_type === "hr" ? "interview" : (session.stage_label || "").includes("测评") ? "assessment" : (session.stage_label || "").includes("AI") ? "ai_interview" : "written_test",
-    shortModeLabel: {video:"视频",onsite:"现场",phone:"电话",other:"在线"}[session.mode] || "在线",
+    shortTimeLabel:
+      shortDate(session.start_at) +
+      " " +
+      dateParts(session.start_at).time +
+      "–" +
+      (dateParts(session.start_at).date === dateParts(session.end_at).date
+        ? ""
+        : shortDate(session.end_at) + " ") +
+      dateParts(session.end_at).time,
+    stageIcon:
+      session.stage_type === "interview" || session.stage_type === "hr"
+        ? "interview"
+        : (session.stage_label || "").includes("测评")
+          ? "assessment"
+          : (session.stage_label || "").includes("AI")
+            ? "ai_interview"
+            : "written_test",
+    shortModeLabel:
+      { video: "视频", onsite: "现场", phone: "电话", other: "在线" }[
+        session.mode
+      ] || "在线",
     modeLabel: (modes.find((m) => m.value === session.mode) || modes[3]).label,
   };
 }
@@ -92,7 +129,7 @@ function applicationView(app, sessions = []) {
       kind === "screening"
         ? { label: "筛选中", tone: "neutral", icon: "screening" }
         : completed && !scheduled
-          ? { label: "已完成", tone: "success", icon: "check" }
+          ? { label: "本阶段已结束", tone: "success", icon: "check" }
           : scheduled
             ? {
                 label: sessionView(scheduled).statusLabel,
@@ -102,7 +139,16 @@ function applicationView(app, sessions = []) {
             : app.stage_state === "awaiting_result"
               ? { label: "等待结果", tone: "warning", icon: "clock" }
               : app.stage_state === "scheduled"
-                ? { label: "待进行", tone: "accent", icon: "clock" }
+                ? {
+                    label:
+                      kind === "assessment"
+                        ? "待测评"
+                        : kind === "written_test"
+                          ? "待笔试"
+                          : "待面试",
+                    tone: "accent",
+                    icon: "clock",
+                  }
                 : { label: "待安排", tone: "accent", icon: "clock" };
   }
   return {
@@ -270,11 +316,42 @@ const confirm = (title, content, confirmText = "确定") =>
       fail: () => resolve(false),
     }),
   );
+// Keep the overlay mounted until the downward exit animation finishes.
+function reset(component) {
+  clearTimeout(component._closeTimer);
+  component._closeTimer = null;
+  component._closing = false;
+  component._disposed = false;
+  component.setData({ closing: false, sheetExitStyle: "", maskExitStyle: "" });
+}
+
+function dismiss(component, detail) {
+  if (component._closing || component._disposed) return;
+  component._closing = true;
+  component.setData({
+    closing: true,
+    sheetExitStyle: "transform:translateY(100%);transition:transform 240ms ease-in;pointer-events:none;",
+    maskExitStyle: "opacity:0;transition:opacity 240ms ease-in;",
+  });
+  component._closeTimer = setTimeout(() => {
+    component._closeTimer = null;
+    if (!component._disposed) component.triggerEvent("close", detail);
+  }, 240);
+}
+
+function dispose(component) {
+  component._disposed = true;
+  clearTimeout(component._closeTimer);
+}
+
+
 module.exports = {
+  sheetMotion: { reset, dismiss, dispose },
   TZ,
   stageNames,
   modes,
   dateParts,
+  shortDate,
   dayLabel,
   iso,
   shiftDate,

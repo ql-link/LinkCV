@@ -1,0 +1,39 @@
+@import "../schedule-sheet/index.wxss";
+/* Figma 197:169 — shared 684px sheet, 20px gutter. */
+.detail-stack { display:flex; flex-direction:column; gap:20px; min-height:100%; box-sizing:border-box; }
+.detail-stack > view, .detail-stack > button { flex-shrink:0; }
+.identity { display:flex; flex-direction:column; gap:12px; padding:16px; background:#f9fafb; border-radius:12px; }
+.identity-heading, .time-row, .meeting-row, .meeting-mode { display:flex; align-items:center; gap:10px; min-width:0; }
+.session-title { flex:1; min-width:0; font-size:20px; line-height:28px; font-weight:700; color:#17191c; overflow-wrap:anywhere; }
+.session-status { display:flex; align-items:center; gap:4px; flex-shrink:0; padding:4px 8px; border-radius:6px; font-size:12px; line-height:18px; }
+.session-status.tone-accent { background:#e9f1fd; color:#145ed6; }
+.session-status.tone-success { background:#eaf7f0; color:#267a4d; }
+.session-status.tone-warning { background:#fff6e8; color:#9a5b13; }
+.session-status.tone-neutral { background:#edf1f5; color:#6f7a8c; }
+.company-role { font-size:14px; line-height:20px; color:#3f4752; overflow-wrap:anywhere; }
+.time-row, .meeting-mode { gap:8px; }
+.detail-icon { display:block; width:16px; height:16px; flex-shrink:0; }
+.session-date { flex-shrink:0; font-size:14px; line-height:21px; color:#3f4752; }
+.session-time { flex:1; min-width:0; text-align:right; font-size:20px; line-height:26px; color:#17191c; }
+.session-time.cross-day { font-size:16px; line-height:24px; }
+.meeting-mode { flex:1; font-size:14px; line-height:20px; color:#3f4752; }
+.muted { font-size:12px; line-height:18px; color:#6f7a8c; }
+.meeting-address { overflow-wrap:anywhere; word-break:break-all; }
+.location-text { flex:1; min-width:0; }
+.sheet-overlay .copy-link { background:transparent; padding:0; font-size:13px; line-height:20px; color:#145ed6; border-radius:0; }
+.sheet-overlay .record-entry { display:flex; align-items:center; gap:12px; width:100%; height:64px; padding:0 16px; background:#f9fafb; border-radius:10px; text-align:left; }
+.record-title { flex:1; min-width:0; font-size:17px; line-height:25px; font-weight:700; color:#17191c; }
+.record-action { font-size:13px; line-height:19px; color:#145ed6; }
+.manage { display:flex; gap:12px; margin-top:auto; }
+.sheet-overlay .manage-button { flex:1; width:0; min-height:36px; display:flex; align-items:center; justify-content:center; background:transparent; color:#3f4752; border-radius:10px; }
+.sheet-overlay .danger { color:#c43b3b; }
+.sheet-overlay .sheet-header .close-button { display:flex; align-items:center; justify-content:center; width:32px; height:31px; }
+.close-icon { display:block; width:20px; height:20px; }
+.sheet-footer .save-button { display:flex; align-items:center; justify-content:center; height:42px; width:100%; background:#17191c; color:#fff; border-radius:10px; font-size:14px; font-weight:700; }
+.record-form { display:flex;flex-direction:column;gap:16px; }
+.record-field { display:flex;flex-direction:column;gap:8px; }
+.record-label { font-size:16px;line-height:22px;font-weight:700; }
+.record-input { display:block;box-sizing:border-box;width:100%;height:84px;min-height:0;padding:12px;border:0;border-radius:10px;background:#f9fafb;font-family:inherit;font-size:14px;line-height:22px;color:#3f4752; }
+.record-input.questions { height:180px; }
+.sheet-overlay .record-footer .cancel-record { width:76px;background:#f9fafb;color:#3f4752; }
+.sheet-overlay .record-footer .save-button { flex:1;width:0; }

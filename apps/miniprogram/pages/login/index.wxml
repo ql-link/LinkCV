@@ -1,15 +1,7 @@
-<view class="page" style="padding-top: calc({{statusBarHeight}}px + 12rpx)">
-  <view class="topbar">
-    <view class="close-button" hover-class="close-button-pressed" bindtap="handleDismiss" wx:if="{{!submitting}}" role="button" aria-label="暂不登录，返回简历">
-      <icon type="cancel" size="22" color="#17191c"></icon>
-    </view>
-  </view>
-
+<brand-navigation />
+<view class="page" style="min-height:calc(100vh - {{statusBarHeight + 50}}px)">
   <view class="content">
     <view class="identity">
-      <view class="brand-card">
-        <image class="brand-mark" src="/assets/linkresume-wordmark.png" mode="aspectFit" aria-label="LinkResume"></image>
-      </view>
       <text class="title">开启你的创意简历</text>
       <text class="subtitle">{{message}}</text>
       <view class="inline-status" wx:if="{{loading || submitting}}"><view class="spinner"></view></view>

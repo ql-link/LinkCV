@@ -1,6 +1,9 @@
 {
   "navigationBarTitleText": "求职详情",
   "usingComponents": {
-    "career-icon": "/components/career-icon/index"
-  }
+    "career-icon": "/components/career-icon/index",
+    "career-tabs": "/custom-tab-bar/index",
+    "session-sheet": "/components/session-sheet/index"
+  },
+  "navigationStyle": "custom"
 }

@@ -32,7 +32,13 @@ module.exports = function createCareerEditor() {
       modes: c.modes,
       currencies: ["CNY", "USD", "HKD", "EUR"],
       periods: ["每月", "每年", "每天", "每小时"],
-      reasons: ["公司未通过", "主动放弃", "放弃 Offer", "求职已结束", "其他原因"],
+      reasons: [
+        "公司未通过",
+        "主动放弃",
+        "放弃 Offer",
+        "求职已结束",
+        "其他原因",
+      ],
       buttonLabel: "保存阶段",
     },
     onLoad(options) {
@@ -44,12 +50,12 @@ module.exports = function createCareerEditor() {
       this._stageRequest = c.uuid();
       this._sessionRequest = c.uuid();
       this._terminateRequest = c.uuid();
-      wx.setNavigationBarTitle({
-        title:
+      const navigationTitle =
           options.sessionId && options.mode === "schedule"
             ? "修改安排"
-            : titles[this.data.mode],
-      });
+            : titles[this.data.mode];
+      this.setData({ navigationTitle });
+      wx.setNavigationBarTitle({ title: navigationTitle });
       return this.load();
     },
     async load() {
@@ -93,6 +99,8 @@ module.exports = function createCareerEditor() {
             interviewer: session.interviewer_name || "",
             preparation: session.preparation_note || "",
             record: session.questions_markdown || "",
+            review: session.review_summary || "",
+            improvement: session.improvement_markdown || "",
           });
         }
         if (this.data.mode === "offer")
@@ -117,7 +125,9 @@ module.exports = function createCareerEditor() {
           }));
         this.setData({ app, session: session || null, form, types });
         if (app.phase === "pending" && this.data.mode === "stage") {
-          wx.setNavigationBarTitle({ title: "记录投递信息" });
+          this.setData({ navigationTitle: "记录投递信息" });
+          if (!this.triggerEvent)
+            wx.setNavigationBarTitle({ title: "记录投递信息" });
           try {
             const resumes = await resumeApi.listResumes();
             this.setData({
@@ -189,10 +199,14 @@ module.exports = function createCareerEditor() {
         fail: () => wx.switchTab({ url: "/pages/career/index" }),
       });
     },
-    toggleOptions() { this.setData({optionsExpanded: !this.data.optionsExpanded}); },
+    toggleOptions() {
+      this.setData({ optionsExpanded: !this.data.optionsExpanded });
+    },
     cancelEdit() {
       if (this.data.saving) return;
-      wx.navigateBack({fail: () => wx.switchTab({url: "/pages/career/index"})});
+      wx.navigateBack({
+        fail: () => wx.switchTab({ url: "/pages/career/index" }),
+      });
     },
     clearTimes() {
       if (!this.data.saving)
@@ -200,7 +214,9 @@ module.exports = function createCareerEditor() {
           form: {
             ...this.data.form,
             startDate:
-              this.data.form.stageType === "assessment" ? c.dateParts().date : "",
+              this.data.form.stageType === "assessment"
+                ? c.dateParts().date
+                : "",
             startTime: this.data.form.stageType === "assessment" ? "09:00" : "",
             endDate: "",
             endTime: "",
@@ -236,7 +252,8 @@ module.exports = function createCareerEditor() {
         if (this.data.requireSchedule) f.timeRange(form, true);
         if (mode === "stage") {
           f.stagePayload(app, form, this._stageRequest, this.data.resumes);
-          if (!["offer", "screening"].includes(form.stageType)) f.timeRange(form);
+          if (!["offer", "screening"].includes(form.stageType))
+            f.timeRange(form);
           if (form.stageType === "offer") f.offerPayload(app, form);
         }
         if (mode === "schedule") f.timeRange(form, true);
@@ -332,8 +349,13 @@ module.exports = function createCareerEditor() {
         } else if (mode === "record" || mode === "prepare") {
           await api.updateSession(session.id, {
             base_lock_version: session.lock_version,
-            [mode === "record" ? "questions_markdown" : "preparation_note"]:
-              (mode === "record" ? form.record : form.preparation).trim() || null,
+            ...(mode === "record"
+              ? {
+                  questions_markdown: form.record.trim() || null,
+                  review_summary: (form.review || "").trim() || null,
+                  improvement_markdown: (form.improvement || "").trim() || null,
+                }
+              : { preparation_note: form.preparation.trim() || null }),
           });
         } else if (mode === "terminate") {
           await api.terminateApplication(app.id, {
@@ -375,7 +397,9 @@ module.exports = function createCareerEditor() {
       }
     },
     onSaved() {
-      wx.navigateBack({ fail: () => wx.switchTab({ url: "/pages/career/index" }) });
+      wx.navigateBack({
+        fail: () => wx.switchTab({ url: "/pages/career/index" }),
+      });
     },
     async createWithConflict(id, payload) {
       try {

@@ -1,3 +1,5 @@
+<brand-navigation title="简历预览" back />
+<view class="preview-shell" style="--navigation-height:{{navigationHeight}}px">
 <view class="preview-state" wx:if="{{loading}}">
   <view class="spinner"></view>
   <text class="state-title">{{progress > 0 ? '正在下载简历 ' + progress + '%' : '正在准备简历…'}}</text>
@@ -103,4 +105,6 @@
   </movable-area>
 
   <text class="preview-footnote">只读查阅 · 编辑请前往 LinkResume 网页端</text>
+</view>
+
 </view>

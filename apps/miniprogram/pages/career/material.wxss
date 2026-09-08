@@ -1,6 +1,65 @@
 @import "./shared.wxss";
+.with-tabs {
+  padding-bottom: calc(78px + env(safe-area-inset-bottom));
+}
+.material-page .panel {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.material-page .title {
+  font-size: 22px;
+  line-height: 30px;
+}
+.material-page .heading {
+  font-size: 17px;
+  line-height: 25px;
+}
+.material-page .subtitle {
+  font-size: 13px;
+  line-height: 21px;
+}
+.salary {
+  font-size: 18px;
+  font-weight: 700;
+  color: #145ed6;
+  line-height: 24px;
+}
+.body-copy {
+  font-size: 13px;
+  line-height: 21px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #3f4752;
+}
+.skills {
+  font-size: 13px;
+  line-height: 21px;
+  color: #145ed6;
+}
+.fact {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  font-size: 13px;
+  line-height: 21px;
+}
+.fact-label {
+  width: 80px;
+  flex-shrink: 0;
+  color: #6f7a8c;
+}
+.fact-value {
+  flex: 1;
+  min-width: 0;
+  color: #3f4752;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .resume-preview {
+  display: block;
   width: 100%;
-  margin-top: 24rpx;
-  background: white;
+  margin-top: 16px;
 }
