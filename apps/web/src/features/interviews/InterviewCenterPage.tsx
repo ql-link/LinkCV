@@ -757,7 +757,7 @@ export function InterviewCenterPage({
   };
 
   return (
-    <>
+    <div className={`career-workspace-frame${isStandaloneDetailRoute ? " is-standalone-detail" : ""}`}>
       {!isStandaloneDetailRoute && (
         <WorkspacePageHero
           className={`career-module-header${view === "applications" ? " career-applications-header" : ""}`}
@@ -805,7 +805,7 @@ export function InterviewCenterPage({
           )}
         />
       )}
-      <main className={`dashboard-content interview-center-content${isStandaloneDetailRoute ? " career-standalone-detail-content" : ""}${!isStandaloneDetailRoute && view === "applications" && applicationDisplayMode === "board" ? " career-applications-board-content" : ""}`}>
+      <main className={`dashboard-content interview-center-content${isStandaloneDetailRoute ? " career-standalone-detail-content" : ""}${!isStandaloneDetailRoute && view === "applications" && applicationDisplayMode === "board" ? " career-applications-board-content" : ""}${!isStandaloneDetailRoute && view === "schedule" ? " career-schedule-content" : ""}`}>
       {notice && (
         <FeedbackNotice className="interview-error-notice" kind="error" placement="floating">
           {notice}
@@ -988,7 +988,7 @@ export function InterviewCenterPage({
         <PluginInstallDialog onClose={() => setShowPluginInstall(false)} />
       )}
       </main>
-    </>
+    </div>
   );
 }
 
@@ -1287,6 +1287,7 @@ function ApplicationsView({
           application={draggedNextStage.application}
           timezone={timezone}
           initialTab={draggedNextStage.prefill.initialTab}
+          initialStage={draggedNextStage.prefill.initialStage}
           initialInterviewLabel={draggedNextStage.prefill.initialInterviewLabel}
           lockStageSelection={draggedNextStage.targetColumnId != null}
           onClose={() => setDraggedNextStage(null)}

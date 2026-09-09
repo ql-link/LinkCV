@@ -8,6 +8,7 @@ export type ApplicationProgressColumnKey =
   | "pending"
   | "screening"
   | "assessment"
+  | "written_test"
   | "interview"
   | "offer"
   | "ended";
@@ -99,7 +100,8 @@ export const APPLICATION_PROGRESS_COLUMNS: Array<{
 }> = [
   { key: "pending", label: "待投递" },
   { key: "screening", label: "筛选中" },
-  { key: "assessment", label: "笔试 / 测评" },
+  { key: "assessment", label: "测评" },
+  { key: "written_test", label: "笔试" },
   { key: "interview", label: "面试中" },
   { key: "offer", label: "Offer" },
   { key: "ended", label: "已结束" },
@@ -241,9 +243,11 @@ export function projectApplicationProgress(
 
   const columnKey: ApplicationProgressColumnKey = stableStageType === "screening"
     ? "screening"
-    : isAssessment
+    : stableStageType === "assessment"
       ? "assessment"
-      : "interview";
+      : stableStageType === "written_test"
+        ? "written_test"
+        : "interview";
   const statusLabel = application.stage_state === "awaiting_schedule"
     ? "等待安排"
     : application.stage_state === "awaiting_result"
@@ -264,7 +268,9 @@ export function projectApplicationProgress(
 function scheduledProgressColumn(
   projection: ApplicationProgressProjection,
 ): boolean {
-  return projection.columnKey === "assessment" || projection.columnKey === "interview";
+  return projection.columnKey === "assessment"
+    || projection.columnKey === "written_test"
+    || projection.columnKey === "interview";
 }
 
 function validTimestamp(value: string | null | undefined): number | null {

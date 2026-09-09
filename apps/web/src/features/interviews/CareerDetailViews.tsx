@@ -2053,7 +2053,9 @@ export function ApplicationDetailView({
   ));
   const progress = projectApplicationProgress(application);
   const currentStageCompleted = currentSession?.status === "completed"
-    && (progress.columnKey === "assessment" || progress.columnKey === "interview");
+    && (progress.columnKey === "assessment"
+      || progress.columnKey === "written_test"
+      || progress.columnKey === "interview");
   const isSubmittedScreening = progress.columnKey === "screening"
     && application.current_stage_type === "screening"
     && Boolean(application.applied_at);
@@ -2067,7 +2069,9 @@ export function ApplicationDetailView({
   const canSchedule = active && application.stage_state === "awaiting_schedule"
     && (currentStableType
       ? ["assessment", "written_test", "ai_interview", "interview"].includes(currentStableType)
-      : progress.columnKey === "assessment" || progress.columnKey === "interview");
+      : progress.columnKey === "assessment"
+        || progress.columnKey === "written_test"
+        || progress.columnKey === "interview");
   const canAdvance = active && currentStableType !== "offer";
   const canUpdateOffer = active
     && application.current_stage_type === "offer"
