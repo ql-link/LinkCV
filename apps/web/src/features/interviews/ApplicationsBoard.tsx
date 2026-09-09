@@ -42,6 +42,8 @@ type BoardProgressColumn = {
   interviewRoundNo: number | null;
 };
 
+export type ApplicationBoardColumnOption = Pick<BoardProgressColumn, "id" | "key" | "label">;
+
 type DropPreview = {
   columnId: string;
 };
@@ -200,6 +202,12 @@ function buildBoardColumns(applications: JobApplicationSummary[]): BoardProgress
       interviewRoundNo: null,
     }];
   });
+}
+
+export function applicationBoardColumnOptions(
+  applications: JobApplicationSummary[],
+): ApplicationBoardColumnOption[] {
+  return buildBoardColumns(applications).map(({ id, key, label }) => ({ id, key, label }));
 }
 
 function chineseNumeralToNumber(value: string): number | null {
@@ -509,6 +517,7 @@ export function formatApplicationListDateTime(value: string): string {
 
 export function ApplicationsBoard({
   visibleApplications,
+  hiddenColumnIds,
   groupByCategory = false,
   completedCurrentStageApplicationIds,
   now,
@@ -522,6 +531,7 @@ export function ApplicationsBoard({
   onRequestCategory,
 }: {
   visibleApplications: JobApplicationSummary[];
+  hiddenColumnIds?: ReadonlySet<string>;
   groupByCategory?: boolean;
   completedCurrentStageApplicationIds: ReadonlySet<string>;
   now?: Date;
@@ -566,6 +576,7 @@ export function ApplicationsBoard({
         <ProgressBoard
           applications={items}
           layoutApplications={visibleApplications}
+          hiddenColumnIds={hiddenColumnIds}
           completedCurrentStageApplicationIds={completedCurrentStageApplicationIds}
           now={now}
           sortMode={sortMode}
@@ -587,6 +598,7 @@ export function ApplicationsBoard({
 export function ProgressBoard({
   applications,
   layoutApplications = applications,
+  hiddenColumnIds,
   completedCurrentStageApplicationIds,
   now,
   sortMode = "recent_schedule",
@@ -601,6 +613,7 @@ export function ProgressBoard({
 }: {
   applications: JobApplicationSummary[];
   layoutApplications?: JobApplicationSummary[];
+  hiddenColumnIds?: ReadonlySet<string>;
   completedCurrentStageApplicationIds: ReadonlySet<string>;
   now?: Date;
   sortMode?: ApplicationSortMode;
@@ -629,7 +642,7 @@ export function ProgressBoard({
   const dismissMenuClickApplicationIdRef = useRef<string | null>(null);
   const columnDragRef = useRef<{ id: string } | null>(null);
   const shouldReduceMotion = useReducedMotion();
-  const columns = useMemo(
+  const allColumns = useMemo(
     () => {
       const memberIds = new Set(applications.map((item) => item.id));
       const boardColumns = buildBoardColumns(sortApplications(layoutApplications, sortMode)).map((column) => ({
@@ -643,6 +656,9 @@ export function ProgressBoard({
     },
     [applications, columnOrder, layoutApplications, sortMode],
   );
+  const columns = hiddenColumnIds?.size
+    ? allColumns.filter((column) => !hiddenColumnIds.has(column.id))
+    : allColumns;
   const calculationNow = now ?? new Date();
 
   useEffect(() => () => {
@@ -762,7 +778,7 @@ export function ProgressBoard({
       clearDrag();
       return;
     }
-    const validation = validateApplicationDrop(application, target, columns, completedCurrentStageApplicationIds);
+    const validation = validateApplicationDrop(application, target, allColumns, completedCurrentStageApplicationIds);
     if (!validation.valid) {
       event.dataTransfer.dropEffect = "move";
       settleBackToSource(application);
@@ -843,7 +859,7 @@ export function ProgressBoard({
             canAcceptDrop={Boolean(draggingApplication && validateApplicationDrop(
               draggingApplication,
               column,
-              columns,
+              allColumns,
               completedCurrentStageApplicationIds,
             ).valid)}
             isInvalidDropTarget={invalidDropTarget === column.id}
@@ -875,7 +891,7 @@ export function ProgressBoard({
               const validation = validateApplicationDrop(
                 draggingApplication,
                 column,
-                columns,
+                allColumns,
                 completedCurrentStageApplicationIds,
               );
               // The board handles rejected drops itself so the browser must still
