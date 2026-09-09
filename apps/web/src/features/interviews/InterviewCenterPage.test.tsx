@@ -623,6 +623,34 @@ describe("InterviewCenterPage API projections", () => {
     expect(inner.parentElement).toHaveStyle({ left: "12px", width: "calc(100% - 12px)" });
   });
 
+  it("shows every written test and interview round scheduled for the same application", async () => {
+    const stages = [
+      { id: "written-test", stage_type: "written_test" as const, round_no: null, stage_label: "笔试" },
+      { id: "first-round", stage_type: "interview" as const, round_no: 1, stage_label: "一面" },
+      { id: "second-round", stage_type: "interview" as const, round_no: 2, stage_label: "二面" },
+      { id: "third-round", stage_type: "interview" as const, round_no: 3, stage_label: "三面" },
+    ];
+    mocks.listInterviewSessions.mockResolvedValue({
+      items: stages.map((stage, index) => {
+        const start = new Date(fixtureSessionStart.getTime() + index * 90 * 60_000);
+        return {
+          ...session,
+          ...stage,
+          start_at: start.toISOString(),
+          end_at: new Date(start.getTime() + 60 * 60_000).toISOString(),
+        };
+      }),
+      next_cursor: null,
+    });
+
+    render(<InterviewCenterPage view="schedule" />);
+
+    for (const stage of stages) {
+      expect(await screen.findByRole("button", { name: new RegExp(`腾讯.*${stage.stage_label}`) })).toBeInTheDocument();
+    }
+    expect(screen.getAllByRole("button", { name: /腾讯.*(?:笔试|一面|二面|三面)/ })).toHaveLength(4);
+  });
+
   it("splits crossing schedules into equal-width columns", async () => {
     const firstStart = new Date(fixtureSessionStart);
     firstStart.setHours(14, 30, 0, 0);
@@ -900,7 +928,7 @@ describe("InterviewCenterPage API projections", () => {
     const searchButton = within(moduleHeader).getByRole("button", { name: "搜索求职进程" });
     expect(searchButton).toBeInTheDocument();
     expect(within(moduleHeader).getByRole("button", { name: "安装采集插件" })).toBeInTheDocument();
-    expect(within(moduleHeader).getByRole("button", { name: "导入岗位" })).toBeInTheDocument();
+    expect(within(moduleHeader).getByRole("button", { name: "导入岗位" })).toHaveClass("ui-button-transparent");
     expect(within(moduleHeader).queryByRole("button", { name: "筛选" })).not.toBeInTheDocument();
     expect(within(moduleHeader).queryByRole("button", { name: "新建求职进程" })).not.toBeInTheDocument();
     const navigation = screen.getByRole("navigation", { name: "求职中心导航" });
