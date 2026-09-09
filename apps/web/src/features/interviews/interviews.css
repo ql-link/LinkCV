@@ -1030,15 +1030,6 @@
   padding: 0 32px;
 }
 
-.career-next-stage-terminate {
-  color: var(--ui-destructive);
-}
-
-.career-next-stage-terminate svg {
-  width: 17px;
-  height: 17px;
-}
-
 .career-next-stage-dialog-footer-actions {
   width: auto;
 }
@@ -2789,6 +2780,10 @@
   gap: var(--ui-space-2);
 }
 
+.career-next-stage-dialog-footer-actions:only-child {
+  margin-left: auto;
+}
+
 @media (max-width: 640px) {
   .career-next-stage-dialog {
     width: calc(100vw - 24px);
@@ -3611,7 +3606,7 @@
   right: 0;
   top: calc(100% + 10px);
   z-index: 40;
-  width: min(300px, calc(100vw - 32px));
+  width: min(320px, calc(100vw - 32px));
   padding: 16px;
   border: 1px solid var(--ui-border);
   border-radius: 14px;
@@ -3673,6 +3668,29 @@
 .career-view-settings-fields { display: grid; gap: 12px; margin-top: 20px; }
 .career-view-settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 13px; color: var(--ui-text-secondary); }
 .career-view-settings-row [data-slot="select-field"] { width: 148px; min-width: 0; height: 34px; border-radius: 8px; background: var(--ui-surface-subtle); }
+.career-view-stage-visibility { min-width: 0; border-bottom: 1px solid var(--ui-border); padding-bottom: 12px; }
+.career-view-stage-visibility > button { display: flex; width: 100%; min-height: 34px; align-items: center; justify-content: space-between; gap: 12px; border: 0; border-radius: var(--ui-radius-sm); background: transparent; padding: 0; color: var(--ui-text-secondary); font: inherit; font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; }
+.career-view-stage-visibility > button:hover { color: var(--ui-foreground); }
+.career-view-stage-visibility > button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 3px; }
+.career-view-stage-visibility > button svg { color: var(--ui-text-muted); transition: transform var(--ui-duration-base) var(--ui-ease-standard); }
+.career-view-stage-visibility.is-open > button svg { transform: rotate(180deg); }
+.career-view-stage-options { display: grid; margin-top: 8px; overflow: hidden; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-lg); background: var(--ui-surface-subtle); }
+.career-view-stage-options label { position: relative; display: grid; min-width: 0; min-height: 42px; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 0 12px; color: var(--ui-foreground); font-size: 13px; cursor: pointer; }
+.career-view-stage-options label + label { border-top: 1px solid var(--ui-border); }
+.career-view-stage-options label:hover { background: var(--ui-surface); }
+.career-view-stage-icon { display: grid; width: 24px; height: 24px; place-items: center; color: var(--ui-text-muted); }
+.career-view-stage-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.career-view-stage-options input { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+.career-view-stage-switch { position: relative; width: 34px; height: 20px; box-sizing: border-box; border-radius: var(--ui-radius-full); background: var(--ui-border-strong); transition: background var(--ui-duration-base) var(--ui-ease-standard); }
+.career-view-stage-switch::after { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--ui-surface); box-shadow: var(--ui-shadow-xs); content: ""; transition: transform var(--ui-duration-base) var(--ui-ease-standard); }
+.career-view-stage-options input:checked + .career-view-stage-switch { background: var(--ui-accent); }
+.career-view-stage-options input:checked + .career-view-stage-switch::after { transform: translateX(14px); }
+.career-view-stage-options label:has(input:focus-visible) { outline: 2px solid var(--ui-ring); outline-offset: -2px; }
+@media (prefers-reduced-motion: reduce) {
+  .career-view-stage-visibility > button svg,
+  .career-view-stage-switch,
+  .career-view-stage-switch::after { transition: none; }
+}
 .career-category-board { overflow: auto; height: 100%; min-width: 0; }
 .career-category-board-content { width: max-content; min-width: 100%; }
 .career-category-heading { margin: 0; padding: 14px 8px; color: var(--ui-foreground); font-size: 14px; font-weight: 600; }

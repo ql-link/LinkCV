@@ -25,6 +25,7 @@ import {
   CircleAlert,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   CircleCheck,
   Clock3,
   Download,
@@ -90,6 +91,7 @@ import { JobSmartImportDialog } from "../jobs/JobSmartImportDialog";
 import { PluginInstallDialog } from "../jobs/PluginInstallDialog";
 import {
   ApplicationsBoard,
+  applicationBoardColumnOptions,
   formatApplicationListDateTime,
   formatApplicationUpdatedAt,
   interviewRoundLabel,
@@ -501,6 +503,7 @@ export function InterviewCenterPage({
   const [query, setQuery] = useState("");
   const [applicationDisplayMode, setApplicationDisplayMode] = useState<"board" | "list">("board");
   const [groupByCategory, setGroupByCategory] = useState(false);
+  const [hiddenApplicationBoardColumnIds, setHiddenApplicationBoardColumnIds] = useState<Set<string>>(() => new Set());
   const [applicationSortMode, setApplicationSortMode] = useState<ApplicationSortMode>("recent_schedule");
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -793,12 +796,22 @@ export function InterviewCenterPage({
               )}
               {view === "applications" && (
                 <ApplicationViewControls
+                  applications={applications}
                   displayMode={applicationDisplayMode}
+                  hiddenColumnIds={hiddenApplicationBoardColumnIds}
                   sortMode={applicationSortMode}
                   groupByCategory={groupByCategory}
                   onGroupingChange={setGroupByCategory}
                   onDisplayModeChange={setApplicationDisplayMode}
                   onSortChange={setApplicationSortMode}
+                  onColumnVisibilityChange={(columnId, visible) => {
+                    setHiddenApplicationBoardColumnIds((current) => {
+                      const next = new Set(current);
+                      if (visible) next.delete(columnId);
+                      else next.add(columnId);
+                      return next;
+                    });
+                  }}
                 />
               )}
             </>
@@ -869,6 +882,7 @@ export function InterviewCenterPage({
           sessions={sessions}
           query={query}
           displayMode={applicationDisplayMode}
+          hiddenColumnIds={hiddenApplicationBoardColumnIds}
           sortMode={applicationSortMode}
           groupByCategory={groupByCategory}
           timezone={timezone}
@@ -1027,21 +1041,32 @@ function ApplicationHeaderControls({
 }
 
 function ApplicationViewControls({
+  applications,
   displayMode,
+  hiddenColumnIds,
   sortMode,
   groupByCategory,
   onDisplayModeChange,
   onSortChange,
   onGroupingChange,
+  onColumnVisibilityChange,
 }: {
+  applications: JobApplicationSummary[];
   displayMode: "board" | "list";
+  hiddenColumnIds: ReadonlySet<string>;
   sortMode: ApplicationSortMode;
   groupByCategory: boolean;
   onDisplayModeChange: (value: "board" | "list") => void;
   onSortChange: (value: ApplicationSortMode) => void;
   onGroupingChange: (value: boolean) => void;
+  onColumnVisibilityChange: (columnId: string, visible: boolean) => void;
 }) {
   const ref = useRef<HTMLDetailsElement>(null);
+  const [stageVisibilityOpen, setStageVisibilityOpen] = useState(false);
+  const boardColumnOptions = useMemo(
+    () => applicationBoardColumnOptions(applications),
+    [applications],
+  );
   useEffect(() => {
     const close = (event: PointerEvent) => {
       const target = event.target;
@@ -1055,7 +1080,9 @@ function ApplicationViewControls({
     return () => document.removeEventListener("pointerdown", close);
   }, []);
   return <div className="career-applications-view-controls" role="group" aria-label="求职记录显示设置">
-    <details className="career-view-settings" ref={ref} onKeyDown={(event) => {
+    <details className="career-view-settings" ref={ref} onToggle={(event) => {
+      if (!event.currentTarget.open) setStageVisibilityOpen(false);
+    }} onKeyDown={(event) => {
       if (event.key === "Escape") {
         ref.current?.removeAttribute("open");
         ref.current?.querySelector("summary")?.focus();
@@ -1072,6 +1099,45 @@ function ApplicationViewControls({
           </button>
         </div>
         <div className="career-view-settings-fields">
+          {displayMode === "board" && (
+            <div className={`career-view-stage-visibility${stageVisibilityOpen ? " is-open" : ""}`}>
+              <button
+                type="button"
+                aria-expanded={stageVisibilityOpen}
+                aria-controls="career-view-stage-options"
+                onClick={() => setStageVisibilityOpen((open) => !open)}
+              >
+                <span>展示阶段</span>
+                <ChevronDown size={16} aria-hidden="true" />
+              </button>
+              {stageVisibilityOpen && <div id="career-view-stage-options" className="career-view-stage-options" role="group" aria-label="展示阶段">
+                {boardColumnOptions.map((column) => (
+                  <label key={column.id}>
+                    <span className="career-view-stage-icon" aria-hidden="true">
+                      {column.key === "pending"
+                        ? <Import size={16} />
+                        : column.key === "screening"
+                          ? <Search size={16} />
+                          : column.key === "assessment"
+                            ? <FileText size={16} />
+                            : column.key === "interview"
+                              ? <UserRound size={16} />
+                              : column.key === "offer"
+                                ? <BriefcaseBusiness size={16} />
+                                : <CircleCheck size={16} />}
+                    </span>
+                    <span className="career-view-stage-label">{column.label}</span>
+                    <input
+                      type="checkbox"
+                      checked={!hiddenColumnIds.has(column.id)}
+                      onChange={(event) => onColumnVisibilityChange(column.id, event.target.checked)}
+                    />
+                    <span className="career-view-stage-switch" aria-hidden="true" />
+                  </label>
+                ))}
+              </div>}
+            </div>
+          )}
           <div className="career-view-settings-row"><span>分组</span>
             <SelectField label="分类分组" value={groupByCategory ? "category" : "none"}
               options={[{ value: "none", label: "不分组" }, { value: "category", label: "求职分类" }]}
@@ -1154,6 +1220,7 @@ function ScheduleStageDialog({
 
 function ApplicationsView({
   applications,
+  hiddenColumnIds,
   groupByCategory,
   sessions,
   query,
@@ -1165,6 +1232,7 @@ function ApplicationsView({
   onNotice,
 }: {
   applications: JobApplicationSummary[];
+  hiddenColumnIds: ReadonlySet<string>;
   groupByCategory: boolean;
   sessions: InterviewSessionSummary[];
   query: string;
@@ -1246,6 +1314,7 @@ function ApplicationsView({
       {categoryApplication && <ApplicationCategoryDialog application={categoryApplication} onClose={() => setCategoryApplication(null)} onChanged={onChanged} />}
       <ApplicationsBoard
         groupByCategory={groupByCategory}
+        hiddenColumnIds={hiddenColumnIds}
         onRequestCategory={setCategoryApplication}
         visibleApplications={visibleApplications}
         completedCurrentStageApplicationIds={completedCurrentStageApplicationIds}
