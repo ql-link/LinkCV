@@ -589,13 +589,13 @@ select:not([data-slot]):focus-visible,
 }
 
 .theme-classic-technical .resume-content strong {
-  color: #48505c;
+  color: inherit;
   font-weight: 600;
 }
 
 .theme-classic-technical .resume-content em {
-  color: #28303d;
-  font-style: normal;
+  color: inherit;
+  font-style: italic;
 }
 
 .theme-classic-technical .resume-content a {

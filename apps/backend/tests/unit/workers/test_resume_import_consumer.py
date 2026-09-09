@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 from aiokafka.structs import TopicPartition
+from pydantic import BaseModel, ValidationError
 
 from linkcv.core.config import Settings
 from linkcv.core.mq.message import DatasetParseMessage, ResumeImportMessage
@@ -45,6 +46,17 @@ def rabbit_incoming(*, retries: int = 0):
 
 def dataset_processor():
     return SimpleNamespace(process=AsyncMock(), mark_retry_exhausted=Mock())
+
+
+def processing_validation_error() -> ValidationError:
+    class ProcessingResult(BaseModel):
+        required_value: int
+
+    try:
+        ProcessingResult.model_validate({})
+    except ValidationError as error:
+        return error
+    raise AssertionError("fixture must create a validation error")
 
 
 def test_rabbit_success_acks_original_message() -> None:
@@ -185,6 +197,34 @@ def test_rabbit_retry_exhaustion_confirms_dlt_before_ack() -> None:
     assert outbound.headers == incoming.headers
     incoming.ack.assert_awaited_once()
     incoming.nack.assert_not_awaited()
+
+
+def test_rabbit_processing_validation_error_uses_bounded_retry() -> None:
+    processor = SimpleNamespace(
+        process=AsyncMock(side_effect=processing_validation_error()),
+        mark_retry_exhausted=Mock(),
+    )
+    incoming = rabbit_incoming()
+    exchange = SimpleNamespace(publish=AsyncMock(return_value=True))
+    dead_letter_exchange = SimpleNamespace(publish=AsyncMock())
+
+    asyncio.run(
+        _handle_rabbit_message(
+            resume_processor=processor,
+            dataset_processor=dataset_processor(),
+            exchange=exchange,
+            dead_letter_exchange=dead_letter_exchange,
+            incoming=incoming,
+            settings=settings(),
+        )
+    )
+
+    exchange.publish.assert_awaited_once()
+    republished = exchange.publish.await_args.args[0]
+    assert republished.headers["x-linkcv-retry"] == 1
+    dead_letter_exchange.publish.assert_not_awaited()
+    processor.mark_retry_exhausted.assert_not_called()
+    incoming.ack.assert_awaited_once()
 
 
 def test_rabbit_terminal_state_write_failure_retains_original_message() -> None:

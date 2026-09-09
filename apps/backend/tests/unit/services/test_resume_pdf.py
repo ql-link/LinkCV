@@ -4,12 +4,24 @@ import pytest
 
 from linkcv.core.config import Settings
 from linkcv.core.errors import ApiError
+from linkcv.modules.resumes import pdf_service
 from linkcv.modules.resumes.pdf_service import (
     RENDER_SLOTS,
     ResumePdfRenderer,
     _object_key,
     build_render_assets,
 )
+
+
+def test_renderer_does_not_require_unix_account_apis(monkeypatch) -> None:
+    monkeypatch.setattr(pdf_service, "pwd", None)
+    monkeypatch.delattr(pdf_service.os, "geteuid", raising=False)
+
+    assert ResumePdfRenderer._runtime_user_available() is False
+    assert ResumePdfRenderer._command(Path("renderer.cjs")) == [
+        "node",
+        "renderer.cjs",
+    ]
 
 
 def renderer(tmp_path: Path, source: str) -> ResumePdfRenderer:
