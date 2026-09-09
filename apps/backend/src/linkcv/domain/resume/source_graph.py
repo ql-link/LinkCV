@@ -299,7 +299,10 @@ def build_source_graph_from_layout_ir(
                 if metadata is not None
                 else None,
                 list_ordinal=(
-                    int(_field(metadata, "index")) if metadata is not None else None
+                    int(_field(metadata, "index"))
+                    if metadata is not None
+                    and _field(metadata, "kind") == "ordered"
+                    else None
                 ),
             )
         )

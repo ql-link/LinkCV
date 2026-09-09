@@ -18,6 +18,7 @@ describe("LandingPage", () => {
     expect(screen.getByRole("heading", { name: /岗位信息/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /下一份简历，从这里开始/ })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "页脚导航" })).toBeInTheDocument();
+    expect(container).not.toHaveTextContent("LinkCV");
     const filingLink = screen.getByRole("link", { name: "皖ICP备2026017322号" });
     expect(filingLink).toHaveAttribute("href", "https://beian.miit.gov.cn/");
     expect(filingLink).toHaveAttribute("target", "_blank");
@@ -32,7 +33,7 @@ describe("LandingPage", () => {
     expect(within(headerNav as HTMLElement).queryByRole("link", { name: "FAQ" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "开始创建简历" }));
-    fireEvent.click(screen.getByRole("button", { name: "开始使用 LinkCV" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始使用 LinkResume" }));
     fireEvent.click(screen.getByRole("button", { name: "开始使用" }));
 
     expect(onStart).toHaveBeenCalledTimes(2);
