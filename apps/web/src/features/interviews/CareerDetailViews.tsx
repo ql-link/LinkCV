@@ -1161,7 +1161,6 @@ export function AddNextStageDialog({
   onChanged,
   onNotice,
   onApplicationChange,
-  onTerminate,
 }: {
   application: ApplicationStageSource;
   applicationOptions?: JobApplicationSummary[];
@@ -1180,7 +1179,6 @@ export function AddNextStageDialog({
   onChanged: () => void | Promise<void>;
   onNotice: (notice: string) => void;
   onApplicationChange?: (application: JobApplicationSummary) => void;
-  onTerminate?: () => void;
 }) {
   const [selectedApplicationId, setSelectedApplicationId] = useState(application.id);
   const selectedApplicationOption = applicationOptions?.find((item) => item.id === selectedApplicationId);
@@ -1728,7 +1726,6 @@ export function AddNextStageDialog({
           {errorMessage && <p className="career-next-stage-error" role="alert">{errorMessage}</p>}
         </div>
         <DialogFooter className="career-next-stage-dialog-footer">
-          <div>{onTerminate && <Button variant="ghost" className="career-next-stage-terminate" disabled={busy} icon={<Trash2 aria-hidden="true" />} onClick={onTerminate}>终止求职</Button>}</div>
           <div className="career-next-stage-dialog-footer-actions">
             <Button variant="ghost" onClick={onClose}>取消</Button>
             <Button variant={lockStageSelection ? "default" : "ghost"} disabled={!canSubmit} onClick={() => void save()}>{busy ? "保存中…" : startsPending ? "保存求职进度" : "添加并保存"}</Button>
@@ -2133,6 +2130,7 @@ export function ApplicationDetailView({
   const [stageDialogOpen, setStageDialogOpen] = useState(false);
   const [offerDialogOpen, setOfferDialogOpen] = useState(false);
   const [terminateDialogOpen, setTerminateDialogOpen] = useState(false);
+  const [editScheduleDialogOpen, setEditScheduleDialogOpen] = useState(false);
   if (!application) {
     return (
       <section className="career-detail-not-found">
@@ -2188,7 +2186,13 @@ export function ApplicationDetailView({
   const currentRecordKind = currentSession
     ? sessionRecordKind(currentSession)
     : progress.isAssessment ? "笔试" : "面试";
-  const sessionRecordActionLabel = `填写${currentRecordKind}记录`;
+  const sessionRecordActionLabel = `管理${currentRecordKind}进度`;
+  const canEditCurrentSchedule = Boolean(
+    currentSession
+    && active
+    && currentSession.status === "scheduled"
+    && currentSession.stage_type !== "offer"
+  );
   const sessionRecordKinds = new Set(applicationSessions.map(sessionRecordKind));
   const sessionSectionTitle = sessionRecordKinds.size > 1
     ? "笔试与面试记录"
@@ -2232,6 +2236,7 @@ export function ApplicationDetailView({
             </div>
           </div>
           <div className="career-record-actions">
+            {canEditCurrentSchedule && currentSession && <Button variant="outline" icon={<Pencil />} onClick={() => setEditScheduleDialogOpen(true)}>修改{currentRecordKind}安排</Button>}
             {primaryAction === "set-stage" && <Button variant="ghost" onClick={() => setStageDialogOpen(true)}>投递岗位</Button>}
             {primaryAction === "schedule" && <Button variant="ghost" onClick={() => onCreateInterview(application.id)}>{scheduleActionLabel}</Button>}
             {primaryAction === "record-result" && <Button variant="ghost" onClick={() => setStageDialogOpen(true)}>{resultActionLabel}</Button>}
@@ -2281,13 +2286,10 @@ export function ApplicationDetailView({
           onClose={() => setStageDialogOpen(false)}
           onChanged={onChanged}
           onNotice={onNotice}
-          onTerminate={() => {
-            setStageDialogOpen(false);
-            setTerminateDialogOpen(true);
-          }}
         />)}
       {offerDialogOpen && <OfferApplicationDialog application={application} onClose={() => setOfferDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
       {terminateDialogOpen && <TerminateApplicationConfirmDialog application={application} onClose={() => setTerminateDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
+      {editScheduleDialogOpen && currentSession && <EditInterviewScheduleDialog session={currentSession} recordKind={currentRecordKind} onClose={() => setEditScheduleDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
     </div>
   );
 }
@@ -2843,12 +2845,12 @@ export function InterviewSessionDetailView({
   const overviewNameLabel = isAssessment ? "笔试名称" : "面试轮次";
   const addContentLabel = isAssessment ? "添加笔试内容" : "添加面试内容";
   const completeLabel = isAssessment ? "完成笔试" : "完成本轮面试";
+  const editScheduleAction = !isArchived && application.status === "active" && session.status === "scheduled"
+    ? <Button variant="outline" icon={<Pencil />} onClick={() => setShowEditScheduleDialog(true)}>修改{recordKind}安排</Button>
+    : null;
   const recordActions = (
     <>
-      {!isArchived && application.status === "active" && session.status === "scheduled" && (
-        <Button variant="outline" icon={<Pencil />} onClick={() => setShowEditScheduleDialog(true)}>修改{recordKind}安排</Button>
-      )}
-      <Button onClick={() => setShowContentDialog(true)}>{addContentLabel}</Button>
+      <Button variant="ghost" onClick={() => setShowContentDialog(true)}>{addContentLabel}</Button>
       {!isArchived && session.status === "scheduled" && <Button variant="outline" onClick={() => setShowCompleteDialog(true)}>{completeLabel}</Button>}
     </>
   );
@@ -2926,7 +2928,7 @@ export function InterviewSessionDetailView({
               <span className={`career-session-status career-session-hero-status ${sessionStatusTone(session)}`}>{sessionStatusLabel(session)}</span>
             </div>
           </div>
-          <div className="career-record-actions">{recordActions}</div>
+          <div className="career-record-actions">{editScheduleAction}{recordActions}</div>
         </div>
       </header>
       {detailBody}
