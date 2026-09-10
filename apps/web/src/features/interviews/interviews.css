@@ -3707,10 +3707,11 @@
   height: clamp(560px, calc(100vh - 248px), 706px);
   min-width: 880px;
   overflow: hidden;
+  --career-calendar-today: #ff3b30;
   --ec-gutter-width: 78px;
   --ec-hour-height: 70px;
   --ec-event-min-h: 22px;
-  --ec-grid-line-color: color-mix(in srgb, var(--ui-border) 82%, transparent);
+  --ec-grid-line-color: color-mix(in srgb, var(--ui-border) 62%, transparent);
   --ec-slot-line-color: var(--ec-grid-line-color);
   --ec-slot-line-width: 1px;
 }
@@ -3954,10 +3955,38 @@
 .career-reui-calendar [data-slot="event-calendar-drag-ghost"][data-kind^="resize"] {
   background: color-mix(in srgb, var(--ec-event-color) 11%, var(--ui-surface));
 }
-.career-reui-calendar [data-slot="event-calendar-month-view"] { min-height: 540px; }
+.interview-event-calendar-month {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+.career-reui-calendar [data-slot="event-calendar-month-view"] {
+  min-height: 0;
+  flex: 1 1 auto;
+  border-color: var(--ec-grid-line-color);
+}
+.career-reui-calendar :is(
+  [data-slot="event-calendar-month-header"],
+  [data-slot="event-calendar-month-row"],
+  [data-slot="event-calendar-month-cell"],
+  [data-slot="event-calendar-week-number"]
+) {
+  border-color: var(--ec-grid-line-color);
+}
 .career-reui-calendar [data-slot="event-calendar-month-cell"] { background: var(--ui-surface); }
-.career-reui-calendar [data-slot="event-calendar-month-cell"][data-outside] { background: var(--ui-surface-muted); }
+.career-reui-calendar [data-slot="event-calendar-month-cell"][data-outside] { background: var(--ui-surface); }
 .career-reui-calendar [data-slot="event-calendar-month-day-number"] { color: var(--ui-text-secondary); }
+.career-reui-calendar [data-slot="event-calendar-month-cell"][data-today] {
+  border-bottom-width: 1px;
+  border-bottom-color: color-mix(in srgb, var(--career-calendar-today) 42%, var(--ec-grid-line-color));
+  background: color-mix(in srgb, var(--career-calendar-today) 2.5%, var(--ui-surface));
+}
+.career-reui-calendar [data-slot="event-calendar-month-cell"][data-today]
+  [data-slot="event-calendar-month-day-number"] {
+  background: var(--career-calendar-today);
+  color: #fff;
+}
 
 .career-application-identity { display: grid; gap: 5px; min-width: 0; }
 .career-application-identity > :first-child { color: var(--ui-foreground); font-weight: 600; }
