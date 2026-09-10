@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => {
   getInterviewSession: vi.fn(),
   updateJobApplication: vi.fn(),
   rescheduleInterviewSession: vi.fn(),
+  updateInterviewAnswerPlan: vi.fn(),
   listJobDescriptions: vi.fn(),
   listVersions: vi.fn(),
   parseJobDescriptionDraft: vi.fn(),
@@ -130,6 +131,9 @@ const session = {
   round_result: "pending" as const,
   start_at: fixtureSessionStart.toISOString(),
   end_at: fixtureSessionEnd.toISOString(),
+  schedule_kind: "fixed_slot" as const,
+  answer_plan_start_at: null,
+  answer_plan_end_at: null,
   timezone: "Asia/Shanghai",
   mode: "video" as const,
   meeting_url: "https://meeting.example/31",
@@ -260,6 +264,7 @@ beforeEach(() => {
   mocks.listVersions.mockResolvedValue({ versions: [] });
   useResumeStore.setState({ resumes: resumeFixtures });
   mocks.cancelInterviewSession.mockResolvedValue({ session, application, assets: [] });
+  mocks.updateInterviewAnswerPlan.mockResolvedValue({ session, application, assets: [] });
   mocks.deleteInterviewSession.mockResolvedValue({ deleted: true, application });
   mocks.archiveJobApplication.mockResolvedValue({
     application: { ...application, archived_at: "2026-08-20T12:00:00Z" },
@@ -594,6 +599,134 @@ describe("InterviewCenterPage API projections", () => {
     expect(screen.queryByRole("dialog", { name: "面试详情" })).not.toBeInTheDocument();
 
     expect(event).toHaveAttribute("data-draggable", "true");
+  });
+
+  it("把开放笔试显示在顶部并允许保存个人作答计划", async () => {
+    const windowStart = new Date(fixtureWeekStart);
+    windowStart.setDate(windowStart.getDate() + 3);
+    windowStart.setHours(12, 0, 0, 0);
+    const windowEnd = new Date(fixtureWeekStart);
+    windowEnd.setDate(windowEnd.getDate() + 6);
+    windowEnd.setHours(23, 45, 0, 0);
+    const planStart = new Date(fixtureWeekStart);
+    planStart.setDate(planStart.getDate() + 5);
+    planStart.setHours(19, 0, 0, 0);
+    const planEnd = new Date(planStart);
+    planEnd.setHours(21, 0, 0, 0);
+    const openWindowSession = {
+      ...session,
+      id: "open-window-31",
+      stage_type: "other" as const,
+      round_no: null,
+      stage_label: "笔试",
+      company_name: "水滴",
+      start_at: windowStart.toISOString(),
+      end_at: windowEnd.toISOString(),
+      schedule_kind: "open_window" as const,
+      answer_plan_start_at: planStart.toISOString(),
+      answer_plan_end_at: planEnd.toISOString(),
+      calendar_color: "orange" as const,
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [openWindowSession], next_cursor: null });
+    mocks.getInterviewSession.mockResolvedValue({ session: openWindowSession, application, assets: [] });
+    mocks.updateInterviewAnswerPlan.mockResolvedValue({ session: openWindowSession, application, assets: [] });
+
+    render(<InterviewCenterPage view="schedule" />);
+
+    const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
+    expect(within(calendar).getByText("作答时段")).toBeInTheDocument();
+    const windowEvent = within(calendar).getByRole("button", { name: /水滴.*笔试/ });
+    expect(windowEvent).not.toHaveAttribute("data-draggable", "true");
+    expect(within(calendar).getByText("我的作答计划")).toBeInTheDocument();
+
+    fireEvent.doubleClick(windowEvent);
+    const dialog = await screen.findByRole("dialog", { name: "面试详情" });
+    expect(within(dialog).getByText("仅作为个人时间安排，不会改变官方截止时间。")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "保存作答计划" }));
+    await waitFor(() => expect(mocks.updateInterviewAnswerPlan).toHaveBeenCalledWith(
+      openWindowSession.id,
+      expect.objectContaining({
+        answer_plan_start_at: planStart.toISOString(),
+        answer_plan_end_at: planEnd.toISOString(),
+        base_lock_version: openWindowSession.lock_version,
+      }),
+    ));
+  });
+
+  it("当前周没有作答时段时隐藏顶部区域", async () => {
+    render(<InterviewCenterPage view="schedule" />);
+
+    const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
+    expect(within(calendar).queryByText("作答时段")).not.toBeInTheDocument();
+    expect(calendar.querySelector('[data-slot="event-calendar-all-day-section"]')).not.toBeInTheDocument();
+    expect(within(calendar).getByRole("button", { name: /腾讯.*二面/ })).toBeInTheDocument();
+  });
+
+  it("已完成的开放笔试只读展示作答计划", async () => {
+    const windowStart = new Date(fixtureWeekStart);
+    const windowEnd = new Date(fixtureWeekEnd);
+    const planStart = new Date(fixtureWeekStart);
+    planStart.setDate(planStart.getDate() + 2);
+    planStart.setHours(19, 0, 0, 0);
+    const planEnd = new Date(planStart);
+    planEnd.setHours(21, 0, 0, 0);
+    const completedWindow = {
+      ...session,
+      id: "completed-open-window",
+      stage_type: "other" as const,
+      round_no: null,
+      stage_label: "笔试",
+      company_name: "只读示例公司",
+      status: "completed" as const,
+      completed_at: planEnd.toISOString(),
+      start_at: windowStart.toISOString(),
+      end_at: windowEnd.toISOString(),
+      schedule_kind: "open_window" as const,
+      answer_plan_start_at: planStart.toISOString(),
+      answer_plan_end_at: planEnd.toISOString(),
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [completedWindow], next_cursor: null });
+    mocks.getInterviewSession.mockResolvedValue({ session: completedWindow, application, assets: [] });
+
+    render(<InterviewCenterPage view="schedule" />);
+
+    const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
+    fireEvent.doubleClick(within(calendar).getByRole("button", { name: /只读示例公司.*笔试/ }));
+    const dialog = await screen.findByRole("dialog", { name: "面试详情" });
+    expect(within(dialog).getByLabelText("计划开始")).toBeDisabled();
+    expect(within(dialog).getByLabelText("计划结束")).toBeDisabled();
+    expect(within(dialog).queryByRole("button", { name: "保存作答计划" })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "清除计划" })).not.toBeInTheDocument();
+  });
+
+  it("作答时段超过三条时折叠并可展开", async () => {
+    const windowStart = new Date(fixtureWeekStart);
+    windowStart.setHours(8, 0, 0, 0);
+    const windowEnd = new Date(fixtureWeekStart);
+    windowEnd.setDate(windowEnd.getDate() + 6);
+    windowEnd.setHours(22, 0, 0, 0);
+    mocks.listInterviewSessions.mockResolvedValue({
+      items: Array.from({ length: 5 }, (_, index) => ({
+        ...session,
+        id: `open-${index}`,
+        stage_type: "other" as const,
+        round_no: null,
+        stage_label: "笔试",
+        company_name: `开放公司${index + 1}`,
+        start_at: windowStart.toISOString(),
+        end_at: new Date(windowEnd.getTime() + index * 60_000).toISOString(),
+        schedule_kind: "open_window" as const,
+      })),
+      next_cursor: null,
+    });
+
+    render(<InterviewCenterPage view="schedule" />);
+
+    const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
+    expect(within(calendar).getAllByRole("button", { name: /开放公司\d.*笔试/ })).toHaveLength(3);
+    fireEvent.click(within(calendar).getByRole("button", { name: /还有 2 项待完成 · 展开查看/ }));
+    expect(within(calendar).getAllByRole("button", { name: /开放公司\d.*笔试/ })).toHaveLength(5);
+    expect(within(calendar).getByRole("button", { name: /收起更多项目/ })).toBeInTheDocument();
   });
 
   it("nests a schedule that is fully contained by another schedule", async () => {

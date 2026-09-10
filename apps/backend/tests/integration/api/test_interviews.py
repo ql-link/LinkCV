@@ -596,6 +596,170 @@ def test_reschedule_allows_overlapping_sessions() -> None:
         assert moved.json()["session"]["start_at"].endswith(("Z", "+00:00"))
 
 
+def test_open_window_answer_plan_is_persisted_and_bounded() -> None:
+    app = build_app(FakeStorage())
+    with TestClient(app) as client:
+        register(client, "answer-plan@example.test")
+        pending = create_pending_application(client, "水滴示例科技")
+        staged = client.post(
+            f"/api/job-applications/{pending['id']}/stages",
+            json={
+                "client_request_id": "a1000000-0000-4000-8000-000000000001",
+                "stage_type": "written_test",
+                "base_lock_version": pending["lock_version"],
+            },
+        )
+        assert staged.status_code == 200, staged.text
+        application = staged.json()["application"]
+        window_start = fixture_datetime(3, 12)
+        window_end = fixture_datetime(6, 23, 45)
+        created = client.post(
+            f"/api/job-applications/{application['id']}/interview-sessions",
+            json={
+                "client_request_id": "a2000000-0000-4000-8000-000000000002",
+                "application_stage_id": application["current_stage"]["id"],
+                "stage_type": "other",
+                "round_no": None,
+                "stage_label": "笔试",
+                "start_at": window_start.isoformat(),
+                "end_at": window_end.isoformat(),
+                "schedule_kind": "open_window",
+                "timezone": "Asia/Shanghai",
+                "mode": "video",
+            },
+        )
+        assert created.status_code == 201, created.text
+        session = created.json()["session"]
+        assert session["schedule_kind"] == "open_window"
+        assert session["answer_plan_start_at"] is None
+
+        planned = client.put(
+            f"/api/interview-sessions/{session['id']}/answer-plan",
+            json={
+                "answer_plan_start_at": fixture_datetime(5, 19).isoformat(),
+                "answer_plan_end_at": fixture_datetime(5, 21).isoformat(),
+                "base_lock_version": session["lock_version"],
+            },
+        )
+        assert planned.status_code == 200, planned.text
+        planned_session = planned.json()["session"]
+        assert planned_session["answer_plan_start_at"].endswith("Z")
+        assert planned_session["answer_plan_end_at"].endswith("Z")
+
+        stale = client.put(
+            f"/api/interview-sessions/{session['id']}/answer-plan",
+            json={
+                "answer_plan_start_at": fixture_datetime(5, 18).isoformat(),
+                "answer_plan_end_at": fixture_datetime(5, 20).isoformat(),
+                "base_lock_version": session["lock_version"],
+            },
+        )
+        assert stale.status_code == 409
+        assert stale.json() == {"error": "INTERVIEW_EDIT_CONFLICT"}
+
+        outside = client.put(
+            f"/api/interview-sessions/{session['id']}/answer-plan",
+            json={
+                "answer_plan_start_at": fixture_datetime(2, 19).isoformat(),
+                "answer_plan_end_at": fixture_datetime(2, 21).isoformat(),
+                "base_lock_version": planned_session["lock_version"],
+            },
+        )
+        assert outside.status_code == 400
+        assert outside.json() == {"error": "INTERVIEW_ANSWER_PLAN_OUTSIDE_WINDOW"}
+
+        invalid_window_change = client.post(
+            f"/api/interview-sessions/{session['id']}/reschedule",
+            json={
+                "start_at": fixture_datetime(4, 12).isoformat(),
+                "end_at": fixture_datetime(5, 20).isoformat(),
+                "timezone": "Asia/Shanghai",
+                "base_lock_version": planned_session["lock_version"],
+            },
+        )
+        assert invalid_window_change.status_code == 400
+        assert invalid_window_change.json() == {
+            "error": "INTERVIEW_ANSWER_PLAN_OUTSIDE_WINDOW"
+        }
+
+        cleared = client.put(
+            f"/api/interview-sessions/{session['id']}/answer-plan",
+            json={
+                "answer_plan_start_at": None,
+                "answer_plan_end_at": None,
+                "base_lock_version": planned_session["lock_version"],
+            },
+        )
+        assert cleared.status_code == 200, cleared.text
+        cleared_body = cleared.json()
+        assert cleared_body["session"]["answer_plan_start_at"] is None
+
+        completed = client.post(
+            f"/api/interview-sessions/{session['id']}/complete",
+            json={"base_lock_version": cleared_body["session"]["lock_version"]},
+        )
+        assert completed.status_code == 200, completed.text
+        terminal_update = client.put(
+            f"/api/interview-sessions/{session['id']}/answer-plan",
+            json={
+                "answer_plan_start_at": fixture_datetime(5, 19).isoformat(),
+                "answer_plan_end_at": fixture_datetime(5, 21).isoformat(),
+                "base_lock_version": completed.json()["session"]["lock_version"],
+            },
+        )
+        assert terminal_update.status_code == 409
+        assert terminal_update.json() == {"error": "INTERVIEW_INVALID_TRANSITION"}
+
+
+def test_open_window_and_answer_plan_reject_unsupported_or_unowned_sessions() -> None:
+    app = build_app(FakeStorage())
+    with TestClient(app) as client:
+        register(client, "answer-plan-owner@example.test")
+        application = create_application(client, create_job(client, "固定面试示例公司"))
+        payload = session_payload("a3000000-0000-4000-8000-000000000003")
+        payload["schedule_kind"] = "open_window"
+        rejected_window = client.post(
+            f"/api/job-applications/{application['id']}/interview-sessions",
+            json=payload,
+        )
+        assert rejected_window.status_code == 400
+        assert rejected_window.json() == {
+            "error": "INTERVIEW_SCHEDULE_KIND_NOT_SUPPORTED"
+        }
+
+        payload["schedule_kind"] = "fixed_slot"
+        created = client.post(
+            f"/api/job-applications/{application['id']}/interview-sessions",
+            json=payload,
+        )
+        assert created.status_code == 201, created.text
+        session = created.json()["session"]
+        unsupported_plan = client.put(
+            f"/api/interview-sessions/{session['id']}/answer-plan",
+            json={
+                "answer_plan_start_at": fixture_datetime(0, 10).isoformat(),
+                "answer_plan_end_at": fixture_datetime(0, 11).isoformat(),
+                "base_lock_version": session["lock_version"],
+            },
+        )
+        assert unsupported_plan.status_code == 400
+        assert unsupported_plan.json() == {
+            "error": "INTERVIEW_ANSWER_PLAN_NOT_SUPPORTED"
+        }
+
+        register(client, "answer-plan-other@example.test")
+        unowned = client.put(
+            f"/api/interview-sessions/{session['id']}/answer-plan",
+            json={
+                "answer_plan_start_at": None,
+                "answer_plan_end_at": None,
+                "base_lock_version": session["lock_version"],
+            },
+        )
+        assert unowned.status_code == 404
+        assert unowned.json() == {"error": "INTERVIEW_NOT_FOUND"}
+
+
 def test_reschedule_scheduled_session_after_application_is_terminated() -> None:
     app = build_app(FakeStorage())
     with TestClient(app) as client:

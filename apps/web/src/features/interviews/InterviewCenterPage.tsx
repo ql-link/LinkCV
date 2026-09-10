@@ -148,6 +148,10 @@ type Interview = {
   color: InterviewCalendarColor;
   startAt: string;
   endAt: string;
+  scheduleKind: "fixed_slot" | "open_window";
+  answerPlanStartAt: string | null;
+  answerPlanEndAt: string | null;
+  calendarRole?: "open_window" | "answer_plan";
   questions: string;
   review: string;
   improvement: string;
@@ -168,7 +172,7 @@ const INTERVIEW_CALENDAR_I18N: EventCalendarI18nOverrides = {
     previous: "上一周期",
     next: "下一周期",
     addEvent: "添加面试",
-    allDay: "全天",
+    allDay: "作答时段",
     more: (count) => `另有 ${count} 项`,
     noEvents: "暂无面试安排",
     loading: "正在加载面试排期",
@@ -353,6 +357,9 @@ function toInterview(
         : session.calendar_color,
     startAt: session.start_at,
     endAt: session.end_at,
+    scheduleKind: session.schedule_kind ?? "fixed_slot",
+    answerPlanStartAt: session.answer_plan_start_at ?? null,
+    answerPlanEndAt: session.answer_plan_end_at ?? null,
     questions: session.questions_markdown ?? "",
     review: session.review_summary ?? "",
     improvement: session.improvement_markdown ?? "",
@@ -364,6 +371,10 @@ function errorMessage(error: unknown): string {
     const messages: Record<string, string> = {
       INTERVIEW_EDIT_CONFLICT: "这条面试已在其他页面更新，请刷新后再试。",
       INTERVIEW_INVALID_TRANSITION: "当前求职进度不允许执行这个操作。",
+      INTERVIEW_SCHEDULE_KIND_NOT_SUPPORTED: "当前阶段不支持开放作答窗口。",
+      INTERVIEW_ANSWER_PLAN_NOT_SUPPORTED: "这条安排不支持设置作答计划。",
+      INTERVIEW_ANSWER_PLAN_INVALID_TIME: "作答计划时间无效，请重新选择。",
+      INTERVIEW_ANSWER_PLAN_OUTSIDE_WINDOW: "作答计划必须完整落在官方开放时间内。",
       INVALID_INTERVIEW_TIME: "面试开始时间需要是有效的 24 小时制 HH:mm（分钟 00–59）。",
       INTERVIEW_ASSET_TOO_LARGE: "素材超过 500 MiB，请压缩后重试。",
       UNSUPPORTED_INTERVIEW_ASSET: "暂不支持这种素材格式。",
@@ -746,6 +757,31 @@ export function InterviewCenterPage({
     }
   };
 
+  const updateAnswerPlan = async (id: string, start: Date | null, end: Date | null) => {
+    const current = interviews.find((item) => item.id === id);
+    if (!current || !current.canReschedule || current.scheduleKind !== "open_window") return;
+    const optimisticStart = start?.toISOString() ?? null;
+    const optimisticEnd = end?.toISOString() ?? null;
+    setSessions((items) => items.map((item) => item.id === id
+      ? { ...item, answer_plan_start_at: optimisticStart, answer_plan_end_at: optimisticEnd }
+      : item));
+    try {
+      const response = await api.updateInterviewAnswerPlan(id, {
+        answer_plan_start_at: optimisticStart,
+        answer_plan_end_at: optimisticEnd,
+        base_lock_version: current.lockVersion,
+      });
+      setNotice(null);
+      await loadData(response.session.id);
+      pushScheduleToast(start && end
+        ? `已更新作答计划：${current.company} · ${weekday(start)} ${formatTime(start)}–${formatTime(end)}`
+        : `已清除作答计划：${current.company}`);
+    } catch (error) {
+      setNotice(errorMessage(error));
+      await loadData(id);
+    }
+  };
+
   const updateColor = async (color: InterviewCalendarColor) => {
     if (!detail || detail.session.id !== selectedIdRef.current) return;
     try {
@@ -916,6 +952,8 @@ export function InterviewCenterPage({
           }}
           onSelect={(id) => void selectInterview(id)}
           onMove={(id, day, slot, span) => void reschedule(id, day, slot, span)}
+          onAnswerPlanMove={(id, start, end) => void updateAnswerPlan(id, start, end)}
+          onAnswerPlanChange={(id, start, end) => void updateAnswerPlan(id, start, end)}
         />
       ) : (
         <RecordsView
@@ -1447,10 +1485,10 @@ function ApplicationsView({
   );
 }
 
-function InterviewScheduleWeekView() {
+function InterviewScheduleWeekView({ showAnswerPeriods }: { showAnswerPeriods: boolean }) {
   return (
     <div className="interview-event-calendar-week" role="grid" aria-label="面试周排期，可拖动并按 15 分钟调整">
-      <EventCalendarWeekView showAllDay={false} />
+      <EventCalendarWeekView showAllDay={showAnswerPeriods} />
     </div>
   );
 }
@@ -1489,11 +1527,32 @@ function renderInterviewCalendarEvent({
   const interview = occurrence.event.data;
   const visibleStart = formatTime(occurrence.start);
   const visibleEnd = formatTime(occurrence.end);
+  if (occurrence.event.id === "interview-open-window-more") {
+    return <span className="interview-calendar-window-more">{occurrence.event.title}</span>;
+  }
   if (!interview) {
     return (
       <span className="interview-calendar-event-content">
         <strong className="interview-calendar-event-title">新面试</strong>
         <span className="interview-calendar-event-time"><i aria-hidden="true" />{visibleStart}–{visibleEnd}</span>
+      </span>
+    );
+  }
+  if (interview.calendarRole === "open_window") {
+    return (
+      <span className="interview-calendar-event-content interview-calendar-open-window-content">
+        <strong className="interview-calendar-event-title">{interview.company} · {interview.stage}</strong>
+        <span className="interview-calendar-window-range">{interview.date} {interview.time} – {formatDate(new Date(interview.endAt))} {interview.endTime}</span>
+        <em className="interview-calendar-window-status">{interview.status === "completed" ? "已完成" : interview.status === "cancelled" ? "已取消" : "待完成"}</em>
+      </span>
+    );
+  }
+  if (interview.calendarRole === "answer_plan") {
+    return (
+      <span className="interview-calendar-event-content interview-calendar-answer-plan-content">
+        <strong className="interview-calendar-event-title">我的作答计划</strong>
+        <span className="interview-calendar-event-time"><i aria-hidden="true" />{visibleStart}–{visibleEnd}</span>
+        <em className="interview-calendar-event-stage">{interview.company} · {interview.stage}</em>
       </span>
     );
   }
@@ -1524,6 +1583,8 @@ function ScheduleView({
   onGranularityChange,
   onSelect,
   onMove,
+  onAnswerPlanMove,
+  onAnswerPlanChange,
 }: {
   interviews: Interview[];
   detail: InterviewSessionDetail | null;
@@ -1542,14 +1603,25 @@ function ScheduleView({
   onGranularityChange: (value: ScheduleGranularity) => void;
   onSelect: (id: string) => void;
   onMove: (id: string, calendarDay: number, calendarStart: number, calendarSpan?: number) => void;
+  onAnswerPlanMove: (id: string, startAt: Date, endAt: Date) => void;
+  onAnswerPlanChange: (id: string, startAt: Date | null, endAt: Date | null) => void;
 }) {
   const [openInterviewId, setOpenInterviewId] = useState<string | null>(null);
+  const [showAllOpenWindows, setShowAllOpenWindows] = useState(false);
   const normalizedQuery = query.trim().toLowerCase();
   const sourceInterviews = interviews;
   const visibleInterviews = useMemo(
     () => sourceInterviews.filter((item) => !normalizedQuery || `${item.company}${item.role}${item.stage}`.toLowerCase().includes(normalizedQuery)),
     [normalizedQuery, sourceInterviews],
   );
+  const hasAnswerPeriodsInCurrentWeek = useMemo(() => {
+    const weekEnd = addDays(weekStart, 7);
+    return visibleInterviews.some((interview) => (
+      interview.scheduleKind === "open_window"
+      && new Date(interview.startAt) < weekEnd
+      && new Date(interview.endAt) > weekStart
+    ));
+  }, [visibleInterviews, weekStart]);
   const dialogInterview = openInterviewId
     ? sourceInterviews.find((item) => item.id === openInterviewId) ?? null
     : null;
@@ -1565,7 +1637,22 @@ function ScheduleView({
   };
   const calendarEvents = useMemo<CalendarEvent<Interview | null>[]>(() => {
     const monthFallbackColors: InterviewCalendarColor[] = ["red", "orange", "green", "blue", "purple"];
-    const events = visibleInterviews.map((interview) => {
+    const weekEnd = addDays(weekStart, 7);
+    const openWindows = visibleInterviews
+      .filter((interview) => (
+        interview.scheduleKind === "open_window"
+        && (granularity !== "week" || (
+          new Date(interview.startAt) < weekEnd
+          && new Date(interview.endAt) > weekStart
+        ))
+      ))
+      .sort((left, right) => new Date(left.endAt).getTime() - new Date(right.endAt).getTime());
+    const visibleOpenWindows = granularity === "week" && !showAllOpenWindows
+      ? openWindows.slice(0, 3)
+      : openWindows;
+    const hiddenOpenWindowCount = openWindows.length - visibleOpenWindows.length;
+    const fixedInterviews = visibleInterviews.filter((interview) => interview.scheduleKind === "fixed_slot");
+    const fixedEvents = fixedInterviews.map((interview) => {
       const hash = Array.from(interview.id).reduce((total, character) => total + character.charCodeAt(0), 0);
       const color = granularity === "month" && interview.color === "gray"
         ? monthFallbackColors[hash % monthFallbackColors.length]
@@ -1582,6 +1669,60 @@ function ScheduleView({
         data: interview,
       };
     });
+    const windowEvents = visibleOpenWindows.map((interview) => {
+      const actualStart = new Date(interview.startAt);
+      const actualEnd = new Date(interview.endAt);
+      const start = new Date(actualStart);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(actualEnd);
+      if (end.getHours() !== 0 || end.getMinutes() !== 0 || end.getSeconds() !== 0 || end.getMilliseconds() !== 0) {
+        end.setDate(end.getDate() + 1);
+      }
+      end.setHours(0, 0, 0, 0);
+      return {
+        id: `open-window:${interview.id}`,
+        title: `${interview.company} ${interview.stage}`,
+        start,
+        end,
+        allDay: true,
+        color: INTERVIEW_CALENDAR_COLORS[interview.color],
+        readOnly: true,
+        draggable: false,
+        resizable: false,
+        data: { ...interview, calendarRole: "open_window" as const },
+      };
+    });
+    const answerPlanEvents = visibleInterviews.flatMap((interview) => (
+      interview.scheduleKind === "open_window" && interview.answerPlanStartAt && interview.answerPlanEndAt
+        ? [{
+            id: `answer-plan:${interview.id}`,
+            title: `我的作答计划 · ${interview.company}`,
+            start: new Date(interview.answerPlanStartAt),
+            end: new Date(interview.answerPlanEndAt),
+            color: INTERVIEW_CALENDAR_COLORS[interview.color],
+            readOnly: !interview.canReschedule,
+            draggable: interview.canReschedule,
+            resizable: interview.canReschedule,
+            data: { ...interview, calendarRole: "answer_plan" as const },
+          }]
+        : []
+    ));
+    const disclosureEvents: CalendarEvent<Interview | null>[] = granularity === "week" && (hiddenOpenWindowCount > 0 || showAllOpenWindows && openWindows.length > 3)
+      ? [{
+          id: "interview-open-window-more",
+          title: hiddenOpenWindowCount > 0 ? `还有 ${hiddenOpenWindowCount} 项待完成 · 展开查看` : "收起更多项目",
+          start: new Date(weekStart),
+          end: addDays(weekStart, 7),
+          allDay: true,
+          color: "#eef1f5",
+          priority: -100,
+          readOnly: true,
+          draggable: false,
+          resizable: false,
+          data: null,
+        }]
+      : [];
+    const events = [...windowEvents, ...disclosureEvents, ...fixedEvents, ...answerPlanEvents];
     if (!draftStartAt) return events;
     const start = new Date(draftStartAt);
     if (!Number.isFinite(start.getTime())) return events;
@@ -1603,10 +1744,15 @@ function ScheduleView({
         data: null,
       },
     ];
-  }, [draftColor, draftEndAt, draftStartAt, granularity, visibleInterviews]);
+  }, [draftColor, draftEndAt, draftStartAt, granularity, showAllOpenWindows, visibleInterviews, weekStart]);
   const updateCalendarEvent = (update: EventCalendarProposedUpdate<Interview | null>) => {
     const interview = update.event.data;
     if (!interview?.canReschedule || update.allDay) return false;
+    if (interview.calendarRole === "answer_plan") {
+      onAnswerPlanMove(interview.id, update.start, update.end);
+      return true;
+    }
+    if (interview.scheduleKind === "open_window") return false;
     const startDay = new Date(update.start);
     startDay.setHours(0, 0, 0, 0);
     const calendarDay = Math.round((startDay.getTime() - weekStart.getTime()) / 86_400_000);
@@ -1617,8 +1763,11 @@ function ScheduleView({
   };
   const createAt = (start: Date, end: Date) => onCreate(localDateTimeValue(start), localDateTimeValue(end));
   const calendarComponents = useMemo(
-    () => ({ week: InterviewScheduleWeekView, month: InterviewScheduleMonthView }),
-    [],
+    () => ({
+      week: () => <InterviewScheduleWeekView showAnswerPeriods={hasAnswerPeriodsInCurrentWeek} />,
+      month: InterviewScheduleMonthView,
+    }),
+    [hasAnswerPeriodsInCurrentWeek],
   );
   const calendarInteractions = useMemo(() => ({ drag: true, resize: true, selectSlot: true }), []);
   const calendarViewSettings = useMemo(() => ({
@@ -1667,6 +1816,10 @@ function ScheduleView({
           canDropEvent={(update) => !update.allDay && update.event.data?.canReschedule === true}
           onEventUpdate={updateCalendarEvent}
           onEventClick={(occurrence) => {
+            if (occurrence.event.id === "interview-open-window-more") {
+              setShowAllOpenWindows((current) => !current);
+              return;
+            }
             if (occurrence.event.data) handleSelect(occurrence.event.data.id);
           }}
           onEventDoubleClick={(occurrence) => {
@@ -1709,15 +1862,41 @@ function ScheduleView({
           detail={detail}
           detailLoading={detailLoading}
           onClose={() => setOpenInterviewId(null)}
+          onAnswerPlanChange={onAnswerPlanChange}
         />
       )}
     </div>
   );
 }
 
-function InterviewScheduleDialog({ interview, detail, detailLoading, onClose }: { interview: Interview; detail: InterviewSessionDetail | null; detailLoading: boolean; onClose: () => void }) {
+function InterviewScheduleDialog({ interview, detail, detailLoading, onClose, onAnswerPlanChange }: { interview: Interview; detail: InterviewSessionDetail | null; detailLoading: boolean; onClose: () => void; onAnswerPlanChange: (id: string, startAt: Date | null, endAt: Date | null) => void }) {
   const matchingDetail = detail?.session.id === interview.id ? detail : null;
   const meetingUrl = matchingDetail?.session.meeting_url ?? null;
+  const [planStartAt, setPlanStartAt] = useState(() => interview.answerPlanStartAt ? localDateTimeValue(new Date(interview.answerPlanStartAt)) : "");
+  const [planEndAt, setPlanEndAt] = useState(() => interview.answerPlanEndAt ? localDateTimeValue(new Date(interview.answerPlanEndAt)) : "");
+  const [planError, setPlanError] = useState<string | null>(null);
+  const savePlan = () => {
+    if (!interview.canReschedule) return;
+    if (!planStartAt && !planEndAt) {
+      setPlanError(null);
+      onAnswerPlanChange(interview.id, null, null);
+      return;
+    }
+    const start = new Date(planStartAt);
+    const end = new Date(planEndAt);
+    const windowStart = new Date(interview.startAt);
+    const windowEnd = new Date(interview.endAt);
+    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
+      setPlanError("请选择完整且有效的作答时间段。");
+      return;
+    }
+    if (start < windowStart || end > windowEnd) {
+      setPlanError("作答计划必须完整落在官方开放时间内。");
+      return;
+    }
+    setPlanError(null);
+    onAnswerPlanChange(interview.id, start, end);
+  };
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="interview-schedule-dialog">
@@ -1732,6 +1911,22 @@ function InterviewScheduleDialog({ interview, detail, detailLoading, onClose }: 
             <DetailRow icon={<Video />} label="面试形式" value={matchingDetail ? `${modeLabel(matchingDetail.session.mode)}${matchingDetail.session.location ? ` · ${matchingDetail.session.location}` : ""}` : interview.mode} />
             {meetingUrl && <div><dt><Link2 />会议链接</dt><dd><a href={meetingUrl} target="_blank" rel="noreferrer">{meetingUrl}</a></dd></div>}
           </dl>
+          {interview.scheduleKind === "open_window" && (
+            <div className="schedule-dialog-answer-plan">
+              <div><strong>我的作答计划</strong><span>仅作为个人时间安排，不会改变官方截止时间。</span></div>
+              <div className="schedule-dialog-answer-plan-fields">
+                <label>计划开始<input type="datetime-local" step={60} value={planStartAt} disabled={!interview.canReschedule} onChange={(event) => setPlanStartAt(event.target.value)} /></label>
+                <label>计划结束<input type="datetime-local" step={60} value={planEndAt} disabled={!interview.canReschedule} onChange={(event) => setPlanEndAt(event.target.value)} /></label>
+              </div>
+              {planError && <p role="alert">{planError}</p>}
+              {interview.canReschedule && (
+                <div className="schedule-dialog-answer-plan-actions">
+                  {(interview.answerPlanStartAt || interview.answerPlanEndAt) && <Button type="button" variant="ghost" onClick={() => { setPlanStartAt(""); setPlanEndAt(""); onAnswerPlanChange(interview.id, null, null); }}>清除计划</Button>}
+                  <Button type="button" onClick={savePlan}>保存作答计划</Button>
+                </div>
+              )}
+            </div>
+          )}
         </section>
         <DialogFooter className="schedule-dialog-footer">
           <Button variant="outline" onClick={onClose}>关闭</Button>

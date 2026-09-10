@@ -46,6 +46,7 @@ from linkcv.modules.interviews.schemas import (
     OfferApplicationRequest,
     RescheduleInterviewRequest,
     TerminateApplicationRequest,
+    UpdateAnswerPlanRequest,
 )
 from linkcv.modules.job_descriptions.models import JobDescription
 from linkcv.modules.resumes.models import Resume, ResumeVersion
@@ -64,6 +65,22 @@ class InterviewEditConflict(RuntimeError):
 
 
 class InterviewInvalidTransition(RuntimeError):
+    pass
+
+
+class InterviewScheduleKindNotSupported(RuntimeError):
+    pass
+
+
+class InterviewAnswerPlanNotSupported(RuntimeError):
+    pass
+
+
+class InterviewAnswerPlanInvalidTime(ValueError):
+    pass
+
+
+class InterviewAnswerPlanOutsideWindow(ValueError):
     pass
 
 
@@ -1129,6 +1146,7 @@ def _session_matches_create_request(
         and session.stage_label == payload.stage_label
         and _normalize_cursor_time(session.start_at) == start_at
         and _normalize_cursor_time(session.end_at) == end_at
+        and session.schedule_kind == payload.schedule_kind
         and session.timezone == payload.timezone
         and session.mode == payload.mode
         and session.meeting_url == payload.meeting_url
@@ -1156,6 +1174,11 @@ def create_session(
     current_stage = current_application_stage(db, application.id)
     if current_stage is None or current_stage.stage_type not in SCHEDULABLE_STAGE_TYPES:
         raise InvalidInterviewRequest
+    if payload.schedule_kind == "open_window" and current_stage.stage_type not in {
+        "assessment",
+        "written_test",
+    }:
+        raise InterviewScheduleKindNotSupported
     requested_stage_id = (
         parse_decimal_id(payload.application_stage_id)
         if payload.application_stage_id is not None
@@ -1210,6 +1233,7 @@ def create_session(
         round_result="pending",
         start_at=start_at,
         end_at=end_at,
+        schedule_kind=payload.schedule_kind,
         timezone=payload.timezone,
         mode=payload.mode,
         meeting_url=payload.meeting_url,
@@ -1411,11 +1435,65 @@ def reschedule_session(
     start_at, end_at = _validate_schedule(
         payload.start_at, payload.end_at, payload.timezone
     )
+    if result.session.answer_plan_start_at is not None:
+        assert result.session.answer_plan_end_at is not None
+        if (
+            _normalize_cursor_time(result.session.answer_plan_start_at) < start_at
+            or _normalize_cursor_time(result.session.answer_plan_end_at) > end_at
+        ):
+            raise InterviewAnswerPlanOutsideWindow
     return _commit_session_update(
         db,
         result.session,
         payload.base_lock_version,
         {"start_at": start_at, "end_at": end_at, "timezone": payload.timezone},
+    )
+
+
+def update_answer_plan(
+    db: Session,
+    user_id: int,
+    session_id: int,
+    payload: UpdateAnswerPlanRequest,
+) -> InterviewSession:
+    result = require_owned_session(db, user_id, session_id)
+    session = result.session
+    if session.status != "scheduled" or result.application.archived_at is not None:
+        raise InterviewInvalidTransition
+    if session.schedule_kind != "open_window":
+        raise InterviewAnswerPlanNotSupported
+    stage = (
+        db.get(JobApplicationStage, session.application_stage_id)
+        if session.application_stage_id is not None
+        else None
+    )
+    if stage is None or stage.stage_type not in {"assessment", "written_test"}:
+        raise InterviewAnswerPlanNotSupported
+    if payload.answer_plan_start_at is None:
+        return _commit_session_update(
+            db,
+            session,
+            payload.base_lock_version,
+            {"answer_plan_start_at": None, "answer_plan_end_at": None},
+        )
+    assert payload.answer_plan_end_at is not None
+    try:
+        plan_start, plan_end = _validate_schedule(
+            payload.answer_plan_start_at,
+            payload.answer_plan_end_at,
+            session.timezone,
+        )
+    except InvalidInterviewTime as error:
+        raise InterviewAnswerPlanInvalidTime from error
+    if plan_start < _normalize_cursor_time(
+        session.start_at
+    ) or plan_end > _normalize_cursor_time(session.end_at):
+        raise InterviewAnswerPlanOutsideWindow
+    return _commit_session_update(
+        db,
+        session,
+        payload.base_lock_version,
+        {"answer_plan_start_at": plan_start, "answer_plan_end_at": plan_end},
     )
 
 

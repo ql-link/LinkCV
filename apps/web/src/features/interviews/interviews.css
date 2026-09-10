@@ -229,6 +229,15 @@
 .schedule-dialog-details a { color: var(--ui-accent); text-decoration: none; }
 .schedule-dialog-details a:hover { text-decoration: underline; }
 .schedule-dialog-details a:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 2px; }
+.schedule-dialog-answer-plan { display: grid; gap: 14px; border-top: 1px solid var(--ui-border); padding-top: 20px; }
+.schedule-dialog-answer-plan > div:first-child { display: grid; gap: 4px; }
+.schedule-dialog-answer-plan > div:first-child strong { font-size: 14px; }
+.schedule-dialog-answer-plan > div:first-child span { color: var(--ui-text-muted); font-size: 12px; }
+.schedule-dialog-answer-plan-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.schedule-dialog-answer-plan-fields label { display: grid; gap: 6px; color: var(--ui-text-secondary); font-size: 12px; }
+.schedule-dialog-answer-plan-fields input { min-width: 0; min-height: 40px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); background: var(--ui-surface); padding: 0 10px; color: var(--ui-foreground); font: inherit; }
+.schedule-dialog-answer-plan > p { margin: 0; color: var(--ui-danger); font-size: 12px; }
+.schedule-dialog-answer-plan-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .schedule-dialog-footer { gap: 9px; }
 .schedule-dialog-footer .ui-button { min-width: 104px; min-height: 44px; }
 .schedule-dialog-join { display: inline-flex; min-width: 104px; min-height: 44px; align-items: center; justify-content: center; border-radius: var(--ui-radius-md); background: var(--ui-primary); padding: 0 18px; color: var(--ui-primary-foreground); font-size: 13px; font-weight: 650; text-decoration: none; }
@@ -980,6 +989,7 @@
   width: 16px;
   height: 16px;
 }
+.career-next-stage-field-hint { margin: 0; color: var(--ui-text-muted); font-size: var(--ui-text-xs); line-height: 18px; }
 
 .career-next-stage-note-field {
   grid-template-rows: 18px 74px;
@@ -3911,6 +3921,12 @@
 .interview-calendar-event-time { display: flex; align-items: center; gap: 5px; color: var(--ui-text-secondary); font-size: 10px; font-variant-numeric: tabular-nums; }
 .interview-calendar-event-time i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--ec-event-color); }
 .interview-calendar-event-stage { color: var(--ui-foreground); font-size: 10px; font-style: normal; font-weight: 600; line-height: 1.2; }
+.interview-calendar-open-window-content { position: relative; display: flex; align-items: center; gap: 8px; }
+.interview-calendar-open-window-content .interview-calendar-event-title { flex: 0 1 auto; }
+.interview-calendar-window-range { min-width: 0; flex: 1; overflow: hidden; color: var(--ui-text-secondary); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.interview-calendar-window-status { flex: 0 0 auto; border: 1px solid color-mix(in srgb, var(--ec-event-color) 42%, transparent); border-radius: 999px; padding: 1px 6px; color: var(--ui-foreground); font-size: 9px; font-style: normal; }
+.interview-calendar-window-more { display: flex; width: 100%; align-items: center; justify-content: center; color: var(--ui-text-secondary); font-size: 10px; font-weight: 650; }
+.interview-calendar-answer-plan-content .interview-calendar-event-title { color: var(--ec-event-color); }
 .career-reui-calendar [data-view="month"] .interview-calendar-event { padding: 3px 5px; }
 .career-reui-calendar [data-view="month"] .interview-calendar-event-content { display: flex; align-items: center; gap: 5px; }
 .career-reui-calendar [data-view="month"] .interview-calendar-event-time,
