@@ -61,6 +61,8 @@ import {
   type CommandMenuState,
 } from "./slashCommand";
 import { VersionDiffDialog } from "./VersionDiffDialog";
+import { evaluateResumeCompleteness } from "./resumeCompleteness";
+import { ResumeCompletenessAction, ResumeCompletenessPanel } from "./ResumeCompletenessPanel";
 import { TemplatePreviewDialog } from "../templates/TemplatePreviewDialog";
 import { PaginationExtension } from "./paginationPlugin";
 import {
@@ -83,7 +85,7 @@ import {
   type ResumePresentationRead,
 } from "../../api/resumeContract";
 
-type DrawerMode = "settings" | "history" | "agent" | null;
+type DrawerMode = "settings" | "history" | "quality" | "agent" | null;
 
 type AgentFloatingPosition = { left: number; top: number };
 type AgentFloatingBounds = { width: number; height: number; entryWidth: number; entryHeight: number };
@@ -127,19 +129,15 @@ type WorkbenchTitleInputProps = {
 };
 
 export function WorkbenchTitleInput({ value, disabled, onChange }: WorkbenchTitleInputProps) {
-  const [focused, setFocused] = useState(false);
-  const displayValue = focused ? value : truncateWorkbenchTitle(value);
-  const truncated = displayValue !== value;
+  const truncated = truncateWorkbenchTitle(value) !== value;
 
   return (
     <input
       autoComplete="off"
       className="workbench-title"
       name="resume-title"
-      value={displayValue}
+      value={value}
       onChange={(event) => onChange(event.target.value)}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
       aria-label="简历标题"
       disabled={disabled}
       title={truncated ? value : undefined}
@@ -1143,6 +1141,7 @@ export function ResumeWorkbench() {
   const lastPageAnchorRef = useRef<ReturnType<typeof capturePageViewportAnchor> | null>(null);
   const arrangementLayoutRunRef = useRef(0);
   const agentDrawerResizeRef = useRef<{ pointerId: number; clientX: number; width: number; currentWidth: number } | null>(null);
+  const completeness = useMemo(() => evaluateResumeCompleteness(markdown), [markdown]);
 
   const persistAgentDrawerWidth = useCallback((width: number) => {
     const nextWidth = clampAgentDrawerWidth(width, window.innerWidth);
@@ -1264,6 +1263,9 @@ export function ResumeWorkbench() {
   }, []);
 
   const editor = useEditor({
+    // The editor view owns document transactions; surrounding controls subscribe
+    // explicitly, so an extra React render per keystroke only destabilizes input.
+    shouldRerenderOnTransaction: false,
     extensions: [
       ...resumeEditorExtensions,
       PaginationExtension,
@@ -1596,6 +1598,11 @@ export function ResumeWorkbench() {
           </div>
           <div className="workbench-header-actions">
             <div className="workbench-header-tool-group" role="group" aria-label="编辑面板">
+              <ResumeCompletenessAction
+                score={completeness.score}
+                panelOpen={drawerMode === "quality"}
+                onToggle={() => setDrawerMode((mode) => mode === "quality" ? null : "quality")}
+              />
               <WorkbenchDesignAction
                 panelOpen={drawerMode === "settings" || drawerMode === "history"}
                 onToggle={() => setDrawerMode((mode) => mode === "settings" ? null : "settings")}
@@ -1687,14 +1694,14 @@ export function ResumeWorkbench() {
                 id="workbench-side-panel"
                 className={`workbench-drawer${drawerMode === "agent" ? " is-agent" : ""}`}
                 role="region"
-                aria-label={drawerMode === "agent" ? undefined : "简历编辑面板"}
-                aria-labelledby={drawerMode === "agent" ? "workbench-agent-title" : undefined}
+                aria-label={drawerMode === "agent" || drawerMode === "quality" ? undefined : "简历编辑面板"}
+                aria-labelledby={drawerMode === "agent" ? "workbench-agent-title" : drawerMode === "quality" ? "workbench-quality-title" : undefined}
                 initial={{ x: drawerMode === "agent" ? 390 : 392 }}
                 animate={{ x: 0 }}
                 exit={{ x: drawerMode === "agent" ? 390 : 392 }}
                 transition={{ type: "spring", bounce: 0, duration: 0.26 }}
               >
-                {drawerMode !== "agent" && (
+                {(drawerMode === "settings" || drawerMode === "history") && (
                   <WorkbenchPanelSwitcher
                     activePanel={drawerMode}
                     onSettings={() => setDrawerMode("settings")}
@@ -1830,6 +1837,11 @@ export function ResumeWorkbench() {
                     ))}
                     <p className="workbench-version-footnote">自动保存不会创建正式版本；恢复会直接替换当前编辑内容。</p>
                   </div>
+                ) : drawerMode === "quality" ? (
+                  <ResumeCompletenessPanel
+                    result={completeness}
+                    onClose={() => setDrawerMode(null)}
+                  />
                 ) : activeResumeId ? (
                   <>
                     <div
