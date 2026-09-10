@@ -77,6 +77,46 @@ final result: passed
 
 ---
 
+## 求职记录看板栏位弱化 — 2026-09-10
+
+### Evidence
+
+- Source visual truth: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-6af015bf-e246-4a3e-97d2-6ae7e92de4d1.png`，`1231 × 855` px；用户指定只复现栏位之间的浅色单线分隔与无独立栏背景。
+- Implementation route: `http://127.0.0.1:5174/career/applications`，当前工作树 Web 与 FastAPI，Chrome 已登录桌面状态。
+- Implementation screenshot: 当前任务中的 CUA 最终内联截图；浏览器接口未提供可持久化文件路径。
+- Viewport: `1920 × 1078` CSS px，device density `1`。来源图的真实 CSS viewport 与 density 未知，因此完整画面按可见结构归一化比较，并聚焦核对相邻栏边界、栏背景和岗位卡片。
+- State: 浅色主题，7 个真实阶段栏、16 张岗位卡片已加载，无弹层。
+
+### Findings
+
+没有剩余 P0/P1/P2 问题。
+
+- 字体与排版：沿用 LinkCV 既有字体、字号、标题层级与省略规则；本次没有改动文字样式。
+- 间距与布局：栏间 gap 为 `0px`，相邻栏共用连续的 1px 竖向分隔线；栏内 12px inset、260px 列宽、卡片高度与滚动行为保持原实现。
+- 色彩与 Token：所有栏背景实测为透明 `rgba(0, 0, 0, 0)`，自然透出项目背景；第二栏起使用由 `--ui-border` 混合得到的 68% 浅色分隔线。
+- 图片与图标：目标区域没有新增图片资产；拖拽手柄与卡片菜单继续使用项目既有 Lucide 图标。
+- 文案与内容：阶段名称、数量、公司、岗位和进度文案均未改变。
+- 聚焦对照：参考图保留白色岗位卡片并弱化栏容器；最终实现同样保留 16 张白色岗位卡片，只移除整栏圆角、边框和底色。无需额外图片裁切即可辨识关键差异。
+
+### Interaction Evidence
+
+- 真实路由成功加载 7 栏和 16 张岗位卡片；标题拖拽节点、卡片菜单与横向看板 DOM 结构未改动。
+- 当前页面应用自身 console error 为 0；仅 Chrome 扩展记录过与页面实现无关的扩展上下文错误。
+
+### Comparison History
+
+1. 首次对照发现 5173 由另一工作树提供，仍显示旧版栏卡片；该截图不作为实现证据。
+2. 按 Development profile 在独立的 5174/18001 端口启动当前工作树，重新加载同一真实账号与求职数据。
+3. 最终对照确认栏容器已透明、圆角与整框消失，相邻栏之间只保留浅色单线，无剩余 P0/P1/P2。
+
+### Follow-up Polish
+
+- 无。本次按用户范围保留既有列宽、卡片尺寸和页面其余视觉细节。
+
+final result: passed
+
+---
+
 ## Evidence
 
 - Source visual truth: 用户提供的 `LinkCV 2.zip` 中 `design_handoff_resume_editor/design_files/ui_kits/resume-workbench/Workbench.jsx`。

@@ -445,7 +445,7 @@
   min-height: 0;
   grid-auto-flow: column;
   grid-auto-columns: 260px;
-  gap: 12px;
+  gap: 0;
   align-items: stretch;
 }
 .progress-column {
@@ -457,10 +457,13 @@
   min-height: 0;
   flex-direction: column;
   gap: 10px;
-  border: 1px solid var(--ui-border);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--ui-surface-subtle) 64%, var(--ui-surface));
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   padding: 12px;
+}
+.progress-column + .progress-column {
+  border-left: 1px solid color-mix(in srgb, var(--ui-border) 68%, transparent);
 }
 .progress-column.is-dragging-column { opacity: .58; }
 .progress-column.is-column-drop-before::before,
@@ -476,8 +479,8 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-accent) 14%, transparent);
   pointer-events: none;
 }
-.progress-column.is-column-drop-before::before { left: -8px; }
-.progress-column.is-column-drop-after::after { right: -8px; }
+.progress-column.is-column-drop-before::before { left: -2px; }
+.progress-column.is-column-drop-after::after { right: -2px; }
 .progress-column.is-invalid-drop-target {
   cursor: not-allowed;
 }

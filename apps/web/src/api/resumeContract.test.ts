@@ -316,12 +316,19 @@ describe("resume semantic contract adapter", () => {
     const settings = styleToEditorSettings(style);
     expect(settings.fontSize).toBe(12);
     expect(withResumePresentationAvatarSize(style, 136).template_scoped["classic-cn"]?.avatar_size_px).toBe(136);
+    const wenkai = '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif';
+    const withWenkai = editorSettingsToStyle({ ...settings, fontFamily: wenkai }, style);
+    expect(withWenkai.template_scoped["classic-cn"]?.font_family).toBe(wenkai);
+    expect(styleToEditorSettings(withWenkai).fontFamily).toBe(wenkai);
+    expect(withWenkai.template_snapshot.tokens.font_family).toBe("Source Han Serif SC");
     const switchedBack = {
-      ...style,
+      ...withWenkai,
       template_snapshot: { ...template, template_key: "modern-cn" },
     };
     expect(styleToEditorSettings(switchedBack).fontSize).toBe(9);
+    expect(styleToEditorSettings(switchedBack).fontFamily).toBe("Source Han Serif SC");
     expect(styleToEditorSettings({ ...switchedBack, template_snapshot: template }).fontSize).toBe(12);
+    expect(styleToEditorSettings({ ...switchedBack, template_snapshot: template }).fontFamily).toBe(wenkai);
   });
 
   it("preserves four-edge canonical margins until the matching editor control changes", () => {

@@ -589,13 +589,13 @@ select:not([data-slot]):focus-visible,
 }
 
 .theme-classic-technical .resume-content strong {
-  color: #48505c;
+  color: inherit;
   font-weight: 600;
 }
 
 .theme-classic-technical .resume-content em {
-  color: #28303d;
-  font-style: normal;
+  color: inherit;
+  font-style: italic;
 }
 
 .theme-classic-technical .resume-content a {
@@ -1760,7 +1760,7 @@ select:not([data-slot]):focus-visible,
   overflow: hidden;
   background: var(--canvas);
   color: var(--ink);
-  font-family: var(--ui-font);
+  font-family: var(--ui-font-content);
 }
 
 .workspace-route-loading {
@@ -1783,6 +1783,7 @@ select:not([data-slot]):focus-visible,
   padding: 0 24px;
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
+  font-family: var(--ui-font-sans);
 }
 
 .dashboard-brand {
@@ -1835,9 +1836,11 @@ select:not([data-slot]):focus-visible,
   min-height: 40px;
   box-sizing: border-box;
   gap: 0;
-  border-color: var(--ui-border);
-  background: var(--ui-surface);
-  box-shadow: var(--ui-shadow-xs);
+  overflow: visible;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .dashboard-tabs > a {
@@ -1846,6 +1849,85 @@ select:not([data-slot]):focus-visible,
   padding-inline: 14px;
   color: var(--ui-text-muted);
   font-size: var(--ui-text-sm);
+}
+
+.dashboard-tabs > a::before {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  bottom: auto;
+  left: 0;
+  z-index: 0;
+  height: 44px;
+  border-radius: 0;
+  background:
+    radial-gradient(ellipse 9px 19px at 2% 51%, color-mix(in srgb, var(--nav-item-color) 9%, transparent) 0 84%, transparent 100%),
+    radial-gradient(ellipse 9px 21px at 11% 43%, color-mix(in srgb, var(--nav-item-color) 8%, transparent) 0 84%, transparent 100%),
+    radial-gradient(ellipse 8px 18px at 20% 58%, color-mix(in srgb, var(--nav-item-color) 9%, transparent) 0 85%, transparent 100%),
+    radial-gradient(ellipse 9px 21px at 29% 45%, color-mix(in srgb, var(--nav-item-color) 8%, transparent) 0 84%, transparent 100%),
+    radial-gradient(ellipse 8px 19px at 38% 55%, color-mix(in srgb, var(--nav-item-color) 9%, transparent) 0 85%, transparent 100%),
+    radial-gradient(ellipse 9px 22px at 47% 40%, color-mix(in srgb, var(--nav-item-color) 8%, transparent) 0 83%, transparent 100%),
+    radial-gradient(ellipse 8px 19px at 56% 57%, color-mix(in srgb, var(--nav-item-color) 9%, transparent) 0 85%, transparent 100%),
+    radial-gradient(ellipse 9px 21px at 65% 46%, color-mix(in srgb, var(--nav-item-color) 8%, transparent) 0 84%, transparent 100%),
+    radial-gradient(ellipse 8px 18px at 74% 61%, color-mix(in srgb, var(--nav-item-color) 9%, transparent) 0 85%, transparent 100%),
+    radial-gradient(ellipse 9px 22px at 83% 42%, color-mix(in srgb, var(--nav-item-color) 8%, transparent) 0 83%, transparent 100%),
+    radial-gradient(ellipse 8px 19px at 92% 55%, color-mix(in srgb, var(--nav-item-color) 9%, transparent) 0 85%, transparent 100%),
+    radial-gradient(ellipse 8px 20px at 99% 47%, color-mix(in srgb, var(--nav-item-color) 8%, transparent) 0 84%, transparent 100%);
+  --dashboard-brush-opacity: 0.86;
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transform: scaleX(0);
+  transform-origin: left center;
+  filter: saturate(0.88) blur(0.12px);
+}
+
+.dashboard-tabs > a::after {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  bottom: auto;
+  left: 0;
+  z-index: 0;
+  height: 44px;
+  border-radius: 0;
+  background:
+    radial-gradient(ellipse 6px 20px at 16% 48%, color-mix(in srgb, var(--nav-item-color) 11%, transparent) 0 60%, transparent 100%),
+    radial-gradient(ellipse 6px 19px at 34% 52%, color-mix(in srgb, var(--nav-item-color) 10%, transparent) 0 58%, transparent 100%),
+    radial-gradient(ellipse 6px 21px at 52% 47%, color-mix(in srgb, var(--nav-item-color) 11%, transparent) 0 59%, transparent 100%),
+    radial-gradient(ellipse 6px 19px at 70% 53%, color-mix(in srgb, var(--nav-item-color) 10%, transparent) 0 58%, transparent 100%),
+    radial-gradient(ellipse 6px 20px at 88% 48%, color-mix(in srgb, var(--nav-item-color) 11%, transparent) 0 60%, transparent 100%);
+  --dashboard-brush-opacity: 0.42;
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transform: scaleX(0);
+  transform-origin: left center;
+  filter: blur(0.16px);
+}
+
+.dashboard-tabs > a[data-active="true"]::before,
+.dashboard-tabs > a[data-active="true"]::after {
+  animation: dashboard-nav-watercolor-stroke 620ms var(--ui-ease-standard) both;
+}
+
+.dashboard-tabs > a[data-active="true"]::after {
+  animation-delay: 70ms;
+}
+
+@keyframes dashboard-nav-watercolor-stroke {
+  0% { opacity: 0; transform: scaleX(0); }
+  38% { opacity: var(--dashboard-brush-opacity); }
+  100% { opacity: var(--dashboard-brush-opacity); transform: scaleX(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-tabs > a[data-active="true"]::before,
+  .dashboard-tabs > a[data-active="true"]::after {
+    animation: none;
+    opacity: var(--dashboard-brush-opacity);
+    transform: scaleX(1);
+  }
 }
 
 .dashboard-tabs > a svg {

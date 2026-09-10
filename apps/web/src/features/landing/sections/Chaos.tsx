@@ -70,7 +70,7 @@ export function Chaos() {
             </Reveal>
           </div>
 
-          {/* 散落工具 → LinkCV 连接图 */}
+          {/* 散落工具 → LinkResume 连接图 */}
           <div className="relative flex items-center">
             <ConnectionMap />
           </div>

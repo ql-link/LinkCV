@@ -280,6 +280,24 @@ afterEach(() => {
 });
 
 describe("InterviewCenterPage API projections", () => {
+  it("顶部错误提示不显示关闭按钮并在 5 秒后自动消失", async () => {
+    vi.useFakeTimers();
+    mocks.listJobApplications.mockRejectedValue(new ApiRequestError(401, "UNAUTHORIZED"));
+
+    render(<InterviewCenterPage view="applications" />);
+    await act(async () => {});
+
+    expect(screen.getByRole("alert")).toHaveTextContent("登录状态已失效，请重新登录后再试。");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("UNAUTHORIZED");
+    expect(screen.queryByRole("button", { name: "关闭" })).not.toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(4999));
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("sorts scheduled progress by the next session and keeps stable creation ordering", () => {
     const makeSummary = (
       id: string,
@@ -581,6 +599,10 @@ describe("InterviewCenterPage API projections", () => {
     expect(event.querySelector(".interview-calendar-event-content")).toBeInTheDocument();
     fireEvent.click(event);
     expect(event).toHaveAttribute("aria-pressed", "true");
+    const emptyScheduleColumn = calendar.querySelector<HTMLElement>('[data-ec-bounds-start="0"]');
+    expect(emptyScheduleColumn).not.toBeNull();
+    fireEvent.click(emptyScheduleColumn!);
+    expect(event).toHaveAttribute("aria-pressed", "false");
     expect(screen.queryByRole("dialog", { name: "面试详情" })).not.toBeInTheDocument();
     fireEvent.doubleClick(event);
     const dialog = await screen.findByRole("dialog", { name: "面试详情" });
