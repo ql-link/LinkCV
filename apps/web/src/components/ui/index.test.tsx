@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -57,6 +57,22 @@ describe("LinkCV UI components", () => {
     expect(notice).toHaveAttribute("aria-live", "assertive");
     expect(notice).toHaveTextContent("操作失败");
     expect(notice).toHaveTextContent("请求暂时无法完成，请稍后重试。");
+  });
+
+  it("提醒卡片的操作按钮使用独立的右侧区域", () => {
+    render(
+      <FeedbackNotice
+        kind="warning"
+        action={<Button variant="link">继续操作</Button>}
+      >
+        当前操作需要确认。
+      </FeedbackNotice>,
+    );
+
+    const notice = screen.getByRole("status");
+    const action = within(notice).getByRole("button", { name: "继续操作" });
+    expect(action.parentElement).toHaveClass("ui-feedback-notice-action");
+    expect(notice.querySelector(".ui-feedback-notice-description")).not.toContainElement(action);
   });
 
   it("紧凑品牌只保留图形标识", () => {

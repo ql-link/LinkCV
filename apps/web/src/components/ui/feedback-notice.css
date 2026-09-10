@@ -16,6 +16,23 @@
   box-shadow: var(--ui-shadow-xs);
 }
 
+.ui-feedback-notice.has-action {
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+}
+
+.ui-feedback-notice-action {
+  align-self: center;
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.ui-feedback-notice-action .ui-button {
+  min-height: 28px;
+  padding-inline: 0;
+  color: inherit;
+  font-weight: 650;
+}
+
 .ui-feedback-notice.is-floating {
   position: fixed;
   top: clamp(20px, 8vh, 72px);
