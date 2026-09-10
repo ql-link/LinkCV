@@ -1035,7 +1035,7 @@ function ApplicationHeaderControls({
         placeholder="搜索公司、岗位…"
       />
       <Button variant="ghost" icon={<Download size={15} />} onClick={onInstallPlugin}>安装采集插件</Button>
-      <Button icon={<Plus />} onClick={onImport}>导入岗位</Button>
+      <Button variant="ghost" icon={<Plus />} onClick={onImport}>导入岗位</Button>
     </div>
   );
 }
