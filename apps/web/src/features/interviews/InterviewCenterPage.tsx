@@ -52,6 +52,7 @@ import { Button, ConfirmDialog, Dialog, DialogContent, DialogDescription, Dialog
 import { SelectField } from "@/components/ui/select-field";
 import {
   EventCalendar,
+  type EventCalendarApi,
   type EventCalendarRenderEventProps,
 } from "@/components/reui/event-calendar/event-calendar";
 import { EventCalendarContent } from "@/components/reui/event-calendar/event-calendar-content";
@@ -1544,6 +1545,9 @@ function ScheduleView({
   onMove: (id: string, calendarDay: number, calendarStart: number, calendarSpan?: number) => void;
 }) {
   const [openInterviewId, setOpenInterviewId] = useState<string | null>(null);
+  const calendarApiRef = useRef<EventCalendarApi<Interview | null> | null>(null);
+  const calendarRootRef = useRef<HTMLDivElement | null>(null);
+  const hasCalendarSelectionRef = useRef(false);
   const normalizedQuery = query.trim().toLowerCase();
   const sourceInterviews = interviews;
   const visibleInterviews = useMemo(
@@ -1563,6 +1567,19 @@ function ScheduleView({
   const handleMove = (id: string, calendarDay: number, calendarStart: number, calendarSpan?: number) => {
     onMove(id, calendarDay, calendarStart, calendarSpan);
   };
+  useEffect(() => {
+    const clearSelectionOutsideEvent = (event: MouseEvent) => {
+      if (!hasCalendarSelectionRef.current) return;
+      const target = event.target;
+      const eventCard = target instanceof Element
+        ? target.closest('[data-slot="event-calendar-event"]')
+        : null;
+      if (eventCard && calendarRootRef.current?.contains(eventCard)) return;
+      calendarApiRef.current?.clearSelection();
+    };
+    document.addEventListener("click", clearSelectionOutsideEvent, true);
+    return () => document.removeEventListener("click", clearSelectionOutsideEvent, true);
+  }, []);
   const calendarEvents = useMemo<CalendarEvent<Interview | null>[]>(() => {
     const monthFallbackColors: InterviewCalendarColor[] = ["red", "orange", "green", "blue", "purple"];
     const events = visibleInterviews.map((interview) => {
@@ -1639,6 +1656,8 @@ function ScheduleView({
           双击空白时间新建排期；按住空白时间拖动可选择范围。按住卡片可在当天移动排期，拖动上边缘调整开始时间，下边缘调整结束时间，以 15 分钟为步长调整。
         </p>
         <EventCalendar<Interview | null>
+          ref={calendarRootRef}
+          apiRef={calendarApiRef}
           className="career-reui-calendar"
           events={calendarEvents}
           view={granularity}
@@ -1671,6 +1690,9 @@ function ScheduleView({
           }}
           onEventDoubleClick={(occurrence) => {
             if (occurrence.event.data) handleOpen(occurrence.event.data.id);
+          }}
+          onSelectionChange={(selection) => {
+            hasCalendarSelectionRef.current = selection.eventKeys.length > 0 || selection.slot !== null;
           }}
           onSlotDoubleClick={(slot) => createAt(
             slot.date,
