@@ -367,12 +367,19 @@ function EventCalendarMonthWeek({
     }
     return start === -1 ? null : { col: start, span: end - start + 1 }
   }
-  // bars fit within the cap; deeper lanes fall into each day's "+N more"
-  const visibleBars = bars.filter((b) => (b.lane ?? 0) < cap)
+  // In contained auto-fit mode the overflow indicator consumes one row just
+  // like an event chip. If bars already occupy every measured row, reserve the
+  // last lane for "+N more"; otherwise the indicator is squeezed underneath
+  // the fixed day-number footer and only its upper half remains visible.
+  const hasHiddenBars = bars.some((b) => (b.lane ?? 0) >= cap)
+  const visibleBarCap =
+    autoFit && hasHiddenBars ? Math.max(0, cap - 1) : cap
+  // bars fit within the adjusted cap; deeper lanes fall into each day's "+N more"
+  const visibleBars = bars.filter((b) => (b.lane ?? 0) < visibleBarCap)
   const covers = (b: EventCalendarSegment, dayOffset: number) =>
     (b.colStart ?? 0) <= dayOffset &&
     dayOffset < (b.colStart ?? 0) + (b.colSpan ?? 1)
-  // Occurrence keys of the bars hidden in each column (lane >= cap). Threaded to
+  // Occurrence keys of the bars hidden in each column (lane >= visibleBarCap). Threaded to
   // the cell so its "+N more" popover can list the hidden bars WITHOUT re-listing
   // the visible ones (day buckets carry no lane, so the week row - which owns bar
   // laning - is the only place that knows which bars are hidden).
@@ -380,7 +387,10 @@ function EventCalendarMonthWeek({
     (_, col) =>
       new Set(
         bars
-          .filter((b) => (b.lane ?? 0) >= cap && covers(b, offsets[col]))
+          .filter(
+            (b) =>
+              (b.lane ?? 0) >= visibleBarCap && covers(b, offsets[col])
+          )
           .map((b) => b.occurrence.key)
       )
   )
