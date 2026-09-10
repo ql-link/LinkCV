@@ -117,6 +117,8 @@ import {
 } from "./CareerDetailViews";
 import "./interviews.css";
 
+const FLOATING_ERROR_NOTICE_DURATION_MS = 5000;
+
 type InterviewStatus = "upcoming" | "active" | "completed" | "cancelled";
 type ScheduleGranularity = CalendarView;
 type ScheduleCreatedInfo = {
@@ -361,6 +363,7 @@ function toInterview(
 
 function errorMessage(error: unknown): string {
   if (error instanceof ApiRequestError) {
+    if (error.status === 401) return "登录状态已失效，请重新登录后再试。";
     const messages: Record<string, string> = {
       INTERVIEW_EDIT_CONFLICT: "这条面试已在其他页面更新，请刷新后再试。",
       INTERVIEW_INVALID_TRANSITION: "当前求职进度不允许执行这个操作。",
@@ -505,7 +508,7 @@ export function InterviewCenterPage({
   const [groupByCategory, setGroupByCategory] = useState(false);
   const [hiddenApplicationBoardColumnIds, setHiddenApplicationBoardColumnIds] = useState<Set<string>>(() => new Set());
   const [applicationSortMode, setApplicationSortMode] = useState<ApplicationSortMode>("recent_schedule");
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ id: number; message: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasLoadedData, setHasLoadedData] = useState(false);
   const [resolvedApplicationDetailId, setResolvedApplicationDetailId] = useState<string | null>(null);
@@ -523,6 +526,7 @@ export function InterviewCenterPage({
   const loadRequestRef = useRef(0);
   const detailRequestRef = useRef(0);
   const scheduleToastTimeoutRef = useRef<number | null>(null);
+  const noticeIdRef = useRef(0);
   const isApplicationDetailRoute = view === "applications" && Boolean(initialApplicationId);
   const isApplicationSessionDialogRoute = isApplicationDetailRoute && Boolean(initialSessionId);
   const closeApplicationSessionDialog = () => {
@@ -535,6 +539,11 @@ export function InterviewCenterPage({
   };
   const isInterviewDetailRoute = view === "records" && Boolean(initialApplicationId && initialSessionId);
   const isStandaloneDetailRoute = isApplicationDetailRoute || isInterviewDetailRoute;
+
+  const showNotice = useCallback((message: string) => {
+    noticeIdRef.current += 1;
+    setNotice({ id: noticeIdRef.current, message });
+  }, []);
 
   const pushScheduleToast = useCallback((message: string) => {
     setScheduleToast(message);
@@ -552,6 +561,12 @@ export function InterviewCenterPage({
       window.clearTimeout(scheduleToastTimeoutRef.current);
     }
   }, []);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), FLOATING_ERROR_NOTICE_DURATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   const openCreateInterview = (startAt?: string, endAt?: string) => {
     setCreateInterviewStartAt(startAt ?? null);
@@ -592,11 +607,11 @@ export function InterviewCenterPage({
       if (requestId !== detailRequestRef.current || nextDetail.session.id !== id) return;
       setDetail(nextDetail);
     } catch (error) {
-      if (requestId === detailRequestRef.current) setNotice(errorMessage(error));
+      if (requestId === detailRequestRef.current) showNotice(errorMessage(error));
     } finally {
       if (requestId === detailRequestRef.current) setDetailLoading(false);
     }
-  }, []);
+  }, [showNotice]);
 
   const loadData = useCallback(async (preferredId?: string | null) => {
     const requestId = ++loadRequestRef.current;
@@ -657,14 +672,14 @@ export function InterviewCenterPage({
       }
     } catch (error) {
       if (requestId === loadRequestRef.current) {
-        setNotice(errorMessage(error));
+        showNotice(errorMessage(error));
         if (detailRequestRef.current === invalidatedDetailRequest)
           setDetailLoading(false);
       }
     } finally {
       if (requestId === loadRequestRef.current) setLoading(false);
     }
-  }, [initialApplicationId, initialSessionId, loadDetail, scheduleRange, timezone, view, weekStart]);
+  }, [initialApplicationId, initialSessionId, loadDetail, scheduleRange, showNotice, timezone, view, weekStart]);
 
   useEffect(() => {
     selectedIdRef.current = initialSessionId ?? null;
@@ -741,7 +756,7 @@ export function InterviewCenterPage({
       const updatedEnd = new Date(response.session.end_at);
       pushScheduleToast(`已自动更新：${current.company} · ${weekday(updatedStart)} ${formatTime(updatedStart)}–${formatTime(updatedEnd)}`);
     } catch (error) {
-      setNotice(errorMessage(error));
+      showNotice(errorMessage(error));
       await loadData(id);
     }
   };
@@ -755,7 +770,7 @@ export function InterviewCenterPage({
       });
       await loadData(detail.session.id);
     } catch (error) {
-      setNotice(errorMessage(error));
+      showNotice(errorMessage(error));
     }
   };
 
@@ -820,18 +835,8 @@ export function InterviewCenterPage({
       )}
       <main className={`dashboard-content interview-center-content${isStandaloneDetailRoute ? " career-standalone-detail-content" : ""}${!isStandaloneDetailRoute && view === "applications" && applicationDisplayMode === "board" ? " career-applications-board-content" : ""}${!isStandaloneDetailRoute && view === "schedule" ? " career-schedule-content" : ""}`}>
       {notice && (
-        <FeedbackNotice className="interview-error-notice" kind="error" placement="floating">
-          {notice}
-          <Button
-            variant="link"
-            size="sm"
-            onClick={() => {
-              setNotice(null);
-              void loadData(selectedId ?? undefined);
-            }}
-          >
-            关闭
-          </Button>
+        <FeedbackNotice key={notice.id} className="interview-error-notice" kind="error" placement="floating">
+          {notice.message}
         </FeedbackNotice>
       )}
       {scheduleToast && <FeedbackNotice kind="success" placement="floating">{scheduleToast}</FeedbackNotice>}
@@ -849,7 +854,7 @@ export function InterviewCenterPage({
               setShowCreate(true);
             }}
             onChanged={() => loadData(initialSessionId)}
-            onNotice={setNotice}
+            onNotice={showNotice}
           />
           {isApplicationSessionDialogRoute && (
             <InterviewSessionDetailView
@@ -864,7 +869,7 @@ export function InterviewCenterPage({
                 }
                 void loadData(initialSessionId ?? preferredId);
               }}
-              onNotice={setNotice}
+              onNotice={showNotice}
             />
           )}
         </>
@@ -874,7 +879,7 @@ export function InterviewCenterPage({
           detailLoading={detailLoading}
           onBack={() => navigateTo(careerApplicationPath(initialApplicationId as string))}
           onChanged={(preferredId) => loadData(preferredId)}
-          onNotice={setNotice}
+          onNotice={showNotice}
         />
       ) : view === "applications" ? (
         <ApplicationsView
@@ -888,7 +893,7 @@ export function InterviewCenterPage({
           timezone={timezone}
           onCreate={() => setShowCreateApplication(true)}
           onChanged={() => loadData(initialSessionId)}
-          onNotice={setNotice}
+          onNotice={showNotice}
         />
       ) : view === "schedule" ? (
         <ScheduleView
@@ -928,7 +933,7 @@ export function InterviewCenterPage({
           onSelect={(id) => void selectInterview(id)}
           onColorChange={(color) => void updateColor(color)}
           onChanged={(preferredId) => void loadData(preferredId)}
-          onNotice={setNotice}
+          onNotice={showNotice}
         />
       )}
       {showCreate && (isApplicationDetailRoute || Boolean(createInterviewApplicationId) ? (
@@ -962,7 +967,7 @@ export function InterviewCenterPage({
             }
             void loadData(id);
           }}
-          onNotice={setNotice}
+          onNotice={showNotice}
         />
       ) : (
         <ScheduleStageDialog
@@ -977,7 +982,7 @@ export function InterviewCenterPage({
             setCreateInterviewEndAt(null);
           }}
           onChanged={() => loadData()}
-          onNotice={setNotice}
+          onNotice={showNotice}
         />
       ))}
       {showCreateApplication && (
@@ -989,7 +994,7 @@ export function InterviewCenterPage({
             void loadData();
             navigateTo(careerApplicationPath(applicationId));
           }}
-          onNotice={setNotice}
+          onNotice={showNotice}
         />
       )}
       {view === "applications" && jobImportOpen && (
@@ -1276,7 +1281,7 @@ function ApplicationsView({
     dragRejectionNoticeTimerRef.current = window.setTimeout(() => {
       setDragRejectionNotice(null);
       dragRejectionNoticeTimerRef.current = null;
-    }, 3600);
+    }, FLOATING_ERROR_NOTICE_DURATION_MS);
   }, []);
   const normalizedQuery = query.trim().toLowerCase();
   const visibleApplications = sortApplications(

@@ -275,6 +275,24 @@ afterEach(() => {
 });
 
 describe("InterviewCenterPage API projections", () => {
+  it("顶部错误提示不显示关闭按钮并在 5 秒后自动消失", async () => {
+    vi.useFakeTimers();
+    mocks.listJobApplications.mockRejectedValue(new ApiRequestError(401, "UNAUTHORIZED"));
+
+    render(<InterviewCenterPage view="applications" />);
+    await act(async () => {});
+
+    expect(screen.getByRole("alert")).toHaveTextContent("登录状态已失效，请重新登录后再试。");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("UNAUTHORIZED");
+    expect(screen.queryByRole("button", { name: "关闭" })).not.toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(4999));
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("sorts scheduled progress by the next session and keeps stable creation ordering", () => {
     const makeSummary = (
       id: string,
