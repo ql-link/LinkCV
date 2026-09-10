@@ -780,15 +780,20 @@ export function DatasetsPage() {
           )}
 
           {syncFailure && (
-            <FeedbackNotice kind="error" placement="floating">
+            <FeedbackNotice
+              kind="error"
+              placement="floating"
+              action={(
+                <Button
+                  variant="link"
+                  size="sm"
+                  onClick={() => void refreshDatasets({ accepted: syncFailure === ACCEPTED_SYNC_FAILURE })}
+                >
+                  重新刷新
+                </Button>
+              )}
+            >
               <span>{syncFailure}</span>
-              <Button
-                variant="link"
-                size="sm"
-                onClick={() => void refreshDatasets({ accepted: syncFailure === ACCEPTED_SYNC_FAILURE })}
-              >
-                重新刷新
-              </Button>
             </FeedbackNotice>
           )}
 

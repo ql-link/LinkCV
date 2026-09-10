@@ -56,15 +56,29 @@ export function buildProfileEnvironment(options) {
     ? parseEnv(readFileSync(files.secret, "utf8"))
     : {};
 
+  const env = {
+    ...baseEnv,
+    ...secretEnv,
+    ...inheritedEnv,
+    LINKCV_ENV_FILE: files.base,
+    LINKCV_SECRET_ENV_FILE: files.secret,
+  };
+
+  if (
+    basename(options.profile) === ".env"
+    && env.RABBITMQ_URL
+    && env.RABBITMQ_PORT
+  ) {
+    const rabbitmqUrl = new URL(env.RABBITMQ_URL);
+    if (["127.0.0.1", "localhost", "[::1]"].includes(rabbitmqUrl.hostname)) {
+      rabbitmqUrl.port = env.RABBITMQ_PORT;
+      env.RABBITMQ_URL = rabbitmqUrl.toString();
+    }
+  }
+
   return {
     files,
-    env: {
-      ...baseEnv,
-      ...secretEnv,
-      ...inheritedEnv,
-      LINKCV_ENV_FILE: files.base,
-      LINKCV_SECRET_ENV_FILE: files.secret,
-    },
+    env,
   };
 }
 
@@ -136,6 +150,22 @@ export function serviceScriptForProfile(profile) {
     : "dev:services";
 }
 
+export function npmInvocation(environment = process.env, platform = process.platform) {
+  if (environment.npm_execpath) {
+    return {
+      command: process.execPath,
+      prefixArgs: [environment.npm_execpath],
+    };
+  }
+  if (platform === "win32") {
+    return {
+      command: environment.ComSpec || "cmd.exe",
+      prefixArgs: ["/d", "/s", "/c", "npm"],
+    };
+  }
+  return { command: "npm", prefixArgs: [] };
+}
+
 function run() {
   const profile = process.argv[2];
   if (!profile) {
@@ -160,7 +190,12 @@ function run() {
     console.log(`小程序联调：开发者工具 ${miniprogramSync.devtoolsApiBaseUrl}；真机开发版 ${miniprogramSync.apiBaseUrl}（需要局域网监听） -> ${miniprogramSync.targetFile}`);
   }
 
-  const child = spawn("npm", ["run", serviceScriptForProfile(profile)], {
+  const npm = npmInvocation(runtime.env);
+  const child = spawn(npm.command, [
+    ...npm.prefixArgs,
+    "run",
+    serviceScriptForProfile(profile),
+  ], {
     cwd: process.cwd(),
     env: runtime.env,
     stdio: "inherit",
