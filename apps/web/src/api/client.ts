@@ -667,6 +667,9 @@ export type InterviewSessionRecord = {
   round_result: "pending" | "passed" | "rejected";
   start_at: string;
   end_at: string;
+  schedule_kind: "fixed_slot" | "open_window";
+  answer_plan_start_at: string | null;
+  answer_plan_end_at: string | null;
   timezone: string;
   mode: InterviewMode;
   meeting_url: string | null;
@@ -1764,6 +1767,7 @@ export const api = {
       stage_label: string;
       start_at: string;
       end_at: string;
+      schedule_kind?: "fixed_slot" | "open_window";
       timezone: string;
       mode: InterviewMode;
       meeting_url?: string | null;
@@ -1811,6 +1815,18 @@ export const api = {
     request<InterviewSessionDetail>(
       `/api/interview-sessions/${id}/reschedule`,
       { method: "POST", body: payload },
+    ),
+  updateInterviewAnswerPlan: (
+    id: string,
+    payload: {
+      answer_plan_start_at: string | null;
+      answer_plan_end_at: string | null;
+      base_lock_version: number;
+    },
+  ) =>
+    request<InterviewSessionDetail>(
+      `/api/interview-sessions/${id}/answer-plan`,
+      { method: "PUT", body: payload },
     ),
   completeInterviewSession: (
     id: string,
