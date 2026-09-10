@@ -58,6 +58,25 @@ final result: passed
 
 ---
 
+# 开放窗口与作答计划 Design QA
+
+- reference: `/Users/jixu/.codex/generated_images/01a08961-e9bf-7e43-86d2-819cb6049c14/exec-81852339-6b61-44ac-b8c8-cae2b8e697fd.png`
+- implementation: `http://127.0.0.1:5174/career/schedule`
+- viewport checked: desktop 1280 x 720
+- data checked: 5 条虚构开放窗口和 1 条个人作答计划
+
+## Comparison
+
+- 周视图保留既有导航、星期表头、小时网格和当前时间线。
+- 官方开放范围在顶部只读区域展示公司、阶段、精确起止时间、颜色和待完成状态。
+- 默认显示 3 条窗口；第 4 行是“还有 2 项待完成 · 展开查看”，点击后展示全部 5 条并切换为“收起更多项目”。
+- “我的作答计划”独立显示在周六 19:00–21:00 小时网格，不改变官方窗口。
+- 页面信息层级和交互模型与参考一致；在 1280 x 720 验收视口下使用现有日历的紧凑密度，避免破坏工作区外框。
+
+final result: passed
+
+---
+
 ## 求职记录看板栏位弱化 — 2026-09-10
 
 ### Evidence

@@ -31,7 +31,7 @@
 | `src/linkcv/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkcv/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0057` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0058` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -42,6 +42,8 @@
 MySQL 包含用户、简历、LLM 治理和 `job_descriptions` 等业务表。当前可编辑简历状态保存在 `resumes.data_json/style_json`，历史版本同时快照两份 JSON。HTTP 中的 ID 是十进制字符串，ORM 和数据库使用整数。
 
 `job_applications` 保存一次求职尝试的岗位快照、投递事实、生命周期、Offer 详情和乐观锁；`applied_at` 为空表示待投递，`lifecycle_status=terminated` 保存终止时间与原因。迁移 `0057` 新增追加式 `job_application_stages` 作为当前阶段和阶段历史真值，并为 `interview_sessions` 增加可空阶段外键；旧扁平阶段字段和旧动作接口保留一个兼容期。迁移 `0053` 增加可空 Offer 详情并将历史 OC/书面 Offer 状态不可逆地合并为 `received`；迁移 `0054` 把薪资区间收敛为单个 `offer_salary`，旧记录优先保留下限、仅缺少下限时取上限，并继续要求数值薪资与币种、计薪周期同时存在；迁移 `0055` 允许手工创建的岗位描述为空。
+
+迁移 `0058` 为 `interview_sessions` 增加固定场次/开放窗口类型和开放窗口专用的个人作答计划时间。只有测评和笔试能创建 `open_window`；它可保存至多一组个人作答计划，两端同时为空表示未计划，两端有值时必须完整落在官方 `start_at/end_at` 内。调整官方窗口不能使既有计划越界，固定场次不能写入计划。
 
 `job_descriptions.description` 保持非空字符串列，但允许空字符串表示用户尚未填写职位描述；迁移 `0055` 删除旧的非空白 CHECK，不修改存量岗位。手工创建可省略该字段，浏览器插件导入仍要求采集到非空职位描述。
 
@@ -203,7 +205,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0057`、模板初始化和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0058`、模板初始化和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 

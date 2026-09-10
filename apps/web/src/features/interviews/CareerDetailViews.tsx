@@ -1198,6 +1198,7 @@ export function AddNextStageDialog({
   const [aiInterviewLink, setAiInterviewLink] = useState("");
   const [writtenStartAt, setWrittenStartAt] = useState(initialStartAt);
   const [writtenEndAt, setWrittenEndAt] = useState(initialEndAt);
+  const [writtenScheduleKind, setWrittenScheduleKind] = useState<"fixed_slot" | "open_window">("fixed_slot");
   const [writtenMode, setWrittenMode] = useState<InterviewSessionRecord["mode"]>("video");
   const [writtenMeetingOrLocation, setWrittenMeetingOrLocation] = useState("");
   const [interviewLabel, setInterviewLabel] = useState(initialInterviewLabel);
@@ -1383,6 +1384,9 @@ export function AddNextStageDialog({
           stage_label: activeStage === "interview" ? interviewLabel.trim() : fixedLabel,
           start_at: start.toISOString(),
           end_at: end.toISOString(),
+          schedule_kind: activeStage === "assessment" || (isWrittenTest && writtenScheduleKind === "open_window")
+            ? "open_window"
+            : "fixed_slot",
           timezone,
           mode,
           meeting_url: mode === "video" || mode === "phone" ? meetingOrLocation || null : null,
@@ -1599,13 +1603,24 @@ export function AddNextStageDialog({
               </>
             ) : activeStage === "written_test" ? (
               <>
-                <div className="career-next-stage-field">
-                  <Label htmlFor="career-next-stage-written-start">开始时间</Label>
-                  <ScheduleDateTimePicker id="career-next-stage-written-start" label="开始时间" value={writtenStartAt} disabled={busy} onChange={setWrittenStartAt} />
+                <div className="career-next-stage-field career-next-stage-field--full">
+                  <Label htmlFor="career-next-stage-written-schedule-kind">时间类型</Label>
+                  <Select value={writtenScheduleKind} disabled={busy} onValueChange={(value) => setWrittenScheduleKind(value as "fixed_slot" | "open_window")}>
+                    <SelectTrigger id="career-next-stage-written-schedule-kind" aria-label="笔试时间类型" className="career-next-stage-select-trigger"><SelectValue /></SelectTrigger>
+                    <SelectContent className="career-next-stage-select-content">
+                      <SelectItem value="fixed_slot">固定场次（按时参加）</SelectItem>
+                      <SelectItem value="open_window">作答时段（期间内自行完成）</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="career-next-stage-field-hint">作答时段会显示在看板顶部；保存后可另设“我的作答计划”。</p>
                 </div>
                 <div className="career-next-stage-field">
-                  <Label htmlFor="career-next-stage-written-end">结束时间</Label>
-                  <ScheduleDateTimePicker id="career-next-stage-written-end" label="结束时间" value={writtenEndAt} disabled={busy} onChange={setWrittenEndAt} />
+                  <Label htmlFor="career-next-stage-written-start">{writtenScheduleKind === "open_window" ? "开放时间" : "开始时间"}</Label>
+                  <ScheduleDateTimePicker id="career-next-stage-written-start" label={writtenScheduleKind === "open_window" ? "开放时间" : "开始时间"} value={writtenStartAt} disabled={busy} onChange={setWrittenStartAt} />
+                </div>
+                <div className="career-next-stage-field">
+                  <Label htmlFor="career-next-stage-written-end">{writtenScheduleKind === "open_window" ? "截止时间" : "结束时间"}</Label>
+                  <ScheduleDateTimePicker id="career-next-stage-written-end" label={writtenScheduleKind === "open_window" ? "截止时间" : "结束时间"} value={writtenEndAt} disabled={busy} onChange={setWrittenEndAt} />
                 </div>
                 <div className="career-next-stage-field career-next-stage-field--full">
                   <Label htmlFor="career-next-stage-written-meeting">笔试链接或地点（选填）</Label>
