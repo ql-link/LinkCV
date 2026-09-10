@@ -141,12 +141,26 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
 button {
   border: 0;
+  font-family: var(--ui-font-sans);
+}
+
+nav,
+[role="navigation"],
+select {
+  font-family: var(--ui-font-sans);
+}
+
+input,
+textarea,
+[contenteditable="true"] {
+  font-family: var(--ui-font-content);
 }
 
 button:not([data-slot]):focus-visible,
@@ -2278,7 +2292,7 @@ select:not([data-slot]):focus-visible {
 .agent-message { display: grid; max-width: 92%; gap: 5px; }
 .agent-message-row { display: flex; align-items: flex-end; gap: 8px; }
 .agent-message-bubble { display: grid; min-width: 0; gap: 8px; border-radius: var(--ui-radius-lg); background: color-mix(in srgb, var(--ui-accent-subtle) 74%, var(--ui-surface)); padding: 12px 14px; }
-.agent-message-content { display: grid; gap: 7px; min-width: 0; margin: 0; color: var(--ui-text-secondary); font-size: 0.8125rem; line-height: 1.62; overflow-wrap: anywhere; }
+.agent-message-content { display: grid; gap: 7px; min-width: 0; margin: 0; color: var(--ui-text-secondary); font-family: var(--ui-font-content); font-size: 0.8125rem; line-height: 1.62; overflow-wrap: anywhere; }
 .agent-message-content p,
 .agent-message-content ul,
 .agent-message-content ol,
@@ -2352,13 +2366,13 @@ select:not([data-slot]):focus-visible {
 .agent-clarification label > span { display: grid; gap: 2px; }
 .agent-clarification label strong { font-size: 0.75rem; }
 .agent-clarification label small { color: var(--ui-text-muted); font-size: 0.65625rem; line-height: 1.4; }
-.agent-clarification-other { height: 38px; border: 1px solid var(--ui-input); border-radius: var(--ui-radius-sm); outline: 0; background: var(--ui-surface); padding: 0 10px; color: var(--ui-foreground); font: 0.75rem/1 var(--ui-font-sans); }
+.agent-clarification-other { height: 38px; border: 1px solid var(--ui-input); border-radius: var(--ui-radius-sm); outline: 0; background: var(--ui-surface); padding: 0 10px; color: var(--ui-foreground); font: 0.75rem/1 var(--ui-font-content); }
 .agent-clarification-other:focus { border-color: var(--ui-ring); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-ring) 15%, transparent); }
 .agent-clarification-error { color: var(--ui-destructive); font-size: 0.65625rem; }
 .agent-clarification > .ui-button { justify-self: stretch; }
 .agent-composer > label { color: var(--ui-text-secondary); font-size: 0.75rem; font-weight: 600; }
 .agent-input-shell { position: relative; display: grid; }
-.agent-composer textarea { min-height: 78px; resize: none; border: 1px solid var(--ui-input); border-radius: var(--ui-radius-xl); outline: 0; background: var(--ui-surface); padding: 15px 58px 15px 16px; color: var(--ui-foreground); font: 400 0.8125rem/1.55 var(--ui-font-sans); box-shadow: 0 4px 16px rgba(15, 18, 22, 0.035); }
+.agent-composer textarea { min-height: 78px; resize: none; border: 1px solid var(--ui-input); border-radius: var(--ui-radius-xl); outline: 0; background: var(--ui-surface); padding: 15px 58px 15px 16px; color: var(--ui-foreground); font: 400 0.8125rem/1.55 var(--ui-font-content); box-shadow: 0 4px 16px rgba(15, 18, 22, 0.035); }
 .agent-composer textarea:focus { border-color: var(--ui-ring); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-ring) 15%, transparent); }
 .agent-composer textarea::placeholder { color: var(--ui-text-subtle); }
 .agent-send-button { position: absolute; right: 12px; bottom: 12px; display: grid; width: 36px; height: 36px; place-items: center; border: 0; border-radius: 50%; background: var(--ui-accent); padding: 0; color: var(--ui-primary-foreground); cursor: pointer; box-shadow: 0 5px 14px color-mix(in srgb, var(--ui-accent) 24%, transparent); }

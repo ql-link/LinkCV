@@ -4,9 +4,8 @@
   font-display: swap;
 }
 
-.assistant-workspace-shell { min-height: 100dvh; background: linear-gradient(90deg, #fbfcfd 0%, #f7faff 50%, #fafbfc 100%); }
+.assistant-workspace-shell { --ui-font-content: "LinkCV Assistant WenKai", "LXGW WenKai", KaiTi, STKaiti, serif; min-height: 100dvh; background: linear-gradient(90deg, #fbfcfd 0%, #f7faff 50%, #fafbfc 100%); }
 .assistant-workspace-shell .dashboard-topbar { position: relative; z-index: 10; background: transparent; }
-.assistant-workspace-shell .dashboard-topbar nav { border: 1px solid #dbdee3; border-radius: 31px; background: rgb(255 255 255 / 92%); box-shadow: 0 7px 20px rgb(31 36 46 / 6%); }
 .assistant-page { display: flex; min-height: 0; flex: 1; padding: 23px 39px clamp(28px, 7vh, 71px); color: #17191c; font-family: "LinkCV Assistant WenKai", "LXGW WenKai", KaiTi, STKaiti, serif; }
 .assistant-shell { display: grid; width: 100%; min-height: 640px; grid-template-columns: 319px minmax(0, 1fr); overflow: hidden; border: 1px solid #d6dbe0; border-radius: 18px; background: #fff; box-shadow: 0 12px 28px rgb(26 31 41 / 8%); }
 
