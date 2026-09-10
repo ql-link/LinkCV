@@ -35,7 +35,7 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0057"
+EXPECTED_HEAD = "0058"
 
 
 def canonical_editor_markdown(data: dict[str, Any]) -> str:
@@ -258,6 +258,17 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         for column in inspector.get_columns("interview_sessions")
     }
     assert interview_columns["application_stage_id"]["nullable"] is True
+    assert interview_columns["schedule_kind"]["nullable"] is False
+    assert str(interview_columns["schedule_kind"]["default"]).strip("'") == "fixed_slot"
+    assert interview_columns["answer_plan_start_at"]["nullable"] is True
+    assert interview_columns["answer_plan_end_at"]["nullable"] is True
+    assert {
+        "ck_interview_sessions_schedule_kind",
+        "ck_interview_sessions_answer_plan",
+    } <= {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("interview_sessions")
+    }
     interview_foreign_keys = {
         foreign_key["name"]: foreign_key
         for foreign_key in inspector.get_foreign_keys("interview_sessions")
