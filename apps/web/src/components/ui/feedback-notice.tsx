@@ -25,12 +25,14 @@ export function FeedbackNotice({
   title,
   placement = "inline",
   className,
+  action,
   children,
 }: {
   kind?: FeedbackNoticeKind;
   title?: ReactNode;
   placement?: "inline" | "floating";
   className?: string;
+  action?: ReactNode;
   children: ReactNode;
 }) {
   const Icon = noticeIcons[kind];
@@ -42,6 +44,7 @@ export function FeedbackNotice({
         "ui-feedback-notice",
         `is-${kind}`,
         placement === "floating" && "is-floating",
+        action && "has-action",
         className,
       )}
       data-kind={kind}
@@ -53,6 +56,7 @@ export function FeedbackNotice({
         <strong>{title ?? defaultTitles[kind]}</strong>
         <div className="ui-feedback-notice-description">{children}</div>
       </div>
+      {action && <div className="ui-feedback-notice-action">{action}</div>}
     </div>
   );
 }
