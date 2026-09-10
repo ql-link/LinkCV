@@ -594,6 +594,10 @@ describe("InterviewCenterPage API projections", () => {
     expect(event.querySelector(".interview-calendar-event-content")).toBeInTheDocument();
     fireEvent.click(event);
     expect(event).toHaveAttribute("aria-pressed", "true");
+    const emptyScheduleColumn = calendar.querySelector<HTMLElement>('[data-ec-bounds-start="0"]');
+    expect(emptyScheduleColumn).not.toBeNull();
+    fireEvent.click(emptyScheduleColumn!);
+    expect(event).toHaveAttribute("aria-pressed", "false");
     expect(screen.queryByRole("dialog", { name: "面试详情" })).not.toBeInTheDocument();
     fireEvent.doubleClick(event);
     const dialog = await screen.findByRole("dialog", { name: "面试详情" });
