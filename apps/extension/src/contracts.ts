@@ -1,6 +1,7 @@
 export interface BossJobCapture {
   job_title?: string;
   company_name?: string;
+  logo_url?: string;
   description_text?: string;
   skills: string[];
   employment_type_text?: string;
@@ -45,6 +46,7 @@ export interface JobSummary {
   id: string;
   job_title: string;
   company_name: string;
+  logo_url: string | null;
   lock_version: number;
 }
 

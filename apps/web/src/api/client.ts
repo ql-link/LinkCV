@@ -486,6 +486,7 @@ export type JobDescriptionSummary = {
   id: string;
   job_title: string;
   company_name: string;
+  logo_url: string | null;
   work_city: string | null;
   salary_text: string | null;
   skills: string[];
@@ -526,6 +527,7 @@ export type JobDescriptionRecord = JobDescriptionSummary & {
 export type JobDescriptionFields = {
   job_title: string;
   company_name: string;
+  logo_url?: string | null;
   employment_type?: JobEmploymentType | null;
   description: string;
   skills?: string[];
@@ -609,6 +611,7 @@ export type JobApplicationRecord = {
   resume_version_id: string | null;
   company_name_snapshot: string;
   job_title_snapshot: string;
+  company_logo_url?: string | null;
   job_snapshot: Record<string, unknown>;
   resume_title_snapshot: string | null;
   calendar_color: InterviewCalendarColor;
