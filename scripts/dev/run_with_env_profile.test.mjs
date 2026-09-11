@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   buildProfileEnvironment,
+  npmInvocation,
   resolveProfileFiles,
   serviceScriptForProfile,
   syncMiniprogramLocalConfig,
@@ -55,6 +56,54 @@ test("local profile can run from the main worktree secret file alone", () => {
   assert.equal(result.env.APP_ENV, "local");
 });
 
+test("local profile aligns a loopback RabbitMQ URL with the Compose host port", () => {
+  const paths = fixture();
+  writeFileSync(
+    join(paths.mainRoot, ".env"),
+    "RABBITMQ_PORT=5676\n",
+  );
+  writeFileSync(
+    join(paths.mainRoot, ".env.local"),
+    "RABBITMQ_URL=amqp://linkcv:secret@127.0.0.1:5672/\n",
+  );
+
+  const result = buildProfileEnvironment({
+    cwd: paths.mainRoot,
+    profile: ".env",
+    inheritedEnv: {},
+    gitCommonDir: join(paths.mainRoot, ".git"),
+  });
+
+  assert.equal(
+    result.env.RABBITMQ_URL,
+    "amqp://linkcv:secret@127.0.0.1:5676/",
+  );
+});
+
+test("local profile does not rewrite a remote RabbitMQ URL", () => {
+  const paths = fixture();
+  writeFileSync(
+    join(paths.mainRoot, ".env"),
+    "RABBITMQ_PORT=5676\n",
+  );
+  writeFileSync(
+    join(paths.mainRoot, ".env.local"),
+    "RABBITMQ_URL=amqp://linkcv:secret@rabbit.example.test:5672/\n",
+  );
+
+  const result = buildProfileEnvironment({
+    cwd: paths.mainRoot,
+    profile: ".env",
+    inheritedEnv: {},
+    gitCommonDir: join(paths.mainRoot, ".git"),
+  });
+
+  assert.equal(
+    result.env.RABBITMQ_URL,
+    "amqp://linkcv:secret@rabbit.example.test:5672/",
+  );
+});
+
 test("LINKCV_SECRET_ENV_FILE explicitly overrides the shared default", () => {
   const paths = fixture();
   writeFileSync(join(paths.worktree, ".env.development"), "APP_ENV=development\n");
@@ -76,6 +125,26 @@ test("Development profile keeps the Agent-aware four-service launcher", () => {
     "dev:development-services",
   );
   assert.equal(serviceScriptForProfile(".env"), "dev:services");
+});
+
+test("the profile launcher reuses npm's JavaScript entrypoint", () => {
+  const invocation = npmInvocation(
+    { npm_execpath: "C:/npm/npm-cli.js" },
+    "win32",
+  );
+  assert.equal(invocation.command, process.execPath);
+  assert.deepEqual(invocation.prefixArgs, ["C:/npm/npm-cli.js"]);
+});
+
+test("the profile launcher has platform fallbacks outside npm scripts", () => {
+  assert.deepEqual(npmInvocation({ ComSpec: "cmd.exe" }, "win32"), {
+    command: "cmd.exe",
+    prefixArgs: ["/d", "/s", "/c", "npm"],
+  });
+  assert.deepEqual(npmInvocation({}, "linux"), {
+    command: "npm",
+    prefixArgs: [],
+  });
 });
 
 test("syncMiniprogramLocalConfig writes gitignored local.js with detected LAN IP", () => {

@@ -60,4 +60,4 @@ AI 助手提供独立对话工作区和简历编辑器侧栏，允许用户组�
 
 ## 修改联动与验证
 
-修改 SSE 事件、上下文类型、提案 operation 或澄清结构时，需同步 `schemas.py`、Pi 协议、Web 两个客户端、接口契约和 Agent 测试；模型能力变化还需同步[运行时架构](../internals/agent-runtime.md)。主要验证入口为 `test_agent_routes.py`、`modules/agent/test_context_service.py`、`test_pi_client.py`、`test_service.py`，以及 Web `AssistantPage` 和 `AgentPanel` 测试。
+修改 SSE 事件、上下文类型、提案 operation 或澄清结构时，需同步 `schemas.py`、Pi 协议、Web 两个客户端、接口契约和 Agent 测试；模型能力变化还需同步[运行时架构](../internals/agent-runtime.md)。主要验证入口为 `test_agent_routes.py`、`modules/agent/test_context_service.py`、`test_pi_client.py`、`test_service.py`，以及 Web `AssistantPage` 和 `AgentPanel` 测试；完整 Pi 运行时检查使用跨平台的 `npm run check:pi`。
