@@ -87,7 +87,7 @@ Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，�
 
 语义分类请求携带当前规范 `data` 的 `sha256:` 内容哈希和可选章节 ID 列表。分类器只接收自定义章节的标题、正文和相邻标题，必须综合上下文，不在模板切换时调用，也不改写正文或持久化建议；相同用户、简历、内容哈希和章节集合的成功结果在 Redis 缓存 1 小时，重复请求不重复调用模型；响应包含稳定章节 ID、建议类型、置信度和依据。内容已变化返回 `409 RESUME_SEMANTIC_CLASSIFICATION_STALE`，章节选择非法返回 `400 INVALID_RESUME_SEMANTIC_CLASSIFICATION`，模型不可用或返回越界 ID 返回 `503 RESUME_SEMANTIC_CLASSIFICATION_UNAVAILABLE`。未登录返回 `401 UNAUTHORIZED`，不存在或越权统一返回 `404 RESUME_NOT_FOUND`。
 
-Web PDF 请求必须携带当前保存成功后的 `lock_version`。服务端再次校验 Cookie 用户、简历归属和版本，然后以当前 `data/style` 快照调用受控 Chromium；Linux 部署可用专用账号降权运行，Windows 本地环境没有 Unix 账号 API 时直接运行 Node，这一内部选择不改变 HTTP 响应契约。成功响应为 `application/pdf`、`private, no-store`，并携带 `Content-Disposition`、`X-LinkCV-Pdf-Lock-Version` 和 `X-Content-Type-Options: nosniff`。固定模式按 A4 分页，智能一页保持 210mm 宽并按内容增长，超过 2000mm 返回 `413 RESUME_PDF_PAGE_TOO_TALL`。私有图片只从已校验的用户/简历对象键读取，缺失、不支持或超限分别以稳定 `RESUME_PDF_*` 错误失败关闭；正文中的外部资源不会被渲染器联网获取。
+Web PDF 请求必须携带当前保存成功后的 `lock_version`。服务端再次校验 Cookie 用户、简历归属和版本，然后以当前 `data/style` 快照调用受控 Chromium；Linux 部署可用专用账号降权运行，Windows 本地环境没有 Unix 账号 API 时直接运行 Node，这一内部选择不改变 HTTP 响应契约。成功响应为 `application/pdf`、`private, no-store`，并携带 `Content-Disposition`、`X-LinkCV-Pdf-Lock-Version` 和 `X-Content-Type-Options: nosniff`。固定模式按 A4 分页，智能一页保持 210mm 宽并按内容增长，超过 2000mm 返回 `413 RESUME_PDF_PAGE_TOO_TALL`。简历级图片只接受 PNG/JPEG，上传与 PDF 读取共用 10 MiB 单图上限，一份当前快照引用的私有图片原始二进制总量上限为 10 MiB；更新简历、切换模板和恢复历史版本均在持久化前校验该契约，超限返回 `413 RESUME_PDF_ASSET_TOO_LARGE` 或 `413 RESUME_PDF_ASSETS_TOO_LARGE`，因此不能保存成随后无法导出的当前快照。私有图片只从已校验的用户/简历对象键读取，缺失、不支持或超限分别以稳定 `RESUME_PDF_*` 错误失败关闭；正文中的外部资源不会被渲染器联网获取。
 
 每个用户最多保存 10 份正式简历；创建事务锁定用户行后检查，达到上限返回 `409 RESUME_LIMIT_REACHED`。创建在同一事务写入当前简历及 `version_no=1/reason=initial` 快照。更新同时保存完整 data/style 并递增 `lock_version`，不创建历史版本；过期基准返回 `409 RESUME_EDIT_CONFLICT`。非法内容和样式分别返回 `400 INVALID_RESUME_DOCUMENT`、`400 INVALID_RESUME_STYLE`。不存在或不属于当前用户的简历统一返回 `404 RESUME_NOT_FOUND`。
 
@@ -176,7 +176,7 @@ RabbitMQ 是默认 Broker，V2 使用 `tolink.cv.resume_import.v2` exchange、`l
 
 `GET /api/resume-overview` 返回 `{resumes, active_imports, failed_imports, next_failed_cursor}`；失败列表支持 `failed_limit=1..50` 和服务端生成的 `failed_cursor`。`GET /api/resume-imports/:id` 返回本人的单个 `{import}` 任务摘要，查询前沿用陈旧任务收口；不存在、非法 ID 或越权统一返回 `404 RESUME_IMPORT_NOT_FOUND`。Web 只对 `upload_status=succeeded` 且 `parse_status=processing` 的任务按 ID 每秒独立查询，多个任务分别轮询，终态后停止；成功终态再一次性刷新 overview，使正式简历替换活动任务。`DELETE /api/resume-imports/:id` 只允许本人删除上传或解析失败记录，并同时清理源文件、当前 `artifacts/converted.md` 和旧版 `converted.md` 候选；活动任务返回 `409 RESUME_IMPORT_IN_PROGRESS`，不存在、非法 ID 或越权同样返回 `404 RESUME_IMPORT_NOT_FOUND`，对象删除失败返回 `502 ASSET_DELETE_FAILED`。
 
-文件或模板无效时返回对应 `4xx` 且不创建正式简历。文字型、扫描和混合 PDF 都以 LinkParse Markdown 作为可编辑文字基线，并额外请求可选的 V1 layout；可安全解析且有界的页码、归一化 bbox、顺序、文字、置信度、角色、同行和续行作为精简模型提示，layout 的严格关系、计数、warning allowlist 和 Markdown 一致性只决定是否采用重建 Markdown。显式请求 layout 遇到 `413 LAYOUT_RESOURCE_LIMIT` 时，客户端在同一 deadline 内仅补发一次不含 layout 的 Markdown 请求，第二次失败按既有错误映射返回。layout 缺失、降级、畸形或不一致时保留 Markdown；若基础物理块仍安全，提示可以继续传给模型，不产生 `RESUME_LAYOUT_UNSUPPORTED`。含嵌入图片的文本 PDF、含图片/表格/文本框的 DOCX，以及转换后仍含表格、图片、嵌入或主动 HTML 的内容仍返回 `422 RESUME_LAYOUT_UNSUPPORTED`；源块映射不完整、重复、越界或分组非法返回 `422 RESUME_STRUCTURE_INVALID`。MinIO 上传失败会补偿删除可能写入的对象，再返回 `502 RESUME_SOURCE_UPLOAD_FAILED` 并保留上传失败记录；MQ publisher 初始化或 confirm 失败返回 `503 RESUME_IMPORT_QUEUE_UNAVAILABLE`，记录保存为解析失败且不会覆盖 Worker 已成功写入的终态。非法 MQ envelope 直接进入 DLT 且不调用 Processor；Processor 内部异常使用有界重试，耗尽后必须把可识别的简历导入任务写为失败终态，不能永久停留在 `processing`。转换、结构化或模板复核失败由 Worker 保存解析失败终态，不创建半成品，也不自动重试业务失败。正式简历与活动导入共享每用户 10 个名额；成功导入只是把活动占位转换为正式简历。
+文件或模板无效时返回对应 `4xx` 且不创建正式简历。文字型、扫描和混合 PDF 都以 LinkParse Markdown 作为可编辑文字基线，并额外请求可选的 V1 layout；可安全解析且有界的页码、归一化 bbox、顺序、文字、置信度、角色、同行和续行作为精简模型提示，layout 的严格关系、计数、warning allowlist 和 Markdown 一致性只决定是否采用重建 Markdown。显式请求 layout 遇到 `413 LAYOUT_RESOURCE_LIMIT` 时，客户端在同一 deadline 内仅补发一次不含 layout 的 Markdown 请求，第二次失败按既有错误映射返回。layout 缺失、降级、畸形或不一致时保留 Markdown；若基础物理块仍安全，提示可以继续传给模型，不产生 `RESUME_LAYOUT_UNSUPPORTED`。PDF 固定请求 `include_images=false`，因此文字与图片混排的 PDF 只导入文字，源图片不进入简历且不会仅因原文件存在图片对象返回 `RESUME_LAYOUT_UNSUPPORTED`；模板头像保持为空。含图片/表格/文本框的 DOCX，以及转换后仍含表格、图片、嵌入或主动 HTML 的内容仍返回 `422 RESUME_LAYOUT_UNSUPPORTED`；源块映射不完整、重复、越界或分组非法返回 `422 RESUME_STRUCTURE_INVALID`。MinIO 上传失败会补偿删除可能写入的对象，再返回 `502 RESUME_SOURCE_UPLOAD_FAILED` 并保留上传失败记录；MQ publisher 初始化或 confirm 失败返回 `503 RESUME_IMPORT_QUEUE_UNAVAILABLE`，记录保存为解析失败且不会覆盖 Worker 已成功写入的终态。非法 MQ envelope 直接进入 DLT 且不调用 Processor；Processor 内部异常使用有界重试，耗尽后必须把可识别的简历导入任务写为失败终态，不能永久停留在 `processing`。转换、结构化或模板复核失败由 Worker 保存解析失败终态，不创建半成品，也不自动重试业务失败。正式简历与活动导入共享每用户 10 个名额；成功导入只是把活动占位转换为正式简历。
 
 ## 简历模板管理
 
@@ -288,7 +288,7 @@ Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `rec
 
 | Method   | Path                                  | 行为                                          |
 | -------- | ------------------------------------- | --------------------------------------------- |
-| `POST`   | `/api/resumes/:id/assets`             | 接收 `file_name/data_url`，写入简历私有前缀   |
+| `POST`   | `/api/resumes/:id/assets`             | 接收 PNG/JPEG `file_name/data_url`，单图最大 10 MiB，写入简历私有前缀 |
 | `GET`    | `/api/resumes/:id/assets/:asset_name` | 校验简历所有权后读取                          |
 | `DELETE` | `/api/resumes/:id/assets/:asset_name` | 当前或历史快照仍引用时返回 `409 ASSET_IN_USE` |
 

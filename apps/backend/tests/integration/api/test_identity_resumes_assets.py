@@ -1,5 +1,6 @@
 import base64
 from collections.abc import Iterator
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -47,6 +48,9 @@ class FakeStorage:
 
     def get(self, object_name: str) -> FakeObjectResponse:
         return FakeObjectResponse(self.objects[object_name])
+
+    def stat(self, object_name: str) -> SimpleNamespace:
+        return SimpleNamespace(size=len(self.objects[object_name]))
 
     def delete(self, object_name: str) -> None:
         if self.fail_cleanup:
@@ -257,6 +261,76 @@ def test_resume_assets_are_owned_and_preserved_while_history_references_them() -
 
         assert owner.delete(f"/api/resumes/{resume_id}").json() == {"deleted": True}
         assert app.state.storage.objects == {}
+
+
+def test_resume_save_rejects_images_above_pdf_total_before_persisting() -> None:
+    app = build_test_app()
+
+    with TestClient(app) as owner:
+        owner.post(
+            "/api/auth/register",
+            json={"email": "image-total@example.com", "password": "password-123"},
+        )
+        resume = owner.post("/api/resumes", json=resume_payload(app)).json()["resume"]
+        resume_id = resume["id"]
+        first_name = "first.png"
+        second_name = "second.jpg"
+        app.state.storage.objects[
+            f"users/1/resumes/{resume_id}/assets/{first_name}"
+        ] = b"x" * (6 * 1024 * 1024)
+        app.state.storage.objects[
+            f"users/1/resumes/{resume_id}/assets/{second_name}"
+        ] = b"y" * (6 * 1024 * 1024)
+
+        data = resume["data"]
+        data["identity"]["avatar"] = {
+            "node_id": "node_avatar00000000002",
+            "source_refs": [],
+            "media_kind": "avatar",
+            "src": f"/api/resumes/{resume_id}/assets/{first_name}",
+            "alt": None,
+            "width": 96,
+            "width_unit": "px",
+            "height_px": None,
+            "align": None,
+            "system_fallback": False,
+        }
+        data["sections"] = [
+            {
+                "node_id": "node_section0000000002",
+                "source_refs": [],
+                "semantic_kind": "custom",
+                "title": None,
+                "title_icon": None,
+                "entries": [],
+                "blocks": [
+                    {
+                        "node_id": "node_media00000000002",
+                        "source_refs": [],
+                        "block_type": "media",
+                        "media_kind": "resume_image",
+                        "src": f"/api/resumes/{resume_id}/assets/{second_name}",
+                        "alt": None,
+                        "width": 50,
+                        "width_unit": "%",
+                        "height_px": None,
+                        "align": "center",
+                        "system_fallback": False,
+                    }
+                ],
+            }
+        ]
+
+        rejected = owner.put(
+            f"/api/resumes/{resume_id}",
+            json={"data": data, "base_lock_version": 1},
+        )
+
+        assert rejected.status_code == 413
+        assert rejected.json() == {"error": "RESUME_PDF_ASSETS_TOO_LARGE"}
+        current = owner.get(f"/api/resumes/{resume_id}").json()["resume"]
+        assert current["lock_version"] == 1
+        assert current["data"]["identity"]["avatar"] is None
 
 
 def test_resume_delete_keeps_database_record_when_storage_cleanup_fails() -> None:

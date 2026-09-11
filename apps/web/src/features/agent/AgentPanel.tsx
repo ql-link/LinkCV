@@ -17,6 +17,7 @@ import {
 } from "../../api/client";
 import { resumePresentationTemplateKey } from "../../api/resumeContract";
 import { Avatar, AvatarFallback, AvatarImage, Button, PageLoading } from "@/components/ui";
+import { resumeImageContractErrorMessage } from "../workbench/resumeImageLimits";
 
 type AgentPanelProps = {
   resumeId: string;
@@ -70,6 +71,8 @@ function proposalChanges(
 
 export function agentErrorMessage(error: unknown) {
   const code = error instanceof ApiRequestError ? error.message : "";
+  const imageMessage = resumeImageContractErrorMessage(code);
+  if (imageMessage) return imageMessage;
   const messages: Record<string, string> = {
     AGENT_UNAVAILABLE: "智能助手暂时不可用，简历编辑不受影响。",
     AGENT_STREAM_INCOMPLETE: "智能助手连接意外中断，请稍后重试。",
