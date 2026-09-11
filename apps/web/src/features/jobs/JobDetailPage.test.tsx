@@ -66,6 +66,7 @@ describe("JobDetailPage", () => {
     expect(screen.queryByText("编辑")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "删除" })).toBeInTheDocument();
     expect(screen.queryByText("活动岗位")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "这个岗位的求职记录" })).not.toBeInTheDocument();
   });
 
   it("从求职记录进入岗位详情时返回对应记录", async () => {
