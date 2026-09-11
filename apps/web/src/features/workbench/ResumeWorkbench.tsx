@@ -129,19 +129,15 @@ type WorkbenchTitleInputProps = {
 };
 
 export function WorkbenchTitleInput({ value, disabled, onChange }: WorkbenchTitleInputProps) {
-  const [focused, setFocused] = useState(false);
-  const displayValue = focused ? value : truncateWorkbenchTitle(value);
-  const truncated = displayValue !== value;
+  const truncated = truncateWorkbenchTitle(value) !== value;
 
   return (
     <input
       autoComplete="off"
       className="workbench-title"
       name="resume-title"
-      value={displayValue}
+      value={value}
       onChange={(event) => onChange(event.target.value)}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
       aria-label="简历标题"
       disabled={disabled}
       title={truncated ? value : undefined}
@@ -1267,6 +1263,9 @@ export function ResumeWorkbench() {
   }, []);
 
   const editor = useEditor({
+    // The editor view owns document transactions; surrounding controls subscribe
+    // explicitly, so an extra React render per keystroke only destabilizes input.
+    shouldRerenderOnTransaction: false,
     extensions: [
       ...resumeEditorExtensions,
       PaginationExtension,

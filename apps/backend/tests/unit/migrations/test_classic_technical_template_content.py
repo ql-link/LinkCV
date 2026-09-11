@@ -30,7 +30,9 @@ def _seeded_markdown(sql: str) -> str:
 
 
 def test_classic_technical_template_uses_independent_fictional_content() -> None:
-    markdown = _updated_markdown((SQL_DIR / "0025.up.sql").read_text())
+    markdown = _updated_markdown(
+        (SQL_DIR / "0025.up.sql").read_text(encoding="utf-8")
+    )
 
     assert "北辰科技大学" in markdown
     assert "极昼气象服务有限公司" in markdown
@@ -51,8 +53,8 @@ def test_classic_technical_template_uses_independent_fictional_content() -> None
 
 
 def test_classic_technical_template_upgrade_guard_matches_0024_content() -> None:
-    seed_sql = (SQL_DIR / "0024.up.sql").read_text()
-    update_sql = (SQL_DIR / "0025.up.sql").read_text()
+    seed_sql = (SQL_DIR / "0024.up.sql").read_text(encoding="utf-8")
+    update_sql = (SQL_DIR / "0025.up.sql").read_text(encoding="utf-8")
     seeded_digest = hashlib.sha256(_seeded_markdown(seed_sql).encode()).hexdigest()
 
     assert seeded_digest in update_sql

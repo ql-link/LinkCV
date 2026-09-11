@@ -165,3 +165,24 @@ def test_source_graph_without_pdf_layout_keeps_text_order_and_no_bbox() -> None:
     )
     assert [leaf.text for leaf in graph.leaves] == ["张三", "正文"]
     assert all(leaf.page == 1 and leaf.bbox is None for leaf in graph.leaves)
+
+
+def test_source_graph_keeps_ordinal_only_for_ordered_list_items() -> None:
+    source_ir = build_section_ir(
+        "## 专业技能\n\n- Python\n- FastAPI\n\n1. 需求分析\n2. 接口开发",
+        source_format="md",
+    )
+
+    graph = build_source_graph_from_layout_ir(
+        source_ir,
+        source_document_sha256="1" * 64,
+    )
+
+    list_leaves = [leaf for leaf in graph.leaves if leaf.leaf_kind == "list_item"]
+    assert [leaf.list_kind for leaf in list_leaves] == [
+        "bullet",
+        "bullet",
+        "ordered",
+        "ordered",
+    ]
+    assert [leaf.list_ordinal for leaf in list_leaves] == [None, None, 1, 2]
