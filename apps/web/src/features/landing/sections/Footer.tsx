@@ -22,7 +22,7 @@ export function Footer({ onStart }: { onStart: () => void }) {
         aria-hidden
       >
         <div className="-mb-[0.34em] select-none whitespace-nowrap font-display text-[28vw] leading-[0.72] font-semibold tracking-[-0.075em] text-transparent opacity-45 [-webkit-text-stroke:1px_rgba(24,24,27,0.42)] sm:text-[23vw] md:-mb-[0.36em] md:text-[18vw] dark:opacity-35 dark:[-webkit-text-stroke:1px_rgba(255,255,255,0.5)]">
-          LinkCV
+          LinkResume
         </div>
       </div>
 
@@ -55,7 +55,7 @@ export function Footer({ onStart }: { onStart: () => void }) {
           ) : null}
         </div>
 
-        <div className="relative z-10 mx-auto grid max-w-7xl gap-14 px-6 py-14 sm:px-8 md:px-12 lg:h-full lg:grid-cols-[minmax(0,1.3fr)_minmax(420px,1fr)] lg:items-center lg:gap-16 lg:px-16 lg:py-8">
+        <div className="relative z-10 mx-auto grid max-w-7xl gap-14 px-6 py-14 sm:px-8 md:px-12 lg:h-full lg:-translate-y-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(420px,1fr)] lg:items-center lg:gap-16 lg:px-16 lg:py-8">
           <div className="max-w-2xl">
             <Reveal>
               <div>

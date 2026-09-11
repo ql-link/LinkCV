@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import json
 import os
-import pwd
 import re
 import signal
 import shutil
@@ -18,6 +17,11 @@ from minio.error import S3Error
 from linkcv.core.config import REPO_ROOT, Settings
 from linkcv.core.errors import ApiError
 from linkcv.core.storage import AssetStorage, infer_image_content_type
+
+try:
+    import pwd
+except ImportError:  # Windows does not provide the Unix account database.
+    pwd = None  # type: ignore[assignment]
 
 
 # These limits are deliberately kept in the service boundary.  The renderer
@@ -160,7 +164,13 @@ class ResumePdfRenderer:
 
     @staticmethod
     def _runtime_user_available() -> bool:
-        if os.geteuid() != 0 or shutil.which("runuser") is None:
+        get_effective_user_id = getattr(os, "geteuid", None)
+        if (
+            get_effective_user_id is None
+            or pwd is None
+            or get_effective_user_id() != 0
+            or shutil.which("runuser") is None
+        ):
             return False
         try:
             pwd.getpwnam("linkcv-pdf")
@@ -225,7 +235,11 @@ class ResumePdfRenderer:
             except subprocess.TimeoutExpired as error:
                 if process is not None:
                     try:
-                        os.killpg(process.pid, signal.SIGKILL)
+                        kill_process_group = getattr(os, "killpg", None)
+                        if kill_process_group is None:
+                            process.kill()
+                        else:
+                            kill_process_group(process.pid, signal.SIGKILL)
                     except ProcessLookupError:
                         pass
                     process.communicate()
