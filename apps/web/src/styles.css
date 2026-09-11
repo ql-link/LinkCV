@@ -974,7 +974,7 @@ select:not([data-slot]):focus-visible {
   box-shadow: 0 20px 48px rgba(0, 0, 0, 0.26);
   color: #111827;
   font-family: var(--resume-font-family);
-  font-synthesis: weight;
+  font-synthesis: weight style;
   transform: scale(var(--preview-scale));
   transform-origin: top left;
 }
@@ -1083,8 +1083,13 @@ select:not([data-slot]):focus-visible {
 }
 
 .resume-content strong {
-  color: #4b5563;
+  color: inherit;
   font-weight: 600;
+}
+
+.resume-content em,
+.resume-content i {
+  font-style: italic;
 }
 
 .resume-content a {
@@ -1713,6 +1718,9 @@ select:not([data-slot]):focus-visible {
 
 .color-popover { transform: translateX(-50%); }
 .color-swatch { width: 22px; height: 22px; flex: 0 0 22px; border: 1px solid var(--ui-border); border-radius: 50%; cursor: pointer; }
+.color-swatch.is-active { border-color: var(--ui-foreground); box-shadow: 0 0 0 2px var(--ui-surface), 0 0 0 3px var(--ui-foreground); }
+.color-swatch-clear { display: grid; place-items: center; background: var(--ui-surface); color: var(--ui-text-muted); }
+.color-swatch-clear:hover { border-color: var(--ui-border-strong); color: var(--ui-foreground); }
 
 .workbench-canvas {
   position: relative;
@@ -1866,14 +1874,14 @@ select:not([data-slot]):focus-visible {
 
 .resume-line-add {
   position: absolute;
-  top: 50%;
+  top: 0;
   left: calc(-30px - var(--resume-line-add-list-indent, 0px));
   z-index: 8;
   display: grid;
   width: 22px;
   height: 22px;
   place-items: center;
-  transform: translateY(-50%);
+  transform: none;
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-xs);
   background: var(--ui-surface);
@@ -1915,7 +1923,7 @@ select:not([data-slot]):focus-visible {
   outline: 2px solid var(--ui-ring);
   outline-offset: 2px;
 }
-.resume-line-add:active { transform: translateY(-50%) scale(0.94); }
+.resume-line-add:active { transform: scale(0.94); }
 
 .workbench-command-menu {
   position: fixed;
@@ -1968,7 +1976,7 @@ select:not([data-slot]):focus-visible {
 .resume-workbench .resume-content ol,
 .resume-workbench .resume-content ul { margin: 3px 0 4px 18px; padding: 0; }
 .resume-workbench .resume-content li { margin: 1px 0; }
-.resume-workbench .resume-content strong { color: #4b5563; font-weight: 600; }
+.resume-workbench .resume-content strong { color: inherit; font-weight: 600; }
 .resume-workbench .resume-content a { color: #3478f6; text-decoration-thickness: 1px; text-underline-offset: 2px; }
 .resume-workbench .resume-content ::selection { background: rgba(52, 120, 246, 0.2); }
 

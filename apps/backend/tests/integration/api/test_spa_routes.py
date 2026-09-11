@@ -15,7 +15,11 @@ def test_spa_deep_links_fall_back_to_index_without_masking_api_404(tmp_path) -> 
     assets = tmp_path / "assets"
     assets.mkdir()
     (assets / "app.js").write_text("console.log('LinkCV')", encoding="utf-8")
-    (assets / "large.js").write_text("const value = 'LinkCV';\n" * 100, encoding="utf-8")
+    (assets / "large.js").write_text(
+        "const value = 'LinkCV';\n" * 100,
+        encoding="utf-8",
+        newline="",
+    )
     settings = Settings(
         database_url="sqlite+pysqlite:///:memory:",
         jwt_secret="integration-test-secret-with-32-bytes",

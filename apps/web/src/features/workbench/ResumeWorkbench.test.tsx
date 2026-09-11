@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { api, ApiRequestError, type ResumeTemplate } from "../../api/client";
 import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
@@ -68,22 +69,23 @@ describe("ResumeWorkbench 标题", () => {
     expect(truncateWorkbenchTitle("😀".repeat(31))).toBe(`${"😀".repeat(30)}…`);
   });
 
-  it("聚焦编辑时恢复完整标题，失焦后重新省略", async () => {
+  it("始终保留完整受控值，并允许连续修改长标题", async () => {
     const user = userEvent.setup();
     const fullTitle = `${"开发演示简历".repeat(5)}完整标题`;
-    const onChange = vi.fn();
-    render(<WorkbenchTitleInput value={fullTitle} disabled={false} onChange={onChange} />);
+    function ControlledTitle() {
+      const [value, setValue] = useState(fullTitle);
+      return <WorkbenchTitleInput value={value} disabled={false} onChange={setValue} />;
+    }
+    render(<ControlledTitle />);
 
     const input = screen.getByRole("textbox", { name: "简历标题" });
-    expect(input).toHaveValue(truncateWorkbenchTitle(fullTitle));
+    expect(input).toHaveValue(fullTitle);
     expect(input).toHaveAttribute("title", fullTitle);
 
     await user.click(input);
-    expect(input).toHaveValue(fullTitle);
+    await user.keyboard("{Control>}a{/Control}前端开发投递版");
+    expect(input).toHaveValue("前端开发投递版");
     expect(input).not.toHaveAttribute("title");
-
-    await user.tab();
-    expect(input).toHaveValue(truncateWorkbenchTitle(fullTitle));
   });
 });
 

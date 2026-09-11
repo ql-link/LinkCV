@@ -97,9 +97,12 @@ export function createSkillReadTool(onRead = () => undefined) {
     }, ["path"]),
     execute: async (_toolCallId, params) => {
       const root = await realpath(SKILLS_ROOT);
-      const requested = isAbsolute(params.path)
-        ? params.path
-        : resolve(root, params.path);
+      const normalizedPath = process.platform === "win32" && /^\/[a-zA-Z]:[\\/]/.test(params.path)
+        ? params.path.slice(1)
+        : params.path;
+      const requested = isAbsolute(normalizedPath)
+        ? normalizedPath
+        : resolve(root, normalizedPath);
       const target = await realpath(requested);
       const relativePath = relative(root, target);
       if (
@@ -115,12 +118,13 @@ export function createSkillReadTool(onRead = () => undefined) {
         throw new Error("AGENT_SKILL_TOO_LARGE");
       }
       const lines = content.split("\n");
-      onRead(relativePath);
+      const portablePath = relativePath.split(sep).join("/");
+      onRead(portablePath);
       const start = Math.max(0, (params.offset ?? 1) - 1);
       const limit = params.limit ?? 2000;
       return {
         content: [{ type: "text", text: lines.slice(start, start + limit).join("\n") }],
-        details: { path: relativePath, totalLines: lines.length },
+        details: { path: portablePath, totalLines: lines.length },
       };
     },
   });
