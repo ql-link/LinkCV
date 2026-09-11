@@ -4178,31 +4178,72 @@
   flex: 1 1 auto;
   flex-direction: column;
 }
+.career-reui-calendar [data-slot="event-calendar-month-view"],
+.career-reui-calendar [data-slot="event-calendar-month-header"],
+.career-reui-calendar [data-slot="event-calendar-month-row"],
+.career-reui-calendar [data-slot="event-calendar-month-cell"],
+.career-reui-calendar [data-slot="event-calendar-week-number"] {
+  border-color: var(--ec-grid-line-color);
+}
 .career-reui-calendar [data-slot="event-calendar-month-view"] {
   min-height: 0;
   flex: 1 1 auto;
-  border-color: var(--ec-grid-line-color);
+  background: var(--ui-surface);
 }
-.career-reui-calendar :is(
-  [data-slot="event-calendar-month-header"],
-  [data-slot="event-calendar-month-row"],
-  [data-slot="event-calendar-month-cell"],
-  [data-slot="event-calendar-week-number"]
-) {
-  border-color: var(--ec-grid-line-color);
+.career-reui-calendar [data-slot="event-calendar-month-header"] {
+  min-height: 32px;
+  align-items: center;
+  background: var(--ui-surface);
 }
-.career-reui-calendar [data-slot="event-calendar-month-cell"] { background: var(--ui-surface); }
-.career-reui-calendar [data-slot="event-calendar-month-cell"][data-outside] { background: var(--ui-surface); }
-.career-reui-calendar [data-slot="event-calendar-month-day-number"] { color: var(--ui-text-secondary); }
+.career-reui-calendar [data-slot="event-calendar-month-header"] [role="columnheader"] {
+  padding: 7px 9px;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+.career-reui-calendar [data-slot="event-calendar-month-cell"] {
+  background: var(--ui-surface);
+}
+.career-reui-calendar [data-slot="event-calendar-month-cell"][data-outside] {
+  background: var(--ui-surface);
+}
 .career-reui-calendar [data-slot="event-calendar-month-cell"][data-today] {
-  border-bottom-width: 1px;
-  border-bottom-color: color-mix(in srgb, var(--career-calendar-today) 42%, var(--ec-grid-line-color));
-  background: color-mix(in srgb, var(--career-calendar-today) 2.5%, var(--ui-surface));
+  border-bottom-color: color-mix(in srgb, var(--ui-foreground) 40%, transparent);
+  background: var(--ui-surface);
 }
-.career-reui-calendar [data-slot="event-calendar-month-cell"][data-today]
+.career-reui-calendar [data-slot="event-calendar-month-day-number"] {
+  color: var(--ui-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.career-reui-calendar [data-slot="event-calendar-month-cell"][data-outside]
   [data-slot="event-calendar-month-day-number"] {
-  background: var(--career-calendar-today);
-  color: #fff;
+  color: var(--ui-text-muted);
+}
+.career-reui-calendar [data-view="month"] .interview-calendar-event {
+  min-height: 28px;
+  padding: 4px 7px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ec-event-color) 22%, transparent);
+}
+.career-reui-calendar [data-view="month"] .interview-calendar-event-title {
+  font-size: 12px;
+  line-height: 18px;
+}
+.career-reui-calendar [data-view="month"] .interview-calendar-event-time {
+  display: flex;
+  min-width: 0;
+  margin-left: auto;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  line-height: 18px;
+}
+.career-reui-calendar [data-view="month"] .interview-calendar-event-time i {
+  display: none;
+}
+.career-reui-calendar [data-view="month"] .interview-calendar-event[aria-pressed="true"]
+  .interview-calendar-event-time {
+  color: var(--ui-primary-foreground);
 }
 
 .career-application-identity { display: grid; gap: 5px; min-width: 0; }
