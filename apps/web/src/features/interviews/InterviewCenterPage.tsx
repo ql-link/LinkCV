@@ -114,6 +114,7 @@ import {
   ApplicationDetailView,
   InterviewSessionDetailView,
   MarkApplicationAppliedDialog,
+  ScheduleDateTimePicker,
   TerminateApplicationConfirmDialog,
 } from "./CareerDetailViews";
 import "./interviews.css";
@@ -265,6 +266,18 @@ function formatTime(source: Date): string {
 
 function formatDate(source: Date): string {
   return `${source.getMonth() + 1}月${source.getDate()}日`;
+}
+
+function formatApplicationSessionRange(startAt: string, endAt: string): string {
+  const start = new Date(startAt);
+  const end = new Date(endAt);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return "—";
+  const sameDay = start.getFullYear() === end.getFullYear()
+    && start.getMonth() === end.getMonth()
+    && start.getDate() === end.getDate();
+  return sameDay
+    ? `${formatApplicationListDateTime(startAt)}–${formatTime(end)}`
+    : `${formatApplicationListDateTime(startAt)}–${formatApplicationListDateTime(endAt)}`;
 }
 
 function formatMonth(source: Date): string {
@@ -773,20 +786,29 @@ export function InterviewCenterPage({
     }
   };
 
-  const updateAnswerPlan = async (id: string, start: Date | null, end: Date | null) => {
+  const updateAnswerPlan = async (id: string, start: Date | null, durationMinutes: number | null) => {
     const current = interviews.find((item) => item.id === id);
     if (!current || !current.canReschedule || current.scheduleKind !== "open_window") return;
     const optimisticStart = start?.toISOString() ?? null;
+    const end = start && durationMinutes
+      ? new Date(start.getTime() + durationMinutes * 60_000)
+      : null;
     const optimisticEnd = end?.toISOString() ?? null;
     setSessions((items) => items.map((item) => item.id === id
       ? { ...item, answer_plan_start_at: optimisticStart, answer_plan_end_at: optimisticEnd }
       : item));
     try {
-      const response = await api.updateInterviewAnswerPlan(id, {
-        answer_plan_start_at: optimisticStart,
-        answer_plan_end_at: optimisticEnd,
-        base_lock_version: current.lockVersion,
-      });
+      const response = optimisticStart && durationMinutes
+        ? await api.updateInterviewAnswerPlan(id, {
+            answer_plan_start_at: optimisticStart,
+            duration_minutes: durationMinutes,
+            base_lock_version: current.lockVersion,
+          })
+        : await api.updateInterviewAnswerPlan(id, {
+            answer_plan_start_at: null,
+            answer_plan_end_at: null,
+            base_lock_version: current.lockVersion,
+          });
       setNotice(null);
       await loadData(response.session.id);
       pushScheduleToast(start && end
@@ -958,8 +980,8 @@ export function InterviewCenterPage({
           }}
           onSelect={(id) => void selectInterview(id)}
           onMove={(id, day, slot, span) => void reschedule(id, day, slot, span)}
-          onAnswerPlanMove={(id, start, end) => void updateAnswerPlan(id, start, end)}
-          onAnswerPlanChange={(id, start, end) => void updateAnswerPlan(id, start, end)}
+          onAnswerPlanMove={(id, start, end) => void updateAnswerPlan(id, start, Math.round((end.getTime() - start.getTime()) / 60_000))}
+          onAnswerPlanChange={(id, start, durationMinutes) => void updateAnswerPlan(id, start, durationMinutes)}
         />
       ) : (
         <RecordsView
@@ -1466,7 +1488,7 @@ function ApplicationsView({
                         {progressLabel}
                       </span>
                     </td>
-                    <td><span className="career-application-cell-text">{nextInterview ? `${formatApplicationListDateTime(nextInterview.start_at)} · ${nextInterview.stage_label}` : "暂无安排"}</span></td>
+                    <td><span className="career-application-cell-text">{nextInterview ? `${formatApplicationSessionRange(nextInterview.start_at, nextInterview.end_at)} · ${nextInterview.stage_label}` : "暂无安排"}</span></td>
                     <td>{item.applied_at ? <time dateTime={item.applied_at}>{formatApplicationUpdatedAt(item.applied_at)}</time> : "未投递"}</td>
                     <td><time className="career-application-updated-at" dateTime={item.updated_at}>{formatApplicationUpdatedAt(item.updated_at)}</time></td>
                   </tr>
@@ -1610,7 +1632,7 @@ function ScheduleView({
   onSelect: (id: string) => void;
   onMove: (id: string, calendarDay: number, calendarStart: number, calendarSpan?: number) => void;
   onAnswerPlanMove: (id: string, startAt: Date, endAt: Date) => void;
-  onAnswerPlanChange: (id: string, startAt: Date | null, endAt: Date | null) => void;
+  onAnswerPlanChange: (id: string, startAt: Date | null, durationMinutes: number | null) => void;
 }) {
   const [openInterviewId, setOpenInterviewId] = useState<string | null>(null);
   const [showAllOpenWindows, setShowAllOpenWindows] = useState(false);
@@ -1896,24 +1918,26 @@ function ScheduleView({
   );
 }
 
-function InterviewScheduleDialog({ interview, detail, detailLoading, onClose, onAnswerPlanChange }: { interview: Interview; detail: InterviewSessionDetail | null; detailLoading: boolean; onClose: () => void; onAnswerPlanChange: (id: string, startAt: Date | null, endAt: Date | null) => void }) {
+function InterviewScheduleDialog({ interview, detail, detailLoading, onClose, onAnswerPlanChange }: { interview: Interview; detail: InterviewSessionDetail | null; detailLoading: boolean; onClose: () => void; onAnswerPlanChange: (id: string, startAt: Date | null, durationMinutes: number | null) => void }) {
   const matchingDetail = detail?.session.id === interview.id ? detail : null;
   const meetingUrl = matchingDetail?.session.meeting_url ?? null;
   const [planStartAt, setPlanStartAt] = useState(() => interview.answerPlanStartAt ? localDateTimeValue(new Date(interview.answerPlanStartAt)) : "");
-  const [planEndAt, setPlanEndAt] = useState(() => interview.answerPlanEndAt ? localDateTimeValue(new Date(interview.answerPlanEndAt)) : "");
+  const [planDurationMinutes, setPlanDurationMinutes] = useState(() => interview.answerPlanStartAt && interview.answerPlanEndAt
+    ? Math.max(1, Math.round((new Date(interview.answerPlanEndAt).getTime() - new Date(interview.answerPlanStartAt).getTime()) / 60_000))
+    : 120);
   const [planError, setPlanError] = useState<string | null>(null);
   const savePlan = () => {
     if (!interview.canReschedule) return;
-    if (!planStartAt && !planEndAt) {
+    if (!planStartAt) {
       setPlanError(null);
       onAnswerPlanChange(interview.id, null, null);
       return;
     }
     const start = new Date(planStartAt);
-    const end = new Date(planEndAt);
+    const end = new Date(start.getTime() + planDurationMinutes * 60_000);
     const windowStart = new Date(interview.startAt);
     const windowEnd = new Date(interview.endAt);
-    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
+    if (!Number.isFinite(start.getTime()) || !Number.isInteger(planDurationMinutes) || planDurationMinutes <= 0) {
       setPlanError("请选择完整且有效的作答时间段。");
       return;
     }
@@ -1922,7 +1946,7 @@ function InterviewScheduleDialog({ interview, detail, detailLoading, onClose, on
       return;
     }
     setPlanError(null);
-    onAnswerPlanChange(interview.id, start, end);
+    onAnswerPlanChange(interview.id, start, planDurationMinutes);
   };
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -1942,13 +1966,25 @@ function InterviewScheduleDialog({ interview, detail, detailLoading, onClose, on
             <div className="schedule-dialog-answer-plan">
               <div><strong>我的作答计划</strong><span>仅作为个人时间安排，不会改变官方截止时间。</span></div>
               <div className="schedule-dialog-answer-plan-fields">
-                <label>计划开始<input type="datetime-local" step={60} value={planStartAt} disabled={!interview.canReschedule} onChange={(event) => setPlanStartAt(event.target.value)} /></label>
-                <label>计划结束<input type="datetime-local" step={60} value={planEndAt} disabled={!interview.canReschedule} onChange={(event) => setPlanEndAt(event.target.value)} /></label>
+                <div className="schedule-dialog-answer-plan-field">
+                  <label htmlFor={`schedule-answer-plan-${interview.id}`}>计划作答时间</label>
+                  <ScheduleDateTimePicker
+                    id={`schedule-answer-plan-${interview.id}`}
+                    label="计划作答时间"
+                    value={planStartAt}
+                    durationMinutes={planDurationMinutes}
+                    minimumStartAt={interview.startAt}
+                    maximumEndAt={interview.endAt}
+                    disabled={!interview.canReschedule}
+                    onChange={(value) => { setPlanStartAt(value); setPlanError(null); }}
+                    onDurationMinutesChange={(value) => { setPlanDurationMinutes(value); setPlanError(null); }}
+                  />
+                </div>
               </div>
               {planError && <p role="alert">{planError}</p>}
               {interview.canReschedule && (
                 <div className="schedule-dialog-answer-plan-actions">
-                  {(interview.answerPlanStartAt || interview.answerPlanEndAt) && <Button type="button" variant="ghost" onClick={() => { setPlanStartAt(""); setPlanEndAt(""); onAnswerPlanChange(interview.id, null, null); }}>清除计划</Button>}
+                  {(interview.answerPlanStartAt || interview.answerPlanEndAt) && <Button type="button" variant="ghost" onClick={() => { setPlanStartAt(""); onAnswerPlanChange(interview.id, null, null); }}>清除计划</Button>}
                   <Button type="button" onClick={savePlan}>保存作答计划</Button>
                 </div>
               )}
@@ -2040,7 +2076,7 @@ function RecordsView({
                 <span>{item.role}</span>
                 <span>{item.stage}</span>
                 <span>
-                  {item.date} {item.time}
+                  {formatApplicationSessionRange(item.startAt, item.endAt)}
                 </span>
                 <StatusBadge status={item.status} />
               </button>
@@ -2896,7 +2932,6 @@ function CreateInterviewDialog({
         setCreatedApplication(targetApplication);
       }
       const start = new Date(startAt);
-      const end = new Date(start.getTime() + duration * 60_000);
       const payload: InterviewSessionCreatePayload = {
         client_request_id: requestIdRef.current,
         application_stage_id: targetApplication.current_stage?.id,
@@ -2910,7 +2945,7 @@ function CreateInterviewDialog({
             : null,
         stage_label: targetApplication.current_stage_label,
         start_at: start.toISOString(),
-        end_at: end.toISOString(),
+        duration_minutes: duration,
         timezone,
         mode,
         ...(detailMode
@@ -2964,9 +2999,20 @@ function CreateInterviewDialog({
                 <label>展示名称<input required value={stage} readOnly aria-readonly="true" /></label>
                 {detailStageCategory === "interview" && <label>面试轮次<input type="number" value={detailApplication?.current_round_no ?? ""} readOnly aria-readonly="true" /></label>}
                 <label>当前状态<input value="已安排" readOnly aria-readonly="true" /></label>
-                <label>{detailTimeLabel}<input required type="datetime-local" step={60} value={startAt} onChange={(event) => setStartAt(event.target.value)} /></label>
+                <div className="interview-dialog-schedule-field is-wide">
+                  <label htmlFor="interview-detail-schedule">{detailTimeLabel}</label>
+                  <ScheduleDateTimePicker
+                    id="interview-detail-schedule"
+                    label={detailTimeLabel}
+                    value={startAt}
+                    durationMinutes={detailStageCategory === "screening" ? undefined : duration}
+                    required
+                    disabled={submitting}
+                    onChange={setStartAt}
+                    onDurationMinutesChange={detailStageCategory === "screening" ? undefined : setDuration}
+                  />
+                </div>
                 {detailStageCategory !== "screening" && <>
-                  <label>时长<select value={duration} onChange={(event) => setDuration(Number(event.target.value))}><option value={30}>30 分钟</option><option value={60}>1 小时</option><option value={90}>1.5 小时</option><option value={120}>2 小时</option></select></label>
                   <label>方式<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="video">视频面试</option><option value="onsite">现场面试</option><option value="phone">电话面试</option><option value="other">其他</option></select></label>
                   <label className="is-wide">链接或地点<input value={meetingOrLocation} onChange={(event) => setMeetingOrLocation(event.target.value)} placeholder={meetingOrLocationPlaceholder} /></label>
                 </>}
@@ -2983,7 +3029,22 @@ function CreateInterviewDialog({
             </>
           )}
           {creationLocked && <p className="interview-create-progress" role="status">岗位或求职进程已创建；再次提交只会重试当前面试排期，不会重复创建前置数据。</p>}
-          {!detailMode && <div className="interview-dialog-grid"><label>开始时间<input required type="datetime-local" step={60} value={startAt} onChange={(event) => setStartAt(event.target.value)} /></label><label>时长<select value={duration} onChange={(event) => setDuration(Number(event.target.value))}><option value={30}>30 分钟</option><option value={60}>1 小时</option><option value={90}>1.5 小时</option><option value={120}>2 小时</option></select></label><label>面试方式<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="video">视频面试</option><option value="onsite">现场面试</option><option value="phone">电话面试</option><option value="other">其他</option></select></label></div>}
+          {!detailMode && <div className="interview-dialog-grid">
+            <div className="interview-dialog-schedule-field is-wide">
+              <label htmlFor="interview-create-schedule">面试时间</label>
+              <ScheduleDateTimePicker
+                id="interview-create-schedule"
+                label="面试时间"
+                value={startAt}
+                durationMinutes={duration}
+                required
+                disabled={submitting}
+                onChange={setStartAt}
+                onDurationMinutesChange={setDuration}
+              />
+            </div>
+            <label>面试方式<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="video">视频面试</option><option value="onsite">现场面试</option><option value="phone">电话面试</option><option value="other">其他</option></select></label>
+          </div>}
           {detailMode ? (
             <footer className="interview-detail-footer">
               <p>保存后可继续补充安排或更新结果。</p>
