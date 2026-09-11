@@ -98,6 +98,10 @@ export type UserProfileConflict = {
   profile: UserProfileData;
 };
 
+export type StageVisibilityPreference = {
+  hidden_column_ids: string[];
+};
+
 export type AdminUserSummary = User & {
   status: number;
   resume_count: number;
@@ -1292,6 +1296,15 @@ export const api = {
       method: "PUT",
       body: payload,
     }),
+  getStageVisibilityPreference: () =>
+    request<StageVisibilityPreference>(
+      "/api/account/preferences/career.applications.stage_visibility",
+    ),
+  putStageVisibilityPreference: (payload: StageVisibilityPreference) =>
+    request<StageVisibilityPreference>(
+      "/api/account/preferences/career.applications.stage_visibility",
+      { method: "PUT", body: payload },
+    ),
   uploadAccountAvatar: (payload: { fileName: string; dataUrl: string }) =>
     request<{ url: string }>("/api/account/avatar", {
       method: "PUT",

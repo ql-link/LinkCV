@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import (
     BigInteger,
@@ -121,6 +122,33 @@ class User(Base):
         if not self.avatar_object_key:
             return None
         return asset_url(self.avatar_object_key)
+
+
+class UserPreference(Base):
+    __tablename__ = "user_preferences"
+    __table_args__ = (
+        PrimaryKeyConstraint(
+            "user_id", "preference_key", name="pk_user_preferences"
+        ),
+        CheckConstraint(
+            "LOWER(JSON_TYPE(value_json)) = 'object'",
+            name="ck_user_preferences_value_object",
+        ),
+        {"comment": "用户账号级产品偏好"},
+    )
+
+    user_id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(),
+        ForeignKey("users.id", name="fk_user_preferences_user", ondelete="RESTRICT"),
+        nullable=False,
+        comment="配置所属用户 id",
+    )
+    preference_key: Mapped[str] = mapped_column(
+        ascii_char(64), nullable=False, comment="服务端允许的配置键"
+    )
+    value_json: Mapped[dict[str, Any]] = mapped_column(
+        JSON(), nullable=False, comment="经过对应接口校验的配置值"
+    )
 
 
 class UserProfile(Base):

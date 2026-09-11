@@ -7,7 +7,7 @@ from linkcv.core.config import Settings
 from linkcv.core.security import verify_password
 from linkcv.integrations.wechat_client import WechatApiError
 from linkcv.main import create_app
-from linkcv.modules.identity.models import User
+from linkcv.modules.identity.models import User, UserPreference
 from linkcv.modules.resumes.models import ResumeTemplate
 from tests.canonical_resume_fixtures import canonical_template_payload
 from tests.fakes import FakeRedis
@@ -311,6 +311,9 @@ def test_account_routes_reject_unauthenticated_users() -> None:
         assert client.patch("/api/account/profile", json={"nickname": "x"}).status_code == 401
         assert client.put("/api/account/avatar", json={"fileName": "a.png", "dataUrl": "x"}).status_code == 401
         assert client.delete("/api/account/avatar").status_code == 401
+        preference_path = "/api/account/preferences/career.applications.stage_visibility"
+        assert client.get(preference_path).status_code == 401
+        assert client.put(preference_path, json={"hidden_column_ids": []}).status_code == 401
         assert (
             client.post(
                 "/api/account/change-password",
@@ -504,6 +507,95 @@ def test_user_profile_get_returns_empty_when_not_created() -> None:
         # Unauthenticated requests are rejected.
         with TestClient(app) as stranger:
             assert stranger.get("/api/account/user-profile").status_code == 401
+
+
+def test_stage_visibility_preference_defaults_without_creating_a_row() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        _register_account(client, "preference-default@example.com")
+
+        response = client.get(
+            "/api/account/preferences/career.applications.stage_visibility"
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"hidden_column_ids": []}
+        with app.state.session_factory() as session:
+            assert session.scalar(select(UserPreference)) is None
+
+
+def test_stage_visibility_preference_put_normalizes_and_roundtrips() -> None:
+    app = build_test_app()
+    path = "/api/account/preferences/career.applications.stage_visibility"
+    with TestClient(app) as client:
+        _register_account(client, "preference-roundtrip@example.com")
+
+        created = client.put(
+            path,
+            json={
+                "hidden_column_ids": [
+                    "assessment",
+                    "interview:二面",
+                    "assessment",
+                ]
+            },
+        )
+        assert created.status_code == 200
+        assert created.json() == {
+            "hidden_column_ids": ["assessment", "interview:二面"]
+        }
+        assert client.get(path).json() == created.json()
+
+        updated = client.put(path, json={"hidden_column_ids": ["written_test"]})
+        assert updated.status_code == 200
+        assert updated.json() == {"hidden_column_ids": ["written_test"]}
+
+        with app.state.session_factory() as session:
+            rows = session.scalars(select(UserPreference)).all()
+            assert len(rows) == 1
+            assert rows[0].preference_key == "career.applications.stage_visibility"
+            assert rows[0].value_json == {"hidden_column_ids": ["written_test"]}
+
+
+def test_stage_visibility_preference_is_isolated_by_user() -> None:
+    app = build_test_app()
+    path = "/api/account/preferences/career.applications.stage_visibility"
+    with TestClient(app) as first_client, TestClient(app) as second_client:
+        _register_account(first_client, "preference-first@example.com")
+        _register_account(second_client, "preference-second@example.com")
+
+        assert first_client.put(
+            path, json={"hidden_column_ids": ["offer"]}
+        ).status_code == 200
+        assert second_client.get(path).json() == {"hidden_column_ids": []}
+        assert second_client.put(
+            path, json={"hidden_column_ids": ["pending"]}
+        ).status_code == 200
+
+        assert first_client.get(path).json() == {"hidden_column_ids": ["offer"]}
+        assert second_client.get(path).json() == {"hidden_column_ids": ["pending"]}
+
+
+def test_stage_visibility_preference_rejects_invalid_payloads() -> None:
+    app = build_test_app()
+    path = "/api/account/preferences/career.applications.stage_visibility"
+    with TestClient(app) as client:
+        _register_account(client, "preference-invalid@example.com")
+
+        invalid_payloads = [
+            {},
+            {"hidden_column_ids": ["unknown"]},
+            {"hidden_column_ids": ["interview:"]},
+            {"hidden_column_ids": ["interview: 二面"]},
+            {"hidden_column_ids": ["interview:" + "x" * 101]},
+            {"hidden_column_ids": [], "display_mode": "list"},
+        ]
+        for payload in invalid_payloads:
+            response = client.put(path, json=payload)
+            assert response.status_code == 400
+            assert response.json() == {"error": "INVALID_USER_PREFERENCE"}
+
+        assert client.get(path).json() == {"hidden_column_ids": []}
 
 
 def test_user_profile_put_and_get_roundtrip() -> None:

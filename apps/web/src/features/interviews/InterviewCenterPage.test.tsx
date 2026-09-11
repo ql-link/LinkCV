@@ -18,6 +18,8 @@ const mocks = vi.hoisted(() => {
   return ({
   listInterviewSessions: vi.fn(),
   listJobApplications: vi.fn(),
+  getStageVisibilityPreference: vi.fn(),
+  putStageVisibilityPreference: vi.fn(),
   getInterviewSession: vi.fn(),
   updateJobApplication: vi.fn(),
   rescheduleInterviewSession: vi.fn(),
@@ -247,6 +249,8 @@ async function switchToScheduleMonth() {
 
 beforeEach(() => {
   window.sessionStorage.removeItem("linkcv:career-applications:column-order:v1");
+  mocks.getStageVisibilityPreference.mockResolvedValue({ hidden_column_ids: [] });
+  mocks.putStageVisibilityPreference.mockImplementation(async (payload) => payload);
   mocks.addJobApplicationStage.mockResolvedValue({ application });
   mocks.terminateJobApplication.mockResolvedValue({ application });
   mocks.listInterviewSessions.mockResolvedValue({ items: [session], next_cursor: null });
@@ -2875,6 +2879,54 @@ describe("InterviewCenterPage API projections", () => {
     expect(await screen.findByRole("dialog", { name: "新建求职进程" })).toBeInTheDocument();
   });
 
+  it("persists a hidden stage and restores the switch from the account preference", async () => {
+    mocks.getStageVisibilityPreference
+      .mockResolvedValueOnce({ hidden_column_ids: [] })
+      .mockResolvedValue({ hidden_column_ids: ["interview:二面"] });
+    mocks.putStageVisibilityPreference.mockResolvedValue({
+      hidden_column_ids: ["interview:二面"],
+    });
+    const { unmount } = render(<InterviewCenterPage view="applications" />);
+
+    await screen.findByRole("region", { name: "求职进程看板" });
+    let settings = openViewSettings();
+    fireEvent.click(within(settings).getByRole("button", { name: "展示阶段" }));
+    fireEvent.click(within(settings).getByRole("checkbox", { name: "二面" }));
+
+    expect(document.querySelector('[data-column-id="interview:二面"]')).not.toBeInTheDocument();
+    await waitFor(() => expect(mocks.putStageVisibilityPreference).toHaveBeenCalledWith({
+      hidden_column_ids: ["interview:二面"],
+    }));
+
+    unmount();
+    render(<InterviewCenterPage view="applications" />);
+
+    await screen.findByRole("region", { name: "求职进程看板" });
+    settings = openViewSettings();
+    fireEvent.click(within(settings).getByRole("button", { name: "展示阶段" }));
+    expect(within(settings).getByRole("checkbox", { name: "二面" })).not.toBeChecked();
+    expect(document.querySelector('[data-column-id="interview:二面"]')).not.toBeInTheDocument();
+  });
+
+  it("restores the confirmed stage visibility when saving fails", async () => {
+    mocks.getStageVisibilityPreference.mockResolvedValue({ hidden_column_ids: [] });
+    mocks.putStageVisibilityPreference.mockRejectedValue(
+      new ApiRequestError(500, "PREFERENCE_SAVE_FAILED"),
+    );
+    render(<InterviewCenterPage view="applications" />);
+
+    await screen.findByRole("region", { name: "求职进程看板" });
+    const settings = openViewSettings();
+    fireEvent.click(within(settings).getByRole("button", { name: "展示阶段" }));
+    fireEvent.click(within(settings).getByRole("checkbox", { name: "二面" }));
+
+    await waitFor(() => expect(mocks.putStageVisibilityPreference).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      expect(within(settings).getByRole("checkbox", { name: "二面" })).toBeChecked();
+      expect(document.querySelector('[data-column-id="interview:二面"]')).toBeInTheDocument();
+    });
+  });
+
   it("renders separate assessment and written-test columns and projects legacy screening labels", async () => {
     const today = new Date();
     today.setHours(10, 20, 0, 0);
@@ -3084,7 +3136,16 @@ describe("InterviewCenterPage API projections", () => {
     expect(document.querySelector('[data-column-key="screening"]')).not.toBeInTheDocument();
     expect(screen.queryByRole("article", { name: "筛选公司 筛选岗位" })).not.toBeInTheDocument();
     expect(within(stageVisibility).getByRole("checkbox", { name: "筛选中" })).not.toBeChecked();
-    fireEvent.click(within(stageVisibility).getByRole("checkbox", { name: "筛选中" }));
+
+    fireEvent.click(within(settings).getByLabelText("视图设置"));
+    await waitFor(() => expect(within(settings).getByRole("button", { name: "展示阶段" })).toHaveAttribute("aria-expanded", "false"));
+    const reopenedSettings = openViewSettings();
+    fireEvent.click(within(reopenedSettings).getByRole("button", { name: "展示阶段" }));
+    const reopenedStageVisibility = within(reopenedSettings).getByRole("group", { name: "展示阶段" });
+    expect(within(reopenedStageVisibility).getByRole("checkbox", { name: "筛选中" })).not.toBeChecked();
+    expect(document.querySelector('[data-column-key="screening"]')).not.toBeInTheDocument();
+
+    fireEvent.click(within(reopenedStageVisibility).getByRole("checkbox", { name: "筛选中" }));
     expect(document.querySelector('[data-column-key="screening"]')).toBeInTheDocument();
     expect(screen.queryByText("等待通知")).not.toBeInTheDocument();
     expect(screen.queryByText("横向滑动查看更多阶段")).not.toBeInTheDocument();

@@ -63,6 +63,15 @@ def install_error_handlers(app: FastAPI) -> None:
                 status_code=400, content={"error": "INVALID_USER_PROFILE"}
             )
         if (
+            request.method == "PUT"
+            and request.url.path.rstrip("/")
+            == "/api/account/preferences/career.applications.stage_visibility"
+        ):
+            request.state.error_code = "INVALID_USER_PREFERENCE"
+            return JSONResponse(
+                status_code=400, content={"error": "INVALID_USER_PREFERENCE"}
+            )
+        if (
             request.url.path.startswith(
                 (
                     "/api/job-applications",

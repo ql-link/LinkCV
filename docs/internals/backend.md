@@ -22,7 +22,7 @@
 | `src/linkcv/services/resume_import_idempotency.py` | Redis Lua 请求指纹到导入 ID 的短期绑定与冲突保护 |
 | `src/linkcv/core/mq/` | RabbitMQ/Kafka publisher、统一导入消息和 confirm 异常边界 |
 | `src/linkcv/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
-| `src/linkcv/modules/identity/` | 用户模型、管理员密码登录、双通道会话、微信自动建号、扫码状态机、`/api/account` 用户中心、个人画像（`user_profiles`）与管理端用户管理 |
+| `src/linkcv/modules/identity/` | 用户模型、管理员密码登录、双通道会话、微信自动建号、扫码状态机、`/api/account` 用户中心、个人画像（`user_profiles`）、账号级产品偏好（`user_preferences`）与管理端用户管理 |
 | `src/linkcv/modules/miniprogram/` | 本人正式版本只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品。`account_routes.py` 提供小程序专用昵称与头像读写（头像二进制仅经 `/api/miniprogram/account/avatar` 分发） |
 | `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板及管理、简历、版本、异步导入、分享和资源路由 |
 | `src/linkcv/modules/datasets/` | `user_dataset` 资料元数据、异步解析受理与状态列表路由 |
@@ -31,7 +31,7 @@
 | `src/linkcv/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkcv/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0058` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0059` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -74,6 +74,8 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 `0045` 重构 `user_profiles`：把旧城市、工作性质和目标职位字段转换为新的 JSON 字符串数组，新增可空的 `candidate_status` 和 `graduation_year`，并物理删除旧工作方式、目标公司、排除条件、到岗信息和出生日期字段。迁移前严格核对画像表结构、约束与存量数据，迁移后核验画像行数、转换结果、所有保留字段和最终 CHECK；存量候选人类型与毕业年份保持为空，不能从工作年限推断。该 revision 无兼容窗口且为 forward-only，删除列后的恢复只能使用升级前备份或新的向前 revision。
 
 `0046` 在 `0045` 基础上锁定 `user_profiles` 结构，预检职业方向列及数组 CHECK 和画像行数后，用临时表按原顺序去重并过滤 `employment_types`，只保留 `internship` 与 `full_time`，再删除职业方向列及其 CHECK。迁移后核验画像行数、工作性质数组和最终结构；该 revision 同样无兼容窗口且为 forward-only，删除的数据只能依赖升级前备份或新的向前 revision。
+
+`0059` 新增克制的 `user_preferences` 表，只包含 `user_id`、`preference_key` 和 `value_json`，以用户和配置键组成复合主键，并通过 `RESTRICT` 外键归属用户。数据库只保证配置值为 JSON object；当前固定接口只允许 `career.applications.stage_visibility`，Pydantic 严格校验其中唯一的 `hidden_column_ids`。迁移只创建空表，不扫描或回填业务数据，revision 为 forward-only。
 
 `0047` 在维护窗口完成简历 canonical 一次性切流，新增表为 0。迁移先只读预检全部 `resume_templates/resumes/resume_versions`；对于 `0042` 已从目录删除但仍被历史快照引用的 `blank-cn`，预检通过后、非空外键 DDL 前写入确定性的 inactive tombstone，并把历史简历与版本绑定该身份。tombstone 的示例正文为空且不含用户数据，每份历史简历/版本仍从自己的旧 data/style 生成自己的 canonical 内容和冻结模板快照，不互相覆盖。旧 Markdown 同一区域存在多组 row 时，转换器保留首组稳定 ID，并为后续组生成带确定性序号的节点 ID；row 单元格内的多个纯文本段落按原顺序和样式以换行归并，列表、图片或其他无法表示的混合内容仍阻断迁移。迁移同时为历史版本补齐非空 `template_id`，把当前简历模板外键改为 `RESTRICT`，并为既有 `document_parse_tasks` 增加导入时冻结的 `selected_template_id` 与私有 `source_graph_object_name`。未知模板、关系身份冲突、无法无损表示、成功任务缺少结果简历或仍在处理的导入都会在首次写入前阻断；inactive tombstone 不进入普通模板列表、新建、导入默认选择或模板切换。升级后普通运行时不再双读双写；旧解析模块只保留给该迁移和离线 SQLite 导入器。
 
@@ -197,7 +199,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 公开的 `/api/account/*` 通过 `get_current_user` 获取当前用户，不接受客户端 `user_id`。`GET /api/account/profile` 返回资料并附带简历数量与最近 5 份简历；`PATCH /api/account/profile` 只允许修改昵称（去空白后 1–50 字符）。头像上传复用 `decode_image_data_url`、`build_avatar_object_name` 和 `asset_url`：新对象写入 `users/{user_id}/assets/avatar/...`，再更新 `users.avatar_object_key`，提交失败补偿删除新对象，成功后才清理旧对象；响应只含相对 URL。普通改密和微信绑定不是运行时公开契约；用户停用或管理员操作仍通过 `revoke_user_sessions` 撤销该用户的 Web 与小程序 session。
 
-`UserProfile` 模型承载每个用户至多一份的个人画像（`user_profiles` 表，迁移 `0044`，由 `0045`、`0046` 和漂移修复 `0051` 收敛为当前结构），`GET/PUT /api/account/user-profile` 负责读写。`GET` 未创建时返回 `lock_version=1` 的约定空对象且不写库；`PUT` 整体替换全部可编辑字段（缺省以 `null`/空数组覆盖），首次创建要求 `base_lock_version=1`。更新使用 `user_id + lock_version` 条件写并递增版本，影响 0 行即并发冲突，`USER_PROFILE_VERSION_CONFLICT` 附最新画像供前端刷新重试；创建时 `IntegrityError` 冲突同样转成该错误。薪资币种统一转大写三字母，数组字段去除空串与重复并保留提交顺序；schema 侧 `UserProfileData` 追加 `lock_version` 与 UTC 时间戳，`GET /api/account/profile` 的 `profile` 字段未创建时为 `null`。
+`UserProfile` 模型承载每个用户至多一份的个人画像（`user_profiles` 表，迁移 `0044`，由 `0045`、`0046` 和漂移修复 `0051` 收敛为当前结构），`GET/PUT /api/account/user-profile` 负责读写。`GET` 未创建时返回 `lock_version=1` 的约定空对象且不写库；`PUT` 整体替换全部可编辑字段（缺省以 `null`/空数组覆盖），首次创建要求 `base_lock_version=1`。更新使用 `user_id + lock_version` 条件写并递增版本，影响 0 行即并发冲突，`USER_PROFILE_VERSION_CONFLICT` 附最新画像供前端刷新重试；创建时 `IntegrityError` 冲突同样转成该错误。薪资币种统一转大写三字母，数组字段去除空串与重复并保留提交顺序；schema 侧 `UserProfileData` 追加 `lock_version` 与 UTC 时间戳，`GET /api/account/profile` 的 `profile` 字段未创建时为 `null`。`UserPreference` 只保存账号级产品偏好；阶段显隐 GET 在无行时返回空数组而不写库，PUT 按当前用户和固定键整体覆盖 JSON，采用最后一次成功写入为准。
 
 ## 简历分享
 
@@ -207,7 +209,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0058`、模板初始化和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0059`、模板初始化和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 

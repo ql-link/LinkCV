@@ -26,7 +26,7 @@ from linkcv.core.storage import (
 )
 from linkcv.integrations.wechat_client import WechatApiError, WechatClient
 from linkcv.modules.identity.dependencies import get_current_user, get_settings
-from linkcv.modules.identity.models import User, UserProfile
+from linkcv.modules.identity.models import User, UserPreference, UserProfile
 from linkcv.modules.identity.schemas import (
     AccountProfileResponse,
     AvatarResponse,
@@ -36,6 +36,7 @@ from linkcv.modules.identity.schemas import (
     PasswordChangedResponse,
     ProfileUpdateRequest,
     RecentResumeSummary,
+    StageVisibilityPreference,
     UserProfileData,
     UserProfileResponse,
     UserProfileUpdateRequest,
@@ -57,6 +58,7 @@ MIN_PASSWORD_LENGTH = 8
 NICKNAME_MAX_LENGTH = 50
 RECENT_RESUMES_LIMIT = 5
 logger = logging.getLogger(__name__)
+STAGE_VISIBILITY_PREFERENCE_KEY = "career.applications.stage_visibility"
 
 
 def require_legacy_test_route(request: Request) -> None:
@@ -259,6 +261,69 @@ def put_user_profile(
         raise
     db.refresh(current)
     return _user_profile_data(current)
+
+
+@router.get(
+    "/preferences/career.applications.stage_visibility",
+    response_model=StageVisibilityPreference,
+)
+def get_stage_visibility_preference(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> StageVisibilityPreference:
+    preference = db.get(
+        UserPreference,
+        (user.id, STAGE_VISIBILITY_PREFERENCE_KEY),
+    )
+    if preference is None:
+        return StageVisibilityPreference(hidden_column_ids=[])
+    return StageVisibilityPreference.model_validate(preference.value_json)
+
+
+@router.put(
+    "/preferences/career.applications.stage_visibility",
+    response_model=StageVisibilityPreference,
+)
+def put_stage_visibility_preference(
+    payload: StageVisibilityPreference,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> StageVisibilityPreference:
+    preference = db.get(
+        UserPreference,
+        (user.id, STAGE_VISIBILITY_PREFERENCE_KEY),
+    )
+    value_json = payload.model_dump(mode="json")
+    if preference is None:
+        preference = UserPreference(
+            user_id=user.id,
+            preference_key=STAGE_VISIBILITY_PREFERENCE_KEY,
+            value_json=value_json,
+        )
+        db.add(preference)
+    else:
+        preference.value_json = value_json
+    try:
+        db.commit()
+    except IntegrityError:
+        # Two first writes may race. The low-risk preference contract is
+        # last-successful-write-wins, so retry as an update of the winning row.
+        db.rollback()
+        preference = db.get(
+            UserPreference,
+            (user.id, STAGE_VISIBILITY_PREFERENCE_KEY),
+        )
+        if preference is None:
+            raise
+        preference.value_json = value_json
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "failed to save stage visibility preference for user %s", user.id
+        )
+        raise
+    return StageVisibilityPreference.model_validate(value_json)
 
 
 @router.patch("/profile", response_model=UserProfileResponse)

@@ -308,6 +308,42 @@ class AccountProfileResponse(BaseModel):
     recent_resumes: list[RecentResumeSummary]
 
 
+class StageVisibilityPreference(BaseModel):
+    """求职看板阶段显隐；第一版只承载隐藏列 ID。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    hidden_column_ids: list[str]
+
+    @field_validator("hidden_column_ids")
+    @classmethod
+    def validate_hidden_column_ids(cls, values: list[str]) -> list[str]:
+        fixed_ids = {
+            "pending",
+            "screening",
+            "assessment",
+            "written_test",
+            "offer",
+            "ended",
+        }
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            if value in fixed_ids:
+                column_id = value
+            elif value.startswith("interview:"):
+                label = value.removeprefix("interview:")
+                if not label or label != label.strip() or len(label) > 100:
+                    raise ValueError("invalid interview column id")
+                column_id = value
+            else:
+                raise ValueError("invalid application board column id")
+            if column_id not in seen:
+                seen.add(column_id)
+                normalized.append(column_id)
+        return normalized
+
+
 class AvatarUploadRequest(BaseModel):
     fileName: str = "avatar"
     dataUrl: str

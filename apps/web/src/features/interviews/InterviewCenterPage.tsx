@@ -532,6 +532,7 @@ export function InterviewCenterPage({
   const [applicationDisplayMode, setApplicationDisplayMode] = useState<"board" | "list">("board");
   const [groupByCategory, setGroupByCategory] = useState(false);
   const [hiddenApplicationBoardColumnIds, setHiddenApplicationBoardColumnIds] = useState<Set<string>>(() => new Set());
+  const [stageVisibilityLoading, setStageVisibilityLoading] = useState(view === "applications");
   const [applicationSortMode, setApplicationSortMode] = useState<ApplicationSortMode>("recent_schedule");
   const [notice, setNotice] = useState<{ id: number; message: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -552,6 +553,11 @@ export function InterviewCenterPage({
   const detailRequestRef = useRef(0);
   const scheduleToastTimeoutRef = useRef<number | null>(null);
   const noticeIdRef = useRef(0);
+  const stageVisibilityLoadRef = useRef(0);
+  const stageVisibilitySaveRef = useRef(0);
+  const stageVisibilitySaveChainRef = useRef<Promise<void>>(Promise.resolve());
+  const hiddenApplicationBoardColumnIdsRef = useRef<Set<string>>(new Set());
+  const confirmedHiddenApplicationBoardColumnIdsRef = useRef<Set<string>>(new Set());
   const isApplicationDetailRoute = view === "applications" && Boolean(initialApplicationId);
   const isApplicationSessionDialogRoute = isApplicationDetailRoute && Boolean(initialSessionId);
   const closeApplicationSessionDialog = () => {
@@ -592,6 +598,75 @@ export function InterviewCenterPage({
     const timer = window.setTimeout(() => setNotice(null), FLOATING_ERROR_NOTICE_DURATION_MS);
     return () => window.clearTimeout(timer);
   }, [notice]);
+
+  useEffect(() => {
+    if (view !== "applications") {
+      setStageVisibilityLoading(false);
+      return;
+    }
+    const requestId = ++stageVisibilityLoadRef.current;
+    setStageVisibilityLoading(true);
+    void api.getStageVisibilityPreference()
+      .then((preference) => {
+        if (requestId !== stageVisibilityLoadRef.current) return;
+        const hiddenColumnIds = new Set(preference.hidden_column_ids);
+        hiddenApplicationBoardColumnIdsRef.current = hiddenColumnIds;
+        confirmedHiddenApplicationBoardColumnIdsRef.current = hiddenColumnIds;
+        setHiddenApplicationBoardColumnIds(hiddenColumnIds);
+      })
+      .catch((error) => {
+        if (requestId === stageVisibilityLoadRef.current) {
+          showNotice(errorMessage(error));
+        }
+      })
+      .finally(() => {
+        if (requestId === stageVisibilityLoadRef.current) {
+          setStageVisibilityLoading(false);
+        }
+      });
+    return () => {
+      ++stageVisibilityLoadRef.current;
+    };
+  }, [showNotice, view]);
+
+  const updateApplicationBoardColumnVisibility = useCallback((columnId: string, visible: boolean) => {
+    const next = new Set(hiddenApplicationBoardColumnIdsRef.current);
+    if (visible) next.delete(columnId);
+    else next.add(columnId);
+    hiddenApplicationBoardColumnIdsRef.current = next;
+    setHiddenApplicationBoardColumnIds(next);
+
+    const saveId = ++stageVisibilitySaveRef.current;
+    stageVisibilitySaveChainRef.current = stageVisibilitySaveChainRef.current.then(async () => {
+      if (saveId !== stageVisibilitySaveRef.current) return;
+      try {
+        const saved = await api.putStageVisibilityPreference({
+          hidden_column_ids: Array.from(hiddenApplicationBoardColumnIdsRef.current),
+        });
+        const confirmed = new Set(saved.hidden_column_ids);
+        confirmedHiddenApplicationBoardColumnIdsRef.current = confirmed;
+        if (saveId !== stageVisibilitySaveRef.current) return;
+        hiddenApplicationBoardColumnIdsRef.current = confirmed;
+        setHiddenApplicationBoardColumnIds(confirmed);
+      } catch (error) {
+        if (saveId !== stageVisibilitySaveRef.current) return;
+        showNotice(errorMessage(error));
+        try {
+          const latest = await api.getStageVisibilityPreference();
+          if (saveId !== stageVisibilitySaveRef.current) return;
+          const confirmed = new Set(latest.hidden_column_ids);
+          confirmedHiddenApplicationBoardColumnIdsRef.current = confirmed;
+          hiddenApplicationBoardColumnIdsRef.current = confirmed;
+          setHiddenApplicationBoardColumnIds(confirmed);
+        } catch {
+          if (saveId !== stageVisibilitySaveRef.current) return;
+          const confirmed = new Set(confirmedHiddenApplicationBoardColumnIdsRef.current);
+          hiddenApplicationBoardColumnIdsRef.current = confirmed;
+          setHiddenApplicationBoardColumnIds(confirmed);
+        }
+      }
+    });
+  }, [showNotice]);
 
   const openCreateInterview = (startAt?: string, endAt?: string) => {
     setCreateInterviewStartAt(startAt ?? null);
@@ -878,14 +953,7 @@ export function InterviewCenterPage({
                   onGroupingChange={setGroupByCategory}
                   onDisplayModeChange={setApplicationDisplayMode}
                   onSortChange={setApplicationSortMode}
-                  onColumnVisibilityChange={(columnId, visible) => {
-                    setHiddenApplicationBoardColumnIds((current) => {
-                      const next = new Set(current);
-                      if (visible) next.delete(columnId);
-                      else next.add(columnId);
-                      return next;
-                    });
-                  }}
+                  onColumnVisibilityChange={updateApplicationBoardColumnVisibility}
                 />
               )}
             </>
@@ -899,7 +967,7 @@ export function InterviewCenterPage({
         </FeedbackNotice>
       )}
       {scheduleToast && <FeedbackNotice kind="success" placement="floating">{scheduleToast}</FeedbackNotice>}
-      {(loading && !hasLoadedData) || applicationDetailPending ? (
+      {(loading && !hasLoadedData) || stageVisibilityLoading || applicationDetailPending ? (
         <PageLoading label="正在加载求职数据…" />
       ) : isApplicationDetailRoute ? (
         <>
