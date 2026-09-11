@@ -1117,6 +1117,20 @@ def _validate_schedule(
     return start_at.astimezone(UTC), end_at.astimezone(UTC)
 
 
+def _resolve_schedule_end(
+    start_at: datetime,
+    end_at: datetime | None,
+    duration_minutes: int | None,
+) -> datetime:
+    if duration_minutes is None:
+        assert end_at is not None
+        return end_at
+    try:
+        return start_at + timedelta(minutes=duration_minutes)
+    except OverflowError as error:
+        raise InvalidInterviewTime from error
+
+
 def _session_matches_current_stage(
     session: InterviewSession, application: JobApplication
 ) -> bool:
@@ -1193,16 +1207,22 @@ def create_session(
         )
     )
     if existing is not None:
+        requested_end_at = _resolve_schedule_end(
+            payload.start_at, payload.end_at, payload.duration_minutes
+        )
         requested_start, requested_end = _validate_schedule(
-            payload.start_at, payload.end_at, payload.timezone
+            payload.start_at, requested_end_at, payload.timezone
         )
         if not _session_matches_create_request(
             existing, payload, requested_start, requested_end
         ):
             raise InterviewEditConflict
         return existing
+    requested_end_at = _resolve_schedule_end(
+        payload.start_at, payload.end_at, payload.duration_minutes
+    )
     start_at, end_at = _validate_schedule(
-        payload.start_at, payload.end_at, payload.timezone
+        payload.start_at, requested_end_at, payload.timezone
     )
     try:
         state = schedule_current_stage(_application_state(application))
@@ -1432,8 +1452,11 @@ def reschedule_session(
         or result.application.archived_at is not None
     ):
         raise InterviewInvalidTransition
+    requested_end_at = _resolve_schedule_end(
+        payload.start_at, payload.end_at, payload.duration_minutes
+    )
     start_at, end_at = _validate_schedule(
-        payload.start_at, payload.end_at, payload.timezone
+        payload.start_at, requested_end_at, payload.timezone
     )
     if result.session.answer_plan_start_at is not None:
         assert result.session.answer_plan_end_at is not None
@@ -1476,11 +1499,15 @@ def update_answer_plan(
             payload.base_lock_version,
             {"answer_plan_start_at": None, "answer_plan_end_at": None},
         )
-    assert payload.answer_plan_end_at is not None
+    requested_plan_end_at = _resolve_schedule_end(
+        payload.answer_plan_start_at,
+        payload.answer_plan_end_at,
+        payload.duration_minutes,
+    )
     try:
         plan_start, plan_end = _validate_schedule(
             payload.answer_plan_start_at,
-            payload.answer_plan_end_at,
+            requested_plan_end_at,
             session.timezone,
         )
     except InvalidInterviewTime as error:
