@@ -55,7 +55,6 @@
 - P3：来源截图与当前开发数据的具体日期不同；这是数据状态差异，不属于控件样式偏差。
 
 final result: passed
-
 ---
 
 # 开放窗口与作答计划 Design QA
@@ -1276,5 +1275,61 @@ final result: passed
 ## Follow-up Polish
 
 - 移动端使用单列堆叠布局；本次来源只提供桌面视觉，未把移动端与未提供的移动稿做视觉像素对照。
+
+final result: passed
+
+---
+
+# Time Range Picker Design QA
+
+- Source visual truth: `/Users/jixu/.codex/generated_images/01a08ea8-b2f0-76e0-abc8-9fbdaae56825/exec-7e6d9d0e-a6bc-4ffa-b4c9-deced388588b.png`
+- Initial implementation evidence: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-0fec07fa-68d2-4f1e-b203-4a9ed8340186.png`
+- Revised implementation evidence: inline CUA browser capture from `http://127.0.0.1:5174/career/applications` (the CUA screenshot API did not expose a filesystem path)
+- Browser viewport: 1920 × 1022 CSS px, device scale factor 1
+- Source image: 1398 × 1125 px
+- Focused implementation capture: 750 × 500 px crop from the 1920 × 1022 viewport
+- State: written-test record detail, answer-plan picker open, 2026-09-12 at 14:00, duration 2 hours
+
+## Full-view comparison evidence
+
+The revised picker follows the source composition: a contextual title and available-window notice sit above a two-column calendar/time layout; the start-time selector, four duration choices, derived end time, and footer actions are all visible without viewport overflow. The surrounding production dialog remains at its existing width, so the picker scales to that dialog rather than copying the mock's wider outer frame.
+
+## Focused-region comparison evidence
+
+The focused browser capture confirms that the native time input and clock affordance are gone. The start time is now a single text-capable combobox with a chevron and a 15-minute option list, while still accepting exact `HH:mm` input. The four duration choices share one row, and the summary separates the highlighted end time from the total duration. The official availability window uses the same blue information treatment as the source.
+
+## Required fidelity surfaces
+
+- Fonts and typography: existing LinkCV font stack, label hierarchy, numeric tabular alignment, and source-like weights retained.
+- Spacing and layout rhythm: two-column ratio, full-width contextual header, four-column duration row, summary spacing, and footer separation now match the source hierarchy.
+- Colors and visual tokens: existing LinkCV surface, border, accent, muted text, and primary-button tokens map cleanly to the source.
+- Image quality and assets: no raster assets are required inside this control; the information and chevron icons use the project's existing Lucide icon set.
+- Copy and content: `选择作答时间段`, `可安排`, `开始时间`, `预计时长`, `结束时间`, and total-duration copy match the selected design intent.
+
+## Comparison history
+
+1. Initial P1: duration mode still used a native `type="time"` field with a clock icon, retained the old quick-time row, and stacked the custom duration control. Fixed by introducing the source-aligned start-time combobox, removing quick times in duration mode, and using four equal duration choices.
+2. Initial P2: picker width and vertical rhythm were too compact, and the record dialog clipped the footer and fourth duration choice. Fixed by using a wider maximum picker, restoring calendar row height, and portalling the picker to the record dialog with visible overflow and a dialog-aligned width.
+3. Post-fix browser evidence: picker measured 670 × 423 px inside the existing 720 px record dialog; it stayed within the 1920 × 1022 viewport, displayed all four duration controls and the full footer, and contained no native time input.
+
+## Findings
+
+No actionable P0, P1, or P2 visual differences remain within the requested picker scope. The outer record dialog intentionally preserves the production LinkCV width instead of adopting the wider mock frame.
+
+## Primary interactions tested
+
+- Open and close the answer-plan picker without saving.
+- Open the start-time dropdown and select 14:00.
+- Verify the derived end time updates to 16:00 for a two-hour duration.
+- Switch to a custom 90-minute duration and verify the derived end time updates to 15:30.
+- Confirm the picker has no viewport overflow and does not persist draft changes when closed.
+
+## Implementation checklist
+
+- [x] Replace native duration-mode time input.
+- [x] Match source information hierarchy and duration controls.
+- [x] Preserve exact-minute typing and keyboard-accessible combobox semantics.
+- [x] Prevent record-dialog clipping.
+- [x] Verify the rendered Development route.
 
 final result: passed

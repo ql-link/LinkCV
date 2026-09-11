@@ -274,7 +274,8 @@ class InterviewSessionCreateRequest(StrictModel):
     round_no: int | None = Field(default=None, ge=1, le=65_535)
     stage_label: str = Field(max_length=100)
     start_at: datetime
-    end_at: datetime
+    end_at: datetime | None = None
+    duration_minutes: int | None = Field(default=None, gt=0)
     schedule_kind: ScheduleKind = "fixed_slot"
     timezone: str = Field(max_length=64)
     mode: InterviewMode
@@ -307,9 +308,13 @@ class InterviewSessionCreateRequest(StrictModel):
 
     @model_validator(mode="after")
     def validate_context(self) -> InterviewSessionCreateRequest:
-        if self.start_at.tzinfo is None or self.end_at.tzinfo is None:
+        if (self.end_at is None) == (self.duration_minutes is None):
+            raise ValueError("provide exactly one of end_at or duration_minutes")
+        if self.start_at.tzinfo is None or (
+            self.end_at is not None and self.end_at.tzinfo is None
+        ):
             raise ValueError("interview times must include a timezone")
-        if self.end_at <= self.start_at:
+        if self.end_at is not None and self.end_at <= self.start_at:
             raise ValueError("end_at must be after start_at")
         if self.stage_type == "interview" and self.round_no is None:
             raise ValueError("interview stage requires round_no")
@@ -356,15 +361,20 @@ class InterviewSessionUpdateRequest(StrictModel):
 
 class RescheduleInterviewRequest(LifecycleRequest):
     start_at: datetime
-    end_at: datetime
+    end_at: datetime | None = None
+    duration_minutes: int | None = Field(default=None, gt=0)
     timezone: str = Field(max_length=64)
     allow_conflict: bool = False
 
     @model_validator(mode="after")
     def validate_time_range(self) -> RescheduleInterviewRequest:
-        if self.start_at.tzinfo is None or self.end_at.tzinfo is None:
+        if (self.end_at is None) == (self.duration_minutes is None):
+            raise ValueError("provide exactly one of end_at or duration_minutes")
+        if self.start_at.tzinfo is None or (
+            self.end_at is not None and self.end_at.tzinfo is None
+        ):
             raise ValueError("interview times must include a timezone")
-        if self.end_at <= self.start_at:
+        if self.end_at is not None and self.end_at <= self.start_at:
             raise ValueError("end_at must be after start_at")
         return self
 
@@ -372,20 +382,30 @@ class RescheduleInterviewRequest(LifecycleRequest):
 class UpdateAnswerPlanRequest(LifecycleRequest):
     answer_plan_start_at: datetime | None = None
     answer_plan_end_at: datetime | None = None
+    duration_minutes: int | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def validate_time_range(self) -> UpdateAnswerPlanRequest:
-        if (self.answer_plan_start_at is None) != (self.answer_plan_end_at is None):
-            raise ValueError("answer plan times must be provided together")
         if self.answer_plan_start_at is None:
+            if self.answer_plan_end_at is not None or self.duration_minutes is not None:
+                raise ValueError("answer plan start is required")
             return self
-        assert self.answer_plan_end_at is not None
+        if (self.answer_plan_end_at is None) == (self.duration_minutes is None):
+            raise ValueError(
+                "provide exactly one of answer_plan_end_at or duration_minutes"
+            )
         if (
             self.answer_plan_start_at.tzinfo is None
-            or self.answer_plan_end_at.tzinfo is None
+            or (
+                self.answer_plan_end_at is not None
+                and self.answer_plan_end_at.tzinfo is None
+            )
         ):
             raise ValueError("answer plan times must include a timezone")
-        if self.answer_plan_end_at <= self.answer_plan_start_at:
+        if (
+            self.answer_plan_end_at is not None
+            and self.answer_plan_end_at <= self.answer_plan_start_at
+        ):
             raise ValueError("answer_plan_end_at must be after answer_plan_start_at")
         return self
 
