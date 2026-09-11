@@ -127,6 +127,8 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 排期与复盘继续共用 `interview_sessions`，通过 `scheduled/completed/cancelled` 区分生命周期；新排期必须关联当前且可排期的 `assessment/written_test/ai_interview/interview` 阶段，筛选、Offer、待投递和已终止记录不能排期。排期开始时间使用 IANA 时区校验，接受分钟精度的任意有效时间（秒和微秒必须为 0），同一用户的多个排期允许时间重叠并直接保存；归档进程不能再执行排期生命周期，也不会进入总览统计。求职进程和场次列表使用与筛选摘要绑定的时间加 ID 游标稳定分页，全部 BIGINT 资源 ID 在 HTTP 与 TypeScript 中保持规范十进制字符串。写操作校验当前用户归属；阶段和进程动作使用 `lock_version` 与请求 UUID 拒绝过期或内容不一致的重复修改，场次创建也会核对原业务内容。旧扁平状态字段和 `/advance`、`/offer`、`/close` 仍由兼容投影维护，新消费方只读取稳定阶段与生命周期字段。进程、排期和素材的创建、更新、状态动作与删除沿用统一审计链，创建型接口显式绑定新记录 ID，普通读取不写审计。
 
+创建和改期排期时，请求必须在显式 `end_at` 与正整数 `duration_minutes` 中二选一；新 Web 流程提交持续分钟，应用服务据此推算并持久化 `end_at`，旧消费方仍可继续提交显式结束时间。开放窗口的个人作答计划遵循同一兼容契约，并继续在推算后校验完整落入官方窗口。
+
 绑定由 Web 已登录用户发起，走 `/api/account/wechat/bind-request|bind-confirm|bind-status`（ticket 票据）。绑定票据是临时凭证，只存 Redis（`wechat:bind_ticket:<ticket>` 存用户、`wechat:bind_status:<ticket>` 存 `pending/bound`、`wechat:bind_user_ticket:<uid>` 指向当前票据），TTL 默认 300 秒，同用户重新发起时覆盖旧票据。`bind-confirm` 提交小程序 `wx.login()` 的临时 code，服务端换 openid 后关联到发起用户；openid 已被其他用户绑定时返回 `409 WECHAT_ALREADY_BOUND`，原绑定关系不被覆盖。
 
 扫码登录挂在 `/api/auth/wechat` 下，scene 状态机存 Redis（key `wechat:login:<scene>`，TTL 默认 300 秒）：

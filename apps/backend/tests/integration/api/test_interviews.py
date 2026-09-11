@@ -637,7 +637,7 @@ def test_open_window_answer_plan_is_persisted_and_bounded() -> None:
             f"/api/interview-sessions/{session['id']}/answer-plan",
             json={
                 "answer_plan_start_at": fixture_datetime(5, 19).isoformat(),
-                "answer_plan_end_at": fixture_datetime(5, 21).isoformat(),
+                "duration_minutes": 120,
                 "base_lock_version": session["lock_version"],
             },
         )
@@ -645,6 +645,11 @@ def test_open_window_answer_plan_is_persisted_and_bounded() -> None:
         planned_session = planned.json()["session"]
         assert planned_session["answer_plan_start_at"].endswith("Z")
         assert planned_session["answer_plan_end_at"].endswith("Z")
+        assert datetime.fromisoformat(
+            planned_session["answer_plan_end_at"]
+        ) - datetime.fromisoformat(
+            planned_session["answer_plan_start_at"]
+        ) == timedelta(minutes=120)
 
         stale = client.put(
             f"/api/interview-sessions/{session['id']}/answer-plan",
@@ -922,9 +927,10 @@ def test_schedule_accepts_arbitrary_minutes_for_create_and_reschedule() -> None:
         payload.update(
             {
                 "start_at": fixture_datetime(0, 9, 17).isoformat(),
-                "end_at": fixture_datetime(0, 10, 17).isoformat(),
+                "duration_minutes": 60,
             }
         )
+        payload.pop("end_at")
 
         created = client.post(
             f"/api/job-applications/{application['id']}/interview-sessions",
@@ -933,6 +939,9 @@ def test_schedule_accepts_arbitrary_minutes_for_create_and_reschedule() -> None:
         assert created.status_code == 201, created.text
         created_session = created.json()["session"]
         assert datetime.fromisoformat(created_session["start_at"]).minute == 17
+        assert datetime.fromisoformat(created_session["end_at"]) - datetime.fromisoformat(
+            created_session["start_at"]
+        ) == timedelta(minutes=60)
 
         invalid_clock = client.post(
             f"/api/interview-sessions/{created_session['id']}/reschedule",
@@ -974,13 +983,30 @@ def test_schedule_accepts_arbitrary_minutes_for_create_and_reschedule() -> None:
             f"/api/interview-sessions/{created_session['id']}/reschedule",
             json={
                 "start_at": fixture_datetime(1, 12, 17).isoformat(),
-                "end_at": fixture_datetime(1, 13, 17).isoformat(),
+                "duration_minutes": 75,
                 "timezone": "Asia/Shanghai",
                 "base_lock_version": created_session["lock_version"],
             },
         )
         assert rescheduled.status_code == 200, rescheduled.text
-        assert datetime.fromisoformat(rescheduled.json()["session"]["start_at"]).minute == 17
+        rescheduled_session = rescheduled.json()["session"]
+        assert datetime.fromisoformat(rescheduled_session["start_at"]).minute == 17
+        assert datetime.fromisoformat(rescheduled_session["end_at"]) - datetime.fromisoformat(
+            rescheduled_session["start_at"]
+        ) == timedelta(minutes=75)
+
+        ambiguous = client.post(
+            f"/api/interview-sessions/{created_session['id']}/reschedule",
+            json={
+                "start_at": fixture_datetime(1, 12, 17).isoformat(),
+                "end_at": fixture_datetime(1, 13, 17).isoformat(),
+                "duration_minutes": 60,
+                "timezone": "Asia/Shanghai",
+                "base_lock_version": rescheduled_session["lock_version"],
+            },
+        )
+        assert ambiguous.status_code == 400
+        assert ambiguous.json() == {"error": "INVALID_INTERVIEW_REQUEST"}
 
 
 def test_other_users_cannot_discover_interview_resources() -> None:
