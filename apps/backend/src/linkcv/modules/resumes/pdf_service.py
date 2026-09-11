@@ -28,6 +28,11 @@ try:
 except ImportError:  # Windows does not provide the Unix account database.
     pwd = None  # type: ignore[assignment]
 
+try:
+    import pwd
+except ImportError:  # Windows does not provide the Unix account database.
+    pwd = None  # type: ignore[assignment]
+
 
 # These limits are deliberately kept in the service boundary.  The renderer
 # receives only a bounded JSON document and returns only a complete PDF.
