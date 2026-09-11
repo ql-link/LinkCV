@@ -53,6 +53,9 @@ class FakeStorage:
     def get(self, object_name: str) -> bytes:
         return self.objects[object_name]
 
+    def stat(self, object_name: str) -> SimpleNamespace:
+        return SimpleNamespace(size=len(self.objects[object_name]))
+
     def delete(self, object_name: str) -> None:
         pass
 
@@ -576,6 +579,86 @@ def test_proposal_is_idempotent_and_confirmed_once() -> None:
             )
             assert version is not None
             assert version.name == "智能助手修改"
+
+
+def test_proposal_confirmation_rejects_images_above_pdf_total() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-image-total@example.test")
+        resume = create_resume(client, app)
+        resume_id = resume["id"]
+        first_name = "first.png"
+        second_name = "second.jpg"
+        app.state.storage.objects[
+            f"users/1/resumes/{resume_id}/assets/{first_name}"
+        ] = b"x" * (6 * 1024 * 1024)
+        app.state.storage.objects[
+            f"users/1/resumes/{resume_id}/assets/{second_name}"
+        ] = b"y" * (6 * 1024 * 1024)
+
+        proposed_data = resume["data"]
+        proposed_data["identity"]["avatar"] = {
+            "node_id": "node_avatar00000000003",
+            "source_refs": [],
+            "media_kind": "avatar",
+            "src": f"/api/resumes/{resume_id}/assets/{first_name}",
+            "alt": None,
+            "width": 96,
+            "width_unit": "px",
+            "height_px": None,
+            "align": None,
+            "system_fallback": False,
+        }
+        proposed_data["sections"] = [
+            {
+                "node_id": "node_section0000000003",
+                "source_refs": [],
+                "semantic_kind": "custom",
+                "title": None,
+                "title_icon": None,
+                "entries": [],
+                "blocks": [
+                    {
+                        "node_id": "node_media00000000003",
+                        "source_refs": [],
+                        "block_type": "media",
+                        "media_kind": "resume_image",
+                        "src": f"/api/resumes/{resume_id}/assets/{second_name}",
+                        "alt": None,
+                        "width": 50,
+                        "width_unit": "%",
+                        "height_px": None,
+                        "align": "center",
+                        "system_fallback": False,
+                    }
+                ],
+            }
+        ]
+        session_id = client.post(
+            "/api/agent/sessions", json={"resume_id": resume_id}
+        ).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        proposal = client.post(
+            f"/internal/agent/runs/{run_id}/proposals",
+            headers=internal_headers(),
+            json={
+                "call_key": "proposal-image-total",
+                "data": proposed_data,
+                "style": resume["style"],
+                "summary": "保留现有图片并调整文字",
+            },
+        )
+        assert proposal.status_code == 201
+
+        rejected = client.post(
+            f"/api/agent/proposals/{proposal.json()['proposal']['id']}/confirm"
+        )
+
+        assert rejected.status_code == 413
+        assert rejected.json() == {"error": "RESUME_PDF_ASSETS_TOO_LARGE"}
+        current = client.get(f"/api/resumes/{resume_id}").json()["resume"]
+        assert current["lock_version"] == 1
+        assert current["data"]["identity"]["avatar"] is None
 
 
 def test_scoped_edit_requires_resolved_target_and_diagnosis_before_confirmation() -> (

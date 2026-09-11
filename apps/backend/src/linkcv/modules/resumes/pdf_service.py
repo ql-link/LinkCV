@@ -17,6 +17,11 @@ from minio.error import S3Error
 from linkcv.core.config import REPO_ROOT, Settings
 from linkcv.core.errors import ApiError
 from linkcv.core.storage import AssetStorage, infer_image_content_type
+from linkcv.modules.resumes.image_limits import (
+    MAX_RESUME_IMAGE_BYTES,
+    MAX_RESUME_PDF_IMAGE_TOTAL_BYTES,
+    RESUME_PDF_IMAGE_CONTENT_TYPES,
+)
 
 try:
     import pwd
@@ -26,10 +31,8 @@ except ImportError:  # Windows does not provide the Unix account database.
 
 # These limits are deliberately kept in the service boundary.  The renderer
 # receives only a bounded JSON document and returns only a complete PDF.
-MAX_RENDER_INPUT_BYTES = 12 * 1024 * 1024
+MAX_RENDER_INPUT_BYTES = 24 * 1024 * 1024
 MAX_RENDER_OUTPUT_BYTES = 15 * 1024 * 1024
-MAX_IMAGE_BYTES = 3 * 1024 * 1024
-MAX_IMAGE_TOTAL_BYTES = 8 * 1024 * 1024
 PRIVATE_ASSET_PATTERN = re.compile(
     r"/api/(?:assets/[^\s)'\"<>]+|resumes/[^/\s)'\"<>]+/assets/[^\s)'\"<>]+)"
 )
@@ -66,7 +69,7 @@ def _object_key(source: str, user_id: int, resume_id: int) -> str | None:
 
 def _read_image(storage: AssetStorage, object_key: str) -> tuple[bytes, str]:
     content_type = infer_image_content_type(object_key)
-    if content_type not in {"image/png", "image/jpeg"}:
+    if content_type not in RESUME_PDF_IMAGE_CONTENT_TYPES:
         raise ApiError(422, "RESUME_PDF_IMAGE_UNSUPPORTED")
     try:
         response = storage.get(object_key)
@@ -83,13 +86,54 @@ def _read_image(storage: AssetStorage, object_key: str) -> tuple[bytes, str]:
     try:
         for chunk in response.stream(64 * 1024):
             size += len(chunk)
-            if size > MAX_IMAGE_BYTES:
+            if size > MAX_RESUME_IMAGE_BYTES:
                 raise ApiError(413, "RESUME_PDF_ASSET_TOO_LARGE")
             chunks.append(chunk)
     finally:
         response.close()
         response.release_conn()
     return b"".join(chunks), content_type
+
+
+def validate_resume_pdf_asset_contract(
+    storage: AssetStorage,
+    data: dict[str, Any],
+    *,
+    user_id: int,
+    resume_id: int,
+) -> None:
+    """Reject snapshots that cannot satisfy the PDF image contract.
+
+    Image object names are immutable, so a metadata check at the persistence
+    boundary is sufficient to keep later PDF rendering from discovering a
+    size or format mismatch after the edit was reported as saved.
+    """
+
+    total = 0
+    for source in sorted(_private_sources(data)):
+        object_key = _object_key(source, user_id, resume_id)
+        if object_key is None:
+            raise ApiError(422, "RESUME_PDF_IMAGE_UNAVAILABLE")
+        if infer_image_content_type(object_key) not in RESUME_PDF_IMAGE_CONTENT_TYPES:
+            raise ApiError(422, "RESUME_PDF_IMAGE_UNSUPPORTED")
+        try:
+            metadata = storage.stat(object_key)
+        except KeyError:
+            raise ApiError(422, "RESUME_PDF_IMAGE_UNAVAILABLE")
+        except S3Error as error:
+            if error.code in {"NoSuchKey", "NoSuchObject"}:
+                raise ApiError(422, "RESUME_PDF_IMAGE_UNAVAILABLE") from error
+            raise ApiError(502, "RESUME_PDF_ASSET_READ_FAILED") from error
+        except Exception as error:
+            raise ApiError(502, "RESUME_PDF_ASSET_READ_FAILED") from error
+        size = getattr(metadata, "size", None)
+        if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+            raise ApiError(502, "RESUME_PDF_ASSET_READ_FAILED")
+        if size > MAX_RESUME_IMAGE_BYTES:
+            raise ApiError(413, "RESUME_PDF_ASSET_TOO_LARGE")
+        total += size
+        if total > MAX_RESUME_PDF_IMAGE_TOTAL_BYTES:
+            raise ApiError(413, "RESUME_PDF_ASSETS_TOO_LARGE")
 
 
 def build_render_assets(
@@ -115,7 +159,7 @@ def build_render_assets(
         image = _read_image(storage, object_key)
         content, content_type = image
         total += len(content)
-        if total > MAX_IMAGE_TOTAL_BYTES:
+        if total > MAX_RESUME_PDF_IMAGE_TOTAL_BYTES:
             raise ApiError(413, "RESUME_PDF_ASSETS_TOO_LARGE")
         assets[source] = (
             f"data:{content_type};base64,{base64.b64encode(content).decode('ascii')}"

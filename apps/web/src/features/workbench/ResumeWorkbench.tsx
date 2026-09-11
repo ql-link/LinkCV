@@ -25,6 +25,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import { flushSync } from "react-dom";
 import type { Instance as TippyInstance } from "tippy.js";
 import { api, ApiRequestError, type ResumeTemplate } from "../../api/client";
+import { resumeImageContractErrorMessage } from "./resumeImageLimits";
 import {
   Button,
   ConfirmDialog,
@@ -538,6 +539,10 @@ function versionTime(value: string) {
 }
 
 export function versionOperationErrorMessage(error: unknown, operation: "create" | "restore") {
+  if (error instanceof ApiRequestError) {
+    const imageError = resumeImageContractErrorMessage(error.message);
+    if (imageError) return imageError;
+  }
   if (operation !== "create" || !(error instanceof ApiRequestError) || error.message !== "RESUME_VERSION_LIMIT_REACHED") {
     return null;
   }
@@ -796,9 +801,10 @@ function WorkbenchSettingsSection({
 type WorkbenchSaveStatusProps = {
   saveStatus: "idle" | "saving" | "saved" | "error";
   dirty: boolean;
+  error?: string | null;
 };
 
-export function WorkbenchSaveStatus({ saveStatus, dirty }: WorkbenchSaveStatusProps) {
+export function WorkbenchSaveStatus({ saveStatus, dirty, error }: WorkbenchSaveStatusProps) {
   const kind = saveStatus === "saving"
     ? "saving"
     : saveStatus === "error"
@@ -806,10 +812,11 @@ export function WorkbenchSaveStatus({ saveStatus, dirty }: WorkbenchSaveStatusPr
       : dirty
         ? "editing"
         : "saved";
+  const imageError = resumeImageContractErrorMessage(error);
   const label = kind === "saving"
     ? "保存中…"
     : kind === "error"
-      ? "保存失败 · 请重试"
+      ? `保存失败 · ${imageError ?? "请重试"}`
       : kind === "editing"
         ? "编辑中"
         : "已保存";
@@ -1088,6 +1095,7 @@ export function ResumeWorkbench() {
   const previewScale = useResumeStore((state) => state.previewScale);
   const setPreviewScale = useResumeStore((state) => state.setPreviewScale);
   const saveStatus = useResumeStore((state) => state.saveStatus);
+  const saveError = useResumeStore((state) => state.error);
   const dirty = useResumeStore((state) => state.dirty);
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
   const versions = useResumeStore((state) => state.versions);
@@ -1439,8 +1447,13 @@ export function ResumeWorkbench() {
   const saveResume = async () => {
     if (!editor || saveStatus === "saving" || versionOperationPending || versionNameSubmitting) return;
     await saveCurrentResume();
-    const saveFailed = useResumeStore.getState().saveStatus === "error";
-    setToast({ kind: saveFailed ? "error" : "success", label: saveFailed ? "简历保存失败，请稍后重试" : "简历已保存" });
+    const savedState = useResumeStore.getState();
+    const saveFailed = savedState.saveStatus === "error";
+    const imageError = resumeImageContractErrorMessage(savedState.error);
+    setToast({
+      kind: saveFailed ? "error" : "success",
+      label: saveFailed ? imageError ?? "简历保存失败，请稍后重试" : "简历已保存",
+    });
   };
 
   const exportPdf = () => {
@@ -1461,6 +1474,7 @@ export function ResumeWorkbench() {
           activeResumeId: state.activeResumeId,
           lockVersion: state.lockVersion,
           saveStatus: state.saveStatus,
+          saveError: state.error,
         };
       },
     })
@@ -1496,8 +1510,12 @@ export function ResumeWorkbench() {
     setVersionNameError(null);
     setVersionNameSubmitting(true);
     await saveCurrentResume();
-    if (useResumeStore.getState().saveStatus === "error") {
-      setToast({ kind: "error", label: "保存失败，请稍后重试" });
+    const savedState = useResumeStore.getState();
+    if (savedState.saveStatus === "error") {
+      setToast({
+        kind: "error",
+        label: resumeImageContractErrorMessage(savedState.error) ?? "保存失败，请稍后重试",
+      });
       setVersionNameSubmitting(false);
       return;
     }
@@ -1523,8 +1541,11 @@ export function ResumeWorkbench() {
       setRestoredEditorContent(editor, restored);
       setToast({ kind: "success", label: `已恢复 ${versionTime(createdAt)} 的版本` });
       return true;
-    } catch {
-      setToast({ kind: "error", label: "版本恢复失败，请稍后重试" });
+    } catch (error) {
+      setToast({
+        kind: "error",
+        label: versionOperationErrorMessage(error, "restore") ?? "版本恢复失败，请稍后重试",
+      });
       return false;
     } finally {
       setWorkbenchEditorEditable(editor, true);
@@ -1546,8 +1567,12 @@ export function ResumeWorkbench() {
     pdfExportAbortRef.current?.abort();
     if (dirty) {
       await saveCurrentResume();
-      if (useResumeStore.getState().error) {
-        setToast({ kind: "error", label: "保存失败，已留在当前页面，请重试" });
+      const savedState = useResumeStore.getState();
+      if (savedState.error) {
+        setToast({
+          kind: "error",
+          label: resumeImageContractErrorMessage(savedState.error) ?? "保存失败，已留在当前页面，请重试",
+        });
         return;
       }
     }
@@ -1557,8 +1582,12 @@ export function ResumeWorkbench() {
 
   const prepareAgentProposalConfirmation = async () => {
     await saveCurrentResume();
-    if (useResumeStore.getState().error) {
-      setToast({ kind: "error", label: "当前草稿保存失败，提案没有应用" });
+    const savedState = useResumeStore.getState();
+    if (savedState.error) {
+      setToast({
+        kind: "error",
+        label: resumeImageContractErrorMessage(savedState.error) ?? "当前草稿保存失败，提案没有应用",
+      });
       return false;
     }
     return true;
@@ -1566,8 +1595,12 @@ export function ResumeWorkbench() {
 
   const prepareAgentRun = async () => {
     await saveCurrentResume();
-    if (useResumeStore.getState().error) {
-      setToast({ kind: "error", label: "当前草稿保存失败，智能助手没有读取所选内容" });
+    const savedState = useResumeStore.getState();
+    if (savedState.error) {
+      setToast({
+        kind: "error",
+        label: resumeImageContractErrorMessage(savedState.error) ?? "当前草稿保存失败，智能助手没有读取所选内容",
+      });
       return false;
     }
     return true;
@@ -1594,7 +1627,7 @@ export function ResumeWorkbench() {
           </div>
           <div className="workbench-header-center">
             <WorkbenchTitleInput value={title} onChange={setTitle} disabled={versionOperationPending} />
-            <WorkbenchSaveStatus dirty={dirty} saveStatus={saveStatus} />
+            <WorkbenchSaveStatus dirty={dirty} saveStatus={saveStatus} error={saveError} />
           </div>
           <div className="workbench-header-actions">
             <div className="workbench-header-tool-group" role="group" aria-label="编辑面板">
@@ -1616,8 +1649,11 @@ export function ResumeWorkbench() {
                     await applyTemplate(template.id, editor.getJSON());
                     editor.commands.setContent(useResumeStore.getState().editorContent, false);
                     setToast({ kind: "success", label: `已切换为“${template.name}”，内容已按新模板重新排版` });
-                  } catch {
-                    setToast({ kind: "error", label: "模板切换失败，当前简历未被替换" });
+                  } catch (error) {
+                    const imageError = error instanceof ApiRequestError
+                      ? resumeImageContractErrorMessage(error.message)
+                      : null;
+                    setToast({ kind: "error", label: imageError ?? "模板切换失败，当前简历未被替换" });
                     throw new Error("TEMPLATE_APPLY_FAILED");
                   }
                 }}
