@@ -142,6 +142,35 @@ def create_job(client: TestClient, **overrides: object) -> dict[str, object]:
     return response.json()["job_description"]
 
 
+def test_job_logo_url_round_trips_and_rejects_non_https_urls() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        created = create_job(
+            client,
+            logo_url=" https://cdn.example.test/logos/example.png ",
+        )
+        assert created["logo_url"] == "https://cdn.example.test/logos/example.png"
+
+        detail = client.get(f"/api/job-descriptions/{created['id']}")
+        assert detail.status_code == 200
+        assert detail.json()["job_description"]["logo_url"] == created["logo_url"]
+
+        rejected = client.post(
+            "/api/job-descriptions",
+            json=payload(logo_url="http://cdn.example.test/logos/example.png"),
+        )
+        assert rejected.status_code == 400
+        assert rejected.json() == {"error": "INVALID_JOB_DESCRIPTION"}
+
+        updated = client.put(
+            f"/api/job-descriptions/{created['id']}",
+            json={"logo_url": None, "base_lock_version": created["lock_version"]},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["job_description"]["logo_url"] is None
+
+
 def test_parse_text_and_image_drafts_use_separate_models_without_creating_jobs() -> None:
     gateway = DraftGateway()
     app = build_app(llm_gateway=gateway, with_llm_key=True)

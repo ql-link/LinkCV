@@ -160,6 +160,7 @@ def _application_record(
     current = next((stage for stage in stages if stage.current_marker == 1), None)
     return JobApplicationRecord.model_validate(application).model_copy(
         update={
+            "company_logo_url": _application_logo_url(application),
             "current_stage": (
                 ApplicationStageRecord.model_validate(current) if current else None
             ),
@@ -170,6 +171,11 @@ def _application_record(
             ),
         }
     )
+
+
+def _application_logo_url(application: JobApplication) -> str | None:
+    value = application.job_snapshot.get("logo_url")
+    return value if isinstance(value, str) and value.startswith("https://") else None
 
 
 def _application_summary(
@@ -511,10 +517,27 @@ def delete_application_route(
     application_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    storage: AssetStorage = Depends(get_storage),
 ) -> DeleteResponse:
+    def delete_asset_object(object_name: str) -> None:
+        try:
+            storage.delete(object_name)
+        except S3Error as error:
+            if error.code not in {"NoSuchKey", "NoSuchObject"}:
+                raise
+
     try:
-        delete_application(db, user.id, _database_id(application_id))
+        delete_application(
+            db,
+            user.id,
+            _database_id(application_id),
+            delete_asset_object=delete_asset_object,
+        )
+    except S3Error as error:
+        raise ApiError(502, "INTERVIEW_APPLICATION_DELETE_FAILED") from error
     except Exception as error:
+        if not isinstance(error, (InterviewNotFound, InterviewApplicationNotEmpty)):
+            raise ApiError(502, "INTERVIEW_APPLICATION_DELETE_FAILED") from error
         _raise_service_error(error)
     return DeleteResponse(deleted=True)
 
