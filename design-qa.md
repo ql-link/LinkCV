@@ -101,6 +101,55 @@ final result: passed
 final result: passed
 ---
 
+## 求职记录看板响应式列宽与时间信息 — 2026-09-11
+
+### Evidence
+
+- Source visual truth: `/Users/jixu/.codex/generated_images/01a08ff6-0049-70f1-8e5b-61e5a0c93273/exec-90e0ad11-5566-4f03-9275-baaa39a75b64.png`，`1672 × 941` px；用户保留该六列舒适密度，并在后续反馈中明确将卡片底部改为左侧状态、右侧时间的单行布局，后续反馈优先于原图的双层结构。
+- Implementation route: `http://127.0.0.1:5174/career/applications`，当前工作树 Development profile，Chrome 已登录浅色主题。
+- Implementation screenshot path: 当前任务中的 CUA 最终内联 PNG；浏览器接口未提供可持久化文件路径。
+- Comparison input: 已在同一任务上下文打开来源原型与实现截图；按看板内容区归一化比较，不把来源省略的工作区页头视为差异。
+- Viewport and density: 默认 `1920 × 1078` CSS px、density `1`；响应式补充检查 `1440 × 900` CSS px、density `1`。
+- State: 真实 Dev 求职数据已加载，无弹层；默认横向滚动位置在最左侧。
+
+### Findings
+
+没有剩余 P0/P1/P2 问题。
+
+- 字体与排版：沿用 LinkCV 系统字体、公司 12px、岗位 15px、状态 12px 的既有层级；新增时间元数据为 11px、500 字重，保持可读且不抢状态层级，长岗位继续单行截断。
+- 间距与布局：默认 1920px 视口下看板内容宽 `1860px`，前六列各 `310px` 并全部完整可见，第七列从右侧边界开始；1440px 下列宽保持 `280px`，完整展示五列并横向滚动。卡片恢复为紧凑的 `118px` 高度，底部使用单行左右布局，状态靠左、时间靠右，并以 `8px` 弹性间距隔开。
+- 色彩与 Token：页面、卡片、边框、状态和元数据继续消费现有 `--ui-*` 与 `--career-state-*` Token；时间行使用 muted 文本色，没有引入原型外的新强调色。
+- 图片与图标：看板无栅格内容；时间使用项目现有 Lucide `Clock3`，拖动手柄和三点菜单保持原有图标与尺寸，没有用字符或 CSS 绘图替代。
+- 文案与内容：待投递显示“创建于”，筛选显示“投递于”，测评/笔试显示“截止”，面试显示起止时间或“尚未安排时间”，Offer 显示“获得 Offer”，已结束显示“结束于”；缺失时间均有明确兜底。
+- 聚焦对照：最终 1920px 捕获中卡片公司、岗位、状态、时钟及时间均清晰可辨；“正在进行/进行中”等状态稳定靠左，时间稳定靠右，没有互相覆盖，长岗位继续截断。真实数据的公司名称与原型示例不同，属于状态差异。
+
+### Interaction Evidence
+
+- 默认看板实测 `clientWidth=1860`、`scrollWidth=2170`，横向滚动仍有效，未隐藏后续阶段。
+- 卡片菜单可正常展开，显示“查看详情、修改分类、推进流程、终止求职”，按 Escape 可关闭。
+- 真实 Dev 数据已观察到创建时间、测评/笔试截止时间、无排期兜底和结束时间；Offer 时间由自动化测试覆盖，因为当前账号的 Offer 列为空。
+- 默认与 1440px 响应式视口均无页面级横向挤压或持久控件遮挡。
+- 浏览器控制台 error：0。
+
+### Automated Evidence
+
+- 定向组件测试：`142` 项通过，覆盖六类阶段时间及回归交互。
+- `npm run check:web`：`60` 个测试文件、`677` 项测试通过，设计规则、TypeScript、Vite 生产构建与 PDF CLI 构建通过。
+- `npm run check:docs`：通过。
+
+### Comparison History
+
+1. 首次实现后在 1920px 与 1440px 两个真实浏览器视口对照已确认原型的列密度、卡片双层信息和横向滚动；未发现 P0/P1/P2。
+2. 用户要求将状态与时间从上下结构改为左右结构；实现后重新捕获 1920px 已登录真实数据状态，恢复 `118px` 卡片高度并确认左右对齐、截断和六列密度均正常，没有新增 P0/P1/P2。
+
+### Follow-up Polish
+
+- P3：来源图用示例 Offer 卡片展示时间，而当前账号 Offer 列为空；当前阶段进入时间的视觉和文案由同一卡片组件与自动化用例确认。
+
+final result: passed
+
+---
+
 # 开放窗口与作答计划 Design QA
 
 - reference: `/Users/jixu/.codex/generated_images/01a08961-e9bf-7e43-86d2-819cb6049c14/exec-81852339-6b61-44ac-b8c8-cae2b8e697fd.png`

@@ -7,6 +7,7 @@ const activeJob: JobDescriptionRecord = {
   id: "job-1",
   job_title: "Java 开发实习生",
   company_name: "示例科技",
+  logo_url: null,
   employment_type: "internship",
   description: "参与后端业务开发。",
   skills: ["Java", "MySQL"],
