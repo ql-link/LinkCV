@@ -3415,7 +3415,7 @@ describe("InterviewCenterPage API projections", () => {
     expect(window.location.pathname).toBe("/career/applications/menu-pending");
   });
 
-  it("lets users permanently delete an ended application from the board", async () => {
+  it("lets users permanently delete an ended job from the board", async () => {
     const endedApplication = {
       ...application,
       id: "ended-delete-board",
@@ -3437,17 +3437,19 @@ describe("InterviewCenterPage API projections", () => {
     switchToApplicationBoard();
     const card = await screen.findByRole("article", { name: "已结束示例公司 后端开发工程师" });
     fireEvent.click(within(card).getByRole("button", { name: "更多求职操作 已结束示例公司 后端开发工程师" }));
-    fireEvent.click(within(card).getByRole("menuitem", { name: "删除记录" }));
+    const endedMenu = within(card).getByRole("menu");
+    expect(within(endedMenu).queryByRole("menuitem", { name: "修改分类" })).not.toBeInTheDocument();
+    expect(within(endedMenu).queryByRole("menuitem", { name: "推进流程" })).not.toBeInTheDocument();
+    fireEvent.click(within(card).getByRole("menuitem", { name: "删除岗位" }));
 
     const dialog = screen.getByRole("alertdialog", { name: "永久删除「已结束示例公司 · 后端开发工程师」？" });
-    expect(dialog).toHaveTextContent("阶段、排期、复盘和素材将无法恢复");
-    expect(dialog).toHaveTextContent("原始岗位资料不会被删除");
+    expect(dialog).toHaveTextContent("岗位及其求职进程、阶段、排期、复盘和素材都将无法恢复");
     fireEvent.click(within(dialog).getByRole("button", { name: "永久删除" }));
 
     await waitFor(() => expect(mocks.deleteJobApplication).toHaveBeenCalledWith("ended-delete-board"));
   });
 
-  it("shows the delete button only for ended applications in list view", async () => {
+  it("does not show delete buttons in list view", async () => {
     const endedApplication = {
       ...application,
       id: "ended-delete-list",
@@ -3477,7 +3479,8 @@ describe("InterviewCenterPage API projections", () => {
     render(<InterviewCenterPage view="applications" />);
     switchToApplicationList();
 
-    expect(await screen.findByRole("button", { name: "删除 列表已结束公司 后端开发工程师 求职记录" })).toBeInTheDocument();
+    expect(await screen.findByRole("table", { name: "求职记录列表" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "删除 列表已结束公司 后端开发工程师 求职记录" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "删除 列表进行中公司 后端开发工程师 求职记录" })).not.toBeInTheDocument();
   });
 
@@ -3587,6 +3590,37 @@ describe("InterviewCenterPage API projections", () => {
       applied_at: null,
       resume_version_id: null,
     })));
+  });
+
+  it("does not offer a job with an ended application for another application", async () => {
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications.mockResolvedValue({
+      items: [{ ...application, lifecycle_status: "terminated", status: "rejected" }],
+      next_cursor: null,
+    });
+    mocks.listJobDescriptions.mockResolvedValue({
+      items: [{
+        id: "8",
+        job_title: "后端开发工程师",
+        company_name: "腾讯",
+        work_city: "深圳",
+        salary_text: "25-40K",
+        skills: ["Java"],
+        source_type: "manual",
+        source_site: null,
+        source_url: null,
+        archived_at: null,
+        lock_version: 1,
+        updated_at: "2026-08-20T12:00:00Z",
+      }],
+      next_cursor: null,
+    });
+
+    render(<InterviewCenterPage view="applications" initialCreateApplication />);
+
+    const dialog = await screen.findByRole("dialog", { name: "新建求职进程" });
+    expect(within(dialog).getByText("已有求职记录的岗位不能再次投递；请导入新岗位。")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "创建求职进程" })).toBeDisabled();
   });
 
   it("opens the shared stage track with screening selected and the import date by default", async () => {
@@ -3981,6 +4015,9 @@ describe("InterviewCenterPage API projections", () => {
       current_stage_label: "筛选中",
       stage_state: "awaiting_result" as const,
       status: "rejected" as const,
+      lifecycle_status: "terminated" as const,
+      terminated_at: "2026-08-22T08:00:00Z",
+      termination_reason: "company_rejected" as const,
       applied_at: "2026-08-22T04:00:00Z",
     };
     mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
@@ -3990,6 +4027,10 @@ describe("InterviewCenterPage API projections", () => {
 
     await screen.findByRole("list", { name: "当前阶段：筛选中" });
     expect(document.querySelector(".career-journey-progress li.is-ended .career-journey-node")).toHaveTextContent("!");
+    fireEvent.click(screen.getByRole("button", { name: "删除岗位" }));
+    const confirmation = screen.getByRole("alertdialog", { name: "永久删除「腾讯 · 后端开发工程师」？" });
+    fireEvent.click(within(confirmation).getByRole("button", { name: "永久删除" }));
+    await waitFor(() => expect(mocks.deleteJobApplication).toHaveBeenCalledWith("62"));
   });
 
   it("keeps a submitted application in canonical screening until the next stage is confirmed", async () => {
