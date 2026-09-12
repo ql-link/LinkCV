@@ -283,6 +283,7 @@ def test_capability_matrix_binds_resume_with_validation_evidence_and_blocks_pi()
             "chat",
             "resume_structuring",
             "pi_agent",
+            "job_image_structuring",
         ]
         resume = next(
             item
@@ -299,6 +300,7 @@ def test_capability_matrix_binds_resume_with_validation_evidence_and_blocks_pi()
             "chat",
             "resume_structuring",
             "pi_agent",
+            "job_image_structuring",
         ]
         tested = client.post(
             f"/api/admin/llm/models/{model['id']}/tests",
@@ -391,6 +393,45 @@ def test_pi_capability_binding_accepts_successful_pi_probe_evidence() -> None:
             assert call.status == "succeeded"
             assert call.input_tokens == 7
             assert call.output_tokens == 2
+
+
+def test_job_image_capability_requires_real_image_probe_before_binding() -> None:
+    app, gateway = build_app()
+    with TestClient(app) as client:
+        register(client)
+        set_admin(app, "admin@example.invalid", True)
+        model = create_candidate(client, model="vision-model")
+        gateway.results["deepseek/vision-model"] = GatewayResult(
+            content='{"color":"red"}',
+            usage=GatewayUsage(12, 3),
+            input_price_per_million=Decimal("1"),
+            output_price_per_million=Decimal("2"),
+        )
+
+        response = client.put(
+            "/api/admin/llm/capabilities/job_image_structuring/binding",
+            json={
+                "modelConfigId": model["id"],
+                "baseConfigVersion": 1,
+                "baseBindingVersion": 1,
+            },
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["capability"] == "job_image_structuring"
+        messages = gateway.calls[-1]["messages"]
+        assert isinstance(messages, tuple)
+        content = messages[0].content
+        assert isinstance(content, list)
+        assert content[1].type == "image_url"
+        assert content[1].image_url.url.startswith("data:image/png;base64,")
+        with app.state.session_factory() as db:
+            binding = db.get(LLMCapabilityBinding, "job_image_structuring")
+            chat_binding = db.get(LLMCapabilityBinding, "chat")
+            assert binding is not None
+            assert binding.model_config_id == int(model["id"])
+            assert chat_binding is not None
+            assert chat_binding.model_config_id is None
 
 
 def test_removed_internal_agent_proxy_route_returns_not_found() -> None:

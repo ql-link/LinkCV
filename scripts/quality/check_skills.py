@@ -18,6 +18,7 @@ AI_ROOT = REPO_ROOT / ".ai"
 SKILLS_ROOT = REPO_ROOT / ".ai" / "skills"
 NAME_RE = re.compile(r"^[a-z0-9-]+$")
 MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+SKILL_REGISTRY_ROW_RE = re.compile(r"^\| `([a-z0-9-]+)` \|", re.MULTILINE)
 STALE_REFERENCES = (
     ".agent/skills",
     "docs/api/schemas/elasticsearch.md",
@@ -25,6 +26,53 @@ STALE_REFERENCES = (
     "src/core/",
 )
 ALLOWED_AI_ENTRIES = {"prompts", "skills"}
+OBSOLETE_SKILL_DIRS = {
+    "apple-design",
+    "backend-delivery",
+    "frontend-design",
+    "frontend-delivery",
+    "frontend-implementation",
+    "module-planning",
+    "prototype-acceptance",
+    "solution-delegated-delivery",
+    "ui-layout-design",
+}
+OBSOLETE_WORKFLOW_FILES = (
+    Path(".ai/skills/frontend-delivery/ui_design.template.md"),
+)
+OBSOLETE_WORKFLOW_MARKERS = (
+    "由它选择轻量、标准或完整 UI 交付档位",
+    "前端标准或完整",
+    "标准或完整档",
+    "轻量任务不强制生成视觉产物",
+    "全新页面默认制作隔离的 HTML/CSS 原型",
+    "全新页面才生成可运行的 HTML 原型",
+    "再生成从属原型或 Figma",
+    "修订视觉产物并确认受影响内容",
+    "用户确认验收契约后转 `implementation-execution`",
+    "直接施工路径转 `implementation-execution`",
+    "按“后续路径”转 `acceptance-generator` 或 `implementation-execution`",
+    "需要落实代码、配置或迁移：转 `implementation-execution`",
+    "把确认后的统一方案交给 `implementation-execution`",
+    "发现生产缺陷时转 `implementation-execution`",
+    "完整业务实现转 `implementation-execution`",
+    "通过 `frontend-implementation`",
+    "使用 `prototype-acceptance`",
+    "`frontend-delivery`",
+    "原型图 → Figma 确认 → 代码复现",
+    "页面完成后统一运行 `npm run check:web`",
+    "`backend-delivery`",
+    "`lark-doc`",
+    "`lark-drive`",
+    "module-planning",
+    "模块规划",
+    "飞书",
+)
+FRONTEND_CAPABILITY_SKILLS = {
+    "frontend-browser-check",
+    "frontend-prototype",
+    "frontend-visual-check",
+}
 SOLUTION_TEMPLATE_REQUIRED_MARKERS = (
     "# <KEY> · <标题> 方案文档",
     "| 任务标识 |",
@@ -108,57 +156,132 @@ SOLUTION_TEMPLATE_FORBIDDEN_MARKERS = (
 SOLUTION_FIXED_SECTION_RE = re.compile(
     r"(?:方案文档|`?solution\.md`?)(?:的)?(?:第 ?\d+ ?节| ?\d+\.\d+)"
 )
-FLOW_ROUTER_REQUIRED_MARKERS = (
+FLOW_ROUTER_DELIVERY_REQUIRED_MARKERS = (
+    "它先用最小代码证据确认当前请求是否存在后端范围，再在同一上下文中继续七维判断和交付，不产生中间路由结果",
+    "本技能可以识别前端消费方并约束后端必须提供的可观察契约，但不负责决定、实施或验收前端页面，也不调用前端能力",
+    "当前 Codex 始终拥有用户沟通、授权边界、七维判断、方案、实施、工作区协调、验证、复核和最终结论",
+    "不要为了满足工作流形式创建实施子 Agent、重复读取上下文或等待另一模型执行命令",
+    "只有用户明确要求独立审查或并行 Agent 工作时，才按该次授权使用子 Agent",
+    "不得仅因为需要七维判断、方案先行、严格风险或任务复杂而创建额外 Agent",
     "准备程度、复杂度、风险和记录需要必须分开表达",
     "七个维度仍必须在内部完整判断",
-    "没有 Issue 不阻止分流",
+    "没有 Issue 不阻止七维判断或交付",
     "只使用 4.2 至 4.5 四个维度",
+    "复杂度只用于安排实施顺序、调查深度和验证范围，不决定是否创建 `solution.md`",
+    "目标已经稳定，并命中以下至少一个方案门槛",
+    "未命中方案门槛：`直接实现`",
+    "数据库或数据变更只有实际命中回填、兼容、发布协调或难回退门槛时才方案先行",
     "严格风险本身不自动升级为方案先行",
     "记录需要不改变交付路径",
     "记录为持久记录也不自动升级方案",
-    "不要由分流阶段提前主持方案讨论",
-    "其他准备为 `需澄清` 或 `需调查` 的情况",
+    "准备为`需澄清`或`需调查`",
     "准备：可实施 | 需澄清 | 需调查",
     "复杂度：简单 | 中等 | 复杂 | 暂不判定",
     "风险：常规 | 严格",
     "记录：会话内 | 持久记录",
-    "路径：直接实现 | 方案先行 | 模块规划 | 暂不进入开发路径",
+    "路径：直接实现 | 方案先行 | 暂不进入开发路径",
     "默认只向用户展示三行",
     "原因：<只写一个决定当前路径的主导事实>",
     "额外检查：无 |",
     "只有准备不足、风险严格、需要持久记录或用户主动要求查看判断依据时",
+    "当前 Codex 直接实施与复核",
+    "在同一上下文中完整使用 `implementation-execution`",
+    "不创建默认实施子 Agent，也不为实施指定其他模型或推理强度",
+    "共享契约、迁移链、同一核心文件或存在前后依赖的改动按依赖顺序完成",
+    "不为了并行拆成 Agent 工作包",
+    "实现问题在确认范围内直接修正",
+    "只执行一次与任务范围匹配的自动化验证",
+    "只进入一次任务级 `run-all-tests`",
+    "准备、方案门槛或后端范围变化：留在本技能",
 )
-FLOW_ROUTER_FORBIDDEN_MARKERS = (
+FLOW_ROUTER_DELIVERY_FORBIDDEN_MARKERS = (
+    "自动或开启工作流时创建一个独立评估 Agent",
+    "以下情况直接使用独立实施 Agent",
+    "由另一模型基于真实代码完成七维判断",
     "任意一条不满足即判方案先行",
     "只有五条全部满足才判直接实现",
+    "复杂任务：`方案先行`",
+    "数据库 schema 或数据迁移通常命中迁移顺序、存量数据、兼容和回退，因此默认方案先行",
+    "下游跳过交付文档和模型编排",
+    "下一站：flow-router",
+    "`flow-router` 已判为纯后端或前后端混合任务",
 )
+FLOW_ROUTER_DELIVERY_FRONTEND_ORCHESTRATION_MARKERS = (
+    "`frontend-prototype`",
+    "`frontend-browser-check`",
+    "`frontend-visual-check`",
+    "直接完成混合任务的 UI",
+    "前端由当前 Codex 直接实现",
+)
+IMPLEMENTATION_DELEGATION_FORBIDDEN_MARKERS = (
+    "每个工作包的实施 Agent 使用",
+    "按工作包调度一个或多个",
+    "交给实施 Agent 施工",
+    "`model`:",
+    "`reasoning_effort`:",
+    "`fork_turns`:",
+)
+DESIGN_SYSTEM_REQUIRED_MARKERS = {
+    Path("run-all-tests/SKILL.md"): (
+        "npm run check:design",
+        "修改 `DESIGN.md`、`tokens.css`",
+    ),
+}
 IMPLEMENTATION_EXECUTION_REQUIRED_MARKERS = (
+    "本技能可以核对前端 API Client 或共享类型是否与后端契约一致，但不负责决定、实施或验收前端页面，也不调用前端能力",
     "方案先行任务以当前 `solution.md` 为准；"
-    "直接实现以来源材料、当前确认结论和 `flow-router` 列出的严格检查项为准",
-    "不因选择影响大就自动升级为模块规划",
+    "直接实现以来源材料、当前确认结论和 `flow-router` 七维简报列出的严格检查项为准",
+    "不因选择影响大就自动升级为另一个规划阶段",
     "没有 Issue 不阻止直接实现",
+    "复杂度可以是简单、中等或复杂",
+    "复杂度、风险或记录需要变化本身不自动等于方案先行",
     "数据库迁移、跨端契约",
     "严格风险本身都不触发报告",
     "与方案的实际偏差",
     "已接受限制",
     "跨会话遗留风险与接手点",
+    "只执行当前已确认的范围，不自行扩展目标或创建实施子 Agent",
+    "### 当前实施边界",
+    "当前 Codex 在同一上下文中按依赖顺序直接完成实现",
+    "不创建默认实施子 Agent，也不为实施切换模型",
+    "共享契约、迁移链、同一核心文件或存在前后依赖时，必须按依赖顺序处理",
+    "不要通过拆分或重新派发 Agent 绕过确认",
+    "不按文件或步骤机械重跑",
+    "基于完整差异运行或复用一次与任务范围匹配的 `run-all-tests` 验证",
+    "不把二者设为所有任务的固定收尾步骤",
+)
+IMPLEMENTATION_EXECUTION_FORBIDDEN_MARKERS = (
+    "`frontend-prototype`",
+    "`frontend-browser-check`",
+    "`frontend-visual-check`",
+    "页面设计与前端实现由当前 Codex",
+    "原型或 Figma",
 )
 CONTRACT_GUARD_REQUIRED_MARKERS = (
     "已经明确属于方案先行的单需求分歧直接交 `solution-generator` 修订当前方案",
-    "只有分流维度或交付路径也可能变化时才返回 `flow-router`",
+    "只有七维判断、后端路径或后端范围可能变化时才返回 `flow-router`",
 )
 DELIVERY_FLOW_REQUIRED_MARKERS = {
     Path(".ai/prompts/project.md"): (
         "需求和交付信息按单向链路流转",
         "在 PR 创建后只补一条交付评论",
+        "后端实现由当前 Codex 在同一上下文中直接完成",
+        "默认不创建实施子 Agent、不切换模型，也不等待另一模型执行命令",
+        "自动路径不按工作量或复杂度决定是否写方案",
         "新的业务需求分支必须从最新 `origin/master` 创建",
         "由业务分支向 `dev` 提 PR",
+        "npm run check:web",
     ),
     Path(".ai/skills/README.md"): (
-        "飞书文档只作为方案形成前的初步设计输入",
-        "确认后的 `solution.md` 是方案任务的当前实施依据",
+        "用户指定的外部材料只作为方案形成前的初始输入",
+        "确认后的 `solution.md` 是后端和混合方案中后端范围的实施依据",
+        "任务规模和复杂度只影响实施与验证，不自动创建 `solution.md`",
+        "## 后端直接实施",
+        "当前 Codex 在同一上下文中负责规划、实施、验证和复核",
+        "默认不创建实施子 Agent、不切换模型，也不为了并行拆分任务",
+        "新的产品、权限、数据、兼容、迁移或发布决定按归属回流",
         "## 单向交付层次",
-        "| 初始设计层 | 飞书文档 |",
+        "| 外部输入层 | 用户明确指定的外部材料 |",
         "| 任务入口与跟踪层 | Issue 正文 |",
         "| 实施真相层 | 代码、配置、迁移和测试 |",
         "| 交付审阅层 | PR |",
@@ -166,14 +289,14 @@ DELIVERY_FLOW_REQUIRED_MARKERS = {
         "主链只向右推进",
     ),
     Path(".ai/skills/solution-generator/SKILL.md"): (
-        "飞书文档只作为初步设计输入",
+        "用户指定的外部材料只作为初始输入",
         "把已确认的取舍和被替代的来源结论写入当前 `solution.md`",
-        "不更新飞书",
+        "也不创建或回写其他外部材料",
     ),
     Path(".ai/skills/implementation-execution/SKILL.md"): (
-        "飞书冲突本身不触发 `module-planning`",
+        "外部初始材料与当前方案不同本身不触发新的规划阶段",
         "交付说明统一留到 PR 收口",
-        "本阶段不回写飞书或 Issue",
+        "本阶段不回写外部初始材料或 Issue",
     ),
     Path(".ai/skills/branch-pr-workflow/SKILL.md"): (
         "默认同时授权发布上述一条交付评论",
@@ -197,8 +320,8 @@ DELIVERY_FLOW_REQUIRED_MARKERS = {
         "未完成与后续：",
     ),
     Path(".specs/README.md"): (
-        "飞书只提供方案形成前的初步设计",
-        "不反向同步飞书或 Issue 正文",
+        "用户指定的外部材料只提供方案或视觉设计形成前的初始输入",
+        "项目工作流不主动创建或回写这些材料",
         "普通文件组织、命名、测试落点",
         "PR 创建后只追加一条交付评论",
     ),
@@ -218,10 +341,6 @@ DELIVERY_FLOW_FORBIDDEN_MARKERS = {
     ),
 }
 REDUCTION_CONTRACTS = {
-    Path("module-planning/SKILL.md"): (
-        "没有 Issue 不阻塞模块规划",
-        "复用该授权，不再索要一遍相同指令",
-    ),
     Path("implementation-execution/implementation_report.template.md"): (
         "## 1. 与方案的实际偏差",
         "## 2. 已接受限制",
@@ -235,17 +354,19 @@ REDUCTION_CONTRACTS = {
     ),
     Path("run-all-tests/SKILL.md"): (
         "**任务范围验证**",
-        "**PR 全量验证**",
-        "准备创建 PR 时始终运行完整 `npm run check`",
+        "**PR 范围验证**",
+        "只有差异实际覆盖全仓、无法可靠缩小范围或用户明确要求时运行 `npm run check`",
+        "同一会话中，如果任务范围验证后",
         "任务范围验证不因为“最终验证”自动变成全仓检查",
     ),
     Path("branch-pr-workflow/SKILL.md"): (
         "来源 Issue 是可选的追踪信息",
-        "当前可提交内容实际运行完整 `npm run check`",
-        "共享 CI 仍对对应提交运行完整质量检查",
+        "同一会话中，任务范围验证后",
+        "只有差异实际覆盖全仓、无法可靠缩小范围或用户明确要求时运行 `npm run check`",
+        "共享 CI 仍运行其配置的检查",
     ),
     Path("code-review-and-quality/SKILL.md"): (
-        "不把任务范围验证冒充 PR 全量检查",
+        "运行与领域匹配的范围检查",
         "不写入工作流状态",
     ),
 }
@@ -256,17 +377,17 @@ STATELESS_SPEC_REQUIRED_MARKERS = {
     ),
     Path(".ai/skills/solution-generator/SKILL.md"): (
         "`solution.md` 是方案任务的唯一中心文档",
-        "AI 根据当前请求、Spec 文档、Git 差异、真实代码和实际测试判断下一步",
+        "AI 根据当前请求、Spec 文档、视觉产物、Git 差异、真实代码和实际测试判断下一步",
         "不创建额外机器状态文件",
     ),
     Path(".specs/README.md"): (
         "顺序是内容关系，不是机器状态机",
-        "AI 根据最新用户指令、Spec 文档、Git 差异、真实代码和本次实际验证自行判断下一步",
-        "跨会话恢复后不继承以前会话的测试结论",
+        "AI 根据最新用户指令、当前方案、确认的视觉产物、Git 差异、真实代码和本次验证判断下一步",
+        "跨会话不继承以前会话的测试结论",
     ),
     Path(".ai/skills/run-all-tests/SKILL.md"): (
         "不创建验证状态文件",
-        "不把较早会话中的“已通过”当作当前代码证据",
+        "不继承较早会话的“已通过”",
     ),
     Path(".ai/skills/code-review-and-quality/SKILL.md"): (
         "不写入工作流状态",
@@ -302,6 +423,9 @@ STATELESS_SPEC_CORE_ROOTS = (
     Path(".ai/prompts/project.md"),
     Path(".ai/skills/README.md"),
     Path(".ai/skills/flow-router"),
+    Path(".ai/skills/frontend-browser-check"),
+    Path(".ai/skills/frontend-prototype"),
+    Path(".ai/skills/frontend-visual-check"),
     Path(".ai/skills/solution-generator"),
     Path(".ai/skills/acceptance-generator"),
     Path(".ai/skills/implementation-execution"),
@@ -359,8 +483,72 @@ def validate_ai_layout() -> list[str]:
         )
     if not (AI_ROOT / "prompts" / "project.md").is_file():
         errors.append("缺少 .ai/prompts/project.md 项目规则源")
-    if not (SKILLS_ROOT / "README.md").is_file():
+    registry_file = SKILLS_ROOT / "README.md"
+    if not registry_file.is_file():
         errors.append("缺少 .ai/skills/README.md Skill 注册表")
+    elif all(
+        path.exists()
+        for path in (
+            REPO_ROOT / "package.json",
+            REPO_ROOT / "apps" / "web",
+            REPO_ROOT / "apps" / "backend",
+        )
+    ):
+        registered = set(
+            SKILL_REGISTRY_ROW_RE.findall(registry_file.read_text(encoding="utf-8"))
+        )
+        actual = {path.name for path in SKILLS_ROOT.iterdir() if path.is_dir()}
+        unregistered = sorted(actual - registered)
+        if unregistered:
+            errors.append(
+                ".ai/skills 含未登记到 README 正式清单的 Skill "
+                f"{unregistered}"
+            )
+        missing = sorted(registered - actual)
+        if missing:
+            errors.append(
+                ".ai/skills/README.md 登记了不存在的 Skill "
+                f"{missing}"
+            )
+    obsolete = sorted(
+        name for name in OBSOLETE_SKILL_DIRS if (SKILLS_ROOT / name).exists()
+    )
+    if obsolete:
+        errors.append(
+            "仍含已退出当前工作流的 Skill "
+            f"{obsolete}；项目只保留代码交付与按需能力，外部规划不作为项目 Skill"
+        )
+    obsolete_files = [
+        path.as_posix()
+        for path in OBSOLETE_WORKFLOW_FILES
+        if (REPO_ROOT / path).exists()
+    ]
+    if obsolete_files:
+        errors.append(f"仍含已退出当前工作流的文件 {obsolete_files}")
+    return errors
+
+
+def validate_obsolete_workflow_contract() -> list[str]:
+    if not (REPO_ROOT / "package.json").is_file():
+        return []
+
+    files = [
+        AI_ROOT / "prompts" / "project.md",
+        SKILLS_ROOT / "README.md",
+        REPO_ROOT / ".specs" / "README.md",
+    ]
+    files.extend(sorted(SKILLS_ROOT.glob("*/SKILL.md")))
+    errors: list[str] = []
+    for path in files:
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        stale = [marker for marker in OBSOLETE_WORKFLOW_MARKERS if marker in text]
+        if stale:
+            errors.append(
+                f"{path.relative_to(REPO_ROOT).as_posix()}: 仍含已退出当前工作流的规则 "
+                + ", ".join(repr(marker) for marker in stale)
+            )
     return errors
 
 
@@ -491,19 +679,112 @@ def validate_flow_router_contract() -> list[str]:
         return []
 
     text = skill_file.read_text(encoding="utf-8")
-    missing = [marker for marker in FLOW_ROUTER_REQUIRED_MARKERS if marker not in text]
-    stale = [marker for marker in FLOW_ROUTER_FORBIDDEN_MARKERS if marker in text]
+    metadata, _ = parse_frontmatter(text)
+    description = metadata.get("description") if metadata else None
+    errors: list[str] = []
+    if not isinstance(description, str) or not all(
+        marker in description
+        for marker in ("唯一的后端开发入口", "纯 Web 前端", "不使用")
+    ):
+        errors.append(
+            "flow-router: description 必须说明它是唯一后端开发入口，"
+            "并明确排除纯 Web 前端"
+        )
+    return errors
+
+
+def validate_frontend_capability_contract() -> list[str]:
+    full_repository = all(
+        (REPO_ROOT / relative_path).exists()
+        for relative_path in (Path("package.json"), Path("apps/web"), Path(".ai/skills/README.md"))
+    )
+    if not full_repository:
+        return []
+
+    errors: list[str] = []
+    missing = sorted(
+        name
+        for name in FRONTEND_CAPABILITY_SKILLS
+        if not (SKILLS_ROOT / name / "SKILL.md").is_file()
+    )
+    if missing:
+        errors.append(f"纯前端能力积木缺失 {missing}")
+
+    for name in sorted(FRONTEND_CAPABILITY_SKILLS):
+        skill_file = SKILLS_ROOT / name / "SKILL.md"
+        if not skill_file.is_file():
+            continue
+        text = skill_file.read_text(encoding="utf-8")
+        other_capabilities = sorted(
+            other for other in FRONTEND_CAPABILITY_SKILLS - {name} if other in text
+        )
+        if other_capabilities or "下一站：" in text:
+            details = other_capabilities or ["下一站："]
+            errors.append(
+                f"{name}: 前端能力必须保持独立，不得编排其他能力 {details}"
+            )
+    return errors
+
+
+def validate_flow_router_delivery_contract() -> list[str]:
+    skill_file = SKILLS_ROOT / "flow-router" / "SKILL.md"
+    if not skill_file.is_file():
+        return []
+
+    text = skill_file.read_text(encoding="utf-8")
+    missing = [
+        marker for marker in FLOW_ROUTER_DELIVERY_REQUIRED_MARKERS if marker not in text
+    ]
+    stale = [
+        marker for marker in FLOW_ROUTER_DELIVERY_FORBIDDEN_MARKERS if marker in text
+    ]
+    frontend_orchestration = [
+        marker
+        for marker in FLOW_ROUTER_DELIVERY_FRONTEND_ORCHESTRATION_MARKERS
+        if marker in text
+    ]
+    delegated_implementation = [
+        marker
+        for marker in IMPLEMENTATION_DELEGATION_FORBIDDEN_MARKERS
+        if marker in text
+    ]
     errors: list[str] = []
     if missing:
         errors.append(
-            "flow-router: 七维分流契约缺少必要内容 "
+            "flow-router: 七维判断、直接实施或回流契约缺少必要内容 "
             + ", ".join(repr(marker) for marker in missing)
         )
     if stale:
         errors.append(
-            "flow-router: 仍含旧的一票升级判据 "
+            "flow-router: 仍存在过期的入口或模型编排契约 "
             + ", ".join(repr(marker) for marker in stale)
         )
+    if frontend_orchestration:
+        errors.append(
+            "flow-router: 后端交付入口仍在编排前端工作 "
+            + ", ".join(repr(marker) for marker in frontend_orchestration)
+        )
+    if delegated_implementation:
+        errors.append(
+            "flow-router: 仍存在默认实施 Agent 或模型切换契约 "
+            + ", ".join(repr(marker) for marker in delegated_implementation)
+        )
+    return errors
+
+
+def validate_design_system_contract() -> list[str]:
+    errors: list[str] = []
+    for relative_path, markers in DESIGN_SYSTEM_REQUIRED_MARKERS.items():
+        path = SKILLS_ROOT / relative_path
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        missing = [marker for marker in markers if marker not in text]
+        if missing:
+            errors.append(
+                f"{relative_path.as_posix()}: 设计系统事实源契约缺少必要内容 "
+                + ", ".join(repr(marker) for marker in missing)
+            )
     return errors
 
 
@@ -518,12 +799,33 @@ def validate_implementation_execution_contract() -> list[str]:
         for marker in IMPLEMENTATION_EXECUTION_REQUIRED_MARKERS
         if marker not in text
     ]
-    if not missing:
-        return []
-    return [
-        "implementation-execution: 实现入口或实施报告契约缺少必要内容 "
-        + ", ".join(repr(marker) for marker in missing)
+    delegated_implementation = [
+        marker
+        for marker in IMPLEMENTATION_DELEGATION_FORBIDDEN_MARKERS
+        if marker in text
     ]
+    frontend_orchestration = [
+        marker
+        for marker in IMPLEMENTATION_EXECUTION_FORBIDDEN_MARKERS
+        if marker in text
+    ]
+    errors: list[str] = []
+    if missing:
+        errors.append(
+            "implementation-execution: 实现入口或实施报告契约缺少必要内容 "
+            + ", ".join(repr(marker) for marker in missing)
+        )
+    if delegated_implementation:
+        errors.append(
+            "implementation-execution: 仍存在默认实施 Agent 或模型切换契约 "
+            + ", ".join(repr(marker) for marker in delegated_implementation)
+        )
+    if frontend_orchestration:
+        errors.append(
+            "implementation-execution: 后端实施入口仍在编排前端工作 "
+            + ", ".join(repr(marker) for marker in frontend_orchestration)
+        )
+    return errors
 
 
 def validate_contract_guard_routing() -> list[str]:
@@ -538,7 +840,7 @@ def validate_contract_guard_routing() -> list[str]:
     if not missing:
         return []
     return [
-        "contract-guard: 七维分流下游契约缺少必要内容 "
+        "contract-guard: 领域或七维回流契约缺少必要内容 "
         + ", ".join(repr(marker) for marker in missing)
     ]
 
@@ -593,7 +895,7 @@ def validate_reduction_contracts() -> list[str]:
         missing = [marker for marker in markers if marker not in text]
         if missing:
             errors.append(
-                f"{relative_path.as_posix()}: 五项减法契约缺少必要内容 "
+                f"{relative_path.as_posix()}: 减法契约缺少必要内容 "
                 + ", ".join(repr(marker) for marker in missing)
             )
     return errors
@@ -709,8 +1011,12 @@ def main() -> int:
     errors.extend(
         error for skill_dir in skill_dirs for error in validate_skill(skill_dir)
     )
+    errors.extend(validate_obsolete_workflow_contract())
     errors.extend(validate_solution_template())
     errors.extend(validate_flow_router_contract())
+    errors.extend(validate_frontend_capability_contract())
+    errors.extend(validate_flow_router_delivery_contract())
+    errors.extend(validate_design_system_contract())
     errors.extend(validate_implementation_execution_contract())
     errors.extend(validate_contract_guard_routing())
     errors.extend(validate_delivery_flow_contract())

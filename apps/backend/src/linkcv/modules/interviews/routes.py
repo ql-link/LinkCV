@@ -16,14 +16,21 @@ from sqlalchemy.orm import Session
 
 from linkcv.application.interviews.service import (
     InterviewApplicationNotEmpty,
+    InterviewApplicationAlreadyActive,
+    InterviewAnswerPlanInvalidTime,
+    InterviewAnswerPlanNotSupported,
+    InterviewAnswerPlanOutsideWindow,
     InterviewEditConflict,
     InterviewInvalidTransition,
     InterviewNotFound,
+    InterviewResumeVersionRequired,
+    InterviewScheduleKindNotSupported,
     InterviewSessionNotEmpty,
-    InterviewTimeConflict,
+    InvalidInterviewRequest,
     InvalidInterviewCursor,
     InvalidInterviewTime,
     SessionWithApplication,
+    add_application_stage,
     advance_application,
     cancel_interview,
     close_application,
@@ -36,6 +43,7 @@ from linkcv.application.interviews.service import (
     delete_session,
     find_owned_asset,
     list_applications,
+    list_application_stages,
     list_assets,
     list_sessions,
     overview,
@@ -44,7 +52,9 @@ from linkcv.application.interviews.service import (
     require_owned_session,
     reschedule_session,
     set_application_archived,
+    terminate_application,
     update_application,
+    update_answer_plan,
     update_session,
 )
 from linkcv.application.resumes.service import parse_decimal_id
@@ -66,8 +76,10 @@ from linkcv.modules.interviews.models import (
     JobApplication,
 )
 from linkcv.modules.interviews.schemas import (
+    AddApplicationStageRequest,
     AdvanceApplicationRequest,
     ApplicationStageType,
+    ApplicationStageRecord,
     ApplicationStatus,
     AssetSourceType,
     CancelInterviewRequest,
@@ -96,6 +108,8 @@ from linkcv.modules.interviews.schemas import (
     OverviewMetrics,
     RescheduleInterviewRequest,
     SessionStatus,
+    TerminateApplicationRequest,
+    UpdateAnswerPlanRequest,
 )
 from linkcv.modules.observability.audit import bind_audit_target
 
@@ -139,8 +153,29 @@ def _utc_iso(value: datetime) -> str:
     return normalized.isoformat()
 
 
-def _application_record(application: JobApplication) -> JobApplicationRecord:
-    return JobApplicationRecord.model_validate(application)
+def _application_record(
+    db: Session, application: JobApplication, *, include_history: bool = True
+) -> JobApplicationRecord:
+    stages = list_application_stages(db, application.id)
+    current = next((stage for stage in stages if stage.current_marker == 1), None)
+    return JobApplicationRecord.model_validate(application).model_copy(
+        update={
+            "company_logo_url": _application_logo_url(application),
+            "current_stage": (
+                ApplicationStageRecord.model_validate(current) if current else None
+            ),
+            "stages": (
+                [ApplicationStageRecord.model_validate(stage) for stage in stages]
+                if include_history
+                else []
+            ),
+        }
+    )
+
+
+def _application_logo_url(application: JobApplication) -> str | None:
+    value = application.job_snapshot.get("logo_url")
+    return value if isinstance(value, str) and value.startswith("https://") else None
 
 
 def _application_summary(
@@ -156,7 +191,7 @@ def _application_summary(
         .order_by(InterviewSession.start_at.asc(), InterviewSession.id.asc())
     )
     return JobApplicationSummary(
-        **_application_record(application).model_dump(),
+        **_application_record(db, application, include_history=False).model_dump(),
         next_session_id=next_session.id if next_session else None,
         next_session_start_at=next_session.start_at if next_session else None,
         next_session_end_at=next_session.end_at if next_session else None,
@@ -181,10 +216,28 @@ def _asset_record(asset: InterviewAsset) -> InterviewAssetRecord:
 def _raise_service_error(error: Exception) -> None:
     if isinstance(error, InterviewNotFound):
         raise ApiError(404, "INTERVIEW_NOT_FOUND") from error
+    if isinstance(error, InterviewResumeVersionRequired):
+        raise ApiError(409, "INTERVIEW_RESUME_VERSION_REQUIRED") from error
+    if isinstance(error, InterviewApplicationAlreadyActive):
+        raise ApiError(
+            409,
+            "APPLICATION_ALREADY_ACTIVE",
+            {"application_id": str(error.application_id)},
+        ) from error
     if isinstance(error, InterviewEditConflict):
         raise ApiError(409, "INTERVIEW_EDIT_CONFLICT") from error
     if isinstance(error, InterviewInvalidTransition):
         raise ApiError(409, "INTERVIEW_INVALID_TRANSITION") from error
+    if isinstance(error, InterviewScheduleKindNotSupported):
+        raise ApiError(400, "INTERVIEW_SCHEDULE_KIND_NOT_SUPPORTED") from error
+    if isinstance(error, InterviewAnswerPlanNotSupported):
+        raise ApiError(400, "INTERVIEW_ANSWER_PLAN_NOT_SUPPORTED") from error
+    if isinstance(error, InterviewAnswerPlanInvalidTime):
+        raise ApiError(400, "INTERVIEW_ANSWER_PLAN_INVALID_TIME") from error
+    if isinstance(error, InterviewAnswerPlanOutsideWindow):
+        raise ApiError(400, "INTERVIEW_ANSWER_PLAN_OUTSIDE_WINDOW") from error
+    if isinstance(error, InvalidInterviewRequest):
+        raise ApiError(400, "INVALID_INTERVIEW_REQUEST") from error
     if isinstance(error, InvalidInterviewTime):
         raise ApiError(400, "INVALID_INTERVIEW_TIME") from error
     if isinstance(error, InvalidInterviewCursor):
@@ -193,24 +246,6 @@ def _raise_service_error(error: Exception) -> None:
         raise ApiError(409, "INTERVIEW_APPLICATION_NOT_EMPTY") from error
     if isinstance(error, InterviewSessionNotEmpty):
         raise ApiError(409, "INTERVIEW_SESSION_NOT_EMPTY") from error
-    if isinstance(error, InterviewTimeConflict):
-        raise ApiError(
-            409,
-            "INTERVIEW_TIME_CONFLICT",
-            {
-                "conflicts": [
-                    {
-                        "id": str(item.id),
-                        "application_id": str(item.application_id),
-                        "company_name": item.company_name,
-                        "stage_label": item.stage_label,
-                        "start_at": _utc_iso(item.start_at),
-                        "end_at": _utc_iso(item.end_at),
-                    }
-                    for item in error.conflicts
-                ]
-            },
-        ) from error
     raise error
 
 
@@ -245,6 +280,8 @@ def get_job_applications(
     keyword: str | None = Query(default=None, max_length=200),
     status: ApplicationStatus | None = None,
     stage_type: ApplicationStageType | None = None,
+    phase: Literal["pending", "applied"] | None = None,
+    lifecycle_status: Literal["active", "terminated"] | None = None,
     cursor: str | None = Query(default=None, max_length=4096),
     limit: int = Query(default=100, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -258,6 +295,8 @@ def get_job_applications(
             keyword=keyword,
             status=status,
             stage_type=stage_type,
+            phase=phase,
+            lifecycle_status=lifecycle_status,
             cursor=cursor,
             limit=limit,
         )
@@ -285,7 +324,7 @@ def post_job_application(
         _raise_service_error(error)
         raise AssertionError("unreachable")
     bind_audit_target(request, application.id)
-    return JobApplicationResponse(application=_application_record(application))
+    return JobApplicationResponse(application=_application_record(db, application))
 
 
 @router.get("/job-applications/{application_id}", response_model=JobApplicationResponse)
@@ -301,7 +340,7 @@ def get_job_application(
     except Exception as error:
         _raise_service_error(error)
         raise AssertionError("unreachable")
-    return JobApplicationResponse(application=_application_record(application))
+    return JobApplicationResponse(application=_application_record(db, application))
 
 
 @router.put("/job-applications/{application_id}", response_model=JobApplicationResponse)
@@ -318,7 +357,55 @@ def put_job_application(
     except Exception as error:
         _raise_service_error(error)
         raise AssertionError("unreachable")
-    return JobApplicationResponse(application=_application_record(application))
+    return JobApplicationResponse(application=_application_record(db, application))
+
+
+@router.post(
+    "/job-applications/{application_id}/stages",
+    response_model=JobApplicationResponse,
+)
+def post_application_stage(
+    application_id: str,
+    payload: AddApplicationStageRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> JobApplicationResponse:
+    try:
+        result = add_application_stage(
+            db, user.id, _database_id(application_id), payload
+        )
+    except Exception as error:
+        _raise_service_error(error)
+        raise
+    bind_audit_target(request, result.application.id)
+    return JobApplicationResponse(
+        application=_application_record(db, result.application)
+    )
+
+
+@router.post(
+    "/job-applications/{application_id}/terminate",
+    response_model=JobApplicationResponse,
+)
+def post_terminate_application(
+    application_id: str,
+    payload: TerminateApplicationRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> JobApplicationResponse:
+    try:
+        result = terminate_application(
+            db, user.id, _database_id(application_id), payload
+        )
+    except Exception as error:
+        _raise_service_error(error)
+        raise
+    bind_audit_target(request, result.application.id)
+    return JobApplicationResponse(
+        application=_application_record(db, result.application)
+    )
 
 
 def _application_command(
@@ -333,7 +420,7 @@ def _application_command(
     except Exception as error:
         _raise_service_error(error)
         raise AssertionError("unreachable")
-    return JobApplicationResponse(application=_application_record(application))
+    return JobApplicationResponse(application=_application_record(db, application))
 
 
 @router.post(
@@ -396,7 +483,7 @@ def _archive_command(
     except Exception as error:
         _raise_service_error(error)
         raise AssertionError("unreachable")
-    return JobApplicationResponse(application=_application_record(application))
+    return JobApplicationResponse(application=_application_record(db, application))
 
 
 @router.post(
@@ -430,10 +517,27 @@ def delete_application_route(
     application_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    storage: AssetStorage = Depends(get_storage),
 ) -> DeleteResponse:
+    def delete_asset_object(object_name: str) -> None:
+        try:
+            storage.delete(object_name)
+        except S3Error as error:
+            if error.code not in {"NoSuchKey", "NoSuchObject"}:
+                raise
+
     try:
-        delete_application(db, user.id, _database_id(application_id))
+        delete_application(
+            db,
+            user.id,
+            _database_id(application_id),
+            delete_asset_object=delete_asset_object,
+        )
+    except S3Error as error:
+        raise ApiError(502, "INTERVIEW_APPLICATION_DELETE_FAILED") from error
     except Exception as error:
+        if not isinstance(error, (InterviewNotFound, InterviewApplicationNotEmpty)):
+            raise ApiError(502, "INTERVIEW_APPLICATION_DELETE_FAILED") from error
         _raise_service_error(error)
     return DeleteResponse(deleted=True)
 
@@ -507,7 +611,7 @@ def post_interview_session(
     bind_audit_target(request, session.id)
     return InterviewSessionResponse(
         session=InterviewSessionRecord.model_validate(session),
-        application=_application_record(application),
+        application=_application_record(db, application),
     )
 
 
@@ -526,7 +630,7 @@ def get_interview_session(
         raise AssertionError("unreachable")
     return InterviewSessionResponse(
         session=InterviewSessionRecord.model_validate(item.session),
-        application=_application_record(item.application),
+        application=_application_record(db, item.application),
         assets=[_asset_record(asset) for asset in assets],
     )
 
@@ -548,7 +652,7 @@ def _session_command(
         raise AssertionError("unreachable")
     return InterviewSessionResponse(
         session=InterviewSessionRecord.model_validate(session),
-        application=_application_record(item.application),
+        application=_application_record(db, item.application),
         assets=[_asset_record(asset) for asset in assets],
     )
 
@@ -574,6 +678,19 @@ def post_reschedule_interview(
     user: User = Depends(get_current_user),
 ) -> InterviewSessionResponse:
     return _session_command(reschedule_session, db, user.id, session_id, payload)
+
+
+@router.put(
+    "/interview-sessions/{session_id}/answer-plan",
+    response_model=InterviewSessionResponse,
+)
+def put_interview_answer_plan(
+    session_id: str,
+    payload: UpdateAnswerPlanRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> InterviewSessionResponse:
+    return _session_command(update_answer_plan, db, user.id, session_id, payload)
 
 
 @router.post(
@@ -614,7 +731,7 @@ def delete_interview_session(
         _raise_service_error(error)
         raise AssertionError("unreachable")
     return DeleteSessionResponse(
-        deleted=True, application=_application_record(application)
+        deleted=True, application=_application_record(db, application)
     )
 
 

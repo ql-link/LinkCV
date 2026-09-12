@@ -4,12 +4,13 @@ import re
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 EmploymentType = Literal[
-    "full_time", "part_time", "internship", "contract", "temporary"
+    "internship", "campus", "full_time"
 ]
 WorkMode = Literal["onsite", "hybrid", "remote"]
 SalaryPeriod = Literal["hour", "day", "month", "year"]
@@ -17,10 +18,88 @@ SourceType = Literal["manual", "external_import"]
 Skill = Annotated[str, Field(max_length=100)]
 
 
+def _validate_optional_https_url(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    parsed = urlsplit(normalized)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise ValueError("URL must be an absolute HTTPS URL without credentials")
+    return normalized
+
+
+class JobDescriptionDraft(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    job_title: str | None = Field(default=None, max_length=200)
+    company_name: str | None = Field(default=None, max_length=200)
+    employment_type: EmploymentType | None = None
+    description: str | None = Field(default=None, max_length=200_000)
+    skills: list[Skill] = Field(default_factory=list, max_length=100)
+    education_requirement: str | None = Field(default=None, max_length=100)
+    experience_requirement: str | None = Field(default=None, max_length=100)
+    work_schedule: str | None = Field(default=None, max_length=100)
+    work_city: str | None = Field(default=None, max_length=100)
+    work_address: str | None = Field(default=None, max_length=500)
+    work_mode: WorkMode | None = None
+    salary_text: str | None = Field(default=None, max_length=128)
+    salary_min: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    salary_max: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    salary_currency: str | None = Field(default=None, max_length=3)
+    salary_period: SalaryPeriod | None = None
+    salary_months_per_year: int | None = Field(default=None, ge=1, le=65_535)
+    company_legal_name: str | None = Field(default=None, max_length=255)
+    company_industry: str | None = Field(default=None, max_length=100)
+    company_size: str | None = Field(default=None, max_length=50)
+    company_financing_stage: str | None = Field(default=None, max_length=50)
+    company_description: str | None = Field(default=None, max_length=200_000)
+    recruiter_name: str | None = Field(default=None, max_length=100)
+    recruiter_title: str | None = Field(default=None, max_length=100)
+    source_url: str | None = Field(default=None, max_length=2048)
+    notes: str | None = Field(default=None, max_length=16_000)
+
+    @field_validator(
+        "job_title", "company_name", "description", "education_requirement",
+        "experience_requirement", "work_schedule", "work_city", "work_address",
+        "salary_text", "company_legal_name", "company_industry", "company_size",
+        "company_financing_stage", "company_description", "recruiter_name",
+        "recruiter_title", "source_url", "notes",
+    )
+    @classmethod
+    def trim_optional_text(cls, value: str | None) -> str | None:
+        return value.strip() or None if value is not None else None
+
+    @field_validator("skills")
+    @classmethod
+    def normalize_draft_skills(cls, values: list[str]) -> list[str]:
+        result: list[str] = []
+        for value in values:
+            normalized = value.strip()
+            if normalized and normalized not in result:
+                result.append(normalized)
+        return result
+
+
+class JobDescriptionDraftResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    draft: JobDescriptionDraft
+    warnings: list[str]
+    input_type: Literal["text", "image"] = Field(alias="inputType")
+    call_id: str = Field(alias="callId")
+
+
 class DuplicateResolution(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    action: Literal["update", "restore"]
+    action: Literal["update"]
     job_description_id: str
     base_lock_version: int = Field(ge=1)
 
@@ -32,6 +111,7 @@ class BrowserJobCapture(BaseModel):
 
     job_title: str | None = Field(default=None, max_length=1_000)
     company_name: str | None = Field(default=None, max_length=1_000)
+    logo_url: str | None = Field(default=None, max_length=2048)
     description_text: str | None = Field(default=None, max_length=200_000)
     skills: list[Skill] = Field(default_factory=list, max_length=100)
     employment_type_text: str | None = Field(default=None, max_length=100)
@@ -49,6 +129,11 @@ class BrowserJobCapture(BaseModel):
     company_tags: list[Skill] = Field(default_factory=list, max_length=30)
     recruiter_name: str | None = Field(default=None, max_length=100)
     recruiter_title: str | None = Field(default=None, max_length=100)
+
+    @field_validator("logo_url")
+    @classmethod
+    def validate_logo_url(cls, value: str | None) -> str | None:
+        return _validate_optional_https_url(value)
 
 
 class JobDescriptionImportRequest(BaseModel):
@@ -72,8 +157,9 @@ class JobDescriptionCreateRequest(BaseModel):
 
     job_title: str = Field(max_length=200)
     company_name: str = Field(max_length=200)
+    logo_url: str | None = Field(default=None, max_length=2048)
     employment_type: EmploymentType | None = None
-    description: str = Field(max_length=200_000)
+    description: str = Field(default="", max_length=200_000)
     skills: list[Skill] = Field(default_factory=list, max_length=100)
     education_requirement: str | None = Field(default=None, max_length=100)
     experience_requirement: str | None = Field(default=None, max_length=100)
@@ -99,13 +185,18 @@ class JobDescriptionCreateRequest(BaseModel):
     notes: str | None = Field(default=None, max_length=16_000)
     duplicate_resolution: DuplicateResolution | None = None
 
-    @field_validator("job_title", "company_name", "description")
+    @field_validator("job_title", "company_name")
     @classmethod
     def trim_required_text(cls, value: str) -> str:
         normalized = value.strip()
         if not normalized:
             raise ValueError("required text cannot be blank")
         return normalized
+
+    @field_validator("description")
+    @classmethod
+    def trim_description(cls, value: str) -> str:
+        return value.strip()
 
     @field_validator(
         "education_requirement",
@@ -129,6 +220,11 @@ class JobDescriptionCreateRequest(BaseModel):
         if value is None:
             return None
         return value.strip() or None
+
+    @field_validator("logo_url")
+    @classmethod
+    def validate_logo_url(cls, value: str | None) -> str | None:
+        return _validate_optional_https_url(value)
 
     @field_validator("skills")
     @classmethod
@@ -157,6 +253,8 @@ class JobDescriptionCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_salary(self) -> JobDescriptionCreateRequest:
+        if self.source_type == "external_import" and not self.description:
+            raise ValueError("external imports require a job description")
         _validate_salary_values(
             self.salary_min,
             self.salary_max,
@@ -171,6 +269,7 @@ class JobDescriptionUpdateRequest(BaseModel):
 
     job_title: str | None = Field(default=None, max_length=200)
     company_name: str | None = Field(default=None, max_length=200)
+    logo_url: str | None = Field(default=None, max_length=2048)
     employment_type: EmploymentType | None = None
     description: str | None = Field(default=None, max_length=200_000)
     skills: list[Skill] | None = Field(default=None, max_length=100)
@@ -228,6 +327,11 @@ class JobDescriptionUpdateRequest(BaseModel):
             return None
         return value.strip() or None
 
+    @field_validator("logo_url")
+    @classmethod
+    def validate_logo_url(cls, value: str | None) -> str | None:
+        return _validate_optional_https_url(value)
+
     @field_validator("skills")
     @classmethod
     def normalize_skills(cls, values: list[str] | None) -> list[str] | None:
@@ -266,25 +370,19 @@ class JobDescriptionUpdateRequest(BaseModel):
         return self
 
 
-class JobLifecycleRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    base_lock_version: int = Field(ge=1)
-
-
 class JobDescriptionSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
     id: str
     job_title: str
     company_name: str
+    logo_url: str | None
     work_city: str | None
     salary_text: str | None
     skills: list[str]
     source_type: SourceType
     source_site: str | None
     source_url: str | None
-    archived_at: datetime | None
     lock_version: int
     updated_at: datetime
 
@@ -293,7 +391,7 @@ class JobDescriptionSummary(BaseModel):
     def stringify_id(cls, value: object) -> str:
         return str(value)
 
-    @field_validator("archived_at", "updated_at", mode="before")
+    @field_validator("updated_at", mode="before")
     @classmethod
     def normalize_summary_timestamps(cls, value: object) -> object:
         return _as_utc(value)
@@ -340,8 +438,23 @@ class JobDescriptionRecord(JobDescriptionSummary):
         return _as_utc(value)
 
 
+class JobImportApplicationRecord(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    phase: Literal["pending", "applied"]
+    lifecycle_status: Literal["active", "terminated"]
+    current_stage_label: str
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def stringify_id(cls, value: object) -> str:
+        return str(value)
+
+
 class JobDescriptionResponse(BaseModel):
     job_description: JobDescriptionRecord
+    application: JobImportApplicationRecord | None = None
 
 
 class JobDescriptionListResponse(BaseModel):

@@ -1,4 +1,5 @@
 import asyncio
+from copy import deepcopy
 import logging
 from time import monotonic
 from uuid import UUID, uuid4
@@ -20,14 +21,14 @@ from linkcv.application.resumes.service import (
     close_stale_resume_imports,
     has_resume_capacity,
     parse_decimal_id,
+    parse_persisted_template_snapshot,
 )
 from linkcv.core.config import Settings
 from linkcv.core.database import get_db
 from linkcv.core.errors import ApiError
-from linkcv.core.mq import MQPublishError, MQPublisher, ResumeImportMessage
+from linkcv.core.mq import MQPublisher, ResumeImportMessage
 from linkcv.core.mq.factory import build_mq_publisher
 from linkcv.core.storage import AssetStorage, build_import_object_name, get_storage
-from linkcv.domain.resume_snapshot import parse_resume_snapshot
 from linkcv.modules.identity.dependencies import get_current_user, get_settings
 from linkcv.modules.identity.models import User
 from linkcv.modules.observability.audit import bind_audit_target
@@ -56,6 +57,7 @@ from linkcv.services.resume_import_service import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/resumes", tags=["resume-imports"])
+DEFAULT_RESUME_TEMPLATE_KEY = "classic-technical-cn"
 
 
 def get_import_idempotency(request: Request) -> ResumeImportIdempotency:
@@ -71,7 +73,7 @@ def get_mq_publisher(request: Request, settings: Settings) -> MQPublisher:
     if publisher is None:
         try:
             publisher = build_mq_publisher(settings)
-        except ValueError as error:
+        except Exception as error:
             raise ApiError(503, "RESUME_IMPORT_QUEUE_UNAVAILABLE") from error
         request.app.state.mq_publisher = publisher
     return publisher
@@ -102,12 +104,115 @@ def import_summary(db: Session, record: DocumentParseTask) -> ResumeImportSummar
         upload_duration_ms=record.upload_duration_ms,
         parse_status=record.parse_status,
         parse_duration_ms=record.parse_duration_ms,
+        selected_template_id=(
+            str(record.selected_template_id)
+            if record.selected_template_id is not None
+            else None
+        ),
         result_resume_id=(
             str(result_resume_id) if result_resume_id is not None else None
         ),
         created_at=record.created_at,
         updated_at=record.updated_at,
     )
+
+
+def _template_is_usable(template: ResumeTemplate) -> bool:
+    try:
+        snapshot = parse_persisted_template_snapshot(
+            template.data_json,
+            template.style_json,
+        )
+    except (TypeError, ValueError):
+        return False
+    return snapshot.style.template_key == template.key
+
+
+def _freeze_template_definition(template: ResumeTemplate) -> dict[str, object]:
+    """Return an independent, normalized definition for an accepted import.
+
+    The template row is the source of truth only while the request accepts the
+    task.  The worker must consume this value from the task row afterwards, so
+    never persist the ORM JSON object itself or the un-normalized input.
+    """
+
+    try:
+        snapshot = parse_persisted_template_snapshot(
+            template.data_json,
+            template.style_json,
+        )
+    except (TypeError, ValueError) as error:
+        raise ResumeImportFailure(422, "TEMPLATE_INACTIVE") from error
+    if snapshot.style.template_key != template.key:
+        raise ResumeImportFailure(422, "TEMPLATE_INACTIVE")
+    return deepcopy(snapshot.style.model_dump(mode="json"))
+
+
+def _select_import_template(
+    db: Session,
+    *,
+    parsed_template_id: int | None,
+) -> ResumeTemplate | None:
+    """Resolve and validate the template frozen into a new import task."""
+
+    if parsed_template_id is not None:
+        template = db.scalar(
+            select(ResumeTemplate).where(
+                ResumeTemplate.id == parsed_template_id,
+                ResumeTemplate.is_active == 1,
+            )
+        )
+        return (
+            template if template is not None and _template_is_usable(template) else None
+        )
+
+    preferred = db.scalar(
+        select(ResumeTemplate).where(
+            ResumeTemplate.key == DEFAULT_RESUME_TEMPLATE_KEY,
+            ResumeTemplate.is_active == 1,
+        )
+    )
+    if preferred is not None and _template_is_usable(preferred):
+        return preferred
+
+    # Keep the production fallback documented and deterministic: a valid
+    # active non-blank template may replace an unavailable configured default.
+    candidates = db.scalars(
+        select(ResumeTemplate)
+        .where(
+            ResumeTemplate.is_active == 1,
+            ResumeTemplate.key != "blank-cn",
+        )
+        .order_by(ResumeTemplate.id)
+    ).all()
+    return next(
+        (template for template in candidates if _template_is_usable(template)), None
+    )
+
+
+def _lock_selected_import_template(
+    db: Session,
+    template_id: int,
+) -> ResumeTemplate:
+    """Lock and revalidate the selected template after locking its owner.
+
+    Import admission and resume creation both lock the user row before a
+    template row.  Keeping that order avoids a deadlock with the worker's
+    finalization transaction while still making the ID/style snapshot atomic
+    with the acceptance decision.
+    """
+
+    template = db.scalar(
+        select(ResumeTemplate)
+        .where(
+            ResumeTemplate.id == template_id,
+            ResumeTemplate.is_active == 1,
+        )
+        .with_for_update()
+    )
+    if template is None or not _template_is_usable(template):
+        raise ResumeImportFailure(422, "TEMPLATE_INACTIVE")
+    return template
 
 
 def import_details(db: Session, record: DocumentParseTask) -> dict[str, object]:
@@ -147,12 +252,48 @@ def _replay_response(
     return ResumeImportResponse.model_validate({"import": import_summary(db, record)})
 
 
+def _mark_queue_unavailable(
+    db: Session,
+    record: DocumentParseTask,
+    response: Response,
+) -> ResumeImportResponse:
+    """Close an accepted task unless a worker has already completed it.
+
+    Publisher construction and confirm failures happen after the source file
+    is durable.  The conditional update makes that task user-cleanable while
+    preserving a worker result that won the race with the failed request.
+    """
+    result = db.execute(
+        update(DocumentParseTask)
+        .where(
+            DocumentParseTask.id == record.id,
+            DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+            DocumentParseTask.parse_status == "processing",
+        )
+        .values(
+            parse_status="failed",
+            parse_duration_ms=0,
+            failure_reason="service_unavailable",
+        )
+    )
+    db.commit()
+    db.expire_all()
+    latest = _load_owned_import(db, str(record.id), record.user_id)
+    if result.rowcount != 1:
+        return _replay_response(db, latest, response)
+    raise ApiError(
+        503,
+        "RESUME_IMPORT_QUEUE_UNAVAILABLE",
+        import_details(db, latest),
+    )
+
+
 @router.post("/import", response_model=ResumeImportResponse, status_code=202)
 async def import_resume(
     request: Request,
     response: Response,
     file: UploadFile = File(...),
-    template_id: str = Form(...),
+    template_id: str | None = Form(default=None),
     idempotency_key_header: str | None = Header(
         default=None,
         alias="Idempotency-Key",
@@ -167,9 +308,11 @@ async def import_resume(
     record: DocumentParseTask | None = None
     admission_context = None
     try:
-        parsed_template_id = parse_decimal_id(template_id)
-        if parsed_template_id is None:
+        if template_id is not None and parse_decimal_id(template_id) is None:
             raise ResumeImportFailure(422, "TEMPLATE_INACTIVE")
+        parsed_template_id = (
+            parse_decimal_id(template_id) if template_id is not None else None
+        )
 
         idempotency_key = canonical_idempotency_key(idempotency_key_header)
         filename = safe_import_filename(file.filename or "resume.bin")
@@ -181,13 +324,6 @@ async def import_resume(
             content=content,
             max_bytes=settings.resume_import_max_bytes,
         )
-        fingerprint = import_fingerprint(
-            filename=filename,
-            source_format=extension,
-            content_type=content_type,
-            template_id=template_id,
-            content=content,
-        )
         close_stale_resume_imports(
             db,
             user_id=user.id,
@@ -195,18 +331,23 @@ async def import_resume(
             parse_stale_seconds=settings.resume_import_parse_stale_seconds,
         )
 
-        template = db.scalar(
-            select(ResumeTemplate).where(
-                ResumeTemplate.id == parsed_template_id,
-                ResumeTemplate.is_active == 1,
-            )
+        template = _select_import_template(
+            db,
+            parsed_template_id=parsed_template_id,
         )
         template_available = template is not None
-        if template is not None:
-            try:
-                parse_resume_snapshot(template.data_json, template.style_json)
-            except ValueError:
-                template_available = False
+        fingerprint_template_id = (
+            str(template.id)
+            if template is not None
+            else (template_id or DEFAULT_RESUME_TEMPLATE_KEY)
+        )
+        fingerprint = import_fingerprint(
+            filename=filename,
+            source_format=extension,
+            content_type=content_type,
+            template_id=fingerprint_template_id,
+            content=content,
+        )
         if not template_available:
             try:
                 existing = await idempotency.read_state(
@@ -281,12 +422,15 @@ async def import_resume(
                 raise ApiError(401, "UNAUTHORIZED")
             if not has_resume_capacity(db, user.id):
                 raise ApiError(409, "RESUME_LIMIT_REACHED")
+            template = _lock_selected_import_template(db, template.id)
             record = DocumentParseTask(
                 source_type=RESUME_IMPORT_SOURCE_TYPE,
                 user_id=user.id,
                 file_name=filename,
                 file_format=extension,
                 object_name=object_key,
+                selected_template_id=template.id,
+                selected_template_style_json=_freeze_template_definition(template),
                 upload_status="uploading",
             )
             db.add(record)
@@ -342,38 +486,19 @@ async def import_resume(
         db.commit()
         record = _load_owned_import(db, str(record.id), user.id)
 
-        publisher = get_mq_publisher(request, settings)
         try:
+            publisher = get_mq_publisher(request, settings)
             await publisher.publish(
                 ResumeImportMessage.create(
                     import_id=record.id,
                     template_id=template.id,
                 )
             )
-        except MQPublishError as error:
-            result = db.execute(
-                update(DocumentParseTask)
-                .where(
-                    DocumentParseTask.id == record.id,
-                    DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
-                    DocumentParseTask.parse_status == "processing",
-                )
-                .values(
-                    parse_status="failed",
-                    parse_duration_ms=0,
-                    failure_reason="service_unavailable",
-                )
-            )
-            db.commit()
-            db.expire_all()
-            record = _load_owned_import(db, str(record.id), user.id)
-            if result.rowcount != 1:
-                return _replay_response(db, record, response)
-            raise ApiError(
-                503,
-                "RESUME_IMPORT_QUEUE_UNAVAILABLE",
-                import_details(db, record),
-            ) from error
+        except Exception as error:
+            try:
+                return _mark_queue_unavailable(db, record, response)
+            except ApiError as queue_error:
+                raise queue_error from error
         return ResumeImportResponse.model_validate(
             {"import": import_summary(db, record)}
         )

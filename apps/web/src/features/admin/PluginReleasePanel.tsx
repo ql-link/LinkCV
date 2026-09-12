@@ -1,7 +1,7 @@
 import { CheckCircle2, PackageOpen, RefreshCw, RotateCcw, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { FileUpload, type FileUploadHandle } from "@/components/ui";
+import { FileUpload, PageLoading, type FileUploadHandle } from "@/components/ui";
 import {
   api,
   ApiRequestError,
@@ -148,7 +148,7 @@ export function PluginReleasePanel() {
       </header>
 
       <section className="admin-surface plugin-release-panel">
-        {loading ? <p className="plugin-admin-state">正在读取插件状态…</p> : loadError ? <p className="plugin-admin-state is-error" role="alert">无法读取当前插件状态。</p> : (
+        {loading ? <PageLoading label="正在读取插件状态…" scope="panel" /> : loadError ? <p className="plugin-admin-state is-error" role="alert">无法读取当前插件状态。</p> : (
           <div className={`plugin-status-card is-${current.status}`}>
             <div className="plugin-status-icon">{hasPlugin ? <CheckCircle2 size={24} /> : <PackageOpen size={24} />}</div>
             <div className="plugin-status-copy">
@@ -198,11 +198,10 @@ function publishErrorMessage(error: unknown): string {
   if (error.status === 413) return "安装包超过 20 MB。";
   if (error.status === 409) return "版本低于当前版本，或相同版本的内容不一致。";
   if (error.status === 422) {
-    if (error.message === "PLUGIN_RELEASE_INVALID_CONTENTS") return "安装包校验失败，未写入对象存储。ZIP 根目录必须包含 manifest.json 和安装说明。";
-    if (error.message === "PLUGIN_RELEASE_INVALID_PERMISSIONS") return "安装包校验失败，未写入对象存储。Manifest 站点权限与当前环境不一致。";
+    if (error.message === "PLUGIN_RELEASE_INVALID_CONTENTS") return "安装包校验失败，未写入对象存储。ZIP 根目录必须包含 manifest.json。";
     if (error.message === "PLUGIN_RELEASE_INVALID_VERSION") return "安装包校验失败，未写入对象存储。Manifest 版本必须是三段数字版本。";
     if (error.message === "PLUGIN_RELEASE_UNSAFE_ARCHIVE") return "安装包校验失败，未写入对象存储。ZIP 包含不安全或重复的文件路径。";
-    return "安装包校验失败，未写入对象存储。请检查 ZIP、Manifest 和离线说明。";
+    return "安装包校验失败，未写入对象存储。请检查 ZIP 和 Manifest。";
   }
   if (error.status === 503) return "对象存储暂不可用，当前版本没有切换。";
   return "操作失败，请稍后重试。";

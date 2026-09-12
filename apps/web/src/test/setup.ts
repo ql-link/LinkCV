@@ -27,6 +27,23 @@ class IntersectionObserverStub implements IntersectionObserver {
 
 globalThis.IntersectionObserver = IntersectionObserverStub;
 
+// Node 22 can expose an unusable experimental global localStorage to worker
+// threads unless a file is configured. Install a deterministic per-test-worker
+// implementation so jsdom tests behave the same on macOS, Linux and CI.
+const storage = new Map<string, string>();
+const localStorageStub: Storage = {
+  get length() { return storage.size; },
+  clear: () => storage.clear(),
+  getItem: (key) => storage.get(String(key)) ?? null,
+  key: (index) => Array.from(storage.keys())[index] ?? null,
+  removeItem: (key) => { storage.delete(String(key)); },
+  setItem: (key, value) => { storage.set(String(key), String(value)); },
+};
+Object.defineProperty(globalThis, "localStorage", {
+  configurable: true,
+  value: localStorageStub,
+});
+
 // Radix Select relies on pointer-capture APIs that jsdom does not implement.
 Object.defineProperties(HTMLElement.prototype, {
   hasPointerCapture: { configurable: true, value: () => false },

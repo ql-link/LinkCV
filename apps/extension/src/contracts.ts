@@ -1,6 +1,7 @@
 export interface BossJobCapture {
   job_title?: string;
   company_name?: string;
+  logo_url?: string;
   description_text?: string;
   skills: string[];
   employment_type_text?: string;
@@ -36,7 +37,7 @@ export interface BossCaptureFailure {
 export type BossCaptureResult = BossCaptureSuccess | BossCaptureFailure;
 
 export interface DuplicateResolution {
-  action: "update" | "restore";
+  action: "update";
   job_description_id: string;
   base_lock_version: number;
 }
@@ -45,7 +46,7 @@ export interface JobSummary {
   id: string;
   job_title: string;
   company_name: string;
-  archived_at: string | null;
+  logo_url: string | null;
   lock_version: number;
 }
 
@@ -61,7 +62,7 @@ export interface ImportJobPayload {
 
 export interface DuplicateDetails {
   existing: JobSummary;
-  allowed_actions: Array<"update" | "restore" | "cancel">;
+  allowed_actions: Array<"update" | "cancel">;
 }
 
 export const CAPTURE_MESSAGE = "LINKCV_CAPTURE_BOSS_JOB" as const;

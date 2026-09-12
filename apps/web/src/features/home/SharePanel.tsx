@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { api, type ResumeShareState } from "../../api/client";
 import { ConfirmDialog, PageLoading } from "@/components/ui";
 
@@ -89,6 +89,12 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
     setError(null);
     const result = await api.getShareState(resumeId);
     setShare(result.share);
+    if (result.share) {
+      // 与 share 在同一批次初始化，避免界面已可交互时，后续 effect
+      // 又把用户刚选择的有效期覆盖回服务端旧值。
+      setDraftVisibility(result.share.share_visibility);
+      setDraftExpiry(matchExpiry(result.share.share_expires_at));
+    }
   }, [resumeId]);
 
   useEffect(() => {
@@ -107,7 +113,7 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
   }, [load]);
 
   // 链接加载或保存成功后，把暂存值同步为最新服务端状态
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!share) return;
     setDraftVisibility(share.share_visibility);
     setDraftExpiry(matchExpiry(share.share_expires_at));

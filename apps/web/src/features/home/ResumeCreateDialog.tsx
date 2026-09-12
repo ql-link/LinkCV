@@ -239,7 +239,7 @@ export function ResumeCreateDialog({ onClose }: ResumeCreateDialogProps) {
                         }}
                       >
                         <span className="resume-create-template-preview" aria-hidden="true">
-                          <ResumePreview data={template.data} style={template.style} />
+                          <ResumePreview data={template.data} style={template.style} layoutPlan={template.layout_plan} />
                         </span>
                         <strong>{template.name}</strong>
                         {selected && (

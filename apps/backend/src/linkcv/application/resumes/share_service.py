@@ -10,9 +10,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from linkcv.application.resumes.service import find_owned_resume
+from linkcv.application.resumes.service import (
+    find_owned_resume,
+    parse_persisted_resume_snapshot,
+)
 from linkcv.core.database import utc_now
-from linkcv.domain.resume_snapshot import parse_resume_snapshot
+from linkcv.domain.resume import compile_layout_plan
 from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import Resume, ResumeVersion
 from linkcv.modules.resumes.schemas import (
@@ -147,9 +150,14 @@ def resolve_public_share(
     )
     if version is None:
         raise ShareLinkUnavailable
-    snapshot = parse_resume_snapshot(version.data_json, version.style_json)
+    snapshot = parse_persisted_resume_snapshot(version.data_json, version.style_json)
     return PublicSharePayload(
         data=snapshot.data,
         style=snapshot.style,
+        layout_plan=compile_layout_plan(
+            snapshot.data,
+            snapshot.style.template_snapshot,
+            snapshot.style,
+        ),
         sharer=PublicShareSharer(nickname=owner.nickname, avatar_url=owner.avatar_url),
     )

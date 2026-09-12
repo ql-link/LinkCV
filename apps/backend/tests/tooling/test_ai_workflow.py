@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -355,6 +356,211 @@ def test_skill_check_rejects_unowned_ai_top_level_entry(tmp_path: Path) -> None:
     assert "长期知识应放 docs" in result.stderr
 
 
+def test_skill_check_rejects_obsolete_workflow_skill(tmp_path: Path) -> None:
+    (tmp_path / ".ai" / "prompts").mkdir(parents=True)
+    skills_root = tmp_path / ".ai" / "skills"
+    obsolete_skill = skills_root / "ui-layout-design"
+    obsolete_skill.mkdir(parents=True)
+    (tmp_path / ".ai" / "prompts" / "project.md").write_text(
+        "rules", encoding="utf-8"
+    )
+    (skills_root / "README.md").write_text("skills", encoding="utf-8")
+    (obsolete_skill / "SKILL.md").write_text(
+        """---
+name: ui-layout-design
+description: 旧版 UI 布局设计入口，仅用于验证退出工作流的 Skill 不得重新出现。
+---
+
+旧规则。
+""",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        SKILL_CHECK,
+        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result.returncode == 1
+    assert "仍含已退出当前工作流的 Skill" in result.stderr
+    assert "ui-layout-design" in result.stderr
+
+
+def test_project_skill_directories_match_registry() -> None:
+    skills_root = REPO_ROOT / ".ai" / "skills"
+    registered = {
+        match.group(1)
+        for match in re.finditer(
+            r"^\| `([a-z0-9-]+)` \|",
+            (skills_root / "README.md").read_text(encoding="utf-8"),
+            re.MULTILINE,
+        )
+    }
+    actual = {path.name for path in skills_root.iterdir() if path.is_dir()}
+
+    assert actual == registered
+    assert not {
+        "apple-design",
+        "backend-delivery",
+        "frontend-design",
+        "frontend-delivery",
+        "frontend-implementation",
+        "module-planning",
+        "prototype-acceptance",
+        "solution-delegated-delivery",
+        "ui-layout-design",
+    } & actual
+    assert {
+        "frontend-browser-check",
+        "frontend-prototype",
+        "frontend-visual-check",
+    } <= actual
+
+
+def test_frontend_capabilities_are_independent(tmp_path: Path) -> None:
+    (tmp_path / ".ai" / "prompts").mkdir(parents=True)
+    skills_root = tmp_path / ".ai" / "skills"
+    skills_root.mkdir(parents=True)
+    (tmp_path / "apps" / "web").mkdir(parents=True)
+    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+    (tmp_path / ".ai" / "prompts" / "project.md").write_text(
+        "rules", encoding="utf-8"
+    )
+    (skills_root / "README.md").write_text("skills", encoding="utf-8")
+    for skill_name in (
+        "frontend-browser-check",
+        "frontend-prototype",
+        "frontend-visual-check",
+    ):
+        shutil.copytree(
+            REPO_ROOT / ".ai" / "skills" / skill_name,
+            skills_root / skill_name,
+        )
+
+    baseline = run_script(SKILL_CHECK, env={"LINKCV_REPO_ROOT": str(tmp_path)})
+    assert baseline.returncode == 0, baseline.stderr
+
+    prototype = skills_root / "frontend-prototype" / "SKILL.md"
+    prototype.write_text(
+        prototype.read_text(encoding="utf-8")
+        + "\n下一站：frontend-browser-check\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(SKILL_CHECK, env={"LINKCV_REPO_ROOT": str(tmp_path)})
+    assert result.returncode == 1
+    assert "前端能力必须保持独立" in result.stderr
+
+
+def test_skill_check_rejects_unregistered_or_missing_skill_directory(
+    tmp_path: Path,
+) -> None:
+    for case_name, readme, directory, expected in (
+        (
+            "unregistered",
+            "# Skills\n",
+            "orphan-workflow",
+            "含未登记到 README 正式清单的 Skill",
+        ),
+        (
+            "missing",
+            "| 技能 | 职责 | 下一站 |\n| --- | --- | --- |\n"
+            "| `missing-workflow` | 测试 | 停止 |\n",
+            None,
+            "登记了不存在的 Skill",
+        ),
+    ):
+        case_root = tmp_path / case_name
+        (case_root / ".ai" / "prompts").mkdir(parents=True)
+        skills_root = case_root / ".ai" / "skills"
+        skills_root.mkdir(parents=True)
+        (case_root / "apps" / "web").mkdir(parents=True)
+        (case_root / "apps" / "backend").mkdir(parents=True)
+        (case_root / "package.json").write_text("{}", encoding="utf-8")
+        (case_root / ".ai" / "prompts" / "project.md").write_text(
+            "rules", encoding="utf-8"
+        )
+        (skills_root / "README.md").write_text(readme, encoding="utf-8")
+        if directory:
+            skill_root = skills_root / directory
+            skill_root.mkdir()
+            (skill_root / "SKILL.md").write_text(
+                f"""---
+name: {directory}
+description: 用于验证未登记工作流目录会被项目级确定性检查识别并阻止继续交付。
+---
+
+测试规则。
+""",
+                encoding="utf-8",
+            )
+
+        result = run_script(
+            SKILL_CHECK,
+            env={"LINKCV_REPO_ROOT": str(case_root)},
+        )
+
+        assert result.returncode == 1
+        assert expected in result.stderr
+
+
+def test_skill_check_rejects_obsolete_frontend_workflow_rule(tmp_path: Path) -> None:
+    (tmp_path / ".ai" / "prompts").mkdir(parents=True)
+    (tmp_path / ".ai" / "skills").mkdir(parents=True)
+    (tmp_path / ".specs").mkdir()
+    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+    (tmp_path / ".ai" / "prompts" / "project.md").write_text(
+        "rules", encoding="utf-8"
+    )
+    (tmp_path / ".ai" / "skills" / "README.md").write_text(
+        "# Skills\n", encoding="utf-8"
+    )
+    (tmp_path / ".specs" / "README.md").write_text(
+        "前端标准或完整任务由 AI 生成原型。", encoding="utf-8"
+    )
+
+    result = run_script(
+        SKILL_CHECK,
+        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result.returncode == 1
+    assert "仍含已退出当前工作流的规则" in result.stderr
+    assert "前端标准或完整" in result.stderr
+
+
+def test_skill_check_rejects_project_external_planning_rules(tmp_path: Path) -> None:
+    legacy_markers = (
+        ("项目工作流读取飞书规划文档。", "飞书"),
+        ("目标不清楚时转 module-planning。", "module-planning"),
+    )
+
+    for index, (legacy_rule, legacy_marker) in enumerate(legacy_markers):
+        case_root = tmp_path / f"case-{index}"
+        (case_root / ".ai" / "prompts").mkdir(parents=True)
+        (case_root / ".ai" / "skills").mkdir(parents=True)
+        (case_root / ".specs").mkdir()
+        (case_root / "package.json").write_text("{}", encoding="utf-8")
+        (case_root / ".ai" / "prompts" / "project.md").write_text(
+            legacy_rule, encoding="utf-8"
+        )
+        (case_root / ".ai" / "skills" / "README.md").write_text(
+            "# Skills\n", encoding="utf-8"
+        )
+        (case_root / ".specs" / "README.md").write_text(
+            "specs", encoding="utf-8"
+        )
+
+        result = run_script(
+            SKILL_CHECK,
+            env={"LINKCV_REPO_ROOT": str(case_root)},
+        )
+
+        assert result.returncode == 1
+        assert "仍含已退出当前工作流的规则" in result.stderr
+        assert legacy_marker in result.stderr
+
+
 def test_skill_check_accepts_linkcv_backend_test_paths(tmp_path: Path) -> None:
     skill_root = tmp_path / ".ai" / "skills" / "test-authoring"
     skill_root.mkdir(parents=True)
@@ -538,7 +744,7 @@ def test_skill_check_rejects_fixed_solution_section_in_downstream_skill(
     assert "方案文档 9.3" in result.stderr
 
 
-def test_skill_check_rejects_incomplete_flow_router_contract(tmp_path: Path) -> None:
+def test_skill_check_requires_flow_router_to_exclude_pure_frontend(tmp_path: Path) -> None:
     (tmp_path / ".ai" / "prompts").mkdir(parents=True)
     (tmp_path / ".ai" / "prompts" / "project.md").write_text(
         "rules", encoding="utf-8"
@@ -552,7 +758,8 @@ def test_skill_check_rejects_incomplete_flow_router_contract(tmp_path: Path) -> 
     skill_file = target_skill / "SKILL.md"
     skill_file.write_text(
         skill_file.read_text(encoding="utf-8").replace(
-            "默认只向用户展示三行", "默认展示完整七维表"
+            "明确的纯 Web 前端修改不使用本技能；",
+            "明确的纯 Web 前端修改也使用本技能；",
         ),
         encoding="utf-8",
     )
@@ -563,20 +770,63 @@ def test_skill_check_rejects_incomplete_flow_router_contract(tmp_path: Path) -> 
     )
 
     assert result.returncode == 1
-    assert "七维分流契约缺少必要内容" in result.stderr
-    assert "默认只向用户展示三行" in result.stderr
+    assert "description 必须说明它是唯一后端开发入口" in result.stderr
 
 
-def test_skill_check_protects_flow_router_core_semantics(tmp_path: Path) -> None:
+def test_skill_check_rejects_legacy_flow_router_handoff(tmp_path: Path) -> None:
+    (tmp_path / ".ai" / "prompts").mkdir(parents=True)
+    (tmp_path / ".ai" / "prompts" / "project.md").write_text(
+        "rules", encoding="utf-8"
+    )
+    skills_root = tmp_path / ".ai" / "skills"
+    skills_root.mkdir(parents=True)
+    (skills_root / "README.md").write_text("skills", encoding="utf-8")
+    source_skill = REPO_ROOT / ".ai" / "skills" / "flow-router"
+    target_skill = skills_root / "flow-router"
+    shutil.copytree(source_skill, target_skill)
+    skill_file = target_skill / "SKILL.md"
+    skill_file.write_text(
+        skill_file.read_text(encoding="utf-8")
+        + "\n工作流关闭时，下游跳过交付文档和模型编排。\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        SKILL_CHECK,
+        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result.returncode == 1
+    assert "仍存在过期的入口或模型编排契约" in result.stderr
+    assert "下游跳过交付文档和模型编排" in result.stderr
+
+
+def test_skill_check_protects_flow_router_delivery_core_semantics(tmp_path: Path) -> None:
     protected_markers = (
+        "它先用最小代码证据确认当前请求是否存在后端范围，再在同一上下文中继续七维判断和交付，不产生中间路由结果",
+        "本技能可以识别前端消费方并约束后端必须提供的可观察契约，但不负责决定、实施或验收前端页面，也不调用前端能力",
+        "当前 Codex 始终拥有用户沟通、授权边界、七维判断、方案、实施、工作区协调、验证、复核和最终结论",
+        "不要为了满足工作流形式创建实施子 Agent、重复读取上下文或等待另一模型执行命令",
+        "只有用户明确要求独立审查或并行 Agent 工作时，才按该次授权使用子 Agent",
+        "不得仅因为需要七维判断、方案先行、严格风险或任务复杂而创建额外 Agent",
         "七个维度仍必须在内部完整判断",
-        "没有 Issue 不阻止分流",
+        "没有 Issue 不阻止七维判断或交付",
+        "复杂度只用于安排实施顺序、调查深度和验证范围，不决定是否创建 `solution.md`",
+        "目标已经稳定，并命中以下至少一个方案门槛",
+        "未命中方案门槛：`直接实现`",
+        "数据库或数据变更只有实际命中回填、兼容、发布协调或难回退门槛时才方案先行",
         "严格风险本身不自动升级为方案先行",
         "记录需要不改变交付路径",
         "记录为持久记录也不自动升级方案",
-        "不要由分流阶段提前主持方案讨论",
-        "其他准备为 `需澄清` 或 `需调查` 的情况",
+        "准备为`需澄清`或`需调查`",
         "只有准备不足、风险严格、需要持久记录或用户主动要求查看判断依据时",
+        "当前 Codex 直接实施与复核",
+        "在同一上下文中完整使用 `implementation-execution`",
+        "不创建默认实施子 Agent，也不为实施指定其他模型或推理强度",
+        "共享契约、迁移链、同一核心文件或存在前后依赖的改动按依赖顺序完成",
+        "不为了并行拆成 Agent 工作包",
+        "实现问题在确认范围内直接修正",
+        "只执行一次与任务范围匹配的自动化验证",
     )
 
     for index, marker in enumerate(protected_markers):
@@ -603,22 +853,124 @@ def test_skill_check_protects_flow_router_core_semantics(tmp_path: Path) -> None
         )
 
         assert result.returncode == 1
-        assert "七维分流契约缺少必要内容" in result.stderr
+        assert "七维判断、直接实施或回流契约缺少必要内容" in result.stderr
         assert marker in result.stderr
 
 
-def test_skill_check_protects_five_reduction_contracts(tmp_path: Path) -> None:
+def test_skill_check_rejects_mandatory_backend_extra_agent(tmp_path: Path) -> None:
+    (tmp_path / ".ai" / "prompts").mkdir(parents=True)
+    (tmp_path / ".ai" / "prompts" / "project.md").write_text(
+        "rules", encoding="utf-8"
+    )
+    skills_root = tmp_path / ".ai" / "skills"
+    skills_root.mkdir(parents=True)
+    (skills_root / "README.md").write_text("skills", encoding="utf-8")
+    source_skill = REPO_ROOT / ".ai" / "skills" / "flow-router"
+    target_skill = skills_root / "flow-router"
+    shutil.copytree(source_skill, target_skill)
+    skill_file = target_skill / "SKILL.md"
+    skill_file.write_text(
+        skill_file.read_text(encoding="utf-8")
+        + "\n自动或开启工作流时创建一个独立评估 Agent。\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        SKILL_CHECK,
+        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result.returncode == 1
+    assert "仍存在过期的入口或模型编排契约" in result.stderr
+
+
+def test_skill_check_rejects_frontend_orchestration_in_backend_workflow(
+    tmp_path: Path,
+) -> None:
+    cases = (
+        (
+            "flow-router",
+            "混合任务完成后使用 `frontend-prototype` 继续设计页面。",
+            "后端交付入口仍在编排前端工作",
+        ),
+        (
+            "implementation-execution",
+            "页面设计与前端实现由当前 Codex 继续完成。",
+            "后端实施入口仍在编排前端工作",
+        ),
+    )
+
+    for index, (skill_name, stale_rule, expected_error) in enumerate(cases):
+        case_root = tmp_path / f"case-{index}"
+        (case_root / ".ai" / "prompts").mkdir(parents=True)
+        (case_root / ".ai" / "prompts" / "project.md").write_text(
+            "rules", encoding="utf-8"
+        )
+        skills_root = case_root / ".ai" / "skills"
+        skills_root.mkdir(parents=True)
+        (skills_root / "README.md").write_text("skills", encoding="utf-8")
+        target_skill = skills_root / skill_name
+        shutil.copytree(REPO_ROOT / ".ai" / "skills" / skill_name, target_skill)
+        skill_file = target_skill / "SKILL.md"
+        skill_file.write_text(
+            skill_file.read_text(encoding="utf-8") + f"\n{stale_rule}\n",
+            encoding="utf-8",
+        )
+
+        result = run_script(
+            SKILL_CHECK,
+            env={"LINKCV_REPO_ROOT": str(case_root)},
+        )
+
+        assert result.returncode == 1
+        assert expected_error in result.stderr
+
+
+def test_skill_check_rejects_default_implementation_delegation(tmp_path: Path) -> None:
+    delegated_cases = (
+        (
+            "flow-router",
+            "每个工作包的实施 Agent 使用指定模型。",
+            "每个工作包的实施 Agent 使用",
+        ),
+        (
+            "implementation-execution",
+            "`model`: `example-model`",
+            "`model`:",
+        ),
+    )
+
+    for index, (skill_name, delegated_rule, expected_marker) in enumerate(
+        delegated_cases
+    ):
+        case_root = tmp_path / f"case-{index}"
+        (case_root / ".ai" / "prompts").mkdir(parents=True)
+        (case_root / ".ai" / "prompts" / "project.md").write_text(
+            "rules", encoding="utf-8"
+        )
+        skills_root = case_root / ".ai" / "skills"
+        skills_root.mkdir(parents=True)
+        (skills_root / "README.md").write_text("skills", encoding="utf-8")
+        target_skill = skills_root / skill_name
+        shutil.copytree(REPO_ROOT / ".ai" / "skills" / skill_name, target_skill)
+        skill_file = target_skill / "SKILL.md"
+        skill_file.write_text(
+            skill_file.read_text(encoding="utf-8") + f"\n{delegated_rule}\n",
+            encoding="utf-8",
+        )
+
+        result = run_script(
+            SKILL_CHECK,
+            env={"LINKCV_REPO_ROOT": str(case_root)},
+        )
+
+        assert result.returncode == 1
+        assert "仍存在默认实施 Agent 或模型切换契约" in result.stderr
+        assert expected_marker in result.stderr
+
+
+def test_skill_check_protects_reduction_contracts(tmp_path: Path) -> None:
     protected_cases = (
-        (
-            "module-planning",
-            "SKILL.md",
-            "没有 Issue 不阻塞模块规划",
-        ),
-        (
-            "module-planning",
-            "SKILL.md",
-            "复用该授权，不再索要一遍相同指令",
-        ),
         (
             "implementation-execution",
             "implementation_report.template.md",
@@ -637,7 +989,7 @@ def test_skill_check_protects_five_reduction_contracts(tmp_path: Path) -> None:
         (
             "run-all-tests",
             "SKILL.md",
-            "准备创建 PR 时始终运行完整 `npm run check`",
+            "同一会话中，如果任务范围验证后",
         ),
         (
             "branch-pr-workflow",
@@ -678,27 +1030,79 @@ def test_skill_check_protects_five_reduction_contracts(tmp_path: Path) -> None:
         )
 
         assert result.returncode == 1
-        assert "五项减法契约缺少必要内容" in result.stderr
+        assert "减法契约缺少必要内容" in result.stderr
         assert marker in result.stderr
 
 
-def test_skill_check_protects_flow_router_downstream_contract(tmp_path: Path) -> None:
+def test_skill_check_protects_flow_router_delivery_downstream_contract(
+    tmp_path: Path,
+) -> None:
     protected_markers = (
         (
             "implementation-execution",
-            "方案先行任务以当前 `solution.md` 为准；"
-            "直接实现以来源材料、当前确认结论和 `flow-router` 列出的严格检查项为准",
+            "本技能可以核对前端 API Client 或共享类型是否与后端契约一致，但不负责决定、实施或验收前端页面，也不调用前端能力",
             "实现入口或实施报告契约缺少必要内容",
         ),
         (
             "implementation-execution",
-            "不因选择影响大就自动升级为模块规划",
+            "方案先行任务以当前 `solution.md` 为准；"
+            "直接实现以来源材料、当前确认结论和 `flow-router` 七维简报列出的严格检查项为准",
             "实现入口或实施报告契约缺少必要内容",
+        ),
+        (
+            "implementation-execution",
+            "不因选择影响大就自动升级为另一个规划阶段",
+            "实现入口或实施报告契约缺少必要内容",
+        ),
+        (
+            "implementation-execution",
+            "复杂度可以是简单、中等或复杂",
+            "实现入口或实施报告契约缺少必要内容",
+        ),
+        (
+            "implementation-execution",
+            "复杂度、风险或记录需要变化本身不自动等于方案先行",
+            "实现入口或实施报告契约缺少必要内容",
+        ),
+        (
+            "implementation-execution",
+            "只执行当前已确认的范围，不自行扩展目标或创建实施子 Agent",
+            "实现入口或实施报告契约缺少必要内容",
+        ),
+        (
+            "implementation-execution",
+            "当前 Codex 在同一上下文中按依赖顺序直接完成实现",
+            "实现入口或实施报告契约缺少必要内容",
+        ),
+        (
+            "implementation-execution",
+            "共享契约、迁移链、同一核心文件或存在前后依赖时，必须按依赖顺序处理",
+            "实现入口或实施报告契约缺少必要内容",
+        ),
+        (
+            "implementation-execution",
+            "不要通过拆分或重新派发 Agent 绕过确认",
+            "实现入口或实施报告契约缺少必要内容",
+        ),
+        (
+            "implementation-execution",
+            "基于完整差异运行或复用一次与任务范围匹配的 `run-all-tests` 验证",
+            "实现入口或实施报告契约缺少必要内容",
+        ),
+        (
+            "flow-router",
+            "只进入一次任务级 `run-all-tests`",
+            "七维判断、直接实施或回流契约缺少必要内容",
         ),
         (
             "contract-guard",
             "已经明确属于方案先行的单需求分歧直接交 `solution-generator` 修订当前方案",
-            "七维分流下游契约缺少必要内容",
+            "领域或七维回流契约缺少必要内容",
+        ),
+        (
+            "contract-guard",
+            "只有七维判断、后端路径或后端范围可能变化时才返回 `flow-router`",
+            "领域或七维回流契约缺少必要内容",
         ),
     )
 
@@ -736,7 +1140,7 @@ def test_skill_check_protects_source_authority_and_one_way_delivery(
     cases = (
         (
             Path(".ai/skills/README.md"),
-            "飞书文档只作为方案形成前的初步设计输入",
+            "用户指定的外部材料只作为方案形成前的初始输入",
         ),
         (
             Path(".ai/skills/solution-generator/SKILL.md"),
@@ -744,11 +1148,11 @@ def test_skill_check_protects_source_authority_and_one_way_delivery(
         ),
         (
             Path(".ai/skills/implementation-execution/SKILL.md"),
-            "飞书冲突本身不触发 `module-planning`",
+            "外部初始材料与当前方案不同本身不触发新的规划阶段",
         ),
         (
             Path(".specs/README.md"),
-            "飞书只提供方案形成前的初步设计",
+            "用户指定的外部材料只提供方案或视觉设计形成前的初始输入",
         ),
         (
             Path(".ai/prompts/project.md"),
@@ -876,7 +1280,9 @@ def test_skill_check_rejects_legacy_flow_router_rule(tmp_path: Path) -> None:
     skill_file = target_skill / "SKILL.md"
     skill_file.write_text(
         skill_file.read_text(encoding="utf-8")
-        + "\n任意一条不满足即判方案先行。\n",
+        + "\n任意一条不满足即判方案先行。\n"
+        + "复杂任务：`方案先行`\n"
+        + "数据库 schema 或数据迁移通常命中迁移顺序、存量数据、兼容和回退，因此默认方案先行。\n",
         encoding="utf-8",
     )
 
@@ -886,4 +1292,6 @@ def test_skill_check_rejects_legacy_flow_router_rule(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 1
-    assert "仍含旧的一票升级判据" in result.stderr
+    assert "仍存在过期的入口或模型编排契约" in result.stderr
+    assert "复杂任务：`方案先行`" in result.stderr
+    assert "数据库 schema 或数据迁移通常命中迁移顺序、存量数据、兼容和回退，因此默认方案先行" in result.stderr

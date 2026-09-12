@@ -1,7 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
 
 function placeholderDataUri(label: string, width = 96, height = 96) {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><defs><pattern id="p" width="14" height="14" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><rect width="14" height="14" fill="#f0f0f0"/><line x1="0" y1="0" x2="0" y2="14" stroke="#e3e3e6" stroke-width="7"/></pattern></defs><rect width="100%" height="100%" fill="url(#p)"/><rect width="100%" height="100%" fill="none" stroke="#d2d2d7"/><text x="50%" y="50%" font-family="system-ui" font-size="12" fill="#8a8a8e" text-anchor="middle" dominant-baseline="middle">${label}</text></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><defs><pattern id="p" width="14" height="14" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><rect width="14" height="14" fill="#f0f0f0"/><line x1="0" y1="0" x2="0" y2="14" stroke="#e3e3e6" stroke-width="7"/></pattern></defs><rect width="100%" height="100%" fill="url(#p)"/><rect width="100%" height="100%" fill="none" stroke="#d2d2d7"/><text x="50%" y="50%" font-family="LXGW WenKai" font-size="12" fill="#8a8a8e" text-anchor="middle" dominant-baseline="middle">${label}</text></svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 

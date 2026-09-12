@@ -1,17 +1,19 @@
 import json
 import re
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from linkcv.domain.resume_document import ResumeDocumentV1
-from linkcv.domain.resume_snapshot import parse_resume_snapshot
-from linkcv.domain.resume_style import ResumeStyleV1
+from linkcv.domain.resume import (
+    CanonicalResumeDocument,
+    TemplateDefinition,
+    compile_layout_plan,
+)
 
 TEMPLATE_PACKAGE_MAX_BYTES = 512 * 1024
 TEMPLATE_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 UNSAFE_TEMPLATE_TEXT = re.compile(
-    r"<(?:script|iframe|object|embed|style|html)\b|javascript:|file://|https?://",
+    r"<[^>]+>|javascript:|file://|https?://|\{[^}]*\}|(?:^|;)\s*[-a-z]+\s*:[^;]+;",
     re.IGNORECASE,
 )
 LOCAL_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\)")
@@ -20,12 +22,24 @@ LOCAL_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\)")
 class TemplatePackage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[1]
     key: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=1000)
-    data: ResumeDocumentV1
-    style: ResumeStyleV1
+    data: CanonicalResumeDocument
+    style: TemplateDefinition
+
+    @model_validator(mode="before")
+    @classmethod
+    def require_canonical_contract(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            raise ValueError("template package must be an object")
+        data = value.get("data")
+        style = value.get("style")
+        if not isinstance(data, dict) or data.get("schema_version") != "canonical-resume.v1":
+            raise ValueError("template package requires canonical resume data")
+        if not isinstance(style, dict) or style.get("schema_version") != "template-definition.v1":
+            raise ValueError("template package requires a template definition")
+        return value
 
     @model_validator(mode="after")
     def validate_package(self) -> "TemplatePackage":
@@ -34,7 +48,9 @@ class TemplatePackage(BaseModel):
         if self.style.template_key != self.key:
             raise ValueError("style template key does not match package key")
         _reject_unsafe_values(self.model_dump(mode="json"))
-        parse_resume_snapshot(self.data, self.style)
+        if self.data.identity.name is not None or self.data.sections:
+            raise ValueError("template package data must be blank")
+        compile_layout_plan(self.data, self.style)
         return self
 
 

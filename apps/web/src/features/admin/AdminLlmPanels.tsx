@@ -20,6 +20,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { PageLoading } from "@/components/ui";
 import {
   api,
   ApiRequestError,
@@ -223,9 +224,8 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
       />
 
       {loadState === "loading" && (
-        <section className="admin-surface llm-state" aria-live="polite">
-          <span className="loading-spinner" />
-          <p>正在加载 Chat 模型配置…</p>
+        <section className="admin-surface">
+          <PageLoading label="正在加载 Chat 模型配置…" scope="panel" />
         </section>
       )}
       {loadState === "error" && (
@@ -280,7 +280,7 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
                     <span className="model-summary-icon"><Bot size={20} /></span>
                     <div>
                       <small>能力配置</small>
-                      <strong>{item.capability === "resume_structuring" ? "简历结构化" : "Pi Agent"}</strong>
+                      <strong>{capabilityLabel(item.capability)}</strong>
                       <p>
                         {item.activeModel
                           ? `已绑定 ${adapterLabels.get(item.activeModel.adapter) ?? item.activeModel.adapter} / ${item.activeModel.model}`
@@ -707,6 +707,7 @@ function GenericBindingEditor({
   const label: Record<Exclude<ModelCapability, "chat">, string> = {
     resume_structuring: "简历结构化",
     pi_agent: "Pi Agent",
+    job_image_structuring: "JD 图片解析",
   };
   const capabilityLabel = label[capability.capability as Exclude<ModelCapability, "chat">];
 
@@ -771,6 +772,13 @@ function GenericBindingEditor({
       </section>
     </div>
   );
+}
+
+function capabilityLabel(capability: ModelCapability): string {
+  if (capability === "resume_structuring") return "简历结构化";
+  if (capability === "job_image_structuring") return "JD 图片解析";
+  if (capability === "pi_agent") return "Pi Agent";
+  return "Chat";
 }
 
 function ModelEditor({
@@ -975,7 +983,7 @@ export function LogsPanel({
   return (
     <>
       {!embedded && <PanelHeading eyebrow="可观测性" title="LLM 调用日志" description="查询真实 Chat 调用的安全元数据；数据仅在手动刷新后更新。" action={<button className="admin-secondary-button" type="button" onClick={refresh} disabled={pagePending}><RefreshCw size={15} />{pagePending ? "刷新中…" : "刷新"}</button>} />}
-      {loadState === "loading" && <section className="admin-surface llm-state" aria-live="polite"><span className="loading-spinner" /><p>正在加载 LLM 调用日志…</p></section>}
+      {loadState === "loading" && <section className="admin-surface"><PageLoading label="正在加载 LLM 调用日志…" scope="panel" /></section>}
       {loadState === "error" && <section className="admin-surface llm-state llm-error" role="alert"><CircleAlert size={22} /><strong>无法加载 LLM 调用日志</strong><p>{loadError}</p><button type="button" onClick={() => void loadPage(appliedQuery, currentCursor, true)}>重试</button></section>}
       {loadState === "ready" && (
         <>

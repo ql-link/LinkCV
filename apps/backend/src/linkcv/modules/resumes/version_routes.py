@@ -7,19 +7,23 @@ from linkcv.application.resumes.service import (
     InvalidResumeVersionName,
     LatestResumeVersionRequired,
     ResumeVersionLimitExceeded,
+    ResumeVersionDataInvalid,
     create_manual_version,
     delete_resume_version,
     find_owned_resume,
+    parse_persisted_resume_snapshot,
     rename_resume_version,
     restore_resume_version,
 )
 from linkcv.core.config import Settings
 from linkcv.core.database import get_db
 from linkcv.core.errors import ApiError
-from linkcv.domain.resume_snapshot import parse_resume_snapshot
+from linkcv.core.storage import AssetStorage, get_storage
+from linkcv.domain.resume import compile_layout_plan
 from linkcv.modules.identity.dependencies import get_current_user, get_settings
 from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import ResumeVersion
+from linkcv.modules.resumes.pdf_service import validate_resume_pdf_asset_contract
 from linkcv.modules.resumes.routes import resume_record
 from linkcv.modules.resumes.schemas import (
     DeleteResumeVersionResponse,
@@ -42,19 +46,28 @@ def version_summary(version: ResumeVersion) -> ResumeVersionSummary:
         version_no=version.version_no,
         name=version.name,
         reason=version.reason,
+        template_id=str(version.template_id),
         created_at=version.created_at,
     )
 
 
 def version_record(version: ResumeVersion) -> ResumeVersionRecord:
     try:
-        snapshot = parse_resume_snapshot(version.data_json, version.style_json)
-    except ValueError as error:
+        snapshot = parse_persisted_resume_snapshot(
+            version.data_json,
+            version.style_json,
+        )
+    except (TypeError, ValueError) as error:
         raise ApiError(500, "RESUME_SCHEMA_INVALID") from error
     return ResumeVersionRecord(
         **version_summary(version).model_dump(),
         data=snapshot.data,
         style=snapshot.style,
+        layout_plan=compile_layout_plan(
+            snapshot.data,
+            snapshot.style.template_snapshot,
+            snapshot.style,
+        ),
     )
 
 
@@ -105,6 +118,8 @@ def create_version(
         raise ApiError(409, "VERSION_CONFLICT") from error
     except InvalidResumeVersionName as error:
         raise ApiError(400, "INVALID_RESUME_VERSION_NAME") from error
+    except ResumeVersionDataInvalid as error:
+        raise ApiError(422, "RESUME_VERSION_DATA_INVALID") from error
     except ValueError as error:
         raise ApiError(500, "RESUME_SCHEMA_INVALID") from error
     if version is None:
@@ -183,7 +198,23 @@ def restore_version(
     version_no: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    storage: AssetStorage = Depends(get_storage),
 ) -> ResumeResponse:
+    owned_resume_id = require_owned_resume_id(db, resume_id, user.id)
+    target = db.scalar(
+        select(ResumeVersion).where(
+            ResumeVersion.resume_id == owned_resume_id,
+            ResumeVersion.version_no == version_no,
+        )
+    )
+    if target is None:
+        raise ApiError(404, "RESUME_VERSION_NOT_FOUND")
+    validate_resume_pdf_asset_contract(
+        storage,
+        target.data_json,
+        user_id=user.id,
+        resume_id=owned_resume_id,
+    )
     try:
         resume = restore_resume_version(
             db,
@@ -193,6 +224,8 @@ def restore_version(
         )
     except IntegrityError as error:
         raise ApiError(409, "VERSION_CONFLICT") from error
+    except ResumeVersionDataInvalid as error:
+        raise ApiError(422, "RESUME_VERSION_DATA_INVALID") from error
     except ValueError as error:
         raise ApiError(500, "RESUME_SCHEMA_INVALID") from error
     if resume is None:

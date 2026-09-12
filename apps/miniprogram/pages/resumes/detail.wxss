@@ -1,8 +1,10 @@
 .page {
   min-height: 100vh;
-  padding: 24rpx 32rpx calc(48rpx + env(safe-area-inset-bottom));
+  padding: 16rpx 24rpx calc(24rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
-  background: var(--ui-background);
+  background: #f6f8fa;
+  display: flex;
+  flex-direction: column;
 }
 
 .preview-state {
@@ -61,18 +63,42 @@
 }
 
 .preview-document {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
+  width: 100%;
+}
+
+/* 专用图片可手势交互视口区域（纯粹双指捏合缩放与拖拽） */
+.preview-viewport {
+  width: 100%;
+  height: calc(100vh - 100rpx - env(safe-area-inset-bottom));
+  overflow: hidden;
+  border-radius: 28rpx;
+  background: #e2e8f0;
+  border: 1rpx solid rgba(15, 23, 42, 0.06);
+  position: relative;
+  box-sizing: border-box;
+}
+
+.preview-movable-sheet {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 12rpx;
 }
 
 .preview-paper {
   width: 100%;
   overflow: hidden;
-  border: 1rpx solid var(--ui-border);
-  border-radius: 16rpx;
-  background: var(--ui-surface);
-  box-shadow: var(--ui-shadow-md);
+  border-radius: 20rpx;
+  background: #ffffff;
+  border: 1rpx solid rgba(15, 23, 42, 0.06);
+  box-shadow: 0 10rpx 32rpx -6rpx rgba(15, 23, 42, 0.12), 0 2rpx 8rpx rgba(15, 23, 42, 0.04);
 }
 
 .resume-preview-image {
@@ -81,7 +107,275 @@
 }
 
 .preview-footnote {
-  margin-top: 24rpx;
-  color: var(--ui-text-subtle);
+  margin-top: 16rpx;
+  color: #94a3b8;
+  font-size: 21rpx;
+  letter-spacing: 0.2rpx;
+}
+
+/* 游客示例简历：沿用详情页的白纸、冷灰视口和圆角语言，内容完全内置 */
+.demo-preview-document {
+  min-height: 100vh;
+}
+
+.demo-preview-viewport {
+  padding: 12rpx 0;
+  box-sizing: border-box;
+}
+
+.demo-resume-paper {
+  width: calc(100% - 24rpx);
+  min-height: 100%;
+  margin: 0 12rpx;
+  padding: 36rpx 30rpx 48rpx;
+  box-sizing: border-box;
+}
+
+.demo-resume-label {
+  display: inline-flex;
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  background: var(--ui-surface-muted);
+  color: var(--ui-accent);
   font-size: 20rpx;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.demo-resume-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24rpx;
+  margin-top: 30rpx;
+}
+
+.demo-resume-heading {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.demo-resume-name {
+  display: block;
+  color: var(--ui-foreground);
+  font-size: 44rpx;
+  font-weight: 700;
+  letter-spacing: -1rpx;
+  line-height: 1.15;
+}
+
+.demo-resume-role {
+  margin-top: 10rpx;
+  color: var(--ui-text-secondary);
+  font-size: 24rpx;
+  line-height: 1.4;
+}
+
+.demo-resume-monogram {
+  width: 78rpx;
+  height: 78rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 20rpx;
+  background: var(--ui-primary);
+  color: #ffffff;
+  font-size: 24rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+}
+
+.demo-resume-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  margin-top: 24rpx;
+  padding: 18rpx 0 20rpx;
+  border-top: 1rpx solid var(--ui-border);
+  border-bottom: 1rpx solid var(--ui-border);
+  color: var(--ui-text-muted);
+  font-size: 21rpx;
+  line-height: 1.55;
+}
+
+.demo-resume-contact-item {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.demo-resume-section {
+  margin-top: 34rpx;
+}
+
+.demo-resume-section-title {
+  display: block;
+  padding-left: 14rpx;
+  border-left: 5rpx solid var(--ui-accent);
+  color: var(--ui-foreground);
+  font-size: 25rpx;
+  font-weight: 700;
+  letter-spacing: 0.2rpx;
+  line-height: 1.4;
+}
+
+.demo-resume-summary,
+.demo-resume-project-copy,
+.demo-resume-bullet-copy,
+.demo-resume-education-major,
+.demo-resume-education-period {
+  display: block;
+  color: var(--ui-text-secondary);
+  font-size: 22rpx;
+  line-height: 1.65;
+}
+
+.demo-resume-summary {
+  margin-top: 12rpx;
+  line-height: 1.75;
+}
+
+.demo-resume-entry {
+  margin-top: 22rpx;
+}
+
+.demo-resume-entry + .demo-resume-entry {
+  margin-top: 22rpx;
+  padding-top: 24rpx;
+  border-top: 1rpx solid var(--ui-border);
+}
+
+.demo-resume-entry-heading {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6rpx;
+}
+
+.demo-resume-entry-title {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.demo-resume-company {
+  color: var(--ui-foreground);
+  font-size: 23rpx;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.demo-resume-position,
+.demo-resume-period {
+  color: var(--ui-text-muted);
+  font-size: 20rpx;
+  line-height: 1.45;
+}
+
+.demo-resume-position {
+  margin-top: 4rpx;
+}
+
+.demo-resume-period {
+  flex-shrink: 0;
+  letter-spacing: 0.2rpx;
+}
+
+.demo-resume-bullet {
+  display: flex;
+  align-items: flex-start;
+  gap: 10rpx;
+  margin-top: 12rpx;
+}
+
+.demo-resume-bullet-mark {
+  flex-shrink: 0;
+  color: var(--ui-accent);
+  font-size: 24rpx;
+  line-height: 1.45;
+}
+
+.demo-resume-bullet-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.demo-resume-project {
+  margin-top: 18rpx;
+  padding: 20rpx 20rpx 22rpx;
+  border: 1rpx solid var(--ui-border);
+  border-radius: 18rpx;
+  background: var(--ui-surface-subtle);
+}
+
+.demo-resume-project-name {
+  display: block;
+  color: var(--ui-foreground);
+  font-size: 22rpx;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.demo-resume-project-copy {
+  margin-top: 8rpx;
+  line-height: 1.65;
+}
+
+.demo-resume-bottom-grid {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 28rpx;
+}
+
+.demo-resume-column {
+  width: 100%;
+  min-width: 0;
+}
+
+.demo-resume-column + .demo-resume-column {
+  padding-top: 26rpx;
+  border-top: 1rpx solid var(--ui-border);
+}
+
+.demo-resume-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 14rpx;
+}
+
+.demo-resume-skill {
+  padding: 8rpx 12rpx;
+  border-radius: 999rpx;
+  background: var(--ui-surface-muted);
+  color: var(--ui-text-secondary);
+  font-size: 19rpx;
+  line-height: 1.35;
+}
+
+.demo-resume-education-school {
+  display: block;
+  margin-top: 14rpx;
+  color: var(--ui-text-secondary);
+  font-size: 22rpx;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.demo-resume-education-major,
+.demo-resume-education-period {
+  margin-top: 4rpx;
+}
+
+.demo-resume-disclaimer {
+  display: block;
+  margin-top: 38rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx solid var(--ui-border);
+  color: var(--ui-text-subtle);
+  font-size: 19rpx;
+  line-height: 1.55;
 }

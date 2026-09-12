@@ -31,6 +31,17 @@ afterEach(() => {
 });
 
 describe("AuthPage environment-aware login", () => {
+  it("确认登录方式时使用统一的面板加载状态", () => {
+    vi.mocked(api.authCapabilities).mockReturnValue(new Promise(() => {}));
+
+    render(<AuthPage initialMode="login" />);
+
+    expect(screen.getByRole("status", { name: "正在确认登录方式…" })).toHaveClass(
+      "page-loading",
+      "is-panel",
+    );
+  });
+
   it("生产环境的注册或登录入口都只展示微信二维码，不展示表单", async () => {
     vi.spyOn(api, "wechatStatus").mockResolvedValue({
       status: "pending",
@@ -39,8 +50,10 @@ describe("AuthPage environment-aware login", () => {
 
     const { rerender } = render(<AuthPage initialMode="login" />);
     await act(async () => {});
-    expect(screen.getByRole("heading", { name: "微信扫码登录 LinkCV" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "微信扫码登录 LinkResume" })).toBeInTheDocument();
     expect(screen.getByAltText("微信扫码登录二维码")).toBeInTheDocument();
+    expect(screen.getByText("扫码后在微信中确认登录，保障账号安全")).toBeInTheDocument();
+    expect(document.querySelector(".wechat-qr-panel--auth")).toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(document.querySelector("form")).toBeNull();
 
@@ -63,7 +76,7 @@ describe("AuthPage environment-aware login", () => {
     render(<AuthPage initialMode="login" />);
     await act(async () => {});
 
-    expect(screen.getByRole("heading", { name: "登录 LinkCV" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "登录 LinkResume" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "邮箱" })).toBeInTheDocument();
     expect(screen.getByLabelText("密码")).toBeInTheDocument();
     expect(screen.queryByAltText("微信扫码登录二维码")).not.toBeInTheDocument();
@@ -98,7 +111,7 @@ describe("AuthPage environment-aware login", () => {
     render(<AuthPage initialMode="register" />);
     await act(async () => {});
 
-    expect(screen.getByRole("heading", { name: "注册 LinkCV" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "注册 LinkResume" })).toBeInTheDocument();
     expect(screen.getByLabelText("密码")).toHaveAttribute("autocomplete", "new-password");
     fireEvent.change(screen.getByRole("textbox", { name: "邮箱" }), {
       target: { value: "new@example.test" },

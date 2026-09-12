@@ -1,4 +1,6 @@
+from collections.abc import Callable
 from datetime import timedelta, timezone
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import delete, func, select
@@ -9,8 +11,8 @@ from linkcv.core.errors import ApiError
 from linkcv.application.resumes.service import (
     ResumeVersionLimitExceeded,
     append_resume_version,
+    parse_persisted_resume_snapshot,
 )
-from linkcv.domain.resume_snapshot import parse_resume_snapshot
 from linkcv.modules.agent.models import (
     AgentMessage,
     AgentRun,
@@ -20,6 +22,7 @@ from linkcv.modules.agent.models import (
 )
 from linkcv.modules.agent.schemas import (
     AgentMessageRecord,
+    AgentContextSnapshot,
     AgentSessionRecord,
     ProposalRecord,
     ResumeTargetLocator,
@@ -39,10 +42,28 @@ from linkcv.modules.resumes.models import Resume
 def session_record(
     session: AgentSession, messages: list[AgentMessage] | None = None
 ) -> AgentSessionRecord:
+    def message_contexts(item: AgentMessage) -> list[AgentContextSnapshot] | None:
+        if item.message_type != "text" or not isinstance(item.metadata_json, dict):
+            return None
+        raw = item.metadata_json.get("contexts")
+        if not isinstance(raw, list):
+            return None
+        contexts: list[AgentContextSnapshot] = []
+        for value in raw:
+            try:
+                contexts.append(AgentContextSnapshot.model_validate(value))
+            except Exception:
+                # A malformed historical metadata blob must not make the whole
+                # conversation unreadable.  It is never treated as an active
+                # authorization grant.
+                continue
+        return contexts or None
+
     return AgentSessionRecord(
         id=session.public_id,
         resume_id=str(session.resume_id) if session.resume_id is not None else None,
         title=session.title,
+        pinned=bool(getattr(session, "pinned", False)),
         status=session.status,
         last_message_at=session.last_message_at,
         created_at=session.created_at,
@@ -54,10 +75,9 @@ def session_record(
                 message_type=item.message_type,
                 content=item.content,
                 clarification=(
-                    item.metadata_json
-                    if item.message_type == "clarification"
-                    else None
+                    item.metadata_json if item.message_type == "clarification" else None
                 ),
+                contexts=message_contexts(item),
                 created_at=item.created_at,
             )
             for item in (messages or [])
@@ -68,7 +88,7 @@ def session_record(
 def proposal_record(
     proposal: ResumeChangeProposal, run_public_id: str
 ) -> ProposalRecord:
-    snapshot = parse_resume_snapshot(
+    snapshot = parse_persisted_resume_snapshot(
         proposal.proposed_data_json, proposal.proposed_style_json
     )
     return ProposalRecord(
@@ -101,6 +121,98 @@ def get_owned_session(db: Session, public_id: str, user_id: int) -> AgentSession
     if record is None:
         raise ApiError(404, "AGENT_SESSION_NOT_FOUND")
     return record
+
+
+def update_session(
+    db: Session,
+    *,
+    public_id: str,
+    user_id: int,
+    fields: set[str],
+    title: str | None = None,
+    pinned: bool | None = None,
+) -> AgentSession:
+    """Update only presentation state on an owner-scoped Agent session."""
+    if not fields:
+        raise ApiError(400, "INVALID_AGENT_SESSION")
+
+    record = db.scalar(
+        select(AgentSession)
+        .where(
+            AgentSession.public_id == public_id,
+            AgentSession.user_id == user_id,
+        )
+        .with_for_update()
+    )
+    if record is None:
+        raise ApiError(404, "AGENT_SESSION_NOT_FOUND")
+
+    if "title" in fields:
+        normalized_title = " ".join((title or "").split())
+        if not normalized_title or len(normalized_title) > 128:
+            raise ApiError(400, "INVALID_AGENT_SESSION")
+        record.title = normalized_title
+    if "pinned" in fields:
+        if pinned is None:
+            raise ApiError(400, "INVALID_AGENT_SESSION")
+        record.pinned = pinned
+    record.updated_at = utc_now()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    db.refresh(record)
+    return record
+
+
+def delete_session(db: Session, *, public_id: str, user_id: int) -> None:
+    """Delete one owned session and all of its Agent-owned dependent rows."""
+    session = db.scalar(
+        select(AgentSession)
+        .where(
+            AgentSession.public_id == public_id,
+            AgentSession.user_id == user_id,
+        )
+        .with_for_update()
+    )
+    if session is None:
+        raise ApiError(404, "AGENT_SESSION_NOT_FOUND")
+
+    runs = list(
+        db.scalars(
+            select(AgentRun).where(AgentRun.session_id == session.id).with_for_update()
+        ).all()
+    )
+    if any(run.status == "running" for run in runs):
+        db.rollback()
+        raise ApiError(409, "AGENT_RUN_IN_PROGRESS")
+
+    run_ids = [run.id for run in runs]
+    try:
+        # These tables are intentionally not linked by database foreign keys;
+        # keep the logical dependency order explicit for safe hard deletion.
+        if run_ids:
+            db.execute(
+                delete(ResumeChangeProposal).where(
+                    ResumeChangeProposal.run_id.in_(run_ids),
+                    ResumeChangeProposal.user_id == user_id,
+                )
+            )
+            db.execute(delete(AgentToolCall).where(AgentToolCall.run_id.in_(run_ids)))
+        db.execute(delete(AgentMessage).where(AgentMessage.session_id == session.id))
+        if run_ids:
+            db.execute(delete(AgentRun).where(AgentRun.id.in_(run_ids)))
+        db.execute(
+            delete(AgentSession).where(
+                AgentSession.id == session.id,
+                AgentSession.user_id == user_id,
+            )
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
 
 def create_session(
@@ -145,12 +257,39 @@ def create_run(
     idempotency_key: str,
     timeout_seconds: float,
     reply_to_sequence_no: int | None = None,
+    context_snapshots: list[AgentContextSnapshot] | None = None,
 ) -> tuple[AgentRun, bool]:
+    normalized_content = content.strip()
+    if not normalized_content:
+        raise ApiError(400, "INVALID_AGENT_MESSAGE")
+    context_snapshots = context_snapshots or []
+    context_resume_ids = {
+        item.resume_id for item in context_snapshots if item.resume_id is not None
+    }
+    target_resume_ids = {
+        item.resume_id
+        for item in context_snapshots
+        if item.type in {"resume", "resume_version"} and item.resume_id is not None
+    }
+    if len(target_resume_ids) > 1:
+        raise ApiError(409, "AGENT_SESSION_RESUME_MISMATCH")
+
     # Serialize run creation for the whole account so opening multiple sessions
     # cannot bypass the concurrency guard and multiply model cost. The
     # idempotency lookup intentionally happens after this lock to close the race
     # between two simultaneous retries with the same key.
     db.execute(select(User.id).where(User.id == session.user_id).with_for_update())
+    locked_session = db.scalar(
+        select(AgentSession)
+        .where(
+            AgentSession.id == session.id,
+            AgentSession.user_id == session.user_id,
+        )
+        .with_for_update()
+    )
+    if locked_session is None:
+        raise ApiError(404, "AGENT_SESSION_NOT_FOUND")
+    session = locked_session
     existing = db.scalar(
         select(AgentRun).where(
             AgentRun.session_id == session.id,
@@ -174,6 +313,22 @@ def create_run(
             or latest_message.message_type != "clarification"
         ):
             raise ApiError(409, "AGENT_CLARIFICATION_STALE")
+    target_resume_id = next(iter(target_resume_ids), None)
+    expected_resume_id = (
+        str(session.resume_id) if session.resume_id is not None else target_resume_id
+    )
+    if expected_resume_id is not None and any(
+        resume_id != expected_resume_id for resume_id in context_resume_ids
+    ):
+        raise ApiError(409, "AGENT_SESSION_RESUME_MISMATCH")
+    if target_resume_id is not None:
+        if session.resume_id is not None and str(session.resume_id) != target_resume_id:
+            raise ApiError(409, "AGENT_SESSION_RESUME_MISMATCH")
+        if session.resume_id is None:
+            # Context resolution already checked ownership and held the source
+            # row where possible.  The session binding and user message are
+            # committed below together with the run.
+            session.resume_id = int(target_resume_id)
     running = db.scalars(
         select(AgentRun)
         .join(AgentSession, AgentSession.id == AgentRun.session_id)
@@ -223,11 +378,21 @@ def create_run(
             run_id=run.id,
             sequence_no=sequence_no,
             role="user",
-            content=content.strip(),
+            content=normalized_content,
+            metadata_json=(
+                {
+                    "version": 1,
+                    "contexts": [
+                        item.model_dump(mode="json") for item in context_snapshots
+                    ],
+                }
+                if context_snapshots
+                else None
+            ),
         )
     )
     if sequence_no == 1 and session.title == "新对话":
-        title_source = " ".join(content.split())
+        title_source = " ".join(normalized_content.split())
         session.title = title_source[:24] + ("…" if len(title_source) > 24 else "")
     session.last_message_at = now
     db.commit()
@@ -277,7 +442,7 @@ def create_proposal(
     )
     if existing is not None:
         return existing
-    snapshot = parse_resume_snapshot(data, style)
+    snapshot = parse_persisted_resume_snapshot(data, style)
     proposal = ResumeChangeProposal(
         public_id=str(uuid4()),
         run_id=run.id,
@@ -353,7 +518,7 @@ def create_scoped_proposal(
         raise ApiError(422, "DIAGNOSIS_REQUIRED")
     if payload.mode == "generate_from_materials" and not source_refs:
         raise ApiError(422, "SOURCE_REQUIRED")
-    snapshot = parse_resume_snapshot(resume.data_json, resume.style_json)
+    snapshot = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
     target_content(resume, snapshot.data, payload.target, "target")
     markdown = editor_markdown(snapshot.data)
     if markdown is None:
@@ -364,7 +529,7 @@ def create_scoped_proposal(
         main_target=payload.target,
         operations=payload.operations,
     )
-    updated_snapshot = parse_resume_snapshot(
+    updated_snapshot = parse_persisted_resume_snapshot(
         replace_editor_markdown(snapshot.data, updated_markdown), snapshot.style
     )
     proposal = ResumeChangeProposal(
@@ -394,7 +559,12 @@ def create_scoped_proposal(
 
 
 def confirm_proposal(
-    db: Session, *, public_id: str, user_id: int, version_limit: int
+    db: Session,
+    *,
+    public_id: str,
+    user_id: int,
+    version_limit: int,
+    validate_resume_data: Callable[[dict[str, Any], int], None] | None = None,
 ) -> tuple[ResumeChangeProposal, Resume]:
     proposal = db.scalar(
         select(ResumeChangeProposal)
@@ -430,17 +600,20 @@ def confirm_proposal(
         raise ApiError(409, "RESUME_EDIT_CONFLICT")
     if proposal.target_locator_json is not None:
         try:
-            current = parse_resume_snapshot(resume.data_json, resume.style_json)
+            current = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
             target = ResumeTargetLocator.model_validate(proposal.target_locator_json)
             target_content(resume, current.data, target, "target")
         except (ApiError, ValueError):
             proposal.status = "conflicted"
             db.commit()
             raise ApiError(409, "TARGET_STALE")
-    snapshot = parse_resume_snapshot(
+    snapshot = parse_persisted_resume_snapshot(
         proposal.proposed_data_json, proposal.proposed_style_json
     )
-    resume.data_json = snapshot.data.model_dump(mode="json")
+    proposed_data = snapshot.data.model_dump(mode="json")
+    if validate_resume_data is not None:
+        validate_resume_data(proposed_data, resume.id)
+    resume.data_json = proposed_data
     resume.style_json = snapshot.style.model_dump(mode="json")
     resume.lock_version += 1
     try:

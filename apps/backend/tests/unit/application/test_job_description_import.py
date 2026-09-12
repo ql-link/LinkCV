@@ -26,6 +26,7 @@ def import_payload(**capture_overrides: object) -> JobDescriptionImportRequest:
 def test_capture_is_cleaned_and_mapped_to_existing_storage_contract() -> None:
     result = build_job_description_from_capture(
         import_payload(
+            logo_url="https://cdn.example.test/logos/example.png",
             salary_text="15-25K·13薪",
             employment_type_text="全职",
             work_schedule_text="支持远程办公",
@@ -36,6 +37,7 @@ def test_capture_is_cleaned_and_mapped_to_existing_storage_contract() -> None:
 
     assert result.job_title == "高级 Python 工程师"
     assert result.company_name == "示例 科技"
+    assert result.logo_url == "https://cdn.example.test/logos/example.png"
     assert result.description == "负责平台开发。"
     assert result.skills == ["Python", "FastAPI"]
     assert result.experience_requirement is None
@@ -69,3 +71,19 @@ def test_non_boss_or_incomplete_capture_is_rejected(
 
     with pytest.raises(InvalidJobImport):
         build_job_description_from_capture(payload)
+
+
+def test_capture_rejects_non_https_logo_url() -> None:
+    with pytest.raises(ValueError, match="HTTPS"):
+        import_payload(logo_url="http://cdn.example.test/logo.png")
+
+
+def test_employment_classification_prioritizes_internship_and_campus() -> None:
+    from linkcv.application.job_descriptions.import_service import _employment_type
+
+    for raw, expected in [
+        ("校招 全职", "campus"), ("校园招聘", "campus"), ("应届毕业生", "campus"),
+        ("校招实习", "internship"), ("社招", "full_time"), ("正式", "full_time"),
+        ("全职", "full_time"), ("兼职", None), ("合同", None), (None, None),
+    ]:
+        assert _employment_type(raw) == expected

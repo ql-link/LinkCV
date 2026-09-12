@@ -1,12 +1,23 @@
+from copy import deepcopy
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from linkcv.application.resumes import service as resume_service
 from linkcv.core.config import Settings
-from linkcv.domain.resume_document import default_resume_document
 from linkcv.domain.resume_style import default_resume_style
 from linkcv.main import create_app
-from linkcv.modules.resumes.models import ResumeTemplate, ResumeVersion
+from linkcv.modules.llm.dependencies import get_llm_service
+from linkcv.modules.llm.service import LLMError
+from linkcv.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
+from linkcv.modules.resumes.routes import resume_content_hash
+from linkcv.modules.resumes.schemas import (
+    SemanticClassificationModelResult,
+    SemanticClassificationSuggestion,
+)
 from tests.fakes import FakeRedis
+from tests.canonical_resume_fixtures import canonical_template_payload
 
 
 class FakeStorage:
@@ -32,12 +43,13 @@ def build_app(version_limit: int = 10):
         create_schema=True,
     )
     with app.state.session_factory() as session:
+        template_data, template_style = canonical_template_payload(key="blank-cn")
         template = ResumeTemplate(
             key="blank-cn",
             name="空白简历",
             description="测试默认模板",
-            data_json=default_resume_document().model_dump(mode="json"),
-            style_json=default_resume_style().model_dump(mode="json"),
+            data_json=template_data,
+            style_json=template_style,
             is_active=1,
         )
         session.add(template)
@@ -61,6 +73,78 @@ def create_resume(client: TestClient, app, title: str = "测试简历"):
     )
 
 
+class FakeSemanticClassificationService:
+    def __init__(self, *, unavailable: bool = False, on_call=None) -> None:
+        self.unavailable = unavailable
+        self.on_call = on_call
+        self.calls = 0
+
+    async def structured_chat(self, *_args, **_kwargs):
+        self.calls += 1
+        if self.on_call is not None:
+            self.on_call()
+        if self.unavailable:
+            raise LLMError("LLM_UNAVAILABLE", "llmcall_semantic_test")
+        return SimpleNamespace(
+            value=SemanticClassificationModelResult(
+                suggestions=[
+                    SemanticClassificationSuggestion(
+                        section_id="semantic_growth",
+                        semantic_kind="work",
+                        confidence=0.92,
+                        reason="正文描述了企业工作职责",
+                    )
+                ]
+            )
+        )
+
+
+def add_unclassified_section(client: TestClient, resume: dict) -> dict:
+    data = resume["data"]
+    data["sections"].append({
+        "node_id": "node_growth0000000001",
+        "source_refs": [],
+        "semantic_kind": "custom",
+        "title": {
+            "node_id": "node_growthtitle000001",
+            "source_refs": [],
+            "value": "成长轨迹",
+        },
+        "entries": [],
+        "blocks": [{
+            "node_id": "node_growthbody0000001",
+            "source_refs": [],
+            "block_type": "paragraph",
+            "runs": [{
+                "inline_type": "text",
+                "text": "在虚构公司负责客户运营和数据复盘",
+                "marks": [],
+                "href": None,
+                "style": {"color": None, "font_size_pt": None, "highlight_color": None},
+            }],
+        }],
+    })
+    response = client.put(
+        f"/api/resumes/{resume['id']}",
+        json={"data": data, "base_lock_version": resume["lock_version"]},
+    )
+    assert response.status_code == 200
+    return response.json()["resume"]
+
+
+def set_headline(data: dict, value: str | None) -> dict:
+    data["identity"]["headline"] = (
+        {
+            "node_id": "node_headline00000001",
+            "source_refs": [],
+            "value": value,
+        }
+        if value is not None
+        else None
+    )
+    return data
+
+
 def test_blank_create_update_versions_and_restore() -> None:
     app = build_app()
     with TestClient(app) as client:
@@ -68,8 +152,8 @@ def test_blank_create_update_versions_and_restore() -> None:
         created = create_resume(client, app)
         assert created.status_code == 201
         resume = created.json()["resume"]
-        assert resume["data"]["schema_version"] == "1.0"
-        assert resume["style"]["schema_version"] == "1.0"
+        assert resume["data"]["schema_version"] == "canonical-resume.v1"
+        assert resume["layout_plan"]["schema_version"] == "layout-plan.v1"
         assert resume["lock_version"] == 1
         resume_id = resume["id"]
 
@@ -82,7 +166,7 @@ def test_blank_create_update_versions_and_restore() -> None:
             assert initial.name == "初始版本"
 
         first_data = resume["data"]
-        first_data["basics"]["headline"] = "第一次保存"
+        set_headline(first_data, "第一次保存")
         updated = client.put(
             f"/api/resumes/{resume_id}",
             json={"data": first_data, "base_lock_version": 1},
@@ -124,7 +208,7 @@ def test_blank_create_update_versions_and_restore() -> None:
         assert manual.json()["version"]["name"] == "投递 版本"
 
         second_data = updated.json()["resume"]["data"]
-        second_data["basics"]["headline"] = "尚未保存版本的草稿"
+        set_headline(second_data, "尚未保存版本的草稿")
         saved = client.put(
             f"/api/resumes/{resume_id}",
             json={"data": second_data, "base_lock_version": 2},
@@ -134,7 +218,7 @@ def test_blank_create_update_versions_and_restore() -> None:
         restored = client.post(f"/api/resumes/{resume_id}/versions/1/restore")
         assert restored.status_code == 200
         restored_resume = restored.json()["resume"]
-        assert restored_resume["data"]["basics"]["headline"] == "后端开发工程师"
+        assert restored_resume["data"]["identity"]["headline"] is None
         assert restored_resume["lock_version"] == 4
 
         versions = client.get(f"/api/resumes/{resume_id}/versions").json()["versions"]
@@ -142,6 +226,176 @@ def test_blank_create_update_versions_and_restore() -> None:
             (2, "manual"),
             (1, "initial"),
         ]
+
+
+def test_update_persists_canonical_ordered_list_start() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        resume = create_resume(client, app).json()["resume"]
+        data = resume["data"]
+        data["sections"].append({
+            "node_id": "node_section1111111111",
+            "source_refs": [],
+            "semantic_kind": "work",
+            "title": None,
+            "entries": [],
+            "blocks": [{
+                "node_id": "node_list111111111111",
+                "block_type": "ordered_list",
+                "start": 3,
+                "items": [{
+                    "node_id": "node_item111111111111",
+                    "source_refs": [],
+                    "runs": [{
+                        "inline_type": "text",
+                        "text": "第一项",
+                        "marks": [],
+                        "href": None,
+                        "style": {"color": None, "font_size_pt": None, "highlight_color": None},
+                    }],
+                }],
+            }],
+        })
+
+        response = client.put(
+            f"/api/resumes/{resume['id']}",
+            json={"data": data, "base_lock_version": resume["lock_version"]},
+        )
+
+        assert response.status_code == 200
+        saved = response.json()["resume"]["data"]["sections"][0]["blocks"][0]
+        assert saved["block_type"] == "ordered_list"
+        assert saved["start"] == 3
+
+
+def test_update_persists_empty_canonical_list_item() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        resume = create_resume(client, app).json()["resume"]
+        data = resume["data"]
+        data["sections"].append({
+            "node_id": "node_section1111111111",
+            "source_refs": [],
+            "semantic_kind": "work",
+            "title": None,
+            "entries": [],
+            "blocks": [{
+                "node_id": "node_list111111111111",
+                "block_type": "ordered_list",
+                "start": 1,
+                "items": [{
+                    "node_id": "node_item111111111111",
+                    "source_refs": [],
+                    "runs": [],
+                }],
+            }],
+        })
+
+        response = client.put(
+            f"/api/resumes/{resume['id']}",
+            json={"data": data, "base_lock_version": resume["lock_version"]},
+        )
+
+        assert response.status_code == 200
+        saved = response.json()["resume"]["data"]["sections"][0]["blocks"][0]
+        assert saved["items"][0]["runs"] == []
+
+
+def test_semantic_classification_returns_scoped_suggestion_without_writing_resume() -> None:
+    app = build_app()
+    service = FakeSemanticClassificationService()
+    app.dependency_overrides[get_llm_service] = lambda: service
+    with TestClient(app) as client:
+        register(client)
+        resume = add_unclassified_section(
+            client,
+            create_resume(client, app).json()["resume"],
+        )
+        content_hash = resume_content_hash(resume["data"])
+
+        response = client.post(
+            f"/api/resumes/{resume['id']}/semantic-classification",
+            json={"content_hash": content_hash, "section_ids": ["node_growth0000000001"]},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "content_hash": content_hash,
+            "suggestions": [],
+        }
+        unchanged = client.get(f"/api/resumes/{resume['id']}").json()["resume"]
+        assert unchanged["lock_version"] == resume["lock_version"]
+        assert unchanged["data"] == resume["data"]
+
+        repeated = client.post(
+            f"/api/resumes/{resume['id']}/semantic-classification",
+            json={"content_hash": content_hash, "section_ids": ["node_growth0000000001"]},
+        )
+        assert repeated.json() == response.json()
+        assert service.calls == 0
+
+
+def test_semantic_classification_rejects_stale_content_and_service_failure() -> None:
+    app = build_app()
+    service = FakeSemanticClassificationService(unavailable=True)
+    app.dependency_overrides[get_llm_service] = lambda: service
+    with TestClient(app) as client:
+        register(client)
+        resume = add_unclassified_section(
+            client,
+            create_resume(client, app).json()["resume"],
+        )
+
+        stale = client.post(
+            f"/api/resumes/{resume['id']}/semantic-classification",
+            json={"content_hash": "sha256:" + "0" * 64},
+        )
+        assert stale.status_code == 409
+        assert stale.json() == {"error": "RESUME_SEMANTIC_CLASSIFICATION_STALE"}
+
+        unavailable = client.post(
+            f"/api/resumes/{resume['id']}/semantic-classification",
+            json={"content_hash": resume_content_hash(resume["data"])},
+        )
+        assert unavailable.status_code == 200
+        assert unavailable.json()["suggestions"] == []
+        assert service.calls == 0
+
+
+def test_semantic_classification_rechecks_content_after_model_returns() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        resume = add_unclassified_section(
+            client,
+            create_resume(client, app).json()["resume"],
+        )
+
+        def edit_during_model_call() -> None:
+            with app.state.session_factory() as db:
+                stored = db.get(Resume, int(resume["id"]))
+                assert stored is not None
+                next_data = dict(stored.data_json)
+                next_data["basics"] = {
+                    **next_data["basics"],
+                    "headline": "模型调用期间的新编辑",
+                }
+                stored.data_json = next_data
+                stored.lock_version += 1
+                db.commit()
+
+        service = FakeSemanticClassificationService(on_call=edit_during_model_call)
+        app.dependency_overrides[get_llm_service] = lambda: service
+        response = client.post(
+            f"/api/resumes/{resume['id']}/semantic-classification",
+            json={"content_hash": resume_content_hash(resume["data"])},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["suggestions"] == []
+        assert service.calls == 0
 
 
 def test_manual_version_name_rejects_blank_and_overlong_values() -> None:
@@ -205,19 +459,21 @@ def test_historical_version_can_be_renamed_without_changing_snapshot() -> None:
 def test_template_creation_copies_snapshot_and_filters_inactive_templates() -> None:
     app = build_app()
     with app.state.session_factory() as session:
+        active_data, active_style = canonical_template_payload(key="classic-cn")
+        inactive_data, inactive_style = canonical_template_payload(key="inactive")
         active = ResumeTemplate(
             key="classic-cn",
             name="经典中文",
             description="示例模板",
-            data_json=default_resume_document().model_dump(mode="json"),
-            style_json=default_resume_style().model_dump(mode="json"),
+            data_json=active_data,
+            style_json=active_style,
             is_active=1,
         )
         inactive = ResumeTemplate(
             key="inactive",
             name="已停用",
-            data_json=default_resume_document().model_dump(mode="json"),
-            style_json=default_resume_style().model_dump(mode="json"),
+            data_json=inactive_data,
+            style_json=inactive_style,
             is_active=0,
         )
         session.add_all([active, inactive])
@@ -246,6 +502,118 @@ def test_template_creation_copies_snapshot_and_filters_inactive_templates() -> N
         )
         assert rejected.status_code == 422
         assert rejected.json() == {"error": "TEMPLATE_INACTIVE"}
+
+
+def test_apply_template_atomically_preserves_content_and_updates_provenance() -> None:
+    app = build_app()
+    target_style = default_resume_style().model_copy(
+        update={"template_key": "target-template-cn", "accent_color": "#3476D2"}
+    )
+    with app.state.session_factory() as session:
+        target_data, target_definition = canonical_template_payload(
+            key="target-template-cn", style=target_style
+        )
+        inactive_data, inactive_definition = canonical_template_payload(
+            key="inactive-target-cn",
+            style=target_style.model_copy(update={"template_key": "inactive-target-cn"}),
+        )
+        target = ResumeTemplate(
+            key="target-template-cn",
+            name="目标模板",
+            data_json=target_data,
+            style_json=target_definition,
+            is_active=1,
+        )
+        inactive = ResumeTemplate(
+            key="inactive-target-cn",
+            name="停用目标模板",
+            data_json=inactive_data,
+            style_json=inactive_definition,
+            is_active=0,
+        )
+        session.add_all([target, inactive])
+        session.commit()
+        target_id = str(target.id)
+        inactive_id = str(inactive.id)
+
+    with TestClient(app) as client:
+        register(client)
+        original = create_resume(client, app).json()["resume"]
+        original_data = original["data"]
+        edited_data = set_headline(original_data, "原子切换保留的最新内容")
+
+        switched = client.post(
+            f"/api/resumes/{original['id']}/apply-template",
+            json={
+                "template_id": target_id,
+                "base_lock_version": 1,
+                "title": "原子切换后的简历",
+                "data": edited_data,
+            },
+        )
+        assert switched.status_code == 200
+        resume = switched.json()["resume"]
+        assert resume["title"] == "原子切换后的简历"
+        assert resume["data"] == edited_data
+        assert resume["template_id"] == target_id
+        assert resume["style"]["template_snapshot"]["template_key"] == "target-template-cn"
+        assert resume["lock_version"] == 2
+
+        conflict = client.post(
+            f"/api/resumes/{original['id']}/apply-template",
+            json={"template_id": app.state.test_template_id, "base_lock_version": 1},
+        )
+        assert conflict.status_code == 409
+        assert conflict.json() == {"error": "RESUME_EDIT_CONFLICT"}
+
+        rejected = client.post(
+            f"/api/resumes/{original['id']}/apply-template",
+            json={"template_id": inactive_id, "base_lock_version": 2},
+        )
+        assert rejected.status_code == 422
+        assert rejected.json() == {"error": "TEMPLATE_INACTIVE"}
+
+
+def test_apply_template_composition_failure_keeps_original_snapshot(monkeypatch) -> None:
+    app = build_app()
+    target_style = default_resume_style().model_copy(
+        update={"template_key": "composition-failure-cn"}
+    )
+    with app.state.session_factory() as session:
+        target_data, target_definition = canonical_template_payload(
+            key="composition-failure-cn", style=target_style
+        )
+        target = ResumeTemplate(
+            key="composition-failure-cn",
+            name="组合失败模板",
+            data_json=target_data,
+            style_json=target_definition,
+            is_active=1,
+        )
+        session.add(target)
+        session.commit()
+        target_id = str(target.id)
+
+    with TestClient(app) as client:
+        register(client)
+        original = create_resume(client, app).json()["resume"]
+
+        def reject_composition(*_args, **_kwargs):
+            raise ValueError("invalid composition")
+
+        monkeypatch.setattr(resume_service, "validate_resume_template_composition", reject_composition)
+        rejected = client.post(
+            f"/api/resumes/{original['id']}/apply-template",
+            json={"template_id": target_id, "base_lock_version": 1},
+        )
+
+        assert rejected.status_code == 422
+        assert rejected.json() == {"error": "TEMPLATE_COMPOSITION_INVALID"}
+        current = client.get(f"/api/resumes/{original['id']}").json()["resume"]
+        assert current["template_id"] == original["template_id"]
+        assert current["style"] == original["style"]
+        assert current["data"] == original["data"]
+        assert current["lock_version"] == original["lock_version"]
 
 
 def test_resume_limit_rejects_eleventh_and_delete_releases_slot() -> None:
@@ -397,7 +765,7 @@ def test_restore_does_not_create_a_version_for_an_unversioned_draft() -> None:
         assert client.post(f"/api/resumes/{resume_id}/versions").status_code == 201
 
         draft = created["data"]
-        draft["basics"]["headline"] = "尚未建立版本的草稿"
+        set_headline(draft, "尚未建立版本的草稿")
         updated = client.put(
             f"/api/resumes/{resume_id}",
             json={"data": draft, "base_lock_version": 1},
@@ -408,7 +776,7 @@ def test_restore_does_not_create_a_version_for_an_unversioned_draft() -> None:
 
         assert restored.status_code == 200
         current = client.get(f"/api/resumes/{resume_id}").json()["resume"]
-        assert current["data"]["basics"]["headline"] == "后端开发工程师"
+        assert current["data"]["identity"]["headline"] is None
         assert current["lock_version"] == 3
         assert [
             (item["version_no"], item["reason"])
@@ -447,7 +815,7 @@ def test_restore_at_version_limit_still_replaces_the_current_draft() -> None:
             assert client.post(f"/api/resumes/{resume_id}/versions").status_code == 201
 
         draft = created["data"]
-        draft["basics"]["headline"] = "尚未建立版本的草稿"
+        set_headline(draft, "尚未建立版本的草稿")
         updated = client.put(
             f"/api/resumes/{resume_id}",
             json={"data": draft, "base_lock_version": 1},
@@ -458,7 +826,7 @@ def test_restore_at_version_limit_still_replaces_the_current_draft() -> None:
 
         assert restored.status_code == 200
         current = client.get(f"/api/resumes/{resume_id}").json()["resume"]
-        assert current["data"]["basics"]["headline"] == "后端开发工程师"
+        assert current["data"]["identity"]["headline"] is None
         assert current["lock_version"] == 3
         assert [
             item["version_no"]
@@ -478,27 +846,33 @@ def test_overlong_resume_id_is_rejected_without_integer_conversion() -> None:
         assert response.json() == {"error": "RESUME_NOT_FOUND"}
 
 
-def test_smart_one_page_is_persisted_and_restored_with_versions() -> None:
+def test_presentation_settings_are_persisted_and_restored_with_versions() -> None:
     app = build_app()
     with TestClient(app) as client:
         register(client)
         resume = create_resume(client, app).json()["resume"]
         resume_id = resume["id"]
         style = resume["style"]
-        assert style["smart_one_page"] is False
+        template_key = style["template_snapshot"]["template_key"]
+        assert style["portable"]["smart_one_page"] is False
 
-        style["smart_one_page"] = True
+        style["portable"]["smart_one_page"] = True
+        style["template_scoped"][template_key]["font_family"] = "LXGW WenKai"
         updated = client.put(
             f"/api/resumes/{resume_id}",
             json={"style": style, "base_lock_version": 1},
         )
         assert updated.status_code == 200
-        assert updated.json()["resume"]["style"]["smart_one_page"] is True
+        assert updated.json()["resume"]["style"]["portable"]["smart_one_page"] is True
+        assert (
+            updated.json()["resume"]["style"]["template_scoped"][template_key]["font_family"]
+            == "LXGW WenKai"
+        )
         version = client.post(f"/api/resumes/{resume_id}/versions")
         assert version.status_code == 201
         assert version.json()["version"]["version_no"] == 2
 
-        style["smart_one_page"] = False
+        style["portable"]["smart_one_page"] = False
         assert client.put(
             f"/api/resumes/{resume_id}",
             json={"style": style, "base_lock_version": 2},
@@ -506,4 +880,243 @@ def test_smart_one_page_is_persisted_and_restored_with_versions() -> None:
         restored = client.post(f"/api/resumes/{resume_id}/versions/2/restore")
 
         assert restored.status_code == 200
-        assert restored.json()["resume"]["style"]["smart_one_page"] is True
+        assert restored.json()["resume"]["style"]["portable"]["smart_one_page"] is True
+        assert (
+            restored.json()["resume"]["style"]["template_scoped"][template_key]["font_family"]
+            == "LXGW WenKai"
+        )
+
+
+def test_update_uses_server_template_snapshot_and_retains_known_scoped_settings() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        original = create_resume(client, app).json()["resume"]
+        forged_style = deepcopy(original["style"])
+        forged_style["portable"]["smart_one_page"] = True
+        forged_style["template_snapshot"]["template_key"] = "forged-template-cn"
+        forged_style["template_snapshot"]["tokens"]["accent_color"] = "#123456"
+
+        updated = client.put(
+            f"/api/resumes/{original['id']}",
+            json={"style": forged_style, "base_lock_version": 1},
+        )
+
+        assert updated.status_code == 200
+        saved = updated.json()["resume"]
+        assert saved["style"]["template_snapshot"] == original["style"]["template_snapshot"]
+        assert set(saved["style"]["template_scoped"]) == set(
+            original["style"]["template_scoped"]
+        )
+        assert saved["style"]["portable"]["smart_one_page"] is True
+
+
+def test_update_rejects_new_template_scoped_key_without_writing() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        original = create_resume(client, app).json()["resume"]
+        forged_style = deepcopy(original["style"])
+        forged_style["template_scoped"]["forged-template-cn"] = {}
+
+        rejected = client.put(
+            f"/api/resumes/{original['id']}",
+            json={"style": forged_style, "base_lock_version": 1},
+        )
+
+        assert rejected.status_code == 400
+        assert rejected.json() == {"error": "INVALID_RESUME_STYLE"}
+        current = client.get(f"/api/resumes/{original['id']}").json()["resume"]
+        assert current["style"] == original["style"]
+        assert current["lock_version"] == original["lock_version"]
+
+
+def test_update_layout_failure_keeps_current_snapshot(monkeypatch) -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        original = create_resume(client, app).json()["resume"]
+
+        def reject_layout(*_args, **_kwargs):
+            raise ValueError("layout cannot render")
+
+        monkeypatch.setattr(
+            resume_service,
+            "validate_resume_template_composition",
+            reject_layout,
+        )
+        rejected = client.put(
+            f"/api/resumes/{original['id']}",
+            json={"title": "不会保存", "base_lock_version": 1},
+        )
+
+        assert rejected.status_code == 422
+        assert rejected.json() == {"error": "TEMPLATE_COMPOSITION_INVALID"}
+        current = client.get(f"/api/resumes/{original['id']}").json()["resume"]
+        assert current["title"] == original["title"]
+        assert current["data"] == original["data"]
+        assert current["style"] == original["style"]
+        assert current["lock_version"] == original["lock_version"]
+
+
+def test_apply_template_round_trip_preserves_content_hash() -> None:
+    app = build_app()
+    target_style = default_resume_style().model_copy(
+        update={"template_key": "round-trip-template-cn"}
+    )
+    with app.state.session_factory() as session:
+        target_data, target_definition = canonical_template_payload(
+            key="round-trip-template-cn", style=target_style
+        )
+        target = ResumeTemplate(
+            key="round-trip-template-cn",
+            name="往返模板",
+            description="内容哈希测试模板",
+            data_json=target_data,
+            style_json=target_definition,
+            is_active=1,
+        )
+        session.add(target)
+        session.commit()
+        target_id = str(target.id)
+
+    with TestClient(app) as client:
+        register(client)
+        original = create_resume(client, app).json()["resume"]
+        edited_data = set_headline(deepcopy(original["data"]), "往返内容守恒")
+        saved = client.put(
+            f"/api/resumes/{original['id']}",
+            json={"data": edited_data, "base_lock_version": 1},
+        ).json()["resume"]
+        content_hash = resume_service.parse_persisted_resume_snapshot(
+            saved["data"], saved["style"]
+        ).content_sha256
+
+        switched = client.post(
+            f"/api/resumes/{original['id']}/apply-template",
+            json={"template_id": target_id, "base_lock_version": 2},
+        )
+        assert switched.status_code == 200
+        switched_resume = switched.json()["resume"]
+        switched_hash = resume_service.parse_persisted_resume_snapshot(
+            switched_resume["data"], switched_resume["style"]
+        ).content_sha256
+
+        switched_back = client.post(
+            f"/api/resumes/{original['id']}/apply-template",
+            json={
+                "template_id": app.state.test_template_id,
+                "base_lock_version": 3,
+            },
+        )
+        assert switched_back.status_code == 200
+        restored_resume = switched_back.json()["resume"]
+        restored_hash = resume_service.parse_persisted_resume_snapshot(
+            restored_resume["data"], restored_resume["style"]
+        ).content_sha256
+
+        assert switched_hash == content_hash
+        assert restored_hash == content_hash
+        assert restored_resume["data"] == edited_data
+
+
+def test_apply_template_rejects_template_row_key_mismatch_without_writing() -> None:
+    app = build_app()
+    with app.state.session_factory() as session:
+        target_data, target_definition = canonical_template_payload(
+            key="definition-template-cn"
+        )
+        target = ResumeTemplate(
+            key="row-template-cn",
+            name="身份不一致模板",
+            description=None,
+            data_json=target_data,
+            style_json=target_definition,
+            is_active=1,
+        )
+        session.add(target)
+        session.commit()
+        target_id = str(target.id)
+
+    with TestClient(app) as client:
+        register(client)
+        original = create_resume(client, app).json()["resume"]
+        rejected = client.post(
+            f"/api/resumes/{original['id']}/apply-template",
+            json={"template_id": target_id, "base_lock_version": 1},
+        )
+
+        assert rejected.status_code == 422
+        assert rejected.json() == {"error": "TEMPLATE_INACTIVE"}
+        current = client.get(f"/api/resumes/{original['id']}").json()["resume"]
+        assert current["template_id"] == original["template_id"]
+        assert current["data"] == original["data"]
+        assert current["style"] == original["style"]
+        assert current["lock_version"] == original["lock_version"]
+
+
+def test_restore_uses_version_template_snapshot_after_template_row_changes() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        original = create_resume(client, app).json()["resume"]
+        version = client.post(f"/api/resumes/{original['id']}/versions").json()[
+            "version"
+        ]
+        version_style = deepcopy(version["style"])
+
+        with app.state.session_factory() as session:
+            template = session.get(ResumeTemplate, int(app.state.test_template_id))
+            assert template is not None
+            changed_style = deepcopy(template.style_json)
+            changed_style["tokens"]["accent_color"] = "#123456"
+            template.style_json = changed_style
+            session.commit()
+
+        changed = client.put(
+            f"/api/resumes/{original['id']}",
+            json={
+                "title": "当前草稿",
+                "base_lock_version": original["lock_version"],
+            },
+        )
+        assert changed.status_code == 200
+
+        restored = client.post(f"/api/resumes/{original['id']}/versions/2/restore")
+
+        assert restored.status_code == 200
+        assert (
+            restored.json()["resume"]["style"]["template_snapshot"]
+            == version_style["template_snapshot"]
+        )
+
+
+def test_restore_rejects_version_template_key_mismatch_without_writing() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        original = create_resume(client, app).json()["resume"]
+        created_version = client.post(
+            f"/api/resumes/{original['id']}/versions"
+        ).json()["version"]
+        with app.state.session_factory() as session:
+            version = session.scalar(
+                select(ResumeVersion).where(
+                    ResumeVersion.id == int(created_version["id"])
+                )
+            )
+            assert version is not None
+            changed_style = deepcopy(version.style_json)
+            changed_style["template_snapshot"]["template_key"] = "other-template-cn"
+            version.style_json = changed_style
+            session.commit()
+
+        rejected = client.post(f"/api/resumes/{original['id']}/versions/2/restore")
+
+        assert rejected.status_code == 422
+        assert rejected.json() == {"error": "RESUME_VERSION_DATA_INVALID"}
+        current = client.get(f"/api/resumes/{original['id']}").json()["resume"]
+        assert current["template_id"] == original["template_id"]
+        assert current["data"] == original["data"]
+        assert current["style"] == original["style"]
+        assert current["lock_version"] == original["lock_version"]

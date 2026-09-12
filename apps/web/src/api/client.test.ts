@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, ApiRequestError } from "./client";
+import {
+  defaultCanonicalTemplateDefinition,
+  defaultSemanticDocument,
+  defaultSemanticStyle,
+} from "./resumeContract";
 
 function jsonResponse(status: number, body: unknown): Response {
   return {
@@ -149,6 +154,39 @@ describe("API session refresh", () => {
   });
 });
 
+describe("resume template API", () => {
+  it("兼容旧数据库响应时也不会向产品暴露已退役空白模板", async () => {
+    const retained = {
+      id: "5",
+      key: "classic-technical-cn",
+      name: "经典单页技术简历",
+      style: {
+        ...defaultCanonicalTemplateDefinition,
+        template_key: "classic-technical-cn",
+      },
+    };
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, {
+      templates: [
+        { id: "1", key: "blank-cn", name: "空白简历" },
+        retained,
+      ],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.listResumeTemplates()).resolves.toEqual({
+      templates: [{
+        ...retained,
+        style: {
+          schema_version: "resume-presentation.v1",
+          portable: { smart_one_page: false },
+          template_scoped: { "classic-technical-cn": {} },
+          template_snapshot: retained.style,
+        },
+      }],
+    });
+  });
+});
+
 describe("API observability", () => {
   it("adds a request id and reports API 5xx without exposing the response body", async () => {
     const fetchMock = vi
@@ -223,6 +261,91 @@ describe("Agent SSE client", () => {
   });
 });
 
+describe("Agent session list API", () => {
+  it("支持按简历筛选，也支持读取当前用户最近会话", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { sessions: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.listAgentSessions("resume/42");
+    await api.listAgentSessions();
+
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      "/api/agent/sessions?resume_id=resume%2F42",
+      "/api/agent/sessions",
+    ]);
+  });
+});
+
+describe("Agent readiness API", () => {
+  it("读取助手运行时就绪状态", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ready: false }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.getAgentReadiness()).resolves.toEqual({ ready: false });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/agent/readiness",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
+});
+
+describe("Agent model API", () => {
+  it("读取当前 Pi Agent 的安全模型摘要", async () => {
+    const body = { model: { adapter: "deepseek", name: "fictional-agent-model" } };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, body));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.getAgentModel()).resolves.toEqual(body);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/agent/model",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
+});
+
+describe("Agent session management API", () => {
+  it("更新会话标题与置顶状态并编码会话 ID", async () => {
+    const body = { session: { id: "session/a b", title: "新标题", pinned: true } };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, body));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.updateAgentSession("session/a b", { title: "新标题", pinned: true })).resolves.toEqual(body);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/agent/sessions/session%2Fa%20b",
+      expect.objectContaining({
+        method: "PATCH",
+        credentials: "include",
+        body: JSON.stringify({ title: "新标题", pinned: true }),
+      }),
+    );
+  });
+
+  it("删除会话并编码会话 ID", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.deleteAgentSession("session/a b");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/agent/sessions/session%2Fa%20b",
+      expect.objectContaining({ method: "DELETE", credentials: "include" }),
+    );
+  });
+});
+
+describe("Agent context API", () => {
+  it("按类型、搜索词和上限读取轻量上下文列表", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { contexts: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.listAgentContexts({ type: "resume_version", search: "投递版", limit: 10 });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/agent/contexts?type=resume_version&q=%E6%8A%95%E9%80%92%E7%89%88&limit=10",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
+});
+
 describe("resume import polling API", () => {
   it("按任务 ID 查询单个导入状态并编码路径参数", async () => {
     const body = { import: { id: "41", parse_status: "processing" } };
@@ -250,22 +373,66 @@ describe("resume version detail API", () => {
   });
 });
 
+describe("resume PDF download API", () => {
+  it("按当前锁版本请求 PDF，传递取消信号并读取 UTF-8 文件名", async () => {
+    const signal = new AbortController().signal;
+    const blob = new Blob(["%PDF-test"], { type: "application/pdf" });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        "Content-Disposition": "attachment; filename*=UTF-8''%E5%BC%A0%E4%B8%89-%E7%AE%80%E5%8E%86.pdf",
+      }),
+      blob: vi.fn().mockResolvedValue(blob),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.downloadResumePdf("resume/42", 7, signal)).resolves.toEqual({
+      blob,
+      filename: "张三-简历.pdf",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/resumes/resume%2F42/pdf?lock_version=7",
+      expect.objectContaining({
+        method: "GET",
+        credentials: "include",
+        signal,
+        headers: expect.objectContaining({ "X-Request-ID": expect.any(String) }),
+      }),
+    );
+  });
+
+  it("保留服务端 PDF 错误码和请求追踪 ID", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      headers: new Headers({ "X-Request-ID": "request-pdf-1" }),
+      json: vi.fn().mockResolvedValue({ error: "RESUME_PDF_SNAPSHOT_STALE" }),
+    }));
+
+    await expect(api.downloadResumePdf("42", 3)).rejects.toMatchObject({
+      status: 409,
+      message: "RESUME_PDF_SNAPSHOT_STALE",
+      requestId: "request-pdf-1",
+    });
+  });
+});
+
 describe("JD API client", () => {
-  it("编码列表筛选和游标，并保持相对 API 路径", async () => {
+  it("编码列表搜索和游标，并保持相对 API 路径", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse(200, { items: [], next_cursor: null }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
     await api.listJobDescriptions({
-      scope: "archived",
       keyword: "Java 后端",
       cursor: "cursor/value",
       limit: 30,
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/job-descriptions?scope=archived&keyword=Java+%E5%90%8E%E7%AB%AF&cursor=cursor%2Fvalue&limit=30",
+      "/api/job-descriptions?keyword=Java+%E5%90%8E%E7%AB%AF&cursor=cursor%2Fvalue&limit=30",
       expect.objectContaining({ method: "GET", credentials: "include" }),
     );
   });
@@ -298,6 +465,42 @@ describe("JD API client", () => {
         duplicate,
       });
     }
+  });
+
+  it("使用 multipart 分别提交文字和图片草稿解析请求", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        draft: {},
+        warnings: [],
+        inputType: "text",
+        callId: "llmcall_fictional",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const controller = new AbortController();
+    await api.parseJobDescriptionDraft({
+      text: "虚构的产品经理岗位",
+      signal: controller.signal,
+    });
+    const image = new File([new Uint8Array([1, 2, 3])], "job.png", {
+      type: "image/png",
+    });
+    await api.parseJobDescriptionDraft({ image });
+
+    for (const [, options] of fetchMock.mock.calls) {
+      expect(options).toEqual(
+        expect.objectContaining({ method: "POST", credentials: "include" }),
+      );
+      expect(options.headers).not.toHaveProperty("Content-Type");
+      expect(options.body).toBeInstanceOf(FormData);
+    }
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/job-descriptions/parse-draft");
+    expect((fetchMock.mock.calls[0][1].body as FormData).get("text")).toBe(
+      "虚构的产品经理岗位",
+    );
+    expect(fetchMock.mock.calls[0][1].signal).toBe(controller.signal);
+    expect((fetchMock.mock.calls[1][1].body as FormData).get("image")).toBe(image);
   });
 });
 
@@ -368,7 +571,7 @@ describe("面试中心 API client", () => {
 });
 
 describe("知识库资料 API", () => {
-  it("以 FormData 上传资料并保持相对路径", async () => {
+  it("以 FormData 上传资料并发送稳定的幂等键", async () => {
     const record = {
       id: "42",
       file_name: "岗位要求.md",
@@ -379,17 +582,20 @@ describe("知识库资料 API", () => {
     };
     const fetchMock = vi
       .fn()
-      .mockResolvedValue(jsonResponse(201, record));
+      .mockResolvedValue(jsonResponse(202, record));
     vi.stubGlobal("fetch", fetchMock);
     const file = new File(["# 岗位要求"], "岗位要求.md", { type: "text/markdown" });
+    const idempotencyKey = "8d42a61f-2396-4dbc-a63d-a1770e398f61";
 
-    await expect(api.uploadDataset(file)).resolves.toEqual(record);
+    await expect(api.uploadDataset(file, idempotencyKey, "42")).resolves.toEqual(record);
 
     const [, init] = fetchMock.mock.calls[0];
     expect(init.method).toBe("POST");
     expect(init.headers).not.toHaveProperty("Content-Type");
+    expect(init.headers).toHaveProperty("Idempotency-Key", idempotencyKey);
     expect(init.body).toBeInstanceOf(FormData);
     expect((init.body as FormData).get("file")).toBe(file);
+    expect((init.body as FormData).get("folder_id")).toBe("42");
   });
 
   it("列出当前用户的资料清单", async () => {
@@ -403,16 +609,61 @@ describe("知识库资料 API", () => {
         created_at: "2026-08-07T08:00:00Z",
       },
     ];
+    const limits = {
+      max_file_bytes: 10 * 1024 * 1024,
+      max_files_per_batch: 10,
+      allowed_extensions: [".pdf", ".docx", ".md", ".txt"],
+    };
     const fetchMock = vi
       .fn()
-      .mockResolvedValue(jsonResponse(200, { datasets }));
+      .mockResolvedValue(jsonResponse(200, { datasets, limits }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(api.listDatasets()).resolves.toEqual({ datasets });
+    await expect(api.listDatasets()).resolves.toEqual({ datasets, limits });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/datasets",
       expect.objectContaining({ method: "GET", credentials: "include" }),
     );
+  });
+
+  it("资料上传遇到 401 刷新会话后复用同一个幂等键", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(401, { error: "UNAUTHORIZED" }))
+      .mockResolvedValueOnce(jsonResponse(200, { user: { id: "1" } }))
+      .mockResolvedValueOnce(jsonResponse(202, { id: "42", parse_status: "queued" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const file = new File(["# 资料"], "资料.md", { type: "text/markdown" });
+    const key = "8d42a61f-2396-4dbc-a63d-a1770e398f61";
+
+    await api.uploadDataset(file, key, "42");
+
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
+      headers: expect.objectContaining({ "Idempotency-Key": key }),
+    }));
+    expect(fetchMock.mock.calls[2]?.[1]).toEqual(expect.objectContaining({
+      headers: expect.objectContaining({ "Idempotency-Key": key }),
+    }));
+  });
+
+  it("支持资料重命名、解析重试和删除契约", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(200, { id: "42", file_name: "新名称.md" }))
+      .mockResolvedValueOnce(jsonResponse(200, { id: "42", file_name: "新名称.md", parse_status: "processing" }))
+      .mockResolvedValueOnce(jsonResponse(200, { deleted: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.renameDataset("42", "新名称");
+    await api.retryDataset("42");
+    await api.deleteDataset("42");
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/datasets/42");
+    expect(fetchMock.mock.calls[0][1]).toEqual(expect.objectContaining({ method: "PATCH", body: JSON.stringify({ name: "新名称" }) }));
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/datasets/42/retry");
+    expect(fetchMock.mock.calls[1][1]).toEqual(expect.objectContaining({ method: "POST" }));
+    expect(fetchMock.mock.calls[2][0]).toBe("/api/datasets/42");
+    expect(fetchMock.mock.calls[2][1]).toEqual(expect.objectContaining({ method: "DELETE" }));
   });
 });
 
@@ -432,8 +683,8 @@ describe("API resume share", () => {
       .mockResolvedValueOnce(jsonResponse(200, { deleted: true }))
       .mockResolvedValueOnce(
         jsonResponse(200, {
-          data: { schema_version: "1.0" },
-          style: { schema_version: "1.0" },
+          data: defaultSemanticDocument,
+          style: defaultSemanticStyle,
           sharer: { nickname: "于晏", avatar_url: null },
         }),
       );
@@ -565,5 +816,21 @@ describe("微信扫码登录 API", () => {
     await expect(api.wechatQrcode()).rejects.toThrow(
       "WECHAT_RATE_LIMITED",
     );
+  });
+});
+
+describe("资料正文与替换契约",()=>{
+  it("替换携带确认、源文件、相同幂等键和当前凭据",async()=>{
+    const fetchMock=vi.fn().mockResolvedValue(jsonResponse(202,{id:"8",status:"pending"}));vi.stubGlobal("fetch",fetchMock);
+    const file=new File(["# New"],"notes.md",{type:"text/markdown"});await api.replaceDataset("42",file,"3","replace-key");
+    const [path,options]=fetchMock.mock.calls[0];expect(path).toBe("/api/datasets/42/replacements");
+    expect(new Headers(options.headers).get("If-Match")).toBe('"dataset-42-3"');
+    expect(new Headers(options.headers).get("Idempotency-Key")).toBe("replace-key");
+    expect(options.body.get("confirm_replace")).toBe("true");expect(options.body.get("file")).toBe(file);
+  });
+  it("同名错误保留候选文件和建议名称",async()=>{
+    const payload={error:"DATASET_NAME_CONFLICT",candidates:[{id:"42",content_revision:"3"}],suggested_name:"notes (1).md"};
+    vi.stubGlobal("fetch",vi.fn().mockResolvedValue(jsonResponse(409,payload)));
+    await expect(api.uploadDataset(new File(["text"],"notes.md"),"key","8")).rejects.toMatchObject({status:409,payload});
   });
 });

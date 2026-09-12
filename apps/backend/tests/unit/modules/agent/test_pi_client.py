@@ -3,7 +3,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from linkcv.modules.agent.pi_client import _finalize, cancel_pi_run, check_pi_readiness
+from linkcv.modules.agent.pi_client import (
+    _finalize,
+    _safe_phase_payload,
+    cancel_pi_run,
+    check_pi_readiness,
+)
 
 
 class Result:
@@ -28,9 +33,7 @@ class FinalizeSession:
 
 def test_finalize_locks_run_before_checking_terminal_state() -> None:
     db = FinalizeSession()
-    app = SimpleNamespace(
-        state=SimpleNamespace(session_factory=lambda: db)
-    )
+    app = SimpleNamespace(state=SimpleNamespace(session_factory=lambda: db))
 
     _finalize(app, "run-public-id", "succeeded", error_code=None)
 
@@ -88,3 +91,26 @@ def test_cancel_and_readiness_use_their_own_pi_endpoints(
         ("POST", "http://pi:8010/internal/agent/runs/run-1/cancel"),
         ("GET", "http://pi:8010/internal/agent/readiness"),
     ]
+
+
+def test_phase_payload_is_allowlisted_and_hides_upstream_labels() -> None:
+    assert _safe_phase_payload(
+        "run-1",
+        {
+            "phase": "comparing_context",
+            "label": "供应商内部工具与参数不应透传",
+            "referencedContextCount": 99,
+        },
+        2,
+    ) == {
+        "runId": "run-1",
+        "phase": "comparing_context",
+        "label": "正在分析简历与岗位要求…",
+        "referencedContextCount": 2,
+    }
+    assert (
+        _safe_phase_payload("run-1", {"phase": "unregistered", "label": "secret"}, 1)[
+            "label"
+        ]
+        == "AI 正在处理…"
+    )

@@ -84,6 +84,7 @@ class RabbitMQPublisher:
         exchange = await self._ensure_ready()
         outbound = aio_pika.Message(
             body=message.body(),
+            headers={"x-linkcv-pipeline-version": message.pipeline_version},
             content_type="application/json",
             delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
             message_id=str(message.payload.message_id),

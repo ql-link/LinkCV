@@ -1,13 +1,12 @@
 from types import SimpleNamespace
 
-from linkcv.domain.resume_document import default_resume_document
-from linkcv.domain.resume_style import default_resume_style
 from linkcv.modules.agent.service import (
     create_proposal,
     create_session,
     reject_proposal,
     upsert_tool_event,
 )
+from tests.canonical_resume_fixtures import canonical_resume_payload
 
 
 class RecordingSession:
@@ -49,14 +48,15 @@ def test_create_session_locks_resume_lifecycle_row() -> None:
 
 def test_create_proposal_locks_resume_before_idempotency_lookup() -> None:
     db = RecordingSession([SimpleNamespace(id=7, lock_version=4), None])
+    data, style = canonical_resume_payload()
 
     proposal = create_proposal(
         db,  # type: ignore[arg-type]
         run=SimpleNamespace(id=11),
         session=SimpleNamespace(resume_id=7, user_id=3),
         call_key="proposal-call",
-        data=default_resume_document().model_dump(mode="json"),
-        style=default_resume_style().model_dump(mode="json"),
+        data=data,
+        style=style,
         summary="生成一份待确认修改",
         ttl_days=30,
     )

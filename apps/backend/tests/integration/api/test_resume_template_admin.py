@@ -4,12 +4,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from linkcv.core.config import Settings
-from linkcv.domain.resume_document import default_resume_document
-from linkcv.domain.resume_style import default_resume_style
 from linkcv.main import create_app
 from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import ResumeTemplate
 from tests.fakes import FakeRedis
+from tests.canonical_resume_fixtures import canonical_template_payload
 
 
 class FakeStorage:
@@ -44,15 +43,14 @@ def register(client: TestClient, app, *, admin: bool) -> None:
 
 
 def package(key: str = "portfolio-cn") -> bytes:
-    style = default_resume_style().model_copy(update={"template_key": key})
+    data, style = canonical_template_payload(key=key)
     return json.dumps(
         {
-            "schema_version": 1,
             "key": key,
             "name": "作品集模板",
             "description": "测试模板包",
-            "data": default_resume_document().model_dump(mode="json"),
-            "style": style.model_dump(mode="json"),
+            "data": data,
+            "style": style,
         },
         ensure_ascii=False,
     ).encode("utf-8")
@@ -126,14 +124,38 @@ def test_invalid_oversized_and_duplicate_packages_never_overwrite() -> None:
                 )
             },
         )
+        html_payload = json.loads(package("html-template-cn"))
+        html_payload["description"] = "<div>不允许的模板标记</div>"
+        html_unsafe = client.post(
+            "/api/admin/resume-templates/import",
+            files={"file": ("html.json", json.dumps(html_payload).encode(), "application/json")},
+        )
+        css_payload = json.loads(package("css-template-cn"))
+        css_payload["description"] = ".resume { color: red; }"
+        css_unsafe = client.post(
+            "/api/admin/resume-templates/import",
+            files={"file": ("css.json", json.dumps(css_payload).encode(), "application/json")},
+        )
         oversized = client.post(
             "/api/admin/resume-templates/import",
             files={"file": ("large.json", b"x" * (512 * 1024 + 1), "application/json")},
+        )
+        missing_fallback_payload = json.loads(package("missing-fallback-cn"))
+        missing_fallback_payload["style"]["slots"] = []
+        missing_fallback = client.post(
+            "/api/admin/resume-templates/import",
+            files={
+                "file": (
+                    "missing-fallback.json",
+                    json.dumps(missing_fallback_payload).encode(),
+                    "application/json",
+                )
+            },
         )
 
     assert first.status_code == 201
     assert duplicate.status_code == 409
     assert duplicate.json() == {"error": "TEMPLATE_KEY_CONFLICT"}
-    assert unsafe.status_code == oversized.status_code == 400
+    assert unsafe.status_code == html_unsafe.status_code == css_unsafe.status_code == oversized.status_code == missing_fallback.status_code == 400
     with app.state.session_factory() as db:
         assert db.scalar(select(func.count(ResumeTemplate.id))) == 1

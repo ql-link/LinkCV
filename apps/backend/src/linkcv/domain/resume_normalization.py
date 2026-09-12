@@ -14,13 +14,14 @@ from linkcv.domain.resume_document import (
     Language,
     Project,
     ResumeBasics,
-    ResumeDocumentV1,
+    ResumeDocument,
     ResumeLink,
     ResumeSections,
-    RichTextV1,
+    RichText,
     Skill,
     SourceRef,
     WorkExperience,
+    with_default_semantics,
 )
 from linkcv.domain.resume_extraction import ResumeExtractionDraft
 
@@ -28,7 +29,7 @@ from linkcv.domain.resume_extraction import ResumeExtractionDraft
 class NormalizationResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    document: ResumeDocumentV1
+    document: ResumeDocument
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -105,8 +106,8 @@ def _source_refs(
     return refs
 
 
-def _rich_text(value: str | None) -> RichTextV1 | None:
-    return RichTextV1(content=value.strip()) if value and value.strip() else None
+def _rich_text(value: str | None) -> RichText | None:
+    return RichText(content=value.strip()) if value and value.strip() else None
 
 
 def finalize_resume_document(
@@ -154,7 +155,7 @@ def finalize_resume_document(
                 highlights=[
                     Highlight(
                         id=new_element_id("highlight"),
-                        content=RichTextV1(content=highlight),
+                        content=RichText(content=highlight),
                     )
                     for highlight in item.highlights
                     if highlight.strip()
@@ -205,7 +206,7 @@ def finalize_resume_document(
                 highlights=[
                     Highlight(
                         id=new_element_id("highlight"),
-                        content=RichTextV1(content=highlight),
+                        content=RichText(content=highlight),
                     )
                     for highlight in item.highlights
                     if highlight.strip()
@@ -223,7 +224,7 @@ def finalize_resume_document(
             items=[
                 CustomItem(
                     id=new_element_id("custom_item"),
-                    content=RichTextV1(content=value),
+                    content=RichText(content=value),
                     source_refs=_source_refs(
                         "custom_section",
                         section.source_quotes,
@@ -245,7 +246,7 @@ def finalize_resume_document(
                 items=[
                     CustomItem(
                         id=new_element_id("custom_item"),
-                        content=RichTextV1(content=value),
+                        content=RichText(content=value),
                     )
                     for value in draft.unmapped_fragments
                     if value.strip()
@@ -254,7 +255,7 @@ def finalize_resume_document(
         )
         warnings.append("unmapped_fragments_preserved")
 
-    document = ResumeDocumentV1(
+    document = ResumeDocument(
         basics=basics,
         sections=ResumeSections(
             work_experiences=work_experiences,
@@ -303,5 +304,8 @@ def finalize_resume_document(
             ],
             custom_sections=custom_sections,
         ),
+        semantic_sections=[],
     )
-    return NormalizationResult(document=document, warnings=sorted(set(warnings)))
+    return NormalizationResult(
+        document=with_default_semantics(document), warnings=sorted(set(warnings))
+    )

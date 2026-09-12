@@ -9,9 +9,98 @@
   <button class="ui-primary-button state-action" hover-class="ui-primary-button-pressed" bindtap="retryLoad">重新加载</button>
   <button class="ui-secondary-button state-action" hover-class="ui-secondary-button-pressed" bindtap="backToResumes">返回简历列表</button>
 </view>
+<view class="preview-document demo-preview-document" wx:elif="{{isDemo}}">
+  <scroll-view class="preview-viewport demo-preview-viewport" scroll-y enable-back-to-top>
+    <view class="preview-paper demo-resume-paper">
+      <view class="demo-resume-label">{{demoResume.label}}</view>
+
+      <view class="demo-resume-header">
+        <view class="demo-resume-heading">
+          <text class="demo-resume-name">{{demoResume.name}}</text>
+          <text class="demo-resume-role">{{demoResume.role}}</text>
+        </view>
+        <view class="demo-resume-monogram" aria-hidden="true">LZ</view>
+      </view>
+
+      <view class="demo-resume-contact">
+        <text class="demo-resume-contact-item">{{demoResume.location}}</text>
+        <text class="demo-resume-contact-item">{{demoResume.email}}</text>
+        <text class="demo-resume-contact-item">{{demoResume.phone}}</text>
+      </view>
+
+      <view class="demo-resume-section">
+        <text class="demo-resume-section-title">个人简介</text>
+        <text class="demo-resume-summary">{{demoResume.summary}}</text>
+      </view>
+
+      <view class="demo-resume-section">
+        <text class="demo-resume-section-title">工作经历</text>
+        <view class="demo-resume-entry" wx:for="{{demoResume.experience}}" wx:for-item="job" wx:key="company">
+          <view class="demo-resume-entry-heading">
+            <view class="demo-resume-entry-title">
+              <text class="demo-resume-company">{{job.company}}</text>
+              <text class="demo-resume-position">{{job.role}}</text>
+            </view>
+            <text class="demo-resume-period">{{job.period}}</text>
+          </view>
+          <view class="demo-resume-bullet" wx:for="{{job.details}}" wx:for-item="detail" wx:key="*this">
+            <text class="demo-resume-bullet-mark">•</text>
+            <text class="demo-resume-bullet-copy">{{detail}}</text>
+          </view>
+        </view>
+      </view>
+
+      <view class="demo-resume-section">
+        <text class="demo-resume-section-title">精选项目</text>
+        <view class="demo-resume-project" wx:for="{{demoResume.projects}}" wx:for-item="project" wx:key="name">
+          <text class="demo-resume-project-name">{{project.name}}</text>
+          <text class="demo-resume-project-copy">{{project.description}}</text>
+        </view>
+      </view>
+
+      <view class="demo-resume-section demo-resume-bottom-grid">
+        <view class="demo-resume-column">
+          <text class="demo-resume-section-title">能力</text>
+          <view class="demo-resume-skills">
+            <text class="demo-resume-skill" wx:for="{{demoResume.skills}}" wx:for-item="skill" wx:key="*this">{{skill}}</text>
+          </view>
+        </view>
+        <view class="demo-resume-column">
+          <text class="demo-resume-section-title">教育背景</text>
+          <text class="demo-resume-education-school">{{demoResume.education.school}}</text>
+          <text class="demo-resume-education-major">{{demoResume.education.major}}</text>
+          <text class="demo-resume-education-period">{{demoResume.education.period}}</text>
+        </view>
+      </view>
+
+      <text class="demo-resume-disclaimer">以上姓名、联系方式与经历均为虚构，仅用于示例浏览。</text>
+    </view>
+  </scroll-view>
+  <text class="preview-footnote">示例简历 · 内容为虚构信息 · 仅供浏览</text>
+</view>
 <view class="preview-document" wx:else>
-  <view class="preview-paper">
-    <image class="resume-preview-image" src="{{previewPath}}" mode="widthFix" binderror="handlePreviewError" />
-  </view>
-  <text class="preview-footnote">只读预览 · 编辑请前往 LinkCV 网页端</text>
+  <!-- 专门的图片展示与手势交互区域（纯粹双指缩放、平移拖拽） -->
+  <movable-area class="preview-viewport">
+    <movable-view
+      class="preview-movable-sheet"
+      direction="all"
+      scale="{{true}}"
+      scale-min="1"
+      scale-max="4"
+      inertia="{{true}}"
+      out-of-bounds="{{true}}"
+    >
+      <view class="preview-paper">
+        <image
+          class="resume-preview-image"
+          src="{{previewPath}}"
+          mode="widthFix"
+          show-menu-by-longpress="{{true}}"
+          binderror="handlePreviewError"
+        />
+      </view>
+    </movable-view>
+  </movable-area>
+
+  <text class="preview-footnote">只读查阅 · 编辑请前往 LinkResume 网页端</text>
 </view>

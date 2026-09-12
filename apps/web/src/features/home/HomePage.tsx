@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { ExternalLink, FileUp, MoreHorizontal, Pencil, Plus, Share2, Trash2 } from "lucide-react";
+import { ExternalLink, FileText, FileUp, MoreHorizontal, Pencil, Plus, Share2, Trash2 } from "lucide-react";
 import {
   type ResumeImportSummary,
   type ResumeSummary,
@@ -177,8 +177,8 @@ function ResumeThumbnailCard({
     <article className="home-resume-card">
       <button className="home-card-open" type="button" onClick={onOpen}>
         <span className="home-card-preview" aria-hidden="true">
-          {resume.preview ? (
-            <ResumePreview data={resume.preview.data} style={resume.preview.style} />
+          {resume.preview?.layout_plan ? (
+            <ResumePreview data={resume.preview.data} style={resume.preview.style} layoutPlan={resume.preview.layout_plan} />
           ) : (
             <span className="home-preview-unavailable">预览不可用</span>
           )}
@@ -332,8 +332,9 @@ export function HomeScreen({
   return (
     <main className="dashboard-content home-dashboard-content">
       <WorkspacePageHero
-        eyebrow="求职工作台"
-        title="全部简历"
+        icon={<FileText />}
+        title="我的简历"
+        description="集中管理简历、版本与分享，随时继续编辑或导入新内容。"
         actions={
           <>
             <ExpandableSearch
@@ -396,33 +397,32 @@ export function HomeScreen({
               </section>
             </>
           ) : (
-            <section className="dashboard-empty-state">
-            <span className="empty-state-icon" aria-hidden="true"><Plus size={28} strokeWidth={1.6} /></span>
-            <h2>{query ? "没有匹配的简历" : "还没有正式简历"}</h2>
-            <p>
-              {query
-                ? "换个关键词试试。"
-                : "从空白模板创建，或导入一份已有文件作为起点。之后可以复制出不同岗位版本，分别维护和分享。"}
-            </p>
-            {!query && (
-              <div className="empty-state-actions">
-                <Button icon={<Plus size={15} />} onClick={() => setCreateDialogOpen(true)}>创建第一份简历</Button>
-                <Button
-                  variant="outline"
-                  icon={<FileUp size={15} />}
-                  onClick={() => setImportDialogOpen(true)}
-                >
-                  导入简历
-                </Button>
-              </div>
-            )}
-            {!query && <small className="empty-state-hint">建议：先完成一份基础版，再为不同岗位复制出定向版本。</small>}
+            <section className="home-resume-empty-state">
+              <FileText aria-hidden="true" />
+              <h2>{query ? "没有匹配的简历" : "还没有正式简历"}</h2>
+              <p>
+                {query
+                  ? "换个关键词试试。"
+                  : "创建一份新简历，或导入已有文件，开始整理你的求职资料。"}
+              </p>
+              {!query && (
+                <div className="empty-state-actions">
+                  <Button icon={<Plus size={15} />} onClick={() => setCreateDialogOpen(true)}>创建第一份简历</Button>
+                  <Button
+                    variant="outline"
+                    icon={<FileUp size={15} />}
+                    onClick={() => setImportDialogOpen(true)}
+                  >
+                    导入简历
+                  </Button>
+                </div>
+              )}
             </section>
           )}
         </div>
       )}
 
-      {notice && <div className="home-action-toast"><FeedbackNotice kind={notice.kind}>{notice.message}</FeedbackNotice></div>}
+      {notice && <FeedbackNotice kind={notice.kind} placement="floating">{notice.message}</FeedbackNotice>}
       {pendingDelete && (
         <ConfirmDialog
           kind="delete"

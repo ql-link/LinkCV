@@ -125,6 +125,52 @@ def test_resume_version_limit_defaults_to_ten() -> None:
     assert settings.resume_version_limit == 10
 
 
+def test_pdf_renderer_uses_bounded_chromium_defaults() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.chromium_executable_path == "/usr/bin/chromium"
+    assert settings.pdf_renderer_max_smart_height_mm == 2000
+
+
+def test_pdf_renderer_smart_page_height_is_bounded() -> None:
+    with pytest.raises(ValidationError):
+        Settings(pdf_renderer_max_smart_height_mm=296)
+
+    with pytest.raises(ValidationError):
+        Settings(pdf_renderer_max_smart_height_mm=5001)
+
+
+def test_dataset_admission_defaults_match_upload_contract() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.dataset_upload_max_bytes == 10 * 1024 * 1024
+    assert settings.dataset_max_files_per_batch == 10
+    assert settings.dataset_upload_requests_per_minute == 20
+    assert settings.dataset_upload_user_concurrency == 3
+    assert settings.dataset_upload_global_concurrency == 12
+    assert settings.dataset_max_count_per_user == 200
+    assert settings.dataset_max_total_bytes_per_user == 1024 * 1024 * 1024
+    assert settings.dataset_dispatch_scan_seconds == 5
+    assert settings.dataset_redispatch_after_seconds == 30
+    assert settings.dataset_parse_stale_seconds == 240
+    assert settings.dataset_parse_max_attempts == 3
+    assert settings.dataset_upload_reservation_ttl_seconds == 86400
+
+
+def test_dataset_admission_rejects_inconsistent_limits() -> None:
+    with pytest.raises(ValidationError, match="DATASET_UPLOAD_GLOBAL_CONCURRENCY"):
+        Settings(
+            dataset_upload_user_concurrency=4,
+            dataset_upload_global_concurrency=3,
+        )
+
+    with pytest.raises(ValidationError, match="DATASET_MAX_TOTAL_BYTES_PER_USER"):
+        Settings(
+            dataset_upload_max_bytes=1024,
+            dataset_max_total_bytes_per_user=1023,
+        )
+
+
 def test_resume_import_timeout_defaults_leave_cleanup_budget() -> None:
     settings = Settings(
         _env_file=None,
@@ -159,6 +205,16 @@ def test_kafka_vendor_requires_bootstrap_servers() -> None:
         Settings(mq_vendor="kafka", kafka_bootstrap_servers="")
 
 
+def test_document_parse_broker_defaults_use_v2_topology() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.rabbitmq_exchange_name == "tolink.cv.resume_import.v2"
+    assert settings.rabbitmq_queue == "linkcv.resume_import.worker.v2"
+    assert settings.rabbitmq_routing_key == "resume.import.v2"
+    assert settings.kafka_topic == "tolink.cv.resume_import.v2"
+    assert settings.kafka_consumer_group == "linkcv.resume_import.worker.v2"
+
+
 def test_structuring_input_limit_cannot_exceed_markdown_limit() -> None:
     with pytest.raises(ValidationError, match="RESUME_STRUCTURING_MAX_BYTES"):
         Settings(
@@ -182,7 +238,6 @@ def test_production_rejects_missing_secrets_without_exposing_values() -> None:
     assert "JWT_SECRET" in message
     assert "MINIO_ACCESS_KEY" in message
     assert "MINIO_SECRET_KEY" in message
-    assert "PLUGIN_RELEASE_ORIGIN" in message
     assert "LLM_CREDENTIAL_ENCRYPTION_KEYS" in message
     assert "LINKPARSE_API_KEY" in message
     assert "RABBITMQ_URL" in message
@@ -199,7 +254,6 @@ def test_production_accepts_injected_secrets() -> None:
         mysql_password="production-db-secret",
         minio_access_key="production-minio-access",
         minio_secret_key="production-minio-secret",
-        plugin_release_origin="https://linkcv.example.test",
         llm_credential_encryption_keys=(
             f"production:{Fernet.generate_key().decode('ascii')}"
         ),
@@ -209,7 +263,6 @@ def test_production_accepts_injected_secrets() -> None:
         wechat_secret="fictional-production-wechat-secret",
     )
     assert settings.minio_bucket == "linkcv"
-    assert settings.plugin_release_origin == "https://linkcv.example.test"
 
 
 def test_production_rejects_reused_agent_service_token() -> None:
@@ -224,18 +277,9 @@ def test_production_rejects_reused_agent_service_token() -> None:
             mysql_password="production-db-secret",
             minio_access_key="production-minio-access",
             minio_secret_key="production-minio-secret",
-            plugin_release_origin="https://linkcv.example.test",
             llm_credential_encryption_keys=f"production:{Fernet.generate_key().decode('ascii')}",
             linkparse_api_key="fictional-linkparse-key",
             rabbitmq_url="amqp://linkcv:fictional-secret@rabbitmq:5672/",
             wechat_appid="fictional-production-appid",
             wechat_secret="fictional-production-wechat-secret",
         )
-
-
-def test_plugin_release_origin_must_be_a_root_origin() -> None:
-    with pytest.raises(ValidationError, match="PLUGIN_RELEASE_ORIGIN"):
-        Settings(plugin_release_origin="https://linkcv.example.test/path")
-
-    with pytest.raises(ValidationError, match="PLUGIN_RELEASE_ORIGIN"):
-        Settings(plugin_release_origin="https://linkcv.example.test:invalid")

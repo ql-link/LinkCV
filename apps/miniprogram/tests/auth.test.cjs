@@ -83,34 +83,13 @@ test("logs into an existing account without enabling registration", async () => 
   assert.deepEqual(requestData, { code: "wx-existing", privacy_accepted: false });
 });
 
-test("checks whether the current WeChat identity is registered without logging in", async () => {
-  let requestedPath = "";
-  let requestData;
-  const auth = loadAuth({
-    getStorageSync: () => undefined,
-    login(options) { queueMicrotask(() => options.success({ code: "wx-status" })); },
-    request(options) {
-      requestedPath = options.url;
-      requestData = options.data;
-      queueMicrotask(() => options.success({
-        statusCode: 200,
-        data: { registered: true },
-      }));
-    },
-  });
-
-  assert.equal(await auth.getAccountStatus(), true);
-  assert.equal(requestedPath, "https://linkcv.example.test/api/auth/wechat/miniprogram/account-status");
-  assert.deepEqual(requestData, { code: "wx-status" });
-});
-
 test("reads the platform privacy contract name when available", async () => {
   const auth = loadAuth({
     getStorageSync: () => undefined,
     getPrivacySetting(options) {
       options.success({
         needAuthorization: true,
-        privacyContractName: "《LinkCV 隐私保护指引》",
+        privacyContractName: "《LinkResume 隐私保护指引》",
       });
     },
   });
@@ -118,7 +97,7 @@ test("reads the platform privacy contract name when available", async () => {
   assert.deepEqual(await auth.getPrivacySetting(), {
     supported: true,
     needAuthorization: true,
-    privacyContractName: "《LinkCV 隐私保护指引》",
+    privacyContractName: "《LinkResume 隐私保护指引》",
   });
 });
 
@@ -128,6 +107,6 @@ test("fails closed when the platform privacy API is unavailable", async () => {
   assert.deepEqual(await auth.getPrivacySetting(), {
     supported: false,
     needAuthorization: false,
-    privacyContractName: "《LinkCV 小程序隐私保护指引》",
+    privacyContractName: "《LinkResume 小程序隐私保护指引》",
   });
 });

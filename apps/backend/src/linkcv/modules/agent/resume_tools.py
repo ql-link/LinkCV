@@ -10,13 +10,21 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from linkcv.core.errors import ApiError
+from linkcv.domain.resume import CanonicalResumeDocument
 from linkcv.modules.datasets.models import UserDataset
 from linkcv.modules.datasets.routes import read_dataset_markdown
+from linkcv.services.dataset_content_service import content_key, source_version
 from linkcv.modules.job_descriptions.models import JobDescription
 from linkcv.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask, Resume
 
 
-BLOCK_MARKER_PATTERN = re.compile(r"\[\[linkcv-block:(blk_[a-z0-9]{16,64})\]\]")
+BLOCK_MARKER_PATTERN = re.compile(
+    r"\[\[linkcv-block:(node_[a-z0-9]{16,64})(?::(?:identity|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\]"
+)
+SECTION_HEADING_PATTERN = re.compile(
+    r"^##\s+\[\[linkcv-block:(node_[a-z0-9]{16,64})(?::(?:profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\](.*)$",
+    re.MULTILINE,
+)
 NUMBER_PATTERN = re.compile(
     r"(?<![A-Za-z0-9])\d+(?:\.\d+)?\s*(?:%|％|倍|万|亿|ms|s|秒|分钟|小时|天|人|次|个|元|美元)?",
     re.IGNORECASE,
@@ -64,26 +72,168 @@ class EditorBlock:
     entry_label: str | None
 
 
-def editor_markdown(data: Any) -> str | None:
-    for section in data.sections.custom_sections:
-        if section.id != "custom_section_editor":
-            continue
-        for item in section.items:
-            if item.id == "custom_item_editor":
-                return item.content.content
-    return None
+def _inline_text(runs: list[Any]) -> str:
+    values: list[str] = []
+    for run in runs:
+        inline_type = getattr(run, "inline_type", None)
+        if inline_type == "text":
+            values.append(run.text)
+        elif inline_type == "icon":
+            values.append(f":icon[{run.name}]:")
+        else:
+            values.append(run.alt or "")
+    return "".join(values)
 
 
-def replace_editor_markdown(data: Any, markdown: str) -> dict[str, Any]:
+def editor_markdown(data: CanonicalResumeDocument) -> str | None:
+    """Project canonical nodes into the Agent's marker-based text surface."""
+
+    parts: list[str] = []
+    identity_label = data.identity.name.value if data.identity.name is not None else "基本信息"
+    parts.append(f"# [[linkcv-block:{data.identity.node_id}:identity]]{identity_label}")
+    if data.identity.headline is not None:
+        parts.append(
+            f"[[linkcv-block:{data.identity.headline.node_id}]]{data.identity.headline.value}"
+        )
+    for contact in data.identity.contacts:
+        parts.append(f"[[linkcv-block:{contact.node_id}]]{contact.value}")
+    for section in data.sections:
+        title = section.title.value if section.title is not None else section.semantic_kind
+        if section.title_icon is not None:
+            marker = f":icon[{section.title_icon.name}]:"
+            title = f"{marker} {title}" if title else marker
+        parts.append(
+            f"## [[linkcv-block:{section.node_id}:{section.semantic_kind}]]{title}"
+        )
+        for entry in section.entries:
+            entry_label = next(
+                (
+                    value.value
+                    for value in (
+                        entry.fields.name,
+                        entry.fields.organization,
+                        entry.fields.role,
+                        entry.fields.degree,
+                    )
+                    if value is not None
+                ),
+                "经历",
+            )
+            parts.append(f"### [[linkcv-block:{entry.node_id}]]{entry_label}")
+            parts.extend(_canonical_blocks_markdown(entry.blocks))
+        parts.extend(_canonical_blocks_markdown(section.blocks))
+    return "\n\n".join(part for part in parts if part).strip() or None
+
+
+def _canonical_blocks_markdown(blocks: list[Any]) -> list[str]:
+    parts: list[str] = []
+    for block in blocks:
+        if block.block_type == "paragraph":
+            parts.append(f"[[linkcv-block:{block.node_id}]]{_inline_text(block.runs)}")
+        elif block.block_type in {"ordered_list", "bullet_list"}:
+            for index, item in enumerate(block.items):
+                prefix = f"{(block.start or 1) + index}. " if block.block_type == "ordered_list" else "- "
+                parts.append(f"{prefix}[[linkcv-block:{item.node_id}]]{_inline_text(item.runs)}")
+        elif block.block_type == "media":
+            parts.append(f"[[linkcv-block:{block.node_id}]]{block.alt or block.src}")
+    return parts
+
+
+def replace_editor_markdown(
+    data: CanonicalResumeDocument, markdown: str
+) -> dict[str, Any]:
+    """Apply marker-scoped edits without round-tripping the canonical tree."""
+
     payload = data.model_dump(mode="json")
-    for section in payload["sections"]["custom_sections"]:
-        if section["id"] != "custom_section_editor":
+    before = {block.block_id: block for block in parse_editor_blocks(editor_markdown(data) or "")}
+    after = {block.block_id: block for block in parse_editor_blocks(markdown)}
+
+    def plain_run(text: str) -> list[dict[str, Any]]:
+        return [{
+            "inline_type": "text",
+            "text": text,
+            "marks": [],
+            "href": None,
+            "style": {"color": None, "font_size_pt": None, "highlight_color": None},
+        }]
+
+    containers: list[list[dict[str, Any]]] = []
+    for section in payload["sections"]:
+        section_after = after.get(section["node_id"])
+        section_before = before.get(section["node_id"])
+        if (
+            section_after is not None
+            and section_before is not None
+            and section_after.text != section_before.text
+            and section["title"] is not None
+        ):
+            section["title"]["value"] = section_after.text
+        for entry in section["entries"]:
+            entry_after = after.get(entry["node_id"])
+            entry_before = before.get(entry["node_id"])
+            if (
+                entry_after is not None
+                and entry_before is not None
+                and entry_after.text != entry_before.text
+            ):
+                target_field = next(
+                    (field for field in entry["fields"].values() if field is not None),
+                    None,
+                )
+                if target_field is None:
+                    raise ApiError(422, "TARGET_INVALID")
+                target_field["value"] = entry_after.text
+        containers.append(section["blocks"])
+        containers.extend(entry["blocks"] for entry in section["entries"])
+    for blocks in containers:
+        for block in blocks:
+            if block["block_type"] == "paragraph" and block["node_id"] in after:
+                current = before.get(block["node_id"])
+                replacement = after[block["node_id"]].text
+                if current is not None and replacement != current.text:
+                    block["runs"] = plain_run(replacement)
+            elif block["block_type"] in {"ordered_list", "bullet_list"}:
+                for item in block["items"]:
+                    current = before.get(item["node_id"])
+                    replacement = after.get(item["node_id"])
+                    if current is not None and replacement is not None and replacement.text != current.text:
+                        item["runs"] = plain_run(replacement.text)
+
+    # Inserted nodes are attached after their immediately preceding canonical
+    # block in the same section/entry container. They never rewrite unrelated
+    # blocks, source refs, marks or media.
+    ordered = parse_editor_blocks(markdown)
+    known_ids = set(before)
+    for index, block in enumerate(ordered):
+        if block.block_id in known_ids:
             continue
-        for item in section["items"]:
-            if item["id"] == "custom_item_editor":
-                item["content"]["content"] = markdown
-                return payload
-    raise ApiError(422, "TARGET_INVALID")
+        previous_id = next(
+            (candidate.block_id for candidate in reversed(ordered[:index]) if candidate.block_id in known_ids),
+            None,
+        )
+        if previous_id is None:
+            raise ApiError(422, "PATCH_OUT_OF_SCOPE")
+        inserted = False
+        for blocks in containers:
+            for position, existing in enumerate(blocks):
+                existing_ids = {existing["node_id"]}
+                existing_ids.update(item["node_id"] for item in existing.get("items", []))
+                if previous_id not in existing_ids:
+                    continue
+                blocks.insert(position + 1, {
+                    "node_id": block.block_id,
+                    "source_refs": [],
+                    "block_type": "paragraph",
+                    "runs": plain_run(block.text),
+                })
+                inserted = True
+                known_ids.add(block.block_id)
+                break
+            if inserted:
+                break
+        if not inserted:
+            raise ApiError(422, "PATCH_OUT_OF_SCOPE")
+    return payload
 
 
 def parse_editor_blocks(markdown: str) -> list[EditorBlock]:
@@ -408,24 +558,24 @@ def search_materials(
             .limit(20)
         ).all()
         for dataset, task in rows:
-            if len(sources) >= limit or not task.converted_object_name:
+            if len(sources) >= limit or not (dataset.content_object_name or task.converted_object_name):
                 continue
-            if not task.converted_object_name.startswith(
+            if not (dataset.content_object_name or task.converted_object_name).startswith(
                 f"users/{user_id}/datasets/converted/"
             ):
                 continue
             try:
                 content = read_dataset_markdown(
-                    storage, task.converted_object_name, max_bytes
+                    storage, content_key(dataset, task), max_bytes
                 )
             except Exception:
                 continue
             add(
-                f"dataset:{dataset.id}:{dataset.sha256}",
+                f"dataset:{dataset.id}:{source_version(dataset)}",
                 "dataset",
                 dataset.file_name,
                 content,
-                dataset.sha256,
+                source_version(dataset),
             )
     return sources
 
@@ -569,7 +719,7 @@ def validate_source_ids(
                     UserDataset.id == int(raw_id), UserDataset.user_id == user_id
                 )
             )
-            valid = item is not None and item.sha256 == version
+            valid = item is not None and source_version(item) == version
             title = item.file_name if item else ""
         else:
             valid, title = False, ""
@@ -648,6 +798,13 @@ def apply_operations(
             or expected not in block.text
         ):
             raise ApiError(409, "TARGET_STALE")
+        # A whole-block locator deliberately carries no user selection.  Once
+        # the block and its expected hash have been verified against the
+        # current markdown, persist the exact protected text for the proposal
+        # card.  This does not alter diagnosis data or the patch scope; it only
+        # makes the server-derived before value observable to clients.
+        if not target.selected_text:
+            target.selected_text = expected
         if operation.op == "replace_target_text":
             segment = updated[block.start : block.end]
             if segment.count(expected) != 1:
@@ -655,7 +812,7 @@ def apply_operations(
             replacement = segment.replace(expected, operation.new_text, 1)
             updated = updated[: block.start] + replacement + updated[block.end :]
         else:
-            generated_id = f"blk_{uuid4().hex}"
+            generated_id = f"node_{uuid4().hex}"
             new_text = operation.new_text.strip()
             heading_or_list = re.match(r"^(#{1,3}\s+|-\s+|\d+\.\s+)", new_text)
             annotated = (

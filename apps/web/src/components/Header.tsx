@@ -1,5 +1,6 @@
-import { CircleAlert, CircleCheck, FileDown, Home, Save } from "lucide-react";
+import { FileDown, Home, Save } from "lucide-react";
 import { useEffect, useState } from "react";
+import { exportResumePdf, resumePdfExportErrorMessage } from "../features/preview/pdfExport";
 import { useResumeStore } from "../store/resumeStore";
 import { Brand, Button, FeedbackNotice, IconButton } from "@/components/ui";
 
@@ -11,8 +12,6 @@ type SaveToast = {
 export function Header() {
   const title = useResumeStore((state) => state.title);
   const activeResumeId = useResumeStore((state) => state.activeResumeId);
-  const editorContent = useResumeStore((state) => state.editorContent);
-  const settings = useResumeStore((state) => state.settings);
   const setTitle = useResumeStore((state) => state.setTitle);
   const user = useResumeStore((state) => state.user);
   const saveStatus = useResumeStore((state) => state.saveStatus);
@@ -69,11 +68,24 @@ export function Header() {
         </div>
       </div>
       <div className="nav-actions">
-        <Button variant="secondary" icon={<FileDown size={14} />} disabled={!activeResumeId || typeof editorContent === "string"} onClick={() => {
-          if (!activeResumeId || typeof editorContent === "string") return;
-          void import("../features/preview/exportTextPdf")
-            .then(({ exportResumeTextPdf }) => exportResumeTextPdf(editorContent, settings, title))
-            .catch(() => setSaveToast({ kind: "error", message: "PDF 生成失败" }));
+        <Button variant="secondary" icon={<FileDown size={14} />} disabled={!activeResumeId} onClick={() => {
+          if (!activeResumeId) return;
+          void exportResumePdf({
+            resumeId: activeResumeId,
+            title,
+            saveCurrentResume,
+            getSnapshot: () => {
+              const state = useResumeStore.getState();
+              return {
+                activeResumeId: state.activeResumeId,
+                lockVersion: state.lockVersion,
+                saveStatus: state.saveStatus,
+              };
+            },
+          }).catch((error) => setSaveToast({
+            kind: "error",
+            message: resumePdfExportErrorMessage(error),
+          }));
         }}>
           导出 PDF
         </Button>
@@ -82,10 +94,7 @@ export function Header() {
         </Button>
       </div>
       {saveToast && (
-        <FeedbackNotice kind={saveToast.kind}>
-          {saveToast.kind === "success" ? <CircleCheck size={18} /> : <CircleAlert size={18} />}
-          {saveToast.message}
-        </FeedbackNotice>
+        <FeedbackNotice kind={saveToast.kind} placement="floating">{saveToast.message}</FeedbackNotice>
       )}
     </header>
   );

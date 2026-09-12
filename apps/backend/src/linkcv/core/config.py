@@ -170,11 +170,6 @@ class Settings(BaseSettings):
         alias="MINIO_SECRET_KEY",
     )
     minio_bucket: str = Field(default="linkcv", alias="MINIO_BUCKET")
-    plugin_release_origin: str = Field(
-        default="http://127.0.0.1:5173",
-        alias="PLUGIN_RELEASE_ORIGIN",
-    )
-
     resume_version_limit: int = Field(default=10, alias="RESUME_VERSION_LIMIT", ge=2)
     pdf_renderer_script: str | None = Field(default=None, alias="PDF_RENDERER_SCRIPT")
     pdf_renderer_timeout_seconds: float = Field(
@@ -183,9 +178,75 @@ class Settings(BaseSettings):
         gt=0,
         le=60,
     )
+    chromium_executable_path: str = Field(
+        default="/usr/bin/chromium",
+        alias="CHROMIUM_EXECUTABLE_PATH",
+        min_length=1,
+    )
+    pdf_renderer_max_smart_height_mm: float = Field(
+        default=2000,
+        alias="PDF_RENDERER_MAX_SMART_HEIGHT_MM",
+        ge=297,
+        le=5000,
+    )
     dataset_upload_max_bytes: int = Field(
         default=10 * 1024 * 1024,
         alias="DATASET_UPLOAD_MAX_BYTES",
+        ge=1,
+    )
+    dataset_max_files_per_batch: int = Field(
+        default=10,
+        alias="DATASET_MAX_FILES_PER_BATCH",
+        ge=1,
+    )
+    dataset_upload_requests_per_minute: int = Field(
+        default=20,
+        alias="DATASET_UPLOAD_REQUESTS_PER_MINUTE",
+        ge=1,
+    )
+    dataset_upload_user_concurrency: int = Field(
+        default=3,
+        alias="DATASET_UPLOAD_USER_CONCURRENCY",
+        ge=1,
+    )
+    dataset_upload_global_concurrency: int = Field(
+        default=12,
+        alias="DATASET_UPLOAD_GLOBAL_CONCURRENCY",
+        ge=1,
+    )
+    dataset_max_count_per_user: int = Field(
+        default=200,
+        alias="DATASET_MAX_COUNT_PER_USER",
+        ge=1,
+    )
+    dataset_max_total_bytes_per_user: int = Field(
+        default=1024 * 1024 * 1024,
+        alias="DATASET_MAX_TOTAL_BYTES_PER_USER",
+        ge=1,
+    )
+    dataset_dispatch_scan_seconds: int = Field(
+        default=5,
+        alias="DATASET_DISPATCH_SCAN_SECONDS",
+        ge=1,
+    )
+    dataset_redispatch_after_seconds: int = Field(
+        default=30,
+        alias="DATASET_REDISPATCH_AFTER_SECONDS",
+        ge=1,
+    )
+    dataset_parse_stale_seconds: int = Field(
+        default=240,
+        alias="DATASET_PARSE_STALE_SECONDS",
+        ge=1,
+    )
+    dataset_parse_max_attempts: int = Field(
+        default=3,
+        alias="DATASET_PARSE_MAX_ATTEMPTS",
+        ge=1,
+    )
+    dataset_upload_reservation_ttl_seconds: int = Field(
+        default=86400,
+        alias="DATASET_UPLOAD_RESERVATION_TTL_SECONDS",
         ge=1,
     )
     interview_asset_upload_max_bytes: int = Field(
@@ -261,19 +322,19 @@ class Settings(BaseSettings):
     )
     rabbitmq_url: SecretStr | None = Field(default=None, alias="RABBITMQ_URL")
     rabbitmq_exchange_name: str = Field(
-        default="tolink.cv.resume_import",
+        default="tolink.cv.resume_import.v2",
         alias="RABBITMQ_EXCHANGE_NAME",
         min_length=1,
         max_length=255,
     )
     rabbitmq_queue: str = Field(
-        default="linkcv.resume_import.worker",
+        default="linkcv.resume_import.worker.v2",
         alias="RABBITMQ_QUEUE",
         min_length=1,
         max_length=255,
     )
     rabbitmq_routing_key: str = Field(
-        default="resume.import",
+        default="resume.import.v2",
         alias="RABBITMQ_ROUTING_KEY",
         min_length=1,
         max_length=255,
@@ -282,13 +343,13 @@ class Settings(BaseSettings):
         default=None, alias="KAFKA_BOOTSTRAP_SERVERS"
     )
     kafka_topic: str = Field(
-        default="tolink.cv.resume_import",
+        default="tolink.cv.resume_import.v2",
         alias="KAFKA_TOPIC",
         min_length=1,
         max_length=249,
     )
     kafka_consumer_group: str = Field(
-        default="linkcv.resume_import.worker",
+        default="linkcv.resume_import.worker.v2",
         alias="KAFKA_CONSUMER_GROUP",
         min_length=1,
         max_length=255,
@@ -441,6 +502,19 @@ class Settings(BaseSettings):
                 "RESUME_STRUCTURING_MAX_BYTES cannot exceed RESUME_MARKDOWN_MAX_BYTES"
             )
         if (
+            self.dataset_upload_user_concurrency
+            > self.dataset_upload_global_concurrency
+        ):
+            raise ValueError(
+                "DATASET_UPLOAD_USER_CONCURRENCY cannot exceed "
+                "DATASET_UPLOAD_GLOBAL_CONCURRENCY"
+            )
+        if self.dataset_max_total_bytes_per_user < self.dataset_upload_max_bytes:
+            raise ValueError(
+                "DATASET_MAX_TOTAL_BYTES_PER_USER cannot be less than "
+                "DATASET_UPLOAD_MAX_BYTES"
+            )
+        if (
             self.resume_import_parse_stale_seconds
             <= self.resume_import_parse_deadline_seconds
         ):
@@ -467,30 +541,6 @@ class Settings(BaseSettings):
             raise ValueError(
                 "KAFKA_BOOTSTRAP_SERVERS is required when MQ_VENDOR=kafka"
             )
-        origin = urlsplit(self.plugin_release_origin.strip())
-        try:
-            port = origin.port
-        except ValueError as error:
-            raise ValueError(
-                "PLUGIN_RELEASE_ORIGIN must be an HTTP(S) root origin"
-            ) from error
-        if (
-            origin.scheme not in {"http", "https"}
-            or not origin.hostname
-            or origin.path not in {"", "/"}
-            or origin.query
-            or origin.fragment
-            or origin.username
-            or origin.password
-        ):
-            raise ValueError("PLUGIN_RELEASE_ORIGIN must be an HTTP(S) root origin")
-        authority = origin.hostname
-        if ":" in authority:
-            authority = f"[{authority}]"
-        if port is not None:
-            authority = f"{authority}:{port}"
-        self.plugin_release_origin = f"{origin.scheme}://{authority}"
-
         pi_origin = urlsplit(self.pi_service_base_url.strip())
         if (
             pi_origin.scheme not in {"http", "https"}
@@ -518,8 +568,6 @@ class Settings(BaseSettings):
             invalid.append("MINIO_ACCESS_KEY")
         if _is_placeholder(self.minio_secret_key):
             invalid.append("MINIO_SECRET_KEY")
-        if origin.scheme != "https":
-            invalid.append("PLUGIN_RELEASE_ORIGIN")
         if _is_placeholder(self.linkparse_base_url):
             invalid.append("LINKPARSE_BASE_URL")
         linkparse_key = (

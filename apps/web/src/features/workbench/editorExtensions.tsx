@@ -21,6 +21,7 @@ import {
   Globe,
   GraduationCap,
   ContactRound,
+  ImageUp,
   Mail,
   MapPin,
   Maximize2,
@@ -32,7 +33,14 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
 import { resumeInlineIconOptions, type InlineIconName } from "../../lib/resumeInlineIcon";
+import { isResumeEmailLink, shouldAutoLinkResumeValue } from "../../lib/resumeLink";
 import { useResumeStore } from "../../store/resumeStore";
+import {
+  exitResumeRowToBlankParagraph,
+  removeBlankParagraphAfterResumeRow,
+  removeVisuallyBlankResumeLine,
+} from "./editorCommands";
+import { RESUME_IMAGE_ACCEPT, validateResumeImageFile } from "./resumeImageLimits";
 
 export const inlineIconComponents = {
   Mail,
@@ -52,13 +60,15 @@ export const inlineIconComponents = {
 export type { InlineIconName } from "../../lib/resumeInlineIcon";
 export const inlineIconNames = resumeInlineIconOptions.map((option) => option.name);
 
-const BLOCK_ID_PATTERN = /^blk_[a-z0-9]{16,64}$/;
+// Canonical node ids are the stable editor anchors. Legacy blk_ values are
+// accepted only when the explicit maintenance adapter projects an old row.
+const BLOCK_ID_PATTERN = /^(?:blk|node)_[a-z0-9]{16,64}$/;
 const blockIdentityPluginKey = new PluginKey("resume-block-identity");
 
 export function createResumeBlockId() {
   const random = globalThis.crypto?.randomUUID?.().replace(/-/g, "")
     ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
-  return `blk_${random.toLowerCase()}`.slice(0, 68);
+  return `node_${random.toLowerCase()}`.slice(0, 69);
 }
 
 export function normalizeResumeBlockId(value: unknown) {
@@ -71,15 +81,35 @@ export const ResumeBlockAnchor = Node.create({
   inline: true,
   atom: true,
   selectable: false,
-  addAttributes: () => ({ blockId: { default: null } }),
+  addAttributes: () => ({
+    blockId: { default: null },
+    semanticKind: { default: null },
+    role: { default: null },
+    sourceRefs: { default: [] },
+    fieldKey: { default: null },
+    contactKind: { default: null },
+    label: { default: null },
+  }),
   parseHTML: () => [{
     tag: "span[data-resume-block-id]",
     getAttrs: (element) => element instanceof HTMLElement
-      ? { blockId: normalizeResumeBlockId(element.dataset.resumeBlockId) }
+      ? {
+        blockId: normalizeResumeBlockId(element.dataset.resumeBlockId),
+        semanticKind: element.dataset.resumeSemanticKind ?? null,
+        role: element.dataset.resumeBlockRole ?? null,
+        fieldKey: element.dataset.resumeFieldKey ?? null,
+        contactKind: element.dataset.resumeContactKind ?? null,
+        label: element.dataset.resumeLabel ?? null,
+      }
       : false,
   }],
   renderHTML: ({ node }) => ["span", {
     "data-resume-block-id": normalizeResumeBlockId(node.attrs.blockId) ?? createResumeBlockId(),
+    ...(typeof node.attrs.semanticKind === "string" ? { "data-resume-semantic-kind": node.attrs.semanticKind } : {}),
+    ...(typeof node.attrs.role === "string" ? { "data-resume-block-role": node.attrs.role } : {}),
+    ...(typeof node.attrs.fieldKey === "string" ? { "data-resume-field-key": node.attrs.fieldKey } : {}),
+    ...(typeof node.attrs.contactKind === "string" ? { "data-resume-contact-kind": node.attrs.contactKind } : {}),
+    ...(typeof node.attrs.label === "string" ? { "data-resume-label": node.attrs.label } : {}),
     "aria-hidden": "true",
     class: "resume-block-anchor",
   }],
@@ -115,12 +145,9 @@ export const ResumeBlockIdentity = Extension.create({
 
 function uploadImage(file: File) {
   return new Promise<string>((resolve, reject) => {
-    if (!file.type.startsWith("image/")) {
-      reject(new Error("请选择图片文件"));
-      return;
-    }
-    if (file.size > 8 * 1024 * 1024) {
-      reject(new Error("图片不能超过 8MB"));
+    const validationMessage = validateResumeImageFile(file);
+    if (validationMessage) {
+      reject(new Error(validationMessage));
       return;
     }
     const reader = new FileReader();
@@ -149,6 +176,7 @@ function uploadImage(file: File) {
 }
 
 function MediaNodeView({ node, selected, updateAttributes, deleteNode }: NodeViewProps) {
+  const mediaRef = useRef<HTMLElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const isAvatar = node.type.name === "avatarImage";
   const size = isAvatar ? Number(node.attrs.size) : Number(node.attrs.width);
@@ -156,8 +184,34 @@ function MediaNodeView({ node, selected, updateAttributes, deleteNode }: NodeVie
   const align = node.attrs.align as string | undefined;
   const [widthDraft, setWidthDraft] = useState(String(size));
   const [error, setError] = useState("");
+  const avatarSizeRef = useRef(size);
 
   useEffect(() => setWidthDraft(String(size)), [size]);
+  useEffect(() => { avatarSizeRef.current = size; }, [size]);
+
+  const adjustAvatarSize = (direction: -1 | 1) => {
+    const nextSize = Math.min(220, Math.max(56, avatarSizeRef.current + direction * 4));
+    if (nextSize === avatarSizeRef.current) return;
+    avatarSizeRef.current = nextSize;
+    updateAttributes({ size: nextSize });
+  };
+
+  useEffect(() => {
+    if (!isAvatar || !selected) return;
+    const media = mediaRef.current;
+    if (!media) return;
+
+    const zoomAvatar = (event: WheelEvent) => {
+      if ((!event.ctrlKey && !event.metaKey) || event.deltaY === 0) return;
+      if (event.target !== imageRef.current) return;
+      event.preventDefault();
+      event.stopPropagation();
+      adjustAvatarSize(event.deltaY < 0 ? 1 : -1);
+    };
+
+    media.addEventListener("wheel", zoomAvatar, { passive: false });
+    return () => media.removeEventListener("wheel", zoomAvatar);
+  }, [isAvatar, selected, updateAttributes]);
 
   const bodyImageBounds = () => {
     const image = imageRef.current;
@@ -190,7 +244,7 @@ function MediaNodeView({ node, selected, updateAttributes, deleteNode }: NodeVie
   const replace = async () => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = "image/png,image/jpeg,image/gif,image/webp,image/svg+xml";
+    input.accept = RESUME_IMAGE_ACCEPT;
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
@@ -217,8 +271,7 @@ function MediaNodeView({ node, selected, updateAttributes, deleteNode }: NodeVie
 
     const move = (moveEvent: PointerEvent) => {
       const nextPx = startWidth + moveEvent.clientX - startX;
-      if (isAvatar) updateAttributes({ size: Math.round(Math.min(220, Math.max(56, nextPx))) });
-      else if (widthUnit === "px") applyBodyWidth(nextPx, "px");
+      if (widthUnit === "px") applyBodyWidth(nextPx, "px");
       else applyBodyWidth((nextPx / pageWidth) * 100, "%");
     };
     const up = () => {
@@ -233,81 +286,107 @@ function MediaNodeView({ node, selected, updateAttributes, deleteNode }: NodeVie
 
   return (
     <NodeViewWrapper
+      ref={mediaRef}
       as={isAvatar ? "figure" : "div"}
       className={`resume-media-node ${isAvatar ? "resume-avatar" : `resume-image align-${align}`}${selected ? " is-selected" : ""}`}
       style={isAvatar ? { width: size, height: size } : { width: `${size}${widthUnit}` }}
+      role={isAvatar ? "group" : undefined}
+      aria-label={isAvatar ? "简历头像；按住 Command 或 Control 并滚动鼠标滚轮缩放，也可按住修饰键使用上下方向键调整" : undefined}
+      tabIndex={isAvatar && selected ? 0 : undefined}
       data-drag-handle
+      onKeyDown={(event: React.KeyboardEvent<HTMLElement>) => {
+        if (!isAvatar || !selected || (!event.ctrlKey && !event.metaKey)) return;
+        if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+        event.preventDefault();
+        event.stopPropagation();
+        adjustAvatarSize(event.key === "ArrowUp" ? 1 : -1);
+      }}
     >
-      {selected && (
+      {selected && isAvatar && (
+        <>
+          <div className="avatar-scale-hint" contentEditable={false} role="note">
+            按住 <kbd>⌘</kbd> / Ctrl + 滚轮缩放
+          </div>
+          <button
+            type="button"
+            className="avatar-replace-action"
+            contentEditable={false}
+            aria-label="更换头像"
+            onClick={() => void replace()}
+          >
+            <ImageUp aria-hidden="true" size={16} />
+            <span>更换头像</span>
+          </button>
+          {error && <em className="avatar-media-error" contentEditable={false} role="alert">{error}</em>}
+        </>
+      )}
+      {selected && !isAvatar && (
         <div className="media-context-toolbar" contentEditable={false}>
-          {!isAvatar ? (
-            <>
-              <button aria-label="图片左对齐" onClick={() => updateAttributes({ align: "left" })}><AlignLeft size={14} /></button>
-              <button aria-label="图片居中" onClick={() => updateAttributes({ align: "center" })}><AlignCenter size={14} /></button>
-              <button aria-label="图片右对齐" onClick={() => updateAttributes({ align: "right" })}><AlignRight size={14} /></button>
-              <button aria-label="图片通栏" onClick={() => updateAttributes({ align: "full", width: 100, widthUnit: "%" })}><Maximize2 size={14} /></button>
-              <span />
-              <label className="media-size-field" aria-label="图片宽度">
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min={widthUnit === "px" ? 10 : 0.1}
-                  max={widthUnit === "px" ? 794 : 100}
-                  step={widthUnit === "px" ? 1 : 0.1}
-                  value={widthDraft}
-                  onChange={(event) => setWidthDraft(event.target.value)}
-                  onBlur={() => {
-                    const nextValue = Number(widthDraft);
-                    if (Number.isFinite(nextValue)) applyBodyWidth(nextValue);
-                    else setWidthDraft(String(size));
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      const nextValue = Number(widthDraft);
-                      if (Number.isFinite(nextValue)) applyBodyWidth(nextValue);
-                      event.currentTarget.blur();
-                    }
-                  }}
-                />
-                <select aria-label="图片宽度单位" value={widthUnit} onChange={(event) => changeUnit(event.target.value as "%" | "px")}>
-                  <option value="%">%</option>
-                  <option value="px">px</option>
-                </select>
-              </label>
-              <span />
-            </>
-          ) : (
-            <label className="media-size-field avatar-size-field" aria-label="头像尺寸">
-              <input
-                type="number"
-                min="56"
-                max="220"
-                step="1"
-                value={widthDraft}
-                onChange={(event) => setWidthDraft(event.target.value)}
-                onBlur={() => {
+          <button aria-label="图片左对齐" onClick={() => updateAttributes({ align: "left" })}><AlignLeft size={14} /></button>
+          <button aria-label="图片居中" onClick={() => updateAttributes({ align: "center" })}><AlignCenter size={14} /></button>
+          <button aria-label="图片右对齐" onClick={() => updateAttributes({ align: "right" })}><AlignRight size={14} /></button>
+          <button aria-label="图片通栏" onClick={() => updateAttributes({ align: "full", width: 100, widthUnit: "%" })}><Maximize2 size={14} /></button>
+          <span />
+          <label className="media-size-field" aria-label="图片宽度">
+            <input
+              type="number"
+              inputMode="decimal"
+              min={widthUnit === "px" ? 10 : 0.1}
+              max={widthUnit === "px" ? 794 : 100}
+              step={widthUnit === "px" ? 1 : 0.1}
+              value={widthDraft}
+              onChange={(event) => setWidthDraft(event.target.value)}
+              onBlur={() => {
+                const nextValue = Number(widthDraft);
+                if (Number.isFinite(nextValue)) applyBodyWidth(nextValue);
+                else setWidthDraft(String(size));
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
                   const nextValue = Number(widthDraft);
-                  if (Number.isFinite(nextValue)) updateAttributes({ size: Math.round(Math.min(220, Math.max(56, nextValue))) });
-                  else setWidthDraft(String(size));
-                }}
-              />
-              <output>px</output>
-            </label>
-          )}
+                  if (Number.isFinite(nextValue)) applyBodyWidth(nextValue);
+                  event.currentTarget.blur();
+                }
+              }}
+            />
+            <select aria-label="图片宽度单位" value={widthUnit} onChange={(event) => changeUnit(event.target.value as "%" | "px")}>
+              <option value="%">%</option>
+              <option value="px">px</option>
+            </select>
+          </label>
+          <span />
           <input
             className="media-alt-field"
-            aria-label={isAvatar ? "头像替代文字" : "图片替代文字"}
+            aria-label="图片替代文字"
             value={node.attrs.alt ?? ""}
             placeholder="替代文字"
             onChange={(event) => updateAttributes({ alt: event.target.value })}
           />
           {error && <em className="media-error" role="alert">{error}</em>}
           <button aria-label="更换图片" onClick={() => void replace()}><Upload size={14} /></button>
-          {!isAvatar && <button aria-label="删除图片" onClick={deleteNode}><Trash2 size={14} /></button>}
+          <button aria-label="删除图片" onClick={deleteNode}><Trash2 size={14} /></button>
         </div>
       )}
-      <img ref={imageRef} src={node.attrs.src} alt={node.attrs.alt || (isAvatar ? "简历头像" : "简历图片")} draggable={false} />
-      {selected && <button className="media-resize-handle" contentEditable={false} aria-label="拖拽调整图片尺寸" onPointerDown={startResize} />}
+      {isAvatar ? (
+        <span className="resume-avatar-image-frame" contentEditable={false}>
+          <img
+            ref={imageRef}
+            src={node.attrs.src}
+            alt={node.attrs.alt || "简历头像"}
+            width={size}
+            height={size}
+            draggable={false}
+          />
+        </span>
+      ) : (
+        <img
+          ref={imageRef}
+          src={node.attrs.src}
+          alt={node.attrs.alt || "简历图片"}
+          draggable={false}
+        />
+      )}
+      {selected && !isAvatar && <button className="media-resize-handle" contentEditable={false} aria-label="拖拽调整图片尺寸" onPointerDown={startResize} />}
     </NodeViewWrapper>
   );
 }
@@ -317,17 +396,28 @@ export const AvatarImage = Node.create({
   group: "block",
   atom: true,
   selectable: true,
-  addAttributes: () => ({ src: { default: "" }, size: { default: 96 }, alt: { default: "简历头像" } }),
+  addAttributes: () => ({
+    src: { default: "" },
+    size: { default: 96 },
+    alt: { default: "简历头像" },
+    systemFallback: { default: false },
+    nodeId: { default: null },
+    sourceRefs: { default: [] },
+  }),
   parseHTML: () => [{
     tag: "figure[data-type='avatar-image']",
     getAttrs: (element) => element instanceof HTMLElement ? {
       src: element.dataset.src ?? "",
       size: Number(element.dataset.size) || 96,
       alt: element.dataset.alt ?? "简历头像",
+      systemFallback: element.dataset.systemFallback === "true",
+      nodeId: normalizeResumeBlockId(element.dataset.nodeId),
     } : false,
   }],
   renderHTML: ({ HTMLAttributes }) => ["figure", mergeAttributes(HTMLAttributes, { "data-type": "avatar-image" })],
-  addNodeView: () => ReactNodeViewRenderer(MediaNodeView),
+  addNodeView: () => ReactNodeViewRenderer(MediaNodeView, {
+    className: "resume-avatar-node-view",
+  }),
 });
 
 export const ResumeImage = Node.create({
@@ -341,6 +431,8 @@ export const ResumeImage = Node.create({
     widthUnit: { default: "%" },
     align: { default: "center" },
     alt: { default: "简历图片" },
+    nodeId: { default: null },
+    sourceRefs: { default: [] },
   }),
   parseHTML: () => [
     {
@@ -351,10 +443,11 @@ export const ResumeImage = Node.create({
         widthUnit: element.dataset.widthUnit === "px" ? "px" : "%",
         align: element.dataset.align ?? "center",
         alt: element.dataset.alt ?? "简历图片",
+        nodeId: normalizeResumeBlockId(element.dataset.nodeId),
       } : false,
     },
     {
-      tag: "img",
+      tag: "img:not([data-inline-image])",
       getAttrs: (element) => element instanceof HTMLImageElement ? {
         src: element.getAttribute("src") || "",
         alt: element.alt || "简历图片",
@@ -492,6 +585,11 @@ export const ResumeRow = Node.create({
   content: "paragraph paragraph",
   defining: true,
   isolating: true,
+  addKeyboardShortcuts() {
+    return {
+      Enter: () => exitResumeRowToBlankParagraph(this.editor),
+    };
+  },
   addAttributes: () => ({ leftWidth: { default: 50 } }),
   parseHTML: () => [
     {
@@ -502,6 +600,16 @@ export const ResumeRow = Node.create({
   ],
   renderHTML: ({ HTMLAttributes }) => ["div", mergeAttributes(HTMLAttributes, { "data-type": "resume-row", "data-left-width": HTMLAttributes.leftWidth ?? 50 }), 0],
   addNodeView: () => ReactNodeViewRenderer(ResumeRowView),
+});
+
+export const ResumeRowExitKeymap = Extension.create({
+  name: "resumeRowExitKeymap",
+  addKeyboardShortcuts() {
+    return {
+      Backspace: () => removeBlankParagraphAfterResumeRow(this.editor)
+        || removeVisuallyBlankResumeLine(this.editor),
+    };
+  },
 });
 
 export const ResumeColumn = Node.create({
@@ -565,6 +673,137 @@ function InlineIconView({ node }: NodeViewProps) {
   return <NodeViewWrapper as="span" className="resume-inline-icon"><Icon size="1em" /></NodeViewWrapper>;
 }
 
+function InlineImageView({ node, selected, updateAttributes, deleteNode }: NodeViewProps) {
+  const width = Math.min(240, Math.max(16, Number(node.attrs.width) || 72));
+  const legacyAspectRatio = Math.min(20, Math.max(0.1, Number(node.attrs.aspectRatio) || 3));
+  const height = Math.min(240, Math.max(16, Number(node.attrs.height) || width / legacyAspectRatio));
+  const [widthDraft, setWidthDraft] = useState(String(width));
+  const [heightDraft, setHeightDraft] = useState(String(Math.round(height)));
+  useEffect(() => setWidthDraft(String(width)), [width]);
+  useEffect(() => setHeightDraft(String(Math.round(height))), [height]);
+  const commitSize = (dimension: "width" | "height") => {
+    const draft = dimension === "width" ? widthDraft : heightDraft;
+    const fallback = dimension === "width" ? width : height;
+    const next = Number(draft);
+    if (Number.isFinite(next)) updateAttributes({ [dimension]: Math.round(Math.min(240, Math.max(16, next))) });
+    else if (dimension === "width") setWidthDraft(String(Math.round(fallback)));
+    else setHeightDraft(String(Math.round(fallback)));
+  };
+  return (
+    <NodeViewWrapper
+      as="span"
+      className={`resume-inline-image${selected ? " is-selected" : ""}`}
+      style={{ width, height }}
+    >
+      {selected && (
+        <span className="media-context-toolbar inline-image-toolbar" contentEditable={false}>
+          <label className="media-size-field inline-image-size-field" aria-label="行内图片宽度">
+            <span>宽</span>
+            <input
+              type="number"
+              name="inline-image-width"
+              autoComplete="off"
+              inputMode="numeric"
+              min="16"
+              max="240"
+              step="1"
+              value={widthDraft}
+              onChange={(event) => setWidthDraft(event.target.value)}
+              onBlur={() => commitSize("width")}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  commitSize("width");
+                  event.currentTarget.blur();
+                }
+              }}
+            />
+            <output>px</output>
+          </label>
+          <label className="media-size-field inline-image-size-field" aria-label="行内图片高度">
+            <span>高</span>
+            <input
+              type="number"
+              name="inline-image-height"
+              autoComplete="off"
+              inputMode="numeric"
+              min="16"
+              max="240"
+              step="1"
+              value={heightDraft}
+              onChange={(event) => setHeightDraft(event.target.value)}
+              onBlur={() => commitSize("height")}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  commitSize("height");
+                  event.currentTarget.blur();
+                }
+              }}
+            />
+            <output>px</output>
+          </label>
+          <input
+            className="media-alt-field"
+            name="inline-image-alt"
+            autoComplete="off"
+            aria-label="行内图片替代文字"
+            value={node.attrs.alt ?? ""}
+            placeholder="例如：示例公司 Logo…"
+            onChange={(event) => updateAttributes({ alt: event.target.value })}
+          />
+          <button type="button" aria-label="删除行内图片" onClick={deleteNode}><Trash2 size={14} /></button>
+        </span>
+      )}
+      <img src={node.attrs.src} width={Math.round(width)} height={Math.round(height)} alt={node.attrs.alt || "行内图片"} draggable={false} />
+    </NodeViewWrapper>
+  );
+}
+
+export const InlineImage = Node.create({
+  name: "inlineImage",
+  group: "inline",
+  inline: true,
+  atom: true,
+  selectable: true,
+  addAttributes: () => ({
+    src: { default: "" },
+    width: { default: 72 },
+    height: { default: null },
+    aspectRatio: { default: 3 },
+    alt: { default: "行内图片" },
+    nodeId: { default: null },
+    sourceRefs: { default: [] },
+  }),
+  parseHTML: () => [{
+    tag: "img[data-inline-image]",
+    getAttrs: (element) => element instanceof HTMLElement ? {
+      src: element.dataset.src ?? element.getAttribute("src") ?? "",
+      width: Number(element.dataset.width) || 72,
+      height: Number(element.dataset.height) || null,
+      aspectRatio: Number(element.dataset.aspectRatio) || 3,
+      alt: element.dataset.alt ?? element.getAttribute("alt") ?? "行内图片",
+      nodeId: normalizeResumeBlockId(element.dataset.nodeId),
+    } : false,
+  }],
+  renderHTML: ({ node, HTMLAttributes }) => [
+    "img",
+    mergeAttributes(HTMLAttributes, {
+      "data-inline-image": "",
+      "data-src": node.attrs.src,
+      "data-width": node.attrs.width,
+      "data-height": node.attrs.height,
+      "data-aspect-ratio": node.attrs.aspectRatio,
+      "data-alt": node.attrs.alt,
+      class: "resume-inline-image",
+      style: `width:${node.attrs.width}px;height:${node.attrs.height ?? Math.round(node.attrs.width / node.attrs.aspectRatio)}px`,
+      src: node.attrs.src,
+      alt: node.attrs.alt,
+      width: node.attrs.width,
+      height: node.attrs.height ?? Math.round(node.attrs.width / node.attrs.aspectRatio),
+    }),
+  ],
+  addNodeView: () => ReactNodeViewRenderer(InlineImageView),
+});
+
 export const InlineIcon = Node.create({
   name: "inlineIcon",
   group: "inline",
@@ -606,14 +845,24 @@ export const resumeEditorExtensions: Extensions = [
   Color,
   Highlight.configure({ multicolor: true }),
   TextAlign.configure({ types: ["heading", "paragraph"] }),
-  Link.configure({ openOnClick: false, autolink: true, HTMLAttributes: { rel: "noopener noreferrer", target: "_blank" } }),
+  Link.configure({
+    openOnClick: false,
+    autolink: true,
+    shouldAutoLink: shouldAutoLinkResumeValue,
+    isAllowedUri: (value, { defaultValidate }) => (
+      defaultValidate(value) && !isResumeEmailLink(value)
+    ),
+    HTMLAttributes: { rel: "noopener noreferrer", target: "_blank" },
+  }),
   Placeholder.configure({ placeholder: "直接输入你的简历内容…" }),
   AvatarImage,
   ResumeImage,
   ResumeRow,
+  ResumeRowExitKeymap,
   ResumeColumn,
   ResumeColumns,
   ResumeMetaRow,
   ResumeTrioRow,
+  InlineImage,
   InlineIcon,
 ];

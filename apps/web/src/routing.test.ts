@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   adminLoginPath,
+  assistantPath,
   authPath,
+  datasetsPath,
   editorPath,
   isSafeAdminPath,
   isSafeAppPath,
   jobDetailPath,
-  jobEditPath,
+  legacyCareerRedirect,
   navigateTo,
   parseAppRoute,
   sharePath,
@@ -16,21 +18,36 @@ describe("LinkCV routes", () => {
   it("parses landing, auth, admin, resume, template, and editor routes", () => {
     expect(parseAppRoute("/")).toEqual({ kind: "landing" });
     expect(parseAppRoute("/home")).toEqual({ kind: "landing" });
+    expect(parseAppRoute("/datasets/99")).toEqual({ kind: "datasets" });
     expect(parseAppRoute("/home/")).toEqual({ kind: "landing" });
     expect(parseAppRoute("/login", "?mode=register")).toEqual({ kind: "auth", mode: "register", next: null });
     expect(parseAppRoute("/admin/llm/models")).toEqual({ kind: "admin" });
     expect(parseAppRoute("/resumes/")).toEqual({ kind: "resumes" });
+    expect(parseAppRoute("/assistant/")).toEqual({ kind: "assistant" });
+    expect(parseAppRoute("/assistant/session_123")).toEqual({ kind: "assistant", sessionId: "session_123" });
+    expect(parseAppRoute("/assistant/a%20b")).toEqual({ kind: "assistant", sessionId: "a b" });
     expect(parseAppRoute("/templates/")).toEqual({ kind: "templates" });
     expect(parseAppRoute("/resumes/resume_123/edit")).toEqual({ kind: "editor", resumeId: "resume_123" });
-    expect(parseAppRoute("/jobs")).toEqual({ kind: "jobs" });
-    expect(parseAppRoute("/jobs/new")).toEqual({ kind: "jobCreate" });
+    expect(parseAppRoute("/jobs")).toEqual({ kind: "interviews", view: "applications" });
+    expect(parseAppRoute("/jobs/new")).toEqual({ kind: "interviews", view: "applications", importJob: true });
     expect(parseAppRoute("/jobs/job_123")).toEqual({ kind: "jobDetail", jobId: "job_123" });
-    expect(parseAppRoute("/jobs/job_123/edit")).toEqual({ kind: "jobEdit", jobId: "job_123" });
-    expect(parseAppRoute("/interviews")).toEqual({ kind: "interviews", view: "overview" });
+    expect(parseAppRoute("/jobs/job_123/edit")).toEqual({ kind: "jobDetail", jobId: "job_123" });
+    expect(parseAppRoute("/interviews")).toEqual({ kind: "interviews", view: "applications" });
+    expect(parseAppRoute("/career")).toEqual({ kind: "interviews", view: "applications" });
+    expect(parseAppRoute("/career/jobs")).toEqual({ kind: "interviews", view: "applications" });
+    expect(parseAppRoute("/career/jobs/new")).toEqual({ kind: "interviews", view: "applications", importJob: true });
+    expect(parseAppRoute("/career/applications")).toEqual({ kind: "interviews", view: "applications", jobId: undefined, createApplication: undefined, importJob: undefined });
+    expect(parseAppRoute("/career/applications", "?job=job_123&create=1&import=1")).toEqual({ kind: "interviews", view: "applications", jobId: "job_123", createApplication: true, importJob: true });
+    expect(parseAppRoute("/career/applications/application_1")).toEqual({ kind: "interviews", view: "applications", applicationId: "application_1", sessionId: undefined });
+    expect(parseAppRoute("/career/applications/application_1", "?session=session_1")).toEqual({ kind: "interviews", view: "applications", applicationId: "application_1", sessionId: "session_1" });
+    expect(parseAppRoute("/career/schedule")).toEqual({ kind: "interviews", view: "schedule" });
+    expect(parseAppRoute("/career/reviews")).toEqual({ kind: "interviews", view: "records", sessionId: undefined });
     expect(parseAppRoute("/interviews", "?view=schedule")).toEqual({ kind: "interviews", view: "schedule" });
     expect(parseAppRoute("/interviews", "?view=records")).toEqual({ kind: "interviews", view: "records" });
-    expect(parseAppRoute("/interviews", "?view=unknown")).toEqual({ kind: "interviews", view: "overview" });
-    expect(parseAppRoute("/datasets")).toEqual({ kind: "datasets" });
+    expect(parseAppRoute("/interviews", "?view=overview")).toEqual({ kind: "interviews", view: "applications" });
+    expect(parseAppRoute("/interviews", "?view=unknown")).toEqual({ kind: "interviews", view: "applications" });
+    expect(parseAppRoute("/datasets")).toEqual({ kind: "datasets", folderId: undefined });
+    expect(parseAppRoute("/datasets", "?folder=f-123")).toEqual({ kind: "datasets", folderId: "f-123" });
     expect(parseAppRoute("/account")).toEqual({ kind: "account" });
     expect(parseAppRoute("/account/password")).toEqual({ kind: "notFound" });
     expect(parseAppRoute("/share/abc123")).toEqual({ kind: "share", token: "abc123" });
@@ -38,9 +55,27 @@ describe("LinkCV routes", () => {
     expect(parseAppRoute("/missing")).toEqual({ kind: "notFound" });
   });
 
+  it("redirects career entry routes to the two current career center entries", () => {
+    expect(legacyCareerRedirect("/career")).toBe("/career/applications");
+    expect(legacyCareerRedirect("/career/jobs")).toBe("/career/applications");
+    expect(legacyCareerRedirect("/jobs")).toBe("/career/applications");
+    expect(legacyCareerRedirect("/career/jobs/new")).toBe("/career/applications?import=1");
+    expect(legacyCareerRedirect("/jobs/new")).toBe("/career/applications?import=1");
+    expect(legacyCareerRedirect("/jobs/job_123/edit")).toBe("/career/jobs/job_123");
+    expect(legacyCareerRedirect("/interviews")).toBe("/career/applications");
+    expect(legacyCareerRedirect("/interviews", "?view=overview")).toBe("/career/applications");
+    expect(legacyCareerRedirect("/interviews", "?view=unknown")).toBe("/career/applications");
+    expect(legacyCareerRedirect("/interviews", "?view=applications")).toBe("/career/applications");
+  });
+
   it("encodes share tokens when building share paths", () => {
     expect(sharePath("abc123")).toBe("/share/abc123");
     expect(sharePath("a/b c")).toBe("/share/a%2Fb%20c");
+  });
+
+  it("builds assistant conversation paths with encoded session identifiers", () => {
+    expect(assistantPath()).toBe("/assistant");
+    expect(assistantPath("session/a b")).toBe("/assistant/session%2Fa%20b");
   });
 
   it("parses the admin login route and its safe next target", () => {
@@ -52,13 +87,19 @@ describe("LinkCV routes", () => {
 
   it("encodes resume identifiers and only accepts internal resume return paths", () => {
     expect(editorPath("resume/a b")).toBe("/resumes/resume%2Fa%20b/edit");
-    expect(jobDetailPath("job/a b")).toBe("/jobs/job%2Fa%20b");
-    expect(jobEditPath("job/a b")).toBe("/jobs/job%2Fa%20b/edit");
+    expect(jobDetailPath("job/a b")).toBe("/career/jobs/job%2Fa%20b");
+    expect(jobDetailPath("job/a b", "application/1")).toBe("/career/jobs/job%2Fa%20b?fromApplication=application%2F1");
     expect(isSafeAppPath("/resumes/resume_123/edit")).toBe(true);
+    expect(isSafeAppPath("/assistant")).toBe(true);
     expect(isSafeAppPath("/templates")).toBe(true);
     expect(isSafeAppPath("/jobs/job_123/edit")).toBe(true);
     expect(isSafeAppPath("/interviews?view=records")).toBe(true);
+    expect(isSafeAppPath("/career?view=applications")).toBe(true);
     expect(isSafeAppPath("/datasets")).toBe(true);
+    expect(isSafeAppPath("/datasets?folder=f1")).toBe(true);
+    expect(datasetsPath()).toBe("/datasets");
+    expect(datasetsPath("all")).toBe("/datasets");
+    expect(datasetsPath("folder-1")).toBe("/datasets?folder=folder-1");
     expect(isSafeAppPath("/account")).toBe(true);
     expect(isSafeAppPath("/account/password")).toBe(true);
     expect(isSafeAppPath("//example.com/resumes")).toBe(false);

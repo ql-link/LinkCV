@@ -82,16 +82,12 @@ class JobDescription(Base):
             name="ck_job_descriptions_company_name_not_blank",
         ),
         CheckConstraint(
-            "LENGTH(TRIM(description)) > 0",
-            name="ck_job_descriptions_description_not_blank",
-        ),
-        CheckConstraint(
             "LOWER(JSON_TYPE(skills)) = 'array'",
             name="ck_job_descriptions_skills_array",
         ),
         CheckConstraint(
             "employment_type IS NULL OR employment_type IN "
-            "('full_time', 'part_time', 'internship', 'contract', 'temporary')",
+            "('internship', 'campus', 'full_time')",
             name="ck_job_descriptions_employment_type",
         ),
         CheckConstraint(
@@ -162,6 +158,9 @@ class JobDescription(Base):
     job_title: Mapped[str] = mapped_column(String(200), nullable=False, comment="岗位名称")
     company_name: Mapped[str] = mapped_column(
         String(200), nullable=False, comment="公司展示名称"
+    )
+    logo_url: Mapped[str | None] = mapped_column(
+        String(2048), nullable=True, comment="用户为该岗位保存的公司 Logo HTTPS URL"
     )
     employment_type: Mapped[str | None] = mapped_column(
         String(24), nullable=True, comment="岗位类型"
@@ -254,9 +253,6 @@ class JobDescription(Base):
         timestamp_type(), nullable=True, comment="外部结构化数据写入时间（UTC）"
     )
     notes: Mapped[str | None] = mapped_column(Text(), nullable=True, comment="用户个人备注")
-    archived_at: Mapped[datetime | None] = mapped_column(
-        timestamp_type(), nullable=True, comment="归档时间（UTC）"
-    )
     lock_version: Mapped[int] = mapped_column(
         unsigned_int_type(), nullable=False, default=1, comment="乐观锁版本"
     )
@@ -273,15 +269,73 @@ class JobDescription(Base):
 
 
 Index(
-    "idx_job_descriptions_user_archive_updated_id",
-    JobDescription.user_id,
-    JobDescription.archived_at,
-    JobDescription.updated_at.desc(),
-    JobDescription.id.desc(),
-)
-Index(
     "idx_job_descriptions_user_updated_id",
     JobDescription.user_id,
     JobDescription.updated_at.desc(),
     JobDescription.id.desc(),
 )
+
+
+class GlobalCompany(Base):
+    __tablename__ = "global_companies"
+    __table_args__ = (
+        PrimaryKeyConstraint("id", name="pk_global_companies"),
+        UniqueConstraint(
+            "normalized_name", name="uk_global_companies_normalized_name"
+        ),
+        CheckConstraint(
+            "LENGTH(TRIM(company_name)) > 0",
+            name="ck_global_companies_company_name_not_blank",
+        ),
+        CheckConstraint(
+            "LENGTH(TRIM(normalized_name)) > 0",
+            name="ck_global_companies_normalized_name_not_blank",
+        ),
+        {
+            "comment": "平台独立维护的全局公司资料",
+            "sqlite_autoincrement": True,
+        },
+    )
+
+    id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(), autoincrement=True, comment="全局公司资料主键"
+    )
+    company_name: Mapped[str] = mapped_column(
+        String(200), nullable=False, comment="公司展示名称"
+    )
+    normalized_name: Mapped[str] = mapped_column(
+        String(200), nullable=False, comment="用于维护去重的标准化名称"
+    )
+    legal_name: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="公司工商全称"
+    )
+    logo_url: Mapped[str | None] = mapped_column(
+        String(2048), nullable=True, comment="公司 Logo HTTPS URL"
+    )
+    website_url: Mapped[str | None] = mapped_column(
+        String(2048), nullable=True, comment="公司官网 HTTPS URL"
+    )
+    industry: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, comment="行业"
+    )
+    company_size: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, comment="公司规模"
+    )
+    financing_stage: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, comment="融资阶段"
+    )
+    description: Mapped[str | None] = mapped_column(
+        Text().with_variant(mysql.LONGTEXT(), "mysql"),
+        nullable=True,
+        comment="公司简介",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        timestamp_type(), nullable=False, server_default=func.now(), comment="创建时间（UTC）"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        timestamp_type(),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+        comment="最后更新时间（UTC）",
+    )

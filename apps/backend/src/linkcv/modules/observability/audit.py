@@ -42,6 +42,9 @@ AUDIT_ACTIONS: dict[tuple[str, str], AuditAction] = {
     ("DELETE", "/api/resumes/{resume_id}"): AuditAction(
         "resume.delete", "resume", "resume_id"
     ),
+    ("GET", "/api/resumes/{resume_id}/pdf"): AuditAction(
+        "resume.pdf_export", "resume", "resume_id"
+    ),
     ("POST", "/api/resumes/{resume_id}/versions"): AuditAction(
         "resume.version_create", "resume_version", "resume_id"
     ),
@@ -66,12 +69,6 @@ AUDIT_ACTIONS: dict[tuple[str, str], AuditAction] = {
     ),
     ("PUT", "/api/job-descriptions/{job_id}"): AuditAction(
         "job.update", "job", "job_id"
-    ),
-    ("POST", "/api/job-descriptions/{job_id}/archive"): AuditAction(
-        "job.archive", "job", "job_id"
-    ),
-    ("POST", "/api/job-descriptions/{job_id}/restore"): AuditAction(
-        "job.restore", "job", "job_id"
     ),
     ("DELETE", "/api/job-descriptions/{job_id}"): AuditAction(
         "job.delete", "job", "job_id"

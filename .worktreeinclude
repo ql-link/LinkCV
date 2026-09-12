@@ -1,4 +1,5 @@
 # Local runtime configuration copied into new Codex-managed worktrees.
+.env
 .env.local
 .env.development.local
 

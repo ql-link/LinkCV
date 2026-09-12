@@ -9,7 +9,25 @@ from sqlalchemy import func, select
 from linkcv.core.database import utc_now
 from linkcv.core.errors import ApiError
 from linkcv.modules.agent.models import AgentMessage, AgentRun, AgentSession
-from linkcv.modules.agent.schemas import AgentClarification
+from linkcv.modules.agent.schemas import AgentClarification, AgentContextMaterial
+
+
+RUN_PHASE_LABELS = {
+    "loading_context": "正在读取所选资料…",
+    "comparing_context": "正在分析简历与岗位要求…",
+    "drafting": "正在整理建议…",
+}
+_VISIBLE_EVENTS = {
+    "run.started",
+    "run.phase",
+    "assistant.delta",
+    "clarification.requested",
+    "proposal.created",
+    "run.completed",
+    "run.cancelled",
+    "run.failed",
+}
+_LEGACY_TOOL_EVENTS = {"tool.started", "tool.completed"}
 
 
 def sse_event(event_type: str, data: dict[str, object]) -> bytes:
@@ -17,7 +35,11 @@ def sse_event(event_type: str, data: dict[str, object]) -> bytes:
 
 
 async def stream_pi_run(
-    app, run_public_id: str, content: str, selection_context=None
+    app,
+    run_public_id: str,
+    content: str,
+    selection_context=None,
+    context_materials: list[AgentContextMaterial] | None = None,
 ) -> AsyncIterator[bytes]:
     settings = app.state.settings
     token = settings.pi_service_token
@@ -57,6 +79,18 @@ async def stream_pi_run(
                             )
                         }
                         if selection_context is not None
+                        else {}
+                    ),
+                    **(
+                        {
+                            "contextMaterials": [
+                                item.model_dump(mode="json")
+                                if isinstance(item, AgentContextMaterial)
+                                else item
+                                for item in (context_materials or [])
+                            ]
+                        }
+                        if context_materials
                         else {}
                     ),
                 },
@@ -129,8 +163,16 @@ async def stream_pi_run(
                             final_error = (
                                 value if isinstance(value, str) else final_error
                             )
-                        if event_name:
-                            yield sse_event(event_name, payload)
+                        if event_name not in _VISIBLE_EVENTS and not (
+                            context_materials is None
+                            and event_name in _LEGACY_TOOL_EVENTS
+                        ):
+                            continue
+                        if event_name == "run.phase":
+                            payload = _safe_phase_payload(
+                                run_public_id, payload, len(context_materials or [])
+                            )
+                        yield sse_event(event_name, payload)
                     elif not line:
                         event_name = None
                 if not terminal_received:
@@ -162,6 +204,29 @@ async def stream_pi_run(
             output_tokens=final_output_tokens,
             estimated_cost=final_estimated_cost,
         )
+
+
+def _safe_phase_payload(
+    run_public_id: str, payload: dict[str, object], fallback_count: int
+) -> dict[str, object]:
+    phase = payload.get("phase")
+    phase_name = (
+        phase if isinstance(phase, str) and phase in RUN_PHASE_LABELS else "unknown"
+    )
+    raw_count = payload.get("referencedContextCount", fallback_count)
+    context_count = (
+        raw_count
+        if isinstance(raw_count, int)
+        and not isinstance(raw_count, bool)
+        and 0 <= raw_count <= 10
+        else fallback_count
+    )
+    return {
+        "runId": run_public_id,
+        "phase": phase_name,
+        "label": RUN_PHASE_LABELS.get(phase_name, "AI 正在处理…"),
+        "referencedContextCount": context_count,
+    }
 
 
 async def cancel_pi_run(app, run_public_id: str) -> None:

@@ -1,8 +1,16 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { createElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "./api/client";
-import { App, resumeLoadErrorMessage } from "./App";
+import {
+  App,
+  AppRouteLoadingFallback,
+  RESUME_AUTOSAVE_INTERVAL_MS,
+  resumeLoadErrorMessage,
+  startResumeAutosave,
+  WorkspacePageBoundary,
+} from "./App";
+import { WorkspaceLayout } from "./components/WorkspaceLayout";
 import { useResumeStore } from "./store/resumeStore";
 
 describe("App landing routes", () => {
@@ -82,5 +90,52 @@ describe("resumeLoadErrorMessage", () => {
 
   it("网络异常提示检查本地服务", () => {
     expect(resumeLoadErrorMessage(new TypeError("fetch failed"))).toContain("无法连接到服务");
+  });
+});
+
+describe("resume autosave cadence", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("每十秒触发一次批量保存检查，而不是随每次编辑重置", () => {
+    vi.useFakeTimers();
+    const save = vi.fn();
+    const timer = startResumeAutosave(save);
+
+    vi.advanceTimersByTime(RESUME_AUTOSAVE_INTERVAL_MS - 1);
+    expect(save).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    expect(save).toHaveBeenCalledOnce();
+
+    vi.advanceTimersByTime(RESUME_AUTOSAVE_INTERVAL_MS);
+    expect(save).toHaveBeenCalledTimes(2);
+    window.clearInterval(timer);
+  });
+});
+
+describe("workspace route loading", () => {
+  it("模块首次挂起时保留浅色工作区导航，只替换正文区域", () => {
+    const PendingPage = () => {
+      throw new Promise(() => undefined);
+    };
+    render(createElement(WorkspaceLayout, {
+      active: "templates",
+      children: createElement(WorkspacePageBoundary, null, createElement(PendingPage)),
+    }));
+
+    expect(screen.getByRole("navigation", { name: "工作区导航" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "正在加载模块…" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "正在加载模块…" }).closest("[data-ui-theme]"))
+      .toHaveAttribute("data-ui-theme", "light");
+  });
+
+  it("工作区冷启动的全屏兜底也固定为浅色主题", () => {
+    window.history.replaceState(null, "", "/resumes/new");
+    render(createElement(AppRouteLoadingFallback));
+
+    expect(screen.getByRole("status", { name: "正在加载页面…" }).closest("[data-ui-theme]"))
+      .toHaveAttribute("data-ui-theme", "light");
   });
 });

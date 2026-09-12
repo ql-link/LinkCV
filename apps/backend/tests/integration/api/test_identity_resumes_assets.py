@@ -1,5 +1,6 @@
 import base64
 from collections.abc import Iterator
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -7,8 +8,6 @@ from sqlalchemy import select
 from linkcv.core.config import Settings
 from linkcv.core.security import parse_refresh_token, session_key
 from linkcv.main import create_app
-from linkcv.domain.resume_document import default_resume_document
-from linkcv.domain.resume_style import default_resume_style
 from linkcv.modules.identity.models import User
 from linkcv.modules.identity.session_service import MINIPROGRAM_CHANNEL, issue_session
 from linkcv.modules.resumes.models import (
@@ -19,6 +18,7 @@ from linkcv.modules.resumes.models import (
     ResumeVersion,
 )
 from tests.fakes import FakeRedis
+from tests.canonical_resume_fixtures import canonical_template_payload
 
 
 class FakeObjectResponse:
@@ -49,6 +49,9 @@ class FakeStorage:
     def get(self, object_name: str) -> FakeObjectResponse:
         return FakeObjectResponse(self.objects[object_name])
 
+    def stat(self, object_name: str) -> SimpleNamespace:
+        return SimpleNamespace(size=len(self.objects[object_name]))
+
     def delete(self, object_name: str) -> None:
         if self.fail_cleanup:
             raise RuntimeError("storage unavailable")
@@ -74,11 +77,12 @@ def build_test_app():
         create_schema=True,
     )
     with app.state.session_factory() as session:
+        template_data, template_style = canonical_template_payload(key="blank-cn")
         template = ResumeTemplate(
             key="blank-cn",
             name="空白简历",
-            data_json=default_resume_document().model_dump(mode="json"),
-            style_json=default_resume_style().model_dump(mode="json"),
+            data_json=template_data,
+            style_json=template_style,
             is_active=1,
         )
         session.add(template)
@@ -121,8 +125,9 @@ def test_authentication_and_resume_crud() -> None:
         assert created.status_code == 201
         resume = created.json()["resume"]
         assert resume["title"] == "测试简历"
-        assert resume["data"]["schema_version"] == "1.0"
-        assert resume["style"]["template_key"] == "classic-cn"
+        assert resume["data"]["schema_version"] == "canonical-resume.v1"
+        assert resume["layout_plan"]["template_key"] == "blank-cn"
+        assert resume["style"]["template_snapshot"]["template_key"] == "blank-cn"
         assert resume["source_type"] == "template"
         assert resume["lock_version"] == 1
         assert "created_at" in resume
@@ -217,7 +222,18 @@ def test_resume_assets_are_owned_and_preserved_while_history_references_them() -
         assert owner.get(asset["url"]).content == b"png-bytes"
 
         data = resume["data"]
-        data["basics"]["photo"] = asset["url"]
+        data["identity"]["avatar"] = {
+            "node_id": "node_avatar00000000001",
+            "source_refs": [],
+            "media_kind": "avatar",
+            "src": asset["url"],
+            "alt": None,
+            "width": 96,
+            "width_unit": "px",
+            "height_px": None,
+            "align": None,
+            "system_fallback": False,
+        }
         saved = owner.put(
             f"/api/resumes/{resume_id}",
             json={"data": data, "base_lock_version": 1},
@@ -225,7 +241,7 @@ def test_resume_assets_are_owned_and_preserved_while_history_references_them() -
         assert saved.status_code == 200
         assert owner.post(f"/api/resumes/{resume_id}/versions").status_code == 201
 
-        data["basics"]["photo"] = None
+        data["identity"]["avatar"] = None
         saved_without_photo = owner.put(
             f"/api/resumes/{resume_id}",
             json={"data": data, "base_lock_version": 2},
@@ -245,6 +261,76 @@ def test_resume_assets_are_owned_and_preserved_while_history_references_them() -
 
         assert owner.delete(f"/api/resumes/{resume_id}").json() == {"deleted": True}
         assert app.state.storage.objects == {}
+
+
+def test_resume_save_rejects_images_above_pdf_total_before_persisting() -> None:
+    app = build_test_app()
+
+    with TestClient(app) as owner:
+        owner.post(
+            "/api/auth/register",
+            json={"email": "image-total@example.com", "password": "password-123"},
+        )
+        resume = owner.post("/api/resumes", json=resume_payload(app)).json()["resume"]
+        resume_id = resume["id"]
+        first_name = "first.png"
+        second_name = "second.jpg"
+        app.state.storage.objects[
+            f"users/1/resumes/{resume_id}/assets/{first_name}"
+        ] = b"x" * (6 * 1024 * 1024)
+        app.state.storage.objects[
+            f"users/1/resumes/{resume_id}/assets/{second_name}"
+        ] = b"y" * (6 * 1024 * 1024)
+
+        data = resume["data"]
+        data["identity"]["avatar"] = {
+            "node_id": "node_avatar00000000002",
+            "source_refs": [],
+            "media_kind": "avatar",
+            "src": f"/api/resumes/{resume_id}/assets/{first_name}",
+            "alt": None,
+            "width": 96,
+            "width_unit": "px",
+            "height_px": None,
+            "align": None,
+            "system_fallback": False,
+        }
+        data["sections"] = [
+            {
+                "node_id": "node_section0000000002",
+                "source_refs": [],
+                "semantic_kind": "custom",
+                "title": None,
+                "title_icon": None,
+                "entries": [],
+                "blocks": [
+                    {
+                        "node_id": "node_media00000000002",
+                        "source_refs": [],
+                        "block_type": "media",
+                        "media_kind": "resume_image",
+                        "src": f"/api/resumes/{resume_id}/assets/{second_name}",
+                        "alt": None,
+                        "width": 50,
+                        "width_unit": "%",
+                        "height_px": None,
+                        "align": "center",
+                        "system_fallback": False,
+                    }
+                ],
+            }
+        ]
+
+        rejected = owner.put(
+            f"/api/resumes/{resume_id}",
+            json={"data": data, "base_lock_version": 1},
+        )
+
+        assert rejected.status_code == 413
+        assert rejected.json() == {"error": "RESUME_PDF_ASSETS_TOO_LARGE"}
+        current = owner.get(f"/api/resumes/{resume_id}").json()["resume"]
+        assert current["lock_version"] == 1
+        assert current["data"]["identity"]["avatar"] is None
 
 
 def test_resume_delete_keeps_database_record_when_storage_cleanup_fails() -> None:
@@ -330,6 +416,51 @@ def test_resume_delete_cleans_parse_task_source_and_converted_markdown() -> None
             assert session.get(DocumentParseTask, task_id) is None
             assert session.get(Resume, resume_id) is None
         assert storage.objects == {}
+
+
+def test_resume_delete_cleans_legacy_converted_orphan_without_reference() -> None:
+    app = build_test_app()
+    storage = app.state.storage
+
+    with TestClient(app) as client:
+        assert client.post(
+            "/api/auth/register",
+            json={"email": "legacy-import-cleanup@example.com", "password": "password-123"},
+        ).status_code == 201
+        resume_id = int(
+            client.post("/api/resumes", json=resume_payload(app)).json()["resume"]["id"]
+        )
+        with app.state.session_factory() as session:
+            user_id = session.scalar(select(User.id))
+            resume = session.get(Resume, resume_id)
+            assert user_id is not None
+            assert resume is not None
+            task = DocumentParseTask(
+                source_type=RESUME_IMPORT_SOURCE_TYPE,
+                user_id=user_id,
+                file_name="resume.md",
+                file_format="md",
+                object_name=f"users/{user_id}/resume-imports/legacy-task/resume.md",
+                converted_object_name=None,
+                upload_status="succeeded",
+                upload_duration_ms=1,
+                parse_status="succeeded",
+                parse_duration_ms=1,
+            )
+            session.add(task)
+            session.flush()
+            resume.parse_task_id = task.id
+            session.commit()
+            storage.objects[task.object_name] = b"# source"
+            legacy_converted = (
+                f"users/{user_id}/resume-imports/legacy-task/converted.md"
+            )
+            storage.objects[legacy_converted] = b"# converted"
+
+        deleted = client.delete(f"/api/resumes/{resume_id}")
+
+    assert deleted.status_code == 200
+    assert storage.objects == {}
 
 
 def test_refresh_rotates_secret_and_reuse_revokes_session() -> None:

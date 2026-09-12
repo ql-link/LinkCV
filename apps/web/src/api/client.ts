@@ -1,4 +1,9 @@
-import type { ResumeDocumentV1, ResumeStyleV1 } from "./resumeContract";
+import type {
+  CanonicalResumeDocument,
+  CanonicalResumePresentation,
+  LayoutPlan,
+  TemplateDefinition,
+} from "./resumeContract";
 
 export type User = {
   id: string;
@@ -41,6 +46,58 @@ export type AccountProfile = {
   recent_resumes: RecentResumeSummary[];
 };
 
+export type EmploymentType =
+  | "internship"
+  | "full_time";
+
+export type SalaryPeriod = "hour" | "day" | "month" | "year";
+
+export type CandidateStatus = "fresh_graduate" | "experienced";
+
+export type EducationLevel =
+  | "high_school"
+  | "junior_college"
+  | "bachelor"
+  | "master"
+  | "doctor";
+
+export type SchoolTier = "project_985" | "project_211" | "double_first_class";
+
+export type UserProfileData = {
+  candidate_cities: string[];
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_currency: string | null;
+  salary_period: SalaryPeriod | null;
+  employment_types: EmploymentType[];
+  school: string | null;
+  school_tier: SchoolTier[];
+  major: string | null;
+  education_level: EducationLevel | null;
+  candidate_status: CandidateStatus | null;
+  graduation_year: number | null;
+  years_experience: number | null;
+  languages: string[];
+  skills: string[];
+  certifications: string[];
+  honors: string[];
+  campus_experiences: string[];
+  lock_version: number;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type UserProfileUpdate = Omit<
+  UserProfileData,
+  "lock_version" | "created_at" | "updated_at"
+> & {
+  base_lock_version: number;
+};
+
+export type UserProfileConflict = {
+  profile: UserProfileData;
+};
+
 export type AdminUserSummary = User & {
   status: number;
   resume_count: number;
@@ -81,7 +138,7 @@ export type ResumeSummary = {
   lock_version: number;
   created_at: string;
   updated_at: string;
-  preview?: { data: ResumeDocumentV1; style: ResumeStyleV1 } | null;
+  preview?: { data: CanonicalResumeDocument; style: CanonicalResumePresentation; layout_plan?: LayoutPlan | null } | null;
 };
 
 export type ResumeTemplate = {
@@ -89,26 +146,102 @@ export type ResumeTemplate = {
   key: string;
   name: string;
   description: string | null;
-  data: ResumeDocumentV1;
-  style: ResumeStyleV1;
+  data: CanonicalResumeDocument;
+  style: CanonicalResumePresentation;
+  layout_plan?: LayoutPlan | null;
+  switchable: true;
+  incompatibility_reason: null;
 };
+
+type ResumeTemplateWire = Omit<ResumeTemplate, "style"> & {
+  style: TemplateDefinition;
+};
+
+const RETIRED_RESUME_TEMPLATE_KEYS = new Set(["blank-cn"]);
+
+function presentationForTemplate(style: TemplateDefinition): CanonicalResumePresentation {
+  return {
+    schema_version: "resume-presentation.v1",
+    portable: { smart_one_page: false },
+    template_scoped: { [style.template_key]: {} },
+    template_snapshot: style,
+  };
+}
+
+function resumeTemplateFromWire(template: ResumeTemplateWire): ResumeTemplate {
+  return { ...template, style: presentationForTemplate(template.style) };
+}
+
+function selectableResumeTemplates(templates: ResumeTemplateWire[]): ResumeTemplate[] {
+  return templates
+    .filter((template) => !RETIRED_RESUME_TEMPLATE_KEYS.has(template.key))
+    .map(resumeTemplateFromWire);
+}
 
 export type AdminResumeTemplate = {
   id: string;
   key: string;
   name: string;
   description: string | null;
-  data: ResumeDocumentV1 | null;
-  style: ResumeStyleV1 | null;
+  data: CanonicalResumeDocument | null;
+  style: CanonicalResumePresentation | null;
+  layout_plan?: LayoutPlan | null;
   active: boolean;
   valid: boolean;
   validation_error: string | null;
+  switchable: boolean;
+  incompatibility_reason: string | null;
 };
+
+type AdminResumeTemplateWire = Omit<AdminResumeTemplate, "style"> & {
+  style: TemplateDefinition | null;
+};
+
+function adminResumeTemplateFromWire(template: AdminResumeTemplateWire): AdminResumeTemplate {
+  return {
+    ...template,
+    style: template.style ? presentationForTemplate(template.style) : null,
+  };
+}
 
 export type ResumeRecord = ResumeSummary & {
   template_id: string | null;
-  data: ResumeDocumentV1;
-  style: ResumeStyleV1;
+  data: CanonicalResumeDocument;
+  style: CanonicalResumePresentation;
+  layout_plan?: LayoutPlan | null;
+};
+
+/** Canonical-only write contract for the normal editor save path. */
+export type ResumeCanonicalWritePayload = {
+  title?: string;
+  data?: CanonicalResumeDocument;
+  style?: CanonicalResumePresentation;
+  base_lock_version: number;
+};
+
+export type ResumeCanonicalTemplateApplyPayload = {
+  template_id: string;
+  base_lock_version: number;
+  title?: string;
+  data?: CanonicalResumeDocument;
+};
+
+export type SemanticClassificationSuggestion = {
+  section_id: string;
+  semantic_kind:
+    | "profile"
+    | "work"
+    | "education"
+    | "project"
+    | "skills"
+    | "activity"
+    | "interests"
+    | "certificates"
+    | "awards"
+    | "languages"
+    | "custom";
+  confidence: number;
+  reason: string;
 };
 
 export type ResumeVersion = {
@@ -117,8 +250,8 @@ export type ResumeVersion = {
   name: string;
   reason: "initial" | "manual" | "before_restore" | "restore" | "agent";
   created_at: string;
-  data?: ResumeDocumentV1;
-  style?: ResumeStyleV1;
+  data?: CanonicalResumeDocument;
+  style?: CanonicalResumePresentation;
 };
 
 export type AgentMessage = {
@@ -127,17 +260,27 @@ export type AgentMessage = {
   message_type?: "text" | "clarification";
   content: string;
   clarification?: AgentClarification | null;
+  /**
+   * References are intentionally lightweight snapshots.  The API keeps this
+   * field optional so messages created by the editor before the assistant
+   * workspace was introduced remain readable.
+   */
+  contexts?: AgentContextSnapshot[] | null;
   created_at: string;
+};
+
+export type AgentClarificationQuestion = {
+  id: string;
+  header: string;
+  question: string;
+  allow_custom?: boolean;
+  options: Array<{ id: string; label: string; description?: string | null }>;
 };
 
 export type AgentClarification = {
   version: 1;
-  questions: Array<{
-    id: string;
-    header: string;
-    question: string;
-    options: Array<{ id: string; label: string; description?: string | null }>;
-  }>;
+  allow_custom?: boolean;
+  questions: AgentClarificationQuestion[];
 };
 
 export type AgentSelectionContext = {
@@ -148,10 +291,38 @@ export type AgentSelectionContext = {
   selected_text_hash: string;
 };
 
+export type AgentContextType =
+  | "resume"
+  | "resume_version"
+  | "dataset"
+  | "job"
+  | "application"
+  | "interview";
+
+export type AgentContextRef = {
+  type: AgentContextType;
+  id: string;
+  version_id?: string | null;
+  version?: string | null;
+};
+
+export type AgentContextSnapshot = AgentContextRef & {
+  resume_id?: string | null;
+  label: string;
+  description?: string | null;
+  updated_at?: string | null;
+};
+
+export type AgentContextListResponse = {
+  contexts?: AgentContextSnapshot[];
+  groups?: Array<{ type: AgentContextType; items: AgentContextSnapshot[] }>;
+};
+
 export type AgentSession = {
   id: string;
   resume_id: string | null;
   title: string;
+  pinned: boolean;
   status: "active" | "archived";
   last_message_at: string | null;
   created_at: string;
@@ -164,8 +335,9 @@ export type AgentProposal = {
   run_id: string;
   resume_id: string;
   base_lock_version: number;
-  data: ResumeDocumentV1;
-  style: ResumeStyleV1;
+  data: CanonicalResumeDocument;
+  style: CanonicalResumePresentation;
+  layout_plan?: LayoutPlan | null;
   summary: string;
   proposal_mode?: "legacy_snapshot" | "polish_local" | "rewrite_entry_star" | "generate_from_materials";
   target?: Record<string, unknown> | null;
@@ -186,6 +358,13 @@ export type AgentProposal = {
 
 export type AgentStreamEvent =
   | { type: "run.started"; runId: string }
+  | {
+      type: "run.phase";
+      runId: string;
+      phase?: string;
+      label?: string;
+      referencedContextCount?: number;
+    }
   | { type: "assistant.delta"; runId: string; delta: string }
   | { type: "clarification.requested"; runId: string; clarification: AgentClarification }
   | { type: "tool.started" | "tool.completed"; runId: string; tool: string; callKey: string }
@@ -211,8 +390,9 @@ export type PublicShareSharer = {
 };
 
 export type PublicSharePayload = {
-  data: ResumeDocumentV1;
-  style: ResumeStyleV1;
+  data: CanonicalResumeDocument;
+  style: CanonicalResumePresentation;
+  layout_plan?: LayoutPlan | null;
   sharer: PublicShareSharer;
 };
 
@@ -240,11 +420,12 @@ export type ResumeImportResult = {
 
 export type DatasetRecord = {
   id: string;
+  folder_id?: string | null;
   file_name: string;
   file_format: string;
   file_size: number;
   upload_status: "uploading" | "succeeded" | "failed";
-  parse_status: "processing" | "succeeded" | "failed" | null;
+  parse_status: "queued" | "processing" | "succeeded" | "failed" | null;
   failure_reason:
     | "format_unsupported"
     | "content_invalid"
@@ -255,13 +436,48 @@ export type DatasetRecord = {
     | "internal_error"
     | null;
   created_at: string;
+  content_revision?: string;
+  content_updated_at?: string | null;
+  folder_name?: string | null;
+  replacement?: DatasetReplacement | null;
 };
+
+export type DatasetFolder = {
+  id: string;
+  name: string;
+  dataset_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DatasetFolderListResponse = {
+  folders: DatasetFolder[];
+  total_count: number;
+  uncategorized_count: number;
+};
+
+export type DatasetLimits = {
+  max_file_bytes: number;
+  max_files_per_batch: number;
+  allowed_extensions: string[];
+};
+
+export type DatasetListResponse = {
+  datasets: DatasetRecord[];
+  /** Older API responses did not include limits; callers normalize that case. */
+  limits?: DatasetLimits;
+};
+
+export type DatasetReplacement = { id: string; status: "pending" | "failed" | "conflict" | "applied" | "discarded"; upload_status: string | null; parse_status: string | null; failure_code: string | null; retryable: boolean; current_revision: string };
 
 export type DatasetContent = {
   id: string;
   file_name: string;
   file_format: string;
   markdown: string;
+  content_revision?: string;
+  content_updated_at?: string | null;
+  content_format?: "markdown";
 };
 
 export type ResumeImportSummary = {
@@ -286,7 +502,7 @@ export type ResumeOverview = {
 
 export type JobSourceType = "manual" | "external_import";
 export type JobEmploymentType =
-  "full_time" | "part_time" | "internship" | "contract" | "temporary";
+  "internship" | "campus" | "full_time";
 export type JobWorkMode = "onsite" | "hybrid" | "remote";
 export type JobSalaryPeriod = "hour" | "day" | "month" | "year";
 
@@ -294,13 +510,13 @@ export type JobDescriptionSummary = {
   id: string;
   job_title: string;
   company_name: string;
+  logo_url: string | null;
   work_city: string | null;
   salary_text: string | null;
   skills: string[];
   source_type: JobSourceType;
   source_site: string | null;
   source_url: string | null;
-  archived_at: string | null;
   lock_version: number;
   updated_at: string;
 };
@@ -335,6 +551,7 @@ export type JobDescriptionRecord = JobDescriptionSummary & {
 export type JobDescriptionFields = {
   job_title: string;
   company_name: string;
+  logo_url?: string | null;
   employment_type?: JobEmploymentType | null;
   description: string;
   skills?: string[];
@@ -360,6 +577,17 @@ export type JobDescriptionFields = {
   notes?: string | null;
 };
 
+export type JobDescriptionDraft = {
+  [K in keyof JobDescriptionFields]?: JobDescriptionFields[K] | null;
+};
+
+export type JobDescriptionDraftParseResponse = {
+  draft: JobDescriptionDraft;
+  warnings: string[];
+  inputType: "text" | "image";
+  callId: string;
+};
+
 export type InterviewCalendarColor =
   | "red"
   | "orange"
@@ -368,7 +596,14 @@ export type InterviewCalendarColor =
   | "blue"
   | "purple"
   | "gray";
-export type ApplicationStageType = "screening" | "interview" | "hr" | "offer";
+export type ApplicationStageType =
+  | "screening"
+  | "assessment"
+  | "written_test"
+  | "ai_interview"
+  | "interview"
+  | "offer";
+export type LegacyApplicationStageType = "screening" | "interview" | "hr" | "offer";
 export type ApplicationStageState =
   | "awaiting_schedule"
   | "scheduled"
@@ -377,26 +612,58 @@ export type ApplicationStageState =
 export type InterviewMode = "video" | "onsite" | "phone" | "other";
 export type InterviewSessionStatus = "scheduled" | "completed" | "cancelled";
 
+export type ApplicationStageRecord = {
+  id: string;
+  application_id: string;
+  client_request_id: string;
+  stage_type: ApplicationStageType;
+  stage_label: string;
+  interview_round_no: number | null;
+  sequence_no: number;
+  stage_status: "active" | "completed" | "cancelled";
+  stage_result: "pending" | "passed" | "rejected" | "skipped";
+  current_marker: number | null;
+  entered_at: string;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type JobApplicationRecord = {
   id: string;
   job_description_id: string | null;
   resume_version_id: string | null;
   company_name_snapshot: string;
   job_title_snapshot: string;
+  company_logo_url?: string | null;
   job_snapshot: Record<string, unknown>;
   resume_title_snapshot: string | null;
   calendar_color: InterviewCalendarColor;
-  current_stage_type: ApplicationStageType;
+  current_stage_type: LegacyApplicationStageType;
   current_round_no: number | null;
   current_stage_label: string;
   stage_state: ApplicationStageState;
   status: "active" | "rejected" | "withdrawn" | "closed";
+  phase?: "pending" | "applied";
+  lifecycle_status?: "active" | "terminated";
+  terminated_at?: string | null;
+  termination_reason?:
+    | "company_rejected"
+    | "user_withdrew"
+    | "offer_declined"
+    | "completed"
+    | "other"
+    | null;
   offer_status:
     | "none"
-    | "oc_received"
-    | "written_offer_received"
+    | "received"
     | "accepted"
     | "declined";
+  offer_base_location: string | null;
+  offer_salary: string | null;
+  offer_salary_currency: string | null;
+  offer_salary_period: SalaryPeriod | null;
+  offer_benefits_description: string | null;
   is_favorite: boolean;
   applied_at: string | null;
   notes: string | null;
@@ -404,6 +671,8 @@ export type JobApplicationRecord = {
   lock_version: number;
   created_at: string;
   updated_at: string;
+  current_stage?: ApplicationStageRecord | null;
+  stages?: ApplicationStageRecord[];
 };
 
 export type JobApplicationSummary = JobApplicationRecord & {
@@ -416,6 +685,7 @@ export type JobApplicationSummary = JobApplicationRecord & {
 export type InterviewSessionRecord = {
   id: string;
   application_id: string;
+  application_stage_id?: string | null;
   client_request_id: string;
   stage_type: "interview" | "hr" | "offer" | "other";
   round_no: number | null;
@@ -424,6 +694,9 @@ export type InterviewSessionRecord = {
   round_result: "pending" | "passed" | "rejected";
   start_at: string;
   end_at: string;
+  schedule_kind: "fixed_slot" | "open_window";
+  answer_plan_start_at: string | null;
+  answer_plan_end_at: string | null;
   timezone: string;
   mode: InterviewMode;
   meeting_url: string | null;
@@ -474,7 +747,7 @@ export type InterviewOverview = {
     weekly_interviews: number;
     upcoming_interviews: number;
     completed_interviews: number;
-    written_offers: number;
+    offers_received: number;
   };
   pipeline: JobApplicationSummary[];
   week_sessions: InterviewSessionSummary[];
@@ -501,7 +774,7 @@ export type AdminPluginReleaseCurrentResponse = {
 };
 
 export type DuplicateResolution = {
-  action: "update" | "restore";
+  action: "update";
   job_description_id: string;
   base_lock_version: number;
 };
@@ -525,6 +798,11 @@ export type ChatAdapter =
   | "cohere_chat"
   | "perplexity";
 
+export type AgentModelSummary = {
+  adapter: ChatAdapter;
+  name: string;
+};
+
 export type LlmModelLastTest = {
   status: "succeeded" | "failed" | "cancelled";
   callId: string;
@@ -544,7 +822,7 @@ export type LlmModelConfig = {
   updatedAt: string;
 };
 
-export type ModelCapability = "chat" | "resume_structuring" | "pi_agent";
+export type ModelCapability = "chat" | "resume_structuring" | "pi_agent" | "job_image_structuring";
 
 export type CapabilityModelConfig = {
   id: string;
@@ -656,7 +934,7 @@ export type LlmCallQuery = {
 export type JobDuplicateDetails = {
   duplicate: {
     existing: JobDescriptionSummary;
-    allowed_actions: Array<"restore" | "update" | "cancel">;
+    allowed_actions: Array<"update" | "cancel">;
   };
 };
 
@@ -737,6 +1015,12 @@ type ApiOptions = {
   body?: unknown;
   formData?: FormData;
   headers?: Record<string, string>;
+  signal?: AbortSignal;
+};
+
+export type ResumePdfDownload = {
+  blob: Blob;
+  filename: string | null;
 };
 
 export class ApiRequestError extends Error {
@@ -816,6 +1100,7 @@ async function request<T>(
       options.formData ??
       (options.body ? JSON.stringify(options.body) : undefined),
     credentials: "include",
+    signal: options.signal,
   });
 
   const data = await response.json().catch(() => ({}));
@@ -866,9 +1151,63 @@ async function requestBlob(path: string, retryAuth = true): Promise<Blob> {
   return response.blob();
 }
 
+function filenameFromContentDisposition(value: string | null): string | null {
+  if (!value) return null;
+  const encoded = value.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)?.[1];
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded.trim().replace(/^"|"$/g, ""));
+    } catch {
+      // Fall through to the legacy filename parameter when decoding fails.
+    }
+  }
+  return value.match(/filename\s*=\s*"([^"]+)"/i)?.[1]
+    ?? value.match(/filename\s*=\s*([^;]+)/i)?.[1]?.trim()
+    ?? null;
+}
+
+async function requestResumePdf(
+  path: string,
+  signal?: AbortSignal,
+  retryAuth = true,
+): Promise<ResumePdfDownload> {
+  const requestId = createRequestId();
+  const response = await fetch(path, {
+    method: "GET",
+    headers: { "X-Request-ID": requestId },
+    credentials: "include",
+    signal,
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401 && retryAuth && !signal?.aborted) {
+      const refreshed = await refreshSession();
+      if (refreshed) return requestResumePdf(path, signal, false);
+    }
+    const error = new ApiRequestError(
+      response.status,
+      typeof data.error === "string" ? data.error : `HTTP_${response.status}`,
+      data && typeof data === "object" ? data as Record<string, unknown> : null,
+      response.headers?.get?.("X-Request-ID") ?? requestId,
+    );
+    if (response.status >= 500) reportApi5xx(error);
+    throw error;
+  }
+  return {
+    blob: await response.blob(),
+    filename: filenameFromContentDisposition(response.headers?.get?.("Content-Disposition") ?? null),
+  };
+}
+
 async function streamAgentMessage(
   sessionId: string,
-  payload: { content: string; idempotency_key: string; selection_context?: AgentSelectionContext; reply_to_sequence_no?: number },
+  payload: {
+    content: string;
+    idempotency_key: string;
+    selection_context?: AgentSelectionContext;
+    contexts?: AgentContextRef[];
+    reply_to_sequence_no?: number;
+  },
   signal: AbortSignal,
   onEvent: (event: AgentStreamEvent) => void,
   retryAuth = true,
@@ -902,7 +1241,7 @@ async function streamAgentMessage(
   let terminalReceived = false;
   const terminalEvents = new Set(["run.completed", "run.failed", "run.cancelled"]);
   const allowedEvents = new Set([
-    "run.started", "assistant.delta", "clarification.requested", "tool.started", "tool.completed",
+    "run.started", "run.phase", "assistant.delta", "clarification.requested", "tool.started", "tool.completed",
     "proposal.created", ...terminalEvents,
   ]);
   while (true) {
@@ -974,6 +1313,12 @@ export const api = {
       method: "PATCH",
       body: { nickname },
     }),
+  getUserProfile: () => request<UserProfileData>("/api/account/user-profile"),
+  putUserProfile: (payload: UserProfileUpdate) =>
+    request<UserProfileData>("/api/account/user-profile", {
+      method: "PUT",
+      body: payload,
+    }),
   uploadAccountAvatar: (payload: { fileName: string; dataUrl: string }) =>
     request<{ url: string }>("/api/account/avatar", {
       method: "PUT",
@@ -984,9 +1329,11 @@ export const api = {
   listResumes: () => request<{ resumes: ResumeSummary[] }>("/api/resumes"),
   getResumeOverview: () => request<ResumeOverview>("/api/resume-overview"),
   listResumeTemplates: () =>
-    request<{ templates: ResumeTemplate[] }>("/api/resume-templates"),
+    request<{ templates: ResumeTemplateWire[] }>("/api/resume-templates")
+      .then(({ templates }) => ({ templates: selectableResumeTemplates(templates) })),
   getResumeTemplate: (id: string) =>
-    request<{ template: ResumeTemplate }>(`/api/resume-templates/${id}`),
+    request<{ template: ResumeTemplateWire }>(`/api/resume-templates/${id}`)
+      .then(({ template }) => ({ template: resumeTemplateFromWire(template) })),
   createResume: (payload: { title: string; template_id: string }) =>
     request<{ resume: ResumeRecord }>("/api/resumes", {
       method: "POST",
@@ -994,10 +1341,38 @@ export const api = {
     }),
   getResume: (id: string) =>
     request<{ resume: ResumeRecord }>(`/api/resumes/${id}`),
-  listAgentSessions: (resumeId: string) =>
-    request<{ sessions: AgentSession[] }>(
-      `/api/agent/sessions?resume_id=${encodeURIComponent(resumeId)}`,
+  classifyResumeSemantics: (
+    id: string,
+    payload: { content_hash: string; section_ids?: string[] },
+  ) => request<{ content_hash: string; suggestions: SemanticClassificationSuggestion[] }>(
+    `/api/resumes/${id}/semantic-classification`,
+    { method: "POST", body: payload },
+  ),
+  downloadResumePdf: (id: string, lockVersion: number, signal?: AbortSignal) =>
+    requestResumePdf(
+      `/api/resumes/${encodeURIComponent(id)}/pdf?lock_version=${encodeURIComponent(lockVersion)}`,
+      signal,
     ),
+  listAgentSessions: (resumeId?: string) =>
+    request<{ sessions: AgentSession[] }>(
+      `/api/agent/sessions${resumeId ? `?resume_id=${encodeURIComponent(resumeId)}` : ""}`,
+    ),
+  getAgentReadiness: () => request<{ ready: boolean }>("/api/agent/readiness"),
+  getAgentModel: () => request<{ model: AgentModelSummary }>("/api/agent/model"),
+  listAgentContexts: (options: {
+    type?: AgentContextType;
+    search?: string;
+    prefix?: boolean;
+    limit?: number;
+  } = {}) => {
+    const params = new URLSearchParams();
+    if (options.type) params.set("type", options.type);
+    if (options.search?.trim()) params.set("q", options.search.trim());
+    if (options.prefix) params.set("prefix", "true");
+    if (options.limit !== undefined) params.set("limit", String(options.limit));
+    const query = params.toString();
+    return request<AgentContextListResponse>(`/api/agent/contexts${query ? `?${query}` : ""}`);
+  },
   listAgentProposals: (resumeId: string, sessionId?: string) =>
     request<{ proposals: AgentProposal[] }>(
       `/api/agent/proposals?resume_id=${encodeURIComponent(resumeId)}${sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : ""}`,
@@ -1006,11 +1381,21 @@ export const api = {
     request<{ session: AgentSession }>(
       `/api/agent/sessions/${encodeURIComponent(sessionId)}`,
     ),
-  createAgentSession: (resumeId: string) =>
+  createAgentSession: (resumeId?: string | null, title?: string) =>
     request<{ session: AgentSession }>("/api/agent/sessions", {
       method: "POST",
-      body: { resume_id: resumeId },
+      body: {
+        ...(resumeId ? { resume_id: resumeId } : {}),
+        ...(title ? { title } : {}),
+      },
     }),
+  updateAgentSession: (sessionId: string, payload: { title?: string; pinned?: boolean }) =>
+    request<{ session: AgentSession }>(
+      `/api/agent/sessions/${encodeURIComponent(sessionId)}`,
+      { method: "PATCH", body: payload },
+    ),
+  deleteAgentSession: (sessionId: string) =>
+    request<void>(`/api/agent/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" }),
   streamAgentMessage,
   cancelAgentRun: (runId: string) =>
     request<{ run_id: string; status: string }>(
@@ -1029,17 +1414,19 @@ export const api = {
     ),
   updateResume: (
     id: string,
-    payload: {
-      title?: string;
-      data?: ResumeDocumentV1;
-      style?: ResumeStyleV1;
-      base_lock_version: number;
-    },
+    payload: ResumeCanonicalWritePayload,
   ) =>
     request<{ resume: ResumeRecord }>(`/api/resumes/${id}`, {
       method: "PUT",
       body: payload,
     }),
+  applyResumeTemplate: (
+    id: string,
+    payload: ResumeCanonicalTemplateApplyPayload,
+  ) => request<{ resume: ResumeRecord }>(`/api/resumes/${id}/apply-template`, {
+    method: "POST",
+    body: payload,
+  }),
   deleteResume: (id: string) =>
     request<{ deleted: boolean }>(`/api/resumes/${id}`, { method: "DELETE" }),
   listVersions: (id: string) =>
@@ -1108,20 +1495,21 @@ export const api = {
       method: "DELETE",
     }),
   listAdminResumeTemplates: () =>
-    request<{ templates: AdminResumeTemplate[] }>("/api/admin/resume-templates"),
+    request<{ templates: AdminResumeTemplateWire[] }>("/api/admin/resume-templates")
+      .then(({ templates }) => ({ templates: templates.map(adminResumeTemplateFromWire) })),
   importAdminResumeTemplate: (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
-    return request<{ template: AdminResumeTemplate }>(
+    return request<{ template: AdminResumeTemplateWire }>(
       "/api/admin/resume-templates/import",
       { method: "POST", formData },
-    );
+    ).then(({ template }) => ({ template: adminResumeTemplateFromWire(template) }));
   },
   updateAdminResumeTemplateStatus: (id: string, active: boolean) =>
-    request<{ template: AdminResumeTemplate }>(
+    request<{ template: AdminResumeTemplateWire }>(
       `/api/admin/resume-templates/${id}/status`,
       { method: "PUT", body: { active } },
-    ),
+    ).then(({ template }) => ({ template: adminResumeTemplateFromWire(template) })),
   uploadResumeAsset: (
     resumeId: string,
     payload: { file_name: string; data_url: string },
@@ -1130,27 +1518,82 @@ export const api = {
       method: "POST",
       body: payload,
     }),
-  uploadDataset: (file: File) => {
+  uploadDataset: (file: File, idempotencyKey: string, folderId: string) => {
     const formData = new FormData();
     formData.append("file", file);
+    if (folderId) {
+      formData.append("folder_id", folderId);
+    }
     return request<DatasetRecord>("/api/datasets", {
       method: "POST",
       formData,
+      headers: { "Idempotency-Key": idempotencyKey },
     });
   },
-  listDatasets: () => request<{ datasets: DatasetRecord[] }>("/api/datasets"),
+  listDatasets: (folderId?: string | null) => {
+    const search = new URLSearchParams();
+    if (folderId !== undefined && folderId !== null) {
+      search.set("folder_id", folderId);
+    }
+    const query = search.toString();
+    return request<DatasetListResponse>(query ? `/api/datasets?${query}` : "/api/datasets");
+  },
+  renameDataset: (id: string, name: string) =>
+    request<DatasetRecord>(`/api/datasets/${id}`, {
+      method: "PATCH",
+      body: { name },
+    }),
+  retryDataset: (id: string) =>
+    request<DatasetRecord>(`/api/datasets/${id}/retry`, {
+      method: "POST",
+    }),
+  deleteDataset: (id: string) =>
+    request<{ deleted: boolean }>(`/api/datasets/${id}`, {
+      method: "DELETE",
+    }),
+  listDatasetFolders: () => request<DatasetFolderListResponse>("/api/datasets/folders"),
+  createDatasetFolder: (name: string) =>
+    request<DatasetFolder>("/api/datasets/folders", {
+      method: "POST",
+      body: { name },
+    }),
+  renameDatasetFolder: (folderId: string, name: string) =>
+    request<DatasetFolder>(`/api/datasets/folders/${folderId}`, {
+      method: "PATCH",
+      body: { name },
+    }),
+  deleteDatasetFolder: (folderId: string) =>
+    request<{ deleted: boolean; affected_dataset_count: number }>(
+      `/api/datasets/folders/${folderId}?confirm_contents=true`,
+      { method: "DELETE" },
+    ),
+  moveDataset: (datasetId: string, folderId: string) =>
+    request<DatasetRecord>(`/api/datasets/${datasetId}/folder`, {
+      method: "PATCH",
+      body: { folder_id: folderId },
+    }),
+  batchMoveDatasets: (datasetIds: string[], folderId: string) =>
+    request<{ moved_count: number }>("/api/datasets/move-batch", {
+      method: "POST",
+      body: { dataset_ids: datasetIds, folder_id: folderId },
+    }),
+  getDataset: (id: string) => request<DatasetRecord>(`/api/datasets/${id}`),
+  replaceDataset: (id: string, file: File, revision: string, key: string) => {
+    const formData = new FormData(); formData.append("file",file); formData.append("confirm_replace","true");
+    return request<DatasetReplacement>(`/api/datasets/${id}/replacements`, {method:"POST",formData,headers:{"If-Match":`"dataset-${id}-${revision}"`,"Idempotency-Key":key}});
+  },
+  retryDatasetReplacement: (id:string, rid:string, revision:string, requestId:string) => request<DatasetReplacement>(`/api/datasets/${id}/replacements/${rid}/retry`,{method:"POST",body:{request_id:requestId,confirm_replace:true},headers:{"If-Match":`"dataset-${id}-${revision}"`}}),
+  discardDatasetReplacement: (id:string,rid:string) => request(`/api/datasets/${id}/replacements/${rid}`,{method:"DELETE"}),
   getDatasetContent: (id: string) =>
     request<DatasetContent>(`/api/datasets/${id}/content`),
   listJobDescriptions: (
     params: {
-      scope?: "active" | "archived" | "all";
       keyword?: string;
       cursor?: string;
       limit?: number;
     } = {},
   ) => {
     const search = new URLSearchParams();
-    if (params.scope) search.set("scope", params.scope);
     if (params.keyword) search.set("keyword", params.keyword);
     if (params.cursor) search.set("cursor", params.cursor);
     if (params.limit) search.set("limit", String(params.limit));
@@ -1161,10 +1604,33 @@ export const api = {
     }>(`/api/job-descriptions${suffix ? `?${suffix}` : ""}`);
   },
   createJobDescription: (payload: JobDescriptionCreatePayload) =>
-    request<{ job_description: JobDescriptionRecord }>(
+    request<{
+      job_description: JobDescriptionRecord;
+      application: Pick<
+        JobApplicationRecord,
+        "id" | "phase" | "lifecycle_status" | "current_stage_label"
+      > | null;
+    }>(
       "/api/job-descriptions",
       { method: "POST", body: payload },
     ),
+  parseJobDescriptionDraft: ({
+    text,
+    image,
+    signal,
+  }: {
+    text?: string;
+    image?: File;
+    signal?: AbortSignal;
+  }) => {
+    const formData = new FormData();
+    if (text !== undefined) formData.append("text", text);
+    if (image !== undefined) formData.append("image", image);
+    return request<JobDescriptionDraftParseResponse>(
+      "/api/job-descriptions/parse-draft",
+      { method: "POST", formData, signal },
+    );
+  },
   getJobDescription: (id: string) =>
     request<{ job_description: JobDescriptionRecord }>(
       `/api/job-descriptions/${id}`,
@@ -1176,22 +1642,6 @@ export const api = {
     request<{ job_description: JobDescriptionRecord }>(
       `/api/job-descriptions/${id}`,
       { method: "PUT", body: payload },
-    ),
-  archiveJobDescription: (id: string, baseLockVersion: number) =>
-    request<{ job_description: JobDescriptionRecord }>(
-      `/api/job-descriptions/${id}/archive`,
-      {
-        method: "POST",
-        body: { base_lock_version: baseLockVersion },
-      },
-    ),
-  restoreJobDescription: (id: string, baseLockVersion: number) =>
-    request<{ job_description: JobDescriptionRecord }>(
-      `/api/job-descriptions/${id}/restore`,
-      {
-        method: "POST",
-        body: { base_lock_version: baseLockVersion },
-      },
     ),
   deleteJobDescription: (id: string) =>
     request<{ deleted: boolean }>(`/api/job-descriptions/${id}`, {
@@ -1207,6 +1657,8 @@ export const api = {
       keyword?: string;
       status?: JobApplicationRecord["status"];
       stage_type?: ApplicationStageType;
+      phase?: "pending" | "applied";
+      lifecycle_status?: "active" | "terminated";
       cursor?: string;
       limit?: number;
     } = {},
@@ -1216,6 +1668,8 @@ export const api = {
     if (params.keyword) search.set("keyword", params.keyword);
     if (params.status) search.set("status", params.status);
     if (params.stage_type) search.set("stage_type", params.stage_type);
+    if (params.phase) search.set("phase", params.phase);
+    if (params.lifecycle_status) search.set("lifecycle_status", params.lifecycle_status);
     if (params.cursor) search.set("cursor", params.cursor);
     search.set("limit", String(params.limit ?? 200));
     return request<{ items: JobApplicationSummary[]; next_cursor: string | null }>(
@@ -1225,10 +1679,10 @@ export const api = {
   createJobApplication: (payload: {
     job_description_id: string;
     resume_version_id?: string | null;
-    current_stage_type: ApplicationStageType;
+    current_stage_type?: LegacyApplicationStageType;
     current_round_no?: number | null;
-    current_stage_label: string;
-    stage_state: ApplicationStageState;
+    current_stage_label?: string;
+    stage_state?: ApplicationStageState;
     applied_at?: string | null;
     notes?: string | null;
   }) =>
@@ -1236,13 +1690,17 @@ export const api = {
       method: "POST",
       body: payload,
     }),
+  getJobApplication: (id: string) =>
+    request<{ application: JobApplicationRecord }>(`/api/job-applications/${id}`),
   updateJobApplication: (
     id: string,
     payload: Partial<{
+      employment_type: JobEmploymentType | null;
       calendar_color: InterviewCalendarColor;
       is_favorite: boolean;
       notes: string | null;
       applied_at: string | null;
+      resume_id: string | null;
       resume_version_id: string | null;
     }> & { base_lock_version: number },
   ) =>
@@ -1253,7 +1711,7 @@ export const api = {
   advanceJobApplication: (
     id: string,
     payload: {
-      target_stage_type: ApplicationStageType;
+      target_stage_type: LegacyApplicationStageType;
       target_round_no?: number | null;
       target_stage_label: string;
       base_lock_version: number;
@@ -1263,19 +1721,57 @@ export const api = {
       `/api/job-applications/${id}/advance`,
       { method: "POST", body: payload },
     ),
+  addJobApplicationStage: (
+    id: string,
+    payload: {
+      client_request_id: string;
+      stage_type: ApplicationStageType;
+      stage_label?: string | null;
+      interview_round_no?: number | null;
+      applied_at?: string | null;
+      resume_id?: string | null;
+      resume_version_id?: string | null;
+      base_lock_version: number;
+    },
+  ) =>
+    request<{ application: JobApplicationRecord }>(
+      `/api/job-applications/${id}/stages`,
+      { method: "POST", body: payload },
+    ),
+  terminateJobApplication: (
+    id: string,
+    payload: {
+      client_request_id: string;
+      reason:
+        | "company_rejected"
+        | "user_withdrew"
+        | "offer_declined"
+        | "completed"
+        | "other";
+      applied_at?: string | null;
+      base_lock_version: number;
+    },
+  ) =>
+    request<{ application: JobApplicationRecord }>(
+      `/api/job-applications/${id}/terminate`,
+      { method: "POST", body: payload },
+    ),
   recordJobApplicationOffer: (
     id: string,
-    offerStatus: "oc_received" | "written_offer_received",
-    baseLockVersion: number,
+    payload: {
+      base_lock_version: number;
+      base_location?: string | null;
+      salary?: number | null;
+      salary_currency?: string | null;
+      salary_period?: SalaryPeriod | null;
+      benefits_description?: string | null;
+    },
   ) =>
     request<{ application: JobApplicationRecord }>(
       `/api/job-applications/${id}/offer`,
       {
         method: "POST",
-        body: {
-          offer_status: offerStatus,
-          base_lock_version: baseLockVersion,
-        },
+        body: payload,
       },
     ),
   closeJobApplication: (
@@ -1333,13 +1829,14 @@ export const api = {
     request<InterviewSessionDetail>(`/api/interview-sessions/${id}`),
   createInterviewSession: (
     applicationId: string,
-    payload: {
+    payload: ({
       client_request_id: string;
+      application_stage_id?: string | null;
       stage_type: "interview" | "hr" | "offer" | "other";
       round_no?: number | null;
       stage_label: string;
       start_at: string;
-      end_at: string;
+      schedule_kind?: "fixed_slot" | "open_window";
       timezone: string;
       mode: InterviewMode;
       meeting_url?: string | null;
@@ -1349,7 +1846,10 @@ export const api = {
       reminder_minutes?: number | null;
       preparation_note?: string | null;
       allow_conflict?: boolean;
-    },
+    } & (
+      | { end_at: string; duration_minutes?: never }
+      | { end_at?: never; duration_minutes: number }
+    )),
   ) =>
     request<InterviewSessionDetail>(
       `/api/job-applications/${applicationId}/interview-sessions`,
@@ -1376,17 +1876,45 @@ export const api = {
     }),
   rescheduleInterviewSession: (
     id: string,
-    payload: {
+    payload: ({
       start_at: string;
-      end_at: string;
       timezone: string;
-      allow_conflict: boolean;
+      allow_conflict?: boolean;
       base_lock_version: number;
-    },
+    } & (
+      | { end_at: string; duration_minutes?: never }
+      | { end_at?: never; duration_minutes: number }
+    )),
   ) =>
     request<InterviewSessionDetail>(
       `/api/interview-sessions/${id}/reschedule`,
       { method: "POST", body: payload },
+    ),
+  updateInterviewAnswerPlan: (
+    id: string,
+    payload: ({
+      base_lock_version: number;
+    } & (
+      | {
+          answer_plan_start_at: null;
+          answer_plan_end_at: null;
+          duration_minutes?: never;
+        }
+      | {
+          answer_plan_start_at: string;
+          answer_plan_end_at: string;
+          duration_minutes?: never;
+        }
+      | {
+          answer_plan_start_at: string;
+          answer_plan_end_at?: never;
+          duration_minutes: number;
+        }
+    )),
+  ) =>
+    request<InterviewSessionDetail>(
+      `/api/interview-sessions/${id}/answer-plan`,
+      { method: "PUT", body: payload },
     ),
   completeInterviewSession: (
     id: string,
@@ -1637,4 +2165,8 @@ function withLogQuery(path: string, params: Record<string, unknown>): string {
   return `${path}${suffix ? `?${suffix}` : ""}`;
 }
 
-export type { ResumeDocumentV1, ResumeStyleV1 } from "./resumeContract";
+export type {
+  CanonicalResumeDocument,
+  CanonicalResumePresentation,
+  LayoutPlan,
+} from "./resumeContract";

@@ -14,13 +14,7 @@ MAX_FILES = 512
 MAX_FILE_BYTES = 20 * 1024 * 1024
 MAX_TOTAL_BYTES = 50 * 1024 * 1024
 MAX_MANIFEST_BYTES = 64 * 1024
-GUIDE_NAME = "安装与使用说明.html"
 VERSION_PATTERN = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
-BOSS_PERMISSIONS = {
-    "https://zhipin.com/*",
-    "https://www.zhipin.com/*",
-    "https://m.zhipin.com/*",
-}
 
 
 class PluginPackageValidationError(ValueError):
@@ -46,7 +40,7 @@ def parse_version(value: str) -> tuple[int, int, int]:
     return parts
 
 
-def validate_plugin_package(data: bytes, expected_origin: str) -> ValidatedPluginPackage:
+def validate_plugin_package(data: bytes) -> ValidatedPluginPackage:
     if not data:
         raise PluginPackageValidationError("PLUGIN_RELEASE_EMPTY")
     if len(data) > MAX_UPLOAD_BYTES:
@@ -79,7 +73,7 @@ def validate_plugin_package(data: bytes, expected_origin: str) -> ValidatedPlugi
                 total += info.file_size
             if total > MAX_TOTAL_BYTES:
                 raise PluginPackageValidationError("PLUGIN_RELEASE_TOO_LARGE")
-            if "manifest.json" not in names or GUIDE_NAME not in names:
+            if "manifest.json" not in names:
                 raise PluginPackageValidationError("PLUGIN_RELEASE_INVALID_CONTENTS")
             manifest_info = archive.getinfo("manifest.json")
             if manifest_info.file_size > MAX_MANIFEST_BYTES:
@@ -96,13 +90,6 @@ def validate_plugin_package(data: bytes, expected_origin: str) -> ValidatedPlugi
     if not isinstance(version, str):
         raise PluginPackageValidationError("PLUGIN_RELEASE_INVALID_VERSION")
     version_tuple = parse_version(version)
-    permissions = manifest.get("host_permissions")
-    if not isinstance(permissions, list) or not all(isinstance(item, str) for item in permissions):
-        raise PluginPackageValidationError("PLUGIN_RELEASE_INVALID_PERMISSIONS")
-    expected_permissions = BOSS_PERMISSIONS | {f"{expected_origin}/*"}
-    if set(permissions) != expected_permissions or len(permissions) != len(expected_permissions):
-        raise PluginPackageValidationError("PLUGIN_RELEASE_INVALID_PERMISSIONS")
-
     return ValidatedPluginPackage(
         data=data,
         version=version,

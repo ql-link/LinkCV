@@ -1,23 +1,29 @@
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 import {
   BriefcaseBusiness,
-  CalendarClock,
-  Database,
+  CalendarDays,
+  FolderOpen,
   FileText,
   LayoutTemplate,
+  ListChecks,
 } from "lucide-react";
+import assistantFeatherOutline from "../assets/assistant-feather-outline.png";
 import { navigateTo } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
-import { Brand } from "@/components/ui";
+import { Brand, PageHeader } from "@/components/ui";
 import RandomLetterSwapNav from "@/components/ui/m-random-letter-swap-1";
+import { preloadWorkspacePage } from "../workspacePageLoaders";
+import "./career-navigation.css";
 
-export type WorkspaceSection = "resumes" | "templates" | "jobs" | "interviews" | "datasets" | "account";
+export type WorkspaceSection = "resumes" | "assistant" | "templates" | "career" | "datasets" | "account";
+export type CareerSection = "applications" | "schedule" | "reviews";
 
 type WorkspaceNavigationProps = {
   active: WorkspaceSection;
   email: string;
   nickname?: string;
   avatarUrl?: string | null;
+  onItemIntent?: (href: string) => void;
 };
 
 const NAV_ITEMS: Array<{
@@ -26,7 +32,7 @@ const NAV_ITEMS: Array<{
   key: WorkspaceSection;
   label: string;
   href: string;
-  icon: typeof FileText;
+  icon: ComponentType<{ "aria-hidden"?: boolean; className?: string; strokeWidth?: number }>;
 }> = [
   {
     activeColor: "var(--ui-accent)",
@@ -45,20 +51,20 @@ const NAV_ITEMS: Array<{
     icon: LayoutTemplate,
   },
   {
-    activeColor: "var(--ui-warning)",
-    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-warning) 24%, transparent) 0%, color-mix(in srgb, var(--ui-warning) 10%, transparent) 48%, transparent 76%)",
-    key: "jobs",
-    label: "JD 中心",
-    href: "/jobs",
-    icon: BriefcaseBusiness,
+    activeColor: "var(--ui-assistant-accent)",
+    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-assistant-accent) 28%, transparent) 0%, color-mix(in srgb, var(--ui-assistant-accent) 12%, transparent) 48%, transparent 76%)",
+    key: "assistant",
+    label: "AI 助手",
+    href: "/assistant",
+    icon: AssistantFeatherIcon,
   },
   {
-    activeColor: "var(--ui-interview-accent)",
-    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-interview-accent) 26%, transparent) 0%, color-mix(in srgb, var(--ui-interview-accent) 12%, transparent) 48%, transparent 76%)",
-    key: "interviews",
-    label: "面试中心",
-    href: "/interviews",
-    icon: CalendarClock,
+    activeColor: "var(--ui-warning)",
+    gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-warning) 24%, transparent) 0%, color-mix(in srgb, var(--ui-warning) 10%, transparent) 48%, transparent 76%)",
+    key: "career",
+    label: "求职中心",
+    href: "/career/applications",
+    icon: BriefcaseBusiness,
   },
   {
     activeColor: "var(--ui-success)",
@@ -66,11 +72,28 @@ const NAV_ITEMS: Array<{
     key: "datasets",
     label: "资料库",
     href: "/datasets",
-    icon: Database,
+    icon: FolderOpen,
   },
 ];
 
-export function WorkspaceNavigation({ active, avatarUrl, email, nickname }: WorkspaceNavigationProps) {
+function AssistantFeatherIcon({
+  className,
+  "aria-hidden": ariaHidden,
+}: {
+  "aria-hidden"?: boolean;
+  className?: string;
+  strokeWidth?: number;
+}) {
+  return <img aria-hidden={ariaHidden} className={`${className ?? ""} dark:invert`} src={assistantFeatherOutline} alt="" />;
+}
+
+export function WorkspaceNavigation({
+  active,
+  avatarUrl,
+  email,
+  nickname,
+  onItemIntent = preloadWorkspacePage,
+}: WorkspaceNavigationProps) {
   const displayName = nickname || email || "个人资料";
   const activeHref = NAV_ITEMS.find((item) => item.key === active)?.href ?? "";
 
@@ -79,6 +102,8 @@ export function WorkspaceNavigation({ active, avatarUrl, email, nickname }: Work
       <a
         className="dashboard-brand-link no-underline hover:no-underline"
         href="/resumes"
+        onFocus={() => { void onItemIntent("/resumes"); }}
+        onMouseEnter={() => { void onItemIntent("/resumes"); }}
         onClick={(event) => {
           if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
           event.preventDefault();
@@ -97,6 +122,7 @@ export function WorkspaceNavigation({ active, avatarUrl, email, nickname }: Work
             links={NAV_ITEMS}
             navigationMode="client"
             onItemClick={navigateTo}
+            onItemIntent={(href) => { void onItemIntent(href); }}
           />
         </nav>
       </div>
@@ -105,6 +131,8 @@ export function WorkspaceNavigation({ active, avatarUrl, email, nickname }: Work
         aria-label={`打开个人资料，当前账号：${displayName}`}
         className="dashboard-account-badge"
         href="/account"
+        onFocus={() => { void onItemIntent("/account"); }}
+        onMouseEnter={() => { void onItemIntent("/account"); }}
         title={`个人资料：${displayName}`}
         onClick={(event) => {
           if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
@@ -121,32 +149,99 @@ export function WorkspaceNavigation({ active, avatarUrl, email, nickname }: Work
 }
 
 export function WorkspacePageHero({
+  layout,
   eyebrow,
   title,
   description,
+  navigation,
   actions,
+  icon,
+  tone = "accent",
+  className,
 }: {
-  eyebrow: string;
+  layout?: "module";
+  eyebrow?: string;
   title: string;
   description?: string;
+  navigation?: ReactNode;
   actions?: ReactNode;
+  icon?: ReactNode;
+  tone?: "accent" | "template" | "success" | "warning";
+  className?: string;
 }) {
+  if (icon || layout === "module") {
+    return (
+      <header className={`page-hero is-module${className ? ` ${className}` : ""}`}>
+        <div className="page-hero-module-summary">
+          {icon && (
+            <span className={`page-hero-module-mark is-${tone}`} aria-hidden="true">
+              {icon}
+            </span>
+          )}
+          <div className="page-hero-module-copy">
+            <h1>{title}</h1>
+            {description && <p className="page-hero-description">{description}</p>}
+          </div>
+        </div>
+        {navigation && <div className="page-hero-module-navigation">{navigation}</div>}
+        {actions && <div className="page-hero-actions">{actions}</div>}
+      </header>
+    );
+  }
+
   return (
-    <header className="page-hero">
-      <div className="page-hero-text">
-        <p className="page-hero-eyebrow">{eyebrow}</p>
-        <h1>{title}</h1>
-        {description && <p className="page-hero-description">{description}</p>}
-      </div>
-      {actions && <div className="page-hero-actions">{actions}</div>}
-    </header>
+    <PageHeader
+      eyebrow={eyebrow}
+      title={title}
+      description={description}
+      actions={actions}
+      className={className}
+    />
   );
 }
 
-export function WorkspaceLayout({ active, children }: { active: WorkspaceSection; children: ReactNode }) {
+const CAREER_ITEMS: Array<{ key: CareerSection; label: string; href: string; icon: typeof BriefcaseBusiness }> = [
+  { key: "applications", label: "求职记录", href: "/career/applications", icon: ListChecks },
+  { key: "schedule", label: "面试排期", href: "/career/schedule", icon: CalendarDays },
+];
+
+export function CareerNavigation({ active }: { active: CareerSection }) {
+  const activeEntry = active === "schedule" ? "schedule" : "applications";
+
+  return (
+    <nav className="career-subnav" aria-label="求职中心导航">
+      {CAREER_ITEMS.map(({ key, label, href, icon: Icon }) => (
+        <a
+          key={key}
+          className={activeEntry === key ? "is-active" : ""}
+          aria-current={activeEntry === key ? "page" : undefined}
+          href={href}
+          onClick={(event) => {
+            if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+            event.preventDefault();
+            navigateTo(href);
+          }}
+        >
+          <Icon aria-hidden="true" />
+          <span className="career-subnav-label">{label}</span>
+        </a>
+      ))}
+    </nav>
+  );
+}
+
+export function WorkspaceLayout({
+  active,
+  children,
+  className,
+}: {
+  active: WorkspaceSection;
+  children: ReactNode;
+  className?: string;
+}) {
   const user = useResumeStore((state) => state.user);
   return (
-    <div className="dashboard-shell" data-ui-theme="light">
+    <div className={`dashboard-shell${className ? ` ${className}` : ""}`} data-ui-theme="light">
       <WorkspaceNavigation
         active={active}
         email={user?.email ?? ""}

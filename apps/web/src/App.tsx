@@ -1,23 +1,36 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { CircleAlert } from "lucide-react";
 import { Brand, Button, PageLoading } from "@/components/ui";
-import { WorkspaceLayout, type WorkspaceSection } from "./components/WorkspaceLayout";
+import { CareerNavigation, WorkspaceLayout, type CareerSection, type WorkspaceSection } from "./components/WorkspaceLayout";
 import { ApiRequestError } from "./api/client";
-import { authPath, editorPath, navigateTo, useAppRoute } from "./routing";
+import { authPath, editorPath, legacyCareerRedirect, navigateTo, useAppRoute } from "./routing";
 import { useResumeStore } from "./store/resumeStore";
+import {
+  loadAccountPage,
+  loadAssistantPage,
+  loadDatasetsPage,
+  loadHomePage,
+  loadInterviewCenterPage,
+  loadResumeTemplatesPage,
+} from "./workspacePageLoaders";
 
-const AccountPage = lazy(() => import("./features/account/AccountPage").then((module) => ({ default: module.AccountPage })));
+export const RESUME_AUTOSAVE_INTERVAL_MS = 10_000;
+
+export function startResumeAutosave(save: () => void) {
+  return window.setInterval(save, RESUME_AUTOSAVE_INTERVAL_MS);
+}
+
+const AccountPage = lazy(() => loadAccountPage().then((module) => ({ default: module.AccountPage })));
+const AssistantPage = lazy(() => loadAssistantPage().then((module) => ({ default: module.AssistantPage })));
 const AdminApp = lazy(() => import("./features/admin/AdminApp").then((module) => ({ default: module.AdminApp })));
 const AdminLoginPage = lazy(() => import("./features/admin/AdminLoginPage").then((module) => ({ default: module.AdminLoginPage })));
 const AuthPage = lazy(() => import("./features/auth/AuthPage").then((module) => ({ default: module.AuthPage })));
-const DatasetsPage = lazy(() => import("./features/datasets/DatasetsPage").then((module) => ({ default: module.DatasetsPage })));
-const HomePage = lazy(() => import("./features/home/HomePage").then((module) => ({ default: module.HomePage })));
+const DatasetsPage = lazy(() => loadDatasetsPage().then((module) => ({ default: module.DatasetsPage })));
+const HomePage = lazy(() => loadHomePage().then((module) => ({ default: module.HomePage })));
 const ResumeCreatePage = lazy(() => import("./features/home/ResumeCreatePage").then((module) => ({ default: module.ResumeCreatePage })));
-const ResumeTemplatesPage = lazy(() => import("./features/templates/ResumeTemplatesPage").then((module) => ({ default: module.ResumeTemplatesPage })));
-const JobCenterPage = lazy(() => import("./features/jobs/JobCenterPage").then((module) => ({ default: module.JobCenterPage })));
+const ResumeTemplatesPage = lazy(() => loadResumeTemplatesPage().then((module) => ({ default: module.ResumeTemplatesPage })));
 const JobDetailPage = lazy(() => import("./features/jobs/JobDetailPage").then((module) => ({ default: module.JobDetailPage })));
-const JobFormPage = lazy(() => import("./features/jobs/JobFormPage").then((module) => ({ default: module.JobFormPage })));
-const InterviewCenterPage = lazy(() => import("./features/interviews/InterviewCenterPage").then((module) => ({ default: module.InterviewCenterPage })));
+const InterviewCenterPage = lazy(() => loadInterviewCenterPage().then((module) => ({ default: module.InterviewCenterPage })));
 const LandingPage = lazy(() => import("./features/landing/LandingPage").then((module) => ({ default: module.LandingPage })));
 const NotFoundPage = lazy(() => import("./features/not-found/NotFoundPage").then((module) => ({ default: module.NotFoundPage })));
 const SharePage = lazy(() => import("./features/share/SharePage").then((module) => ({ default: module.SharePage })));
@@ -25,14 +38,42 @@ const ResumeWorkbench = lazy(() => import("./features/workbench/ResumeWorkbench"
 
 export function App() {
   return (
-    <Suspense fallback={<PageLoading label="正在加载页面…" scope="page" />}>
+    <Suspense fallback={<AppRouteLoadingFallback />}>
       <AppContent />
+    </Suspense>
+  );
+}
+
+export function AppRouteLoadingFallback() {
+  const route = useAppRoute();
+  const loading = <PageLoading label="正在加载页面…" scope="page" />;
+  const usesLightWorkspace = route.kind === "resumes"
+    || route.kind === "assistant"
+    || route.kind === "templates"
+    || route.kind === "resumeCreate"
+    || route.kind === "editor"
+    || route.kind === "jobDetail"
+    || route.kind === "interviews"
+    || route.kind === "datasets"
+    || route.kind === "account";
+  return usesLightWorkspace ? <div data-ui-theme="light">{loading}</div> : loading;
+}
+
+export function WorkspacePageBoundary({ children }: { children: ReactNode }) {
+  return (
+    <Suspense fallback={(
+      <main className="dashboard-content workspace-route-loading">
+        <PageLoading label="正在加载模块…" scope="workspace" />
+      </main>
+    )}>
+      {children}
     </Suspense>
   );
 }
 
 function AppContent() {
   const route = useAppRoute();
+  const currentLocation = `${window.location.pathname}${window.location.search}`;
   const isInterviewMockPreview = import.meta.env.DEV
     && route.kind === "interviews"
     && new URLSearchParams(window.location.search).get("mock") === "1";
@@ -45,9 +86,13 @@ function AppContent() {
   const loadResume = useResumeStore((state) => state.loadResume);
   const goHome = useResumeStore((state) => state.goHome);
   const dirty = useResumeStore((state) => state.dirty);
-  const versionOperationPending = useResumeStore((state) => state.versionOperationPending);
-  const editVersion = useResumeStore((state) => state.editVersion);
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
+
+  useEffect(() => {
+    if (isInterviewMockPreview) return;
+    const redirect = legacyCareerRedirect(window.location.pathname, window.location.search);
+    if (redirect) navigateTo(redirect, { replace: true });
+  }, [currentLocation, isInterviewMockPreview]);
 
   useEffect(() => {
     if (isAdminArea || isInterviewMockPreview) return;
@@ -56,14 +101,14 @@ function AppContent() {
 
   useEffect(() => {
     if (isAdminArea || isInterviewMockPreview) return;
-    if (!dirty || !activeResumeId || versionOperationPending) return;
+    const timer = startResumeAutosave(() => {
+      const state = useResumeStore.getState();
+      if (!state.dirty || !state.activeResumeId || state.versionOperationPending) return;
+      void state.saveCurrentResume();
+    });
 
-    const timer = window.setTimeout(() => {
-      void saveCurrentResume();
-    }, 1200);
-
-    return () => window.clearTimeout(timer);
-  }, [activeResumeId, dirty, editVersion, isAdminArea, isInterviewMockPreview, saveCurrentResume, versionOperationPending]);
+    return () => window.clearInterval(timer);
+  }, [isAdminArea, isInterviewMockPreview]);
 
   useEffect(() => {
     if (isAdminArea || isInterviewMockPreview) return;
@@ -72,13 +117,11 @@ function AppContent() {
     if (authStatus === "guest") {
       if (
         route.kind === "resumes"
+        || route.kind === "assistant"
         || route.kind === "templates"
         || route.kind === "resumeCreate"
         || route.kind === "editor"
-        || route.kind === "jobs"
-        || route.kind === "jobCreate"
         || route.kind === "jobDetail"
-        || route.kind === "jobEdit"
         || route.kind === "interviews"
         || route.kind === "datasets"
         || route.kind === "account"
@@ -158,8 +201,13 @@ function AppContent() {
 
   if (isInterviewMockPreview && route.kind === "interviews") {
     return (
-      <WorkspaceLayout active="interviews">
-        <InterviewCenterPage view={route.view} />
+      <WorkspaceLayout active="career">
+        <WorkspacePageBoundary>
+          <InterviewCenterPage
+            view={route.view}
+            navigation={<CareerNavigation active={route.view === "records" ? "reviews" : route.view} />}
+          />
+        </WorkspacePageBoundary>
       </WorkspaceLayout>
     );
   }
@@ -197,13 +245,20 @@ function AppContent() {
     return <ResumeCreatePage />;
   }
 
+  if (route.kind === "assistant") {
+    return (
+      <WorkspaceLayout active="assistant" className="assistant-workspace-shell">
+        <WorkspacePageBoundary>
+          <AssistantPage sessionId={route.sessionId} />
+        </WorkspacePageBoundary>
+      </WorkspaceLayout>
+    );
+  }
+
   if (
     route.kind === "resumes"
     || route.kind === "templates"
-    || route.kind === "jobs"
-    || route.kind === "jobCreate"
     || route.kind === "jobDetail"
-    || route.kind === "jobEdit"
     || route.kind === "interviews"
     || route.kind === "datasets"
     || route.kind === "account"
@@ -216,21 +271,34 @@ function AppContent() {
         ? "account"
         : route.kind === "datasets"
           ? "datasets"
-          : route.kind === "interviews"
-            ? "interviews"
-          : "jobs";
+          : "career";
+
+    const careerSection: CareerSection | null = route.kind === "jobDetail"
+      ? "applications"
+      : route.kind === "interviews"
+        ? route.view === "records" ? "reviews" : route.view
+        : null;
 
     return (
       <WorkspaceLayout active={activeSection}>
-        {route.kind === "resumes" && <HomePage />}
-        {route.kind === "templates" && <ResumeTemplatesPage />}
-        {route.kind === "jobs" && <JobCenterPage />}
-        {route.kind === "jobCreate" && <JobFormPage mode="create" />}
-        {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}
-        {route.kind === "jobEdit" && <JobFormPage mode="edit" jobId={route.jobId} />}
-        {route.kind === "interviews" && <InterviewCenterPage view={route.view} />}
-        {route.kind === "datasets" && <DatasetsPage />}
-        {route.kind === "account" && <AccountPage />}
+        <WorkspacePageBoundary>
+          {route.kind === "resumes" && <HomePage />}
+          {route.kind === "templates" && <ResumeTemplatesPage />}
+          {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}
+          {route.kind === "interviews" && (
+            <InterviewCenterPage
+              view={route.view}
+              initialApplicationId={route.applicationId}
+              initialSessionId={route.sessionId}
+              initialJobId={route.jobId}
+              initialCreateApplication={route.createApplication}
+              initialJobImport={route.importJob}
+              navigation={<CareerNavigation active={careerSection ?? "applications"} />}
+            />
+          )}
+          {route.kind === "datasets" && <DatasetsPage initialFolderId={route.folderId} />}
+          {route.kind === "account" && <AccountPage />}
+        </WorkspacePageBoundary>
       </WorkspaceLayout>
     );
   }

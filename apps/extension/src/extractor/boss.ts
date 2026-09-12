@@ -155,6 +155,13 @@ export function extractBossJob(document: Document, sourceUrl: string): BossCaptu
         "a[href*='/gongsi/']",
       ]) ??
       companyFromBossInfo(detailRoot);
+    const logoUrl = firstHttpsImageUrl(detailRoot, sourceUrl, [
+      ".sider-company .company-info img",
+      ".job-detail-company img",
+      ".company-info img",
+      "img[class*='company-logo']",
+      "img[class*='company_logo']",
+    ]);
     const resolvedSourceUrl = resolveBossSourceUrl(
       document,
       sourceUrl,
@@ -196,9 +203,10 @@ export function extractBossJob(document: Document, sourceUrl: string): BossCaptu
     const capture: BossJobCapture = {
       job_title: jobTitle,
       company_name: companyName,
+      logo_url: logoUrl,
       description_text: descriptionText,
       skills: jobTags.filter(isLikelySkill),
-      employment_type_text: [...jobTags, jobTitle ?? ""].find((tag) => /全职|兼职|实习|合同|临时/.test(tag)),
+      employment_type_text: [...jobTags, jobTitle ?? ""].filter((tag) => /实习|校招|校园招聘|应届|正式|社招|全职/.test(tag)).join(" ") || undefined,
       education_text:
         firstTextAcross(fieldRoots, [".text-degree", ".job-degree", "[class*='degree']"]) ??
         meta.find((item) => EDUCATION_RE.test(item)),
@@ -702,6 +710,17 @@ function firstAttribute(root: ParentNode, selectors: string[], attribute: string
   return undefined;
 }
 
+function firstHttpsImageUrl(root: ParentNode, baseUrl: string, selectors: string[]): string | undefined {
+  const value = firstAttribute(root, selectors, "src");
+  if (!value) return undefined;
+  try {
+    const url = new URL(value, baseUrl);
+    return url.protocol === "https:" ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function firstTextAcross(roots: ParentNode[], selectors: string[]): string | undefined {
   for (const root of roots) {
     const value = firstText(root, selectors);
@@ -752,7 +771,7 @@ function unique(values: string[]): string[] {
 }
 
 function isLikelySkill(value: string): boolean {
-  if (/全职|兼职|实习|合同|临时/.test(value)) return false;
+  if (/实习|校招|校园招聘|应届|正式|社招|全职|兼职|合同|临时/.test(value)) return false;
   if (EDUCATION_RE.test(value) || EXPERIENCE_RE.test(value) || WORK_SCHEDULE_RE.test(value)) return false;
   if (BENEFIT_RE.test(value)) return false;
   return !NON_SKILL_MARKERS.some((marker) => value.includes(marker));

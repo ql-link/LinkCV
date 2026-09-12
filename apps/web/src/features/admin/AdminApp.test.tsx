@@ -73,6 +73,17 @@ describe("AdminApp access control", () => {
     window.history.replaceState(null, "", "/");
   });
 
+  it("uses the shared page loader while verifying the administrator session", () => {
+    vi.spyOn(api, "me").mockReturnValue(new Promise(() => {}));
+
+    render(<AdminApp />);
+
+    expect(screen.getByRole("status", { name: "正在验证身份…" })).toHaveClass(
+      "page-loading",
+      "is-page",
+    );
+  });
+
   it("shows the workspace for an admin user", async () => {
     vi.spyOn(api, "me").mockResolvedValue({ user: mockAdminUser });
     window.history.replaceState(null, "", "/admin");

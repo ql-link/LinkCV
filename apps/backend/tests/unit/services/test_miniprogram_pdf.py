@@ -43,7 +43,7 @@ def test_renderer_times_out_and_missing_script_fails_closed(tmp_path: Path) -> N
     )
     with pytest.raises(ApiError) as timed_out:
         timeout_service.render({"title": "fixture"})
-    assert timed_out.value.code == "RESUME_PDF_RENDER_FAILED"
+    assert timed_out.value.code == "RESUME_PDF_TIMEOUT"
 
     missing = ResumePdfRenderer(
         Settings(pdf_renderer_script=str(tmp_path / "missing.cjs"))

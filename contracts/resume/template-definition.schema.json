@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "template-definition.schema.json",
+  "title": "TemplateDefinitionV1", "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "template_key", "semantic_labels", "regions", "slots", "tokens", "avatar"],
+  "properties": {
+    "schema_version": {"const": "template-definition.v1"},
+    "template_key": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,63}$"},
+    "semantic_labels": {"$ref": "#/$defs/labels"},
+    "regions": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"$ref": "#/$defs/region"}},
+    "slots": {"type": "array", "minItems": 1, "maxItems": 30, "items": {"$ref": "#/$defs/slot"}},
+    "tokens": {"$ref": "#/$defs/tokens"},
+    "avatar": {"$ref": "#/$defs/avatar"}
+  },
+  "$defs": {
+    "semanticKind": {"enum": ["identity", "profile", "work", "education", "project", "skills", "activity", "interests", "certificates", "awards", "languages", "custom"]},
+    "labels": {"type": "object", "additionalProperties": false, "required": ["profile", "work", "education", "project", "skills", "activity", "interests", "certificates", "awards", "languages"], "properties": {"profile": {"type": "string", "minLength": 1, "maxLength": 120}, "work": {"type": "string", "minLength": 1, "maxLength": 120}, "education": {"type": "string", "minLength": 1, "maxLength": 120}, "project": {"type": "string", "minLength": 1, "maxLength": 120}, "skills": {"type": "string", "minLength": 1, "maxLength": 120}, "activity": {"type": "string", "minLength": 1, "maxLength": 120}, "interests": {"type": "string", "minLength": 1, "maxLength": 120}, "certificates": {"type": "string", "minLength": 1, "maxLength": 120}, "awards": {"type": "string", "minLength": 1, "maxLength": 120}, "languages": {"type": "string", "minLength": 1, "maxLength": 120}}},
+    "region": {"type": "object", "additionalProperties": false, "required": ["region_id", "region_kind", "order"], "properties": {"region_id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$"}, "region_kind": {"enum": ["header", "sidebar", "main", "footer"]}, "order": {"type": "integer", "minimum": 0, "maximum": 100}}},
+    "slot": {"type": "object", "additionalProperties": false, "required": ["slot_id", "region_id", "accepts", "universal_fallback", "order"], "properties": {"slot_id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$"}, "region_id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$"}, "accepts": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/semanticKind"}}, "universal_fallback": {"type": "boolean"}, "order": {"type": "integer", "minimum": 0, "maximum": 100}}},
+    "avatar": {"type": "object", "additionalProperties": false, "required": ["visibility", "fallback_asset", "size_px", "region_id"], "properties": {"visibility": {"enum": ["show", "hide"]}, "fallback_asset": {"enum": ["system-default", "none"]}, "size_px": {"type": "integer", "minimum": 56, "maximum": 220}, "region_id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$"}}, "allOf": [{"if": {"properties": {"visibility": {"const": "hide"}}}, "then": {"properties": {"fallback_asset": {"const": "none"}}}}]},
+    "tokens": {"type": "object", "additionalProperties": false, "required": ["font_family", "font_size_pt", "line_height", "accent_color", "page_margin_mm"], "properties": {"font_family": {"type": "string", "minLength": 1, "maxLength": 100}, "font_size_pt": {"type": "number", "minimum": 6, "maximum": 32}, "line_height": {"type": "number", "minimum": 1, "maximum": 3}, "accent_color": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"}, "page_margin_mm": {"type": "number", "minimum": 0, "maximum": 50}, "vertical_page_margin_mm": {"type": "number", "minimum": 0, "maximum": 50}, "page_margin_top_mm": {"type": "number", "minimum": 0, "maximum": 50}, "page_margin_right_mm": {"type": "number", "minimum": 0, "maximum": 50}, "page_margin_bottom_mm": {"type": "number", "minimum": 0, "maximum": 50}, "page_margin_left_mm": {"type": "number", "minimum": 0, "maximum": 50}}}
+  }
+}

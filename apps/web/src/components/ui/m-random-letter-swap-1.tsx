@@ -16,6 +16,7 @@ type RandomLetterSwapNavProps = {
   links: readonly NavigationLink[];
   navigationMode?: "client" | "native";
   onItemClick?: (href: string) => void;
+  onItemIntent?: (href: string) => void;
   currentType?: "location" | "page";
 };
 
@@ -30,6 +31,7 @@ export default function RandomLetterSwapNav({
   links,
   navigationMode = "native",
   onItemClick,
+  onItemIntent,
   currentType = "location",
 }: RandomLetterSwapNavProps) {
   return (
@@ -64,6 +66,8 @@ export default function RandomLetterSwapNav({
               }
               onItemClick?.(link.href);
             }}
+            onFocus={() => onItemIntent?.(link.href)}
+            onMouseEnter={() => onItemIntent?.(link.href)}
             style={{
               "--nav-item-color": link.activeColor,
               "--nav-item-glow": link.gradient,

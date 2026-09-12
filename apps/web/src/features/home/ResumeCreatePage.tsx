@@ -6,6 +6,7 @@ import { editorPath, navigateTo } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
 import { ResumePreview } from "../preview/ResumePreview";
 import { formatImportFileSize, importErrorMessage, validateImportTitle } from "@/lib/resumeImport";
+import { selectImportTemplate } from "./importTemplate";
 
 function createErrorMessage(error: unknown) {
   if (!(error instanceof ApiRequestError)) return "创建简历失败，请稍后重试。";
@@ -54,7 +55,7 @@ export function ResumeCreatePage() {
     };
   }, []);
 
-  const importTemplate = templates.find((template) => template.key === "blank-cn") ?? templates[0] ?? null;
+  const importTemplate = selectImportTemplate(templates);
 
   const pickFile = (next: File | null) => {
     setFile(next);
@@ -185,7 +186,7 @@ export function ResumeCreatePage() {
                         }}
                       >
                         <span className="create-template-thumb" aria-hidden="true">
-                          <ResumePreview data={template.data} style={template.style} />
+                          <ResumePreview data={template.data} style={template.style} layoutPlan={template.layout_plan} />
                         </span>
                         <span className="create-template-meta">
                           <strong>{template.name}</strong>
@@ -274,7 +275,12 @@ export function ResumeCreatePage() {
           </div>
           <div className="create-preview-paper">
             {previewTemplate ? (
-              <ResumePreview data={previewTemplate.data} style={previewTemplate.style} mode="full" />
+              <ResumePreview
+                data={previewTemplate.data}
+                style={previewTemplate.style}
+                layoutPlan={previewTemplate.layout_plan}
+                mode="full"
+              />
             ) : (
               <div className="create-preview-empty">模板加载后可预览版式。</div>
             )}

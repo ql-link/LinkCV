@@ -16,12 +16,18 @@ vi.mock("../../api/client", async (importOriginal) => {
 });
 
 vi.mock("../preview/ResumePreview", () => ({
-  ResumePreview: () => <div data-testid="resume-preview" />,
+  ResumePreview: ({ layoutPlan, mode = "card" }: { layoutPlan?: unknown; mode?: "card" | "full" }) => (
+    <div
+      data-testid={`resume-preview-${mode}`}
+      data-layout-plan={layoutPlan ? "present" : "missing"}
+    />
+  ),
 }));
 
+const layoutPlan = { schema_version: "layout-plan.v1", regions: [] };
 const templates = [
-  { id: "8", key: "blank-cn", name: "空白简历", description: null, data: {}, style: {} },
-  { id: "9", key: "modern-cn", name: "现代双栏", description: null, data: {}, style: {} },
+  { id: "9", key: "classic-technical-cn", name: "经典单页技术简历", description: null, data: {}, style: {}, layout_plan: layoutPlan },
+  { id: "10", key: "civic-service-cn", name: "蓝色政务行政", description: null, data: {}, style: {}, layout_plan: layoutPlan },
 ];
 
 function mockTemplates() {
@@ -41,7 +47,7 @@ describe("ResumeCreatePage", () => {
     window.history.replaceState(null, "", "/resumes/new");
     render(<ResumeCreatePage />);
 
-    fireEvent.click(await screen.findByRole("option", { name: /现代双栏/ }));
+    fireEvent.click(await screen.findByRole("option", { name: /经典单页技术简历/ }));
     fireEvent.change(screen.getByLabelText("简历名称"), {
       target: { value: "2026 产品经理简历" },
     });
@@ -53,6 +59,16 @@ describe("ResumeCreatePage", () => {
     });
   });
 
+  it("创建页的完整预览继续传递服务端布局计划", async () => {
+    mockTemplates();
+    render(<ResumeCreatePage />);
+
+    expect(await screen.findByTestId("resume-preview-full")).toHaveAttribute(
+      "data-layout-plan",
+      "present",
+    );
+  });
+
   it("名称重复时留在新建页并显示明确错误", async () => {
     mockTemplates();
     useResumeStore.setState({
@@ -62,7 +78,7 @@ describe("ResumeCreatePage", () => {
     });
     render(<ResumeCreatePage />);
 
-    await screen.findByRole("option", { name: /空白简历/ });
+    await screen.findByRole("option", { name: /经典单页技术简历/ });
     fireEvent.change(screen.getByLabelText("简历名称"), {
       target: { value: "重复名称" },
     });
@@ -85,7 +101,7 @@ describe("ResumeCreatePage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /导入并开始解析/ }));
     await waitFor(() => {
-      expect(importResume).toHaveBeenCalledWith(file, "8", "resume");
+      expect(importResume).toHaveBeenCalledWith(file, "9", "resume");
       expect(window.location.pathname).toBe("/resumes");
     });
   });

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from linkcv.core.database import utc_now
 from linkcv.modules.llm.catalog import (
     CHAT_CAPABILITY,
+    JOB_IMAGE_STRUCTURING_CAPABILITY,
     PI_AGENT_CAPABILITY,
     RESUME_STRUCTURING_CAPABILITY,
     adapter_requires_api_key,
@@ -38,15 +39,22 @@ from linkcv.modules.llm.models import (
     LLMModelConfig,
 )
 from linkcv.modules.llm.schemas import (
+    ChatImageContentPart,
+    ChatImageUrl,
     ChatMessage,
     ChatResult,
     ChatStream,
     ChatStreamEvent,
     ChatUsage,
+    ChatTextContentPart,
     StructuredChatResult,
 )
 
 logger = logging.getLogger(__name__)
+VISION_PROBE_IMAGE_DATA_URL = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP8zwACTGCSAQANHQEDgslx/wAAAABJRU5ErkJggg=="
+)
 ONE_MILLION = Decimal(1_000_000)
 COST_QUANTUM = Decimal("0.0000000001")
 SOURCE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
@@ -192,6 +200,14 @@ class AgentRuntimeModel:
 
 
 @dataclass(frozen=True)
+class AgentModelSummary:
+    """The non-sensitive model identity exposed to an authenticated user."""
+
+    adapter: str
+    name: str
+
+
+@dataclass(frozen=True)
 class Metering:
     status: str
     input_tokens: int | None
@@ -305,6 +321,13 @@ class LLMService:
 
     def encrypt_credential(self, plaintext: str) -> str:
         return self._cipher.encrypt(plaintext)
+
+    async def agent_model_summary(self) -> AgentModelSummary:
+        """Resolve the bound Pi Agent model without reading its credentials."""
+        config = await self._db(self._current_config_sync, PI_AGENT_CAPABILITY)
+        if config is None:
+            raise LLMError("LLM_MODEL_NOT_CONFIGURED", "agent-model-summary")
+        return AgentModelSummary(adapter=config.adapter, name=config.model_call_name)
 
     async def agent_runtime_model(self) -> AgentRuntimeModel:
         """Resolve and decrypt the model bound to the Pi Agent capability."""
@@ -896,18 +919,35 @@ class LLMService:
             await self._db(self._select_model_sync, call_id, config)
             api_key = await self._credential(config, call_id, started_at)
             try:
+                is_image_probe = config.capability == JOB_IMAGE_STRUCTURING_CAPABILITY
+                probe_message = ChatMessage(
+                    role="user",
+                    content=(
+                        [
+                            ChatTextContentPart(
+                                text=(
+                                    "识别图片的纯色，只返回一个 JSON 对象，"
+                                    '格式为 {"color":"颜色英文小写"}。'
+                                )
+                            ),
+                            ChatImageContentPart(
+                                image_url=ChatImageUrl(
+                                    url=VISION_PROBE_IMAGE_DATA_URL,
+                                    detail="low",
+                                )
+                            ),
+                        ]
+                        if is_image_probe
+                        else (
+                            "Reply only with this valid JSON object: {\"ok\": true}"
+                            if config.capability == RESUME_STRUCTURING_CAPABILITY
+                            else "Reply with OK."
+                        )
+                    ),
+                )
                 result: GatewayResult = await self._gateway.complete(
                     model=config.model_name,
-                    messages=(
-                        ChatMessage(
-                            role="user",
-                            content=(
-                                "Reply only with this valid JSON object: {\"ok\": true}"
-                                if config.capability == RESUME_STRUCTURING_CAPABILITY
-                                else "Reply with OK."
-                            ),
-                        ),
-                    ),
+                    messages=(probe_message,),
                     api_base=config.api_base,
                     api_key=api_key,
                 )
@@ -926,14 +966,21 @@ class LLMService:
                 input_price_per_million=result.input_price_per_million,
                 output_price_per_million=result.output_price_per_million,
             )
-            if config.capability == RESUME_STRUCTURING_CAPABILITY:
+            if config.capability in {
+                RESUME_STRUCTURING_CAPABILITY,
+                JOB_IMAGE_STRUCTURING_CAPABILITY,
+            }:
                 try:
                     probe_payload = json.loads(result.content)
                 except (TypeError, ValueError):
                     probe_payload = None
                 if (
                     not isinstance(probe_payload, dict)
-                    or probe_payload.get("ok") is not True
+                    or (
+                        probe_payload.get("color") != "red"
+                        if config.capability == JOB_IMAGE_STRUCTURING_CAPABILITY
+                        else probe_payload.get("ok") is not True
+                    )
                 ):
                     await self._db(
                         self._finalize_sync,

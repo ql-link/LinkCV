@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
@@ -10,6 +11,7 @@ from sqlalchemy import (
     Index,
     Integer,
     JSON,
+    Numeric,
     PrimaryKeyConstraint,
     SmallInteger,
     String,
@@ -84,8 +86,31 @@ class JobApplication(Base):
             name="ck_job_applications_status",
         ),
         CheckConstraint(
-            "offer_status IN ('none', 'oc_received', 'written_offer_received', 'accepted', 'declined')",
+            "lifecycle_status IN ('active', 'terminated')",
+            name="ck_job_applications_lifecycle_status",
+        ),
+        CheckConstraint(
+            "(lifecycle_status = 'active' AND terminated_at IS NULL AND termination_reason IS NULL) OR "
+            "(lifecycle_status = 'terminated' AND terminated_at IS NOT NULL AND termination_reason IS NOT NULL)",
+            name="ck_job_applications_termination_context",
+        ),
+        CheckConstraint(
+            "offer_status IN ('none', 'received', 'accepted', 'declined')",
             name="ck_job_applications_offer_status",
+        ),
+        CheckConstraint(
+            "offer_salary_period IS NULL OR "
+            "offer_salary_period IN ('hour', 'day', 'month', 'year')",
+            name="ck_job_applications_offer_salary_period",
+        ),
+        CheckConstraint(
+            "offer_salary IS NULL OR "
+            "(offer_salary_currency IS NOT NULL AND offer_salary_period IS NOT NULL)",
+            name="ck_job_applications_offer_salary_context",
+        ),
+        CheckConstraint(
+            "offer_salary_currency IS NULL OR LENGTH(offer_salary_currency) = 3",
+            name="ck_job_applications_offer_salary_currency",
         ),
         CheckConstraint(
             "is_favorite IN (0, 1)", name="ck_job_applications_is_favorite"
@@ -113,6 +138,15 @@ class JobApplication(Base):
             "user_id",
             "archived_at",
             "offer_status",
+        ),
+        Index(
+            "idx_job_applications_user_lifecycle_updated",
+            "user_id",
+            "archived_at",
+            "lifecycle_status",
+            "applied_at",
+            desc("updated_at"),
+            desc("id"),
         ),
         Index("idx_job_applications_job_description", "job_description_id"),
         Index("idx_job_applications_resume_version", "resume_version_id"),
@@ -157,8 +191,30 @@ class JobApplication(Base):
     current_stage_label: Mapped[str] = mapped_column(String(100), nullable=False)
     stage_state: Mapped[str] = mapped_column(String(24), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="active")
+    lifecycle_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="active"
+    )
+    terminated_at: Mapped[datetime | None] = mapped_column(
+        timestamp_type(), nullable=True
+    )
+    termination_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
     offer_status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="none"
+    )
+    offer_base_location: Mapped[str | None] = mapped_column(
+        String(100), nullable=True
+    )
+    offer_salary: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2), nullable=True
+    )
+    offer_salary_currency: Mapped[str | None] = mapped_column(
+        ascii_char(3), nullable=True
+    )
+    offer_salary_period: Mapped[str | None] = mapped_column(
+        String(16), nullable=True
+    )
+    offer_benefits_description: Mapped[str | None] = mapped_column(
+        String(500), nullable=True
     )
     is_favorite: Mapped[int] = mapped_column(
         unsigned_tinyint_type(), nullable=False, default=0
@@ -170,6 +226,111 @@ class JobApplication(Base):
     )
     lock_version: Mapped[int] = mapped_column(
         unsigned_int_type(), nullable=False, default=1
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        timestamp_type(), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    @property
+    def phase(self) -> str:
+        return "pending" if self.applied_at is None else "applied"
+
+
+class JobApplicationStage(Base):
+    __tablename__ = "job_application_stages"
+    __table_args__ = (
+        PrimaryKeyConstraint("id", name="pk_job_application_stages"),
+        UniqueConstraint(
+            "application_id",
+            "client_request_id",
+            name="uk_job_application_stages_request",
+        ),
+        UniqueConstraint(
+            "application_id",
+            "sequence_no",
+            name="uk_job_application_stages_sequence",
+        ),
+        UniqueConstraint(
+            "application_id",
+            "current_marker",
+            name="uk_job_application_stages_current",
+        ),
+        CheckConstraint(
+            "stage_type IN ('screening', 'assessment', 'written_test', 'ai_interview', 'interview', 'offer')",
+            name="ck_job_application_stages_type",
+        ),
+        CheckConstraint(
+            "LENGTH(TRIM(stage_label)) > 0 AND "
+            "((stage_type = 'interview' AND (interview_round_no IS NULL OR interview_round_no >= 1)) OR "
+            "(stage_type <> 'interview' AND interview_round_no IS NULL))",
+            name="ck_job_application_stages_round_context",
+        ),
+        CheckConstraint(
+            "stage_status IN ('active', 'completed', 'cancelled')",
+            name="ck_job_application_stages_status",
+        ),
+        CheckConstraint(
+            "stage_result IN ('pending', 'passed', 'rejected', 'skipped')",
+            name="ck_job_application_stages_result",
+        ),
+        CheckConstraint(
+            "(current_marker = 1 AND stage_status = 'active' AND completed_at IS NULL) OR "
+            "(current_marker IS NULL)",
+            name="ck_job_application_stages_current_context",
+        ),
+        CheckConstraint(
+            "(stage_status = 'completed' AND completed_at IS NOT NULL) OR "
+            "(stage_status <> 'completed')",
+            name="ck_job_application_stages_completed_context",
+        ),
+        Index(
+            "idx_job_application_stages_application_order",
+            "application_id",
+            "sequence_no",
+            "id",
+        ),
+        Index(
+            "idx_job_application_stages_application_status",
+            "application_id",
+            "stage_status",
+            "entered_at",
+            "id",
+        ),
+        {"comment": "一次求职记录的阶段历史", "sqlite_autoincrement": True},
+    )
+
+    id: Mapped[int] = mapped_column(unsigned_bigint_type(), autoincrement=True)
+    application_id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(),
+        ForeignKey(
+            "job_applications.id",
+            name="fk_job_application_stages_application",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+    client_request_id: Mapped[str] = mapped_column(ascii_char(36), nullable=False)
+    stage_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    stage_label: Mapped[str] = mapped_column(String(100), nullable=False)
+    interview_round_no: Mapped[int | None] = mapped_column(
+        unsigned_smallint_type(), nullable=True
+    )
+    sequence_no: Mapped[int] = mapped_column(unsigned_smallint_type(), nullable=False)
+    stage_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="active"
+    )
+    stage_result: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending"
+    )
+    current_marker: Mapped[int | None] = mapped_column(
+        unsigned_tinyint_type(), nullable=True
+    )
+    entered_at: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        timestamp_type(), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         timestamp_type(), nullable=False, server_default=func.now()
@@ -206,6 +367,21 @@ class InterviewSession(Base):
             name="ck_interview_sessions_round_result",
         ),
         CheckConstraint("end_at > start_at", name="ck_interview_sessions_time_range"),
+        CheckConstraint(
+            "schedule_kind IN ('fixed_slot', 'open_window')",
+            name="ck_interview_sessions_schedule_kind",
+        ),
+        CheckConstraint(
+            "(schedule_kind = 'fixed_slot' "
+            "AND answer_plan_start_at IS NULL AND answer_plan_end_at IS NULL) OR "
+            "(schedule_kind = 'open_window' AND "
+            "((answer_plan_start_at IS NULL AND answer_plan_end_at IS NULL) OR "
+            "(answer_plan_start_at IS NOT NULL AND answer_plan_end_at IS NOT NULL "
+            "AND answer_plan_end_at > answer_plan_start_at "
+            "AND answer_plan_start_at >= start_at "
+            "AND answer_plan_end_at <= end_at)))",
+            name="ck_interview_sessions_answer_plan",
+        ),
         CheckConstraint(
             "mode IN ('video', 'onsite', 'phone', 'other')",
             name="ck_interview_sessions_mode",
@@ -256,6 +432,15 @@ class InterviewSession(Base):
         ),
         nullable=False,
     )
+    application_stage_id: Mapped[int | None] = mapped_column(
+        unsigned_bigint_type(),
+        ForeignKey(
+            "job_application_stages.id",
+            name="fk_interview_sessions_application_stage",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
     client_request_id: Mapped[str] = mapped_column(ascii_char(36), nullable=False)
     stage_type: Mapped[str] = mapped_column(String(24), nullable=False)
     round_no: Mapped[int | None] = mapped_column(
@@ -268,6 +453,15 @@ class InterviewSession(Base):
     )
     start_at: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False)
     end_at: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False)
+    schedule_kind: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="fixed_slot", server_default="fixed_slot"
+    )
+    answer_plan_start_at: Mapped[datetime | None] = mapped_column(
+        timestamp_type(), nullable=True
+    )
+    answer_plan_end_at: Mapped[datetime | None] = mapped_column(
+        timestamp_type(), nullable=True
+    )
     timezone: Mapped[str] = mapped_column(String(64), nullable=False)
     mode: Mapped[str] = mapped_column(String(24), nullable=False)
     meeting_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)

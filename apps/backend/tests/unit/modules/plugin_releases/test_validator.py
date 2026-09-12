@@ -8,15 +8,13 @@ from linkcv.modules.plugin_releases.validator import (
     PluginPackageValidationError,
     validate_plugin_package,
 )
-from tests.plugin_release_fakes import BOSS_PERMISSIONS, build_plugin_zip
-
-ORIGIN = "http://127.0.0.1:5173"
+from tests.plugin_release_fakes import build_plugin_zip
 
 
 def test_valid_package_returns_version_size_and_digest() -> None:
-    data = build_plugin_zip(origin=ORIGIN)
+    data = build_plugin_zip()
 
-    package = validate_plugin_package(data, ORIGIN)
+    package = validate_plugin_package(data)
 
     assert package.version == "0.1.0"
     assert package.version_tuple == (0, 1, 0)
@@ -28,30 +26,36 @@ def test_valid_package_returns_version_size_and_digest() -> None:
     "data, code",
     [
         (b"not-a-zip", "PLUGIN_RELEASE_INVALID_ARCHIVE"),
-        (
-            build_plugin_zip(permissions=[*BOSS_PERMISSIONS, "https://wrong.example/*"]),
-            "PLUGIN_RELEASE_INVALID_PERMISSIONS",
-        ),
         (build_plugin_zip(version="1.0.0-beta"), "PLUGIN_RELEASE_INVALID_VERSION"),
     ],
 )
 def test_invalid_packages_are_rejected(data: bytes, code: str) -> None:
     with pytest.raises(PluginPackageValidationError, match=code):
-        validate_plugin_package(data, ORIGIN)
+        validate_plugin_package(data)
+
+
+def test_package_permissions_are_not_tied_to_an_environment_origin() -> None:
+    data = build_plugin_zip(
+        permissions=["https://www.zhipin.com/*", "http://localhost:4317/*"]
+    )
+
+    package = validate_plugin_package(data)
+
+    assert package.version == "0.1.0"
 
 
 def test_path_traversal_is_rejected() -> None:
     data = build_plugin_zip(extra={"../outside.js": b"bad"})
 
     with pytest.raises(PluginPackageValidationError, match="UNSAFE_ARCHIVE"):
-        validate_plugin_package(data, ORIGIN)
+        validate_plugin_package(data)
 
 
 def test_case_insensitive_duplicate_path_is_rejected() -> None:
     data = build_plugin_zip(extra={"content.js": b"one", "CONTENT.js": b"two"})
 
     with pytest.raises(PluginPackageValidationError, match="UNSAFE_ARCHIVE"):
-        validate_plugin_package(data, ORIGIN)
+        validate_plugin_package(data)
 
 
 def test_symbolic_link_is_rejected() -> None:
@@ -66,4 +70,4 @@ def test_symbolic_link_is_rejected() -> None:
         target.writestr(link, "manifest.json")
 
     with pytest.raises(PluginPackageValidationError, match="UNSAFE_ARCHIVE"):
-        validate_plugin_package(output.getvalue(), ORIGIN)
+        validate_plugin_package(output.getvalue())

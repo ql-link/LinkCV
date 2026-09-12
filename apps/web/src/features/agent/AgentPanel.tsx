@@ -1,6 +1,7 @@
 import { ChevronLeft, CircleCheck, History, LoaderCircle, Pencil, Plus, RotateCcw, Send, Sparkles, Square, X } from "lucide-react";
+import MarkdownIt from "markdown-it";
 import { useEffect, useRef, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent } from "react";
 
 import {
   AgentMessage,
@@ -10,16 +11,18 @@ import {
   AgentSelectionContext,
   AgentStreamEvent,
   ApiRequestError,
-  ResumeDocumentV1,
-  ResumeStyleV1,
+  CanonicalResumeDocument,
+  CanonicalResumePresentation,
   api,
 } from "../../api/client";
-import { Avatar, AvatarFallback, AvatarImage, Button } from "@/components/ui";
+import { resumePresentationTemplateKey } from "../../api/resumeContract";
+import { Avatar, AvatarFallback, AvatarImage, Button, PageLoading } from "@/components/ui";
+import { resumeImageContractErrorMessage } from "../workbench/resumeImageLimits";
 
 type AgentPanelProps = {
   resumeId: string;
-  currentData?: ResumeDocumentV1;
-  currentStyle?: ResumeStyleV1;
+  currentData?: CanonicalResumeDocument;
+  currentStyle?: CanonicalResumePresentation;
   userAvatarUrl?: string | null;
   userDisplayName?: string;
   onBeforeRun?: () => Promise<boolean>;
@@ -41,21 +44,10 @@ const agentQuickPrompts = [
   { label: "提炼亮点", prompt: "提炼这份简历的技术亮点", icon: Sparkles },
 ];
 
-const sectionLabels: Record<keyof ResumeDocumentV1["sections"], string> = {
-  work_experiences: "工作经历",
-  educations: "教育经历",
-  projects: "项目经历",
-  skills: "技能",
-  certificates: "证书",
-  awards: "奖项",
-  languages: "语言",
-  custom_sections: "自定义内容",
-};
-
 function proposalChanges(
   proposal: AgentProposal,
-  currentData?: ResumeDocumentV1,
-  currentStyle?: ResumeStyleV1,
+  currentData?: CanonicalResumeDocument,
+  currentStyle?: CanonicalResumePresentation,
 ) {
   if (proposal.operations?.length) {
     return proposal.operations.map((operation, index) => ({
@@ -68,24 +60,19 @@ function proposalChanges(
   }
   if (!currentData || !currentStyle) return [];
   const changes: Array<{ label: string; before: string; after: string }> = [];
-  if (JSON.stringify(currentData.basics) !== JSON.stringify(proposal.data.basics)) {
-    changes.push({ label: "基本信息", before: "当前内容", after: "有修改" });
-  }
-  for (const key of Object.keys(sectionLabels) as Array<keyof ResumeDocumentV1["sections"]>) {
-    const before = currentData.sections[key];
-    const after = proposal.data.sections[key];
-    if (JSON.stringify(before) !== JSON.stringify(after)) {
-      changes.push({ label: sectionLabels[key], before: `${before.length} 项`, after: `${after.length} 项` });
-    }
+  if (JSON.stringify(currentData) !== JSON.stringify(proposal.data)) {
+    changes.push({ label: "简历正文", before: "当前内容", after: "有修改" });
   }
   if (JSON.stringify(currentStyle) !== JSON.stringify(proposal.style)) {
-    changes.push({ label: "排版样式", before: currentStyle.template_key, after: proposal.style.template_key });
+    changes.push({ label: "排版样式", before: resumePresentationTemplateKey(currentStyle), after: resumePresentationTemplateKey(proposal.style) });
   }
   return changes;
 }
 
-function agentErrorMessage(error: unknown) {
+export function agentErrorMessage(error: unknown) {
   const code = error instanceof ApiRequestError ? error.message : "";
+  const imageMessage = resumeImageContractErrorMessage(code);
+  if (imageMessage) return imageMessage;
   const messages: Record<string, string> = {
     AGENT_UNAVAILABLE: "智能助手暂时不可用，简历编辑不受影响。",
     AGENT_STREAM_INCOMPLETE: "智能助手连接意外中断，请稍后重试。",
@@ -143,16 +130,23 @@ function conversationTime(createdAt: string) {
   }).format(created);
 }
 
-function pendingClarificationMessage(messages: AgentMessage[]) {
+export function pendingClarificationMessage(messages: AgentMessage[]) {
   const last = messages[messages.length - 1];
   return last?.role === "assistant" && last.message_type === "clarification" && last.clarification
     ? last
     : null;
 }
 
-type ClarificationAnswer = { optionId: string; other: string };
+export type ClarificationAnswer = { optionId: string; other: string };
 
-function clarificationAnswerText(
+export function clarificationAllowsCustom(
+  clarification: AgentClarification,
+  question: AgentClarification["questions"][number],
+) {
+  return question.allow_custom ?? clarification.allow_custom ?? true;
+}
+
+export function clarificationAnswerText(
   clarification: AgentClarification,
   answers: Record<string, ClarificationAnswer>,
 ) {
@@ -176,48 +170,45 @@ export function AgentUserAvatar({ avatarUrl, displayName = "用户" }: { avatarU
   );
 }
 
-function inlineMarkdown(text: string): ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean).map((part, index) => {
-    if (part.startsWith("**") && part.endsWith("**")) return <strong key={index}>{part.slice(2, -2)}</strong>;
-    if (part.startsWith("`") && part.endsWith("`")) return <code key={index}>{part.slice(1, -1)}</code>;
-    return part;
-  });
+const agentMarkdown = new MarkdownIt({
+  html: false,
+  linkify: true,
+  breaks: false,
+  typographer: false,
+});
+
+function agentHeadingTag(tag: string) {
+  const sourceLevel = Number.parseInt(tag.slice(1), 10) || 1;
+  return { sourceLevel, tag: `h${Math.min(sourceLevel + 1, 6)}` };
 }
 
-function AgentMarkdown({ content }: { content: string }) {
-  const lines = content.split("\n");
-  const blocks: ReactNode[] = [];
-  for (let index = 0; index < lines.length;) {
-    const line = lines[index]?.trimEnd() ?? "";
-    if (!line.trim()) {
-      index += 1;
-      continue;
-    }
-    if (line.startsWith("```") ) {
-      const code: string[] = [];
-      index += 1;
-      while (index < lines.length && !lines[index]?.startsWith("```")) code.push(lines[index++] ?? "");
-      index += 1;
-      blocks.push(<pre key={`code-${index}`}><code>{code.join("\n")}</code></pre>);
-      continue;
-    }
-    if (/^[-*]\s+/.test(line)) {
-      const items: string[] = [];
-      while (index < lines.length && /^[-*]\s+/.test(lines[index] ?? "")) items.push((lines[index++] ?? "").replace(/^[-*]\s+/, ""));
-      blocks.push(<ul key={`list-${index}`}>{items.map((item, itemIndex) => <li key={itemIndex}>{inlineMarkdown(item)}</li>)}</ul>);
-      continue;
-    }
-    const heading = line.match(/^(#{1,3})\s+(.+)$/);
-    if (heading) {
-      blocks.push(<strong className="agent-markdown-heading" key={`heading-${index}`}>{inlineMarkdown(heading[2] ?? "")}</strong>);
-      index += 1;
-      continue;
-    }
-    const paragraph: string[] = [];
-    while (index < lines.length && lines[index]?.trim() && !/^(```|[-*]\s+|#{1,3}\s+)/.test(lines[index] ?? "")) paragraph.push(lines[index++] ?? "");
-    blocks.push(<p key={`paragraph-${index}`}>{inlineMarkdown(paragraph.join("\n"))}</p>);
-  }
-  return <div className="agent-message-content">{blocks}</div>;
+agentMarkdown.renderer.rules.heading_open = (tokens, index, options, _env, self) => {
+  const token = tokens[index];
+  const heading = agentHeadingTag(token.tag);
+  token.tag = heading.tag;
+  token.attrJoin("class", `agent-markdown-heading is-level-${heading.sourceLevel}`);
+  return self.renderToken(tokens, index, options);
+};
+
+agentMarkdown.renderer.rules.heading_close = (tokens, index, options, _env, self) => {
+  tokens[index].tag = agentHeadingTag(tokens[index].tag).tag;
+  return self.renderToken(tokens, index, options);
+};
+
+agentMarkdown.renderer.rules.link_open = (tokens, index, options, _env, self) => {
+  const token = tokens[index];
+  token.attrSet("target", "_blank");
+  token.attrSet("rel", "noopener noreferrer");
+  return self.renderToken(tokens, index, options);
+};
+
+agentMarkdown.renderer.rules.image = (tokens, index) => {
+  const alt = agentMarkdown.utils.escapeHtml(tokens[index].content || "图片");
+  return `<span class="agent-markdown-image" role="img" aria-label="${alt}">[图片：${alt}]</span>`;
+};
+
+export function AgentMarkdown({ content }: { content: string }) {
+  return <div className="agent-message-content" dangerouslySetInnerHTML={{ __html: agentMarkdown.render(content) }} />;
 }
 
 export function AgentPanel({
@@ -607,7 +598,7 @@ export function AgentPanel({
       {conversationView === "history" ? (
         <section className="agent-conversation-history" aria-label="历史对话">
           <header><strong>历史对话</strong><small>当前简历 · 最近 50 条</small></header>
-          {historyLoading && <p className="agent-empty"><LoaderCircle aria-hidden="true" className="agent-spinner" />正在读取历史对话…</p>}
+          {historyLoading && <PageLoading label="正在读取历史对话…" scope="panel" />}
           {historyError && <div className="agent-error" role="alert">{historyError}<button type="button" onClick={() => void openHistory()}>重试</button></div>}
           {!historyLoading && !historyError && sessions.length === 0 && <p className="agent-empty">暂无历史对话。发送第一条消息后会显示在这里。</p>}
           {!historyLoading && !historyError && sessions.length > 0 && (
@@ -628,7 +619,7 @@ export function AgentPanel({
         </section>
       ) : <>
       <div className="agent-message-list" ref={messageListRef} aria-live="polite">
-        {loading && <p className="agent-empty"><LoaderCircle aria-hidden="true" className="agent-spinner" />正在读取对话…</p>}
+        {loading && <PageLoading label="正在读取对话…" scope="panel" />}
         {!loading && messages.length === 0 && (
           <div className="agent-welcome-message">
             <strong>你好！我是你的 AI 简历助手</strong>
@@ -721,7 +712,8 @@ export function AgentPanel({
             <header><Sparkles aria-hidden="true" size={15} /><span><strong>需要你确认</strong><small>回答后我再继续处理</small></span></header>
             {pendingClarification.clarification.questions.map((question) => {
               const answer = clarificationAnswers[question.id] ?? { optionId: "", other: "" };
-              const missing = clarificationAttempted && (!answer.optionId || (answer.optionId === "__other__" && !answer.other.trim()));
+              const allowCustom = clarificationAllowsCustom(pendingClarification.clarification!, question);
+              const missing = clarificationAttempted && (!answer.optionId || (answer.optionId === "__other__" && allowCustom && !answer.other.trim()));
               return (
                 <fieldset key={question.id} aria-describedby={missing ? `${question.id}-error` : undefined}>
                   <legend><span>{question.header}</span>{question.question}</legend>
@@ -737,24 +729,28 @@ export function AgentPanel({
                       <span><strong>{option.label}</strong>{option.description && <small>{option.description}</small>}</span>
                     </label>
                   ))}
-                  <label>
-                    <input
-                      type="radio"
-                      name={`clarification-${question.id}`}
-                      value="__other__"
-                      checked={answer.optionId === "__other__"}
-                      onChange={() => setClarificationAnswers((current) => ({ ...current, [question.id]: { optionId: "__other__", other: current[question.id]?.other ?? "" } }))}
-                    />
-                    <span><strong>其他</strong><small>用自己的话补充</small></span>
-                  </label>
-                  {answer.optionId === "__other__" && (
-                    <input
-                      className="agent-clarification-other"
-                      aria-label={`${question.header}的其他回答`}
-                      maxLength={500}
-                      value={answer.other}
-                      onChange={(event) => setClarificationAnswers((current) => ({ ...current, [question.id]: { optionId: "__other__", other: event.target.value } }))}
-                    />
+                  {allowCustom && (
+                    <>
+                      <label>
+                        <input
+                          type="radio"
+                          name={`clarification-${question.id}`}
+                          value="__other__"
+                          checked={answer.optionId === "__other__"}
+                          onChange={() => setClarificationAnswers((current) => ({ ...current, [question.id]: { optionId: "__other__", other: current[question.id]?.other ?? "" } }))}
+                        />
+                        <span><strong>其他</strong><small>用自己的话补充</small></span>
+                      </label>
+                      {answer.optionId === "__other__" && (
+                        <input
+                          className="agent-clarification-other"
+                          aria-label={`${question.header}的其他回答`}
+                          maxLength={500}
+                          value={answer.other}
+                          onChange={(event) => setClarificationAnswers((current) => ({ ...current, [question.id]: { optionId: "__other__", other: event.target.value } }))}
+                        />
+                      )}
+                    </>
                   )}
                   {missing && <small className="agent-clarification-error" id={`${question.id}-error`}>请选择一个选项或填写其他答案。</small>}
                 </fieldset>

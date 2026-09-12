@@ -110,7 +110,11 @@ async function rawRequest<T>(
 }
 
 function candidateOrigins(): string[] {
-  const values = [import.meta.env.WXT_PUBLIC_LINKCV_ORIGIN, ...FALLBACK_ORIGINS];
+  const configuredChannel = import.meta.env.WXT_PUBLIC_LINKCV_CHANNEL;
+  const configuredOrigin = import.meta.env.WXT_PUBLIC_LINKCV_ORIGIN;
+  const values = configuredChannel === "development" || configuredChannel === "production"
+    ? [configuredOrigin]
+    : [configuredOrigin, ...FALLBACK_ORIGINS];
   const origins: string[] = [];
   for (const value of values) {
     if (!value) continue;
@@ -119,7 +123,7 @@ function candidateOrigins(): string[] {
       if (!["http:", "https:"].includes(url.protocol)) continue;
       if (!origins.includes(url.origin)) origins.push(url.origin);
     } catch {
-      // Invalid build-time configuration is ignored; local fallbacks still work.
+      // Release packages fail closed; ordinary local builds may continue to fallbacks.
     }
   }
   return origins;

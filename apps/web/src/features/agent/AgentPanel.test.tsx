@@ -2,14 +2,15 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api, type AgentProposal, type AgentSession } from "../../api/client";
-import { defaultSemanticDocument, defaultSemanticStyle } from "../../api/resumeContract";
-import { AgentPanel, AgentUserAvatar } from "./AgentPanel";
+import { ApiRequestError, api, type AgentProposal, type AgentSession } from "../../api/client";
+import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
+import { agentErrorMessage, AgentMarkdown, AgentPanel, AgentUserAvatar } from "./AgentPanel";
 
 const session: AgentSession = {
   id: "session-1",
   resume_id: "resume-1",
   title: "简历助手",
+  pinned: false,
   status: "active",
   last_message_at: null,
   created_at: "2026-08-20T08:00:00Z",
@@ -22,8 +23,8 @@ const proposal: AgentProposal = {
   run_id: "run-1",
   resume_id: "resume-1",
   base_lock_version: 2,
-  data: defaultSemanticDocument,
-  style: defaultSemanticStyle,
+  data: defaultCanonicalDocument,
+  style: defaultCanonicalPresentation,
   summary: "突出项目中的量化成果",
   status: "pending",
   applied_lock_version: null,
@@ -37,6 +38,51 @@ afterEach(() => {
 });
 
 describe("AgentPanel", () => {
+  it("提案确认失败时展示图片总量契约提示", () => {
+    expect(agentErrorMessage(new ApiRequestError(413, "RESUME_PDF_ASSETS_TOO_LARGE")))
+      .toBe("简历中引用的图片总大小不能超过 10MB");
+  });
+
+  it("渲染常用 Markdown 块级与行内语法并阻止原始 HTML 执行", () => {
+    const { container } = render(<AgentMarkdown content={`# 一级标题
+
+---
+
+| 位置 | 建议 |
+| --- | --- |
+| 项目 | **补充量化结果** |
+
+1. 第一项
+2. 第二项
+
+> 引用说明
+
+[参考链接](https://example.com) 与 ~~删除内容~~、\`行内代码\`
+
+\`\`\`ts
+const value = 1;
+\`\`\`
+
+![远程图片](https://example.com/image.png)
+
+<script>alert("unsafe")</script>`} />);
+
+    expect(screen.getByRole("heading", { level: 2, name: "一级标题" })).toHaveClass("is-level-1");
+    expect(screen.getByRole("separator")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "位置" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "补充量化结果" })).toBeInTheDocument();
+    expect(screen.getByText("第一项")).toBeInTheDocument();
+    expect(screen.getByText("第二项")).toBeInTheDocument();
+    expect(container.querySelector("blockquote")).toHaveTextContent("引用说明");
+    expect(screen.getByRole("link", { name: "参考链接" })).toHaveAttribute("rel", "noopener noreferrer");
+    expect(container.querySelector("s")).toHaveTextContent("删除内容");
+    expect(container.querySelector("pre code")).toHaveTextContent("const value = 1;");
+    expect(screen.getByRole("img", { name: "远程图片" })).toHaveTextContent("[图片：远程图片]");
+    expect(container.querySelector("img")).not.toBeInTheDocument();
+    expect(container.querySelector("script")).not.toBeInTheDocument();
+    expect(container).toHaveTextContent('<script>alert("unsafe")</script>');
+  });
+
   it("用户消息头像使用当前用户图片，并在缺少图片时回退到昵称首字", async () => {
     class LoadedImage extends EventTarget {
       complete = true;

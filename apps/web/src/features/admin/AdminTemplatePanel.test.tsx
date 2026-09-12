@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, type AdminResumeTemplate } from "../../api/client";
-import { defaultSemanticDocument, defaultSemanticStyle } from "../../api/resumeContract";
+import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
 import { AdminTemplatePanel } from "./AdminTemplatePanel";
 
 vi.mock("../preview/ResumePreview", () => ({
@@ -13,15 +13,28 @@ const inactiveTemplate: AdminResumeTemplate = {
   key: "modern-cn",
   name: "现代双栏",
   description: "虚构模板",
-  data: defaultSemanticDocument,
-  style: defaultSemanticStyle,
+  data: defaultCanonicalDocument,
+  style: defaultCanonicalPresentation,
   active: false,
   valid: true,
   validation_error: null,
+  switchable: true,
+  incompatibility_reason: null,
 };
 
 describe("AdminTemplatePanel", () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it("读取模板时使用统一的面板加载状态", () => {
+    vi.spyOn(api, "listAdminResumeTemplates").mockReturnValue(new Promise(() => {}));
+
+    render(<AdminTemplatePanel notify={vi.fn()} />);
+
+    expect(screen.getByRole("status", { name: "正在读取模板…" })).toHaveClass(
+      "page-loading",
+      "is-panel",
+    );
+  });
 
   it("使用统一上传区导入 JSON 模板包", async () => {
     vi.spyOn(api, "listAdminResumeTemplates").mockResolvedValue({ templates: [] });
@@ -32,7 +45,7 @@ describe("AdminTemplatePanel", () => {
     render(<AdminTemplatePanel notify={notify} />);
 
     await screen.findByText("简历模板");
-    expect(screen.getByRole("button", { name: /点击上传或拖放文件/ })).toBeInTheDocument();
+    expect(screen.getByText("点击上传或拖放文件")).toBeInTheDocument();
     const file = new File(["{}"], "template.json", { type: "application/json" });
     fireEvent.change(screen.getByLabelText("选择 JSON 模板包"), { target: { files: [file] } });
 

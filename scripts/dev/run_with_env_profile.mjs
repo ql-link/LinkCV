@@ -56,22 +56,103 @@ export function buildProfileEnvironment(options) {
     ? parseEnv(readFileSync(files.secret, "utf8"))
     : {};
 
+  const env = {
+    ...baseEnv,
+    ...secretEnv,
+    ...inheritedEnv,
+    LINKCV_ENV_FILE: files.base,
+    LINKCV_SECRET_ENV_FILE: files.secret,
+  };
+
+  if (
+    basename(options.profile) === ".env"
+    && env.RABBITMQ_URL
+    && env.RABBITMQ_PORT
+  ) {
+    const rabbitmqUrl = new URL(env.RABBITMQ_URL);
+    if (["127.0.0.1", "localhost", "[::1]"].includes(rabbitmqUrl.hostname)) {
+      rabbitmqUrl.port = env.RABBITMQ_PORT;
+      env.RABBITMQ_URL = rabbitmqUrl.toString();
+    }
+  }
+
   return {
     files,
-    env: {
-      ...baseEnv,
-      ...secretEnv,
-      ...inheritedEnv,
-      LINKCV_ENV_FILE: files.base,
-      LINKCV_SECRET_ENV_FILE: files.secret,
-    },
+    env,
   };
+}
+
+import { networkInterfaces } from "node:os";
+import { writeFileSync } from "node:fs";
+
+export function detectLocalLanIp() {
+  const interfaces = networkInterfaces();
+  const candidates = [];
+  for (const [name, addrs] of Object.entries(interfaces)) {
+    if (!addrs) continue;
+    for (const addr of addrs) {
+      if (addr.family === "IPv4" && !addr.internal) {
+        const isLan = addr.address.startsWith("192.168.")
+          || addr.address.startsWith("10.")
+          || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(addr.address);
+        candidates.push({ name, address: addr.address, isLan });
+      }
+    }
+  }
+  const preferred = candidates.find((c) => c.isLan) || candidates[0];
+  return preferred ? preferred.address : "127.0.0.1";
+}
+
+export function syncMiniprogramLocalConfig(cwd, mainRoot) {
+  const lanIp = detectLocalLanIp();
+  const roots = [cwd];
+  if (mainRoot && mainRoot !== cwd) roots.push(mainRoot);
+
+  const targets = [];
+  const jsContent = `// 本地自动生成的局域网联调配置（已被 .gitignore 忽略，不会提交到 Git）\nmodule.exports = {\n  apiBaseUrl: "http://${lanIp}:8000",\n  detectedLanIp: "${lanIp}",\n};\n`;
+  const jsonContent = JSON.stringify(
+    {
+      apiBaseUrl: `http://${lanIp}:8000`,
+      detectedLanIp: lanIp,
+      updatedAt: new Date().toISOString(),
+    },
+    null,
+    2,
+  ) + "\n";
+
+  for (const root of roots) {
+    const configDir = resolve(root, "apps/miniprogram/config");
+    if (existsSync(configDir)) {
+      const jsFile = resolve(configDir, "local.js");
+      const jsonFile = resolve(configDir, "local.json");
+      writeFileSync(jsFile, jsContent, "utf8");
+      writeFileSync(jsonFile, jsonContent, "utf8");
+      targets.push(jsFile);
+    }
+  }
+  return targets.length > 0 ? { targetFile: targets[0], lanIp } : null;
 }
 
 export function serviceScriptForProfile(profile) {
   return basename(profile) === ".env.development"
     ? "dev:development-services"
     : "dev:services";
+}
+
+export function npmInvocation(environment = process.env, platform = process.platform) {
+  if (environment.npm_execpath) {
+    return {
+      command: process.execPath,
+      prefixArgs: [environment.npm_execpath],
+    };
+  }
+  if (platform === "win32") {
+    return {
+      command: environment.ComSpec || "cmd.exe",
+      prefixArgs: ["/d", "/s", "/c", "npm"],
+    };
+  }
+  return { command: "npm", prefixArgs: [] };
 }
 
 function run() {
@@ -93,7 +174,17 @@ function run() {
   console.log(`基础配置：${runtime.files.base}`);
   console.log(`共享私密覆盖：${runtime.files.secret}（${secretState}）`);
 
-  const child = spawn("npm", ["run", serviceScriptForProfile(profile)], {
+  const miniprogramSync = syncMiniprogramLocalConfig(process.cwd());
+  if (miniprogramSync) {
+    console.log(`小程序联调：已自动配置局域网地址 ${miniprogramSync.lanIp}:8000 -> ${miniprogramSync.targetFile}`);
+  }
+
+  const npm = npmInvocation(runtime.env);
+  const child = spawn(npm.command, [
+    ...npm.prefixArgs,
+    "run",
+    serviceScriptForProfile(profile),
+  ], {
     cwd: process.cwd(),
     env: runtime.env,
     stdio: "inherit",

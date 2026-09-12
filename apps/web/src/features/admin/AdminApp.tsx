@@ -10,7 +10,6 @@ import {
   ArrowRight,
   Bell,
   Bot,
-  Check,
   ChevronRight,
   CircleAlert,
   Clock3,
@@ -28,7 +27,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { Brand } from "@/components/ui";
+import { Brand, FeedbackNotice, PageLoading, type FeedbackNoticeKind } from "@/components/ui";
 import { ModelsPanel } from "./AdminLlmPanels";
 import { AdminLogsCenter } from "./AdminObservabilityPanels";
 import { AdminTemplatePanel } from "./AdminTemplatePanel";
@@ -77,6 +76,10 @@ const gentleSpring = {
   damping: 34,
   mass: 0.9,
 };
+
+function adminNoticeKind(message: string): FeedbackNoticeKind {
+  return /失败|异常|不可用|不能|错误/u.test(message) ? "error" : "success";
+}
 
 const usersData = [
   {
@@ -188,10 +191,7 @@ export function AdminApp() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            <div className="admin-page-loading">
-              <div className="loading-spinner" />
-              <span>正在验证身份...</span>
-            </div>
+            <PageLoading label="正在验证身份…" scope="page" />
           </motion.div>
         ) : user?.is_admin ? (
           <motion.div
@@ -213,10 +213,7 @@ export function AdminApp() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            <div className="admin-page-loading">
-              <div className="loading-spinner" />
-              <span>正在前往登录页...</span>
-            </div>
+            <PageLoading label="正在前往登录页…" scope="page" />
           </motion.div>
         )}
       </AnimatePresence>
@@ -247,8 +244,13 @@ function AdminWorkspace({
 
   const notify = (message: string) => {
     setToast(message);
-    window.setTimeout(() => setToast(""), 2400);
   };
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(""), 4000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   const openUserDetail = (userId: string) => {
     setSelectedUserId(userId);
@@ -384,20 +386,11 @@ function AdminWorkspace({
           />
         )}
       </AnimatePresence>
-      <AnimatePresence>
-        {toast && (
-          <motion.div
-            className="admin-toast"
-            role="status"
-            initial={{ opacity: 0, y: 16, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.97 }}
-          >
-            <Check size={16} />
-            {toast}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {toast && (
+        <FeedbackNotice kind={adminNoticeKind(toast)} placement="floating">
+          {toast}
+        </FeedbackNotice>
+      )}
     </div>
   );
 }
@@ -807,7 +800,7 @@ function UsersPanel({
           </div>
         </div>
         <div className="admin-table-wrap">
-          {loading && <div className="table-status-row">加载中...</div>}
+          {loading && <PageLoading label="正在加载用户…" scope="panel" />}
           {!loading && error && (
             <div className="table-status-row">
               加载失败
@@ -1085,11 +1078,7 @@ function UserDetail({
   };
 
   if (detail === "loading") {
-    return (
-      <div className="user-detail" style={{ padding: 24, textAlign: "center" }}>
-        加载中...
-      </div>
-    );
+    return <PageLoading label="正在加载用户详情…" scope="panel" />;
   }
   if (!detail) {
     return (

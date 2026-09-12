@@ -55,6 +55,35 @@ def test_advancing_requires_an_explicit_forward_stage() -> None:
         )
 
 
+def test_screening_targets_distinguish_result_waiting_from_assessment_scheduling() -> None:
+    waiting = state(
+        stage_type="screening",
+        round_no=None,
+        stage_label="筛选中",
+        stage_state="awaiting_result",
+    )
+
+    quick_added = advance_application(
+        waiting,
+        target_stage_type="screening",
+        target_round_no=None,
+        target_stage_label="初筛",
+    )
+    assert quick_added.stage_type == "screening"
+    assert quick_added.round_no is None
+    assert quick_added.stage_label == "初筛"
+    assert quick_added.stage_state == "awaiting_result"
+
+    assessment = advance_application(
+        waiting,
+        target_stage_type="screening",
+        target_round_no=None,
+        target_stage_label="在线测评",
+    )
+    assert assessment.stage_type == "screening"
+    assert assessment.stage_state == "awaiting_schedule"
+
+
 def test_current_stage_allows_only_one_schedule_lifecycle() -> None:
     waiting = state(stage_state="awaiting_schedule")
     scheduled = schedule_current_stage(waiting)
@@ -66,7 +95,7 @@ def test_current_stage_allows_only_one_schedule_lifecycle() -> None:
         complete_session(waiting)
 
 
-def test_written_offer_is_distinct_from_offer_call_and_final_result() -> None:
+def test_received_offer_can_be_recorded_and_reaches_a_final_result() -> None:
     negotiating = state(
         stage_type="offer",
         round_no=None,
@@ -74,11 +103,11 @@ def test_written_offer_is_distinct_from_offer_call_and_final_result() -> None:
         stage_state="negotiating",
     )
 
-    called = record_offer(negotiating, "oc_received")
-    written = record_offer(called, "written_offer_received")
-    accepted = close_application(written, status="closed", offer_status="accepted")
+    received = record_offer(negotiating)
+    refreshed = record_offer(received)
+    accepted = close_application(refreshed, status="closed", offer_status="accepted")
 
-    assert called.offer_status == "oc_received"
-    assert written.offer_status == "written_offer_received"
+    assert received.offer_status == "received"
+    assert refreshed.offer_status == "received"
     assert accepted.offer_status == "accepted"
     assert accepted.status == "closed"

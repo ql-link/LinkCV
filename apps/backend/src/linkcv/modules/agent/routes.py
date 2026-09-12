@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from linkcv.core.database import get_db, utc_now
 from linkcv.core.errors import ApiError
+from linkcv.core.storage import AssetStorage, get_storage
 from linkcv.modules.agent.models import (
     AgentMessage,
     AgentRun,
@@ -18,6 +19,8 @@ from linkcv.modules.agent.pi_client import (
     stream_pi_run,
 )
 from linkcv.modules.agent.schemas import (
+    AgentContextListResponse,
+    AgentModelResponse,
     AgentReadinessResponse,
     MessageCreateRequest,
     ProposalListResponse,
@@ -26,19 +29,25 @@ from linkcv.modules.agent.schemas import (
     SessionCreateRequest,
     SessionListResponse,
     SessionResponse,
+    SessionUpdateRequest,
 )
+from linkcv.modules.agent.context_service import list_contexts, resolve_contexts
 from linkcv.modules.agent.service import (
     confirm_proposal,
     create_run,
     create_session,
+    delete_session,
     get_owned_session,
     proposal_record,
     reject_proposal,
     session_record,
+    update_session,
 )
 from linkcv.modules.identity.dependencies import get_current_user
 from linkcv.modules.identity.models import User
+from linkcv.modules.llm.service import LLMError
 from linkcv.modules.resumes.routes import resume_record
+from linkcv.modules.resumes.pdf_service import validate_resume_pdf_asset_contract
 from linkcv.modules.resumes.schemas import ResumeResponse
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -48,6 +57,41 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 async def get_agent_readiness(request: Request) -> AgentReadinessResponse:
     await check_pi_readiness(request.app)
     return AgentReadinessResponse(ready=True)
+
+
+@router.get("/model", response_model=AgentModelResponse)
+async def get_agent_model(
+    request: Request,
+    _user: User = Depends(get_current_user),
+) -> AgentModelResponse:
+    llm_service = request.app.state.llm_service
+    try:
+        model = await llm_service.agent_model_summary()
+    except LLMError as error:
+        raise ApiError(503, error.code) from error
+    return AgentModelResponse(model={"adapter": model.adapter, "name": model.name})
+
+
+@router.get("/contexts", response_model=AgentContextListResponse)
+def list_agent_contexts(
+    type: str | None = Query(default=None),
+    q: str | None = Query(default=None, max_length=200),
+    search: str | None = Query(default=None, max_length=200),
+    prefix: bool = Query(default=False),
+    limit: int = Query(default=50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AgentContextListResponse:
+    return AgentContextListResponse(
+        contexts=list_contexts(
+            db,
+            user_id=user.id,
+            context_type=type,
+            query=q or search,
+            prefix_match=prefix,
+            limit=limit,
+        )
+    )
 
 
 @router.get("/proposals", response_model=ProposalListResponse)
@@ -111,9 +155,44 @@ def list_agent_sessions(
             raise ApiError(404, "RESUME_NOT_FOUND")
         query = query.where(AgentSession.resume_id == int(resume_id))
     records = db.scalars(
-        query.order_by(AgentSession.updated_at.desc(), AgentSession.id.desc()).limit(50)
+        query.order_by(
+            AgentSession.pinned.desc(),
+            AgentSession.updated_at.desc(),
+            AgentSession.id.desc(),
+        ).limit(50)
     ).all()
     return SessionListResponse(sessions=[session_record(item) for item in records])
+
+
+@router.patch("/sessions/{session_id}", response_model=SessionResponse)
+def update_agent_session(
+    session_id: str,
+    payload: SessionUpdateRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> SessionResponse:
+    return SessionResponse(
+        session=session_record(
+            update_session(
+                db,
+                public_id=session_id,
+                user_id=user.id,
+                fields=payload.model_fields_set,
+                title=payload.title,
+                pinned=payload.pinned,
+            )
+        )
+    )
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+def delete_agent_session(
+    session_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    delete_session(db, public_id=session_id, user_id=user.id)
+    return Response(status_code=204)
 
 
 @router.get("/sessions/{session_id}", response_model=SessionResponse)
@@ -143,6 +222,27 @@ def send_agent_message(
     session = get_owned_session(db, session_id, user.id)
     if session.status != "active":
         raise ApiError(409, "AGENT_SESSION_ARCHIVED")
+    # Idempotent retries must replay the original run even if one of the
+    # referenced records has since changed or been removed.  The session was
+    # already resolved through the authenticated owner, and create_run keeps
+    # the locked second lookup for the concurrent-create race.
+    existing_run = db.scalar(
+        select(AgentRun).where(
+            AgentRun.session_id == session.id,
+            AgentRun.idempotency_key == payload.idempotency_key,
+        )
+    )
+    resolved_contexts = (
+        resolve_contexts(
+            db,
+            user_id=user.id,
+            refs=payload.contexts,
+            storage=request.app.state.storage,
+            settings=request.app.state.settings,
+        )
+        if existing_run is None
+        else None
+    )
     run, created = create_run(
         db,
         session=session,
@@ -150,6 +250,7 @@ def send_agent_message(
         idempotency_key=payload.idempotency_key,
         timeout_seconds=request.app.state.settings.agent_run_timeout_seconds,
         reply_to_sequence_no=payload.reply_to_sequence_no,
+        context_snapshots=resolved_contexts.snapshots if resolved_contexts else None,
     )
     if not created:
 
@@ -168,6 +269,11 @@ def send_agent_message(
             run.public_id,
             payload.content.strip(),
             payload.selection_context,
+            (
+                resolved_contexts.materials
+                if payload.contexts is not None and resolved_contexts is not None
+                else None
+            ),
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -214,12 +320,19 @@ def confirm_agent_proposal(
     request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    storage: AssetStorage = Depends(get_storage),
 ) -> ResumeResponse:
     _, resume = confirm_proposal(
         db,
         public_id=proposal_id,
         user_id=user.id,
         version_limit=request.app.state.settings.resume_version_limit,
+        validate_resume_data=lambda data, resume_id: validate_resume_pdf_asset_contract(
+            storage,
+            data,
+            user_id=user.id,
+            resume_id=resume_id,
+        ),
     )
     return ResumeResponse(resume=resume_record(resume))
 

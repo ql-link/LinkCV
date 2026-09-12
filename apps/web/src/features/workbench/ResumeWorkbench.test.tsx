@@ -1,12 +1,15 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { ApiRequestError } from "../../api/client";
+import { api, ApiRequestError, type ResumeTemplate } from "../../api/client";
+import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
 import {
   ImportWarningBanner,
   AgentFloatingEntry,
   clampAgentDrawerWidth,
   clampAgentFloatingPosition,
+  defaultWorkbenchDrawerMode,
   ExportPdfAction,
   FontPreviewSelect,
   normalizeVersionName,
@@ -14,17 +17,77 @@ import {
   SettingsStepper,
   SaveResumeAction,
   SaveVersionAction,
+  ResumeTemplateSwitcher,
+  semanticSectionDisplayTitle,
   VersionRenameAction,
-  VersionHistoryAction,
+  WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM,
   versionRenameErrorMessage,
   setRestoredEditorContent,
   setWorkbenchEditorEditable,
   versionNameValidationMessage,
+  truncateWorkbenchTitle,
   ZoomFeedback,
   WorkbenchSaveStatus,
+  WorkbenchDesignAction,
+  WorkbenchPanelSwitcher,
+  WorkbenchTitleInput,
   workbenchCanvasClassName,
   versionOperationErrorMessage,
+  resumeWorkbenchStyle,
 } from "./ResumeWorkbench";
+import { resumePdfExportErrorMessage } from "../preview/pdfExport";
+
+describe("ResumeWorkbench 标题", () => {
+  it("把持久化强调色注入可编辑简历根节点", () => {
+    const style = resumeWorkbenchStyle({
+      fontFamily: "sans-serif",
+      fontSize: 9.5,
+      lineHeight: 1.25,
+      pageMargin: 11,
+      verticalPageMargin: 9,
+    }, "#202632");
+
+    expect(style).toMatchObject({
+      "--preview-accent": "#202632",
+      "--resume-font-size": "9.5pt",
+      "--resume-line-height": 1.25,
+    });
+  });
+
+  it("在章节类型面板隐藏内部图标标记", () => {
+    expect(semanticSectionDisplayTitle(":icon[GraduationCap]: 教育经历")).toBe("教育经历");
+    expect(semanticSectionDisplayTitle(":icon[Star]: 自我评价")).toBe("自我评价");
+    expect(semanticSectionDisplayTitle(":icon[Star]:")).toBe("未命名章节");
+  });
+
+  it("只在标题超过 30 个字符时省略", () => {
+    const thirtyCharacters = "简".repeat(30);
+    const thirtyOneCharacters = `${thirtyCharacters}历`;
+
+    expect(truncateWorkbenchTitle(thirtyCharacters)).toBe(thirtyCharacters);
+    expect(truncateWorkbenchTitle(thirtyOneCharacters)).toBe(`${thirtyCharacters}…`);
+    expect(truncateWorkbenchTitle("😀".repeat(31))).toBe(`${"😀".repeat(30)}…`);
+  });
+
+  it("始终保留完整受控值，并允许连续修改长标题", async () => {
+    const user = userEvent.setup();
+    const fullTitle = `${"开发演示简历".repeat(5)}完整标题`;
+    function ControlledTitle() {
+      const [value, setValue] = useState(fullTitle);
+      return <WorkbenchTitleInput value={value} disabled={false} onChange={setValue} />;
+    }
+    render(<ControlledTitle />);
+
+    const input = screen.getByRole("textbox", { name: "简历标题" });
+    expect(input).toHaveValue(fullTitle);
+    expect(input).toHaveAttribute("title", fullTitle);
+
+    await user.click(input);
+    await user.keyboard("{Control>}a{/Control}前端开发投递版");
+    expect(input).toHaveValue("前端开发投递版");
+    expect(input).not.toHaveAttribute("title");
+  });
+});
 
 describe("ResumeWorkbench AI 悬浮入口", () => {
   it("用同一个低打扰入口打开和收起智能助手", async () => {
@@ -92,6 +155,7 @@ describe("ResumeWorkbench 抽屉布局", () => {
     expect(workbenchCanvasClassName(null)).toBe("workbench-canvas");
     expect(workbenchCanvasClassName("settings")).toBe("workbench-canvas has-drawer");
     expect(workbenchCanvasClassName("history")).toBe("workbench-canvas has-drawer");
+    expect(workbenchCanvasClassName("quality")).toBe("workbench-canvas has-drawer");
     expect(workbenchCanvasClassName("agent")).toBe("workbench-canvas has-drawer has-agent-drawer");
   });
 
@@ -101,17 +165,143 @@ describe("ResumeWorkbench 抽屉布局", () => {
     expect(clampAgentDrawerWidth(600, 500)).toBe(476);
     expect(clampAgentDrawerWidth(390, 300)).toBe(320);
   });
+
+  it("桌面默认展开设置，小屏默认保留完整编辑画布", () => {
+    expect(defaultWorkbenchDrawerMode(1440)).toBe("settings");
+    expect(defaultWorkbenchDrawerMode(1024)).toBe("settings");
+    expect(defaultWorkbenchDrawerMode(980)).toBeNull();
+    expect(defaultWorkbenchDrawerMode(390)).toBeNull();
+  });
 });
 
-describe("ResumeWorkbench 版本记录入口", () => {
-  it("在页面设置中显示版本数量并打开版本记录", async () => {
+describe("ResumeWorkbench 编辑面板入口", () => {
+  it("从顶部设计按钮打开或收起编辑面板", async () => {
     const user = userEvent.setup();
-    const onOpen = vi.fn();
-    render(<VersionHistoryAction count={3} onOpen={onOpen} />);
+    const onToggle = vi.fn();
+    const { rerender } = render(<WorkbenchDesignAction panelOpen={false} onToggle={onToggle} />);
 
-    expect(screen.getByText("查看、恢复和管理 3 个已保存版本。")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "查看版本记录" }));
-    expect(onOpen).toHaveBeenCalledOnce();
+    const design = screen.getByRole("button", { name: "设计" });
+    expect(design).toHaveAttribute("aria-expanded", "false");
+    await user.click(design);
+    expect(onToggle).toHaveBeenCalledOnce();
+
+    rerender(<WorkbenchDesignAction panelOpen onToggle={onToggle} />);
+    expect(screen.getByRole("button", { name: "设计" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "设计" })).toHaveClass("is-active");
+  });
+
+  it("在右侧面板内切换页面设置和版本记录", async () => {
+    const user = userEvent.setup();
+    const onSettings = vi.fn();
+    const onHistory = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <WorkbenchPanelSwitcher
+        activePanel="settings"
+        onSettings={onSettings}
+        onHistory={onHistory}
+        onClose={onClose}
+      />,
+    );
+
+    expect(screen.getByRole("tab", { name: "页面设置" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "版本记录" })).toHaveAttribute("aria-selected", "false");
+    await user.click(screen.getByRole("tab", { name: "页面设置" }));
+    await user.click(screen.getByRole("tab", { name: "版本记录" }));
+    await user.keyboard("{ArrowLeft}");
+    expect(screen.getByRole("tab", { name: "页面设置" })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "关闭编辑面板" }));
+    expect(onSettings).toHaveBeenCalledTimes(2);
+    expect(onHistory).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+});
+
+describe("ResumeWorkbench 简历模板", () => {
+  it("展示现有模板并在切换时保留当前模板状态", async () => {
+    const user = userEvent.setup();
+    const templates: ResumeTemplate[] = [
+      {
+        id: "1",
+        key: "classic-cn",
+        name: "经典模板",
+        description: "清晰稳妥的单栏结构",
+        data: defaultCanonicalDocument,
+        style: defaultCanonicalPresentation,
+        switchable: true,
+        incompatibility_reason: null,
+      },
+      {
+        id: "2",
+        key: "creative-orange-cn",
+        name: "创意橙色",
+        description: "强调视觉层级的创意版式",
+        data: defaultCanonicalDocument,
+        style: {
+          ...defaultCanonicalPresentation,
+          template_snapshot: {
+            ...defaultCanonicalPresentation.template_snapshot,
+            template_key: "creative-orange-cn",
+          },
+        },
+        switchable: true,
+        incompatibility_reason: null,
+      },
+    ];
+    vi.spyOn(api, "listResumeTemplates").mockResolvedValue({ templates });
+    const onApply = vi.fn();
+
+    render(
+      <ResumeTemplateSwitcher
+        currentTemplateKey="classic-cn"
+        onApply={onApply}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "简历模板" }));
+    const previewDialog = await screen.findByRole("dialog", { name: "经典模板" });
+    expect(previewDialog).toHaveClass("template-preview-dialog");
+    expect(screen.getByRole("button", { name: "当前模板" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "下一个模板：创意橙色" }));
+    expect(await screen.findByRole("dialog", { name: "创意橙色" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "应用模板" }));
+    expect(onApply).toHaveBeenCalledWith(templates[1]);
+    expect(screen.queryByRole("dialog", { name: "创意橙色" })).not.toBeInTheDocument();
+  });
+
+  it("模板加载失败时保留弹窗并允许重新加载", async () => {
+    const user = userEvent.setup();
+    const listTemplates = vi
+      .spyOn(api, "listResumeTemplates")
+      .mockRejectedValueOnce(new Error("HTTP_503"))
+      .mockResolvedValueOnce({
+        templates: [{
+          id: "1",
+          key: "classic-cn",
+          name: "经典模板",
+          description: null,
+          data: defaultCanonicalDocument,
+          style: defaultCanonicalPresentation,
+          switchable: true,
+          incompatibility_reason: null,
+        }],
+      });
+
+    render(
+      <ResumeTemplateSwitcher
+        currentTemplateKey="creative-orange-cn"
+        onApply={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "简历模板" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("模板暂时无法加载");
+    await user.click(screen.getByRole("button", { name: "重新加载" }));
+
+    expect(await screen.findByRole("dialog", { name: "经典模板" })).toHaveClass("template-preview-dialog");
+    expect(screen.getByRole("button", { name: "应用模板" })).toBeEnabled();
+    expect(listTemplates).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -130,7 +320,7 @@ describe("ResumeWorkbench 字体选择", () => {
     await user.click(trigger);
     expect(screen.getByRole("listbox")).toHaveAttribute("data-ui-theme", "light");
     const wenkaiOption = screen.getByRole("option", { name: /霞鹜文楷/ });
-    expect(wenkaiOption).toHaveTextContent("霞鹜文楷");
+    expect(wenkaiOption).toHaveTextContent("霞鹜文楷 Medium");
     expect(wenkaiOption).not.toHaveTextContent("张三的简历 Resume");
     expect(wenkaiOption.querySelector(".workbench-font-option-copy")).toHaveStyle({
       fontFamily: '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif',
@@ -158,6 +348,38 @@ describe("ResumeWorkbench 页面设置步进按钮", () => {
 
     expect(onChange).toHaveBeenNthCalledWith(1, 10);
     expect(onChange).toHaveBeenNthCalledWith(2, 11);
+  });
+
+  it("允许上下页边距减小到 6 毫米", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <SettingsStepper
+        label="上下边距"
+        unit="mm"
+        value={8}
+        min={WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM}
+        max={30}
+        step={2}
+        onChange={onChange}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "上下边距减小" }));
+    expect(onChange).toHaveBeenCalledWith(6);
+
+    rerender(
+      <SettingsStepper
+        label="上下边距"
+        unit="mm"
+        value={6}
+        min={WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM}
+        max={30}
+        step={2}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "上下边距减小" })).toBeDisabled();
   });
 });
 
@@ -216,6 +438,16 @@ describe("ResumeWorkbench 顶部保存反馈", () => {
 
     rerender(<WorkbenchSaveStatus dirty={false} saveStatus="saved" />);
     expect(screen.getByRole("status")).toHaveTextContent("已保存");
+
+    rerender(
+      <WorkbenchSaveStatus
+        dirty
+        saveStatus="error"
+        error="RESUME_PDF_ASSETS_TOO_LARGE"
+      />,
+    );
+    expect(screen.getByRole("status"))
+      .toHaveTextContent("保存失败 · 简历中引用的图片总大小不能超过 10MB");
   });
 
   it("顶部保存简历按钮触发主记录保存并在保存期间禁用重复操作", async () => {
@@ -266,6 +498,11 @@ describe("ResumeWorkbench PDF 导出按钮", () => {
     await user.click(pdfAction);
     expect(onExport).not.toHaveBeenCalled();
   });
+
+  it("把服务端快照过期错误显示为可重试提示", () => {
+    expect(resumePdfExportErrorMessage(new ApiRequestError(409, "RESUME_PDF_SNAPSHOT_STALE")))
+      .toBe("简历内容已变化，请重新导出");
+  });
 });
 
 describe("ResumeWorkbench 导入质量提示", () => {
@@ -299,6 +536,13 @@ describe("ResumeWorkbench 版本上限提示", () => {
 
   it("其他错误继续使用通用失败提示", () => {
     expect(versionOperationErrorMessage(new Error("HTTP_500"), "create")).toBeNull();
+  });
+
+  it("恢复版本时展示图片契约错误", () => {
+    const error = new ApiRequestError(413, "RESUME_PDF_ASSETS_TOO_LARGE");
+
+    expect(versionOperationErrorMessage(error, "restore"))
+      .toBe("简历中引用的图片总大小不能超过 10MB");
   });
 });
 

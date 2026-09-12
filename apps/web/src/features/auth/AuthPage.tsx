@@ -1,6 +1,6 @@
 import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
 import { ArrowRight } from "lucide-react";
-import { Button, TextField } from "@/components/ui";
+import { Button, PageLoading, TextField } from "@/components/ui";
 import { api, User } from "../../api/client";
 import { useResumeStore } from "../../store/resumeStore";
 import { authPath, navigateTo } from "../../routing";
@@ -78,8 +78,8 @@ export function AuthPage(props: {
             </span>
             <h1 className="mt-3 text-3xl font-medium tracking-[-0.04em] sm:text-4xl lg:text-[42px] lg:leading-[1.05] xl:text-[48px]">
               {showPasswordForm
-                ? (isRegister ? "注册 LinkCV" : "登录 LinkCV")
-                : "微信扫码登录 LinkCV"}
+                ? (isRegister ? "注册 LinkResume" : "登录 LinkResume")
+                : "微信扫码登录 LinkResume"}
             </h1>
             <p className="mt-3 text-base leading-snug text-text-secondary sm:text-lg">
               {showPasswordForm
@@ -90,9 +90,7 @@ export function AuthPage(props: {
             </p>
 
             {passwordLoginEnabled === null && (
-              <p className="mt-10 text-sm text-muted-foreground" role="status">
-                正在确认登录方式...
-              </p>
+              <PageLoading className="mt-10" label="正在确认登录方式…" scope="panel" />
             )}
 
             {showPasswordForm && (
@@ -158,11 +156,14 @@ export function AuthPage(props: {
             )}
 
             {showWechatLogin && (
-              <div className="mt-10 rounded-xl border border-border bg-surface-subtle p-6">
-                <WechatQrLogin onSuccess={(user) => void handleWechatSuccess(user)} />
+              <div className="auth-wechat-login mt-10">
+                <WechatQrLogin
+                  appearance="auth"
+                  onSuccess={(user) => void handleWechatSuccess(user)}
+                />
                 {passwordLoginEnabled && (
                   <button
-                    className="mx-auto mt-4 block bg-transparent p-0 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    className="mx-auto mt-6 block bg-transparent p-0 text-sm text-muted-foreground transition-colors hover:text-foreground"
                     onClick={() => setShowWechat(false)}
                     type="button"
                   >

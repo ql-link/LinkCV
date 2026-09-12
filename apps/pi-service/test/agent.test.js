@@ -7,7 +7,9 @@ import {
   createAssistantOutputFilter,
   createSkillReadTool,
   clarificationFallbackText,
+  formatContextMaterials,
 } from "../src/runtime/agent.js";
+import { validateContextMaterials } from "../src/context.js";
 
 test("agent completion accepts a successful assistant message", () => {
   assert.doesNotThrow(() => assertAgentCompleted({ role: "assistant", stopReason: "stop" }));
@@ -143,4 +145,43 @@ test("read tool rejects files outside the registered skills directory", async ()
     tool.execute("read-2", { path: new URL("../../../package.json", import.meta.url).pathname }),
     /AGENT_SKILL_READ_FORBIDDEN/,
   );
+});
+
+test("context materials accept only bounded, unique authorized categories", () => {
+  const materials = [{
+    type: "job",
+    id: "7",
+    version: "2",
+    label: "示例公司 · 后端工程师",
+    updated_at: "2026-08-26T00:00:00Z",
+    content: { description: "负责服务端开发" },
+  }];
+
+  assert.deepEqual(validateContextMaterials(materials), materials);
+  assert.throws(
+    () => validateContextMaterials([
+      ...materials,
+      { ...materials[0], id: "8" },
+    ]),
+    /INVALID_CONTEXT_MATERIALS/,
+  );
+  assert.throws(
+    () => validateContextMaterials([{ ...materials[0], user_id: "other" }]),
+    /INVALID_CONTEXT_MATERIALS/,
+  );
+});
+
+test("authorized materials are marked read-only and are the only prompt data", () => {
+  const prompt = formatContextMaterials([{
+    type: "resume",
+    id: "1",
+    version: "3",
+    label: "张三的简历",
+    updated_at: "2026-08-26T00:00:00Z",
+    content: { resume_markdown: "已选择的经历" },
+  }]);
+
+  assert.match(prompt, /authorized-context-materials/);
+  assert.match(prompt, /已选择的经历/);
+  assert.doesNotMatch(prompt, /未选择的经历/);
 });

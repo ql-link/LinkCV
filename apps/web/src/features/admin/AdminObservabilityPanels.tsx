@@ -11,6 +11,7 @@ import {
   RefreshCw,
   X,
 } from "lucide-react";
+import { PageLoading } from "@/components/ui";
 import {
   api,
   ApiRequestError,
@@ -460,7 +461,7 @@ function QueryState({
       {response?.partial && <div className="llm-inline-error" role="status">部分异常日志行已忽略（{response.droppedMalformed} 条）。</div>}
       <section className="admin-surface logs-surface">
         {loading && !response ? (
-          <div className="llm-state"><span className="loading-spinner" /><p>正在加载日志…</p></div>
+          <PageLoading label="正在加载日志…" scope="panel" />
         ) : error && !response ? (
           <div className="llm-state llm-error" role="alert"><strong>日志查询暂不可用</strong><p>{error}</p><button type="button" onClick={() => void load(cursor)}>重试</button></div>
         ) : (

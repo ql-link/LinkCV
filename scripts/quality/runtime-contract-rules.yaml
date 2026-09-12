@@ -11,8 +11,11 @@ contracts:
         pattern: 'serviceScriptForProfile[\s\S]*\.env\.development[\s\S]*dev:development-services'
         message: Development profile 必须路由到 Agent 感知的四服务启动器
       - path: scripts/dev/start-development.sh
-        pattern: 'BACKEND_PORT="\$\{backend_port\}"[\s\S]*PI_SERVICE_BASE_URL="http://127\.0\.0\.1:\$\{pi_port\}"[\s\S]*LINKCV_BASE_URL="http://127\.0\.0\.1:\$\{backend_port\}"[\s\S]*--env-file=\$\{base_env\}'
-        message: 启动脚本必须加载 Development 配置并统一本地跨服务地址
+        pattern: 'node_bin="node"[\s\S]*node\.exe[\s\S]*wslpath[\s\S]*BACKEND_PORT="\$\{backend_port\}"[\s\S]*PI_SERVICE_BASE_URL="http://127\.0\.0\.1:\$\{pi_port\}"[\s\S]*LINKCV_BASE_URL="http://127\.0\.0\.1:\$\{backend_port\}"[\s\S]*node_env_args=.*node_path.*base_env'
+        message: 启动脚本必须跨平台加载 Development 配置并统一本地跨服务地址
+      - path: scripts/dev/start-development.sh
+        pattern: 'worktree_queue_id=.*cksum[\s\S]*LINKCV_LOCAL_RABBITMQ_QUEUE[\s\S]*linkcv\.resume_import\.worker\.local\.\$\{worktree_queue_id\}\.v2[\s\S]*LINKCV_LOCAL_RABBITMQ_ROUTING_KEY[\s\S]*resume\.import\.local\.\$\{worktree_queue_id\}\.v2'
+        message: 本地 Development 必须自动隔离 worktree 的 queue 与 routing key，避免共享 Worker 竞争消费
       - path: scripts/dev/run-development.mjs
         pattern: 'RABBITMQ_URL[\s\S]*LINKCV_LOCAL_RABBITMQ_HOST[\s\S]*MYSQL_HOST[\s\S]*LINKCV_LOCAL_RABBITMQ_PORT'
         message: 本机 Worker 必须把 Development 容器 DNS 转换为可达的 AMQP 地址
@@ -85,22 +88,6 @@ contracts:
       - path: deploy/docker-compose.production.yml
         pattern: 'linkcv-worker:[\s\S]*LOG_DIRECTORY: /app/logs/worker[\s\S]*linkcv-production-logs:/app/logs'
         message: Production Worker 必须使用共享卷中的独立日志子目录
-
-  - id: plugin-release-origin-contract
-    description: FastAPI 和三套环境声明当前环境允许插件访问的精确 LinkCV Origin
-    assertions:
-      - path: apps/backend/src/linkcv/core/config.py
-        pattern: 'default="http://127\.0\.0\.1:5173",[\s\S]*alias="PLUGIN_RELEASE_ORIGIN"'
-        message: FastAPI 必须保留本地插件发布 Origin 默认值
-      - path: .env.example
-        pattern: '(?m)^PLUGIN_RELEASE_ORIGIN=http://127\.0\.0\.1:5173$'
-        message: 本地模板必须声明插件发布 Origin
-      - path: .env.development
-        pattern: '(?m)^PLUGIN_RELEASE_ORIGIN=http://127\.0\.0\.1:5173$'
-        message: Dev 基础配置必须声明可由私密环境文件覆盖的插件发布 Origin
-      - path: .env.production
-        pattern: '(?m)^PLUGIN_RELEASE_ORIGIN=$'
-        message: Production 基础配置不得提交实际公开 Origin，必须由环境覆盖提供
 
   - id: llm-credential-encryption-key-ring
     description: 三套环境都声明后端模型凭据密钥环且不把真实密钥提交到仓库
@@ -177,7 +164,7 @@ contracts:
         message: Production 配置必须声明双 Token Cookie 契约
 
   - id: wechat-miniprogram-environment-contract
-    description: Production 普通登录使用微信，且小程序开发与正式 API 地址按环境隔离
+    description: Production 普通登录使用微信，且小程序本地联调必须显式 opt-in
     assertions:
       - path: .env.development
         pattern: '(?m)^APP_ENV=development$'
@@ -201,11 +188,23 @@ contracts:
         pattern: 'required_secret_keys=\([\s\S]*WECHAT_APPID[\s\S]*WECHAT_SECRET[\s\S]*Missing required Development secret setting[\s\S]*Settings\(\)\.wechat_enabled[\s\S]*docker network inspect'
         message: Dev 发布必须在迁移与容器替换前拒绝缺失、空值或占位的微信凭据
       - path: apps/miniprogram/config/runtime.js
-        pattern: 'developmentApiBaseUrl: "http://127\.0\.0\.1:8000"[\s\S]*productionApiBaseUrl: "https://linkresume\.cn"'
-        message: 小程序必须把 API 开发默认地址与 linkresume.cn 生产地址分开
+        pattern: 'productionApiBaseUrl: "https://linkresume\.cn"'
+        message: 小程序必须保留 linkresume.cn 作为生产默认 API 地址
       - path: apps/miniprogram/config/env.js
-        pattern: 'developmentStorageKey: "linkcv_api_base_url"[\s\S]*envVersion === "develop"[\s\S]*wx\.getStorageSync\(developmentStorageKey\)[\s\S]*envVersion !== "develop"[\s\S]*startsWith\("https://"\)'
+        pattern: 'developmentStorageKey: "linkcv_api_base_url"[\s\S]*envVersion === "develop"[\s\S]*readStorageValue\(developmentStorageKey\)[\s\S]*!isDevelop[\s\S]*startsWith\("https://"\)'
         message: API 内网地址覆盖只能用于开发版，体验版和正式版必须强制 HTTPS
+      - path: apps/miniprogram/config/env.js
+        pattern: 'LOCAL_DEBUG_ENABLED_STORAGE_KEY = "linkcv_local_debug_enabled"[\s\S]*const localDebugEnabled = isDevelop[\s\S]*readStorageValue\(LOCAL_DEBUG_ENABLED_STORAGE_KEY\) === true[\s\S]*const localConfig = localDebugEnabled[\s\S]*readLocalConfigSafely\(localConfigReader\)[\s\S]*: null'
+        message: 包内 local.js 只能在 develop 且显式开启 linkcv_local_debug_enabled 后读取
+      - path: apps/miniprogram/config/env.js
+        pattern: 'function readAccountInfoSafely\(\)[\s\S]*typeof wx\.getAccountInfoSync !== "function"[\s\S]*return null[\s\S]*try[\s\S]*const account = wx\.getAccountInfoSync\(\)[\s\S]*typeof account\.miniProgram\.envVersion !== "string"[\s\S]*return null[\s\S]*catch \{[\s\S]*return null'
+        message: 小程序环境识别缺失、字段不完整或异常时必须安全失败
+      - path: apps/miniprogram/config/env.js
+        pattern: 'const account = readAccountInfoSafely\(\);[\s\S]*const envVersion = account \? account\.miniProgram\.envVersion : null;[\s\S]*const isDevelop = envVersion === "develop";'
+        message: 只有明确 envVersion 为 develop 才允许读取开发配置与 storage 覆盖
+      - path: apps/miniprogram/config/env.js
+        pattern: 'const developmentOverride = typeof developmentOverrideValue === "string"[\s\S]*const configured = \([\s\S]*developmentOverride[\s\S]*\|\| localOverride[\s\S]*\|\| extBaseUrl[\s\S]*\|\| productionDefault'
+        message: develop 的显式 linkcv_api_base_url 必须优先于 local.js，其他环境只能回退生产地址
       - path: apps/miniprogram/services/resumes.js
         pattern: 'downloadResumePreview[\s\S]*version_id=[\s\S]*/api/miniprogram/resumes/[\s\S]*/preview\.png'
         message: 小程序必须通过后端专用只读接口查询并下载正式版本 PNG 预览
@@ -238,6 +237,22 @@ contracts:
       - path: .env.production
         pattern: '(?m)^INTERVIEW_ASSET_UPLOAD_MAX_BYTES=524288000$'
         message: Production 必须声明面试素材上传上限
+
+  - id: dataset-upload-admission-contract
+    description: FastAPI 与三套环境使用一致的资料上传、配额和解析恢复默认值
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default=10 \* 1024 \* 1024,[\s\S]*alias="DATASET_UPLOAD_MAX_BYTES"[\s\S]*default=10,[\s\S]*alias="DATASET_MAX_FILES_PER_BATCH"[\s\S]*default=20,[\s\S]*alias="DATASET_UPLOAD_REQUESTS_PER_MINUTE"[\s\S]*default=3,[\s\S]*alias="DATASET_UPLOAD_USER_CONCURRENCY"[\s\S]*default=12,[\s\S]*alias="DATASET_UPLOAD_GLOBAL_CONCURRENCY"[\s\S]*default=200,[\s\S]*alias="DATASET_MAX_COUNT_PER_USER"[\s\S]*default=1024 \* 1024 \* 1024,[\s\S]*alias="DATASET_MAX_TOTAL_BYTES_PER_USER"[\s\S]*default=5,[\s\S]*alias="DATASET_DISPATCH_SCAN_SECONDS"[\s\S]*default=30,[\s\S]*alias="DATASET_REDISPATCH_AFTER_SECONDS"[\s\S]*default=240,[\s\S]*alias="DATASET_PARSE_STALE_SECONDS"[\s\S]*default=3,[\s\S]*alias="DATASET_PARSE_MAX_ATTEMPTS"[\s\S]*default=86400,[\s\S]*alias="DATASET_UPLOAD_RESERVATION_TTL_SECONDS"'
+        message: FastAPI 必须使用方案确认的资料上传、配额和解析恢复默认值
+      - path: .env.example
+        pattern: '(?m)^DATASET_UPLOAD_MAX_BYTES=10485760$[\s\S]*^DATASET_MAX_FILES_PER_BATCH=10$[\s\S]*^DATASET_UPLOAD_REQUESTS_PER_MINUTE=20$[\s\S]*^DATASET_UPLOAD_USER_CONCURRENCY=3$[\s\S]*^DATASET_UPLOAD_GLOBAL_CONCURRENCY=12$[\s\S]*^DATASET_MAX_COUNT_PER_USER=200$[\s\S]*^DATASET_MAX_TOTAL_BYTES_PER_USER=1073741824$[\s\S]*^DATASET_DISPATCH_SCAN_SECONDS=5$[\s\S]*^DATASET_REDISPATCH_AFTER_SECONDS=30$[\s\S]*^DATASET_PARSE_STALE_SECONDS=240$[\s\S]*^DATASET_PARSE_MAX_ATTEMPTS=3$[\s\S]*^DATASET_UPLOAD_RESERVATION_TTL_SECONDS=86400$'
+        message: 本地模板必须声明资料上传、配额和解析恢复默认值
+      - path: .env.development
+        pattern: '(?m)^DATASET_UPLOAD_MAX_BYTES=10485760$[\s\S]*^DATASET_MAX_FILES_PER_BATCH=10$[\s\S]*^DATASET_UPLOAD_REQUESTS_PER_MINUTE=20$[\s\S]*^DATASET_UPLOAD_USER_CONCURRENCY=3$[\s\S]*^DATASET_UPLOAD_GLOBAL_CONCURRENCY=12$[\s\S]*^DATASET_MAX_COUNT_PER_USER=200$[\s\S]*^DATASET_MAX_TOTAL_BYTES_PER_USER=1073741824$[\s\S]*^DATASET_DISPATCH_SCAN_SECONDS=5$[\s\S]*^DATASET_REDISPATCH_AFTER_SECONDS=30$[\s\S]*^DATASET_PARSE_STALE_SECONDS=240$[\s\S]*^DATASET_PARSE_MAX_ATTEMPTS=3$[\s\S]*^DATASET_UPLOAD_RESERVATION_TTL_SECONDS=86400$'
+        message: Development 必须声明资料上传、配额和解析恢复默认值
+      - path: .env.production
+        pattern: '(?m)^DATASET_UPLOAD_MAX_BYTES=10485760$[\s\S]*^DATASET_MAX_FILES_PER_BATCH=10$[\s\S]*^DATASET_UPLOAD_REQUESTS_PER_MINUTE=20$[\s\S]*^DATASET_UPLOAD_USER_CONCURRENCY=3$[\s\S]*^DATASET_UPLOAD_GLOBAL_CONCURRENCY=12$[\s\S]*^DATASET_MAX_COUNT_PER_USER=200$[\s\S]*^DATASET_MAX_TOTAL_BYTES_PER_USER=1073741824$[\s\S]*^DATASET_DISPATCH_SCAN_SECONDS=5$[\s\S]*^DATASET_REDISPATCH_AFTER_SECONDS=30$[\s\S]*^DATASET_PARSE_STALE_SECONDS=240$[\s\S]*^DATASET_PARSE_MAX_ATTEMPTS=3$[\s\S]*^DATASET_UPLOAD_RESERVATION_TTL_SECONDS=86400$'
+        message: Production 必须声明资料上传、配额和解析恢复默认值
 
   - id: redis-local-port
     description: 本地配置与 Compose 使用同一个 Redis 默认端口
@@ -303,17 +318,29 @@ contracts:
     description: FastAPI、Worker、环境模板与 Compose 使用同一套异步导入 Broker 契约
     assertions:
       - path: apps/backend/src/linkcv/core/config.py
-        pattern: 'default="rabbitmq", alias="MQ_VENDOR"[\s\S]*default="tolink\.cv\.resume_import"[\s\S]*alias="RABBITMQ_EXCHANGE_NAME"[\s\S]*default="resume\.import"[\s\S]*alias="RABBITMQ_ROUTING_KEY"'
-        message: 后端必须默认使用 RabbitMQ 固定 exchange 和 routing key
+        pattern: 'default="rabbitmq", alias="MQ_VENDOR"[\s\S]*default="tolink\.cv\.resume_import\.v2"[\s\S]*alias="RABBITMQ_EXCHANGE_NAME"[\s\S]*default="linkcv\.resume_import\.worker\.v2"[\s\S]*alias="RABBITMQ_QUEUE"[\s\S]*default="resume\.import\.v2"[\s\S]*alias="RABBITMQ_ROUTING_KEY"'
+        message: 后端必须默认使用 RabbitMQ V2 exchange、queue 和 routing key
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default="tolink\.cv\.resume_import\.v2"[\s\S]*alias="KAFKA_TOPIC"[\s\S]*default="linkcv\.resume_import\.worker\.v2"[\s\S]*alias="KAFKA_CONSUMER_GROUP"'
+        message: 后端必须默认使用 Kafka V2 topic 和 consumer group
+      - path: apps/backend/src/linkcv/core/mq/message.py
+        pattern: 'ConfigDict\(extra="forbid"\)[\s\S]*pipeline_version: Literal\["v2"\][\s\S]*mq_name: Literal\["tolink\.cv\.resume_import\.v2"\]'
+        message: 文档解析消息必须使用严格的 V2 envelope 和必填 pipeline version
+      - path: apps/backend/src/linkcv/core/mq/rabbitmq.py
+        pattern: 'headers=\{\"x-linkcv-pipeline-version\": message\.pipeline_version\}'
+        message: RabbitMQ 发布必须以 header 观测 V2 pipeline version
+      - path: apps/backend/src/linkcv/modules/observability/logging.py
+        pattern: 'ALLOWED_FIELDS = \{[\s\S]*"message_id"[\s\S]*"pipeline_version"[\s\S]*"vendor"[\s\S]*"route"'
+        message: 结构化日志必须保留受控的 V2 消息诊断字段
       - path: .env.example
-        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=amqp://linkcv:linkcv-rabbit-local-change-me@127\.0\.0\.1:5672/$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import$'
-        message: 本地模板必须连接本地 RabbitMQ 并声明固定路由
+        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=amqp://linkcv:linkcv-rabbit-local-change-me@127\.0\.0\.1:5672/$[\s\S]*^RABBITMQ_EXCHANGE_NAME=tolink\.cv\.resume_import\.v2$[\s\S]*^RABBITMQ_QUEUE=linkcv\.resume_import\.worker\.v2$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import\.v2$[\s\S]*^KAFKA_TOPIC=tolink\.cv\.resume_import\.v2$[\s\S]*^KAFKA_CONSUMER_GROUP=linkcv\.resume_import\.worker\.v2$'
+        message: 本地模板必须连接本地 RabbitMQ 并声明 V2 路由和 Kafka 标识
       - path: .env.development
-        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import$'
-        message: Dev 必须由私密覆盖提供平台 RabbitMQ 地址
+        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=$[\s\S]*^RABBITMQ_EXCHANGE_NAME=tolink\.cv\.resume_import\.v2$[\s\S]*^RABBITMQ_QUEUE=linkcv\.resume_import\.worker\.v2$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import\.v2$[\s\S]*^KAFKA_TOPIC=tolink\.cv\.resume_import\.v2$[\s\S]*^KAFKA_CONSUMER_GROUP=linkcv\.resume_import\.worker\.v2$'
+        message: Dev 必须由私密覆盖提供平台 RabbitMQ 地址并使用 V2 标识
       - path: .env.production
-        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import$'
-        message: Production 必须由私密覆盖提供平台 RabbitMQ 地址
+        pattern: '(?m)^MQ_VENDOR=rabbitmq$[\s\S]*^RABBITMQ_URL=$[\s\S]*^RABBITMQ_EXCHANGE_NAME=tolink\.cv\.resume_import\.v2$[\s\S]*^RABBITMQ_QUEUE=linkcv\.resume_import\.worker\.v2$[\s\S]*^RABBITMQ_ROUTING_KEY=resume\.import\.v2$[\s\S]*^KAFKA_TOPIC=tolink\.cv\.resume_import\.v2$[\s\S]*^KAFKA_CONSUMER_GROUP=linkcv\.resume_import\.worker\.v2$'
+        message: Production 必须由私密覆盖提供平台 RabbitMQ 地址并使用 V2 标识
       - path: deploy/docker-compose.yml
         pattern: '(?m)^  rabbitmq:$[\s\S]*rabbitmq:4-management-alpine'
         message: 本地 Compose 必须提供 RabbitMQ
@@ -374,6 +401,25 @@ contracts:
       - path: Dockerfile
         pattern: 'npm ci --no-audit --replace-registry-host=never --registry="\$\{NPM_REGISTRY\}"'
         message: npm ci 必须保留 package-lock.json 已锁定的 tarball 主机
+
+  - id: resume-pdf-chromium-runtime
+    description: FastAPI、三套环境与生产镜像使用同一个受控 Chromium 路径和智能一页高度上限
+    assertions:
+      - path: apps/backend/src/linkcv/core/config.py
+        pattern: 'default="/usr/bin/chromium",[\s\S]*alias="CHROMIUM_EXECUTABLE_PATH"[\s\S]*default=2000,[\s\S]*alias="PDF_RENDERER_MAX_SMART_HEIGHT_MM"'
+        message: FastAPI 必须读取受控 Chromium 路径和智能一页高度上限
+      - path: .env.example
+        pattern: '(?m)^CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium$[\s\S]*^PDF_RENDERER_MAX_SMART_HEIGHT_MM=2000$'
+        message: 本地环境模板必须声明 PDF Chromium 运行契约
+      - path: .env.development
+        pattern: '(?m)^CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium$[\s\S]*^PDF_RENDERER_MAX_SMART_HEIGHT_MM=2000$'
+        message: Development 必须声明 PDF Chromium 运行契约
+      - path: .env.production
+        pattern: '(?m)^CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium$[\s\S]*^PDF_RENDERER_MAX_SMART_HEIGHT_MM=2000$'
+        message: Production 必须声明 PDF Chromium 运行契约
+      - path: Dockerfile
+        pattern: 'CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium[\s\S]*PDF_RENDERER_MAX_SMART_HEIGHT_MM=2000[\s\S]*apt-get install -y --no-install-recommends chromium[\s\S]*node_modules/playwright-core /app/pdf/node_modules/playwright-core'
+        message: 生产镜像必须提供与 FastAPI 配置一致的 Chromium、页面上限和 Playwright 运行库
 
   - id: pi-model-data-offline-build
     description: Pi 模型目录使用版本化快照，常规安装和镜像构建不访问实时外部目录

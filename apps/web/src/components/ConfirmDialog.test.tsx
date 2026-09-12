@@ -22,6 +22,10 @@ describe("ConfirmDialog", () => {
       />,
     );
 
+    expect(screen.getByRole("alertdialog", { name: "删除版本 v1？" })).toHaveAttribute("data-ui-theme", "light");
+    expect(screen.getByRole("alertdialog", { name: "删除版本 v1？" })).toHaveClass("text-foreground");
+    expect(document.querySelector('[data-slot="alert-dialog-overlay"]')).toHaveAttribute("data-ui-theme", "light");
+
     await user.click(screen.getByRole("button", { name: "永久删除" }));
 
     expect(onConfirm).toHaveBeenCalledOnce();

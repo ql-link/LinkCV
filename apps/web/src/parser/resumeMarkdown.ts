@@ -4,10 +4,12 @@ import {
   normalizeInlineFontSize,
 } from "../lib/resumeInlineStyle";
 import { isInlineIconName } from "../lib/resumeInlineIcon";
+import { isResumeEmailLink } from "../lib/resumeLink";
 
 type Block =
   | { type: "markdown"; content: string }
   | { type: "side"; align: "left" | "right"; content: string; leftWidth?: number }
+  | { type: "text-align"; align: "left" | "center" | "right"; content: string }
   | { type: "wide"; kind: "sidebar" | "main" | "meta" | "trio"; content: string };
 
 const inlineIconNames = new Set([
@@ -40,7 +42,7 @@ const inlineIconShapes: Record<string, string> = {
   Code2: '<path d="m18 16 4-4-4-4M6 8l-4 4 4 4M14.5 4l-5 16"/>',
 };
 
-function renderInlineIcon(name: string) {
+export function renderInlineIcon(name: string) {
   const shape = inlineIconShapes[name] ?? inlineIconShapes.Star;
   return `<span data-inline-icon data-icon-name="${escapeAttribute(name)}" class="resume-inline-icon"><svg aria-hidden="true" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${shape}</svg></span>`;
 }
@@ -74,6 +76,40 @@ const inlineFontSizeRule: InlineRule = (state, silent) => {
 
 md.inline.ruler.before("emphasis", "linkcv_font_size", inlineFontSizeRule);
 
+const inlineStyleRule: InlineRule = (state, silent) => {
+  const source = state.src.slice(state.pos);
+  const opening = source.match(/^\[\[linkcv-(underline|color|highlight)(?::(#[0-9A-Fa-f]{6}))?\]\]/u);
+  if (opening) {
+    const kind = opening[1];
+    const color = opening[2];
+    if ((kind === "color" || kind === "highlight") !== Boolean(color)) return false;
+    const closing = `[[/linkcv-${kind}]]`;
+    if (!source.slice(opening[0].length).includes(closing)) return false;
+    if (!silent) {
+      const tag = kind === "underline" ? "u" : kind === "highlight" ? "mark" : "span";
+      const token = state.push(`linkcv_${kind}_open`, tag, 1);
+      if (kind === "color") token.attrSet("style", `color:${color}`);
+      if (kind === "highlight") {
+        token.attrSet("data-color", color);
+        token.attrSet("style", `background-color:${color};color:inherit`);
+      }
+    }
+    state.pos += opening[0].length;
+    return true;
+  }
+  const closing = source.match(/^\[\[\/linkcv-(underline|color|highlight)\]\]/u);
+  if (!closing) return false;
+  if (!silent) {
+    const kind = closing[1];
+    const tag = kind === "underline" ? "u" : kind === "highlight" ? "mark" : "span";
+    state.push(`linkcv_${kind}_close`, tag, -1);
+  }
+  state.pos += closing[0].length;
+  return true;
+};
+
+md.inline.ruler.before("emphasis", "linkcv_inline_style", inlineStyleRule);
+
 const inlineIconRule: InlineRule = (state, silent) => {
   const match = state.src.slice(state.pos).match(/^\[\[linkcv-icon:([A-Za-z0-9]+)\]\]/);
   const name = match?.[1];
@@ -90,21 +126,25 @@ md.inline.ruler.before("emphasis", "linkcv_inline_icon", inlineIconRule);
 md.renderer.rules.linkcv_inline_icon = (tokens, index) => `<span data-inline-icon data-icon-name="${tokens[index].meta.name}" class="resume-inline-icon"></span>`;
 
 const resumeBlockAnchorRule: InlineRule = (state, silent) => {
-  const match = state.src.slice(state.pos).match(/^\[\[linkcv-block:(blk_[a-z0-9]{16,64})\]\]/);
+  const match = state.src.slice(state.pos).match(/^\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::(basics|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\]/);
   if (!match) return false;
   if (!silent) {
     const token = state.push("linkcv_resume_block_anchor", "span", 0);
-    token.meta = { blockId: match[1] };
+    token.meta = { blockId: match[1], semanticKind: match[2] ?? null };
   }
   state.pos += match[0].length;
   return true;
 };
 
 md.inline.ruler.before("emphasis", "linkcv_resume_block_anchor", resumeBlockAnchorRule);
-md.renderer.rules.linkcv_resume_block_anchor = (tokens, index) => `<span data-resume-block-id="${tokens[index].meta.blockId}" aria-hidden="true" class="resume-block-anchor"></span>`;
+md.renderer.rules.linkcv_resume_block_anchor = (tokens, index) => {
+  const kind = tokens[index].meta.semanticKind;
+  return `<span data-resume-block-id="${tokens[index].meta.blockId}"${kind ? ` data-resume-semantic-kind="${kind}"` : ""} aria-hidden="true" class="resume-block-anchor"></span>`;
+};
 
 const defaultImageRenderer = md.renderer.rules.image;
 const defaultLinkOpenRenderer = md.renderer.rules.link_open;
+const defaultLinkCloseRenderer = md.renderer.rules.link_close;
 
 function isDomainLikeHref(href: string) {
   return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:[/:?#].*)?$/i.test(
@@ -150,6 +190,12 @@ md.renderer.rules.link_open = (tokens, index, options, env, self) => {
 
   if (hrefIndex >= 0) {
     const href = token.attrs?.[hrefIndex]?.[1];
+    if (href && isResumeEmailLink(href)) {
+      token.meta = { ...token.meta, resumePlainEmail: true };
+      const closingToken = tokens.slice(index + 1).find((candidate) => candidate.type === "link_close");
+      if (closingToken) closingToken.meta = { ...closingToken.meta, resumePlainEmail: true };
+      return "";
+    }
     if (href) token.attrs![hrefIndex][1] = normalizeLinkHref(href);
   }
 
@@ -158,6 +204,13 @@ md.renderer.rules.link_open = (tokens, index, options, env, self) => {
 
   return defaultLinkOpenRenderer
     ? defaultLinkOpenRenderer(tokens, index, options, env, self)
+    : self.renderToken(tokens, index, options);
+};
+
+md.renderer.rules.link_close = (tokens, index, options, env, self) => {
+  if (tokens[index].meta?.resumePlainEmail) return "";
+  return defaultLinkCloseRenderer
+    ? defaultLinkCloseRenderer(tokens, index, options, env, self)
     : self.renderToken(tokens, index, options);
 };
 
@@ -183,10 +236,23 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
   const title = token.attrGet("title") ?? "";
   const alt = escapeAttribute(token.content || "简历图片");
   const escapedSrc = escapeAttribute(src);
-  const avatar = title.match(/^linkcv-avatar:(\d+)$/);
+  const inlineImageV2 = title.match(/^linkcv-inline-image-v2:(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/);
+  if (inlineImageV2) {
+    const width = Math.min(240, Math.max(16, Number(inlineImageV2[1]) || 72));
+    const height = Math.min(240, Math.max(16, Number(inlineImageV2[2]) || 24));
+    return `<img data-inline-image data-src="${escapedSrc}" data-width="${width}" data-height="${height}" data-alt="${alt}" class="resume-inline-image" style="width:${width}px;height:${height}px" src="${escapedSrc}" width="${width}" height="${height}" alt="${alt}">`;
+  }
+  const legacyInlineImage = title.match(/^linkcv-inline-image:(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/);
+  if (legacyInlineImage) {
+    const width = Math.min(240, Math.max(16, Number(legacyInlineImage[1]) || 72));
+    const aspectRatio = Math.min(20, Math.max(0.1, Number(legacyInlineImage[2]) || 3));
+    const height = Math.min(240, Math.max(16, width / aspectRatio));
+    return `<img data-inline-image data-src="${escapedSrc}" data-width="${width}" data-height="${Number(height.toFixed(2))}" data-aspect-ratio="${aspectRatio}" data-alt="${alt}" class="resume-inline-image" style="width:${width}px;height:${Number(height.toFixed(2))}px" src="${escapedSrc}" width="${width}" height="${Number(height.toFixed(2))}" alt="${alt}">`;
+  }
+  const avatar = title.match(/^linkcv-avatar:(\d+)(:system)?$/);
   if (avatar) {
     const size = Math.min(220, Math.max(56, Number(avatar[1]) || 96));
-    return `<figure data-type="avatar-image" data-src="${escapedSrc}" data-size="${size}" data-alt="${alt}" class="resume-media-node resume-avatar" style="width:${size}px;height:${size}px"><img src="${escapedSrc}" alt="${alt}"></figure>`;
+    return `<figure data-type="avatar-image" data-src="${escapedSrc}" data-size="${size}" data-alt="${alt}"${avatar[2] ? ' data-system-fallback="true"' : ""} class="resume-media-node resume-avatar" style="width:${size}px;height:${size}px"><img src="${escapedSrc}" alt="${alt}"></figure>`;
   }
   const bodyImage = title.match(/^linkcv-image:(\d+(?:\.\d+)?):(%|px):(left|center|right|full)$/);
   if (bodyImage) {
@@ -294,8 +360,9 @@ function tokenizeCustomBlocks(source: string): Block[] {
     const line = lines[index];
     const wideStart = line.match(/^::::\s*(sidebar|main|meta|trio)\s*$/);
     const start = line.match(/^:::\s*(left|right)(?:\s+(\d+(?:\.\d+)?))?\s*$/);
+    const textAlignStart = line.match(/^:::\s*text-align\s+(left|center|right)\s*$/);
 
-    if (!wideStart && !start) {
+    if (!wideStart && !start && !textAlignStart) {
       buffer.push(line);
       continue;
     }
@@ -305,14 +372,40 @@ function tokenizeCustomBlocks(source: string): Block[] {
     if (wideStart) {
       const kind = wideStart[1] as "sidebar" | "main" | "meta" | "trio";
       const content: string[] = [];
+      let depth = 1;
       index += 1;
 
-      while (index < lines.length && !/^::::\s*$/.test(lines[index])) {
+      while (index < lines.length) {
+        if (/^::::\s*(?:sidebar|main|meta|trio)\s*$/.test(lines[index])) {
+          depth += 1;
+          content.push(lines[index]);
+          index += 1;
+          continue;
+        }
+        if (/^::::\s*$/.test(lines[index])) {
+          depth -= 1;
+          if (depth === 0) break;
+        }
         content.push(lines[index]);
         index += 1;
       }
 
       blocks.push({ type: "wide", kind, content: content.join("\n").trim() });
+      continue;
+    }
+
+    if (textAlignStart) {
+      const content: string[] = [];
+      index += 1;
+      while (index < lines.length && !/^:::\s*$/.test(lines[index])) {
+        content.push(lines[index]);
+        index += 1;
+      }
+      blocks.push({
+        type: "text-align",
+        align: textAlignStart[1] as "left" | "center" | "right",
+        content: content.join("\n").trim(),
+      });
       continue;
     }
 
@@ -359,8 +452,13 @@ function renderSideContent(content: string) {
   return renderMarkdownContent(content, true);
 }
 
+function renderTextAlignedContent(content: string, align: "left" | "center" | "right") {
+  const rendered = renderMarkdownContent(content);
+  return rendered.replace(/^<(p|h[1-3])\b[^>]*>/, (tag) => rewriteAttribute(tag, "style", `text-align:${align}`));
+}
+
 function renderPair(left: string, right: string, leftWidth = 70) {
-  return `<div class="resume-row" data-type="resume-row" data-block="pair" data-left-width="${leftWidth}"><p class="resume-row-left">${renderSideContent(
+  return `<div class="resume-row" data-type="resume-row" data-block="pair" data-left-width="${leftWidth}" style="--resume-row-left:${leftWidth}%"><p class="resume-row-left">${renderSideContent(
     left,
   )}</p><p class="resume-row-right">${renderSideContent(right)}</p></div>`;
 }
@@ -374,6 +472,11 @@ export function renderResumeMarkdown(source: string) {
 
     if (block.type === "markdown") {
       html.push(renderMarkdownContent(block.content));
+      continue;
+    }
+
+    if (block.type === "text-align") {
+      html.push(renderTextAlignedContent(block.content, block.align));
       continue;
     }
 

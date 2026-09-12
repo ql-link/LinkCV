@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "layout-plan.schema.json",
+  "title": "LayoutPlanV1", "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "content_sha256", "template_key", "regions"],
+  "properties": {
+    "schema_version": {"const": "layout-plan.v1"},
+    "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "template_key": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,63}$"},
+    "regions": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"$ref": "#/$defs/region"}}
+  },
+  "$defs": {
+    "region": {"type": "object", "additionalProperties": false, "required": ["region_id", "order", "nodes"], "properties": {"region_id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$"}, "order": {"type": "integer", "minimum": 0, "maximum": 100}, "nodes": {"type": "array", "maxItems": 5000, "items": {"$ref": "#/$defs/node"}}}},
+    "node": {"type": "object", "additionalProperties": false, "required": ["node_id", "semantic_kind", "slot_id"], "properties": {"node_id": {"type": "string", "pattern": "^node_[a-z0-9]{16,64}$"}, "semantic_kind": {"enum": ["identity", "profile", "work", "education", "project", "skills", "activity", "interests", "certificates", "awards", "languages", "custom"]}, "slot_id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$"}}}
+  }
+}

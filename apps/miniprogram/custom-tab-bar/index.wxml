@@ -1,0 +1,33 @@
+<view class="tab-bar">
+  <view
+    wx:for="{{list}}"
+    wx:key="pagePath"
+    class="tab-bar-item {{selected === index ? 'is-active' : ''}}"
+    data-path="{{item.pagePath}}"
+    data-index="{{index}}"
+    bindtap="switchTab"
+    hover-class="tab-bar-item-hover"
+    hover-stay-time="70"
+  >
+    <!-- 图标区 -->
+    <view class="tab-icon-wrap {{selected === index ? 'is-active' : ''}}">
+      <!-- 简历图标 -->
+      <view class="tab-icon icon-resume" wx:if="{{item.icon === 'resume'}}">
+        <view class="doc-body {{selected === index ? 'is-active' : ''}}">
+          <view class="doc-line l1 {{selected === index ? 'is-active' : ''}}"></view>
+          <view class="doc-line l2 {{selected === index ? 'is-active' : ''}}"></view>
+          <view class="doc-line l3 {{selected === index ? 'is-active' : ''}}"></view>
+        </view>
+      </view>
+
+      <!-- 我的图标 -->
+      <view class="tab-icon icon-profile" wx:elif="{{item.icon === 'profile'}}">
+        <view class="user-avatar-head {{selected === index ? 'is-active' : ''}}"></view>
+        <view class="user-avatar-body {{selected === index ? 'is-active' : ''}}"></view>
+      </view>
+    </view>
+
+    <!-- 文本标签：字号放大至 25rpx -->
+    <text class="tab-label {{selected === index ? 'is-active' : ''}}">{{item.text}}</text>
+  </view>
+</view>

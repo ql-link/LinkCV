@@ -2,10 +2,13 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from linkcv.application.resumes.service import parse_decimal_id
+from linkcv.application.resumes.service import (
+    parse_decimal_id,
+    parse_persisted_template_snapshot,
+)
 from linkcv.core.database import get_db
 from linkcv.core.errors import ApiError
-from linkcv.domain.resume_snapshot import parse_resume_snapshot
+from linkcv.domain.resume import compile_layout_plan
 from linkcv.modules.identity.dependencies import get_current_user
 from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import ResumeTemplate
@@ -20,8 +23,11 @@ router = APIRouter(prefix="/resume-templates", tags=["resume-templates"])
 
 def template_record(template: ResumeTemplate) -> ResumeTemplateRecord:
     try:
-        snapshot = parse_resume_snapshot(template.data_json, template.style_json)
-    except ValueError as error:
+        snapshot = parse_persisted_template_snapshot(
+            template.data_json,
+            template.style_json,
+        )
+    except (TypeError, ValueError) as error:
         raise ApiError(500, "TEMPLATE_SCHEMA_INVALID") from error
     return ResumeTemplateRecord(
         id=str(template.id),
@@ -30,6 +36,7 @@ def template_record(template: ResumeTemplate) -> ResumeTemplateRecord:
         description=template.description,
         data=snapshot.data,
         style=snapshot.style,
+        layout_plan=compile_layout_plan(snapshot.data, snapshot.style),
     )
 
 

@@ -84,7 +84,6 @@ required_secret_keys=(
   WECHAT_SECRET
   PI_SERVICE_TOKEN
   LINKCV_INTERNAL_AGENT_TOKEN
-  PLUGIN_RELEASE_ORIGIN
 )
 for required_key in "${required_secret_keys[@]}"; do
   if ! grep -Eq "^${required_key}=.+$" "${secret_env}"; then

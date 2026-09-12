@@ -19,6 +19,7 @@ describe("BOSS detail extraction", () => {
         </section>
         <aside class="sider-company">
           <div class="company-info">
+            <img class="company-logo" src="https://cdn.example.test/logos/example.png" />
             <h3><a title="示例科技">示例科技</a></h3>
             <ul class="company-tag-list"><li>B轮</li><li>100-499人</li><li>企业服务</li></ul>
           </div>
@@ -39,6 +40,7 @@ describe("BOSS detail extraction", () => {
     expect(result.capture).toMatchObject({
       job_title: "高级 Python 工程师",
       company_name: "示例科技",
+      logo_url: "https://cdn.example.test/logos/example.png",
       description_text: "职位描述\n负责服务端接口开发。\n任职要求\n熟悉 Python。",
       salary_text: "20-35K·14薪",
       work_city: "上海",
@@ -302,4 +304,18 @@ describe("BOSS detail extraction", () => {
     expect(isBossJobUrl("https://www.zhipin.com/web/geek/job")).toBe(false);
     expect(isBossJobUrl("https://example.test/job_detail/abc.html")).toBe(false);
   });
+});
+
+
+it("keeps campus title evidence alongside full-time tags and excludes legacy types from skills", () => {
+  const result = extractBossJob(page(`
+    <section class="job-banner"><div class="job-primary"><div class="name"><h1>校招 Java 工程师</h1></div></div></section>
+    <aside class="sider-company"><div class="company-info"><h3><a title="分类测试公司">分类测试公司</a></h3></div></aside>
+    <div class="job-detail"><div class="job-tags"><span>全职</span><span>兼职</span><span>Java</span></div>
+    <div class="job-sec-text">职位描述：负责虚构项目的服务端开发、接口维护、数据库设计，并参与团队协作和代码评审。</div></div>
+  `), "https://www.zhipin.com/job_detail/category-test.html");
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.capture.employment_type_text).toBe("全职 校招 Java 工程师");
+  expect(result.capture.skills).toEqual(["Java"]);
 });

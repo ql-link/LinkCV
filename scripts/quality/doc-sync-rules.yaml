@@ -10,6 +10,74 @@ rules:
       - docs/api/http-contracts.md
       - docs/internals/backend.md
 
+  - id: identity-feature
+    description: 身份、账号和会话变化必须同步账号功能文档
+    when_changed:
+      - apps/backend/src/linkcv/modules/identity/**/*.py
+      - apps/web/src/features/auth/**/*
+      - apps/web/src/features/account/**/*
+    must_update:
+      - docs/features/identity-account.md
+
+  - id: resume-feature
+    description: 简历聚合、模板、版本、分享、导入和工作台变化必须同步简历功能文档
+    when_changed:
+      - apps/backend/src/linkcv/modules/resumes/**/*.py
+      - apps/web/src/features/home/**/*
+      - apps/web/src/features/workbench/**/*
+      - apps/web/src/features/templates/**/*
+      - apps/web/src/features/share/**/*
+    must_update:
+      - docs/features/resume-workbench.md
+
+  - id: career-center-feature
+    description: 岗位、求职进程和面试变化必须同步求职中心功能文档
+    when_changed:
+      - apps/backend/src/linkcv/modules/job_descriptions/**/*.py
+      - apps/backend/src/linkcv/modules/interviews/**/*.py
+      - apps/web/src/features/jobs/**/*
+      - apps/web/src/features/interviews/**/*
+    must_update:
+      - docs/features/career-center.md
+
+  - id: agent-feature-and-runtime
+    description: Agent、模型治理或 Pi 运行时变化必须同步助手功能和运行时架构文档
+    when_changed:
+      - apps/backend/src/linkcv/modules/agent/**/*.py
+      - apps/backend/src/linkcv/modules/llm/**/*.py
+      - apps/pi-service/**/*
+      - apps/web/src/features/agent/**/*
+      - apps/web/src/features/assistant/**/*
+    must_update:
+      - docs/features/ai-assistant.md
+      - docs/internals/agent-runtime.md
+
+  - id: dataset-feature
+    description: 用户资料集变化必须同步资料集功能文档
+    when_changed:
+      - apps/backend/src/linkcv/modules/datasets/**/*.py
+      - apps/web/src/features/datasets/**/*
+    must_update:
+      - docs/features/datasets.md
+
+  - id: observability-architecture
+    description: 可观测性和审计变化必须同步可观测性架构文档
+    when_changed:
+      - apps/backend/src/linkcv/modules/observability/**/*.py
+      - apps/web/src/features/observability/**/*
+      - apps/web/src/features/admin/AdminObservabilityPanels.tsx
+    must_update:
+      - docs/internals/observability.md
+
+  - id: plugin-delivery-architecture
+    description: 插件制品发布生命周期变化必须同步插件制品架构文档
+    when_changed:
+      - apps/backend/src/linkcv/modules/plugin_releases/**/*.py
+      - apps/web/src/features/admin/PluginReleasePanel.tsx
+      - apps/web/src/features/jobs/PluginInstallDialog.tsx
+    must_update:
+      - docs/internals/plugin-delivery.md
+
   - id: web-api-client-contract
     description: 前端 API 客户端变化必须同步 HTTP 契约
     when_changed:
@@ -28,6 +96,7 @@ rules:
       - docs/api/http-contracts.md
       - docs/internals/architecture.md
       - docs/ops/development.md
+      - docs/internals/miniprogram.md
 
   - id: miniprogram-ui-contract
     description: 微信小程序页面行为、结构、样式或配置变化必须同步架构与开发文档
@@ -39,6 +108,7 @@ rules:
     must_update:
       - docs/internals/architecture.md
       - docs/ops/development.md
+      - docs/internals/miniprogram.md
 
   - id: browser-extension-import-contract
     description: 浏览器岗位采集、权限或导入客户端变化必须同步插件与 HTTP 契约文档

@@ -84,6 +84,7 @@ def build_job_description_from_capture(
         return JobDescriptionCreateRequest(
             job_title=job_title,
             company_name=company_name,
+            logo_url=capture.logo_url,
             employment_type=_employment_type(capture.employment_type_text),
             description=description,
             skills=_clean_skills(capture.skills),
@@ -196,10 +197,11 @@ def _employment_type(value: str | None) -> EmploymentType | None:
         return None
     for marker, result in (
         ("实习", "internship"),
-        ("兼职", "part_time"),
-        ("合同", "contract"),
-        ("劳务", "contract"),
-        ("临时", "temporary"),
+        ("校招", "campus"),
+        ("校园招聘", "campus"),
+        ("应届", "campus"),
+        ("正式", "full_time"),
+        ("社招", "full_time"),
         ("全职", "full_time"),
     ):
         if marker in normalized:

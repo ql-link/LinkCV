@@ -1,0 +1,141 @@
+/* Shared workspace structure. Patterns describe geometry, not a fixed page composition. */
+.ui-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ui-space-6);
+  padding: 28px 32px 0;
+}
+
+.ui-page-header__text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--ui-space-2);
+}
+
+.ui-page-header__eyebrow {
+  margin: 0;
+  color: var(--ui-accent);
+  font-size: var(--ui-text-sm);
+  font-weight: 600;
+}
+
+.ui-page-header h1 {
+  margin: 0;
+  color: var(--ui-foreground);
+  font-size: var(--ui-text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: var(--ui-leading-tight);
+}
+
+.ui-page-header__description {
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-text-sm);
+}
+
+.ui-page-header__actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-end;
+  gap: var(--ui-space-4);
+}
+
+.ui-content-frame {
+  width: min(var(--ui-content-frame-max, 60rem), 100%);
+  margin-inline: auto;
+}
+
+.ui-content-frame--narrow {
+  --ui-content-frame-max: 56rem;
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.ui-content-frame--wide {
+  --ui-content-frame-max: 72rem;
+}
+
+.ui-settings-layout {
+  width: min(var(--ui-settings-content-max), 100%);
+}
+
+.ui-settings-layout--framed {
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface);
+}
+
+.ui-settings-layout--plain {
+  background: transparent;
+}
+
+.ui-settings-section {
+  position: relative;
+  padding: var(--ui-settings-section-inset);
+}
+
+.ui-settings-section + .ui-settings-section {
+  border-top: 1px solid var(--ui-border);
+}
+
+.ui-settings-section--identity {
+  padding-block: var(--ui-space-6);
+}
+
+.ui-settings-section--compact {
+  padding-block: var(--ui-space-4);
+}
+
+.ui-settings-section__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ui-space-4);
+}
+
+.ui-settings-row {
+  display: grid;
+  grid-template-columns: var(--ui-settings-label-track) minmax(0, 1fr) var(--ui-settings-action-track);
+  align-items: center;
+  column-gap: var(--ui-space-3);
+  min-height: var(--ui-settings-row-min-size);
+  padding-block: var(--ui-space-2);
+}
+
+.ui-settings-row + .ui-settings-row {
+  border-top: 1px solid var(--ui-border);
+}
+
+@media (max-width: 760px) {
+  .ui-page-header {
+    width: 100%;
+    padding: 22px 16px 0;
+  }
+
+  .ui-page-header__actions {
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .ui-content-frame--narrow {
+    margin-inline: auto;
+  }
+
+  .ui-settings-section {
+    padding: var(--ui-space-4);
+  }
+
+  .ui-settings-section--identity {
+    padding-block: var(--ui-space-5);
+  }
+
+  .ui-settings-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: var(--ui-space-2);
+  }
+}

@@ -4,6 +4,9 @@ page {
   --ui-surface: #ffffff;
   --ui-surface-subtle: #f9fafb;
   --ui-surface-muted: #edf1f5;
+  --ui-secondary: #ffffff;
+  --ui-secondary-hover: #f2f4f7;
+  --ui-secondary-foreground: #24282e;
   --ui-text-secondary: #3f4752;
   --ui-text-muted: #6f7a8c;
   --ui-text-subtle: #8791a1;
@@ -27,7 +30,7 @@ page {
 }
 
 .ui-brand { display: flex; align-items: center; gap: 16rpx; color: var(--ui-foreground); font-size: 30rpx; font-weight: 700; letter-spacing: -1rpx; }
-.ui-brand-mark { width: 64rpx; height: 64rpx; flex-shrink: 0; border-radius: 16rpx; }
+.ui-brand-wordmark { width: 220rpx; height: 46rpx; display: block; flex-shrink: 0; }
 
 .ui-primary-button, .ui-secondary-button { height: 88rpx; display: flex; align-items: center; justify-content: center; margin: 0; padding: 0 30rpx; box-sizing: border-box; font-size: 27rpx; font-weight: 600; line-height: 88rpx; touch-action: manipulation; }
 .ui-primary-button { border-radius: 16rpx; background: var(--ui-accent); color: #fff; }

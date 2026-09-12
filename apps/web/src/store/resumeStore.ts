@@ -2,26 +2,37 @@ import { create } from "zustand";
 import type { JSONContent } from "@tiptap/core";
 import {
   api,
+  ApiRequestError,
   ImportWarning,
-  ResumeDocumentV1,
   ResumeRecord,
   ResumeImportSummary,
-  ResumeStyleV1,
   ResumeSummary,
   ResumeVersion,
   User,
   UserProfile,
 } from "../api/client";
 import {
-  defaultSemanticDocument,
-  defaultSemanticStyle,
+  defaultCanonicalDocument,
+  defaultCanonicalPresentation,
   editorDocumentToMarkdown,
   editorSettingsToStyle,
-  resumeDocumentFromMarkdown,
   resumeDocumentToMarkdown,
+  resumePresentationTemplateDefinition,
   styleToEditorSettings,
+  withResumePresentationAvatarSize,
 } from "../api/resumeContract";
 import { defaultResumeDocument } from "../features/workbench/defaultDocument";
+import {
+  composeEditorDocumentForTemplate,
+  composeEditorDocumentForLayoutPlan,
+  composeResumeMarkdownForTemplate,
+  stripTemplateProjectionFromEditorDocument,
+} from "../features/workbench/templateLayout";
+import {
+  editorDocumentUserAvatar,
+  resumeDocumentFromEditorDocument,
+  resumeDocumentToEditorDocument,
+} from "../features/workbench/resumeEditorPersistence";
 import { defaultResumeMarkdown } from "../parser/defaultResume";
 import { renderResumeMarkdown } from "../parser/resumeMarkdown";
 import { buildNamedImportFile } from "../lib/resumeImport";
@@ -53,6 +64,8 @@ export const resumeSerifFontStack =
 type AuthStatus = "checking" | "guest" | "authenticated";
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
+let templateOperationSequence = 0;
+
 type ResumeState = {
   authStatus: AuthStatus;
   user: User | null;
@@ -65,8 +78,8 @@ type ResumeState = {
   importWarningsByResumeId: Record<string, ImportWarning[]>;
   activeResumeId: string | null;
   lockVersion: number;
-  data: ResumeDocumentV1;
-  style: ResumeStyleV1;
+  data: import("../api/resumeContract").CanonicalResumeDocument;
+  style: import("../api/resumeContract").CanonicalResumePresentation;
   title: string;
   markdown: string;
   editorContent: JSONContent | string;
@@ -105,13 +118,20 @@ type ResumeState = {
   setSplitRatio: (ratio: number) => void;
   setPreviewScale: (scale: number) => void;
   updateSettings: (settings: Partial<ResumeSettings>) => void;
+  applyTemplate: (templateId: string, editorDocument: JSONContent) => Promise<void>;
+  setSectionSemanticKind: (
+    sectionId: string,
+    semanticKind: import("../api/resumeContract").CanonicalResumeSection["semantic_kind"],
+    source?: "model" | "user",
+    confidence?: number | null,
+  ) => void;
 };
 
 type SaveSnapshot = {
   activeResumeId: string;
   lockVersion: number;
-  data: ResumeDocumentV1;
-  style: ResumeStyleV1;
+  data: import("../api/resumeContract").CanonicalResumeDocument;
+  style: import("../api/resumeContract").CanonicalResumePresentation;
   title: string;
   markdown: string;
   editorContent: JSONContent | string;
@@ -120,7 +140,169 @@ type SaveSnapshot = {
   previewScale: number;
 };
 
+type LocalResumeDraft = {
+  version: 1;
+  userId: string;
+  resumeId: string;
+  baseLockVersion: number;
+  title: string;
+  markdown: string;
+  editorContent: JSONContent | string;
+  settings: ResumeSettings;
+  editVersion: number;
+  updatedAt: string;
+};
+
 let saveQueue: Promise<void> = Promise.resolve();
+let pendingLocalDraft: LocalResumeDraft | null = null;
+let pendingLocalDraftTimer: ReturnType<typeof setTimeout> | null = null;
+
+export const LOCAL_RESUME_DRAFT_WRITE_DELAY_MS = 250;
+
+function localResumeDraftStoragePrefix(userId: string) {
+  return `linkcv:resume-draft:v1:${encodeURIComponent(userId)}:`;
+}
+
+export function localResumeDraftStorageKey(userId: string, resumeId: string) {
+  return `${localResumeDraftStoragePrefix(userId)}${encodeURIComponent(resumeId)}`;
+}
+
+function localDraftFromState(state: ResumeState): LocalResumeDraft | null {
+  if (!state.user || !state.activeResumeId || !state.dirty) return null;
+  return {
+    version: 1,
+    userId: state.user.id,
+    resumeId: state.activeResumeId,
+    baseLockVersion: state.lockVersion,
+    title: state.title,
+    markdown: state.markdown,
+    editorContent: state.editorContent,
+    settings: { ...state.settings, showSource: false },
+    editVersion: state.editVersion,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export function flushPendingLocalResumeDraft() {
+  if (pendingLocalDraftTimer) clearTimeout(pendingLocalDraftTimer);
+  pendingLocalDraftTimer = null;
+  const draft = pendingLocalDraft;
+  pendingLocalDraft = null;
+  if (!draft) return;
+  try {
+    globalThis.localStorage?.setItem(
+      localResumeDraftStorageKey(draft.userId, draft.resumeId),
+      JSON.stringify(draft),
+    );
+  } catch {
+    // Browser storage can be unavailable or full; database autosave remains active.
+  }
+}
+
+function scheduleLocalResumeDraft(state: ResumeState) {
+  const draft = localDraftFromState(state);
+  if (!draft) return;
+  if (pendingLocalDraft
+    && (pendingLocalDraft.userId !== draft.userId || pendingLocalDraft.resumeId !== draft.resumeId)) {
+    flushPendingLocalResumeDraft();
+  }
+  pendingLocalDraft = draft;
+  if (pendingLocalDraftTimer) clearTimeout(pendingLocalDraftTimer);
+  pendingLocalDraftTimer = setTimeout(flushPendingLocalResumeDraft, LOCAL_RESUME_DRAFT_WRITE_DELAY_MS);
+}
+
+function clearLocalResumeDraft(userId: string, resumeId: string) {
+  if (pendingLocalDraft?.userId === userId && pendingLocalDraft.resumeId === resumeId) {
+    pendingLocalDraft = null;
+    if (pendingLocalDraftTimer) clearTimeout(pendingLocalDraftTimer);
+    pendingLocalDraftTimer = null;
+  }
+  try {
+    globalThis.localStorage?.removeItem(localResumeDraftStorageKey(userId, resumeId));
+  } catch {
+    // Storage cleanup is best-effort.
+  }
+}
+
+function clearLocalResumeDraftsForUser(userId: string) {
+  flushPendingLocalResumeDraft();
+  try {
+    const prefix = localResumeDraftStoragePrefix(userId);
+    const keys = Array.from({ length: globalThis.localStorage?.length ?? 0 }, (_, index) => (
+      globalThis.localStorage?.key(index) ?? ""
+    ));
+    keys.filter((key) => key.startsWith(prefix)).forEach((key) => globalThis.localStorage?.removeItem(key));
+  } catch {
+    // Storage cleanup is best-effort.
+  }
+}
+
+function isStoredResumeSettings(value: unknown): value is ResumeSettings {
+  if (!value || typeof value !== "object") return false;
+  const settings = value as Partial<ResumeSettings>;
+  return typeof settings.fontFamily === "string"
+    && typeof settings.fontSize === "number" && Number.isFinite(settings.fontSize)
+    && typeof settings.lineHeight === "number" && Number.isFinite(settings.lineHeight)
+    && typeof settings.pageMargin === "number" && Number.isFinite(settings.pageMargin)
+    && typeof settings.verticalPageMargin === "number" && Number.isFinite(settings.verticalPageMargin)
+    && typeof settings.theme === "string"
+    && typeof settings.smartOnePage === "boolean"
+    && typeof settings.showSource === "boolean";
+}
+
+function isStoredEditorContent(value: unknown): value is JSONContent | string {
+  if (typeof value === "string") return true;
+  if (!value || typeof value !== "object") return false;
+  const content = value as Partial<JSONContent>;
+  return content.type === "doc" && (content.content === undefined || Array.isArray(content.content));
+}
+
+function readLocalResumeDraft(userId: string | undefined, resume: ResumeRecord): LocalResumeDraft | null {
+  if (!userId) return null;
+  const key = localResumeDraftStorageKey(userId, resume.id);
+  try {
+    const raw = globalThis.localStorage?.getItem(key);
+    if (!raw) return null;
+    const draft = JSON.parse(raw) as Partial<LocalResumeDraft>;
+    const valid = draft.version === 1
+      && draft.userId === userId
+      && draft.resumeId === resume.id
+      && draft.baseLockVersion === resume.lock_version
+      && typeof draft.title === "string"
+      && typeof draft.markdown === "string"
+      && isStoredEditorContent(draft.editorContent)
+      && isStoredResumeSettings(draft.settings)
+      && typeof draft.editVersion === "number" && Number.isFinite(draft.editVersion);
+    if (!valid) {
+      globalThis.localStorage?.removeItem(key);
+      return null;
+    }
+    return draft as LocalResumeDraft;
+  } catch {
+    try {
+      globalThis.localStorage?.removeItem(key);
+    } catch {
+      // Ignore cleanup failures for malformed local data.
+    }
+    return null;
+  }
+}
+
+function applyResumeWithLocalDraft(resume: ResumeRecord, userId?: string, localState?: ResumeState) {
+  const persisted = applyResume(resume, localState);
+  const draft = readLocalResumeDraft(userId, resume);
+  if (!draft) return persisted;
+  return {
+    ...persisted,
+    title: draft.title,
+    markdown: draft.markdown,
+    editorContent: draft.editorContent,
+    settings: normalizeSettings(draft.settings),
+    dirty: true,
+    editVersion: Math.max(localState?.editVersion ?? 0, draft.editVersion),
+    saveStatus: "idle" as SaveStatus,
+  };
+}
 
 function createImportIdempotencyKey(): string {
   const nativeUuid = globalThis.crypto?.randomUUID?.();
@@ -170,6 +352,12 @@ function normalizeSettings(settings: Partial<ResumeSettings> = {}) {
 
 function applyResume(resume: ResumeRecord, localState?: ResumeState) {
   const markdown = resumeDocumentToMarkdown(resume.data);
+  const canonicalEditor = resumeDocumentToEditorDocument(resume.data);
+  let editorContent: JSONContent | string;
+  const definition = resumePresentationTemplateDefinition(resume.style);
+  editorContent = canonicalEditor && resume.layout_plan && definition
+    ? composeEditorDocumentForLayoutPlan(canonicalEditor, resume.data, resume.layout_plan, definition)
+    : canonicalEditor ?? renderResumeMarkdown(markdown);
   const semanticSettings = normalizeSettings(styleToEditorSettings(resume.style));
   return {
     activeResumeId: resume.id,
@@ -178,7 +366,7 @@ function applyResume(resume: ResumeRecord, localState?: ResumeState) {
     style: resume.style,
     title: resume.title,
     markdown,
-    editorContent: renderResumeMarkdown(markdown),
+    editorContent,
     settings: semanticSettings,
     splitRatio: localState?.splitRatio ?? 0.4,
     previewScale: localState?.previewScale ?? 1,
@@ -224,7 +412,11 @@ function summaryFromRecord(resume: ResumeRecord): ResumeSummary {
     lock_version: resume.lock_version,
     created_at: resume.created_at,
     updated_at: resume.updated_at,
-    preview: { data: resume.data, style: resume.style },
+    preview: {
+      data: resume.data,
+      style: resume.style,
+      layout_plan: resume.layout_plan,
+    },
   };
 }
 
@@ -249,8 +441,8 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   importWarningsByResumeId: {},
   activeResumeId: null,
   lockVersion: 0,
-  data: defaultSemanticDocument,
-  style: defaultSemanticStyle,
+  data: defaultCanonicalDocument,
+  style: defaultCanonicalPresentation,
   title: "张三-后端开发实习生",
   markdown: defaultResumeMarkdown,
   editorContent: defaultResumeDocument,
@@ -263,27 +455,38 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   error: null,
 
   hydrate: async () => {
+    let user: User | null;
     try {
-      const { user } = await api.me();
-      if (!user) {
-        set({
-          authStatus: "guest",
-          user: null,
-          resumes: [],
-          activeImports: [],
-          failedImports: [],
-          versions: [],
-          importWarningsByResumeId: {},
-          activeResumeId: null,
-          lockVersion: 0,
-        });
-        return;
-      }
-
-      set({ authStatus: "authenticated", user });
-      await get().listResumes();
+      ({ user } = await api.me());
     } catch (error) {
       set({ authStatus: "guest", user: null, error: (error as Error).message });
+      return;
+    }
+
+    if (!user) {
+      set({
+        authStatus: "guest",
+        user: null,
+        resumes: [],
+        activeImports: [],
+        failedImports: [],
+        versions: [],
+        importWarningsByResumeId: {},
+        activeResumeId: null,
+        lockVersion: 0,
+      });
+      return;
+    }
+
+    set({ authStatus: "authenticated", user, error: null });
+    try {
+      await get().listResumes();
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 401) {
+        set({ authStatus: "guest", user: null, error: error.message });
+        return;
+      }
+      set({ error: (error as Error).message });
     }
   },
 
@@ -305,6 +508,8 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   },
 
   logout: async () => {
+    const currentUserId = get().user?.id;
+    if (currentUserId) clearLocalResumeDraftsForUser(currentUserId);
     await api.logout();
     set({
       authStatus: "guest",
@@ -421,7 +626,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
 
   loadResume: async (id) => {
     const { resume } = await api.getResume(id);
-    set({ versions: [], ...applyResume(resume) });
+    set({ versions: [], ...applyResumeWithLocalDraft(resume, get().user?.id, get()) });
   },
 
   renameResume: async (id, title) => {
@@ -493,15 +698,23 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       set({ saveStatus: "saving", error: null });
 
       try {
-        const dataChanged = snapshot.markdown !== resumeDocumentToMarkdown(snapshot.data);
-        const { resume } = await api.updateResume(snapshot.activeResumeId, {
+        const nextData = typeof snapshot.editorContent === "string"
+          ? snapshot.data
+          : resumeDocumentFromEditorDocument(snapshot.editorContent, snapshot.data);
+        let nextStyle = editorSettingsToStyle(snapshot.settings, snapshot.style);
+        if (typeof snapshot.editorContent !== "string") {
+          const avatar = editorDocumentUserAvatar(snapshot.editorContent);
+          if (avatar) {
+            nextStyle = withResumePresentationAvatarSize(nextStyle, avatar.size);
+          }
+        }
+        const response = await api.updateResume(snapshot.activeResumeId, {
           title: snapshot.title,
           base_lock_version: snapshot.lockVersion,
-          ...(dataChanged
-            ? { data: resumeDocumentFromMarkdown(snapshot.markdown, snapshot.data) }
-            : {}),
-          style: editorSettingsToStyle(snapshot.settings, snapshot.style),
+          data: nextData,
+          style: nextStyle,
         });
+        const { resume } = response;
         set((current) => {
           const resumes = mergeResumeSummary(current.resumes, resume);
           if (current.activeResumeId !== snapshot.activeResumeId) return { resumes };
@@ -660,9 +873,10 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   setEditorContent: (editorContent) =>
     set((state) => {
       if (JSON.stringify(editorContent) === JSON.stringify(state.editorContent)) return {};
+      const canonical = stripTemplateProjectionFromEditorDocument(editorContent, state.data);
       return {
         editorContent,
-        markdown: editorDocumentToMarkdown(editorContent),
+        markdown: editorDocumentToMarkdown(canonical),
         dirty: true,
         editVersion: state.editVersion + 1,
         saveStatus: "idle",
@@ -687,4 +901,117 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       editVersion: state.editVersion + 1,
       saveStatus: "idle",
     })),
+  applyTemplate: async (templateId, editorDocument) => {
+    let state = get();
+    if (!state.activeResumeId) throw new Error("RESUME_NOT_FOUND");
+    if (state.versionOperationPending) throw new Error("RESUME_TEMPLATE_APPLY_PENDING");
+    const resumeId = state.activeResumeId;
+    const operationVersion = state.editVersion;
+    const operationId = ++templateOperationSequence;
+    const nextData = resumeDocumentFromEditorDocument(editorDocument, state.data);
+    set({ saveStatus: "saving", versionOperationPending: true, error: null });
+    try {
+      const response = await api.applyResumeTemplate(resumeId, {
+        template_id: templateId,
+        base_lock_version: state.lockVersion,
+        title: state.title,
+        data: nextData,
+      });
+      const { resume } = response;
+      state = get();
+      if (operationId !== templateOperationSequence) return;
+      if (state.activeResumeId !== resumeId) {
+        set({ saveStatus: "idle", versionOperationPending: false });
+        return;
+      }
+      if (state.editVersion !== operationVersion) {
+        const latestData = typeof state.editorContent === "string"
+          ? state.data
+          : resumeDocumentFromEditorDocument(state.editorContent, state.data);
+
+        // The response plan belongs to the data submitted by this request. If
+        // the editor changed while the request was in flight, applying that
+        // plan to the newer local tree would make a stale server decision look
+        // current (and can silently place newly added sections incorrectly).
+        // Keep the user's current projection untouched, retain dirty state,
+        // and let the normal autosave submit the newer data so the next
+        // response carries a plan for the same snapshot.
+        set({
+          // The card is the last persisted server snapshot; its plan still
+          // matches resume.data and must not be paired with latestData.
+          resumes: mergeResumeSummary(state.resumes, resume),
+          lockVersion: resume.lock_version,
+          data: latestData,
+          style: resume.style,
+          editorContent: state.editorContent,
+          // Preserve local presentation edits as well. The follow-up save
+          // merges these settings into the switched template snapshot.
+          settings: state.settings,
+          dirty: true,
+          saveStatus: "idle",
+          versionOperationPending: false,
+          error: null,
+        });
+        return;
+      }
+      set({
+        resumes: mergeResumeSummary(state.resumes, resume),
+        ...applyResume(resume, state),
+        versionOperationPending: false,
+      });
+    } catch (error) {
+      state = get();
+      if (operationId !== templateOperationSequence) throw error;
+      // Do not attach an obsolete request failure to another resume, but always
+      // release the global operation lock owned by this request.
+      set(state.activeResumeId === resumeId && state.editVersion === operationVersion
+        ? { saveStatus: "error", versionOperationPending: false, error: (error as Error).message }
+        : { saveStatus: "idle", versionOperationPending: false });
+      throw error;
+    }
+  },
+  setSectionSemanticKind: (sectionId, semanticKind, source = "user", confidence = null) =>
+    set((state) => {
+      return {
+        data: {
+          ...state.data,
+          sections: state.data.sections.map((section) => (
+            section.node_id === sectionId
+              ? {
+                ...section,
+                semantic_kind: semanticKind,
+              }
+              : section
+          )),
+        },
+        dirty: true,
+        editVersion: state.editVersion + 1,
+        saveStatus: "idle" as SaveStatus,
+      };
+    }),
 }));
+
+useResumeStore.subscribe((state, previous) => {
+  const draftChanged = state.user?.id !== previous.user?.id
+    || state.activeResumeId !== previous.activeResumeId
+    || state.lockVersion !== previous.lockVersion
+    || state.title !== previous.title
+    || state.markdown !== previous.markdown
+    || state.editorContent !== previous.editorContent
+    || state.settings !== previous.settings
+    || state.editVersion !== previous.editVersion
+    || state.dirty !== previous.dirty;
+  if (!draftChanged) return;
+
+  if (state.dirty) scheduleLocalResumeDraft(state);
+  if (previous.user && previous.activeResumeId
+    && (!state.dirty
+      || state.user?.id !== previous.user.id
+      || state.activeResumeId !== previous.activeResumeId)) {
+    clearLocalResumeDraft(previous.user.id, previous.activeResumeId);
+  }
+});
+
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", flushPendingLocalResumeDraft);
+}
