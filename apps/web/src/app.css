@@ -4237,34 +4237,39 @@ select:not([data-slot]):focus-visible,
   line-height: 1.55;
 }
 
-/* 资料上传弹窗（16C） */
-.dataset-dialog-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: grid;
-  place-items: center;
-  background: var(--scrim);
-  padding: 20px;
+/* 资料上传弹窗规范化：大尺寸、纯净无多余线框、清晰高对比度文字 */
+.dataset-upload-dialog {
+  width: min(580px, calc(100vw - 32px)) !important;
+  max-width: none !important;
+  padding: 28px !important;
+  border: 1px solid var(--ui-border) !important;
+  border-radius: var(--ui-radius-xl) !important;
+  background: var(--ui-surface) !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.16) !important;
+  gap: 20px !important;
 }
 
-.dataset-dialog {
-  position: relative;
-  width: min(600px, 100%);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-xl);
-  background: var(--surface-raised);
-  padding: 28px;
-  box-shadow: var(--shadow-lg);
+.dataset-upload-dialog-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  text-align: left;
 }
 
-.dataset-dialog h2 { margin: 0 0 6px; font-size: 20px; }
-.dataset-dialog > p { margin: 0 0 18px; color: var(--muted); font-size: 13px; }
+.dataset-upload-dialog-title {
+  margin: 0 !important;
+  font-size: var(--ui-text-xl) !important;
+  font-weight: 600 !important;
+  color: var(--ui-foreground) !important;
+  letter-spacing: -0.015em;
+}
 
 .dataset-dialog-close {
-  position: absolute;
-  top: 18px;
-  right: 18px;
+  position: static;
+  flex-shrink: 0;
+  margin: 0 !important;
   display: grid;
   width: 32px;
   height: 32px;
@@ -4272,25 +4277,51 @@ select:not([data-slot]):focus-visible,
   border: 0;
   border-radius: 50%;
   background: transparent;
-  color: var(--muted);
+  color: var(--ui-text-muted);
   cursor: pointer;
+  transition: color var(--ui-duration-fast), background-color var(--ui-duration-fast);
 }
 
-.dataset-dialog-close:hover { background: var(--surface-subtle); color: var(--ink); }
-.dataset-dialog-close:disabled { cursor: not-allowed; opacity: .5; }
+.dataset-dialog-close:hover {
+  background: var(--ui-surface-muted);
+  color: var(--ui-foreground);
+}
 
-/* 资料页只保留一个上传表面；共享 FileUpload 的其他消费方不受影响。 */
+.dataset-dialog-close > svg {
+  transform: translateY(-1px);
+}
+
+.dataset-dialog-close:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+.dataset-upload-dialog .dataset-file-upload.file-upload {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* 资料页上传区域：无外层多余深底色与厚重边框，干净清爽 */
 .datasets-page .dataset-file-upload.file-upload {
   overflow: hidden;
-  border: 1px dashed var(--ui-border-strong);
+  border: 1.5px dashed var(--ui-border);
   border-radius: var(--ui-radius-lg);
-  background: var(--ui-surface-subtle);
+  background: transparent;
   padding: 0;
+  transition: border-color var(--ui-duration-fast), background-color var(--ui-duration-fast);
+}
+
+.datasets-page .dataset-file-upload.file-upload:hover {
+  border-color: var(--ui-accent);
+  background: var(--ui-surface-muted);
 }
 
 .datasets-page .dataset-file-upload .file-upload-picker,
 .datasets-page .dataset-file-upload .file-upload-dropzone {
-  min-height: 184px;
+  min-height: 190px;
 }
 
 .datasets-page .dataset-file-upload .file-upload-dropzone {
@@ -4302,8 +4333,8 @@ select:not([data-slot]):focus-visible,
 }
 
 .datasets-page .dataset-file-upload .file-upload-icon {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   margin: 0 0 var(--ui-space-1);
   border: 0;
   border-radius: var(--ui-radius-md);
@@ -4315,9 +4346,22 @@ select:not([data-slot]):focus-visible,
 .datasets-page .dataset-file-upload .file-upload-icon::before,
 .datasets-page .dataset-file-upload .file-upload-icon::after { display: none; }
 
-.datasets-page .dataset-file-upload .file-upload-icon svg { width: 20px; height: 20px; }
+.datasets-page .dataset-file-upload .file-upload-icon svg { width: 22px; height: 22px; }
 
-.datasets-page .dataset-file-upload .file-upload-copy { gap: var(--ui-space-1); }
+.datasets-page .dataset-file-upload .file-upload-copy {
+  gap: var(--ui-space-1);
+}
+
+.datasets-page .dataset-file-upload .file-upload-copy strong {
+  color: var(--ui-foreground);
+  font-size: var(--ui-text-sm);
+  font-weight: 600;
+}
+
+.datasets-page .dataset-file-upload .file-upload-copy small {
+  color: var(--ui-text-muted);
+  font-size: var(--ui-text-xs);
+}
 
 .datasets-page .dataset-file-upload .file-upload-browse {
   min-height: 0;
@@ -4327,7 +4371,13 @@ select:not([data-slot]):focus-visible,
   background: transparent;
   padding: 0;
   color: var(--ui-accent);
+  font-size: var(--ui-text-xs);
+  font-weight: 600;
   box-shadow: none;
+}
+
+.datasets-page .dataset-file-upload .file-upload-browse:hover {
+  text-decoration: underline;
 }
 
 .datasets-page .dataset-file-upload.is-disabled .file-upload-dropzone {
@@ -4440,7 +4490,723 @@ select:not([data-slot]):focus-visible,
 }
 
 .datasets-body {
-  padding: 20px clamp(24px, 4vw, 48px) 48px;
+  padding: 12px clamp(24px, 4vw, 48px) 48px;
+}
+
+/* 资料库主体文件夹板块（位于主体核心位置） */
+.dataset-folders-section {
+  margin-bottom: 32px;
+}
+
+.dataset-folders-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.dataset-folders-header-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.dataset-folders-header-title h2 {
+  font-size: var(--ui-text-md);
+  font-weight: 700;
+  color: var(--ui-foreground);
+  margin: 0;
+}
+
+.dataset-folders-header-count {
+  font-size: var(--ui-text-xs);
+  color: var(--ui-text-muted);
+}
+
+.dataset-folders-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(164px, 1fr));
+  gap: 20px 16px;
+}
+
+/* macOS 原生访达风格文件夹卡片 */
+.macos-folder-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 12px 14px;
+  border-radius: var(--ui-radius-lg);
+  background: transparent;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 文件夹图标区域：仅放大图标本身，避免连带外框和底色 */
+.macos-folder-graphic {
+  position: relative;
+  width: 125px;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+  transform-origin: center bottom;
+  transition: transform var(--ui-duration-fast) var(--ui-ease-standard);
+}
+
+.macos-folder-item:hover .macos-folder-graphic {
+  transform: scale(1.06);
+}
+
+.macos-folder-svg-back {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 1px 2px rgba(15, 23, 42, 0.08));
+}
+
+.macos-folder-svg-front {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 3;
+  filter: drop-shadow(0 4px 10px rgba(50, 145, 240, 0.22));
+}
+
+/* 纸质卡片装饰 */
+.macos-folder-papers {
+  position: absolute;
+  top: 8px;
+  left: 18px;
+  right: 18px;
+  height: 60px;
+  z-index: 2;
+  pointer-events: none;
+  transition: transform var(--ui-duration-base) var(--ui-ease-standard);
+}
+
+.macos-folder-item:hover .macos-folder-papers,
+.macos-folder-card:hover .macos-folder-papers {
+  transform: translateY(-9px);
+}
+
+.macos-paper-sheet {
+  position: absolute;
+  border-radius: var(--ui-radius-xs);
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.macos-paper-sheet.is-front {
+  inset: 0 4px;
+  z-index: 2;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transform: rotate(-2deg);
+}
+
+.macos-paper-sheet.is-back {
+  inset: -4px 10px 4px;
+  z-index: 1;
+  background: #f8fafc;
+  opacity: 0.9;
+  transform: rotate(2.5deg);
+}
+
+.macos-paper-line {
+  height: 3px;
+  border-radius: 2px;
+  background: #cbd5e1;
+}
+
+.macos-paper-line.is-long { width: 75%; }
+.macos-paper-line.is-medium { width: 55%; }
+.macos-paper-line.is-short { width: 35%; }
+
+/* 下方操作框：名称与操作（悬停时同步放大） */
+.macos-folder-caption {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  text-align: center;
+}
+
+.macos-folder-item:hover .macos-folder-caption {
+  transform: scale(1.06);
+}
+
+.macos-folder-name {
+  font-size: var(--ui-text-sm);
+  font-weight: 600;
+  color: var(--ui-foreground);
+  max-width: 148px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.macos-folder-badge {
+  font-size: var(--ui-text-xs);
+  color: var(--ui-text-muted);
+}
+
+/* 文件夹卡片右上角操作栏：仅悬停或展开时展示 */
+.macos-folder-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--ui-duration-fast) var(--ui-ease-standard);
+}
+
+.macos-folder-item:hover .macos-folder-actions,
+.macos-folder-actions.is-active,
+.macos-folder-actions:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 右上角纯三个点按钮：去除外层圆圈底色与边框 */
+.macos-folder-menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+  padding: 0;
+  box-shadow: none;
+  transition: color var(--ui-duration-fast) var(--ui-ease-standard),
+              transform var(--ui-duration-fast) var(--ui-ease-standard);
+}
+
+.macos-folder-menu-btn:hover,
+.macos-folder-actions.is-active .macos-folder-menu-btn {
+  background: transparent;
+  color: var(--ui-foreground);
+  border-color: transparent;
+  transform: scale(1.15);
+}
+
+.macos-folder-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  left: auto;
+  transform: none;
+  z-index: 20;
+}
+
+/* 新建文件夹卡片 */
+.macos-create-folder-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 12px 14px;
+  border-radius: var(--ui-radius-lg);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  user-select: none;
+  color: var(--ui-text-muted);
+  transition: color var(--ui-duration-fast) var(--ui-ease-standard);
+}
+
+.macos-create-folder-item:hover {
+  color: var(--ui-accent);
+}
+
+.macos-create-folder-icon-wrap {
+  width: 125px;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: inherit;
+  margin-bottom: 10px;
+  transform-origin: center bottom;
+  transition: transform var(--ui-duration-fast) var(--ui-ease-standard);
+}
+
+.macos-create-folder-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.macos-create-folder-bg {
+  fill: color-mix(in srgb, var(--ui-accent) 7%, transparent);
+  stroke: color-mix(in srgb, var(--ui-accent) 26%, transparent);
+  stroke-width: 1.5px;
+  stroke-dasharray: 4 3.5;
+  transition: fill var(--ui-duration-fast) var(--ui-ease-standard),
+              stroke var(--ui-duration-fast) var(--ui-ease-standard);
+}
+
+.macos-create-folder-plus {
+  stroke: color-mix(in srgb, var(--ui-accent) 72%, var(--ui-text-muted));
+  transition: stroke var(--ui-duration-fast) var(--ui-ease-standard);
+}
+
+.macos-create-folder-item:hover .macos-create-folder-bg {
+  fill: color-mix(in srgb, var(--ui-accent) 14%, transparent);
+  stroke: var(--ui-accent);
+}
+
+.macos-create-folder-item:hover .macos-create-folder-plus {
+  stroke: var(--ui-accent);
+}
+
+.macos-create-folder-item:hover .macos-create-folder-icon-wrap {
+  transform: scale(1.06);
+}
+
+.macos-create-folder-caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  text-align: center;
+  transform-origin: center top;
+  transition: transform var(--ui-duration-fast) var(--ui-ease-standard);
+}
+
+.macos-create-folder-item:hover .macos-create-folder-caption {
+  transform: scale(1.06);
+}
+
+.macos-create-label {
+  font-size: var(--ui-text-sm);
+  font-weight: 600;
+  color: inherit;
+}
+
+/* 统一网格布局（文件夹与文件同级） */
+.dataset-unified-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(164px, 1fr));
+  gap: 20px 16px;
+  align-items: start;
+}
+
+/* 批量操作控制条 */
+.dataset-list-header.dataset-batch-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  border-bottom: none;
+  padding: 0 4px;
+  margin-bottom: 12px;
+}
+
+.dataset-batch-bar .dataset-batch-count {
+  font-size: var(--ui-text-xs);
+  color: var(--ui-text-muted);
+}
+
+/* macOS 文件卡片 */
+.macos-file-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 12px 14px;
+  border-radius: var(--ui-radius-lg);
+  background: transparent;
+  user-select: none;
+  position: relative;
+  cursor: default;
+  text-align: center;
+}
+
+.macos-file-item.is-clickable { cursor: pointer; }
+.macos-file-item.is-clickable:focus-visible {
+  outline: 2px solid var(--ui-ring);
+  outline-offset: -2px;
+}
+
+.macos-file-graphic {
+  position: relative;
+  width: 140px;
+  height: 154px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 14px;
+  transition: transform var(--ui-duration-fast) var(--ui-ease-standard);
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .macos-file-item:has(.dataset-paper-thumbnail:hover, .dataset-document-icon:hover) .macos-file-graphic,
+  .macos-file-item:has(.dataset-paper-thumbnail:hover, .dataset-document-icon:hover) .macos-file-name,
+  .macos-file-item:has(.dataset-paper-thumbnail:hover, .dataset-document-icon:hover) .dataset-file-date {
+    transform: scale(1.06);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .macos-file-graphic,
+  .datasets-page .dataset-name.macos-file-name,
+  .dataset-file-date { transition: none; }
+}
+
+.dataset-document-icon {
+  width: 82px;
+  height: 96px;
+  overflow: visible;
+  filter: drop-shadow(0 3px 4px rgb(60 120 165 / 12%));
+}
+
+.dataset-document-format {
+  position: absolute;
+  pointer-events: none;
+  top: 80px;
+  left: 0;
+  width: 100%;
+  color: #477c9f;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 16px;
+  letter-spacing: 0.05em;
+}
+
+/* 底部操作与信息框 */
+.macos-file-caption {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+  transform-origin: center top;
+  transition: transform var(--ui-duration-fast) var(--ui-ease-standard);
+}
+
+.datasets-page .dataset-name.macos-file-name {
+  font-size: var(--ui-text-sm);
+  font-weight: 600;
+  color: var(--ui-foreground);
+  display: block;
+  width: 100%;
+  max-width: 180px;
+  min-height: 20px;
+  line-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: transform var(--ui-duration-fast) var(--ui-ease-standard);
+}
+
+.dataset-file-date {
+  display: block;
+  margin-top: 4px;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-text-xs);
+  line-height: 20px;
+  transition: transform var(--ui-duration-fast) var(--ui-ease-standard);
+}
+
+.macos-file-subrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 22px;
+}
+
+.dataset-row-actions.macos-file-actions {
+  position: absolute;
+  top: 10px;
+  left: calc(50% + 68px);
+  right: auto;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  justify-content: center;
+  display: flex;
+  align-items: center;
+}
+
+.dataset-row-actions.macos-file-actions .macos-file-menu-btn {
+  width: 28px;
+  height: 28px;
+}
+
+.macos-file-menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--ui-radius-full);
+  border: none;
+  background: transparent;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--ui-duration-fast), background-color var(--ui-duration-fast);
+}
+
+.macos-file-item:hover .macos-file-menu-btn,
+.macos-file-actions:focus-within .macos-file-menu-btn {
+  opacity: 1;
+}
+
+.macos-file-menu-btn:hover {
+  background: var(--ui-surface-muted);
+  color: var(--ui-foreground);
+}
+
+.macos-file-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  left: auto;
+  transform: none;
+  z-index: 20;
+}
+
+.dataset-floating-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-text-sm);
+  white-space: nowrap;
+}
+
+/* 全屏拖拽上传遮罩 */
+.dataset-page-drag-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
+.dataset-page-drag-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 36px 48px;
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-surface);
+  border: 2px dashed var(--ui-accent);
+  box-shadow: var(--ui-shadow-md);
+  text-align: center;
+}
+
+.dataset-page-drag-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--ui-radius-full);
+  background: var(--ui-accent-subtle);
+  color: var(--ui-accent);
+}
+
+.dataset-page-drag-content h3 {
+  font-size: var(--ui-text-lg);
+  font-weight: 700;
+  color: var(--ui-foreground);
+  margin: 0;
+}
+
+.dataset-page-drag-content p {
+  font-size: var(--ui-text-sm);
+  color: var(--ui-text-muted);
+  margin: 0;
+}
+
+/* 正在上传悬浮条 */
+.dataset-uploading-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  margin-bottom: 16px;
+  border-radius: var(--ui-radius-full);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  box-shadow: var(--ui-shadow-xs);
+  font-size: var(--ui-text-xs);
+  font-weight: 500;
+  color: var(--ui-foreground);
+  width: fit-content;
+}
+
+.dataset-uploading-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--ui-border);
+  border-top-color: var(--ui-accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* 上传弹窗目标分类选择 */
+.dataset-upload-target-select {
+  margin-bottom: 16px;
+  text-align: left;
+}
+
+/* 列表板块标题 */
+.dataset-list-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.dataset-list-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.dataset-list-section-title h2 {
+  font-size: var(--ui-text-md);
+  font-weight: 700;
+  color: var(--ui-foreground);
+  margin: 0;
+}
+
+.dataset-list-section-count {
+  font-size: var(--ui-text-xs);
+  color: var(--ui-text-muted);
+}
+
+.dataset-folder-breadcrumb {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 30px 0;
+  margin-bottom: 14px;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.dataset-folder-back {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: fit-content;
+  align-items: center;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--ui-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.dataset-folder-back svg { width: 14px; height: 14px; }
+.dataset-folder-back:hover { color: var(--ui-foreground); }
+.dataset-folder-back:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 4px;
+  border-radius: var(--ui-radius-sm);
+}
+.dataset-folder-breadcrumb > span:last-child {
+  overflow: hidden;
+  color: var(--ui-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .dataset-folder-breadcrumb {
+    padding: 14px 16px 0;
+    margin-bottom: 18px;
+  }
+}
+
+.dataset-move-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 2px 0;
+}
+
+.dataset-move-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--ui-radius-md);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface);
+  color: var(--ui-foreground);
+  font-size: var(--ui-text-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--ui-duration-fast), background-color var(--ui-duration-fast);
+}
+
+.dataset-move-option:hover {
+  background: var(--ui-surface-muted);
+  border-color: var(--ui-border-strong);
+}
+
+.dataset-move-option.is-selected {
+  border-color: var(--ui-foreground);
+  background: var(--ui-surface-muted);
+  font-weight: 600;
+}
+
+.dataset-move-option-icon {
+  color: var(--ui-text-muted);
+  flex-shrink: 0;
+}
+
+.dataset-move-option.is-selected .dataset-move-option-icon {
+  color: var(--ui-foreground);
+}
+
+.dataset-move-option-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dataset-move-option-count {
+  font-size: var(--ui-text-xs);
+  color: var(--ui-text-muted);
+}
+
+.dataset-move-check {
+  color: var(--ui-foreground);
+  flex-shrink: 0;
 }
 
 .dataset-list-card {
@@ -4574,6 +5340,12 @@ select:not([data-slot]):focus-visible,
 
 .datasets-page .dataset-status.is-processing { color: var(--action-blue); }
 .datasets-page .dataset-status.is-succeeded { color: var(--success); }
+.datasets-page .macos-file-item .dataset-status.is-succeeded {
+  color: var(--ui-text-muted);
+  font-size: var(--ui-text-xs);
+  font-weight: 400;
+}
+.macos-file-item .dataset-status.is-succeeded .dataset-status-mark { display: none; }
 .datasets-page .dataset-status.is-failed { color: var(--error); }
 .datasets-page .dataset-status.is-processing .dataset-status-mark { animation: dataset-status-pulse 1.4s ease-in-out infinite; }
 
@@ -4649,7 +5421,42 @@ select:not([data-slot]):focus-visible,
 .dataset-action-menu button.is-danger { color: var(--ui-destructive); }
 
 .dataset-action-dialog {
-  width: min(440px, calc(100vw - 32px));
+  width: min(460px, calc(100vw - 32px)) !important;
+  max-width: none !important;
+  padding: 24px !important;
+  border: 1px solid var(--ui-border) !important;
+  border-radius: var(--ui-radius-xl) !important;
+  background: var(--ui-surface) !important;
+  color: var(--ui-foreground) !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.16) !important;
+}
+
+.dataset-action-dialog [data-slot="dialog-title"] {
+  color: var(--ui-foreground) !important;
+  font-size: var(--ui-text-lg) !important;
+  font-weight: 600 !important;
+}
+
+.dataset-action-dialog [data-slot="dialog-description"] {
+  color: var(--ui-text-muted) !important;
+  font-size: var(--ui-text-sm) !important;
+}
+
+.dataset-action-dialog label {
+  color: var(--ui-text-secondary) !important;
+  font-size: var(--ui-text-xs) !important;
+  font-weight: 600 !important;
+}
+
+.dataset-action-dialog input {
+  background: var(--ui-surface) !important;
+  border-color: var(--ui-border) !important;
+  color: var(--ui-foreground) !important;
+}
+
+.dataset-action-dialog input::placeholder {
+  color: var(--ui-text-muted) !important;
+  opacity: 1 !important;
 }
 
 .dataset-rename-field {
@@ -4741,4 +5548,166 @@ select:not([data-slot]):focus-visible,
 
 @media (prefers-reduced-motion: reduce) {
   .datasets-page .dataset-status.is-processing .dataset-status-mark { animation: none; }
+  .datasets-floating-bar { animation: none; transition: none; }
 }
+
+/* 资料库底部悬浮批量操作岛 (Floating Action Bar) */
+.datasets-floating-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%) translateY(20px);
+  z-index: 40;
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    transform var(--ui-duration-normal) var(--ui-ease-spring),
+    opacity var(--ui-duration-fast) var(--ui-ease-standard);
+}
+
+.datasets-floating-bar.is-active {
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+  opacity: 1;
+}
+
+.datasets-floating-bar-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px 8px 18px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-full);
+  box-shadow:
+    0 12px 32px -4px rgba(0, 0, 0, 0.14),
+    0 4px 12px -2px rgba(0, 0, 0, 0.08),
+    0 0 0 1px rgba(0, 0, 0, 0.04);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.datasets-floating-bar-count {
+  font-size: var(--ui-text-sm);
+  color: var(--ui-text-secondary);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.datasets-floating-bar-count strong {
+  color: var(--ui-foreground);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  margin: 0 2px;
+}
+
+.datasets-floating-bar-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--ui-border);
+  flex-shrink: 0;
+}
+
+.datasets-floating-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.datasets-floating-action-btn {
+  height: 32px;
+  padding: 0 12px;
+  font-size: var(--ui-text-sm);
+  font-weight: 500;
+  border-radius: var(--ui-radius-full);
+}
+
+.datasets-floating-action-btn.is-danger {
+  color: var(--ui-destructive);
+}
+
+.datasets-floating-action-btn.is-danger:hover:not(:disabled) {
+  background: var(--ui-destructive-subtle);
+  color: var(--ui-destructive);
+}
+
+.datasets-floating-bar-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--ui-text-muted);
+  border-radius: var(--ui-radius-full);
+  cursor: pointer;
+  transition: color var(--ui-duration-fast), background-color var(--ui-duration-fast);
+}
+
+.datasets-floating-bar-close:hover {
+  color: var(--ui-foreground);
+  background: var(--ui-surface-muted);
+}
+
+/* Real document excerpts, scaled down as a paper thumbnail. */
+.dataset-thumbnail-host {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+.dataset-paper-thumbnail {
+  width: 124px;
+  height: 154px;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: 3px;
+  background: var(--ui-surface);
+  box-shadow: 0 2px 5px rgb(15 18 22 / 10%);
+  pointer-events: auto;
+}
+
+.dataset-paper-content {
+  width: 310px;
+  padding: 28px;
+  transform: scale(.4);
+  transform-origin: top left;
+  color: var(--ui-foreground);
+  font-family: Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.75;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.dataset-paper-content > :first-child { margin-top: 0; }
+.dataset-paper-content h1 { font-size: 24px; line-height: 1.3; margin: 0 0 12px; }
+.dataset-paper-content h2 { font-size: 18px; line-height: 1.4; margin: 14px 0 8px; }
+.dataset-paper-content h3 { font-size: 15px; margin: 12px 0 6px; }
+.dataset-paper-content p { margin: 0 0 8px; }
+.dataset-paper-content ul, .dataset-paper-content ol { padding-left: 18px; }
+.dataset-paper-content pre { white-space: pre-wrap; background: var(--ui-surface-muted); padding: 8px; }
+.dataset-paper-content table { width: 100%; border-collapse: collapse; font-size: 10px; }
+.dataset-paper-content th, .dataset-paper-content td { border: 1px solid var(--ui-border); padding: 3px; }
+.dataset-paper-content blockquote { border-left: 2px solid var(--ui-border-strong); margin-left: 0; padding-left: 10px; }
+.dataset-paper-content.is-plain { white-space: pre-wrap; }
+
+.dataset-file-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  padding: 2px 4px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-text-xs);
+  cursor: pointer;
+}
+.dataset-file-retry:hover { color: var(--ui-foreground); background: var(--ui-surface-muted); }
+.dataset-file-retry:disabled { opacity: .5; cursor: default; }
+
+.dataset-replacement-feedback { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; color: var(--ui-text-muted); font-size: 12px; }
+.dataset-replacement-feedback button { text-decoration: underline; }

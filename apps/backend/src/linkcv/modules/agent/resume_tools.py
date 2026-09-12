@@ -13,6 +13,7 @@ from linkcv.core.errors import ApiError
 from linkcv.domain.resume import CanonicalResumeDocument
 from linkcv.modules.datasets.models import UserDataset
 from linkcv.modules.datasets.routes import read_dataset_markdown
+from linkcv.services.dataset_content_service import content_key, source_version
 from linkcv.modules.job_descriptions.models import JobDescription
 from linkcv.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask, Resume
 
@@ -557,24 +558,24 @@ def search_materials(
             .limit(20)
         ).all()
         for dataset, task in rows:
-            if len(sources) >= limit or not task.converted_object_name:
+            if len(sources) >= limit or not (dataset.content_object_name or task.converted_object_name):
                 continue
-            if not task.converted_object_name.startswith(
+            if not (dataset.content_object_name or task.converted_object_name).startswith(
                 f"users/{user_id}/datasets/converted/"
             ):
                 continue
             try:
                 content = read_dataset_markdown(
-                    storage, task.converted_object_name, max_bytes
+                    storage, content_key(dataset, task), max_bytes
                 )
             except Exception:
                 continue
             add(
-                f"dataset:{dataset.id}:{dataset.sha256}",
+                f"dataset:{dataset.id}:{source_version(dataset)}",
                 "dataset",
                 dataset.file_name,
                 content,
-                dataset.sha256,
+                source_version(dataset),
             )
     return sources
 
@@ -718,7 +719,7 @@ def validate_source_ids(
                     UserDataset.id == int(raw_id), UserDataset.user_id == user_id
                 )
             )
-            valid = item is not None and item.sha256 == version
+            valid = item is not None and source_version(item) == version
             title = item.file_name if item else ""
         else:
             valid, title = False, ""
