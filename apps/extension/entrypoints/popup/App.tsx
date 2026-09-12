@@ -224,6 +224,7 @@ export default function App() {
       <section className="form-grid">
         <Field label="岗位名称 *" value={form.job_title ?? ""} onChange={(value) => updateField("job_title", value)} />
         <Field label="公司名称 *" value={form.company_name ?? ""} onChange={(value) => updateField("company_name", value)} />
+        <Field label="公司 Logo URL（可选）" type="url" value={form.logo_url ?? ""} onChange={(value) => updateField("logo_url", value)} />
         <div className="two-columns">
           <Field label="薪资" value={form.salary_text ?? ""} onChange={(value) => updateField("salary_text", value)} />
           <Field label="城市" value={form.work_city ?? ""} onChange={(value) => updateField("work_city", value)} />
@@ -253,11 +254,11 @@ export default function App() {
   );
 }
 
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function Field({ label, value, type = "text", onChange }: { label: string; value: string; type?: string; onChange: (value: string) => void }) {
   return (
     <label>
       <span>{label}</span>
-      <input value={value} onChange={(event) => onChange(event.target.value)} />
+      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} />
     </label>
   );
 }

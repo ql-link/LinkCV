@@ -4,6 +4,7 @@ import re
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -15,6 +16,23 @@ WorkMode = Literal["onsite", "hybrid", "remote"]
 SalaryPeriod = Literal["hour", "day", "month", "year"]
 SourceType = Literal["manual", "external_import"]
 Skill = Annotated[str, Field(max_length=100)]
+
+
+def _validate_optional_https_url(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    parsed = urlsplit(normalized)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise ValueError("URL must be an absolute HTTPS URL without credentials")
+    return normalized
 
 
 class JobDescriptionDraft(BaseModel):
@@ -93,6 +111,7 @@ class BrowserJobCapture(BaseModel):
 
     job_title: str | None = Field(default=None, max_length=1_000)
     company_name: str | None = Field(default=None, max_length=1_000)
+    logo_url: str | None = Field(default=None, max_length=2048)
     description_text: str | None = Field(default=None, max_length=200_000)
     skills: list[Skill] = Field(default_factory=list, max_length=100)
     employment_type_text: str | None = Field(default=None, max_length=100)
@@ -110,6 +129,11 @@ class BrowserJobCapture(BaseModel):
     company_tags: list[Skill] = Field(default_factory=list, max_length=30)
     recruiter_name: str | None = Field(default=None, max_length=100)
     recruiter_title: str | None = Field(default=None, max_length=100)
+
+    @field_validator("logo_url")
+    @classmethod
+    def validate_logo_url(cls, value: str | None) -> str | None:
+        return _validate_optional_https_url(value)
 
 
 class JobDescriptionImportRequest(BaseModel):
@@ -133,6 +157,7 @@ class JobDescriptionCreateRequest(BaseModel):
 
     job_title: str = Field(max_length=200)
     company_name: str = Field(max_length=200)
+    logo_url: str | None = Field(default=None, max_length=2048)
     employment_type: EmploymentType | None = None
     description: str = Field(default="", max_length=200_000)
     skills: list[Skill] = Field(default_factory=list, max_length=100)
@@ -196,6 +221,11 @@ class JobDescriptionCreateRequest(BaseModel):
             return None
         return value.strip() or None
 
+    @field_validator("logo_url")
+    @classmethod
+    def validate_logo_url(cls, value: str | None) -> str | None:
+        return _validate_optional_https_url(value)
+
     @field_validator("skills")
     @classmethod
     def normalize_skills(cls, values: list[str]) -> list[str]:
@@ -239,6 +269,7 @@ class JobDescriptionUpdateRequest(BaseModel):
 
     job_title: str | None = Field(default=None, max_length=200)
     company_name: str | None = Field(default=None, max_length=200)
+    logo_url: str | None = Field(default=None, max_length=2048)
     employment_type: EmploymentType | None = None
     description: str | None = Field(default=None, max_length=200_000)
     skills: list[Skill] | None = Field(default=None, max_length=100)
@@ -296,6 +327,11 @@ class JobDescriptionUpdateRequest(BaseModel):
             return None
         return value.strip() or None
 
+    @field_validator("logo_url")
+    @classmethod
+    def validate_logo_url(cls, value: str | None) -> str | None:
+        return _validate_optional_https_url(value)
+
     @field_validator("skills")
     @classmethod
     def normalize_skills(cls, values: list[str] | None) -> list[str] | None:
@@ -340,6 +376,7 @@ class JobDescriptionSummary(BaseModel):
     id: str
     job_title: str
     company_name: str
+    logo_url: str | None
     work_city: str | None
     salary_text: str | None
     skills: list[str]

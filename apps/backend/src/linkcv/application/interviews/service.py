@@ -7,7 +7,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import Literal
+from typing import Callable, Literal
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -220,6 +220,7 @@ def _job_snapshot(job: JobDescription) -> dict[str, object]:
     fields = (
         "job_title",
         "company_name",
+        "logo_url",
         "employment_type",
         "description",
         "skills",
@@ -1081,19 +1082,77 @@ def set_application_archived(
     )
 
 
-def delete_application(db: Session, user_id: int, application_id: int) -> None:
-    application = require_owned_application(db, user_id, application_id)
-    if application.archived_at is None:
+def delete_application(
+    db: Session,
+    user_id: int,
+    application_id: int,
+    *,
+    delete_asset_object: Callable[[str], None] | None = None,
+) -> None:
+    application = db.scalar(
+        select(JobApplication)
+        .where(
+            JobApplication.id == application_id,
+            JobApplication.user_id == user_id,
+        )
+        .with_for_update()
+    )
+    if application is None:
+        raise InterviewNotFound
+    is_terminated = application.lifecycle_status == "terminated"
+    if application.archived_at is None and not is_terminated:
         raise InterviewApplicationNotEmpty
+
+    session_ids = list(
+        db.scalars(
+            select(InterviewSession.id)
+            .where(InterviewSession.application_id == application.id)
+            .with_for_update()
+        )
+    )
+    if not is_terminated:
+        if session_ids:
+            raise InterviewApplicationNotEmpty
+    else:
+        assets = list(
+            db.scalars(
+                select(InterviewAsset)
+                .where(InterviewAsset.interview_session_id.in_(session_ids))
+                .with_for_update()
+            )
+        )
+        if assets and delete_asset_object is None:
+            raise InterviewApplicationNotEmpty
+        try:
+            if delete_asset_object is not None:
+                for asset in assets:
+                    delete_asset_object(asset.object_name)
+        except Exception:
+            db.rollback()
+            raise
+        db.execute(
+            delete(InterviewAsset).where(
+                InterviewAsset.interview_session_id.in_(session_ids)
+            )
+        )
+        db.execute(
+            delete(InterviewSession).where(
+                InterviewSession.application_id == application.id
+            )
+        )
+        db.execute(
+            delete(JobApplicationStage).where(
+                JobApplicationStage.application_id == application.id
+            )
+        )
+
     result = db.execute(
         delete(JobApplication).where(
             JobApplication.id == application.id,
             JobApplication.user_id == user_id,
-            JobApplication.archived_at.is_not(None),
-            ~exists(
-                select(InterviewSession.id).where(
-                    InterviewSession.application_id == JobApplication.id
-                )
+            or_(
+                JobApplication.archived_at.is_not(None),
+                JobApplication.lifecycle_status == "terminated",
             ),
         )
     )

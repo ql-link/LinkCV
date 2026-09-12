@@ -84,6 +84,7 @@ def build_job_description_from_capture(
         return JobDescriptionCreateRequest(
             job_title=job_title,
             company_name=company_name,
+            logo_url=capture.logo_url,
             employment_type=_employment_type(capture.employment_type_text),
             description=description,
             skills=_clean_skills(capture.skills),

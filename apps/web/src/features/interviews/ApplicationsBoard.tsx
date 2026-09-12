@@ -7,7 +7,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { ArrowRight, Ban, Eye, GripVertical, MoreHorizontal } from "lucide-react";
+import { ArrowRight, Ban, Clock3, Eye, GripVertical, MoreHorizontal, Trash2 } from "lucide-react";
 import type { JobApplicationSummary } from "@/api/client";
 import { careerApplicationPath, navigateTo } from "../../routing";
 import {
@@ -471,8 +471,67 @@ export function applicationCardStatusLabel(
   now = new Date(),
 ): string {
   const projection = projectApplicationProgress(application);
+  if (projection.columnKey === "ended") {
+    return `结束阶段：${projection.stageLabel}`;
+  }
   const scheduleLabel = applicationScheduleStatusLabel(application, { currentStageCompleted, now });
   return scheduleLabel ?? projection.supportingLabel ?? projection.statusLabel;
+}
+
+function formatBoardCardDateTime(value: string | null | undefined): string | null {
+  const timestamp = validApplicationTimestamp(value);
+  if (timestamp === null) return null;
+  const date = new Date(timestamp);
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function formatBoardCardScheduleRange(
+  startAt: string | null | undefined,
+  endAt: string | null | undefined,
+): string | null {
+  const startTimestamp = validApplicationTimestamp(startAt);
+  const endTimestamp = validApplicationTimestamp(endAt);
+  if (startTimestamp === null || endTimestamp === null || endTimestamp <= startTimestamp) return null;
+  const start = new Date(startTimestamp);
+  const end = new Date(endTimestamp);
+  const sameDay = start.getFullYear() === end.getFullYear()
+    && start.getMonth() === end.getMonth()
+    && start.getDate() === end.getDate();
+  const startLabel = formatBoardCardDateTime(startAt);
+  if (!startLabel) return null;
+  if (!sameDay) return `${startLabel}–${formatBoardCardDateTime(endAt)}`;
+  return `${startLabel}–${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}`;
+}
+
+/** Secondary time context shown under the board card's progress status. */
+export function applicationCardTimeLabel(application: JobApplicationSummary): string {
+  const projection = projectApplicationProgress(application);
+  if (projection.columnKey === "pending") {
+    const createdAt = formatBoardCardDateTime(application.created_at);
+    return createdAt ? `创建于 ${createdAt}` : "创建时间待确认";
+  }
+  if (projection.columnKey === "assessment" || projection.columnKey === "written_test") {
+    const deadline = formatBoardCardDateTime(application.next_session_end_at);
+    return deadline ? `截止 ${deadline}` : "尚未安排时间";
+  }
+  if (projection.columnKey === "interview") {
+    return formatBoardCardScheduleRange(
+      application.next_session_start_at,
+      application.next_session_end_at,
+    ) ?? "尚未安排时间";
+  }
+  if (projection.columnKey === "offer") {
+    const offerAt = application.current_stage?.stage_type === "offer"
+      ? formatBoardCardDateTime(application.current_stage.entered_at)
+      : null;
+    return offerAt ? `${offerAt} 获得 Offer` : "Offer 时间待确认";
+  }
+  if (projection.columnKey === "ended") {
+    const terminatedAt = formatBoardCardDateTime(application.terminated_at);
+    return terminatedAt ? `结束于 ${terminatedAt}` : "结束时间待确认";
+  }
+  const appliedAt = formatBoardCardDateTime(application.applied_at);
+  return appliedAt ? `投递于 ${appliedAt}` : "投递时间待确认";
 }
 
 type ApplicationAdvanceAction = {
@@ -528,6 +587,7 @@ export function ApplicationsBoard({
   onRequestMarkApplied,
   onRequestNextStage,
   onRequestTerminate,
+  onRequestDelete,
   onRequestCategory,
 }: {
   visibleApplications: JobApplicationSummary[];
@@ -542,6 +602,7 @@ export function ApplicationsBoard({
   onRequestMarkApplied: (application: JobApplicationSummary, targetColumnId?: string) => void;
   onRequestNextStage: (application: JobApplicationSummary, prefill: NextStagePrefill, targetColumnId?: string) => void;
   onRequestTerminate: (application: JobApplicationSummary) => void;
+  onRequestDelete: (application: JobApplicationSummary) => void;
   onRequestCategory: (application: JobApplicationSummary) => void;
 }) {
   const defaultColumnIds = buildBoardColumns(visibleApplications).map((column) => column.id);
@@ -587,6 +648,7 @@ export function ApplicationsBoard({
           onRequestMarkApplied={onRequestMarkApplied}
           onRequestNextStage={onRequestNextStage}
           onRequestTerminate={onRequestTerminate}
+          onRequestDelete={onRequestDelete}
           onRequestCategory={onRequestCategory}
         />
       </section>;
@@ -609,6 +671,7 @@ export function ProgressBoard({
   onRequestMarkApplied,
   onRequestNextStage,
   onRequestTerminate,
+  onRequestDelete,
   onRequestCategory,
 }: {
   applications: JobApplicationSummary[];
@@ -624,6 +687,7 @@ export function ProgressBoard({
   onRequestMarkApplied: (application: JobApplicationSummary, targetColumnId?: string) => void;
   onRequestNextStage: (application: JobApplicationSummary, prefill: NextStagePrefill, targetColumnId?: string) => void;
   onRequestTerminate: (application: JobApplicationSummary) => void;
+  onRequestDelete: (application: JobApplicationSummary) => void;
   onRequestCategory: (application: JobApplicationSummary) => void;
 }) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -929,6 +993,7 @@ export function ProgressBoard({
             onRequestMarkApplied={onRequestMarkApplied}
             onRequestNextStage={onRequestNextStage}
             onRequestTerminate={onRequestTerminate}
+            onRequestDelete={onRequestDelete}
             onRequestCategory={onRequestCategory}
             onOpen={(item) => {
               if (!suppressCardClickRef.current) navigateTo(careerApplicationPath(item.id));
@@ -967,6 +1032,7 @@ export function ProgressColumn({
   onRequestMarkApplied,
   onRequestNextStage,
   onRequestTerminate,
+  onRequestDelete,
   onRequestCategory,
   onOpen,
 }: {
@@ -996,6 +1062,7 @@ export function ProgressColumn({
   onRequestMarkApplied: (application: JobApplicationSummary) => void;
   onRequestNextStage: (application: JobApplicationSummary, prefill: NextStagePrefill) => void;
   onRequestTerminate: (application: JobApplicationSummary) => void;
+  onRequestDelete: (application: JobApplicationSummary) => void;
   onRequestCategory: (application: JobApplicationSummary) => void;
   onOpen: (item: JobApplicationSummary) => void;
 }) {
@@ -1061,6 +1128,7 @@ export function ProgressColumn({
           onRequestMarkApplied={onRequestMarkApplied}
           onRequestNextStage={onRequestNextStage}
           onRequestTerminate={onRequestTerminate}
+          onRequestDelete={onRequestDelete}
           onRequestCategory={onRequestCategory}
           onOpen={() => onOpen(item)}
         />
@@ -1141,6 +1209,7 @@ export function ProgressCard({
   onRequestMarkApplied,
   onRequestNextStage,
   onRequestTerminate,
+  onRequestDelete,
   onRequestCategory,
   onOpen,
 }: {
@@ -1160,10 +1229,12 @@ export function ProgressCard({
   onRequestMarkApplied?: (application: JobApplicationSummary) => void;
   onRequestNextStage?: (application: JobApplicationSummary, prefill: NextStagePrefill) => void;
   onRequestTerminate?: (application: JobApplicationSummary) => void;
+  onRequestDelete?: (application: JobApplicationSummary) => void;
   onRequestCategory?: (application: JobApplicationSummary) => void;
   onOpen: () => void;
 }) {
   const statusLabel = applicationCardStatusLabel(item, currentStageCompleted, now);
+  const timeLabel = applicationCardTimeLabel(item);
   const stageToneClass = projectApplicationProgressToneClass(item, {
     currentStageCompleted,
     now,
@@ -1242,12 +1313,19 @@ export function ProgressCard({
       onDragEnd={onDragEnd}
     >
       <button type="button" className="progress-card-open" aria-label={`查看 ${item.company_name_snapshot} ${item.job_title_snapshot} 求职进程`} onClick={handleCardOpen}>
-        <span className="progress-card-company-row">
-          <strong className="progress-card-company" title={item.company_name_snapshot}>{item.company_name_snapshot}</strong>
+        <span className="progress-card-main">
+          <CompanyLogo companyName={item.company_name_snapshot} logoUrl={item.company_logo_url} />
+          <span className="progress-card-copy">
+            <strong className="progress-card-company" title={item.company_name_snapshot}>{item.company_name_snapshot}</strong>
+            <strong className="progress-card-job-title" title={item.job_title_snapshot}>{item.job_title_snapshot}</strong>
+          </span>
         </span>
-        <strong className="progress-card-job-title" title={item.job_title_snapshot}>{item.job_title_snapshot}</strong>
         <span className="progress-card-footer">
           <span className={`progress-card-stage ${stageToneClass}`}>{statusLabel}</span>
+          <span className="progress-card-time">
+            <Clock3 aria-hidden="true" />
+            <span>{timeLabel}</span>
+          </span>
         </span>
       </button>
       <div
@@ -1316,9 +1394,41 @@ export function ProgressCard({
                 <Ban size={15} aria-hidden="true" />终止求职
               </button>
             )}
+            {columnKey === "ended" && (
+              <button
+                type="button"
+                role="menuitem"
+                className="is-danger"
+                disabled={isAdvancing}
+                onClick={() => runMenuAction(() => onRequestDelete?.(item))}
+              >
+                <Trash2 size={15} aria-hidden="true" />删除记录
+              </button>
+            )}
           </div>
         )}
       </div>
     </article>
+  );
+}
+
+function CompanyLogo({ companyName, logoUrl }: { companyName: string; logoUrl?: string | null }) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => setFailed(false), [logoUrl]);
+
+  if (!logoUrl || failed) {
+    return <span className="progress-card-logo is-fallback" aria-hidden="true">{companyName.trim().slice(0, 1) || "企"}</span>;
+  }
+  return (
+    <span className="progress-card-logo">
+      <img
+        src={logoUrl}
+        alt={`${companyName} Logo`}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
+      />
+    </span>
   );
 }

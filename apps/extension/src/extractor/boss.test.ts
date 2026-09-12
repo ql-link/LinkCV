@@ -19,6 +19,7 @@ describe("BOSS detail extraction", () => {
         </section>
         <aside class="sider-company">
           <div class="company-info">
+            <img class="company-logo" src="https://cdn.example.test/logos/example.png" />
             <h3><a title="示例科技">示例科技</a></h3>
             <ul class="company-tag-list"><li>B轮</li><li>100-499人</li><li>企业服务</li></ul>
           </div>
@@ -39,6 +40,7 @@ describe("BOSS detail extraction", () => {
     expect(result.capture).toMatchObject({
       job_title: "高级 Python 工程师",
       company_name: "示例科技",
+      logo_url: "https://cdn.example.test/logos/example.png",
       description_text: "职位描述\n负责服务端接口开发。\n任职要求\n熟悉 Python。",
       salary_text: "20-35K·14薪",
       work_city: "上海",
