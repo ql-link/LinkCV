@@ -747,11 +747,18 @@ describe("InterviewCenterPage API projections", () => {
 
     const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
     expect(within(calendar).getByText("作答时段")).toBeInTheDocument();
-    const windowEvent = within(calendar).getByRole("button", { name: /水滴.*笔试/ });
+    const waterdropEvents = within(calendar).getAllByRole("button", { name: /水滴.*笔试/ });
+    expect(waterdropEvents).toHaveLength(2);
+    const windowEvent = waterdropEvents.find((event) => !event.hasAttribute("data-draggable"));
+    const answerPlanEvent = waterdropEvents.find((event) => event.getAttribute("data-draggable") === "true");
+    expect(windowEvent).toBeDefined();
+    expect(answerPlanEvent).toBeDefined();
     expect(windowEvent).not.toHaveAttribute("data-draggable", "true");
-    expect(within(calendar).getByText("我的作答计划")).toBeInTheDocument();
+    expect(within(answerPlanEvent!).getByText("水滴")).toBeInTheDocument();
+    expect(within(answerPlanEvent!).getByText("笔试")).toBeInTheDocument();
+    expect(within(calendar).queryByText("我的作答计划")).not.toBeInTheDocument();
 
-    fireEvent.doubleClick(windowEvent);
+    fireEvent.doubleClick(windowEvent!);
     const dialog = await screen.findByRole("dialog", { name: "面试详情" });
     expect(within(dialog).getByText("仅作为个人时间安排，不会改变官方截止时间。")).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "保存作答计划" }));
@@ -803,7 +810,7 @@ describe("InterviewCenterPage API projections", () => {
     render(<InterviewCenterPage view="schedule" />);
 
     const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
-    fireEvent.doubleClick(within(calendar).getByRole("button", { name: /只读示例公司.*笔试/ }));
+    fireEvent.doubleClick(within(calendar).getByRole("button", { name: /只读示例公司.*笔试.*19:00.*21:00/ }));
     const dialog = await screen.findByRole("dialog", { name: "面试详情" });
     expect(within(dialog).getByRole("button", { name: "计划作答时间" })).toBeDisabled();
     expect(within(dialog).queryByRole("button", { name: "保存作答计划" })).not.toBeInTheDocument();
