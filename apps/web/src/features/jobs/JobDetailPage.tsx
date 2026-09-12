@@ -5,7 +5,7 @@ import { Button, ConfirmDialog, PageLoading } from "@/components/ui";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { careerApplicationPath, navigateTo, startCareerApplicationPath } from "../../routing";
 import { jobFormFromRecord, jobPayloadFromForm, type JobFormState } from "./jobFormModel";
-import { activeApplicationForJob, applicationOutcome, applicationsForJob, listAllJobApplications } from "./jobApplications";
+import { activeApplicationForJob, applicationsForJob, listAllJobApplications } from "./jobApplications";
 import "./jobs.css";
 
 export function JobDetailPage({ jobId }: { jobId: string }) {
@@ -114,26 +114,6 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
         </div>
         {error && <div className="job-error job-detail-error" role="alert">{error}</div>}
         <JobDocument job={job} editingField={editingField} busy={busy} onEdit={setEditingField} onSave={saveField} onSaveFields={saveFields} />
-        <section className="job-document-section job-career-section">
-          <header>
-            <div><p className="job-eyebrow">求职进程</p><h2>这个岗位的求职记录</h2></div>
-          </header>
-          {!applicationsLoaded ? (
-            <div className="job-career-empty"><p>暂时无法读取求职进程。为避免重复创建，请稍后刷新再试。</p></div>
-          ) : jobApplications.length ? (
-            <div className="job-application-history">
-              {jobApplications.map((application) => (
-                <article key={application.id}>
-                  <div><strong>{application.current_stage_label}</strong><span>{applicationOutcome(application)} · {formatTime(application.created_at)}</span></div>
-                  <span className={`job-status-badge${application.status !== "active" || application.archived_at ? " is-archived" : ""}`}>{applicationOutcome(application)}</span>
-                  <Button size="sm" variant="outline" onClick={() => navigateTo(careerApplicationPath(application.id))}>查看进程</Button>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="job-career-empty"><p>这个岗位还没有求职进程。开始后会保存当前岗位与简历版本快照，并进入筛选阶段。</p></div>
-          )}
-        </section>
       </article>
       {deleteOpen && <ConfirmDialog kind="delete" title={`永久删除「${job.job_title}」？`} description="删除后无法恢复，并会释放该来源，之后再次写入会创建新的岗位。" confirmLabel="永久删除" busyLabel="正在删除…" busy={busy} onCancel={() => setDeleteOpen(false)} onConfirm={deleteJob} />}
     </main>
