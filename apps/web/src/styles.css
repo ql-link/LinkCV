@@ -1004,7 +1004,7 @@ select:not([data-slot]):focus-visible {
   right: 7mm;
   bottom: 4mm;
   color: #9ca3af;
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--ui-font-sans);
   font-size: 7pt;
   line-height: 1;
 }
@@ -2358,7 +2358,7 @@ select:not([data-slot]):focus-visible {
 .agent-message { display: grid; max-width: 92%; gap: 5px; }
 .agent-message-row { display: flex; align-items: flex-end; gap: 8px; }
 .agent-message-bubble { display: grid; min-width: 0; gap: 8px; border-radius: var(--ui-radius-lg); background: color-mix(in srgb, var(--ui-accent-subtle) 74%, var(--ui-surface)); padding: 12px 14px; }
-.agent-message-content { display: grid; gap: 7px; min-width: 0; margin: 0; color: var(--ui-text-secondary); font-family: var(--ui-font-content); font-size: 0.8125rem; line-height: 1.62; overflow-wrap: anywhere; }
+.agent-message-content { display: grid; gap: 7px; min-width: 0; margin: 0; color: var(--ui-text-secondary); font-family: var(--resume-serif-font); font-size: 0.8125rem; line-height: 1.62; overflow-wrap: anywhere; }
 .agent-message-content p,
 .agent-message-content ul,
 .agent-message-content ol,
