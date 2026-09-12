@@ -7,6 +7,10 @@ import { api } from "../../api/client";
 import { useResumeStore } from "../../store/resumeStore";
 import { EditorCommand, EditorToolbar } from "./EditorToolbar";
 import { EditorInsertRange, insertEditorText, runEditorCommand } from "./editorCommands";
+import {
+  RESUME_IMAGE_ACCEPT,
+  validateResumeImageFile,
+} from "../workbench/resumeImageLimits";
 
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -54,6 +58,12 @@ export function EditorPanel() {
     const view = editorRef.current;
     if (!view) return;
 
+    const validationMessage = validateResumeImageFile(file);
+    if (validationMessage) {
+      setUploadError(validationMessage);
+      return;
+    }
+
     setIsUploadingImage(true);
     try {
       const dataUrl = await readFileAsDataUrl(file);
@@ -92,7 +102,7 @@ export function EditorPanel() {
         ref={fileInputRef}
         className="visually-hidden"
         type="file"
-        accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+        accept={RESUME_IMAGE_ACCEPT}
         onChange={(event) => {
           const file = event.target.files?.[0];
           if (file) handleImageFile(file);

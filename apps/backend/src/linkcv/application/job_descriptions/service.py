@@ -46,6 +46,7 @@ class CreateJobResult:
 _MUTABLE_FIELDS = (
     "job_title",
     "company_name",
+    "logo_url",
     "employment_type",
     "description",
     "skills",
