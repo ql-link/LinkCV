@@ -7,6 +7,7 @@ const activeJob: JobDescriptionRecord = {
   id: "job-1",
   job_title: "Java 开发实习生",
   company_name: "示例科技",
+  logo_url: null,
   employment_type: "internship",
   description: "参与后端业务开发。",
   skills: ["Java", "MySQL"],
@@ -66,6 +67,7 @@ describe("JobDetailPage", () => {
     expect(screen.queryByText("编辑")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "删除" })).toBeInTheDocument();
     expect(screen.queryByText("活动岗位")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "这个岗位的求职记录" })).not.toBeInTheDocument();
   });
 
   it("从求职记录进入岗位详情时返回对应记录", async () => {

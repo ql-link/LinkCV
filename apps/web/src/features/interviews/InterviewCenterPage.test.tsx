@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiRequestError, type JobApplicationSummary, type ResumeSummary } from "@/api/client";
 import { useResumeStore } from "@/store/resumeStore";
-import { sortApplications } from "./ApplicationsBoard";
+import { applicationCardTimeLabel, sortApplications } from "./ApplicationsBoard";
 import { InterviewCenterPage } from "./InterviewCenterPage";
 import {
   applicationProgressLabel,
@@ -58,6 +58,7 @@ const application = {
   resume_version_id: null,
   company_name_snapshot: "腾讯",
   job_title_snapshot: "后端开发工程师",
+  company_logo_url: null,
   job_snapshot: { schema_version: 1 },
   resume_title_snapshot: null,
   calendar_color: "blue" as const,
@@ -425,6 +426,75 @@ describe("InterviewCenterPage API projections", () => {
       next_session_end_at: null,
     }, { now, currentStageCompleted: true })).toBe("is-success");
     expect(applicationProgressToneClass(makeScheduled("2026-08-31T23:00:00Z", "2026-08-31T23:30:00Z"), { now })).toBe("is-waiting");
+  });
+
+  it("shows stage-specific time context on board cards", () => {
+    const makeSummary = (
+      overrides: Partial<JobApplicationSummary>,
+    ): JobApplicationSummary => ({
+      ...application,
+      next_session_id: null,
+      next_session_start_at: null,
+      next_session_end_at: null,
+      next_session_mode: null,
+      ...overrides,
+    });
+    const stage = {
+      id: "stage-offer",
+      application_id: application.id,
+      client_request_id: "request-offer",
+      stage_type: "offer" as const,
+      stage_label: "Offer",
+      interview_round_no: null,
+      sequence_no: 4,
+      stage_status: "active" as const,
+      stage_result: "pending" as const,
+      current_marker: 1,
+      entered_at: "2026-09-10T18:32:00",
+      completed_at: null,
+      created_at: "2026-09-10T18:32:00",
+      updated_at: "2026-09-10T18:32:00",
+    };
+
+    expect(applicationCardTimeLabel(makeSummary({
+      current_stage_type: "screening",
+      current_round_no: null,
+      current_stage_label: "待投递",
+      phase: "pending",
+      created_at: "2026-09-09T10:24:00",
+    }))).toBe("创建于 9月9日 10:24");
+    expect(applicationCardTimeLabel(makeSummary({
+      next_session_start_at: "2026-09-12T14:00:00",
+      next_session_end_at: "2026-09-12T15:00:00",
+    }))).toBe("9月12日 14:00–15:00");
+    expect(applicationCardTimeLabel(makeSummary({}))).toBe("尚未安排时间");
+    expect(applicationCardTimeLabel(makeSummary({
+      current_stage_type: "screening",
+      current_round_no: null,
+      current_stage_label: "笔试中",
+      phase: "applied",
+      next_session_end_at: "2026-09-13T20:00:00",
+    }))).toBe("截止 9月13日 20:00");
+    expect(applicationCardTimeLabel(makeSummary({
+      current_stage_type: "offer",
+      current_round_no: null,
+      current_stage_label: "Offer",
+      stage_state: "negotiating",
+      offer_status: "received",
+      current_stage: stage,
+    }))).toBe("9月10日 18:32 获得 Offer");
+    expect(applicationCardTimeLabel(makeSummary({
+      current_stage_type: "screening",
+      current_round_no: null,
+      current_stage_label: "筛选中",
+      applied_at: "2026-09-08T14:36:00",
+    }))).toBe("投递于 9月8日 14:36");
+    expect(applicationCardTimeLabel(makeSummary({
+      lifecycle_status: "terminated",
+      status: "rejected",
+      terminated_at: "2026-09-11T09:20:00",
+      termination_reason: "company_rejected",
+    }))).toBe("结束于 9月11日 09:20");
   });
 
   it("keeps the board status concise while retaining stage context in the list", async () => {
@@ -2932,6 +3002,7 @@ describe("InterviewCenterPage API projections", () => {
     });
     const interview = makeApplication({
       id: "42",
+      company_logo_url: "https://cdn.example.test/logos/tencent.png",
       job_snapshot: { schema_version: 1, employment_type: "full_time" },
       next_session_id: "31",
       next_session_start_at: session.start_at,
@@ -3107,10 +3178,17 @@ describe("InterviewCenterPage API projections", () => {
     expect(within(screen.getByRole("article", { name: "笔试公司 笔试岗位" })).getByText("进行中")).toBeInTheDocument();
 
     const interviewCard = screen.getByRole("article", { name: "腾讯 后端开发工程师" });
+    const companyLogo = within(interviewCard).getByRole("img", { name: "腾讯 Logo" });
+    expect(companyLogo).toHaveAttribute("src", "https://cdn.example.test/logos/tencent.png");
+    expect(companyLogo).toHaveAttribute("loading", "lazy");
+    expect(companyLogo).toHaveAttribute("referrerpolicy", "no-referrer");
     expect(within(interviewCard).queryByText("全职")).not.toBeInTheDocument();
     expect(within(interviewCard).getByText(/^(\d+ 天后|\d+ 小时后|正在进行|等待结果)$/)).toBeInTheDocument();
     expect(interviewCard.querySelector(".progress-card-updated-at")).not.toBeInTheDocument();
     expect(interviewCard).toHaveAttribute("draggable", "true");
+    fireEvent.error(companyLogo);
+    expect(within(interviewCard).queryByRole("img", { name: "腾讯 Logo" })).not.toBeInTheDocument();
+    expect(interviewCard.querySelector(".progress-card-logo.is-fallback")).toHaveTextContent("腾");
 
     const waitingCard = screen.getByRole("article", { name: "完成公司 完成岗位" });
     expect(within(waitingCard).getByText("等待结果")).toBeInTheDocument();
@@ -3128,7 +3206,8 @@ describe("InterviewCenterPage API projections", () => {
     expect(within(offerColumn!).getByRole("article", { name: "Offer 公司 Offer 岗位" })).toBe(offerCard);
 
     const endedCard = screen.getByRole("article", { name: "结束公司 结束岗位" });
-    expect(within(endedCard).getByText("未通过")).toBeInTheDocument();
+    expect(within(endedCard).getByText("结束阶段：筛选中")).toBeInTheDocument();
+    expect(within(endedCard).queryByText("未通过")).not.toBeInTheDocument();
     expect(within(endedCard).queryByText("筛选中 · 未通过")).not.toBeInTheDocument();
     expect(within(endedCard).queryByText("校招")).not.toBeInTheDocument();
     expect(endedCard).toHaveAttribute("draggable", "true");
@@ -3138,8 +3217,8 @@ describe("InterviewCenterPage API projections", () => {
     expect(within(offerColumn!).getByRole("article", { name: "已接受公司 已接受岗位" })).toBe(acceptedOfferCard);
     const endedColumn = columns.find((column) => column.dataset.columnKey === "ended");
     expect(within(endedColumn!).queryByRole("article", { name: "已接受公司 已接受岗位" })).not.toBeInTheDocument();
-    expect(within(endedColumn!).getByRole("article", { name: "主动结束公司 主动结束岗位" })).toHaveTextContent("已主动结束");
-    expect(within(endedColumn!).getByRole("article", { name: "婉拒公司 婉拒岗位" })).toHaveTextContent("已主动结束");
+    expect(within(endedColumn!).getByRole("article", { name: "主动结束公司 主动结束岗位" })).toHaveTextContent("结束阶段：Offer");
+    expect(within(endedColumn!).getByRole("article", { name: "婉拒公司 婉拒岗位" })).toHaveTextContent("结束阶段：Offer");
 
     fireEvent.click(within(screeningCard).getByRole("button", { name: "查看 筛选公司 筛选岗位 求职进程" }));
     expect(window.location.pathname).toBe("/career/applications/46");
@@ -3272,6 +3351,72 @@ describe("InterviewCenterPage API projections", () => {
     fireEvent.click(trigger);
     fireEvent.click(within(card).getByRole("menuitem", { name: "查看详情" }));
     expect(window.location.pathname).toBe("/career/applications/menu-pending");
+  });
+
+  it("lets users permanently delete an ended application from the board", async () => {
+    const endedApplication = {
+      ...application,
+      id: "ended-delete-board",
+      company_name_snapshot: "已结束示例公司",
+      job_title_snapshot: "后端开发工程师",
+      status: "closed" as const,
+      lifecycle_status: "terminated" as const,
+      terminated_at: "2026-08-22T08:00:00Z",
+      termination_reason: "company_rejected" as const,
+      next_session_id: null,
+      next_session_start_at: null,
+      next_session_end_at: null,
+      next_session_mode: null,
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications.mockResolvedValue({ items: [endedApplication], next_cursor: null });
+
+    render(<InterviewCenterPage view="applications" />);
+    switchToApplicationBoard();
+    const card = await screen.findByRole("article", { name: "已结束示例公司 后端开发工程师" });
+    fireEvent.click(within(card).getByRole("button", { name: "更多求职操作 已结束示例公司 后端开发工程师" }));
+    fireEvent.click(within(card).getByRole("menuitem", { name: "删除记录" }));
+
+    const dialog = screen.getByRole("alertdialog", { name: "永久删除「已结束示例公司 · 后端开发工程师」？" });
+    expect(dialog).toHaveTextContent("阶段、排期、复盘和素材将无法恢复");
+    expect(dialog).toHaveTextContent("原始岗位资料不会被删除");
+    fireEvent.click(within(dialog).getByRole("button", { name: "永久删除" }));
+
+    await waitFor(() => expect(mocks.deleteJobApplication).toHaveBeenCalledWith("ended-delete-board"));
+  });
+
+  it("shows the delete button only for ended applications in list view", async () => {
+    const endedApplication = {
+      ...application,
+      id: "ended-delete-list",
+      company_name_snapshot: "列表已结束公司",
+      status: "closed" as const,
+      lifecycle_status: "terminated" as const,
+      terminated_at: "2026-08-22T08:00:00Z",
+      termination_reason: "user_withdrew" as const,
+      next_session_id: null,
+      next_session_start_at: null,
+      next_session_end_at: null,
+      next_session_mode: null,
+    };
+    const activeApplication = {
+      ...application,
+      id: "active-delete-list",
+      company_name_snapshot: "列表进行中公司",
+      lifecycle_status: "active" as const,
+      next_session_id: null,
+      next_session_start_at: null,
+      next_session_end_at: null,
+      next_session_mode: null,
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications.mockResolvedValue({ items: [endedApplication, activeApplication], next_cursor: null });
+
+    render(<InterviewCenterPage view="applications" />);
+    switchToApplicationList();
+
+    expect(await screen.findByRole("button", { name: "删除 列表已结束公司 后端开发工程师 求职记录" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "删除 列表进行中公司 后端开发工程师 求职记录" })).not.toBeInTheDocument();
   });
 
   it("routes card progression through the existing stage dialog for every active stage", async () => {

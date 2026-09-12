@@ -84,7 +84,7 @@ describe("JobSmartImportDialog", () => {
     for (const label of [
       "技能", "求职分类", "学历要求", "经验要求", "工作城市", "详细地址", "工作方式",
       "工作安排", "薪资范围", "行业", "公司规模", "融资阶段", "招聘者姓名", "招聘者职位",
-      "来源链接（可选）", "个人备注",
+      "公司 Logo URL（可选）", "来源链接（可选）", "个人备注",
     ]) {
       expect(screen.getByLabelText(label)).toBeInTheDocument();
     }
@@ -98,6 +98,26 @@ describe("JobSmartImportDialog", () => {
     expect(screen.getByLabelText("工作城市").closest(".job-smart-manual-field")).toHaveClass("is-wide");
     expect(screen.queryByRole("heading", { name: "薪资明细" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "创建岗位" })).toBeInTheDocument();
+  });
+
+  it("手工导入会提交公司 Logo URL", async () => {
+    const create = vi.spyOn(api, "createJobDescription").mockResolvedValue({
+      job_description: { id: "logo-job" } as never,
+      application: null,
+    });
+    render(<JobSmartImportDialog unified onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "手工填写" }));
+    fireEvent.change(screen.getByLabelText("职位名称"), { target: { value: "平台工程师" } });
+    fireEvent.change(screen.getByLabelText("公司名称"), { target: { value: "示例科技" } });
+    fireEvent.change(screen.getByLabelText("公司 Logo URL（可选）"), {
+      target: { value: "https://cdn.example.test/logos/example.png" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "创建岗位" }));
+
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      logo_url: "https://cdn.example.test/logos/example.png",
+    })));
   });
 
   it("职位描述留空时仍可创建岗位", async () => {

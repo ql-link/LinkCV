@@ -425,6 +425,7 @@
 .career-view-switch svg, .career-sort-button svg { width: 15px; height: 15px; }
 .career-view-switch:focus-visible, .career-sort-button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 2px; }
 .career-applications-board {
+  container-type: inline-size;
   height: 100%;
   min-width: 0;
   min-height: 0;
@@ -445,15 +446,15 @@
   height: 100%;
   min-height: 0;
   grid-auto-flow: column;
-  grid-auto-columns: 260px;
+  grid-auto-columns: clamp(280px, calc(100cqw / 6), 320px);
   gap: 0;
   align-items: stretch;
 }
 .progress-column {
   position: relative;
   display: flex;
-  width: 260px;
-  min-width: 260px;
+  width: 100%;
+  min-width: 0;
   height: 100%;
   min-height: 0;
   flex-direction: column;
@@ -508,14 +509,21 @@
 .progress-card.is-dragging { opacity: 0; transform: scale(.98); }
 .progress-card.is-returning { opacity: 1; transform: scale(1); }
 .progress-card.is-advancing { opacity: .6; }
-.progress-card-open { display: grid; width: 100%; height: 100%; min-width: 0; grid-template-rows: auto auto 1fr; align-content: start; gap: 6px; border: 0; background: transparent; padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.progress-card-open { display: grid; width: 100%; height: 100%; min-width: 0; grid-template-rows: auto 1fr; align-content: start; gap: 8px; border: 0; background: transparent; padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .progress-card-open:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 3px; border-radius: var(--ui-radius-sm); }
-.progress-card-company-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; padding-right: 28px; }
+.progress-card-main { display: grid; min-width: 0; grid-template-columns: 32px minmax(0, 1fr); align-items: center; gap: 10px; padding-right: 28px; }
+.progress-card-copy { display: grid; min-width: 0; gap: 5px; }
+.progress-card-logo { display: grid; width: 32px; height: 32px; overflow: hidden; place-items: center; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--ui-surface-subtle); color: var(--ui-text-secondary); font-size: 13px; font-weight: 700; }
+.progress-card-logo img { width: 100%; height: 100%; object-fit: contain; }
+.progress-card-logo.is-fallback { background: color-mix(in srgb, var(--ui-accent-subtle) 72%, var(--ui-surface)); color: var(--ui-accent); }
 .progress-card-footer { display: flex; min-width: 0; align-self: end; align-items: center; justify-content: space-between; gap: 8px; }
 .progress-card-company, .progress-card-job-title, .progress-card-stage { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .progress-card-company { color: var(--ui-text-secondary); font-size: 12px; font-weight: 550; }
 .progress-card-job-title { color: var(--ui-foreground); font-size: 15px; font-weight: 650; line-height: 1.2; }
 .progress-card-stage { flex: 1 1 auto; color: var(--ui-text-secondary); font-size: 12px; font-weight: 600; line-height: 1.2; }
+.progress-card-time { display: flex; min-width: 0; flex: 0 1 auto; align-items: center; justify-content: flex-end; gap: 6px; color: var(--ui-text-muted); font-size: 11px; font-weight: 500; line-height: 1.2; }
+.progress-card-time svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.progress-card-time span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .progress-card-drop-placeholder { box-sizing: border-box; width: 100%; height: 118px; min-height: 118px; border: 1px dashed color-mix(in srgb, var(--ui-warning) 58%, var(--ui-border)); border-radius: 8px; background: color-mix(in srgb, var(--ui-warning-subtle) 42%, transparent); opacity: .82; pointer-events: none; transition: opacity var(--ui-duration-fast) var(--ui-ease-press), transform var(--ui-duration-fast) var(--ui-ease-press); }
 .progress-card-layout > .progress-card,
 .progress-card-layout > .progress-card-drop-placeholder.is-source-return { grid-area: 1 / 1; }
@@ -578,6 +586,10 @@
 .career-application-progress.is-danger { color: var(--career-state-danger); }
 .career-application-progress.is-muted { color: var(--career-state-neutral); }
 .career-application-updated-at { color: var(--ui-text-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.career-application-progress-cell { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; }
+.career-application-delete-button { display: inline-flex; min-height: 32px; align-items: center; gap: 5px; border: 0; border-radius: var(--ui-radius-sm); background: transparent; padding: 5px 7px; color: var(--ui-destructive); font: inherit; cursor: pointer; }
+.career-application-delete-button:hover { background: var(--ui-destructive-subtle); }
+.career-application-delete-button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 2px; }
 .career-applications-empty { display: grid; min-height: 300px; place-items: center; align-content: center; gap: 8px; padding: 40px 20px; text-align: center; }
 .career-applications-empty > svg { width: 34px; height: 34px; color: var(--ui-text-muted); stroke-width: 1.4; }
 .career-applications-empty h2 { margin: 4px 0 0; font-size: 16px; }
@@ -4178,31 +4190,72 @@
   flex: 1 1 auto;
   flex-direction: column;
 }
+.career-reui-calendar [data-slot="event-calendar-month-view"],
+.career-reui-calendar [data-slot="event-calendar-month-header"],
+.career-reui-calendar [data-slot="event-calendar-month-row"],
+.career-reui-calendar [data-slot="event-calendar-month-cell"],
+.career-reui-calendar [data-slot="event-calendar-week-number"] {
+  border-color: var(--ec-grid-line-color);
+}
 .career-reui-calendar [data-slot="event-calendar-month-view"] {
   min-height: 0;
   flex: 1 1 auto;
-  border-color: var(--ec-grid-line-color);
+  background: var(--ui-surface);
 }
-.career-reui-calendar :is(
-  [data-slot="event-calendar-month-header"],
-  [data-slot="event-calendar-month-row"],
-  [data-slot="event-calendar-month-cell"],
-  [data-slot="event-calendar-week-number"]
-) {
-  border-color: var(--ec-grid-line-color);
+.career-reui-calendar [data-slot="event-calendar-month-header"] {
+  min-height: 32px;
+  align-items: center;
+  background: var(--ui-surface);
 }
-.career-reui-calendar [data-slot="event-calendar-month-cell"] { background: var(--ui-surface); }
-.career-reui-calendar [data-slot="event-calendar-month-cell"][data-outside] { background: var(--ui-surface); }
-.career-reui-calendar [data-slot="event-calendar-month-day-number"] { color: var(--ui-text-secondary); }
+.career-reui-calendar [data-slot="event-calendar-month-header"] [role="columnheader"] {
+  padding: 7px 9px;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+.career-reui-calendar [data-slot="event-calendar-month-cell"] {
+  background: var(--ui-surface);
+}
+.career-reui-calendar [data-slot="event-calendar-month-cell"][data-outside] {
+  background: var(--ui-surface);
+}
 .career-reui-calendar [data-slot="event-calendar-month-cell"][data-today] {
-  border-bottom-width: 1px;
-  border-bottom-color: color-mix(in srgb, var(--career-calendar-today) 42%, var(--ec-grid-line-color));
-  background: color-mix(in srgb, var(--career-calendar-today) 2.5%, var(--ui-surface));
+  border-bottom-color: color-mix(in srgb, var(--ui-foreground) 40%, transparent);
+  background: var(--ui-surface);
 }
-.career-reui-calendar [data-slot="event-calendar-month-cell"][data-today]
+.career-reui-calendar [data-slot="event-calendar-month-day-number"] {
+  color: var(--ui-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.career-reui-calendar [data-slot="event-calendar-month-cell"][data-outside]
   [data-slot="event-calendar-month-day-number"] {
-  background: var(--career-calendar-today);
-  color: #fff;
+  color: var(--ui-text-muted);
+}
+.career-reui-calendar [data-view="month"] .interview-calendar-event {
+  min-height: 28px;
+  padding: 4px 7px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ec-event-color) 22%, transparent);
+}
+.career-reui-calendar [data-view="month"] .interview-calendar-event-title {
+  font-size: 12px;
+  line-height: 18px;
+}
+.career-reui-calendar [data-view="month"] .interview-calendar-event-time {
+  display: flex;
+  min-width: 0;
+  margin-left: auto;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  line-height: 18px;
+}
+.career-reui-calendar [data-view="month"] .interview-calendar-event-time i {
+  display: none;
+}
+.career-reui-calendar [data-view="month"] .interview-calendar-event[aria-pressed="true"]
+  .interview-calendar-event-time {
+  color: var(--ui-primary-foreground);
 }
 
 .career-application-identity { display: grid; gap: 5px; min-width: 0; }

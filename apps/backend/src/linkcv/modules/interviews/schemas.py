@@ -469,6 +469,7 @@ class JobApplicationRecord(BaseModel):
     resume_version_id: DatabaseId | None
     company_name_snapshot: str
     job_title_snapshot: str
+    company_logo_url: str | None = None
     job_snapshot: dict[str, object]
     resume_title_snapshot: str | None
     calendar_color: CalendarColor

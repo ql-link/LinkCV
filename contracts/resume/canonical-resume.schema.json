@@ -165,7 +165,7 @@
       "required": ["node_id", "runs", "source_refs"],
       "properties": {
         "node_id": {"$ref": "#/$defs/nodeId"},
-        "runs": {"type": "array", "minItems": 1, "maxItems": 2000, "items": {"$ref": "#/$defs/inlineContent"}},
+        "runs": {"type": "array", "maxItems": 2000, "items": {"$ref": "#/$defs/inlineContent"}},
         "source_refs": {"$ref": "#/$defs/sourceRefs"}
       }
     },
