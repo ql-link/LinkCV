@@ -296,7 +296,7 @@ function AppContent() {
               navigation={<CareerNavigation active={careerSection ?? "applications"} />}
             />
           )}
-          {route.kind === "datasets" && <DatasetsPage />}
+          {route.kind === "datasets" && <DatasetsPage initialFolderId={route.folderId} />}
           {route.kind === "account" && <AccountPage />}
         </WorkspacePageBoundary>
       </WorkspaceLayout>

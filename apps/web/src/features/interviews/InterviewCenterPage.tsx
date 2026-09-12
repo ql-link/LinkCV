@@ -1614,15 +1614,6 @@ function renderInterviewCalendarEvent({
       </span>
     );
   }
-  if (interview.calendarRole === "answer_plan") {
-    return (
-      <span className="interview-calendar-event-content interview-calendar-answer-plan-content">
-        <strong className="interview-calendar-event-title">我的作答计划</strong>
-        <span className="interview-calendar-event-time"><i aria-hidden="true" />{visibleStart}–{visibleEnd}</span>
-        <em className="interview-calendar-event-stage">{interview.company} · {interview.stage}</em>
-      </span>
-    );
-  }
   return (
     <span className="interview-calendar-event-content">
       <strong className="interview-calendar-event-title">{interview.company}</strong>
@@ -1779,7 +1770,7 @@ function ScheduleView({
       interview.scheduleKind === "open_window" && interview.answerPlanStartAt && interview.answerPlanEndAt
         ? [{
             id: `answer-plan:${interview.id}`,
-            title: `我的作答计划 · ${interview.company}`,
+            title: `${interview.company} ${interview.stage}`,
             start: new Date(interview.answerPlanStartAt),
             end: new Date(interview.answerPlanEndAt),
             color: INTERVIEW_CALENDAR_COLORS[interview.color],
