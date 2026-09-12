@@ -587,7 +587,7 @@ describe("知识库资料 API", () => {
     const file = new File(["# 岗位要求"], "岗位要求.md", { type: "text/markdown" });
     const idempotencyKey = "8d42a61f-2396-4dbc-a63d-a1770e398f61";
 
-    await expect(api.uploadDataset(file, idempotencyKey)).resolves.toEqual(record);
+    await expect(api.uploadDataset(file, idempotencyKey, "42")).resolves.toEqual(record);
 
     const [, init] = fetchMock.mock.calls[0];
     expect(init.method).toBe("POST");
@@ -595,6 +595,7 @@ describe("知识库资料 API", () => {
     expect(init.headers).toHaveProperty("Idempotency-Key", idempotencyKey);
     expect(init.body).toBeInstanceOf(FormData);
     expect((init.body as FormData).get("file")).toBe(file);
+    expect((init.body as FormData).get("folder_id")).toBe("42");
   });
 
   it("列出当前用户的资料清单", async () => {
@@ -635,7 +636,7 @@ describe("知识库资料 API", () => {
     const file = new File(["# 资料"], "资料.md", { type: "text/markdown" });
     const key = "8d42a61f-2396-4dbc-a63d-a1770e398f61";
 
-    await api.uploadDataset(file, key);
+    await api.uploadDataset(file, key, "42");
 
     expect(fetchMock.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
       headers: expect.objectContaining({ "Idempotency-Key": key }),
@@ -815,5 +816,21 @@ describe("微信扫码登录 API", () => {
     await expect(api.wechatQrcode()).rejects.toThrow(
       "WECHAT_RATE_LIMITED",
     );
+  });
+});
+
+describe("资料正文与替换契约",()=>{
+  it("替换携带确认、源文件、相同幂等键和当前凭据",async()=>{
+    const fetchMock=vi.fn().mockResolvedValue(jsonResponse(202,{id:"8",status:"pending"}));vi.stubGlobal("fetch",fetchMock);
+    const file=new File(["# New"],"notes.md",{type:"text/markdown"});await api.replaceDataset("42",file,"3","replace-key");
+    const [path,options]=fetchMock.mock.calls[0];expect(path).toBe("/api/datasets/42/replacements");
+    expect(new Headers(options.headers).get("If-Match")).toBe('"dataset-42-3"');
+    expect(new Headers(options.headers).get("Idempotency-Key")).toBe("replace-key");
+    expect(options.body.get("confirm_replace")).toBe("true");expect(options.body.get("file")).toBe(file);
+  });
+  it("同名错误保留候选文件和建议名称",async()=>{
+    const payload={error:"DATASET_NAME_CONFLICT",candidates:[{id:"42",content_revision:"3"}],suggested_name:"notes (1).md"};
+    vi.stubGlobal("fetch",vi.fn().mockResolvedValue(jsonResponse(409,payload)));
+    await expect(api.uploadDataset(new File(["text"],"notes.md"),"key","8")).rejects.toMatchObject({status:409,payload});
   });
 });
