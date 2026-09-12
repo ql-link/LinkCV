@@ -19,6 +19,7 @@
     "@date-fns/tz": "^1.5.0",
     "@embedpdf/fonts-sc": "^1.0.0",
     "@fontpkg/lxgw-wen-kai": "^1.520.0",
+    "@fontpkg/source-han-sans-sc-vf": "^2.5.3",
     "@fontpkg/source-han-serif-sc": "^2.3.3",
     "@paper-design/shaders-react": "^0.0.80",
     "@radix-ui/react-accordion": "^1.2.12",
