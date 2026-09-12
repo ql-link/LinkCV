@@ -212,6 +212,7 @@ const INTERVIEW_CALENDAR_I18N: EventCalendarI18nOverrides = {
     monthDayHeader: "EEE",
     monthDayHeaderNarrow: "EEEEE",
     monthCellDay: "d",
+    moreDayHeader: "M月d日 · EEE",
   },
 };
 type InterviewSessionCreatePayload = Parameters<
@@ -1874,7 +1875,7 @@ function ScheduleView({
           snapDuration={15}
           interval={60}
           scrollToHour={9}
-          fixedWeeks
+          fixedWeeks={false}
           showOutsideDays
           interactions={calendarInteractions}
           viewSettings={calendarViewSettings}
@@ -1907,6 +1908,9 @@ function ScheduleView({
             event: "interview-calendar-event",
             timedChip: "interview-calendar-timed-event",
             monthBar: "interview-calendar-month-event",
+            moreIndicator: "interview-calendar-more-indicator",
+            morePopover: "interview-calendar-more-popover",
+            morePopoverHeader: "interview-calendar-more-popover-header",
             resizeHandle: "interview-calendar-resize-handle",
             resizeGrip: "interview-calendar-resize-grip",
             viewSwitcherContent: "interview-calendar-view-menu",

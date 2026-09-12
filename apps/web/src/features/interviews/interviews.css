@@ -4254,6 +4254,110 @@
   color: var(--ui-primary-foreground);
 }
 
+.interview-calendar-more-indicator {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 22px;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 2px 6px;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 18px;
+  transition: background-color var(--ui-duration-fast) var(--ui-ease-press), color var(--ui-duration-fast) var(--ui-ease-press);
+}
+.interview-calendar-more-indicator::after {
+  width: 5px;
+  height: 5px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  content: "";
+  transform: translateY(-1px) rotate(45deg);
+  transition: transform var(--ui-duration-base) var(--ui-ease-standard);
+}
+.interview-calendar-more-indicator:hover,
+.interview-calendar-more-indicator[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--ui-career-accent) 9%, var(--ui-surface));
+  color: color-mix(in srgb, var(--ui-career-accent) 82%, var(--ui-foreground));
+}
+.interview-calendar-more-indicator[aria-expanded="true"]::after {
+  transform: translateY(2px) rotate(225deg);
+}
+.interview-calendar-more-indicator:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ui-ring) 55%, transparent);
+  outline-offset: 1px;
+}
+
+/* The month overflow is portaled outside .career-reui-calendar, so its feature
+   styling must be anchored on the popover class itself. */
+.interview-calendar-more-popover {
+  width: min(256px, calc(100vw - 32px));
+  gap: 2px !important;
+  border: 0;
+  border-radius: 10px;
+  background: var(--ui-surface-elevated);
+  padding: 8px !important;
+  box-shadow: 0 14px 34px rgb(15 18 22 / 10%), 0 2px 8px rgb(15 18 22 / 6%);
+}
+.interview-calendar-more-popover-header {
+  padding: 6px 8px 8px;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 18px;
+}
+.interview-calendar-more-popover [data-slot="event-calendar-event"] {
+  min-height: 48px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  padding: 8px 10px 8px 13px;
+  color: var(--ui-foreground);
+}
+.interview-calendar-more-popover [data-slot="event-calendar-event"]::before {
+  position: absolute;
+  inset-block: 9px;
+  inset-inline-start: 5px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--ec-event-color);
+  content: "";
+}
+.interview-calendar-more-popover [data-slot="event-calendar-event"]:hover,
+.interview-calendar-more-popover [data-slot="event-calendar-event"]:focus-visible {
+  background: var(--ui-surface-subtle);
+}
+.interview-calendar-more-popover .interview-calendar-event-content {
+  display: grid;
+  gap: 3px;
+  padding-inline-start: 5px;
+}
+.interview-calendar-more-popover .interview-calendar-event-title {
+  font-size: 12px;
+  line-height: 17px;
+}
+.interview-calendar-more-popover .interview-calendar-event-time {
+  display: flex;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+.interview-calendar-more-popover .interview-calendar-event-time i {
+  display: none;
+}
+.interview-calendar-more-popover .interview-calendar-event-stage {
+  color: var(--ui-text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
 .career-application-identity { display: grid; gap: 5px; min-width: 0; }
 .career-application-identity > :first-child { color: var(--ui-foreground); font-weight: 600; }
 .career-application-identity .career-application-job-title { color: var(--ui-text-muted); font-size: 11px; font-weight: 400; }
