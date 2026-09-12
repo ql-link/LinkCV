@@ -42,6 +42,8 @@ logger = logging.getLogger(__name__)
 
 
 class SpaStaticFiles(StaticFiles):
+    _PUBLIC_DOCUMENT_PATHS = {"", ".", "home", "index.html"}
+
     @staticmethod
     def _path_is_api(path: str) -> bool:
         # Normalise OS path separators so the check works on Windows too.
@@ -50,6 +52,10 @@ class SpaStaticFiles(StaticFiles):
     @staticmethod
     def _path_is_asset(path: str) -> bool:
         return path.replace("\\", "/").lstrip("/").startswith("assets/")
+
+    @classmethod
+    def _path_is_public_document(cls, path: str) -> bool:
+        return path.replace("\\", "/").strip("/") in cls._PUBLIC_DOCUMENT_PATHS
 
     async def get_response(self, path: str, scope: Scope) -> Response:
         try:
@@ -74,6 +80,11 @@ class SpaStaticFiles(StaticFiles):
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         else:
             response.headers["Cache-Control"] = "no-cache"
+        if (
+            response.headers.get("content-type", "").startswith("text/html")
+            and not self._path_is_public_document(path)
+        ):
+            response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
         return response
 
 
