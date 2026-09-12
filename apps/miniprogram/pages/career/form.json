@@ -1,0 +1,9 @@
+{
+  "navigationBarTitleText": "添加下一阶段",
+  "usingComponents": {
+    "career-icon": "/components/career-icon/index",
+    "career-time-picker": "/components/career-time-picker/index",
+    "career-select": "/components/career-select/index"
+  },
+  "navigationStyle": "custom"
+}

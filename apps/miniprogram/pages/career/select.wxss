@@ -1,0 +1,4 @@
+@import "./shared.wxss";
+.panel {
+  margin-top: 28rpx;
+}

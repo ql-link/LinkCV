@@ -1,4 +1,5 @@
 <view class="page">
+  <brand-navigation />
   <scroll-view
     class="page-scroll"
     scroll-y
@@ -7,13 +8,7 @@
     refresher-triggered="{{refresherTriggered}}"
     bindrefresherrefresh="handleRefresherRefresh"
   >
-    <view class="page-content" style="padding-top: {{statusBarHeight}}px">
-      <view class="brand-row">
-        <view class="ui-brand">
-          <image class="ui-brand-wordmark" src="/assets/linkresume-wordmark.png" mode="aspectFit" aria-label="LinkResume"></image>
-        </view>
-      </view>
-
+    <view class="page-content">
       <view class="loading-grid" wx:if="{{loading}}">
         <view class="skeleton-grid-card" wx:for="{{[1, 2, 3, 4]}}" wx:key="*this">
           <view class="skeleton-thumb"></view>

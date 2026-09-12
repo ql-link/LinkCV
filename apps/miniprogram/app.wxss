@@ -1,4 +1,8 @@
+@import "./assets/career-font.wxss";
 page {
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+  -webkit-overflow-scrolling: touch;
   --ui-background: #f4f6f8;
   --ui-foreground: #17191c;
   --ui-surface: #ffffff;
@@ -31,6 +35,34 @@ page {
 
 .ui-brand { display: flex; align-items: center; gap: 16rpx; color: var(--ui-foreground); font-size: 30rpx; font-weight: 700; letter-spacing: -1rpx; }
 .ui-brand-wordmark { width: 220rpx; height: 46rpx; display: block; flex-shrink: 0; }
+
+/* 顶部固定导航栏（Fixed Top Navigation Bar）与羽化遮盖层 */
+.fixed-top-navbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: #f6f8fa;
+  box-sizing: border-box;
+}
+
+.navbar-content {
+  height: 96rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 32rpx;
+}
+
+.navbar-bottom-mask {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 24rpx;
+  background: linear-gradient(180deg, #f6f8fa 0%, rgba(246, 248, 250, 0) 100%);
+  pointer-events: none;
+}
 
 .ui-primary-button, .ui-secondary-button { height: 88rpx; display: flex; align-items: center; justify-content: center; margin: 0; padding: 0 30rpx; box-sizing: border-box; font-size: 27rpx; font-weight: 600; line-height: 88rpx; touch-action: manipulation; }
 .ui-primary-button { border-radius: 16rpx; background: var(--ui-accent); color: #fff; }

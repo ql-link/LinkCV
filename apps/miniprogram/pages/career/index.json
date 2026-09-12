@@ -1,0 +1,11 @@
+{
+  "navigationStyle": "custom",
+  "disableScroll": true,
+  "enablePullDownRefresh": false,
+  "allowsBounceVertical": "NO",
+  "usingComponents": {
+    "career-icon": "/components/career-icon/index",
+    "schedule-sheet": "/components/schedule-sheet/index",
+    "session-sheet": "/components/session-sheet/index"
+  }
+}

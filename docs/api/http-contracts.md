@@ -23,7 +23,7 @@
 
 会话统一保存为 Redis `auth:session:{sid}` hash 和 `auth:user_sessions:{uid}` 集合。Hash 包含 `uid`、refresh secret 哈希、`channel=web|miniprogram` 和创建时间；access JWT 同样携带 channel。Web 只接受 HttpOnly Cookie 中的 `channel=web` 凭据，小程序只接受 `Authorization: Bearer` 中的 `channel=miniprogram` 凭据；同时携带两种载体、JWT 与 Redis 的 uid/channel 不一致、session 被撤销或用户停用时均视为未登录。为兼容本功能上线前已签发的 Web 会话，缺少 channel 的旧 JWT/Redis session 仅按 Web 凭据接受，并在 refresh 轮换时补写 `channel=web`；它不会被小程序接口接受。Refresh 每次轮换 secret，重放旧 refresh 会撤销整个 session。
 
-微信 code 只由后端提交微信平台换取 openid。`/api/auth/wechat/miniprogram/account-status` 仍可使用当前 `wx.login` code 返回该 openid 是否已有关联账号，只返回布尔值，不创建用户、不更新登录时间、不签发会话；随仓库发布的小程序不再把它用于登录前置探测。该接口与小程序登录共用来源 IP 默认每分钟 30 次的限流。openid 已存在时登录接口直接复用；不存在时，`/api/auth/wechat/confirm` 和 `/api/auth/wechat/miniprogram/login` 只有在收到 `privacy_accepted=true` 后才创建 `email/password_hash` 为空的普通账号，缺失或为 `false` 时返回 `400 PRIVACY_AGREEMENT_REQUIRED`，唯一约束负责并发建号收敛。该字段只表示本次注册请求已经通过客户端确认门禁，不是服务端持久化的同意审计记录。随仓库发布的小程序冷启动在“简历”页展示一张内置“示例简历 · 内容为虚构信息”卡片，点击详情也只渲染包内虚构内容；游客首页与示例详情不发起账号探测、登录、隐私授权或个人数据请求，可切换“我的”游客态。登录入口只保留在“我的”页；用户查看并勾选微信平台隐私保护指引并点击主操作后，客户端才调用建号或登录接口；未勾选时在协议区行内提示。普通登录成功后返回“我的”页；扫码确认先用一个 code 确认 Web scene，再用新的 code 建立独立小程序会话。登录后的简历页与请求重试路径只能以 `privacy_accepted=false` 尝试恢复已有账号，不能静默触发首次建号。停用账号不能登录或续期；启用管理员账号即使历史上已有 openid，也与普通账号一样可以通过网页扫码确认并由匹配 `poll_token` 的 status 签发 Web Cookie，也可以通过小程序 login 建立、refresh 轮换小程序 Bearer 会话并访问小程序业务接口；管理员仍可使用 `/api/auth/admin-login`。超出上述限流时返回 `429 WECHAT_RATE_LIMITED`。开发者工具和真机的 `develop` 运行时都默认使用 `https://linkresume.cn`；只有环境被明确识别为 `develop` 且设备本地执行 `wx.setStorageSync("linkcv_local_debug_enabled", true)` 时才读取每次 `npm run dev` 自动更新的 `local.js`，环境识别缺失或异常时不读取开发 storage/local.js；`linkcv_api_base_url` 显式 URL 覆盖优先于 `local.js`。关闭 opt-in 可执行 `wx.removeStorageSync("linkcv_local_debug_enabled")` 或写入 `false`；体验版和正式版忽略全部开发 storage/local.js，继续使用该 HTTPS 地址。
+微信 code 只由后端提交微信平台换取 openid。`/api/auth/wechat/miniprogram/account-status` 仍可使用当前 `wx.login` code 返回该 openid 是否已有关联账号，只返回布尔值，不创建用户、不更新登录时间、不签发会话；随仓库发布的小程序不再把它用于登录前置探测。该接口与小程序登录共用来源 IP 默认每分钟 30 次的限流。openid 已存在时登录接口直接复用；不存在时，`/api/auth/wechat/confirm` 和 `/api/auth/wechat/miniprogram/login` 只有在收到 `privacy_accepted=true` 后才创建 `email/password_hash` 为空的普通账号，缺失或为 `false` 时返回 `400 PRIVACY_AGREEMENT_REQUIRED`，唯一约束负责并发建号收敛。该字段只表示本次注册请求已经通过客户端确认门禁，不是服务端持久化的同意审计记录。随仓库发布的小程序冷启动在“简历”页展示一张内置“示例简历 · 内容为虚构信息”卡片，点击详情也只渲染包内虚构内容；游客首页与示例详情不发起账号探测、登录、隐私授权或个人数据请求，可切换“我的”游客态。登录入口位于“我的”页和求职游客引导；用户查看并勾选微信平台隐私保护指引并点击主操作后，客户端才调用建号或登录接口；未勾选时在协议区行内提示。普通登录成功后返回“我的”页；扫码确认先用一个 code 确认 Web scene，再用新的 code 建立独立小程序会话。登录后的简历页与请求重试路径只能以 `privacy_accepted=false` 尝试恢复已有账号，不能静默触发首次建号。停用账号不能登录或续期；启用管理员账号即使历史上已有 openid，也与普通账号一样可以通过网页扫码确认并由匹配 `poll_token` 的 status 签发 Web Cookie，也可以通过小程序 login 建立、refresh 轮换小程序 Bearer 会话并访问小程序业务接口；管理员仍可使用 `/api/auth/admin-login`。超出上述限流时返回 `429 WECHAT_RATE_LIMITED`。开发者工具和真机的 `develop` 运行时都默认使用 `https://linkresume.cn`；只有环境被明确识别为 `develop` 且设备本地执行 `wx.setStorageSync("linkcv_local_debug_enabled", true)` 时才读取每次 `npm run dev` 自动更新的 `local.js`，环境识别缺失或异常时不读取开发 storage/local.js；`linkcv_api_base_url` 显式 URL 覆盖优先于 `local.js`。关闭 opt-in 可执行 `wx.removeStorageSync("linkcv_local_debug_enabled")` 或写入 `false`；体验版和正式版忽略全部开发 storage/local.js，继续使用该 HTTPS 地址。
 
 ### 网页扫码登录
 
@@ -49,7 +49,7 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 | `PUT` | `/api/miniprogram/account/avatar` | `{url}`；JSON `{dataUrl, fileName?}`，复用 `/api/account/avatar` 的解码、10MB 上限与 MinIO 归属键规则，替换后删除旧头像对象 |
 | `GET` | `/api/miniprogram/account/avatar` | 本人头像二进制流（`image/*`、`private`）；无头像返回 `404 ASSET_NOT_FOUND`。普通 `/api/assets/*` 仍只接受 Web Cookie，小程序只能经此专用端点读取头像 |
 
-四个端点只接受小程序 Bearer，不接受 Web Cookie；小程序 Bearer 也不能调用普通 `/api/resumes*` 读写接口。预览选择最新 `reason=manual` 快照，没有手动版本时回退 `reason=initial`；客户端版本过期或无可读版本返回 `409 RESUME_VERSION_UNAVAILABLE`。服务端按请求启动一次性 Node 渲染进程，强制智能一页，从该版本真实引用且通过用户/简历对象键校验的 PNG/JPEG 私有图片构造输入；`preview.png` 再用 PDFium 把单页 PDF 栅格化为宽度不超过 1440 像素的 PNG。PDF 和 PNG 都只保留在请求内存，不写 MySQL、MinIO 或服务端文件缓存。输入、页面尺寸、像素数和输出大小都有上限；渲染脚本缺失、超时、异常退出、非法 PDF 或栅格化失败以稳定的 4xx/503 错误收口。
+四个端点只接受小程序 Bearer，不接受 Web Cookie；小程序 Bearer 也不能调用普通 `/api/resumes*` 读写接口。预览选择最新 `reason=manual` 快照，没有手动版本时回退 `reason=initial`；客户端版本过期或无可读版本返回 `409 RESUME_VERSION_UNAVAILABLE`。服务端按请求启动一次性 Node 渲染进程，强制智能一页，从该版本真实引用且通过用户/简历对象键校验的 PNG/JPEG 私有图片构造输入；`preview.png` 再用 PDFium 把单页 PDF 栅格化为宽度不超过 1440 像素的 PNG。PNG 栅格化进入进程级 PDFium 互斥区；预览槽位耗尽仍返回 `503 RESUME_PDF_BUSY`，不改变版本与归属校验。PDF 和 PNG 都只保留在请求内存，不写 MySQL、MinIO 或服务端文件缓存。输入、页面尺寸、像素数和输出大小都有上限；渲染脚本缺失、超时、异常退出、非法 PDF 或栅格化失败以稳定的 4xx/503 错误收口。
 
 ### 用户中心
 
@@ -411,3 +411,25 @@ current 或下载读取存储失败、指针/对象大小或摘要非法时返�
 重新上架只接受 `unpublished` 指针：没有 current 指针返回 `404`，已经上架返回 `409 PLUGIN_RELEASE_ALREADY_PUBLISHED`，保留 ZIP 缺失或校验不一致返回 `503`。永久删除也必须二次确认；若插件仍已上架，服务端先把指针改为 `unpublished` 以关闭下载，再依次删除 ZIP 和 `current.json`。任一步骤失败返回 `503 PLUGIN_RELEASE_DELETE_FAILED`，保留 unpublished 状态供管理员安全重试；没有 current 指针返回 `404`。
 
 Development 与 Production 使用独立 MinIO。各自 Bucket 内的当前指针固定为 `system/plugin-releases/current.json`，版本对象固定为 `system/plugin-releases/v<version>/linkcv-job-capture-v<version>.zip`；对象键不重复携带环境名。服务端新写的指针使用 `schema_version=3` 并显式包含 `status=published|unpublished`；读取兼容既有不含 `status` 的 v2 指针，并按已发布处理。
+
+## 微信小程序求职接口
+
+以下接口均要求有效小程序 Bearer，会话与 Web Cookie 隔离；普通用户和启用管理员均只能操作本人资源。前缀为 `/api/miniprogram/career`。
+
+| 方法 | 路径 | 语义 |
+| --- | --- | --- |
+| GET | `/applications` | 游标分页，复用 scope/keyword/status/stage_type/limit；返回 items/next_cursor，包含 current_stage、stages 和 current_session_status，用于区分场次已完成与等待结果 |
+| GET | `/applications/:id` | 本次求职的岗位快照、阶段历史、Offer 和锁版本 |
+| POST | `/applications/:id/stages` | 复用 AddApplicationStageRequest；client_request_id 幂等追加阶段，首次追加同时记录投递事实与可选正式简历版本 |
+| POST | `/applications/:id/terminate` | 复用 TerminateApplicationRequest；保留历史 |
+| POST | `/applications/:id/offer` | 复用 OfferApplicationRequest，保存已收到 Offer 的待遇 |
+| GET | `/sessions` | 游标分页，支持 application_id、带时区的 start_at/end_at、status、upcoming、scope、limit，时间窗口按重叠查询 |
+| POST | `/applications/:id/sessions` | 复用 InterviewSessionCreateRequest；关联当前阶段，幂等创建安排 |
+| GET | `/sessions/:id` | 返回 session/application，含准备和文字记录 |
+| PUT | `/sessions/:id` | 复用 InterviewSessionUpdateRequest，更新方式、链接、地点、准备或文字记录 |
+| POST | `/sessions/:id/reschedule` | 复用 RescheduleInterviewRequest；更新开始结束时间与时区 |
+| POST | `/sessions/:id/complete` | 复用 CompleteInterviewRequest，只完成本场 |
+| POST | `/sessions/:id/cancel` | 复用 CancelInterviewRequest，取消安排，保留记录 |
+| GET | `/applications/:id/resume-preview.png` | 仅渲染本次求职实际绑定的不可变简历版本，另校验简历仍归本人所有；不接受 version_id 覆盖，返回 PNG、private/no-store 和版本头；版本缺失返回 409 RESUME_VERSION_UNAVAILABLE |
+
+修改复用 base_lock_version；过期锁返回 `409 INTERVIEW_EDIT_CONFLICT`，非法阶段动作返回 `409 INTERVIEW_INVALID_TRANSITION`，排期允许时间重叠；兼容字段 `allow_conflict` 不再影响是否可保存。非法 ID、不存在或越权统一 `404 INTERVIEW_NOT_FOUND`。日期查询缺时区或范围倒置返回 `400 INVALID_INTERVIEW_QUERY`。阶段与安排分别提交，阶段成功后排期失败不会回滚阶段。原 overview、advance、close 兼容端点保留，新页面使用 stages/terminate。Web API、数据库 schema 和代理配置未改变。

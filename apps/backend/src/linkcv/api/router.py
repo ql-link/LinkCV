@@ -11,6 +11,7 @@ from linkcv.modules.interviews.routes import router as interview_router
 from linkcv.modules.job_descriptions.routes import router as job_description_router
 from linkcv.modules.llm.admin_routes import router as llm_admin_router
 from linkcv.modules.miniprogram.account_routes import router as miniprogram_account_router
+from linkcv.modules.miniprogram.career_routes import router as miniprogram_career_router
 from linkcv.modules.miniprogram.routes import router as miniprogram_router
 from linkcv.modules.observability.routes import router as observability_router
 from linkcv.modules.plugin_releases.admin_routes import router as plugin_release_admin_router
@@ -45,6 +46,7 @@ api_router.include_router(job_description_router)
 api_router.include_router(llm_admin_router)
 api_router.include_router(miniprogram_router)
 api_router.include_router(miniprogram_account_router)
+api_router.include_router(miniprogram_career_router)
 api_router.include_router(observability_router)
 api_router.include_router(plugin_release_admin_router)
 api_router.include_router(plugin_release_router)

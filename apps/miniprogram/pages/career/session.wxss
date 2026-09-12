@@ -1,0 +1,2 @@
+@import "./shared.wxss";
+.session-page .title { font-size:20px; }.complete-action { margin-top:0; }.session-mode { margin-top:0; }

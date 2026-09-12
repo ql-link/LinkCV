@@ -31,6 +31,7 @@ Page({
   },
 
   onLoad(options) {
+    require('../../services/tabResources').prepare();
     let scene = "";
     try {
       scene = decodeURIComponent((options && options.scene) || "");
@@ -129,8 +130,9 @@ Page({
         throw new Error((response.data && response.data.error) || "确认失败");
       }
       await auth.loginExistingAccount();
+      require('../../services/tabPrefetch').schedule();
+      require('../../services/tabResources').prepare();
       this.setData({ submitting: false, phase: "confirmed", message: "网页已安全登录，正在进入…" });
-      await new Promise((resolve) => setTimeout(resolve, 120));
       wx.switchTab({ url: "/pages/resumes/index" });
     } catch (error) {
       const recoverable = error.message === "WECHAT_SERVICE_UNAVAILABLE" || error.message === "WECHAT_CODE_INVALID";

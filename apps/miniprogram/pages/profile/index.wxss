@@ -1,10 +1,13 @@
+.page, button, input, textarea {
+  font-family: "LinkCV Career UI", -apple-system, "PingFang SC", sans-serif;
+}
+
 .page {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   padding: 0 32rpx calc(130rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
-  overflow-x: hidden;
   background: #f6f8fa;
   position: relative;
 }
@@ -330,7 +333,7 @@
   color: #0f172a;
   line-height: 1.1;
   letter-spacing: -1rpx;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  font-family: "LinkCV Career UI", -apple-system, "PingFang SC", sans-serif;
 }
 
 .stat-unit {
@@ -523,3 +526,6 @@
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+
+/* The shared brand component supplies the top inset. */
+.page { min-height:0;padding-top:20px; }
