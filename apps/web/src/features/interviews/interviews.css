@@ -4140,7 +4140,6 @@
 .interview-calendar-window-range { min-width: 0; flex: 1; overflow: hidden; color: var(--ui-text-secondary); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .interview-calendar-window-status { flex: 0 0 auto; border: 1px solid color-mix(in srgb, var(--ec-event-color) 42%, transparent); border-radius: 999px; padding: 1px 6px; color: var(--ui-foreground); font-size: 9px; font-style: normal; }
 .interview-calendar-window-more { display: flex; width: 100%; align-items: center; justify-content: center; color: var(--ui-text-secondary); font-size: 10px; font-weight: 650; }
-.interview-calendar-answer-plan-content .interview-calendar-event-title { color: var(--ec-event-color); }
 .career-reui-calendar [data-view="month"] .interview-calendar-event { padding: 3px 5px; }
 .career-reui-calendar [data-view="month"] .interview-calendar-event-content { display: flex; align-items: center; gap: 5px; }
 .career-reui-calendar [data-view="month"] .interview-calendar-event-time,
