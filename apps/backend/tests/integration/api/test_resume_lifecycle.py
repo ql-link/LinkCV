@@ -269,6 +269,40 @@ def test_update_persists_canonical_ordered_list_start() -> None:
         assert saved["start"] == 3
 
 
+def test_update_persists_empty_canonical_list_item() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        resume = create_resume(client, app).json()["resume"]
+        data = resume["data"]
+        data["sections"].append({
+            "node_id": "node_section1111111111",
+            "source_refs": [],
+            "semantic_kind": "work",
+            "title": None,
+            "entries": [],
+            "blocks": [{
+                "node_id": "node_list111111111111",
+                "block_type": "ordered_list",
+                "start": 1,
+                "items": [{
+                    "node_id": "node_item111111111111",
+                    "source_refs": [],
+                    "runs": [],
+                }],
+            }],
+        })
+
+        response = client.put(
+            f"/api/resumes/{resume['id']}",
+            json={"data": data, "base_lock_version": resume["lock_version"]},
+        )
+
+        assert response.status_code == 200
+        saved = response.json()["resume"]["data"]["sections"][0]["blocks"][0]
+        assert saved["items"][0]["runs"] == []
+
+
 def test_semantic_classification_returns_scoped_suggestion_without_writing_resume() -> None:
     app = build_app()
     service = FakeSemanticClassificationService()

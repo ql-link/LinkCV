@@ -235,7 +235,7 @@ Identity.model_rebuild()
 
 
 class ListItem(SourceReferenced):
-    runs: list[InlineContent] = Field(min_length=1, max_length=2000)
+    runs: list[InlineContent] = Field(max_length=2000)
 
 
 class ListBlock(ClosedModel):
