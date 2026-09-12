@@ -30,6 +30,7 @@
 | `doc-maintenance-sync` | 维护 `docs/` 长期项目知识 | 文档与契约门禁 |
 | `implementation-execution` | 执行纯后端任务及混合任务的后端、契约和配置工作包；方案任务以 `solution.md` 为中心 | 测试 |
 | `branch-pr-workflow` | 从 `master` 准备业务分支，完成面向 `dev` 的提交与 PR，PR 前执行与实际范围匹配的本地检查 | 用户审核与 Dev 集成测试 |
+| `version-release-workflow` | 将指定 Dev-only 分支提取为净差异，汇总到 `release/<version>` 并生成版本说明和唯一的 Master 发布 PR；按授权处理合并、Tag 和 GitHub Release | 版本发布汇总、Master PR、Tag/Release 权限边界 |
 
 ## 测试与质量
 
