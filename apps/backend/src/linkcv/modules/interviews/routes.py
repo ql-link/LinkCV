@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from linkcv.application.interviews.service import (
     InterviewApplicationNotEmpty,
-    InterviewApplicationAlreadyActive,
+    InterviewApplicationAlreadyExists,
     InterviewAnswerPlanInvalidTime,
     InterviewAnswerPlanNotSupported,
     InterviewAnswerPlanOutsideWindow,
@@ -57,6 +57,7 @@ from linkcv.application.interviews.service import (
     update_answer_plan,
     update_session,
 )
+from linkcv.application.job_descriptions.service import hard_delete_owned_job
 from linkcv.application.resumes.service import parse_decimal_id
 from linkcv.core.config import Settings
 from linkcv.core.database import get_db
@@ -149,7 +150,9 @@ def _database_id(
 
 
 def _utc_iso(value: datetime) -> str:
-    normalized = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+    normalized = (
+        value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+    )
     return normalized.isoformat()
 
 
@@ -218,10 +221,10 @@ def _raise_service_error(error: Exception) -> None:
         raise ApiError(404, "INTERVIEW_NOT_FOUND") from error
     if isinstance(error, InterviewResumeVersionRequired):
         raise ApiError(409, "INTERVIEW_RESUME_VERSION_REQUIRED") from error
-    if isinstance(error, InterviewApplicationAlreadyActive):
+    if isinstance(error, InterviewApplicationAlreadyExists):
         raise ApiError(
             409,
-            "APPLICATION_ALREADY_ACTIVE",
+            "APPLICATION_ALREADY_EXISTS",
             {"application_id": str(error.application_id)},
         ) from error
     if isinstance(error, InterviewEditConflict):
@@ -527,12 +530,26 @@ def delete_application_route(
                 raise
 
     try:
-        delete_application(
-            db,
-            user.id,
-            _database_id(application_id),
-            delete_asset_object=delete_asset_object,
-        )
+        parsed_application_id = _database_id(application_id)
+        application = require_owned_application(db, user.id, parsed_application_id)
+        if application.job_description_id is not None:
+            if application.lifecycle_status != "terminated":
+                raise InterviewApplicationNotEmpty
+            deleted = hard_delete_owned_job(
+                db,
+                str(application.job_description_id),
+                user.id,
+                delete_asset_object=delete_asset_object,
+            )
+            if not deleted:
+                raise InterviewNotFound
+        else:
+            delete_application(
+                db,
+                user.id,
+                parsed_application_id,
+                delete_asset_object=delete_asset_object,
+            )
     except S3Error as error:
         raise ApiError(502, "INTERVIEW_APPLICATION_DELETE_FAILED") from error
     except Exception as error:
