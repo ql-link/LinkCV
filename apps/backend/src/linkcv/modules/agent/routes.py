@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from linkcv.core.database import get_db, utc_now
 from linkcv.core.errors import ApiError
+from linkcv.core.storage import AssetStorage, get_storage
 from linkcv.modules.agent.models import (
     AgentMessage,
     AgentRun,
@@ -46,6 +47,7 @@ from linkcv.modules.identity.dependencies import get_current_user
 from linkcv.modules.identity.models import User
 from linkcv.modules.llm.service import LLMError
 from linkcv.modules.resumes.routes import resume_record
+from linkcv.modules.resumes.pdf_service import validate_resume_pdf_asset_contract
 from linkcv.modules.resumes.schemas import ResumeResponse
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -318,12 +320,19 @@ def confirm_agent_proposal(
     request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    storage: AssetStorage = Depends(get_storage),
 ) -> ResumeResponse:
     _, resume = confirm_proposal(
         db,
         public_id=proposal_id,
         user_id=user.id,
         version_limit=request.app.state.settings.resume_version_limit,
+        validate_resume_data=lambda data, resume_id: validate_resume_pdf_asset_contract(
+            storage,
+            data,
+            user_id=user.id,
+            resume_id=resume_id,
+        ),
     )
     return ResumeResponse(resume=resume_record(resume))
 

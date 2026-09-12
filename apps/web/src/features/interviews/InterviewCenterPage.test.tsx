@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiRequestError, type JobApplicationSummary, type ResumeSummary } from "@/api/client";
 import { useResumeStore } from "@/store/resumeStore";
-import { sortApplications } from "./ApplicationsBoard";
+import { applicationCardTimeLabel, sortApplications } from "./ApplicationsBoard";
 import { InterviewCenterPage } from "./InterviewCenterPage";
 import {
   applicationProgressLabel,
@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => {
   getInterviewSession: vi.fn(),
   updateJobApplication: vi.fn(),
   rescheduleInterviewSession: vi.fn(),
+  updateInterviewAnswerPlan: vi.fn(),
   listJobDescriptions: vi.fn(),
   listVersions: vi.fn(),
   parseJobDescriptionDraft: vi.fn(),
@@ -57,6 +58,7 @@ const application = {
   resume_version_id: null,
   company_name_snapshot: "腾讯",
   job_title_snapshot: "后端开发工程师",
+  company_logo_url: null,
   job_snapshot: { schema_version: 1 },
   resume_title_snapshot: null,
   calendar_color: "blue" as const,
@@ -130,6 +132,9 @@ const session = {
   round_result: "pending" as const,
   start_at: fixtureSessionStart.toISOString(),
   end_at: fixtureSessionEnd.toISOString(),
+  schedule_kind: "fixed_slot" as const,
+  answer_plan_start_at: null,
+  answer_plan_end_at: null,
   timezone: "Asia/Shanghai",
   mode: "video" as const,
   meeting_url: "https://meeting.example/31",
@@ -190,12 +195,32 @@ function chooseScheduleDateTime(
   dateValue: string,
   hour: string,
   minute: string,
+  durationMinutes?: number,
 ) {
   const picker = openScheduleDateTimePicker(dialog, label, dateValue);
-  fireEvent.click(within(picker).getByRole("combobox", { name: "小时" }));
-  fireEvent.click(within(picker).getByRole("option", { name: `${hour} 时` }));
-  fireEvent.click(within(picker).getByRole("combobox", { name: "分钟" }));
-  fireEvent.click(within(picker).getByRole("option", { name: `${minute} 分` }));
+  const directTime = within(picker).queryByLabelText("开始时间");
+  if (directTime) {
+    fireEvent.change(directTime, { target: { value: `${hour}:${minute}` } });
+    if (durationMinutes !== undefined) {
+      const presetLabel = durationMinutes === 30
+        ? "30 分钟"
+        : durationMinutes === 60
+          ? "1 小时"
+          : durationMinutes === 120
+            ? "2 小时"
+            : null;
+      if (presetLabel) fireEvent.click(within(picker).getByRole("button", { name: presetLabel }));
+      else {
+        fireEvent.click(within(picker).getByRole("button", { name: "自定义" }));
+        fireEvent.change(within(picker).getByLabelText("自定义时长（分钟）"), { target: { value: String(durationMinutes) } });
+      }
+    }
+  } else {
+    fireEvent.click(within(picker).getByRole("combobox", { name: "小时" }));
+    fireEvent.click(within(picker).getByRole("option", { name: `${hour} 时` }));
+    fireEvent.click(within(picker).getByRole("combobox", { name: "分钟" }));
+    fireEvent.click(within(picker).getByRole("option", { name: `${minute} 分` }));
+  }
   fireEvent.click(within(picker).getByRole("button", { name: "确定" }));
 }
 
@@ -260,6 +285,7 @@ beforeEach(() => {
   mocks.listVersions.mockResolvedValue({ versions: [] });
   useResumeStore.setState({ resumes: resumeFixtures });
   mocks.cancelInterviewSession.mockResolvedValue({ session, application, assets: [] });
+  mocks.updateInterviewAnswerPlan.mockResolvedValue({ session, application, assets: [] });
   mocks.deleteInterviewSession.mockResolvedValue({ deleted: true, application });
   mocks.archiveJobApplication.mockResolvedValue({
     application: { ...application, archived_at: "2026-08-20T12:00:00Z" },
@@ -400,6 +426,75 @@ describe("InterviewCenterPage API projections", () => {
       next_session_end_at: null,
     }, { now, currentStageCompleted: true })).toBe("is-success");
     expect(applicationProgressToneClass(makeScheduled("2026-08-31T23:00:00Z", "2026-08-31T23:30:00Z"), { now })).toBe("is-waiting");
+  });
+
+  it("shows stage-specific time context on board cards", () => {
+    const makeSummary = (
+      overrides: Partial<JobApplicationSummary>,
+    ): JobApplicationSummary => ({
+      ...application,
+      next_session_id: null,
+      next_session_start_at: null,
+      next_session_end_at: null,
+      next_session_mode: null,
+      ...overrides,
+    });
+    const stage = {
+      id: "stage-offer",
+      application_id: application.id,
+      client_request_id: "request-offer",
+      stage_type: "offer" as const,
+      stage_label: "Offer",
+      interview_round_no: null,
+      sequence_no: 4,
+      stage_status: "active" as const,
+      stage_result: "pending" as const,
+      current_marker: 1,
+      entered_at: "2026-09-10T18:32:00",
+      completed_at: null,
+      created_at: "2026-09-10T18:32:00",
+      updated_at: "2026-09-10T18:32:00",
+    };
+
+    expect(applicationCardTimeLabel(makeSummary({
+      current_stage_type: "screening",
+      current_round_no: null,
+      current_stage_label: "待投递",
+      phase: "pending",
+      created_at: "2026-09-09T10:24:00",
+    }))).toBe("创建于 9月9日 10:24");
+    expect(applicationCardTimeLabel(makeSummary({
+      next_session_start_at: "2026-09-12T14:00:00",
+      next_session_end_at: "2026-09-12T15:00:00",
+    }))).toBe("9月12日 14:00–15:00");
+    expect(applicationCardTimeLabel(makeSummary({}))).toBe("尚未安排时间");
+    expect(applicationCardTimeLabel(makeSummary({
+      current_stage_type: "screening",
+      current_round_no: null,
+      current_stage_label: "笔试中",
+      phase: "applied",
+      next_session_end_at: "2026-09-13T20:00:00",
+    }))).toBe("截止 9月13日 20:00");
+    expect(applicationCardTimeLabel(makeSummary({
+      current_stage_type: "offer",
+      current_round_no: null,
+      current_stage_label: "Offer",
+      stage_state: "negotiating",
+      offer_status: "received",
+      current_stage: stage,
+    }))).toBe("9月10日 18:32 获得 Offer");
+    expect(applicationCardTimeLabel(makeSummary({
+      current_stage_type: "screening",
+      current_round_no: null,
+      current_stage_label: "筛选中",
+      applied_at: "2026-09-08T14:36:00",
+    }))).toBe("投递于 9月8日 14:36");
+    expect(applicationCardTimeLabel(makeSummary({
+      lifecycle_status: "terminated",
+      status: "rejected",
+      terminated_at: "2026-09-11T09:20:00",
+      termination_reason: "company_rejected",
+    }))).toBe("结束于 9月11日 09:20");
   });
 
   it("keeps the board status concise while retaining stage context in the list", async () => {
@@ -594,6 +689,10 @@ describe("InterviewCenterPage API projections", () => {
     expect(event.querySelector(".interview-calendar-event-content")).toBeInTheDocument();
     fireEvent.click(event);
     expect(event).toHaveAttribute("aria-pressed", "true");
+    const emptyScheduleColumn = calendar.querySelector<HTMLElement>('[data-ec-bounds-start="0"]');
+    expect(emptyScheduleColumn).not.toBeNull();
+    fireEvent.click(emptyScheduleColumn!);
+    expect(event).toHaveAttribute("aria-pressed", "false");
     expect(screen.queryByRole("dialog", { name: "面试详情" })).not.toBeInTheDocument();
     fireEvent.doubleClick(event);
     const dialog = await screen.findByRole("dialog", { name: "面试详情" });
@@ -612,6 +711,140 @@ describe("InterviewCenterPage API projections", () => {
     expect(screen.queryByRole("dialog", { name: "面试详情" })).not.toBeInTheDocument();
 
     expect(event).toHaveAttribute("data-draggable", "true");
+  });
+
+  it("把开放笔试显示在顶部并允许保存个人作答计划", async () => {
+    const windowStart = new Date(fixtureWeekStart);
+    windowStart.setDate(windowStart.getDate() + 3);
+    windowStart.setHours(12, 0, 0, 0);
+    const windowEnd = new Date(fixtureWeekStart);
+    windowEnd.setDate(windowEnd.getDate() + 6);
+    windowEnd.setHours(23, 45, 0, 0);
+    const planStart = new Date(fixtureWeekStart);
+    planStart.setDate(planStart.getDate() + 5);
+    planStart.setHours(19, 0, 0, 0);
+    const planEnd = new Date(planStart);
+    planEnd.setHours(21, 0, 0, 0);
+    const openWindowSession = {
+      ...session,
+      id: "open-window-31",
+      stage_type: "other" as const,
+      round_no: null,
+      stage_label: "笔试",
+      company_name: "水滴",
+      start_at: windowStart.toISOString(),
+      end_at: windowEnd.toISOString(),
+      schedule_kind: "open_window" as const,
+      answer_plan_start_at: planStart.toISOString(),
+      answer_plan_end_at: planEnd.toISOString(),
+      calendar_color: "orange" as const,
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [openWindowSession], next_cursor: null });
+    mocks.getInterviewSession.mockResolvedValue({ session: openWindowSession, application, assets: [] });
+    mocks.updateInterviewAnswerPlan.mockResolvedValue({ session: openWindowSession, application, assets: [] });
+
+    render(<InterviewCenterPage view="schedule" />);
+
+    const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
+    expect(within(calendar).getByText("作答时段")).toBeInTheDocument();
+    const waterdropEvents = within(calendar).getAllByRole("button", { name: /水滴.*笔试/ });
+    expect(waterdropEvents).toHaveLength(2);
+    const windowEvent = waterdropEvents.find((event) => !event.hasAttribute("data-draggable"));
+    const answerPlanEvent = waterdropEvents.find((event) => event.getAttribute("data-draggable") === "true");
+    expect(windowEvent).toBeDefined();
+    expect(answerPlanEvent).toBeDefined();
+    expect(windowEvent).not.toHaveAttribute("data-draggable", "true");
+    expect(within(answerPlanEvent!).getByText("水滴")).toBeInTheDocument();
+    expect(within(answerPlanEvent!).getByText("笔试")).toBeInTheDocument();
+    expect(within(calendar).queryByText("我的作答计划")).not.toBeInTheDocument();
+
+    fireEvent.doubleClick(windowEvent!);
+    const dialog = await screen.findByRole("dialog", { name: "面试详情" });
+    expect(within(dialog).getByText("仅作为个人时间安排，不会改变官方截止时间。")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "保存作答计划" }));
+    await waitFor(() => expect(mocks.updateInterviewAnswerPlan).toHaveBeenCalledWith(
+      openWindowSession.id,
+      expect.objectContaining({
+        answer_plan_start_at: planStart.toISOString(),
+        duration_minutes: 120,
+        base_lock_version: openWindowSession.lock_version,
+      }),
+    ));
+  });
+
+  it("当前周没有作答时段时隐藏顶部区域", async () => {
+    render(<InterviewCenterPage view="schedule" />);
+
+    const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
+    expect(within(calendar).queryByText("作答时段")).not.toBeInTheDocument();
+    expect(calendar.querySelector('[data-slot="event-calendar-all-day-section"]')).not.toBeInTheDocument();
+    expect(within(calendar).getByRole("button", { name: /腾讯.*二面/ })).toBeInTheDocument();
+  });
+
+  it("已完成的开放笔试只读展示作答计划", async () => {
+    const windowStart = new Date(fixtureWeekStart);
+    const windowEnd = new Date(fixtureWeekEnd);
+    const planStart = new Date(fixtureWeekStart);
+    planStart.setDate(planStart.getDate() + 2);
+    planStart.setHours(19, 0, 0, 0);
+    const planEnd = new Date(planStart);
+    planEnd.setHours(21, 0, 0, 0);
+    const completedWindow = {
+      ...session,
+      id: "completed-open-window",
+      stage_type: "other" as const,
+      round_no: null,
+      stage_label: "笔试",
+      company_name: "只读示例公司",
+      status: "completed" as const,
+      completed_at: planEnd.toISOString(),
+      start_at: windowStart.toISOString(),
+      end_at: windowEnd.toISOString(),
+      schedule_kind: "open_window" as const,
+      answer_plan_start_at: planStart.toISOString(),
+      answer_plan_end_at: planEnd.toISOString(),
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [completedWindow], next_cursor: null });
+    mocks.getInterviewSession.mockResolvedValue({ session: completedWindow, application, assets: [] });
+
+    render(<InterviewCenterPage view="schedule" />);
+
+    const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
+    fireEvent.doubleClick(within(calendar).getByRole("button", { name: /只读示例公司.*笔试.*19:00.*21:00/ }));
+    const dialog = await screen.findByRole("dialog", { name: "面试详情" });
+    expect(within(dialog).getByRole("button", { name: "计划作答时间" })).toBeDisabled();
+    expect(within(dialog).queryByRole("button", { name: "保存作答计划" })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "清除计划" })).not.toBeInTheDocument();
+  });
+
+  it("作答时段超过三条时折叠并可展开", async () => {
+    const windowStart = new Date(fixtureWeekStart);
+    windowStart.setHours(8, 0, 0, 0);
+    const windowEnd = new Date(fixtureWeekStart);
+    windowEnd.setDate(windowEnd.getDate() + 6);
+    windowEnd.setHours(22, 0, 0, 0);
+    mocks.listInterviewSessions.mockResolvedValue({
+      items: Array.from({ length: 5 }, (_, index) => ({
+        ...session,
+        id: `open-${index}`,
+        stage_type: "other" as const,
+        round_no: null,
+        stage_label: "笔试",
+        company_name: `开放公司${index + 1}`,
+        start_at: windowStart.toISOString(),
+        end_at: new Date(windowEnd.getTime() + index * 60_000).toISOString(),
+        schedule_kind: "open_window" as const,
+      })),
+      next_cursor: null,
+    });
+
+    render(<InterviewCenterPage view="schedule" />);
+
+    const calendar = await screen.findByRole("grid", { name: "面试周排期，可拖动并按 15 分钟调整" });
+    expect(within(calendar).getAllByRole("button", { name: /开放公司\d.*笔试/ })).toHaveLength(3);
+    fireEvent.click(within(calendar).getByRole("button", { name: /还有 2 项待完成 · 展开查看/ }));
+    expect(within(calendar).getAllByRole("button", { name: /开放公司\d.*笔试/ })).toHaveLength(5);
+    expect(within(calendar).getByRole("button", { name: /收起更多项目/ })).toBeInTheDocument();
   });
 
   it("nests a schedule that is fully contained by another schedule", async () => {
@@ -1428,15 +1661,14 @@ describe("InterviewCenterPage API projections", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "修改笔试安排" }));
     const editDialog = await screen.findByRole("dialog", { name: "修改笔试安排" });
-    chooseScheduleDateTime(editDialog, "笔试开始时间", "2026-09-18", "14", "30");
-    fireEvent.change(within(editDialog).getByLabelText("时长（分钟）"), { target: { value: "90" } });
+    chooseScheduleDateTime(editDialog, "笔试时间", "2026-09-18", "14", "30", 90);
     chooseSelectOption(editDialog, "笔试方式", "线下");
     fireEvent.change(within(editDialog).getByLabelText("地点（选填）"), { target: { value: "科技园 2 号楼" } });
     fireEvent.click(within(editDialog).getByRole("button", { name: "保存修改" }));
 
     await waitFor(() => expect(mocks.rescheduleInterviewSession).toHaveBeenCalledWith("31", {
       start_at: new Date("2026-09-18T14:30").toISOString(),
-      end_at: new Date("2026-09-18T16:00").toISOString(),
+      duration_minutes: 90,
       timezone: "Asia/Shanghai",
       allow_conflict: false,
       base_lock_version: 2,
@@ -1465,7 +1697,15 @@ describe("InterviewCenterPage API projections", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "修改面试安排" }));
     const editDialog = await screen.findByRole("dialog", { name: "修改面试安排" });
-    fireEvent.change(within(editDialog).getByLabelText("时长（分钟）"), { target: { value: "90" } });
+    const originalStart = new Date(session.start_at);
+    chooseScheduleDateTime(
+      editDialog,
+      "面试时间",
+      `${originalStart.getFullYear()}-${String(originalStart.getMonth() + 1).padStart(2, "0")}-${String(originalStart.getDate()).padStart(2, "0")}`,
+      String(originalStart.getHours()).padStart(2, "0"),
+      String(originalStart.getMinutes()).padStart(2, "0"),
+      90,
+    );
     fireEvent.click(within(editDialog).getByRole("button", { name: "保存修改" }));
 
     expect(await within(editDialog).findByRole("status")).toHaveTextContent("这个时间段与其他安排重叠");
@@ -1791,7 +2031,7 @@ describe("InterviewCenterPage API projections", () => {
     expect(within(dialog).queryByRole("radio", { name: "筛选" })).not.toBeInTheDocument();
     expect(within(dialog).queryByLabelText("筛选轮次")).not.toBeInTheDocument();
     expect(within(dialog).queryByLabelText("当前状态")).not.toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "开始时间" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "笔试时间" })).toBeInTheDocument();
     expect(within(dialog).getByLabelText("笔试链接或地点（选填）")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "添加并保存" })).toBeEnabled();
     expect(dialog.querySelector("select")).not.toBeInTheDocument();
@@ -1801,18 +2041,20 @@ describe("InterviewCenterPage API projections", () => {
     expect(within(dialog).getByLabelText("面试轮次")).toHaveAttribute("placeholder", "如：一面、业务面、HR 面");
     expect(within(dialog).getByLabelText("面试轮次（选填）")).toHaveValue(3);
     expect(within(dialog).queryByLabelText("当前状态")).not.toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "面试时间" })).toBeInTheDocument();
+    const interviewTimeField = within(dialog).getByRole("button", { name: "面试时间" }).closest(".career-next-stage-field");
+    const interviewModeField = within(dialog).getByRole("combobox", { name: "方式" }).closest(".career-next-stage-field");
+    expect(interviewTimeField).not.toHaveClass("career-next-stage-field--full");
+    expect(interviewModeField).not.toHaveClass("career-next-stage-field--full");
+    expect(interviewTimeField?.nextElementSibling).toBe(interviewModeField);
     expect(within(dialog).getByLabelText("面试链接或地点（选填）")).toBeInTheDocument();
-    expect(within(dialog).getByRole("combobox", { name: "时长" })).toHaveTextContent("60 分钟");
     expect(within(dialog).getByRole("button", { name: "添加并保存" })).toBeDisabled();
     fireEvent.change(within(dialog).getByLabelText("面试轮次"), { target: { value: "三面" } });
     fireEvent.change(within(dialog).getByLabelText("面试链接或地点（选填）"), { target: { value: "深圳科技园 3 号楼" } });
     expect(within(dialog).getByRole("button", { name: "添加并保存" })).toBeEnabled();
     expect(mocks.advanceJobApplication).not.toHaveBeenCalled();
-    chooseScheduleDateTime(dialog, "面试时间", "2026-09-10", "09", "30");
-    chooseSelectOption(dialog, "时长", "90 分钟");
+    chooseScheduleDateTime(dialog, "面试时间", "2026-09-10", "09", "30", 90);
     chooseSelectOption(dialog, "方式", "现场面试");
-    expect(within(dialog).getByRole("button", { name: "面试时间" })).toHaveTextContent("2026-09-10 09:30");
+    expect(within(dialog).getByRole("button", { name: "面试时间" })).toHaveTextContent("2026-09-10 09:30–11:00");
     expect(within(dialog).getByRole("button", { name: "添加并保存" })).toBeEnabled();
     fireEvent.click(within(dialog).getByRole("button", { name: "添加并保存" }));
 
@@ -1829,7 +2071,7 @@ describe("InterviewCenterPage API projections", () => {
       round_no: 3,
       stage_label: "三面",
       start_at: new Date("2026-09-10T09:30").toISOString(),
-      end_at: new Date("2026-09-10T11:00").toISOString(),
+      duration_minutes: 90,
       timezone: localTimezone,
       mode: "onsite",
       meeting_url: null,
@@ -1908,7 +2150,7 @@ describe("InterviewCenterPage API projections", () => {
     );
   });
 
-  it("adds and schedules an AI interview with explicit start and end times", async () => {
+  it("adds and schedules an AI interview with one start time and a duration", async () => {
     const awaitingResultApplication = {
       ...application,
       id: "69",
@@ -1927,12 +2169,11 @@ describe("InterviewCenterPage API projections", () => {
     const dialog = await screen.findByRole("dialog", { name: "添加下一阶段" });
     fireEvent.click(within(dialog).getByRole("radio", { name: "AI 面试" }));
     expect(within(dialog).getByRole("button", { name: "开始时间" })).toHaveTextContent("选择日期和时间");
-    expect(within(dialog).getByRole("button", { name: "结束时间" })).toHaveTextContent("选择日期和时间");
+    expect(within(dialog).queryByRole("button", { name: "结束时间" })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("radiogroup", { name: "完成期限" })).not.toBeInTheDocument();
 
     fireEvent.change(within(dialog).getByLabelText("面试链接（选填）"), { target: { value: "https://ai-interview.example/69" } });
-    chooseScheduleDateTime(dialog, "开始时间", "2026-09-12", "09", "17");
-    chooseScheduleDateTime(dialog, "结束时间", "2026-09-12", "10", "45");
+    chooseScheduleDateTime(dialog, "开始时间", "2026-09-12", "09", "17", 90);
     fireEvent.click(within(dialog).getByRole("button", { name: "添加并保存" }));
 
     await waitFor(() => expect(mocks.addJobApplicationStage).toHaveBeenCalledWith("69", {
@@ -1946,7 +2187,7 @@ describe("InterviewCenterPage API projections", () => {
       round_no: null,
       stage_label: "AI 面试",
       start_at: new Date("2026-09-12T09:17").toISOString(),
-      end_at: new Date("2026-09-12T10:45").toISOString(),
+      duration_minutes: 90,
       timezone: localTimezone,
       mode: "video",
       meeting_url: "https://ai-interview.example/69",
@@ -1976,8 +2217,8 @@ describe("InterviewCenterPage API projections", () => {
     expect(within(dialog).getByRole("radiogroup", { name: "完成期限" })).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole("radio", { name: "笔试" }));
-    expect(within(dialog).getByRole("button", { name: "开始时间" })).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "结束时间" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "笔试时间" })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "结束时间" })).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText("笔试链接或地点（选填）")).toBeInTheDocument();
     expect(within(dialog).queryByLabelText("测评链接（选填）")).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("radiogroup", { name: "完成期限" })).not.toBeInTheDocument();
@@ -2011,8 +2252,8 @@ describe("InterviewCenterPage API projections", () => {
     fireEvent.click(await screen.findByRole("button", { name: "添加下一阶段" }));
     const dialog = await screen.findByRole("dialog", { name: "添加下一阶段" });
     expect(within(dialog).getByRole("radio", { name: "笔试" })).toHaveAttribute("aria-checked", "true");
-    expect(within(dialog).getByRole("button", { name: "开始时间" })).toHaveTextContent("选择日期和时间");
-    expect(within(dialog).getByRole("button", { name: "结束时间" })).toHaveTextContent("选择日期和时间");
+    expect(within(dialog).getByRole("button", { name: "笔试时间" })).toHaveTextContent("选择日期和时间");
+    expect(within(dialog).queryByRole("button", { name: "结束时间" })).not.toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "添加并保存" })).toBeEnabled();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "添加并保存" }));
@@ -2042,15 +2283,24 @@ describe("InterviewCenterPage API projections", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "添加下一阶段" }));
     const dialog = await screen.findByRole("dialog", { name: "添加下一阶段" });
-    const picker = openScheduleDateTimePicker(dialog, "开始时间", "2026-09-10");
+    const picker = openScheduleDateTimePicker(dialog, "笔试时间", "2026-09-10");
 
-    expect(within(picker).getByRole("combobox", { name: "小时" })).toBeInTheDocument();
-    expect(within(picker).getByRole("combobox", { name: "分钟" })).toBeInTheDocument();
-    fireEvent.click(within(picker).getByRole("button", { name: "14:00" }));
+    expect(within(picker).getByText("选择笔试时间段")).toBeInTheDocument();
+    const startTimeInput = within(picker).getByRole("combobox", { name: "开始时间" });
+    expect(startTimeInput).toBeInTheDocument();
+    expect(within(picker).queryByText("快捷选择")).not.toBeInTheDocument();
+    expect(picker.querySelector('input[type="time"]')).not.toBeInTheDocument();
+    expect(within(picker).getByRole("group", { name: "预计时长" })).toBeInTheDocument();
+    fireEvent.change(startTimeInput, { target: { value: "1" } });
+    expect(startTimeInput).toHaveValue("1");
+    fireEvent.change(startTimeInput, { target: { value: "14:" } });
+    expect(startTimeInput).toHaveValue("14:");
+    fireEvent.click(within(picker).getByRole("button", { name: "展开开始时间选项" }));
+    fireEvent.click(within(picker).getByRole("option", { name: "14:00" }));
 
-    expect(within(picker).getByText("2026-09-10 14:00")).toBeInTheDocument();
+    expect(within(picker).getByText(/15:00/)).toBeInTheDocument();
     fireEvent.click(within(picker).getByRole("button", { name: "确定" }));
-    expect(within(dialog).getByRole("button", { name: "开始时间" })).toHaveTextContent("2026-09-10 14:00");
+    expect(within(dialog).getByRole("button", { name: "笔试时间" })).toHaveTextContent("2026-09-10 14:00–15:00");
   });
 
   it("keeps the schedule picker inside a narrow viewport without scrolling the dialog", async () => {
@@ -2090,7 +2340,7 @@ describe("InterviewCenterPage API projections", () => {
         scrollHeight: { configurable: true, value: 900 },
       });
       panel.scrollTop = 96;
-      const trigger = within(dialog).getByRole("button", { name: "开始时间" });
+      const trigger = within(dialog).getByRole("button", { name: "笔试时间" });
       vi.spyOn(trigger, "getBoundingClientRect").mockReturnValue({
         x: 24,
         y: 80,
@@ -2104,7 +2354,7 @@ describe("InterviewCenterPage API projections", () => {
       });
       fireEvent.click(trigger);
 
-      const picker = within(dialog).getByRole("dialog", { name: "选择开始时间" });
+      const picker = within(dialog).getByRole("dialog", { name: "选择笔试时间" });
       expect(picker.parentElement).toBe(dialog);
       expect(panel.contains(picker)).toBe(false);
       expect(picker).toHaveStyle({ left: "22px", right: "auto", top: "112px" });
@@ -2423,9 +2673,93 @@ describe("InterviewCenterPage API projections", () => {
     expect(screen.getByRole("heading", { name: "笔试概况" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "笔试记录", level: 2 })).toBeInTheDocument();
     expect(screen.getByText("笔试名称")).toBeInTheDocument();
+    expect(screen.getByText(`${fixtureSessionStart.getFullYear()}年${fixtureSessionStart.getMonth() + 1}月${fixtureSessionStart.getDate()}日 10:00–11:00`)).toBeInTheDocument();
     expect(screen.getByText("尚未添加笔试内容")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "打开笔试链接" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "打开会议链接" })).not.toBeInTheDocument();
+  });
+
+  it("shows an open written-test range and saves its answer plan from the record detail", async () => {
+    const windowStart = new Date(2026, 8, 10, 12, 0);
+    const windowEnd = new Date(2026, 8, 13, 13, 0);
+    const planStart = new Date(2026, 8, 11, 19, 0);
+    const planEnd = new Date(2026, 8, 11, 21, 0);
+    const openWindowSession = {
+      ...session,
+      stage_type: "other" as const,
+      round_no: null,
+      stage_label: "笔试",
+      start_at: windowStart.toISOString(),
+      end_at: windowEnd.toISOString(),
+      schedule_kind: "open_window" as const,
+      answer_plan_start_at: null,
+      answer_plan_end_at: null,
+      questions_markdown: null,
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [openWindowSession], next_cursor: null });
+    mocks.getInterviewSession.mockResolvedValue({ session: openWindowSession, application, assets: [] });
+    mocks.updateInterviewAnswerPlan.mockResolvedValue({
+      session: {
+        ...openWindowSession,
+        answer_plan_start_at: planStart.toISOString(),
+        answer_plan_end_at: planEnd.toISOString(),
+        lock_version: openWindowSession.lock_version + 1,
+      },
+      application,
+      assets: [],
+    });
+
+    render(<InterviewCenterPage view="records" initialApplicationId="21" initialSessionId="31" />);
+
+    expect(await screen.findByText("官方作答时段")).toBeInTheDocument();
+    expect(screen.getByText("2026年9月10日 12:00–2026年9月13日 13:00")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "我的作答计划" })).toBeInTheDocument();
+
+    const outsidePicker = openScheduleDateTimePicker(document.body, "计划作答时间", "2026-09-13");
+    expect(within(outsidePicker).getByText("选择作答时间段")).toBeInTheDocument();
+    expect(within(outsidePicker).getByText("可安排：9月10日 12:00 – 9月13日 13:00")).toBeInTheDocument();
+    fireEvent.change(within(outsidePicker).getByLabelText("开始时间"), { target: { value: "12:00" } });
+    fireEvent.click(within(outsidePicker).getByRole("button", { name: "2 小时" }));
+    expect(within(outsidePicker).getByRole("button", { name: "确定" })).toBeDisabled();
+    fireEvent.keyDown(outsidePicker, { key: "Escape" });
+    expect(mocks.updateInterviewAnswerPlan).not.toHaveBeenCalled();
+
+    chooseScheduleDateTime(document.body, "计划作答时间", "2026-09-11", "19", "00", 120);
+    fireEvent.click(screen.getByRole("button", { name: "保存作答计划" }));
+
+    await waitFor(() => expect(mocks.updateInterviewAnswerPlan).toHaveBeenCalledWith("31", {
+      answer_plan_start_at: planStart.toISOString(),
+      duration_minutes: 120,
+      base_lock_version: 2,
+    }));
+  });
+
+  it("keeps a completed open written-test answer plan visible and read-only", async () => {
+    const windowStart = new Date(2026, 8, 10, 12, 0);
+    const windowEnd = new Date(2026, 8, 13, 13, 0);
+    const planStart = new Date(2026, 8, 11, 19, 0);
+    const planEnd = new Date(2026, 8, 11, 21, 0);
+    const completedWindowSession = {
+      ...session,
+      stage_type: "other" as const,
+      round_no: null,
+      stage_label: "笔试",
+      status: "completed" as const,
+      completed_at: planEnd.toISOString(),
+      start_at: windowStart.toISOString(),
+      end_at: windowEnd.toISOString(),
+      schedule_kind: "open_window" as const,
+      answer_plan_start_at: planStart.toISOString(),
+      answer_plan_end_at: planEnd.toISOString(),
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [completedWindowSession], next_cursor: null });
+    mocks.getInterviewSession.mockResolvedValue({ session: completedWindowSession, application, assets: [] });
+
+    render(<InterviewCenterPage view="records" initialApplicationId="21" initialSessionId="31" />);
+
+    expect(await screen.findByText("2026年9月11日 19:00–21:00")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "保存作答计划" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "清除计划" })).not.toBeInTheDocument();
   });
 
   it("does not show the next-stage action inside a completed assessment detail", async () => {
@@ -2675,6 +3009,7 @@ describe("InterviewCenterPage API projections", () => {
     });
     const interview = makeApplication({
       id: "42",
+      company_logo_url: "https://cdn.example.test/logos/tencent.png",
       job_snapshot: { schema_version: 1, employment_type: "full_time" },
       next_session_id: "31",
       next_session_start_at: session.start_at,
@@ -2850,10 +3185,17 @@ describe("InterviewCenterPage API projections", () => {
     expect(within(screen.getByRole("article", { name: "笔试公司 笔试岗位" })).getByText("进行中")).toBeInTheDocument();
 
     const interviewCard = screen.getByRole("article", { name: "腾讯 后端开发工程师" });
+    const companyLogo = within(interviewCard).getByRole("img", { name: "腾讯 Logo" });
+    expect(companyLogo).toHaveAttribute("src", "https://cdn.example.test/logos/tencent.png");
+    expect(companyLogo).toHaveAttribute("loading", "lazy");
+    expect(companyLogo).toHaveAttribute("referrerpolicy", "no-referrer");
     expect(within(interviewCard).queryByText("全职")).not.toBeInTheDocument();
     expect(within(interviewCard).getByText(/^(\d+ 天后|\d+ 小时后|正在进行|等待结果)$/)).toBeInTheDocument();
     expect(interviewCard.querySelector(".progress-card-updated-at")).not.toBeInTheDocument();
     expect(interviewCard).toHaveAttribute("draggable", "true");
+    fireEvent.error(companyLogo);
+    expect(within(interviewCard).queryByRole("img", { name: "腾讯 Logo" })).not.toBeInTheDocument();
+    expect(interviewCard.querySelector(".progress-card-logo.is-fallback")).toHaveTextContent("腾");
 
     const waitingCard = screen.getByRole("article", { name: "完成公司 完成岗位" });
     expect(within(waitingCard).getByText("等待结果")).toBeInTheDocument();
@@ -2871,7 +3213,8 @@ describe("InterviewCenterPage API projections", () => {
     expect(within(offerColumn!).getByRole("article", { name: "Offer 公司 Offer 岗位" })).toBe(offerCard);
 
     const endedCard = screen.getByRole("article", { name: "结束公司 结束岗位" });
-    expect(within(endedCard).getByText("未通过")).toBeInTheDocument();
+    expect(within(endedCard).getByText("结束阶段：筛选中")).toBeInTheDocument();
+    expect(within(endedCard).queryByText("未通过")).not.toBeInTheDocument();
     expect(within(endedCard).queryByText("筛选中 · 未通过")).not.toBeInTheDocument();
     expect(within(endedCard).queryByText("校招")).not.toBeInTheDocument();
     expect(endedCard).toHaveAttribute("draggable", "true");
@@ -2881,8 +3224,8 @@ describe("InterviewCenterPage API projections", () => {
     expect(within(offerColumn!).getByRole("article", { name: "已接受公司 已接受岗位" })).toBe(acceptedOfferCard);
     const endedColumn = columns.find((column) => column.dataset.columnKey === "ended");
     expect(within(endedColumn!).queryByRole("article", { name: "已接受公司 已接受岗位" })).not.toBeInTheDocument();
-    expect(within(endedColumn!).getByRole("article", { name: "主动结束公司 主动结束岗位" })).toHaveTextContent("已主动结束");
-    expect(within(endedColumn!).getByRole("article", { name: "婉拒公司 婉拒岗位" })).toHaveTextContent("已主动结束");
+    expect(within(endedColumn!).getByRole("article", { name: "主动结束公司 主动结束岗位" })).toHaveTextContent("结束阶段：Offer");
+    expect(within(endedColumn!).getByRole("article", { name: "婉拒公司 婉拒岗位" })).toHaveTextContent("结束阶段：Offer");
 
     fireEvent.click(within(screeningCard).getByRole("button", { name: "查看 筛选公司 筛选岗位 求职进程" }));
     expect(window.location.pathname).toBe("/career/applications/46");
@@ -3015,6 +3358,72 @@ describe("InterviewCenterPage API projections", () => {
     fireEvent.click(trigger);
     fireEvent.click(within(card).getByRole("menuitem", { name: "查看详情" }));
     expect(window.location.pathname).toBe("/career/applications/menu-pending");
+  });
+
+  it("lets users permanently delete an ended application from the board", async () => {
+    const endedApplication = {
+      ...application,
+      id: "ended-delete-board",
+      company_name_snapshot: "已结束示例公司",
+      job_title_snapshot: "后端开发工程师",
+      status: "closed" as const,
+      lifecycle_status: "terminated" as const,
+      terminated_at: "2026-08-22T08:00:00Z",
+      termination_reason: "company_rejected" as const,
+      next_session_id: null,
+      next_session_start_at: null,
+      next_session_end_at: null,
+      next_session_mode: null,
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications.mockResolvedValue({ items: [endedApplication], next_cursor: null });
+
+    render(<InterviewCenterPage view="applications" />);
+    switchToApplicationBoard();
+    const card = await screen.findByRole("article", { name: "已结束示例公司 后端开发工程师" });
+    fireEvent.click(within(card).getByRole("button", { name: "更多求职操作 已结束示例公司 后端开发工程师" }));
+    fireEvent.click(within(card).getByRole("menuitem", { name: "删除记录" }));
+
+    const dialog = screen.getByRole("alertdialog", { name: "永久删除「已结束示例公司 · 后端开发工程师」？" });
+    expect(dialog).toHaveTextContent("阶段、排期、复盘和素材将无法恢复");
+    expect(dialog).toHaveTextContent("原始岗位资料不会被删除");
+    fireEvent.click(within(dialog).getByRole("button", { name: "永久删除" }));
+
+    await waitFor(() => expect(mocks.deleteJobApplication).toHaveBeenCalledWith("ended-delete-board"));
+  });
+
+  it("shows the delete button only for ended applications in list view", async () => {
+    const endedApplication = {
+      ...application,
+      id: "ended-delete-list",
+      company_name_snapshot: "列表已结束公司",
+      status: "closed" as const,
+      lifecycle_status: "terminated" as const,
+      terminated_at: "2026-08-22T08:00:00Z",
+      termination_reason: "user_withdrew" as const,
+      next_session_id: null,
+      next_session_start_at: null,
+      next_session_end_at: null,
+      next_session_mode: null,
+    };
+    const activeApplication = {
+      ...application,
+      id: "active-delete-list",
+      company_name_snapshot: "列表进行中公司",
+      lifecycle_status: "active" as const,
+      next_session_id: null,
+      next_session_start_at: null,
+      next_session_end_at: null,
+      next_session_mode: null,
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications.mockResolvedValue({ items: [endedApplication, activeApplication], next_cursor: null });
+
+    render(<InterviewCenterPage view="applications" />);
+    switchToApplicationList();
+
+    expect(await screen.findByRole("button", { name: "删除 列表已结束公司 后端开发工程师 求职记录" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "删除 列表进行中公司 后端开发工程师 求职记录" })).not.toBeInTheDocument();
   });
 
   it("routes card progression through the existing stage dialog for every active stage", async () => {
@@ -3294,6 +3703,11 @@ describe("InterviewCenterPage API projections", () => {
     expect(within(dialog).getByLabelText("展示名称")).toHaveValue("二面");
     expect(within(dialog).getByLabelText("面试轮次")).toHaveValue(2);
     expect(within(dialog).getByLabelText("当前状态")).toHaveValue("已安排");
+    const scheduleTrigger = within(dialog).getByRole("button", { name: "面试时间" });
+    fireEvent.click(scheduleTrigger);
+    expect(within(dialog).getByLabelText("开始时间")).toBeInTheDocument();
+    expect(within(dialog).getByRole("group", { name: "预计时长" })).toBeInTheDocument();
+    fireEvent.click(scheduleTrigger);
 
     fireEvent.change(within(dialog).getByLabelText("链接或地点"), { target: { value: "https://meeting.example/detail" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "添加并保存" }));
@@ -3302,6 +3716,7 @@ describe("InterviewCenterPage API projections", () => {
       stage_type: "interview",
       round_no: 2,
       stage_label: "二面",
+      duration_minutes: 60,
       mode: "video",
       meeting_url: "https://meeting.example/detail",
       location: null,

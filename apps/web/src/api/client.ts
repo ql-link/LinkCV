@@ -420,6 +420,7 @@ export type ResumeImportResult = {
 
 export type DatasetRecord = {
   id: string;
+  folder_id?: string | null;
   file_name: string;
   file_format: string;
   file_size: number;
@@ -435,6 +436,24 @@ export type DatasetRecord = {
     | "internal_error"
     | null;
   created_at: string;
+  content_revision?: string;
+  content_updated_at?: string | null;
+  folder_name?: string | null;
+  replacement?: DatasetReplacement | null;
+};
+
+export type DatasetFolder = {
+  id: string;
+  name: string;
+  dataset_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DatasetFolderListResponse = {
+  folders: DatasetFolder[];
+  total_count: number;
+  uncategorized_count: number;
 };
 
 export type DatasetLimits = {
@@ -449,11 +468,16 @@ export type DatasetListResponse = {
   limits?: DatasetLimits;
 };
 
+export type DatasetReplacement = { id: string; status: "pending" | "failed" | "conflict" | "applied" | "discarded"; upload_status: string | null; parse_status: string | null; failure_code: string | null; retryable: boolean; current_revision: string };
+
 export type DatasetContent = {
   id: string;
   file_name: string;
   file_format: string;
   markdown: string;
+  content_revision?: string;
+  content_updated_at?: string | null;
+  content_format?: "markdown";
 };
 
 export type ResumeImportSummary = {
@@ -486,6 +510,7 @@ export type JobDescriptionSummary = {
   id: string;
   job_title: string;
   company_name: string;
+  logo_url: string | null;
   work_city: string | null;
   salary_text: string | null;
   skills: string[];
@@ -526,6 +551,7 @@ export type JobDescriptionRecord = JobDescriptionSummary & {
 export type JobDescriptionFields = {
   job_title: string;
   company_name: string;
+  logo_url?: string | null;
   employment_type?: JobEmploymentType | null;
   description: string;
   skills?: string[];
@@ -609,6 +635,7 @@ export type JobApplicationRecord = {
   resume_version_id: string | null;
   company_name_snapshot: string;
   job_title_snapshot: string;
+  company_logo_url?: string | null;
   job_snapshot: Record<string, unknown>;
   resume_title_snapshot: string | null;
   calendar_color: InterviewCalendarColor;
@@ -667,6 +694,9 @@ export type InterviewSessionRecord = {
   round_result: "pending" | "passed" | "rejected";
   start_at: string;
   end_at: string;
+  schedule_kind: "fixed_slot" | "open_window";
+  answer_plan_start_at: string | null;
+  answer_plan_end_at: string | null;
   timezone: string;
   mode: InterviewMode;
   meeting_url: string | null;
@@ -1488,16 +1518,26 @@ export const api = {
       method: "POST",
       body: payload,
     }),
-  uploadDataset: (file: File, idempotencyKey: string) => {
+  uploadDataset: (file: File, idempotencyKey: string, folderId: string) => {
     const formData = new FormData();
     formData.append("file", file);
+    if (folderId) {
+      formData.append("folder_id", folderId);
+    }
     return request<DatasetRecord>("/api/datasets", {
       method: "POST",
       formData,
       headers: { "Idempotency-Key": idempotencyKey },
     });
   },
-  listDatasets: () => request<DatasetListResponse>("/api/datasets"),
+  listDatasets: (folderId?: string | null) => {
+    const search = new URLSearchParams();
+    if (folderId !== undefined && folderId !== null) {
+      search.set("folder_id", folderId);
+    }
+    const query = search.toString();
+    return request<DatasetListResponse>(query ? `/api/datasets?${query}` : "/api/datasets");
+  },
   renameDataset: (id: string, name: string) =>
     request<DatasetRecord>(`/api/datasets/${id}`, {
       method: "PATCH",
@@ -1511,6 +1551,39 @@ export const api = {
     request<{ deleted: boolean }>(`/api/datasets/${id}`, {
       method: "DELETE",
     }),
+  listDatasetFolders: () => request<DatasetFolderListResponse>("/api/datasets/folders"),
+  createDatasetFolder: (name: string) =>
+    request<DatasetFolder>("/api/datasets/folders", {
+      method: "POST",
+      body: { name },
+    }),
+  renameDatasetFolder: (folderId: string, name: string) =>
+    request<DatasetFolder>(`/api/datasets/folders/${folderId}`, {
+      method: "PATCH",
+      body: { name },
+    }),
+  deleteDatasetFolder: (folderId: string) =>
+    request<{ deleted: boolean; affected_dataset_count: number }>(
+      `/api/datasets/folders/${folderId}?confirm_contents=true`,
+      { method: "DELETE" },
+    ),
+  moveDataset: (datasetId: string, folderId: string) =>
+    request<DatasetRecord>(`/api/datasets/${datasetId}/folder`, {
+      method: "PATCH",
+      body: { folder_id: folderId },
+    }),
+  batchMoveDatasets: (datasetIds: string[], folderId: string) =>
+    request<{ moved_count: number }>("/api/datasets/move-batch", {
+      method: "POST",
+      body: { dataset_ids: datasetIds, folder_id: folderId },
+    }),
+  getDataset: (id: string) => request<DatasetRecord>(`/api/datasets/${id}`),
+  replaceDataset: (id: string, file: File, revision: string, key: string) => {
+    const formData = new FormData(); formData.append("file",file); formData.append("confirm_replace","true");
+    return request<DatasetReplacement>(`/api/datasets/${id}/replacements`, {method:"POST",formData,headers:{"If-Match":`"dataset-${id}-${revision}"`,"Idempotency-Key":key}});
+  },
+  retryDatasetReplacement: (id:string, rid:string, revision:string, requestId:string) => request<DatasetReplacement>(`/api/datasets/${id}/replacements/${rid}/retry`,{method:"POST",body:{request_id:requestId,confirm_replace:true},headers:{"If-Match":`"dataset-${id}-${revision}"`}}),
+  discardDatasetReplacement: (id:string,rid:string) => request(`/api/datasets/${id}/replacements/${rid}`,{method:"DELETE"}),
   getDatasetContent: (id: string) =>
     request<DatasetContent>(`/api/datasets/${id}/content`),
   listJobDescriptions: (
@@ -1756,14 +1829,14 @@ export const api = {
     request<InterviewSessionDetail>(`/api/interview-sessions/${id}`),
   createInterviewSession: (
     applicationId: string,
-    payload: {
+    payload: ({
       client_request_id: string;
       application_stage_id?: string | null;
       stage_type: "interview" | "hr" | "offer" | "other";
       round_no?: number | null;
       stage_label: string;
       start_at: string;
-      end_at: string;
+      schedule_kind?: "fixed_slot" | "open_window";
       timezone: string;
       mode: InterviewMode;
       meeting_url?: string | null;
@@ -1773,7 +1846,10 @@ export const api = {
       reminder_minutes?: number | null;
       preparation_note?: string | null;
       allow_conflict?: boolean;
-    },
+    } & (
+      | { end_at: string; duration_minutes?: never }
+      | { end_at?: never; duration_minutes: number }
+    )),
   ) =>
     request<InterviewSessionDetail>(
       `/api/job-applications/${applicationId}/interview-sessions`,
@@ -1800,17 +1876,45 @@ export const api = {
     }),
   rescheduleInterviewSession: (
     id: string,
-    payload: {
+    payload: ({
       start_at: string;
-      end_at: string;
       timezone: string;
       allow_conflict?: boolean;
       base_lock_version: number;
-    },
+    } & (
+      | { end_at: string; duration_minutes?: never }
+      | { end_at?: never; duration_minutes: number }
+    )),
   ) =>
     request<InterviewSessionDetail>(
       `/api/interview-sessions/${id}/reschedule`,
       { method: "POST", body: payload },
+    ),
+  updateInterviewAnswerPlan: (
+    id: string,
+    payload: ({
+      base_lock_version: number;
+    } & (
+      | {
+          answer_plan_start_at: null;
+          answer_plan_end_at: null;
+          duration_minutes?: never;
+        }
+      | {
+          answer_plan_start_at: string;
+          answer_plan_end_at: string;
+          duration_minutes?: never;
+        }
+      | {
+          answer_plan_start_at: string;
+          answer_plan_end_at?: never;
+          duration_minutes: number;
+        }
+    )),
+  ) =>
+    request<InterviewSessionDetail>(
+      `/api/interview-sessions/${id}/answer-plan`,
+      { method: "PUT", body: payload },
     ),
   completeInterviewSession: (
     id: string,

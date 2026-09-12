@@ -52,16 +52,6 @@ def pdf_with_image_fixture() -> bytes:
     return output.getvalue()
 
 
-def pdf_without_image_fixture() -> bytes:
-    document = pdfium.PdfDocument.new()
-    page = document.new_page(100, 100)
-    output = BytesIO()
-    document.save(output)
-    page.close()
-    document.close()
-    return output.getvalue()
-
-
 class FakeConverter:
     def __init__(
         self,
@@ -230,28 +220,7 @@ def test_docx_validation_accepts_required_zip_structure() -> None:
     )
 
 
-def test_pdf_text_conversion_rejects_embedded_images_that_would_be_omitted() -> None:
-    conversion = DocumentMarkdownResult(
-        markdown="# Resume\n\n正文",
-        source_file_name="resume.pdf",
-        source_format="pdf",
-        parser="fake",
-        parser_version="1",
-        detected_type="text_pdf",
-        layout_applied=True,
-        layout_schema_version=1,
-    )
-
-    with pytest.raises(ResumeImportFailure) as error:
-        validate_conversion_layout(
-            conversion,
-            source_content=pdf_with_image_fixture(),
-        )
-
-    assert error.value.code == "RESUME_LAYOUT_UNSUPPORTED"
-
-
-def test_pdf_text_conversion_accepts_proven_image_free_source() -> None:
+def test_pdf_text_conversion_accepts_embedded_images_as_text_only_import() -> None:
     conversion = DocumentMarkdownResult(
         markdown="# Resume\n\n正文",
         source_file_name="resume.pdf",
@@ -265,13 +234,11 @@ def test_pdf_text_conversion_accepts_proven_image_free_source() -> None:
 
     validate_conversion_layout(
         conversion,
-        source_content=pdf_without_image_fixture(),
+        source_content=pdf_with_image_fixture(),
     )
 
 
-def test_pdf_text_conversion_fails_closed_when_image_inspection_fails(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_pdf_text_conversion_does_not_require_source_image_inspection() -> None:
     conversion = DocumentMarkdownResult(
         markdown="# Resume\n\n正文",
         source_file_name="resume.pdf",
@@ -283,50 +250,31 @@ def test_pdf_text_conversion_fails_closed_when_image_inspection_fails(
         layout_schema_version=1,
     )
 
-    def fail_inspection(_content: bytes):
-        raise RuntimeError("inspection unavailable")
-
-    monkeypatch.setattr(pdfium, "PdfDocument", fail_inspection)
-    with pytest.raises(ResumeImportFailure) as error:
-        validate_conversion_layout(conversion, source_content=b"%PDF-valid-upstream")
-    assert error.value.code == "RESUME_LAYOUT_UNSUPPORTED"
+    validate_conversion_layout(conversion, source_content=b"%PDF-uninspectable-source")
 
 
-def test_pdf_text_conversion_fails_closed_when_page_enumeration_fails(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    conversion = DocumentMarkdownResult(
-        markdown="# Resume\n\n正文",
-        source_file_name="resume.pdf",
-        source_format="pdf",
-        parser="fake",
-        parser_version="1",
-        detected_type="text_pdf",
-        layout_applied=True,
-        layout_schema_version=1,
+def test_pdf_with_images_composes_text_only_resume_without_avatar() -> None:
+    converter = FakeConverter(source_format="pdf")
+    service = ResumeImportService(
+        document_converter=converter,
+        structuring_client=MappingStructuringClient(),
+        max_structuring_bytes=10_000,
+        structuring_timeout_seconds=30,
     )
 
-    class BrokenPage:
-        def get_objects(self, **_kwargs):
-            raise RuntimeError("enumeration unavailable")
+    result = asyncio.run(
+        service.parse_resume(
+            user_id=1,
+            filename="resume.pdf",
+            content_type="application/pdf",
+            content=pdf_with_image_fixture(),
+            operation_id="task-mixed-pdf",
+            deadline_monotonic=monotonic() + 60,
+        )
+    )
 
-        def close(self) -> None:
-            pass
-
-    class BrokenDocument:
-        def __len__(self) -> int:
-            return 1
-
-        def __getitem__(self, _index: int) -> BrokenPage:
-            return BrokenPage()
-
-        def close(self) -> None:
-            pass
-
-    monkeypatch.setattr(pdfium, "PdfDocument", lambda _content: BrokenDocument())
-    with pytest.raises(ResumeImportFailure) as error:
-        validate_conversion_layout(conversion, source_content=b"%PDF-valid-upstream")
-    assert error.value.code == "RESUME_LAYOUT_UNSUPPORTED"
+    assert result.document.identity.avatar is None
+    assert "media" not in result.document.model_dump_json()
 
 
 def test_pdf_import_without_layout_uses_markdown_fallback() -> None:

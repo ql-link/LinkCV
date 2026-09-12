@@ -3,6 +3,7 @@ import {
   adminLoginPath,
   assistantPath,
   authPath,
+  datasetsPath,
   editorPath,
   isSafeAdminPath,
   isSafeAppPath,
@@ -17,6 +18,7 @@ describe("LinkCV routes", () => {
   it("parses landing, auth, admin, resume, template, and editor routes", () => {
     expect(parseAppRoute("/")).toEqual({ kind: "landing" });
     expect(parseAppRoute("/home")).toEqual({ kind: "landing" });
+    expect(parseAppRoute("/datasets/99")).toEqual({ kind: "datasets" });
     expect(parseAppRoute("/home/")).toEqual({ kind: "landing" });
     expect(parseAppRoute("/login", "?mode=register")).toEqual({ kind: "auth", mode: "register", next: null });
     expect(parseAppRoute("/admin/llm/models")).toEqual({ kind: "admin" });
@@ -44,7 +46,8 @@ describe("LinkCV routes", () => {
     expect(parseAppRoute("/interviews", "?view=records")).toEqual({ kind: "interviews", view: "records" });
     expect(parseAppRoute("/interviews", "?view=overview")).toEqual({ kind: "interviews", view: "applications" });
     expect(parseAppRoute("/interviews", "?view=unknown")).toEqual({ kind: "interviews", view: "applications" });
-    expect(parseAppRoute("/datasets")).toEqual({ kind: "datasets" });
+    expect(parseAppRoute("/datasets")).toEqual({ kind: "datasets", folderId: undefined });
+    expect(parseAppRoute("/datasets", "?folder=f-123")).toEqual({ kind: "datasets", folderId: "f-123" });
     expect(parseAppRoute("/account")).toEqual({ kind: "account" });
     expect(parseAppRoute("/account/password")).toEqual({ kind: "notFound" });
     expect(parseAppRoute("/share/abc123")).toEqual({ kind: "share", token: "abc123" });
@@ -93,6 +96,10 @@ describe("LinkCV routes", () => {
     expect(isSafeAppPath("/interviews?view=records")).toBe(true);
     expect(isSafeAppPath("/career?view=applications")).toBe(true);
     expect(isSafeAppPath("/datasets")).toBe(true);
+    expect(isSafeAppPath("/datasets?folder=f1")).toBe(true);
+    expect(datasetsPath()).toBe("/datasets");
+    expect(datasetsPath("all")).toBe("/datasets");
+    expect(datasetsPath("folder-1")).toBe("/datasets?folder=folder-1");
     expect(isSafeAppPath("/account")).toBe(true);
     expect(isSafeAppPath("/account/password")).toBe(true);
     expect(isSafeAppPath("//example.com/resumes")).toBe(false);

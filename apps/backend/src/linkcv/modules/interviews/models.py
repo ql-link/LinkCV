@@ -368,6 +368,21 @@ class InterviewSession(Base):
         ),
         CheckConstraint("end_at > start_at", name="ck_interview_sessions_time_range"),
         CheckConstraint(
+            "schedule_kind IN ('fixed_slot', 'open_window')",
+            name="ck_interview_sessions_schedule_kind",
+        ),
+        CheckConstraint(
+            "(schedule_kind = 'fixed_slot' "
+            "AND answer_plan_start_at IS NULL AND answer_plan_end_at IS NULL) OR "
+            "(schedule_kind = 'open_window' AND "
+            "((answer_plan_start_at IS NULL AND answer_plan_end_at IS NULL) OR "
+            "(answer_plan_start_at IS NOT NULL AND answer_plan_end_at IS NOT NULL "
+            "AND answer_plan_end_at > answer_plan_start_at "
+            "AND answer_plan_start_at >= start_at "
+            "AND answer_plan_end_at <= end_at)))",
+            name="ck_interview_sessions_answer_plan",
+        ),
+        CheckConstraint(
             "mode IN ('video', 'onsite', 'phone', 'other')",
             name="ck_interview_sessions_mode",
         ),
@@ -438,6 +453,15 @@ class InterviewSession(Base):
     )
     start_at: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False)
     end_at: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False)
+    schedule_kind: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="fixed_slot", server_default="fixed_slot"
+    )
+    answer_plan_start_at: Mapped[datetime | None] = mapped_column(
+        timestamp_type(), nullable=True
+    )
+    answer_plan_end_at: Mapped[datetime | None] = mapped_column(
+        timestamp_type(), nullable=True
+    )
     timezone: Mapped[str] = mapped_column(String(64), nullable=False)
     mode: Mapped[str] = mapped_column(String(24), nullable=False)
     meeting_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)

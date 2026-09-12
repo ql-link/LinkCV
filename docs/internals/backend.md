@@ -25,13 +25,13 @@
 | `src/linkcv/modules/identity/` | 用户模型、管理员密码登录、双通道会话、微信自动建号、扫码状态机、`/api/account` 用户中心、个人画像（`user_profiles`）与管理端用户管理 |
 | `src/linkcv/modules/miniprogram/` | 本人正式版本只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品。`account_routes.py` 提供小程序专用昵称与头像读写（头像二进制仅经 `/api/miniprogram/account/avatar` 分发） |
 | `src/linkcv/modules/resumes/` | ORM、HTTP DTO、模板及管理、简历、版本、异步导入、分享和资源路由 |
-| `src/linkcv/modules/datasets/` | `user_dataset` 资料元数据、异步解析受理与状态列表路由 |
-| `src/linkcv/modules/job_descriptions/` | JD 单表 ORM、HTTP DTO 和受保护路由 |
+| `src/linkcv/modules/datasets/` | `user_dataset` 资料元数据、`user_dataset_folders` 文件夹分类、异步解析受理与状态列表路由 |
+| `src/linkcv/modules/job_descriptions/` | 用户 JD 与独立全局公司资料 ORM、HTTP DTO 和受保护的 JD 路由 |
 | `src/linkcv/modules/interviews/` | 求职进程、单场面试和素材 ORM、HTTP DTO 与受保护路由 |
 | `src/linkcv/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkcv/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkcv/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0057` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0061` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -39,11 +39,15 @@
 
 迁移 `0056` 将岗位 `employment_type` 检查约束收敛为 `internship/campus/full_time` 或空值。不包含自动删除或旧值回填；存在不支持的旧值时约束变更失败，须先按目标环境授权完成数据处理。发布时先升级约束，再部署新的岗位/求职接口和 Web、采集插件。迁移 forward-only，恢复旧约束使用新的向前 revision，数据恢复依赖备份。
 
-MySQL 包含用户、简历、LLM 治理和 `job_descriptions` 等业务表。当前可编辑简历状态保存在 `resumes.data_json/style_json`，历史版本同时快照两份 JSON。HTTP 中的 ID 是十进制字符串，ORM 和数据库使用整数。
+MySQL 包含用户、简历、LLM 治理、`job_descriptions` 和 `global_companies` 等业务表。当前可编辑简历状态保存在 `resumes.data_json/style_json`，历史版本同时快照两份 JSON。HTTP 中的 ID 是十进制字符串，ORM 和数据库使用整数。
 
-`job_applications` 保存一次求职尝试的岗位快照、投递事实、生命周期、Offer 详情和乐观锁；`applied_at` 为空表示待投递，`lifecycle_status=terminated` 保存终止时间与原因。迁移 `0057` 新增追加式 `job_application_stages` 作为当前阶段和阶段历史真值，并为 `interview_sessions` 增加可空阶段外键；旧扁平阶段字段和旧动作接口保留一个兼容期。迁移 `0053` 增加可空 Offer 详情并将历史 OC/书面 Offer 状态不可逆地合并为 `received`；迁移 `0054` 把薪资区间收敛为单个 `offer_salary`，旧记录优先保留下限、仅缺少下限时取上限，并继续要求数值薪资与币种、计薪周期同时存在；迁移 `0055` 允许手工创建的岗位描述为空。
+`job_applications` 保存一次求职尝试的岗位快照、投递事实、生命周期、Offer 详情和乐观锁；`applied_at` 为空表示待投递，`lifecycle_status=terminated` 保存终止时间与原因。已终止进程可由所属用户永久删除，服务按素材对象、素材记录、排期、阶段和进程的顺序清理，原始 `job_descriptions` 记录不随之删除；活动进程仍不能直接永久删除。迁移 `0057` 新增追加式 `job_application_stages` 作为当前阶段和阶段历史真值，并为 `interview_sessions` 增加可空阶段外键；旧扁平阶段字段和旧动作接口保留一个兼容期。迁移 `0053` 增加可空 Offer 详情并将历史 OC/书面 Offer 状态不可逆地合并为 `received`；迁移 `0054` 把薪资区间收敛为单个 `offer_salary`，旧记录优先保留下限、仅缺少下限时取上限，并继续要求数值薪资与币种、计薪周期同时存在；迁移 `0055` 允许手工创建的岗位描述为空。
+
+迁移 `0058` 为 `interview_sessions` 增加固定场次/开放窗口类型和开放窗口专用的个人作答计划时间。只有测评和笔试能创建 `open_window`；它可保存至多一组个人作答计划，两端同时为空表示未计划，两端有值时必须完整落在官方 `start_at/end_at` 内。调整官方窗口不能使既有计划越界，固定场次不能写入计划。
 
 `job_descriptions.description` 保持非空字符串列，但允许空字符串表示用户尚未填写职位描述；迁移 `0055` 删除旧的非空白 CHECK，不修改存量岗位。手工创建可省略该字段，浏览器插件导入仍要求采集到非空职位描述。
+
+迁移 `0059` 为用户已有的 `job_descriptions` 增加可空 `logo_url`，只接受应用层校验通过的 HTTPS 绝对 URL；新求职记录把该字段写入既有 `job_snapshot`，不为 `job_applications` 新增重复列。该迁移同时新增无 `user_id`、无业务外键的 `global_companies` 平台资料表，保存标准化名称、Logo、官网、行业、规模、融资阶段和简介；当前没有对应路由、管理页面、自动匹配或用户岗位回填。
 
 `user_dataset.sha256` 在 MySQL 使用固定长度 `CHAR(64)` 保存源文件 SHA-256 十六进制摘要；SQLite 测试仍使用通用字符串替身。该字段只用于后端完整性元数据，不向浏览器返回。
 
@@ -64,6 +68,10 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 `0041` 从正文中移除模板拥有的页级投影。迁移全量读取 `resume_templates`、`resumes` 和 `resume_versions`：旧 `custom_section_editor` 整篇 Markdown 以及跨规范章节残留的 `:::: sidebar/main` 被拆成无投影 `custom_sections`，侧栏标题映射为 `profile/skills/interests/languages` 等独立语义，私有用户头像转入 `basics.photo`，系统模板头像继续由 manifest 提供。转换在首笔写入前比较去除页栏标记与模板头像后的全部可见行，校验完整 `ResumeSnapshot`；写后再次全量转换并核对幂等结果。revision 不新增物理列，失败按 forward-only 规则从备份恢复或增加后续 revision。
 
 `0042` 先验证 `blank-cn`、其历史简历引用以及所有 `classic-technical-cn` 模板/简历/版本快照，再把经典单页技术模板的 A4 页边距恢复为生产审查值 `9/11/9/11mm` 并删除空白模板行。`resumes.template_id` 的既有 `ON DELETE SET NULL` 只清除历史简历的来源引用；简历和版本自有的 `data_json/style_json` 不变。迁移写后逐项验证模板不存在、旧简历仍存在且来源已置空、经典技术快照内容不变。revision 为 forward-only，恢复删除的模板和原引用依赖升级前备份。
+
+`0061` 为资料增加当前正文指针、摘要、并发序号、最近保存请求标识，新增 `dataset_replacements` 和 `dataset_object_cleanup`。历史资料保持序号 0 与空覆盖指针，读取成功任务存档。正文编辑已撤销，保留迁移字段及既有正文，不再提供保存接口；替换通过候选任务成功收口切换同一资料 ID，失败保留当前源与正文。用户锁及当前读串行化写入和同名检查；Agent 来源身份改用正文序号，旧源摘要只兼容尚未更新的历史资料。
+
+资料旧对象回收复用 Worker 扫描循环：精确对象键先登记，延迟并重新检查当前引用，再取得清理权；已取得清理权的对象不能成为新的当前正文。存储 I/O 在释放数据库事务后执行，失败按退避重试。成功/放弃的操作回执 24 小时后删除，失败候选保留到重试、放弃或资料删除。部署先停旧 Worker 和写入口、执行 `0061`，再同时更新 API、Worker 和 Web；新正文指针开始写入后不支持直接回退到不认识该字段的旧应用。
 
 `0043` 为资料上传增加数据库幂等和可靠调度字段：`user_dataset` 保存 `idempotency_key/request_fingerprint` 并以 `(user_id, idempotency_key)` 唯一约束收敛并发请求；`document_parse_tasks` 支持 `queued`，并保存解析尝试次数和最近分发时间。历史资料获得确定性兼容键与指纹；原有解析状态和对象引用保持不变，历史 `processing` 任务随后按陈旧租约规则恢复。revision 是 forward-only；部署必须先升级 schema，再同时替换 FastAPI、Worker 和 Web。
 
@@ -103,7 +111,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0013` 为 `resumes` 增加分享字段：`share_token`（VARCHAR(64)，全局唯一索引）、`share_visibility`（VARCHAR(16)，`private|public`）、`share_expires_at`（可空，UTC 过期时间）和 `share_created_at`。两个 CHECK 约束保证分享字段要么全部为空（未分享）、要么全部非空（已分享），且可见性只允许 `private/public`。分享不单独建表、不落内容快照，公开读取时实时取 `resume_versions` 中 `version_no` 最大的正式版本。
 
-`0018` 新增 `user_dataset` 用户知识库数据集表，`0022` 让资料通过唯一 `parse_task_id` 关联通用解析任务，`0043` 增加数据库幂等键、请求指纹和可靠调度字段。`POST /api/datasets` 先执行有界格式与内容校验，在用户行锁内检查数量和总容量，再创建 `uploading` 预留；MinIO 成功后提交为 `upload_status=succeeded/parse_status=queued`，RabbitMQ confirm 失败仍返回已受理记录。Worker 扫描器周期补发未分发或超时的 `queued` 任务，消费方用数据库条件更新把任务原子抢占为 `processing`；陈旧处理任务在尝试上限内回到 `queued`，超过上限收口失败。每次尝试把转换 Markdown 保存为 `users/{uid}/datasets/converted/{task_id}-{attempt}.md`，条件提交失败会删除本次对象，避免陈旧消费者覆盖较新结果；读取仍兼容历史 `{task_id}.md`。上传失败预留由 Worker 清理，只有对象删除成功才删除数据库记录。列表只暴露上传成功资料；重试把失败任务重新置为 `queued`，活动任务禁止删除。本模块不使用 Outbox，不提供分片、RAG 或源文件下载。
+`0018` 新增 `user_dataset` 用户知识库数据集表，`0022` 让资料通过唯一 `parse_task_id` 关联通用解析任务，`0043` 增加数据库幂等键、请求指纹和可靠调度字段。`0060` 新增 `user_dataset_folders` 文件夹分类表并在 `user_dataset` 增加 `folder_id` 字段（`ON DELETE SET NULL` 外键），支持文件夹 CRUD、按分类查询、单项/批量移动与带文件夹上传。删除非空文件夹需显式确认，预检无活动任务后清理内部资料记录、解析任务及 MinIO 对象，不再退回未分类。`POST /api/datasets` 要求提供当前用户拥有的现存文件夹，缺少目标返回 `400 DATASET_FOLDER_REQUIRED`，非法或不可访问目标返回 `404 FOLDER_NOT_FOUND`，不再自动存入未分类；创建资料前锁定文件夹以防删除竞争，并执行有界格式与内容校验，在用户行锁内检查数量和总容量，再创建 `uploading` 预留；MinIO 成功后提交为 `upload_status=succeeded/parse_status=queued`，RabbitMQ confirm 失败仍返回已受理记录。Worker 扫描器周期补发未分发或超时的 `queued` 任务，消费方用数据库条件更新把任务原子抢占为 `processing`；陈旧处理任务在尝试上限内回到 `queued`，超过上限收口失败。每次尝试把转换 Markdown 保存为 `users/{uid}/datasets/converted/{task_id}-{attempt}.md`，条件提交失败会删除本次对象，避免陈旧消费者覆盖较新结果；读取仍兼容历史 `{task_id}.md`。上传失败预留由 Worker 清理，只有对象删除成功才删除数据库记录。列表只暴露上传成功资料；重试把失败任务重新置为 `queued`，活动任务禁止删除。本模块不使用 Outbox，不提供分片、RAG 或源文件下载。
 
 ### 微信账号、双端会话与扫码登录
 
@@ -111,9 +119,9 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `session_service.py` 统一发放、轮换和撤销 Redis session。`auth:session:{sid}` 保存 `uid/rhash/channel/created_at`，access JWT 也保存 `channel=web|miniprogram`。Web 只从 Cookie 接受 web channel，小程序只从 Bearer 接受 miniprogram channel；Redis uid/channel 必须与 JWT 完全一致。小程序的 login/refresh/logout 返回 JSON token，refresh 每次轮换，旧 secret 重放会删除 session；管理员停用用户时原有用户会话集合仍可撤销两个 channel。
 
-`modules/resumes/pdf_service.py` 是 Web 与小程序共用的 PDF 边界：从快照提取 LinkCV 私有图片引用，按用户/简历对象键读取 PNG/JPEG 并转为内存 data URL，再以有界 stdin/stdout 协议启动一次性 Node/Chromium 进程。Linux root 环境在 `runuser` 和专用 `linkcv-pdf` 账号可用时降权启动；Windows 或缺少 Unix 账号 API 时直接启动 Node，并继续使用相同的输入、输出、并发与超时边界。渲染器不监听端口、不读取任意对象键、不联网抓取正文资源，也不把快照或输出写入持久临时文件；并发、输入、单图、图片总量、输出、超时和智能页高都有上限。Web `GET /api/resumes/{id}/pdf` 校验当前 Cookie 用户和 `lock_version`，直接渲染 `resumes` 当前快照。
+`modules/resumes/pdf_service.py` 是 Web 与小程序共用的 PDF 边界：从快照提取 LinkCV 私有图片引用，按用户/简历对象键读取 PNG/JPEG 并转为内存 data URL，再以有界 stdin/stdout 协议启动一次性 Node/Chromium 进程。Linux root 环境在 `runuser` 和专用 `linkcv-pdf` 账号可用时降权启动；Windows 或缺少 Unix 账号 API 时直接启动 Node，并继续使用相同的输入、输出、并发与超时边界。简历图片上传与 PDF 读取共用 10 MiB 单图上限，当前快照内所有私有图片的原始二进制总量也限制为 10 MiB；更新、模板切换和版本恢复先用对象元数据校验同一导出契约，PDF 渲染再次读取并校验作为纵深防线。渲染 JSON 输入上限为 24 MiB，以容纳 Base64 编码增量和简历快照。渲染器不监听端口、不读取任意对象键、不联网抓取正文资源，也不把快照或输出写入持久临时文件；并发、输入、单图、图片总量、输出、超时和智能页高都有上限。Web `GET /api/resumes/{id}/pdf` 校验当前 Cookie 用户和 `lock_version`，直接渲染 `resumes` 当前快照。
 
-小程序简历接口仍从 `resume_versions` 选择最新 `reason=manual` 快照，没有手动版本时选择 `reason=initial`，因此不会暴露自动保存草稿。PDF/PNG 请求再次核对小程序会话、本人归属和当前版本标识，在请求副本中设置 `style.portable.smart_one_page=true`，并用同一 canonical 正文、模板快照和后端 `LayoutPlan` 渲染，不修改持久版本。PNG 路由继续用 `pypdfium2`/PDFium 把唯一页面渲染为最大宽度 1440 像素的 RGB 图片；页面尺寸、总像素和输出字节都有上限，并发栅格化槽位固定。异常以稳定 4xx/503 错误收口。`core/pdfium_lock.py` 的进程级互斥锁覆盖 PNG 栅格化、岗位资料 PDF 校验和简历导入 PDF 检查的原生调用与资源释放；预览容量限制保留，避免并行调用 PDFium 导致进程崩溃。
+小程序简历接口仍从 `resume_versions` 选择最新 `reason=manual` 快照，没有手动版本时选择 `reason=initial`，因此不会暴露自动保存草稿。PDF/PNG 请求再次核对小程序会话、本人归属和当前版本标识，在请求副本中设置 `style.portable.smart_one_page=true`，并用同一 canonical 正文、模板快照和后端 `LayoutPlan` 渲染，不修改持久版本。PNG 路由继续用 `pypdfium2`/PDFium 把唯一页面渲染为最大宽度 1440 像素的 RGB 图片；页面尺寸、总像素和输出字节都有上限，并发栅格化槽位固定。异常以稳定 4xx/503 错误收口。`core/pdfium_lock.py` 的进程级互斥锁覆盖 PNG 栅格化和岗位资料 PDF 校验的原生调用与资源释放；预览容量限制保留，避免并行调用 PDFium 导致进程崩溃。
 
 `0021` 将 `resume_imports` 一次性迁移为通用 `document_parse_tasks`：任务表保存 `source_type=resume_import`、源文件和上传/解析状态，不再持有最终简历指针；`resumes.parse_task_id` 以无外键的可空唯一列记录来源任务，由 Worker 在创建简历和完成任务的同一事务中维护。迁移沿用原任务主键并回填来源指针，随后删除旧表；需要恢复旧表与数据时使用迁移前备份。转换后的 Markdown 尽力存入 `converted_object_name`，历史迁移记录保持为空，生命周期检查不依赖该字段。
 
@@ -124,6 +132,8 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 `0033` 新增 `job_applications`、`interview_sessions` 和 `interview_assets`；`0057` 再把求职生命周期、阶段历史和排期拆开。岗位 JD 创建或导入时在同一事务内创建或复用待投递 `job_applications`，因此正常入口不会只产生 JD。待投递记录可通过一次阶段命令直接进入 `screening/assessment/written_test/ai_interview/interview/offer`，不需要单独写“已投递”；命令可补填带时区的 `applied_at`，省略时以后端有效操作时间为准。每次推进追加一条 `job_application_stages`，旧当前阶段完成并保留，普通面试名称由用户填写且轮次可空。终止命令独立保存生命周期、时间和原因，并关闭当前阶段。
 
 排期与复盘继续共用 `interview_sessions`，通过 `scheduled/completed/cancelled` 区分生命周期；新排期必须关联当前且可排期的 `assessment/written_test/ai_interview/interview` 阶段，筛选、Offer、待投递和已终止记录不能排期。排期开始时间使用 IANA 时区校验，接受分钟精度的任意有效时间（秒和微秒必须为 0），同一用户的多个排期允许时间重叠并直接保存；归档进程不能再执行排期生命周期，也不会进入总览统计。求职进程和场次列表使用与筛选摘要绑定的时间加 ID 游标稳定分页，全部 BIGINT 资源 ID 在 HTTP 与 TypeScript 中保持规范十进制字符串。写操作校验当前用户归属；阶段和进程动作使用 `lock_version` 与请求 UUID 拒绝过期或内容不一致的重复修改，场次创建也会核对原业务内容。旧扁平状态字段和 `/advance`、`/offer`、`/close` 仍由兼容投影维护，新消费方只读取稳定阶段与生命周期字段。进程、排期和素材的创建、更新、状态动作与删除沿用统一审计链，创建型接口显式绑定新记录 ID，普通读取不写审计。
+
+创建和改期排期时，请求必须在显式 `end_at` 与正整数 `duration_minutes` 中二选一；新 Web 流程提交持续分钟，应用服务据此推算并持久化 `end_at`，旧消费方仍可继续提交显式结束时间。开放窗口的个人作答计划遵循同一兼容契约，并继续在推算后校验完整落入官方窗口。
 
 绑定由 Web 已登录用户发起，走 `/api/account/wechat/bind-request|bind-confirm|bind-status`（ticket 票据）。绑定票据是临时凭证，只存 Redis（`wechat:bind_ticket:<ticket>` 存用户、`wechat:bind_status:<ticket>` 存 `pending/bound`、`wechat:bind_user_ticket:<uid>` 指向当前票据），TTL 默认 300 秒，同用户重新发起时覆盖旧票据。`bind-confirm` 提交小程序 `wx.login()` 的临时 code，服务端换 openid 后关联到发起用户；openid 已被其他用户绑定时返回 `409 WECHAT_ALREADY_BOUND`，原绑定关系不被覆盖。
 
@@ -158,7 +168,7 @@ LiteLLM 只位于 `modules/llm/gateway.py` 和只读目录边界。白名单 ada
 
 ## 导入与外部边界
 
-Markdown 文件在进程内做 UTF-8 与确定性换行清理；DOCX 以固定的 `output_formats=markdown/include_bbox=false/include_images=false` 调用 LinkParse `POST /v1/parse`，PDF 在此基础上额外发送 `include_layout=true`。LinkParse 识别文件类型并决定 OpenDataLoader、OCR 选页和渲染 DPI；layout 模式内部即使公开 `include_bbox=false` 也应保留 OCR 坐标，并在 `meta.pdf.layout` 返回版本化物理行、归一化 bbox、来源顺序、语义角色、同行、续行和质量计数。LinkParse 响应在 JSON decode 前限制为 3 MiB，先校验 request ID、外层兼容 envelope、预期文件类型和空 assets，再独立尝试解析可选 layout；可安全解析的页码、bbox、源顺序和有界块作为精简模型提示，严格关系、计数、warning 和 Markdown 一致性检查只决定是否采用重建 Markdown。显式请求 layout 时若 LinkParse 返回 `413 LAYOUT_RESOURCE_LIMIT`，客户端在同一 deadline 内仅补发一次不含 `include_layout` 的 Markdown 请求，随后按原错误映射收口，不递归重试。layout 缺失、降级、畸形或不一致时保留原始 LinkParse Markdown，不产生 `RESUME_LAYOUT_UNSUPPORTED`；安全提示若仍可用可以继续传入模型，缺少 layout 的旧 LinkParse 版本保持兼容。含嵌入图片的文本 PDF、含图片/表格/文本框的 DOCX，以及转换 Markdown 中仍存在图片、表格、嵌入或主动 HTML 时仍按既有不可承载内容边界失败。LinkParse 的 Word omitted-image/table 信号参与该严格检查，其余 Word 元数据只写入脱敏调用日志。
+Markdown 文件在进程内做 UTF-8 与确定性换行清理；DOCX 以固定的 `output_formats=markdown/include_bbox=false/include_images=false` 调用 LinkParse `POST /v1/parse`，PDF 在此基础上额外发送 `include_layout=true`。LinkParse 识别文件类型并决定 OpenDataLoader、OCR 选页和渲染 DPI；layout 模式内部即使公开 `include_bbox=false` 也应保留 OCR 坐标，并在 `meta.pdf.layout` 返回版本化物理行、归一化 bbox、来源顺序、语义角色、同行、续行和质量计数。LinkParse 响应在 JSON decode 前限制为 3 MiB，先校验 request ID、外层兼容 envelope、预期文件类型和空 assets，再独立尝试解析可选 layout；可安全解析的页码、bbox、源顺序和有界块作为精简模型提示，严格关系、计数、warning 和 Markdown 一致性检查只决定是否采用重建 Markdown。显式请求 layout 时若 LinkParse 返回 `413 LAYOUT_RESOURCE_LIMIT`，客户端在同一 deadline 内仅补发一次不含 `include_layout` 的 Markdown 请求，随后按原错误映射收口，不递归重试。layout 缺失、降级、畸形或不一致时保留原始 LinkParse Markdown，不产生 `RESUME_LAYOUT_UNSUPPORTED`；安全提示若仍可用可以继续传入模型，缺少 layout 的旧 LinkParse 版本保持兼容。PDF 始终关闭图片输出，文字与图片混排的 PDF 继续解析文字且不再检查原文件是否存在图片对象；图片不会被单独提取为资产，也不进入 SourceGraph、LLM 或简历快照，模板头像保持为空。完整原始 PDF（其中仍包含嵌入图片）会按现有导入任务生命周期保存在私有对象存储并发送给 LinkParse。含图片/表格/文本框的 DOCX，以及转换 Markdown 中仍存在图片、表格、嵌入或主动 HTML 时仍按既有不可承载内容边界失败。LinkParse 的 Word omitted-image/table 信号参与该严格检查，其余 Word 元数据只写入脱敏调用日志。
 
 超过结构化输入上限的内容不会发送给模型。合规输入经 `SourceLayoutIR → 模型映射决策 → 规范组合器` 处理：组合器只复制已校验源块文字，并按任务受理时冻结的完整 `TemplateDefinition` 选择受控联系信息行、左右条目和 CommonMark 列表配方；Worker 不重新读取当前模板行的样式或启用状态。同块经历头只有显式 `entry_header` 决策及原文确定性分隔符同时存在时才生成左右行，普通 `body` 中的 `｜`/`|` 原样保留。与父章节语义相同的嵌套 heading 作为父章节可见标题保留，只有根标题或语义切换才建立新章节。有序列表的起始值、项目编号和嵌套深度由程序输出，超过单 item 50 个源引用时在安全边界确定性分片并延续实际序号。所有源块必须保持来源顺序且恰好进入一个规范 custom 章节，不存在“未分类内容”运行时兜底。结构化模型引用未知/重复源块、非法锚点/复合键或 graph hash 不匹配时仅使可选增强降级为空标注；确定性组合器或模板布局无法完整承载时分别以 `RESUME_STRUCTURE_INVALID` 或 `RESUME_LAYOUT_UNSUPPORTED` 失败，不创建半成品。日期、联系方式、错别字和空缺字段作为可见源文字原样保留；字段类型、数量和长度上限、危险链接、Markdown 主动内容及内部 ID 完整性仍严格校验。
 
@@ -203,7 +213,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0057`、模板初始化和物理约束验证。
+- `LINKCV_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkcv` 数据库，用于从根 revision 向前升级到 `0061`、模板初始化和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 
@@ -212,6 +222,8 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 插件不使用数据库表。Development 与 Production 使用彼此独立的 MinIO，因此各自 Bucket 内统一以 `system/plugin-releases/current.json` 保存当前指针，以 `system/plugin-releases/v<version>/linkcv-job-capture-v<version>.zip` 保存当前版本 ZIP，不在对象键中重复环境名。新写指针使用 schema v3，并显式包含 `published` 或 `unpublished` 状态；读取兼容既有不含状态的 v2 指针，并按已发布处理。发布顺序固定为先写 ZIP 并核对 size/SHA-256 元数据，再覆盖当前指针，最后枚举插件保留前缀并删除除 current 引用对象外的其他 ZIP。指针失败时上一状态和旧 ZIP 继续有效；清理失败时新版保持有效并返回 `cleanup_pending=true`，同版本重试或后续上传会再次清理。同版本同摘要可以幂等重试或从下架状态重新上架，同版本不同内容或低于指针保留版本的发布返回冲突。当前 Docker 入口是单 Uvicorn 进程，进程锁只保证当前部署内发布串行；扩为多副本前必须改成跨实例协调。
 
 普通登录用户通过 FastAPI 读取当前元数据和流式下载，MinIO Bucket policy、Endpoint 和对象键都不暴露给浏览器。下载前重新核对当前版本、对象大小和 SHA-256 元数据，页面停留期间版本已变化时要求刷新，不回退到已删除的历史对象。管理员通过独立 current 接口区分无插件、已上架和已下架三种状态。下架将 `current.json.status` 改为 `unpublished`，成功后用户下载关闭，但当前版本信息和该版本 ZIP 均保留；重新上架校验保留 ZIP 后切回 `published`，无需再次上传。永久删除与发布共用进程锁，并在插件仍已上架时先写入 unpublished 指针关闭下载，再删除 ZIP 和指针；部分失败保留 unpublished 状态，允许重复删除完成收尾。
+
+资料文件夹的上传与移动接口均要求现存的自有目标文件夹，并锁定目标文件夹直到写入提交。非空文件夹删除必须传 `confirm_contents=true`；删除过程锁定文件夹及其资料，预检任务状态，清理对象后在数据库事务中删除资料、解析任务和文件夹。数据库现有 nullable 外键保留用于历史结构兼容，公开写入接口不再产生未分类资料。
 
 ## 小程序求职适配
 
