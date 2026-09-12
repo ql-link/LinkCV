@@ -2475,11 +2475,6 @@ select:not([data-slot]):focus-visible {
 .workbench-typography-settings > .workbench-field .workbench-font-select > svg { position: absolute; right: 7px; }
 .workbench-typography-settings > .workbench-value-row { padding: 14px 0; }
 .workbench-typography-settings > .workbench-value-row:last-child { padding-bottom: 0; }
-.workbench-semantic-settings { display: grid; gap: 10px; }
-.workbench-semantic-row { display: grid; grid-template-columns: minmax(0, 1fr) 108px; align-items: center; gap: 12px; }
-.workbench-semantic-row > span { overflow: hidden; color: #344054; font-size: 0.75rem; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
-.workbench-semantic-row [role="combobox"] { width: 108px; height: 30px; justify-content: space-between; font-size: 0.75rem; }
-.workbench-semantic-settings > button { justify-self: stretch; gap: 7px; margin-top: 4px; }
 .workbench-field { display: grid; gap: 8px; color: var(--ui-text-secondary); font-size: 0.8125rem; }
 .workbench-field > span { font-weight: 600; }
 .workbench-font-select { height: 40px; align-items: center; border-color: var(--ui-input); background: var(--ui-surface); padding: 7px 10px; color: var(--ui-foreground); }
@@ -2487,10 +2482,10 @@ select:not([data-slot]):focus-visible {
 .workbench-font-select[data-state="open"] { border-color: var(--ui-ring); box-shadow: 0 0 0 1px var(--ui-ring); }
 .workbench-font-select > .workbench-font-current { min-width: 0; flex: 1; overflow: hidden; color: var(--ui-foreground); font-size: 0.875rem; font-weight: 500; line-height: 1.35; text-align: left; text-overflow: ellipsis; white-space: nowrap; -webkit-line-clamp: unset; }
 .workbench-font-select-content { min-width: var(--radix-select-trigger-width); border-color: var(--ui-border); background: var(--ui-surface-elevated); color: var(--ui-foreground); box-shadow: var(--ui-shadow-sm); }
-.workbench-font-option { min-height: 40px; padding-block: 7px; padding-left: 10px; }
+.workbench-font-option { min-height: 40px; justify-content: center; padding-block: 7px; padding-inline: 32px; text-align: center; }
 .workbench-font-option[data-highlighted] { background: var(--ui-accent-subtle); color: var(--ui-foreground); }
 .workbench-font-option[data-state="checked"] { color: var(--ui-accent); }
-.workbench-font-option-copy { min-width: 0; overflow: hidden; padding-right: 4px; font-size: 0.875rem; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.workbench-font-option-copy { min-width: 0; overflow: hidden; font-size: 0.875rem; font-weight: 500; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 
 .workbench-setting-toggle,
 .workbench-setting-action,
