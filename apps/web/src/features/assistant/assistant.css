@@ -1,12 +1,6 @@
-@font-face {
-  font-family: "LinkCV Assistant WenKai";
-  src: url("../../../node_modules/@fontpkg/lxgw-wen-kai/LXGWWenKai-Regular.ttf") format("truetype");
-  font-display: swap;
-}
-
-.assistant-workspace-shell { --ui-font-content: "LinkCV Assistant WenKai", "LXGW WenKai", KaiTi, STKaiti, serif; min-height: 100dvh; background: linear-gradient(90deg, #fbfcfd 0%, #f7faff 50%, #fafbfc 100%); }
+.assistant-workspace-shell { min-height: 100dvh; background: linear-gradient(90deg, #fbfcfd 0%, #f7faff 50%, #fafbfc 100%); }
 .assistant-workspace-shell .dashboard-topbar { position: relative; z-index: 10; background: transparent; }
-.assistant-page { display: flex; min-height: 0; flex: 1; padding: 23px 39px clamp(28px, 7vh, 71px); color: #17191c; font-family: "LinkCV Assistant WenKai", "LXGW WenKai", KaiTi, STKaiti, serif; }
+.assistant-page { display: flex; min-height: 0; flex: 1; padding: 23px 39px clamp(28px, 7vh, 71px); color: #17191c; font-family: var(--ui-font-sans); }
 .assistant-shell { display: grid; width: 100%; min-height: 640px; grid-template-columns: 319px minmax(0, 1fr); overflow: hidden; border: 1px solid #d6dbe0; border-radius: 18px; background: #fff; box-shadow: 0 12px 28px rgb(26 31 41 / 8%); }
 
 .assistant-sidebar { position: relative; display: flex; min-width: 0; min-height: 0; flex-direction: column; border-right: 1px solid #dee0e5; background: #fff; padding: 36px 16px 30px; font-family: var(--ui-font-sans); }
@@ -121,7 +115,7 @@
 .assistant-message-body { min-width: 0; }
 .assistant-message.is-user .assistant-message-body { max-width: 760px; border-radius: 11px; background: #edf1f5; padding: 14px 16px; }
 .assistant-message.is-assistant .assistant-message-body { flex: 1; padding-top: 3px; }
-.assistant-message-content { color: #17191c; font-size: 20px; line-height: 1.65; }
+.assistant-message-content { color: #17191c; font-family: var(--resume-serif-font); font-size: 20px; line-height: 1.65; }
 .assistant-message-content .agent-message-content { display: grid; gap: 8px; font-size: 20px; line-height: 1.65; }
 .assistant-message-content p { margin: 0; }
 .assistant-message-content ul { margin: 0; padding-left: 1.25em; }
@@ -210,7 +204,7 @@
 .assistant-context-mention-group > button > svg { flex: 0 0 auto; color: #687484; }
 .assistant-context-mention-group > button > span { display: flex; min-width: 0; flex: 1; }
 .assistant-context-mention-group > button strong { overflow: hidden; font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.assistant-composer-editor { width: 100%; min-height: 61px; max-height: 220px; overflow-y: auto; border: 1px solid #c3ccd6; border-radius: 19px; outline: none; background: #fff; padding: 17px 58px 15px 46px; color: #17191c; font: 400 15px/1.55 "LinkCV Assistant WenKai", "LXGW WenKai", serif; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 2px 8px rgb(15 18 22 / 6%); }
+.assistant-composer-editor { width: 100%; min-height: 61px; max-height: 220px; overflow-y: auto; border: 1px solid #c3ccd6; border-radius: 19px; outline: none; background: #fff; padding: 17px 58px 15px 46px; color: #17191c; font: 400 15px/1.55 var(--ui-font-sans); white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 2px 8px rgb(15 18 22 / 6%); }
 .assistant-conversation:not(.is-empty) .assistant-composer-editor { height: 61px; max-height: 61px; }
 .assistant-conversation.is-empty .assistant-composer-editor { height: 152px; min-height: 152px; max-height: 152px; padding: 25px 72px 54px 26px; border-color: #b8bfcc; font-size: 18px; box-shadow: 0 8px 18px rgb(31 36 46 / 9%); }
 .assistant-composer-editor:empty::before { color: #8791a1; content: attr(data-placeholder); pointer-events: none; }
@@ -228,9 +222,9 @@
 .assistant-send-button:disabled { background: #c7cbd2; cursor: not-allowed; box-shadow: none; }
 .assistant-send-button.is-stop { background: #0e1114; color: #fff; }
 .assistant-composer-context-row { display: flex; min-height: 23px; align-items: center; justify-content: space-between; order: 2; gap: 14px; padding: 0 4px; }
-.assistant-add-context { display: inline-flex; align-items: center; gap: 5px; background: transparent; color: #6f7a8c; cursor: pointer; font: 400 13px/1.4 "LinkCV Assistant WenKai", serif; }
+.assistant-add-context { display: inline-flex; align-items: center; gap: 5px; background: transparent; color: #6f7a8c; cursor: pointer; font: 400 13px/1.4 var(--ui-font-sans); }
 .assistant-model-selector { position: relative; margin-left: auto; }
-.assistant-model-selector > button { display: inline-flex; min-height: 30px; max-width: 280px; align-items: center; gap: 6px; background: transparent; color: #333b47; cursor: pointer; font: 400 13px/1.4 "LinkCV Assistant WenKai", serif; }
+.assistant-model-selector > button { display: inline-flex; min-height: 30px; max-width: 280px; align-items: center; gap: 6px; background: transparent; color: #333b47; cursor: pointer; font: 400 13px/1.4 var(--ui-font-sans); }
 .assistant-model-selector > button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .assistant-model-menu { position: absolute; z-index: 20; right: 0; bottom: calc(100% + 8px); width: 238px; border: 1px solid #dbe0e8; border-radius: 12px; background: #fff; padding: 7px; box-shadow: 0 12px 28px rgb(26 31 41 / 12%); }
 .assistant-model-menu button { display: flex; width: 100%; align-items: center; justify-content: space-between; border-radius: 8px; background: #ecf2ff; padding: 10px; color: #0d52eb; cursor: pointer; text-align: left; }
