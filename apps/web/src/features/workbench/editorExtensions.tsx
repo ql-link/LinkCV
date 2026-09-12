@@ -40,6 +40,7 @@ import {
   removeBlankParagraphAfterResumeRow,
   removeVisuallyBlankResumeLine,
 } from "./editorCommands";
+import { RESUME_IMAGE_ACCEPT, validateResumeImageFile } from "./resumeImageLimits";
 
 export const inlineIconComponents = {
   Mail,
@@ -144,12 +145,9 @@ export const ResumeBlockIdentity = Extension.create({
 
 function uploadImage(file: File) {
   return new Promise<string>((resolve, reject) => {
-    if (!file.type.startsWith("image/")) {
-      reject(new Error("请选择图片文件"));
-      return;
-    }
-    if (file.size > 8 * 1024 * 1024) {
-      reject(new Error("图片不能超过 8MB"));
+    const validationMessage = validateResumeImageFile(file);
+    if (validationMessage) {
+      reject(new Error(validationMessage));
       return;
     }
     const reader = new FileReader();
@@ -246,7 +244,7 @@ function MediaNodeView({ node, selected, updateAttributes, deleteNode }: NodeVie
   const replace = async () => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = "image/png,image/jpeg,image/gif,image/webp,image/svg+xml";
+    input.accept = RESUME_IMAGE_ACCEPT;
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;

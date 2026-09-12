@@ -35,6 +35,7 @@
 - `resume_templates` 保存 `TemplateDefinition` 与默认 canonical 内容；普通用户只消费启用且结构有效的模板。模板拥有区域、插槽、列宽和头像显示策略，`LayoutPlan` 是后端编译的只读投影结果。
 - Web 默认简历中的图片占位标签使用随应用发布的霞鹜文楷；它只负责示例占位图呈现，不覆盖用户保存的简历字体设置。
 - canonical 正文把白名单内的简历图标保存为结构化 `InlineIcon`，章节标题使用独立 `title_icon`；`:icon[Name]:` 只作为 Markdown、Agent 和旧数据兼容边界的序列化形式，不能作为预览中可见的普通正文。未知或不完整标记继续按原文字保留，避免静默改写用户内容。
+- 简历图片在进入当前快照前统一校验 PNG/JPEG 格式、单图 10 MiB 上限和快照引用总量 10 MiB；不满足条件时保存、模板切换、版本恢复和 Agent 提案确认均明确失败，避免延迟到 PDF 导出阶段才暴露问题。
 - canonical 列表保留用户创建的空项，空项使用 `runs: []` 表达，不写入空格或占位文本；列表块本身仍至少包含一个列表项。
 - `document_parse_tasks` 保存简历导入和资料集共用的上传/解析状态。简历导入在受理时同时冻结 `selected_template_id` 与规范化的 `selected_template_style_json`（完整 `TemplateDefinition`），并把确定性的 `SourceGraph` 保存到私有对象；Worker 只使用任务快照，因此模板之后更新或停用不会改变已受理任务的版式。资料集任务额外使用 `queued`、派发时间和尝试版本完成 MQ 恢复。PDF/DOCX 由 LinkParse 转换文字并可附带有界布局提示，Markdown 在 Worker 本地转换。PDF 始终使用 `include_images=false`：文字与图片混排的 PDF 继续解析文字，但证件照、Logo 和其他源图片不会进入导入结果，模板头像保持为空。
 - 分享实时读取最新正式版本，不另存内容快照；PDF 使用当前已保存快照生成且不持久化成品。

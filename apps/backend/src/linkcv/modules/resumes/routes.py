@@ -39,6 +39,7 @@ from linkcv.modules.resumes.models import (
     Resume,
     ResumeVersion,
 )
+from linkcv.modules.resumes.pdf_service import validate_resume_pdf_asset_contract
 from linkcv.modules.resumes.schemas import (
     DeleteResumeResponse,
     ResumeCreateRequest,
@@ -229,8 +230,21 @@ def update_resume(
     payload: ResumeUpdateRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    storage: AssetStorage = Depends(get_storage),
 ) -> ResumeResponse:
     resume = require_owned_resume(db, resume_id, user.id)
+    if resume.lock_version != payload.base_lock_version:
+        raise ApiError(409, "RESUME_EDIT_CONFLICT")
+    validate_resume_pdf_asset_contract(
+        storage,
+        (
+            payload.data.model_dump(mode="json")
+            if payload.data is not None
+            else resume.data_json
+        ),
+        user_id=user.id,
+        resume_id=resume.id,
+    )
     try:
         updated = update_resume_snapshot(
             db=db,
@@ -262,11 +276,24 @@ def apply_template(
     payload: ResumeApplyTemplateRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    storage: AssetStorage = Depends(get_storage),
 ) -> ResumeResponse:
     template_id = parse_decimal_id(payload.template_id)
     if template_id is None:
         raise ApiError(422, "TEMPLATE_INACTIVE")
     resume = require_owned_resume(db, resume_id, user.id)
+    if resume.lock_version != payload.base_lock_version:
+        raise ApiError(409, "RESUME_EDIT_CONFLICT")
+    validate_resume_pdf_asset_contract(
+        storage,
+        (
+            payload.data.model_dump(mode="json")
+            if payload.data is not None
+            else resume.data_json
+        ),
+        user_id=user.id,
+        resume_id=resume.id,
+    )
     try:
         updated = apply_resume_template(
             db=db,
