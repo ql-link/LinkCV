@@ -395,6 +395,7 @@ function errorMessage(error: unknown): string {
       INVALID_INTERVIEW_TIME: "面试开始时间需要是有效的 24 小时制 HH:mm（分钟 00–59）。",
       INTERVIEW_ASSET_TOO_LARGE: "素材超过 500 MiB，请压缩后重试。",
       UNSUPPORTED_INTERVIEW_ASSET: "暂不支持这种素材格式。",
+      INTERVIEW_APPLICATION_DELETE_FAILED: "删除失败，请稍后重试。",
       INTERVIEW_APPLICATION_NOT_EMPTY: "请先清理该求职进程下的面试记录。",
       INTERVIEW_SESSION_NOT_EMPTY: "请先删除这场面试关联的素材。",
     };
@@ -1321,6 +1322,8 @@ function ApplicationsView({
     targetColumnId: string | null;
   } | null>(null);
   const [pendingTermination, setPendingTermination] = useState<JobApplicationSummary | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<JobApplicationSummary | null>(null);
+  const [deletingApplicationId, setDeletingApplicationId] = useState<string | null>(null);
   const [dragRejectionNotice, setDragRejectionNotice] = useState<{ id: number; message: string } | null>(null);
   const dragRejectionNoticeIdRef = useRef(0);
   const dragRejectionNoticeTimerRef = useRef<number | null>(null);
@@ -1362,6 +1365,19 @@ function ApplicationsView({
       .filter((application) => currentApplicationStageCompleted(application, sessions))
       .map((application) => application.id),
   );
+  const deleteEndedApplication = async () => {
+    if (!pendingDelete) return;
+    setDeletingApplicationId(pendingDelete.id);
+    try {
+      await api.deleteJobApplication(pendingDelete.id);
+      setPendingDelete(null);
+      await onChanged();
+    } catch (error) {
+      onNotice(errorMessage(error));
+    } finally {
+      setDeletingApplicationId(null);
+    }
+  };
   return (
     <div className="career-applications-layout">
       <AnimatePresence>
@@ -1406,6 +1422,7 @@ function ApplicationsView({
           setDraggedNextStage({ application, prefill, targetColumnId: targetColumnId ?? null });
         }}
         onRequestTerminate={setPendingTermination}
+        onRequestDelete={setPendingDelete}
       />
       {draggedPendingApplication && (
         <MarkApplicationAppliedDialog
@@ -1436,6 +1453,18 @@ function ApplicationsView({
           onClose={() => setPendingTermination(null)}
           onChanged={onChanged}
           onNotice={onNotice}
+        />
+      )}
+      {pendingDelete && (
+        <ConfirmDialog
+          kind="delete"
+          title={`永久删除「${pendingDelete.company_name_snapshot} · ${pendingDelete.job_title_snapshot}」？`}
+          description="删除后，这次求职记录及其阶段、排期、复盘和素材将无法恢复；原始岗位资料不会被删除。"
+          confirmLabel="永久删除"
+          busyLabel="正在删除…"
+          busy={deletingApplicationId === pendingDelete.id}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={deleteEndedApplication}
         />
       )}
       {displayMode === "list" && visibleApplications.length ? (
@@ -1483,11 +1512,21 @@ function ApplicationsView({
                   >
                     <td><div className="career-application-identity"><span className="career-application-cell-text" title={item.company_name_snapshot}>{item.company_name_snapshot}</span><span className="career-application-cell-text career-application-job-title" title={item.job_title_snapshot}>{item.job_title_snapshot}</span></div></td>
                     {!groupByCategory && <td><span className="career-application-category-tag">{categories.find(([key]) => key === categoryKey(item))?.[1]}</span></td>}
-                    <td>
+                    <td><div className="career-application-progress-cell">
                       <span className={`career-application-progress ${applicationProgressToneClass(item, { now, currentStageCompleted })}`} aria-label={progressLabel}>
                         {progressLabel}
                       </span>
-                    </td>
+                      {projectApplicationProgress(item).columnKey === "ended" && (
+                        <button
+                          type="button"
+                          className="career-application-delete-button"
+                          aria-label={`删除 ${item.company_name_snapshot} ${item.job_title_snapshot} 求职记录`}
+                          onClick={() => setPendingDelete(item)}
+                        >
+                          <Trash2 size={15} aria-hidden="true" />删除
+                        </button>
+                      )}
+                    </div></td>
                     <td><span className="career-application-cell-text">{nextInterview ? `${formatApplicationSessionRange(nextInterview.start_at, nextInterview.end_at)} · ${nextInterview.stage_label}` : "暂无安排"}</span></td>
                     <td>{item.applied_at ? <time dateTime={item.applied_at}>{formatApplicationUpdatedAt(item.applied_at)}</time> : "未投递"}</td>
                     <td><time className="career-application-updated-at" dateTime={item.updated_at}>{formatApplicationUpdatedAt(item.updated_at)}</time></td>

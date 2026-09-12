@@ -68,6 +68,12 @@ class FailingUploadStorage(FakeStorage):
         raise RuntimeError("simulated storage outage")
 
 
+class FailingDeleteStorage(FakeStorage):
+    def delete(self, object_name: str) -> None:
+        del object_name
+        raise RuntimeError("simulated storage outage")
+
+
 def build_app(storage: FakeStorage | None = None):
     app = create_app(
         Settings(
@@ -104,18 +110,44 @@ def register(client: TestClient, email: str) -> None:
     assert response.status_code == 201, response.text
 
 
-def create_job(client: TestClient, company: str) -> str:
+def create_job(client: TestClient, company: str, *, logo_url: str | None = None) -> str:
     response = client.post(
         "/api/job-descriptions",
         json={
             "job_title": "后端开发工程师",
             "company_name": company,
+            "logo_url": logo_url,
             "description": "负责虚构业务的后端系统设计与开发。",
             "source_type": "manual",
         },
     )
     assert response.status_code == 201, response.text
     return response.json()["job_description"]["id"]
+
+
+def test_application_response_uses_logo_from_job_snapshot() -> None:
+    app = build_app(FakeStorage())
+    with TestClient(app) as client:
+        register(client, "logo-snapshot@example.test")
+        job_id = create_job(
+            client,
+            "示例 Logo 公司",
+            logo_url="https://cdn.example.test/logos/example.png",
+        )
+
+        listed = client.get("/api/job-applications")
+        assert listed.status_code == 200, listed.text
+        application = next(
+            item
+            for item in listed.json()["items"]
+            if item["job_description_id"] == job_id
+        )
+        assert application["job_snapshot"]["logo_url"] == (
+            "https://cdn.example.test/logos/example.png"
+        )
+        assert application["company_logo_url"] == (
+            "https://cdn.example.test/logos/example.png"
+        )
 
 
 def create_resume(
@@ -1872,6 +1904,101 @@ def test_archived_history_can_be_cleaned_only_from_child_to_parent() -> None:
             f"/api/job-applications/{application['id']}"
         )
         assert deleted_parent.status_code == 200
+
+
+def test_terminated_application_delete_removes_its_history_and_asset_objects() -> None:
+    storage = FakeStorage()
+    app = build_app(storage)
+    with TestClient(app) as client:
+        register(client, "terminated-application-delete@example.test")
+        job_id = create_job(client, "已结束记录公司")
+        application = create_application(client, job_id)
+        created = client.post(
+            f"/api/job-applications/{application['id']}/interview-sessions",
+            json=session_payload("cccccccc-cccc-4ccc-8ccc-cccccccccccc"),
+        ).json()
+        session_id = created["session"]["id"]
+        uploaded = client.post(
+            f"/api/interview-sessions/{session_id}/assets",
+            data={"source_type": "uploaded"},
+            files={"file": ("复盘.txt", b"fictional interview notes", "text/plain")},
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        asset_id = uploaded.json()["asset"]["id"]
+        assert len(storage.objects) == 1
+
+        terminated = client.post(
+            f"/api/job-applications/{application['id']}/terminate",
+            json={
+                "client_request_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                "reason": "company_rejected",
+                "base_lock_version": created["application"]["lock_version"],
+            },
+        )
+        assert terminated.status_code == 200, terminated.text
+
+        deleted = client.delete(f"/api/job-applications/{application['id']}")
+        assert deleted.status_code == 200, deleted.text
+        assert deleted.json() == {"deleted": True}
+        assert storage.objects == {}
+        assert (
+            client.get(f"/api/job-applications/{application['id']}").status_code == 404
+        )
+        assert client.get(f"/api/interview-sessions/{session_id}").status_code == 404
+        assert (
+            client.get(f"/api/interview-assets/{asset_id}/content").status_code == 404
+        )
+        assert client.get(f"/api/job-descriptions/{job_id}").status_code == 200
+
+
+def test_active_application_cannot_be_deleted() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "active-application-delete@example.test")
+        application = create_pending_application(client, "活动记录公司")
+
+        deleted = client.delete(f"/api/job-applications/{application['id']}")
+        assert deleted.status_code == 409
+        assert deleted.json() == {"error": "INTERVIEW_APPLICATION_NOT_EMPTY"}
+        assert (
+            client.get(f"/api/job-applications/{application['id']}").status_code == 200
+        )
+
+
+def test_terminated_application_delete_keeps_records_when_asset_cleanup_fails() -> None:
+    storage = FailingDeleteStorage()
+    app = build_app(storage)
+    with TestClient(app) as client:
+        register(client, "failed-application-delete@example.test")
+        application = create_application(client, create_job(client, "删除失败示例公司"))
+        created = client.post(
+            f"/api/job-applications/{application['id']}/interview-sessions",
+            json=session_payload("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"),
+        ).json()
+        session_id = created["session"]["id"]
+        uploaded = client.post(
+            f"/api/interview-sessions/{session_id}/assets",
+            data={"source_type": "uploaded"},
+            files={"file": ("复盘.txt", b"fictional interview notes", "text/plain")},
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        terminated = client.post(
+            f"/api/job-applications/{application['id']}/terminate",
+            json={
+                "client_request_id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                "reason": "other",
+                "base_lock_version": created["application"]["lock_version"],
+            },
+        )
+        assert terminated.status_code == 200, terminated.text
+
+        deleted = client.delete(f"/api/job-applications/{application['id']}")
+        assert deleted.status_code == 502
+        assert deleted.json() == {"error": "INTERVIEW_APPLICATION_DELETE_FAILED"}
+        assert (
+            client.get(f"/api/job-applications/{application['id']}").status_code == 200
+        )
+        assert client.get(f"/api/interview-sessions/{session_id}").status_code == 200
 
 
 def test_optimistic_lock_rejects_a_second_application_write_from_a_stale_page() -> None:

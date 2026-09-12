@@ -5,7 +5,7 @@ import { Button, ConfirmDialog, PageLoading } from "@/components/ui";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { careerApplicationPath, navigateTo, startCareerApplicationPath } from "../../routing";
 import { jobFormFromRecord, jobPayloadFromForm, type JobFormState } from "./jobFormModel";
-import { activeApplicationForJob, applicationOutcome, applicationsForJob, listAllJobApplications } from "./jobApplications";
+import { activeApplicationForJob, applicationsForJob, listAllJobApplications } from "./jobApplications";
 import "./jobs.css";
 
 export function JobDetailPage({ jobId }: { jobId: string }) {
@@ -114,26 +114,6 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
         </div>
         {error && <div className="job-error job-detail-error" role="alert">{error}</div>}
         <JobDocument job={job} editingField={editingField} busy={busy} onEdit={setEditingField} onSave={saveField} onSaveFields={saveFields} />
-        <section className="job-document-section job-career-section">
-          <header>
-            <div><p className="job-eyebrow">求职进程</p><h2>这个岗位的求职记录</h2></div>
-          </header>
-          {!applicationsLoaded ? (
-            <div className="job-career-empty"><p>暂时无法读取求职进程。为避免重复创建，请稍后刷新再试。</p></div>
-          ) : jobApplications.length ? (
-            <div className="job-application-history">
-              {jobApplications.map((application) => (
-                <article key={application.id}>
-                  <div><strong>{application.current_stage_label}</strong><span>{applicationOutcome(application)} · {formatTime(application.created_at)}</span></div>
-                  <span className={`job-status-badge${application.status !== "active" || application.archived_at ? " is-archived" : ""}`}>{applicationOutcome(application)}</span>
-                  <Button size="sm" variant="outline" onClick={() => navigateTo(careerApplicationPath(application.id))}>查看进程</Button>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="job-career-empty"><p>这个岗位还没有求职进程。开始后会保存当前岗位与简历版本快照，并进入筛选阶段。</p></div>
-          )}
-        </section>
       </article>
       {deleteOpen && <ConfirmDialog kind="delete" title={`永久删除「${job.job_title}」？`} description="删除后无法恢复，并会释放该来源，之后再次写入会创建新的岗位。" confirmLabel="永久删除" busyLabel="正在删除…" busy={busy} onCancel={() => setDeleteOpen(false)} onConfirm={deleteJob} />}
     </main>
@@ -173,7 +153,7 @@ function JobDocument({ job, editingField, busy, onEdit, onSave, onSaveFields }: 
       </header>
       <div className="job-document-body">
         <DocumentSection title="岗位要求"><dl className="job-document-grid"><EditableDefinition label="学历要求">{editable("education_requirement", "学历要求", job.education_requirement)}</EditableDefinition><EditableDefinition label="经验要求">{editable("experience_requirement", "经验要求", job.experience_requirement)}</EditableDefinition><EditableDefinition label="工作方式">{editable("work_mode", "工作方式", job.work_mode, workModeOptions)}</EditableDefinition><EditableDefinition label="工作安排">{editable("work_schedule", "工作安排", job.work_schedule)}</EditableDefinition><EditableDefinition label="详细地址">{editable("work_address", "详细地址", job.work_address)}</EditableDefinition><StructuredSalaryEditor job={job} active={editingField === "structured_salary"} disabled={busy} onEdit={onEdit} onSave={onSaveFields} /></dl></DocumentSection>
-        <DocumentSection title="公司与招聘者"><dl className="job-document-grid"><EditableDefinition label="公司全称">{editable("company_legal_name", "公司全称", job.company_legal_name)}</EditableDefinition><EditableDefinition label="行业">{editable("company_industry", "行业", job.company_industry)}</EditableDefinition><EditableDefinition label="公司规模">{editable("company_size", "公司规模", job.company_size)}</EditableDefinition><EditableDefinition label="融资阶段">{editable("company_financing_stage", "融资阶段", job.company_financing_stage)}</EditableDefinition><EditableDefinition label="招聘者姓名">{editable("recruiter_name", "招聘者姓名", job.recruiter_name)}</EditableDefinition><EditableDefinition label="招聘者职位">{editable("recruiter_title", "招聘者职位", job.recruiter_title)}</EditableDefinition><EditableDefinition label="公司简介" wide>{<InlineEditableField field="company_description" label="公司简介" value={job.company_description ?? ""} multiline active={editingField === "company_description"} disabled={busy} onEdit={onEdit} onSave={onSave} />}</EditableDefinition></dl></DocumentSection>
+        <DocumentSection title="公司与招聘者"><dl className="job-document-grid"><EditableDefinition label="公司 Logo URL" wide>{editable("logo_url", "公司 Logo URL", job.logo_url)}</EditableDefinition><EditableDefinition label="公司全称">{editable("company_legal_name", "公司全称", job.company_legal_name)}</EditableDefinition><EditableDefinition label="行业">{editable("company_industry", "行业", job.company_industry)}</EditableDefinition><EditableDefinition label="公司规模">{editable("company_size", "公司规模", job.company_size)}</EditableDefinition><EditableDefinition label="融资阶段">{editable("company_financing_stage", "融资阶段", job.company_financing_stage)}</EditableDefinition><EditableDefinition label="招聘者姓名">{editable("recruiter_name", "招聘者姓名", job.recruiter_name)}</EditableDefinition><EditableDefinition label="招聘者职位">{editable("recruiter_title", "招聘者职位", job.recruiter_title)}</EditableDefinition><EditableDefinition label="公司简介" wide>{<InlineEditableField field="company_description" label="公司简介" value={job.company_description ?? ""} multiline active={editingField === "company_description"} disabled={busy} onEdit={onEdit} onSave={onSave} />}</EditableDefinition></dl></DocumentSection>
         <DocumentSection title="来源与备注"><dl className="job-document-grid"><Definition label="来源" value={job.source_site ?? "手工创建"} /><Definition label="来源类型" value={job.source_type} /><Definition label="更新时间" value={formatTime(job.updated_at)} />{job.imported_at && <Definition label="导入时间" value={formatTime(job.imported_at)} />}<EditableDefinition label="个人备注" wide>{<InlineEditableField field="notes" label="个人备注" value={job.notes ?? ""} multiline active={editingField === "notes"} disabled={busy} onEdit={onEdit} onSave={onSave} />}</EditableDefinition></dl>{job.source_url && <a className="job-source-link" href={job.source_url} target="_blank" rel="noreferrer">打开来源岗位 <ExternalLink size={13} /></a>}</DocumentSection>
       </div>
     </section>

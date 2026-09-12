@@ -13,7 +13,7 @@ from linkcv.modules.interviews.models import (
     JobApplication,
     JobApplicationStage,
 )
-from linkcv.modules.job_descriptions.models import JobDescription
+from linkcv.modules.job_descriptions.models import GlobalCompany, JobDescription
 from linkcv.modules.llm.models import (
     LLMCallLog,
     LLMCapabilityBinding,
@@ -42,6 +42,7 @@ __all__ = [
     "JobApplication",
     "JobApplicationStage",
     "JobDescription",
+    "GlobalCompany",
     "DocumentParseTask",
     "Resume",
     "ResumeTemplate",
