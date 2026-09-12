@@ -438,6 +438,16 @@ describe("ResumeWorkbench 顶部保存反馈", () => {
 
     rerender(<WorkbenchSaveStatus dirty={false} saveStatus="saved" />);
     expect(screen.getByRole("status")).toHaveTextContent("已保存");
+
+    rerender(
+      <WorkbenchSaveStatus
+        dirty
+        saveStatus="error"
+        error="RESUME_PDF_ASSETS_TOO_LARGE"
+      />,
+    );
+    expect(screen.getByRole("status"))
+      .toHaveTextContent("保存失败 · 简历中引用的图片总大小不能超过 10MB");
   });
 
   it("顶部保存简历按钮触发主记录保存并在保存期间禁用重复操作", async () => {
@@ -526,6 +536,13 @@ describe("ResumeWorkbench 版本上限提示", () => {
 
   it("其他错误继续使用通用失败提示", () => {
     expect(versionOperationErrorMessage(new Error("HTTP_500"), "create")).toBeNull();
+  });
+
+  it("恢复版本时展示图片契约错误", () => {
+    const error = new ApiRequestError(413, "RESUME_PDF_ASSETS_TOO_LARGE");
+
+    expect(versionOperationErrorMessage(error, "restore"))
+      .toBe("简历中引用的图片总大小不能超过 10MB");
   });
 });
 

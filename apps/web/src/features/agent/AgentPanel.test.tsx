@@ -2,9 +2,9 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api, type AgentProposal, type AgentSession } from "../../api/client";
+import { ApiRequestError, api, type AgentProposal, type AgentSession } from "../../api/client";
 import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
-import { AgentMarkdown, AgentPanel, AgentUserAvatar } from "./AgentPanel";
+import { agentErrorMessage, AgentMarkdown, AgentPanel, AgentUserAvatar } from "./AgentPanel";
 
 const session: AgentSession = {
   id: "session-1",
@@ -38,6 +38,11 @@ afterEach(() => {
 });
 
 describe("AgentPanel", () => {
+  it("提案确认失败时展示图片总量契约提示", () => {
+    expect(agentErrorMessage(new ApiRequestError(413, "RESUME_PDF_ASSETS_TOO_LARGE")))
+      .toBe("简历中引用的图片总大小不能超过 10MB");
+  });
+
   it("渲染常用 Markdown 块级与行内语法并阻止原始 HTML 执行", () => {
     const { container } = render(<AgentMarkdown content={`# 一级标题
 

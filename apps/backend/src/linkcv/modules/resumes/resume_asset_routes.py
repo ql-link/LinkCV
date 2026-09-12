@@ -20,11 +20,14 @@ from linkcv.core.storage import (
 )
 from linkcv.modules.identity.dependencies import get_current_user
 from linkcv.modules.identity.models import User
+from linkcv.modules.resumes.image_limits import (
+    MAX_RESUME_IMAGE_BYTES,
+    RESUME_PDF_IMAGE_CONTENT_TYPES,
+)
 from linkcv.modules.resumes.models import ResumeVersion
 from linkcv.modules.resumes.routes import require_owned_resume
 
 router = APIRouter(prefix="/resumes/{resume_id}/assets", tags=["resume-assets"])
-MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 
 class ResumeAssetUploadRequest(BaseModel):
@@ -88,7 +91,9 @@ def upload_resume_asset(
     if image is None:
         raise ApiError(400, "INVALID_IMAGE")
     data, content_type = image
-    if len(data) > MAX_IMAGE_BYTES:
+    if content_type not in RESUME_PDF_IMAGE_CONTENT_TYPES:
+        raise ApiError(400, "INVALID_IMAGE")
+    if len(data) > MAX_RESUME_IMAGE_BYTES:
         raise ApiError(413, "IMAGE_TOO_LARGE")
     object_key = build_resume_asset_object_name(
         user.id,

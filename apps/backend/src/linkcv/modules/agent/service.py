@@ -1,4 +1,6 @@
+from collections.abc import Callable
 from datetime import timedelta, timezone
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import delete, func, select
@@ -557,7 +559,12 @@ def create_scoped_proposal(
 
 
 def confirm_proposal(
-    db: Session, *, public_id: str, user_id: int, version_limit: int
+    db: Session,
+    *,
+    public_id: str,
+    user_id: int,
+    version_limit: int,
+    validate_resume_data: Callable[[dict[str, Any], int], None] | None = None,
 ) -> tuple[ResumeChangeProposal, Resume]:
     proposal = db.scalar(
         select(ResumeChangeProposal)
@@ -603,7 +610,10 @@ def confirm_proposal(
     snapshot = parse_persisted_resume_snapshot(
         proposal.proposed_data_json, proposal.proposed_style_json
     )
-    resume.data_json = snapshot.data.model_dump(mode="json")
+    proposed_data = snapshot.data.model_dump(mode="json")
+    if validate_resume_data is not None:
+        validate_resume_data(proposed_data, resume.id)
+    resume.data_json = proposed_data
     resume.style_json = snapshot.style.model_dump(mode="json")
     resume.lock_version += 1
     try:
