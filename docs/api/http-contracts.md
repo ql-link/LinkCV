@@ -66,7 +66,7 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 
 简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`，数据库 ID 在 HTTP 中使用十进制字符串。维护窗口升级到 `0047` 后，运行期只接受 `schema_version=canonical-resume.v1` 的 `data` 和 `schema_version=resume-presentation.v1` 的 `style`；旧 `basics/semantic_sections/custom_sections` 与旧 `manifest` 只允许进入一次性迁移转换器，不能通过普通保存、模板切换、版本、Agent、分享或 PDF API 写回。`CanonicalResumeDocument` 使用稳定 `node_*`、identity、按语义排序的 sections、段落/列表/媒体以及章节内 `row`（`pair` 两格、`meta` 四格、`trio` 三格）和 `source_refs/source_dispositions` 保存唯一内容真值；row/cell 是模板无关的正文结构，禁止保存模板级 region、slot、sidebar/main、column、CSS、分页和编辑器 selection。`TemplateDefinition` 的严格 `avatar` 包含 `visibility`、`fallback_asset`、`size_px` 和已声明的 `region_id`；系统默认头像只在渲染投影中出现，不写回 canonical 正文。`ResumePresentation` 使用 `portable/template_scoped/template_snapshot` 保存展示设置与当前模板快照；`portable.smart_one_page` 控制连续单页或标准 A4 导出。模板切换只更换模板身份、presentation 与后端编译的 `LayoutPlan`，正文规范摘要必须保持不变。字段闭集、数量和长度、URL、node/source 唯一性与来源闭包均严格校验；LLM 只返回稀疏语义标注，未标注源块由确定性组合器保留，不生成“未分类内容”。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不是简历写契约。
 
-Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，把旧 `"1.0"` JSON 一次性转换为上述唯一契约；`0037`–`0040` 依次拆分官方编辑 Markdown、移除 typed 副本、规范区块 ID 并修正双栏插槽。`0041` 再对模板、当前简历和历史版本全量预检，把旧整篇编辑正文及跨章节残留的 `sidebar/main` 页级包装转换为无投影语义块，保留可见文字与私有用户头像，并为双栏 manifest 补齐 `profile/interests` 路由；写后重复完整校验。`0042` 恢复经典技术模板及既有快照的生产页边距并从目录删除 `blank-cn`，历史简历依靠 `ON DELETE SET NULL` 暂时只清空来源引用。`0043` 增加资料上传幂等和可靠调度字段，`0044`–`0046` 建立并收敛 `user_profiles`。`0047` 全量只读预检后执行 canonical 切流；若历史简历或版本仍引用 `blank-cn`，先创建不含用户内容、`is_active=0` 的 tombstone 身份，再把各行绑定到该身份，各自正文和冻结样式仍从自己的旧快照转换。未知退役身份、关系冲突或非法 JSON 在首次写入前阻断。`0048` 确定性重组 canonical row 并恢复 avatar 策略；`0049` 为活动导入任务回填受理时模板定义；`0050` 规范官方模板图标；`0051` 修复已标记迁移环境中的画像结构漂移；`0052` 为 Agent 会话增加持久化置顶状态及对应列表索引；`0053` 简化 Offer 状态并增加可选详情；`0054` 将 Offer 薪资收敛为单值字段；`0055` 允许手工创建的岗位不填写职位描述；`0056` 将岗位性质收敛为实习、校招和正式三类；`0057` 增加求职生命周期、阶段历史及排期关联；`0058` 增加开放作答窗口；`0059` 增加岗位 Logo URL 与独立全局公司资料表。所有 revision 均为 forward-only，发布顺序仍为停止旧写入、备份、从真实 current 按顺序升级到 `0059`、验证后启动新应用；失败时依赖备份恢复，不执行 downgrade。
+Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，把旧 `"1.0"` JSON 一次性转换为上述唯一契约；`0037`–`0040` 依次拆分官方编辑 Markdown、移除 typed 副本、规范区块 ID 并修正双栏插槽。`0041` 再对模板、当前简历和历史版本全量预检，把旧整篇编辑正文及跨章节残留的 `sidebar/main` 页级包装转换为无投影语义块，保留可见文字与私有用户头像，并为双栏 manifest 补齐 `profile/interests` 路由；写后重复完整校验。`0042` 恢复经典技术模板及既有快照的生产页边距并从目录删除 `blank-cn`，历史简历依靠 `ON DELETE SET NULL` 暂时只清空来源引用。`0043` 增加资料上传幂等和可靠调度字段，`0044`–`0046` 建立并收敛 `user_profiles`。`0047` 全量只读预检后执行 canonical 切流；若历史简历或版本仍引用 `blank-cn`，先创建不含用户内容、`is_active=0` 的 tombstone 身份，再把各行绑定到该身份，各自正文和冻结样式仍从自己的旧快照转换。未知退役身份、关系冲突或非法 JSON 在首次写入前阻断。`0048` 确定性重组 canonical row 并恢复 avatar 策略；`0049` 为活动导入任务回填受理时模板定义；`0050` 规范官方模板图标；`0051` 修复已标记迁移环境中的画像结构漂移；`0052` 为 Agent 会话增加持久化置顶状态及对应列表索引；`0053` 简化 Offer 状态并增加可选详情；`0054` 将 Offer 薪资收敛为单值字段；`0055` 允许手工创建的岗位不填写职位描述；`0056` 将岗位性质收敛为实习、校招和正式三类；`0057` 增加求职生命周期、阶段历史及排期关联；`0058` 增加开放作答窗口；`0059` 增加岗位 Logo URL 与独立全局公司资料表；`0060` 增加资料库文件夹分类；`0061` 增加资料当前正文指针、替换操作与对象清理记录。所有 revision 均为 forward-only，发布顺序仍为停止旧写入、备份、从真实 current 按顺序升级到 `0061`、验证后启动新应用；失败时依赖备份恢复，不执行 downgrade。
 
 | Method   | Path                        | 鉴权 | 成功结果                                                         |
 | -------- | --------------------------- | ---- | ---------------------------------------------------------------- |
@@ -87,7 +87,7 @@ Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，�
 
 语义分类请求携带当前规范 `data` 的 `sha256:` 内容哈希和可选章节 ID 列表。分类器只接收自定义章节的标题、正文和相邻标题，必须综合上下文，不在模板切换时调用，也不改写正文或持久化建议；相同用户、简历、内容哈希和章节集合的成功结果在 Redis 缓存 1 小时，重复请求不重复调用模型；响应包含稳定章节 ID、建议类型、置信度和依据。内容已变化返回 `409 RESUME_SEMANTIC_CLASSIFICATION_STALE`，章节选择非法返回 `400 INVALID_RESUME_SEMANTIC_CLASSIFICATION`，模型不可用或返回越界 ID 返回 `503 RESUME_SEMANTIC_CLASSIFICATION_UNAVAILABLE`。未登录返回 `401 UNAUTHORIZED`，不存在或越权统一返回 `404 RESUME_NOT_FOUND`。
 
-Web PDF 请求必须携带当前保存成功后的 `lock_version`。服务端再次校验 Cookie 用户、简历归属和版本，然后以当前 `data/style` 快照调用受控 Chromium；Linux 部署可用专用账号降权运行，Windows 本地环境没有 Unix 账号 API 时直接运行 Node，这一内部选择不改变 HTTP 响应契约。成功响应为 `application/pdf`、`private, no-store`，并携带 `Content-Disposition`、`X-LinkCV-Pdf-Lock-Version` 和 `X-Content-Type-Options: nosniff`。固定模式按 A4 分页，智能一页保持 210mm 宽并按内容增长，超过 2000mm 返回 `413 RESUME_PDF_PAGE_TOO_TALL`。私有图片只从已校验的用户/简历对象键读取，缺失、不支持或超限分别以稳定 `RESUME_PDF_*` 错误失败关闭；正文中的外部资源不会被渲染器联网获取。
+Web PDF 请求必须携带当前保存成功后的 `lock_version`。服务端再次校验 Cookie 用户、简历归属和版本，然后以当前 `data/style` 快照调用受控 Chromium；Linux 部署可用专用账号降权运行，Windows 本地环境没有 Unix 账号 API 时直接运行 Node，这一内部选择不改变 HTTP 响应契约。成功响应为 `application/pdf`、`private, no-store`，并携带 `Content-Disposition`、`X-LinkCV-Pdf-Lock-Version` 和 `X-Content-Type-Options: nosniff`。固定模式按 A4 分页，智能一页保持 210mm 宽并按内容增长，超过 2000mm 返回 `413 RESUME_PDF_PAGE_TOO_TALL`。简历级图片只接受 PNG/JPEG，上传与 PDF 读取共用 10 MiB 单图上限，一份当前快照引用的私有图片原始二进制总量上限为 10 MiB；更新简历、切换模板和恢复历史版本均在持久化前校验该契约，超限返回 `413 RESUME_PDF_ASSET_TOO_LARGE` 或 `413 RESUME_PDF_ASSETS_TOO_LARGE`，因此不能保存成随后无法导出的当前快照。私有图片只从已校验的用户/简历对象键读取，缺失、不支持或超限分别以稳定 `RESUME_PDF_*` 错误失败关闭；正文中的外部资源不会被渲染器联网获取。
 
 每个用户最多保存 10 份正式简历；创建事务锁定用户行后检查，达到上限返回 `409 RESUME_LIMIT_REACHED`。创建在同一事务写入当前简历及 `version_no=1/reason=initial` 快照。更新同时保存完整 data/style 并递增 `lock_version`，不创建历史版本；过期基准返回 `409 RESUME_EDIT_CONFLICT`。非法内容和样式分别返回 `400 INVALID_RESUME_DOCUMENT`、`400 INVALID_RESUME_STYLE`。不存在或不属于当前用户的简历统一返回 `404 RESUME_NOT_FOUND`。
 
@@ -176,7 +176,7 @@ RabbitMQ 是默认 Broker，V2 使用 `tolink.cv.resume_import.v2` exchange、`l
 
 `GET /api/resume-overview` 返回 `{resumes, active_imports, failed_imports, next_failed_cursor}`；失败列表支持 `failed_limit=1..50` 和服务端生成的 `failed_cursor`。`GET /api/resume-imports/:id` 返回本人的单个 `{import}` 任务摘要，查询前沿用陈旧任务收口；不存在、非法 ID 或越权统一返回 `404 RESUME_IMPORT_NOT_FOUND`。Web 只对 `upload_status=succeeded` 且 `parse_status=processing` 的任务按 ID 每秒独立查询，多个任务分别轮询，终态后停止；成功终态再一次性刷新 overview，使正式简历替换活动任务。`DELETE /api/resume-imports/:id` 只允许本人删除上传或解析失败记录，并同时清理源文件、当前 `artifacts/converted.md` 和旧版 `converted.md` 候选；活动任务返回 `409 RESUME_IMPORT_IN_PROGRESS`，不存在、非法 ID 或越权同样返回 `404 RESUME_IMPORT_NOT_FOUND`，对象删除失败返回 `502 ASSET_DELETE_FAILED`。
 
-文件或模板无效时返回对应 `4xx` 且不创建正式简历。文字型、扫描和混合 PDF 都以 LinkParse Markdown 作为可编辑文字基线，并额外请求可选的 V1 layout；可安全解析且有界的页码、归一化 bbox、顺序、文字、置信度、角色、同行和续行作为精简模型提示，layout 的严格关系、计数、warning allowlist 和 Markdown 一致性只决定是否采用重建 Markdown。显式请求 layout 遇到 `413 LAYOUT_RESOURCE_LIMIT` 时，客户端在同一 deadline 内仅补发一次不含 layout 的 Markdown 请求，第二次失败按既有错误映射返回。layout 缺失、降级、畸形或不一致时保留 Markdown；若基础物理块仍安全，提示可以继续传给模型，不产生 `RESUME_LAYOUT_UNSUPPORTED`。含嵌入图片的文本 PDF、含图片/表格/文本框的 DOCX，以及转换后仍含表格、图片、嵌入或主动 HTML 的内容仍返回 `422 RESUME_LAYOUT_UNSUPPORTED`；源块映射不完整、重复、越界或分组非法返回 `422 RESUME_STRUCTURE_INVALID`。MinIO 上传失败会补偿删除可能写入的对象，再返回 `502 RESUME_SOURCE_UPLOAD_FAILED` 并保留上传失败记录；MQ publisher 初始化或 confirm 失败返回 `503 RESUME_IMPORT_QUEUE_UNAVAILABLE`，记录保存为解析失败且不会覆盖 Worker 已成功写入的终态。非法 MQ envelope 直接进入 DLT 且不调用 Processor；Processor 内部异常使用有界重试，耗尽后必须把可识别的简历导入任务写为失败终态，不能永久停留在 `processing`。转换、结构化或模板复核失败由 Worker 保存解析失败终态，不创建半成品，也不自动重试业务失败。正式简历与活动导入共享每用户 10 个名额；成功导入只是把活动占位转换为正式简历。
+文件或模板无效时返回对应 `4xx` 且不创建正式简历。文字型、扫描和混合 PDF 都以 LinkParse Markdown 作为可编辑文字基线，并额外请求可选的 V1 layout；可安全解析且有界的页码、归一化 bbox、顺序、文字、置信度、角色、同行和续行作为精简模型提示，layout 的严格关系、计数、warning allowlist 和 Markdown 一致性只决定是否采用重建 Markdown。显式请求 layout 遇到 `413 LAYOUT_RESOURCE_LIMIT` 时，客户端在同一 deadline 内仅补发一次不含 layout 的 Markdown 请求，第二次失败按既有错误映射返回。layout 缺失、降级、畸形或不一致时保留 Markdown；若基础物理块仍安全，提示可以继续传给模型，不产生 `RESUME_LAYOUT_UNSUPPORTED`。PDF 固定请求 `include_images=false`，因此文字与图片混排的 PDF 只导入文字，源图片不进入简历且不会仅因原文件存在图片对象返回 `RESUME_LAYOUT_UNSUPPORTED`；模板头像保持为空。含图片/表格/文本框的 DOCX，以及转换后仍含表格、图片、嵌入或主动 HTML 的内容仍返回 `422 RESUME_LAYOUT_UNSUPPORTED`；源块映射不完整、重复、越界或分组非法返回 `422 RESUME_STRUCTURE_INVALID`。MinIO 上传失败会补偿删除可能写入的对象，再返回 `502 RESUME_SOURCE_UPLOAD_FAILED` 并保留上传失败记录；MQ publisher 初始化或 confirm 失败返回 `503 RESUME_IMPORT_QUEUE_UNAVAILABLE`，记录保存为解析失败且不会覆盖 Worker 已成功写入的终态。非法 MQ envelope 直接进入 DLT 且不调用 Processor；Processor 内部异常使用有界重试，耗尽后必须把可识别的简历导入任务写为失败终态，不能永久停留在 `processing`。转换、结构化或模板复核失败由 Worker 保存解析失败终态，不创建半成品，也不自动重试业务失败。正式简历与活动导入共享每用户 10 个名额；成功导入只是把活动占位转换为正式简历。
 
 ## 简历模板管理
 
@@ -184,11 +184,12 @@ RabbitMQ 是默认 Broker，V2 使用 `tolink.cv.resume_import.v2` exchange、`l
 
 ## 知识库资料
 
-`POST /api/datasets` 使用 `multipart/form-data`，字段为 `file`，并要求 canonical UUID `Idempotency-Key`。支持 docx/pdf/md/txt 四种格式（扩展名大小写不敏感），服务端还会检查 PDF 结构、DOCX ZIP 结构与解压边界、文本编码和 NUL 字节，不信任浏览器 MIME。单文件上限由 `DATASET_UPLOAD_MAX_BYTES` 控制（默认 10 MiB）。服务端先建立 `uploading` 容量预留，再写入 MinIO；成功后把任务提交为 `upload_status=succeeded/parse_status=queued`。首次 RabbitMQ 发布失败不使请求失败，数据库中的 `queued` 是持久待分发标记，Worker 扫描器会重新发布。受理返回 `202`：
+`POST /api/datasets` 使用 `multipart/form-data`，必填字段为 `file` 和 `folder_id`（当前用户拥有的现存文件夹），并要求 canonical UUID `Idempotency-Key`。缺少或空白文件夹返回 `400 DATASET_FOLDER_REQUIRED`；非法、不存在、已删除或越权文件夹统一返回 `404 FOLDER_NOT_FOUND`，不创建资料、解析任务或存储对象，不再降级到未分类。支持 docx/pdf/md/txt 四种格式（扩展名大小写不敏感），服务端还会检查 PDF 结构、DOCX ZIP 结构与解压边界、文本编码和 NUL 字节，不信任浏览器 MIME。单文件上限由 `DATASET_UPLOAD_MAX_BYTES` 控制（默认 10 MiB）。服务端先建立 `uploading` 容量预留，再写入 MinIO；成功后把任务提交为 `upload_status=succeeded/parse_status=queued`。首次 RabbitMQ 发布失败不使请求失败，数据库中的 `queued` 是持久待分发标记，Worker 扫描器会重新发布。受理返回 `202`：
 
 ```json
 {
   "id": "1",
+  "folder_id": "1",
   "file_name": "notes.md",
   "file_format": "md",
   "file_size": 12,
@@ -199,13 +200,32 @@ RabbitMQ 是默认 Broker，V2 使用 `tolink.cv.resume_import.v2` exchange、`l
 }
 ```
 
-`GET /api/datasets` 只返回当前用户 `upload_status=succeeded` 的正式资料，按上传时间倒序；响应为 `{datasets, limits}`，`limits` 包含单文件字节数、单批文件数和允许扩展名，供前端提前反馈。列表从关联任务返回 `queued/processing/succeeded/failed` 解析状态。失败分类为 `format_unsupported/content_invalid/size_exceeded/service_unavailable/timeout/quota_exceeded/internal_error`。`GET /api/datasets/:id/content` 只允许资料所有者读取解析成功且已保存转换对象的 Markdown，返回 `{id, file_name, file_format, markdown}`；资料不存在或越权统一返回 `404 DATASET_NOT_FOUND`，解析尚未成功或转换存档未保存返回 `409 DATASET_CONTENT_UNAVAILABLE`，对象读取、大小或 UTF-8 校验失败返回 `502 DATASET_CONTENT_READ_FAILED`。六个接口都要求登录（未登录返回 `401 UNAUTHORIZED`），响应不包含对象存储路径或 SHA-256。
+`GET /api/datasets` 只返回当前用户 `upload_status=succeeded` 的正式资料，支持可选 Query 参数 `folder_id`（传数值 ID 过滤具体文件夹，传 `uncategorized` 过滤未分类资料，不传则返回全部）；按上传时间倒序。响应为 `{datasets, limits}`，每项数据包含 `folder_id`。`limits` 包含单文件字节数、单批文件数和允许扩展名，供前端提前反馈。列表从关联任务返回 `queued/processing/succeeded/failed` 解析状态。失败分类为 `format_unsupported/content_invalid/size_exceeded/service_unavailable/timeout/quota_exceeded/internal_error`。`GET /api/datasets/:id/content` 只允许资料所有者读取解析成功且已保存转换对象的 Markdown，返回 `{id, file_name, file_format, markdown, content_format: "markdown", content_revision, content_updated_at}` 并带 ETag；资料不存在或越权统一返回 `404 DATASET_NOT_FOUND`，解析尚未成功或转换存档未保存返回 `409 DATASET_CONTENT_UNAVAILABLE`，对象读取、大小或 UTF-8 校验失败返回 `502 DATASET_CONTENT_READ_FAILED`。
+
+`GET /api/datasets/folders` 列出当前用户自建的全部文件夹及其所含资料数，响应为 `{folders: [{id, name, dataset_count, created_at, updated_at}], total_count, uncategorized_count}`。`POST /api/datasets/folders` 接受 `{name: string}` 创建新文件夹（1~64 字符，去首尾空格，禁止斜杠与控制字符，用户内唯一，每用户上限 50 个；超限 `429 FOLDER_LIMIT_EXCEEDED`，重名 `409 FOLDER_NAME_DUPLICATE`，非法名称 `400 INVALID_FOLDER_NAME`）。`PATCH /api/datasets/folders/:id` 接受 `{name: string}` 重命名文件夹。`DELETE /api/datasets/folders/:id` 删除空文件夹；非空文件夹必须传 `confirm_contents=true`，否则返回 `409 FOLDER_DELETE_CONFIRMATION_REQUIRED`。确认后永久清理其中的源文件、转换对象、资料与解析任务，再删除文件夹，返回 `{deleted: true, affected_dataset_count}`。任一资料上传或解析中返回 `409 DATASET_BUSY`，清理对象失败返回 `502 ASSET_DELETE_FAILED` 并保留数据库记录供重试。
+
+`PATCH /api/datasets/:id/folder` 接受 `{folder_id: string}` 移动单份资料。`POST /api/datasets/move-batch` 接受 `{dataset_ids: string[], folder_id: string}` 批量移动资料，返回 `{moved_count: number}`。移动目标必填，缺失、null、空串返回 422；目标必须是当前用户拥有的现存文件夹。以上接口均要求登录（未登录返回 `401 UNAUTHORIZED`），响应不包含对象存储路径或 SHA-256。
 
 资料源文件 SHA-256 仅作为后端完整性元数据，以固定 64 位十六进制字符串保存；它不进入公开请求或响应契约。服务端以用户、`Idempotency-Key` 和包含文件元数据及摘要的请求指纹收敛重放：同 Key 同指纹返回原记录，活动任务返回 `202`、成功任务返回 `200`；同 Key 异指纹返回 `409 IDEMPOTENCY_KEY_REUSED`，上一次上传已失败返回 `409 DATASET_UPLOAD_PREVIOUSLY_FAILED`，调用方随后应为明确的新尝试生成新 Key。
 
 `PATCH /api/datasets/:id` 接受 JSON `{name: string}`，只更新资料显示名称并沿用原始扩展名；`document_parse_tasks.file_name`、源对象键和转换对象键不变。名称为空、过长、含控制字符或路径分隔符返回 `400 INVALID_DATASET_NAME`。`POST /api/datasets/:id/retry` 只允许 `parse_status=failed` 且源对象仍可读取的本人资料，成功把任务改为 `queued` 并返回 `202`；即时发布失败仍保留 `queued`，等待扫描器补发。任务进行中或其他终态返回 `409 DATASET_NOT_RETRYABLE`，源对象不可用返回 `502 DATASET_SOURCE_UNAVAILABLE`。`DELETE /api/datasets/:id` 只允许删除本人的终态资料，`uploading/queued/processing` 返回 `409 DATASET_BUSY`；删除前清理源文件和已保存的转换对象，任一对象清理失败返回 `502 ASSET_DELETE_FAILED` 并保留数据库记录，成功后在同一事务删除资料与解析任务。所有新增操作对不存在或越权资料统一返回 `404 DATASET_NOT_FOUND`。
 
 文件名非法返回 `400 INVALID_DATASET_FILENAME`，空文件返回 `400 EMPTY_DATASET_FILE`，格式或内容非法统一返回 `400 UNSUPPORTED_DATASET_FILE`，超过大小上限返回 `413 DATASET_FILE_TOO_LARGE`。请求频率或进程内并发超限返回带 `Retry-After` 的 `429 DATASET_UPLOAD_RATE_LIMITED`；数量或总容量超限分别返回 `409 DATASET_COUNT_LIMIT_REACHED`、`409 DATASET_STORAGE_LIMIT_REACHED`。对象存储上传失败返回 `502 DATASET_STORAGE_UNAVAILABLE`，预留记录标记为上传失败且不会出现在正式列表；后续清理器删除对象与预留记录。元信息状态提交失败返回 `500 DATASET_RECORD_FAILED` 并尽力清理对象。独立上传必须使用新 Key；网络失败等结果不明确的重试保持原 Key，避免重复记录。
+
+### 资料正文读取与替换
+
+资料列表及 `GET /api/datasets/:id` 增加字符串 `content_revision`、可空 `content_updated_at` 和可空 `replacement`；详情另外返回 `folder_name`。ETag 为 `"dataset-<id>-<revision>"`。这些接口继续只对本人可见，不暴露存储对象键。`replacement` 包含 `id/status/upload_status/parse_status/failure_code/retryable/current_revision`；pending 时 Web 展示处理占位，failed/conflict 时恢复当前文件。
+
+资料正文只提供 GET 读取，不提供 PUT 保存接口。既有正文对象继续可读。
+
+普通上传新增可选 `file_name` 表单字段，重命名必须保留扩展名。同一文件夹出现同名时返回 `409 DATASET_NAME_CONFLICT`，响应携带 `candidates:[{id,file_name,created_at,content_revision,replaceable}]` 与 `suggested_name`；不自动替换。同名规则也用于改名、移动和批量移动；批量任一冲突整批拒绝。
+
+- `POST /api/datasets/:id/replacements`：multipart `file`、`confirm_replace=true`，必传 UUID `Idempotency-Key` 和 `If-Match`；返回 202 操作状态。目标完整文件名必须相同；同键同指纹重放，同键异指纹返回 409。候选经过与普通上传相同的格式、大小、并发、速率和容量检查。旧源和候选源同时占用容量，候选不增加资料数量。
+- `GET /api/datasets/:id/replacements/:rid`：查询本人的操作状态。
+- `POST /api/datasets/:id/replacements/:rid/retry`：JSON `{confirm_replace:true,request_id}` 与当前 `If-Match`，复用已保存的候选源；返回 202，已有成功转换结果时可直接切换并返回 200。来源不可用返回 502，状态不可重试返回 409。
+- `DELETE /api/datasets/:id/replacements/:rid`：放弃失败或冲突候选，返回 `{discarded:true}`；进行中拒绝，重复放弃幂等。
+
+pending 替换期间，改名、移动和删除返回 `409 DATASET_BUSY`。失败后当前正文仍有效并可预览，再次替换需要确认当前序号。替换成功原子切换源与正文指针并递增序号；旧对象延迟回收，操作回执保留 24 小时，不提供用户版本历史。普通 `/retry` 始终只重试当前资料任务，不隐式重试候选。
 
 ## JD 数据模型与管理
 
@@ -288,7 +308,7 @@ Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `rec
 
 | Method   | Path                                  | 行为                                          |
 | -------- | ------------------------------------- | --------------------------------------------- |
-| `POST`   | `/api/resumes/:id/assets`             | 接收 `file_name/data_url`，写入简历私有前缀   |
+| `POST`   | `/api/resumes/:id/assets`             | 接收 PNG/JPEG `file_name/data_url`，单图最大 10 MiB，写入简历私有前缀 |
 | `GET`    | `/api/resumes/:id/assets/:asset_name` | 校验简历所有权后读取                          |
 | `DELETE` | `/api/resumes/:id/assets/:asset_name` | 当前或历史快照仍引用时返回 `409 ASSET_IN_USE` |
 

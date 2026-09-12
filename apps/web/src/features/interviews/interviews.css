@@ -23,14 +23,14 @@
 }
 
 @media (min-width: 641px) {
-  /* Match the desktop AI assistant frame's vertical insets and minimum height. */
+  /* Keep the shared module-header origin while retaining the assistant frame's bottom inset. */
   .career-workspace-frame:not(.is-standalone-detail) {
     display: flex;
     min-width: 0;
     min-height: 640px;
     flex: 1;
     flex-direction: column;
-    margin-block: 23px clamp(28px, 7vh, 71px);
+    margin-block: 0 clamp(28px, 7vh, 71px);
     overflow: hidden;
   }
 }

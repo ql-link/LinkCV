@@ -19,7 +19,7 @@ Agent 系统由 FastAPI `agent` 模块、独立 `apps/pi-service` 和 FastAPI `l
 2. 登录后的 Web 可通过 `/api/agent/model` 读取当前 `pi_agent` 绑定的非敏感 `adapter/name` 摘要；此查询只解析绑定配置，不解密凭据。
 3. Pi 通过另一枚 token 调用 `/internal/agent`，读取当前用户被授权的简历、岗位、进程、面试或资料集上下文；求职进程的阶段摘要以追加式当前阶段和生命周期为真值，旧扁平字段只作迁移兼容；公开选择的 `dataset` 仅限解析成功且转换对象键属于当前用户前缀的资料。
 4. 模型调用按 `llm_capability_bindings` 选择候选，解密运行凭据并写入 `llm_call_logs`。
-5. 简历上下文通过统一的 persisted canonical 解析边界读取；结构化 `InlineIcon/title_icon` 只在 Agent Markdown 边界序列化为白名单 `:icon[Name]:`，不降级为可编辑普通文本。简历改动只保存为 canonical 提案，确认后回到 FastAPI 简历应用服务执行乐观锁写入并重新编译模板 `LayoutPlan`。
+5. 简历上下文通过统一的 persisted canonical 解析边界读取；结构化 `InlineIcon/title_icon` 只在 Agent Markdown 边界序列化为白名单 `:icon[Name]:`，不降级为可编辑普通文本。简历改动只保存为 canonical 提案，确认后回到 FastAPI 执行乐观锁与私有图片导出契约校验，再写入当前快照并重新编译模板 `LayoutPlan`；图片缺失、不支持或超过单图/快照总量上限时不应用提案。
 
 ## 进程与信任边界
 
@@ -58,3 +58,7 @@ Agent 系统由 FastAPI `agent` 模块、独立 `apps/pi-service` 和 FastAPI `l
 ## 修改联动与验证
 
 修改服务间协议时同步 FastAPI `pi_client/internal_routes`、`apps/pi-service`、Compose/Jenkins、运行时契约和 [HTTP 契约](../api/http-contracts.md)。修改能力治理时同步 catalog、schema、模型 CHECK、管理端和探针。主要验证入口为 Agent 路由/服务/context/Pi client 测试、LLM catalog/crypto/gateway/service/Pi probe 测试、`test_llm_admin.py`、Web `AssistantPage`/`AgentPanel`/`AdminLlmPanels` 测试，以及 `npm run check:contracts`。根级 `npm run check:pi` 会由 Node 递归发现并检查 Pi Service 的全部 `.js` 源文件，不依赖 Unix shell 展开通配符。
+
+## 资料正文引用一致性
+
+`modules/agent/resume_tools.py` 的资料检索优先读取 `user_dataset.content_object_name`，没有当前覆盖指针的历史资料回退到成功解析任务对象。来源 ID 使用 `dataset:<id>:content-<content_revision>`；序号为 0 的历史资料继续兼容原源文件摘要。引用校验使用同一规则，因此手动保存后旧来源 ID 失效，不能以未改变的源文件 SHA-256 冒充正文仍未变化。该读取与资料页面使用同一正文真值，详细写入和替换规则见[资料集功能](../features/datasets.md)。

@@ -58,7 +58,7 @@ class FakeConverter:
     ) -> DocumentMarkdownResult:
         self.request_pdf_layout_calls.append(request_pdf_layout)
         return DocumentMarkdownResult(
-            markdown="# 张三",
+            markdown="<!-- WORD_PAGE:1 -->\n# 张三",
             source_file_name=filename,
             source_format=filename.rsplit(".", 1)[-1],
             parser="fake",
