@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 
 from linkcv.domain.resume import (
@@ -180,6 +181,35 @@ def test_canonical_document_preserves_inline_links_and_ordered_list_start() -> N
     payload["sections"][0]["node_id"] = "node_bbbbbbbbbbbbbbbb"
     with pytest.raises(ValidationError, match="node ids must be unique"):
         CanonicalResumeDocument.model_validate(payload)
+
+
+def test_canonical_document_preserves_empty_list_items() -> None:
+    payload = document_payload()
+    payload["sections"][0]["blocks"] = [
+        {
+            "node_id": "node_dddddddddddddddd",
+            "block_type": "bullet_list",
+            "start": None,
+            "items": [
+                {
+                    "node_id": "node_eeeeeeeeeeeeeeee",
+                    "source_refs": [],
+                    "runs": [],
+                }
+            ],
+        }
+    ]
+
+    document = CanonicalResumeDocument.model_validate(payload)
+    assert document.sections[0].blocks[0].items[0].runs == []
+
+    root = Path(__file__).resolve().parents[6]
+    schema = json.loads(
+        (root / "contracts/resume/canonical-resume.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    Draft202012Validator(schema).validate(payload)
 
 
 def test_canonical_rows_are_strict_fixed_cardinality_content_blocks() -> None:
@@ -420,13 +450,17 @@ def test_presentation_keeps_template_scoped_settings_separate() -> None:
             "schema_version": "resume-presentation.v1",
             "portable": {"font_scale": 1},
             "template_scoped": {
-                "classic-cn": {"avatar_size_px": 96},
+                "classic-cn": {
+                    "avatar_size_px": 96,
+                    "font_family": "LXGW WenKai",
+                },
                 "modern-cn": {"avatar_size_px": 120},
             },
             "template_snapshot": template_payload(),
         }
     )
     assert presentation.template_scoped["classic-cn"].avatar_size_px == 96
+    assert presentation.template_scoped["classic-cn"].font_family == "LXGW WenKai"
     assert presentation.template_scoped["modern-cn"].avatar_size_px == 120
 
 

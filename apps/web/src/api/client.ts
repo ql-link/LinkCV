@@ -510,6 +510,7 @@ export type JobDescriptionSummary = {
   id: string;
   job_title: string;
   company_name: string;
+  logo_url: string | null;
   work_city: string | null;
   salary_text: string | null;
   skills: string[];
@@ -550,6 +551,7 @@ export type JobDescriptionRecord = JobDescriptionSummary & {
 export type JobDescriptionFields = {
   job_title: string;
   company_name: string;
+  logo_url?: string | null;
   employment_type?: JobEmploymentType | null;
   description: string;
   skills?: string[];
@@ -633,6 +635,7 @@ export type JobApplicationRecord = {
   resume_version_id: string | null;
   company_name_snapshot: string;
   job_title_snapshot: string;
+  company_logo_url?: string | null;
   job_snapshot: Record<string, unknown>;
   resume_title_snapshot: string | null;
   calendar_color: InterviewCalendarColor;
@@ -691,6 +694,9 @@ export type InterviewSessionRecord = {
   round_result: "pending" | "passed" | "rejected";
   start_at: string;
   end_at: string;
+  schedule_kind: "fixed_slot" | "open_window";
+  answer_plan_start_at: string | null;
+  answer_plan_end_at: string | null;
   timezone: string;
   mode: InterviewMode;
   meeting_url: string | null;
@@ -1823,14 +1829,14 @@ export const api = {
     request<InterviewSessionDetail>(`/api/interview-sessions/${id}`),
   createInterviewSession: (
     applicationId: string,
-    payload: {
+    payload: ({
       client_request_id: string;
       application_stage_id?: string | null;
       stage_type: "interview" | "hr" | "offer" | "other";
       round_no?: number | null;
       stage_label: string;
       start_at: string;
-      end_at: string;
+      schedule_kind?: "fixed_slot" | "open_window";
       timezone: string;
       mode: InterviewMode;
       meeting_url?: string | null;
@@ -1840,7 +1846,10 @@ export const api = {
       reminder_minutes?: number | null;
       preparation_note?: string | null;
       allow_conflict?: boolean;
-    },
+    } & (
+      | { end_at: string; duration_minutes?: never }
+      | { end_at?: never; duration_minutes: number }
+    )),
   ) =>
     request<InterviewSessionDetail>(
       `/api/job-applications/${applicationId}/interview-sessions`,
@@ -1867,17 +1876,45 @@ export const api = {
     }),
   rescheduleInterviewSession: (
     id: string,
-    payload: {
+    payload: ({
       start_at: string;
-      end_at: string;
       timezone: string;
-      allow_conflict: boolean;
+      allow_conflict?: boolean;
       base_lock_version: number;
-    },
+    } & (
+      | { end_at: string; duration_minutes?: never }
+      | { end_at?: never; duration_minutes: number }
+    )),
   ) =>
     request<InterviewSessionDetail>(
       `/api/interview-sessions/${id}/reschedule`,
       { method: "POST", body: payload },
+    ),
+  updateInterviewAnswerPlan: (
+    id: string,
+    payload: ({
+      base_lock_version: number;
+    } & (
+      | {
+          answer_plan_start_at: null;
+          answer_plan_end_at: null;
+          duration_minutes?: never;
+        }
+      | {
+          answer_plan_start_at: string;
+          answer_plan_end_at: string;
+          duration_minutes?: never;
+        }
+      | {
+          answer_plan_start_at: string;
+          answer_plan_end_at?: never;
+          duration_minutes: number;
+        }
+    )),
+  ) =>
+    request<InterviewSessionDetail>(
+      `/api/interview-sessions/${id}/answer-plan`,
+      { method: "PUT", body: payload },
     ),
   completeInterviewSession: (
     id: string,

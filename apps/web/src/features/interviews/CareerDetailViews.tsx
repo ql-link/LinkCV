@@ -5,6 +5,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   Archive,
   Banknote,
@@ -25,10 +26,13 @@ import {
   FilePenLine,
   FileText,
   Import,
+  Info,
   ListFilter,
   MapPin,
   Mail,
   MoreHorizontal,
+  Pencil,
+  Send,
   Sparkles,
   Trash2,
   Users,
@@ -55,6 +59,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  FeedbackNotice,
   Label,
   PageLoading,
   Select,
@@ -109,6 +114,9 @@ function requestErrorMessage(error: unknown): string {
       UNSUPPORTED_INTERVIEW_ASSET: "暂不支持这种素材格式。",
       INTERVIEW_APPLICATION_NOT_EMPTY: "请先清理该求职进程下的面试记录。",
       INTERVIEW_SESSION_NOT_EMPTY: "请先删除这场面试关联的素材。",
+      INTERVIEW_ANSWER_PLAN_NOT_SUPPORTED: "这条安排不支持设置作答计划。",
+      INTERVIEW_ANSWER_PLAN_INVALID_TIME: "作答计划时间无效，请重新选择。",
+      INTERVIEW_ANSWER_PLAN_OUTSIDE_WINDOW: "作答计划必须完整落在官方作答时段内。",
     };
     return messages[error.message] ?? `操作失败：${error.message}`;
   }
@@ -127,6 +135,34 @@ function formatFullDateTime(value: string | null | undefined): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
   return `${formatFullDate(value)} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function sameLocalDate(left: Date, right: Date): boolean {
+  return left.getFullYear() === right.getFullYear()
+    && left.getMonth() === right.getMonth()
+    && left.getDate() === right.getDate();
+}
+
+function formatLocalTime(value: Date): string {
+  return `${String(value.getHours()).padStart(2, "0")}:${String(value.getMinutes()).padStart(2, "0")}`;
+}
+
+function formatFullDateTimeRange(startAt: string, endAt: string): string {
+  const start = new Date(startAt);
+  const end = new Date(endAt);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "—";
+  return sameLocalDate(start, end)
+    ? `${formatFullDateTime(startAt)}–${formatLocalTime(end)}`
+    : `${formatFullDateTime(startAt)}–${formatFullDateTime(endAt)}`;
+}
+
+function formatApplicationDateTimeRange(startAt: string, endAt: string): string {
+  const start = new Date(startAt);
+  const end = new Date(endAt);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "—";
+  return sameLocalDate(start, end)
+    ? `${formatApplicationListDateTime(startAt)}–${formatLocalTime(end)}`
+    : `${formatApplicationListDateTime(startAt)}–${formatApplicationListDateTime(endAt)}`;
 }
 
 function formatUpdatedDateTime(value: string | null | undefined): string {
@@ -357,8 +393,15 @@ function OverviewLink({ href, className, children }: { href: string; className?:
   );
 }
 
-function JobSummaryCard({ application }: { application: JobApplicationSummary }) {
+function JobSummaryCard({
+  application,
+  currentStageCompleted = false,
+}: {
+  application: JobApplicationSummary;
+  currentStageCompleted?: boolean;
+}) {
   const progress = projectApplicationProgress(application);
+  const statusLabel = currentStageCompleted ? "已完成" : progress.statusLabel;
   const snapshot = application.job_snapshot ?? {};
   const skills = snapshotList(snapshot, "skills", "core_skills");
   const salary = snapshotText(snapshot, "salary_text", "salary") ?? "—";
@@ -397,7 +440,7 @@ function JobSummaryCard({ application }: { application: JobApplicationSummary })
         <h3>求职信息</h3>
         <dl>
           <div><dt>当前阶段</dt><dd>{progress.stageLabel}</dd></div>
-          <div><dt>当前状态</dt><dd>{progress.statusLabel}{progress.supportingLabel && <small>{progress.supportingLabel}</small>}</dd></div>
+          <div><dt>当前状态</dt><dd>{statusLabel}{!currentStageCompleted && progress.supportingLabel && <small>{progress.supportingLabel}</small>}</dd></div>
           <div><dt>{application.applied_at ? "投递时间" : "导入时间"}</dt><dd>{formatFullDate(application.applied_at ?? application.created_at)}</dd></div>
           <div><dt>投递简历版本</dt><dd>{application.resume_title_snapshot ?? "未关联"}</dd></div>
           <div><dt>最近更新</dt><dd>{formatUpdatedDateTime(application.updated_at)}</dd></div>
@@ -424,7 +467,7 @@ function InterviewRoundCard({ session, onOpen }: { session: InterviewSessionSumm
       <header className="career-interview-round-heading">
         <div>
           <h3>{session.stage_label}</h3>
-          <p>{formatApplicationListDateTime(session.start_at)} · {sessionModeLabel(session.mode)}</p>
+          <p>{formatApplicationDateTimeRange(session.start_at, session.end_at)} · {sessionModeLabel(session.mode)}</p>
         </div>
       </header>
       <div className="career-interview-round-record">
@@ -493,22 +536,103 @@ function formatScheduleDateTimeDisplay(
   return `${dateValue} ${time}`;
 }
 
-function ScheduleDateTimePicker({
+function scheduleEndDate(date: Date | null, time: string, durationMinutes: number): Date | null {
+  if (!date || !parseScheduleTime(time) || !Number.isInteger(durationMinutes) || durationMinutes <= 0) return null;
+  const start = new Date(`${formatDatePickerValue(date)}T${time}`);
+  if (Number.isNaN(start.getTime())) return null;
+  return new Date(start.getTime() + durationMinutes * 60_000);
+}
+
+function formatScheduleDurationDisplay(date: Date | null, time: string, durationMinutes: number): string {
+  const end = scheduleEndDate(date, time, durationMinutes);
+  if (!date || !time || !end) return formatScheduleDateTimeDisplay(date, time);
+  const startDisplay = formatScheduleDateTimeDisplay(date, time);
+  return sameLocalDate(date, end)
+    ? `${startDisplay}–${formatLocalTime(end)}`
+    : `${startDisplay}–${formatScheduleDateTimeDisplay(end, formatLocalTime(end))}`;
+}
+
+function formatDurationMinutes(durationMinutes: number): string {
+  const hours = Math.floor(durationMinutes / 60);
+  const minutes = durationMinutes % 60;
+  if (!hours) return `${minutes} 分钟`;
+  if (!minutes) return `${hours} 小时`;
+  return `${hours} 小时 ${minutes} 分钟`;
+}
+
+const SCHEDULE_PICKER_MAX_WIDTH = 776;
+const SCHEDULE_PICKER_MAX_HEIGHT = 520;
+const SCHEDULE_PICKER_VIEWPORT_GUTTER = 32;
+const SCHEDULE_PICKER_GAP = 8;
+
+function schedulePickerPosition(
+  trigger: DOMRect,
+  host: DOMRect,
+  viewportWidth: number,
+  viewportHeight: number,
+  renderedHeight = SCHEDULE_PICKER_MAX_HEIGHT,
+): { left: number; top: number } {
+  const pickerWidth = Math.min(
+    SCHEDULE_PICKER_MAX_WIDTH,
+    Math.max(0, viewportWidth - SCHEDULE_PICKER_VIEWPORT_GUTTER * 2),
+  );
+  const maximumLeft = Math.max(
+    SCHEDULE_PICKER_VIEWPORT_GUTTER,
+    viewportWidth - pickerWidth - SCHEDULE_PICKER_VIEWPORT_GUTTER,
+  );
+  const boundedLeft = Math.min(
+    Math.max(trigger.left, SCHEDULE_PICKER_VIEWPORT_GUTTER),
+    maximumLeft,
+  );
+  const pickerHeight = Math.min(
+    renderedHeight || SCHEDULE_PICKER_MAX_HEIGHT,
+    Math.max(0, viewportHeight - SCHEDULE_PICKER_VIEWPORT_GUTTER * 2),
+  );
+  const belowTop = trigger.bottom + SCHEDULE_PICKER_GAP;
+  const aboveTop = trigger.top - SCHEDULE_PICKER_GAP - pickerHeight;
+  const boundedTop = belowTop + pickerHeight <= viewportHeight - SCHEDULE_PICKER_VIEWPORT_GUTTER
+    ? belowTop
+    : Math.max(SCHEDULE_PICKER_VIEWPORT_GUTTER, aboveTop);
+  return {
+    left: boundedLeft - host.left,
+    top: boundedTop - host.top,
+  };
+}
+
+function SchedulePickerPortal({
+  host,
+  children,
+}: {
+  host: HTMLElement | null;
+  children: ReactNode;
+}) {
+  return host ? createPortal(children, host) : children;
+}
+
+export function ScheduleDateTimePicker({
   id,
   label,
   value,
   defaultDate,
+  durationMinutes,
+  minimumStartAt,
+  maximumEndAt,
   required = false,
   disabled = false,
   onChange,
+  onDurationMinutesChange,
 }: {
   id: string;
   label: string;
   value: string;
   defaultDate?: string;
+  durationMinutes?: number;
+  minimumStartAt?: string;
+  maximumEndAt?: string;
   required?: boolean;
   disabled?: boolean;
   onChange: (value: string) => void;
+  onDurationMinutesChange?: (value: number) => void;
 }) {
   const [open, setOpen] = useState(false);
   const fallbackDate = parseDatePickerValue(defaultDate ?? "");
@@ -516,21 +640,55 @@ function ScheduleDateTimePicker({
   const [draftDate, setDraftDate] = useState<Date | null>(null);
   const [draftHour, setDraftHour] = useState("");
   const [draftMinute, setDraftMinute] = useState("");
-  const [openTimeMenu, setOpenTimeMenu] = useState<"hour" | "minute" | null>(null);
+  const [draftTimeInput, setDraftTimeInput] = useState("");
+  const [draftDurationMinutes, setDraftDurationMinutes] = useState(durationMinutes ?? 60);
+  const [customDurationOpen, setCustomDurationOpen] = useState(false);
+  const [openTimeMenu, setOpenTimeMenu] = useState<"hour" | "minute" | "start" | null>(null);
+  const [popoverHost, setPopoverHost] = useState<HTMLElement | null>(null);
+  const [popoverPosition, setPopoverPosition] = useState<{ left: number; top: number } | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const selectedValue = parseScheduleDateTimeValue(value);
+  const durationMode = durationMinutes !== undefined && onDurationMinutesChange !== undefined;
   const calendarDays = useMemo(() => buildDatePickerDays(displayMonth), [displayMonth]);
   const monthLabel = formatDatePickerMonth(displayMonth);
-  const draftTime = draftHour && draftMinute ? `${draftHour}:${draftMinute}` : "";
+  const selectedDuration = durationMinutes ?? 60;
+  const draftTime = durationMode
+    ? draftTimeInput
+    : draftHour && draftMinute ? `${draftHour}:${draftMinute}` : "";
   const displayedValue = open
-    ? formatScheduleDateTimeDisplay(draftDate, draftTime)
+    ? durationMode
+      ? formatScheduleDurationDisplay(draftDate, draftTime, draftDurationMinutes)
+      : formatScheduleDateTimeDisplay(draftDate, draftTime)
     : selectedValue
-      ? formatScheduleDateTimeDisplay(selectedValue.date, selectedValue.time)
+      ? durationMode
+        ? formatScheduleDurationDisplay(selectedValue.date, selectedValue.time, selectedDuration)
+        : formatScheduleDateTimeDisplay(selectedValue.date, selectedValue.time)
       : fallbackDate
         ? formatScheduleDateTimeDisplay(fallbackDate, "")
         : "选择日期和时间";
   const parsedDraftTime = parseScheduleTime(draftTime);
+  const draftEnd = durationMode ? scheduleEndDate(draftDate, draftTime, draftDurationMinutes) : null;
+  const minimumStart = minimumStartAt ? new Date(minimumStartAt) : null;
+  const maximumEnd = maximumEndAt ? new Date(maximumEndAt) : null;
+  const durationPickerTitle = label.includes("作答")
+    ? "选择作答时间段"
+    : label === "开始时间"
+      ? "选择时间段"
+      : `选择${label.replace(/时间$/, "")}时间段`;
+  const availableWindowLabel = minimumStart && maximumEnd
+    && !Number.isNaN(minimumStart.getTime())
+    && !Number.isNaN(maximumEnd.getTime())
+    ? `可安排：${minimumStart.getMonth() + 1}月${minimumStart.getDate()}日 ${formatLocalTime(minimumStart)} – ${maximumEnd.getMonth() + 1}月${maximumEnd.getDate()}日 ${formatLocalTime(maximumEnd)}`
+    : null;
+  const rangeWithinBounds = !durationMode || Boolean(
+    draftDate
+    && parsedDraftTime
+    && draftEnd
+    && (!minimumStart || new Date(`${formatDatePickerValue(draftDate)}T${draftTime}`) >= minimumStart)
+    && (!maximumEnd || draftEnd <= maximumEnd)
+  );
 
   const closePicker = () => {
     setOpen(false);
@@ -540,12 +698,37 @@ function ScheduleDateTimePicker({
 
   useEffect(() => {
     if (!open) return;
-    const panel = pickerRef.current?.closest<HTMLElement>(".career-next-stage-panel");
-    if (panel && panel.scrollHeight > panel.clientHeight) {
-      panel.scrollTop = panel.scrollHeight - panel.clientHeight;
-    }
+    const positionPopover = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const nextHost = window.innerWidth > 640
+        ? pickerRef.current?.closest<HTMLElement>(".career-next-stage-dialog, .interview-dialog, .career-session-record-dialog") ?? null
+        : null;
+      if (nextHost !== popoverHost) {
+        setPopoverHost(nextHost);
+        return;
+      }
+      if (!nextHost) {
+        setPopoverPosition(null);
+        return;
+      }
+      setPopoverPosition(schedulePickerPosition(
+        trigger.getBoundingClientRect(),
+        nextHost.getBoundingClientRect(),
+        window.innerWidth,
+        window.innerHeight,
+        popoverRef.current?.getBoundingClientRect().height,
+      ));
+    };
+    positionPopover();
+    window.addEventListener("resize", positionPopover);
+    window.addEventListener("scroll", positionPopover, true);
     const handlePointerDown = (event: Event) => {
-      if (!pickerRef.current?.contains(event.target as Node)) closePicker();
+      const target = event.target as Node;
+      if (
+        !pickerRef.current?.contains(target)
+        && !popoverRef.current?.contains(target)
+      ) closePicker();
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -556,10 +739,12 @@ function ScheduleDateTimePicker({
     document.addEventListener("pointerdown", handlePointerDown);
     window.addEventListener("keydown", handleKeyDown, true);
     return () => {
+      window.removeEventListener("resize", positionPopover);
+      window.removeEventListener("scroll", positionPopover, true);
       document.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("keydown", handleKeyDown, true);
     };
-  }, [open]);
+  }, [open, popoverHost]);
 
   const openPicker = () => {
     const current = parseScheduleDateTimeValue(value);
@@ -568,8 +753,25 @@ function ScheduleDateTimePicker({
     setDraftDate(initialDate);
     setDraftHour(currentTime ? String(currentTime.hour).padStart(2, "0") : "");
     setDraftMinute(currentTime ? String(currentTime.minute).padStart(2, "0") : "");
+    setDraftTimeInput(current?.time ?? "");
+    setDraftDurationMinutes(durationMinutes ?? 60);
+    setCustomDurationOpen(![30, 60, 120].includes(durationMinutes ?? 60));
     setDisplayMonth(startOfDatePickerMonth(initialDate));
     setOpenTimeMenu(null);
+    const nextHost = window.innerWidth > 640
+      ? pickerRef.current?.closest<HTMLElement>(".career-next-stage-dialog, .interview-dialog, .career-session-record-dialog") ?? null
+      : null;
+    setPopoverHost(nextHost);
+    if (nextHost && triggerRef.current) {
+      setPopoverPosition(schedulePickerPosition(
+        triggerRef.current.getBoundingClientRect(),
+        nextHost.getBoundingClientRect(),
+        window.innerWidth,
+        window.innerHeight,
+      ));
+    } else {
+      setPopoverPosition(null);
+    }
     setOpen(true);
   };
 
@@ -584,11 +786,13 @@ function ScheduleDateTimePicker({
     if (!parsedTime) return;
     setDraftHour(String(parsedTime.hour).padStart(2, "0"));
     setDraftMinute(String(parsedTime.minute).padStart(2, "0"));
+    setDraftTimeInput(time);
     setOpenTimeMenu(null);
   };
   const confirm = () => {
-    if (!draftDate || !parsedDraftTime) return;
+    if (!draftDate || !parsedDraftTime || !rangeWithinBounds) return;
     onChange(formatScheduleDateTimeValue(draftDate, draftTime));
+    if (durationMode) onDurationMinutesChange(draftDurationMinutes);
     closePicker();
   };
 
@@ -618,19 +822,30 @@ function ScheduleDateTimePicker({
         <CalendarDays aria-hidden="true" />
       </button>
       {open && (
-        <div
-          id={`${id}-calendar`}
-          className="career-date-picker-popover career-schedule-picker-popover"
-          role="dialog"
-          aria-label={`选择${label}`}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              event.stopPropagation();
-              closePicker();
-            }
-          }}
-        >
+        <SchedulePickerPortal host={popoverHost}>
+          <div
+            ref={popoverRef}
+            id={`${id}-calendar`}
+            className="career-date-picker-popover career-schedule-picker-popover"
+            role="dialog"
+            aria-label={`选择${label}`}
+            style={popoverPosition ? { left: popoverPosition.left, right: "auto", top: popoverPosition.top } : undefined}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                closePicker();
+              }
+            }}
+          >
+          {durationMode && (
+            <header className="career-schedule-picker-heading">
+              <strong>{durationPickerTitle}</strong>
+              {availableWindowLabel && (
+                <span><Info aria-hidden="true" />{availableWindowLabel}</span>
+              )}
+            </header>
+          )}
           <div className="career-schedule-picker-layout">
             <div className="career-schedule-picker-calendar-pane">
               <header className="career-date-picker-header">
@@ -668,6 +883,12 @@ function ScheduleDateTimePicker({
                         const isSelected = dateValue === (draftDate ? formatDatePickerValue(draftDate) : null);
                         const isCurrentMonth = date.getMonth() === displayMonth.getMonth()
                           && date.getFullYear() === displayMonth.getFullYear();
+                        const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+                        const nextDayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
+                        const isUnavailable = durationMode && (
+                          Boolean(minimumStart && nextDayStart <= minimumStart)
+                          || Boolean(maximumEnd && dayStart >= maximumEnd)
+                        );
                         return (
                           <div
                             key={dateValue}
@@ -680,6 +901,7 @@ function ScheduleDateTimePicker({
                               type="button"
                               aria-label={formatDatePickerDay(date)}
                               className={isSelected ? "is-selected" : undefined}
+                              disabled={isUnavailable}
                               onClick={() => selectDate(date)}
                             >
                               {date.getDate()}
@@ -693,8 +915,55 @@ function ScheduleDateTimePicker({
               </div>
             </div>
             <section className="career-schedule-picker-time" aria-label="选择时间">
-              <span className="career-schedule-picker-time-label">时间</span>
-              <div className="career-schedule-picker-time-fields">
+              <span className="career-schedule-picker-time-label">{durationMode ? "开始时间" : "时间"}</span>
+              {durationMode ? (
+                <div className="career-schedule-picker-start-time">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    role="combobox"
+                    aria-label="开始时间"
+                    aria-controls={`${id}-start-options`}
+                    aria-expanded={openTimeMenu === "start"}
+                    aria-autocomplete="list"
+                    placeholder="选择时间"
+                    value={draftTime}
+                    disabled={disabled}
+                    onChange={(event) => {
+                      const nextValue = event.target.value.replace(/[^\d:]/g, "").slice(0, 5);
+                      const parsed = parseScheduleTime(nextValue);
+                      setDraftTimeInput(nextValue);
+                      setDraftHour(parsed ? String(parsed.hour).padStart(2, "0") : nextValue.slice(0, 2));
+                      setDraftMinute(parsed ? String(parsed.minute).padStart(2, "0") : nextValue.includes(":") ? nextValue.slice(3, 5) : "");
+                    }}
+                  />
+                  <button
+                    type="button"
+                    aria-label="展开开始时间选项"
+                    aria-controls={`${id}-start-options`}
+                    aria-expanded={openTimeMenu === "start"}
+                    disabled={disabled}
+                    onClick={() => setOpenTimeMenu(openTimeMenu === "start" ? null : "start")}
+                  ><ChevronDown aria-hidden="true" /></button>
+                  {openTimeMenu === "start" && (
+                    <div id={`${id}-start-options`} className="career-schedule-picker-time-menu" role="listbox" aria-label="开始时间选项">
+                      {Array.from({ length: 96 }, (_, index) => {
+                        const option = `${String(Math.floor(index / 4)).padStart(2, "0")}:${String((index % 4) * 15).padStart(2, "0")}`;
+                        return (
+                          <button
+                            key={option}
+                            type="button"
+                            role="option"
+                            aria-selected={draftTime === option}
+                            className={draftTime === option ? "is-selected" : undefined}
+                            onClick={() => selectQuickTime(option)}
+                          >{option}</button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : <div className="career-schedule-picker-time-fields">
                 {(["hour", "minute"] as const).map((kind) => {
                   const isHour = kind === "hour";
                   const currentValue = isHour ? draftHour : draftMinute;
@@ -750,25 +1019,75 @@ function ScheduleDateTimePicker({
                     </div>
                   );
                 })}
-              </div>
-              <span className="career-schedule-picker-quick-label">快捷选择</span>
-              <div className="career-schedule-picker-quick-times" role="group" aria-label="快捷时间">
-                {["09:00", "14:00", "18:00"].map((time) => (
-                  <button
-                    key={time}
-                    type="button"
-                    className={draftTime === time ? "is-selected" : undefined}
-                    aria-pressed={draftTime === time}
-                    disabled={disabled}
-                    onClick={() => selectQuickTime(time)}
-                  >{time}</button>
-                ))}
-              </div>
+              </div>}
+              {!durationMode && (
+                <>
+                  <span className="career-schedule-picker-quick-label">快捷选择</span>
+                  <div className="career-schedule-picker-quick-times" role="group" aria-label="快捷时间">
+                    {["09:00", "14:00", "18:00"].map((time) => (
+                      <button
+                        key={time}
+                        type="button"
+                        className={draftTime === time ? "is-selected" : undefined}
+                        aria-pressed={draftTime === time}
+                        disabled={disabled}
+                        onClick={() => selectQuickTime(time)}
+                      >{time}</button>
+                    ))}
+                  </div>
+                </>
+              )}
+              {durationMode && (
+                <>
+                  <span className="career-schedule-picker-quick-label">预计时长</span>
+                  <div className="career-schedule-picker-duration-options" role="group" aria-label="预计时长">
+                    {[30, 60, 120].map((minutes) => (
+                      <button
+                        key={minutes}
+                        type="button"
+                        className={draftDurationMinutes === minutes ? "is-selected" : undefined}
+                        aria-pressed={draftDurationMinutes === minutes}
+                        onClick={() => { setDraftDurationMinutes(minutes); setCustomDurationOpen(false); }}
+                      >{formatDurationMinutes(minutes)}</button>
+                    ))}
+                    {customDurationOpen ? (
+                      <label className="is-selected">
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          autoFocus
+                          aria-label="自定义时长（分钟）"
+                          value={draftDurationMinutes > 0 ? draftDurationMinutes : ""}
+                          placeholder="分钟"
+                          onChange={(event) => setDraftDurationMinutes(Number(event.target.value))}
+                        />
+                        <span>分钟</span>
+                      </label>
+                    ) : (
+                      <button type="button" onClick={() => { setDraftDurationMinutes(0); setCustomDurationOpen(true); }}>自定义</button>
+                    )}
+                  </div>
+                </>
+              )}
               <div className="career-schedule-picker-summary" aria-live="polite">
-                <span>已选择</span>
-                <strong>{draftDate && draftTime
-                  ? `${formatDatePickerValue(draftDate)} ${draftTime}`
-                  : "请选择日期和时间"}</strong>
+                {durationMode ? (
+                  draftEnd ? (
+                    <>
+                      <div><span>结束时间</span><strong>{draftDate && sameLocalDate(draftDate, draftEnd)
+                        ? formatLocalTime(draftEnd)
+                        : formatScheduleDateTimeDisplay(draftEnd, formatLocalTime(draftEnd))}</strong></div>
+                      <b>共 {formatDurationMinutes(draftDurationMinutes)}</b>
+                    </>
+                  ) : (
+                    <strong>请选择开始时间和时长</strong>
+                  )
+                ) : (
+                  <><span>已选择</span><strong>{draftDate && draftTime
+                    ? `${formatDatePickerValue(draftDate)} ${draftTime}`
+                    : "请选择日期和时间"}</strong></>
+                )}
+                {durationMode && !rangeWithinBounds && draftEnd && <small>所选时间段超出可安排范围</small>}
               </div>
             </section>
           </div>
@@ -781,6 +1100,7 @@ function ScheduleDateTimePicker({
                   setDraftDate(null);
                   setDraftHour("");
                   setDraftMinute("");
+                  setDraftTimeInput("");
                   onChange("");
                   closePicker();
                 }}
@@ -790,11 +1110,12 @@ function ScheduleDateTimePicker({
             <button
               type="button"
               className="career-schedule-picker-confirm"
-              disabled={disabled || !draftDate || !parsedDraftTime}
+              disabled={disabled || !draftDate || !parsedDraftTime || !rangeWithinBounds || (durationMode && (!Number.isInteger(draftDurationMinutes) || draftDurationMinutes <= 0))}
               onClick={confirm}
             >确定</button>
           </footer>
-        </div>
+          </div>
+        </SchedulePickerPortal>
       )}
     </div>
   );
@@ -987,13 +1308,13 @@ const NEXT_STAGE_FORM_COPY: Record<NextStageChoice, { title: string; badge: stri
   },
   written_test: {
     title: "填写笔试信息",
-    badge: "固定时段",
+    badge: "笔试安排",
     description: "记录笔试要求的固定开始和结束时间。",
   },
   ai_interview: {
     title: "填写 AI 面试信息",
     badge: "异步面试",
-    description: "记录 AI 面试链接、开始时间和完成期限。",
+    description: "记录 AI 面试链接、开始时间和结束时间。",
   },
   interview: {
     title: "填写面试信息",
@@ -1005,6 +1326,15 @@ const NEXT_STAGE_FORM_COPY: Record<NextStageChoice, { title: string; badge: stri
     badge: "录用结果",
     description: "记录 Offer 结果及相关信息。",
   },
+};
+
+const NEXT_STAGE_BADGE_ICONS: Record<NextStageChoice, typeof ClipboardCheck> = {
+  screening: Send,
+  assessment: ClipboardCheck,
+  written_test: FilePenLine,
+  ai_interview: Sparkles,
+  interview: CalendarDays,
+  offer: BriefcaseBusiness,
 };
 
 const COMPLETION_WINDOW_OPTIONS = [
@@ -1033,15 +1363,17 @@ export function AddNextStageDialog({
   initialTab = "assessment",
   initialInterviewLabel = "",
   initialStartAt = "",
+  initialEndAt = "",
   initialStage,
   initialAppliedAt = "",
   includeOffer = true,
+  lockStageSelection = false,
   title = "添加下一阶段",
   description,
   onClose,
   onChanged,
   onNotice,
-  onTerminate,
+  onApplicationChange,
 }: {
   application: ApplicationStageSource;
   applicationOptions?: JobApplicationSummary[];
@@ -1049,18 +1381,21 @@ export function AddNextStageDialog({
   initialTab?: NextStageDialogTab;
   initialInterviewLabel?: string;
   initialStartAt?: string;
+  initialEndAt?: string;
   initialStage?: ApplicationStageType;
   initialAppliedAt?: string;
   includeOffer?: boolean;
+  lockStageSelection?: boolean;
   title?: string;
   description?: string;
   onClose: () => void;
   onChanged: () => void | Promise<void>;
   onNotice: (notice: string) => void;
-  onTerminate?: () => void;
+  onApplicationChange?: (application: JobApplicationSummary) => void;
 }) {
   const [selectedApplicationId, setSelectedApplicationId] = useState(application.id);
-  const selectedApplication = applicationOptions?.find((item) => item.id === selectedApplicationId) ?? application;
+  const selectedApplicationOption = applicationOptions?.find((item) => item.id === selectedApplicationId);
+  const selectedApplication = selectedApplicationOption ?? application;
   const suggestedInterviewRoundNo = selectedApplication.current_stage_type === "interview"
     ? (selectedApplication.current_round_no ?? 0) + 1
     : 1;
@@ -1072,11 +1407,17 @@ export function AddNextStageDialog({
   const [completionWindow, setCompletionWindow] = useState<string>("4320");
   const [customCompletionDays, setCustomCompletionDays] = useState("3");
   const [aiInterviewStartAt, setAiInterviewStartAt] = useState(initialStartAt);
+  const [aiInterviewDuration, setAiInterviewDuration] = useState(60);
   const [aiInterviewLink, setAiInterviewLink] = useState("");
-  const [aiCompletionWindow, setAiCompletionWindow] = useState<string>("4320");
-  const [aiCustomCompletionDays, setAiCustomCompletionDays] = useState("3");
   const [writtenStartAt, setWrittenStartAt] = useState(initialStartAt);
-  const [writtenEndAt, setWrittenEndAt] = useState("");
+  const [writtenEndAt, setWrittenEndAt] = useState(initialEndAt);
+  const [writtenDuration, setWrittenDuration] = useState(() => {
+    const start = parseScheduleStart(initialStartAt);
+    const end = parseScheduleStart(initialEndAt);
+    const minutes = start && end ? Math.round((end.getTime() - start.getTime()) / 60_000) : 60;
+    return Number.isFinite(minutes) && minutes > 0 ? minutes : 60;
+  });
+  const [writtenScheduleKind, setWrittenScheduleKind] = useState<"fixed_slot" | "open_window">("fixed_slot");
   const [writtenMode, setWrittenMode] = useState<InterviewSessionRecord["mode"]>("video");
   const [writtenMeetingOrLocation, setWrittenMeetingOrLocation] = useState("");
   const [interviewLabel, setInterviewLabel] = useState(initialInterviewLabel);
@@ -1084,7 +1425,12 @@ export function AddNextStageDialog({
     String(suggestedInterviewRoundNo),
   );
   const [interviewStartAt, setInterviewStartAt] = useState(initialStartAt);
-  const [interviewDuration, setInterviewDuration] = useState(60);
+  const [interviewDuration, setInterviewDuration] = useState(() => {
+    const start = parseScheduleStart(initialStartAt);
+    const end = parseScheduleStart(initialEndAt);
+    const minutes = start && end ? Math.round((end.getTime() - start.getTime()) / 60_000) : 60;
+    return Number.isFinite(minutes) && minutes > 0 ? minutes : 60;
+  });
   const [interviewMode, setInterviewMode] = useState<InterviewSessionRecord["mode"]>("video");
   const [interviewMeetingOrLocation, setInterviewMeetingOrLocation] = useState("");
   const [offerValues, setOfferValues] = useState<OfferFormValues>({
@@ -1103,14 +1449,16 @@ export function AddNextStageDialog({
     setInterviewRoundNo(String(suggestedInterviewRoundNo));
   }, [selectedApplication.id, suggestedInterviewRoundNo]);
 
+  useEffect(() => {
+    if (selectedApplicationOption) onApplicationChange?.(selectedApplicationOption);
+  }, [onApplicationChange, selectedApplicationOption]);
+
   const activeAsyncStartAt = activeStage === "ai_interview" ? aiInterviewStartAt : assessmentStartAt;
   const activeAsyncLink = activeStage === "ai_interview" ? aiInterviewLink : assessmentLink;
-  const activeCompletionWindow = activeStage === "ai_interview" ? aiCompletionWindow : completionWindow;
-  const activeCustomCompletionDays = activeStage === "ai_interview" ? aiCustomCompletionDays : customCompletionDays;
-  const completionMinutes = activeCompletionWindow === "custom"
-    ? Number(activeCustomCompletionDays) * 24 * 60
-    : Number(activeCompletionWindow);
-  const deadlineDisplay = stageDeadlineDisplay(activeAsyncStartAt, completionMinutes);
+  const completionMinutes = completionWindow === "custom"
+    ? Number(customCompletionDays) * 24 * 60
+    : Number(completionWindow);
+  const deadlineDisplay = stageDeadlineDisplay(assessmentStartAt, completionMinutes);
 
   const saveStage = async () => {
     const fixedLabel = NEXT_STAGE_CHOICES.find((choice) => choice.key === activeStage)?.label ?? "";
@@ -1185,7 +1533,6 @@ export function AddNextStageDialog({
     }
 
     const fixedLabel = NEXT_STAGE_CHOICES.find((choice) => choice.key === activeStage)?.label ?? "";
-    const isAsyncStage = activeStage === "assessment" || activeStage === "ai_interview";
     const isWrittenTest = activeStage === "written_test";
     const isInterview = activeStage === "interview";
     const startAt = isWrittenTest
@@ -1198,25 +1545,34 @@ export function AddNextStageDialog({
         ? Boolean(interviewStartAt || interviewMeetingOrLocation.trim() || preparationNote.trim())
         : Boolean(activeAsyncStartAt || activeAsyncLink.trim() || preparationNote.trim());
     let end: Date | null = null;
+    let durationMinutes: number | null = null;
     if (hasScheduleDetails) {
       if (!start) {
         setErrorMessage(isWrittenTest ? "请填写有效的笔试开始时间。" : `请填写有效的${fixedLabel}开始时间。`);
         return;
       }
-      if (isWrittenTest) {
-        end = parseScheduleStart(writtenEndAt);
+      if ((isWrittenTest && writtenScheduleKind === "open_window") || activeStage === "assessment") {
+        if (activeStage === "assessment" && (!Number.isFinite(completionMinutes) || completionMinutes <= 0)) {
+          setErrorMessage("完成期限必须大于 0 天。");
+          return;
+        }
+        end = activeStage === "assessment"
+          ? new Date(start.getTime() + completionMinutes * 60_000)
+          : parseScheduleStart(writtenEndAt);
         if (!end || end <= start) {
           setErrorMessage("笔试结束时间必须晚于开始时间。");
           return;
         }
-      } else if (isAsyncStage) {
-        if (!Number.isFinite(completionMinutes) || completionMinutes <= 0) {
-          setErrorMessage("完成期限必须大于 0 天。");
+      } else {
+        durationMinutes = isWrittenTest
+          ? writtenDuration
+          : activeStage === "ai_interview"
+            ? aiInterviewDuration
+            : interviewDuration;
+        if (!Number.isInteger(durationMinutes) || durationMinutes <= 0) {
+          setErrorMessage("持续时长必须大于 0 分钟。");
           return;
         }
-        end = new Date(start.getTime() + completionMinutes * 60_000);
-      } else {
-        end = new Date(start.getTime() + interviewDuration * 60_000);
       }
     }
     setErrorMessage(null);
@@ -1239,7 +1595,7 @@ export function AddNextStageDialog({
       }
 
       try {
-        if (!start || !end) throw new Error("schedule time is required");
+        if (!start || (!end && !durationMinutes)) throw new Error("schedule time is required");
         const targetRoundNo = activeStage === "interview" && interviewRoundNo
           ? Number(interviewRoundNo)
           : null;
@@ -1247,6 +1603,9 @@ export function AddNextStageDialog({
         const meetingOrLocation = isWrittenTest
           ? writtenMeetingOrLocation.trim()
           : isInterview ? interviewMeetingOrLocation.trim() : activeAsyncLink.trim();
+        const scheduleTiming = end
+          ? { end_at: end.toISOString() }
+          : { duration_minutes: durationMinutes! };
         await api.createInterviewSession(selectedApplication.id, {
           client_request_id: clientRequestId,
           application_stage_id: savedApplication.current_stage?.id,
@@ -1254,13 +1613,15 @@ export function AddNextStageDialog({
           round_no: isInterview ? targetRoundNo ?? suggestedInterviewRoundNo : null,
           stage_label: activeStage === "interview" ? interviewLabel.trim() : fixedLabel,
           start_at: start.toISOString(),
-          end_at: end.toISOString(),
+          ...scheduleTiming,
+          schedule_kind: activeStage === "assessment" || (isWrittenTest && writtenScheduleKind === "open_window")
+            ? "open_window"
+            : "fixed_slot",
           timezone,
           mode,
           meeting_url: mode === "video" || mode === "phone" ? meetingOrLocation || null : null,
           location: mode === "onsite" || mode === "other" ? meetingOrLocation || null : null,
           preparation_note: preparationNote.trim() || null,
-          allow_conflict: false,
         });
       } catch {
         onClose();
@@ -1294,6 +1655,7 @@ export function AddNextStageDialog({
     ? "选择当前实际进度，可直接补录已经发生的阶段。"
     : "选择下一阶段，也可以直接补录已发生的阶段。");
   const formCopy = NEXT_STAGE_FORM_COPY[activeStage];
+  const StageBadgeIcon = NEXT_STAGE_BADGE_ICONS[activeStage];
   const availableStages = NEXT_STAGE_CHOICES.filter((choice) => (
     (startsPending || choice.key !== "screening")
     && (includeOffer || choice.key !== "offer")
@@ -1301,11 +1663,19 @@ export function AddNextStageDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className={`career-stage-dialog career-next-stage-dialog${activeStage === "screening" ? " is-screening" : ""}`}>
-        <DialogHeader className="career-next-stage-dialog-header">
+      <DialogContent className={`career-stage-dialog career-next-stage-dialog${activeStage === "screening" ? " is-screening" : ""}${lockStageSelection ? " is-stage-locked" : ""}`}>
+        <DialogHeader className={lockStageSelection ? "sr-only" : "career-next-stage-dialog-header"}>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{dialogDescription}</DialogDescription>
+          <DialogDescription>
+            {lockStageSelection ? "填写拖拽目标阶段所需的信息。" : dialogDescription}
+          </DialogDescription>
         </DialogHeader>
+        {lockStageSelection && (
+          <div className="career-next-stage-floating-badge" aria-hidden="true">
+            <StageBadgeIcon />
+            <span>{formCopy.badge}</span>
+          </div>
+        )}
         {applicationOptions && (
           <div className="career-next-stage-process-picker">
               <div className="career-next-stage-field career-next-stage-process">
@@ -1336,35 +1706,39 @@ export function AddNextStageDialog({
               </div>
           </div>
         )}
-        <div className="career-next-stage-track" aria-label={`当前阶段：${projectApplicationProgress(selectedApplication).stageLabel}`}>
-          <div className="career-next-stage-current"><span>当前状态</span><strong>{projectApplicationProgress(selectedApplication).stageLabel}</strong></div>
-          <div className="career-next-stage-line" aria-hidden="true" />
-          <div className={`career-next-stage-options${startsPending ? " has-six-stages" : ""}`} role="radiogroup" aria-label="选择下一阶段">
-            {availableStages.map((choice) => {
-              const Icon = choice.icon;
-              const selected = choice.key === activeStage;
-              return (
-                <button
-                  key={choice.key}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  className={selected ? "is-active" : undefined}
-                  disabled={busy}
-                  onClick={() => {
-                    setActiveStage(choice.key);
-                    setErrorMessage(null);
-                  }}
-                >
-                  <span className="career-next-stage-node" aria-hidden="true" />
-                  <Icon aria-hidden="true" />
-                  <strong>{choice.label}</strong>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        <div className="career-next-stage-divider" aria-hidden="true" />
+        {!lockStageSelection && (
+          <>
+            <div className="career-next-stage-track" aria-label={`当前阶段：${projectApplicationProgress(selectedApplication).stageLabel}`}>
+              <div className="career-next-stage-current"><span>当前状态</span><strong>{projectApplicationProgress(selectedApplication).stageLabel}</strong></div>
+              <div className="career-next-stage-line" aria-hidden="true" />
+              <div className={`career-next-stage-options${startsPending ? " has-six-stages" : ""}`} role="radiogroup" aria-label="选择下一阶段">
+                {availableStages.map((choice) => {
+                  const Icon = choice.icon;
+                  const selected = choice.key === activeStage;
+                  return (
+                    <button
+                      key={choice.key}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      className={selected ? "is-active" : undefined}
+                      disabled={busy}
+                      onClick={() => {
+                        setActiveStage(choice.key);
+                        setErrorMessage(null);
+                      }}
+                    >
+                      <span className="career-next-stage-node" aria-hidden="true" />
+                      <Icon aria-hidden="true" />
+                      <strong>{choice.label}</strong>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="career-next-stage-divider" aria-hidden="true" />
+          </>
+        )}
         <div className="career-next-stage-panel">
           <header className="career-next-stage-form-header">
             <div><h3>{formCopy.title}</h3><span>{formCopy.badge}</span></div>
@@ -1402,62 +1776,90 @@ export function AddNextStageDialog({
                     id="career-next-stage-assessment-time"
                     label={activeStage === "assessment" ? "测评开始时间" : "开始时间"}
                     value={activeAsyncStartAt}
+                    durationMinutes={activeStage === "ai_interview" ? aiInterviewDuration : undefined}
                     defaultDate={activeStage === "assessment" ? formatDatePickerValue(new Date()) : undefined}
                     disabled={busy}
                     required={activeStage === "assessment"}
                     onChange={activeStage === "assessment" ? setAssessmentStartAt : setAiInterviewStartAt}
+                    onDurationMinutesChange={activeStage === "ai_interview" ? setAiInterviewDuration : undefined}
                   />
                 </div>
-                <div className="career-next-stage-field career-next-stage-deadline-field">
-                  <Label>完成期限</Label>
-                  <div className="career-next-stage-deadline-options" role="radiogroup" aria-label="完成期限">
-                    {COMPLETION_WINDOW_OPTIONS.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        role="radio"
-                        aria-checked={activeCompletionWindow === option.value}
-                        className={activeCompletionWindow === option.value ? "is-active" : undefined}
-                        disabled={busy}
-                        onClick={() => {
-                          if (activeStage === "assessment") setCompletionWindow(option.value);
-                          else setAiCompletionWindow(option.value);
-                        }}
-                      >{option.label}</button>
-                    ))}
-                  </div>
-                </div>
-                {activeCompletionWindow === "custom" && (
-                  <div className="career-next-stage-field career-next-stage-custom-days">
-                    <Label htmlFor="career-next-stage-custom-days">自定义天数</Label>
-                  <input
-                      id="career-next-stage-custom-days"
-                      type="number"
-                      min="1"
-                      max="365"
-                      value={activeCustomCompletionDays}
-                    disabled={busy}
-                      onChange={(event) => {
-                        if (activeStage === "assessment") setCustomCompletionDays(event.target.value);
-                        else setAiCustomCompletionDays(event.target.value);
-                      }}
-                  />
-                </div>
-                )}
-                {deadlineDisplay && (
-                  <p className="career-next-stage-derived career-next-stage-field--full"><Clock3 aria-hidden="true" />预计最晚完成：{deadlineDisplay}</p>
-                )}
+                {activeStage === "assessment" ? (
+                  <>
+                    <div className="career-next-stage-field career-next-stage-deadline-field">
+                      <Label>完成期限</Label>
+                      <div className="career-next-stage-deadline-options" role="radiogroup" aria-label="完成期限">
+                        {COMPLETION_WINDOW_OPTIONS.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={completionWindow === option.value}
+                            className={completionWindow === option.value ? "is-active" : undefined}
+                            disabled={busy}
+                            onClick={() => setCompletionWindow(option.value)}
+                          >{option.label}</button>
+                        ))}
+                      </div>
+                    </div>
+                    {completionWindow === "custom" && (
+                      <div className="career-next-stage-field career-next-stage-custom-days">
+                        <Label htmlFor="career-next-stage-custom-days">自定义天数</Label>
+                        <input
+                          id="career-next-stage-custom-days"
+                          type="number"
+                          min="1"
+                          max="365"
+                          value={customCompletionDays}
+                          disabled={busy}
+                          onChange={(event) => setCustomCompletionDays(event.target.value)}
+                        />
+                      </div>
+                    )}
+                    {deadlineDisplay && (
+                      <p className="career-next-stage-derived career-next-stage-field--full"><Clock3 aria-hidden="true" />预计最晚完成：{deadlineDisplay}</p>
+                    )}
+                  </>
+                ) : null}
               </>
             ) : activeStage === "written_test" ? (
               <>
-                <div className="career-next-stage-field">
-                  <Label htmlFor="career-next-stage-written-start">开始时间</Label>
-                  <ScheduleDateTimePicker id="career-next-stage-written-start" label="开始时间" value={writtenStartAt} disabled={busy} onChange={setWrittenStartAt} />
+                <div className="career-next-stage-field career-next-stage-field--full">
+                  <Label htmlFor="career-next-stage-written-schedule-kind">时间类型</Label>
+                  <Select value={writtenScheduleKind} disabled={busy} onValueChange={(value) => setWrittenScheduleKind(value as "fixed_slot" | "open_window")}>
+                    <SelectTrigger id="career-next-stage-written-schedule-kind" aria-label="笔试时间类型" className="career-next-stage-select-trigger"><SelectValue /></SelectTrigger>
+                    <SelectContent className="career-next-stage-select-content">
+                      <SelectItem value="fixed_slot">固定场次（按时参加）</SelectItem>
+                      <SelectItem value="open_window">作答时段（期间内自行完成）</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="career-next-stage-field-hint">作答时段会显示在看板顶部；保存后可另设“我的作答计划”。</p>
                 </div>
-                <div className="career-next-stage-field">
-                  <Label htmlFor="career-next-stage-written-end">结束时间</Label>
-                  <ScheduleDateTimePicker id="career-next-stage-written-end" label="结束时间" value={writtenEndAt} disabled={busy} onChange={setWrittenEndAt} />
-                </div>
+                {writtenScheduleKind === "open_window" ? (
+                  <>
+                    <div className="career-next-stage-field">
+                      <Label htmlFor="career-next-stage-written-start">开放时间</Label>
+                      <ScheduleDateTimePicker id="career-next-stage-written-start" label="开放时间" value={writtenStartAt} disabled={busy} onChange={setWrittenStartAt} />
+                    </div>
+                    <div className="career-next-stage-field">
+                      <Label htmlFor="career-next-stage-written-end">截止时间</Label>
+                      <ScheduleDateTimePicker id="career-next-stage-written-end" label="截止时间" value={writtenEndAt} disabled={busy} onChange={setWrittenEndAt} />
+                    </div>
+                  </>
+                ) : (
+                  <div className="career-next-stage-field career-next-stage-field--full">
+                    <Label htmlFor="career-next-stage-written-start">笔试时间</Label>
+                    <ScheduleDateTimePicker
+                      id="career-next-stage-written-start"
+                      label="笔试时间"
+                      value={writtenStartAt}
+                      durationMinutes={writtenDuration}
+                      disabled={busy}
+                      onChange={setWrittenStartAt}
+                      onDurationMinutesChange={setWrittenDuration}
+                    />
+                  </div>
+                )}
                 <div className="career-next-stage-field career-next-stage-field--full">
                   <Label htmlFor="career-next-stage-written-meeting">笔试链接或地点（选填）</Label>
                   <input id="career-next-stage-written-meeting" value={writtenMeetingOrLocation} maxLength={2048} disabled={busy} placeholder="粘贴线上笔试链接，或填写线下地点" onChange={(event) => setWrittenMeetingOrLocation(event.target.value)} />
@@ -1506,31 +1908,11 @@ export function AddNextStageDialog({
                     id="career-next-stage-interview-time"
                     label="面试时间"
                     value={interviewStartAt}
+                    durationMinutes={interviewDuration}
                     disabled={busy}
                     onChange={setInterviewStartAt}
+                    onDurationMinutesChange={setInterviewDuration}
                   />
-                </div>
-                <div className="career-next-stage-field">
-                  <Label htmlFor="career-next-stage-interview-duration">时长</Label>
-                  <Select
-                    value={String(interviewDuration)}
-                    onValueChange={(value) => setInterviewDuration(Number(value))}
-                    disabled={busy}
-                  >
-                    <SelectTrigger
-                      id="career-next-stage-interview-duration"
-                      aria-label="时长"
-                      className="career-next-stage-select-trigger"
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="career-next-stage-select-content">
-                      <SelectItem value="30">30 分钟</SelectItem>
-                      <SelectItem value="60">60 分钟</SelectItem>
-                      <SelectItem value="90">90 分钟</SelectItem>
-                      <SelectItem value="120">120 分钟</SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
                 <div className="career-next-stage-field">
                   <Label htmlFor="career-next-stage-interview-mode">方式</Label>
@@ -1578,10 +1960,9 @@ export function AddNextStageDialog({
           {errorMessage && <p className="career-next-stage-error" role="alert">{errorMessage}</p>}
         </div>
         <DialogFooter className="career-next-stage-dialog-footer">
-          <div>{onTerminate && <Button variant="ghost" className="career-next-stage-terminate" disabled={busy} icon={<Trash2 aria-hidden="true" />} onClick={onTerminate}>终止求职</Button>}</div>
           <div className="career-next-stage-dialog-footer-actions">
             <Button variant="ghost" onClick={onClose}>取消</Button>
-            <Button variant="ghost" disabled={!canSubmit} onClick={() => void save()}>{busy ? "保存中…" : startsPending ? "保存求职进度" : "添加并保存"}</Button>
+            <Button variant={lockStageSelection ? "default" : "ghost"} disabled={!canSubmit} onClick={() => void save()}>{busy ? "保存中…" : startsPending ? "保存求职进度" : "添加并保存"}</Button>
           </div>
         </DialogFooter>
       </DialogContent>
@@ -1841,6 +2222,7 @@ export function MarkApplicationAppliedDialog({
       initialStage={initialStageType}
       initialInterviewLabel={initialInterviewLabel}
       initialAppliedAt={initialAppliedAt}
+      lockStageSelection={initialTargetColumnId != null}
       title="投递岗位"
       description="选择当前实际进度，可直接补录已经发生的阶段。"
       onClose={onClose}
@@ -1982,6 +2364,7 @@ export function ApplicationDetailView({
   const [stageDialogOpen, setStageDialogOpen] = useState(false);
   const [offerDialogOpen, setOfferDialogOpen] = useState(false);
   const [terminateDialogOpen, setTerminateDialogOpen] = useState(false);
+  const [editScheduleDialogOpen, setEditScheduleDialogOpen] = useState(false);
   if (!application) {
     return (
       <section className="career-detail-not-found">
@@ -1999,18 +2382,26 @@ export function ApplicationDetailView({
     session.status !== "cancelled" && applicationStageMatchesSession(application, session)
   ));
   const progress = projectApplicationProgress(application);
+  const currentStageCompleted = currentSession?.status === "completed"
+    && (progress.columnKey === "assessment"
+      || progress.columnKey === "written_test"
+      || progress.columnKey === "interview");
   const isSubmittedScreening = progress.columnKey === "screening"
     && application.current_stage_type === "screening"
     && Boolean(application.applied_at);
-  const heroStatusLabel = progress.isPending || progress.isWaiting || progress.columnKey === "ended" || progress.columnKey === "offer"
-    ? progress.statusLabel
-    : progress.stageLabel;
+  const heroStatusLabel = currentStageCompleted
+    ? "已完成"
+    : progress.isPending || progress.isWaiting || progress.columnKey === "ended" || progress.columnKey === "offer"
+      ? progress.statusLabel
+      : progress.stageLabel;
   const active = application.lifecycle_status !== "terminated" && application.status === "active" && application.archived_at === null;
   const currentStableType = application.current_stage?.stage_type;
   const canSchedule = active && application.stage_state === "awaiting_schedule"
     && (currentStableType
       ? ["assessment", "written_test", "ai_interview", "interview"].includes(currentStableType)
-      : progress.columnKey === "assessment" || progress.columnKey === "interview");
+      : progress.columnKey === "assessment"
+        || progress.columnKey === "written_test"
+        || progress.columnKey === "interview");
   const canAdvance = active && currentStableType !== "offer";
   const canUpdateOffer = active
     && application.current_stage_type === "offer"
@@ -2029,7 +2420,13 @@ export function ApplicationDetailView({
   const currentRecordKind = currentSession
     ? sessionRecordKind(currentSession)
     : progress.isAssessment ? "笔试" : "面试";
-  const sessionRecordActionLabel = `填写${currentRecordKind}记录`;
+  const sessionRecordActionLabel = `管理${currentRecordKind}进度`;
+  const canEditCurrentSchedule = Boolean(
+    currentSession
+    && active
+    && currentSession.status === "scheduled"
+    && currentSession.stage_type !== "offer"
+  );
   const sessionRecordKinds = new Set(applicationSessions.map(sessionRecordKind));
   const sessionSectionTitle = sessionRecordKinds.size > 1
     ? "笔试与面试记录"
@@ -2064,7 +2461,7 @@ export function ApplicationDetailView({
                 <span className="career-record-position-name">{application.job_title_snapshot}</span>
               </h1>
               <span
-                className={`career-application-status ${applicationDetailStatusToneClass(application)}`}
+                className={`career-application-status ${applicationDetailStatusToneClass(application, { currentStageCompleted })}`}
                 aria-label={`${heroStatusLabel}${progress.supportingLabel ? `，${progress.supportingLabel}` : ""}`}
               >
                 {heroStatusLabel}
@@ -2073,6 +2470,7 @@ export function ApplicationDetailView({
             </div>
           </div>
           <div className="career-record-actions">
+            {canEditCurrentSchedule && currentSession && <Button variant="outline" icon={<Pencil />} onClick={() => setEditScheduleDialogOpen(true)}>修改{currentRecordKind}安排</Button>}
             {primaryAction === "set-stage" && <Button variant="ghost" onClick={() => setStageDialogOpen(true)}>投递岗位</Button>}
             {primaryAction === "schedule" && <Button variant="ghost" onClick={() => onCreateInterview(application.id)}>{scheduleActionLabel}</Button>}
             {primaryAction === "record-result" && <Button variant="ghost" onClick={() => setStageDialogOpen(true)}>{resultActionLabel}</Button>}
@@ -2111,7 +2509,7 @@ export function ApplicationDetailView({
           </section>
         </div>
         <aside className="career-detail-side-column">
-          <JobSummaryCard application={application} />
+          <JobSummaryCard application={application} currentStageCompleted={currentStageCompleted} />
         </aside>
       </div>
       {stageDialogOpen && (progress.isPending
@@ -2122,13 +2520,10 @@ export function ApplicationDetailView({
           onClose={() => setStageDialogOpen(false)}
           onChanged={onChanged}
           onNotice={onNotice}
-          onTerminate={() => {
-            setStageDialogOpen(false);
-            setTerminateDialogOpen(true);
-          }}
         />)}
       {offerDialogOpen && <OfferApplicationDialog application={application} onClose={() => setOfferDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
       {terminateDialogOpen && <TerminateApplicationConfirmDialog application={application} onClose={() => setTerminateDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
+      {editScheduleDialogOpen && currentSession && <EditInterviewScheduleDialog session={currentSession} recordKind={currentRecordKind} onClose={() => setEditScheduleDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
     </div>
   );
 }
@@ -2415,10 +2810,310 @@ function CompleteInterviewDialog({
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="career-complete-dialog">
         <DialogHeader><DialogTitle>完成{session.stage_label}</DialogTitle><DialogDescription>完成后可以继续补充音频或文字记录。</DialogDescription></DialogHeader>
-        <div className="career-complete-summary"><strong>{session.stage_label}</strong><span>{formatFullDateTime(session.start_at)} · {sessionModeLabel(session.mode)}</span></div>
+        <div className="career-complete-summary"><strong>{session.stage_label}</strong><span>{formatFullDateTimeRange(session.start_at, session.end_at)} · {sessionModeLabel(session.mode)}</span></div>
         <DialogFooter><Button variant="outline" onClick={onClose}>取消</Button><Button disabled={busy} onClick={() => void complete()}>{busy ? "处理中…" : completeLabel}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function schedulePickerValue(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return formatScheduleDateTimeValue(
+    date,
+    `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`,
+  );
+}
+
+function EditInterviewScheduleDialog({
+  session,
+  recordKind,
+  onClose,
+  onChanged,
+  onNotice,
+}: {
+  session: InterviewSessionRecord;
+  recordKind: "笔试" | "面试";
+  onClose: () => void;
+  onChanged: () => void | Promise<void>;
+  onNotice: (notice: string) => void;
+}) {
+  const initialDurationMinutes = Math.max(
+    1,
+    Math.round((new Date(session.end_at).getTime() - new Date(session.start_at).getTime()) / 60_000),
+  );
+  const initialMeetingOrLocation = session.mode === "onsite" || session.mode === "other"
+    ? session.location ?? ""
+    : session.meeting_url ?? "";
+  const [startAt, setStartAt] = useState(() => schedulePickerValue(session.start_at));
+  const [durationMinutes, setDurationMinutes] = useState(String(initialDurationMinutes));
+  const [mode, setMode] = useState<InterviewSessionRecord["mode"]>(session.mode);
+  const [meetingOrLocation, setMeetingOrLocation] = useState(initialMeetingOrLocation);
+  const [busy, setBusy] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [hasConflict, setHasConflict] = useState(false);
+
+  const parsedStart = parseScheduleStart(startAt);
+  const parsedDuration = Number(durationMinutes);
+  const parsedEnd = parsedStart && Number.isFinite(parsedDuration) && parsedDuration > 0
+    ? new Date(parsedStart.getTime() + parsedDuration * 60_000)
+    : null;
+  const scheduleChanged = Boolean(parsedStart && parsedEnd) && (
+    parsedStart!.getTime() !== new Date(session.start_at).getTime()
+    || parsedEnd!.getTime() !== new Date(session.end_at).getTime()
+  );
+  const normalizedMeetingOrLocation = meetingOrLocation.trim();
+  const detailsChanged = mode !== session.mode
+    || (mode === "onsite" || mode === "other"
+      ? normalizedMeetingOrLocation !== (session.location ?? "") || session.meeting_url !== null
+      : normalizedMeetingOrLocation !== (session.meeting_url ?? "") || session.location !== null);
+  const canSubmit = Boolean(parsedStart && parsedEnd)
+    && Number.isInteger(parsedDuration)
+    && parsedDuration > 0
+    && parsedDuration <= 525_600
+    && (scheduleChanged || detailsChanged)
+    && !busy;
+
+  const updateField = (update: () => void) => {
+    update();
+    setErrorMessage(null);
+    setHasConflict(false);
+  };
+
+  const save = async (allowConflict = false) => {
+    if (!parsedStart || !parsedEnd || !canSubmit) return;
+    setBusy(true);
+    setErrorMessage(null);
+    let currentLockVersion = session.lock_version;
+    let scheduleWasSaved = false;
+    try {
+      if (scheduleChanged) {
+        try {
+          const response = await api.rescheduleInterviewSession(session.id, {
+            start_at: parsedStart.toISOString(),
+            duration_minutes: parsedDuration,
+            timezone: session.timezone,
+            allow_conflict: allowConflict,
+            base_lock_version: currentLockVersion,
+          });
+          currentLockVersion = response.session.lock_version;
+          scheduleWasSaved = true;
+          setHasConflict(false);
+        } catch (error) {
+          if (error instanceof ApiRequestError && error.message === "INTERVIEW_TIME_CONFLICT" && !allowConflict) {
+            setHasConflict(true);
+            return;
+          }
+          throw error;
+        }
+      }
+
+      if (detailsChanged) {
+        try {
+          await api.updateInterviewSession(session.id, {
+            mode,
+            meeting_url: mode === "video" || mode === "phone" ? normalizedMeetingOrLocation || null : null,
+            location: mode === "onsite" || mode === "other" ? normalizedMeetingOrLocation || null : null,
+            base_lock_version: currentLockVersion,
+          });
+        } catch (error) {
+          if (scheduleWasSaved) {
+            onClose();
+            await onChanged();
+            onNotice(`已更新${recordKind}时间，但方式或链接保存失败，请重新修改。`);
+            return;
+          }
+          throw error;
+        }
+      }
+
+      onClose();
+      await onChanged();
+    } catch (error) {
+      setErrorMessage(requestErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const meetingOrLocationLabel = mode === "onsite" || mode === "other" ? "地点" : "链接";
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="career-stage-dialog career-next-stage-dialog career-edit-schedule-dialog">
+        <DialogHeader className="career-next-stage-dialog-header">
+          <DialogTitle>修改{recordKind}安排</DialogTitle>
+          <DialogDescription>调整时间、方式以及{recordKind}链接或地点。</DialogDescription>
+        </DialogHeader>
+        <div className="career-next-stage-panel">
+          <div className="career-next-stage-form">
+            <div className="career-next-stage-field career-next-stage-field--full">
+              <Label htmlFor="career-edit-session-start">{recordKind}时间</Label>
+              <ScheduleDateTimePicker
+                id="career-edit-session-start"
+                label={`${recordKind}时间`}
+                value={startAt}
+                durationMinutes={parsedDuration}
+                required
+                disabled={busy}
+                onChange={(value) => updateField(() => setStartAt(value))}
+                onDurationMinutesChange={(value) => updateField(() => setDurationMinutes(String(value)))}
+              />
+            </div>
+            <div className="career-next-stage-field">
+              <Label htmlFor="career-edit-session-mode">{recordKind}方式</Label>
+              <Select
+                value={mode}
+                onValueChange={(value) => updateField(() => setMode(value as InterviewSessionRecord["mode"]))}
+                disabled={busy}
+              >
+                <SelectTrigger id="career-edit-session-mode" aria-label={`${recordKind}方式`} className="career-next-stage-select-trigger">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="career-next-stage-select-content">
+                  <SelectItem value="video">线上</SelectItem>
+                  <SelectItem value="onsite">线下</SelectItem>
+                  <SelectItem value="phone">电话</SelectItem>
+                  <SelectItem value="other">其他</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="career-next-stage-field">
+              <Label htmlFor="career-edit-session-location">{meetingOrLocationLabel}（选填）</Label>
+              <input
+                id="career-edit-session-location"
+                value={meetingOrLocation}
+                maxLength={mode === "onsite" || mode === "other" ? 500 : 2048}
+                disabled={busy}
+                placeholder={mode === "onsite" || mode === "other" ? "填写地点" : "粘贴链接"}
+                onChange={(event) => updateField(() => setMeetingOrLocation(event.target.value))}
+              />
+            </div>
+          </div>
+          {hasConflict && (
+            <FeedbackNotice className="career-edit-schedule-notice" kind="warning" title="时间存在冲突">
+              这个时间段与其他安排重叠。你可以返回修改，或仍然保存。
+            </FeedbackNotice>
+          )}
+          {errorMessage && <FeedbackNotice className="career-edit-schedule-notice" kind="error">{errorMessage}</FeedbackNotice>}
+        </div>
+        <DialogFooter className="career-next-stage-dialog-footer">
+          <div />
+          <div className="career-next-stage-dialog-footer-actions">
+            <Button variant="outline" disabled={busy} onClick={onClose}>取消</Button>
+            <Button disabled={!canSubmit} onClick={() => void save(hasConflict)}>
+              {busy ? "正在保存…" : hasConflict ? "仍然保存" : "保存修改"}
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function InterviewAnswerPlanSection({
+  session,
+  canEdit,
+  onChanged,
+}: {
+  session: InterviewSessionRecord;
+  canEdit: boolean;
+  onChanged: () => void | Promise<void>;
+}) {
+  const [planStartAt, setPlanStartAt] = useState(() => session.answer_plan_start_at ? schedulePickerValue(session.answer_plan_start_at) : "");
+  const [durationMinutes, setDurationMinutes] = useState(() => session.answer_plan_start_at && session.answer_plan_end_at
+    ? Math.max(1, Math.round((new Date(session.answer_plan_end_at).getTime() - new Date(session.answer_plan_start_at).getTime()) / 60_000))
+    : 120);
+  const [busy, setBusy] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPlanStartAt(session.answer_plan_start_at ? schedulePickerValue(session.answer_plan_start_at) : "");
+    setDurationMinutes(session.answer_plan_start_at && session.answer_plan_end_at
+      ? Math.max(1, Math.round((new Date(session.answer_plan_end_at).getTime() - new Date(session.answer_plan_start_at).getTime()) / 60_000))
+      : 120);
+    setErrorMessage(null);
+  }, [session.id, session.lock_version, session.answer_plan_start_at, session.answer_plan_end_at]);
+
+  const updatePlan = async (start: Date | null, duration: number | null) => {
+    setBusy(true);
+    setErrorMessage(null);
+    try {
+      if (start && duration) {
+        await api.updateInterviewAnswerPlan(session.id, {
+          answer_plan_start_at: start.toISOString(),
+          duration_minutes: duration,
+          base_lock_version: session.lock_version,
+        });
+      } else {
+        await api.updateInterviewAnswerPlan(session.id, {
+          answer_plan_start_at: null,
+          answer_plan_end_at: null,
+          base_lock_version: session.lock_version,
+        });
+      }
+      await onChanged();
+    } catch (error) {
+      setErrorMessage(requestErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const save = () => {
+    const start = parseScheduleStart(planStartAt);
+    const end = start && Number.isInteger(durationMinutes) && durationMinutes > 0
+      ? new Date(start.getTime() + durationMinutes * 60_000)
+      : null;
+    const windowStart = new Date(session.start_at);
+    const windowEnd = new Date(session.end_at);
+    if (!start || !end || end <= start) {
+      setErrorMessage("请选择完整且有效的作答时间段。");
+      return;
+    }
+    if (start < windowStart || end > windowEnd) {
+      setErrorMessage("作答计划必须完整落在官方作答时段内。");
+      return;
+    }
+    void updatePlan(start, durationMinutes);
+  };
+
+  const hasPlan = Boolean(session.answer_plan_start_at && session.answer_plan_end_at);
+  return (
+    <section className="career-session-answer-plan" aria-labelledby={`career-session-answer-plan-${session.id}`}>
+      <header>
+        <div>
+          <h3 id={`career-session-answer-plan-${session.id}`}>我的作答计划</h3>
+          <p>在官方作答时段内记录准备完成笔试的具体时间。</p>
+        </div>
+        {!canEdit && <strong>{hasPlan ? formatFullDateTimeRange(session.answer_plan_start_at!, session.answer_plan_end_at!) : "尚未设置"}</strong>}
+      </header>
+      {canEdit && (
+        <>
+          <div className="career-session-answer-plan-fields is-single">
+            <div>
+              <Label htmlFor={`career-session-answer-plan-start-${session.id}`}>计划作答时间</Label>
+              <ScheduleDateTimePicker
+                id={`career-session-answer-plan-start-${session.id}`}
+                label="计划作答时间"
+                value={planStartAt}
+                durationMinutes={durationMinutes}
+                minimumStartAt={session.start_at}
+                maximumEndAt={session.end_at}
+                disabled={busy}
+                onChange={(value) => { setPlanStartAt(value); setErrorMessage(null); }}
+                onDurationMinutesChange={(value) => { setDurationMinutes(value); setErrorMessage(null); }}
+              />
+            </div>
+          </div>
+          {errorMessage && <FeedbackNotice kind="error">{errorMessage}</FeedbackNotice>}
+          <div className="career-session-answer-plan-actions">
+            {hasPlan && <Button variant="ghost" disabled={busy} onClick={() => void updatePlan(null, null)}>清除计划</Button>}
+            <Button disabled={busy} onClick={save}>{busy ? "正在保存…" : "保存作答计划"}</Button>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -2446,6 +3141,7 @@ export function InterviewSessionDetailView({
   const [showEditTextDialog, setShowEditTextDialog] = useState(false);
   const [showDeleteTextDialog, setShowDeleteTextDialog] = useState(false);
   const [showCompleteDialog, setShowCompleteDialog] = useState(false);
+  const [showEditScheduleDialog, setShowEditScheduleDialog] = useState(false);
   const [textExpanded, setTextExpanded] = useState(false);
   useEffect(() => {
     if (!detail) return;
@@ -2478,9 +3174,13 @@ export function InterviewSessionDetailView({
   const overviewNameLabel = isAssessment ? "笔试名称" : "面试轮次";
   const addContentLabel = isAssessment ? "添加笔试内容" : "添加面试内容";
   const completeLabel = isAssessment ? "完成笔试" : "完成本轮面试";
+  const canEditAnswerPlan = !isArchived && session.status === "scheduled";
+  const editScheduleAction = !isArchived && application.status === "active" && session.status === "scheduled"
+    ? <Button variant="outline" icon={<Pencil />} onClick={() => setShowEditScheduleDialog(true)}>修改{recordKind}安排</Button>
+    : null;
   const recordActions = (
     <>
-      <Button onClick={() => setShowContentDialog(true)}>{addContentLabel}</Button>
+      <Button variant="ghost" onClick={() => setShowContentDialog(true)}>{addContentLabel}</Button>
       {!isArchived && session.status === "scheduled" && <Button variant="outline" onClick={() => setShowCompleteDialog(true)}>{completeLabel}</Button>}
     </>
   );
@@ -2490,9 +3190,10 @@ export function InterviewSessionDetailView({
         <header className="career-session-content-header"><h2>{overviewTitle}</h2><span>最后更新：{formatUpdatedDateTime(session.updated_at)}</span></header>
         <div className="career-session-overview">
           <div><FileText aria-hidden="true" /><span><small>{overviewNameLabel}</small><strong>{session.stage_label}</strong></span></div>
-          <div><CalendarDays aria-hidden="true" /><span><small>{recordKind}时间</small><strong>{formatFullDateTime(session.start_at)}</strong></span></div>
+          <div><CalendarDays aria-hidden="true" /><span><small>{session.schedule_kind === "open_window" ? "官方作答时段" : `${recordKind}时间`}</small><strong className="career-session-time-range" title={formatFullDateTimeRange(session.start_at, session.end_at)}>{formatFullDateTimeRange(session.start_at, session.end_at)}</strong></span></div>
           <div><Video aria-hidden="true" /><span><small>{recordKind}方式</small><strong>{sessionModeLabel(session.mode)}{session.location ? ` · ${session.location}` : ""}</strong></span></div>
         </div>
+        {isAssessment && session.schedule_kind === "open_window" && <InterviewAnswerPlanSection session={session} canEdit={canEditAnswerPlan} onChanged={() => onChanged(session.id)} />}
         {session.meeting_url && <a className="career-session-meeting-link" href={session.meeting_url} target="_blank" rel="noreferrer"><Video aria-hidden="true" />打开{isAssessment ? "笔试" : "会议"}链接 <ExternalLink aria-hidden="true" /></a>}
         <section className="career-session-content-section">
           <header><h2>{recordTitle}</h2><span>支持上传音频或粘贴文字</span></header>
@@ -2521,6 +3222,7 @@ export function InterviewSessionDetailView({
       {showEditTextDialog && <AddInterviewContentDialog session={session} recordKind={recordKind} mode="edit" initialText={questions} onClose={() => setShowEditTextDialog(false)} onChanged={() => onChanged(session.id)} onNotice={onNotice} />}
       {showDeleteTextDialog && <DeleteInterviewTextConfirmDialog session={session} recordKind={recordKind} onClose={() => setShowDeleteTextDialog(false)} onDeleted={() => onChanged(session.id)} onNotice={onNotice} />}
       {showCompleteDialog && <CompleteInterviewDialog session={session} questions={questions} review={review} improvement={improvement} onClose={() => setShowCompleteDialog(false)} onCompleted={() => isDialog ? onChanged(null) : navigateTo(careerApplicationPath(application.id))} onNotice={onNotice} />}
+      {showEditScheduleDialog && <EditInterviewScheduleDialog session={session} recordKind={recordKind} onClose={() => setShowEditScheduleDialog(false)} onChanged={() => onChanged(session.id)} onNotice={onNotice} />}
     </>
   );
 
@@ -2557,7 +3259,7 @@ export function InterviewSessionDetailView({
               <span className={`career-session-status career-session-hero-status ${sessionStatusTone(session)}`}>{sessionStatusLabel(session)}</span>
             </div>
           </div>
-          <div className="career-record-actions">{recordActions}</div>
+          <div className="career-record-actions">{editScheduleAction}{recordActions}</div>
         </div>
       </header>
       {detailBody}

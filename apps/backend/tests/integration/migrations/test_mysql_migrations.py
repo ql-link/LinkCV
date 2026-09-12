@@ -35,7 +35,7 @@ from linkcv.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0059"
+EXPECTED_HEAD = "0061"
 
 
 def canonical_editor_markdown(data: dict[str, Any]) -> str:
@@ -132,6 +132,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "resume_versions",
         "document_parse_tasks",
         "job_descriptions",
+        "global_companies",
         "agent_sessions",
         "agent_runs",
         "agent_messages",
@@ -258,6 +259,17 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         for column in inspector.get_columns("interview_sessions")
     }
     assert interview_columns["application_stage_id"]["nullable"] is True
+    assert interview_columns["schedule_kind"]["nullable"] is False
+    assert str(interview_columns["schedule_kind"]["default"]).strip("'") == "fixed_slot"
+    assert interview_columns["answer_plan_start_at"]["nullable"] is True
+    assert interview_columns["answer_plan_end_at"]["nullable"] is True
+    assert {
+        "ck_interview_sessions_schedule_kind",
+        "ck_interview_sessions_answer_plan",
+    } <= {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("interview_sessions")
+    }
     interview_foreign_keys = {
         foreign_key["name"]: foreign_key
         for foreign_key in inspector.get_foreign_keys("interview_sessions")
@@ -3199,6 +3211,7 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
         "user_id",
         "job_title",
         "company_name",
+        "logo_url",
         "employment_type",
         "description",
         "skills",
@@ -3243,6 +3256,7 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
     assert columns["salary_currency"]["type"].length == 3
     assert columns["salary_currency"]["type"].collation == "ascii_bin"
     assert columns["company_size"]["type"].length == 50
+    assert columns["logo_url"]["type"].length == 2048
     assert columns["company_financing_stage"]["type"].length == 50
     assert columns["description"]["type"].__class__.__name__ == "LONGTEXT"
     assert columns["company_description"]["type"].__class__.__name__ == "LONGTEXT"
@@ -3288,6 +3302,39 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
     assert foreign_key["constrained_columns"] == ["user_id"]
     assert foreign_key["referred_table"] == "users"
     assert foreign_key["options"]["ondelete"] == "RESTRICT"
+
+    global_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("global_companies")
+    }
+    assert set(global_columns) == {
+        "id",
+        "company_name",
+        "normalized_name",
+        "legal_name",
+        "logo_url",
+        "website_url",
+        "industry",
+        "company_size",
+        "financing_stage",
+        "description",
+        "created_at",
+        "updated_at",
+    }
+    assert global_columns["id"]["type"].unsigned is True
+    assert global_columns["logo_url"]["type"].length == 2048
+    assert global_columns["description"]["type"].__class__.__name__ == "LONGTEXT"
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("global_companies")
+    } == {"uk_global_companies_normalized_name"}
+    assert {
+        "ck_global_companies_company_name_not_blank",
+        "ck_global_companies_normalized_name_not_blank",
+    } <= {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("global_companies")
+    }
 
     with engine.begin() as connection:
         first_user = connection.execute(
@@ -3760,10 +3807,10 @@ def test_mysql_migrates_legacy_resume_snapshots_forward() -> None:
     engine.dispose()
 
 
-def test_mysql_dataset_edit_upgrade_from_0058_preserves_existing_files() -> None:
+def test_mysql_dataset_edit_upgrade_from_0060_preserves_existing_files() -> None:
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)
-    run_alembic(database_url, "upgrade", "0058")
+    run_alembic(database_url, "upgrade", "0060")
     engine = create_engine(database_url)
     with engine.begin() as conn:
         user_id = conn.execute(text("INSERT INTO users (email,password_hash,nickname) VALUES ('dataset-migration@example.invalid','fictional','张三')")).lastrowid

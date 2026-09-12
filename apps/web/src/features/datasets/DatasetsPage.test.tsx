@@ -543,7 +543,7 @@ describe("DatasetsPage", () => {
 
       expect(screen.getByRole("alert")).toHaveTextContent("不支持.exe");
       act(() => vi.advanceTimersByTime(5000));
-      expect(screen.getByRole("alert").parentElement).toHaveClass("is-fading");
+      expect(screen.getByRole("alert")).toHaveClass("is-fading");
       act(() => vi.advanceTimersByTime(300));
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     } finally {
@@ -705,6 +705,7 @@ describe("DatasetsPage", () => {
     expect(await screen.findByText("资料已接受，但列表同步失败")).toBeInTheDocument();
     const refreshButton = screen.getByRole("button", { name: "重新刷新" });
     expect(refreshButton).toBeInTheDocument();
+    expect(refreshButton.parentElement).toHaveClass("ui-feedback-notice-action");
     fireEvent.click(refreshButton);
     await waitFor(() => expect(screen.queryByText("资料已接受，但列表同步失败")).not.toBeInTheDocument());
     expect(list).toHaveBeenCalledTimes(3);

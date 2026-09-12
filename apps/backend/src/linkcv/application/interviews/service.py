@@ -7,7 +7,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import Literal
+from typing import Callable, Literal
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -46,6 +46,7 @@ from linkcv.modules.interviews.schemas import (
     OfferApplicationRequest,
     RescheduleInterviewRequest,
     TerminateApplicationRequest,
+    UpdateAnswerPlanRequest,
 )
 from linkcv.modules.job_descriptions.models import JobDescription
 from linkcv.modules.resumes.models import Resume, ResumeVersion
@@ -64,6 +65,22 @@ class InterviewEditConflict(RuntimeError):
 
 
 class InterviewInvalidTransition(RuntimeError):
+    pass
+
+
+class InterviewScheduleKindNotSupported(RuntimeError):
+    pass
+
+
+class InterviewAnswerPlanNotSupported(RuntimeError):
+    pass
+
+
+class InterviewAnswerPlanInvalidTime(ValueError):
+    pass
+
+
+class InterviewAnswerPlanOutsideWindow(ValueError):
     pass
 
 
@@ -90,21 +107,6 @@ class InvalidInterviewTime(ValueError):
 
 class InvalidInterviewCursor(ValueError):
     pass
-
-
-@dataclass(frozen=True, slots=True)
-class TimeConflict:
-    id: int
-    application_id: int
-    company_name: str
-    stage_label: str
-    start_at: datetime
-    end_at: datetime
-
-
-@dataclass(slots=True)
-class InterviewTimeConflict(RuntimeError):
-    conflicts: list[TimeConflict]
 
 
 @dataclass(frozen=True, slots=True)
@@ -218,6 +220,7 @@ def _job_snapshot(job: JobDescription) -> dict[str, object]:
     fields = (
         "job_title",
         "company_name",
+        "logo_url",
         "employment_type",
         "description",
         "skills",
@@ -1079,19 +1082,77 @@ def set_application_archived(
     )
 
 
-def delete_application(db: Session, user_id: int, application_id: int) -> None:
-    application = require_owned_application(db, user_id, application_id)
-    if application.archived_at is None:
+def delete_application(
+    db: Session,
+    user_id: int,
+    application_id: int,
+    *,
+    delete_asset_object: Callable[[str], None] | None = None,
+) -> None:
+    application = db.scalar(
+        select(JobApplication)
+        .where(
+            JobApplication.id == application_id,
+            JobApplication.user_id == user_id,
+        )
+        .with_for_update()
+    )
+    if application is None:
+        raise InterviewNotFound
+    is_terminated = application.lifecycle_status == "terminated"
+    if application.archived_at is None and not is_terminated:
         raise InterviewApplicationNotEmpty
+
+    session_ids = list(
+        db.scalars(
+            select(InterviewSession.id)
+            .where(InterviewSession.application_id == application.id)
+            .with_for_update()
+        )
+    )
+    if not is_terminated:
+        if session_ids:
+            raise InterviewApplicationNotEmpty
+    else:
+        assets = list(
+            db.scalars(
+                select(InterviewAsset)
+                .where(InterviewAsset.interview_session_id.in_(session_ids))
+                .with_for_update()
+            )
+        )
+        if assets and delete_asset_object is None:
+            raise InterviewApplicationNotEmpty
+        try:
+            if delete_asset_object is not None:
+                for asset in assets:
+                    delete_asset_object(asset.object_name)
+        except Exception:
+            db.rollback()
+            raise
+        db.execute(
+            delete(InterviewAsset).where(
+                InterviewAsset.interview_session_id.in_(session_ids)
+            )
+        )
+        db.execute(
+            delete(InterviewSession).where(
+                InterviewSession.application_id == application.id
+            )
+        )
+        db.execute(
+            delete(JobApplicationStage).where(
+                JobApplicationStage.application_id == application.id
+            )
+        )
+
     result = db.execute(
         delete(JobApplication).where(
             JobApplication.id == application.id,
             JobApplication.user_id == user_id,
-            JobApplication.archived_at.is_not(None),
-            ~exists(
-                select(InterviewSession.id).where(
-                    InterviewSession.application_id == JobApplication.id
-                )
+            or_(
+                JobApplication.archived_at.is_not(None),
+                JobApplication.lifecycle_status == "terminated",
             ),
         )
     )
@@ -1115,38 +1176,18 @@ def _validate_schedule(
     return start_at.astimezone(UTC), end_at.astimezone(UTC)
 
 
-def find_time_conflicts(
-    db: Session,
-    user_id: int,
+def _resolve_schedule_end(
     start_at: datetime,
-    end_at: datetime,
-    *,
-    exclude_session_id: int | None = None,
-) -> list[TimeConflict]:
-    query = (
-        select(InterviewSession, JobApplication)
-        .join(JobApplication, JobApplication.id == InterviewSession.application_id)
-        .where(
-            JobApplication.user_id == user_id,
-            JobApplication.archived_at.is_(None),
-            InterviewSession.status != "cancelled",
-            InterviewSession.start_at < end_at,
-            InterviewSession.end_at > start_at,
-        )
-    )
-    if exclude_session_id is not None:
-        query = query.where(InterviewSession.id != exclude_session_id)
-    return [
-        TimeConflict(
-            id=session.id,
-            application_id=application.id,
-            company_name=application.company_name_snapshot,
-            stage_label=session.stage_label,
-            start_at=session.start_at,
-            end_at=session.end_at,
-        )
-        for session, application in db.execute(query).all()
-    ]
+    end_at: datetime | None,
+    duration_minutes: int | None,
+) -> datetime:
+    if duration_minutes is None:
+        assert end_at is not None
+        return end_at
+    try:
+        return start_at + timedelta(minutes=duration_minutes)
+    except OverflowError as error:
+        raise InvalidInterviewTime from error
 
 
 def _session_matches_current_stage(
@@ -1178,6 +1219,7 @@ def _session_matches_create_request(
         and session.stage_label == payload.stage_label
         and _normalize_cursor_time(session.start_at) == start_at
         and _normalize_cursor_time(session.end_at) == end_at
+        and session.schedule_kind == payload.schedule_kind
         and session.timezone == payload.timezone
         and session.mode == payload.mode
         and session.meeting_url == payload.meeting_url
@@ -1205,6 +1247,11 @@ def create_session(
     current_stage = current_application_stage(db, application.id)
     if current_stage is None or current_stage.stage_type not in SCHEDULABLE_STAGE_TYPES:
         raise InvalidInterviewRequest
+    if payload.schedule_kind == "open_window" and current_stage.stage_type not in {
+        "assessment",
+        "written_test",
+    }:
+        raise InterviewScheduleKindNotSupported
     requested_stage_id = (
         parse_decimal_id(payload.application_stage_id)
         if payload.application_stage_id is not None
@@ -1219,16 +1266,22 @@ def create_session(
         )
     )
     if existing is not None:
+        requested_end_at = _resolve_schedule_end(
+            payload.start_at, payload.end_at, payload.duration_minutes
+        )
         requested_start, requested_end = _validate_schedule(
-            payload.start_at, payload.end_at, payload.timezone
+            payload.start_at, requested_end_at, payload.timezone
         )
         if not _session_matches_create_request(
             existing, payload, requested_start, requested_end
         ):
             raise InterviewEditConflict
         return existing
+    requested_end_at = _resolve_schedule_end(
+        payload.start_at, payload.end_at, payload.duration_minutes
+    )
     start_at, end_at = _validate_schedule(
-        payload.start_at, payload.end_at, payload.timezone
+        payload.start_at, requested_end_at, payload.timezone
     )
     try:
         state = schedule_current_stage(_application_state(application))
@@ -1247,9 +1300,6 @@ def create_session(
         payload.round_no != (current_stage.interview_round_no or 1)
     ):
         raise InterviewInvalidTransition
-    conflicts = find_time_conflicts(db, user_id, start_at, end_at)
-    if conflicts and not payload.allow_conflict:
-        raise InterviewTimeConflict(conflicts)
     now = utc_now()
     session = InterviewSession(
         application_id=application.id,
@@ -1262,6 +1312,7 @@ def create_session(
         round_result="pending",
         start_at=start_at,
         end_at=end_at,
+        schedule_kind=payload.schedule_kind,
         timezone=payload.timezone,
         mode=payload.mode,
         meeting_url=payload.meeting_url,
@@ -1457,23 +1508,78 @@ def reschedule_session(
     result = require_owned_session(db, user_id, session_id)
     if (
         result.session.status != "scheduled"
-        or result.application.status != "active"
         or result.application.archived_at is not None
     ):
         raise InterviewInvalidTransition
+    requested_end_at = _resolve_schedule_end(
+        payload.start_at, payload.end_at, payload.duration_minutes
+    )
     start_at, end_at = _validate_schedule(
-        payload.start_at, payload.end_at, payload.timezone
+        payload.start_at, requested_end_at, payload.timezone
     )
-    conflicts = find_time_conflicts(
-        db, user_id, start_at, end_at, exclude_session_id=result.session.id
-    )
-    if conflicts and not payload.allow_conflict:
-        raise InterviewTimeConflict(conflicts)
+    if result.session.answer_plan_start_at is not None:
+        assert result.session.answer_plan_end_at is not None
+        if (
+            _normalize_cursor_time(result.session.answer_plan_start_at) < start_at
+            or _normalize_cursor_time(result.session.answer_plan_end_at) > end_at
+        ):
+            raise InterviewAnswerPlanOutsideWindow
     return _commit_session_update(
         db,
         result.session,
         payload.base_lock_version,
         {"start_at": start_at, "end_at": end_at, "timezone": payload.timezone},
+    )
+
+
+def update_answer_plan(
+    db: Session,
+    user_id: int,
+    session_id: int,
+    payload: UpdateAnswerPlanRequest,
+) -> InterviewSession:
+    result = require_owned_session(db, user_id, session_id)
+    session = result.session
+    if session.status != "scheduled" or result.application.archived_at is not None:
+        raise InterviewInvalidTransition
+    if session.schedule_kind != "open_window":
+        raise InterviewAnswerPlanNotSupported
+    stage = (
+        db.get(JobApplicationStage, session.application_stage_id)
+        if session.application_stage_id is not None
+        else None
+    )
+    if stage is None or stage.stage_type not in {"assessment", "written_test"}:
+        raise InterviewAnswerPlanNotSupported
+    if payload.answer_plan_start_at is None:
+        return _commit_session_update(
+            db,
+            session,
+            payload.base_lock_version,
+            {"answer_plan_start_at": None, "answer_plan_end_at": None},
+        )
+    requested_plan_end_at = _resolve_schedule_end(
+        payload.answer_plan_start_at,
+        payload.answer_plan_end_at,
+        payload.duration_minutes,
+    )
+    try:
+        plan_start, plan_end = _validate_schedule(
+            payload.answer_plan_start_at,
+            requested_plan_end_at,
+            session.timezone,
+        )
+    except InvalidInterviewTime as error:
+        raise InterviewAnswerPlanInvalidTime from error
+    if plan_start < _normalize_cursor_time(
+        session.start_at
+    ) or plan_end > _normalize_cursor_time(session.end_at):
+        raise InterviewAnswerPlanOutsideWindow
+    return _commit_session_update(
+        db,
+        session,
+        payload.base_lock_version,
+        {"answer_plan_start_at": plan_start, "answer_plan_end_at": plan_end},
     )
 
 

@@ -7,7 +7,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { ArrowRight, Ban, Eye, MoreHorizontal } from "lucide-react";
+import { ArrowRight, Ban, Clock3, Eye, GripVertical, MoreHorizontal, Trash2 } from "lucide-react";
 import type { JobApplicationSummary } from "@/api/client";
 import { careerApplicationPath, navigateTo } from "../../routing";
 import {
@@ -23,9 +23,10 @@ import {
 
 export type ProgressColumnKey = ApplicationProgressColumnKey;
 export type ApplicationSortMode = "recent_schedule" | "earliest_added";
-export type NextStageDialogTab = "assessment" | "interview" | "offer";
+export type NextStageDialogTab = "assessment" | "written_test" | "interview" | "offer";
 export type NextStagePrefill = {
   initialTab: NextStageDialogTab;
+  initialStage?: "assessment" | "written_test";
   initialInterviewLabel?: string;
 };
 
@@ -41,8 +42,15 @@ type BoardProgressColumn = {
   interviewRoundNo: number | null;
 };
 
+export type ApplicationBoardColumnOption = Pick<BoardProgressColumn, "id" | "key" | "label">;
+
 type DropPreview = {
   columnId: string;
+};
+
+type ColumnDropIndicator = {
+  columnId: string;
+  edge: "before" | "after";
 };
 
 export type ApplicationFormDropPreview = {
@@ -56,6 +64,64 @@ type InterviewColumnGroup = {
   firstAppearance: number;
   interviewRoundNo: number | null;
 };
+
+const BOARD_COLUMN_ORDER_STORAGE_KEY = "linkcv:career-applications:column-order:v1";
+const BOARD_COLUMN_DRAG_TYPE = "application/x-linkcv-board-column";
+
+function readStoredColumnOrder(): string[] {
+  try {
+    const value = window.sessionStorage.getItem(BOARD_COLUMN_ORDER_STORAGE_KEY);
+    if (!value) return [];
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) && parsed.every((item) => typeof item === "string")
+      ? parsed
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function storeColumnOrder(columnIds: string[]) {
+  try {
+    window.sessionStorage.setItem(BOARD_COLUMN_ORDER_STORAGE_KEY, JSON.stringify(columnIds));
+  } catch {
+    // A blocked storage backend must not prevent in-memory column ordering.
+  }
+}
+
+function reconcileColumnOrder(preferredIds: readonly string[], availableIds: readonly string[]): string[] {
+  const fallbackInterviewId = `interview:${INTERVIEW_FALLBACK_LABEL}`;
+  const hasSpecificInterviewColumn = availableIds.some((id) => id.startsWith("interview:") && id !== fallbackInterviewId);
+  const retained = preferredIds.filter((id, index) => (
+    preferredIds.indexOf(id) === index
+    && !(hasSpecificInterviewColumn && id === fallbackInterviewId)
+  ));
+  const retainedSet = new Set(retained);
+  return [...retained, ...availableIds.filter((id) => !retainedSet.has(id))];
+}
+
+function mergeVisibleColumnOrder(currentIds: readonly string[], reorderedVisibleIds: readonly string[]): string[] {
+  const visible = new Set(reorderedVisibleIds);
+  const queue = [...reorderedVisibleIds];
+  const merged = currentIds.map((id) => visible.has(id) ? queue.shift() as string : id);
+  const mergedSet = new Set(merged);
+  return [...merged, ...queue.filter((id) => !mergedSet.has(id))];
+}
+
+export function reorderBoardColumns(
+  columnIds: readonly string[],
+  sourceId: string,
+  targetId: string,
+  edge: "before" | "after",
+): string[] {
+  if (sourceId === targetId || !columnIds.includes(sourceId) || !columnIds.includes(targetId)) {
+    return [...columnIds];
+  }
+  const reordered = columnIds.filter((id) => id !== sourceId);
+  const targetIndex = reordered.indexOf(targetId);
+  reordered.splice(targetIndex + (edge === "after" ? 1 : 0), 0, sourceId);
+  return reordered;
+}
 
 function validInterviewRound(roundNo: number | null): number | null {
   return typeof roundNo === "number" && Number.isInteger(roundNo) && roundNo > 0
@@ -138,6 +204,12 @@ function buildBoardColumns(applications: JobApplicationSummary[]): BoardProgress
   });
 }
 
+export function applicationBoardColumnOptions(
+  applications: JobApplicationSummary[],
+): ApplicationBoardColumnOption[] {
+  return buildBoardColumns(applications).map(({ id, key, label }) => ({ id, key, label }));
+}
+
 function chineseNumeralToNumber(value: string): number | null {
   const digits: Record<string, number> = {
     零: 0,
@@ -210,7 +282,7 @@ function compareApplicationsByCreatedAt(left: JobApplicationSummary, right: JobA
 }
 
 function isScheduleColumn(columnKey: ProgressColumnKey): boolean {
-  return columnKey === "assessment" || columnKey === "interview";
+  return columnKey === "assessment" || columnKey === "written_test" || columnKey === "interview";
 }
 
 /** Whether an application participates in recent-schedule ordering. */
@@ -308,10 +380,10 @@ function validateApplicationDrop(
     }
     return { valid: true, prefill: { initialTab: "assessment" } };
   }
-  if (target.key === "assessment") {
+  if (target.key === "assessment" || target.key === "written_test") {
     return source === "screening"
-      ? { valid: true, prefill: { initialTab: "assessment" } }
-      : { valid: false, message: "笔试阶段只能从筛选中进入。" };
+      ? { valid: true, prefill: { initialTab: target.key, initialStage: target.key } }
+      : { valid: false, message: `${target.label}阶段只能从筛选中进入。` };
   }
   if (target.key === "offer") {
     return { valid: true, prefill: { initialTab: "offer" } };
@@ -399,8 +471,67 @@ export function applicationCardStatusLabel(
   now = new Date(),
 ): string {
   const projection = projectApplicationProgress(application);
+  if (projection.columnKey === "ended") {
+    return `结束阶段：${projection.stageLabel}`;
+  }
   const scheduleLabel = applicationScheduleStatusLabel(application, { currentStageCompleted, now });
   return scheduleLabel ?? projection.supportingLabel ?? projection.statusLabel;
+}
+
+function formatBoardCardDateTime(value: string | null | undefined): string | null {
+  const timestamp = validApplicationTimestamp(value);
+  if (timestamp === null) return null;
+  const date = new Date(timestamp);
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function formatBoardCardScheduleRange(
+  startAt: string | null | undefined,
+  endAt: string | null | undefined,
+): string | null {
+  const startTimestamp = validApplicationTimestamp(startAt);
+  const endTimestamp = validApplicationTimestamp(endAt);
+  if (startTimestamp === null || endTimestamp === null || endTimestamp <= startTimestamp) return null;
+  const start = new Date(startTimestamp);
+  const end = new Date(endTimestamp);
+  const sameDay = start.getFullYear() === end.getFullYear()
+    && start.getMonth() === end.getMonth()
+    && start.getDate() === end.getDate();
+  const startLabel = formatBoardCardDateTime(startAt);
+  if (!startLabel) return null;
+  if (!sameDay) return `${startLabel}–${formatBoardCardDateTime(endAt)}`;
+  return `${startLabel}–${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}`;
+}
+
+/** Secondary time context shown under the board card's progress status. */
+export function applicationCardTimeLabel(application: JobApplicationSummary): string {
+  const projection = projectApplicationProgress(application);
+  if (projection.columnKey === "pending") {
+    const createdAt = formatBoardCardDateTime(application.created_at);
+    return createdAt ? `创建于 ${createdAt}` : "创建时间待确认";
+  }
+  if (projection.columnKey === "assessment" || projection.columnKey === "written_test") {
+    const deadline = formatBoardCardDateTime(application.next_session_end_at);
+    return deadline ? `截止 ${deadline}` : "尚未安排时间";
+  }
+  if (projection.columnKey === "interview") {
+    return formatBoardCardScheduleRange(
+      application.next_session_start_at,
+      application.next_session_end_at,
+    ) ?? "尚未安排时间";
+  }
+  if (projection.columnKey === "offer") {
+    const offerAt = application.current_stage?.stage_type === "offer"
+      ? formatBoardCardDateTime(application.current_stage.entered_at)
+      : null;
+    return offerAt ? `${offerAt} 获得 Offer` : "Offer 时间待确认";
+  }
+  if (projection.columnKey === "ended") {
+    const terminatedAt = formatBoardCardDateTime(application.terminated_at);
+    return terminatedAt ? `结束于 ${terminatedAt}` : "结束时间待确认";
+  }
+  const appliedAt = formatBoardCardDateTime(application.applied_at);
+  return appliedAt ? `投递于 ${appliedAt}` : "投递时间待确认";
 }
 
 type ApplicationAdvanceAction = {
@@ -431,8 +562,11 @@ function applicationAdvanceAction(
   return {
     enabled: true,
     prefill: columnKey === "screening"
-      ? { initialTab: "assessment" }
-      : { initialTab: "interview", initialInterviewLabel: columnKey === "assessment" ? "一面" : "" },
+      ? { initialTab: "written_test" }
+      : {
+        initialTab: "interview",
+        initialInterviewLabel: columnKey === "assessment" || columnKey === "written_test" ? "一面" : "",
+      },
   };
 }
 
@@ -442,6 +576,7 @@ export function formatApplicationListDateTime(value: string): string {
 
 export function ApplicationsBoard({
   visibleApplications,
+  hiddenColumnIds,
   groupByCategory = false,
   completedCurrentStageApplicationIds,
   now,
@@ -452,9 +587,11 @@ export function ApplicationsBoard({
   onRequestMarkApplied,
   onRequestNextStage,
   onRequestTerminate,
+  onRequestDelete,
   onRequestCategory,
 }: {
   visibleApplications: JobApplicationSummary[];
+  hiddenColumnIds?: ReadonlySet<string>;
   groupByCategory?: boolean;
   completedCurrentStageApplicationIds: ReadonlySet<string>;
   now?: Date;
@@ -465,8 +602,27 @@ export function ApplicationsBoard({
   onRequestMarkApplied: (application: JobApplicationSummary, targetColumnId?: string) => void;
   onRequestNextStage: (application: JobApplicationSummary, prefill: NextStagePrefill, targetColumnId?: string) => void;
   onRequestTerminate: (application: JobApplicationSummary) => void;
+  onRequestDelete: (application: JobApplicationSummary) => void;
   onRequestCategory: (application: JobApplicationSummary) => void;
 }) {
+  const defaultColumnIds = buildBoardColumns(visibleApplications).map((column) => column.id);
+  const [columnOrder, setColumnOrder] = useState(readStoredColumnOrder);
+  useEffect(() => {
+    if (!visibleApplications.length) return;
+    setColumnOrder((current) => {
+      const next = reconcileColumnOrder(current, defaultColumnIds);
+      if (next.length === current.length && next.every((id, index) => id === current[index])) return current;
+      storeColumnOrder(next);
+      return next;
+    });
+  }, [defaultColumnIds.join("\u0000")]);
+  const updateColumnOrder = (next: string[]) => {
+    setColumnOrder((current) => {
+      const merged = mergeVisibleColumnOrder(current, next);
+      storeColumnOrder(merged);
+      return merged;
+    });
+  };
   if (displayMode !== "board" || !visibleApplications.length) return null;
   const groups = groupByCategory
     ? [["internship", "实习"], ["campus", "校招"], ["full_time", "正式"], ["", "未分类"]]
@@ -481,14 +637,18 @@ export function ApplicationsBoard({
         <ProgressBoard
           applications={items}
           layoutApplications={visibleApplications}
+          hiddenColumnIds={hiddenColumnIds}
           completedCurrentStageApplicationIds={completedCurrentStageApplicationIds}
           now={now}
           sortMode={sortMode}
+          columnOrder={columnOrder}
           formDropPreview={items.some((item) => item.id === formDropPreview?.applicationId) ? formDropPreview : null}
+          onColumnOrderChange={updateColumnOrder}
           onNotice={onNotice}
           onRequestMarkApplied={onRequestMarkApplied}
           onRequestNextStage={onRequestNextStage}
           onRequestTerminate={onRequestTerminate}
+          onRequestDelete={onRequestDelete}
           onRequestCategory={onRequestCategory}
         />
       </section>;
@@ -500,26 +660,34 @@ export function ApplicationsBoard({
 export function ProgressBoard({
   applications,
   layoutApplications = applications,
+  hiddenColumnIds,
   completedCurrentStageApplicationIds,
   now,
   sortMode = "recent_schedule",
+  columnOrder,
   formDropPreview,
+  onColumnOrderChange,
   onNotice,
   onRequestMarkApplied,
   onRequestNextStage,
   onRequestTerminate,
+  onRequestDelete,
   onRequestCategory,
 }: {
   applications: JobApplicationSummary[];
   layoutApplications?: JobApplicationSummary[];
+  hiddenColumnIds?: ReadonlySet<string>;
   completedCurrentStageApplicationIds: ReadonlySet<string>;
   now?: Date;
   sortMode?: ApplicationSortMode;
+  columnOrder: string[];
   formDropPreview: ApplicationFormDropPreview | null;
+  onColumnOrderChange: (columnIds: string[]) => void;
   onNotice: (notice: string) => void;
   onRequestMarkApplied: (application: JobApplicationSummary, targetColumnId?: string) => void;
   onRequestNextStage: (application: JobApplicationSummary, prefill: NextStagePrefill, targetColumnId?: string) => void;
   onRequestTerminate: (application: JobApplicationSummary) => void;
+  onRequestDelete: (application: JobApplicationSummary) => void;
   onRequestCategory: (application: JobApplicationSummary) => void;
 }) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -528,22 +696,33 @@ export function ProgressBoard({
   const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
   const [settlingReturnId, setSettlingReturnId] = useState<string | null>(null);
   const [openMenuApplicationId, setOpenMenuApplicationId] = useState<string | null>(null);
+  const [draggingColumnId, setDraggingColumnId] = useState<string | null>(null);
+  const [columnDropIndicator, setColumnDropIndicator] = useState<ColumnDropIndicator | null>(null);
   const advancingId: string | null = null;
   const dragRef = useRef<{ id: string } | null>(null);
   const returnSettleTimerRef = useRef<number | null>(null);
   const isSettlingReturnRef = useRef(false);
   const suppressCardClickRef = useRef(false);
   const dismissMenuClickApplicationIdRef = useRef<string | null>(null);
+  const columnDragRef = useRef<{ id: string } | null>(null);
   const shouldReduceMotion = useReducedMotion();
-  const columns = useMemo(
+  const allColumns = useMemo(
     () => {
       const memberIds = new Set(applications.map((item) => item.id));
-      return buildBoardColumns(sortApplications(layoutApplications, sortMode)).map((column) => ({
+      const boardColumns = buildBoardColumns(sortApplications(layoutApplications, sortMode)).map((column) => ({
         ...column, items: column.items.filter((item) => memberIds.has(item.id)),
       }));
+      const columnIndex = new Map(columnOrder.map((id, index) => [id, index]));
+      return boardColumns.sort((left, right) => (
+        (columnIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER)
+        - (columnIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER)
+      ));
     },
-    [applications, layoutApplications, sortMode],
+    [applications, columnOrder, layoutApplications, sortMode],
   );
+  const columns = hiddenColumnIds?.size
+    ? allColumns.filter((column) => !hiddenColumnIds.has(column.id))
+    : allColumns;
   const calculationNow = now ?? new Date();
 
   useEffect(() => () => {
@@ -557,6 +736,61 @@ export function ProgressBoard({
     setInvalidDropTarget(null);
     setDropPreview(null);
     setSettlingReturnId(null);
+  };
+
+  const clearColumnDrag = () => {
+    columnDragRef.current = null;
+    setDraggingColumnId(null);
+    setColumnDropIndicator(null);
+  };
+
+  const moveColumn = (sourceId: string, targetId: string, edge: "before" | "after") => {
+    const currentIds = columns.map((column) => column.id);
+    const next = reorderBoardColumns(currentIds, sourceId, targetId, edge);
+    if (next.every((id, index) => id === currentIds[index])) return;
+    onColumnOrderChange(next);
+  };
+
+  const handleColumnDragStart = (columnId: string, event: ReactDragEvent<HTMLElement>) => {
+    clearDrag();
+    columnDragRef.current = { id: columnId };
+    setDraggingColumnId(columnId);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData(BOARD_COLUMN_DRAG_TYPE, columnId);
+  };
+
+  const handleColumnDragOver = (columnId: string, event: ReactDragEvent<HTMLDivElement>) => {
+    const sourceId = columnDragRef.current?.id || event.dataTransfer.getData(BOARD_COLUMN_DRAG_TYPE);
+    if (!sourceId || sourceId === columnId) {
+      setColumnDropIndicator(null);
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const edge = event.clientX < bounds.left + bounds.width / 2 ? "before" : "after";
+    setColumnDropIndicator({ columnId, edge });
+  };
+
+  const handleColumnDrop = (columnId: string, event: ReactDragEvent<HTMLDivElement>) => {
+    const sourceId = columnDragRef.current?.id || event.dataTransfer.getData(BOARD_COLUMN_DRAG_TYPE);
+    if (!sourceId) return;
+    event.preventDefault();
+    const edge = columnDropIndicator?.columnId === columnId
+      ? columnDropIndicator.edge
+      : "before";
+    moveColumn(sourceId, columnId, edge);
+    clearColumnDrag();
+  };
+
+  const handleColumnKeyDown = (columnId: string, event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    const currentIndex = columns.findIndex((column) => column.id === columnId);
+    const targetIndex = currentIndex + (event.key === "ArrowLeft" ? -1 : 1);
+    const target = columns[targetIndex];
+    if (!target) return;
+    event.preventDefault();
+    moveColumn(columnId, target.id, event.key === "ArrowLeft" ? "before" : "after");
   };
 
   const handleDragStart = (item: JobApplicationSummary, event: ReactDragEvent<HTMLElement>) => {
@@ -608,7 +842,7 @@ export function ProgressBoard({
       clearDrag();
       return;
     }
-    const validation = validateApplicationDrop(application, target, columns, completedCurrentStageApplicationIds);
+    const validation = validateApplicationDrop(application, target, allColumns, completedCurrentStageApplicationIds);
     if (!validation.valid) {
       event.dataTransfer.dropEffect = "move";
       settleBackToSource(application);
@@ -689,10 +923,12 @@ export function ProgressBoard({
             canAcceptDrop={Boolean(draggingApplication && validateApplicationDrop(
               draggingApplication,
               column,
-              columns,
+              allColumns,
               completedCurrentStageApplicationIds,
             ).valid)}
             isInvalidDropTarget={invalidDropTarget === column.id}
+            isDraggingColumn={draggingColumnId === column.id}
+            columnDropEdge={columnDropIndicator?.columnId === column.id ? columnDropIndicator.edge : null}
             openMenuApplicationId={openMenuApplicationId}
             onMenuOpenChange={setOpenMenuApplicationId}
             onDragStart={handleDragStart}
@@ -703,6 +939,10 @@ export function ProgressBoard({
               }, 0);
             }}
             onDragOver={(event) => {
+              if (columnDragRef.current || Array.from(event.dataTransfer.types ?? []).includes(BOARD_COLUMN_DRAG_TYPE)) {
+                handleColumnDragOver(column.id, event);
+                return;
+              }
               if (!draggingApplication) return;
               event.preventDefault();
               if (applicationBoardColumnId(draggingApplication) === column.id) {
@@ -715,7 +955,7 @@ export function ProgressBoard({
               const validation = validateApplicationDrop(
                 draggingApplication,
                 column,
-                columns,
+                allColumns,
                 completedCurrentStageApplicationIds,
               );
               // The board handles rejected drops itself so the browser must still
@@ -734,15 +974,26 @@ export function ProgressBoard({
             onDragLeave={(event) => {
               const relatedTarget = event.relatedTarget as Node | null;
               if (!relatedTarget || !event.currentTarget.contains(relatedTarget)) {
+                if (columnDragRef.current) setColumnDropIndicator(null);
                 setDropTarget(null);
                 setInvalidDropTarget(null);
                 setDropPreview(null);
               }
             }}
-            onDrop={(event) => handleDrop(column, event)}
+            onDrop={(event) => {
+              if (columnDragRef.current || Array.from(event.dataTransfer.types ?? []).includes(BOARD_COLUMN_DRAG_TYPE)) {
+                handleColumnDrop(column.id, event);
+                return;
+              }
+              handleDrop(column, event);
+            }}
+            onColumnDragStart={(event) => handleColumnDragStart(column.id, event)}
+            onColumnDragEnd={clearColumnDrag}
+            onColumnKeyDown={(event) => handleColumnKeyDown(column.id, event)}
             onRequestMarkApplied={onRequestMarkApplied}
             onRequestNextStage={onRequestNextStage}
             onRequestTerminate={onRequestTerminate}
+            onRequestDelete={onRequestDelete}
             onRequestCategory={onRequestCategory}
             onOpen={(item) => {
               if (!suppressCardClickRef.current) navigateTo(careerApplicationPath(item.id));
@@ -766,6 +1017,8 @@ export function ProgressColumn({
   now,
   canAcceptDrop,
   isInvalidDropTarget,
+  isDraggingColumn,
+  columnDropEdge,
   openMenuApplicationId,
   onMenuOpenChange,
   onDragStart,
@@ -773,9 +1026,13 @@ export function ProgressColumn({
   onDragOver,
   onDragLeave,
   onDrop,
+  onColumnDragStart,
+  onColumnDragEnd,
+  onColumnKeyDown,
   onRequestMarkApplied,
   onRequestNextStage,
   onRequestTerminate,
+  onRequestDelete,
   onRequestCategory,
   onOpen,
 }: {
@@ -790,6 +1047,8 @@ export function ProgressColumn({
   now?: Date;
   canAcceptDrop: boolean;
   isInvalidDropTarget: boolean;
+  isDraggingColumn: boolean;
+  columnDropEdge: "before" | "after" | null;
   openMenuApplicationId: string | null;
   onMenuOpenChange: (applicationId: string | null) => void;
   onDragStart: (item: JobApplicationSummary, event: ReactDragEvent<HTMLElement>) => void;
@@ -797,9 +1056,13 @@ export function ProgressColumn({
   onDragOver: (event: ReactDragEvent<HTMLDivElement>) => void;
   onDragLeave: (event: ReactDragEvent<HTMLDivElement>) => void;
   onDrop: (event: ReactDragEvent<HTMLDivElement>) => void;
+  onColumnDragStart: (event: ReactDragEvent<HTMLElement>) => void;
+  onColumnDragEnd: () => void;
+  onColumnKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
   onRequestMarkApplied: (application: JobApplicationSummary) => void;
   onRequestNextStage: (application: JobApplicationSummary, prefill: NextStagePrefill) => void;
   onRequestTerminate: (application: JobApplicationSummary) => void;
+  onRequestDelete: (application: JobApplicationSummary) => void;
   onRequestCategory: (application: JobApplicationSummary) => void;
   onOpen: (item: JobApplicationSummary) => void;
 }) {
@@ -865,6 +1128,7 @@ export function ProgressColumn({
           onRequestMarkApplied={onRequestMarkApplied}
           onRequestNextStage={onRequestNextStage}
           onRequestTerminate={onRequestTerminate}
+          onRequestDelete={onRequestDelete}
           onRequestCategory={onRequestCategory}
           onOpen={() => onOpen(item)}
         />
@@ -898,14 +1162,26 @@ export function ProgressColumn({
   }
   return (
     <div
-      className={`progress-column${canAcceptDrop ? " is-valid-drop-target" : ""}${dropTarget === column.id ? " is-drop-target" : ""}${isInvalidDropTarget ? " is-invalid-drop-target" : ""}`}
+      className={`progress-column${canAcceptDrop ? " is-valid-drop-target" : ""}${dropTarget === column.id ? " is-drop-target" : ""}${isInvalidDropTarget ? " is-invalid-drop-target" : ""}${isDraggingColumn ? " is-dragging-column" : ""}${columnDropEdge ? ` is-column-drop-${columnDropEdge}` : ""}`}
       data-column-key={column.key}
       data-column-id={column.id}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      <header className="progress-column-heading">
+      <header
+        className="progress-column-heading"
+        role="button"
+        tabIndex={0}
+        draggable
+        aria-label={`拖动调整“${column.label}”栏目位置；也可使用左右方向键`}
+        aria-grabbed={isDraggingColumn}
+        title="拖动调整栏目位置"
+        onDragStart={onColumnDragStart}
+        onDragEnd={onColumnDragEnd}
+        onKeyDown={onColumnKeyDown}
+      >
+        <GripVertical className="progress-column-drag-handle" aria-hidden="true" />
         <h3><span className="progress-column-label">{column.label}</span><span className="progress-column-count">{column.items.length}</span></h3>
       </header>
       <div className="progress-column-cards">
@@ -933,6 +1209,7 @@ export function ProgressCard({
   onRequestMarkApplied,
   onRequestNextStage,
   onRequestTerminate,
+  onRequestDelete,
   onRequestCategory,
   onOpen,
 }: {
@@ -952,10 +1229,12 @@ export function ProgressCard({
   onRequestMarkApplied?: (application: JobApplicationSummary) => void;
   onRequestNextStage?: (application: JobApplicationSummary, prefill: NextStagePrefill) => void;
   onRequestTerminate?: (application: JobApplicationSummary) => void;
+  onRequestDelete?: (application: JobApplicationSummary) => void;
   onRequestCategory?: (application: JobApplicationSummary) => void;
   onOpen: () => void;
 }) {
   const statusLabel = applicationCardStatusLabel(item, currentStageCompleted, now);
+  const timeLabel = applicationCardTimeLabel(item);
   const stageToneClass = projectApplicationProgressToneClass(item, {
     currentStageCompleted,
     now,
@@ -1034,12 +1313,19 @@ export function ProgressCard({
       onDragEnd={onDragEnd}
     >
       <button type="button" className="progress-card-open" aria-label={`查看 ${item.company_name_snapshot} ${item.job_title_snapshot} 求职进程`} onClick={handleCardOpen}>
-        <span className="progress-card-company-row">
-          <strong className="progress-card-company" title={item.company_name_snapshot}>{item.company_name_snapshot}</strong>
+        <span className="progress-card-main">
+          <CompanyLogo companyName={item.company_name_snapshot} logoUrl={item.company_logo_url} />
+          <span className="progress-card-copy">
+            <strong className="progress-card-company" title={item.company_name_snapshot}>{item.company_name_snapshot}</strong>
+            <strong className="progress-card-job-title" title={item.job_title_snapshot}>{item.job_title_snapshot}</strong>
+          </span>
         </span>
-        <strong className="progress-card-job-title" title={item.job_title_snapshot}>{item.job_title_snapshot}</strong>
         <span className="progress-card-footer">
           <span className={`progress-card-stage ${stageToneClass}`}>{statusLabel}</span>
+          <span className="progress-card-time">
+            <Clock3 aria-hidden="true" />
+            <span>{timeLabel}</span>
+          </span>
         </span>
       </button>
       <div
@@ -1108,9 +1394,41 @@ export function ProgressCard({
                 <Ban size={15} aria-hidden="true" />终止求职
               </button>
             )}
+            {columnKey === "ended" && (
+              <button
+                type="button"
+                role="menuitem"
+                className="is-danger"
+                disabled={isAdvancing}
+                onClick={() => runMenuAction(() => onRequestDelete?.(item))}
+              >
+                <Trash2 size={15} aria-hidden="true" />删除记录
+              </button>
+            )}
           </div>
         )}
       </div>
     </article>
+  );
+}
+
+function CompanyLogo({ companyName, logoUrl }: { companyName: string; logoUrl?: string | null }) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => setFailed(false), [logoUrl]);
+
+  if (!logoUrl || failed) {
+    return <span className="progress-card-logo is-fallback" aria-hidden="true">{companyName.trim().slice(0, 1) || "企"}</span>;
+  }
+  return (
+    <span className="progress-card-logo">
+      <img
+        src={logoUrl}
+        alt={`${companyName} Logo`}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
+      />
+    </span>
   );
 }

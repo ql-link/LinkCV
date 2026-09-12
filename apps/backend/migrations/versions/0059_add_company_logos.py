@@ -1,17 +1,18 @@
-"""add user dataset folders.
+"""add company logos.
 
-Revision ID: 0058
-Revises: 0057
-Create Date: 2026-09-03 10:30:00.000000
+Revision ID: 0059
+Revises: 0058
+Create Date: 2026-09-11 21:45:58.456469
 """
+
 from collections.abc import Sequence
 from pathlib import Path
 
 from alembic import op
 from linkcv.core.migration_sql import execute_sql_file
 
-revision: str = "0058"
-down_revision: str | None = "0057"
+revision: str = "0059"
+down_revision: str | None = "0058"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -19,7 +20,7 @@ SQL_DIR = Path(__file__).parent.parent / "sql"
 
 
 def upgrade() -> None:
-    execute_sql_file(op.get_bind(), SQL_DIR / "0058.up.sql")
+    execute_sql_file(op.get_bind(), SQL_DIR / "0059.up.sql")
 
 
 def downgrade() -> None:

@@ -1,17 +1,18 @@
-"""add dataset editing and replacement.
+"""add interview answer plans.
 
-Revision ID: 0059
-Revises: 0058
-Create Date: 2026-09-05 16:32:06.878375
+Revision ID: 0058
+Revises: 0057
+Create Date: 2026-09-10 13:22:06.253588
 """
+
 from collections.abc import Sequence
 from pathlib import Path
 
 from alembic import op
 from linkcv.core.migration_sql import execute_sql_file
 
-revision: str = '0059'
-down_revision: str | None = '0058'
+revision: str = "0058"
+down_revision: str | None = "0057"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -19,7 +20,7 @@ SQL_DIR = Path(__file__).parent.parent / "sql"
 
 
 def upgrade() -> None:
-    execute_sql_file(op.get_bind(), SQL_DIR / "0059.up.sql")
+    execute_sql_file(op.get_bind(), SQL_DIR / "0058.up.sql")
 
 
 def downgrade() -> None:

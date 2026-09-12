@@ -1,22 +1,26 @@
--- Up migration for 0058: add user dataset folders
-CREATE TABLE user_dataset_folders (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '文件夹自增主键',
-  user_id BIGINT UNSIGNED NOT NULL COMMENT '所属用户 ID',
-  name VARCHAR(64) NOT NULL COMMENT '文件夹名称',
-  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
-  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间（UTC）',
-  CONSTRAINT pk_user_dataset_folders PRIMARY KEY (id),
-  CONSTRAINT fk_user_dataset_folders_user FOREIGN KEY (user_id)
-    REFERENCES users (id) ON DELETE RESTRICT,
-  CONSTRAINT uk_user_dataset_folders_user_name UNIQUE (user_id, name),
-  KEY idx_user_dataset_folders_user_created (user_id, created_at DESC)
-) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
-  COMMENT='用户资料分类文件夹';
-
-ALTER TABLE user_dataset
-  ADD COLUMN folder_id BIGINT UNSIGNED NULL
-    COMMENT '所属文件夹 ID，为 NULL 表示未分类' AFTER user_id,
-  ADD CONSTRAINT fk_user_dataset_folder
-    FOREIGN KEY (folder_id) REFERENCES user_dataset_folders (id) ON DELETE SET NULL,
-  ADD KEY idx_user_dataset_user_folder
-    (user_id, folder_id, created_at DESC);
+-- Upgrade migration for 0058: add interview answer plans
+ALTER TABLE interview_sessions
+  ADD COLUMN schedule_kind VARCHAR(24) NOT NULL DEFAULT 'fixed_slot'
+    COMMENT 'fixed_slot 固定场次或 open_window 开放窗口' AFTER end_at,
+  ADD COLUMN answer_plan_start_at DATETIME(6) NULL
+    COMMENT '用户个人作答计划开始时间 UTC' AFTER schedule_kind,
+  ADD COLUMN answer_plan_end_at DATETIME(6) NULL
+    COMMENT '用户个人作答计划结束时间 UTC' AFTER answer_plan_start_at,
+  ADD CONSTRAINT ck_interview_sessions_schedule_kind
+    CHECK (schedule_kind IN ('fixed_slot', 'open_window')),
+  ADD CONSTRAINT ck_interview_sessions_answer_plan
+    CHECK (
+      (schedule_kind = 'fixed_slot'
+        AND answer_plan_start_at IS NULL
+        AND answer_plan_end_at IS NULL)
+      OR
+      (schedule_kind = 'open_window' AND (
+        (answer_plan_start_at IS NULL AND answer_plan_end_at IS NULL)
+        OR
+        (answer_plan_start_at IS NOT NULL
+          AND answer_plan_end_at IS NOT NULL
+          AND answer_plan_end_at > answer_plan_start_at
+          AND answer_plan_start_at >= start_at
+          AND answer_plan_end_at <= end_at)
+      ))
+    );

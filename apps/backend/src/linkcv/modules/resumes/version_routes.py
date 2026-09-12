@@ -18,10 +18,12 @@ from linkcv.application.resumes.service import (
 from linkcv.core.config import Settings
 from linkcv.core.database import get_db
 from linkcv.core.errors import ApiError
+from linkcv.core.storage import AssetStorage, get_storage
 from linkcv.domain.resume import compile_layout_plan
 from linkcv.modules.identity.dependencies import get_current_user, get_settings
 from linkcv.modules.identity.models import User
 from linkcv.modules.resumes.models import ResumeVersion
+from linkcv.modules.resumes.pdf_service import validate_resume_pdf_asset_contract
 from linkcv.modules.resumes.routes import resume_record
 from linkcv.modules.resumes.schemas import (
     DeleteResumeVersionResponse,
@@ -196,7 +198,23 @@ def restore_version(
     version_no: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    storage: AssetStorage = Depends(get_storage),
 ) -> ResumeResponse:
+    owned_resume_id = require_owned_resume_id(db, resume_id, user.id)
+    target = db.scalar(
+        select(ResumeVersion).where(
+            ResumeVersion.resume_id == owned_resume_id,
+            ResumeVersion.version_no == version_no,
+        )
+    )
+    if target is None:
+        raise ApiError(404, "RESUME_VERSION_NOT_FOUND")
+    validate_resume_pdf_asset_contract(
+        storage,
+        target.data_json,
+        user_id=user.id,
+        resume_id=owned_resume_id,
+    )
     try:
         resume = restore_resume_version(
             db,

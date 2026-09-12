@@ -9,9 +9,11 @@ import {
   List,
   Sparkles,
   Underline,
+  X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, type AgentSelectionContext } from "../../api/client";
+import { validateResumeImageFile } from "./resumeImageLimits";
 
 const textColors = ["#1d1d1f", "#3478f6", "#34c759", "#ff9f0a", "#ff3b30", "#8a8a8e"];
 const highlightColors = ["#fff3c4", "#d1f5db", "#dbe8ff", "#ffe0d1", "#f0f0f0"];
@@ -95,27 +97,45 @@ function ColorControl({ editor, type }: { editor: Editor; type: "color" | "highl
   const colors = type === "color" ? textColors : highlightColors;
   const Icon = type === "color" ? Baseline : Highlighter;
   const label = type === "color" ? "文字颜色" : "高亮颜色";
-  const applied = type === "color"
-    ? Boolean(editor.getAttributes("textStyle").color)
-    : editor.isActive("highlight");
+  const currentColor = type === "color"
+    ? editor.getAttributes("textStyle").color
+    : editor.getAttributes("highlight").color;
+  const applied = typeof currentColor === "string" && currentColor.length > 0;
+  const clearLabel = type === "color" ? "取消文字颜色" : "取消高亮颜色";
   useDismissPopover(open, () => setOpen(false), anchorRef);
 
   return (
     <div ref={anchorRef} className="workbench-popover-anchor">
       <ToolButton label={label} active={open || applied} onClick={() => setOpen((value) => !value)}><Icon aria-hidden="true" size={18} /></ToolButton>
       <AnchoredPopover open={open} className="color-popover">
+        <motion.button
+          type="button"
+          className="color-swatch color-swatch-clear"
+          aria-label={clearLabel}
+          title={clearLabel}
+          whileTap={{ scale: 0.9 }}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            if (type === "color") editor.chain().focus().unsetColor().run();
+            else editor.chain().focus().unsetHighlight().run();
+            setOpen(false);
+          }}
+        >
+          <X aria-hidden="true" size={14} />
+        </motion.button>
         {colors.map((color) => (
           <motion.button
             type="button"
             key={color}
-            className="color-swatch"
+            className={`color-swatch${currentColor === color ? " is-active" : ""}`}
             style={{ background: color }}
             aria-label={`${label} ${color}`}
+            aria-pressed={currentColor === color}
             whileTap={{ scale: 0.9 }}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
               if (type === "color") editor.chain().focus().setColor(color).run();
-              else editor.chain().focus().toggleHighlight({ color }).run();
+              else editor.chain().focus().setHighlight({ color }).run();
               setOpen(false);
             }}
           />
@@ -253,12 +273,9 @@ export function readImage(
   onLoad: (src: string, metadata: UploadedImageMetadata) => void,
   onError: (message: string) => void,
 ) {
-  if (!file.type.startsWith("image/")) {
-    onError("请选择图片文件");
-    return;
-  }
-  if (file.size > 8 * 1024 * 1024) {
-    onError("图片不能超过 8MB");
+  const validationMessage = validateResumeImageFile(file);
+  if (validationMessage) {
+    onError(validationMessage);
     return;
   }
   const reader = new FileReader();

@@ -1,49 +1,23 @@
--- Current document metadata and transient replacement/cleanup records.
-ALTER TABLE user_dataset
- ADD COLUMN content_revision BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '正文并发序号',
- ADD COLUMN content_object_name VARCHAR(512) NULL COMMENT '当前正文对象',
- ADD COLUMN content_sha256 CHAR(64) NULL COMMENT '当前正文摘要',
- ADD COLUMN content_updated_at DATETIME(6) NULL COMMENT '正文更新时间 UTC',
- ADD COLUMN last_content_request_id VARCHAR(64) NULL COMMENT '最近保存请求';
+-- Upgrade migration for 0059: add company logos
+ALTER TABLE job_descriptions
+  ADD COLUMN logo_url VARCHAR(2048) NULL
+    COMMENT '用户为该岗位保存的公司 Logo HTTPS URL' AFTER company_name;
 
-CREATE TABLE dataset_replacements (
-	id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-	user_id BIGINT UNSIGNED NOT NULL,
-	dataset_id BIGINT UNSIGNED NOT NULL,
-	parse_task_id BIGINT UNSIGNED,
-	source_content_type VARCHAR(128) NOT NULL,
-	source_file_size BIGINT UNSIGNED NOT NULL,
-	source_sha256 CHAR(64) NOT NULL,
-	idempotency_key VARCHAR(64) NOT NULL,
-	request_fingerprint CHAR(64) NOT NULL,
-	base_revision BIGINT UNSIGNED NOT NULL,
-	status VARCHAR(16) NOT NULL,
-	active_dataset_id BIGINT UNSIGNED,
-	last_retry_request_id VARCHAR(64),
-	failure_code VARCHAR(64),
-	created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-	updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-	CONSTRAINT pk_dataset_replacements PRIMARY KEY (id),
-	CONSTRAINT uk_dataset_replacements_user_request UNIQUE (user_id, idempotency_key),
-	CONSTRAINT uk_dataset_replacements_active UNIQUE (active_dataset_id),
-	CONSTRAINT uk_dataset_replacements_task UNIQUE (parse_task_id),
-	CONSTRAINT ck_dataset_replacements_status CHECK (status IN ('pending','failed','conflict','applied','discarded')),
-	CONSTRAINT ck_dataset_replacements_active CHECK ((status IN ('pending','failed','conflict') AND active_dataset_id IS NOT NULL AND active_dataset_id = dataset_id) OR (status IN ('applied','discarded') AND active_dataset_id IS NULL)),
-	CONSTRAINT fk_dataset_replacements_user FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE RESTRICT,
-	CONSTRAINT fk_dataset_replacements_dataset FOREIGN KEY(dataset_id) REFERENCES user_dataset (id) ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-CREATE INDEX idx_dataset_replacements_cleanup ON dataset_replacements (status, updated_at);
-CREATE INDEX idx_dataset_replacements_target ON dataset_replacements (dataset_id, created_at);
-
-CREATE TABLE dataset_object_cleanup (
-	id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-	user_id BIGINT UNSIGNED NOT NULL,
-	object_name VARCHAR(512) NOT NULL,
-	parse_task_id BIGINT UNSIGNED,
-	not_before DATETIME(6) NOT NULL,
-	attempt_count INTEGER UNSIGNED NOT NULL DEFAULT '0',
-	created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-	CONSTRAINT pk_dataset_object_cleanup PRIMARY KEY (id),
-	CONSTRAINT uk_dataset_object_cleanup_object UNIQUE (object_name)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-CREATE INDEX idx_dataset_object_cleanup_due ON dataset_object_cleanup (not_before, id);
+CREATE TABLE global_companies (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '全局公司资料主键',
+  company_name VARCHAR(200) NOT NULL COMMENT '公司展示名称',
+  normalized_name VARCHAR(200) NOT NULL COMMENT '用于维护去重的标准化名称',
+  legal_name VARCHAR(255) NULL COMMENT '公司工商全称',
+  logo_url VARCHAR(2048) NULL COMMENT '公司 Logo HTTPS URL',
+  website_url VARCHAR(2048) NULL COMMENT '公司官网 HTTPS URL',
+  industry VARCHAR(100) NULL COMMENT '行业',
+  company_size VARCHAR(50) NULL COMMENT '公司规模',
+  financing_stage VARCHAR(50) NULL COMMENT '融资阶段',
+  description LONGTEXT NULL COMMENT '公司简介',
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间 UTC',
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间 UTC',
+  CONSTRAINT pk_global_companies PRIMARY KEY (id),
+  CONSTRAINT uk_global_companies_normalized_name UNIQUE (normalized_name),
+  CONSTRAINT ck_global_companies_company_name_not_blank CHECK (LENGTH(TRIM(company_name)) > 0),
+  CONSTRAINT ck_global_companies_normalized_name_not_blank CHECK (LENGTH(TRIM(normalized_name)) > 0)
+) COMMENT='平台独立维护的全局公司资料';

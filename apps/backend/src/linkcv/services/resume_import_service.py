@@ -132,50 +132,6 @@ def _docx_has_unsupported_layout(content: bytes) -> bool:
     return False
 
 
-def _pdf_has_embedded_images(content: bytes) -> bool | None:
-    """Best-effort detection for PDF image objects omitted by text conversion.
-
-    LinkParse reports OCR use for scanned and mixed PDFs, but a text PDF can
-    still contain a photo or raster logo.  Those objects are visible source
-    content and cannot be silently dropped from an editable import.
-    """
-
-    try:
-        import pypdfium2 as pdfium
-        import pypdfium2.raw as pdfium_c
-
-        document = pdfium.PdfDocument(content)
-    except Exception:
-        # A text-PDF image check is a strict loss boundary. Returning unknown
-        # lets the caller fail closed instead of treating inspection failure
-        # as proof that no visible image exists.
-        return None
-    inspection: bool | None = False
-    try:
-        for page_index in range(len(document)):
-            page = document[page_index]
-            try:
-                if (
-                    next(
-                        page.get_objects(filter=[pdfium_c.FPDF_PAGEOBJ_IMAGE]),
-                        None,
-                    )
-                    is not None
-                ):
-                    inspection = True
-                    break
-            finally:
-                page.close()
-    except Exception:
-        inspection = None
-    finally:
-        try:
-            document.close()
-        except Exception:
-            inspection = None
-    return inspection
-
-
 def _raise_layout_unsupported(*, stage: str = "document_conversion") -> None:
     raise ResumeImportFailure(
         422,
@@ -195,9 +151,10 @@ def validate_conversion_layout(
     LinkParse's warning envelope is the primary signal.  The service also
     checks the original DOCX package and the Markdown representation so a
     stale/mocked converter cannot silently turn unsupported input into a
-    successful import.  PDF layout metadata is deliberately advisory: its
-    absence, degraded quality or inconsistency is handled by the converter's
-    Markdown fallback and is never an import gate.
+    successful import.  PDF source images are intentionally omitted by the
+    converter and do not gate the text-only import.  PDF layout metadata is
+    advisory: its absence, degraded quality or inconsistency is handled by
+    the converter's Markdown fallback and is never an import gate.
     """
 
     warnings = {getattr(warning, "value", warning) for warning in conversion.warnings}
@@ -205,13 +162,6 @@ def validate_conversion_layout(
         _raise_layout_unsupported()
     source_format = conversion.source_format
     if source_format != "pdf" and conversion.layout_applied:
-        _raise_layout_unsupported()
-    if (
-        source_format == "pdf"
-        and conversion.detected_type == "text_pdf"
-        and source_content
-        and _pdf_has_embedded_images(source_content) is not False
-    ):
         _raise_layout_unsupported()
     if source_format == "docx" and _docx_has_unsupported_layout(source_content):
         _raise_layout_unsupported()

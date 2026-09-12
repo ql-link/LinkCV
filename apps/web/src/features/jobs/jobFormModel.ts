@@ -12,6 +12,7 @@ import {
 export type JobFormState = {
   job_title: string;
   company_name: string;
+  logo_url: string;
   employment_type: JobEmploymentType | "";
   description: string;
   skills: string;
@@ -39,7 +40,7 @@ export type JobFormState = {
 };
 
 export const emptyJobForm: JobFormState = {
-  job_title: "", company_name: "", employment_type: "", description: "", skills: "",
+  job_title: "", company_name: "", logo_url: "", employment_type: "", description: "", skills: "",
   education_requirement: "", experience_requirement: "", work_schedule: "", work_city: "",
   work_address: "", work_mode: "", salary_text: "", salary_min: "", salary_max: "",
   salary_currency: "", salary_period: "", salary_months_per_year: "", company_legal_name: "",
@@ -51,6 +52,7 @@ export function jobPayloadFromForm(form: JobFormState): JobDescriptionCreatePayl
   return {
     job_title: form.job_title.trim(),
     company_name: form.company_name.trim(),
+    logo_url: nullable(form.logo_url),
     employment_type: form.employment_type || null,
     description: form.description.trim(),
     skills: form.skills.split(/[,，\n]/).map((value) => value.trim()).filter(Boolean),
@@ -92,6 +94,7 @@ export function jobFormFromRecord(record: JobDescriptionRecord): JobFormState {
     salary_period: record.salary_period ?? "",
     salary_months_per_year: record.salary_months_per_year?.toString() ?? "",
     source_url: record.source_url ?? "",
+    logo_url: record.logo_url ?? "",
     education_requirement: record.education_requirement ?? "",
     experience_requirement: record.experience_requirement ?? "",
     work_schedule: record.work_schedule ?? "",
@@ -114,6 +117,7 @@ export function jobFormFromDraft(draft: JobDescriptionDraft): JobFormState {
     ...emptyJobForm,
     job_title: draft.job_title ?? "",
     company_name: draft.company_name ?? "",
+    logo_url: draft.logo_url ?? "",
     employment_type: draft.employment_type ?? "",
     description: draft.description ?? "",
     skills: draft.skills?.join(", ") ?? "",

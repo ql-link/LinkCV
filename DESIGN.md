@@ -55,6 +55,16 @@ typography:
     fontSize: 0.875rem
     fontWeight: 400
     lineHeight: 1.55
+  content-md:
+    fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans SC, system-ui, sans-serif"
+    fontSize: 1rem
+    fontWeight: 400
+    lineHeight: 1.55
+  content-sm:
+    fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans SC, system-ui, sans-serif"
+    fontSize: 0.875rem
+    fontWeight: 400
+    lineHeight: 1.55
   label-sm:
     fontFamily: "Inter, LXGW WenKai, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 0.875rem
@@ -132,7 +142,7 @@ components:
   input-field:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.on-surface}"
-    typography: "{typography.body-sm}"
+    typography: "{typography.content-sm}"
     rounded: "{rounded.md}"
     height: 40px
   input-border:

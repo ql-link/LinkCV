@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { api, ApiRequestError, type ResumeTemplate } from "../../api/client";
 import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
@@ -68,22 +69,23 @@ describe("ResumeWorkbench 标题", () => {
     expect(truncateWorkbenchTitle("😀".repeat(31))).toBe(`${"😀".repeat(30)}…`);
   });
 
-  it("聚焦编辑时恢复完整标题，失焦后重新省略", async () => {
+  it("始终保留完整受控值，并允许连续修改长标题", async () => {
     const user = userEvent.setup();
     const fullTitle = `${"开发演示简历".repeat(5)}完整标题`;
-    const onChange = vi.fn();
-    render(<WorkbenchTitleInput value={fullTitle} disabled={false} onChange={onChange} />);
+    function ControlledTitle() {
+      const [value, setValue] = useState(fullTitle);
+      return <WorkbenchTitleInput value={value} disabled={false} onChange={setValue} />;
+    }
+    render(<ControlledTitle />);
 
     const input = screen.getByRole("textbox", { name: "简历标题" });
-    expect(input).toHaveValue(truncateWorkbenchTitle(fullTitle));
+    expect(input).toHaveValue(fullTitle);
     expect(input).toHaveAttribute("title", fullTitle);
 
     await user.click(input);
-    expect(input).toHaveValue(fullTitle);
+    await user.keyboard("{Control>}a{/Control}前端开发投递版");
+    expect(input).toHaveValue("前端开发投递版");
     expect(input).not.toHaveAttribute("title");
-
-    await user.tab();
-    expect(input).toHaveValue(truncateWorkbenchTitle(fullTitle));
   });
 });
 
@@ -153,6 +155,7 @@ describe("ResumeWorkbench 抽屉布局", () => {
     expect(workbenchCanvasClassName(null)).toBe("workbench-canvas");
     expect(workbenchCanvasClassName("settings")).toBe("workbench-canvas has-drawer");
     expect(workbenchCanvasClassName("history")).toBe("workbench-canvas has-drawer");
+    expect(workbenchCanvasClassName("quality")).toBe("workbench-canvas has-drawer");
     expect(workbenchCanvasClassName("agent")).toBe("workbench-canvas has-drawer has-agent-drawer");
   });
 
@@ -435,6 +438,16 @@ describe("ResumeWorkbench 顶部保存反馈", () => {
 
     rerender(<WorkbenchSaveStatus dirty={false} saveStatus="saved" />);
     expect(screen.getByRole("status")).toHaveTextContent("已保存");
+
+    rerender(
+      <WorkbenchSaveStatus
+        dirty
+        saveStatus="error"
+        error="RESUME_PDF_ASSETS_TOO_LARGE"
+      />,
+    );
+    expect(screen.getByRole("status"))
+      .toHaveTextContent("保存失败 · 简历中引用的图片总大小不能超过 10MB");
   });
 
   it("顶部保存简历按钮触发主记录保存并在保存期间禁用重复操作", async () => {
@@ -523,6 +536,13 @@ describe("ResumeWorkbench 版本上限提示", () => {
 
   it("其他错误继续使用通用失败提示", () => {
     expect(versionOperationErrorMessage(new Error("HTTP_500"), "create")).toBeNull();
+  });
+
+  it("恢复版本时展示图片契约错误", () => {
+    const error = new ApiRequestError(413, "RESUME_PDF_ASSETS_TOO_LARGE");
+
+    expect(versionOperationErrorMessage(error, "restore"))
+      .toBe("简历中引用的图片总大小不能超过 10MB");
   });
 });
 

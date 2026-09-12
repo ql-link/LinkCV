@@ -1,0 +1,127 @@
+.ui-feedback-notice {
+  --feedback-notice-border: color-mix(in srgb, var(--ui-success) 32%, var(--ui-border));
+  --feedback-notice-background: var(--ui-success-subtle);
+  --feedback-notice-foreground: var(--ui-success);
+  box-sizing: border-box;
+  display: grid;
+  width: min(492px, 100%);
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  border: 1px solid var(--feedback-notice-border);
+  border-radius: 10px;
+  background: var(--feedback-notice-background);
+  padding: 9px 16px 10px;
+  color: var(--feedback-notice-foreground);
+  box-shadow: var(--ui-shadow-xs);
+}
+
+.ui-feedback-notice.has-action {
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+}
+
+.ui-feedback-notice-action {
+  align-self: center;
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.ui-feedback-notice-action .ui-button {
+  min-height: 28px;
+  padding-inline: 0;
+  color: inherit;
+  font-weight: 650;
+}
+
+.ui-feedback-notice.is-floating {
+  position: fixed;
+  top: clamp(20px, 8vh, 72px);
+  left: 50%;
+  z-index: 140;
+  width: min(492px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  box-shadow: var(--shadow-toast);
+  animation: ui-feedback-notice-enter 220ms var(--ui-ease-standard) both;
+  transition: opacity 220ms var(--ui-ease-standard), transform 220ms var(--ui-ease-standard);
+}
+
+.ui-feedback-notice.is-floating.is-fading {
+  opacity: 0;
+  transform: translate(-50%, -6px);
+}
+
+.ui-feedback-notice.is-info {
+  --feedback-notice-border: color-mix(in srgb, var(--ui-accent) 42%, var(--ui-border));
+  --feedback-notice-background: var(--ui-accent-subtle);
+  --feedback-notice-foreground: color-mix(in srgb, var(--ui-accent) 70%, var(--ui-foreground));
+}
+
+.ui-feedback-notice.is-warning {
+  --feedback-notice-border: color-mix(in srgb, var(--ui-warning) 36%, var(--ui-border));
+  --feedback-notice-background: var(--ui-warning-subtle);
+  --feedback-notice-foreground: var(--ui-warning);
+}
+
+.ui-feedback-notice.is-error {
+  --feedback-notice-border: color-mix(in srgb, var(--ui-destructive) 38%, var(--ui-border));
+  --feedback-notice-background: var(--ui-destructive-subtle);
+  --feedback-notice-foreground: var(--ui-destructive);
+}
+
+.ui-feedback-notice-icon {
+  margin-top: 7px;
+  flex: 0 0 auto;
+}
+
+.ui-feedback-notice-copy {
+  min-width: 0;
+}
+
+.ui-feedback-notice-copy > strong {
+  display: block;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 20px;
+}
+
+.ui-feedback-notice-description {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 1px;
+  color: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.ui-feedback-notice-description .ui-button {
+  min-height: 28px;
+  padding-inline: 0;
+  color: inherit;
+  font-weight: 650;
+}
+
+@keyframes ui-feedback-notice-enter {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@media (max-width: 520px) {
+  .ui-feedback-notice,
+  .ui-feedback-notice.is-floating {
+    border-radius: 9px;
+    padding-inline: 14px;
+  }
+
+  .ui-feedback-notice.is-floating {
+    top: max(16px, env(safe-area-inset-top));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-feedback-notice.is-floating { animation: none; }
+}

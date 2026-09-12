@@ -25,6 +25,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import { flushSync } from "react-dom";
 import type { Instance as TippyInstance } from "tippy.js";
 import { api, ApiRequestError, type ResumeTemplate } from "../../api/client";
+import { resumeImageContractErrorMessage } from "./resumeImageLimits";
 import {
   Button,
   ConfirmDialog,
@@ -34,6 +35,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  FeedbackNotice,
   IconButton,
   Input,
   Label,
@@ -60,6 +62,8 @@ import {
   type CommandMenuState,
 } from "./slashCommand";
 import { VersionDiffDialog } from "./VersionDiffDialog";
+import { evaluateResumeCompleteness } from "./resumeCompleteness";
+import { ResumeCompletenessAction, ResumeCompletenessPanel } from "./ResumeCompletenessPanel";
 import { TemplatePreviewDialog } from "../templates/TemplatePreviewDialog";
 import { PaginationExtension } from "./paginationPlugin";
 import {
@@ -82,7 +86,7 @@ import {
   type ResumePresentationRead,
 } from "../../api/resumeContract";
 
-type DrawerMode = "settings" | "history" | "agent" | null;
+type DrawerMode = "settings" | "history" | "quality" | "agent" | null;
 
 type AgentFloatingPosition = { left: number; top: number };
 type AgentFloatingBounds = { width: number; height: number; entryWidth: number; entryHeight: number };
@@ -126,19 +130,15 @@ type WorkbenchTitleInputProps = {
 };
 
 export function WorkbenchTitleInput({ value, disabled, onChange }: WorkbenchTitleInputProps) {
-  const [focused, setFocused] = useState(false);
-  const displayValue = focused ? value : truncateWorkbenchTitle(value);
-  const truncated = displayValue !== value;
+  const truncated = truncateWorkbenchTitle(value) !== value;
 
   return (
     <input
       autoComplete="off"
       className="workbench-title"
       name="resume-title"
-      value={displayValue}
+      value={value}
       onChange={(event) => onChange(event.target.value)}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
       aria-label="简历标题"
       disabled={disabled}
       title={truncated ? value : undefined}
@@ -406,7 +406,7 @@ export function AgentFloatingEntry({ open, onToggle }: { open: boolean; onToggle
   );
 }
 
-type ToastState = { label: string } | null;
+type ToastState = { kind: "info" | "success" | "warning" | "error"; label: string } | null;
 export type { PageArrangement } from "./pageArrangementTransition";
 
 const EMPTY_IMPORT_WARNINGS: string[] = [];
@@ -539,6 +539,10 @@ function versionTime(value: string) {
 }
 
 export function versionOperationErrorMessage(error: unknown, operation: "create" | "restore") {
+  if (error instanceof ApiRequestError) {
+    const imageError = resumeImageContractErrorMessage(error.message);
+    if (imageError) return imageError;
+  }
   if (operation !== "create" || !(error instanceof ApiRequestError) || error.message !== "RESUME_VERSION_LIMIT_REACHED") {
     return null;
   }
@@ -797,9 +801,10 @@ function WorkbenchSettingsSection({
 type WorkbenchSaveStatusProps = {
   saveStatus: "idle" | "saving" | "saved" | "error";
   dirty: boolean;
+  error?: string | null;
 };
 
-export function WorkbenchSaveStatus({ saveStatus, dirty }: WorkbenchSaveStatusProps) {
+export function WorkbenchSaveStatus({ saveStatus, dirty, error }: WorkbenchSaveStatusProps) {
   const kind = saveStatus === "saving"
     ? "saving"
     : saveStatus === "error"
@@ -807,10 +812,11 @@ export function WorkbenchSaveStatus({ saveStatus, dirty }: WorkbenchSaveStatusPr
       : dirty
         ? "editing"
         : "saved";
+  const imageError = resumeImageContractErrorMessage(error);
   const label = kind === "saving"
     ? "保存中…"
     : kind === "error"
-      ? "保存失败 · 请重试"
+      ? `保存失败 · ${imageError ?? "请重试"}`
       : kind === "editing"
         ? "编辑中"
         : "已保存";
@@ -1089,6 +1095,7 @@ export function ResumeWorkbench() {
   const previewScale = useResumeStore((state) => state.previewScale);
   const setPreviewScale = useResumeStore((state) => state.setPreviewScale);
   const saveStatus = useResumeStore((state) => state.saveStatus);
+  const saveError = useResumeStore((state) => state.error);
   const dirty = useResumeStore((state) => state.dirty);
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
   const versions = useResumeStore((state) => state.versions);
@@ -1142,6 +1149,7 @@ export function ResumeWorkbench() {
   const lastPageAnchorRef = useRef<ReturnType<typeof capturePageViewportAnchor> | null>(null);
   const arrangementLayoutRunRef = useRef(0);
   const agentDrawerResizeRef = useRef<{ pointerId: number; clientX: number; width: number; currentWidth: number } | null>(null);
+  const completeness = useMemo(() => evaluateResumeCompleteness(markdown), [markdown]);
 
   const persistAgentDrawerWidth = useCallback((width: number) => {
     const nextWidth = clampAgentDrawerWidth(width, window.innerWidth);
@@ -1263,6 +1271,9 @@ export function ResumeWorkbench() {
   }, []);
 
   const editor = useEditor({
+    // The editor view owns document transactions; surrounding controls subscribe
+    // explicitly, so an extra React render per keystroke only destabilizes input.
+    shouldRerenderOnTransaction: false,
     extensions: [
       ...resumeEditorExtensions,
       PaginationExtension,
@@ -1312,7 +1323,7 @@ export function ResumeWorkbench() {
 
     void loadVersions()
       .catch(() => {
-        if (!cancelled) setToast({ label: "版本记录暂时无法读取" });
+        if (!cancelled) setToast({ kind: "error", label: "版本记录暂时无法读取" });
       });
 
     return () => {
@@ -1424,7 +1435,7 @@ export function ResumeWorkbench() {
     setVersionRenameError(null);
     try {
       await renameStoredVersion(versionNo, nextName);
-      setToast({ label: `已将版本 ${versionNo} 重命名为“${nextName}”` });
+      setToast({ kind: "success", label: `已将版本 ${versionNo} 重命名为“${nextName}”` });
     } catch (error) {
       setVersionRenameError({ versionNo, message: versionRenameErrorMessage(error) });
       throw error;
@@ -1436,7 +1447,13 @@ export function ResumeWorkbench() {
   const saveResume = async () => {
     if (!editor || saveStatus === "saving" || versionOperationPending || versionNameSubmitting) return;
     await saveCurrentResume();
-    setToast({ label: useResumeStore.getState().saveStatus === "error" ? "简历保存失败，请稍后重试" : "简历已保存" });
+    const savedState = useResumeStore.getState();
+    const saveFailed = savedState.saveStatus === "error";
+    const imageError = resumeImageContractErrorMessage(savedState.error);
+    setToast({
+      kind: saveFailed ? "error" : "success",
+      label: saveFailed ? imageError ?? "简历保存失败，请稍后重试" : "简历已保存",
+    });
   };
 
   const exportPdf = () => {
@@ -1445,7 +1462,7 @@ export function ResumeWorkbench() {
     const controller = new AbortController();
     pdfExportAbortRef.current = controller;
     setPdfExportPending(true);
-    setToast({ label: "正在生成 PDF…" });
+    setToast({ kind: "info", label: "正在生成 PDF…" });
     void exportResumePdf({
       resumeId: activeResumeId,
       title,
@@ -1457,13 +1474,14 @@ export function ResumeWorkbench() {
           activeResumeId: state.activeResumeId,
           lockVersion: state.lockVersion,
           saveStatus: state.saveStatus,
+          saveError: state.error,
         };
       },
     })
-      .then(() => setToast({ label: "PDF 已下载" }))
+      .then(() => setToast({ kind: "success", label: "PDF 已下载" }))
       .catch((error: unknown) => {
         if (!isResumePdfExportCancelled(error)) {
-          setToast({ label: resumePdfExportErrorMessage(error) });
+          setToast({ kind: "error", label: resumePdfExportErrorMessage(error) });
         }
       })
       .finally(() => {
@@ -1492,19 +1510,23 @@ export function ResumeWorkbench() {
     setVersionNameError(null);
     setVersionNameSubmitting(true);
     await saveCurrentResume();
-    if (useResumeStore.getState().saveStatus === "error") {
-      setToast({ label: "保存失败，请稍后重试" });
+    const savedState = useResumeStore.getState();
+    if (savedState.saveStatus === "error") {
+      setToast({
+        kind: "error",
+        label: resumeImageContractErrorMessage(savedState.error) ?? "保存失败，请稍后重试",
+      });
       setVersionNameSubmitting(false);
       return;
     }
     try {
       await createVersion(normalizedName);
       setVersionNameDialogOpen(false);
-      setToast({ label: "已保存新版本" });
+      setToast({ kind: "success", label: "已保存新版本" });
     } catch (error) {
       const limitMessage = versionOperationErrorMessage(error, "create");
       if (limitMessage) setDrawerMode("history");
-      setToast({ label: limitMessage ?? "当前内容已保存，但版本创建失败" });
+      setToast({ kind: "warning", label: limitMessage ?? "当前内容已保存，但版本创建失败" });
     } finally {
       setVersionNameSubmitting(false);
     }
@@ -1517,10 +1539,13 @@ export function ResumeWorkbench() {
       await restoreStoredVersion(versionNo);
       const restored = useResumeStore.getState().editorContent;
       setRestoredEditorContent(editor, restored);
-      setToast({ label: `已恢复 ${versionTime(createdAt)} 的版本` });
+      setToast({ kind: "success", label: `已恢复 ${versionTime(createdAt)} 的版本` });
       return true;
-    } catch {
-      setToast({ label: "版本恢复失败，请稍后重试" });
+    } catch (error) {
+      setToast({
+        kind: "error",
+        label: versionOperationErrorMessage(error, "restore") ?? "版本恢复失败，请稍后重试",
+      });
       return false;
     } finally {
       setWorkbenchEditorEditable(editor, true);
@@ -1532,9 +1557,9 @@ export function ResumeWorkbench() {
     try {
       await deleteStoredVersion(pendingVersionDelete.versionNo);
       setPendingVersionDelete(null);
-      setToast({ label: "旧版本已删除，现在可以保存新版本" });
+      setToast({ kind: "success", label: "旧版本已删除，现在可以保存新版本" });
     } catch {
-      setToast({ label: "版本删除失败，请稍后重试" });
+      setToast({ kind: "error", label: "版本删除失败，请稍后重试" });
     }
   };
 
@@ -1542,8 +1567,12 @@ export function ResumeWorkbench() {
     pdfExportAbortRef.current?.abort();
     if (dirty) {
       await saveCurrentResume();
-      if (useResumeStore.getState().error) {
-        setToast({ label: "保存失败，已留在当前页面，请重试" });
+      const savedState = useResumeStore.getState();
+      if (savedState.error) {
+        setToast({
+          kind: "error",
+          label: resumeImageContractErrorMessage(savedState.error) ?? "保存失败，已留在当前页面，请重试",
+        });
         return;
       }
     }
@@ -1553,8 +1582,12 @@ export function ResumeWorkbench() {
 
   const prepareAgentProposalConfirmation = async () => {
     await saveCurrentResume();
-    if (useResumeStore.getState().error) {
-      setToast({ label: "当前草稿保存失败，提案没有应用" });
+    const savedState = useResumeStore.getState();
+    if (savedState.error) {
+      setToast({
+        kind: "error",
+        label: resumeImageContractErrorMessage(savedState.error) ?? "当前草稿保存失败，提案没有应用",
+      });
       return false;
     }
     return true;
@@ -1562,8 +1595,12 @@ export function ResumeWorkbench() {
 
   const prepareAgentRun = async () => {
     await saveCurrentResume();
-    if (useResumeStore.getState().error) {
-      setToast({ label: "当前草稿保存失败，智能助手没有读取所选内容" });
+    const savedState = useResumeStore.getState();
+    if (savedState.error) {
+      setToast({
+        kind: "error",
+        label: resumeImageContractErrorMessage(savedState.error) ?? "当前草稿保存失败，智能助手没有读取所选内容",
+      });
       return false;
     }
     return true;
@@ -1573,7 +1610,7 @@ export function ResumeWorkbench() {
     if (!activeResumeId || !editor) return;
     await loadResume(activeResumeId);
     editor.commands.setContent(useResumeStore.getState().editorContent);
-    setToast({ label: "智能修改已应用，并保存为可恢复版本" });
+    setToast({ kind: "success", label: "智能修改已应用，并保存为可恢复版本" });
   };
 
   const importWarnings = activeResumeId
@@ -1590,10 +1627,15 @@ export function ResumeWorkbench() {
           </div>
           <div className="workbench-header-center">
             <WorkbenchTitleInput value={title} onChange={setTitle} disabled={versionOperationPending} />
-            <WorkbenchSaveStatus dirty={dirty} saveStatus={saveStatus} />
+            <WorkbenchSaveStatus dirty={dirty} saveStatus={saveStatus} error={saveError} />
           </div>
           <div className="workbench-header-actions">
             <div className="workbench-header-tool-group" role="group" aria-label="编辑面板">
+              <ResumeCompletenessAction
+                score={completeness.score}
+                panelOpen={drawerMode === "quality"}
+                onToggle={() => setDrawerMode((mode) => mode === "quality" ? null : "quality")}
+              />
               <WorkbenchDesignAction
                 panelOpen={drawerMode === "settings" || drawerMode === "history"}
                 onToggle={() => setDrawerMode((mode) => mode === "settings" ? null : "settings")}
@@ -1606,9 +1648,12 @@ export function ResumeWorkbench() {
                   try {
                     await applyTemplate(template.id, editor.getJSON());
                     editor.commands.setContent(useResumeStore.getState().editorContent, false);
-                    setToast({ label: `已切换为“${template.name}”，内容已按新模板重新排版` });
-                  } catch {
-                    setToast({ label: "模板切换失败，当前简历未被替换" });
+                    setToast({ kind: "success", label: `已切换为“${template.name}”，内容已按新模板重新排版` });
+                  } catch (error) {
+                    const imageError = error instanceof ApiRequestError
+                      ? resumeImageContractErrorMessage(error.message)
+                      : null;
+                    setToast({ kind: "error", label: imageError ?? "模板切换失败，当前简历未被替换" });
                     throw new Error("TEMPLATE_APPLY_FAILED");
                   }
                 }}
@@ -1652,7 +1697,7 @@ export function ResumeWorkbench() {
             resumeId={activeResumeId}
             state={commandMenu}
             onClose={() => setCommandMenu(null)}
-            onNotice={(label) => setToast({ label })}
+            onNotice={(label) => setToast({ kind: "warning", label })}
           />
         )}
 
@@ -1685,14 +1730,14 @@ export function ResumeWorkbench() {
                 id="workbench-side-panel"
                 className={`workbench-drawer${drawerMode === "agent" ? " is-agent" : ""}`}
                 role="region"
-                aria-label={drawerMode === "agent" ? undefined : "简历编辑面板"}
-                aria-labelledby={drawerMode === "agent" ? "workbench-agent-title" : undefined}
+                aria-label={drawerMode === "agent" || drawerMode === "quality" ? undefined : "简历编辑面板"}
+                aria-labelledby={drawerMode === "agent" ? "workbench-agent-title" : drawerMode === "quality" ? "workbench-quality-title" : undefined}
                 initial={{ x: drawerMode === "agent" ? 390 : 392 }}
                 animate={{ x: 0 }}
                 exit={{ x: drawerMode === "agent" ? 390 : 392 }}
                 transition={{ type: "spring", bounce: 0, duration: 0.26 }}
               >
-                {drawerMode !== "agent" && (
+                {(drawerMode === "settings" || drawerMode === "history") && (
                   <WorkbenchPanelSwitcher
                     activePanel={drawerMode}
                     onSettings={() => setDrawerMode("settings")}
@@ -1828,6 +1873,11 @@ export function ResumeWorkbench() {
                     ))}
                     <p className="workbench-version-footnote">自动保存不会创建正式版本；恢复会直接替换当前编辑内容。</p>
                   </div>
+                ) : drawerMode === "quality" ? (
+                  <ResumeCompletenessPanel
+                    result={completeness}
+                    onClose={() => setDrawerMode(null)}
+                  />
                 ) : activeResumeId ? (
                   <>
                     <div
@@ -1914,9 +1964,7 @@ export function ResumeWorkbench() {
             </motion.div>
           )}
           {toast && (
-            <motion.div className="workbench-toast" role="status" initial={{ opacity: 0, scale: 0.9, y: -8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.94, y: -6 }}>
-              <CircleCheck size={18} />{toast.label}
-            </motion.div>
+            <FeedbackNotice kind={toast.kind} placement="floating">{toast.label}</FeedbackNotice>
           )}
         </AnimatePresence>
 

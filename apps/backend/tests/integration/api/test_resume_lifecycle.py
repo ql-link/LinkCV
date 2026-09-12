@@ -269,6 +269,40 @@ def test_update_persists_canonical_ordered_list_start() -> None:
         assert saved["start"] == 3
 
 
+def test_update_persists_empty_canonical_list_item() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        resume = create_resume(client, app).json()["resume"]
+        data = resume["data"]
+        data["sections"].append({
+            "node_id": "node_section1111111111",
+            "source_refs": [],
+            "semantic_kind": "work",
+            "title": None,
+            "entries": [],
+            "blocks": [{
+                "node_id": "node_list111111111111",
+                "block_type": "ordered_list",
+                "start": 1,
+                "items": [{
+                    "node_id": "node_item111111111111",
+                    "source_refs": [],
+                    "runs": [],
+                }],
+            }],
+        })
+
+        response = client.put(
+            f"/api/resumes/{resume['id']}",
+            json={"data": data, "base_lock_version": resume["lock_version"]},
+        )
+
+        assert response.status_code == 200
+        saved = response.json()["resume"]["data"]["sections"][0]["blocks"][0]
+        assert saved["items"][0]["runs"] == []
+
+
 def test_semantic_classification_returns_scoped_suggestion_without_writing_resume() -> None:
     app = build_app()
     service = FakeSemanticClassificationService()
@@ -812,22 +846,28 @@ def test_overlong_resume_id_is_rejected_without_integer_conversion() -> None:
         assert response.json() == {"error": "RESUME_NOT_FOUND"}
 
 
-def test_smart_one_page_is_persisted_and_restored_with_versions() -> None:
+def test_presentation_settings_are_persisted_and_restored_with_versions() -> None:
     app = build_app()
     with TestClient(app) as client:
         register(client)
         resume = create_resume(client, app).json()["resume"]
         resume_id = resume["id"]
         style = resume["style"]
+        template_key = style["template_snapshot"]["template_key"]
         assert style["portable"]["smart_one_page"] is False
 
         style["portable"]["smart_one_page"] = True
+        style["template_scoped"][template_key]["font_family"] = "LXGW WenKai"
         updated = client.put(
             f"/api/resumes/{resume_id}",
             json={"style": style, "base_lock_version": 1},
         )
         assert updated.status_code == 200
         assert updated.json()["resume"]["style"]["portable"]["smart_one_page"] is True
+        assert (
+            updated.json()["resume"]["style"]["template_scoped"][template_key]["font_family"]
+            == "LXGW WenKai"
+        )
         version = client.post(f"/api/resumes/{resume_id}/versions")
         assert version.status_code == 201
         assert version.json()["version"]["version_no"] == 2
@@ -841,6 +881,10 @@ def test_smart_one_page_is_persisted_and_restored_with_versions() -> None:
 
         assert restored.status_code == 200
         assert restored.json()["resume"]["style"]["portable"]["smart_one_page"] is True
+        assert (
+            restored.json()["resume"]["style"]["template_scoped"][template_key]["font_family"]
+            == "LXGW WenKai"
+        )
 
 
 def test_update_uses_server_template_snapshot_and_retains_known_scoped_settings() -> None:

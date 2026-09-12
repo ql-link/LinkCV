@@ -386,7 +386,6 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState<Notice>(null);
   const [syncFailure, setSyncFailure] = useState<string | null>(null);
-  const [fading, setFading] = useState(false);
   const [conflicts,setConflicts] = useState<DatasetConflict[]>([]);
   const [pendingReplacementIds,setPendingReplacementIds] = useState<Set<string>>(new Set());
   const [menuDatasetId, setMenuDatasetId] = useState<string | null>(null);
@@ -398,6 +397,7 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
   const [selectedDatasetIds, setSelectedDatasetIds] = useState<Set<string>>(() => new Set());
   const [bulkDeleteTarget, setBulkDeleteTarget] = useState<DatasetRecord[] | null>(null);
   const [busyAction, setBusyAction] = useState<DatasetAction>(null);
+  const [fading, setFading] = useState(false);
 
   const [folders, setFolders] = useState<DatasetFolder[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string>(() => initialFolderId || "all");
@@ -1130,9 +1130,10 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
           )}
 
           {syncFailure && (
-            <div className="datasets-toast dataset-sync-toast">
-              <FeedbackNotice kind="error">
-                <span>{syncFailure}</span>
+            <FeedbackNotice
+              kind="error"
+              placement="floating"
+              action={(
                 <Button
                   variant="link"
                   size="sm"
@@ -1140,8 +1141,10 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
                 >
                   重新刷新
                 </Button>
-              </FeedbackNotice>
-            </div>
+              )}
+            >
+              <span>{syncFailure}</span>
+            </FeedbackNotice>
           )}
 
           {!loadFailed && (
@@ -1519,12 +1522,10 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
         />
       )}
 
-      {notice && (
-        <div className={`datasets-toast${fading ? " is-fading" : ""}`}>
-          <FeedbackNotice kind={notice.kind}>
-            <span className="dataset-notice-message" title={notice.message}>{notice.message}</span>
-          </FeedbackNotice>
-        </div>
+      {notice && !syncFailure && (
+        <FeedbackNotice className={fading ? "is-fading" : undefined} kind={notice.kind} placement="floating">
+          <span className="dataset-notice-message" title={notice.message}>{notice.message}</span>
+        </FeedbackNotice>
       )}
 
       {conflicts[0] && <DatasetUploadConflictDialog key={conflicts[0].id} conflict={conflicts[0]} onDone={()=>setConflicts(current=>current.slice(1))}/>}

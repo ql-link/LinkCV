@@ -1,15 +1,33 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from linkcv.core.config import Settings
 from linkcv.core.errors import ApiError
+from linkcv.modules.resumes import pdf_service
+from linkcv.modules.resumes.image_limits import (
+    MAX_RESUME_IMAGE_BYTES,
+    MAX_RESUME_PDF_IMAGE_TOTAL_BYTES,
+)
 from linkcv.modules.resumes.pdf_service import (
     RENDER_SLOTS,
     ResumePdfRenderer,
     _object_key,
     build_render_assets,
+    validate_resume_pdf_asset_contract,
 )
+
+
+def test_renderer_does_not_require_unix_account_apis(monkeypatch) -> None:
+    monkeypatch.setattr(pdf_service, "pwd", None)
+    monkeypatch.delattr(pdf_service.os, "geteuid", raising=False)
+
+    assert ResumePdfRenderer._runtime_user_available() is False
+    assert ResumePdfRenderer._command(Path("renderer.cjs")) == [
+        "node",
+        "renderer.cjs",
+    ]
 
 
 def renderer(tmp_path: Path, source: str) -> ResumePdfRenderer:
@@ -100,6 +118,32 @@ class RecordingStorage:
         raise AssertionError("external or unowned assets must not be fetched")
 
 
+class MemoryResponse:
+    def __init__(self, content: bytes) -> None:
+        self.content = content
+
+    def stream(self, size: int):
+        for offset in range(0, len(self.content), size):
+            yield self.content[offset : offset + size]
+
+    def close(self) -> None:
+        pass
+
+    def release_conn(self) -> None:
+        pass
+
+
+class MemoryStorage:
+    def __init__(self, objects: dict[str, bytes]) -> None:
+        self.objects = objects
+
+    def get(self, object_key: str) -> MemoryResponse:
+        return MemoryResponse(self.objects[object_key])
+
+    def stat(self, object_key: str) -> SimpleNamespace:
+        return SimpleNamespace(size=len(self.objects[object_key]))
+
+
 def test_external_asset_urls_are_ignored_without_network_fetches() -> None:
     storage = RecordingStorage()
     assets = build_render_assets(
@@ -129,3 +173,76 @@ def test_unowned_private_asset_fails_closed_without_fetching() -> None:
     assert raised.value.status_code == 422
     assert raised.value.code == "RESUME_PDF_IMAGE_UNAVAILABLE"
     assert storage.requested == []
+
+
+def test_pdf_accepts_an_image_within_the_shared_upload_limit() -> None:
+    object_key = "users/7/resumes/11/assets/photo.png"
+    content = b"x" * MAX_RESUME_IMAGE_BYTES
+
+    assets = build_render_assets(
+        MemoryStorage({object_key: content}),  # type: ignore[arg-type]
+        {"image": "/api/resumes/11/assets/photo.png"},
+        user_id=7,
+        resume_id=11,
+    )
+
+    assert assets["/api/resumes/11/assets/photo.png"].startswith(
+        "data:image/png;base64,"
+    )
+
+
+def test_pdf_rejects_an_image_above_the_shared_upload_limit() -> None:
+    object_key = "users/7/resumes/11/assets/photo.png"
+    content = b"x" * (MAX_RESUME_IMAGE_BYTES + 1)
+
+    with pytest.raises(ApiError) as raised:
+        build_render_assets(
+            MemoryStorage({object_key: content}),  # type: ignore[arg-type]
+            {"image": "/api/resumes/11/assets/photo.png"},
+            user_id=7,
+            resume_id=11,
+        )
+
+    assert raised.value.status_code == 413
+    assert raised.value.code == "RESUME_PDF_ASSET_TOO_LARGE"
+
+
+def test_snapshot_rejects_multiple_images_above_pdf_total_limit() -> None:
+    first_key = "users/7/resumes/11/assets/first.png"
+    second_key = "users/7/resumes/11/assets/second.jpg"
+    first_size = MAX_RESUME_PDF_IMAGE_TOTAL_BYTES // 2
+    storage = MemoryStorage(
+        {
+            first_key: b"x" * first_size,
+            second_key: b"y" * (MAX_RESUME_PDF_IMAGE_TOTAL_BYTES - first_size + 1),
+        }
+    )
+
+    with pytest.raises(ApiError) as raised:
+        validate_resume_pdf_asset_contract(
+            storage,  # type: ignore[arg-type]
+            {
+                "first": "/api/resumes/11/assets/first.png",
+                "second": "/api/resumes/11/assets/second.jpg",
+            },
+            user_id=7,
+            resume_id=11,
+        )
+
+    assert raised.value.status_code == 413
+    assert raised.value.code == "RESUME_PDF_ASSETS_TOO_LARGE"
+
+
+def test_snapshot_counts_duplicate_image_references_once() -> None:
+    object_key = "users/7/resumes/11/assets/photo.png"
+    storage = MemoryStorage({object_key: b"x" * MAX_RESUME_IMAGE_BYTES})
+
+    validate_resume_pdf_asset_contract(
+        storage,  # type: ignore[arg-type]
+        {
+            "avatar": "/api/resumes/11/assets/photo.png",
+            "duplicate": ["/api/resumes/11/assets/photo.png"],
+        },
+        user_id=7,
+        resume_id=11,
+    )

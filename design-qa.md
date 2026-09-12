@@ -1,4 +1,214 @@
+# 月排期视觉对照 — 2026-09-10
+
+## Evidence
+
+- Source visual truth: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-a4ee59dc-f0ff-4b66-b170-ac4b3a2e4e82.png`，`1325 × 805` px。
+- Implementation screenshot: Codex in-app Browser tab 3 的浏览器渲染截图；该接口返回内联 PNG，不提供可持久化文件路径。
+- Viewport: `1280 × 768` CSS px；两侧均按 1x 桌面比例观察，按日历外框归一化比较。
+- State: 2026 年 9 月、固定六周、跨月日期可见、包含多个彩色面试事件和当天状态。
+
+## Findings
+
+- 当前没有待处理 P0、P1 或 P2。
+- 字体与排版：星期标题、日期数字、事件标题和时间范围使用项目字体栈；事件条为 28px 最小高度，标题 12px、时间 11px，保持单行省略。
+- 间距与布局：顶部工具栏、星期栏和六个等高周行填满同一圆角外框；日期位于右下角，事件从单元格顶部开始排列。
+- 颜色与 Token：月视图所有边框统一使用 `--ec-grid-line-color`；跨月单元格保持白色并弱化数字；当天保留深色日期圆形和浅色底边提示。
+- 图片与资产：该视图没有图片资产；本次没有新增图标、CSS 图形、占位图或替代资产。
+- 文案与内容：继续遵循此前已确认的中文标签、周一起始日、移除右侧新建按钮，以及“左侧重色条 + 右侧浅背景”的事件样式，不按参考图回退这些产品约束。
+
+## Focused comparison
+
+- 星期标题区、日期单元格、当天状态和事件条均在浏览器中单独核对；重要细节在完整截图中清晰可读，不需要额外裁切图。
+
+## Comparison history
+
+1. 首次对照发现 P1：月视图未覆盖默认边框颜色，网格显示为黑色重线；同时发现 P2：月视图包装层不伸展，底部存在空白。修复为统一浅色边框并让六周网格填满剩余高度。
+2. 第二次对照发现 P2：事件条高度和文字过小，且月视图隐藏时间。修复为 28px 事件条并恢复时间范围。
+3. 第三次浏览器渲染未发现剩余 P0、P1 或 P2。
+
+## Implementation checklist
+
+- [x] 统一月视图浅色网格线。
+- [x] 六周网格等高填满框架。
+- [x] 跨月日期弱化且不使用整块灰底。
+- [x] 保留当天圆形日期和底边提示。
+- [x] 增加月视图事件条密度与时间可读性。
+
+## Follow-up polish
+
+- P3：参考图事件使用彩色圆点，本项目保留此前确认的左侧重色条，属于预期差异。
+
+final result: passed
+
+---
+
 # Design QA
+
+## 求职中心页头与排期控件 — 2026-09-06
+
+### Evidence
+
+- Source visual truth: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-5787d624-cbcb-400c-9aa2-1c7d066cd99f.png`（`377 × 230` px，标出“议程”和“时间网格”入口；用户明确要求这两个视图的线条颜色与此前周视图一样减淡）。
+- Implementation route: `http://127.0.0.1:5173/career/applications` 与 `http://127.0.0.1:5173/career/schedule`，Chrome 已登录桌面状态。
+- Implementation screenshot: 当前任务中的 CUA 最终浏览器截图；该浏览器接口返回内联 PNG，没有提供可持久化文件路径。
+- Viewport: `1920 × 1022` CSS px，device density `1`。来源为局部裁切，因此使用完整实现截图确认页面结构，再分别聚焦二级导航与排期工具栏进行归一化比较。
+- State: “面试排期”选中，浅色主题，真实排期数据已加载；同时核对视图菜单关闭和展开状态。
+
+### Findings
+
+没有剩余 P0/P1/P2 问题。
+
+- 字体与排版：“今天”“周”、日期标题和二级导航使用项目系统字体及与来源一致的字重层级，菜单项目保持清晰的 15px 正文字号。
+- 间距与布局：二级导航文字底部与橙色弧线之间保留可辨识空隙；弧线改为以文字标签自身定位，浏览器实测“面试排期”文字与弧线中心均为 `368.171875px`，横向偏差 `0px`，左侧圆点不再参与弧线居中计算。排期工具栏按“今天、周、上一周期、下一周期、日期标题”顺序紧凑排列。
+- 色彩与 Token：选中项使用 `#f97316` 橙色圆点、文字和短弧形下划线；未选中项使用浅灰圆点和次级文字色，符合来源层级。
+- 视图分隔线：议程的根边框、日期分组线与记录分隔线统一使用 `--ec-grid-line-color`，与周视图的浅灰网格 Token 一致；不需要资源排期后，“时间网格”入口及其专属样式已移除。
+- 图片与图标：二级导航恢复项目原有 Lucide `ListChecks` 与 `CalendarDays` 图标，尺寸均为 15px；选中图标随文字变为橙色，未选中图标保持灰色。翻页与下拉箭头继续使用项目既有图标，没有增加截图中不存在的装饰资产。
+- 文案：导航已统一为“今天”“周”“选择视图”，菜单项统一为“月、周、日、5 天、议程”，日期标题采用中文年月日范围格式。
+- 控件外观：“今天”与前后翻页按钮均为透明背景、零边框、零阴影；“周”在菜单关闭且鼠标未悬停时同样为透明背景，仅在悬停或菜单展开时显示浅灰反馈；日历右侧“安排面试”按钮及其工具栏占位已完整移除。
+
+### Interaction Evidence
+
+- 在真实 `/career/schedule` 周视图同一空白坐标执行浏览器点击：单击后弹窗数 `0`、临时排期数 `0`；双击后出现“新建面试”弹窗及 `12:00–12:30` 临时排期。
+- 默认关闭态实测“周”为 `background: rgba(0, 0, 0, 0)`；点击后展开态为 `rgba(237, 241, 245, 1)`；选择“周”关闭菜单并移开鼠标后恢复为透明。
+- 已登录 Chrome 中重新加载 `/career/schedule`，可访问树与真实 DOM 中“安排面试”按钮数量均为 `0`，周排期网格数量为 `1`；完整页面截图确认右侧空间自然留白，没有残留按钮边框或空工具栏。
+- 中文化后在真实页面核对关闭态显示“今天 / 周 / 2026年8月31日 – 9月6日”；展开视图菜单后五个选项依次显示“月、周、日、5 天、议程”，无英文视图名称或资源排期入口残留。
+- 在真实“面试排期”和“求职记录”两个路由分别截图：二级导航文字左侧均显示语义图标；切换路由后当前项的图标、文字与弧形下划线同步变橙，另一项图标保持灰色，导航位置与间距未漂移。
+- 在真实页面切换“议程”并截图：议程日期分组线与记录分隔线均呈现与周视图一致的浅灰细线，内容与滚动区域未受影响。
+- 移除资源排期后重新加载排期页并展开菜单，真实 DOM 与截图中只剩“月、周、日、5 天、议程”五项，“时间网格”不存在，菜单高度自然收拢。
+- 拖动选择入口仍保留，单击规则调整没有移除按住空白区域拖动创建时间范围的能力。
+- 浏览器控制台 error：0。
+
+### Comparison History
+
+1. 首次实现完成结构上移，但沿用了偏棕的 warning 色，与来源亮橙选中态存在 P2 色差。
+2. 修复为页头局部 `#f97316`，同时让公文包边框、导航圆点、文字与下划线共享同一强调色。
+3. 修复后重新捕获完整求职记录页，并切换两个入口核对布局与状态；未发现剩余 P0/P1/P2。
+4. 用户进一步要求删除说明并居中标题；移除说明节点，为标题容器设置 38px 最小高度和垂直居中，再次捕获真实排期页。聚焦对照确认标题与图标中心线重合、导航结构未漂移，无新增 P0/P1/P2。
+5. 本轮首次捕获发现通用透明按钮样式仍给 Today 和 Week 回灌边框，并给前后翻页按钮回灌灰底，属于 P2 视觉偏差；同时二级导航下划线与文字过近。
+6. 将日历导航选择器改为精确匹配实际 `data-slot`，清除 Today 和翻页按钮的边框、背景与阴影，只保留 Week 的浅灰底；下移弧线后重新捕获关闭态和展开态，未发现剩余 P0/P1/P2。
+7. 用户指出弧线仍按“圆点＋文字”整体居中；将弧线伪元素从链接迁移到独立文字标签，并重新捕获排期页。浏览器测得文字与弧线中心差值 `0px`，问题已消除。
+8. 用户指出 Week 在未悬停时仍像被选中；移除关闭态常驻浅灰底，并避免菜单选择后返回焦点造成灰底残留。重新验证关闭、展开、再次关闭三个状态，背景依次为透明、浅灰、透明，无剩余 P0/P1/P2。
+9. 用户要求删除日历右侧“安排面试”按钮；移除按钮节点、空工具栏容器及专属样式，并把相关组件测试改为通过既有的空白时间双击入口打开新建弹窗。真实页面复核按钮数量为 `0`，日历数据与网格保持正常，无剩余 P0/P1/P2。
+10. 用户要求将排期左侧 Today、Week 等控件中文化；同步调整按钮、无障碍标签、完整视图菜单和各视图日期标题。真实页面分别捕获关闭态与菜单展开态，中文文案完整且布局未溢出，无剩余 P0/P1/P2。
+11. 用户要求把二级导航文字左侧圆点恢复为原有语义图标；用 `ListChecks` 和 `CalendarDays` 替换圆点，并恢复 15px 图标尺寸与选中态颜色继承。真实页面切换两个入口核对图标与激活状态，无剩余 P0/P1/P2。
+12. 用户指出“议程”和“时间网格”的线条颜色仍过重；为两个视图的结构边框统一应用周视图的 `--ec-grid-line-color`，并分别捕获真实视图核对。边框层级已统一，无剩余 P0/P1/P2。
+13. 用户确认不需要资源排期；从可用视图中移除 `resource`，同步删除资源视图的局部边框覆盖并更新菜单测试。真实页面展开菜单后确认只剩五个有效视图，无剩余 P0/P1/P2。
+
+### Follow-up Polish
+
+- P3：来源截图与当前开发数据的具体日期不同；这是数据状态差异，不属于控件样式偏差。
+
+final result: passed
+
+---
+
+## 求职记录看板响应式列宽与时间信息 — 2026-09-11
+
+### Evidence
+
+- Source visual truth: `/Users/jixu/.codex/generated_images/01a08ff6-0049-70f1-8e5b-61e5a0c93273/exec-90e0ad11-5566-4f03-9275-baaa39a75b64.png`，`1672 × 941` px；用户保留该六列舒适密度，并在后续反馈中明确将卡片底部改为左侧状态、右侧时间的单行布局，后续反馈优先于原图的双层结构。
+- Implementation route: `http://127.0.0.1:5174/career/applications`，当前工作树 Development profile，Chrome 已登录浅色主题。
+- Implementation screenshot path: 当前任务中的 CUA 最终内联 PNG；浏览器接口未提供可持久化文件路径。
+- Comparison input: 已在同一任务上下文打开来源原型与实现截图；按看板内容区归一化比较，不把来源省略的工作区页头视为差异。
+- Viewport and density: 默认 `1920 × 1078` CSS px、density `1`；响应式补充检查 `1440 × 900` CSS px、density `1`。
+- State: 真实 Dev 求职数据已加载，无弹层；默认横向滚动位置在最左侧。
+
+### Findings
+
+没有剩余 P0/P1/P2 问题。
+
+- 字体与排版：沿用 LinkCV 系统字体、公司 12px、岗位 15px、状态 12px 的既有层级；新增时间元数据为 11px、500 字重，保持可读且不抢状态层级，长岗位继续单行截断。
+- 间距与布局：默认 1920px 视口下看板内容宽 `1860px`，前六列各 `310px` 并全部完整可见，第七列从右侧边界开始；1440px 下列宽保持 `280px`，完整展示五列并横向滚动。卡片恢复为紧凑的 `118px` 高度，底部使用单行左右布局，状态靠左、时间靠右，并以 `8px` 弹性间距隔开。
+- 色彩与 Token：页面、卡片、边框、状态和元数据继续消费现有 `--ui-*` 与 `--career-state-*` Token；时间行使用 muted 文本色，没有引入原型外的新强调色。
+- 图片与图标：看板无栅格内容；时间使用项目现有 Lucide `Clock3`，拖动手柄和三点菜单保持原有图标与尺寸，没有用字符或 CSS 绘图替代。
+- 文案与内容：待投递显示“创建于”，筛选显示“投递于”，测评/笔试显示“截止”，面试显示起止时间或“尚未安排时间”，Offer 显示“获得 Offer”，已结束显示“结束于”；缺失时间均有明确兜底。
+- 聚焦对照：最终 1920px 捕获中卡片公司、岗位、状态、时钟及时间均清晰可辨；“正在进行/进行中”等状态稳定靠左，时间稳定靠右，没有互相覆盖，长岗位继续截断。真实数据的公司名称与原型示例不同，属于状态差异。
+
+### Interaction Evidence
+
+- 默认看板实测 `clientWidth=1860`、`scrollWidth=2170`，横向滚动仍有效，未隐藏后续阶段。
+- 卡片菜单可正常展开，显示“查看详情、修改分类、推进流程、终止求职”，按 Escape 可关闭。
+- 真实 Dev 数据已观察到创建时间、测评/笔试截止时间、无排期兜底和结束时间；Offer 时间由自动化测试覆盖，因为当前账号的 Offer 列为空。
+- 默认与 1440px 响应式视口均无页面级横向挤压或持久控件遮挡。
+- 浏览器控制台 error：0。
+
+### Automated Evidence
+
+- 定向组件测试：`142` 项通过，覆盖六类阶段时间及回归交互。
+- `npm run check:web`：`60` 个测试文件、`677` 项测试通过，设计规则、TypeScript、Vite 生产构建与 PDF CLI 构建通过。
+- `npm run check:docs`：通过。
+
+### Comparison History
+
+1. 首次实现后在 1920px 与 1440px 两个真实浏览器视口对照已确认原型的列密度、卡片双层信息和横向滚动；未发现 P0/P1/P2。
+2. 用户要求将状态与时间从上下结构改为左右结构；实现后重新捕获 1920px 已登录真实数据状态，恢复 `118px` 卡片高度并确认左右对齐、截断和六列密度均正常，没有新增 P0/P1/P2。
+
+### Follow-up Polish
+
+- P3：来源图用示例 Offer 卡片展示时间，而当前账号 Offer 列为空；当前阶段进入时间的视觉和文案由同一卡片组件与自动化用例确认。
+
+final result: passed
+
+---
+
+# 开放窗口与作答计划 Design QA
+
+- reference: `/Users/jixu/.codex/generated_images/01a08961-e9bf-7e43-86d2-819cb6049c14/exec-81852339-6b61-44ac-b8c8-cae2b8e697fd.png`
+- implementation: `http://127.0.0.1:5174/career/schedule`
+- viewport checked: desktop 1280 x 720
+- data checked: 5 条虚构开放窗口和 1 条个人作答计划
+
+## Comparison
+
+- 周视图保留既有导航、星期表头、小时网格和当前时间线。
+- 官方开放范围在顶部只读区域展示公司、阶段、精确起止时间、颜色和待完成状态。
+- 默认显示 3 条窗口；第 4 行是“还有 2 项待完成 · 展开查看”，点击后展示全部 5 条并切换为“收起更多项目”。
+- “我的作答计划”独立显示在周六 19:00–21:00 小时网格，不改变官方窗口。
+- 页面信息层级和交互模型与参考一致；在 1280 x 720 验收视口下使用现有日历的紧凑密度，避免破坏工作区外框。
+
+final result: passed
+
+---
+
+## 求职记录看板栏位弱化 — 2026-09-10
+
+### Evidence
+
+- Source visual truth: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-6af015bf-e246-4a3e-97d2-6ae7e92de4d1.png`，`1231 × 855` px；用户指定只复现栏位之间的浅色单线分隔与无独立栏背景。
+- Implementation route: `http://127.0.0.1:5174/career/applications`，当前工作树 Web 与 FastAPI，Chrome 已登录桌面状态。
+- Implementation screenshot: 当前任务中的 CUA 最终内联截图；浏览器接口未提供可持久化文件路径。
+- Viewport: `1920 × 1078` CSS px，device density `1`。来源图的真实 CSS viewport 与 density 未知，因此完整画面按可见结构归一化比较，并聚焦核对相邻栏边界、栏背景和岗位卡片。
+- State: 浅色主题，7 个真实阶段栏、16 张岗位卡片已加载，无弹层。
+
+### Findings
+
+没有剩余 P0/P1/P2 问题。
+
+- 字体与排版：沿用 LinkCV 既有字体、字号、标题层级与省略规则；本次没有改动文字样式。
+- 间距与布局：栏间 gap 为 `0px`，相邻栏共用连续的 1px 竖向分隔线；栏内 12px inset、260px 列宽、卡片高度与滚动行为保持原实现。
+- 色彩与 Token：所有栏背景实测为透明 `rgba(0, 0, 0, 0)`，自然透出项目背景；第二栏起使用由 `--ui-border` 混合得到的 68% 浅色分隔线。
+- 图片与图标：目标区域没有新增图片资产；拖拽手柄与卡片菜单继续使用项目既有 Lucide 图标。
+- 文案与内容：阶段名称、数量、公司、岗位和进度文案均未改变。
+- 聚焦对照：参考图保留白色岗位卡片并弱化栏容器；最终实现同样保留 16 张白色岗位卡片，只移除整栏圆角、边框和底色。无需额外图片裁切即可辨识关键差异。
+
+### Interaction Evidence
+
+- 真实路由成功加载 7 栏和 16 张岗位卡片；标题拖拽节点、卡片菜单与横向看板 DOM 结构未改动。
+- 当前页面应用自身 console error 为 0；仅 Chrome 扩展记录过与页面实现无关的扩展上下文错误。
+
+### Comparison History
+
+1. 首次对照发现 5173 由另一工作树提供，仍显示旧版栏卡片；该截图不作为实现证据。
+2. 按 Development profile 在独立的 5174/18001 端口启动当前工作树，重新加载同一真实账号与求职数据。
+3. 最终对照确认栏容器已透明、圆角与整框消失，相邻栏之间只保留浅色单线，无剩余 P0/P1/P2。
+
+### Follow-up Polish
+
+- 无。本次按用户范围保留既有列宽、卡片尺寸和页面其余视觉细节。
+
+final result: passed
+
+---
 
 ## Evidence
 
@@ -1159,5 +1369,61 @@ final result: passed
 ## Follow-up Polish
 
 - 移动端使用单列堆叠布局；本次来源只提供桌面视觉，未把移动端与未提供的移动稿做视觉像素对照。
+
+final result: passed
+
+---
+
+# Time Range Picker Design QA
+
+- Source visual truth: `/Users/jixu/.codex/generated_images/01a08ea8-b2f0-76e0-abc8-9fbdaae56825/exec-7e6d9d0e-a6bc-4ffa-b4c9-deced388588b.png`
+- Initial implementation evidence: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-0fec07fa-68d2-4f1e-b203-4a9ed8340186.png`
+- Revised implementation evidence: inline CUA browser capture from `http://127.0.0.1:5174/career/applications` (the CUA screenshot API did not expose a filesystem path)
+- Browser viewport: 1920 × 1022 CSS px, device scale factor 1
+- Source image: 1398 × 1125 px
+- Focused implementation capture: 750 × 500 px crop from the 1920 × 1022 viewport
+- State: written-test record detail, answer-plan picker open, 2026-09-12 at 14:00, duration 2 hours
+
+## Full-view comparison evidence
+
+The revised picker follows the source composition: a contextual title and available-window notice sit above a two-column calendar/time layout; the start-time selector, four duration choices, derived end time, and footer actions are all visible without viewport overflow. The surrounding production dialog remains at its existing width, so the picker scales to that dialog rather than copying the mock's wider outer frame.
+
+## Focused-region comparison evidence
+
+The focused browser capture confirms that the native time input and clock affordance are gone. The start time is now a single text-capable combobox with a chevron and a 15-minute option list, while still accepting exact `HH:mm` input. The four duration choices share one row, and the summary separates the highlighted end time from the total duration. The official availability window uses the same blue information treatment as the source.
+
+## Required fidelity surfaces
+
+- Fonts and typography: existing LinkCV font stack, label hierarchy, numeric tabular alignment, and source-like weights retained.
+- Spacing and layout rhythm: two-column ratio, full-width contextual header, four-column duration row, summary spacing, and footer separation now match the source hierarchy.
+- Colors and visual tokens: existing LinkCV surface, border, accent, muted text, and primary-button tokens map cleanly to the source.
+- Image quality and assets: no raster assets are required inside this control; the information and chevron icons use the project's existing Lucide icon set.
+- Copy and content: `选择作答时间段`, `可安排`, `开始时间`, `预计时长`, `结束时间`, and total-duration copy match the selected design intent.
+
+## Comparison history
+
+1. Initial P1: duration mode still used a native `type="time"` field with a clock icon, retained the old quick-time row, and stacked the custom duration control. Fixed by introducing the source-aligned start-time combobox, removing quick times in duration mode, and using four equal duration choices.
+2. Initial P2: picker width and vertical rhythm were too compact, and the record dialog clipped the footer and fourth duration choice. Fixed by using a wider maximum picker, restoring calendar row height, and portalling the picker to the record dialog with visible overflow and a dialog-aligned width.
+3. Post-fix browser evidence: picker measured 670 × 423 px inside the existing 720 px record dialog; it stayed within the 1920 × 1022 viewport, displayed all four duration controls and the full footer, and contained no native time input.
+
+## Findings
+
+No actionable P0, P1, or P2 visual differences remain within the requested picker scope. The outer record dialog intentionally preserves the production LinkCV width instead of adopting the wider mock frame.
+
+## Primary interactions tested
+
+- Open and close the answer-plan picker without saving.
+- Open the start-time dropdown and select 14:00.
+- Verify the derived end time updates to 16:00 for a two-hour duration.
+- Switch to a custom 90-minute duration and verify the derived end time updates to 15:30.
+- Confirm the picker has no viewport overflow and does not persist draft changes when closed.
+
+## Implementation checklist
+
+- [x] Replace native duration-mode time input.
+- [x] Match source information hierarchy and duration controls.
+- [x] Preserve exact-minute typing and keyboard-accessible combobox semantics.
+- [x] Prevent record-dialog clipping.
+- [x] Verify the rendered Development route.
 
 final result: passed

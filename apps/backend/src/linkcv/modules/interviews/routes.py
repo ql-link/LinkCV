@@ -17,12 +17,15 @@ from sqlalchemy.orm import Session
 from linkcv.application.interviews.service import (
     InterviewApplicationNotEmpty,
     InterviewApplicationAlreadyActive,
+    InterviewAnswerPlanInvalidTime,
+    InterviewAnswerPlanNotSupported,
+    InterviewAnswerPlanOutsideWindow,
     InterviewEditConflict,
     InterviewInvalidTransition,
     InterviewNotFound,
     InterviewResumeVersionRequired,
+    InterviewScheduleKindNotSupported,
     InterviewSessionNotEmpty,
-    InterviewTimeConflict,
     InvalidInterviewRequest,
     InvalidInterviewCursor,
     InvalidInterviewTime,
@@ -51,6 +54,7 @@ from linkcv.application.interviews.service import (
     set_application_archived,
     terminate_application,
     update_application,
+    update_answer_plan,
     update_session,
 )
 from linkcv.application.resumes.service import parse_decimal_id
@@ -105,6 +109,7 @@ from linkcv.modules.interviews.schemas import (
     RescheduleInterviewRequest,
     SessionStatus,
     TerminateApplicationRequest,
+    UpdateAnswerPlanRequest,
 )
 from linkcv.modules.observability.audit import bind_audit_target
 
@@ -155,6 +160,7 @@ def _application_record(
     current = next((stage for stage in stages if stage.current_marker == 1), None)
     return JobApplicationRecord.model_validate(application).model_copy(
         update={
+            "company_logo_url": _application_logo_url(application),
             "current_stage": (
                 ApplicationStageRecord.model_validate(current) if current else None
             ),
@@ -165,6 +171,11 @@ def _application_record(
             ),
         }
     )
+
+
+def _application_logo_url(application: JobApplication) -> str | None:
+    value = application.job_snapshot.get("logo_url")
+    return value if isinstance(value, str) and value.startswith("https://") else None
 
 
 def _application_summary(
@@ -217,6 +228,14 @@ def _raise_service_error(error: Exception) -> None:
         raise ApiError(409, "INTERVIEW_EDIT_CONFLICT") from error
     if isinstance(error, InterviewInvalidTransition):
         raise ApiError(409, "INTERVIEW_INVALID_TRANSITION") from error
+    if isinstance(error, InterviewScheduleKindNotSupported):
+        raise ApiError(400, "INTERVIEW_SCHEDULE_KIND_NOT_SUPPORTED") from error
+    if isinstance(error, InterviewAnswerPlanNotSupported):
+        raise ApiError(400, "INTERVIEW_ANSWER_PLAN_NOT_SUPPORTED") from error
+    if isinstance(error, InterviewAnswerPlanInvalidTime):
+        raise ApiError(400, "INTERVIEW_ANSWER_PLAN_INVALID_TIME") from error
+    if isinstance(error, InterviewAnswerPlanOutsideWindow):
+        raise ApiError(400, "INTERVIEW_ANSWER_PLAN_OUTSIDE_WINDOW") from error
     if isinstance(error, InvalidInterviewRequest):
         raise ApiError(400, "INVALID_INTERVIEW_REQUEST") from error
     if isinstance(error, InvalidInterviewTime):
@@ -227,24 +246,6 @@ def _raise_service_error(error: Exception) -> None:
         raise ApiError(409, "INTERVIEW_APPLICATION_NOT_EMPTY") from error
     if isinstance(error, InterviewSessionNotEmpty):
         raise ApiError(409, "INTERVIEW_SESSION_NOT_EMPTY") from error
-    if isinstance(error, InterviewTimeConflict):
-        raise ApiError(
-            409,
-            "INTERVIEW_TIME_CONFLICT",
-            {
-                "conflicts": [
-                    {
-                        "id": str(item.id),
-                        "application_id": str(item.application_id),
-                        "company_name": item.company_name,
-                        "stage_label": item.stage_label,
-                        "start_at": _utc_iso(item.start_at),
-                        "end_at": _utc_iso(item.end_at),
-                    }
-                    for item in error.conflicts
-                ]
-            },
-        ) from error
     raise error
 
 
@@ -516,10 +517,27 @@ def delete_application_route(
     application_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    storage: AssetStorage = Depends(get_storage),
 ) -> DeleteResponse:
+    def delete_asset_object(object_name: str) -> None:
+        try:
+            storage.delete(object_name)
+        except S3Error as error:
+            if error.code not in {"NoSuchKey", "NoSuchObject"}:
+                raise
+
     try:
-        delete_application(db, user.id, _database_id(application_id))
+        delete_application(
+            db,
+            user.id,
+            _database_id(application_id),
+            delete_asset_object=delete_asset_object,
+        )
+    except S3Error as error:
+        raise ApiError(502, "INTERVIEW_APPLICATION_DELETE_FAILED") from error
     except Exception as error:
+        if not isinstance(error, (InterviewNotFound, InterviewApplicationNotEmpty)):
+            raise ApiError(502, "INTERVIEW_APPLICATION_DELETE_FAILED") from error
         _raise_service_error(error)
     return DeleteResponse(deleted=True)
 
@@ -660,6 +678,19 @@ def post_reschedule_interview(
     user: User = Depends(get_current_user),
 ) -> InterviewSessionResponse:
     return _session_command(reschedule_session, db, user.id, session_id, payload)
+
+
+@router.put(
+    "/interview-sessions/{session_id}/answer-plan",
+    response_model=InterviewSessionResponse,
+)
+def put_interview_answer_plan(
+    session_id: str,
+    payload: UpdateAnswerPlanRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> InterviewSessionResponse:
+    return _session_command(update_answer_plan, db, user.id, session_id, payload)
 
 
 @router.post(
