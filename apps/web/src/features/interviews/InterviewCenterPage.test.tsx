@@ -1000,6 +1000,61 @@ describe("InterviewCenterPage API projections", () => {
     expect(Array.from(month.querySelectorAll('[data-slot="event-calendar-event"]')).some((item) => item.textContent?.includes("新面试"))).toBe(false);
   });
 
+  it("renders only the weeks required by the active month", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-09-12T12:00:00+08:00"));
+
+    render(<InterviewCenterPage view="schedule" />);
+    await act(async () => {});
+    await switchToScheduleMonth();
+
+    const month = screen.getByRole("grid", { name: /月面试排期$/ });
+    expect(month.querySelectorAll('[data-slot="event-calendar-month-row"]')).toHaveLength(5);
+    expect(within(month).getAllByRole("gridcell")).toHaveLength(35);
+  });
+
+  it("uses the minimal overflow panel and closes it outside or when another day opens", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-09-12T12:00:00+08:00"));
+    const overflowSessions = [4, 5].flatMap((day) =>
+      Array.from({ length: 4 }, (_, index) => {
+        const start = new Date(2026, 8, day, 9 + index, 0, 0);
+        return {
+          ...session,
+          id: `overflow-${day}-${index}`,
+          company_name: `示例公司${day}-${index}`,
+          start_at: start.toISOString(),
+          end_at: new Date(start.getTime() + 30 * 60_000).toISOString(),
+        };
+      }),
+    );
+    mocks.listInterviewSessions.mockResolvedValue({ items: overflowSessions, next_cursor: null });
+
+    render(<InterviewCenterPage view="schedule" />);
+    await act(async () => {});
+    await switchToScheduleMonth();
+
+    const month = screen.getByRole("grid", { name: /月面试排期$/ });
+    const moreButtons = within(month).getAllByRole("button", { name: /另有 \d+ 项/ });
+    expect(moreButtons).toHaveLength(2);
+    expect(moreButtons[0]).toHaveClass("interview-calendar-more-indicator");
+
+    fireEvent.click(moreButtons[0]);
+    const firstPanel = screen.getByRole("dialog", { name: "9月4日 · 周五" });
+    expect(firstPanel).toHaveClass("interview-calendar-more-popover");
+    expect(within(firstPanel).getByRole("button", { name: /示例公司4-3/ })).toBeInTheDocument();
+
+    fireEvent.pointerDown(within(month).getAllByRole("gridcell")[10]);
+    expect(screen.queryByRole("dialog", { name: "9月4日 · 周五" })).not.toBeInTheDocument();
+
+    fireEvent.click(moreButtons[0]);
+    fireEvent.pointerDown(moreButtons[1]);
+    fireEvent.click(moreButtons[1]);
+    expect(screen.queryByRole("dialog", { name: "9月4日 · 周五" })).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "9月5日 · 周六" })).toBeInTheDocument();
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+  });
+
   it("周日历空白处仅双击时按最近 15 分钟创建 30 分钟彩色临时排期", async () => {
     mocks.listJobApplications.mockResolvedValue({
       items: [
