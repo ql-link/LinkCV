@@ -22,6 +22,8 @@
       "properties": {
         "node_id": {"$ref": "#/$defs/nodeId"},
         "value": {"type": "string", "maxLength": 20000},
+        "runs": {"type": ["array", "null"], "maxItems": 1000, "items": {"$ref": "#/$defs/textRun"}},
+        "prefix_runs": {"type": ["array", "null"], "maxItems": 100, "items": {"$ref": "#/$defs/textRun"}},
         "source_refs": {"$ref": "#/$defs/sourceRefs"}
       }
     },
@@ -32,6 +34,8 @@
         "node_id": {"$ref": "#/$defs/nodeId"},
         "contact_kind": {"enum": ["phone", "email", "website", "location", "github", "linkedin", "other"]},
         "value": {"type": "string", "minLength": 1, "maxLength": 2048},
+        "runs": {"type": ["array", "null"], "maxItems": 1000, "items": {"$ref": "#/$defs/textRun"}},
+        "prefix_runs": {"type": ["array", "null"], "maxItems": 100, "items": {"$ref": "#/$defs/textRun"}},
         "label": {"type": ["string", "null"], "maxLength": 100},
         "source_refs": {"$ref": "#/$defs/sourceRefs"}
       }
