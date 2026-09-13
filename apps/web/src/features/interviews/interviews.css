@@ -3194,7 +3194,8 @@
   padding: 0;
 }
 
-.career-next-stage-dialog:has(> .career-schedule-picker-popover) {
+.career-next-stage-dialog:has(> .career-schedule-picker-popover),
+.career-next-stage-dialog:has(> .career-applied-date-picker-popover) {
   overflow: visible;
 }
 
