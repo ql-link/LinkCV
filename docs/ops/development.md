@@ -12,7 +12,7 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkresume` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker 和独立 Pi 服务。当前 Alembic head `0061`；`0002`–`0029` 建立并演进既有业务结构，`0030`–`0034` 建立 Agent、面试与 JD 契约，`0035` 为 JD 图片智能导入新增空的 `job_image_structuring` 模型能力绑定，`0036`–`0046` 收敛简历、资料与用户画像结构，`0047` 完成简历 canonical 一次性切流并为仍被历史快照引用的 `blank-cn` 建立 inactive tombstone，`0048` 修复 canonical 行结构与头像策略，`0049` 冻结导入受理时的模板定义，`0050` 将白名单内的历史 `:icon[Name]:` 标记规范化为结构化图标，`0051` 修复已登记的用户画像结构漂移并增加发布门禁，`0052` 增加 Agent 会话置顶状态及列表索引，`0053` 简化 Offer 状态并增加可选详情，`0054` 将 Offer 薪资收敛为单值字段，`0055` 允许手工创建岗位时留空职位描述，`0056` 收敛岗位用工类型约束，`0057` 建立求职生命周期、阶段历史及排期关联，`0058` 增加开放作答窗口及其个人作答计划字段，`0059` 增加岗位 Logo URL 与独立全局公司资料表，`0060` 增加资料库文件夹分类，`0061` 增加资料当前正文指针、替换操作与对象清理记录。
+新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务、macOS 桌面壳和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkresume` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker 和独立 Pi 服务。当前 Alembic head `0061`；`0002`–`0029` 建立并演进既有业务结构，`0030`–`0034` 建立 Agent、面试与 JD 契约，`0035` 为 JD 图片智能导入新增空的 `job_image_structuring` 模型能力绑定，`0036`–`0046` 收敛简历、资料与用户画像结构，`0047` 完成简历 canonical 一次性切流并为仍被历史快照引用的 `blank-cn` 建立 inactive tombstone，`0048` 修复 canonical 行结构与头像策略，`0049` 冻结导入受理时的模板定义，`0050` 将白名单内的历史 `:icon[Name]:` 标记规范化为结构化图标，`0051` 修复已登记的用户画像结构漂移并增加发布门禁，`0052` 增加 Agent 会话置顶状态及列表索引，`0053` 简化 Offer 状态并增加可选详情，`0054` 将 Offer 薪资收敛为单值字段，`0055` 允许手工创建岗位时留空职位描述，`0056` 收敛岗位用工类型约束，`0057` 建立求职生命周期、阶段历史及排期关联，`0058` 增加开放作答窗口及其个人作答计划字段，`0059` 增加岗位 Logo URL 与独立全局公司资料表，`0060` 增加资料库文件夹分类，`0061` 增加资料当前正文指针、替换操作与对象清理记录。
 
 本地开发把 Git 主工作目录中的 `.env.local` 与 `.env.development.local` 作为所有 worktree 的共享私密覆盖层。Codex 管理的新建 worktree 会按 `.worktreeinclude` 自动带入主目录的 `.env`、`.env.local` 与 `.env.development.local`；这些文件仍被 Git 忽略，不能提交。`npm run dev`/`npm run dev:local` 优先使用当前 worktree 的 `.env`，否则回退主工作目录 `.env`；两处基础文件都不存在时，完整的主目录 `.env.local` 仍可单独作为 Local 配置。Local profile 同时设置回环地址的 `RABBITMQ_URL` 与 `RABBITMQ_PORT` 时，启动器在进程环境中让 URL 端口跟随 `RABBITMQ_PORT`，不修改文件，也不重写远程 RabbitMQ 地址。启动器复用当前 npm 的 JavaScript 入口，在 Windows 和 Unix 上都通过同一 profile 启动服务。`npm run dev:development` 使用当前 worktree 已跟踪的 `.env.development`，再加载主工作目录 `.env.development.local`，并把同一结果注入 Web、FastAPI、Worker 与 Pi Service。新建 worktree 后不需要手动复制这些本地运行配置。需要临时隔离时可显式设置 `LINKRESUME_SECRET_ENV_FILE=/absolute/path/to/override.local`。
 
@@ -177,6 +177,10 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run test:miniprogram`            | 小程序纯逻辑 Node 测试（含访客与已登录态）                         |
 | `npm run dev:extension`               | 启动 WXT 插件开发模式                                                |
 | `npm run test:extension`              | 插件 DOM 提取与 API 客户端测试                                       |
+| `npm run dev:desktop`                 | 等待本地 Vite 就绪后打开 Electron 桌面窗口（加载本地页面，支持热更新） |
+| `npm run build:desktop`             | 打包未签名 macOS 正式版 dmg（连生产源，仅微信扫码登录）           |
+| `npm run build:desktop:dev`         | 打包未签名 macOS 开发版 dmg（LinkResume-Dev，连内网 Dev，密码登录） |
+| `npm run test:desktop`                | 桌面壳配置解析与导航守卫的 Node 测试                                  |
 | `npm run build:extension`             | 构建可侧载的 Chrome MV3 目录                                         |
 | `uv run --directory apps/backend python ../../scripts/release/build_extension_release.py ...` | 生成并校验 Development/Production 插件发布 ZIP 与 SHA256SUMS |
 | `npm run test:backend:unit`           | 后端快速单元测试                                                     |
@@ -186,6 +190,8 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run check:ai`                    | 校验 AI 入口、项目 Skill、文档同步和运行时契约                       |
 | `npm run check:app`                   | 执行设计门禁、类型检查、构建、应用测试和 Pi 质量检查                 |
 | `npm run check`                       | 完整本地质量入口                                                     |
+
+桌面壳的打包规范：产物只落在被 Git 忽略的 `apps/desktop/release/`，不提交任何 dmg 或构建产物；应用图标使用 `apps/desktop/build/icon.png`（复制自 `apps/web/src/assets/linkresume-mark.png`，品牌图更新时需同步该副本）；目标环境在构建期由 `scripts/write-build-env.mjs` 写入产物，正式版强制 https，开发版允许内网 http 并在启动日志提示；开发版使用独立应用名 LinkResume-Dev 与 appId，不与正式版互相覆盖。完整引导见 `desktop-release` Skill。
 
 ## 测试分层
 
