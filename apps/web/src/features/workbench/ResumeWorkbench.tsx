@@ -1,4 +1,4 @@
-import { posToDOMRect, type Editor, type JSONContent } from "@tiptap/core";
+import { type Editor, type JSONContent } from "@tiptap/core";
 import { BubbleMenu, EditorContent, useEditor } from "@tiptap/react";
 import { TextSelection } from "@tiptap/pm/state";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
@@ -51,6 +51,8 @@ import { SelectionFormattingToolbar } from "./WorkbenchToolbar";
 import {
   createSelectionBubbleAnchor,
   refreshSelectionBubblePosition,
+  selectionBubbleContainer,
+  selectionEndAnchorRect,
   shouldShowSelectionAgentBubble,
 } from "./selectionBubbleAnchor";
 import { getTwoPageFitScale, getWheelZoomScale, handleWheelZoom } from "./workbenchZoom";
@@ -391,12 +393,19 @@ const PAGE_ARRANGEMENT_STORAGE_KEY = "linkresume.workbench.page-arrangement";
 
 function currentSelectionRect(editor: Editor) {
   const { ranges } = editor.state.selection;
-  const from = Math.min(...ranges.map((range) => range.$from.pos));
   const to = Math.max(...ranges.map((range) => range.$to.pos));
-  return posToDOMRect(editor.view, from, to);
+  return selectionEndAnchorRect(editor.view.coordsAtPos(to, -1));
 }
 
-function StableSelectionToolbarBubble({ editor, children }: { editor: Editor; children: ReactNode }) {
+function StableSelectionToolbarBubble({
+  editor,
+  scale,
+  children,
+}: {
+  editor: Editor;
+  scale: number;
+  children: ReactNode;
+}) {
   const anchorRef = useRef<ReturnType<typeof createSelectionBubbleAnchor> | null>(null);
   const tippyRef = useRef<TippyInstance | null>(null);
   if (!anchorRef.current) anchorRef.current = createSelectionBubbleAnchor();
@@ -411,22 +420,27 @@ function StableSelectionToolbarBubble({ editor, children }: { editor: Editor; ch
         () => { void tippyRef.current?.popperInstance?.update(); },
       );
     };
+    tippyRef.current?.setProps({ offset: [0, 8 * scale] });
     scrollArea?.addEventListener("scroll", refresh, { passive: true });
     window.addEventListener("resize", refresh, { passive: true });
+    refresh();
     return () => {
       scrollArea?.removeEventListener("scroll", refresh);
       window.removeEventListener("resize", refresh);
     };
-  }, [anchor, editor]);
+  }, [anchor, editor, scale]);
 
   return (
     <BubbleMenu
       editor={editor}
       tippyOptions={{
+        // Keep Tippy outside the zoomed paper so viewport coordinates are not
+        // scaled twice, but inside React's root so delegated button events work.
+        appendTo: () => selectionBubbleContainer(editor.view.dom, document.body),
         duration: 150,
         maxWidth: "none",
-        placement: "top",
-        offset: [0, 8],
+        placement: "bottom-start",
+        offset: [0, 8 * scale],
         getReferenceClientRect: () => anchor.getRect(() => currentSelectionRect(editor)),
         onCreate: (instance) => { tippyRef.current = instance; },
         onDestroy: (instance) => {
@@ -441,12 +455,17 @@ function StableSelectionToolbarBubble({ editor, children }: { editor: Editor; ch
         });
         anchor.observe(
           visible ? { from, to } : { from, to: from },
-          () => posToDOMRect(view, from, to),
+          () => selectionEndAnchorRect(view.coordsAtPos(to, -1)),
         );
         return visible;
       }}
     >
-      {children}
+      <div
+        className="selection-toolbar-bubble-scale"
+        style={{ "--selection-toolbar-scale": scale } as React.CSSProperties}
+      >
+        {children}
+      </div>
     </BubbleMenu>
   );
 }
@@ -1642,7 +1661,7 @@ export function ResumeWorkbench() {
         )}
 
         {activeResumeId && editor && (
-          <StableSelectionToolbarBubble editor={editor}>
+          <StableSelectionToolbarBubble editor={editor} scale={renderedPreviewScale}>
             <SelectionFormattingToolbar
               editor={editor}
               onAgentAction={(instruction, selectionContext) => {

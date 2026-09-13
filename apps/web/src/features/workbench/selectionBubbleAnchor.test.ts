@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createSelectionBubbleAnchor,
   refreshSelectionBubblePosition,
+  selectionBubbleContainer,
+  selectionEndAnchorRect,
   shouldShowSelectionAgentBubble,
 } from "./selectionBubbleAnchor";
 
@@ -10,6 +12,39 @@ function rect(left: number) {
 }
 
 describe("selectionBubbleAnchor", () => {
+  it("把浮层挂在 React 工作台内、缩放纸张外", () => {
+    const workbench = document.createElement("div");
+    workbench.className = "resume-workbench";
+    const paper = document.createElement("article");
+    paper.className = "resume-paper";
+    const editor = document.createElement("div");
+    paper.append(editor);
+    workbench.append(paper);
+
+    expect(selectionBubbleContainer(editor, document.body)).toBe(workbench);
+    expect(selectionBubbleContainer(document.createElement("div"), document.body)).toBe(document.body);
+  });
+
+  it("把选区末字右下角转换为浮层锚点", () => {
+    const anchor = selectionEndAnchorRect({
+      left: 120,
+      top: 48,
+      right: 184,
+      bottom: 72,
+    } as DOMRect);
+
+    expect(anchor).toMatchObject({
+      x: 184,
+      y: 72,
+      left: 184,
+      top: 72,
+      right: 184,
+      bottom: 72,
+      width: 0,
+      height: 0,
+    });
+  });
+
   it("只在可编辑状态选中文字后显示 AI 提示", () => {
     expect(shouldShowSelectionAgentBubble({ editable: true, selectionEmpty: false })).toBe(true);
     expect(shouldShowSelectionAgentBubble({ editable: true, selectionEmpty: true })).toBe(false);
