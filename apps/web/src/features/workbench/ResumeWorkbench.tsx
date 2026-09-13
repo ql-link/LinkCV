@@ -1698,7 +1698,7 @@ export function ResumeWorkbench() {
             </div>
           </div>
 
-          {activeResumeId && (
+          {activeResumeId && !import.meta.env.PROD && (
             <AgentFloatingEntry
               open={drawerMode === "agent"}
               onToggle={() => setDrawerMode((mode) => mode === "agent" ? null : "agent")}
